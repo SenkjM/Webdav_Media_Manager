@@ -39,6 +39,10 @@ class PlayerScreen extends StatelessWidget {
     final album = track?.album ?? lib?.album;
     add(album);
 
+    if (track?.isCueVirtual == true || lib?.isCueVirtual == true) {
+      add(LibraryTrack.cueMultiSliceLabel);
+    }
+
     final albumArtist = track?.albumArtist ?? lib?.albumArtist;
     if (albumArtist != null &&
         albumArtist.trim().isNotEmpty &&
@@ -131,6 +135,37 @@ class PlayerScreen extends StatelessWidget {
         row('服务器', serverUrl);
         row('远程路径', track.remotePath);
         row('文件名', track.fileName);
+        final isCue = track.isCueVirtual || (lib?.isCueVirtual ?? false);
+        if (isCue) {
+          row('类型', LibraryTrack.cueMultiSliceLabel);
+          row(
+            '说明',
+            '此条目来自 CUE 分片，不是独立单曲文件；'
+            '播放与缓存共用源音频。',
+          );
+          row(
+            'CUE 文件',
+            track.cueRemotePath ?? lib?.cueRemotePath,
+          );
+          row(
+            '源音频',
+            track.audioRemotePath ?? lib?.audioRemotePath,
+          );
+          final idx = track.cueTrackIndex ?? lib?.cueTrackIndex;
+          if (idx != null) row('CUE 曲序', '$idx');
+          final start = track.clipStart ??
+              (lib?.clipStartMs != null
+                  ? Duration(milliseconds: lib!.clipStartMs!)
+                  : null);
+          final end = track.clipEnd ??
+              (lib?.clipEndMs != null
+                  ? Duration(milliseconds: lib!.clipEndMs!)
+                  : null);
+          if (start != null) {
+            final endLabel = end != null ? _fmt(end) : '结尾';
+            row('分片区间', '${_fmt(start)} – $endLabel');
+          }
+        }
         row('本地缓存', localPath ?? '未下载');
         if (fileSize != null) {
           row('文件大小', _formatBytes(fileSize));

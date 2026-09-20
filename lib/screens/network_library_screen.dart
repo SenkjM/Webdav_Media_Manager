@@ -288,11 +288,18 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     ),
                   ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                   child: Text(
-                    'CUE · ${sheet.tracks.length} 曲'
+                    '多歌曲合并分片 · CUE · ${sheet.tracks.length} 曲'
                     '${multiFile ? ' · ${byFile.length} 个音频文件' : ''}',
                     style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    '此 CUE 将整张专辑按分片导入音乐库，不是独立单曲文件。',
+                    style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
                   ),
                 ),
                 const Divider(height: 1, color: AppColors.divider),

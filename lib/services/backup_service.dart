@@ -11,6 +11,7 @@ import '../models/webdav_account.dart';
 import '../utils/backup_crypto.dart';
 import '../utils/backup_paths.dart';
 import 'accounts_service.dart';
+import 'cache_service.dart';
 import 'library_database.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';
@@ -27,9 +28,11 @@ import 'webdav_service.dart';
 /// Optional full multi-account backup goes under the backup root as
 /// `full-backup-….wmpbak` and on restore replaces all mounts.
 ///
-/// Per-account zip includes: that account's credentials, its library tracks
-/// (JSON), playlists that reference it (entries keep accountId), cover thumbs,
-/// and settings. Never includes audio cache or download queue.
+/// Unified per-account backup unit (formatVersion 3): site credentials + that
+/// site's music library (tracks + cue_albums + cue_slices) + playlists +
+/// covers + settings in one archive. Never includes audio cache files or
+/// download queue. On restore, cache annex is cleared / left uncached so the
+/// player never thinks files exist unless they are actually on disk.
 ///
 /// Format: ZIP, optionally AES-256-GCM with passphrase (WMPB1).
 class BackupService extends ChangeNotifier {
@@ -40,12 +43,14 @@ class BackupService extends ChangeNotifier {
     required SettingsService settings,
     required PlaylistService playlists,
     required WebDavService webDav,
+    CacheService? cache,
   })  : _libraryDb = libraryDb,
         _library = library,
         _accounts = accounts,
         _settings = settings,
         _playlists = playlists,
-        _webDav = webDav;
+        _webDav = webDav,
+        _cache = cache;
 
   final LibraryDatabase _libraryDb;
   final LibraryService _library;
@@ -53,10 +58,11 @@ class BackupService extends ChangeNotifier {
   final SettingsService _settings;
   final PlaylistService _playlists;
   final WebDavService _webDav;
+  final CacheService? _cache;
 
   static const defaultRemoteDir = '/WebDAVMusicPlayer/backup/';
   static const defaultFileName = 'webdav_music_backup.wmpbak';
-  static const formatVersion = 2;
+  static const formatVersion = 3;
 
   bool busy = false;
   String? lastError;
@@ -97,12 +103,14 @@ class BackupService extends ChangeNotifier {
       'trackCount': tracks.length,
       'includes': [
         'account_credentials',
-        'tracks_json',
+        'library_json',  // tracks + cue_albums + cue_slices (unified)
+        'tracks_json',  // legacy alias of normal+cue rows
         'covers',
         'playlists_json',
         'settings',
       ],
-      'excludes': ['audio_cache', 'download_queue', 'other_accounts'],
+      'excludes': ['audio_cache', 'cache_annex', 'download_queue', 'other_accounts'],
+      'cachePolicy': 'restore_uncached_unless_files_on_disk',
     };
     archive.addFile(ArchiveFile.bytes(
       'manifest.json',
@@ -131,12 +139,29 @@ class BackupService extends ChangeNotifier {
       })),
     ));
 
+    final cueAlbums = await _libraryDb.allCueAlbumsForAccount(account.id);
+    final cueSlices = await _libraryDb.allCueSlicesForAccount(account.id);
+
     archive.addFile(ArchiveFile.bytes(
       'tracks.json',
       utf8.encode(const JsonEncoder.withIndent('  ').convert({
         'accountId': account.id,
         'accountUrl': account.url,
         'tracks': tracks.map((t) => t.toMap()).toList(),
+      })),
+    ));
+
+    // Unified library unit (formatVersion 3): site-scoped tracks + CUE tables.
+    archive.addFile(ArchiveFile.bytes(
+      'library.json',
+      utf8.encode(const JsonEncoder.withIndent('  ').convert({
+        'accountId': account.id,
+        'accountUrl': account.url,
+        'accountName': account.name,
+        'tracks': tracks.where((t) => !t.isCueVirtual).map((t) => t.toMap()).toList(),
+        'cueAlbums': cueAlbums,
+        'cueSlices': cueSlices.map((t) => t.toMap()).toList(),
+        'cache': <Map<String, dynamic>>[], // never mark cached without files
       })),
     ));
 
@@ -181,7 +206,8 @@ class BackupService extends ChangeNotifier {
         'settings',
         'webdav_accounts_with_passwords',
       ],
-      'excludes': ['audio_cache', 'download_queue'],
+      'excludes': ['audio_cache', 'cache_annex', 'download_queue'],
+      'cachePolicy': 'restore_uncached_unless_files_on_disk',
     };
     archive.addFile(ArchiveFile.bytes(
       'manifest.json',
@@ -506,8 +532,44 @@ class BackupService extends ChangeNotifier {
 
     await _accounts.mergeAccountFromBackup(accountMap);
 
+    // Always clear cache annex on restore — never mark tracks cached without files.
+    if (_cache != null) {
+      await _cache.markAllUncached();
+    } else {
+      await _libraryDb.clearAllCacheEntries();
+    }
+
+    final libraryFile = archive.findFile('library.json');
     final tracksFile = archive.findFile('tracks.json');
-    if (tracksFile != null) {
+    if (libraryFile != null) {
+      final libJson = jsonDecode(utf8.decode(libraryFile.content as List<int>))
+          as Map<String, dynamic>;
+      final accountId = libJson['accountId'] as String? ?? backupId;
+      if (accountId == null) {
+        throw StateError('library.json 缺少 accountId');
+      }
+      final tracks = <LibraryTrack>[];
+      for (final e in (libJson['tracks'] as List<dynamic>? ?? [])) {
+        final t = LibraryTrack.fromMap(Map<String, dynamic>.from(e as Map));
+        if (t.accountId != accountId) {
+          throw StateError(
+            '备份曲目 accountId=${t.accountId} 与站点 $accountId 不一致，已中止以免串站',
+          );
+        }
+        tracks.add(t);
+      }
+      for (final e in (libJson['cueSlices'] as List<dynamic>? ?? [])) {
+        final t = LibraryTrack.fromMap(Map<String, dynamic>.from(e as Map));
+        if (t.accountId != accountId) {
+          throw StateError(
+            '备份 CUE 切片 accountId=${t.accountId} 与站点 $accountId 不一致',
+          );
+        }
+        tracks.add(t);
+      }
+      await _library.replaceTracksForAccount(accountId, tracks);
+      // Ignore libJson['cache'] — restore leaves everything uncached.
+    } else if (tracksFile != null) {
       final tracksJson = jsonDecode(
               utf8.decode(tracksFile.content as List<int>))
           as Map<String, dynamic>;
@@ -616,6 +678,13 @@ class BackupService extends ChangeNotifier {
     }
 
     await _rewriteCoverPaths(docs.path);
+    // Full DB restore may contain a legacy cache table — wipe annex so
+    // isLocal never trusts missing files.
+    if (_cache != null) {
+      await _cache.markAllUncached();
+    } else {
+      await _libraryDb.clearAllCacheEntries();
+    }
     await _library.refresh();
   }
 
@@ -635,21 +704,35 @@ class BackupService extends ChangeNotifier {
 
   Future<void> _rewriteCoverPaths(String docsPath) async {
     final db = await _libraryDb.database;
-    final rows = await db
-        .query('tracks', columns: ['account_id', 'remote_path', 'cover_path']);
     final coversRoot = p.join(docsPath, 'covers');
-    for (final row in rows) {
-      final cover = row['cover_path'] as String?;
-      if (cover == null || cover.isEmpty) continue;
-      final base = p.basename(cover);
-      final newPath = p.join(coversRoot, base);
-      if (cover == newPath) continue;
-      await db.update(
-        'tracks',
-        {'cover_path': newPath},
-        where: 'account_id = ? AND remote_path = ?',
-        whereArgs: [row['account_id'], row['remote_path']],
+    for (final table in ['tracks', 'cue_slices']) {
+      final rows = await db.query(
+        table,
+        columns: ['music_id', 'account_id', 'remote_path', 'cover_path'],
       );
+      for (final row in rows) {
+        final cover = row['cover_path'] as String?;
+        if (cover == null || cover.isEmpty) continue;
+        final base = p.basename(cover);
+        final newPath = p.join(coversRoot, base);
+        if (cover == newPath) continue;
+        final musicId = row['music_id'] as String?;
+        if (musicId != null && musicId.isNotEmpty) {
+          await db.update(
+            table,
+            {'cover_path': newPath},
+            where: 'music_id = ?',
+            whereArgs: [musicId],
+          );
+        } else {
+          await db.update(
+            table,
+            {'cover_path': newPath},
+            where: 'account_id = ? AND remote_path = ?',
+            whereArgs: [row['account_id'], row['remote_path']],
+          );
+        }
+      }
     }
   }
 }

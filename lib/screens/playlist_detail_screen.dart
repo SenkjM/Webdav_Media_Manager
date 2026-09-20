@@ -160,9 +160,12 @@ class _PlaylistTrackTile extends StatelessWidget {
         ),
       ),
       subtitle: Text(
-        isLocal
-            ? '${track.displayArtist} · ${track.displayAlbum}'
-            : '未下载 · ${track.displayArtist}',
+        [
+          if (track.isCueVirtual) LibraryTrack.cueMultiSliceLabel,
+          if (!isLocal) '未下载',
+          track.displayArtist,
+          if (isLocal) track.displayAlbum,
+        ].join(' · '),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

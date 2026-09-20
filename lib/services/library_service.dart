@@ -73,7 +73,9 @@ class LibraryService extends ChangeNotifier {
     for (final track in tracks) {
       await _db.upsertTrack(track);
       final idx = _tracks.indexWhere(
-        (t) => t.accountId == track.accountId && t.remotePath == track.remotePath,
+        (t) =>
+            t.musicId == track.musicId ||
+            (t.accountId == track.accountId && t.remotePath == track.remotePath),
       );
       if (idx >= 0) {
         _tracks[idx] = track;
@@ -106,6 +108,45 @@ class LibraryService extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  LibraryTrack? findByMusicId(String musicId) {
+    try {
+      return _tracks.firstWhere((t) => t.musicId == musicId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Bidirectional CUE: slice → cue album + audio music_id.
+  Future<Map<String, dynamic>?> cueRelationForSlice(LibraryTrack track) async {
+    if (!track.isCueVirtual) return null;
+    final album = await _db.cueAlbumForSlice(track.musicId);
+    if (album == null) return null;
+    final cueId = album['cue_id'] as String;
+    final slices = await _db.sliceMusicIdsForCue(cueId);
+    return {
+      'cueId': cueId,
+      'cueRemotePath': album['cue_remote_path'],
+      'audioMusicId': track.audioMusicId ?? track.cacheMusicId,
+      'audioRemotePath': track.audioRemotePath,
+      'sliceMusicIds': slices,
+    };
+  }
+
+  /// Bidirectional CUE: cue → original audio + slice music_ids.
+  Future<Map<String, dynamic>?> cueRelationForCueId(String cueId) async {
+    final slices = await _db.slicesForCue(cueId);
+    if (slices.isEmpty) return null;
+    final first = slices.first;
+    return {
+      'cueId': cueId,
+      'cueRemotePath': first.cueRemotePath,
+      'audioMusicId': first.audioMusicId ?? first.cacheMusicId,
+      'audioRemotePath': first.audioRemotePath,
+      'sliceMusicIds': slices.map((s) => s.musicId).toList(),
+      'slices': slices,
+    };
   }
 
   /// After a file finishes downloading: read tags, save thumb + full cover, upsert.
@@ -235,15 +276,35 @@ class LibraryService extends ChangeNotifier {
         coverPath = await _covers.saveThumb(accountId: accountId, remotePath: virtualPath, bytes: bytes);
         await _covers.saveFull(accountId: accountId, remotePath: resolved, bytes: bytes);
       }
+      final audioMid = musicIdForRemote(accountId, resolved);
+      final sliceMid = musicIdForCueSlice(accountId, cueRemotePath, ct.number);
       final track = LibraryTrack(
-        accountId: accountId, remotePath: virtualPath,
+        musicId: sliceMid,
+        accountId: accountId,
+        remotePath: virtualPath,
         fileName: merged.title ?? ct.title ?? '${ct.number}',
-        title: merged.title, artist: merged.artist, albumArtist: merged.albumArtist, album: merged.album,
-        durationMs: durationMs, trackNumber: merged.trackNumber, trackTotal: sheet.tracks.length,
-        year: merged.year, genre: merged.genre, bitrate: fileTag.bitrate, sampleRate: fileTag.sampleRate,
-        coverPath: coverPath, cueRemotePath: cueRemotePath, cueTrackIndex: ct.number,
-        audioRemotePath: resolved, clipStartMs: range.start.inMilliseconds, clipEndMs: range.end?.inMilliseconds,
-        cacheGroupId: cacheGroupId, lastDownloadedAt: now, lastTagReadAt: now,
+        title: merged.title,
+        artist: merged.artist,
+        albumArtist: merged.albumArtist,
+        album: merged.album,
+        durationMs: durationMs,
+        trackNumber: merged.trackNumber,
+        trackTotal: sheet.tracks.length,
+        year: merged.year,
+        genre: merged.genre,
+        bitrate: fileTag.bitrate,
+        sampleRate: fileTag.sampleRate,
+        coverPath: coverPath,
+        cueId: cueIdFor(accountId, cueRemotePath),
+        cueRemotePath: cueRemotePath,
+        cueTrackIndex: ct.number,
+        audioMusicId: audioMid,
+        audioRemotePath: resolved,
+        clipStartMs: range.start.inMilliseconds,
+        clipEndMs: range.end?.inMilliseconds,
+        cacheGroupId: cacheGroupId,
+        lastDownloadedAt: now,
+        lastTagReadAt: now,
       );
       await _db.upsertTrack(track);
       final idx = _tracks.indexWhere((x) => x.accountId == accountId && x.remotePath == virtualPath);

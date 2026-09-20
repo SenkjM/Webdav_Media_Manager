@@ -69,7 +69,11 @@ class TrackInfo {
   Duration? clipEnd;
   String? cacheGroupId;
   bool get isDownloaded => localPath != null;
-  bool get isCueVirtual => cueTrackIndex != null && cueRemotePath != null;
+  bool get isCueVirtual =>
+      cueTrackIndex != null && (cueRemotePath?.isNotEmpty ?? false);
+  /// See [LibraryTrack.cueMultiSliceLabel].
+  String? get cueTypeLabel =>
+      isCueVirtual ? '多歌曲合并分片' : null;
   String get effectiveAudioRemotePath => audioRemotePath ?? remotePath;
   String get displayTitle {
     if (isDownloaded && title != null && title!.trim().isNotEmpty) return title!;

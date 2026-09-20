@@ -13,12 +13,10 @@ import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'download_queue_service.dart';
 
-/// Whether the track's audio file is present in the local cache.
+/// Whether the track's audio is local: cache annex + file on disk.
+/// Stale annex rows are cleared when the file is missing.
 bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
-  return cache.hasLocalFile(
-    track.effectiveAudioRemotePath,
-    accountId: track.accountId,
-  );
+  return cache.isLocalTrack(track);
 }
 
 /// Enqueue download for a non-local library track (CUE group or single file).

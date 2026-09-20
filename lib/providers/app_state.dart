@@ -24,10 +24,10 @@ class AppState extends ChangeNotifier {
   AppState({required MusicAudioHandler audioHandler}) {
     settings = SettingsService();
     webDav = WebDavService();
-    cache = CacheService();
     notificationPermission = NotificationPermissionService();
     final db = LibraryDatabase();
     libraryDb = db;
+    cache = CacheService(libraryDb: db);
     library = LibraryService(db: db);
     accounts = AccountsService(db: db);
     playlists = PlaylistService(webDav: webDav);
@@ -38,6 +38,7 @@ class AppState extends ChangeNotifier {
       settings: settings,
       playlists: playlists,
       webDav: webDav,
+      cache: cache,
     );
     librarySync = LibrarySyncService(
       library: library,
