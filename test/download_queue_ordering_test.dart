@@ -7,6 +7,7 @@ void main() {
     test('orders pending tasks FIFO by createdAt', () {
       final t1 = DownloadTask(
         id: '1',
+        accountId: 'a',
         remotePath: '/a.mp3',
         fileName: 'a.mp3',
         createdAt: DateTime(2026, 1, 1, 10),
@@ -14,6 +15,7 @@ void main() {
       );
       final t2 = DownloadTask(
         id: '2',
+        accountId: 'a',
         remotePath: '/b.mp3',
         fileName: 'b.mp3',
         createdAt: DateTime(2026, 1, 1, 9),
@@ -21,6 +23,7 @@ void main() {
       );
       final t3 = DownloadTask(
         id: '3',
+        accountId: 'a',
         remotePath: '/c.mp3',
         fileName: 'c.mp3',
         createdAt: DateTime(2026, 1, 1, 11),
@@ -28,6 +31,7 @@ void main() {
       );
       final active = DownloadTask(
         id: '4',
+        accountId: 'a',
         remotePath: '/d.mp3',
         fileName: 'd.mp3',
         createdAt: DateTime(2026, 1, 1, 8),
@@ -35,6 +39,7 @@ void main() {
       );
       final done = DownloadTask(
         id: '5',
+        accountId: 'a',
         remotePath: '/e.mp3',
         fileName: 'e.mp3',
         createdAt: DateTime(2026, 1, 1, 7),
@@ -55,6 +60,7 @@ void main() {
     test('excludes failed and cancelled from pending order', () {
       final pending = DownloadTask(
         id: 'p',
+        accountId: 'a',
         remotePath: '/p.mp3',
         fileName: 'p.mp3',
         createdAt: DateTime(2026, 2, 1),
@@ -62,6 +68,7 @@ void main() {
       );
       final failed = DownloadTask(
         id: 'f',
+        accountId: 'a',
         remotePath: '/f.mp3',
         fileName: 'f.mp3',
         createdAt: DateTime(2026, 1, 1),
@@ -69,6 +76,7 @@ void main() {
       );
       final cancelled = DownloadTask(
         id: 'c',
+        accountId: 'a',
         remotePath: '/c.mp3',
         fileName: 'c.mp3',
         createdAt: DateTime(2026, 1, 2),

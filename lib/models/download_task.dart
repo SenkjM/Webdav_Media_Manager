@@ -11,6 +11,7 @@ enum DownloadStatus {
 class DownloadTask {
   DownloadTask({
     required this.id,
+    required this.accountId,
     required this.remotePath,
     required this.fileName,
     required this.createdAt,
@@ -24,6 +25,7 @@ class DownloadTask {
   });
 
   final String id;
+  final String accountId;
   final String remotePath;
   final String fileName;
   final DateTime createdAt;
@@ -42,6 +44,7 @@ class DownloadTask {
 
   Map<String, dynamic> toMap() => {
         'id': id,
+        'account_id': accountId,
         'remote_path': remotePath,
         'file_name': fileName,
         'created_at': createdAt.toIso8601String(),
@@ -56,6 +59,7 @@ class DownloadTask {
 
   factory DownloadTask.fromMap(Map<String, dynamic> map) => DownloadTask(
         id: map['id'] as String,
+        accountId: (map['account_id'] as String?) ?? 'legacy',
         remotePath: map['remote_path'] as String,
         fileName: map['file_name'] as String,
         createdAt: DateTime.parse(map['created_at'] as String),
@@ -84,6 +88,7 @@ class DownloadTask {
   }) {
     return DownloadTask(
       id: id,
+      accountId: accountId,
       remotePath: remotePath,
       fileName: fileName,
       createdAt: createdAt,

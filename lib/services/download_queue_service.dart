@@ -2,14 +2,16 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
-import 'package:dio/dio.dart';
 
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
+import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'download_store.dart';
+import 'library_service.dart';
 import 'webdav_service.dart';
 
 /// Background async download queue. Does not block UI/navigation.
@@ -18,13 +20,16 @@ class DownloadQueueService extends ChangeNotifier {
   DownloadQueueService({
     required WebDavService webDav,
     required CacheService cache,
+    LibraryService? library,
     DownloadStore? store,
   })  : _webDav = webDav,
         _cache = cache,
+        _library = library,
         _store = store ?? DownloadStore();
 
   final WebDavService _webDav;
   final CacheService _cache;
+  LibraryService? _library;
   final DownloadStore _store;
   final _uuid = const Uuid();
 
@@ -34,6 +39,10 @@ class DownloadQueueService extends ChangeNotifier {
 
   bool _running = false;
   bool _initialized = false;
+
+  void attachLibrary(LibraryService library) {
+    _library = library;
+  }
 
   UnmodifiableListView<DownloadTask> get tasks =>
       UnmodifiableListView(_tasks);
@@ -49,7 +58,6 @@ class DownloadQueueService extends ChangeNotifier {
   Future<void> init() async {
     if (_initialized) return;
     final loaded = await _store.loadAll();
-    // Reset interrupted active downloads to pending so they retry.
     for (final t in loaded) {
       if (t.status == DownloadStatus.active) {
         t.status = DownloadStatus.pending;
@@ -63,21 +71,27 @@ class DownloadQueueService extends ChangeNotifier {
     unawaited(_pump());
   }
 
-  DownloadTask? taskForRemote(String remotePath) {
+  DownloadTask? taskForRemote(String accountId, String remotePath) {
     try {
-      return _tasks.lastWhere((t) => t.remotePath == remotePath);
+      return _tasks.lastWhere(
+        (t) => t.accountId == accountId && t.remotePath == remotePath,
+      );
     } catch (_) {
       return null;
     }
   }
 
   TrackUiState uiStateFor(
+    String accountId,
     String remotePath, {
     String? playingRemotePath,
+    String? playingAccountId,
   }) {
-    final cached = _cache.fileForRemote(remotePath);
-    final task = taskForRemote(remotePath);
-    if (playingRemotePath == remotePath) return TrackUiState.playing;
+    final cached = _cache.fileForRemote(remotePath, accountId: accountId);
+    final task = taskForRemote(accountId, remotePath);
+    if (playingRemotePath == remotePath && playingAccountId == accountId) {
+      return TrackUiState.playing;
+    }
     if (task != null) {
       switch (task.status) {
         case DownloadStatus.pending:
@@ -94,32 +108,37 @@ class DownloadQueueService extends ChangeNotifier {
     if (cached.existsSync() || task?.status == DownloadStatus.completed) {
       return TrackUiState.ready;
     }
-    return TrackUiState.queued; // not yet enqueued — caller may enqueue
+    return TrackUiState.queued;
   }
 
   /// Enqueue download. If already completed/cached, returns existing task.
-  /// Returns a Future that completes when download finishes (or fails).
   Future<DownloadTask> enqueue(
+    String accountId,
     String remotePath, {
     String? fileName,
     bool playWhenReady = false,
   }) async {
     final existingCompleted = _tasks.cast<DownloadTask?>().firstWhere(
           (t) =>
-              t!.remotePath == remotePath &&
+              t!.accountId == accountId &&
+              t.remotePath == remotePath &&
               t.status == DownloadStatus.completed &&
               t.localPath != null &&
               File(t.localPath!).existsSync(),
           orElse: () => null,
         );
     if (existingCompleted != null) {
+      // Refresh tags when file is already cached (re-ingest).
+      unawaited(_ingest(existingCompleted));
       return existingCompleted;
     }
 
-    final cachedPath = await _cache.localPathIfCached(remotePath);
+    final cachedPath =
+        await _cache.localPathIfCached(remotePath, accountId: accountId);
     if (cachedPath != null) {
       final done = DownloadTask(
         id: _uuid.v4(),
+        accountId: accountId,
         remotePath: remotePath,
         fileName: fileName ?? remotePath.split('/').last,
         createdAt: DateTime.now(),
@@ -130,13 +149,15 @@ class DownloadQueueService extends ChangeNotifier {
       );
       _tasks.add(done);
       await _store.upsert(done);
+      await _ingest(done);
       notifyListeners();
       return done;
     }
 
     final inFlight = _tasks.cast<DownloadTask?>().firstWhere(
           (t) =>
-              t!.remotePath == remotePath &&
+              t!.accountId == accountId &&
+              t.remotePath == remotePath &&
               (t.status == DownloadStatus.pending ||
                   t.status == DownloadStatus.active),
           orElse: () => null,
@@ -147,6 +168,7 @@ class DownloadQueueService extends ChangeNotifier {
 
     final task = DownloadTask(
       id: _uuid.v4(),
+      accountId: accountId,
       remotePath: remotePath,
       fileName: fileName ?? remotePath.split('/').last,
       createdAt: DateTime.now(),
@@ -156,6 +178,29 @@ class DownloadQueueService extends ChangeNotifier {
     notifyListeners();
     unawaited(_pump());
     return _waitFor(task.id);
+  }
+
+  /// Enqueue all audio files under a folder (recursive). Non-blocking.
+  Future<int> enqueueFolder(String accountId, String folderPath) async {
+    final items = await _webDav.collectAudioRecursive(folderPath);
+    for (final item in items) {
+      unawaited(enqueue(accountId, item.path, fileName: item.name));
+    }
+    return items.length;
+  }
+
+  Future<void> _ingest(DownloadTask task) async {
+    final lib = _library;
+    final local = task.localPath;
+    if (lib == null || local == null) return;
+    try {
+      await lib.ingestDownloaded(
+        accountId: task.accountId,
+        remotePath: task.remotePath,
+        fileName: task.fileName,
+        localPath: local,
+      );
+    } catch (_) {}
   }
 
   Future<DownloadTask> _waitFor(String id) {
@@ -237,7 +282,6 @@ class DownloadQueueService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Ordered pending queue (FIFO). Exposed for unit tests via static helper.
   static List<DownloadTask> orderPending(List<DownloadTask> tasks) {
     final pending = tasks
         .where((t) => t.status == DownloadStatus.pending)
@@ -269,7 +313,8 @@ class DownloadQueueService extends ChangeNotifier {
 
     final token = CancelToken();
     _cancelTokens[task.id] = token;
-    final dest = _cache.fileForRemote(task.remotePath);
+    final dest =
+        _cache.fileForRemote(task.remotePath, accountId: task.accountId);
     final tmp = File('${dest.path}.part');
 
     try {
@@ -282,7 +327,6 @@ class DownloadQueueService extends ChangeNotifier {
           task.bytesTotal = total > 0 ? total : null;
           task.progress = total > 0 ? received / total : 0;
           notifyListeners();
-          // Persist progress sparsely
           if (received % (512 * 1024) < 8192) {
             unawaited(_store.upsert(task));
           }
@@ -296,8 +340,13 @@ class DownloadQueueService extends ChangeNotifier {
       task.progress = 1.0;
       task.completedAt = DateTime.now();
       task.errorMessage = null;
-      await _cache.registerCompleted(task.remotePath, dest.path);
+      await _cache.registerCompleted(
+        task.accountId,
+        task.remotePath,
+        dest.path,
+      );
       await _store.upsert(task);
+      await _ingest(task);
       _completeWaiter(task);
       notifyListeners();
     } catch (e) {
@@ -321,18 +370,18 @@ class DownloadQueueService extends ChangeNotifier {
     }
   }
 
-  Set<String> get downloadingRemotePaths => _tasks
+  Set<String> get downloadingIdentityKeys => _tasks
       .where((t) =>
           t.status == DownloadStatus.active ||
           t.status == DownloadStatus.pending)
-      .map((t) => t.remotePath)
+      .map((t) => trackIdentityKey(t.accountId, t.remotePath))
       .toSet();
 
-  Map<String, String> get completedRemoteToLocal {
+  Map<String, String> get completedIdentityToLocal {
     final map = <String, String>{};
     for (final t in _tasks) {
       if (t.status == DownloadStatus.completed && t.localPath != null) {
-        map[t.remotePath] = t.localPath!;
+        map[trackIdentityKey(t.accountId, t.remotePath)] = t.localPath!;
       }
     }
     return map;

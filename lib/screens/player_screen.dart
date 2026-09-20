@@ -61,16 +61,22 @@ class PlayerScreen extends StatelessWidget {
                         : null,
                   ),
             ),
-            if (track?.remotePath != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                track!.remotePath,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+            Builder(builder: (context) {
+              final album = track?.album?.trim();
+              if (album == null || album.isEmpty) return const SizedBox.shrink();
+              return Column(
+                children: [
+                  const SizedBox(height: 4),
+                  Text(
+                    album,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              );
+            }),
             const Spacer(),
             Slider(
               value: posMs.toDouble(),

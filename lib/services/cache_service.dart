@@ -7,8 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cache_policy.dart';
 import '../utils/audio_extensions.dart';
+import '../utils/track_identity.dart';
 
 /// Local file cache for downloaded music. Playback always uses these files.
+/// Cleanup NEVER touches library DB or cover thumbs (separate directories).
 class CacheService extends ChangeNotifier {
   CacheService({SharedPreferences? prefs}) : _prefs = prefs;
 
@@ -32,98 +34,69 @@ class CacheService extends ChangeNotifier {
     return d;
   }
 
-  File fileForRemote(String remotePath) {
-    final name = cacheFileNameForRemote(remotePath);
+  File fileForRemote(String remotePath, {required String accountId}) {
+    final name = cacheFileNameForRemote(remotePath, accountId: accountId);
     return File(p.join(cacheDir.path, name));
   }
 
-  Future<bool> isCached(String remotePath) async {
-    final f = fileForRemote(remotePath);
+  Future<bool> isCached(String remotePath, {required String accountId}) async {
+    final f = fileForRemote(remotePath, accountId: accountId);
     return f.exists();
   }
 
-  Future<String?> localPathIfCached(String remotePath) async {
-    final f = fileForRemote(remotePath);
+  Future<String?> localPathIfCached(
+    String remotePath, {
+    required String accountId,
+  }) async {
+    final f = fileForRemote(remotePath, accountId: accountId);
     if (await f.exists()) {
-      await touch(remotePath);
+      await touch(accountId, remotePath);
       return f.path;
     }
     return null;
   }
 
-  Future<void> touch(String remotePath) async {
+  String _accessKey(String accountId, String remotePath) =>
+      '$_kAccessPrefix${trackIdentityKey(accountId, remotePath).hashCode}';
+
+  Future<void> touch(String accountId, String remotePath) async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(
-      '$_kAccessPrefix${remotePath.hashCode}',
+      _accessKey(accountId, remotePath),
       DateTime.now().toIso8601String(),
     );
   }
 
-  DateTime? lastAccessed(String remotePath) {
-    final raw = _prefs?.getString('$_kAccessPrefix${remotePath.hashCode}');
+  DateTime? lastAccessed(String accountId, String remotePath) {
+    final raw = _prefs?.getString(_accessKey(accountId, remotePath));
     if (raw == null) return null;
     return DateTime.tryParse(raw);
   }
 
-  Future<void> registerCompleted(String remotePath, String localPath) async {
-    await touch(remotePath);
+  Future<void> registerCompleted(
+    String accountId,
+    String remotePath,
+    String localPath,
+  ) async {
+    await touch(accountId, remotePath);
     notifyListeners();
   }
 
-  /// Auto-cleanup by retention. Never deletes [playingRemotePath] or
-  /// paths in [downloadingRemotePaths].
-  Future<int> cleanup({
-    required CacheRetention retention,
-    String? playingRemotePath,
-    Set<String> downloadingRemotePaths = const {},
-    DateTime? now,
-  }) async {
-    final policy = CacheExpiryPolicy(retention: retention);
-    final clock = now ?? DateTime.now();
-    if (_cacheDir == null || !await _cacheDir!.exists()) return 0;
-
-    var removed = 0;
-    await for (final entity in _cacheDir!.list()) {
-      if (entity is! File) continue;
-      final remote = _remoteForCacheFile(entity);
-      final isPlaying =
-          playingRemotePath != null && remote == playingRemotePath;
-      final isDownloading = downloadingRemotePaths.contains(remote);
-      final accessed = lastAccessed(remote) ??
-          (await entity.stat()).modified;
-      if (policy.shouldDelete(
-        lastAccessed: accessed,
-        now: clock,
-        isCurrentlyPlaying: isPlaying,
-        isDownloading: isDownloading,
-      )) {
-        try {
-          await entity.delete();
-          await _prefs?.remove('$_kAccessPrefix${remote.hashCode}');
-          removed++;
-        } catch (_) {}
-      }
-    }
-    if (removed > 0) notifyListeners();
-    return removed;
-  }
-
-  /// Manual clear of all cache except playing / downloading.
+  /// Manual clear of all audio cache except playing / downloading.
+  /// Does not delete library metadata or cover thumbs.
   Future<int> clearAll({
     String? playingRemotePath,
+    String? playingAccountId,
     String? playingLocalPath,
-    Set<String> downloadingRemotePaths = const {},
     Set<String> protectedLocalPaths = const {},
   }) async {
     if (_cacheDir == null || !await _cacheDir!.exists()) return 0;
     final protected = <String>{...protectedLocalPaths};
     if (playingLocalPath != null) protected.add(playingLocalPath);
-    if (playingRemotePath != null) {
-      protected.add(fileForRemote(playingRemotePath).path);
-    }
-    for (final r in downloadingRemotePaths) {
-      protected.add(fileForRemote(r).path);
-      protected.add('${fileForRemote(r).path}.part');
+    if (playingRemotePath != null && playingAccountId != null) {
+      final f = fileForRemote(playingRemotePath, accountId: playingAccountId);
+      protected.add(f.path);
+      protected.add('${f.path}.part');
     }
     var removed = 0;
     await for (final entity in _cacheDir!.list()) {
@@ -149,32 +122,31 @@ class CacheService extends ChangeNotifier {
     return total;
   }
 
-  /// Best-effort reverse: we store hash_basename; callers should prefer
-  /// known remote paths from the download store.
-  String _remoteForCacheFile(File file) {
-    // Prefer matching via download store; fallback uses basename marker.
-    return p.basename(file.path);
-  }
-
   /// Cleanup using known remote→local mapping from download tasks.
+  /// Only deletes audio cache files — never library DB or covers/.
   Future<int> cleanupKnown({
     required CacheRetention retention,
-    required Map<String, String> remoteToLocal,
-    String? playingRemotePath,
-    Set<String> downloadingRemotePaths = const {},
+    required Map<String, String> identityToLocal,
+    String? playingIdentityKey,
+    Set<String> downloadingIdentityKeys = const {},
     DateTime? now,
   }) async {
     final policy = CacheExpiryPolicy(retention: retention);
     final clock = now ?? DateTime.now();
     var removed = 0;
-    for (final entry in remoteToLocal.entries) {
-      final remote = entry.key;
+    for (final entry in identityToLocal.entries) {
+      final identity = entry.key;
       final local = entry.value;
       final file = File(local);
       if (!await file.exists()) continue;
-      final isPlaying = playingRemotePath == remote;
-      final isDownloading = downloadingRemotePaths.contains(remote);
-      final accessed = lastAccessed(remote) ?? (await file.stat()).modified;
+      final isPlaying = playingIdentityKey == identity;
+      final isDownloading = downloadingIdentityKeys.contains(identity);
+      // Parse accountId\0remotePath
+      final parts = identity.split('\u0000');
+      final accountId = parts.isNotEmpty ? parts.first : '';
+      final remote = parts.length > 1 ? parts.sublist(1).join('\u0000') : identity;
+      final accessed =
+          lastAccessed(accountId, remote) ?? (await file.stat()).modified;
       if (policy.shouldDelete(
         lastAccessed: accessed,
         now: clock,
@@ -183,7 +155,7 @@ class CacheService extends ChangeNotifier {
       )) {
         try {
           await file.delete();
-          await _prefs?.remove('$_kAccessPrefix${remote.hashCode}');
+          await _prefs?.remove(_accessKey(accountId, remote));
           removed++;
         } catch (_) {}
       }

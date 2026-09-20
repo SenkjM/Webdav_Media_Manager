@@ -1,0 +1,167 @@
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
+
+import '../models/library_track.dart';
+import '../models/webdav_account.dart';
+
+/// SQLite persistence for multi-WebDAV accounts and the local music library.
+/// Separate from audio file cache — survives cache cleanup.
+class LibraryDatabase {
+  Database? _db;
+
+  Future<Database> get database async {
+    if (_db != null) return _db!;
+    final dir = await getApplicationDocumentsDirectory();
+    final path = p.join(dir.path, 'music_library.db');
+    _db = await openDatabase(
+      path,
+      version: 1,
+      onCreate: (db, version) async {
+        await db.execute('''
+CREATE TABLE accounts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  url TEXT NOT NULL,
+  username TEXT NOT NULL
+)
+''');
+        await db.execute('''
+CREATE TABLE tracks (
+  account_id TEXT NOT NULL,
+  remote_path TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  title TEXT,
+  artist TEXT,
+  album TEXT,
+  duration_ms INTEGER,
+  cover_path TEXT,
+  last_downloaded_at TEXT NOT NULL,
+  last_tag_read_at TEXT NOT NULL,
+  PRIMARY KEY (account_id, remote_path)
+)
+''');
+        await db.execute(
+          'CREATE INDEX idx_tracks_artist ON tracks(artist)',
+        );
+        await db.execute(
+          'CREATE INDEX idx_tracks_album ON tracks(album)',
+        );
+        await db.execute(
+          'CREATE INDEX idx_tracks_title ON tracks(title)',
+        );
+      },
+    );
+    return _db!;
+  }
+
+  // --- Accounts ---
+
+  Future<List<WebDavAccount>> loadAccounts() async {
+    final db = await database;
+    final rows = await db.query('accounts', orderBy: 'name COLLATE NOCASE ASC');
+    return rows.map(WebDavAccount.fromMap).toList();
+  }
+
+  Future<void> upsertAccount(WebDavAccount account) async {
+    final db = await database;
+    await db.insert(
+      'accounts',
+      account.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteAccount(String id) async {
+    final db = await database;
+    await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- Tracks ---
+
+  Future<void> upsertTrack(LibraryTrack track) async {
+    final db = await database;
+    await db.insert(
+      'tracks',
+      track.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<LibraryTrack?> getTrack(String accountId, String remotePath) async {
+    final db = await database;
+    final rows = await db.query(
+      'tracks',
+      where: 'account_id = ? AND remote_path = ?',
+      whereArgs: [accountId, remotePath],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return LibraryTrack.fromMap(rows.first);
+  }
+
+  Future<List<LibraryTrack>> allTracks() async {
+    final db = await database;
+    final rows = await db.query(
+      'tracks',
+      orderBy: 'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
+    );
+    return rows.map(LibraryTrack.fromMap).toList();
+  }
+
+  Future<List<LibraryTrack>> tracksByArtist(String artist) async {
+    final db = await database;
+    final rows = await db.query(
+      'tracks',
+      where: 'IFNULL(NULLIF(TRIM(artist), ""), "未知艺术家") = ?',
+      whereArgs: [artist],
+      orderBy: 'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
+    );
+    return rows.map(LibraryTrack.fromMap).toList();
+  }
+
+  Future<List<LibraryTrack>> tracksByAlbum(String album) async {
+    final db = await database;
+    final rows = await db.query(
+      'tracks',
+      where: 'IFNULL(NULLIF(TRIM(album), ""), "未知专辑") = ?',
+      whereArgs: [album],
+      orderBy: 'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
+    );
+    return rows.map(LibraryTrack.fromMap).toList();
+  }
+
+  Future<List<String>> distinctArtists() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+SELECT DISTINCT IFNULL(NULLIF(TRIM(artist), ''), '未知艺术家') AS a
+FROM tracks ORDER BY a COLLATE NOCASE ASC
+''');
+    return rows.map((r) => r['a'] as String).toList();
+  }
+
+  Future<List<String>> distinctAlbums() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+SELECT DISTINCT IFNULL(NULLIF(TRIM(album), ''), '未知专辑') AS a
+FROM tracks ORDER BY a COLLATE NOCASE ASC
+''');
+    return rows.map((r) => r['a'] as String).toList();
+  }
+
+  Future<int> trackCount() async {
+    final db = await database;
+    final r = await db.rawQuery('SELECT COUNT(*) AS c FROM tracks');
+    return Sqflite.firstIntValue(r) ?? 0;
+  }
+
+  Future<void> deleteTracksForAccount(String accountId) async {
+    final db = await database;
+    await db.delete('tracks', where: 'account_id = ?', whereArgs: [accountId]);
+  }
+
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
+  }
+}

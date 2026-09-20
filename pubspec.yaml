@@ -46,6 +46,8 @@ dependencies:
   intl: ^0.20.3
   collection: ^1.19.1
   dio: ^5.11.1
+  audiotags: ^1.4.5
+  image: ^4.10.1
 
 dev_dependencies:
   flutter_test:

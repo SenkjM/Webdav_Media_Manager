@@ -52,6 +52,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   TrackInfo? get current => _current;
   String? get currentRemotePath => _current?.remotePath;
+  String? get currentAccountId => _current?.accountId;
   List<TrackInfo> get queue => List.unmodifiable(_queue);
   int get index => _index;
   Duration get position => _position;
@@ -71,7 +72,10 @@ class AudioPlayerService extends ChangeNotifier {
       _queue
         ..clear()
         ..addAll(playlist);
-      _index = _queue.indexWhere((t) => t.remotePath == track.remotePath);
+      _index = _queue.indexWhere(
+        (t) =>
+            t.remotePath == track.remotePath && t.accountId == track.accountId,
+      );
       if (_index < 0) {
         _queue.insert(0, track);
         _index = 0;
@@ -80,7 +84,10 @@ class AudioPlayerService extends ChangeNotifier {
       _queue.add(track);
       _index = 0;
     } else {
-      final i = _queue.indexWhere((t) => t.remotePath == track.remotePath);
+      final i = _queue.indexWhere(
+        (t) =>
+            t.remotePath == track.remotePath && t.accountId == track.accountId,
+      );
       if (i >= 0) {
         _index = i;
       } else {
@@ -101,6 +108,7 @@ class AudioPlayerService extends ChangeNotifier {
       String? local = track.localPath;
       if (local == null || !File(local).existsSync()) {
         final task = await _downloads.enqueue(
+          track.accountId,
           track.remotePath,
           fileName: track.fileName,
         );

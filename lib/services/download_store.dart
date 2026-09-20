@@ -14,11 +14,12 @@ class DownloadStore {
     final path = p.join(dir.path, 'download_queue.db');
     _db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
 CREATE TABLE download_tasks (
   id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
   remote_path TEXT NOT NULL,
   file_name TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -31,15 +32,29 @@ CREATE TABLE download_tasks (
   bytes_received INTEGER NOT NULL DEFAULT 0
 )
 ''');
-        await db.execute(
-          'CREATE INDEX idx_tasks_status ON download_tasks(status)',
-        );
-        await db.execute(
-          'CREATE INDEX idx_tasks_created ON download_tasks(created_at)',
-        );
+        await _createIndexes(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            "ALTER TABLE download_tasks ADD COLUMN account_id TEXT NOT NULL DEFAULT 'legacy'",
+          );
+        }
       },
     );
     return _db!;
+  }
+
+  Future<void> _createIndexes(Database db) async {
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_status ON download_tasks(status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_created ON download_tasks(created_at)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_account_path ON download_tasks(account_id, remote_path)',
+    );
   }
 
   Future<List<DownloadTask>> loadAll() async {
@@ -74,14 +89,24 @@ CREATE TABLE download_tasks (
     );
   }
 
-  Future<DownloadTask?> findByRemotePath(String remotePath) async {
+  Future<DownloadTask?> findByRemotePath(
+    String remotePath, {
+    String? accountId,
+  }) async {
     final db = await database;
-    final rows = await db.query(
-      'download_tasks',
-      where: 'remote_path = ?',
-      whereArgs: [remotePath],
-      limit: 1,
-    );
+    final rows = accountId == null
+        ? await db.query(
+            'download_tasks',
+            where: 'remote_path = ?',
+            whereArgs: [remotePath],
+            limit: 1,
+          )
+        : await db.query(
+            'download_tasks',
+            where: 'account_id = ? AND remote_path = ?',
+            whereArgs: [accountId, remotePath],
+            limit: 1,
+          );
     if (rows.isEmpty) return null;
     return DownloadTask.fromMap(rows.first);
   }

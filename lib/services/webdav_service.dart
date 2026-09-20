@@ -1,8 +1,6 @@
-import 'dart:async';
 import 'dart:io';
-
-import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:webdav_client/webdav_client.dart' as webdav;
 
 import '../models/webdav_item.dart';
@@ -12,18 +10,22 @@ import '../models/webdav_item.dart';
 class WebDavService extends ChangeNotifier {
   webdav.Client? _client;
   String? _baseUrl;
+  String? _accountId;
   String? _lastError;
 
   bool get isConnected => _client != null;
   String? get lastError => _lastError;
   String? get baseUrl => _baseUrl;
+  String? get accountId => _accountId;
 
   void configure({
+    required String accountId,
     required String url,
     required String username,
     required String password,
   }) {
     final normalized = url.trim().replaceAll(RegExp(r'/+$'), '');
+    _accountId = accountId;
     _baseUrl = normalized;
     _client = webdav.newClient(
       normalized,
@@ -45,6 +47,7 @@ class WebDavService extends ChangeNotifier {
   void disconnect() {
     _client = null;
     _baseUrl = null;
+    _accountId = null;
     notifyListeners();
   }
 
@@ -76,10 +79,7 @@ class WebDavService extends ChangeNotifier {
   }
 
   Future<List<WebDavItem>> listDirectory(String path) async {
-    final client = _client;
-    if (client == null) {
-      throw StateError('WebDAV 未配置');
-    }
+    final client = _requireClient();
     final normalized = path.isEmpty ? '/' : path;
     final files = await client.readDir(normalized);
     final items = <WebDavItem>[];
@@ -118,8 +118,7 @@ class WebDavService extends ChangeNotifier {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final client = _client;
-    if (client == null) throw StateError('WebDAV 未配置');
+    final client = _requireClient();
     await localFile.parent.create(recursive: true);
     await client.read2File(
       remotePath,
@@ -130,10 +129,49 @@ class WebDavService extends ChangeNotifier {
   }
 
   Future<Uint8List> readAsBytes(String remotePath) async {
-    final client = _client;
-    if (client == null) throw StateError('WebDAV 未配置');
+    final client = _requireClient();
     final data = await client.read(remotePath);
     return Uint8List.fromList(data);
+  }
+
+  Future<void> createFolder(String path) async {
+    final client = _requireClient();
+    await client.mkdir(path);
+  }
+
+  Future<void> deletePath(String path) async {
+    final client = _requireClient();
+    await client.remove(path);
+  }
+
+  Future<void> renamePath(String oldPath, String newPath,
+      {bool overwrite = false}) async {
+    final client = _requireClient();
+    await client.rename(oldPath, newPath, overwrite);
+  }
+
+  /// Recursively collect audio file paths under [folderPath].
+  Future<List<WebDavItem>> collectAudioRecursive(String folderPath) async {
+    final result = <WebDavItem>[];
+    final queue = <String>[folderPath];
+    while (queue.isNotEmpty) {
+      final dir = queue.removeAt(0);
+      final items = await listDirectory(dir);
+      for (final item in items) {
+        if (item.isDirectory) {
+          queue.add(item.path);
+        } else if (item.isAudio) {
+          result.add(item);
+        }
+      }
+    }
+    return result;
+  }
+
+  webdav.Client _requireClient() {
+    final client = _client;
+    if (client == null) throw StateError('WebDAV 未配置');
+    return client;
   }
 }
 

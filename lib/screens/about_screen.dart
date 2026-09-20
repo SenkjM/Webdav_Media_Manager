@@ -1,0 +1,44 @@
+import 'package:flutter/material.dart';
+
+class AboutScreen extends StatelessWidget {
+  const AboutScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('关于')),
+      body: ListView(
+        padding: const EdgeInsets.all(24),
+        children: [
+          Text(
+            'WebDAV 音乐播放器',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '基于 Flutter 的 Android WebDAV 音乐客户端。'
+            '浏览网盘目录，下载到本地缓存后再播放；不做网络流式播放。',
+          ),
+          const SizedBox(height: 24),
+          Text('作者与致谢', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          const Text('实现：Grok Bot'),
+          const Text('创意与需求框架：SenkjM'),
+          const SizedBox(height: 24),
+          Text('许可证', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          const Text(
+            '本项目采用 GNU Affero General Public License v3.0（AGPL-3.0）授权。\n\n'
+            '你可以自由使用、修改与分发本软件，但若发布修改版，或通过网络提供基于本软件的服务，'
+            '必须按 AGPL-3.0 公开对应完整源代码。完整文本见仓库 LICENSE 文件。',
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'https://github.com/SenkjM/WEBDAV-music-player',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+}

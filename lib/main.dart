@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 
 import 'providers/app_state.dart';
 import 'screens/home_shell.dart';
+import 'services/accounts_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/cache_service.dart';
 import 'services/download_queue_service.dart';
+import 'services/library_service.dart';
 import 'services/settings_service.dart';
 import 'services/webdav_service.dart';
 
@@ -27,6 +29,8 @@ class WebDavMusicApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<AppState>.value(value: appState),
         ChangeNotifierProvider<SettingsService>.value(value: appState.settings),
+        ChangeNotifierProvider<AccountsService>.value(value: appState.accounts),
+        ChangeNotifierProvider<LibraryService>.value(value: appState.library),
         ChangeNotifierProvider<WebDavService>.value(value: appState.webDav),
         ChangeNotifierProvider<CacheService>.value(value: appState.cache),
         ChangeNotifierProvider<DownloadQueueService>.value(

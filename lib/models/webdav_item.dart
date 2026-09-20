@@ -32,6 +32,7 @@ class WebDavItem {
 /// Local playback metadata. Tags are only filled after download.
 class TrackInfo {
   TrackInfo({
+    required this.accountId,
     required this.remotePath,
     required this.fileName,
     this.localPath,
@@ -39,8 +40,10 @@ class TrackInfo {
     this.artist,
     this.album,
     this.duration,
+    this.coverPath,
   });
 
+  final String accountId;
   final String remotePath;
   final String fileName;
   String? localPath;
@@ -48,6 +51,7 @@ class TrackInfo {
   String? artist;
   String? album;
   Duration? duration;
+  String? coverPath;
 
   bool get isDownloaded => localPath != null;
 

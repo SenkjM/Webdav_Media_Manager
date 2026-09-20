@@ -16,15 +16,27 @@ void main() {
       isDirectory: false,
     );
     expect(item.isAudio, isTrue);
-    const dir = WebDavItem(name: 'Album', path: '/music/Album/', isDirectory: true);
+    const dir =
+        WebDavItem(name: 'Album', path: '/music/Album/', isDirectory: true);
     expect(dir.isAudio, isFalse);
   });
 
   test('TrackInfo display falls back to filename when not downloaded', () {
-    final t = TrackInfo(remotePath: '/a/b.mp3', fileName: 'b.mp3', title: 'Secret');
+    final t = TrackInfo(
+      accountId: 'acc1',
+      remotePath: '/a/b.mp3',
+      fileName: 'b.mp3',
+      title: 'Secret',
+    );
     expect(t.isDownloaded, isFalse);
     expect(t.displayTitle, 'b.mp3'); // no tag until downloaded
     t.localPath = '/cache/b.mp3';
     expect(t.displayTitle, 'Secret');
+  });
+
+  test('folderDisplayName shows only current folder', () {
+    expect(folderDisplayName('/'), '根目录');
+    expect(folderDisplayName('/music/Album/'), 'Album');
+    expect(folderDisplayName('/music/Album'), 'Album');
   });
 }

@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/download_task.dart';
 import '../services/download_queue_service.dart';
+import 'home_shell.dart';
 
 class DownloadsScreen extends StatelessWidget {
   const DownloadsScreen({super.key});
@@ -14,6 +15,7 @@ class DownloadsScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
+        leading: const DrawerMenuButton(),
         title: const Text('下载队列'),
         actions: [
           TextButton(
@@ -83,7 +85,7 @@ class _TaskTile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              task.remotePath,
+              task.fileName,
               style: Theme.of(context).textTheme.bodySmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
