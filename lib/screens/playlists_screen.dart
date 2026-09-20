@@ -314,3 +314,73 @@ Future<void> showAddToPlaylistDialog(
     const SnackBar(content: Text('已添加到歌单')),
   );
 }
+
+/// Add multiple entries to one playlist (or create).
+Future<void> showAddManyToPlaylistDialog(
+  BuildContext context,
+  List<PlaylistEntry> entries,
+) async {
+  if (entries.isEmpty) return;
+  final service = context.read<PlaylistService>();
+  final choice = await showModalBottomSheet<String>(
+    context: context,
+    builder: (ctx) {
+      final list = service.playlists;
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(title: Text('添加 ${entries.length} 首到歌单')),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final pl in list)
+                    ListTile(
+                      leading: const Icon(Icons.queue_music),
+                      title: Text(pl.name),
+                      onTap: () => Navigator.pop(ctx, pl.id),
+                    ),
+                  ListTile(
+                    leading: const Icon(Icons.add),
+                    title: const Text('新建歌单…'),
+                    onTap: () => Navigator.pop(ctx, '__new__'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+  if (choice == null || !context.mounted) return;
+  String playlistId = choice;
+  if (choice == '__new__') {
+    final c = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('新建歌单'),
+        content: TextField(controller: c, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, c.text),
+            child: const Text('创建'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || !context.mounted) return;
+    final pl = await service.create(name: name);
+    playlistId = pl.id;
+  }
+  for (final e in entries) {
+    await service.addTrack(playlistId, e);
+  }
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text('已添加 ${entries.length} 首到歌单')),
+  );
+}

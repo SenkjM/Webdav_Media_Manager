@@ -56,6 +56,8 @@ dependencies:
   cryptography: ^2.9.0
   package_info_plus: ^10.2.1
   crypto: ^3.0.7
+  share_plus: ^13.3.0
+  ffmpeg_kit_flutter_new_audio: ^2.5.2
 
 dev_dependencies:
   flutter_test:

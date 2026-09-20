@@ -8,19 +8,31 @@ import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/download_queue_service.dart';
+import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
-import '../utils/track_identity.dart';
-import 'package:path/path.dart' as p;
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
-import '../models/playlist.dart';
 import 'home_shell.dart';
-import 'playlists_screen.dart';
 
-class LibraryScreen extends StatelessWidget {
+class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
+
+  @override
+  State<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends State<LibraryScreen> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+  bool _searchOpen = false;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -28,13 +40,41 @@ class LibraryScreen extends StatelessWidget {
     final settings = context.watch<SettingsService>();
 
     return DefaultTabController(
-      length: 3,
+      length: 4,
       child: Scaffold(
         backgroundColor: AppColors.nearBlack,
         appBar: AppBar(
           leading: const DrawerMenuButton(),
-          title: const Text('音乐库'),
+          title: _searchOpen
+              ? TextField(
+                  controller: _searchCtrl,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: '搜索标题 / 艺术家 / 专辑',
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    isDense: true,
+                  ),
+                  style: const TextStyle(color: AppColors.onDark, fontSize: 16),
+                  onChanged: (v) => setState(() => _query = v),
+                )
+              : const Text('音乐库'),
           actions: [
+            IconButton(
+              tooltip: _searchOpen ? '关闭搜索' : '搜索',
+              icon: Icon(_searchOpen ? Icons.close : Icons.search),
+              onPressed: () {
+                setState(() {
+                  _searchOpen = !_searchOpen;
+                  if (!_searchOpen) {
+                    _searchCtrl.clear();
+                    _query = '';
+                  }
+                });
+              },
+            ),
             PopupMenuButton<LibrarySortMode>(
               tooltip: '排序',
               initialValue: settings.librarySort,
@@ -62,10 +102,12 @@ class LibraryScreen extends StatelessWidget {
             ),
           ],
           bottom: const TabBar(
+            isScrollable: true,
             tabs: [
               Tab(text: '专辑'),
               Tab(text: '作者'),
               Tab(text: '音乐名'),
+              Tab(text: '标签'),
             ],
           ),
         ),
@@ -83,12 +125,14 @@ class LibraryScreen extends StatelessWidget {
               )
             : TabBarView(
                 children: [
-                  _AlbumTab(library: library),
-                  _ArtistTab(library: library),
+                  _AlbumTab(library: library, query: _query),
+                  _ArtistTab(library: library, query: _query),
                   _TitleTab(
                     library: library,
                     sort: settings.librarySort,
+                    query: _query,
                   ),
+                  _TagsTab(library: library, query: _query),
                 ],
               ),
       ),
@@ -97,106 +141,346 @@ class LibraryScreen extends StatelessWidget {
 }
 
 class _TitleTab extends StatelessWidget {
-  const _TitleTab({required this.library, required this.sort});
+  const _TitleTab({
+    required this.library,
+    required this.sort,
+    required this.query,
+  });
   final LibraryService library;
   final LibrarySortMode sort;
+  final String query;
 
   @override
   Widget build(BuildContext context) {
-    final tracks = library.byTitle(sort: sort);
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: tracks.length,
-      itemBuilder: (context, i) =>
-          _TrackTile(track: tracks[i], playlist: tracks),
-    );
+    final tracks = query.trim().isEmpty
+        ? library.byTitle(sort: sort)
+        : library.search(query, sort: sort);
+    return _SelectableTrackList(tracks: tracks, emptyHint: '无匹配曲目');
   }
 }
 
 class _ArtistTab extends StatelessWidget {
-  const _ArtistTab({required this.library});
+  const _ArtistTab({required this.library, required this.query});
   final LibraryService library;
+  final String query;
 
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
-    final groups = library.groupedByArtist();
+    var groups = library.groupedByArtist();
+    final q = query.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      groups = Map.fromEntries(
+        groups.entries.where((e) {
+          if (e.key.toLowerCase().contains(q)) return true;
+          return e.value.any((t) =>
+              t.displayTitle.toLowerCase().contains(q) ||
+              t.displayAlbum.toLowerCase().contains(q));
+        }),
+      );
+    }
     final artists = groups.keys.toList();
-    return GridView.builder(
-      padding: const EdgeInsets.all(12),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.85,
-      ),
-      itemCount: artists.length,
+    return _SelectableGroupGrid(
+      keys: artists,
+      groups: groups,
+      cache: cache,
+      placeholderIcon: Icons.person_outline,
+      subtitleOf: (tracks) => '${tracks.length} 首',
+      detailSort: LibrarySortMode.byName,
+    );
+  }
+}
+
+class _AlbumTab extends StatelessWidget {
+  const _AlbumTab({required this.library, required this.query});
+  final LibraryService library;
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    final cache = context.watch<CacheService>();
+    var groups = library.groupedByAlbum();
+    final q = query.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      groups = Map.fromEntries(
+        groups.entries.where((e) {
+          if (e.key.toLowerCase().contains(q)) return true;
+          return e.value.any((t) =>
+              t.displayTitle.toLowerCase().contains(q) ||
+              t.displayArtist.toLowerCase().contains(q));
+        }),
+      );
+    }
+    final albums = groups.keys.toList();
+    return _SelectableGroupGrid(
+      keys: albums,
+      groups: groups,
+      cache: cache,
+      placeholderIcon: Icons.album,
+      subtitleOf: (tracks) =>
+          '${tracks.length} 首 · ${tracks.first.displayArtist}',
+      detailSort: LibrarySortMode.byAlbumTrack,
+    );
+  }
+}
+
+class _TagsTab extends StatelessWidget {
+  const _TagsTab({required this.library, required this.query});
+  final LibraryService library;
+  final String query;
+
+  @override
+  Widget build(BuildContext context) {
+    var groups = library.groupedByGenre();
+    final q = query.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      groups = Map.fromEntries(
+        groups.entries.where((e) =>
+            e.key.toLowerCase().contains(q) ||
+            e.value.any((t) =>
+                t.displayTitle.toLowerCase().contains(q) ||
+                t.displayArtist.toLowerCase().contains(q) ||
+                t.displayAlbum.toLowerCase().contains(q))),
+      );
+    }
+    if (groups.isEmpty) {
+      return const Center(
+        child: Text(
+          '暂无标签。下载带有流派（genre）等元数据的曲目后会出现在此。',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppColors.secondaryText),
+        ),
+      );
+    }
+    final tags = groups.keys.toList();
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: tags.length,
       itemBuilder: (context, i) {
-        final artist = artists[i];
-        final tracks = groups[artist]!;
-        final coverTrack = pickCoverTrack(tracks, cache);
-        return _CoverTile(
-          coverTrack: coverTrack,
-          title: artist,
-          subtitle: '${tracks.length} 首',
-          placeholderIcon: Icons.person_outline,
+        final tag = tags[i];
+        final tracks = groups[tag]!;
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: AppColors.elevatedHigh,
+            child: Icon(
+              tag == '未分类' ? Icons.label_off_outlined : Icons.label_outline,
+              color: AppColors.accent,
+              size: 20,
+            ),
+          ),
+          title: Text(tag, style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text('${tracks.length} 首'),
+          trailing: const Icon(Icons.chevron_right),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => _TrackListPage(
-                  title: artist,
+                  title: tag,
                   tracks: tracks,
                   defaultSort: LibrarySortMode.byName,
                 ),
               ),
             );
           },
-        );
-      },
-    );
-  }
-}
-
-class _AlbumTab extends StatelessWidget {
-  const _AlbumTab({required this.library});
-  final LibraryService library;
-
-  @override
-  Widget build(BuildContext context) {
-    final cache = context.watch<CacheService>();
-    final groups = library.groupedByAlbum();
-    final albums = groups.keys.toList();
-    return GridView.builder(
-      padding: const EdgeInsets.all(12),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.78,
-      ),
-      itemCount: albums.length,
-      itemBuilder: (context, i) {
-        final album = albums[i];
-        final tracks = groups[album]!;
-        final coverTrack = pickCoverTrack(tracks, cache);
-        return _CoverTile(
-          coverTrack: coverTrack,
-          title: album,
-          subtitle: '${tracks.length} 首 · ${tracks.first.displayArtist}',
-          placeholderIcon: Icons.album,
-          onTap: () {
+          onLongPress: () {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => _TrackListPage(
-                  title: album,
+                  title: tag,
                   tracks: tracks,
-                  defaultSort: LibrarySortMode.byAlbumTrack,
+                  defaultSort: LibrarySortMode.byName,
+                  startInSelection: true,
                 ),
               ),
             );
           },
         );
       },
+    );
+  }
+}
+
+class _SelectableGroupGrid extends StatefulWidget {
+  const _SelectableGroupGrid({
+    required this.keys,
+    required this.groups,
+    required this.cache,
+    required this.placeholderIcon,
+    required this.subtitleOf,
+    required this.detailSort,
+  });
+
+  final List<String> keys;
+  final Map<String, List<LibraryTrack>> groups;
+  final CacheService cache;
+  final IconData placeholderIcon;
+  final String Function(List<LibraryTrack>) subtitleOf;
+  final LibrarySortMode detailSort;
+
+  @override
+  State<_SelectableGroupGrid> createState() => _SelectableGroupGridState();
+}
+
+class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
+  bool _selecting = false;
+  final Set<String> _selected = {};
+
+  List<LibraryTrack> get _selectedTracks {
+    final out = <LibraryTrack>[];
+    final seen = <String>{};
+    for (final k in _selected) {
+      for (final t in widget.groups[k] ?? const <LibraryTrack>[]) {
+        final id = '${t.accountId}\u0000${t.remotePath}';
+        if (seen.add(id)) out.add(t);
+      }
+    }
+    return out;
+  }
+
+  void _exitSelect() => setState(() {
+        _selecting = false;
+        _selected.clear();
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.keys.isEmpty) {
+      return const Center(
+        child: Text('无匹配结果', style: TextStyle(color: AppColors.secondaryText)),
+      );
+    }
+    return Column(
+      children: [
+        if (_selecting) _SelectionBar(
+          count: _selected.length,
+          onCancel: _exitSelect,
+          onAdd: () async {
+            await addTracksToPlaylist(context, _selectedTracks);
+            if (mounted) _exitSelect();
+          },
+          onShare: () async {
+            await shareLibraryTracks(context, _selectedTracks);
+            if (mounted) _exitSelect();
+          },
+          onDelete: () async {
+            await deleteTracksLocalCache(context, _selectedTracks);
+            if (mounted) _exitSelect();
+          },
+        ),
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.all(12),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: 12,
+              crossAxisSpacing: 12,
+              childAspectRatio: 0.85,
+            ),
+            itemCount: widget.keys.length,
+            itemBuilder: (context, i) {
+              final key = widget.keys[i];
+              final tracks = widget.groups[key]!;
+              final coverTrack = pickCoverTrack(tracks, widget.cache);
+              final selected = _selected.contains(key);
+              return _CoverTile(
+                coverTrack: coverTrack,
+                title: key,
+                subtitle: widget.subtitleOf(tracks),
+                placeholderIcon: widget.placeholderIcon,
+                selected: _selecting && selected,
+                selecting: _selecting,
+                onTap: () {
+                  if (_selecting) {
+                    setState(() {
+                      if (selected) {
+                        _selected.remove(key);
+                        if (_selected.isEmpty) _selecting = false;
+                      } else {
+                        _selected.add(key);
+                      }
+                    });
+                    return;
+                  }
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => _TrackListPage(
+                        title: key,
+                        tracks: tracks,
+                        defaultSort: widget.detailSort,
+                      ),
+                    ),
+                  );
+                },
+                onLongPress: () {
+                  setState(() {
+                    _selecting = true;
+                    _selected.add(key);
+                  });
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SelectionBar extends StatelessWidget {
+  const _SelectionBar({
+    required this.count,
+    required this.onCancel,
+    required this.onAdd,
+    required this.onShare,
+    required this.onDelete,
+  });
+
+  final int count;
+  final VoidCallback onCancel;
+  final VoidCallback onAdd;
+  final VoidCallback onShare;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.elevated,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              IconButton(
+                tooltip: '取消',
+                onPressed: onCancel,
+                icon: const Icon(Icons.close),
+              ),
+              Expanded(
+                child: Text(
+                  '已选 $count 项',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              IconButton(
+                tooltip: '添加到歌单',
+                onPressed: count == 0 ? null : onAdd,
+                icon: const Icon(Icons.playlist_add),
+              ),
+              IconButton(
+                tooltip: '分享',
+                onPressed: count == 0 ? null : onShare,
+                icon: const Icon(Icons.share_outlined),
+              ),
+              IconButton(
+                tooltip: '删除',
+                onPressed: count == 0 ? null : onDelete,
+                icon: const Icon(Icons.delete_outline, color: AppColors.error),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -207,23 +491,30 @@ class _CoverTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.onLongPress,
     this.placeholderIcon,
+    this.selected = false,
+    this.selecting = false,
   });
 
   final LibraryTrack? coverTrack;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final IconData? placeholderIcon;
+  final bool selected;
+  final bool selecting;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.elevated,
+      color: selected ? AppColors.accent.withValues(alpha: 0.14) : AppColors.elevated,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Column(
@@ -234,24 +525,43 @@ class _CoverTile extends StatelessWidget {
                   builder: (context, constraints) {
                     final side = constraints.biggest.shortestSide;
                     final t = coverTrack;
+                    Widget art;
                     if (t == null) {
-                      return Center(
+                      art = Center(
                         child: CoverArt(
                           size: side,
                           borderRadius: 6,
                           icon: placeholderIcon,
                         ),
                       );
+                    } else {
+                      art = Center(
+                        child: LibraryCoverArt.forTrack(
+                          track: t,
+                          size: side,
+                          borderRadius: 6,
+                          icon: placeholderIcon,
+                          enqueueIfMissing: false,
+                        ),
+                      );
                     }
-                    return Center(
-                      child: LibraryCoverArt.forTrack(
-                        track: t,
-                        size: side,
-                        borderRadius: 6,
-                        icon: placeholderIcon,
-                        // Grid tiles: show art; download on open album / tap play.
-                        enqueueIfMissing: false,
-                      ),
+                    if (!selecting) return art;
+                    return Stack(
+                      children: [
+                        art,
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: Icon(
+                            selected
+                                ? Icons.check_circle
+                                : Icons.circle_outlined,
+                            color: selected
+                                ? AppColors.accent
+                                : AppColors.mutedText,
+                          ),
+                        ),
+                      ],
                     );
                   },
                 ),
@@ -285,15 +595,123 @@ class _CoverTile extends StatelessWidget {
   }
 }
 
+class _SelectableTrackList extends StatefulWidget {
+  const _SelectableTrackList({
+    required this.tracks,
+    this.emptyHint = '暂无曲目',
+    this.startInSelection = false,
+  });
+
+  final List<LibraryTrack> tracks;
+  final String emptyHint;
+  final bool startInSelection;
+
+  @override
+  State<_SelectableTrackList> createState() => _SelectableTrackListState();
+}
+
+class _SelectableTrackListState extends State<_SelectableTrackList> {
+  bool _selecting = false;
+  final Set<String> _selected = {};
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.startInSelection) {
+      _selecting = true;
+      for (final t in widget.tracks) {
+        _selected.add('${t.accountId}\u0000${t.remotePath}');
+      }
+    }
+  }
+
+  String _id(LibraryTrack t) => '${t.accountId}\u0000${t.remotePath}';
+
+  List<LibraryTrack> get _selectedTracks =>
+      widget.tracks.where((t) => _selected.contains(_id(t))).toList();
+
+  void _exitSelect() => setState(() {
+        _selecting = false;
+        _selected.clear();
+      });
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.tracks.isEmpty) {
+      return Center(
+        child: Text(
+          widget.emptyHint,
+          style: const TextStyle(color: AppColors.secondaryText),
+        ),
+      );
+    }
+    return Column(
+      children: [
+        if (_selecting)
+          _SelectionBar(
+            count: _selected.length,
+            onCancel: _exitSelect,
+            onAdd: () async {
+              await addTracksToPlaylist(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+            onShare: () async {
+              await shareLibraryTracks(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+            onDelete: () async {
+              await deleteTracksLocalCache(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+          ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            itemCount: widget.tracks.length,
+            itemBuilder: (context, i) {
+              final track = widget.tracks[i];
+              return _TrackTile(
+                track: track,
+                playlist: widget.tracks,
+                selecting: _selecting,
+                selected: _selected.contains(_id(track)),
+                onToggleSelect: () {
+                  setState(() {
+                    final id = _id(track);
+                    if (_selected.contains(id)) {
+                      _selected.remove(id);
+                      if (_selected.isEmpty) _selecting = false;
+                    } else {
+                      _selected.add(id);
+                    }
+                  });
+                },
+                onEnterSelect: () {
+                  setState(() {
+                    _selecting = true;
+                    _selected.add(_id(track));
+                  });
+                },
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _TrackListPage extends StatefulWidget {
   const _TrackListPage({
     required this.title,
     required this.tracks,
     required this.defaultSort,
+    this.startInSelection = false,
   });
   final String title;
   final List<LibraryTrack> tracks;
   final LibrarySortMode defaultSort;
+  final bool startInSelection;
 
   @override
   State<_TrackListPage> createState() => _TrackListPageState();
@@ -311,8 +729,6 @@ class _TrackListPageState extends State<_TrackListPage> {
   void _enqueueMissing() {
     if (!mounted) return;
     final downloads = context.read<DownloadQueueService>();
-    // Batch-enqueue missing files when opening album/artist detail (non-blocking).
-    // Cue virtual tracks share one audio file — enqueue each audio once, never #cue: paths.
     final seenAudio = <String>{};
     final jobs = <({String accountId, String remotePath, String? fileName})>[];
     for (final t in widget.tracks) {
@@ -348,35 +764,47 @@ class _TrackListPageState extends State<_TrackListPage> {
           ),
         ],
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        itemCount: tracks.length,
-        itemBuilder: (context, i) =>
-            _TrackTile(track: tracks[i], playlist: tracks),
+      body: _SelectableTrackList(
+        tracks: tracks,
+        startInSelection: widget.startInSelection,
       ),
     );
   }
 }
 
 class _TrackTile extends StatelessWidget {
-  const _TrackTile({required this.track, required this.playlist});
+  const _TrackTile({
+    required this.track,
+    required this.playlist,
+    this.selecting = false,
+    this.selected = false,
+    this.onToggleSelect,
+    this.onEnterSelect,
+  });
   final LibraryTrack track;
   final List<LibraryTrack> playlist;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback? onToggleSelect;
+  final VoidCallback? onEnterSelect;
 
   @override
   Widget build(BuildContext context) {
-    final trackLabel = track.trackNumber != null
-        ? '${track.trackNumber}. '
-        : '';
+    final trackLabel = track.trackNumber != null ? '${track.trackNumber}. ' : '';
     return ListTile(
-      leading: LibraryCoverArt.forTrack(
-        track: track,
-        size: 52,
-        borderRadius: 4,
-        // List rows: enqueue when the row is shown / tapped — prefer tap play;
-        // also enqueue if missing while rendering so cover upgrades soon.
-        enqueueIfMissing: true,
-      ),
+      selected: selected,
+      selectedTileColor: AppColors.accent.withValues(alpha: 0.12),
+      leading: selecting
+          ? Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              color: selected ? AppColors.accent : AppColors.mutedText,
+            )
+          : LibraryCoverArt.forTrack(
+              track: track,
+              size: 52,
+              borderRadius: 4,
+              enqueueIfMissing: true,
+            ),
       title: Text(
         '$trackLabel${track.displayTitle}',
         maxLines: 1,
@@ -393,55 +821,21 @@ class _TrackTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
       ),
-      onTap: () => _play(context),
-      onLongPress: () => _showTrackMenu(context),
+      onTap: () {
+        if (selecting) {
+          onToggleSelect?.call();
+          return;
+        }
+        _play(context);
+      },
+      onLongPress: () {
+        if (selecting) {
+          onToggleSelect?.call();
+          return;
+        }
+        onEnterSelect?.call();
+      },
     );
-  }
-
-  Future<void> _showTrackMenu(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.elevated,
-      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(title: Text(track.displayTitle), subtitle: Text(track.isCueVirtual ? 'CUE 虚拟曲目' : track.fileName)),
-        ListTile(leading: const Icon(Icons.playlist_add), title: const Text('添加到歌单'), onTap: () {
-          Navigator.pop(ctx);
-          showAddToPlaylistDialog(context, PlaylistEntry(accountId: track.accountId, remotePath: track.remotePath, title: track.displayTitle, durationMs: track.durationMs));
-        }),
-        ListTile(leading: const Icon(Icons.delete_outline, color: AppColors.error), title: const Text('删除本地音频缓存'), subtitle: const Text('保留元数据与封面'), onTap: () { Navigator.pop(ctx); _deleteLocalCache(context); }),
-      ])),
-    );
-  }
-
-  Future<void> _deleteLocalCache(BuildContext context) async {
-    final cache = context.read<CacheService>();
-    final groupId = track.cacheGroupId ?? (track.cueRemotePath != null ? cueCacheGroupId(track.accountId, track.cueRemotePath!) : null);
-    if (track.isCueVirtual && groupId != null) {
-      var names = cache.groupMemberFileNames(groupId);
-      if (names.isEmpty) names = [if (track.cueRemotePath != null) p.basename(track.cueRemotePath!), if (track.audioRemotePath != null) p.basename(track.audioRemotePath!)];
-      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('删除整个 CUE 缓存组？'),
-        content: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          const Text('将删除整组（CUE + 关联音频）：'), const SizedBox(height: 8),
-          for (final n in names) Text('• $n'),
-        ])),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除整组'))],
-      ));
-      if (ok != true || !context.mounted) return;
-      final n = await cache.deleteCacheGroup(groupId);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已删除 CUE 缓存组（$n 个文件）')));
-      return;
-    }
-    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('删除本地音频缓存？'),
-      content: Text('将删除「${p.basename(track.effectiveAudioRemotePath)}」。元数据与封面保留。'),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除'))],
-    ));
-    if (ok != true || !context.mounted) return;
-    final removed = await cache.deleteLocalFile(accountId: track.accountId, remotePath: track.effectiveAudioRemotePath);
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(removed ? '已删除本地音频缓存' : '本地无缓存文件')));
   }
 
   Future<void> _play(BuildContext context) async {
@@ -470,7 +864,15 @@ class _TrackTile extends StatelessWidget {
         );
       }
     }
-    final info = TrackInfo(
+    final info = _toTrackInfo(track, local);
+    final list = playlist.map((t) => _toTrackInfo(t, null)).toList();
+    if (!context.mounted) return;
+    // Progress for THIS track is shown on the global mini play bar while preparing.
+    await player.playTrack(info, playlist: list);
+  }
+
+  static TrackInfo _toTrackInfo(LibraryTrack track, String? local) {
+    return TrackInfo(
       accountId: track.accountId,
       remotePath: track.remotePath,
       fileName: track.fileName,
@@ -493,47 +895,13 @@ class _TrackTile extends StatelessWidget {
       cueRemotePath: track.cueRemotePath,
       cueTrackIndex: track.cueTrackIndex,
       audioRemotePath: track.audioRemotePath,
-      clipStart: track.clipStartMs != null ? Duration(milliseconds: track.clipStartMs!) : null,
-      clipEnd: track.clipEndMs != null ? Duration(milliseconds: track.clipEndMs!) : null,
+      clipStart: track.clipStartMs != null
+          ? Duration(milliseconds: track.clipStartMs!)
+          : null,
+      clipEnd: track.clipEndMs != null
+          ? Duration(milliseconds: track.clipEndMs!)
+          : null,
       cacheGroupId: track.cacheGroupId,
     );
-    final list = playlist
-        .map(
-          (t) => TrackInfo(
-            accountId: t.accountId,
-            remotePath: t.remotePath,
-            fileName: t.fileName,
-            title: t.title,
-            artist: t.artist,
-            albumArtist: t.albumArtist,
-            album: t.album,
-            coverPath: t.coverPath,
-            trackNumber: t.trackNumber,
-            trackTotal: t.trackTotal,
-            discNumber: t.discNumber,
-            discTotal: t.discTotal,
-            year: t.year,
-            genre: t.genre,
-            bitrate: t.bitrate,
-            sampleRate: t.sampleRate,
-            duration: t.durationMs != null
-                ? Duration(milliseconds: t.durationMs!)
-                : null,
-            cueRemotePath: t.cueRemotePath,
-            cueTrackIndex: t.cueTrackIndex,
-            audioRemotePath: t.audioRemotePath,
-            clipStart: t.clipStartMs != null ? Duration(milliseconds: t.clipStartMs!) : null,
-            clipEnd: t.clipEndMs != null ? Duration(milliseconds: t.clipEndMs!) : null,
-            cacheGroupId: t.cacheGroupId,
-          ),
-        )
-        .toList();
-    if (!context.mounted) return;
-    if (local == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('缓存已过期，正在重新下载…')),
-      );
-    }
-    await player.playTrack(info, playlist: list);
   }
 }

@@ -125,7 +125,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   Future<void> _onTapFile(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
-    final downloads = context.read<DownloadQueueService>();
     final player = context.read<AudioPlayerService>();
     final audios = _items.where((e) => e.isAudio).toList();
     final playlist = audios
@@ -142,20 +141,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       remotePath: item.path,
       fileName: item.name,
     );
-
-    final existing = downloads.taskForRemote(accountId, item.path);
-    final app = context.read<AppState>();
-    final cached =
-        await app.cache.localPathIfCached(item.path, accountId: accountId);
-    if (!mounted) return;
-    if (cached == null &&
-        (existing == null ||
-            existing.status == DownloadStatus.failed ||
-            existing.status == DownloadStatus.cancelled)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已加入下载队列：${item.name}')),
-      );
-    }
+    // If not cached, playTrack prepares via download; progress shows on the
+    // global mini play bar for THIS track (no generic waiting snackbar).
     await player.playTrack(track, playlist: playlist);
   }
 

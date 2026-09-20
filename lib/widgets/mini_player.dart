@@ -22,11 +22,12 @@ class MiniPlayer extends StatelessWidget {
             player.duration!.inMilliseconds > 0)
         ? player.position.inMilliseconds / player.duration!.inMilliseconds
         : 0.0;
-    // While downloading: show download progress on the bottom bar.
-    // When ready: show playback position.
-    final barValue = preparing
-        ? (downloadProgress ?? 0.0)
-        : playProgress;
+    // While downloading: show THIS track's download progress on the bottom bar.
+    // When ready: show playback position. Never look fully playable while preparing.
+    final barValue = preparing ? (downloadProgress ?? 0.0) : playProgress;
+    final pct = downloadProgress == null
+        ? null
+        : (downloadProgress * 100).clamp(0, 100).toStringAsFixed(0);
 
     return Material(
       color: AppColors.elevated,
@@ -38,7 +39,7 @@ class MiniPlayer extends StatelessWidget {
           onTap: preparing
               ? null
               : () {
-                  Navigator.of(context).push(
+                  Navigator.of(context, rootNavigator: true).push(
                     MaterialPageRoute(builder: (_) => const PlayerScreen()),
                   );
                 },
@@ -51,7 +52,7 @@ class MiniPlayer extends StatelessWidget {
                     : barValue.clamp(0.0, 1.0),
                 minHeight: 2.5,
                 backgroundColor: AppColors.elevatedHigh,
-                color: preparing ? AppColors.accent : AppColors.accent,
+                color: AppColors.accent,
               ),
               Padding(
                 padding:
@@ -76,8 +77,10 @@ class MiniPlayer extends StatelessWidget {
                             track.displayTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.onDark,
+                            style: TextStyle(
+                              color: preparing
+                                  ? AppColors.secondaryText
+                                  : AppColors.onDark,
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
                               height: 1.2,
@@ -86,9 +89,9 @@ class MiniPlayer extends StatelessWidget {
                           const SizedBox(height: 2),
                           Text(
                             preparing
-                                ? (downloadProgress != null
-                                    ? '下载中… ${(downloadProgress * 100).toStringAsFixed(0)}%'
-                                    : '下载中…')
+                                ? (pct != null
+                                    ? '正在下载此曲… $pct%'
+                                    : '正在下载此曲…')
                                 : (player.error ?? track.displayArtist),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -119,7 +122,7 @@ class MiniPlayer extends StatelessWidget {
                       tooltip: '播放列表',
                       icon: const Icon(Icons.queue_music, color: AppColors.onDark),
                       onPressed: () {
-                        Navigator.of(context).push(
+                        Navigator.of(context, rootNavigator: true).push(
                           MaterialPageRoute(
                             builder: (_) => const NowPlayingQueueScreen(),
                           ),

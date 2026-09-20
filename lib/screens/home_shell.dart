@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/app_theme.dart';
 import '../widgets/mini_player.dart';
@@ -38,21 +39,46 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _libraryNav = GlobalKey<NavigatorState>();
+  final _playlistsNav = GlobalKey<NavigatorState>();
+  final _networkNav = GlobalKey<NavigatorState>();
+  final _downloadsNav = GlobalKey<NavigatorState>();
   int _index = 0;
+
+  static const _settingsIndex = 4;
 
   @override
   Widget build(BuildContext context) {
     final pages = [
-      const LibraryScreen(),
-      const PlaylistsScreen(),
-      const NetworkLibraryScreen(),
-      const DownloadsScreen(),
+      _TabNavigator(navigatorKey: _libraryNav, root: const LibraryScreen()),
+      _TabNavigator(navigatorKey: _playlistsNav, root: const PlaylistsScreen()),
+      _TabNavigator(
+        navigatorKey: _networkNav,
+        root: const NetworkLibraryScreen(),
+      ),
+      _TabNavigator(navigatorKey: _downloadsNav, root: const DownloadsScreen()),
       const SettingsScreen(),
     ];
 
     return RootScaffold(
       scaffoldKey: _scaffoldKey,
-      child: Scaffold(
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          final nav = _activeNavKey?.currentState;
+          if (nav != null && nav.canPop()) {
+            nav.pop();
+            return;
+          }
+          final rootNav = Navigator.of(context, rootNavigator: true);
+          if (rootNav.canPop()) {
+            rootNav.pop();
+            return;
+          }
+          SystemNavigator.pop();
+        },
+        child: Scaffold(
         key: _scaffoldKey,
         backgroundColor: AppColors.nearBlack,
         drawer: Drawer(
@@ -131,7 +157,7 @@ class _HomeShellState extends State<HomeShell> {
                   selected: false,
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.of(context).push(
+                    Navigator.of(context, rootNavigator: true).push(
                       MaterialPageRoute(builder: (_) => const AboutScreen()),
                     );
                   },
@@ -145,16 +171,55 @@ class _HomeShellState extends State<HomeShell> {
             Expanded(
               child: IndexedStack(index: _index, children: pages),
             ),
-            const MiniPlayer(),
+            // Global mini bar on all main tabs except Settings.
+            if (_index != _settingsIndex) const MiniPlayer(),
           ],
         ),
       ),
+      ),
     );
+  }
+
+  GlobalKey<NavigatorState>? get _activeNavKey {
+    return switch (_index) {
+      0 => _libraryNav,
+      1 => _playlistsNav,
+      2 => _networkNav,
+      3 => _downloadsNav,
+      _ => null,
+    };
   }
 
   void _select(int i) {
     setState(() => _index = i);
     Navigator.pop(context);
+  }
+}
+
+/// Keeps tab pushes (album/artist detail, playlist detail, …) above the
+/// shell mini player instead of covering the whole [HomeShell].
+class _TabNavigator extends StatelessWidget {
+  const _TabNavigator({
+    required this.navigatorKey,
+    required this.root,
+  });
+
+  final GlobalKey<NavigatorState> navigatorKey;
+  final Widget root;
+
+  @override
+  Widget build(BuildContext context) {
+    return Navigator(
+      key: navigatorKey,
+      onGenerateInitialRoutes: (navigator, initialRoute) {
+        return [
+          MaterialPageRoute<void>(
+            builder: (_) => root,
+            settings: const RouteSettings(name: '/'),
+          ),
+        ];
+      },
+    );
   }
 }
 

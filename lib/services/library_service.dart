@@ -33,6 +33,15 @@ class LibraryService extends ChangeNotifier {
 
   UnmodifiableListView<LibraryTrack> get tracks =>
       UnmodifiableListView(_tracks);
+
+  /// Test-only: seed in-memory tracks without opening SQLite.
+  @visibleForTesting
+  void debugSetTracksForTest(List<LibraryTrack> tracks) {
+    _tracks
+      ..clear()
+      ..addAll(tracks);
+    _loaded = true;
+  }
   bool get loaded => _loaded;
   int get count => _tracks.length;
 
@@ -277,7 +286,86 @@ class LibraryService extends ChangeNotifier {
     return created;
   }
 
-  List<LibraryTrack> byTitle({LibrarySortMode sort = LibrarySortMode.byName}) {
+  /// Case-insensitive search over title / artist / album / file name.
+  List<LibraryTrack> search(
+    String query, {
+    LibrarySortMode sort = LibrarySortMode.byName,
+  }) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return byTitle(sort: sort);
+    final matched = _tracks.where((t) {
+      bool has(String? s) => (s ?? '').toLowerCase().contains(q);
+      return has(t.title) ||
+          has(t.artist) ||
+          has(t.albumArtist) ||
+          has(t.album) ||
+          has(t.fileName) ||
+          has(t.genre) ||
+          t.displayTitle.toLowerCase().contains(q) ||
+          t.displayArtist.toLowerCase().contains(q) ||
+          t.displayAlbum.toLowerCase().contains(q);
+    }).toList();
+    matched.sort(sort == LibrarySortMode.byAlbumTrack
+        ? compareTracksByAlbumOrder
+        : compareTracksByName);
+    return matched;
+  }
+
+  /// Distinct non-empty genre values, sorted (case-insensitive unique).
+  List<String> allGenres() {
+    final byLower = <String, String>{};
+    for (final t in _tracks) {
+      final g = t.genre?.trim();
+      if (g == null || g.isEmpty) continue;
+      byLower.putIfAbsent(g.toLowerCase(), () => g);
+    }
+    final list = byLower.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
+  /// Tracks matching a genre tag (exact, case-insensitive).
+  List<LibraryTrack> tracksWithGenre(
+    String genre, {
+    LibrarySortMode sort = LibrarySortMode.byName,
+  }) {
+    final g = genre.trim().toLowerCase();
+    final list = _tracks
+        .where((t) => (t.genre ?? '').trim().toLowerCase() == g)
+        .toList();
+    list.sort(sort == LibrarySortMode.byAlbumTrack
+        ? compareTracksByAlbumOrder
+        : compareTracksByName);
+    return list;
+  }
+
+  /// Group tracks by genre for the tags browser (empty genre → 未分类).
+  Map<String, List<LibraryTrack>> groupedByGenre() {
+    final map = <String, List<LibraryTrack>>{};
+    final keyByLower = <String, String>{};
+    for (final t in _tracks) {
+      final g = t.genre?.trim();
+      final String key;
+      if (g == null || g.isEmpty) {
+        key = '未分类';
+      } else {
+        key = keyByLower.putIfAbsent(g.toLowerCase(), () => g);
+      }
+      map.putIfAbsent(key, () => []).add(t);
+    }
+    for (final e in map.entries) {
+      e.value.sort(compareTracksByName);
+    }
+    final keys = map.keys.toList()
+      ..sort((a, b) {
+        if (a == '未分类') return 1;
+        if (b == '未分类') return -1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+    return LinkedHashMap.fromEntries(keys.map((k) => MapEntry(k, map[k]!)));
+  }
+
+    List<LibraryTrack> byTitle({LibrarySortMode sort = LibrarySortMode.byName}) {
     final list = List<LibraryTrack>.from(_tracks);
     list.sort(sort == LibrarySortMode.byAlbumTrack
         ? compareTracksByAlbumOrder
