@@ -1,19 +1,27 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
 import 'download_queue_service.dart';
+import 'notification_permission_service.dart';
 
 /// Local-file-only player. Never streams from WebDAV.
+///
+/// When [JustAudioBackground] is initialized (Android/iOS), each loaded source
+/// carries a [MediaItem] so the system can show a media-style notification with
+/// play/pause (and next/prev when a multi-item sequence is active).
 class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
     required DownloadQueueService downloads,
+    NotificationPermissionService? notificationPermission,
     AudioPlayer? player,
   })  : _downloads = downloads,
+        _notifications = notificationPermission,
         _player = player ?? AudioPlayer() {
     _posSub = _player.positionStream.listen((p) {
       _position = p;
@@ -34,6 +42,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   final DownloadQueueService _downloads;
+  final NotificationPermissionService? _notifications;
   final AudioPlayer _player;
 
   StreamSubscription<Duration>? _posSub;
@@ -49,6 +58,7 @@ class AudioPlayerService extends ChangeNotifier {
   ProcessingState _processingState = ProcessingState.idle;
   String? _error;
   bool _preparing = false;
+  bool _notificationPrompted = false;
 
   TrackInfo? get current => _current;
   String? get currentRemotePath => _current?.remotePath;
@@ -97,7 +107,20 @@ class AudioPlayerService extends ChangeNotifier {
     }
     _current = _queue[_index];
     notifyListeners();
+    await _ensureNotificationPermission();
     await _loadAndPlay(_current!);
+  }
+
+  Future<void> _ensureNotificationPermission() async {
+    final svc = _notifications;
+    if (svc == null || _notificationPrompted) return;
+    _notificationPrompted = true;
+    if (!svc.loaded) {
+      await svc.refresh();
+    }
+    if (!svc.isGranted) {
+      await svc.request();
+    }
   }
 
   Future<void> _loadAndPlay(TrackInfo track) async {
@@ -118,8 +141,21 @@ class AudioPlayerService extends ChangeNotifier {
         local = task.localPath;
         track.localPath = local;
       }
-      // CRITICAL: setFilePath — local only, never network URL.
-      await _player.setFilePath(local!);
+      // CRITICAL: local file only — never a network URL.
+      // MediaItem tag enables the system media notification (title/artist/art).
+      await _player.setAudioSource(
+        AudioSource.file(
+          local!,
+          tag: MediaItem(
+            id: '${track.accountId}|${track.remotePath}',
+            title: track.displayTitle,
+            album: track.album,
+            artist: track.displayArtist,
+            duration: track.duration,
+            artUri: _artUri(track),
+          ),
+        ),
+      );
       _current = track;
       await _player.play();
     } catch (e) {
@@ -131,14 +167,23 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  Uri? _artUri(TrackInfo track) {
+    final cover = track.coverPath;
+    if (cover == null || cover.isEmpty) return null;
+    if (!File(cover).existsSync()) return null;
+    return Uri.file(cover);
+  }
+
   Future<void> playPause() async {
     if (_player.playing) {
       await _player.pause();
     } else {
       if (_current == null && _queue.isNotEmpty) {
         _index = _index < 0 ? 0 : _index;
+        await _ensureNotificationPermission();
         await _loadAndPlay(_queue[_index]);
       } else {
+        await _ensureNotificationPermission();
         await _player.play();
       }
     }

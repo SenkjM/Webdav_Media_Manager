@@ -11,6 +11,7 @@ import '../services/cache_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
+import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 
@@ -20,6 +21,7 @@ class AppState extends ChangeNotifier {
     settings = SettingsService();
     webDav = WebDavService();
     cache = CacheService();
+    notificationPermission = NotificationPermissionService();
     final db = LibraryDatabase();
     libraryDb = db;
     library = LibraryService(db: db);
@@ -29,7 +31,10 @@ class AppState extends ChangeNotifier {
       cache: cache,
       library: library,
     );
-    player = AudioPlayerService(downloads: downloads);
+    player = AudioPlayerService(
+      downloads: downloads,
+      notificationPermission: notificationPermission,
+    );
   }
 
   late final SettingsService settings;
@@ -39,6 +44,7 @@ class AppState extends ChangeNotifier {
   late final LibraryService library;
   late final AccountsService accounts;
   late final DownloadQueueService downloads;
+  late final NotificationPermissionService notificationPermission;
   late final AudioPlayerService player;
 
   bool ready = false;
@@ -52,6 +58,7 @@ class AppState extends ChangeNotifier {
       await accounts.init();
       downloads.attachLibrary(library);
       await downloads.init();
+      await notificationPermission.refresh();
       await connectActiveAccount();
       unawaited(runCacheCleanup());
       ready = true;
@@ -130,6 +137,7 @@ class AppState extends ChangeNotifier {
     library.dispose();
     accounts.dispose();
     settings.dispose();
+    notificationPermission.dispose();
     super.dispose();
   }
 }

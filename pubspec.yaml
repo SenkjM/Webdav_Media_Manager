@@ -48,6 +48,9 @@ dependencies:
   dio: ^5.11.1
   audio_metadata_reader: ^1.4.1
   image: ^4.10.1
+  just_audio_background: ^0.0.1-beta.17
+  permission_handler: ^13.0.2
+  audio_service: ^0.18.19
 
 dev_dependencies:
   flutter_test:
