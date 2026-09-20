@@ -95,6 +95,7 @@ class AppState extends ChangeNotifier {
   Future<int> runCacheCleanup() {
     return cache.cleanupKnown(
       retention: settings.retention,
+      customDuration: settings.customRetentionDuration,
       identityToLocal: downloads.completedIdentityToLocal,
       playingIdentityKey: player.currentAccountId != null &&
               player.currentRemotePath != null
@@ -127,6 +128,14 @@ class AppState extends ChangeNotifier {
 
   Future<void> setRetention(CacheRetention r) async {
     await settings.setRetention(r);
+    unawaited(runCacheCleanup());
+  }
+
+  Future<void> setCustomRetentionDuration(Duration d) async {
+    await settings.setCustomRetentionDuration(d);
+    if (settings.retention != CacheRetention.custom) {
+      await settings.setRetention(CacheRetention.custom);
+    }
     unawaited(runCacheCleanup());
   }
 

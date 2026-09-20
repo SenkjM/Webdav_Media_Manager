@@ -19,18 +19,47 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
+  late final TextEditingController _customDaysController;
+  late final TextEditingController _customHoursController;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _customDaysController = TextEditingController();
+    _customHoursController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationPermissionService>().refresh();
+      _syncCustomFieldsFromSettings();
     });
+  }
+
+  void _syncCustomFieldsFromSettings() {
+    final settings = context.read<SettingsService>();
+    final total = settings.customRetentionHours;
+    final days = total ~/ 24;
+    final hours = total % 24;
+    _customDaysController.text = '$days';
+    _customHoursController.text = '$hours';
+  }
+
+  Future<void> _applyCustomRetention() async {
+    final days = int.tryParse(_customDaysController.text.trim()) ?? 0;
+    final hours = int.tryParse(_customHoursController.text.trim()) ?? 0;
+    var totalHours = days * 24 + hours;
+    if (totalHours < 1) totalHours = 1;
+    await context.read<AppState>().setCustomRetentionDuration(
+          Duration(hours: totalHours),
+        );
+    if (!mounted) return;
+    _syncCustomFieldsFromSettings();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _customDaysController.dispose();
+    _customHoursController.dispose();
     super.dispose();
   }
 
@@ -88,6 +117,20 @@ class _SettingsScreenState extends State<SettingsScreen>
         ),
       ),
     );
+  }
+
+
+  String _customRetentionSummary(SettingsService settings) {
+    final total = settings.customRetentionHours;
+    final days = total ~/ 24;
+    final hours = total % 24;
+    if (days > 0 && hours > 0) {
+      return '当前：保留 $days 天 $hours 小时未访问的音频';
+    }
+    if (days > 0) {
+      return '当前：保留 $days 天未访问的音频';
+    }
+    return '当前：保留 $hours 小时未访问的音频';
   }
 
   String _notificationSubtitle(NotificationPermissionService perms) {
@@ -168,12 +211,13 @@ class _SettingsScreenState extends State<SettingsScreen>
           Text('缓存清理', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 4),
           Text(
-            '播放仅使用本地音频缓存。超过保留期的音频文件会自动删除；'
-            '正在播放或正在下载的文件不会被删除。'
+            '播放仅使用本地音频缓存。可选 1 天 / 1 周 / 自定义时长自动清理，或「永不」关闭自动清理；'
+            '正在播放或正在下载的文件不会被删除。手动清空仍可用。'
             '音乐库标签与 100×100 封面缩略图不受缓存清理影响（当前库内 ${library.count} 首）。',
           ),
           const SizedBox(height: 8),
           SegmentedButton<CacheRetention>(
+            showSelectedIcon: false,
             segments: [
               ButtonSegment(
                 value: CacheRetention.oneDay,
@@ -183,12 +227,81 @@ class _SettingsScreenState extends State<SettingsScreen>
                 value: CacheRetention.oneWeek,
                 label: Text(CacheRetention.oneWeek.labelZh),
               ),
+              ButtonSegment(
+                value: CacheRetention.custom,
+                label: Text(CacheRetention.custom.labelZh),
+              ),
+              ButtonSegment(
+                value: CacheRetention.never,
+                label: Text(CacheRetention.never.labelZh),
+              ),
             ],
             selected: {settings.retention},
             onSelectionChanged: (s) {
-              context.read<AppState>().setRetention(s.first);
+              final next = s.first;
+              context.read<AppState>().setRetention(next);
+              if (next == CacheRetention.custom) {
+                _syncCustomFieldsFromSettings();
+              }
             },
           ),
+          if (settings.retention == CacheRetention.custom) ...[
+            const SizedBox(height: 12),
+            Text(
+              '自定义保留时长（到期自动删除；至少 1 小时）',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                SizedBox(
+                  width: 88,
+                  child: TextField(
+                    controller: _customDaysController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: '天',
+                      border: OutlineInputBorder(),
+                    ),
+                    onEditingComplete: _applyCustomRetention,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 88,
+                  child: TextField(
+                    controller: _customHoursController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: '小时',
+                      border: OutlineInputBorder(),
+                    ),
+                    onEditingComplete: _applyCustomRetention,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.tonal(
+                  onPressed: _applyCustomRetention,
+                  child: const Text('应用'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _customRetentionSummary(settings),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          if (settings.retention == CacheRetention.never) ...[
+            const SizedBox(height: 8),
+            Text(
+              '已关闭自动清理。仍可通过下方按钮手动清空缓存'
+              '（正在播放/下载的文件会保留）。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
           const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: () => _clearCache(context),

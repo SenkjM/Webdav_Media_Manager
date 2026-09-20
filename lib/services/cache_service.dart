@@ -131,12 +131,16 @@ class CacheService extends ChangeNotifier {
   /// Only deletes audio cache files — never library DB or covers/.
   Future<int> cleanupKnown({
     required CacheRetention retention,
+    Duration? customDuration,
     required Map<String, String> identityToLocal,
     String? playingIdentityKey,
     Set<String> downloadingIdentityKeys = const {},
     DateTime? now,
   }) async {
-    final policy = CacheExpiryPolicy(retention: retention);
+    final policy = CacheExpiryPolicy(
+      retention: retention,
+      customDuration: customDuration,
+    );
     final clock = now ?? DateTime.now();
     var removed = 0;
     for (final entry in identityToLocal.entries) {
