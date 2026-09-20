@@ -4,7 +4,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.media.session.MediaSessionManager
 import android.os.Build
-import com.ryanheise.audioservice.AudioService
 import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -12,7 +11,11 @@ import io.flutter.plugin.common.MethodChannel
 /**
  * Hosts a small MethodChannel so Flutter can:
  * - send the task to the background (same as Home) without finishing the Activity
- * - probe whether the media FGS notification / MediaSession are alive
+ * - probe whether the media notification / MediaSession are alive
+ *
+ * Do not reference [com.ryanheise.audioservice.AudioService] here: that pulls
+ * MediaBrowserServiceCompat into the app compile classpath and breaks release
+ * Kotlin builds unless androidx.media is forced onto :app.
  */
 class MainActivity : AudioServiceActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -49,13 +52,6 @@ class MainActivity : AudioServiceActivity() {
         } else {
             false
         }
-        val svc = AudioService.instance
-        val sessionActive = try {
-            svc != null && svc.isPlaying || (svc != null)
-        } catch (_: Exception) {
-            svc != null
-        }
-        // Prefer reflecting MediaSession via MediaSessionManager when possible.
         var ourActiveSessionCount = 0
         var mediaSessionActive = false
         try {
@@ -73,10 +69,9 @@ class MainActivity : AudioServiceActivity() {
                 }
             }
         } catch (_: SecurityException) {
-            // MEDIA_CONTENT_CONTROL not granted — fall back to service presence.
-            mediaSessionActive = svc != null
+            // MEDIA_CONTENT_CONTROL not granted — session count stays 0.
         } catch (_: Exception) {
-            mediaSessionActive = svc != null
+            // ignore
         }
         val notificationsEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             nm.areNotificationsEnabled()
@@ -84,8 +79,8 @@ class MainActivity : AudioServiceActivity() {
             true
         }
         return mapOf(
-            "audioServiceRunning" to (svc != null),
-            "servicePlaying" to (svc?.isPlaying ?: false),
+            "audioServiceRunning" to posted,
+            "servicePlaying" to mediaSessionActive,
             "mediaSessionActive" to mediaSessionActive,
             "notificationPosted" to posted,
             "notificationsEnabled" to notificationsEnabled,
@@ -94,8 +89,7 @@ class MainActivity : AudioServiceActivity() {
             "channelImportance" to channelImportance,
             "ourActiveSessionCount" to ourActiveSessionCount,
             "sdk" to Build.VERSION.SDK_INT,
-            // Keep a soft hint from the crude sessionActive local above.
-            "servicePresentHint" to sessionActive,
+            "servicePresentHint" to posted,
         )
     }
 
