@@ -304,6 +304,11 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  /// Do not stop when the Activity task is removed while media FGS runs.
+  /// Explicit stop only via pause/stop controls or drawer 「退出应用」.
+  @override
+  Future<void> onTaskRemoved() async {}
+
   @override
   Future<void> seek(Duration position) => _player.seek(position);
 
