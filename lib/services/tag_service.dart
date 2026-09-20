@@ -10,6 +10,8 @@ class ReadTags {
     this.artist,
     this.album,
     this.durationMs,
+    this.trackNumber,
+    this.discNumber,
     this.coverBytes,
   });
 
@@ -17,6 +19,8 @@ class ReadTags {
   final String? artist;
   final String? album;
   final int? durationMs;
+  final int? trackNumber;
+  final int? discNumber;
   final Uint8List? coverBytes;
 }
 
@@ -49,6 +53,8 @@ class TagService {
         artist: artist,
         album: meta.album,
         durationMs: durationMs,
+        trackNumber: meta.trackNumber,
+        discNumber: meta.discNumber,
         coverBytes: cover,
       );
     } catch (_) {

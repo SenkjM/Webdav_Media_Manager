@@ -11,13 +11,14 @@ import '../services/cache_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
+import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
 class AppState extends ChangeNotifier {
-  AppState() {
+  AppState({required MusicAudioHandler audioHandler}) {
     settings = SettingsService();
     webDav = WebDavService();
     cache = CacheService();
@@ -33,6 +34,7 @@ class AppState extends ChangeNotifier {
     );
     player = AudioPlayerService(
       downloads: downloads,
+      handler: audioHandler,
       notificationPermission: notificationPermission,
     );
   }

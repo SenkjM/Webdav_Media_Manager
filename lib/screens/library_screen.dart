@@ -8,6 +8,7 @@ import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_service.dart';
+import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cover_art.dart';
 import 'home_shell.dart';
@@ -18,6 +19,7 @@ class LibraryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryService>();
+    final settings = context.watch<SettingsService>();
 
     return DefaultTabController(
       length: 3,
@@ -26,6 +28,33 @@ class LibraryScreen extends StatelessWidget {
         appBar: AppBar(
           leading: const DrawerMenuButton(),
           title: const Text('音乐库'),
+          actions: [
+            PopupMenuButton<LibrarySortMode>(
+              tooltip: '排序',
+              initialValue: settings.librarySort,
+              onSelected: (mode) =>
+                  context.read<SettingsService>().setLibrarySort(mode),
+              itemBuilder: (context) => [
+                for (final mode in LibrarySortMode.values)
+                  PopupMenuItem(
+                    value: mode,
+                    child: Row(
+                      children: [
+                        Icon(
+                          settings.librarySort == mode
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(mode.labelZh),
+                      ],
+                    ),
+                  ),
+              ],
+              icon: const Icon(Icons.sort),
+            ),
+          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: '专辑'),
@@ -50,7 +79,10 @@ class LibraryScreen extends StatelessWidget {
                 children: [
                   _AlbumTab(library: library),
                   _ArtistTab(library: library),
-                  _TitleTab(library: library),
+                  _TitleTab(
+                    library: library,
+                    sort: settings.librarySort,
+                  ),
                 ],
               ),
       ),
@@ -59,12 +91,13 @@ class LibraryScreen extends StatelessWidget {
 }
 
 class _TitleTab extends StatelessWidget {
-  const _TitleTab({required this.library});
+  const _TitleTab({required this.library, required this.sort});
   final LibraryService library;
+  final LibrarySortMode sort;
 
   @override
   Widget build(BuildContext context) {
-    final tracks = library.byTitle();
+    final tracks = library.byTitle(sort: sort);
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 4),
       itemCount: tracks.length,
@@ -110,7 +143,12 @@ class _ArtistTab extends StatelessWidget {
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => _TrackListPage(title: artist, tracks: tracks),
+                builder: (_) => _TrackListPage(
+                  title: artist,
+                  tracks: tracks,
+                  // Artist lists stay name-ordered unless user opens album.
+                  defaultSort: LibrarySortMode.byName,
+                ),
               ),
             );
           },
@@ -156,7 +194,12 @@ class _AlbumTab extends StatelessWidget {
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
-                builder: (_) => _TrackListPage(title: album, tracks: tracks),
+                builder: (_) => _TrackListPage(
+                  title: album,
+                  tracks: tracks,
+                  // Album detail defaults to disc/track order.
+                  defaultSort: LibrarySortMode.byAlbumTrack,
+                ),
               ),
             );
           },
@@ -238,16 +281,47 @@ class _CoverTile extends StatelessWidget {
   }
 }
 
-class _TrackListPage extends StatelessWidget {
-  const _TrackListPage({required this.title, required this.tracks});
+class _TrackListPage extends StatefulWidget {
+  const _TrackListPage({
+    required this.title,
+    required this.tracks,
+    required this.defaultSort,
+  });
   final String title;
   final List<LibraryTrack> tracks;
+  final LibrarySortMode defaultSort;
+
+  @override
+  State<_TrackListPage> createState() => _TrackListPageState();
+}
+
+class _TrackListPageState extends State<_TrackListPage> {
+  late LibrarySortMode _sort = widget.defaultSort;
 
   @override
   Widget build(BuildContext context) {
+    final library = context.read<LibraryService>();
+    final tracks = library.sortedCopy(widget.tracks, sort: _sort);
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          PopupMenuButton<LibrarySortMode>(
+            tooltip: '排序',
+            initialValue: _sort,
+            onSelected: (mode) => setState(() => _sort = mode),
+            itemBuilder: (context) => [
+              for (final mode in LibrarySortMode.values)
+                PopupMenuItem(
+                  value: mode,
+                  child: Text(mode.labelZh),
+                ),
+            ],
+            icon: const Icon(Icons.sort),
+          ),
+        ],
+      ),
       body: ListView.builder(
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: tracks.length,
@@ -265,10 +339,13 @@ class _TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final trackLabel = track.trackNumber != null
+        ? '${track.trackNumber}. '
+        : '';
     return ListTile(
       leading: CoverArt(path: track.coverPath, size: 52, borderRadius: 4),
       title: Text(
-        track.displayTitle,
+        '$trackLabel${track.displayTitle}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(

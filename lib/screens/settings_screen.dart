@@ -134,8 +134,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           Text('媒体通知', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 4),
           Text(
-            'Android 13+ 需授予通知权限后，才能在通知栏 / 锁屏显示播放控制。'
-            '首次开始播放时也会自动请求。',
+            '播放时通过 audio_service 前台服务显示系统媒体通知（通知栏 / 锁屏 / 媒体控制中心）：'
+            '标题、艺术家与播放/暂停。\n'
+            '请确保本应用的「通知」已开启；若曾拒绝，可点下方打开系统通知设置。'
+            'Android 13+ 首次播放时也会请求 POST_NOTIFICATIONS。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),

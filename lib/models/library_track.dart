@@ -11,6 +11,8 @@ class LibraryTrack {
     this.artist,
     this.album,
     this.durationMs,
+    this.trackNumber,
+    this.discNumber,
     this.coverPath,
     DateTime? lastDownloadedAt,
     DateTime? lastTagReadAt,
@@ -24,6 +26,8 @@ class LibraryTrack {
   String? artist;
   String? album;
   int? durationMs;
+  int? trackNumber;
+  int? discNumber;
   String? coverPath;
   DateTime lastDownloadedAt;
   DateTime lastTagReadAt;
@@ -56,6 +60,8 @@ class LibraryTrack {
         'artist': artist,
         'album': album,
         'duration_ms': durationMs,
+        'track_number': trackNumber,
+        'disc_number': discNumber,
         'cover_path': coverPath,
         'last_downloaded_at': lastDownloadedAt.toIso8601String(),
         'last_tag_read_at': lastTagReadAt.toIso8601String(),
@@ -69,8 +75,61 @@ class LibraryTrack {
         artist: map['artist'] as String?,
         album: map['album'] as String?,
         durationMs: map['duration_ms'] as int?,
+        trackNumber: map['track_number'] as int?,
+        discNumber: map['disc_number'] as int?,
         coverPath: map['cover_path'] as String?,
         lastDownloadedAt: DateTime.parse(map['last_downloaded_at'] as String),
         lastTagReadAt: DateTime.parse(map['last_tag_read_at'] as String),
       );
+}
+
+/// How to order tracks in the local library title list / album detail.
+enum LibrarySortMode {
+  /// Title / display name (case-insensitive).
+  byName,
+
+  /// Disc number then track number within an album; missing numbers last.
+  byAlbumTrack,
+}
+
+extension LibrarySortModeX on LibrarySortMode {
+  String get storageKey => switch (this) {
+        LibrarySortMode.byName => 'name',
+        LibrarySortMode.byAlbumTrack => 'album_track',
+      };
+
+  String get labelZh => switch (this) {
+        LibrarySortMode.byName => '按名称',
+        LibrarySortMode.byAlbumTrack => '按曲序',
+      };
+
+  static LibrarySortMode fromStorageKey(String? key) {
+    switch (key) {
+      case 'album_track':
+        return LibrarySortMode.byAlbumTrack;
+      case 'name':
+      default:
+        return LibrarySortMode.byName;
+    }
+  }
+}
+
+/// Shared comparators for library lists.
+int compareTracksByName(LibraryTrack a, LibraryTrack b) {
+  final byTitle =
+      a.displayTitle.toLowerCase().compareTo(b.displayTitle.toLowerCase());
+  if (byTitle != 0) return byTitle;
+  return a.fileName.toLowerCase().compareTo(b.fileName.toLowerCase());
+}
+
+/// Disc → track → name. Missing disc defaults to 1; missing track sorts last.
+int compareTracksByAlbumOrder(LibraryTrack a, LibraryTrack b) {
+  final discA = a.discNumber ?? 1;
+  final discB = b.discNumber ?? 1;
+  if (discA != discB) return discA.compareTo(discB);
+  const missing = 1 << 30;
+  final trackA = a.trackNumber ?? missing;
+  final trackB = b.trackNumber ?? missing;
+  if (trackA != trackB) return trackA.compareTo(trackB);
+  return compareTracksByName(a, b);
 }

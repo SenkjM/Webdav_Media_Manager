@@ -8,50 +8,49 @@ import 'package:just_audio/just_audio.dart';
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
 import 'download_queue_service.dart';
+import 'music_audio_handler.dart';
 import 'notification_permission_service.dart';
 
-/// Local-file-only player. Never streams from WebDAV.
+/// Local-file-only player facade. Never streams from WebDAV.
 ///
-/// When [JustAudioBackground] is initialized (Android/iOS), each loaded source
-/// carries a [MediaItem] so the system can show a media-style notification with
-/// play/pause (and next/prev when a multi-item sequence is active).
+/// On Android/iOS, playback goes through [MusicAudioHandler] so the system
+/// MediaStyle notification / media session stays active with metadata.
 class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
     required DownloadQueueService downloads,
+    required MusicAudioHandler handler,
     NotificationPermissionService? notificationPermission,
-    AudioPlayer? player,
   })  : _downloads = downloads,
         _notifications = notificationPermission,
-        _player = player ?? AudioPlayer() {
-    _posSub = _player.positionStream.listen((p) {
+        _handler = handler {
+    _handler.resolveLocalPath = _resolveLocalPath;
+    _posSub = _handler.player.positionStream.listen((p) {
       _position = p;
       notifyListeners();
     });
-    _durSub = _player.durationStream.listen((d) {
+    _durSub = _handler.player.durationStream.listen((d) {
       _duration = d;
       notifyListeners();
     });
-    _stateSub = _player.playerStateStream.listen((s) {
+    _stateSub = _handler.player.playerStateStream.listen((s) {
       _playing = s.playing;
       _processingState = s.processingState;
-      if (s.processingState == ProcessingState.completed) {
-        unawaited(skipNext());
-      }
+      notifyListeners();
+    });
+    _mediaSub = _handler.mediaItem.listen((_) {
       notifyListeners();
     });
   }
 
   final DownloadQueueService _downloads;
   final NotificationPermissionService? _notifications;
-  final AudioPlayer _player;
+  final MusicAudioHandler _handler;
 
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration?>? _durSub;
   StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<MediaItem?>? _mediaSub;
 
-  final List<TrackInfo> _queue = [];
-  int _index = -1;
-  TrackInfo? _current;
   Duration _position = Duration.zero;
   Duration? _duration;
   bool _playing = false;
@@ -60,11 +59,13 @@ class AudioPlayerService extends ChangeNotifier {
   bool _preparing = false;
   bool _notificationPrompted = false;
 
-  TrackInfo? get current => _current;
-  String? get currentRemotePath => _current?.remotePath;
-  String? get currentAccountId => _current?.accountId;
-  List<TrackInfo> get queue => List.unmodifiable(_queue);
-  int get index => _index;
+  MusicAudioHandler get handler => _handler;
+
+  TrackInfo? get current => _handler.currentTrack;
+  String? get currentRemotePath => current?.remotePath;
+  String? get currentAccountId => current?.accountId;
+  List<TrackInfo> get queue => _handler.tracks;
+  int get index => _handler.index;
   Duration get position => _position;
   Duration? get duration => _duration;
   bool get playing => _playing;
@@ -72,43 +73,47 @@ class AudioPlayerService extends ChangeNotifier {
   String? get error => _error;
   ProcessingState get processingState => _processingState;
 
+  Future<String?> _resolveLocalPath(TrackInfo track) async {
+    final existing = track.localPath;
+    if (existing != null && File(existing).existsSync()) return existing;
+    final task = await _downloads.enqueue(
+      track.accountId,
+      track.remotePath,
+      fileName: track.fileName,
+    );
+    if (task.status != DownloadStatus.completed || task.localPath == null) {
+      throw StateError(task.errorMessage ?? '下载失败');
+    }
+    track.localPath = task.localPath;
+    return task.localPath;
+  }
+
   /// Play a track: if not cached, enqueue download then play local file.
   Future<void> playTrack(
     TrackInfo track, {
     List<TrackInfo>? playlist,
   }) async {
     _error = null;
-    if (playlist != null) {
-      _queue
-        ..clear()
-        ..addAll(playlist);
-      _index = _queue.indexWhere(
-        (t) =>
-            t.remotePath == track.remotePath && t.accountId == track.accountId,
-      );
-      if (_index < 0) {
-        _queue.insert(0, track);
-        _index = 0;
-      }
-    } else if (_queue.isEmpty) {
-      _queue.add(track);
-      _index = 0;
+    final list = <TrackInfo>[];
+    if (playlist != null && playlist.isNotEmpty) {
+      list.addAll(playlist);
     } else {
-      final i = _queue.indexWhere(
-        (t) =>
-            t.remotePath == track.remotePath && t.accountId == track.accountId,
-      );
-      if (i >= 0) {
-        _index = i;
-      } else {
-        _queue.add(track);
-        _index = _queue.length - 1;
-      }
+      list.addAll(_handler.tracks);
     }
-    _current = _queue[_index];
+    var idx = list.indexWhere(
+      (t) =>
+          t.remotePath == track.remotePath && t.accountId == track.accountId,
+    );
+    if (idx < 0) {
+      list.add(track);
+      idx = list.length - 1;
+    } else {
+      // Prefer caller-provided localPath / tags for the selected item.
+      list[idx] = track;
+    }
     notifyListeners();
     await _ensureNotificationPermission();
-    await _loadAndPlay(_current!);
+    await _loadAndPlay(list, idx);
   }
 
   Future<void> _ensureNotificationPermission() async {
@@ -123,110 +128,57 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
-  Future<void> _loadAndPlay(TrackInfo track) async {
+  Future<void> _loadAndPlay(List<TrackInfo> playlist, int index) async {
     _preparing = true;
     _error = null;
     notifyListeners();
     try {
-      String? local = track.localPath;
-      if (local == null || !File(local).existsSync()) {
-        final task = await _downloads.enqueue(
-          track.accountId,
-          track.remotePath,
-          fileName: track.fileName,
-        );
-        if (task.status != DownloadStatus.completed || task.localPath == null) {
-          throw StateError(task.errorMessage ?? '下载失败');
-        }
-        local = task.localPath;
-        track.localPath = local;
+      final track = playlist[index];
+      final local = await _resolveLocalPath(track);
+      if (local == null) {
+        throw StateError('下载失败');
       }
-      // CRITICAL: local file only — never a network URL.
-      // MediaItem tag enables the system media notification (title/artist/art).
-      await _player.setAudioSource(
-        AudioSource.file(
-          local!,
-          tag: MediaItem(
-            id: '${track.accountId}|${track.remotePath}',
-            title: track.displayTitle,
-            album: track.album,
-            artist: track.displayArtist,
-            duration: track.duration,
-            artUri: _artUri(track),
-          ),
-        ),
+      await _handler.loadAndPlay(
+        playlist: playlist,
+        startIndex: index,
+        localPath: local,
       );
-      _current = track;
-      await _player.play();
     } catch (e) {
       _error = e.toString();
-      await _player.stop();
+      try {
+        await _handler.stop();
+      } catch (_) {}
     } finally {
       _preparing = false;
       notifyListeners();
     }
   }
 
-  Uri? _artUri(TrackInfo track) {
-    final cover = track.coverPath;
-    if (cover == null || cover.isEmpty) return null;
-    if (!File(cover).existsSync()) return null;
-    return Uri.file(cover);
-  }
-
   Future<void> playPause() async {
-    if (_player.playing) {
-      await _player.pause();
+    if (_handler.player.playing) {
+      await _handler.pause();
     } else {
-      if (_current == null && _queue.isNotEmpty) {
-        _index = _index < 0 ? 0 : _index;
+      if (current == null && _handler.tracks.isNotEmpty) {
+        final idx = _handler.index < 0 ? 0 : _handler.index;
         await _ensureNotificationPermission();
-        await _loadAndPlay(_queue[_index]);
+        await _loadAndPlay(_handler.tracks, idx);
       } else {
         await _ensureNotificationPermission();
-        await _player.play();
+        await _handler.play();
       }
     }
   }
 
-  Future<void> pause() => _player.pause();
+  Future<void> pause() => _handler.pause();
 
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) => _handler.seek(position);
 
-  Future<void> skipNext() async {
-    if (_queue.isEmpty) return;
-    if (_index + 1 >= _queue.length) {
-      await _player.stop();
-      _playing = false;
-      notifyListeners();
-      return;
-    }
-    _index++;
-    _current = _queue[_index];
-    notifyListeners();
-    await _loadAndPlay(_current!);
-  }
+  Future<void> skipNext() => _handler.skipToNext();
 
-  Future<void> skipPrevious() async {
-    if (_queue.isEmpty) return;
-    if (_position > const Duration(seconds: 3)) {
-      await seek(Duration.zero);
-      return;
-    }
-    if (_index <= 0) {
-      await seek(Duration.zero);
-      return;
-    }
-    _index--;
-    _current = _queue[_index];
-    notifyListeners();
-    await _loadAndPlay(_current!);
-  }
+  Future<void> skipPrevious() => _handler.skipToPrevious();
 
   Future<void> stop() async {
-    await _player.stop();
-    _current = null;
-    _index = -1;
+    await _handler.stop();
     notifyListeners();
   }
 
@@ -235,7 +187,9 @@ class AudioPlayerService extends ChangeNotifier {
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
-    _player.dispose();
+    _mediaSub?.cancel();
+    // Handler player lifetime is owned by AudioService on mobile; only dispose
+    // when this service created a standalone handler (tests / desktop).
     super.dispose();
   }
 }

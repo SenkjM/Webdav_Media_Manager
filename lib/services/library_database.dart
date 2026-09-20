@@ -16,7 +16,7 @@ class LibraryDatabase {
     final path = p.join(dir.path, 'music_library.db');
     _db = await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('''
 CREATE TABLE accounts (
@@ -35,24 +35,40 @@ CREATE TABLE tracks (
   artist TEXT,
   album TEXT,
   duration_ms INTEGER,
+  track_number INTEGER,
+  disc_number INTEGER,
   cover_path TEXT,
   last_downloaded_at TEXT NOT NULL,
   last_tag_read_at TEXT NOT NULL,
   PRIMARY KEY (account_id, remote_path)
 )
 ''');
-        await db.execute(
-          'CREATE INDEX idx_tracks_artist ON tracks(artist)',
-        );
-        await db.execute(
-          'CREATE INDEX idx_tracks_album ON tracks(album)',
-        );
-        await db.execute(
-          'CREATE INDEX idx_tracks_title ON tracks(title)',
-        );
+        await _createIndexes(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN track_number INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN disc_number INTEGER',
+          );
+        }
       },
     );
     return _db!;
+  }
+
+  Future<void> _createIndexes(Database db) async {
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title)',
+    );
   }
 
   // --- Accounts ---
@@ -126,7 +142,9 @@ CREATE TABLE tracks (
       'tracks',
       where: 'IFNULL(NULLIF(TRIM(album), ""), "未知专辑") = ?',
       whereArgs: [album],
-      orderBy: 'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
+      orderBy:
+          'IFNULL(disc_number, 1) ASC, IFNULL(track_number, 2147483647) ASC, '
+          'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
     );
     return rows.map(LibraryTrack.fromMap).toList();
   }

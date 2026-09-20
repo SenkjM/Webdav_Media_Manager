@@ -19,10 +19,10 @@
 
 - **网络库（多 WebDAV）**：可添加 / 编辑 / 删除多个服务器账号（URL、用户名、密码经安全存储）；在网络库中切换当前服务器；浏览时只显示条目名称（不铺满远程完整路径）
 - **下载队列**：后台异步排队下载，支持取消 / 重试 / 清除已完成；长按文件夹可**递归下载整个目录**中的音频
-- **标签读取**：下载完成后用 `audio_metadata_reader` 读取 title / artist / album / 封面 / 时长，并写入本地音乐库
-- **本地音乐库**：仅索引「至少缓存过一次」的曲目；可按 **专辑 / 作者 / 音乐名** 浏览；身份键为 `(webdav_account_id + remote_path)`
+- **标签读取**：下载完成后用 `audio_metadata_reader` 读取 title / artist / album / track / disc / 封面 / 时长，并写入本地音乐库
+- **本地音乐库**：仅索引「至少缓存过一次」的曲目；可按 **专辑 / 作者 / 音乐名** 浏览；支持按 **名称** 或 **专辑曲序（碟号/曲号）** 排序；身份键为 `(webdav_account_id + remote_path)`
 - **元数据持久化**：库记录与 100×100 封面缩略图独立于音频缓存；清空或过期清理音频缓存**不会**删除库与封面；同一账号+路径再次下载会刷新标签与封面
-- **本地播放**：仅用本地文件路径播放（`just_audio` + `just_audio_background` 媒体通知）
+- **本地播放**：仅用本地文件路径播放（`just_audio` + `audio_service` 媒体通知 / 系统媒体控制）
 - **缓存清理**：可按 1 天或 1 周自动清理**音频缓存文件**；正在播放或下载中的文件受保护
 - **WebDAV 管理**：长按可重命名 / 删除；可新建文件夹；权限不足（401/403）时弹出错误对话框
 
@@ -40,7 +40,7 @@
 | 封面缩放 | `image` → 100×100 JPEG，存于应用文档 `covers/` |
 | 凭证 | `flutter_secure_storage` |
 | WebDAV | `webdav_client` |
-| 媒体通知 / 后台播放 | `just_audio_background`（底层 `audio_service`） |
+| 媒体通知 / 后台播放 | `audio_service` + `just_audio`（`MusicAudioHandler`） |
 | 通知权限（Android 13+） | `permission_handler`（`POST_NOTIFICATIONS`） |
 
 ## 状态
@@ -63,8 +63,9 @@
 
 ## 权限与媒体通知
 
-- **Android 13+**：运行时请求 `POST_NOTIFICATIONS`。首次开始播放时自动请求；也可在 **设置 → 媒体通知** 中手动开启 / 跳转系统设置。
-- **媒体播放通知**：通过 `just_audio_background` 在播放（及暂停保持会话）时显示系统媒体样式通知（标题 / 艺术家 / 封面；播放/暂停）。需声明 `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`、`WAKE_LOCK` 等，并注册 `AudioService` 前台服务（`mediaPlayback`）。
+- **Android 13+**：运行时请求 `POST_NOTIFICATIONS`（首次播放 / 设置页）。通知权限开启后，媒体通知才能显示。
+- **媒体播放通知**：通过 `audio_service` 的 `MusicAudioHandler` 在播放时启动 `mediaPlayback` 前台服务，并发布 `MediaItem` + `PlaybackState`，使通知栏 / 锁屏 / 系统媒体控制中心显示 MediaStyle 控件（播放/暂停，有队列时上一首/下一首）。通知小图标使用 `drawable/ic_stat_music`（不可用自适应 launcher 图标）。
+- 需声明 `WAKE_LOCK`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`、`POST_NOTIFICATIONS`，并注册 `AudioService` / `MediaButtonReceiver`；`MainActivity` 继承 `AudioServiceActivity`。
 - 真机验证：通知样式与锁屏控件需在真实 Android 设备上确认；模拟器上权限与 FGS 行为可能不完整。
 
 ## 分支策略

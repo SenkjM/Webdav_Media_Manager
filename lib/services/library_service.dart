@@ -91,6 +91,8 @@ class LibraryService extends ChangeNotifier {
       artist: read.artist,
       album: read.album,
       durationMs: read.durationMs,
+      trackNumber: read.trackNumber,
+      discNumber: read.discNumber,
       coverPath: coverPath,
       lastDownloadedAt: now,
       lastTagReadAt: now,
@@ -108,10 +110,22 @@ class LibraryService extends ChangeNotifier {
     return track;
   }
 
-  List<LibraryTrack> byTitle() {
+  List<LibraryTrack> byTitle({LibrarySortMode sort = LibrarySortMode.byName}) {
     final list = List<LibraryTrack>.from(_tracks);
-    list.sort((a, b) =>
-        a.displayTitle.toLowerCase().compareTo(b.displayTitle.toLowerCase()));
+    list.sort(sort == LibrarySortMode.byAlbumTrack
+        ? compareTracksByAlbumOrder
+        : compareTracksByName);
+    return list;
+  }
+
+  List<LibraryTrack> sortedCopy(
+    List<LibraryTrack> source, {
+    required LibrarySortMode sort,
+  }) {
+    final list = List<LibraryTrack>.from(source);
+    list.sort(sort == LibrarySortMode.byAlbumTrack
+        ? compareTracksByAlbumOrder
+        : compareTracksByName);
     return list;
   }
 
@@ -119,6 +133,9 @@ class LibraryService extends ChangeNotifier {
     final map = <String, List<LibraryTrack>>{};
     for (final t in _tracks) {
       map.putIfAbsent(t.displayArtist, () => []).add(t);
+    }
+    for (final e in map.entries) {
+      e.value.sort(compareTracksByName);
     }
     final keys = map.keys.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -129,6 +146,10 @@ class LibraryService extends ChangeNotifier {
     final map = <String, List<LibraryTrack>>{};
     for (final t in _tracks) {
       map.putIfAbsent(t.displayAlbum, () => []).add(t);
+    }
+    // Album detail defaults to disc/track order.
+    for (final e in map.entries) {
+      e.value.sort(compareTracksByAlbumOrder);
     }
     final keys = map.keys.toList()
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));

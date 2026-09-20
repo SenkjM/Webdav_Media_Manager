@@ -81,6 +81,8 @@ void main() {
       expect(map.containsKey('local_path'), isFalse);
       expect(map['cover_path'], '/docs/covers/abc.jpg');
       expect(map['title'], 'Keep Me');
+      expect(map.containsKey('track_number'), isTrue);
+      expect(map.containsKey('disc_number'), isTrue);
       final roundtrip = LibraryTrack.fromMap(map);
       expect(roundtrip.title, 'Keep Me');
       expect(roundtrip.coverPath, '/docs/covers/abc.jpg');
