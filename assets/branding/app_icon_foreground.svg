@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="WEBDAV Music Player foreground">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="WEBDAV Music Player light foreground">
   <defs>
     <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#2EC4B6"/>
@@ -6,10 +6,9 @@
     </linearGradient>
   </defs>
 
-  <!-- Content kept inside adaptive safe zone (~center 66%) -->
   <path
     fill="none"
-    stroke="#3A4550"
+    stroke="#9AA3AD"
     stroke-width="36"
     stroke-linecap="round"
     stroke-linejoin="round"

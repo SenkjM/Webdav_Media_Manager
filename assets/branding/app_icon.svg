@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="WEBDAV Music Player">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="WEBDAV Music Player light">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0B0B0D"/>
-      <stop offset="100%" stop-color="#121214"/>
+      <stop offset="0%" stop-color="#F7F8FA"/>
+      <stop offset="100%" stop-color="#EEF1F4"/>
     </linearGradient>
     <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#2EC4B6"/>
@@ -10,14 +10,12 @@
     </linearGradient>
   </defs>
 
-  <!-- Full-bleed dark background for raster export / launcher -->
   <rect width="1024" height="1024" fill="url(#bg)"/>
 
-  <!-- Safe zone guide conceptually: content within ~170–854 (66% center) -->
-  <!-- Cloud outline (secondary, cool gray-blue) -->
+  <!-- Cloud outline — slightly stronger on light bg -->
   <path
     fill="none"
-    stroke="#3A4550"
+    stroke="#9AA3AD"
     stroke-width="36"
     stroke-linecap="round"
     stroke-linejoin="round"
@@ -32,19 +30,13 @@
        L 340 620
        C 310 620, 300 590, 300 560 Z"/>
 
-  <!-- Music mark: note + waveform bars (turquoise → blue cyan) -->
   <g fill="url(#accent)">
-    <!-- Note head -->
     <ellipse cx="390" cy="560" rx="72" ry="52" transform="rotate(-18 390 560)"/>
-    <!-- Stem -->
     <rect x="448" y="300" width="36" height="270" rx="10"/>
-    <!-- Flag / beam -->
     <path d="M 484 300
              C 560 320, 620 360, 640 430
              L 600 440
              C 585 390, 545 350, 484 340 Z"/>
-
-    <!-- Waveform bars -->
     <rect x="560" y="470" width="36" height="100" rx="12"/>
     <rect x="612" y="430" width="36" height="140" rx="12"/>
     <rect x="664" y="390" width="36" height="180" rx="12"/>
