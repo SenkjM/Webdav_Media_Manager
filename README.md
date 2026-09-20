@@ -19,7 +19,7 @@
 
 - **网络库（多 WebDAV）**：可添加 / 编辑 / 删除多个服务器账号（URL、用户名、密码经安全存储）；在网络库中切换当前服务器；浏览时只显示条目名称（不铺满远程完整路径）
 - **下载队列**：后台异步排队下载，支持取消 / 重试 / 清除已完成；长按文件夹可**递归下载整个目录**中的音频
-- **标签读取**：下载完成后用 `audiotags` 读取 title / artist / album / 封面 / 时长，并写入本地音乐库
+- **标签读取**：下载完成后用 `audio_metadata_reader` 读取 title / artist / album / 封面 / 时长，并写入本地音乐库
 - **本地音乐库**：仅索引「至少缓存过一次」的曲目；可按 **专辑 / 作者 / 音乐名** 浏览；身份键为 `(webdav_account_id + remote_path)`
 - **元数据持久化**：库记录与 100×100 封面缩略图独立于音频缓存；清空或过期清理音频缓存**不会**删除库与封面；同一账号+路径再次下载会刷新标签与封面
 - **本地播放**：仅用本地文件路径播放（`just_audio`）
@@ -36,7 +36,7 @@
 |------|------|
 | 库 / 账号持久化 | `sqflite`（`music_library.db`：accounts + tracks） |
 | 下载队列 | `sqflite`（`download_queue.db`） |
-| 标签 | `audiotags` |
+| 标签 | `audio_metadata_reader` |
 | 封面缩放 | `image` → 100×100 JPEG，存于应用文档 `covers/` |
 | 凭证 | `flutter_secure_storage` |
 | WebDAV | `webdav_client` |
