@@ -4,13 +4,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/cache_policy.dart';
 import '../models/library_track.dart';
 
-/// App preferences (cache retention, library sort). WebDAV credentials live in AccountsService.
+/// App preferences (cache retention, library sort, backup/playlist paths).
+/// WebDAV credentials live in AccountsService / flutter_secure_storage.
 class SettingsService extends ChangeNotifier {
   SettingsService({SharedPreferences? prefs}) : _prefs = prefs;
 
   static const _kRetention = 'cache_retention';
   static const _kCustomRetentionHours = 'cache_custom_retention_hours';
   static const _kLibrarySort = 'library_sort_mode';
+  static const _kBackupRemotePath = 'backup_remote_path';
+  static const _kPlaylistRemotePath = 'playlist_remote_path';
+  static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
 
   /// Default custom retention: 30 days.
   static const int defaultCustomRetentionHours = 24 * 30;
@@ -19,10 +23,16 @@ class SettingsService extends ChangeNotifier {
   static const int minCustomRetentionHours = 1;
   static const int maxCustomRetentionHours = 24 * 365 * 10;
 
+  static const String defaultBackupRemotePath = '/WebDAVMusicPlayer/backup/';
+  static const String defaultPlaylistRemotePath = '/Playlists/';
+
   SharedPreferences? _prefs;
   CacheRetention _retention = CacheRetention.oneWeek;
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
+  String _backupRemotePath = defaultBackupRemotePath;
+  String _playlistRemotePath = defaultPlaylistRemotePath;
+  bool _playlistSyncEnabled = true;
   bool _loaded = false;
 
   CacheRetention get retention => _retention;
@@ -30,6 +40,9 @@ class SettingsService extends ChangeNotifier {
       Duration(hours: _customRetentionHours);
   int get customRetentionHours => _customRetentionHours;
   LibrarySortMode get librarySort => _librarySort;
+  String get backupRemotePath => _backupRemotePath;
+  String get playlistRemotePath => _playlistRemotePath;
+  bool get playlistSyncEnabled => _playlistSyncEnabled;
   bool get loaded => _loaded;
 
   Future<void> init() async {
@@ -41,6 +54,11 @@ class SettingsService extends ChangeNotifier {
     );
     _librarySort =
         LibrarySortModeX.fromStorageKey(_prefs!.getString(_kLibrarySort));
+    _backupRemotePath =
+        _prefs!.getString(_kBackupRemotePath) ?? defaultBackupRemotePath;
+    _playlistRemotePath =
+        _prefs!.getString(_kPlaylistRemotePath) ?? defaultPlaylistRemotePath;
+    _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
     _loaded = true;
     notifyListeners();
   }
@@ -69,6 +87,74 @@ class SettingsService extends ChangeNotifier {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_kLibrarySort, mode.storageKey);
     notifyListeners();
+  }
+
+  Future<void> setBackupRemotePath(String path) async {
+    var p = path.trim();
+    if (p.isEmpty) p = defaultBackupRemotePath;
+    if (!p.startsWith('/')) p = '/$p';
+    if (!p.endsWith('/')) p = '$p/';
+    _backupRemotePath = p;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kBackupRemotePath, _backupRemotePath);
+    notifyListeners();
+  }
+
+  Future<void> setPlaylistRemotePath(String path) async {
+    var p = path.trim();
+    if (p.isEmpty) p = defaultPlaylistRemotePath;
+    if (!p.startsWith('/')) p = '/$p';
+    if (!p.endsWith('/')) p = '$p/';
+    _playlistRemotePath = p;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kPlaylistRemotePath, _playlistRemotePath);
+    notifyListeners();
+  }
+
+  Future<void> setPlaylistSyncEnabled(bool enabled) async {
+    _playlistSyncEnabled = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kPlaylistSyncEnabled, enabled);
+    notifyListeners();
+  }
+
+  Map<String, dynamic> exportForBackup() => {
+        'cache_retention': _retention.storageKey,
+        'cache_custom_retention_hours': _customRetentionHours,
+        'library_sort_mode': _librarySort.storageKey,
+        'backup_remote_path': _backupRemotePath,
+        'playlist_remote_path': _playlistRemotePath,
+        'playlist_sync_enabled': _playlistSyncEnabled,
+      };
+
+  Future<Map<String, dynamic>> exportForBackupAsync() async => exportForBackup();
+
+  Future<void> importFromBackup(Map<String, dynamic> json) async {
+    _prefs ??= await SharedPreferences.getInstance();
+    if (json['cache_retention'] != null) {
+      await setRetention(
+        CacheRetentionX.fromStorageKey(json['cache_retention'] as String?),
+      );
+    }
+    if (json['cache_custom_retention_hours'] is int) {
+      await setCustomRetentionDuration(
+        Duration(hours: json['cache_custom_retention_hours'] as int),
+      );
+    }
+    if (json['library_sort_mode'] != null) {
+      await setLibrarySort(
+        LibrarySortModeX.fromStorageKey(json['library_sort_mode'] as String?),
+      );
+    }
+    if (json['backup_remote_path'] is String) {
+      await setBackupRemotePath(json['backup_remote_path'] as String);
+    }
+    if (json['playlist_remote_path'] is String) {
+      await setPlaylistRemotePath(json['playlist_remote_path'] as String);
+    }
+    if (json['playlist_sync_enabled'] is bool) {
+      await setPlaylistSyncEnabled(json['playlist_sync_enabled'] as bool);
+    }
   }
 
   static int _clampCustomHours(int hours) {

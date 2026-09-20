@@ -134,6 +134,22 @@ class WebDavService extends ChangeNotifier {
     return Uint8List.fromList(data);
   }
 
+
+  /// Upload bytes to remote path (creates/overwrites file).
+  Future<void> writeBytes(String remotePath, Uint8List data) async {
+    final client = _requireClient();
+    await client.write(remotePath, data);
+  }
+
+  /// Ensure directory exists (mkdirAll).
+  Future<void> ensureDirectory(String path) async {
+    final client = _requireClient();
+    var normalized = path.trim();
+    if (normalized.isEmpty) return;
+    if (!normalized.endsWith('/')) normalized = '$normalized/';
+    await client.mkdirAll(normalized);
+  }
+
   Future<void> createFolder(String path) async {
     final client = _requireClient();
     await client.mkdir(path);

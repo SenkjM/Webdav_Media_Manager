@@ -7,12 +7,14 @@ import '../models/download_task.dart';
 import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/backup_service.dart';
 import '../services/cache_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
 import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
+import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 
@@ -27,6 +29,14 @@ class AppState extends ChangeNotifier {
     libraryDb = db;
     library = LibraryService(db: db);
     accounts = AccountsService(db: db);
+    playlists = PlaylistService(webDav: webDav);
+    backup = BackupService(
+      libraryDb: db,
+      accounts: accounts,
+      settings: settings,
+      playlists: playlists,
+      webDav: webDav,
+    );
     downloads = DownloadQueueService(
       webDav: webDav,
       cache: cache,
@@ -45,6 +55,8 @@ class AppState extends ChangeNotifier {
   late final LibraryDatabase libraryDb;
   late final LibraryService library;
   late final AccountsService accounts;
+  late final PlaylistService playlists;
+  late final BackupService backup;
   late final DownloadQueueService downloads;
   late final NotificationPermissionService notificationPermission;
   late final AudioPlayerService player;
@@ -58,11 +70,18 @@ class AppState extends ChangeNotifier {
       await cache.init();
       await library.init();
       await accounts.init();
+      playlists.configureSync(
+        remotePath: settings.playlistRemotePath,
+        enabled: settings.playlistSyncEnabled,
+      );
+      await playlists.init();
       downloads.attachLibrary(library);
       await downloads.init();
       await notificationPermission.refresh();
       await connectActiveAccount();
       unawaited(runCacheCleanup());
+      // Pull remote playlists after connect (best-effort).
+      unawaited(playlists.pullAndMergeFromWebDav());
       ready = true;
     } catch (e) {
       initError = e.toString();
@@ -84,11 +103,16 @@ class AppState extends ChangeNotifier {
       username: account.username,
       password: pass,
     );
+    playlists.configureSync(
+      remotePath: settings.playlistRemotePath,
+      enabled: settings.playlistSyncEnabled,
+    );
   }
 
   Future<void> switchAccount(String accountId) async {
     await accounts.setActiveAccount(accountId);
     await connectActiveAccount();
+    unawaited(playlists.pullAndMergeFromWebDav());
     notifyListeners();
   }
 
@@ -147,6 +171,8 @@ class AppState extends ChangeNotifier {
     webDav.dispose();
     library.dispose();
     accounts.dispose();
+    playlists.dispose();
+    backup.dispose();
     settings.dispose();
     notificationPermission.dispose();
     super.dispose();

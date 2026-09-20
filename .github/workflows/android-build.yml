@@ -116,11 +116,34 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Compute pre-release version
+        id: ver
+        run: |
+          set -euo pipefail
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          # pubspec version base before +build, e.g. 1.0.0+1 → 1.0.0
+          BASE=$(grep -E '^version:' pubspec.yaml | head -1 | sed -E 's/^version:[[:space:]]*//; s/\+.*//; s/[[:space:]]*$//')
+          if [ -z "$BASE" ]; then BASE="1.0.0"; fi
+          # versionName: semver-friendly with short hash (Android versionName is free-form)
+          VERSION_NAME="${BASE}-${SHORT_SHA}"
+          # Monotonic versionCode: 1000 + run_number always increases across workflow runs
+          VERSION_CODE=$((1000 + ${{ github.run_number }}))
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "VERSION_NAME=$VERSION_NAME VERSION_CODE=$VERSION_CODE"
+
       - name: Build release APK
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.ver.outputs.version_name }}" \
+            --build-number="${{ steps.ver.outputs.version_code }}"
 
       - name: Build app bundle (optional)
-        run: flutter build appbundle --release
+        run: |
+          flutter build appbundle --release \
+            --build-name="${{ steps.ver.outputs.version_name }}" \
+            --build-number="${{ steps.ver.outputs.version_code }}"
         continue-on-error: true
 
       - name: Upload APK artifact
@@ -147,17 +170,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: prerelease
-          name: Pre-release (beta) ${{ github.sha }}
+          name: Pre-release ${{ steps.ver.outputs.version_name }} (${{ steps.ver.outputs.version_code }})
           prerelease: true
           generate_release_notes: true
           target_commitish: beta
           body: |
             自动构建的 Pre-release（来自 **beta** 分支，AGPL-3.0）。
 
+            - 版本：`${{ steps.ver.outputs.version_name }}`（versionCode `${{ steps.ver.outputs.version_code }}`）
+            - 短提交：`${{ steps.ver.outputs.short_sha }}`
             - 触发：`${{ github.event_name }}`（${{ steps.gate.outputs.reason }}）
             - Commit：`${{ github.sha }}`
             - 分支：`beta`
 
+            versionCode 使用 `1000 + github.run_number` 单调递增，可直接覆盖安装旧预发布 APK，无需先卸载。
             APK 为 CI 默认签名，仅供内测安装。
           files: |
             build/app/outputs/flutter-apk/app-release.apk

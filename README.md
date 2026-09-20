@@ -25,10 +25,12 @@
 - **本地播放**：仅用本地文件路径播放（`just_audio` + `audio_service` 媒体通知 / 系统媒体控制）
 - **缓存清理**：可按 1 天或 1 周自动清理**音频缓存文件**；正在播放或下载中的文件受保护
 - **WebDAV 管理**：长按可重命名 / 删除；可新建文件夹；权限不足（401/403）时弹出错误对话框
+- **歌单**：本地独立数据库（`playlists.db`）创建 / 编辑 / 删除歌单，按 `(accountId + remotePath)` 添加曲目；音频缓存清理**不会**删除歌单。可选同步到 WebDAV（默认 `/Playlists/`）为 **M3U8**（含 `#EXT-X-WMP-*` 扩展）；本地修改后上传，启动/切换账号时拉取，按 `updatedAt` **最后写入胜出**合并
+- **WebDAV 备份 / 恢复**：设置中可将应用数据备份到所选账号路径（默认 `/WebDAVMusicPlayer/backup/`）。备份含音乐库 DB、封面缩略图、歌单、设置、**全部 WebDAV 账号用户名与密码**；建议使用口令 AES-256-GCM 加密（`WMPB1`）。未加密时档案内含明文密码，请妥善保管。不含音频缓存与下载队列
 
 ### 导航
 
-侧边栏（Drawer）：音乐库、网络库、下载队列、设置、关于 / AGPL。
+侧边栏（Drawer）：音乐库、歌单、网络库、下载队列、设置、关于 / AGPL。
 
 ## 技术要点
 
@@ -78,6 +80,43 @@
 
 日常：在 `dev` 试新鲜玩意 → 成熟后合入 `beta` 打 Pre-release → 再合入 `main`。
 
+
+## 预发布版本号（可覆盖安装）
+
+CI 在 `flutter build apk` 前计算：
+
+| 变量 | 规则 |
+|------|------|
+| `SHORT_SHA` | `github.sha` 前 7 位 |
+| `VERSION_NAME` | `pubspec` 版本基（如 `1.0.0`）+ `-` + `SHORT_SHA`，例如 `1.0.0-abc1234` |
+| `VERSION_CODE` | `1000 + github.run_number`（单调递增） |
+
+构建命令：
+
+```bash
+flutter build apk --release \
+  --build-name="$VERSION_NAME" \
+  --build-number="$VERSION_CODE"
+```
+
+Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发布无需先卸载。Pre-release 名称 / 正文会写入同一版本字符串；应用「关于」页显示 `version+buildNumber`。
+
+## 歌单（M3U8）
+
+- **本地**：`playlists.db`（应用文档目录），与 `music_cache` 分离
+- **远程**：可配置目录，默认 `/Playlists/<name>_<id前8位>.m3u8`
+- **格式**：扩展 M3U8，路径行为 `wmp://<accountId>/<remotePath>`；头字段 `#EXT-X-WMP-ID` / `#EXT-X-WMP-UPDATED` / `#EXT-X-WMP-NAME`
+- **同步策略**：最后写入胜出（比较 `updatedAt`）；相等时保留本地
+- **UI**：抽屉「歌单」；音乐库曲目长按「添加到歌单」
+
+## WebDAV 备份
+
+- **路径**：设置中可改，默认 `/WebDAVMusicPlayer/backup/webdav_music_backup.wmpbak`
+- **包含**：`music_library.db`、`covers/` 缩略图、`playlists.db` / JSON、设置 JSON、`accounts.json`（**含密码**）
+- **不含**：`music_cache/` 音频、下载队列
+- **加密**：推荐设置口令；格式魔数 `WMPB1` + PBKDF2 + AES-256-GCM。无口令则为明文 ZIP（内含密钥，有风险）
+- **恢复**：确认后下载并覆盖本地库 / 账号（写回 `flutter_secure_storage`）/ 歌单 / 设置
+
 ## CI：自动构建并发布 Pre-release
 
 工作流：`.github/workflows/android-build.yml`
@@ -101,3 +140,4 @@
 
 - **私有仓库**需在 Settings → Actions 启用工作流；发布 Pre-release 使用默认 `GITHUB_TOKEN`（`contents: write`）。
 - CI APK 为默认签名，仅适合内测；正式分发请自行配置 keystore（不要把密钥提交进仓库）。
+- 每次构建写入递增 `versionCode`（`1000+run_number`）与带短 hash 的 `versionName`，Pre-release 正文同步显示，便于覆盖安装。

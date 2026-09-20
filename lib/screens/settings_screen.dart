@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 
 import '../models/cache_policy.dart';
 import '../providers/app_state.dart';
+import '../services/backup_service.dart';
 import '../services/library_service.dart';
 import '../services/notification_permission_service.dart';
+import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
 import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
@@ -119,6 +121,103 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+
+
+  Future<String?> _askPassphrase(
+    BuildContext context, {
+    required String title,
+    required String confirmLabel,
+    bool requireNonEmpty = false,
+  }) async {
+    final c = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: c,
+          obscureText: true,
+          decoration: const InputDecoration(
+            labelText: '加密口令（可留空则不加密，含明文密码）',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () {
+              final v = c.text;
+              if (requireNonEmpty && v.isEmpty) return;
+              Navigator.pop(ctx, v);
+            },
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _runBackup(BuildContext context) async {
+    final pass = await _askPassphrase(
+      context,
+      title: '备份加密口令',
+      confirmLabel: '开始备份',
+    );
+    if (pass == null || !context.mounted) return;
+    final backup = context.read<BackupService>();
+    try {
+      await backup.uploadBackup(passphrase: pass);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(backup.lastMessage ?? '备份完成')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('备份失败：$e')),
+      );
+    }
+  }
+
+  Future<void> _runRestore(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认恢复'),
+        content: const Text(
+          '将从 WebDAV 下载备份并覆盖本机音乐库、歌单、设置与 WebDAV 账号（含密码）。'
+          '此操作不可撤销。确定继续？',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('恢复')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final pass = await _askPassphrase(
+      context,
+      title: '备份解密口令',
+      confirmLabel: '开始恢复',
+    );
+    if (pass == null || !context.mounted) return;
+    final backup = context.read<BackupService>();
+    final app = context.read<AppState>();
+    try {
+      await backup.restoreFromWebDav(passphrase: pass);
+      await app.library.refresh();
+      await app.playlists.refresh();
+      await app.connectActiveAccount();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(backup.lastMessage ?? '恢复完成')),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('恢复失败：$e')),
+      );
+    }
+  }
 
   String _customRetentionSummary(SettingsService settings) {
     final total = settings.customRetentionHours;
@@ -308,6 +407,134 @@ class _SettingsScreenState extends State<SettingsScreen>
             icon: const Icon(Icons.delete_outline),
             label: const Text('手动清空音频缓存'),
           ),
+
+          const Divider(height: 40),
+          Text('歌单同步', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          const SizedBox(height: 4),
+          Text(
+            '本地歌单保存在独立数据库 playlists.db，音频缓存清理不会删除。'
+            '开启同步后，修改会上传为所选 WebDAV 账号下的 M3U8；启动/切换账号时拉取并按 updatedAt 最后写入胜出合并。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('同步歌单到 WebDAV'),
+            value: settings.playlistSyncEnabled,
+            onChanged: (v) async {
+              await settings.setPlaylistSyncEnabled(v);
+              context.read<PlaylistService>().configureSync(
+                    remotePath: settings.playlistRemotePath,
+                    enabled: v,
+                  );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('歌单远程目录'),
+            subtitle: Text(settings.playlistRemotePath),
+            trailing: const Icon(Icons.edit_outlined),
+            onTap: () async {
+              final c = TextEditingController(text: settings.playlistRemotePath);
+              final path = await showDialog<String>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('歌单 WebDAV 路径'),
+                  content: TextField(
+                    controller: c,
+                    decoration: const InputDecoration(
+                      hintText: '/Playlists/',
+                    ),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, c.text),
+                      child: const Text('保存'),
+                    ),
+                  ],
+                ),
+              );
+              if (path != null && context.mounted) {
+                await settings.setPlaylistRemotePath(path);
+                context.read<PlaylistService>().configureSync(
+                      remotePath: settings.playlistRemotePath,
+                      enabled: settings.playlistSyncEnabled,
+                    );
+              }
+            },
+          ),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('清空本地歌单'),
+                  content: const Text('仅清除本机歌单数据库，不会删除 WebDAV 上的 M3U8。确定？'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('清空')),
+                  ],
+                ),
+              );
+              if (ok == true && context.mounted) {
+                await context.read<PlaylistService>().clearAllLocal();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已清空本地歌单')),
+                );
+              }
+            },
+            icon: const Icon(Icons.playlist_remove),
+            label: const Text('清空本地歌单'),
+          ),
+          const Divider(height: 40),
+          Text('WebDAV 备份', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          const SizedBox(height: 4),
+          Text(
+            '备份包含：音乐库数据库与封面缩略图、歌单、设置、以及全部 WebDAV 账号（含用户名与密码）。'
+            '不含音频缓存与下载队列。\n'
+            '强烈建议设置加密口令（AES-256-GCM）；未加密时档案内含明文密码，请妥善保管。\n'
+            '默认路径：${settings.backupRemotePath}webdav_music_backup.wmpbak',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('备份远程目录'),
+            subtitle: Text(settings.backupRemotePath),
+            trailing: const Icon(Icons.edit_outlined),
+            onTap: () async {
+              final c = TextEditingController(text: settings.backupRemotePath);
+              final path = await showDialog<String>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('备份 WebDAV 路径'),
+                  content: TextField(controller: c),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, c.text),
+                      child: const Text('保存'),
+                    ),
+                  ],
+                ),
+              );
+              if (path != null && context.mounted) {
+                await settings.setBackupRemotePath(path);
+              }
+            },
+          ),
+          const SizedBox(height: 8),
+          FilledButton.tonalIcon(
+            onPressed: () => _runBackup(context),
+            icon: const Icon(Icons.cloud_upload_outlined),
+            label: const Text('备份到 WebDAV'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _runRestore(context),
+            icon: const Icon(Icons.cloud_download_outlined),
+            label: const Text('从 WebDAV 恢复…'),
+          ),
+
           const Divider(height: 40),
           Text(
             '说明：本应用永不从 WebDAV 流式播放。点按曲目会先下载到本地，'

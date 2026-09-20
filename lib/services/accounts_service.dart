@@ -166,4 +166,53 @@ class AccountsService extends ChangeNotifier {
     await _prefs!.setString(_kActiveAccount, id);
     notifyListeners();
   }
+
+  /// Restore accounts + passwords from backup JSON.
+  /// Expects `{ activeAccountId, accounts: [{id,name,url,username,password}, ...] }`.
+  Future<void> restoreFromBackup(Map<String, dynamic> json) async {
+    final list = json['accounts'] as List<dynamic>? ?? [];
+    _prefs ??= await SharedPreferences.getInstance();
+    // Clear existing passwords for current accounts.
+    for (final a in List<WebDavAccount>.from(_accounts)) {
+      await _secure.delete(key: '$_kPassPrefix${a.id}');
+    }
+    // Replace accounts table by upserting backup set and deleting missing.
+    final existing = await _db.loadAccounts();
+    final keepIds = <String>{};
+    for (final raw in list) {
+      final m = Map<String, dynamic>.from(raw as Map);
+      final account = WebDavAccount(
+        id: m['id'] as String,
+        name: m['name'] as String? ?? m['url'] as String? ?? '服务器',
+        url: (m['url'] as String? ?? '').trim().replaceAll(RegExp(r'/+$'), ''),
+        username: m['username'] as String? ?? '',
+      );
+      keepIds.add(account.id);
+      await _db.upsertAccount(account);
+      final pass = m['password'] as String? ?? '';
+      await _secure.write(key: '$_kPassPrefix${account.id}', value: pass);
+    }
+    for (final a in existing) {
+      if (!keepIds.contains(a.id)) {
+        await _db.deleteAccount(a.id);
+        await _secure.delete(key: '$_kPassPrefix${a.id}');
+      }
+    }
+    _accounts
+      ..clear()
+      ..addAll(await _db.loadAccounts());
+    final active = json['activeAccountId'] as String?;
+    if (active != null && _accounts.any((a) => a.id == active)) {
+      _activeAccountId = active;
+    } else {
+      _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
+    }
+    if (_activeAccountId == null) {
+      await _prefs!.remove(_kActiveAccount);
+    } else {
+      await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+    }
+    notifyListeners();
+  }
+
 }

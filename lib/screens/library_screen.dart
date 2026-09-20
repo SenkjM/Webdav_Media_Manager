@@ -13,7 +13,9 @@ import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
+import '../models/playlist.dart';
 import 'home_shell.dart';
+import 'playlists_screen.dart';
 
 class LibraryScreen extends StatelessWidget {
   const LibraryScreen({super.key});
@@ -391,6 +393,15 @@ class _TrackTile extends StatelessWidget {
         style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
       ),
       onTap: () => _play(context),
+      onLongPress: () => showAddToPlaylistDialog(
+        context,
+        PlaylistEntry(
+          accountId: track.accountId,
+          remotePath: track.remotePath,
+          title: track.displayTitle,
+          durationMs: track.durationMs,
+        ),
+      ),
     );
   }
 

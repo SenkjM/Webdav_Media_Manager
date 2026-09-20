@@ -1,9 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../theme/app_theme.dart';
 
-class AboutScreen extends StatelessWidget {
+class AboutScreen extends StatefulWidget {
   const AboutScreen({super.key});
+
+  @override
+  State<AboutScreen> createState() => _AboutScreenState();
+}
+
+class _AboutScreenState extends State<AboutScreen> {
+  String _versionLabel = '…';
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (!mounted) return;
+      setState(() {
+        _versionLabel = '${info.version}+${info.buildNumber}';
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,6 +37,19 @@ class AboutScreen extends StatelessWidget {
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),
+          Text(
+            '版本 $_versionLabel',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: AppColors.accent,
+                ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'CI 预发布会写入 versionName（含短 git hash）与递增 versionCode，'
+            '便于在不卸载的情况下覆盖安装。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 16),
           const Text(
             '基于 Flutter 的 Android WebDAV 音乐客户端。'
             '浏览网盘目录，下载到本地缓存后再播放；不做网络流式播放。',

@@ -6,6 +6,7 @@ import 'about_screen.dart';
 import 'downloads_screen.dart';
 import 'library_screen.dart';
 import 'network_library_screen.dart';
+import 'playlists_screen.dart';
 import 'settings_screen.dart';
 
 /// Provides [openDrawer] to nested page AppBars.
@@ -43,6 +44,7 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final pages = [
       const LibraryScreen(),
+      const PlaylistsScreen(),
       const NetworkLibraryScreen(),
       const DownloadsScreen(),
       const SettingsScreen(),
@@ -96,22 +98,28 @@ class _HomeShellState extends State<HomeShell> {
                   onTap: () => _select(0),
                 ),
                 _DrawerItem(
-                  icon: Icons.cloud_outlined,
-                  label: '网络库',
+                  icon: Icons.queue_music,
+                  label: '歌单',
                   selected: _index == 1,
                   onTap: () => _select(1),
                 ),
                 _DrawerItem(
-                  icon: Icons.download_outlined,
-                  label: '下载队列',
+                  icon: Icons.cloud_outlined,
+                  label: '网络库',
                   selected: _index == 2,
                   onTap: () => _select(2),
                 ),
                 _DrawerItem(
-                  icon: Icons.settings_outlined,
-                  label: '设置',
+                  icon: Icons.download_outlined,
+                  label: '下载队列',
                   selected: _index == 3,
                   onTap: () => _select(3),
+                ),
+                _DrawerItem(
+                  icon: Icons.settings_outlined,
+                  label: '设置',
+                  selected: _index == 4,
+                  onTap: () => _select(4),
                 ),
                 const Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
