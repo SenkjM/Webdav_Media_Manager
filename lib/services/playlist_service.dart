@@ -231,6 +231,30 @@ class PlaylistService extends ChangeNotifier {
     return p;
   }
 
+
+  /// Playlists that reference [accountId] (any entry). Entries keep their accountId labels.
+  List<Map<String, dynamic>> exportJsonForAccount(String accountId) {
+    return _playlists
+        .where((p) => p.entries.any((e) => e.accountId == accountId))
+        .map((p) => p.toJson())
+        .toList();
+  }
+
+  /// Merge playlists from backup/sync JSON without wiping unrelated local lists.
+  Future<void> mergeFromJson(List<dynamic> list) async {
+    for (final raw in list) {
+      final incoming = Playlist.fromJson(Map<String, dynamic>.from(raw as Map));
+      final local = findById(incoming.id);
+      if (local == null) {
+        await _store.upsert(incoming);
+      } else {
+        final winner = mergePlaylistsLastWriteWins(local, incoming);
+        await _store.upsert(winner);
+      }
+    }
+    await refresh();
+  }
+
   /// Export all playlists as JSON (for backup).
   List<Map<String, dynamic>> exportJson() =>
       _playlists.map((p) => p.toJson()).toList();

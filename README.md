@@ -26,7 +26,8 @@
 - **缓存清理**：可按 1 天或 1 周自动清理**音频缓存文件**；正在播放或下载中的文件受保护
 - **WebDAV 管理**：长按可重命名 / 删除；可新建文件夹；权限不足（401/403）时弹出错误对话框
 - **歌单**：本地独立数据库（`playlists.db`）创建 / 编辑 / 删除歌单，按 `(accountId + remotePath)` 添加曲目；音频缓存清理**不会**删除歌单。可选同步到 WebDAV（默认 `/Playlists/`）为 **M3U8**（含 `#EXT-X-WMP-*` 扩展）；本地修改后上传，启动/切换账号时拉取，按 `updatedAt` **最后写入胜出**合并
-- **WebDAV 备份 / 恢复**：设置中可将应用数据备份到所选账号路径（默认 `/WebDAVMusicPlayer/backup/`）。备份含音乐库 DB、封面缩略图、歌单、设置、**全部 WebDAV 账号用户名与密码**；建议使用口令 AES-256-GCM 加密（`WMPB1`）。未加密时档案内含明文密码，请妥善保管。不含音频缓存与下载队列
+- **按站点 WebDAV 备份 / 恢复**：默认按 WebDAV 账号（`accountId` + 站点 URL）分别备份到 `/WebDAVMusicPlayer/backup/<accountDir>/backup-….wmpbak`（并写 latest）。含该站凭证、该站曲库、相关歌单与封面；恢复写回对应账号，不会把站点 A 凭证合并进站点 B。可选「全部账号」备份。建议口令 AES-256-GCM（`WMPB1`）。不含音频缓存与下载队列
+- **歌曲库同步**：设置中「同步歌曲库」对所选站点双向同步歌曲索引 JSON、封面缩略图与歌单（不同步音频文件）；身份键仍为 `accountId + remotePath`
 
 ### 导航
 
@@ -109,13 +110,23 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
 - **同步策略**：最后写入胜出（比较 `updatedAt`）；相等时保留本地
 - **UI**：抽屉「歌单」；音乐库曲目长按「添加到歌单」
 
-## WebDAV 备份
+## WebDAV 备份（按站点）
 
-- **路径**：设置中可改，默认 `/WebDAVMusicPlayer/backup/webdav_music_backup.wmpbak`
-- **包含**：`music_library.db`、`covers/` 缩略图、`playlists.db` / JSON、设置 JSON、`accounts.json`（**含密码**）
+- **默认范围**：单个 WebDAV 账号/站点（`accountId` + base URL）
+- **路径**：`/WebDAVMusicPlayer/backup/<accountId前缀_站点名>/backup-<UTC时间戳>.wmpbak`，同目录另写 `webdav_music_backup.wmpbak`（latest）。根路径可在设置中改
+- **包含（按站点）**：该站 `accounts.json`（含密码）、`tracks.json`（仅该 `accountId`）、相关 `playlists.json`（条目带 accountId）、`covers/`、`settings.json`
+- **可选**：全部账号备份（`full-backup-….wmpbak`）仍可用，但非默认
 - **不含**：`music_cache/` 音频、下载队列
-- **加密**：推荐设置口令；格式魔数 `WMPB1` + PBKDF2 + AES-256-GCM。无口令则为明文 ZIP（内含密钥，有风险）
-- **恢复**：确认后下载并覆盖本地库 / 账号（写回 `flutter_secure_storage`）/ 歌单 / 设置
+- **加密**：推荐口令；魔数 `WMPB1` + PBKDF2 + AES-256-GCM
+- **恢复**：按站点写回匹配账号（或重建该挂载）；校验 accountId/URL，避免把站点 A 凭证写入站点 B
+
+## 歌曲库同步
+
+- **入口**：设置 →「同步歌曲库」
+- **内容**：所选站点的 `library_index.json`（曲目元数据）+ `covers/` 缩略图 + 歌单 M3U8（复用现有歌单同步）
+- **策略**：按 `lastTagReadAt` 最后写入胜出合并；不同步音频缓存文件
+- **路径**：默认 `/WebDAVMusicPlayer/library/<accountId>/`
+- **身份**：始终 `accountId + remotePath`
 
 ## CI：自动构建并发布 Pre-release
 

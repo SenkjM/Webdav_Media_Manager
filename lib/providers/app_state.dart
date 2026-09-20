@@ -8,6 +8,7 @@ import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/backup_service.dart';
+import '../services/library_sync_service.dart';
 import '../services/cache_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/library_database.dart';
@@ -32,6 +33,14 @@ class AppState extends ChangeNotifier {
     playlists = PlaylistService(webDav: webDav);
     backup = BackupService(
       libraryDb: db,
+      library: library,
+      accounts: accounts,
+      settings: settings,
+      playlists: playlists,
+      webDav: webDav,
+    );
+    librarySync = LibrarySyncService(
+      library: library,
       accounts: accounts,
       settings: settings,
       playlists: playlists,
@@ -57,6 +66,7 @@ class AppState extends ChangeNotifier {
   late final AccountsService accounts;
   late final PlaylistService playlists;
   late final BackupService backup;
+  late final LibrarySyncService librarySync;
   late final DownloadQueueService downloads;
   late final NotificationPermissionService notificationPermission;
   late final AudioPlayerService player;
@@ -173,6 +183,7 @@ class AppState extends ChangeNotifier {
     accounts.dispose();
     playlists.dispose();
     backup.dispose();
+    librarySync.dispose();
     settings.dispose();
     notificationPermission.dispose();
     super.dispose();

@@ -13,6 +13,7 @@ class SettingsService extends ChangeNotifier {
   static const _kCustomRetentionHours = 'cache_custom_retention_hours';
   static const _kLibrarySort = 'library_sort_mode';
   static const _kBackupRemotePath = 'backup_remote_path';
+  static const _kLibrarySyncRemotePath = 'library_sync_remote_path';
   static const _kPlaylistRemotePath = 'playlist_remote_path';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
 
@@ -24,6 +25,7 @@ class SettingsService extends ChangeNotifier {
   static const int maxCustomRetentionHours = 24 * 365 * 10;
 
   static const String defaultBackupRemotePath = '/WebDAVMusicPlayer/backup/';
+  static const String defaultLibrarySyncRemotePath = '/WebDAVMusicPlayer/library/';
   static const String defaultPlaylistRemotePath = '/Playlists/';
 
   SharedPreferences? _prefs;
@@ -31,6 +33,7 @@ class SettingsService extends ChangeNotifier {
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
   String _backupRemotePath = defaultBackupRemotePath;
+  String _librarySyncRemotePath = defaultLibrarySyncRemotePath;
   String _playlistRemotePath = defaultPlaylistRemotePath;
   bool _playlistSyncEnabled = true;
   bool _loaded = false;
@@ -41,6 +44,7 @@ class SettingsService extends ChangeNotifier {
   int get customRetentionHours => _customRetentionHours;
   LibrarySortMode get librarySort => _librarySort;
   String get backupRemotePath => _backupRemotePath;
+  String get librarySyncRemotePath => _librarySyncRemotePath;
   String get playlistRemotePath => _playlistRemotePath;
   bool get playlistSyncEnabled => _playlistSyncEnabled;
   bool get loaded => _loaded;
@@ -56,6 +60,8 @@ class SettingsService extends ChangeNotifier {
         LibrarySortModeX.fromStorageKey(_prefs!.getString(_kLibrarySort));
     _backupRemotePath =
         _prefs!.getString(_kBackupRemotePath) ?? defaultBackupRemotePath;
+    _librarySyncRemotePath =
+        _prefs!.getString(_kLibrarySyncRemotePath) ?? defaultLibrarySyncRemotePath;
     _playlistRemotePath =
         _prefs!.getString(_kPlaylistRemotePath) ?? defaultPlaylistRemotePath;
     _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
@@ -97,6 +103,18 @@ class SettingsService extends ChangeNotifier {
     _backupRemotePath = p;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_kBackupRemotePath, _backupRemotePath);
+    notifyListeners();
+  }
+
+  
+  Future<void> setLibrarySyncRemotePath(String path) async {
+    var p = path.trim();
+    if (p.isEmpty) p = defaultLibrarySyncRemotePath;
+    if (!p.startsWith('/')) p = '/$p';
+    if (!p.endsWith('/')) p = '$p/';
+    _librarySyncRemotePath = p;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kLibrarySyncRemotePath, _librarySyncRemotePath);
     notifyListeners();
   }
 

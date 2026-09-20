@@ -167,6 +167,46 @@ class AccountsService extends ChangeNotifier {
     notifyListeners();
   }
 
+
+  /// Restore **one** account from a per-site backup without touching other mounts.
+  /// Never copies credentials onto a different account id.
+  /// Recreates the mount if [account.id] is missing locally.
+  Future<void> mergeAccountFromBackup(Map<String, dynamic> accountJson) async {
+    final id = accountJson['id'] as String?;
+    if (id == null || id.isEmpty) {
+      throw StateError('备份账号缺少 id，无法安全恢复');
+    }
+    final url = (accountJson['url'] as String? ?? '')
+        .trim()
+        .replaceAll(RegExp(r'/+$'), '');
+    final name = accountJson['name'] as String? ??
+        accountJson['url'] as String? ??
+        '服务器';
+    final username = accountJson['username'] as String? ?? '';
+    final pass = accountJson['password'] as String? ?? '';
+
+    final account = WebDavAccount(
+      id: id,
+      name: name,
+      url: url,
+      username: username,
+    );
+    await _db.upsertAccount(account);
+    await _secure.write(key: '$_kPassPrefix$id', value: pass);
+
+    final idx = _accounts.indexWhere((a) => a.id == id);
+    if (idx >= 0) {
+      _accounts[idx] = account;
+    } else {
+      _accounts.add(account);
+    }
+    // Prefer restored account as active when it was the backup target.
+    _prefs ??= await SharedPreferences.getInstance();
+    _activeAccountId = id;
+    await _prefs!.setString(_kActiveAccount, id);
+    notifyListeners();
+  }
+
   /// Restore accounts + passwords from backup JSON.
   /// Expects `{ activeAccountId, accounts: [{id,name,url,username,password}, ...] }`.
   Future<void> restoreFromBackup(Map<String, dynamic> json) async {

@@ -155,6 +155,17 @@ CREATE TABLE tracks (
     return rows.map(LibraryTrack.fromMap).toList();
   }
 
+  Future<List<LibraryTrack>> tracksForAccount(String accountId) async {
+    final db = await database;
+    final rows = await db.query(
+      'tracks',
+      where: 'account_id = ?',
+      whereArgs: [accountId],
+      orderBy: 'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
+    );
+    return rows.map(LibraryTrack.fromMap).toList();
+  }
+
   Future<List<LibraryTrack>> tracksByArtist(String artist) async {
     final db = await database;
     final rows = await db.query(

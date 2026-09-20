@@ -50,6 +50,40 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
+
+  List<LibraryTrack> tracksForAccount(String accountId) =>
+      _tracks.where((t) => t.accountId == accountId).toList();
+
+  /// Upsert tracks from a sync/backup payload; only touches listed rows.
+  Future<void> upsertTracks(Iterable<LibraryTrack> tracks) async {
+    for (final track in tracks) {
+      await _db.upsertTrack(track);
+      final idx = _tracks.indexWhere(
+        (t) => t.accountId == track.accountId && t.remotePath == track.remotePath,
+      );
+      if (idx >= 0) {
+        _tracks[idx] = track;
+      } else {
+        _tracks.add(track);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Replace all local tracks for [accountId] with [tracks] (other accounts untouched).
+  Future<void> replaceTracksForAccount(
+    String accountId,
+    List<LibraryTrack> tracks,
+  ) async {
+    await _db.deleteTracksForAccount(accountId);
+    _tracks.removeWhere((t) => t.accountId == accountId);
+    for (final track in tracks) {
+      await _db.upsertTrack(track);
+      _tracks.add(track);
+    }
+    notifyListeners();
+  }
+
   LibraryTrack? find(String accountId, String remotePath) {
     try {
       return _tracks.firstWhere(
