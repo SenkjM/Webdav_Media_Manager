@@ -4,7 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.media.session.MediaSessionManager
 import android.os.Build
-import com.ryanheise.audioservice.AudioServiceActivity
+import com.ryanheise.audioservice.AudioServiceFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
@@ -16,8 +16,20 @@ import io.flutter.plugin.common.MethodChannel
  * Do not reference [com.ryanheise.audioservice.AudioService] here: that pulls
  * MediaBrowserServiceCompat into the app compile classpath and breaks release
  * Kotlin builds unless androidx.media is forced onto :app.
+ *
+ * Must extend [AudioServiceFragmentActivity] (not the plain [AudioServiceActivity]):
+ * the plain variant only overrides `provideFlutterEngine()` and leaves
+ * `getCachedEngineId()` / `shouldDestroyEngineWithHost()` at their Flutter
+ * defaults, so `shouldDestroyEngineWithHost()` resolves to true. Every time
+ * this Activity is destroyed (OS reclaiming the backgrounded task, swiping
+ * it from Recents, etc.) Flutter then destroys the *shared* FlutterEngine
+ * that also hosts MusicAudioHandler — killing the MediaSession and the
+ * notification and resetting all in-app playback state. The Fragment
+ * variant overrides all three lifecycle hooks so the shared engine survives
+ * Activity destruction; only the audio_service FGS/handler controls its
+ * lifecycle (see `onTaskRemoved` in MusicAudioHandler).
  */
-class MainActivity : AudioServiceActivity() {
+class MainActivity : AudioServiceFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(

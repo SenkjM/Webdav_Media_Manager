@@ -90,7 +90,7 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 | Models | `lib/models/` | `LibraryTrack`、账号、下载任务、WebDAV 条目等 |
 | Utils | `lib/utils/` | `music_id`、CUE 解析、备份加密、路径 |
 | Theme | `lib/theme/app_theme.dart` | 浅色系主题 |
-| Android | `android/app/.../MainActivity.kt` | `AudioServiceActivity` + MethodChannel |
+| Android | `android/app/.../MainActivity.kt` | `AudioServiceFragmentActivity` + MethodChannel |
 | Vendor | `packages/audio_service/` | 带 Android 14+ FGS / 通道补丁的 audio_service |
 
 ### 关键服务「改什么找谁」
@@ -374,7 +374,7 @@ lib/models/library_track.dart
 lib/widgets/track_status_chip.dart     # remote 不显示「排队」
 lib/widgets/mini_player.dart
 packages/audio_service/                # vendor + PATCHES.md
-android/.../MainActivity.kt            # AudioServiceActivity；诊断通道
+android/.../MainActivity.kt            # AudioServiceFragmentActivity；诊断通道
 .github/workflows/android-build.yml
 test/                                  # 身份 / CUE / 本地播放 / idle guard 等
 ```
@@ -386,7 +386,8 @@ test/                                  # 身份 / CUE / 本地播放 / idle guar
 | 问题 | 原因 / 表现 | 正确做法 |
 |------|-------------|----------|
 | **UTF-8 CUE ingest 失败** | 非 UTF-8 CUE 用 `readAsString` 抛错；下载成功但库无虚拟曲 | 始终 `decodeCueText(bytes)` 再 `CueSheetParser`；见 `cue_library_ingest_test` |
-| **MainActivity AudioService classpath** | 在 Kotlin 中 `import AudioService` 会拉进 `MediaBrowserServiceCompat`，release 编译失败 | 只继承 `AudioServiceActivity`；通知诊断用 `NotificationManager` / `MediaSessionManager`，**不要**引用 `AudioService` 类（`251e46a`） |
+| **MainActivity AudioService classpath** | 在 Kotlin 中 `import AudioService` 会拉进 `MediaBrowserServiceCompat`，release 编译失败 | 继承 `AudioServiceFragmentActivity`；通知诊断用 `NotificationManager` / `MediaSessionManager`，**不要**引用 `AudioService` 类（`251e46a`） |
+| **切后台后通知/播放状态消失** | `AudioServiceActivity`（普通 `FlutterActivity` 变体）只重写 `provideFlutterEngine()`，未重写 `getCachedEngineId()`/`shouldDestroyEngineWithHost()`，导致其默认值为 `true`：Activity 被系统回收/从最近任务划掉时，共享的 `FlutterEngine`（同时承载 `MusicAudioHandler`）被销毁，通知与播放状态一起消失 | `MainActivity` 改继承 `AudioServiceFragmentActivity`（正确重写全部三个方法，engine 不随 Activity 销毁） |
 | **SystemNavigator.pop 停音乐** | 根返回 finish Activity → 拆掉 handler | 根返回 `moveTaskToBack`；仅抽屉「退出」才 pop（`9c9d5c5`） |
 | **起播双击杂音 / 首曲无声** | 每次 play 播静音 AudioTrack；或 unmute 排在卡住的 `play()` 之后 | 禁止 `androidForceEnableMediaButtons` on play；mute 仅罩住 setAudioSource，**play 前 unmute**；`stop`/finally 清 mute（`0ed9591`, `922d3c4`） |
 | **idle 拆掉媒体通知** | 把 just_audio idle 映射成 `AudioProcessingState.idle` | 有选中曲时用 loading 等非 idle；见 idle guard 测试 |
