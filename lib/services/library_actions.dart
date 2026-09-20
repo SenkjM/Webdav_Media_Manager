@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/library_track.dart';
 import '../models/playlist.dart';
@@ -11,7 +12,6 @@ import '../theme/app_theme.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'download_queue_service.dart';
-import 'share_export_service.dart';
 
 /// Whether the track's audio file is present in the local cache.
 bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
@@ -206,65 +206,117 @@ Future<void> deleteTracksLocalCache(
   );
 }
 
-/// Share only tracks that already have a local audio cache.
+/// Share already-cached **non-CUE** audio files via the system share sheet.
+///
+/// CUE-sliced rows are identified from the library DB via
+/// [LibraryTrack.isCueVirtual] (`cue_remote_path` + `cue_track_index`).
+/// Those tracks are never cropped/exported — sharing them only shows a
+/// snackbar (`CUE 音轨不支持分享`).
 Future<void> shareLibraryTracks(
   BuildContext context,
   List<LibraryTrack> tracks,
 ) async {
   if (tracks.isEmpty) return;
   final cache = context.read<CacheService>();
-  final local = <LibraryTrack>[];
-  var skipped = 0;
+  final localNonCue = <LibraryTrack>[];
+  var cueCount = 0;
+  var notLocalCount = 0;
   for (final t in tracks) {
+    if (t.isCueVirtual) {
+      cueCount++;
+      continue;
+    }
     if (libraryTrackIsLocal(cache, t)) {
-      local.add(t);
+      localNonCue.add(t);
     } else {
-      skipped++;
+      notLocalCount++;
     }
   }
-  if (local.isEmpty) {
+
+  if (localNonCue.isEmpty) {
+    final String msg;
+    if (cueCount > 0 && notLocalCount == 0) {
+      msg = 'CUE 音轨不支持分享';
+    } else if (cueCount > 0) {
+      msg = 'CUE 音轨不支持分享；其余曲目尚未下载到本地';
+    } else {
+      msg = notLocalCount == 1
+          ? '该曲目尚未下载到本地，无法分享'
+          : '所选曲目均未下载到本地，无法分享';
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: AppColors.error),
+    );
+    return;
+  }
+
+  if (cueCount > 0 && context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          skipped == 1 ? '该曲目尚未下载到本地，无法分享' : '所选曲目均未下载到本地，无法分享',
+          cueCount == 1 ? 'CUE 音轨不支持分享' : '已跳过 $cueCount 首 CUE 音轨（不支持分享）',
         ),
+      ),
+    );
+  }
+  if (notLocalCount > 0 && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已跳过 $notLocalCount 首未下载曲目')),
+    );
+  }
+
+  final files = <XFile>[];
+  for (final t in localNonCue) {
+    final path = await cache.localPathIfCached(
+      t.effectiveAudioRemotePath,
+      accountId: t.accountId,
+    );
+    if (path == null) continue;
+    files.add(XFile(path, mimeType: _shareMimeFor(path)));
+  }
+  if (files.isEmpty) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('没有可分享的文件'),
         backgroundColor: AppColors.error,
       ),
     );
     return;
   }
-  if (skipped > 0 && context.mounted) {
+
+  try {
+    await SharePlus.instance.share(ShareParams(files: files));
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已跳过 $skipped 首未下载曲目')),
+      SnackBar(content: Text('已分享 ${files.length} 个文件')),
+    );
+  } catch (e) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('分享失败：$e'),
+        backgroundColor: AppColors.error,
+      ),
     );
   }
+}
 
-  final share = ShareExportService(cache: cache);
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (ctx) => const AlertDialog(
-      content: Row(
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(width: 16),
-          Expanded(child: Text('正在准备分享文件…')),
-        ],
-      ),
-    ),
-  );
-  ShareExportResult result;
-  try {
-    result = await share.shareTracks(local);
-  } catch (e) {
-    result = ShareExportResult(ok: false, message: '分享失败：$e');
+String _shareMimeFor(String path) {
+  switch (p.extension(path).toLowerCase()) {
+    case '.mp3':
+      return 'audio/mpeg';
+    case '.flac':
+      return 'audio/flac';
+    case '.m4a':
+    case '.aac':
+      return 'audio/mp4';
+    case '.ogg':
+      return 'audio/ogg';
+    case '.wav':
+      return 'audio/wav';
+    default:
+      return 'application/octet-stream';
   }
-  if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
-  if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: Text(result.message),
-      backgroundColor: result.ok ? null : AppColors.error,
-    ),
-  );
 }

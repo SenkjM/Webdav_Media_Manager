@@ -49,7 +49,10 @@ class LibraryTrack {
   int? bitrate;
   int? sampleRate;
   String? coverPath;
+  /// Absolute WebDAV path of the source `.cue` (`tracks.cue_remote_path`).
+  /// Non-null when this row is a CUE-sliced virtual track.
   String? cueRemotePath;
+  /// CUE `TRACK` number (`tracks.cue_track_index`).
   int? cueTrackIndex;
   String? audioRemotePath;
   int? clipStartMs;
@@ -59,7 +62,10 @@ class LibraryTrack {
   DateTime lastTagReadAt;
 
   String get identityKey => trackIdentityKey(accountId, remotePath);
-  bool get isCueVirtual => cueTrackIndex != null && (cueRemotePath?.isNotEmpty ?? false);
+  /// True when library DB marks this row as a CUE split
+  /// ([cueRemotePath] + [cueTrackIndex] both set).
+  bool get isCueVirtual =>
+      cueTrackIndex != null && (cueRemotePath?.isNotEmpty ?? false);
   String get effectiveAudioRemotePath => audioRemotePath ?? remotePath;
 
   String get displayTitle {
@@ -133,14 +139,22 @@ class LibraryTrack {
         sampleRate: map['sample_rate'] as int?,
         coverPath: map['cover_path'] as String?,
         cueRemotePath: map['cue_remote_path'] as String?,
-        cueTrackIndex: map['cue_track_index'] as int?,
+        cueTrackIndex: _asInt(map['cue_track_index']),
         audioRemotePath: map['audio_remote_path'] as String?,
-        clipStartMs: map['clip_start_ms'] as int?,
-        clipEndMs: map['clip_end_ms'] as int?,
+        clipStartMs: _asInt(map['clip_start_ms']),
+        clipEndMs: _asInt(map['clip_end_ms']),
         cacheGroupId: map['cache_group_id'] as String?,
         lastDownloadedAt: DateTime.parse(map['last_downloaded_at'] as String),
         lastTagReadAt: DateTime.parse(map['last_tag_read_at'] as String),
       );
+}
+
+
+int? _asInt(Object? value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value.toString());
 }
 
 /// How to order tracks in the local library title list / album detail.
