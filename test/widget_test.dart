@@ -21,7 +21,7 @@ void main() {
     expect(dir.isAudio, isFalse);
   });
 
-  test('TrackInfo display falls back to filename when not downloaded', () {
+  test('TrackInfo display prefers title when known (library metadata)', () {
     final t = TrackInfo(
       accountId: 'acc1',
       remotePath: '/a/b.mp3',
@@ -29,9 +29,15 @@ void main() {
       title: 'Secret',
     );
     expect(t.isDownloaded, isFalse);
-    expect(t.displayTitle, 'b.mp3'); // no tag until downloaded
-    t.localPath = '/cache/b.mp3';
+    // Library may retain tags after cache cleanup — show title when present.
     expect(t.displayTitle, 'Secret');
+    expect(t.displayArtist, '未知艺术家');
+    final bare = TrackInfo(
+      accountId: 'acc1',
+      remotePath: '/a/c.mp3',
+      fileName: 'c.mp3',
+    );
+    expect(bare.displayTitle, 'c.mp3');
   });
 
   test('folderDisplayName shows only current folder', () {

@@ -16,7 +16,7 @@ class LibraryDatabase {
     final path = p.join(dir.path, 'music_library.db');
     _db = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
 CREATE TABLE accounts (
@@ -33,10 +33,17 @@ CREATE TABLE tracks (
   file_name TEXT NOT NULL,
   title TEXT,
   artist TEXT,
+  album_artist TEXT,
   album TEXT,
   duration_ms INTEGER,
   track_number INTEGER,
+  track_total INTEGER,
   disc_number INTEGER,
+  disc_total INTEGER,
+  year INTEGER,
+  genre TEXT,
+  bitrate INTEGER,
+  sample_rate INTEGER,
   cover_path TEXT,
   last_downloaded_at TEXT NOT NULL,
   last_tag_read_at TEXT NOT NULL,
@@ -52,6 +59,29 @@ CREATE TABLE tracks (
           );
           await db.execute(
             'ALTER TABLE tracks ADD COLUMN disc_number INTEGER',
+          );
+        }
+        if (oldVersion < 3) {
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN album_artist TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN track_total INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN disc_total INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN year INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN genre TEXT',
+          );
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN bitrate INTEGER',
+          );
+          await db.execute(
+            'ALTER TABLE tracks ADD COLUMN sample_rate INTEGER',
           );
         }
       },

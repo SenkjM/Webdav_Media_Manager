@@ -29,7 +29,7 @@ class WebDavItem {
   }
 }
 
-/// Local playback metadata. Tags are only filled after download.
+/// Local playback metadata. Tags are only filled after download / library ingest.
 class TrackInfo {
   TrackInfo({
     required this.accountId,
@@ -38,8 +38,17 @@ class TrackInfo {
     this.localPath,
     this.title,
     this.artist,
+    this.albumArtist,
     this.album,
     this.duration,
+    this.trackNumber,
+    this.trackTotal,
+    this.discNumber,
+    this.discTotal,
+    this.year,
+    this.genre,
+    this.bitrate,
+    this.sampleRate,
     this.coverPath,
   });
 
@@ -49,8 +58,17 @@ class TrackInfo {
   String? localPath;
   String? title;
   String? artist;
+  String? albumArtist;
   String? album;
   Duration? duration;
+  int? trackNumber;
+  int? trackTotal;
+  int? discNumber;
+  int? discTotal;
+  int? year;
+  String? genre;
+  int? bitrate;
+  int? sampleRate;
   String? coverPath;
 
   bool get isDownloaded => localPath != null;
@@ -60,14 +78,22 @@ class TrackInfo {
     if (isDownloaded && title != null && title!.trim().isNotEmpty) {
       return title!;
     }
+    // Library-backed tracks may have title without localPath set yet.
+    final t = title?.trim();
+    if (t != null && t.isNotEmpty) return t;
     return fileName;
   }
 
   String get displayArtist {
-    if (isDownloaded && artist != null && artist!.trim().isNotEmpty) {
-      return artist!;
-    }
+    final a = artist?.trim();
+    if (a != null && a.isNotEmpty) return a;
     return '未知艺术家';
+  }
+
+  String get displayAlbum {
+    final a = album?.trim();
+    if (a != null && a.isNotEmpty) return a;
+    return '';
   }
 }
 

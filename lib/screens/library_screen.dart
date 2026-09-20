@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -7,10 +7,12 @@ import '../models/library_track.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
+import '../services/download_queue_service.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cover_art.dart';
+import '../widgets/library_cover_art.dart';
 import 'home_shell.dart';
 
 class LibraryScreen extends StatelessWidget {
@@ -113,6 +115,7 @@ class _ArtistTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cache = context.watch<CacheService>();
     final groups = library.groupedByArtist();
     final artists = groups.keys.toList();
     return GridView.builder(
@@ -127,16 +130,9 @@ class _ArtistTab extends StatelessWidget {
       itemBuilder: (context, i) {
         final artist = artists[i];
         final tracks = groups[artist]!;
-        String? cover;
-        for (final t in tracks) {
-          final path = t.coverPath;
-          if (path != null && File(path).existsSync()) {
-            cover = path;
-            break;
-          }
-        }
+        final coverTrack = pickCoverTrack(tracks, cache);
         return _CoverTile(
-          coverPath: cover,
+          coverTrack: coverTrack,
           title: artist,
           subtitle: '${tracks.length} 首',
           placeholderIcon: Icons.person_outline,
@@ -146,7 +142,6 @@ class _ArtistTab extends StatelessWidget {
                 builder: (_) => _TrackListPage(
                   title: artist,
                   tracks: tracks,
-                  // Artist lists stay name-ordered unless user opens album.
                   defaultSort: LibrarySortMode.byName,
                 ),
               ),
@@ -164,6 +159,7 @@ class _AlbumTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cache = context.watch<CacheService>();
     final groups = library.groupedByAlbum();
     final albums = groups.keys.toList();
     return GridView.builder(
@@ -178,16 +174,9 @@ class _AlbumTab extends StatelessWidget {
       itemBuilder: (context, i) {
         final album = albums[i];
         final tracks = groups[album]!;
-        String? cover;
-        for (final t in tracks) {
-          final path = t.coverPath;
-          if (path != null && File(path).existsSync()) {
-            cover = path;
-            break;
-          }
-        }
+        final coverTrack = pickCoverTrack(tracks, cache);
         return _CoverTile(
-          coverPath: cover,
+          coverTrack: coverTrack,
           title: album,
           subtitle: '${tracks.length} 首 · ${tracks.first.displayArtist}',
           placeholderIcon: Icons.album,
@@ -197,7 +186,6 @@ class _AlbumTab extends StatelessWidget {
                 builder: (_) => _TrackListPage(
                   title: album,
                   tracks: tracks,
-                  // Album detail defaults to disc/track order.
                   defaultSort: LibrarySortMode.byAlbumTrack,
                 ),
               ),
@@ -211,14 +199,14 @@ class _AlbumTab extends StatelessWidget {
 
 class _CoverTile extends StatelessWidget {
   const _CoverTile({
-    required this.coverPath,
+    required this.coverTrack,
     required this.title,
     required this.subtitle,
     required this.onTap,
     this.placeholderIcon,
   });
 
-  final String? coverPath;
+  final LibraryTrack? coverTrack;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -241,12 +229,24 @@ class _CoverTile extends StatelessWidget {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final side = constraints.biggest.shortestSide;
+                    final t = coverTrack;
+                    if (t == null) {
+                      return Center(
+                        child: CoverArt(
+                          size: side,
+                          borderRadius: 6,
+                          icon: placeholderIcon,
+                        ),
+                      );
+                    }
                     return Center(
-                      child: CoverArt(
-                        path: coverPath,
+                      child: LibraryCoverArt.forTrack(
+                        track: t,
                         size: side,
                         borderRadius: 6,
                         icon: placeholderIcon,
+                        // Grid tiles: show art; download on open album / tap play.
+                        enqueueIfMissing: false,
                       ),
                     );
                   },
@@ -299,6 +299,29 @@ class _TrackListPageState extends State<_TrackListPage> {
   late LibrarySortMode _sort = widget.defaultSort;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _enqueueMissing());
+  }
+
+  void _enqueueMissing() {
+    if (!mounted) return;
+    final downloads = context.read<DownloadQueueService>();
+    // Batch-enqueue missing files when opening album/artist detail (non-blocking).
+    unawaited(
+      downloads.ensureQueuedMany(
+        widget.tracks.map(
+          (t) => (
+            accountId: t.accountId,
+            remotePath: t.remotePath,
+            fileName: t.fileName,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     final library = context.read<LibraryService>();
     final tracks = library.sortedCopy(widget.tracks, sort: _sort);
@@ -343,7 +366,14 @@ class _TrackTile extends StatelessWidget {
         ? '${track.trackNumber}. '
         : '';
     return ListTile(
-      leading: CoverArt(path: track.coverPath, size: 52, borderRadius: 4),
+      leading: LibraryCoverArt.forTrack(
+        track: track,
+        size: 52,
+        borderRadius: 4,
+        // List rows: enqueue when the row is shown / tapped — prefer tap play;
+        // also enqueue if missing while rendering so cover upgrades soon.
+        enqueueIfMissing: true,
+      ),
       title: Text(
         '$trackLabel${track.displayTitle}',
         maxLines: 1,
@@ -367,10 +397,20 @@ class _TrackTile extends StatelessWidget {
   Future<void> _play(BuildContext context) async {
     final player = context.read<AudioPlayerService>();
     final cache = context.read<CacheService>();
+    final downloads = context.read<DownloadQueueService>();
     final local = await cache.localPathIfCached(
       track.remotePath,
       accountId: track.accountId,
     );
+    if (local == null) {
+      unawaited(
+        downloads.ensureQueued(
+          track.accountId,
+          track.remotePath,
+          fileName: track.fileName,
+        ),
+      );
+    }
     final info = TrackInfo(
       accountId: track.accountId,
       remotePath: track.remotePath,
@@ -378,9 +418,18 @@ class _TrackTile extends StatelessWidget {
       localPath: local,
       title: track.title,
       artist: track.artist,
+      albumArtist: track.albumArtist,
       album: track.album,
       duration:
           track.durationMs != null ? Duration(milliseconds: track.durationMs!) : null,
+      trackNumber: track.trackNumber,
+      trackTotal: track.trackTotal,
+      discNumber: track.discNumber,
+      discTotal: track.discTotal,
+      year: track.year,
+      genre: track.genre,
+      bitrate: track.bitrate,
+      sampleRate: track.sampleRate,
       coverPath: track.coverPath,
     );
     final list = playlist
@@ -391,8 +440,17 @@ class _TrackTile extends StatelessWidget {
             fileName: t.fileName,
             title: t.title,
             artist: t.artist,
+            albumArtist: t.albumArtist,
             album: t.album,
             coverPath: t.coverPath,
+            trackNumber: t.trackNumber,
+            trackTotal: t.trackTotal,
+            discNumber: t.discNumber,
+            discTotal: t.discTotal,
+            year: t.year,
+            genre: t.genre,
+            bitrate: t.bitrate,
+            sampleRate: t.sampleRate,
             duration: t.durationMs != null
                 ? Duration(milliseconds: t.durationMs!)
                 : null,

@@ -33,9 +33,11 @@ class LibraryService extends ChangeNotifier {
 
   LibraryDatabase get database => _db;
   CoverService get covers => _covers;
+  TagService get tags => _tags;
 
   Future<void> init() async {
     await _db.database;
+    await _covers.init();
     await refresh();
   }
 
@@ -58,7 +60,7 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
-  /// After a file finishes downloading: read tags, save 100×100 cover, upsert.
+  /// After a file finishes downloading: read tags, save thumb + full cover, upsert.
   Future<LibraryTrack> ingestDownloaded({
     required String accountId,
     required String remotePath,
@@ -70,6 +72,12 @@ class LibraryService extends ChangeNotifier {
     String? coverPath;
     if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
       coverPath = await _covers.saveThumb(
+        accountId: accountId,
+        remotePath: remotePath,
+        bytes: read.coverBytes!,
+      );
+      // Best-effort full-res cache for library UI when file is local.
+      await _covers.saveFull(
         accountId: accountId,
         remotePath: remotePath,
         bytes: read.coverBytes!,
@@ -89,10 +97,17 @@ class LibraryService extends ChangeNotifier {
       fileName: fileName,
       title: read.title,
       artist: read.artist,
+      albumArtist: read.albumArtist,
       album: read.album,
       durationMs: read.durationMs,
       trackNumber: read.trackNumber,
+      trackTotal: read.trackTotal,
       discNumber: read.discNumber,
+      discTotal: read.discTotal,
+      year: read.year,
+      genre: read.genre,
+      bitrate: read.bitrate,
+      sampleRate: read.sampleRate,
       coverPath: coverPath,
       lastDownloadedAt: now,
       lastTagReadAt: now,

@@ -1,7 +1,7 @@
 import '../utils/track_identity.dart';
 
 /// Persisted library record for a track that has been cached at least once.
-/// Survives audio cache deletion; cover is a small local thumb only.
+/// Survives audio cache deletion; [coverPath] is a small local thumb only.
 class LibraryTrack {
   LibraryTrack({
     required this.accountId,
@@ -9,10 +9,17 @@ class LibraryTrack {
     required this.fileName,
     this.title,
     this.artist,
+    this.albumArtist,
     this.album,
     this.durationMs,
     this.trackNumber,
+    this.trackTotal,
     this.discNumber,
+    this.discTotal,
+    this.year,
+    this.genre,
+    this.bitrate,
+    this.sampleRate,
     this.coverPath,
     DateTime? lastDownloadedAt,
     DateTime? lastTagReadAt,
@@ -24,10 +31,17 @@ class LibraryTrack {
   final String fileName;
   String? title;
   String? artist;
+  String? albumArtist;
   String? album;
   int? durationMs;
   int? trackNumber;
+  int? trackTotal;
   int? discNumber;
+  int? discTotal;
+  int? year;
+  String? genre;
+  int? bitrate;
+  int? sampleRate;
   String? coverPath;
   DateTime lastDownloadedAt;
   DateTime lastTagReadAt;
@@ -46,6 +60,12 @@ class LibraryTrack {
     return '未知艺术家';
   }
 
+  String get displayAlbumArtist {
+    final a = albumArtist?.trim();
+    if (a != null && a.isNotEmpty) return a;
+    return displayArtist;
+  }
+
   String get displayAlbum {
     final a = album?.trim();
     if (a != null && a.isNotEmpty) return a;
@@ -58,10 +78,17 @@ class LibraryTrack {
         'file_name': fileName,
         'title': title,
         'artist': artist,
+        'album_artist': albumArtist,
         'album': album,
         'duration_ms': durationMs,
         'track_number': trackNumber,
+        'track_total': trackTotal,
         'disc_number': discNumber,
+        'disc_total': discTotal,
+        'year': year,
+        'genre': genre,
+        'bitrate': bitrate,
+        'sample_rate': sampleRate,
         'cover_path': coverPath,
         'last_downloaded_at': lastDownloadedAt.toIso8601String(),
         'last_tag_read_at': lastTagReadAt.toIso8601String(),
@@ -73,10 +100,17 @@ class LibraryTrack {
         fileName: map['file_name'] as String,
         title: map['title'] as String?,
         artist: map['artist'] as String?,
+        albumArtist: map['album_artist'] as String?,
         album: map['album'] as String?,
         durationMs: map['duration_ms'] as int?,
         trackNumber: map['track_number'] as int?,
+        trackTotal: map['track_total'] as int?,
         discNumber: map['disc_number'] as int?,
+        discTotal: map['disc_total'] as int?,
+        year: map['year'] as int?,
+        genre: map['genre'] as String?,
+        bitrate: map['bitrate'] as int?,
+        sampleRate: map['sample_rate'] as int?,
         coverPath: map['cover_path'] as String?,
         lastDownloadedAt: DateTime.parse(map['last_downloaded_at'] as String),
         lastTagReadAt: DateTime.parse(map['last_tag_read_at'] as String),

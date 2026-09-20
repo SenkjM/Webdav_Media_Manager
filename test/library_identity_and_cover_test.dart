@@ -83,6 +83,11 @@ void main() {
       expect(map['title'], 'Keep Me');
       expect(map.containsKey('track_number'), isTrue);
       expect(map.containsKey('disc_number'), isTrue);
+      expect(map.containsKey('album_artist'), isTrue);
+      expect(map.containsKey('year'), isTrue);
+      expect(map.containsKey('genre'), isTrue);
+      expect(map.containsKey('bitrate'), isTrue);
+      expect(map.containsKey('sample_rate'), isTrue);
       final roundtrip = LibraryTrack.fromMap(map);
       expect(roundtrip.title, 'Keep Me');
       expect(roundtrip.coverPath, '/docs/covers/abc.jpg');

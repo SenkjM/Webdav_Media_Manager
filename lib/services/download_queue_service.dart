@@ -180,6 +180,72 @@ class DownloadQueueService extends ChangeNotifier {
     return _waitFor(task.id);
   }
 
+  /// Fire-and-forget enqueue when the file is missing and not already queued.
+  /// Does not wait for download completion; safe to call from UI build/open.
+  Future<bool> ensureQueued(
+    String accountId,
+    String remotePath, {
+    String? fileName,
+  }) async {
+    if (_cache.hasLocalFile(remotePath, accountId: accountId)) {
+      return false;
+    }
+    final existing = taskForRemote(accountId, remotePath);
+    if (existing != null) {
+      switch (existing.status) {
+        case DownloadStatus.pending:
+        case DownloadStatus.active:
+          return false;
+        case DownloadStatus.completed:
+          if (existing.localPath != null &&
+              File(existing.localPath!).existsSync()) {
+            return false;
+          }
+          break;
+        case DownloadStatus.failed:
+        case DownloadStatus.cancelled:
+          existing.status = DownloadStatus.pending;
+          existing.errorMessage = null;
+          existing.progress = 0;
+          existing.bytesReceived = 0;
+          await _store.upsert(existing);
+          notifyListeners();
+          unawaited(_pump());
+          return true;
+      }
+    }
+
+    final task = DownloadTask(
+      id: _uuid.v4(),
+      accountId: accountId,
+      remotePath: remotePath,
+      fileName: fileName ?? remotePath.split('/').last,
+      createdAt: DateTime.now(),
+    );
+    _tasks.add(task);
+    await _store.upsert(task);
+    notifyListeners();
+    unawaited(_pump());
+    return true;
+  }
+
+  /// Batch [ensureQueued] for many tracks without awaiting each download.
+  Future<int> ensureQueuedMany(
+    Iterable<({String accountId, String remotePath, String? fileName})> items,
+  ) async {
+    var n = 0;
+    for (final item in items) {
+      if (await ensureQueued(
+        item.accountId,
+        item.remotePath,
+        fileName: item.fileName,
+      )) {
+        n++;
+      }
+    }
+    return n;
+  }
+
   /// Enqueue all audio files under a folder (recursive). Non-blocking.
   Future<int> enqueueFolder(String accountId, String folderPath) async {
     final items = await _webDav.collectAudioRecursive(folderPath);

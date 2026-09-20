@@ -44,6 +44,11 @@ class CacheService extends ChangeNotifier {
     return f.exists();
   }
 
+  /// Sync check whether the audio file is present in the local cache.
+  bool hasLocalFile(String remotePath, {required String accountId}) {
+    return fileForRemote(remotePath, accountId: accountId).existsSync();
+  }
+
   Future<String?> localPathIfCached(
     String remotePath, {
     required String accountId,

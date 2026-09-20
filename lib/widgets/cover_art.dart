@@ -1,26 +1,30 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// Square cover: [Image.file] when path exists, else music-note on elevated tile.
+/// Square cover: file path and/or in-memory bytes, else music-note placeholder.
 class CoverArt extends StatelessWidget {
   const CoverArt({
     super.key,
     this.path,
+    this.bytes,
     required this.size,
     this.borderRadius = 6,
     this.icon,
   });
 
   final String? path;
+  final Uint8List? bytes;
   final double size;
   final double borderRadius;
   final IconData? icon;
 
-  bool get _hasFile => path != null && File(path!).existsSync();
+  bool get _hasBytes => bytes != null && bytes!.isNotEmpty;
+  bool get _hasFile => path != null && path!.isNotEmpty && File(path!).existsSync();
 
   @override
   Widget build(BuildContext context) {
@@ -29,16 +33,31 @@ class CoverArt extends StatelessWidget {
       child: SizedBox(
         width: size,
         height: size,
-        child: _hasFile
-            ? Image.file(
-                File(path!),
+        child: _hasBytes
+            ? Image.memory(
+                bytes!,
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => _placeholder(),
+                gaplessPlayback: true,
+                errorBuilder: (context, error, stackTrace) =>
+                    _hasFile ? _fileImage() : _placeholder(),
               )
-            : _placeholder(),
+            : _hasFile
+                ? _fileImage()
+                : _placeholder(),
       ),
+    );
+  }
+
+  Widget _fileImage() {
+    return Image.file(
+      File(path!),
+      width: size,
+      height: size,
+      fit: BoxFit.cover,
+      gaplessPlayback: true,
+      errorBuilder: (context, error, stackTrace) => _placeholder(),
     );
   }
 
@@ -58,29 +77,42 @@ class CoverArt extends StatelessWidget {
 
 /// Soft light wash over blurred cover used as Now Playing backdrop.
 class CoverBackdrop extends StatelessWidget {
-  const CoverBackdrop({super.key, this.path, required this.child});
+  const CoverBackdrop({super.key, this.path, this.bytes, required this.child});
 
   final String? path;
+  final Uint8List? bytes;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final has =
+    final hasBytes = bytes != null && bytes!.isNotEmpty;
+    final hasFile =
         path != null && path!.isNotEmpty && File(path!).existsSync();
     return Stack(
       fit: StackFit.expand,
       children: [
         const ColoredBox(color: AppColors.background),
-        if (has)
+        if (hasBytes)
+          ImageFiltered(
+            imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+            child: Image.memory(
+              bytes!,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) =>
+                  const SizedBox.shrink(),
+            ),
+          )
+        else if (hasFile)
           ImageFiltered(
             imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
             child: Image.file(
               File(path!),
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+              errorBuilder: (context, error, stackTrace) =>
+                  const SizedBox.shrink(),
             ),
           ),
-        if (has)
+        if (hasBytes || hasFile)
           ColoredBox(color: Colors.white.withValues(alpha: 0.82)),
         child,
       ],
