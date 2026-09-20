@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -210,7 +209,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       final webDav = context.read<WebDavService>();
       final bytes = await webDav.readAsBytes(item.path);
       final sheet = CueSheetParser.tryParse(
-        utf8.decode(bytes, allowMalformed: true),
+        decodeCueText(bytes),
       );
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // close loading

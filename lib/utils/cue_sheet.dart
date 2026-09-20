@@ -1,4 +1,48 @@
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
+
+/// Decode CUE file bytes for parsing.
+///
+/// Many Chinese / Exact Audio Copy CUEs are GBK or UTF-16, not strict
+/// UTF-8. [File.readAsString] throws on those and previously caused
+/// `_maybeIngestCueGroup` to abort — downloads succeeded but virtual
+/// tracks never entered 音乐库. Structural keywords (FILE/TRACK/INDEX)
+/// are ASCII, so a lenient decode is enough to ingest slices.
+String decodeCueText(List<int> bytes) {
+  if (bytes.isEmpty) return '';
+  // UTF-8 BOM
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xEF &&
+      bytes[1] == 0xBB &&
+      bytes[2] == 0xBF) {
+    return utf8.decode(bytes.sublist(3), allowMalformed: true);
+  }
+  // UTF-16 LE BOM
+  if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) {
+    final codes = <int>[];
+    for (var i = 2; i + 1 < bytes.length; i += 2) {
+      codes.add(bytes[i] | (bytes[i + 1] << 8));
+    }
+    return String.fromCharCodes(codes);
+  }
+  // UTF-16 BE BOM
+  if (bytes.length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) {
+    final codes = <int>[];
+    for (var i = 2; i + 1 < bytes.length; i += 2) {
+      codes.add(bytes[i + 1] | (bytes[i] << 8));
+    }
+    return String.fromCharCodes(codes);
+  }
+  // Prefer strict UTF-8 when valid (keeps Chinese titles correct).
+  try {
+    return utf8.decode(bytes);
+  } on FormatException {
+    // GBK / Latin1 / mixed: keep ASCII structure; titles may be lossy.
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+}
+
 
 class CueSheet {
   const CueSheet({

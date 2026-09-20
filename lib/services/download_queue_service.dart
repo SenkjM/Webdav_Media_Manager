@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
 
@@ -42,6 +41,8 @@ class DownloadQueueService extends ChangeNotifier {
   final Map<String, Completer<DownloadTask>> _waiters = {};
   /// CUE cacheGroupId → sheet.tracks.length (for queue UI; not file count).
   final Map<String, int> _cueSongCounts = {};
+  /// Sheets captured at enqueue — reuse on ingest (same decode as download).
+  final Map<String, CueSheet> _cueSheetsByGroup = {};
 
   bool _running = false;
   bool _initialized = false;
@@ -369,7 +370,7 @@ class DownloadQueueService extends ChangeNotifier {
       sheet = preParsed;
     } else {
       final bytes = await _webDav.readAsBytes(cueRemotePath);
-      final parsed = CueSheetParser.tryParse(utf8.decode(bytes, allowMalformed: true));
+      final parsed = CueSheetParser.tryParse(decodeCueText(bytes));
       if (parsed == null) {
         throw StateError('无法解析的 CUE：需要标准 FILE + TRACK/INDEX');
       }
@@ -377,6 +378,7 @@ class DownloadQueueService extends ChangeNotifier {
     }
     final groupId = cueCacheGroupId(accountId, cueRemotePath);
     rememberCueSongCount(groupId, sheet.tracks.length);
+    _cueSheetsByGroup[groupId] = sheet;
     final paths = <String>[cueRemotePath, ...sheet.audioRemotePaths(cueRemotePath)];
     for (final path in paths) {
       await _cache.bindCacheGroup(accountId: accountId, remotePath: path, groupId: groupId);
@@ -580,26 +582,39 @@ class DownloadQueueService extends ChangeNotifier {
         !File(cueTask!.localPath!).existsSync()) {
       return;
     }
-    CueSheet? sheet;
-    try {
-      sheet = CueSheetParser.tryParse(
-        await File(cueTask.localPath!).readAsString(),
-      );
-    } catch (_) {
-      return;
+
+    // Prefer the sheet parsed at enqueue (same bytes/decode as download).
+    // Re-reading the cache file with File.readAsString() used to throw on
+    // GBK/UTF-16 CUEs and silently skip library ingest.
+    CueSheet? sheet = _cueSheetsByGroup[groupId];
+    if (sheet == null) {
+      try {
+        final bytes = await File(cueTask.localPath!).readAsBytes();
+        sheet = CueSheetParser.tryParse(decodeCueText(bytes));
+      } catch (e, st) {
+        debugPrint('CUE re-parse failed: $e\n$st');
+        return;
+      }
     }
     if (sheet == null) return;
     rememberCueSongCount(groupId, sheet.tracks.length);
+    _cueSheetsByGroup[groupId] = sheet;
+
     final required = <String>{
       cueTask.remotePath,
       ...sheet.audioRemotePaths(cueTask.remotePath),
     };
+    String norm(String path) => normalizeRemotePath(path);
+    final membersByNorm = <String, DownloadTask>{
+      for (final m in members) norm(m.remotePath): m,
+    };
     // Every required path must have a live completed member with file on disk.
     for (final path in required) {
-      final m = members.cast<DownloadTask?>().firstWhere(
-            (t) => t!.remotePath == path,
-            orElse: () => null,
-          );
+      final m = membersByNorm[norm(path)] ??
+          members.cast<DownloadTask?>().firstWhere(
+                (t) => t!.remotePath == path,
+                orElse: () => null,
+              );
       if (m == null ||
           m.status != DownloadStatus.completed ||
           m.localPath == null ||
@@ -616,7 +631,25 @@ class DownloadQueueService extends ChangeNotifier {
         localPathFor: (remote) =>
             _cache.fileForRemote(remote, accountId: cueTask.accountId).path,
       );
-    } catch (_) {}
+      // Re-bind cache annex for backing audio — ingestCueAlbum deletes
+      // standalone track rows which previously also wiped annex entries.
+      for (final audioRemote in sheet.audioRemotePaths(cueTask.remotePath)) {
+        final f = _cache.fileForRemote(
+          audioRemote,
+          accountId: cueTask.accountId,
+        );
+        if (f.existsSync()) {
+          await _cache.registerCompleted(
+            cueTask.accountId,
+            audioRemote,
+            f.path,
+            cacheGroupId: groupId,
+          );
+        }
+      }
+    } catch (e, st) {
+      debugPrint('CUE library ingest failed: $e\n$st');
+    }
   }
 
   Future<void> _ingest(DownloadTask task) async {

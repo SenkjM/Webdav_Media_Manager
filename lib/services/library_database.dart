@@ -437,12 +437,24 @@ CREATE TABLE cache (
       where: 'account_id = ? AND remote_path = ?',
       whereArgs: [accountId, remotePath],
     );
+    // Do not drop cache annex if cue_slices still use this music_id as audio.
+    // ingestCueAlbum deletes standalone audio rows after writing slices; wiping
+    // annex there made virtual tracks look uncached despite files on disk.
     if (existing != null && !existing.isCueVirtual) {
-      await db.delete(
-        'cache',
-        where: 'music_id = ?',
+      final stillUsed = await db.query(
+        'cue_slices',
+        columns: ['music_id'],
+        where: 'audio_music_id = ?',
         whereArgs: [existing.musicId],
+        limit: 1,
       );
+      if (stillUsed.isEmpty) {
+        await db.delete(
+          'cache',
+          where: 'music_id = ?',
+          whereArgs: [existing.musicId],
+        );
+      }
     }
   }
 

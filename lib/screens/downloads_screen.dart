@@ -150,7 +150,7 @@ class _CueGroupTile extends StatelessWidget {
       final cueFile = cue?.localPath;
       if (cueFile != null && File(cueFile).existsSync()) {
         try {
-          final sheet = CueSheetParser.tryParse(File(cueFile).readAsStringSync());
+          final sheet = CueSheetParser.tryParse(decodeCueText(File(cueFile).readAsBytesSync()));
           if (sheet != null) {
             songs = sheet.tracks.length;
             queue.rememberCueSongCount(groupId, songs);
