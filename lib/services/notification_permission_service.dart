@@ -55,7 +55,7 @@ class NotificationPermissionService extends ChangeNotifier {
     if (_pluginInitialized) return;
     try {
       await _plugin.initialize(
-        const InitializationSettings(
+        settings: const InitializationSettings(
           android: AndroidInitializationSettings('@mipmap/ic_launcher'),
         ),
       );
