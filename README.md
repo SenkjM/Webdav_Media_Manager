@@ -17,7 +17,7 @@
 
 ### 主要能力
 
-- **网络库（多 WebDAV）**：可添加 / 编辑 / 删除多个服务器账号（URL、用户名、密码经安全存储）；在网络库中切换当前服务器；浏览时只显示条目名称（不铺满远程完整路径）
+- **网络库（多 WebDAV）**：未下载音频浏览时不显示「排队」等状态徽标（点按/多选下载后才入队并显示）；可添加 / 编辑 / 删除多个服务器账号（URL、用户名、密码经安全存储）；在网络库中切换当前服务器；浏览时只显示条目名称（不铺满远程完整路径）
 - **下载队列**：后台异步排队下载，支持取消 / 重试 / 清除已完成；长按文件夹可**递归下载整个目录**中的音频
 - **标签读取**：下载完成后用 `audio_metadata_reader` 读取 title / artist / album / track / disc / 封面 / 时长，并写入本地音乐库
 - **本地音乐库**：仅索引「至少缓存过一次」的曲目；可按 **专辑 / 作者 / 音乐名 / 标签（流派）** 浏览；支持 **搜索**（标题/艺术家/专辑）；长按进入多选（添加到歌单 / 分享已缓存非 CUE 文件 / 删除，CUE 组删除仍整组警告；CUE 虚拟曲目不可分享）；支持按 **名称** 或 **专辑曲序（碟号/曲号）** 排序；身份键为 `(webdav_account_id + remote_path)`
@@ -26,7 +26,7 @@
 - **CUE 分轨**：网络库显示 `.cue`；标准 CUE（FILE + TRACK/INDEX）可整组下载（CUE+音频同一缓存组）；音乐库展开为虚拟曲目，标签以 CUE 为准；播放用 `ClippingAudioSource` 按 INDEX 裁切；删除缓存时整组提示
 - **缓存占用**：设置页显示音乐缓存磁盘用量（可读大小）；曲库可单独删除某曲本地音频缓存（保留元数据/封面）
 - **当前播放列表**：正在播放页 / 迷你条可打开**临时队列**（不自动同步歌单）；歌单页可「从当前播放列表创建」保存后再同步
-- **媒体通知**：`audio_service` 使用应用内补丁（Android 14+ `FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK` + 通道 IMPORTANCE_DEFAULT）；小图标为单色 `drawable/ic_stat_music_white`。`MusicAudioHandler` 在曲目已选中时不向系统广播 `idle`（避免 native `stop()` 拆掉 MediaSession）；设置页提供「测试媒体通知」
+- **媒体通知**：`audio_service` 使用应用内补丁（Android 14+ typed `startForeground` + 通道 `…audio.v3` IMPORTANCE_DEFAULT）；`androidStopForegroundOnPause: false`；起播静音至 ready 且不再每次 play 播放 AudioTrack 静音（避免两声杂音）。设置页「测试媒体通知」回报会话/通知是否已发布
 - **缓存清理**：可按 1 天或 1 周自动清理**音频缓存文件**；正在播放或下载中的文件受保护
 - **WebDAV 管理**：长按可重命名 / 删除；可新建文件夹；权限不足（401/403）时弹出错误对话框
 - **歌单**：本地独立数据库（`playlists.db`）创建 / 编辑 / 删除歌单，按 `(accountId + remotePath)` 添加曲目；音频缓存清理**不会**删除歌单。可选同步到 WebDAV（默认 `/Playlists/`）为 **M3U8**（含 `#EXT-X-WMP-*` 扩展）；本地修改后上传，启动/切换账号时拉取，按 `updatedAt` **最后写入胜出**合并

@@ -11,7 +11,13 @@ class TrackStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Undownloaded / never queued: no badge (filename only).
+    if (state == TrackUiState.remote) {
+      return const SizedBox.shrink();
+    }
+
     final (label, color, icon) = switch (state) {
+      TrackUiState.remote => ('', AppColors.mutedText, Icons.circle_outlined),
       TrackUiState.queued => ('排队', AppColors.mutedText, Icons.schedule),
       TrackUiState.downloading => (
           '下载中',

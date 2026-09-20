@@ -1,4 +1,3 @@
-
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
@@ -8,13 +7,8 @@ import 'package:webdav_music_player/services/music_audio_handler.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('channel id is v2 (IMPORTANCE_DEFAULT fresh channel)', () {
-    // Compile-time check that init config stays on the new channel id.
-    // (Runtime AudioService.init needs a platform channel.)
-    expect(
-      'com.webdav.webdav_music_player.audio.v2',
-      contains('audio.v2'),
-    );
+  test('channel id is v3 (IMPORTANCE_DEFAULT fresh channel)', () {
+    expect(kMediaNotificationChannelId, contains('audio.v3'));
   });
 
   test('stop clears queue and allows idle again', () async {

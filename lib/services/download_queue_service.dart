@@ -193,7 +193,8 @@ class DownloadQueueService extends ChangeNotifier {
         File(task!.localPath!).existsSync()) {
       return TrackUiState.ready;
     }
-    return TrackUiState.queued;
+    // Not downloaded and never explicitly enqueued — show no status chip.
+    return TrackUiState.remote;
   }
 
   /// Enqueue download. If already completed/cached, returns existing task.
@@ -277,7 +278,9 @@ class DownloadQueueService extends ChangeNotifier {
   }
 
   /// Fire-and-forget enqueue when the file is missing and not already queued.
-  /// Does not wait for download completion; safe to call from UI build/open.
+  /// Does not wait for download completion.
+  /// Call only from explicit user actions (tap / multi-select download) —
+  /// never from browse/list open or cover resolve.
   Future<bool> ensureQueued(
     String accountId,
     String remotePath, {

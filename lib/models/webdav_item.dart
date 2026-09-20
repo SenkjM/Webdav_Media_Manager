@@ -93,4 +93,4 @@ class TrackInfo {
   }
 }
 
-enum TrackUiState { queued, downloading, ready, playing, error }
+enum TrackUiState { remote, queued, downloading, ready, playing, error }

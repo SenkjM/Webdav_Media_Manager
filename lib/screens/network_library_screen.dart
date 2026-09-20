@@ -758,8 +758,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         final task = accountId == null
             ? null
             : downloads.taskForRemote(accountId, item.path);
+        // Undownloaded + never enqueued → TrackUiState.remote (no chip).
         final state = accountId == null
-            ? TrackUiState.queued
+            ? TrackUiState.remote
             : downloads.uiStateFor(
                 accountId,
                 item.path,
@@ -776,12 +777,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TrackStatusChip(
-                state: state,
-                progress: task?.status == DownloadStatus.active
-                    ? task?.progress
-                    : null,
-              ),
+              // Only show after user-initiated queue / download / ready / play.
+              if (state != TrackUiState.remote)
+                TrackStatusChip(
+                  state: state,
+                  progress: task?.status == DownloadStatus.active
+                      ? task?.progress
+                      : null,
+                ),
               IconButton(
                 icon: const Icon(Icons.download_for_offline_outlined),
                 tooltip: '仅下载',

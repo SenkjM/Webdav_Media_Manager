@@ -100,7 +100,7 @@ public class AudioService extends MediaBrowserServiceCompat {
             | PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE
             | PlaybackStateCompat.ACTION_SET_CAPTIONING_ENABLED;
 
-    static AudioService instance;
+    public static AudioService instance;
     private static PendingIntent contentIntent;
     private static ServiceListener listener;
     private static List<MediaSessionCompat.QueueItem> queue = new ArrayList<>();
@@ -556,7 +556,15 @@ public class AudioService extends MediaBrowserServiceCompat {
         mediaSession.setShuffleMode(shuffleMode);
         mediaSession.setCaptioningEnabled(captioningEnabled);
 
-        if (!wasPlaying && playing) {
+        // Keep MediaSession active whenever we are non-idle so OEM media
+        // resumers / QS controllers can discover us even while buffering.
+        if (processingState != AudioProcessingState.idle) {
+            activateMediaSession();
+        }
+
+        // Re-enter playing/FGS if notification was never created (e.g. prior
+        // startForeground failed) even when wasPlaying is already true.
+        if (playing && (!wasPlaying || !notificationCreated)) {
             enterPlayingState();
         } else if (wasPlaying && !playing) {
             exitPlayingState();
@@ -567,6 +575,9 @@ public class AudioService extends MediaBrowserServiceCompat {
             stop();
         } else if (processingState != AudioProcessingState.idle && notificationChanged) {
             updateNotification();
+        } else if (processingState != AudioProcessingState.idle && playing && !notificationCreated) {
+            // Last chance: controls unchanged but FGS never stuck.
+            enterPlayingState();
         }
     }
 
@@ -704,9 +715,12 @@ public class AudioService extends MediaBrowserServiceCompat {
     }
 
     private void enterPlayingState() {
+        android.util.Log.i("AudioService", "enterPlayingState playing=" + playing
+                + " proc=" + processingState
+                + " notifCreated=" + notificationCreated
+                + " sessionActive=" + (mediaSession != null && mediaSession.isActive()));
         ContextCompat.startForegroundService(this, new Intent(AudioService.this, AudioService.class));
-        if (!mediaSession.isActive())
-            mediaSession.setActive(true);
+        activateMediaSession();
 
         acquireWakeLock();
         mediaSession.setSessionActivity(contentIntent);
@@ -741,6 +755,8 @@ public class AudioService extends MediaBrowserServiceCompat {
                 startForeground(NOTIFICATION_ID, notification);
             }
             notificationCreated = true;
+            android.util.Log.i("AudioService", "startForeground ok id=" + NOTIFICATION_ID
+                    + " sdk=" + Build.VERSION.SDK_INT);
         } catch (Exception e) {
             android.util.Log.e("AudioService", "startForeground failed", e);
             // Last-resort: still post MediaStyle so the shade shows something
@@ -748,8 +764,10 @@ public class AudioService extends MediaBrowserServiceCompat {
             try {
                 getNotificationManager().notify(NOTIFICATION_ID, notification);
                 notificationCreated = true;
+                android.util.Log.w("AudioService", "notify fallback posted id=" + NOTIFICATION_ID);
             } catch (Exception e2) {
                 android.util.Log.e("AudioService", "notify fallback failed", e2);
+                notificationCreated = false;
             }
         }
     }

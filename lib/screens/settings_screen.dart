@@ -508,7 +508,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             '播放时通过 audio_service 前台服务显示系统媒体通知（通知栏 / 锁屏 / 媒体控制中心）：'
             '标题、艺术家与播放/暂停。\n'
             '请确保本应用的「通知」已开启；若曾拒绝，可点下方打开系统通知设置。'
-            'Android 13+ 首次播放时也会请求 POST_NOTIFICATIONS。',
+            'Android 13+ 首次播放时也会请求 POST_NOTIFICATIONS。'
+            '「测试媒体通知」会强制播放并回报会话/通知是否已发布。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
