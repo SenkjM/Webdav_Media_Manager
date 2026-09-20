@@ -58,7 +58,7 @@
 | 凭证 | `flutter_secure_storage` |
 | WebDAV | `webdav_client` |
 | 媒体通知 / 后台播放 | `audio_service` + `media_kit`（`MusicAudioHandler`） |
-| 通知权限（Android 13+） | `permission_handler`（`POST_NOTIFICATIONS`） |
+| 通知权限（Android 13+） | `flutter_local_notifications`（`POST_NOTIFICATIONS` + 通道状态查询） |
 
 ## 状态
 

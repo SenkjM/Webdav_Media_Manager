@@ -147,7 +147,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       );
       return;
     }
-    if (perms.isPermanentlyDenied) {
+    if (perms.isChannelBlocked || perms.isPermanentlyDenied) {
       final opened = await perms.openSystemSettings();
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -499,6 +499,9 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (perms.isGranted) {
       return '已允许 — 播放/暂停时显示系统媒体通知';
     }
+    if (perms.isChannelBlocked) {
+      return '通知权限已开启，但「音乐播放」通道被关闭 — 点此打开系统设置';
+    }
     if (perms.isPermanentlyDenied) {
       return '已拒绝 — 点此打开系统设置以开启通知';
     }
@@ -569,7 +572,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                 onPressed: () => _onNotificationTap(context, notif),
                 icon: const Icon(Icons.notification_add_outlined),
                 label: Text(
-                  notif.isPermanentlyDenied ? '打开系统设置' : '请求通知权限',
+                  (notif.isPermanentlyDenied || notif.isChannelBlocked)
+                      ? '打开系统设置'
+                      : '请求通知权限',
                 ),
               ),
             ),
