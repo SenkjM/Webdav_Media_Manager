@@ -11,6 +11,12 @@
 
 本仓库代码由 Grok Bot 实现；SenkjM 提出产品思路与约束（WebDAV 先缓存再播放、下载队列、缓存策略、本地音乐库、多网盘等）。
 
+## 开发文档
+
+面向开发者与 coding agents 的架构、数据模型、CUE、播放约束与 CI 说明见：
+
+- [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)
+
 ## 这是什么
 
 在 WebDAV 上浏览音乐目录，把文件下载到本地缓存后再播放。**不做网络流式播放**。
