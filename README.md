@@ -142,10 +142,10 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
 
 | 触发 | 行为 |
 |------|------|
-| 推送到 `beta` | 分析、测试、打 APK，并更新 GitHub **Pre-release** |
+| 推送到任意分支 | **不**触发构建 |
 | 推送到 `main` / `dev` | **不**触发 Actions 自动构建 |
 | 每天定时（约北京时间 00:00） | 检查 **beta**：相对上次 `prerelease` 有新提交才发布；无变动跳过 |
-| 手动 `workflow_dispatch`（选 `beta`） | 强制从 beta 构建并更新 Pre-release |
+| 手动 `workflow_dispatch`（选 `beta`） | 构建并更新 Pre-release |
 
 **产物：**
 
