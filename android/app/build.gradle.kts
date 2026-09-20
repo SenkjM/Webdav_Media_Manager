@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.webdav.webdav_music_player"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = maxOf(flutter.compileSdkVersion, 35)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
