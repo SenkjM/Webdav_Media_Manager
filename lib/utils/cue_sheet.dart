@@ -72,13 +72,16 @@ class CueSheetParser {
 
     void flush() {
       if (!inTrack || trackNumber == null) return;
-      if (currentFile == null || currentFile!.isEmpty || index01 == null) {
+      final number = trackNumber!;
+      final file = currentFile;
+      final index = index01;
+      if (file == null || file.isEmpty || index == null) {
         incomplete = true;
         inTrack = false;
         trackNumber = null; trackTitle = null; trackPerformer = null; trackIsrc = null; index01 = null;
         return;
       }
-      tracks.add(CueTrack(number: trackNumber!, fileName: currentFile!, index01: index01!, title: trackTitle, performer: trackPerformer, isrc: trackIsrc));
+      tracks.add(CueTrack(number: number, fileName: file, index01: index, title: trackTitle, performer: trackPerformer, isrc: trackIsrc));
       inTrack = false;
       trackNumber = null; trackTitle = null; trackPerformer = null; trackIsrc = null; index01 = null;
     }
@@ -91,12 +94,31 @@ class CueSheetParser {
       if (u.startsWith('REM ')) {
         final rem = line.substring(4).trim();
         final ru = rem.toUpperCase();
-        if (ru.startsWith('GENRE ')) remGenre = _uq(rem.substring(6).trim());
-        else if (ru.startsWith('DATE ')) remDate = _uq(rem.substring(5).trim());
+        if (ru.startsWith('GENRE ')) {
+          remGenre = _uq(rem.substring(6).trim());
+        } else if (ru.startsWith('DATE ')) {
+          remDate = _uq(rem.substring(5).trim());
+        }
         continue;
       }
-      if (u.startsWith('TITLE ')) { final v = _uq(line.substring(6).trim()); if (inTrack) trackTitle = v; else albumTitle = v; continue; }
-      if (u.startsWith('PERFORMER ')) { final v = _uq(line.substring(10).trim()); if (inTrack) trackPerformer = v; else albumPerformer = v; continue; }
+      if (u.startsWith('TITLE ')) {
+        final v = _uq(line.substring(6).trim());
+        if (inTrack) {
+          trackTitle = v;
+        } else {
+          albumTitle = v;
+        }
+        continue;
+      }
+      if (u.startsWith('PERFORMER ')) {
+        final v = _uq(line.substring(10).trim());
+        if (inTrack) {
+          trackPerformer = v;
+        } else {
+          albumPerformer = v;
+        }
+        continue;
+      }
       if (u.startsWith('FILE ')) {
         flush();
         final fn = _file(line.substring(5).trim());

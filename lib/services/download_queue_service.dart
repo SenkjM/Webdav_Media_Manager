@@ -284,7 +284,11 @@ class DownloadQueueService extends ChangeNotifier {
       await _cache.bindCacheGroup(accountId: accountId, remotePath: path, groupId: groupId);
     }
     for (final path in paths) {
-      unawaited(enqueue(accountId, path, fileName: p.basename(path), cacheGroupId: groupId).catchError((_) {}));
+      unawaited(() async {
+        try {
+          await enqueue(accountId, path, fileName: p.basename(path), cacheGroupId: groupId);
+        } catch (_) {}
+      }());
     }
     return paths.length;
   }

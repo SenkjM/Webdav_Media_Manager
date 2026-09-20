@@ -88,8 +88,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         try {
           final bytes = await webDav.readAsBytes(item.path);
           final sheet = CueSheetParser.tryParse(utf8.decode(bytes, allowMalformed: true));
-          if (sheet != null) cueSheets[item.path] = sheet;
-          else cueErrors[item.path] = '无法解析的 CUE：需要标准 FILE + TRACK/INDEX';
+          if (sheet != null) {
+            cueSheets[item.path] = sheet;
+          } else {
+            cueErrors[item.path] = '无法解析的 CUE：需要标准 FILE + TRACK/INDEX';
+          }
         } catch (e) {
           cueErrors[item.path] = '读取 CUE 失败：$e';
         }

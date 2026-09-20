@@ -228,7 +228,11 @@ class LibraryService extends ChangeNotifier {
       );
       await _db.upsertTrack(track);
       final idx = _tracks.indexWhere((x) => x.accountId == accountId && x.remotePath == virtualPath);
-      if (idx >= 0) _tracks[idx] = track; else _tracks.add(track);
+      if (idx >= 0) {
+        _tracks[idx] = track;
+      } else {
+        _tracks.add(track);
+      }
       created.add(track);
     }
     notifyListeners();
