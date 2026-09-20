@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// Square cover: [Image.file] when path exists, else music-note on dark tile.
+/// Square cover: [Image.file] when path exists, else music-note on elevated tile.
 class CoverArt extends StatelessWidget {
   const CoverArt({
     super.key,
@@ -56,7 +56,7 @@ class CoverArt extends StatelessWidget {
   }
 }
 
-/// Darkened / lightly blurred cover used as Now Playing backdrop.
+/// Soft light wash over blurred cover used as Now Playing backdrop.
 class CoverBackdrop extends StatelessWidget {
   const CoverBackdrop({super.key, this.path, required this.child});
 
@@ -70,7 +70,7 @@ class CoverBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        ColoredBox(color: AppColors.nearBlack),
+        const ColoredBox(color: AppColors.background),
         if (has)
           ImageFiltered(
             imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
@@ -81,7 +81,7 @@ class CoverBackdrop extends StatelessWidget {
             ),
           ),
         if (has)
-          ColoredBox(color: Colors.black.withValues(alpha: 0.72)),
+          ColoredBox(color: Colors.white.withValues(alpha: 0.82)),
         child,
       ],
     );

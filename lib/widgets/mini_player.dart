@@ -23,7 +23,7 @@ class MiniPlayer extends StatelessWidget {
     return Material(
       color: AppColors.elevated,
       elevation: 12,
-      shadowColor: Colors.black54,
+      shadowColor: Colors.black26,
       child: SafeArea(
         top: false,
         child: InkWell(

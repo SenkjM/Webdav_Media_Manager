@@ -60,8 +60,8 @@ class WebDavMusicApp extends StatelessWidget {
       child: MaterialApp(
         title: 'WebDAV 音乐播放器',
         debugShowCheckedModeBanner: false,
-        themeMode: ThemeMode.dark,
-        theme: AppTheme.dark,
+        themeMode: ThemeMode.light,
+        theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         home: appState.initError != null
             ? Scaffold(

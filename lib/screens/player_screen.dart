@@ -175,7 +175,7 @@ class PlayerScreen extends StatelessWidget {
                                       ? Icons.pause_rounded
                                       : Icons.play_arrow_rounded,
                                   size: 42,
-                                  color: const Color(0xFF1A1000),
+                                  color: AppColors.onAccent,
                                 ),
                               ),
                             ),
