@@ -57,6 +57,17 @@
 
 简要说明：你可以自由使用、修改与分发本软件，但若发布修改版，或通过网络提供基于本软件的服务，必须按 AGPL-3.0 公开对应完整源代码。详情以 LICENSE 原文为准。
 
+
+## 分支策略
+
+| 分支 | 用途 |
+|------|------|
+| `main` | 稳定主干 |
+| `beta` | 预发布线；**GitHub Pre-release 只从 beta 构建发布** |
+| `dev` | 实验线，给助手试新功能 / 不稳定改动 |
+
+日常：在 `dev` 试新鲜玩意 → 成熟后合入 `beta` 打 Pre-release → 再合入 `main`。
+
 ## CI：自动构建并发布 Pre-release
 
 工作流：`.github/workflows/android-build.yml`
@@ -65,9 +76,10 @@
 
 | 触发 | 行为 |
 |------|------|
-| 推送到 `main` / `master` | 分析、测试、打 APK，并更新 GitHub **Pre-release** |
-| 每天定时（约北京时间 00:00） | **仅当自上次 `prerelease` 标签以来有新提交** 时才构建并更新 Pre-release；无变动则跳过发布 |
-| 手动 `workflow_dispatch` | 强制构建并更新 Pre-release |
+| 推送到 `beta` | 分析、测试、打 APK，并更新 GitHub **Pre-release** |
+| 推送到 `main` / `dev` | 分析、测试、打 APK（**不**发 Pre-release） |
+| 每天定时（约北京时间 00:00） | 检查 **beta**：相对上次 `prerelease` 有新提交才发布；无变动跳过 |
+| 手动 `workflow_dispatch`（选 `beta`） | 强制从 beta 构建并更新 Pre-release |
 | Pull Request | 只做分析 / 测试 / 构建产物，**不**发 Release |
 
 **产物：**
