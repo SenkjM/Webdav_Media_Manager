@@ -157,3 +157,11 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
 - **私有仓库**需在 Settings → Actions 启用工作流；发布 Pre-release 使用默认 `GITHUB_TOKEN`（`contents: write`）。
 - CI APK 为默认签名，仅适合内测；正式分发请自行配置 keystore（不要把密钥提交进仓库）。
 - 每次构建写入递增 `versionCode`（`1000+run_number`）与带短 hash 的 `versionName`，Pre-release 正文同步显示，便于覆盖安装。
+
+## 内测签名
+
+CI Pre-release 使用**固定内测 keystore**（GitHub Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD`），避免 Actions 每次换机器导致签名变化、无法覆盖安装。
+
+从旧的 debug 签名包换成内测签名包时，需要**卸载一次**；之后可直接覆盖安装。
+
+本地 release 可通过环境变量或未提交的 `android/key.properties` 使用同一 keystore。
