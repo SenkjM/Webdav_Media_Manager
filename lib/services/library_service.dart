@@ -176,6 +176,12 @@ class LibraryService extends ChangeNotifier {
     required String Function(String remotePath) localPathFor,
   }) async {
     final now = DateTime.now();
+    // Replace the whole CUE group so clear-cache + re-download cannot leave
+    // orphan virtual rows or a leftover standalone audio row (+1 drift).
+    await _db.deleteTracksForCue(accountId, cueRemotePath);
+    _tracks.removeWhere(
+      (t) => t.accountId == accountId && t.cueRemotePath == cueRemotePath,
+    );
     final audioRemotes = sheet.audioRemotePaths(cueRemotePath);
     final fileTags = <String, ReadTags>{};
     final fileDurations = <String, Duration?>{};
@@ -239,12 +245,32 @@ class LibraryService extends ChangeNotifier {
       }
       created.add(track);
     }
-    // Drop any accidental standalone rows for the .cue itself or raw audio
-    // files — library should only keep virtual tracks for this album.
-    final removePaths = <String>{cueRemotePath, ...sheet.audioRemotePaths(cueRemotePath)};
+    // Drop accidental standalone rows for the .cue itself or raw audio files
+    // (e.g. ensureQueued ingested audio without a cue group id).
+    final removePaths = <String>{cueRemotePath, ...audioRemotes};
     for (final path in removePaths) {
       await _db.deleteTrack(accountId, path);
       _tracks.removeWhere((t) => t.accountId == accountId && t.remotePath == path);
+    }
+    // Also drop any row whose audioRemotePath is one of this album's files but
+    // is not one of the virtual paths we just wrote (stale / wrong keys).
+    final keepVirtual = created.map((t) => t.remotePath).toSet();
+    final stale = _tracks
+        .where(
+          (t) =>
+              t.accountId == accountId &&
+              !keepVirtual.contains(t.remotePath) &&
+              (t.cueRemotePath == cueRemotePath ||
+                  (t.audioRemotePath != null &&
+                      audioRemotes.contains(t.audioRemotePath)) ||
+                  audioRemotes.contains(t.remotePath)),
+        )
+        .toList();
+    for (final t in stale) {
+      await _db.deleteTrack(t.accountId, t.remotePath);
+      _tracks.removeWhere(
+        (x) => x.accountId == t.accountId && x.remotePath == t.remotePath,
+      );
     }
 
     notifyListeners();

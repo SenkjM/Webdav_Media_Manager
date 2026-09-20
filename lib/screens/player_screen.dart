@@ -300,10 +300,28 @@ class PlayerScreen extends StatelessWidget {
     final artSize = MediaQuery.sizeOf(context).width * 0.68;
     final chips = _metaChips(track, lib);
 
+    final preparing = player.preparing;
+
+    // While downloading: do not present a full playable now-playing UI.
+    // Progress belongs on the bottom mini play bar — pop back if opened.
+    if (preparing) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted && Navigator.of(context).canPop()) {
+          Navigator.of(context).pop();
+        }
+      });
+      return const Scaffold(
+        backgroundColor: AppColors.nearBlack,
+        body: SizedBox.shrink(),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      body: CoverBackdrop(
-        path: track?.coverPath ?? lib?.coverPath,
+      body: _PlayerBackdrop(
+        accountId: track?.accountId,
+        audioRemotePath: track?.effectiveAudioRemotePath,
+        localPath: track?.localPath,
         child: SafeArea(
           child: Column(
             children: [
@@ -345,17 +363,14 @@ class PlayerScreen extends StatelessWidget {
                             children: [
                               const SizedBox(height: 8),
                               if (track != null)
-                                LibraryCoverArt(
+                                PlayerCoverArt(
                                   accountId: track.accountId,
-                                  remotePath: track.remotePath,
-                                  thumbPath: track.coverPath ?? lib?.coverPath,
+                                  remotePath: track.effectiveAudioRemotePath,
+                                  localAudioPath: track.localPath,
                                   fileName: track.fileName,
                                   size: artSize.clamp(180.0, 300.0),
                                   borderRadius: 8,
-                                  icon: player.preparing
-                                      ? Icons.downloading
-                                      : Icons.album,
-                                  enqueueIfMissing: true,
+                                  icon: Icons.album,
                                 )
                               else
                                 CoverArt(
@@ -379,11 +394,7 @@ class PlayerScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                player.preparing
-                                    ? '正在下载到本地缓存…'
-                                    : (player.error ??
-                                        track?.displayArtist ??
-                                        ''),
+                                player.error ?? track?.displayArtist ?? '',
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -534,6 +545,82 @@ class PlayerScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Backdrop that loads full/embedded art only — never the 100×100 thumb.
+class _PlayerBackdrop extends StatefulWidget {
+  const _PlayerBackdrop({
+    this.accountId,
+    this.audioRemotePath,
+    this.localPath,
+    required this.child,
+  });
+
+  final String? accountId;
+  final String? audioRemotePath;
+  final String? localPath;
+  final Widget child;
+
+  @override
+  State<_PlayerBackdrop> createState() => _PlayerBackdropState();
+}
+
+class _PlayerBackdropState extends State<_PlayerBackdrop> {
+  String? _fullPath;
+  Uint8List? _bytes;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    unawaited(_load());
+  }
+
+  @override
+  void didUpdateWidget(covariant _PlayerBackdrop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.accountId != widget.accountId ||
+        oldWidget.audioRemotePath != widget.audioRemotePath ||
+        oldWidget.localPath != widget.localPath) {
+      unawaited(_load());
+    }
+  }
+
+  Future<void> _load() async {
+    final accountId = widget.accountId;
+    final remote = widget.audioRemotePath;
+    if (accountId == null || remote == null) {
+      if (mounted) setState(() { _fullPath = null; _bytes = null; });
+      return;
+    }
+    final library = context.read<LibraryService>();
+    final covers = library.covers;
+    await covers.init();
+    final full = await covers.fullCoverPath(accountId, remote);
+    if (full != null) {
+      if (mounted) setState(() { _fullPath = full; _bytes = null; });
+      return;
+    }
+    final local = widget.localPath;
+    if (local != null && File(local).existsSync()) {
+      final tags = await library.tags.readFromFile(local);
+      final bytes = tags.coverBytes;
+      if (bytes != null && bytes.isNotEmpty) {
+        unawaited(covers.saveFull(accountId: accountId, remotePath: remote, bytes: bytes));
+        if (mounted) setState(() { _fullPath = null; _bytes = bytes; });
+        return;
+      }
+    }
+    if (mounted) setState(() { _fullPath = null; _bytes = null; });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CoverBackdrop(
+      path: _fullPath,
+      bytes: _bytes,
+      child: widget.child,
     );
   }
 }

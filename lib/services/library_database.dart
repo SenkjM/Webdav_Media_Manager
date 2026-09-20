@@ -242,6 +242,16 @@ FROM tracks ORDER BY a COLLATE NOCASE ASC
     );
   }
 
+  /// Remove every library row belonging to a CUE album (virtual clips).
+  Future<int> deleteTracksForCue(String accountId, String cueRemotePath) async {
+    final db = await database;
+    return db.delete(
+      'tracks',
+      where: 'account_id = ? AND cue_remote_path = ?',
+      whereArgs: [accountId, cueRemotePath],
+    );
+  }
+
   Future<void> close() async {
     await _db?.close();
     _db = null;

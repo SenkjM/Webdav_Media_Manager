@@ -16,10 +16,17 @@ class MiniPlayer extends StatelessWidget {
     final track = player.current;
     if (track == null) return const SizedBox.shrink();
 
-    final progress = (player.duration != null &&
+    final preparing = player.preparing;
+    final downloadProgress = player.preparingProgress;
+    final playProgress = (player.duration != null &&
             player.duration!.inMilliseconds > 0)
         ? player.position.inMilliseconds / player.duration!.inMilliseconds
         : 0.0;
+    // While downloading: show download progress on the bottom bar.
+    // When ready: show playback position.
+    final barValue = preparing
+        ? (downloadProgress ?? 0.0)
+        : playProgress;
 
     return Material(
       color: AppColors.elevated,
@@ -28,19 +35,23 @@ class MiniPlayer extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: InkWell(
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const PlayerScreen()),
-            );
-          },
+          onTap: preparing
+              ? null
+              : () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const PlayerScreen()),
+                  );
+                },
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               LinearProgressIndicator(
-                value: progress.clamp(0.0, 1.0),
+                value: preparing && downloadProgress == null
+                    ? null
+                    : barValue.clamp(0.0, 1.0),
                 minHeight: 2.5,
                 backgroundColor: AppColors.elevatedHigh,
-                color: AppColors.accent,
+                color: preparing ? AppColors.accent : AppColors.accent,
               ),
               Padding(
                 padding:
@@ -48,10 +59,11 @@ class MiniPlayer extends StatelessWidget {
                 child: Row(
                   children: [
                     CoverArt(
+                      // Mini bar may use thumb; full player never does.
                       path: track.coverPath,
                       size: 44,
                       borderRadius: 4,
-                      icon: player.preparing
+                      icon: preparing
                           ? Icons.downloading
                           : Icons.music_note,
                     ),
@@ -73,8 +85,10 @@ class MiniPlayer extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            player.preparing
-                                ? '下载中…'
+                            preparing
+                                ? (downloadProgress != null
+                                    ? '下载中… ${(downloadProgress * 100).toStringAsFixed(0)}%'
+                                    : '下载中…')
                                 : (player.error ?? track.displayArtist),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -94,10 +108,12 @@ class MiniPlayer extends StatelessWidget {
                         player.playing
                             ? Icons.pause_rounded
                             : Icons.play_arrow_rounded,
-                        color: AppColors.accent,
+                        color: preparing
+                            ? AppColors.mutedText
+                            : AppColors.accent,
                       ),
                       iconSize: 30,
-                      onPressed: () => player.playPause(),
+                      onPressed: preparing ? null : () => player.playPause(),
                     ),
                     IconButton(
                       tooltip: '播放列表',
@@ -111,11 +127,13 @@ class MiniPlayer extends StatelessWidget {
                       },
                     ),
                     IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.skip_next_rounded,
-                        color: AppColors.onDark,
+                        color: preparing
+                            ? AppColors.mutedText
+                            : AppColors.onDark,
                       ),
-                      onPressed: () => player.skipNext(),
+                      onPressed: preparing ? null : () => player.skipNext(),
                     ),
                   ],
                 ),

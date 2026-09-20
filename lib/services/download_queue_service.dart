@@ -40,6 +40,8 @@ class DownloadQueueService extends ChangeNotifier {
   final List<DownloadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
   final Map<String, Completer<DownloadTask>> _waiters = {};
+  /// CUE cacheGroupId → sheet.tracks.length (for queue UI; not file count).
+  final Map<String, int> _cueSongCounts = {};
 
   bool _running = false;
   bool _initialized = false;
@@ -104,6 +106,60 @@ class DownloadQueueService extends ChangeNotifier {
     }
   }
 
+  /// Progress 0..1 for an in-flight (or cue-group) download of [remotePath].
+  double? downloadProgressFor(String accountId, String remotePath) {
+    final direct = taskForRemote(accountId, remotePath);
+    if (direct != null &&
+        (direct.status == DownloadStatus.active ||
+            direct.status == DownloadStatus.pending)) {
+      return direct.progress.clamp(0.0, 1.0);
+    }
+    // CUE virtual / audio member: use group average of non-terminal-cancelled tasks.
+    final groupId = direct?.cacheGroupId;
+    if (groupId != null && groupId.startsWith('cue')) {
+      return cueGroupProgress(groupId);
+    }
+    // Look up by any cue-group member matching this audio path.
+    for (final t in _tasks.reversed) {
+      if (t.accountId != accountId || t.remotePath != remotePath) continue;
+      final gid = t.cacheGroupId;
+      if (gid != null && gid.startsWith('cue')) {
+        return cueGroupProgress(gid);
+      }
+    }
+    return null;
+  }
+
+  double cueGroupProgress(String groupId) {
+    final members = _liveCueMembers(groupId);
+    if (members.isEmpty) return 0;
+    final sum = members.map((t) => t.progress).fold<double>(0, (a, b) => a + b);
+    return (sum / members.length).clamp(0.0, 1.0);
+  }
+
+  /// Active generation only — ignores cancelled/failed leftovers from prior clears.
+  List<DownloadTask> _liveCueMembers(String groupId) {
+    final byPath = <String, DownloadTask>{};
+    for (final t in _tasks) {
+      if (t.cacheGroupId != groupId) continue;
+      if (t.status == DownloadStatus.cancelled ||
+          t.status == DownloadStatus.failed) {
+        continue;
+      }
+      final prev = byPath[t.remotePath];
+      if (prev == null || t.createdAt.isAfter(prev.createdAt)) {
+        byPath[t.remotePath] = t;
+      }
+    }
+    return byPath.values.toList();
+  }
+
+  int? cueSongCountForGroup(String groupId) => _cueSongCounts[groupId];
+
+  void rememberCueSongCount(String groupId, int count) {
+    if (count > 0) _cueSongCounts[groupId] = count;
+  }
+
   TrackUiState uiStateFor(
     String accountId,
     String remotePath, {
@@ -157,6 +213,11 @@ class DownloadQueueService extends ChangeNotifier {
           orElse: () => null,
         );
     if (existingCompleted != null) {
+      if (cacheGroupId != null &&
+          existingCompleted.cacheGroupId != cacheGroupId) {
+        existingCompleted.cacheGroupId = cacheGroupId;
+        await _store.upsert(existingCompleted);
+      }
       // Refresh tags when file is already cached (re-ingest).
       unawaited(_ingest(existingCompleted));
       return existingCompleted;
@@ -175,10 +236,14 @@ class DownloadQueueService extends ChangeNotifier {
         localPath: cachedPath,
         progress: 1.0,
         completedAt: DateTime.now(),
+        cacheGroupId: cacheGroupId,
       );
       _tasks.add(done);
       await _store.upsert(done);
       await _ingest(done);
+      if (cacheGroupId != null && cacheGroupId.startsWith('cue')) {
+        unawaited(_maybeIngestCueGroup(done));
+      }
       notifyListeners();
       return done;
     }
@@ -311,10 +376,14 @@ class DownloadQueueService extends ChangeNotifier {
       sheet = parsed;
     }
     final groupId = cueCacheGroupId(accountId, cueRemotePath);
+    rememberCueSongCount(groupId, sheet.tracks.length);
     final paths = <String>[cueRemotePath, ...sheet.audioRemotePaths(cueRemotePath)];
     for (final path in paths) {
       await _cache.bindCacheGroup(accountId: accountId, remotePath: path, groupId: groupId);
     }
+    // Drop stale cancelled/failed tasks for this group so member counts and
+    // allDone checks stay stable across clear-cache + re-download.
+    await _pruneDeadCueMembers(groupId, keepPaths: paths.toSet());
     // Register each path once; do not await download completion (prevents races
     // / duplicate jobs when callers also touch member files).
     for (final path in paths) {
@@ -325,7 +394,27 @@ class DownloadQueueService extends ChangeNotifier {
         cacheGroupId: groupId,
       );
     }
-    return paths.length;
+    return sheet.tracks.length;
+  }
+
+  Future<void> _pruneDeadCueMembers(
+    String groupId, {
+    required Set<String> keepPaths,
+  }) async {
+    final dead = _tasks
+        .where(
+          (t) =>
+              t.cacheGroupId == groupId &&
+              (t.status == DownloadStatus.cancelled ||
+                  t.status == DownloadStatus.failed ||
+                  !keepPaths.contains(t.remotePath)),
+        )
+        .toList();
+    for (final t in dead) {
+      _tasks.remove(t);
+      await _store.delete(t.id);
+    }
+    if (dead.isNotEmpty) notifyListeners();
   }
 
   /// Offer a cue-group member into the queue without waiting for completion.
@@ -349,6 +438,9 @@ class DownloadQueueService extends ChangeNotifier {
         existingCompleted.cacheGroupId = cacheGroupId;
         await _store.upsert(existingCompleted);
       }
+      if (cacheGroupId != null && cacheGroupId.startsWith('cue')) {
+        unawaited(_maybeIngestCueGroup(existingCompleted));
+      }
       return;
     }
 
@@ -364,10 +456,39 @@ class DownloadQueueService extends ChangeNotifier {
             orElse: () => null,
           );
       if (already != null) {
+        already.localPath = cachedPath;
+        already.progress = 1.0;
         if (cacheGroupId != null) {
           already.cacheGroupId = cacheGroupId;
-          await _store.upsert(already);
         }
+        await _store.upsert(already);
+        if (cacheGroupId != null && cacheGroupId.startsWith('cue')) {
+          unawaited(_maybeIngestCueGroup(already));
+        }
+        notifyListeners();
+        return;
+      }
+      // Reuse a cancelled/failed row for the same path instead of duplicating.
+      final reusable = _tasks.cast<DownloadTask?>().firstWhere(
+            (t) =>
+                t!.accountId == accountId &&
+                t.remotePath == remotePath &&
+                (t.status == DownloadStatus.cancelled ||
+                    t.status == DownloadStatus.failed),
+            orElse: () => null,
+          );
+      if (reusable != null) {
+        reusable.status = DownloadStatus.completed;
+        reusable.localPath = cachedPath;
+        reusable.progress = 1.0;
+        reusable.completedAt = DateTime.now();
+        reusable.errorMessage = null;
+        reusable.cacheGroupId = cacheGroupId;
+        await _store.upsert(reusable);
+        if (cacheGroupId != null && cacheGroupId.startsWith('cue')) {
+          unawaited(_maybeIngestCueGroup(reusable));
+        }
+        notifyListeners();
         return;
       }
       final done = DownloadTask(
@@ -384,6 +505,9 @@ class DownloadQueueService extends ChangeNotifier {
       );
       _tasks.add(done);
       await _store.upsert(done);
+      if (cacheGroupId != null && cacheGroupId.startsWith('cue')) {
+        unawaited(_maybeIngestCueGroup(done));
+      }
       notifyListeners();
       return;
     }
@@ -405,6 +529,29 @@ class DownloadQueueService extends ChangeNotifier {
       return;
     }
 
+    // Reuse cancelled/failed task for this path (avoids +1 member each clear).
+    final reusable = _tasks.cast<DownloadTask?>().firstWhere(
+          (t) =>
+              t!.accountId == accountId &&
+              t.remotePath == remotePath &&
+              (t.status == DownloadStatus.cancelled ||
+                  t.status == DownloadStatus.failed),
+          orElse: () => null,
+        );
+    if (reusable != null) {
+      reusable.status = DownloadStatus.pending;
+      reusable.errorMessage = null;
+      reusable.progress = 0;
+      reusable.bytesReceived = 0;
+      reusable.localPath = null;
+      reusable.completedAt = null;
+      reusable.cacheGroupId = cacheGroupId;
+      await _store.upsert(reusable);
+      notifyListeners();
+      unawaited(_pump());
+      return;
+    }
+
     final task = DownloadTask(
       id: _uuid.v4(),
       accountId: accountId,
@@ -422,27 +569,52 @@ class DownloadQueueService extends ChangeNotifier {
   Future<void> _maybeIngestCueGroup(DownloadTask task) async {
     final groupId = task.cacheGroupId;
     if (groupId == null || _library == null) return;
-    final members = _tasks.where((t) => t.cacheGroupId == groupId).toList();
+    // Only the live generation — ignore cancelled leftovers from cache clears.
+    final members = _liveCueMembers(groupId);
     if (members.isEmpty) return;
-    final allDone = members.every((t) =>
-        t.status == DownloadStatus.completed &&
-        t.localPath != null &&
-        File(t.localPath!).existsSync());
-    if (!allDone) return;
     final cueTask = members.cast<DownloadTask?>().firstWhere(
       (t) => t!.remotePath.toLowerCase().endsWith('.cue'),
       orElse: () => null,
     );
-    if (cueTask?.localPath == null) return;
+    if (cueTask?.localPath == null ||
+        !File(cueTask!.localPath!).existsSync()) {
+      return;
+    }
+    CueSheet? sheet;
     try {
-      final sheet = CueSheetParser.tryParse(await File(cueTask!.localPath!).readAsString());
-      if (sheet == null) return;
+      sheet = CueSheetParser.tryParse(
+        await File(cueTask.localPath!).readAsString(),
+      );
+    } catch (_) {
+      return;
+    }
+    if (sheet == null) return;
+    rememberCueSongCount(groupId, sheet.tracks.length);
+    final required = <String>{
+      cueTask.remotePath,
+      ...sheet.audioRemotePaths(cueTask.remotePath),
+    };
+    // Every required path must have a live completed member with file on disk.
+    for (final path in required) {
+      final m = members.cast<DownloadTask?>().firstWhere(
+            (t) => t!.remotePath == path,
+            orElse: () => null,
+          );
+      if (m == null ||
+          m.status != DownloadStatus.completed ||
+          m.localPath == null ||
+          !File(m.localPath!).existsSync()) {
+        return;
+      }
+    }
+    try {
       await _library!.ingestCueAlbum(
         accountId: cueTask.accountId,
         cueRemotePath: cueTask.remotePath,
         sheet: sheet,
         cacheGroupId: groupId,
-        localPathFor: (remote) => _cache.fileForRemote(remote, accountId: cueTask.accountId).path,
+        localPathFor: (remote) =>
+            _cache.fileForRemote(remote, accountId: cueTask.accountId).path,
       );
     } catch (_) {}
   }
@@ -459,6 +631,16 @@ class DownloadQueueService extends ChangeNotifier {
     if (task.cacheGroupId != null && task.cacheGroupId!.startsWith('cue')) {
       return;
     }
+    // If this audio is already the backing file of a CUE album, never create a
+    // standalone library row (that was the clear+redownload +1 drift).
+    final ownedByCue = lib.tracks.any(
+      (t) =>
+          t.accountId == task.accountId &&
+          t.isCueVirtual &&
+          (t.audioRemotePath == task.remotePath ||
+              t.effectiveAudioRemotePath == task.remotePath),
+    );
+    if (ownedByCue) return;
     try {
       await lib.ingestDownloaded(
         accountId: task.accountId,

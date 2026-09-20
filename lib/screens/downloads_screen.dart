@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/download_task.dart';
+import '../utils/cue_sheet.dart';
 import '../services/download_queue_service.dart';
 import '../theme/app_theme.dart';
 import 'home_shell.dart';
@@ -10,7 +12,10 @@ class DownloadsScreen extends StatelessWidget {
   const DownloadsScreen({super.key});
 
   /// Collapse CUE cache-group members into one queue row.
-  static List<_QueueRow> _rowsFor(List<DownloadTask> tasksNewestFirst) {
+  static List<_QueueRow> _rowsFor(
+    List<DownloadTask> tasksNewestFirst,
+    DownloadQueueService queue,
+  ) {
     final seenGroups = <String>{};
     final rows = <_QueueRow>[];
     for (final t in tasksNewestFirst) {
@@ -18,10 +23,29 @@ class DownloadsScreen extends StatelessWidget {
       if (gid != null && gid.startsWith('cue')) {
         if (seenGroups.contains(gid)) continue;
         seenGroups.add(gid);
-        final members = tasksNewestFirst
-            .where((x) => x.cacheGroupId == gid)
+        // Prefer live generation so cancelled leftovers never inflate the row.
+        var members = tasksNewestFirst
+            .where(
+              (x) =>
+                  x.cacheGroupId == gid &&
+                  x.status != DownloadStatus.cancelled &&
+                  x.status != DownloadStatus.failed,
+            )
             .toList();
-        rows.add(_QueueRow.cueGroup(gid, members));
+        if (members.isEmpty) {
+          members = tasksNewestFirst
+              .where((x) => x.cacheGroupId == gid)
+              .toList();
+        }
+        // Dedupe by remotePath (keep newest).
+        final byPath = <String, DownloadTask>{};
+        for (final m in members) {
+          final prev = byPath[m.remotePath];
+          if (prev == null || m.createdAt.isAfter(prev.createdAt)) {
+            byPath[m.remotePath] = m;
+          }
+        }
+        rows.add(_QueueRow.cueGroup(gid, byPath.values.toList(), queue));
       } else {
         rows.add(_QueueRow.single(t));
       }
@@ -33,7 +57,7 @@ class DownloadsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final queue = context.watch<DownloadQueueService>();
     final tasks = queue.tasks.reversed.toList();
-    final rows = _rowsFor(tasks);
+    final rows = _rowsFor(tasks, queue);
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
@@ -62,7 +86,11 @@ class DownloadsScreen extends StatelessWidget {
               itemBuilder: (context, i) {
                 final row = rows[i];
                 if (row.isCueGroup) {
-                  return _CueGroupTile(members: row.members);
+                  return _CueGroupTile(
+                    members: row.members,
+                    groupId: row.groupId!,
+                    songCount: row.songCount,
+                  );
                 }
                 return _TaskTile(task: row.members.first);
               },
@@ -72,20 +100,42 @@ class DownloadsScreen extends StatelessWidget {
 }
 
 class _QueueRow {
-  _QueueRow._(this.members, {required this.isCueGroup});
+  _QueueRow._(
+    this.members, {
+    required this.isCueGroup,
+    this.groupId,
+    this.songCount,
+  });
   factory _QueueRow.single(DownloadTask t) =>
       _QueueRow._([t], isCueGroup: false);
-  factory _QueueRow.cueGroup(String id, List<DownloadTask> members) =>
-      _QueueRow._(members, isCueGroup: true);
+  factory _QueueRow.cueGroup(
+    String id,
+    List<DownloadTask> members,
+    DownloadQueueService queue,
+  ) =>
+      _QueueRow._(
+        members,
+        isCueGroup: true,
+        groupId: id,
+        songCount: queue.cueSongCountForGroup(id),
+      );
 
   final List<DownloadTask> members;
   final bool isCueGroup;
+  final String? groupId;
+  final int? songCount;
 }
 
 class _CueGroupTile extends StatelessWidget {
-  const _CueGroupTile({required this.members});
+  const _CueGroupTile({
+    required this.members,
+    required this.groupId,
+    this.songCount,
+  });
 
   final List<DownloadTask> members;
+  final String groupId;
+  final int? songCount;
 
   @override
   Widget build(BuildContext context) {
@@ -95,24 +145,38 @@ class _CueGroupTile extends StatelessWidget {
           orElse: () => null,
         );
     final title = cue?.fileName ?? members.first.fileName;
-    final done =
-        members.where((t) => t.status == DownloadStatus.completed).length;
+    var songs = songCount ?? queue.cueSongCountForGroup(groupId);
+    if (songs == null) {
+      final cueFile = cue?.localPath;
+      if (cueFile != null && File(cueFile).existsSync()) {
+        try {
+          final sheet = CueSheetParser.tryParse(File(cueFile).readAsStringSync());
+          if (sheet != null) {
+            songs = sheet.tracks.length;
+            queue.rememberCueSongCount(groupId, songs);
+          }
+        } catch (_) {}
+      }
+    }
     final failed = members.any((t) => t.status == DownloadStatus.failed);
     final active = members.any((t) => t.status == DownloadStatus.active);
     final pending = members.any((t) => t.status == DownloadStatus.pending);
+    final allDone = members.isNotEmpty &&
+        members.every((t) => t.status == DownloadStatus.completed);
     final (label, color) = failed
         ? ('失败', AppColors.error)
         : active
-            ? ('下载中 $done/${members.length}', AppColors.accent)
+            ? ('下载中', AppColors.accent)
             : pending
                 ? ('等待中', AppColors.mutedText)
-                : done == members.length
+                : allDone
                     ? ('已完成', const Color(0xFF66BB6A))
-                    : ('进行中 $done/${members.length}', AppColors.mutedText);
+                    : ('进行中', AppColors.mutedText);
     final progress = members.isEmpty
         ? 0.0
         : members.map((t) => t.progress).reduce((a, b) => a + b) /
             members.length;
+    final songLabel = songs != null && songs > 0 ? '$songs 首歌' : 'CUE 专辑';
 
     return Card(
       color: AppColors.elevated,
@@ -128,7 +192,7 @@ class _CueGroupTile extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'CUE · $title',
+                    title,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       color: AppColors.onDark,
@@ -151,20 +215,30 @@ class _CueGroupTile extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              '${members.length} 个文件（.cue + 音频）合并为一条',
+              songLabel,
               style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
             ),
-            if (active) ...[
+            if (active || pending) ...[
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(2),
                 child: LinearProgressIndicator(
-                  value: progress.clamp(0.0, 1.0),
+                  value: active ? progress.clamp(0.0, 1.0) : null,
                   minHeight: 4,
                   backgroundColor: AppColors.elevatedHigh,
                   color: AppColors.accent,
                 ),
               ),
+              if (active) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${(progress * 100).toStringAsFixed(0)}%',
+                  style: const TextStyle(
+                    color: AppColors.mutedText,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ],
             const SizedBox(height: 4),
             Row(

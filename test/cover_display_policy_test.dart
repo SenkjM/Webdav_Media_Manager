@@ -129,4 +129,17 @@ void main() {
       expect(map['采样率'], '44100 Hz');
     });
   });
+
+  group('player cover hard rule', () {
+    test('local without full path must not resolve to thumb', () {
+      expect(
+        resolveLibraryCoverPath(
+          audioIsLocal: true,
+          fullCoverPath: null,
+          thumbPath: '/docs/covers/thumb.jpg',
+        ),
+        isNull,
+      );
+    });
+  });
 }
