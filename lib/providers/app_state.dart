@@ -161,7 +161,7 @@ class AppState extends ChangeNotifier {
       protectedLocalPaths: protected,
     );
     // Drop stale completed entries so CUE clips re-download cleanly and
-    // ClippingAudioSource still applies from library DB metadata.
+    // clip trimming still applies from library DB metadata.
     await downloads.invalidateMissingCompleted();
     return removed;
   }

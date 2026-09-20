@@ -1,16 +1,17 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:webdav_music_player/models/webdav_item.dart';
 import 'package:webdav_music_player/services/music_audio_handler.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
 
   group('MusicAudioHandler mediaItemFor', () {
     test('builds MediaItem with id title artist', () {
-      final handler = MusicAudioHandler(player: AudioPlayer());
+      final handler = MusicAudioHandler(player: Player());
       final track = TrackInfo(
         accountId: 'acc',
         remotePath: '/m/song.mp3',
@@ -31,7 +32,7 @@ void main() {
     });
 
     test('artUri null when cover missing', () {
-      final handler = MusicAudioHandler(player: AudioPlayer());
+      final handler = MusicAudioHandler(player: Player());
       final track = TrackInfo(
         accountId: 'acc',
         remotePath: '/m/song.mp3',
@@ -42,7 +43,7 @@ void main() {
     });
 
     test('artUri file when cover exists', () async {
-      final handler = MusicAudioHandler(player: AudioPlayer());
+      final handler = MusicAudioHandler(player: Player());
       final tmp = File(
         '${Directory.systemTemp.path}/webdav_cover_test_${DateTime.now().microsecondsSinceEpoch}.jpg',
       );

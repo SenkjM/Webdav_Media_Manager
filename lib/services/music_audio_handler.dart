@@ -6,7 +6,7 @@ import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:media_kit/media_kit.dart';
 
 import '../models/webdav_item.dart';
 
@@ -42,86 +42,67 @@ const Set<MediaAction> _kSystemActions = {
   MediaAction.skipToPrevious,
 };
 
-/// audio_service handler owning one [AudioPlayer]. Continuously pipes
-/// just_audio events into [playbackState] / [mediaItem] / [queue] so Android
-/// keeps an active MediaSession + MediaStyle notification (system media center).
+/// audio_service handler owning one media_kit [Player]. Pipes its playback
+/// events into [playbackState] / [mediaItem] / [queue] so Android keeps an
+/// active MediaSession + MediaStyle notification (system media center).
+///
+/// CUE-sheet virtual tracks (clipStart/clipEnd) have no native clipping
+/// source in media_kit, so this handler remaps raw player position/duration
+/// to be clip-relative itself (seek offsets by clipStart, auto-advances at
+/// clipEnd) to match the previous just_audio ClippingAudioSource behavior.
 class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
-  MusicAudioHandler({AudioPlayer? player})
-      : _player = player ??
-            AudioPlayer(
-              // Keep interruption handling; AudioSession is configured once
-              // below — do not re-configure on every play (causes focus clicks).
-              handleInterruptions: true,
-              androidApplyAudioAttributes: true,
-              handleAudioSessionActivation: true,
-            ) {
-    _eventSub = _player.playbackEventStream.map(_transformEvent).listen(
-      (state) {
-        if (_gatePlayerEvents) {
-          // Keep MediaSession non-idle while swapping sources / preparing,
-          // but do not let stale playing=false undo an explicit play().
-          final playingNow = playbackState.value.playing || state.playing;
-          var proc = state.processingState;
-          if (proc == AudioProcessingState.idle &&
-              !_allowIdleBroadcast &&
-              _index >= 0) {
-            // Prefer buffering over loading: native maps loading→CONNECTING
-            // which ColorOS media center often ignores.
-            proc = playingNow
-                ? AudioProcessingState.buffering
-                : AudioProcessingState.loading;
-          } else if (playingNow && proc == AudioProcessingState.loading) {
-            proc = AudioProcessingState.buffering;
-          }
-          playbackState.add(state.copyWith(
-            playing: playingNow,
-            processingState: proc,
-            controls: _controls(playing: playingNow),
-            systemActions: _kSystemActions,
-            androidCompactActionIndices: const [0, 1, 3],
-            queueIndex: _index >= 0 ? _index : state.queueIndex,
-          ));
-          return;
-        }
-        playbackState.add(state);
-        _notifLog(
-          'playbackState playing=${state.playing} '
-          'proc=${state.processingState} idx=${state.queueIndex} '
-          'actions=${state.systemActions.length} controls=${state.controls.length}',
-        );
-      },
-      onError: (Object e, StackTrace st) {
-        _notifLog('playbackEventStream error: $e');
-      },
-    );
-    _completeSub = _player.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed && !_gatePlayerEvents) {
+  MusicAudioHandler({Player? player}) : _player = player ?? Player() {
+    _playingSub = _player.stream.playing.listen((_) => _broadcastState());
+    _bufferingSub = _player.stream.buffering.listen((_) => _broadcastState());
+    _positionSub = _player.stream.position.listen(_onPosition);
+    _durationSub = _player.stream.duration.listen((raw) {
+      final dur = _clipDuration(raw);
+      _durationController.add(dur);
+      final current = mediaItem.valueOrNull;
+      if (current != null) mediaItem.add(current.copyWith(duration: dur));
+    });
+    _completedSub = _player.stream.completed.listen((completed) {
+      if (completed && _index >= 0 && !_gateEvents) {
         unawaited(skipToNext());
       }
     });
-    // Safety net: never stay at volume 0 once playback is actually playing.
-    _volumeSafetySub = _player.playerStateStream.listen((s) {
-      if (s.playing && (_mutedForPrep || _player.volume < 0.01)) {
-        unawaited(_restoreVolume(reason: 'playingSafety'));
-      }
+    _errorSub = _player.stream.error.listen((e) {
+      _notifLog('media_kit error: $e');
+    });
+    // audio_service swallows setState/setMediaItem/setQueue platform-channel
+    // failures (e.g. NO_SERVICE when the native AudioService binder is null)
+    // into this stream instead of throwing — without listening, a broken
+    // native bridge silently plays audio with no notification ever posted.
+    _asyncErrorSub = AudioService.asyncError.listen((e) {
+      _lastAsyncError = e.toString();
+      _lastAsyncErrorAt = DateTime.now();
+      _notifLog('AudioService.asyncError: $e');
     });
     unawaited(_ensureAudioSessionConfigured());
   }
 
-  final AudioPlayer _player;
-  StreamSubscription<PlaybackState>? _eventSub;
-  StreamSubscription<ProcessingState>? _completeSub;
+  final Player _player;
+  StreamSubscription<bool>? _playingSub;
+  StreamSubscription<bool>? _bufferingSub;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration>? _durationSub;
+  StreamSubscription<bool>? _completedSub;
+  StreamSubscription<String>? _errorSub;
+  StreamSubscription<Object>? _asyncErrorSub;
+  StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
+  StreamSubscription<void>? _becomingNoisySub;
+  String? _lastAsyncError;
+  DateTime? _lastAsyncErrorAt;
 
-  /// When true, idle may be broadcast (tears down Android AudioService).
-  bool _allowIdleBroadcast = false;
-
-  /// Suppresses event-driven playing=false while load/play is in progress.
-  bool _gatePlayerEvents = false;
+  /// Suppresses transient stream events while a source swap is in flight.
+  bool _gateEvents = false;
+  bool _duckedByInterruption = false;
+  bool _pausedByInterruption = false;
 
   bool _audioSessionConfigured = false;
-  bool _mutedForPrep = false;
-  double _volumeBeforeMute = 1.0;
-  StreamSubscription<PlayerState>? _volumeSafetySub;
+
+  final _positionController = StreamController<Duration>.broadcast();
+  final _durationController = StreamController<Duration?>.broadcast();
 
   /// Optional resolver when skipping to a queue item that needs a local path.
   Future<String?> Function(TrackInfo track)? resolveLocalPath;
@@ -133,13 +114,54 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   int get index => _index;
   TrackInfo? get currentTrack =>
       (_index >= 0 && _index < _tracks.length) ? _tracks[_index] : null;
-  AudioPlayer get player => _player;
+  Player get player => _player;
+
+  bool get playing => _player.state.playing;
+
+  /// Clip-relative position (0-based within clipStart..clipEnd).
+  Duration get position => _clipRelative(_player.state.position);
+  Stream<Duration> get positionStream => _positionController.stream;
+  Stream<Duration?> get durationStream => _durationController.stream;
+
+  Duration get _clipStartOf => currentTrack?.clipStart ?? Duration.zero;
+  Duration? get _clipEndOf => currentTrack?.clipEnd;
+
+  Duration _clipRelative(Duration raw) {
+    final rel = raw - _clipStartOf;
+    return rel.isNegative ? Duration.zero : rel;
+  }
+
+  Duration? _clipDuration(Duration? rawDuration) {
+    final end = _clipEndOf;
+    if (end != null) return end - _clipStartOf;
+    if (rawDuration == null || rawDuration == Duration.zero) return null;
+    final d = rawDuration - _clipStartOf;
+    return d.isNegative ? Duration.zero : d;
+  }
+
+  void _onPosition(Duration raw) {
+    if (_gateEvents) return;
+    final rel = _clipRelative(raw);
+    _positionController.add(rel);
+    playbackState.add(playbackState.value.copyWith(updatePosition: rel));
+    final end = _clipEndOf;
+    if (end != null && raw >= end && _index >= 0) {
+      unawaited(skipToNext());
+    }
+  }
+
+  AudioSession? _audioSession;
 
   Future<void> _ensureAudioSessionConfigured() async {
     if (_audioSessionConfigured) return;
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
+      _interruptionSub = session.interruptionEventStream.listen(_onInterruption);
+      _becomingNoisySub = session.becomingNoisyEventStream.listen((_) {
+        unawaited(pause());
+      });
+      _audioSession = session;
       _audioSessionConfigured = true;
       _notifLog('AudioSession configured (music) once');
     } catch (e) {
@@ -147,68 +169,41 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  Future<void> _muteForPrep() async {
-    if (!_mutedForPrep) {
-      final v = _player.volume;
-      _volumeBeforeMute = v > 0.01 ? v : 1.0;
-    }
-    _mutedForPrep = true;
-    try {
-      await _player.setVolume(0);
-    } catch (_) {}
-  }
-
-  Future<void> _restoreVolume({String reason = ''}) async {
-    final target = _volumeBeforeMute > 0.01 ? _volumeBeforeMute : 1.0;
-    _mutedForPrep = false;
-    try {
-      await _player.setVolume(target);
-    } catch (_) {
-      try {
-        await _player.setVolume(1);
-      } catch (_) {}
-    }
-    _notifLog('restoreVolume($reason) vol=$target playerVol=${_player.volume}');
-  }
-
-  /// Poll ready instead of stream.firstWhere — avoids missing the ready event
-  /// between a synchronous check and subscription (classic race → stuck mute).
-  Future<void> _waitReadyWhileMuted({
-    Duration timeout = const Duration(seconds: 3),
-  }) async {
-    final deadline = DateTime.now().add(timeout);
-    while (DateTime.now().isBefore(deadline)) {
-      final s = _player.processingState;
-      if (s == ProcessingState.ready || s == ProcessingState.completed) {
-        return;
+  /// media_kit/libmpv has no automatic OS audio-focus handling like
+  /// ExoPlayer, so interruptions (calls, other apps' media) must be applied
+  /// manually via audio_session's recipe.
+  void _onInterruption(AudioInterruptionEvent event) {
+    if (event.begin) {
+      switch (event.type) {
+        case AudioInterruptionType.duck:
+          _duckedByInterruption = true;
+          unawaited(_player.setVolume((_player.state.volume * 0.5).clamp(0.0, 100.0)));
+          break;
+        case AudioInterruptionType.pause:
+        case AudioInterruptionType.unknown:
+          if (_player.state.playing) {
+            _pausedByInterruption = true;
+            unawaited(pause());
+          }
       }
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+    } else {
+      switch (event.type) {
+        case AudioInterruptionType.duck:
+          if (_duckedByInterruption) {
+            _duckedByInterruption = false;
+            unawaited(_player.setVolume(100));
+          }
+          break;
+        case AudioInterruptionType.pause:
+          if (_pausedByInterruption) {
+            _pausedByInterruption = false;
+            unawaited(play());
+          }
+          break;
+        case AudioInterruptionType.unknown:
+          _pausedByInterruption = false;
+      }
     }
-  }
-
-  /// Mute window ends BEFORE audible play. Never leave volume at 0.
-  Future<void> _unmuteBeforeAudiblePlay() async {
-    if (!_mutedForPrep && _player.volume >= 0.01) return;
-    await _waitReadyWhileMuted();
-    // Brief settle so clip/seek/activate clicks stay under the mute window.
-    await Future<void>.delayed(const Duration(milliseconds: 30));
-    await _restoreVolume(reason: 'beforePlay');
-  }
-
-  AudioSource _sourceFor(TrackInfo track, String localPath) {
-    final start = track.clipStart;
-    final end = track.clipEnd;
-    final fileSrc = AudioSource.file(localPath);
-    if (start != null || end != null) {
-      // ClippingMediaSource starts at [start] — no play-then-seek blip.
-      return ClippingAudioSource(
-        child: fileSrc,
-        start: start ?? Duration.zero,
-        end: end,
-        duration: track.duration,
-      );
-    }
-    return fileSrc;
   }
 
   MediaItem mediaItemFor(TrackInfo track) {
@@ -216,12 +211,16 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final title = track.displayTitle.trim().isEmpty
         ? track.fileName
         : track.displayTitle;
+    final clipEnd = track.clipEnd;
+    final duration = clipEnd != null
+        ? clipEnd - (track.clipStart ?? Duration.zero)
+        : track.duration;
     return MediaItem(
       id: '${track.accountId}|${track.remotePath}',
       title: title,
       album: track.album,
       artist: track.displayArtist,
-      duration: track.duration,
+      duration: duration,
       artUri: _artUri(track),
       extras: {
         'accountId': track.accountId,
@@ -239,6 +238,12 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     return Uri.file(cover);
   }
 
+  /// mpv trims to [start]..[end] natively (via an on_load hook) — no
+  /// separate play-then-seek blip like a manual seek-after-open would cause.
+  Media _mediaFor(TrackInfo track, String localPath) {
+    return Media(localPath, start: track.clipStart, end: track.clipEnd);
+  }
+
   /// Replace queue and start playback at [startIndex] with a resolved local path.
   Future<void> loadAndPlay({
     required List<TrackInfo> playlist,
@@ -247,8 +252,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }) async {
     if (playlist.isEmpty) return;
     final idx = startIndex.clamp(0, playlist.length - 1);
-    _allowIdleBroadcast = false;
-    _gatePlayerEvents = true;
+    _gateEvents = true;
     _tracks
       ..clear()
       ..addAll(playlist);
@@ -256,7 +260,6 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _tracks[_index].localPath = localPath;
 
     await _ensureAudioSessionConfigured();
-    await _muteForPrep();
 
     final items = _tracks.map(mediaItemFor).toList();
     // Real queue enables skipToNext/Previous for MediaSession callbacks.
@@ -265,14 +268,14 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     mediaItem.add(item);
     _notifLog('mediaItem set title=${item.title} artist=${item.artist}');
 
-    // Publish non-idle BEFORE setAudioSource. just_audio may briefly stay
-    // idle / emit idle while swapping sources; mapping that through would
-    // call AudioService.stop() on Android and kill the MediaStyle notification.
+    // Publish non-idle BEFORE open(). A transient idle broadcast here would
+    // make native audio_service call AudioService.stop() and kill the
+    // MediaStyle notification.
     playbackState.add(playbackState.value.copyWith(
       controls: _controls(playing: false),
       systemActions: _kSystemActions,
       androidCompactActionIndices: const [0, 1, 3],
-      processingState: AudioProcessingState.loading,
+      processingState: AudioProcessingState.buffering,
       playing: false,
       updatePosition: Duration.zero,
       bufferedPosition: Duration.zero,
@@ -280,20 +283,14 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     ));
 
     try {
-      await _player.setAudioSource(_sourceFor(_tracks[_index], localPath));
-      mediaItem.add(item.copyWith(duration: _player.duration ?? item.duration));
-      // Unmute BEFORE play — awaiting play() first left volume at 0 when the
-      // first cold-start play() Future stalled (ColorOS / audio focus).
-      await _unmuteBeforeAudiblePlay();
+      await _player.open(_mediaFor(_tracks[_index], localPath), play: false);
+      final dur = _clipDuration(_player.state.duration);
+      _durationController.add(dur);
+      mediaItem.add(item.copyWith(duration: dur ?? item.duration));
       await play();
     } finally {
-      // Belt-and-suspenders: never leave prep-mute stuck after load.
-      if (_mutedForPrep || _player.volume < 0.01) {
-        await _restoreVolume(reason: 'loadAndPlay/finally');
-      }
-      _gatePlayerEvents = false;
-      // Push authoritative state once gate lifts (prefer ready+playing).
-      playbackState.add(_transformEvent(_player.playbackEvent));
+      _gateEvents = false;
+      _broadcastState();
     }
   }
 
@@ -308,53 +305,36 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     ];
   }
 
-  AudioProcessingState _mapProcessing(ProcessingState state) {
-    var mapped = const {
-      ProcessingState.idle: AudioProcessingState.idle,
-      ProcessingState.loading: AudioProcessingState.loading,
-      ProcessingState.buffering: AudioProcessingState.buffering,
-      ProcessingState.ready: AudioProcessingState.ready,
-      ProcessingState.completed: AudioProcessingState.completed,
-    }[state]!;
-    // Root cause #2: audio_service Android stops the MediaBrowserService when
-    // processingState transitions to idle. just_audio emits idle while
-    // activating/replacing sources; if we forward that after a load started,
-    // startForeground never sticks and the system media center stays empty
-    // even though in-process audio still plays.
-    if (mapped == AudioProcessingState.idle &&
-        !_allowIdleBroadcast &&
-        _index >= 0) {
-      mapped = _player.playing
-          ? AudioProcessingState.buffering
-          : AudioProcessingState.loading;
+  void _broadcastState() {
+    if (_gateEvents) return;
+    final playingNow = _player.state.playing;
+    final AudioProcessingState proc;
+    if (_index < 0) {
+      proc = AudioProcessingState.idle;
+    } else if (_player.state.completed) {
+      proc = AudioProcessingState.completed;
+    } else if (_player.state.buffering) {
+      proc = AudioProcessingState.buffering;
+    } else {
+      proc = AudioProcessingState.ready;
     }
-    // ColorOS / OPPO media center: avoid STATE_CONNECTING (loading) while
-    // already playing — promote to buffering so the session stays visible.
-    if (_player.playing && mapped == AudioProcessingState.loading) {
-      mapped = AudioProcessingState.buffering;
-    }
-    return mapped;
-  }
-
-  PlaybackState _transformEvent(PlaybackEvent event) {
-    final playing = _player.playing;
-    return PlaybackState(
-      controls: _controls(playing: playing),
+    playbackState.add(playbackState.value.copyWith(
+      controls: _controls(playing: playingNow),
       systemActions: _kSystemActions,
       androidCompactActionIndices: const [0, 1, 3],
-      processingState: _mapProcessing(_player.processingState),
-      playing: playing,
-      updatePosition: _player.position,
-      bufferedPosition: _player.bufferedPosition,
-      speed: _player.speed,
-      queueIndex: _index >= 0 ? _index : event.currentIndex,
-    );
+      processingState: proc,
+      playing: playingNow,
+      updatePosition: position,
+      bufferedPosition: _clipRelative(_player.state.buffer),
+      speed: _player.state.rate,
+      queueIndex: _index >= 0 ? _index : null,
+    ));
+    _notifLog('playbackState playing=$playingNow proc=$proc idx=$_index');
   }
 
   Future<void> _loadIndex(int idx) async {
     if (idx < 0 || idx >= _tracks.length) return;
-    _allowIdleBroadcast = false;
-    _gatePlayerEvents = true;
+    _gateEvents = true;
     _index = idx;
     final track = _tracks[_index];
     String? local = track.localPath;
@@ -366,15 +346,14 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       }
     }
     if (local == null || !File(local).existsSync()) {
-      _gatePlayerEvents = false;
+      _gateEvents = false;
       throw StateError('本地文件不可用');
     }
-    await _muteForPrep();
     final item = mediaItemFor(track);
     mediaItem.add(item);
     queue.add(_tracks.map(mediaItemFor).toList());
     playbackState.add(playbackState.value.copyWith(
-      processingState: AudioProcessingState.loading,
+      processingState: AudioProcessingState.buffering,
       playing: false,
       controls: _controls(playing: false),
       systemActions: _kSystemActions,
@@ -382,50 +361,33 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       queueIndex: _index,
     ));
     try {
-      await _player.setAudioSource(_sourceFor(track, local));
-      mediaItem.add(item.copyWith(duration: _player.duration ?? item.duration));
-      await _unmuteBeforeAudiblePlay();
+      await _player.open(_mediaFor(track, local), play: false);
+      final dur = _clipDuration(_player.state.duration);
+      _durationController.add(dur);
+      mediaItem.add(item.copyWith(duration: dur ?? item.duration));
       await play();
     } finally {
-      if (_mutedForPrep || _player.volume < 0.01) {
-        await _restoreVolume(reason: 'loadIndex/finally');
-      }
-      _gatePlayerEvents = false;
-      playbackState.add(_transformEvent(_player.playbackEvent));
+      _gateEvents = false;
+      _broadcastState();
     }
   }
 
   @override
   Future<void> play() async {
-    // Immediate PLAYING broadcast → enterPlayingState / startForeground /
-    // mediaSession.setActive(true) before just_audio's event arrives.
-    // Prefer buffering (not loading/CONNECTING) while warming — ColorOS media
-    // center often ignores STATE_CONNECTING.
-    // Do NOT call androidForceEnableMediaButtons here: it plays a STREAM_MUSIC
-    // AudioTrack of silence and causes the audible double click/pop on start,
-    // and races with ExoPlayer audio focus.
-    if (_mutedForPrep || _player.volume < 0.01) {
-      await _restoreVolume(reason: 'play/safety');
-    }
-    final proc = _player.processingState == ProcessingState.ready
-        ? AudioProcessingState.ready
-        : AudioProcessingState.buffering;
     playbackState.add(playbackState.value.copyWith(
       playing: true,
-      processingState: proc == AudioProcessingState.idle
+      processingState: playbackState.value.processingState == AudioProcessingState.idle
           ? AudioProcessingState.buffering
-          : proc,
+          : playbackState.value.processingState,
       controls: _controls(playing: true),
       systemActions: _kSystemActions,
       androidCompactActionIndices: const [0, 1, 3],
-      updatePosition: _player.position,
+      updatePosition: position,
       queueIndex: _index >= 0 ? _index : null,
     ));
-    _notifLog('play() → playing=true proc=$proc muted=$_mutedForPrep vol=${_player.volume}');
+    _notifLog('play() -> playing=true');
+    unawaited(_audioSession?.setActive(true));
     await _player.play();
-    if (_mutedForPrep || _player.volume < 0.01) {
-      await _restoreVolume(reason: 'play/after');
-    }
   }
 
   @override
@@ -435,27 +397,34 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       controls: _controls(playing: false),
       systemActions: _kSystemActions,
       androidCompactActionIndices: const [0, 1, 3],
-      updatePosition: _player.position,
+      updatePosition: position,
     ));
     await _player.pause();
   }
 
   @override
   Future<void> stop() async {
-    _allowIdleBroadcast = true;
-    _gatePlayerEvents = false;
+    // Stay gated through the native reset so its own stream events (which
+    // fire synchronously against the stale, about-to-be-cleared queue/index)
+    // don't race our explicit idle broadcast below. The next loadAndPlay/
+    // _loadIndex re-gates anyway.
+    _gateEvents = true;
     try {
-      if (_mutedForPrep || _player.volume < 0.01) {
-        await _restoreVolume(reason: 'stop');
-      }
       await _player.stop();
       await super.stop();
+      unawaited(_audioSession?.setActive(false));
     } finally {
       mediaItem.add(null);
       queue.add(const []);
       _index = -1;
       _tracks.clear();
-      _allowIdleBroadcast = false;
+      _durationController.add(null);
+      playbackState.add(playbackState.value.copyWith(
+        processingState: AudioProcessingState.idle,
+        playing: false,
+        updatePosition: Duration.zero,
+        queueIndex: null,
+      ));
     }
   }
 
@@ -465,7 +434,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> onTaskRemoved() async {}
 
   @override
-  Future<void> seek(Duration position) => _player.seek(position);
+  Future<void> seek(Duration position) => _player.seek(_clipStartOf + position);
 
   @override
   Future<void> skipToNext() async {
@@ -480,7 +449,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToPrevious() async {
-    if (_player.position > const Duration(seconds: 3)) {
+    if (position > const Duration(seconds: 3)) {
       await seek(Duration.zero);
       return;
     }
@@ -556,7 +525,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     if (track == null || path == null || !File(path).existsSync()) {
       final probe = await probeMediaNotificationNative();
-      return '无可用本地音频。请先播放一首歌，再点测试。\n$probe';
+      return '无可用本地音频。请先播放一首歌，再点测试。\n$probe$_asyncErrorSuffix';
     }
     final idx = _tracks.indexWhere(
       (t) => t.remotePath == track!.remotePath && t.accountId == track.accountId,
@@ -572,20 +541,38 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final probe = await probeMediaNotificationNative();
     return '已强制播放「${track.displayTitle}」 '
         'playing=${st.playing} proc=${st.processingState}\n'
-        '$probe\n'
+        '$probe$_asyncErrorSuffix\n'
         '请查看通知栏 / 媒体控制中心。';
   }
 
+  /// Reports the last error audio_service swallowed from a platform-channel
+  /// call (e.g. "NO_SERVICE" — native AudioService binder is null), if recent.
+  String get _asyncErrorSuffix {
+    final err = _lastAsyncError;
+    final at = _lastAsyncErrorAt;
+    if (err == null || at == null) return '';
+    if (DateTime.now().difference(at) > const Duration(minutes: 2)) return '';
+    return '\n\u26a0 audio_service 桥接错误: $err';
+  }
+
   Future<void> disposePlayer() async {
-    await _eventSub?.cancel();
-    await _completeSub?.cancel();
-    await _volumeSafetySub?.cancel();
+    await _playingSub?.cancel();
+    await _bufferingSub?.cancel();
+    await _positionSub?.cancel();
+    await _durationSub?.cancel();
+    await _completedSub?.cancel();
+    await _errorSub?.cancel();
+    await _asyncErrorSub?.cancel();
+    await _interruptionSub?.cancel();
+    await _becomingNoisySub?.cancel();
+    await _positionController.close();
+    await _durationController.close();
     await _player.dispose();
   }
 }
 
 /// Creates and registers the platform audio service (Android/iOS).
-/// Must be called before any other [AudioPlayer] is created.
+/// Must be called before any other media_kit [Player] is created.
 Future<MusicAudioHandler> initMusicAudioService() {
   return AudioService.init<MusicAudioHandler>(
     builder: MusicAudioHandler.new,

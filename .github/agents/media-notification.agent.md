@@ -1,5 +1,5 @@
 ---
-description: "Use when working on WEBDAV-music-player's media notification / background playback / lock-screen controls (audio_service, MusicAudioHandler, just_audio, Android foreground service, notification channel, POST_NOTIFICATIONS). Handles all dev work on the `dev` branch and only merges into `beta` after explicit user approval."
+description: "Use when working on WEBDAV-music-player's media notification / background playback / lock-screen controls (audio_service, MusicAudioHandler, media_kit, Android foreground service, notification channel, POST_NOTIFICATIONS). Handles all dev work on the `dev` branch and only merges into `beta` after explicit user approval."
 name: "Media Notification Dev"
 tools: [read, edit, search, execute, todo]
 agents: [Explore]

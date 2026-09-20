@@ -105,6 +105,11 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
+      - name: Install libmpv (media_kit native backend for `flutter test` on Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev mpv
+
       - name: Install dependencies
         run: flutter pub get
 

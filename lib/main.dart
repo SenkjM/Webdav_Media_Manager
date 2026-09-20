@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/app_state.dart';
@@ -22,7 +23,9 @@ import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // AudioService / handler must be created before any other AudioPlayer.
+  // Required once before any media_kit Player is created.
+  MediaKit.ensureInitialized();
+  // AudioService / handler must be created before any other Player.
   late final MusicAudioHandler audioHandler;
   if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
     audioHandler = await initMusicAudioService();

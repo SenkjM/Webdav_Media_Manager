@@ -1,18 +1,19 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:webdav_music_player/models/webdav_item.dart';
 import 'package:webdav_music_player/services/music_audio_handler.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
 
   test('channel id is v4 (IMPORTANCE_DEFAULT fresh channel)', () {
     expect(kMediaNotificationChannelId, contains('audio.v4'));
   });
 
   test('stop clears queue and allows idle again', () async {
-    final handler = MusicAudioHandler(player: AudioPlayer());
+    final handler = MusicAudioHandler(player: Player());
     addTearDown(() async {
       await handler.disposePlayer();
     });
@@ -24,7 +25,7 @@ void main() {
   });
 
   test('mediaItemFor never empty title', () {
-    final handler = MusicAudioHandler(player: AudioPlayer());
+    final handler = MusicAudioHandler(player: Player());
     addTearDown(() async {
       await handler.disposePlayer();
     });

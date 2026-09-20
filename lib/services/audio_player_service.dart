@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
@@ -26,15 +25,15 @@ class AudioPlayerService extends ChangeNotifier {
         _notifications = notificationPermission,
         _handler = handler {
     _handler.resolveLocalPath = _resolveLocalPath;
-    _posSub = _handler.player.positionStream.listen((p) {
+    _posSub = _handler.positionStream.listen((p) {
       _position = p;
       notifyListeners();
     });
-    _durSub = _handler.player.durationStream.listen((d) {
+    _durSub = _handler.durationStream.listen((d) {
       _duration = d;
       notifyListeners();
     });
-    _stateSub = _handler.player.playerStateStream.listen((s) {
+    _stateSub = _handler.playbackState.listen((s) {
       _playing = s.playing;
       _processingState = s.processingState;
       notifyListeners();
@@ -50,13 +49,13 @@ class AudioPlayerService extends ChangeNotifier {
 
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration?>? _durSub;
-  StreamSubscription<PlayerState>? _stateSub;
+  StreamSubscription<PlaybackState>? _stateSub;
   StreamSubscription<MediaItem?>? _mediaSub;
 
   Duration _position = Duration.zero;
   Duration? _duration;
   bool _playing = false;
-  ProcessingState _processingState = ProcessingState.idle;
+  AudioProcessingState _processingState = AudioProcessingState.idle;
   String? _error;
 
   MusicAudioHandler get handler => _handler;
@@ -70,7 +69,7 @@ class AudioPlayerService extends ChangeNotifier {
   Duration? get duration => _duration;
   bool get playing => _playing;
   String? get error => _error;
-  ProcessingState get processingState => _processingState;
+  AudioProcessingState get processingState => _processingState;
 
   /// Resolve an already-cached local path. Never enqueues downloads.
   Future<String?> _resolveLocalPath(TrackInfo track) async {
@@ -165,7 +164,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> playPause() async {
-    if (_handler.player.playing) {
+    if (_handler.playing) {
       await _handler.pause();
     } else {
       if (current == null && _handler.tracks.isNotEmpty) {

@@ -12,7 +12,7 @@
 **WebDAV 音乐播放器**是 Android-first 的 Flutter 客户端：
 
 - 在 WebDAV 上浏览目录 → **先下载到本地缓存** → 再用本地路径播放。
-- **不做网络流式播放**（`just_audio` 只用 `AudioSource.file`；播放路径上禁止隐式入队下载）。
+- **不做网络流式播放**（`media_kit` 的 `Player.open` 只喂本地文件路径；播放路径上禁止隐式入队下载）。
 - 本地「音乐库」持久化标签 / CUE 分片 / 封面缩略图；**清空音频缓存不会毁掉曲库身份**。
 - 多 WebDAV 账号、下载队列、歌单（本地 + 可选 M3U8 同步）、按站点备份 / 恢复、媒体通知（`audio_service`）。
 
@@ -178,7 +178,7 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 2. 确认后 **整组下载**：CUE + 引用的音频进同一 `cacheGroupId`。
 3. 下载完成后 `DownloadQueueService` 调 `LibraryService.ingestCueAlbum` → 虚拟曲目进入音乐库。
 4. **原始 `.cue` 文件本身不是音乐库里的「一首歌」**；库里是 `cue_slices` 虚拟行。
-5. 播放：`ClippingAudioSource`（`MusicAudioHandler._sourceFor`）按 INDEX 裁切。
+5. 播放：`Media(path, start:, end:)`（`MusicAudioHandler._mediaFor`）原生按 INDEX 裁切。
 
 ### 编码：`decodeCueText`
 
@@ -208,8 +208,9 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 
 ### 栈
 
-- `just_audio`：实际解码 / 播放本地文件。
-- `audio_service`（vendored）：`MusicAudioHandler` → MediaSession + MediaStyle 通知。
+- `media_kit`（libmpv/FFI）：实际解码 / 播放本地文件；`Media(path, start:, end:)` 原生裁切 CUE 分片，`MusicAudioHandler` 再把绝对 position/duration 换算成 clip 相对值对外暴露。
+- `audio_service`（vendored）：`MusicAudioHandler` → MediaSession + MediaStyle 通知；播放引擎与通知桥接解耦，`Player` 的 stream 被动推送到 `playbackState`/`mediaItem`。
+- Android 原生依赖 `libmpv`：`media_kit_libs_android_audio` 随 APK 打包各 ABI 的 so；CI 在 ubuntu-latest 上跑 `flutter test` 前需 `apt install libmpv-dev mpv`（`flutter test` 进程本身是 Linux 可执行文件，会走 GNU/Linux 加载路径）。
 - 配置要点（`initMusicAudioService`）：
   - 通道 id：`com.webdav.webdav_music_player.audio.v4`（IMPORTANCE_DEFAULT；历史曾用 v1–v3，升级靠换 id 生效）
   - `androidStopForegroundOnPause: false`（避免 Android 12+ 暂停后再起 FGS 被拦）
@@ -226,13 +227,11 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 
 **禁止**：在根返回路径上调用 `SystemNavigator.pop()`——会 finish Activity、拆掉 `AppState` / 播放器，表现为「一返回音乐就停」。
 
-### 起播静音（勿卡住）
+### 起播静音（历史背景，media_kit 起已移除）
 
-- 静音窗口应尽量短：主要盖住 `setAudioSource` / clip 准备；**在可闻的 `play()` 之前恢复 volume=1**。
-- 历史回归（`922d3c4`）：若「先 `play()` 再 unmute」，冷启动 `play` Future 卡住会把音量永久留在 0 → 首曲无声。`play()` / `playing` 与 `finally` 需有 unmute 安全网；见 `test/music_audio_handler_volume_safety_test.dart`。
-- **禁止**在每次 `play()` 调 `androidForceEnableMediaButtons`（会播一段静音 AudioTrack → 双击杂音）。
-- `stop()` 必须清除 mute 标志并恢复 volume=1。
-- 不要把 `ProcessingState.idle` 在仍有选中曲时转成 `AudioProcessingState.idle`（native 会 `stop()` 拆掉通知）。详见 PATCHES.md 与 idle guard 测试。
+- 旧栈（`just_audio`/ExoPlayer）冷启动 `play()` 前需要静音窗口盖住 `setAudioSource`，否则会有双击杂音或卡在音量 0；相关hack（`_muteForPrep`/`_waitReadyWhileMuted`）已随引擎换成 `media_kit`（libmpv）一起移除——mpv 没有这个问题，不要凭旧记忆重新引入。
+- `_index < 0`（无选中曲）才广播 `AudioProcessingState.idle`；media_kit 没有 just_audio 式的过渡态 idle 事件，无需再靠 gate 抑制。详见 PATCHES.md 与 idle guard 测试。
+- `stop()` 通过 `AudioSession.setActive(false)` 释放音频焦点；`play()` 通过 `setActive(true)` 申请焦点——media_kit 不像 ExoPlayer 那样自动管理 Android 音频焦点，中断（来电/其它 App 播放）靠 `audio_session` 的 `interruptionEventStream` 手动 duck/pause（见 `MusicAudioHandler._onInterruption`）。
 
 ### OEM 已知问题（ColorOS / OnePlus / Oppo 等）
 
@@ -337,7 +336,7 @@ Agents：**不要**打印 / 提交任何 keystore、token、密码。
 - 不要把未下载远程文件标成「排队中」。
 - 不要分享 CUE 虚拟曲；不要恢复已删除的 ffmpeg CUE 导出分享。
 - 不要在 `MainActivity` 引用 `com.ryanheise.audioservice.AudioService` 类（见陷阱）。
-- 不要让起播静音逻辑在异常路径卡死（`stop`/错误路径要 unmute）。
+- 不要重新引入 just_audio 时代的起播静音 hack；media_kit 不需要它（见第 7 节历史背景）。
 - **不要**改 CI 为 push 自动构建；**不要**未经用户确认 `workflow_dispatch`；**不要**推 beta/main 或打 Pre-release，除非用户明确要求。
 - 不要提交 `key.properties`、keystore、secrets、`.env`。
 - 不要发明不存在的 API；以仓库源码为准。
@@ -357,7 +356,7 @@ lib/screens/network_library_screen.dart# WebDAV 浏览；CUE 预览下载
 lib/screens/player_screen.dart         # Now Playing
 lib/screens/downloads_screen.dart      # 下载队列 UI
 lib/screens/settings_screen.dart       # 缓存 / 备份 / 封面尺寸 / 通知测试
-lib/services/music_audio_handler.dart  # 媒体会话；静音；ClippingAudioSource
+lib/services/music_audio_handler.dart  # 媒体会话；media_kit Player；clip 相对 position/duration
 lib/services/audio_player_service.dart # 仅本地播放门面
 lib/services/download_queue_service.dart
 lib/services/library_service.dart      # ingestCueAlbum 等
@@ -390,7 +389,7 @@ test/                                  # 身份 / CUE / 本地播放 / idle guar
 | **切后台后通知/播放状态消失** | `AudioServiceActivity`（普通 `FlutterActivity` 变体）只重写 `provideFlutterEngine()`，未重写 `getCachedEngineId()`/`shouldDestroyEngineWithHost()`，导致其默认值为 `true`：Activity 被系统回收/从最近任务划掉时，共享的 `FlutterEngine`（同时承载 `MusicAudioHandler`）被销毁，通知与播放状态一起消失 | `MainActivity` 改继承 `AudioServiceFragmentActivity`（正确重写全部三个方法，engine 不随 Activity 销毁） |
 | **SystemNavigator.pop 停音乐** | 根返回 finish Activity → 拆掉 handler | 根返回 `moveTaskToBack`；仅抽屉「退出」才 pop（`9c9d5c5`） |
 | **起播双击杂音 / 首曲无声** | 每次 play 播静音 AudioTrack；或 unmute 排在卡住的 `play()` 之后 | 禁止 `androidForceEnableMediaButtons` on play；mute 仅罩住 setAudioSource，**play 前 unmute**；`stop`/finally 清 mute（`0ed9591`, `922d3c4`） |
-| **idle 拆掉媒体通知** | 把 just_audio idle 映射成 `AudioProcessingState.idle` | 有选中曲时用 loading 等非 idle；见 idle guard 测试 |
+| **idle 拆掉媒体通知** | 只在无选中曲（`_index < 0`）时广播 `AudioProcessingState.idle` | 见 idle guard 测试 |
 | **未下载显示「排队中」** | 远程浏览误用 queued 状态 | 未入队 → `TrackUiState.remote`，Chip 为空 |
 | **播放器顺手下载** | 在 play 路径 enqueue | 拒绝并提示先下载（`892ff89`） |
 | **清缓存误删曲库** | 把 tracks 和文件绑死 | 标签在 DB；cache 为 annex；销毁才是 wipe |

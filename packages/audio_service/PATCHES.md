@@ -29,14 +29,13 @@ This tree is audio_service 0.18.19 with local Android fixes:
 
 Upstream: https://pub.dev/packages/audio_service/versions/0.18.19
 
-App-side (not in this package): MusicAudioHandler must not forward
-just_audio `ProcessingState.idle` to `AudioProcessingState.idle` while a
-track is selected — native audio_service calls `stop()` on idle and tears
-down the MediaSession / notification. Also: do not call
+App-side (not in this package): MusicAudioHandler (now backed by media_kit,
+not just_audio) must not broadcast `AudioProcessingState.idle` while a track
+is selected — native audio_service calls `stop()` on idle and tears down the
+MediaSession / notification. Also: do not call
 `androidForceEnableMediaButtons` on every `play()` (AudioTrack silence
-causes startup clicks); mute until ready; keep
-`androidStopForegroundOnPause: false` to avoid Android 12+ FGS restart
-blocks during play/pause races.
+causes startup clicks); keep `androidStopForegroundOnPause: false` to avoid
+Android 12+ FGS restart blocks during play/pause races.
 
 6. **ColorOS / MediaSession discoverability** — onCreate sets
    `FLAG_HANDLES_MEDIA_BUTTONS | TRANSPORT_CONTROLS | QUEUE_COMMANDS` and

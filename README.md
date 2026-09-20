@@ -30,11 +30,11 @@
 - **元数据持久化**：库记录与压缩封面缩略图独立于音频缓存；清空或过期清理音频缓存**不会**删除库与封面；同一账号+路径再次下载会刷新标签与封面
 - **销毁音乐库**：音乐库页菜单「销毁」可一次性清除标签/CUE 表、压缩封面与对应本地音频缓存（不可恢复）；网络库与账号保留；歌单去掉已失效曲目引用。区别于设置中的「手动清空音频缓存」（保留标签与封面）
 - **封面缩略图尺寸**：设置中可选默认 **100×100**、预设 **300×300** 或自定义正方形边长；仅影响**新**写入的缩略图。已有文件保持原尺寸，需重新下载/写入标签或销毁后重下才会按新尺寸生成
-- **本地播放**：仅用本地文件路径播放（`just_audio` + `audio_service` 媒体通知 / 系统媒体控制）
-- **CUE 分轨**：网络库显示 `.cue`；标准 CUE（FILE + TRACK/INDEX）可整组下载（CUE+音频同一缓存组）；音乐库展开为虚拟曲目，标签以 CUE 为准；播放用 `ClippingAudioSource` 按 INDEX 裁切；删除缓存时整组提示
+- **本地播放**：仅用本地文件路径播放（`media_kit` + `audio_service` 媒体通知 / 系统媒体控制）
+- **CUE 分轨**：网络库显示 `.cue`；标准 CUE（FILE + TRACK/INDEX）可整组下载（CUE+音频同一缓存组）；音乐库展开为虚拟曲目，标签以 CUE 为准；播放用 `Media(start:, end:)` 原生裁切按 INDEX 分片；删除缓存时整组提示
 - **缓存占用**：设置页显示音乐缓存磁盘用量（可读大小）；曲库可单独删除某曲本地音频缓存（保留元数据/封面）
 - **当前播放列表**：正在播放页 / 迷你条可打开**临时队列**（不自动同步歌单）；歌单页可「从当前播放列表创建」保存后再同步
-- **媒体通知**：`audio_service` 使用应用内补丁（Android 14+ typed `startForeground` + 通道 `…audio.v4` IMPORTANCE_DEFAULT）；`androidStopForegroundOnPause: false`；起播静音至 ready 且不再每次 play 播放 AudioTrack 静音（避免两声杂音）。设置页「测试媒体通知」回报会话/通知是否已发布
+- **媒体通知**：`audio_service` 使用应用内补丁（Android 14+ typed `startForeground` + 通道 `…audio.v4` IMPORTANCE_DEFAULT）；`androidStopForegroundOnPause: false`；播放引擎为 `media_kit`，`play()`/`stop()` 时显式申请/释放 Android 音频焦点。设置页「测试媒体通知」回报会话/通知是否已发布
 - **缓存清理**：可按 1 天或 1 周自动清理**音频缓存文件**；正在播放或下载中的文件受保护
 - **WebDAV 管理**：长按可重命名 / 删除；可新建文件夹；权限不足（401/403）时弹出错误对话框
 - **歌单**：本地独立数据库（`playlists.db`）创建 / 编辑 / 删除歌单，按 `(accountId + remotePath)` 添加曲目；音频缓存清理**不会**删除歌单。可选同步到 WebDAV（默认 `/Playlists/`）为 **M3U8**（含 `#EXT-X-WMP-*` 扩展）；本地修改后上传，启动/切换账号时拉取，按 `updatedAt` **最后写入胜出**合并
@@ -57,7 +57,7 @@
 | 封面缩放 | `image` → 正方形 JPEG（默认 100×100，可设置），存于应用文档 `covers/` |
 | 凭证 | `flutter_secure_storage` |
 | WebDAV | `webdav_client` |
-| 媒体通知 / 后台播放 | `audio_service` + `just_audio`（`MusicAudioHandler`） |
+| 媒体通知 / 后台播放 | `audio_service` + `media_kit`（`MusicAudioHandler`） |
 | 通知权限（Android 13+） | `permission_handler`（`POST_NOTIFICATIONS`） |
 
 ## 状态
