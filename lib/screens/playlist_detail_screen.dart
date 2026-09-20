@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,7 +6,7 @@ import '../models/playlist.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
-import '../services/download_queue_service.dart';
+import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
@@ -146,54 +144,100 @@ class _PlaylistTrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cache = context.watch<CacheService>();
+    final isLocal = libraryTrackIsLocal(cache, track);
     return ListTile(
-      leading: LibraryCoverArt.forTrack(track: track, size: 48, borderRadius: 4),
-      title: Text(track.displayTitle),
-      subtitle: Text('${track.displayArtist} · ${track.displayAlbum}'),
-      trailing: IconButton(
-        icon: const Icon(Icons.remove_circle_outline),
-        onPressed: onRemove,
+      leading: LibraryCoverArt.forTrack(
+        track: track,
+        size: 48,
+        borderRadius: 4,
+        enqueueIfMissing: false,
       ),
-      onTap: () => _play(context),
+      title: Text(
+        track.displayTitle,
+        style: TextStyle(
+          color: isLocal ? AppColors.onDark : AppColors.secondaryText,
+        ),
+      ),
+      subtitle: Text(
+        isLocal
+            ? '${track.displayArtist} · ${track.displayAlbum}'
+            : '未下载 · ${track.displayArtist}',
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Tooltip(
+            message: isLocal ? '已下载到本地' : '未下载（点按加入下载）',
+            child: Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isLocal ? AppColors.localReady : AppColors.remotePlaceholder,
+              ),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline),
+            onPressed: onRemove,
+          ),
+        ],
+      ),
+      onTap: () => _onTap(context, isLocal: isLocal),
       onLongPress: onRemove,
     );
   }
 
-  Future<void> _play(BuildContext context) async {
+  Future<void> _onTap(BuildContext context, {required bool isLocal}) async {
+    if (!isLocal) {
+      await enqueueLibraryTrackDownload(context, track);
+      return;
+    }
     final player = context.read<AudioPlayerService>();
     final cache = context.read<CacheService>();
-    final downloads = context.read<DownloadQueueService>();
     final local = await cache.localPathIfCached(
-      track.remotePath,
+      track.effectiveAudioRemotePath,
       accountId: track.accountId,
     );
     if (local == null) {
-      unawaited(
-        downloads.ensureQueued(
-          track.accountId,
-          track.remotePath,
-          fileName: track.fileName,
+      if (context.mounted) await enqueueLibraryTrackDownload(context, track);
+      return;
+    }
+    final list = <TrackInfo>[];
+    for (final t in playlistTracks) {
+      final path = await cache.localPathIfCached(
+        t.effectiveAudioRemotePath,
+        accountId: t.accountId,
+      );
+      if (path == null) continue;
+      list.add(
+        TrackInfo(
+          accountId: t.accountId,
+          remotePath: t.remotePath,
+          fileName: t.fileName,
+          localPath: path,
+          title: t.title,
+          artist: t.artist,
+          album: t.album,
+          duration: t.durationMs != null
+              ? Duration(milliseconds: t.durationMs!)
+              : null,
+          coverPath: t.coverPath,
+          cueRemotePath: t.cueRemotePath,
+          cueTrackIndex: t.cueTrackIndex,
+          audioRemotePath: t.audioRemotePath,
+          clipStart: t.clipStartMs != null
+              ? Duration(milliseconds: t.clipStartMs!)
+              : null,
+          clipEnd: t.clipEndMs != null
+              ? Duration(milliseconds: t.clipEndMs!)
+              : null,
+          cacheGroupId: t.cacheGroupId,
         ),
       );
     }
-    final list = playlistTracks
-        .map(
-          (t) => TrackInfo(
-            accountId: t.accountId,
-            remotePath: t.remotePath,
-            fileName: t.fileName,
-            localPath: null,
-            title: t.title,
-            artist: t.artist,
-            album: t.album,
-            duration: t.durationMs != null
-                ? Duration(milliseconds: t.durationMs!)
-                : null,
-            coverPath: t.coverPath,
-          ),
-        )
-        .toList();
-    // Refresh local paths best-effort for current.
     final info = TrackInfo(
       accountId: track.accountId,
       remotePath: track.remotePath,
@@ -206,12 +250,19 @@ class _PlaylistTrackTile extends StatelessWidget {
           ? Duration(milliseconds: track.durationMs!)
           : null,
       coverPath: track.coverPath,
+      cueRemotePath: track.cueRemotePath,
+      cueTrackIndex: track.cueTrackIndex,
+      audioRemotePath: track.audioRemotePath,
+      clipStart: track.clipStartMs != null
+          ? Duration(milliseconds: track.clipStartMs!)
+          : null,
+      clipEnd: track.clipEndMs != null
+          ? Duration(milliseconds: track.clipEndMs!)
+          : null,
+      cacheGroupId: track.cacheGroupId,
     );
-    final idx = playlistTracks.indexWhere(
-      (t) =>
-          t.accountId == track.accountId && t.remotePath == track.remotePath,
-    );
-    if (idx >= 0) list[idx] = info;
+    if (list.isEmpty) list.add(info);
+    if (!context.mounted) return;
     await player.playTrack(info, playlist: list);
   }
 }

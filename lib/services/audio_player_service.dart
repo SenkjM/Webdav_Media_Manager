@@ -8,11 +8,12 @@ import 'package:just_audio/just_audio.dart';
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
 import 'download_queue_service.dart';
-import '../utils/track_identity.dart';
 import 'music_audio_handler.dart';
 import 'notification_permission_service.dart';
 
-/// Local-file-only player facade. Never streams from WebDAV.
+/// Local-file-only player facade. Never streams from WebDAV and never
+/// enqueues downloads as part of playback — callers must only start play
+/// after a cache file exists.
 ///
 /// On Android/iOS, playback goes through [MusicAudioHandler] so the system
 /// MediaStyle notification / media session stays active with metadata.
@@ -41,12 +42,6 @@ class AudioPlayerService extends ChangeNotifier {
     _mediaSub = _handler.mediaItem.listen((_) {
       notifyListeners();
     });
-    _downloads.addListener(_onDownloadsChanged);
-  }
-
-  void _onDownloadsChanged() {
-    if (!_preparing) return;
-    notifyListeners();
   }
 
   final DownloadQueueService _downloads;
@@ -63,14 +58,10 @@ class AudioPlayerService extends ChangeNotifier {
   bool _playing = false;
   ProcessingState _processingState = ProcessingState.idle;
   String? _error;
-  bool _preparing = false;
-  bool _notificationPrompted = false;
-  /// Track being downloaded before handler queue is loaded.
-  TrackInfo? _pendingTrack;
 
   MusicAudioHandler get handler => _handler;
 
-  TrackInfo? get current => _handler.currentTrack ?? _pendingTrack;
+  TrackInfo? get current => _handler.currentTrack;
   String? get currentRemotePath => current?.remotePath;
   String? get currentAccountId => current?.accountId;
   List<TrackInfo> get queue => _handler.tracks;
@@ -78,69 +69,27 @@ class AudioPlayerService extends ChangeNotifier {
   Duration get position => _position;
   Duration? get duration => _duration;
   bool get playing => _playing;
-  bool get preparing => _preparing;
   String? get error => _error;
   ProcessingState get processingState => _processingState;
 
-  /// 0..1 while [preparing]; null when not downloading / unknown.
-  double? get preparingProgress {
-    if (!_preparing) return null;
-    final track = current;
-    if (track == null) return null;
+  /// Resolve an already-cached local path. Never enqueues downloads.
+  Future<String?> _resolveLocalPath(TrackInfo track) async {
+    final existing = track.localPath;
+    if (existing != null && File(existing).existsSync()) return existing;
     final audioRemote = track.effectiveAudioRemotePath;
-    final direct =
-        _downloads.downloadProgressFor(track.accountId, audioRemote);
-    if (direct != null) return direct;
-    final cue = track.cueRemotePath;
-    if (cue != null) {
-      final cueProg = _downloads.downloadProgressFor(track.accountId, cue);
-      if (cueProg != null) return cueProg;
-      final gid = track.cacheGroupId ??
-          cueCacheGroupId(track.accountId, cue);
-      return _downloads.cueGroupProgress(gid);
+    final task = _downloads.taskForRemote(track.accountId, audioRemote);
+    if (task != null &&
+        task.status == DownloadStatus.completed &&
+        task.localPath != null &&
+        File(task.localPath!).existsSync()) {
+      track.localPath = task.localPath;
+      return task.localPath;
     }
     return null;
   }
 
-  Future<String?> _resolveLocalPath(TrackInfo track) async {
-    final existing = track.localPath;
-    if (existing != null && File(existing).existsSync()) return existing;
-    if (track.isCueVirtual && track.cueRemotePath != null) {
-      await _downloads.enqueueCueGroup(
-        accountId: track.accountId,
-        cueRemotePath: track.cueRemotePath!,
-      );
-      final audioRemote = track.effectiveAudioRemotePath;
-      // Wait for the cue-group audio member (already enqueued above) — do not
-      // create a second standalone download job.
-      final groupId = track.cacheGroupId ??
-          cueCacheGroupId(track.accountId, track.cueRemotePath!);
-      final task = await _downloads.enqueue(
-        track.accountId,
-        audioRemote,
-        fileName: track.fileName,
-        cacheGroupId: groupId,
-      );
-      if (task.status != DownloadStatus.completed || task.localPath == null) {
-        throw StateError(task.errorMessage ?? '下载失败');
-      }
-      track.localPath = task.localPath;
-      return task.localPath;
-    }
-    final task = await _downloads.enqueue(
-      track.accountId,
-      track.remotePath,
-      fileName: track.fileName,
-      cacheGroupId: track.cacheGroupId,
-    );
-    if (task.status != DownloadStatus.completed || task.localPath == null) {
-      throw StateError(task.errorMessage ?? '下载失败');
-    }
-    track.localPath = task.localPath;
-    return task.localPath;
-  }
-
-  /// Play a track: if not cached, enqueue download then play local file.
+  /// Play a track that is already local. Non-local tracks are rejected —
+  /// use the download queue from library / network UI instead.
   Future<void> playTrack(
     TrackInfo track, {
     List<TrackInfo>? playlist,
@@ -163,6 +112,15 @@ class AudioPlayerService extends ChangeNotifier {
       // Prefer caller-provided localPath / tags for the selected item.
       list[idx] = track;
     }
+
+    final local = await _resolveLocalPath(list[idx]);
+    if (local == null) {
+      _error = '本地无缓存，请先下载';
+      notifyListeners();
+      return;
+    }
+    list[idx].localPath = local;
+
     notifyListeners();
     await _ensureNotificationPermission();
     await _loadAndPlay(list, idx);
@@ -180,16 +138,16 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  bool _notificationPrompted = false;
+
   Future<void> _loadAndPlay(List<TrackInfo> playlist, int index) async {
-    _preparing = true;
     _error = null;
-    _pendingTrack = playlist[index];
     notifyListeners();
     try {
       final track = playlist[index];
       final local = await _resolveLocalPath(track);
       if (local == null) {
-        throw StateError('下载失败');
+        throw StateError('本地无缓存，请先下载');
       }
       await _handler.loadAndPlay(
         playlist: playlist,
@@ -202,20 +160,22 @@ class AudioPlayerService extends ChangeNotifier {
         await _handler.stop();
       } catch (_) {}
     } finally {
-      _preparing = false;
-      _pendingTrack = null;
       notifyListeners();
     }
   }
 
   Future<void> playPause() async {
-    // While still downloading the current track, do not pretend playback is ready.
-    if (_preparing) return;
     if (_handler.player.playing) {
       await _handler.pause();
     } else {
       if (current == null && _handler.tracks.isNotEmpty) {
         final idx = _handler.index < 0 ? 0 : _handler.index;
+        final local = await _resolveLocalPath(_handler.tracks[idx]);
+        if (local == null) {
+          _error = '本地无缓存，请先下载';
+          notifyListeners();
+          return;
+        }
         await _ensureNotificationPermission();
         await _loadAndPlay(_handler.tracks, idx);
       } else {
@@ -252,7 +212,6 @@ class AudioPlayerService extends ChangeNotifier {
 
   @override
   void dispose() {
-    _downloads.removeListener(_onDownloadsChanged);
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();

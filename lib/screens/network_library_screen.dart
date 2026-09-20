@@ -9,6 +9,7 @@ import '../models/webdav_item.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/cache_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/audio_extensions.dart';
@@ -125,24 +126,35 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   Future<void> _onTapFile(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
+    final cache = context.read<CacheService>();
+    final local = await cache.localPathIfCached(item.path, accountId: accountId);
+    if (local == null) {
+      // Non-local: download link only — never enter the play / preparing flow.
+      await _enqueueOnly(item);
+      return;
+    }
     final player = context.read<AudioPlayerService>();
     final audios = _items.where((e) => e.isAudio).toList();
-    final playlist = audios
-        .map(
-          (e) => TrackInfo(
-            accountId: accountId,
-            remotePath: e.path,
-            fileName: e.name,
-          ),
-        )
-        .toList();
+    final playlist = <TrackInfo>[];
+    for (final e in audios) {
+      final path = await cache.localPathIfCached(e.path, accountId: accountId);
+      if (path == null) continue;
+      playlist.add(
+        TrackInfo(
+          accountId: accountId,
+          remotePath: e.path,
+          fileName: e.name,
+          localPath: path,
+        ),
+      );
+    }
     final track = TrackInfo(
       accountId: accountId,
       remotePath: item.path,
       fileName: item.name,
+      localPath: local,
     );
-    // If not cached, playTrack prepares via download; progress shows on the
-    // global mini play bar for THIS track (no generic waiting snackbar).
+    if (playlist.isEmpty) playlist.add(track);
     await player.playTrack(track, playlist: playlist);
   }
 
@@ -151,7 +163,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (accountId == null) return;
     final downloads = context.read<DownloadQueueService>();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('排队下载：${item.name}')),
+      const SnackBar(content: Text('已加入下载')),
     );
     downloads.enqueue(accountId, item.path, fileName: item.name).ignore();
   }
@@ -447,7 +459,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.play_arrow),
-                  title: const Text('播放（下载后播放）'),
+                  title: const Text('播放（仅本地缓存）'),
                   onTap: () {
                     Navigator.pop(ctx);
                     _onTapFile(item);

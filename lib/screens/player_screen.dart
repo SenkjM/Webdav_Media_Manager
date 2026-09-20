@@ -98,12 +98,13 @@ class PlayerScreen extends StatelessWidget {
     String? localPath = track.localPath;
     if (localPath == null || !File(localPath).existsSync()) {
       localPath = await cache.localPathIfCached(
-        track.remotePath,
+        track.effectiveAudioRemotePath,
         accountId: track.accountId,
       );
     }
     ReadTags? liveTags;
     int? fileSize;
+    // Tag reads only against an existing local audio file.
     if (localPath != null && File(localPath).existsSync()) {
       liveTags = await library.tags.readFromFile(localPath);
       try {
@@ -299,22 +300,6 @@ class PlayerScreen extends StatelessWidget {
     final posMs = position.inMilliseconds.clamp(0, maxMs);
     final artSize = MediaQuery.sizeOf(context).width * 0.68;
     final chips = _metaChips(track, lib);
-
-    final preparing = player.preparing;
-
-    // While downloading: do not present a full playable now-playing UI.
-    // Progress belongs on the bottom mini play bar — pop back if opened.
-    if (preparing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted && Navigator.of(context).canPop()) {
-          Navigator.of(context).pop();
-        }
-      });
-      return const Scaffold(
-        backgroundColor: AppColors.nearBlack,
-        body: SizedBox.shrink(),
-      );
-    }
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,

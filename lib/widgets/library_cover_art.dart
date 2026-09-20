@@ -13,7 +13,8 @@ import '../utils/cover_image.dart';
 import 'cover_art.dart';
 
 /// Library cover that prefers full-resolution art when the audio file is local,
-/// otherwise shows the 100×100 thumb and optionally enqueues a download.
+/// otherwise shows the 100×100 thumb only. Never auto-enqueues audio
+/// downloads from cover resolution (tap the row to enqueue explicitly).
 class LibraryCoverArt extends StatefulWidget {
   const LibraryCoverArt({
     super.key,
@@ -24,7 +25,7 @@ class LibraryCoverArt extends StatefulWidget {
     required this.size,
     this.borderRadius = 6,
     this.icon,
-    this.enqueueIfMissing = true,
+    this.enqueueIfMissing = false,
   });
 
   factory LibraryCoverArt.forTrack({
@@ -33,7 +34,7 @@ class LibraryCoverArt extends StatefulWidget {
     required double size,
     double borderRadius = 6,
     IconData? icon,
-    bool enqueueIfMissing = true,
+    bool enqueueIfMissing = false,
   }) {
     return LibraryCoverArt(
       key: key,

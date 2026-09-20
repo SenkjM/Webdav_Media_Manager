@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
@@ -8,7 +10,47 @@ import '../screens/playlists_screen.dart';
 import '../theme/app_theme.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
+import 'download_queue_service.dart';
 import 'share_export_service.dart';
+
+/// Whether the track's audio file is present in the local cache.
+bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
+  return cache.hasLocalFile(
+    track.effectiveAudioRemotePath,
+    accountId: track.accountId,
+  );
+}
+
+/// Enqueue download for a non-local library track (CUE group or single file).
+/// Does not start playback or tag reading.
+Future<void> enqueueLibraryTrackDownload(
+  BuildContext context,
+  LibraryTrack track, {
+  bool showSnack = true,
+}) async {
+  final downloads = context.read<DownloadQueueService>();
+  if (track.isCueVirtual && track.cueRemotePath != null) {
+    unawaited(
+      downloads.enqueueCueGroup(
+        accountId: track.accountId,
+        cueRemotePath: track.cueRemotePath!,
+      ),
+    );
+  } else {
+    unawaited(
+      downloads.ensureQueued(
+        track.accountId,
+        track.effectiveAudioRemotePath,
+        fileName: track.fileName,
+      ),
+    );
+  }
+  if (showSnack && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已加入下载')),
+    );
+  }
+}
 
 /// Add one or more library tracks to a playlist (Chinese UI).
 Future<void> addTracksToPlaylist(
@@ -164,12 +206,39 @@ Future<void> deleteTracksLocalCache(
   );
 }
 
+/// Share only tracks that already have a local audio cache.
 Future<void> shareLibraryTracks(
   BuildContext context,
   List<LibraryTrack> tracks,
 ) async {
   if (tracks.isEmpty) return;
   final cache = context.read<CacheService>();
+  final local = <LibraryTrack>[];
+  var skipped = 0;
+  for (final t in tracks) {
+    if (libraryTrackIsLocal(cache, t)) {
+      local.add(t);
+    } else {
+      skipped++;
+    }
+  }
+  if (local.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          skipped == 1 ? '该曲目尚未下载到本地，无法分享' : '所选曲目均未下载到本地，无法分享',
+        ),
+        backgroundColor: AppColors.error,
+      ),
+    );
+    return;
+  }
+  if (skipped > 0 && context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已跳过 $skipped 首未下载曲目')),
+    );
+  }
+
   final share = ShareExportService(cache: cache);
   showDialog<void>(
     context: context,
@@ -186,7 +255,7 @@ Future<void> shareLibraryTracks(
   );
   ShareExportResult result;
   try {
-    result = await share.shareTracks(tracks);
+    result = await share.shareTracks(local);
   } catch (e) {
     result = ShareExportResult(ok: false, message: '分享失败：$e');
   }

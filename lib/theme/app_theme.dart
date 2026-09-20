@@ -33,6 +33,12 @@ class AppColors {
 
   static const Color mutedText = Color(0xFF8A8A94);
 
+  /// Track row: audio file already in local cache (light-theme friendly green).
+  static const Color localReady = Color(0xFF2E7D32);
+
+  /// Track row: library placeholder — not downloaded yet (soft gray).
+  static const Color remotePlaceholder = Color(0xFFB0B0B8);
+
   static const Color divider = Color(0xFFE0E0E4);
 
   static const Color error = Color(0xFFE53935);

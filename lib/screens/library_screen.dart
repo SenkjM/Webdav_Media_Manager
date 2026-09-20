@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,7 +5,6 @@ import '../models/library_track.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
-import '../services/download_queue_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
@@ -721,26 +718,6 @@ class _TrackListPageState extends State<_TrackListPage> {
   late LibrarySortMode _sort = widget.defaultSort;
 
   @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _enqueueMissing());
-  }
-
-  void _enqueueMissing() {
-    if (!mounted) return;
-    final downloads = context.read<DownloadQueueService>();
-    final seenAudio = <String>{};
-    final jobs = <({String accountId, String remotePath, String? fileName})>[];
-    for (final t in widget.tracks) {
-      final audio = t.effectiveAudioRemotePath;
-      final key = '${t.accountId}\u0000$audio';
-      if (!seenAudio.add(key)) continue;
-      jobs.add((accountId: t.accountId, remotePath: audio, fileName: t.fileName));
-    }
-    unawaited(downloads.ensureQueuedMany(jobs));
-  }
-
-  @override
   Widget build(BuildContext context) {
     final library = context.read<LibraryService>();
     final tracks = library.sortedCopy(widget.tracks, sort: _sort);
@@ -790,6 +767,8 @@ class _TrackTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cache = context.watch<CacheService>();
+    final isLocal = libraryTrackIsLocal(cache, track);
     final trackLabel = track.trackNumber != null ? '${track.trackNumber}. ' : '';
     return ListTile(
       selected: selected,
@@ -803,30 +782,50 @@ class _TrackTile extends StatelessWidget {
               track: track,
               size: 52,
               borderRadius: 4,
-              enqueueIfMissing: true,
+              enqueueIfMissing: false,
             ),
       title: Text(
         '$trackLabel${track.displayTitle}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: AppColors.onDark,
+        style: TextStyle(
+          color: isLocal ? AppColors.onDark : AppColors.secondaryText,
           fontWeight: FontWeight.w500,
           fontSize: 14,
         ),
       ),
       subtitle: Text(
-        '${track.displayArtist} · ${track.displayAlbum}',
+        isLocal
+            ? '${track.displayArtist} · ${track.displayAlbum}'
+            : '未下载 · ${track.displayArtist}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+      ),
+      trailing: Tooltip(
+        message: isLocal ? '已下载到本地' : '未下载（点按加入下载）',
+        child: Container(
+          width: 10,
+          height: 10,
+          margin: const EdgeInsets.only(right: 4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isLocal ? AppColors.localReady : AppColors.remotePlaceholder,
+            border: Border.all(
+              color: isLocal
+                  ? AppColors.localReady.withValues(alpha: 0.4)
+                  : AppColors.divider,
+              width: 1,
+            ),
+          ),
+        ),
       ),
       onTap: () {
         if (selecting) {
           onToggleSelect?.call();
           return;
         }
-        _play(context);
+        _onTap(context, isLocal: isLocal);
       },
       onLongPress: () {
         if (selecting) {
@@ -838,37 +837,40 @@ class _TrackTile extends StatelessWidget {
     );
   }
 
-  Future<void> _play(BuildContext context) async {
+  Future<void> _onTap(BuildContext context, {required bool isLocal}) async {
+    if (!isLocal) {
+      await enqueueLibraryTrackDownload(context, track);
+      return;
+    }
     final player = context.read<AudioPlayerService>();
     final cache = context.read<CacheService>();
-    final downloads = context.read<DownloadQueueService>();
     final local = await cache.localPathIfCached(
       track.effectiveAudioRemotePath,
       accountId: track.accountId,
     );
     if (local == null) {
-      if (track.isCueVirtual && track.cueRemotePath != null) {
-        unawaited(
-          downloads.enqueueCueGroup(
-            accountId: track.accountId,
-            cueRemotePath: track.cueRemotePath!,
-          ),
-        );
-      } else {
-        unawaited(
-          downloads.ensureQueued(
-            track.accountId,
-            track.effectiveAudioRemotePath,
-            fileName: track.fileName,
-          ),
-        );
+      // Race: cache deleted between check and play — treat as download link.
+      if (context.mounted) {
+        await enqueueLibraryTrackDownload(context, track);
       }
+      return;
+    }
+    // Only local tracks enter the play queue.
+    final localPlaylist = <TrackInfo>[];
+    for (final t in playlist) {
+      final path = await cache.localPathIfCached(
+        t.effectiveAudioRemotePath,
+        accountId: t.accountId,
+      );
+      if (path == null) continue;
+      localPlaylist.add(_toTrackInfo(t, path));
     }
     final info = _toTrackInfo(track, local);
-    final list = playlist.map((t) => _toTrackInfo(t, null)).toList();
+    if (localPlaylist.isEmpty) {
+      localPlaylist.add(info);
+    }
     if (!context.mounted) return;
-    // Progress for THIS track is shown on the global mini play bar while preparing.
-    await player.playTrack(info, playlist: list);
+    await player.playTrack(info, playlist: localPlaylist);
   }
 
   static TrackInfo _toTrackInfo(LibraryTrack track, String? local) {
