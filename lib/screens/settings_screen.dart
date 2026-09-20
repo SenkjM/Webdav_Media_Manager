@@ -13,6 +13,7 @@ import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
 import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
+import '../utils/audio_extensions.dart';
 import 'home_shell.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -26,6 +27,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
   late final TextEditingController _customDaysController;
   late final TextEditingController _customHoursController;
+  int? _cacheBytes;
+  bool _cacheSizeLoading = false;
 
   @override
   void initState() {
@@ -36,7 +39,20 @@ class _SettingsScreenState extends State<SettingsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationPermissionService>().refresh();
       _syncCustomFieldsFromSettings();
+      _refreshCacheSize();
     });
+  }
+
+  Future<void> _refreshCacheSize() async {
+    setState(() => _cacheSizeLoading = true);
+    try {
+      final bytes = await context.read<AppState>().cache.cacheSizeBytes();
+      if (!mounted) return;
+      setState(() { _cacheBytes = bytes; _cacheSizeLoading = false; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _cacheSizeLoading = false);
+    }
   }
 
   void _syncCustomFieldsFromSettings() {
@@ -79,6 +95,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     final n = await context.read<AppState>().manualClearCache();
     if (!context.mounted) return;
     final libCount = context.read<LibraryService>().count;
+    await _refreshCacheSize();
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -494,6 +512,16 @@ class _SettingsScreenState extends State<SettingsScreen>
             '播放仅使用本地音频缓存。可选 1 天 / 1 周 / 自定义时长自动清理，或「永不」关闭自动清理；'
             '正在播放或正在下载的文件不会被删除。手动清空仍可用。'
             '音乐库标签与 100×100 封面缩略图不受缓存清理影响（当前库内 ${library.count} 首）。',
+          ),
+          const SizedBox(height: 12),
+          Card(
+            color: AppColors.elevated,
+            child: ListTile(
+              leading: const Icon(Icons.sd_storage_outlined, color: AppColors.accent),
+              title: const Text('当前缓存占用'),
+              subtitle: Text(_cacheSizeLoading ? '计算中…' : (_cacheBytes == null ? '未知' : formatByteSize(_cacheBytes!))),
+              trailing: IconButton(tooltip: '刷新', icon: const Icon(Icons.refresh), onPressed: _cacheSizeLoading ? null : _refreshCacheSize),
+            ),
           ),
           const SizedBox(height: 8),
           SegmentedButton<CacheRetention>(

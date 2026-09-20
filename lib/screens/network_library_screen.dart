@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,6 +12,7 @@ import '../services/audio_player_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/audio_extensions.dart';
+import '../utils/cue_sheet.dart';
 import '../widgets/track_status_chip.dart';
 import '../utils/webdav_errors.dart';
 import '../widgets/webdav_error_dialog.dart';
@@ -28,6 +31,8 @@ class NetworkLibraryScreen extends StatefulWidget {
 class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   final List<String> _stack = ['/'];
   List<WebDavItem> _items = [];
+  final Map<String, CueSheet> _cueSheets = {};
+  final Map<String, String> _cueErrors = {};
   bool _loading = false;
   String? _error;
   String? _boundAccountId;
@@ -77,9 +82,23 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     });
     try {
       final items = await webDav.listDirectory(_path);
+      final cueSheets = <String, CueSheet>{};
+      final cueErrors = <String, String>{};
+      for (final item in items.where((e) => e.isCue)) {
+        try {
+          final bytes = await webDav.readAsBytes(item.path);
+          final sheet = CueSheetParser.tryParse(utf8.decode(bytes, allowMalformed: true));
+          if (sheet != null) cueSheets[item.path] = sheet;
+          else cueErrors[item.path] = '无法解析的 CUE：需要标准 FILE + TRACK/INDEX';
+        } catch (e) {
+          cueErrors[item.path] = '读取 CUE 失败：$e';
+        }
+      }
       if (!mounted) return;
       setState(() {
         _items = items;
+        _cueSheets..clear()..addAll(cueSheets);
+        _cueErrors..clear()..addAll(cueErrors);
         _loading = false;
         _boundAccountId = accounts.activeAccountId;
       });
@@ -182,6 +201,30 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     } catch (e) {
       if (!mounted) return;
       await showWebDavErrorDialog(context, e);
+    }
+  }
+
+
+  Future<void> _enqueueCue(WebDavItem item, CueSheet sheet) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('正在下载 CUE 专辑「${sheet.title ?? item.name}」…')),
+    );
+    try {
+      await context.read<DownloadQueueService>().enqueueCueGroup(
+        accountId: accountId,
+        cueRemotePath: item.path,
+        cueFileName: item.name,
+        preParsed: sheet,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已加入下载：完成后音乐库显示 ${sheet.tracks.length} 首')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('CUE 失败：$e')));
     }
   }
 
@@ -529,6 +572,25 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
             title: Text(item.name),
             subtitle: const Text('目录'),
             onTap: () => _enterDir(item),
+            onLongPress: () => _showItemMenu(item),
+          );
+        }
+        if (item.isCue) {
+          final sheet = _cueSheets[item.path];
+          if (sheet != null) {
+            return ListTile(
+              leading: const Icon(Icons.album, color: AppColors.accent),
+              title: Text((sheet.title != null && sheet.title!.isNotEmpty) ? sheet.title! : item.name),
+              subtitle: Text('CUE 专辑 · ${sheet.tracks.length} 曲'),
+              trailing: const Icon(Icons.download_for_offline_outlined),
+              onTap: () => _enqueueCue(item, sheet),
+              onLongPress: () => _showItemMenu(item),
+            );
+          }
+          return ListTile(
+            leading: Icon(Icons.insert_drive_file_outlined, color: Theme.of(context).colorScheme.error),
+            title: Text(item.name),
+            subtitle: Text(_cueErrors[item.path] ?? '无法解析的 CUE'),
             onLongPress: () => _showItemMenu(item),
           );
         }

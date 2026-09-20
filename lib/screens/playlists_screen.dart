@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/playlist.dart';
+import '../services/audio_player_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
 import 'home_shell.dart';
@@ -9,6 +10,70 @@ import 'playlist_detail_screen.dart';
 
 class PlaylistsScreen extends StatelessWidget {
   const PlaylistsScreen({super.key});
+
+
+  Future<void> _createFromQueue(BuildContext context) async {
+    final player = context.read<AudioPlayerService>();
+    final queue = player.queue;
+    if (queue.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前播放列表为空')),
+      );
+      return;
+    }
+    final controller = TextEditingController(
+      text: '播放列表 ${DateTime.now().month}/${DateTime.now().day}',
+    );
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('从当前播放列表创建'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '将复制当前临时队列中的 ${queue.length} 首到新歌单（之后可按歌单同步）。',
+              style: const TextStyle(fontSize: 13, color: AppColors.secondaryText),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: '歌单名称'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('创建'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || !context.mounted) return;
+    final entries = queue
+        .map((t) => PlaylistEntry(
+              accountId: t.accountId,
+              remotePath: t.remotePath,
+              title: t.displayTitle,
+              durationMs: t.duration?.inMilliseconds,
+            ))
+        .toList();
+    final pl = await context.read<PlaylistService>().createFromQueue(
+          name: name,
+          queueEntries: entries,
+        );
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已创建歌单「${pl.name}」（${pl.length} 首）')),
+    );
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PlaylistDetailScreen(playlistId: pl.id)),
+    );
+  }
 
   Future<void> _create(BuildContext context) async {
     final controller = TextEditingController();
@@ -66,7 +131,12 @@ class PlaylistsScreen extends StatelessWidget {
             },
           ),
           IconButton(
-            tooltip: '新建',
+            tooltip: '从当前播放列表创建',
+            icon: const Icon(Icons.playlist_add_check),
+            onPressed: () => _createFromQueue(context),
+          ),
+          IconButton(
+            tooltip: '新建歌单',
             icon: const Icon(Icons.add),
             onPressed: () => _create(context),
           ),
@@ -155,9 +225,24 @@ class PlaylistsScreen extends StatelessWidget {
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _create(context),
-        child: const Icon(Icons.add),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'from_queue',
+            onPressed: () => _createFromQueue(context),
+            icon: const Icon(Icons.playlist_add_check),
+            label: const Text('从当前播放列表创建'),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'new_playlist',
+            onPressed: () => _create(context),
+            icon: const Icon(Icons.add),
+            label: const Text('新建歌单'),
+          ),
+        ],
       ),
     );
   }

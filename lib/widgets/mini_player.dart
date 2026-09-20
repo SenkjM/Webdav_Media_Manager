@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../screens/player_screen.dart';
+import '../screens/now_playing_queue_screen.dart';
 import '../services/audio_player_service.dart';
 import '../theme/app_theme.dart';
 import 'cover_art.dart';
@@ -97,6 +98,17 @@ class MiniPlayer extends StatelessWidget {
                       ),
                       iconSize: 30,
                       onPressed: () => player.playPause(),
+                    ),
+                    IconButton(
+                      tooltip: '播放列表',
+                      icon: const Icon(Icons.queue_music, color: AppColors.onDark),
+                      onPressed: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const NowPlayingQueueScreen(),
+                          ),
+                        );
+                      },
                     ),
                     IconButton(
                       icon: const Icon(

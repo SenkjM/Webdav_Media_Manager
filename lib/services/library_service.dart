@@ -3,7 +3,11 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:path/path.dart' as p;
+
 import '../models/library_track.dart';
+import '../utils/cue_sheet.dart';
+import '../utils/track_identity.dart';
 import 'cover_service.dart';
 import 'library_database.dart';
 import 'tag_service.dart';
@@ -157,6 +161,78 @@ class LibraryService extends ChangeNotifier {
     }
     notifyListeners();
     return track;
+  }
+
+
+  Future<List<LibraryTrack>> ingestCueAlbum({
+    required String accountId,
+    required String cueRemotePath,
+    required CueSheet sheet,
+    required String cacheGroupId,
+    required String Function(String remotePath) localPathFor,
+  }) async {
+    final now = DateTime.now();
+    final audioRemotes = sheet.audioRemotePaths(cueRemotePath);
+    final fileTags = <String, ReadTags>{};
+    final fileDurations = <String, Duration?>{};
+    for (final audioRemote in audioRemotes) {
+      final tags = await _tags.readFromFile(localPathFor(audioRemote));
+      fileTags[audioRemote] = tags;
+      final base = p.basename(audioRemote);
+      if (tags.durationMs != null) {
+        final d = Duration(milliseconds: tags.durationMs!);
+        fileDurations[base] = d;
+        for (final f in sheet.files) {
+          if (p.basename(f.replaceAll('\\', '/')) == base) fileDurations[f] = d;
+        }
+      }
+    }
+    final ranges = cueClipRanges(sheet.tracks, fileDurations: fileDurations);
+    final created = <LibraryTrack>[];
+    ReadTags? coverSource;
+    for (final a in audioRemotes) {
+      final tags = fileTags[a];
+      if (tags?.coverBytes != null && tags!.coverBytes!.isNotEmpty) { coverSource = tags; break; }
+    }
+    for (var i = 0; i < sheet.tracks.length; i++) {
+      final ct = sheet.tracks[i];
+      final range = ranges[i];
+      final base = p.basename(ct.fileName.replaceAll('\\', '/'));
+      final resolved = audioRemotes.firstWhere((r) => p.basename(r) == base, orElse: () => audioRemotes.isNotEmpty ? audioRemotes.first : ct.fileName);
+      final fileTag = fileTags[resolved] ?? const ReadTags();
+      final merged = mergeCueOverFileTags(sheet: sheet, cueTrack: ct, fileTitle: fileTag.title, fileArtist: fileTag.artist, fileAlbumArtist: fileTag.albumArtist, fileAlbum: fileTag.album, fileYear: fileTag.year, fileGenre: fileTag.genre);
+      final virtualPath = cueVirtualRemotePath(resolved, ct.number);
+      int? durationMs;
+      if (range.end != null) {
+        final ms = (range.end! - range.start).inMilliseconds;
+        durationMs = ms >= 0 ? ms : null;
+      } else if (fileTag.durationMs != null) {
+        final ms = fileTag.durationMs! - range.start.inMilliseconds;
+        durationMs = ms >= 0 ? ms : null;
+      }
+      String? coverPath;
+      final bytes = coverSource?.coverBytes ?? fileTag.coverBytes;
+      if (bytes != null && bytes.isNotEmpty) {
+        coverPath = await _covers.saveThumb(accountId: accountId, remotePath: virtualPath, bytes: bytes);
+        await _covers.saveFull(accountId: accountId, remotePath: resolved, bytes: bytes);
+      }
+      final track = LibraryTrack(
+        accountId: accountId, remotePath: virtualPath,
+        fileName: merged.title ?? ct.title ?? '${ct.number}',
+        title: merged.title, artist: merged.artist, albumArtist: merged.albumArtist, album: merged.album,
+        durationMs: durationMs, trackNumber: merged.trackNumber, trackTotal: sheet.tracks.length,
+        year: merged.year, genre: merged.genre, bitrate: fileTag.bitrate, sampleRate: fileTag.sampleRate,
+        coverPath: coverPath, cueRemotePath: cueRemotePath, cueTrackIndex: ct.number,
+        audioRemotePath: resolved, clipStartMs: range.start.inMilliseconds, clipEndMs: range.end?.inMilliseconds,
+        cacheGroupId: cacheGroupId, lastDownloadedAt: now, lastTagReadAt: now,
+      );
+      await _db.upsertTrack(track);
+      final idx = _tracks.indexWhere((x) => x.accountId == accountId && x.remotePath == virtualPath);
+      if (idx >= 0) _tracks[idx] = track; else _tracks.add(track);
+      created.add(track);
+    }
+    notifyListeners();
+    return created;
   }
 
   List<LibraryTrack> byTitle({LibrarySortMode sort = LibrarySortMode.byName}) {

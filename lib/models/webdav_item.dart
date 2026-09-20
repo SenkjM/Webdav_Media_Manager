@@ -1,5 +1,5 @@
-/// A WebDAV directory entry. Undownloaded items expose filename/path only
-/// — no ID3/tag scan until the file is in local cache.
+import '../utils/audio_extensions.dart';
+
 class WebDavItem {
   const WebDavItem({
     required this.name,
@@ -8,28 +8,15 @@ class WebDavItem {
     this.size,
     this.modified,
   });
-
   final String name;
   final String path;
   final bool isDirectory;
   final int? size;
   final DateTime? modified;
-
-  bool get isAudio {
-    if (isDirectory) return false;
-    final lower = name.toLowerCase();
-    return lower.endsWith('.mp3') ||
-        lower.endsWith('.flac') ||
-        lower.endsWith('.m4a') ||
-        lower.endsWith('.aac') ||
-        lower.endsWith('.wav') ||
-        lower.endsWith('.ogg') ||
-        lower.endsWith('.opus') ||
-        lower.endsWith('.wma');
-  }
+  bool get isAudio => !isDirectory && isAudioFileName(name);
+  bool get isCue => !isDirectory && isCueFileName(name);
 }
 
-/// Local playback metadata. Tags are only filled after download / library ingest.
 class TrackInfo {
   TrackInfo({
     required this.accountId,
@@ -50,8 +37,13 @@ class TrackInfo {
     this.bitrate,
     this.sampleRate,
     this.coverPath,
+    this.cueRemotePath,
+    this.cueTrackIndex,
+    this.audioRemotePath,
+    this.clipStart,
+    this.clipEnd,
+    this.cacheGroupId,
   });
-
   final String accountId;
   final String remotePath;
   final String fileName;
@@ -70,26 +62,26 @@ class TrackInfo {
   int? bitrate;
   int? sampleRate;
   String? coverPath;
-
+  String? cueRemotePath;
+  int? cueTrackIndex;
+  String? audioRemotePath;
+  Duration? clipStart;
+  Duration? clipEnd;
+  String? cacheGroupId;
   bool get isDownloaded => localPath != null;
-
-  /// Display title: prefer tag title only when downloaded; else filename.
+  bool get isCueVirtual => cueTrackIndex != null && cueRemotePath != null;
+  String get effectiveAudioRemotePath => audioRemotePath ?? remotePath;
   String get displayTitle {
-    if (isDownloaded && title != null && title!.trim().isNotEmpty) {
-      return title!;
-    }
-    // Library-backed tracks may have title without localPath set yet.
+    if (isDownloaded && title != null && title!.trim().isNotEmpty) return title!;
     final t = title?.trim();
     if (t != null && t.isNotEmpty) return t;
     return fileName;
   }
-
   String get displayArtist {
     final a = artist?.trim();
     if (a != null && a.isNotEmpty) return a;
     return '未知艺术家';
   }
-
   String get displayAlbum {
     final a = album?.trim();
     if (a != null && a.isNotEmpty) return a;
@@ -97,11 +89,4 @@ class TrackInfo {
   }
 }
 
-/// UI playback / download state for a track.
-enum TrackUiState {
-  queued,
-  downloading,
-  ready,
-  playing,
-  error,
-}
+enum TrackUiState { queued, downloading, ready, playing, error }

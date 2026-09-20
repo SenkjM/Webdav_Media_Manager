@@ -49,7 +49,8 @@ dependencies:
   audio_metadata_reader: ^1.4.1
   image: ^4.10.1
   permission_handler: 11.3.1
-  audio_service: ^0.18.19
+  audio_service:
+    path: packages/audio_service
   archive: ^4.3.0
   cryptography: ^2.9.0
   package_info_plus: ^10.2.1

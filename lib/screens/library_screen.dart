@@ -11,6 +11,8 @@ import '../services/download_queue_service.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/track_identity.dart';
+import 'package:path/path.dart' as p;
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
 import '../models/playlist.dart';
@@ -393,16 +395,54 @@ class _TrackTile extends StatelessWidget {
         style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
       ),
       onTap: () => _play(context),
-      onLongPress: () => showAddToPlaylistDialog(
-        context,
-        PlaylistEntry(
-          accountId: track.accountId,
-          remotePath: track.remotePath,
-          title: track.displayTitle,
-          durationMs: track.durationMs,
-        ),
-      ),
+      onLongPress: () => _showTrackMenu(context),
     );
+  }
+
+  Future<void> _showTrackMenu(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.elevated,
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(title: Text(track.displayTitle), subtitle: Text(track.isCueVirtual ? 'CUE 虚拟曲目' : track.fileName)),
+        ListTile(leading: const Icon(Icons.playlist_add), title: const Text('添加到歌单'), onTap: () {
+          Navigator.pop(ctx);
+          showAddToPlaylistDialog(context, PlaylistEntry(accountId: track.accountId, remotePath: track.remotePath, title: track.displayTitle, durationMs: track.durationMs));
+        }),
+        ListTile(leading: const Icon(Icons.delete_outline, color: AppColors.error), title: const Text('删除本地音频缓存'), subtitle: const Text('保留元数据与封面'), onTap: () { Navigator.pop(ctx); _deleteLocalCache(context); }),
+      ])),
+    );
+  }
+
+  Future<void> _deleteLocalCache(BuildContext context) async {
+    final cache = context.read<CacheService>();
+    final groupId = track.cacheGroupId ?? (track.cueRemotePath != null ? cueCacheGroupId(track.accountId, track.cueRemotePath!) : null);
+    if (track.isCueVirtual && groupId != null) {
+      var names = cache.groupMemberFileNames(groupId);
+      if (names.isEmpty) names = [if (track.cueRemotePath != null) p.basename(track.cueRemotePath!), if (track.audioRemotePath != null) p.basename(track.audioRemotePath!)];
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('删除整个 CUE 缓存组？'),
+        content: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          const Text('将删除整组（CUE + 关联音频）：'), const SizedBox(height: 8),
+          for (final n in names) Text('• $n'),
+        ])),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除整组'))],
+      ));
+      if (ok != true || !context.mounted) return;
+      final n = await cache.deleteCacheGroup(groupId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已删除 CUE 缓存组（$n 个文件）')));
+      return;
+    }
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('删除本地音频缓存？'),
+      content: Text('将删除「${p.basename(track.effectiveAudioRemotePath)}」。元数据与封面保留。'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除'))],
+    ));
+    if (ok != true || !context.mounted) return;
+    final removed = await cache.deleteLocalFile(accountId: track.accountId, remotePath: track.effectiveAudioRemotePath);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(removed ? '已删除本地音频缓存' : '本地无缓存文件')));
   }
 
   Future<void> _play(BuildContext context) async {
@@ -410,7 +450,7 @@ class _TrackTile extends StatelessWidget {
     final cache = context.read<CacheService>();
     final downloads = context.read<DownloadQueueService>();
     final local = await cache.localPathIfCached(
-      track.remotePath,
+      track.effectiveAudioRemotePath,
       accountId: track.accountId,
     );
     if (local == null) {
@@ -442,6 +482,12 @@ class _TrackTile extends StatelessWidget {
       bitrate: track.bitrate,
       sampleRate: track.sampleRate,
       coverPath: track.coverPath,
+      cueRemotePath: track.cueRemotePath,
+      cueTrackIndex: track.cueTrackIndex,
+      audioRemotePath: track.audioRemotePath,
+      clipStart: track.clipStartMs != null ? Duration(milliseconds: track.clipStartMs!) : null,
+      clipEnd: track.clipEndMs != null ? Duration(milliseconds: track.clipEndMs!) : null,
+      cacheGroupId: track.cacheGroupId,
     );
     final list = playlist
         .map(
@@ -465,6 +511,12 @@ class _TrackTile extends StatelessWidget {
             duration: t.durationMs != null
                 ? Duration(milliseconds: t.durationMs!)
                 : null,
+            cueRemotePath: t.cueRemotePath,
+            cueTrackIndex: t.cueTrackIndex,
+            audioRemotePath: t.audioRemotePath,
+            clipStart: t.clipStartMs != null ? Duration(milliseconds: t.clipStartMs!) : null,
+            clipEnd: t.clipEndMs != null ? Duration(milliseconds: t.clipEndMs!) : null,
+            cacheGroupId: t.cacheGroupId,
           ),
         )
         .toList();

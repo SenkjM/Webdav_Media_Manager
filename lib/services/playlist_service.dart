@@ -64,10 +64,14 @@ class PlaylistService extends ChangeNotifier {
     }
   }
 
-  Future<Playlist> create({required String name}) async {
+  Future<Playlist> create({
+    required String name,
+    List<PlaylistEntry> entries = const [],
+  }) async {
     final pl = Playlist(
       id: _uuid.v4(),
       name: name.trim().isEmpty ? '新歌单' : name.trim(),
+      entries: entries,
       updatedAt: DateTime.now().toUtc(),
     );
     pl.remoteFileName = M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
@@ -77,6 +81,14 @@ class PlaylistService extends ChangeNotifier {
     notifyListeners();
     unawaitedSyncUpload(pl);
     return pl;
+  }
+
+  /// Snapshot the ephemeral playback queue into a new saved playlist.
+  Future<Playlist> createFromQueue({
+    required String name,
+    required List<PlaylistEntry> queueEntries,
+  }) {
+    return create(name: name, entries: queueEntries);
   }
 
   Future<void> rename(String id, String name) async {

@@ -21,6 +21,12 @@ class LibraryTrack {
     this.bitrate,
     this.sampleRate,
     this.coverPath,
+    this.cueRemotePath,
+    this.cueTrackIndex,
+    this.audioRemotePath,
+    this.clipStartMs,
+    this.clipEndMs,
+    this.cacheGroupId,
     DateTime? lastDownloadedAt,
     DateTime? lastTagReadAt,
   })  : lastDownloadedAt = lastDownloadedAt ?? DateTime.now(),
@@ -43,10 +49,18 @@ class LibraryTrack {
   int? bitrate;
   int? sampleRate;
   String? coverPath;
+  String? cueRemotePath;
+  int? cueTrackIndex;
+  String? audioRemotePath;
+  int? clipStartMs;
+  int? clipEndMs;
+  String? cacheGroupId;
   DateTime lastDownloadedAt;
   DateTime lastTagReadAt;
 
   String get identityKey => trackIdentityKey(accountId, remotePath);
+  bool get isCueVirtual => cueTrackIndex != null && (cueRemotePath?.isNotEmpty ?? false);
+  String get effectiveAudioRemotePath => audioRemotePath ?? remotePath;
 
   String get displayTitle {
     final t = title?.trim();
@@ -90,6 +104,12 @@ class LibraryTrack {
         'bitrate': bitrate,
         'sample_rate': sampleRate,
         'cover_path': coverPath,
+        'cue_remote_path': cueRemotePath,
+        'cue_track_index': cueTrackIndex,
+        'audio_remote_path': audioRemotePath,
+        'clip_start_ms': clipStartMs,
+        'clip_end_ms': clipEndMs,
+        'cache_group_id': cacheGroupId,
         'last_downloaded_at': lastDownloadedAt.toIso8601String(),
         'last_tag_read_at': lastTagReadAt.toIso8601String(),
       };
@@ -112,6 +132,12 @@ class LibraryTrack {
         bitrate: map['bitrate'] as int?,
         sampleRate: map['sample_rate'] as int?,
         coverPath: map['cover_path'] as String?,
+        cueRemotePath: map['cue_remote_path'] as String?,
+        cueTrackIndex: map['cue_track_index'] as int?,
+        audioRemotePath: map['audio_remote_path'] as String?,
+        clipStartMs: map['clip_start_ms'] as int?,
+        clipEndMs: map['clip_end_ms'] as int?,
+        cacheGroupId: map['cache_group_id'] as String?,
         lastDownloadedAt: DateTime.parse(map['last_downloaded_at'] as String),
         lastTagReadAt: DateTime.parse(map['last_tag_read_at'] as String),
       );

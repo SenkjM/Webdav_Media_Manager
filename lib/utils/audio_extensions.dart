@@ -2,6 +2,8 @@ import 'package:path/path.dart' as p;
 
 import 'track_identity.dart';
 
+bool isCueFileName(String name) => name.toLowerCase().endsWith('.cue');
+
 bool isAudioFileName(String name) {
   final lower = name.toLowerCase();
   const exts = [
@@ -40,4 +42,12 @@ String folderDisplayName(String path) {
       : path;
   final name = p.basename(trimmed);
   return name.isEmpty ? '根目录' : name;
+}
+
+
+String formatByteSize(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+  if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
 }

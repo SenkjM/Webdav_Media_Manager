@@ -14,7 +14,7 @@ class DownloadStore {
     final path = p.join(dir.path, 'download_queue.db');
     _db = await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
 CREATE TABLE download_tasks (
@@ -29,7 +29,8 @@ CREATE TABLE download_tasks (
   progress REAL NOT NULL DEFAULT 0,
   completed_at TEXT,
   bytes_total INTEGER,
-  bytes_received INTEGER NOT NULL DEFAULT 0
+  bytes_received INTEGER NOT NULL DEFAULT 0,
+  cache_group_id TEXT
 )
 ''');
         await _createIndexes(db);
@@ -39,6 +40,9 @@ CREATE TABLE download_tasks (
           await db.execute(
             "ALTER TABLE download_tasks ADD COLUMN account_id TEXT NOT NULL DEFAULT 'legacy'",
           );
+        }
+        if (oldVersion < 3) {
+          await db.execute('ALTER TABLE download_tasks ADD COLUMN cache_group_id TEXT');
         }
       },
     );

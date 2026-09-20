@@ -22,6 +22,7 @@ class DownloadTask {
     this.completedAt,
     this.bytesTotal,
     this.bytesReceived = 0,
+    this.cacheGroupId,
   });
 
   final String id;
@@ -36,6 +37,7 @@ class DownloadTask {
   DateTime? completedAt;
   int? bytesTotal;
   int bytesReceived;
+  String? cacheGroupId;
 
   bool get isTerminal =>
       status == DownloadStatus.completed ||
@@ -55,6 +57,7 @@ class DownloadTask {
         'completed_at': completedAt?.toIso8601String(),
         'bytes_total': bytesTotal,
         'bytes_received': bytesReceived,
+        'cache_group_id': cacheGroupId,
       };
 
   factory DownloadTask.fromMap(Map<String, dynamic> map) => DownloadTask(
@@ -75,6 +78,7 @@ class DownloadTask {
             : null,
         bytesTotal: map['bytes_total'] as int?,
         bytesReceived: (map['bytes_received'] as int?) ?? 0,
+        cacheGroupId: map['cache_group_id'] as String?,
       );
 
   DownloadTask copyWith({
@@ -85,6 +89,7 @@ class DownloadTask {
     DateTime? completedAt,
     int? bytesTotal,
     int? bytesReceived,
+    String? cacheGroupId,
   }) {
     return DownloadTask(
       id: id,
@@ -99,6 +104,7 @@ class DownloadTask {
       completedAt: completedAt ?? this.completedAt,
       bytesTotal: bytesTotal ?? this.bytesTotal,
       bytesReceived: bytesReceived ?? this.bytesReceived,
+      cacheGroupId: cacheGroupId ?? this.cacheGroupId,
     );
   }
 }

@@ -31,6 +31,9 @@ Future<void> main() async {
   }
   final app = AppState(audioHandler: audioHandler);
   await app.init();
+  if (!kIsWeb && Platform.isAndroid) {
+    await app.notificationPermission.request();
+  }
   runApp(WebDavMusicApp(appState: app));
 }
 

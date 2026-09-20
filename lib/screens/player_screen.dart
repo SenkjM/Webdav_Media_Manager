@@ -15,6 +15,7 @@ import '../services/tag_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
+import 'now_playing_queue_screen.dart';
 
 class PlayerScreen extends StatelessWidget {
   const PlayerScreen({super.key});
@@ -311,6 +312,17 @@ class PlayerScreen extends StatelessWidget {
                 elevation: 0,
                 title: const Text('正在播放'),
                 actions: [
+                  IconButton(
+                    tooltip: '播放列表',
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const NowPlayingQueueScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.queue_music),
+                  ),
                   if (track != null)
                     IconButton(
                       tooltip: '更多',

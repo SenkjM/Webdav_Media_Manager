@@ -1,20 +1,60 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/webdav_item.dart';
 
-/// audio_service handler that owns a single [AudioPlayer] and publishes
-/// MediaItem + PlaybackState so Android shows a MediaStyle notification /
-/// system media controls.
+/// Set true (or --dart-define=AUDIO_NOTIF_DEBUG=true) to log playbackState.
+const bool kAudioNotifDebug = bool.fromEnvironment(
+  'AUDIO_NOTIF_DEBUG',
+  defaultValue: false,
+);
+
+void _notifLog(String message) {
+  if (kAudioNotifDebug || kDebugMode) {
+    developer.log(message, name: 'MusicAudioHandler');
+  }
+}
+
+/// Actions Android 13+ / lock screen / control center read from PlaybackState.
+/// Controls (notification buttons) + systemActions together must expose
+/// PLAY / PAUSE / PLAY_PAUSE / SKIP_* / SEEK.
+const Set<MediaAction> _kSystemActions = {
+  MediaAction.play,
+  MediaAction.pause,
+  MediaAction.playPause,
+  MediaAction.stop,
+  MediaAction.seek,
+  MediaAction.seekForward,
+  MediaAction.seekBackward,
+  MediaAction.skipToNext,
+  MediaAction.skipToPrevious,
+};
+
+/// audio_service handler owning one [AudioPlayer]. Continuously pipes
+/// just_audio events into [playbackState] / [mediaItem] / [queue] so Android
+/// keeps an active MediaSession + MediaStyle notification (system media center).
 class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   MusicAudioHandler({AudioPlayer? player}) : _player = player ?? AudioPlayer() {
-    _player.playbackEventStream.listen((event) {
-      playbackState.add(_transformEvent(event));
-    });
-    _player.processingStateStream.listen((state) {
+    // Official example pattern: transform playback events → playbackState.
+    _eventSub = _player.playbackEventStream.map(_transformEvent).listen(
+      (state) {
+        playbackState.add(state);
+        _notifLog(
+          'playbackState playing=${state.playing} '
+          'proc=${state.processingState} idx=${state.queueIndex} '
+          'actions=${state.systemActions.length} controls=${state.controls.length}',
+        );
+      },
+      onError: (Object e, StackTrace st) {
+        _notifLog('playbackEventStream error: $e');
+      },
+    );
+    _completeSub = _player.processingStateStream.listen((state) {
       if (state == ProcessingState.completed) {
         unawaited(skipToNext());
       }
@@ -22,8 +62,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   final AudioPlayer _player;
+  StreamSubscription<PlaybackState>? _eventSub;
+  StreamSubscription<ProcessingState>? _completeSub;
 
-  /// Optional resolver used when skipping to a queue item that needs a local path.
+  /// Optional resolver when skipping to a queue item that needs a local path.
   Future<String?> Function(TrackInfo track)? resolveLocalPath;
 
   final List<TrackInfo> _tracks = [];
@@ -35,10 +77,29 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       (_index >= 0 && _index < _tracks.length) ? _tracks[_index] : null;
   AudioPlayer get player => _player;
 
+  AudioSource _sourceFor(TrackInfo track, String localPath) {
+    final start = track.clipStart;
+    final end = track.clipEnd;
+    final fileSrc = AudioSource.file(localPath);
+    if (start != null || end != null) {
+      return ClippingAudioSource(
+        child: fileSrc,
+        start: start ?? Duration.zero,
+        end: end,
+        duration: track.duration,
+      );
+    }
+    return fileSrc;
+  }
+
   MediaItem mediaItemFor(TrackInfo track) {
+    // Title is required for system media center; never leave empty.
+    final title = track.displayTitle.trim().isEmpty
+        ? track.fileName
+        : track.displayTitle;
     return MediaItem(
       id: '${track.accountId}|${track.remotePath}',
-      title: track.displayTitle,
+      title: title,
       album: track.album,
       artist: track.displayArtist,
       duration: track.duration,
@@ -59,8 +120,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     return Uri.file(cover);
   }
 
-  /// Replace queue and start playback at [startIndex] using an already-resolved
-  /// local file path for that track.
+  /// Replace queue and start playback at [startIndex] with a resolved local path.
   Future<void> loadAndPlay({
     required List<TrackInfo> playlist,
     required int startIndex,
@@ -75,74 +135,53 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _tracks[_index].localPath = localPath;
 
     final items = _tracks.map(mediaItemFor).toList();
+    // Real queue enables skipToNext/Previous for MediaSession callbacks.
     queue.add(items);
     final item = items[_index];
-    // Publish metadata BEFORE play so the FGS notification has title/artist.
     mediaItem.add(item);
+    _notifLog('mediaItem set title=${item.title} artist=${item.artist}');
+
     playbackState.add(playbackState.value.copyWith(
       controls: _controls(playing: false),
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-        MediaAction.skipToNext,
-        MediaAction.skipToPrevious,
-      },
-      androidCompactActionIndices: const [0, 1],
+      systemActions: _kSystemActions,
+      androidCompactActionIndices: const [0, 1, 3],
       processingState: AudioProcessingState.loading,
       playing: false,
       updatePosition: Duration.zero,
       queueIndex: _index,
     ));
 
-    await _player.setAudioSource(AudioSource.file(localPath));
+    await _player.setAudioSource(_sourceFor(_tracks[_index], localPath));
     mediaItem.add(item.copyWith(duration: _player.duration ?? item.duration));
     await play();
   }
 
+  /// Always expose skip + play/pause + stop so PlaybackState actions stay rich
+  /// for Android 13+ system media buttons (not only notification addAction).
   List<MediaControl> _controls({required bool playing}) {
     return [
-      if (_tracks.length > 1 && _index > 0) MediaControl.skipToPrevious,
+      MediaControl.skipToPrevious,
       if (playing) MediaControl.pause else MediaControl.play,
       MediaControl.stop,
-      if (_tracks.length > 1 && _index + 1 < _tracks.length)
-        MediaControl.skipToNext,
+      MediaControl.skipToNext,
     ];
   }
 
   PlaybackState _transformEvent(PlaybackEvent event) {
     final playing = _player.playing;
-    final controls = _controls(playing: playing);
-    // Compact view: prefer play/pause (+ skip next when present).
-    final compact = <int>[];
-    for (var i = 0; i < controls.length; i++) {
-      final a = controls[i].action;
-      if (a == MediaAction.play ||
-          a == MediaAction.pause ||
-          a == MediaAction.skipToNext) {
-        compact.add(i);
-      }
-      if (compact.length >= 3) break;
-    }
-    if (compact.isEmpty) compact.add(0);
+    final proc = const {
+      ProcessingState.idle: AudioProcessingState.idle,
+      ProcessingState.loading: AudioProcessingState.loading,
+      ProcessingState.buffering: AudioProcessingState.buffering,
+      ProcessingState.ready: AudioProcessingState.ready,
+      ProcessingState.completed: AudioProcessingState.completed,
+    }[_player.processingState]!;
 
     return PlaybackState(
-      controls: controls,
-      systemActions: const {
-        MediaAction.seek,
-        MediaAction.seekForward,
-        MediaAction.seekBackward,
-        MediaAction.skipToNext,
-        MediaAction.skipToPrevious,
-      },
-      androidCompactActionIndices: compact,
-      processingState: const {
-        ProcessingState.idle: AudioProcessingState.idle,
-        ProcessingState.loading: AudioProcessingState.loading,
-        ProcessingState.buffering: AudioProcessingState.buffering,
-        ProcessingState.ready: AudioProcessingState.ready,
-        ProcessingState.completed: AudioProcessingState.completed,
-      }[_player.processingState]!,
+      controls: _controls(playing: playing),
+      systemActions: _kSystemActions,
+      androidCompactActionIndices: const [0, 1, 3],
+      processingState: proc,
       playing: playing,
       updatePosition: _player.position,
       bufferedPosition: _player.bufferedPosition,
@@ -169,16 +208,42 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final item = mediaItemFor(track);
     mediaItem.add(item);
     queue.add(_tracks.map(mediaItemFor).toList());
-    await _player.setAudioSource(AudioSource.file(local));
+    await _player.setAudioSource(_sourceFor(track, local));
     mediaItem.add(item.copyWith(duration: _player.duration ?? item.duration));
     await play();
   }
 
   @override
-  Future<void> play() => _player.play();
+  Future<void> play() async {
+    // Immediate PLAYING broadcast → enterPlayingState / startForeground /
+    // mediaSession.setActive(true) before just_audio's event arrives.
+    final proc = _player.processingState == ProcessingState.ready
+        ? AudioProcessingState.ready
+        : AudioProcessingState.buffering;
+    playbackState.add(playbackState.value.copyWith(
+      playing: true,
+      processingState: proc,
+      controls: _controls(playing: true),
+      systemActions: _kSystemActions,
+      androidCompactActionIndices: const [0, 1, 3],
+      updatePosition: _player.position,
+      queueIndex: _index >= 0 ? _index : null,
+    ));
+    _notifLog('play() → playing=true proc=$proc');
+    await _player.play();
+  }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> pause() async {
+    playbackState.add(playbackState.value.copyWith(
+      playing: false,
+      controls: _controls(playing: false),
+      systemActions: _kSystemActions,
+      androidCompactActionIndices: const [0, 1, 3],
+      updatePosition: _player.position,
+    ));
+    await _player.pause();
+  }
 
   @override
   Future<void> stop() async {
@@ -194,11 +259,9 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> skipToNext() async {
     if (_index + 1 >= _tracks.length) {
-      await _player.stop();
-      playbackState.add(playbackState.value.copyWith(
-        playing: false,
-        processingState: AudioProcessingState.idle,
-      ));
+      // Keep session metadata; just pause at end rather than idle/NONE.
+      await pause();
+      await seek(Duration.zero);
       return;
     }
     await _loadIndex(_index + 1);
@@ -221,6 +284,8 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> skipToQueueItem(int index) => _loadIndex(index);
 
   Future<void> disposePlayer() async {
+    await _eventSub?.cancel();
+    await _completeSub?.cancel();
     await _player.dispose();
   }
 }
@@ -231,16 +296,16 @@ Future<MusicAudioHandler> initMusicAudioService() {
   return AudioService.init<MusicAudioHandler>(
     builder: MusicAudioHandler.new,
     config: const AudioServiceConfig(
-      androidNotificationChannelId:
-          'com.webdav.webdav_music_player.channel.audio',
+      // applicationId-style channel; new id so IMPORTANCE_DEFAULT from the
+      // vendored patch applies (existing LOW channels are not updated in-place).
+      androidNotificationChannelId: 'com.webdav.webdav_music_player.audio',
       androidNotificationChannelName: '音乐播放',
       androidNotificationChannelDescription: '正在播放的音乐控制',
-      // ongoing=true requires stopForegroundOnPause=true (audio_service assert).
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
-      // Adaptive mipmap/ic_launcher is NOT valid as a status-bar small icon.
-      androidNotificationIcon: 'drawable/ic_stat_music',
+      androidNotificationIcon: 'drawable/ic_stat_music_white',
       androidNotificationClickStartsActivity: true,
+      androidShowNotificationBadge: false,
     ),
   );
 }

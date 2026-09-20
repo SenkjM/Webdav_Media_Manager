@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
+import '../utils/cue_sheet.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'download_store.dart';
@@ -117,6 +120,7 @@ class DownloadQueueService extends ChangeNotifier {
     String remotePath, {
     String? fileName,
     bool playWhenReady = false,
+    String? cacheGroupId,
   }) async {
     final existingCompleted = _tasks.cast<DownloadTask?>().firstWhere(
           (t) =>
@@ -172,6 +176,7 @@ class DownloadQueueService extends ChangeNotifier {
       remotePath: remotePath,
       fileName: fileName ?? remotePath.split('/').last,
       createdAt: DateTime.now(),
+      cacheGroupId: cacheGroupId,
     );
     _tasks.add(task);
     await _store.upsert(task);
@@ -253,6 +258,63 @@ class DownloadQueueService extends ChangeNotifier {
       unawaited(enqueue(accountId, item.path, fileName: item.name));
     }
     return items.length;
+  }
+
+
+  Future<int> enqueueCueGroup({
+    required String accountId,
+    required String cueRemotePath,
+    String? cueFileName,
+    CueSheet? preParsed,
+  }) async {
+    final CueSheet sheet;
+    if (preParsed != null) {
+      sheet = preParsed;
+    } else {
+      final bytes = await _webDav.readAsBytes(cueRemotePath);
+      final parsed = CueSheetParser.tryParse(utf8.decode(bytes, allowMalformed: true));
+      if (parsed == null) {
+        throw StateError('无法解析的 CUE：需要标准 FILE + TRACK/INDEX');
+      }
+      sheet = parsed;
+    }
+    final groupId = cueCacheGroupId(accountId, cueRemotePath);
+    final paths = <String>[cueRemotePath, ...sheet.audioRemotePaths(cueRemotePath)];
+    for (final path in paths) {
+      await _cache.bindCacheGroup(accountId: accountId, remotePath: path, groupId: groupId);
+    }
+    for (final path in paths) {
+      unawaited(enqueue(accountId, path, fileName: p.basename(path), cacheGroupId: groupId).catchError((_) {}));
+    }
+    return paths.length;
+  }
+
+  Future<void> _maybeIngestCueGroup(DownloadTask task) async {
+    final groupId = task.cacheGroupId;
+    if (groupId == null || _library == null) return;
+    final members = _tasks.where((t) => t.cacheGroupId == groupId).toList();
+    if (members.isEmpty) return;
+    final allDone = members.every((t) =>
+        t.status == DownloadStatus.completed &&
+        t.localPath != null &&
+        File(t.localPath!).existsSync());
+    if (!allDone) return;
+    final cueTask = members.cast<DownloadTask?>().firstWhere(
+      (t) => t!.remotePath.toLowerCase().endsWith('.cue'),
+      orElse: () => null,
+    );
+    if (cueTask?.localPath == null) return;
+    try {
+      final sheet = CueSheetParser.tryParse(await File(cueTask!.localPath!).readAsString());
+      if (sheet == null) return;
+      await _library!.ingestCueAlbum(
+        accountId: cueTask.accountId,
+        cueRemotePath: cueTask.remotePath,
+        sheet: sheet,
+        cacheGroupId: groupId,
+        localPathFor: (remote) => _cache.fileForRemote(remote, accountId: cueTask.accountId).path,
+      );
+    } catch (_) {}
   }
 
   Future<void> _ingest(DownloadTask task) async {
@@ -410,7 +472,11 @@ class DownloadQueueService extends ChangeNotifier {
         task.accountId,
         task.remotePath,
         dest.path,
+        cacheGroupId: task.cacheGroupId,
       );
+      if (task.cacheGroupId != null && task.cacheGroupId!.startsWith('cue')) {
+        unawaited(_maybeIngestCueGroup(task));
+      }
       await _store.upsert(task);
       await _ingest(task);
       _completeWaiter(task);

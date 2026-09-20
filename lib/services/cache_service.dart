@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -15,6 +16,8 @@ class CacheService extends ChangeNotifier {
   CacheService({SharedPreferences? prefs}) : _prefs = prefs;
 
   static const _kAccessPrefix = 'cache_access_';
+  static const _kGroupPrefix = 'cache_group_';
+  static const _kGroupMembersPrefix = 'cache_group_members_';
 
   SharedPreferences? _prefs;
   Directory? _cacheDir;
@@ -64,6 +67,54 @@ class CacheService extends ChangeNotifier {
   String _accessKey(String accountId, String remotePath) =>
       '$_kAccessPrefix${trackIdentityKey(accountId, remotePath).hashCode}';
 
+
+  String _groupKey(String accountId, String remotePath) =>
+      '$_kGroupPrefix${trackIdentityKey(accountId, remotePath).hashCode}';
+  String _groupMembersKey(String groupId) => '$_kGroupMembersPrefix${groupId.hashCode}';
+  Future<void> bindCacheGroup({required String accountId, required String remotePath, required String groupId}) async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_groupKey(accountId, remotePath), groupId);
+    final members = List<String>.from(groupMemberIdentities(groupId));
+    final id = trackIdentityKey(accountId, remotePath);
+    if (!members.contains(id)) {
+      members.add(id);
+      await _prefs!.setString(_groupMembersKey(groupId), jsonEncode(members));
+    }
+  }
+  String? cacheGroupIdFor(String accountId, String remotePath) => _prefs?.getString(_groupKey(accountId, remotePath));
+  List<String> groupMemberIdentities(String groupId) {
+    final raw = _prefs?.getString(_groupMembersKey(groupId));
+    if (raw == null || raw.isEmpty) return const [];
+    try { return (jsonDecode(raw) as List).map((e) => e.toString()).toList(); } catch (_) { return const []; }
+  }
+  List<String> groupMemberFileNames(String groupId) => groupMemberIdentities(groupId).map((id) {
+    final parts = id.split('\u0000');
+    final remote = parts.length > 1 ? parts.sublist(1).join('\u0000') : id;
+    return p.basename(remote);
+  }).toList();
+  Future<bool> deleteLocalFile({required String accountId, required String remotePath}) async {
+    final f = fileForRemote(remotePath, accountId: accountId);
+    var removed = false;
+    if (await f.exists()) { try { await f.delete(); removed = true; } catch (_) {} }
+    final part = File('${f.path}.part');
+    if (await part.exists()) { try { await part.delete(); } catch (_) {} }
+    await _prefs?.remove(_accessKey(accountId, remotePath));
+    if (removed) notifyListeners();
+    return removed;
+  }
+  Future<int> deleteCacheGroup(String groupId) async {
+    var removed = 0;
+    for (final identity in groupMemberIdentities(groupId)) {
+      final parts = identity.split('\u0000');
+      final accountId = parts.isNotEmpty ? parts.first : '';
+      final remote = parts.length > 1 ? parts.sublist(1).join('\u0000') : identity;
+      if (await deleteLocalFile(accountId: accountId, remotePath: remote)) removed++;
+      await _prefs?.remove(_groupKey(accountId, remote));
+    }
+    await _prefs?.remove(_groupMembersKey(groupId));
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
   Future<void> touch(String accountId, String remotePath) async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(
@@ -81,9 +132,13 @@ class CacheService extends ChangeNotifier {
   Future<void> registerCompleted(
     String accountId,
     String remotePath,
-    String localPath,
-  ) async {
+    String localPath, {
+    String? cacheGroupId,
+  }) async {
     await touch(accountId, remotePath);
+    if (cacheGroupId != null && cacheGroupId.isNotEmpty) {
+      await bindCacheGroup(accountId: accountId, remotePath: remotePath, groupId: cacheGroupId);
+    }
     notifyListeners();
   }
 

@@ -76,10 +76,23 @@ class AudioPlayerService extends ChangeNotifier {
   Future<String?> _resolveLocalPath(TrackInfo track) async {
     final existing = track.localPath;
     if (existing != null && File(existing).existsSync()) return existing;
+    if (track.isCueVirtual && track.cueRemotePath != null) {
+      await _downloads.enqueueCueGroup(
+        accountId: track.accountId,
+        cueRemotePath: track.cueRemotePath!,
+      );
+      final audioRemote = track.effectiveAudioRemotePath;
+      final audioTask = _downloads.taskForRemote(track.accountId, audioRemote);
+      if (audioTask?.localPath != null && File(audioTask!.localPath!).existsSync()) {
+        track.localPath = audioTask.localPath;
+        return track.localPath;
+      }
+    }
     final task = await _downloads.enqueue(
       track.accountId,
-      track.remotePath,
+      track.isCueVirtual ? track.effectiveAudioRemotePath : track.remotePath,
       fileName: track.fileName,
+      cacheGroupId: track.cacheGroupId,
     );
     if (task.status != DownloadStatus.completed || task.localPath == null) {
       throw StateError(task.errorMessage ?? '下载失败');
