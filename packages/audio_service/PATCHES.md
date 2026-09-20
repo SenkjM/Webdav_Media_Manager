@@ -37,3 +37,11 @@ down the MediaSession / notification. Also: do not call
 causes startup clicks); mute until ready; keep
 `androidStopForegroundOnPause: false` to avoid Android 12+ FGS restart
 blocks during play/pause races.
+
+6. **ColorOS / MediaSession discoverability** — onCreate sets
+   `FLAG_HANDLES_MEDIA_BUTTONS | TRANSPORT_CONTROLS | QUEUE_COMMANDS` and
+   `setPlaybackToLocal(STREAM_MUSIC)`. `getPlaybackState()` maps
+   `loading + playing` to `STATE_BUFFERING` instead of `STATE_CONNECTING`
+   (OEM media centers often ignore CONNECTING). Notification channel sets
+   lockscreen `VISIBILITY_PUBLIC` and silent sound (keep IMPORTANCE_DEFAULT).
+

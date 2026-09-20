@@ -27,7 +27,7 @@ const _kAppChannel = MethodChannel('com.webdav.webdav_music_player/app');
 /// Fresh channel so IMPORTANCE_DEFAULT applies (Android does not upgrade
 /// importance of an already-created channel in-place).
 const String kMediaNotificationChannelId =
-    'com.webdav.webdav_music_player.audio.v3';
+    'com.webdav.webdav_music_player.audio.v4';
 
 /// Actions Android 13+ / lock screen / control center read from PlaybackState.
 const Set<MediaAction> _kSystemActions = {
@@ -60,17 +60,23 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         if (_gatePlayerEvents) {
           // Keep MediaSession non-idle while swapping sources / preparing,
           // but do not let stale playing=false undo an explicit play().
+          final playingNow = playbackState.value.playing || state.playing;
+          var proc = state.processingState;
+          if (proc == AudioProcessingState.idle &&
+              !_allowIdleBroadcast &&
+              _index >= 0) {
+            // Prefer buffering over loading: native maps loading→CONNECTING
+            // which ColorOS media center often ignores.
+            proc = playingNow
+                ? AudioProcessingState.buffering
+                : AudioProcessingState.loading;
+          } else if (playingNow && proc == AudioProcessingState.loading) {
+            proc = AudioProcessingState.buffering;
+          }
           playbackState.add(state.copyWith(
-            playing: playbackState.value.playing || state.playing,
-            processingState:
-                state.processingState == AudioProcessingState.idle &&
-                        !_allowIdleBroadcast &&
-                        _index >= 0
-                    ? AudioProcessingState.loading
-                    : state.processingState,
-            controls: _controls(
-              playing: playbackState.value.playing || state.playing,
-            ),
+            playing: playingNow,
+            processingState: proc,
+            controls: _controls(playing: playingNow),
             systemActions: _kSystemActions,
             androidCompactActionIndices: const [0, 1, 3],
             queueIndex: _index >= 0 ? _index : state.queueIndex,
@@ -93,6 +99,12 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         unawaited(skipToNext());
       }
     });
+    // Safety net: never stay at volume 0 once playback is actually playing.
+    _volumeSafetySub = _player.playerStateStream.listen((s) {
+      if (s.playing && (_mutedForPrep || _player.volume < 0.01)) {
+        unawaited(_restoreVolume(reason: 'playingSafety'));
+      }
+    });
     unawaited(_ensureAudioSessionConfigured());
   }
 
@@ -108,6 +120,8 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   bool _audioSessionConfigured = false;
   bool _mutedForPrep = false;
+  double _volumeBeforeMute = 1.0;
+  StreamSubscription<PlayerState>? _volumeSafetySub;
 
   /// Optional resolver when skipping to a queue item that needs a local path.
   Future<String?> Function(TrackInfo track)? resolveLocalPath;
@@ -134,38 +148,51 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   Future<void> _muteForPrep() async {
+    if (!_mutedForPrep) {
+      final v = _player.volume;
+      _volumeBeforeMute = v > 0.01 ? v : 1.0;
+    }
     _mutedForPrep = true;
     try {
       await _player.setVolume(0);
     } catch (_) {}
   }
 
-  Future<void> _unmuteWhenReady() async {
-    if (!_mutedForPrep) return;
+  Future<void> _restoreVolume({String reason = ''}) async {
+    final target = _volumeBeforeMute > 0.01 ? _volumeBeforeMute : 1.0;
+    _mutedForPrep = false;
     try {
-      // Wait until ExoPlayer reports ready so seek/clip/activate settles
-      // while still silent — avoids the audible seek / focus click pair.
-      final readyNow = _player.processingState == ProcessingState.ready ||
-          _player.processingState == ProcessingState.completed;
-      if (!readyNow) {
-        await _player.processingStateStream
-            .firstWhere(
-              (s) =>
-                  s == ProcessingState.ready || s == ProcessingState.completed,
-            )
-            .timeout(const Duration(seconds: 8), onTimeout: () {
-          return _player.processingState;
-        });
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 40));
-      await _player.setVolume(1);
+      await _player.setVolume(target);
     } catch (_) {
       try {
         await _player.setVolume(1);
       } catch (_) {}
-    } finally {
-      _mutedForPrep = false;
     }
+    _notifLog('restoreVolume($reason) vol=$target playerVol=${_player.volume}');
+  }
+
+  /// Poll ready instead of stream.firstWhere — avoids missing the ready event
+  /// between a synchronous check and subscription (classic race → stuck mute).
+  Future<void> _waitReadyWhileMuted({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final s = _player.processingState;
+      if (s == ProcessingState.ready || s == ProcessingState.completed) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+  }
+
+  /// Mute window ends BEFORE audible play. Never leave volume at 0.
+  Future<void> _unmuteBeforeAudiblePlay() async {
+    if (!_mutedForPrep && _player.volume >= 0.01) return;
+    await _waitReadyWhileMuted();
+    // Brief settle so clip/seek/activate clicks stay under the mute window.
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    await _restoreVolume(reason: 'beforePlay');
   }
 
   AudioSource _sourceFor(TrackInfo track, String localPath) {
@@ -255,12 +282,17 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     try {
       await _player.setAudioSource(_sourceFor(_tracks[_index], localPath));
       mediaItem.add(item.copyWith(duration: _player.duration ?? item.duration));
+      // Unmute BEFORE play — awaiting play() first left volume at 0 when the
+      // first cold-start play() Future stalled (ColorOS / audio focus).
+      await _unmuteBeforeAudiblePlay();
       await play();
-      // Unmute after play has started and engine is ready (still gated).
-      await _unmuteWhenReady();
     } finally {
+      // Belt-and-suspenders: never leave prep-mute stuck after load.
+      if (_mutedForPrep || _player.volume < 0.01) {
+        await _restoreVolume(reason: 'loadAndPlay/finally');
+      }
       _gatePlayerEvents = false;
-      // Push authoritative state once gate lifts.
+      // Push authoritative state once gate lifts (prefer ready+playing).
       playbackState.add(_transformEvent(_player.playbackEvent));
     }
   }
@@ -277,7 +309,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   AudioProcessingState _mapProcessing(ProcessingState state) {
-    final mapped = const {
+    var mapped = const {
       ProcessingState.idle: AudioProcessingState.idle,
       ProcessingState.loading: AudioProcessingState.loading,
       ProcessingState.buffering: AudioProcessingState.buffering,
@@ -292,7 +324,14 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (mapped == AudioProcessingState.idle &&
         !_allowIdleBroadcast &&
         _index >= 0) {
-      return AudioProcessingState.loading;
+      mapped = _player.playing
+          ? AudioProcessingState.buffering
+          : AudioProcessingState.loading;
+    }
+    // ColorOS / OPPO media center: avoid STATE_CONNECTING (loading) while
+    // already playing — promote to buffering so the session stays visible.
+    if (_player.playing && mapped == AudioProcessingState.loading) {
+      mapped = AudioProcessingState.buffering;
     }
     return mapped;
   }
@@ -345,9 +384,12 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     try {
       await _player.setAudioSource(_sourceFor(track, local));
       mediaItem.add(item.copyWith(duration: _player.duration ?? item.duration));
+      await _unmuteBeforeAudiblePlay();
       await play();
-      await _unmuteWhenReady();
     } finally {
+      if (_mutedForPrep || _player.volume < 0.01) {
+        await _restoreVolume(reason: 'loadIndex/finally');
+      }
       _gatePlayerEvents = false;
       playbackState.add(_transformEvent(_player.playbackEvent));
     }
@@ -357,9 +399,14 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> play() async {
     // Immediate PLAYING broadcast → enterPlayingState / startForeground /
     // mediaSession.setActive(true) before just_audio's event arrives.
+    // Prefer buffering (not loading/CONNECTING) while warming — ColorOS media
+    // center often ignores STATE_CONNECTING.
     // Do NOT call androidForceEnableMediaButtons here: it plays a STREAM_MUSIC
     // AudioTrack of silence and causes the audible double click/pop on start,
     // and races with ExoPlayer audio focus.
+    if (_mutedForPrep || _player.volume < 0.01) {
+      await _restoreVolume(reason: 'play/safety');
+    }
     final proc = _player.processingState == ProcessingState.ready
         ? AudioProcessingState.ready
         : AudioProcessingState.buffering;
@@ -374,8 +421,11 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       updatePosition: _player.position,
       queueIndex: _index >= 0 ? _index : null,
     ));
-    _notifLog('play() → playing=true proc=$proc muted=$_mutedForPrep');
+    _notifLog('play() → playing=true proc=$proc muted=$_mutedForPrep vol=${_player.volume}');
     await _player.play();
+    if (_mutedForPrep || _player.volume < 0.01) {
+      await _restoreVolume(reason: 'play/after');
+    }
   }
 
   @override
@@ -395,11 +445,8 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _allowIdleBroadcast = true;
     _gatePlayerEvents = false;
     try {
-      if (_mutedForPrep) {
-        _mutedForPrep = false;
-        try {
-          await _player.setVolume(1);
-        } catch (_) {}
+      if (_mutedForPrep || _player.volume < 0.01) {
+        await _restoreVolume(reason: 'stop');
       }
       await _player.stop();
       await super.stop();
@@ -465,10 +512,22 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         final chImp = map['channelImportance'];
         final chName = map['channelId'];
         final ourSessions = map['ourActiveSessionCount'];
+        final channelExists = map['channelExists'] == true;
+        final channelBlocked = map['channelBlocked'] == true;
+        final mfr = map['manufacturer']?.toString() ?? '';
+        final model = map['model']?.toString() ?? '';
+        final sdk = map['sdk'];
+        final hint = (!posted || channelBlocked)
+            ? ' | 若仍无通知: 设置→应用→WebDAV音乐→耗电管理=不限制;'
+                '通知=允许(含锁屏/悬浮); 通道「音乐播放」勿关闭'
+            : '';
         return '服务=${svc ? "运行" : "无"} 会话=${active ? "活跃" : "否"} '
             '通知=${posted ? "已发布" : "未发布"} '
-            '系统通知开关=$perm 通道=$chName 重要性=$chImp '
-            '本包会话数=$ourSessions';
+            '系统通知开关=$perm 通道=$chName'
+            '${channelExists ? "" : "(未创建)"}'
+            '${channelBlocked ? "(已关闭)" : ""} 重要性=$chImp '
+            '本包会话数=$ourSessions '
+            '设备=$mfr $model sdk=$sdk$hint';
       }
       return '探测返回: $raw';
     } on MissingPluginException {
@@ -520,6 +579,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> disposePlayer() async {
     await _eventSub?.cancel();
     await _completeSub?.cancel();
+    await _volumeSafetySub?.cancel();
     await _player.dispose();
   }
 }
@@ -530,8 +590,9 @@ Future<MusicAudioHandler> initMusicAudioService() {
   return AudioService.init<MusicAudioHandler>(
     builder: MusicAudioHandler.new,
     config: AudioServiceConfig(
-      // v3: new channel id so IMPORTANCE_DEFAULT applies for upgrades that
-      // still had v1/v2 channels from earlier builds.
+      // v4: fresh channel so IMPORTANCE_DEFAULT + lockscreen visibility apply
+      // (Android never upgrades an existing channel in-place; ColorOS may
+      // have silenced v3).
       androidNotificationChannelId: kMediaNotificationChannelId,
       androidNotificationChannelName: '音乐播放',
       androidNotificationChannelDescription: '正在播放的音乐控制',

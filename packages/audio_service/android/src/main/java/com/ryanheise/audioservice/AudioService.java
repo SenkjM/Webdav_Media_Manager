@@ -314,7 +314,14 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         configure(new AudioServiceConfig(getApplicationContext()));
 
-        mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
+        // TRANSPORT + MEDIA_BUTTONS help OEM controllers (ColorOS/OPPO) discover
+        // the session; QUEUE_COMMANDS kept for skipToQueueItem.
+        mediaSession.setFlags(
+                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS
+                        | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
+                        | MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
+        // Local STREAM_MUSIC so system media UI treats us as a music player.
+        mediaSession.setPlaybackToLocal(AudioManager.STREAM_MUSIC);
         PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
                 .setActions(AUTO_ENABLED_ACTIONS);
         mediaSession.setPlaybackState(stateBuilder.build());
@@ -612,7 +619,12 @@ public class AudioService extends MediaBrowserServiceCompat {
     public int getPlaybackState() {
         switch (processingState) {
         case idle: return PlaybackStateCompat.STATE_NONE;
-        case loading: return PlaybackStateCompat.STATE_CONNECTING;
+        // ColorOS / OPPO media center often ignores STATE_CONNECTING. When we
+        // already claim playing, report BUFFERING (or PLAYING once ready).
+        case loading:
+            return playing
+                    ? PlaybackStateCompat.STATE_BUFFERING
+                    : PlaybackStateCompat.STATE_CONNECTING;
         case buffering: return PlaybackStateCompat.STATE_BUFFERING;
         case ready: return playing ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
         case completed: return playing ? PlaybackStateCompat.STATE_PLAYING : PlaybackStateCompat.STATE_PAUSED;
@@ -702,6 +714,11 @@ public class AudioService extends MediaBrowserServiceCompat {
         if (channel == null) {
             channel = new NotificationChannel(notificationChannelId, config.androidNotificationChannelName, NotificationManager.IMPORTANCE_DEFAULT);
             channel.setShowBadge(config.androidShowNotificationBadge);
+            channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+            // Keep sound/vibration off for media transport, but do not drop
+            // importance — ColorOS hides LOW media channels aggressively.
+            channel.setSound(null, null);
+            channel.enableVibration(false);
             if (config.androidNotificationChannelDescription != null)
                 channel.setDescription(config.androidNotificationChannelDescription);
             notificationManager.createNotificationChannel(channel);

@@ -39,7 +39,7 @@ class MainActivity : AudioServiceActivity() {
 
     private fun mediaNotificationDiagnostics(): Map<String, Any?> {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "com.webdav.webdav_music_player.audio.v3"
+        val channelId = "com.webdav.webdav_music_player.audio.v4"
         var channelImportance: Int? = null
         var channelExists = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -78,6 +78,11 @@ class MainActivity : AudioServiceActivity() {
         } else {
             true
         }
+        var channelBlocked = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val ch = nm.getNotificationChannel(channelId)
+            channelBlocked = ch != null && ch.importance == NotificationManager.IMPORTANCE_NONE
+        }
         return mapOf(
             "audioServiceRunning" to posted,
             "servicePlaying" to mediaSessionActive,
@@ -87,8 +92,11 @@ class MainActivity : AudioServiceActivity() {
             "channelId" to channelId,
             "channelExists" to channelExists,
             "channelImportance" to channelImportance,
+            "channelBlocked" to channelBlocked,
             "ourActiveSessionCount" to ourActiveSessionCount,
             "sdk" to Build.VERSION.SDK_INT,
+            "manufacturer" to Build.MANUFACTURER,
+            "model" to Build.MODEL,
             "servicePresentHint" to posted,
         )
     }

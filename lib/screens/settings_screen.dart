@@ -486,7 +486,12 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
     final msg = await player.debugForceMediaNotification();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        duration: const Duration(seconds: 12),
+      ),
+    );
   }
 
   String _notificationSubtitle(NotificationPermissionService perms) {
@@ -537,7 +542,11 @@ class _SettingsScreenState extends State<SettingsScreen>
             '标题、艺术家与播放/暂停。\n'
             '请确保本应用的「通知」已开启；若曾拒绝，可点下方打开系统通知设置。'
             'Android 13+ 首次播放时也会请求 POST_NOTIFICATIONS。'
-            '「测试媒体通知」会强制播放并回报会话/通知是否已发布。',
+            '「测试媒体通知」会强制播放并回报会话/通知是否已发布。\n'
+            'OnePlus / ColorOS / OPPO：若仍无控制中心卡片，请到 设置→应用→WebDAV音乐：'
+            '① 耗电管理/电池＝不限制或不优化；'
+            '② 通知＝允许（含锁屏通知、悬浮通知，通道「音乐播放」勿关闭）；'
+            '③ 允许关联启动/后台运行（若有该开关）。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),

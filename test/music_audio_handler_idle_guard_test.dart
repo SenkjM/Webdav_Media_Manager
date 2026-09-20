@@ -7,8 +7,8 @@ import 'package:webdav_music_player/services/music_audio_handler.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('channel id is v3 (IMPORTANCE_DEFAULT fresh channel)', () {
-    expect(kMediaNotificationChannelId, contains('audio.v3'));
+  test('channel id is v4 (IMPORTANCE_DEFAULT fresh channel)', () {
+    expect(kMediaNotificationChannelId, contains('audio.v4'));
   });
 
   test('stop clears queue and allows idle again', () async {
