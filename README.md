@@ -119,6 +119,8 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
 
 ## CI：自动构建并发布 Pre-release
 
+**自动构建只在 `beta` 上跑**（`main` / `dev` 的 push 不触发）。正式 release 等 beta 测完后再合入 `main` 并打版本号。
+
 工作流：`.github/workflows/android-build.yml`
 
 **触发条件（全部由 Actions 自动执行）：**
@@ -126,10 +128,9 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
 | 触发 | 行为 |
 |------|------|
 | 推送到 `beta` | 分析、测试、打 APK，并更新 GitHub **Pre-release** |
-| 推送到 `main` / `dev` | 分析、测试、打 APK（**不**发 Pre-release） |
+| 推送到 `main` / `dev` | **不**触发 Actions 自动构建 |
 | 每天定时（约北京时间 00:00） | 检查 **beta**：相对上次 `prerelease` 有新提交才发布；无变动跳过 |
 | 手动 `workflow_dispatch`（选 `beta`） | 强制从 beta 构建并更新 Pre-release |
-| Pull Request | 只做分析 / 测试 / 构建产物，**不**发 Release |
 
 **产物：**
 

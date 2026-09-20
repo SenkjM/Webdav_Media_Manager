@@ -2,13 +2,12 @@ name: Android Build & Pre-release
 
 on:
   push:
-    branches: [main, master, beta, dev]
+    branches: [beta]
   schedule:
     # 每天约北京时间 00:00：检查 beta 是否有相对 prerelease 的新提交
     - cron: "0 16 * * *"
+  # 仅手动；请在 GitHub UI 选择 beta 分支再 Run
   workflow_dispatch:
-  pull_request:
-    branches: [main, master, beta]
 
 permissions:
   contents: write
