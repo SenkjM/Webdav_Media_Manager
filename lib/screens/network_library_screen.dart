@@ -31,8 +31,6 @@ class NetworkLibraryScreen extends StatefulWidget {
 class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   final List<String> _stack = ['/'];
   List<WebDavItem> _items = [];
-  final Map<String, CueSheet> _cueSheets = {};
-  final Map<String, String> _cueErrors = {};
   bool _loading = false;
   String? _error;
   String? _boundAccountId;
@@ -82,26 +80,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     });
     try {
       final items = await webDav.listDirectory(_path);
-      final cueSheets = <String, CueSheet>{};
-      final cueErrors = <String, String>{};
-      for (final item in items.where((e) => e.isCue)) {
-        try {
-          final bytes = await webDav.readAsBytes(item.path);
-          final sheet = CueSheetParser.tryParse(utf8.decode(bytes, allowMalformed: true));
-          if (sheet != null) {
-            cueSheets[item.path] = sheet;
-          } else {
-            cueErrors[item.path] = '无法解析的 CUE：需要标准 FILE + TRACK/INDEX';
-          }
-        } catch (e) {
-          cueErrors[item.path] = '读取 CUE 失败：$e';
-        }
-      }
       if (!mounted) return;
       setState(() {
         _items = items;
-        _cueSheets..clear()..addAll(cueSheets);
-        _cueErrors..clear()..addAll(cueErrors);
         _loading = false;
         _boundAccountId = accounts.activeAccountId;
       });
@@ -208,11 +189,182 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   }
 
 
-  Future<void> _enqueueCue(WebDavItem item, CueSheet sheet) async {
+
+  Future<void> _openCue(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    // Show loading while fetching/parsing — do NOT enqueue downloads yet.
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 20),
+            Expanded(child: Text('正在解析 CUE…')),
+          ],
+        ),
+      ),
+    );
+    try {
+      final webDav = context.read<WebDavService>();
+      final bytes = await webDav.readAsBytes(item.path);
+      final sheet = CueSheetParser.tryParse(
+        utf8.decode(bytes, allowMalformed: true),
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // close loading
+      if (sheet == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('无法解析的 CUE：需要标准 FILE + TRACK/INDEX')),
+        );
+        return;
+      }
+      await _showCuePreview(item, sheet);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('读取 CUE 失败：$e')),
+      );
+    }
+  }
+
+  Future<void> _showCuePreview(WebDavItem item, CueSheet sheet) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    // Group tracks by referenced audio FILE when multiple FILEs exist.
+    final byFile = <String, List<CueTrack>>{};
+    for (final t in sheet.tracks) {
+      byFile.putIfAbsent(t.fileName, () => []).add(t);
+    }
+    final multiFile = byFile.length > 1;
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.elevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final height = MediaQuery.of(ctx).size.height * 0.75;
+        return SafeArea(
+          child: SizedBox(
+            height: height,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 8),
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.divider,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Text(
+                    (sheet.title != null && sheet.title!.isNotEmpty)
+                        ? sheet.title!
+                        : item.name,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onDark,
+                    ),
+                  ),
+                ),
+                if (sheet.performer != null && sheet.performer!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      sheet.performer!,
+                      style: const TextStyle(color: AppColors.mutedText),
+                    ),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                  child: Text(
+                    'CUE · ${sheet.tracks.length} 曲'
+                    '${multiFile ? ' · ${byFile.length} 个音频文件' : ''}',
+                    style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+                  ),
+                ),
+                const Divider(height: 1, color: AppColors.divider),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (final entry in byFile.entries) ...[
+                        if (multiFile)
+                          ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.audio_file_outlined, size: 20),
+                            title: Text(
+                              entry.key,
+                              style: const TextStyle(
+                                color: AppColors.accent,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        for (final t in entry.value)
+                          ListTile(
+                            dense: true,
+                            title: Text(
+                              '${t.number.toString().padLeft(2, '0')}-${t.title?.isNotEmpty == true ? t.title! : 'Track ${t.number}'}',
+                            ),
+                            subtitle: (t.performer != null && t.performer!.isNotEmpty)
+                                ? Text(t.performer!)
+                                : null,
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: AppColors.divider),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, 'close'),
+                          child: const Text('关闭'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: () => Navigator.pop(ctx, 'download'),
+                          icon: const Icon(Icons.download),
+                          label: const Text('下载'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (action != 'download' || !mounted) return;
+    await _downloadCueGroup(item, sheet);
+  }
+
+  Future<void> _downloadCueGroup(WebDavItem item, CueSheet sheet) async {
     final accountId = _accountId;
     if (accountId == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('正在下载 CUE 专辑「${sheet.title ?? item.name}」…')),
+      SnackBar(content: Text('已加入 CUE 专辑「${sheet.title ?? item.name}」下载队列')),
     );
     try {
       await context.read<DownloadQueueService>().enqueueCueGroup(
@@ -223,11 +375,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已加入下载：完成后音乐库显示 ${sheet.tracks.length} 首')),
+        SnackBar(content: Text('下载任务已排队：完成后音乐库显示 ${sheet.tracks.length} 首虚拟曲目')),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('CUE 失败：$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('CUE 下载失败：$e')),
+      );
     }
   }
 
@@ -579,21 +733,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           );
         }
         if (item.isCue) {
-          final sheet = _cueSheets[item.path];
-          if (sheet != null) {
-            return ListTile(
-              leading: const Icon(Icons.album, color: AppColors.accent),
-              title: Text((sheet.title != null && sheet.title!.isNotEmpty) ? sheet.title! : item.name),
-              subtitle: Text('CUE 专辑 · ${sheet.tracks.length} 曲'),
-              trailing: const Icon(Icons.download_for_offline_outlined),
-              onTap: () => _enqueueCue(item, sheet),
-              onLongPress: () => _showItemMenu(item),
-            );
-          }
           return ListTile(
-            leading: Icon(Icons.insert_drive_file_outlined, color: Theme.of(context).colorScheme.error),
+            leading: const Icon(Icons.insert_drive_file_outlined),
             title: Text(item.name),
-            subtitle: Text(_cueErrors[item.path] ?? '无法解析的 CUE'),
+            subtitle: Text(item.size != null ? _fmtSize(item.size!) : 'CUE 文件'),
+            onTap: () => _openCue(item),
             onLongPress: () => _showItemMenu(item),
           );
         }

@@ -38,13 +38,14 @@ class LibraryCoverArt extends StatefulWidget {
     return LibraryCoverArt(
       key: key,
       accountId: track.accountId,
-      remotePath: track.remotePath,
+      // Virtual cue rows enqueue/check the real audio file, not #cue:N paths.
+      remotePath: track.effectiveAudioRemotePath,
       thumbPath: track.coverPath,
       fileName: track.fileName,
       size: size,
       borderRadius: borderRadius,
       icon: icon,
-      enqueueIfMissing: enqueueIfMissing,
+      enqueueIfMissing: enqueueIfMissing && !track.isCueVirtual,
     );
   }
 

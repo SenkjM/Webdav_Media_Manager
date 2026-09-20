@@ -7,7 +7,9 @@ import '../services/backup_service.dart';
 import '../services/library_sync_service.dart';
 import '../services/accounts_service.dart';
 import '../models/webdav_account.dart';
+import '../widgets/marquee_text.dart';
 import '../services/library_service.dart';
+import '../services/audio_player_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
@@ -209,7 +211,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                       for (final a in accounts.accounts)
                         DropdownMenuItem(
                           value: a.id,
-                          child: Text('${a.name} (${a.url})'),
+                          child: SizedBox(
+                            width: 240,
+                            child: MarqueeText(webDavAccountLabel(a)),
+                          ),
                         ),
                     ],
                     onChanged: (id) {
@@ -285,7 +290,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                       for (final a in accounts.accounts)
                         DropdownMenuItem(
                           value: a.id,
-                          child: Text('${a.name} (${a.url})'),
+                          child: SizedBox(
+                            width: 240,
+                            child: MarqueeText(webDavAccountLabel(a)),
+                          ),
                         ),
                     ],
                     onChanged: (id) {
@@ -380,7 +388,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                     for (final a in accounts.accounts)
                       DropdownMenuItem(
                         value: a.id,
-                        child: Text('${a.name} (${a.url})'),
+                        child: SizedBox(
+                            width: 240,
+                            child: MarqueeText(webDavAccountLabel(a)),
+                          ),
                       ),
                   ],
                   onChanged: (id) {
@@ -429,6 +440,25 @@ class _SettingsScreenState extends State<SettingsScreen>
       return '当前：保留 $days 天未访问的音频';
     }
     return '当前：保留 $hours 小时未访问的音频';
+  }
+
+
+  Future<void> _testMediaNotification(BuildContext context) async {
+    final player = context.read<AudioPlayerService>();
+    final notif = context.read<NotificationPermissionService>();
+    await notif.refresh();
+    if (!notif.isGranted) {
+      final ok = await notif.request();
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请先授予通知权限，再测试媒体通知')),
+        );
+        return;
+      }
+    }
+    final msg = await player.debugForceMediaNotification();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   String _notificationSubtitle(NotificationPermissionService perms) {
@@ -505,6 +535,14 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ),
             ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => _testMediaNotification(context),
+              icon: const Icon(Icons.notifications_active_outlined),
+              label: const Text('测试媒体通知'),
+            ),
+          ),
           const Divider(height: 40),
           Text('缓存清理', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 4),

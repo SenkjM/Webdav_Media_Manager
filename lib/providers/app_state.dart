@@ -142,7 +142,7 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<int> manualClearCache() {
+  Future<int> manualClearCache() async {
     final protected = <String>{};
     for (final t in downloads.tasks) {
       if (t.status == DownloadStatus.active ||
@@ -152,12 +152,16 @@ class AppState extends ChangeNotifier {
         protected.add('${f.path}.part');
       }
     }
-    return cache.clearAll(
+    final removed = await cache.clearAll(
       playingRemotePath: player.currentRemotePath,
       playingAccountId: player.currentAccountId,
       playingLocalPath: player.current?.localPath,
       protectedLocalPaths: protected,
     );
+    // Drop stale completed entries so CUE clips re-download cleanly and
+    // ClippingAudioSource still applies from library DB metadata.
+    await downloads.invalidateMissingCompleted();
+    return removed;
   }
 
   Future<void> setRetention(CacheRetention r) async {

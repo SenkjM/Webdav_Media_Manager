@@ -912,6 +912,10 @@ public class AudioServicePlugin implements FlutterPlugin, ActivityAware {
                         for (int i = 0; i < compactActionIndices.length; i++)
                             compactActionIndices[i] = (Integer)compactActionIndexList.get(i);
                     }
+                    if (AudioService.instance == null) {
+                        result.error("NO_SERVICE", "AudioService not running", null);
+                        break;
+                    }
                     AudioService.instance.setState(
                             actions,
                             actionBits,

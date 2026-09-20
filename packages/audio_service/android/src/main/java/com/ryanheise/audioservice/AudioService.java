@@ -729,17 +729,29 @@ public class AudioService extends MediaBrowserServiceCompat {
         // declares android:foregroundServiceType in the manifest; otherwise
         // startForeground throws and no MediaStyle notification is posted.
         final Notification notification = buildNotification();
-        if (Build.VERSION.SDK_INT >= 34) {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            );
-        } else {
-            startForeground(NOTIFICATION_ID, notification);
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                );
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+            notificationCreated = true;
+        } catch (Exception e) {
+            android.util.Log.e("AudioService", "startForeground failed", e);
+            // Last-resort: still post MediaStyle so the shade shows something
+            // even if FGS promotion failed (helps diagnose OEM / type issues).
+            try {
+                getNotificationManager().notify(NOTIFICATION_ID, notification);
+                notificationCreated = true;
+            } catch (Exception e2) {
+                android.util.Log.e("AudioService", "notify fallback failed", e2);
+            }
         }
-        notificationCreated = true;
     }
 
     private void acquireWakeLock() {

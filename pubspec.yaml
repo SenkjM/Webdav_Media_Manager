@@ -51,6 +51,7 @@ dependencies:
   permission_handler: 11.3.1
   audio_service:
     path: packages/audio_service
+  audio_session: ^0.2.2
   archive: ^4.3.0
   cryptography: ^2.9.0
   package_info_plus: ^10.2.1

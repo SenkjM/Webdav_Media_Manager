@@ -233,6 +233,15 @@ FROM tracks ORDER BY a COLLATE NOCASE ASC
     await db.delete('tracks', where: 'account_id = ?', whereArgs: [accountId]);
   }
 
+  Future<void> deleteTrack(String accountId, String remotePath) async {
+    final db = await database;
+    await db.delete(
+      'tracks',
+      where: 'account_id = ? AND remote_path = ?',
+      whereArgs: [accountId, remotePath],
+    );
+  }
+
   Future<void> close() async {
     await _db?.close();
     _db = null;

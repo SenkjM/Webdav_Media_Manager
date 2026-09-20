@@ -26,7 +26,7 @@
 - **CUE 分轨**：网络库显示 `.cue`；标准 CUE（FILE + TRACK/INDEX）可整组下载（CUE+音频同一缓存组）；音乐库展开为虚拟曲目，标签以 CUE 为准；播放用 `ClippingAudioSource` 按 INDEX 裁切；删除缓存时整组提示
 - **缓存占用**：设置页显示音乐缓存磁盘用量（可读大小）；曲库可单独删除某曲本地音频缓存（保留元数据/封面）
 - **当前播放列表**：正在播放页 / 迷你条可打开**临时队列**（不自动同步歌单）；歌单页可「从当前播放列表创建」保存后再同步
-- **媒体通知**：`audio_service` 使用应用内补丁（Android 14+ `FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK` + 通道 IMPORTANCE_DEFAULT）；小图标为单色 `drawable/ic_stat_music_white`
+- **媒体通知**：`audio_service` 使用应用内补丁（Android 14+ `FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK` + 通道 IMPORTANCE_DEFAULT）；小图标为单色 `drawable/ic_stat_music_white`。`MusicAudioHandler` 在曲目已选中时不向系统广播 `idle`（避免 native `stop()` 拆掉 MediaSession）；设置页提供「测试媒体通知」
 - **缓存清理**：可按 1 天或 1 周自动清理**音频缓存文件**；正在播放或下载中的文件受保护
 - **WebDAV 管理**：长按可重命名 / 删除；可新建文件夹；权限不足（401/403）时弹出错误对话框
 - **歌单**：本地独立数据库（`playlists.db`）创建 / 编辑 / 删除歌单，按 `(accountId + remotePath)` 添加曲目；音频缓存清理**不会**删除歌单。可选同步到 WebDAV（默认 `/Playlists/`）为 **M3U8**（含 `#EXT-X-WMP-*` 扩展）；本地修改后上传，启动/切换账号时拉取，按 `updatedAt` **最后写入胜出**合并
@@ -74,6 +74,7 @@
 - **媒体播放通知**：通过 `audio_service` 的 `MusicAudioHandler` 在播放时启动 `mediaPlayback` 前台服务，并发布 `MediaItem` + `PlaybackState`，使通知栏 / 锁屏 / 系统媒体控制中心显示 MediaStyle 控件（播放/暂停，有队列时上一首/下一首）。通知小图标使用 `drawable/ic_stat_music`（不可用自适应 launcher 图标）。
 - 需声明 `WAKE_LOCK`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`、`POST_NOTIFICATIONS`，并注册 `AudioService` / `MediaButtonReceiver`；`MainActivity` 继承 `AudioServiceActivity`。
 - 真机验证：通知样式与锁屏控件需在真实 Android 设备上确认；模拟器上权限与 FGS 行为可能不完整。
+- **CUE**：网络库点开 `.cue` 先预览曲目再下载；下载队列将 CUE 组折叠为单行；清空缓存后会失效陈旧 completed 任务，库内 clip 元数据保留以便重新下载后继续分段播放。
 
 ## 分支策略
 

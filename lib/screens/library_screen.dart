@@ -312,17 +312,16 @@ class _TrackListPageState extends State<_TrackListPage> {
     if (!mounted) return;
     final downloads = context.read<DownloadQueueService>();
     // Batch-enqueue missing files when opening album/artist detail (non-blocking).
-    unawaited(
-      downloads.ensureQueuedMany(
-        widget.tracks.map(
-          (t) => (
-            accountId: t.accountId,
-            remotePath: t.remotePath,
-            fileName: t.fileName,
-          ),
-        ),
-      ),
-    );
+    // Cue virtual tracks share one audio file — enqueue each audio once, never #cue: paths.
+    final seenAudio = <String>{};
+    final jobs = <({String accountId, String remotePath, String? fileName})>[];
+    for (final t in widget.tracks) {
+      final audio = t.effectiveAudioRemotePath;
+      final key = '${t.accountId}\u0000$audio';
+      if (!seenAudio.add(key)) continue;
+      jobs.add((accountId: t.accountId, remotePath: audio, fileName: t.fileName));
+    }
+    unawaited(downloads.ensureQueuedMany(jobs));
   }
 
   @override
@@ -454,13 +453,22 @@ class _TrackTile extends StatelessWidget {
       accountId: track.accountId,
     );
     if (local == null) {
-      unawaited(
-        downloads.ensureQueued(
-          track.accountId,
-          track.remotePath,
-          fileName: track.fileName,
-        ),
-      );
+      if (track.isCueVirtual && track.cueRemotePath != null) {
+        unawaited(
+          downloads.enqueueCueGroup(
+            accountId: track.accountId,
+            cueRemotePath: track.cueRemotePath!,
+          ),
+        );
+      } else {
+        unawaited(
+          downloads.ensureQueued(
+            track.accountId,
+            track.effectiveAudioRemotePath,
+            fileName: track.fileName,
+          ),
+        );
+      }
     }
     final info = TrackInfo(
       accountId: track.accountId,

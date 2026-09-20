@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
+import '../utils/audio_extensions.dart';
 import '../utils/cue_sheet.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
@@ -49,6 +50,25 @@ class DownloadQueueService extends ChangeNotifier {
 
   UnmodifiableListView<DownloadTask> get tasks =>
       UnmodifiableListView(_tasks);
+
+  /// After cache files are deleted, mark stale "completed" tasks so enqueue
+  /// will re-download. Library clip metadata stays in the DB.
+  Future<int> invalidateMissingCompleted() async {
+    var n = 0;
+    for (final t in List<DownloadTask>.from(_tasks)) {
+      if (t.status != DownloadStatus.completed) continue;
+      final path = t.localPath;
+      if (path != null && File(path).existsSync()) continue;
+      t.status = DownloadStatus.cancelled;
+      t.localPath = null;
+      t.progress = 0;
+      t.errorMessage = '缓存已清除，需重新下载';
+      await _store.upsert(t);
+      n++;
+    }
+    if (n > 0) notifyListeners();
+    return n;
+  }
 
   List<DownloadTask> get pendingTasks =>
       _tasks.where((t) => t.status == DownloadStatus.pending).toList();
@@ -108,7 +128,12 @@ class DownloadQueueService extends ChangeNotifier {
           break;
       }
     }
-    if (cached.existsSync() || task?.status == DownloadStatus.completed) {
+    if (cached.existsSync()) {
+      return TrackUiState.ready;
+    }
+    if (task?.status == DownloadStatus.completed &&
+        task?.localPath != null &&
+        File(task!.localPath!).existsSync()) {
       return TrackUiState.ready;
     }
     return TrackUiState.queued;
@@ -192,6 +217,13 @@ class DownloadQueueService extends ChangeNotifier {
     String remotePath, {
     String? fileName,
   }) async {
+    if (isCueVirtualRemotePath(remotePath)) {
+      return false;
+    }
+    if (!isAudioFileName(fileName ?? remotePath) &&
+        !isAudioFileName(remotePath)) {
+      return false;
+    }
     if (_cache.hasLocalFile(remotePath, accountId: accountId)) {
       return false;
     }
@@ -283,14 +315,108 @@ class DownloadQueueService extends ChangeNotifier {
     for (final path in paths) {
       await _cache.bindCacheGroup(accountId: accountId, remotePath: path, groupId: groupId);
     }
+    // Register each path once; do not await download completion (prevents races
+    // / duplicate jobs when callers also touch member files).
     for (final path in paths) {
-      unawaited(() async {
-        try {
-          await enqueue(accountId, path, fileName: p.basename(path), cacheGroupId: groupId);
-        } catch (_) {}
-      }());
+      await _offerCueMember(
+        accountId,
+        path,
+        fileName: p.basename(path),
+        cacheGroupId: groupId,
+      );
     }
     return paths.length;
+  }
+
+  /// Offer a cue-group member into the queue without waiting for completion.
+  Future<void> _offerCueMember(
+    String accountId,
+    String remotePath, {
+    String? fileName,
+    String? cacheGroupId,
+  }) async {
+    final existingCompleted = _tasks.cast<DownloadTask?>().firstWhere(
+          (t) =>
+              t!.accountId == accountId &&
+              t.remotePath == remotePath &&
+              t.status == DownloadStatus.completed &&
+              t.localPath != null &&
+              File(t.localPath!).existsSync(),
+          orElse: () => null,
+        );
+    if (existingCompleted != null) {
+      if (cacheGroupId != null && existingCompleted.cacheGroupId != cacheGroupId) {
+        existingCompleted.cacheGroupId = cacheGroupId;
+        await _store.upsert(existingCompleted);
+      }
+      return;
+    }
+
+    final cachedPath =
+        await _cache.localPathIfCached(remotePath, accountId: accountId);
+    if (cachedPath != null) {
+      // Already on disk — record completed task in the cue group (no re-download).
+      final already = _tasks.cast<DownloadTask?>().firstWhere(
+            (t) =>
+                t!.accountId == accountId &&
+                t.remotePath == remotePath &&
+                t.status == DownloadStatus.completed,
+            orElse: () => null,
+          );
+      if (already != null) {
+        if (cacheGroupId != null) {
+          already.cacheGroupId = cacheGroupId;
+          await _store.upsert(already);
+        }
+        return;
+      }
+      final done = DownloadTask(
+        id: _uuid.v4(),
+        accountId: accountId,
+        remotePath: remotePath,
+        fileName: fileName ?? remotePath.split('/').last,
+        createdAt: DateTime.now(),
+        status: DownloadStatus.completed,
+        localPath: cachedPath,
+        progress: 1.0,
+        completedAt: DateTime.now(),
+        cacheGroupId: cacheGroupId,
+      );
+      _tasks.add(done);
+      await _store.upsert(done);
+      notifyListeners();
+      return;
+    }
+
+    final inFlight = _tasks.cast<DownloadTask?>().firstWhere(
+          (t) =>
+              t!.accountId == accountId &&
+              t.remotePath == remotePath &&
+              (t.status == DownloadStatus.pending ||
+                  t.status == DownloadStatus.active),
+          orElse: () => null,
+        );
+    if (inFlight != null) {
+      if (cacheGroupId != null && inFlight.cacheGroupId != cacheGroupId) {
+        inFlight.cacheGroupId = cacheGroupId;
+        await _store.upsert(inFlight);
+        notifyListeners();
+      }
+      return;
+    }
+
+    final task = DownloadTask(
+      id: _uuid.v4(),
+      accountId: accountId,
+      remotePath: remotePath,
+      fileName: fileName ?? remotePath.split('/').last,
+      createdAt: DateTime.now(),
+      cacheGroupId: cacheGroupId,
+    );
+    _tasks.add(task);
+    await _store.upsert(task);
+    notifyListeners();
+    unawaited(_pump());
   }
 
   Future<void> _maybeIngestCueGroup(DownloadTask task) async {
@@ -325,6 +451,14 @@ class DownloadQueueService extends ChangeNotifier {
     final lib = _library;
     final local = task.localPath;
     if (lib == null || local == null) return;
+    // Non-audio (including .cue) must never become library rows.
+    if (!isAudioFileName(task.fileName) && !isAudioFileName(task.remotePath)) {
+      return;
+    }
+    // Cue-group audio is expanded into virtual tracks via _maybeIngestCueGroup.
+    if (task.cacheGroupId != null && task.cacheGroupId!.startsWith('cue')) {
+      return;
+    }
     try {
       await lib.ingestDownloaded(
         accountId: task.accountId,

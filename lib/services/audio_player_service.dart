@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
 import 'download_queue_service.dart';
+import '../utils/track_identity.dart';
 import 'music_audio_handler.dart';
 import 'notification_permission_service.dart';
 
@@ -82,15 +83,25 @@ class AudioPlayerService extends ChangeNotifier {
         cueRemotePath: track.cueRemotePath!,
       );
       final audioRemote = track.effectiveAudioRemotePath;
-      final audioTask = _downloads.taskForRemote(track.accountId, audioRemote);
-      if (audioTask?.localPath != null && File(audioTask!.localPath!).existsSync()) {
-        track.localPath = audioTask.localPath;
-        return track.localPath;
+      // Wait for the cue-group audio member (already enqueued above) — do not
+      // create a second standalone download job.
+      final groupId = track.cacheGroupId ??
+          cueCacheGroupId(track.accountId, track.cueRemotePath!);
+      final task = await _downloads.enqueue(
+        track.accountId,
+        audioRemote,
+        fileName: track.fileName,
+        cacheGroupId: groupId,
+      );
+      if (task.status != DownloadStatus.completed || task.localPath == null) {
+        throw StateError(task.errorMessage ?? '下载失败');
       }
+      track.localPath = task.localPath;
+      return task.localPath;
     }
     final task = await _downloads.enqueue(
       track.accountId,
-      track.isCueVirtual ? track.effectiveAudioRemotePath : track.remotePath,
+      track.remotePath,
       fileName: track.fileName,
       cacheGroupId: track.cacheGroupId,
     );
@@ -193,6 +204,18 @@ class AudioPlayerService extends ChangeNotifier {
   Future<void> stop() async {
     await _handler.stop();
     notifyListeners();
+  }
+
+  /// Settings debug: force MediaSession + play so a MediaStyle notification
+  /// must appear when the OS path is healthy.
+  Future<String> debugForceMediaNotification() async {
+    await _ensureNotificationPermission();
+    // Allow re-prompt path on next play if user denied then granted in settings.
+    _notificationPrompted = false;
+    await _ensureNotificationPermission();
+    final msg = await _handler.debugForceMediaNotification();
+    notifyListeners();
+    return msg;
   }
 
   @override
