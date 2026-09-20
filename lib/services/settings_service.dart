@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cache_policy.dart';
 import '../models/library_track.dart';
+import '../utils/cover_image.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
 /// WebDAV credentials live in AccountsService / flutter_secure_storage.
@@ -16,6 +17,7 @@ class SettingsService extends ChangeNotifier {
   static const _kLibrarySyncRemotePath = 'library_sync_remote_path';
   static const _kPlaylistRemotePath = 'playlist_remote_path';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
+  static const _kCoverThumbSize = 'cover_thumb_size';
 
   /// Default custom retention: 30 days.
   static const int defaultCustomRetentionHours = 24 * 30;
@@ -36,6 +38,7 @@ class SettingsService extends ChangeNotifier {
   String _librarySyncRemotePath = defaultLibrarySyncRemotePath;
   String _playlistRemotePath = defaultPlaylistRemotePath;
   bool _playlistSyncEnabled = true;
+  int _coverThumbSize = coverThumbSize;
   bool _loaded = false;
 
   CacheRetention get retention => _retention;
@@ -47,6 +50,8 @@ class SettingsService extends ChangeNotifier {
   String get librarySyncRemotePath => _librarySyncRemotePath;
   String get playlistRemotePath => _playlistRemotePath;
   bool get playlistSyncEnabled => _playlistSyncEnabled;
+  /// Square edge (px) for newly compressed cover thumbs.
+  int get coverThumbSizePx => _coverThumbSize;
   bool get loaded => _loaded;
 
   Future<void> init() async {
@@ -65,6 +70,9 @@ class SettingsService extends ChangeNotifier {
     _playlistRemotePath =
         _prefs!.getString(_kPlaylistRemotePath) ?? defaultPlaylistRemotePath;
     _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
+    _coverThumbSize = clampCoverThumbSize(
+      _prefs!.getInt(_kCoverThumbSize) ?? coverThumbSize,
+    );
     _loaded = true;
     notifyListeners();
   }
@@ -136,6 +144,17 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+
+  /// Persist square cover-thumb edge. Presets: 100 / 300; custom clamped to
+  /// [minCoverThumbSize]–[maxCoverThumbSize]. Applies to NEW thumbs only;
+  /// existing files keep old size until re-download/re-ingest (or destroy).
+  Future<void> setCoverThumbSize(int size) async {
+    _coverThumbSize = clampCoverThumbSize(size);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kCoverThumbSize, _coverThumbSize);
+    notifyListeners();
+  }
+
   Map<String, dynamic> exportForBackup() => {
         'cache_retention': _retention.storageKey,
         'cache_custom_retention_hours': _customRetentionHours,
@@ -143,6 +162,7 @@ class SettingsService extends ChangeNotifier {
         'backup_remote_path': _backupRemotePath,
         'playlist_remote_path': _playlistRemotePath,
         'playlist_sync_enabled': _playlistSyncEnabled,
+        'cover_thumb_size': _coverThumbSize,
       };
 
   Future<Map<String, dynamic>> exportForBackupAsync() async => exportForBackup();
@@ -172,6 +192,9 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['playlist_sync_enabled'] is bool) {
       await setPlaylistSyncEnabled(json['playlist_sync_enabled'] as bool);
+    }
+    if (json['cover_thumb_size'] is int) {
+      await setCoverThumbSize(json['cover_thumb_size'] as int);
     }
   }
 

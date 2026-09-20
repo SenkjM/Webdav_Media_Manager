@@ -78,6 +78,7 @@ class AppState extends ChangeNotifier {
   Future<void> init() async {
     try {
       await settings.init();
+      _syncCoverThumbSize();
       await cache.init();
       await library.init();
       await accounts.init();
@@ -176,6 +177,56 @@ class AppState extends ChangeNotifier {
       await settings.setRetention(CacheRetention.custom);
     }
     unawaited(runCacheCleanup());
+  }
+
+
+  void _syncCoverThumbSize() {
+    library.covers.thumbSize = settings.coverThumbSizePx;
+  }
+
+  Future<void> setCoverThumbSize(int size) async {
+    await settings.setCoverThumbSize(size);
+    _syncCoverThumbSize();
+  }
+
+  /// Wipe music library tags, cue tables, covers, cache annex, and local audio
+  /// for former library tracks. Distinct from [manualClearCache] (keeps tags).
+  /// Network library / accounts untouched. Playlist shells kept; orphan track
+  /// refs removed.
+  Future<void> destroyMusicLibrary() async {
+    final snapshot = List.of(library.tracks);
+    final groupIds = <String>{};
+    final audioKeys = <String>{}; // accountId\0remotePath
+
+    for (final t in snapshot) {
+      final audio = t.effectiveAudioRemotePath;
+      audioKeys.add('${t.accountId}\u0000$audio');
+      if (t.cueRemotePath != null && t.cueRemotePath!.isNotEmpty) {
+        audioKeys.add('${t.accountId}\u0000${t.cueRemotePath}');
+      }
+      final gid = t.cacheGroupId;
+      if (gid != null && gid.isNotEmpty) groupIds.add(gid);
+    }
+
+    // Delete CUE cache groups first (also clears member prefs).
+    for (final gid in groupIds) {
+      await cache.deleteCacheGroup(gid);
+    }
+    // Delete remaining library audio files.
+    for (final key in audioKeys) {
+      final parts = key.split('\u0000');
+      if (parts.length < 2) continue;
+      final accountId = parts[0];
+      final remote = parts.sublist(1).join('\u0000');
+      await cache.deleteLocalFile(accountId: accountId, remotePath: remote);
+    }
+
+    await library.destroyAll();
+    await cache.markAllUncached();
+    // After destroy, no library tracks remain — strip all playlist track refs.
+    await playlists.removeEntriesNotIn(const <String>{});
+    await downloads.invalidateMissingCompleted();
+    notifyListeners();
   }
 
   @override

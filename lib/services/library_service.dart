@@ -472,6 +472,17 @@ class LibraryService extends ChangeNotifier {
     return LinkedHashMap.fromEntries(keys.map((k) => MapEntry(k, map[k]!)));
   }
 
+
+  /// Destroy the entire local music library: DB track/cue rows, cover thumbs
+  /// (and full covers), and in-memory index. Does not touch WebDAV accounts.
+  /// Caller should also delete local audio files / annex and clean playlists.
+  Future<void> destroyAll() async {
+    await _db.clearAllLibraryData();
+    await _covers.deleteAllCovers();
+    _tracks.clear();
+    notifyListeners();
+  }
+
   Future<void> removeTrack(String accountId, String remotePath) async {
     await _db.deleteTrack(accountId, remotePath);
     _tracks.removeWhere((t) => t.accountId == accountId && t.remotePath == remotePath);

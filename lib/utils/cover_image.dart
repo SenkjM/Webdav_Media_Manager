@@ -2,19 +2,33 @@ import 'dart:typed_data';
 
 import 'package:image/image.dart' as img;
 
-/// Policy: persisted album art is always square [coverThumbSize]×[coverThumbSize].
+/// Default square edge for new cover thumbs (overridable via Settings).
 const int coverThumbSize = 100;
 
-/// Decode [bytes], resize to [coverThumbSize]×[coverThumbSize], encode JPEG.
+/// Alternate preset offered in Settings.
+const int coverThumbSizeLarge = 300;
+
+/// Clamp user-chosen square edge length for thumbs.
+const int minCoverThumbSize = 32;
+const int maxCoverThumbSize = 1024;
+
+int clampCoverThumbSize(int size) {
+  if (size < minCoverThumbSize) return minCoverThumbSize;
+  if (size > maxCoverThumbSize) return maxCoverThumbSize;
+  return size;
+}
+
+/// Decode [bytes], resize to square [size]×[size], encode JPEG.
 /// Returns null if decoding fails.
 Uint8List? resizeCoverToThumb(Uint8List bytes, {int size = coverThumbSize}) {
+  final edge = clampCoverThumbSize(size);
   try {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
     final resized = img.copyResize(
       decoded,
-      width: size,
-      height: size,
+      width: edge,
+      height: edge,
       interpolation: img.Interpolation.average,
     );
     return Uint8List.fromList(img.encodeJpg(resized, quality: 85));
@@ -23,15 +37,15 @@ Uint8List? resizeCoverToThumb(Uint8List bytes, {int size = coverThumbSize}) {
   }
 }
 
-/// True when [width] and [height] match the persistence policy.
-bool isCoverThumbSize(int width, int height) =>
-    width == coverThumbSize && height == coverThumbSize;
+/// True when [width] and [height] match [expected] (default policy size).
+bool isCoverThumbSize(int width, int height, {int expected = coverThumbSize}) =>
+    width == expected && height == expected;
 
 /// Prefer full-resolution cover when the audio file is on disk; else thumb.
 ///
 /// When [audioIsLocal] is true but [fullCoverPath] is missing, returns null so
 /// the caller can load original bytes from tags (Image.memory) instead of the
-/// 100×100 thumb. When not local, returns [thumbPath] as the offline placeholder.
+/// compressed thumb. When not local, returns [thumbPath] as the offline placeholder.
 String? resolveLibraryCoverPath({
   required bool audioIsLocal,
   String? fullCoverPath,

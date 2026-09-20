@@ -63,6 +63,17 @@ void main() {
     test('invalid bytes return null', () {
       expect(resizeCoverToThumb(Uint8List.fromList([1, 2, 3])), isNull);
     });
+
+    test('resizeCoverToThumb respects custom size', () {
+      final src = img.Image(width: 400, height: 300);
+      img.fill(src, color: img.ColorRgb8(0, 128, 255));
+      final bytes = Uint8List.fromList(img.encodePng(src));
+      final thumb = resizeCoverToThumb(bytes, size: coverThumbSizeLarge);
+      expect(thumb, isNotNull);
+      final decoded = img.decodeJpg(thumb!);
+      expect(decoded!.width, coverThumbSizeLarge);
+      expect(decoded.height, coverThumbSizeLarge);
+    });
   });
 
   group('library survives cache delete (policy)', () {

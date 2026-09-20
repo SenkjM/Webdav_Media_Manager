@@ -15,6 +15,7 @@ import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
 import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
+import '../utils/cover_image.dart';
 import '../utils/audio_extensions.dart';
 import 'home_shell.dart';
 
@@ -29,6 +30,9 @@ class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
   late final TextEditingController _customDaysController;
   late final TextEditingController _customHoursController;
+  late final TextEditingController _coverSizeController;
+  /// When non-null, overrides derived preset (lets user open 「自定义」 before applying).
+  String? _coverUiMode;
   int? _cacheBytes;
   bool _cacheSizeLoading = false;
 
@@ -38,6 +42,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     WidgetsBinding.instance.addObserver(this);
     _customDaysController = TextEditingController();
     _customHoursController = TextEditingController();
+    _coverSizeController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationPermissionService>().refresh();
       _syncCustomFieldsFromSettings();
@@ -64,6 +69,28 @@ class _SettingsScreenState extends State<SettingsScreen>
     final hours = total % 24;
     _customDaysController.text = '$days';
     _customHoursController.text = '$hours';
+    final edge = settings.coverThumbSizePx;
+    if (edge != coverThumbSize && edge != coverThumbSizeLarge) {
+      _coverSizeController.text = '$edge';
+    }
+  }
+
+  String _coverPresetKey(int edge) {
+    if (edge == coverThumbSize) return '100';
+    if (edge == coverThumbSizeLarge) return '300';
+    return 'custom';
+  }
+
+  String _coverMode(SettingsService settings) =>
+      _coverUiMode ?? _coverPresetKey(settings.coverThumbSizePx);
+
+  Future<void> _applyCustomCoverSize() async {
+    final parsed = int.tryParse(_coverSizeController.text.trim());
+    if (parsed == null) return;
+    await context.read<AppState>().setCoverThumbSize(parsed);
+    if (!mounted) return;
+    setState(() => _coverUiMode = 'custom');
+    _syncCustomFieldsFromSettings();
   }
 
   Future<void> _applyCustomRetention() async {
@@ -83,6 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     WidgetsBinding.instance.removeObserver(this);
     _customDaysController.dispose();
     _customHoursController.dispose();
+    _coverSizeController.dispose();
     super.dispose();
   }
 
@@ -545,12 +573,79 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
           ),
           const Divider(height: 40),
+          Text('封面缩略图尺寸', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          const SizedBox(height: 4),
+          Text(
+            '新下载/重新写入标签时按此边长生成正方形压缩封面。'
+            '已有缩略图保持原尺寸，需重新下载/写入标签或「销毁」音乐库后再下载才会按新尺寸生成。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: '100', label: Text('100×100')),
+              ButtonSegment(value: '300', label: Text('300×300')),
+              ButtonSegment(value: 'custom', label: Text('自定义')),
+            ],
+            selected: {_coverMode(settings)},
+            onSelectionChanged: (sel) async {
+              final v = sel.first;
+              if (v == '100') {
+                setState(() => _coverUiMode = null);
+                await context.read<AppState>().setCoverThumbSize(coverThumbSize);
+              } else if (v == '300') {
+                setState(() => _coverUiMode = null);
+                await context.read<AppState>().setCoverThumbSize(coverThumbSizeLarge);
+              } else {
+                setState(() {
+                  _coverUiMode = 'custom';
+                  if (_coverSizeController.text.trim().isEmpty) {
+                    _coverSizeController.text = '${settings.coverThumbSizePx}';
+                  }
+                });
+              }
+            },
+          ),
+          if (_coverMode(settings) == 'custom') ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: _coverSizeController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: '边长 (px)',
+                      border: const OutlineInputBorder(),
+                      helperText: '$minCoverThumbSize–$maxCoverThumbSize',
+                    ),
+                    onEditingComplete: _applyCustomCoverSize,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.tonal(
+                  onPressed: _applyCustomCoverSize,
+                  child: const Text('应用'),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            '当前：${settings.coverThumbSizePx}×${settings.coverThumbSizePx}',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const Divider(height: 40),
           Text('缓存清理', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 4),
           Text(
             '播放仅使用本地音频缓存。可选 1 天 / 1 周 / 自定义时长自动清理，或「永不」关闭自动清理；'
             '正在播放或正在下载的文件不会被删除。手动清空仍可用。'
-            '音乐库标签与 100×100 封面缩略图不受缓存清理影响（当前库内 ${library.count} 首）。',
+            '音乐库标签与封面缩略图不受缓存清理影响（当前库内 ${library.count} 首）。'
+            '销毁音乐库（音乐库页菜单）才会清除标签与封面。',
           ),
           const SizedBox(height: 12),
           Card(

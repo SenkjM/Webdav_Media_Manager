@@ -634,6 +634,17 @@ CREATE TABLE cache (
     return removed;
   }
 
+
+  /// Wipe all library-persisted rows: tracks, cue_albums, cue_slices, cache annex.
+  /// Does **not** delete WebDAV accounts.
+  Future<void> clearAllLibraryData() async {
+    final db = await database;
+    await db.delete('cache');
+    await db.delete('cue_slices');
+    await db.delete('cue_albums');
+    await db.delete('tracks');
+  }
+
   Future<void> close() async {
     await _db?.close();
     _db = null;

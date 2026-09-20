@@ -7,11 +7,17 @@ import 'package:path_provider/path_provider.dart';
 import '../utils/cover_image.dart';
 import '../utils/track_identity.dart';
 
-/// Stores 100×100 album art thumbs under `covers/` and optional full-resolution
+/// Stores square album art thumbs under `covers/` and optional full-resolution
 /// originals under `covers_full/` for faster display when the audio file is local.
+/// Thumb edge length defaults to [coverThumbSize]; override via [thumbSize]
+/// (Settings) for newly written thumbs. Existing files keep their old size until
+/// re-ingest or library destroy + re-download.
 class CoverService {
   Directory? _coversDir;
   Directory? _coversFullDir;
+
+  /// Square edge (px) used by [saveThumb] when no explicit size is passed.
+  int thumbSize = coverThumbSize;
 
   Future<Directory> get coversDir async {
     if (_coversDir != null) return _coversDir!;
@@ -42,14 +48,16 @@ class CoverService {
     return File(p.join(dir.path, coverFileName(accountId, remotePath)));
   }
 
-  /// Transcode/resize [bytes] to 100×100 JPEG and write under covers/.
-  /// Returns local path, or null if [bytes] could not be decoded.
+  /// Transcode/resize [bytes] to square JPEG and write under covers/.
+  /// Uses [size] or [thumbSize] (Settings). Returns local path, or null if
+  /// [bytes] could not be decoded.
   Future<String?> saveThumb({
     required String accountId,
     required String remotePath,
     required Uint8List bytes,
+    int? size,
   }) async {
-    final thumb = resizeCoverToThumb(bytes);
+    final thumb = resizeCoverToThumb(bytes, size: size ?? thumbSize);
     if (thumb == null) return null;
     final file = await coverFile(accountId, remotePath);
     await file.writeAsBytes(thumb, flush: true);
@@ -152,6 +160,21 @@ class CoverService {
         try {
           await entity.delete();
         } catch (_) {}
+      }
+    }
+  }
+
+  /// Wipe all compressed thumbs and full-res covers (library destroy).
+  Future<void> deleteAllCovers() async {
+    for (final getter in [coversDir, coversFullDir]) {
+      final dir = await getter;
+      if (!await dir.exists()) continue;
+      await for (final entity in dir.list(recursive: false)) {
+        if (entity is File) {
+          try {
+            await entity.delete();
+          } catch (_) {}
+        }
       }
     }
   }

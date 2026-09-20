@@ -140,6 +140,27 @@ class PlaylistService extends ChangeNotifier {
     unawaitedSyncUpload(pl);
   }
 
+
+  /// Drop playlist entries whose identity is not in [validKeys]
+  /// (`accountId\0remotePath` via [PlaylistEntry.identityKey]).
+  /// Keeps playlist shells; empties entries that all became orphans.
+  Future<int> removeEntriesNotIn(Set<String> validKeys) async {
+    var removed = 0;
+    for (final pl in _playlists) {
+      final before = pl.entries.length;
+      pl.entries.removeWhere((e) => !validKeys.contains(e.identityKey));
+      final n = before - pl.entries.length;
+      if (n > 0) {
+        removed += n;
+        pl.updatedAt = DateTime.now().toUtc();
+        await _store.upsert(pl);
+        unawaitedSyncUpload(pl);
+      }
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
+
   Future<void> clearAllLocal() async {
     await _store.clearAll();
     _playlists.clear();
