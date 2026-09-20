@@ -211,7 +211,7 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 - `just_audio`：实际解码 / 播放本地文件。
 - `audio_service`（vendored）：`MusicAudioHandler` → MediaSession + MediaStyle 通知。
 - 配置要点（`initMusicAudioService`）：
-  - 通道 id：`com.webdav.webdav_music_player.audio.v3`（IMPORTANCE_DEFAULT）
+  - 通道 id：`com.webdav.webdav_music_player.audio.v4`（IMPORTANCE_DEFAULT；历史曾用 v1–v3，升级靠换 id 生效）
   - `androidStopForegroundOnPause: false`（避免 Android 12+ 暂停后再起 FGS 被拦）
   - 图标：`drawable/ic_stat_music`（不要用自适应 launcher）
 - 补丁说明：`packages/audio_service/PATCHES.md`（Android 14+ typed `startForeground`、通道重要性、失败后 notify 回退、缺通知时重入 FGS）。
@@ -228,17 +228,19 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 
 ### 起播静音（勿卡住）
 
-- 换源前 `_muteForPrep()`（volume=0），ready 后 `_unmuteWhenReady()`。
+- 静音窗口应尽量短：主要盖住 `setAudioSource` / clip 准备；**在可闻的 `play()` 之前恢复 volume=1**。
+- 历史回归（`922d3c4`）：若「先 `play()` 再 unmute」，冷启动 `play` Future 卡住会把音量永久留在 0 → 首曲无声。`play()` / `playing` 与 `finally` 需有 unmute 安全网；见 `test/music_audio_handler_volume_safety_test.dart`。
 - **禁止**在每次 `play()` 调 `androidForceEnableMediaButtons`（会播一段静音 AudioTrack → 双击杂音）。
-- `stop()` 必须清除 `_mutedForPrep` 并恢复 volume=1，避免「退出后一直静音」。
+- `stop()` 必须清除 mute 标志并恢复 volume=1。
 - 不要把 `ProcessingState.idle` 在仍有选中曲时转成 `AudioProcessingState.idle`（native 会 `stop()` 拆掉通知）。详见 PATCHES.md 与 idle guard 测试。
 
 ### OEM 已知问题（ColorOS / OnePlus / Oppo 等）
 
-- 低重要性媒体通道可能被系统栏隐藏 → 使用 **v3 + IMPORTANCE_DEFAULT**。
+- 低重要性媒体通道可能被系统栏隐藏 → 使用 **v4 + IMPORTANCE_DEFAULT**（锁屏 visibility PUBLIC）；通道被用户关掉时诊断字段 `channelBlocked`。
+- ColorOS 媒体中心常忽略 `CONNECTING`：`loading + playing` 应映射为 **`BUFFERING`**，不要映射成会变成 CONNECTING 的 loading（`922d3c4` / vendor MediaSession TRANSPORT + STREAM_MUSIC）。
 - Android 14+ 未声明 typed FGS 会导致通知永远不出现 → vendor 补丁必须保留。
+- 设置页「测试媒体通知」含中文 OEM 提示（耗电不限制、通知含锁屏、允许关联启动）；诊断走 MethodChannel（**不要**在 `MainActivity` 引用 `AudioService` 类——见第 14 节）。
 - Upstream changelog 曾记 Oppo/OnePlus Android 13 相关崩溃；升级 / 回退 `audio_service` 时对照 `PATCHES.md`。
-- 设置页「测试媒体通知」走 MethodChannel `mediaNotificationDiagnostics`（**不要**在 `MainActivity` 里直接引用 `AudioService` 类——见第 14 节）。
 
 ---
 
@@ -386,16 +388,16 @@ test/                                  # 身份 / CUE / 本地播放 / idle guar
 | **UTF-8 CUE ingest 失败** | 非 UTF-8 CUE 用 `readAsString` 抛错；下载成功但库无虚拟曲 | 始终 `decodeCueText(bytes)` 再 `CueSheetParser`；见 `cue_library_ingest_test` |
 | **MainActivity AudioService classpath** | 在 Kotlin 中 `import AudioService` 会拉进 `MediaBrowserServiceCompat`，release 编译失败 | 只继承 `AudioServiceActivity`；通知诊断用 `NotificationManager` / `MediaSessionManager`，**不要**引用 `AudioService` 类（`251e46a`） |
 | **SystemNavigator.pop 停音乐** | 根返回 finish Activity → 拆掉 handler | 根返回 `moveTaskToBack`；仅抽屉「退出」才 pop（`9c9d5c5`） |
-| **起播双击杂音 / 静音卡住** | 每次 play 播静音 AudioTrack；或 mute 后未 unmute | 禁止 `androidForceEnableMediaButtons` on play；mute→ready→unmute；`stop` 清 mute（`0ed9591`） |
+| **起播双击杂音 / 首曲无声** | 每次 play 播静音 AudioTrack；或 unmute 排在卡住的 `play()` 之后 | 禁止 `androidForceEnableMediaButtons` on play；mute 仅罩住 setAudioSource，**play 前 unmute**；`stop`/finally 清 mute（`0ed9591`, `922d3c4`） |
 | **idle 拆掉媒体通知** | 把 just_audio idle 映射成 `AudioProcessingState.idle` | 有选中曲时用 loading 等非 idle；见 idle guard 测试 |
 | **未下载显示「排队中」** | 远程浏览误用 queued 状态 | 未入队 → `TrackUiState.remote`，Chip 为空 |
 | **播放器顺手下载** | 在 play 路径 enqueue | 拒绝并提示先下载（`892ff89`） |
 | **清缓存误删曲库** | 把 tracks 和文件绑死 | 标签在 DB；cache 为 annex；销毁才是 wipe |
 | **备份恢复后假「已缓存」** | 恢复了 annex 路径但文件未打包 | 恢复策略 uncached unless on disk |
 | **schema 升级丢库** | v5 `onUpgrade` 直接 DROP | bump version 前告知用户；无自动 migration |
-| **OEM 无媒体通知** | LOW 通道 / 未 typed FGS | 保留 vendor 补丁与 v3 通道；真机测 ColorOS/OnePlus |
+| **OEM 无媒体通知** | LOW 通道 / 未 typed FGS | 保留 vendor 补丁与 v4 通道；真机测 ColorOS/OnePlus |
 
-相关提交可参考：`c235c92`（CUE ingest）、`1649677`（music_id v5 / 备份）、`0ed9591`（mute + remote chip）、`9c9d5c5`（返回键）、`251e46a`（MainActivity）、`ebe85b7`（禁用 push 触发 CI）。
+相关提交可参考：`c235c92`（CUE ingest）、`1649677`（music_id v5 / 备份）、`0ed9591`（mute + remote chip）、`922d3c4`（unmute before play + ColorOS BUFFERING / v4）、`9c9d5c5`（返回键）、`251e46a`（MainActivity）、`ebe85b7`（禁用 push 触发 CI）。
 
 ---
 
@@ -408,6 +410,7 @@ flutter test test/cue_library_ingest_test.dart
 flutter test test/local_only_play_policy_test.dart
 flutter test test/network_remote_status_test.dart
 flutter test test/music_audio_handler_idle_guard_test.dart
+flutter test test/music_audio_handler_volume_safety_test.dart
 flutter test test/cache_group_deletion_test.dart
 # 或全量
 flutter test
