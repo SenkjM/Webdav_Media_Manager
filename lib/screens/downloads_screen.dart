@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/download_task.dart';
 import '../services/download_queue_service.dart';
+import '../theme/app_theme.dart';
 import 'home_shell.dart';
 
 class DownloadsScreen extends StatelessWidget {
@@ -14,6 +15,7 @@ class DownloadsScreen extends StatelessWidget {
     final tasks = queue.tasks.reversed.toList();
 
     return Scaffold(
+      backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
         title: const Text('下载队列'),
@@ -27,8 +29,14 @@ class DownloadsScreen extends StatelessWidget {
         ],
       ),
       body: tasks.isEmpty
-          ? const Center(child: Text('暂无下载任务'))
+          ? const Center(
+              child: Text(
+                '暂无下载任务',
+                style: TextStyle(color: AppColors.secondaryText),
+              ),
+            )
           : ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: tasks.length,
               itemBuilder: (context, i) {
                 final t = tasks[i];
@@ -48,15 +56,16 @@ class _TaskTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final queue = context.read<DownloadQueueService>();
     final (label, color) = switch (task.status) {
-      DownloadStatus.pending => ('等待中', Colors.blueGrey),
-      DownloadStatus.active => ('下载中', Colors.orange),
-      DownloadStatus.completed => ('已完成', Colors.green),
-      DownloadStatus.failed => ('失败', Colors.red),
-      DownloadStatus.cancelled => ('已取消', Colors.grey),
+      DownloadStatus.pending => ('等待中', AppColors.mutedText),
+      DownloadStatus.active => ('下载中', AppColors.accent),
+      DownloadStatus.completed => ('已完成', const Color(0xFF66BB6A)),
+      DownloadStatus.failed => ('失败', AppColors.error),
+      DownloadStatus.cancelled => ('已取消', AppColors.mutedText),
     };
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: AppColors.elevated,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -67,7 +76,10 @@ class _TaskTile extends StatelessWidget {
                 Expanded(
                   child: Text(
                     task.fileName,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.onDark,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -83,29 +95,34 @@ class _TaskTile extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              task.fileName,
-              style: Theme.of(context).textTheme.bodySmall,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
             if (task.status == DownloadStatus.active) ...[
-              const SizedBox(height: 8),
-              LinearProgressIndicator(value: task.progress.clamp(0.0, 1.0)),
-              Text('${(task.progress * 100).toStringAsFixed(0)}%'),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: task.progress.clamp(0.0, 1.0),
+                  minHeight: 4,
+                  backgroundColor: AppColors.elevatedHigh,
+                  color: AppColors.accent,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${(task.progress * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+              ),
             ],
             if (task.errorMessage != null &&
                 task.status == DownloadStatus.failed) ...[
               const SizedBox(height: 4),
               Text(
                 task.errorMessage!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: const TextStyle(color: AppColors.error),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [

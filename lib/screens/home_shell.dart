@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
 import '../widgets/mini_player.dart';
 import 'about_screen.dart';
 import 'downloads_screen.dart';
@@ -51,50 +52,75 @@ class _HomeShellState extends State<HomeShell> {
       scaffoldKey: _scaffoldKey,
       child: Scaffold(
         key: _scaffoldKey,
+        backgroundColor: AppColors.nearBlack,
         drawer: Drawer(
+          backgroundColor: AppColors.surface,
           child: SafeArea(
             child: ListView(
+              padding: EdgeInsets.zero,
               children: [
-                DrawerHeader(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer,
+                Container(
+                  height: 140,
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                  decoration: const BoxDecoration(
+                    color: AppColors.elevated,
+                    border: Border(
+                      bottom: BorderSide(color: AppColors.divider),
+                    ),
                   ),
-                  child: Align(
+                  child: const Align(
                     alignment: Alignment.bottomLeft,
-                    child: Text(
-                      'WebDAV 音乐播放器',
-                      style: Theme.of(context).textTheme.titleLarge,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.library_music, color: AppColors.accent, size: 32),
+                        SizedBox(height: 12),
+                        Text(
+                          'WebDAV 音乐播放器',
+                          style: TextStyle(
+                            color: AppColors.onDark,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.library_music),
-                  title: const Text('音乐库'),
+                const SizedBox(height: 8),
+                _DrawerItem(
+                  icon: Icons.library_music,
+                  label: '音乐库',
                   selected: _index == 0,
                   onTap: () => _select(0),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.cloud_outlined),
-                  title: const Text('网络库'),
+                _DrawerItem(
+                  icon: Icons.cloud_outlined,
+                  label: '网络库',
                   selected: _index == 1,
                   onTap: () => _select(1),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.download_outlined),
-                  title: const Text('下载队列'),
+                _DrawerItem(
+                  icon: Icons.download_outlined,
+                  label: '下载队列',
                   selected: _index == 2,
                   onTap: () => _select(2),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.settings_outlined),
-                  title: const Text('设置'),
+                _DrawerItem(
+                  icon: Icons.settings_outlined,
+                  label: '设置',
                   selected: _index == 3,
                   onTap: () => _select(3),
                 ),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.info_outline),
-                  title: const Text('关于 / AGPL'),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Divider(color: AppColors.divider),
+                ),
+                _DrawerItem(
+                  icon: Icons.info_outline,
+                  label: '关于 / AGPL',
+                  selected: false,
                   onTap: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(
@@ -121,6 +147,44 @@ class _HomeShellState extends State<HomeShell> {
   void _select(int i) {
     setState(() => _index = i);
     Navigator.pop(context);
+  }
+}
+
+class _DrawerItem extends StatelessWidget {
+  const _DrawerItem({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      child: ListTile(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        leading: Icon(
+          icon,
+          color: selected ? AppColors.accent : AppColors.secondaryText,
+        ),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: selected ? AppColors.accent : AppColors.onDark,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+          ),
+        ),
+        selected: selected,
+        selectedTileColor: AppColors.accent.withValues(alpha: 0.14),
+        onTap: onTap,
+      ),
+    );
   }
 }
 

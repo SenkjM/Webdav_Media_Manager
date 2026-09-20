@@ -14,6 +14,7 @@ import '../widgets/track_status_chip.dart';
 import '../utils/webdav_errors.dart';
 import '../widgets/webdav_error_dialog.dart';
 import 'accounts_screen.dart';
+import '../theme/app_theme.dart';
 import 'home_shell.dart';
 
 /// 网络库：multi-WebDAV browse. Shows entry names only (no full remote paths).
@@ -189,16 +190,40 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (accountId == null) return;
     await showModalBottomSheet<void>(
       context: context,
+      backgroundColor: AppColors.elevated,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       builder: (ctx) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                title: Text(item.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(item.isDirectory ? '文件夹' : '文件'),
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-              const Divider(height: 1),
+              ListTile(
+                title: Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.onDark,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                subtitle: Text(
+                  item.isDirectory ? '文件夹' : '文件',
+                  style: const TextStyle(color: AppColors.mutedText),
+                ),
+              ),
+              const Divider(height: 1, color: AppColors.divider),
               if (item.isDirectory) ...[
                 ListTile(
                   leading: const Icon(Icons.download),
@@ -217,7 +242,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
                   title: const Text('删除'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -250,7 +275,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
                   title: const Text('删除'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -267,7 +292,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
                   title: const Text('删除'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -393,6 +418,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
 
     return Scaffold(
+      backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
         leading: _stack.length > 1
             ? IconButton(
@@ -499,7 +525,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         final item = _items[i];
         if (item.isDirectory) {
           return ListTile(
-            leading: const Icon(Icons.folder, color: Colors.amber),
+            leading: const Icon(Icons.folder_rounded, color: AppColors.accent),
             title: Text(item.name),
             subtitle: const Text('目录'),
             onTap: () => _enterDir(item),

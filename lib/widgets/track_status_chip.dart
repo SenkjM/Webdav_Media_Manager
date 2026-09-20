@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/webdav_item.dart';
+import '../theme/app_theme.dart';
 
 class TrackStatusChip extends StatelessWidget {
   const TrackStatusChip({super.key, required this.state, this.progress});
@@ -11,15 +12,15 @@ class TrackStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (label, color, icon) = switch (state) {
-      TrackUiState.queued => ('排队', Colors.blueGrey, Icons.schedule),
+      TrackUiState.queued => ('排队', AppColors.mutedText, Icons.schedule),
       TrackUiState.downloading => (
           '下载中',
-          Colors.orange,
+          AppColors.accent,
           Icons.downloading,
         ),
-      TrackUiState.ready => ('就绪', Colors.green, Icons.check_circle_outline),
-      TrackUiState.playing => ('播放中', Colors.deepPurple, Icons.equalizer),
-      TrackUiState.error => ('错误', Colors.red, Icons.error_outline),
+      TrackUiState.ready => ('就绪', const Color(0xFF66BB6A), Icons.check_circle_outline),
+      TrackUiState.playing => ('播放中', AppColors.accent, Icons.equalizer),
+      TrackUiState.error => ('错误', AppColors.error, Icons.error_outline),
     };
 
     return Chip(
@@ -28,11 +29,11 @@ class TrackStatusChip extends StatelessWidget {
         state == TrackUiState.downloading && progress != null
             ? '$label ${(progress! * 100).toStringAsFixed(0)}%'
             : label,
-        style: const TextStyle(fontSize: 12),
+        style: TextStyle(fontSize: 12, color: color),
       ),
       visualDensity: VisualDensity.compact,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      backgroundColor: color.withValues(alpha: 0.12),
+      backgroundColor: color.withValues(alpha: 0.14),
       side: BorderSide.none,
     );
   }

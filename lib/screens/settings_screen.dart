@@ -6,6 +6,7 @@ import '../providers/app_state.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import 'accounts_screen.dart';
+import '../theme/app_theme.dart';
 import 'home_shell.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -31,6 +32,7 @@ class SettingsScreen extends StatelessWidget {
     final library = context.watch<LibraryService>();
 
     return Scaffold(
+      backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
         title: const Text('设置'),
@@ -38,7 +40,7 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('WebDAV 服务器', style: Theme.of(context).textTheme.titleMedium),
+          Text('WebDAV 服务器', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -53,7 +55,7 @@ class SettingsScreen extends StatelessWidget {
             },
           ),
           const Divider(height: 40),
-          Text('缓存清理', style: Theme.of(context).textTheme.titleMedium),
+          Text('缓存清理', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 4),
           Text(
             '播放仅使用本地音频缓存。超过保留期的音频文件会自动删除；'

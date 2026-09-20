@@ -5,6 +5,7 @@ import '../models/webdav_account.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/webdav_service.dart';
+import '../theme/app_theme.dart';
 import '../widgets/webdav_error_dialog.dart';
 
 class AccountsScreen extends StatelessWidget {
@@ -15,6 +16,7 @@ class AccountsScreen extends StatelessWidget {
     final accounts = context.watch<AccountsService>();
 
     return Scaffold(
+      backgroundColor: AppColors.nearBlack,
       appBar: AppBar(title: const Text('WebDAV 服务器')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _editAccount(context),

@@ -8,6 +8,8 @@ import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/cover_art.dart';
 import 'home_shell.dart';
 
 class LibraryScreen extends StatelessWidget {
@@ -20,6 +22,7 @@ class LibraryScreen extends StatelessWidget {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
+        backgroundColor: AppColors.nearBlack,
         appBar: AppBar(
           leading: const DrawerMenuButton(),
           title: const Text('音乐库'),
@@ -39,6 +42,7 @@ class LibraryScreen extends StatelessWidget {
                     '暂无已缓存曲目。\n请在「网络库」下载音乐后，曲目会出现在此。\n'
                     '元数据与封面缩略图会在缓存清理后保留。',
                     textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.secondaryText),
                   ),
                 ),
               )
@@ -62,8 +66,10 @@ class _TitleTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final tracks = library.byTitle();
     return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 4),
       itemCount: tracks.length,
-      itemBuilder: (context, i) => _TrackTile(track: tracks[i], playlist: tracks),
+      itemBuilder: (context, i) =>
+          _TrackTile(track: tracks[i], playlist: tracks),
     );
   }
 }
@@ -76,15 +82,31 @@ class _ArtistTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final groups = library.groupedByArtist();
     final artists = groups.keys.toList();
-    return ListView.builder(
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.85,
+      ),
       itemCount: artists.length,
       itemBuilder: (context, i) {
         final artist = artists[i];
         final tracks = groups[artist]!;
-        return ListTile(
-          leading: const Icon(Icons.person_outline),
-          title: Text(artist),
-          subtitle: Text('${tracks.length} 首'),
+        String? cover;
+        for (final t in tracks) {
+          final path = t.coverPath;
+          if (path != null && File(path).existsSync()) {
+            cover = path;
+            break;
+          }
+        }
+        return _CoverTile(
+          coverPath: cover,
+          title: artist,
+          subtitle: '${tracks.length} 首',
+          placeholderIcon: Icons.person_outline,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -106,7 +128,14 @@ class _AlbumTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final groups = library.groupedByAlbum();
     final albums = groups.keys.toList();
-    return ListView.builder(
+    return GridView.builder(
+      padding: const EdgeInsets.all(12),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.78,
+      ),
       itemCount: albums.length,
       itemBuilder: (context, i) {
         final album = albums[i];
@@ -119,10 +148,11 @@ class _AlbumTab extends StatelessWidget {
             break;
           }
         }
-        return ListTile(
-          leading: _CoverThumb(path: cover, size: 48),
-          title: Text(album),
-          subtitle: Text('${tracks.length} 首 · ${tracks.first.displayArtist}'),
+        return _CoverTile(
+          coverPath: cover,
+          title: album,
+          subtitle: '${tracks.length} 首 · ${tracks.first.displayArtist}',
+          placeholderIcon: Icons.album,
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -136,6 +166,78 @@ class _AlbumTab extends StatelessWidget {
   }
 }
 
+class _CoverTile extends StatelessWidget {
+  const _CoverTile({
+    required this.coverPath,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.placeholderIcon,
+  });
+
+  final String? coverPath;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final IconData? placeholderIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.elevated,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final side = constraints.biggest.shortestSide;
+                    return Center(
+                      child: CoverArt(
+                        path: coverPath,
+                        size: side,
+                        borderRadius: 6,
+                        icon: placeholderIcon,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.onDark,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.mutedText,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TrackListPage extends StatelessWidget {
   const _TrackListPage({required this.title, required this.tracks});
   final String title;
@@ -144,8 +246,10 @@ class _TrackListPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.nearBlack,
       appBar: AppBar(title: Text(title)),
       body: ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: tracks.length,
         itemBuilder: (context, i) =>
             _TrackTile(track: tracks[i], playlist: tracks),
@@ -162,9 +266,23 @@ class _TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: _CoverThumb(path: track.coverPath, size: 48),
-      title: Text(track.displayTitle),
-      subtitle: Text('${track.displayArtist} · ${track.displayAlbum}'),
+      leading: CoverArt(path: track.coverPath, size: 52, borderRadius: 4),
+      title: Text(
+        track.displayTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: AppColors.onDark,
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+        ),
+      ),
+      subtitle: Text(
+        '${track.displayArtist} · ${track.displayAlbum}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+      ),
       onTap: () => _play(context),
     );
   }
@@ -211,40 +329,5 @@ class _TrackTile extends StatelessWidget {
       );
     }
     await player.playTrack(info, playlist: list);
-  }
-}
-
-class _CoverThumb extends StatelessWidget {
-  const _CoverThumb({required this.path, required this.size});
-  final String? path;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    if (path != null && File(path!).existsSync()) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: Image.file(
-          File(path!),
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (ctx, error, stackTrace) => _placeholder(ctx),
-        ),
-      );
-    }
-    return _placeholder(context);
-  }
-
-  Widget _placeholder(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Icon(Icons.album, size: size * 0.5),
-    );
   }
 }

@@ -45,6 +45,10 @@
 
 **WIP（开发中）**。核心流程已实现，仍在完善与打磨。
 
+### UI
+
+界面参考 **Poweramp** 观感 / **Salt Player** 信息架构（非仿冒皮肤；无商标素材）。默认深色近黑底、琥珀/橙强调色、大封面 Now Playing 与底部迷你播放条。
+
 ## 许可
 
 本项目采用 **GNU Affero General Public License v3.0（AGPL-3.0）** 授权。

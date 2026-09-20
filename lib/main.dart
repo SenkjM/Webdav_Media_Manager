@@ -10,6 +10,7 @@ import 'services/download_queue_service.dart';
 import 'services/library_service.dart';
 import 'services/settings_service.dart';
 import 'services/webdav_service.dart';
+import 'theme/app_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,17 +42,9 @@ class WebDavMusicApp extends StatelessWidget {
       child: MaterialApp(
         title: 'WebDAV 音乐播放器',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurple,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-        ),
+        themeMode: ThemeMode.dark,
+        theme: AppTheme.dark,
+        darkTheme: AppTheme.dark,
         home: appState.initError != null
             ? Scaffold(
                 body: Center(child: Text('初始化失败：${appState.initError}')),

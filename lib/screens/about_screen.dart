@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.nearBlack,
       appBar: AppBar(title: const Text('关于')),
       body: ListView(
         padding: const EdgeInsets.all(24),
