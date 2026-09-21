@@ -65,4 +65,8 @@ TUNNEL-SKILL-TEST-RECORD.md
 /.tmp/
 /dev-shot*.png
 /devtools_options.yaml
-
+# Local build artifacts (flutter build apk --release copies land here)
+/dist/
+*.apk
+*.aab
+*.ipa
