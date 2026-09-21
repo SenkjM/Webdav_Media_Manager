@@ -505,7 +505,28 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (perms.isPermanentlyDenied) {
       return '已拒绝 — 点此打开系统设置以开启通知';
     }
+    if (perms.isChannelMissing) {
+      return '「音乐播放」通道未创建 — 播放一次或点「刷新」重试';
+    }
     return '未授权 — 点此请求通知权限（Android 13+）';
+  }
+
+  /// Re-reads permission +「音乐播放」channel state from the system and
+  /// reports what flutter_local_notifications currently sees.
+  Future<void> _refreshNotificationState(
+    BuildContext context,
+    NotificationPermissionService perms,
+  ) async {
+    await perms.refresh();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '通知权限：${perms.isGranted ? '已允许' : '未允许'}｜'
+          '通道「音乐播放」：${perms.channelStatusLabel}',
+        ),
+      ),
+    );
   }
 
   @override
@@ -543,8 +564,10 @@ class _SettingsScreenState extends State<SettingsScreen>
           Text(
             '播放时通过 audio_service 前台服务显示系统媒体通知（通知栏 / 锁屏 / 媒体控制中心）：'
             '标题、艺术家与播放/暂停。\n'
+            '通知权限与「音乐播放」通道由 flutter_local_notifications 统一创建并检查'
+            '（本页显示的通道状态即系统真实状态，无需先播放一次）。'
             '请确保本应用的「通知」已开启；若曾拒绝，可点下方打开系统通知设置。'
-            'Android 13+ 首次播放时也会请求 POST_NOTIFICATIONS。'
+            'Android 13+ 首次启动会请求 POST_NOTIFICATIONS。'
             '「测试媒体通知」会强制播放并回报会话/通知是否已发布。\n'
             'OnePlus / ColorOS / OPPO：若仍无控制中心卡片，请到 设置→应用→WebDAV音乐：'
             '① 耗电管理/电池＝不限制或不优化；'
@@ -564,6 +587,16 @@ class _SettingsScreenState extends State<SettingsScreen>
             subtitle: Text(_notificationSubtitle(notif)),
             value: notif.isGranted,
             onChanged: (_) => _onNotificationTap(context, notif),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.graphic_eq),
+            title: const Text('「音乐播放」通道'),
+            subtitle: Text(notif.channelStatusLabel),
+            trailing: TextButton(
+              onPressed: () => _refreshNotificationState(context, notif),
+              child: const Text('刷新'),
+            ),
           ),
           if (!notif.isGranted)
             Align(

@@ -9,6 +9,13 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 
 import '../models/webdav_item.dart';
+import 'media_notification_channel.dart';
+
+// The「音乐播放」channel definition lives in media_notification_channel.dart and
+// is created at startup by NotificationPermissionService through
+// flutter_local_notifications. Re-exported so existing importers (and tests) can
+// keep reading the channel id from this file.
+export 'media_notification_channel.dart' show kMediaNotificationChannelId;
 
 /// Set true (or --dart-define=AUDIO_NOTIF_DEBUG=true) to log playbackState.
 const bool kAudioNotifDebug = bool.fromEnvironment(
@@ -23,11 +30,6 @@ void _notifLog(String message) {
 }
 
 const _kAppChannel = MethodChannel('com.webdav.webdav_music_player/app');
-
-/// Fresh channel so IMPORTANCE_DEFAULT applies (Android does not upgrade
-/// importance of an already-created channel in-place).
-const String kMediaNotificationChannelId =
-    'com.webdav.webdav_music_player.audio.v4';
 
 /// Actions Android 13+ / lock screen / control center read from PlaybackState.
 const Set<MediaAction> _kSystemActions = {
@@ -579,15 +581,18 @@ Future<MusicAudioHandler> initMusicAudioService() {
     config: AudioServiceConfig(
       // v4: fresh channel so IMPORTANCE_DEFAULT + lockscreen visibility apply
       // (Android never upgrades an existing channel in-place; ColorOS may
-      // have silenced v3).
+      // have silenced v3). The channel itself is created by
+      // NotificationPermissionService via flutter_local_notifications; these
+      // values must mirror `kMediaNotificationChannel`.
       androidNotificationChannelId: kMediaNotificationChannelId,
-      androidNotificationChannelName: '音乐播放',
-      androidNotificationChannelDescription: '正在播放的音乐控制',
+      androidNotificationChannelName: kMediaNotificationChannelName,
+      androidNotificationChannelDescription:
+          kMediaNotificationChannelDescription,
       androidNotificationOngoing: true,
       // Keep FGS while paused so Android 12+ does not block restarting
       // startForegroundService when play() races with event-driven pause.
       androidStopForegroundOnPause: false,
-      androidNotificationIcon: 'drawable/ic_stat_music',
+      androidNotificationIcon: kMediaNotificationIcon,
       androidNotificationClickStartsActivity: true,
       androidShowNotificationBadge: false,
     ),

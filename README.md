@@ -58,7 +58,7 @@
 | 凭证 | `flutter_secure_storage` |
 | WebDAV | `webdav_client` |
 | 媒体通知 / 后台播放 | `audio_service` + `media_kit`（`MusicAudioHandler`） |
-| 通知权限（Android 13+） | `flutter_local_notifications`（`POST_NOTIFICATIONS` + 通道状态查询） |
+| 通知权限 / 通道（Android 13+） | `flutter_local_notifications`（建「音乐播放」通道 + `POST_NOTIFICATIONS` + 通道状态查询） |
 
 ## 状态
 
@@ -80,7 +80,8 @@
 
 ## 权限与媒体通知
 
-- **Android 13+**：运行时请求 `POST_NOTIFICATIONS`（首次播放 / 设置页）。通知权限开启后，媒体通知才能显示。
+- **Android 13+**：运行时请求 `POST_NOTIFICATIONS`（首次启动 / 首次播放 / 设置页）。通知权限开启后，媒体通知才能显示。
+- **通知通道**：`flutter_local_notifications` 在启动时创建并接管「音乐播放」通道（`com.webdav.webdav_music_player.audio.v4`，IMPORTANCE_DEFAULT、静音、不震动），并负责查询权限与通道状态；`audio_service` 原生 `createChannel()` 发现通道已存在即复用，因此设置页在首次播放前就能显示系统真实通道状态（定义见 `lib/services/media_notification_channel.dart`，须与 `AudioServiceConfig` 保持一致）。
 - **媒体播放通知**：通过 `audio_service` 的 `MusicAudioHandler` 在播放时启动 `mediaPlayback` 前台服务，并发布 `MediaItem` + `PlaybackState`，使通知栏 / 锁屏 / 系统媒体控制中心显示 MediaStyle 控件（播放/暂停，有队列时上一首/下一首）。通知小图标使用 `drawable/ic_stat_music`（不可用自适应 launcher 图标）。
 - 需声明 `WAKE_LOCK`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`、`POST_NOTIFICATIONS`，并注册 `AudioService` / `MediaButtonReceiver`；`MainActivity` 继承 `AudioServiceFragmentActivity`（保证共享 FlutterEngine 不随 Activity 销毁而销毁，避免切后台后通知/播放状态丢失）。
 - 真机验证：通知样式与锁屏控件需在真实 Android 设备上确认；模拟器上权限与 FGS 行为可能不完整。

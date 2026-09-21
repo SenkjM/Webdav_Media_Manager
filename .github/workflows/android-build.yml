@@ -95,6 +95,8 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          # Cache Gradle/AGP compile dependencies (android/gradle wrapper).
+          cache: gradle
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -104,6 +106,29 @@ jobs:
 
       - name: Flutter version
         run: flutter --version
+
+      - name: Install Android SDK compile dependencies
+        # android/app/build.gradle.kts consumes Flutter's defaults
+        # (compileSdk/targetSdk 36) with AGP 9.1 + Gradle 9.3.1, so install the
+        # SDK components the Android build resolves instead of relying on the
+        # runner image. JDK stays 17 (matches AGP 9 / Kotlin jvmTarget 17 and
+        # the desugaring that flutter_local_notifications requires).
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found; leaving SDK components to Gradle."
+            exit 0
+          fi
+          # Accept any licenses Gradle's auto-download may still need.
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
 
       - name: Install libmpv (media_kit native backend for `flutter test` on Linux)
         run: |

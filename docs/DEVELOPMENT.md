@@ -106,6 +106,7 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 | 缓存路径 / 过期清理 / annex | `cache_service.dart` |
 | 备份 ZIP / WMPB1 | `backup_service.dart`, `backup_crypto.dart` |
 | 设置（缓存策略、封面边长） | `settings_service.dart`, `settings_screen.dart` |
+| 通知权限 / 「音乐播放」通道 | `notification_permission_service.dart`, `media_notification_channel.dart` |
 | 根返回键后台 / 抽屉退出 | `home_shell.dart`, `android_background.dart`, `MainActivity.kt` |
 
 ### 导航壳
@@ -289,6 +290,16 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 
 工作流：`.github/workflows/android-build.yml`
 
+### 编译依赖参数
+
+| 依赖 | 参数 | 说明 |
+|------|------|------|
+| JDK | `17`（temurin） | 与 AGP 9.1 / Kotlin `jvmTarget 17` 一致；`flutter_local_notifications` 依赖 core library desugaring（`android/app/build.gradle.kts` 已启用） |
+| Flutter | `stable` | 与 `.metadata` 记录的本机 SDK 线一致（当前 stable 线：Dart `^3.13.4`） |
+| Android SDK | `platform-tools` + `platforms;android-36` + `build-tools;36.0.0` | 对应 Flutter 默认 `compileSdk/targetSdk = 36`（`android/app/build.gradle.kts` 取 `maxOf(flutter.compileSdkVersion, 35)`） |
+| Linux 测试库 | `libmpv-dev`、`mpv` | media_kit 的 Linux 后端，`flutter test` 需要 |
+| Gradle | `cache: gradle` | 缓存 AGP/Gradle 编译依赖（`actions/setup-java`） |
+
 ### 版本号
 
 | 变量 | 规则 |
@@ -357,6 +368,8 @@ lib/screens/player_screen.dart         # Now Playing
 lib/screens/downloads_screen.dart      # 下载队列 UI
 lib/screens/settings_screen.dart       # 缓存 / 备份 / 封面尺寸 / 通知测试
 lib/services/music_audio_handler.dart  # 媒体会话；media_kit Player；clip 相对 position/duration
+lib/services/media_notification_channel.dart # 「音乐播放」通道唯一定义（须与 AudioServiceConfig 同步）
+lib/services/notification_permission_service.dart # flutter_local_notifications：建通道 + 权限/通道状态
 lib/services/audio_player_service.dart # 仅本地播放门面
 lib/services/download_queue_service.dart
 lib/services/library_service.dart      # ingestCueAlbum 等
@@ -396,6 +409,7 @@ test/                                  # 身份 / CUE / 本地播放 / idle guar
 | **备份恢复后假「已缓存」** | 恢复了 annex 路径但文件未打包 | 恢复策略 uncached unless on disk |
 | **schema 升级丢库** | v5 `onUpgrade` 直接 DROP | bump version 前告知用户；无自动 migration |
 | **OEM 无媒体通知** | LOW 通道 / 未 typed FGS | 保留 vendor 补丁与 v4 通道；真机测 ColorOS/OnePlus |
+| **通道状态查不到 / 与系统不一致** | 通道原先只由首次播放的原生 `createChannel()` 创建，设置页在播放前读到「未创建」 | 由 `notification_permission_service.dart` 经 `flutter_local_notifications` 在启动时建通道（`media_notification_channel.dart` 为唯一定义）；原生侧发现通道已存在即复用，故两侧参数必须一致（IMPORTANCE_DEFAULT、静音、不震动、无角标） |
 
 相关提交可参考：`c235c92`（CUE ingest）、`1649677`（music_id v5 / 备份）、`0ed9591`（mute + remote chip）、`922d3c4`（unmute before play + ColorOS BUFFERING / v4）、`9c9d5c5`（返回键）、`251e46a`（MainActivity）、`ebe85b7`（禁用 push 触发 CI）。
 
@@ -411,6 +425,7 @@ flutter test test/local_only_play_policy_test.dart
 flutter test test/network_remote_status_test.dart
 flutter test test/music_audio_handler_idle_guard_test.dart
 flutter test test/music_audio_handler_volume_safety_test.dart
+flutter test test/media_notification_channel_test.dart
 flutter test test/cache_group_deletion_test.dart
 # 或全量
 flutter test
