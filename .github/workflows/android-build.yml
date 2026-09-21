@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # 定时任务固定检视 beta；其余事件用触发引用
@@ -104,7 +104,7 @@ jobs:
           echo "reason=unknown_event" >> "$GITHUB_OUTPUT"
 
       - name: Setup Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
@@ -236,14 +236,14 @@ jobs:
         continue-on-error: true
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
 
       - name: Upload AAB artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-release-aab
           path: build/app/outputs/bundle/release/app-release.aab
@@ -256,7 +256,7 @@ jobs:
 
       - name: Create / update Pre-release
         if: steps.gate.outputs.publish == 'true'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: prerelease
           name: Pre-release ${{ steps.ver.outputs.version_name }} (${{ steps.ver.outputs.version_code }})
