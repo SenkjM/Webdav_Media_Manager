@@ -8,15 +8,25 @@ import '../models/download_task.dart';
 /// Android notification channels for the download queue.
 ///
 /// Two channels on purpose:
-/// * **进度** — low importance, silent, rewritten several times a second while
-///   files transfer;
-/// * **完成** — default importance, silent, posted once when the queue drains so
-///   the result is still readable after the progress notifications are gone.
+/// * **进度** — silent, rewritten several times a second while files transfer;
+/// * **完成** — silent, posted once when the queue drains so the result is still
+///   readable after the progress notification is gone.
 ///
 /// Both are separate from the media channel, which is owned by `audio_service`.
-const String kDownloadChannelId = 'com.webdav.webdav_music_player.downloads.v1';
+///
+/// The progress channel is `.v2`: the `.v1` channel was created with
+/// `Importance.low`, and ColorOS folded it into 不重要通知 (the system reported
+/// `mUnimportant=true`), so progress was invisible even though it was posted.
+/// Android never raises the importance of an existing channel, hence the new id
+/// — and [DownloadNotificationService.ensureChannel] deletes the stale one.
+const String kDownloadChannelId =
+    'com.webdav.webdav_music_player.downloads.v2';
 const String kDownloadChannelName = '下载进度';
 const String kDownloadChannelDescription = '下载队列进行中的进度';
+
+/// Superseded by [kDownloadChannelId]; removed on startup.
+const String kLegacyDownloadChannelId =
+    'com.webdav.webdav_music_player.downloads.v1';
 
 const String kDownloadDoneChannelId =
     'com.webdav.webdav_music_player.downloads.done.v1';
@@ -27,7 +37,10 @@ const AndroidNotificationChannel kDownloadChannel = AndroidNotificationChannel(
   kDownloadChannelId,
   kDownloadChannelName,
   description: kDownloadChannelDescription,
-  importance: Importance.low,
+  // Default (not low) importance: ColorOS hides low-importance notifications in
+  // 不重要通知, which made them look like they were never posted. Silence still
+  // comes from `playSound`/`enableVibration`/`silent` on the notification.
+  importance: Importance.defaultImportance,
   playSound: false,
   enableVibration: false,
   showBadge: false,
@@ -46,15 +59,15 @@ const AndroidNotificationChannel kDownloadDoneChannel =
 
 /// System notifications for the download queue.
 ///
-/// A single Android notification can only carry **one** progress bar, so the two
-/// levels the user asked for are two notifications:
+/// Two notifications at most, on two channels:
 ///
-/// * [currentId] — the file being transferred right now (its own percentage);
-/// * [queueId] — the whole batch (finished files + the current one's fraction).
+/// * [currentId] — the file being transferred, with its own percentage **and**
+///   the batch position/counts in one line;
+/// * [summaryId] — 「全部下载完成」, posted once when the queue drains.
 ///
-/// Both are cancelled the moment the queue drains and a separate
-/// [summaryId] 「全部下载完成」 notification is posted, so the counts never leak
-/// into the next batch.
+/// There is deliberately no separate queue-level notification: it carried no
+/// information the current-file line does not, and the two of them stole each
+/// other's autogroup slot in the shade.
 class DownloadNotificationService {
   DownloadNotificationService({FlutterLocalNotificationsPlugin? plugin})
     : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
@@ -64,8 +77,8 @@ class DownloadNotificationService {
   /// The file currently transferring. Rewritten on every progress frame.
   static const int currentId = 2001;
 
-  /// The whole batch.
-  static const int queueId = 2002;
+  /// Retired queue-level notification; cancelled so no stale bar lingers.
+  static const int legacyQueueId = 2002;
 
   /// 「全部下载完成」 — posted after the queue drains.
   static const int summaryId = 2003;
@@ -96,6 +109,15 @@ class DownloadNotificationService {
     try {
       await _android?.createNotificationChannel(kDownloadChannel);
       await _android?.createNotificationChannel(kDownloadDoneChannel);
+      // Drop the old low-importance channel so it stops showing up (and stops
+      // swallowing progress) in system settings.
+      try {
+        await _android?.deleteNotificationChannel(
+          channelId: kLegacyDownloadChannelId,
+        );
+      } catch (e) {
+        debugPrint('DownloadNotification: deleteLegacyChannel failed: $e');
+      }
       return true;
     } catch (e) {
       debugPrint('DownloadNotification: ensureChannel failed: $e');
@@ -135,6 +157,9 @@ class DownloadNotificationService {
           ongoing: false,
           autoCancel: true,
           showWhen: false,
+          // Silent by construction: progress repaints constantly and must never
+          // buzz or pop a heads-up.
+          silent: true,
           icon: 'drawable/ic_stat_download',
           playSound: false,
           enableVibration: false,
@@ -158,9 +183,8 @@ class DownloadNotificationService {
     ),
   );
 
-  /// Two-level progress: [index]/[total] is the position of the running file,
-  /// [fileProgress] its own 0..1 fraction and [done] how many files already
-  /// finished in **this** batch.
+  /// One progress notification for the whole queue: the running file's own
+  /// percentage on the bar, plus its position and the batch counts in the body.
   ///
   /// Throttled by [progressInterval] and by integer percent so a fast download
   /// does not post hundreds of updates.
@@ -196,21 +220,16 @@ class DownloadNotificationService {
     _lastTotal = total;
     final safeTotal = total == 0 ? 1 : total;
     final name = currentName ?? '准备中';
+    final counts = queuePercent == currentPercent
+        ? '已完成 $done / $safeTotal'
+        : '总进度 $queuePercent% · 已完成 $done / $safeTotal';
     await _ensureInitialized();
     try {
-      // Level 1 — the file being transferred.
       await _plugin.show(
         id: currentId,
         title: '正在下载（第 $index / $safeTotal 个）',
-        body: '$name\n$currentPercent%',
+        body: '$name\n$currentPercent% · $counts',
         notificationDetails: _progressDetails(percent: currentPercent),
-      );
-      // Level 2 — the whole batch.
-      await _plugin.show(
-        id: queueId,
-        title: '下载队列（$safeTotal 个任务）',
-        body: '总进度 $queuePercent% · 已完成 $done / $safeTotal',
-        notificationDetails: _progressDetails(percent: queuePercent),
       );
     } catch (e) {
       // Notification failures must never break the download itself.
@@ -218,13 +237,14 @@ class DownloadNotificationService {
     }
   }
 
-  /// Drop both progress notifications (the queue drained or was cleared).
+  /// Drop the progress notification (the queue drained or was cleared) together
+  /// with the retired queue-level one, so nothing stale survives an upgrade.
   Future<void> clearProgress() async {
     if (kIsWeb || !Platform.isAndroid) return;
     await _ensureInitialized();
     try {
       await _plugin.cancel(id: currentId);
-      await _plugin.cancel(id: queueId);
+      await _plugin.cancel(id: legacyQueueId);
     } catch (e) {
       debugPrint('DownloadNotification: clearProgress failed: $e');
     }
@@ -271,7 +291,7 @@ class DownloadNotificationService {
     await _ensureInitialized();
     try {
       await _plugin.cancel(id: currentId);
-      await _plugin.cancel(id: queueId);
+      await _plugin.cancel(id: legacyQueueId);
       await _plugin.cancel(id: summaryId);
     } catch (_) {}
     _lastCurrentPercent = null;
