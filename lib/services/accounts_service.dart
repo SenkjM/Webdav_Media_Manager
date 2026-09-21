@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/webdav_account.dart';
+import '../utils/credential_vault_crypto.dart';
 import 'library_database.dart';
 
 /// Multi-WebDAV account management. Passwords in secure storage.
@@ -171,7 +172,14 @@ class AccountsService extends ChangeNotifier {
   /// Restore **one** account from a per-site backup without touching other mounts.
   /// Never copies credentials onto a different account id.
   /// Recreates the mount if [account.id] is missing locally.
-  Future<void> mergeAccountFromBackup(Map<String, dynamic> accountJson) async {
+  ///
+  /// Only the password may be encrypted (`AESGCMv1:`); when [passphrase] cannot
+  /// decrypt it the account is still restored with an **empty password** so the
+  /// user can fill it in, instead of failing the whole restore.
+  Future<bool> mergeAccountFromBackup(
+    Map<String, dynamic> accountJson, {
+    String passphrase = '',
+  }) async {
     final id = accountJson['id'] as String?;
     if (id == null || id.isEmpty) {
       throw StateError('备份账号缺少 id，无法安全恢复');
@@ -183,7 +191,24 @@ class AccountsService extends ChangeNotifier {
         accountJson['url'] as String? ??
         '服务器';
     final username = accountJson['username'] as String? ?? '';
-    final pass = accountJson['password'] as String? ?? '';
+    final rawPass = accountJson['password'] as String? ?? '';
+    final encrypted = accountJson['passwordEncrypted'] as bool? ??
+        CredentialVaultCrypto.isEncrypted(rawPass);
+    var passwordRecovered = true;
+    String pass = rawPass;
+    if (encrypted && CredentialVaultCrypto.isEncrypted(rawPass)) {
+      final clear = await CredentialVaultCrypto.tryDecrypt(
+        encoded: rawPass,
+        passphrase: passphrase,
+      );
+      if (clear == null) {
+        // Missing unified decryption key → restore the mount, leave password blank.
+        pass = '';
+        passwordRecovered = false;
+      } else {
+        pass = clear;
+      }
+    }
 
     final account = WebDavAccount(
       id: id,
@@ -205,12 +230,20 @@ class AccountsService extends ChangeNotifier {
     _activeAccountId = id;
     await _prefs!.setString(_kActiveAccount, id);
     notifyListeners();
+    return passwordRecovered;
   }
 
   /// Restore accounts + passwords from backup JSON.
   /// Expects `{ activeAccountId, accounts: [{id,name,url,username,password}, ...] }`.
-  Future<void> restoreFromBackup(Map<String, dynamic> json) async {
+  ///
+  /// Passwords may be `AESGCMv1:` blobs; entries that cannot be decrypted with
+  /// [passphrase] are restored with an empty password rather than aborting.
+  Future<List<String>> restoreFromBackup(
+    Map<String, dynamic> json, {
+    String passphrase = '',
+  }) async {
     final list = json['accounts'] as List<dynamic>? ?? [];
+    final missing = <String>[];
     _prefs ??= await SharedPreferences.getInstance();
     // Clear existing passwords for current accounts.
     for (final a in List<WebDavAccount>.from(_accounts)) {
@@ -229,7 +262,20 @@ class AccountsService extends ChangeNotifier {
       );
       keepIds.add(account.id);
       await _db.upsertAccount(account);
-      final pass = m['password'] as String? ?? '';
+      final rawPass = m['password'] as String? ?? '';
+      String pass = rawPass;
+      if (CredentialVaultCrypto.isEncrypted(rawPass)) {
+        final clear = await CredentialVaultCrypto.tryDecrypt(
+          encoded: rawPass,
+          passphrase: passphrase,
+        );
+        if (clear == null) {
+          pass = '';
+          missing.add(account.name);
+        } else {
+          pass = clear;
+        }
+      }
       await _secure.write(key: '$_kPassPrefix${account.id}', value: pass);
     }
     for (final a in existing) {
@@ -253,6 +299,7 @@ class AccountsService extends ChangeNotifier {
       await _prefs!.setString(_kActiveAccount, _activeAccountId!);
     }
     notifyListeners();
+    return missing;
   }
 
 }

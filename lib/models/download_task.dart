@@ -7,6 +7,33 @@ enum DownloadStatus {
   cancelled,
 }
 
+/// Where a downloaded file is written.
+enum DownloadTarget {
+  /// App-internal audio cache (`music_cache/`). Required for music playback —
+  /// music is never streamed, so its only usable destination is the cache.
+  cache,
+
+  /// System gallery / media library via MediaStore (Android `Movies/…`).
+  /// Video downloads go here instead of the app-private cache.
+  gallery,
+}
+
+extension DownloadTargetX on DownloadTarget {
+  String get storageKey => switch (this) {
+        DownloadTarget.cache => 'cache',
+        DownloadTarget.gallery => 'gallery',
+      };
+
+  /// Short badge shown in the download queue and library lists.
+  String get labelZh => switch (this) {
+        DownloadTarget.cache => '应用缓存',
+        DownloadTarget.gallery => '系统相册',
+      };
+
+  static DownloadTarget fromStorageKey(String? key) =>
+      key == 'gallery' ? DownloadTarget.gallery : DownloadTarget.cache;
+}
+
 /// A single download queue item persisted across restarts.
 class DownloadTask {
   DownloadTask({
@@ -23,6 +50,7 @@ class DownloadTask {
     this.bytesTotal,
     this.bytesReceived = 0,
     this.cacheGroupId,
+    this.target = DownloadTarget.cache,
   });
 
   final String id;
@@ -38,6 +66,12 @@ class DownloadTask {
   int? bytesTotal;
   int bytesReceived;
   String? cacheGroupId;
+
+  /// Destination the file was (or will be) written to.
+  DownloadTarget target;
+
+  /// True when the file went to the system gallery rather than app storage.
+  bool get isGallery => target == DownloadTarget.gallery;
 
   bool get isTerminal =>
       status == DownloadStatus.completed ||
@@ -58,6 +92,7 @@ class DownloadTask {
         'bytes_total': bytesTotal,
         'bytes_received': bytesReceived,
         'cache_group_id': cacheGroupId,
+        'target': target.storageKey,
       };
 
   factory DownloadTask.fromMap(Map<String, dynamic> map) => DownloadTask(
@@ -79,6 +114,7 @@ class DownloadTask {
         bytesTotal: map['bytes_total'] as int?,
         bytesReceived: (map['bytes_received'] as int?) ?? 0,
         cacheGroupId: map['cache_group_id'] as String?,
+        target: DownloadTargetX.fromStorageKey(map['target'] as String?),
       );
 
   DownloadTask copyWith({
@@ -90,6 +126,7 @@ class DownloadTask {
     int? bytesTotal,
     int? bytesReceived,
     String? cacheGroupId,
+    DownloadTarget? target,
   }) {
     return DownloadTask(
       id: id,
@@ -105,6 +142,7 @@ class DownloadTask {
       bytesTotal: bytesTotal ?? this.bytesTotal,
       bytesReceived: bytesReceived ?? this.bytesReceived,
       cacheGroupId: cacheGroupId ?? this.cacheGroupId,
+      target: target ?? this.target,
     );
   }
 }

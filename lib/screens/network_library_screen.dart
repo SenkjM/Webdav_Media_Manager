@@ -38,7 +38,23 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   String? _error;
   String? _boundAccountId;
 
+  /// Multi-select mode (entered by long-pressing a file entry).
+  bool _selecting = false;
+  final Set<String> _selected = {};
+
   String get _path => _stack.last;
+
+  String _itemKey(WebDavItem item) => '${item.isDirectory ? 'd' : 'f'}\u0000${item.path}';
+
+  List<WebDavItem> get _selectedItems =>
+      _items.where((e) => _selected.contains(_itemKey(e))).toList();
+
+  void _exitSelect() {
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
+  }
 
   @override
   void initState() {
@@ -212,14 +228,75 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
   }
 
+  /// Enqueue one file for download. Videos go to the **system gallery**;
+  /// music goes to the app-internal audio cache (playback reads only there).
   Future<void> _enqueueOnly(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
     final downloads = context.read<DownloadQueueService>();
+    if (item.isVideo) {
+      final queued = await downloads.enqueueGallery(
+        accountId,
+        item.path,
+        fileName: item.name,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            queued ? '已加入下载（保存到系统相册）' : '该视频已在下载队列或已保存到系统相册',
+          ),
+        ),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('已加入下载')),
     );
     downloads.enqueue(accountId, item.path, fileName: item.name).ignore();
+  }
+
+  /// Download many entries at once (multi-select). Videos → system gallery.
+  Future<void> _enqueueMany(List<WebDavItem> items) async {
+    final accountId = _accountId;
+    if (accountId == null || items.isEmpty) return;
+    final downloads = context.read<DownloadQueueService>();
+    final videos = items.where((e) => e.isVideo).toList();
+    final others = items.where((e) => !e.isVideo).toList();
+    var queued = 0;
+    if (videos.isNotEmpty) {
+      queued += await downloads.enqueueGalleryMany(
+        videos.map(
+          (v) => (
+            accountId: accountId,
+            remotePath: v.path,
+            fileName: v.name,
+          ),
+        ),
+      );
+    }
+    for (final item in others) {
+      // Video-adjacent and unknown files are neither audio nor cacheable.
+      if (!item.isAudio) continue;
+      if (await downloads.ensureQueued(
+        accountId,
+        item.path,
+        fileName: item.name,
+      )) {
+        queued++;
+      }
+    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          queued == 0
+              ? '所选条目均已在队列或已下载'
+              : '已加入 $queued 个下载任务'
+                  '${videos.isEmpty ? '' : '（视频保存到系统相册）'}',
+        ),
+      ),
+    );
   }
 
   Future<void> _enqueueFolder(WebDavItem folder) async {
@@ -553,7 +630,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.download),
-                  title: const Text('下载'),
+                  title: const Text('下载到系统相册'),
+                  subtitle: const Text('保存到系统相册（Movies），不是应用内部目录'),
                   onTap: () {
                     Navigator.pop(ctx);
                     _enqueueOnly(item);
@@ -812,102 +890,231 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       return const Center(child: Text('空目录'));
     }
     final accountId = active?.id ?? _accountId;
-    return ListView.builder(
-      itemCount: _items.length,
-      itemBuilder: (context, i) {
-        final item = _items[i];
-        if (item.isDirectory) {
-          return ListTile(
-            leading: const Icon(Icons.folder_rounded, color: AppColors.accent),
-            title: Text(item.name),
-            subtitle: const Text('目录'),
-            onTap: () => _enterDir(item),
-            onLongPress: () => _showItemMenu(item),
-          );
-        }
-        if (item.isCue) {
-          return ListTile(
-            leading: const Icon(Icons.insert_drive_file_outlined),
-            title: Text(item.name),
-            subtitle: Text(item.size != null ? _fmtSize(item.size!) : 'CUE 文件'),
-            onTap: () => _openCue(item),
-            onLongPress: () => _showItemMenu(item),
-          );
-        }
-        if (item.isVideo) {
-          return ListTile(
-            leading: const Icon(Icons.videocam_outlined, color: AppColors.accent),
-            title: Text(item.name),
-            subtitle: Text(item.size != null ? _fmtSize(item.size!) : '视频'),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.download_for_offline_outlined),
-                  tooltip: '下载',
-                  onPressed: () => _enqueueOnly(item),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.play_circle_outline),
-                  tooltip: '打开视频',
-                  onPressed: () => _openVideo(item),
-                ),
-              ],
-            ),
-            onTap: () => _onTapFile(item),
-            onLongPress: () => _showItemMenu(item),
-          );
-        }
-        if (!item.isAudio) {
-          return ListTile(
-            leading: const Icon(Icons.insert_drive_file_outlined),
-            title: Text(item.name),
-            subtitle: Text(item.size != null ? _fmtSize(item.size!) : '文件'),
-            onLongPress: () => _showItemMenu(item),
-          );
-        }
+    return Column(
+      children: [
+        if (_selecting) _buildSelectionBar(),
+        Expanded(
+          child: ListView.builder(
+            itemCount: _items.length,
+            itemBuilder: (context, i) {
+              final item = _items[i];
+              if (item.isDirectory) {
+                return ListTile(
+                  leading: _selectionLeading(
+                    item,
+                    const Icon(Icons.folder_rounded, color: AppColors.accent),
+                  ),
+                  title: Text(item.name),
+                  subtitle: const Text('目录'),
+                  trailing: _itemMenuButton(item),
+                  onTap: () => _onEntryTap(item, () => _enterDir(item)),
+                  onLongPress: () => _enterSelect(item),
+                );
+              }
+              if (item.isCue) {
+                return ListTile(
+                  leading: _selectionLeading(
+                    item,
+                    const Icon(Icons.insert_drive_file_outlined),
+                  ),
+                  title: Text(item.name),
+                  subtitle: Text(
+                    item.size != null ? _fmtSize(item.size!) : 'CUE 文件',
+                  ),
+                  trailing: _itemMenuButton(item),
+                  onTap: () => _onEntryTap(item, () => _openCue(item)),
+                  onLongPress: () => _enterSelect(item),
+                );
+              }
+              if (item.isVideo) {
+                final task = accountId == null
+                    ? null
+                    : downloads.taskFor(accountId, item.path);
+                final saved = task != null &&
+                    task.isGallery &&
+                    task.status == DownloadStatus.completed;
+                return ListTile(
+                  leading: _selectionLeading(
+                    item,
+                    const Icon(Icons.videocam_outlined, color: AppColors.accent),
+                  ),
+                  title: Text(item.name),
+                  subtitle: Text(
+                    [
+                      item.size != null ? _fmtSize(item.size!) : '视频',
+                      if (saved) '系统相册',
+                    ].join(' · '),
+                  ),
+                  // Videos expose only 播放 here; 下载 appears on long-press
+                  // (item menu) or in multi-select mode.
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.play_circle_outline),
+                        tooltip: '播放视频',
+                        onPressed: () => _openVideo(item),
+                      ),
+                      _itemMenuButton(item),
+                    ],
+                  ),
+                  onTap: () => _onEntryTap(item, () => _onTapFile(item)),
+                  onLongPress: () => _enterSelect(item),
+                );
+              }
+              if (!item.isAudio) {
+                return ListTile(
+                  leading: _selectionLeading(
+                    item,
+                    const Icon(Icons.insert_drive_file_outlined),
+                  ),
+                  title: Text(item.name),
+                  subtitle: Text(
+                    item.size != null ? _fmtSize(item.size!) : '文件',
+                  ),
+                  trailing: _itemMenuButton(item),
+                  onTap: () => _onEntryTap(item, () {}),
+                  onLongPress: () => _enterSelect(item),
+                );
+              }
 
-        final task = accountId == null
-            ? null
-            : downloads.taskForRemote(accountId, item.path);
-        // Undownloaded + never enqueued → TrackUiState.remote (no chip).
-        final state = accountId == null
-            ? TrackUiState.remote
-            : downloads.uiStateFor(
-                accountId,
-                item.path,
-                playingRemotePath: player.currentRemotePath,
-                playingAccountId: player.currentAccountId,
-              );
-        return ListTile(
-          leading: Icon(
-            state == TrackUiState.playing ? Icons.equalizer : Icons.audiotrack,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          title: Text(item.name),
-          subtitle: Text(item.size != null ? _fmtSize(item.size!) : '音频'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Only show after user-initiated queue / download / ready / play.
-              if (state != TrackUiState.remote)
-                TrackStatusChip(
-                  state: state,
-                  progress: task?.status == DownloadStatus.active
-                      ? task?.progress
-                      : null,
+              final task = accountId == null
+                  ? null
+                  : downloads.taskForRemote(accountId, item.path);
+              // Undownloaded + never enqueued → TrackUiState.remote (no chip).
+              final state = accountId == null
+                  ? TrackUiState.remote
+                  : downloads.uiStateFor(
+                      accountId,
+                      item.path,
+                      playingRemotePath: player.currentRemotePath,
+                      playingAccountId: player.currentAccountId,
+                    );
+              return ListTile(
+                leading: _selectionLeading(
+                  item,
+                  Icon(
+                    state == TrackUiState.playing
+                        ? Icons.equalizer
+                        : Icons.audiotrack,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
+                title: Text(item.name),
+                subtitle: Text(
+                  item.size != null ? _fmtSize(item.size!) : '音频',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Only show after user-initiated queue / download / ready / play.
+                    if (state != TrackUiState.remote)
+                      TrackStatusChip(
+                        state: state,
+                        progress: task?.status == DownloadStatus.active
+                            ? task?.progress
+                            : null,
+                      ),
+                    IconButton(
+                      icon: const Icon(Icons.download_for_offline_outlined),
+                      tooltip: '仅下载',
+                      onPressed: () => _enqueueOnly(item),
+                    ),
+                    _itemMenuButton(item),
+                  ],
+                ),
+                onTap: () => _onEntryTap(item, () => _onTapFile(item)),
+                onLongPress: () => _enterSelect(item),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Checkbox shown in multi-select mode, otherwise the entry's own icon.
+  Widget _selectionLeading(WebDavItem item, Widget icon) {
+    if (!_selecting) return icon;
+    final selected = _selected.contains(_itemKey(item));
+    return Icon(
+      selected ? Icons.check_circle : Icons.circle_outlined,
+      color: selected ? AppColors.accent : AppColors.mutedText,
+    );
+  }
+
+  /// Overflow button opening the per-item menu (rename / delete / download).
+  /// Long-press now enters multi-select, so the menu lives on this button.
+  Widget _itemMenuButton(WebDavItem item) {
+    if (_selecting) return const SizedBox.shrink();
+    return IconButton(
+      icon: const Icon(Icons.more_vert),
+      tooltip: '更多操作',
+      onPressed: () => _showItemMenu(item),
+    );
+  }
+
+  /// Tap handling that respects multi-select mode.
+  void _onEntryTap(WebDavItem item, VoidCallback action) {
+    if (!_selecting) {
+      action();
+      return;
+    }
+    setState(() {
+      final key = _itemKey(item);
+      if (!_selected.remove(key)) _selected.add(key);
+      if (_selected.isEmpty) _selecting = false;
+    });
+  }
+
+  void _enterSelect(WebDavItem item) {
+    setState(() {
+      _selecting = true;
+      _selected.add(_itemKey(item));
+    });
+  }
+
+  Widget _buildSelectionBar() {
+    final items = _selectedItems;
+    final videos = items.where((e) => e.isVideo).length;
+    return Material(
+      color: AppColors.elevated,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
               IconButton(
+                tooltip: '取消',
+                onPressed: _exitSelect,
+                icon: const Icon(Icons.close),
+              ),
+              Expanded(
+                child: Text(
+                  '已选 ${items.length} 项'
+                  '${videos > 0 ? '（$videos 个视频 → 系统相册）' : ''}',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                tooltip: '下载',
+                onPressed: items.isEmpty ? null : () => _enqueueMany(items),
                 icon: const Icon(Icons.download_for_offline_outlined),
-                tooltip: '仅下载',
-                onPressed: () => _enqueueOnly(item),
+              ),
+              IconButton(
+                tooltip: '下载整个文件夹',
+                onPressed: items.length != 1 || !items.first.isDirectory
+                    ? null
+                    : () => _enqueueFolder(items.first),
+                icon: const Icon(Icons.folder_zip_outlined),
               ),
             ],
           ),
-          onTap: () => _onTapFile(item),
-          onLongPress: () => _showItemMenu(item),
-        );
-      },
+        ),
+      ),
     );
   }
 

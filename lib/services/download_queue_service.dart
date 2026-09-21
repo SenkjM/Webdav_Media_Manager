@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/download_task.dart';
@@ -15,25 +16,34 @@ import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'download_store.dart';
 import 'library_service.dart';
+import 'platform_export_service.dart';
 import 'webdav_service.dart';
 
 /// Background async download queue. Does not block UI/navigation.
 /// Ordering: FIFO by [createdAt]. Only one active download at a time.
+///
+/// Two destinations (see [DownloadTarget]):
+/// * music → app-internal audio cache (the only place playback reads from)
+/// * video → the **system gallery** via MediaStore, so downloads show up in
+///   the device's video app rather than an app-private folder
 class DownloadQueueService extends ChangeNotifier {
   DownloadQueueService({
     required WebDavService webDav,
     required CacheService cache,
     LibraryService? library,
     DownloadStore? store,
+    PlatformExportService? export,
   })  : _webDav = webDav,
         _cache = cache,
         _library = library,
-        _store = store ?? DownloadStore();
+        _store = store ?? DownloadStore(),
+        _export = export ?? const PlatformExportService();
 
   final WebDavService _webDav;
   final CacheService _cache;
   LibraryService? _library;
   final DownloadStore _store;
+  final PlatformExportService _export;
   final _uuid = const Uuid();
 
   final List<DownloadTask> _tasks = [];
@@ -182,6 +192,9 @@ class DownloadQueueService extends ChangeNotifier {
         case DownloadStatus.cancelled:
           return TrackUiState.error;
         case DownloadStatus.completed:
+          // Gallery downloads live in the system gallery, not the audio cache,
+          // so a completed gallery task alone means "downloaded".
+          if (task.isGallery) return TrackUiState.ready;
           break;
       }
     }
@@ -334,6 +347,75 @@ class DownloadQueueService extends ChangeNotifier {
     unawaited(_pump());
     return true;
   }
+
+  /// Enqueue a download that will be written into the system gallery
+  /// (MediaStore `Movies/…`) instead of the app-private audio cache.
+  ///
+  /// Used for video files: the user asked for downloads to land in the system
+  /// gallery, and music playback never reads video files, so no cache copy is
+  /// needed. Returns false when the file is already queued/downloaded.
+  Future<bool> enqueueGallery(
+    String accountId,
+    String remotePath, {
+    String? fileName,
+  }) async {
+    final existing = taskForRemote(accountId, remotePath);
+    if (existing != null) {
+      switch (existing.status) {
+        case DownloadStatus.pending:
+        case DownloadStatus.active:
+        case DownloadStatus.completed:
+          return false;
+        case DownloadStatus.failed:
+        case DownloadStatus.cancelled:
+          existing.status = DownloadStatus.pending;
+          existing.errorMessage = null;
+          existing.progress = 0;
+          existing.bytesReceived = 0;
+          existing.localPath = null;
+          existing.completedAt = null;
+          existing.target = DownloadTarget.gallery;
+          await _store.upsert(existing);
+          notifyListeners();
+          unawaited(_pump());
+          return true;
+      }
+    }
+    final task = DownloadTask(
+      id: _uuid.v4(),
+      accountId: accountId,
+      remotePath: remotePath,
+      fileName: fileName ?? p.basename(remotePath),
+      createdAt: DateTime.now(),
+      target: DownloadTarget.gallery,
+    );
+    _tasks.add(task);
+    await _store.upsert(task);
+    notifyListeners();
+    unawaited(_pump());
+    return true;
+  }
+
+  /// Batch [enqueueGallery] for many items without awaiting each download.
+  Future<int> enqueueGalleryMany(
+    Iterable<({String accountId, String remotePath, String? fileName})> items,
+  ) async {
+    var n = 0;
+    for (final item in items) {
+      if (await enqueueGallery(
+        item.accountId,
+        item.remotePath,
+        fileName: item.fileName,
+      )) {
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /// Latest queue task for a remote path (any status), if any.
+  DownloadTask? taskFor(String accountId, String remotePath) =>
+      taskForRemote(accountId, remotePath);
 
   /// Batch [ensureQueued] for many tracks without awaiting each download.
   Future<int> ensureQueuedMany(
@@ -797,6 +879,74 @@ class DownloadQueueService extends ChangeNotifier {
 
     final token = CancelToken();
     _cancelTokens[task.id] = token;
+    if (task.isGallery) {
+      await _runGalleryDownload(task, token);
+    } else {
+      await _runCacheDownload(task, token);
+    }
+    _cancelTokens.remove(task.id);
+  }
+
+  /// Video → system gallery (MediaStore). Never touches the audio cache or the
+  /// music library: the file belongs to the user's media library, not the app.
+  Future<void> _runGalleryDownload(DownloadTask task, CancelToken token) async {
+    final tmpRoot = await getTemporaryDirectory();
+    final tmpDir = Directory(p.join(tmpRoot.path, 'gallery_dl'));
+    if (!await tmpDir.exists()) await tmpDir.create(recursive: true);
+    final tmp = File(p.join(tmpDir.path, '${task.id}.part'));
+    try {
+      await _webDav.downloadToFile(
+        task.remotePath,
+        tmp,
+        cancelToken: token,
+        onProgress: (received, total) {
+          task.bytesReceived = received;
+          task.bytesTotal = total > 0 ? total : null;
+          task.progress = total > 0 ? received / total : 0;
+          notifyListeners();
+          if (received % (512 * 1024) < 8192) {
+            unawaited(_store.upsert(task));
+          }
+        },
+      );
+      if (task.status == DownloadStatus.cancelled) return;
+      final result = await _export.saveToGallery(
+        sourcePath: tmp.path,
+        fileName: task.fileName,
+        mimeType: galleryMimeFor(task.fileName),
+      );
+      if (!result.ok) {
+        throw StateError(result.error ?? '写入系统相册失败');
+      }
+      task.localPath = result.uri ?? result.path;
+      task.status = DownloadStatus.completed;
+      task.progress = 1.0;
+      task.completedAt = DateTime.now();
+      task.errorMessage = null;
+      await _store.upsert(task);
+      _completeWaiter(task);
+      notifyListeners();
+    } catch (e) {
+      if (task.status == DownloadStatus.cancelled || token.isCancelled) {
+        task.status = DownloadStatus.cancelled;
+        task.errorMessage = '已取消';
+      } else {
+        task.status = DownloadStatus.failed;
+        task.errorMessage = e.toString();
+      }
+      await _store.upsert(task);
+      _completeWaiter(task);
+      notifyListeners();
+    } finally {
+      if (await tmp.exists()) {
+        try {
+          await tmp.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _runCacheDownload(DownloadTask task, CancelToken token) async {
     final dest =
         _cache.fileForRemote(task.remotePath, accountId: task.accountId);
     final tmp = File('${dest.path}.part');
@@ -853,8 +1003,6 @@ class DownloadQueueService extends ChangeNotifier {
       await _store.upsert(task);
       _completeWaiter(task);
       notifyListeners();
-    } finally {
-      _cancelTokens.remove(task.id);
     }
   }
 

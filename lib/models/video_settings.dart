@@ -27,7 +27,8 @@ extension VideoGestureActionX on VideoGestureAction {
         VideoGestureAction.forward10s => '前进 10 秒',
         VideoGestureAction.back30s => '后退 30 秒',
         VideoGestureAction.forward30s => '前进 30 秒',
-        VideoGestureAction.toggleRate2x => '2 倍速切换',
+        // Long-press only: hold to speed up, release to restore.
+        VideoGestureAction.toggleRate2x => '长按临时加速（松手恢复）',
         VideoGestureAction.playPause => '播放 / 暂停',
       };
 

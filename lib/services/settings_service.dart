@@ -35,6 +35,12 @@ class SettingsService extends ChangeNotifier {
   static const _kVideoPipEnabled = 'video_pip_enabled';
   static const _kVideoHardwareDecoding = 'video_hardware_decoding';
   static const _kVideoBufferSizeMb = 'video_buffer_size_mb';
+  static const _kVideoLongPressRate = 'video_long_press_rate';
+  static const _kVideoLastRate = 'video_last_rate';
+  static const _kShareTagRenameEnabled = 'share_tag_rename_enabled';
+  static const _kShareTagRenamePattern = 'share_tag_rename_pattern';
+  static const _kSyncRemoteRoot = 'sync_remote_root';
+  static const _kSyncEncryptPassword = 'sync_encrypt_password';
 
   /// Default custom retention: 30 days.
   static const int defaultCustomRetentionHours = 24 * 30;
@@ -51,6 +57,24 @@ class SettingsService extends ChangeNotifier {
   static const int minVideoBufferMb = 8;
   static const int maxVideoBufferMb = 512;
   static const int defaultVideoBufferMb = 64;
+
+  /// Video playback-rate slider range (0.5×–3.0×).
+  static const double minVideoRate = 0.5;
+  static const double maxVideoRate = 3.0;
+
+  /// Slider granularity: (3.0 - 0.5) / 0.05 = 50 steps.
+  static const int videoRateDivisions = 50;
+
+  /// Long-press speed boost default (temporary 2× while the finger is down).
+  static const double defaultVideoLongPressRate = 2.0;
+  static const List<double> videoLongPressRatePresets = [1.25, 1.5, 2.0, 2.5, 3.0];
+
+  /// Tag-based share renaming: enabled by default with `作者-标题`.
+  static const bool defaultShareTagRename = true;
+  static const String defaultShareTagRenamePattern = '{artist}-{title}';
+
+  /// Unified sync root on the WebDAV server (holds credentials + backup).
+  static const String defaultSyncRemoteRoot = '/WebDAVMusicPlayer/';
 
   SharedPreferences? _prefs;
   CacheRetention _retention = CacheRetention.oneWeek;
@@ -74,6 +98,12 @@ class SettingsService extends ChangeNotifier {
   bool _videoPipEnabled = false;
   bool _videoHardwareDecoding = true;
   int _videoBufferSizeMb = defaultVideoBufferMb;
+  double _videoLongPressRate = defaultVideoLongPressRate;
+  double _videoLastRate = 1.0;
+  bool _shareTagRenameEnabled = defaultShareTagRename;
+  String _shareTagRenamePattern = defaultShareTagRenamePattern;
+  String _syncRemoteRoot = defaultSyncRemoteRoot;
+  bool _syncEncryptPassword = true;
   bool _loaded = false;
 
   CacheRetention get retention => _retention;
@@ -100,6 +130,24 @@ class SettingsService extends ChangeNotifier {
   bool get videoPipEnabled => _videoPipEnabled;
   bool get videoHardwareDecoding => _videoHardwareDecoding;
   int get videoBufferSizeMb => _videoBufferSizeMb;
+
+  /// Temporary playback rate applied while the video screen is long-pressed.
+  double get videoLongPressRate => _videoLongPressRate;
+
+  /// Last rate the user picked in the video speed slider.
+  double get videoLastRate => _videoLastRate;
+
+  /// Whether sharing a cached audio file offers a tag-based default name.
+  bool get shareTagRenameEnabled => _shareTagRenameEnabled;
+
+  /// Rename pattern, e.g. `{artist}-{title}`; supports `{album}`, `{track}`.
+  String get shareTagRenamePattern => _shareTagRenamePattern;
+
+  /// WebDAV root used by the unified 同步 feature.
+  String get syncRemoteRoot => _syncRemoteRoot;
+
+  /// Whether synced/exported WebDAV passwords are encrypted with a passphrase.
+  bool get syncEncryptPassword => _syncEncryptPassword;
   bool get loaded => _loaded;
 
   Future<void> init() async {
@@ -149,6 +197,19 @@ class SettingsService extends ChangeNotifier {
     _videoBufferSizeMb = _clampBufferMb(
       _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
     );
+    _videoLongPressRate = _clampRate(
+      _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
+    );
+    _videoLastRate = _clampRate(
+      _prefs!.getDouble(_kVideoLastRate) ?? 1.0,
+    );
+    _shareTagRenameEnabled =
+        _prefs!.getBool(_kShareTagRenameEnabled) ?? defaultShareTagRename;
+    _shareTagRenamePattern =
+        _prefs!.getString(_kShareTagRenamePattern) ?? defaultShareTagRenamePattern;
+    _syncRemoteRoot =
+        _prefs!.getString(_kSyncRemoteRoot) ?? defaultSyncRemoteRoot;
+    _syncEncryptPassword = _prefs!.getBool(_kSyncEncryptPassword) ?? true;
     _loaded = true;
     notifyListeners();
   }
@@ -344,6 +405,66 @@ class SettingsService extends ChangeNotifier {
     return mb;
   }
 
+  /// Persist the long-press speed boost rate (used while long-pressing video).
+  Future<void> setVideoLongPressRate(double rate) async {
+    _videoLongPressRate = _clampRate(rate);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setDouble(_kVideoLongPressRate, _videoLongPressRate);
+    notifyListeners();
+  }
+
+  /// Remember the user's last chosen video speed for the next session.
+  Future<void> setVideoLastRate(double rate) async {
+    _videoLastRate = _clampRate(rate);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setDouble(_kVideoLastRate, _videoLastRate);
+    // No notifyListeners: only the video screen reads this on open.
+  }
+
+  Future<void> setShareTagRenameEnabled(bool enabled) async {
+    _shareTagRenameEnabled = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kShareTagRenameEnabled, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setShareTagRenamePattern(String pattern) async {
+    final trimmed = pattern.trim();
+    _shareTagRenamePattern =
+        trimmed.isEmpty ? defaultShareTagRenamePattern : trimmed;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kShareTagRenamePattern, _shareTagRenamePattern);
+    notifyListeners();
+  }
+
+  Future<void> setSyncRemoteRoot(String path) async {
+    var value = path.trim();
+    if (value.isEmpty) value = defaultSyncRemoteRoot;
+    if (!value.startsWith('/')) value = '/$value';
+    if (!value.endsWith('/')) value = '$value/';
+    _syncRemoteRoot = value;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kSyncRemoteRoot, _syncRemoteRoot);
+    notifyListeners();
+  }
+
+  Future<void> setSyncEncryptPassword(bool enabled) async {
+    _syncEncryptPassword = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kSyncEncryptPassword, enabled);
+    notifyListeners();
+  }
+
+  /// Clamp a playback rate into the supported 0.5×–3.0× window.
+  static double clampVideoRate(double rate) => _clampRate(rate);
+
+  static double _clampRate(double rate) {
+    if (rate.isNaN) return 1.0;
+    if (rate < minVideoRate) return minVideoRate;
+    if (rate > maxVideoRate) return maxVideoRate;
+    return rate;
+  }
+
   Map<String, dynamic> exportForBackup() => {
         'cache_retention': _retention.storageKey,
         'cache_custom_retention_hours': _customRetentionHours,
@@ -365,6 +486,12 @@ class SettingsService extends ChangeNotifier {
         'video_pip_enabled': _videoPipEnabled,
         'video_hardware_decoding': _videoHardwareDecoding,
         'video_buffer_size_mb': _videoBufferSizeMb,
+        'video_long_press_rate': _videoLongPressRate,
+        'video_last_rate': _videoLastRate,
+        'share_tag_rename_enabled': _shareTagRenameEnabled,
+        'share_tag_rename_pattern': _shareTagRenamePattern,
+        'sync_remote_root': _syncRemoteRoot,
+        'sync_encrypt_password': _syncEncryptPassword,
       };
 
   Future<Map<String, dynamic>> exportForBackupAsync() async => exportForBackup();
@@ -456,6 +583,28 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['video_buffer_size_mb'] is int) {
       await setVideoBufferSizeMb(json['video_buffer_size_mb'] as int);
+    }
+    if (json['video_long_press_rate'] is num) {
+      await setVideoLongPressRate(
+        (json['video_long_press_rate'] as num).toDouble(),
+      );
+    }
+    if (json['video_last_rate'] is num) {
+      await setVideoLastRate((json['video_last_rate'] as num).toDouble());
+    }
+    if (json['share_tag_rename_enabled'] is bool) {
+      await setShareTagRenameEnabled(json['share_tag_rename_enabled'] as bool);
+    }
+    if (json['share_tag_rename_pattern'] is String) {
+      await setShareTagRenamePattern(
+        json['share_tag_rename_pattern'] as String,
+      );
+    }
+    if (json['sync_remote_root'] is String) {
+      await setSyncRemoteRoot(json['sync_remote_root'] as String);
+    }
+    if (json['sync_encrypt_password'] is bool) {
+      await setSyncEncryptPassword(json['sync_encrypt_password'] as bool);
     }
   }
 

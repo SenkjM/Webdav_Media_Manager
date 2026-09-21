@@ -98,14 +98,20 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 | 需求 | 优先文件 |
 |------|----------|
 | 播放 / 媒体会话 / 起播静音 | `music_audio_handler.dart`, `audio_player_service.dart` |
-| 下载队列 / CUE 组下载 / ingest | `download_queue_service.dart`, `library_service.dart` |
+| 视频播放器 UI（居中控件 / 动画 / 长按加速 / 倍速滑块） | `video_player_screen.dart`, `video_playback_service.dart`, `models/video_settings.dart` |
+| 视频媒体通知 / 音乐-视频互斥 | `music_audio_handler.dart`（`AudioHandlerMode.video`）, `audio_player_service.dart` |
+| 下载队列 / CUE 组下载 / ingest / 视频→相册 | `download_queue_service.dart`, `library_service.dart`, `models/download_task.dart` |
+| 系统相册 / 下载目录 / SAF 导入 / PiP 回调（原生） | `android/.../MainActivity.kt`, `services/platform_export_service.dart`, `utils/video_pip.dart` |
 | music_id / 路径规范化 | `utils/track_identity.dart` |
 | DB schema（accounts/tracks/cue_*/cache） | `library_database.dart`（当前 **schemaVersion = 5**） |
-| 网络库 UI / 预览 CUE | `network_library_screen.dart` |
-| 音乐库 UI / 销毁 / 多选分享 | `library_screen.dart`, `library_actions.dart` |
+| 网络库 UI / 预览 CUE / 多选下载 | `network_library_screen.dart` |
+| 音乐库 UI / 销毁 / 多选删除与销毁 | `library_screen.dart`, `library_actions.dart` |
 | 缓存路径 / 过期清理 / annex | `cache_service.dart` |
+| 同步（凭证 + 曲库 + 歌单 + 备份） | `sync_service.dart`, `credential_vault_service.dart`, `screens/sync_screen.dart` |
+| 凭证加密（仅密码） | `utils/credential_vault_crypto.dart` |
 | 备份 ZIP / WMPB1 | `backup_service.dart`, `backup_crypto.dart` |
-| 设置（缓存策略、封面边长） | `settings_service.dart`, `settings_screen.dart` |
+| 分享重命名 | `share_rename_service.dart`, `library_actions.dart` |
+| 设置（缓存策略、封面边长、视频倍速、分享模板） | `settings_service.dart`, `settings_screen.dart`, `video_settings_screen.dart` |
 | 通知权限 / 「音乐播放」通道 | `notification_permission_service.dart`, `media_notification_channel.dart` |
 | 根返回键后台 / 抽屉退出 | `home_shell.dart`, `android_background.dart`, `MainActivity.kt` |
 
@@ -273,16 +279,40 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 
 ---
 
-## 10. 备份格式
+## 10. 备份 / 同步格式
+
+### 统一「同步」（现行）
+
+入口：设置 →「同步」（`screens/sync_screen.dart`），聚合服务 `services/sync_service.dart`。
+合并了旧的「歌单同步 / 歌曲库同步 / WebDAV 备份」三个入口。
+
+云端根目录 `SettingsService.syncRemoteRoot`（默认 `/WebDAVMusicPlayer/`）：
+
+| 文件 | 内容 | 加密 |
+|------|------|------|
+| `credentials.json` | WebDAV 账号（**地址/用户名明文** + 密码） | **仅密码**（`AESGCMv1:`，PBKDF2-SHA256 120k + AES-256-GCM） |
+| `<libraryRoot>/<accountId>/library_index.json` + `covers/` | 曲库索引与封面缩略图 | 无 |
+| `/Playlists/*.m3u8` | 歌单 | 无 |
+| `backup/<站点>/backup-<UTC>.wmpbak` + latest | 站点完整备份 | 可选口令（`WMPB1`） |
+
+- `passwordEncrypted: true` 表示密码是 `AESGCMv1:` 密文；`tryDecrypt` 失败时**账号照常恢复、密码留空**（`AccountsService` 返回 missing 列表供 UI 提示），**绝不**因缺密钥中止整次同步。
+- 「导出到下载目录」→ `Download/WebDAVMusic/wmp-sync-<UTC>.zip`（`PlatformExportService.saveToDownloads`）。
+- 「从本地文件导入」→ 原生 SAF `ACTION_OPEN_DOCUMENT` 拷贝到应用缓存后读取（`pickFile`），也支持粘贴 Base64。
+
+### 站点备份（`BackupService`，被同步复用）
 
 - **默认范围**：按 WebDAV **站点**（`accountId` + base URL），不是整机糊成一团。
 - 远程路径：`/WebDAVMusicPlayer/backup/<accountDir>/backup-<UTC>.wmpbak`，同目录 `webdav_music_backup.wmpbak`（latest）。
 - `BackupService.formatVersion = 3`：统一包内含该站凭证、`library_json`（tracks + cue_albums + cue_slices）、相关歌单、covers、settings。
 - **不含**：`music_cache` 音频、下载队列。
-- 加密：可选口令，魔数 **`WMPB1`** + PBKDF2 + AES-256-GCM（`backup_crypto.dart`）。
+- 加密：可选口令，魔数 **`WMPB1`** + PBKDF2 + AES-256-GCM（`backup_crypto.dart`）；包内 `accounts.json` 的密码另行按 `credentials.json` 规则加密。
 - **恢复策略**：`cachePolicy: restore_uncached_unless_files_on_disk`——恢复后 cache annex 视为未缓存，**除非**文件已真实在磁盘；避免「库以为有文件但播不了」。
 - 可选「全部账号」`full-backup-….wmpbak`（非默认）。
 - 恢复按站点写回，校验 accountId/URL，禁止把站点 A 凭证合并进站点 B。
+
+### 视频下载目标（非备份）
+
+视频下载不进备份，也不进音频缓存：`DownloadTask.target = DownloadTarget.gallery` → `DownloadQueueService._runGalleryDownload` → 原生 `saveToGallery`（MediaStore `Movies/WebDAVMusic`）。因此画廊任务的 `localPath` 存的是 `content://` URI 或 API<29 的绝对路径。
 
 ---
 

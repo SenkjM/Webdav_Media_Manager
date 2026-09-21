@@ -10,6 +10,7 @@ import '../services/audio_player_service.dart';
 import '../services/backup_service.dart';
 import '../services/library_sync_service.dart';
 import '../services/cache_service.dart';
+import '../services/credential_vault_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
@@ -17,6 +18,7 @@ import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
 import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
+import '../services/sync_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/webdav_service.dart';
 
@@ -48,6 +50,21 @@ class AppState extends ChangeNotifier {
       playlists: playlists,
       webDav: webDav,
     );
+    credentials = CredentialVaultService(
+      accounts: accounts,
+      settings: settings,
+      webDav: webDav,
+    );
+    sync = SyncService(
+      accounts: accounts,
+      settings: settings,
+      webDav: webDav,
+      vault: credentials,
+      librarySync: librarySync,
+      library: library,
+      playlists: playlists,
+      backup: backup,
+    );
     downloads = DownloadQueueService(
       webDav: webDav,
       cache: cache,
@@ -58,7 +75,7 @@ class AppState extends ChangeNotifier {
       handler: audioHandler,
       notificationPermission: notificationPermission,
     );
-    videoPlayback = VideoPlaybackService();
+    videoPlayback = VideoPlaybackService(handler: audioHandler);
   }
 
   late final SettingsService settings;
@@ -70,6 +87,8 @@ class AppState extends ChangeNotifier {
   late final PlaylistService playlists;
   late final BackupService backup;
   late final LibrarySyncService librarySync;
+  late final CredentialVaultService credentials;
+  late final SyncService sync;
   late final DownloadQueueService downloads;
   late final NotificationPermissionService notificationPermission;
   late final AudioPlayerService player;
@@ -244,6 +263,8 @@ class AppState extends ChangeNotifier {
     playlists.dispose();
     backup.dispose();
     librarySync.dispose();
+    credentials.dispose();
+    sync.dispose();
     settings.dispose();
     notificationPermission.dispose();
     super.dispose();

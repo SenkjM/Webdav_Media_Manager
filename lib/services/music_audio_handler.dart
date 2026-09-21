@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 
 import '../models/webdav_item.dart';
+import '../models/webdav_stream.dart';
 import 'media_notification_channel.dart';
 
 // The「音乐播放」channel definition lives in media_notification_channel.dart and
@@ -78,33 +79,60 @@ const MediaControl _kSkipNextControl = MediaControl(
   action: MediaAction.skipToNext,
 );
 
-/// audio_service handler owning one media_kit [Player]. Pipes its playback
+/// Which media the shared handler currently drives.
+enum AudioHandlerMode {
+  /// Local-cache music queue (default).
+  music,
+
+  /// Single streamed WebDAV video. Same MediaSession/notification, but only
+  /// play/pause + seek controls and no queue.
+  video,
+}
+
+/// audio_service handler owning the media_kit [Player]s. Pipes their playback
 /// events into [playbackState] / [mediaItem] / [queue] so Android keeps an
 /// active MediaSession + MediaStyle notification (system media center).
+///
+/// It drives **two** players: the music player (queue playback of cached
+/// local files) and the video player (one streamed WebDAV URL). Only one is
+/// active at a time — [mode] selects which; both publish through the same
+/// notification so video playback also gets media controls.
 ///
 /// CUE-sheet virtual tracks (clipStart/clipEnd) have no native clipping
 /// source in media_kit, so this handler remaps raw player position/duration
 /// to be clip-relative itself (seek offsets by clipStart, auto-advances at
 /// clipEnd) to match the previous just_audio ClippingAudioSource behavior.
 class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
-  MusicAudioHandler({Player? player}) : _player = player ?? Player() {
-    _playingSub = _player.stream.playing.listen((_) => _broadcastState());
-    _bufferingSub = _player.stream.buffering.listen((_) => _broadcastState());
+  MusicAudioHandler({Player? player, Player? videoPlayer})
+      : _player = player ?? Player(),
+        _videoPlayer = videoPlayer {
+    _playingSub = _player.stream.playing.listen((_) {
+      if (mode == AudioHandlerMode.music) _broadcastState();
+    });
+    _bufferingSub = _player.stream.buffering.listen((_) {
+      if (mode == AudioHandlerMode.music) _broadcastState();
+    });
     _positionSub = _player.stream.position.listen(_onPosition);
     _durationSub = _player.stream.duration.listen((raw) {
+      if (mode != AudioHandlerMode.music) return;
       final dur = _clipDuration(raw);
       _durationController.add(dur);
       final current = mediaItem.valueOrNull;
       if (current != null) mediaItem.add(current.copyWith(duration: dur));
     });
     _completedSub = _player.stream.completed.listen((completed) {
-      if (completed && _index >= 0 && !_gateEvents) {
+      if (completed &&
+          mode == AudioHandlerMode.music &&
+          _index >= 0 &&
+          !_gateEvents) {
         unawaited(skipToNext());
       }
     });
     _errorSub = _player.stream.error.listen((e) {
       _notifLog('media_kit error: $e');
     });
+    // A pre-built video player (tests) still needs its stream plumbing.
+    if (_videoPlayer != null) _bindVideoStreams(_videoPlayer!);
     // audio_service swallows setState/setMediaItem/setQueue platform-channel
     // failures (e.g. NO_SERVICE when the native AudioService binder is null)
     // into this stream instead of throwing — without listening, a broken
@@ -118,8 +146,60 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   final Player _player;
+
+  /// Created lazily on the first video stream so audio-only usage (and tests)
+  /// never pay for a second libmpv instance.
+  Player? _videoPlayer;
+
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<bool>? _bufferingSub;
+  StreamSubscription<bool>? _videoPlayingSub;
+  StreamSubscription<bool>? _videoBufferingSub;
+  StreamSubscription<Duration>? _videoPositionSub;
+  StreamSubscription<Duration?>? _videoDurationSub;
+  StreamSubscription<double>? _videoRateSub;
+  StreamSubscription<String>? _videoErrorSub;
+
+  AudioHandlerMode _mode = AudioHandlerMode.music;
+
+  /// Which player the transport controls currently address.
+  AudioHandlerMode get mode => _mode;
+  bool get isVideoMode => _mode == AudioHandlerMode.video;
+
+  /// The video player, creating it on first use.
+  ///
+  /// Owned by this handler (and therefore by `audio_service` on mobile) — the
+  /// video screen only ever borrows it for a `VideoController`.
+  Player get videoPlayer => _videoPlayer ??= _createVideoPlayer();
+  Player _createVideoPlayer() {
+    final p = Player();
+    _bindVideoStreams(p);
+    return p;
+  }
+
+  void _bindVideoStreams(Player p) {
+    _videoPlayingSub = p.stream.playing.listen((_) {
+      if (mode == AudioHandlerMode.video) _broadcastState();
+    });
+    _videoBufferingSub = p.stream.buffering.listen((_) {
+      if (mode == AudioHandlerMode.video) _broadcastState();
+    });
+    _videoPositionSub = p.stream.position.listen(_onVideoPosition);
+    _videoDurationSub = p.stream.duration.listen((raw) {
+      if (mode != AudioHandlerMode.video) return;
+      final dur = raw == Duration.zero ? null : raw;
+      _durationController.add(dur);
+      final current = mediaItem.valueOrNull;
+      if (current != null) mediaItem.add(current.copyWith(duration: dur));
+    });
+    _videoRateSub = p.stream.rate.listen((_) {
+      if (mode == AudioHandlerMode.video) _broadcastState();
+    });
+    _videoErrorSub = p.stream.error.listen((e) {
+      _notifLog('video media_kit error: $e');
+    });
+  }
+
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration>? _durationSub;
   StreamSubscription<bool>? _completedSub;
@@ -150,12 +230,18 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   int get index => _index;
   TrackInfo? get currentTrack =>
       (_index >= 0 && _index < _tracks.length) ? _tracks[_index] : null;
-  Player get player => _player;
 
-  bool get playing => _player.state.playing;
+  /// Active player: video while streaming, otherwise the music queue player.
+  Player get player => _mode == AudioHandlerMode.video
+      ? (_videoPlayer ?? _player)
+      : _player;
 
-  /// Clip-relative position (0-based within clipStart..clipEnd).
-  Duration get position => _clipRelative(_player.state.position);
+  bool get playing => player.state.playing;
+
+  /// Clip-relative position (0-based within clipStart..clipEnd); raw for video.
+  Duration get position => _mode == AudioHandlerMode.video
+      ? (_videoPlayer?.state.position ?? Duration.zero)
+      : _clipRelative(_player.state.position);
   Stream<Duration> get positionStream => _positionController.stream;
   Stream<Duration?> get durationStream => _durationController.stream;
 
@@ -176,7 +262,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   void _onPosition(Duration raw) {
-    if (_gateEvents) return;
+    if (_gateEvents || _mode != AudioHandlerMode.music) return;
     final rel = _clipRelative(raw);
     _positionController.add(rel);
     playbackState.add(playbackState.value.copyWith(updatePosition: rel));
@@ -184,6 +270,12 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (end != null && raw >= end && _index >= 0) {
       unawaited(skipToNext());
     }
+  }
+
+  void _onVideoPosition(Duration raw) {
+    if (_mode != AudioHandlerMode.video) return;
+    _positionController.add(raw);
+    playbackState.add(playbackState.value.copyWith(updatePosition: raw));
   }
 
   AudioSession? _audioSession;
@@ -208,7 +300,11 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// media_kit/libmpv has no automatic OS audio-focus handling like
   /// ExoPlayer, so interruptions (calls, other apps' media) must be applied
   /// manually via audio_session's recipe.
+  ///
+  /// Ignored while a video is streaming: the same session is active but the
+  /// video must never be paused/ducked by the music-side recipe.
   void _onInterruption(AudioInterruptionEvent event) {
+    if (_mode == AudioHandlerMode.video) return;
     if (event.begin) {
       switch (event.type) {
         case AudioInterruptionType.duck:
@@ -289,6 +385,12 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (playlist.isEmpty) return;
     final idx = startIndex.clamp(0, playlist.length - 1);
     _gateEvents = true;
+    // Music and video share one MediaSession: taking the queue back over ends
+    // any video session first (the video player object itself is untouched).
+    if (_mode == AudioHandlerMode.video) {
+      _mode = AudioHandlerMode.music;
+      _videoSource = null;
+    }
     _tracks
       ..clear()
       ..addAll(playlist);
@@ -341,7 +443,27 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     ];
   }
 
+  /// Video has no queue: play/pause + stop only, and no seek system actions.
+  List<MediaControl> _videoControls({required bool playing}) {
+    return [
+      if (playing) _kPauseControl else _kPlayControl,
+      _kStopControl,
+    ];
+  }
+
+  static const Set<MediaAction> _kVideoSystemActions = {
+    MediaAction.play,
+    MediaAction.pause,
+    MediaAction.playPause,
+    MediaAction.stop,
+    MediaAction.seek,
+  };
+
   void _broadcastState() {
+    if (_mode == AudioHandlerMode.video) {
+      _broadcastVideoState();
+      return;
+    }
     if (_gateEvents) return;
     final playingNow = _player.state.playing;
     final AudioProcessingState proc;
@@ -368,10 +490,164 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     _notifLog('playbackState playing=$playingNow proc=$proc idx=$_index');
   }
 
+  void _broadcastVideoState() {
+    final vp = _videoPlayer;
+    if (_videoSource == null || vp == null) return;
+    final playingNow = vp.state.playing;
+    final AudioProcessingState proc;
+    if (vp.state.completed) {
+      proc = AudioProcessingState.completed;
+    } else if (vp.state.buffering) {
+      proc = AudioProcessingState.buffering;
+    } else {
+      proc = AudioProcessingState.ready;
+    }
+    playbackState.add(playbackState.value.copyWith(
+      controls: _videoControls(playing: playingNow),
+      systemActions: _kVideoSystemActions,
+      androidCompactActionIndices: const [0, 1],
+      processingState: proc,
+      playing: playingNow,
+      updatePosition: vp.state.position,
+      bufferedPosition: vp.state.buffer,
+      speed: vp.state.rate,
+      queueIndex: null,
+    ));
+    _notifLog('video playbackState playing=$playingNow proc=$proc');
+  }
+
+  // --- Video mode -------------------------------------------------------
+
+  WebDavStreamSource? _videoSource;
+
+  /// Currently streamed video (null outside video mode).
+  WebDavStreamSource? get videoSource => _videoSource;
+
+  /// Take over the MediaSession / notification for a single streamed video.
+  ///
+  /// Publishes the video as the current [mediaItem] with a play/pause-only
+  /// control set. The paused music queue (`_tracks` / `_index`) is **kept**, so
+  /// leaving the video restores the music session exactly where it was paused.
+  /// Must be paired with [exitVideoMode].
+  Future<void> enterVideoMode(
+    WebDavStreamSource source, {
+    Media? media,
+  }) async {
+    _gateEvents = true;
+    try {
+      _mode = AudioHandlerMode.video;
+      _videoSource = source;
+      await _ensureAudioSessionConfigured();
+
+      final item = MediaItem(
+        id: 'video|${source.accountId}|${source.remotePath}',
+        title: source.name,
+        album: '视频',
+        artist: 'WebDAV 流媒体',
+        extras: {
+          'kind': 'video',
+          'accountId': source.accountId,
+          'remotePath': source.remotePath,
+        },
+      );
+      mediaItem.add(item);
+      // A queue-less session keeps the notification but hides skip controls.
+      queue.add(const []);
+
+      playbackState.add(playbackState.value.copyWith(
+        controls: _videoControls(playing: false),
+        systemActions: _kVideoSystemActions,
+        androidCompactActionIndices: const [0, 1],
+        processingState: AudioProcessingState.buffering,
+        playing: false,
+        updatePosition: Duration.zero,
+        bufferedPosition: Duration.zero,
+        queueIndex: null,
+      ));
+      if (media != null) {
+        await videoPlayer.open(media, play: false);
+        final dur = videoPlayer.state.duration;
+        mediaItem.add(
+          item.copyWith(duration: dur == Duration.zero ? null : dur),
+        );
+      }
+    } finally {
+      _gateEvents = false;
+      _broadcastVideoState();
+    }
+  }
+
+  /// Leave video mode.
+  ///
+  /// Restores the music session: if a music queue was paused when the video
+  /// started, its MediaItem / queue / paused state come back so the user can
+  /// hit play in the notification and continue. Otherwise the session goes idle
+  /// and the foreground notification for the video is torn down.
+  Future<void> exitVideoMode() async {
+    if (_mode != AudioHandlerMode.video && _videoSource == null) return;
+    _gateEvents = true;
+    try {
+      try {
+        await _videoPlayer?.stop();
+      } catch (_) {}
+      _mode = AudioHandlerMode.music;
+      _videoSource = null;
+
+      final track = currentTrack;
+      if (track != null) {
+        final items = _tracks.map(mediaItemFor).toList();
+        queue.add(items);
+        mediaItem.add(items[_index]);
+        _durationController.add(_clipDuration(_player.state.duration));
+        playbackState.add(playbackState.value.copyWith(
+          controls: _controls(playing: false),
+          systemActions: _kSystemActions,
+          androidCompactActionIndices: const [0, 1, 3],
+          processingState: AudioProcessingState.ready,
+          playing: false,
+          updatePosition: position,
+          bufferedPosition: _clipRelative(_player.state.buffer),
+          speed: _player.state.rate,
+          queueIndex: _index,
+        ));
+      } else {
+        mediaItem.add(null);
+        queue.add(const []);
+        _durationController.add(null);
+        playbackState.add(playbackState.value.copyWith(
+          controls: _controls(playing: false),
+          systemActions: _kSystemActions,
+          androidCompactActionIndices: const [0, 1, 3],
+          processingState: AudioProcessingState.idle,
+          playing: false,
+          updatePosition: Duration.zero,
+          queueIndex: null,
+        ));
+      }
+    } finally {
+      _gateEvents = false;
+    }
+    _notifLog('exitVideoMode (musicRestored=${currentTrack != null})');
+  }
+
+  /// Stop any in-flight music session without touching the video player.
+  /// Used to enforce "video playback pauses music".
+  Future<void> pauseMusicForVideo() async {
+    try {
+      if (_player.state.playing) await _player.pause();
+    } catch (_) {}
+  }
+
   Future<void> _loadIndex(int idx) async {
     if (idx < 0 || idx >= _tracks.length) return;
     _gateEvents = true;
     _index = idx;
+    // Music and video share the session: taking the queue back over ends the
+    // video session bookkeeping (the video player object is left to its owner).
+    if (_mode == AudioHandlerMode.video) {
+      _mode = AudioHandlerMode.music;
+      _videoSource = null;
+    }
     final track = _tracks[_index];
     String? local = track.localPath;
     if (local == null || !File(local).existsSync()) {
@@ -410,6 +686,22 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> play() async {
+    if (_mode == AudioHandlerMode.video) {
+      playbackState.add(playbackState.value.copyWith(
+        playing: true,
+        controls: _videoControls(playing: true),
+        systemActions: _kVideoSystemActions,
+        androidCompactActionIndices: const [0, 1],
+        processingState: playbackState.value.processingState ==
+                AudioProcessingState.idle
+            ? AudioProcessingState.buffering
+            : playbackState.value.processingState,
+        updatePosition: videoPlayer.state.position,
+      ));
+      unawaited(_audioSession?.setActive(true));
+      await videoPlayer.play();
+      return;
+    }
     playbackState.add(playbackState.value.copyWith(
       playing: true,
       processingState: playbackState.value.processingState == AudioProcessingState.idle
@@ -428,6 +720,17 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> pause() async {
+    if (_mode == AudioHandlerMode.video) {
+      playbackState.add(playbackState.value.copyWith(
+        playing: false,
+        controls: _videoControls(playing: false),
+        systemActions: _kVideoSystemActions,
+        androidCompactActionIndices: const [0, 1],
+        updatePosition: videoPlayer.state.position,
+      ));
+      await videoPlayer.pause();
+      return;
+    }
     playbackState.add(playbackState.value.copyWith(
       playing: false,
       controls: _controls(playing: false),
@@ -440,6 +743,12 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> stop() async {
+    // Video owns its own teardown (VideoPlaybackService calls exitVideoMode),
+    // so a stop while streaming must not touch the music queue.
+    if (_mode == AudioHandlerMode.video) {
+      await exitVideoMode();
+      return;
+    }
     // Stay gated through the native reset so its own stream events (which
     // fire synchronously against the stale, about-to-be-cleared queue/index)
     // don't race our explicit idle broadcast below. The next loadAndPlay/
@@ -470,10 +779,16 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> onTaskRemoved() async {}
 
   @override
-  Future<void> seek(Duration position) => _player.seek(_clipStartOf + position);
+  Future<void> seek(Duration position) {
+    if (_mode == AudioHandlerMode.video) {
+      return videoPlayer.seek(position);
+    }
+    return _player.seek(_clipStartOf + position);
+  }
 
   @override
   Future<void> skipToNext() async {
+    if (_mode == AudioHandlerMode.video) return;
     if (_index + 1 >= _tracks.length) {
       // Keep session metadata; just pause at end rather than idle/NONE.
       await pause();
@@ -485,6 +800,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   @override
   Future<void> skipToPrevious() async {
+    if (_mode == AudioHandlerMode.video) return;
     if (position > const Duration(seconds: 3)) {
       await seek(Duration.zero);
       return;
@@ -497,7 +813,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   @override
-  Future<void> skipToQueueItem(int index) => _loadIndex(index);
+  Future<void> skipToQueueItem(int index) {
+    if (_mode == AudioHandlerMode.video) return Future<void>.value();
+    return _loadIndex(index);
+  }
 
   /// Native probe: session / posted notification / channel importance.
   Future<String> probeMediaNotificationNative() async {
@@ -598,12 +917,20 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     await _durationSub?.cancel();
     await _completedSub?.cancel();
     await _errorSub?.cancel();
+    await _videoPlayingSub?.cancel();
+    await _videoBufferingSub?.cancel();
+    await _videoPositionSub?.cancel();
+    await _videoDurationSub?.cancel();
+    await _videoRateSub?.cancel();
+    await _videoErrorSub?.cancel();
     await _asyncErrorSub?.cancel();
     await _interruptionSub?.cancel();
     await _becomingNoisySub?.cancel();
     await _positionController.close();
     await _durationController.close();
     await _player.dispose();
+    await _videoPlayer?.dispose();
+    _videoPlayer = null;
   }
 }
 

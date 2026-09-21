@@ -396,22 +396,29 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
     }
     return Column(
       children: [
-        if (_selecting) _SelectionBar(
-          count: _selected.length,
-          onCancel: _exitSelect,
-          onAdd: () async {
-            await addTracksToPlaylist(context, _selectedTracks);
-            if (mounted) _exitSelect();
-          },
-          onShare: () async {
-            await shareLibraryTracks(context, _selectedTracks);
-            if (mounted) _exitSelect();
-          },
-          onDelete: () async {
-            await deleteTracksLocalCache(context, _selectedTracks);
-            if (mounted) _exitSelect();
-          },
-        ),
+        if (_selecting)
+          _SelectionBar(
+            count: _selected.length,
+            hasCachedSelection:
+                _selectedTracks.any((t) => libraryTrackIsLocal(context.read<CacheService>(), t)),
+            onCancel: _exitSelect,
+            onAdd: () async {
+              await addTracksToPlaylist(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+            onShare: () async {
+              await shareLibraryTracks(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+            onDelete: () async {
+              await deleteTracksLocalCache(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+            onDestroy: () async {
+              await destroyLibraryTracks(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+          ),
         Expanded(
           child: GridView.builder(
             padding: const EdgeInsets.all(12),
@@ -471,20 +478,29 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
   }
 }
 
+/// Action bar shown in multi-select mode.
+///
+/// The 删除 button only appears when at least one selected track has a local
+/// audio cache (there is nothing to delete otherwise); 销毁 is always available
+/// and additionally removes library metadata + cached covers.
 class _SelectionBar extends StatelessWidget {
   const _SelectionBar({
     required this.count,
+    required this.hasCachedSelection,
     required this.onCancel,
     required this.onAdd,
     required this.onShare,
     required this.onDelete,
+    required this.onDestroy,
   });
 
   final int count;
+  final bool hasCachedSelection;
   final VoidCallback onCancel;
   final VoidCallback onAdd;
   final VoidCallback onShare;
   final VoidCallback onDelete;
+  final VoidCallback onDestroy;
 
   @override
   Widget build(BuildContext context) {
@@ -505,6 +521,8 @@ class _SelectionBar extends StatelessWidget {
                 child: Text(
                   '已选 $count 项',
                   style: const TextStyle(fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               IconButton(
@@ -517,10 +535,23 @@ class _SelectionBar extends StatelessWidget {
                 onPressed: count == 0 ? null : onShare,
                 icon: const Icon(Icons.share_outlined),
               ),
+              // No cached file in the selection → nothing to delete.
+              if (hasCachedSelection)
+                IconButton(
+                  tooltip: '删除缓存（保留元数据与封面）',
+                  onPressed: count == 0 ? null : onDelete,
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.error,
+                  ),
+                ),
               IconButton(
-                tooltip: '删除',
-                onPressed: count == 0 ? null : onDelete,
-                icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                tooltip: '销毁（缓存 + 元数据 + 封面）',
+                onPressed: count == 0 ? null : onDestroy,
+                icon: const Icon(
+                  Icons.delete_forever,
+                  color: AppColors.error,
+                ),
               ),
             ],
           ),
@@ -695,6 +726,8 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
         if (_selecting)
           _SelectionBar(
             count: _selected.length,
+            hasCachedSelection: _selectedTracks
+                .any((t) => libraryTrackIsLocal(context.read<CacheService>(), t)),
             onCancel: _exitSelect,
             onAdd: () async {
               await addTracksToPlaylist(context, _selectedTracks);
@@ -706,6 +739,10 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
             },
             onDelete: () async {
               await deleteTracksLocalCache(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+            onDestroy: () async {
+              await destroyLibraryTracks(context, _selectedTracks);
               if (mounted) _exitSelect();
             },
           ),

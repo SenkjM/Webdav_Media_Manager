@@ -135,6 +135,63 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             value: settings.videoLongPress,
             onChanged: (v) => settings.setVideoLongPress(v),
           ),
+          if (settings.videoLongPress == VideoGestureAction.toggleRate2x) ...[
+            const SizedBox(height: 4),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.speed),
+              title: const Text('长按临时倍速'),
+              subtitle: Text(
+                '按住画面时临时加速到 ${settings.videoLongPressRate.toStringAsFixed(2)}×，'
+                '松手恢复用户选择的倍速',
+              ),
+            ),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final preset in SettingsService.videoLongPressRatePresets)
+                  ChoiceChip(
+                    label: Text('${preset.toStringAsFixed(2)}×'),
+                    selected:
+                        (settings.videoLongPressRate - preset).abs() < 0.001,
+                    onSelected: (_) => settings.setVideoLongPressRate(preset),
+                  ),
+              ],
+            ),
+            Slider(
+              value: settings.videoLongPressRate.clamp(
+                SettingsService.minVideoRate,
+                SettingsService.maxVideoRate,
+              ),
+              min: SettingsService.minVideoRate,
+              max: SettingsService.maxVideoRate,
+              divisions: SettingsService.videoRateDivisions,
+              label: '${settings.videoLongPressRate.toStringAsFixed(2)}×',
+              onChanged: (v) => settings.setVideoLongPressRate(v),
+            ),
+          ],
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.slow_motion_video),
+            title: const Text('默认播放倍速'),
+            subtitle: Text(
+              '当前 ${settings.videoLastRate.toStringAsFixed(2)}×'
+              '（播放页浮窗滑块范围 '
+              '${SettingsService.minVideoRate.toStringAsFixed(1)}×–'
+              '${SettingsService.maxVideoRate.toStringAsFixed(1)}×）',
+            ),
+          ),
+          Slider(
+            value: settings.videoLastRate.clamp(
+              SettingsService.minVideoRate,
+              SettingsService.maxVideoRate,
+            ),
+            min: SettingsService.minVideoRate,
+            max: SettingsService.maxVideoRate,
+            divisions: SettingsService.videoRateDivisions,
+            label: '${settings.videoLastRate.toStringAsFixed(2)}×',
+            onChanged: (v) => settings.setVideoLastRate(v),
+          ),
           const Divider(height: 40),
           Text(
             '播放行为',

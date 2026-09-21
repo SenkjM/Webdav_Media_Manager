@@ -143,6 +143,11 @@ class AudioPlayerService extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
+      // Video and music never play together: taking back the media session for
+      // music ends any active video stream first.
+      if (_handler.isVideoMode) {
+        await _handler.exitVideoMode();
+      }
       final track = playlist[index];
       final local = await _resolveLocalPath(track);
       if (local == null) {
@@ -185,6 +190,16 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   Future<void> pause() => _handler.pause();
+
+  /// Pause music because video playback is taking over the media session.
+  ///
+  /// Unlike [stop] this keeps the music queue, so the user can resume the same
+  /// track after leaving the video player. No-op when nothing is playing.
+  Future<void> pauseForVideo() async {
+    if (!_handler.playing) return;
+    await _handler.pause();
+    notifyListeners();
+  }
 
   Future<void> seek(Duration position) => _handler.seek(position);
 

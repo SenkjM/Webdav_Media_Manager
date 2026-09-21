@@ -3,14 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../models/cache_policy.dart';
 import '../providers/app_state.dart';
-import '../services/backup_service.dart';
-import '../services/library_sync_service.dart';
-import '../services/accounts_service.dart';
-import '../models/webdav_account.dart';
-import '../widgets/marquee_text.dart';
 import '../services/library_service.dart';
 import '../services/notification_permission_service.dart';
-import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
 import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
@@ -18,6 +12,7 @@ import '../utils/cover_image.dart';
 import '../utils/audio_extensions.dart';
 import 'file_extensions_screen.dart';
 import 'home_shell.dart';
+import 'sync_screen.dart';
 import 'video_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -175,288 +170,6 @@ class _SettingsScreenState extends State<SettingsScreen>
 
 
 
-  Future<String?> _askPassphrase(
-    BuildContext context, {
-    required String title,
-    required String confirmLabel,
-    bool requireNonEmpty = false,
-  }) async {
-    final c = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: c,
-          obscureText: true,
-          decoration: const InputDecoration(
-            labelText: '加密口令（可留空则不加密，含明文密码）',
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-          FilledButton(
-            onPressed: () {
-              final v = c.text;
-              if (requireNonEmpty && v.isEmpty) return;
-              Navigator.pop(ctx, v);
-            },
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
-    );
-  }
-
-    Future<void> _runBackup(BuildContext context, {bool fullMultiAccount = false}) async {
-    final accounts = context.read<AccountsService>();
-    WebDavAccount? selected = accounts.activeAccount;
-    if (!fullMultiAccount) {
-      if (accounts.accounts.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先添加 WebDAV 账号')),
-        );
-        return;
-      }
-      selected = await showDialog<WebDavAccount>(
-        context: context,
-        builder: (ctx) {
-          WebDavAccount? current = accounts.activeAccount ?? accounts.accounts.first;
-          return StatefulBuilder(
-            builder: (ctx, setLocal) => AlertDialog(
-              title: const Text('选择要备份的 WebDAV 站点'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    '默认按站点分别备份（账号凭证 + 该站曲库 + 相关歌单）。'
-                    '备份目录：/WebDAVMusicPlayer/backup/<站点>/',
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: current?.id,
-                    items: [
-                      for (final a in accounts.accounts)
-                        DropdownMenuItem(
-                          value: a.id,
-                          child: SizedBox(
-                            width: 240,
-                            child: MarqueeText(webDavAccountLabel(a)),
-                          ),
-                        ),
-                    ],
-                    onChanged: (id) {
-                      setLocal(() {
-                        current = accounts.accounts.firstWhere((a) => a.id == id);
-                      });
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, current),
-                  child: const Text('下一步'),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-      if (selected == null || !context.mounted) return;
-    }
-
-    final pass = await _askPassphrase(
-      context,
-      title: fullMultiAccount ? '全部账号备份口令' : '站点备份加密口令',
-      confirmLabel: '开始备份',
-    );
-    if (pass == null || !context.mounted) return;
-    final backup = context.read<BackupService>();
-    try {
-      await backup.uploadBackup(
-        passphrase: pass,
-        account: selected,
-        fullMultiAccount: fullMultiAccount,
-      );
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(backup.lastMessage ?? '备份完成')),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('备份失败：$e')),
-      );
-    }
-  }
-
-    Future<void> _runRestore(BuildContext context) async {
-    final accounts = context.read<AccountsService>();
-    final selected = await showDialog<WebDavAccount?>(
-      context: context,
-      builder: (ctx) {
-        WebDavAccount? current = accounts.activeAccount ??
-            (accounts.accounts.isEmpty ? null : accounts.accounts.first);
-        return StatefulBuilder(
-          builder: (ctx, setLocal) => AlertDialog(
-            title: const Text('选择恢复来源站点'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '将从该站点的 per-account 备份目录下载 latest 并恢复到对应账号'
-                  '（不会把站点 A 的凭证写入站点 B）。'
-                  '若备份是旧版「全部账号」格式，恢复时会覆盖全部本地挂载。',
-                ),
-                const SizedBox(height: 12),
-                if (accounts.accounts.isNotEmpty)
-                  DropdownButtonFormField<String>(
-                    initialValue: current?.id,
-                    items: [
-                      for (final a in accounts.accounts)
-                        DropdownMenuItem(
-                          value: a.id,
-                          child: SizedBox(
-                            width: 240,
-                            child: MarqueeText(webDavAccountLabel(a)),
-                          ),
-                        ),
-                    ],
-                    onChanged: (id) {
-                      setLocal(() {
-                        current = accounts.accounts.firstWhere((a) => a.id == id);
-                      });
-                    },
-                  ),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, current),
-                child: const Text('继续'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (selected == null && accounts.accounts.isNotEmpty) return;
-    if (!context.mounted) return;
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('确认恢复'),
-        content: Text(
-          selected == null
-              ? '将从 WebDAV 下载备份。按站点备份仅恢复对应账号；全部账号备份会覆盖本机音乐库、歌单、设置与全部 WebDAV 账号。此操作不可撤销。'
-              : '将从站点「${selected.name}」下载备份并恢复该站点的凭证、曲库与相关歌单。其他 WebDAV 站点不受影响（除非是旧版全量备份）。确定继续？',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('恢复')),
-        ],
-      ),
-    );
-    if (ok != true || !context.mounted) return;
-    final pass = await _askPassphrase(
-      context,
-      title: '备份解密口令',
-      confirmLabel: '开始恢复',
-    );
-    if (pass == null || !context.mounted) return;
-    final backup = context.read<BackupService>();
-    final app = context.read<AppState>();
-    try {
-      await backup.restoreFromWebDav(passphrase: pass, account: selected);
-      await app.library.refresh();
-      await app.playlists.refresh();
-      await app.connectActiveAccount();
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(backup.lastMessage ?? '恢复完成')),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('恢复失败：$e')),
-      );
-    }
-  }
-
-  Future<void> _runLibrarySync(BuildContext context) async {
-    final accounts = context.read<AccountsService>();
-    if (accounts.accounts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先添加并连接 WebDAV 账号')),
-      );
-      return;
-    }
-    final selected = await showDialog<WebDavAccount>(
-      context: context,
-      builder: (ctx) {
-        WebDavAccount? current = accounts.activeAccount ?? accounts.accounts.first;
-        return StatefulBuilder(
-          builder: (ctx, setLocal) => AlertDialog(
-            title: const Text('同步歌曲库'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '双向同步所选站点的歌曲索引（JSON）、封面缩略图与歌单 M3U8。'
-                  '不会上传音频缓存文件。身份键：accountId + remotePath。',
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: current?.id,
-                  items: [
-                    for (final a in accounts.accounts)
-                      DropdownMenuItem(
-                        value: a.id,
-                        child: SizedBox(
-                            width: 240,
-                            child: MarqueeText(webDavAccountLabel(a)),
-                          ),
-                      ),
-                  ],
-                  onChanged: (id) {
-                    setLocal(() {
-                      current = accounts.accounts.firstWhere((a) => a.id == id);
-                    });
-                  },
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, current),
-                child: const Text('开始同步'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (selected == null || !context.mounted) return;
-    final sync = context.read<LibrarySyncService>();
-    try {
-      await sync.syncLibrary(account: selected);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(sync.lastMessage ?? '同步完成')),
-      );
-    } catch (e) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('同步失败：${sync.lastError ?? e}')),
-      );
-    }
-  }
 
   String _customRetentionSummary(SettingsService settings) {
     final total = settings.customRetentionHours;
@@ -819,175 +532,30 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
 
           const Divider(height: 40),
-          Text('歌单同步', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text('同步与备份', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 4),
           Text(
-            '本地歌单保存在独立数据库 playlists.db，音频缓存清理不会删除。'
-            '开启同步后，修改会上传为所选 WebDAV 账号下的 M3U8；启动/切换账号时拉取并按 updatedAt 最后写入胜出合并。',
+            '歌单同步、歌曲库同步与 WebDAV 备份已合并为「同步」。\n'
+            'WebDAV 凭证统一存放在云端（地址与用户名明文，仅密码可选加密）；'
+            '同步与导入/导出都在同一页面完成。\n'
+            '远程根目录：${settings.syncRemoteRoot}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('同步歌单到 WebDAV'),
-            value: settings.playlistSyncEnabled,
-            onChanged: (v) async {
-              await settings.setPlaylistSyncEnabled(v);
-              context.read<PlaylistService>().configureSync(
-                    remotePath: settings.playlistRemotePath,
-                    enabled: v,
-                  );
-            },
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('歌单远程目录'),
-            subtitle: Text(settings.playlistRemotePath),
-            trailing: const Icon(Icons.edit_outlined),
-            onTap: () async {
-              final c = TextEditingController(text: settings.playlistRemotePath);
-              final path = await showDialog<String>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('歌单 WebDAV 路径'),
-                  content: TextField(
-                    controller: c,
-                    decoration: const InputDecoration(
-                      hintText: '/Playlists/',
-                    ),
-                  ),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(ctx, c.text),
-                      child: const Text('保存'),
-                    ),
-                  ],
-                ),
-              );
-              if (path != null && context.mounted) {
-                await settings.setPlaylistRemotePath(path);
-                context.read<PlaylistService>().configureSync(
-                      remotePath: settings.playlistRemotePath,
-                      enabled: settings.playlistSyncEnabled,
-                    );
-              }
-            },
-          ),
-          OutlinedButton.icon(
-            onPressed: () async {
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('清空本地歌单'),
-                  content: const Text('仅清除本机歌单数据库，不会删除 WebDAV 上的 M3U8。确定？'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('清空')),
-                  ],
-                ),
-              );
-              if (ok == true && context.mounted) {
-                await context.read<PlaylistService>().clearAllLocal();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('已清空本地歌单')),
-                );
-              }
-            },
-            icon: const Icon(Icons.playlist_remove),
-            label: const Text('清空本地歌单'),
-          ),
-          const Divider(height: 40),
-                    Text('歌曲库同步', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
-          const SizedBox(height: 4),
-          Text(
-            '按所选 WebDAV 站点双向同步歌曲索引（library_index.json）、封面缩略图与歌单。'
-            '不同步音频缓存。默认目录：${settings.librarySyncRemotePath}<accountId>/',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('歌曲库同步远程目录'),
-            subtitle: Text(settings.librarySyncRemotePath),
-            trailing: const Icon(Icons.edit_outlined),
-            onTap: () async {
-              final c = TextEditingController(text: settings.librarySyncRemotePath);
-              final path = await showDialog<String>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('歌曲库同步路径'),
-                  content: TextField(controller: c),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(ctx, c.text),
-                      child: const Text('保存'),
-                    ),
-                  ],
-                ),
-              );
-              if (path != null && context.mounted) {
-                await settings.setLibrarySyncRemotePath(path);
-              }
-            },
-          ),
+          const SizedBox(height: 8),
           FilledButton.tonalIcon(
-            onPressed: () => _runLibrarySync(context),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SyncScreen()),
+              );
+            },
             icon: const Icon(Icons.sync),
-            label: const Text('同步歌曲库'),
+            label: const Text('打开同步'),
           ),
-          const Divider(height: 40),
-          Text('WebDAV 备份（按站点）', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           Text(
-            '默认按 WebDAV 站点分别备份：该站凭证 + 该站曲库曲目 + 相关歌单 + 封面缩略图 + 设置。\n'
-            '远程路径：${settings.backupRemotePath}<accountId_站点名>/backup-<时间戳>.wmpbak（并写 latest）。\n'
-            '恢复时写回对应账号，不会把站点 A 的密码合并进站点 B。\n'
-            '可选「全部账号」备份仍可用，但非默认。强烈建议加密口令（AES-256-GCM）。不含音频缓存与下载队列。',
+            '分享重命名：${settings.shareTagRenameEnabled ? '开启' : '关闭'}'
+            '（模板 ${settings.shareTagRenamePattern}），可在「同步」页调整。',
             style: Theme.of(context).textTheme.bodySmall,
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('备份远程根目录'),
-            subtitle: Text(settings.backupRemotePath),
-            trailing: const Icon(Icons.edit_outlined),
-            onTap: () async {
-              final c = TextEditingController(text: settings.backupRemotePath);
-              final path = await showDialog<String>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('备份 WebDAV 路径'),
-                  content: TextField(controller: c),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(ctx, c.text),
-                      child: const Text('保存'),
-                    ),
-                  ],
-                ),
-              );
-              if (path != null && context.mounted) {
-                await settings.setBackupRemotePath(path);
-              }
-            },
-          ),
-          const SizedBox(height: 8),
-          FilledButton.tonalIcon(
-            onPressed: () => _runBackup(context),
-            icon: const Icon(Icons.cloud_upload_outlined),
-            label: const Text('备份当前站点到 WebDAV'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: () => _runBackup(context, fullMultiAccount: true),
-            icon: const Icon(Icons.backup_outlined),
-            label: const Text('备份全部账号（可选）'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: () => _runRestore(context),
-            icon: const Icon(Icons.cloud_download_outlined),
-            label: const Text('从 WebDAV 恢复…'),
           ),
 
           const Divider(height: 40),

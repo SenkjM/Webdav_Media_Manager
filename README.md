@@ -23,23 +23,29 @@
 
 ### 主要能力
 
-- **网络库（多 WebDAV）**：未下载音频浏览时不显示「排队」等状态徽标（点按/多选下载后才入队并显示）；可添加 / 编辑 / 删除多个服务器账号（URL、用户名、密码经安全存储）；在网络库中切换当前服务器；浏览时只显示条目名称（不铺满远程完整路径）
-- **下载队列**：后台异步排队下载，支持取消 / 重试 / 清除已完成；长按文件夹可**递归下载整个目录**中的音频
+- **网络库（多 WebDAV）**：未下载音频浏览时不显示「排队」等状态徽标（点按/多选下载后才入队并显示）；可添加 / 编辑 / 删除多个服务器账号（URL、用户名、密码经安全存储）；在网络库中切换当前服务器；浏览时只显示条目名称（不铺满远程完整路径）。**视频条目只显示「播放」按钮**，下载要到长按（多选）或右侧「更多操作」菜单里才会出现
+- **下载队列**：后台异步排队下载，支持取消 / 重试 / 清除已完成；长按文件夹可**递归下载整个目录**中的音频。**视频下载写入系统相册**（MediaStore `Movies/WebDAVMusic`），下载队列与网络库都会标注「系统相册」；音乐仍下载到应用内部音频缓存（播放只读缓存）
 - **标签读取**：下载完成后用 `audio_metadata_reader` 读取 title / artist / album / track / disc / 封面 / 时长，并写入本地音乐库
-- **本地音乐库**：仅索引「至少缓存过一次」的曲目；可按 **专辑 / 作者 / 音乐名 / 标签（流派）** 浏览；支持 **搜索**（标题/艺术家/专辑）；长按进入多选（添加到歌单 / 分享已缓存非 CUE 文件 / 删除，CUE 组删除仍整组警告；CUE 虚拟曲目不可分享）；支持按 **名称** 或 **专辑曲序（碟号/曲号）** 排序；身份键为 `(webdav_account_id + remote_path)`
+- **本地音乐库**：仅索引「至少缓存过一次」的曲目；可按 **专辑 / 作者 / 音乐名 / 标签（流派）** 浏览；支持 **搜索**（标题/艺术家/专辑）；长按进入多选（添加到歌单 / 分享 / **删除** / **销毁**；CUE 组删除仍整组警告；CUE 虚拟曲目不可分享）；支持按 **名称** 或 **专辑曲序（碟号/曲号）** 排序；身份键为 `(webdav_account_id + remote_path)`
+  - 多选工具条按缓存状态显示按钮：**所有选中项都无缓存 → 只显示「销毁」**；**有缓存 → 同时显示「删除」与「销毁」**；混合选择同样显示两个
+  - **删除**：只删本地音频缓存，保留标签与封面；**销毁**：删缓存 + 从音乐库移除 + 销毁元数据与压缩封面（不可恢复）
+- **分享重命名**：分享已缓存音频时可按标签重命名，**默认开启且模板为「作者-标题」**（`{artist}-{title}`）；分享单个文件会弹出可编辑的文件名对话框，也可选「用原文件名」。模板支持 `{artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}`，在「同步」页配置
 - **元数据持久化**：库记录与压缩封面缩略图独立于音频缓存；清空或过期清理音频缓存**不会**删除库与封面；同一账号+路径再次下载会刷新标签与封面
 - **销毁音乐库**：音乐库页菜单「销毁」可一次性清除标签/CUE 表、压缩封面与对应本地音频缓存（不可恢复）；网络库与账号保留；歌单去掉已失效曲目引用。区别于设置中的「手动清空音频缓存」（保留标签与封面）
 - **封面缩略图尺寸**：设置中可选默认 **100×100**、预设 **300×300** 或自定义正方形边长；仅影响**新**写入的缩略图。已有文件保持原尺寸，需重新下载/写入标签或销毁后重下才会按新尺寸生成
 - **本地播放**：仅用本地文件路径播放（`media_kit` + `audio_service` 媒体通知 / 系统媒体控制）
+- **视频播放器**：控件**居中浮层**（不再占满顶部/底部通栏）；前进/后退带缩放淡出的**动画反馈**；**长按 = 按住期间临时加速**（倍速可在设置里调，默认 2.0×），松手恢复；播放倍速用**浮窗滑块**在 **0.5×–3.0×** 之间调整并记住上次选择；**小窗（画中画）时不显示任何控件**；**后台播放在主页键挂后台后生效**（返回键会停止并提示，不再「退出即后台播放」）；视频播放期间会**暂停音乐**，并**发布媒体通知**（播放/暂停、进度、锁屏与媒体控制中心）
 - **CUE 分轨**：网络库显示 `.cue`；标准 CUE（FILE + TRACK/INDEX）可整组下载（CUE+音频同一缓存组）；音乐库展开为虚拟曲目，标签以 CUE 为准；播放用 `Media(start:, end:)` 原生裁切按 INDEX 分片；删除缓存时整组提示
 - **缓存占用**：设置页显示音乐缓存磁盘用量（可读大小）；曲库可单独删除某曲本地音频缓存（保留元数据/封面）
 - **当前播放列表**：正在播放页 / 迷你条可打开**临时队列**（不自动同步歌单）；歌单页可「从当前播放列表创建」保存后再同步
-- **媒体通知**：`audio_service` 使用应用内补丁（Android 14+ typed `startForeground` + 通道 `…audio.v4` IMPORTANCE_DEFAULT）；`androidStopForegroundOnPause: false`；播放引擎为 `media_kit`，`play()`/`stop()` 时显式申请/释放 Android 音频焦点。设置页「测试媒体通知」回报会话/通知是否已发布
+- **媒体通知**：`audio_service` 使用应用内补丁（Android 14+ typed `startForeground` + 通道 `…audio.v4` IMPORTANCE_DEFAULT）；`androidStopForegroundOnPause: false`；播放引擎为 `media_kit`，`play()`/`stop()` 时显式申请/释放 Android 音频焦点。**音乐与视频共用一个 MediaSession**：`MusicAudioHandler` 通过 video 模式接管通知，因此视频也有媒体通知与前台服务（这也是切后台仍能继续播放的原因）。设置页「测试媒体通知」回报会话/通知是否已发布
 - **缓存清理**：可按 1 天或 1 周自动清理**音频缓存文件**；正在播放或下载中的文件受保护
 - **WebDAV 管理**：长按可重命名 / 删除；可新建文件夹；权限不足（401/403）时弹出错误对话框
-- **歌单**：本地独立数据库（`playlists.db`）创建 / 编辑 / 删除歌单，按 `(accountId + remotePath)` 添加曲目；音频缓存清理**不会**删除歌单。可选同步到 WebDAV（默认 `/Playlists/`）为 **M3U8**（含 `#EXT-X-WMP-*` 扩展）；本地修改后上传，启动/切换账号时拉取，按 `updatedAt` **最后写入胜出**合并
-- **按站点 WebDAV 备份 / 恢复**：默认按 WebDAV 账号（`accountId` + 站点 URL）分别备份到 `/WebDAVMusicPlayer/backup/<accountDir>/backup-….wmpbak`（并写 latest）。含该站凭证、该站曲库、相关歌单与封面；恢复写回对应账号，不会把站点 A 凭证合并进站点 B。可选「全部账号」备份。建议口令 AES-256-GCM（`WMPB1`）。不含音频缓存与下载队列
-- **歌曲库同步**：设置中「同步歌曲库」对所选站点双向同步歌曲索引 JSON、封面缩略图与歌单（不同步音频文件）；身份键仍为 `accountId + remotePath`
+- **同步（合并歌单同步 / 歌曲库同步 / WebDAV 备份）**：设置 →「同步」。两个方向（本机 → 云端 / 云端 → 本机）加**本地导入 / 导出**：
+  - **WebDAV 凭证统一存放在云端** `credentials.json`：**地址与用户名为明文**，**只加密密码**（AES-256-GCM，`AESGCMv1:` 前缀；可在设置里关闭加密改为明文）。导入/同步时若无法提供统一解密密钥，则**密码留空恢复**，其余字段照常写回，稍后在账号管理里补填即可
+  - 歌曲库索引 + 封面缩略图（`lastTagReadAt` 最后写入胜出）、歌单 M3U8、站点备份 `.wmpbak`
+  - **导出到系统下载目录**：`下载/WebDAVMusic/wmp-sync-*.zip`（AES-256-GCM 可选）；**从本地文件导入**走系统文件选择器（SAF），也支持粘贴 Base64
+  - 站点隔离不变：恢复只写回对应账号，不会把站点 A 的凭证合并进站点 B
 
 ### 导航
 
@@ -55,9 +61,11 @@
 | 下载队列 | `sqflite`（`download_queue.db`） |
 | 标签 | `audio_metadata_reader` |
 | 封面缩放 | `image` → 正方形 JPEG（默认 100×100，可设置），存于应用文档 `covers/` |
-| 凭证 | `flutter_secure_storage` |
+| 凭证 | `flutter_secure_storage`（本机）＋ 云端 `credentials.json`（仅密码加密） |
 | WebDAV | `webdav_client` |
-| 媒体通知 / 后台播放 | `audio_service` + `media_kit`（`MusicAudioHandler`） |
+| 媒体通知 / 后台播放 | `audio_service` + `media_kit`（`MusicAudioHandler`，含 video 模式） |
+| 系统相册 / 下载目录写入 | 原生 `MediaStore`（`MainActivity` MethodChannel，Android 10+ 免权限） |
+| 本地文件导入 | 原生 SAF `ACTION_OPEN_DOCUMENT`（拷贝到应用缓存后读取） |
 | 通知权限 / 通道（Android 13+） | `flutter_local_notifications`（建「音乐播放」通道 + `POST_NOTIFICATIONS` + 通道状态查询） |
 
 ## 状态
@@ -84,6 +92,8 @@
 - **通知通道**：`flutter_local_notifications` 在启动时创建并接管「音乐播放」通道（`com.webdav.webdav_music_player.audio.v4`，IMPORTANCE_DEFAULT、静音、不震动），并负责查询权限与通道状态；`audio_service` 原生 `createChannel()` 发现通道已存在即复用，因此设置页在首次播放前就能显示系统真实通道状态（定义见 `lib/services/media_notification_channel.dart`，须与 `AudioServiceConfig` 保持一致）。
 - **媒体播放通知**：通过 `audio_service` 的 `MusicAudioHandler` 在播放时启动 `mediaPlayback` 前台服务，并发布 `MediaItem` + `PlaybackState`，使通知栏 / 锁屏 / 系统媒体控制中心显示 MediaStyle 控件（播放/暂停，有队列时上一首/下一首）。通知小图标使用 `drawable/ic_stat_music`（不可用自适应 launcher 图标）。
 - 需声明 `WAKE_LOCK`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`、`POST_NOTIFICATIONS`，并注册 `AudioService` / `MediaButtonReceiver`；`MainActivity` 继承 `AudioServiceFragmentActivity`（保证共享 FlutterEngine 不随 Activity 销毁而销毁，避免切后台后通知/播放状态丢失）。
+- **视频媒体通知**：`MusicAudioHandler` 与视频共用同一个 MediaSession。进入视频时切到 video 模式（`mediaItem` = 视频标题、控件只保留播放/暂停与停止、无队列），因此通知栏 / 锁屏 / 媒体控制中心都会显示视频；`FOREGROUND_SERVICE_MEDIA_PLAYBACK` 前台服务也是「主页键挂后台仍继续播放」的前提。
+- **系统相册 / 下载目录**：`MainActivity` 通过同名 MethodChannel 暴露 `saveToGallery` / `saveToDownloads` / `pickFile`：Android 10+ 走 `MediaStore`（`Movies/WebDAVMusic`、`Download/WebDAVMusic`，无需运行时权限），Android 9 及以下退回公共目录写入 + `MediaScannerConnection`（需要 `WRITE_EXTERNAL_STORAGE`，已用 `android:maxSdkVersion="28"` 声明）。PiP 状态通过 `onPictureInPictureModeChanged` 回传 `pictureInPictureChanged`。
 - 真机验证：通知样式与锁屏控件需在真实 Android 设备上确认；模拟器上权限与 FGS 行为可能不完整。
 - **CUE**：网络库点开 `.cue` 先预览曲目再下载；下载队列将 CUE 组折叠为单行；清空缓存后会失效陈旧 completed 任务，库内 clip 元数据保留以便重新下载后继续分段播放。
 
@@ -124,25 +134,22 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
 - **远程**：可配置目录，默认 `/Playlists/<name>_<id前8位>.m3u8`
 - **格式**：扩展 M3U8，路径行为 `wmp://<accountId>/<remotePath>`；头字段 `#EXT-X-WMP-ID` / `#EXT-X-WMP-UPDATED` / `#EXT-X-WMP-NAME`
 - **同步策略**：最后写入胜出（比较 `updatedAt`）；相等时保留本地
-- **UI**：抽屉「歌单」；音乐库曲目长按「添加到歌单」
+- **UI**：抽屉「歌单」；音乐库曲目长按「添加到歌单」。同步入口已合并到「设置 → 同步」页
 
-## WebDAV 备份（按站点）
+## 同步（歌单 + 歌曲库 + WebDAV 备份）
 
-- **默认范围**：单个 WebDAV 账号/站点（`accountId` + base URL）
-- **路径**：`/WebDAVMusicPlayer/backup/<accountId前缀_站点名>/backup-<UTC时间戳>.wmpbak`，同目录另写 `webdav_music_backup.wmpbak`（latest）。根路径可在设置中改
-- **包含（按站点）**：该站 `accounts.json`（含密码）、`tracks.json`（仅该 `accountId`）、相关 `playlists.json`（条目带 accountId）、`covers/`、`settings.json`
-- **可选**：全部账号备份（`full-backup-….wmpbak`）仍可用，但非默认
-- **不含**：`music_cache/` 音频、下载队列
-- **加密**：推荐口令；魔数 `WMPB1` + PBKDF2 + AES-256-GCM
-- **恢复**：按站点写回匹配账号（或重建该挂载）；校验 accountId/URL，避免把站点 A 凭证写入站点 B
-
-## 歌曲库同步
-
-- **入口**：设置 →「同步歌曲库」
-- **内容**：所选站点的 `library_index.json`（曲目元数据）+ `covers/` 缩略图 + 歌单 M3U8（复用现有歌单同步）
-- **策略**：按 `lastTagReadAt` 最后写入胜出合并；不同步音频缓存文件
-- **路径**：默认 `/WebDAVMusicPlayer/library/<accountId>/`
-- **身份**：始终 `accountId + remotePath`
+- **入口**：设置 →「同步」（`SyncScreen`）
+- **云端根目录**：`SettingsService.syncRemoteRoot`（默认 `/WebDAVMusicPlayer/`）
+  - `credentials.json` — WebDAV 凭证：**地址 / 用户名明文**，密码可选加密
+  - `<libraryRoot><accountId>/library_index.json` + `covers/` — 歌曲库索引与封面
+  - `/Playlists/*.m3u8` — 歌单
+  - `/WebDAVMusicPlayer/backup/<站点>/backup-….wmpbak` + latest — 站点完整备份
+- **方向**：「同步到云端」= 本机 → 云端；「从云端同步」= 云端 → 本机（可勾选同时恢复站点备份）
+- **凭证加密**：`settings.syncEncryptPassword`（默认开启）。密码字段为 `AESGCMv1:<base64(salt|nonce|ct|mac)>`（PBKDF2-SHA256 120k + AES-256-GCM）。**无法提供统一解密密钥时，密码留空恢复**，其余字段照常写回
+- **本地导入 / 导出**：
+  - 导出 → `下载/WebDAVMusic/wmp-sync-<UTC>.zip`（可选口令加密，`WMPB1` 头）
+  - 导入 ← 系统文件选择器（SAF，任意 `.wmpbak` / `.zip`）或粘贴 Base64
+- **兼容**：`BackupService` 仍可读写旧格式；新写入的 `accounts.json` 也遵循「仅密码加密」规则
 
 ## CI：自动构建并发布 Pre-release
 

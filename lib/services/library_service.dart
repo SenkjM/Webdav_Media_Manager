@@ -483,6 +483,45 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Destroy tracks: drop their library rows **and** their cover thumbnails.
+  ///
+  /// Distinct from [removeTrack] (rows only) and from cache deletion (audio
+  /// files only, metadata kept). CUE slices are grouped so the whole album's
+  /// virtual rows disappear together.
+  Future<void> destroyTracks(Iterable<LibraryTrack> tracks) async {
+    final list = tracks.toList();
+    if (list.isEmpty) return;
+    final removedIds = <String>{};
+    final cuePaths = <String>{};
+    for (final t in list) {
+      removedIds.add(t.musicId);
+      if (t.isCueVirtual && t.cueRemotePath != null) {
+        cuePaths.add('${t.accountId}\u0000${t.cueRemotePath}');
+      }
+    }
+    // Cover thumbs + full-res covers live per identity; collect them before
+    // deleting rows.
+    for (final t in list) {
+      await _covers.deleteThumb(t.accountId, t.remotePath);
+      await _covers.deleteFull(t.accountId, t.remotePath);
+    }
+    for (final t in list) {
+      if (t.isCueVirtual && t.cueRemotePath != null) {
+        await _db.deleteTracksForCue(t.accountId, t.cueRemotePath!);
+      } else {
+        await _db.deleteTrack(t.accountId, t.remotePath);
+      }
+    }
+    _tracks.removeWhere(
+      (t) =>
+          removedIds.contains(t.musicId) ||
+          (t.isCueVirtual &&
+              t.cueRemotePath != null &&
+              cuePaths.contains('${t.accountId}\u0000${t.cueRemotePath}')),
+    );
+    notifyListeners();
+  }
+
   Future<void> removeTrack(String accountId, String remotePath) async {
     await _db.deleteTrack(accountId, remotePath);
     _tracks.removeWhere((t) => t.accountId == accountId && t.remotePath == remotePath);

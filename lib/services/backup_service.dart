@@ -10,6 +10,7 @@ import '../models/library_track.dart';
 import '../models/webdav_account.dart';
 import '../utils/backup_crypto.dart';
 import '../utils/backup_paths.dart';
+import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
 import 'library_database.dart';
@@ -130,12 +131,16 @@ class BackupService extends ChangeNotifier {
         'accounts': [
           {
             ...account.toMap(),
-            'password': pass,
+            // URL + username stay plain text; only the password is encrypted
+            // (and only when a passphrase was given).
+            'password': await _encodePassword(pass, passphrase),
+            'passwordEncrypted':
+                passphrase.isNotEmpty && pass.isNotEmpty,
           }
         ],
-        'warning':
-            'Contains plaintext WebDAV password for this account only. '
-            'Prefer encrypting the backup with a passphrase.',
+        'warning': passphrase.isEmpty
+            ? 'WebDAV 密码为明文（未提供加密口令）。'
+            : 'WebDAV 地址与用户名为明文，仅密码使用 AES-256-GCM 加密。',
       })),
     ));
 
@@ -224,7 +229,9 @@ class BackupService extends ChangeNotifier {
       final pass = await _accounts.passwordFor(a.id) ?? '';
       accountPayload.add({
         ...a.toMap(),
-        'password': pass,
+        // Only the password is encrypted; url/username stay readable.
+        'password': await _encodePassword(pass, passphrase),
+        'passwordEncrypted': passphrase.isNotEmpty && pass.isNotEmpty,
       });
     }
     archive.addFile(ArchiveFile.bytes(
@@ -233,9 +240,9 @@ class BackupService extends ChangeNotifier {
         'scope': 'all',
         'activeAccountId': _accounts.activeAccountId,
         'accounts': accountPayload,
-        'warning':
-            'Contains plaintext WebDAV passwords for ALL accounts. '
-            'Prefer encrypting the backup with a passphrase.',
+        'warning': passphrase.isEmpty
+            ? 'WebDAV 密码为明文（未提供加密口令）。'
+            : 'WebDAV 地址与用户名为明文，仅密码使用 AES-256-GCM 加密。',
       })),
     ));
 
@@ -459,12 +466,12 @@ class BackupService extends ChangeNotifier {
       final scope = manifest['scope'] as String? ?? _inferScope(archive);
 
       if (scope == 'account') {
-        await _restoreAccountScope(archive, manifest);
+        await _restoreAccountScope(archive, manifest, passphrase);
         lastMessage =
             '已按站点恢复「${manifest['accountName'] ?? manifest['accountId']}」。'
             '其他 WebDAV 账号未改动。';
       } else {
-        await _restoreFullScope(archive);
+        await _restoreFullScope(archive, passphrase);
         lastMessage = '全部账号恢复完成。请确认 WebDAV 账号与歌单是否正确。';
       }
     } catch (e) {
@@ -492,6 +499,7 @@ class BackupService extends ChangeNotifier {
   Future<void> _restoreAccountScope(
     Archive archive,
     Map<String, dynamic> manifest,
+    String passphrase,
   ) async {
     final docs = await getApplicationDocumentsDirectory();
 
@@ -530,7 +538,15 @@ class BackupService extends ChangeNotifier {
       );
     }
 
-    await _accounts.mergeAccountFromBackup(accountMap);
+    final recovered = await _accounts.mergeAccountFromBackup(
+      accountMap,
+      passphrase: passphrase,
+    );
+    if (!recovered) {
+      lastMessage =
+          '站点凭证已恢复，但密码无法用当前口令解密（缺少统一解密密钥），已留空；'
+          '请在账号管理中补填密码。';
+    }
 
     // Always clear cache annex on restore — never mark tracks cached without files.
     if (_cache != null) {
@@ -619,7 +635,7 @@ class BackupService extends ChangeNotifier {
     await _library.refresh();
   }
 
-  Future<void> _restoreFullScope(Archive archive) async {
+  Future<void> _restoreFullScope(Archive archive, String passphrase) async {
     final docs = await getApplicationDocumentsDirectory();
 
     await _libraryDb.close();
@@ -659,7 +675,15 @@ class BackupService extends ChangeNotifier {
     if (accountsFile != null) {
       final json = jsonDecode(utf8.decode(accountsFile.content as List<int>))
           as Map<String, dynamic>;
-      await _accounts.restoreFromBackup(json);
+      final missing = await _accounts.restoreFromBackup(
+        json,
+        passphrase: passphrase,
+      );
+      if (missing.isNotEmpty) {
+        lastMessage =
+            '已恢复 ${missing.length} 个账号，但其中密码无法解密并已留空：'
+            '${missing.join('、')}。请在账号管理中补填密码。';
+      }
     }
 
     final settingsFile = archive.findFile('settings.json');
@@ -700,6 +724,18 @@ class BackupService extends ChangeNotifier {
       fileName: fileName,
     );
     await restoreFromBytes(data: data, passphrase: passphrase);
+  }
+
+  /// Encrypt one account password for storage in an archive.
+  ///
+  /// Empty passphrase (or empty password) keeps the value readable, matching
+  /// the credential vault rule: 地址与用户名明文，仅密码可选加密.
+  Future<String> _encodePassword(String password, String passphrase) async {
+    if (passphrase.isEmpty || password.isEmpty) return password;
+    return CredentialVaultCrypto.encrypt(
+      plaintext: password,
+      passphrase: passphrase,
+    );
   }
 
   Future<void> _rewriteCoverPaths(String docsPath) async {

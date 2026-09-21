@@ -91,3 +91,66 @@ String formatByteSize(int bytes) {
   if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
 }
+
+/// MIME type used when handing a file to MediaStore / the share sheet.
+String galleryMimeFor(String fileName) {
+  switch (p.extension(fileName).toLowerCase()) {
+    case '.mp4':
+    case '.m4v':
+      return 'video/mp4';
+    case '.mkv':
+      return 'video/x-matroska';
+    case '.webm':
+      return 'video/webm';
+    case '.avi':
+      return 'video/x-msvideo';
+    case '.mov':
+      return 'video/quicktime';
+    case '.flv':
+      return 'video/x-flv';
+    case '.ts':
+      return 'video/mp2t';
+    case '.wmv':
+      return 'video/x-ms-wmv';
+    case '.3gp':
+      return 'video/3gpp';
+    case '.mpg':
+    case '.mpeg':
+      return 'video/mpeg';
+    case '.mp3':
+      return 'audio/mpeg';
+    case '.flac':
+      return 'audio/flac';
+    case '.m4a':
+    case '.aac':
+      return 'audio/mp4';
+    case '.ogg':
+    case '.opus':
+      return 'audio/ogg';
+    case '.wav':
+      return 'audio/wav';
+    case '.wma':
+      return 'audio/x-ms-wma';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.png':
+      return 'image/png';
+    case '.webp':
+      return 'image/webp';
+    case '.zip':
+      return 'application/zip';
+    case '.json':
+      return 'application/json';
+    case '.m3u8':
+      return 'application/vnd.apple.mpegurl';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+/// MIME type of an audio file for sharing (falls back to octet-stream).
+String audioShareMimeFor(String path) {
+  final mime = galleryMimeFor(path);
+  return mime.startsWith('audio/') ? mime : 'application/octet-stream';
+}

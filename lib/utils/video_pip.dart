@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../services/platform_export_service.dart';
+
 const MethodChannel _kAppChannel = MethodChannel(
   'com.webdav.webdav_music_player/app',
 );
@@ -36,3 +38,11 @@ Future<bool> isInPictureInPicture() async {
     return false;
   }
 }
+
+/// Stream of PiP enter/exit transitions (never emits on non-Android platforms).
+///
+/// Owned by [PlatformExportService] because MainActivity shares one
+/// MethodChannel for PiP callbacks and MediaStore exports.
+Stream<bool> get pictureInPictureChanges => PlatformExportService.supported
+    ? pictureInPictureChangesStream
+    : const Stream<bool>.empty();

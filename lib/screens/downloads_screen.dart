@@ -300,6 +300,8 @@ class _TaskTile extends StatelessWidget {
       DownloadStatus.failed => ('失败', AppColors.error),
       DownloadStatus.cancelled => ('已取消', AppColors.mutedText),
     };
+    final savedToGallery = task.isGallery &&
+        task.status == DownloadStatus.completed;
 
     return Card(
       color: AppColors.elevated,
@@ -309,9 +311,13 @@ class _TaskTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 220),
                   child: Text(
                     task.fileName,
                     style: const TextStyle(
@@ -322,6 +328,12 @@ class _TaskTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (task.isGallery)
+                  _DestinationChip(
+                    icon: Icons.photo_library_outlined,
+                    label: savedToGallery ? '已存入系统相册' : '目标：系统相册',
+                    color: AppColors.accent,
+                  ),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -349,6 +361,16 @@ class _TaskTile extends StatelessWidget {
               Text(
                 '${(task.progress * 100).toStringAsFixed(0)}%',
                 style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+              ),
+            ],
+            if (task.isGallery &&
+                task.status == DownloadStatus.completed) ...[
+              const SizedBox(height: 4),
+              Text(
+                '系统相册：${task.localPath}',
+                style: const TextStyle(color: AppColors.mutedText, fontSize: 11),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ],
             if (task.errorMessage != null &&
@@ -385,6 +407,38 @@ class _TaskTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Small pill marking the destination of a download (e.g. 系统相册).
+class _DestinationChip extends StatelessWidget {
+  const _DestinationChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(label, style: TextStyle(color: color, fontSize: 11)),
+        ],
       ),
     );
   }
