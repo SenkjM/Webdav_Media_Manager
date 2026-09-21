@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:webdav_music_player/models/file_type_config.dart';
 import 'package:webdav_music_player/models/webdav_item.dart';
 import 'package:webdav_music_player/utils/audio_extensions.dart';
 
@@ -9,16 +10,26 @@ void main() {
     expect(isAudioFileName('readme.txt'), isFalse);
   });
 
-  test('WebDavItem.isAudio uses filename only (no ID3)', () {
+  test('WebDavItem.isAudio derives from assigned category', () {
     const item = WebDavItem(
       name: 'track.ogg',
       path: '/music/track.ogg',
       isDirectory: false,
+      category: FileCategory.music,
     );
     expect(item.isAudio, isTrue);
+    expect(item.isVideo, isFalse);
     const dir =
         WebDavItem(name: 'Album', path: '/music/Album/', isDirectory: true);
     expect(dir.isAudio, isFalse);
+  });
+
+  test('FileTypeConfig classifies by extension', () {
+    final config = FileTypeConfig();
+    expect(config.categoryFor('song.mp3'), FileCategory.music);
+    expect(config.categoryFor('movie.MKV'), FileCategory.video);
+    expect(config.categoryFor('album.cue'), FileCategory.cue);
+    expect(config.categoryFor('readme.txt'), FileCategory.other);
   });
 
   test('TrackInfo display prefers title when known (library metadata)', () {

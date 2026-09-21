@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/download_task.dart';
+import '../models/video_settings.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../providers/app_state.dart';
@@ -10,6 +11,7 @@ import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/download_queue_service.dart';
+import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/cue_sheet.dart';
@@ -19,6 +21,7 @@ import '../widgets/webdav_error_dialog.dart';
 import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
 import 'home_shell.dart';
+import 'video_player_screen.dart';
 
 /// 网络库：multi-WebDAV browse. Shows entry names only (no full remote paths).
 class NetworkLibraryScreen extends StatefulWidget {
@@ -40,6 +43,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   @override
   void initState() {
     super.initState();
+    final settings = context.read<SettingsService>();
+    if (settings.networkRememberLastPath &&
+        settings.networkLastPath != '/' &&
+        settings.networkLastPath.isNotEmpty) {
+      _stack.add(settings.networkLastPath);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureAndLoad());
   }
 
@@ -79,7 +88,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       _error = null;
     });
     try {
-      final items = await webDav.listDirectory(_path);
+      final fileTypes = context.read<SettingsService>().fileTypes;
+      final items = await webDav.listDirectory(_path, fileTypes: fileTypes);
       if (!mounted) return;
       setState(() {
         _items = items;
@@ -105,18 +115,28 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     _stack
       ..clear()
       ..add('/');
+    _persistPath();
     await _load();
   }
 
   void _enterDir(WebDavItem item) {
     _stack.add(item.path);
+    _persistPath();
     _load();
   }
 
   void _goUp() {
     if (_stack.length <= 1) return;
     _stack.removeLast();
+    _persistPath();
     _load();
+  }
+
+  void _persistPath() {
+    final settings = context.read<SettingsService>();
+    if (settings.networkRememberLastPath) {
+      settings.setNetworkLastPath(_path);
+    }
   }
 
   String? get _accountId =>
@@ -125,6 +145,22 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   Future<void> _onTapFile(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
+    if (item.isVideo) {
+      final settings = context.read<SettingsService>();
+      if (settings.videoTapAction == VideoTapAction.download) {
+        await _enqueueOnly(item);
+      } else {
+        await _openVideo(item);
+      }
+      return;
+    }
+    if (item.isAudio) {
+      final settings = context.read<SettingsService>();
+      if (settings.musicTapAction == MusicTapAction.download) {
+        await _enqueueOnly(item);
+        return;
+      }
+    }
     final cache = context.read<CacheService>();
     final local = await cache.localPathIfCached(item.path, accountId: accountId);
     if (local == null) {
@@ -155,6 +191,25 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
     if (playlist.isEmpty) playlist.add(track);
     await player.playTrack(track, playlist: playlist);
+  }
+
+  Future<void> _openVideo(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final source = context.read<WebDavService>().buildStreamSource(
+          remotePath: item.path,
+          name: item.name,
+          accountId: accountId,
+        );
+    if (source == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('WebDAV 未连接，无法流式播放')),
+      );
+      return;
+    }
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(builder: (_) => VideoPlayerScreen(source: source)),
+    );
   }
 
   Future<void> _enqueueOnly(WebDavItem item) async {
@@ -487,6 +542,39 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     _deleteItem(item);
                   },
                 ),
+              ] else if (item.isVideo) ...[
+                ListTile(
+                  leading: const Icon(Icons.play_circle_outline),
+                  title: const Text('打开视频（流式播放）'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openVideo(item);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.download),
+                  title: const Text('下载'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _enqueueOnly(item);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.drive_file_rename_outline),
+                  title: const Text('重命名'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _renameItem(item);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
+                  title: const Text('删除'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _deleteItem(item);
+                  },
+                ),
               ] else ...[
                 ListTile(
                   leading: const Icon(Icons.drive_file_rename_outline),
@@ -743,6 +831,30 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
             title: Text(item.name),
             subtitle: Text(item.size != null ? _fmtSize(item.size!) : 'CUE 文件'),
             onTap: () => _openCue(item),
+            onLongPress: () => _showItemMenu(item),
+          );
+        }
+        if (item.isVideo) {
+          return ListTile(
+            leading: const Icon(Icons.videocam_outlined, color: AppColors.accent),
+            title: Text(item.name),
+            subtitle: Text(item.size != null ? _fmtSize(item.size!) : '视频'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.download_for_offline_outlined),
+                  tooltip: '下载',
+                  onPressed: () => _enqueueOnly(item),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.play_circle_outline),
+                  tooltip: '打开视频',
+                  onPressed: () => _openVideo(item),
+                ),
+              ],
+            ),
+            onTap: () => _onTapFile(item),
             onLongPress: () => _showItemMenu(item),
           );
         }

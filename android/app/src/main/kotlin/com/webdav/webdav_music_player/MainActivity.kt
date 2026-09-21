@@ -44,8 +44,46 @@ class MainActivity : AudioServiceFragmentActivity() {
                 "mediaNotificationDiagnostics" -> {
                     result.success(mediaNotificationDiagnostics())
                 }
+                "enterPictureInPicture" -> {
+                    result.success(enterPictureInPictureModeCompat())
+                }
+                "isInPictureInPicture" -> {
+                    result.success(isInPictureInPictureModeCompat())
+                }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /** Enter picture-in-picture, guarding for API levels that lack the API. */
+    private fun enterPictureInPictureModeCompat(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                enterPictureInPictureMode(
+                    android.app.PictureInPictureParams.Builder().build(),
+                )
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                @Suppress("DEPRECATION")
+                enterPictureInPictureMode()
+            } else {
+                return false
+            }
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun isInPictureInPictureModeCompat(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                @Suppress("DEPRECATION")
+                isInPictureInPictureMode
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 

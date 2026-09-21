@@ -19,8 +19,48 @@ bool isAudioFileName(String name) {
   return exts.any(lower.endsWith);
 }
 
+bool isVideoFileName(String name) {
+  final lower = name.toLowerCase();
+  const exts = [
+    '.mp4',
+    '.mkv',
+    '.avi',
+    '.mov',
+    '.webm',
+    '.flv',
+    '.ts',
+    '.m4v',
+    '.wmv',
+    '.3gp',
+    '.mpg',
+    '.mpeg',
+  ];
+  return exts.any(lower.endsWith);
+}
+
+/// Extension check against a caller-supplied list (without leading dots).
+bool isCueFileNameWith(String name, List<String> extensions) =>
+    extensions.any((e) => name.toLowerCase().endsWith('.$e'));
+
+bool isAudioFileNameWith(String name, List<String> extensions) =>
+    extensions.any((e) => name.toLowerCase().endsWith('.$e'));
+
+bool isVideoFileNameWith(String name, List<String> extensions) =>
+    extensions.any((e) => name.toLowerCase().endsWith('.$e'));
+
 String sanitizeFileName(String name) {
   return name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+}
+
+/// Percent-encode a WebDAV path's segments while keeping `/` separators.
+///
+/// `webdav_client` stores decoded paths (spaces / non-ASCII as literal
+/// characters), so a streaming URL handed to libmpv must re-encode them.
+String encodeWebDavPath(String path) {
+  return path
+      .split('/')
+      .map((seg) => Uri.encodeComponent(seg))
+      .join('/');
 }
 
 /// Stable cache file name derived from account + remote path (avoids collisions).

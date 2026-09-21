@@ -1,4 +1,4 @@
-import '../utils/audio_extensions.dart';
+import '../models/file_type_config.dart';
 
 class WebDavItem {
   const WebDavItem({
@@ -7,14 +7,21 @@ class WebDavItem {
     required this.isDirectory,
     this.size,
     this.modified,
+    this.category = FileCategory.other,
   });
   final String name;
   final String path;
   final bool isDirectory;
   final int? size;
   final DateTime? modified;
-  bool get isAudio => !isDirectory && isAudioFileName(name);
-  bool get isCue => !isDirectory && isCueFileName(name);
+
+  /// Classification derived from the extension sets in effect when the item
+  /// was listed. Folders are always [FileCategory.other].
+  final FileCategory category;
+
+  bool get isAudio => !isDirectory && category == FileCategory.music;
+  bool get isVideo => !isDirectory && category == FileCategory.video;
+  bool get isCue => !isDirectory && category == FileCategory.cue;
 }
 
 class TrackInfo {

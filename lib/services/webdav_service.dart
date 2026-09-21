@@ -1,16 +1,25 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:webdav_client/webdav_client.dart' as webdav;
 
+import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
+import '../models/webdav_stream.dart';
+import '../utils/audio_extensions.dart';
 
-/// Thin WebDAV client wrapper. Playback NEVER uses remote streams —
-/// only [downloadToFile] / [readAsBytes] for cache population.
+/// Thin WebDAV client wrapper.
+///
+/// Music playback NEVER uses remote streams — only [downloadToFile] /
+/// [readAsBytes] for cache population. Video playback *does* stream: it uses
+/// [buildStreamSource] to hand media_kit a direct URL + Basic auth headers.
 class WebDavService extends ChangeNotifier {
   webdav.Client? _client;
   String? _baseUrl;
   String? _accountId;
+  String? _username;
+  String? _password;
   String? _lastError;
 
   bool get isConnected => _client != null;
@@ -27,6 +36,8 @@ class WebDavService extends ChangeNotifier {
     final normalized = url.trim().replaceAll(RegExp(r'/+$'), '');
     _accountId = accountId;
     _baseUrl = normalized;
+    _username = username;
+    _password = password;
     _client = webdav.newClient(
       normalized,
       user: username,
@@ -48,7 +59,40 @@ class WebDavService extends ChangeNotifier {
     _client = null;
     _baseUrl = null;
     _accountId = null;
+    _username = null;
+    _password = null;
     notifyListeners();
+  }
+
+  /// Build a streaming source for media_kit. Returns null when disconnected.
+  ///
+  /// Uses HTTP Basic auth (the same credentials the WebDAV client uses); some
+  /// servers also accept a bearer/token flow, but Basic is what
+  /// `webdav_client`'s `BasicAuth` sends, so we mirror it for parity.
+  WebDavStreamSource? buildStreamSource({
+    required String remotePath,
+    required String name,
+    required String accountId,
+  }) {
+    final base = _baseUrl;
+    if (base == null) return null;
+    final uri = '$base${encodeWebDavPath(remotePath)}';
+    final headers = <String, String>{
+      'User-Agent': 'WEBDAV-music-player/1.0',
+    };
+    final user = _username ?? '';
+    final pass = _password ?? '';
+    if (user.isNotEmpty || pass.isNotEmpty) {
+      final token = base64Encode(utf8.encode('$user:$pass'));
+      headers['Authorization'] = 'Basic $token';
+    }
+    return WebDavStreamSource(
+      uri: uri,
+      headers: headers,
+      name: name,
+      remotePath: remotePath,
+      accountId: accountId,
+    );
   }
 
   /// PROPFIND / ping to verify credentials.
@@ -78,8 +122,12 @@ class WebDavService extends ChangeNotifier {
     }
   }
 
-  Future<List<WebDavItem>> listDirectory(String path) async {
+  Future<List<WebDavItem>> listDirectory(
+    String path, {
+    FileTypeConfig? fileTypes,
+  }) async {
     final client = _requireClient();
+    final types = fileTypes ?? FileTypeConfig();
     final normalized = path.isEmpty ? '/' : path;
     final files = await client.readDir(normalized);
     final items = <WebDavItem>[];
@@ -100,6 +148,7 @@ class WebDavService extends ChangeNotifier {
         isDirectory: isDir,
         size: f.size,
         modified: f.mTime,
+        category: isDir ? FileCategory.other : types.categoryFor(name),
       ));
     }
     items.sort((a, b) {
@@ -167,12 +216,15 @@ class WebDavService extends ChangeNotifier {
   }
 
   /// Recursively collect audio file paths under [folderPath].
-  Future<List<WebDavItem>> collectAudioRecursive(String folderPath) async {
+  Future<List<WebDavItem>> collectAudioRecursive(
+    String folderPath, {
+    FileTypeConfig? fileTypes,
+  }) async {
     final result = <WebDavItem>[];
     final queue = <String>[folderPath];
     while (queue.isNotEmpty) {
       final dir = queue.removeAt(0);
-      final items = await listDirectory(dir);
+      final items = await listDirectory(dir, fileTypes: fileTypes);
       for (final item in items) {
         if (item.isDirectory) {
           queue.add(item.path);

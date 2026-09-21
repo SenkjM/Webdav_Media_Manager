@@ -9,7 +9,6 @@ import '../services/accounts_service.dart';
 import '../models/webdav_account.dart';
 import '../widgets/marquee_text.dart';
 import '../services/library_service.dart';
-import '../services/audio_player_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
@@ -17,7 +16,9 @@ import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
 import '../utils/cover_image.dart';
 import '../utils/audio_extensions.dart';
+import 'file_extensions_screen.dart';
 import 'home_shell.dart';
+import 'video_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -471,29 +472,6 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
 
-  Future<void> _testMediaNotification(BuildContext context) async {
-    final player = context.read<AudioPlayerService>();
-    final notif = context.read<NotificationPermissionService>();
-    await notif.refresh();
-    if (!notif.isGranted) {
-      final ok = await notif.request();
-      if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请先授予通知权限，再测试媒体通知')),
-        );
-        return;
-      }
-    }
-    final msg = await player.debugForceMediaNotification();
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        duration: const Duration(seconds: 12),
-      ),
-    );
-  }
-
   String _notificationSubtitle(NotificationPermissionService perms) {
     if (!perms.loaded) return '正在检查…';
     if (perms.isGranted) {
@@ -559,22 +537,72 @@ class _SettingsScreenState extends State<SettingsScreen>
             },
           ),
           const Divider(height: 40),
-          Text('媒体通知', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
-          const SizedBox(height: 4),
-          Text(
-            '播放时通过 audio_service 前台服务显示系统媒体通知（通知栏 / 锁屏 / 媒体控制中心）：'
-            '标题、艺术家与播放/暂停。\n'
-            '通知权限与「音乐播放」通道由 flutter_local_notifications 统一创建并检查'
-            '（本页显示的通道状态即系统真实状态，无需先播放一次）。'
-            '请确保本应用的「通知」已开启；若曾拒绝，可点下方打开系统通知设置。'
-            'Android 13+ 首次启动会请求 POST_NOTIFICATIONS。'
-            '「测试媒体通知」会强制播放并回报会话/通知是否已发布。\n'
-            'OnePlus / ColorOS / OPPO：若仍无控制中心卡片，请到 设置→应用→WebDAV音乐：'
-            '① 耗电管理/电池＝不限制或不优化；'
-            '② 通知＝允许（含锁屏通知、悬浮通知，通道「音乐播放」勿关闭）；'
-            '③ 允许关联启动/后台运行（若有该开关）。',
-            style: Theme.of(context).textTheme.bodySmall,
+          Text('主页与导航', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.home_outlined),
+            title: const Text('自定义主页'),
+            subtitle: const Text('从其他界面返回时回到此主页'),
+            trailing: DropdownButton<int>(
+              value: settings.homeTab,
+              items: const [
+                DropdownMenuItem(value: 0, child: Text('音乐库')),
+                DropdownMenuItem(value: 1, child: Text('歌单')),
+                DropdownMenuItem(value: 2, child: Text('网络库')),
+                DropdownMenuItem(value: 3, child: Text('下载队列')),
+                DropdownMenuItem(value: 4, child: Text('设置')),
+              ],
+              onChanged: (v) {
+                if (v != null) context.read<SettingsService>().setHomeTab(v);
+              },
+            ),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.history),
+            title: const Text('网络库记住上次路径'),
+            subtitle: const Text('下次进入网络库时恢复上次浏览的目录'),
+            value: settings.networkRememberLastPath,
+            onChanged: (v) =>
+                context.read<SettingsService>().setNetworkRememberLastPath(v),
+          ),
+          const Divider(height: 40),
+          Text('视频播放', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.video_library_outlined),
+            title: const Text('视频播放设置'),
+            subtitle: const Text('流式参数 / 手势 / 后台播放 / 画中画'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const VideoSettingsScreen(),
+                ),
+              );
+            },
+          ),
+          const Divider(height: 40),
+          Text('文件类型', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.extension_outlined),
+            title: const Text('文件后缀管理'),
+            subtitle: const Text('音乐 / 视频 / CUE 后缀与默认操作'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const FileExtensionsScreen(),
+                ),
+              );
+            },
+          ),
+          const Divider(height: 40),
+          Text('媒体通知', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -611,14 +639,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ),
             ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => _testMediaNotification(context),
-              icon: const Icon(Icons.notifications_active_outlined),
-              label: const Text('测试媒体通知'),
-            ),
-          ),
           const Divider(height: 40),
           Text('封面缩略图尺寸', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 4),
@@ -972,9 +992,9 @@ class _SettingsScreenState extends State<SettingsScreen>
 
           const Divider(height: 40),
           Text(
-            '说明：本应用永不从 WebDAV 流式播放。点按曲目会先下载到本地，'
-            '就绪后再用本地文件播放。下载完成后读取标签并写入本地音乐库。'
-            '凭证保存在 flutter_secure_storage。',
+            '说明：音乐不流式播放——点按曲目会先下载到本地，就绪后再用本地文件'
+            '播放，下载完成后读取标签并写入本地音乐库。视频则通过 media_kit '
+            '直接从 WebDAV 流式播放。凭证保存在 flutter_secure_storage。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

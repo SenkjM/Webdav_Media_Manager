@@ -18,6 +18,7 @@ import 'services/library_sync_service.dart';
 import 'services/notification_permission_service.dart';
 import 'services/playlist_service.dart';
 import 'services/settings_service.dart';
+import 'services/video_playback_service.dart';
 import 'services/webdav_service.dart';
 import 'theme/app_theme.dart';
 
@@ -65,6 +66,9 @@ class WebDavMusicApp extends StatelessWidget {
           value: appState.notificationPermission,
         ),
         ChangeNotifierProvider<AudioPlayerService>.value(value: appState.player),
+        ChangeNotifierProvider<VideoPlaybackService>.value(
+          value: appState.videoPlayback,
+        ),
       ],
       child: MaterialApp(
         title: 'WebDAV 音乐播放器',

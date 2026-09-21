@@ -17,6 +17,7 @@ import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
 import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
+import '../services/video_playback_service.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
@@ -57,6 +58,7 @@ class AppState extends ChangeNotifier {
       handler: audioHandler,
       notificationPermission: notificationPermission,
     );
+    videoPlayback = VideoPlaybackService();
   }
 
   late final SettingsService settings;
@@ -71,6 +73,7 @@ class AppState extends ChangeNotifier {
   late final DownloadQueueService downloads;
   late final NotificationPermissionService notificationPermission;
   late final AudioPlayerService player;
+  late final VideoPlaybackService videoPlayback;
 
   bool ready = false;
   String? initError;
@@ -231,6 +234,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    videoPlayback.dispose();
     player.dispose();
     downloads.dispose();
     cache.dispose();

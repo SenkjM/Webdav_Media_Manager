@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cache_policy.dart';
+import '../models/file_type_config.dart';
 import '../models/library_track.dart';
+import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
@@ -18,6 +22,19 @@ class SettingsService extends ChangeNotifier {
   static const _kPlaylistRemotePath = 'playlist_remote_path';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
   static const _kCoverThumbSize = 'cover_thumb_size';
+  static const _kFileTypeConfig = 'file_type_config_json';
+  static const _kMusicTapAction = 'music_tap_action';
+  static const _kVideoTapAction = 'video_tap_action';
+  static const _kHomeTab = 'home_tab_index';
+  static const _kNetworkRememberLastPath = 'network_remember_last_path';
+  static const _kNetworkLastPath = 'network_last_path';
+  static const _kVideoLeftDoubleTap = 'video_left_double_tap';
+  static const _kVideoRightDoubleTap = 'video_right_double_tap';
+  static const _kVideoLongPress = 'video_long_press';
+  static const _kVideoBackgroundPlayback = 'video_background_playback';
+  static const _kVideoPipEnabled = 'video_pip_enabled';
+  static const _kVideoHardwareDecoding = 'video_hardware_decoding';
+  static const _kVideoBufferSizeMb = 'video_buffer_size_mb';
 
   /// Default custom retention: 30 days.
   static const int defaultCustomRetentionHours = 24 * 30;
@@ -30,6 +47,11 @@ class SettingsService extends ChangeNotifier {
   static const String defaultLibrarySyncRemotePath = '/WebDAVMusicPlayer/library/';
   static const String defaultPlaylistRemotePath = '/Playlists/';
 
+  /// Video streaming buffer clamp [8 MB, 512 MB]; default 64 MB.
+  static const int minVideoBufferMb = 8;
+  static const int maxVideoBufferMb = 512;
+  static const int defaultVideoBufferMb = 64;
+
   SharedPreferences? _prefs;
   CacheRetention _retention = CacheRetention.oneWeek;
   int _customRetentionHours = defaultCustomRetentionHours;
@@ -39,6 +61,19 @@ class SettingsService extends ChangeNotifier {
   String _playlistRemotePath = defaultPlaylistRemotePath;
   bool _playlistSyncEnabled = true;
   int _coverThumbSize = coverThumbSize;
+  FileTypeConfig _fileTypes = FileTypeConfig();
+  MusicTapAction _musicTapAction = MusicTapAction.download;
+  VideoTapAction _videoTapAction = VideoTapAction.open;
+  int _homeTab = 0;
+  bool _networkRememberLastPath = false;
+  String _networkLastPath = '/';
+  VideoGestureAction _videoLeftDoubleTap = VideoGestureAction.back10s;
+  VideoGestureAction _videoRightDoubleTap = VideoGestureAction.forward10s;
+  VideoGestureAction _videoLongPress = VideoGestureAction.toggleRate2x;
+  bool _videoBackgroundPlayback = true;
+  bool _videoPipEnabled = false;
+  bool _videoHardwareDecoding = true;
+  int _videoBufferSizeMb = defaultVideoBufferMb;
   bool _loaded = false;
 
   CacheRetention get retention => _retention;
@@ -52,6 +87,19 @@ class SettingsService extends ChangeNotifier {
   bool get playlistSyncEnabled => _playlistSyncEnabled;
   /// Square edge (px) for newly compressed cover thumbs.
   int get coverThumbSizePx => _coverThumbSize;
+  FileTypeConfig get fileTypes => _fileTypes;
+  MusicTapAction get musicTapAction => _musicTapAction;
+  VideoTapAction get videoTapAction => _videoTapAction;
+  int get homeTab => _homeTab;
+  bool get networkRememberLastPath => _networkRememberLastPath;
+  String get networkLastPath => _networkLastPath;
+  VideoGestureAction get videoLeftDoubleTap => _videoLeftDoubleTap;
+  VideoGestureAction get videoRightDoubleTap => _videoRightDoubleTap;
+  VideoGestureAction get videoLongPress => _videoLongPress;
+  bool get videoBackgroundPlayback => _videoBackgroundPlayback;
+  bool get videoPipEnabled => _videoPipEnabled;
+  bool get videoHardwareDecoding => _videoHardwareDecoding;
+  int get videoBufferSizeMb => _videoBufferSizeMb;
   bool get loaded => _loaded;
 
   Future<void> init() async {
@@ -73,8 +121,46 @@ class SettingsService extends ChangeNotifier {
     _coverThumbSize = clampCoverThumbSize(
       _prefs!.getInt(_kCoverThumbSize) ?? coverThumbSize,
     );
+    _fileTypes = _readFileTypes();
+    _musicTapAction = MusicTapActionX.fromStorageKey(
+      _prefs!.getString(_kMusicTapAction),
+    );
+    _videoTapAction = VideoTapActionX.fromStorageKey(
+      _prefs!.getString(_kVideoTapAction),
+    );
+    _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
+    _networkRememberLastPath =
+        _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
+    _networkLastPath = _prefs!.getString(_kNetworkLastPath) ?? '/';
+    _videoLeftDoubleTap = VideoGestureActionX.fromStorageKey(
+      _prefs!.getString(_kVideoLeftDoubleTap),
+    );
+    _videoRightDoubleTap = VideoGestureActionX.fromStorageKey(
+      _prefs!.getString(_kVideoRightDoubleTap),
+    );
+    _videoLongPress = VideoGestureActionX.fromStorageKey(
+      _prefs!.getString(_kVideoLongPress),
+    );
+    _videoBackgroundPlayback =
+        _prefs!.getBool(_kVideoBackgroundPlayback) ?? true;
+    _videoPipEnabled = _prefs!.getBool(_kVideoPipEnabled) ?? false;
+    _videoHardwareDecoding =
+        _prefs!.getBool(_kVideoHardwareDecoding) ?? true;
+    _videoBufferSizeMb = _clampBufferMb(
+      _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
+    );
     _loaded = true;
     notifyListeners();
+  }
+
+  FileTypeConfig _readFileTypes() {
+    final raw = _prefs!.getString(_kFileTypeConfig);
+    if (raw == null || raw.isEmpty) return FileTypeConfig();
+    try {
+      final json = jsonDecode(raw);
+      if (json is Map<String, dynamic>) return FileTypeConfig.fromJson(json);
+    } catch (_) {}
+    return FileTypeConfig();
   }
 
   Future<void> setRetention(CacheRetention retention) async {
@@ -155,6 +241,109 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setFileTypes(FileTypeConfig config) async {
+    _fileTypes = config;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kFileTypeConfig, jsonEncode(config.toJson()));
+    notifyListeners();
+  }
+
+  Future<void> setMusicTapAction(MusicTapAction action) async {
+    _musicTapAction = action;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kMusicTapAction, action.storageKey);
+    notifyListeners();
+  }
+
+  Future<void> setVideoTapAction(VideoTapAction action) async {
+    _videoTapAction = action;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kVideoTapAction, action.storageKey);
+    notifyListeners();
+  }
+
+  Future<void> setHomeTab(int index) async {
+    _homeTab = index.clamp(0, 4);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kHomeTab, _homeTab);
+    notifyListeners();
+  }
+
+  Future<void> setNetworkRememberLastPath(bool enabled) async {
+    _networkRememberLastPath = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kNetworkRememberLastPath, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setNetworkLastPath(String path) async {
+    var p = path.trim();
+    if (p.isEmpty) p = '/';
+    if (!p.startsWith('/')) p = '/$p';
+    _networkLastPath = p;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kNetworkLastPath, p);
+    // Avoid notifyListeners() spam on every folder navigation.
+  }
+
+  Future<void> setVideoLeftDoubleTap(VideoGestureAction action) async {
+    _videoLeftDoubleTap = action;
+    await _persistGesture(_kVideoLeftDoubleTap, action);
+  }
+
+  Future<void> setVideoRightDoubleTap(VideoGestureAction action) async {
+    _videoRightDoubleTap = action;
+    await _persistGesture(_kVideoRightDoubleTap, action);
+  }
+
+  Future<void> setVideoLongPress(VideoGestureAction action) async {
+    _videoLongPress = action;
+    await _persistGesture(_kVideoLongPress, action);
+  }
+
+  Future<void> _persistGesture(
+    String key,
+    VideoGestureAction action,
+  ) async {
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(key, action.storageKey);
+    notifyListeners();
+  }
+
+  Future<void> setVideoBackgroundPlayback(bool enabled) async {
+    _videoBackgroundPlayback = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kVideoBackgroundPlayback, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setVideoPipEnabled(bool enabled) async {
+    _videoPipEnabled = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kVideoPipEnabled, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setVideoHardwareDecoding(bool enabled) async {
+    _videoHardwareDecoding = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kVideoHardwareDecoding, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setVideoBufferSizeMb(int mb) async {
+    _videoBufferSizeMb = _clampBufferMb(mb);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kVideoBufferSizeMb, _videoBufferSizeMb);
+    notifyListeners();
+  }
+
+  static int _clampBufferMb(int mb) {
+    if (mb < minVideoBufferMb) return minVideoBufferMb;
+    if (mb > maxVideoBufferMb) return maxVideoBufferMb;
+    return mb;
+  }
+
   Map<String, dynamic> exportForBackup() => {
         'cache_retention': _retention.storageKey,
         'cache_custom_retention_hours': _customRetentionHours,
@@ -163,6 +352,19 @@ class SettingsService extends ChangeNotifier {
         'playlist_remote_path': _playlistRemotePath,
         'playlist_sync_enabled': _playlistSyncEnabled,
         'cover_thumb_size': _coverThumbSize,
+        'file_type_config': _fileTypes.toJson(),
+        'music_tap_action': _musicTapAction.storageKey,
+        'video_tap_action': _videoTapAction.storageKey,
+        'home_tab_index': _homeTab,
+        'network_remember_last_path': _networkRememberLastPath,
+        'network_last_path': _networkLastPath,
+        'video_left_double_tap': _videoLeftDoubleTap.storageKey,
+        'video_right_double_tap': _videoRightDoubleTap.storageKey,
+        'video_long_press': _videoLongPress.storageKey,
+        'video_background_playback': _videoBackgroundPlayback,
+        'video_pip_enabled': _videoPipEnabled,
+        'video_hardware_decoding': _videoHardwareDecoding,
+        'video_buffer_size_mb': _videoBufferSizeMb,
       };
 
   Future<Map<String, dynamic>> exportForBackupAsync() async => exportForBackup();
@@ -195,6 +397,65 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['cover_thumb_size'] is int) {
       await setCoverThumbSize(json['cover_thumb_size'] as int);
+    }
+    if (json['file_type_config'] is Map) {
+      await setFileTypes(
+        FileTypeConfig.fromJson(
+          Map<String, dynamic>.from(json['file_type_config'] as Map),
+        ),
+      );
+    }
+    if (json['music_tap_action'] != null) {
+      await setMusicTapAction(
+        MusicTapActionX.fromStorageKey(json['music_tap_action'] as String?),
+      );
+    }
+    if (json['video_tap_action'] != null) {
+      await setVideoTapAction(
+        VideoTapActionX.fromStorageKey(json['video_tap_action'] as String?),
+      );
+    }
+    if (json['home_tab_index'] is int) {
+      await setHomeTab(json['home_tab_index'] as int);
+    }
+    if (json['network_remember_last_path'] is bool) {
+      await setNetworkRememberLastPath(
+        json['network_remember_last_path'] as bool,
+      );
+    }
+    if (json['network_last_path'] is String) {
+      await setNetworkLastPath(json['network_last_path'] as String);
+    }
+    if (json['video_left_double_tap'] != null) {
+      await setVideoLeftDoubleTap(
+        VideoGestureActionX.fromStorageKey(
+          json['video_left_double_tap'] as String?,
+        ),
+      );
+    }
+    if (json['video_right_double_tap'] != null) {
+      await setVideoRightDoubleTap(
+        VideoGestureActionX.fromStorageKey(
+          json['video_right_double_tap'] as String?,
+        ),
+      );
+    }
+    if (json['video_long_press'] != null) {
+      await setVideoLongPress(
+        VideoGestureActionX.fromStorageKey(json['video_long_press'] as String?),
+      );
+    }
+    if (json['video_background_playback'] is bool) {
+      await setVideoBackgroundPlayback(json['video_background_playback'] as bool);
+    }
+    if (json['video_pip_enabled'] is bool) {
+      await setVideoPipEnabled(json['video_pip_enabled'] as bool);
+    }
+    if (json['video_hardware_decoding'] is bool) {
+      await setVideoHardwareDecoding(json['video_hardware_decoding'] as bool);
+    }
+    if (json['video_buffer_size_mb'] is int) {
+      await setVideoBufferSizeMb(json['video_buffer_size_mb'] as int);
     }
   }
 

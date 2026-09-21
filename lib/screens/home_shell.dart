@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/audio_player_service.dart';
+import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/android_background.dart';
 import '../widgets/mini_player.dart';
@@ -79,9 +80,15 @@ class _HomeShellState extends State<HomeShell> {
             rootNav.pop();
             return;
           }
-          // Root back: send task to background (like Home) so audio_service
-          // keeps playing. Do NOT SystemNavigator.pop() — that finishes the
-          // Activity and disposes AppState/player.
+          // Not on the configured home tab → return to it instead of exiting.
+          final home = context.read<SettingsService>().homeTab;
+          if (_index != home) {
+            setState(() => _index = home);
+            return;
+          }
+          // Root back on home: send task to background (like Home) so
+          // audio_service keeps playing. Do NOT SystemNavigator.pop() — that
+          // finishes the Activity and disposes AppState/player.
           moveAppToBackground();
         },
         child: Scaffold(
