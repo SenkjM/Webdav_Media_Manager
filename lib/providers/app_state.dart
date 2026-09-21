@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/cache_policy.dart';
 import '../models/download_task.dart';
 import '../models/file_type_config.dart';
+import '../models/sync_interval.dart';
 import '../utils/app_snack.dart';
 import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
@@ -123,6 +124,9 @@ class AppState extends ChangeNotifier {
       // Incremental library sync: whenever a download (or a restore) changes
       // the local library, push just the new rows to the cloud index.
       library.addListener(_onLibraryChanged);
+      // Changing 定时同步 in Settings must take effect immediately, not on the
+      // next launch.
+      settings.addListener(_onSettingsChanged);
       await downloads.init();
       // Download notifications: create the channel and honour the setting.
       downloads.notificationsEnabled = settings.downloadNotificationsEnabled;
@@ -196,13 +200,42 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  /// Periodic scan for the "true sync" side (credentials + playlists) plus an
-  /// incremental library push. Cheap no-op when nothing changed.
+  SyncInterval _appliedSyncInterval = SyncInterval.every30m;
+
+  /// Re-arm the background timer when the interval setting changes.
+  void _onSettingsChanged() {
+    if (!ready) return;
+    if (settings.syncInterval == _appliedSyncInterval) return;
+    _appliedSyncInterval = settings.syncInterval;
+    _schedulePeriodicSync();
+  }
+
+  /// Background scan on the interval chosen in 同步与备份 → 定时同步.
+  ///
+  /// It runs the **whole** sync: credentials pull (needs the user's key),
+  /// playlist merge, and the incremental library push. `off` disables it — the
+  /// timer is then simply not created. Cheap no-op when nothing changed.
   void _schedulePeriodicSync() {
     _periodicSync?.cancel();
-    _periodicSync = Timer.periodic(const Duration(minutes: 30), (_) {
-      unawaited(sync.autoScan());
-    });
+    _periodicSync = null;
+    _appliedSyncInterval = settings.syncInterval;
+    final interval = settings.syncInterval.duration;
+    if (interval == null) return;
+    _periodicSync = Timer.periodic(
+      interval,
+      (_) => unawaited(runScheduledSync()),
+    );
+  }
+
+  /// One scheduled pass; also used by the "立即同步一次" action.
+  Future<void> runScheduledSync() async {
+    if (!ready || !sync.hasUsableAccount) return;
+    try {
+      await sync.autoScan();
+      await pushLibraryIncrement();
+    } catch (_) {
+      // Background best-effort — the sync screen surfaces real errors.
+    }
   }
 
   /// Push newly added library rows without waiting for a manual action.
@@ -316,10 +349,7 @@ class AppState extends ChangeNotifier {
       if (parts.length < 2) continue;
       final sourceName = parts[0];
       final remote = parts.sublist(1).join('\u0000');
-      await cache.deleteLocalFile(
-        sourceName: sourceName,
-        remotePath: remote,
-      );
+      await cache.deleteLocalFile(sourceName: sourceName, remotePath: remote);
     }
 
     await library.destroyAll();

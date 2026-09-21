@@ -8,6 +8,7 @@ import '../models/cache_policy.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
 import '../models/snack_duration.dart';
+import '../models/sync_interval.dart';
 import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
 import 'library_sync_store.dart';
@@ -53,6 +54,7 @@ class SettingsService extends ChangeNotifier {
   static const _kSyncRemoteRoot = 'sync_remote_root';
   static const _kSyncEncryptPassword = 'sync_encrypt_password';
   static const _kLibraryRebuildHint = 'library_rebuild_hint_fragments';
+  static const _kSyncInterval = 'sync_interval';
   static const _kVaultPassphrase = 'vault_passphrase';
   static const _kDeviceId = 'sync_device_id';
   static const _kLastRev = 'sync_last_rev';
@@ -162,6 +164,9 @@ class SettingsService extends ChangeNotifier {
   /// Cloud-library fragment count at which the sync screen suggests a rebuild.
   int _libraryRebuildHintFragments = defaultLibraryRebuildHintFragments;
 
+  /// How often the background scan runs; [SyncInterval.off] disables it.
+  SyncInterval _syncInterval = SyncInterval.every30m;
+
   /// User-chosen credential-vault key (see [vaultPassphrase]).
   String _vaultPassphrase = '';
 
@@ -255,6 +260,16 @@ class SettingsService extends ChangeNotifier {
   static int _clampRebuildHint(int value) => value.clamp(2, 500);
 
   int get libraryRebuildHintFragments => _libraryRebuildHintFragments;
+
+  SyncInterval get syncInterval => _syncInterval;
+
+  Future<void> setSyncInterval(SyncInterval value) async {
+    if (value == _syncInterval) return;
+    _syncInterval = value;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kSyncInterval, value.storageKey);
+    notifyListeners();
+  }
 
   Future<void> setLibraryRebuildHintFragments(int value) async {
     final next = _clampRebuildHint(value);
@@ -350,6 +365,9 @@ class SettingsService extends ChangeNotifier {
     _syncRemoteRoot =
         _prefs!.getString(_kSyncRemoteRoot) ?? defaultSyncRemoteRoot;
     _syncEncryptPassword = _prefs!.getBool(_kSyncEncryptPassword) ?? true;
+    _syncInterval = SyncIntervalX.fromStorageKey(
+      _prefs!.getString(_kSyncInterval),
+    );
     _libraryRebuildHintFragments = _clampRebuildHint(
       _prefs!.getInt(_kLibraryRebuildHint) ??
           defaultLibraryRebuildHintFragments,
@@ -788,6 +806,7 @@ class SettingsService extends ChangeNotifier {
     'share_tag_rename_enabled': _shareTagRenameEnabled,
     'share_tag_rename_pattern': _shareTagRenamePattern,
     'library_rebuild_hint_fragments': _libraryRebuildHintFragments,
+    'sync_interval': _syncInterval.storageKey,
     'sync_remote_root': _syncRemoteRoot,
     'sync_encrypt_password': _syncEncryptPassword,
     'snack_duration': _snackMode.storageKey,
@@ -921,6 +940,11 @@ class SettingsService extends ChangeNotifier {
     if (json['share_tag_rename_pattern'] is String) {
       await setShareTagRenamePattern(
         json['share_tag_rename_pattern'] as String,
+      );
+    }
+    if (json['sync_interval'] is String) {
+      await setSyncInterval(
+        SyncIntervalX.fromStorageKey(json['sync_interval'] as String),
       );
     }
     if (json['library_rebuild_hint_fragments'] is num) {

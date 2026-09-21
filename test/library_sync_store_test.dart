@@ -310,4 +310,32 @@ void main() {
       expect(audit.summary, contains('缺失文件 1 个'));
     });
   });
+
+  group('standard shard slicing', () {
+    test('fixed-size chunks, ordered by disk then path', () {
+      final tracks = [
+        for (var i = 0; i < 5; i++) _t('/b/$i.flac', source: 'aliyun', rev: i + 1),
+        for (var i = 0; i < 5; i++) _t('/a/$i.flac', source: '123pan', rev: i + 1),
+      ];
+      final slices = chunkTracksForRebuild(tracks, perShard: 4);
+      expect(slices.map((s) => s.length), [4, 4, 2]);
+      // Sorted by (disk name, path), so the same library always slices the same.
+      expect(slices.first.first.sourceName, '123pan');
+      expect(slices.first.first.remotePath, '/a/0.flac');
+      expect(slices.last.last.sourceName, 'aliyun');
+    });
+
+    test('an album may span shards — grouping was dropped on purpose', () {
+      final tracks = [
+        for (var i = 0; i < 4; i++)
+          _t('/album/$i.flac', rev: i + 1, title: '同名专辑'),
+      ];
+      final slices = chunkTracksForRebuild(tracks, perShard: 3);
+      expect(slices.map((s) => s.length), [3, 1]);
+    });
+
+    test('an empty library yields no shards', () {
+      expect(chunkTracksForRebuild(const [], perShard: 500), isEmpty);
+    });
+  });
 }

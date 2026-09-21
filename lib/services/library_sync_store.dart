@@ -141,20 +141,26 @@ class LibraryManifest {
   }
 }
 
-/// What a rebuild would produce (for the size/片数 preview).
+/// What a rebuild would produce (for the size / shard-count preview).
 class RebuildEstimate {
   const RebuildEstimate({
     required this.shards,
-    required this.withCoverBytes,
-    required this.withoutCoverBytes,
+    required this.bytes,
+    required this.withCovers,
   });
 
   final int shards;
-  final int withCoverBytes;
-  final int withoutCoverBytes;
 
-  String get withCoverLabel => _fmt(withCoverBytes);
-  String get withoutCoverLabel => _fmt(withoutCoverBytes);
+  /// Total bytes for the requested [withCovers] setting.
+  final int bytes;
+
+  /// Whether the estimate includes embedded cover thumbnails.
+  final bool withCovers;
+
+  String get sizeLabel => _fmt(bytes);
+
+  String get label =>
+      '预计 $shards 个分片 · ${withCovers ? '含封面' : '不含封面'}约 $sizeLabel';
 
   static String _fmt(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -283,6 +289,30 @@ bool _isLibraryPartName(String name) =>
     name.startsWith(LibrarySyncStore.shardPrefix) ||
     name.startsWith(LibrarySyncStore.segmentPrefix) ||
     name.startsWith(LibrarySyncStore.tombPrefix);
+
+/// Split [tracks] into fixed-size shards, ordered by `(网盘名, path)`.
+///
+/// Pure so the slicing rule is unit-testable. Album grouping was deliberately
+/// dropped: covers are stored **per track** (no dedupe), so keeping an album in
+/// one shard bought nothing but uneven shard sizes.
+List<List<LibraryTrack>> chunkTracksForRebuild(
+  List<LibraryTrack> tracks, {
+  required int perShard,
+}) {
+  final size = perShard < 1 ? 1 : perShard;
+  final ordered = [...tracks]
+    ..sort((a, b) {
+      final bySource = a.sourceName.compareTo(b.sourceName);
+      if (bySource != 0) return bySource;
+      return a.remotePath.compareTo(b.remotePath);
+    });
+  final slices = <List<LibraryTrack>>[];
+  for (var i = 0; i < ordered.length; i += size) {
+    final end = (i + size) > ordered.length ? ordered.length : i + size;
+    slices.add(ordered.sublist(i, end));
+  }
+  return slices;
+}
 
 /// The merged cloud library.
 class CloudLibrary {
@@ -630,6 +660,10 @@ class LibrarySyncStore {
 
   /// Estimated shard count and size for a rebuild, so the user can pick a
   /// tracks-per-shard value before committing.
+  ///
+  /// Only the size for the **requested** cover setting is reported: showing both
+  /// numbers next to a switch made it ambiguous which one would actually land in
+  /// the cloud.
   Future<RebuildEstimate> estimate({
     required List<LibraryTrack> tracks,
     required int tracksPerShard,
@@ -639,7 +673,7 @@ class LibrarySyncStore {
     final shards = tracks.isEmpty
         ? 0
         : ((tracks.length + perShard - 1) ~/ perShard);
-    // Encode one representative slice to measure real bytes (covers included).
+    // Encode one real slice so the number reflects actual bytes, covers included.
     final sample = tracks.take(perShard).toList();
     final blobs = withCovers ? await _coverBlobs(sample) : null;
     final bytes = LibraryShardCodec.encodeTrackShard(
@@ -650,30 +684,15 @@ class LibrarySyncStore {
       tracks: sample,
       coverBlobs: blobs,
     ).length;
-    final full = libraryTrackCountForEstimate(
-      shards: shards,
-      perShardSampleBytes: bytes,
-      sampleCount: sample.length,
-      total: tracks.length,
-    );
-    final withoutCovers = LibraryShardCodec.encodeTrackShard(
-      kind: WmpKind.base,
-      deviceId: deviceId,
-      revFrom: 0,
-      revTo: 0,
-      tracks: sample,
-      coverBlobs: null,
-    ).length;
-    final fullNoCover = libraryTrackCountForEstimate(
-      shards: shards,
-      perShardSampleBytes: withoutCovers,
-      sampleCount: sample.length,
-      total: tracks.length,
-    );
     return RebuildEstimate(
       shards: shards,
-      withCoverBytes: full,
-      withoutCoverBytes: fullNoCover,
+      bytes: libraryTrackCountForEstimate(
+        shards: shards,
+        perShardSampleBytes: bytes,
+        sampleCount: sample.length,
+        total: tracks.length,
+      ),
+      withCovers: withCovers,
     );
   }
 
@@ -692,32 +711,8 @@ class LibrarySyncStore {
     final previous = await readManifest(destAccountId);
     await _webDav.ensureDirectory(destAccountId, dirPath());
 
-    // Slice on album boundaries where possible: an album's tracks then share one
-    // shard, which keeps a future read local and avoids splitting a CUE group.
-    final ordered = [...tracks]
-      ..sort((a, b) {
-        final albumA = '${a.sourceName}\u0000${a.displayAlbum}';
-        final albumB = '${b.sourceName}\u0000${b.displayAlbum}';
-        final byAlbum = albumA.compareTo(albumB);
-        if (byAlbum != 0) return byAlbum;
-        return a.remotePath.compareTo(b.remotePath);
-      });
-    final slices = <List<LibraryTrack>>[];
-    var current = <LibraryTrack>[];
-    var currentAlbum = ordered.isEmpty
-        ? ''
-        : '${ordered.first.sourceName}\u0000${ordered.first.displayAlbum}';
-    for (final t in ordered) {
-      final album = '${t.sourceName}\u0000${t.displayAlbum}';
-      if (current.isNotEmpty &&
-          (current.length >= perShard || album != currentAlbum)) {
-        slices.add(current);
-        current = <LibraryTrack>[];
-      }
-      currentAlbum = album;
-      current.add(t);
-    }
-    if (current.isNotEmpty) slices.add(current);
+    // Plain fixed-size shards (see [chunkTracksForRebuild]).
+    final slices = chunkTracksForRebuild(tracks, perShard: perShard);
 
     final shards = <BaseShard>[];
     var maxRev = 0;

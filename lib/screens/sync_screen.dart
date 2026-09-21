@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/sync_interval.dart';
 import '../models/webdav_account.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
@@ -32,6 +33,50 @@ class SyncScreen extends StatefulWidget {
 }
 
 class _SyncScreenState extends State<SyncScreen> {
+  /// Sentinel for the「自定义…」entry of the rebuild-hint dropdown.
+  static const int _customThreshold = -1;
+
+  static int _thresholdChoice(int current) =>
+      SettingsService.rebuildHintPresets.contains(current)
+      ? current
+      : _customThreshold;
+
+  /// Ask for an exact fragment count (the presets are only conveniences).
+  Future<int?> _askCustomThreshold(int current) async {
+    final ctrl = TextEditingController(text: '$current');
+    final value = await showDialog<int>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.elevated,
+        title: const Text('重建提示阈值'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: '云端分片数',
+            helperText: '达到这个数量时提示重建（2–500）',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = int.tryParse(ctrl.text.trim());
+              Navigator.pop(ctx, parsed);
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    return value;
+  }
+
   final _passphrase = TextEditingController();
   final _base64Controller = TextEditingController();
   final _backupDirController = TextEditingController();
@@ -565,6 +610,31 @@ class _SyncScreenState extends State<SyncScreen> {
             icon: const Icon(Icons.sync),
             label: const Text('全部同步（凭证 + 歌单 + 音乐库）'),
           ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.schedule, size: 20),
+            title: const Text('定时同步', style: TextStyle(fontSize: 14)),
+            subtitle: Text(
+              settings.syncInterval == SyncInterval.off
+                  ? '已关闭：只在手动点「全部同步」时同步'
+                  : '${settings.syncInterval.labelZh} 后台自动跑一遍：'
+                        '凭证 + 歌单合并 + 音乐库增量（无变化不上传）',
+              style: const TextStyle(fontSize: 11),
+            ),
+            trailing: DropdownButton<SyncInterval>(
+              value: settings.syncInterval,
+              underline: const SizedBox.shrink(),
+              items: [
+                for (final v in SyncInterval.values)
+                  DropdownMenuItem(value: v, child: Text(v.labelZh)),
+              ],
+              onChanged: (v) {
+                if (v != null) settings.setSyncInterval(v);
+              },
+            ),
+          ),
 
           const Divider(height: 28),
 
@@ -696,7 +766,7 @@ class _SyncScreenState extends State<SyncScreen> {
           _sectionTitle('音乐库'),
           const Text(
             '云端一个库 = 一个 index.json 清单 + 若干二进制分片（.wmp）：\n'
-            '• lib-*.wmp 基础分片，按专辑边界切片\n'
+            '• lib-*.wmp 基础分片，按每片歌曲数切片（不按专辑分组）\n'
             '• seg-*.wmp 增量分片，每下载一首只追加一个小片\n'
             '• del-*.wmp 墓碑分片，记录删除，**重建时才真正落实**\n'
             '只有本地有变化才会上传，没变化一个字节都不传；不会自动合并。'
@@ -784,18 +854,41 @@ class _SyncScreenState extends State<SyncScreen> {
             leading: const Icon(Icons.notifications_active_outlined, size: 20),
             title: const Text('重建提示阈值', style: TextStyle(fontSize: 14)),
             subtitle: Text(
-              '云端分片达到  个时提示重建',
+              sync.cloudFragmentCount > 0
+                  ? '当前云端分片 ${sync.cloudFragmentCount} 个，'
+                        '达到 ${settings.libraryRebuildHintFragments} 个时提示重建'
+                  : '云端分片达到 ${settings.libraryRebuildHintFragments} 个时提示重建',
               style: const TextStyle(fontSize: 11),
             ),
             trailing: DropdownButton<int>(
-              value: settings.libraryRebuildHintFragments,
+              value: _thresholdChoice(settings.libraryRebuildHintFragments),
               underline: const SizedBox.shrink(),
               items: [
                 for (final n in SettingsService.rebuildHintPresets)
-                  DropdownMenuItem(value: n, child: Text('')),
+                  DropdownMenuItem(value: n, child: Text('$n')),
+                DropdownMenuItem(
+                  value: _customThreshold,
+                  child: Text(
+                    SettingsService.rebuildHintPresets.contains(
+                          settings.libraryRebuildHintFragments,
+                        )
+                        ? '自定义…'
+                        : '自定义（${settings.libraryRebuildHintFragments}）',
+                  ),
+                ),
               ],
-              onChanged: (v) {
-                if (v != null) settings.setLibraryRebuildHintFragments(v);
+              onChanged: (v) async {
+                if (v == null) return;
+                if (v == _customThreshold) {
+                  final picked = await _askCustomThreshold(
+                    settings.libraryRebuildHintFragments,
+                  );
+                  if (picked != null) {
+                    await settings.setLibraryRebuildHintFragments(picked);
+                  }
+                  return;
+                }
+                await settings.setLibraryRebuildHintFragments(v);
               },
             ),
           ),
@@ -1078,10 +1171,7 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
             ),
             const SizedBox(height: 4),
             Text(
-              est == null
-                  ? (_loading ? '正在估算…' : '估算不可用')
-                  : '预计 ${est.shards} 个分片 · 含封面约 ${est.withCoverLabel}'
-                        ' · 不含封面约 ${est.withoutCoverLabel}',
+              est == null ? (_loading ? '正在估算…' : '估算不可用') : est.label,
               style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.secondaryText,
