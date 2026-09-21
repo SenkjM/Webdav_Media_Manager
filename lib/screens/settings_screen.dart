@@ -589,6 +589,28 @@ class _SettingsScreenState extends State<SettingsScreen>
               await context.read<DownloadQueueService>().setNotifications(v);
             },
           ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            leading: const Icon(Icons.notifications_active_outlined, size: 20),
+            title: const Text('发送测试通知', style: TextStyle(fontSize: 14)),
+            subtitle: const Text(
+              '立即发一条进度与一条完成通知，用来排查系统是否拦截',
+              style: TextStyle(fontSize: 11),
+            ),
+            onTap: () async {
+              final err = await context
+                  .read<DownloadQueueService>()
+                  .notificationService
+                  .selfTest();
+              if (!context.mounted) return;
+              if (err == null) {
+                AppSnack.show(context, '测试通知已发送（进度 + 完成各一条）');
+              } else {
+                AppSnack.error(context, '测试通知失败：$err');
+              }
+            },
+          ),
 
           const Divider(height: 40),
           Text(

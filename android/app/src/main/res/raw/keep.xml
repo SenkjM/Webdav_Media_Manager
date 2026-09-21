@@ -1,3 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Resources referenced only by *name at runtime* (Dart strings): the resource
+  shrinker cannot see those references and would drop them from a release build.
+  That silently broke download notifications: `drawable/ic_stat_download` was
+  removed, so `show()` could not resolve a small icon and the notification never
+  appeared (debug builds worked, which made it look like a device/OEM problem).
+  Keep every name that Dart passes to a notification API.
+-->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@drawable/ic_stat_music,@drawable/ic_stat_music_white,@drawable/ic_media_play,@drawable/ic_media_pause,@drawable/ic_media_stop,@drawable/ic_media_skip_previous,@drawable/ic_media_skip_next" />
+    tools:keep="@drawable/ic_stat_download,@drawable/ic_stat_music,@drawable/ic_stat_music_white,@drawable/ic_media_play,@drawable/ic_media_pause,@drawable/ic_media_stop,@drawable/ic_media_skip_previous,@drawable/ic_media_skip_next" />

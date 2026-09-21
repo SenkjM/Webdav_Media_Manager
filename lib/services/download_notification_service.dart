@@ -8,25 +8,19 @@ import '../models/download_task.dart';
 /// Android notification channels for the download queue.
 ///
 /// Two channels on purpose:
-/// * **进度** — silent, rewritten several times a second while files transfer;
-/// * **完成** — silent, posted once when the queue drains so the result is still
-///   readable after the progress notification is gone.
+/// * **进度** — low importance, silent, rewritten several times a second while
+///   files transfer;
+/// * **完成** — default importance, silent, posted once when the queue drains so
+///   the result is still readable after the progress notifications are gone.
 ///
 /// Both are separate from the media channel, which is owned by `audio_service`.
-///
-/// The progress channel is `.v2`: the `.v1` channel was created with
-/// `Importance.low`, and ColorOS folded it into 不重要通知 (the system reported
-/// `mUnimportant=true`), so progress was invisible even though it was posted.
-/// Android never raises the importance of an existing channel, hence the new id
-/// — and [DownloadNotificationService.ensureChannel] deletes the stale one.
-const String kDownloadChannelId =
-    'com.webdav.webdav_music_player.downloads.v2';
+const String kDownloadChannelId = 'com.webdav.webdav_music_player.downloads.v1';
 const String kDownloadChannelName = '下载进度';
 const String kDownloadChannelDescription = '下载队列进行中的进度';
 
-/// Superseded by [kDownloadChannelId]; removed on startup.
-const String kLegacyDownloadChannelId =
-    'com.webdav.webdav_music_player.downloads.v1';
+/// Experimental default-importance channel from one build; removed on startup.
+const String kLegacyDefaultImportanceChannelId =
+    'com.webdav.webdav_music_player.downloads.v2';
 
 const String kDownloadDoneChannelId =
     'com.webdav.webdav_music_player.downloads.done.v1';
@@ -37,10 +31,7 @@ const AndroidNotificationChannel kDownloadChannel = AndroidNotificationChannel(
   kDownloadChannelId,
   kDownloadChannelName,
   description: kDownloadChannelDescription,
-  // Default (not low) importance: ColorOS hides low-importance notifications in
-  // 不重要通知, which made them look like they were never posted. Silence still
-  // comes from `playSound`/`enableVibration`/`silent` on the notification.
-  importance: Importance.defaultImportance,
+  importance: Importance.low,
   playSound: false,
   enableVibration: false,
   showBadge: false,
@@ -109,14 +100,14 @@ class DownloadNotificationService {
     try {
       await _android?.createNotificationChannel(kDownloadChannel);
       await _android?.createNotificationChannel(kDownloadDoneChannel);
-      // Drop the old low-importance channel so it stops showing up (and stops
-      // swallowing progress) in system settings.
+      // Drop the experimental default-importance channel (it never changed what
+      // ColorOS showed) so system settings list only the two live channels.
       try {
         await _android?.deleteNotificationChannel(
-          channelId: kLegacyDownloadChannelId,
+          channelId: kLegacyDefaultImportanceChannelId,
         );
       } catch (e) {
-        debugPrint('DownloadNotification: deleteLegacyChannel failed: $e');
+        debugPrint('DownloadNotification: deleteStaleChannel failed: $e');
       }
       return true;
     } catch (e) {
@@ -157,9 +148,6 @@ class DownloadNotificationService {
           ongoing: false,
           autoCancel: true,
           showWhen: false,
-          // Silent by construction: progress repaints constantly and must never
-          // buzz or pop a heads-up.
-          silent: true,
           icon: 'drawable/ic_stat_download',
           playSound: false,
           enableVibration: false,
@@ -234,6 +222,38 @@ class DownloadNotificationService {
     } catch (e) {
       // Notification failures must never break the download itself.
       debugPrint('DownloadNotification: showProgress failed: $e');
+    }
+  }
+
+  /// One-off diagnostic: posts a progress + a summary notification and reports
+  /// what the system said, so 「看不到通知」 can be pinned to a cause without a
+  /// real download. Returns null on success, else a short reason.
+  Future<String?> selfTest() async {
+    if (kIsWeb || !Platform.isAndroid) return '仅 Android 支持';
+    final wasEnabled = enabled;
+    enabled = true;
+    try {
+      final allowed = await _android?.areNotificationsEnabled();
+      if (allowed == false) return '系统已关闭本应用的通知';
+      await ensureChannel();
+      await _ensureInitialized();
+      await _plugin.show(
+        id: currentId,
+        title: '正在下载（第 1 / 1 个）',
+        body: '测试通知 · 50% · 已完成 0 / 1',
+        notificationDetails: _progressDetails(percent: 50),
+      );
+      await _plugin.show(
+        id: summaryId,
+        title: '全部下载完成',
+        body: '成功：1 个（测试）',
+        notificationDetails: _summaryDetails(),
+      );
+      return null;
+    } catch (e) {
+      return e.toString();
+    } finally {
+      enabled = wasEnabled;
     }
   }
 
