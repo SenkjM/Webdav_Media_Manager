@@ -69,7 +69,8 @@ class ShareRenameService {
     SettingsService? settings,
   }) async {
     final source = fileName ?? p.basename(localPath);
-    final pattern = settings?.shareTagRenamePattern ??
+    final pattern =
+        settings?.shareTagRenamePattern ??
         SettingsService.defaultShareTagRenamePattern;
     final tags = _tags;
     if (tags == null) return _withExtension(_stemOf(source), source);
@@ -163,5 +164,71 @@ class ShareRenameService {
   static String _withExtension(String stem, String originalFileName) {
     final ext = p.extension(originalFileName);
     return ext.isEmpty ? stem : '$stem$ext';
+  }
+
+  /// Extensions we recognise as "the user typed a file name, not a stem".
+  ///
+  /// Titles legitimately contain dots (`01. Also sprach Zarathustra`), so a
+  /// trailing dot is **not** enough to conclude that an extension was typed —
+  /// only a known media extension is treated as one.
+  static const Set<String> _mediaExtensions = {
+    'mp3',
+    'flac',
+    'm4a',
+    'aac',
+    'ogg',
+    'oga',
+    'opus',
+    'wav',
+    'wma',
+    'ape',
+    'dsf',
+    'dff',
+    'aiff',
+    'aif',
+    'alac',
+    'mp4',
+    'm4v',
+    'mkv',
+    'webm',
+    'avi',
+    'mov',
+    'ts',
+    'mpg',
+    'mpeg',
+    'wmv',
+    'cue',
+  };
+
+  /// Put the source file's extension back onto a name edited in the share dialog.
+  ///
+  /// The dialog edits only the **stem** (the extension is shown as a read-only
+  /// suffix), so it must be re-appended here — a shared audio file without its
+  /// extension is rejected by most receiving apps.
+  ///
+  /// * empty input → `''`, the caller's "use the original file name" signal;
+  /// * input already ending in the same extension → not duplicated;
+  /// * input ending in some **other** media extension → that one is replaced
+  ///   (the extension is fixed by the source file);
+  /// * anything else → the source extension is appended.
+  static String finalizeEditedName(String typed, String originalFileName) {
+    final ext = p.extension(originalFileName);
+    var name = typed.trim();
+    if (name.isEmpty) return '';
+
+    if (ext.isNotEmpty && name.toLowerCase().endsWith(ext.toLowerCase())) {
+      // Already carries the extension (in whatever case) — keep it as typed.
+      return name;
+    }
+    final typedExt = p.extension(name);
+    if (typedExt.length > 1 &&
+        _mediaExtensions.contains(typedExt.substring(1).toLowerCase())) {
+      // Some *other* media extension was typed: the extension is fixed by the
+      // source file, so replace rather than stack it.
+      name = name.substring(0, name.length - typedExt.length);
+    }
+    name = name.trim();
+    if (name.isEmpty) return '';
+    return '$name$ext';
   }
 }

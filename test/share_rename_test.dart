@@ -14,10 +14,7 @@ void main() {
         title: '夜曲',
         artist: '周杰伦',
       );
-      expect(
-        ShareRenameService.render('{artist}-{title}', track),
-        '周杰伦-夜曲',
-      );
+      expect(ShareRenameService.render('{artist}-{title}', track), '周杰伦-夜曲');
     });
 
     test('missing fields collapse instead of leaving dangling separators', () {
@@ -61,7 +58,10 @@ void main() {
         year: 1999,
       );
       expect(
-        ShareRenameService.render('{track}. {artist} - {title} ({year})', track),
+        ShareRenameService.render(
+          '{track}. {artist} - {title} ({year})',
+          track,
+        ),
         '3. A - T (1999)',
       );
     });
@@ -115,5 +115,70 @@ void main() {
     final settings = SettingsService();
     expect(settings.shareTagRenameEnabled, isTrue);
     expect(settings.shareTagRenamePattern, '{artist}-{title}');
+  });
+
+  group('finalizeEditedName (分享对话框只编辑主文件名)', () {
+    test('puts the source extension back', () {
+      expect(
+        ShareRenameService.finalizeEditedName('Ado-うっせぇわ', 'x.flac'),
+        'Ado-うっせぇわ.flac',
+      );
+    });
+
+    test('a dotted title is not mistaken for an extension', () {
+      // The real report: `01. Also sprach Zarathustra` has a dot in the stem.
+      expect(
+        ShareRenameService.finalizeEditedName(
+          '01. Also sprach Zarathustra',
+          'track01.flac',
+        ),
+        '01. Also sprach Zarathustra.flac',
+      );
+      expect(
+        ShareRenameService.finalizeEditedName(
+          '2. Peer Gynt Suite No. 1',
+          'a.mp3',
+        ),
+        '2. Peer Gynt Suite No. 1.mp3',
+      );
+    });
+
+    test('never duplicates the same extension', () {
+      expect(
+        ShareRenameService.finalizeEditedName('song.flac', 'x.flac'),
+        'song.flac',
+      );
+      expect(
+        ShareRenameService.finalizeEditedName('song.FLAC', 'x.flac'),
+        'song.FLAC',
+      );
+    });
+
+    test('a typed media extension is replaced, not stacked', () {
+      expect(
+        ShareRenameService.finalizeEditedName('song.mp3', 'x.flac'),
+        'song.flac',
+      );
+      expect(
+        ShareRenameService.finalizeEditedName('clip.mp4', 'v.mkv'),
+        'clip.mkv',
+      );
+    });
+
+    test('a non-media trailing dot stays part of the stem', () {
+      expect(
+        ShareRenameService.finalizeEditedName('Mr.', 'x.flac'),
+        'Mr..flac',
+      );
+    });
+
+    test('empty input keeps the "use the original name" signal', () {
+      expect(ShareRenameService.finalizeEditedName('', 'x.flac'), '');
+      expect(ShareRenameService.finalizeEditedName('   ', 'x.flac'), '');
+    });
+
+    test('a source file without an extension stays without one', () {
+      expect(ShareRenameService.finalizeEditedName('song', 'noext'), 'song');
+    });
   });
 }

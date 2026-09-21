@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../utils/app_snack.dart';
+
 import 'package:share_plus/share_plus.dart';
 
 import '../models/library_track.dart';
@@ -67,9 +68,8 @@ Future<void> enqueueLibraryTrackDownload(
     );
   }
   if (showSnack && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已加入下载')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已加入下载')));
   }
 }
 
@@ -108,7 +108,8 @@ Future<void> deleteTracksLocalCache(
   final groupIds = <String>{};
   final plain = <LibraryTrack>[];
   for (final t in tracks) {
-    final gid = t.cacheGroupId ??
+    final gid =
+        t.cacheGroupId ??
         (t.cueRemotePath != null
             ? cueCacheGroupId(t.sourceName, t.cueRemotePath!)
             : null);
@@ -124,12 +125,14 @@ Future<void> deleteTracksLocalCache(
     for (final gid in groupIds) {
       var n = cache.groupMemberFileNames(gid);
       if (n.isEmpty) {
-        for (final t in tracks.where((x) =>
-            (x.cacheGroupId ??
-                (x.cueRemotePath != null
-                    ? cueCacheGroupId(x.sourceName, x.cueRemotePath!)
-                    : null)) ==
-            gid)) {
+        for (final t in tracks.where(
+          (x) =>
+              (x.cacheGroupId ??
+                  (x.cueRemotePath != null
+                      ? cueCacheGroupId(x.sourceName, x.cueRemotePath!)
+                      : null)) ==
+              gid,
+        )) {
           if (t.cueRemotePath != null) names.add(p.basename(t.cueRemotePath!));
           if (t.audioRemotePath != null) {
             names.add(p.basename(t.audioRemotePath!));
@@ -177,9 +180,8 @@ Future<void> deleteTracksLocalCache(
       n += await cache.deleteCacheGroup(gid);
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已删除 CUE 缓存组（$n 个文件）')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已删除 CUE 缓存组（$n 个文件）')));
   }
 
   if (plain.isEmpty) return;
@@ -222,9 +224,8 @@ Future<void> deleteTracksLocalCache(
     }
   }
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('已删除 $removed 个本地音频缓存')),
-  );
+  ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text('已删除 $removed 个本地音频缓存')));
 }
 
 /// Destroy tracks: delete their audio cache, remove them from the music
@@ -245,7 +246,8 @@ Future<void> destroyLibraryTracks(
   final groupIds = <String>{};
   final files = <String>{};
   for (final t in tracks) {
-    final gid = t.cacheGroupId ??
+    final gid =
+        t.cacheGroupId ??
         (t.cueRemotePath != null
             ? cueCacheGroupId(t.sourceName, t.cueRemotePath!)
             : null);
@@ -363,9 +365,7 @@ Future<void> shareLibraryTracks(
     } else if (cueCount > 0) {
       msg = 'CUE 音轨不支持分享；其余曲目尚未下载到本地';
     } else {
-      msg = notLocalCount == 1
-          ? '该曲目尚未下载到本地，无法分享'
-          : '所选曲目均未下载到本地，无法分享';
+      msg = notLocalCount == 1 ? '该曲目尚未下载到本地，无法分享' : '所选曲目均未下载到本地，无法分享';
     }
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -384,9 +384,8 @@ Future<void> shareLibraryTracks(
     );
   }
   if (notLocalCount > 0 && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已跳过 $notLocalCount 首未下载曲目')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已跳过 $notLocalCount 首未下载曲目')));
   }
 
   final plan = <_SharePlan>[];
@@ -445,16 +444,12 @@ Future<void> shareLibraryTracks(
       unawaited(File(path).delete().catchError((_) => File(path)));
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已分享 ${built.files.length} 个文件')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已分享 ${built.files.length} 个文件')));
   } catch (e) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('分享失败：$e'),
-        backgroundColor: AppColors.error,
-      ),
+      SnackBar(content: Text('分享失败：$e'), backgroundColor: AppColors.error),
     );
   }
 }
@@ -484,7 +479,9 @@ Future<String?> _askShareName(
   _SharePlan plan,
   SettingsService settings,
 ) async {
-  final controller = TextEditingController(text: p.basenameWithoutExtension(plan.name));
+  final controller = TextEditingController(
+    text: p.basenameWithoutExtension(plan.name),
+  );
   final ext = p.extension(plan.name);
   return showDialog<String>(
     context: context,
@@ -505,6 +502,7 @@ Future<String?> _askShareName(
             autofocus: true,
             decoration: InputDecoration(
               labelText: '文件名',
+              helperText: '扩展名固定为 $ext，不用自己写',
               suffixText: ext,
               border: const OutlineInputBorder(),
             ),
@@ -528,7 +526,11 @@ Future<String?> _askShareName(
           child: const Text('用原文件名'),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+          onPressed: () => Navigator.pop(
+            ctx,
+            // The field holds the stem only; put the extension back.
+            ShareRenameService.finalizeEditedName(controller.text, plan.name),
+          ),
           child: const Text('分享'),
         ),
       ],
