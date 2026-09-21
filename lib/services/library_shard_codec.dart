@@ -258,6 +258,13 @@ class LibraryShardCodec {
               const <int, Object?>{});
 
     final kind = (meta[WmpMeta.kind] as int?) ?? WmpKind.seg;
+    // The magic says what the file is; META repeats it. They must agree, or this
+    // is not a shard we should be feeding into the library.
+    if (WmpFileKind.metaKindOf(container.kind) != kind) {
+      throw WmpFormatException(
+        '分片类型不一致：文件头 ${container.kind}，META kind=$kind',
+      );
+    }
     final revFrom = (meta[WmpMeta.seqFrom] as int?) ?? 0;
     final revTo = (meta[WmpMeta.seqTo] as int?) ?? 0;
     final deviceId = (meta[WmpMeta.deviceId] as String?) ?? '';
@@ -343,5 +350,18 @@ class LibraryShardCodec {
   static Uint8List _encode({
     required Map<int, Uint8List> sections,
     Set<int> rawIds = const {},
-  }) => WmpContainer.encode(sections, rawIds: rawIds);
+  }) {
+    // The META kind is the single source of truth; the magic is derived from it
+    // so the two can never drift.
+    final kind =
+        (decodeRecords(sections[WmpSections.meta]!, intTags: kMetaIntTags)
+                    .firstOrNull?[WmpMeta.kind]
+                as int?) ??
+        WmpKind.seg;
+    return WmpContainer.encode(
+      sections,
+      kind: WmpFileKind.forMetaKind(kind),
+      rawIds: rawIds,
+    );
+  }
 }

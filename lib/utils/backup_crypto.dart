@@ -4,12 +4,19 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
+import 'wmp_container.dart';
+
 /// Passphrase-based AES-256-GCM encryption for backup archives.
 ///
 /// Wire format (bytes):
-/// `WMPB1` (5) | salt(16) | nonce(12) | ciphertext+mac
+/// `WDMMEN01` (8) | salt(16) | nonce(12) | ciphertext+mac
+///
+/// The magic is the app's standard header ([WmpContainer.appTag] + the `EN`
+/// envelope kind + layout digits), so an encrypted file is recognisable as ours
+/// and as *not* a readable document: decrypt first, then the plaintext carries
+/// its own magic (a container kind or JSON).
 class BackupCrypto {
-  static const magic = 'WMPB1';
+  static const magic = '${WmpContainer.appTag}EN01';
   static const _saltLen = 16;
   static const _nonceLen = 12;
   static const _iterations = 120000;
@@ -50,16 +57,16 @@ class BackupCrypto {
     required Uint8List data,
     required String passphrase,
   }) async {
-    if (data.length < 5 + _saltLen + _nonceLen + 16) {
+    if (data.length < magic.length + _saltLen + _nonceLen + 16) {
       throw FormatException('备份文件过短或损坏');
     }
     final magicBytes = utf8.encode(magic);
     for (var i = 0; i < magicBytes.length; i++) {
       if (data[i] != magicBytes[i]) {
-        throw FormatException('不是加密备份（缺少 WMPB1 头）');
+        throw FormatException('不是加密备份（缺少 $magic 头）');
       }
     }
-    var offset = 5;
+    var offset = magic.length;
     final salt = data.sublist(offset, offset + _saltLen);
     offset += _saltLen;
     final nonce = data.sublist(offset, offset + _nonceLen);
@@ -82,7 +89,7 @@ class BackupCrypto {
   }
 
   static bool looksEncrypted(Uint8List data) {
-    if (data.length < 5) return false;
+    if (data.length < magic.length) return false;
     final m = utf8.encode(magic);
     for (var i = 0; i < m.length; i++) {
       if (data[i] != m[i]) return false;

@@ -156,7 +156,7 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
   | 全部备份 | 一次性归档：凭证 + 音乐库 + 歌单 + 封面，写到自选网盘与路径，可从该路径恢复 |
 - **凭证加密**：`settings.syncEncryptPassword`（默认开启）。密码字段为 `AESGCMv1:<base64(salt|nonce|ct|mac)>`（PBKDF2-SHA256 120k + AES-256-GCM）。**无法提供统一解密密钥时，密码留空恢复**，其余字段照常写回
 - **本地导入 / 导出**：
-  - 导出 → `下载/WebdavMediaManager/wdmm-export-<UTC>.wdmm`（可选口令加密，密文以 `WMPB1` 开头）或 `.json`（可读，不含封面）
+  - 导出 → `下载/WebdavMediaManager/wdmm-export-<UTC>.wdmm`（可选口令加密，密文以 `WDMMEN01` 开头）或 `.json`（可读，不含封面）
   - 导入 ← 系统文件选择器（SAF，任意 `.wdmm` / `.json`）或粘贴 Base64
 
 ## CI：自动构建并发布 Pre-release

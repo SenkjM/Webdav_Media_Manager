@@ -145,10 +145,14 @@ void main() {
           WmpSections.tracks: tracks,
           WmpSections.covers: covers,
         },
+        kind: WmpFileKind.base,
         rawIds: {WmpSections.covers},
       );
 
       final container = WmpContainer.fromBytes(bytes);
+      expect(container.kind, WmpFileKind.base);
+      expect(WmpContainer.kindOf(bytes), WmpFileKind.base);
+      expect(WmpContainer.looksLikeContainer(bytes), isTrue);
       expect(container.sectionIds, [
         WmpSections.meta,
         WmpSections.tracks,
@@ -175,7 +179,10 @@ void main() {
             WmpTrack.rev: 1750000000000 + i,
           },
       ]);
-      final bytes = WmpContainer.encode({WmpSections.tracks: tracks});
+      final bytes = WmpContainer.encode(
+        {WmpSections.tracks: tracks},
+        kind: WmpFileKind.seg,
+      );
       expect(bytes.length, lessThan(tracks.length));
     });
 
@@ -201,22 +208,88 @@ void main() {
     });
 
     test('bad magic is rejected', () {
-      final bytes = WmpContainer.encode({
-        WmpSections.meta: encodeRecords(const []),
-      });
+      final bytes = WmpContainer.encode(
+        {WmpSections.meta: encodeRecords(const [])},
+        kind: WmpFileKind.backup,
+      );
       bytes[0] = 0x00;
       expect(
         () => WmpContainer.fromBytes(bytes),
         throwsA(isA<WmpFormatException>()),
       );
+      expect(WmpContainer.kindOf(bytes), isNull);
+    });
+
+    test('a foreign app tag is refused by name', () {
+      final bytes = WmpContainer.encode(
+        {WmpSections.meta: encodeRecords(const [])},
+        kind: WmpFileKind.backup,
+      );
+      // Same layout, different provenance: 'WMPC' from the previous naming.
+      bytes.setRange(0, 4, 'WMPC'.codeUnits);
+      expect(WmpContainer.looksLikeContainer(bytes), isFalse);
+      expect(
+        () => WmpContainer.fromBytes(bytes),
+        throwsA(
+          isA<WmpFormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('WDMM'),
+          ),
+        ),
+      );
+    });
+
+    test('an encrypted envelope is not a container', () {
+      final envelope = Uint8List.fromList([
+        ...'WDMMEN01'.codeUnits,
+        ...List<int>.filled(64, 7),
+      ]);
+      expect(WmpContainer.kindOf(envelope), WmpFileKind.envelope);
+      expect(WmpContainer.looksLikeContainer(envelope), isFalse);
+    });
+
+    test('unknown kind and layout are reported, not silently accepted', () {
+      final bytes = WmpContainer.encode(
+        {WmpSections.meta: encodeRecords(const [])},
+        kind: WmpFileKind.seg,
+      );
+      final unknownKind = Uint8List.fromList(bytes)..setRange(4, 6, 'ZZ'.codeUnits);
+      expect(WmpContainer.kindOf(unknownKind), 'ZZ');
+      expect(
+        () => WmpContainer.fromBytes(unknownKind),
+        throwsA(isA<WmpFormatException>()),
+      );
+
+      final newLayout = Uint8List.fromList(bytes)..setRange(6, 8, '02'.codeUnits);
+      expect(WmpContainer.kindOf(newLayout), WmpFileKind.seg);
+      expect(WmpContainer.looksLikeContainer(newLayout), isFalse);
+      expect(
+        () => WmpContainer.fromBytes(newLayout),
+        throwsA(isA<WmpFormatException>()),
+      );
+    });
+
+    test('header flags round-trip (room for future switches)', () {
+      final bytes = WmpContainer.encode(
+        {WmpSections.meta: encodeRecords(const [])},
+        kind: WmpFileKind.exportBundle,
+        flags: 0x0003,
+      );
+      final container = WmpContainer.fromBytes(bytes);
+      expect(container.flags, 0x0003);
+      expect(container.kind, WmpFileKind.exportBundle);
     });
 
     test('a corrupt section payload fails its CRC', () {
-      final bytes = WmpContainer.encode({
-        WmpSections.tracks: encodeRecords([
-          {WmpTrack.sourceName: '123pan', WmpTrack.remotePath: '/a.flac'},
-        ]),
-      });
+      final bytes = WmpContainer.encode(
+        {
+          WmpSections.tracks: encodeRecords([
+            {WmpTrack.sourceName: '123pan', WmpTrack.remotePath: '/a.flac'},
+          ]),
+        },
+        kind: WmpFileKind.seg,
+      );
       final container = WmpContainer.fromBytes(bytes);
       final offset = container.info(WmpSections.tracks)!.offset;
       bytes[offset] = bytes[offset] ^ 0xFF;

@@ -35,7 +35,8 @@ import 'webdav_service.dart';
 /// cache annex is cleared, so the player never believes a file exists unless it
 /// really is on disk.
 ///
-/// Format: ZIP, optionally wrapped in AES-256-GCM with a passphrase (`WMPB1`).
+/// Format: a `WmpContainer` (magic `WDMMBK01`), optionally wrapped in AES-256-GCM
+/// with a passphrase (magic `WDMMEN01`).
 class BackupService extends ChangeNotifier {
   BackupService({
     required LibraryDatabase libraryDb,
@@ -206,6 +207,7 @@ class BackupService extends ChangeNotifier {
                 (bytes: coverBlobs[i]!, kind: coverKinds[i]),
           ]),
       },
+      kind: WmpFileKind.backup,
       rawIds: {WmpSections.covers},
     );
     if (passphrase.isEmpty) return container;
@@ -398,6 +400,14 @@ class BackupService extends ChangeNotifier {
   /// restored rows point at real local files.
   Future<Map<String, dynamic>> _decodeContainer(Uint8List bytes) async {
     final container = WmpContainer.fromBytes(bytes);
+    // A shard is a valid container but not a backup: say so plainly instead of
+    // failing later on a missing section.
+    if (container.kind != WmpFileKind.backup &&
+        container.kind != WmpFileKind.exportBundle) {
+      throw WmpFormatException(
+        '这是 ${container.kind} 类文件，不是备份归档',
+      );
+    }
     Map<String, dynamic> jsonSection(int id) {
       final raw = container.readSection(id);
       if (raw == null || raw.isEmpty) return const {};

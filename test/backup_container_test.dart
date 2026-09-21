@@ -107,11 +107,13 @@ void main() {
             ),
           ),
         },
+        kind: WmpFileKind.backup,
         rawIds: {WmpSections.covers},
       );
 
       // Sanity: it really is a container, not JSON.
       expect(WmpContainer.looksLikeContainer(container), isTrue);
+      expect(WmpContainer.kindOf(container), WmpFileKind.backup);
 
       final parsed = WmpContainer.fromBytes(container);
       final meta = decodeRecords(
@@ -182,11 +184,14 @@ void main() {
     });
 
     test('a container body survives the deflate round-trip byte for byte', () {
-      final container = WmpContainer.encode({
-        WmpSections.settings: Uint8List.fromList(
-          utf8.encode(jsonEncode({'a': 1, 'b': '中文'})),
-        ),
-      });
+      final container = WmpContainer.encode(
+        {
+          WmpSections.settings: Uint8List.fromList(
+            utf8.encode(jsonEncode({'a': 1, 'b': '中文'})),
+          ),
+        },
+        kind: WmpFileKind.backup,
+      );
       final parsed = WmpContainer.fromBytes(container);
       expect(
         jsonDecode(utf8.decode(parsed.readSection(WmpSections.settings)!)),

@@ -49,6 +49,10 @@ class WmpCodec {
 }
 
 /// What a container file describes.
+///
+/// The numeric id mirrors [WmpMeta.kind] (inside the file); [WmpFileKind] is the
+/// same classification in the file's magic. Keep the two in step — readers
+/// cross-check them.
 class WmpKind {
   WmpKind._();
 
@@ -63,6 +67,87 @@ class WmpKind {
 
   /// A whole-app backup archive.
   static const int backup = 3;
+
+  /// Reserved: a library bundle meant to be handed to someone else (sharing).
+  static const int exportBundle = 4;
+
+  /// Reserved: a credentials/vault bundle.
+  static const int credentials = 5;
+}
+
+/// File classes, carried in the first 8 bytes of every binary file we write.
+///
+/// ```
+/// 'WDMM' | kind(2) | layout(2)      e.g. 'WDMMLB01'
+/// ```
+///
+/// * `WDMM` — app tag: the file provably came from this app, so a restore can
+///   refuse foreign data with a clear message instead of a CRC error;
+/// * `kind` — what the file *is*, readable from the first bytes without
+///   inflating anything (see the table below);
+/// * `layout` — version of that kind's layout, so a future format can be told
+///   apart from today's without a separate version field.
+///
+/// Adding a kind is a one-line change here plus its [WmpKind] twin: readers
+/// reject unknown codes by name, and the reserved bytes in the container header
+/// ([WmpContainer.flags]) are free for future switches.
+class WmpFileKind {
+  WmpFileKind._();
+
+  /// Cloud library base shard — the big slice written by a rebuild.
+  static const String base = 'LB';
+
+  /// Cloud library delta shard — the small append-only batch.
+  static const String seg = 'LS';
+
+  /// Cloud library tombstone shard — deletions, materialised on rebuild.
+  static const String tomb = 'LT';
+
+  /// Whole-app backup archive (personal backup).
+  static const String backup = 'BK';
+
+  /// Reserved: shareable library bundle.
+  static const String exportBundle = 'EX';
+
+  /// Reserved: credentials/vault bundle.
+  static const String credentials = 'CR';
+
+  /// Encrypted wrapper (see `BackupCrypto`); wraps any document kind. Deliberately
+  /// **not** a document, so `looksLikeContainer` never accepts an envelope.
+  static const String envelope = 'EN';
+
+  /// Codes that may appear in a container file we are willing to parse.
+  static const Set<String> documents = {
+    base,
+    seg,
+    tomb,
+    backup,
+    exportBundle,
+    credentials,
+  };
+
+  static bool isDocument(String code) => documents.contains(code);
+
+  /// Magic ↔ [WmpMeta.kind] mapping, for cross-checking a parsed container.
+  static int metaKindOf(String code) => switch (code) {
+    base => WmpKind.base,
+    seg => WmpKind.seg,
+    tomb => WmpKind.tomb,
+    backup => WmpKind.backup,
+    exportBundle => WmpKind.exportBundle,
+    credentials => WmpKind.credentials,
+    _ => -1,
+  };
+
+  static String forMetaKind(int metaKind) => switch (metaKind) {
+    WmpKind.base => base,
+    WmpKind.seg => seg,
+    WmpKind.tomb => tomb,
+    WmpKind.backup => backup,
+    WmpKind.exportBundle => exportBundle,
+    WmpKind.credentials => credentials,
+    _ => '',
+  };
 }
 
 /// META tag ids.
@@ -277,26 +362,64 @@ List<WmpCoverEntry> parseCoverSection(Uint8List section) {
 ///
 /// Layout:
 /// ```
-/// 'WMPC' | u16 version | u16 sectionCount | u32 reserved
+/// magic: 'WDMM' | kind(2) | layout(2)          e.g. 'WDMMBK01'
+/// u16 sectionCount | u16 flags                 (flags: reserved, must be 0 today)
 /// section table: sectionCount × 18 bytes
 ///   u8 id | u8 codec | u32 offset | u32 storedLen | u32 rawLen | u32 crc32
 /// payload: sections back to back
 /// ```
+///
+/// Every file this app writes starts with the same 8-byte magic, so provenance
+/// (`WDMM`) and file class ([WmpFileKind]) are readable from the first bytes —
+/// no inflation, no heuristics. See [WmpFileKind] for the kind table; the two
+/// bytes after the count are reserved for future header switches.
 ///
 /// Why not ZIP: covers are already-compressed images (deflate would waste CPU),
 /// and a plain byte range lets a reader pull a single cover without inflating
 /// the record block. CRC32 + per-section lengths make corruption detectable
 /// per section instead of per file.
 class WmpContainer {
-  WmpContainer._(this._bytes, this.sections);
+  WmpContainer._(this._bytes, this.sections, this.kind, this.flags);
 
-  static const List<int> magic = [0x57, 0x4D, 0x50, 0x43]; // 'WMPC'
-  static const int version = 1;
+  /// Provenance tag: present in every binary file the app writes.
+  static const String appTag = 'WDMM';
+
+  /// Layout revision of the container itself; part of the magic.
+  static const String layoutVersion = '01';
+
   static const int headerLength = 12;
   static const int entryLength = 18;
+  static const int magicLength = 8;
 
   final Uint8List _bytes;
   final List<WmpSectionInfo> sections;
+
+  /// [WmpFileKind] code of this file, e.g. `LB` (base shard) or `BK` (backup).
+  final String kind;
+
+  /// Reserved header switches; 0 for every file written today.
+  final int flags;
+
+  /// The 8 magic bytes for [kind].
+  static Uint8List magicFor(String kind) => Uint8List.fromList(
+    utf8.encode('$appTag$kind$layoutVersion'),
+  );
+
+  /// Magic code of [bytes], or null when it is not one of our files.
+  ///
+  /// Returns the raw code even for kinds this build does not know, so tooling can
+  /// report "written by a newer version" instead of "corrupt".
+  static String? kindOf(Uint8List bytes) {
+    if (bytes.length < magicLength) return null;
+    for (var i = 0; i < appTag.length; i++) {
+      if (bytes[i] != appTag.codeUnitAt(i)) return null;
+    }
+    try {
+      return String.fromCharCodes(bytes.sublist(4, 6));
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Section ids present, in file order.
   List<int> get sectionIds => [for (final s in sections) s.id];
@@ -337,13 +460,18 @@ class WmpContainer {
   }
 
   /// Cheap magic check, so a caller can tell a container from a JSON export (or
-  /// anything else) before parsing.
+  /// an encrypted envelope, or another app's file) before parsing.
   static bool looksLikeContainer(Uint8List bytes) {
-    if (bytes.length < magic.length) return false;
-    for (var i = 0; i < magic.length; i++) {
-      if (bytes[i] != magic[i]) return false;
-    }
-    return true;
+    if (bytes.length < magicLength) return false;
+    final code = kindOf(bytes);
+    if (code == null || !WmpFileKind.isDocument(code)) return false;
+    return layoutOf(bytes) == layoutVersion;
+  }
+
+  /// Layout revision digits of [bytes] (`'01'` today), or null when unreadable.
+  static String? layoutOf(Uint8List bytes) {
+    if (bytes.length < magicLength) return null;
+    return String.fromCharCodes(bytes.sublist(6, 8));
   }
 
   /// Parse just the header + section table.
@@ -351,16 +479,21 @@ class WmpContainer {
     if (bytes.length < headerLength) {
       throw const WmpFormatException('file too short');
     }
-    for (var i = 0; i < magic.length; i++) {
-      if (bytes[i] != magic[i]) {
-        throw const WmpFormatException('bad magic');
-      }
+    final code = kindOf(bytes);
+    if (code == null) {
+      throw const WmpFormatException(
+        '不是 Webdav Media Manager 文件（缺少 WDMM 标识）',
+      );
     }
-    final ver = _u16(bytes, 4);
-    if (ver != version) {
-      throw WmpFormatException('unsupported container version $ver');
+    if (!WmpFileKind.isDocument(code)) {
+      throw WmpFormatException('unsupported file kind "$code"');
     }
-    final count = _u16(bytes, 6);
+    final layout = layoutOf(bytes);
+    if (layout != layoutVersion) {
+      throw WmpFormatException('unsupported layout version $layout for kind $code');
+    }
+    final count = _u16(bytes, 8);
+    final flags = _u16(bytes, 10);
     final tableEnd = headerLength + count * entryLength;
     if (bytes.length < tableEnd) {
       throw const WmpFormatException('truncated section table');
@@ -381,17 +514,26 @@ class WmpContainer {
       }
       out.add(info);
     }
-    return WmpContainer._(bytes, out);
+    return WmpContainer._(bytes, out, code, flags);
   }
 
   /// Build a container from raw section payloads.
+  ///
+  /// [kind] is a [WmpFileKind] code and decides the file's magic — a base shard,
+  /// a delta shard, a backup… The same classification is stored in
+  /// `META.kind`; readers cross-check the two.
   ///
   /// [rawIds] are stored uncompressed (use it for sections holding
   /// already-compressed bytes, such as covers).
   static Uint8List encode(
     Map<int, Uint8List> sections, {
+    required String kind,
     Set<int> rawIds = const {},
+    int flags = 0,
   }) {
+    if (!WmpFileKind.isDocument(kind)) {
+      throw ArgumentError.value(kind, 'kind', 'unknown file kind');
+    }
     final ids = sections.keys.toList()..sort();
     final stored = <int, Uint8List>{};
     for (final id in ids) {
@@ -400,10 +542,9 @@ class WmpContainer {
     }
     var offset = headerLength + ids.length * entryLength;
     final header = BytesBuilder();
-    header.add(magic);
-    header.add(_u16Bytes(version));
+    header.add(magicFor(kind));
     header.add(_u16Bytes(ids.length));
-    header.add(_u32Bytes(0));
+    header.add(_u16Bytes(flags));
     final payload = BytesBuilder();
     for (final id in ids) {
       final raw = sections[id]!;
