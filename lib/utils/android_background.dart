@@ -3,7 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-const _kAppChannel = MethodChannel('com.webdav.media_manager/app');
+const _kAppChannel = MethodChannel('com.senkjM.media_manager/app');
 
 /// Moves the Android task to the background (like pressing Home).
 ///

@@ -17,7 +17,7 @@ You are the media-notification specialist for the **WEBDAV-music-player** Flutte
 - Read the "权限与媒体通知" and "技术要点" sections of [README.md](README.md) for the intended design, then cross-check:
   - [lib/services/audio_player_service.dart](lib/services/audio_player_service.dart) — player/queue logic, whether it wires into an `AudioHandler`.
   - [android/app/src/main/AndroidManifest.xml](android/app/src/main/AndroidManifest.xml) — `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `POST_NOTIFICATIONS`, `WAKE_LOCK`, `AudioService`/`MediaButtonReceiver` registration.
-  - [android/app/src/main/kotlin/com/webdav/media_manager/MainActivity.kt](android/app/src/main/kotlin/com/webdav/media_manager/MainActivity.kt) — whether it extends `AudioServiceActivity` (or `FlutterFragmentActivity` per current `audio_service` versions).
+  - [android/app/src/main/kotlin/com/senkjM/media_manager/MainActivity.kt](android/app/src/main/kotlin/com/senkjM/media_manager/MainActivity.kt) — whether it extends `AudioServiceActivity` (or `FlutterFragmentActivity` per current `audio_service` versions).
   - `pubspec.yaml` — presence/version of `audio_service` (and any patch/override).
   - Notification icon assets (`drawable/ic_stat_music*`) and channel importance settings.
 - State any doc/code mismatch you find before proposing a fix, so the user knows whether this is "implement the documented feature" vs "fix a regression."

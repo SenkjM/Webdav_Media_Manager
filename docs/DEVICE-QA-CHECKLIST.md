@@ -9,7 +9,7 @@
 # 一次性：装包并启动（保留数据，账号不用重配）
 flutter build apk --debug
 adb install -r build\app\outputs\flutter-apk\app-debug.apk
-adb shell am start -n com.webdav.media_manager/.MainActivity
+adb shell am start -n com.senkjM.media_manager/.MainActivity
 ```
 
 需要热重载时（可选，用完随手关掉省事）：

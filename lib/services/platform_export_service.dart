@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-const _kAppChannel = MethodChannel('com.webdav.media_manager/app');
+const _kAppChannel = MethodChannel('com.senkjM.media_manager/app');
 
 /// Broadcasts Android picture-in-picture transitions reported by MainActivity.
 final StreamController<bool> _pipController =

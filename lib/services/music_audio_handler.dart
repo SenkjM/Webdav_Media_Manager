@@ -30,7 +30,7 @@ void _notifLog(String message) {
   }
 }
 
-const _kAppChannel = MethodChannel('com.webdav.media_manager/app');
+const _kAppChannel = MethodChannel('com.senkjM.media_manager/app');
 
 /// Actions Android 13+ / lock screen / control center read from PlaybackState.
 const Set<MediaAction> _kSystemActions = {

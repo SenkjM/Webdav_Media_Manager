@@ -90,7 +90,7 @@
 ## 权限与媒体通知
 
 - **Android 13+**：运行时请求 `POST_NOTIFICATIONS`（首次启动 / 首次播放 / 设置页）。通知权限开启后，媒体通知才能显示。
-- **通知通道**：`flutter_local_notifications` 在启动时创建并接管「音乐播放」通道（`com.webdav.media_manager.audio.v4`，IMPORTANCE_DEFAULT、静音、不震动），并负责查询权限与通道状态；`audio_service` 原生 `createChannel()` 发现通道已存在即复用，因此设置页在首次播放前就能显示系统真实通道状态（定义见 `lib/services/media_notification_channel.dart`，须与 `AudioServiceConfig` 保持一致）。
+- **通知通道**：`flutter_local_notifications` 在启动时创建并接管「音乐播放」通道（`com.senkjM.media_manager.audio.v4`，IMPORTANCE_DEFAULT、静音、不震动），并负责查询权限与通道状态；`audio_service` 原生 `createChannel()` 发现通道已存在即复用，因此设置页在首次播放前就能显示系统真实通道状态（定义见 `lib/services/media_notification_channel.dart`，须与 `AudioServiceConfig` 保持一致）。
 - **媒体播放通知**：通过 `audio_service` 的 `MusicAudioHandler` 在播放时启动 `mediaPlayback` 前台服务，并发布 `MediaItem` + `PlaybackState`，使通知栏 / 锁屏 / 系统媒体控制中心显示 MediaStyle 控件（播放/暂停，有队列时上一首/下一首）。通知小图标使用 `drawable/ic_stat_music`（不可用自适应 launcher 图标）。
 - 需声明 `WAKE_LOCK`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`、`POST_NOTIFICATIONS`，并注册 `AudioService` / `MediaButtonReceiver`；`MainActivity` 继承 `AudioServiceFragmentActivity`（保证共享 FlutterEngine 不随 Activity 销毁而销毁，避免切后台后通知/播放状态丢失）。
 - **视频媒体通知**：`MusicAudioHandler` 与视频共用同一个 MediaSession。进入视频时切到 video 模式（`mediaItem` = 视频标题、控件只保留播放/暂停与停止、无队列），因此通知栏 / 锁屏 / 媒体控制中心都会显示视频；`FOREGROUND_SERVICE_MEDIA_PLAYBACK` 前台服务也是「主页键挂后台仍继续播放」的前提。

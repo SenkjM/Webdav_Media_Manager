@@ -18,7 +18,7 @@ fun envOrProp(name: String): String? =
         ?: keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
 
 android {
-    namespace = "com.webdav.media_manager"
+    namespace = "com.senkjM.media_manager"
     compileSdk = maxOf(flutter.compileSdkVersion, 35)
     ndkVersion = flutter.ndkVersion
 
@@ -30,7 +30,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.webdav.media_manager"
+        applicationId = "com.senkjM.media_manager"
         minSdk = maxOf(flutter.minSdkVersion, 24)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
