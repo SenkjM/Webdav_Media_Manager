@@ -164,8 +164,10 @@ class CredentialVaultService extends ChangeNotifier {
     };
   }
 
-  /// Upload the vault to the connected WebDAV server.
+  /// Upload the vault to [accountId] (the credentials destination the user
+  /// configured for this feature).
   Future<Map<String, dynamic>> push({
+    required String accountId,
     required String passphrase,
     bool? encryptPassword,
   }) async {
@@ -174,7 +176,7 @@ class CredentialVaultService extends ChangeNotifier {
     lastMessage = null;
     notifyListeners();
     try {
-      _requireConnection();
+      _requireAccount(accountId);
       final json = await buildJson(
         passphrase: passphrase,
         encryptPassword: encryptPassword,
@@ -182,8 +184,8 @@ class CredentialVaultService extends ChangeNotifier {
       final bytes = Uint8List.fromList(
         utf8.encode(const JsonEncoder.withIndent('  ').convert(json)),
       );
-      await _webDav.ensureDirectory(_settings.syncRemoteRoot);
-      await _webDav.writeBytes(remotePath, bytes);
+      await _webDav.ensureDirectory(accountId, _settings.syncRemoteRoot);
+      await _webDav.writeBytes(accountId, remotePath, bytes);
       lastMessage = (json['passwordEncryption'] == 'aes-256-gcm')
           ? '凭证已同步到云端（密码已加密）'
           : '凭证已同步到云端（明文密码）';
@@ -197,13 +199,15 @@ class CredentialVaultService extends ChangeNotifier {
     }
   }
 
-  /// Download the vault JSON from the connected WebDAV server.
+  /// Download the vault JSON from [accountId].
   ///
   /// Returns null when the file does not exist yet (nothing to pull).
-  Future<Map<String, dynamic>?> fetchJson() async {
-    _requireConnection();
+  Future<Map<String, dynamic>?> fetchJson({
+    required String accountId,
+  }) async {
+    _requireAccount(accountId);
     try {
-      final bytes = await _webDav.readAsBytes(remotePath);
+      final bytes = await _webDav.readAsBytes(accountId, remotePath);
       final decoded = jsonDecode(utf8.decode(bytes));
       if (decoded is! Map) return null;
       return Map<String, dynamic>.from(decoded);
@@ -221,13 +225,16 @@ class CredentialVaultService extends ChangeNotifier {
   ///
   /// When [passphrase] cannot decrypt an entry's password the account is still
   /// restored (url/username/name) with an **empty password**.
-  Future<VaultApplyResult?> pull({required String passphrase}) async {
+  Future<VaultApplyResult?> pull({
+    required String accountId,
+    required String passphrase,
+  }) async {
     busy = true;
     lastError = null;
     lastMessage = null;
     notifyListeners();
     try {
-      final json = await fetchJson();
+      final json = await fetchJson(accountId: accountId);
       if (json == null) {
         lastMessage = '云端暂无凭证文件（$remotePath），已跳过';
         return null;
@@ -319,9 +326,10 @@ class CredentialVaultService extends ChangeNotifier {
     );
   }
 
-  void _requireConnection() {
-    if (!_webDav.isConnected) {
-      throw StateError('请先连接 WebDAV 账号');
+  /// Throws when the destination account has no registered client.
+  void _requireAccount(String accountId) {
+    if (!_webDav.hasAccount(accountId)) {
+      throw StateError('凭证同步目的地网盘未配置');
     }
   }
 }

@@ -26,7 +26,8 @@ class WebDavItem {
 
 class TrackInfo {
   TrackInfo({
-    required this.accountId,
+    required this.sourceName,
+    this.accountId = '',
     required this.remotePath,
     required this.fileName,
     this.localPath,
@@ -51,6 +52,9 @@ class TrackInfo {
     this.clipEnd,
     this.cacheGroupId,
   });
+  /// 网盘名 —— the library binding point (cache / identity side).
+  final String sourceName;
+  /// Local WebDAV account resolved from [sourceName] for the HTTP transfer.
   final String accountId;
   final String remotePath;
   final String fileName;

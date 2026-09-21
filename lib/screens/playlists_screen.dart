@@ -11,14 +11,12 @@ import 'playlist_detail_screen.dart';
 class PlaylistsScreen extends StatelessWidget {
   const PlaylistsScreen({super.key});
 
-
   Future<void> _createFromQueue(BuildContext context) async {
     final player = context.read<AudioPlayerService>();
     final queue = player.queue;
     if (queue.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前播放列表为空')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('当前播放列表为空')));
       return;
     }
     final controller = TextEditingController(
@@ -34,7 +32,10 @@ class PlaylistsScreen extends StatelessWidget {
           children: [
             Text(
               '将复制当前临时队列中的 ${queue.length} 首到新歌单（之后可按歌单同步）。',
-              style: const TextStyle(fontSize: 13, color: AppColors.secondaryText),
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.secondaryText,
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -45,7 +46,10 @@ class PlaylistsScreen extends StatelessWidget {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
             child: const Text('创建'),
@@ -55,23 +59,27 @@ class PlaylistsScreen extends StatelessWidget {
     );
     if (name == null || !context.mounted) return;
     final entries = queue
-        .map((t) => PlaylistEntry(
-              accountId: t.accountId,
-              remotePath: t.remotePath,
-              title: t.displayTitle,
-              durationMs: t.duration?.inMilliseconds,
-            ))
+        .map(
+          (t) => PlaylistEntry(
+            sourceName: t.sourceName,
+            remotePath: t.remotePath,
+            title: t.displayTitle,
+            durationMs: t.duration?.inMilliseconds,
+          ),
+        )
         .toList();
     final pl = await context.read<PlaylistService>().createFromQueue(
-          name: name,
-          queueEntries: entries,
-        );
+      name: name,
+      queueEntries: entries,
+    );
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('已创建歌单「${pl.name}」（${pl.length} 首）')),
     );
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PlaylistDetailScreen(playlistId: pl.id)),
+      MaterialPageRoute(
+        builder: (_) => PlaylistDetailScreen(playlistId: pl.id),
+      ),
     );
   }
 
@@ -88,7 +96,10 @@ class PlaylistsScreen extends StatelessWidget {
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
             child: const Text('创建'),
@@ -100,7 +111,9 @@ class PlaylistsScreen extends StatelessWidget {
     final pl = await context.read<PlaylistService>().create(name: name);
     if (!context.mounted) return;
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PlaylistDetailScreen(playlistId: pl.id)),
+      MaterialPageRoute(
+        builder: (_) => PlaylistDetailScreen(playlistId: pl.id),
+      ),
     );
   }
 
@@ -160,7 +173,10 @@ class PlaylistsScreen extends StatelessWidget {
               itemBuilder: (context, i) {
                 final pl = service.playlists[i];
                 return ListTile(
-                  leading: const Icon(Icons.queue_music, color: AppColors.accent),
+                  leading: const Icon(
+                    Icons.queue_music,
+                    color: AppColors.accent,
+                  ),
                   title: Text(pl.name),
                   subtitle: Text('${pl.length} 首'),
                   trailing: PopupMenuButton<String>(
@@ -192,7 +208,9 @@ class PlaylistsScreen extends StatelessWidget {
                           context: context,
                           builder: (ctx) => AlertDialog(
                             title: const Text('删除歌单'),
-                            content: Text('确定删除「${pl.name}」？本地与 WebDAV 上的对应文件都会删除。'),
+                            content: Text(
+                              '确定删除「${pl.name}」？本地与 WebDAV 上的对应文件都会删除。',
+                            ),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, false),
@@ -256,6 +274,7 @@ Future<void> showAddToPlaylistDialog(
   final service = context.read<PlaylistService>();
   final choice = await showModalBottomSheet<String>(
     context: context,
+    isScrollControlled: true,
     builder: (ctx) {
       final list = service.playlists;
       return SafeArea(
@@ -295,7 +314,10 @@ Future<void> showAddToPlaylistDialog(
         title: const Text('新建歌单'),
         content: TextField(controller: c, autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, c.text),
             child: const Text('创建'),
@@ -310,9 +332,8 @@ Future<void> showAddToPlaylistDialog(
     await service.addTrack(choice, entry);
   }
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('已添加到歌单')),
-  );
+  ScaffoldMessenger.of(context)
+      .showSnackBar(const SnackBar(content: Text('已添加到歌单')));
 }
 
 /// Add multiple entries to one playlist (or create).
@@ -324,6 +345,7 @@ Future<void> showAddManyToPlaylistDialog(
   final service = context.read<PlaylistService>();
   final choice = await showModalBottomSheet<String>(
     context: context,
+    isScrollControlled: true,
     builder: (ctx) {
       final list = service.playlists;
       return SafeArea(
@@ -364,7 +386,10 @@ Future<void> showAddManyToPlaylistDialog(
         title: const Text('新建歌单'),
         content: TextField(controller: c, autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, c.text),
             child: const Text('创建'),
@@ -380,7 +405,6 @@ Future<void> showAddManyToPlaylistDialog(
     await service.addTrack(playlistId, e);
   }
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('已添加 ${entries.length} 首到歌单')),
-  );
+  ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text('已添加 ${entries.length} 首到歌单')));
 }

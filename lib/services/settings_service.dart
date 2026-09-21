@@ -1,18 +1,24 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cache_policy.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
+import '../models/snack_duration.dart';
 import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
 /// WebDAV credentials live in AccountsService / flutter_secure_storage.
 class SettingsService extends ChangeNotifier {
-  SettingsService({SharedPreferences? prefs}) : _prefs = prefs;
+  SettingsService({
+    SharedPreferences? prefs,
+    FlutterSecureStorage? secureStorage,
+  }) : _prefs = prefs,
+       _secure = secureStorage ?? const FlutterSecureStorage();
 
   static const _kRetention = 'cache_retention';
   static const _kCustomRetentionHours = 'cache_custom_retention_hours';
@@ -38,10 +44,22 @@ class SettingsService extends ChangeNotifier {
   static const _kVideoLongPressRate = 'video_long_press_rate';
   static const _kVideoLastRate = 'video_last_rate';
   static const _kVideoConfirmExit = 'video_confirm_exit';
+  static const _kVideoSubtitlePosition = 'video_subtitle_position';
+  static const _kVideoSubtitleOffset = 'video_subtitle_offset';
+  static const _kVideoSubtitleFontSize = 'video_subtitle_font_size';
   static const _kShareTagRenameEnabled = 'share_tag_rename_enabled';
   static const _kShareTagRenamePattern = 'share_tag_rename_pattern';
   static const _kSyncRemoteRoot = 'sync_remote_root';
   static const _kSyncEncryptPassword = 'sync_encrypt_password';
+  static const _kVaultPassphrase = 'vault_passphrase';
+  static const _kDeviceId = 'sync_device_id';
+  static const _kLastRev = 'sync_last_rev';
+  static const _kSnackDuration = 'snack_duration';
+  static const _kDownloadNotifications = 'download_notifications';
+  static const _kCredentialsAccountId = 'sync_credentials_account_id';
+  static const _kPlaylistsAccountId = 'sync_playlists_account_id';
+  static const _kLibraryAccountId = 'sync_library_account_id';
+  static const _kBackupAccountId = 'sync_backup_account_id';
 
   /// Default custom retention: 30 days.
   static const int defaultCustomRetentionHours = 24 * 30;
@@ -51,7 +69,8 @@ class SettingsService extends ChangeNotifier {
   static const int maxCustomRetentionHours = 24 * 365 * 10;
 
   static const String defaultBackupRemotePath = '/WebDAVMusicPlayer/backup/';
-  static const String defaultLibrarySyncRemotePath = '/WebDAVMusicPlayer/library/';
+  static const String defaultLibrarySyncRemotePath =
+      '/WebDAVMusicPlayer/library/';
   static const String defaultPlaylistRemotePath = '/Playlists/';
 
   /// Video streaming buffer clamp [8 MB, 512 MB]; default 64 MB.
@@ -68,7 +87,34 @@ class SettingsService extends ChangeNotifier {
 
   /// Long-press speed boost default (temporary 2× while the finger is down).
   static const double defaultVideoLongPressRate = 2.0;
-  static const List<double> videoLongPressRatePresets = [1.25, 1.5, 2.0, 2.5, 3.0];
+  static const List<double> videoLongPressRatePresets = [
+    1.25,
+    1.5,
+    2.0,
+    2.5,
+    3.0,
+  ];
+
+  /// Distance (dp) between subtitles and the video picture's lower edge when
+  /// [VideoSubtitlePosition.insideVideo] is selected. Tune this if subtitles sit
+  /// too close to (or too far from) the bottom of the frame.
+  static const double defaultVideoSubtitleOffset = 24.0;
+  static const double minVideoSubtitleOffset = 0.0;
+  static const double maxVideoSubtitleOffset = 160.0;
+
+  /// Subtitle font size (sp) / line height, adjustable because phones and TV-ish
+  /// viewing distances differ a lot.
+  static const double defaultVideoSubtitleFontSize = 16.0;
+  static const double minVideoSubtitleFontSize = 10.0;
+  static const double maxVideoSubtitleFontSize = 40.0;
+  static const List<double> videoSubtitleFontSizePresets = [
+    12,
+    14,
+    16,
+    20,
+    24,
+    30,
+  ];
 
   /// Tag-based share renaming: enabled by default with `作者-标题`.
   static const bool defaultShareTagRename = true;
@@ -78,6 +124,7 @@ class SettingsService extends ChangeNotifier {
   static const String defaultSyncRemoteRoot = '/WebDAVMusicPlayer/';
 
   SharedPreferences? _prefs;
+  final FlutterSecureStorage _secure;
   CacheRetention _retention = CacheRetention.oneWeek;
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
@@ -102,10 +149,36 @@ class SettingsService extends ChangeNotifier {
   double _videoLongPressRate = defaultVideoLongPressRate;
   double _videoLastRate = 1.0;
   bool _videoConfirmExit = false;
+  VideoSubtitlePosition _videoSubtitlePosition = VideoSubtitlePosition.visible;
+  double _videoSubtitleOffset = defaultVideoSubtitleOffset;
+  double _videoSubtitleFontSize = defaultVideoSubtitleFontSize;
   bool _shareTagRenameEnabled = defaultShareTagRename;
   String _shareTagRenamePattern = defaultShareTagRenamePattern;
   String _syncRemoteRoot = defaultSyncRemoteRoot;
   bool _syncEncryptPassword = true;
+
+  /// User-chosen credential-vault key (see [vaultPassphrase]).
+  String _vaultPassphrase = '';
+
+  /// Stable id of this install; only used to break exact rev ties.
+  String _deviceId = '';
+
+  /// Highest rev handed out or observed on this install.
+  int _lastRev = 0;
+
+  /// How long in-app messages stay on screen.
+  SnackDuration _snackMode = SnackDuration.normal;
+
+  /// Whether the download queue posts system notifications.
+  bool _downloadNotifications = true;
+
+  // Per-feature sync destinations. Each feature writes to its **own** account, so
+  // credentials / playlists / library can each live on a different server instead
+  // of everything going to whichever account happens to be selected.
+  String? _credentialsAccountId;
+  String? _playlistsAccountId;
+  String? _libraryAccountId;
+  String? _backupAccountId;
   bool _loaded = false;
 
   CacheRetention get retention => _retention;
@@ -117,6 +190,7 @@ class SettingsService extends ChangeNotifier {
   String get librarySyncRemotePath => _librarySyncRemotePath;
   String get playlistRemotePath => _playlistRemotePath;
   bool get playlistSyncEnabled => _playlistSyncEnabled;
+
   /// Square edge (px) for newly compressed cover thumbs.
   int get coverThumbSizePx => _coverThumbSize;
   FileTypeConfig get fileTypes => _fileTypes;
@@ -142,6 +216,16 @@ class SettingsService extends ChangeNotifier {
   /// Whether leaving the video player asks「确认关闭视频吗？」first.
   bool get videoConfirmExit => _videoConfirmExit;
 
+  /// Where subtitles are drawn (inside the picture / below it / hidden).
+  VideoSubtitlePosition get videoSubtitlePosition => _videoSubtitlePosition;
+
+  /// Offset (dp) from the picture's lower edge in
+  /// [VideoSubtitlePosition.insideVideo] mode.
+  double get videoSubtitleOffset => _videoSubtitleOffset;
+
+  /// Subtitle font size (sp).
+  double get videoSubtitleFontSize => _videoSubtitleFontSize;
+
   /// Whether sharing a cached audio file offers a tag-based default name.
   bool get shareTagRenameEnabled => _shareTagRenameEnabled;
 
@@ -153,6 +237,19 @@ class SettingsService extends ChangeNotifier {
 
   /// Whether synced/exported WebDAV passwords are encrypted with a passphrase.
   bool get syncEncryptPassword => _syncEncryptPassword;
+
+  /// How long in-app messages stay on screen.
+  SnackDuration get snackMode => _snackMode;
+
+  /// Whether the download queue posts system notifications.
+  bool get downloadNotificationsEnabled => _downloadNotifications;
+
+  /// Destination accounts per sync feature (null → fall back to the active one).
+  String? get credentialsAccountId => _credentialsAccountId;
+  String? get playlistsAccountId => _playlistsAccountId;
+  String? get libraryAccountId => _libraryAccountId;
+  String? get backupAccountId => _backupAccountId;
+
   bool get loaded => _loaded;
 
   Future<void> init() async {
@@ -162,12 +259,14 @@ class SettingsService extends ChangeNotifier {
     _customRetentionHours = _clampCustomHours(
       storedHours ?? defaultCustomRetentionHours,
     );
-    _librarySort =
-        LibrarySortModeX.fromStorageKey(_prefs!.getString(_kLibrarySort));
+    _librarySort = LibrarySortModeX.fromStorageKey(
+      _prefs!.getString(_kLibrarySort),
+    );
     _backupRemotePath =
         _prefs!.getString(_kBackupRemotePath) ?? defaultBackupRemotePath;
     _librarySyncRemotePath =
-        _prefs!.getString(_kLibrarySyncRemotePath) ?? defaultLibrarySyncRemotePath;
+        _prefs!.getString(_kLibrarySyncRemotePath) ??
+        defaultLibrarySyncRemotePath;
     _playlistRemotePath =
         _prefs!.getString(_kPlaylistRemotePath) ?? defaultPlaylistRemotePath;
     _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
@@ -197,25 +296,56 @@ class SettingsService extends ChangeNotifier {
     _videoBackgroundPlayback =
         _prefs!.getBool(_kVideoBackgroundPlayback) ?? true;
     _videoPipEnabled = _prefs!.getBool(_kVideoPipEnabled) ?? false;
-    _videoHardwareDecoding =
-        _prefs!.getBool(_kVideoHardwareDecoding) ?? true;
+    _videoHardwareDecoding = _prefs!.getBool(_kVideoHardwareDecoding) ?? true;
     _videoBufferSizeMb = _clampBufferMb(
       _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
     );
     _videoLongPressRate = _clampRate(
       _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
     );
-    _videoLastRate = _clampRate(
-      _prefs!.getDouble(_kVideoLastRate) ?? 1.0,
-    );
+    _videoLastRate = _clampRate(_prefs!.getDouble(_kVideoLastRate) ?? 1.0);
     _videoConfirmExit = _prefs!.getBool(_kVideoConfirmExit) ?? false;
+    _videoSubtitlePosition = VideoSubtitlePositionX.fromStorageKey(
+      _prefs!.getString(_kVideoSubtitlePosition),
+    );
+    _videoSubtitleOffset = _clampSubtitleOffset(
+      _prefs!.getDouble(_kVideoSubtitleOffset) ?? defaultVideoSubtitleOffset,
+    );
+    _videoSubtitleFontSize = _clampSubtitleFontSize(
+      _prefs!.getDouble(_kVideoSubtitleFontSize) ??
+          defaultVideoSubtitleFontSize,
+    );
     _shareTagRenameEnabled =
         _prefs!.getBool(_kShareTagRenameEnabled) ?? defaultShareTagRename;
     _shareTagRenamePattern =
-        _prefs!.getString(_kShareTagRenamePattern) ?? defaultShareTagRenamePattern;
+        _prefs!.getString(_kShareTagRenamePattern) ??
+        defaultShareTagRenamePattern;
     _syncRemoteRoot =
         _prefs!.getString(_kSyncRemoteRoot) ?? defaultSyncRemoteRoot;
     _syncEncryptPassword = _prefs!.getBool(_kSyncEncryptPassword) ?? true;
+    // The vault key lives in secure storage (Keystore), like account passwords.
+    try {
+      _vaultPassphrase = await _secure.read(key: _kVaultPassphrase) ?? '';
+    } catch (e) {
+      debugPrint('SettingsService: vault passphrase read failed: $e');
+      _vaultPassphrase = '';
+    }
+    _snackMode = SnackDurationX.fromStorageKey(
+      _prefs!.getString(_kSnackDuration),
+    );
+    // Device id + rev high-water mark: the `rev` clock survives restarts, and an
+    // exact tie between two devices is broken by the id.
+    _deviceId = _prefs!.getString(_kDeviceId) ?? '';
+    if (_deviceId.isEmpty) {
+      _deviceId = 'dev-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+      await _prefs!.setString(_kDeviceId, _deviceId);
+    }
+    _lastRev = _prefs!.getInt(_kLastRev) ?? 0;
+    _downloadNotifications = _prefs!.getBool(_kDownloadNotifications) ?? true;
+    _credentialsAccountId = _prefs!.getString(_kCredentialsAccountId);
+    _playlistsAccountId = _prefs!.getString(_kPlaylistsAccountId);
+    _libraryAccountId = _prefs!.getString(_kLibraryAccountId);
+    _backupAccountId = _prefs!.getString(_kBackupAccountId);
     _loaded = true;
     notifyListeners();
   }
@@ -267,7 +397,6 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  
   Future<void> setLibrarySyncRemotePath(String path) async {
     var p = path.trim();
     if (p.isEmpty) p = defaultLibrarySyncRemotePath;
@@ -296,7 +425,6 @@ class SettingsService extends ChangeNotifier {
     await _prefs!.setBool(_kPlaylistSyncEnabled, enabled);
     notifyListeners();
   }
-
 
   /// Persist square cover-thumb edge. Presets: 100 / 300; custom clamped to
   /// [minCoverThumbSize]–[maxCoverThumbSize]. Applies to NEW thumbs only;
@@ -368,10 +496,7 @@ class SettingsService extends ChangeNotifier {
     await _persistGesture(_kVideoLongPress, action);
   }
 
-  Future<void> _persistGesture(
-    String key,
-    VideoGestureAction action,
-  ) async {
+  Future<void> _persistGesture(String key, VideoGestureAction action) async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(key, action.storageKey);
     notifyListeners();
@@ -436,7 +561,83 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setShareTagRenameEnabled(bool enabled) async {    _shareTagRenameEnabled = enabled;
+  /// Where subtitles are drawn (inside the picture / below it / hidden).
+  Future<void> setVideoSubtitlePosition(VideoSubtitlePosition position) async {
+    _videoSubtitlePosition = position;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kVideoSubtitlePosition, position.storageKey);
+    notifyListeners();
+  }
+
+  /// Distance (dp) between subtitles and the picture's lower edge.
+  Future<void> setVideoSubtitleOffset(double dp) async {
+    _videoSubtitleOffset = _clampSubtitleOffset(dp);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setDouble(_kVideoSubtitleOffset, _videoSubtitleOffset);
+    notifyListeners();
+  }
+
+  static double _clampSubtitleOffset(double dp) {
+    if (dp.isNaN) return defaultVideoSubtitleOffset;
+    if (dp < minVideoSubtitleOffset) return minVideoSubtitleOffset;
+    if (dp > maxVideoSubtitleOffset) return maxVideoSubtitleOffset;
+    return dp;
+  }
+
+  /// Subtitle font size (sp).
+  Future<void> setVideoSubtitleFontSize(double sp) async {
+    _videoSubtitleFontSize = _clampSubtitleFontSize(sp);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setDouble(_kVideoSubtitleFontSize, _videoSubtitleFontSize);
+    notifyListeners();
+  }
+
+  static double _clampSubtitleFontSize(double sp) {
+    if (sp.isNaN) return defaultVideoSubtitleFontSize;
+    if (sp < minVideoSubtitleFontSize) return minVideoSubtitleFontSize;
+    if (sp > maxVideoSubtitleFontSize) return maxVideoSubtitleFontSize;
+    return sp;
+  }
+
+  /// Toggle download-queue system notifications.
+  Future<void> setDownloadNotificationsEnabled(bool enabled) async {
+    _downloadNotifications = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kDownloadNotifications, enabled);
+    notifyListeners();
+  }
+
+  /// Persist the in-app message duration.
+  Future<void> setSnackMode(SnackDuration mode) async {
+    _snackMode = mode;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kSnackDuration, mode.storageKey);
+    notifyListeners();
+  }
+
+  /// Set the destination account for one sync feature.
+  /// [feature] is `credentials` / `playlists` / `library` / `backup`.
+  Future<void> setSyncAccount(String feature, String? accountId) async {
+    _prefs ??= await SharedPreferences.getInstance();
+    switch (feature) {
+      case 'credentials':
+        _credentialsAccountId = accountId;
+        await _prefs!.setString(_kCredentialsAccountId, accountId ?? '');
+      case 'playlists':
+        _playlistsAccountId = accountId;
+        await _prefs!.setString(_kPlaylistsAccountId, accountId ?? '');
+      case 'library':
+        _libraryAccountId = accountId;
+        await _prefs!.setString(_kLibraryAccountId, accountId ?? '');
+      case 'backup':
+        _backupAccountId = accountId;
+        await _prefs!.setString(_kBackupAccountId, accountId ?? '');
+    }
+    notifyListeners();
+  }
+
+  Future<void> setShareTagRenameEnabled(bool enabled) async {
+    _shareTagRenameEnabled = enabled;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kShareTagRenameEnabled, enabled);
     notifyListeners();
@@ -444,8 +645,9 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setShareTagRenamePattern(String pattern) async {
     final trimmed = pattern.trim();
-    _shareTagRenamePattern =
-        trimmed.isEmpty ? defaultShareTagRenamePattern : trimmed;
+    _shareTagRenamePattern = trimmed.isEmpty
+        ? defaultShareTagRenamePattern
+        : trimmed;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_kShareTagRenamePattern, _shareTagRenamePattern);
     notifyListeners();
@@ -469,6 +671,51 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The **user-chosen** key used to encrypt WebDAV passwords before they leave
+  /// the device (credential vault on the cloud, backup archives, local exports).
+  ///
+  /// This must never be derived from anything else in the app: it used to be the
+  /// destination account's own WebDAV password, which meant changing that
+  /// password (or picking another destination disk) silently made every
+  /// previously synced password undecryptable.
+  ///
+  /// Kept on this device only — deliberately **not** part of
+  /// [exportForBackup], because exporting the key next to the ciphertext would
+  /// defeat the point. A device that does not know it restores accounts with
+  /// empty passwords.
+  String get vaultPassphrase => _vaultPassphrase;
+
+  /// Stable id of this install (tie-breaker for identical `rev` values).
+  String get deviceId => _deviceId;
+
+  /// Highest `rev` this install has handed out or observed.
+  int get lastRev => _lastRev;
+
+  Future<void> setLastRev(int value) async {
+    if (value <= _lastRev) return;
+    _lastRev = value;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kLastRev, value);
+  }
+
+  /// Whether a unified decryption key is configured.
+  bool get hasVaultPassphrase => _vaultPassphrase.isNotEmpty;
+
+  Future<void> setVaultPassphrase(String value) async {
+    if (_vaultPassphrase == value) return;
+    _vaultPassphrase = value;
+    try {
+      if (value.isEmpty) {
+        await _secure.delete(key: _kVaultPassphrase);
+      } else {
+        await _secure.write(key: _kVaultPassphrase, value: value);
+      }
+    } catch (e) {
+      debugPrint('SettingsService: vault passphrase write failed: $e');
+    }
+    notifyListeners();
+  }
+
   /// Clamp a playback rate into the supported 0.5×–3.0× window.
   static double clampVideoRate(double rate) => _clampRate(rate);
 
@@ -480,36 +727,42 @@ class SettingsService extends ChangeNotifier {
   }
 
   Map<String, dynamic> exportForBackup() => {
-        'cache_retention': _retention.storageKey,
-        'cache_custom_retention_hours': _customRetentionHours,
-        'library_sort_mode': _librarySort.storageKey,
-        'backup_remote_path': _backupRemotePath,
-        'playlist_remote_path': _playlistRemotePath,
-        'playlist_sync_enabled': _playlistSyncEnabled,
-        'cover_thumb_size': _coverThumbSize,
-        'file_type_config': _fileTypes.toJson(),
-        'music_tap_action': _musicTapAction.storageKey,
-        'video_tap_action': _videoTapAction.storageKey,
-        'home_tab_index': _homeTab,
-        'network_remember_last_path': _networkRememberLastPath,
-        'network_last_path': _networkLastPath,
-        'video_left_double_tap': _videoLeftDoubleTap.storageKey,
-        'video_right_double_tap': _videoRightDoubleTap.storageKey,
-        'video_long_press': _videoLongPress.storageKey,
-        'video_background_playback': _videoBackgroundPlayback,
-        'video_pip_enabled': _videoPipEnabled,
-        'video_hardware_decoding': _videoHardwareDecoding,
-        'video_buffer_size_mb': _videoBufferSizeMb,
-        'video_long_press_rate': _videoLongPressRate,
-        'video_last_rate': _videoLastRate,
-        'video_confirm_exit': _videoConfirmExit,
-        'share_tag_rename_enabled': _shareTagRenameEnabled,
-        'share_tag_rename_pattern': _shareTagRenamePattern,
-        'sync_remote_root': _syncRemoteRoot,
-        'sync_encrypt_password': _syncEncryptPassword,
-      };
+    'cache_retention': _retention.storageKey,
+    'cache_custom_retention_hours': _customRetentionHours,
+    'library_sort_mode': _librarySort.storageKey,
+    'backup_remote_path': _backupRemotePath,
+    'playlist_remote_path': _playlistRemotePath,
+    'playlist_sync_enabled': _playlistSyncEnabled,
+    'cover_thumb_size': _coverThumbSize,
+    'file_type_config': _fileTypes.toJson(),
+    'music_tap_action': _musicTapAction.storageKey,
+    'video_tap_action': _videoTapAction.storageKey,
+    'home_tab_index': _homeTab,
+    'network_remember_last_path': _networkRememberLastPath,
+    'network_last_path': _networkLastPath,
+    'video_left_double_tap': _videoLeftDoubleTap.storageKey,
+    'video_right_double_tap': _videoRightDoubleTap.storageKey,
+    'video_long_press': _videoLongPress.storageKey,
+    'video_background_playback': _videoBackgroundPlayback,
+    'video_pip_enabled': _videoPipEnabled,
+    'video_hardware_decoding': _videoHardwareDecoding,
+    'video_buffer_size_mb': _videoBufferSizeMb,
+    'video_long_press_rate': _videoLongPressRate,
+    'video_last_rate': _videoLastRate,
+    'video_confirm_exit': _videoConfirmExit,
+    'video_subtitle_position': _videoSubtitlePosition.storageKey,
+    'video_subtitle_offset': _videoSubtitleOffset,
+    'video_subtitle_font_size': _videoSubtitleFontSize,
+    'share_tag_rename_enabled': _shareTagRenameEnabled,
+    'share_tag_rename_pattern': _shareTagRenamePattern,
+    'sync_remote_root': _syncRemoteRoot,
+    'sync_encrypt_password': _syncEncryptPassword,
+    'snack_duration': _snackMode.storageKey,
+    'download_notifications': _downloadNotifications,
+  };
 
-  Future<Map<String, dynamic>> exportForBackupAsync() async => exportForBackup();
+  Future<Map<String, dynamic>> exportForBackupAsync() async =>
+      exportForBackup();
 
   Future<void> importFromBackup(Map<String, dynamic> json) async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -588,7 +841,9 @@ class SettingsService extends ChangeNotifier {
       );
     }
     if (json['video_background_playback'] is bool) {
-      await setVideoBackgroundPlayback(json['video_background_playback'] as bool);
+      await setVideoBackgroundPlayback(
+        json['video_background_playback'] as bool,
+      );
     }
     if (json['video_pip_enabled'] is bool) {
       await setVideoPipEnabled(json['video_pip_enabled'] as bool);
@@ -610,6 +865,23 @@ class SettingsService extends ChangeNotifier {
     if (json['video_confirm_exit'] is bool) {
       await setVideoConfirmExit(json['video_confirm_exit'] as bool);
     }
+    if (json['video_subtitle_position'] != null) {
+      await setVideoSubtitlePosition(
+        VideoSubtitlePositionX.fromStorageKey(
+          json['video_subtitle_position'] as String?,
+        ),
+      );
+    }
+    if (json['video_subtitle_offset'] is num) {
+      await setVideoSubtitleOffset(
+        (json['video_subtitle_offset'] as num).toDouble(),
+      );
+    }
+    if (json['video_subtitle_font_size'] is num) {
+      await setVideoSubtitleFontSize(
+        (json['video_subtitle_font_size'] as num).toDouble(),
+      );
+    }
     if (json['share_tag_rename_enabled'] is bool) {
       await setShareTagRenameEnabled(json['share_tag_rename_enabled'] as bool);
     }
@@ -623,6 +895,16 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['sync_encrypt_password'] is bool) {
       await setSyncEncryptPassword(json['sync_encrypt_password'] as bool);
+    }
+    if (json['download_notifications'] is bool) {
+      await setDownloadNotificationsEnabled(
+        json['download_notifications'] as bool,
+      );
+    }
+    if (json['snack_duration'] != null) {
+      await setSnackMode(
+        SnackDurationX.fromStorageKey(json['snack_duration'] as String?),
+      );
     }
   }
 

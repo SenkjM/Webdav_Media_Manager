@@ -6,6 +6,7 @@ import '../services/audio_player_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/android_background.dart';
+import '../utils/back_handler_registry.dart';
 import '../widgets/mini_player.dart';
 import 'about_screen.dart';
 import 'downloads_screen.dart';
@@ -70,6 +71,9 @@ class _HomeShellState extends State<HomeShell> {
         canPop: false,
         onPopInvokedWithResult: (didPop, _) {
           if (didPop) return;
+          // A tab root that navigates internally (network library directory
+          // stack, multi-select) gets first refusal.
+          if (BackHandlerRegistry.tryHandleBack()) return;
           final nav = _activeNavKey?.currentState;
           if (nav != null && nav.canPop()) {
             nav.pop();

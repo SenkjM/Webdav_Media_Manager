@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/cache_policy.dart';
+import '../models/snack_duration.dart';
 import '../providers/app_state.dart';
+import '../services/download_queue_service.dart';
 import '../services/library_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
@@ -27,6 +29,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   late final TextEditingController _customDaysController;
   late final TextEditingController _customHoursController;
   late final TextEditingController _coverSizeController;
+
   /// When non-null, overrides derived preset (lets user open 「自定义」 before applying).
   String? _coverUiMode;
   int? _cacheBytes;
@@ -51,7 +54,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     try {
       final bytes = await context.read<AppState>().cache.cacheSizeBytes();
       if (!mounted) return;
-      setState(() { _cacheBytes = bytes; _cacheSizeLoading = false; });
+      setState(() {
+        _cacheBytes = bytes;
+        _cacheSizeLoading = false;
+      });
     } catch (_) {
       if (!mounted) return;
       setState(() => _cacheSizeLoading = false);
@@ -95,8 +101,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     var totalHours = days * 24 + hours;
     if (totalHours < 1) totalHours = 1;
     await context.read<AppState>().setCustomRetentionDuration(
-          Duration(hours: totalHours),
-        );
+      Duration(hours: totalHours),
+    );
     if (!mounted) return;
     _syncCustomFieldsFromSettings();
   }
@@ -138,9 +144,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     NotificationPermissionService perms,
   ) async {
     if (perms.isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('通知权限已开启，播放时会显示媒体通知')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('通知权限已开启，播放时会显示媒体通知')));
       return;
     }
     if (perms.isChannelBlocked || perms.isPermanentlyDenied) {
@@ -148,11 +153,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            opened
-                ? '请在系统设置中允许通知后返回应用'
-                : '无法打开系统设置，请手动允许通知权限',
-          ),
+          content: Text(opened ? '请在系统设置中允许通知后返回应用' : '无法打开系统设置，请手动允许通知权限'),
         ),
       );
       return;
@@ -160,16 +161,9 @@ class _SettingsScreenState extends State<SettingsScreen>
     final granted = await perms.request();
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          granted ? '已授予通知权限' : '未授予通知权限，媒体通知可能无法显示',
-        ),
-      ),
+      SnackBar(content: Text(granted ? '已授予通知权限' : '未授予通知权限，媒体通知可能无法显示')),
     );
   }
-
-
-
 
   String _customRetentionSummary(SettingsService settings) {
     final total = settings.customRetentionHours;
@@ -183,7 +177,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     }
     return '当前：保留 $hours 小时未访问的音频';
   }
-
 
   String _notificationSubtitle(NotificationPermissionService perms) {
     if (!perms.loaded) return '正在检查…';
@@ -235,7 +228,11 @@ class _SettingsScreenState extends State<SettingsScreen>
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text('WebDAV 服务器', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            'WebDAV 服务器',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -244,13 +241,17 @@ class _SettingsScreenState extends State<SettingsScreen>
             subtitle: const Text('添加 / 编辑 / 删除 WebDAV 服务器'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AccountsScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AccountsScreen()));
             },
           ),
           const Divider(height: 40),
-          Text('主页与导航', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            '主页与导航',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -281,7 +282,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                 context.read<SettingsService>().setNetworkRememberLastPath(v),
           ),
           const Divider(height: 40),
-          Text('视频播放', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            '视频播放',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -291,14 +296,16 @@ class _SettingsScreenState extends State<SettingsScreen>
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const VideoSettingsScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const VideoSettingsScreen()),
               );
             },
           ),
           const Divider(height: 40),
-          Text('文件类型', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            '文件类型',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -308,14 +315,16 @@ class _SettingsScreenState extends State<SettingsScreen>
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const FileExtensionsScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const FileExtensionsScreen()),
               );
             },
           ),
           const Divider(height: 40),
-          Text('媒体通知', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            '媒体通知',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -353,7 +362,11 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
             ),
           const Divider(height: 40),
-          Text('封面缩略图尺寸', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            '封面缩略图尺寸',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 4),
           Text(
             '新下载/重新写入标签时按此边长生成正方形压缩封面。'
@@ -373,10 +386,14 @@ class _SettingsScreenState extends State<SettingsScreen>
               final v = sel.first;
               if (v == '100') {
                 setState(() => _coverUiMode = null);
-                await context.read<AppState>().setCoverThumbSize(coverThumbSize);
+                await context.read<AppState>().setCoverThumbSize(
+                  coverThumbSize,
+                );
               } else if (v == '300') {
                 setState(() => _coverUiMode = null);
-                await context.read<AppState>().setCoverThumbSize(coverThumbSizeLarge);
+                await context.read<AppState>().setCoverThumbSize(
+                  coverThumbSizeLarge,
+                );
               } else {
                 setState(() {
                   _coverUiMode = 'custom';
@@ -419,7 +436,11 @@ class _SettingsScreenState extends State<SettingsScreen>
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const Divider(height: 40),
-          Text('缓存清理', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            '缓存清理',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 4),
           Text(
             '播放仅使用本地音频缓存。可选 1 天 / 1 周 / 自定义时长自动清理，或「永不」关闭自动清理；'
@@ -431,10 +452,23 @@ class _SettingsScreenState extends State<SettingsScreen>
           Card(
             color: AppColors.elevated,
             child: ListTile(
-              leading: const Icon(Icons.sd_storage_outlined, color: AppColors.accent),
+              leading: const Icon(
+                Icons.sd_storage_outlined,
+                color: AppColors.accent,
+              ),
               title: const Text('当前缓存占用'),
-              subtitle: Text(_cacheSizeLoading ? '计算中…' : (_cacheBytes == null ? '未知' : formatByteSize(_cacheBytes!))),
-              trailing: IconButton(tooltip: '刷新', icon: const Icon(Icons.refresh), onPressed: _cacheSizeLoading ? null : _refreshCacheSize),
+              subtitle: Text(
+                _cacheSizeLoading
+                    ? '计算中…'
+                    : (_cacheBytes == null
+                          ? '未知'
+                          : formatByteSize(_cacheBytes!)),
+              ),
+              trailing: IconButton(
+                tooltip: '刷新',
+                icon: const Icon(Icons.refresh),
+                onPressed: _cacheSizeLoading ? null : _refreshCacheSize,
+              ),
             ),
           ),
           const SizedBox(height: 8),
@@ -532,7 +566,53 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
 
           const Divider(height: 40),
-          Text('分享', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            '提示与通知',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '应用内提示（屏幕底部的短消息）同时只显示一条：新的会替换旧的，'
+            '重复的会被忽略，点「知道了」可立即关闭。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.timer_outlined),
+            title: const Text('提示显示时长'),
+            subtitle: Text(settings.snackMode.labelZh),
+            trailing: DropdownButton<SnackDuration>(
+              value: settings.snackMode,
+              items: [
+                for (final m in SnackDuration.values)
+                  DropdownMenuItem(value: m, child: Text(m.labelZh)),
+              ],
+              onChanged: (v) {
+                if (v != null) settings.setSnackMode(v);
+              },
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.download_outlined),
+            title: const Text('下载队列系统通知'),
+            subtitle: const Text('下载进度与完成结果显示在通知栏'),
+            value: settings.downloadNotificationsEnabled,
+            onChanged: (v) async {
+              await settings.setDownloadNotificationsEnabled(v);
+              if (!context.mounted) return;
+              await context.read<DownloadQueueService>().setNotifications(v);
+            },
+          ),
+
+          const Divider(height: 40),
+          Text(
+            '分享',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 4),
           Text(
             '分享已缓存的音乐文件时可按标签重命名文件名。',
@@ -561,7 +641,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
 
           const Divider(height: 40),
-          Text('同步与备份', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          Text(
+            '同步与备份',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
           const SizedBox(height: 4),
           Text(
             'WebDAV 凭证与歌单是真同步（双向 + 定期扫描）；'
@@ -573,9 +657,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           const SizedBox(height: 8),
           FilledButton.tonalIcon(
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SyncScreen()),
-              );
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
             },
             icon: const Icon(Icons.sync),
             label: const Text('打开同步'),
@@ -594,8 +677,9 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   Future<void> _editShareRenamePattern(SettingsService settings) async {
-    final controller =
-        TextEditingController(text: settings.shareTagRenamePattern);
+    final controller = TextEditingController(
+      text: settings.shareTagRenamePattern,
+    );
     final value = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(

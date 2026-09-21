@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/cache_policy.dart';
 import '../models/download_task.dart';
 import '../models/file_type_config.dart';
+import '../utils/app_snack.dart';
 import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
@@ -14,6 +15,7 @@ import '../services/credential_vault_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
+import '../utils/rev_clock.dart';
 import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
 import '../services/playlist_service.dart';
@@ -95,23 +97,39 @@ class AppState extends ChangeNotifier {
   Future<void> init() async {
     try {
       await settings.init();
+      AppSnack.attach(settings);
       _syncCoverThumbSize();
       _syncDownloadFileTypes();
       await cache.init();
+      // The rev clock is the single version source sync compares; it starts from
+      // the persisted high-water mark and reports every advance back.
+      library.attachRevClock(
+        RevClock(
+          nowMs: () => DateTime.now().millisecondsSinceEpoch,
+          initial: settings.lastRev,
+          onAdvance: settings.setLastRev,
+        ),
+      );
       await library.init();
       await accounts.init();
-      playlists.configureSync(
-        remotePath: settings.playlistRemotePath,
-        enabled: settings.playlistSyncEnabled,
-      );
+      await registerAllAccounts();
+      // The queue persists 网盘名, never an account id: it has to resolve one to
+      // the other **after** the account list is loaded, or every transfer would
+      // be judged "来源网盘未绑定".
+      downloads.configureAccountResolver(accounts.idForSource);
+      _configurePlaylistSync();
       await playlists.init();
       downloads.attachLibrary(library);
       // Incremental library sync: whenever a download (or a restore) changes
       // the local library, push just the new rows to the cloud index.
       library.addListener(_onLibraryChanged);
       await downloads.init();
+      // Download notifications: create the channel and honour the setting.
+      downloads.notificationsEnabled = settings.downloadNotificationsEnabled;
+      downloads.notificationService.enabled =
+          settings.downloadNotificationsEnabled;
+      unawaited(downloads.initNotifications());
       await notificationPermission.refresh();
-      await connectActiveAccount();
       unawaited(runCacheCleanup());
       // Startup scan: credentials + playlists both ways (best-effort, never
       // blocks the first frame).
@@ -125,28 +143,42 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> connectActiveAccount() async {
-    final account = accounts.activeAccount;
-    if (account == null) {
-      webDav.disconnect();
-      return;
+  /// Register **every** configured account with [WebDavService].
+  ///
+  /// This is what makes the music library independent of the network library's
+  /// selection: a track row carries its own `accountId`, and its client stays
+  /// available no matter which account the user is browsing.
+  Future<void> registerAllAccounts() async {
+    for (final a in accounts.accounts) {
+      final pass = await accounts.passwordFor(a.id) ?? '';
+      webDav.configure(
+        accountId: a.id,
+        url: a.url,
+        username: a.username,
+        password: pass,
+        makeActive: false,
+      );
     }
-    final pass = await accounts.passwordFor(account.id) ?? '';
-    webDav.configure(
-      accountId: account.id,
-      url: account.url,
-      username: account.username,
-      password: pass,
-    );
+    // Drop clients for accounts that no longer exist.
+    final live = accounts.accounts.map((a) => a.id).toSet();
+    for (final id in webDav.registeredAccountIds) {
+      if (!live.contains(id)) webDav.disconnect(accountId: id);
+    }
+    webDav.setActiveAccount(accounts.activeAccountId ?? '');
+  }
+
+  void _configurePlaylistSync() {
     playlists.configureSync(
       remotePath: settings.playlistRemotePath,
       enabled: settings.playlistSyncEnabled,
+      accountId: settings.playlistsAccountId ?? accounts.activeAccountId,
     );
   }
 
   Future<void> switchAccount(String accountId) async {
     await accounts.setActiveAccount(accountId);
-    await connectActiveAccount();
+    webDav.setActiveAccount(accountId);
+    _configurePlaylistSync();
     unawaited(sync.autoScan());
     notifyListeners();
   }
@@ -158,8 +190,10 @@ class AppState extends ChangeNotifier {
   void _onLibraryChanged() {
     if (!ready || !sync.hasUsableAccount) return;
     _libraryPushDebounce?.cancel();
-    _libraryPushDebounce =
-        Timer(const Duration(seconds: 20), () => unawaited(pushLibraryIncrement()));
+    _libraryPushDebounce = Timer(
+      const Duration(seconds: 20),
+      () => unawaited(pushLibraryIncrement()),
+    );
   }
 
   /// Periodic scan for the "true sync" side (credentials + playlists) plus an
@@ -187,10 +221,10 @@ class AppState extends ChangeNotifier {
       retention: settings.retention,
       customDuration: settings.customRetentionDuration,
       identityToLocal: downloads.completedIdentityToLocal,
-      playingIdentityKey: player.currentAccountId != null &&
-              player.currentRemotePath != null
+      playingIdentityKey:
+          player.currentSourceName != null && player.currentRemotePath != null
           ? trackIdentityKey(
-              player.currentAccountId!,
+              player.currentSourceName!,
               player.currentRemotePath!,
             )
           : null,
@@ -203,14 +237,14 @@ class AppState extends ChangeNotifier {
     for (final t in downloads.tasks) {
       if (t.status == DownloadStatus.active ||
           t.status == DownloadStatus.pending) {
-        final f = cache.fileForRemote(t.remotePath, accountId: t.accountId);
+        final f = cache.fileForRemote(t.remotePath, sourceName: t.sourceName);
         protected.add(f.path);
         protected.add('${f.path}.part');
       }
     }
     final removed = await cache.clearAll(
       playingRemotePath: player.currentRemotePath,
-      playingAccountId: player.currentAccountId,
+      playingSourceName: player.currentSourceName,
       playingLocalPath: player.current?.localPath,
       protectedLocalPaths: protected,
     );
@@ -232,7 +266,6 @@ class AppState extends ChangeNotifier {
     }
     unawaited(runCacheCleanup());
   }
-
 
   void _syncCoverThumbSize() {
     library.covers.thumbSize = settings.coverThumbSizePx;
@@ -265,9 +298,9 @@ class AppState extends ChangeNotifier {
 
     for (final t in snapshot) {
       final audio = t.effectiveAudioRemotePath;
-      audioKeys.add('${t.accountId}\u0000$audio');
+      audioKeys.add('${t.sourceName}\u0000$audio');
       if (t.cueRemotePath != null && t.cueRemotePath!.isNotEmpty) {
-        audioKeys.add('${t.accountId}\u0000${t.cueRemotePath}');
+        audioKeys.add('${t.sourceName}\u0000${t.cueRemotePath}');
       }
       final gid = t.cacheGroupId;
       if (gid != null && gid.isNotEmpty) groupIds.add(gid);
@@ -281,9 +314,12 @@ class AppState extends ChangeNotifier {
     for (final key in audioKeys) {
       final parts = key.split('\u0000');
       if (parts.length < 2) continue;
-      final accountId = parts[0];
+      final sourceName = parts[0];
       final remote = parts.sublist(1).join('\u0000');
-      await cache.deleteLocalFile(accountId: accountId, remotePath: remote);
+      await cache.deleteLocalFile(
+        sourceName: sourceName,
+        remotePath: remote,
+      );
     }
 
     await library.destroyAll();

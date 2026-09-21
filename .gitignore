@@ -58,3 +58,11 @@ signing-secrets/
 /.orig.ps1
 TUNNEL-SKILL-TEST-RECORD.md
 
+# Local dev-run log (tool/dev-run.ps1 output)
+/.dev-run.log
+
+# Local scratch: pulled device DBs, dev-run pid/log/uri, screenshots
+/.tmp/
+/dev-shot*.png
+/devtools_options.yaml
+

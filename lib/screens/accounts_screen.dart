@@ -1,3 +1,5 @@
+import '../utils/app_snack.dart';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +8,7 @@ import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/webdav_error_dialog.dart';
 
 class AccountsScreen extends StatelessWidget {
@@ -36,8 +39,13 @@ class AccountsScreen extends StatelessWidget {
                         ? Theme.of(context).colorScheme.primary
                         : null,
                   ),
-                  title: Text(a.name),
-                  subtitle: Text('${a.url}\n${a.username}'),
+                  // 名称（用户名）：同一主机上多个挂载点一眼可分。
+                  title: Text(webDavAccountLabel(a)),
+                  subtitle: Text(
+                    a.url,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   isThreeLine: true,
                   trailing: PopupMenuButton<String>(
                     onSelected: (v) async {
@@ -74,26 +82,24 @@ class AccountsScreen extends StatelessWidget {
     final app = context.read<AppState>();
     final pass = await context.read<AccountsService>().passwordFor(a.id) ?? '';
     final webDav = context.read<WebDavService>();
+    // Refresh just this account's client; testing must not disturb which account
+    // the network library is browsing.
     webDav.configure(
       accountId: a.id,
       url: a.url,
       username: a.username,
       password: pass,
+      makeActive: false,
     );
-    final ok = await webDav.testConnection();
+    final ok = await webDav.testConnection(accountId: a.id);
     if (!context.mounted) return;
     if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('连接成功')),
-      );
+      AppSnack.show(context, '连接成功');
     } else {
-      await showWebDavErrorDialog(
-        context,
-        webDav.lastError ?? '连接失败',
-      );
+      await showWebDavErrorDialog(context, webDav.lastError ?? '连接失败');
     }
     // Restore active account connection.
-    await app.connectActiveAccount();
+    await app.registerAllAccounts();
   }
 
   Future<void> _delete(BuildContext context, WebDavAccount a) async {
@@ -116,7 +122,7 @@ class AccountsScreen extends StatelessWidget {
     );
     if (ok != true || !context.mounted) return;
     await context.read<AccountsService>().deleteAccount(a.id);
-    await context.read<AppState>().connectActiveAccount();
+    await context.read<AppState>().registerAllAccounts();
   }
 
   Future<void> _editAccount(
@@ -172,8 +178,7 @@ class AccountsScreen extends StatelessWidget {
                       controller: passCtrl,
                       obscureText: obscure,
                       decoration: InputDecoration(
-                        labelText:
-                            existing == null ? '密码' : '密码（留空则不修改）',
+                        labelText: existing == null ? '密码' : '密码（留空则不修改）',
                         border: const OutlineInputBorder(),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -221,7 +226,7 @@ class AccountsScreen extends StatelessWidget {
       );
     }
     if (context.mounted) {
-      await context.read<AppState>().connectActiveAccount();
+      await context.read<AppState>().registerAllAccounts();
     }
   }
 }

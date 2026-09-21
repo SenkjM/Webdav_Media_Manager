@@ -68,8 +68,8 @@ class CacheService extends ChangeNotifier {
     return d;
   }
 
-  File fileForRemote(String remotePath, {required String accountId}) {
-    final name = cacheFileNameForRemote(remotePath, accountId: accountId);
+  File fileForRemote(String remotePath, {required String sourceName}) {
+    final name = cacheFileNameForRemote(remotePath, sourceName: sourceName);
     return File(p.join(cacheDir.path, name));
   }
 
@@ -141,7 +141,7 @@ class CacheService extends ChangeNotifier {
     final musicId = track.cacheMusicId;
     final annexPath = _annex[musicId];
     final audioRemote = track.effectiveAudioRemotePath;
-    final file = fileForRemote(audioRemote, accountId: track.accountId);
+    final file = fileForRemote(audioRemote, sourceName: track.sourceName);
 
     if (annexPath != null) {
       if (File(annexPath).existsSync()) return true;
@@ -195,9 +195,9 @@ class CacheService extends ChangeNotifier {
     );
   }
 
-  Future<bool> isCached(String remotePath, {required String accountId}) async {
-    final musicId = musicIdForRemote(accountId, remotePath);
-    final f = fileForRemote(remotePath, accountId: accountId);
+  Future<bool> isCached(String remotePath, {required String sourceName}) async {
+    final musicId = musicIdForRemote(sourceName, remotePath);
+    final f = fileForRemote(remotePath, sourceName: sourceName);
     if (!await f.exists()) {
       await _libraryDb?.deleteCacheEntry(musicId);
       return false;
@@ -207,18 +207,18 @@ class CacheService extends ChangeNotifier {
   }
 
   /// Sync check whether the audio file is present in the local cache.
-  bool hasLocalFile(String remotePath, {required String accountId}) {
-    return fileForRemote(remotePath, accountId: accountId).existsSync();
+  bool hasLocalFile(String remotePath, {required String sourceName}) {
+    return fileForRemote(remotePath, sourceName: sourceName).existsSync();
   }
 
   Future<String?> localPathIfCached(
     String remotePath, {
-    required String accountId,
+    required String sourceName,
   }) async {
-    final f = fileForRemote(remotePath, accountId: accountId);
-    final musicId = musicIdForRemote(accountId, remotePath);
+    final f = fileForRemote(remotePath, sourceName: sourceName);
+    final musicId = musicIdForRemote(sourceName, remotePath);
     if (await f.exists()) {
-      await touch(accountId, remotePath);
+      await touch(sourceName, remotePath);
       await ensureAnnexForFile(musicId: musicId, localPath: f.path);
       return f.path;
     }
@@ -230,35 +230,35 @@ class CacheService extends ChangeNotifier {
   Future<String?> localPathForTrack(LibraryTrack track) async {
     return localPathIfCached(
       track.effectiveAudioRemotePath,
-      accountId: track.accountId,
+      sourceName: track.sourceName,
     );
   }
 
-  String _accessKey(String accountId, String remotePath) =>
-      '$_kAccessPrefix${trackIdentityKey(accountId, remotePath).hashCode}';
+  String _accessKey(String sourceName, String remotePath) =>
+      '$_kAccessPrefix${trackIdentityKey(sourceName, remotePath).hashCode}';
 
-  String _groupKey(String accountId, String remotePath) =>
-      '$_kGroupPrefix${trackIdentityKey(accountId, remotePath).hashCode}';
+  String _groupKey(String sourceName, String remotePath) =>
+      '$_kGroupPrefix${trackIdentityKey(sourceName, remotePath).hashCode}';
   String _groupMembersKey(String groupId) =>
       '$_kGroupMembersPrefix${groupId.hashCode}';
 
   Future<void> bindCacheGroup({
-    required String accountId,
+    required String sourceName,
     required String remotePath,
     required String groupId,
   }) async {
     _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_groupKey(accountId, remotePath), groupId);
+    await _prefs!.setString(_groupKey(sourceName, remotePath), groupId);
     final members = List<String>.from(groupMemberIdentities(groupId));
-    final id = trackIdentityKey(accountId, remotePath);
+    final id = trackIdentityKey(sourceName, remotePath);
     if (!members.contains(id)) {
       members.add(id);
       await _prefs!.setString(_groupMembersKey(groupId), jsonEncode(members));
     }
   }
 
-  String? cacheGroupIdFor(String accountId, String remotePath) =>
-      _prefs?.getString(_groupKey(accountId, remotePath));
+  String? cacheGroupIdFor(String sourceName, String remotePath) =>
+      _prefs?.getString(_groupKey(sourceName, remotePath));
 
   List<String> groupMemberIdentities(String groupId) {
     final raw = _prefs?.getString(_groupMembersKey(groupId));
@@ -278,11 +278,11 @@ class CacheService extends ChangeNotifier {
       }).toList();
 
   Future<bool> deleteLocalFile({
-    required String accountId,
+    required String sourceName,
     required String remotePath,
   }) async {
-    final f = fileForRemote(remotePath, accountId: accountId);
-    final musicId = musicIdForRemote(accountId, remotePath);
+    final f = fileForRemote(remotePath, sourceName: sourceName);
+    final musicId = musicIdForRemote(sourceName, remotePath);
     var removed = false;
     if (await f.exists()) {
       try {
@@ -296,7 +296,7 @@ class CacheService extends ChangeNotifier {
         await part.delete();
       } catch (_) {}
     }
-    await _prefs?.remove(_accessKey(accountId, remotePath));
+    await _prefs?.remove(_accessKey(sourceName, remotePath));
     _annex.remove(musicId);
     await _libraryDb?.deleteCacheEntry(musicId);
     if (removed) notifyListeners();
@@ -307,49 +307,49 @@ class CacheService extends ChangeNotifier {
     var removed = 0;
     for (final identity in groupMemberIdentities(groupId)) {
       final parts = identity.split('\u0000');
-      final accountId = parts.isNotEmpty ? parts.first : '';
+      final sourceName = parts.isNotEmpty ? parts.first : '';
       final remote =
           parts.length > 1 ? parts.sublist(1).join('\u0000') : identity;
-      if (await deleteLocalFile(accountId: accountId, remotePath: remote)) {
+      if (await deleteLocalFile(sourceName: sourceName, remotePath: remote)) {
         removed++;
       }
-      await _prefs?.remove(_groupKey(accountId, remote));
+      await _prefs?.remove(_groupKey(sourceName, remote));
     }
     await _prefs?.remove(_groupMembersKey(groupId));
     if (removed > 0) notifyListeners();
     return removed;
   }
 
-  Future<void> touch(String accountId, String remotePath) async {
+  Future<void> touch(String sourceName, String remotePath) async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(
-      _accessKey(accountId, remotePath),
+      _accessKey(sourceName, remotePath),
       DateTime.now().toIso8601String(),
     );
   }
 
-  DateTime? lastAccessed(String accountId, String remotePath) {
-    final raw = _prefs?.getString(_accessKey(accountId, remotePath));
+  DateTime? lastAccessed(String sourceName, String remotePath) {
+    final raw = _prefs?.getString(_accessKey(sourceName, remotePath));
     if (raw == null) return null;
     return DateTime.tryParse(raw);
   }
 
   Future<void> registerCompleted(
-    String accountId,
+    String sourceName,
     String remotePath,
     String localPath, {
     String? cacheGroupId,
     String? musicId,
   }) async {
-    await touch(accountId, remotePath);
+    await touch(sourceName, remotePath);
     if (cacheGroupId != null && cacheGroupId.isNotEmpty) {
       await bindCacheGroup(
-        accountId: accountId,
+        sourceName: sourceName,
         remotePath: remotePath,
         groupId: cacheGroupId,
       );
     }
-    final id = musicId ?? musicIdForRemote(accountId, remotePath);
+    final id = musicId ?? musicIdForRemote(sourceName, remotePath);
     await ensureAnnexForFile(musicId: id, localPath: localPath);
     notifyListeners();
   }
@@ -358,7 +358,7 @@ class CacheService extends ChangeNotifier {
   /// Does not delete library metadata or cover thumbs. Clears cache annex.
   Future<int> clearAll({
     String? playingRemotePath,
-    String? playingAccountId,
+    String? playingSourceName,
     String? playingLocalPath,
     Set<String> protectedLocalPaths = const {},
   }) async {
@@ -366,11 +366,11 @@ class CacheService extends ChangeNotifier {
     final protected = <String>{...protectedLocalPaths};
     if (playingLocalPath != null) protected.add(playingLocalPath);
     String? protectedMusicId;
-    if (playingRemotePath != null && playingAccountId != null) {
-      final f = fileForRemote(playingRemotePath, accountId: playingAccountId);
+    if (playingRemotePath != null && playingSourceName != null) {
+      final f = fileForRemote(playingRemotePath, sourceName: playingSourceName);
       protected.add(f.path);
       protected.add('${f.path}.part');
-      protectedMusicId = musicIdForRemote(playingAccountId, playingRemotePath);
+      protectedMusicId = musicIdForRemote(playingSourceName, playingRemotePath);
     }
     var removed = 0;
     await for (final entity in _cacheDir!.list()) {
@@ -436,11 +436,11 @@ class CacheService extends ChangeNotifier {
       final isPlaying = playingIdentityKey == identity;
       final isDownloading = downloadingIdentityKeys.contains(identity);
       final parts = identity.split('\u0000');
-      final accountId = parts.isNotEmpty ? parts.first : '';
+      final sourceName = parts.isNotEmpty ? parts.first : '';
       final remote =
           parts.length > 1 ? parts.sublist(1).join('\u0000') : identity;
       final accessed =
-          lastAccessed(accountId, remote) ?? (await file.stat()).modified;
+          lastAccessed(sourceName, remote) ?? (await file.stat()).modified;
       if (policy.shouldDelete(
         lastAccessed: accessed,
         now: clock,
@@ -449,9 +449,9 @@ class CacheService extends ChangeNotifier {
       )) {
         try {
           await file.delete();
-          await _prefs?.remove(_accessKey(accountId, remote));
+          await _prefs?.remove(_accessKey(sourceName, remote));
           await _libraryDb?.deleteCacheEntry(
-            musicIdForRemote(accountId, remote),
+            musicIdForRemote(sourceName, remote),
           );
           removed++;
         } catch (_) {}

@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -11,7 +10,10 @@ import '../utils/backup_crypto.dart';
 import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
+import '../utils/wmp_container.dart';
 import 'cache_service.dart';
+import 'cover_service.dart';
+import 'library_shard_codec.dart';
 import 'library_database.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';
@@ -43,13 +45,15 @@ class BackupService extends ChangeNotifier {
     required PlaylistService playlists,
     required WebDavService webDav,
     CacheService? cache,
+    CoverService? covers,
   })  : _libraryDb = libraryDb,
         _library = library,
         _accounts = accounts,
         _settings = settings,
         _playlists = playlists,
         _webDav = webDav,
-        _cache = cache;
+        _cache = cache,
+        _covers = covers ?? library.covers;
 
   final LibraryDatabase _libraryDb;
   final LibraryService _library;
@@ -58,11 +62,12 @@ class BackupService extends ChangeNotifier {
   final PlaylistService _playlists;
   final WebDavService _webDav;
   final CacheService? _cache;
+  final CoverService _covers;
 
   static const defaultRemoteDir = '/WebDAVMusicPlayer/backup/';
   static const defaultFileName = 'webdav_music_backup.wmpbak';
   static const format = 'webdav_music_player_backup';
-  static const formatVersion = 4;
+  static const formatVersion = 5;
 
   bool busy = false;
   String? lastError;
@@ -124,62 +129,116 @@ class BackupService extends ChangeNotifier {
     };
   }
 
-  /// The cover file names referenced by the library (for the ZIP payload).
-  Future<Set<String>> _referencedCovers() async {
-    final names = <String>{};
-    for (final t in await _libraryDb.allTracks()) {
-      final cover = t.coverPath;
-      if (cover != null && cover.isNotEmpty) names.add(p.basename(cover));
-    }
-    return names;
-  }
-
-  /// Build the ZIP archive (optionally passphrase-encrypted).
+  /// Build the backup archive as a [WmpContainer] (optionally encrypted).
+  ///
+  /// Sections: `META` + `TRACKS` (every row, CUE slices included, **each with its
+  /// own cover copy** in the raw `COVERS` section) + `CUEALBUMS` +
+  /// `CREDENTIALS` / `PLAYLISTS` / `SETTINGS` as JSON. Binary on purpose: the
+  /// rows are compressed with deflate while the already-compressed covers are
+  /// stored as-is — a ZIP would deflate those again for nothing.
   Future<Uint8List> buildArchiveBytes({
     required String passphrase,
   }) async {
     final payload = await buildPayload(passphrase: passphrase);
-    final archive = Archive();
-    archive.addFile(ArchiveFile.bytes(
-      'backup.json',
-      utf8.encode(const JsonEncoder.withIndent('  ').convert(payload)),
-    ));
-    // Keep the legacy file names too so the payload is easy to inspect/unzip
-    // by hand; they are derived from the same object.
-    archive.addFile(ArchiveFile.bytes(
-      'credentials.json',
-      utf8.encode(jsonEncode(payload['credentials'])),
-    ));
-    archive.addFile(ArchiveFile.bytes(
-      'library.json',
-      utf8.encode(jsonEncode(payload['library'])),
-    ));
-    archive.addFile(ArchiveFile.bytes(
-      'playlists.json',
-      utf8.encode(jsonEncode(payload['playlists'])),
-    ));
-    archive.addFile(ArchiveFile.bytes(
-      'settings.json',
-      utf8.encode(jsonEncode(payload['settings'])),
-    ));
-
-    final coverNames = await _referencedCovers();
-    final docs = await getApplicationDocumentsDirectory();
-    final coversDir = Directory(p.join(docs.path, 'covers'));
-    if (await coversDir.exists() && coverNames.isNotEmpty) {
-      await for (final entity in coversDir.list(recursive: false)) {
-        if (entity is! File) continue;
-        final name = p.basename(entity.path);
-        if (!coverNames.contains(name)) continue;
-        archive.addFile(
-          ArchiveFile.bytes('covers/$name', await entity.readAsBytes()),
-        );
-      }
+    final tracks = <LibraryTrack>[];
+    for (final raw in (payload['library']?['tracks'] as List<dynamic>? ??
+        const [])) {
+      tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
+    }
+    for (final raw in (payload['library']?['cueSlices'] as List<dynamic>? ??
+        const [])) {
+      tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
     }
 
-    final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive));
-    if (passphrase.isEmpty) return zipBytes;
-    return BackupCrypto.encrypt(plaintext: zipBytes, passphrase: passphrase);
+    final coverBlobs = <Uint8List?>[];
+    final coverKinds = <int>[];
+    for (final t in tracks) {
+      Uint8List? blob;
+      final path = t.coverPath;
+      if (path != null && path.isNotEmpty) {
+        try {
+          final file = File(path);
+          if (file.existsSync()) blob = await file.readAsBytes();
+        } catch (_) {
+          blob = null;
+        }
+      }
+      coverBlobs.add(blob);
+      coverKinds.add(blob == null ? WmpImageKind.none : WmpImageKind.detect(blob));
+    }
+
+    Uint8List json(Uint8List Function() encode) => encode();
+    final container = WmpContainer.encode(
+      {
+        WmpSections.meta: encodeRecords([
+          {
+            WmpMeta.kind: WmpKind.backup,
+            WmpMeta.count: tracks.length,
+            WmpMeta.deviceId: _settings.deviceId,
+            WmpMeta.createdAt: DateTime.now().toUtc().toIso8601String(),
+            WmpMeta.note: jsonEncode({
+              'format': format,
+              'formatVersion': formatVersion,
+              'activeAccountId': payload['activeAccountId'],
+              'passwordEncryption': payload['passwordEncryption'],
+            }),
+          },
+        ]),
+        WmpSections.tracks: _trackRecordsOnly(tracks, coverBlobs, coverKinds),
+        WmpSections.credentials: json(
+          () => Uint8List.fromList(utf8.encode(jsonEncode(payload['credentials']))),
+        ),
+        WmpSections.playlists: json(
+          () => Uint8List.fromList(utf8.encode(jsonEncode(payload['playlists']))),
+        ),
+        WmpSections.settings: json(
+          () => Uint8List.fromList(utf8.encode(jsonEncode(payload['settings']))),
+        ),
+        WmpSections.cueAlbums: json(
+          () => Uint8List.fromList(
+            utf8.encode(jsonEncode(payload['library']?['cueAlbums'] ?? const [])),
+          ),
+        ),
+        if (coverBlobs.any((b) => b != null))
+          WmpSections.covers: buildCoverSection([
+            for (var i = 0; i < coverBlobs.length; i++)
+              if (coverBlobs[i] != null)
+                (bytes: coverBlobs[i]!, kind: coverKinds[i]),
+          ]),
+      },
+      rawIds: {WmpSections.covers},
+    );
+    if (passphrase.isEmpty) return container;
+    return BackupCrypto.encrypt(plaintext: container, passphrase: passphrase);
+  }
+
+  /// Readable JSON export (no cover bytes) for troubleshooting / hand editing.
+  Future<Uint8List> buildJsonExport({required String passphrase}) async {
+    final payload = await buildPayload(passphrase: passphrase);
+    return Uint8List.fromList(
+      utf8.encode(const JsonEncoder.withIndent('  ').convert(payload)),
+    );
+  }
+
+  /// Track records with a cover index per row (the container's COVERS section
+  /// holds one entry per covered row, in row order).
+  Uint8List _trackRecordsOnly(
+    List<LibraryTrack> tracks,
+    List<Uint8List?> coverBlobs,
+    List<int> coverKinds,
+  ) {
+    final records = <Map<int, Object?>>[];
+    var coverIndex = 0;
+    for (var i = 0; i < tracks.length; i++) {
+      final has = coverBlobs[i] != null && coverBlobs[i]!.isNotEmpty;
+      records.add(
+        LibraryShardCodec.trackToRecord(
+          tracks[i],
+          coverIndex: has ? coverIndex++ : null,
+        ),
+      );
+    }
+    return encodeRecords(records);
   }
 
   /// Encrypt one account password for storage in the archive.
@@ -205,10 +264,10 @@ class BackupService extends ChangeNotifier {
     return value;
   }
 
-  /// Write the archive to [remoteDir] on the **connected** server, plus a
-  /// stable `latest` copy. No per-site folders: the whole app state goes to the
-  /// path the user selected.
+  /// Write the archive to [remoteDir] **on the account the caller picked**,
+  /// plus a stable `latest` copy. Nothing is scoped per site.
   Future<void> uploadBackup({
+    required String accountId,
     required String passphrase,
     required String remoteDir,
     String? fileName,
@@ -218,18 +277,18 @@ class BackupService extends ChangeNotifier {
     lastMessage = null;
     notifyListeners();
     try {
-      if (!_webDav.isConnected) {
-        throw StateError('请先连接要存放备份的 WebDAV 账号');
+      if (!_webDav.hasAccount(accountId)) {
+        throw StateError('备份目的地网盘未配置');
       }
       final dir = normalizeDir(remoteDir);
       final name = fileName ?? backupFileNameNow();
       final bytes = await buildArchiveBytes(passphrase: passphrase);
-      await _webDav.ensureDirectory(dir);
+      await _webDav.ensureDirectory(accountId, dir);
       final remote = '$dir$name';
-      await _webDav.writeBytes(remote, bytes);
-      await _webDav.writeBytes('$dir$defaultFileName', bytes);
-      lastMessage = '已备份到 $remote'
-          '（${_fmtBytes(bytes.length)}；并更新 latest）';
+      await _webDav.writeBytes(accountId, remote, bytes);
+      await _webDav.writeBytes(accountId, '$dir$defaultFileName', bytes);
+      lastMessage =
+          '已备份到 $remote（${_fmtBytes(bytes.length)}；并更新 latest）';
     } catch (e) {
       lastError = e.toString();
       rethrow;
@@ -240,21 +299,23 @@ class BackupService extends ChangeNotifier {
   }
 
   Future<Uint8List> downloadBackupBytes({
+    required String accountId,
     required String remoteDir,
     String? fileName,
   }) async {
-    if (!_webDav.isConnected) throw StateError('请先连接 WebDAV 账号');
     final dir = normalizeDir(remoteDir);
     final name = fileName ?? defaultFileName;
-    return _webDav.readAsBytes('$dir$name');
+    return _webDav.readAsBytes(accountId, '$dir$name');
   }
 
   /// List available archives in [remoteDir] (newest first).
-  Future<List<String>> listBackups({required String remoteDir}) async {
-    if (!_webDav.isConnected) throw StateError('请先连接 WebDAV 账号');
+  Future<List<String>> listBackups({
+    required String accountId,
+    required String remoteDir,
+  }) async {
     final dir = normalizeDir(remoteDir);
     try {
-      final items = await _webDav.listDirectory(dir);
+      final items = await _webDav.listDirectory(accountId, dir);
       final files = items
           .where((e) => !e.isDirectory && e.name.endsWith('.wmpbak'))
           .map((e) => e.name)
@@ -269,11 +330,13 @@ class BackupService extends ChangeNotifier {
   }
 
   Future<void> restoreFromWebDav({
+    required String accountId,
     required String passphrase,
     required String remoteDir,
     String? fileName,
   }) async {
     final data = await downloadBackupBytes(
+      accountId: accountId,
       remoteDir: remoteDir,
       fileName: fileName,
     );
@@ -282,7 +345,8 @@ class BackupService extends ChangeNotifier {
 
   // --- Restore ----------------------------------------------------------
 
-  /// Restore an archive produced by [buildArchiveBytes].
+  /// Restore an archive produced by [buildArchiveBytes] (or the readable JSON
+  /// produced by [buildJsonExport]).
   ///
   /// Passwords that cannot be decrypted with [passphrase] are left **empty**
   /// instead of aborting; everything else is restored.
@@ -295,20 +359,26 @@ class BackupService extends ChangeNotifier {
     lastMessage = null;
     notifyListeners();
     try {
-      Uint8List zipBytes = data;
+      Uint8List bytes = data;
       if (BackupCrypto.looksEncrypted(data)) {
         if (passphrase.isEmpty) {
           throw StateError('此备份已加密，请输入口令');
         }
-        zipBytes = await BackupCrypto.decrypt(
-          data: data,
-          passphrase: passphrase,
-        );
+        bytes = await BackupCrypto.decrypt(data: data, passphrase: passphrase);
       }
 
-      final archive = ZipDecoder().decodeBytes(zipBytes);
-      final payload = _readPayload(archive);
-      final missing = await _applyPayload(payload, passphrase, archive);
+      final Map<String, dynamic> payload;
+      if (WmpContainer.looksLikeContainer(bytes)) {
+        payload = await _decodeContainer(bytes);
+      } else {
+        // Readable JSON export (no cover bytes) — accepted as an interchange
+        // format for troubleshooting / hand editing.
+        final decoded = jsonDecode(utf8.decode(bytes));
+        if (decoded is! Map) throw StateError('无法识别的备份内容');
+        payload = Map<String, dynamic>.from(decoded);
+      }
+
+      final missing = await _applyPayload(payload, passphrase);
       lastMessage = missing.isEmpty
           ? '备份已恢复：${payload['credentials']?['accounts']?.length ?? 0} 个服务器、'
               '音乐库与歌单已写回'
@@ -323,39 +393,94 @@ class BackupService extends ChangeNotifier {
     }
   }
 
-  Map<String, dynamic> _readPayload(Archive archive) {
-    final file = archive.findFile('backup.json');
-    if (file != null) {
-      return jsonDecode(utf8.decode(file.content as List<int>))
-          as Map<String, dynamic>;
-    }
-    // Tolerate a hand-made archive with the split files.
-    Map<String, dynamic> readJson(String name) {
-      final f = archive.findFile(name);
-      if (f == null) return const {};
-      final decoded = jsonDecode(utf8.decode(f.content as List<int>));
+  /// Decode a [WmpContainer] archive into the payload shape [_applyPayload]
+  /// expects. Covers are written into this device's cover cache here, so the
+  /// restored rows point at real local files.
+  Future<Map<String, dynamic>> _decodeContainer(Uint8List bytes) async {
+    final container = WmpContainer.fromBytes(bytes);
+    Map<String, dynamic> jsonSection(int id) {
+      final raw = container.readSection(id);
+      if (raw == null || raw.isEmpty) return const {};
+      final decoded = jsonDecode(utf8.decode(raw));
       return decoded is Map ? Map<String, dynamic>.from(decoded) : const {};
     }
 
-    final credentials = readJson('credentials.json');
-    final lib = readJson('library.json');
-    final playlists = archive.findFile('playlists.json') == null
-        ? const <dynamic>[]
-        : jsonDecode(
-            utf8.decode(
-              archive.findFile('playlists.json')!.content as List<int>,
-            ),
-          );
-    final settings = readJson('settings.json');
-    if (credentials.isEmpty && lib.isEmpty) {
-      throw StateError('备份缺少 backup.json / library.json');
+    List<dynamic> jsonList(int id) {
+      final raw = container.readSection(id);
+      if (raw == null || raw.isEmpty) return const [];
+      final decoded = jsonDecode(utf8.decode(raw));
+      return decoded is List ? decoded : const [];
     }
+
+    final metaRaw = container.readSection(WmpSections.meta);
+    final meta = metaRaw == null
+        ? const <int, Object?>{}
+        : (decodeRecords(metaRaw, intTags: kMetaIntTags).firstOrNull ??
+              const <int, Object?>{});
+    final noteRaw = meta[WmpMeta.note];
+    var header = <String, dynamic>{};
+    if (noteRaw is String && noteRaw.isNotEmpty) {
+      final decoded = jsonDecode(noteRaw);
+      if (decoded is Map) header = Map<String, dynamic>.from(decoded);
+    }
+
+    final tracksRaw = container.readSection(WmpSections.tracks);
+    final records = tracksRaw == null
+        ? const <Map<int, Object?>>[]
+        : decodeRecords(tracksRaw, intTags: kTrackIntTags);
+    final coversRaw = container.readSection(WmpSections.covers);
+    final covers = coversRaw == null
+        ? <WmpCoverEntry>[]
+        : parseCoverSection(coversRaw);
+
+    final tracks = <Map<String, dynamic>>[];
+    for (final record in records) {
+      final track = LibraryShardCodec.recordToTrack(record);
+      final idx = record[WmpTrack.coverIndex];
+      String? coverPath;
+      if (idx is int && idx >= 0 && idx < covers.length) {
+        coverPath = await _writeLocalCover(
+          sourceName: track.sourceName,
+          remotePath: track.remotePath,
+          blob: covers[idx].bytesIn(coversRaw!),
+        );
+      }
+      tracks.add({...track.toMap(), 'cover_path': coverPath});
+    }
+
     return {
-      'credentials': credentials,
-      'library': lib,
-      'playlists': playlists,
-      'settings': settings,
+      'format': header['format'] ?? format,
+      'formatVersion': header['formatVersion'] ?? formatVersion,
+      'activeAccountId': header['activeAccountId'],
+      'passwordEncryption': header['passwordEncryption'],
+      'credentials': jsonSection(WmpSections.credentials),
+      'library': {
+        'tracks': tracks,
+        'cueSlices': const <dynamic>[],
+        'cueAlbums': jsonList(WmpSections.cueAlbums),
+        'cache': const <dynamic>[],
+      },
+      'playlists': jsonList(WmpSections.playlists),
+      'settings': jsonSection(WmpSections.settings),
     };
+  }
+
+  /// Write a restored cover under the deterministic local name for this row.
+  Future<String?> _writeLocalCover({
+    required String sourceName,
+    required String remotePath,
+    required Uint8List blob,
+  }) async {
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'covers'));
+      if (!await dir.exists()) await dir.create(recursive: true);
+      final file = File(p.join(dir.path, _covers.coverFileName(sourceName, remotePath)));
+      await file.writeAsBytes(blob, flush: true);
+      return file.path;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Apply a decoded payload. Returns the names of accounts whose password
@@ -363,7 +488,6 @@ class BackupService extends ChangeNotifier {
   Future<List<String>> _applyPayload(
     Map<String, dynamic> payload,
     String passphrase,
-    Archive archive,
   ) async {
     final docs = await getApplicationDocumentsDirectory();
     final missing = <String>[];
@@ -401,17 +525,6 @@ class BackupService extends ChangeNotifier {
       }
     }
 
-    // 3. Covers: write the archived thumbnails into the local covers folder,
-    // then re-point every library row at that folder below.
-    final covers = Directory(p.join(docs.path, 'covers'));
-    if (!await covers.exists()) await covers.create(recursive: true);
-    for (final file in archive) {
-      if (!file.isFile) continue;
-      if (!file.name.startsWith('covers/')) continue;
-      final base = p.basename(file.name);
-      await File(p.join(covers.path, base))
-          .writeAsBytes(file.content as List<int>, flush: true);
-    }
 
     // 4. Playlists.
     final playlists = payload['playlists'];
@@ -436,7 +549,7 @@ class BackupService extends ChangeNotifier {
     for (final table in ['tracks', 'cue_slices']) {
       final rows = await db.query(
         table,
-        columns: ['music_id', 'account_id', 'remote_path', 'cover_path'],
+        columns: ['music_id', 'source_name', 'remote_path', 'cover_path'],
       );
       for (final row in rows) {
         final cover = row['cover_path'] as String?;
@@ -456,8 +569,8 @@ class BackupService extends ChangeNotifier {
           await db.update(
             table,
             {'cover_path': newPath},
-            where: 'account_id = ? AND remote_path = ?',
-            whereArgs: [row['account_id'], row['remote_path']],
+            where: 'source_name = ? AND remote_path = ?',
+            whereArgs: [row['source_name'], row['remote_path']],
           );
         }
       }

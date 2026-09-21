@@ -15,56 +15,104 @@ import '../utils/audio_extensions.dart';
 /// [readAsBytes] for cache population. Video playback *does* stream: it uses
 /// [buildStreamSource] to hand media_kit a direct URL + Basic auth headers.
 class WebDavService extends ChangeNotifier {
-  webdav.Client? _client;
-  String? _baseUrl;
-  String? _accountId;
-  String? _username;
-  String? _password;
+  /// One live client per configured account.
+  ///
+  /// The music library must be able to fetch a track from **its own** source
+  /// account even while a different account is selected for browsing — switching
+  /// the network library's account used to drop the previous client, which broke
+  /// library downloads/streams whose files live on the other server.
+  final Map<String, _WebDavConn> _conns = {};
+
+  /// Account selected by the network library (browsing only).
+  String? _activeAccountId;
   String? _lastError;
 
-  bool get isConnected => _client != null;
+  /// Whether the active account has a usable client.
+  bool get isConnected => _connFor(_activeAccountId) != null;
   String? get lastError => _lastError;
-  String? get baseUrl => _baseUrl;
-  String? get accountId => _accountId;
 
+  /// Base URL / id of the **active** account (browsing target).
+  String? get baseUrl => _connFor(_activeAccountId)?.url;
+  String? get accountId => _activeAccountId;
+
+  /// All registered account ids.
+  List<String> get registeredAccountIds => _conns.keys.toList();
+
+  /// Whether [accountId] has a registered client.
+  bool hasAccount(String accountId) => _conns.containsKey(accountId);
+
+  _WebDavConn? _connFor(String? accountId) {
+    if (accountId == null) return null;
+    return _conns[accountId];
+  }
+
+  /// Resolve the client for [accountId], falling back to the active account when
+  /// no id is given (old call sites) or the requested account is unknown.
+  _WebDavConn? _resolve(String? accountId) {
+    if (accountId != null) return _conns[accountId];
+    return _conns[_activeAccountId];
+  }
+
+  /// Register/refresh a WebDAV account. Registers the client **without**
+  /// disturbing other accounts; pass [makeActive] to also select it for browsing.
   void configure({
     required String accountId,
     required String url,
     required String username,
     required String password,
+    bool makeActive = true,
   }) {
     final normalized = url.trim().replaceAll(RegExp(r'/+$'), '');
-    _accountId = accountId;
-    _baseUrl = normalized;
-    _username = username;
-    _password = password;
-    _client = webdav.newClient(
+    final client = webdav.newClient(
       normalized,
       user: username,
       password: password,
       debug: false,
     );
-    _client!.setHeaders({
+    client.setHeaders({
       'accept-charset': 'utf-8',
       'user-agent': 'WEBDAV-music-player/1.0',
     });
-    _client!.setConnectTimeout(15000);
-    _client!.setSendTimeout(30000);
-    _client!.setReceiveTimeout(120000);
+    client.setConnectTimeout(15000);
+    client.setSendTimeout(30000);
+    client.setReceiveTimeout(120000);
+    _conns[accountId] = _WebDavConn(
+      accountId: accountId,
+      url: normalized,
+      username: username,
+      password: password,
+      client: client,
+    );
+    if (makeActive || _activeAccountId == null) _activeAccountId = accountId;
     _lastError = null;
     notifyListeners();
   }
 
-  void disconnect() {
-    _client = null;
-    _baseUrl = null;
-    _accountId = null;
-    _username = null;
-    _password = null;
+  /// Drop one account (deleted from settings) or everything when [accountId] is
+  /// null.
+  void disconnect({String? accountId}) {
+    if (accountId == null) {
+      _conns.clear();
+      _activeAccountId = null;
+    } else {
+      _conns.remove(accountId);
+      if (_activeAccountId == accountId) {
+        _activeAccountId = _conns.keys.isEmpty ? null : _conns.keys.first;
+      }
+    }
     notifyListeners();
   }
 
-  /// Build a streaming source for media_kit. Returns null when disconnected.
+  /// Select the account the network library browses. Does not affect the music
+  /// library, whose rows carry their own accountId.
+  void setActiveAccount(String accountId) {
+    if (_activeAccountId == accountId) return;
+    _activeAccountId = accountId;
+    notifyListeners();
+  }
+
+  /// Build a streaming source for media_kit. Returns null when the account has no
+  /// registered client.
   ///
   /// Uses HTTP Basic auth (the same credentials the WebDAV client uses); some
   /// servers also accept a bearer/token flow, but Basic is what
@@ -74,16 +122,14 @@ class WebDavService extends ChangeNotifier {
     required String name,
     required String accountId,
   }) {
-    final base = _baseUrl;
-    if (base == null) return null;
-    final uri = '$base${encodeWebDavPath(remotePath)}';
+    final conn = _resolve(accountId);
+    if (conn == null) return null;
+    final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
     final headers = <String, String>{
       'User-Agent': 'WEBDAV-music-player/1.0',
     };
-    final user = _username ?? '';
-    final pass = _password ?? '';
-    if (user.isNotEmpty || pass.isNotEmpty) {
-      final token = base64Encode(utf8.encode('$user:$pass'));
+    if (conn.username.isNotEmpty || conn.password.isNotEmpty) {
+      final token = base64Encode(utf8.encode('${conn.username}:${conn.password}'));
       headers['Authorization'] = 'Basic $token';
     }
     return WebDavStreamSource(
@@ -95,14 +141,15 @@ class WebDavService extends ChangeNotifier {
     );
   }
 
-  /// PROPFIND / ping to verify credentials.
-  Future<bool> testConnection() async {
-    final client = _client;
-    if (client == null) {
+  /// PROPFIND / ping to verify credentials of one account.
+  Future<bool> testConnection({required String accountId}) async {
+    final conn = _resolve(accountId);
+    if (conn == null) {
       _lastError = '未配置 WebDAV';
       notifyListeners();
       return false;
     }
+    final client = conn.client;
     try {
       await client.ping();
       _lastError = null;
@@ -122,11 +169,13 @@ class WebDavService extends ChangeNotifier {
     }
   }
 
+  /// List a directory on a specific account.
   Future<List<WebDavItem>> listDirectory(
+    String accountId,
     String path, {
     FileTypeConfig? fileTypes,
   }) async {
-    final client = _requireClient();
+    final client = _requireClient(accountId);
     final types = fileTypes ?? FileTypeConfig();
     final normalized = path.isEmpty ? '/' : path;
     final files = await client.readDir(normalized);
@@ -160,14 +209,16 @@ class WebDavService extends ChangeNotifier {
     return items;
   }
 
-  /// Download remote file into [localFile]. Never used for streaming playback.
+  /// Download a remote file into [localFile] **from a specific account**.
+  /// Never used for streaming playback.
   Future<void> downloadToFile(
+    String accountId,
     String remotePath,
     File localFile, {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final client = _requireClient();
+    final client = _requireClient(accountId);
     await localFile.parent.create(recursive: true);
     await client.read2File(
       remotePath,
@@ -177,46 +228,54 @@ class WebDavService extends ChangeNotifier {
     );
   }
 
-  Future<Uint8List> readAsBytes(String remotePath) async {
-    final client = _requireClient();
+  Future<Uint8List> readAsBytes(String accountId, String remotePath) async {
+    final client = _requireClient(accountId);
     final data = await client.read(remotePath);
     return Uint8List.fromList(data);
   }
 
-
-  /// Upload bytes to remote path (creates/overwrites file).
-  Future<void> writeBytes(String remotePath, Uint8List data) async {
-    final client = _requireClient();
+  /// Upload bytes to remote path on a specific account.
+  Future<void> writeBytes(
+    String accountId,
+    String remotePath,
+    Uint8List data,
+  ) async {
+    final client = _requireClient(accountId);
     await client.write(remotePath, data);
   }
 
-  /// Ensure directory exists (mkdirAll).
-  Future<void> ensureDirectory(String path) async {
-    final client = _requireClient();
+  /// Ensure directory exists (mkdirAll) on a specific account.
+  Future<void> ensureDirectory(String accountId, String path) async {
+    final client = _requireClient(accountId);
     var normalized = path.trim();
     if (normalized.isEmpty) return;
     if (!normalized.endsWith('/')) normalized = '$normalized/';
     await client.mkdirAll(normalized);
   }
 
-  Future<void> createFolder(String path) async {
-    final client = _requireClient();
+  Future<void> createFolder(String accountId, String path) async {
+    final client = _requireClient(accountId);
     await client.mkdir(path);
   }
 
-  Future<void> deletePath(String path) async {
-    final client = _requireClient();
+  Future<void> deletePath(String accountId, String path) async {
+    final client = _requireClient(accountId);
     await client.remove(path);
   }
 
-  Future<void> renamePath(String oldPath, String newPath,
-      {bool overwrite = false}) async {
-    final client = _requireClient();
+  Future<void> renamePath(
+    String accountId,
+    String oldPath,
+    String newPath, {
+    bool overwrite = false,
+  }) async {
+    final client = _requireClient(accountId);
     await client.rename(oldPath, newPath, overwrite);
   }
 
-  /// Recursively collect audio file paths under [folderPath].
+  /// Recursively collect audio file paths under [folderPath] on one account.
   Future<List<WebDavItem>> collectAudioRecursive(
+    String accountId,
     String folderPath, {
     FileTypeConfig? fileTypes,
   }) async {
@@ -224,7 +283,8 @@ class WebDavService extends ChangeNotifier {
     final queue = <String>[folderPath];
     while (queue.isNotEmpty) {
       final dir = queue.removeAt(0);
-      final items = await listDirectory(dir, fileTypes: fileTypes);
+      final items =
+          await listDirectory(accountId, dir, fileTypes: fileTypes);
       for (final item in items) {
         if (item.isDirectory) {
           queue.add(item.path);
@@ -236,12 +296,50 @@ class WebDavService extends ChangeNotifier {
     return result;
   }
 
-  webdav.Client _requireClient() {
-    final client = _client;
-    if (client == null) throw StateError('WebDAV 未配置');
-    return client;
+  webdav.Client _requireClient(String accountId) {
+    final conn = _conns[accountId];
+    if (conn == null) {
+      throw UnknownWebDavAccountException(accountId);
+    }
+    return conn.client;
   }
+}
+
+/// Thrown when an operation targets an account that is no longer configured.
+///
+/// Distinct from a WebDAV 404: it means the *server* is missing (deleted
+/// account), so the UI can say "来源网盘已移除" instead of showing a confusing
+/// "file not found" from whatever account happened to be selected.
+class UnknownWebDavAccountException implements Exception {
+  const UnknownWebDavAccountException(this.accountId);
+
+  final String accountId;
+
+  @override
+  String toString() => '来源网盘已移除或未配置（$accountId）';
 }
 
 /// Cancel token for in-flight downloads (dio).
 typedef DownloadCancelToken = CancelToken;
+
+/// One configured WebDAV account: its client plus the credentials needed to
+/// build a streaming URL / Basic auth header for it.
+///
+/// Kept per account because the same file can live on several servers and the
+/// music library must be able to reach **its own** source account regardless of
+/// which account the network library is currently browsing.
+class _WebDavConn {
+  const _WebDavConn({
+    required this.accountId,
+    required this.url,
+    required this.username,
+    required this.password,
+    required this.client,
+  });
+
+  final String accountId;
+  final String url;
+  final String username;
+  final String password;
+  final webdav.Client client;
+}

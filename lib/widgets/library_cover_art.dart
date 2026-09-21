@@ -18,7 +18,7 @@ import 'cover_art.dart';
 class LibraryCoverArt extends StatefulWidget {
   const LibraryCoverArt({
     super.key,
-    required this.accountId,
+    required this.sourceName,
     required this.remotePath,
     this.thumbPath,
     this.fileName,
@@ -38,7 +38,7 @@ class LibraryCoverArt extends StatefulWidget {
   }) {
     return LibraryCoverArt(
       key: key,
-      accountId: track.accountId,
+      sourceName: track.sourceName,
       // Virtual cue rows enqueue/check the real audio file, not #cue:N paths.
       remotePath: track.effectiveAudioRemotePath,
       thumbPath: track.coverPath,
@@ -50,7 +50,7 @@ class LibraryCoverArt extends StatefulWidget {
     );
   }
 
-  final String accountId;
+  final String sourceName;
   final String remotePath;
   final String? thumbPath;
   final String? fileName;
@@ -78,7 +78,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
   @override
   void didUpdateWidget(covariant LibraryCoverArt oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.accountId != widget.accountId ||
+    if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.remotePath != widget.remotePath ||
         oldWidget.thumbPath != widget.thumbPath) {
       _resolved = false;
@@ -89,7 +89,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
   }
 
   void _scheduleResolve() {
-    final id = '${widget.accountId}\u0000${widget.remotePath}';
+    final id = '${widget.sourceName}\u0000${widget.remotePath}';
     if (_resolved && _identity == id) return;
     _identity = id;
     // Defer so we don't call ensureQueued synchronously during build.
@@ -108,14 +108,14 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
 
     final local = cache.hasLocalFile(
       widget.remotePath,
-      accountId: widget.accountId,
+      sourceName: widget.sourceName,
     );
 
     if (!local) {
       if (widget.enqueueIfMissing) {
         unawaited(
           downloads.ensureQueued(
-            widget.accountId,
+            widget.sourceName,
             widget.remotePath,
             fileName: widget.fileName,
           ),
@@ -136,7 +136,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
 
     // Local audio: prefer saved full cover, else extract from tags.
     final fullPath = await covers.fullCoverPath(
-      widget.accountId,
+      widget.sourceName,
       widget.remotePath,
     );
     if (fullPath != null) {
@@ -154,14 +154,14 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
     }
 
     final localPath = cache
-        .fileForRemote(widget.remotePath, accountId: widget.accountId)
+        .fileForRemote(widget.remotePath, sourceName: widget.sourceName)
         .path;
     final tags = await TagService().readFromFile(localPath);
     final bytes = tags.coverBytes;
     if (bytes != null && bytes.isNotEmpty) {
       unawaited(
         covers.saveFull(
-          accountId: widget.accountId,
+          sourceName: widget.sourceName,
           remotePath: widget.remotePath,
           bytes: bytes,
         ),
@@ -170,7 +170,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
       if (widget.thumbPath == null) {
         unawaited(
           covers.saveThumb(
-            accountId: widget.accountId,
+            sourceName: widget.sourceName,
             remotePath: widget.remotePath,
             bytes: bytes,
           ),
@@ -214,7 +214,7 @@ LibraryTrack? pickCoverTrack(
 ) {
   // Prefer a track that is local (full art available).
   for (final t in tracks) {
-    if (cache.hasLocalFile(t.remotePath, accountId: t.accountId)) {
+    if (cache.hasLocalFile(t.remotePath, sourceName: t.sourceName)) {
       return t;
     }
   }
@@ -236,7 +236,7 @@ LibraryTrack? pickCoverTrack(
 class PlayerCoverArt extends StatefulWidget {
   const PlayerCoverArt({
     super.key,
-    required this.accountId,
+    required this.sourceName,
     required this.remotePath,
     this.localAudioPath,
     this.fileName,
@@ -245,7 +245,7 @@ class PlayerCoverArt extends StatefulWidget {
     this.icon,
   });
 
-  final String accountId;
+  final String sourceName;
   /// Prefer effective audio remote path (not CUE virtual `#cue:N`).
   final String remotePath;
   final String? localAudioPath;
@@ -273,7 +273,7 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
   @override
   void didUpdateWidget(covariant PlayerCoverArt oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.accountId != widget.accountId ||
+    if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.remotePath != widget.remotePath ||
         oldWidget.localAudioPath != widget.localAudioPath) {
       _resolved = false;
@@ -285,7 +285,7 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
 
   void _schedule() {
     final id =
-        '${widget.accountId}\u0000${widget.remotePath}\u0000${widget.localAudioPath ?? ''}';
+        '${widget.sourceName}\u0000${widget.remotePath}\u0000${widget.localAudioPath ?? ''}';
     if (_resolved && _identity == id) return;
     _identity = id;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -301,9 +301,9 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     await covers.init();
 
     final localPath = widget.localAudioPath ??
-        (cache.hasLocalFile(widget.remotePath, accountId: widget.accountId)
+        (cache.hasLocalFile(widget.remotePath, sourceName: widget.sourceName)
             ? cache
-                .fileForRemote(widget.remotePath, accountId: widget.accountId)
+                .fileForRemote(widget.remotePath, sourceName: widget.sourceName)
                 .path
             : null);
 
@@ -319,7 +319,7 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     }
 
     final fullPath =
-        await covers.fullCoverPath(widget.accountId, widget.remotePath);
+        await covers.fullCoverPath(widget.sourceName, widget.remotePath);
     if (fullPath != null) {
       if (!mounted) return;
       setState(() {
@@ -335,7 +335,7 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     if (bytes != null && bytes.isNotEmpty) {
       unawaited(
         covers.saveFull(
-          accountId: widget.accountId,
+          sourceName: widget.sourceName,
           remotePath: widget.remotePath,
           bytes: bytes,
         ),

@@ -34,7 +34,7 @@ void main() {
 
   test('TrackInfo display prefers title when known (library metadata)', () {
     final t = TrackInfo(
-      accountId: 'acc1',
+      sourceName: 'acc1',
       remotePath: '/a/b.mp3',
       fileName: 'b.mp3',
       title: 'Secret',
@@ -44,7 +44,7 @@ void main() {
     expect(t.displayTitle, 'Secret');
     expect(t.displayArtist, '未知艺术家');
     final bare = TrackInfo(
-      accountId: 'acc1',
+      sourceName: 'acc1',
       remotePath: '/a/c.mp3',
       fileName: 'c.mp3',
     );

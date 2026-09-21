@@ -1,3 +1,4 @@
+import '../utils/app_snack.dart';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -14,7 +15,10 @@ import '../services/download_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/audio_extensions.dart';
+import '../utils/back_handler_registry.dart';
 import '../utils/cue_sheet.dart';
+import '../widgets/app_bottom_sheet.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/track_status_chip.dart';
 import '../utils/webdav_errors.dart';
 import '../widgets/webdav_error_dialog.dart';
@@ -36,7 +40,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   List<WebDavItem> _items = [];
   bool _loading = false;
   String? _error;
-  String? _boundAccountId;
 
   /// Multi-select mode (entered by long-pressing a file entry).
   bool _selecting = false;
@@ -44,7 +47,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
   String get _path => _stack.last;
 
-  String _itemKey(WebDavItem item) => '${item.isDirectory ? 'd' : 'f'}\u0000${item.path}';
+  String _itemKey(WebDavItem item) =>
+      '${item.isDirectory ? 'd' : 'f'}\u0000${item.path}';
 
   List<WebDavItem> get _selectedItems =>
       _items.where((e) => _selected.contains(_itemKey(e))).toList();
@@ -65,7 +69,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         settings.networkLastPath.isNotEmpty) {
       _stack.add(settings.networkLastPath);
     }
+    // Take the system back key for directory navigation / multi-select.
+    BackHandlerRegistry.register(_handleSystemBack);
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureAndLoad());
+  }
+
+  @override
+  void dispose() {
+    BackHandlerRegistry.unregister(_handleSystemBack);
+    super.dispose();
   }
 
   Future<void> _ensureAndLoad() async {
@@ -78,14 +90,20 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       });
       return;
     }
-    if (app.webDav.accountId != accounts.activeAccountId) {
-      await app.connectActiveAccount();
-    }
-    _boundAccountId = accounts.activeAccountId;
+    // Make sure every account has a client before the first request. Without
+    // this the very first listing could go out with no credentials and fail as
+    // 401/403 for every configured account — which popped one permission dialog
+    // per account on every app start.
+    await app.registerAllAccounts();
+    // Bring the browsing pointer in line with the selected account. Previously
+    // this was only done when the ids differed, and the reload loop below could
+    // fire again before the first load finished — producing duplicate dialogs.
+    _browsedAccountId = accounts.activeAccountId;
     await _load();
   }
 
   Future<void> _load() async {
+    if (_loading) return; // never run two listings at once
     final webDav = context.read<WebDavService>();
     final accounts = context.read<AccountsService>();
     if (!accounts.hasAccounts) {
@@ -96,21 +114,33 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       });
       return;
     }
-    if (!webDav.isConnected) {
-      await context.read<AppState>().connectActiveAccount();
+    if (!webDav.hasAccount(accounts.activeAccountId ?? '')) {
+      await context.read<AppState>().registerAllAccounts();
     }
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final fileTypes = context.read<SettingsService>().fileTypes;
-      final items = await webDav.listDirectory(_path, fileTypes: fileTypes);
+      // Resolve the account once for both the request and the bookkeeping, so the
+      // listing and [_browsedAccountId] can never disagree.
+      final accountId = _accountId;
+      if (accountId == null) {
+        setState(() => _loading = false);
+        return;
+      }
+      final items = await webDav.listDirectory(
+        accountId,
+        _path,
+        fileTypes: fileTypes,
+      );
       if (!mounted) return;
       setState(() {
         _items = items;
+        _browsedAccountId = accountId;
         _loading = false;
-        _boundAccountId = accounts.activeAccountId;
       });
     } catch (e) {
       if (!mounted) return;
@@ -119,7 +149,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         _loading = false;
         _items = [];
       });
-      if (isWebDavPermissionError(e)) {
+      // Show the permission dialog at most once per account per session: it used
+      // to reappear on every reload (the reload guard could fire repeatedly
+      // before the first listing finished), which on startup looked like "a
+      // permission error every time, one per configured account".
+      final accountId = _accountId;
+      if (isWebDavPermissionError(e) &&
+          accountId != null &&
+          _permissionWarned.add(accountId)) {
         await showWebDavErrorDialog(context, e);
       }
     }
@@ -148,6 +185,25 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     _load();
   }
 
+  /// Handles the system back key for this tab.
+  ///
+  /// Returns true when the gesture was consumed here: leave multi-select, or walk
+  /// up one directory. Returns false at the root so the shell keeps its usual
+  /// root-back behaviour (return to the home tab / send the task to the
+  /// background).
+  bool _handleSystemBack() {
+    if (!mounted) return false;
+    if (_selecting) {
+      _exitSelect();
+      return true;
+    }
+    if (_stack.length > 1) {
+      _goUp();
+      return true;
+    }
+    return false;
+  }
+
   void _persistPath() {
     final settings = context.read<SettingsService>();
     if (settings.networkRememberLastPath) {
@@ -155,12 +211,33 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
   }
 
-  String? get _accountId =>
-      _boundAccountId ?? context.read<AccountsService>().activeAccountId;
+  /// Account the network library is browsing — always the *current* active
+  /// account, never a cached one.
+  ///
+  /// This used to be `_boundAccountId ?? active`, and `_boundAccountId` was only
+  /// updated *after* a load finished. Switching accounts therefore listed the
+  /// previous account's directory ("落后一次") because the directory request still
+  /// used the stale cached id.
+  String? get _accountId => context.read<AccountsService>().activeAccountId;
+
+  /// Library binding name for a local WebDAV account id.
+  String _nameFor(String accountId) =>
+      context.read<AccountsService>().nameForAccount(accountId) ?? '';
+
+
+
+  /// The account whose directory the current [_items] belong to. Only used to
+  /// detect an external account switch for reloading.
+  String? _browsedAccountId;
+
+  /// Accounts already warned about a permission failure this session, so a
+  /// retry loop cannot stack dialogs.
+  final Set<String> _permissionWarned = {};
 
   Future<void> _onTapFile(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
     if (item.isVideo) {
       final settings = context.read<SettingsService>();
       if (settings.videoTapAction == VideoTapAction.download) {
@@ -170,17 +247,23 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       }
       return;
     }
-    if (item.isAudio) {
-      final settings = context.read<SettingsService>();
-      if (settings.musicTapAction == MusicTapAction.download) {
-        await _enqueueOnly(item);
-        return;
-      }
+    // Music: tap = download. There is deliberately no separate download button
+    // on the row — the row itself is the download action (and plays once the
+    // file is cached).
+    final settings = context.read<SettingsService>();
+    if (!item.isAudio) {
+      await _enqueueOnly(item);
+      return;
     }
     final cache = context.read<CacheService>();
-    final local = await cache.localPathIfCached(item.path, accountId: accountId);
-    if (local == null) {
-      // Non-local: download link only — never enter the play / preparing flow.
+    final local = await cache.localPathIfCached(
+      item.path,
+      sourceName: sourceName,
+    );
+    final wantsPlay = settings.musicTapAction == MusicTapAction.play;
+    if (local == null || !wantsPlay) {
+      // Not cached → download. Already cached but the tap action is 下载 → also a
+      // plain download request (keeps the setting meaningful without a button).
       await _enqueueOnly(item);
       return;
     }
@@ -188,10 +271,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final audios = _items.where((e) => e.isAudio).toList();
     final playlist = <TrackInfo>[];
     for (final e in audios) {
-      final path = await cache.localPathIfCached(e.path, accountId: accountId);
+      final path = await cache.localPathIfCached(e.path, sourceName: sourceName);
       if (path == null) continue;
       playlist.add(
         TrackInfo(
+          sourceName: sourceName,
           accountId: accountId,
           remotePath: e.path,
           fileName: e.name,
@@ -200,6 +284,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       );
     }
     final track = TrackInfo(
+      sourceName: sourceName,
       accountId: accountId,
       remotePath: item.path,
       fileName: item.name,
@@ -213,14 +298,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final source = context.read<WebDavService>().buildStreamSource(
-          remotePath: item.path,
-          name: item.name,
-          accountId: accountId,
-        );
+      remotePath: item.path,
+      name: item.name,
+      accountId: accountId,
+    );
     if (source == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('WebDAV 未连接，无法流式播放')),
-      );
+      AppSnack.show(context, 'WebDAV 未连接，无法流式播放');
       return;
     }
     // Build a play queue from this folder: the already-listed videos seed it so
@@ -239,38 +322,64 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
   }
 
-  /// Enqueue one file for download. Videos go to the **system gallery**;
-  /// music goes to the app-internal audio cache (playback reads only there).
-  Future<void> _enqueueOnly(WebDavItem item) async {
+  /// Download a file whose extension is in none of the configured lists.
+  ///
+  /// Such files have no playback path, so they go to the public Downloads folder
+  /// (MediaStore `Download/…`) and are never indexed into the music library.
+  Future<void> _enqueueUnknown(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
     final downloads = context.read<DownloadQueueService>();
-    if (item.isVideo) {
-      final queued = await downloads.enqueueGallery(
-        accountId,
+    try {
+      final queued = await downloads.enqueueToDownloads(
+        sourceName,
         item.path,
         fileName: item.name,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            queued ? '已加入下载（保存到系统相册）' : '该视频已在下载队列或已保存到系统相册',
-          ),
-        ),
-      );
-      return;
+      if (!queued) AppSnack.show(context, '该文件已在下载队列或已下载');
+    } catch (e) {
+      if (!mounted) return;
+      AppSnack.error(context, '加入下载失败：${downloads.lastError ?? e}');
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已加入下载')),
-    );
-    downloads.enqueue(accountId, item.path, fileName: item.name).ignore();
+  }
+
+  /// Enqueue one file for download. Videos go to the **system gallery**;
+  /// music goes to the app-internal audio cache (playback reads only there).
+  ///
+  /// Deliberately **silent on success**: `enqueue` resolves when the task is
+  /// persisted for a cached file, but for a new file it waits for the whole
+  /// download — so a success message used to appear at *download completion*
+  /// while saying "已加入下载". The row's status chip and the download queue
+  /// already show progress; only failures speak up.
+  Future<void> _enqueueOnly(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
+    final downloads = context.read<DownloadQueueService>();
+    try {
+      if (item.isVideo) {
+        await downloads.enqueueGallery(
+          sourceName,
+          item.path,
+          fileName: item.name,
+        );
+        return;
+      }
+      await downloads.enqueue(sourceName, item.path, fileName: item.name);
+    } catch (e) {
+      if (!mounted) return;
+      final hint = downloads.lastError ?? '$e';
+      AppSnack.error(context, '加入下载失败：$hint');
+    }
   }
 
   /// Download many entries at once (multi-select). Videos → system gallery.
   Future<void> _enqueueMany(List<WebDavItem> items) async {
     final accountId = _accountId;
     if (accountId == null || items.isEmpty) return;
+    final sourceName = _nameFor(accountId);
     final downloads = context.read<DownloadQueueService>();
     final videos = items.where((e) => e.isVideo).toList();
     final others = items.where((e) => !e.isVideo).toList();
@@ -278,11 +387,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (videos.isNotEmpty) {
       queued += await downloads.enqueueGalleryMany(
         videos.map(
-          (v) => (
-            accountId: accountId,
-            remotePath: v.path,
-            fileName: v.name,
-          ),
+          (v) => (sourceName: sourceName, remotePath: v.path, fileName: v.name),
         ),
       );
     }
@@ -290,7 +395,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       // Video-adjacent and unknown files are neither audio nor cacheable.
       if (!item.isAudio) continue;
       if (await downloads.ensureQueued(
-        accountId,
+        sourceName,
         item.path,
         fileName: item.name,
       )) {
@@ -298,38 +403,30 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       }
     }
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          queued == 0
-              ? '所选条目均已在队列或已下载'
-              : '已加入 $queued 个下载任务'
-                  '${videos.isEmpty ? '' : '（视频保存到系统相册）'}',
-        ),
-      ),
+    AppSnack.show(
+      context,
+      queued == 0
+          ? '所选条目均已在队列或已下载'
+          : '已加入 $queued 个下载任务'
+                '${videos.isEmpty ? '' : '（视频保存到系统相册）'}',
     );
   }
 
   Future<void> _enqueueFolder(WebDavItem folder) async {
     final accountId = _accountId;
     if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
     final downloads = context.read<DownloadQueueService>();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('正在扫描文件夹：${folder.name}')),
-    );
+    AppSnack.show(context, '正在扫描文件夹：${folder.name}');
     try {
-      final n = await downloads.enqueueFolder(accountId, folder.path);
+      final n = await downloads.enqueueFolder(sourceName, folder.path);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已加入 $n 个音频文件到下载队列')),
-      );
+      AppSnack.show(context, '已加入 $n 个音频文件到下载队列');
     } catch (e) {
       if (!mounted) return;
       await showWebDavErrorDialog(context, e);
     }
   }
-
-
 
   Future<void> _openCue(WebDavItem item) async {
     final accountId = _accountId;
@@ -350,10 +447,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
     try {
       final webDav = context.read<WebDavService>();
-      final bytes = await webDav.readAsBytes(item.path);
-      final sheet = CueSheetParser.tryParse(
-        decodeCueText(bytes),
-      );
+      final bytes = await webDav.readAsBytes(_accountId!, item.path);
+      final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // close loading
       if (sheet == null) {
@@ -366,9 +461,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('读取 CUE 失败：$e')),
-      );
+      AppSnack.show(context, '读取 CUE 失败：$e');
     }
   }
 
@@ -434,14 +527,20 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   child: Text(
                     '多歌曲合并分片 · CUE · ${sheet.tracks.length} 曲'
                     '${multiFile ? ' · ${byFile.length} 个音频文件' : ''}',
-                    style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+                    style: const TextStyle(
+                      color: AppColors.mutedText,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Text(
                     '此 CUE 将整张专辑按分片导入音乐库，不是独立单曲文件。',
-                    style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+                    style: TextStyle(
+                      color: AppColors.secondaryText,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 const Divider(height: 1, color: AppColors.divider),
@@ -452,7 +551,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                         if (multiFile)
                           ListTile(
                             dense: true,
-                            leading: const Icon(Icons.audio_file_outlined, size: 20),
+                            leading: const Icon(
+                              Icons.audio_file_outlined,
+                              size: 20,
+                            ),
                             title: Text(
                               entry.key,
                               style: const TextStyle(
@@ -467,7 +569,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                             title: Text(
                               '${t.number.toString().padLeft(2, '0')}-${t.title?.isNotEmpty == true ? t.title! : 'Track ${t.number}'}',
                             ),
-                            subtitle: (t.performer != null && t.performer!.isNotEmpty)
+                            subtitle:
+                                (t.performer != null && t.performer!.isNotEmpty)
                                 ? Text(t.performer!)
                                 : null,
                           ),
@@ -511,25 +614,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   Future<void> _downloadCueGroup(WebDavItem item, CueSheet sheet) async {
     final accountId = _accountId;
     if (accountId == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已加入 CUE 专辑「${sheet.title ?? item.name}」下载队列')),
-    );
+    final sourceName = _nameFor(accountId);
     try {
       await context.read<DownloadQueueService>().enqueueCueGroup(
-        accountId: accountId,
+        sourceName: sourceName,
         cueRemotePath: item.path,
         cueFileName: item.name,
         preParsed: sheet,
       );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('下载任务已排队：完成后音乐库显示 ${sheet.tracks.length} 首虚拟曲目')),
-      );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('CUE 下载失败：$e')),
-      );
+      AppSnack.error(context, 'CUE 下载失败：$e');
     }
   }
 
@@ -539,23 +634,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.elevated,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      isScrollControlled: true,
+      shape: AppBottomSheet.shape,
       builder: (ctx) {
-        return SafeArea(
+        return AppBottomSheet(
+          padding: const EdgeInsets.only(bottom: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
               ListTile(
                 title: Text(
                   item.name,
@@ -590,7 +676,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.error,
+                  ),
                   title: const Text('删除'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -600,7 +689,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
               ] else if (item.isAudio) ...[
                 ListTile(
                   leading: const Icon(Icons.download),
-                  title: const Text('下载'),
+                  title: const Text('下载到本地缓存'),
+                  subtitle: const Text('点按整行即为下载，此处为备用入口'),
                   onTap: () {
                     Navigator.pop(ctx);
                     _enqueueOnly(item);
@@ -623,7 +713,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.error,
+                  ),
                   title: const Text('删除'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -657,7 +750,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.error,
+                  ),
                   title: const Text('删除'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -665,6 +761,18 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
               ] else ...[
+                // Not in the configured music/video/CUE extension lists: still
+                // downloadable, just with no playback path — it lands in the
+                // public Downloads folder instead of the audio cache.
+                ListTile(
+                  leading: const Icon(Icons.download),
+                  title: const Text('下载到系统下载目录'),
+                  subtitle: const Text('该后缀不在音乐/视频列表中，不会进入音乐库'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _enqueueUnknown(item);
+                  },
+                ),
                 ListTile(
                   leading: const Icon(Icons.drive_file_rename_outline),
                   title: const Text('重命名'),
@@ -674,7 +782,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.delete_outline, color: AppColors.error),
+                  leading: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.error,
+                  ),
                   title: const Text('删除'),
                   onTap: () {
                     Navigator.pop(ctx);
@@ -716,7 +827,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final parent = _path.endsWith('/') ? _path : '$_path/';
     final path = '$parent$name';
     await runWebDavAction(context, () async {
-      await context.read<WebDavService>().createFolder(path);
+      await context.read<WebDavService>().createFolder(_accountId!, path);
       await _load();
     });
   }
@@ -749,7 +860,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     var newPath = '$parent$name';
     if (item.isDirectory && !newPath.endsWith('/')) newPath = '$newPath/';
     await runWebDavAction(context, () async {
-      await context.read<WebDavService>().renamePath(item.path, newPath);
+      await context.read<WebDavService>().renamePath(
+        _accountId!,
+        item.path,
+        newPath,
+      );
       await _load();
     });
   }
@@ -774,7 +889,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
     if (ok != true || !mounted) return;
     await runWebDavAction(context, () async {
-      await context.read<WebDavService>().deletePath(item.path);
+      await context.read<WebDavService>().deletePath(_accountId!, item.path);
       await _load();
     });
   }
@@ -786,12 +901,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final player = context.watch<AudioPlayerService>();
     final active = accounts.activeAccount;
 
-    // Reload when active account changes externally.
-    if (active != null &&
-        _boundAccountId != null &&
-        active.id != _boundAccountId &&
-        !_loading) {
+    // Reload when the active account changed from the one these items came from
+    // (e.g. switched in the accounts screen, or from the drawer).
+    if (active != null && _browsedAccountId != active.id && !_loading) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         _stack
           ..clear()
           ..add('/');
@@ -799,15 +913,26 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       });
     }
 
+    // The system back key is handled through [BackHandlerRegistry] (registered in
+    // initState), which the app shell consults before its own fallbacks. Doing it
+    // with PopScope here did not work: this screen sits in a nested Navigator
+    // inside the shell's own PopScope, and the event never reached our handler.
+    return _buildScaffold(accounts, downloads, player, active);
+  }
+
+  Widget _buildScaffold(
+    AccountsService accounts,
+    DownloadQueueService downloads,
+    AudioPlayerService player,
+    WebDavAccount? active,
+  ) {
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
-        leading: _stack.length > 1
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: _goUp,
-              )
-            : const DrawerMenuButton(),
+        // Always the drawer button: directory navigation is done by the system
+        // back key (see BackHandlerRegistry), so the top-left is reserved for the
+        // side menu like every other tab.
+        leading: const DrawerMenuButton(),
         title: Text(folderDisplayName(_path)),
         actions: [
           IconButton(
@@ -819,9 +944,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
             icon: const Icon(Icons.dns_outlined),
             tooltip: '管理服务器',
             onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AccountsScreen()),
-              );
+              await Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AccountsScreen()));
               if (mounted) await _ensureAndLoad();
             },
           ),
@@ -848,7 +973,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     .map(
                       (a) => DropdownMenuItem(
                         value: a.id,
-                        child: Text(a.name, overflow: TextOverflow.ellipsis),
+                        // 名称（用户名）so two mounts on the same host are
+                        // distinguishable at a glance.
+                        child: Text(
+                          webDavAccountLabel(a),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     )
                     .toList(),
@@ -876,8 +1006,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.cloud_off,
-                  size: 48, color: Theme.of(context).colorScheme.error),
+              Icon(
+                Icons.cloud_off,
+                size: 48,
+                color: Theme.of(context).colorScheme.error,
+              ),
               const SizedBox(height: 12),
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
@@ -900,7 +1033,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (_items.isEmpty) {
       return const Center(child: Text('空目录'));
     }
-    final accountId = active?.id ?? _accountId;
+    final sourceName =
+        context.read<AccountsService>().nameForAccount(active?.id ?? '') ?? '';
     return Column(
       children: [
         if (_selecting) _buildSelectionBar(),
@@ -938,16 +1072,20 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 );
               }
               if (item.isVideo) {
-                final task = accountId == null
+                final task = sourceName.isEmpty
                     ? null
-                    : downloads.taskFor(accountId, item.path);
-                final saved = task != null &&
+                    : downloads.taskFor(sourceName, item.path);
+                final saved =
+                    task != null &&
                     task.isGallery &&
                     task.status == DownloadStatus.completed;
                 return ListTile(
                   leading: _selectionLeading(
                     item,
-                    const Icon(Icons.videocam_outlined, color: AppColors.accent),
+                    const Icon(
+                      Icons.videocam_outlined,
+                      color: AppColors.accent,
+                    ),
                   ),
                   title: Text(item.name),
                   subtitle: Text(
@@ -989,17 +1127,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 );
               }
 
-              final task = accountId == null
+              final task = sourceName.isEmpty
                   ? null
-                  : downloads.taskForRemote(accountId, item.path);
+                  : downloads.taskForRemote(sourceName, item.path);
               // Undownloaded + never enqueued → TrackUiState.remote (no chip).
-              final state = accountId == null
+              final state = sourceName.isEmpty
                   ? TrackUiState.remote
                   : downloads.uiStateFor(
-                      accountId,
+                      sourceName,
                       item.path,
                       playingRemotePath: player.currentRemotePath,
-                      playingAccountId: player.currentAccountId,
+                      playingSourceName: player.currentSourceName,
                     );
               return ListTile(
                 leading: _selectionLeading(
@@ -1013,7 +1151,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ),
                 title: Text(item.name),
                 subtitle: Text(
-                  item.size != null ? _fmtSize(item.size!) : '音频',
+                  [
+                    item.size != null ? _fmtSize(item.size!) : '音频',
+                    // 没有下载按钮：整行就是下载动作。
+                    if (state == TrackUiState.remote) '点按下载',
+                  ].join(' · '),
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1026,11 +1168,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                             ? task?.progress
                             : null,
                       ),
-                    IconButton(
-                      icon: const Icon(Icons.download_for_offline_outlined),
-                      tooltip: '仅下载',
-                      onPressed: () => _enqueueOnly(item),
-                    ),
                     _itemMenuButton(item),
                   ],
                 ),
@@ -1088,6 +1225,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   Widget _buildSelectionBar() {
     final items = _selectedItems;
     final videos = items.where((e) => e.isVideo).length;
+    final allSelected = _items.isNotEmpty && _selected.length >= _items.length;
     return Material(
       color: AppColors.elevated,
       child: SafeArea(
@@ -1100,6 +1238,22 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 tooltip: '取消',
                 onPressed: _exitSelect,
                 icon: const Icon(Icons.close),
+              ),
+              IconButton(
+                tooltip: allSelected ? '取消全选' : '全选',
+                onPressed: _items.isEmpty
+                    ? null
+                    : () => setState(() {
+                        if (allSelected) {
+                          _selected.clear();
+                          _selecting = false;
+                        } else {
+                          _selected
+                            ..clear()
+                            ..addAll(_items.map(_itemKey));
+                        }
+                      }),
+                icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
               ),
               Expanded(
                 child: Text(
@@ -1136,8 +1290,4 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
-}
-
-extension on Future {
-  void ignore() {}
 }

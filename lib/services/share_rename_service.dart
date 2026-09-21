@@ -76,7 +76,7 @@ class ShareRenameService {
     try {
       final read = await tags.readFromFile(localPath);
       final track = TrackInfo(
-        accountId: '',
+        sourceName: '',
         remotePath: localPath,
         fileName: source,
         title: read.title,
@@ -108,7 +108,7 @@ class ShareRenameService {
     String? localPath,
   }) {
     return TrackInfo(
-      accountId: track.accountId,
+      sourceName: track.sourceName,
       remotePath: track.remotePath,
       fileName: track.fileName,
       localPath: localPath,

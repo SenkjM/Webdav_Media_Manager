@@ -60,14 +60,14 @@ FILE "great.flac" WAVE
 
   test('raw .cue is not a library song; virtual slices are', () {
     final plainCue = LibraryTrack(
-      accountId: 'a',
+      sourceName: 'a',
       remotePath: '/album/disc.cue',
       fileName: 'disc.cue',
     );
     expect(plainCue.isCueVirtual, isFalse);
 
     final slice = LibraryTrack(
-      accountId: 'a',
+      sourceName: 'a',
       remotePath: cueVirtualRemotePath('/album/disc.flac', 1),
       fileName: '01',
       cueRemotePath: '/album/disc.cue',

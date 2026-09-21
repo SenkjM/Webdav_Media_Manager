@@ -6,7 +6,7 @@ import '../utils/track_identity.dart';
 class LibraryTrack {
   LibraryTrack({
     String? musicId,
-    required this.accountId,
+    required this.sourceName,
     required this.remotePath,
     required this.fileName,
     this.title,
@@ -31,11 +31,12 @@ class LibraryTrack {
     this.clipStartMs,
     this.clipEndMs,
     this.cacheGroupId,
+    this.rev,
     DateTime? lastDownloadedAt,
     DateTime? lastTagReadAt,
   })  : musicId = musicId ??
             musicIdForLibraryRow(
-              accountId: accountId,
+              sourceName: sourceName,
               remotePath: remotePath,
               cueRemotePath: cueRemotePath,
               cueTrackIndex: cueTrackIndex,
@@ -45,7 +46,8 @@ class LibraryTrack {
 
   /// Stable offline primary key (SHA-1 hex).
   final String musicId;
-  final String accountId;
+  /// 网盘名 —— the single binding point (URL/username live in the account table).
+  final String sourceName;
   final String remotePath;
   final String fileName;
   String? title;
@@ -74,17 +76,19 @@ class LibraryTrack {
   int? clipStartMs;
   int? clipEndMs;
   String? cacheGroupId;
+  /// Monotonic version of this row (see [RevClock]); the only value sync compares.
+  int? rev;
   DateTime lastDownloadedAt;
   DateTime lastTagReadAt;
 
-  /// Legacy playlist / UI key (accountId + remotePath). Prefer [musicId].
-  String get identityKey => trackIdentityKey(accountId, remotePath);
+  /// Legacy playlist / UI key (网盘名 + remotePath). Prefer [musicId].
+  String get identityKey => trackIdentityKey(sourceName, remotePath);
 
   /// music_id used for cache annex lookups (audio file, not virtual slice).
   String get cacheMusicId =>
       audioMusicId ??
       (audioRemotePath != null
-          ? musicIdForRemote(accountId, audioRemotePath!)
+          ? musicIdForRemote(sourceName, audioRemotePath!)
           : musicId);
 
   /// True when this row is a CUE-sliced virtual track.
@@ -125,7 +129,8 @@ class LibraryTrack {
 
   Map<String, dynamic> toMap() => {
         'music_id': musicId,
-        'account_id': accountId,
+        'source_name': sourceName,
+        'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
         'remote_path': remotePath,
         'file_name': fileName,
         'title': title,
@@ -157,7 +162,8 @@ class LibraryTrack {
   /// Map for the `tracks` table (no CUE-only columns).
   Map<String, dynamic> toTrackTableMap() => {
         'music_id': musicId,
-        'account_id': accountId,
+        'source_name': sourceName,
+        'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
         'remote_path': remotePath,
         'file_name': fileName,
         'title': title,
@@ -183,13 +189,14 @@ class LibraryTrack {
         'music_id': musicId,
         'cue_id': cueId ??
             (cueRemotePath != null
-                ? cueIdFor(accountId, cueRemotePath!)
+                ? cueIdFor(sourceName, cueRemotePath!)
                 : ''),
         'audio_music_id': audioMusicId ??
             (audioRemotePath != null
-                ? musicIdForRemote(accountId, audioRemotePath!)
+                ? musicIdForRemote(sourceName, audioRemotePath!)
                 : musicId),
-        'account_id': accountId,
+        'source_name': sourceName,
+        'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
         'remote_path': remotePath,
         'file_name': fileName,
         'track_index': cueTrackIndex,
@@ -216,7 +223,7 @@ class LibraryTrack {
       };
 
   factory LibraryTrack.fromMap(Map<String, dynamic> map) {
-    final accountId = map['account_id'] as String;
+    final sourceName = (map['source_name'] ?? map['account_id']) as String;
     final remotePath = map['remote_path'] as String;
     final cueRemotePath = map['cue_remote_path'] as String?;
     final cueTrackIndex = _asInt(map['cue_track_index'] ?? map['track_index']);
@@ -225,12 +232,12 @@ class LibraryTrack {
       musicId: (storedId != null && storedId.isNotEmpty)
           ? storedId
           : musicIdForLibraryRow(
-              accountId: accountId,
+              sourceName: sourceName,
               remotePath: remotePath,
               cueRemotePath: cueRemotePath,
               cueTrackIndex: cueTrackIndex,
             ),
-      accountId: accountId,
+      sourceName: sourceName,
       remotePath: remotePath,
       fileName: map['file_name'] as String,
       title: map['title'] as String?,
@@ -255,6 +262,7 @@ class LibraryTrack {
       clipStartMs: _asInt(map['clip_start_ms']),
       clipEndMs: _asInt(map['clip_end_ms']),
       cacheGroupId: map['cache_group_id'] as String?,
+      rev: _asInt(map['rev']),
       lastDownloadedAt: DateTime.tryParse(
             map['last_downloaded_at'] as String? ?? '') ??
           DateTime.now(),

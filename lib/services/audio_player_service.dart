@@ -62,7 +62,8 @@ class AudioPlayerService extends ChangeNotifier {
 
   TrackInfo? get current => _handler.currentTrack;
   String? get currentRemotePath => current?.remotePath;
-  String? get currentAccountId => current?.accountId;
+  /// 网盘名 of the playing track (cache / identity side).
+  String? get currentSourceName => current?.sourceName;
   List<TrackInfo> get queue => _handler.tracks;
   int get index => _handler.index;
   Duration get position => _position;
@@ -76,7 +77,7 @@ class AudioPlayerService extends ChangeNotifier {
     final existing = track.localPath;
     if (existing != null && File(existing).existsSync()) return existing;
     final audioRemote = track.effectiveAudioRemotePath;
-    final task = _downloads.taskForRemote(track.accountId, audioRemote);
+    final task = _downloads.taskForRemote(track.sourceName, audioRemote);
     if (task != null &&
         task.status == DownloadStatus.completed &&
         task.localPath != null &&
@@ -102,7 +103,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
     var idx = list.indexWhere(
       (t) =>
-          t.remotePath == track.remotePath && t.accountId == track.accountId,
+          t.remotePath == track.remotePath && t.sourceName == track.sourceName,
     );
     if (idx < 0) {
       list.add(track);

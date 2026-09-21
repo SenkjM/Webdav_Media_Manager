@@ -1,10 +1,10 @@
+import '../utils/app_snack.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/video_settings.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
-import 'home_shell.dart';
 
 /// Video playback settings (WebDAV streaming parameters, gestures, background
 /// playback & picture-in-picture). Reachable from the main Settings list.
@@ -39,10 +39,9 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
     if (mb == null) return;
     await context.read<SettingsService>().setVideoBufferSizeMb(mb);
     if (!mounted) return;
-    _bufferController.text = '${context.read<SettingsService>().videoBufferSizeMb}';
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('缓冲大小已保存，下次播放生效')),
-    );
+    _bufferController.text =
+        '${context.read<SettingsService>().videoBufferSizeMb}';
+    AppSnack.show(context, '缓冲大小已保存，下次播放生效');
   }
 
   @override
@@ -51,18 +50,13 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(
-        leading: const DrawerMenuButton(),
-        title: const Text('视频播放'),
-      ),
+      appBar: AppBar(title: const Text('视频播放')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
             '流式播放',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
+            style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
@@ -114,9 +108,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           const Divider(height: 40),
           Text(
             '手势',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
+            style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 8),
@@ -194,10 +186,69 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           ),
           const Divider(height: 40),
           Text(
+            '字幕',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            '字幕固定画在底部控件条上方；控件隐藏时贴窗口底部，因此不会与控件重叠。',
+            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<VideoSubtitlePosition>(
+            showSelectedIcon: false,
+            segments: [
+              for (final p in VideoSubtitlePosition.values)
+                ButtonSegment(value: p, label: Text(p.labelZh)),
+            ],
+            selected: {settings.videoSubtitlePosition},
+            onSelectionChanged: (sel) =>
+                settings.setVideoSubtitlePosition(sel.first),
+          ),
+          if (settings.videoSubtitlePosition ==
+              VideoSubtitlePosition.visible) ...[
+            const SizedBox(height: 12),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.format_size),
+              title: const Text('字幕大小'),
+              subtitle: Text(
+                '当前 ${settings.videoSubtitleFontSize.toStringAsFixed(0)} sp'
+                '（范围 ${SettingsService.minVideoSubtitleFontSize.toStringAsFixed(0)}–'
+                '${SettingsService.maxVideoSubtitleFontSize.toStringAsFixed(0)} sp）',
+              ),
+            ),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final preset
+                    in SettingsService.videoSubtitleFontSizePresets)
+                  ChoiceChip(
+                    label: Text(preset.toStringAsFixed(0)),
+                    selected:
+                        (settings.videoSubtitleFontSize - preset).abs() < 0.001,
+                    onSelected: (_) =>
+                        settings.setVideoSubtitleFontSize(preset),
+                  ),
+              ],
+            ),
+            Slider(
+              value: settings.videoSubtitleFontSize.clamp(
+                SettingsService.minVideoSubtitleFontSize,
+                SettingsService.maxVideoSubtitleFontSize,
+              ),
+              min: SettingsService.minVideoSubtitleFontSize,
+              max: SettingsService.maxVideoSubtitleFontSize,
+              divisions: 30,
+              label: '${settings.videoSubtitleFontSize.toStringAsFixed(0)} sp',
+              onChanged: (v) => settings.setVideoSubtitleFontSize(v),
+            ),
+          ],
+          const Divider(height: 40),
+          Text(
             '播放行为',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
+            style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 8),

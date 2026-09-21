@@ -16,8 +16,8 @@ import '../services/video_playback_service.dart';
 import '../services/video_queue_controller.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
-import '../utils/android_background.dart';
 import '../utils/video_pip.dart';
+import '../widgets/app_bottom_sheet.dart';
 
 /// Everything the player needs to build a play queue for one video.
 class VideoQueueSeed {
@@ -58,11 +58,7 @@ class VideoQueueSeed {
 /// * the queue comes from a progressive folder scan, so 上一个 / 下一个 and
 ///   auto-advance work while the scan is still running.
 class VideoPlayerScreen extends StatefulWidget {
-  const VideoPlayerScreen({
-    super.key,
-    required this.source,
-    this.seed,
-  });
+  const VideoPlayerScreen({super.key, required this.source, this.seed});
 
   final WebDavStreamSource source;
 
@@ -101,6 +97,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   /// Title shown in the bar / notification (changes as the queue advances).
   final ValueNotifier<String> _title = ValueNotifier('');
+
+  /// Real video aspect ratio (width / height), or null until libmpv reports it.
+  /// Used to place the control bar just below the letterboxed picture.
+  double? _videoAspectRatio;
+
+  /// Current subtitle text (only used by 视频下方 mode, which renders its own).
+  final ValueNotifier<String> _subtitleText = ValueNotifier('');
 
   StreamSubscription<bool>? _pipSub;
   StreamSubscription<bool>? _completedSub;
@@ -190,21 +193,46 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _subs.add(player.stream.playing.listen((v) => _playing.value = v));
     _subs.add(player.stream.buffering.listen((v) => _buffering.value = v));
     _subs.add(player.stream.rate.listen((r) => _rate.value = r));
-    _subs.add(player.stream.error.listen((e) {
-      if (!mounted || e.isEmpty) return;
-      setState(() => _error = e);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('播放错误：$e')),
-      );
-    }));
+    _subs.add(
+      player.stream.error.listen((e) {
+        if (!mounted || e.isEmpty) return;
+        setState(() => _error = e);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('播放错误：$e')));
+      }),
+    );
     // Auto-advance to the next video in the folder when one finishes.
     _completedSub = player.stream.completed.listen((completed) {
       if (completed && mounted) unawaited(_playNext(auto: true));
     });
+    // Track the real video size so the control bar can sit under the picture.
+    void syncAspect() {
+      final w = player.state.width;
+      final h = player.state.height;
+      final ratio = (w != null && h != null && w > 0 && h > 0) ? w / h : null;
+      if (ratio != _videoAspectRatio && mounted) {
+        setState(() => _videoAspectRatio = ratio);
+      }
+    }
+
+    _subs.add(player.stream.width.listen((_) => syncAspect()));
+    _subs.add(player.stream.height.listen((_) => syncAspect()));
+    // Keep the active subtitle text for 视频下方 mode (the built-in subtitle view
+    // is disabled there, so we render the lines ourselves).
+    _subs.add(
+      player.stream.subtitle.listen((lines) {
+        if (!mounted) return;
+        _subtitleText.value = lines
+            .map((l) => l.trim())
+            .where((l) => l.isNotEmpty)
+            .join('\n');
+      }),
+    );
     _position.value = player.state.position;
     _duration.value = player.state.duration;
     _playing.value = player.state.playing;
     _rate.value = player.state.rate;
+    syncAspect();
   }
 
   @override
@@ -229,6 +257,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _pip.dispose();
     _seekFeedback.dispose();
     _title.dispose();
+    _subtitleText.dispose();
     // Restore free rotation; the Video widget detaches the texture itself and
     // the Player lifetime stays owned by the audio handler.
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
@@ -243,9 +272,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (player == null || service == null || _switching) return;
     final source = _streamFor(item);
     if (source == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('WebDAV 未连接，无法播放')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('WebDAV 未连接，无法播放')));
       return;
     }
     setState(() {
@@ -268,9 +296,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       if ((rate - 1.0).abs() > 0.001) await player.setRate(rate);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('切换视频失败：$e')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('切换视频失败：$e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -284,19 +311,18 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   WebDavStreamSource? _streamFor(WebDavItem item) {
     final queue = _queue;
     return context.read<WebDavService>().buildStreamSource(
-          remotePath: item.path,
-          name: item.name,
-          accountId: queue?.accountId ?? widget.source.accountId,
-        );
+      remotePath: item.path,
+      name: item.name,
+      accountId: queue?.accountId ?? widget.source.accountId,
+    );
   }
 
   Future<void> _playNext({bool auto = false}) async {
     final queue = _queue;
     if (queue == null) {
       if (!auto) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('当前没有播放列表')),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('当前没有播放列表')));
       }
       return;
     }
@@ -305,9 +331,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       if (!auto) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              queue.scanning ? '已到列表末尾（仍在扫描文件夹…）' : '已是最后一个视频',
-            ),
+            content: Text(queue.scanning ? '已到列表末尾（仍在扫描文件夹…）' : '已是最后一个视频'),
           ),
         );
       } else {
@@ -322,9 +346,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   Future<void> _playPrevious() async {
     final queue = _queue;
     if (queue == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前没有播放列表')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('当前没有播放列表')));
       return;
     }
     // Standard player behavior: restart the current video first.
@@ -336,9 +359,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (prev == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            queue.scanning ? '已是第一个视频（仍在扫描文件夹…）' : '已是第一个视频',
-          ),
+          content: Text(queue.scanning ? '已是第一个视频（仍在扫描文件夹…）' : '已是第一个视频'),
         ),
       );
       return;
@@ -410,15 +431,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     await _handleExit();
   }
 
-  /// Send the task to the background exactly like the Home key.
-  Future<void> _sendToBackground() async {
-    if (!context.read<SettingsService>().videoBackgroundPlayback) {
-      await _handleExit();
-      return;
-    }
-    await moveAppToBackground();
-  }
-
   void _toggleControls() {
     if (_locked.value || _pip.value) return;
     _controlsVisible.value = !_controlsVisible.value;
@@ -467,11 +479,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (dur > Duration.zero && target > dur) target = dur;
     await player.seek(target);
     _position.value = target;
-    _showSeekFeedback(
-      label: label,
-      forward: !delta.isNegative,
-      target: target,
-    );
+    _showSeekFeedback(label: label, forward: !delta.isNegative, target: target);
   }
 
   void _showSeekFeedback({
@@ -551,9 +559,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final ok = await enterPictureInPicture();
     if (!mounted) return;
     if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('当前设备/系统不支持画中画')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('当前设备/系统不支持画中画')));
       return;
     }
     _controlsVisible.value = false;
@@ -609,7 +616,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline, color: Colors.white70, size: 48),
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.white70,
+                  size: 48,
+                ),
                 const SizedBox(height: 12),
                 Text(
                   '无法播放：$_error',
@@ -653,15 +664,98 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 wakelock: true,
                 pauseUponEnteringBackgroundMode: pauseOnBackground,
                 resumeUponEnteringForegroundMode: false,
+                // The built-in subtitle view is deliberately disabled: it lives
+                // INSIDE the Video widget, so the control overlay (a later sibling
+                // in this Stack) always painted on top of it and subtitles looked
+                // like they rendered "under" the controls. We draw subtitles
+                // ourselves in the overlay stack instead, above the controls.
+                subtitleViewConfiguration: const SubtitleViewConfiguration(
+                  visible: false,
+                ),
               ),
             ),
             _buildGestureLayer(),
             Positioned.fill(child: _buildOverlay(settings)),
+            // Subtitles last so they are never covered by the control bars.
+            Positioned.fill(
+              child: IgnorePointer(child: _buildSubtitles(settings)),
+            ),
           ],
         ),
       ),
     );
   }
+
+  /// Subtitles, drawn above every control.
+  ///
+  /// Placement is fixed by design: just above the bottom control bar, or at the
+  /// bottom of the window when the controls are hidden. That is the one spot that
+  /// never fights with the control bars regardless of aspect ratio / orientation
+  /// (earlier "inside the picture" attempts kept ending up underneath them).
+  ///
+  /// Drawn last in the Stack so it can never be covered; ignored for hit testing
+  /// so taps still reach the gesture layer.
+  Widget _buildSubtitles(SettingsService settings) {
+    if (settings.videoSubtitlePosition == VideoSubtitlePosition.hidden) {
+      return const SizedBox.shrink();
+    }
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    // Rebuild on control visibility changes so the subtitle tracks the bar.
+    return ValueListenableBuilder<bool>(
+      valueListenable: _controlsVisible,
+      builder: (context, visible, _) => ValueListenableBuilder<bool>(
+        valueListenable: _locked,
+        builder: (context, locked, _) => ValueListenableBuilder<bool>(
+          valueListenable: _pip,
+          builder: (context, pip, _) {
+            final controlsShown = visible && !locked && !pip;
+            // Controls visible → clear the control bar; hidden → sit at the
+            // bottom of the window (still above the system gesture area).
+            final bottom = controlsShown
+                ? _approxControlsHeight + bottomInset
+                : bottomInset + 12;
+            return Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, bottom),
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _subtitleText,
+                  builder: (context, text, _) {
+                    if (text.trim().isEmpty) return const SizedBox.shrink();
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.62),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        text,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: settings.videoSubtitleFontSize,
+                          height: 1.3,
+                          shadows: const [
+                            Shadow(blurRadius: 4, color: Colors.black87),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Typical height of the bottom control card; subtitles sit clear of it.
+  static const double _approxControlsHeight = 132.0;
 
   /// Three horizontal zones so a middle double-tap can mean play/pause while
   /// the sides keep the configurable seek gestures. Each zone handles its own
@@ -713,8 +807,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   Future<void> _runSideDoubleTap({required bool left}) async {
     final settings = context.read<SettingsService>();
-    final action =
-        left ? settings.videoLeftDoubleTap : settings.videoRightDoubleTap;
+    final action = left
+        ? settings.videoLeftDoubleTap
+        : settings.videoRightDoubleTap;
     await _runGesture(action);
   }
 
@@ -739,10 +834,25 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   alignment: Alignment.topRight,
                   child: Padding(
                     padding: const EdgeInsets.all(8),
-                    child: _RoundIconButton(
-                      icon: Icons.lock_open,
-                      tooltip: '解锁',
-                      onTap: _toggleLock,
+                    child: Tooltip(
+                      message: '长按解锁',
+                      child: GestureDetector(
+                        // Long-press only: a single tap must not unlock, otherwise
+                        // an accidental brush against the screen defeats the lock.
+                        onLongPress: _toggleLock,
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.lock_outline,
+                            color: Colors.white,
+                            size: 22,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -751,26 +861,38 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             return ValueListenableBuilder<bool>(
               valueListenable: _controlsVisible,
               builder: (context, visible, _) {
+                // Controls fade + slide in/out instead of hard-cutting. They
+                // stay laid out (IgnorePointer) so the transition is smooth.
                 return Stack(
                   fit: StackFit.expand,
                   children: [
                     _buildFeedbackLayer(),
-                    if (visible) ...[
-                      _buildTopStrip(settings),
-                      _buildBottomCluster(settings),
-                    ],
+                    _AnimatedControls(
+                      visible: visible,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _buildTopStrip(settings),
+                          _buildBottomCluster(settings),
+                        ],
+                      ),
+                    ),
+                    // Buffering must never eat the middle double-tap zone:
+                    // IgnorePointer keeps the gesture layer beneath reachable,
+                    // and it is drawn above centre so the picture stays clear.
                     ValueListenableBuilder<bool>(
                       valueListenable: _buffering,
-                      builder: (context, buffering, _) => buffering
-                          ? const Center(
-                              child: SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: CircularProgressIndicator(strokeWidth: 3),
-                              ),
-                            )
-                          : const SizedBox.shrink(),
+                      builder: (context, buffering, _) => IgnorePointer(
+                        child: AnimatedOpacity(
+                          opacity: buffering ? 1 : 0,
+                          duration: const Duration(milliseconds: 180),
+                          child: const _BufferingBadge(),
+                        ),
+                      ),
                     ),
+                    // Switching to another queue entry: the previous frame would
+                    // otherwise sit there frozen with no feedback at all.
+                    if (_switching) _SwitchingOverlay(title: _title.value),
                   ],
                 );
               },
@@ -798,143 +920,209 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     );
   }
 
-  /// Title + non-transport actions, in a small pill at the very top.
+  /// Title + non-transport actions, in a small pill hugging the **top of the
+  /// video** (mirrors how the bottom bar hugs its lower edge).
+  ///
+  /// Full-width bar (not a pill that hugs its content).
+  ///
+  /// The action set adapts to available width: on a narrow portrait phone
+  /// (360dp is common) five 48px buttons plus a title do not fit, so the title
+  /// shrinks instead. (切换横竖屏 lives in the bottom bar.)
   Widget _buildTopStrip(SettingsService settings) {
-    return SafeArea(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: Container(
-          margin: const EdgeInsets.only(top: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _RoundIconButton(
-                icon: Icons.arrow_back,
-                tooltip: '返回',
-                onTap: _handleBackPress,
-              ),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 170),
-                child: ValueListenableBuilder<String>(
-                  valueListenable: _title,
-                  builder: (context, title, _) => Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
+    final media = MediaQuery.of(context);
+    final size = media.size;
+    final landscape = size.width > size.height;
+    // Mirror the bottom bar's contain-fit maths to find where the picture starts.
+    final slot = Size(landscape ? size.width : 860.0, size.height);
+    final ar = _videoAspectRatio;
+    final fitted = ar == null
+        ? slot
+        : applyBoxFit(BoxFit.contain, Size(ar, 1), slot).destination;
+    final videoTop = (size.height - fitted.height) / 2;
+    final bandAbove = videoTop - media.padding.top;
+    const stripHeight = 52.0;
+    // Portrait: pin to the very top. Landscape: hug the picture's upper edge.
+    final hugPicture = landscape && bandAbove > stripHeight;
+
+    return Align(
+      alignment: Alignment.topCenter,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 8,
+          right: 8,
+          top:
+              media.padding.top +
+              (hugPicture ? bandAbove - stripHeight + 6 : 6),
+        ),
+        child: SizedBox(
+          // Always span the available width: the bar used to hug a short title,
+          // which made it look inconsistent between videos.
+          width: double.infinity,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(22),
+            ),
+            child: Row(
+              children: [
+                _RoundIconButton(
+                  icon: Icons.arrow_back,
+                  tooltip: '返回',
+                  onTap: _handleBackPress,
+                ),
+                Expanded(
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: _title,
+                    builder: (context, title, _) => Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                    ),
                   ),
                 ),
-              ),
-              if (_queue != null)
+                if (_queue != null)
+                  _RoundIconButton(
+                    icon: Icons.playlist_play,
+                    tooltip: '播放列表',
+                    onTap: _showQueueSheet,
+                  ),
                 _RoundIconButton(
-                  icon: Icons.playlist_play,
-                  tooltip: '播放列表',
-                  onTap: _showQueueSheet,
+                  icon: Icons.more_vert,
+                  tooltip: '更多设置',
+                  onTap: _showMoreSettings,
                 ),
-              _RoundIconButton(
-                icon: Icons.home_outlined,
-                tooltip: '转到后台（继续播放）',
-                onTap: _sendToBackground,
-              ),
-              _RoundIconButton(
-                icon: Icons.screen_rotation,
-                tooltip: '切换横竖屏',
-                onTap: _toggleOrientation,
-              ),
-              _RoundIconButton(
-                icon: Icons.more_vert,
-                tooltip: '更多设置',
-                onTap: _showMoreSettings,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// Transport + secondary controls, anchored to the **lower** part of the
-  /// frame so the middle of the picture stays unobstructed.
+  /// Transport + progress, in ONE card placed just below the **video**, not at
+  /// the bottom of the screen.
+  ///
+  /// Why not simply bottom-anchored: `BoxFit.contain` letterboxes, so on a tall
+  /// phone a 16:9 video leaves a large black band underneath. Pinning the
+  /// controls to the screen bottom then leaves an obvious empty gap between the
+  /// picture and the controls. Instead we reproduce the `contain` fit from the
+  /// real video size and sit the bar right under the picture — falling back to
+  /// the screen bottom when that band is too shallow for the bar.
   Widget _buildBottomCluster(SettingsService settings) {
-    return SafeArea(
-      child: Align(
-        alignment: const Alignment(0, 0.66),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(20),
-                ),
+    final size = MediaQuery.of(context).size;
+    final landscape = size.width > size.height;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    // Mirror BoxFit.contain for the real aspect ratio (null until known, and we
+    // then assume the full slot so the bar stays at the screen bottom).
+    final slot = Size(landscape ? size.width : 860.0, size.height);
+    final ar = _videoAspectRatio;
+    final fitted = ar == null
+        ? slot
+        : applyBoxFit(BoxFit.contain, Size(ar, 1), slot).destination;
+    final videoBottom = (size.height - fitted.height) / 2 + fitted.height;
+    final bandBelow = size.height - bottomInset - videoBottom;
+    // Height of this card (3 rows); keep in sync with its padding below.
+    const cardHeight = 116.0;
+    // Portrait: pin to the screen bottom. Hugging the picture left large empty
+    // bands above AND below the controls, which looked broken on a tall phone.
+    // Landscape keeps hugging the picture, where the bar reads as part of the
+    // video frame.
+    final hugPicture = landscape && bandBelow > cardHeight;
+
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 10,
+          right: 10,
+          bottom: hugPicture ? bandBelow - cardHeight + 6 : bottomInset + 6,
+        ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: landscape ? 860 : 560),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                // Opaque enough to stay legible over bright video.
+                color: Colors.black.withValues(alpha: 0.72),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(6, 2, 6, 4),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         if (_queue != null)
-                          _CenterIconButton(
+                          _TransportButton(
                             icon: Icons.skip_previous,
                             tooltip: '上一个视频',
-                            size: 28,
                             onTap: _playPrevious,
-                          ),
-                        _CenterIconButton(
+                          )
+                        else
+                          const SizedBox(width: 44),
+                        _TransportButton(
                           icon: Icons.replay_10,
                           tooltip: '后退 10 秒',
-                          size: 28,
                           onTap: () => _seekBy(
                             const Duration(seconds: -10),
                             label: '后退 10 秒',
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        ValueListenableBuilder<bool>(
-                          valueListenable: _playing,
-                          builder: (context, playing, _) => _CenterIconButton(
-                            icon: playing ? Icons.pause : Icons.play_arrow,
-                            tooltip: playing ? '暂停' : '播放',
-                            size: 40,
-                            onTap: _togglePlayPause,
+                        Expanded(
+                          child: Center(
+                            child: ValueListenableBuilder<bool>(
+                              valueListenable: _playing,
+                              builder: (context, playing, _) =>
+                                  _TransportButton(
+                                    icon: playing
+                                        ? Icons.pause
+                                        : Icons.play_arrow,
+                                    tooltip: playing ? '暂停' : '播放',
+                                    size: 38,
+                                    onTap: _togglePlayPause,
+                                  ),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 4),
-                        _CenterIconButton(
+                        _TransportButton(
                           icon: Icons.forward_10,
                           tooltip: '前进 10 秒',
-                          size: 28,
                           onTap: () => _seekBy(
                             const Duration(seconds: 10),
                             label: '前进 10 秒',
                           ),
                         ),
                         if (_queue != null)
-                          _CenterIconButton(
+                          _TransportButton(
                             icon: Icons.skip_next,
                             tooltip: '下一个视频',
-                            size: 28,
                             onTap: () => _playNext(),
-                          ),
+                          )
+                        else
+                          const SizedBox(width: 44),
                       ],
                     ),
+                    _buildProgressRow(),
                     Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         _RoundIconButton(
                           icon: Icons.lock_outline,
                           tooltip: '锁定屏幕',
                           onTap: _toggleLock,
                         ),
+                        // Orientation toggle lives with the controls, not buried
+                        // in 更多设置 — it is a primary playback action here.
+                        _RoundIconButton(
+                          icon: Icons.screen_rotation,
+                          tooltip: '切换横竖屏',
+                          onTap: _toggleOrientation,
+                        ),
+                        const Spacer(),
+                        if (_queue != null) ...[_queueLabel(), const Spacer()],
                         _SpeedButton(
                           rateListenable: _rate,
                           onTap: () => _showSpeedSheet(settings),
@@ -950,13 +1138,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   ],
                 ),
               ),
-              if (_queue != null) ...[
-                const SizedBox(height: 4),
-                _queueLabel(),
-              ],
-              const SizedBox(height: 4),
-              _buildProgressRow(),
-            ],
+            ),
           ),
         ),
       ),
@@ -994,21 +1176,26 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           builder: (context, duration, _) {
             final total = duration ?? Duration.zero;
             final maxSec = total.inMilliseconds / 1000.0;
-            final value = (position.inMilliseconds / 1000.0)
-                .clamp(0.0, maxSec > 0 ? maxSec : 0.0);
-            return Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Text(
-                    _fmt(position),
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                  Expanded(
+            final value = (position.inMilliseconds / 1000.0).clamp(
+              0.0,
+              maxSec > 0 ? maxSec : 0.0,
+            );
+            // No own background: the parent bottom bar already provides one, and
+            // a nested card here was what made the layout look stacked.
+            return Row(
+              children: [
+                Text(_fmt(position), style: _timeLabelStyle),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2.5,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
+                      ),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 14,
+                      ),
+                    ),
                     child: Slider(
                       value: value,
                       max: maxSec > 0 ? maxSec : 1.0,
@@ -1026,18 +1213,26 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       },
                     ),
                   ),
-                  Text(
-                    _fmt(total),
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
-              ),
+                ),
+                Text(_fmt(total), style: _timeLabelStyle),
+              ],
             );
           },
         );
       },
     );
   }
+
+  /// Time labels need a hard shadow: the scrim is translucent and bright frames
+  /// (snow, sky, white text in the video) swallowed plain white70 text.
+  static const _timeLabelStyle = TextStyle(
+    color: Colors.white,
+    fontSize: 12,
+    fontFeatures: [FontFeature.tabularFigures()],
+    shadows: [
+      Shadow(blurRadius: 4, color: Colors.black87, offset: Offset(0, 1)),
+    ],
+  );
 
   String _fmt(Duration d) {
     final h = d.inHours;
@@ -1167,96 +1362,98 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      isScrollControlled: true,
+      shape: AppBottomSheet.shape,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    const Icon(Icons.speed, color: AppColors.accent),
-                    const SizedBox(width: 8),
-                    const Text(
-                      '播放倍速',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      '${draft.toStringAsFixed(2)}×',
-                      style: const TextStyle(
-                        color: AppColors.accent,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-                Slider(
-                  value: draft.clamp(
-                    SettingsService.minVideoRate,
-                    SettingsService.maxVideoRate,
+        builder: (ctx, setLocal) => AppBottomSheet(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.speed, color: AppColors.accent),
+                  const SizedBox(width: 8),
+                  const Text(
+                    '播放倍速',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                   ),
-                  min: SettingsService.minVideoRate,
-                  max: SettingsService.maxVideoRate,
-                  divisions: SettingsService.videoRateDivisions,
-                  label: '${draft.toStringAsFixed(2)}×',
-                  onChanged: (v) => setLocal(() => draft = v),
-                  onChangeEnd: (v) => _applyRate(v),
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${SettingsService.minVideoRate.toStringAsFixed(1)}×',
-                      style: const TextStyle(
-                        color: AppColors.mutedText,
-                        fontSize: 12,
-                      ),
+                  const Spacer(),
+                  Text(
+                    '${draft.toStringAsFixed(2)}×',
+                    style: const TextStyle(
+                      color: AppColors.accent,
+                      fontWeight: FontWeight.w600,
                     ),
-                    Text(
-                      '${SettingsService.maxVideoRate.toStringAsFixed(1)}×',
-                      style: const TextStyle(
-                        color: AppColors.mutedText,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final preset in const [0.5, 0.75, 1.0, 1.5, 2.0, 2.5, 3.0])
-                      ChoiceChip(
-                        label: Text('${preset.toStringAsFixed(2)}×'),
-                        selected: (draft - preset).abs() < 0.001,
-                        onSelected: (_) {
-                          setLocal(() => draft = preset);
-                          _applyRate(preset);
-                        },
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  '长按画面可临时加速（当前 '
-                  '${settings.videoLongPressRate.toStringAsFixed(2)}×，'
-                  '可在「视频播放设置」中调整）。',
-                  style: const TextStyle(
-                    color: AppColors.mutedText,
-                    fontSize: 12,
                   ),
+                ],
+              ),
+              Slider(
+                value: draft.clamp(
+                  SettingsService.minVideoRate,
+                  SettingsService.maxVideoRate,
                 ),
-              ],
-            ),
+                min: SettingsService.minVideoRate,
+                max: SettingsService.maxVideoRate,
+                divisions: SettingsService.videoRateDivisions,
+                label: '${draft.toStringAsFixed(2)}×',
+                onChanged: (v) => setLocal(() => draft = v),
+                onChangeEnd: (v) => _applyRate(v),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${SettingsService.minVideoRate.toStringAsFixed(1)}×',
+                    style: const TextStyle(
+                      color: AppColors.mutedText,
+                      fontSize: 12,
+                    ),
+                  ),
+                  Text(
+                    '${SettingsService.maxVideoRate.toStringAsFixed(1)}×',
+                    style: const TextStyle(
+                      color: AppColors.mutedText,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final preset in const [
+                    0.5,
+                    0.75,
+                    1.0,
+                    1.5,
+                    2.0,
+                    2.5,
+                    3.0,
+                  ])
+                    ChoiceChip(
+                      label: Text('${preset.toStringAsFixed(2)}×'),
+                      selected: (draft - preset).abs() < 0.001,
+                      onSelected: (_) {
+                        setLocal(() => draft = preset);
+                        _applyRate(preset);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '长按画面可临时加速（当前 '
+                '${settings.videoLongPressRate.toStringAsFixed(2)}×，'
+                '可在「视频播放设置」中调整）。',
+                style: const TextStyle(
+                  color: AppColors.mutedText,
+                  fontSize: 12,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1264,38 +1461,27 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   }
 
   // --- More settings sheet ----------------------------------------------
-
   Future<void> _showMoreSettings() async {
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      isScrollControlled: true,
+      shape: AppBottomSheet.shape,
       builder: (ctx) {
         final settings = ctx.watch<SettingsService>();
-        return SafeArea(
+        // Scrollable: this sheet has enough rows that its content exceeds a short
+        // window, which produced "RenderFlex overflowed by 16 pixels".
+        return AppBottomSheet(
+          padding: const EdgeInsets.only(bottom: 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppColors.divider,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const ListTile(
-                title: Text('更多设置'),
-                subtitle: Text('视频播放器'),
-              ),
+              const ListTile(title: Text('更多设置'), subtitle: Text('视频播放器')),
               const Divider(height: 1, color: AppColors.divider),
               SwitchListTile(
                 secondary: const Icon(Icons.lock_outline),
                 title: const Text('锁定屏幕'),
-                subtitle: const Text('锁定后隐藏控件并禁用手势'),
+                subtitle: const Text('锁定后隐藏控件并禁用手势；解锁需长按'),
                 value: _locked.value,
                 onChanged: (_) {
                   _toggleLock();
@@ -1343,7 +1529,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   _showGestureSettings();
                 },
               ),
-              const SizedBox(height: 8),
             ],
           ),
         );
@@ -1532,6 +1717,132 @@ class _GestureZone extends StatelessWidget {
   }
 }
 
+/// Fades + slides the control chrome in and out.
+///
+/// Appearing is deliberately faster than disappearing: a tap that takes long to
+/// show controls feels broken, while a slower fade-out looks intentional.
+/// [IgnorePointer] while hidden keeps the gesture layer underneath usable, and
+/// the child is never removed so the transition can actually run.
+class _AnimatedControls extends StatelessWidget {
+  const _AnimatedControls({required this.visible, required this.child});
+
+  final bool visible;
+  final Widget child;
+
+  static const _showDuration = Duration(milliseconds: 140);
+  static const _hideDuration = Duration(milliseconds: 240);
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedSlide(
+        offset: visible ? Offset.zero : const Offset(0, 0.04),
+        duration: visible ? _showDuration : _hideDuration,
+        curve: visible ? Curves.easeOut : Curves.easeIn,
+        child: AnimatedOpacity(
+          opacity: visible ? 1 : 0,
+          duration: visible ? _showDuration : _hideDuration,
+          curve: visible ? Curves.easeOut : Curves.easeIn,
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// Small buffering pill, kept above the centre so it never covers the picture's
+/// middle (and wrapped in IgnorePointer by the caller).
+class _BufferingBadge extends StatelessWidget {
+  const _BufferingBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Align(
+        alignment: const Alignment(0, -0.35),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 10),
+              Text(
+                '缓冲中…',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Full-screen dimmer shown while switching to another video in the queue, so
+/// the previous video's last frame is not mistaken for a frozen player.
+class _SwitchingOverlay extends StatelessWidget {
+  const _SwitchingOverlay({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.45),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                '正在打开',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Immutable snapshot of one 前进 / 后退 feedback animation.
 class _SeekFeedback {
   const _SeekFeedback({
@@ -1567,12 +1878,17 @@ class _SeekFeedbackPillState extends State<_SeekFeedbackPill>
   );
   late final Animation<double> _scale = TweenSequence<double>([
     TweenSequenceItem(
-      tween: Tween(begin: 0.82, end: 1.06)
-          .chain(CurveTween(curve: Curves.easeOutBack)),
+      tween: Tween(
+        begin: 0.82,
+        end: 1.06,
+      ).chain(CurveTween(curve: Curves.easeOutBack)),
       weight: 35,
     ),
     TweenSequenceItem(
-      tween: Tween(begin: 1.06, end: 1.0).chain(CurveTween(curve: Curves.easeOut)),
+      tween: Tween(
+        begin: 1.06,
+        end: 1.0,
+      ).chain(CurveTween(curve: Curves.easeOut)),
       weight: 20,
     ),
     TweenSequenceItem(tween: ConstantTween(1.0), weight: 45),
@@ -1671,24 +1987,28 @@ class _SpeedButton extends StatelessWidget {
         onPressed: onTap,
         style: TextButton.styleFrom(
           foregroundColor: Colors.white,
-          minimumSize: const Size(56, 40),
+          minimumSize: const Size(52, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
         ),
+        // One decimal reads better on a control bar than the slider's
+        // hundredths (1.0× instead of 1.00×).
         child: Text(
-          '${rate.toStringAsFixed(2)}×',
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          '${rate.toStringAsFixed(2).replaceAll(RegExp(r'0$'), '')}×',
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
       ),
     );
   }
 }
 
-/// Larger tap target used for the transport buttons.
-class _CenterIconButton extends StatelessWidget {
-  const _CenterIconButton({
+/// Transport button for the bottom bar: even 44px tap target, fixed width so the
+/// row stays balanced whether or not the queue buttons are present.
+class _TransportButton extends StatelessWidget {
+  const _TransportButton({
     required this.icon,
     required this.tooltip,
     required this.onTap,
-    this.size = 34,
+    this.size = 28,
   });
 
   final IconData icon;
@@ -1698,11 +2018,16 @@ class _CenterIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      iconSize: size,
-      icon: Icon(icon, color: Colors.white),
-      tooltip: tooltip,
-      onPressed: onTap,
+    return SizedBox(
+      width: 44,
+      height: 40,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        iconSize: size,
+        icon: Icon(icon, color: Colors.white),
+        tooltip: tooltip,
+        onPressed: onTap,
+      ),
     );
   }
 }

@@ -21,7 +21,7 @@ void main() {
 
     test('LibraryTrack.identityKey matches helper', () {
       final t = LibraryTrack(
-        accountId: 'x',
+        sourceName: 'x',
         remotePath: '/a/b.flac',
         fileName: 'b.flac',
       );
@@ -30,13 +30,13 @@ void main() {
 
     test('same filename different accounts are distinct library rows', () {
       final t1 = LibraryTrack(
-        accountId: 'a1',
+        sourceName: 'a1',
         remotePath: '/same/name.mp3',
         fileName: 'name.mp3',
         title: 'One',
       );
       final t2 = LibraryTrack(
-        accountId: 'a2',
+        sourceName: 'a2',
         remotePath: '/same/name.mp3',
         fileName: 'name.mp3',
         title: 'Two',
@@ -80,7 +80,7 @@ void main() {
     test('library record fields are independent of local audio path', () {
       // Metadata persistence does not store audio cache path — only cover thumb.
       final t = LibraryTrack(
-        accountId: 'acc',
+        sourceName: 'acc',
         remotePath: '/r/t.mp3',
         fileName: 't.mp3',
         title: 'Keep Me',

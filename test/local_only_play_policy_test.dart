@@ -12,7 +12,7 @@ void main() {
 
   test('library track identity uses effective audio path for cue members', () {
     final cue = LibraryTrack(
-      accountId: 'a1',
+      sourceName: 'a1',
       remotePath: '/album/disc.cue#cue:2',
       fileName: 'Track 02',
       cueRemotePath: '/album/disc.cue',
@@ -23,7 +23,7 @@ void main() {
     expect(cue.effectiveAudioRemotePath, '/album/disc.flac');
 
     final plain = LibraryTrack(
-      accountId: 'a1',
+      sourceName: 'a1',
       remotePath: '/album/song.mp3',
       fileName: 'song.mp3',
     );

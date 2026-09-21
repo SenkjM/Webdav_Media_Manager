@@ -53,6 +53,38 @@ extension VideoGestureActionX on VideoGestureAction {
   }
 }
 
+/// Whether subtitles are drawn.
+///
+/// There is deliberately no "inside the picture" mode any more: the player's
+/// control bars hug the picture's edges, so the only predictable place that
+/// never fights with them is **just above the bottom control bar** (and at the
+/// bottom of the window when the controls are hidden). Size is configurable in
+/// 视频播放设置.
+enum VideoSubtitlePosition {
+  /// Drawn above the bottom control bar (or at the window bottom when hidden).
+  visible,
+
+  /// Hidden entirely.
+  hidden,
+}
+
+extension VideoSubtitlePositionX on VideoSubtitlePosition {
+  String get storageKey => switch (this) {
+        VideoSubtitlePosition.visible => 'visible',
+        VideoSubtitlePosition.hidden => 'hidden',
+      };
+
+  String get labelZh => switch (this) {
+        VideoSubtitlePosition.visible => '显示字幕',
+        VideoSubtitlePosition.hidden => '不显示',
+      };
+
+  static VideoSubtitlePosition fromStorageKey(String? key) =>
+      key == 'hidden'
+          ? VideoSubtitlePosition.hidden
+          : VideoSubtitlePosition.visible;
+}
+
 /// Default primary (tap) action for a video file in the network library.
 enum VideoTapAction {
   /// Stream the video from WebDAV and open the player.

@@ -121,7 +121,7 @@ class VideoQueueController extends ChangeNotifier {
         if (_cancelled) return;
         final dir = pending.removeAt(0);
         try {
-          final items = await _webDav.listDirectory(dir, fileTypes: _fileTypes);
+          final items = await _webDav.listDirectory(accountId, dir, fileTypes: _fileTypes);
           final videos = items.where((e) => e.isVideo).toList();
           final dirs = items.where((e) => e.isDirectory).map((e) => e.path);
           pending.addAll(dirs);

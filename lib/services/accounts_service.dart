@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/webdav_account.dart';
 import '../utils/credential_vault_crypto.dart';
+import '../utils/track_identity.dart';
 import 'library_database.dart';
 
 /// Multi-WebDAV account management. Passwords in secure storage.
@@ -47,6 +48,49 @@ class AccountsService extends ChangeNotifier {
     } catch (_) {
       return _accounts.isEmpty ? null : _accounts.first;
     }
+  }
+
+  /// Resolve a library row's binding point (the disk **name**) to a local account.
+  ///
+  /// The name is the only thing the cloud library and backups carry — URL,
+  /// username and password stay in this table. A name that has no local account
+  /// means the row is "unbound": it can be listed, but not played or downloaded
+  /// until the user adds/renames a disk to match.
+  WebDavAccount? accountForSource(String sourceName) {
+    final wanted = normalizeSourceName(sourceName);
+    if (wanted.isEmpty) return null;
+    for (final a in _accounts) {
+      if (normalizeSourceName(a.name) == wanted) return a;
+    }
+    return null;
+  }
+
+  String? idForSource(String sourceName) => accountForSource(sourceName)?.id;
+
+  /// Whether a library row bound to [sourceName] can actually transfer bytes.
+  bool isSourceBound(String sourceName) => accountForSource(sourceName) != null;
+
+  /// Reverse lookup: a WebDAV account id → the library binding name.
+  String? nameForAccount(String accountId) {
+    for (final a in _accounts) {
+      if (a.id == accountId) return a.name;
+    }
+    return null;
+  }
+
+  /// Disk names already taken (used to warn about the single binding point).
+  List<String> get sourceNames =>
+      [for (final a in _accounts) a.name.trim()];
+
+  /// An account that already uses [name] (case-insensitive), if any.
+  WebDavAccount? accountNamed(String name, {String? exceptId}) {
+    final wanted = normalizeSourceName(name).toLowerCase();
+    if (wanted.isEmpty) return null;
+    for (final a in _accounts) {
+      if (a.id == exceptId) continue;
+      if (normalizeSourceName(a.name).toLowerCase() == wanted) return a;
+    }
+    return null;
   }
 
   bool get hasAccounts => _accounts.isNotEmpty;

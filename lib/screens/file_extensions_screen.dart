@@ -1,3 +1,4 @@
+import '../utils/app_snack.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,7 +7,6 @@ import '../models/video_settings.dart';
 import '../providers/app_state.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
-import 'home_shell.dart';
 
 /// Manage which file extensions are treated as music / video / CUE, plus the
 /// default tap action for music & video files in the network library.
@@ -33,12 +33,15 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
 
   void _syncFromSettings() {
     final settings = context.read<SettingsService>();
-    _musicController.text =
-        FileTypeConfig.displayList(settings.fileTypes.musicExtensions);
-    _videoController.text =
-        FileTypeConfig.displayList(settings.fileTypes.videoExtensions);
-    _cueController.text =
-        FileTypeConfig.displayList(settings.fileTypes.cueExtensions);
+    _musicController.text = FileTypeConfig.displayList(
+      settings.fileTypes.musicExtensions,
+    );
+    _videoController.text = FileTypeConfig.displayList(
+      settings.fileTypes.videoExtensions,
+    );
+    _cueController.text = FileTypeConfig.displayList(
+      settings.fileTypes.cueExtensions,
+    );
   }
 
   @override
@@ -72,9 +75,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     // previous extension list after the user edits it here.
     if (mounted) context.read<AppState>().refreshFileTypeClassifiers();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('后缀配置已保存')),
-    );
+    AppSnack.show(context, '后缀配置已保存');
   }
 
   void _restoreDefault(FileCategory category) {
@@ -101,10 +102,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(
-        leading: const DrawerMenuButton(),
-        title: const Text('文件后缀管理'),
-      ),
+      appBar: AppBar(title: const Text('文件后缀管理')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -201,7 +199,10 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
             ),
             Text(
               subtitle,
-              style: const TextStyle(color: AppColors.secondaryText, fontSize: 12),
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 12,
+              ),
             ),
             const SizedBox(height: 8),
             TextField(

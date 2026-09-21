@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/library_track.dart';
 import '../utils/cue_sheet.dart';
+import '../utils/rev_clock.dart';
 import '../utils/track_identity.dart';
 import 'cover_service.dart';
 import 'library_database.dart';
@@ -15,6 +17,95 @@ import 'tag_service.dart';
 /// Local music library: indexes tracks that have been cached at least once.
 /// Metadata + cover thumbs persist across audio-cache deletion.
 class LibraryService extends ChangeNotifier {
+  /// Monotonic version source; every locally-created or locally-changed row is
+  /// stamped with it so sync has a single comparable field.
+  RevClock? _revClock;
+
+  /// Wire the clock (AppState.init) — falls back to the wall clock when absent.
+  void attachRevClock(RevClock clock) => _revClock = clock;
+
+  /// Sync cursor for one remote: how far we have consumed, plus the parts we
+  /// already read (so a pull only fetches what is new).
+  Future<({int lastSeq, int baseUpTo, Map<String, int> parts})> loadSyncCursor(
+    String remoteKey,
+  ) async {
+    final row = await _db.loadSyncState(remoteKey);
+    if (row == null) return (lastSeq: 0, baseUpTo: 0, parts: <String, int>{});
+    final parts = <String, int>{};
+    try {
+      final decoded = jsonDecode(row['parts'] as String? ?? '{}');
+      if (decoded is Map) {
+        decoded.forEach((k, v) {
+          if (k is String) parts[k] = (v as num?)?.toInt() ?? 0;
+        });
+      }
+    } catch (_) {
+      // A corrupt cursor only costs one full re-read.
+    }
+    return (
+      lastSeq: (row['last_seq'] as num?)?.toInt() ?? 0,
+      baseUpTo: (row['base_up_to'] as num?)?.toInt() ?? 0,
+      parts: parts,
+    );
+  }
+
+  Future<void> saveSyncCursor({
+    required String remoteKey,
+    required int lastSeq,
+    required int baseUpTo,
+    required Map<String, int> parts,
+  }) => _db.saveSyncState(
+    remoteKey: remoteKey,
+    lastSeq: lastSeq,
+    baseUpTo: baseUpTo,
+    parts: jsonEncode(parts),
+  );
+
+  Future<void> clearSyncCursor() => _db.clearSyncState();
+
+  /// Adopt an externally observed rev (a row pulled from the cloud) so the next
+  /// local write cannot go backwards relative to it.
+  void observeRev(int rev) => _revClock?.observe(rev);
+
+  /// Deletions made here that the cloud has not been told about yet.
+  Future<List<Map<String, dynamic>>> pendingTombstones() =>
+      _db.unpushedTombstones();
+
+  /// Mark the given tombstone revs as published.
+  Future<void> markTombstonesPushed(Set<int> revs) =>
+      _db.markTombstonesPushed(revs);
+
+  /// Drop tombstones that a rebuild has materialised (`rev <= upTo`).
+  Future<int> purgeTombstonesUpTo(int upTo) => _db.purgeTombstonesUpTo(upTo);
+
+  /// Forget tombstones for rows that were re-downloaded (they are alive again).
+  Future<void> clearTombstones(Set<int> revs) async {
+    if (revs.isEmpty) return;
+    final rows = await _db.allTombstones();
+    for (final row in rows) {
+      final rev = (row['rev'] as num?)?.toInt() ?? 0;
+      if (!revs.contains(rev)) continue;
+      await _db.clearTombstone(
+        row['source_name'] as String? ?? '',
+        row['remote_path'] as String? ?? '',
+      );
+    }
+  }
+
+  int _nextRev() =>
+      _revClock?.next() ?? DateTime.now().millisecondsSinceEpoch;
+
+  /// Record a tombstone so a destroyed song is not pulled back by sync.
+  ///
+  /// Only *destruction* / removal writes one: dropping just the audio cache keeps
+  /// the metadata and the song stays in the library.
+  Future<void> recordTombstone(String sourceName, String remotePath) async {
+    await _db.upsertTombstone(
+      sourceName: sourceName,
+      remotePath: remotePath,
+      rev: _nextRev(),
+    );
+  }
   LibraryService({
     LibraryDatabase? db,
     TagService? tags,
@@ -64,8 +155,8 @@ class LibraryService extends ChangeNotifier {
   }
 
 
-  List<LibraryTrack> tracksForAccount(String accountId) =>
-      _tracks.where((t) => t.accountId == accountId).toList();
+  List<LibraryTrack> tracksForSource(String sourceName) =>
+      _tracks.where((t) => t.sourceName == sourceName).toList();
 
   /// Upsert tracks from a sync/backup payload; only touches listed rows.
   Future<void> upsertTracks(Iterable<LibraryTrack> tracks) async {
@@ -74,7 +165,7 @@ class LibraryService extends ChangeNotifier {
       final idx = _tracks.indexWhere(
         (t) =>
             t.musicId == track.musicId ||
-            (t.accountId == track.accountId && t.remotePath == track.remotePath),
+            (t.sourceName == track.sourceName && t.remotePath == track.remotePath),
       );
       if (idx >= 0) {
         _tracks[idx] = track;
@@ -85,13 +176,13 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Replace all local tracks for [accountId] with [tracks] (other accounts untouched).
+  /// Replace all local tracks for [sourceName] with [tracks] (other accounts untouched).
   Future<void> replaceTracksForAccount(
-    String accountId,
+    String sourceName,
     List<LibraryTrack> tracks,
   ) async {
-    await _db.deleteTracksForAccount(accountId);
-    _tracks.removeWhere((t) => t.accountId == accountId);
+    await _db.deleteTracksForSource(sourceName);
+    _tracks.removeWhere((t) => t.sourceName == sourceName);
     for (final track in tracks) {
       await _db.upsertTrack(track);
       _tracks.add(track);
@@ -99,10 +190,10 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
-  LibraryTrack? find(String accountId, String remotePath) {
+  LibraryTrack? find(String sourceName, String remotePath) {
     try {
       return _tracks.firstWhere(
-        (t) => t.accountId == accountId && t.remotePath == remotePath,
+        (t) => t.sourceName == sourceName && t.remotePath == remotePath,
       );
     } catch (_) {
       return null;
@@ -154,7 +245,7 @@ class LibraryService extends ChangeNotifier {
   /// the user's configured music extensions); this does not re-check against a
   /// hard-coded list, which used to reject configured formats like `.m4a`.
   Future<LibraryTrack> ingestDownloaded({
-    required String accountId,
+    required String sourceName,
     required String remotePath,
     required String fileName,
     required String localPath,
@@ -164,19 +255,19 @@ class LibraryService extends ChangeNotifier {
     String? coverPath;
     if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
       coverPath = await _covers.saveThumb(
-        accountId: accountId,
+        sourceName: sourceName,
         remotePath: remotePath,
         bytes: read.coverBytes!,
       );
       // Best-effort full-res cache for library UI when file is local.
       await _covers.saveFull(
-        accountId: accountId,
+        sourceName: sourceName,
         remotePath: remotePath,
         bytes: read.coverBytes!,
       );
     } else {
       // Keep previous thumb if re-download has no art.
-      final existing = await _db.getTrack(accountId, remotePath);
+      final existing = await _db.getTrack(sourceName, remotePath);
       coverPath = existing?.coverPath;
       if (coverPath != null && !File(coverPath).existsSync()) {
         coverPath = null;
@@ -184,7 +275,7 @@ class LibraryService extends ChangeNotifier {
     }
 
     final track = LibraryTrack(
-      accountId: accountId,
+      sourceName: sourceName,
       remotePath: remotePath,
       fileName: fileName,
       title: read.title,
@@ -206,7 +297,7 @@ class LibraryService extends ChangeNotifier {
     );
     await _db.upsertTrack(track);
     final idx = _tracks.indexWhere(
-      (t) => t.accountId == accountId && t.remotePath == remotePath,
+      (t) => t.sourceName == sourceName && t.remotePath == remotePath,
     );
     if (idx >= 0) {
       _tracks[idx] = track;
@@ -219,7 +310,7 @@ class LibraryService extends ChangeNotifier {
 
 
   Future<List<LibraryTrack>> ingestCueAlbum({
-    required String accountId,
+    required String sourceName,
     required String cueRemotePath,
     required CueSheet sheet,
     required String cacheGroupId,
@@ -228,9 +319,9 @@ class LibraryService extends ChangeNotifier {
     final now = DateTime.now();
     // Replace the whole CUE group so clear-cache + re-download cannot leave
     // orphan virtual rows or a leftover standalone audio row (+1 drift).
-    await _db.deleteTracksForCue(accountId, cueRemotePath);
+    await _db.deleteTracksForCue(sourceName, cueRemotePath);
     _tracks.removeWhere(
-      (t) => t.accountId == accountId && t.cueRemotePath == cueRemotePath,
+      (t) => t.sourceName == sourceName && t.cueRemotePath == cueRemotePath,
     );
     final audioRemotes = sheet.audioRemotePaths(cueRemotePath);
     final fileTags = <String, ReadTags>{};
@@ -273,14 +364,14 @@ class LibraryService extends ChangeNotifier {
       String? coverPath;
       final bytes = coverSource?.coverBytes ?? fileTag.coverBytes;
       if (bytes != null && bytes.isNotEmpty) {
-        coverPath = await _covers.saveThumb(accountId: accountId, remotePath: virtualPath, bytes: bytes);
-        await _covers.saveFull(accountId: accountId, remotePath: resolved, bytes: bytes);
+        coverPath = await _covers.saveThumb(sourceName: sourceName, remotePath: virtualPath, bytes: bytes);
+        await _covers.saveFull(sourceName: sourceName, remotePath: resolved, bytes: bytes);
       }
-      final audioMid = musicIdForRemote(accountId, resolved);
-      final sliceMid = musicIdForCueSlice(accountId, cueRemotePath, ct.number);
+      final audioMid = musicIdForRemote(sourceName, resolved);
+      final sliceMid = musicIdForCueSlice(sourceName, cueRemotePath, ct.number);
       final track = LibraryTrack(
         musicId: sliceMid,
-        accountId: accountId,
+        sourceName: sourceName,
         remotePath: virtualPath,
         fileName: merged.title ?? ct.title ?? '${ct.number}',
         title: merged.title,
@@ -295,7 +386,7 @@ class LibraryService extends ChangeNotifier {
         bitrate: fileTag.bitrate,
         sampleRate: fileTag.sampleRate,
         coverPath: coverPath,
-        cueId: cueIdFor(accountId, cueRemotePath),
+        cueId: cueIdFor(sourceName, cueRemotePath),
         cueRemotePath: cueRemotePath,
         cueTrackIndex: ct.number,
         audioMusicId: audioMid,
@@ -305,9 +396,10 @@ class LibraryService extends ChangeNotifier {
         cacheGroupId: cacheGroupId,
         lastDownloadedAt: now,
         lastTagReadAt: now,
+        rev: _nextRev(),
       );
       await _db.upsertTrack(track);
-      final idx = _tracks.indexWhere((x) => x.accountId == accountId && x.remotePath == virtualPath);
+      final idx = _tracks.indexWhere((x) => x.sourceName == sourceName && x.remotePath == virtualPath);
       if (idx >= 0) {
         _tracks[idx] = track;
       } else {
@@ -319,8 +411,8 @@ class LibraryService extends ChangeNotifier {
     // (e.g. ensureQueued ingested audio without a cue group id).
     final removePaths = <String>{cueRemotePath, ...audioRemotes};
     for (final path in removePaths) {
-      await _db.deleteTrack(accountId, path);
-      _tracks.removeWhere((t) => t.accountId == accountId && t.remotePath == path);
+      await _db.deleteTrack(sourceName, path);
+      _tracks.removeWhere((t) => t.sourceName == sourceName && t.remotePath == path);
     }
     // Also drop any row whose audioRemotePath is one of this album's files but
     // is not one of the virtual paths we just wrote (stale / wrong keys).
@@ -328,7 +420,7 @@ class LibraryService extends ChangeNotifier {
     final stale = _tracks
         .where(
           (t) =>
-              t.accountId == accountId &&
+              t.sourceName == sourceName &&
               !keepVirtual.contains(t.remotePath) &&
               (t.cueRemotePath == cueRemotePath ||
                   (t.audioRemotePath != null &&
@@ -337,9 +429,9 @@ class LibraryService extends ChangeNotifier {
         )
         .toList();
     for (final t in stale) {
-      await _db.deleteTrack(t.accountId, t.remotePath);
+      await _db.deleteTrack(t.sourceName, t.remotePath);
       _tracks.removeWhere(
-        (x) => x.accountId == t.accountId && x.remotePath == t.remotePath,
+        (x) => x.sourceName == t.sourceName && x.remotePath == t.remotePath,
       );
     }
 
@@ -496,20 +588,25 @@ class LibraryService extends ChangeNotifier {
     for (final t in list) {
       removedIds.add(t.musicId);
       if (t.isCueVirtual && t.cueRemotePath != null) {
-        cuePaths.add('${t.accountId}\u0000${t.cueRemotePath}');
+        cuePaths.add('${t.sourceName}\u0000${t.cueRemotePath}');
       }
+    }
+    // Tombstones first, so a sync that runs while we delete still learns about
+    // the removal (and cannot pull the song back).
+    for (final t in list) {
+      await recordTombstone(t.sourceName, t.remotePath);
     }
     // Cover thumbs + full-res covers live per identity; collect them before
     // deleting rows.
     for (final t in list) {
-      await _covers.deleteThumb(t.accountId, t.remotePath);
-      await _covers.deleteFull(t.accountId, t.remotePath);
+      await _covers.deleteThumb(t.sourceName, t.remotePath);
+      await _covers.deleteFull(t.sourceName, t.remotePath);
     }
     for (final t in list) {
       if (t.isCueVirtual && t.cueRemotePath != null) {
-        await _db.deleteTracksForCue(t.accountId, t.cueRemotePath!);
+        await _db.deleteTracksForCue(t.sourceName, t.cueRemotePath!);
       } else {
-        await _db.deleteTrack(t.accountId, t.remotePath);
+        await _db.deleteTrack(t.sourceName, t.remotePath);
       }
     }
     _tracks.removeWhere(
@@ -517,14 +614,15 @@ class LibraryService extends ChangeNotifier {
           removedIds.contains(t.musicId) ||
           (t.isCueVirtual &&
               t.cueRemotePath != null &&
-              cuePaths.contains('${t.accountId}\u0000${t.cueRemotePath}')),
+              cuePaths.contains('${t.sourceName}\u0000${t.cueRemotePath}')),
     );
     notifyListeners();
   }
 
-  Future<void> removeTrack(String accountId, String remotePath) async {
-    await _db.deleteTrack(accountId, remotePath);
-    _tracks.removeWhere((t) => t.accountId == accountId && t.remotePath == remotePath);
+  Future<void> removeTrack(String sourceName, String remotePath) async {
+    await recordTombstone(sourceName, remotePath);
+    await _db.deleteTrack(sourceName, remotePath);
+    _tracks.removeWhere((t) => t.sourceName == sourceName && t.remotePath == remotePath);
     notifyListeners();
   }
 

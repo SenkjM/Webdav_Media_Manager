@@ -13,7 +13,7 @@ void main() {
     test('builds MediaItem with id title artist', () {
       final handler = MusicAudioHandler(player: Player());
       final track = TrackInfo(
-        accountId: 'acc',
+        sourceName: 'acc',
         remotePath: '/m/song.mp3',
         fileName: 'song.mp3',
         localPath: '/tmp/song.mp3',
@@ -34,7 +34,7 @@ void main() {
     test('artUri null when cover missing', () {
       final handler = MusicAudioHandler(player: Player());
       final track = TrackInfo(
-        accountId: 'acc',
+        sourceName: 'acc',
         remotePath: '/m/song.mp3',
         fileName: 'song.mp3',
         coverPath: '/no/such/cover.jpg',
@@ -52,7 +52,7 @@ void main() {
         if (tmp.existsSync()) tmp.deleteSync();
       });
       final track = TrackInfo(
-        accountId: 'acc',
+        sourceName: 'acc',
         remotePath: '/m/song.mp3',
         fileName: 'song.mp3',
         coverPath: tmp.path,

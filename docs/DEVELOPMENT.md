@@ -105,15 +105,24 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 | 系统相册 / 下载目录 / SAF 导入 / PiP 回调（原生） | `android/.../MainActivity.kt`, `services/platform_export_service.dart`, `utils/video_pip.dart` |
 | music_id / 路径规范化 | `utils/track_identity.dart` |
 | **音乐/视频后缀判定（单一真相）** | `models/file_type_config.dart`；下载队列用 `configureFileTypes` 注入，**禁止**再写硬编码后缀列表 |
-| DB schema（accounts/tracks/cue_*/cache） | `library_database.dart`（当前 **schemaVersion = 5**） |
+| DB schema（accounts/tracks/cue_*/cache/deleted_tracks/sync_state） | `library_database.dart`、`download_store.dart`；`tracks`/`cue_*` 用 `source_name` + `rev`，删除走独立表 `deleted_tracks`（不做软删列），同步游标在 `sync_state`。**不写迁移分支**：`onUpgrade` 直接 drop + 重建 |
 | 网络库 UI / 预览 CUE / 多选下载 | `network_library_screen.dart` |
 | 音乐库 UI / 销毁 / 多选删除与销毁 | `library_screen.dart`, `library_actions.dart` |
 | 缓存路径 / 过期清理 / annex | `cache_service.dart` |
 | **同步 / 备份（凭证 + 曲库 + 歌单 + 归档）** | `sync_service.dart`, `screens/sync_screen.dart`, `backup_service.dart` |
+| **音乐库增量索引（清单 + 二进制分片）** | `services/library_sync_store.dart`（`index.json` 清单 + `lib-*.wmp` 基础分片 + `seg-*.wmp` 增量 + `del-*.wmp` 墓碑；**无自动合并**，≥20 片由 UI 建议重建）、`services/library_shard_codec.dart`（曲目/墓碑 ⇄ 容器记录、封面每首一份）、`utils/library_index_merge.dart`（纯合并函数） |
+| **曲目身份 = 网盘名 + remote_path** | `utils/track_identity.dart`；行内**不含 URL / 用户名**，`网盘名 → url/用户名/密码` 只由本机 accounts 表解析（`AccountsService.accountForSource` / `idForSource` / `nameForAccount`） |
+| **下载队列只存网盘名** | `DownloadTask.sourceName`；`DownloadQueueService._accountIdForSource` 在真正传输时才解析账号，改名/重加网盘不会留下过期指针 |
+| **二进制容器（云端分片 + 备份归档）** | `utils/wmp_container.dart`：'WMPC' 头 + section 表 + 每 section CRC32；META/TRACKS/COVERS/TOMBS/CREDENTIALS/PLAYLISTS/SETTINGS/**CUEALBUMS**；曲目记录 tag-value varint；封面**每首一份**、连续排布便于按需 seek |
+| **备份归档 `.wmpbak` = 同一容器** | `backup_service.dart`：TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections；整包可选口令加密。`buildJsonExport()` 另出**可读 JSON（不含封面）**排障用；导入按魔数自动识别容器 / JSON（**不再用 ZIP**，`archive` 依赖已移除） |
+| **云端库整理 / 审计** | `library_sync_store.dart`(`audit`/`deleteOrphans`, 纯函数 `auditLibraryParts`)：孤儿文件、缺失分片；UI 在同步页「整理」 |
+| **单增版本时钟 rev** | `utils/rev_clock.dart`：`rev = max(nowMs, last+1)`，严格单增、时钟回拨不回退；`compareRev` 版本相同时按 deviceId 决胜 |
 | 凭证加密（仅密码） | `utils/credential_vault_crypto.dart`, `credential_vault_service.dart` |
 | 分享重命名 | `share_rename_service.dart`, `library_actions.dart`；配置在 `settings_screen.dart` |
 | 设置（缓存策略、封面边长、视频倍速、分享模板） | `settings_service.dart`, `settings_screen.dart`, `video_settings_screen.dart` |
 | 通知权限 / 「音乐播放」通道 | `notification_permission_service.dart`, `media_notification_channel.dart` |
+| 下载进度 / 完成通知（两级进度条） | `download_notification_service.dart`, `download_queue_service.dart` |
+| 凭证 / 备份加密密钥（用户指定） | `settings_service.dart`(`vaultPassphrase`, Keystore), `sync_screen.dart`, `credential_vault_crypto.dart` |
 | 根返回键后台 / 抽屉退出 | `home_shell.dart`, `android_background.dart`, `MainActivity.kt` |
 
 ### 导航壳
@@ -406,7 +415,9 @@ lib/services/music_audio_handler.dart  # 媒体会话；media_kit Player；clip 
 lib/services/media_notification_channel.dart # 「音乐播放」通道唯一定义（须与 AudioServiceConfig 同步）
 lib/services/notification_permission_service.dart # flutter_local_notifications：建通道 + 权限/通道状态
 lib/services/audio_player_service.dart # 仅本地播放门面
-lib/services/download_queue_service.dart
+lib/services/download_queue_service.dart # 队列；跨账号下载；通知聚合（_sessionIds 只算本轮）
+lib/services/download_notification_service.dart # 两级进度（当前文件 2001 / 整批 2002）+ 完成 2003
+lib/utils/app_snack.dart               # 单槽 SnackBar（去重 / 覆盖 / 点消息消失 / 可关闭）
 lib/services/library_service.dart      # ingestCueAlbum 等
 lib/services/library_database.dart     # schema v5
 lib/services/cache_service.dart

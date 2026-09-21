@@ -39,27 +39,27 @@ class CoverService {
     return _coversFullDir!;
   }
 
-  String coverFileName(String accountId, String remotePath) {
-    return '${identityHashStem(accountId, remotePath)}.jpg';
+  String coverFileName(String sourceName, String remotePath) {
+    return '${identityHashStem(sourceName, remotePath)}.jpg';
   }
 
-  Future<File> coverFile(String accountId, String remotePath) async {
+  Future<File> coverFile(String sourceName, String remotePath) async {
     final dir = await coversDir;
-    return File(p.join(dir.path, coverFileName(accountId, remotePath)));
+    return File(p.join(dir.path, coverFileName(sourceName, remotePath)));
   }
 
   /// Transcode/resize [bytes] to square JPEG and write under covers/.
   /// Uses [size] or [thumbSize] (Settings). Returns local path, or null if
   /// [bytes] could not be decoded.
   Future<String?> saveThumb({
-    required String accountId,
+    required String sourceName,
     required String remotePath,
     required Uint8List bytes,
     int? size,
   }) async {
     final thumb = resizeCoverToThumb(bytes, size: size ?? thumbSize);
     if (thumb == null) return null;
-    final file = await coverFile(accountId, remotePath);
+    final file = await coverFile(sourceName, remotePath);
     await file.writeAsBytes(thumb, flush: true);
     return file.path;
   }
@@ -94,13 +94,13 @@ class CoverService {
 
   /// Persist original cover bytes under covers_full/ (not resized).
   Future<String?> saveFull({
-    required String accountId,
+    required String sourceName,
     required String remotePath,
     required Uint8List bytes,
   }) async {
     if (bytes.isEmpty) return null;
     final dir = await coversFullDir;
-    final stem = identityHashStem(accountId, remotePath);
+    final stem = identityHashStem(sourceName, remotePath);
     final ext = _extensionForBytes(bytes);
     // Remove prior variants so only one full cover remains.
     await for (final entity in dir.list()) {
@@ -119,10 +119,10 @@ class CoverService {
   }
 
   /// Sync lookup of a previously saved full-res cover (null if missing / not ready).
-  String? fullCoverPathSync(String accountId, String remotePath) {
+  String? fullCoverPathSync(String sourceName, String remotePath) {
     final dir = _coversFullDir;
     if (dir == null) return null;
-    final stem = identityHashStem(accountId, remotePath);
+    final stem = identityHashStem(sourceName, remotePath);
     for (final ext in const ['jpg', 'jpeg', 'png', 'webp']) {
       final f = File(p.join(dir.path, '$stem.$ext'));
       if (f.existsSync()) return f.path;
@@ -131,11 +131,11 @@ class CoverService {
   }
 
   Future<String?> fullCoverPath(
-    String accountId,
+    String sourceName,
     String remotePath,
   ) async {
     final dir = await coversFullDir;
-    final stem = identityHashStem(accountId, remotePath);
+    final stem = identityHashStem(sourceName, remotePath);
     for (final ext in const ['jpg', 'jpeg', 'png', 'webp']) {
       final f = File(p.join(dir.path, '$stem.$ext'));
       if (await f.exists()) return f.path;
@@ -143,8 +143,8 @@ class CoverService {
     return null;
   }
 
-  Future<void> deleteThumb(String accountId, String remotePath) async {
-    final file = await coverFile(accountId, remotePath);
+  Future<void> deleteThumb(String sourceName, String remotePath) async {
+    final file = await coverFile(sourceName, remotePath);
     if (await file.exists()) {
       try {
         await file.delete();
@@ -152,9 +152,9 @@ class CoverService {
     }
   }
 
-  Future<void> deleteFull(String accountId, String remotePath) async {
+  Future<void> deleteFull(String sourceName, String remotePath) async {
     final dir = await coversFullDir;
-    final stem = identityHashStem(accountId, remotePath);
+    final stem = identityHashStem(sourceName, remotePath);
     await for (final entity in dir.list()) {
       if (entity is File && p.basename(entity.path).startsWith('$stem.')) {
         try {

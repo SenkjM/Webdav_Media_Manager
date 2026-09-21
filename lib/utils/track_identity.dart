@@ -2,10 +2,17 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
-/// Unique binding between a network disk account and a remote path
-/// (legacy / playlist key — not the stable [musicId]).
-String trackIdentityKey(String accountId, String remotePath) {
-  return '$accountId\u0000$remotePath';
+/// Identity of a library row is **`网盘名 + remote_path`**.
+///
+/// The URL, username and password deliberately do **not** participate: they live
+/// only in the local WebDAV account table, so the cloud library and backups can
+/// be moved to a different backing disk without rewriting anything. The disk
+/// *name* is the single binding point, which is why renaming an account is
+/// treated as "a different disk".
+
+/// Legacy-ish composite key (playlists / UI maps).
+String trackIdentityKey(String sourceName, String remotePath) {
+  return '$sourceName\u0000$remotePath';
 }
 
 /// Normalize remote paths so music_id stays stable across slash variants.
@@ -19,34 +26,43 @@ String normalizeRemotePath(String path) {
   return out;
 }
 
+/// Normalize a disk name so trailing spaces / inner runs don't split identity.
+String normalizeSourceName(String name) {
+  return name.trim().replaceAll(RegExp(r'\s+'), ' ');
+}
+
 /// Stable offline music_id for a normal (non-CUE-slice) track.
-/// `hash(accountId + normalized remotePath)` — NOT a content hash of audio bytes.
-String musicIdForRemote(String accountId, String remotePath) {
-  final key = '$accountId\u0000${normalizeRemotePath(remotePath)}';
+/// `hash(网盘名 + normalized remotePath)` — NOT a content hash of audio bytes.
+String musicIdForRemote(String sourceName, String remotePath) {
+  final key =
+      '${normalizeSourceName(sourceName)}\u0000${normalizeRemotePath(remotePath)}';
   return sha1.convert(utf8.encode(key)).toString();
 }
 
 /// Stable offline music_id for a CUE virtual slice.
-/// `hash(accountId + cuePath + trackIndex)`.
+/// `hash(网盘名 + cuePath + trackIndex)`.
 String musicIdForCueSlice(
-  String accountId,
+  String sourceName,
   String cueRemotePath,
   int trackIndex,
 ) {
   final key =
-      '$accountId\u0000${normalizeRemotePath(cueRemotePath)}\u0000$trackIndex';
+      '${normalizeSourceName(sourceName)}\u0000'
+      '${normalizeRemotePath(cueRemotePath)}\u0000$trackIndex';
   return sha1.convert(utf8.encode(key)).toString();
 }
 
-/// Cue album identity: `hash("cue" + accountId + cuePath)`.
-String cueIdFor(String accountId, String cueRemotePath) {
-  final key = 'cue\u0000$accountId\u0000${normalizeRemotePath(cueRemotePath)}';
+/// Cue album identity: `hash("cue" + 网盘名 + cuePath)`.
+String cueIdFor(String sourceName, String cueRemotePath) {
+  final key =
+      'cue\u0000${normalizeSourceName(sourceName)}\u0000'
+      '${normalizeRemotePath(cueRemotePath)}';
   return sha1.convert(utf8.encode(key)).toString();
 }
 
 /// Resolve music_id for a library row (normal or CUE slice).
 String musicIdForLibraryRow({
-  required String accountId,
+  required String sourceName,
   required String remotePath,
   String? cueRemotePath,
   int? cueTrackIndex,
@@ -54,14 +70,14 @@ String musicIdForLibraryRow({
   if (cueTrackIndex != null &&
       cueRemotePath != null &&
       cueRemotePath.isNotEmpty) {
-    return musicIdForCueSlice(accountId, cueRemotePath, cueTrackIndex);
+    return musicIdForCueSlice(sourceName, cueRemotePath, cueTrackIndex);
   }
-  return musicIdForRemote(accountId, remotePath);
+  return musicIdForRemote(sourceName, remotePath);
 }
 
 /// Stable short stem for cache / cover file names (first 16 of music_id).
-String identityHashStem(String accountId, String remotePath) {
-  return musicIdForRemote(accountId, remotePath).substring(0, 16);
+String identityHashStem(String sourceName, String remotePath) {
+  return musicIdForRemote(sourceName, remotePath).substring(0, 16);
 }
 
 const String cueVirtualMarker = '#cue:';
@@ -83,5 +99,6 @@ bool isCueVirtualRemotePath(String remotePath) =>
   return (audioRemotePath: audio, cueTrackIndex: idx);
 }
 
-String cueCacheGroupId(String accountId, String cueRemotePath) =>
-    'cue\u0000$accountId\u0000${normalizeRemotePath(cueRemotePath)}';
+String cueCacheGroupId(String sourceName, String cueRemotePath) =>
+    'cue\u0000${normalizeSourceName(sourceName)}\u0000'
+    '${normalizeRemotePath(cueRemotePath)}';

@@ -5,15 +5,15 @@ import 'package:webdav_music_player/models/library_track.dart';
 List<LibraryTrack> mergeTracksForTest({
   required List<LibraryTrack> local,
   required List<LibraryTrack> remote,
-  required String accountId,
+  required String sourceName,
 }) {
   final map = <String, LibraryTrack>{};
   for (final t in local) {
-    if (t.accountId != accountId) continue;
+    if (t.sourceName != sourceName) continue;
     map[t.remotePath] = t;
   }
   for (final r in remote) {
-    if (r.accountId != accountId) continue;
+    if (r.sourceName != sourceName) continue;
     final l = map[r.remotePath];
     if (l == null) {
       map[r.remotePath] = r;
@@ -35,10 +35,10 @@ LibraryTrack track({
   required DateTime tagAt,
   String? title,
   String? cover,
-  String accountId = 'acc-a',
+  String sourceName = 'acc-a',
 }) {
   return LibraryTrack(
-    accountId: accountId,
+    sourceName: sourceName,
     remotePath: path,
     fileName: path.split('/').last,
     title: title,
@@ -61,7 +61,7 @@ void main() {
       final merged = mergeTracksForTest(
         local: local,
         remote: remote,
-        accountId: 'acc-a',
+        sourceName: 'acc-a',
       );
       final byPath = {for (final t in merged) t.remotePath: t};
       expect(byPath['/a.mp3']!.title, 'Remote');
@@ -77,16 +77,16 @@ void main() {
           path: '/a.mp3',
           tagAt: DateTime.utc(2026, 9, 1),
           title: 'Other',
-          accountId: 'acc-b',
+          sourceName: 'acc-b',
         ),
       ];
       final merged = mergeTracksForTest(
         local: local,
         remote: remote,
-        accountId: 'acc-a',
+        sourceName: 'acc-a',
       );
       expect(merged.single.title, isNull);
-      expect(merged.single.accountId, 'acc-a');
+      expect(merged.single.sourceName, 'acc-a');
     });
 
     test('keeps local cover when remote cover empty', () {
@@ -108,7 +108,7 @@ void main() {
       final merged = mergeTracksForTest(
         local: local,
         remote: remote,
-        accountId: 'acc-a',
+        sourceName: 'acc-a',
       );
       expect(merged.single.title, 'R');
       expect(merged.single.coverPath, '/docs/covers/x.jpg');

@@ -63,14 +63,16 @@ String encodeWebDavPath(String path) {
       .join('/');
 }
 
-/// Stable cache file name derived from account + remote path (avoids collisions).
-String cacheFileNameForRemote(String remotePath, {String? accountId}) {
+/// Stable cache file name derived from the disk name + remote path (avoids
+/// collisions). Renaming a disk therefore orphans its cached audio — that is the
+/// documented "改名 = 换盘" semantics of the name-only binding.
+String cacheFileNameForRemote(String remotePath, {String? sourceName}) {
   final base = sanitizeFileName(p.basename(remotePath));
-  if (accountId == null || accountId.isEmpty) {
+  if (sourceName == null || sourceName.isEmpty) {
     final hash = remotePath.hashCode.toRadixString(16);
     return '${hash}_$base';
   }
-  final stem = identityHashStem(accountId, remotePath);
+  final stem = identityHashStem(sourceName, remotePath);
   return '${stem}_$base';
 }
 

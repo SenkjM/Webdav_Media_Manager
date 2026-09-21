@@ -10,7 +10,7 @@ import '../utils/track_identity.dart';
 /// Separate from audio file cache — survives cache cleanup.
 ///
 /// Schema v5:
-/// - `accounts` — site (stable accountId; display name separate)
+/// - `accounts` — site (stable sourceName; display name separate)
 /// - `tracks` — music_id PK, library identity (survives cache clear)
 /// - `cue_albums` / `cue_slices` — CUE identity + clips stay in library
 /// - `cache` — annex: music_id → localPath (reconcile against disk)
@@ -31,12 +31,19 @@ class LibraryDatabase {
         await _createSchema(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // Wipe and rebuild — user approved schema bump without migration.
-        await db.execute('DROP TABLE IF EXISTS cache');
-        await db.execute('DROP TABLE IF EXISTS cue_slices');
-        await db.execute('DROP TABLE IF EXISTS cue_albums');
-        await db.execute('DROP TABLE IF EXISTS tracks');
-        await db.execute('DROP TABLE IF EXISTS accounts');
+        // Wipe the **library** tables and rebuild — no migration branches by
+        // design. Accounts are deliberately kept: they carry the disk names that
+        // every library row is bound to, and they are not part of this schema.
+        for (final table in [
+          'cache',
+          'cue_slices',
+          'cue_albums',
+          'tracks',
+          'deleted_tracks',
+          'sync_state',
+        ]) {
+          await db.execute('DROP TABLE IF EXISTS $table');
+        }
         await _createSchema(db);
       },
     );
@@ -45,7 +52,7 @@ class LibraryDatabase {
 
   Future<void> _createSchema(Database db) async {
     await db.execute('''
-CREATE TABLE accounts (
+CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   url TEXT NOT NULL,
@@ -53,9 +60,9 @@ CREATE TABLE accounts (
 )
 ''');
     await db.execute('''
-CREATE TABLE tracks (
+CREATE TABLE IF NOT EXISTS tracks (
   music_id TEXT PRIMARY KEY,
-  account_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
   remote_path TEXT NOT NULL,
   file_name TEXT NOT NULL,
   title TEXT,
@@ -72,29 +79,30 @@ CREATE TABLE tracks (
   bitrate INTEGER,
   sample_rate INTEGER,
   cover_path TEXT,
+  rev INTEGER NOT NULL DEFAULT 0,
   last_downloaded_at TEXT NOT NULL,
   last_tag_read_at TEXT NOT NULL,
-  UNIQUE(account_id, remote_path)
+  UNIQUE(source_name, remote_path)
 )
 ''');
     await db.execute('''
-CREATE TABLE cue_albums (
+CREATE TABLE IF NOT EXISTS cue_albums (
   cue_id TEXT PRIMARY KEY,
-  account_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
   cue_remote_path TEXT NOT NULL,
   title TEXT,
   performer TEXT,
   cache_group_id TEXT,
   created_at TEXT NOT NULL,
-  UNIQUE(account_id, cue_remote_path)
+  UNIQUE(source_name, cue_remote_path)
 )
 ''');
     await db.execute('''
-CREATE TABLE cue_slices (
+CREATE TABLE IF NOT EXISTS cue_slices (
   music_id TEXT PRIMARY KEY,
   cue_id TEXT NOT NULL,
   audio_music_id TEXT NOT NULL,
-  account_id TEXT NOT NULL,
+  source_name TEXT NOT NULL,
   remote_path TEXT NOT NULL,
   file_name TEXT NOT NULL,
   track_index INTEGER NOT NULL,
@@ -116,18 +124,43 @@ CREATE TABLE cue_slices (
   clip_start_ms INTEGER,
   clip_end_ms INTEGER,
   cache_group_id TEXT,
+  rev INTEGER NOT NULL DEFAULT 0,
   last_downloaded_at TEXT NOT NULL,
   last_tag_read_at TEXT NOT NULL,
-  UNIQUE(account_id, remote_path)
+  UNIQUE(source_name, remote_path)
 )
 ''');
     await db.execute('''
-CREATE TABLE cache (
+CREATE TABLE IF NOT EXISTS cache (
   music_id TEXT PRIMARY KEY,
   local_path TEXT NOT NULL,
   size_bytes INTEGER,
   etag TEXT,
   cached_at TEXT NOT NULL
+)
+''');
+    // Deletions live in their **own** table, never as a soft-delete column on
+    // `tracks`: a flag would have to be filtered out of every list / search /
+    // count / cover query, and one missed filter shows a destroyed song again.
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS deleted_tracks (
+  source_name TEXT NOT NULL,
+  remote_path TEXT NOT NULL,
+  rev INTEGER NOT NULL,
+  deleted_at TEXT NOT NULL,
+  pushed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (source_name, remote_path)
+)
+''');
+    // Per-remote sync cursor: how far we have consumed, and which file satisfies
+    // which rev range (so a rebuilt shard is re-fetched instead of trusted).
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS sync_state (
+  remote_key TEXT PRIMARY KEY,
+  last_seq INTEGER NOT NULL DEFAULT 0,
+  base_up_to INTEGER NOT NULL DEFAULT 0,
+  parts TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL
 )
 ''');
     await _createIndexes(db);
@@ -144,7 +177,7 @@ CREATE TABLE cache (
       'CREATE INDEX IF NOT EXISTS idx_tracks_title ON tracks(title)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_tracks_account ON tracks(account_id)',
+      'CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks(source_name)',
     );
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_cue_slices_cue ON cue_slices(cue_id)',
@@ -153,7 +186,7 @@ CREATE TABLE cache (
       'CREATE INDEX IF NOT EXISTS idx_cue_slices_audio ON cue_slices(audio_music_id)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_cue_albums_account ON cue_albums(account_id)',
+      'CREATE INDEX IF NOT EXISTS idx_cue_albums_source ON cue_albums(source_name)',
     );
   }
 
@@ -200,12 +233,12 @@ CREATE TABLE cache (
     if (cuePath == null || cuePath.isEmpty) {
       throw StateError('cue_slices require cue_remote_path');
     }
-    final cueId = track.cueId ?? cueIdFor(track.accountId, cuePath);
+    final cueId = track.cueId ?? cueIdFor(track.sourceName, cuePath);
     await db.insert(
       'cue_albums',
       {
         'cue_id': cueId,
-        'account_id': track.accountId,
+        'source_name': track.sourceName,
         'cue_remote_path': normalizeRemotePath(cuePath),
         'title': track.album,
         'performer': track.albumArtist ?? track.artist,
@@ -229,7 +262,7 @@ CREATE TABLE cache (
     }
     final slice = LibraryTrack(
       musicId: track.musicId,
-      accountId: track.accountId,
+      sourceName: track.sourceName,
       remotePath: track.remotePath,
       fileName: track.fileName,
       title: track.title,
@@ -251,7 +284,7 @@ CREATE TABLE cache (
       cueTrackIndex: track.cueTrackIndex,
       audioMusicId: track.audioMusicId ??
           (track.audioRemotePath != null
-              ? musicIdForRemote(track.accountId, track.audioRemotePath!)
+              ? musicIdForRemote(track.sourceName, track.audioRemotePath!)
               : null),
       audioRemotePath: track.audioRemotePath,
       clipStartMs: track.clipStartMs,
@@ -267,20 +300,20 @@ CREATE TABLE cache (
     );
   }
 
-  Future<LibraryTrack?> getTrack(String accountId, String remotePath) async {
+  Future<LibraryTrack?> getTrack(String sourceName, String remotePath) async {
     final db = await database;
     final rows = await db.query(
       'tracks',
-      where: 'account_id = ? AND remote_path = ?',
-      whereArgs: [accountId, remotePath],
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, remotePath],
       limit: 1,
     );
     if (rows.isNotEmpty) return LibraryTrack.fromMap(rows.first);
 
     final cueRows = await db.query(
       'cue_slices',
-      where: 'account_id = ? AND remote_path = ?',
-      whereArgs: [accountId, remotePath],
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, remotePath],
       limit: 1,
     );
     if (cueRows.isEmpty) return null;
@@ -344,18 +377,18 @@ CREATE TABLE cache (
     return out;
   }
 
-  Future<List<LibraryTrack>> tracksForAccount(String accountId) async {
+  Future<List<LibraryTrack>> tracksForSource(String sourceName) async {
     final db = await database;
     final normal = await db.query(
       'tracks',
-      where: 'account_id = ?',
-      whereArgs: [accountId],
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
       orderBy: 'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
     );
     final slices = await db.query(
       'cue_slices',
-      where: 'account_id = ?',
-      whereArgs: [accountId],
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
       orderBy: 'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
     );
     final out = <LibraryTrack>[...normal.map(LibraryTrack.fromMap)];
@@ -398,24 +431,24 @@ CREATE TABLE cache (
     return (Sqflite.firstIntValue(a) ?? 0) + (Sqflite.firstIntValue(b) ?? 0);
   }
 
-  Future<void> deleteTracksForAccount(String accountId) async {
+  Future<void> deleteTracksForSource(String sourceName) async {
     final db = await database;
     // Collect audio music_ids for cache cleanup of this account's library.
     final slices = await db.query(
       'cue_slices',
       columns: ['audio_music_id'],
-      where: 'account_id = ?',
-      whereArgs: [accountId],
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
     );
     final trackIds = await db.query(
       'tracks',
       columns: ['music_id'],
-      where: 'account_id = ?',
-      whereArgs: [accountId],
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
     );
-    await db.delete('cue_slices', where: 'account_id = ?', whereArgs: [accountId]);
-    await db.delete('cue_albums', where: 'account_id = ?', whereArgs: [accountId]);
-    await db.delete('tracks', where: 'account_id = ?', whereArgs: [accountId]);
+    await db.delete('cue_slices', where: 'source_name = ?', whereArgs: [sourceName]);
+    await db.delete('cue_albums', where: 'source_name = ?', whereArgs: [sourceName]);
+    await db.delete('tracks', where: 'source_name = ?', whereArgs: [sourceName]);
     for (final r in [...slices, ...trackIds]) {
       final id = (r['audio_music_id'] ?? r['music_id']) as String?;
       if (id != null) {
@@ -424,18 +457,18 @@ CREATE TABLE cache (
     }
   }
 
-  Future<void> deleteTrack(String accountId, String remotePath) async {
+  Future<void> deleteTrack(String sourceName, String remotePath) async {
     final db = await database;
-    final existing = await getTrack(accountId, remotePath);
+    final existing = await getTrack(sourceName, remotePath);
     await db.delete(
       'tracks',
-      where: 'account_id = ? AND remote_path = ?',
-      whereArgs: [accountId, remotePath],
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, remotePath],
     );
     await db.delete(
       'cue_slices',
-      where: 'account_id = ? AND remote_path = ?',
-      whereArgs: [accountId, remotePath],
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, remotePath],
     );
     // Do not drop cache annex if cue_slices still use this music_id as audio.
     // ingestCueAlbum deletes standalone audio rows after writing slices; wiping
@@ -460,16 +493,16 @@ CREATE TABLE cache (
 
   /// Remove every library row belonging to a CUE album (virtual clips stay
   /// removable as a group; cache annex for audio is left to CacheService).
-  Future<int> deleteTracksForCue(String accountId, String cueRemotePath) async {
+  Future<int> deleteTracksForCue(String sourceName, String cueRemotePath) async {
     final db = await database;
-    final cueId = cueIdFor(accountId, cueRemotePath);
+    final cueId = cueIdFor(sourceName, cueRemotePath);
     final normalized = normalizeRemotePath(cueRemotePath);
     // Resolve cue_id both by hash and by path lookup (legacy rows).
     final albums = await db.query(
       'cue_albums',
       columns: ['cue_id'],
-      where: 'cue_id = ? OR (account_id = ? AND cue_remote_path = ?)',
-      whereArgs: [cueId, accountId, normalized],
+      where: 'cue_id = ? OR (source_name = ? AND cue_remote_path = ?)',
+      whereArgs: [cueId, sourceName, normalized],
     );
     final ids = <String>{cueId, ...albums.map((r) => r['cue_id'] as String)};
     var n = 0;
@@ -542,14 +575,14 @@ CREATE TABLE cache (
     return rows.first['audio_music_id'] as String?;
   }
 
-  Future<List<Map<String, dynamic>>> allCueAlbumsForAccount(
-    String accountId,
+  Future<List<Map<String, dynamic>>> allCueAlbumsForSource(
+    String sourceName,
   ) async {
     final db = await database;
     return db.query(
       'cue_albums',
-      where: 'account_id = ?',
-      whereArgs: [accountId],
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
     );
   }
 
@@ -559,12 +592,12 @@ CREATE TABLE cache (
     return db.query('cue_albums');
   }
 
-  Future<List<LibraryTrack>> allCueSlicesForAccount(String accountId) async {
+  Future<List<LibraryTrack>> allCueSlicesForSource(String sourceName) async {
     final db = await database;
     final rows = await db.query(
       'cue_slices',
-      where: 'account_id = ?',
-      whereArgs: [accountId],
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
     );
     final out = <LibraryTrack>[];
     for (final r in rows) {
@@ -641,14 +674,131 @@ CREATE TABLE cache (
   }
 
 
-  /// Wipe all library-persisted rows: tracks, cue_albums, cue_slices, cache annex.
-  /// Does **not** delete WebDAV accounts.
+  /// Wipe all library-persisted rows: tracks, cue_albums, cue_slices, cache annex,
+  /// tombstones and sync cursors. Does **not** delete WebDAV accounts.
   Future<void> clearAllLibraryData() async {
     final db = await database;
     await db.delete('cache');
     await db.delete('cue_slices');
     await db.delete('cue_albums');
     await db.delete('tracks');
+    await db.delete('deleted_tracks');
+    await db.delete('sync_state');
+  }
+
+  // --- Tombstones (deletions) ---
+
+  /// Record (or bump) a tombstone for one path.
+  Future<void> upsertTombstone({
+    required String sourceName,
+    required String remotePath,
+    required int rev,
+    DateTime? deletedAt,
+  }) async {
+    final db = await database;
+    await db.insert('deleted_tracks', {
+      'source_name': sourceName,
+      'remote_path': normalizeRemotePath(remotePath),
+      'rev': rev,
+      'deleted_at': (deletedAt ?? DateTime.now()).toUtc().toIso8601String(),
+      'pushed': 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Drop the tombstone for one path (a re-download resurrects the song).
+  Future<void> clearTombstone(String sourceName, String remotePath) async {
+    final db = await database;
+    await db.delete(
+      'deleted_tracks',
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, normalizeRemotePath(remotePath)],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> allTombstones() async {
+    final db = await database;
+    return db.query('deleted_tracks', orderBy: 'rev ASC');
+  }
+
+  Future<List<Map<String, dynamic>>> unpushedTombstones() async {
+    final db = await database;
+    return db.query(
+      'deleted_tracks',
+      where: 'pushed = 0',
+      orderBy: 'rev ASC',
+    );
+  }
+
+  Future<void> markTombstonesPushed(Iterable<int> revs) async {
+    if (revs.isEmpty) return;
+    final db = await database;
+    for (final rev in revs) {
+      await db.update(
+        'deleted_tracks',
+        {'pushed': 1},
+        where: 'rev = ?',
+        whereArgs: [rev],
+      );
+    }
+  }
+
+  /// Purge tombstones already materialised into a rebuilt base (`rev <= upTo`).
+  Future<int> purgeTombstonesUpTo(int upTo) async {
+    final db = await database;
+    return db.delete(
+      'deleted_tracks',
+      where: 'rev <= ?',
+      whereArgs: [upTo],
+    );
+  }
+
+  /// Song paths currently hidden by a tombstone (for the library UI + ingest).
+  Future<Set<String>> tombstonedKeys(String sourceName) async {
+    final db = await database;
+    final rows = await db.query(
+      'deleted_tracks',
+      columns: ['remote_path'],
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
+    );
+    return {
+      for (final row in rows)
+        trackIdentityKey(sourceName, row['remote_path'] as String),
+    };
+  }
+
+  // --- Sync cursor ---
+
+  Future<Map<String, dynamic>?> loadSyncState(String remoteKey) async {
+    final db = await database;
+    final rows = await db.query(
+      'sync_state',
+      where: 'remote_key = ?',
+      whereArgs: [remoteKey],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first;
+  }
+
+  Future<void> saveSyncState({
+    required String remoteKey,
+    required int lastSeq,
+    required int baseUpTo,
+    required String parts,
+  }) async {
+    final db = await database;
+    await db.insert('sync_state', {
+      'remote_key': remoteKey,
+      'last_seq': lastSeq,
+      'base_up_to': baseUpTo,
+      'parts': parts,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> clearSyncState() async {
+    final db = await database;
+    await db.delete('sync_state');
   }
 
   Future<void> close() async {

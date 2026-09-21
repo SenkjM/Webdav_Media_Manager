@@ -31,7 +31,7 @@ void main() {
     });
     final item = handler.mediaItemFor(
       TrackInfo(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/x.mp3',
         fileName: 'x.mp3',
         title: '   ',

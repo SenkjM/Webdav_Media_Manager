@@ -3,15 +3,19 @@ import 'package:provider/provider.dart';
 
 import '../models/library_track.dart';
 import '../providers/app_state.dart';
+import '../services/accounts_service.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
+import '../services/download_queue_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/app_snack.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
+import '../widgets/track_status_chip.dart';
 import 'home_shell.dart';
 
 class LibraryScreen extends StatefulWidget {
@@ -32,24 +36,19 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.dispose();
   }
 
-
   Future<void> _confirmDestroyLibrary() async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('销毁'),
-        content: const Text(
-          '确定销毁？将删除音乐库标签、压缩封面与本地缓存，不可恢复。',
-        ),
+        content: const Text('确定销毁？将删除音乐库标签、压缩封面与本地缓存，不可恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('取消'),
           ),
           FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('销毁'),
           ),
@@ -59,9 +58,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (ok != true || !mounted) return;
     await context.read<AppState>().destroyMusicLibrary();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('音乐库已销毁')),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('音乐库已销毁')));
   }
 
   @override
@@ -138,10 +136,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               itemBuilder: (context) => [
                 const PopupMenuItem(
                   value: 'destroy',
-                  child: Text(
-                    '销毁',
-                    style: TextStyle(color: AppColors.error),
-                  ),
+                  child: Text('销毁', style: TextStyle(color: AppColors.error)),
                 ),
               ],
             ),
@@ -218,9 +213,11 @@ class _ArtistTab extends StatelessWidget {
       groups = Map.fromEntries(
         groups.entries.where((e) {
           if (e.key.toLowerCase().contains(q)) return true;
-          return e.value.any((t) =>
-              t.displayTitle.toLowerCase().contains(q) ||
-              t.displayAlbum.toLowerCase().contains(q));
+          return e.value.any(
+            (t) =>
+                t.displayTitle.toLowerCase().contains(q) ||
+                t.displayAlbum.toLowerCase().contains(q),
+          );
         }),
       );
     }
@@ -250,9 +247,11 @@ class _AlbumTab extends StatelessWidget {
       groups = Map.fromEntries(
         groups.entries.where((e) {
           if (e.key.toLowerCase().contains(q)) return true;
-          return e.value.any((t) =>
-              t.displayTitle.toLowerCase().contains(q) ||
-              t.displayArtist.toLowerCase().contains(q));
+          return e.value.any(
+            (t) =>
+                t.displayTitle.toLowerCase().contains(q) ||
+                t.displayArtist.toLowerCase().contains(q),
+          );
         }),
       );
     }
@@ -280,12 +279,16 @@ class _TagsTab extends StatelessWidget {
     final q = query.trim().toLowerCase();
     if (q.isNotEmpty) {
       groups = Map.fromEntries(
-        groups.entries.where((e) =>
-            e.key.toLowerCase().contains(q) ||
-            e.value.any((t) =>
-                t.displayTitle.toLowerCase().contains(q) ||
-                t.displayArtist.toLowerCase().contains(q) ||
-                t.displayAlbum.toLowerCase().contains(q))),
+        groups.entries.where(
+          (e) =>
+              e.key.toLowerCase().contains(q) ||
+              e.value.any(
+                (t) =>
+                    t.displayTitle.toLowerCase().contains(q) ||
+                    t.displayArtist.toLowerCase().contains(q) ||
+                    t.displayAlbum.toLowerCase().contains(q),
+              ),
+        ),
       );
     }
     if (groups.isEmpty) {
@@ -375,7 +378,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
     final seen = <String>{};
     for (final k in _selected) {
       for (final t in widget.groups[k] ?? const <LibraryTrack>[]) {
-        final id = '${t.accountId}\u0000${t.remotePath}';
+        final id = '${t.sourceName}\u0000${t.remotePath}';
         if (seen.add(id)) out.add(t);
       }
     }
@@ -383,9 +386,9 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
   }
 
   void _exitSelect() => setState(() {
-        _selecting = false;
-        _selected.clear();
-      });
+    _selecting = false;
+    _selected.clear();
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -399,8 +402,20 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
         if (_selecting)
           _SelectionBar(
             count: _selected.length,
-            hasCachedSelection:
-                _selectedTracks.any((t) => libraryTrackIsLocal(context.read<CacheService>(), t)),
+            allSelected: _selected.length >= widget.keys.length,
+            hasCachedSelection: _selectedTracks.any(
+              (t) => libraryTrackIsLocal(context.read<CacheService>(), t),
+            ),
+            onSelectAll: () => setState(() {
+              if (_selected.length >= widget.keys.length) {
+                _selected.clear();
+                _selecting = false;
+              } else {
+                _selected
+                  ..clear()
+                  ..addAll(widget.keys);
+              }
+            }),
             onCancel: _exitSelect,
             onAdd: () async {
               await addTracksToPlaylist(context, _selectedTracks);
@@ -492,6 +507,8 @@ class _SelectionBar extends StatelessWidget {
     required this.onShare,
     required this.onDelete,
     required this.onDestroy,
+    required this.allSelected,
+    required this.onSelectAll,
   });
 
   final int count;
@@ -501,6 +518,10 @@ class _SelectionBar extends StatelessWidget {
   final VoidCallback onShare;
   final VoidCallback onDelete;
   final VoidCallback onDestroy;
+
+  /// Every selectable entry is already selected — the button then clears instead.
+  final bool allSelected;
+  final VoidCallback onSelectAll;
 
   @override
   Widget build(BuildContext context) {
@@ -516,6 +537,11 @@ class _SelectionBar extends StatelessWidget {
                 tooltip: '取消',
                 onPressed: onCancel,
                 icon: const Icon(Icons.close),
+              ),
+              IconButton(
+                tooltip: allSelected ? '取消全选' : '全选',
+                onPressed: onSelectAll,
+                icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
               ),
               Expanded(
                 child: Text(
@@ -548,10 +574,7 @@ class _SelectionBar extends StatelessWidget {
               IconButton(
                 tooltip: '销毁（缓存 + 元数据 + 封面）',
                 onPressed: count == 0 ? null : onDestroy,
-                icon: const Icon(
-                  Icons.delete_forever,
-                  color: AppColors.error,
-                ),
+                icon: const Icon(Icons.delete_forever, color: AppColors.error),
               ),
             ],
           ),
@@ -585,7 +608,9 @@ class _CoverTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected ? AppColors.accent.withValues(alpha: 0.14) : AppColors.elevated,
+      color: selected
+          ? AppColors.accent.withValues(alpha: 0.14)
+          : AppColors.elevated,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -696,20 +721,20 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
     if (widget.startInSelection) {
       _selecting = true;
       for (final t in widget.tracks) {
-        _selected.add('${t.accountId}\u0000${t.remotePath}');
+        _selected.add('${t.sourceName}\u0000${t.remotePath}');
       }
     }
   }
 
-  String _id(LibraryTrack t) => '${t.accountId}\u0000${t.remotePath}';
+  String _id(LibraryTrack t) => '${t.sourceName}\u0000${t.remotePath}';
 
   List<LibraryTrack> get _selectedTracks =>
       widget.tracks.where((t) => _selected.contains(_id(t))).toList();
 
   void _exitSelect() => setState(() {
-        _selecting = false;
-        _selected.clear();
-      });
+    _selecting = false;
+    _selected.clear();
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -726,8 +751,20 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
         if (_selecting)
           _SelectionBar(
             count: _selected.length,
-            hasCachedSelection: _selectedTracks
-                .any((t) => libraryTrackIsLocal(context.read<CacheService>(), t)),
+            allSelected: _selected.length >= widget.tracks.length,
+            hasCachedSelection: _selectedTracks.any(
+              (t) => libraryTrackIsLocal(context.read<CacheService>(), t),
+            ),
+            onSelectAll: () => setState(() {
+              if (_selected.length >= widget.tracks.length) {
+                _selected.clear();
+                _selecting = false;
+              } else {
+                _selected
+                  ..clear()
+                  ..addAll(widget.tracks.map(_id));
+              }
+            }),
             onCancel: _exitSelect,
             onAdd: () async {
               await addTracksToPlaylist(context, _selectedTracks);
@@ -817,10 +854,7 @@ class _TrackListPageState extends State<_TrackListPage> {
             onSelected: (mode) => setState(() => _sort = mode),
             itemBuilder: (context) => [
               for (final mode in LibrarySortMode.values)
-                PopupMenuItem(
-                  value: mode,
-                  child: Text(mode.labelZh),
-                ),
+                PopupMenuItem(value: mode, child: Text(mode.labelZh)),
             ],
             icon: const Icon(Icons.sort),
           ),
@@ -853,8 +887,34 @@ class _TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
+    final downloads = context.watch<DownloadQueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
-    final trackLabel = track.trackNumber != null ? '${track.trackNumber}. ' : '';
+    final trackLabel = track.trackNumber != null
+        ? '${track.trackNumber}. '
+        : '';
+    // A library row can be re-queued after its cache was deleted, so surface the
+    // queue state here too (network library already does).
+    final task = downloads.taskForRemote(
+      track.sourceName,
+      track.effectiveAudioRemotePath,
+    );
+    // `read` (not `watch`): AudioPlayerService notifies on every position tick,
+    // so watching it here would rebuild the whole list several times a second.
+    final audio = context.read<AudioPlayerService>();
+    final sourceBound = context
+        .read<AccountsService>()
+        .isSourceBound(track.sourceName);
+    final state = downloads.uiStateFor(
+      track.sourceName,
+      track.effectiveAudioRemotePath,
+      playingRemotePath: audio.currentRemotePath,
+      playingSourceName: audio.currentSourceName,
+    );
+    final showChip =
+        task != null &&
+        state != TrackUiState.ready &&
+        state != TrackUiState.playing;
+    final isDownloading = state == TrackUiState.downloading;
     return ListTile(
       selected: selected,
       selectedTileColor: AppColors.accent.withValues(alpha: 0.12),
@@ -882,7 +942,11 @@ class _TrackTile extends StatelessWidget {
       subtitle: Text(
         [
           if (track.isCueVirtual) LibraryTrack.cueMultiSliceLabel,
-          if (!isLocal) '未下载',
+          if (!sourceBound) '来源网盘未绑定',
+          if (isDownloading && task!.progress > 0)
+            '下载中 ${(task.progress * 100).toStringAsFixed(0)}%'
+          else if (!isLocal)
+            '未下载',
           track.displayArtist,
           if (isLocal) track.displayAlbum,
         ].join(' · '),
@@ -890,23 +954,38 @@ class _TrackTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
       ),
-      trailing: Tooltip(
-        message: isLocal ? '已下载到本地' : '未下载（点按加入下载）',
-        child: Container(
-          width: 10,
-          height: 10,
-          margin: const EdgeInsets.only(right: 4),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isLocal ? AppColors.localReady : AppColors.remotePlaceholder,
-            border: Border.all(
-              color: isLocal
-                  ? AppColors.localReady.withValues(alpha: 0.4)
-                  : AppColors.divider,
-              width: 1,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (showChip)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: TrackStatusChip(
+                state: state,
+                progress: isDownloading ? task.progress : null,
+              ),
+            ),
+          Tooltip(
+            message: isLocal ? '已下载到本地' : '未下载（点按加入下载）',
+            child: Container(
+              width: 10,
+              height: 10,
+              margin: const EdgeInsets.only(right: 4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isLocal
+                    ? AppColors.localReady
+                    : AppColors.remotePlaceholder,
+                border: Border.all(
+                  color: isLocal
+                      ? AppColors.localReady.withValues(alpha: 0.4)
+                      : AppColors.divider,
+                  width: 1,
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
       onTap: () {
         if (selecting) {
@@ -930,11 +1009,16 @@ class _TrackTile extends StatelessWidget {
       await enqueueLibraryTrackDownload(context, track);
       return;
     }
+    final accountsService = context.read<AccountsService>();
+    if (!accountsService.isSourceBound(track.sourceName)) {
+      AppSnack.error(context, unboundSourceMessage(track.sourceName));
+      return;
+    }
     final player = context.read<AudioPlayerService>();
     final cache = context.read<CacheService>();
     final local = await cache.localPathIfCached(
       track.effectiveAudioRemotePath,
-      accountId: track.accountId,
+      sourceName: track.sourceName,
     );
     if (local == null) {
       // Race: cache deleted between check and play — treat as download link.
@@ -944,16 +1028,23 @@ class _TrackTile extends StatelessWidget {
       return;
     }
     // Only local tracks enter the play queue.
+    final accounts = context.read<AccountsService>();
     final localPlaylist = <TrackInfo>[];
     for (final t in playlist) {
       final path = await cache.localPathIfCached(
         t.effectiveAudioRemotePath,
-        accountId: t.accountId,
+        sourceName: t.sourceName,
       );
       if (path == null) continue;
-      localPlaylist.add(_toTrackInfo(t, path));
+      localPlaylist.add(
+        _toTrackInfo(t, path, accounts.idForSource(t.sourceName) ?? ''),
+      );
     }
-    final info = _toTrackInfo(track, local);
+    final info = _toTrackInfo(
+      track,
+      local,
+      accounts.idForSource(track.sourceName) ?? '',
+    );
     if (localPlaylist.isEmpty) {
       localPlaylist.add(info);
     }
@@ -961,9 +1052,14 @@ class _TrackTile extends StatelessWidget {
     await player.playTrack(info, playlist: localPlaylist);
   }
 
-  static TrackInfo _toTrackInfo(LibraryTrack track, String? local) {
+  static TrackInfo _toTrackInfo(
+    LibraryTrack track,
+    String? local,
+    String accountId,
+  ) {
     return TrackInfo(
-      accountId: track.accountId,
+      sourceName: track.sourceName,
+      accountId: accountId,
       remotePath: track.remotePath,
       fileName: track.fileName,
       localPath: local,
@@ -971,8 +1067,9 @@ class _TrackTile extends StatelessWidget {
       artist: track.artist,
       albumArtist: track.albumArtist,
       album: track.album,
-      duration:
-          track.durationMs != null ? Duration(milliseconds: track.durationMs!) : null,
+      duration: track.durationMs != null
+          ? Duration(milliseconds: track.durationMs!)
+          : null,
       trackNumber: track.trackNumber,
       trackTotal: track.trackTotal,
       discNumber: track.discNumber,

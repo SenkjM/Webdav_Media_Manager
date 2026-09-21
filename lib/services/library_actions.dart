@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+
+import '../utils/app_snack.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/library_track.dart';
@@ -13,6 +15,7 @@ import '../screens/playlists_screen.dart';
 import '../theme/app_theme.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/track_identity.dart';
+import 'accounts_service.dart';
 import 'cache_service.dart';
 import 'download_queue_service.dart';
 import 'library_service.dart';
@@ -21,6 +24,10 @@ import 'settings_service.dart';
 import 'share_rename_service.dart';
 
 /// Whether the track's audio is local: cache annex + file on disk.
+/// Shown when a library row is bound to a disk name that has no local account.
+String unboundSourceMessage(String sourceName) =>
+    '来源网盘未绑定（$sourceName）：请先在账号页添加或改名成这个名称的网盘';
+
 /// Stale annex rows are cleared when the file is missing.
 bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
   return cache.isLocalTrack(track);
@@ -33,18 +40,27 @@ Future<void> enqueueLibraryTrackDownload(
   LibraryTrack track, {
   bool showSnack = true,
 }) async {
+  // The row is bound to a disk **name**; without a local account for that name
+  // there is nothing to download from. Say so instead of silently doing nothing.
+  final accounts = context.read<AccountsService>();
+  if (!accounts.isSourceBound(track.sourceName)) {
+    if (context.mounted) {
+      AppSnack.error(context, unboundSourceMessage(track.sourceName));
+    }
+    return;
+  }
   final downloads = context.read<DownloadQueueService>();
   if (track.isCueVirtual && track.cueRemotePath != null) {
     unawaited(
       downloads.enqueueCueGroup(
-        accountId: track.accountId,
+        sourceName: track.sourceName,
         cueRemotePath: track.cueRemotePath!,
       ),
     );
   } else {
     unawaited(
       downloads.ensureQueued(
-        track.accountId,
+        track.sourceName,
         track.effectiveAudioRemotePath,
         fileName: track.fileName,
       ),
@@ -66,7 +82,7 @@ Future<void> addTracksToPlaylist(
   final entries = tracks
       .map(
         (t) => PlaylistEntry(
-          accountId: t.accountId,
+          sourceName: t.sourceName,
           remotePath: t.remotePath,
           title: t.displayTitle,
           durationMs: t.durationMs,
@@ -94,7 +110,7 @@ Future<void> deleteTracksLocalCache(
   for (final t in tracks) {
     final gid = t.cacheGroupId ??
         (t.cueRemotePath != null
-            ? cueCacheGroupId(t.accountId, t.cueRemotePath!)
+            ? cueCacheGroupId(t.sourceName, t.cueRemotePath!)
             : null);
     if (t.isCueVirtual && gid != null) {
       groupIds.add(gid);
@@ -111,7 +127,7 @@ Future<void> deleteTracksLocalCache(
         for (final t in tracks.where((x) =>
             (x.cacheGroupId ??
                 (x.cueRemotePath != null
-                    ? cueCacheGroupId(x.accountId, x.cueRemotePath!)
+                    ? cueCacheGroupId(x.sourceName, x.cueRemotePath!)
                     : null)) ==
             gid)) {
           if (t.cueRemotePath != null) names.add(p.basename(t.cueRemotePath!));
@@ -171,7 +187,7 @@ Future<void> deleteTracksLocalCache(
   final seen = <String>{};
   final unique = <LibraryTrack>[];
   for (final t in plain) {
-    final key = '${t.accountId}\u0000${t.effectiveAudioRemotePath}';
+    final key = '${t.sourceName}\u0000${t.effectiveAudioRemotePath}';
     if (seen.add(key)) unique.add(t);
   }
   final ok = await showDialog<bool>(
@@ -199,7 +215,7 @@ Future<void> deleteTracksLocalCache(
   var removed = 0;
   for (final t in unique) {
     if (await cache.deleteLocalFile(
-      accountId: t.accountId,
+      sourceName: t.sourceName,
       remotePath: t.effectiveAudioRemotePath,
     )) {
       removed++;
@@ -231,7 +247,7 @@ Future<void> destroyLibraryTracks(
   for (final t in tracks) {
     final gid = t.cacheGroupId ??
         (t.cueRemotePath != null
-            ? cueCacheGroupId(t.accountId, t.cueRemotePath!)
+            ? cueCacheGroupId(t.sourceName, t.cueRemotePath!)
             : null);
     if (t.isCueVirtual && gid != null) {
       groupIds.add(gid);
@@ -292,10 +308,10 @@ Future<void> destroyLibraryTracks(
   final seen = <String>{};
   for (final t in tracks) {
     if (t.isCueVirtual) continue;
-    final key = '${t.accountId}\u0000${t.effectiveAudioRemotePath}';
+    final key = '${t.sourceName}\u0000${t.effectiveAudioRemotePath}';
     if (!seen.add(key)) continue;
     await cache.deleteLocalFile(
-      accountId: t.accountId,
+      sourceName: t.sourceName,
       remotePath: t.effectiveAudioRemotePath,
     );
   }
@@ -377,7 +393,7 @@ Future<void> shareLibraryTracks(
   for (final t in localNonCue) {
     final path = await cache.localPathIfCached(
       t.effectiveAudioRemotePath,
-      accountId: t.accountId,
+      sourceName: t.sourceName,
     );
     if (path == null) continue;
     final info = ShareRenameService.trackInfoForLibrary(t, localPath: path);

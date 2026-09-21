@@ -949,7 +949,17 @@ Future<MusicAudioHandler> initMusicAudioService() {
       androidNotificationChannelName: kMediaNotificationChannelName,
       androidNotificationChannelDescription:
           kMediaNotificationChannelDescription,
-      androidNotificationOngoing: true,
+      // MUST stay false while androidStopForegroundOnPause is false:
+      // audio_service asserts `!androidNotificationOngoing ||
+      // androidStopForegroundOnPause` in its constructor, and that assertion is
+      // evaluated in main() *before* runApp — throwing it leaves a permanently
+      // blank Flutter surface with no visible error (no crash dialog, just a
+      // black screen; only logcat shows the unhandled exception).
+      //
+      // "Ongoing" only means the notification cannot be dismissed by the user;
+      // keeping the FGS alive across pause is what
+      // androidStopForegroundOnPause: false already does, so nothing is lost.
+      androidNotificationOngoing: false,
       // Keep FGS while paused so Android 12+ does not block restarting
       // startForegroundService when play() races with event-driven pause.
       androidStopForegroundOnPause: false,

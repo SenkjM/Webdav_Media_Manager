@@ -27,7 +27,7 @@ class M3u8PlaylistCodec {
       final secs = e.durationMs != null ? (e.durationMs! / 1000).round() : -1;
       final title = _escape(e.title ?? e.remotePath.split('/').last);
       buf.writeln('#EXTINF:$secs,$title');
-      buf.writeln('$pathScheme${e.accountId}${e.remotePath.startsWith('/') ? '' : '/'}${e.remotePath}');
+      buf.writeln('$pathScheme${e.sourceName}${e.remotePath.startsWith('/') ? '' : '/'}${e.remotePath}');
     }
     return buf.toString();
   }
@@ -69,7 +69,7 @@ class M3u8PlaylistCodec {
         final parsed = parsePathLine(line);
         if (parsed != null) {
           entries.add(PlaylistEntry(
-            accountId: parsed.$1,
+            sourceName: parsed.$1,
             remotePath: parsed.$2,
             title: pendingTitle,
             durationMs: pendingDurationMs,

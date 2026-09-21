@@ -25,6 +25,9 @@ class PlaylistService extends ChangeNotifier {
   bool _loaded = false;
   String _remotePath = '/Playlists/';
   bool _syncEnabled = true;
+  /// Account that owns the playlist M3U8 mirror (set from Settings)a The music
+  /// library never depends on it.
+  String? _syncAccountId;
   String? _lastSyncError;
 
   UnmodifiableListView<Playlist> get playlists =>
@@ -35,9 +38,20 @@ class PlaylistService extends ChangeNotifier {
   String? get lastSyncError => _lastSyncError;
   PlaylistStore get store => _store;
 
-  void configureSync({required String remotePath, required bool enabled}) {
+  /// Whether a usable destination account is configured for playlist sync.
+  bool get canSync =>
+      _syncEnabled &&
+      _syncAccountId != null &&
+      _webDav.hasAccount(_syncAccountId!);
+
+  void configureSync({
+    required String remotePath,
+    required bool enabled,
+    String? accountId,
+  }) {
     _remotePath = _normalizeDir(remotePath);
     _syncEnabled = enabled;
+    _syncAccountId = accountId;
   }
 
   Future<void> init() async {
@@ -109,10 +123,10 @@ class PlaylistService extends ChangeNotifier {
     await _store.delete(id);
     _playlists.removeWhere((p) => p.id == id);
     notifyListeners();
-    if (deleteRemote && pl != null && _syncEnabled && _webDav.isConnected) {
+    if (deleteRemote && pl != null && canSync) {
       final remote = _remoteFilePath(pl);
       try {
-        await _webDav.deletePath(remote);
+        await _webDav.deletePath(_syncAccountId!, remote);
       } catch (_) {}
     }
   }
@@ -169,16 +183,16 @@ class PlaylistService extends ChangeNotifier {
 
   /// Pull remote M3U8 files and merge last-write-wins into local store.
   Future<void> pullAndMergeFromWebDav() async {
-    if (!_syncEnabled || !_webDav.isConnected) return;
+    if (!canSync) return;
     try {
-      await _webDav.ensureDirectory(_remotePath);
-      final items = await _webDav.listDirectory(_remotePath);
+      await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
+      final items = await _webDav.listDirectory(_syncAccountId!, _remotePath);
       final remotes = <Playlist>[];
       for (final item in items) {
         if (item.isDirectory) continue;
         final name = item.name.toLowerCase();
         if (!name.endsWith('.m3u8') && !name.endsWith('.m3u')) continue;
-        final bytes = await _webDav.readAsBytes(item.path);
+        final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
         final text = utf8.decode(bytes, allowMalformed: true);
         final decoded = M3u8PlaylistCodec.decode(
           text,
@@ -222,16 +236,16 @@ class PlaylistService extends ChangeNotifier {
   }
 
   Future<void> uploadPlaylist(Playlist pl) async {
-    if (!_syncEnabled || !_webDav.isConnected) return;
+    if (!canSync) return;
     pl.remoteFileName ??= M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
-    await _webDav.ensureDirectory(_remotePath);
+    await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
     final body = M3u8PlaylistCodec.encode(pl);
-    await _webDav.writeBytes(_remoteFilePath(pl), Uint8List.fromList(utf8.encode(body)));
+    await _webDav.writeBytes(_syncAccountId!, _remoteFilePath(pl), Uint8List.fromList(utf8.encode(body)));
     await _store.upsert(pl);
   }
 
   void unawaitedSyncUpload(Playlist pl) {
-    if (!_syncEnabled || !_webDav.isConnected) return;
+    if (!canSync) return;
     // Fire-and-forget; errors stored on service.
     Future(() async {
       try {
@@ -268,7 +282,7 @@ class PlaylistService extends ChangeNotifier {
   /// Playlists that reference [accountId] (any entry). Entries keep their accountId labels.
   List<Map<String, dynamic>> exportJsonForAccount(String accountId) {
     return _playlists
-        .where((p) => p.entries.any((e) => e.accountId == accountId))
+        .where((p) => p.entries.any((e) => e.sourceName == accountId))
         .map((p) => p.toJson())
         .toList();
   }

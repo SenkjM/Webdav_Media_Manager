@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +7,7 @@ import '../models/download_task.dart';
 import '../utils/cue_sheet.dart';
 import '../services/download_queue_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/app_snack.dart';
 import 'home_shell.dart';
 
 class DownloadsScreen extends StatelessWidget {
@@ -53,6 +55,50 @@ class DownloadsScreen extends StatelessWidget {
     return rows;
   }
 
+  /// Clear every queue entry. Always asks first: unlike clearing completed rows,
+  /// this also drops pending/failed entries and cancels running transfers.
+  Future<void> _confirmClearAll(
+    BuildContext context,
+    DownloadQueueService queue,
+    List<DownloadTask> tasks,
+  ) async {
+    final running = tasks
+        .where(
+          (t) =>
+              t.status == DownloadStatus.active ||
+              t.status == DownloadStatus.pending,
+        )
+        .length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.elevated,
+        title: const Text('清除所有队列？'),
+        content: Text(
+          '将移除全部 ${tasks.length} 条队列记录'
+          '${running > 0 ? '，并取消 $running 个正在进行/等待中的下载' : ''}。\n\n'
+          '已下载完成的文件不会被删除（音频缓存与系统相册里的文件都保留），'
+          '音乐库记录也不受影响。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('清除全部'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    await queue.clearAll();
+    if (!context.mounted) return;
+    AppSnack.show(context, '下载队列已清空');
+  }
+
   @override
   Widget build(BuildContext context) {
     final queue = context.watch<DownloadQueueService>();
@@ -70,6 +116,22 @@ class DownloadsScreen extends StatelessWidget {
                 ? () => queue.clearCompleted()
                 : null,
             child: const Text('清除已完成'),
+          ),
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            onSelected: (v) {
+              if (v == 'clear_all') _confirmClearAll(context, queue, tasks);
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'clear_all',
+                enabled: tasks.isNotEmpty,
+                child: const Text(
+                  '清除所有队列',
+                  style: TextStyle(color: AppColors.error),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -112,13 +174,12 @@ class _QueueRow {
     String id,
     List<DownloadTask> members,
     DownloadQueueService queue,
-  ) =>
-      _QueueRow._(
-        members,
-        isCueGroup: true,
-        groupId: id,
-        songCount: queue.cueSongCountForGroup(id),
-      );
+  ) => _QueueRow._(
+    members,
+    isCueGroup: true,
+    groupId: id,
+    songCount: queue.cueSongCountForGroup(id),
+  );
 
   final List<DownloadTask> members;
   final bool isCueGroup;
@@ -141,16 +202,18 @@ class _CueGroupTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final queue = context.read<DownloadQueueService>();
     final cue = members.cast<DownloadTask?>().firstWhere(
-          (t) => t!.remotePath.toLowerCase().endsWith('.cue'),
-          orElse: () => null,
-        );
+      (t) => t!.remotePath.toLowerCase().endsWith('.cue'),
+      orElse: () => null,
+    );
     final title = cue?.fileName ?? members.first.fileName;
     var songs = songCount ?? queue.cueSongCountForGroup(groupId);
     if (songs == null) {
       final cueFile = cue?.localPath;
       if (cueFile != null && File(cueFile).existsSync()) {
         try {
-          final sheet = CueSheetParser.tryParse(decodeCueText(File(cueFile).readAsBytesSync()));
+          final sheet = CueSheetParser.tryParse(
+            decodeCueText(File(cueFile).readAsBytesSync()),
+          );
           if (sheet != null) {
             songs = sheet.tracks.length;
             queue.rememberCueSongCount(groupId, songs);
@@ -161,21 +224,22 @@ class _CueGroupTile extends StatelessWidget {
     final failed = members.any((t) => t.status == DownloadStatus.failed);
     final active = members.any((t) => t.status == DownloadStatus.active);
     final pending = members.any((t) => t.status == DownloadStatus.pending);
-    final allDone = members.isNotEmpty &&
+    final allDone =
+        members.isNotEmpty &&
         members.every((t) => t.status == DownloadStatus.completed);
     final (label, color) = failed
         ? ('失败', AppColors.error)
         : active
-            ? ('下载中', AppColors.accent)
-            : pending
-                ? ('等待中', AppColors.mutedText)
-                : allDone
-                    ? ('已完成', const Color(0xFF66BB6A))
-                    : ('进行中', AppColors.mutedText);
+        ? ('下载中', AppColors.accent)
+        : pending
+        ? ('等待中', AppColors.mutedText)
+        : allDone
+        ? ('已完成', const Color(0xFF66BB6A))
+        : ('进行中', AppColors.mutedText);
     final progress = members.isEmpty
         ? 0.0
         : members.map((t) => t.progress).reduce((a, b) => a + b) /
-            members.length;
+              members.length;
     final songLabel = songs != null && songs > 0 ? '$songs 首歌' : 'CUE 专辑';
 
     return Card(
@@ -202,14 +266,18 @@ class _CueGroupTile extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child:
-                      Text(label, style: TextStyle(color: color, fontSize: 12)),
+                  child: Text(
+                    label,
+                    style: TextStyle(color: color, fontSize: 12),
+                  ),
                 ),
               ],
             ),
@@ -300,7 +368,10 @@ class _TaskTile extends StatelessWidget {
       DownloadStatus.failed => ('失败', AppColors.error),
       DownloadStatus.cancelled => ('已取消', AppColors.mutedText),
     };
-    final savedToGallery = task.isGallery &&
+    final savedToGallery =
+        task.isGallery && task.status == DownloadStatus.completed;
+    final savedToDownloads =
+        task.target == DownloadTarget.downloads &&
         task.status == DownloadStatus.completed;
 
     return Card(
@@ -334,15 +405,25 @@ class _TaskTile extends StatelessWidget {
                     label: savedToGallery ? '已存入系统相册' : '目标：系统相册',
                     color: AppColors.accent,
                   ),
+                if (task.target == DownloadTarget.downloads)
+                  _DestinationChip(
+                    icon: Icons.folder_outlined,
+                    label: savedToDownloads ? '已存入下载目录' : '目标：下载目录',
+                    color: AppColors.accent,
+                  ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child:
-                      Text(label, style: TextStyle(color: color, fontSize: 12)),
+                  child: Text(
+                    label,
+                    style: TextStyle(color: color, fontSize: 12),
+                  ),
                 ),
               ],
             ),
@@ -360,15 +441,21 @@ class _TaskTile extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 '${(task.progress * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+                style: const TextStyle(
+                  color: AppColors.mutedText,
+                  fontSize: 12,
+                ),
               ),
             ],
-            if (task.isGallery &&
+            if (task.target != DownloadTarget.cache &&
                 task.status == DownloadStatus.completed) ...[
               const SizedBox(height: 4),
               Text(
-                '系统相册：${task.localPath}',
-                style: const TextStyle(color: AppColors.mutedText, fontSize: 11),
+                '${task.target.labelZh}：${task.localPath ?? ''}',
+                style: const TextStyle(
+                  color: AppColors.mutedText,
+                  fontSize: 11,
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),

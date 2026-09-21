@@ -88,7 +88,7 @@ class PlayerScreen extends StatelessWidget {
     final library = context.read<LibraryService>();
     final accounts = context.read<AccountsService>();
     final cache = context.read<CacheService>();
-    final lib = library.find(track.accountId, track.remotePath);
+    final lib = library.find(track.sourceName, track.remotePath);
     String? accountLabel;
     String? serverUrl;
     for (final a in accounts.accounts) {
@@ -103,7 +103,7 @@ class PlayerScreen extends StatelessWidget {
     if (localPath == null || !File(localPath).existsSync()) {
       localPath = await cache.localPathIfCached(
         track.effectiveAudioRemotePath,
-        accountId: track.accountId,
+        sourceName: track.sourceName,
       );
     }
     ReadTags? liveTags;
@@ -328,7 +328,7 @@ class PlayerScreen extends StatelessWidget {
     final track = player.current;
     final lib = track == null
         ? null
-        : library.find(track.accountId, track.remotePath);
+        : library.find(track.sourceName, track.remotePath);
     final duration = player.duration ?? Duration.zero;
     final position = player.position;
     final maxMs = duration.inMilliseconds > 0 ? duration.inMilliseconds : 1;
@@ -339,7 +339,7 @@ class PlayerScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
       body: _PlayerBackdrop(
-        accountId: track?.accountId,
+        sourceName: track?.sourceName,
         audioRemotePath: track?.effectiveAudioRemotePath,
         localPath: track?.localPath,
         child: SafeArea(
@@ -384,7 +384,7 @@ class PlayerScreen extends StatelessWidget {
                               const SizedBox(height: 8),
                               if (track != null)
                                 PlayerCoverArt(
-                                  accountId: track.accountId,
+                                  sourceName: track.sourceName,
                                   remotePath: track.effectiveAudioRemotePath,
                                   localAudioPath: track.localPath,
                                   fileName: track.fileName,
@@ -572,13 +572,13 @@ class PlayerScreen extends StatelessWidget {
 /// Backdrop that loads full/embedded art only — never the 100×100 thumb.
 class _PlayerBackdrop extends StatefulWidget {
   const _PlayerBackdrop({
-    this.accountId,
+    this.sourceName,
     this.audioRemotePath,
     this.localPath,
     required this.child,
   });
 
-  final String? accountId;
+  final String? sourceName;
   final String? audioRemotePath;
   final String? localPath;
   final Widget child;
@@ -600,7 +600,7 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
   @override
   void didUpdateWidget(covariant _PlayerBackdrop oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.accountId != widget.accountId ||
+    if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.audioRemotePath != widget.audioRemotePath ||
         oldWidget.localPath != widget.localPath) {
       unawaited(_load());
@@ -608,16 +608,16 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
   }
 
   Future<void> _load() async {
-    final accountId = widget.accountId;
+    final sourceName = widget.sourceName;
     final remote = widget.audioRemotePath;
-    if (accountId == null || remote == null) {
+    if (sourceName == null || remote == null) {
       if (mounted) setState(() { _fullPath = null; _bytes = null; });
       return;
     }
     final library = context.read<LibraryService>();
     final covers = library.covers;
     await covers.init();
-    final full = await covers.fullCoverPath(accountId, remote);
+    final full = await covers.fullCoverPath(sourceName, remote);
     if (full != null) {
       if (mounted) setState(() { _fullPath = full; _bytes = null; });
       return;
@@ -627,7 +627,7 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
       final tags = await library.tags.readFromFile(local);
       final bytes = tags.coverBytes;
       if (bytes != null && bytes.isNotEmpty) {
-        unawaited(covers.saveFull(accountId: accountId, remotePath: remote, bytes: bytes));
+        unawaited(covers.saveFull(sourceName: sourceName, remotePath: remote, bytes: bytes));
         if (mounted) setState(() { _fullPath = null; _bytes = bytes; });
         return;
       }

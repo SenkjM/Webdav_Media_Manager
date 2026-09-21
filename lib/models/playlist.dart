@@ -1,30 +1,31 @@
 import '../utils/track_identity.dart';
 
-/// A playlist track identity: accountId + remotePath (library key).
+/// A playlist track identity: 网盘名 + remotePath (library key).
 class PlaylistEntry {
   const PlaylistEntry({
-    required this.accountId,
+    required this.sourceName,
     required this.remotePath,
     this.title,
     this.durationMs,
   });
 
-  final String accountId;
+  final String sourceName;
   final String remotePath;
   final String? title;
   final int? durationMs;
 
-  String get identityKey => trackIdentityKey(accountId, remotePath);
+  String get identityKey => trackIdentityKey(sourceName, remotePath);
 
   Map<String, dynamic> toJson() => {
-        'accountId': accountId,
+        'sourceName': sourceName,
         'remotePath': remotePath,
         if (title != null) 'title': title,
         if (durationMs != null) 'durationMs': durationMs,
       };
 
   factory PlaylistEntry.fromJson(Map<String, dynamic> json) => PlaylistEntry(
-        accountId: json['accountId'] as String? ?? '',
+        sourceName:
+            (json['sourceName'] ?? json['accountId']) as String? ?? '',
         remotePath: json['remotePath'] as String? ?? '',
         title: json['title'] as String?,
         durationMs: json['durationMs'] as int?,
@@ -33,11 +34,11 @@ class PlaylistEntry {
   @override
   bool operator ==(Object other) =>
       other is PlaylistEntry &&
-      other.accountId == accountId &&
+      other.sourceName == sourceName &&
       other.remotePath == remotePath;
 
   @override
-  int get hashCode => Object.hash(accountId, remotePath);
+  int get hashCode => Object.hash(sourceName, remotePath);
 }
 
 /// Local + syncable playlist. Survives audio cache cleanup.

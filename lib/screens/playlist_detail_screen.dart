@@ -32,7 +32,7 @@ class PlaylistDetailScreen extends StatelessWidget {
     final tracks = <LibraryTrack>[];
     final missing = <PlaylistEntry>[];
     for (final e in pl.entries) {
-      final t = library.find(e.accountId, e.remotePath);
+      final t = library.find(e.sourceName, e.remotePath);
       if (t != null) {
         tracks.add(t);
       } else {
@@ -69,7 +69,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                     onRemove: () => service.removeTrack(
                       pl.id,
                       PlaylistEntry(
-                        accountId: tracks[i].accountId,
+                        sourceName: tracks[i].sourceName,
                         remotePath: tracks[i].remotePath,
                       ),
                     ),
@@ -78,7 +78,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                   ListTile(
                     leading: const Icon(Icons.music_off_outlined),
                     title: Text(e.title ?? e.remotePath.split('/').last),
-                    subtitle: Text('库中暂无 · ${e.accountId}'),
+                    subtitle: Text('库中暂无 · ${e.sourceName}'),
                     trailing: IconButton(
                       icon: const Icon(Icons.remove_circle_outline),
                       onPressed: () => service.removeTrack(pl.id, e),
@@ -122,7 +122,7 @@ class PlaylistDetailScreen extends StatelessWidget {
     await context.read<PlaylistService>().addTrack(
           pl.id,
           PlaylistEntry(
-            accountId: selected.accountId,
+            sourceName: selected.sourceName,
             remotePath: selected.remotePath,
             title: selected.displayTitle,
             durationMs: selected.durationMs,
@@ -202,7 +202,7 @@ class _PlaylistTrackTile extends StatelessWidget {
     final cache = context.read<CacheService>();
     final local = await cache.localPathIfCached(
       track.effectiveAudioRemotePath,
-      accountId: track.accountId,
+      sourceName: track.sourceName,
     );
     if (local == null) {
       if (context.mounted) await enqueueLibraryTrackDownload(context, track);
@@ -212,12 +212,12 @@ class _PlaylistTrackTile extends StatelessWidget {
     for (final t in playlistTracks) {
       final path = await cache.localPathIfCached(
         t.effectiveAudioRemotePath,
-        accountId: t.accountId,
+        sourceName: t.sourceName,
       );
       if (path == null) continue;
       list.add(
         TrackInfo(
-          accountId: t.accountId,
+          sourceName: t.sourceName,
           remotePath: t.remotePath,
           fileName: t.fileName,
           localPath: path,
@@ -242,7 +242,7 @@ class _PlaylistTrackTile extends StatelessWidget {
       );
     }
     final info = TrackInfo(
-      accountId: track.accountId,
+      sourceName: track.sourceName,
       remotePath: track.remotePath,
       fileName: track.fileName,
       localPath: local,

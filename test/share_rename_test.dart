@@ -8,7 +8,7 @@ void main() {
   group('ShareRenameService.render', () {
     test('default 作者-标题 pattern', () {
       final track = TrackInfo(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/m/x.mp3',
         fileName: 'x.mp3',
         title: '夜曲',
@@ -22,7 +22,7 @@ void main() {
 
     test('missing fields collapse instead of leaving dangling separators', () {
       final track = TrackInfo(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/m/x.mp3',
         fileName: 'x.mp3',
         title: 'Solo',
@@ -32,7 +32,7 @@ void main() {
 
     test('unknown artist placeholder still yields the title', () {
       final track = TrackInfo(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/m/x.mp3',
         fileName: 'x.mp3',
         title: 'Untitled',
@@ -43,7 +43,7 @@ void main() {
 
     test('falls back to the original file stem when nothing matches', () {
       final track = TrackInfo(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/m/songfile.mp3',
         fileName: 'songfile.mp3',
       );
@@ -52,7 +52,7 @@ void main() {
 
     test('track / year placeholders render', () {
       final track = TrackInfo(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/m/x.mp3',
         fileName: 'x.mp3',
         title: 'T',
@@ -71,7 +71,7 @@ void main() {
     test('keeps the original extension', () {
       final settings = SettingsService();
       final track = TrackInfo(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/m/x.flac',
         fileName: 'x.flac',
         title: 'Song',
@@ -87,7 +87,7 @@ void main() {
   group('ShareRenameService.trackInfoForLibrary', () {
     test('maps tags and clip metadata across', () {
       final libraryTrack = LibraryTrack(
-        accountId: 'acc',
+        sourceName: 'acc',
         remotePath: '/m/song.mp3',
         fileName: 'song.mp3',
         title: 'Hello',

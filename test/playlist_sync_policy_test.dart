@@ -7,18 +7,18 @@ void main() {
   group('playlist identity', () {
     test('entry identity matches library trackIdentityKey', () {
       const e = PlaylistEntry(
-        accountId: 'acc-1',
+        sourceName: 'acc-1',
         remotePath: '/Music/a.mp3',
       );
       expect(e.identityKey, trackIdentityKey('acc-1', '/Music/a.mp3'));
       expect(
         e,
-        const PlaylistEntry(accountId: 'acc-1', remotePath: '/Music/a.mp3'),
+        const PlaylistEntry(sourceName: 'acc-1', remotePath: '/Music/a.mp3'),
       );
       expect(
         e ==
             const PlaylistEntry(
-              accountId: 'acc-2',
+              sourceName: 'acc-2',
               remotePath: '/Music/a.mp3',
             ),
         isFalse,
@@ -33,7 +33,7 @@ void main() {
         name: 'local',
         updatedAt: DateTime.utc(2026, 1, 1),
         entries: const [
-          PlaylistEntry(accountId: 'a', remotePath: '/x.mp3'),
+          PlaylistEntry(sourceName: 'a', remotePath: '/x.mp3'),
         ],
       );
       final remote = Playlist(
@@ -41,7 +41,7 @@ void main() {
         name: 'remote',
         updatedAt: DateTime.utc(2026, 2, 1),
         entries: const [
-          PlaylistEntry(accountId: 'a', remotePath: '/y.mp3'),
+          PlaylistEntry(sourceName: 'a', remotePath: '/y.mp3'),
         ],
       );
       final merged = mergePlaylistsLastWriteWins(local, remote);
@@ -79,13 +79,13 @@ void main() {
         updatedAt: DateTime.utc(2026, 9, 20, 7, 30),
         entries: const [
           PlaylistEntry(
-            accountId: 'accA',
+            sourceName: 'accA',
             remotePath: '/Music/song.flac',
             title: 'Song',
             durationMs: 125000,
           ),
           PlaylistEntry(
-            accountId: 'accB',
+            sourceName: 'accB',
             remotePath: '/Other/b.mp3',
             title: 'B',
           ),
@@ -101,10 +101,10 @@ void main() {
       expect(decoded.name, original.name);
       expect(decoded.updatedAt.toUtc(), original.updatedAt.toUtc());
       expect(decoded.entries.length, 2);
-      expect(decoded.entries[0].accountId, 'accA');
+      expect(decoded.entries[0].sourceName, 'accA');
       expect(decoded.entries[0].remotePath, '/Music/song.flac');
       expect(decoded.entries[0].durationMs, 125000);
-      expect(decoded.entries[1].accountId, 'accB');
+      expect(decoded.entries[1].sourceName, 'accB');
     });
 
     test('safeFileName sanitizes', () {

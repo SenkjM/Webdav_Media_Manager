@@ -28,7 +28,7 @@ void main() {
 
     test('LibraryTrack.musicId uses cue formula for virtual rows', () {
       final cue = LibraryTrack(
-        accountId: 'a1',
+        sourceName: 'a1',
         remotePath: '/album/disc.flac#cue:2',
         fileName: 'Track 02',
         cueRemotePath: '/album/disc.cue',
@@ -45,12 +45,12 @@ void main() {
 
     test('same path different accounts get distinct music_ids', () {
       final t1 = LibraryTrack(
-        accountId: 'a1',
+        sourceName: 'a1',
         remotePath: '/same/name.mp3',
         fileName: 'name.mp3',
       );
       final t2 = LibraryTrack(
-        accountId: 'a2',
+        sourceName: 'a2',
         remotePath: '/same/name.mp3',
         fileName: 'name.mp3',
       );
@@ -66,7 +66,7 @@ void main() {
   group('cue bidirectional relations (model)', () {
     test('slice points to cue + original audio', () {
       final slice = LibraryTrack(
-        accountId: 'acc',
+        sourceName: 'acc',
         remotePath: cueVirtualRemotePath('/a/x.flac', 3),
         fileName: '03',
         cueId: cueIdFor('acc', '/a/x.cue'),
@@ -129,7 +129,7 @@ void main() {
   group('CUE multi-slice UX label', () {
     test('virtual cue track exposes 多歌曲合并分片', () {
       final cue = LibraryTrack(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/a.flac#cue:1',
         fileName: '01',
         cueRemotePath: '/a.cue',
@@ -139,7 +139,7 @@ void main() {
       expect(cue.cueTypeLabel, LibraryTrack.cueMultiSliceLabel);
       expect(cue.cueTypeLabel, '多歌曲合并分片');
       final plain = LibraryTrack(
-        accountId: 'a',
+        sourceName: 'a',
         remotePath: '/b.mp3',
         fileName: 'b.mp3',
       );
@@ -150,7 +150,7 @@ void main() {
   group('backup restore leaves uncached without files', () {
     test('library maps never carry local_path as cached truth', () {
       final t = LibraryTrack(
-        accountId: 'acc',
+        sourceName: 'acc',
         remotePath: '/r/t.mp3',
         fileName: 't.mp3',
         title: 'Keep',
@@ -168,7 +168,7 @@ void main() {
         'accountId': 'acc',
         'tracks': [
           LibraryTrack(
-            accountId: 'acc',
+            sourceName: 'acc',
             remotePath: '/a.mp3',
             fileName: 'a.mp3',
           ).toMap(),
