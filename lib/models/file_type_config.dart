@@ -51,7 +51,7 @@ class FileTypeConfig {
   final List<String> cueExtensions;
 
   FileCategory categoryFor(String name) {
-    if (isMusicFileNameWith(name, musicExtensions)) return FileCategory.music;
+    if (isAudioFileNameWith(name, musicExtensions)) return FileCategory.music;
     if (isVideoFileNameWith(name, videoExtensions)) return FileCategory.video;
     if (isCueFileNameWith(name, cueExtensions)) return FileCategory.cue;
     return FileCategory.other;
