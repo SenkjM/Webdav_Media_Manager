@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_music_player/utils/track_identity.dart';
+import 'package:webdav_media_manager/utils/track_identity.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -3,9 +3,9 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:webdav_music_player/utils/cover_image.dart';
-import 'package:webdav_music_player/widgets/cover_art.dart';
-import 'package:webdav_music_player/services/tag_service.dart';
+import 'package:webdav_media_manager/utils/cover_image.dart';
+import 'package:webdav_media_manager/widgets/cover_art.dart';
+import 'package:webdav_media_manager/services/tag_service.dart';
 
 void main() {
   group('resolveLibraryCoverPath', () {

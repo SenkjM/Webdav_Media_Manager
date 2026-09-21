@@ -64,9 +64,9 @@ class BackupService extends ChangeNotifier {
   final CacheService? _cache;
   final CoverService _covers;
 
-  static const defaultRemoteDir = '/WebDAVMusicPlayer/backup/';
-  static const defaultFileName = 'webdav_music_backup.wmpbak';
-  static const format = 'webdav_music_player_backup';
+  static const defaultRemoteDir = '/WebdavMediaManager/backup/';
+  static const defaultFileName = 'webdav_media_backup.wdmm';
+  static const format = 'webdav_media_manager_backup';
   static const formatVersion = 5;
 
   bool busy = false;
@@ -107,7 +107,7 @@ class BackupService extends ChangeNotifier {
     }
 
     return {
-      'format': 'webdav_music_player_sync',
+      'format': 'webdav_media_manager_sync',
       'formatVersion': formatVersion,
       'createdAt': DateTime.now().toUtc().toIso8601String(),
       'activeAccountId': _accounts.activeAccountId,
@@ -317,7 +317,7 @@ class BackupService extends ChangeNotifier {
     try {
       final items = await _webDav.listDirectory(accountId, dir);
       final files = items
-          .where((e) => !e.isDirectory && e.name.endsWith('.wmpbak'))
+          .where((e) => !e.isDirectory && e.name.endsWith('.wdmm'))
           .map((e) => e.name)
           .toList()
         ..sort((a, b) => b.compareTo(a));

@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/library_track.dart';
-import 'package:webdav_music_player/models/webdav_item.dart';
-import 'package:webdav_music_player/services/settings_service.dart';
-import 'package:webdav_music_player/services/share_rename_service.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/models/webdav_item.dart';
+import 'package:webdav_media_manager/services/settings_service.dart';
+import 'package:webdav_media_manager/services/share_rename_service.dart';
 
 void main() {
   group('ShareRenameService.render', () {

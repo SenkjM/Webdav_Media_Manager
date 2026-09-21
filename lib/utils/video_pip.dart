@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import '../services/platform_export_service.dart';
 
 const MethodChannel _kAppChannel = MethodChannel(
-  'com.webdav.webdav_music_player/app',
+  'com.webdav.media_manager/app',
 );
 
 /// Requests Android Picture-in-Picture for the running activity.

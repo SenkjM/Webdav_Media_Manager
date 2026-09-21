@@ -2,10 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:webdav_music_player/models/library_track.dart';
-import 'package:webdav_music_player/utils/cover_image.dart';
-import 'package:webdav_music_player/utils/track_identity.dart';
-import 'package:webdav_music_player/utils/webdav_errors.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/utils/cover_image.dart';
+import 'package:webdav_media_manager/utils/track_identity.dart';
+import 'package:webdav_media_manager/utils/webdav_errors.dart';
 
 void main() {
   group('track identity key', () {

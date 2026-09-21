@@ -1,15 +1,15 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/services/media_notification_channel.dart';
-import 'package:webdav_music_player/services/music_audio_handler.dart'
+import 'package:webdav_media_manager/services/media_notification_channel.dart';
+import 'package:webdav_media_manager/services/music_audio_handler.dart'
     as handler;
-import 'package:webdav_music_player/services/notification_permission_service.dart';
+import 'package:webdav_media_manager/services/notification_permission_service.dart';
 
 void main() {
   test('media channel id stays the v4 ColorOS-fresh channel', () {
     expect(
       kMediaNotificationChannelId,
-      'com.webdav.webdav_music_player.audio.v4',
+      'com.webdav.media_manager.audio.v4',
     );
     // Still re-exported from music_audio_handler.dart for existing importers.
     expect(handler.kMediaNotificationChannelId, kMediaNotificationChannelId);

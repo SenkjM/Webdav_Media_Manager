@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/utils/wmp_container.dart';
+import 'package:webdav_media_manager/utils/wmp_container.dart';
 
 List<int> _pattern(int length, [int seed = 7]) =>
     List<int>.generate(length, (i) => (i * 31 + seed) & 0xFF);

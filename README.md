@@ -1,6 +1,6 @@
-# WebDAV 音乐播放器
+# Webdav Media Manager
 
-基于 **Flutter** 的 **Android** WebDAV 音乐客户端。
+基于 **Flutter** 的 **Android** 网盘媒体管理器（Webdav Media Manager）。
 
 仓库：[https://github.com/SenkjM/WEBDAV-music-player](https://github.com/SenkjM/WEBDAV-music-player)
 
@@ -24,9 +24,9 @@
 ### 主要能力
 
 - **网络库（多 WebDAV）**：未下载音频浏览时不显示「排队」等状态徽标（点按/多选下载后才入队并显示）；可添加 / 编辑 / 删除多个服务器账号（URL、用户名、密码经安全存储）；在网络库中切换当前服务器；浏览时只显示条目名称（不铺满远程完整路径）。**视频条目只显示「播放」按钮**，下载要到长按（多选）或右侧「更多操作」菜单里才会出现
-- **下载队列**：后台异步排队下载，支持取消 / 重试 / 清除已完成；长按文件夹可**递归下载整个目录**中的音频。**视频下载写入系统相册**（MediaStore `Movies/WebDAVMusic`），下载队列与网络库都会标注「系统相册」；音乐仍下载到应用内部音频缓存（播放只读缓存）
+- **下载队列**：后台异步排队下载，支持取消 / 重试 / 清除已完成；长按文件夹可**递归下载整个目录**中的音频。**视频下载写入系统相册**（MediaStore `Movies/WebdavMediaManager`），下载队列与网络库都会标注「系统相册」；音乐仍下载到应用内部音频缓存（播放只读缓存）
 - **标签读取**：下载完成后用 `audio_metadata_reader` 读取 title / artist / album / track / disc / 封面 / 时长，并写入本地音乐库
-- **本地音乐库**：仅索引「至少缓存过一次」的曲目；可按 **专辑 / 作者 / 音乐名 / 标签（流派）** 浏览；支持 **搜索**（标题/艺术家/专辑）；长按进入多选（添加到歌单 / 分享 / **删除** / **销毁**；CUE 组删除仍整组警告；CUE 虚拟曲目不可分享）；支持按 **名称** 或 **专辑曲序（碟号/曲号）** 排序；身份键为 `(webdav_account_id + remote_path)`
+- **本地音乐库**：仅索引「至少缓存过一次」的曲目；可按 **专辑 / 作者 / 音乐名 / 标签（流派）** 浏览；支持 **搜索**（标题/艺术家/专辑）；长按进入多选（添加到歌单 / 分享 / **删除** / **销毁**；CUE 组删除仍整组警告；CUE 虚拟曲目不可分享）；支持按 **名称** 或 **专辑曲序（碟号/曲号）** 排序；身份键为 `(网盘名 + remote_path)`
   - 多选工具条按缓存状态显示按钮：**所有选中项都无缓存 → 只显示「销毁」**；**有缓存 → 同时显示「删除」与「销毁」**；混合选择同样显示两个
   - **删除**：只删本地音频缓存，保留标签与封面；**销毁**：删缓存 + 从音乐库移除 + 销毁元数据与压缩封面（不可恢复）
 - **分享重命名**：分享已缓存音频时可按标签重命名，**默认开启且模板为「作者-标题」**（`{artist}-{title}`）；分享单个文件会弹出可编辑的文件名对话框，也可选「用原文件名」。模板支持 `{artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}`，在**设置 → 分享**里配置
@@ -45,8 +45,8 @@
   - **WebDAV 凭证 = 真同步**：统一存放在云端 `credentials.json`，**地址与用户名为明文、只加密密码**（AES-256-GCM，`AESGCMv1:` 前缀，可关闭改成明文）。启动 / 切换账号 / 每 30 分钟自动双向扫描。无法提供统一解密密钥时**密码留空恢复**，其余字段照常写回，之后再补填
   - **歌单 = 真同步**：双向 M3U8，`updatedAt` 最后写入胜出；改动即时上传，启动 / 切换账号 / 定时拉取合并
   - **音乐库 = 增量同步**：本地下载完成（防抖 20s）即把新增曲目推到云端索引，云端新增也会拉下来；不会删除。需要对齐删除时用**全量同步**
-  - **全部备份**：把凭证 + 音乐库 + 歌单打成一个归档，**自己挑网盘再挑路径**，写 `backup-<UTC>.wmpbak` 与 `webdav_music_backup.wmpbak`（latest）；可从该路径列出备份并恢复
-  - **本地导入 / 导出**：导出到 `下载/WebDAVMusic/wmp-sync-*.zip`（口令可选）；导入走系统文件选择器（SAF）或粘贴 Base64
+  - **全部备份**：把凭证 + 音乐库 + 歌单打成一个归档，**自己挑网盘再挑路径**，写 `backup-<UTC>.wdmm` 与 `webdav_media_backup.wdmm`（latest）；可从该路径列出备份并恢复
+  - **本地导入 / 导出**：导出到 `下载/WebdavMediaManager/wdmm-export-<UTC>.wdmm`（可读 JSON 模式则为 `.json`；口令可选）；导入走系统文件选择器（SAF）或粘贴 Base64
 
 ### 导航
 
@@ -90,11 +90,11 @@
 ## 权限与媒体通知
 
 - **Android 13+**：运行时请求 `POST_NOTIFICATIONS`（首次启动 / 首次播放 / 设置页）。通知权限开启后，媒体通知才能显示。
-- **通知通道**：`flutter_local_notifications` 在启动时创建并接管「音乐播放」通道（`com.webdav.webdav_music_player.audio.v4`，IMPORTANCE_DEFAULT、静音、不震动），并负责查询权限与通道状态；`audio_service` 原生 `createChannel()` 发现通道已存在即复用，因此设置页在首次播放前就能显示系统真实通道状态（定义见 `lib/services/media_notification_channel.dart`，须与 `AudioServiceConfig` 保持一致）。
+- **通知通道**：`flutter_local_notifications` 在启动时创建并接管「音乐播放」通道（`com.webdav.media_manager.audio.v4`，IMPORTANCE_DEFAULT、静音、不震动），并负责查询权限与通道状态；`audio_service` 原生 `createChannel()` 发现通道已存在即复用，因此设置页在首次播放前就能显示系统真实通道状态（定义见 `lib/services/media_notification_channel.dart`，须与 `AudioServiceConfig` 保持一致）。
 - **媒体播放通知**：通过 `audio_service` 的 `MusicAudioHandler` 在播放时启动 `mediaPlayback` 前台服务，并发布 `MediaItem` + `PlaybackState`，使通知栏 / 锁屏 / 系统媒体控制中心显示 MediaStyle 控件（播放/暂停，有队列时上一首/下一首）。通知小图标使用 `drawable/ic_stat_music`（不可用自适应 launcher 图标）。
 - 需声明 `WAKE_LOCK`、`FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_MEDIA_PLAYBACK`、`POST_NOTIFICATIONS`，并注册 `AudioService` / `MediaButtonReceiver`；`MainActivity` 继承 `AudioServiceFragmentActivity`（保证共享 FlutterEngine 不随 Activity 销毁而销毁，避免切后台后通知/播放状态丢失）。
 - **视频媒体通知**：`MusicAudioHandler` 与视频共用同一个 MediaSession。进入视频时切到 video 模式（`mediaItem` = 视频标题、控件只保留播放/暂停与停止、无队列），因此通知栏 / 锁屏 / 媒体控制中心都会显示视频；`FOREGROUND_SERVICE_MEDIA_PLAYBACK` 前台服务也是「主页键挂后台仍继续播放」的前提。
-- **系统相册 / 下载目录**：`MainActivity` 通过同名 MethodChannel 暴露 `saveToGallery` / `saveToDownloads` / `pickFile`：Android 10+ 走 `MediaStore`（`Movies/WebDAVMusic`、`Download/WebDAVMusic`，无需运行时权限），Android 9 及以下退回公共目录写入 + `MediaScannerConnection`（需要 `WRITE_EXTERNAL_STORAGE`，已用 `android:maxSdkVersion="28"` 声明）。PiP 状态通过 `onPictureInPictureModeChanged` 回传 `pictureInPictureChanged`。
+- **系统相册 / 下载目录**：`MainActivity` 通过同名 MethodChannel 暴露 `saveToGallery` / `saveToDownloads` / `pickFile`：Android 10+ 走 `MediaStore`（`Movies/WebdavMediaManager`、`Download/WebdavMediaManager`，无需运行时权限），Android 9 及以下退回公共目录写入 + `MediaScannerConnection`（需要 `WRITE_EXTERNAL_STORAGE`，已用 `android:maxSdkVersion="28"` 声明）。PiP 状态通过 `onPictureInPictureModeChanged` 回传 `pictureInPictureChanged`。
 - 真机验证：通知样式与锁屏控件需在真实 Android 设备上确认；模拟器上权限与 FGS 行为可能不完整。
 - **CUE**：网络库点开 `.cue` 先预览曲目再下载；下载队列将 CUE 组折叠为单行；清空缓存后会失效陈旧 completed 任务，库内 clip 元数据保留以便重新下载后继续分段播放。
 
@@ -142,11 +142,11 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
 只有三样数据：**WebDAV 凭证、音乐库、歌单**。没有站点隔离 —— 一份凭证表、一份音乐库、一份歌单，备份自己挑网盘和路径。
 
 - **入口**：设置 →「同步与备份」（`SyncScreen`）
-- **云端根目录**：`SettingsService.syncRemoteRoot`（默认 `/WebDAVMusicPlayer/`）
+- **云端根目录**：`SettingsService.syncRemoteRoot`（默认 `/WebdavMediaManager/`）
   - `credentials.json` — WebDAV 凭证：**地址 / 用户名明文**，密码可选加密
   - `library/<accountId12>/library_index.json` — 曲库索引（`formatVersion 2`）
   - `/Playlists/*.m3u8` — 歌单
-  - 备份路径（默认 `/WebDAVMusicPlayer/backup/`）下 `backup-<UTC>.wmpbak` + `webdav_music_backup.wmpbak`
+  - 备份路径（默认 `/WebdavMediaManager/backup/`）下 `backup-<UTC>.wdmm` + `webdav_media_backup.wdmm`
 - **各自的同步方式**
   | 数据 | 方式 |
   |------|------|
@@ -156,8 +156,8 @@ Android 要求新 APK 的 `versionCode` 更大才能覆盖安装；因此预发�
   | 全部备份 | 一次性归档：凭证 + 音乐库 + 歌单 + 封面，写到自选网盘与路径，可从该路径恢复 |
 - **凭证加密**：`settings.syncEncryptPassword`（默认开启）。密码字段为 `AESGCMv1:<base64(salt|nonce|ct|mac)>`（PBKDF2-SHA256 120k + AES-256-GCM）。**无法提供统一解密密钥时，密码留空恢复**，其余字段照常写回
 - **本地导入 / 导出**：
-  - 导出 → `下载/WebDAVMusic/wmp-sync-<UTC>.zip`（可选口令加密，`WMPB1` 头）
-  - 导入 ← 系统文件选择器（SAF，任意 `.wmpbak` / `.zip`）或粘贴 Base64
+  - 导出 → `下载/WebdavMediaManager/wdmm-export-<UTC>.wdmm`（可选口令加密，密文以 `WMPB1` 开头）或 `.json`（可读，不含封面）
+  - 导入 ← 系统文件选择器（SAF，任意 `.wdmm` / `.json`）或粘贴 Base64
 
 ## CI：自动构建并发布 Pre-release
 

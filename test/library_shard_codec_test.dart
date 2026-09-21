@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/library_track.dart';
-import 'package:webdav_music_player/services/library_shard_codec.dart';
-import 'package:webdav_music_player/utils/wmp_container.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/services/library_shard_codec.dart';
+import 'package:webdav_media_manager/utils/wmp_container.dart';
 
 LibraryTrack _track(
   String path, {

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/cache_policy.dart';
+import 'package:webdav_media_manager/models/cache_policy.dart';
 
 /// Documents & guards the policy: audio cache cleanup must never target
 /// playlist storage paths (playlists.db lives under documents, not music_cache).

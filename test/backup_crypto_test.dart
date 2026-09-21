@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/utils/backup_crypto.dart';
+import 'package:webdav_media_manager/utils/backup_crypto.dart';
 
 void main() {
   test('encrypt/decrypt round-trip', () async {

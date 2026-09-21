@@ -38,7 +38,7 @@
 - [x] A8 视频发布媒体通知（`AudioHandlerMode.video`，复用同一 MediaSession）
 
 ### B. 下载与系统相册
-- [x] B1 视频下载写入系统相册（`MediaStore Movies/WebDAVMusic`）
+- [x] B1 视频下载写入系统相册（`MediaStore Movies/WebdavMediaManager`）
 - [x] B2 下载队列与网络库标注「系统相册」
 - [x] B3 本地备份导出到系统下载目录
 

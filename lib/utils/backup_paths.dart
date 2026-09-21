@@ -25,19 +25,20 @@ String backupAccountDirName(WebDavAccount account) {
   return '${shortId}_$namePart';
 }
 
-/// Timestamped backup file name, e.g. `backup-20260920T080000Z.wmpbak`.
-String backupFileNameNow({DateTime? now}) {
+/// UTC stamp used in backup / export file names, e.g. `20260920T080000Z`.
+String utcStamp({DateTime? now}) {
   final t = (now ?? DateTime.now()).toUtc();
   String two(int n) => n.toString().padLeft(2, '0');
-  final stamp =
-      '${t.year}${two(t.month)}${two(t.day)}T${two(t.hour)}${two(t.minute)}${two(t.second)}Z';
-  return 'backup-$stamp.wmpbak';
+  return '${t.year}${two(t.month)}${two(t.day)}T${two(t.hour)}${two(t.minute)}${two(t.second)}Z';
 }
+
+/// Timestamped cloud backup file name, e.g. `backup-20260920T080000Z.wdmm`.
+String backupFileNameNow({DateTime? now}) => 'backup-${utcStamp(now: now)}.wdmm';
 
 /// Join base backup root with per-account subdirectory.
 String perAccountBackupDir(String backupRoot, WebDavAccount account) {
   var root = backupRoot.trim();
-  if (root.isEmpty) root = '/WebDAVMusicPlayer/backup/';
+  if (root.isEmpty) root = '/WebdavMediaManager/backup/';
   if (!root.startsWith('/')) root = '/$root';
   if (!root.endsWith('/')) root = '$root/';
   return '$root${backupAccountDirName(account)}/';

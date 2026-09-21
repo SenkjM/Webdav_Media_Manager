@@ -12,7 +12,7 @@
         android:maxSdkVersion="28"/>
     <application
         android:usesCleartextTraffic="true"
-        android:label="WebDAV 音乐"
+        android:label="Webdav Media Manager"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

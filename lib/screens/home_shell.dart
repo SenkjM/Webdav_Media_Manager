@@ -129,7 +129,7 @@ class _HomeShellState extends State<HomeShell> {
                                 ),
                                 SizedBox(height: 12),
                                 Text(
-                                  'WebDAV 音乐播放器',
+                                  'Webdav Media Manager',
                                   style: TextStyle(
                                     color: AppColors.onDark,
                                     fontSize: 18,

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/download_task.dart';
-import 'package:webdav_music_player/services/download_queue_service.dart';
+import 'package:webdav_media_manager/models/download_task.dart';
+import 'package:webdav_media_manager/services/download_queue_service.dart';
 
 void main() {
   group('DownloadQueueService.orderPending', () {

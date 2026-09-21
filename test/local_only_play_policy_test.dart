@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/library_track.dart';
-import 'package:webdav_music_player/theme/app_theme.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/theme/app_theme.dart';
 
 void main() {
   test('local vs remote indicator colors are distinct and light-friendly', () {

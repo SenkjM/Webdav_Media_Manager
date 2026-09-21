@@ -329,9 +329,9 @@ class CloudLibrary {
 /// ```
 /// <sync root>/library/
 ///   index.json          manifest: base shards + delta parts + tombstone parts
-///   lib-<ts>-<rand>.wmp base shard (a slice of the complete live library)
-///   seg-<from>-<rand>.wmp  delta: rows added/updated since the base
-///   del-<from>-<rand>.wmp  tombstones: deletions, materialised only on rebuild
+///   lib-<ts>-<rand>.wdmm base shard (a slice of the complete live library)
+///   seg-<from>-<rand>.wdmm  delta: rows added/updated since the base
+///   del-<from>-<rand>.wdmm  tombstones: deletions, materialised only on rebuild
 /// ```
 ///
 /// There is deliberately **no automatic compaction**: appending is cheap and
@@ -731,7 +731,7 @@ class LibrarySyncStore {
         coverBlobs: withCovers ? await _coverBlobs(slice) : null,
       );
       final file =
-          '$shardPrefix${(i + 1).toString().padLeft(4, '0')}-${_rand()}.wmp';
+          '$shardPrefix${(i + 1).toString().padLeft(4, '0')}-${_rand()}.wdmm';
       await _webDav.writeBytes(destAccountId, '${dirPath()}/$file', bytes);
       shards.add(
         BaseShard(file: file, count: slice.length, bytes: bytes.length),
@@ -811,7 +811,7 @@ class LibrarySyncStore {
 
   String _partName(String prefix, int rev) {
     final stamp = rev > 0 ? rev : DateTime.now().millisecondsSinceEpoch;
-    return '$prefix$stamp-${_rand()}.wmp';
+    return '$prefix$stamp-${_rand()}.wdmm';
   }
 
   static String _rand() =>

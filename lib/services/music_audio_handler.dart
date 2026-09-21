@@ -30,7 +30,7 @@ void _notifLog(String message) {
   }
 }
 
-const _kAppChannel = MethodChannel('com.webdav.webdav_music_player/app');
+const _kAppChannel = MethodChannel('com.webdav.media_manager/app');
 
 /// Actions Android 13+ / lock screen / control center read from PlaybackState.
 const Set<MediaAction> _kSystemActions = {
@@ -842,7 +842,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         final model = map['model']?.toString() ?? '';
         final sdk = map['sdk'];
         final hint = (!posted || channelBlocked)
-            ? ' | 若仍无通知: 设置→应用→WebDAV音乐→耗电管理=不限制;'
+            ? ' | 若仍无通知: 设置→应用→Webdav Media Manager→耗电管理=不限制;'
                 '通知=允许(含锁屏/悬浮); 通道「音乐播放」勿关闭'
             : '';
         return '服务=${svc ? "运行" : "无"} 会话=${active ? "活跃" : "否"} '

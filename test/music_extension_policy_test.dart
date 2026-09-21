@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/file_type_config.dart';
+import 'package:webdav_media_manager/models/file_type_config.dart';
 
 /// Regression guard: the download queue used to gate library ingest on a
 /// hard-coded extension list that omitted `.m4a` / `.aac`, so those downloads

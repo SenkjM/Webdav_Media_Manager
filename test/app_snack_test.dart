@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_music_player/models/snack_duration.dart';
-import 'package:webdav_music_player/services/settings_service.dart';
-import 'package:webdav_music_player/utils/app_snack.dart';
+import 'package:webdav_media_manager/models/snack_duration.dart';
+import 'package:webdav_media_manager/services/settings_service.dart';
+import 'package:webdav_media_manager/utils/app_snack.dart';
 
 /// The user-facing contract of in-app messages:
 /// * every message carries 知道了;

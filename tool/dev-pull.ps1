@@ -17,7 +17,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $Path,
     [string] $Out = '',
-    [string] $Package = 'com.webdav.webdav_music_player'
+    [string] $Package = 'com.webdav.media_manager'
 )
 
 $ErrorActionPreference = 'Continue'

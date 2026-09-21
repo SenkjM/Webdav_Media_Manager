@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/services/music_audio_handler.dart';
+import 'package:webdav_media_manager/services/music_audio_handler.dart';
 
 void main() {
   test('channel id bumped to v4 for ColorOS fresh IMPORTANCE_DEFAULT', () {

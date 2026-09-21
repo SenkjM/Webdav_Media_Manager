@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-const _kAppChannel = MethodChannel('com.webdav.webdav_music_player/app');
+const _kAppChannel = MethodChannel('com.webdav.media_manager/app');
 
 /// Broadcasts Android picture-in-picture transitions reported by MainActivity.
 final StreamController<bool> _pipController =
@@ -54,7 +54,7 @@ class ExportResult {
   final bool ok;
   final String fileName;
 
-  /// Human-readable destination, e.g. `系统相册` / `下载目录/WebDAVMusic`.
+  /// Human-readable destination, e.g. `系统相册` / `下载目录/WebdavMediaManager`.
   final String location;
   final String? uri;
 
@@ -111,7 +111,7 @@ class PlatformExportService {
     required String sourcePath,
     required String fileName,
     String? mimeType,
-    String album = 'WebDAVMusic',
+    String album = 'WebdavMediaManager',
   }) =>
       _save(
         method: 'saveToGallery',
@@ -127,7 +127,7 @@ class PlatformExportService {
     required String sourcePath,
     required String fileName,
     String? mimeType,
-    String subdir = 'WebDAVMusic',
+    String subdir = 'WebdavMediaManager',
   }) =>
       _save(
         method: 'saveToDownloads',

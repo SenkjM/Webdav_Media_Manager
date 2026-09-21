@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/cache_policy.dart';
+import 'package:webdav_media_manager/models/cache_policy.dart';
 
 void main() {
   group('CacheExpiryPolicy', () {

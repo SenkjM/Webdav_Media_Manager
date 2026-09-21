@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/utils/rev_clock.dart';
+import 'package:webdav_media_manager/utils/rev_clock.dart';
 
 void main() {
   group('RevClock', () {

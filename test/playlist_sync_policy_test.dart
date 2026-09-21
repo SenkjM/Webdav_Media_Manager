@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/playlist.dart';
-import 'package:webdav_music_player/utils/m3u8_playlist.dart';
-import 'package:webdav_music_player/utils/track_identity.dart';
+import 'package:webdav_media_manager/models/playlist.dart';
+import 'package:webdav_media_manager/utils/m3u8_playlist.dart';
+import 'package:webdav_media_manager/utils/track_identity.dart';
 
 void main() {
   group('playlist identity', () {

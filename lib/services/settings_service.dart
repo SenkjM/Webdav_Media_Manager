@@ -72,9 +72,9 @@ class SettingsService extends ChangeNotifier {
   static const int minCustomRetentionHours = 1;
   static const int maxCustomRetentionHours = 24 * 365 * 10;
 
-  static const String defaultBackupRemotePath = '/WebDAVMusicPlayer/backup/';
+  static const String defaultBackupRemotePath = '/WebdavMediaManager/backup/';
   static const String defaultLibrarySyncRemotePath =
-      '/WebDAVMusicPlayer/library/';
+      '/WebdavMediaManager/library/';
   static const String defaultPlaylistRemotePath = '/Playlists/';
 
   /// Video streaming buffer clamp [8 MB, 512 MB]; default 64 MB.
@@ -125,7 +125,7 @@ class SettingsService extends ChangeNotifier {
   static const String defaultShareTagRenamePattern = '{artist}-{title}';
 
   /// Unified sync root on the WebDAV server (holds credentials + backup).
-  static const String defaultSyncRemoteRoot = '/WebDAVMusicPlayer/';
+  static const String defaultSyncRemoteRoot = '/WebdavMediaManager/';
 
   SharedPreferences? _prefs;
   final FlutterSecureStorage _secure;

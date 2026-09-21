@@ -1,7 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_music_player/services/settings_service.dart';
+import 'package:webdav_media_manager/services/settings_service.dart';
 
 /// In-memory stand-in for the platform keystore.
 class _FakeSecureStorage extends FlutterSecureStorage {

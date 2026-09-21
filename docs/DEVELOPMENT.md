@@ -9,7 +9,7 @@
 
 ## 1. 项目概览与目标
 
-**WebDAV 音乐播放器**是 Android-first 的 Flutter 客户端：
+**Webdav Media Manager**是 Android-first 的 Flutter 客户端：
 
 - 在 WebDAV 上浏览目录 → **先下载到本地缓存** → 再用本地路径播放。
 - **不做网络流式播放**（`media_kit` 的 `Player.open` 只喂本地文件路径；播放路径上禁止隐式入队下载）。
@@ -110,11 +110,11 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 | 音乐库 UI / 销毁 / 多选删除与销毁 | `library_screen.dart`, `library_actions.dart` |
 | 缓存路径 / 过期清理 / annex | `cache_service.dart` |
 | **同步 / 备份（凭证 + 曲库 + 歌单 + 归档）** | `sync_service.dart`, `screens/sync_screen.dart`, `backup_service.dart` |
-| **音乐库增量索引（清单 + 二进制分片）** | `services/library_sync_store.dart`（`index.json` 清单 + `lib-*.wmp` 基础分片 + `seg-*.wmp` 增量 + `del-*.wmp` 墓碑；**无自动合并**，≥20 片由 UI 建议重建）、`services/library_shard_codec.dart`（曲目/墓碑 ⇄ 容器记录、封面每首一份）、`utils/library_index_merge.dart`（纯合并函数） |
+| **音乐库增量索引（清单 + 二进制分片）** | `services/library_sync_store.dart`（`index.json` 清单 + `lib-*.wdmm` 基础分片 + `seg-*.wdmm` 增量 + `del-*.wdmm` 墓碑；**无自动合并**，≥20 片由 UI 建议重建）、`services/library_shard_codec.dart`（曲目/墓碑 ⇄ 容器记录、封面每首一份）、`utils/library_index_merge.dart`（纯合并函数） |
 | **曲目身份 = 网盘名 + remote_path** | `utils/track_identity.dart`；行内**不含 URL / 用户名**，`网盘名 → url/用户名/密码` 只由本机 accounts 表解析（`AccountsService.accountForSource` / `idForSource` / `nameForAccount`） |
 | **下载队列只存网盘名** | `DownloadTask.sourceName`；`DownloadQueueService._accountIdForSource` 在真正传输时才解析账号，改名/重加网盘不会留下过期指针 |
 | **二进制容器（云端分片 + 备份归档）** | `utils/wmp_container.dart`：'WMPC' 头 + section 表 + 每 section CRC32；META/TRACKS/COVERS/TOMBS/CREDENTIALS/PLAYLISTS/SETTINGS/**CUEALBUMS**；曲目记录 tag-value varint；封面**每首一份**、连续排布便于按需 seek |
-| **备份归档 `.wmpbak` = 同一容器** | `backup_service.dart`：TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections；整包可选口令加密。`buildJsonExport()` 另出**可读 JSON（不含封面）**排障用；导入按魔数自动识别容器 / JSON（**不再用 ZIP**，`archive` 依赖已移除） |
+| **备份归档 `.wdmm` = 同一容器** | `backup_service.dart`：TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections；整包可选口令加密。`buildJsonExport()` 另出**可读 JSON（不含封面）**排障用；导入按魔数自动识别容器 / JSON（**不再用 ZIP**，`archive` 依赖已移除） |
 | **云端库整理 / 审计** | `library_sync_store.dart`(`audit`/`deleteOrphans`, 纯函数 `auditLibraryParts`)：孤儿文件、缺失分片；UI 在同步页「整理」 |
 | **单增版本时钟 rev** | `utils/rev_clock.dart`：`rev = max(nowMs, last+1)`，严格单增、时钟回拨不回退；`compareRev` 版本相同时按 deviceId 决胜 |
 | 凭证加密（仅密码） | `utils/credential_vault_crypto.dart`, `credential_vault_service.dart` |
@@ -229,7 +229,7 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 - `audio_service`（vendored）：`MusicAudioHandler` → MediaSession + MediaStyle 通知；播放引擎与通知桥接解耦，`Player` 的 stream 被动推送到 `playbackState`/`mediaItem`。
 - Android 原生依赖 `libmpv`：`media_kit_libs_android_audio` 随 APK 打包各 ABI 的 so；CI 在 ubuntu-latest 上跑 `flutter test` 前需 `apt install libmpv-dev mpv`（`flutter test` 进程本身是 Linux 可执行文件，会走 GNU/Linux 加载路径）。
 - 配置要点（`initMusicAudioService`）：
-  - 通道 id：`com.webdav.webdav_music_player.audio.v4`（IMPORTANCE_DEFAULT；历史曾用 v1–v3，升级靠换 id 生效）
+  - 通道 id：`com.webdav.media_manager.audio.v4`（IMPORTANCE_DEFAULT；历史曾用 v1–v3，升级靠换 id 生效）
   - `androidStopForegroundOnPause: false`（避免 Android 12+ 暂停后再起 FGS 被拦）
   - 图标：`drawable/ic_stat_music`（不要用自适应 launcher）
 - 补丁说明：`packages/audio_service/PATCHES.md`（Android 14+ typed `startForeground`、通道重要性、失败后 notify 回退、缺通知时重入 FGS）。
@@ -303,17 +303,17 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 | 音乐库 | **增量**：`library.addListener` 防抖 20s 后 `syncLibraryIncremental()`；也可手动 `syncLibraryFull()`（对齐删除） |
 | 全部备份 | `backupTo(destination, remoteDir, passphrase)` 打成**一个**归档 |
 
-云端布局（`SettingsService.syncRemoteRoot`，默认 `/WebDAVMusicPlayer/`）：
+云端布局（`SettingsService.syncRemoteRoot`，默认 `/WebdavMediaManager/`）：
 
 | 文件 | 内容 | 加密 |
 |------|------|------|
 | `credentials.json` | WebDAV 账号（**地址/用户名明文** + 密码） | **仅密码**（`AESGCMv1:`，PBKDF2-SHA256 120k + AES-256-GCM） |
 | `library/<accountId12>/library_index.json` | 曲库索引（`formatVersion 2`） | 无 |
 | `/Playlists/*.m3u8` | 歌单 | 无 |
-| `backup/`（用户自选路径）`backup-<UTC>.wmpbak` + `webdav_music_backup.wmpbak` | 全部备份归档 | 可选口令（`WMPB1`） |
+| `backup/`（用户自选路径）`backup-<UTC>.wdmm` + `webdav_media_backup.wdmm` | 全部备份归档 | 可选口令（`WMPB1`） |
 
 - `passwordEncrypted: true` 表示密码是 `AESGCMv1:` 密文；`tryDecrypt` 失败时**账号照常恢复、密码留空**（`AccountsService` 返回 missing 列表供 UI 提示），**绝不**因缺密钥中止整次同步。
-- 「导出到下载目录」→ `Download/WebDAVMusic/wmp-sync-<UTC>.zip`（`PlatformExportService.saveToDownloads`）。
+- 「导出到下载目录」→ `Download/WebdavMediaManager/wdmm-export-<UTC>.wdmm`（可读 JSON 模式为 `.json`；`PlatformExportService.saveToDownloads`）。
 - 「从本地文件导入」→ 原生 SAF `ACTION_OPEN_DOCUMENT` 拷贝到应用缓存后读取（`pickFile`），也支持粘贴 Base64。
 
 ### 全部备份归档（`BackupService`）
@@ -326,7 +326,7 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 
 ### 视频下载目标（非备份）
 
-视频下载不进备份，也不进音频缓存：`DownloadTask.target = DownloadTarget.gallery` → `DownloadQueueService._runGalleryDownload` → 原生 `saveToGallery`（MediaStore `Movies/WebDAVMusic`）。因此画廊任务的 `localPath` 存的是 `content://` URI 或 API<29 的绝对路径。
+视频下载不进备份，也不进音频缓存：`DownloadTask.target = DownloadTarget.gallery` → `DownloadQueueService._runGalleryDownload` → 原生 `saveToGallery`（MediaStore `Movies/WebdavMediaManager`）。因此画廊任务的 `localPath` 存的是 `content://` URI 或 API<29 的绝对路径。
 
 ---
 

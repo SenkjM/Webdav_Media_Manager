@@ -9,7 +9,7 @@
 # 一次性：装包并启动（保留数据，账号不用重配）
 flutter build apk --debug
 adb install -r build\app\outputs\flutter-apk\app-debug.apk
-adb shell am start -n com.webdav.webdav_music_player/.MainActivity
+adb shell am start -n com.webdav.media_manager/.MainActivity
 ```
 
 需要热重载时（可选，用完随手关掉省事）：
@@ -60,7 +60,7 @@ adb logcat -d -s AndroidRuntime:E > .tmp\log-crash.txt
 - [ ] **2.6 视频行只有「播放」按钮**，没有下载按钮
 - [ ] **2.7 视频：「⋮」→「下载到系统相册」生效**
   - 期望：下载队列该行标注「目标：系统相册」/完成后「已存入系统相册」
-  - 完成后到系统相册（Movies/WebDAVMusic）能看到文件
+  - 完成后到系统相册（Movies/WebdavMediaManager）能看到文件
 - [ ] **2.8 长按文件夹 → 递归下载整个目录的音频**
 
 ---
@@ -153,19 +153,19 @@ adb logcat -d -s AndroidRuntime:E > .tmp\log-crash.txt
 - [ ] **6.3 通知栏 / 锁屏的播放暂停能控制**
 - [ ] **6.4 视频播放时音乐自动暂停**；点音乐则视频停止
 - [ ] **6.5 ColorOS 省电设置影响通知**
-  - 设置 → 应用 → WebDAV音乐 → 耗电管理 = 不限制；通知 = 允许
+  - 设置 → 应用 → Webdav Media Manager → 耗电管理 = 不限制；通知 = 允许
   - 应用内「设置 → 「音乐播放」通道」看状态
 
 ---
 
 ## 7. 系统相册 / 下载目录（真机专属）
 
-- [ ] **7.1** 视频下载完成 → 系统相册能看到，路径 `Movies/WebDAVMusic`
+- [ ] **7.1** 视频下载完成 → 系统相册能看到，路径 `Movies/WebdavMediaManager`
   ```powershell
   adb shell content query --uri content://media/external/video/media --projection _display_name:relative_path
   ```
-- [ ] **7.2** 同步页「导出到系统下载目录」→ `下载/WebDAVMusic/wmp-sync-*.zip`
-- [ ] **7.3** 同步页「从本地文件导入」→ 系统文件选择器能选到该 zip 并导入
+- [ ] **7.2** 同步页「导出到系统下载目录」→ `下载/WebdavMediaManager/wdmm-export-*.wdmm`
+- [ ] **7.3** 同步页「从本地文件导入」→ 系统文件选择器能选到该 `.wdmm` 并导入
 
 ---
 
@@ -185,16 +185,16 @@ adb logcat -d -s AndroidRuntime:E > .tmp\log-crash.txt
 - [ ] **8.4** 「增量同步」/「全量同步」可用
 - [ ] **8.4b 音乐库云端格式 = 一个 JSON 清单 + 二进制分片**（本轮重做）
   - 云端目录 `<同步根>/library/` 里应有：`index.json`（几百字节，只有文件名/片数/字节数/rev 区间）
-    以及 `lib-*.wmp` / `seg-*.wmp` / `del-*.wmp`
-  - 下载 1 首新歌 → 只多出**一个很小的 `seg-*.wmp`**，`index.json` 只多一行；**不会**重传整个曲库
+    以及 `lib-*.wdmm` / `seg-*.wdmm` / `del-*.wdmm`
+  - 下载 1 首新歌 → 只多出**一个很小的 `seg-*.wdmm`**，`index.json` 只多一行；**不会**重传整个曲库
   - 什么都没改时点「增量同步」→ 提示「**无变化（未上传任何内容）**」，且云端文件的时间戳不变
   - 曲目按**网盘名 + 路径**绑定：`index.json` 里**没有**网盘地址/用户名/密码，只有 `source_name`
-  - 删掉一首（销毁）→ 多出一个 `del-*.wmp`，但**重建前**云端旧分片里那首歌仍在（这是设计）
+  - 删掉一首（销毁）→ 多出一个 `del-*.wdmm`，但**重建前**云端旧分片里那首歌仍在（这是设计）
   - 同步页显示「云端分片：N 个（约 X KB）」；N ≥ 20 时提示「建议重建一次」
 - [ ] **8.4c 重建云端音乐库**（会把删除真正落实）
   - 点「重建云端库」→ 可选用**每个分片歌曲数**（200/500/1000/2000）与**是否把封面写进分片**
   - 对话框实时显示「预计 N 个分片 · 含封面约 X · 不含封面约 Y」
-  - 确认后云端只剩 `lib-*.wmp` + 新的 `index.json`，旧 `seg-*/del-*` 被删除
+  - 确认后云端只剩 `lib-*.wdmm` + 新的 `index.json`，旧 `seg-*/del-*` 被删除
   - 之前销毁的歌**不会**在重建后回来；另一台设备下次同步会跟着删掉它
 - [ ] **8.4d 未绑定来源**
   - 把某个网盘改名（例如 `123pan` → `123pan2`）→ 音乐库里属于它的行应显示「**来源网盘未绑定**」
@@ -210,11 +210,11 @@ adb logcat -d -s AndroidRuntime:E > .tmp\log-crash.txt
 - [ ] **8.4f 整理云端库**
   - 同步页「整理」→ 弹窗显示「基础分片 N · 增量 M · 墓碑 K · 合计 X」
   - 一致时提示「一切一致，无需处理。」
-  - 手工往云端 `library/` 丢一个 `seg-999-zz.wmp` → 再整理应报「孤儿文件 1 个」，可点「删除孤儿文件」
+  - 手工往云端 `library/` 丢一个 `seg-999-zz.wdmm` → 再整理应报「孤儿文件 1 个」，可点「删除孤儿文件」
   - 手工删掉一个清单里引用的分片 → 应报「缺失文件」，并给「以本机为准重建」出口
 - [ ] **8.5** 「全部同步」一次跑完凭证 + 歌单 + 音乐库
 - [ ] **8.6 备份：先选①网盘 → 填②路径 → ③开始备份**
-  - 期望：远端出现 `backup-<UTC>.wmpbak` 和 `webdav_music_backup.wmpbak`
+  - 期望：远端出现 `backup-<UTC>.wdmm` 和 `webdav_media_backup.wdmm`
   - 不再有按站点分目录
 - [ ] **8.7** 「读取该路径下的备份」能列出，选中后可恢复
 - [ ] **8.8 分享重命名配置在「设置 → 分享」**（不再在同步页）

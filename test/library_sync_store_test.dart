@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/library_track.dart';
-import 'package:webdav_music_player/services/library_sync_store.dart';
-import 'package:webdav_music_player/utils/track_identity.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/services/library_sync_store.dart';
+import 'package:webdav_media_manager/utils/track_identity.dart';
 
 LibraryTrack _t(
   String path, {
@@ -150,14 +150,14 @@ void main() {
       final manifest = LibraryManifest(
         baseUpTo: 1750000000000,
         shards: const [
-          BaseShard(file: 'lib-0001-a1.wmp', count: 500, bytes: 412233),
+          BaseShard(file: 'lib-0001-a1.wdmm', count: 500, bytes: 412233),
         ],
         segments: const [
-          IndexPart(file: 'seg-1-b2.wmp', from: 1, to: 9, count: 3, bytes: 700),
+          IndexPart(file: 'seg-1-b2.wdmm', from: 1, to: 9, count: 3, bytes: 700),
         ],
         tombstones: const [
           IndexPart(
-            file: 'del-2-c3.wmp',
+            file: 'del-2-c3.wdmm',
             from: 10,
             to: 10,
             count: 1,
@@ -168,10 +168,10 @@ void main() {
 
       final back = LibraryManifest.fromJson(manifest.toJson());
       expect(back.baseUpTo, 1750000000000);
-      expect(back.shards.single.file, 'lib-0001-a1.wmp');
+      expect(back.shards.single.file, 'lib-0001-a1.wdmm');
       expect(back.shards.single.count, 500);
       expect(back.segments.single.to, 9);
-      expect(back.tombstones.single.file, 'del-2-c3.wmp');
+      expect(back.tombstones.single.file, 'del-2-c3.wdmm');
     });
 
     test('fragment counters drive the rebuild hint', () {
@@ -194,7 +194,7 @@ void main() {
 
     test('a pre-container index reads as empty (no compatibility branch)', () {
       final back = LibraryManifest.fromJson({
-        'format': 'webdav_music_player_library_index',
+        'format': 'webdav_media_manager_library_index',
         'tracks': [
           {'remote_path': '/a.flac'},
         ],
@@ -235,10 +235,10 @@ void main() {
       List<String> extraSegments = const [],
     }) => LibraryManifest(
       baseUpTo: 100,
-      shards: const [BaseShard(file: 'lib-0001-aa.wmp', count: 2, bytes: 100)],
+      shards: const [BaseShard(file: 'lib-0001-aa.wdmm', count: 2, bytes: 100)],
       segments: [
         const IndexPart(
-          file: 'seg-1-bb.wmp',
+          file: 'seg-1-bb.wdmm',
           from: 1,
           to: 2,
           count: 1,
@@ -248,16 +248,16 @@ void main() {
           IndexPart(file: f, from: 3, to: 4, count: 1, bytes: 50),
       ],
       tombstones: const [
-        IndexPart(file: 'del-3-cc.wmp', from: 5, to: 5, count: 1, bytes: 20),
+        IndexPart(file: 'del-3-cc.wdmm', from: 5, to: 5, count: 1, bytes: 20),
       ],
     );
 
     test('a consistent cloud has no orphans and no gaps', () {
       final audit = auditLibraryParts(
         present: const [
-          (name: 'lib-0001-aa.wmp', size: 100),
-          (name: 'seg-1-bb.wmp', size: 50),
-          (name: 'del-3-cc.wmp', size: 20),
+          (name: 'lib-0001-aa.wdmm', size: 100),
+          (name: 'seg-1-bb.wdmm', size: 50),
+          (name: 'del-3-cc.wdmm', size: 20),
         ],
         manifest: manifestWith(),
       );
@@ -271,14 +271,14 @@ void main() {
     test('unreferenced part files are reported as orphans', () {
       final audit = auditLibraryParts(
         present: const [
-          (name: 'lib-0001-aa.wmp', size: 100),
-          (name: 'seg-1-bb.wmp', size: 50),
-          (name: 'del-3-cc.wmp', size: 20),
-          (name: 'seg-9-zz.wmp', size: 999),
+          (name: 'lib-0001-aa.wdmm', size: 100),
+          (name: 'seg-1-bb.wdmm', size: 50),
+          (name: 'del-3-cc.wdmm', size: 20),
+          (name: 'seg-9-zz.wdmm', size: 999),
         ],
         manifest: manifestWith(),
       );
-      expect(audit.orphans, ['seg-9-zz.wmp']);
+      expect(audit.orphans, ['seg-9-zz.wdmm']);
       expect(audit.missing, isEmpty);
       expect(audit.healthy, isFalse);
       expect(audit.summary, contains('孤儿文件 1 个'));
@@ -288,9 +288,9 @@ void main() {
       final audit = auditLibraryParts(
         present: const [
           (name: 'index.json', size: 300),
-          (name: 'lib-0001-aa.wmp', size: 100),
-          (name: 'seg-1-bb.wmp', size: 50),
-          (name: 'del-3-cc.wmp', size: 20),
+          (name: 'lib-0001-aa.wdmm', size: 100),
+          (name: 'seg-1-bb.wdmm', size: 50),
+          (name: 'del-3-cc.wdmm', size: 20),
         ],
         manifest: manifestWith(),
       );
@@ -301,12 +301,12 @@ void main() {
     test('a referenced file that is gone is a gap', () {
       final audit = auditLibraryParts(
         present: const [
-          (name: 'lib-0001-aa.wmp', size: 100),
-          (name: 'del-3-cc.wmp', size: 20),
+          (name: 'lib-0001-aa.wdmm', size: 100),
+          (name: 'del-3-cc.wdmm', size: 20),
         ],
         manifest: manifestWith(),
       );
-      expect(audit.missing, ['seg-1-bb.wmp']);
+      expect(audit.missing, ['seg-1-bb.wdmm']);
       expect(audit.summary, contains('缺失文件 1 个'));
     });
   });

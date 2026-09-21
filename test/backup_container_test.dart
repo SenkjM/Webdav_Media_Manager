@@ -2,9 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/library_track.dart';
-import 'package:webdav_music_player/services/library_shard_codec.dart';
-import 'package:webdav_music_player/utils/wmp_container.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/services/library_shard_codec.dart';
+import 'package:webdav_media_manager/utils/wmp_container.dart';
 
 /// The backup archive is a container: META + TRACKS (every row, CUE slices
 /// included) + raw COVERS (one own copy per row) + JSON side sections.
@@ -68,7 +68,7 @@ void main() {
               WmpMeta.count: tracks.length,
               WmpMeta.deviceId: 'dev-1',
               WmpMeta.note: jsonEncode({
-                'format': 'webdav_music_player_backup',
+                'format': 'webdav_media_manager_backup',
                 'formatVersion': 5,
                 'activeAccountId': 'acc-1',
                 'passwordEncryption': 'aes-256-gcm',
@@ -170,7 +170,7 @@ void main() {
     test('a readable JSON export is not mistaken for a container', () {
       final json = utf8.encode(
         jsonEncode({
-          'format': 'webdav_music_player_backup',
+          'format': 'webdav_media_manager_backup',
           'formatVersion': 5,
           'library': {'tracks': <dynamic>[]},
         }),

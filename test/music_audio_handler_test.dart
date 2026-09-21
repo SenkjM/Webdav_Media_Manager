@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:webdav_music_player/models/webdav_item.dart';
-import 'package:webdav_music_player/services/music_audio_handler.dart';
+import 'package:webdav_media_manager/models/webdav_item.dart';
+import 'package:webdav_media_manager/services/music_audio_handler.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -1,4 +1,4 @@
-package com.webdav.webdav_music_player
+package com.webdav.media_manager
 
 import android.app.Activity
 import android.app.NotificationManager
@@ -193,7 +193,7 @@ class MainActivity : AudioServiceFragmentActivity() {
         }
         val raw = name?.takeIf { it.isNotBlank() }
             ?: uri.lastPathSegment?.substringAfterLast('/')
-            ?: "import.wmpbak"
+            ?: "import.wdmm"
         return sanitizeName(raw)
     }
 
@@ -246,7 +246,7 @@ class MainActivity : AudioServiceFragmentActivity() {
         if (!src.exists()) return mapOf("ok" to false, "error" to "源文件不存在")
         val fileName = sanitizeName(resolveFileName(src, name))
         val mime = (mimeType ?: "").trim().ifEmpty { mimeFor(src) }
-        val dir = subdirOrDefault(album, "WebDAVMusic")
+        val dir = subdirOrDefault(album, "WebdavMediaManager")
         val kind = mediaKindFor(mime, fileName)
         val collection = when (kind) {
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
@@ -331,7 +331,7 @@ class MainActivity : AudioServiceFragmentActivity() {
         if (!src.exists()) return mapOf("ok" to false, "error" to "源文件不存在")
         val fileName = sanitizeName(resolveFileName(src, name))
         val mime = (mimeType ?: "").trim().ifEmpty { "application/octet-stream" }
-        val dir = subdirOrDefault(subdir, "WebDAVMusic")
+        val dir = subdirOrDefault(subdir, "WebdavMediaManager")
         val relative = "${Environment.DIRECTORY_DOWNLOADS}/$dir"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -488,7 +488,7 @@ class MainActivity : AudioServiceFragmentActivity() {
 
     private fun mediaNotificationDiagnostics(): Map<String, Any?> {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "com.webdav.webdav_music_player.audio.v4"
+        val channelId = "com.webdav.media_manager.audio.v4"
         var channelImportance: Int? = null
         var channelExists = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -551,7 +551,7 @@ class MainActivity : AudioServiceFragmentActivity() {
     }
 
     companion object {
-        private const val CHANNEL = "com.webdav.webdav_music_player/app"
+        private const val CHANNEL = "com.webdav.media_manager/app"
         /** Must match AudioService.NOTIFICATION_ID */
         private const val AUDIO_SERVICE_NOTIFICATION_ID = 1124
         private const val REQUEST_PICK_FILE = 4711

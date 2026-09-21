@@ -1,5 +1,5 @@
-name: webdav_music_player
-description: "Android-first WebDAV music player — download-to-cache, never stream."
+name: webdav_media_manager
+description: "Android Webdav Media Manager — browse WebDAV, download to cache, play locally."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

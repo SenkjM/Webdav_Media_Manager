@@ -82,8 +82,8 @@ class SyncService extends ChangeNotifier {
   final BackupService _backup;
   final PlatformExportService _export;
 
-  static const localExportSubdir = 'WebDAVMusic';
-  static const localExportPrefix = 'wmp-sync';
+  static const localExportSubdir = 'WebdavMediaManager';
+  static const localExportPrefix = 'wdmm-export';
 
   /// Incremental library index (state kept by [LibrarySyncStore]).
   ///
@@ -109,7 +109,7 @@ class SyncService extends ChangeNotifier {
   static const libraryMaxSegments = 24;
 
   /// Marker for the per-account index format.
-  static const libraryFormat = 'webdav_music_player_library_index';
+  static const libraryFormat = 'webdav_media_manager_library_index';
   static const libraryFormatVersion = 3;
 
   bool busy = false;
@@ -301,8 +301,8 @@ class SyncService extends ChangeNotifier {
 
   /// Incremental library sync.
   ///
-  /// Only locally-changed rows travel (one small binary `seg-*.wmp` per pass) and
-  /// only new tombstones are appended as `del-*.wmp`. When nothing changed the
+  /// Only locally-changed rows travel (one small binary `seg-*.wdmm` per pass) and
+  /// only new tombstones are appended as `del-*.wdmm`. When nothing changed the
   /// pass uploads **zero** bytes — not even the manifest.
   Future<SyncOutcome> syncLibraryIncremental() async {
     final outcome = SyncOutcome(direction: 'sync');
@@ -662,8 +662,8 @@ class SyncService extends ChangeNotifier {
       final name =
           fileName ??
           (readableJson
-              ? '$localExportPrefix-${backupFileNameNow()}.json'
-              : '$localExportPrefix-${backupFileNameNow()}');
+              ? '$localExportPrefix-${utcStamp()}.json'
+              : '$localExportPrefix-${utcStamp()}.wdmm');
       final tmp = await PlatformExportService.writeTempExportFile(name, bytes);
       final result = await _export.saveToDownloads(
         sourcePath: tmp.path,

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/utils/credential_vault_crypto.dart';
+import 'package:webdav_media_manager/utils/credential_vault_crypto.dart';
 
 void main() {
   group('CredentialVaultCrypto', () {

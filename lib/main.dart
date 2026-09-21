@@ -80,7 +80,7 @@ class WebDavMusicApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'WebDAV 音乐播放器',
+        title: 'Webdav Media Manager',
         debugShowCheckedModeBanner: false,
         // Lets context-free callers (the download queue) post in-app messages.
         scaffoldMessengerKey: AppSnack.messengerKey,

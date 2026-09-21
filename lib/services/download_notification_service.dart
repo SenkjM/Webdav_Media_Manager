@@ -14,16 +14,12 @@ import '../models/download_task.dart';
 ///   the result is still readable after the progress notifications are gone.
 ///
 /// Both are separate from the media channel, which is owned by `audio_service`.
-const String kDownloadChannelId = 'com.webdav.webdav_music_player.downloads.v1';
+const String kDownloadChannelId = 'com.webdav.media_manager.downloads.v1';
 const String kDownloadChannelName = '下载进度';
 const String kDownloadChannelDescription = '下载队列进行中的进度';
 
-/// Experimental default-importance channel from one build; removed on startup.
-const String kLegacyDefaultImportanceChannelId =
-    'com.webdav.webdav_music_player.downloads.v2';
-
 const String kDownloadDoneChannelId =
-    'com.webdav.webdav_music_player.downloads.done.v1';
+    'com.webdav.media_manager.downloads.done.v1';
 const String kDownloadDoneChannelName = '下载完成';
 const String kDownloadDoneChannelDescription = '全部下载完成后的结果汇总';
 
@@ -100,15 +96,6 @@ class DownloadNotificationService {
     try {
       await _android?.createNotificationChannel(kDownloadChannel);
       await _android?.createNotificationChannel(kDownloadDoneChannel);
-      // Drop the experimental default-importance channel (it never changed what
-      // ColorOS showed) so system settings list only the two live channels.
-      try {
-        await _android?.deleteNotificationChannel(
-          channelId: kLegacyDefaultImportanceChannelId,
-        );
-      } catch (e) {
-        debugPrint('DownloadNotification: deleteStaleChannel failed: $e');
-      }
       return true;
     } catch (e) {
       debugPrint('DownloadNotification: ensureChannel failed: $e');

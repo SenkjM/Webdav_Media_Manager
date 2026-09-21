@@ -930,7 +930,7 @@ class _SyncScreenState extends State<SyncScreen> {
               controller: _backupDirController,
               decoration: const InputDecoration(
                 labelText: '② 备份路径',
-                hintText: '/WebDAVMusicPlayer/backup/',
+                hintText: '/WebdavMediaManager/backup/',
                 border: OutlineInputBorder(),
                 isDense: true,
               ),

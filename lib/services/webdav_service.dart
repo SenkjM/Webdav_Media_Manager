@@ -71,7 +71,7 @@ class WebDavService extends ChangeNotifier {
     );
     client.setHeaders({
       'accept-charset': 'utf-8',
-      'user-agent': 'WEBDAV-music-player/1.0',
+      'user-agent': 'WebdavMediaManager/1.0',
     });
     client.setConnectTimeout(15000);
     client.setSendTimeout(30000);
@@ -126,7 +126,7 @@ class WebDavService extends ChangeNotifier {
     if (conn == null) return null;
     final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
     final headers = <String, String>{
-      'User-Agent': 'WEBDAV-music-player/1.0',
+      'User-Agent': 'WebdavMediaManager/1.0',
     };
     if (conn.username.isNotEmpty || conn.password.isNotEmpty) {
       final token = base64Encode(utf8.encode('${conn.username}:${conn.password}'));

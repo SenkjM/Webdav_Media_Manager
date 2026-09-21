@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/library_track.dart';
-import 'package:webdav_music_player/utils/audio_extensions.dart';
-import 'package:webdav_music_player/utils/cue_sheet.dart';
-import 'package:webdav_music_player/utils/track_identity.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/utils/audio_extensions.dart';
+import 'package:webdav_media_manager/utils/cue_sheet.dart';
+import 'package:webdav_media_manager/utils/track_identity.dart';
 
 void main() {
   const sample = """

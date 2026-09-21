@@ -103,7 +103,7 @@ class CredentialVaultService extends ChangeNotifier {
   final WebDavService _webDav;
 
   static const fileName = 'credentials.json';
-  static const format = 'webdav_music_player_credentials';
+  static const format = 'webdav_media_manager_credentials';
   static const formatVersion = 1;
 
   bool busy = false;

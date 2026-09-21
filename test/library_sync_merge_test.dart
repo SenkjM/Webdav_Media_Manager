@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/library_track.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
 
 /// Mirrors LibrarySyncService LWW merge by lastTagReadAt (pure logic test).
 List<LibraryTrack> mergeTracksForTest({

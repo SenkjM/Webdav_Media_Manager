@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_music_player/models/webdav_account.dart';
-import 'package:webdav_music_player/utils/backup_paths.dart';
+import 'package:webdav_media_manager/models/webdav_account.dart';
+import 'package:webdav_media_manager/utils/backup_paths.dart';
 
 void main() {
   group('backup_paths', () {
@@ -24,15 +24,15 @@ void main() {
         url: 'https://x',
         username: 'u',
       );
-      final path = perAccountBackupDir('/WebDAVMusicPlayer/backup/', a);
-      expect(path.startsWith('/WebDAVMusicPlayer/backup/'), isTrue);
+      final path = perAccountBackupDir('/WebdavMediaManager/backup/', a);
+      expect(path.startsWith('/WebdavMediaManager/backup/'), isTrue);
       expect(path.contains(backupAccountDirName(a)), isTrue);
       expect(path.endsWith('/'), isTrue);
     });
 
     test('backupFileNameNow is timestamped', () {
       final name = backupFileNameNow(now: DateTime.utc(2026, 9, 20, 8, 0, 0));
-      expect(name, 'backup-20260920T080000Z.wmpbak');
+      expect(name, 'backup-20260920T080000Z.wdmm');
     });
   });
 }

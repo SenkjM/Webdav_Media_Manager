@@ -33,7 +33,7 @@ class _AboutScreenState extends State<AboutScreen> {
         padding: const EdgeInsets.all(24),
         children: [
           Text(
-            'WebDAV 音乐播放器',
+            'Webdav Media Manager',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),
