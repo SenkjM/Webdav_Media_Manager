@@ -56,11 +56,10 @@ jobs:
             exit 0
           fi
 
-          # Pre-release 仅从 beta 发布
+          # Pre-release 仅从 beta 发布；其他引用照样构建，只告警不终止
           if [ "$BRANCH" != "beta" ]; then
             if [ "$EVENT" = "workflow_dispatch" ]; then
-              echo "::error::预发布只能从 beta 发（当前引用 $BRANCH）。正式版请用 workflow「Android Release (from main)」。"
-              exit 1
+              echo "::warning::预发布只从 beta 发布（当前引用 $BRANCH）：本次只构建、不发 Pre-release。正式版请用 workflow「Android Release (from main)」。"
             fi
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "reason=not_beta_branch" >> "$GITHUB_OUTPUT"
