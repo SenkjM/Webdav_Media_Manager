@@ -38,8 +38,11 @@ causes startup clicks); keep `androidStopForegroundOnPause: false` to avoid
 Android 12+ FGS restart blocks during play/pause races.
 
 6. **ColorOS / MediaSession discoverability** — onCreate sets
-   `FLAG_HANDLES_MEDIA_BUTTONS | TRANSPORT_CONTROLS | QUEUE_COMMANDS` and
-   `setPlaybackToLocal(STREAM_MUSIC)`. `getPlaybackState()` maps
+   `FLAG_HANDLES_QUEUE_COMMANDS` and `setPlaybackToLocal(STREAM_MUSIC)`.
+   (`FLAG_HANDLES_MEDIA_BUTTONS` / `FLAG_HANDLES_TRANSPORT_CONTROLS` are no
+   longer passed: `androidx.media` always ORs them in itself, so they were dead
+   code whose only effect was two `[deprecation]` javac warnings.)
+   `getPlaybackState()` maps
    `loading + playing` to `STATE_BUFFERING` instead of `STATE_CONNECTING`
    (OEM media centers often ignore CONNECTING). Notification channel sets
    lockscreen `VISIBILITY_PUBLIC` and silent sound (keep IMPORTANCE_DEFAULT).

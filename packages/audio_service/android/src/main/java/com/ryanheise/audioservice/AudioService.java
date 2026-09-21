@@ -314,12 +314,13 @@ public class AudioService extends MediaBrowserServiceCompat {
 
         configure(new AudioServiceConfig(getApplicationContext()));
 
-        // TRANSPORT + MEDIA_BUTTONS help OEM controllers (ColorOS/OPPO) discover
-        // the session; QUEUE_COMMANDS kept for skipToQueueItem.
-        mediaSession.setFlags(
-                MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS
-                        | MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS
-                        | MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
+        // QUEUE_COMMANDS is the only flag that still has an effect (keep it for
+        // skipToQueueItem). FLAG_HANDLES_MEDIA_BUTTONS / FLAG_HANDLES_TRANSPORT_CONTROLS
+        // are deprecated no-ops: androidx.media always ORs them in itself
+        // (MediaSessionCompat.Impl#setFlags). Passing them only produced
+        // "[deprecation]" warnings. Session discoverability comes from
+        // setPlaybackToLocal(STREAM_MUSIC) below plus the PlaybackState actions.
+        mediaSession.setFlags(MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS);
         // Local STREAM_MUSIC so system media UI treats us as a music player.
         mediaSession.setPlaybackToLocal(AudioManager.STREAM_MUSIC);
         PlaybackStateCompat.Builder stateBuilder = new PlaybackStateCompat.Builder()
