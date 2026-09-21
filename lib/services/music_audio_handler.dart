@@ -338,37 +338,9 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
-  MediaItem mediaItemFor(TrackInfo track) {
-    // Title is required for system media center; never leave empty.
-    final title = track.displayTitle.trim().isEmpty
-        ? track.fileName
-        : track.displayTitle;
-    final clipEnd = track.clipEnd;
-    final duration = clipEnd != null
-        ? clipEnd - (track.clipStart ?? Duration.zero)
-        : track.duration;
-    return MediaItem(
-      id: '${track.accountId}|${track.remotePath}',
-      title: title,
-      album: track.album,
-      artist: track.displayArtist,
-      duration: duration,
-      artUri: _artUri(track),
-      extras: {
-        'accountId': track.accountId,
-        'remotePath': track.remotePath,
-        'fileName': track.fileName,
-        'localPath': track.localPath,
-      },
-    );
-  }
-
-  Uri? _artUri(TrackInfo track) {
-    final cover = track.coverPath;
-    if (cover == null || cover.isEmpty) return null;
-    if (!File(cover).existsSync()) return null;
-    return Uri.file(cover);
-  }
+  /// Delegates to [mediaItemForTrack]; kept as a method for call sites that
+  /// already hold the handler.
+  MediaItem mediaItemFor(TrackInfo track) => mediaItemForTrack(track);
 
   /// mpv trims to [start]..[end] natively (via an on_load hook) — no
   /// separate play-then-seek blip like a manual seek-after-open would cause.
@@ -967,5 +939,43 @@ Future<MusicAudioHandler> initMusicAudioService() {
       androidNotificationClickStartsActivity: true,
       androidShowNotificationBadge: false,
     ),
+  );
+}
+/// Pure [TrackInfo] → [MediaItem] mapping for the media session.
+///
+/// Top-level on purpose: the identity / title / art rules are worth testing
+/// without spinning up a native mpv player, which is what made these assertions
+/// unrunnable off-device.
+///
+/// The id is **网盘名 + remotePath** — the app's binding key — rather than the
+/// resolved account id: playlists and some library rows carry no account id at
+/// all, so keying on it produced `|/path` ids that collided across disks and
+/// left `extras` empty.
+MediaItem mediaItemForTrack(TrackInfo track) {
+  // Title is required for the system media center; never leave it empty.
+  final title = track.displayTitle.trim().isEmpty
+      ? track.fileName
+      : track.displayTitle;
+  final clipEnd = track.clipEnd;
+  final duration = clipEnd != null
+      ? clipEnd - (track.clipStart ?? Duration.zero)
+      : track.duration;
+  final cover = track.coverPath;
+  final artUri = (cover == null || cover.isEmpty || !File(cover).existsSync())
+      ? null
+      : Uri.file(cover);
+  return MediaItem(
+    id: '${track.sourceName}|${track.remotePath}',
+    title: title,
+    album: track.album,
+    artist: track.displayArtist,
+    duration: duration,
+    artUri: artUri,
+    extras: {
+      'sourceName': track.sourceName,
+      'remotePath': track.remotePath,
+      'fileName': track.fileName,
+      'localPath': track.localPath,
+    },
   );
 }
