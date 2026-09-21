@@ -7,6 +7,15 @@ on:
     - cron: "0 16 * * *"
   # 手动发版：GitHub UI 选择 beta 再 Run workflow
   workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空 = 用 pubspec 版本 + 短提交哈希，例如 1.2.0；填写则原样使用）"
+        required: false
+        type: string
+      version_code:
+        description: "versionCode（留空 = 1000 + 运行序号，保证单调递增可覆盖安装）"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -49,6 +58,10 @@ jobs:
 
           # Pre-release 仅从 beta 发布
           if [ "$BRANCH" != "beta" ]; then
+            if [ "$EVENT" = "workflow_dispatch" ]; then
+              echo "::error::预发布只能从 beta 发（当前引用 $BRANCH）。正式版请用 workflow「Android Release (from main)」。"
+              exit 1
+            fi
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "reason=not_beta_branch" >> "$GITHUB_OUTPUT"
             exit 0
@@ -146,16 +159,42 @@ jobs:
 
       - name: Compute pre-release version
         id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CODE: ${{ inputs.version_code }}
         run: |
           set -euo pipefail
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           # pubspec version base before +build, e.g. 1.0.0+1 → 1.0.0
           BASE=$(grep -E '^version:' pubspec.yaml | head -1 | sed -E 's/^version:[[:space:]]*//; s/\+.*//; s/[[:space:]]*$//')
           if [ -z "$BASE" ]; then BASE="1.0.0"; fi
-          # versionName: semver-friendly with short hash (Android versionName is free-form)
-          VERSION_NAME="${BASE}-${SHORT_SHA}"
-          # Monotonic versionCode: 1000 + run_number always increases across workflow runs
-          VERSION_CODE=$((1000 + ${{ github.run_number }}))
+
+          # Manual run may type the version (and versionCode) in the UI.
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            VERSION_NAME="$INPUT_VERSION"
+            if ! printf '%s' "$VERSION_NAME" | grep -Eq '^[0-9]+(\.[0-9]+){1,3}([-+][0-9A-Za-z.-]+)?$'; then
+              echo "::error::version 不合法：$VERSION_NAME（示例 1.2.0 或 1.2.0-rc1）"
+              exit 1
+            fi
+            echo "Using manual version: $VERSION_NAME"
+          else
+            # versionName: semver-friendly with short hash (Android versionName is free-form)
+            VERSION_NAME="${BASE}-${SHORT_SHA}"
+          fi
+
+          if [ -n "${INPUT_CODE:-}" ]; then
+            VERSION_CODE="$INPUT_CODE"
+            if ! printf '%s' "$VERSION_CODE" | grep -Eq '^[0-9]+$'; then
+              echo "::error::version_code 必须是整数：$VERSION_CODE"
+              exit 1
+            fi
+          else
+            # Monotonic versionCode: 1000 + run_number always increases across
+            # workflow runs of this repository (pre-releases and releases share
+            # the counter, so neither track can go backwards).
+            VERSION_CODE=$((1000 + ${{ github.run_number }}))
+          fi
+
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
           echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"

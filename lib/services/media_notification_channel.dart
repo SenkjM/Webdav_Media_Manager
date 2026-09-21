@@ -23,7 +23,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 /// installs off the old LOW-importance channel. `MainActivity`'s
 /// `mediaNotificationDiagnostics` probe reads this same id.
 const String kMediaNotificationChannelId =
-    'com.senkjM.media_manager.audio.v4';
+    'com.senkjm.media_manager.audio.v4';
 
 /// Channel name shown in the system notification settings.
 const String kMediaNotificationChannelName = '音乐播放';

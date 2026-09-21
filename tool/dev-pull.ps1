@@ -17,7 +17,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $Path,
     [string] $Out = '',
-    [string] $Package = 'com.senkjM.media_manager'
+    [string] $Package = 'com.senkjm.media_manager'
 )
 
 $ErrorActionPreference = 'Continue'

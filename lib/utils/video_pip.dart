@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import '../services/platform_export_service.dart';
 
 const MethodChannel _kAppChannel = MethodChannel(
-  'com.senkjM.media_manager/app',
+  'com.senkjm.media_manager/app',
 );
 
 /// Requests Android Picture-in-Picture for the running activity.

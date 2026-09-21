@@ -1,4 +1,4 @@
-package com.senkjM.media_manager
+package com.senkjm.media_manager
 
 import android.app.Activity
 import android.app.NotificationManager
@@ -488,7 +488,7 @@ class MainActivity : AudioServiceFragmentActivity() {
 
     private fun mediaNotificationDiagnostics(): Map<String, Any?> {
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = "com.senkjM.media_manager.audio.v4"
+        val channelId = "com.senkjm.media_manager.audio.v4"
         var channelImportance: Int? = null
         var channelExists = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -551,7 +551,7 @@ class MainActivity : AudioServiceFragmentActivity() {
     }
 
     companion object {
-        private const val CHANNEL = "com.senkjM.media_manager/app"
+        private const val CHANNEL = "com.senkjm.media_manager/app"
         /** Must match AudioService.NOTIFICATION_ID */
         private const val AUDIO_SERVICE_NOTIFICATION_ID = 1124
         private const val REQUEST_PICK_FILE = 4711

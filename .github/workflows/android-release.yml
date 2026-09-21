@@ -1,0 +1,213 @@
+name: Android Release (from main)
+
+# 一键正式发版：Actions → 本流程 → Run workflow（引用选 main）→ 填版本号。
+#
+# 与 android-build.yml 的分工：
+#   * android-build.yml  → beta 分支的**预发布**（滚动 tag `prerelease`）
+#   * 本流程            → main 分支的**正式 Release**（tag `v<版本号>`，标记 Latest）
+#
+# versionCode 默认与预发布共用 `1000 + run_number`，因此任何一次构建的 code 都严格
+# 递增，正式包与预发布包可以互相覆盖安装、不会降级。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（必填，例如 1.2.0；将作为 Release 标题与 tag v1.2.0）"
+        required: true
+        type: string
+      version_code:
+        description: "versionCode（留空 = 1000 + 运行序号）"
+        required: false
+        type: string
+      draft:
+        description: "先存为 Draft（不立即公开）"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check branch
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_name }}" != "main" ]; then
+            echo "::error::正式发版只允许从 main 构建（当前引用：${{ github.ref_name }}）。请把 beta 合入 main 后在 main 上重跑。"
+            exit 1
+          fi
+          echo "Building release from main."
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Compute release version
+        id: ver
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          VERSION_NAME="$(printf '%s' "$INPUT_VERSION" | tr -d '[:space:]')"
+          if ! printf '%s' "$VERSION_NAME" | grep -Eq '^[0-9]+(\.[0-9]+){1,3}([-+][0-9A-Za-z.-]+)?$'; then
+            echo "::error::version 不合法：$INPUT_VERSION（示例 1.2.0 或 1.2.0-rc1）"
+            exit 1
+          fi
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          if [ -n "${INPUT_CODE:-}" ]; then
+            VERSION_CODE="$INPUT_CODE"
+            if ! printf '%s' "$VERSION_CODE" | grep -Eq '^[0-9]+$'; then
+              echo "::error::version_code 必须是整数：$VERSION_CODE"
+              exit 1
+            fi
+          else
+            VERSION_CODE=$((1000 + ${{ github.run_number }}))
+          fi
+          # Last published release, for the "changes since" link.
+          PREV=$(git tag -l 'v*' --sort=-v:refname | head -1 || true)
+          if [ -n "$PREV" ]; then
+            COMPARE="变更对比：https://github.com/${{ github.repository }}/compare/${PREV}...v${VERSION_NAME}"
+          else
+            COMPARE="（首个正式版，无对比基准）"
+          fi
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "prev_tag=$PREV" >> "$GITHUB_OUTPUT"
+          echo "compare=$COMPARE" >> "$GITHUB_OUTPUT"
+          echo "VERSION_NAME=$VERSION_NAME VERSION_CODE=$VERSION_CODE PREV=$PREV"
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install Android SDK compile dependencies
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found; leaving SDK components to Gradle."
+            exit 0
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Install libmpv (media_kit native backend for `flutter test` on Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libmpv-dev mpv
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Decode release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "Missing secret ANDROID_KEYSTORE_BASE64 — cannot produce a signed release."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/android/app/release.jks"
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/android/app/release.jks" >> "$GITHUB_ENV"
+
+      - name: Build release APK
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.ver.outputs.version_name }}" \
+            --build-number="${{ steps.ver.outputs.version_code }}"
+
+      - name: Build app bundle
+        env:
+          ANDROID_KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          flutter build appbundle --release \
+            --build-name="${{ steps.ver.outputs.version_name }}" \
+            --build-number="${{ steps.ver.outputs.version_code }}"
+
+      - name: Rename artifacts with the version
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version_name }}"
+          cp build/app/outputs/flutter-apk/app-release.apk "webdav-media-manager-${V}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "webdav-media-manager-${V}.aab"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: webdav-media-manager-${{ steps.ver.outputs.version_name }}
+          path: |
+            webdav-media-manager-*.apk
+            webdav-media-manager-*.aab
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version_name }}
+          name: Webdav Media Manager ${{ steps.ver.outputs.version_name }}
+          target_commitish: main
+          prerelease: false
+          draft: ${{ inputs.draft }}
+          make_latest: true
+          # `body` wins over generate_release_notes, so keep it self-contained.
+          body: |
+            正式版（来自 **main**，AGPL-3.0）。
+
+            - 版本：`${{ steps.ver.outputs.version_name }}`（versionCode `${{ steps.ver.outputs.version_code }}`）
+            - 短提交：`${{ steps.ver.outputs.short_sha }}`
+            - 完整提交：`${{ github.sha }}`
+            - 上一个正式版：`${{ steps.ver.outputs.prev_tag || '（首个正式版）' }}`
+            - ${{ steps.ver.outputs.compare }}
+
+            安装：APK 使用仓库配置的固定 keystore 签名，可直接覆盖安装（含预发布包）。
+            包名 `com.senkjm.media_manager`；versionCode 与预发布共用 `1000 + run_number`，不会出现降级。
+          files: |
+            webdav-media-manager-*.apk
+            webdav-media-manager-*.aab
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

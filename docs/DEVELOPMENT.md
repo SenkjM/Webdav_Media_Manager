@@ -229,7 +229,7 @@ Vendored 依赖：`audio_service` 使用 path 包 `packages/audio_service`（勿
 - `audio_service`（vendored）：`MusicAudioHandler` → MediaSession + MediaStyle 通知；播放引擎与通知桥接解耦，`Player` 的 stream 被动推送到 `playbackState`/`mediaItem`。
 - Android 原生依赖 `libmpv`：`media_kit_libs_android_audio` 随 APK 打包各 ABI 的 so；CI 在 ubuntu-latest 上跑 `flutter test` 前需 `apt install libmpv-dev mpv`（`flutter test` 进程本身是 Linux 可执行文件，会走 GNU/Linux 加载路径）。
 - 配置要点（`initMusicAudioService`）：
-  - 通道 id：`com.senkjM.media_manager.audio.v4`（IMPORTANCE_DEFAULT；历史曾用 v1–v3，升级靠换 id 生效）
+  - 通道 id：`com.senkjm.media_manager.audio.v4`（IMPORTANCE_DEFAULT；历史曾用 v1–v3，升级靠换 id 生效）
   - `androidStopForegroundOnPause: false`（避免 Android 12+ 暂停后再起 FGS 被拦）
   - 图标：`drawable/ic_stat_music`（不要用自适应 launcher）
 - 补丁说明：`packages/audio_service/PATCHES.md`（Android 14+ typed `startForeground`、通道重要性、失败后 notify 回退、缺通知时重入 FGS）。

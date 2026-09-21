@@ -14,12 +14,12 @@ import '../models/download_task.dart';
 ///   the result is still readable after the progress notifications are gone.
 ///
 /// Both are separate from the media channel, which is owned by `audio_service`.
-const String kDownloadChannelId = 'com.senkjM.media_manager.downloads.v1';
+const String kDownloadChannelId = 'com.senkjm.media_manager.downloads.v1';
 const String kDownloadChannelName = '下载进度';
 const String kDownloadChannelDescription = '下载队列进行中的进度';
 
 const String kDownloadDoneChannelId =
-    'com.senkjM.media_manager.downloads.done.v1';
+    'com.senkjm.media_manager.downloads.done.v1';
 const String kDownloadDoneChannelName = '下载完成';
 const String kDownloadDoneChannelDescription = '全部下载完成后的结果汇总';
 
