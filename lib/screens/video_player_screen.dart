@@ -18,6 +18,7 @@ import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/video_pip.dart';
 import '../widgets/app_bottom_sheet.dart';
+import '../utils/app_snack.dart';
 
 /// Everything the player needs to build a play queue for one video.
 class VideoQueueSeed {
@@ -197,8 +198,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       player.stream.error.listen((e) {
         if (!mounted || e.isEmpty) return;
         setState(() => _error = e);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('播放错误：$e')));
+        AppSnack.show(context, '播放错误：$e');
       }),
     );
     // Auto-advance to the next video in the folder when one finishes.
@@ -272,8 +272,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (player == null || service == null || _switching) return;
     final source = _streamFor(item);
     if (source == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('WebDAV 未连接，无法播放')));
+      AppSnack.show(context, 'WebDAV 未连接，无法播放');
       return;
     }
     setState(() {
@@ -296,8 +295,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       if ((rate - 1.0).abs() > 0.001) await player.setRate(rate);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('切换视频失败：$e')));
+      AppSnack.show(context, '切换视频失败：$e');
     } finally {
       if (mounted) {
         setState(() {
@@ -321,18 +319,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final queue = _queue;
     if (queue == null) {
       if (!auto) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('当前没有播放列表')));
+        AppSnack.show(context, '当前没有播放列表');
       }
       return;
     }
     final next = queue.next;
     if (next == null) {
       if (!auto) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(queue.scanning ? '已到列表末尾（仍在扫描文件夹…）' : '已是最后一个视频'),
-          ),
+        AppSnack.show(
+          context,
+          queue.scanning ? '已到列表末尾（仍在扫描文件夹…）' : '已是最后一个视频',
         );
       } else {
         await _player?.pause();
@@ -346,8 +342,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   Future<void> _playPrevious() async {
     final queue = _queue;
     if (queue == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('当前没有播放列表')));
+      AppSnack.show(context, '当前没有播放列表');
       return;
     }
     // Standard player behavior: restart the current video first.
@@ -357,11 +352,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
     final prev = queue.previous;
     if (prev == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(queue.scanning ? '已是第一个视频（仍在扫描文件夹…）' : '已是第一个视频'),
-        ),
-      );
+      AppSnack.show(context, queue.scanning ? '已是第一个视频（仍在扫描文件夹…）' : '已是第一个视频');
       return;
     }
     queue.selectRemotePath(prev.path);
@@ -559,8 +550,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final ok = await enterPictureInPicture();
     if (!mounted) return;
     if (!ok) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('当前设备/系统不支持画中画')));
+      AppSnack.show(context, '当前设备/系统不支持画中画');
       return;
     }
     _controlsVisible.value = false;

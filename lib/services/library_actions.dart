@@ -68,8 +68,7 @@ Future<void> enqueueLibraryTrackDownload(
     );
   }
   if (showSnack && context.mounted) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('已加入下载')));
+    AppSnack.show(context, '已加入下载');
   }
 }
 
@@ -180,8 +179,7 @@ Future<void> deleteTracksLocalCache(
       n += await cache.deleteCacheGroup(gid);
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('已删除 CUE 缓存组（$n 个文件）')));
+    AppSnack.show(context, '已删除 CUE 缓存组（$n 个文件）');
   }
 
   if (plain.isEmpty) return;
@@ -224,8 +222,7 @@ Future<void> deleteTracksLocalCache(
     }
   }
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text('已删除 $removed 个本地音频缓存')));
+  AppSnack.show(context, '已删除 $removed 个本地音频缓存');
 }
 
 /// Destroy tracks: delete their audio cache, remove them from the music
@@ -322,9 +319,7 @@ Future<void> destroyLibraryTracks(
   await library.destroyTracks(tracks);
 
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(content: Text('已销毁 ${tracks.length} 首曲目（含缓存、元数据与封面）')),
-  );
+  AppSnack.show(context, '已销毁 ${tracks.length} 首曲目（含缓存、元数据与封面）');
 }
 
 /// Share already-cached **non-CUE** audio files via the system share sheet.
@@ -368,24 +363,18 @@ Future<void> shareLibraryTracks(
       msg = notLocalCount == 1 ? '该曲目尚未下载到本地，无法分享' : '所选曲目均未下载到本地，无法分享';
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: AppColors.error),
-    );
+    AppSnack.error(context, msg);
     return;
   }
 
   if (cueCount > 0 && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          cueCount == 1 ? 'CUE 音轨不支持分享' : '已跳过 $cueCount 首 CUE 音轨（不支持分享）',
-        ),
-      ),
+    AppSnack.show(
+      context,
+      cueCount == 1 ? 'CUE 音轨不支持分享' : '已跳过 $cueCount 首 CUE 音轨（不支持分享）',
     );
   }
   if (notLocalCount > 0 && context.mounted) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('已跳过 $notLocalCount 首未下载曲目')));
+    AppSnack.show(context, '已跳过 $notLocalCount 首未下载曲目');
   }
 
   final plan = <_SharePlan>[];
@@ -403,12 +392,7 @@ Future<void> shareLibraryTracks(
   }
   if (plan.isEmpty) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('没有可分享的文件'),
-        backgroundColor: AppColors.error,
-      ),
-    );
+    AppSnack.error(context, '没有可分享的文件');
     return;
   }
 
@@ -430,12 +414,7 @@ Future<void> shareLibraryTracks(
     final built = await _materializeShareFiles(plan, rename: applyRename);
     if (built.files.isEmpty) {
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('没有可分享的文件'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnack.error(context, '没有可分享的文件');
       return;
     }
     await SharePlus.instance.share(ShareParams(files: built.files));
@@ -444,13 +423,10 @@ Future<void> shareLibraryTracks(
       unawaited(File(path).delete().catchError((_) => File(path)));
     }
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('已分享 ${built.files.length} 个文件')));
+    AppSnack.show(context, '已分享 ${built.files.length} 个文件');
   } catch (e) {
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('分享失败：$e'), backgroundColor: AppColors.error),
-    );
+    AppSnack.error(context, '分享失败：$e');
   }
 }
 

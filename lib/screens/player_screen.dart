@@ -16,6 +16,7 @@ import '../theme/app_theme.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
 import 'now_playing_queue_screen.dart';
+import '../utils/app_snack.dart';
 
 class PlayerScreen extends StatelessWidget {
   const PlayerScreen({super.key});
@@ -27,7 +28,6 @@ class PlayerScreen extends StatelessWidget {
     if (h > 0) return '$h:$m:$s';
     return '$m:$s';
   }
-
 
   List<String> _metaChips(TrackInfo? track, LibraryTrack? lib) {
     final chips = <String>[];
@@ -71,7 +71,11 @@ class PlayerScreen extends StatelessWidget {
     }
     final sr = track?.sampleRate ?? lib?.sampleRate;
     if (sr != null && sr > 0) {
-      add(sr >= 1000 ? '${(sr / 1000).toStringAsFixed(sr % 1000 == 0 ? 0 : 1)} kHz' : '$sr Hz');
+      add(
+        sr >= 1000
+            ? '${(sr / 1000).toStringAsFixed(sr % 1000 == 0 ? 0 : 1)} kHz'
+            : '$sr Hz',
+      );
     }
 
     final durMs = track?.duration?.inMilliseconds ?? lib?.durationMs;
@@ -141,23 +145,19 @@ class PlayerScreen extends StatelessWidget {
           row(
             '说明',
             '此条目来自 CUE 分片，不是独立单曲文件；'
-            '播放与缓存共用源音频。',
+                '播放与缓存共用源音频。',
           );
-          row(
-            'CUE 文件',
-            track.cueRemotePath ?? lib?.cueRemotePath,
-          );
-          row(
-            '源音频',
-            track.audioRemotePath ?? lib?.audioRemotePath,
-          );
+          row('CUE 文件', track.cueRemotePath ?? lib?.cueRemotePath);
+          row('源音频', track.audioRemotePath ?? lib?.audioRemotePath);
           final idx = track.cueTrackIndex ?? lib?.cueTrackIndex;
           if (idx != null) row('CUE 曲序', '$idx');
-          final start = track.clipStart ??
+          final start =
+              track.clipStart ??
               (lib?.clipStartMs != null
                   ? Duration(milliseconds: lib!.clipStartMs!)
                   : null);
-          final end = track.clipEnd ??
+          final end =
+              track.clipEnd ??
               (lib?.clipEndMs != null
                   ? Duration(milliseconds: lib!.clipEndMs!)
                   : null);
@@ -257,9 +257,7 @@ class PlayerScreen extends StatelessWidget {
                             ClipboardData(text: buf.toString()),
                           );
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('已复制到剪贴板')),
-                            );
+                            AppSnack.show(context, '已复制到剪贴板');
                           }
                         },
                         icon: const Icon(Icons.copy_outlined),
@@ -296,9 +294,7 @@ class PlayerScreen extends StatelessWidget {
                         onLongPress: () async {
                           await Clipboard.setData(ClipboardData(text: e.value));
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('已复制：${e.key}')),
-                            );
+                            AppSnack.show(context, '已复制：${e.key}');
                           }
                         },
                       );
@@ -441,8 +437,9 @@ class PlayerScreen extends StatelessWidget {
                                         ),
                                         decoration: BoxDecoration(
                                           color: AppColors.elevated,
-                                          borderRadius:
-                                              BorderRadius.circular(16),
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
                                         ),
                                         child: Text(
                                           c,
@@ -473,14 +470,15 @@ class PlayerScreen extends StatelessWidget {
                                   max: maxMs.toDouble(),
                                   onChanged: duration.inMilliseconds > 0
                                       ? (v) => player.seek(
-                                            Duration(milliseconds: v.round()),
-                                          )
+                                          Duration(milliseconds: v.round()),
+                                        )
                                       : null,
                                 ),
                               ),
                               Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
                                 child: Row(
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
@@ -491,7 +489,7 @@ class PlayerScreen extends StatelessWidget {
                                         color: AppColors.mutedText,
                                         fontSize: 12,
                                         fontFeatures: [
-                                          FontFeature.tabularFigures()
+                                          FontFeature.tabularFigures(),
                                         ],
                                       ),
                                     ),
@@ -501,7 +499,7 @@ class PlayerScreen extends StatelessWidget {
                                         color: AppColors.mutedText,
                                         fontSize: 12,
                                         fontFeatures: [
-                                          FontFeature.tabularFigures()
+                                          FontFeature.tabularFigures(),
                                         ],
                                       ),
                                     ),
@@ -611,7 +609,12 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
     final sourceName = widget.sourceName;
     final remote = widget.audioRemotePath;
     if (sourceName == null || remote == null) {
-      if (mounted) setState(() { _fullPath = null; _bytes = null; });
+      if (mounted) {
+        setState(() {
+          _fullPath = null;
+          _bytes = null;
+        });
+      }
       return;
     }
     final library = context.read<LibraryService>();
@@ -619,7 +622,12 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
     await covers.init();
     final full = await covers.fullCoverPath(sourceName, remote);
     if (full != null) {
-      if (mounted) setState(() { _fullPath = full; _bytes = null; });
+      if (mounted) {
+        setState(() {
+          _fullPath = full;
+          _bytes = null;
+        });
+      }
       return;
     }
     final local = widget.localPath;
@@ -627,20 +635,32 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
       final tags = await library.tags.readFromFile(local);
       final bytes = tags.coverBytes;
       if (bytes != null && bytes.isNotEmpty) {
-        unawaited(covers.saveFull(sourceName: sourceName, remotePath: remote, bytes: bytes));
-        if (mounted) setState(() { _fullPath = null; _bytes = bytes; });
+        unawaited(
+          covers.saveFull(
+            sourceName: sourceName,
+            remotePath: remote,
+            bytes: bytes,
+          ),
+        );
+        if (mounted) {
+          setState(() {
+            _fullPath = null;
+            _bytes = bytes;
+          });
+        }
         return;
       }
     }
-    if (mounted) setState(() { _fullPath = null; _bytes = null; });
+    if (mounted) {
+      setState(() {
+        _fullPath = null;
+        _bytes = null;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return CoverBackdrop(
-      path: _fullPath,
-      bytes: _bytes,
-      child: widget.child,
-    );
+    return CoverBackdrop(path: _fullPath, bytes: _bytes, child: widget.child);
   }
 }

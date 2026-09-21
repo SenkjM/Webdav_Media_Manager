@@ -58,8 +58,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     if (ok != true || !mounted) return;
     await context.read<AppState>().destroyMusicLibrary();
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('音乐库已销毁')));
+    AppSnack.show(context, '音乐库已销毁');
   }
 
   @override
@@ -901,9 +900,9 @@ class _TrackTile extends StatelessWidget {
     // `read` (not `watch`): AudioPlayerService notifies on every position tick,
     // so watching it here would rebuild the whole list several times a second.
     final audio = context.read<AudioPlayerService>();
-    final sourceBound = context
-        .read<AccountsService>()
-        .isSourceBound(track.sourceName);
+    final sourceBound = context.read<AccountsService>().isSourceBound(
+      track.sourceName,
+    );
     final state = downloads.uiStateFor(
       track.sourceName,
       track.effectiveAudioRemotePath,

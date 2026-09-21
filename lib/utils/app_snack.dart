@@ -12,19 +12,24 @@ import '../services/settings_service.dart';
 /// * there was no way to dismiss a message early.
 ///
 /// Rules:
-/// * **one slot** — showing a message dismisses whatever is on screen, so the
+/// * **one slot** — showing a message removes whatever is on screen, so the
 ///   newest message always wins and nothing queues up;
-/// * **same text within a few seconds is ignored** — tapping download five times
-///   produces one message, not five;
-/// * **tapping the message itself dismisses it** (swipe and the `知道了` button
-///   work too);
-/// * duration comes from Settings (short / normal / long / until dismissed / off).
+/// * **every message carries 知道了** and tapping either the button or the text
+///   removes it **immediately** (no exit animation to outrun);
+/// * once you dismiss a message, that exact text is *not* shown again until a
+///   different message appears — otherwise a background ticker re-showing the
+///   same line looks like "知道了 不管用";
+/// * duration comes from Settings (short / normal / long / until dismissed /
+///   off), so 设置 → 提示与通知 governs every in-app message.
 class AppSnack {
   AppSnack._();
 
   static SettingsService? _settings;
   static String? _lastText;
   static DateTime? _lastAt;
+
+  /// Text the user explicitly closed; suppressed until the text changes.
+  static String? _dismissedText;
 
   /// Set once from `AppState.init`.
   static void attach(SettingsService settings) => _settings = settings;
@@ -39,6 +44,10 @@ class AppSnack {
     if (!context.mounted) return;
     // Settings → 提示与通知 → 应用内消息 = 关闭.
     if (_settings?.snackMode.visible == false) return;
+    // The user already closed exactly this message and nothing else has been
+    // shown since: do not resurrect it.
+    if (_dismissedText == text) return;
+
     final now = DateTime.now();
     // Collapse identical rapid-fire taps into a single message.
     if (_lastText == text &&
@@ -48,20 +57,27 @@ class AppSnack {
     }
     _lastText = text;
     _lastAt = now;
+    // A different message ends the suppression of the previous one.
+    _dismissedText = null;
 
     final messenger = ScaffoldMessenger.maybeOf(context);
     if (messenger == null) return;
 
-    void dismiss() => messenger.hideCurrentSnackBar();
+    void dismiss() {
+      _dismissedText = text;
+      // `remove`, not `hide`: removal is immediate and leaves no exit animation
+      // or queued bar behind, which is what made the button feel dead.
+      messenger.removeCurrentSnackBar();
+      messenger.clearSnackBars();
+    }
 
     // Replace, never queue.
     messenger.clearSnackBars();
     messenger.showSnackBar(
       SnackBar(
         content: GestureDetector(
-          // The bar itself is only hit-testable where it has content, so make the
-          // whole text area opaque and dismiss on tap. Previously only the
-          // `知道了` button reacted, which read as "tapping does nothing".
+          // The bar is only hit-testable where it has content, so make the whole
+          // text area opaque and dismiss on tap.
           behavior: HitTestBehavior.opaque,
           onTap: dismiss,
           child: Padding(
@@ -85,10 +101,11 @@ class AppSnack {
   static void error(BuildContext context, String text) =>
       show(context, text, error: true);
 
-  /// Resets the dedupe window (tests).
+  /// Resets the dedupe/dismissal state (tests).
   @visibleForTesting
   static void resetForTest() {
     _lastText = null;
     _lastAt = null;
+    _dismissedText = null;
   }
 }

@@ -83,22 +83,14 @@ class _SyncScreenState extends State<SyncScreen> {
       await body();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('操作失败：$e'), backgroundColor: AppColors.error),
-      );
+      AppSnack.error(context, '操作失败：$e');
     } finally {
       if (mounted) setState(() => _running = false);
     }
   }
 
   void _showOutcome(SyncOutcome outcome) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(outcome.message),
-        duration: const Duration(seconds: 8),
-        backgroundColor: outcome.ok ? null : AppColors.error,
-      ),
-    );
+    AppSnack.error(context, outcome.message);
   }
 
   // --- Actions ----------------------------------------------------------
@@ -310,14 +302,12 @@ class _SyncScreenState extends State<SyncScreen> {
   Future<void> _backup() async {
     final destination = _backupDestination;
     if (destination == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请先选择要存放备份的网盘')));
+      AppSnack.show(context, '请先选择要存放备份的网盘');
       return;
     }
     final dir = _backupDirController.text.trim();
     if (dir.isEmpty || dir == '/') {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请填写备份路径')));
+      AppSnack.show(context, '请填写备份路径');
       return;
     }
     await _guard(() async {
@@ -349,8 +339,7 @@ class _SyncScreenState extends State<SyncScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('读取备份列表失败：$e')));
+      AppSnack.show(context, '读取备份列表失败：$e');
     }
   }
 
@@ -401,15 +390,11 @@ class _SyncScreenState extends State<SyncScreen> {
       readableJson: readableJson,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result.ok
-              ? '已导出到${result.location}：${result.fileName}'
-              : '导出失败：${result.error}',
-        ),
-        backgroundColor: result.ok ? null : AppColors.error,
-      ),
+    AppSnack.error(
+      context,
+      result.ok
+          ? '已导出到${result.location}：${result.fileName}'
+          : '导出失败：${result.error}',
     );
   });
 
@@ -419,12 +404,7 @@ class _SyncScreenState extends State<SyncScreen> {
     );
     if (!mounted) return;
     if (!picked.ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('选择文件失败：${picked.error}'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+      AppSnack.error(context, '选择文件失败：${picked.error}');
       return;
     }
     if (picked.cancelled) return;
@@ -449,8 +429,7 @@ class _SyncScreenState extends State<SyncScreen> {
   Future<void> _importBase64() async {
     final text = _base64Controller.text.trim();
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('请先粘贴备份内容（Base64）')));
+      AppSnack.show(context, '请先粘贴备份内容（Base64）');
       return;
     }
     await _guard(() async {
@@ -575,9 +554,18 @@ class _SyncScreenState extends State<SyncScreen> {
           const Text(
             '这里只有三样东西：WebDAV 凭证、音乐库、歌单。\n'
             '凭证与歌单是真同步（双向 + 定期扫描），音乐库按本地变化增量同步、'
-            '也可手动全量；「全部备份」把三者打成一个归档写到指定网盘路径。',
+            '也可手动重写；「全部备份」把三者打成一个归档写到指定网盘路径。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
+          const Divider(height: 28),
+
+          // 一键同步放在最上面：这是最常用的动作。
+          FilledButton.icon(
+            onPressed: _running || accounts.accounts.isEmpty ? null : _syncAll,
+            icon: const Icon(Icons.sync),
+            label: const Text('全部同步（凭证 + 歌单 + 音乐库）'),
+          ),
+
           const Divider(height: 28),
 
           _sectionTitle('WebDAV 凭证'),
@@ -734,22 +722,26 @@ class _SyncScreenState extends State<SyncScreen> {
               child: Text(
                 '云端分片：${sync.cloudFragmentCount} 个'
                 '（约 ${_fmtBytes(sync.cloudFragmentBytes)}）'
-                '${sync.cloudFragmentCount >= LibrarySyncStore.suggestRebuildAtFragments ? ' —— 建议重建一次' : ''}',
+                '${sync.cloudFragmentCount >= settings.libraryRebuildHintFragments ? ' —— 建议重建一次' : ''}',
                 style: TextStyle(
                   fontSize: 12,
                   color:
                       sync.cloudFragmentCount >=
-                          LibrarySyncStore.suggestRebuildAtFragments
+                          settings.libraryRebuildHintFragments
                       ? AppColors.accent
                       : AppColors.mutedText,
                 ),
               ),
             ),
           const SizedBox(height: 8),
+          // Three compact buttons: 同步 = 只传变化；重建 = 以本机为准整体重写并落实删除；
+          // 整理 = 只读体检 + 清孤儿文件。
           Row(
             children: [
               Expanded(
-                child: OutlinedButton.icon(
+                child: _compactButton(
+                  icon: Icons.sync,
+                  label: '同步',
                   onPressed: _running || accounts.accounts.isEmpty
                       ? null
                       : () => _guard(() async {
@@ -760,45 +752,52 @@ class _SyncScreenState extends State<SyncScreen> {
                           await context.read<AppState>().library.refresh();
                           if (mounted) _showOutcome(o);
                         }),
-                  icon: const Icon(Icons.sync),
-                  label: const Text('增量同步'),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
-                child: OutlinedButton.icon(
+                child: _compactButton(
+                  icon: Icons.auto_awesome_motion,
+                  label: '重建',
                   onPressed: _running || accounts.accounts.isEmpty
                       ? null
                       : _rebuild,
-                  icon: const Icon(Icons.auto_awesome_motion),
-                  label: const Text('重建云端库'),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Expanded(
-                child: OutlinedButton.icon(
+                child: _compactButton(
+                  icon: Icons.cleaning_services_outlined,
+                  label: '整理',
                   onPressed: _running || accounts.accounts.isEmpty
                       ? null
                       : _tidy,
-                  icon: const Icon(Icons.cleaning_services_outlined),
-                  label: const Text('整理'),
                 ),
               ),
             ],
           ),
-
-          const Divider(height: 32),
-
-          _sectionTitle('一键同步'),
-          const Text(
-            '凭证 + 歌单 + 音乐库增量，一次做完。',
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _running || accounts.accounts.isEmpty ? null : _syncAll,
-            icon: const Icon(Icons.sync),
-            label: const Text('全部同步'),
+          const SizedBox(height: 4),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.notifications_active_outlined, size: 20),
+            title: const Text('重建提示阈值', style: TextStyle(fontSize: 14)),
+            subtitle: Text(
+              '云端分片达到  个时提示重建',
+              style: const TextStyle(fontSize: 11),
+            ),
+            trailing: DropdownButton<int>(
+              value: settings.libraryRebuildHintFragments,
+              underline: const SizedBox.shrink(),
+              items: [
+                for (final n in SettingsService.rebuildHintPresets)
+                  DropdownMenuItem(value: n, child: Text('')),
+              ],
+              onChanged: (v) {
+                if (v != null) settings.setLibraryRebuildHintFragments(v);
+              },
+            ),
           ),
 
           const Divider(height: 32),
@@ -953,6 +952,25 @@ class _SyncScreenState extends State<SyncScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Small, icon+label button so three actions fit one row without crowding.
+  Widget _compactButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        minimumSize: const Size(0, 40),
+        visualDensity: VisualDensity.compact,
+        textStyle: const TextStyle(fontSize: 13),
       ),
     );
   }

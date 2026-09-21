@@ -224,8 +224,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   String _nameFor(String accountId) =>
       context.read<AccountsService>().nameForAccount(accountId) ?? '';
 
-
-
   /// The account whose directory the current [_items] belong to. Only used to
   /// detect an external account switch for reloading.
   String? _browsedAccountId;
@@ -271,7 +269,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final audios = _items.where((e) => e.isAudio).toList();
     final playlist = <TrackInfo>[];
     for (final e in audios) {
-      final path = await cache.localPathIfCached(e.path, sourceName: sourceName);
+      final path = await cache.localPathIfCached(
+        e.path,
+        sourceName: sourceName,
+      );
       if (path == null) continue;
       playlist.add(
         TrackInfo(
@@ -452,9 +453,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // close loading
       if (sheet == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('无法解析的 CUE：需要标准 FILE + TRACK/INDEX')),
-        );
+        AppSnack.show(context, '无法解析的 CUE：需要标准 FILE + TRACK/INDEX');
         return;
       }
       await _showCuePreview(item, sheet);

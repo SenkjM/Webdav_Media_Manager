@@ -16,6 +16,7 @@ import 'file_extensions_screen.dart';
 import 'home_shell.dart';
 import 'sync_screen.dart';
 import 'video_settings_screen.dart';
+import '../utils/app_snack.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -129,13 +130,10 @@ class _SettingsScreenState extends State<SettingsScreen>
     final libCount = context.read<LibraryService>().count;
     await _refreshCacheSize();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '已清理 $n 个音频缓存文件（播放中/下载中已保留）。'
-          '音乐库元数据与封面缩略图仍保留（$libCount 首）。',
-        ),
-      ),
+    AppSnack.show(
+      context,
+      '已清理 $n 个音频缓存文件（播放中/下载中已保留）。'
+      '音乐库元数据与封面缩略图仍保留（$libCount 首）。',
     );
   }
 
@@ -144,25 +142,21 @@ class _SettingsScreenState extends State<SettingsScreen>
     NotificationPermissionService perms,
   ) async {
     if (perms.isGranted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('通知权限已开启，播放时会显示媒体通知')));
+      AppSnack.show(context, '通知权限已开启，播放时会显示媒体通知');
       return;
     }
     if (perms.isChannelBlocked || perms.isPermanentlyDenied) {
       final opened = await perms.openSystemSettings();
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(opened ? '请在系统设置中允许通知后返回应用' : '无法打开系统设置，请手动允许通知权限'),
-        ),
+      AppSnack.show(
+        context,
+        opened ? '请在系统设置中允许通知后返回应用' : '无法打开系统设置，请手动允许通知权限',
       );
       return;
     }
     final granted = await perms.request();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(granted ? '已授予通知权限' : '未授予通知权限，媒体通知可能无法显示')),
-    );
+    AppSnack.show(context, granted ? '已授予通知权限' : '未授予通知权限，媒体通知可能无法显示');
   }
 
   String _customRetentionSummary(SettingsService settings) {
@@ -203,13 +197,10 @@ class _SettingsScreenState extends State<SettingsScreen>
   ) async {
     await perms.refresh();
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '通知权限：${perms.isGranted ? '已允许' : '未允许'}｜'
-          '通道「音乐播放」：${perms.channelStatusLabel}',
-        ),
-      ),
+    AppSnack.show(
+      context,
+      '通知权限：${perms.isGranted ? '已允许' : '未允许'}｜'
+      '通道「音乐播放」：${perms.channelStatusLabel}',
     );
   }
 

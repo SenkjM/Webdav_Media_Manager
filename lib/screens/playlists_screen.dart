@@ -7,6 +7,7 @@ import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
 import 'home_shell.dart';
 import 'playlist_detail_screen.dart';
+import '../utils/app_snack.dart';
 
 class PlaylistsScreen extends StatelessWidget {
   const PlaylistsScreen({super.key});
@@ -15,8 +16,7 @@ class PlaylistsScreen extends StatelessWidget {
     final player = context.read<AudioPlayerService>();
     final queue = player.queue;
     if (queue.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('当前播放列表为空')));
+      AppSnack.show(context, '当前播放列表为空');
       return;
     }
     final controller = TextEditingController(
@@ -73,9 +73,7 @@ class PlaylistsScreen extends StatelessWidget {
       queueEntries: entries,
     );
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已创建歌单「${pl.name}」（${pl.length} 首）')),
-    );
+    AppSnack.show(context, '已创建歌单「${pl.name}」（${pl.length} 首）');
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlaylistDetailScreen(playlistId: pl.id),
@@ -132,14 +130,11 @@ class PlaylistsScreen extends StatelessWidget {
             onPressed: () async {
               await service.pullAndMergeFromWebDav();
               if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    service.lastSyncError == null
-                        ? '已同步歌单'
-                        : '同步失败：${service.lastSyncError}',
-                  ),
-                ),
+              AppSnack.show(
+                context,
+                service.lastSyncError == null
+                    ? '已同步歌单'
+                    : '同步失败：${service.lastSyncError}',
               );
             },
           ),
@@ -332,8 +327,7 @@ Future<void> showAddToPlaylistDialog(
     await service.addTrack(choice, entry);
   }
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context)
-      .showSnackBar(const SnackBar(content: Text('已添加到歌单')));
+  AppSnack.show(context, '已添加到歌单');
 }
 
 /// Add multiple entries to one playlist (or create).
@@ -405,6 +399,5 @@ Future<void> showAddManyToPlaylistDialog(
     await service.addTrack(playlistId, e);
   }
   if (!context.mounted) return;
-  ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text('已添加 ${entries.length} 首到歌单')));
+  AppSnack.show(context, '已添加 ${entries.length} 首到歌单');
 }

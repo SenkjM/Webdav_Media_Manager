@@ -10,6 +10,7 @@ import '../models/library_track.dart';
 import '../models/snack_duration.dart';
 import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
+import 'library_sync_store.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
 /// WebDAV credentials live in AccountsService / flutter_secure_storage.
@@ -51,6 +52,7 @@ class SettingsService extends ChangeNotifier {
   static const _kShareTagRenamePattern = 'share_tag_rename_pattern';
   static const _kSyncRemoteRoot = 'sync_remote_root';
   static const _kSyncEncryptPassword = 'sync_encrypt_password';
+  static const _kLibraryRebuildHint = 'library_rebuild_hint_fragments';
   static const _kVaultPassphrase = 'vault_passphrase';
   static const _kDeviceId = 'sync_device_id';
   static const _kLastRev = 'sync_last_rev';
@@ -157,6 +159,9 @@ class SettingsService extends ChangeNotifier {
   String _syncRemoteRoot = defaultSyncRemoteRoot;
   bool _syncEncryptPassword = true;
 
+  /// Cloud-library fragment count at which the sync screen suggests a rebuild.
+  int _libraryRebuildHintFragments = defaultLibraryRebuildHintFragments;
+
   /// User-chosen credential-vault key (see [vaultPassphrase]).
   String _vaultPassphrase = '';
 
@@ -237,6 +242,28 @@ class SettingsService extends ChangeNotifier {
 
   /// Whether synced/exported WebDAV passwords are encrypted with a passphrase.
   bool get syncEncryptPassword => _syncEncryptPassword;
+
+  /// Cloud-library fragment count (delta + tombstone parts) at which the sync
+  /// screen suggests a rebuild. The hint is advisory — nothing is compacted
+  /// automatically.
+  static const int defaultLibraryRebuildHintFragments =
+      LibrarySyncStore.suggestRebuildAtFragments;
+
+  /// Choices offered in Settings.
+  static const List<int> rebuildHintPresets = [10, 20, 30, 50];
+
+  static int _clampRebuildHint(int value) => value.clamp(2, 500);
+
+  int get libraryRebuildHintFragments => _libraryRebuildHintFragments;
+
+  Future<void> setLibraryRebuildHintFragments(int value) async {
+    final next = _clampRebuildHint(value);
+    if (next == _libraryRebuildHintFragments) return;
+    _libraryRebuildHintFragments = next;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kLibraryRebuildHint, next);
+    notifyListeners();
+  }
 
   /// How long in-app messages stay on screen.
   SnackDuration get snackMode => _snackMode;
@@ -323,6 +350,10 @@ class SettingsService extends ChangeNotifier {
     _syncRemoteRoot =
         _prefs!.getString(_kSyncRemoteRoot) ?? defaultSyncRemoteRoot;
     _syncEncryptPassword = _prefs!.getBool(_kSyncEncryptPassword) ?? true;
+    _libraryRebuildHintFragments = _clampRebuildHint(
+      _prefs!.getInt(_kLibraryRebuildHint) ??
+          defaultLibraryRebuildHintFragments,
+    );
     // The vault key lives in secure storage (Keystore), like account passwords.
     try {
       _vaultPassphrase = await _secure.read(key: _kVaultPassphrase) ?? '';
@@ -337,7 +368,8 @@ class SettingsService extends ChangeNotifier {
     // exact tie between two devices is broken by the id.
     _deviceId = _prefs!.getString(_kDeviceId) ?? '';
     if (_deviceId.isEmpty) {
-      _deviceId = 'dev-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+      _deviceId =
+          'dev-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
       await _prefs!.setString(_kDeviceId, _deviceId);
     }
     _lastRev = _prefs!.getInt(_kLastRev) ?? 0;
@@ -755,6 +787,7 @@ class SettingsService extends ChangeNotifier {
     'video_subtitle_font_size': _videoSubtitleFontSize,
     'share_tag_rename_enabled': _shareTagRenameEnabled,
     'share_tag_rename_pattern': _shareTagRenamePattern,
+    'library_rebuild_hint_fragments': _libraryRebuildHintFragments,
     'sync_remote_root': _syncRemoteRoot,
     'sync_encrypt_password': _syncEncryptPassword,
     'snack_duration': _snackMode.storageKey,
@@ -888,6 +921,11 @@ class SettingsService extends ChangeNotifier {
     if (json['share_tag_rename_pattern'] is String) {
       await setShareTagRenamePattern(
         json['share_tag_rename_pattern'] as String,
+      );
+    }
+    if (json['library_rebuild_hint_fragments'] is num) {
+      await setLibraryRebuildHintFragments(
+        (json['library_rebuild_hint_fragments'] as num).toInt(),
       );
     }
     if (json['sync_remote_root'] is String) {
