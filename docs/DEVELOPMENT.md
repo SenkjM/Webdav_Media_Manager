@@ -410,6 +410,7 @@ test/                                  # 身份 / CUE / 本地播放 / idle guar
 | **schema 升级丢库** | v5 `onUpgrade` 直接 DROP | bump version 前告知用户；无自动 migration |
 | **OEM 无媒体通知** | LOW 通道 / 未 typed FGS | 保留 vendor 补丁与 v4 通道；真机测 ColorOS/OnePlus |
 | **通道状态查不到 / 与系统不一致** | 通道原先只由首次播放的原生 `createChannel()` 创建，设置页在播放前读到「未创建」 | 由 `notification_permission_service.dart` 经 `flutter_local_notifications` 在启动时建通道（`media_notification_channel.dart` 为唯一定义）；原生侧发现通道已存在即复用，故两侧参数必须一致（IMPORTANCE_DEFAULT、静音、不震动、无角标） |
+| **Android 13+ 通知抛 `You must specify an icon resource id to build a CustomAction`** | `MediaControl.stop`（以及 ff/rewind）在 API 33+ 会被 audio_service 转成 `CustomAction`，其 builder 在图标解析为 0 时抛异常；vendor 插件自带的 `drawable/audio_service_*` 图标在该 app 的 release 构建里不可靠合并 | 媒体控制按钮改用 app 自带 `drawable/ic_media_*` 矢量图标（与 `ic_stat_music` 同源、必能解析）：见 `music_audio_handler.dart` 的 `_k*Control` 常量、`android/app/src/main/res/drawable/ic_media_*.xml` 与 `res/raw/keep.xml` |
 
 相关提交可参考：`c235c92`（CUE ingest）、`1649677`（music_id v5 / 备份）、`0ed9591`（mute + remote chip）、`922d3c4`（unmute before play + ColorOS BUFFERING / v4）、`9c9d5c5`（返回键）、`251e46a`（MainActivity）、`ebe85b7`（禁用 push 触发 CI）。
 

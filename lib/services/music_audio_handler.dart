@@ -44,6 +44,40 @@ const Set<MediaAction> _kSystemActions = {
   MediaAction.skipToPrevious,
 };
 
+/// Media-control buttons reference app-bundled `drawable/ic_media_*` vectors
+/// instead of the audio_service plugin's default `drawable/audio_service_*`
+/// icons. On Android 13+ the stop control is turned into a CustomAction whose
+/// builder throws "You must specify an icon resource id to build a
+/// CustomAction" when the icon resolves to 0, and the plugin's own icons are
+/// not reliably merged into this app's release build. App-owned vectors live
+/// in the same source set as `ic_stat_music` (which already resolves as the
+/// notification small icon), so these always resolve.
+const MediaControl _kSkipPreviousControl = MediaControl(
+  androidIcon: 'drawable/ic_media_skip_previous',
+  label: 'Previous',
+  action: MediaAction.skipToPrevious,
+);
+const MediaControl _kPlayControl = MediaControl(
+  androidIcon: 'drawable/ic_media_play',
+  label: 'Play',
+  action: MediaAction.play,
+);
+const MediaControl _kPauseControl = MediaControl(
+  androidIcon: 'drawable/ic_media_pause',
+  label: 'Pause',
+  action: MediaAction.pause,
+);
+const MediaControl _kStopControl = MediaControl(
+  androidIcon: 'drawable/ic_media_stop',
+  label: 'Stop',
+  action: MediaAction.stop,
+);
+const MediaControl _kSkipNextControl = MediaControl(
+  androidIcon: 'drawable/ic_media_skip_next',
+  label: 'Next',
+  action: MediaAction.skipToNext,
+);
+
 /// audio_service handler owning one media_kit [Player]. Pipes its playback
 /// events into [playbackState] / [mediaItem] / [queue] so Android keeps an
 /// active MediaSession + MediaStyle notification (system media center).
@@ -300,10 +334,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// for Android 13+ system media buttons (not only notification addAction).
   List<MediaControl> _controls({required bool playing}) {
     return [
-      MediaControl.skipToPrevious,
-      if (playing) MediaControl.pause else MediaControl.play,
-      MediaControl.stop,
-      MediaControl.skipToNext,
+      _kSkipPreviousControl,
+      if (playing) _kPauseControl else _kPlayControl,
+      _kStopControl,
+      _kSkipNextControl,
     ];
   }
 
