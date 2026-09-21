@@ -535,7 +535,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Text(
-                    '此 CUE 将整张专辑按分片导入音乐库，不是独立单曲文件。',
+                    '将整张专辑按分片导入音乐库。',
                     style: TextStyle(
                       color: AppColors.secondaryText,
                       fontSize: 12,
@@ -734,7 +734,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ListTile(
                   leading: const Icon(Icons.download),
                   title: const Text('下载到系统相册'),
-                  subtitle: const Text('保存到系统相册（Movies），不是应用内部目录'),
+                  subtitle: const Text('保存到系统相册 Movies'),
                   onTap: () {
                     Navigator.pop(ctx);
                     _enqueueOnly(item);

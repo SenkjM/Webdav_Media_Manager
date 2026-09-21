@@ -129,12 +129,8 @@ class AccountsScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除服务器'),
-        content: Text(
-          '确定删除「${a.name}」？\n\n'
-          '曲目记录与已下载的缓存不会被删除，但它们绑定的是这个名称，'
-          '之后会显示「来源网盘未绑定」——能看，但不能播放或下载。'
-          '把同名网盘加回来即可恢复。',
-        ),
+        content: Text('确定删除「${a.name}」？其曲目会变成「未绑定网盘」，加回同名即可恢复。'),
+
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -181,9 +177,7 @@ class AccountsScreen extends StatelessWidget {
                         decoration: const InputDecoration(
                           labelText: '名称',
                           // The name is not a label: it is the library's binding key.
-                          helperText:
-                              '曲库按「名称 + 路径」绑定网盘，名称必须唯一且稳定；'
-                              '改名等同于换盘',
+                          helperText: '曲库按此名称绑定，必须唯一；改名等同换盘',
                           helperMaxLines: 2,
                           border: OutlineInputBorder(),
                         ),
@@ -198,8 +192,7 @@ class AccountsScreen extends StatelessWidget {
                         const Padding(
                           padding: EdgeInsets.only(top: 6),
                           child: Text(
-                            '这个名称已被别的网盘占用：同名会被当成同一个来源，'
-                            '路径重叠时会互相覆盖，建议换一个',
+                            '该名称已被占用，建议换一个',
                             style: TextStyle(
                               color: AppColors.error,
                               fontSize: 12,
@@ -272,7 +265,7 @@ class AccountsScreen extends StatelessWidget {
       if (!await showForm() || !context.mounted) return;
       final name = nameCtrl.text.trim();
       if (name.isEmpty) {
-        AppSnack.error(context, '请填写名称——音乐库按「名称 + 路径」绑定网盘');
+        AppSnack.error(context, '请填写名称');
         continue;
       }
       if (!await _confirmDuplicateName(context, accounts, name, existing?.id)) {
@@ -329,10 +322,8 @@ class AccountsScreen extends StatelessWidget {
         backgroundColor: AppColors.elevated,
         title: const Text('名称已被占用'),
         content: Text(
-          '已经有一个网盘叫「${clash.name}」：\n${clash.url}\n\n'
-          '音乐库按「名称 + 路径」绑定来源。同名会被当成同一个来源，'
-          '如果两个挂载点的路径有重叠，同一首歌会互相覆盖缓存与元数据。\n\n'
-          '建议改用能区分它们的名称（例如「123pan-工作」「123pan-备份」）。',
+          '已有同名网盘「${clash.name}」：\n${clash.url}\n\n'
+          '同名会被当成同一来源。',
         ),
         actions: [
           TextButton(
@@ -363,14 +354,9 @@ class AccountsScreen extends StatelessWidget {
         title: Text(renamed ? '改名等同于换盘' : '用户名已修改'),
         content: Text(
           renamed
-              ? '把「${existing.name}」改成「$newName」之后：\n\n'
-                    '• 音乐库里原本属于「${existing.name}」的曲目会显示'
-                    '「来源网盘未绑定」——能看，但不能播放或下载\n'
-                    '• 云端库与备份里仍然记录旧名称\n'
-                    '• 想恢复：把名称改回来，或到「同步与备份 → 音乐库」点「重建」\n\n'
-                    '如果只是服务器地址变了，请保持名称不变。'
-              : '用户名不参与曲目绑定（绑定看名称），但若新用户名对应另一个目录树，'
-                    '原有曲目的路径可能不存在，届时需要重新扫描下载。',
+              ? '「${existing.name}」的曲目将变为「未绑定网盘」，改回原名即可恢复。\n'
+                    '仅改地址时请保持名称不变。'
+              : '用户名不参与绑定；新用户名对应别的目录时原路径可能不存在。',
         ),
         actions: [
           TextButton(
@@ -399,8 +385,7 @@ class _BindingHint extends StatelessWidget {
       color: AppColors.elevated,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: const Text(
-        '名称是音乐库的唯一绑定点：曲目按「名称 + 路径」记录，'
-        '云端库与备份里也只有名称，不含地址与用户名。改名等同于换盘。',
+        '曲目按「名称 + 路径」绑定；改名等同于换盘。',
         style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
       ),
     );

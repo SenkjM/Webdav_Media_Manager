@@ -31,6 +31,11 @@ class AppSnack {
   /// Text the user explicitly closed; suppressed until the text changes.
   static String? _dismissedText;
 
+  /// Lets a service without a `BuildContext` (the download queue) post a message.
+  /// Wired to `MaterialApp.scaffoldMessengerKey`.
+  static final GlobalKey<ScaffoldMessengerState> messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
   /// Set once from `AppState.init`.
   static void attach(SettingsService settings) => _settings = settings;
 
@@ -40,8 +45,25 @@ class AppSnack {
   /// Ignore an identical message repeating within this window.
   static const Duration repeatWindow = Duration(seconds: 3);
 
+  /// Same contract as [show], for callers that only have the global key.
+  static void showGlobal(String text, {bool error = false}) {
+    final messenger = messengerKey.currentState;
+    if (messenger == null) return;
+    _present(messenger, text, error: error);
+  }
+
   static void show(BuildContext context, String text, {bool error = false}) {
     if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    _present(messenger, text, error: error);
+  }
+
+  static void _present(
+    ScaffoldMessengerState messenger,
+    String text, {
+    required bool error,
+  }) {
     // Settings → 提示与通知 → 应用内消息 = 关闭.
     if (_settings?.snackMode.visible == false) return;
     // The user already closed exactly this message and nothing else has been
@@ -59,9 +81,6 @@ class AppSnack {
     _lastAt = now;
     // A different message ends the suppression of the previous one.
     _dismissedText = null;
-
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
 
     void dismiss() {
       _dismissedText = text;
@@ -86,6 +105,11 @@ class AppSnack {
           ),
         ),
         duration: _settings?.snackMode.duration ?? defaultDuration,
+        // Flutter makes an action-carrying SnackBar persistent by default
+        // (`persist = persist ?? action != null`), which silently ignored the
+        // duration chosen in Settings — every message waited for a tap. We want
+        // 知道了 *and* the configured timeout.
+        persist: false,
         behavior: SnackBarBehavior.floating,
         dismissDirection: DismissDirection.horizontal,
         backgroundColor: error ? const Color(0xFFB3261E) : null,

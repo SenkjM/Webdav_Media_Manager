@@ -31,7 +31,7 @@ class PlaylistsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '将复制当前临时队列中的 ${queue.length} 首到新歌单（之后可按歌单同步）。',
+              '复制当前队列 ${queue.length} 首到新歌单。',
               style: const TextStyle(
                 fontSize: 13,
                 color: AppColors.secondaryText,
@@ -73,7 +73,7 @@ class PlaylistsScreen extends StatelessWidget {
       queueEntries: entries,
     );
     if (!context.mounted) return;
-    AppSnack.show(context, '已创建歌单「${pl.name}」（${pl.length} 首）');
+    AppSnack.show(context, '已创建歌单「${pl.name}」');
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlaylistDetailScreen(playlistId: pl.id),
@@ -155,9 +155,7 @@ class PlaylistsScreen extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  '暂无歌单。点右上角「+」创建，或在音乐库长按曲目添加。\n'
-                  '歌单保存在本地独立数据库，不会被音频缓存清理删除；'
-                  '并可同步为 WebDAV 上的 M3U8 文件。',
+                  '暂无歌单：右上角「+」新建，或在音乐库长按曲目添加。',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.secondaryText),
                 ),

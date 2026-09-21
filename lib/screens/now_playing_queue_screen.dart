@@ -26,8 +26,7 @@ class NowPlayingQueueScreen extends StatelessWidget {
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Text(
-                  '当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。\n'
-                  '此列表为临时队列，不会自动同步到歌单。',
+                  '当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.secondaryText),
                 ),

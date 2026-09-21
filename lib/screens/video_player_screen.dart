@@ -1322,7 +1322,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         ),
                         SizedBox(width: 10),
                         Text(
-                          '正在扫描文件夹，列表会继续增加…',
+                          '扫描文件夹中…',
                           style: TextStyle(
                             color: AppColors.mutedText,
                             fontSize: 12,
@@ -1471,7 +1471,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               SwitchListTile(
                 secondary: const Icon(Icons.lock_outline),
                 title: const Text('锁定屏幕'),
-                subtitle: const Text('锁定后隐藏控件并禁用手势；解锁需长按'),
+                subtitle: const Text('隐藏控件并禁用手势，长按解锁'),
                 value: _locked.value,
                 onChanged: (_) {
                   _toggleLock();
@@ -1491,7 +1491,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               SwitchListTile(
                 secondary: const Icon(Icons.exit_to_app),
                 title: const Text('退出时二次确认'),
-                subtitle: const Text('返回时询问「确认关闭视频吗？」'),
+                subtitle: const Text('返回时二次确认'),
                 value: settings.videoConfirmExit,
                 onChanged: (v) => settings.setVideoConfirmExit(v),
               ),
@@ -1505,7 +1505,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               SwitchListTile(
                 secondary: const Icon(Icons.headset_outlined),
                 title: const Text('后台播放'),
-                subtitle: const Text('按主页键挂后台后继续播放；返回键会停止'),
+                subtitle: const Text('主页键挂后台继续播放'),
                 value: settings.videoBackgroundPlayback,
                 onChanged: (v) => settings.setVideoBackgroundPlayback(v),
               ),
@@ -1563,7 +1563,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   const Padding(
                     padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: Text(
-                      '单击画面显示 / 隐藏控件；双击画面中间为播放 / 暂停。',
+                      '单击显示/隐藏控件，双击中间播放/暂停。',
                       style: TextStyle(
                         color: AppColors.mutedText,
                         fontSize: 12,
@@ -1631,7 +1631,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
-                        '按住画面时加速到此倍速，松手恢复用户选择的倍速。',
+                        '按住加速，松手恢复。',
                         style: TextStyle(
                           color: AppColors.mutedText,
                           fontSize: 12,

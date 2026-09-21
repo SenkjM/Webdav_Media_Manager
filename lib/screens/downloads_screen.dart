@@ -75,10 +75,7 @@ class DownloadsScreen extends StatelessWidget {
         backgroundColor: AppColors.elevated,
         title: const Text('清除所有队列？'),
         content: Text(
-          '将移除全部 ${tasks.length} 条队列记录'
-          '${running > 0 ? '，并取消 $running 个正在进行/等待中的下载' : ''}。\n\n'
-          '已下载完成的文件不会被删除（音频缓存与系统相册里的文件都保留），'
-          '音乐库记录也不受影响。',
+          '将移除 ${tasks.length} 条队列记录${running > 0 ? '，并取消 $running 个进行中的下载' : ''}；已下载的文件保留。',
         ),
         actions: [
           TextButton(

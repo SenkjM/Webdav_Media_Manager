@@ -157,8 +157,8 @@ class CredentialVaultService extends ChangeNotifier {
       'activeAccountId': _accounts.activeAccountId,
       'passwordEncryption': encrypt ? 'aes-256-gcm' : 'none',
       'note': encrypt
-          ? '仅密码被加密（AES-256-GCM）；地址与用户名为明文，便于识别站点。'
-          : '密码为明文存储（未启用加密）。',
+          ? '仅密码加密（AES-256-GCM），地址与用户名为明文。'
+          : '密码为明文存储。',
       'accountCount': entries.length,
       'accounts': entries,
     };

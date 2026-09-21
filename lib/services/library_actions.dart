@@ -27,7 +27,7 @@ import 'share_rename_service.dart';
 /// Whether the track's audio is local: cache annex + file on disk.
 /// Shown when a library row is bound to a disk name that has no local account.
 String unboundSourceMessage(String sourceName) =>
-    '来源网盘未绑定（$sourceName）：请先在账号页添加或改名成这个名称的网盘';
+    '未绑定网盘「$sourceName」';
 
 /// Stale annex rows are cleared when the file is missing.
 bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
@@ -152,8 +152,8 @@ Future<void> deleteTracksLocalCache(
             children: [
               Text(
                 groupIds.length == 1
-                    ? '将删除整组（CUE + 关联音频）：'
-                    : '将删除 ${groupIds.length} 个 CUE 缓存组（CUE + 关联音频）：',
+                    ? '将删除整组：'
+                    : '将删除 ${groupIds.length} 个 CUE 组：',
               ),
               const SizedBox(height: 8),
               for (final n in names.take(40)) Text('• $n'),
@@ -196,8 +196,8 @@ Future<void> deleteTracksLocalCache(
       title: const Text('删除本地音频缓存？'),
       content: Text(
         unique.length == 1
-            ? '将删除「${p.basename(unique.first.effectiveAudioRemotePath)}」。元数据与封面保留。'
-            : '将删除 ${unique.length} 个本地音频缓存文件。元数据与封面保留。',
+            ? '将删除「${p.basename(unique.first.effectiveAudioRemotePath)}」的音频缓存，标签与封面保留。'
+            : '将删除 ${unique.length} 个缓存文件，标签与封面保留。',
       ),
       actions: [
         TextButton(
@@ -271,13 +271,12 @@ Future<void> destroyLibraryTracks(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '将删除 ${tracks.length} 首曲目：'
-              '本地音频缓存 + 音乐库记录 + 元数据与压缩封面。不可恢复。',
+              '将删除 ${tracks.length} 首曲目（缓存、库记录、元数据与封面），不可恢复。',
             ),
             if (groupIds.isNotEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 6),
-                child: Text('（CUE 分片会整组删除对应音频文件）'),
+                child: Text('（CUE 分片整组删除）'),
               ),
             const SizedBox(height: 8),
             for (final n in files.take(30)) Text('• $n'),
@@ -319,7 +318,7 @@ Future<void> destroyLibraryTracks(
   await library.destroyTracks(tracks);
 
   if (!context.mounted) return;
-  AppSnack.show(context, '已销毁 ${tracks.length} 首曲目（含缓存、元数据与封面）');
+  AppSnack.show(context, '已销毁 ${tracks.length} 首曲目');
 }
 
 /// Share already-cached **non-CUE** audio files via the system share sheet.
@@ -469,7 +468,7 @@ Future<String?> _askShareName(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '按标签重命名（当前模板 ${settings.shareTagRenamePattern}）',
+            '按标签重命名 · 模板 ${settings.shareTagRenamePattern}',
             style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
           ),
           const SizedBox(height: 10),
@@ -478,7 +477,7 @@ Future<String?> _askShareName(
             autofocus: true,
             decoration: InputDecoration(
               labelText: '文件名',
-              helperText: '扩展名固定为 $ext，不用自己写',
+              helperText: '扩展名固定为 $ext',
               suffixText: ext,
               border: const OutlineInputBorder(),
             ),

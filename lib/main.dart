@@ -23,6 +23,7 @@ import 'services/sync_service.dart';
 import 'services/video_playback_service.dart';
 import 'services/webdav_service.dart';
 import 'theme/app_theme.dart';
+import 'utils/app_snack.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -81,6 +82,8 @@ class WebDavMusicApp extends StatelessWidget {
       child: MaterialApp(
         title: 'WebDAV 音乐播放器',
         debugShowCheckedModeBanner: false,
+        // Lets context-free callers (the download queue) post in-app messages.
+        scaffoldMessengerKey: AppSnack.messengerKey,
         themeMode: ThemeMode.light,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,

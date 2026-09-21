@@ -135,7 +135,11 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   void _showOutcome(SyncOutcome outcome) {
-    AppSnack.error(context, outcome.message);
+    if (outcome.ok) {
+      AppSnack.show(context, outcome.message);
+    } else {
+      AppSnack.error(context, outcome.message);
+    }
   }
 
   // --- Actions ----------------------------------------------------------
@@ -163,7 +167,7 @@ class _SyncScreenState extends State<SyncScreen> {
             obscureText: true,
             decoration: const InputDecoration(
               labelText: '统一加密密钥（由你指定）',
-              helperText: '只保存在本机，和网盘密码无关；留空 = 密码明文存储。',
+              helperText: '只保存在本机；留空则以明文存储。',
               helperMaxLines: 2,
               border: OutlineInputBorder(),
               isDense: true,
@@ -255,7 +259,7 @@ class _SyncScreenState extends State<SyncScreen> {
               const SizedBox(height: 8),
               if (audit.missing.isNotEmpty) ...[
                 const Text(
-                  '有分片缺失：这一段无法重放，只能重建云端库。',
+                  '有分片缺失，只能重建。',
                   style: TextStyle(color: AppColors.error, fontSize: 12),
                 ),
                 const SizedBox(height: 4),
@@ -264,10 +268,7 @@ class _SyncScreenState extends State<SyncScreen> {
               ],
               if (audit.orphans.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                const Text(
-                  '孤儿文件：清单没引用（上传中断或并发重建的输家），可安全删除。',
-                  style: TextStyle(fontSize: 12),
-                ),
+                const Text('孤儿文件：清单没引用，可删除。', style: TextStyle(fontSize: 12)),
                 for (final name in audit.orphans.take(8))
                   Text('• $name', style: const TextStyle(fontSize: 12)),
               ],
@@ -396,7 +397,7 @@ class _SyncScreenState extends State<SyncScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
         title: const Text('确认恢复'),
-        content: const Text('将用备份覆盖本机的 WebDAV 凭证、音乐库与歌单。此操作不可撤销。'),
+        content: const Text('将用备份覆盖本机凭证、音乐库与歌单，不可撤销。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -597,9 +598,7 @@ class _SyncScreenState extends State<SyncScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           const Text(
-            '这里只有三样东西：WebDAV 凭证、音乐库、歌单。\n'
-            '凭证与歌单是真同步（双向 + 定期扫描），音乐库按本地变化增量同步、'
-            '也可手动重写；「全部备份」把三者打成一个归档写到指定网盘路径。',
+            '凭证、歌单与音乐库的同步都在这里。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const Divider(height: 28),
@@ -608,7 +607,7 @@ class _SyncScreenState extends State<SyncScreen> {
           FilledButton.icon(
             onPressed: _running || accounts.accounts.isEmpty ? null : _syncAll,
             icon: const Icon(Icons.sync),
-            label: const Text('全部同步（凭证 + 歌单 + 音乐库）'),
+            label: const Text('全部同步'),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -618,9 +617,8 @@ class _SyncScreenState extends State<SyncScreen> {
             title: const Text('定时同步', style: TextStyle(fontSize: 14)),
             subtitle: Text(
               settings.syncInterval == SyncInterval.off
-                  ? '已关闭：只在手动点「全部同步」时同步'
-                  : '${settings.syncInterval.labelZh} 后台自动跑一遍：'
-                        '凭证 + 歌单合并 + 音乐库增量（无变化不上传）',
+                  ? '已关闭，仅手动同步'
+                  : '${settings.syncInterval.labelZh} 自动同步',
               style: const TextStyle(fontSize: 11),
             ),
             trailing: DropdownButton<SyncInterval>(
@@ -640,8 +638,7 @@ class _SyncScreenState extends State<SyncScreen> {
 
           _sectionTitle('WebDAV 凭证'),
           const Text(
-            '凭证统一存放在云端 credentials.json：地址与用户名为明文，'
-            '只有密码会被加密（AES-256-GCM）。',
+            '云端 credentials.json：地址与用户名明文，仅密码加密。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           _destinationTile(
@@ -663,7 +660,7 @@ class _SyncScreenState extends State<SyncScreen> {
             secondary: const Icon(Icons.lock_outline),
             title: const Text('加密密码'),
             subtitle: Text(
-              settings.syncEncryptPassword ? '口令不匹配时密码留空，其余字段照常恢复' : '明文保存密码',
+              settings.syncEncryptPassword ? '口令不匹配时密码留空' : '明文保存密码',
             ),
             value: settings.syncEncryptPassword,
             onChanged: (v) => settings.setSyncEncryptPassword(v),
@@ -722,8 +719,7 @@ class _SyncScreenState extends State<SyncScreen> {
 
           _sectionTitle('歌单'),
           const Text(
-            '双向 M3U8 同步，按 updatedAt 最后写入胜出。改动会立即上传，'
-            '启动 / 切换账号 / 每 30 分钟自动拉取合并。',
+            '双向 M3U8 同步，改动即时上传。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           _destinationTile(
@@ -765,12 +761,7 @@ class _SyncScreenState extends State<SyncScreen> {
 
           _sectionTitle('音乐库'),
           const Text(
-            '云端一个库 = 一个 index.json 清单 + 若干二进制分片（.wmp）：\n'
-            '• lib-*.wmp 基础分片，按每片歌曲数切片（不按专辑分组）\n'
-            '• seg-*.wmp 增量分片，每下载一首只追加一个小片\n'
-            '• del-*.wmp 墓碑分片，记录删除，**重建时才真正落实**\n'
-            '只有本地有变化才会上传，没变化一个字节都不传；不会自动合并。'
-            '曲目按「网盘名 + 路径」绑定，行内不含地址/用户名。',
+            'index.json 清单 + lib/seg/del 分片；只传变化，删除在重建时落实。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           _destinationTile(
@@ -792,7 +783,7 @@ class _SyncScreenState extends State<SyncScreen> {
               child: Text(
                 '云端分片：${sync.cloudFragmentCount} 个'
                 '（约 ${_fmtBytes(sync.cloudFragmentBytes)}）'
-                '${sync.cloudFragmentCount >= settings.libraryRebuildHintFragments ? ' —— 建议重建一次' : ''}',
+                '${sync.cloudFragmentCount >= settings.libraryRebuildHintFragments ? ' · 建议重建' : ''}',
                 style: TextStyle(
                   fontSize: 12,
                   color:
@@ -897,14 +888,13 @@ class _SyncScreenState extends State<SyncScreen> {
 
           _sectionTitle('全部备份'),
           const Text(
-            '把 WebDAV 凭证 + 音乐库 + 歌单打包成一个归档，'
-            '写到你自己挑选的网盘与路径（不区分站点）。',
+            '写成一个归档到指定网盘路径。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const SizedBox(height: 8),
           if (accounts.accounts.isEmpty)
             const Text(
-              '请先在「管理多服务器账号」中添加 WebDAV 服务器。',
+              '请先添加 WebDAV 服务器。',
               style: TextStyle(color: AppColors.error, fontSize: 12),
             )
           else ...[
@@ -987,7 +977,7 @@ class _SyncScreenState extends State<SyncScreen> {
 
           _sectionTitle('本地导入导出'),
           const Text(
-            '导出 / 导入同样使用上面那把「统一加密密钥」。',
+            '导出、导入同样使用上面那把密钥。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const SizedBox(height: 10),
@@ -1137,10 +1127,7 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '会把本机曲库重新切成固定的二进制分片，并**真正落实删除**'
-              '（墓碑行不再写入新库），随后清掉旧的增量/墓碑分片。',
-            ),
+            const Text('以本机为准重写全部分片，并落实删除。'),
             const SizedBox(height: 12),
             const Text('每个分片包含歌曲数'),
             const SizedBox(height: 6),
@@ -1162,7 +1149,7 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('把封面缩略图写进分片'),
-              subtitle: const Text('每首歌各存一份（不去重）；关掉则云端不含封面'),
+              subtitle: const Text('每首歌独立存一份，不去重；关闭则云端不含封面'),
               value: _withCovers,
               onChanged: (v) {
                 setState(() => _withCovers = v);

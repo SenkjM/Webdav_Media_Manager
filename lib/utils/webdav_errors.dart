@@ -12,7 +12,7 @@ bool isWebDavPermissionError(Object error) {
 
 String webDavErrorMessage(Object error) {
   if (isWebDavPermissionError(error)) {
-    return '权限不足或未授权（401/403）。请检查账号权限后重试。';
+    return '权限不足或未授权（401/403）';
   }
   return error.toString();
 }

@@ -107,8 +107,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           const Text(
-            '网络库按后缀识别文件类型。可自由增删；多个后缀用空格或逗号分隔。'
-            '修改后返回网络库重新刷新即生效。',
+            '按后缀识别文件类型；多个后缀用空格或逗号分隔。返回网络库刷新后生效。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const SizedBox(height: 16),

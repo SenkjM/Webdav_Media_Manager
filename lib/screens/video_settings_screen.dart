@@ -61,7 +61,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           ),
           const SizedBox(height: 4),
           const Text(
-            '视频通过 media_kit 直接流式播放 WebDAV 文件，不下载到本地。',
+            '视频直接流式播放，不下载到本地。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const SizedBox(height: 8),
@@ -134,8 +134,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
               leading: const Icon(Icons.speed),
               title: const Text('长按临时倍速'),
               subtitle: Text(
-                '按住画面时临时加速到 ${settings.videoLongPressRate.toStringAsFixed(2)}×，'
-                '松手恢复用户选择的倍速',
+                '按住加速到 ${settings.videoLongPressRate.toStringAsFixed(2)}×，松手恢复',
               ),
             ),
             Wrap(
@@ -167,10 +166,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             leading: const Icon(Icons.slow_motion_video),
             title: const Text('默认播放倍速'),
             subtitle: Text(
-              '当前 ${settings.videoLastRate.toStringAsFixed(2)}×'
-              '（播放页浮窗滑块范围 '
-              '${SettingsService.minVideoRate.toStringAsFixed(1)}×–'
-              '${SettingsService.maxVideoRate.toStringAsFixed(1)}×）',
+              '当前 ${settings.videoLastRate.toStringAsFixed(2)}×（范围 ${SettingsService.minVideoRate.toStringAsFixed(1)}×–${SettingsService.maxVideoRate.toStringAsFixed(1)}×）',
             ),
           ),
           Slider(
@@ -192,7 +188,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           ),
           const SizedBox(height: 4),
           const Text(
-            '字幕固定画在底部控件条上方；控件隐藏时贴窗口底部，因此不会与控件重叠。',
+            '控件显示时画在控件条上方，隐藏时贴窗口底部。',
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const SizedBox(height: 8),

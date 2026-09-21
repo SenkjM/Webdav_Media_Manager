@@ -144,8 +144,7 @@ class PlayerScreen extends StatelessWidget {
           row('类型', LibraryTrack.cueMultiSliceLabel);
           row(
             '说明',
-            '此条目来自 CUE 分片，不是独立单曲文件；'
-                '播放与缓存共用源音频。',
+            '来自 CUE 分片，播放与缓存共用源音频。',
           );
           row('CUE 文件', track.cueRemotePath ?? lib?.cueRemotePath);
           row('源音频', track.audioRemotePath ?? lib?.audioRemotePath);

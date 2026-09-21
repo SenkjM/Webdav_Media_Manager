@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
 import '../utils/audio_extensions.dart';
+import '../utils/app_snack.dart';
 import '../utils/cue_sheet.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
@@ -1066,6 +1067,16 @@ class DownloadQueueService extends ChangeNotifier {
             cancelled: cancelled,
           ),
         );
+        // The same batch, once, in-app — the queue has no BuildContext, so this
+        // goes through AppSnack's global slot.
+        AppSnack.showGlobal(
+          _completionMessage(
+            completed: completed,
+            failed: failed,
+            cancelled: cancelled,
+          ),
+          error: failed > 0,
+        );
       }
       return;
     }
@@ -1081,6 +1092,20 @@ class DownloadQueueService extends ChangeNotifier {
         fileProgress: current?.progress ?? 0,
       ),
     );
+  }
+
+  /// One line for a finished batch, e.g. 「下载完成：成功 3 首」.
+  static String _completionMessage({
+    required int completed,
+    required int failed,
+    required int cancelled,
+  }) {
+    final parts = <String>[
+      '成功 $completed',
+      if (failed > 0) '失败 $failed',
+      if (cancelled > 0) '取消 $cancelled',
+    ];
+    return '下载完成：${parts.join(' · ')}';
   }
 
   /// Best-effort creation of the download notification channel (startup).

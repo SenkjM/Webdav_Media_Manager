@@ -55,7 +55,7 @@ class PlaylistDetailScreen extends StatelessWidget {
       body: pl.entries.isEmpty
           ? const Center(
               child: Text(
-                '歌单为空。可在音乐库长按曲目添加，或点右上角从库中选择。',
+                '歌单为空，可从音乐库添加。',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.secondaryText),
               ),
@@ -171,7 +171,7 @@ class _PlaylistTrackTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
-            message: isLocal ? '已下载到本地' : '未下载（点按加入下载）',
+            message: isLocal ? '已下载' : '点按加入下载',
             child: Container(
               width: 10,
               height: 10,

@@ -41,7 +41,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('销毁'),
-        content: const Text('确定销毁？将删除音乐库标签、压缩封面与本地缓存，不可恢复。'),
+        content: const Text('将删除音乐库标签、压缩封面与本地缓存，不可恢复。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -155,8 +155,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: Text(
-                    '暂无已缓存曲目。\n请在「网络库」下载音乐后，曲目会出现在此。\n'
-                    '元数据与封面缩略图会在缓存清理后保留。',
+                    '暂无曲目：先在「网络库」下载音乐。',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.secondaryText),
                   ),
@@ -293,7 +292,7 @@ class _TagsTab extends StatelessWidget {
     if (groups.isEmpty) {
       return const Center(
         child: Text(
-          '暂无标签。下载带有流派（genre）等元数据的曲目后会出现在此。',
+          '暂无标签：下载带流派等元数据的曲目后出现。',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.secondaryText),
         ),
@@ -965,7 +964,7 @@ class _TrackTile extends StatelessWidget {
               ),
             ),
           Tooltip(
-            message: isLocal ? '已下载到本地' : '未下载（点按加入下载）',
+            message: isLocal ? '已下载' : '点按加入下载',
             child: Container(
               width: 10,
               height: 10,

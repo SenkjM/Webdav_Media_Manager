@@ -132,8 +132,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (!context.mounted) return;
     AppSnack.show(
       context,
-      '已清理 $n 个音频缓存文件（播放中/下载中已保留）。'
-      '音乐库元数据与封面缩略图仍保留（$libCount 首）。',
+      '已清理 $n 个缓存文件（$libCount 首元数据保留）',
     );
   }
 
@@ -175,18 +174,18 @@ class _SettingsScreenState extends State<SettingsScreen>
   String _notificationSubtitle(NotificationPermissionService perms) {
     if (!perms.loaded) return '正在检查…';
     if (perms.isGranted) {
-      return '已允许 — 播放/暂停时显示系统媒体通知';
+      return '已允许，播放/暂停时显示媒体通知';
     }
     if (perms.isChannelBlocked) {
-      return '通知权限已开启，但「音乐播放」通道被关闭 — 点此打开系统设置';
+      return '「音乐播放」通道被关闭，点此打开系统设置';
     }
     if (perms.isPermanentlyDenied) {
-      return '已拒绝 — 点此打开系统设置以开启通知';
+      return '已拒绝，点此打开系统设置';
     }
     if (perms.isChannelMissing) {
-      return '「音乐播放」通道未创建 — 播放一次或点「刷新」重试';
+      return '「音乐播放」通道未创建，播放一次或点「刷新」重试';
     }
-    return '未授权 — 点此请求通知权限（Android 13+）';
+    return '未授权，点此请求通知权限';
   }
 
   /// Re-reads permission +「音乐播放」channel state from the system and
@@ -207,7 +206,6 @@ class _SettingsScreenState extends State<SettingsScreen>
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
-    final library = context.watch<LibraryService>();
     final notif = context.watch<NotificationPermissionService>();
 
     return Scaffold(
@@ -360,8 +358,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            '新下载/重新写入标签时按此边长生成正方形压缩封面。'
-            '已有缩略图保持原尺寸，需重新下载/写入标签或「销毁」音乐库后再下载才会按新尺寸生成。',
+            '新封面按此边长生成；已有封面需重新生成。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
@@ -434,10 +431,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            '播放仅使用本地音频缓存。可选 1 天 / 1 周 / 自定义时长自动清理，或「永不」关闭自动清理；'
-            '正在播放或正在下载的文件不会被删除。手动清空仍可用。'
-            '音乐库标签与封面缩略图不受缓存清理影响（当前库内 ${library.count} 首）。'
-            '销毁音乐库（音乐库页菜单）才会清除标签与封面。',
+            '仅清理音频缓存（播放/下载中的保留），标签与封面不受影响。',
           ),
           const SizedBox(height: 12),
           Card(
@@ -495,7 +489,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (settings.retention == CacheRetention.custom) ...[
             const SizedBox(height: 12),
             Text(
-              '自定义保留时长（到期自动删除；至少 1 小时）',
+              '自定义保留时长（至少 1 小时）',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -544,8 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (settings.retention == CacheRetention.never) ...[
             const SizedBox(height: 8),
             Text(
-              '已关闭自动清理。仍可通过下方按钮手动清空缓存'
-              '（正在播放/下载的文件会保留）。',
+              '已关闭自动清理，可用下方按钮手动清空。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -564,8 +557,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            '应用内提示（屏幕底部的短消息）同时只显示一条：新的会替换旧的，'
-            '重复的会被忽略，点「知道了」可立即关闭。',
+            '屏幕底部提示同时只显示一条，点「知道了」立即关闭。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
@@ -606,7 +598,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            '分享已缓存的音乐文件时可按标签重命名文件名。',
+            '分享时按标签重命名文件名。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           SwitchListTile(
@@ -639,10 +631,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const SizedBox(height: 4),
           Text(
-            'WebDAV 凭证与歌单是真同步（双向 + 定期扫描）；'
-            '音乐库按本地增量上传，也可手动全量同步；'
-            '「全部备份」把凭证 / 音乐库 / 歌单整体打成一个归档写到指定网盘路径。\n'
-            '云端根目录：${settings.syncRemoteRoot}',
+            '凭证与歌单双向同步，音乐库增量上传。\n云端根目录：${settings.syncRemoteRoot}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
@@ -657,9 +646,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
           const Divider(height: 40),
           Text(
-            '说明：音乐不流式播放——点按曲目会先下载到本地，就绪后再用本地文件'
-            '播放，下载完成后读取标签并写入本地音乐库。视频则通过 media_kit '
-            '直接从 WebDAV 流式播放，并按文件夹自动连播。',
+            '音乐先下载再本地播放；视频直接流式播放并按文件夹连播。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
@@ -687,8 +674,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
             const SizedBox(height: 8),
             const Text(
-              '默认 {artist}-{title}（作者-标题）。'
-              '留空的字段会自动去掉多余的分隔符，扩展名始终保留。',
+              '留空字段自动去掉多余分隔符，扩展名始终保留。',
               style: TextStyle(color: AppColors.mutedText, fontSize: 11),
             ),
           ],
