@@ -8,31 +8,66 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
 
 import '../models/video_settings.dart';
+import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/audio_player_service.dart';
 import '../services/settings_service.dart';
 import '../services/video_playback_service.dart';
+import '../services/video_queue_controller.dart';
+import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/android_background.dart';
 import '../utils/video_pip.dart';
 
+/// Everything the player needs to build a play queue for one video.
+class VideoQueueSeed {
+  const VideoQueueSeed({
+    required this.accountId,
+    required this.folderPath,
+    required this.current,
+    this.siblings = const [],
+  });
+
+  final String accountId;
+
+  /// Folder used as the root of the background scan.
+  final String folderPath;
+
+  /// The video the user actually tapped.
+  final WebDavItem current;
+
+  /// Videos already known in [folderPath] (the listing the user tapped in), so
+  /// playback can start without waiting for the scan.
+  final List<WebDavItem> siblings;
+}
+
 /// Full-screen WebDAV video player (streaming via media_kit).
 ///
-/// Not surfaced as a cross-interface mini player (unlike music). Supports:
-/// * centered floating controls (no full-width top/bottom bars)
-/// * animated seek feedback for the 前进 / 后退 buttons
-/// * long-press speed boost (rate from Settings, restored on release)
-/// * floating 0.5×–3.0× speed slider
-/// * manual portrait/landscape toggle + rotation lock + screen (UI) lock
-/// * background playback (takes effect when the task is sent to the background,
-///   e.g. the Home key — not when the player route is popped)
-/// * picture-in-picture with the control overlay hidden
-/// * a media notification / MediaSession while streaming (via the shared
-///   audio handler's video mode)
+/// Layout / gesture rules:
+/// * controls are drawn as a **low floating cluster**, clear of the middle of
+///   the frame so they never cover the picture;
+/// * single tap toggles the controls, another single tap hides them again;
+/// * double tap in the **middle third** = play / pause; the left and right
+///   thirds run the configured seek gestures;
+/// * long press = temporary speed boost (rate from Settings, restored on
+///   release);
+/// * a floating speed slider covers 0.5×–3.0×;
+/// * picture-in-picture hides every control;
+/// * background playback happens when the task is sent to the background
+///   (Home key), never when the player route is popped;
+/// * the queue comes from a progressive folder scan, so 上一个 / 下一个 and
+///   auto-advance work while the scan is still running.
 class VideoPlayerScreen extends StatefulWidget {
-  const VideoPlayerScreen({super.key, required this.source});
+  const VideoPlayerScreen({
+    super.key,
+    required this.source,
+    this.seed,
+  });
 
   final WebDavStreamSource source;
+
+  /// When present, a queue is built by scanning [VideoQueueSeed.folderPath].
+  final VideoQueueSeed? seed;
 
   @override
   State<VideoPlayerScreen> createState() => _VideoPlayerScreenState();
@@ -43,9 +78,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   VideoPlaybackService? _service;
   Player? _player;
   VideoController? _controller;
+  VideoQueueController? _queue;
 
   bool _loading = true;
   String? _error;
+  bool _switching = false;
 
   final List<StreamSubscription<dynamic>> _subs = [];
 
@@ -59,39 +96,38 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   final ValueNotifier<bool> _rotationLocked = ValueNotifier(false);
   final ValueNotifier<bool> _pip = ValueNotifier(false);
 
-  /// Animated seek feedback (`+10 秒`). Null when nothing is being shown.
   final ValueNotifier<_SeekFeedback?> _seekFeedback =
       ValueNotifier<_SeekFeedback?>(null);
 
-  /// Resume position captured before the app was sent to the background.
-  Duration? _resumePosition;
+  /// Title shown in the bar / notification (changes as the queue advances).
+  final ValueNotifier<String> _title = ValueNotifier('');
 
-  VideoGestureAction? _pendingDoubleTapAction;
   StreamSubscription<bool>? _pipSub;
+  StreamSubscription<bool>? _completedSub;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _title.value = widget.source.name;
     _pipSub = pictureInPictureChanges.listen((active) {
       _pip.value = active;
-      if (active) {
-        // The small window must be free of controls.
-        _controlsVisible.value = false;
-      }
+      if (active) _controlsVisible.value = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _open());
   }
+
+  // --- Open / switch ----------------------------------------------------
 
   Future<void> _open() async {
     final service = context.read<VideoPlaybackService>();
     final settings = context.read<SettingsService>();
     final music = context.read<AudioPlayerService>();
     _service = service;
+    _buildQueue();
     try {
       // Music and video must never play at the same time.
       await music.pauseForVideo();
-      // Restore the user's last chosen speed (0.5×–3.0×).
       final restored = SettingsService.clampVideoRate(settings.videoLastRate);
       final player = await service.prepare(
         widget.source,
@@ -115,9 +151,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       }
       await player.open(service.mediaFor(widget.source));
       if (!mounted) return;
-      setState(() {
-        _loading = false;
-      });
+      setState(() => _loading = false);
       if (await isInPictureInPicture()) _pip.value = true;
     } catch (e) {
       if (!mounted) return;
@@ -126,6 +160,28 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         _error = e.toString();
       });
     }
+  }
+
+  void _buildQueue() {
+    final seed = widget.seed;
+    if (seed == null) return;
+    final queue = VideoQueueController(
+      webDav: context.read<WebDavService>(),
+      accountId: seed.accountId,
+      rootPath: seed.folderPath,
+      seed: seed.siblings,
+      initialRemotePath: seed.current.path,
+      fileTypes: context.read<SettingsService>().fileTypes,
+      autoAdvance: true,
+    );
+    queue.addListener(_onQueueChanged);
+    _queue = queue;
+    // Progressive: never await this, playback starts from the seed.
+    queue.startScan();
+  }
+
+  void _onQueueChanged() {
+    if (mounted) setState(() {});
   }
 
   void _bindStreams(Player player) {
@@ -141,6 +197,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         SnackBar(content: Text('播放错误：$e')),
       );
     }));
+    // Auto-advance to the next video in the folder when one finishes.
+    _completedSub = player.stream.completed.listen((completed) {
+      if (completed && mounted) unawaited(_playNext(auto: true));
+    });
     _position.value = player.state.position;
     _duration.value = player.state.duration;
     _playing.value = player.state.playing;
@@ -151,6 +211,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _pipSub?.cancel();
+    _completedSub?.cancel();
+    _queue?.removeListener(_onQueueChanged);
+    _queue?.dispose();
     unawaited(_service?.endBoost() ?? Future<void>.value());
     for (final s in _subs) {
       s.cancel();
@@ -165,10 +228,123 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _rotationLocked.dispose();
     _pip.dispose();
     _seekFeedback.dispose();
+    _title.dispose();
     // Restore free rotation; the Video widget detaches the texture itself and
     // the Player lifetime stays owned by the audio handler.
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
+  }
+
+  /// Switch to [item] without tearing down the VideoController: the controller
+  /// stays bound to the same player, only the media changes.
+  Future<void> _switchTo(WebDavItem item) async {
+    final player = _player;
+    final service = _service;
+    if (player == null || service == null || _switching) return;
+    final source = _streamFor(item);
+    if (source == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('WebDAV 未连接，无法播放')),
+      );
+      return;
+    }
+    setState(() {
+      _switching = true;
+      _buffering.value = true;
+      _position.value = Duration.zero;
+      _duration.value = null;
+    });
+    try {
+      await service.endBoost();
+      final settings = context.read<SettingsService>();
+      final rate = SettingsService.clampVideoRate(settings.videoLastRate);
+      await service.prepare(
+        source,
+        bufferSizeMb: settings.videoBufferSizeMb,
+        initialRate: rate,
+      );
+      _title.value = item.name;
+      await player.open(service.mediaFor(source), play: true);
+      if ((rate - 1.0).abs() > 0.001) await player.setRate(rate);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('切换视频失败：$e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _switching = false;
+          _buffering.value = false;
+        });
+      }
+    }
+  }
+
+  WebDavStreamSource? _streamFor(WebDavItem item) {
+    final queue = _queue;
+    return context.read<WebDavService>().buildStreamSource(
+          remotePath: item.path,
+          name: item.name,
+          accountId: queue?.accountId ?? widget.source.accountId,
+        );
+  }
+
+  Future<void> _playNext({bool auto = false}) async {
+    final queue = _queue;
+    if (queue == null) {
+      if (!auto) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('当前没有播放列表')),
+        );
+      }
+      return;
+    }
+    final next = queue.next;
+    if (next == null) {
+      if (!auto) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              queue.scanning ? '已到列表末尾（仍在扫描文件夹…）' : '已是最后一个视频',
+            ),
+          ),
+        );
+      } else {
+        await _player?.pause();
+      }
+      return;
+    }
+    queue.selectRemotePath(next.path);
+    await _switchTo(next);
+  }
+
+  Future<void> _playPrevious() async {
+    final queue = _queue;
+    if (queue == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('当前没有播放列表')),
+      );
+      return;
+    }
+    // Standard player behavior: restart the current video first.
+    if (_position.value > const Duration(seconds: 3)) {
+      await _seekBy(Duration.zero, label: '从头播放', toStart: true);
+      return;
+    }
+    final prev = queue.previous;
+    if (prev == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            queue.scanning ? '已是第一个视频（仍在扫描文件夹…）' : '已是第一个视频',
+          ),
+        ),
+      );
+      return;
+    }
+    queue.selectRemotePath(prev.path);
+    await _switchTo(prev);
   }
 
   // --- App lifecycle ----------------------------------------------------
@@ -185,26 +361,19 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         // otherwise pause so the user does not lose their place.
         if (!context.read<SettingsService>().videoBackgroundPlayback &&
             player.state.playing) {
-          _resumePosition = player.state.position;
           unawaited(player.pause());
         }
       case AppLifecycleState.resumed:
-        final resume = _resumePosition;
-        _resumePosition = null;
-        if (resume != null &&
-            context.read<SettingsService>().videoBackgroundPlayback) {
-          unawaited(player.play());
-        }
       case AppLifecycleState.inactive:
       case AppLifecycleState.detached:
         break;
     }
   }
 
-  // --- Transport --------------------------------------------------------
+  // --- Exit -------------------------------------------------------------
 
-  /// Leaving the player stops playback. Background playback is triggered by
-  /// sending the task to the background (Home key), never by navigating back.
+  /// Leaving the player always stops playback: background playback is triggered
+  /// by sending the task to the background, not by navigating away.
   Future<void> _handleExit({bool stopPlayback = true}) async {
     final service = _service ?? context.read<VideoPlaybackService>();
     if (stopPlayback) {
@@ -215,24 +384,22 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   }
 
   Future<void> _handleBackPress() async {
+    final confirm = context.read<SettingsService>().videoConfirmExit;
     final player = _player;
-    if (player != null && player.state.playing) {
+    if (confirm && player != null && player.state.playing) {
       final leave = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppColors.elevated,
-          title: const Text('退出播放？'),
-          content: const Text(
-            '返回将停止视频。若要让视频在后台继续播放，请按主页键。',
-          ),
+          content: const Text('确认关闭视频吗？'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('继续观看'),
+              child: const Text('取消'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('退出并停止'),
+              child: const Text('关闭'),
             ),
           ],
         ),
@@ -243,8 +410,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     await _handleExit();
   }
 
-  /// Send the task to the background exactly like the Home key, keeping
-  /// playback if「后台播放」is on.
+  /// Send the task to the background exactly like the Home key.
   Future<void> _sendToBackground() async {
     if (!context.read<SettingsService>().videoBackgroundPlayback) {
       await _handleExit();
@@ -257,6 +423,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (_locked.value || _pip.value) return;
     _controlsVisible.value = !_controlsVisible.value;
   }
+
+  // --- Gestures ---------------------------------------------------------
 
   Future<void> _runGesture(VideoGestureAction action) async {
     final player = _player;
@@ -286,11 +454,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   }
 
   /// Seek and flash the animated feedback overlay.
-  Future<void> _seekBy(Duration delta, {required String label}) async {
+  Future<void> _seekBy(
+    Duration delta, {
+    required String label,
+    bool toStart = false,
+  }) async {
     final player = _player;
     if (player == null) return;
     final dur = _duration.value ?? Duration.zero;
-    var target = _position.value + delta;
+    var target = toStart ? Duration.zero : _position.value + delta;
     if (target < Duration.zero) target = Duration.zero;
     if (dur > Duration.zero && target > dur) target = dur;
     await player.seek(target);
@@ -372,11 +544,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   void _toggleLock() {
     _locked.value = !_locked.value;
-    if (_locked.value) {
-      _controlsVisible.value = false;
-    } else {
-      _controlsVisible.value = true;
-    }
+    _controlsVisible.value = !_locked.value;
   }
 
   Future<void> _enterPip() async {
@@ -389,6 +557,24 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       return;
     }
     _controlsVisible.value = false;
+  }
+
+  // --- Long-press speed boost -------------------------------------------
+
+  Future<void> _beginLongPress() async {
+    final settings = context.read<SettingsService>();
+    final action = settings.videoLongPress;
+    if (action == VideoGestureAction.toggleRate2x) {
+      await _service?.beginBoost(settings.videoLongPressRate);
+      return;
+    }
+    await _runGesture(action);
+  }
+
+  Future<void> _endLongPress() async {
+    final settings = context.read<SettingsService>();
+    if (settings.videoLongPress != VideoGestureAction.toggleRate2x) return;
+    await _service?.endBoost();
   }
 
   // --- Build ------------------------------------------------------------
@@ -445,8 +631,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final settings = context.watch<SettingsService>();
     // While the PiP window is up the Activity is technically in the background;
     // do not let that pause the stream or the small window would be dead.
-    final pauseOnBackground =
-        !settings.videoBackgroundPlayback && !_pip.value;
+    final pauseOnBackground = !settings.videoBackgroundPlayback && !_pip.value;
 
     return PopScope(
       canPop: false,
@@ -470,17 +655,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 resumeUponEnteringForegroundMode: false,
               ),
             ),
-            // Gesture layer sits under the controls so the buttons win the
-            // hit test; it is disabled while locked or in PiP.
             _buildGestureLayer(),
-            // Center-anchored controls + feedback animations.
-            Positioned.fill(child: _buildCenterOverlay(settings)),
+            Positioned.fill(child: _buildOverlay(settings)),
           ],
         ),
       ),
     );
   }
 
+  /// Three horizontal zones so a middle double-tap can mean play/pause while
+  /// the sides keep the configurable seek gestures. Each zone handles its own
+  /// single tap, so a tap anywhere still toggles the controls.
   Widget _buildGestureLayer() {
     return ValueListenableBuilder<bool>(
       valueListenable: _locked,
@@ -488,27 +673,37 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         return ValueListenableBuilder<bool>(
           valueListenable: _pip,
           builder: (context, pip, _) {
-            if (locked || pip) {
-              return const SizedBox.shrink();
-            }
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _toggleControls,
-              onDoubleTapDown: (details) {
-                final w = MediaQuery.of(context).size.width;
-                final settings = context.read<SettingsService>();
-                _pendingDoubleTapAction = details.localPosition.dx < w / 2
-                    ? settings.videoLeftDoubleTap
-                    : settings.videoRightDoubleTap;
-              },
-              onDoubleTap: () {
-                final action = _pendingDoubleTapAction;
-                if (action != null) _runGesture(action);
-              },
-              onLongPressStart: (_) => _beginLongPress(),
-              onLongPressEnd: (_) => _endLongPress(),
-              onLongPressCancel: _endLongPress,
-              child: const SizedBox.expand(),
+            if (locked || pip) return const SizedBox.shrink();
+            return Row(
+              children: [
+                Expanded(
+                  flex: 30,
+                  child: _GestureZone(
+                    onSingleTap: _toggleControls,
+                    onDoubleTap: () => _runSideDoubleTap(left: true),
+                    onLongPressStart: _beginLongPress,
+                    onLongPressEnd: _endLongPress,
+                  ),
+                ),
+                Expanded(
+                  flex: 40,
+                  child: _GestureZone(
+                    onSingleTap: _toggleControls,
+                    onDoubleTap: _togglePlayPause,
+                    onLongPressStart: _beginLongPress,
+                    onLongPressEnd: _endLongPress,
+                  ),
+                ),
+                Expanded(
+                  flex: 30,
+                  child: _GestureZone(
+                    onSingleTap: _toggleControls,
+                    onDoubleTap: () => _runSideDoubleTap(left: false),
+                    onLongPressStart: _beginLongPress,
+                    onLongPressEnd: _endLongPress,
+                  ),
+                ),
+              ],
             );
           },
         );
@@ -516,28 +711,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     );
   }
 
-  // --- Long-press speed boost -------------------------------------------
-
-  Future<void> _beginLongPress() async {
+  Future<void> _runSideDoubleTap({required bool left}) async {
     final settings = context.read<SettingsService>();
-    final action = settings.videoLongPress;
-    if (action == VideoGestureAction.toggleRate2x) {
-      // Temporary boost while the finger is down.
-      await _service?.beginBoost(settings.videoLongPressRate);
-      return;
-    }
+    final action =
+        left ? settings.videoLeftDoubleTap : settings.videoRightDoubleTap;
     await _runGesture(action);
   }
 
-  Future<void> _endLongPress() async {
-    final settings = context.read<SettingsService>();
-    if (settings.videoLongPress != VideoGestureAction.toggleRate2x) return;
-    await _service?.endBoost();
+  Future<void> _togglePlayPause() async {
+    await _player?.playOrPause();
   }
 
   // --- Overlay ----------------------------------------------------------
 
-  Widget _buildCenterOverlay(SettingsService settings) {
+  Widget _buildOverlay(SettingsService settings) {
     return ValueListenableBuilder<bool>(
       valueListenable: _pip,
       builder: (context, pip, _) {
@@ -569,9 +756,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   children: [
                     _buildFeedbackLayer(),
                     if (visible) ...[
-                      _buildTopStrip(),
-                      Center(child: _buildControlCluster(settings)),
-                      _buildBottomProgress(),
+                      _buildTopStrip(settings),
+                      _buildBottomCluster(settings),
                     ],
                     ValueListenableBuilder<bool>(
                       valueListenable: _buffering,
@@ -595,7 +781,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     );
   }
 
-  /// Animated 前进 / 后退 feedback: a scaling, fading pill in the center.
   Widget _buildFeedbackLayer() {
     return ValueListenableBuilder<_SeekFeedback?>(
       valueListenable: _seekFeedback,
@@ -613,9 +798,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     );
   }
 
-  /// Title + the few non-transport actions, as a small floating strip so the
-  /// middle of the screen stays free for the centered controls.
-  Widget _buildTopStrip() {
+  /// Title + non-transport actions, in a small pill at the very top.
+  Widget _buildTopStrip(SettingsService settings) {
     return SafeArea(
       child: Align(
         alignment: Alignment.topCenter,
@@ -635,14 +819,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 onTap: _handleBackPress,
               ),
               ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 180),
-                child: Text(
-                  widget.source.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                constraints: const BoxConstraints(maxWidth: 170),
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _title,
+                  builder: (context, title, _) => Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                  ),
                 ),
               ),
+              if (_queue != null)
+                _RoundIconButton(
+                  icon: Icons.playlist_play,
+                  tooltip: '播放列表',
+                  onTap: _showQueueSheet,
+                ),
               _RoundIconButton(
                 icon: Icons.home_outlined,
                 tooltip: '转到后台（继续播放）',
@@ -665,83 +858,129 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     );
   }
 
-  /// The centered control cluster: −10s / play-pause / +10s above a small row
-  /// with lock, speed and PiP.
-  Widget _buildControlCluster(SettingsService settings) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
+  /// Transport + secondary controls, anchored to the **lower** part of the
+  /// frame so the middle of the picture stays unobstructed.
+  Widget _buildBottomCluster(SettingsService settings) {
+    return SafeArea(
+      child: Align(
+        alignment: const Alignment(0, 0.66),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _CenterIconButton(
-                icon: Icons.replay_10,
-                tooltip: '后退 10 秒',
-                size: 34,
-                onTap: () =>
-                    _seekBy(const Duration(seconds: -10), label: '后退 10 秒'),
-              ),
-              const SizedBox(width: 18),
-              ValueListenableBuilder<bool>(
-                valueListenable: _playing,
-                builder: (context, playing, _) => _CenterIconButton(
-                  icon: playing ? Icons.pause : Icons.play_arrow,
-                  tooltip: playing ? '暂停' : '播放',
-                  size: 46,
-                  onTap: () => _player?.playOrPause(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_queue != null)
+                          _CenterIconButton(
+                            icon: Icons.skip_previous,
+                            tooltip: '上一个视频',
+                            size: 28,
+                            onTap: _playPrevious,
+                          ),
+                        _CenterIconButton(
+                          icon: Icons.replay_10,
+                          tooltip: '后退 10 秒',
+                          size: 28,
+                          onTap: () => _seekBy(
+                            const Duration(seconds: -10),
+                            label: '后退 10 秒',
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _playing,
+                          builder: (context, playing, _) => _CenterIconButton(
+                            icon: playing ? Icons.pause : Icons.play_arrow,
+                            tooltip: playing ? '暂停' : '播放',
+                            size: 40,
+                            onTap: _togglePlayPause,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        _CenterIconButton(
+                          icon: Icons.forward_10,
+                          tooltip: '前进 10 秒',
+                          size: 28,
+                          onTap: () => _seekBy(
+                            const Duration(seconds: 10),
+                            label: '前进 10 秒',
+                          ),
+                        ),
+                        if (_queue != null)
+                          _CenterIconButton(
+                            icon: Icons.skip_next,
+                            tooltip: '下一个视频',
+                            size: 28,
+                            onTap: () => _playNext(),
+                          ),
+                      ],
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _RoundIconButton(
+                          icon: Icons.lock_outline,
+                          tooltip: '锁定屏幕',
+                          onTap: _toggleLock,
+                        ),
+                        _SpeedButton(
+                          rateListenable: _rate,
+                          onTap: () => _showSpeedSheet(settings),
+                        ),
+                        if (settings.videoPipEnabled)
+                          _RoundIconButton(
+                            icon: Icons.picture_in_picture_alt,
+                            tooltip: '画中画',
+                            onTap: _enterPip,
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 18),
-              _CenterIconButton(
-                icon: Icons.forward_10,
-                tooltip: '前进 10 秒',
-                size: 34,
-                onTap: () =>
-                    _seekBy(const Duration(seconds: 10), label: '前进 10 秒'),
-              ),
+              if (_queue != null) ...[
+                const SizedBox(height: 4),
+                _queueLabel(),
+              ],
+              const SizedBox(height: 4),
+              _buildProgressRow(),
             ],
           ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _RoundIconButton(
-                icon: Icons.lock_outline,
-                tooltip: '锁定屏幕',
-                onTap: _toggleLock,
-              ),
-              _SpeedButton(
-                rateListenable: _rate,
-                onTap: () => _showSpeedSheet(settings),
-              ),
-              if (settings.videoPipEnabled)
-                _RoundIconButton(
-                  icon: Icons.picture_in_picture_alt,
-                  tooltip: '画中画',
-                  onTap: _enterPip,
-                ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  /// Slim progress bar pinned to the bottom, kept out of the control cluster.
-  Widget _buildBottomProgress() {
-    return SafeArea(
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-          child: _buildProgressRow(),
-        ),
+  /// `3 / 27 · 扫描中…` — shows the progressive scan making progress.
+  Widget _queueLabel() {
+    final queue = _queue!;
+    final total = queue.length;
+    final idx = queue.index;
+    final parts = <String>[
+      if (idx >= 0) '${idx + 1} / $total' else '— / $total',
+      if (queue.scanning) '扫描中…',
+    ];
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        parts.join(' · '),
+        style: const TextStyle(color: Colors.white70, fontSize: 11),
       ),
     );
   }
@@ -809,6 +1048,118 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
   }
 
+  // --- Queue sheet ------------------------------------------------------
+
+  Future<void> _showQueueSheet() async {
+    final queue = _queue;
+    if (queue == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final height = MediaQuery.of(ctx).size.height * 0.7;
+        return SafeArea(
+          child: SizedBox(
+            height: height,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                  child: Text(
+                    '播放列表',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
+                ),
+                Expanded(
+                  child: ListenableBuilder(
+                    listenable: queue,
+                    builder: (ctx, _) {
+                      final tracks = queue.tracks;
+                      return ListView.builder(
+                        itemCount: tracks.length,
+                        itemBuilder: (ctx, i) {
+                          final t = tracks[i];
+                          final selected = t.path == queue.currentRemotePath;
+                          return ListTile(
+                            dense: true,
+                            selected: selected,
+                            leading: Text(
+                              '${i + 1}',
+                              style: TextStyle(
+                                color: selected
+                                    ? AppColors.accent
+                                    : AppColors.mutedText,
+                                fontSize: 12,
+                              ),
+                            ),
+                            title: Text(
+                              t.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: selected
+                                    ? AppColors.accent
+                                    : AppColors.onDark,
+                              ),
+                            ),
+                            subtitle: t.size != null
+                                ? Text(
+                                    _fmtBytes(t.size!),
+                                    style: const TextStyle(fontSize: 11),
+                                  )
+                                : null,
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              if (selected) return;
+                              queue.selectRemotePath(t.path);
+                              unawaited(_switchTo(t));
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+                if (queue.scanning)
+                  const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          '正在扫描文件夹，列表会继续增加…',
+                          style: TextStyle(
+                            color: AppColors.mutedText,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _fmtBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
   // --- Floating speed slider --------------------------------------------
 
   Future<void> _showSpeedSheet(SettingsService settings) async {
@@ -857,9 +1208,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   max: SettingsService.maxVideoRate,
                   divisions: SettingsService.videoRateDivisions,
                   label: '${draft.toStringAsFixed(2)}×',
-                  onChanged: (v) {
-                    setLocal(() => draft = v);
-                  },
+                  onChanged: (v) => setLocal(() => draft = v),
                   onChangeEnd: (v) => _applyRate(v),
                 ),
                 Row(
@@ -964,22 +1313,25 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 },
               ),
               SwitchListTile(
+                secondary: const Icon(Icons.exit_to_app),
+                title: const Text('退出时二次确认'),
+                subtitle: const Text('返回时询问「确认关闭视频吗？」'),
+                value: settings.videoConfirmExit,
+                onChanged: (v) => settings.setVideoConfirmExit(v),
+              ),
+              SwitchListTile(
                 secondary: const Icon(Icons.picture_in_picture_alt),
                 title: const Text('允许画中画'),
                 subtitle: const Text('此开关保存在设置中'),
                 value: settings.videoPipEnabled,
-                onChanged: (v) {
-                  settings.setVideoPipEnabled(v);
-                },
+                onChanged: (v) => settings.setVideoPipEnabled(v),
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.headset_outlined),
                 title: const Text('后台播放'),
                 subtitle: const Text('按主页键挂后台后继续播放；返回键会停止'),
                 value: settings.videoBackgroundPlayback,
-                onChanged: (v) {
-                  settings.setVideoBackgroundPlayback(v);
-                },
+                onChanged: (v) => settings.setVideoBackgroundPlayback(v),
               ),
               ListTile(
                 leading: const Icon(Icons.touch_app_outlined),
@@ -1033,6 +1385,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       ),
                     ),
                   ),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text(
+                      '单击画面显示 / 隐藏控件；双击画面中间为播放 / 暂停。',
+                      style: TextStyle(
+                        color: AppColors.mutedText,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                   _gestureDropdown(
                     ctx,
                     label: '左侧双击',
@@ -1066,9 +1428,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
                         children: [
-                          const Expanded(
-                            child: Text('长按临时倍速'),
-                          ),
+                          const Expanded(child: Text('长按临时倍速')),
                           Text(
                             '${longRate.toStringAsFixed(2)}×',
                             style: const TextStyle(
@@ -1140,6 +1500,34 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+/// One horizontal gesture zone (left / middle / right).
+class _GestureZone extends StatelessWidget {
+  const _GestureZone({
+    required this.onSingleTap,
+    required this.onDoubleTap,
+    required this.onLongPressStart,
+    required this.onLongPressEnd,
+  });
+
+  final VoidCallback onSingleTap;
+  final VoidCallback onDoubleTap;
+  final VoidCallback onLongPressStart;
+  final VoidCallback onLongPressEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onSingleTap,
+      onDoubleTap: onDoubleTap,
+      onLongPressStart: (_) => onLongPressStart(),
+      onLongPressEnd: (_) => onLongPressEnd(),
+      onLongPressCancel: onLongPressEnd,
+      child: const SizedBox.expand(),
     );
   }
 }
@@ -1294,7 +1682,7 @@ class _SpeedButton extends StatelessWidget {
   }
 }
 
-/// Larger tap target used for the transport buttons in the center cluster.
+/// Larger tap target used for the transport buttons.
 class _CenterIconButton extends StatelessWidget {
   const _CenterIconButton({
     required this.icon,

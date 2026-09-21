@@ -52,3 +52,9 @@ android/key.properties
 *.keystore
 signing-secrets/
 
+# Local one-off tooling / scratch records — never ship these.
+/.ab-bench.ps1
+/.standard-test.ps1
+/.orig.ps1
+TUNNEL-SKILL-TEST-RECORD.md
+

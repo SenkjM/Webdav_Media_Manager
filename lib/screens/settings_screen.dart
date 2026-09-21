@@ -532,13 +532,42 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
 
           const Divider(height: 40),
+          Text('分享', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
+          const SizedBox(height: 4),
+          Text(
+            '分享已缓存的音乐文件时可按标签重命名文件名。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.drive_file_rename_outline),
+            title: const Text('分享时按标签重命名'),
+            subtitle: const Text('默认开启；分享单个文件时仍可再修改文件名'),
+            value: settings.shareTagRenameEnabled,
+            onChanged: (v) => settings.setShareTagRenameEnabled(v),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.text_fields),
+            title: const Text('重命名模板'),
+            subtitle: Text(
+              '${settings.shareTagRenamePattern}\n'
+              '占位符：{artist} {title} {album} {albumArtist} '
+              '{track} {year} {genre} {fileName}',
+            ),
+            isThreeLine: true,
+            trailing: const Icon(Icons.edit_outlined),
+            onTap: () => _editShareRenamePattern(settings),
+          ),
+
+          const Divider(height: 40),
           Text('同步与备份', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent)),
           const SizedBox(height: 4),
           Text(
-            '歌单同步、歌曲库同步与 WebDAV 备份已合并为「同步」。\n'
-            'WebDAV 凭证统一存放在云端（地址与用户名明文，仅密码可选加密）；'
-            '同步与导入/导出都在同一页面完成。\n'
-            '远程根目录：${settings.syncRemoteRoot}',
+            'WebDAV 凭证与歌单是真同步（双向 + 定期扫描）；'
+            '音乐库按本地增量上传，也可手动全量同步；'
+            '「全部备份」把凭证 / 音乐库 / 歌单整体打成一个归档写到指定网盘路径。\n'
+            '云端根目录：${settings.syncRemoteRoot}',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
@@ -551,22 +580,56 @@ class _SettingsScreenState extends State<SettingsScreen>
             icon: const Icon(Icons.sync),
             label: const Text('打开同步'),
           ),
-          const SizedBox(height: 8),
-          Text(
-            '分享重命名：${settings.shareTagRenameEnabled ? '开启' : '关闭'}'
-            '（模板 ${settings.shareTagRenamePattern}），可在「同步」页调整。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
 
           const Divider(height: 40),
           Text(
             '说明：音乐不流式播放——点按曲目会先下载到本地，就绪后再用本地文件'
             '播放，下载完成后读取标签并写入本地音乐库。视频则通过 media_kit '
-            '直接从 WebDAV 流式播放。凭证保存在 flutter_secure_storage。',
+            '直接从 WebDAV 流式播放，并按文件夹自动连播。',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _editShareRenamePattern(SettingsService settings) async {
+    final controller =
+        TextEditingController(text: settings.shareTagRenamePattern);
+    final value = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.elevated,
+        title: const Text('分享重命名模板'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '默认 {artist}-{title}（作者-标题）。'
+              '留空的字段会自动去掉多余的分隔符，扩展名始终保留。',
+              style: TextStyle(color: AppColors.mutedText, fontSize: 11),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (value != null) await settings.setShareTagRenamePattern(value);
   }
 }

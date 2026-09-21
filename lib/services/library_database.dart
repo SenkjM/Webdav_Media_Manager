@@ -553,6 +553,12 @@ CREATE TABLE cache (
     );
   }
 
+  /// Every CUE album row (all accounts) — used by whole-app backup/sync.
+  Future<List<Map<String, dynamic>>> allCueAlbums() async {
+    final db = await database;
+    return db.query('cue_albums');
+  }
+
   Future<List<LibraryTrack>> allCueSlicesForAccount(String accountId) async {
     final db = await database;
     final rows = await db.query(

@@ -37,6 +37,7 @@ class SettingsService extends ChangeNotifier {
   static const _kVideoBufferSizeMb = 'video_buffer_size_mb';
   static const _kVideoLongPressRate = 'video_long_press_rate';
   static const _kVideoLastRate = 'video_last_rate';
+  static const _kVideoConfirmExit = 'video_confirm_exit';
   static const _kShareTagRenameEnabled = 'share_tag_rename_enabled';
   static const _kShareTagRenamePattern = 'share_tag_rename_pattern';
   static const _kSyncRemoteRoot = 'sync_remote_root';
@@ -100,6 +101,7 @@ class SettingsService extends ChangeNotifier {
   int _videoBufferSizeMb = defaultVideoBufferMb;
   double _videoLongPressRate = defaultVideoLongPressRate;
   double _videoLastRate = 1.0;
+  bool _videoConfirmExit = false;
   bool _shareTagRenameEnabled = defaultShareTagRename;
   String _shareTagRenamePattern = defaultShareTagRenamePattern;
   String _syncRemoteRoot = defaultSyncRemoteRoot;
@@ -136,6 +138,9 @@ class SettingsService extends ChangeNotifier {
 
   /// Last rate the user picked in the video speed slider.
   double get videoLastRate => _videoLastRate;
+
+  /// Whether leaving the video player asks「确认关闭视频吗？」first.
+  bool get videoConfirmExit => _videoConfirmExit;
 
   /// Whether sharing a cached audio file offers a tag-based default name.
   bool get shareTagRenameEnabled => _shareTagRenameEnabled;
@@ -203,6 +208,7 @@ class SettingsService extends ChangeNotifier {
     _videoLastRate = _clampRate(
       _prefs!.getDouble(_kVideoLastRate) ?? 1.0,
     );
+    _videoConfirmExit = _prefs!.getBool(_kVideoConfirmExit) ?? false;
     _shareTagRenameEnabled =
         _prefs!.getBool(_kShareTagRenameEnabled) ?? defaultShareTagRename;
     _shareTagRenamePattern =
@@ -421,8 +427,16 @@ class SettingsService extends ChangeNotifier {
     // No notifyListeners: only the video screen reads this on open.
   }
 
-  Future<void> setShareTagRenameEnabled(bool enabled) async {
-    _shareTagRenameEnabled = enabled;
+  /// Ask before closing the video player (default off; the dialog only asks
+  /// whether to confirm the close).
+  Future<void> setVideoConfirmExit(bool enabled) async {
+    _videoConfirmExit = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kVideoConfirmExit, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setShareTagRenameEnabled(bool enabled) async {    _shareTagRenameEnabled = enabled;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kShareTagRenameEnabled, enabled);
     notifyListeners();
@@ -488,6 +502,7 @@ class SettingsService extends ChangeNotifier {
         'video_buffer_size_mb': _videoBufferSizeMb,
         'video_long_press_rate': _videoLongPressRate,
         'video_last_rate': _videoLastRate,
+        'video_confirm_exit': _videoConfirmExit,
         'share_tag_rename_enabled': _shareTagRenameEnabled,
         'share_tag_rename_pattern': _shareTagRenamePattern,
         'sync_remote_root': _syncRemoteRoot,
@@ -591,6 +606,9 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['video_last_rate'] is num) {
       await setVideoLastRate((json['video_last_rate'] as num).toDouble());
+    }
+    if (json['video_confirm_exit'] is bool) {
+      await setVideoConfirmExit(json['video_confirm_exit'] as bool);
     }
     if (json['share_tag_rename_enabled'] is bool) {
       await setShareTagRenameEnabled(json['share_tag_rename_enabled'] as bool);

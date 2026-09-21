@@ -33,17 +33,33 @@ class DownloadQueueService extends ChangeNotifier {
     LibraryService? library,
     DownloadStore? store,
     PlatformExportService? export,
+    bool Function(String name)? isMusicFile,
   })  : _webDav = webDav,
         _cache = cache,
         _library = library,
         _store = store ?? DownloadStore(),
-        _export = export ?? const PlatformExportService();
+        _export = export ?? const PlatformExportService(),
+        _isMusicFile = isMusicFile ?? isAudioFileName;
 
   final WebDavService _webDav;
   final CacheService _cache;
   LibraryService? _library;
   final DownloadStore _store;
   final PlatformExportService _export;
+
+  /// Whether a file name is music according to the user's configured
+  /// extension sets (`SettingsService.fileTypes.musicExtensions`).
+  ///
+  /// Must be the single source of truth: the network library classifies entries
+  /// with the configured sets, so a hard-coded list here would silently drop
+  /// formats the user enabled (e.g. `.m4a`) or reject ones they added.
+  bool Function(String name) _isMusicFile;
+
+  /// Re-point the classifier at the current settings (called on init).
+  void configureFileTypes(bool Function(String name) isMusicFile) {
+    _isMusicFile = isMusicFile;
+  }
+
   final _uuid = const Uuid();
 
   final List<DownloadTask> _tasks = [];
@@ -302,8 +318,7 @@ class DownloadQueueService extends ChangeNotifier {
     if (isCueVirtualRemotePath(remotePath)) {
       return false;
     }
-    if (!isAudioFileName(fileName ?? remotePath) &&
-        !isAudioFileName(remotePath)) {
+    if (!_isMusicFile(fileName ?? remotePath) && !_isMusicFile(remotePath)) {
       return false;
     }
     if (_cache.hasLocalFile(remotePath, accountId: accountId)) {
@@ -741,8 +756,9 @@ class DownloadQueueService extends ChangeNotifier {
     final lib = _library;
     final local = task.localPath;
     if (lib == null || local == null) return;
-    // Non-audio (including .cue) must never become library rows.
-    if (!isAudioFileName(task.fileName) && !isAudioFileName(task.remotePath)) {
+    // Non-music (including .cue) must never become library rows. Uses the
+    // configured extension sets so custom formats still land in the library.
+    if (!_isMusicFile(task.fileName) && !_isMusicFile(task.remotePath)) {
       return;
     }
     // Cue-group audio is expanded into virtual tracks via _maybeIngestCueGroup.

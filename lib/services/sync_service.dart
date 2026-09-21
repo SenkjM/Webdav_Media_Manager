@@ -4,23 +4,23 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
+import '../models/library_track.dart';
 import '../models/webdav_account.dart';
 import '../utils/backup_paths.dart';
 import 'accounts_service.dart';
 import 'backup_service.dart';
 import 'credential_vault_service.dart';
 import 'library_service.dart';
-import 'library_sync_service.dart';
-import 'platform_export_service.dart';
 import 'playlist_service.dart';
+import 'platform_export_service.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
-/// What a single 同步 run touched. Empty fields mean "not part of this run".
+/// What a single operation touched.
 class SyncOutcome {
   SyncOutcome({required this.direction});
 
-  /// `push` (本机 → 云端) or `pull` (云端 → 本机).
+  /// `push` / `pull` / `sync` / `backup` / `restore` / `import` / `export`.
   final String direction;
 
   final List<String> steps = [];
@@ -33,40 +33,32 @@ class SyncOutcome {
   void warn(String message) => warnings.add(message);
 
   String get message {
-    final head = direction == 'push' ? '已同步到云端' : '已从云端同步';
-    if (!ok) return '$head失败：${error ?? '未知错误'}';
+    if (!ok) return '操作失败：${error ?? '未知错误'}';
     final body = steps.isEmpty ? '无变更' : steps.join('；');
     final warn = warnings.isEmpty ? '' : '\n注意：${warnings.join('；')}';
-    return '$head。$body$warn';
+    return '$body$warn';
   }
 }
 
-/// Unified「同步 / 备份」feature.
+/// 同步 / 备份.
 ///
-/// Replaces the three separate entries (歌单同步、歌曲库同步、WebDAV 备份) with one
-/// screen and two directions:
+/// The app only has three kinds of data, and each gets the treatment that fits
+/// it. There is **no per-site isolation** anywhere: one WebDAV account list, one
+/// music library, one playlist set — and a backup picks its destination server
+/// and path explicitly.
 ///
-/// **push (本机 → 云端)**
-/// 1. `credentials.json` — WebDAV accounts, **URL + username plaintext**, only
-///    the password optionally encrypted (`AESGCMv1:`) with the sync passphrase.
-/// 2. song library index + cover thumbs (bidirectional merge, then push).
-/// 3. playlists (M3U8, last-write-wins).
-/// 4. a site backup archive (`.wmpbak`, optionally AES-256-GCM) under the
-///    backup root so a fresh install can rebuild everything at once.
-///
-/// **pull (云端 → 本机)**
-/// 1. credentials vault → merge into local accounts. An entry whose password
-///    cannot be decrypted (no unified key) is restored with an **empty
-///    password** instead of failing the whole sync.
-/// 2. library + playlists merge.
-/// 3. optionally the backup archive.
+/// | data | behaviour |
+/// |------|-----------|
+/// | WebDAV 凭证 | **真同步**：与云端 `credentials.json` 双向合并；地址/用户名明文、仅密码可选加密；启动与切换账号时自动扫描 |
+/// | 歌单 | **真同步**：双向 M3U8，`updatedAt` 最后写入胜出；改动即时上传，启动/切换账号/定期拉取 |
+/// | 音乐库 | **增量**：本地新增即上传、云端新增即下载；也可手动**全量同步**（对齐删除） |
+/// | 全部备份 | 凭证 + 音乐库 + 歌单打成一个归档，写到用户选定的网盘与路径；可恢复、可导出到本地下载目录 |
 class SyncService extends ChangeNotifier {
   SyncService({
     required AccountsService accounts,
     required SettingsService settings,
     required WebDavService webDav,
     required CredentialVaultService vault,
-    required LibrarySyncService librarySync,
     required LibraryService library,
     required PlaylistService playlists,
     required BackupService backup,
@@ -75,7 +67,6 @@ class SyncService extends ChangeNotifier {
         _settings = settings,
         _webDav = webDav,
         _vault = vault,
-        _librarySync = librarySync,
         _library = library,
         _playlists = playlists,
         _backup = backup,
@@ -85,15 +76,17 @@ class SyncService extends ChangeNotifier {
   final SettingsService _settings;
   final WebDavService _webDav;
   final CredentialVaultService _vault;
-  final LibrarySyncService _librarySync;
   final LibraryService _library;
   final PlaylistService _playlists;
   final BackupService _backup;
   final PlatformExportService _export;
 
-  /// File name used for local export inside the Downloads folder.
   static const localExportSubdir = 'WebDAVMusic';
   static const localExportPrefix = 'wmp-sync';
+
+  /// Incremental library index: one JSON file per accountId under the sync root.
+  static const librarySubdir = 'library/';
+  static const libraryIndexName = 'library_index.json';
 
   bool busy = false;
   String? lastError;
@@ -101,13 +94,20 @@ class SyncService extends ChangeNotifier {
   double? progress;
   String? progressLabel;
 
+  /// Result of the last background scan (shown in the sync screen).
+  DateTime? lastAutoSyncAt;
+  String? lastAutoSyncSummary;
+
   void _progress(String label, [double? value]) {
     progressLabel = label;
     progress = value;
     notifyListeners();
   }
 
-  /// The account whose credentials authenticate the cloud session.
+  // --- Helpers ----------------------------------------------------------
+
+  List<WebDavAccount> get accounts => _accounts.accounts;
+
   WebDavAccount? get targetAccount {
     final connectedId = _webDav.accountId;
     if (connectedId != null) {
@@ -118,9 +118,25 @@ class SyncService extends ChangeNotifier {
     return _accounts.activeAccount;
   }
 
-  Future<void> _ensureConnected(WebDavAccount account) async {
-    if (_webDav.isConnected && _webDav.accountId == account.id) return;
-    await _accounts.setActiveAccount(account.id);
+  String get syncRoot => _settings.syncRemoteRoot;
+
+  /// Whether there is an account we could sync with (password may still be
+  /// blank, which background scans treat as "not usable").
+  bool get hasUsableAccount {
+    final a = targetAccount;
+    if (a == null) return false;
+    return _accounts.accounts.any((e) => e.id == a.id);
+  }
+
+  String libraryIndexPath(String accountId) {
+    final root = syncRoot.endsWith('/') ? syncRoot : '$syncRoot/';
+    final safe = accountId.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
+    final short = safe.length <= 12 ? safe : safe.substring(0, 12);
+    return '$root$librarySubdir$short/$libraryIndexName';
+  }
+
+  /// Authenticate against [account] (any server, not just the "library" one).
+  Future<void> connectTo(WebDavAccount account) async {
     final pass = await _accounts.passwordFor(account.id) ?? '';
     _webDav.configure(
       accountId: account.id,
@@ -129,253 +145,6 @@ class SyncService extends ChangeNotifier {
       password: pass,
     );
   }
-
-  // --- Cloud sync -------------------------------------------------------
-
-  /// Upload local state to the WebDAV cloud.
-  Future<SyncOutcome> push({
-    required String passphrase,
-    bool includeCredentials = true,
-    bool includeLibrary = true,
-    bool includePlaylists = true,
-    bool includeBackup = true,
-  }) async {
-    final outcome = SyncOutcome(direction: 'push');
-    await _run(outcome, () async {
-      final account = targetAccount;
-      if (account == null) throw StateError('请先添加 WebDAV 账号');
-      _ensureVaultConfigured();
-      await _ensureConnected(account);
-      await _webDav.ensureDirectory(_settings.syncRemoteRoot);
-
-      if (includeCredentials) {
-        _progress('同步 WebDAV 凭证…', 0.1);
-        await _vault.push(passphrase: passphrase);
-        outcome.step('凭证已上传（${_accounts.accounts.length} 个服务器）');
-      }
-
-      if (includeLibrary) {
-        _progress('同步歌曲库与封面…', 0.35);
-        await _librarySync.syncLibrary(account: account);
-        outcome.step(_librarySync.lastMessage ?? '歌曲库已同步');
-      }
-
-      if (includePlaylists) {
-        _progress('同步歌单…', 0.6);
-        await _playlists.pullAndMergeFromWebDav();
-        _playlists.configureSync(
-          remotePath: _settings.playlistRemotePath,
-          enabled: true,
-        );
-        for (final pl in _playlists.playlists) {
-          await _playlists.uploadPlaylist(pl);
-        }
-        outcome.step('歌单已上传（${_playlists.playlists.length} 个）');
-      }
-
-      if (includeBackup) {
-        _progress('上传站点备份…', 0.85);
-        await _backup.uploadAccountBackup(
-          account: account,
-          passphrase: passphrase,
-        );
-        outcome.step(_backup.lastMessage ?? '站点备份已上传');
-      }
-    });
-    return outcome;
-  }
-
-  /// Pull cloud state into this device.
-  ///
-  /// When the local account's password is missing the vault is applied first so
-  /// the rest of the pull can authenticate.
-  Future<SyncOutcome> pull({
-    required String passphrase,
-    bool includeCredentials = true,
-    bool includeLibrary = true,
-    bool includePlaylists = true,
-    bool restoreBackup = false,
-  }) async {
-    final outcome = SyncOutcome(direction: 'pull');
-    await _run(outcome, () async {
-      final account = targetAccount;
-      if (account == null) throw StateError('请先添加 WebDAV 账号');
-      _ensureVaultConfigured();
-
-      var localPass = await _accounts.passwordFor(account.id) ?? '';
-      if (localPass.isEmpty) {
-        // Fresh device / forgotten password: pull credentials from cloud first.
-        _ensureConnected(account);
-        _progress('从云端读取凭证…', 0.1);
-        final result = await _vault.pull(passphrase: passphrase);
-        if (result != null) outcome.step(result.summary);
-        final refreshed = targetAccount ?? account;
-        localPass = await _accounts.passwordFor(refreshed.id) ?? '';
-        if (localPass.isEmpty) {
-          outcome.warn(
-            '云端凭证无法解密（缺少统一解密密钥），密码留空；'
-            '请先在该账号手动填写密码后再同步内容',
-          );
-        }
-        await _ensureConnected(refreshed);
-      } else {
-        await _ensureConnected(account);
-        if (includeCredentials) {
-          _progress('合并云端凭证…', 0.1);
-          final result = await _vault.pull(passphrase: passphrase);
-          if (result != null) outcome.step(result.summary);
-        }
-      }
-
-      if (includeLibrary) {
-        _progress('同步歌曲库与封面…', 0.4);
-        final refreshed = targetAccount ?? account;
-        await _ensureConnected(refreshed);
-        await _librarySync.syncLibrary(account: refreshed);
-        outcome.step(_librarySync.lastMessage ?? '歌曲库已同步');
-      }
-
-      if (includePlaylists) {
-        _progress('拉取歌单…', 0.65);
-        _playlists.configureSync(
-          remotePath: _settings.playlistRemotePath,
-          enabled: true,
-        );
-        await _playlists.pullAndMergeFromWebDav();
-        outcome.step('歌单已合并（${_playlists.playlists.length} 个）');
-      }
-
-      if (restoreBackup) {
-        _progress('下载站点备份…', 0.85);
-        await _backup.restoreFromWebDav(
-          passphrase: passphrase,
-          account: targetAccount ?? account,
-        );
-        outcome.step(_backup.lastMessage ?? '站点备份已恢复');
-        await _library.refresh();
-        await _playlists.refresh();
-      }
-
-      await _accounts.init();
-      await _library.refresh();
-    });
-    return outcome;
-  }
-
-  /// The most common recovery path: sync **everything** down from the cloud.
-  Future<SyncOutcome> pullAll({required String passphrase}) => pull(
-        passphrase: passphrase,
-        includeCredentials: true,
-        includeLibrary: true,
-        includePlaylists: true,
-        restoreBackup: true,
-      );
-
-  // --- Local import / export -------------------------------------------
-
-  /// Build a portable local archive (same format as the cloud backup).
-  Future<Uint8List> buildLocalArchive({
-    required String passphrase,
-    bool fullMultiAccount = true,
-  }) {
-    if (fullMultiAccount) {
-      return _backup.buildFullArchiveBytes(passphrase: passphrase);
-    }
-    final account = targetAccount;
-    if (account == null) throw StateError('请先添加 WebDAV 账号');
-    return _backup.buildAccountArchiveBytes(
-      account: account,
-      passphrase: passphrase,
-    );
-  }
-
-  /// Export to the Android **Downloads** directory (falls back to the app
-  /// documents directory when the native channel is unavailable, e.g. desktop
-  /// or a bare `flutter test` run).
-  Future<ExportResult> exportToDownloads({
-    required String passphrase,
-    bool fullMultiAccount = true,
-    String? fileName,
-  }) async {
-    busy = true;
-    lastError = null;
-    lastMessage = null;
-    _progress('生成本地备份…', 0.2);
-    try {
-      final bytes = await buildLocalArchive(
-        passphrase: passphrase,
-        fullMultiAccount: fullMultiAccount,
-      );
-      _progress('写入下载目录…', 0.8);
-      final name = fileName ?? '$localExportPrefix-${backupFileNameNow()}';
-      final result = await _export.saveToDownloads(
-        sourcePath: (await PlatformExportService.writeTempExportFile(name, bytes))
-            .path,
-        fileName: name,
-        mimeType: 'application/zip',
-        subdir: localExportSubdir,
-      );
-      if (result.ok) {
-        lastMessage = '已导出到${result.location}：${result.fileName}';
-      } else {
-        lastError = result.error;
-      }
-      return result;
-    } catch (e) {
-      lastError = e.toString();
-      rethrow;
-    } finally {
-      busy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Import a local archive produced by [exportToDownloads] (or by the cloud
-  /// backup). Merges accounts, library, playlists and settings.
-  Future<SyncOutcome> importLocalArchive({
-    required Uint8List bytes,
-    required String passphrase,
-  }) async {
-    final outcome = SyncOutcome(direction: 'import');
-    await _run(outcome, () async {
-      _progress('解包本地备份…', 0.2);
-      await _backup.restoreFromBytes(data: bytes, passphrase: passphrase);
-      outcome.step(_backup.lastMessage ?? '本地备份已导入');
-      await _accounts.init();
-      await _library.refresh();
-      await _playlists.refresh();
-      _progress('完成', 1);
-    });
-    return outcome;
-  }
-
-  /// Read an archive file picked by the user and import it.
-  Future<SyncOutcome> importLocalFile({
-    required File file,
-    required String passphrase,
-  }) async {
-    final bytes = await file.readAsBytes();
-    return importLocalArchive(bytes: bytes, passphrase: passphrase);
-  }
-
-  /// Decode an archive the user pasted as base64 (helps on devices without a
-  /// file picker).
-  Future<SyncOutcome> importLocalBase64({
-    required String base64Text,
-    required String passphrase,
-  }) {
-    return importLocalArchive(
-      bytes: Uint8List.fromList(base64Decode(base64Text.trim())),
-      passphrase: passphrase,
-    );
-  }
-
-  /// Path of the app-private export fallback (when Downloads is unavailable).
-  static Future<String> fallbackExportPath(String fileName) async {
-    return p.join(Directory.systemTemp.path, fileName);
-  }
-
-  // --- Internals --------------------------------------------------------
 
   Future<void> _run(SyncOutcome outcome, Future<void> Function() body) async {
     busy = true;
@@ -397,12 +166,360 @@ class SyncService extends ChangeNotifier {
     }
   }
 
-  /// Point the playlist / library sync helpers at the current settings while
-  /// tolerating older installs where the paths were configured separately.
-  void _ensureVaultConfigured() {
-    _playlists.configureSync(
-      remotePath: _settings.playlistRemotePath,
-      enabled: _settings.playlistSyncEnabled,
+  // --- Auto scan (credentials + playlists) ------------------------------
+
+  /// Startup / periodic scan: pull credentials and playlists both ways.
+  ///
+  /// Runs in the background — never blocks the app, and silently does nothing
+  /// when there is no account or no stored password.
+  Future<void> autoScan({bool force = false}) async {
+    if (busy) return;
+    final account = targetAccount;
+    if (account == null) return;
+    final pass = await _accounts.passwordFor(account.id) ?? '';
+    if (!force && pass.isEmpty) return;
+    final outcome = SyncOutcome(direction: 'sync');
+    await _run(outcome, () async {
+      await connectTo(account);
+      _progress('扫描云端凭证…', 0.3);
+      try {
+        final result = await _vault.pull(passphrase: pass);
+        if (result != null) outcome.step(result.summary);
+      } catch (e) {
+        outcome.warn('凭证扫描跳过：$e');
+      }
+      _progress('扫描歌单…', 0.7);
+      _playlists.configureSync(
+        remotePath: _settings.playlistRemotePath,
+        enabled: true,
+      );
+      await _playlists.pullAndMergeFromWebDav();
+      outcome.step('歌单已合并（${_playlists.playlists.length} 个）');
+    });
+    lastAutoSyncAt = DateTime.now();
+    lastAutoSyncSummary = outcome.message;
+    notifyListeners();
+  }
+
+  // --- Credentials ------------------------------------------------------
+
+  /// Upload local credentials to the cloud.
+  Future<SyncOutcome> pushCredentials() async {
+    final outcome = SyncOutcome(direction: 'push');
+    await _run(outcome, () async {
+      final account = targetAccount;
+      if (account == null) throw StateError('请先添加 WebDAV 账号');
+      await connectTo(account);
+      final pass = await _accounts.passwordFor(account.id) ?? '';
+      _progress('上传凭证…', 0.5);
+      await _vault.push(passphrase: pass);
+      outcome.step('凭证已同步到云端（${_accounts.accounts.length} 个服务器）');
+    });
+    return outcome;
+  }
+
+  /// Download cloud credentials into this device. Passwords that cannot be
+  /// decrypted are left empty rather than failing the whole operation.
+  Future<SyncOutcome> pullCredentials() async {
+    final outcome = SyncOutcome(direction: 'pull');
+    await _run(outcome, () async {
+      final account = targetAccount;
+      if (account == null) throw StateError('请先添加 WebDAV 账号');
+      await connectTo(account);
+      final pass = await _accounts.passwordFor(account.id) ?? '';
+      _progress('下载凭证…', 0.5);
+      final result = await _vault.pull(passphrase: pass);
+      outcome.step(result?.summary ?? '云端暂无凭证文件');
+      await _accounts.init();
+    });
+    return outcome;
+  }
+
+  // --- Playlists --------------------------------------------------------
+
+  Future<SyncOutcome> syncPlaylistsNow() async {
+    final outcome = SyncOutcome(direction: 'sync');
+    await _run(outcome, () async {
+      final account = targetAccount;
+      if (account == null) throw StateError('请先添加 WebDAV 账号');
+      await connectTo(account);
+      _playlists.configureSync(
+        remotePath: _settings.playlistRemotePath,
+        enabled: true,
+      );
+      _progress('合并歌单…', 0.5);
+      await _playlists.pullAndMergeFromWebDav();
+      for (final pl in _playlists.playlists) {
+        await _playlists.uploadPlaylist(pl);
+      }
+      outcome.step('歌单已同步（${_playlists.playlists.length} 个）');
+    });
+    return outcome;
+  }
+
+  // --- Music library (incremental / full) -------------------------------
+
+  /// Incremental library sync: copy rows the other side does not have yet, and
+  /// prefer whichever side read its tags later.
+  ///
+  /// Never deletes: pruning is the job of [syncLibraryFull], so a fresh install
+  /// can never wipe the cloud index.
+  Future<SyncOutcome> syncLibraryIncremental() async {
+    final outcome = SyncOutcome(direction: 'sync');
+    await _run(outcome, () async {
+      final account = targetAccount;
+      if (account == null) throw StateError('请先添加 WebDAV 账号');
+      await connectTo(account);
+      _progress('读取云端曲库索引…', 0.3);
+      final remote = await _fetchLibraryIndex(account.id);
+      final local = _library.tracksForAccount(account.id);
+      final remoteByPath = {for (final t in remote) t.remotePath: t};
+      final localByPath = {for (final t in local) t.remotePath: t};
+
+      final toUpload = <LibraryTrack>[];
+      final toDownload = <LibraryTrack>[];
+      for (final t in local) {
+        final r = remoteByPath[t.remotePath];
+        if (r == null || t.lastTagReadAt.isAfter(r.lastTagReadAt)) {
+          toUpload.add(t);
+        }
+      }
+      for (final r in remote) {
+        final l = localByPath[r.remotePath];
+        if (l == null || r.lastTagReadAt.isAfter(l.lastTagReadAt)) {
+          toDownload.add(r);
+        }
+      }
+
+      if (toDownload.isNotEmpty) {
+        _progress('下载云端新增 ${toDownload.length} 首…', 0.5);
+        await _library.upsertTracks(toDownload);
+      }
+      if (toUpload.isNotEmpty) {
+        _progress('上传本地新增 ${toUpload.length} 首…', 0.8);
+        await _pushLibraryIndex(
+          accountId: account.id,
+          accountUrl: account.url,
+          tracks: _library.tracksForAccount(account.id),
+        );
+      }
+      await _library.refresh();
+      outcome.step('增量同步：上传 ${toUpload.length} 首，下载 ${toDownload.length} 首');
+    });
+    return outcome;
+  }
+
+  /// Full library sync: adopt newer remote rows, then push the complete local
+  /// index — this is what prunes cloud-only rows the user deleted locally.
+  Future<SyncOutcome> syncLibraryFull() async {
+    final outcome = SyncOutcome(direction: 'push');
+    await _run(outcome, () async {
+      final account = targetAccount;
+      if (account == null) throw StateError('请先添加 WebDAV 账号');
+      await connectTo(account);
+      _progress('拉取云端曲库索引…', 0.3);
+      final remote = await _fetchLibraryIndex(account.id);
+      final local = _library.tracksForAccount(account.id);
+      final localByPath = {for (final t in local) t.remotePath: t};
+
+      final adopt = <LibraryTrack>[];
+      for (final r in remote) {
+        final l = localByPath[r.remotePath];
+        if (l == null || r.lastTagReadAt.isAfter(l.lastTagReadAt)) {
+          adopt.add(r);
+        }
+      }
+      if (adopt.isNotEmpty) await _library.upsertTracks(adopt);
+
+      _progress('上传完整曲库索引…', 0.7);
+      await _pushLibraryIndex(
+        accountId: account.id,
+        accountUrl: account.url,
+        tracks: _library.tracksForAccount(account.id),
+      );
+      await _library.refresh();
+      final total = _library.tracksForAccount(account.id).length;
+      outcome.step('全量同步完成：云端索引已对齐（本机 $total 首，采纳云端 ${adopt.length} 首）');
+    });
+    return outcome;
+  }
+
+  Future<List<LibraryTrack>> _fetchLibraryIndex(String accountId) async {
+    try {
+      final bytes = await _webDav.readAsBytes(libraryIndexPath(accountId));
+      final json = jsonDecode(utf8.decode(bytes));
+      if (json is! Map) return [];
+      final list = json['tracks'] as List<dynamic>? ?? const [];
+      return list
+          .map((e) => LibraryTrack.fromMap(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('404') ||
+          msg.contains('not found') ||
+          msg.contains('does not exist')) {
+        return [];
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _pushLibraryIndex({
+    required String accountId,
+    required String accountUrl,
+    required List<LibraryTrack> tracks,
+  }) async {
+    final portable = <Map<String, dynamic>>[];
+    for (final t in tracks) {
+      final m = Map<String, dynamic>.from(t.toMap());
+      final cover = t.coverPath;
+      if (cover != null && cover.isNotEmpty) {
+        m['cover_path'] = p.basename(cover);
+      }
+      portable.add(m);
+    }
+    final payload = {
+      'format': 'webdav_music_player_library_index',
+      'formatVersion': 2,
+      'accountId': accountId,
+      'accountUrl': accountUrl,
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+      'trackCount': portable.length,
+      'tracks': portable,
+    };
+    final path = libraryIndexPath(accountId);
+    await _webDav.ensureDirectory(p.url.dirname(path));
+    await _webDav.writeBytes(
+      path,
+      Uint8List.fromList(
+        utf8.encode(const JsonEncoder.withIndent('  ').convert(payload)),
+      ),
+    );
+  }
+
+  // --- Whole-app backup -------------------------------------------------
+
+  /// Back up **everything** (credentials + library + playlists) to the chosen
+  /// server and directory. Nothing is scoped per site.
+  Future<SyncOutcome> backupTo({
+    required WebDavAccount destination,
+    required String remoteDir,
+    required String passphrase,
+  }) async {
+    final outcome = SyncOutcome(direction: 'backup');
+    await _run(outcome, () async {
+      _progress('连接备份网盘…', 0.1);
+      await connectTo(destination);
+      _progress('打包凭证 / 音乐库 / 歌单…', 0.4);
+      await _backup.uploadBackup(passphrase: passphrase, remoteDir: remoteDir);
+      outcome.step(_backup.lastMessage ?? '备份完成');
+    });
+    return outcome;
+  }
+
+  /// List archives available in [remoteDir] on [source].
+  Future<List<String>> listBackups({
+    required WebDavAccount source,
+    required String remoteDir,
+  }) async {
+    await connectTo(source);
+    return _backup.listBackups(remoteDir: remoteDir);
+  }
+
+  /// Restore a whole-app archive from the chosen server and path.
+  Future<SyncOutcome> restoreFrom({
+    required WebDavAccount source,
+    required String remoteDir,
+    required String passphrase,
+    String? fileName,
+  }) async {
+    final outcome = SyncOutcome(direction: 'restore');
+    await _run(outcome, () async {
+      _progress('连接备份网盘…', 0.1);
+      await connectTo(source);
+      _progress('下载并恢复…', 0.5);
+      await _backup.restoreFromWebDav(
+        passphrase: passphrase,
+        remoteDir: remoteDir,
+        fileName: fileName,
+      );
+      outcome.step(_backup.lastMessage ?? '恢复完成');
+      await _accounts.init();
+      await _library.refresh();
+      await _playlists.refresh();
+    });
+    return outcome;
+  }
+
+  // --- Local export / import -------------------------------------------
+
+  /// Export the same whole-app archive into the Android Downloads folder.
+  Future<ExportResult> exportToDownloads({
+    required String passphrase,
+    String? fileName,
+  }) async {
+    busy = true;
+    lastError = null;
+    lastMessage = null;
+    _progress('生成备份…', 0.2);
+    try {
+      final bytes = await _backup.buildArchiveBytes(passphrase: passphrase);
+      _progress('写入下载目录…', 0.8);
+      final name = fileName ?? '$localExportPrefix-${backupFileNameNow()}';
+      final tmp = await PlatformExportService.writeTempExportFile(name, bytes);
+      final result = await _export.saveToDownloads(
+        sourcePath: tmp.path,
+        fileName: name,
+        mimeType: 'application/zip',
+        subdir: localExportSubdir,
+      );
+      if (result.ok) {
+        lastMessage = '已导出到${result.location}：${result.fileName}';
+      } else {
+        lastError = result.error;
+      }
+      return result;
+    } catch (e) {
+      lastError = e.toString();
+      rethrow;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<SyncOutcome> importLocalArchive({
+    required Uint8List bytes,
+    required String passphrase,
+  }) async {
+    final outcome = SyncOutcome(direction: 'import');
+    await _run(outcome, () async {
+      _progress('解包并恢复…', 0.3);
+      await _backup.restoreFromBytes(data: bytes, passphrase: passphrase);
+      outcome.step(_backup.lastMessage ?? '本地备份已导入');
+      await _accounts.init();
+      await _library.refresh();
+      await _playlists.refresh();
+      _progress('完成', 1);
+    });
+    return outcome;
+  }
+
+  Future<SyncOutcome> importLocalFile({
+    required File file,
+    required String passphrase,
+  }) async {
+    final bytes = await file.readAsBytes();
+    return importLocalArchive(bytes: bytes, passphrase: passphrase);
+  }
+
+  Future<SyncOutcome> importLocalBase64({
+    required String base64Text,
+    required String passphrase,
+  }) {
+    return importLocalArchive(
+      bytes: Uint8List.fromList(base64Decode(base64Text.trim())),
+      passphrase: passphrase,
     );
   }
 }

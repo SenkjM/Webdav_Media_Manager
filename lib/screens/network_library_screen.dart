@@ -223,8 +223,19 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       );
       return;
     }
+    // Build a play queue from this folder: the already-listed videos seed it so
+    // playback starts immediately, and the player keeps scanning in the
+    // background to extend 上一个 / 下一个.
+    final seed = VideoQueueSeed(
+      accountId: accountId,
+      folderPath: _path,
+      current: item,
+      siblings: _items.where((e) => e.isVideo).toList(),
+    );
     await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(builder: (_) => VideoPlayerScreen(source: source)),
+      MaterialPageRoute(
+        builder: (_) => VideoPlayerScreen(source: source, seed: seed),
+      ),
     );
   }
 

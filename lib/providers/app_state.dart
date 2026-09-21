@@ -4,11 +4,11 @@ import 'package:flutter/foundation.dart';
 
 import '../models/cache_policy.dart';
 import '../models/download_task.dart';
+import '../models/file_type_config.dart';
 import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/backup_service.dart';
-import '../services/library_sync_service.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
 import '../services/download_queue_service.dart';
@@ -43,13 +43,6 @@ class AppState extends ChangeNotifier {
       webDav: webDav,
       cache: cache,
     );
-    librarySync = LibrarySyncService(
-      library: library,
-      accounts: accounts,
-      settings: settings,
-      playlists: playlists,
-      webDav: webDav,
-    );
     credentials = CredentialVaultService(
       accounts: accounts,
       settings: settings,
@@ -60,7 +53,6 @@ class AppState extends ChangeNotifier {
       settings: settings,
       webDav: webDav,
       vault: credentials,
-      librarySync: librarySync,
       library: library,
       playlists: playlists,
       backup: backup,
@@ -69,6 +61,10 @@ class AppState extends ChangeNotifier {
       webDav: webDav,
       cache: cache,
       library: library,
+      // The network library classifies entries with the configured extension
+      // sets, so the queue must use the same list (never a hard-coded one).
+      isMusicFile: (name) =>
+          settings.fileTypes.categoryFor(name) == FileCategory.music,
     );
     player = AudioPlayerService(
       downloads: downloads,
@@ -86,7 +82,6 @@ class AppState extends ChangeNotifier {
   late final AccountsService accounts;
   late final PlaylistService playlists;
   late final BackupService backup;
-  late final LibrarySyncService librarySync;
   late final CredentialVaultService credentials;
   late final SyncService sync;
   late final DownloadQueueService downloads;
@@ -101,6 +96,7 @@ class AppState extends ChangeNotifier {
     try {
       await settings.init();
       _syncCoverThumbSize();
+      _syncDownloadFileTypes();
       await cache.init();
       await library.init();
       await accounts.init();
@@ -110,12 +106,17 @@ class AppState extends ChangeNotifier {
       );
       await playlists.init();
       downloads.attachLibrary(library);
+      // Incremental library sync: whenever a download (or a restore) changes
+      // the local library, push just the new rows to the cloud index.
+      library.addListener(_onLibraryChanged);
       await downloads.init();
       await notificationPermission.refresh();
       await connectActiveAccount();
       unawaited(runCacheCleanup());
-      // Pull remote playlists after connect (best-effort).
-      unawaited(playlists.pullAndMergeFromWebDav());
+      // Startup scan: credentials + playlists both ways (best-effort, never
+      // blocks the first frame).
+      unawaited(sync.autoScan());
+      _schedulePeriodicSync();
       ready = true;
     } catch (e) {
       initError = e.toString();
@@ -146,8 +147,39 @@ class AppState extends ChangeNotifier {
   Future<void> switchAccount(String accountId) async {
     await accounts.setActiveAccount(accountId);
     await connectActiveAccount();
-    unawaited(playlists.pullAndMergeFromWebDav());
+    unawaited(sync.autoScan());
     notifyListeners();
+  }
+
+  Timer? _periodicSync;
+  Timer? _libraryPushDebounce;
+
+  /// Coalesce rapid library changes (a folder download fires once per file).
+  void _onLibraryChanged() {
+    if (!ready || !sync.hasUsableAccount) return;
+    _libraryPushDebounce?.cancel();
+    _libraryPushDebounce =
+        Timer(const Duration(seconds: 20), () => unawaited(pushLibraryIncrement()));
+  }
+
+  /// Periodic scan for the "true sync" side (credentials + playlists) plus an
+  /// incremental library push. Cheap no-op when nothing changed.
+  void _schedulePeriodicSync() {
+    _periodicSync?.cancel();
+    _periodicSync = Timer.periodic(const Duration(minutes: 30), (_) {
+      unawaited(sync.autoScan());
+    });
+  }
+
+  /// Push newly added library rows without waiting for a manual action.
+  /// Called after a download finishes so the cloud index follows local changes.
+  Future<void> pushLibraryIncrement() async {
+    if (!ready || !sync.hasUsableAccount) return;
+    try {
+      await sync.syncLibraryIncremental();
+    } catch (_) {
+      // Background best-effort — the sync screen surfaces real errors.
+    }
   }
 
   Future<int> runCacheCleanup() {
@@ -206,6 +238,17 @@ class AppState extends ChangeNotifier {
     library.covers.thumbSize = settings.coverThumbSizePx;
   }
 
+  /// Keep the download queue's music classifier aligned with the configured
+  /// extension sets (they are user-editable in 「文件后缀管理」).
+  void _syncDownloadFileTypes() {
+    downloads.configureFileTypes(
+      (name) => settings.fileTypes.categoryFor(name) == FileCategory.music,
+    );
+  }
+
+  /// Called after the user edits the extension sets in Settings.
+  void refreshFileTypeClassifiers() => _syncDownloadFileTypes();
+
   Future<void> setCoverThumbSize(int size) async {
     await settings.setCoverThumbSize(size);
     _syncCoverThumbSize();
@@ -262,7 +305,9 @@ class AppState extends ChangeNotifier {
     accounts.dispose();
     playlists.dispose();
     backup.dispose();
-    librarySync.dispose();
+    _periodicSync?.cancel();
+    _libraryPushDebounce?.cancel();
+    library.removeListener(_onLibraryChanged);
     credentials.dispose();
     sync.dispose();
     settings.dispose();

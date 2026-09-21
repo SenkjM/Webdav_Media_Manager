@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/file_type_config.dart';
 import '../models/video_settings.dart';
+import '../providers/app_state.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import 'home_shell.dart';
@@ -67,6 +68,9 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
         cueExtensions: cue,
       ),
     );
+    // Re-point the download queue's classifier: it must never keep using the
+    // previous extension list after the user edits it here.
+    if (mounted) context.read<AppState>().refreshFileTypeClassifiers();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('后缀配置已保存')),

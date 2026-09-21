@@ -7,7 +7,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/library_track.dart';
-import '../models/webdav_account.dart';
 import '../utils/backup_crypto.dart';
 import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
@@ -19,23 +18,22 @@ import 'playlist_service.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
-/// WebDAV backup / restore of app data.
+/// Whole-app backup archive. **No site isolation**: one archive contains every
+/// WebDAV credential, the complete music library and all playlists, and it is
+/// written to a path the user picks together with the destination server.
 ///
-/// **Default: per WebDAV account/site** keyed by `accountId` + base URL.
-/// Remote path:
-/// `/WebDAVMusicPlayer/backup/<accountDir>/backup-<timestamp>.wmpbak`
-/// and a stable `webdav_music_backup.wmpbak` ("latest") in the same folder.
+/// The app only has three kinds of data, and this archive holds all of them:
+/// 1. `credentials.json` — WebDAV accounts (URL + username plaintext, password
+///    optionally encrypted with `AESGCMv1:`)
+/// 2. `library.json` — music library rows + CUE albums/slices
+/// 3. `playlists.json` — playlists
+/// plus the cover thumbnails those rows reference.
 ///
-/// Optional full multi-account backup goes under the backup root as
-/// `full-backup-….wmpbak` and on restore replaces all mounts.
+/// Never includes cached audio files or the download queue. On restore the
+/// cache annex is cleared, so the player never believes a file exists unless it
+/// really is on disk.
 ///
-/// Unified per-account backup unit (formatVersion 3): site credentials + that
-/// site's music library (tracks + cue_albums + cue_slices) + playlists +
-/// covers + settings in one archive. Never includes audio cache files or
-/// download queue. On restore, cache annex is cleared / left uncached so the
-/// player never thinks files exist unless they are actually on disk.
-///
-/// Format: ZIP, optionally AES-256-GCM with passphrase (WMPB1).
+/// Format: ZIP, optionally wrapped in AES-256-GCM with a passphrase (`WMPB1`).
 class BackupService extends ChangeNotifier {
   BackupService({
     required LibraryDatabase libraryDb,
@@ -63,113 +61,109 @@ class BackupService extends ChangeNotifier {
 
   static const defaultRemoteDir = '/WebDAVMusicPlayer/backup/';
   static const defaultFileName = 'webdav_music_backup.wmpbak';
-  static const formatVersion = 3;
+  static const format = 'webdav_music_player_backup';
+  static const formatVersion = 4;
 
   bool busy = false;
   String? lastError;
   String? lastMessage;
 
-  String get _backupRoot {
-    final root = _settings.backupRemotePath.trim();
-    if (root.isEmpty) return defaultRemoteDir;
-    return root.endsWith('/') ? root : '$root/';
-  }
+  // --- Build ------------------------------------------------------------
 
-  /// Per-account archive (default). Identity: [account.id] + [account.url].
-  Future<Uint8List> buildAccountArchiveBytes({
-    required WebDavAccount account,
+  /// Serialise everything into `{ credentials, library, playlists }` JSON.
+  ///
+  /// Exposed because the local export and the cloud backup share this payload;
+  /// the ZIP wrapper (and optional encryption) is applied by
+  /// [buildArchiveBytes].
+  Future<Map<String, dynamic>> buildPayload({
     required String passphrase,
   }) async {
-    final archive = Archive();
-    final pass = await _accounts.passwordFor(account.id) ?? '';
-    final tracks = await _libraryDb.tracksForAccount(account.id);
-    final coverNames = <String>{};
+    final tracks = await _libraryDb.allTracks();
+    final cueAlbums = <Map<String, dynamic>>[];
+    final cueSlices = <Map<String, dynamic>>[];
     for (final t in tracks) {
-      final cover = t.coverPath;
-      if (cover != null && cover.isNotEmpty) {
-        coverNames.add(p.basename(cover));
+      if (t.isCueVirtual) {
+        cueSlices.add(t.toMap());
       }
     }
+    for (final e in await _libraryDb.allCueAlbums()) {
+      cueAlbums.add(e);
+    }
 
-    final manifest = <String, dynamic>{
-      'format': 'webdav_music_player_backup',
+    final accounts = <Map<String, dynamic>>[];
+    for (final a in _accounts.accounts) {
+      final pass = await _accounts.passwordFor(a.id) ?? '';
+      accounts.add({
+        ...a.toMap(),
+        // URL + username stay readable; only the password may be encrypted.
+        'password': await _encodePassword(pass, passphrase),
+        'passwordEncrypted': passphrase.isNotEmpty && pass.isNotEmpty,
+      });
+    }
+
+    return {
+      'format': 'webdav_music_player_sync',
       'formatVersion': formatVersion,
-      'scope': 'account',
-      'accountId': account.id,
-      'accountUrl': account.url,
-      'accountName': account.name,
       'createdAt': DateTime.now().toUtc().toIso8601String(),
-      'containsSecrets': true,
-      'encrypted': passphrase.isNotEmpty,
-      'trackCount': tracks.length,
-      'includes': [
-        'account_credentials',
-        'library_json',  // tracks + cue_albums + cue_slices (unified)
-        'tracks_json',  // legacy alias of normal+cue rows
-        'covers',
-        'playlists_json',
-        'settings',
-      ],
-      'excludes': ['audio_cache', 'cache_annex', 'download_queue', 'other_accounts'],
-      'cachePolicy': 'restore_uncached_unless_files_on_disk',
-    };
-    archive.addFile(ArchiveFile.bytes(
-      'manifest.json',
-      utf8.encode(const JsonEncoder.withIndent('  ').convert(manifest)),
-    ));
-
-    archive.addFile(ArchiveFile.bytes(
-      'settings.json',
-      utf8.encode(jsonEncode(_settings.exportForBackup())),
-    ));
-
-    archive.addFile(ArchiveFile.bytes(
-      'accounts.json',
-      utf8.encode(const JsonEncoder.withIndent('  ').convert({
-        'scope': 'account',
-        'activeAccountId': account.id,
-        'accounts': [
-          {
-            ...account.toMap(),
-            // URL + username stay plain text; only the password is encrypted
-            // (and only when a passphrase was given).
-            'password': await _encodePassword(pass, passphrase),
-            'passwordEncrypted':
-                passphrase.isNotEmpty && pass.isNotEmpty,
-          }
-        ],
-        'warning': passphrase.isEmpty
-            ? 'WebDAV 密码为明文（未提供加密口令）。'
-            : 'WebDAV 地址与用户名为明文，仅密码使用 AES-256-GCM 加密。',
-      })),
-    ));
-
-    final cueAlbums = await _libraryDb.allCueAlbumsForAccount(account.id);
-    final cueSlices = await _libraryDb.allCueSlicesForAccount(account.id);
-
-    archive.addFile(ArchiveFile.bytes(
-      'tracks.json',
-      utf8.encode(const JsonEncoder.withIndent('  ').convert({
-        'accountId': account.id,
-        'accountUrl': account.url,
-        'tracks': tracks.map((t) => t.toMap()).toList(),
-      })),
-    ));
-
-    // Unified library unit (formatVersion 3): site-scoped tracks + CUE tables.
-    archive.addFile(ArchiveFile.bytes(
-      'library.json',
-      utf8.encode(const JsonEncoder.withIndent('  ').convert({
-        'accountId': account.id,
-        'accountUrl': account.url,
-        'accountName': account.name,
+      'activeAccountId': _accounts.activeAccountId,
+      'passwordEncryption': passphrase.isEmpty ? 'none' : 'aes-256-gcm',
+      // 1. WebDAV credentials
+      'credentials': {
+        'accounts': accounts,
+      },
+      // 2. Music library
+      'library': {
         'tracks': tracks.where((t) => !t.isCueVirtual).map((t) => t.toMap()).toList(),
         'cueAlbums': cueAlbums,
-        'cueSlices': cueSlices.map((t) => t.toMap()).toList(),
-        'cache': <Map<String, dynamic>>[], // never mark cached without files
-      })),
+        'cueSlices': cueSlices,
+        'cache': <Map<String, dynamic>>[],
+      },
+      // 3. Playlists
+      'playlists': _playlists.exportJson(),
+      'settings': _settings.exportForBackup(),
+    };
+  }
+
+  /// The cover file names referenced by the library (for the ZIP payload).
+  Future<Set<String>> _referencedCovers() async {
+    final names = <String>{};
+    for (final t in await _libraryDb.allTracks()) {
+      final cover = t.coverPath;
+      if (cover != null && cover.isNotEmpty) names.add(p.basename(cover));
+    }
+    return names;
+  }
+
+  /// Build the ZIP archive (optionally passphrase-encrypted).
+  Future<Uint8List> buildArchiveBytes({
+    required String passphrase,
+  }) async {
+    final payload = await buildPayload(passphrase: passphrase);
+    final archive = Archive();
+    archive.addFile(ArchiveFile.bytes(
+      'backup.json',
+      utf8.encode(const JsonEncoder.withIndent('  ').convert(payload)),
+    ));
+    // Keep the legacy file names too so the payload is easy to inspect/unzip
+    // by hand; they are derived from the same object.
+    archive.addFile(ArchiveFile.bytes(
+      'credentials.json',
+      utf8.encode(jsonEncode(payload['credentials'])),
+    ));
+    archive.addFile(ArchiveFile.bytes(
+      'library.json',
+      utf8.encode(jsonEncode(payload['library'])),
+    ));
+    archive.addFile(ArchiveFile.bytes(
+      'playlists.json',
+      utf8.encode(jsonEncode(payload['playlists'])),
+    ));
+    archive.addFile(ArchiveFile.bytes(
+      'settings.json',
+      utf8.encode(jsonEncode(payload['settings'])),
     ));
 
+    final coverNames = await _referencedCovers();
     final docs = await getApplicationDocumentsDirectory();
     final coversDir = Directory(p.join(docs.path, 'covers'));
     if (await coversDir.exists() && coverNames.isNotEmpty) {
@@ -183,252 +177,115 @@ class BackupService extends ChangeNotifier {
       }
     }
 
-    archive.addFile(ArchiveFile.bytes(
-      'playlists.json',
-      utf8.encode(jsonEncode(_playlists.exportJsonForAccount(account.id))),
-    ));
-
-    final zip = ZipEncoder().encode(archive);
-    final zipBytes = Uint8List.fromList(zip);
+    final zipBytes = Uint8List.fromList(ZipEncoder().encode(archive));
     if (passphrase.isEmpty) return zipBytes;
     return BackupCrypto.encrypt(plaintext: zipBytes, passphrase: passphrase);
   }
 
-  /// Full multi-account archive (optional / legacy).
-  Future<Uint8List> buildFullArchiveBytes({required String passphrase}) async {
-    final archive = Archive();
-    final manifest = <String, dynamic>{
-      'format': 'webdav_music_player_backup',
-      'formatVersion': formatVersion,
-      'scope': 'all',
-      'createdAt': DateTime.now().toUtc().toIso8601String(),
-      'containsSecrets': true,
-      'encrypted': passphrase.isNotEmpty,
-      'includes': [
-        'library_db',
-        'covers',
-        'playlists',
-        'settings',
-        'webdav_accounts_with_passwords',
-      ],
-      'excludes': ['audio_cache', 'cache_annex', 'download_queue'],
-      'cachePolicy': 'restore_uncached_unless_files_on_disk',
-    };
-    archive.addFile(ArchiveFile.bytes(
-      'manifest.json',
-      utf8.encode(const JsonEncoder.withIndent('  ').convert(manifest)),
-    ));
-
-    archive.addFile(ArchiveFile.bytes(
-      'settings.json',
-      utf8.encode(jsonEncode(_settings.exportForBackup())),
-    ));
-
-    final accountPayload = <Map<String, dynamic>>[];
-    for (final a in _accounts.accounts) {
-      final pass = await _accounts.passwordFor(a.id) ?? '';
-      accountPayload.add({
-        ...a.toMap(),
-        // Only the password is encrypted; url/username stay readable.
-        'password': await _encodePassword(pass, passphrase),
-        'passwordEncrypted': passphrase.isNotEmpty && pass.isNotEmpty,
-      });
-    }
-    archive.addFile(ArchiveFile.bytes(
-      'accounts.json',
-      utf8.encode(const JsonEncoder.withIndent('  ').convert({
-        'scope': 'all',
-        'activeAccountId': _accounts.activeAccountId,
-        'accounts': accountPayload,
-        'warning': passphrase.isEmpty
-            ? 'WebDAV 密码为明文（未提供加密口令）。'
-            : 'WebDAV 地址与用户名为明文，仅密码使用 AES-256-GCM 加密。',
-      })),
-    ));
-
-    await _libraryDb.database;
-    final docs = await getApplicationDocumentsDirectory();
-    final dbFile = File(p.join(docs.path, 'music_library.db'));
-    if (await dbFile.exists()) {
-      archive.addFile(
-        ArchiveFile.bytes('music_library.db', await dbFile.readAsBytes()),
-      );
-    }
-
-    final coversDir = Directory(p.join(docs.path, 'covers'));
-    if (await coversDir.exists()) {
-      await for (final entity in coversDir.list(recursive: false)) {
-        if (entity is! File) continue;
-        final name = p.basename(entity.path);
-        archive.addFile(
-          ArchiveFile.bytes('covers/$name', await entity.readAsBytes()),
-        );
-      }
-    }
-
-    final plPath = await _playlists.store.databasePath();
-    final plFile = File(plPath);
-    if (await plFile.exists()) {
-      archive.addFile(
-        ArchiveFile.bytes('playlists.db', await plFile.readAsBytes()),
-      );
-    }
-    archive.addFile(ArchiveFile.bytes(
-      'playlists.json',
-      utf8.encode(jsonEncode(_playlists.exportJson())),
-    ));
-
-    final zip = ZipEncoder().encode(archive);
-    final zipBytes = Uint8List.fromList(zip);
-    if (passphrase.isEmpty) return zipBytes;
-    return BackupCrypto.encrypt(plaintext: zipBytes, passphrase: passphrase);
-  }
-
-  /// Legacy alias — prefer [buildAccountArchiveBytes].
-  Future<Uint8List> buildArchiveBytes({required String passphrase}) =>
-      buildFullArchiveBytes(passphrase: passphrase);
-
-  /// Default: backup one WebDAV account into its own remote folder.
-  Future<void> uploadAccountBackup({
-    required WebDavAccount account,
-    required String passphrase,
-    String? remoteDir,
-    String? fileName,
-  }) async {
-    busy = true;
-    lastError = null;
-    lastMessage = null;
-    notifyListeners();
-    try {
-      if (!_webDav.isConnected) {
-        throw StateError('请先连接 WebDAV 账号');
-      }
-      if (_webDav.accountId != null && _webDav.accountId != account.id) {
-        throw StateError(
-          '当前已连接的 WebDAV 与所选备份账号不一致。'
-          '请先切换到该账号再备份，以免把站点 A 的备份写到站点 B。',
-        );
-      }
-      final dir = remoteDir ?? perAccountBackupDir(_backupRoot, account);
-      final name = fileName ?? backupFileNameNow();
-      final bytes = await buildAccountArchiveBytes(
-        account: account,
-        passphrase: passphrase,
-      );
-      await _webDav.ensureDirectory(dir);
-      final remote = dir.endsWith('/') ? '$dir$name' : '$dir/$name';
-      await _webDav.writeBytes(remote, bytes);
-      final latest =
-          dir.endsWith('/') ? '$dir$defaultFileName' : '$dir/$defaultFileName';
-      await _webDav.writeBytes(latest, bytes);
-      lastMessage =
-          '已备份站点「${account.name}」到 $remote（${bytes.length} 字节；并更新 latest）';
-    } catch (e) {
-      lastError = e.toString();
-      rethrow;
-    } finally {
-      busy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Optional full multi-account backup to the backup root.
-  Future<void> uploadFullBackup({
-    required String passphrase,
-    String? remoteDir,
-    String? fileName,
-  }) async {
-    busy = true;
-    lastError = null;
-    lastMessage = null;
-    notifyListeners();
-    try {
-      if (!_webDav.isConnected) {
-        throw StateError('请先连接 WebDAV 账号');
-      }
-      final dir = remoteDir ?? _backupRoot;
-      final name = fileName ?? 'full-${backupFileNameNow()}';
-      final bytes = await buildFullArchiveBytes(passphrase: passphrase);
-      await _webDav.ensureDirectory(dir);
-      final remote = dir.endsWith('/') ? '$dir$name' : '$dir/$name';
-      await _webDav.writeBytes(remote, bytes);
-      lastMessage = '已上传【全部账号】备份到 $remote（${bytes.length} 字节）';
-    } catch (e) {
-      lastError = e.toString();
-      rethrow;
-    } finally {
-      busy = false;
-      notifyListeners();
-    }
-  }
-
-  /// Default entry used by settings UI: per-account backup.
-  Future<void> uploadBackup({
-    required String passphrase,
-    String? remoteDir,
-    String? fileName,
-    WebDavAccount? account,
-    bool fullMultiAccount = false,
-  }) async {
-    if (fullMultiAccount) {
-      return uploadFullBackup(
-        passphrase: passphrase,
-        remoteDir: remoteDir,
-        fileName: fileName,
-      );
-    }
-    WebDavAccount? target = account;
-    if (target == null && _webDav.accountId != null) {
-      for (final a in _accounts.accounts) {
-        if (a.id == _webDav.accountId) {
-          target = a;
-          break;
-        }
-      }
-    }
-    target ??= _accounts.activeAccount;
-    if (target == null) {
-      throw StateError('请先选择要备份的 WebDAV 账号');
-    }
-    return uploadAccountBackup(
-      account: target,
+  /// Encrypt one account password for storage in the archive.
+  ///
+  /// Empty passphrase (or empty password) keeps the value readable, matching
+  /// the credential vault rule: 地址与用户名明文，仅密码可选加密.
+  Future<String> _encodePassword(String password, String passphrase) async {
+    if (passphrase.isEmpty || password.isEmpty) return password;
+    return CredentialVaultCrypto.encrypt(
+      plaintext: password,
       passphrase: passphrase,
-      remoteDir: remoteDir,
-      fileName: fileName,
     );
   }
 
-  Future<Uint8List> downloadBackupBytes({
-    String? remoteDir,
-    String? fileName,
-    WebDavAccount? account,
-  }) async {
-    if (!_webDav.isConnected) throw StateError('请先连接 WebDAV 账号');
-    String dir;
-    if (remoteDir != null) {
-      dir = remoteDir;
-    } else if (account != null) {
-      dir = perAccountBackupDir(_backupRoot, account);
-    } else {
-      WebDavAccount? match;
-      final connectedId = _webDav.accountId;
-      if (connectedId != null) {
-        for (final a in _accounts.accounts) {
-          if (a.id == connectedId) {
-            match = a;
-            break;
-          }
-        }
-      }
-      dir = match != null
-          ? perAccountBackupDir(_backupRoot, match)
-          : _backupRoot;
-    }
-    final name = fileName ?? defaultFileName;
-    final remote = dir.endsWith('/') ? '$dir$name' : '$dir/$name';
-    return _webDav.readAsBytes(remote);
+  // --- Upload / download -----------------------------------------------
+
+  /// Normalise the user-chosen backup directory.
+  String normalizeDir(String dir) {
+    var value = dir.trim();
+    if (value.isEmpty) value = defaultRemoteDir;
+    if (!value.startsWith('/')) value = '/$value';
+    if (!value.endsWith('/')) value = '$value/';
+    return value;
   }
 
+  /// Write the archive to [remoteDir] on the **connected** server, plus a
+  /// stable `latest` copy. No per-site folders: the whole app state goes to the
+  /// path the user selected.
+  Future<void> uploadBackup({
+    required String passphrase,
+    required String remoteDir,
+    String? fileName,
+  }) async {
+    busy = true;
+    lastError = null;
+    lastMessage = null;
+    notifyListeners();
+    try {
+      if (!_webDav.isConnected) {
+        throw StateError('请先连接要存放备份的 WebDAV 账号');
+      }
+      final dir = normalizeDir(remoteDir);
+      final name = fileName ?? backupFileNameNow();
+      final bytes = await buildArchiveBytes(passphrase: passphrase);
+      await _webDav.ensureDirectory(dir);
+      final remote = '$dir$name';
+      await _webDav.writeBytes(remote, bytes);
+      await _webDav.writeBytes('$dir$defaultFileName', bytes);
+      lastMessage = '已备份到 $remote'
+          '（${_fmtBytes(bytes.length)}；并更新 latest）';
+    } catch (e) {
+      lastError = e.toString();
+      rethrow;
+    } finally {
+      busy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<Uint8List> downloadBackupBytes({
+    required String remoteDir,
+    String? fileName,
+  }) async {
+    if (!_webDav.isConnected) throw StateError('请先连接 WebDAV 账号');
+    final dir = normalizeDir(remoteDir);
+    final name = fileName ?? defaultFileName;
+    return _webDav.readAsBytes('$dir$name');
+  }
+
+  /// List available archives in [remoteDir] (newest first).
+  Future<List<String>> listBackups({required String remoteDir}) async {
+    if (!_webDav.isConnected) throw StateError('请先连接 WebDAV 账号');
+    final dir = normalizeDir(remoteDir);
+    try {
+      final items = await _webDav.listDirectory(dir);
+      final files = items
+          .where((e) => !e.isDirectory && e.name.endsWith('.wmpbak'))
+          .map((e) => e.name)
+          .toList()
+        ..sort((a, b) => b.compareTo(a));
+      return files;
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('404') || msg.contains('not found')) return [];
+      rethrow;
+    }
+  }
+
+  Future<void> restoreFromWebDav({
+    required String passphrase,
+    required String remoteDir,
+    String? fileName,
+  }) async {
+    final data = await downloadBackupBytes(
+      remoteDir: remoteDir,
+      fileName: fileName,
+    );
+    await restoreFromBytes(data: data, passphrase: passphrase);
+  }
+
+  // --- Restore ----------------------------------------------------------
+
+  /// Restore an archive produced by [buildArchiveBytes].
+  ///
+  /// Passwords that cannot be decrypted with [passphrase] are left **empty**
+  /// instead of aborting; everything else is restored.
   Future<void> restoreFromBytes({
     required Uint8List data,
     required String passphrase,
@@ -447,33 +304,16 @@ class BackupService extends ChangeNotifier {
           data: data,
           passphrase: passphrase,
         );
-      } else if (passphrase.isNotEmpty) {
-        try {
-          zipBytes = await BackupCrypto.decrypt(
-            data: data,
-            passphrase: passphrase,
-          );
-        } catch (_) {}
       }
 
       final archive = ZipDecoder().decodeBytes(zipBytes);
-      final manifestFile = archive.findFile('manifest.json');
-      Map<String, dynamic> manifest = {};
-      if (manifestFile != null) {
-        manifest = jsonDecode(utf8.decode(manifestFile.content as List<int>))
-            as Map<String, dynamic>;
-      }
-      final scope = manifest['scope'] as String? ?? _inferScope(archive);
-
-      if (scope == 'account') {
-        await _restoreAccountScope(archive, manifest, passphrase);
-        lastMessage =
-            '已按站点恢复「${manifest['accountName'] ?? manifest['accountId']}」。'
-            '其他 WebDAV 账号未改动。';
-      } else {
-        await _restoreFullScope(archive, passphrase);
-        lastMessage = '全部账号恢复完成。请确认 WebDAV 账号与歌单是否正确。';
-      }
+      final payload = _readPayload(archive);
+      final missing = await _applyPayload(payload, passphrase, archive);
+      lastMessage = missing.isEmpty
+          ? '备份已恢复：${payload['credentials']?['accounts']?.length ?? 0} 个服务器、'
+              '音乐库与歌单已写回'
+          : '备份已恢复，但以下服务器的密码无法解密并已留空：'
+              '${missing.join('、')}。请在账号管理中补填。';
     } catch (e) {
       lastError = e.toString();
       rethrow;
@@ -483,259 +323,111 @@ class BackupService extends ChangeNotifier {
     }
   }
 
-  String _inferScope(Archive archive) {
-    if (archive.findFile('tracks.json') != null) return 'account';
-    final accountsFile = archive.findFile('accounts.json');
-    if (accountsFile != null) {
-      try {
-        final json = jsonDecode(utf8.decode(accountsFile.content as List<int>))
-            as Map<String, dynamic>;
-        if (json['scope'] == 'account') return 'account';
-      } catch (_) {}
+  Map<String, dynamic> _readPayload(Archive archive) {
+    final file = archive.findFile('backup.json');
+    if (file != null) {
+      return jsonDecode(utf8.decode(file.content as List<int>))
+          as Map<String, dynamic>;
     }
-    return 'all';
+    // Tolerate a hand-made archive with the split files.
+    Map<String, dynamic> readJson(String name) {
+      final f = archive.findFile(name);
+      if (f == null) return const {};
+      final decoded = jsonDecode(utf8.decode(f.content as List<int>));
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : const {};
+    }
+
+    final credentials = readJson('credentials.json');
+    final lib = readJson('library.json');
+    final playlists = archive.findFile('playlists.json') == null
+        ? const <dynamic>[]
+        : jsonDecode(
+            utf8.decode(
+              archive.findFile('playlists.json')!.content as List<int>,
+            ),
+          );
+    final settings = readJson('settings.json');
+    if (credentials.isEmpty && lib.isEmpty) {
+      throw StateError('备份缺少 backup.json / library.json');
+    }
+    return {
+      'credentials': credentials,
+      'library': lib,
+      'playlists': playlists,
+      'settings': settings,
+    };
   }
 
-  Future<void> _restoreAccountScope(
-    Archive archive,
-    Map<String, dynamic> manifest,
+  /// Apply a decoded payload. Returns the names of accounts whose password
+  /// could not be decrypted.
+  Future<List<String>> _applyPayload(
+    Map<String, dynamic> payload,
     String passphrase,
+    Archive archive,
   ) async {
     final docs = await getApplicationDocumentsDirectory();
+    final missing = <String>[];
 
-    final accountsFile = archive.findFile('accounts.json');
-    if (accountsFile == null) {
-      throw StateError('备份缺少 accounts.json');
-    }
-    final accountsJson = jsonDecode(
-            utf8.decode(accountsFile.content as List<int>))
-        as Map<String, dynamic>;
-    final list = accountsJson['accounts'] as List<dynamic>? ?? [];
-    if (list.isEmpty) {
-      throw StateError('备份中没有账号数据');
-    }
-    final accountMap = Map<String, dynamic>.from(list.first as Map);
-    final backupId =
-        accountMap['id'] as String? ?? manifest['accountId'] as String?;
-    final backupUrl = (accountMap['url'] as String? ??
-            manifest['accountUrl'] as String? ??
-            '')
-        .trim()
-        .replaceAll(RegExp(r'/+$'), '');
-
-    final connectedId = _webDav.accountId;
-    final connectedUrl = _webDav.baseUrl?.replaceAll(RegExp(r'/+$'), '');
-    if (connectedId != null &&
-        backupId != null &&
-        connectedId != backupId &&
-        connectedUrl != null &&
-        backupUrl.isNotEmpty &&
-        connectedUrl != backupUrl) {
-      throw StateError(
-        '备份属于站点「${manifest['accountName'] ?? backupUrl}」'
-        '（id=$backupId），与当前连接的站点不一致。'
-        '请切换到对应账号后再恢复，避免把站点 A 的凭证写入站点 B。',
-      );
-    }
-
-    final recovered = await _accounts.mergeAccountFromBackup(
-      accountMap,
-      passphrase: passphrase,
-    );
-    if (!recovered) {
-      lastMessage =
-          '站点凭证已恢复，但密码无法用当前口令解密（缺少统一解密密钥），已留空；'
-          '请在账号管理中补填密码。';
-    }
-
-    // Always clear cache annex on restore — never mark tracks cached without files.
-    if (_cache != null) {
-      await _cache.markAllUncached();
-    } else {
-      await _libraryDb.clearAllCacheEntries();
-    }
-
-    final libraryFile = archive.findFile('library.json');
-    final tracksFile = archive.findFile('tracks.json');
-    if (libraryFile != null) {
-      final libJson = jsonDecode(utf8.decode(libraryFile.content as List<int>))
-          as Map<String, dynamic>;
-      final accountId = libJson['accountId'] as String? ?? backupId;
-      if (accountId == null) {
-        throw StateError('library.json 缺少 accountId');
+    // 1. Credentials.
+    final credentials = payload['credentials'];
+    if (credentials is Map) {
+      final accountsJson = Map<String, dynamic>.from(credentials);
+      final list = accountsJson['accounts'] as List<dynamic>? ?? const [];
+      if (list.isNotEmpty) {
+        missing.addAll(
+          await _accounts.restoreFromBackup(accountsJson, passphrase: passphrase),
+        );
       }
+    }
+
+    // 2. Library (replaces all library rows — this is a whole-app backup).
+    final libraryJson = payload['library'];
+    if (libraryJson is Map) {
+      final lib = Map<String, dynamic>.from(libraryJson);
       final tracks = <LibraryTrack>[];
-      for (final e in (libJson['tracks'] as List<dynamic>? ?? [])) {
-        final t = LibraryTrack.fromMap(Map<String, dynamic>.from(e as Map));
-        if (t.accountId != accountId) {
-          throw StateError(
-            '备份曲目 accountId=${t.accountId} 与站点 $accountId 不一致，已中止以免串站',
-          );
-        }
-        tracks.add(t);
+      for (final raw in (lib['tracks'] as List<dynamic>? ?? const [])) {
+        tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
       }
-      for (final e in (libJson['cueSlices'] as List<dynamic>? ?? [])) {
-        final t = LibraryTrack.fromMap(Map<String, dynamic>.from(e as Map));
-        if (t.accountId != accountId) {
-          throw StateError(
-            '备份 CUE 切片 accountId=${t.accountId} 与站点 $accountId 不一致',
-          );
-        }
-        tracks.add(t);
+      for (final raw in (lib['cueSlices'] as List<dynamic>? ?? const [])) {
+        tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
       }
-      await _library.replaceTracksForAccount(accountId, tracks);
-      // Ignore libJson['cache'] — restore leaves everything uncached.
-    } else if (tracksFile != null) {
-      final tracksJson = jsonDecode(
-              utf8.decode(tracksFile.content as List<int>))
-          as Map<String, dynamic>;
-      final accountId = tracksJson['accountId'] as String? ?? backupId;
-      if (accountId == null) {
-        throw StateError('tracks.json 缺少 accountId');
+      await _libraryDb.clearAllLibraryData();
+      for (final t in tracks) {
+        await _libraryDb.upsertTrack(t);
       }
-      final rawTracks = tracksJson['tracks'] as List<dynamic>? ?? [];
-      final tracks = <LibraryTrack>[];
-      for (final e in rawTracks) {
-        final t = LibraryTrack.fromMap(Map<String, dynamic>.from(e as Map));
-        if (t.accountId != accountId) {
-          throw StateError(
-            '备份曲目 accountId=${t.accountId} 与站点 $accountId 不一致，已中止以免串站',
-          );
-        }
-        tracks.add(t);
+      // Never trust the archived cache annex: files must exist on disk.
+      if (_cache != null) {
+        await _cache.markAllUncached();
       }
-      await _library.replaceTracksForAccount(accountId, tracks);
     }
 
+    // 3. Covers: write the archived thumbnails into the local covers folder,
+    // then re-point every library row at that folder below.
+    final covers = Directory(p.join(docs.path, 'covers'));
+    if (!await covers.exists()) await covers.create(recursive: true);
     for (final file in archive) {
       if (!file.isFile) continue;
       if (!file.name.startsWith('covers/')) continue;
-      final covers = Directory(p.join(docs.path, 'covers'));
-      if (!await covers.exists()) await covers.create(recursive: true);
       final base = p.basename(file.name);
       await File(p.join(covers.path, base))
           .writeAsBytes(file.content as List<int>, flush: true);
     }
 
-    final settingsFile = archive.findFile('settings.json');
-    if (settingsFile != null) {
-      final json = jsonDecode(utf8.decode(settingsFile.content as List<int>))
-          as Map<String, dynamic>;
-      await _settings.importFromBackup(json);
+    // 4. Playlists.
+    final playlists = payload['playlists'];
+    if (playlists is List) {
+      await _playlists.importFromJson(playlists);
     }
 
-    final plJson = archive.findFile('playlists.json');
-    if (plJson != null) {
-      final list =
-          jsonDecode(utf8.decode(plJson.content as List<int>)) as List<dynamic>;
-      await _playlists.mergeFromJson(list);
+    // 5. Settings.
+    final settings = payload['settings'];
+    if (settings is Map) {
+      await _settings.importFromBackup(Map<String, dynamic>.from(settings));
     }
 
     await _rewriteCoverPaths(docs.path);
     await _library.refresh();
-  }
-
-  Future<void> _restoreFullScope(Archive archive, String passphrase) async {
-    final docs = await getApplicationDocumentsDirectory();
-
-    await _libraryDb.close();
-    await _playlists.store.close();
-
-    for (final file in archive) {
-      if (!file.isFile) continue;
-      final name = file.name;
-      final content = file.content as List<int>;
-      if (name == 'music_library.db') {
-        final out = File(p.join(docs.path, 'music_library.db'));
-        for (final side in ['music_library.db-wal', 'music_library.db-shm']) {
-          final f = File(p.join(docs.path, side));
-          if (await f.exists()) await f.delete();
-        }
-        await out.writeAsBytes(content, flush: true);
-      } else if (name == 'playlists.db') {
-        final out = File(p.join(docs.path, 'playlists.db'));
-        for (final side in ['playlists.db-wal', 'playlists.db-shm']) {
-          final f = File(p.join(docs.path, side));
-          if (await f.exists()) await f.delete();
-        }
-        await out.writeAsBytes(content, flush: true);
-      } else if (name.startsWith('covers/')) {
-        final covers = Directory(p.join(docs.path, 'covers'));
-        if (!await covers.exists()) await covers.create(recursive: true);
-        final base = p.basename(name);
-        await File(p.join(covers.path, base))
-            .writeAsBytes(content, flush: true);
-      }
-    }
-
-    await _libraryDb.database;
-    await _accounts.init();
-
-    final accountsFile = archive.findFile('accounts.json');
-    if (accountsFile != null) {
-      final json = jsonDecode(utf8.decode(accountsFile.content as List<int>))
-          as Map<String, dynamic>;
-      final missing = await _accounts.restoreFromBackup(
-        json,
-        passphrase: passphrase,
-      );
-      if (missing.isNotEmpty) {
-        lastMessage =
-            '已恢复 ${missing.length} 个账号，但其中密码无法解密并已留空：'
-            '${missing.join('、')}。请在账号管理中补填密码。';
-      }
-    }
-
-    final settingsFile = archive.findFile('settings.json');
-    if (settingsFile != null) {
-      final json = jsonDecode(utf8.decode(settingsFile.content as List<int>))
-          as Map<String, dynamic>;
-      await _settings.importFromBackup(json);
-    }
-
-    await _playlists.init();
-    final plJson = archive.findFile('playlists.json');
-    if (plJson != null) {
-      final list =
-          jsonDecode(utf8.decode(plJson.content as List<int>)) as List<dynamic>;
-      await _playlists.importFromJson(list);
-    }
-
-    await _rewriteCoverPaths(docs.path);
-    // Full DB restore may contain a legacy cache table — wipe annex so
-    // isLocal never trusts missing files.
-    if (_cache != null) {
-      await _cache.markAllUncached();
-    } else {
-      await _libraryDb.clearAllCacheEntries();
-    }
-    await _library.refresh();
-  }
-
-  Future<void> restoreFromWebDav({
-    required String passphrase,
-    WebDavAccount? account,
-    String? remoteDir,
-    String? fileName,
-  }) async {
-    final data = await downloadBackupBytes(
-      account: account,
-      remoteDir: remoteDir,
-      fileName: fileName,
-    );
-    await restoreFromBytes(data: data, passphrase: passphrase);
-  }
-
-  /// Encrypt one account password for storage in an archive.
-  ///
-  /// Empty passphrase (or empty password) keeps the value readable, matching
-  /// the credential vault rule: 地址与用户名明文，仅密码可选加密.
-  Future<String> _encodePassword(String password, String passphrase) async {
-    if (passphrase.isEmpty || password.isEmpty) return password;
-    return CredentialVaultCrypto.encrypt(
-      plaintext: password,
-      passphrase: passphrase,
-    );
+    return missing;
   }
 
   Future<void> _rewriteCoverPaths(String docsPath) async {
@@ -770,5 +462,11 @@ class BackupService extends ChangeNotifier {
         }
       }
     }
+  }
+
+  static String _fmtBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
   }
 }

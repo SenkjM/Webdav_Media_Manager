@@ -6,7 +6,6 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 
 import '../models/library_track.dart';
-import '../utils/audio_extensions.dart';
 import '../utils/cue_sheet.dart';
 import '../utils/track_identity.dart';
 import 'cover_service.dart';
@@ -150,6 +149,10 @@ class LibraryService extends ChangeNotifier {
   }
 
   /// After a file finishes downloading: read tags, save thumb + full cover, upsert.
+  ///
+  /// The caller has already decided this file belongs in the library (it uses
+  /// the user's configured music extensions); this does not re-check against a
+  /// hard-coded list, which used to reject configured formats like `.m4a`.
   Future<LibraryTrack> ingestDownloaded({
     required String accountId,
     required String remotePath,
@@ -157,9 +160,6 @@ class LibraryService extends ChangeNotifier {
     required String localPath,
   }) async {
     final now = DateTime.now();
-    if (!isAudioFileName(fileName) && !isAudioFileName(remotePath)) {
-      throw StateError('非音频文件不会加入音乐库: $fileName');
-    }
     final read = await _tags.readFromFile(localPath);
     String? coverPath;
     if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
