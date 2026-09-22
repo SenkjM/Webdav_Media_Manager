@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Webdav Media Manager — 网盘媒体管理器</title>
+  <meta name="description" content="面向 Android 的网盘媒体管理器：浏览 WebDAV，下载到本地后再播放。适合把 NAS、网盘当作音乐库，在手机上离线收听。">
+  <meta name="theme-color" content="#2EC4B6">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="canonical" href="https://wdmm.senkjm.top/">
+  <meta property="og:title" content="Webdav Media Manager">
+  <meta property="og:description" content="浏览 WebDAV，下载到本地后再播放。开源、AGPL-3.0。">
+  <meta property="og:url" content="https://wdmm.senkjm.top/">
+  <meta property="og:type" content="website">
+  <style>
+    :root {
+      --bg: #fafafa;
+      --surface: #ffffff;
+      --elevated: #f0f0f2;
+      --accent: #2ec4b6;
+      --accent-bright: #3dd9c9;
+      --on-accent: #003832;
+      --text: #1a1a1e;
+      --secondary: #5c5c66;
+      --muted: #8a8a94;
+      --divider: #e0e0e4;
+      --ready: #2e7d32;
+      --shadow: 0 18px 50px rgba(26, 26, 30, 0.08);
+      --radius: 22px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #c8f5f0 0%, transparent 55%),
+                  radial-gradient(900px 500px at 110% 0%, #eef1f4 0%, transparent 50%),
+                  var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+    }
+    a { color: inherit; }
+    .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 22px 0 8px;
+      gap: 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .brand svg { width: 42px; height: 42px; border-radius: 12px; box-shadow: var(--shadow); }
+    nav { display: flex; gap: 8px; flex-wrap: wrap; }
+    nav a, .btn {
+      text-decoration: none;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    nav a { color: var(--secondary); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent);
+      color: var(--on-accent);
+      box-shadow: 0 10px 24px rgba(46, 196, 182, 0.28);
+    }
+    .btn.ghost {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: none;
+      border: 1px solid var(--divider);
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 48px;
+      align-items: center;
+      padding: 56px 0 36px;
+    }
+    .kicker {
+      color: var(--accent);
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 12px;
+    }
+    h1 {
+      font-size: clamp(36px, 6vw, 64px);
+      line-height: 1.08;
+      letter-spacing: -0.045em;
+      margin: 10px 0 16px;
+    }
+    .lead { font-size: 18px; color: var(--secondary); max-width: 560px; }
+    .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+    .phone {
+      background: linear-gradient(180deg, #ffffff 0%, #f7f8fa 100%);
+      border: 1px solid var(--divider);
+      border-radius: 36px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+      min-height: 420px;
+    }
+    .now-playing {
+      background: #121214;
+      color: #f5f5f7;
+      border-radius: 24px;
+      padding: 28px 24px 22px;
+    }
+    .cover {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #2ec4b6, #26a8c9 55%, #1a1a1e);
+      display: grid;
+      place-items: center;
+    }
+    .cover svg { width: 46%; opacity: 0.95; }
+    .track { margin-top: 18px; }
+    .track strong { display: block; font-size: 18px; }
+    .track span { color: #b0b0b8; font-size: 13px; }
+    .bar {
+      height: 4px;
+      background: #2a2a30;
+      border-radius: 99px;
+      margin: 18px 0 8px;
+      overflow: hidden;
+    }
+    .bar i { display: block; width: 62%; height: 100%; background: var(--accent); }
+    .controls { display: flex; justify-content: space-between; color: #7a7a82; font-size: 12px; }
+    section { padding: 28px 0 8px; }
+    h2 { font-size: 28px; letter-spacing: -0.03em; margin: 0 0 8px; }
+    .sub { color: var(--secondary); margin: 0 0 24px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    article {
+      background: var(--surface);
+      border: 1px solid var(--divider);
+      border-radius: var(--radius);
+      padding: 22px;
+    }
+    article h3 { margin: 0 0 8px; font-size: 18px; }
+    article p { margin: 0; color: var(--secondary); font-size: 14.5px; }
+    .chip {
+      display: inline-block;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--ready);
+      background: #e8f5e9;
+      border-radius: 999px;
+      padding: 4px 10px;
+      margin-bottom: 10px;
+    }
+    .split {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--divider);
+      border-radius: var(--radius);
+      padding: 28px;
+    }
+    ul { margin: 12px 0 0; padding-left: 18px; color: var(--secondary); }
+    footer {
+      margin: 48px 0 28px;
+      padding-top: 22px;
+      border-top: 1px solid var(--divider);
+      color: var(--muted);
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    @media (max-width: 860px) {
+      .hero, .grid, .split { grid-template-columns: 1fr; }
+      header { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="#top">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" aria-hidden="true">
+          <defs>
+            <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#F7F8FA"/><stop offset="100%" stop-color="#EEF1F4"/>
+            </linearGradient>
+            <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#2EC4B6"/><stop offset="100%" stop-color="#26A8C9"/>
+            </linearGradient>
+          </defs>
+          <rect width="1024" height="1024" fill="url(#bg)"/>
+          <path fill="none" stroke="#9AA3AD" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"
+            d="M300 560C260 560 230 520 230 470C230 410 275 365 340 365C355 310 410 270 480 270C560 270 620 325 635 395C660 380 700 380 725 410C780 415 820 460 820 515C820 575 770 620 710 620L340 620C310 620 300 590 300 560Z"/>
+          <g fill="url(#accent)">
+            <ellipse cx="390" cy="560" rx="72" ry="52" transform="rotate(-18 390 560)"/>
+            <rect x="448" y="300" width="36" height="270" rx="10"/>
+            <path d="M484 300C560 320 620 360 640 430L600 440C585 390 545 350 484 340Z"/>
+            <rect x="560" y="470" width="36" height="100" rx="12"/>
+            <rect x="612" y="430" width="36" height="140" rx="12"/>
+            <rect x="664" y="390" width="36" height="180" rx="12"/>
+            <rect x="716" y="450" width="36" height="120" rx="12"/>
+            <rect x="768" y="490" width="36" height="80" rx="12"/>
+          </g>
+        </svg>
+        Webdav Media Manager
+      </a>
+      <nav>
+        <a href="#features">功能</a>
+        <a href="#get">获取</a>
+        <a href="#about">关于</a>
+        <a class="btn" href="https://github.com/SenkjM/Webdav_Media_Manager">GitHub</a>
+      </nav>
+    </header>
+
+    <section class="hero" id="top">
+      <div>
+        <div class="kicker">Android · WebDAV · Offline-first</div>
+        <h1>网盘当曲库，<br>下载后再听。</h1>
+        <p class="lead">面向 Android 的开源媒体管理器。浏览 NAS / 网盘 / 自建 WebDAV，把音频缓存到本地再播放，不做网络流式听歌。</p>
+        <div class="cta">
+          <a class="btn" href="https://github.com/SenkjM/Webdav_Media_Manager/releases">下载 APK</a>
+          <a class="btn ghost" href="https://github.com/SenkjM/Webdav_Media_Manager">查看源码</a>
+        </div>
+      </div>
+      <div class="phone">
+        <div class="now-playing">
+          <div class="cover">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+              <g fill="#fff">
+                <ellipse cx="390" cy="560" rx="72" ry="52" transform="rotate(-18 390 560)"/>
+                <rect x="448" y="300" width="36" height="270" rx="10"/>
+                <path d="M484 300C560 320 620 360 640 430L600 440C585 390 545 350 484 340Z"/>
+                <rect x="560" y="470" width="36" height="100" rx="12"/>
+                <rect x="612" y="430" width="36" height="140" rx="12"/>
+                <rect x="664" y="390" width="36" height="180" rx="12"/>
+              </g>
+            </svg>
+          </div>
+          <div class="track">
+            <strong>先下载，再播放</strong>
+            <span>本地缓存 · 锁屏控制 · 歌单同步</span>
+          </div>
+          <div class="bar"><i></i></div>
+          <div class="controls"><span>1:24</span><span>3:41</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <h2>核心能力</h2>
+      <p class="sub">把远程目录变成可离线使用的本地媒体库，而不是又一个在线播放器。</p>
+      <div class="grid">
+        <article>
+          <span class="chip">网盘</span>
+          <h3>多 WebDAV 站点</h3>
+          <p>任意添加 NAS、网盘或自建服务，顶部一键切换。支持建文件夹、重命名、删除，权限不足会明确提示。</p>
+        </article>
+        <article>
+          <span class="chip">下载</span>
+          <h3>队列后台缓存</h3>
+          <p>点按即入队，完成后才用本地文件播放。可取消、重试、清除；系统通知显示进度与结果。</p>
+        </article>
+        <article>
+          <span class="chip">曲库</span>
+          <h3>专辑 / 作者 / 标签</h3>
+          <p>缓存过的曲目进入本地库，带封面与元数据。CUE 分轨按整张专辑展开。删除缓存不会毁掉曲库身份。</p>
+        </article>
+        <article>
+          <span class="chip">播放</span>
+          <h3>通知栏与锁屏</h3>
+          <p>完整播放页 + 迷你条 + 临时队列。视频走流式播放，支持画中画、倍速、字幕与手势。</p>
+        </article>
+        <article>
+          <span class="chip">歌单</span>
+          <h3>本地 + M3U8</h3>
+          <p>从队列或曲库创建歌单，可双向同步为 WebDAV 上的 M3U8，按更新时间合并。</p>
+        </article>
+        <article>
+          <span class="chip">备份</span>
+          <h3>凭证、库、歌单</h3>
+          <p>统一加密密钥只保护密码。支持云端增量同步、<code>.wdmm</code> 归档备份，以及定时任务。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="get">
+      <div class="split">
+        <div class="panel">
+          <h2>获取应用</h2>
+          <p class="sub">包名 <code>com.senkjm.media_manager</code>。当前持续完善中，核心流程已可用。</p>
+          <ul>
+            <li><strong>Pre-release</strong>：来自 <code>beta</code> 分支，可覆盖安装。</li>
+            <li><strong>Release</strong>：来自 <code>main</code>，Actions 一键正式发版。</li>
+            <li>首次从旧签名换成当前内测签名时，需要先卸载再安装。</li>
+          </ul>
+          <div class="cta">
+            <a class="btn" href="https://github.com/SenkjM/Webdav_Media_Manager/releases/tag/prerelease">最新预发布</a>
+            <a class="btn ghost" href="https://github.com/SenkjM/Webdav_Media_Manager">仓库</a>
+          </div>
+        </div>
+        <div class="panel" id="about">
+          <h2>为什么开源</h2>
+          <p class="sub">需求由人提，代码、排查、文档与发版脚本主要由 Agent 完成。</p>
+          <ul>
+            <li>建立在 Flutter、media_kit、audio_service 等开源栈上，能还一点是一点。</li>
+            <li>与其让它躺在硬盘里，不如放出来给需要网盘听歌的人接着用。</li>
+            <li>许可：<strong>GNU AGPL-3.0</strong>。修改版或网络提供服务时须公开对应源码。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div>© SenkjM · Webdav Media Manager · AGPL-3.0</div>
+      <div>
+        <a href="https://github.com/SenkjM/Webdav_Media_Manager">github.com/SenkjM/Webdav_Media_Manager</a>
+        · wdmm.senkjm.top
+      </div>
+    </footer>
+  </div>
+</body>
+</html>
