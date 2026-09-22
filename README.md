@@ -62,6 +62,7 @@
 
 ## 获取应用
 
+- **项目主页**：https://wdmm.senkjm.top
 - **Pre-release（内测）**：来自 `beta` 分支，Actions 里手动触发可自填版本号。
 - **Release（正式）**：来自 `main` 分支，Actions →「Android Release (from main)」一键构建发布，可自填版本号与 versionCode。
 
