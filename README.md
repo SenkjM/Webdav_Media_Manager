@@ -57,7 +57,7 @@
 ## 后续计划（路线图）
 
 > 本表仅规划，未排期实现。
-> 已知待修 Bug 与下载 / 串流计划见：[BUGS-AND-PLANS.md](docs/BUGS-AND-PLANS.md)。
+> **下次开发分块计划**（后台下载优先 + 文件动作 / 多选重构）见：[NEXT-DEV-PLAN.md](docs/NEXT-DEV-PLAN.md)。
 
 | 优先级 | 方向 | 说明 | 状态 |
 |---|---|---|---|

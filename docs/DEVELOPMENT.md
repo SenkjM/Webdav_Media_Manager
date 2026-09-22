@@ -24,7 +24,7 @@
 
 与 README 的[后续计划（路线图）](../README.md#后续计划路线图)保持同一份概览；**本表仅规划，未排期实现。除非用户明确要求，agents 不得开始这些工作，也不要把规划项当作已实现功能。**
 
-已知待修 Bug 与按文件处理设计见：[BUGS-AND-PLANS.md](BUGS-AND-PLANS.md)。
+下次开发分块计划（后台下载优先 + 文件动作 / 多选重构）见：[NEXT-DEV-PLAN.md](NEXT-DEV-PLAN.md)（唯一计划源；旧 [BUGS-AND-PLANS.md](BUGS-AND-PLANS.md) 仅作跳转）。
 
 | 优先级 | 方向 | 说明 | 状态 |
 |---|---|---|---|
