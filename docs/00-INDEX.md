@@ -39,8 +39,8 @@
 
 1. **先读本索引，再读对应功能块文档**；改动前确认它描述的就是现状。
 2. **开发新功能前先读 [99](99-IN-PROGRESS.md)**，再读它链到的完整文档；开发期间同时维护 `99` 与完整文档里的占位，完成后按 §1 收口。
-3. **分支**：main 只有用户明确允许才可合并；beta 用于一般工作保存；新功能基于 beta 开独立功能分支；dev 是重大破坏性改动的历史线。并线至 main / beta 用标准 PR，不得破坏 beta 与 main 的父子关系。
-4. **CI**：不要为了看构建结果给 workflow 加 `on: push`，不要擅自 `gh workflow run`，不要推 beta / main，不要打 Pre-release——除非用户明确要求。细节见 [09](09-MISC.md)。
+3. **分支**：`main` 是唯一主干，只有用户明确允许才可合并。新功能一律**基于 `main` 开独立功能分支**，成熟后合入 `main`（标准 PR）。不开长期保存线，中途成果留在自己的功能分支上。
+4. **CI**：不要为了看构建结果给 workflow 加 `on: push`，不要擅自 `gh workflow run`，不要推 `main`，不要打 Pre-release——除非用户明确要求。细节见 [09](09-MISC.md)。
 5. **改完跑** `flutter analyze` 与相关 `flutter test`；改核心逻辑优先跑 [09](09-MISC.md) 列出的测试入口。
 6. **密钥一律不打印、不提交**：keystore、`key.properties`、token、`.env`、secrets。
 7. 提交信息用简短英文前缀（`feat:` / `fix:` / `docs:` / `deps:` / `ci:`）+ 说明。
@@ -50,7 +50,7 @@
 
 **定位**：Android-first 的 WebDAV 媒体客户端。音频「先下载到本地缓存再播放」，视频走远端流式播放，两者都不做「边下边播的隐式入队」。当前主线是稳定性与体验细节，不是新功能扩张。
 
-**近期（进行中）**：见 [04](04-DOWNLOAD-QUEUE.md) 的「后台下载 `fail host lookup`」与 [02](02-NETWORK-LIBRARY.md) 的「文件动作模型」两节——都在对应功能块文档里标注为未实现。
+**近期（进行中）**：[04](04-DOWNLOAD-QUEUE.md) 的「后台下载 `fail host lookup`」（未修）、[02](02-NETWORK-LIBRARY.md) 的文件动作模型与复制 / 移动（**已实现，待真机验收**）、[99 §3](99-IN-PROGRESS.md) 的音乐流式传输（已接入，未真机验收）。
 
 **路线图（规划快照，未排期，不要当成已实现能力）**：
 

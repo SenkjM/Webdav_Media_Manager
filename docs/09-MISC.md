@@ -38,12 +38,12 @@
 
 | 分支 | 用途 |
 |------|------|
-| `main` | 稳定主干；合并需用户明确允许 |
-| `beta` | 一般工作保存线；不再参与发布 |
-| `dev` | 实验线；历史遗留，重大破坏性改动用 |
+| `main` | 唯一主干；合并与推送都需用户明确允许 |
+| `feature/*` | 功能分支，**基于 `main` 开**，独立工作 |
 
-推荐流程：基于 `beta` 开独立功能分支 → 成熟后合入 `beta` → 用户明确允许时合入 `main`。并线用标准 PR。
-Pre-release 现在从 `main` 出，相当于给 `main` 的每个提交做一次内测快照；`beta` 只是保存线。
+推荐流程：基于 `main` 开独立功能分支 → 成熟后（用户明确允许时）用标准 PR 合入 `main`。
+`beta` 与 `dev` 已删除（本地与 `origin` 都不存在）：没有长期保存线，中途成果留在自己的功能分支上。
+Pre-release 从 `main` 出，相当于给 `main` 的每个提交做一次内测快照。
 
 CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.github/workflows/pre-release-build.yml`。两份都是「检查 → 编译 → 发版」串在同一次运行里，发版直接用本次运行的产物，不再靠 `workflow_run` 接续。
 
@@ -105,7 +105,7 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 - 不要分享 CUE 虚拟曲；不要恢复 ffmpeg CUE 导出分享。
 - 不要在 `MainActivity` 里 import `AudioService` 类。
 - 不要重新引入 just_audio 时代的起播静音 hack。
-- 不要改 CI 触发方式、不要擅自推 beta / main、不要提交任何密钥。
+- 不要改 CI 触发方式、不要擅自推 `main`、不要提交任何密钥。
 - 不要发明不存在的 API；以仓库源码为准。
 
 ## 4. 已知陷阱与历史回归
