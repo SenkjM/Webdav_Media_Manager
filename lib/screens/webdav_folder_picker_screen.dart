@@ -6,6 +6,7 @@ import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../utils/audio_extensions.dart';
+import '../utils/remote_path.dart';
 import '../utils/webdav_errors.dart';
 import '../widgets/webdav_error_dialog.dart';
 
@@ -38,6 +39,8 @@ class WebDavFolderPickerScreen extends StatefulWidget {
 }
 
 class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
+  /// 目录栈。栈底永远是 `/`，**每一层目录一格**——所以「上一级」和返回键
+  /// 都是一格一格退，而不是一步回根目录。
   final List<String> _stack = ['/'];
   List<WebDavItem> _items = const [];
   bool _loading = false;
@@ -48,11 +51,10 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.initialPath != '/' && widget.initialPath.isNotEmpty) {
-      _stack.add(widget.initialPath);
-    }
+    _stack.addAll(remoteAncestors(widget.initialPath));
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
+
 
   /// 当前位置是否就是被排除的那个目录（移动文件夹时不能选它）。
   bool get _isExcluded {
