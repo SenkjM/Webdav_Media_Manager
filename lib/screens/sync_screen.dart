@@ -235,6 +235,82 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   /// Audit the cloud library (orphans / missing parts) and offer to clean up.
+  /// 「从云端覆盖音乐库」：本地索引被云端那份替换。
+  Future<void> _overwriteLibraryFromCloud() async {
+    final app = context.read<AppState>();
+    final ok = await _confirmDestructive(
+      title: '从云端覆盖音乐库',
+      body: '会从云端下载音乐库数据库并覆盖本地。',
+      note: '本地索引、标签与尚未同步的改动会被云端那份替换；已下载的音频、封面与缓存不会删除。',
+      action: '覆盖',
+    );
+    if (ok != true || !mounted) return;
+    await _guard(() async {
+      final outcome = await app.overwriteLibraryFromCloud();
+      if (!mounted) return;
+      AppSnack.showGlobal(outcome.message, error: !outcome.ok);
+    });
+  }
+
+  /// 「销毁音乐库」：本地清空 + 逐首立墓碑 + 关掉定时同步。
+  Future<void> _destroyLibrary() async {
+    final app = context.read<AppState>();
+    final ok = await _confirmDestructive(
+      title: '销毁音乐库',
+      body: '将销毁全部本地音乐库，不可恢复。',
+      note: '删除记录会在下次同步时上传到云端；之后重建云端音乐库也无法恢复这次销毁的内容。此操作后会关闭自动同步。',
+      action: '销毁',
+    );
+    if (ok != true || !mounted) return;
+    await _guard(() async {
+      await app.destroyMusicLibrary();
+      if (!mounted) return;
+      AppSnack.showGlobal('音乐库已销毁，定时同步已关闭');
+    });
+  }
+
+  /// 不可逆动作的二次确认：正文说会发生什么，小一号字补后果。
+  Future<bool?> _confirmDestructive({
+    required String title,
+    required String body,
+    required String note,
+    required String action,
+  }) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.elevated,
+        title: Text(title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(body, style: const TextStyle(fontSize: 14)),
+            const SizedBox(height: 8),
+            Text(
+              note,
+              style: const TextStyle(
+                fontSize: 12,
+                color: AppColors.secondaryText,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _tidy() async {
     final sync = context.read<SyncService>();
     LibraryAudit audit;
@@ -830,6 +906,36 @@ class _SyncScreenState extends State<SyncScreen> {
             ),
           ),
 
+          const SizedBox(height: 12),
+
+          // 两个不可逆动作：红底白字、上下各一个，都要二次确认。
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _running || accounts.accounts.isEmpty
+                  ? null
+                  : _overwriteLibraryFromCloud,
+              icon: const Icon(Icons.cloud_download_outlined),
+              label: const Text('从云端覆盖音乐库'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _running ? null : _destroyLibrary,
+              icon: const Icon(Icons.delete_forever_outlined),
+              label: const Text('销毁音乐库'),
+            ),
+          ),
           const Divider(height: 32),
 
           _sectionTitle('全部备份'),

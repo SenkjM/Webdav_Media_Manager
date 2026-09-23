@@ -686,6 +686,20 @@ CREATE TABLE IF NOT EXISTS sync_state (
     await db.delete('sync_state');
   }
 
+  /// Wipe the library **index** only: tracks, CUE tables, tombstones and the sync
+  /// cursor. The cache annex stays, so audio already on disk keeps its entry and
+  /// the rows pulled back from the cloud still resolve to local files.
+  ///
+  /// Used by「从云端覆盖音乐库」: the index is replaced, the files are not.
+  Future<void> clearLibraryIndex() async {
+    final db = await database;
+    await db.delete('cue_slices');
+    await db.delete('cue_albums');
+    await db.delete('tracks');
+    await db.delete('deleted_tracks');
+    await db.delete('sync_state');
+  }
+
   // --- Tombstones (deletions) ---
 
   /// Record (or bump) a tombstone for one path.

@@ -575,6 +575,20 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hand the index over to the cloud: drop every index row (tracks, CUE,
+  /// tombstones, sync cursor) and forget the in-memory list, keeping the cache
+  /// annex and the covers.
+  ///
+  /// The next incremental sync then finds an empty local index and no cursor, so
+  /// it re-reads the cloud and adopts the whole library — and because the annex
+  /// survived, rows that have a file on disk come back as local instead of
+  /// triggering a second full download.
+  Future<void> prepareCloudOverwrite() async {
+    await _db.clearLibraryIndex();
+    _tracks.clear();
+    notifyListeners();
+  }
+
   /// Destroy tracks: drop their library rows **and** their cover thumbnails.
   ///
   /// Distinct from [removeTrack] (rows only) and from cache deletion (audio

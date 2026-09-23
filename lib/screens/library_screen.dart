@@ -16,7 +16,6 @@ import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
 import '../widgets/track_status_chip.dart';
 import 'home_shell.dart';
-
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 

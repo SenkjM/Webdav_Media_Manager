@@ -196,9 +196,28 @@ class AppState extends ChangeNotifier {
   Timer? _periodicSync;
   Timer? _libraryPushDebounce;
 
+  /// True while a library maintenance action (从云端覆盖 / 销毁) owns the library
+  /// tables. Automatic writers are shut off for its duration rather than raced
+  /// against: a background scan firing mid-wipe would push a half-empty index (or
+  /// adopt rows back into it) and leave the two sides out of step.
+  bool _libraryMaintenance = false;
+
+  /// Run [body] with the 20 s push debounce and the 定时同步 scan silenced.
+  Future<T> _quietLibraryWrites<T>(Future<T> Function() body) async {
+    final wasQuiet = _libraryMaintenance;
+    _libraryMaintenance = true;
+    _libraryPushDebounce?.cancel();
+    _libraryPushDebounce = null;
+    try {
+      return await body();
+    } finally {
+      _libraryMaintenance = wasQuiet;
+    }
+  }
+
   /// Coalesce rapid library changes (a folder download fires once per file).
   void _onLibraryChanged() {
-    if (!ready || !sync.hasUsableAccount) return;
+    if (!ready || !sync.hasUsableAccount || _libraryMaintenance) return;
     _libraryPushDebounce?.cancel();
     _libraryPushDebounce = Timer(
       const Duration(seconds: 20),
@@ -245,7 +264,7 @@ class AppState extends ChangeNotifier {
 
   /// One scheduled pass; also used by the "立即同步一次" action.
   Future<void> runScheduledSync() async {
-    if (!ready || !sync.hasUsableAccount) return;
+    if (!ready || !sync.hasUsableAccount || _libraryMaintenance) return;
     try {
       await sync.autoScan();
       await pushLibraryIncrement();
@@ -257,7 +276,7 @@ class AppState extends ChangeNotifier {
   /// Push newly added library rows without waiting for a manual action.
   /// Called after a download finishes so the cloud index follows local changes.
   Future<void> pushLibraryIncrement() async {
-    if (!ready || !sync.hasUsableAccount) return;
+    if (!ready || !sync.hasUsableAccount || _libraryMaintenance) return;
     try {
       await sync.syncLibraryIncremental();
     } catch (_) {
@@ -337,10 +356,25 @@ class AppState extends ChangeNotifier {
   }
 
   /// Wipe music library tags, cue tables, covers, cache annex, and local audio
-  /// for former library tracks. Distinct from [manualClearCache] (keeps tags).
+  /// for former library tracks, leaving a tombstone for every one of them.
+  /// Distinct from [manualClearCache] (keeps tags).
   /// Network library / accounts untouched. Playlist shells kept; orphan track
   /// refs removed.
+  ///
+  /// Ends by switching 定时同步 off (the confirmation says so). With an empty
+  /// index and no cursor the first automatic pass would re-read the cloud and
+  /// adopt the whole library back — undoing the destruction through a path the
+  /// user never asked for.
   Future<void> destroyMusicLibrary() async {
+    await _quietLibraryWrites(() async {
+      await _destroyLocalMusicLibrary();
+      await settings.setSyncInterval(SyncInterval.off);
+    });
+  }
+
+  /// The local half of [destroyMusicLibrary]: tombstones first, then caches,
+  /// covers, rows and playlist refs. Touches no sync setting.
+  Future<void> _destroyLocalMusicLibrary() async {
     final snapshot = List.of(library.tracks);
     final groupIds = <String>{};
     final audioKeys = <String>{}; // accountId\0remotePath
@@ -353,6 +387,14 @@ class AppState extends ChangeNotifier {
       }
       final gid = t.cacheGroupId;
       if (gid != null && gid.isNotEmpty) groupIds.add(gid);
+    }
+
+    // Tombstones go in before anything is deleted: clearAllLibraryData() drops
+    // the whole deleted_tracks table, so one written after the wipe would not
+    // survive. Without these rows the cloud never learns the songs are gone, and
+    // the next sync pulls every one of them straight back.
+    for (final t in snapshot) {
+      await library.recordTombstone(t.sourceName, t.remotePath);
     }
 
     // Delete CUE cache groups first (also clears member prefs).
@@ -374,6 +416,22 @@ class AppState extends ChangeNotifier {
     await playlists.removeEntriesNotIn(const <String>{});
     await downloads.invalidateMissingCompleted();
     notifyListeners();
+  }
+
+  /// 「从云端覆盖音乐库」: drop the local index and pull the cloud copy whole.
+  ///
+  /// Only the index goes (tracks / CUE / tombstones / sync cursor) — the cache
+  /// annex, covers and downloaded audio stay, so the rows coming back still
+  /// resolve to local files instead of queueing a second full download. The cost
+  /// is that local changes not yet pushed disappear with the index; the
+  /// confirmation dialog states that.
+  Future<SyncOutcome> overwriteLibraryFromCloud() {
+    return _quietLibraryWrites(() async {
+      await library.prepareCloudOverwrite();
+      final outcome = await sync.syncLibraryIncremental();
+      await library.refresh();
+      return outcome;
+    });
   }
 
   @override
