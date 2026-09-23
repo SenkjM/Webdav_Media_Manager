@@ -57,13 +57,13 @@
 ## 后续计划（路线图）
 
 > 本表仅规划，未排期实现。
-> **下次开发分块计划**（后台下载优先 + 文件动作 / 多选重构）见：[D02-NEXT-DEV-PLAN.md](docs/active/D02-NEXT-DEV-PLAN.md)。文档总索引：[INDEX.md](docs/INDEX.md)。
+> 当前计划见[后台下载与文件动作](docs/active/D02-BACKGROUND-DOWNLOAD-AND-FILE-ACTIONS.md)。其余方向的冻结快照见[产品路线图](docs/archive/A07-PRODUCT-ROADMAP.md)。文档总索引：[INDEX.md](docs/INDEX.md)。
 
 | 优先级 | 方向 | 说明 | 状态 |
 |---|---|---|---|
 | 高 | WebDAV 管理增强 | 在现有基础上扩展：上传本地文件、移动/复制、属性查看、批量操作、回收站，以及覆盖冲突策略等。网络库已有新建文件夹、重命名、删除。 | 规划中 |
 | 高 | 国产 ROM 媒体体验 | ColorOS / 一加等国产 ROM 的媒体通知与后台保活仍需真机验证与加固。 | 规划中 |
-| 中 | 视频播放体验 | 增加缓冲进度条第二层、空闲自动隐藏控件、手势引导；详见 `D03-DEVICE-QA-CHECKLIST` 未做项。 | 规划中 |
+| 中 | 视频播放体验 | 增加缓冲进度条第二层、空闲自动隐藏控件、手势引导；详见归档中的真机验证清单。 | 规划中 |
 | 中 | 同步体验 | 增加冲突可视化，并打磨云端分片的整理与审计体验。 | 规划中 |
 | 低 | 音乐输出后端 | 规划 AudioTrack / AAudio 等可选输出后端；仅规划，成本较高。 | 规划中 |
 | 中 | 启动与低端机体验 | 根据真机清单继续优化启动耗时与资源占用，减少启动阶段的可感知等待。 | 规划中 |
@@ -88,7 +88,7 @@
 
 分支、构建、同步与备份格式等说明见：
 
-**[文档总索引](docs/INDEX.md)** · **[开发文档 D01](docs/active/D01-DEVELOPMENT.md)**
+**[文档总索引](docs/INDEX.md)** · **[当前计划](docs/active/D02-BACKGROUND-DOWNLOAD-AND-FILE-ACTIONS.md)**
 
 ## 作者与协作者
 

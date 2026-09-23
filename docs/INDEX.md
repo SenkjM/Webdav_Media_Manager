@@ -1,20 +1,20 @@
 # 文档总索引（编号体系）
 
-面向人类开发者与 coding agents。**实现功能前先读本索引 + 状态为「进行中」的计划文档。**
+面向人类开发者与 coding agents。**实现功能前先读本索引，再读状态为「进行中」的计划。**
 
 ## Agents 规则（硬约束）
 
-1. **先读索引**：动手前打开本文件，确认当前「进行中」文档；再读对应计划 / 开发指南。
-2. **归档只读**：**不得修改**状态为「已完成」、模式为「归档」的文档正文。若需勘误：新建勘误条或新编号文档，并在本表「备注」说明；除非用户明确要求对归档正文勘误。
-3. **新发文档**：取下一个可用编号（活跃用 `D##`，归档用 `A##`），写入本表，状态设为「进行中」、模式「活跃」，正文放 `active/`。
-4. **完成归档**：本表将该条标为「已完成」+ 模式「归档」→ 将文件移入 `archive/`（编号改为 `A##-…` 若原为计划类）→ 更新本表路径；此后正文只读。
-5. **常驻活文档**（如 `D01` 开发指南）：可长期保持「进行中 / 活跃」，持续维护；不要把活指南误归档。
-6. **入口**：本仓库文档以本索引为唯一入口；旧路径（`docs/DEVELOPMENT.md` 等）已移除，请用下表路径。
+1. **先读索引**：动手前打开本文件，确认当前「进行中」文档。
+2. **归档只读**：**不得修改**模式为「归档」的文档正文。若需勘误：新建编号文档，并在本表「备注」说明；除非用户明确要求对归档正文勘误。
+3. **新发文档**：取下一个可用编号（活跃用 `D##`，归档用 `A##`），写入本表。计划类放 `active/`，状态「进行中」、模式「活跃」。
+4. **完成归档**：本表将该条标为「已完成」+ 模式「归档」→ 文件移入 `archive/` → 更新路径；此后正文只读。
+5. **活跃目录只放当前计划**。参考说明、清单、路线图归档后只读，不要在 `active/` 再堆平行长文。
+6. **入口**：本仓库文档以本索引为唯一入口。
 
 | 状态 | 含义 |
 |------|------|
-| `进行中` | 未完成或仍在维护 |
-| `已完成` | 目标已达成，正文进入归档 |
+| `进行中` | 未完成，且允许按本表推进 |
+| `已完成` | 已移入归档。规划类的「已完成」表示快照冻结，不表示功能已实现 |
 
 | 模式 | 含义 |
 |------|------|
@@ -27,10 +27,14 @@
 
 | 编号 | 标题 | 状态 | 模式 | 路径 | 备注 |
 |------|------|------|------|------|------|
-| D01 | 开发文档（开发者 / Agents） | 进行中 | 活跃 | [active/D01-DEVELOPMENT.md](active/D01-DEVELOPMENT.md) | 常驻开发指南；可继续维护 |
-| D02 | 下次开发分块计划 | 进行中 | 活跃 | [active/D02-NEXT-DEV-PLAN.md](active/D02-NEXT-DEV-PLAN.md) | 后台下载优先 + 文件动作 / 多选重构；唯一计划源 |
-| D03 | 真机验证清单 | 进行中 | 活跃 | [active/D03-DEVICE-QA-CHECKLIST.md](active/D03-DEVICE-QA-CHECKLIST.md) | 真机 QA；边测边勾 |
-| A01 | 变更计划：视频 / 相册 / 通知 / 同步备份 | 已完成 | 归档 | [archive/A01-CHANGE-PLAN-video-sync.md](archive/A01-CHANGE-PLAN-video-sync.md) | 原 `CHANGE-PLAN-video-sync`；只读 |
+| D02 | 后台下载与文件动作 | 进行中 | 活跃 | [active/D02-BACKGROUND-DOWNLOAD-AND-FILE-ACTIONS.md](active/D02-BACKGROUND-DOWNLOAD-AND-FILE-ACTIONS.md) | 唯一活跃计划 |
+| A01 | 视频、相册、通知与同步备份 | 已完成 | 归档 | [archive/A01-CHANGE-PLAN-video-sync.md](archive/A01-CHANGE-PLAN-video-sync.md) | 已落地的变更记录 |
+| A02 | 架构与数据模型 | 已完成 | 归档 | [archive/A02-ARCHITECTURE-AND-DATA.md](archive/A02-ARCHITECTURE-AND-DATA.md) | 原开发文档拆分 |
+| A03 | 播放与曲库行为 | 已完成 | 归档 | [archive/A03-PLAYBACK-AND-LIBRARY.md](archive/A03-PLAYBACK-AND-LIBRARY.md) | 原开发文档拆分 |
+| A04 | 同步与备份 | 已完成 | 归档 | [archive/A04-SYNC-AND-BACKUP.md](archive/A04-SYNC-AND-BACKUP.md) | 原开发文档拆分 |
+| A05 | 构建、发布与编码约定 | 已完成 | 归档 | [archive/A05-BUILD-AND-CONVENTIONS.md](archive/A05-BUILD-AND-CONVENTIONS.md) | 原开发文档拆分 |
+| A06 | 真机验证清单 | 已完成 | 归档 | [archive/A06-DEVICE-QA-CHECKLIST.md](archive/A06-DEVICE-QA-CHECKLIST.md) | 勾选状态已冻结 |
+| A07 | 产品路线图 | 已完成 | 归档 | [archive/A07-PRODUCT-ROADMAP.md](archive/A07-PRODUCT-ROADMAP.md) | 规划快照，不是已实现功能 |
 
 ---
 
@@ -39,8 +43,8 @@
 ```
 docs/
   INDEX.md                 # 本文件
-  active/                  # 未完成 / 仍可改（D##）
-  archive/                 # 已完成归档（A##，只读）
+  active/                  # 当前计划（D##）
+  archive/                 # 归档（A##，只读）
 ```
 
-下一活跃编号：`D04`。下一归档编号：`A02`。
+下一活跃编号：`D03`。下一归档编号：`A08`。
