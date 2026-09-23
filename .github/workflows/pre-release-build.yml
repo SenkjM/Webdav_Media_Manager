@@ -1,6 +1,7 @@
 name: Pre-release Build
 
 # 预发布的检查、编译与发版，同一流程内串行：check → build → release。
+# 与 Release 同源 main：预发布也算 main 的提交，基准是上一个正式版标签。
 # 发版直接用同一次运行的产物，不再由 workflow_run 接续。编译步骤保持不变。
 # 没有合法标签或不需要构建时，不上传产物。
 
@@ -34,7 +35,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-          ref: ${{ github.event_name == 'schedule' && 'beta' || github.ref }}
+          ref: ${{ github.event_name == 'schedule' && 'main' || github.ref }}
 
       - name: Check whether a pre-release can run
         id: decision
@@ -176,7 +177,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-          ref: beta
+          ref: main
 
       - name: Download pre-release bundle
         uses: actions/download-artifact@v7
@@ -211,7 +212,7 @@ jobs:
           changes="$(bash "$script" "$base_tag" "$sha")"
           notes="$(mktemp)"
           {
-            printf '自动构建的 Pre-release（来自 **beta** 分支，AGPL-3.0）。\n\n'
+            printf '自动构建的 Pre-release（来自 **main** 分支，AGPL-3.0）。\n\n'
             printf -- '- 版本：`%s`（versionCode `%s`）\n' "$version_name" "$version_code"
             printf -- '- 基准正式版：`%s`\n\n' "$base_tag"
             printf '自上一正式版以来：\n\n%s\n\n' "$changes"
