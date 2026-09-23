@@ -16,12 +16,15 @@ void main() {
       }
     });
 
-    test('storage keys round-trip, unknown falls back to 30 minutes', () {
+    // Background sync is opt-in: the shipped default is off, so a fresh install
+    // never talks to the network on its own.
+    test('storage keys round-trip, unknown/no value falls back to off', () {
       for (final v in SyncInterval.values) {
         expect(SyncIntervalX.fromStorageKey(v.storageKey), v);
       }
-      expect(SyncIntervalX.fromStorageKey('nonsense'), SyncInterval.every30m);
-      expect(SyncIntervalX.fromStorageKey(null), SyncInterval.every30m);
+      expect(SyncIntervalX.fallback, SyncInterval.off);
+      expect(SyncIntervalX.fromStorageKey('nonsense'), SyncInterval.off);
+      expect(SyncIntervalX.fromStorageKey(null), SyncInterval.off);
     });
 
     test('periods are ordered shortest to longest', () {

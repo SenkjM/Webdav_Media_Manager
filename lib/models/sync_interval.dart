@@ -1,7 +1,10 @@
 /// How often the background scan runs (credentials + playlists + library push).
 ///
 /// A single knob instead of a hidden 30-minute timer: a user who syncs rarely
-/// can turn it off, one who moves between two devices daily can shorten it.
+/// can leave it off, one who moves between two devices daily can shorten it.
+///
+/// The default is [SyncInterval.off]: nothing runs in the background until the
+/// user explicitly asks for it.
 enum SyncInterval {
   /// No background scan at all — sync only when the user asks.
   off,
@@ -42,12 +45,16 @@ extension SyncIntervalX on SyncInterval {
     SyncInterval.daily => const Duration(hours: 24),
   };
 
+  /// What a fresh install (or an unreadable value) starts from.
+  static const SyncInterval fallback = SyncInterval.off;
+
   static SyncInterval fromStorageKey(String? key) => switch (key) {
     'off' => SyncInterval.off,
     '15m' => SyncInterval.every15m,
+    '30m' => SyncInterval.every30m,
     '1h' => SyncInterval.hourly,
     '6h' => SyncInterval.every6h,
     '24h' => SyncInterval.daily,
-    _ => SyncInterval.every30m,
+    _ => fallback,
   };
 }
