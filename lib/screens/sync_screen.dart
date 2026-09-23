@@ -12,6 +12,7 @@ import '../services/library_sync_store.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
+import '../widgets/destroy_progress_dialog.dart';
 import '../widgets/marquee_text.dart';
 
 /// 同步 / 备份.
@@ -264,9 +265,16 @@ class _SyncScreenState extends State<SyncScreen> {
     );
     if (ok != true || !mounted) return;
     await _guard(() async {
-      final count = await app.destroyMusicLibrary();
+      final destroyed = await showDestroyProgress(
+        context,
+        total: app.library.tracks.length,
+        run: (onProgress, isCancelled) => app.destroyMusicLibrary(
+          onProgress: onProgress,
+          isCancelled: isCancelled,
+        ),
+      );
       if (!mounted) return;
-      AppSnack.showGlobal('已销毁 $count 首；下次同步上传删除记录，定时同步已关闭');
+      AppSnack.showGlobal('已销毁 $destroyed 首；下次同步上传删除记录，定时同步已关闭');
     });
   }
 

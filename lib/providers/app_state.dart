@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../models/cache_policy.dart';
 import '../models/download_task.dart';
 import '../models/file_type_config.dart';
+import '../models/library_track.dart';
 import '../models/sync_interval.dart';
 import '../utils/app_snack.dart';
 import '../utils/track_identity.dart';
@@ -355,60 +356,80 @@ class AppState extends ChangeNotifier {
     _syncCoverThumbSize();
   }
 
-  /// Destroy the whole library one song at a time — the same sequence the 逐条
-  /// 「销毁」button runs, applied to every row.
+  /// 销毁一首歌 —— **唯一的原子单位**。
   ///
-  /// Per song: tombstone first (so a sync racing the deletion still learns about
-  /// it), then its cached audio, its cover art and its library row, and one
-  /// `notifyListeners()` for the batch at the end. Dropping the rows is what
-  /// makes the songs leave the local library screen: a tombstone on its own
-  /// changes nothing locally ([LibraryDatabase.tombstonedKeys] has no callers).
+  /// 批量销毁只是把它一首一首跑：循环的调用方只能在两首**之间**停下，绝不会停
+  /// 在半首上。顺序是墓碑 → 本地音频 → 封面 → 库行 → 内存（最后一步连同
+  /// `notifyListeners()` 在 [LibraryService.destroyTrack] 里完成）。
   ///
-  /// Different from [overwriteLibraryFromCloud] in both directions: nothing is
-  /// pulled from the cloud, the sync cursor and the rows of other accounts stay
-  /// where they are, and what travels is the **deletion** — the next sync uploads
-  /// it as `del-*.wdmm`, and the cloud materialises it on its next rebuild.
+  /// 返回 false 表示这首歌已经不在了——同一张 CUE 的兄弟曲目被上一次调用带走，
+  /// 调用方不该把它算进「已销毁」。
+  Future<bool> destroyLibraryTrack(LibraryTrack track) async {
+    final live = library.find(track.sourceName, track.remotePath);
+    if (live == null) return false;
+    await _deleteCachedAudioFor(live);
+    await library.destroyTrack(live);
+    return true;
+  }
+
+  /// 逐首销毁 [tracks]：每跑完一首回调一次 [onProgress]，并在两首之间询问
+  /// [isCancelled]。返回真正销毁的曲目数。
+  Future<int> destroyLibraryTracks(
+    Iterable<LibraryTrack> tracks, {
+    void Function(int processed, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    final list = List.of(tracks);
+    var processed = 0;
+    var destroyed = 0;
+    for (final t in list) {
+      if (isCancelled?.call() ?? false) break;
+      if (await destroyLibraryTrack(t)) destroyed++;
+      processed++;
+      onProgress?.call(processed, list.length);
+    }
+    return destroyed;
+  }
+
+  /// 销毁整个音乐库：逐首走完，再清掉歌单里的悬空引用、失效掉已完成的下载记录，
+  /// 最后把定时同步设为关闭（确认框里写明了）。
   ///
-  /// Ends by switching 定时同步 off (the confirmation says so): pushing the
-  /// deletions is left to a moment the user picks.
-  ///
-  /// Returns how many songs were destroyed.
-  Future<int> destroyMusicLibrary() async {
+  /// 与 [overwriteLibraryFromCloud] 方向相反：这里不向云端拉任何东西，同步游标
+  /// 与其它网盘的行都不动，**走的是删除**——下次同步以 `del-*.wdmm` 上传。
+  Future<int> destroyMusicLibrary({
+    void Function(int processed, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) {
     return _quietLibraryWrites(() async {
-      final snapshot = List.of(library.tracks);
-      final groupIds = <String>{};
-      final audioKeys = <String>{}; // accountId\0remotePath
-
-      for (final t in snapshot) {
-        final audio = t.effectiveAudioRemotePath;
-        audioKeys.add('${t.sourceName}\u0000$audio');
-        if (t.cueRemotePath != null && t.cueRemotePath!.isNotEmpty) {
-          audioKeys.add('${t.sourceName}\u0000${t.cueRemotePath}');
-        }
-        final gid = t.cacheGroupId;
-        if (gid != null && gid.isNotEmpty) groupIds.add(gid);
-      }
-
-      // 1. Cached audio: whole CUE groups first (one file backs an album), then
-      //    the remaining single files.
-      for (final gid in groupIds) {
-        await cache.deleteCacheGroup(gid);
-      }
-      for (final key in audioKeys) {
-        final parts = key.split('\u0000');
-        if (parts.length < 2) continue;
-        await cache.deleteLocalFile(
-          sourceName: parts[0],
-          remotePath: parts.sublist(1).join('\u0000'),
-        );
-      }
-
-      // 2. Tombstones, covers, rows, in-memory list — per track, inside the
-      //    service, in that order.
-      await library.destroyTracks(snapshot);
+      final destroyed = await destroyLibraryTracks(
+        List.of(library.tracks),
+        onProgress: onProgress,
+        isCancelled: isCancelled,
+      );
+      // 库空了，歌单里指向它的引用成了悬空引用，下载队列也要重新对账。
+      await playlists.removeEntriesNotIn(const <String>{});
+      await downloads.invalidateMissingCompleted();
       await settings.setSyncInterval(SyncInterval.off);
-      return snapshot.length;
+      return destroyed;
     });
+  }
+
+  /// 删掉这一首的本地音频：CUE 分片共用一整组，先删组；其余删单个文件。
+  Future<void> _deleteCachedAudioFor(LibraryTrack t) async {
+    final gid =
+        t.cacheGroupId ??
+        (t.cueRemotePath != null && t.cueRemotePath!.isNotEmpty
+            ? cueCacheGroupId(t.sourceName, t.cueRemotePath!)
+            : null);
+    if (gid != null && gid.isNotEmpty) {
+      await cache.deleteCacheGroup(gid);
+    }
+    if (!t.isCueVirtual) {
+      await cache.deleteLocalFile(
+        sourceName: t.sourceName,
+        remotePath: t.effectiveAudioRemotePath,
+      );
+    }
   }
 
   /// 「从云端覆写音乐库」: drop the local index and pull the cloud copy whole.

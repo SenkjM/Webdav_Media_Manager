@@ -589,48 +589,49 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Destroy tracks: drop their library rows **and** their cover thumbnails.
+  /// Destroy **one** song: its tombstone, its cover art and its library row.
   ///
-  /// Distinct from [removeTrack] (rows only) and from cache deletion (audio
-  /// files only, metadata kept). CUE slices are grouped so the whole album's
-  /// virtual rows disappear together.
-  Future<void> destroyTracks(Iterable<LibraryTrack> tracks) async {
-    final list = tracks.toList();
-    if (list.isEmpty) return;
-    final removedIds = <String>{};
-    final cuePaths = <String>{};
-    for (final t in list) {
-      removedIds.add(t.musicId);
-      if (t.isCueVirtual && t.cueRemotePath != null) {
-        cuePaths.add('${t.sourceName}\u0000${t.cueRemotePath}');
-      }
+  /// One song is the atomic unit of destruction — callers loop over songs and
+  /// stop *between* them, never inside one. CUE slices share a backing file, so
+  /// destroying any slice takes the whole album's virtual rows with it; the
+  /// siblings are then already gone, and a later call on one of them finds nothing
+  /// to do.
+  ///
+  /// Distinct from [removeTrack] (rows only) and from cache deletion (audio files
+  /// only, metadata kept). The audio file itself is the caller's business:
+  /// `AppState.destroyLibraryTrack` owns both the annex and the disk.
+  Future<void> destroyTrack(LibraryTrack track) async {
+    // Tombstone first, so a sync that runs while we delete still learns about the
+    // removal (and cannot pull the song back).
+    await recordTombstone(track.sourceName, track.remotePath);
+    await _covers.deleteThumb(track.sourceName, track.remotePath);
+    await _covers.deleteFull(track.sourceName, track.remotePath);
+    if (track.isCueVirtual && track.cueRemotePath != null) {
+      await _db.deleteTracksForCue(track.sourceName, track.cueRemotePath!);
+      _tracks.removeWhere(
+        (t) =>
+            t.sourceName == track.sourceName &&
+            t.isCueVirtual &&
+            t.cueRemotePath == track.cueRemotePath,
+      );
+    } else {
+      await _db.deleteTrack(track.sourceName, track.remotePath);
+      _tracks.removeWhere(
+        (t) =>
+            t.sourceName == track.sourceName &&
+            t.remotePath == track.remotePath,
+      );
     }
-    // Tombstones first, so a sync that runs while we delete still learns about
-    // the removal (and cannot pull the song back).
-    for (final t in list) {
-      await recordTombstone(t.sourceName, t.remotePath);
-    }
-    // Cover thumbs + full-res covers live per identity; collect them before
-    // deleting rows.
-    for (final t in list) {
-      await _covers.deleteThumb(t.sourceName, t.remotePath);
-      await _covers.deleteFull(t.sourceName, t.remotePath);
-    }
-    for (final t in list) {
-      if (t.isCueVirtual && t.cueRemotePath != null) {
-        await _db.deleteTracksForCue(t.sourceName, t.cueRemotePath!);
-      } else {
-        await _db.deleteTrack(t.sourceName, t.remotePath);
-      }
-    }
-    _tracks.removeWhere(
-      (t) =>
-          removedIds.contains(t.musicId) ||
-          (t.isCueVirtual &&
-              t.cueRemotePath != null &&
-              cuePaths.contains('${t.sourceName}\u0000${t.cueRemotePath}')),
-    );
     notifyListeners();
+  }
+
+  /// Loop over [tracks], one atomic [destroyTrack] at a time. Kept for callers
+  /// with no progress UI; the screens go through `AppState` so they can report
+  /// progress and stop between songs.
+  Future<void> destroyTracks(Iterable<LibraryTrack> tracks) async {
+    for (final t in tracks) {
+      await destroyTrack(t);
+    }
   }
 
   Future<void> removeTrack(String sourceName, String remotePath) async {

@@ -12,14 +12,15 @@ import 'package:share_plus/share_plus.dart';
 
 import '../models/library_track.dart';
 import '../models/playlist.dart';
+import '../providers/app_state.dart';
 import '../screens/playlists_screen.dart';
 import '../theme/app_theme.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/track_identity.dart';
+import '../widgets/destroy_progress_dialog.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
 import 'download_queue_service.dart';
-import 'library_service.dart';
 import 'platform_export_service.dart';
 import 'settings_service.dart';
 import 'share_rename_service.dart';
@@ -236,7 +237,6 @@ Future<void> destroyLibraryTracks(
 ) async {
   if (tracks.isEmpty) return;
   final cache = context.read<CacheService>();
-  final library = context.read<LibraryService>();
 
   // CUE-sliced rows share one backing audio file; collapse the groups so the
   // confirmation lists files rather than virtual tracks.
@@ -299,26 +299,20 @@ Future<void> destroyLibraryTracks(
   );
   if (ok != true || !context.mounted) return;
 
-  // 1. Audio cache (whole CUE groups first, then single files).
-  for (final gid in groupIds) {
-    await cache.deleteCacheGroup(gid);
-  }
-  final seen = <String>{};
-  for (final t in tracks) {
-    if (t.isCueVirtual) continue;
-    final key = '${t.sourceName}\u0000${t.effectiveAudioRemotePath}';
-    if (!seen.add(key)) continue;
-    await cache.deleteLocalFile(
-      sourceName: t.sourceName,
-      remotePath: t.effectiveAudioRemotePath,
-    );
-  }
-
-  // 2. Library rows + metadata + cover thumbs.
-  await library.destroyTracks(tracks);
+  // 一首一首销毁：进度框走完（或用户终止）之后才回到这里。
+  final app = context.read<AppState>();
+  final destroyed = await showDestroyProgress(
+    context,
+    total: tracks.length,
+    run: (onProgress, isCancelled) => app.destroyLibraryTracks(
+      tracks,
+      onProgress: onProgress,
+      isCancelled: isCancelled,
+    ),
+  );
 
   if (!context.mounted) return;
-  AppSnack.show(context, '已销毁 ${tracks.length} 首曲目');
+  AppSnack.show(context, '已销毁 $destroyed 首曲目');
 }
 
 /// Share already-cached **non-CUE** audio files via the system share sheet.
