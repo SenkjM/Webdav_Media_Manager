@@ -25,9 +25,6 @@ class SettingsService extends ChangeNotifier {
   static const _kRetention = 'cache_retention';
   static const _kCustomRetentionHours = 'cache_custom_retention_hours';
   static const _kLibrarySort = 'library_sort_mode';
-  static const _kBackupRemotePath = 'backup_remote_path';
-  static const _kLibrarySyncRemotePath = 'library_sync_remote_path';
-  static const _kPlaylistRemotePath = 'playlist_remote_path';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
   static const _kCoverThumbSize = 'cover_thumb_size';
   static const _kFileTypeConfig = 'file_type_config_json';
@@ -60,10 +57,18 @@ class SettingsService extends ChangeNotifier {
   static const _kLastRev = 'sync_last_rev';
   static const _kSnackDuration = 'snack_duration';
   static const _kDownloadNotifications = 'download_notifications';
-  static const _kCredentialsAccountId = 'sync_credentials_account_id';
-  static const _kPlaylistsAccountId = 'sync_playlists_account_id';
-  static const _kLibraryAccountId = 'sync_library_account_id';
-  static const _kBackupAccountId = 'sync_backup_account_id';
+
+  /// **One** destination 网盘 for 凭证 / 歌单 / 音乐库 / 备份.
+  static const _kSyncAccountId = 'sync_account_id';
+
+  /// Keys older installs used to store one destination per feature. Read once,
+  /// for migration only — nothing writes them any more.
+  static const _kLegacySyncAccountKeys = [
+    'sync_credentials_account_id',
+    'sync_playlists_account_id',
+    'sync_library_account_id',
+    'sync_backup_account_id',
+  ];
 
   /// Default custom retention: 30 days.
   static const int defaultCustomRetentionHours = 24 * 30;
@@ -72,10 +77,12 @@ class SettingsService extends ChangeNotifier {
   static const int minCustomRetentionHours = 1;
   static const int maxCustomRetentionHours = 24 * 365 * 10;
 
-  static const String defaultBackupRemotePath = '/WebdavMediaManager/backup/';
-  static const String defaultLibrarySyncRemotePath =
-      '/WebdavMediaManager/library/';
-  static const String defaultPlaylistRemotePath = '/Playlists/';
+  /// Sub-directories (and the one file) the unified sync writes under
+  /// [syncRemoteRoot]. They are derived, never configured separately.
+  static const String credentialsFileName = 'credentials.json';
+  static const String playlistsSubdir = 'playlists';
+  static const String librarySubdir = 'library';
+  static const String backupSubdir = 'backup';
 
   /// Video streaming buffer clamp [8 MB, 512 MB]; default 64 MB.
   static const int minVideoBufferMb = 8;
@@ -124,7 +131,8 @@ class SettingsService extends ChangeNotifier {
   static const bool defaultShareTagRename = true;
   static const String defaultShareTagRenamePattern = '{artist}-{title}';
 
-  /// Unified sync root on the WebDAV server (holds credentials + backup).
+  /// Unified remote root on the WebDAV server: 凭证 / 歌单 / 音乐库 / 备份 all
+  /// hang below this one directory.
   static const String defaultSyncRemoteRoot = '/WebdavMediaManager/';
 
   SharedPreferences? _prefs;
@@ -132,9 +140,6 @@ class SettingsService extends ChangeNotifier {
   CacheRetention _retention = CacheRetention.oneWeek;
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
-  String _backupRemotePath = defaultBackupRemotePath;
-  String _librarySyncRemotePath = defaultLibrarySyncRemotePath;
-  String _playlistRemotePath = defaultPlaylistRemotePath;
   bool _playlistSyncEnabled = true;
   int _coverThumbSize = coverThumbSize;
   FileTypeConfig _fileTypes = FileTypeConfig();
@@ -164,8 +169,9 @@ class SettingsService extends ChangeNotifier {
   /// Cloud-library fragment count at which the sync screen suggests a rebuild.
   int _libraryRebuildHintFragments = defaultLibraryRebuildHintFragments;
 
-  /// How often the background scan runs; [SyncInterval.off] disables it.
-  SyncInterval _syncInterval = SyncInterval.every30m;
+  /// How often the background scan runs; [SyncInterval.off] (the default)
+  /// disables it entirely.
+  SyncInterval _syncInterval = SyncIntervalX.fallback;
 
   /// User-chosen credential-vault key (see [vaultPassphrase]).
   String _vaultPassphrase = '';
@@ -182,13 +188,9 @@ class SettingsService extends ChangeNotifier {
   /// Whether the download queue posts system notifications.
   bool _downloadNotifications = true;
 
-  // Per-feature sync destinations. Each feature writes to its **own** account, so
-  // credentials / playlists / library can each live on a different server instead
-  // of everything going to whichever account happens to be selected.
-  String? _credentialsAccountId;
-  String? _playlistsAccountId;
-  String? _libraryAccountId;
-  String? _backupAccountId;
+  /// The single 网盘 every sync feature (凭证 / 歌单 / 音乐库 / 备份) writes to;
+  /// null means「跟随当前选中的网盘」.
+  String? _syncAccountId;
   bool _loaded = false;
 
   CacheRetention get retention => _retention;
@@ -196,9 +198,30 @@ class SettingsService extends ChangeNotifier {
       Duration(hours: _customRetentionHours);
   int get customRetentionHours => _customRetentionHours;
   LibrarySortMode get librarySort => _librarySort;
-  String get backupRemotePath => _backupRemotePath;
-  String get librarySyncRemotePath => _librarySyncRemotePath;
-  String get playlistRemotePath => _playlistRemotePath;
+
+  /// WebDAV root shared by 凭证 / 歌单 / 音乐库 / 备份 (设置 → 同步与备份 →
+  /// 远端路径). Every other cloud path is derived from it.
+  String get syncRemoteRoot => _syncRemoteRoot;
+
+  /// `<远端路径>credentials.json` — the WebDAV credential vault.
+  String get credentialsRemotePath =>
+      '$_syncRemoteRootBase$credentialsFileName';
+
+  /// `<远端路径>playlists/` — the M3U8 playlist mirror.
+  String get playlistRemotePath => _syncSubdir(playlistsSubdir);
+
+  /// `<远端路径>library/` — index.json plus the binary shards.
+  String get libraryRemotePath => _syncSubdir(librarySubdir);
+
+  /// `<远端路径>backup/` — 全部备份 archives.
+  String get backupRemotePath => _syncSubdir(backupSubdir);
+
+  /// Root guaranteed to end with `/`, so plain concatenation stays correct.
+  String get _syncRemoteRootBase =>
+      _syncRemoteRoot.endsWith('/') ? _syncRemoteRoot : '$_syncRemoteRoot/';
+
+  String _syncSubdir(String name) => '$_syncRemoteRootBase$name/';
+
   bool get playlistSyncEnabled => _playlistSyncEnabled;
 
   /// Square edge (px) for newly compressed cover thumbs.
@@ -242,9 +265,6 @@ class SettingsService extends ChangeNotifier {
   /// Rename pattern, e.g. `{artist}-{title}`; supports `{album}`, `{track}`.
   String get shareTagRenamePattern => _shareTagRenamePattern;
 
-  /// WebDAV root used by the unified 同步 feature.
-  String get syncRemoteRoot => _syncRemoteRoot;
-
   /// Whether synced/exported WebDAV passwords are encrypted with a passphrase.
   bool get syncEncryptPassword => _syncEncryptPassword;
 
@@ -286,11 +306,8 @@ class SettingsService extends ChangeNotifier {
   /// Whether the download queue posts system notifications.
   bool get downloadNotificationsEnabled => _downloadNotifications;
 
-  /// Destination accounts per sync feature (null → fall back to the active one).
-  String? get credentialsAccountId => _credentialsAccountId;
-  String? get playlistsAccountId => _playlistsAccountId;
-  String? get libraryAccountId => _libraryAccountId;
-  String? get backupAccountId => _backupAccountId;
+  /// 网盘 every sync feature writes to (null → the active account).
+  String? get syncAccountId => _syncAccountId;
 
   bool get loaded => _loaded;
 
@@ -304,13 +321,6 @@ class SettingsService extends ChangeNotifier {
     _librarySort = LibrarySortModeX.fromStorageKey(
       _prefs!.getString(_kLibrarySort),
     );
-    _backupRemotePath =
-        _prefs!.getString(_kBackupRemotePath) ?? defaultBackupRemotePath;
-    _librarySyncRemotePath =
-        _prefs!.getString(_kLibrarySyncRemotePath) ??
-        defaultLibrarySyncRemotePath;
-    _playlistRemotePath =
-        _prefs!.getString(_kPlaylistRemotePath) ?? defaultPlaylistRemotePath;
     _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
     _coverThumbSize = clampCoverThumbSize(
       _prefs!.getInt(_kCoverThumbSize) ?? coverThumbSize,
@@ -392,12 +402,24 @@ class SettingsService extends ChangeNotifier {
     }
     _lastRev = _prefs!.getInt(_kLastRev) ?? 0;
     _downloadNotifications = _prefs!.getBool(_kDownloadNotifications) ?? true;
-    _credentialsAccountId = _prefs!.getString(_kCredentialsAccountId);
-    _playlistsAccountId = _prefs!.getString(_kPlaylistsAccountId);
-    _libraryAccountId = _prefs!.getString(_kLibraryAccountId);
-    _backupAccountId = _prefs!.getString(_kBackupAccountId);
+    _syncAccountId = _readSyncAccountId();
     _loaded = true;
     notifyListeners();
+  }
+
+  /// The single sync destination 网盘.
+  ///
+  /// Older installs stored one destination per feature; the first non-empty one
+  /// is carried over so an existing choice is not silently dropped. Nothing
+  /// writes the legacy keys any more.
+  String? _readSyncAccountId() {
+    final stored = _prefs!.getString(_kSyncAccountId);
+    if (stored != null && stored.isNotEmpty) return stored;
+    for (final key in _kLegacySyncAccountKeys) {
+      final legacy = _prefs!.getString(key);
+      if (legacy != null && legacy.isNotEmpty) return legacy;
+    }
+    return null;
   }
 
   FileTypeConfig _readFileTypes() {
@@ -433,39 +455,6 @@ class SettingsService extends ChangeNotifier {
     _librarySort = mode;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_kLibrarySort, mode.storageKey);
-    notifyListeners();
-  }
-
-  Future<void> setBackupRemotePath(String path) async {
-    var p = path.trim();
-    if (p.isEmpty) p = defaultBackupRemotePath;
-    if (!p.startsWith('/')) p = '/$p';
-    if (!p.endsWith('/')) p = '$p/';
-    _backupRemotePath = p;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kBackupRemotePath, _backupRemotePath);
-    notifyListeners();
-  }
-
-  Future<void> setLibrarySyncRemotePath(String path) async {
-    var p = path.trim();
-    if (p.isEmpty) p = defaultLibrarySyncRemotePath;
-    if (!p.startsWith('/')) p = '/$p';
-    if (!p.endsWith('/')) p = '$p/';
-    _librarySyncRemotePath = p;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kLibrarySyncRemotePath, _librarySyncRemotePath);
-    notifyListeners();
-  }
-
-  Future<void> setPlaylistRemotePath(String path) async {
-    var p = path.trim();
-    if (p.isEmpty) p = defaultPlaylistRemotePath;
-    if (!p.startsWith('/')) p = '/$p';
-    if (!p.endsWith('/')) p = '$p/';
-    _playlistRemotePath = p;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kPlaylistRemotePath, _playlistRemotePath);
     notifyListeners();
   }
 
@@ -665,24 +654,11 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Set the destination account for one sync feature.
-  /// [feature] is `credentials` / `playlists` / `library` / `backup`.
-  Future<void> setSyncAccount(String feature, String? accountId) async {
+  /// Point every sync feature at one 网盘; empty/null means「跟随当前选中」.
+  Future<void> setSyncAccountId(String? accountId) async {
+    _syncAccountId = (accountId == null || accountId.isEmpty) ? null : accountId;
     _prefs ??= await SharedPreferences.getInstance();
-    switch (feature) {
-      case 'credentials':
-        _credentialsAccountId = accountId;
-        await _prefs!.setString(_kCredentialsAccountId, accountId ?? '');
-      case 'playlists':
-        _playlistsAccountId = accountId;
-        await _prefs!.setString(_kPlaylistsAccountId, accountId ?? '');
-      case 'library':
-        _libraryAccountId = accountId;
-        await _prefs!.setString(_kLibraryAccountId, accountId ?? '');
-      case 'backup':
-        _backupAccountId = accountId;
-        await _prefs!.setString(_kBackupAccountId, accountId ?? '');
-    }
+    await _prefs!.setString(_kSyncAccountId, _syncAccountId ?? '');
     notifyListeners();
   }
 
@@ -703,6 +679,7 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 远端总路径：凭证、歌单、音乐库与备份共同的云端根。
   Future<void> setSyncRemoteRoot(String path) async {
     var value = path.trim();
     if (value.isEmpty) value = defaultSyncRemoteRoot;
@@ -780,8 +757,6 @@ class SettingsService extends ChangeNotifier {
     'cache_retention': _retention.storageKey,
     'cache_custom_retention_hours': _customRetentionHours,
     'library_sort_mode': _librarySort.storageKey,
-    'backup_remote_path': _backupRemotePath,
-    'playlist_remote_path': _playlistRemotePath,
     'playlist_sync_enabled': _playlistSyncEnabled,
     'cover_thumb_size': _coverThumbSize,
     'file_type_config': _fileTypes.toJson(),
@@ -832,12 +807,6 @@ class SettingsService extends ChangeNotifier {
       await setLibrarySort(
         LibrarySortModeX.fromStorageKey(json['library_sort_mode'] as String?),
       );
-    }
-    if (json['backup_remote_path'] is String) {
-      await setBackupRemotePath(json['backup_remote_path'] as String);
-    }
-    if (json['playlist_remote_path'] is String) {
-      await setPlaylistRemotePath(json['playlist_remote_path'] as String);
     }
     if (json['playlist_sync_enabled'] is bool) {
       await setPlaylistSyncEnabled(json['playlist_sync_enabled'] as bool);

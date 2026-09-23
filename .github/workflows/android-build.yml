@@ -1,7 +1,7 @@
 name: Android Build
 
-# 正式版的检查与编译。发版在 android-release.yml，由本流程成功后接上。
-# 编译步骤保持不变。
+# 正式版的检查、编译与发版，同一流程内串行：check → build → release。
+# 发版直接用同一次运行的产物，不再由 workflow_run 接续。编译步骤保持不变。
 
 on:
   push:
@@ -171,3 +171,59 @@ jobs:
           name: release-bundle
           path: dist
           if-no-files-found: error
+  release:
+    needs: [check, build]
+    if: needs.check.outputs.proceed == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: main
+
+      - name: Download release bundle
+        uses: actions/download-artifact@v7
+        with:
+          name: release-bundle
+          path: dist
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::缺少 secret RELEASE_TOKEN。目标提交相对默认分支改过 .github/workflows 时，GITHUB_TOKEN 不能创建 Release，需要带 Workflows 写权限的 token。"
+            exit 1
+          fi
+          meta() { sed -n "s/^${1}=//p" dist/meta.env | head -n 1; }
+          tag="$(meta tag)"
+          version_name="$(meta version_name)"
+          version_code="$(meta version_code)"
+          prev_tag="$(meta prev_tag)"
+          sha="$(meta sha)"
+          if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release ${tag} already exists; skip."
+            exit 0
+          fi
+          changes="$(bash .github/scripts/commit-list.sh "$prev_tag" "$sha")"
+          notes="$(mktemp)"
+          {
+            printf 'Webdav Media Manager\n\n'
+            printf -- '- 版本：`%s`（versionCode `%s`）\n' "$version_name" "$version_code"
+            printf -- '- 上一个正式版：`%s`\n\n' "${prev_tag:-无}"
+            if [ -n "$prev_tag" ]; then
+                printf '相对于上一版本 `%s`：\n\n%s\n' "$prev_tag" "$changes"
+            else
+                printf '本次变更：\n\n%s\n' "$changes"
+            fi
+          } > "$notes"
+          gh release create "$tag" dist/*.apk dist/*.aab \
+            --repo "$REPO" \
+            --target "$sha" \
+            --title "${version_name}" \
+            --notes-file "$notes" \
+            --latest

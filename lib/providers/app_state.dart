@@ -118,7 +118,7 @@ class AppState extends ChangeNotifier {
       // the other **after** the account list is loaded, or every transfer would
       // be judged "来源网盘未绑定".
       downloads.configureAccountResolver(accounts.idForSource);
-      _configurePlaylistSync();
+      applySyncConfiguration();
       await playlists.init();
       downloads.attachLibrary(library);
       // Incremental library sync: whenever a download (or a restore) changes
@@ -171,18 +171,24 @@ class AppState extends ChangeNotifier {
     webDav.setActiveAccount(accounts.activeAccountId ?? '');
   }
 
-  void _configurePlaylistSync() {
+  /// (Re)point playlist sync at the unified 远端路径 + 网盘.
+  ///
+  /// Called on boot, on account switch, and whenever the 远端路径 栏 in
+  /// 设置 → 同步与备份 changes ([_onSettingsChanged] notices that for us).
+  void applySyncConfiguration() {
+    _appliedSyncRoot = settings.syncRemoteRoot;
+    _appliedSyncAccountId = settings.syncAccountId;
     playlists.configureSync(
       remotePath: settings.playlistRemotePath,
       enabled: settings.playlistSyncEnabled,
-      accountId: settings.playlistsAccountId ?? accounts.activeAccountId,
+      accountId: settings.syncAccountId ?? accounts.activeAccountId,
     );
   }
 
   Future<void> switchAccount(String accountId) async {
     await accounts.setActiveAccount(accountId);
     webDav.setActiveAccount(accountId);
-    _configurePlaylistSync();
+    applySyncConfiguration();
     unawaited(sync.autoScan());
     notifyListeners();
   }
@@ -200,11 +206,21 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  SyncInterval _appliedSyncInterval = SyncInterval.every30m;
+  SyncInterval _appliedSyncInterval = SyncIntervalX.fallback;
 
-  /// Re-arm the background timer when the interval setting changes.
+  /// Last 远端路径 / 网盘 [applySyncConfiguration] saw, so an edit in
+  /// 设置 → 同步与备份 reaches the playlist service immediately.
+  String _appliedSyncRoot = '';
+  String? _appliedSyncAccountId;
+
+  /// Re-arm the background timer when the interval setting changes, and re-point
+  /// playlist sync when the shared 远端路径 changes.
   void _onSettingsChanged() {
     if (!ready) return;
+    if (settings.syncRemoteRoot != _appliedSyncRoot ||
+        settings.syncAccountId != _appliedSyncAccountId) {
+      applySyncConfiguration();
+    }
     if (settings.syncInterval == _appliedSyncInterval) return;
     _appliedSyncInterval = settings.syncInterval;
     _schedulePeriodicSync();
