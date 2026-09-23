@@ -6,12 +6,17 @@ import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import 'webdav_service.dart';
 
-/// Progressive video queue for the player.
+/// Progressive media queue for the player.
 ///
-/// The queue is seeded with whatever the caller already knows (the video files
+/// The queue is seeded with whatever the caller already knows (the media files
 /// in the folder the user tapped) so playback can start **immediately**, then a
-/// background scan walks the folder subtree and merges newly discovered videos
-/// in as they arrive — it never blocks the first frame on a full listing.
+/// background scan walks the folder subtree and merges newly discovered files
+/// of the same [category] in as they arrive — it never blocks the first frame
+/// on a full listing.
+///
+/// The video player is the original user of this class; the experimental
+/// music streaming screen reuses it with `category: FileCategory.music`, which
+/// is why the filter is a parameter instead of a hard-coded `isVideo`.
 ///
 /// Ordering is by name (case-insensitive), so the merged queue is identical to
 /// what a full scan would have produced; a partially scanned queue is simply a
@@ -24,6 +29,7 @@ class VideoQueueController extends ChangeNotifier {
     required List<WebDavItem> seed,
     required String initialRemotePath,
     FileTypeConfig? fileTypes,
+    this.category = FileCategory.video,
     this.autoAdvance = true,
   })  : _webDav = webDav,
         _fileTypes = fileTypes ?? FileTypeConfig() {
@@ -36,7 +42,10 @@ class VideoQueueController extends ChangeNotifier {
   final String rootPath;
   final FileTypeConfig _fileTypes;
 
-  /// Whether finishing a video moves on to the next one in the folder.
+  /// Which file category this queue collects (videos by default).
+  final FileCategory category;
+
+  /// Whether finishing a file moves on to the next one in the folder.
   final bool autoAdvance;
 
   final List<WebDavItem> _tracks = [];
@@ -53,7 +62,7 @@ class VideoQueueController extends ChangeNotifier {
   bool get scanComplete => _scanComplete;
   String? get scanError => _scanError;
 
-  /// How many extra videos the background scan has added so far.
+  /// How many extra files the background scan has added so far.
   int get discovered => _discovered;
 
   String get currentRemotePath => _currentRemotePath ?? '';
@@ -122,10 +131,10 @@ class VideoQueueController extends ChangeNotifier {
         final dir = pending.removeAt(0);
         try {
           final items = await _webDav.listDirectory(accountId, dir, fileTypes: _fileTypes);
-          final videos = items.where((e) => e.isVideo).toList();
+          final media = items.where((e) => e.category == category).toList();
           final dirs = items.where((e) => e.isDirectory).map((e) => e.path);
           pending.addAll(dirs);
-          if (videos.isNotEmpty) _merge(videos);
+          if (media.isNotEmpty) _merge(media);
         } catch (e) {
           failed++;
           if (failed == 1) _scanError = e.toString();
@@ -156,7 +165,7 @@ class VideoQueueController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Keep the tapped video selected even if the seed did not contain it (e.g.
+  /// Keep the tapped file selected even if the seed did not contain it (e.g.
   /// it was opened from a folder listing that has since changed).
   String _resolveCurrent(String remotePath) {
     if (_knownPaths.contains(remotePath)) return remotePath;

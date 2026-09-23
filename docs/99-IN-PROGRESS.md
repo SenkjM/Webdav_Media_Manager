@@ -110,15 +110,17 @@
 
 ## 3. 音乐流式传输（**代码已接入，未真机验收**）
 
-**状态**：分支 `feature/music-streaming`。实验开关打开后，网络库对音乐条目（整行点按 / 更多菜单 / 多选单曲）会直接流式播放，`flutter analyze` 干净。**没有跑过真机，没有任何自动化测试覆盖播放栈**。按用户要求目标只是「能播就行」，封面等需要大改的内容先不做。
+**状态**：实验开关打开后，网络库对音乐条目（整行点按 / 更多菜单 / 多选单曲）直接流式播放并进入**音乐流式播放页**。`flutter analyze` 干净，新增 `test/stream_kind_test.dart`（后缀 → 用途标记的契约）。**没有跑过真机**；播放栈本身没有自动化覆盖，因为那需要真实网络与解码器。
 
 **已实现**：
 
-- `WebDavStreamSource.kind`（`StreamKind.video` / `.music`）：远端流管线只有一条，用途标记只影响媒体会话文案与队列语义。
-- `WebDavStreamSource` 构造默认按后缀推断用途，`WebDavService.buildStreamSource` 可以显式覆盖。
+- `WebDavStreamSource.kind`（`StreamKind.video` / `.music`）：远端流管线只有一条，用途标记只影响媒体会话文案、通知与界面路由。
+- 用途默认按**网络库那套后缀配置**判定（含用户在设置里加的后缀），`WebDavService.buildStreamSource` 可以显式覆盖。
 - `enterVideoMode` 在音乐用途下把通知写成「流式播放 / WebDAV 流媒体」，不再写成「视频」。
-- `AudioPlayerService.playRemoteMusic({source, artist})`：建媒体会话 → 打开远端源 → 播放；`stopRemoteMusic()` 退出。
-- 网络库 `_streamMusic` 走上面这条路径，失败时把 `AudioPlayerService.error` 显示出来（远端 401 / 断网不再静默）。
+- 网络库 `_streamMusic` → `_openMusicStream()`：先 `VideoPlaybackService.prepare()` 建好远端源，再 push `MusicStreamScreen`，起播不用等界面第一帧；失败会提示原因（远端 401 / 断网不再静默）。
+- `MusicStreamScreen`（`lib/screens/music_stream_screen.dart`）：**不建 `VideoController`**。只订阅 `Player` 的位置 / 时长 / 缓冲 / 播放 / 错误流，中央放封面占位与大按钮，进度条可拖动，没有手势层、控件不自动隐藏、不旋转、不画中画。
+- 路由判断放在 `_openVideo` 入口：`source.kind == StreamKind.music` 就转音乐页。所以「把音频后缀改成 `.mp4`」这类条目也会进音乐页，不会为一条没有画面的流起视频解码。
+- `VideoQueueController` 的收集类别改成参数（默认仍是视频），音乐页用它做同目录上一首 / 下一首；`autoAdvance` 关闭（整专辑连播太吃流量）。
 
 ### 3.1 现状里有什么
 
@@ -159,15 +161,17 @@
 
 ### 3.6 建议的落地顺序（独立分支）
 
-1. `MusicAudioHandler`：远端流模式加用途标记，`exitVideoMode` 只对视频恢复队列。
-2. `AudioPlayerService` 增加 `playRemoteTrack(...)`：建 `WebDavStreamSource` → 进远端流模式 → 通知用音乐文案（不带封面）。
-3. ~~网络库 `_streamMusic()` 调用它~~（已完成）。
+1. ~~`WebDavStreamSource.kind` + 通知文案~~（已完成）。
+2. ~~播放与界面：`VideoPlaybackService.prepare()` + `MusicStreamScreen`~~（已完成）。
+3. ~~网络库 `_streamMusic()` 接入~~（已完成）。
 4. **真机验收（未做）**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
 
 **已知的粗糙处（第一版接受）**：
 
-- `exitVideoMode()` 的语义仍是「恢复本地音乐队列」。流式音乐停下时会把之前暂停的本地歌重新广播到通知栏，看起来像「跳回了另一首歌」。要更干净，得让远端流用途参与 `exitVideoMode` 的分支判断。
-- 多选工具栏的「播放」按钮仍然只对单个视频可用；音频走整行点按 / 更多菜单。
+- 离开音乐流式页会 `VideoPlaybackService.stop()`，而它内部是 `exitVideoMode()`——语义是「恢复本地音乐队列」。所以停下流式歌时通知栏会跳回之前暂停的本地歌。要更干净，得让远端流用途参与 `exitVideoMode` 的分支判断。
+- 没有屏幕常亮：项目里没有 wakelock 依赖，视频页的常亮来自 `media_kit_video` 的 `Video` 组件，音乐页刻意不建它。
+- 封面与时长不取，界面只有占位图标与「流式传输 · 未缓存」一行字。
+- 没有「停止流式播放」的显式按钮；退出页面才会结束。
 
 **影响面**：[02-NETWORK-LIBRARY.md](02-NETWORK-LIBRARY.md)（§2、§8）、[05-AUDIO-PLAYBACK.md](05-AUDIO-PLAYBACK.md)（「仅本地播放」的约定要改）、[06-VIDEO-PLAYBACK.md](06-VIDEO-PLAYBACK.md)（共享的远端流模式）、[07-NOTIFICATIONS.md](07-NOTIFICATIONS.md)（媒体通知文案）、[09-MISC.md](09-MISC.md)（陷阱表里的「不要给音频做流式播放」要改写成「实验开关控制的流式播放」）。
 

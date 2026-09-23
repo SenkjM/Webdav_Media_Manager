@@ -7,7 +7,8 @@
 
 - `AudioPlayerService.playTrack` 解析本地路径失败就报「本地无缓存，请先下载」，**不会**在播放路径上入队下载。
 - 判定一律用 `File.exists` / `existsSync`（见 [01 §3](01-DATA-MODEL.md)），不要信任「曾经 completed」的队列状态。
-- 音频没有流式播放。想让音频串流是一个**未立项**的方向（[02 §5](02-NETWORK-LIBRARY.md) 的 T6）。
+- 音频有一条**实验性**的流式播放路径（[99 §3](99-IN-PROGRESS.md)），只在设置里打开「允许音乐流式传输（实验性）」后可用，且只在网络库的远端条目上生效；本地播放的判定与上面两条规矩不变。
+- 流式播放**不下载、不入队、不缓存**：它和本地播放是两条入口，不要为了「顺手」把流式变成隐式下载。
 
 ## 2. 播放栈
 
@@ -59,6 +60,21 @@
 - 单击这条线（以及迷你条其它位置）仍然是打开完整播放器，不会误 seek；时长为未知时拖拽无效。
 - 实现：`lib/widgets/mini_player.dart` 的 `_MiniProgressBar`（只有触摸条被加高，视觉仍是 2.5 px 细线）。
 
-## 9. 相关代码
+## 9. 音乐流式播放页（实验性）
 
-`music_audio_handler.dart`、`audio_player_service.dart`、`player_screen.dart`、`widgets/mini_player.dart`、`models/library_track.dart`、`packages/audio_service/`。
+`lib/screens/music_stream_screen.dart`。它和视频播放页共用同一条远端流管线与同一个媒体会话，但界面完全不同——因为「正在听的歌」和「正在看的片」要求不一样：
+
+| 项 | 视频播放页 | 音乐流式播放页 |
+|----|------------|----------------|
+| 图像 | `VideoController` + libmpv 输出 | **不建**，只有封面占位 |
+| 控件 | 贴底、点按切换显隐、自动隐藏 | 居中常驻，**不自动隐藏** |
+| 手势 | 左右亮度 / 音量、双击、长按加速 | **全部没有**，只有按钮与可拖动进度条 |
+| 旋转 | 横屏 | 不锁定也不强制，随系统 |
+| 画中画 | 有 | **没有** |
+| 队列 | 同目录视频队列 | 同目录音频队列（`autoAdvance` 关闭） |
+
+- 判定走 [02 §2](02-NETWORK-LIBRARY.md) 的动作模型：网络库在打开前就按后缀决定进哪一页，把音频改成视频后缀也照样进这一页。
+- 退出页面会 `VideoPlaybackService.stop()`，也就是 `exitVideoMode()`：媒体会话还给本地播放（通知栏会回到之前暂停的本地歌，见 [99 §3](99-IN-PROGRESS.md) 的已知粗糙处）。
+## 10. 相关代码
+
+`music_audio_handler.dart`、`audio_player_service.dart`、`player_screen.dart`、`music_stream_screen.dart`、`video_playback_service.dart`、`widgets/mini_player.dart`、`models/library_track.dart`、`models/webdav_stream.dart`、`packages/audio_service/`。
