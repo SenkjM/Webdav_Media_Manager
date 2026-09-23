@@ -216,13 +216,13 @@ mode_release() {
 }
 
 mode_prerelease() {
-  if [ "$EVENT_NAME" != "schedule" ] && [ "${REF_NAME}" != "beta" ]; then
-    echo "::warning::预发布只从 beta 发布（当前 ${REF_NAME}）。本次不构建。"
+  if [ "$EVENT_NAME" != "schedule" ] && [ "${REF_NAME}" != "main" ]; then
+    echo "::warning::预发布只从 main 发布（当前 ${REF_NAME}）。本次不构建。"
     set_out proceed false
     exit 0
   fi
-  git fetch origin beta main --tags --force
-  git checkout --detach origin/beta
+  git fetch origin main --tags --force
+  git checkout --detach origin/main
   local base head release_sha last="" seq=1
   base="$(highest_other "")"
   if [ -z "$base" ]; then
@@ -250,17 +250,17 @@ mode_prerelease() {
   fi
   if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
     if [ -n "$published_sha" ] && [ "$published_sha" = "$head" ]; then
-      echo "beta 的该提交已经发过 Pre-release。"
+      echo "main 的该提交已经发过 Pre-release。"
       set_out proceed false
       exit 0
     fi
     if [ -n "$old_sha" ] && [ "$old_sha" = "$head" ]; then
-      echo "beta 的该提交已经记入 prerelease 标签。"
+      echo "main 的该提交已经记入 prerelease 标签。"
       set_out proceed false
       exit 0
     fi
     if [ "$head" = "$release_sha" ]; then
-      echo "beta 与正式标签指向同一提交，跳过预发布。"
+      echo "main 与正式标签指向同一提交，跳过预发布。"
       set_out proceed false
       exit 0
     fi

@@ -80,8 +80,8 @@
 ## 获取应用
 
 - **项目主页**：https://wdmm.senkjm.top
-- **Pre-release（内测）**：来自 `beta`。`pre-release-build.yml` 依次检查、编译、发版。没有合法标签则不构建，只开 Issue 提醒。版本名形如 `v0.1.0-5dca8bc`。
-- **Release（正式）**：`android-build.yml` 由合法且递增的 `vX.Y.Z` 标签触发，依次检查、编译、发版。手动触发只给当前 `main` 打标签，再做同一套检查。
+- **Pre-release（内测）**：来自 `main`。`pre-release-build.yml` 依次检查、编译、发版。没有合法标签则不构建，只开 Issue 提醒。版本名形如 `v0.1.0-5dca8bc`。
+- **Release（正式）**：`release-build.yml` 由合法且递增的 `vX.Y.Z` 标签触发，依次检查、编译、发版。手动触发只给当前 `main` 打标签，再做同一套检查。
 
 包名 `com.senkjm.media_manager`。首次从旧签名换成当前内测签名时，需要先卸载再安装；之后可直接覆盖安装。
 

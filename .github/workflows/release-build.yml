@@ -1,4 +1,4 @@
-name: Android Build
+name: Release Build
 
 # 正式版的检查、编译与发版，同一流程内串行：check → build → release。
 # 发版直接用同一次运行的产物，不再由 workflow_run 接续。编译步骤保持不变。
