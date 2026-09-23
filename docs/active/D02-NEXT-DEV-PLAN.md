@@ -1,14 +1,17 @@
-# 下次开发分块计划
+# D02 · 下次开发分块计划
 
 > **本文件是下次开发的唯一参考（single source of truth），不是已实现功能。**  
 > Agents：除非用户明确要求实现某一块，否则只读本文件做规划；不要把下列条目当作已支持能力。
 
+> **文档编号 D02** · 状态：进行中 · 模式：活跃  
+> 总索引：[INDEX.md](../INDEX.md)
+
 相关保留文档：
 
-- 产品概览与路线图概览：[README.md](../README.md)
-- 开发约束与分支策略：[DEVELOPMENT.md](DEVELOPMENT.md)
-- 真机 QA：[DEVICE-QA-CHECKLIST.md](DEVICE-QA-CHECKLIST.md)
-- 已完成的视频/同步大改（归档）：[archive/CHANGE-PLAN-video-sync.md](archive/CHANGE-PLAN-video-sync.md)
+- 产品概览与路线图概览：[README.md](../../README.md)
+- 开发约束与分支策略：[D01-DEVELOPMENT.md](D01-DEVELOPMENT.md)
+- 真机 QA：[D03-DEVICE-QA-CHECKLIST.md](D03-DEVICE-QA-CHECKLIST.md)
+- 已完成的视频/同步大改（归档只读）：[A01-CHANGE-PLAN-video-sync.md](../archive/A01-CHANGE-PLAN-video-sync.md)
 
 ---
 
@@ -51,7 +54,7 @@
 | H1 | 系统在后台限制 DNS / 网络（Doze、应用待机、ColorOS 后台联网策略） | 复现时抓 `logcat`；对比前台/后台；检查电池优化白名单 |
 | H2 | WebDAV client（HTTP 连接）在 `AppLifecycleState.paused` 后未重建，复用失效连接 | 在 pause/resume 打断点；检查 `WebDavService` 是否需 reconnect |
 | H3 | 缺少 **foreground service** 专用于下载（仅有媒体通知不足以保活网络） | 对照 Android 后台限制；评估下载专用 FGS + 类型声明 |
-| H4 | ColorOS / 一加等国产 ROM 额外杀后台网络 | 真机复现；对照 [DEVICE-QA-CHECKLIST.md](DEVICE-QA-CHECKLIST.md) 国产 ROM 项 |
+| H4 | ColorOS / 一加等国产 ROM 额外杀后台网络 | 真机复现；对照 [D03-DEVICE-QA-CHECKLIST.md](D03-DEVICE-QA-CHECKLIST.md) 国产 ROM 项 |
 
 ### 主要触及（实现时）
 
@@ -174,9 +177,9 @@
 
 以下不在本文展开长表，避免与 README 双源：
 
-- **国产 ROM 媒体通知 / 后台保活**：见 README「后续计划」与 [DEVICE-QA-CHECKLIST.md](DEVICE-QA-CHECKLIST.md)。
-- **视频体验 QA 未做项**：缓冲条第二层、空闲自动隐藏、手势引导等 → `DEVICE-QA-CHECKLIST.md`。
-- **WebDAV 管理增强、同步体验、启动优化、无障碍 / 多语言、跨平台** → [README.md 后续计划](../README.md#后续计划路线图) / [DEVELOPMENT.md 后续计划](DEVELOPMENT.md#后续计划)。
+- **国产 ROM 媒体通知 / 后台保活**：见 README「后续计划」与 [D03-DEVICE-QA-CHECKLIST.md](D03-DEVICE-QA-CHECKLIST.md)。
+- **视频体验 QA 未做项**：缓冲条第二层、空闲自动隐藏、手势引导等 → `D03-DEVICE-QA-CHECKLIST.md`。
+- **WebDAV 管理增强、同步体验、启动优化、无障碍 / 多语言、跨平台** → [README.md 后续计划](../../README.md#后续计划路线图) / [D01-DEVELOPMENT.md 后续计划](D01-DEVELOPMENT.md#后续计划)。
 
 P0/P1 完成前，不要把 P2+ 当作当前冲刺范围。
 
