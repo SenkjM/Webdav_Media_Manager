@@ -108,9 +108,17 @@
 - 复制 / 移动没有进度与取消：`webdav_client` 的 `copy` / `rename` 是单次请求，大文件只能等。
 - 真机验收未做。已知风险：部分服务端对目录目标的 `Destination`（加不加结尾 `/`）处理不一致，需要在真实网盘上各试一次。
 
-## 3. 音乐流式传输可行性分析（**代码未开始**）
+## 3. 音乐流式传输（**代码已接入，未真机验收**）
 
-**状态**：只做分析。设置里的实验开关与动作模型里的 `streamMusic` 已就位，网络库执行它时只提示「尚未接入播放栈」。按用户要求代码放**独立分支**，目标只是「能播就行」，封面等需要大改的内容可以先不做。
+**状态**：分支 `feature/music-streaming`。实验开关打开后，网络库对音乐条目（整行点按 / 更多菜单 / 多选单曲）会直接流式播放，`flutter analyze` 干净。**没有跑过真机，没有任何自动化测试覆盖播放栈**。按用户要求目标只是「能播就行」，封面等需要大改的内容先不做。
+
+**已实现**：
+
+- `WebDavStreamSource.kind`（`StreamKind.video` / `.music`）：远端流管线只有一条，用途标记只影响媒体会话文案与队列语义。
+- `WebDavStreamSource` 构造默认按后缀推断用途，`WebDavService.buildStreamSource` 可以显式覆盖。
+- `enterVideoMode` 在音乐用途下把通知写成「流式播放 / WebDAV 流媒体」，不再写成「视频」。
+- `AudioPlayerService.playRemoteMusic({source, artist})`：建媒体会话 → 打开远端源 → 播放；`stopRemoteMusic()` 退出。
+- 网络库 `_streamMusic` 走上面这条路径，失败时把 `AudioPlayerService.error` 显示出来（远端 401 / 断网不再静默）。
 
 ### 3.1 现状里有什么
 
@@ -153,8 +161,13 @@
 
 1. `MusicAudioHandler`：远端流模式加用途标记，`exitVideoMode` 只对视频恢复队列。
 2. `AudioPlayerService` 增加 `playRemoteTrack(...)`：建 `WebDavStreamSource` → 进远端流模式 → 通知用音乐文案（不带封面）。
-3. 网络库 `_streamMusic()`：把「尚未接入播放栈」换成调用它（设置里的实验开关已经能拦住不合法配置）。
-4. 真机验收：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
+3. ~~网络库 `_streamMusic()` 调用它~~（已完成）。
+4. **真机验收（未做）**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
+
+**已知的粗糙处（第一版接受）**：
+
+- `exitVideoMode()` 的语义仍是「恢复本地音乐队列」。流式音乐停下时会把之前暂停的本地歌重新广播到通知栏，看起来像「跳回了另一首歌」。要更干净，得让远端流用途参与 `exitVideoMode` 的分支判断。
+- 多选工具栏的「播放」按钮仍然只对单个视频可用；音频走整行点按 / 更多菜单。
 
 **影响面**：[02-NETWORK-LIBRARY.md](02-NETWORK-LIBRARY.md)（§2、§8）、[05-AUDIO-PLAYBACK.md](05-AUDIO-PLAYBACK.md)（「仅本地播放」的约定要改）、[06-VIDEO-PLAYBACK.md](06-VIDEO-PLAYBACK.md)（共享的远端流模式）、[07-NOTIFICATIONS.md](07-NOTIFICATIONS.md)（媒体通知文案）、[09-MISC.md](09-MISC.md)（陷阱表里的「不要给音频做流式播放」要改写成「实验开关控制的流式播放」）。
 

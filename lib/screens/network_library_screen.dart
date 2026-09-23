@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/download_task.dart';
 import '../models/file_actions.dart';
+import '../models/webdav_stream.dart';
 import '../models/file_type_config.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
@@ -361,6 +362,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 当前分支只做到「能播就行」：复用视频那套远端源与媒体通知，封面与时长
   /// 不额外取（流式播放拿不到本地文件来解析标签）。完整取舍见 docs/99 的
   /// 《音乐流式传输可行性分析》。
+  /// 实验性：把远端音频直接交给播放栈流式播放（不下载、不缓存、不入队）。
+  ///
+  /// 复用视频那套远端源与媒体通知（同一个 Player、同一个媒体会话），所以
+  /// 后台播放与锁屏控制跟着工作。封面与时长不额外取：流式播放拿不到本地
+  /// 文件来解析标签。完整取舍见 docs/99 的《音乐流式传输可行性分析》。
   Future<void> _streamMusic(WebDavItem item) async {
     if (!context.read<SettingsService>().fileActions.experimentalMusicStreaming) {
       AppSnack.error(context, '音乐流式传输是实验功能，请先在设置里打开');
@@ -368,7 +374,27 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
     final accountId = _accountId;
     if (accountId == null) return;
-    AppSnack.show(context, '音乐流式传输尚未接入播放栈');
+    final source = context.read<WebDavService>().buildStreamSource(
+      remotePath: item.path,
+      name: item.name,
+      accountId: accountId,
+      kind: StreamKind.music,
+    );
+    if (source == null) {
+      AppSnack.error(context, '无法建立流式地址，请检查账户配置');
+      return;
+    }
+    final player = context.read<AudioPlayerService>();
+    final ok = await player.playRemoteMusic(
+      source: source,
+      artist: folderDisplayName(_path),
+    );
+    if (!context.mounted) return;
+    if (!ok) {
+      AppSnack.error(context, player.error ?? '流式播放失败');
+      return;
+    }
+    AppSnack.show(context, '正在流式播放 ${item.name}');
   }
 
   /// 多选「下载」：**逐项按类型分发**，而不是把所有东西都当成音频。

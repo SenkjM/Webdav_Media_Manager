@@ -117,11 +117,18 @@ class WebDavService extends ChangeNotifier {
   /// Uses HTTP Basic auth (the same credentials the WebDAV client uses); some
   /// servers also accept a bearer/token flow, but Basic is what
   /// `webdav_client`'s `BasicAuth` sends, so we mirror it for parity.
+  /// [kind] 决定这条流被媒体会话当成视频还是音乐。默认按后缀推断，调用方
+  /// 也可以显式指定。
   WebDavStreamSource? buildStreamSource({
     required String remotePath,
     required String name,
     required String accountId,
+    StreamKind? kind,
   }) {
+    final streamKind = kind ??
+        (FileTypeConfig().categoryFor(name) == FileCategory.music
+            ? StreamKind.music
+            : StreamKind.video);
     final conn = _resolve(accountId);
     if (conn == null) return null;
     final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
@@ -138,6 +145,7 @@ class WebDavService extends ChangeNotifier {
       name: name,
       remotePath: remotePath,
       accountId: accountId,
+      kind: streamKind,
     );
   }
 
