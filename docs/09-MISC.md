@@ -39,18 +39,23 @@
 | 分支 | 用途 |
 |------|------|
 | `main` | 稳定主干；合并需用户明确允许 |
-| `beta` | 预发布线；**Pre-release 只从 beta 发布**（标签 `prerelease`） |
+| `beta` | 一般工作保存线；不再参与发布 |
 | `dev` | 实验线；历史遗留，重大破坏性改动用 |
 
-推荐流程：基于 `beta` 开独立功能分支 → 成熟后合入 `beta` → 验证 Pre-release → 再合入 `main`。并线用标准 PR。
+推荐流程：基于 `beta` 开独立功能分支 → 成熟后合入 `beta` → 用户明确允许时合入 `main`。并线用标准 PR。
+Pre-release 现在从 `main` 出，相当于给 `main` 的每个提交做一次内测快照；`beta` 只是保存线。
 
-CI 触发（`.github/workflows/android-build.yml`）：
+CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.github/workflows/pre-release-build.yml`。两份都是「检查 → 编译 → 发版」串在同一次运行里，发版直接用本次运行的产物，不再靠 `workflow_run` 接续。
 
 | 事件 | 行为 |
 |------|------|
 | 任意分支 push | **不**触发构建 |
-| 每天定时（cron `0 16 * * *`，约北京时间 00:00） | 检视 beta：相对上次 `prerelease` 有新提交才构建发布 |
-| 手动 `workflow_dispatch` | 可构建；**仅当所选引用为 beta 时才发布 Pre-release** |
+| 推 `v*` 标签（release） | 检查标签合法且严格递增 → 编译 → 建 Release |
+| 手动 `workflow_dispatch`（release） | 给当前 `main` 打标签，再做同一套检查；所选引用不是 `main` 时拦下 |
+| 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：相对上次 `prerelease` 有新提交才构建发布 |
+| 手动 `workflow_dispatch`（pre-release） | 同上；**所选引用不是 `main` 时跳过** |
+
+> **开发中**：安装包改为按 ABI 分包、原生库压缩存放，另出一个去掉 x86_64 的合并包。语义与影响面见 [99](99-IN-PROGRESS.md)；完成后并入本节。
 
 **硬约束**：不要为了看构建结果加 `on: push`，不要擅自 `gh workflow run`；需要打 Pre-release 时先等用户确认。
 
@@ -67,7 +72,7 @@ flutter build apk --release    # 本地 release；签名见下
 
 - Flutter **stable**（`environment.sdk: ^3.13.4`）；本机 SDK 装在 `D:\flutter`，`android/local.properties` 里的 `flutter.sdk` 只对本机有效，换机器会重新生成。
 - Android SDK + JDK 17（与 CI `setup-java` 一致）；CI 里 `flutter test` 前需 `apt install libmpv-dev mpv`（media_kit 的 Linux 后端）。
-- 版本号：`VERSION_NAME` = pubspec 版本基 + `-` + 短 SHA；`VERSION_CODE` = `1000 + run_number`（单调递增，便于覆盖安装）。
+- 版本号：正式版 `VERSION_NAME` = 标签（如 `v0.1.0`）；预发布 = 上一个正式版标签 + `-` + 短 SHA。`VERSION_CODE` = 主×1e8 + 次×1e6 + 修订×1e4 + 序号（正式版序号 0，预发布 1–999），单调递增便于覆盖安装。
 - 签名：CI 用固定内测 keystore（Secrets：`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`）。本地没有 `android/key.properties` 时 release 会回落到 debug 签名，仅够自测；**不要提交** `key.properties`、keystore、token、`.env`。
 
 ## 3. 编码约定

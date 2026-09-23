@@ -44,6 +44,15 @@
 - 反过来点音乐 → 视频停止。
 - 视频播放期间发的是**视频**媒体通知（不是音乐），见 [07](07-NOTIFICATIONS.md)。
 
-## 6. 相关代码
+## 6. 计划（未实现）：libmpv 体积裁剪
+
+安装包体积的主要来源是 `libmpv.so`：每个 ABI 约 11–15 MiB，三个 ABI 合计约 38 MiB。上游 `media_kit_libs_android_video` 只提供完整的 `default` 构建（含全部 ffmpeg 编解码器与滤镜），没有精简版。要继续压缩体积，需要：
+
+- 自行编译 libmpv，裁掉本项目用不到的编解码器与滤镜；或
+- 评估换用 Media3 / ExoPlayer 后端——原生库可降到个位数 MiB，代价是格式覆盖与 mpv 特性要重新验证。
+
+**未排期**。构建侧的短期手段（按 ABI 分包、原生库压缩存放）见 [09](09-MISC.md) 的「构建与发布」。
+
+## 7. 相关代码
 
 `video_player_screen.dart`（控件 / 手势 / 播放列表 UI）、`video_queue_controller.dart`（渐进扫描队列）、`video_playback_service.dart`（打开远端流）、`utils/video_pip.dart`（PiP 通道）、`models/video_settings.dart`（设置枚举与默认值）、`video_settings_screen.dart`（设置页）。
