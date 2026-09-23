@@ -12,6 +12,7 @@ import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
+import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
@@ -351,6 +352,28 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
 
   void _exitSelect() => setState(() => _selection = _selection.exit());
 
+  @override
+  void initState() {
+    super.initState();
+    BackHandlerRegistry.register(_handleSystemBack);
+  }
+
+  @override
+  void dispose() {
+    BackHandlerRegistry.unregister(_handleSystemBack);
+    super.dispose();
+  }
+
+  /// 多选时先吃掉返回键：退出多选，而不是退出这一页或回主页。
+  bool _handleSystemBack() {
+    if (!mounted) return false;
+    if (_selection.active) {
+      _exitSelect();
+      return true;
+    }
+    return false;
+  }
+
   /// 全选 / 取消全选。取消全选**不会**退出多选界面。
   void _toggleSelectAll() => setState(
         () => _selection = _selection.toggleSelectAll(widget.keys),
@@ -483,11 +506,18 @@ class _SelectionBar extends StatelessWidget {
             children: [
               // 一进入多选这里只是「全选」；只有选中数打满时才变成叉号。
               // 退不出多选是故意的：返回键负责退出，那个按钮不该兼职关闭。
-              IconButton(
-                tooltip: allSelected ? '取消全选' : '全选',
-                onPressed: onSelectAll,
-                icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
-              ),
+              if (allSelected)
+                IconButton(
+                  tooltip: '取消全选',
+                  onPressed: onSelectAll,
+                  icon: const Icon(Icons.deselect),
+                )
+              else
+                IconButton(
+                  tooltip: '全选',
+                  onPressed: count == 0 ? null : onSelectAll,
+                  icon: const Icon(Icons.select_all),
+                ),
               Expanded(
                 child: Text(
                   '已选 $count 项',
@@ -668,6 +698,7 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
   @override
   void initState() {
     super.initState();
+    BackHandlerRegistry.register(_handleSystemBack);
     if (widget.startInSelection) {
       // 整组进来时选中全部：计数打满 → 工具栏那个按钮一开始就是叉号。
       _selection = _selection.enter(
@@ -676,6 +707,24 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
         selectOnly: _allIds,
       );
     }
+  }
+
+  @override
+  void dispose() {
+    BackHandlerRegistry.unregister(_handleSystemBack);
+    super.dispose();
+  }
+
+  /// 多选时先吃掉返回键。只在**当前路由**上生效，否则父页面的处理器会先
+  /// 把它消费掉，用户按返回什么也看不见。
+  bool _handleSystemBack() {
+    if (!mounted) return false;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    if (_selection.active) {
+      _exitSelect();
+      return true;
+    }
+    return false;
   }
 
   String _id(LibraryTrack t) => '${t.sourceName}\u0000${t.remotePath}';

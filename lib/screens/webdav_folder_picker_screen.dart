@@ -147,14 +147,21 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
         backgroundColor: AppColors.nearBlack,
         appBar: AppBar(
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            tooltip: '上一级',
-            onPressed: () {
-              if (!_goUp()) Navigator.of(context).pop();
-            },
+            // 左上角是「关闭选择器」，不是「上一级」——上一级在右上角，两者
+            // 混用会让人以为退出了、其实只是上了一层目录。
+            icon: const Icon(Icons.close),
+            tooltip: '关闭',
+            onPressed: () => Navigator.of(context).pop(),
           ),
           title: Text('${widget.purpose}：${folderDisplayName(_path)}'),
           actions: [
+            IconButton(
+              key: const Key('picker-up'),
+              icon: const Icon(Icons.arrow_upward),
+              tooltip: '上一级',
+              onPressed:
+                  _stack.length > 1 ? () => setState(() => _goUp()) : null,
+            ),
             IconButton(
               icon: const Icon(Icons.create_new_folder_outlined),
               tooltip: '新建文件夹',
@@ -164,16 +171,21 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
         ),
         body: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text(
-                _path,
-                style: const TextStyle(
-                  color: AppColors.secondaryText,
-                  fontSize: 12,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+            // 长路径要能滚动查看，而不是被省略号吃掉。
+            SizedBox(
+              height: 21,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                children: [
+                  Text(
+                    _path,
+                    style: const TextStyle(
+                      color: AppColors.secondaryText,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(child: _buildList()),
@@ -186,7 +198,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('取消'),
+                        child: const Text('关闭'),
                       ),
                     ),
                     const SizedBox(width: 12),
