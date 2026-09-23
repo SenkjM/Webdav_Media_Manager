@@ -1,113 +1,70 @@
 name: Android Build & Pre-release
 
+# 每日构建。先检查合法正式标签和变化，通过后才编译。
+# 没有合法 vX.Y.Z 时不构建，转 Issue 提醒。编译步骤保持不变。
+
 on:
-  # 不在 push 时构建；未手动触发则等定时
   schedule:
-    # 每天约北京时间 00:00：检查 beta 是否有相对 prerelease 的新提交
+    # 每天约北京时间 00:00
     - cron: "0 16 * * *"
-  # 手动发版：GitHub UI 选择 beta 再 Run workflow
   workflow_dispatch:
-    inputs:
-      version:
-        description: "版本号（留空 = 用 pubspec 版本 + 短提交哈希，例如 1.2.0；填写则原样使用）"
-        required: false
-        type: string
-      version_code:
-        description: "versionCode（留空 = 1000 + 运行序号，保证单调递增可覆盖安装）"
-        required: false
-        type: string
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
-  group: android-build-${{ github.event_name == 'schedule' && 'beta' || github.ref }}
-  cancel-in-progress: true
+  group: android-versioned-release
+  cancel-in-progress: false
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.decision.outputs.proceed }}
+      version_name: ${{ steps.decision.outputs.version_name }}
+      version_code: ${{ steps.decision.outputs.version_code }}
+      short_sha: ${{ steps.decision.outputs.short_sha }}
+      base_tag: ${{ steps.decision.outputs.base_tag }}
+      sha: ${{ steps.decision.outputs.sha }}
+      seq: ${{ steps.decision.outputs.seq }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.event_name == 'schedule' && 'beta' || github.ref }}
+
+      - name: Check whether a pre-release can run
+        id: decision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GATE_MODE: prerelease
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash .github/scripts/version-gate.sh
+
   build:
+    needs: check
+    if: needs.check.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          # 定时任务固定检视 beta；其余事件用触发引用
-          ref: ${{ github.event_name == 'schedule' && 'beta' || github.ref }}
-
-      - name: Decide whether to publish pre-release
-        id: gate
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          EVENT="${{ github.event_name }}"
-          BRANCH="${{ github.ref_name }}"
-          if [ "$EVENT" = "schedule" ]; then
-            BRANCH="beta"
-          fi
-          echo "event=$EVENT branch=$BRANCH"
-          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
-
-          # PR：只构建
-          if [ "$EVENT" = "pull_request" ]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "reason=pull_request" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Pre-release 仅从 beta 发布；其他引用照样构建，只告警不终止
-          if [ "$BRANCH" != "beta" ]; then
-            if [ "$EVENT" = "workflow_dispatch" ]; then
-              echo "::warning::预发布只从 beta 发布（当前引用 $BRANCH）：本次只构建、不发 Pre-release。正式版请用 workflow「Android Release (from main)」。"
-            fi
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "reason=not_beta_branch" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # beta + 手动：强制发
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "reason=workflow_dispatch_beta" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # beta + push：发
-          if [ "$EVENT" = "push" ]; then
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "reason=push_beta" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # 定时：仅当 beta HEAD 相对 prerelease 标签有变动
-          if [ "$EVENT" = "schedule" ]; then
-            if git rev-parse -q --verify refs/tags/prerelease >/dev/null; then
-              LAST=$(git rev-parse prerelease)
-              HEAD=$(git rev-parse HEAD)
-              echo "last_prerelease=$LAST head=$HEAD"
-              if [ "$LAST" = "$HEAD" ]; then
-                echo "publish=false" >> "$GITHUB_OUTPUT"
-                echo "reason=schedule_no_changes_on_beta" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            else
-              echo "No existing prerelease tag; will publish from beta."
-            fi
-            echo "publish=true" >> "$GITHUB_OUTPUT"
-            echo "reason=schedule_beta_has_changes" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "publish=false" >> "$GITHUB_OUTPUT"
-          echo "reason=unknown_event" >> "$GITHUB_OUTPUT"
+          ref: ${{ needs.check.outputs.sha }}
 
       - name: Setup Java 17
         uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-          # Cache Gradle/AGP compile dependencies (android/gradle wrapper).
           cache: gradle
 
       - name: Setup Flutter
@@ -120,11 +77,6 @@ jobs:
         run: flutter --version
 
       - name: Install Android SDK compile dependencies
-        # android/app/build.gradle.kts consumes Flutter's defaults
-        # (compileSdk/targetSdk 36) with AGP 9.1 + Gradle 9.3.1, so install the
-        # SDK components the Android build resolves instead of relying on the
-        # runner image. JDK stays 17 (matches AGP 9 / Kotlin jvmTarget 17 and
-        # the desugaring that flutter_local_notifications requires).
         run: |
           set -euo pipefail
           SDKMANAGER="$(command -v sdkmanager || true)"
@@ -135,7 +87,6 @@ jobs:
             echo "sdkmanager not found; leaving SDK components to Gradle."
             exit 0
           fi
-          # Accept any licenses Gradle's auto-download may still need.
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           "$SDKMANAGER" --install \
             "platform-tools" \
@@ -155,49 +106,6 @@ jobs:
 
       - name: Test
         run: flutter test
-
-      - name: Compute pre-release version
-        id: ver
-        env:
-          INPUT_VERSION: ${{ inputs.version }}
-          INPUT_CODE: ${{ inputs.version_code }}
-        run: |
-          set -euo pipefail
-          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          # pubspec version base before +build, e.g. 1.0.0+1 → 1.0.0
-          BASE=$(grep -E '^version:' pubspec.yaml | head -1 | sed -E 's/^version:[[:space:]]*//; s/\+.*//; s/[[:space:]]*$//')
-          if [ -z "$BASE" ]; then BASE="1.0.0"; fi
-
-          # Manual run may type the version (and versionCode) in the UI.
-          if [ -n "${INPUT_VERSION:-}" ]; then
-            VERSION_NAME="$INPUT_VERSION"
-            if ! printf '%s' "$VERSION_NAME" | grep -Eq '^[0-9]+(\.[0-9]+){1,3}([-+][0-9A-Za-z.-]+)?$'; then
-              echo "::error::version 不合法：$VERSION_NAME（示例 1.2.0 或 1.2.0-rc1）"
-              exit 1
-            fi
-            echo "Using manual version: $VERSION_NAME"
-          else
-            # versionName: semver-friendly with short hash (Android versionName is free-form)
-            VERSION_NAME="${BASE}-${SHORT_SHA}"
-          fi
-
-          if [ -n "${INPUT_CODE:-}" ]; then
-            VERSION_CODE="$INPUT_CODE"
-            if ! printf '%s' "$VERSION_CODE" | grep -Eq '^[0-9]+$'; then
-              echo "::error::version_code 必须是整数：$VERSION_CODE"
-              exit 1
-            fi
-          else
-            # Monotonic versionCode: 1000 + run_number always increases across
-            # workflow runs of this repository (pre-releases and releases share
-            # the counter, so neither track can go backwards).
-            VERSION_CODE=$((1000 + ${{ github.run_number }}))
-          fi
-
-          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
-          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "VERSION_NAME=$VERSION_NAME VERSION_CODE=$VERSION_CODE"
 
       - name: Decode internal keystore
         env:
@@ -219,8 +127,8 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           flutter build apk --release \
-            --build-name="${{ steps.ver.outputs.version_name }}" \
-            --build-number="${{ steps.ver.outputs.version_code }}"
+            --build-name="${{ needs.check.outputs.version_name }}" \
+            --build-number="${{ needs.check.outputs.version_code }}"
 
       - name: Build app bundle (optional)
         env:
@@ -230,8 +138,8 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           flutter build appbundle --release \
-            --build-name="${{ steps.ver.outputs.version_name }}" \
-            --build-number="${{ steps.ver.outputs.version_code }}"
+            --build-name="${{ needs.check.outputs.version_name }}" \
+            --build-number="${{ needs.check.outputs.version_code }}"
         continue-on-error: true
 
       - name: Upload APK artifact
@@ -248,33 +156,50 @@ jobs:
           path: build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: ignore
 
-      - name: Skip publish notice
-        if: steps.gate.outputs.publish != 'true'
-        run: |
-          echo "Skip GitHub Pre-release (reason=${{ steps.gate.outputs.reason }}, branch=${{ steps.gate.outputs.branch }})."
-
       - name: Create / update Pre-release
-        if: steps.gate.outputs.publish == 'true'
         uses: softprops/action-gh-release@v3
         with:
           tag_name: prerelease
-          name: Pre-release ${{ steps.ver.outputs.version_name }} (${{ steps.ver.outputs.version_code }})
+          name: Pre-release ${{ needs.check.outputs.version_name }} (${{ needs.check.outputs.version_code }})
           prerelease: true
-          generate_release_notes: true
-          target_commitish: beta
+          target_commitish: ${{ needs.check.outputs.sha }}
           body: |
             自动构建的 Pre-release（来自 **beta** 分支，AGPL-3.0）。
 
-            - 版本：`${{ steps.ver.outputs.version_name }}`（versionCode `${{ steps.ver.outputs.version_code }}`）
-            - 短提交：`${{ steps.ver.outputs.short_sha }}`
-            - 触发：`${{ github.event_name }}`（${{ steps.gate.outputs.reason }}）
-            - Commit：`${{ github.sha }}`
+            - 版本：`${{ needs.check.outputs.version_name }}`（versionCode `${{ needs.check.outputs.version_code }}`）
+            - 短提交：`${{ needs.check.outputs.short_sha }}`
+            - 基准标签：`${{ needs.check.outputs.base_tag }}`
+            - 触发：`${{ github.event_name }}`
+            - Commit：`${{ needs.check.outputs.sha }}`
             - 分支：`beta`
 
-            versionCode 使用 `1000 + github.run_number` 单调递增，可直接覆盖安装旧预发布 APK，无需先卸载。
-            APK 使用仓库配置的**固定内测 keystore** 签名，可覆盖安装（首次从旧 debug 包换过来需卸载一次）。
+            base_tag=${{ needs.check.outputs.base_tag }}
+            seq=${{ needs.check.outputs.seq }}
+            sha=${{ needs.check.outputs.sha }}
+
+            versionCode 后三位在每个正式版之后从 001 递增，到 999 停止。
+            APK 使用仓库配置的固定内测 keystore 签名。
           files: |
             build/app/outputs/flutter-apk/app-release.apk
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Record pre-release tag metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.check.outputs.sha }}
+          SEQ: ${{ needs.check.outputs.seq }}
+          BASE: ${{ needs.check.outputs.base_tag }}
+          NAME: ${{ needs.check.outputs.version_name }}
+          CODE: ${{ needs.check.outputs.version_code }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a prerelease "$SHA" -f -m "version_name=${NAME}
+          version_code=${CODE}
+          base_tag=${BASE}
+          seq=${SEQ}
+          sha=${SHA}"
+          git push origin refs/tags/prerelease --force

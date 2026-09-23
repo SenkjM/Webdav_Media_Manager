@@ -79,8 +79,8 @@
 ## 获取应用
 
 - **项目主页**：https://wdmm.senkjm.top
-- **Pre-release（内测）**：来自 `beta` 分支，Actions 里手动触发可自填版本号。
-- **Release（正式）**：来自 `main` 分支，Actions →「Android Release (from main)」一键构建发布，可自填版本号与 versionCode。
+- **Pre-release（内测）**：来自 `beta`。每天先检查合法 `vX.Y.Z` 标签和变化，通过后才构建。没有合法标签则不构建，只开 Issue 提醒。版本名形如 `v0.1.0-5dca8bc`。
+- **Release（正式）**：推送合法且递增的 `vX.Y.Z` 标签触发。手动触发只给当前 `main` 打标签，再做同一套检查。
 
 包名 `com.senkjm.media_manager`。首次从旧签名换成当前内测签名时，需要先卸载再安装；之后可直接覆盖安装。
 
