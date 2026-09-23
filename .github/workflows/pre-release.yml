@@ -56,10 +56,14 @@ jobs:
       - name: Publish Pre-release
         if: steps.gate.outputs.publish == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::缺少 secret RELEASE_TOKEN。目标提交相对默认分支改过 .github/workflows 时，GITHUB_TOKEN 不能创建 Release，需要带 Workflows 写权限的 token。"
+            exit 1
+          fi
           meta() { sed -n "s/^${1}=//p" dist/meta.env | head -n 1; }
           version_name="$(meta version_name)"
           version_code="$(meta version_code)"
@@ -70,7 +74,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a prerelease "$sha" -f -m "$(printf 'version_name=%s\nversion_code=%s\nbase_tag=%s\nseq=%s\nsha=%s\n' "$version_name" "$version_code" "$base_tag" "$seq" "$sha")"
-          git push origin refs/tags/prerelease --force
+          git -c credential.helper= -c "http.extraHeader=Authorization: Bearer ${GH_TOKEN}" push "https://github.com/${REPO}.git" "+refs/tags/prerelease:refs/tags/prerelease"
           git fetch origin main --tags --force
           script="$(mktemp)"
           git show origin/main:.github/scripts/commit-list.sh > "$script"

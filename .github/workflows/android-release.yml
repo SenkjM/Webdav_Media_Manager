@@ -58,10 +58,14 @@ jobs:
       - name: Create GitHub Release
         if: steps.gate.outputs.publish == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::缺少 secret RELEASE_TOKEN。目标提交相对默认分支改过 .github/workflows 时，GITHUB_TOKEN 不能创建 Release，需要带 Workflows 写权限的 token。"
+            exit 1
+          fi
           meta() { sed -n "s/^${1}=//p" dist/meta.env | head -n 1; }
           tag="$(meta tag)"
           version_name="$(meta version_name)"
