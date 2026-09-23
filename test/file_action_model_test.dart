@@ -4,7 +4,6 @@ import 'package:webdav_media_manager/models/download_task.dart';
 import 'package:webdav_media_manager/models/file_actions.dart';
 import 'package:webdav_media_manager/models/file_type_config.dart';
 import 'package:webdav_media_manager/services/settings_service.dart';
-import 'package:webdav_media_manager/utils/audio_extensions.dart';
 
 /// T1 回归：类型 → 动作的判定只有一份实现。
 ///
