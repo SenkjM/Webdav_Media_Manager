@@ -100,7 +100,8 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 
 **Don't**
 
-- 不要给**音频**做流式播放 / 在 `playTrack` 里偷偷 enqueue（视频侧本来就流式播放）。
+- 不要在播放路径上偷偷 enqueue 下载（视频侧本来就流式播放）。
+- 音频流式播放只在实验开关打开时可用，且必须复用视频侧的远端流模式，不要另起播放栈，见 [99 §3](99-IN-PROGRESS.md)。
 - 不要把未下载的远端文件标成「排队中」。
 - 不要分享 CUE 虚拟曲；不要恢复 ffmpeg CUE 导出分享。
 - 不要在 `MainActivity` 里 import `AudioService` 类。
@@ -156,8 +157,8 @@ flutter test                   # 或全量
 |----|------|
 | 启动黑屏约 1.4 s（`Skipped 85 frames`） | 未修；`main()` 里串行 init 导致，可异步化 |
 | 后台下载 `fail host lookup` | 未修，优先级最高，见 [04 §7](04-DOWNLOAD-QUEUE.md) |
-| 网络库「文件动作模型」T1–T6 | 未实现，见 [02 §5](02-NETWORK-LIBRARY.md) |
+| 网络库「文件动作模型」T1–T5 | **已实现**（分支 `feature/network-action-model`，未真机验收），见 [02](02-NETWORK-LIBRARY.md) |
 | 进度条没有缓冲进度第二层 | 未做；libmpv 有 `player.stream.buffer` 可用 |
 | 空闲若干秒自动隐藏控件 | 未做，需先确认是否要 |
 | 左右手势区首次使用引导 | 未做，需先确认是否要 |
-| 音频串流（复用视频侧流式栈） | 未立项，见 [02 §5](02-NETWORK-LIBRARY.md) T6 |
+| 音频串流（复用视频侧流式栈） | 待开工，独立分支；分析与坑见 [99 §3](99-IN-PROGRESS.md) |

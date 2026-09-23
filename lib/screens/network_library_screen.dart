@@ -4,18 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/download_task.dart';
-import '../models/video_settings.dart';
+import '../models/file_actions.dart';
+import '../models/file_type_config.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
-import '../services/cache_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/back_handler_registry.dart';
+import '../utils/selection_controller.dart';
 import '../utils/cue_sheet.dart';
 import '../widgets/app_bottom_sheet.dart';
 import '../widgets/marquee_text.dart';
@@ -26,6 +27,7 @@ import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
 import 'home_shell.dart';
 import 'video_player_screen.dart';
+import 'webdav_folder_picker_screen.dart';
 
 /// 网络库：multi-WebDAV browse. Shows entry names only (no full remote paths).
 class NetworkLibraryScreen extends StatefulWidget {
@@ -41,9 +43,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   bool _loading = false;
   String? _error;
 
-  /// Multi-select mode (entered by long-pressing a file entry).
-  bool _selecting = false;
-  final Set<String> _selected = {};
+  /// 多选状态。选中数由 [SelectionController] 统一判定「是不是全选」，
+  /// 全选按钮因此会在计数打满时变成叉号，而不必记住用户按过它。
+  SelectionController _selection = const SelectionController();
 
   String get _path => _stack.last;
 
@@ -51,13 +53,18 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       '${item.isDirectory ? 'd' : 'f'}\u0000${item.path}';
 
   List<WebDavItem> get _selectedItems =>
-      _items.where((e) => _selected.contains(_itemKey(e))).toList();
+      _items.where((e) => _selection.contains(_itemKey(e))).toList();
 
-  void _exitSelect() {
-    setState(() {
-      _selecting = false;
-      _selected.clear();
-    });
+  bool get _selecting => _selection.active;
+
+  void _exitSelect() => setState(() => _selection = _selection.exit());
+
+  /// 列表内容换了（进入目录 / 刷新）之后重新数一遍可选条目。
+  void _syncSelectionTotal() {
+    _selection = _selection.sync(
+      total: _items.length,
+      validKeys: _items.map(_itemKey),
+    );
   }
 
   @override
@@ -141,6 +148,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         _items = items;
         _browsedAccountId = accountId;
         _loading = false;
+        _syncSelectionTotal();
       });
     } catch (e) {
       if (!mounted) return;
@@ -193,7 +201,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// background).
   bool _handleSystemBack() {
     if (!mounted) return false;
-    if (_selecting) {
+    if (_selection.active) {
       _exitSelect();
       return true;
     }
@@ -232,69 +240,57 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// retry loop cannot stack dialogs.
   final Set<String> _permissionWarned = {};
 
-  Future<void> _onTapFile(WebDavItem item) async {
-    final accountId = _accountId;
-    if (accountId == null) return;
-    final sourceName = _nameFor(accountId);
-    if (item.isVideo) {
-      final settings = context.read<SettingsService>();
-      if (settings.videoTapAction == VideoTapAction.download) {
-        await _enqueueOnly(item);
-      } else {
-        await _openVideo(item);
-      }
+  /// 点按条目的统一入口：文件夹进目录，文件走**文件动作模型**。
+  Future<void> _activateItem(WebDavItem item) async {
+    if (item.isDirectory) {
+      _enterDir(item);
       return;
     }
-    // Music: tap = download. There is deliberately no separate download button
-    // on the row — the row itself is the download action (and plays once the
-    // file is cached).
-    final settings = context.read<SettingsService>();
-    if (!item.isAudio) {
-      await _enqueueOnly(item);
-      return;
-    }
-    final cache = context.read<CacheService>();
-    final local = await cache.localPathIfCached(
-      item.path,
-      sourceName: sourceName,
-    );
-    final wantsPlay = settings.musicTapAction == MusicTapAction.play;
-    if (local == null || !wantsPlay) {
-      // Not cached → download. Already cached but the tap action is 下载 → also a
-      // plain download request (keeps the setting meaningful without a button).
-      await _enqueueOnly(item);
-      return;
-    }
-    final player = context.read<AudioPlayerService>();
-    final audios = _items.where((e) => e.isAudio).toList();
-    final playlist = <TrackInfo>[];
-    for (final e in audios) {
-      final path = await cache.localPathIfCached(
-        e.path,
-        sourceName: sourceName,
-      );
-      if (path == null) continue;
-      playlist.add(
-        TrackInfo(
-          sourceName: sourceName,
-          accountId: accountId,
-          remotePath: e.path,
-          fileName: e.name,
-          localPath: path,
-        ),
-      );
-    }
-    final track = TrackInfo(
-      sourceName: sourceName,
-      accountId: accountId,
-      remotePath: item.path,
-      fileName: item.name,
-      localPath: local,
-    );
-    if (playlist.isEmpty) playlist.add(track);
-    await player.playTrack(track, playlist: playlist);
+    await _runDefaultAction(item);
   }
 
+  /// 这个条目在这份设置下的默认动作。
+  FileAction _defaultActionFor(WebDavItem item) {
+    final settings = context.read<SettingsService>();
+    return settings.fileActions.forCategory(item.category);
+  }
+
+  /// 按设置的动作处理一个文件。
+  ///
+  /// 三个入口（整行点按、多选工具栏、更多菜单）都走这里，所以「点按音乐
+  /// 会缓存」和「菜单里的缓存音乐」永远是同一段代码。动作与条目类型不匹配
+  /// 时**直接说明原因**，不去猜用户想干什么——静默换成另一个动作会让设置
+  /// 看起来没生效。
+  Future<void> _runDefaultAction(WebDavItem item) async {
+    final decision = judgeAction(
+      action: _defaultActionFor(item),
+      category: item.category,
+      isDirectory: item.isDirectory,
+    );
+    if (!decision.allowed) {
+      AppSnack.error(context, decision.reason ?? '该动作不适用于这个文件');
+      return;
+    }
+    await _runAction(item, decision.action);
+  }
+
+  /// 在条目上执行一个**已判定合法**的动作。
+  Future<void> _runAction(WebDavItem item, FileAction action) async {
+    switch (action) {
+      case FileAction.cacheMusic:
+        await _cacheMusic(item);
+      case FileAction.download:
+        await _downloadItem(item);
+      case FileAction.stream:
+        await _openVideo(item);
+      case FileAction.readCue:
+        await _openCue(item);
+      case FileAction.streamMusic:
+        await _streamMusic(item);
+    }
+  }
+
+  /// 视频 → 远端流式播放（复用视频播放页与它的后台/通知栈）。
   Future<void> _openVideo(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
@@ -322,12 +318,26 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       ),
     );
   }
-
-  /// Download a file whose extension is in none of the configured lists.
+  /// 音乐 → 应用音频缓存，完成后 ingest 进音乐库。
   ///
-  /// Such files have no playback path, so they go to the public Downloads folder
-  /// (MediaStore `Download/…`) and are never indexed into the music library.
-  Future<void> _enqueueUnknown(WebDavItem item) async {
+  /// 成功时**刻意不出提示**：`enqueue` 对未缓存的文件要等整段下载结束才
+  /// 返回，这时弹「已加入下载」会出现在下载完成的那一刻。行上的状态标签
+  /// 与下载队列已经在显示进度，只有失败才说话。
+  Future<void> _cacheMusic(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
+    final downloads = context.read<DownloadQueueService>();
+    try {
+      await downloads.ensureQueued(sourceName, item.path, fileName: item.name);
+    } catch (e) {
+      if (!mounted) return;
+      AppSnack.error(context, '加入下载失败：${downloads.lastError ?? e}');
+    }
+  }
+
+  /// 任何文件 → 系统下载目录（不缓存、不进音乐库）。
+  Future<void> _downloadItem(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
@@ -346,71 +356,62 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
   }
 
-  /// Enqueue one file for download. Videos go to the **system gallery**;
-  /// music goes to the app-internal audio cache (playback reads only there).
+  /// 音乐 → 远端流式播放（实验性，T6）。
   ///
-  /// Deliberately **silent on success**: `enqueue` resolves when the task is
-  /// persisted for a cached file, but for a new file it waits for the whole
-  /// download — so a success message used to appear at *download completion*
-  /// while saying "已加入下载". The row's status chip and the download queue
-  /// already show progress; only failures speak up.
-  Future<void> _enqueueOnly(WebDavItem item) async {
+  /// 当前分支只做到「能播就行」：复用视频那套远端源与媒体通知，封面与时长
+  /// 不额外取（流式播放拿不到本地文件来解析标签）。完整取舍见 docs/99 的
+  /// 《音乐流式传输可行性分析》。
+  Future<void> _streamMusic(WebDavItem item) async {
+    if (!context.read<SettingsService>().fileActions.experimentalMusicStreaming) {
+      AppSnack.error(context, '音乐流式传输是实验功能，请先在设置里打开');
+      return;
+    }
     final accountId = _accountId;
     if (accountId == null) return;
-    final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
-    try {
-      if (item.isVideo) {
-        await downloads.enqueueGallery(
-          sourceName,
-          item.path,
-          fileName: item.name,
-        );
-        return;
-      }
-      await downloads.enqueue(sourceName, item.path, fileName: item.name);
-    } catch (e) {
-      if (!mounted) return;
-      final hint = downloads.lastError ?? '$e';
-      AppSnack.error(context, '加入下载失败：$hint');
-    }
+    AppSnack.show(context, '音乐流式传输尚未接入播放栈');
   }
 
-  /// Download many entries at once (multi-select). Videos → system gallery.
-  Future<void> _enqueueMany(List<WebDavItem> items) async {
+  /// 多选「下载」：**逐项按类型分发**，而不是把所有东西都当成音频。
+  ///
+  /// 只有音乐进音频缓存；视频与普通文件都落到系统下载目录。这里刻意不再
+  /// 把视频塞进系统相册——「下载」在动作模型里就是 `DownloadTarget.downloads`，
+  /// 想存相册可以在更多菜单里单独选。
+  Future<void> _downloadMany(List<WebDavItem> items) async {
     final accountId = _accountId;
     if (accountId == null || items.isEmpty) return;
     final sourceName = _nameFor(accountId);
     final downloads = context.read<DownloadQueueService>();
-    final videos = items.where((e) => e.isVideo).toList();
-    final others = items.where((e) => !e.isVideo).toList();
     var queued = 0;
-    if (videos.isNotEmpty) {
-      queued += await downloads.enqueueGalleryMany(
-        videos.map(
-          (v) => (sourceName: sourceName, remotePath: v.path, fileName: v.name),
-        ),
-      );
-    }
-    for (final item in others) {
-      // Video-adjacent and unknown files are neither audio nor cacheable.
-      if (!item.isAudio) continue;
-      if (await downloads.ensureQueued(
-        sourceName,
-        item.path,
-        fileName: item.name,
-      )) {
-        queued++;
+    var failed = 0;
+    for (final item in items) {
+      if (item.isDirectory) continue; // 文件夹由「下载整个文件夹」处理
+      try {
+        final ok = item.category == FileCategory.music
+            ? await downloads.ensureQueued(
+                sourceName,
+                item.path,
+                fileName: item.name,
+              )
+            : await downloads.enqueueToDownloads(
+                sourceName,
+                item.path,
+                fileName: item.name,
+              );
+        if (ok) queued++;
+      } catch (_) {
+        failed++;
       }
     }
     if (!mounted) return;
-    AppSnack.show(
-      context,
-      queued == 0
-          ? '所选条目均已在队列或已下载'
-          : '已加入 $queued 个下载任务'
-                '${videos.isEmpty ? '' : '（视频保存到系统相册）'}',
-    );
+    final parts = <String>[];
+    if (queued > 0) parts.add('已加入 $queued 项');
+    if (failed > 0) parts.add('失败 $failed 项');
+    final text = parts.isEmpty ? '所选条目均已在队列或已下载' : parts.join('，');
+    if (failed > 0) {
+      AppSnack.error(context, text);
+    } else {
+      AppSnack.show(context, text);
+    }
   }
 
   Future<void> _enqueueFolder(WebDavItem folder) async {
@@ -627,9 +628,24 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
   }
 
+  /// 单文件右侧「更多」菜单。
+  ///
+  /// 与 T1 的动作模型对齐：主行动那一条**就是**设置里选的默认动作（文案随之
+  /// 变化），其余是该类别允许的其它动作，最后才是重命名 / 复制 / 移动 /
+  /// 删除这些与类型无关的条目。上一版三处各写一套判定（音乐写「播放（仅
+  /// 本地缓存）」、视频只有播放、普通文件只有下载），已经开始互相打架。
   Future<void> _showItemMenu(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
+    final settings = context.read<SettingsService>();
+    final defaultAction = settings.fileActions.forCategory(item.category);
+    final otherActions = FileActionCatalog.forCategory(item.category)
+        .where((a) => a != defaultAction)
+        .where((a) =>
+            a != FileAction.streamMusic ||
+            settings.fileActions.experimentalMusicStreaming)
+        .toList();
+
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: AppColors.elevated,
@@ -638,34 +654,72 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       builder: (ctx) {
         return AppBottomSheet(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                title: Text(
-                  item.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.onDark,
-                    fontWeight: FontWeight.w600,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.onDark,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  subtitle: Text(
+                    item.isDirectory
+                        ? '文件夹'
+                        : '${categoryLabelZh(item.category)} · 点按＝${defaultAction.labelZh}',
+                    style: const TextStyle(color: AppColors.mutedText),
                   ),
                 ),
-                subtitle: Text(
-                  item.isDirectory ? '文件夹' : '文件',
-                  style: const TextStyle(color: AppColors.mutedText),
-                ),
-              ),
-              const Divider(height: 1, color: AppColors.divider),
-              if (item.isDirectory) ...[
-                ListTile(
-                  leading: const Icon(Icons.download),
-                  title: const Text('下载整个文件夹'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _enqueueFolder(item);
-                  },
-                ),
+                const Divider(height: 1, color: AppColors.divider),
+                if (item.isDirectory)
+                  ListTile(
+                    leading: const Icon(Icons.download),
+                    title: const Text('下载整个文件夹'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _enqueueFolder(item);
+                    },
+                  )
+                else ...[
+                  ListTile(
+                    leading: Icon(_actionIcon(defaultAction)),
+                    title: Text(defaultAction.labelZh),
+                    subtitle: const Text('设置里的默认动作'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _runDefaultAction(item);
+                    },
+                  ),
+                  for (final action in otherActions)
+                    ListTile(
+                      leading: Icon(_actionIcon(action)),
+                      title: Text(action.labelZh),
+                      subtitle: action == FileAction.streamMusic
+                          ? const Text('实验性：不下载、不进音乐库')
+                          : null,
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _runAction(item, action);
+                      },
+                    ),
+                  // 相册与下载目录是两条不同的落盘路径，视频两个都保留。
+                  if (item.isVideo)
+                    ListTile(
+                      leading: const Icon(Icons.photo_library_outlined),
+                      title: const Text('下载到系统相册'),
+                      subtitle: const Text('保存到 Movies/WebdavMediaManager'),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _downloadToGallery(item);
+                      },
+                    ),
+                ],
+                const Divider(height: 1, color: AppColors.divider),
                 ListTile(
                   leading: const Icon(Icons.drive_file_rename_outline),
                   title: const Text('重命名'),
@@ -675,109 +729,19 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
                 ListTile(
-                  leading: const Icon(
-                    Icons.delete_outline,
-                    color: AppColors.error,
-                  ),
-                  title: const Text('删除'),
+                  leading: const Icon(Icons.copy_outlined),
+                  title: const Text('复制到…'),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _deleteItem(item);
-                  },
-                ),
-              ] else if (item.isAudio) ...[
-                ListTile(
-                  leading: const Icon(Icons.download),
-                  title: const Text('下载到本地缓存'),
-                  subtitle: const Text('点按整行即为下载，此处为备用入口'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _enqueueOnly(item);
+                    _copyOrMove([item], move: false);
                   },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.play_arrow),
-                  title: const Text('播放（仅本地缓存）'),
+                  leading: const Icon(Icons.drive_file_move_outline),
+                  title: const Text('移动到…'),
                   onTap: () {
                     Navigator.pop(ctx);
-                    _onTapFile(item);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.drive_file_rename_outline),
-                  title: const Text('重命名'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _renameItem(item);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.delete_outline,
-                    color: AppColors.error,
-                  ),
-                  title: const Text('删除'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _deleteItem(item);
-                  },
-                ),
-              ] else if (item.isVideo) ...[
-                ListTile(
-                  leading: const Icon(Icons.play_circle_outline),
-                  title: const Text('打开视频（流式播放）'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _openVideo(item);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.download),
-                  title: const Text('下载到系统相册'),
-                  subtitle: const Text('保存到系统相册 Movies'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _enqueueOnly(item);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.drive_file_rename_outline),
-                  title: const Text('重命名'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _renameItem(item);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.delete_outline,
-                    color: AppColors.error,
-                  ),
-                  title: const Text('删除'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _deleteItem(item);
-                  },
-                ),
-              ] else ...[
-                // Not in the configured music/video/CUE extension lists: still
-                // downloadable, just with no playback path — it lands in the
-                // public Downloads folder instead of the audio cache.
-                ListTile(
-                  leading: const Icon(Icons.download),
-                  title: const Text('下载到系统下载目录'),
-                  subtitle: const Text('该后缀不在音乐/视频列表中，不会进入音乐库'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _enqueueUnknown(item);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.drive_file_rename_outline),
-                  title: const Text('重命名'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _renameItem(item);
+                    _copyOrMove([item], move: true);
                   },
                 ),
                 ListTile(
@@ -792,13 +756,54 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   },
                 ),
               ],
-            ],
+            ),
           ),
         );
       },
     );
   }
 
+  IconData _actionIcon(FileAction action) => switch (action) {
+        FileAction.cacheMusic => Icons.download_for_offline_outlined,
+        FileAction.download => Icons.download,
+        FileAction.stream => Icons.play_circle_outline,
+        FileAction.readCue => Icons.queue_music_outlined,
+        FileAction.streamMusic => Icons.stream,
+      };
+
+  /// 复制 / 移动选中的条目到另一个远端文件夹。
+  Future<void> _copyOrMove(List<WebDavItem> items, {required bool move}) async {
+    final accountId = _accountId;
+    if (accountId == null || items.isEmpty) return;
+    await copyOrMoveItems(
+      context,
+      items: items,
+      move: move,
+      accountId: accountId,
+      currentPath: _path,
+      onDone: _load,
+    );
+  }
+
+  /// 视频 → 系统相册（与「下载」分开的一条落盘路径）。
+  Future<void> _downloadToGallery(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
+    final downloads = context.read<DownloadQueueService>();
+    try {
+      final queued = await downloads.enqueueGallery(
+        sourceName,
+        item.path,
+        fileName: item.name,
+      );
+      if (!mounted) return;
+      if (!queued) AppSnack.show(context, '该文件已在队列或已保存');
+    } catch (e) {
+      if (!mounted) return;
+      AppSnack.error(context, '加入下载失败：${downloads.lastError ?? e}');
+    }
+  }
   Future<void> _createFolder() async {
     final controller = TextEditingController();
     final name = await showDialog<String>(
@@ -1051,7 +1056,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   title: Text(item.name),
                   subtitle: const Text('目录'),
                   trailing: _itemMenuButton(item),
-                  onTap: () => _onEntryTap(item, () => _enterDir(item)),
+                  onTap: () => _onEntryTap(item),
                   onLongPress: () => _enterSelect(item),
                 );
               }
@@ -1066,7 +1071,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     item.size != null ? _fmtSize(item.size!) : 'CUE 文件',
                   ),
                   trailing: _itemMenuButton(item),
-                  onTap: () => _onEntryTap(item, () => _openCue(item)),
+                  onTap: () => _onEntryTap(item),
                   onLongPress: () => _enterSelect(item),
                 );
               }
@@ -1106,7 +1111,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       _itemMenuButton(item),
                     ],
                   ),
-                  onTap: () => _onEntryTap(item, () => _onTapFile(item)),
+                  onTap: () => _onEntryTap(item),
                   onLongPress: () => _enterSelect(item),
                 );
               }
@@ -1121,7 +1126,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     item.size != null ? _fmtSize(item.size!) : '文件',
                   ),
                   trailing: _itemMenuButton(item),
-                  onTap: () => _onEntryTap(item, () {}),
+                  onTap: () => _onEntryTap(item),
                   onLongPress: () => _enterSelect(item),
                 );
               }
@@ -1170,7 +1175,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     _itemMenuButton(item),
                   ],
                 ),
-                onTap: () => _onEntryTap(item, () => _onTapFile(item)),
+                onTap: () => _onEntryTap(item),
                 onLongPress: () => _enterSelect(item),
               );
             },
@@ -1183,7 +1188,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// Checkbox shown in multi-select mode, otherwise the entry's own icon.
   Widget _selectionLeading(WebDavItem item, Widget icon) {
     if (!_selecting) return icon;
-    final selected = _selected.contains(_itemKey(item));
+    final selected = _selection.contains(_itemKey(item));
     return Icon(
       selected ? Icons.check_circle : Icons.circle_outlined,
       color: selected ? AppColors.accent : AppColors.mutedText,
@@ -1201,81 +1206,114 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
   }
 
-  /// Tap handling that respects multi-select mode.
-  void _onEntryTap(WebDavItem item, VoidCallback action) {
-    if (!_selecting) {
-      action();
+  /// 点按一行：多选中就切换勾选，否则执行这个条目的默认动作。
+  void _onEntryTap(WebDavItem item) {
+    if (_selecting) {
+      setState(() => _selection = _selection.toggle(_itemKey(item)));
       return;
     }
-    setState(() {
-      final key = _itemKey(item);
-      if (!_selected.remove(key)) _selected.add(key);
-      if (_selected.isEmpty) _selecting = false;
-    });
+    _activateItem(item);
   }
 
+  /// 长按一行进入多选，并把这一行选上。
   void _enterSelect(WebDavItem item) {
     setState(() {
-      _selecting = true;
-      _selected.add(_itemKey(item));
+      _selection = _selection.enter(
+        _itemKey(item),
+        selectOnly: _items.map(_itemKey),
+      );
     });
   }
 
+  /// 工具栏那个按钮：不是全选就全选，已经是全选就只取消全选（留在多选里）。
+  void _toggleSelectAll() {
+    setState(() => _selection = _selection.toggleSelectAll(_items.map(_itemKey)));
+  }
+
+  /// 多选工具栏。
+  ///
+  /// 交互约定（本分支修正）：**左边的按钮就是那个按钮**。
+  /// - 一进入多选不显示任何叉号：用户好不容易选了几项，旁边杵一个「关闭」
+  ///   只会让人误触。
+  /// - 选定数打满（计数器对比，不看按钮按过没有）时，它变成叉号，作用是
+  ///   **取消全选**，不是退出多选——退出多选交给系统返回键。
+  /// - 任何一次手动取消都会把计数打回去，按钮随即变回「全选」。
+  ///
+  /// 动作按类型分发：下载走 [_downloadMany]，播放只对单个视频开放，复制 /
+  /// 移动对任意条目都可选。
   Widget _buildSelectionBar() {
     final items = _selectedItems;
-    final videos = items.where((e) => e.isVideo).length;
-    final allSelected = _items.isNotEmpty && _selected.length >= _items.length;
+    final folders = items.where((e) => e.isDirectory).toList();
+    final files = items.where((e) => !e.isDirectory).toList();
+    final onlyFolder = folders.length == 1 && files.isEmpty;
+    final allSelected = _selection.isAllSelected;
+    final bulkAction = bulkDownloadAction(files.map((e) => e.category));
+    final single = items.length == 1 ? items.first : null;
+    final canStreamVideo =
+        single != null && single.category == FileCategory.video;
     return Material(
       color: AppColors.elevated,
       child: SafeArea(
         bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              IconButton(
-                tooltip: '取消',
-                onPressed: _exitSelect,
-                icon: const Icon(Icons.close),
-              ),
-              IconButton(
-                tooltip: allSelected ? '取消全选' : '全选',
-                onPressed: _items.isEmpty
-                    ? null
-                    : () => setState(() {
-                        if (allSelected) {
-                          _selected.clear();
-                          _selecting = false;
-                        } else {
-                          _selected
-                            ..clear()
-                            ..addAll(_items.map(_itemKey));
-                        }
-                      }),
-                icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
-              ),
-              Expanded(
-                child: Text(
-                  '已选 ${items.length} 项'
-                  '${videos > 0 ? '（$videos 个视频 → 系统相册）' : ''}',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                // 只在「已经全选」时出现的叉号：它是取消全选，不是关闭界面。
+                if (allSelected || _selection.count > 1)
+                  IconButton(
+                    tooltip: '取消全选',
+                    onPressed: _toggleSelectAll,
+                    icon: const Icon(Icons.deselect),
+                  )
+                else
+                  IconButton(
+                    tooltip: '全选',
+                    onPressed: _items.isEmpty ? null : _toggleSelectAll,
+                    icon: const Icon(Icons.select_all),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    '已选 ${items.length} 项',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
-              IconButton(
-                tooltip: '下载',
-                onPressed: items.isEmpty ? null : () => _enqueueMany(items),
-                icon: const Icon(Icons.download_for_offline_outlined),
-              ),
-              IconButton(
-                tooltip: '下载整个文件夹',
-                onPressed: items.length != 1 || !items.first.isDirectory
-                    ? null
-                    : () => _enqueueFolder(items.first),
-                icon: const Icon(Icons.folder_zip_outlined),
-              ),
-            ],
+                IconButton(
+                  tooltip: bulkAction.labelZh,
+                  onPressed: files.isEmpty ? null : () => _downloadMany(files),
+                  icon: Icon(_actionIcon(bulkAction)),
+                ),
+                IconButton(
+                  tooltip: '播放（流式传输）',
+                  onPressed: canStreamVideo
+                      ? () => _openVideo(single)
+                      : null,
+                  icon: const Icon(Icons.play_circle_outline),
+                ),
+                IconButton(
+                  tooltip: '复制到…',
+                  onPressed: items.isEmpty
+                      ? null
+                      : () => _copyOrMove(items, move: false),
+                  icon: const Icon(Icons.copy_outlined),
+                ),
+                IconButton(
+                  tooltip: '移动到…',
+                  onPressed: items.isEmpty
+                      ? null
+                      : () => _copyOrMove(items, move: true),
+                  icon: const Icon(Icons.drive_file_move_outline),
+                ),
+                IconButton(
+                  tooltip: '下载整个文件夹',
+                  onPressed: !onlyFolder ? null : () => _enqueueFolder(folders.first),
+                  icon: const Icon(Icons.folder_zip_outlined),
+                ),
+              ],
+            ),
           ),
         ),
       ),
