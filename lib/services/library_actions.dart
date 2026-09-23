@@ -142,6 +142,7 @@ Future<void> deleteTracksLocalCache(
         names.addAll(n);
       }
     }
+
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -237,6 +238,10 @@ Future<void> destroyLibraryTracks(
 ) async {
   if (tracks.isEmpty) return;
   final cache = context.read<CacheService>();
+  final app = context.read<AppState>();
+  // 展开成「实际会被销毁的全集」：CUE 分片点一片等于整张专辑，普通曲目就是自己。
+  // 确认框与进度条的数字都按这个集合算，否则会出现「将删除 1 首」而实际删掉一整张。
+  final all = app.destroyTargets(tracks);
 
   // CUE-sliced rows share one backing audio file; collapse the groups so the
   // confirmation lists files rather than virtual tracks.
@@ -271,7 +276,7 @@ Future<void> destroyLibraryTracks(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '将删除 ${tracks.length} 首曲目（缓存、库记录、元数据与封面），不可恢复。',
+              '将删除 ${all.length} 首曲目（缓存、库记录、元数据与封面），不可恢复。',
             ),
             if (groupIds.isNotEmpty)
               const Padding(
@@ -300,12 +305,11 @@ Future<void> destroyLibraryTracks(
   if (ok != true || !context.mounted) return;
 
   // 一首一首销毁：进度框走完（或用户终止）之后才回到这里。
-  final app = context.read<AppState>();
   final destroyed = await showDestroyProgress(
     context,
-    total: tracks.length,
+    total: all.length,
     run: (onProgress, isCancelled) => app.destroyLibraryTracks(
-      tracks,
+      all,
       onProgress: onProgress,
       isCancelled: isCancelled,
     ),

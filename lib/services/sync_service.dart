@@ -486,6 +486,17 @@ class SyncService extends ChangeNotifier {
       // Everything at or below the new base is materialised; those tombstones
       // have done their job.
       await _library.purgeTombstonesUpTo(written.baseUpTo);
+      // 硬约束：重建之后本地不该再有任何墓碑。行已经不在了的先静默清掉；
+      // 还清不掉的说明活行与墓碑同时存在，那是真异常，交给用户看见。
+      final clearedDead = await _library.clearDeadTombstones();
+      final leftoverTombs = await _library.allTombstones();
+      if (leftoverTombs.isNotEmpty) {
+        outcome.warn(
+          '重建后仍残留 ${leftoverTombs.length} 条墓碑（有活行与墓碑同时存在），建议检查数据',
+        );
+      } else if (clearedDead > 0) {
+        outcome.step('清理了 $clearedDead 条已失效的墓碑');
+      }
       // Every part name changed; the cursor is meaningless now.
       await _library.clearSyncCursor();
       await _library.refresh();

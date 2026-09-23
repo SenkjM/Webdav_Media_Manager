@@ -515,6 +515,54 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
   // --- Bidirectional CUE relations ---
 
+  /// Delete a **single** CUE slice row.
+  ///
+  /// 逐条墓碑必须配逐条删除：墓碑的 key 是那一片的虚拟路径，行也就只能一片一片地删。
+  /// 整组一次性清空会让兄弟片拿不到墓碑，它们会被旧 base 从云端带回来。
+  Future<int> deleteCueSlice(String sliceMusicId) async {
+    final db = await database;
+    return db.delete('cue_slices', where: 'music_id = ?', whereArgs: [sliceMusicId]);
+  }
+
+  /// Drop a CUE album row (its slices are already gone).
+  Future<void> deleteCueAlbum(String sourceName, String cueRemotePath) async {
+    final db = await database;
+    final cueId = cueIdFor(sourceName, cueRemotePath);
+    final normalized = normalizeRemotePath(cueRemotePath);
+    final albums = await db.query(
+      'cue_albums',
+      columns: ['cue_id'],
+      where: 'cue_id = ? OR (source_name = ? AND cue_remote_path = ?)',
+      whereArgs: [cueId, sourceName, normalized],
+    );
+    for (final id in <String>{cueId, ...albums.map((r) => r['cue_id'] as String)}) {
+      await db.delete('cue_albums', where: 'cue_id = ?', whereArgs: [id]);
+    }
+  }
+
+  /// How many slices a CUE album still has. 0 means the album can go too.
+  Future<int> remainingSlicesForCue(String sourceName, String cueRemotePath) async {
+    final db = await database;
+    final cueId = cueIdFor(sourceName, cueRemotePath);
+    final normalized = normalizeRemotePath(cueRemotePath);
+    final albums = await db.query(
+      'cue_albums',
+      columns: ['cue_id'],
+      where: 'cue_id = ? OR (source_name = ? AND cue_remote_path = ?)',
+      whereArgs: [cueId, sourceName, normalized],
+    );
+    final ids = <String>{cueId, ...albums.map((r) => r['cue_id'] as String)};
+    var n = 0;
+    for (final id in ids) {
+      n += Sqflite.firstIntValue(await db.rawQuery(
+            'SELECT COUNT(*) FROM cue_slices WHERE cue_id = ?',
+            [id],
+          )) ??
+          0;
+    }
+    return n;
+  }
+
   Future<Map<String, dynamic>?> cueAlbumForSlice(String sliceMusicId) async {
     final db = await database;
     final slices = await db.query(

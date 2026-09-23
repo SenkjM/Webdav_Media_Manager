@@ -78,6 +78,28 @@ class LibraryService extends ChangeNotifier {
   /// Drop tombstones that a rebuild has materialised (`rev <= upTo`).
   Future<int> purgeTombstonesUpTo(int upTo) => _db.purgeTombstonesUpTo(upTo);
 
+  /// Every tombstone, pushed or not (重建后的残留检查要看全量).
+  Future<List<Map<String, dynamic>>> allTombstones() => _db.allTombstones();
+
+  /// 清掉「行已经不在」的墓碑，返回清掉几条。
+  ///
+  /// 重建之后云端 base 就是本地全部行的快照，删除意图也一起被物化了，所以
+  /// **本地不该再留着任何墓碑**。这里只清那些确实没有对应活行的——还留着活行
+  /// 的墓碑属于「行 rev 高于墓碑」的复活场景，要不要清得让用户看见。
+  Future<int> clearDeadTombstones() async {
+    final rows = await _db.allTombstones();
+    var cleared = 0;
+    for (final row in rows) {
+      final source = row['source_name'] as String? ?? '';
+      final path = row['remote_path'] as String? ?? '';
+      if (source.isEmpty || path.isEmpty) continue;
+      if (find(source, path) != null) continue;
+      await _db.clearTombstone(source, path);
+      cleared++;
+    }
+    return cleared;
+  }
+
   /// Forget tombstones for rows that were re-downloaded (they are alive again).
   Future<void> clearTombstones(Set<int> revs) async {
     if (revs.isEmpty) return;
@@ -593,9 +615,8 @@ class LibraryService extends ChangeNotifier {
   ///
   /// One song is the atomic unit of destruction — callers loop over songs and
   /// stop *between* them, never inside one. CUE slices share a backing file, so
-  /// destroying any slice takes the whole album's virtual rows with it; the
-  /// siblings are then already gone, and a later call on one of them finds nothing
-  /// to do.
+  /// 每一次调用只删自己那一片，兄弟片各自留各自的墓碑——整组一次性
+  /// 清空会让后面几片拿不到墓碑，它们会在下一次从云端拉取时被旧 base 带回来。
   ///
   /// Distinct from [removeTrack] (rows only) and from cache deletion (audio files
   /// only, metadata kept). The audio file itself is the caller's business:
@@ -607,13 +628,16 @@ class LibraryService extends ChangeNotifier {
     await _covers.deleteThumb(track.sourceName, track.remotePath);
     await _covers.deleteFull(track.sourceName, track.remotePath);
     if (track.isCueVirtual && track.cueRemotePath != null) {
-      await _db.deleteTracksForCue(track.sourceName, track.cueRemotePath!);
-      _tracks.removeWhere(
-        (t) =>
-            t.sourceName == track.sourceName &&
-            t.isCueVirtual &&
-            t.cueRemotePath == track.cueRemotePath,
-      );
+      // 逐条：只删这一片。整组一次性清空的话，兄弟片就再也拿不到墓碑，
+      // 它们会在下一次从云端拉取时被旧 base 带回来。
+      final cuePath = track.cueRemotePath!;
+      await _db.deleteCueSlice(track.musicId);
+      _tracks.removeWhere((t) => t.musicId == track.musicId);
+      // 整组最后一片走完，专辑行也就没有存在的理由了。
+      final remaining = await _db.remainingSlicesForCue(track.sourceName, cuePath);
+      if (remaining == 0) {
+        await _db.deleteCueAlbum(track.sourceName, cuePath);
+      }
     } else {
       await _db.deleteTrack(track.sourceName, track.remotePath);
       _tracks.removeWhere(

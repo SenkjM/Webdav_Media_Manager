@@ -362,14 +362,45 @@ class AppState extends ChangeNotifier {
   /// 在半首上。顺序是墓碑 → 本地音频 → 封面 → 库行 → 内存（最后一步连同
   /// `notifyListeners()` 在 [LibraryService.destroyTrack] 里完成）。
   ///
-  /// 返回 false 表示这首歌已经不在了——同一张 CUE 的兄弟曲目被上一次调用带走，
-  /// 调用方不该把它算进「已销毁」。
+  /// 返回 false 表示这首歌已经不在了。返回值只管「这次有没有东西被销毁」；
+  /// 要数字就数 [LibraryService.count] 前后的差，不要数它。
   Future<bool> destroyLibraryTrack(LibraryTrack track) async {
     final live = library.find(track.sourceName, track.remotePath);
     if (live == null) return false;
-    await _deleteCachedAudioFor(live);
-    await library.destroyTrack(live);
-    return true;
+    final expanded = destroyTargets(<LibraryTrack>[live]);
+    for (final one in expanded) {
+      await _deleteCachedAudioFor(one);
+      await library.destroyTrack(one);
+    }
+    return expanded.isNotEmpty;
+  }
+
+  /// 展开成「实际会被销毁的全集」：CUE 分片点中一片等于整张专辑，普通曲目就是自己。
+  ///
+  /// 组的成员要查**全库**，不能只在传入的集合里找——只点一片时那个集合里只有一片。
+  /// 展开放在这里而不是 [LibraryService.destroyTrack]：销毁的原子单位始终是一片，
+  /// 每片各删各的行、各留各的墓碑，只有「一次跑几片」是调用方的事。
+  List<LibraryTrack> destroyTargets(Iterable<LibraryTrack> selected) {
+    final parsed = <String, List<LibraryTrack>>{};
+    for (final x in library.tracks) {
+      final cuePath = x.cueRemotePath;
+      if (!x.isCueVirtual || cuePath == null) continue;
+      parsed.putIfAbsent('${x.sourceName}\u0000$cuePath', () => <LibraryTrack>[]).add(x);
+    }
+    final seen = <String>{};
+    final out = <LibraryTrack>[];
+    for (final t in selected) {
+      final cuePath = t.cueRemotePath;
+      final group = (t.isCueVirtual && cuePath != null)
+          ? (parsed['${t.sourceName}\u0000$cuePath'] ?? <LibraryTrack>[t])
+          : <LibraryTrack>[t];
+      for (final one in group) {
+        if (seen.add(one.musicId)) out.add(one);
+      }
+      // 兜底：选中的项万一不在内存里，也别把它漏掉。
+      if (seen.add(t.musicId)) out.add(t);
+    }
+    return out;
   }
 
   /// 逐首销毁 [tracks]：每跑完一首回调一次 [onProgress]，并在两首之间询问
