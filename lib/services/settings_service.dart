@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cache_policy.dart';
+import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
 import '../models/snack_duration.dart';
@@ -30,6 +31,7 @@ class SettingsService extends ChangeNotifier {
   static const _kFileTypeConfig = 'file_type_config_json';
   static const _kMusicTapAction = 'music_tap_action';
   static const _kVideoTapAction = 'video_tap_action';
+  static const _kFileActionConfig = 'file_action_config_json';
   static const _kHomeTab = 'home_tab_index';
   static const _kNetworkRememberLastPath = 'network_remember_last_path';
   static const _kNetworkLastPath = 'network_last_path';
@@ -145,6 +147,12 @@ class SettingsService extends ChangeNotifier {
   FileTypeConfig _fileTypes = FileTypeConfig();
   MusicTapAction _musicTapAction = MusicTapAction.download;
   VideoTapAction _videoTapAction = VideoTapAction.open;
+
+  /// 统一文件动作模型（T1）：按后缀类别决定单击行为。
+  ///
+  /// 旧的 [musicTapAction] / [videoTapAction] 保留为**兼容读**：没有新配置
+  /// 的旧安装会按它们迁移一次，之后两者不再参与判定。
+  FileActionConfig _fileActions = FileActionConfig();
   int _homeTab = 0;
   bool _networkRememberLastPath = false;
   String _networkLastPath = '/';
@@ -229,6 +237,7 @@ class SettingsService extends ChangeNotifier {
   FileTypeConfig get fileTypes => _fileTypes;
   MusicTapAction get musicTapAction => _musicTapAction;
   VideoTapAction get videoTapAction => _videoTapAction;
+  FileActionConfig get fileActions => _fileActions;
   int get homeTab => _homeTab;
   bool get networkRememberLastPath => _networkRememberLastPath;
   String get networkLastPath => _networkLastPath;
@@ -332,6 +341,7 @@ class SettingsService extends ChangeNotifier {
     _videoTapAction = VideoTapActionX.fromStorageKey(
       _prefs!.getString(_kVideoTapAction),
     );
+    _fileActions = _readFileActions();
     _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
@@ -474,6 +484,53 @@ class SettingsService extends ChangeNotifier {
     await _prefs!.setInt(_kCoverThumbSize, _coverThumbSize);
     notifyListeners();
   }
+
+  /// 读统一动作配置；没有就按旧的 music/video 单击行为迁移一次。
+  ///
+  /// 迁移只发生一次：写完新键之后旧键不再被读。旧语义 → 新动作：
+  /// 音乐 `play`（已缓存则播放，否则下载）与 `download` 都是「缓存音乐」，
+  /// 视频 `open` → 流式传输、`download` → 下载。
+  FileActionConfig _readFileActions() {
+    final raw = _prefs!.getString(_kFileActionConfig);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final json = jsonDecode(raw);
+        if (json is Map<String, dynamic>) {
+          final parsed = FileActionConfig.fromJson(json);
+          if (parsed != null) return parsed;
+        }
+      } catch (_) {
+        // fall through to the legacy migration
+      }
+    }
+    return FileActionConfig(
+      actions: {
+        // 旧音乐语义（download / play）都是「先缓存再播」，统一映射到缓存音乐。
+        FileCategory.music: FileAction.cacheMusic,
+        FileCategory.video: _videoTapAction == VideoTapAction.download
+            ? FileAction.download
+            : FileAction.stream,
+        FileCategory.cue: FileAction.readCue,
+        FileCategory.other: FileAction.download,
+      },
+    );
+  }
+
+  Future<void> setFileActions(FileActionConfig config) async {
+    _fileActions = config;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kFileActionConfig, jsonEncode(config.toJson()));
+    notifyListeners();
+  }
+
+  /// 改一个类别的单击行为。
+  Future<void> setFileAction(FileCategory category, FileAction action) =>
+      setFileActions(_fileActions.withAction(category, action));
+
+  /// 音乐流式传输实验开关（T6）。
+  Future<void> setExperimentalMusicStreaming(bool enabled) => setFileActions(
+        _fileActions.copyWith(experimentalMusicStreaming: enabled),
+      );
 
   Future<void> setFileTypes(FileTypeConfig config) async {
     _fileTypes = config;
@@ -760,6 +817,8 @@ class SettingsService extends ChangeNotifier {
     'playlist_sync_enabled': _playlistSyncEnabled,
     'cover_thumb_size': _coverThumbSize,
     'file_type_config': _fileTypes.toJson(),
+    'file_action_config': _fileActions.toJson(),
+    // 兼容字段：旧版本恢复到本机时仍能读懂，判定一律走 file_action_config。
     'music_tap_action': _musicTapAction.storageKey,
     'video_tap_action': _videoTapAction.storageKey,
     'home_tab_index': _homeTab,
@@ -818,6 +877,27 @@ class SettingsService extends ChangeNotifier {
       await setFileTypes(
         FileTypeConfig.fromJson(
           Map<String, dynamic>.from(json['file_type_config'] as Map),
+        ),
+      );
+    }
+    if (json['file_action_config'] is Map) {
+      final parsed = FileActionConfig.fromJson(
+        Map<String, dynamic>.from(json['file_action_config'] as Map),
+      );
+      if (parsed != null) await setFileActions(parsed);
+    } else if (json['music_tap_action'] != null || json['video_tap_action'] != null) {
+      await setFileActions(
+        FileActionConfig(
+          actions: {
+            FileCategory.music: FileAction.cacheMusic,
+            FileCategory.video:
+                VideoTapActionX.fromStorageKey(json['video_tap_action'] as String?) ==
+                        VideoTapAction.download
+                    ? FileAction.download
+                    : FileAction.stream,
+            FileCategory.cue: FileAction.readCue,
+            FileCategory.other: FileAction.download,
+          },
         ),
       );
     }

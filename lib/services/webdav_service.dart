@@ -263,6 +263,7 @@ class WebDavService extends ChangeNotifier {
     await client.remove(path);
   }
 
+  /// 复制到另一个路径（WebDAV COPY）。文件夹会被整棵复制。
   Future<void> renamePath(
     String accountId,
     String oldPath,
@@ -273,6 +274,17 @@ class WebDavService extends ChangeNotifier {
     await client.rename(oldPath, newPath, overwrite);
   }
 
+  Future<void> copyPath(String accountId, String oldPath, String newPath) async {
+    final client = _requireClient(accountId);
+    // Overwrite=false：目标已存在时让服务端报错（412 / 409），由上层先算好不冲突的名字。
+    await client.copy(oldPath, newPath, false);
+  }
+
+  /// 移动（WebDAV MOVE）。语义等同重命名，但可以跨目录。
+  Future<void> movePath(String accountId, String oldPath, String newPath) async {
+    final client = _requireClient(accountId);
+    await client.rename(oldPath, newPath, false);
+  }
   /// Recursively collect audio file paths under [folderPath] on one account.
   Future<List<WebDavItem>> collectAudioRecursive(
     String accountId,
