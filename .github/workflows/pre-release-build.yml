@@ -136,10 +136,15 @@ jobs:
         run: |
           set -euo pipefail
           V="${{ needs.check.outputs.version_name }}"
+          # split APK 的实际文件名由构建工具决定，不要写死：Flutter 3.47.5 出的是
+          # app-<abi>-prod-release.apk（ABI 在前），旧版曾是 app-prod-<abi>-release.apk。
+          # 原来写死旧名称，于是 cp 报 "No such file or directory" 且看不到目录里有什么。
+          echo "== flutter-apk 目录内容 =="
+          ls -l build/app/outputs/flutter-apk || true
           mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-prod-arm64-v8a-release.apk "dist/webdav-media-manager-${V}-arm64-v8a.apk"
-          cp build/app/outputs/flutter-apk/app-prod-armeabi-v7a-release.apk "dist/webdav-media-manager-${V}-armeabi-v7a.apk"
-          cp build/app/outputs/flutter-apk/app-prod-x86_64-release.apk "dist/webdav-media-manager-${V}-x86_64.apk"
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-prod-release.apk "dist/webdav-media-manager-${V}-arm64-v8a.apk"
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-prod-release.apk "dist/webdav-media-manager-${V}-armeabi-v7a.apk"
+          cp build/app/outputs/flutter-apk/app-x86_64-prod-release.apk "dist/webdav-media-manager-${V}-x86_64.apk"
 
       - name: Build arm-only APK (no x86)
         env:
