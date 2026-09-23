@@ -52,6 +52,14 @@ android {
         }
     }
 
+    // 原生库压缩存放：APK 明显变小，代价是安装时要解压（安装更慢、占用更多存储）。
+    // 与 `flutter build apk --split-per-abi` 配合，单包只有一份 ABI。
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
             val internal = signingConfigs.getByName("internal")
