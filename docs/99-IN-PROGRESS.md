@@ -210,3 +210,39 @@
 - 阶段一落地后跑 `flutter analyze` 与 `flutter test`；阶段二补设置项相关的测试。
 
 相关完整文档：[09 §编码约定](09-MISC.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[07](07-NOTIFICATIONS.md)。待发布与合并判断见 [10-SIDE-QUESTS.md](10-SIDE-QUESTS.md)。
+
+## 5. 多语言（已分析，未决定，代码未动）
+
+用户问「多语言支持怎么处理」，只做了查证与拆分：**没有动代码**，也没有把工程写进顺手做清单——它不满足「一屏以内、无需新设计决定」这两条。
+
+### 5.1 实测现状（2026 年底核）
+
+| 项 | 值 |
+|---|---|
+| 含中文的字符串字面量 | 944 条（约 1.1 万汉字） |
+| 分布在 | 61 / 85 个 Dart 文件 |
+| `flutter_localizations` | 未引入 |
+| `intl` | pubspec 已声明 `^0.20.3`，代码中未直接使用 |
+| `l10n.yaml` / `.arb` | 都不存在 |
+| `android/app/src/main/res/values*/strings.xml` | 不存在（应用名走 gradle `manifestPlaceholders["appName"]`） |
+| 文案最集中的文件 | `sync_screen` 112、`settings_screen` 84、`network_library_screen` 75、`video_player_screen` 64 |
+
+### 5.2 三个结构性难点（必须在批量替换**之前**处理）
+
+1. **枚举的显示名**：`models/` 下 38 个文件有中文，多为 `XxxLabel` / `label` 扩展（`CacheRetention`、`DownloadTarget`、`FileAction`、`SyncInterval`、`VideoGestureAction` …）。model 层拿不到 `BuildContext`。推荐做法是给这些 label 扩一个 `AppLocalizations` 参数，而不是把映射表搬到 UI 层（后者要动几十个调用点）。
+2. **被持久化的字符串值**：`library_service.dart:503` 用 `'未分类'` 当 key 并参与排序比较；`playlist.dart:75` 落库默认值 `'未命名'`；`accounts_service.dart:127` 默认服务器名 `'默认服务器'`。**改字符串之前必须先脱钩**，否则旧数据对不上。真机数据库里是否已存在这些值，我查不到。
+3. **后台服务的文案**：`services/` 下 18+ 个文件、38 组含中文，例如 `download_queue_service` 的 `_lastError`、`audio_player_service` 的 `'本地无缓存，请先下载'`、`backup_service` 的异常文案。service 层没有 `BuildContext`，正确做法是返回错误码 / 结构化结果，由 UI 层映射文案——这是重构，不是替换。
+
+### 5.3 分阶段（顺序不能调）
+
+| 阶段 | 内容 | 备注 |
+|---|---|---|
+| 0 | `flutter_localizations` + `l10n.yaml` + ARB + `MaterialApp` 接线 | 见 [10 T4](10-SIDE-QUESTS.md)；key 命名规则必须在这一步定死 |
+| 1 | 5.2 的三类结构性问题 | 做不完就替换文案 = 白干 |
+| 2 | 按模块替换 944 条文案 | 线性体力活，一批一个 commit |
+| 3 | 平台侧资源（应用名、通知渠道名） | 见 [10 T5](10-SIDE-QUESTS.md) |
+| 4 | 语言切换（跟随系统 / 应用内切换 + 持久化） | 独立功能，可选 |
+
+### 5.4 需要用户决定的三件事
+
+1. 目标语言（中 + 英？）；2. 范围（全量还是先跑通一两个模块）；3. 要不要应用内语言切换。**未决定前不开工。**
