@@ -81,9 +81,9 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
         seed: seed.siblings.where((e) => e.category == FileCategory.music).toList(),
         initialRemotePath: seed.current.path,
         category: FileCategory.music,
-        // 连播整张专辑会一直吃流量，先关掉自动下一首（设置里也没有开关，
-        // 第一版按最省流量来）。手动上一首 / 下一首仍然可用。
-        autoAdvance: false,
+        // 自动连播开着：流式播放是「听专辑」的场景，放完一首就停住反而要用户
+        // 每次回来点一下。代价是整张专辑会一直吃流量。手动切歌照旧。
+        autoAdvance: true,
       );
       _queue!.addListener(_onQueueChanged);
       _queue!.startScan();
