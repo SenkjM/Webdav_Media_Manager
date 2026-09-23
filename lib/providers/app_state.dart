@@ -355,37 +355,60 @@ class AppState extends ChangeNotifier {
     _syncCoverThumbSize();
   }
 
-  /// Mark every song in the local library as destroyed: one tombstone per track
-  /// and nothing else. No row, no cached audio, no cover and no playlist entry is
-  /// touched — locally the library is left exactly as it is.
+  /// Destroy the whole library one song at a time — the same sequence the 逐条
+  /// 「销毁」button runs, applied to every row.
   ///
-  /// The **deletion record** is what this action produces: the next sync uploads
-  /// the tombstones as `del-*.wdmm` and the cloud materialises them on its next
-  /// rebuild. That is the whole difference from [overwriteLibraryFromCloud],
-  /// which pulls the cloud copy down over the local one.
+  /// Per song: tombstone first (so a sync racing the deletion still learns about
+  /// it), then its cached audio, its cover art and its library row, and one
+  /// `notifyListeners()` for the batch at the end. Dropping the rows is what
+  /// makes the songs leave the local library screen: a tombstone on its own
+  /// changes nothing locally ([LibraryDatabase.tombstonedKeys] has no callers).
   ///
-  /// Ends by switching 定时同步 off (the confirmation says so): the user is
-  /// deciding *that* these songs die and *when* the cloud hears about it, instead
-  /// of the app pushing the deletion on its own schedule.
+  /// Different from [overwriteLibraryFromCloud] in both directions: nothing is
+  /// pulled from the cloud, the sync cursor and the rows of other accounts stay
+  /// where they are, and what travels is the **deletion** — the next sync uploads
+  /// it as `del-*.wdmm`, and the cloud materialises it on its next rebuild.
   ///
-  /// Returns how many songs were tombstoned, so the caller can report a number
-  /// even though nothing visible changed.
+  /// Ends by switching 定时同步 off (the confirmation says so): pushing the
+  /// deletions is left to a moment the user picks.
+  ///
+  /// Returns how many songs were destroyed.
   Future<int> destroyMusicLibrary() async {
     return _quietLibraryWrites(() async {
-      final destroyed = await _tombstoneEveryLibraryTrack();
-      await settings.setSyncInterval(SyncInterval.off);
-      return destroyed;
-    });
-  }
+      final snapshot = List.of(library.tracks);
+      final groupIds = <String>{};
+      final audioKeys = <String>{}; // accountId\0remotePath
 
-  /// One tombstone per track, taken from a snapshot so the loop cannot be
-  /// disturbed by the library changing underneath it.
-  Future<int> _tombstoneEveryLibraryTrack() async {
-    final snapshot = List.of(library.tracks);
-    for (final t in snapshot) {
-      await library.recordTombstone(t.sourceName, t.remotePath);
-    }
-    return snapshot.length;
+      for (final t in snapshot) {
+        final audio = t.effectiveAudioRemotePath;
+        audioKeys.add('${t.sourceName}\u0000$audio');
+        if (t.cueRemotePath != null && t.cueRemotePath!.isNotEmpty) {
+          audioKeys.add('${t.sourceName}\u0000${t.cueRemotePath}');
+        }
+        final gid = t.cacheGroupId;
+        if (gid != null && gid.isNotEmpty) groupIds.add(gid);
+      }
+
+      // 1. Cached audio: whole CUE groups first (one file backs an album), then
+      //    the remaining single files.
+      for (final gid in groupIds) {
+        await cache.deleteCacheGroup(gid);
+      }
+      for (final key in audioKeys) {
+        final parts = key.split('\u0000');
+        if (parts.length < 2) continue;
+        await cache.deleteLocalFile(
+          sourceName: parts[0],
+          remotePath: parts.sublist(1).join('\u0000'),
+        );
+      }
+
+      // 2. Tombstones, covers, rows, in-memory list — per track, inside the
+      //    service, in that order.
+      await library.destroyTracks(snapshot);
+      await settings.setSyncInterval(SyncInterval.off);
+      return snapshot.length;
+    });
   }
 
   /// 「从云端覆写音乐库」: drop the local index and pull the cloud copy whole.

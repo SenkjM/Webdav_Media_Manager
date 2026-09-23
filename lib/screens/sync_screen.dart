@@ -252,13 +252,13 @@ class _SyncScreenState extends State<SyncScreen> {
     });
   }
 
-  /// 「销毁音乐库」：逐首立墓碑 + 关掉定时同步；本地数据一行不动。
+  /// 「销毁音乐库」：对全库逐条销毁（墓碑 + 缓存 + 封面 + 行），再关掉定时同步。
   Future<void> _destroyLibrary() async {
     final app = context.read<AppState>();
     final ok = await _confirmDestructive(
       title: '销毁音乐库',
-      body: '会把本地音乐库里的每一首都标记为已销毁（立墓碑），下次同步时把删除记录上传到云端。',
-      note: '本地文件与数据不会被删除；云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。',
+      body: '会逐条销毁本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。',
+      note: '删除记录会在下次同步时上传到云端，云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。',
       action: '销毁',
       phrase: '如果确认销毁请输入 YES',
     );
@@ -266,7 +266,7 @@ class _SyncScreenState extends State<SyncScreen> {
     await _guard(() async {
       final count = await app.destroyMusicLibrary();
       if (!mounted) return;
-      AppSnack.showGlobal('已标记 $count 首为销毁；下次同步上传删除记录，定时同步已关闭');
+      AppSnack.showGlobal('已销毁 $count 首；下次同步上传删除记录，定时同步已关闭');
     });
   }
 
