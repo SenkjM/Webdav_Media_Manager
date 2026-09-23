@@ -130,8 +130,21 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 | **OEM 无媒体通知** | 通道重要性过低 / 未声明 typed FGS | 保留 vendor 补丁与 v4 通道；真机测 ColorOS / 一加（[05 §7](05-AUDIO-PLAYBACK.md)） |
 | **通道状态查不到 / 与系统不一致** | 通道原先只由首次播放时的原生代码创建 | 通道唯一定义在 `media_notification_channel.dart`，启动时创建，参数两侧必须一致（[07 §2](07-NOTIFICATIONS.md)） |
 | **API 33+ 自定义动作图标崩溃** | `audio_service` 自带 `drawable/audio_service_*` 在 release 里合并不可靠 | 用 app 自带 `drawable/ic_media_*` + `res/raw/keep.xml`（[07 §2](07-NOTIFICATIONS.md)） |
+| **工具栏整条不显示 / 渲染时炸** | 外壳是横向滚动层，宽度约束无限：`minWidth: double.infinity` 不可满足；`Expanded` / `Flexible` / `Spacer` 没有剩余空间可分 | 铺满用具体宽度（`constraints.maxWidth`）；按钮里不用 `Expanded`，文字自然宽度。**analyze 与测试都发现不了**（[02 §5](02-NETWORK-LIBRARY.md)） |
+| **两库工具栏各写一套** | 网络库与音乐库曾各写一遍，于是各修一次、各炸一次 | 共用 `lib/widgets/selection_toolbar.dart`；子项只放按钮，业务逻辑留各库 |
+| **多选全选点了没反应** | `toggleSelectAll` 没把 `total` 设成传入的键数（音乐库不走 `sync`） | `total` 由传入列表定；计数对着**当前列表**比（[02 §5](02-NETWORK-LIBRARY.md)） |
+| **多选里按返回回到上一页 / 主页** | 子页只用 `ModalRoute.isFirst` 判断（嵌套 Navigator 上恒为真，没用） | 子页本地 `PopScope(canPop: !_selecting)` 接管（[02 §5](02-NETWORK-LIBRARY.md)） |
+| **缓存按钮变灰** | 按「只选了一个文件夹」特判，多选文件夹就废 | 两条线都不挑个数；该灰只可能是 `items.isEmpty`（[02 §5](02-NETWORK-LIBRARY.md)） |
+| **选中文件夹与其中的文件时重复排队 / 炸** | 界面自己分「文件夹路」与「文件路」，同一路径从两个入口各排一次 | 扫描与去重都在后端：一个 `enqueueSelection(folderPaths, files, target)`（[04](04-DOWNLOAD-QUEUE.md)） |
+| **先点缓存再点下载，第二条被悄悄吃掉** | 去重键只有 (来源, 路径) | 键是 **(来源, 路径, 目标)**（[04](04-DOWNLOAD-QUEUE.md)） |
+| **下载跳过音频 / 视频 / CUE** | 下载路径曾自作主张按 `FileTypeConfig` 过滤 | 下载**不挑类型**，一个都不跳；只有缓存那条才只收音频（[02 §5](02-NETWORK-LIBRARY.md)） |
+| **下载图标随对象变** | 行菜单里文件夹项用过 `folder_zip_outlined` | 下载恒为 `Icons.download`：文件夹、文件、工具栏一致（[02 §5](02-NETWORK-LIBRARY.md)） |
+| **目录选择器「上一级」一步跳回根目录** | `_stack` 把整条 `initialPath` 当成一层压入 | `remoteAncestors` 逐层压栈；上一级与返回键**各退一层**，到根再按才关闭（`lib/utils/remote_path.dart`） |
+| **下拉菜单顶出屏幕 / 往上弹** | 服务器多起来时菜单高度不受限 | `menuMaxHeight` 半屏 + `isExpanded: true`（[02 §4](02-NETWORK-LIBRARY.md)） |
 
-相关提交可参考：`c235c92`（CUE ingest）、`1649677`（music_id v5 / 备份）、`0ed9591`（mute + remote chip）、`922d3c4`（unmute before play + ColorOS BUFFERING / v4）、`9c9d5c5`（返回键）、`251e46a`（MainActivity）、`ebe85b7`（禁用 push 触发 CI）。
+本轮相关提交：`fa0c92f`（缓存 / 下载分成两条线）、`c366b2a`（扫描与去重收进 `enqueueSelection`）、`a408c5b`（音乐库工具栏 `Expanded`）、`65d7a55`（选择器逐级返回）、`b9ecd65`（文件夹下载图标）、`0ec8349`（下拉框限高半屏）。
+
+更早的相关提交：`c235c92`（CUE ingest）、`1649677`（music_id v5 / 备份）、`0ed9591`（mute + remote chip）、`922d3c4`（unmute before play + ColorOS BUFFERING / v4）、`9c9d5c5`（返回键）、`251e46a`（MainActivity）、`ebe85b7`（禁用 push 触发 CI）。
 
 ## 5. 测试入口（改核心逻辑时优先跑）
 
@@ -147,6 +160,8 @@ flutter test test/media_notification_channel_test.dart
 flutter test test/cache_group_deletion_test.dart
 flutter test test/music_extension_policy_test.dart
 flutter test test/download_queue_ordering_test.dart
+flutter test test/remote_path_test.dart       # 目录选择器逐级返回
+flutter test test/remote_path_test.dart      # 目录选择器逐级返回
 flutter test test/sync_interval_test.dart
 flutter test                   # 或全量
 ```
