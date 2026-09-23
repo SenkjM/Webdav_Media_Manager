@@ -16,8 +16,10 @@ import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
+import '../widgets/selection_toolbar.dart';
 import '../widgets/track_status_chip.dart';
 import 'home_shell.dart';
+
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
 
@@ -35,7 +37,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _searchCtrl.dispose();
     super.dispose();
   }
-  
+
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryService>();
@@ -102,7 +104,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ],
               icon: const Icon(Icons.sort),
             ),
-            
           ],
           bottom: const TabBar(
             isScrollable: true,
@@ -366,13 +367,12 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
 
   /// 多选时先吃掉返回键：退出多选，而不是退出这一页或回主页。
   ///
-  /// 只在**本路由位于栈底**时生效：流派 / 专辑的子界面是压在库页面之上的
-  /// 新路由，那个子界面的多选组件必须自己处理返回键，上层这两个（预建的
-  /// 主列表与网格）绝不能跟着掺一脚——否则返回键会去退出一个用户看不见的
-  /// 多选界面，子界面上的多选却纹丝不动。
+  /// 只在**当前路由**上生效：流派 / 专辑的子界面会把自己压在库页面之上，
+  /// 那时预建在这里的实例不该越权处理子界面的返回键。子界面自己用
+  /// `PopScope` 处理，不靠这里。
   bool _handleSystemBack() {
     if (!mounted) return false;
-    if (!(ModalRoute.of(context)?.isFirst ?? true)) return false;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return false;
     if (_selection.active) {
       _exitSelect();
       return true;
@@ -381,9 +381,8 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
   }
 
   /// 全选 / 取消全选。取消全选**不会**退出多选界面。
-  void _toggleSelectAll() => setState(
-        () => _selection = _selection.toggleSelectAll(widget.keys),
-      );
+  void _toggleSelectAll() =>
+      setState(() => _selection = _selection.toggleSelectAll(widget.keys));
 
   @override
   Widget build(BuildContext context) {
@@ -457,10 +456,12 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                   );
                 },
                 onLongPress: () {
-                  setState(() => _selection = _selection.enter(
-                        key,
-                        selectOnly: widget.keys,
-                      ));
+                  setState(
+                    () => _selection = _selection.enter(
+                      key,
+                      selectOnly: widget.keys,
+                    ),
+                  );
                 },
               );
             },
@@ -502,65 +503,54 @@ class _SelectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.elevated,
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              // 一进入多选这里只是「全选」；只有选中数打满时才变成叉号。
-              // 退不出多选是故意的：返回键负责退出，那个按钮不该兼职关闭。
-              if (allSelected)
-                IconButton(
-                  tooltip: '取消全选',
-                  onPressed: onSelectAll,
-                  icon: const Icon(Icons.deselect),
-                )
-              else
-                IconButton(
-                  tooltip: '全选',
-                  onPressed: count == 0 ? null : onSelectAll,
-                  icon: const Icon(Icons.select_all),
-                ),
-              Expanded(
-                child: Text(
-                  '已选 $count 项',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              IconButton(
-                tooltip: '添加到歌单',
-                onPressed: count == 0 ? null : onAdd,
-                icon: const Icon(Icons.playlist_add),
-              ),
-              IconButton(
-                tooltip: '分享',
-                onPressed: count == 0 ? null : onShare,
-                icon: const Icon(Icons.share_outlined),
-              ),
-              // No cached file in the selection → nothing to delete.
-              if (hasCachedSelection)
-                IconButton(
-                  tooltip: '删除缓存（保留元数据与封面）',
-                  onPressed: count == 0 ? null : onDelete,
-                  icon: const Icon(
-                    Icons.delete_outline,
-                    color: AppColors.error,
-                  ),
-                ),
-              IconButton(
-                tooltip: '销毁（缓存 + 元数据 + 封面）',
-                onPressed: count == 0 ? null : onDestroy,
-                icon: const Icon(Icons.delete_forever, color: AppColors.error),
-              ),
-            ],
+    // 与网络库共用同一个外壳：宽度、滚动与底色不会再各写一套。
+    return SelectionToolbar(
+      children: [
+        // 一进入多选这里只是「全选」；只有选中数打满时才变成叉号。
+        // 退不出多选是故意的：返回键负责退出，那个按钮不该兼职关闭。
+        if (allSelected)
+          IconButton(
+            tooltip: '取消全选',
+            onPressed: onSelectAll,
+            icon: const Icon(Icons.deselect),
+          )
+        else
+          IconButton(
+            tooltip: '全选',
+            onPressed: count == 0 ? null : onSelectAll,
+            icon: const Icon(Icons.select_all),
+          ),
+        Expanded(
+          child: Text(
+            '已选 $count 项',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
-      ),
+        IconButton(
+          tooltip: '添加到歌单',
+          onPressed: count == 0 ? null : onAdd,
+          icon: const Icon(Icons.playlist_add),
+        ),
+        IconButton(
+          tooltip: '分享',
+          onPressed: count == 0 ? null : onShare,
+          icon: const Icon(Icons.share_outlined),
+        ),
+        // No cached file in the selection → nothing to delete.
+        if (hasCachedSelection)
+          IconButton(
+            tooltip: '删除缓存（保留元数据与封面）',
+            onPressed: count == 0 ? null : onDelete,
+            icon: const Icon(Icons.delete_outline, color: AppColors.error),
+          ),
+        IconButton(
+          tooltip: '销毁（缓存 + 元数据 + 封面）',
+          onPressed: count == 0 ? null : onDestroy,
+          icon: const Icon(Icons.delete_forever, color: AppColors.error),
+        ),
+      ],
     );
   }
 }
@@ -679,14 +669,20 @@ class _CoverTile extends StatelessWidget {
 
 class _SelectableTrackList extends StatefulWidget {
   const _SelectableTrackList({
+    super.key,
     required this.tracks,
     this.emptyHint = '暂无曲目',
     this.startInSelection = false,
+    this.onSelectingChanged,
   });
 
   final List<LibraryTrack> tracks;
   final String emptyHint;
   final bool startInSelection;
+
+  /// 多选开 / 关时通知父级。子界面靠它在自己的 `PopScope` 里决定返回键
+  /// 归谁——不依赖任何「当前路由是谁」的猜测。
+  final ValueChanged<bool>? onSelectingChanged;
 
   @override
   State<_SelectableTrackList> createState() => _SelectableTrackListState();
@@ -712,6 +708,10 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
         entry: SelectionEntry.selectAll,
         selectOnly: _allIds,
       );
+      // 父级的 PopScope 要知道「进来就是多选」，否则第一次返回会被直接 pop。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onSelectingChanged?.call(_selection.active);
+      });
     }
   }
 
@@ -721,13 +721,13 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
     super.dispose();
   }
 
-  /// 多选时先吃掉返回键。判定用 `isFirst`（本路由是否位于栈底）：库页面
-  /// 本身是流派 / 专辑子界面**套着的那一层**，它的多选组件不该越权处理子
-  /// 界面的返回键；反过来，子界面里的这个组件在栈顶，`isFirst` 为真，返回
-  /// 键就是它的事。
+  /// 多选时先吃掉返回键。
+  ///
+  /// 只在**当前路由**上生效。子界面（`_TrackListPage`）不靠这里：它自己的
+  /// `PopScope` 拿 `canPop` 直接接管，那是最可靠的一层。
   bool _handleSystemBack() {
     if (!mounted) return false;
-    if (!(ModalRoute.of(context)?.isFirst ?? true)) return false;
+    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return false;
     if (_selection.active) {
       _exitSelect();
       return true;
@@ -735,16 +735,30 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
     return false;
   }
 
+  /// 多选状态发生变化时同步给父级与全局返回处理器。
+  void _setSelection(SelectionController next) {
+    setState(() => _selection = next);
+    widget.onSelectingChanged?.call(next.active);
+  }
+
+  bool get selecting => _selection.active;
+
+  /// 供子界面的 `PopScope` 调用：多选中就退出多选并返回 true。
+  bool handleSystemBack() {
+    if (!mounted || !_selection.active) return false;
+    _setSelection(_selection.exit());
+    return true;
+  }
+
   String _id(LibraryTrack t) => '${t.sourceName}\u0000${t.remotePath}';
 
   List<LibraryTrack> get _selectedTracks =>
       widget.tracks.where((t) => _selected.contains(_id(t))).toList();
 
-  void _exitSelect() => setState(() => _selection = _selection.exit());
+  void _exitSelect() => _setSelection(_selection.exit());
 
   /// 全选 / 取消全选。取消全选**不会**退出多选界面。
-  void _toggleSelectAll() =>
-      setState(() => _selection = _selection.toggleSelectAll(_allIds));
+  void _toggleSelectAll() => _setSelection(_selection.toggleSelectAll(_allIds));
 
   @override
   Widget build(BuildContext context) {
@@ -794,14 +808,10 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
                 playlist: widget.tracks,
                 selecting: _selecting,
                 selected: _selected.contains(_id(track)),
-                onToggleSelect: () => setState(
-                  () => _selection = _selection.toggle(_id(track)),
-                ),
-                onEnterSelect: () => setState(
-                  () => _selection = _selection.enter(
-                        _id(track),
-                        selectOnly: _allIds,
-                      ),
+                onToggleSelect: () =>
+                    _setSelection(_selection.toggle(_id(track))),
+                onEnterSelect: () => _setSelection(
+                  _selection.enter(_id(track), selectOnly: _allIds),
                 ),
               );
             },
@@ -830,6 +840,10 @@ class _TrackListPage extends StatefulWidget {
 
 class _TrackListPageState extends State<_TrackListPage> {
   late LibrarySortMode _sort = widget.defaultSort;
+  final _listKey = GlobalKey<_SelectableTrackListState>();
+
+  /// 列表里是否正在多选。多选时 `canPop` 转 false，返回键改成「退出多选」。
+  bool _selecting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -852,9 +866,23 @@ class _TrackListPageState extends State<_TrackListPage> {
           ),
         ],
       ),
-      body: _SelectableTrackList(
-        tracks: tracks,
-        startInSelection: widget.startInSelection,
+      body: PopScope(
+        // 多选中就把 pop 拦下来：这一层是子界面自己的，跟全局返回处理器、
+        // 跟「谁在栈顶」的推断都无关。
+        canPop: !_selecting,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          _listKey.currentState?.handleSystemBack();
+        },
+        child: _SelectableTrackList(
+          key: _listKey,
+          tracks: tracks,
+          startInSelection: widget.startInSelection,
+          onSelectingChanged: (selecting) {
+            if (!mounted || selecting == _selecting) return;
+            setState(() => _selecting = selecting);
+          },
+        ),
       ),
     );
   }
