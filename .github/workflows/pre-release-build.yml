@@ -1,7 +1,8 @@
 name: Pre-release Build
 
-# 预发布的检查与编译。发版在 pre-release.yml。
-# 编译步骤保持不变。没有合法标签或不需要构建时，不上传产物。
+# 预发布的检查、编译与发版，同一流程内串行：check → build → release。
+# 发版直接用同一次运行的产物，不再由 workflow_run 接续。编译步骤保持不变。
+# 没有合法标签或不需要构建时，不上传产物。
 
 on:
   schedule:
@@ -165,3 +166,60 @@ jobs:
           name: pre-release-bundle
           path: dist
           if-no-files-found: error
+  release:
+    needs: [check, build]
+    if: needs.check.outputs.proceed == 'true'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: beta
+
+      - name: Download pre-release bundle
+        uses: actions/download-artifact@v7
+        with:
+          name: pre-release-bundle
+          path: dist
+
+      - name: Publish Pre-release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::缺少 secret RELEASE_TOKEN。目标提交相对默认分支改过 .github/workflows 时，GITHUB_TOKEN 不能创建 Release，需要带 Workflows 写权限的 token。"
+            exit 1
+          fi
+          meta() { sed -n "s/^${1}=//p" dist/meta.env | head -n 1; }
+          version_name="$(meta version_name)"
+          version_code="$(meta version_code)"
+          short_sha="$(meta short_sha)"
+          base_tag="$(meta base_tag)"
+          sha="$(meta sha)"
+          seq="$(meta seq)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a prerelease "$sha" -f -m "$(printf 'version_name=%s\nversion_code=%s\nbase_tag=%s\nseq=%s\nsha=%s\n' "$version_name" "$version_code" "$base_tag" "$seq" "$sha")"
+          git -c credential.helper= -c "http.extraHeader=Authorization: Bearer ${GH_TOKEN}" push "https://github.com/${REPO}.git" "+refs/tags/prerelease:refs/tags/prerelease"
+          git fetch origin main --tags --force
+          script="$(mktemp)"
+          git show origin/main:.github/scripts/commit-list.sh > "$script"
+          changes="$(bash "$script" "$base_tag" "$sha")"
+          notes="$(mktemp)"
+          {
+            printf '自动构建的 Pre-release（来自 **beta** 分支，AGPL-3.0）。\n\n'
+            printf -- '- 版本：`%s`（versionCode `%s`）\n' "$version_name" "$version_code"
+            printf -- '- 基准正式版：`%s`\n\n' "$base_tag"
+            printf '自上一正式版以来：\n\n%s\n\n' "$changes"
+            printf 'base_tag=%s\nseq=%s\nsha=%s\n' "$base_tag" "$seq" "$sha"
+          } > "$notes"
+          if gh release view prerelease --repo "$REPO" >/dev/null 2>&1; then
+            gh release edit prerelease --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
+            gh release upload prerelease dist/app-release.apk --repo "$REPO" --clobber
+          else
+            gh release create prerelease dist/app-release.apk --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
+          fi
