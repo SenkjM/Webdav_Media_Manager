@@ -137,7 +137,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          flutter build apk --release --split-per-abi \
+          flutter build apk --release --flavor prod --split-per-abi \
             --build-name="${{ needs.check.outputs.version_name }}" \
             --build-number="${{ needs.check.outputs.version_code }}"
 
@@ -146,9 +146,9 @@ jobs:
           set -euo pipefail
           V="${{ needs.check.outputs.version_name }}"
           mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk "dist/webdav-media-manager-${V}-arm64-v8a.apk"
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk "dist/webdav-media-manager-${V}-armeabi-v7a.apk"
-          cp build/app/outputs/flutter-apk/app-x86_64-release.apk "dist/webdav-media-manager-${V}-x86_64.apk"
+          cp build/app/outputs/flutter-apk/app-prod-arm64-v8a-release.apk "dist/webdav-media-manager-${V}-arm64-v8a.apk"
+          cp build/app/outputs/flutter-apk/app-prod-armeabi-v7a-release.apk "dist/webdav-media-manager-${V}-armeabi-v7a.apk"
+          cp build/app/outputs/flutter-apk/app-prod-x86_64-release.apk "dist/webdav-media-manager-${V}-x86_64.apk"
 
       - name: Build arm-only APK (no x86)
         env:
@@ -157,7 +157,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          flutter build apk --release --target-platform android-arm,android-arm64 \
+          flutter build apk --release --flavor prod --target-platform android-arm,android-arm64 \
             --build-name="${{ needs.check.outputs.version_name }}" \
             --build-number="${{ needs.check.outputs.version_code }}"
 
@@ -165,7 +165,7 @@ jobs:
         run: |
           set -euo pipefail
           V="${{ needs.check.outputs.version_name }}"
-          cp build/app/outputs/flutter-apk/app-release.apk "dist/webdav-media-manager-${V}-arm.apk"
+          cp build/app/outputs/flutter-apk/app-prod-release.apk "dist/webdav-media-manager-${V}-arm.apk"
 
       - name: Build app bundle
         env:
@@ -174,7 +174,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          flutter build appbundle --release \
+          flutter build appbundle --release --flavor prod \
             --build-name="${{ needs.check.outputs.version_name }}" \
             --build-number="${{ needs.check.outputs.version_code }}"
 
@@ -183,7 +183,7 @@ jobs:
           set -euo pipefail
           V="${{ needs.check.outputs.version_name }}"
           mkdir -p dist
-          cp build/app/outputs/bundle/release/app-release.aab "dist/webdav-media-manager-${V}.aab"
+          cp build/app/outputs/bundle/prodRelease/app-prod-release.aab "dist/webdav-media-manager-${V}.aab"
           {
             printf 'tag=%s\n' "${{ needs.check.outputs.tag }}"
             printf 'version_name=%s\n' "${{ needs.check.outputs.version_name }}"

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/library_track.dart';
-import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
@@ -35,32 +34,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     _searchCtrl.dispose();
     super.dispose();
   }
-
-  Future<void> _confirmDestroyLibrary() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('销毁'),
-        content: const Text('将删除音乐库标签、压缩封面与本地缓存，不可恢复。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('销毁'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    await context.read<AppState>().destroyMusicLibrary();
-    if (!mounted) return;
-    AppSnack.show(context, '音乐库已销毁');
-  }
-
+  
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryService>();
@@ -127,18 +101,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ],
               icon: const Icon(Icons.sort),
             ),
-            PopupMenuButton<String>(
-              tooltip: '更多',
-              onSelected: (v) {
-                if (v == 'destroy') _confirmDestroyLibrary();
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'destroy',
-                  child: Text('销毁', style: TextStyle(color: AppColors.error)),
-                ),
-              ],
-            ),
+            
           ],
           bottom: const TabBar(
             isScrollable: true,

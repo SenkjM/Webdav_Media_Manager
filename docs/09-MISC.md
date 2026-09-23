@@ -66,9 +66,20 @@ cd <仓库根目录>          # 不要写死目录名，路径随工作区迁移
 flutter pub get
 flutter analyze
 flutter test
-flutter run                    # debug
-flutter build apk --release    # 本地 release；签名见下
+flutter run --flavor dev                    # 真机调试；会话内 r 热重载 / R 热重启
+flutter build apk --release --flavor prod   # 本地 release；签名见下
 ```
+
+**flavor**（`env` 一个维度，`prod` / `dev` 两个）：构建**必须显式带** `--flavor`——AGP 只要存在 product flavor 就不再生成 `assembleRelease` 这类不带 flavor 的任务；`flutter analyze` / `flutter test` 不受影响。
+
+| flavor | applicationId | 应用名 | 用途 |
+|--------|---------------|--------|------|
+| `prod` | `com.senkjm.media_manager` | Webdav Media Manager | 正式包；本地 release 与 CI 都走它 |
+| `dev` | `com.senkjm.media_manager.dev` | Webdav Media Manager Dev | 本地调试；`versionNameSuffix = "-dev"` |
+
+- 两个包 applicationId 不同，能装在同一台手机上并存，数据库 / 偏好 / 安全存储目录各自独立。
+- flavor 只影响 `applicationId`、`versionName` 后缀和 `android:label`（走 `${appName}` 占位符）；`namespace` 与 Dart 代码不动，`MainActivity` 不搬家。
+- CI 的产物文件名随 flavor 变成 `app-prod-*.apk` / `build/app/outputs/bundle/prodRelease/app-prod-release.aab`。
 
 - Flutter **stable**（`environment.sdk: ^3.13.4`）；本机 SDK 装在 `D:\flutter`，`android/local.properties` 里的 `flutter.sdk` 只对本机有效，换机器会重新生成。
 - Android SDK + JDK 17（与 CI `setup-java` 一致）；CI 里 `flutter test` 前需 `apt install libmpv-dev mpv`（media_kit 的 Linux 后端）。

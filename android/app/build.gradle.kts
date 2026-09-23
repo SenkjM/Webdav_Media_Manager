@@ -35,6 +35,25 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        manifestPlaceholders["appName"] = "Webdav Media Manager"
+    }
+
+    // flavor 只决定「装成哪个包、叫什么名字」，不碰 namespace 与 Dart 代码：
+    // dev 与 prod 的 applicationId 不同，所以能并存在同一台手机上，各自持有
+    // 独立的数据库 / 偏好 / 安全存储目录。
+    // 注意：一旦存在 product flavor，AGP 就不再生成不带 flavor 的
+    // assembleRelease 之类任务，所有构建都必须显式带 --flavor。
+    flavorDimensions += "env"
+    productFlavors {
+        create("prod") {
+            dimension = "env"
+        }
+        create("dev") {
+            dimension = "env"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            manifestPlaceholders["appName"] = "Webdav Media Manager Dev"
+        }
     }
 
     signingConfigs {
