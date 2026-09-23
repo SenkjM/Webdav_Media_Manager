@@ -2,6 +2,7 @@ name: Android Release
 
 # 只负责正式版发版。编译在 Android Build，成功后由 workflow_run 接上。
 # 没有 release-bundle 时直接跳过，不重复编译。
+# 变更列表是上一正式版到本次正式版的提交，只写短哈希、链接和标题。
 
 on:
   workflow_run:
@@ -37,6 +38,14 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Checkout
+        if: steps.gate.outputs.publish == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: main
+
       - name: Download release bundle
         if: steps.gate.outputs.publish == 'true'
         uses: actions/download-artifact@v7
@@ -57,28 +66,20 @@ jobs:
           tag="$(meta tag)"
           version_name="$(meta version_name)"
           version_code="$(meta version_code)"
-          short_sha="$(meta short_sha)"
           prev_tag="$(meta prev_tag)"
-          compare="$(meta compare)"
           sha="$(meta sha)"
-          if [ -z "$prev_tag" ]; then prev_tag="（首个正式版）"; fi
           if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
             echo "Release ${tag} already exists; skip."
             exit 0
           fi
+          changes="$(bash .github/scripts/commit-list.sh "$prev_tag" "$sha")"
           notes="$(mktemp)"
-          cat > "$notes" <<EOF
-          正式版（来自 **main**，AGPL-3.0）。
-
-          - 版本：\`${version_name}\`（versionCode \`${version_code}\`）
-          - 短提交：\`${short_sha}\`
-          - 完整提交：\`${sha}\`
-          - 上一个正式版：\`${prev_tag}\`
-          - ${compare}
-
-          安装：APK 使用仓库配置的固定 keystore 签名，可直接覆盖安装（含预发布包）。
-          包名 \`com.senkjm.media_manager\`。versionCode 由版本号编码，正式版后三位为 000。
-          EOF
+          {
+            printf '正式版（来自 **main**，AGPL-3.0）。\n\n'
+            printf -- '- 版本：`%s`（versionCode `%s`）\n' "$version_name" "$version_code"
+            printf -- '- 上一个正式版：`%s`\n\n' "${prev_tag:-无}"
+            printf '相对上一正式版：\n\n%s\n' "$changes"
+          } > "$notes"
           gh release create "$tag" dist/*.apk dist/*.aab \
             --repo "$REPO" \
             --target "$sha" \

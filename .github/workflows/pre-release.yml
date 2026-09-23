@@ -71,9 +71,18 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a prerelease "$sha" -f -m "$(printf 'version_name=%s\nversion_code=%s\nbase_tag=%s\nseq=%s\nsha=%s\n' "$version_name" "$version_code" "$base_tag" "$seq" "$sha")"
           git push origin refs/tags/prerelease --force
+          git fetch origin main --tags --force
+          script="$(mktemp)"
+          git show origin/main:.github/scripts/commit-list.sh > "$script"
+          changes="$(bash "$script" "$base_tag" "$sha")"
           notes="$(mktemp)"
-          printf '自动构建的 Pre-release（来自 **beta** 分支，AGPL-3.0）。\n\n- 版本：%s（versionCode %s）\n- 短提交：%s\n- 基准标签：%s\n- Commit：%s\n- 分支：beta\n\nbase_tag=%s\nseq=%s\nsha=%s\n' \
-            "$version_name" "$version_code" "$short_sha" "$base_tag" "$sha" "$base_tag" "$seq" "$sha" > "$notes"
+          {
+            printf '自动构建的 Pre-release（来自 **beta** 分支，AGPL-3.0）。\n\n'
+            printf -- '- 版本：`%s`（versionCode `%s`）\n' "$version_name" "$version_code"
+            printf -- '- 基准正式版：`%s`\n\n' "$base_tag"
+            printf '自上一正式版以来：\n\n%s\n\n' "$changes"
+            printf 'base_tag=%s\nseq=%s\nsha=%s\n' "$base_tag" "$seq" "$sha"
+          } > "$notes"
           if gh release view prerelease --repo "$REPO" >/dev/null 2>&1; then
             gh release edit prerelease --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
             gh release upload prerelease dist/app-release.apk --repo "$REPO" --clobber
