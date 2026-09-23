@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     outputs:
       proceed: ${{ steps.decision.outputs.proceed }}
       tag: ${{ steps.decision.outputs.tag }}
@@ -59,7 +59,7 @@ jobs:
   build:
     needs: check
     if: needs.check.outputs.proceed == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
         uses: actions/checkout@v7
