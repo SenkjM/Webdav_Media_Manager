@@ -1,18 +1,12 @@
-name: Android Build
+name: Pre-release Build
 
-# 正式版的检查与编译。发版在 android-release.yml，由本流程成功后接上。
-# 编译步骤保持不变。
+# 预发布的检查与编译。发版在 pre-release.yml。
+# 编译步骤保持不变。没有合法标签或不需要构建时，不上传产物。
 
 on:
-  push:
-    tags:
-      - "v*"
+  schedule:
+    - cron: "0 16 * * *"
   workflow_dispatch:
-    inputs:
-      version:
-        description: "版本号（必填，例如 0.1.0 或 v0.1.0；只给当前 main 打标签）"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -27,28 +21,27 @@ jobs:
     runs-on: ubuntu-26.04
     outputs:
       proceed: ${{ steps.decision.outputs.proceed }}
-      tag: ${{ steps.decision.outputs.tag }}
       version_name: ${{ steps.decision.outputs.version_name }}
       version_code: ${{ steps.decision.outputs.version_code }}
       short_sha: ${{ steps.decision.outputs.short_sha }}
-      prev_tag: ${{ steps.decision.outputs.prev_tag }}
-      compare: ${{ steps.decision.outputs.compare }}
+      base_tag: ${{ steps.decision.outputs.base_tag }}
       sha: ${{ steps.decision.outputs.sha }}
+      seq: ${{ steps.decision.outputs.seq }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          ref: ${{ github.event_name == 'schedule' && 'beta' || github.ref }}
 
-      - name: Check release tag
+      - name: Check whether a pre-release can run
         id: decision
         env:
           GH_TOKEN: ${{ github.token }}
-          GATE_MODE: release
+          GATE_MODE: prerelease
           EVENT_NAME: ${{ github.event_name }}
-          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_VERSION: ""
           REF_NAME: ${{ github.ref_name }}
           REPO: ${{ github.repository }}
           OWNER: ${{ github.repository_owner }}
@@ -114,17 +107,17 @@ jobs:
       - name: Test
         run: flutter test
 
-      - name: Decode release keystore
+      - name: Decode internal keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
           if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
-            echo "Missing secret ANDROID_KEYSTORE_BASE64 — cannot produce a signed release."
+            echo "Missing secret ANDROID_KEYSTORE_BASE64 — cannot produce a stable-signed APK."
             exit 1
           fi
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/android/app/release.jks"
-          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/android/app/release.jks" >> "$GITHUB_ENV"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/android/app/internal-release.jks"
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/android/app/internal-release.jks" >> "$GITHUB_ENV"
 
       - name: Build release APK
         env:
@@ -137,7 +130,7 @@ jobs:
             --build-name="${{ needs.check.outputs.version_name }}" \
             --build-number="${{ needs.check.outputs.version_code }}"
 
-      - name: Build app bundle
+      - name: Build app bundle (optional)
         env:
           ANDROID_KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -147,27 +140,28 @@ jobs:
           flutter build appbundle --release \
             --build-name="${{ needs.check.outputs.version_name }}" \
             --build-number="${{ needs.check.outputs.version_code }}"
+        continue-on-error: true
 
-      - name: Rename artifacts with the version
+      - name: Collect artifacts
         run: |
           set -euo pipefail
-          V="${{ needs.check.outputs.version_name }}"
           mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-release.apk "dist/webdav-media-manager-${V}.apk"
-          cp build/app/outputs/bundle/release/app-release.aab "dist/webdav-media-manager-${V}.aab"
+          cp build/app/outputs/flutter-apk/app-release.apk dist/app-release.apk
+          if [ -f build/app/outputs/bundle/release/app-release.aab ]; then
+            cp build/app/outputs/bundle/release/app-release.aab dist/app-release.aab
+          fi
           {
-            printf 'tag=%s\n' "${{ needs.check.outputs.tag }}"
             printf 'version_name=%s\n' "${{ needs.check.outputs.version_name }}"
             printf 'version_code=%s\n' "${{ needs.check.outputs.version_code }}"
             printf 'short_sha=%s\n' "${{ needs.check.outputs.short_sha }}"
-            printf 'prev_tag=%s\n' "${{ needs.check.outputs.prev_tag }}"
-            printf 'compare=%s\n' "${{ needs.check.outputs.compare }}"
+            printf 'base_tag=%s\n' "${{ needs.check.outputs.base_tag }}"
             printf 'sha=%s\n' "${{ needs.check.outputs.sha }}"
+            printf 'seq=%s\n' "${{ needs.check.outputs.seq }}"
           } > dist/meta.env
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: release-bundle
+          name: pre-release-bundle
           path: dist
           if-no-files-found: error

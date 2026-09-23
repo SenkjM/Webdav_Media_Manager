@@ -1,0 +1,82 @@
+name: Pre-release
+
+# 只负责预发布发版。编译在 Pre-release Build，成功后由 workflow_run 接上。
+
+on:
+  workflow_run:
+    workflows: ["Pre-release Build"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: pre-release-publish
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Decide whether a bundle exists
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          names="$(gh api "repos/${REPO}/actions/runs/${RUN_ID}/artifacts" --jq '.artifacts[].name')"
+          if printf '%s\n' "$names" | grep -qx 'pre-release-bundle'; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No pre-release-bundle on run ${RUN_ID}; skip publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.publish == 'true'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: beta
+
+      - name: Download pre-release bundle
+        if: steps.gate.outputs.publish == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: pre-release-bundle
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: dist
+
+      - name: Publish Pre-release
+        if: steps.gate.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          meta() { sed -n "s/^${1}=//p" dist/meta.env | head -n 1; }
+          version_name="$(meta version_name)"
+          version_code="$(meta version_code)"
+          short_sha="$(meta short_sha)"
+          base_tag="$(meta base_tag)"
+          sha="$(meta sha)"
+          seq="$(meta seq)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a prerelease "$sha" -f -m "$(printf 'version_name=%s\nversion_code=%s\nbase_tag=%s\nseq=%s\nsha=%s\n' "$version_name" "$version_code" "$base_tag" "$seq" "$sha")"
+          git push origin refs/tags/prerelease --force
+          notes="$(mktemp)"
+          printf '自动构建的 Pre-release（来自 **beta** 分支，AGPL-3.0）。\n\n- 版本：%s（versionCode %s）\n- 短提交：%s\n- 基准标签：%s\n- Commit：%s\n- 分支：beta\n\nbase_tag=%s\nseq=%s\nsha=%s\n' \
+            "$version_name" "$version_code" "$short_sha" "$base_tag" "$sha" "$base_tag" "$seq" "$sha" > "$notes"
+          if gh release view prerelease --repo "$REPO" >/dev/null 2>&1; then
+            gh release edit prerelease --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
+            gh release upload prerelease dist/app-release.apk --repo "$REPO" --clobber
+          else
+            gh release create prerelease dist/app-release.apk --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
+          fi
