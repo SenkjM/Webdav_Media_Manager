@@ -75,6 +75,8 @@
 
 - 判定走 [02 §2](02-NETWORK-LIBRARY.md) 的动作模型：网络库在打开前就按后缀决定进哪一页，把音频改成视频后缀也照样进这一页。
 - 退出页面会 `VideoPlaybackService.stop()`，也就是 `exitVideoMode()`：媒体会话还给本地播放（通知栏会回到之前暂停的本地歌，见 [99 §1](99-IN-PROGRESS.md) 的已知粗糙处）。
+- 这一页**初步实现**，优化项还没有具体方案（会话归还、常亮、封面与时长、停止按钮等），清单见 [99 §1](99-IN-PROGRESS.md)。
+
 ## 10. 相关代码
 
 `music_audio_handler.dart`、`audio_player_service.dart`、`player_screen.dart`、`music_stream_screen.dart`、`video_playback_service.dart`、`widgets/mini_player.dart`、`models/library_track.dart`、`models/webdav_stream.dart`、`packages/audio_service/`。
