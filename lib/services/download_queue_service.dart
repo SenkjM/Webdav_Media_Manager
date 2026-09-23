@@ -209,6 +209,26 @@ class DownloadQueueService extends ChangeNotifier {
     }
   }
 
+  /// 同一个远端路径可能同时挂在两条线上（缓存 + 系统下载目录），所以去重按
+  /// **(来源, 路径, 目标)** 三段比：只比路径的话，先点缓存再点下载时第二条会
+  /// 被静默吞掉，看起来就像按钮没反应。
+  DownloadTask? taskForRemoteAndTarget(
+    String sourceName,
+    String remotePath,
+    DownloadTarget target,
+  ) {
+    try {
+      return _tasks.lastWhere(
+        (t) =>
+            t.sourceName == sourceName &&
+            t.remotePath == remotePath &&
+            t.target == target,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Progress 0..1 for an in-flight (or cue-group) download of [remotePath].
   double? downloadProgressFor(String sourceName, String remotePath) {
     final direct = taskForRemote(sourceName, remotePath);
@@ -390,10 +410,17 @@ class DownloadQueueService extends ChangeNotifier {
   /// Does not wait for download completion.
   /// Call only from explicit user actions (tap / multi-select download) —
   /// never from browse/list open or cover resolve.
+  /// 批量版：**同一次选中的内容统一走这里**——文件夹该扫的扫、文件直接用，
+  /// 扫出来的路径先与已选文件去重，最后按 (来源, 路径, 目标) 入队。
+  ///
+  /// 界面不该再自己分「文件夹那条路 / 文件那条路」：那样一旦同时选中文件夹
+  /// 和里面的文件，同一个路径就会从两个入口各排一次。
   Future<bool> ensureQueued(
     String sourceName,
     String remotePath, {
     String? fileName,
+    // 默认缓存：这是「缓存音乐」那条线的入口。
+    DownloadTarget target = DownloadTarget.cache,
   }) async {
     if (isCueVirtualRemotePath(remotePath)) {
       return false;
@@ -404,7 +431,7 @@ class DownloadQueueService extends ChangeNotifier {
     if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
       return false;
     }
-    final existing = taskForRemote(sourceName, remotePath);
+    final existing = taskForRemoteAndTarget(sourceName, remotePath, target);
     if (existing != null) {
       switch (existing.status) {
         case DownloadStatus.pending:
@@ -456,7 +483,9 @@ class DownloadQueueService extends ChangeNotifier {
     required DownloadTarget target,
   }) async {
     assert(target != DownloadTarget.cache);
-    final existing = taskForRemote(sourceName, remotePath);
+    // 去重按**目标**分：同一个文件既可以缓存、也可以下载到系统目录，两条线
+    // 互不顶掉（只按路径去重就会让第二条静默失效）。
+    final existing = taskForRemoteAndTarget(sourceName, remotePath, target);
     if (existing != null) {
       switch (existing.status) {
         case DownloadStatus.pending:
@@ -556,74 +585,47 @@ class DownloadQueueService extends ChangeNotifier {
     return n;
   }
 
-  /// 把文件夹里的**所有内容**（递归排进系统下载目录队列，返回实际入队数量。
+  /// 把**一次选中的内容**统一排队：文件夹由后端递归扫描，文件直接用。
   ///
-  /// 下载是基本功能，不挑类型：音频、视频、CUE、普通文件一律照下。跟
-  /// 缓存音乐（音频进缓存、随后 ingest 进音乐库）是两条独立的线。
-  Future<int> enqueueFoldersToDownloads(
-    String sourceName,
-    Iterable<String> folderPaths,
-  ) async {
+  /// 界面只管「缓存音乐」和「下载」两条线，不自己分文件夹那条路和文件那条
+  /// 路——那样一旦同时选中文件夹和里面的文件，同一个路径就会从两个入口各
+  /// 排一次。这里先把扫出来的路径与已选文件去重，再按 (来源, 路径, 目标)
+  /// 入队。
+  ///
+  /// [target] 决定去处：[DownloadTarget.cache] 是缓存音乐（只有音频会被
+  /// 收下，随后 ingest 进音乐库），其余是系统侧目标（音频、视频、CUE、普通
+  /// 文件一律照下，不跳过任何类型）。
+  ///
+  /// 返回实际入队数、扫描失败的文件夹数、扫到的文件总数（`scanned == 0` 且
+  /// 没选文件，说明文件夹本来就是空的）与第一个错误。
+  Future<({int ok, int failed, int scanned, Object? firstError})>
+  enqueueSelection(
+    String sourceName, {
+    Iterable<String> folderPaths = const [],
+    Iterable<WebDavItem> files = const [],
+    required DownloadTarget target,
+  }) async {
     final accountId = _accountIdFor(sourceName);
     if (accountId == null) {
       _lastError = '来源网盘未绑定（）';
       notifyListeners();
-      return 0;
+      return (ok: 0, failed: 1, scanned: 0, firstError: _lastError);
     }
-    var n = 0;
-    for (final folderPath in folderPaths) {
-      final items = await _webDav.collectFilesRecursive(
-        accountId,
-        folderPath,
-      );
-      for (final item in items) {
-        if (await enqueueToDownloads(
-          sourceName,
-          item.path,
-          fileName: item.name,
-        )) {
-          n++;
-        }
-      }
+    // 选中的文件先占位，扫出来的同路径不再重复入队。
+    final pending = <String, String>{};
+    for (final f in files) {
+      pending.putIfAbsent(f.path, () => f.name);
     }
-    return n;
-  }
-
-  /// 多个文件夹一起进缓存队列（递归取音频）。
-  ///
-  /// 返回实际入队数、失败（扫描出错）的文件夹数，以及第一个错误，供界面
-  /// 决定是弹错误框还是只说一声。
-  ///
-  /// 走 [ensureQueued] 而不是裸 [enqueue]：已在队列里、或本地已有文件的项
-  /// 会被跳过，于是多选几个相互嵌套的文件夹、或既选了文件夹又选了里面
-  /// 那个音频文件时，不会重复入队。
-  Future<({int ok, int failed, Object? firstError})> enqueueFolders(
-    String sourceName,
-    Iterable<String> folderPaths,
-  ) async {
-    final accountId = _accountIdFor(sourceName);
-    if (accountId == null) {
-      _lastError = '来源网盘未绑定（）';
-      notifyListeners();
-      return (ok: 0, failed: 1, firstError: _lastError);
-    }
-    var ok = 0;
     var failed = 0;
     Object? firstError;
     for (final folderPath in folderPaths) {
       try {
-        final items = await _webDav.collectAudioRecursive(
+        final items = await _webDav.collectFilesRecursive(
           accountId,
           folderPath,
         );
         for (final item in items) {
-          if (await ensureQueued(
-            sourceName,
-            item.path,
-            fileName: item.name,
-          )) {
-            ok++;
-          }
+          pending.putIfAbsent(item.path, () => item.name);
         }
       } catch (e) {
         // 一个文件夹扫不动不该拖垮其余的。
@@ -631,7 +633,29 @@ class DownloadQueueService extends ChangeNotifier {
         firstError ??= e;
       }
     }
-    return (ok: ok, failed: failed, firstError: firstError);
+    var ok = 0;
+    for (final entry in pending.entries) {
+      final queued = target == DownloadTarget.cache
+          ? await ensureQueued(
+              sourceName,
+              entry.key,
+              fileName: entry.value,
+              target: DownloadTarget.cache,
+            )
+          : await enqueuePublic(
+              sourceName,
+              entry.key,
+              fileName: entry.value,
+              target: target,
+            );
+      if (queued) ok++;
+    }
+    return (
+      ok: ok,
+      failed: failed,
+      scanned: pending.length,
+      firstError: firstError,
+    );
   }
 
   Future<int> enqueueCueGroup({

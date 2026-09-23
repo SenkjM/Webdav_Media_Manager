@@ -296,18 +296,6 @@ class WebDavService extends ChangeNotifier {
     final client = _requireClient(accountId);
     await client.rename(oldPath, newPath, false);
   }
-  /// Recursively collect audio file paths under [folderPath] on one account.
-  Future<List<WebDavItem>> collectAudioRecursive(
-    String accountId,
-    String folderPath, {
-    FileTypeConfig? fileTypes,
-  }) =>
-      collectFilesRecursive(
-        accountId,
-        folderPath,
-        fileTypes: fileTypes,
-        onlyAudio: true,
-      );
 
   /// Recursively collect **every** file under [folderPath] (directories are not
   /// returned, they are only walked).
