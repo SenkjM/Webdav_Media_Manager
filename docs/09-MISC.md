@@ -91,7 +91,7 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 **Do**
 
 - UI 文案中文；标识符 / 路径 / API 名英文。
-- 改完跑 `flutter analyze` 与相关 `flutter test`。
+- 改完跑**完整**的 `flutter analyze`（不要只跑 `--no-pub lib`：CI 跑的是全项目，测试目录里的 warning 只在完整分析里出现）与相关 `flutter test`。
 - 播放只走本地文件；下载走队列服务。
 - CUE 解析用 `decodeCueText`；ingest 后虚拟曲才进库。
 - 根返回用 `moveTaskToBack`；真正退出才 `SystemNavigator.pop`。
@@ -141,6 +141,7 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 | **下载图标随对象变** | 行菜单里文件夹项用过 `folder_zip_outlined` | 下载恒为 `Icons.download`：文件夹、文件、工具栏一致（[02 §5](02-NETWORK-LIBRARY.md)） |
 | **目录选择器「上一级」一步跳回根目录** | `_stack` 把整条 `initialPath` 当成一层压入 | `remoteAncestors` 逐层压栈；上一级与返回键**各退一层**，到根再按才关闭（`lib/utils/remote_path.dart`） |
 | **下拉菜单顶出屏幕 / 往上弹** | 服务器多起来时菜单高度不受限 | `menuMaxHeight` 半屏 + `isExpanded: true`（[02 §4](02-NETWORK-LIBRARY.md)） |
+| **本地全绿、CI 的 Analyze 失败** | 本地只跑 `flutter analyze --no-pub lib`，CI 跑完整 `flutter analyze`——测试目录里的 `unused_import` 之类 warning 只有完整分析才报 | 提交前跑**完整** `flutter analyze`（v0.2.0 因此失败过一次：`test/file_action_model_test.dart` 的未用 import） |
 
 本轮相关提交：`fa0c92f`（缓存 / 下载分成两条线）、`c366b2a`（扫描与去重收进 `enqueueSelection`）、`a408c5b`（音乐库工具栏 `Expanded`）、`65d7a55`（选择器逐级返回）、`b9ecd65`（文件夹下载图标）、`0ec8349`（下拉框限高半屏）。
 
