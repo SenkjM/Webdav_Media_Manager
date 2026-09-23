@@ -110,7 +110,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               Tab(text: '专辑'),
               Tab(text: '作者'),
               Tab(text: '音乐名'),
-              Tab(text: '标签'),
+              Tab(text: '流派'),
             ],
           ),
         ),
@@ -256,7 +256,7 @@ class _TagsTab extends StatelessWidget {
     if (groups.isEmpty) {
       return const Center(
         child: Text(
-          '暂无标签：下载带流派等元数据的曲目后出现。',
+          '暂无流派：下载带流派元数据的曲目后出现。',
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.secondaryText),
         ),
@@ -365,8 +365,14 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
   }
 
   /// 多选时先吃掉返回键：退出多选，而不是退出这一页或回主页。
+  ///
+  /// 只在**本路由位于栈底**时生效：流派 / 专辑的子界面是压在库页面之上的
+  /// 新路由，那个子界面的多选组件必须自己处理返回键，上层这两个（预建的
+  /// 主列表与网格）绝不能跟着掺一脚——否则返回键会去退出一个用户看不见的
+  /// 多选界面，子界面上的多选却纹丝不动。
   bool _handleSystemBack() {
     if (!mounted) return false;
+    if (!(ModalRoute.of(context)?.isFirst ?? true)) return false;
     if (_selection.active) {
       _exitSelect();
       return true;
@@ -715,11 +721,13 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
     super.dispose();
   }
 
-  /// 多选时先吃掉返回键。只在**当前路由**上生效，否则父页面的处理器会先
-  /// 把它消费掉，用户按返回什么也看不见。
+  /// 多选时先吃掉返回键。判定用 `isFirst`（本路由是否位于栈底）：库页面
+  /// 本身是流派 / 专辑子界面**套着的那一层**，它的多选组件不该越权处理子
+  /// 界面的返回键；反过来，子界面里的这个组件在栈顶，`isFirst` 为真，返回
+  /// 键就是它的事。
   bool _handleSystemBack() {
     if (!mounted) return false;
-    if (!(ModalRoute.of(context)?.isCurrent ?? true)) return false;
+    if (!(ModalRoute.of(context)?.isFirst ?? true)) return false;
     if (_selection.active) {
       _exitSelect();
       return true;

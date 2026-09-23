@@ -50,6 +50,27 @@ void main() {
       expect(again.count, keys.length);
     });
 
+    // 回归：音乐库从来没有调用过 sync，total 一直是 0，于是全选之后
+    // isAllSelected 永远为假——「全选点多少遍还是全选」，按钮回不到叉号。
+    // 计数对比的总数只能由这次传入的列表决定。
+    test('界面从未同步过 total 时，全选之后仍然能取消全选', () {
+      final all = const SelectionController().toggleSelectAll(keys);
+      expect(all.isAllSelected, isTrue);
+      expect(all.showsDeselect, isTrue);
+      final cleared = all.toggleSelectAll(keys);
+      expect(cleared.count, 0);
+      expect(cleared.active, isTrue);
+      expect(cleared.showsDeselect, isFalse);
+    });
+
+    test('列表变长后按新列表判定全选，而不是沿用旧总数', () {
+      final s = fresh().toggleSelectAll(keys);
+      expect(s.isAllSelected, isTrue);
+      final more = s.toggleSelectAll([...keys, 'e']);
+      expect(more.count, 0, reason: '旧总数下它是「全选」，新列表下应当转为取消全选');
+      expect(more.active, isTrue);
+    });
+
     test('从整组进入多选，逐条取消到最后一条时按钮变回「全选」', () {
       var s = fresh().enter('', entry: SelectionEntry.selectAll, selectOnly: keys);
       expect(s.showsDeselect, isTrue);

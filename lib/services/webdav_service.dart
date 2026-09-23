@@ -301,6 +301,25 @@ class WebDavService extends ChangeNotifier {
     String accountId,
     String folderPath, {
     FileTypeConfig? fileTypes,
+  }) =>
+      collectFilesRecursive(
+        accountId,
+        folderPath,
+        fileTypes: fileTypes,
+        onlyAudio: true,
+      );
+
+  /// Recursively collect **every** file under [folderPath] (directories are not
+  /// returned, they are only walked).
+  ///
+  /// [onlyAudio] keeps the old audio-only behaviour for the cache path; the
+  /// plain download path needs everything, because 「下载整个文件夹」 means all
+  /// of it, not just the tracks.
+  Future<List<WebDavItem>> collectFilesRecursive(
+    String accountId,
+    String folderPath, {
+    FileTypeConfig? fileTypes,
+    bool onlyAudio = false,
   }) async {
     final result = <WebDavItem>[];
     final queue = <String>[folderPath];
@@ -311,7 +330,7 @@ class WebDavService extends ChangeNotifier {
       for (final item in items) {
         if (item.isDirectory) {
           queue.add(item.path);
-        } else if (item.isAudio) {
+        } else if (!onlyAudio || item.isAudio) {
           result.add(item);
         }
       }

@@ -556,6 +556,34 @@ class DownloadQueueService extends ChangeNotifier {
     return n;
   }
 
+  /// 把文件夹里的所有文件（递归）排进**系统下载目录**队列。
+  ///
+  /// 与 [enqueueFolder] 的区别只在去处：那个是音频进缓存（随后 ingest 进
+  /// 音乐库），这个是整棵目录树落系统下载目录，非音频也要。
+  Future<int> enqueueFolderToDownloads(
+    String sourceName,
+    String folderPath,
+  ) async {
+    final accountId = _accountIdFor(sourceName);
+    if (accountId == null) {
+      _lastError = '来源网盘未绑定（）';
+      notifyListeners();
+      return 0;
+    }
+    final items = await _webDav.collectFilesRecursive(accountId, folderPath);
+    var n = 0;
+    for (final item in items) {
+      if (await enqueueToDownloads(
+        sourceName,
+        item.path,
+        fileName: item.name,
+      )) {
+        n++;
+      }
+    }
+    return n;
+  }
+
   /// Enqueue all audio files under a folder (recursive). Non-blocking.
   Future<int> enqueueFolder(String sourceName, String folderPath) async {
     final accountId = _accountIdFor(sourceName);

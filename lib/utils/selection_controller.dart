@@ -77,15 +77,20 @@ class SelectionController {
   /// 点工具栏那个按钮。
   ///
   /// 不是全选 → 全选；已经是全选 → 只清空选择，**保持多选界面**。
-  /// [allKeys] 由列表传入，控制器不持有列表副本。
+  ///
+  /// [allKeys] 由列表传入，控制器不持有列表副本。总数也**必须**跟着它走：
+  /// 之前这里只透传旧的 `total`，而音乐库从来没有调用过 [sync]，`total`
+  /// 一直停在 0——于是 `isAllSelected` 永远为假，全选之后再点多少遍都仍是
+  /// 「全选」，按钮根本回不到叉号。计数对比的总数只能以这次传进来的列表为准。
   SelectionController toggleSelectAll(Iterable<String> allKeys) {
+    final keys = allKeys.toList();
     if (isAllSelected) {
-      return SelectionController(active: active, total: total);
+      return SelectionController(active: active, total: keys.length);
     }
     return SelectionController(
       active: true,
-      selected: allKeys.toSet(),
-      total: total,
+      selected: keys.toSet(),
+      total: keys.length,
     );
   }
 

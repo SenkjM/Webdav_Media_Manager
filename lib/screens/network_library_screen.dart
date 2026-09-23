@@ -1301,16 +1301,21 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final onlyFolder = folders.length == 1 && files.isEmpty;
     final allSelected = _selection.isAllSelected;
     final bulkAction = bulkDownloadAction(files.map((e) => e.category));
+    // 背景必须在滚动层**外面**：之前滚动层直接当 SafeArea 的孩子，内容一
+    // 比屏幕宽，灰色条就只画到内容末端，右边露出一截空白（真机截图里能看
+    // 到）。现在滚动只负责按钮，底色由外层铺满整宽。
     return Material(
       color: AppColors.elevated,
       child: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: double.infinity),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                children: [
                 // 只在「计数打满」时出现的叉号：它是取消全选，不是关闭界面。
                 if (allSelected)
                   IconButton(
@@ -1331,36 +1336,110 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
-                IconButton(
-                  tooltip: bulkAction.labelZh,
-                  onPressed: files.isEmpty ? null : () => _downloadMany(files),
-                  icon: Icon(_actionIcon(bulkAction)),
-                ),
-                IconButton(
-                  tooltip: '复制到…',
-                  onPressed: items.isEmpty
-                      ? null
-                      : () => _copyOrMove(items, move: false),
-                  icon: const Icon(Icons.copy_outlined),
-                ),
-                IconButton(
-                  tooltip: '移动到…',
-                  onPressed: items.isEmpty
-                      ? null
-                      : () => _copyOrMove(items, move: true),
-                  icon: const Icon(Icons.drive_file_move_outline),
-                ),
-                IconButton(
-                  tooltip: '下载整个文件夹',
-                  onPressed: !onlyFolder ? null : () => _enqueueFolder(folders.first),
-                  icon: const Icon(Icons.folder_zip_outlined),
-                ),
-              ],
+                  // 文件夹只有一个来源，按钮跟着选中内容变，不摆一排禁用按钮。
+                  if (onlyFolder) ...[
+                    IconButton(
+                      tooltip: '缓存文件夹中的音频',
+                      onPressed: () => _cacheFolderAudio(folders.first),
+                      icon: const Icon(Icons.library_music_outlined),
+                    ),
+                    IconButton(
+                      tooltip: '下载整个文件夹',
+                      onPressed: () => _downloadFolder(folders.first),
+                      icon: const Icon(Icons.folder_zip_outlined),
+                    ),
+                  ] else ...[
+                    // 音频与普通文件分开：音频进缓存（随后进音乐库），其它落
+                    // 系统下载目录。混选时两个按钮都可用，按各自的类型分发。
+                    IconButton(
+                      tooltip: '缓存音乐',
+                      onPressed: files.any((e) => e.category == FileCategory.music)
+                          ? () => _downloadMany(
+                                files
+                                    .where(
+                                        (e) => e.category == FileCategory.music)
+                                    .toList(),
+                              )
+                          : null,
+                      icon: const Icon(Icons.library_music_outlined),
+                    ),
+                    IconButton(
+                      tooltip: '下载',
+                      onPressed: files.isNotEmpty
+                          ? () => _downloadMany(
+                                files
+                                    .where(
+                                        (e) => e.category != FileCategory.music)
+                                    .toList(),
+                              )
+                          : null,
+                      icon: Icon(_actionIcon(bulkAction)),
+                    ),
+                  ],
+                  IconButton(
+                    tooltip: '复制到…',
+                    onPressed: items.isEmpty
+                        ? null
+                        : () => _copyOrMove(items, move: false),
+                    icon: const Icon(Icons.copy_outlined),
+                  ),
+                  IconButton(
+                    tooltip: '移动到…',
+                    onPressed: items.isEmpty
+                        ? null
+                        : () => _copyOrMove(items, move: true),
+                    icon: const Icon(Icons.drive_file_move_outline),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  /// 缓存文件夹内的音频（递归），随缓存管线进音乐库。
+  Future<void> _cacheFolderAudio(WebDavItem folder) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
+    final downloads = context.read<DownloadQueueService>();
+    AppSnack.show(context, '正在扫描文件夹中的音频：${folder.name}');
+    try {
+      final n = await downloads.enqueueFolder(sourceName, folder.path);
+      if (!mounted) return;
+      AppSnack.show(
+        context,
+        n == 0 ? '这个文件夹里没有音频' : '已加入 $n 个音频到缓存队列',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      await showWebDavErrorDialog(context, e);
+    }
+  }
+
+  /// 把整个文件夹（递归，含非音频）下载到系统下载目录。
+  Future<void> _downloadFolder(WebDavItem folder) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
+    final downloads = context.read<DownloadQueueService>();
+    AppSnack.show(context, '正在扫描文件夹：${folder.name}');
+    try {
+      final n = await downloads.enqueueFolderToDownloads(
+        sourceName,
+        folder.path,
+      );
+      if (!mounted) return;
+      AppSnack.show(
+        context,
+        n == 0 ? '这个文件夹里没有可下载的文件' : '已加入 $n 个文件到下载队列',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      await showWebDavErrorDialog(context, e);
+    }
   }
 
   String _fmtSize(int bytes) {
