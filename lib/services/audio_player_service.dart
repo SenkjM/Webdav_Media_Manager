@@ -3,9 +3,11 @@ import 'dart:io';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:media_kit/media_kit.dart';
 
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
+import '../models/webdav_stream.dart';
 import 'download_queue_service.dart';
 import 'music_audio_handler.dart';
 import 'notification_permission_service.dart';
@@ -124,6 +126,49 @@ class AudioPlayerService extends ChangeNotifier {
     notifyListeners();
     await _ensureNotificationPermission();
     await _loadAndPlay(list, idx);
+  }
+
+
+  /// 实验性：直接流式播放一个远端音频文件（不下载、不入队、不缓存）。
+  ///
+  /// 复用视频那套远端流管线（同一个 `media_kit` Player、同一个媒体会话），
+  /// 所以后台播放、锁屏控制、耳机按键都跟着工作；区别只在会话文案与是否
+  /// 暴露切歌。要退回流式播放，调用 [stopRemoteMusic] 或开始本地播放。
+  ///
+  /// 封面与时长刻意不做：流式播放拿不到本地文件来解析标签。取舍见
+  /// docs/99 的《音乐流式传输可行性分析》。
+  Future<bool> playRemoteMusic({
+    required WebDavStreamSource source,
+    String? artist,
+  }) async {
+    if (source.kind != StreamKind.music) {
+      _error = '这条流不是音频';
+      notifyListeners();
+      return false;
+    }
+    try {
+      _error = null;
+      notifyListeners();
+      await _ensureNotificationPermission();
+      await _handler.enterVideoMode(
+        source,
+        media: Media(source.uri, httpHeaders: source.headers),
+      );
+      await _handler.play();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = '流式播放失败：$e';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// 结束远端流（音频或视频）：释放媒体会话并退回本地音乐状态。
+  Future<void> stopRemoteMusic() async {
+    if (!_handler.isVideoMode) return;
+    await _handler.exitVideoMode();
+    notifyListeners();
   }
 
   Future<void> _ensureNotificationPermission() async {

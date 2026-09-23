@@ -511,13 +511,14 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       _videoSource = source;
       await _ensureAudioSessionConfigured();
 
+      final isMusic = source.kind == StreamKind.music;
       final item = MediaItem(
-        id: 'video|${source.accountId}|${source.remotePath}',
+        id: '${isMusic ? 'stream' : 'video'}|${source.accountId}|${source.remotePath}',
         title: source.name,
-        album: '视频',
+        album: isMusic ? '流式播放' : '视频',
         artist: 'WebDAV 流媒体',
         extras: {
-          'kind': 'video',
+          'kind': isMusic ? 'stream_music' : 'video',
           'accountId': source.accountId,
           'remotePath': source.remotePath,
         },
