@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/download_task.dart';
+import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/app_snack.dart';
@@ -560,9 +561,15 @@ class DownloadQueueService extends ChangeNotifier {
   ///
   /// 与 [enqueueFolder] 的区别只在去处：那个是音频进缓存（随后 ingest 进
   /// 音乐库），这个是整棵目录树落系统下载目录，非音频也要。
-  Future<int> enqueueFolderToDownloads(
+
+  /// 多个文件夹一起进**系统下载目录**队列，返回实际入队数量。
+  ///
+  /// 文件夹里的音频**不在这里入队**：音频归「缓存音乐」那条路（进缓存、
+  /// 随后 ingest 进音乐库）。两个按钮各管一类，既选文件夹又选里面的音频
+  /// 时也不会两头都排一遍。
+  Future<int> enqueueFoldersToDownloads(
     String sourceName,
-    String folderPath,
+    Iterable<String> folderPaths,
   ) async {
     final accountId = _accountIdFor(sourceName);
     if (accountId == null) {
@@ -570,33 +577,70 @@ class DownloadQueueService extends ChangeNotifier {
       notifyListeners();
       return 0;
     }
-    final items = await _webDav.collectFilesRecursive(accountId, folderPath);
+    final types = FileTypeConfig();
     var n = 0;
-    for (final item in items) {
-      if (await enqueueToDownloads(
-        sourceName,
-        item.path,
-        fileName: item.name,
-      )) {
-        n++;
+    for (final folderPath in folderPaths) {
+      final items = await _webDav.collectFilesRecursive(
+        accountId,
+        folderPath,
+      );
+      for (final item in items) {
+        if (types.categoryFor(item.name) == FileCategory.music) continue;
+        if (await enqueueToDownloads(
+          sourceName,
+          item.path,
+          fileName: item.name,
+        )) {
+          n++;
+        }
       }
     }
     return n;
   }
 
-  /// Enqueue all audio files under a folder (recursive). Non-blocking.
-  Future<int> enqueueFolder(String sourceName, String folderPath) async {
+  /// 多个文件夹一起进缓存队列（递归取音频）。
+  ///
+  /// 返回实际入队数、失败（扫描出错）的文件夹数，以及第一个错误，供界面
+  /// 决定是弹错误框还是只说一声。
+  ///
+  /// 走 [ensureQueued] 而不是裸 [enqueue]：已在队列里、或本地已有文件的项
+  /// 会被跳过，于是多选几个相互嵌套的文件夹、或既选了文件夹又选了里面
+  /// 那个音频文件时，不会重复入队。
+  Future<({int ok, int failed, Object? firstError})> enqueueFolders(
+    String sourceName,
+    Iterable<String> folderPaths,
+  ) async {
     final accountId = _accountIdFor(sourceName);
     if (accountId == null) {
       _lastError = '来源网盘未绑定（）';
       notifyListeners();
-      return 0;
+      return (ok: 0, failed: 1, firstError: _lastError);
     }
-    final items = await _webDav.collectAudioRecursive(accountId, folderPath);
-    for (final item in items) {
-      unawaited(enqueue(sourceName, item.path, fileName: item.name));
+    var ok = 0;
+    var failed = 0;
+    Object? firstError;
+    for (final folderPath in folderPaths) {
+      try {
+        final items = await _webDav.collectAudioRecursive(
+          accountId,
+          folderPath,
+        );
+        for (final item in items) {
+          if (await ensureQueued(
+            sourceName,
+            item.path,
+            fileName: item.name,
+          )) {
+            ok++;
+          }
+        }
+      } catch (e) {
+        // 一个文件夹扫不动不该拖垮其余的。
+        failed++;
+        firstError ??= e;
+      }
     }
-    return items.length;
+    return (ok: ok, failed: failed, firstError: firstError);
   }
 
   Future<int> enqueueCueGroup({

@@ -431,62 +431,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
   /// 多选「下载」：**逐项按类型分发**，而不是把所有东西都当成音频。
   ///
-  /// 只有音乐进音频缓存；视频与普通文件都落到系统下载目录。这里刻意不再
-  /// 把视频塞进系统相册——「下载」在动作模型里就是 `DownloadTarget.downloads`，
-  /// 想存相册可以在更多菜单里单独选。
-  Future<void> _downloadMany(List<WebDavItem> items) async {
-    final accountId = _accountId;
-    if (accountId == null || items.isEmpty) return;
-    final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
-    var queued = 0;
-    var failed = 0;
-    for (final item in items) {
-      if (item.isDirectory) continue; // 文件夹由「下载整个文件夹」处理
-      try {
-        final ok = item.category == FileCategory.music
-            ? await downloads.ensureQueued(
-                sourceName,
-                item.path,
-                fileName: item.name,
-              )
-            : await downloads.enqueueToDownloads(
-                sourceName,
-                item.path,
-                fileName: item.name,
-              );
-        if (ok) queued++;
-      } catch (_) {
-        failed++;
-      }
-    }
-    if (!mounted) return;
-    final parts = <String>[];
-    if (queued > 0) parts.add('已加入 $queued 项');
-    if (failed > 0) parts.add('失败 $failed 项');
-    final text = parts.isEmpty ? '所选条目均已在队列或已下载' : parts.join('，');
-    if (failed > 0) {
-      AppSnack.error(context, text);
-    } else {
-      AppSnack.show(context, text);
-    }
-  }
 
-  Future<void> _enqueueFolder(WebDavItem folder) async {
-    final accountId = _accountId;
-    if (accountId == null) return;
-    final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
-    AppSnack.show(context, '正在扫描文件夹：${folder.name}');
-    try {
-      final n = await downloads.enqueueFolder(sourceName, folder.path);
-      if (!mounted) return;
-      AppSnack.show(context, '已加入 $n 个音频文件到下载队列');
-    } catch (e) {
-      if (!mounted) return;
-      await showWebDavErrorDialog(context, e);
-    }
-  }
+  /// 行菜单里的「缓存文件夹中的音频」：与工具栏是同一套入口。
+  Future<void> _enqueueFolder(WebDavItem folder) =>
+      _cacheFoldersAudio([folder]);
 
   Future<void> _openCue(WebDavItem item) async {
     final accountId = _accountId;
@@ -1308,9 +1256,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final items = _selectedItems;
     final folders = items.where((e) => e.isDirectory).toList();
     final files = items.where((e) => !e.isDirectory).toList();
-    final onlyFolder = folders.length == 1 && files.isEmpty;
     final allSelected = _selection.isAllSelected;
     final bulkAction = bulkDownloadAction(files.map((e) => e.category));
+    final audioFiles = files
+        .where((e) => e.category == FileCategory.music)
+        .toList();
+    final restFiles = files
+        .where((e) => e.category != FileCategory.music)
+        .toList();
+    final hasFolders = folders.isNotEmpty;
+    final canCacheAudio = hasFolders || audioFiles.isNotEmpty;
+    final canDownload = hasFolders || restFiles.isNotEmpty;
     return SelectionToolbar(
       children: [
         // 只在「计数打满」时出现的叉号：它是取消全选，不是关闭界面。
@@ -1333,44 +1289,27 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
-        // 文件夹只有一个来源，按钮跟着选中内容变，不摆一排禁用按钮。
-        if (onlyFolder) ...[
-          IconButton(
-            tooltip: '缓存文件夹中的音频',
-            onPressed: () => _cacheFolderAudio(folders.first),
-            icon: const Icon(Icons.library_music_outlined),
+        // 音频与普通文件分开：音频进缓存（随后进音乐库），其余落系统下载
+        // 目录。**文件夹也算在内**，而且不挑个数——多选若干文件夹时这两个
+        // 按钮照样可用（曾经按「只选了一个文件夹」特判，多选文件夹时缓存
+        // 按钮直接是灰的）。文件夹与文件混选时，两个按钮各处理自己那一类：
+        // 缓存只碰音频，下载只碰非音频。
+        IconButton(
+          tooltip: hasFolders ? '缓存文件夹中的音频' : '缓存音乐',
+          onPressed: canCacheAudio
+              ? () => _cacheFoldersAudio(folders)
+              : null,
+          icon: const Icon(Icons.library_music_outlined),
+        ),
+        IconButton(
+          tooltip: hasFolders ? '下载文件夹中的文件' : '下载',
+          onPressed: canDownload
+              ? () => _downloadFolders(folders, restFiles)
+              : null,
+          icon: Icon(
+            hasFolders ? Icons.folder_zip_outlined : _actionIcon(bulkAction),
           ),
-          IconButton(
-            tooltip: '下载整个文件夹',
-            onPressed: () => _downloadFolder(folders.first),
-            icon: const Icon(Icons.folder_zip_outlined),
-          ),
-        ] else ...[
-          // 音频与普通文件分开：音频进缓存（随后进音乐库），其它落
-          // 系统下载目录。混选时两个按钮都可用，各处理自己那一类。
-          IconButton(
-            tooltip: '缓存音乐',
-            onPressed: files.any((e) => e.category == FileCategory.music)
-                ? () => _downloadMany(
-                    files
-                        .where((e) => e.category == FileCategory.music)
-                        .toList(),
-                  )
-                : null,
-            icon: const Icon(Icons.library_music_outlined),
-          ),
-          IconButton(
-            tooltip: '下载',
-            onPressed: files.isNotEmpty
-                ? () => _downloadMany(
-                    files
-                        .where((e) => e.category != FileCategory.music)
-                        .toList(),
-                  )
-                : null,
-            icon: Icon(_actionIcon(bulkAction)),
-          ),
-        ],
+        ),
         IconButton(
           tooltip: '复制到…',
           onPressed: items.isEmpty
@@ -1389,40 +1328,100 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
   }
 
-  Future<void> _cacheFolderAudio(WebDavItem folder) async {
+  /// 把选中文件夹里的音频（递归）排进缓存队列，随后 ingest 进音乐库。
+  ///
+  /// 多个文件夹一起给，目录之间嵌套也不会重复入队（服务层按项幂等）。
+  Future<void> _cacheFoldersAudio(List<WebDavItem> folders) async {
     final accountId = _accountId;
-    if (accountId == null) return;
+    if (accountId == null || folders.isEmpty) return;
     final sourceName = _nameFor(accountId);
     final downloads = context.read<DownloadQueueService>();
-    AppSnack.show(context, '正在扫描文件夹中的音频：${folder.name}');
+    final scanning = folders.length == 1
+        ? '正在扫描文件夹中的音频：${folders.first.name}'
+        : '正在扫描 ${folders.length} 个文件夹中的音频';
+    var queued = 0;
+    var failed = 0;
+    Object? firstError;
+    for (final folder in folders) {
+      AppSnack.show(context, scanning);
+      try {
+        final r = await downloads.enqueueFolders(sourceName, [folder.path]);
+        queued += r.ok;
+        failed += r.failed;
+        firstError ??= r.firstError;
+      } catch (e) {
+        failed++;
+        firstError ??= e;
+      }
+    }
+    if (!mounted) return;
+    if (failed > 0 && queued == 0 && firstError != null) {
+      // 全军覆没通常意味着凭证 / 网络问题，按错误弹窗处理更好定位。
+      await showWebDavErrorDialog(context, firstError);
+      return;
+    }
+    final parts = <String>[];
+    if (queued > 0) parts.add('已加入 $queued 个音频到缓存队列');
+    if (failed > 0) parts.add('失败 $failed 个文件夹');
+    AppSnack.show(
+      context,
+      parts.isEmpty ? '这些文件夹里没有新的音频' : parts.join('，'),
+    );
+  }
+
+  /// 把选中的文件夹（递归，跳过音频）与普通文件下载到系统下载目录。
+  ///
+  /// 音频不在这里入队：那是「缓存音乐」的事，两个按钮各管一类，混选同一
+  /// 批内容时不会既缓存又下载。
+  Future<void> _downloadFolders(
+    List<WebDavItem> folders,
+    List<WebDavItem> files,
+  ) async {
+    final accountId = _accountId;
+    if (accountId == null || (folders.isEmpty && files.isEmpty)) return;
+    final sourceName = _nameFor(accountId);
+    final downloads = context.read<DownloadQueueService>();
+    AppSnack.show(
+      context,
+      folders.length == 1
+          ? '正在扫描文件夹：${folders.first.name}'
+          : '正在扫描选中的内容',
+    );
     try {
-      final n = await downloads.enqueueFolder(sourceName, folder.path);
+      final n = await downloads.enqueueFoldersToDownloads(
+        sourceName,
+        folders.map((e) => e.path),
+      );
+      final n2 = await _enqueueFilesToDownloads(downloads, sourceName, files);
       if (!mounted) return;
-      AppSnack.show(context, n == 0 ? '这个文件夹里没有音频' : '已加入 $n 个音频到缓存队列');
+      final total = n + n2;
+      AppSnack.show(
+        context,
+        total == 0 ? '所选内容里没有可下载的文件' : '已加入 $total 个文件到下载队列',
+      );
     } catch (e) {
       if (!mounted) return;
       await showWebDavErrorDialog(context, e);
     }
   }
 
-  /// 把整个文件夹（递归，含非音频）下载到系统下载目录。
-  Future<void> _downloadFolder(WebDavItem folder) async {
-    final accountId = _accountId;
-    if (accountId == null) return;
-    final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
-    AppSnack.show(context, '正在扫描文件夹：${folder.name}');
-    try {
-      final n = await downloads.enqueueFolderToDownloads(
+  /// 普通文件进系统下载目录队列，返回入队数量。
+  Future<int> _enqueueFilesToDownloads(
+    DownloadQueueService downloads,
+    String sourceName,
+    List<WebDavItem> files,
+  ) async {
+    var n = 0;
+    for (final item in files) {
+      if (await downloads.enqueueToDownloads(
         sourceName,
-        folder.path,
-      );
-      if (!mounted) return;
-      AppSnack.show(context, n == 0 ? '这个文件夹里没有可下载的文件' : '已加入 $n 个文件到下载队列');
-    } catch (e) {
-      if (!mounted) return;
-      await showWebDavErrorDialog(context, e);
+        item.path,
+        fileName: item.name,
+      )) {
+        n++;
+      }
     }
+    return n;
   }
 
   String _fmtSize(int bytes) {
