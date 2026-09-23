@@ -953,6 +953,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     AudioPlayerService player,
     WebDavAccount? active,
   ) {
+    // 服务器多起来时菜单别顶到屏幕外：最多半屏，超出部分在里面滚动。
+    // 菜单默认会「向下放不下就往上弹」，限高之后基本只会向下展开。
+    final menuMaxHeight = MediaQuery.sizeOf(context).height / 2;
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
@@ -991,6 +994,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
               child: DropdownButtonFormField<String>(
                 // ignore: deprecated_member_use
                 value: active?.id,
+                // 菜单最多半屏，超出可滚动。
+                menuMaxHeight: menuMaxHeight,
+                // 选中项撑满按钮宽度：否则长名字会把菜单撑得比按钮宽，
+                // 半屏限高后更容易显得不对称。
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: '当前服务器',
                   border: OutlineInputBorder(),
