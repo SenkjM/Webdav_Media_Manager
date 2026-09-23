@@ -12,6 +12,7 @@ import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
+import '../utils/selection_controller.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
 import '../widgets/track_status_chip.dart';
@@ -330,8 +331,11 @@ class _SelectableGroupGrid extends StatefulWidget {
 }
 
 class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
-  bool _selecting = false;
-  final Set<String> _selected = {};
+  /// 多选状态：全选判定按**计数对比**，见 [SelectionController]。
+  SelectionController _selection = const SelectionController();
+
+  bool get _selecting => _selection.active;
+  Set<String> get _selected => _selection.selected;
 
   List<LibraryTrack> get _selectedTracks {
     final out = <LibraryTrack>[];
@@ -345,10 +349,12 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
     return out;
   }
 
-  void _exitSelect() => setState(() {
-    _selecting = false;
-    _selected.clear();
-  });
+  void _exitSelect() => setState(() => _selection = _selection.exit());
+
+  /// 全选 / 取消全选。取消全选**不会**退出多选界面。
+  void _toggleSelectAll() => setState(
+        () => _selection = _selection.toggleSelectAll(widget.keys),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -361,22 +367,12 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
       children: [
         if (_selecting)
           _SelectionBar(
-            count: _selected.length,
-            allSelected: _selected.length >= widget.keys.length,
+            count: _selection.count,
+            allSelected: _selection.isAllSelected,
             hasCachedSelection: _selectedTracks.any(
               (t) => libraryTrackIsLocal(context.read<CacheService>(), t),
             ),
-            onSelectAll: () => setState(() {
-              if (_selected.length >= widget.keys.length) {
-                _selected.clear();
-                _selecting = false;
-              } else {
-                _selected
-                  ..clear()
-                  ..addAll(widget.keys);
-              }
-            }),
-            onCancel: _exitSelect,
+            onSelectAll: _toggleSelectAll,
             onAdd: () async {
               await addTracksToPlaylist(context, _selectedTracks);
               if (mounted) _exitSelect();
@@ -418,14 +414,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                 selecting: _selecting,
                 onTap: () {
                   if (_selecting) {
-                    setState(() {
-                      if (selected) {
-                        _selected.remove(key);
-                        if (_selected.isEmpty) _selecting = false;
-                      } else {
-                        _selected.add(key);
-                      }
-                    });
+                    setState(() => _selection = _selection.toggle(key));
                     return;
                   }
                   Navigator.of(context).push(
@@ -439,10 +428,10 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                   );
                 },
                 onLongPress: () {
-                  setState(() {
-                    _selecting = true;
-                    _selected.add(key);
-                  });
+                  setState(() => _selection = _selection.enter(
+                        key,
+                        selectOnly: widget.keys,
+                      ));
                 },
               );
             },
@@ -462,7 +451,6 @@ class _SelectionBar extends StatelessWidget {
   const _SelectionBar({
     required this.count,
     required this.hasCachedSelection,
-    required this.onCancel,
     required this.onAdd,
     required this.onShare,
     required this.onDelete,
@@ -473,13 +461,13 @@ class _SelectionBar extends StatelessWidget {
 
   final int count;
   final bool hasCachedSelection;
-  final VoidCallback onCancel;
   final VoidCallback onAdd;
   final VoidCallback onShare;
   final VoidCallback onDelete;
   final VoidCallback onDestroy;
 
-  /// Every selectable entry is already selected — the button then clears instead.
+  /// 选中数已经等于可选总数（**计数对比**，不看按钮按过没有）：
+  /// 此时那个按钮是叉号，作用是取消全选，而不是退出多选。
   final bool allSelected;
   final VoidCallback onSelectAll;
 
@@ -493,11 +481,8 @@ class _SelectionBar extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
             children: [
-              IconButton(
-                tooltip: '取消',
-                onPressed: onCancel,
-                icon: const Icon(Icons.close),
-              ),
+              // 一进入多选这里只是「全选」；只有选中数打满时才变成叉号。
+              // 退不出多选是故意的：返回键负责退出，那个按钮不该兼职关闭。
               IconButton(
                 tooltip: allSelected ? '取消全选' : '全选',
                 onPressed: onSelectAll,
@@ -672,17 +657,24 @@ class _SelectableTrackList extends StatefulWidget {
 }
 
 class _SelectableTrackListState extends State<_SelectableTrackList> {
-  bool _selecting = false;
-  final Set<String> _selected = {};
+  /// 多选状态：全选判定按**计数对比**，见 [SelectionController]。
+  SelectionController _selection = const SelectionController();
+
+  bool get _selecting => _selection.active;
+  Set<String> get _selected => _selection.selected;
+
+  List<String> get _allIds => widget.tracks.map(_id).toList();
 
   @override
   void initState() {
     super.initState();
     if (widget.startInSelection) {
-      _selecting = true;
-      for (final t in widget.tracks) {
-        _selected.add('${t.sourceName}\u0000${t.remotePath}');
-      }
+      // 整组进来时选中全部：计数打满 → 工具栏那个按钮一开始就是叉号。
+      _selection = _selection.enter(
+        '',
+        entry: SelectionEntry.selectAll,
+        selectOnly: _allIds,
+      );
     }
   }
 
@@ -691,10 +683,11 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
   List<LibraryTrack> get _selectedTracks =>
       widget.tracks.where((t) => _selected.contains(_id(t))).toList();
 
-  void _exitSelect() => setState(() {
-    _selecting = false;
-    _selected.clear();
-  });
+  void _exitSelect() => setState(() => _selection = _selection.exit());
+
+  /// 全选 / 取消全选。取消全选**不会**退出多选界面。
+  void _toggleSelectAll() =>
+      setState(() => _selection = _selection.toggleSelectAll(_allIds));
 
   @override
   Widget build(BuildContext context) {
@@ -710,22 +703,12 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
       children: [
         if (_selecting)
           _SelectionBar(
-            count: _selected.length,
-            allSelected: _selected.length >= widget.tracks.length,
+            count: _selection.count,
+            allSelected: _selection.isAllSelected,
             hasCachedSelection: _selectedTracks.any(
               (t) => libraryTrackIsLocal(context.read<CacheService>(), t),
             ),
-            onSelectAll: () => setState(() {
-              if (_selected.length >= widget.tracks.length) {
-                _selected.clear();
-                _selecting = false;
-              } else {
-                _selected
-                  ..clear()
-                  ..addAll(widget.tracks.map(_id));
-              }
-            }),
-            onCancel: _exitSelect,
+            onSelectAll: _toggleSelectAll,
             onAdd: () async {
               await addTracksToPlaylist(context, _selectedTracks);
               if (mounted) _exitSelect();
@@ -754,23 +737,15 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
                 playlist: widget.tracks,
                 selecting: _selecting,
                 selected: _selected.contains(_id(track)),
-                onToggleSelect: () {
-                  setState(() {
-                    final id = _id(track);
-                    if (_selected.contains(id)) {
-                      _selected.remove(id);
-                      if (_selected.isEmpty) _selecting = false;
-                    } else {
-                      _selected.add(id);
-                    }
-                  });
-                },
-                onEnterSelect: () {
-                  setState(() {
-                    _selecting = true;
-                    _selected.add(_id(track));
-                  });
-                },
+                onToggleSelect: () => setState(
+                  () => _selection = _selection.toggle(_id(track)),
+                ),
+                onEnterSelect: () => setState(
+                  () => _selection = _selection.enter(
+                        _id(track),
+                        selectOnly: _allIds,
+                      ),
+                ),
               );
             },
           ),
