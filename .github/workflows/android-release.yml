@@ -79,14 +79,18 @@ jobs:
           changes="$(bash .github/scripts/commit-list.sh "$prev_tag" "$sha")"
           notes="$(mktemp)"
           {
-            printf '正式版（来自 **main**，AGPL-3.0）。\n\n'
+            printf 'Webdav Media Manager\n\n'
             printf -- '- 版本：`%s`（versionCode `%s`）\n' "$version_name" "$version_code"
             printf -- '- 上一个正式版：`%s`\n\n' "${prev_tag:-无}"
-            printf '相对上一正式版：\n\n%s\n' "$changes"
+            if [ -n "$prev_tag" ]; then
+                printf '相对于上一版本 `%s`：\n\n%s\n' "$prev_tag" "$changes"
+            else
+                printf '本次变更：\n\n%s\n' "$changes"
+            fi
           } > "$notes"
           gh release create "$tag" dist/*.apk dist/*.aab \
             --repo "$REPO" \
             --target "$sha" \
-            --title "Webdav Media Manager ${version_name}" \
+            --title "${version_name}" \
             --notes-file "$notes" \
             --latest
