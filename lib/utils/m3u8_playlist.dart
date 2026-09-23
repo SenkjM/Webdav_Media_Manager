@@ -1,6 +1,10 @@
 import '../models/playlist.dart';
 
-/// Encode / decode playlist as extended M3U8 with WebDAV Music Player extensions.
+/// Encode / decode playlist as extended M3U8 with Webdav Media Manager extensions.
+///
+/// The `WMP` prefix in the tags below is the historical product abbreviation and
+/// is part of the on-disk format — **do not rename it**, previously synced
+/// playlists depend on it.
 ///
 /// Format notes:
 /// - `#EXTM3U` header

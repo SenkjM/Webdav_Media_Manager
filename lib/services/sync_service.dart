@@ -185,38 +185,33 @@ class SyncService extends ChangeNotifier {
   /// every launch).
   Future<void> autoScan() async {
     if (busy) return;
-    final credentialsDest = await credentialsDestination();
-    final playlistsDest = await playlistsDestination();
-    if (credentialsDest == null && playlistsDest == null) return;
+    final dest = await syncDestination();
+    if (dest == null) return;
     final pass = _settings.vaultPassphrase;
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
-      if (credentialsDest != null) {
-        if (pass.isEmpty) {
-          outcome.step('凭证同步已跳过（未设置统一加密密钥）');
-        } else {
-          _progress('扫描云端凭证…', 0.3);
-          try {
-            final result = await _vault.pull(
-              accountId: credentialsDest,
-              passphrase: pass,
-            );
-            if (result != null) outcome.step(result.summary);
-          } catch (e) {
-            outcome.warn('凭证扫描跳过：$e');
-          }
+      if (pass.isEmpty) {
+        outcome.step('凭证同步已跳过（未设置统一加密密钥）');
+      } else {
+        _progress('扫描云端凭证…', 0.3);
+        try {
+          final result = await _vault.pull(
+            accountId: dest,
+            passphrase: pass,
+          );
+          if (result != null) outcome.step(result.summary);
+        } catch (e) {
+          outcome.warn('凭证扫描跳过：$e');
         }
       }
-      if (playlistsDest != null) {
-        _progress('扫描歌单…', 0.7);
-        _playlists.configureSync(
-          remotePath: _settings.playlistRemotePath,
-          enabled: true,
-          accountId: playlistsDest,
-        );
-        await _playlists.pullAndMergeFromWebDav();
-        outcome.step('歌单已合并（${_playlists.playlists.length} 个）');
-      }
+      _progress('扫描歌单…', 0.7);
+      _playlists.configureSync(
+        remotePath: _settings.playlistRemotePath,
+        enabled: true,
+        accountId: dest,
+      );
+      await _playlists.pullAndMergeFromWebDav();
+      outcome.step('歌单已合并（${_playlists.playlists.length} 个）');
     });
     lastAutoSyncAt = DateTime.now();
     lastAutoSyncSummary = outcome.message;
@@ -225,17 +220,10 @@ class SyncService extends ChangeNotifier {
 
   // --- Credentials ------------------------------------------------------
 
-  /// Credentials destination account (falls back to the active account).
-  Future<String?> credentialsDestination() async =>
-      _settings.credentialsAccountId ?? _accounts.activeAccountId;
-
-  /// Playlists destination account (falls back to the active account).
-  Future<String?> playlistsDestination() async =>
-      _settings.playlistsAccountId ?? _accounts.activeAccountId;
-
-  /// Music-library destination account (falls back to the active one).
-  Future<String?> libraryDestination() async =>
-      _settings.libraryAccountId ?? _accounts.activeAccountId;
+  /// The **one** 网盘 凭证 / 歌单 / 音乐库 / 备份 all sync to (设置 → 同步与备份
+  /// → 远端路径). Falls back to the active account when the user pinned none.
+  Future<String?> syncDestination() async =>
+      _settings.syncAccountId ?? _accounts.activeAccountId;
 
   /// Upload local credentials to the configured destination.
   ///
@@ -244,7 +232,7 @@ class SyncService extends ChangeNotifier {
   Future<SyncOutcome> pushCredentials({String? passphrase}) async {
     final outcome = SyncOutcome(direction: 'push');
     await _run(outcome, () async {
-      final dest = await credentialsDestination();
+      final dest = await syncDestination();
       if (dest == null) throw StateError('请先添加 WebDAV 账号');
       final pass = passphrase ?? _settings.vaultPassphrase;
       _progress('上传凭证…', 0.5);
@@ -259,7 +247,7 @@ class SyncService extends ChangeNotifier {
   Future<SyncOutcome> pullCredentials({String? passphrase}) async {
     final outcome = SyncOutcome(direction: 'pull');
     await _run(outcome, () async {
-      final dest = await credentialsDestination();
+      final dest = await syncDestination();
       if (dest == null) throw StateError('请先添加 WebDAV 账号');
       final pass = passphrase ?? _settings.vaultPassphrase;
       _progress('下载凭证…', 0.5);
@@ -275,7 +263,7 @@ class SyncService extends ChangeNotifier {
   Future<SyncOutcome> syncPlaylistsNow() async {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
-      final dest = await playlistsDestination();
+      final dest = await syncDestination();
       if (dest == null) throw StateError('请先添加 WebDAV 账号');
       _playlists.configureSync(
         remotePath: _settings.playlistRemotePath,
@@ -307,7 +295,7 @@ class SyncService extends ChangeNotifier {
   Future<SyncOutcome> syncLibraryIncremental() async {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
-      final dest = await libraryDestination();
+      final dest = await syncDestination();
       if (dest == null) throw StateError('请先添加 WebDAV 账号');
       final store = await _libraryStore();
 
@@ -460,7 +448,7 @@ class SyncService extends ChangeNotifier {
   }) async {
     final outcome = SyncOutcome(direction: 'push');
     await _run(outcome, () async {
-      final dest = await libraryDestination();
+      final dest = await syncDestination();
       if (dest == null) throw StateError('请先添加 WebDAV 账号');
       final store = await _libraryStore();
 
@@ -511,7 +499,7 @@ class SyncService extends ChangeNotifier {
 
   /// Compare the cloud manifest with the directory's real contents.
   Future<LibraryAudit> auditLibrary() async {
-    final dest = await libraryDestination();
+    final dest = await syncDestination();
     if (dest == null) throw StateError('请先添加 WebDAV 账号');
     final store = await _libraryStore();
     return store.audit(dest);
@@ -519,7 +507,7 @@ class SyncService extends ChangeNotifier {
 
   /// Delete the orphan files an audit found (best effort).
   Future<int> tidyLibraryOrphans(LibraryAudit audit) async {
-    final dest = await libraryDestination();
+    final dest = await syncDestination();
     if (dest == null) throw StateError('请先添加 WebDAV 账号');
     final store = await _libraryStore();
     return store.deleteOrphans(dest, audit);
@@ -585,49 +573,51 @@ class SyncService extends ChangeNotifier {
   );
   // --- Whole-app backup -------------------------------------------------
 
-  /// Back up **everything** (credentials + library + playlists) to the chosen
-  /// server and directory. Nothing is scoped per site.
-  Future<SyncOutcome> backupTo({
-    required WebDavAccount destination,
-    required String remoteDir,
-    required String passphrase,
-  }) async {
+  /// Back up **everything** (credentials + library + playlists) into
+  /// `<远端路径>backup/` on the configured 网盘.
+  ///
+  /// Neither the server nor the directory is asked for here any more: the single
+  /// 远端路径 栏 owns both, so 备份 can never drift away from the rest.
+  Future<SyncOutcome> backupTo({required String passphrase}) async {
     final outcome = SyncOutcome(direction: 'backup');
     await _run(outcome, () async {
+      final dest = await syncDestination();
+      if (dest == null) throw StateError('请先添加 WebDAV 账号');
       _progress('打包凭证 / 音乐库 / 歌单…', 0.4);
       await _backup.uploadBackup(
-        accountId: destination.id,
+        accountId: dest,
         passphrase: passphrase,
-        remoteDir: remoteDir,
+        remoteDir: _settings.backupRemotePath,
       );
       outcome.step(_backup.lastMessage ?? '备份完成');
-      await _settings.setSyncAccount('backup', destination.id);
     });
     return outcome;
   }
 
-  /// List archives available in [remoteDir] on [source].
-  Future<List<String>> listBackups({
-    required WebDavAccount source,
-    required String remoteDir,
-  }) {
-    return _backup.listBackups(accountId: source.id, remoteDir: remoteDir);
+  /// List the archives under `<远端路径>backup/`.
+  Future<List<String>> listBackups() async {
+    final dest = await syncDestination();
+    if (dest == null) return const [];
+    return _backup.listBackups(
+      accountId: dest,
+      remoteDir: _settings.backupRemotePath,
+    );
   }
 
-  /// Restore a whole-app archive from the chosen server and path.
+  /// Restore a whole-app archive from `<远端路径>backup/`.
   Future<SyncOutcome> restoreFrom({
-    required WebDavAccount source,
-    required String remoteDir,
     required String passphrase,
     String? fileName,
   }) async {
     final outcome = SyncOutcome(direction: 'restore');
     await _run(outcome, () async {
+      final dest = await syncDestination();
+      if (dest == null) throw StateError('请先添加 WebDAV 账号');
       _progress('下载并恢复…', 0.5);
       await _backup.restoreFromWebDav(
-        accountId: source.id,
+        accountId: dest,
         passphrase: passphrase,
-        remoteDir: remoteDir,
+        remoteDir: _settings.backupRemotePath,
         fileName: fileName,
       );
       outcome.step(_backup.lastMessage ?? '恢复完成');

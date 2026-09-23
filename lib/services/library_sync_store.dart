@@ -363,13 +363,10 @@ class LibrarySyncStore {
   /// Default tracks per base shard.
   static const defaultTracksPerShard = 500;
 
-  /// Absolute path of `<sync root>/library`.
+  /// Absolute path of the cloud library directory (远端路径 → `library/`).
   String dirPath() {
-    final root = _settings.librarySyncRemotePath;
-    final trimmed = root.endsWith('/')
-        ? root.substring(0, root.length - 1)
-        : root;
-    return '$trimmed/library';
+    final root = _settings.libraryRemotePath;
+    return root.endsWith('/') ? root.substring(0, root.length - 1) : root;
   }
 
   String indexPath() => '${dirPath()}/$indexName';

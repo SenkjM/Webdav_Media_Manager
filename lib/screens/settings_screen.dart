@@ -651,19 +651,24 @@ class _SettingsScreenState extends State<SettingsScreen>
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
-          const SizedBox(height: 4),
-          Text(
-            '凭证与歌单双向同步，音乐库增量上传。\n云端根目录：${settings.syncRemoteRoot}',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
           const SizedBox(height: 8),
-          FilledButton.tonalIcon(
-            onPressed: () {
-              Navigator.of(context)
-                  .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
+          // Same shape as 视频播放 / 文件类型 above: a row with a chevron, not a
+          // button — this opens another screen, it does not run an action.
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.sync),
+            title: const Text('同步与备份设置'),
+            subtitle: Text(
+              '凭证 / 歌单 / 音乐库 / 备份共用一条远端路径：\n'
+              '${settings.syncRemoteRoot}',
+            ),
+            isThreeLine: true,
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SyncScreen()),
+              );
             },
-            icon: const Icon(Icons.sync),
-            label: const Text('打开同步'),
           ),
 
           const Divider(height: 40),
