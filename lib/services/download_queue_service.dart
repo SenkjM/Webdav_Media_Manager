@@ -146,19 +146,28 @@ class DownloadQueueService extends ChangeNotifier {
 
   UnmodifiableListView<DownloadTask> get tasks => UnmodifiableListView(_tasks);
 
-  /// After cache files are deleted, mark stale "completed" tasks so enqueue
-  /// will re-download. Library clip metadata stays in the DB.
+  /// After the audio cache is cleared, drop the completed tasks whose file is
+  /// gone so the next tap enqueues a fresh download.
+  ///
+  /// Rows are **deleted**, not marked cancelled: [uiStateFor] maps cancelled to
+  /// [TrackUiState.error], which made every previously downloaded row show a red
+  /// 「错误」chip after 设置 → 手动清空音频缓存. With the row gone,
+  /// `taskForRemote` returns null and the row falls back to
+  /// [TrackUiState.remote] — the same look 音乐库 → 删除缓存 already produced.
+  ///
+  /// Tasks whose file lives outside the audio cache are skipped: gallery /
+  /// Downloads entries keep a `content://` URI (or an absolute path) in
+  /// [DownloadTask.localPath], so `File(...).existsSync()` is always false for
+  /// them and the cache clear never invalidates them.
   Future<int> invalidateMissingCompleted() async {
     var n = 0;
     for (final t in List<DownloadTask>.from(_tasks)) {
       if (t.status != DownloadStatus.completed) continue;
+      if (t.isPublic) continue;
       final path = t.localPath;
       if (path != null && File(path).existsSync()) continue;
-      t.status = DownloadStatus.cancelled;
-      t.localPath = null;
-      t.progress = 0;
-      t.errorMessage = '缓存已清除，需重新下载';
-      await _store.upsert(t);
+      _tasks.remove(t);
+      await _store.delete(t.id);
       n++;
     }
     if (n > 0) notifyListeners();
