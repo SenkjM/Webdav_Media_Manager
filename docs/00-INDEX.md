@@ -34,6 +34,7 @@
 | 08 | [08-SYNC-AND-BACKUP.md](08-SYNC-AND-BACKUP.md) | 远端路径、凭证 / 歌单 / 曲库同步、备份归档与恢复 |
 | 09 | [09-MISC.md](09-MISC.md) | 代码地图、构建发布、编码约定与陷阱、测试入口、历史回归、待办 |
 | 99 | [99-IN-PROGRESS.md](99-IN-PROGRESS.md) | **开发中文档**：正在开发的功能的原始语义、取舍与影响面 |
+| 10 | [10-SIDE-QUESTS.md](10-SIDE-QUESTS.md) | **顺手做清单**：大工程里值得顺手做的小任务的边界与判断条件（发不发布由用户定） |
 
 ## 3. Agent 编码约束
 
@@ -45,6 +46,7 @@
 6. **密钥一律不打印、不提交**：keystore、`key.properties`、token、`.env`、secrets。
 7. 提交信息用简短英文前缀（`feat:` / `fix:` / `docs:` / `deps:` / `ci:`）+ 说明。
 8. UI 文案用中文，标识符 / 路径 / API 名保持英文。保持 AGPL-3.0 头。
+9. **开始大工程或新功能前**：先做拆分，把适合顺手做的小任务写进 [10](10-SIDE-QUESTS.md)（写清来源、边界与判断条件），**并问用户是否要一起做**——发不发布、拆不拆、合不合并由用户定，agent 只列理由。判断标准与流程见架构技能 `task-splitting-and-side-quests`。
 
 ## 4. 项目整体规划
 

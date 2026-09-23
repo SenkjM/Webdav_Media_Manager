@@ -175,3 +175,37 @@
 
 **影响面**：[02-NETWORK-LIBRARY.md](02-NETWORK-LIBRARY.md)（§2、§8）、[05-AUDIO-PLAYBACK.md](05-AUDIO-PLAYBACK.md)（「仅本地播放」的约定要改）、[06-VIDEO-PLAYBACK.md](06-VIDEO-PLAYBACK.md)（共享的远端流模式）、[07-NOTIFICATIONS.md](07-NOTIFICATIONS.md)（媒体通知文案）、[09-MISC.md](09-MISC.md)（陷阱表里的「不要给音频做流式播放」要改写成「实验开关控制的流式播放」）。
 
+## 4. 主题配色（**已分析，代码未动**）
+
+### 4.1 现状（可直接确认）
+
+- `lib/theme/app_theme.dart` 里 `AppTheme.light` 与 `AppTheme.dark` **两套都已写完**，各约 240 行，覆盖 AppBar / Drawer / Card / ListTile / TabBar / Slider / Chip / Dialog / SnackBar / SegmentedButton 等。
+- `lib/main.dart` 已经传了 `theme:` 与 `darkTheme:`，但 `themeMode: ThemeMode.light` 是**写死**的 —— 也就是说 `AppTheme.dark` 现在是死代码。
+- `AppColors`（同文件）是 `static const Color`，全库 **24 个文件、325 处**直接引用。
+- 另有约 **417 处**裸颜色（`Colors.xxx` / `Color(0x…)`），分布在 25 个文件，其中一部分是**有意**的（封面占位、状态色、播放器黑底）。
+
+### 4.2 为什么不能只把 `themeMode` 打开
+
+把 `themeMode` 改成 `ThemeMode.dark` 会立刻得到「深色主题 + 一堆亮色残留」：`AppColors.xxx` 是编译期常量，不会跟着主题走，于是文字、分隔线、卡片底色仍是亮色值。这是这个功能真正的工作量所在。
+
+### 4.3 拆分（两阶段，各自独立可交付）
+
+**阶段一 · 静态引用转上下文取色**
+
+- `AppColors` 改成「静态常量（默认亮色，保持兼容）+ 上下文取色入口（`AppColors.of(context)` 或 `BuildContext` 扩展）」。
+- 逐文件把 `AppColors.xxx` 换成上下文取色，**24 个文件、325 处**。
+- 只认「该值是否随主题变化」：`nearBlack` / `onDark` 这类语义在暗色下会**反转**（播放器黑底在暗色下应当是深背景而不是纯黑），要单独过一遍，不能机械替换。
+- 完成后亮色下**行为完全不变**，暗色下除裸颜色外应当正常。默认仍是 `ThemeMode.light`，所以这一步落地即安全。
+
+**阶段二 · 模式开关与自定义取色**
+
+- 三态开关：跟随系统 / 亮 / 暗；持久化沿用 `SettingsService` 既有模式。
+- 自定义配色：边界**未定**（是只让用户改主色 accent，还是整套色板）。只改主色的话工作量小得多，但要让 accent 的对比色（`onAccent`）跟着算出来。**这是一个需要先和用户确认的点**。
+- 裸颜色审计与收敛，按类判断：哪些该跟主题、哪些本来就该固定。
+
+### 4.4 验收与回归点
+
+- 纯黑播放器页、下载进度 / 状态色、封面占位在两种模式下都要可读；`docs/05`、`06`、`07` 的界面描述需要跟着补。
+- 阶段一落地后跑 `flutter analyze` 与 `flutter test`；阶段二补设置项相关的测试。
+
+相关完整文档：[09 §编码约定](09-MISC.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[07](07-NOTIFICATIONS.md)。待发布与合并判断见 [10-SIDE-QUESTS.md](10-SIDE-QUESTS.md)。
