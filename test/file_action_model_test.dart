@@ -22,45 +22,68 @@ void main() {
     });
 
     test('默认动作：音乐缓存、cue 读取、视频流式、普通下载', () {
-      expect(FileActionCatalog.defaultFor(FileCategory.music),
-          FileAction.cacheMusic);
-      expect(FileActionCatalog.defaultFor(FileCategory.cue),
-          FileAction.readCue);
-      expect(FileActionCatalog.defaultFor(FileCategory.video),
-          FileAction.stream);
-      expect(FileActionCatalog.defaultFor(FileCategory.other),
-          FileAction.download);
+      expect(
+        FileActionCatalog.defaultFor(FileCategory.music),
+        FileAction.cacheMusic,
+      );
+      expect(
+        FileActionCatalog.defaultFor(FileCategory.cue),
+        FileAction.readCue,
+      );
+      expect(
+        FileActionCatalog.defaultFor(FileCategory.video),
+        FileAction.stream,
+      );
+      expect(
+        FileActionCatalog.defaultFor(FileCategory.other),
+        FileAction.download,
+      );
     });
   });
 
   group('拦截不合法行为', () {
     test('任何文件都允许下载', () {
       for (final c in FileCategory.values) {
-        expect(FileActionCatalog.isAllowed(c, FileAction.download), isTrue,
-            reason: '$c 也应该能下载');
+        expect(
+          FileActionCatalog.isAllowed(c, FileAction.download),
+          isTrue,
+          reason: '$c 也应该能下载',
+        );
       }
     });
 
     test('缓存音乐只对音乐合法', () {
-      expect(FileActionCatalog.isAllowed(FileCategory.music, FileAction.cacheMusic),
-          isTrue);
-      expect(FileActionCatalog.isAllowed(FileCategory.video, FileAction.cacheMusic),
-          isFalse);
-      expect(FileActionCatalog.isAllowed(FileCategory.other, FileAction.cacheMusic),
-          isFalse);
+      expect(
+        FileActionCatalog.isAllowed(FileCategory.music, FileAction.cacheMusic),
+        isTrue,
+      );
+      expect(
+        FileActionCatalog.isAllowed(FileCategory.video, FileAction.cacheMusic),
+        isFalse,
+      );
+      expect(
+        FileActionCatalog.isAllowed(FileCategory.other, FileAction.cacheMusic),
+        isFalse,
+      );
     });
 
     test('视频那个流式传输不适用于音乐（音乐要用实验性的 streamMusic）', () {
-      expect(judgeAction(
-        action: FileAction.stream,
-        category: FileCategory.music,
-        isDirectory: false,
-      ).allowed, isFalse);
-      expect(judgeAction(
-        action: FileAction.streamMusic,
-        category: FileCategory.music,
-        isDirectory: false,
-      ).allowed, isTrue);
+      expect(
+        judgeAction(
+          action: FileAction.stream,
+          category: FileCategory.music,
+          isDirectory: false,
+        ).allowed,
+        isFalse,
+      );
+      expect(
+        judgeAction(
+          action: FileAction.streamMusic,
+          category: FileCategory.music,
+          isDirectory: false,
+        ).allowed,
+        isTrue,
+      );
     });
 
     test('文件夹不能按文件动作处理', () {
@@ -97,50 +120,64 @@ void main() {
 
   group('设置解析与迁移', () {
     test('非法动作在解析时退回默认值', () {
-      final cfg = FileActionConfig(actions: {
-        FileCategory.video: FileAction.cacheMusic,
-        FileCategory.other: FileAction.readCue,
-      });
+      final cfg = FileActionConfig(
+        actions: {
+          FileCategory.video: FileAction.cacheMusic,
+          FileCategory.other: FileAction.readCue,
+        },
+      );
       expect(cfg.video, FileAction.stream);
       expect(cfg.other, FileAction.download);
     });
 
     test('实验开关关掉时音乐流式退回缓存', () {
       final cfg = FileActionConfig(
-        experimentalMusicStreaming: false,
+        allowMusicStreaming: false,
         actions: {FileCategory.music: FileAction.streamMusic},
       );
       expect(cfg.music, FileAction.cacheMusic);
-      expect(cfg.choicesFor(FileCategory.music), isNot(contains(FileAction.streamMusic)));
+      expect(
+        cfg.choicesFor(FileCategory.music),
+        isNot(contains(FileAction.streamMusic)),
+      );
     });
 
     test('打开实验开关后音乐流式可选', () {
-      final cfg = FileActionConfig(experimentalMusicStreaming: true);
-      expect(cfg.choicesFor(FileCategory.music), contains(FileAction.streamMusic));
-      expect(cfg.choicesFor(FileCategory.video),
-          isNot(contains(FileAction.streamMusic)));
+      final cfg = FileActionConfig(allowMusicStreaming: true);
+      expect(
+        cfg.choicesFor(FileCategory.music),
+        contains(FileAction.streamMusic),
+      );
+      expect(
+        cfg.choicesFor(FileCategory.video),
+        isNot(contains(FileAction.streamMusic)),
+      );
     });
 
-    test('JSON 往返保持动作与开关', () {
+    test('JSON 往返保持动作', () {
       final cfg = FileActionConfig(
-        experimentalMusicStreaming: true,
+        allowMusicStreaming: true,
         actions: {
           FileCategory.music: FileAction.streamMusic,
           FileCategory.video: FileAction.download,
         },
       );
-      final back = FileActionConfig.fromJson(cfg.toJson())!;
+      // 开关不再随 JSON 走：它由调用方从设置里传进来（见 SettingsService）。
+      final back = FileActionConfig.fromJson(
+        cfg.toJson(),
+        allowMusicStreaming: true,
+      )!;
       expect(back.music, FileAction.streamMusic);
       expect(back.video, FileAction.download);
       expect(back.cue, FileAction.readCue);
       expect(back.other, FileAction.download);
-      expect(back.experimentalMusicStreaming, isTrue);
+      expect(back.allowMusicStreaming, isTrue);
     });
 
     test('forFileName 先判类型再取动作', () {
-      final cfg = FileActionConfig(actions: {
-        FileCategory.video: FileAction.download,
-      });
+      final cfg = FileActionConfig(
+        actions: {FileCategory.video: FileAction.download},
+      );
       expect(cfg.forFileName('a.mkv', types), FileAction.download);
       expect(cfg.forFileName('a.flac', types), FileAction.cacheMusic);
       expect(cfg.forFileName('a.cue', types), FileAction.readCue);
@@ -150,13 +187,17 @@ void main() {
 
   group('多选工具栏的那个下载动作', () {
     test('全是音乐时叫「缓存音乐」', () {
-      expect(bulkDownloadAction([FileCategory.music, FileCategory.music]),
-          FileAction.cacheMusic);
+      expect(
+        bulkDownloadAction([FileCategory.music, FileCategory.music]),
+        FileAction.cacheMusic,
+      );
     });
 
     test('混进视频或普通文件就退化成「下载」', () {
-      expect(bulkDownloadAction([FileCategory.music, FileCategory.video]),
-          FileAction.download);
+      expect(
+        bulkDownloadAction([FileCategory.music, FileCategory.video]),
+        FileAction.download,
+      );
       expect(bulkDownloadAction([FileCategory.other]), FileAction.download);
     });
   });
@@ -170,11 +211,25 @@ void main() {
       final s = SettingsService();
       await s.init();
       expect(s.fileActions.video, FileAction.download);
-      expect(s.fileActions.music, FileAction.cacheMusic,
-          reason: '旧音乐语义（play / download）都是先缓存再播');
+      expect(
+        s.fileActions.music,
+        FileAction.cacheMusic,
+        reason: '旧音乐语义（play / download）都是先缓存再播',
+      );
       expect(s.fileActions.cue, FileAction.readCue);
       expect(s.fileActions.other, FileAction.download);
-      expect(s.fileActions.experimentalMusicStreaming, isFalse);
+      expect(s.audioStreamingEnabled, isFalse);
+    });
+
+    test('旧配置里的 experimental_music_streaming 迁到新开关', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'file_action_config_json':
+            '{"music":"stream_music","experimental_music_streaming":true}',
+      });
+      final s = SettingsService();
+      await s.init();
+      expect(s.audioStreamingEnabled, isTrue, reason: '点过一次的开关不该再点第二次');
+      expect(s.fileActions.music, FileAction.streamMusic);
     });
 
     test('写回后再读，走的是新配置', () async {

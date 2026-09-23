@@ -1,4 +1,5 @@
 import '../utils/app_snack.dart';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -124,23 +125,6 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
             onApply: () => _apply(FileCategory.music),
             onRestore: () => _restoreDefault(FileCategory.music),
             actionDropdown: _buildActionDropdown(settings, FileCategory.music),
-            footer: SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              dense: true,
-              value: actions.experimentalMusicStreaming,
-              onChanged: (v) => context
-                  .read<SettingsService>()
-                  .setExperimentalMusicStreaming(v),
-              title: const Text(
-                '允许音乐流式传输（实验性）',
-                style: TextStyle(color: AppColors.primaryText),
-              ),
-              subtitle: const Text(
-                '打开后音乐可以像视频一样远端播放，不下载、不进音乐库。'
-                '差别与限制见开发中文档的可行性分析。',
-                style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
-              ),
-            ),
           ),
           const SizedBox(height: 16),
           _buildSection(
@@ -154,7 +138,8 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
           const SizedBox(height: 16),
           _buildSection(
             title: 'CUE 文件',
-            subtitle: '点按默认动作：${actions.cue.labelZh}'
+            subtitle:
+                '点按默认动作：${actions.cue.labelZh}'
                 '（CUE 读取会解析分片并整组下载）',
             controller: _cueController,
             onApply: () => _apply(FileCategory.cue),
@@ -164,7 +149,8 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
           const SizedBox(height: 16),
           _buildSection(
             title: '普通文件',
-            subtitle: '点按默认动作：${actions.other.labelZh}'
+            subtitle:
+                '点按默认动作：${actions.other.labelZh}'
                 '（不在上面三张列表里的后缀，下载到系统下载目录）',
             controller: null,
             onApply: null,

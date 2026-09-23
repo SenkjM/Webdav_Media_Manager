@@ -9,6 +9,7 @@ import '../services/library_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
 import 'accounts_screen.dart';
+import 'audio_stream_settings_screen.dart';
 import '../theme/app_theme.dart';
 import '../utils/cover_image.dart';
 import '../utils/audio_extensions.dart';
@@ -130,10 +131,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     final libCount = context.read<LibraryService>().count;
     await _refreshCacheSize();
     if (!context.mounted) return;
-    AppSnack.show(
-      context,
-      '已清理 $n 个缓存文件（$libCount 首元数据保留）',
-    );
+    AppSnack.show(context, '已清理 $n 个缓存文件（$libCount 首元数据保留）');
   }
 
   Future<void> _onNotificationTap(
@@ -289,6 +287,20 @@ class _SettingsScreenState extends State<SettingsScreen>
               );
             },
           ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.graphic_eq),
+            title: const Text('音频流式设置'),
+            subtitle: const Text('流式传输开关 / 搜索子目录'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AudioStreamSettingsScreen(),
+                ),
+              );
+            },
+          ),
           const Divider(height: 40),
           Text(
             '文件类型',
@@ -430,9 +442,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          Text(
-            '仅清理音频缓存（播放/下载中的保留），标签与封面不受影响。',
-          ),
+          Text('仅清理音频缓存（播放/下载中的保留），标签与封面不受影响。'),
           const SizedBox(height: 12),
           Card(
             color: AppColors.elevated,
@@ -619,10 +629,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          Text(
-            '分享时按标签重命名文件名。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          Text('分享时按标签重命名文件名。', style: Theme.of(context).textTheme.bodySmall),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.drive_file_rename_outline),
@@ -665,9 +672,8 @@ class _SettingsScreenState extends State<SettingsScreen>
             isThreeLine: true,
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SyncScreen()),
-              );
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
             },
           ),
 

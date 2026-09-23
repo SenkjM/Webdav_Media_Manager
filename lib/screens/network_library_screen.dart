@@ -379,10 +379,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 后台播放与锁屏控制跟着工作。封面与时长不额外取：流式播放拿不到本地
   /// 文件来解析标签。完整取舍见 docs/99 的《音乐流式传输可行性分析》。
   Future<void> _streamMusic(WebDavItem item) async {
-    if (!context
-        .read<SettingsService>()
-        .fileActions
-        .experimentalMusicStreaming) {
+    if (!context.read<SettingsService>().audioStreamingEnabled) {
       AppSnack.error(context, '音乐流式传输是实验功能，请先在设置里打开');
       return;
     }
@@ -648,9 +645,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final otherActions = FileActionCatalog.forCategory(item.category)
         .where((a) => a != defaultAction)
         .where(
-          (a) =>
-              a != FileAction.streamMusic ||
-              settings.fileActions.experimentalMusicStreaming,
+          (a) => a != FileAction.streamMusic || settings.audioStreamingEnabled,
         )
         .toList();
 
@@ -706,8 +701,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       _downloadSelection([item], const []);
                     },
                   ),
-                ]
-                else ...[
+                ] else ...[
                   ListTile(
                     leading: Icon(_actionIcon(defaultAction)),
                     title: Text(defaultAction.labelZh),
@@ -1282,7 +1276,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // 缓存音乐：选中里只要有音频、或有文件夹（文件夹由后端扫一遍才知道里面
     // 有什么）就可用。下载是基本功能，选中任何东西都可用。
     final canCacheMusic =
-        folders.isNotEmpty || files.any((e) => e.category == FileCategory.music);
+        folders.isNotEmpty ||
+        files.any((e) => e.category == FileCategory.music);
     final canDownload = items.isNotEmpty;
     return SelectionToolbar(
       children: [
@@ -1413,10 +1408,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       final parts = <String>[];
       if (r.ok > 0) parts.add('已加入 ${r.ok} 项');
       if (r.failed > 0) parts.add('失败 ${r.failed} 个文件夹');
-      AppSnack.show(
-        context,
-        parts.isEmpty ? emptyText : parts.join('，'),
-      );
+      AppSnack.show(context, parts.isEmpty ? emptyText : parts.join('，'));
     } catch (e) {
       if (!mounted) return;
       await showWebDavErrorDialog(context, e);

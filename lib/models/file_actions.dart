@@ -26,37 +26,37 @@ enum FileAction {
 
 extension FileActionX on FileAction {
   String get storageKey => switch (this) {
-        FileAction.cacheMusic => 'cache_music',
-        FileAction.download => 'download',
-        FileAction.stream => 'stream',
-        FileAction.readCue => 'read_cue',
-        FileAction.streamMusic => 'stream_music',
-      };
+    FileAction.cacheMusic => 'cache_music',
+    FileAction.download => 'download',
+    FileAction.stream => 'stream',
+    FileAction.readCue => 'read_cue',
+    FileAction.streamMusic => 'stream_music',
+  };
 
   String get labelZh => switch (this) {
-        FileAction.cacheMusic => '缓存音乐',
-        FileAction.download => '下载',
-        FileAction.stream => '流式传输',
-        FileAction.readCue => 'cue 读取',
-        FileAction.streamMusic => '流式传输（音乐·实验性）',
-      };
+    FileAction.cacheMusic => '缓存音乐',
+    FileAction.download => '下载',
+    FileAction.stream => '流式传输',
+    FileAction.readCue => 'cue 读取',
+    FileAction.streamMusic => '流式传输（音乐）',
+  };
 
   /// 短标签，给多选工具栏这类空间紧张的地方用。
   String get shortLabelZh => switch (this) {
-        FileAction.cacheMusic => '缓存',
-        FileAction.download => '下载',
-        FileAction.stream => '播放',
-        FileAction.readCue => 'CUE',
-        FileAction.streamMusic => '流播',
-      };
+    FileAction.cacheMusic => '缓存',
+    FileAction.download => '下载',
+    FileAction.stream => '播放',
+    FileAction.readCue => 'CUE',
+    FileAction.streamMusic => '流播',
+  };
 
   /// 该动作落盘到哪里。流式播放不落盘，返回 null。
   DownloadTarget? get downloadTarget => switch (this) {
-        FileAction.cacheMusic => DownloadTarget.cache,
-        FileAction.download => DownloadTarget.downloads,
-        FileAction.readCue => DownloadTarget.cache,
-        FileAction.stream || FileAction.streamMusic => null,
-      };
+    FileAction.cacheMusic => DownloadTarget.cache,
+    FileAction.download => DownloadTarget.downloads,
+    FileAction.readCue => DownloadTarget.cache,
+    FileAction.stream || FileAction.streamMusic => null,
+  };
 
   static FileAction fromStorageKey(String? key, FileAction fallback) =>
       FileAction.values.firstWhere(
@@ -80,14 +80,9 @@ class FileActionCatalog {
     FileAction.download,
   ];
 
-  static const List<FileAction> cue = [
-    FileAction.readCue,
-    FileAction.download,
-  ];
+  static const List<FileAction> cue = [FileAction.readCue, FileAction.download];
 
-  static const List<FileAction> other = [
-    FileAction.download,
-  ];
+  static const List<FileAction> other = [FileAction.download];
 
   /// [FileCategory] → 允许的动作列表。
   static List<FileAction> forCategory(FileCategory category) =>
@@ -109,13 +104,12 @@ class FileActionCatalog {
   }
 
   /// 该类别的出厂默认动作。
-  static FileAction defaultFor(FileCategory category) =>
-      switch (category) {
-        FileCategory.music => FileAction.cacheMusic,
-        FileCategory.cue => FileAction.readCue,
-        FileCategory.video => FileAction.stream,
-        FileCategory.other => FileAction.download,
-      };
+  static FileAction defaultFor(FileCategory category) => switch (category) {
+    FileCategory.music => FileAction.cacheMusic,
+    FileCategory.cue => FileAction.readCue,
+    FileCategory.video => FileAction.stream,
+    FileCategory.other => FileAction.download,
+  };
 }
 
 /// 解析后的「单击行为」设置：一个类别一个动作，且一定合法。
@@ -126,20 +120,21 @@ class FileActionCatalog {
 class FileActionConfig {
   FileActionConfig({
     Map<FileCategory, FileAction>? actions,
-    this.experimentalMusicStreaming = false,
+    this.allowMusicStreaming = false,
   }) : actions = {
-          for (final c in FileCategory.values)
-            c: _sanitize(
-              c,
-              actions?[c] ?? FileActionCatalog.defaultFor(c),
-              experimentalMusicStreaming: experimentalMusicStreaming,
-            ),
-        };
+         for (final c in FileCategory.values)
+           c: _sanitize(
+             c,
+             actions?[c] ?? FileActionCatalog.defaultFor(c),
+             allowMusicStreaming: allowMusicStreaming,
+           ),
+       };
 
   final Map<FileCategory, FileAction> actions;
 
-  /// T6 实验开关：关掉之后音乐不再出现「流式传输（音乐·实验性）」。
-  final bool experimentalMusicStreaming;
+  /// 音乐能否选中「流式传输（音乐）」。**不是**持久化字段：值从
+  /// 音频流式设置页的开关来，由 [FileActionConfig] 的构造方传进来。
+  final bool allowMusicStreaming;
 
   FileAction get music => actions[FileCategory.music]!;
   FileAction get video => actions[FileCategory.video]!;
@@ -152,50 +147,41 @@ class FileActionConfig {
   FileAction forFileName(String name, FileTypeConfig types) =>
       forCategory(types.categoryFor(name));
 
-  /// 该类别在设置里可以选的动作（音乐流式的实验开关在这里生效）。
+  /// 该类别在设置里可以选的动作。
+  ///
+  /// 关掉音乐流式开关时，这里也要**不出现**「流式传输（音乐）」：
+  /// 构造期虽然已经把它退回默认值，但下拉框若还列着这一项，用户选完
+  /// 会被静静退回，看不出为什么没生效。
   List<FileAction> choicesFor(FileCategory category) {
     final base = FileActionCatalog.forCategory(category);
-    if (category != FileCategory.music || experimentalMusicStreaming) {
-      return base;
-    }
+    if (category != FileCategory.music || allowMusicStreaming) return base;
     return base.where((a) => a != FileAction.streamMusic).toList();
   }
 
-  FileActionConfig copyWith({
-    Map<FileCategory, FileAction>? actions,
-    bool? experimentalMusicStreaming,
-  }) =>
+  FileActionConfig copyWith({Map<FileCategory, FileAction>? actions}) =>
       FileActionConfig(
         actions: actions ?? this.actions,
-        experimentalMusicStreaming:
-            experimentalMusicStreaming ?? this.experimentalMusicStreaming,
+        allowMusicStreaming: allowMusicStreaming,
       );
 
-  FileActionConfig withAction(FileCategory category, FileAction action) {
-    final next = {...actions, category: action};
-    // 音乐关掉实验开关时，把已选中的流式音乐退回默认，避免留下一个界面选不到的动作。
-    if (category == FileCategory.music &&
-        action == FileAction.streamMusic &&
-        !experimentalMusicStreaming) {
-      next[FileCategory.music] = FileActionCatalog.defaultFor(FileCategory.music);
-    }
-    return copyWith(actions: next);
-  }
+  FileActionConfig withAction(FileCategory category, FileAction action) =>
+      copyWith(actions: {...actions, category: action});
 
   Map<String, dynamic> toJson() => {
-        'music': music.storageKey,
-        'video': video.storageKey,
-        'cue': cue.storageKey,
-        'other': other.storageKey,
-        'experimental_music_streaming': experimentalMusicStreaming,
-      };
+    'music': music.storageKey,
+    'video': video.storageKey,
+    'cue': cue.storageKey,
+    'other': other.storageKey,
+  };
 
-  static FileActionConfig? fromJson(Map<String, dynamic>? json) {
+  /// [allowMusicStreaming] 由调用方从设置里取（`SettingsService.audioStreamingEnabled`）。
+  static FileActionConfig? fromJson(
+    Map<String, dynamic>? json, {
+    bool allowMusicStreaming = false,
+  }) {
     if (json == null) return null;
-    final experimental =
-        json['experimental_music_streaming'] as bool? ?? false;
     return FileActionConfig(
-      experimentalMusicStreaming: experimental,
+      allowMusicStreaming: allowMusicStreaming,
       actions: {
         FileCategory.music: FileActionX.fromStorageKey(
           json['music'] as String?,
@@ -220,9 +206,9 @@ class FileActionConfig {
   static FileAction _sanitize(
     FileCategory category,
     FileAction action, {
-    required bool experimentalMusicStreaming,
+    required bool allowMusicStreaming,
   }) {
-    if (action == FileAction.streamMusic && !experimentalMusicStreaming) {
+    if (action == FileAction.streamMusic && !allowMusicStreaming) {
       return FileActionCatalog.defaultFor(category);
     }
     if (!FileActionCatalog.isAllowed(category, action)) {
@@ -279,11 +265,11 @@ FileActionDecision judgeAction({
 }
 
 String categoryLabelZh(FileCategory category) => switch (category) {
-      FileCategory.music => '音乐文件',
-      FileCategory.video => '视频文件',
-      FileCategory.cue => 'CUE 文件',
-      FileCategory.other => '普通文件',
-    };
+  FileCategory.music => '音乐文件',
+  FileCategory.video => '视频文件',
+  FileCategory.cue => 'CUE 文件',
+  FileCategory.other => '普通文件',
+};
 
 /// 多选工具栏要显示的那一个「按类型分发」的下载动作。
 ///

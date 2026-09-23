@@ -1,4 +1,5 @@
 import '../utils/app_snack.dart';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -72,6 +73,14 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             subtitle: const Text('关闭后改用软件解码，个别设备更稳定'),
             value: settings.videoHardwareDecoding,
             onChanged: (v) => settings.setVideoHardwareDecoding(v),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.account_tree_outlined),
+            title: const Text('搜索子目录'),
+            subtitle: const Text('播放列表是否包含子目录里的视频'),
+            value: settings.videoScanSubdirs,
+            onChanged: (v) => settings.setVideoScanSubdirs(v),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,

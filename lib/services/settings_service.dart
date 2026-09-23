@@ -8,6 +8,7 @@ import '../models/cache_policy.dart';
 import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
+import '../models/music_stream.dart';
 import '../models/snack_duration.dart';
 import '../models/sync_interval.dart';
 import '../models/video_settings.dart';
@@ -59,6 +60,10 @@ class SettingsService extends ChangeNotifier {
   static const _kLastRev = 'sync_last_rev';
   static const _kSnackDuration = 'snack_duration';
   static const _kDownloadNotifications = 'download_notifications';
+  static const _kMusicStreamPlayMode = 'music_stream_play_mode';
+  static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
+  static const _kAudioScanSubdirs = 'audio_scan_subdirs';
+  static const _kVideoScanSubdirs = 'video_scan_subdirs';
 
   /// **One** destination 网盘 for 凭证 / 歌单 / 音乐库 / 备份.
   static const _kSyncAccountId = 'sync_account_id';
@@ -160,6 +165,10 @@ class SettingsService extends ChangeNotifier {
   VideoGestureAction _videoRightDoubleTap = VideoGestureAction.forward10s;
   VideoGestureAction _videoLongPress = VideoGestureAction.toggleRate2x;
   bool _videoBackgroundPlayback = true;
+  MusicStreamPlayMode _musicStreamPlayMode = MusicStreamPlayMode.sequential;
+  bool _audioStreamingEnabled = false;
+  bool _audioScanSubdirs = true;
+  bool _videoScanSubdirs = true;
   bool _videoPipEnabled = false;
   bool _videoHardwareDecoding = true;
   int _videoBufferSizeMb = defaultVideoBufferMb;
@@ -248,6 +257,16 @@ class SettingsService extends ChangeNotifier {
   bool get videoPipEnabled => _videoPipEnabled;
   bool get videoHardwareDecoding => _videoHardwareDecoding;
   int get videoBufferSizeMb => _videoBufferSizeMb;
+
+  /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
+  MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;
+
+  /// 音乐是否走流式传输。原来只有「文件后缀管理」页能改，现在归音频流式设置页。
+  bool get audioStreamingEnabled => _audioStreamingEnabled;
+
+  /// 流式扫描是否递归子目录。音频与视频各一份，默认都开（等于旧行为）。
+  bool get audioScanSubdirs => _audioScanSubdirs;
+  bool get videoScanSubdirs => _videoScanSubdirs;
 
   /// Temporary playback rate applied while the video screen is long-pressed.
   double get videoLongPressRate => _videoLongPressRate;
@@ -342,6 +361,9 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getString(_kVideoTapAction),
     );
     _fileActions = _readFileActions();
+    _audioStreamingEnabled =
+        _prefs!.getBool(_kAudioStreamingEnabled) ??
+        _legacyMusicStreaming(_prefs!.getString(_kFileActionConfig));
     _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
@@ -358,6 +380,11 @@ class SettingsService extends ChangeNotifier {
     _videoBackgroundPlayback =
         _prefs!.getBool(_kVideoBackgroundPlayback) ?? true;
     _videoPipEnabled = _prefs!.getBool(_kVideoPipEnabled) ?? false;
+    _musicStreamPlayMode = MusicStreamPlayModeX.fromStorageKey(
+      _prefs!.getString(_kMusicStreamPlayMode),
+    );
+    _audioScanSubdirs = _prefs!.getBool(_kAudioScanSubdirs) ?? true;
+    _videoScanSubdirs = _prefs!.getBool(_kVideoScanSubdirs) ?? true;
     _videoHardwareDecoding = _prefs!.getBool(_kVideoHardwareDecoding) ?? true;
     _videoBufferSizeMb = _clampBufferMb(
       _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
@@ -492,11 +519,18 @@ class SettingsService extends ChangeNotifier {
   /// 视频 `open` → 流式传输、`download` → 下载。
   FileActionConfig _readFileActions() {
     final raw = _prefs!.getString(_kFileActionConfig);
+    // 流式开关原来只有 `experimental_music_streaming` 一处。新键存在就用新键，
+    // 否则拿旧值当默认——用户点过一次的开关不该再点第二次。
+    final streaming =
+        _prefs!.getBool(_kAudioStreamingEnabled) ?? _legacyMusicStreaming(raw);
     if (raw != null && raw.isNotEmpty) {
       try {
         final json = jsonDecode(raw);
         if (json is Map<String, dynamic>) {
-          final parsed = FileActionConfig.fromJson(json);
+          final parsed = FileActionConfig.fromJson(
+            json,
+            allowMusicStreaming: streaming,
+          );
           if (parsed != null) return parsed;
         }
       } catch (_) {
@@ -504,6 +538,7 @@ class SettingsService extends ChangeNotifier {
       }
     }
     return FileActionConfig(
+      allowMusicStreaming: streaming,
       actions: {
         // 旧音乐语义（download / play）都是「先缓存再播」，统一映射到缓存音乐。
         FileCategory.music: FileAction.cacheMusic,
@@ -516,8 +551,23 @@ class SettingsService extends ChangeNotifier {
     );
   }
 
+  /// 旧安装的流式开关存在 `file_action_config_json` 的
+  /// `experimental_music_streaming` 里，读一次做迁移。
+  bool _legacyMusicStreaming(String? rawConfig) {
+    if (rawConfig == null || rawConfig.isEmpty) return false;
+    try {
+      final json = jsonDecode(rawConfig);
+      if (json is Map<String, dynamic>) {
+        return json['experimental_music_streaming'] as bool? ?? false;
+      }
+    } catch (_) {
+      // 坏配置按默认处理
+    }
+    return false;
+  }
+
   Future<void> setFileActions(FileActionConfig config) async {
-    _fileActions = config;
+    _fileActions = config.copyWith();
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_kFileActionConfig, jsonEncode(config.toJson()));
     notifyListeners();
@@ -528,9 +578,8 @@ class SettingsService extends ChangeNotifier {
       setFileActions(_fileActions.withAction(category, action));
 
   /// 音乐流式传输实验开关（T6）。
-  Future<void> setExperimentalMusicStreaming(bool enabled) => setFileActions(
-        _fileActions.copyWith(experimentalMusicStreaming: enabled),
-      );
+  Future<void> setExperimentalMusicStreaming(bool enabled) =>
+      setAudioStreamingEnabled(enabled);
 
   Future<void> setFileTypes(FileTypeConfig config) async {
     _fileTypes = config;
@@ -595,6 +644,45 @@ class SettingsService extends ChangeNotifier {
   Future<void> _persistGesture(String key, VideoGestureAction action) async {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(key, action.storageKey);
+    notifyListeners();
+  }
+
+  Future<void> setMusicStreamPlayMode(MusicStreamPlayMode mode) async {
+    _musicStreamPlayMode = mode;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kMusicStreamPlayMode, mode.storageKey);
+    notifyListeners();
+  }
+
+  /// 音乐流式传输开关。旧配置键 `experimental_music_streaming`（存在
+  /// `file_action_config_json` 里）保留为**兼容读**，见 [_readFileActions]。
+  Future<void> setAudioStreamingEnabled(bool enabled) async {
+    _audioStreamingEnabled = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kAudioStreamingEnabled, enabled);
+    // 关掉时重建一次动作配置：`copyWith()` 会走一遍解析，把已经选中的
+    // 「流式传输（音乐）」退回默认。否则界面里会留着一个点了没反应的动作。
+    if (!enabled) {
+      _fileActions = _fileActions.copyWith();
+      await _prefs!.setString(
+        _kFileActionConfig,
+        jsonEncode(_fileActions.toJson()),
+      );
+    }
+    notifyListeners();
+  }
+
+  Future<void> setAudioScanSubdirs(bool enabled) async {
+    _audioScanSubdirs = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kAudioScanSubdirs, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setVideoScanSubdirs(bool enabled) async {
+    _videoScanSubdirs = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kVideoScanSubdirs, enabled);
     notifyListeners();
   }
 
@@ -713,7 +801,9 @@ class SettingsService extends ChangeNotifier {
 
   /// Point every sync feature at one 网盘; empty/null means「跟随当前选中」.
   Future<void> setSyncAccountId(String? accountId) async {
-    _syncAccountId = (accountId == null || accountId.isEmpty) ? null : accountId;
+    _syncAccountId = (accountId == null || accountId.isEmpty)
+        ? null
+        : accountId;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_kSyncAccountId, _syncAccountId ?? '');
     notifyListeners();
@@ -828,6 +918,10 @@ class SettingsService extends ChangeNotifier {
     'video_right_double_tap': _videoRightDoubleTap.storageKey,
     'video_long_press': _videoLongPress.storageKey,
     'video_background_playback': _videoBackgroundPlayback,
+    'music_stream_play_mode': _musicStreamPlayMode.storageKey,
+    'audio_streaming_enabled': _audioStreamingEnabled,
+    'audio_scan_subdirs': _audioScanSubdirs,
+    'video_scan_subdirs': _videoScanSubdirs,
     'video_pip_enabled': _videoPipEnabled,
     'video_hardware_decoding': _videoHardwareDecoding,
     'video_buffer_size_mb': _videoBufferSizeMb,
@@ -885,16 +979,19 @@ class SettingsService extends ChangeNotifier {
         Map<String, dynamic>.from(json['file_action_config'] as Map),
       );
       if (parsed != null) await setFileActions(parsed);
-    } else if (json['music_tap_action'] != null || json['video_tap_action'] != null) {
+    } else if (json['music_tap_action'] != null ||
+        json['video_tap_action'] != null) {
       await setFileActions(
         FileActionConfig(
           actions: {
             FileCategory.music: FileAction.cacheMusic,
             FileCategory.video:
-                VideoTapActionX.fromStorageKey(json['video_tap_action'] as String?) ==
-                        VideoTapAction.download
-                    ? FileAction.download
-                    : FileAction.stream,
+                VideoTapActionX.fromStorageKey(
+                      json['video_tap_action'] as String?,
+                    ) ==
+                    VideoTapAction.download
+                ? FileAction.download
+                : FileAction.stream,
             FileCategory.cue: FileAction.readCue,
             FileCategory.other: FileAction.download,
           },
@@ -940,6 +1037,22 @@ class SettingsService extends ChangeNotifier {
       await setVideoLongPress(
         VideoGestureActionX.fromStorageKey(json['video_long_press'] as String?),
       );
+    }
+    if (json['music_stream_play_mode'] is String) {
+      await setMusicStreamPlayMode(
+        MusicStreamPlayModeX.fromStorageKey(
+          json['music_stream_play_mode'] as String?,
+        ),
+      );
+    }
+    if (json['audio_streaming_enabled'] is bool) {
+      await setAudioStreamingEnabled(json['audio_streaming_enabled'] as bool);
+    }
+    if (json['audio_scan_subdirs'] is bool) {
+      await setAudioScanSubdirs(json['audio_scan_subdirs'] as bool);
+    }
+    if (json['video_scan_subdirs'] is bool) {
+      await setVideoScanSubdirs(json['video_scan_subdirs'] as bool);
     }
     if (json['video_background_playback'] is bool) {
       await setVideoBackgroundPlayback(

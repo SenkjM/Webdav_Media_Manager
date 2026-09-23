@@ -31,8 +31,9 @@ class VideoQueueController extends ChangeNotifier {
     FileTypeConfig? fileTypes,
     this.category = FileCategory.video,
     this.autoAdvance = true,
-  })  : _webDav = webDav,
-        _fileTypes = fileTypes ?? FileTypeConfig() {
+    this.deepScan = true,
+  }) : _webDav = webDav,
+       _fileTypes = fileTypes ?? FileTypeConfig() {
     _merge(seed);
     _currentRemotePath = _resolveCurrent(initialRemotePath);
   }
@@ -46,7 +47,15 @@ class VideoQueueController extends ChangeNotifier {
   final FileCategory category;
 
   /// Whether finishing a file moves on to the next one in the folder.
+  ///
+  /// **控制器本身不实现连播**：推进由屏幕层监听 `player.stream.completed`
+  /// 完成（视频页与流式音乐页各写一次）。这个字段目前只有声明处的默认值，
+  /// 没有任何读取方，保留是为了不改变既有构造调用。
   final bool autoAdvance;
+
+  /// 后台扫描是否进入子目录。默认开（等于旧行为）；关掉时只列 [rootPath]
+  /// 这一层。值来自设置（音频与视频各一份）。
+  final bool deepScan;
 
   final List<WebDavItem> _tracks = [];
   final Set<String> _knownPaths = {};
@@ -69,8 +78,7 @@ class VideoQueueController extends ChangeNotifier {
 
   int get length => _tracks.length;
 
-  int get index =>
-      _tracks.indexWhere((t) => t.path == _currentRemotePath);
+  int get index => _tracks.indexWhere((t) => t.path == _currentRemotePath);
 
   WebDavItem? get current {
     final i = index;
@@ -130,10 +138,16 @@ class VideoQueueController extends ChangeNotifier {
         if (_cancelled) return;
         final dir = pending.removeAt(0);
         try {
-          final items = await _webDav.listDirectory(accountId, dir, fileTypes: _fileTypes);
+          final items = await _webDav.listDirectory(
+            accountId,
+            dir,
+            fileTypes: _fileTypes,
+          );
           final media = items.where((e) => e.category == category).toList();
-          final dirs = items.where((e) => e.isDirectory).map((e) => e.path);
-          pending.addAll(dirs);
+          if (deepScan) {
+            final dirs = items.where((e) => e.isDirectory).map((e) => e.path);
+            pending.addAll(dirs);
+          }
           if (media.isNotEmpty) _merge(media);
         } catch (e) {
           failed++;

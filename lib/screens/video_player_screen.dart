@@ -154,6 +154,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         _rate.value = restored;
       }
       await player.open(service.mediaFor(widget.source));
+      // 播放器实例与流式音乐页共用：把音乐页可能设上的循环清掉，
+      // 否则听完一首歌再来看视频，视频也会跟着循环。
+      await player.setPlaylistMode(PlaylistMode.none);
       if (!mounted) return;
       setState(() => _loading = false);
       if (await isInPictureInPicture()) _pip.value = true;
@@ -177,6 +180,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       initialRemotePath: seed.current.path,
       fileTypes: context.read<SettingsService>().fileTypes,
       autoAdvance: true,
+      deepScan: context.read<SettingsService>().videoScanSubdirs,
     );
     queue.addListener(_onQueueChanged);
     _queue = queue;
