@@ -520,12 +520,13 @@ class _SelectionBar extends StatelessWidget {
             onPressed: count == 0 ? null : onSelectAll,
             icon: const Icon(Icons.select_all),
           ),
-        Expanded(
+        // 不要用 Expanded：外壳里是横向滚动层，宽度无限，Expanded 会把整条
+        // 工具栏搞炸。文字自然宽度即可。
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Text(
             '已选 $count 项',
             style: const TextStyle(fontWeight: FontWeight.w600),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ),
         IconButton(

@@ -12,6 +12,11 @@ import '../theme/app_theme.dart';
 /// * 铺满整宽要用**具体**宽度（`constraints.maxWidth`）。横向滚动层给子级
 ///   的宽度约束是无限的，这时候 `minWidth: double.infinity` 是个不可满足
 ///   的约束，整条工具栏直接不画。
+///
+/// 放进来的 children 要注意：**不能用 `Expanded` / `Flexible` / `Spacer`**。
+/// 它们要在主轴方向分配「剩余空间」，而横向滚动层里宽度是无限的，没有
+/// 剩余空间可分——整条工具栏会直接炸掉。文字用 `Padding` + `Text` 自然
+/// 宽度，需要贴边就用 `MainAxisAlignment`。
 class SelectionToolbar extends StatelessWidget {
   const SelectionToolbar({super.key, required this.children});
 
@@ -31,7 +36,7 @@ class SelectionToolbar extends StatelessWidget {
               constraints: BoxConstraints(minWidth: constraints.maxWidth),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Row(children: children),
+                child: Row(mainAxisSize: MainAxisSize.min, children: children),
               ),
             ),
           ),
