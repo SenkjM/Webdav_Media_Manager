@@ -67,7 +67,7 @@ class _AboutScreenState extends State<AboutScreen> {
           ),
           const SizedBox(height: 24),
           Text(
-            'https://github.com/SenkjM/WEBDAV-music-player',
+            'https://github.com/SenkjM/Webdav_Media_Manager',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
