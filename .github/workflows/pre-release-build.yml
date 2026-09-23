@@ -172,12 +172,14 @@ jobs:
     if: needs.check.outputs.proceed == 'true'
     runs-on: ubuntu-26.04
     steps:
+      # 推 prerelease 标签同样需要带 workflows 权限的令牌，理由见 release-build.yml。
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
           ref: main
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Download pre-release bundle
         uses: actions/download-artifact@v7
@@ -205,7 +207,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a prerelease "$sha" -f -m "$(printf 'version_name=%s\nversion_code=%s\nbase_tag=%s\nseq=%s\nsha=%s\n' "$version_name" "$version_code" "$base_tag" "$seq" "$sha")"
-          git -c credential.helper= -c "http.extraHeader=Authorization: Bearer ${GH_TOKEN}" push "https://github.com/${REPO}.git" "+refs/tags/prerelease:refs/tags/prerelease"
+          git push "https://github.com/${REPO}.git" "+refs/tags/prerelease:refs/tags/prerelease"
           git fetch origin main --tags --force
           script="$(mktemp)"
           git show origin/main:.github/scripts/commit-list.sh > "$script"

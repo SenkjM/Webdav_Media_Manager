@@ -35,12 +35,16 @@ jobs:
       compare: ${{ steps.decision.outputs.compare }}
       sha: ${{ steps.decision.outputs.sha }}
     steps:
+      # 手动发版会在这一步之后推 v 标签。只要该提交改动过 .github/workflows，
+      # GITHUB_TOKEN 就会被拒（refusing to allow a GitHub App to create or update workflow），
+      # 所以这里用带 workflows 权限的 RELEASE_TOKEN，并让它留在本地凭据里。
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
           ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          token: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Check release tag
         id: decision
