@@ -432,7 +432,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 多选「下载」：**逐项按类型分发**，而不是把所有东西都当成音频。
   ///
 
-  /// 行菜单里的「缓存文件夹中的音频」：与工具栏是同一套入口。
+  /// 行菜单与工具栏共用同一套入口。
   Future<void> _enqueueFolder(WebDavItem folder) =>
       _cacheFoldersAudio([folder]);
 
@@ -684,15 +684,27 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ),
                 ),
                 const Divider(height: 1, color: AppColors.divider),
-                if (item.isDirectory)
+                // 文件夹也是两条独立的线：缓存里面的音频，或整棵目录树下载。
+                if (item.isDirectory) ...[
                   ListTile(
-                    leading: const Icon(Icons.download),
-                    title: const Text('下载整个文件夹'),
+                    leading: const Icon(Icons.library_music_outlined),
+                    title: const Text('缓存文件夹中的音频'),
+                    subtitle: const Text('递归扫描，音频进缓存并进音乐库'),
                     onTap: () {
                       Navigator.pop(ctx);
                       _enqueueFolder(item);
                     },
-                  )
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.folder_zip_outlined),
+                    title: const Text('下载整个文件夹'),
+                    subtitle: const Text('递归下载目录树，不挑文件类型'),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _downloadFolders([item], const []);
+                    },
+                  ),
+                ]
                 else ...[
                   ListTile(
                     leading: Icon(_actionIcon(defaultAction)),
@@ -1250,23 +1262,23 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   ///   **取消全选**，不是退出多选——退出多选交给系统返回键。
   /// - 任何一次手动取消都会把计数打回去，按钮随即变回「全选」。
   ///
-  /// 动作按类型分发：下载走 [_downloadMany]，播放只对单个视频开放，复制 /
-  /// 移动对任意条目都可选。
+  /// 动作按类型分发：缓存音乐收音频、下载收一切（见 [_cacheFoldersAudio] 与
+  /// [_downloadFolders]），复制 / 移动对任意条目都可选。
   Widget _buildSelectionBar() {
     final items = _selectedItems;
     final folders = items.where((e) => e.isDirectory).toList();
     final files = items.where((e) => !e.isDirectory).toList();
     final allSelected = _selection.isAllSelected;
-    final bulkAction = bulkDownloadAction(files.map((e) => e.category));
     final audioFiles = files
         .where((e) => e.category == FileCategory.music)
         .toList();
-    final restFiles = files
-        .where((e) => e.category != FileCategory.music)
-        .toList();
     final hasFolders = folders.isNotEmpty;
-    final canCacheAudio = hasFolders || audioFiles.isNotEmpty;
-    final canDownload = hasFolders || restFiles.isNotEmpty;
+    // 图标按选中的全部内容定（含文件夹），不是只看文件。
+    final bulkAction = bulkDownloadAction(items.map((e) => e.category));
+    // 缓存音乐：选中里只要有音频、或有文件夹（文件夹要扫一遍才知道里面
+    // 有什么）就可用。下载是基本功能，选中任何东西都可用。
+    final canCacheMusic = hasFolders || audioFiles.isNotEmpty;
+    final canDownload = items.isNotEmpty;
     return SelectionToolbar(
       children: [
         // 只在「计数打满」时出现的叉号：它是取消全选，不是关闭界面。
@@ -1289,22 +1301,25 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
-        // 音频与普通文件分开：音频进缓存（随后进音乐库），其余落系统下载
-        // 目录。**文件夹也算在内**，而且不挑个数——多选若干文件夹时这两个
-        // 按钮照样可用（曾经按「只选了一个文件夹」特判，多选文件夹时缓存
-        // 按钮直接是灰的）。文件夹与文件混选时，两个按钮各处理自己那一类：
-        // 缓存只碰音频，下载只碰非音频。
+        // 「缓存音乐」与「下载」是两条独立的线，文件夹与文件混选时都在。
+        //
+        // 缓存音乐 = 把选中内容里的音频收进缓存：选中的音频文件直接入队，
+        // 选中的文件夹递归扫一遍再入队。扫描只是文件夹那条路内部的事，对
+        // 用户是同一个功能，不另立入口。
+        //
+        // 下载是基本功能：不挑个数、不挑类型，文件夹递归全下——音频、视频、
+        // CUE 都照下，不下就跳过任何东西。
         IconButton(
-          tooltip: hasFolders ? '缓存文件夹中的音频' : '缓存音乐',
-          onPressed: canCacheAudio
+          tooltip: '缓存音乐',
+          onPressed: canCacheMusic
               ? () => _cacheFoldersAudio(folders)
               : null,
           icon: const Icon(Icons.library_music_outlined),
         ),
         IconButton(
-          tooltip: hasFolders ? '下载文件夹中的文件' : '下载',
+          tooltip: '下载',
           onPressed: canDownload
-              ? () => _downloadFolders(folders, restFiles)
+              ? () => _downloadFolders(folders, files)
               : null,
           icon: Icon(
             hasFolders ? Icons.folder_zip_outlined : _actionIcon(bulkAction),
@@ -1369,10 +1384,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
   }
 
-  /// 把选中的文件夹（递归，跳过音频）与普通文件下载到系统下载目录。
+  /// 把选中的内容下载到系统下载目录：文件夹递归全下，文件逐个下。
   ///
-  /// 音频不在这里入队：那是「缓存音乐」的事，两个按钮各管一类，混选同一
-  /// 批内容时不会既缓存又下载。
+  /// 下载是基本功能，**不挑类型**（音频、视频、CUE 都照下），也不挑个数。
+  /// 与「缓存音乐」是两条独立的线：同一批内容两个都点，就会各排一遍。
   Future<void> _downloadFolders(
     List<WebDavItem> folders,
     List<WebDavItem> files,

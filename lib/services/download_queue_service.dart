@@ -9,7 +9,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/download_task.dart';
-import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/app_snack.dart';
@@ -557,16 +556,10 @@ class DownloadQueueService extends ChangeNotifier {
     return n;
   }
 
-  /// 把文件夹里的所有文件（递归）排进**系统下载目录**队列。
+  /// 把文件夹里的**所有内容**（递归排进系统下载目录队列，返回实际入队数量。
   ///
-  /// 与 [enqueueFolder] 的区别只在去处：那个是音频进缓存（随后 ingest 进
-  /// 音乐库），这个是整棵目录树落系统下载目录，非音频也要。
-
-  /// 多个文件夹一起进**系统下载目录**队列，返回实际入队数量。
-  ///
-  /// 文件夹里的音频**不在这里入队**：音频归「缓存音乐」那条路（进缓存、
-  /// 随后 ingest 进音乐库）。两个按钮各管一类，既选文件夹又选里面的音频
-  /// 时也不会两头都排一遍。
+  /// 下载是基本功能，不挑类型：音频、视频、CUE、普通文件一律照下。跟
+  /// 缓存音乐（音频进缓存、随后 ingest 进音乐库）是两条独立的线。
   Future<int> enqueueFoldersToDownloads(
     String sourceName,
     Iterable<String> folderPaths,
@@ -577,7 +570,6 @@ class DownloadQueueService extends ChangeNotifier {
       notifyListeners();
       return 0;
     }
-    final types = FileTypeConfig();
     var n = 0;
     for (final folderPath in folderPaths) {
       final items = await _webDav.collectFilesRecursive(
@@ -585,7 +577,6 @@ class DownloadQueueService extends ChangeNotifier {
         folderPath,
       );
       for (final item in items) {
-        if (types.categoryFor(item.name) == FileCategory.music) continue;
         if (await enqueueToDownloads(
           sourceName,
           item.path,
