@@ -690,7 +690,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
   /// cursor. The cache annex stays, so audio already on disk keeps its entry and
   /// the rows pulled back from the cloud still resolve to local files.
   ///
-  /// Used by「从云端覆盖音乐库」: the index is replaced, the files are not.
+  /// Used by「从云端覆写音乐库」: the index is replaced, the files are not.
   Future<void> clearLibraryIndex() async {
     final db = await database;
     await db.delete('cue_slices');

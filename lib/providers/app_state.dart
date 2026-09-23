@@ -196,7 +196,7 @@ class AppState extends ChangeNotifier {
   Timer? _periodicSync;
   Timer? _libraryPushDebounce;
 
-  /// True while a library maintenance action (从云端覆盖 / 销毁) owns the library
+  /// True while a library maintenance action (从云端覆写 / 销毁) owns the library
   /// tables. Automatic writers are shut off for its duration rather than raced
   /// against: a background scan firing mid-wipe would push a half-empty index (or
   /// adopt rows back into it) and leave the two sides out of step.
@@ -355,70 +355,40 @@ class AppState extends ChangeNotifier {
     _syncCoverThumbSize();
   }
 
-  /// Wipe music library tags, cue tables, covers, cache annex, and local audio
-  /// for former library tracks, leaving a tombstone for every one of them.
-  /// Distinct from [manualClearCache] (keeps tags).
-  /// Network library / accounts untouched. Playlist shells kept; orphan track
-  /// refs removed.
+  /// Mark every song in the local library as destroyed: one tombstone per track
+  /// and nothing else. No row, no cached audio, no cover and no playlist entry is
+  /// touched — locally the library is left exactly as it is.
   ///
-  /// Ends by switching 定时同步 off (the confirmation says so). With an empty
-  /// index and no cursor the first automatic pass would re-read the cloud and
-  /// adopt the whole library back — undoing the destruction through a path the
-  /// user never asked for.
-  Future<void> destroyMusicLibrary() async {
-    await _quietLibraryWrites(() async {
-      await _destroyLocalMusicLibrary();
+  /// The **deletion record** is what this action produces: the next sync uploads
+  /// the tombstones as `del-*.wdmm` and the cloud materialises them on its next
+  /// rebuild. That is the whole difference from [overwriteLibraryFromCloud],
+  /// which pulls the cloud copy down over the local one.
+  ///
+  /// Ends by switching 定时同步 off (the confirmation says so): the user is
+  /// deciding *that* these songs die and *when* the cloud hears about it, instead
+  /// of the app pushing the deletion on its own schedule.
+  ///
+  /// Returns how many songs were tombstoned, so the caller can report a number
+  /// even though nothing visible changed.
+  Future<int> destroyMusicLibrary() async {
+    return _quietLibraryWrites(() async {
+      final destroyed = await _tombstoneEveryLibraryTrack();
       await settings.setSyncInterval(SyncInterval.off);
+      return destroyed;
     });
   }
 
-  /// The local half of [destroyMusicLibrary]: tombstones first, then caches,
-  /// covers, rows and playlist refs. Touches no sync setting.
-  Future<void> _destroyLocalMusicLibrary() async {
+  /// One tombstone per track, taken from a snapshot so the loop cannot be
+  /// disturbed by the library changing underneath it.
+  Future<int> _tombstoneEveryLibraryTrack() async {
     final snapshot = List.of(library.tracks);
-    final groupIds = <String>{};
-    final audioKeys = <String>{}; // accountId\0remotePath
-
-    for (final t in snapshot) {
-      final audio = t.effectiveAudioRemotePath;
-      audioKeys.add('${t.sourceName}\u0000$audio');
-      if (t.cueRemotePath != null && t.cueRemotePath!.isNotEmpty) {
-        audioKeys.add('${t.sourceName}\u0000${t.cueRemotePath}');
-      }
-      final gid = t.cacheGroupId;
-      if (gid != null && gid.isNotEmpty) groupIds.add(gid);
-    }
-
-    // Tombstones go in before anything is deleted: clearAllLibraryData() drops
-    // the whole deleted_tracks table, so one written after the wipe would not
-    // survive. Without these rows the cloud never learns the songs are gone, and
-    // the next sync pulls every one of them straight back.
     for (final t in snapshot) {
       await library.recordTombstone(t.sourceName, t.remotePath);
     }
-
-    // Delete CUE cache groups first (also clears member prefs).
-    for (final gid in groupIds) {
-      await cache.deleteCacheGroup(gid);
-    }
-    // Delete remaining library audio files.
-    for (final key in audioKeys) {
-      final parts = key.split('\u0000');
-      if (parts.length < 2) continue;
-      final sourceName = parts[0];
-      final remote = parts.sublist(1).join('\u0000');
-      await cache.deleteLocalFile(sourceName: sourceName, remotePath: remote);
-    }
-
-    await library.destroyAll();
-    await cache.markAllUncached();
-    // After destroy, no library tracks remain — strip all playlist track refs.
-    await playlists.removeEntriesNotIn(const <String>{});
-    await downloads.invalidateMissingCompleted();
-    notifyListeners();
+    return snapshot.length;
   }
 
-  /// 「从云端覆盖音乐库」: drop the local index and pull the cloud copy whole.
+  /// 「从云端覆写音乐库」: drop the local index and pull the cloud copy whole.
   ///
   /// Only the index goes (tracks / CUE / tombstones / sync cursor) — the cache
   /// annex, covers and downloaded audio stay, so the rows coming back still

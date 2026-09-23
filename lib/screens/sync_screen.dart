@@ -234,15 +234,15 @@ class _SyncScreenState extends State<SyncScreen> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  /// Audit the cloud library (orphans / missing parts) and offer to clean up.
-  /// 「从云端覆盖音乐库」：本地索引被云端那份替换。
+  /// 「从云端覆写音乐库」：本地索引被云端那份替换。
   Future<void> _overwriteLibraryFromCloud() async {
     final app = context.read<AppState>();
     final ok = await _confirmDestructive(
-      title: '从云端覆盖音乐库',
-      body: '会从云端下载音乐库数据库并覆盖本地。',
+      title: '从云端覆写音乐库',
+      body: '会从云端下载音乐库数据库并覆写本地。',
       note: '本地索引、标签与尚未同步的改动会被云端那份替换；已下载的音频、封面与缓存不会删除。',
-      action: '覆盖',
+      action: '覆写',
+      phrase: '如果确认覆写请输入 YES',
     );
     if (ok != true || !mounted) return;
     await _guard(() async {
@@ -252,65 +252,90 @@ class _SyncScreenState extends State<SyncScreen> {
     });
   }
 
-  /// 「销毁音乐库」：本地清空 + 逐首立墓碑 + 关掉定时同步。
+  /// 「销毁音乐库」：逐首立墓碑 + 关掉定时同步；本地数据一行不动。
   Future<void> _destroyLibrary() async {
     final app = context.read<AppState>();
     final ok = await _confirmDestructive(
       title: '销毁音乐库',
-      body: '将销毁全部本地音乐库，不可恢复。',
-      note: '删除记录会在下次同步时上传到云端；之后重建云端音乐库也无法恢复这次销毁的内容。此操作后会关闭自动同步。',
+      body: '会把本地音乐库里的每一首都标记为已销毁（立墓碑），下次同步时把删除记录上传到云端。',
+      note: '本地文件与数据不会被删除；云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。',
       action: '销毁',
+      phrase: '如果确认销毁请输入 YES',
     );
     if (ok != true || !mounted) return;
     await _guard(() async {
-      await app.destroyMusicLibrary();
+      final count = await app.destroyMusicLibrary();
       if (!mounted) return;
-      AppSnack.showGlobal('音乐库已销毁，定时同步已关闭');
+      AppSnack.showGlobal('已标记 $count 首为销毁；下次同步上传删除记录，定时同步已关闭');
     });
   }
 
-  /// 不可逆动作的二次确认：正文说会发生什么，小一号字补后果。
+  /// 不可逆动作的二次确认：正文说会发生什么，小一号字补后果，最后要求手打 YES
+  /// （不区分大小写）才让确认按钮可用。
   Future<bool?> _confirmDestructive({
     required String title,
     required String body,
     required String note,
     required String action,
+    required String phrase,
   }) {
+    final typed = TextEditingController();
     return showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(body, style: const TextStyle(fontSize: 14)),
-            const SizedBox(height: 8),
-            Text(
-              note,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.secondaryText,
-              ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final confirmed = typed.text.trim().toLowerCase() == 'yes';
+          return AlertDialog(
+            backgroundColor: AppColors.elevated,
+            title: Text(title),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(body, style: const TextStyle(fontSize: 14)),
+                const SizedBox(height: 8),
+                Text(
+                  note,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.secondaryText,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(phrase, style: const TextStyle(fontSize: 13)),
+                const SizedBox(height: 6),
+                TextField(
+                  controller: typed,
+                  autofocus: true,
+                  onChanged: (_) => setLocal(() {}),
+                  decoration: const InputDecoration(
+                    hintText: 'YES',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(action),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                ),
+                onPressed: confirmed ? () => Navigator.pop(ctx, true) : null,
+                child: Text(action),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
+  /// Audit the cloud library (orphans / missing parts) and offer to clean up.
   Future<void> _tidy() async {
     final sync = context.read<SyncService>();
     LibraryAudit audit;
@@ -920,7 +945,7 @@ class _SyncScreenState extends State<SyncScreen> {
                   ? null
                   : _overwriteLibraryFromCloud,
               icon: const Icon(Icons.cloud_download_outlined),
-              label: const Text('从云端覆盖音乐库'),
+              label: const Text('从云端覆写音乐库'),
             ),
           ),
           const SizedBox(height: 8),
