@@ -7,7 +7,7 @@
 
 - `AudioPlayerService.playTrack` 解析本地路径失败就报「本地无缓存，请先下载」，**不会**在播放路径上入队下载。
 - 判定一律用 `File.exists` / `existsSync`（见 [01 §3](01-DATA-MODEL.md)），不要信任「曾经 completed」的队列状态。
-- 音频有一条**实验性**的流式播放路径（[99 §3](99-IN-PROGRESS.md)），只在设置里打开「允许音乐流式传输（实验性）」后可用，且只在网络库的远端条目上生效；本地播放的判定与上面两条规矩不变。
+- 音频有一条**实验性**的流式播放路径（[99 §1](99-IN-PROGRESS.md)），只在设置里打开「允许音乐流式传输（实验性）」后可用，且只在网络库的远端条目上生效；本地播放的判定与上面两条规矩不变。
 - 流式播放**不下载、不入队、不缓存**：它和本地播放是两条入口，不要为了「顺手」把流式变成隐式下载。
 
 ## 2. 播放栈
@@ -74,7 +74,7 @@
 | 队列 | 同目录视频队列 | 同目录音频队列（`autoAdvance` 关闭） |
 
 - 判定走 [02 §2](02-NETWORK-LIBRARY.md) 的动作模型：网络库在打开前就按后缀决定进哪一页，把音频改成视频后缀也照样进这一页。
-- 退出页面会 `VideoPlaybackService.stop()`，也就是 `exitVideoMode()`：媒体会话还给本地播放（通知栏会回到之前暂停的本地歌，见 [99 §3](99-IN-PROGRESS.md) 的已知粗糙处）。
+- 退出页面会 `VideoPlaybackService.stop()`，也就是 `exitVideoMode()`：媒体会话还给本地播放（通知栏会回到之前暂停的本地歌，见 [99 §1](99-IN-PROGRESS.md) 的已知粗糙处）。
 ## 10. 相关代码
 
 `music_audio_handler.dart`、`audio_player_service.dart`、`player_screen.dart`、`music_stream_screen.dart`、`video_playback_service.dart`、`widgets/mini_player.dart`、`models/library_track.dart`、`models/webdav_stream.dart`、`packages/audio_service/`。

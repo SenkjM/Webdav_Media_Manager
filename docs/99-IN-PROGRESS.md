@@ -7,189 +7,63 @@
 - 开发期间，完整文档里对应的位置只留占位，不写半成品语义。
 - 开发完成后：删掉这里的条目，把语义按完整文档的写法补进对应功能块，并去掉占位。
 
-## 1. 安装包分包与压缩存放（进行中）
+## 1. 未在真机验收
 
-**状态**：代码已改并推 `main`，还没跑过一次真实构建，**未验证**。
+以下代码已经推上 `main`，自动化只覆盖到 `flutter analyze` 与 `flutter test`；**真机行为都没验过**。写完一条就划掉一条，全部划完时本目录下的文档就可以收口。
 
-**为什么**：v0.1.0 的通用 APK 有 101.3 MiB，其中 99.7 MiB 是三个 ABI 各带一份原生库——`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB——非原生部分只有 2.7 MiB。
+- **安装包分包与压缩存放**：三个单 ABI 包（`arm64-v8a` / `armeabi-v7a` / `x86_64`）加一个去掉 x86 的合并包，原生库压缩存放（`useLegacyPackaging = true`）。v0.2.0 的 CI 已成功产出三个 split APK，**APK 安装与体积没在真机上核过**。
+  - 实测（v0.1.0 通用包 101.3 MiB）：`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB，非原生部分只有 2.7 MiB——所以分包才是主要收益。
+  - 产物命名由构建工具决定，**不要写死**：Flutter 3.47.5 在 `build/app/outputs/flutter-apk/` 下出的是 `app-<abi>-prod-release.apk`（ABI 在前），而 `build/app/outputs/apk/prod/release/` 下仍是 `app-prod-<abi>-release.apk`（flavor 在前）。两份 workflow 已改成新序，并在收集前 `ls` 打印目录清单。
+  - 教训见 [09 §4](09-MISC.md)：本地只跑 `--no-pub lib` 会漏掉 CI 完整 `flutter analyze` 能看见的 warning（v0.2.0 因此失败过一次）。
+- **flavor 与本地 dev 环境**：`env` 维度两个 flavor，`dev` 带 `applicationIdSuffix = ".dev"` 与 `appName = Webdav Media Manager Dev`，可与正式包并存。`flutter run --flavor dev` 已在 PJZ110 上跑通；CI 侧随 v0.2.0 一起验证。存在 flavor 之后**所有构建都必须显式带 `--flavor`**。
+  - 刻意**不动 `namespace`**：`MainActivity.kt` 包路径、`com.senkjm.media_manager/app`、通知 channel id 都是应用内部标识，与 applicationId 无关。
+- **网络库交互模型**：全选判定用计数器对比、那个按钮只取消全选不退出多选、三个入口共用 `judgeAction`、复制 / 移动走原生 `COPY` / `MOVE` 并自动加 ` (n)`。语义已进 [02](02-NETWORK-LIBRARY.md)。**真机待验**：部分服务端对目录目标的 `Destination`（加不加结尾 `/`）处理不一致，要在真实网盘上各试一次。
+- **音乐流式播放**（实验开关）：网络库点音乐条目直接流式播放并进 [音乐流式播放页](05-AUDIO-PLAYBACK.md)。**真机待验**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。已知粗糙处见 §3。
+- **音乐库的两个不可逆动作**（从云端覆写音乐库 / 销毁音乐库）：交互约定已进 [08](08-SYNC-AND-BACKUP.md)。**真机待验**：两个按钮的按压与确认框排版、进度条推进、终止 / 返回键取消、多选销毁。
+- **缓存音乐与下载两条线**：界面只有一个流程，扫描与去重在 `enqueueSelection`。**真机待验**：同时选中文件夹与其中的文件（缓存、下载各点一次）、窄屏下的工具栏、单文件夹 / 多文件夹 / 混选。
 
-**要什么行为**：
+## 2. 已定型的取舍（尚未写进完整文档）
 
-- `--split-per-abi` 出三个单 ABI 包：`arm64-v8a`、`armeabi-v7a`、`x86_64`。
-- 额外再出一个**去掉 x86_64** 的合并包（`android-arm,android-arm64`），给不确定自己 ABI 的人。
-- 原生库**压缩存放**（`useLegacyPackaging = true`）：下载更小，代价是安装时要解压。
-- `.aab` 照旧产出，给 Play 用。
+这些结论已经落地在代码里，但只在这里记着；等 [08](08-SYNC-AND-BACKUP.md) 收口时按完整文档的写法搬过去。
 
-**取舍**：压缩存放会让安装占用变大、安装变慢。若日后确认 Play 分发不需要它，再单独评估是否只对 APK 生效。
-
-**影响面**：[09-MISC.md](09-MISC.md) 的「构建与发布」——那里现在只留占位。
-
-## 2. flavor 与本地 dev 环境（进行中）
-
-**状态**：代码已改。`flutter run --flavor dev` 已在本机 + 真机（PJZ110 / Android 16）上跑通：装成 `com.senkjm.media_manager.dev`，`versionName=1.0.0-dev`，能与正式包并存。**CI 里那几处产物路径改动没在真实 CI 上跑过，未验证。**
-
-**需求原话**：配置 flavor，设置一个本地测试的 dev 环境，使用不同的包名，包名在后面加上 `.dev`。
-
-**要什么行为**：
-
-- `env` 一个维度，两个 flavor：`prod`（applicationId 不变）与 `dev`（`applicationIdSuffix = ".dev"`）。
-- 两个包能并存在同一台手机上，各自持有独立数据目录。
-- 桌面 / 最近任务里能区分：`android:label` 改用 `manifestPlaceholders["appName"]`，dev 叫 `Webdav Media Manager Dev`。
-- 本地 release 与 CI 都改成显式 `--flavor prod`。
-
-**取舍**：
-
-- **不动 `namespace`**：`MainActivity.kt` 的包路径，以及 `com.senkjm.media_manager/app`、通知 channel id 这类字符串都是应用内部标识，与 applicationId 无关，改了只是白白搬家。
-- 代价：存在 flavor 之后，不带 flavor 的 `flutter build apk --release` 失效。
-- CI 的产物名字随 flavor 变成 `app-prod-*.apk` / `bundle/prodRelease/app-prod-release.aab`，两份 workflow 的收集步骤已同步改。
-
-**影响面**：[09-MISC.md](09-MISC.md) 的「构建与发布」——本地命令与 flavor 表已写进那一节；待 CI 跑过一次后收口。
-
-## 3. 音乐库的两个不可逆动作（进行中）
-
-**状态**：代码已改，`flutter analyze` 与 `flutter test`（202 项）通过。**真机未跑过**——按钮按压、确认框排版与实际效果都没验证。
-
-**需求原话**：在备份与恢复的音乐库下面，分成纵向两个红底白字按钮。上面是「从云端覆盖音乐库」，点击后提醒会从云端下载数据库并覆盖本地，逻辑就可以清空本地表并从云端下载重建。另一个是「销毁音乐库」，销毁后将定时同步设为关闭（在此操作中不可更新数据库，如果发现有其他行为干扰就关掉）；点击后提醒会销毁全部本地音乐库，小一号字提醒：同步会将删除记录上传云端，再次重建这次不可恢复，此操作后会关闭自动同步。
-
-**需求修订（同日，两次）**：
-
-1. 按钮改名「从云端**覆写**音乐库」；两个动作都要手打 `YES`（不区分大小写）才放行。
-2. **销毁先改成「只立墓碑」，随后又改回「逐条删除」**。只立墓碑那版在本地毫无可见变化（墓碑不影响本地列表，见下），用户确认要的是逐条删除的语义。
-3. 补上歌单悬空引用清理与下载队列对账；销毁过程要有进度条、可终止、返回即取消；销毁本身重构成「每次只销毁一首歌」的固定函数，多选销毁共用同一套。
-
-**要什么行为**：
-
-- 两个按钮整行宽、上下排列，放在「音乐库」区块内、重建提示阈值那行下面。
-- 覆盖：清索引 → 从云端整库拉一次；已下载的音频与封面保留。
-- 销毁：一首一首地走，每首的顺序是墓碑 → 缓存音频 → 封面 → 库行 → 内存，走完这一首才轮到下一首；整库收尾再清歌单悬空引用、对账下载队列、把定时同步置为 `off`。
-- 进度框：进度条 + 「已处理 N / 总数」+「终止」；终止、点框外、返回键都算取消。
-- 多选销毁与整库销毁共用同一个逐首函数（`AppState.destroyLibraryTrack`），差别只有「销毁哪些」。
-- 两个动作期间不允许后台写库。
-- 两者互为反面：覆写把云端拉到本地，销毁把本地的删除推到云端。
-
-**取舍**：
-
-- 覆写只清**索引**（新增 `LibraryDatabase.clearLibraryIndex()`），不清 cache annex：连 annex 一起清的话，磁盘上已存在的音频会被当成没下过，白白多出一次全量下载。
-- 销毁走逐条、不走 `clearAllLibraryData()` 整表清空：整表清空会把 `deleted_tracks`（墓碑）和 `sync_state`（游标）一起抹掉，云端永远收不到删除记录，下一次同步还会把整库拉回来；逐条则是「先墓碑、后删行」，顺序由 `LibraryService.destroyTracks` 保证。代价是 N 次数据库写入，比一条 `DELETE FROM` 慢得多。
-- 为什么必须是逐条而不是只立墓碑：**本地列表只认行**。让曲目消失的是「删行 + `_tracks.removeWhere` + `notifyListeners()`」，墓碑只对同步的拉取判定有意义（`LibraryDatabase.tombstonedKeys()` 注释写着 for the library UI + ingest，但全仓没有调用方），只立墓碑的话本地曲库不会有任何变化。
-- 逐条会删掉本地已下载的音频，这是不可逆的：云端那行同时被墓碑标记，重建云端库之后两边都没有了。
-- 「原子」说的是**逻辑边界**，不是数据库事务：`LibraryService.destroyTrack` 内部没有 `db.transaction()`，一首歌要跨 `deleted_tracks` / 封面文件 / `tracks` / 内存四处写。取消只能在两首之间生效；进程若在中间被杀，留下的是「墓碑写了、行还在」——顺序（墓碑在前）保证这个中间态是安全的，重跑一次即可收尾。
+- 覆写只清**索引**（`LibraryDatabase.clearLibraryIndex()`），不清 cache annex：连 annex 一起清的话，磁盘上已有的音频会被当成没下过，白白多出一次全量下载。
+- 销毁走**逐条**、不走 `clearAllLibraryData()` 整表清空：整表清空会连 `deleted_tracks`（墓碑）和 `sync_state`（游标）一起抹掉，云端永远收不到删除记录，下次同步还会把整库拉回来。顺序固定为**先墓碑、后删行**（`LibraryService.destroyTracks`），中途被杀掉留下的中间态是安全的。
+- 让曲目从本地列表消失的是「删行 + `_tracks.removeWhere` + `notifyListeners()`」，墓碑只影响同步的拉取判定。所以「只立墓碑」那版在本地毫无可见变化，用户要的是逐条删除。
+- 逐条会删掉本地已下载的音频，**不可逆**；云端那行同时被墓碑标记，重建云端库之后两边都没有了。
+- **「原子」指的是逻辑边界，不是数据库事务**：`destroyTrack` 内部没有 `db.transaction()`，一首歌要跨 `deleted_tracks` / 封面文件 / `tracks` / 内存四处写。取消只能在两首之间生效。
 - 进度条按「已处理 / 总数」推进，不是「已销毁 / 总数」：CUE 分片会被同一张专辑的第一片带走，后面的兄弟曲目直接跳过（`destroyLibraryTrack` 返回 false），所以进度会走满而销毁数可能小于总数。
-- 进度框是模态的，销毁不会在界面消失之后继续在后台跑——这正是「删除界面不要做成异步的」：返回键把取消标志置起来，当前这一首走完就停。
-- 每首都会 `notifyListeners()` 一次，进度框后面的界面会被重建 N 次；换来的是「一首歌就是一个完整动作」，以及取消点永远落在歌与歌之间。
+- 进度框是**模态**的，销毁不会在界面消失后继续跑——这正是「删除界面不要做成异步的」。每首都会 `notifyListeners()` 一次，换来的是一首歌一个完整动作、取消点永远落在歌与歌之间。
+- 销毁结束把定时同步置为 `off` 是刻意的：推不推、什么时候推，交回用户手动决定。
+- 「其他行为干扰」的实现是**静默窗口**（`_quietLibraryWrites`）：暂停 20 s 推送防抖与定时扫描，并取消已排队的防抖。没有做互斥锁——已经在飞的同步不会被中断，只是不再有新的自动触发。
 - `LibraryService.destroyTracks(Iterable)` 保留为「没有进度界面时的循环封装」，目前没有调用方。
-- 关掉定时同步是刻意的：推不推、什么时候推，交回用户手动决定。
-- 「其他行为干扰」的实现是静默窗口（`_quietLibraryWrites`）：暂停 20 s 推送防抖与定时扫描，并取消已排队的防抖。没有做成互斥锁——已经在飞的同步不会被中断，只是不再有新的自动触发。
+## 3. 已知未做（音乐流式，第一版接受）
 
-**影响面**：[08-SYNC-AND-BACKUP.md](08-SYNC-AND-BACKUP.md) 的「同步页的交互约定」已写入这两个动作；真机验证后再收口。
+- 离开音乐流式页会 `VideoPlaybackService.stop()`，而它内部是 `exitVideoMode()`——语义是「**恢复**本地音乐队列」。所以停下流式歌时通知栏会跳回之前暂停的本地歌。要更干净，得让远端流用途参与 `exitVideoMode` 的分支判断（[05 §9](05-AUDIO-PLAYBACK.md) 记录了这条粗糙处）。
+- **没有屏幕常亮**：项目里没有 wakelock 依赖，视频页的常亮来自 `media_kit_video` 的 `Video` 组件，音乐页刻意不建它。
+- **封面与时长不取**（用户已允许先不做）：流式拿不到本地文件，`audio_metadata_reader` 无从解析。要取得用 Range 读头部几 MB 再喂现有解码器，FLAC 的 `STREAMINFO`、MP4 的 `moov` 还可能落在文件尾部。第一版只用占位图标与「流式传输 · 未缓存」一行字。
+- **没有「停止流式播放」的显式按钮**：退出页面才会结束。
+- 音乐流式的**切歌语义与本地不同**：本地有 CUE 裁切 / 队列语义，流式没有；从流式切回本地必须以「停止 + 清会话」结束，而不是暂停。
+- 流式**不得**顺手入队下载（[09 §4](09-MISC.md) 陷阱表：不要在播放路径上偷偷入队下载）。
 
-## 2. 统一网络库交互模型（**代码已完成，未在真机验收**）
+## 4. 交互模型里已知未做
 
-**状态**：分支 `feature/network-action-model`，`flutter analyze` 干净、`flutter test` 全量通过；**没有跑过真机**。已完成的语义写进 [02-NETWORK-LIBRARY.md](02-NETWORK-LIBRARY.md)，本文件只留未定型的部分。
+- 移动 / 重命名远端文件后，本机音乐库里绑定旧路径的曲目**不会跟随**（需要一次「路径重写」才能做对）。
+- 复制 / 移动**没有进度与取消**：`webdav_client` 的 `copy` / `rename` 是单次请求，大文件只能等。
 
-**原始诉求**（用户原话，节选）：
+## 5. 主题配色（**已分析，代码未动**）
 
-- 「多选时使用全选再次取消会退出多选，多选界面的叉号不该一开始就出现，应该是在检测到全选后，全选按键变为叉号，此处除了全选按钮还应该需要检测用户是否手动全选，可以使用计数器对比实现。」
-- 「在网络库中支持对文件进行复制、移动。」
-- 「建立统一的『文件动作模型』……音乐文件默认缓存，cue 文件调用 cue 读取，视频文件调用流式传输，普通文件调用下载。这里的下载指下载到下载文件夹而非缓存。」
-- 「多选工具栏 / 单文件右侧更多菜单与 T1 对齐。」
-
-**做法与取舍**：
-
-- 全选判定用**计数器对比**（`SelectionController.isAllSelected`），不看按钮按过没有。理由是手动一项项点满也必须让按钮变成叉号，否则会出现「明明全选了按钮还是全选，一点就把选择清空」。
-- 那个按钮只在全选时才是叉号，且**只取消全选、不退出多选**；退出交给返回键（用户明确说「选择一项就退出时可以直接使用返回键」），所以没有另设关闭按钮。
-- 三个入口共用 `judgeAction` / `_runAction`。动作与类型不匹配时直接说明原因，**不静默替换成别的动作**——那会让设置看起来没生效。
-- 「下载」= `DownloadTarget.downloads`（系统下载目录），与「缓存音乐」是**两条独立的线**：下载是基本功能，对一切文件夹和文件适用，**不跳过音频、视频、CUE**；缓存音乐只收音频，选中文件夹时由软件自己递归扫描——扫描是这条线的内部步骤，不是另一个功能。
-- 两条线在界面上都只有**一个按钮、一个流程**：文件夹与文件一起交给服务层的 `enqueueSelection`，扫描与去重都在后端（去重键是来源 + 路径 + 目标）。界面分路会让「同时选中文件夹和里面的文件」重复排队。
-- 复制 / 移动走 WebDAV 原生 `COPY` / `MOVE`；同名冲突**自动加 ` (n)`**，不用 `Overwrite: T`（不可逆）。
-
-**已知未做**：
-
-- 移动 / 重命名远端文件后，本机音乐库里绑定旧路径的曲目不会跟随（需要一次「路径重写」才能做对）。
-- 复制 / 移动没有进度与取消：`webdav_client` 的 `copy` / `rename` 是单次请求，大文件只能等。
-- 真机验收未做。已知风险：部分服务端对目录目标的 `Destination`（加不加结尾 `/`）处理不一致，需要在真实网盘上各试一次。
-
-## 3. 音乐流式传输（**代码已接入，未真机验收**）
-
-**状态**：实验开关打开后，网络库对音乐条目（整行点按 / 更多菜单 / 多选单曲）直接流式播放并进入**音乐流式播放页**。`flutter analyze` 干净，新增 `test/stream_kind_test.dart`（后缀 → 用途标记的契约）。**没有跑过真机**；播放栈本身没有自动化覆盖，因为那需要真实网络与解码器。
-
-**已实现**：
-
-- `WebDavStreamSource.kind`（`StreamKind.video` / `.music`）：远端流管线只有一条，用途标记只影响媒体会话文案、通知与界面路由。
-- 用途默认按**网络库那套后缀配置**判定（含用户在设置里加的后缀），`WebDavService.buildStreamSource` 可以显式覆盖。
-- `enterVideoMode` 在音乐用途下把通知写成「流式播放 / WebDAV 流媒体」，不再写成「视频」。
-- 网络库 `_streamMusic` → `_openMusicStream()`：先 `VideoPlaybackService.prepare()` 建好远端源，再 push `MusicStreamScreen`，起播不用等界面第一帧；失败会提示原因（远端 401 / 断网不再静默）。
-- `MusicStreamScreen`（`lib/screens/music_stream_screen.dart`）：**不建 `VideoController`**。只订阅 `Player` 的位置 / 时长 / 缓冲 / 播放 / 错误流，中央放封面占位与大按钮，进度条可拖动，没有手势层、控件不自动隐藏、不旋转、不画中画。
-- 路由判断放在 `_openVideo` 入口：`source.kind == StreamKind.music` 就转音乐页。所以「把音频后缀改成 `.mp4`」这类条目也会进音乐页，不会为一条没有画面的流起视频解码。
-- `VideoQueueController` 的收集类别改成参数（默认仍是视频），音乐页用它做同目录上一首 / 下一首；`autoAdvance` 关闭（整专辑连播太吃流量）。
-
-### 3.1 现状里有什么
-
-- `MusicAudioHandler`（`lib/services/music_audio_handler.dart`）已经持有**两个** `media_kit` `Player`：`_player` 播本地音频，`_videoPlayer` 播远端流，靠 `_mode`（`AudioHandlerMode.music` / `.video`）切换。
-- 远端播放要用的东西视频侧已经齐了：`WebDavService.buildStreamSource()` 出直链 + Basic 认证头，`VideoPlaybackService.mediaFor()` 转 `Media`，`MusicAudioHandler.enterVideoMode()` 建媒体会话 / 通知 / 队列。
-- 后台播放、锁屏控制、耳机按键都工作在这套 handler 上（视频侧已经在用）。
-
-### 3.2 怎么复用，怎么区别
-
-音视频在媒体会话上的**差别只有三处**：
-
-| 项 | 视频现状 | 音乐流式需要 |
-|----|----------|--------------|
-| 队列 | `queue.add(const [])`，隐藏上一首 / 下一首 | 可以同样为空；要切歌得先列目录建远端队列 |
-| 通知文案 | `album: '视频'`、`artist: 'WebDAV 流媒体'` | 换成音乐语义（专辑 / 艺人留空或从文件名猜） |
-| 画面 | 开 `VideoPlayerScreen`（libmpv 输出） | 不开播放页；要封面就只显示在通知与迷你条上 |
-
-结论：**不需要另起播放栈**，把 `enterVideoMode` 泛化成「远端流模式」，用一个用途标记区分视频 / 音乐即可。
-
-### 3.3 必须先解决的一个坑
-
-`enterVideoMode` 会把 `_mode` 置成 `video`，而 `exitVideoMode()` 的语义是「**恢复**音乐队列并暂停」。音乐流式若共用这个模式，「流式播完 → 切回本地音乐」时 handler 会把本地队列状态重新广播一遍，通知栏会闪回上一首本地歌。
-
-需要在 `_mode` 之外单独记一个「远端流用途」标记，让 `exitVideoMode` 只对视频做恢复，音乐流式走「清空会话」的分支。**这一条不解决，实验功能会污染本地播放状态。**
-
-### 3.4 封面与时长（用户已允许先不做）
-
-- 为什么难：流式播放拿不到本地文件，`audio_metadata_reader` 无从解析。要拿封面与时长，至少得用 Range 把文件**头部几 MB** 读回来（`Options(headers: {'Range': 'bytes=0-…'})`）再喂给现有标签 / 封面解码；FLAC 的 `STREAMINFO`、MP4 的 `moov` 还可能落在文件尾部，需要读两次。
-- 折中（第一版建议）：通知与列表用同目录同名的本地封面（`cover.jpg`）或占位图标；时长由 `media_kit` 解析出来后回填 `MediaItem.duration`（视频侧已经这么做）。
-
-### 3.5 操作优化与其它代价
-
-- **看不出区别**：用户分不清「这首是流式还是已缓存」。建议行上加「流」角标，或在通知专辑名写「流式传输」。
-- **流量**：整张专辑连播是几十到几百 MB。建议默认**不连播**。
-- **切歌语义**：本地播放有 CUE 裁切 / 队列语义，流式没有；从流式切到本地必须以「停止 + 清会话」结束，而不是暂停。
-- **失败表现**：远端 401 / 断网时错误落在 `player.stream.error`，要像视频侧那样提示，不要静默。
-- **与缓存的关系**：流式**不得**顺手入队下载（[09](09-MISC.md) 的陷阱表：不要在播放路径上偷偷入队下载）。
-
-### 3.6 建议的落地顺序（独立分支）
-
-1. ~~`WebDavStreamSource.kind` + 通知文案~~（已完成）。
-2. ~~播放与界面：`VideoPlaybackService.prepare()` + `MusicStreamScreen`~~（已完成）。
-3. ~~网络库 `_streamMusic()` 接入~~（已完成）。
-4. **真机验收（未做）**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
-
-**已知的粗糙处（第一版接受）**：
-
-- 离开音乐流式页会 `VideoPlaybackService.stop()`，而它内部是 `exitVideoMode()`——语义是「恢复本地音乐队列」。所以停下流式歌时通知栏会跳回之前暂停的本地歌。要更干净，得让远端流用途参与 `exitVideoMode` 的分支判断。
-- 没有屏幕常亮：项目里没有 wakelock 依赖，视频页的常亮来自 `media_kit_video` 的 `Video` 组件，音乐页刻意不建它。
-- 封面与时长不取，界面只有占位图标与「流式传输 · 未缓存」一行字。
-- 没有「停止流式播放」的显式按钮；退出页面才会结束。
-
-**影响面**：[02-NETWORK-LIBRARY.md](02-NETWORK-LIBRARY.md)（§2、§8）、[05-AUDIO-PLAYBACK.md](05-AUDIO-PLAYBACK.md)（「仅本地播放」的约定要改）、[06-VIDEO-PLAYBACK.md](06-VIDEO-PLAYBACK.md)（共享的远端流模式）、[07-NOTIFICATIONS.md](07-NOTIFICATIONS.md)（媒体通知文案）、[09-MISC.md](09-MISC.md)（陷阱表里的「不要给音频做流式播放」要改写成「实验开关控制的流式播放」）。
-
-## 4. 主题配色（**已分析，代码未动**）
-
-### 4.1 现状（可直接确认）
+### 5.1 现状（可直接确认）
 
 - `lib/theme/app_theme.dart` 里 `AppTheme.light` 与 `AppTheme.dark` **两套都已写完**，各约 240 行，覆盖 AppBar / Drawer / Card / ListTile / TabBar / Slider / Chip / Dialog / SnackBar / SegmentedButton 等。
 - `lib/main.dart` 已经传了 `theme:` 与 `darkTheme:`，但 `themeMode: ThemeMode.light` 是**写死**的 —— 也就是说 `AppTheme.dark` 现在是死代码。
 - `AppColors`（同文件）是 `static const Color`，全库 **24 个文件、325 处**直接引用。
 - 另有约 **417 处**裸颜色（`Colors.xxx` / `Color(0x…)`），分布在 25 个文件，其中一部分是**有意**的（封面占位、状态色、播放器黑底）。
 
-### 4.2 为什么不能只把 `themeMode` 打开
+### 5.2 为什么不能只把 `themeMode` 打开
 
 把 `themeMode` 改成 `ThemeMode.dark` 会立刻得到「深色主题 + 一堆亮色残留」：`AppColors.xxx` 是编译期常量，不会跟着主题走，于是文字、分隔线、卡片底色仍是亮色值。这是这个功能真正的工作量所在。
 
-### 4.3 拆分（两阶段，各自独立可交付）
+### 5.3 拆分（两阶段，各自独立可交付）
 
 **阶段一 · 静态引用转上下文取色**
 
@@ -204,18 +78,18 @@
 - 自定义配色：边界**未定**（是只让用户改主色 accent，还是整套色板）。只改主色的话工作量小得多，但要让 accent 的对比色（`onAccent`）跟着算出来。**这是一个需要先和用户确认的点**。
 - 裸颜色审计与收敛，按类判断：哪些该跟主题、哪些本来就该固定。
 
-### 4.4 验收与回归点
+### 5.4 验收与回归点
 
 - 纯黑播放器页、下载进度 / 状态色、封面占位在两种模式下都要可读；`docs/05`、`06`、`07` 的界面描述需要跟着补。
 - 阶段一落地后跑 `flutter analyze` 与 `flutter test`；阶段二补设置项相关的测试。
 
 相关完整文档：[09 §编码约定](09-MISC.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[07](07-NOTIFICATIONS.md)。待发布与合并判断见 [10-SIDE-QUESTS.md](10-SIDE-QUESTS.md)。
 
-## 5. 多语言（已分析，未决定，代码未动）
+## 6. 多语言（已分析，未决定，代码未动）
 
 用户问「多语言支持怎么处理」，只做了查证与拆分：**没有动代码**，也没有把工程写进顺手做清单——它不满足「一屏以内、无需新设计决定」这两条。
 
-### 5.1 实测现状（2026 年底核）
+### 6.1 实测现状（2026 年底核）
 
 | 项 | 值 |
 |---|---|
@@ -227,13 +101,13 @@
 | `android/app/src/main/res/values*/strings.xml` | 不存在（应用名走 gradle `manifestPlaceholders["appName"]`） |
 | 文案最集中的文件 | `sync_screen` 112、`settings_screen` 84、`network_library_screen` 75、`video_player_screen` 64 |
 
-### 5.2 三个结构性难点（必须在批量替换**之前**处理）
+### 6.2 三个结构性难点（必须在批量替换**之前**处理）
 
 1. **枚举的显示名**：`models/` 下 38 个文件有中文，多为 `XxxLabel` / `label` 扩展（`CacheRetention`、`DownloadTarget`、`FileAction`、`SyncInterval`、`VideoGestureAction` …）。model 层拿不到 `BuildContext`。推荐做法是给这些 label 扩一个 `AppLocalizations` 参数，而不是把映射表搬到 UI 层（后者要动几十个调用点）。
 2. **被持久化的字符串值**：`library_service.dart:503` 用 `'未分类'` 当 key 并参与排序比较；`playlist.dart:75` 落库默认值 `'未命名'`；`accounts_service.dart:127` 默认服务器名 `'默认服务器'`。**改字符串之前必须先脱钩**，否则旧数据对不上。真机数据库里是否已存在这些值，我查不到。
 3. **后台服务的文案**：`services/` 下 18+ 个文件、38 组含中文，例如 `download_queue_service` 的 `_lastError`、`audio_player_service` 的 `'本地无缓存，请先下载'`、`backup_service` 的异常文案。service 层没有 `BuildContext`，正确做法是返回错误码 / 结构化结果，由 UI 层映射文案——这是重构，不是替换。
 
-### 5.3 分阶段（顺序不能调）
+### 6.3 分阶段（顺序不能调）
 
 | 阶段 | 内容 | 备注 |
 |---|---|---|
@@ -243,6 +117,6 @@
 | 3 | 平台侧资源（应用名、通知渠道名） | 见 [10 T5](10-SIDE-QUESTS.md) |
 | 4 | 语言切换（跟随系统 / 应用内切换 + 持久化） | 独立功能，可选 |
 
-### 5.4 需要用户决定的三件事
+### 6.4 需要用户决定的三件事
 
 1. 目标语言（中 + 英？）；2. 范围（全量还是先跑通一两个模块）；3. 要不要应用内语言切换。**未决定前不开工。**
