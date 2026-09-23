@@ -696,7 +696,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     },
                   ),
                   ListTile(
-                    leading: const Icon(Icons.folder_zip_outlined),
+                    // 下载就是下载：图标跟工具栏、跟文件行一致，不因对象是
+                    // 文件夹就换一个（用户明确要求）。
+                    leading: const Icon(Icons.download),
                     title: const Text('下载整个文件夹'),
                     subtitle: const Text('递归下载目录树，不挑文件类型'),
                     onTap: () {
@@ -1298,12 +1300,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         ),
         // 「缓存音乐」与「下载」是两条独立的线，文件夹与文件混选时都在。
         //
-        // 缓存音乐 = 把选中内容里的音频收进缓存：选中的音频文件直接入队，
-        // 选中的文件夹递归扫一遍再入队。扫描只是文件夹那条路内部的事，对
-        // 用户是同一个功能，不另立入口。
+        // 两个按钮各自是**一个**功能，界面不再分「文件夹那条路 / 文件那条
+        // 路」：选中的文件夹与文件一起交给 _queueSelection，扫描、去重、入队
+        // 全在后端。
+        //
+        // 缓存音乐：音频文件直接入队，文件夹由后端递归扫出其中的音频（随后
+        // ingest 进音乐库）。
         //
         // 下载是基本功能：不挑个数、不挑类型，文件夹递归全下——音频、视频、
-        // CUE 都照下，不下就跳过任何东西。
+        // CUE 都照下，不跳过任何东西。
         IconButton(
           tooltip: '缓存音乐',
           onPressed: canCacheMusic
