@@ -35,6 +35,7 @@
 | 09 | [09-MISC.md](09-MISC.md) | 代码地图、构建发布、编码约定与陷阱、测试入口、历史回归、待办 |
 | 99 | [99-IN-PROGRESS.md](99-IN-PROGRESS.md) | **开发中文档**：正在开发的功能的原始语义、取舍与影响面 |
 | 10 | [10-SIDE-QUESTS.md](10-SIDE-QUESTS.md) | **顺手做清单**：大工程里值得顺手做的小任务的边界与判断条件（发不发布由用户定） |
+| 11 | [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md) | **从 OpenList / rclone 移植驱动的要点与陷阱**：架构映射、必须逐字节对齐的格式、直链与本地流桥、测试策略 |
 
 ## 3. Agent 编码约束
 
