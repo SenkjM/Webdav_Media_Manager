@@ -3,9 +3,13 @@ import '../utils/app_snack.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/account_capabilities.dart';
 import '../models/webdav_account.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
+import '../services/cloud_drive_service.dart';
+import '../services/cloud_driver.dart';
+import '../services/cloud_drivers/driver_registry.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/marquee_text.dart';
@@ -17,10 +21,11 @@ class AccountsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accounts = context.watch<AccountsService>();
+    final cloudDrive = context.watch<CloudDriveService>();
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: const Text('WebDAV 服务器')),
+      appBar: AppBar(title: const Text('网盘账号')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _editAccount(context),
         child: const Icon(Icons.add),
@@ -30,7 +35,7 @@ class AccountsScreen extends StatelessWidget {
           const _BindingHint(),
           Expanded(
             child: accounts.accounts.isEmpty
-                ? const Center(child: Text('尚未添加服务器。点击右下角添加。'))
+                ? const Center(child: Text('尚未添加账号。点击右下角添加。'))
                 : ListView.builder(
                     itemCount: accounts.accounts.length,
                     itemBuilder: (context, i) {
@@ -45,8 +50,10 @@ class AccountsScreen extends StatelessWidget {
                         ),
                         // 名称（用户名）：同一主机上多个挂载点一眼可分。
                         title: Text(webDavAccountLabel(a)),
+                        // WebDAV 显示地址；云盘 / crypt 显示类型名
+                        // （crypt = 源类型 + Crypt，见 CloudDriveService.typeLabelFor）。
                         subtitle: Text(
-                          a.url,
+                          a.url.isNotEmpty ? a.url : cloudDrive.typeLabelFor(a),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -102,8 +109,19 @@ class AccountsScreen extends StatelessWidget {
 
   Future<void> _test(BuildContext context, WebDavAccount a) async {
     final app = context.read<AppState>();
-    final pass = await context.read<AccountsService>().passwordFor(a.id) ?? '';
     final webDav = context.read<WebDavService>();
+    if (CloudDriveService.isCloudType(a.providerType)) {
+      // 云盘账号：分流缝会把 testConnection 转给 CloudDriveService。
+      final ok = await webDav.testConnection(accountId: a.id);
+      if (!context.mounted) return;
+      if (ok) {
+        AppSnack.show(context, '连接成功');
+      } else {
+        await showWebDavErrorDialog(context, webDav.lastError ?? '连接失败');
+      }
+      return;
+    }
+    final pass = await context.read<AccountsService>().passwordFor(a.id) ?? '';
     // Refresh just this account's client; testing must not disturb which account
     // the network library is browsing.
     webDav.configure(
@@ -156,16 +174,154 @@ class AccountsScreen extends StatelessWidget {
     final urlCtrl = TextEditingController(text: existing?.url ?? '');
     final userCtrl = TextEditingController(text: existing?.username ?? '');
     final passCtrl = TextEditingController();
-    var obscure = true;
+    final remotePathCtrl = TextEditingController(text: existing?.remotePath ?? '/');
     final accounts = context.read<AccountsService>();
+    final cloudDrive = context.read<CloudDriveService>();
+    var providerType = existing?.providerType ?? 'webdav';
+    final existingCfg = existing == null
+        ? const <String, dynamic>{}
+        : (await accounts.loadDriverConfig(existing.id) ?? const <String, dynamic>{});
+    var obscure = true;
+    // 云盘动态控件按驱动 spec 生成（99 §7.2.10）：控制器 / 开关值 / 明暗态
+    // 三个映射，键都是驱动声明的字段 key；切换类型（仅新增时）重建。
+    CloudDriverSpec? spec = cloudDriverSpec(providerType);
+    var fieldCtrls = <String, TextEditingController>{};
+    var switchValues = <String, bool>{};
+    var fieldObscure = <String, bool>{};
+    void ensureSpecControls() {
+      final s = cloudDriverSpec(providerType);
+      if (identical(s, spec) && fieldCtrls.isNotEmpty) return;
+      spec = s;
+      fieldCtrls = <String, TextEditingController>{};
+      switchValues = <String, bool>{};
+      fieldObscure = <String, bool>{};
+      for (final item in s?.form ?? const <CloudDriverFormItem>[]) {
+        if (item is CloudDriverField) {
+          final stored = existingCfg[item.key] as String?;
+          fieldCtrls[item.key] = TextEditingController(
+            text: stored?.isNotEmpty == true ? stored : item.defaultValue,
+          );
+          fieldObscure[item.key] = item.obscure;
+        } else if (item is CloudDriverSwitchField) {
+          switchValues[item.key] =
+              existingCfg[item.key] as bool? ?? item.defaultValue;
+        } else if (item is CloudDriverAccountField) {
+          fieldCtrls[item.key] = TextEditingController(
+            text: existingCfg[item.key] as String? ?? '',
+          );
+        } else if (item is CloudDriverSelectField) {
+          final stored = existingCfg[item.key] as String?;
+          fieldCtrls[item.key] = TextEditingController(
+            text: stored?.isNotEmpty == true ? stored : item.defaultValue,
+          );
+        }
+      }
+    }
+    ensureSpecControls();
+    var caps = AccountCaps.normalizeStored(existing?.capabilities ?? AccountCaps.all);
 
-    /// Show the form; keeps the typed values so a rejected warning can re-open it.
+    Map<String, dynamic>? cloudConfig;
+
+    /// 弹窗内的错误展示位：SnackBar 会被 AlertDialog 盖住（真机只露出一条边），
+    /// 所以表单校验失败一律显示在弹窗内部。
+    String? dialogError;
+    void Function(void Function())? dialogSet;
+    void fail(String message) {
+      dialogError = message;
+      dialogSet?.call(() {});
+      // 弹窗内联文字可能落在滚动区之外（或被键盘顶出可视区），所以同时推一条
+      // 最顶层横幅——它挂在 Navigator 之上，对话框盖不住（99 §7.5 真机反馈）。
+      AppSnack.show(context, message, error: true);
+    }
+
+    /// 点击「保存」后在弹窗内完成全部校验（99 §7.2.7）：名称 / 重名 / 身份
+    /// 变更确认 / refresh_token / 云盘真连验证。返回 false 时**不关弹窗**，
+    /// 已填内容都在，保存按钮恢复可点。
+    Future<bool> validateAndPrepare() async {
+      final name = nameCtrl.text.trim();
+      final isCloud = CloudDriveService.isCloudType(providerType);
+      if (name.isEmpty) {
+        fail('请填写名称');
+        return false;
+      }
+      if (!await _confirmDuplicateName(context, accounts, name, existing?.id)) {
+        return false;
+      }
+      if (existing != null) {
+        final renamed = name != existing.name.trim();
+        final userChanged =
+            !isCloud && userCtrl.text.trim() != existing.username.trim();
+        if ((renamed || userChanged) &&
+            !await _confirmIdentityChange(context, existing, name, renamed)) {
+          return false;
+        }
+      }
+      if (isCloud) {
+        final s = spec;
+        if (s == null) {
+          fail('未知云盘类型：$providerType');
+          return false;
+        }
+        // 配置的键 / 必填项 / 默认值全部来自驱动声明（99 §7.2.10）。
+        final cfg = <String, dynamic>{};
+        for (final item in s.form) {
+          if (item is CloudDriverField) {
+            final text = fieldCtrls[item.key]?.text.trim() ?? '';
+            if (item.required && text.isEmpty) {
+              fail('请填写 ${item.label}');
+              return false;
+            }
+            cfg[item.key] = text;
+          } else if (item is CloudDriverSelectField) {
+            final v = fieldCtrls[item.key]?.text.trim() ?? '';
+            if (item.required && v.isEmpty) {
+              fail('请选择${item.label}');
+              return false;
+            }
+            cfg[item.key] = v;
+          } else if (item is CloudDriverAccountField) {
+            final v = fieldCtrls[item.key]?.text.trim() ?? '';
+            if (item.required && v.isEmpty) {
+              fail('请选择${item.label}');
+              return false;
+            }
+            cfg[item.key] = v;
+          } else if (item is CloudDriverSwitchField) {
+            cfg[item.key] = switchValues[item.key] ?? item.defaultValue;
+          }
+        }
+        // 云盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
+        cloudConfig = cfg;
+        try {
+          await cloudDrive.verifyNewAccount(
+            WebDavAccount(
+              id: existing?.id ?? 'pending',
+              name: name,
+              url: '',
+              username: '',
+              providerType: providerType,
+            ),
+            cloudConfig!,
+          );
+        } catch (e) {
+          // 不只 CloudDriverException：驱动/网络层抛出的任何异常都必须变成
+          // 用户看得见的一句提示，绝不让保存按钮默默恢复（99 §7.3.1）。
+          fail(e is CloudDriverException ? e.toString() : '验证失败：$e');
+          return false;
+        }
+      }
+      return true;
+    }
+
+    /// Show the form. 点击保存后按钮变圈等待，校验通过才关弹窗。
     Future<bool> showForm() async {
+      var saving = false;
       final saved = await showDialog<bool>(
         context: context,
         builder: (ctx) {
           return StatefulBuilder(
             builder: (ctx, setLocal) {
+              dialogSet = setLocal;
               return AlertDialog(
                 title: Text(existing == null ? '添加服务器' : '编辑服务器'),
                 content: SingleChildScrollView(
@@ -200,51 +356,254 @@ class AccountsScreen extends StatelessWidget {
                           ),
                         ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: urlCtrl,
+                      DropdownButtonFormField<String>(
+                        initialValue: providerType,
                         decoration: const InputDecoration(
-                          labelText: '服务器 URL',
-                          hintText: 'https://example.com/dav',
+                          labelText: '类型',
                           border: OutlineInputBorder(),
                         ),
-                        keyboardType: TextInputType.url,
-                        autocorrect: false,
+                        items: [
+                          const DropdownMenuItem(
+                              value: 'webdav', child: Text('WebDAV')),
+                          // 云盘类型来自驱动注册表（99 §7.2.10），顺序即注册顺序。
+                          for (final s in kCloudDriverSpecs)
+                            DropdownMenuItem(
+                                value: s.typeId, child: Text(s.displayName)),
+                        ],
+                        // 已建账号不改类型：换类型等于换一套实现，删了重加。
+                        onChanged: existing == null
+                            ? (v) => setLocal(() {
+                                  if (v != null) providerType = v;
+                                  ensureSpecControls();
+                                })
+                            : null,
                       ),
+                      // 远程路径（浏览根）是通用字段：WebDAV 与云盘同语义，
+                      // 都放在类型之后（99 §7.2.7 / §7.2.10）。
                       const SizedBox(height: 12),
                       TextField(
-                        controller: userCtrl,
+                        controller: remotePathCtrl,
                         decoration: const InputDecoration(
-                          labelText: '用户名',
+                          labelText: '远程路径',
+                          helperText: '浏览根，默认 /（空置也是 /）',
                           border: OutlineInputBorder(),
                         ),
                         autocorrect: false,
                       ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: passCtrl,
-                        obscureText: obscure,
-                        decoration: InputDecoration(
-                          labelText: existing == null ? '密码' : '密码（留空则不修改）',
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              obscure ? Icons.visibility : Icons.visibility_off,
+                      if (providerType == 'webdav') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: urlCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '服务器 URL',
+                            hintText: 'https://example.com/dav',
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: TextInputType.url,
+                          autocorrect: false,
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: userCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '用户名',
+                            border: OutlineInputBorder(),
+                          ),
+                          autocorrect: false,
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: passCtrl,
+                          obscureText: obscure,
+                          decoration: InputDecoration(
+                            labelText: existing == null ? '密码' : '密码（留空则不修改）',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                obscure ? Icons.visibility : Icons.visibility_off,
+                              ),
+                              onPressed: () => setLocal(() => obscure = !obscure),
                             ),
-                            onPressed: () => setLocal(() => obscure = !obscure),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 4),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('权限'),
+                        ),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final (label, bit) in const [
+                              ('读取', AccountCaps.read),
+                              ('写入', AccountCaps.write),
+                              ('创建文件夹', AccountCaps.mkdir),
+                              ('移动', AccountCaps.move),
+                              ('复制', AccountCaps.copy),
+                              ('删除', AccountCaps.delete),
+                            ])
+                              FilterChip(
+                                label: Text(
+                                  label,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                selected: (caps & bit) != 0,
+                                onSelected: (v) => setLocal(
+                                  () => caps = v ? (caps | bit) : (caps & ~bit),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ] else ...[
+                        // 云盘动态区完全按驱动 spec 渲染（99 §7.2.10）：
+                        // 表单不含任何具体盘的知识，新增盘零改动。
+                        for (final item in spec?.form ??
+                            const <CloudDriverFormItem>[]) ...[
+                          if (item is CloudDriverField)
+                            Builder(
+                              builder: (_) {
+                                final f = item;
+                                final enabled = f.enabledWhenSwitch == null ||
+                                    (switchValues[f.enabledWhenSwitch] ??
+                                        false);
+                                final visible = f.visibleWhenSwitch == null ||
+                                    (switchValues[f.visibleWhenSwitch] ??
+                                        false);
+                                if (!visible) return const SizedBox.shrink();
+                                final isOff =
+                                    f.enabledWhenSwitch != null && !enabled;
+                                return TextField(
+                                  controller: fieldCtrls[f.key],
+                                  obscureText: fieldObscure[f.key] ?? false,
+                                  enabled: enabled,
+                                  decoration: InputDecoration(
+                                    labelText: f.label,
+                                    helperText: isOff
+                                        ? (f.disabledHint ?? f.hint)
+                                        : f.hint,
+                                    helperMaxLines: 2,
+                                    border: const OutlineInputBorder(),
+                                    filled: isOff,
+                                    suffixIcon: f.obscure
+                                        ? IconButton(
+                                            icon: Icon(
+                                              (fieldObscure[f.key] ?? false)
+                                                  ? Icons.visibility
+                                                  : Icons.visibility_off,
+                                            ),
+                                            onPressed: () => setLocal(
+                                              () =>
+                                                  fieldObscure[f.key] =
+                                                      !(fieldObscure[f.key] ??
+                                                          false),
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  autocorrect: false,
+                                );
+                              },
+                            )
+                          else if (item is CloudDriverSwitchField)
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(item.label,
+                                  style: const TextStyle(fontSize: 14)),
+                              subtitle: Text(item.subtitle,
+                                  style: const TextStyle(fontSize: 11)),
+                              value: switchValues[item.key] ?? false,
+                              onChanged: (v) =>
+                                  setLocal(() => switchValues[item.key] = v),
+                            )
+                          else if (item is CloudDriverSelectField)
+                            DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              initialValue: item.options.any((o) => o.$1 == (fieldCtrls[item.key]?.text ?? ''))
+                                  ? fieldCtrls[item.key]!.text
+                                  : (item.defaultValue.isNotEmpty ? item.defaultValue : null),
+                              decoration: InputDecoration(
+                                labelText: item.label,
+                                helperText: item.hint,
+                                helperMaxLines: 2,
+                                border: const OutlineInputBorder(),
+                              ),
+                              items: [
+                                for (final (val, lab) in item.options)
+                                  DropdownMenuItem(value: val, child: Text(lab)),
+                              ],
+                              onChanged: (v) => setLocal(
+                                  () => fieldCtrls[item.key]?.text = v ?? ''),
+                            )
+                          else if (item is CloudDriverAccountField)
+                            DropdownButtonFormField<String>(
+                              isExpanded: true,
+                              initialValue: accounts.accounts
+                                      .any((a) => a.id == (fieldCtrls[item.key]?.text ?? ''))
+                                  ? fieldCtrls[item.key]!.text
+                                  : null,
+                              decoration: InputDecoration(
+                                labelText: item.label,
+                                helperText: item.hint,
+                                helperMaxLines: 2,
+                                border: const OutlineInputBorder(),
+                              ),
+                              items: [
+                                for (final a in accounts.accounts)
+                                  if (a.providerType != 'crypt')
+                                    DropdownMenuItem(
+                                        value: a.id, child: Text(a.name)),
+                              ],
+                              onChanged: (v) => setLocal(
+                                  () => fieldCtrls[item.key]?.text = v ?? ''),
+                            ),
+                          const SizedBox(height: 12),
+                        ],
+                      ],
+                      if (dialogError != null) ...[
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            dialogError!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
                 actions: [
                   TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
+                    onPressed: saving
+                        ? null
+                        : () => Navigator.pop(ctx, false),
                     child: const Text('取消'),
                   ),
                   FilledButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('保存'),
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            setLocal(() {
+                              saving = true;
+                              dialogError = null;
+                            });
+                            final ok = await validateAndPrepare();
+                            if (!ok) {
+                              setLocal(() => saving = false);
+                              return;
+                            }
+                            if (ctx.mounted) Navigator.pop(ctx, true);
+                          },
+                    child: saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('保存'),
                   ),
                 ],
               );
@@ -255,39 +614,43 @@ class AccountsScreen extends StatelessWidget {
       return saved == true;
     }
 
-    // A name is the library's binding key, so it cannot be empty and two disks
-    // must not share one: the same path on two mounts would then be the *same*
-    // song and they would overwrite each other's cache and metadata.
-    //
-    // Every rejection re-opens the form with the typed values intact, so a
-    // warning never costs the user their input.
-    while (true) {
-      if (!await showForm() || !context.mounted) return;
-      final name = nameCtrl.text.trim();
-      if (name.isEmpty) {
-        AppSnack.error(context, '请填写名称');
-        continue;
-      }
-      if (!await _confirmDuplicateName(context, accounts, name, existing?.id)) {
-        continue;
-      }
-      if (existing != null) {
-        final renamed = name != existing.name.trim();
-        final userChanged = userCtrl.text.trim() != existing.username.trim();
-        if ((renamed || userChanged) &&
-            !await _confirmIdentityChange(context, existing, name, renamed)) {
-          continue;
-        }
-      }
-      break;
-    }
+    if (!await showForm() || !context.mounted) return;
 
-    if (existing == null) {
+    final remotePath = WebDavAccount.normalizeRemotePath(remotePathCtrl.text);
+    if (cloudConfig != null) {
+      if (existing == null) {
+        final account = await accounts.addAccount(
+          name: nameCtrl.text,
+          url: '',
+          username: '',
+          password: '',
+          providerType: providerType,
+          remotePath: remotePath,
+        );
+        await accounts.saveDriverConfig(account.id, cloudConfig!);
+        // 云盘添加成功：提示后随表单一起关闭（99 §7.2.7）。
+        if (context.mounted) {
+          AppSnack.show(context, '成功添加（\${nameCtrl.text.trim()}）');
+        }
+      } else {
+        await accounts.updateAccount(
+          id: existing.id,
+          name: nameCtrl.text,
+          url: '',
+          username: '',
+          providerType: providerType,
+          remotePath: remotePath,
+        );
+        await accounts.saveDriverConfig(existing.id, cloudConfig!);
+      }
+    } else if (existing == null) {
       await accounts.addAccount(
         name: nameCtrl.text,
         url: urlCtrl.text,
         username: userCtrl.text,
         password: passCtrl.text,
+        remotePath: remotePath,
+        capabilities: caps,
       );
     } else {
       await accounts.updateAccount(
@@ -296,6 +659,8 @@ class AccountsScreen extends StatelessWidget {
         url: urlCtrl.text,
         username: userCtrl.text,
         password: passCtrl.text.isEmpty ? null : passCtrl.text,
+        remotePath: remotePath,
+        capabilities: caps,
       );
     }
     if (context.mounted) {

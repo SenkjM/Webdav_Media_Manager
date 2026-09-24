@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../utils/app_snack.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
@@ -30,9 +32,19 @@ import 'video_player_screen.dart' show VideoQueueSeed;
 /// 播放本身仍然走视频那套远端流管线（同一个 Player、同一个媒体会话），
 /// 所以后台播放、锁屏控制、耳机按键照常工作。
 class MusicStreamScreen extends StatefulWidget {
-  const MusicStreamScreen({super.key, required this.source, this.seed});
+  const MusicStreamScreen({
+    super.key,
+    this.source,
+    this.sourceLoader,
+    this.seed,
+  }) : assert(source != null || sourceLoader != null);
 
-  final WebDavStreamSource source;
+  /// 已解析好的远端流。调用方已经拿到网络结果时直接传。
+  final WebDavStreamSource? source;
+
+  /// 还没解析时的加载器：界面先落地，解析与缓冲都在页内异步进行，跳转
+  /// 不再被网络卡住（流式体验改造，见 99 §7.2.7）。
+  final Future<WebDavStreamSource?> Function()? sourceLoader;
 
   /// 有它就可以在同一目录里上一首 / 下一首（复用视频的播放队列）。
   final VideoQueueSeed? seed;
@@ -71,14 +83,19 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   final TextEditingController _playlistSearch = TextEditingController();
   String _playlistFilter = '';
 
-  WebDavStreamSource _sourceFor(WebDavItem item) =>
-      context.read<WebDavService>().buildStreamSource(
-        remotePath: item.path,
-        name: item.name,
-        accountId: widget.source.accountId,
-        kind: StreamKind.music,
-      ) ??
-      widget.source;
+  Future<WebDavStreamSource?> _sourceFor(WebDavItem item) async {
+    final accountId =
+        widget.source?.accountId ??
+        _playback?.source?.accountId ??
+        widget.seed?.accountId;
+    if (accountId == null) return null;
+    return context.read<WebDavService>().resolveStreamSource(
+          remotePath: item.path,
+          name: item.name,
+          accountId: accountId,
+          kind: StreamKind.music,
+        );
+  }
 
   @override
   void initState() {
@@ -103,12 +120,36 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
       _queue!.addListener(_onQueueChanged);
       _queue!.startScan();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _open(widget.source));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openInitial());
   }
 
   void _onQueueChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  /// 界面先落地：已带 source 直接开流；否则先在页内异步解析源。
+  /// 解析失败 / 未连接时用页内错误态表达，不再把跳转链卡住。
+  Future<void> _openInitial() async {
+    final pre = widget.source;
+    if (pre != null) {
+      await _open(pre);
+      return;
+    }
+    WebDavStreamSource? source;
+    try {
+      source = await widget.sourceLoader?.call();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString());
+      return;
+    }
+    if (!mounted) return;
+    if (source == null) {
+      setState(() => _error = 'WebDAV 未连接，无法流式播放');
+      return;
+    }
+    await _open(source);
   }
 
   /// 打开一条流并接管 Player 的状态流。
@@ -217,12 +258,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     final player = _player;
     if (player != null) await _applyPlaylistMode(player);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(next.labelZh),
-          duration: const Duration(seconds: 1),
-        ),
-      );
+      AppSnack.show(context, next.labelZh);
+
     }
   }
 
@@ -471,13 +508,22 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     if (queue == null) return;
     final item = queue.selectIndex(index);
     if (item == null) return;
-    await _open(_sourceFor(item));
+    final source = await _sourceFor(item);
+    if (!mounted) return;
+    if (source == null) {
+      setState(() => _error = '无法建立流式地址，请检查账户配置');
+      return;
+    }
+    await _open(source);
   }
 
   @override
   Widget build(BuildContext context) {
     final queue = _queue;
-    final title = queue?.current?.name ?? widget.source.name;
+    final title = queue?.current?.name ??
+        _playback?.source?.name ??
+        widget.source?.name ??
+        '加载中…';
     final hasPrev = (queue?.index ?? 0) > 0;
     final hasNext = queue?.hasNext ?? false;
     return Scaffold(
@@ -565,23 +611,48 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     final value = _dragging
         ? _dragValue
         : _position.inMilliseconds.clamp(0, total == 0 ? 1 : total).toDouble();
+    // 老式「先缓冲完再开播」的等待态（源解析 / 起播前）：二级轨道铺满整条
+    // 并左右渐变；起播后的流式缓冲：实心二级轨道 = 已缓冲区间（buffer 流）。
+    final double? secondary;
+    if (_opening) {
+      secondary = total == 0 ? 1.0 : total.toDouble();
+    } else {
+      secondary = (total == 0 || _buffered <= Duration.zero)
+          ? null
+          : _buffered.inMilliseconds.clamp(0, total).toDouble();
+    }
+    final sliderTheme = SliderTheme.of(context);
+    final base =
+        sliderTheme.activeTrackColor ?? Theme.of(context).colorScheme.primary;
     return Column(
       children: [
-        Slider(
-          value: total == 0 ? 0 : value,
-          max: total == 0 ? 1 : total.toDouble(),
-          onChanged: total == 0
-              ? null
-              : (v) => setState(() {
-                  _dragging = true;
-                  _dragValue = v;
-                }),
-          onChangeEnd: total == 0
-              ? null
-              : (v) async {
-                  setState(() => _dragging = false);
-                  await _player?.seek(Duration(milliseconds: v.round()));
-                },
+        SliderTheme(
+          data: sliderTheme.copyWith(
+            trackShape: _opening
+                ? _GradientSecondaryTrackShape(
+                    from: base.withValues(alpha: 0.25),
+                    to: base,
+                  )
+                : const RoundedRectSliderTrackShape(),
+            secondaryActiveTrackColor: base.withValues(alpha: 0.35),
+          ),
+          child: Slider(
+            value: total == 0 ? 0 : value,
+            max: total == 0 ? 1 : total.toDouble(),
+            secondaryTrackValue: secondary,
+            onChanged: total == 0
+                ? null
+                : (v) => setState(() {
+                    _dragging = true;
+                    _dragValue = v;
+                  }),
+            onChangeEnd: total == 0
+                ? null
+                : (v) async {
+                    setState(() => _dragging = false);
+                    await _player?.seek(Duration(milliseconds: v.round()));
+                  },
+          ),
         ),
         // 快退 / 快进从控制条挪到进度条下面：控制条那两个位置让给了
         // 播放模式与播放列表，取色不再和它们挤在一起。
@@ -611,10 +682,6 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(_fmt(_position), style: _timeStyle),
-              Text(
-                _buffered > Duration.zero ? '已缓冲 ${_fmt(_buffered)}' : '',
-                style: _timeStyle,
-              ),
               Text(total == 0 ? '--:--' : _fmt(_duration), style: _timeStyle),
             ],
           ),
@@ -671,5 +738,92 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+}
+
+/// 二级轨道左右渐变的轨道形状：表示「老式等待式缓冲」（源解析 / 起播前
+/// 的等待阶段，正是原来会挡住界面的那段时间）。铺满整条轨道，左淡右实。
+/// 只覆盖 LTR（本应用固定从左到右），thumb 由 thumbShape 在轨道之后绘制。
+class _GradientSecondaryTrackShape extends RoundedRectSliderTrackShape {
+  const _GradientSecondaryTrackShape({required this.from, required this.to});
+
+  final Color from;
+  final Color to;
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 2,
+  }) {
+    final trackRect = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    if (trackRect.height <= 0) return;
+    final radius = Radius.circular(trackRect.height / 2);
+
+    final inactive = Paint()
+      ..color = ColorTween(
+        begin: sliderTheme.disabledInactiveTrackColor,
+        end: sliderTheme.inactiveTrackColor,
+      ).evaluate(enableAnimation)!;
+    context.canvas.drawRRect(
+      RRect.fromLTRBR(
+        trackRect.left,
+        trackRect.top,
+        trackRect.right,
+        trackRect.bottom,
+        radius,
+      ),
+      inactive,
+    );
+
+    final gradient = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+        colors: [from, to],
+      ).createShader(trackRect);
+    context.canvas.drawRRect(
+      RRect.fromLTRBR(
+        trackRect.left,
+        trackRect.top,
+        trackRect.right,
+        trackRect.bottom,
+        radius,
+      ),
+      gradient,
+    );
+
+    // 播放进度段盖在渐变之上；等待态 thumb 在最左，段宽为零时直接跳过。
+    if (thumbCenter.dx > trackRect.left + 1) {
+      final active = Paint()
+        ..color = ColorTween(
+          begin: sliderTheme.disabledActiveTrackColor,
+          end: sliderTheme.activeTrackColor,
+        ).evaluate(enableAnimation)!;
+      context.canvas.drawRRect(
+        RRect.fromLTRBR(
+          trackRect.left,
+          trackRect.top,
+          thumbCenter.dx,
+          trackRect.bottom,
+          radius,
+        ),
+        active,
+      );
+    }
   }
 }

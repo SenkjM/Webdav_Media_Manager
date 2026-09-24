@@ -21,6 +21,7 @@ import 'services/playlist_service.dart';
 import 'services/settings_service.dart';
 import 'services/sync_service.dart';
 import 'services/video_playback_service.dart';
+import 'services/cloud_drive_service.dart';
 import 'services/webdav_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/app_snack.dart';
@@ -67,6 +68,9 @@ class WebDavMusicApp extends StatelessWidget {
         ChangeNotifierProvider<SyncService>.value(value: appState.sync),
         ChangeNotifierProvider<LibraryService>.value(value: appState.library),
         ChangeNotifierProvider<WebDavService>.value(value: appState.webDav),
+        ChangeNotifierProvider<CloudDriveService>.value(
+          value: appState.cloudDrive,
+        ),
         ChangeNotifierProvider<CacheService>.value(value: appState.cache),
         ChangeNotifierProvider<DownloadQueueService>.value(
           value: appState.downloads,
@@ -82,8 +86,8 @@ class WebDavMusicApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Webdav Media Manager',
         debugShowCheckedModeBanner: false,
-        // Lets context-free callers (the download queue) post in-app messages.
-        scaffoldMessengerKey: AppSnack.messengerKey,
+        // 应用内消息渲染在 Navigator 之上（底部、任何弹窗都盖不住）。
+        builder: AppSnack.hostBuilder,
         themeMode: ThemeMode.light,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,

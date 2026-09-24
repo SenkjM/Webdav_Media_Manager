@@ -35,6 +35,7 @@
 | 09 | [09-MISC.md](09-MISC.md) | 代码地图、构建发布、编码约定与陷阱、测试入口、历史回归、待办 |
 | 99 | [99-IN-PROGRESS.md](99-IN-PROGRESS.md) | **开发中文档**：正在开发的功能的原始语义、取舍与影响面 |
 | 10 | [10-SIDE-QUESTS.md](10-SIDE-QUESTS.md) | **顺手做清单**：大工程里值得顺手做的小任务的边界与判断条件（发不发布由用户定） |
+| 11 | [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md) | **从 OpenList / rclone 移植驱动的要点与陷阱**：架构映射、必须逐字节对齐的格式、直链与本地流桥、测试策略 |
 
 ## 3. Agent 编码约束
 
@@ -52,7 +53,7 @@
 
 **定位**：Android-first 的 WebDAV 媒体客户端。音频「先下载到本地缓存再播放」，视频走远端流式播放，两者都不做「边下边播的隐式入队」。当前主线是稳定性与体验细节，不是新功能扩张。
 
-**近期（进行中）**：见 [99 §1 未在真机验收](99-IN-PROGRESS.md)（代码已上 `main`、真机未验的清单）、[99 §5 主题配色](99-IN-PROGRESS.md) 与 [99 §6 多语言](99-IN-PROGRESS.md)（已分析、未开工）。仍在修的一个实名问题：[04](04-DOWNLOAD-QUEUE.md) 的「后台下载 `fail host lookup`」。
+**近期（进行中）**：见 [99 §1 未在真机验收](99-IN-PROGRESS.md)（代码已上 `main`、真机未验的清单）、[99 §5 主题配色](99-IN-PROGRESS.md) 与 [99 §6 多语言](99-IN-PROGRESS.md)（已分析、未开工）、[99 §7 云盘 Provider](99-IN-PROGRESS.md)（已立项定界、未开工）。仍在修的一个实名问题：[04](04-DOWNLOAD-QUEUE.md) 的「后台下载 `fail host lookup`」。
 
 **路线图（规划快照，未排期，不要当成已实现能力）**：
 

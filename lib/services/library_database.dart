@@ -18,7 +18,7 @@ class LibraryDatabase {
   Database? _db;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 5;
+  static const schemaVersion = 7;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -45,6 +45,9 @@ class LibraryDatabase {
           await db.execute('DROP TABLE IF EXISTS $table');
         }
         await _createSchema(db);
+        // 云盘 provider（99 §7 阶段 0）：accounts 老表不重建（保留库名绑定），
+        // 逐列补齐新列；新库由 _createSchema 直接带全列。
+        await _ensureAccountColumns(db);
       },
     );
     return _db!;
@@ -56,7 +59,10 @@ CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   url TEXT NOT NULL,
-  username TEXT NOT NULL
+  username TEXT NOT NULL,
+  provider_type TEXT NOT NULL DEFAULT 'webdav',
+  remote_path TEXT NOT NULL DEFAULT '/',
+  capabilities INTEGER NOT NULL DEFAULT 127
 )
 ''');
     await db.execute('''
@@ -188,6 +194,29 @@ CREATE TABLE IF NOT EXISTS sync_state (
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_cue_albums_source ON cue_albums(source_name)',
     );
+  }
+
+  /// accounts 表按需补列（PRAGMA 检查，幂等）。默认值与 [AccountCaps.all] 对齐。
+  Future<void> _ensureAccountColumns(Database db) async {
+    final cols = (await db.rawQuery('PRAGMA table_info(accounts)'))
+        .map((row) => row['name'] as String)
+        .toSet();
+    if (!cols.contains('provider_type')) {
+      await db.execute(
+          "ALTER TABLE accounts ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'webdav'");
+    }
+    if (!cols.contains('remote_path')) {
+      await db.execute(
+          "ALTER TABLE accounts ADD COLUMN remote_path TEXT NOT NULL DEFAULT '/'");
+    }
+    if (!cols.contains('capabilities')) {
+      await db.execute(
+          'ALTER TABLE accounts ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 127');
+    }
+    // 旧默认 63（六位掩码）→ 当前全量 127：能力勾选 UI 上线前不存在自定义值，
+    // 全量替换安全（99 §7.2.3 的 mkdir 拆位）。
+    await db.execute(
+        'UPDATE accounts SET capabilities = 127 WHERE capabilities = 63');
   }
 
   // --- Accounts ---

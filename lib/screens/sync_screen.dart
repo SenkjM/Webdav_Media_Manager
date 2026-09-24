@@ -629,8 +629,13 @@ class _SyncScreenState extends State<SyncScreen> {
     // account. A stale id (account deleted) is not allowed to assert.
     var rootAccountId = settings.syncAccountId;
     if (rootAccountId == null ||
-        !accounts.accounts.any((a) => a.id == rootAccountId)) {
-      rootAccountId = accounts.activeAccount?.id;
+        !accounts.accounts.any(
+          (a) => a.id == rootAccountId && a.providerType == 'webdav',
+        )) {
+      // 兜底也只认 WebDAV 类型：活跃账号是云盘时没有同步目标。
+      final active = accounts.activeAccount;
+      rootAccountId =
+          active != null && active.providerType == 'webdav' ? active.id : null;
     }
 
     return Scaffold(
@@ -703,11 +708,14 @@ class _SyncScreenState extends State<SyncScreen> {
                 isDense: true,
               ),
               items: [
+                // 云盘账号没有写路径（上传已砍），同步目标只列 WebDAV 类型
+                //（99 §7.2.8）。
                 for (final a in accounts.accounts)
-                  DropdownMenuItem(
-                    value: a.id,
-                    child: MarqueeText(webDavAccountLabel(a)),
-                  ),
+                  if (a.providerType == 'webdav')
+                    DropdownMenuItem(
+                      value: a.id,
+                      child: MarqueeText(webDavAccountLabel(a)),
+                    ),
               ],
               onChanged: _running
                   ? null

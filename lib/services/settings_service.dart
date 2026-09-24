@@ -46,6 +46,10 @@ class SettingsService extends ChangeNotifier {
   static const _kVideoLongPressRate = 'video_long_press_rate';
   static const _kVideoLastRate = 'video_last_rate';
   static const _kVideoConfirmExit = 'video_confirm_exit';
+
+  /// 断点续传的半截文件（.part）保留上限：时长与总体积。
+  static const _kDownloadPartMaxAgeHours = 'download_part_max_age_hours';
+  static const _kDownloadPartMaxMb = 'download_part_max_mb';
   static const _kVideoSubtitlePosition = 'video_subtitle_position';
   static const _kVideoSubtitleOffset = 'video_subtitle_offset';
   static const _kVideoSubtitleFontSize = 'video_subtitle_font_size';
@@ -95,6 +99,9 @@ class SettingsService extends ChangeNotifier {
   static const int minVideoBufferMb = 8;
   static const int maxVideoBufferMb = 512;
   static const int defaultVideoBufferMb = 64;
+
+  static const int defaultDownloadPartMaxAgeHours = 72;
+  static const int defaultDownloadPartMaxMb = 2048;
 
   /// Video playback-rate slider range (0.5×–3.0×).
   static const double minVideoRate = 0.5;
@@ -172,6 +179,8 @@ class SettingsService extends ChangeNotifier {
   bool _videoPipEnabled = false;
   bool _videoHardwareDecoding = true;
   int _videoBufferSizeMb = defaultVideoBufferMb;
+  int _downloadPartMaxAgeHours = defaultDownloadPartMaxAgeHours;
+  int _downloadPartMaxMb = defaultDownloadPartMaxMb;
   double _videoLongPressRate = defaultVideoLongPressRate;
   double _videoLastRate = 1.0;
   bool _videoConfirmExit = false;
@@ -257,6 +266,9 @@ class SettingsService extends ChangeNotifier {
   bool get videoPipEnabled => _videoPipEnabled;
   bool get videoHardwareDecoding => _videoHardwareDecoding;
   int get videoBufferSizeMb => _videoBufferSizeMb;
+
+  int get downloadPartMaxAgeHours => _downloadPartMaxAgeHours;
+  int get downloadPartMaxMb => _downloadPartMaxMb;
 
   /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
   MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;
@@ -389,6 +401,13 @@ class SettingsService extends ChangeNotifier {
     _videoBufferSizeMb = _clampBufferMb(
       _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
     );
+    _downloadPartMaxAgeHours =
+        (_prefs!.getInt(_kDownloadPartMaxAgeHours) ??
+                defaultDownloadPartMaxAgeHours)
+            .clamp(1, 720);
+    _downloadPartMaxMb =
+        (_prefs!.getInt(_kDownloadPartMaxMb) ?? defaultDownloadPartMaxMb)
+            .clamp(64, 1024 * 64);
     _videoLongPressRate = _clampRate(
       _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
     );
@@ -711,6 +730,20 @@ class SettingsService extends ChangeNotifier {
     _videoBufferSizeMb = _clampBufferMb(mb);
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setInt(_kVideoBufferSizeMb, _videoBufferSizeMb);
+    notifyListeners();
+  }
+
+  Future<void> setDownloadPartMaxAgeHours(int hours) async {
+    _downloadPartMaxAgeHours = hours.clamp(1, 720);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kDownloadPartMaxAgeHours, _downloadPartMaxAgeHours);
+    notifyListeners();
+  }
+
+  Future<void> setDownloadPartMaxMb(int mb) async {
+    _downloadPartMaxMb = mb.clamp(64, 1024 * 64);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kDownloadPartMaxMb, _downloadPartMaxMb);
     notifyListeners();
   }
 

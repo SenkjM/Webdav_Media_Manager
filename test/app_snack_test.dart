@@ -17,6 +17,7 @@ void main() {
   Future<void> pumpHost(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        builder: AppSnack.hostBuilder,
         home: Scaffold(
           body: Builder(
             builder: (ctx) => Center(

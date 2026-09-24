@@ -55,7 +55,9 @@ dependencies:
   uuid: ^4.6.0
   intl: ^0.20.3
   collection: ^1.19.1
-  dio: ^5.11.1
+  dio: ^5.11.1
+  # 网络状态变化：下载队列用它做「恢复即重试」的加速信号（不是可达性判断）。
+  connectivity_plus: ^7.3.1
   audio_metadata_reader: ^1.4.1
   image: ^4.10.1
   flutter_local_notifications: ^22.3.1
@@ -66,6 +68,7 @@ dependencies:
   package_info_plus: ^10.2.1
   crypto: ^3.0.7
   share_plus: ^13.3.0
+  pointycastle: ^4.0.0
 
 dev_dependencies:
   flutter_test:

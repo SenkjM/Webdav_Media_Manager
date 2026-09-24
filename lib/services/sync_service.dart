@@ -133,13 +133,18 @@ class SyncService extends ChangeNotifier {
   List<WebDavAccount> get accounts => _accounts.accounts;
 
   WebDavAccount? get targetAccount {
+    // 云盘账号没有写路径（上传已砍，99 §7.2.1 / §7.2.8），同步目标只认
+    // WebDAV 类型；活跃账号是云盘时视为无同步目标。
     final connectedId = _webDav.accountId;
     if (connectedId != null) {
       for (final a in _accounts.accounts) {
-        if (a.id == connectedId) return a;
+        if (a.id == connectedId) {
+          return a.providerType == 'webdav' ? a : null;
+        }
       }
     }
-    return _accounts.activeAccount;
+    final active = _accounts.activeAccount;
+    return active != null && active.providerType == 'webdav' ? active : null;
   }
 
   String get syncRoot => _settings.syncRemoteRoot;

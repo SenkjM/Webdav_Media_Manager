@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/snack_duration.dart';
@@ -9,7 +11,10 @@ import '../services/settings_service.dart';
 /// * repeated taps queued a backlog of identical bars that then played one after
 ///   another long after the action;
 /// * a later message could not be seen until the earlier one finished;
-/// * there was no way to dismiss a message early.
+/// * there was no way to dismiss a message early;
+/// * messages were covered by AlertDialogs, the keyboard and the bottom
+///   navigation bar — the banner now renders **above the Navigator** (置于顶层),
+///   so nothing can cover it, while staying at the bottom of the screen.
 ///
 /// Rules:
 /// * **one slot** — showing a message removes whatever is on screen, so the
@@ -17,8 +22,7 @@ import '../services/settings_service.dart';
 /// * **every message carries 知道了** and tapping either the button or the text
 ///   removes it **immediately** (no exit animation to outrun);
 /// * once you dismiss a message, that exact text is *not* shown again until a
-///   different message appears — otherwise a background ticker re-showing the
-///   same line looks like "知道了 不管用";
+///   different message appears;
 /// * duration comes from Settings (short / normal / long / until dismissed /
 ///   off), so 设置 → 提示与通知 governs every in-app message.
 class AppSnack {
@@ -31,10 +35,12 @@ class AppSnack {
   /// Text the user explicitly closed; suppressed until the text changes.
   static String? _dismissedText;
 
-  /// Lets a service without a `BuildContext` (the download queue) post a message.
-  /// Wired to `MaterialApp.scaffoldMessengerKey`.
-  static final GlobalKey<ScaffoldMessengerState> messengerKey =
-      GlobalKey<ScaffoldMessengerState>();
+  /// The message currently on screen (single slot).
+  static final ValueNotifier<AppSnackMessage?> _current =
+      ValueNotifier<AppSnackMessage?>(null);
+
+  static Timer? _timer;
+  static int _token = 0;
 
   /// Set once from `AppState.init`.
   static void attach(SettingsService settings) => _settings = settings;
@@ -45,25 +51,31 @@ class AppSnack {
   /// Ignore an identical message repeating within this window.
   static const Duration repeatWindow = Duration(seconds: 3);
 
-  /// Same contract as [show], for callers that only have the global key.
-  static void showGlobal(String text, {bool error = false}) {
-    final messenger = messengerKey.currentState;
-    if (messenger == null) return;
-    _present(messenger, text, error: error);
+  /// Wire into `MaterialApp.builder`.
+  ///
+  /// The banner lives *above* the `Navigator`, so pages, dialogs and the
+  /// keyboard can never cover it; it stays at the bottom of the screen where
+  /// users expect an in-app message (置顶 = 置于顶层, not "moved to the top").
+  static Widget hostBuilder(BuildContext context, Widget? child) {
+    return Stack(
+      children: <Widget>[
+        ?child,
+        const _BannerHost(),
+      ],
+    );
   }
+
+  /// Same contract as [show], for callers without a `BuildContext` (the
+  /// download queue reports from background work).
+  static void showGlobal(String text, {bool error = false}) =>
+      _present(text, error: error);
 
   static void show(BuildContext context, String text, {bool error = false}) {
     if (!context.mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-    _present(messenger, text, error: error);
+    _present(text, error: error);
   }
 
-  static void _present(
-    ScaffoldMessengerState messenger,
-    String text, {
-    required bool error,
-  }) {
+  static void _present(String text, {required bool error}) {
     // Settings → 提示与通知 → 应用内消息 = 关闭.
     if (_settings?.snackMode.visible == false) return;
     // The user already closed exactly this message and nothing else has been
@@ -82,44 +94,29 @@ class AppSnack {
     // A different message ends the suppression of the previous one.
     _dismissedText = null;
 
-    void dismiss() {
-      _dismissedText = text;
-      // `remove`, not `hide`: removal is immediate and leaves no exit animation
-      // or queued bar behind, which is what made the button feel dead.
-      messenger.removeCurrentSnackBar();
-      messenger.clearSnackBars();
-    }
-
     // Replace, never queue.
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: GestureDetector(
-          // The bar is only hit-testable where it has content, so make the whole
-          // text area opaque and dismiss on tap.
-          behavior: HitTestBehavior.opaque,
-          onTap: dismiss,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(text),
-          ),
-        ),
-        duration: _settings?.snackMode.duration ?? defaultDuration,
-        // Flutter makes an action-carrying SnackBar persistent by default
-        // (`persist = persist ?? action != null`), which silently ignored the
-        // duration chosen in Settings — every message waited for a tap. We want
-        // 知道了 *and* the configured timeout.
-        persist: false,
-        behavior: SnackBarBehavior.floating,
-        dismissDirection: DismissDirection.horizontal,
-        backgroundColor: error ? const Color(0xFFB3261E) : null,
-        action: SnackBarAction(
-          label: '知道了',
-          textColor: error ? Colors.white : null,
-          onPressed: dismiss,
-        ),
-      ),
+    _remove();
+    _current.value = AppSnackMessage(
+      text: text,
+      error: error,
+      token: ++_token,
     );
+    _timer = Timer(
+      _settings?.snackMode.duration ?? defaultDuration,
+      _remove,
+    );
+  }
+
+  static void _remove() {
+    _timer?.cancel();
+    _timer = null;
+    _current.value = null;
+  }
+
+  static void _dismiss(String text) {
+    _dismissedText = text;
+    // Immediate removal: no exit animation to outrun, nothing queued behind.
+    _remove();
   }
 
   static void error(BuildContext context, String text) =>
@@ -128,8 +125,105 @@ class AppSnack {
   /// Resets the dedupe/dismissal state (tests).
   @visibleForTesting
   static void resetForTest() {
+    _remove();
     _lastText = null;
     _lastAt = null;
     _dismissedText = null;
+  }
+}
+
+/// One in-app message ([AppSnack] internal carrier).
+class AppSnackMessage {
+  const AppSnackMessage({
+    required this.text,
+    required this.error,
+    required this.token,
+  });
+
+  final String text;
+  final bool error;
+  final int token;
+}
+
+/// Renders the current message at the bottom, inside the builder-level stack.
+class _BannerHost extends StatelessWidget {
+  const _BannerHost();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<AppSnackMessage?>(
+      valueListenable: AppSnack._current,
+      builder: (context, message, _) {
+        if (message == null) return const SizedBox.shrink();
+        // 键盘弹出时抬到键盘之上，否则输入法会盖住消息。
+        final inset = MediaQuery.maybeOf(context)?.viewInsets.bottom ?? 0;
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(12, 0, 12, 12 + inset),
+              child: _BannerCard(
+                message: message,
+                onDismiss: () => AppSnack._dismiss(message.text),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The card itself: rounded, tappable anywhere, with 知道了 on the right.
+class _BannerCard extends StatelessWidget {
+  const _BannerCard({required this.message, required this.onDismiss});
+
+  final AppSnackMessage message;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final background = message.error
+        ? const Color(0xFFB3261E)
+        : theme.colorScheme.inverseSurface;
+    final foreground =
+        message.error ? Colors.white : theme.colorScheme.onInverseSurface;
+    return Material(
+      color: background,
+      elevation: 6,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onDismiss,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  message.text,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+                ),
+              ),
+              TextButton(
+                onPressed: onDismiss,
+                style: TextButton.styleFrom(
+                  foregroundColor: foreground,
+                  minimumSize: Size.zero,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Text('知道了'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
