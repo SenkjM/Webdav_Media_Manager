@@ -265,17 +265,22 @@
 
 1. **上传砍掉**：`CloudDriver` 接口无 put；云盘账号上 `writeBytes` / `ensureDirectory` 与 backup / sync / playlist 的云端写路径一律禁用（显式报语义，不做静默失败）。WebDAV 账号行为不变。
 2. **`WebDavService` 对外 API 与行为不变**（14 个文件直接 import 它，全部零改动）。唯一接入缝：`_connFor` / `_resolve`（`webdav_service.dart:44-54`）之后按账号类型转调 `CloudDriveService` 同名方法。绕不开的配套：`WebDavAccount.providerType`（[10 T6](10-SIDE-QUESTS.md)）；云盘凭证走 AccountsService + credential vault 独立通道，`configure()` 的 url/user/pass 形状不动。
-3. **能力遮罩**：账号类型 → 能力集合（浏览 / 下载 / 流式 / 建目录 / 删除 / 改名 / 移动 / 复制），WebDAV = 全量。网络库行操作与多选工具栏按钮**先查遮罩再启用**。实现先做账号类型静态表；账号级覆盖等有真实需求再议（7.8）。
+3. **能力遮罩**：账号类型 → 能力集合，枚举定型为**列出 / 读取 / 写入 / 移动 / 复制 / 删除**（改名归「移动」，建目录与上传归「写入」；列出默认拥有、不在用户界面显示）。云盘类型由驱动静态给定；**WebDAV 账号的能力由用户在表单里配置**（默认全量）。网络库行操作与多选工具栏按钮**先查遮罩再启用**。
 4. **驱动范围已定界**：除 7.3 / 7.4 / 7.5 列出的驱动外，其余一律不做，不进文档不展开。
+5. **读取能力的绑定**（用户原话「缓存音乐、下载文件、浏览、播放、流式传输功能绑定到账号类型的读取能力」）：这五类功能都要求账号具备「读取」。
+6. **禁用即隐藏**：能力被遮罩时，单文件「更多」菜单的对应条目与多选工具栏的对应按钮**隐藏而非置灰**；「更多」按钮本身只要还有可用条目就保留。
+7. **账号表单定型**：第一行名称、第二行类型（默认 WebDAV），选类型后动态出该盘自身字段。WebDAV 在服务器 URL 之下新增「远程路径」（默认 `/`，空置视为 `/`），**云盘账号同样有远程路径**；保存时 URL 结尾 `/` 隐式清除（`configure()` 已有同样的 trim，表单层保持同一规则）。云盘字段默认照 worker `Addition` 原样保留以便移植，逐盘细节落实时询问用户。
+8. **云端写目标唯一选择点**（本轮查证）：`sync_screen.dart:697-714`「① 选择网盘」下拉（落 `settings.syncAccountId`；凭证 / 歌单 / 音乐库 / 备份共用这条远端路径）——**只列出具备「写入」能力的账号**。`backup_service.dart:100` 的全量账号遍历是备份档案的**凭据导出**（密码加密入档），不是写目标选择，不过滤，云盘账号凭据也该进备份；playlist / library sync 经 `SyncService.targetAccount` 汇到同一选择点，无需单独过滤。
 
 ### 7.3 首批驱动（优先做）
 
 `aliyundrive_open`、`baidu_netdisk`、`quark`、`115open`、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。共同特征：refresh_token 或 cookie **粘贴式**登录、直链 + 必需头、写操作全、无重加密（worker 驱动 18–40KB）。移植底稿 `localdev/OpenList-Worker/src/backend/drivers/<name>/`，语义兜底对照 Go 版同目录。
+**首个端到端驱动：`baidu_netdisk`**（用户有测试条件）；`aliyundrive_open` 顺延——缺少测试条件，发布后靠其他用户反馈验收。
 注意：`139` 带字符集标记，真机要先验编码。
 
 ### 7.4 只读家族（能力遮罩 = 只读）
 
-`115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`、`url_tree`——浏览 / 下载 / 流式可用，写操作按遮罩隐藏（worker 驱动内五项写方法全部显式抛「不支持」，二次扫描证实）。实施批次未定（7.8）。
+`115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`、`url_tree`——浏览 / 下载 / 流式可用，写操作按遮罩隐藏（worker 驱动内五项写方法全部显式抛「不支持」，二次扫描证实）。批次已定：先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制，再批量铺其余。
 
 ### 7.5 待开发（计划未实现，不在本次范围）
 
@@ -295,15 +300,13 @@
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | 0 | 地基：[10 T6](10-SIDE-QUESTS.md) 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
-| 1 | 首个驱动端到端（推荐 `aliyundrive_open` 或 `baidu_netdisk`，refresh_token 最干净） | 真机：添加账号 → 浏览 → 下载 → 流式 |
-| 2 | 能力遮罩接线 UI：行操作 / 多选按钮按遮罩启用禁用 + 只读账号语义 | 真机：只读账号无写按钮 |
-| 3 | 首批其余驱动逐个移植 | 逐盘真机验收 |
+| 1 | 首个驱动端到端：`baidu_netdisk`（用户有测试条件） | 真机：添加账号 → 浏览 → 下载 → 流式 |
+| 2 | 能力遮罩接线 UI：WebDAV 表单能力勾选 + 行操作 / 多选按钮按遮罩隐藏 + 只读试点（`openlist_share` + `github_releases`） | 真机：只读账号无写入口；WebDAV 能力勾选生效 |
+| 3 | 首批其余驱动逐个移植（`aliyundrive_open` 靠后，验收依赖发布后用户反馈） | 逐盘真机验收 |
 | 4 | 云端写路径禁用语义（backup / sync / playlist 对云盘账号的提示） | 真机：云盘账号同步入口有明确文案 |
 
-### 7.8 待讨论细节（已开始，未定型）
+### 7.8 剩余未定
 
-1. 能力遮罩的判定层级（账号类型静态表 vs 账号级覆盖）。
-2. 凭证录入三类交互（refresh_token / cookie / 账密）的表单信息架构与逐盘 schema。
-3. 首个打通的驱动选谁。
-4. 只读家族的实施批次（先 1–2 个验证遮罩，还是全量一起）。
-5. 云端写禁用的 UI 形态（隐藏入口 vs 置灰 + 提示）。
+1. 逐盘表单字段与「如何获取 token / cookie」的教程文案（worker `Addition` 原样起步，落实每个驱动时询问用户）。
+2. crypt 的「本地流桥 vs 仅下载」取舍（开工 crypt 前定）。
+3. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 7.6）。
