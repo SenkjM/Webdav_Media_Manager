@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../utils/app_snack.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
@@ -256,12 +258,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     final player = _player;
     if (player != null) await _applyPlaylistMode(player);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(next.labelZh),
-          duration: const Duration(seconds: 1),
-        ),
-      );
+      AppSnack.show(context, next.labelZh);
+
     }
   }
 

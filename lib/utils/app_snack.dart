@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/snack_duration.dart';
@@ -9,7 +11,9 @@ import '../services/settings_service.dart';
 /// * repeated taps queued a backlog of identical bars that then played one after
 ///   another long after the action;
 /// * a later message could not be seen until the earlier one finished;
-/// * there was no way to dismiss a message early.
+/// * there was no way to dismiss a message early;
+/// * messages sat at the bottom, where AlertDialogs, the keyboard and the bottom
+///   navigation bar covered them — they are now a top banner instead.
 ///
 /// Rules:
 /// * **one slot** — showing a message removes whatever is on screen, so the
@@ -31,6 +35,12 @@ class AppSnack {
   /// Text the user explicitly closed; suppressed until the text changes.
   static String? _dismissedText;
 
+  /// The banner currently on screen (single slot: a new message replaces it).
+  static OverlayEntry? _entry;
+
+  /// Auto-dismiss timer for [_entry].
+  static Timer? _timer;
+
   /// Lets a service without a `BuildContext` (the download queue) post a message.
   /// Wired to `MaterialApp.scaffoldMessengerKey`.
   static final GlobalKey<ScaffoldMessengerState> messengerKey =
@@ -47,20 +57,17 @@ class AppSnack {
 
   /// Same contract as [show], for callers that only have the global key.
   static void showGlobal(String text, {bool error = false}) {
-    final messenger = messengerKey.currentState;
-    if (messenger == null) return;
-    _present(messenger, text, error: error);
+    final context = messengerKey.currentContext;
+    if (context == null) return;
+    _present(context, text, error: error);
   }
 
   static void show(BuildContext context, String text, {bool error = false}) {
     if (!context.mounted) return;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger == null) return;
-    _present(messenger, text, error: error);
+    _present(context, text, error: error);
   }
-
   static void _present(
-    ScaffoldMessengerState messenger,
+    BuildContext context,
     String text, {
     required bool error,
   }) {
@@ -82,54 +89,126 @@ class AppSnack {
     // A different message ends the suppression of the previous one.
     _dismissedText = null;
 
+    // 顶部横幅挂在根 Overlay 上：ScaffoldMessenger 的 SnackBar 只能贴底，会被
+    // AlertDialog / 键盘 / 底部导航挡住（真机上往往只露出一条边）。
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+
     void dismiss() {
       _dismissedText = text;
-      // `remove`, not `hide`: removal is immediate and leaves no exit animation
-      // or queued bar behind, which is what made the button feel dead.
-      messenger.removeCurrentSnackBar();
-      messenger.clearSnackBars();
+      // 立即移除，不留退场动画，也不排队——与旧 SnackBar 契约一致。
+      _removeEntry();
     }
 
     // Replace, never queue.
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: GestureDetector(
-          // The bar is only hit-testable where it has content, so make the whole
-          // text area opaque and dismiss on tap.
-          behavior: HitTestBehavior.opaque,
-          onTap: dismiss,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Text(text),
-          ),
-        ),
-        duration: _settings?.snackMode.duration ?? defaultDuration,
-        // Flutter makes an action-carrying SnackBar persistent by default
-        // (`persist = persist ?? action != null`), which silently ignored the
-        // duration chosen in Settings — every message waited for a tap. We want
-        // 知道了 *and* the configured timeout.
-        persist: false,
-        behavior: SnackBarBehavior.floating,
-        dismissDirection: DismissDirection.horizontal,
-        backgroundColor: error ? const Color(0xFFB3261E) : null,
-        action: SnackBarAction(
-          label: '知道了',
-          textColor: error ? Colors.white : null,
-          onPressed: dismiss,
-        ),
+    _removeEntry();
+    final entry = OverlayEntry(
+      builder: (_) => _TopBanner(
+        text: text,
+        error: error,
+        onDismiss: dismiss,
       ),
+    );
+    _entry = entry;
+    overlay.insert(entry);
+    _timer = Timer(
+      _settings?.snackMode.duration ?? defaultDuration,
+      _removeEntry,
     );
   }
 
+  /// Removes the banner if one is on screen. Safe to call twice.
+  static void _removeEntry() {
+    _timer?.cancel();
+    _timer = null;
+    final entry = _entry;
+    _entry = null;
+    if (entry == null) return;
+    try {
+      if (entry.mounted) entry.remove();
+    } catch (_) {
+      // 树已销毁（测试切换 / 应用退出）时 Overlay 会先清理 entry。
+    }
+  }
   static void error(BuildContext context, String text) =>
       show(context, text, error: true);
 
   /// Resets the dedupe/dismissal state (tests).
   @visibleForTesting
   static void resetForTest() {
+    _removeEntry();
     _lastText = null;
     _lastAt = null;
     _dismissedText = null;
+  }
+}
+
+/// 应用内消息的顶部横幅：圆角卡片挂在根 Overlay 顶部安全区下方，整块可点、
+/// 右侧「知道了」立即移除。错误消息用错误色，其余用反色面。
+class _TopBanner extends StatelessWidget {
+  const _TopBanner({
+    required this.text,
+    required this.error,
+    required this.onDismiss,
+  });
+
+  final String text;
+  final bool error;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final background =
+        error ? const Color(0xFFB3261E) : theme.colorScheme.inverseSurface;
+    final foreground =
+        error ? Colors.white : theme.colorScheme.onInverseSurface;
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: Material(
+            color: background,
+            elevation: 6,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: onDismiss,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        text,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium
+                            ?.copyWith(color: foreground),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: onDismiss,
+                      style: TextButton.styleFrom(
+                        foregroundColor: foreground,
+                        minimumSize: Size.zero,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      child: const Text('知道了'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

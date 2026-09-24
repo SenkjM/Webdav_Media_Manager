@@ -318,7 +318,7 @@
 - **已完成**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）；名称编码三档（base32768 用 rclone 官方 17 条 golden 向量验证）。
 - **待办（下一批）**：本地流桥（下载走内存流 `openContent`；流式播放内存流优先、不可行再本地 HTTP，桥只服务 crypt 不碰原播放逻辑）；libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。
 - **盐**：rclone `cipher.go` 内置 `defaultSalt`（16 字节 `A8 0D F4 3A 8F BD 03 08 A7 CA B8 3E 58 1F 86 B1`），salt 为空即用它；OpenList 把 salt 去掉 obfuscated 前缀后作 `password2` 交给 rclone，语义相同 → 我方「留空用内置默认盐」与两端一致。密码与盐一律按 UTF-8 字节进 scrypt（对应 Go 的 `[]byte(s)`）。
-- **本批修复（真机反馈）**：① 云盘表单 `CloudDriverField` 的控制器创建曾被误删 → 密码填了仍报「请填写密码」（TextField 自建内部控制器，校验读到 null）；② 表单校验错误改为弹窗内联显示（SnackBar 被 AlertDialog 盖住，真机只露出一条边）；③ 下拉框加 `isExpanded` 并去掉标签长括号，消除右溢出。
+- **本批修复（真机反馈）**：① 云盘表单 `CloudDriverField` 的控制器创建曾被误删 → 密码填了仍报「请填写密码」（TextField 自建内部控制器，校验读到 null）；② 表单校验错误改为弹窗内联显示（SnackBar 被 AlertDialog 盖住，真机只露出一条边）；③ 下拉框加 `isExpanded` 并去掉标签长括号，消除右溢出。④ 应用内消息（`AppSnack`）改为根 Overlay 顶部横幅——底部 SnackBar 会被 AlertDialog / 键盘 / 底部导航挡住；音乐流式页切模式的提示也统一走 `AppSnack`，仓库里不再有裸 `showSnackBar`。
 - **base32768 移植**：`cipher/base32768.dart`（逐条对齐上游 `Max-Sum/base32768`：15 位块 + 末块 7 位、补 1、排序后前 4 字符为尾部字母表）与 `cipher/base32768_table.dart`（由 localdev 脚本从上游包生成，1028 个码点）；测试 `test/base32768_test.dart` 用 rclone `TestEncodeFileNameBase32768` 的 17 条向量 + 非法输入位置 + 0..200 全长度往返。
 
 - **crypt**：rclone 兼容加密层（worker 侧 aes + hash-wasm）。它是 MustProxy 驱动——开工前必须先定「本地流桥」（应用内 127.0.0.1 HttpServer 把驱动字节流转成 media_kit 可拉的 URL）还是「仅下载播放」。

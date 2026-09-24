@@ -73,7 +73,7 @@ void main() {
 
   test('换行被忽略（与 rclone 相同）', () {
     final enc = Base32768Encoding.safe.encode(utf8.encode('1234567890'));
-    final wrapped = enc.substring(0, 2) + '\n' + enc.substring(2);
+    final wrapped = '${enc.substring(0, 2)}\n${enc.substring(2)}';
     expect(utf8.decode(Base32768Encoding.safe.decode(wrapped)), '1234567890');
   });
 }
