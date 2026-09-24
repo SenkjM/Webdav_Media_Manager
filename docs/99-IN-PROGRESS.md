@@ -305,7 +305,17 @@
 
 `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`、`url_tree`——浏览 / 下载 / 流式可用，写操作按遮罩隐藏（worker 驱动内五项写方法全部显式抛「不支持」，二次扫描证实）。批次已定：先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制，再批量铺其余。
 
-### 7.5 待开发（计划未实现，不在本次范围）
+### 7.5 待开发
+
+#### crypt（阶段进行中：cipher 层已完成并互操作验证）
+
+- **格式**：逐字节对齐 rclone crypt（OpenList crypt 直接包 rclone 的 cipher，v1.75.1）。内容 = 魔数 "RCLONE\\0\\0"(8B) + 随机 nonce(24B) + 64KiB 明文分块 secretbox（XSalsa20-Poly1305，16B MAC，块 nonce = 文件 nonce + 块号 LE 加法）；KDF = scrypt(N=16384, r=8, p=1, 80B → dataKey32 / nameKey32 / nameTweak16)，空密码 = 全零密钥（格式一部分）；名字 = PKCS7(16) + EME(AES-256, nameTweak，≤128 块) + Base32（Hex 表小写去填充），off 模式 = 原名 + `.bin`（文件）/ 原名（目录），混淆 = rclone obfuscate 方案（含 `!` 双写、latin1 / ≥U+100 区段）。
+- **实现**：`lib/services/cloud_drivers/crypt/cipher/`（salsa20 / secretbox / eme / name_codec / rclone_cipher），pointycastle 组合，无新增原生依赖。
+- **互操作验证**：本机编译 rclone v1.75.1 生成金标向量（名字 ×4、内容 ×2、混淆 ×1）+ NaCl 官方向量，`test/crypt_cipher_test.dart` 固化；生成环境在 localdev（gitignored）。
+- **字段（照 OpenList meta.go）**：filename_encryption（off/standard/obfuscate）、directory_name_encryption、password、salt；另加源账号引用与源目录（用户决定：源 = 已有账号 id，**WebDAV 也可作源**；crypt 浏览根 = 源账号远程路径 + 源目录，如源账号根 /456 + 源目录 /789 → 实际落 /456/789）。
+- **坏名字行为（照 OpenList driver.go 202-219）**：解密失败用原名原大小透传，条目绝不丢。
+- **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（7.2.1）。
+- **待办（下一批）**：CryptSource 接口 + 云盘 / WebDAV 适配器与兼容层注入（CloudDriverEnv，源不存在 → 浏览时报错不炸注册）；本地流桥（下载走内存流 openContent；流式播放内存流优先、不可行再本地 HTTP，桥只服务 crypt 不碰原播放逻辑）；libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）。
 
 - **crypt**：rclone 兼容加密层（worker 侧 aes + hash-wasm）。它是 MustProxy 驱动——开工前必须先定「本地流桥」（应用内 127.0.0.1 HttpServer 把驱动字节流转成 media_kit 可拉的 URL）还是「仅下载播放」。
 - **netease_music**：cookie + rsa/aes 登录；只支持删除，不能建目录 / 改名 / 移动 / 复制。对音乐管理器语义贴合。
@@ -333,7 +343,7 @@
 
 ### 7.8 剩余未定
 
-1. crypt 的「本地流桥 vs 仅下载」取舍（开工 crypt 前定）。
+1. crypt 流桥形态（用户已定向，细节随实现定）：下载/缓存走内存流解密（已定）；流式播放内存流优先、media_kit 仅认 URL 时退本地 HTTP 桥（只服务 crypt，不碰原播放逻辑）；cipher 引擎切换（纯 Dart / libsodium FFI）的落点（设置全局 vs crypt 账号级）在引擎落地时定。
 2. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 7.6）。baidu 首轮真机验收就是第一手数据。
 3. 后续驱动（`aliyundrive_open` 等）落实表单时仍按 7.3.1 的模式先报字段清单给用户确认；教程文案统一链 OpenList 官方文档对应驱动页。
 
