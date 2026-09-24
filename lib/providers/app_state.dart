@@ -24,19 +24,21 @@ import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
 import '../services/sync_service.dart';
 import '../services/video_playback_service.dart';
+import '../services/cloud_drive_service.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
 class AppState extends ChangeNotifier {
   AppState({required MusicAudioHandler audioHandler}) {
     settings = SettingsService();
-    webDav = WebDavService();
     notificationPermission = NotificationPermissionService();
     final db = LibraryDatabase();
     libraryDb = db;
     cache = CacheService(libraryDb: db);
     library = LibraryService(db: db);
     accounts = AccountsService(db: db);
+    cloudDrive = CloudDriveService(accounts: accounts);
+    webDav = WebDavService(cloudDrive: cloudDrive);
     playlists = PlaylistService(webDav: webDav);
     backup = BackupService(
       libraryDb: db,
@@ -80,6 +82,7 @@ class AppState extends ChangeNotifier {
 
   late final SettingsService settings;
   late final WebDavService webDav;
+  late final CloudDriveService cloudDrive;
   late final CacheService cache;
   late final LibraryDatabase libraryDb;
   late final LibraryService library;
@@ -155,6 +158,8 @@ class AppState extends ChangeNotifier {
   /// available no matter which account the user is browsing.
   Future<void> registerAllAccounts() async {
     for (final a in accounts.accounts) {
+      // 云盘账号不建 WebDAV 客户端（99 §7.2.2），由 cloudDrive 统一登记。
+      if (CloudDriveService.isCloudType(a.providerType)) continue;
       final pass = await accounts.passwordFor(a.id) ?? '';
       webDav.configure(
         accountId: a.id,
@@ -169,6 +174,10 @@ class AppState extends ChangeNotifier {
     for (final id in webDav.registeredAccountIds) {
       if (!live.contains(id)) webDav.disconnect(accountId: id);
     }
+    cloudDrive.registerAccounts(
+      accounts.accounts
+          .where((a) => CloudDriveService.isCloudType(a.providerType)),
+    );
     webDav.setActiveAccount(accounts.activeAccountId ?? '');
   }
 

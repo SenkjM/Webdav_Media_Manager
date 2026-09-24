@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/account_capabilities.dart';
 import '../models/webdav_account.dart';
 import '../utils/credential_vault_crypto.dart';
 import '../utils/track_identity.dart';
@@ -93,6 +94,14 @@ class AccountsService extends ChangeNotifier {
     return null;
   }
 
+  /// 按 id 取账号（云盘分流缝 / 能力解析用）。
+  WebDavAccount? accountById(String id) {
+    for (final a in _accounts) {
+      if (a.id == id) return a;
+    }
+    return null;
+  }
+
   bool get hasAccounts => _accounts.isNotEmpty;
 
   Future<void> init() async {
@@ -146,12 +155,21 @@ class AccountsService extends ChangeNotifier {
     required String url,
     required String username,
     required String password,
+    String providerType = 'webdav',
+    String remotePath = '/',
+    int? capabilities,
   }) async {
     final account = WebDavAccount(
       id: _uuid.v4(),
       name: name.trim().isEmpty ? url.trim() : name.trim(),
       url: url.trim().replaceAll(RegExp(r'/+$'), ''),
       username: username,
+      providerType: providerType,
+      remotePath: WebDavAccount.normalizeRemotePath(remotePath),
+      capabilities: capabilities ??
+          (providerType == 'webdav'
+              ? AccountCaps.all
+              : AccountCaps.forType(providerType)),
     );
     await _db.upsertAccount(account);
     await _secure.write(key: '$_kPassPrefix${account.id}', value: password);
@@ -172,6 +190,9 @@ class AccountsService extends ChangeNotifier {
     required String url,
     required String username,
     String? password,
+    String? providerType,
+    String? remotePath,
+    int? capabilities,
   }) async {
     final idx = _accounts.indexWhere((a) => a.id == id);
     if (idx < 0) return;
@@ -179,6 +200,11 @@ class AccountsService extends ChangeNotifier {
       name: name.trim().isEmpty ? url.trim() : name.trim(),
       url: url.trim().replaceAll(RegExp(r'/+$'), ''),
       username: username,
+      providerType: providerType,
+      remotePath: remotePath == null
+          ? null
+          : WebDavAccount.normalizeRemotePath(remotePath),
+      capabilities: capabilities,
     );
     await _db.upsertAccount(updated);
     if (password != null) {

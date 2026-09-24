@@ -7,6 +7,7 @@ import 'package:webdav_client/webdav_client.dart' as webdav;
 import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
+import '../services/cloud_drive_service.dart';
 import '../utils/audio_extensions.dart';
 
 /// Thin WebDAV client wrapper.
@@ -26,6 +27,12 @@ class WebDavService extends ChangeNotifier {
   /// Account selected by the network library (browsing only).
   String? _activeAccountId;
   String? _lastError;
+
+  /// 云盘账号分流（99 §7.2.2）：非 'webdav' 的账号不在 _conns，
+  /// 对外方法先经 [_cloudOf] 转调 CloudDriveService。签名与对外行为不变。
+  final CloudDriveService? _cloudDrive;
+
+  WebDavService({CloudDriveService? cloudDrive}) : _cloudDrive = cloudDrive;
 
   /// Whether the active account has a usable client.
   bool get isConnected => _connFor(_activeAccountId) != null;
@@ -132,6 +139,15 @@ class WebDavService extends ChangeNotifier {
         (FileTypeConfig().categoryFor(name) == FileCategory.music
             ? StreamKind.music
             : StreamKind.video);
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) {
+      return cloud.buildStreamSource(
+        remotePath: remotePath,
+        name: name,
+        accountId: accountId,
+        kind: kind,
+      );
+    }
     final conn = _resolve(accountId);
     if (conn == null) return null;
     final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
@@ -154,6 +170,13 @@ class WebDavService extends ChangeNotifier {
 
   /// PROPFIND / ping to verify credentials of one account.
   Future<bool> testConnection({required String accountId}) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) {
+      final ok = await cloud.testConnection(accountId);
+      _lastError = ok ? null : '云盘驱动尚未接入';
+      notifyListeners();
+      return ok;
+    }
     final conn = _resolve(accountId);
     if (conn == null) {
       _lastError = '未配置 WebDAV';
@@ -186,6 +209,8 @@ class WebDavService extends ChangeNotifier {
     String path, {
     FileTypeConfig? fileTypes,
   }) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.listDirectory(accountId, path, fileTypes: fileTypes);
     final client = _requireClient(accountId);
     final types = fileTypes ?? FileTypeConfig();
     final normalized = path.isEmpty ? '/' : path;
@@ -229,6 +254,8 @@ class WebDavService extends ChangeNotifier {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.downloadToFile(accountId, remotePath, localFile, onProgress: onProgress, cancelToken: cancelToken);
     final client = _requireClient(accountId);
     await localFile.parent.create(recursive: true);
     await client.read2File(
@@ -240,6 +267,8 @@ class WebDavService extends ChangeNotifier {
   }
 
   Future<Uint8List> readAsBytes(String accountId, String remotePath) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.readAsBytes(accountId, remotePath);
     final client = _requireClient(accountId);
     final data = await client.read(remotePath);
     return Uint8List.fromList(data);
@@ -251,12 +280,16 @@ class WebDavService extends ChangeNotifier {
     String remotePath,
     Uint8List data,
   ) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.writeBytes(accountId, remotePath, data);
     final client = _requireClient(accountId);
     await client.write(remotePath, data);
   }
 
   /// Ensure directory exists (mkdirAll) on a specific account.
   Future<void> ensureDirectory(String accountId, String path) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.ensureDirectory(accountId, path);
     final client = _requireClient(accountId);
     var normalized = path.trim();
     if (normalized.isEmpty) return;
@@ -265,11 +298,15 @@ class WebDavService extends ChangeNotifier {
   }
 
   Future<void> createFolder(String accountId, String path) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.createFolder(accountId, path);
     final client = _requireClient(accountId);
     await client.mkdir(path);
   }
 
   Future<void> deletePath(String accountId, String path) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.deletePath(accountId, path);
     final client = _requireClient(accountId);
     await client.remove(path);
   }
@@ -281,11 +318,15 @@ class WebDavService extends ChangeNotifier {
     String newPath, {
     bool overwrite = false,
   }) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.renamePath(accountId, oldPath, newPath, overwrite: overwrite);
     final client = _requireClient(accountId);
     await client.rename(oldPath, newPath, overwrite);
   }
 
   Future<void> copyPath(String accountId, String oldPath, String newPath) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.copyPath(accountId, oldPath, newPath);
     final client = _requireClient(accountId);
     // Overwrite=false：目标已存在时让服务端报错（412 / 409），由上层先算好不冲突的名字。
     await client.copy(oldPath, newPath, false);
@@ -293,6 +334,8 @@ class WebDavService extends ChangeNotifier {
 
   /// 移动（WebDAV MOVE）。语义等同重命名，但可以跨目录。
   Future<void> movePath(String accountId, String oldPath, String newPath) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) return cloud.movePath(accountId, oldPath, newPath);
     final client = _requireClient(accountId);
     await client.rename(oldPath, newPath, false);
   }
@@ -324,6 +367,13 @@ class WebDavService extends ChangeNotifier {
       }
     }
     return result;
+  }
+
+  /// 分流缝：云盘账号返回 [CloudDriveService]，WebDAV 账号返回 null。
+  CloudDriveService? _cloudOf(String? accountId) {
+    final cd = _cloudDrive;
+    if (cd == null || accountId == null) return null;
+    return cd.handles(accountId) ? cd : null;
   }
 
   webdav.Client _requireClient(String accountId) {
