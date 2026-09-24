@@ -263,9 +263,9 @@
 
 ### 7.2 已定型的取舍
 
-1. **上传砍掉**：`CloudDriver` 接口无 put；云盘账号上 `writeBytes` / `ensureDirectory` 与 backup / sync / playlist 的云端写路径一律禁用（显式报语义，不做静默失败）。WebDAV 账号行为不变。
+1. **上传砍掉**：`CloudDriver` 接口无 put；云盘账号上 `writeBytes` / `ensureDirectory` 与 backup / sync / playlist 的云端写路径一律禁用（显式报语义，不做静默失败）。**例外**：`createFolder` 走独立「创建文件夹」位（见 7.2.3 / 7.3.2），baidu 支持。WebDAV 账号行为不变。
 2. **`WebDavService` 对外 API 与行为不变**（14 个文件直接 import 它，全部零改动）。唯一接入缝：`_connFor` / `_resolve`（`webdav_service.dart:44-54`）之后按账号类型转调 `CloudDriveService` 同名方法。绕不开的配套：`WebDavAccount.providerType`（[10 T6](10-SIDE-QUESTS.md)）；云盘凭证走 AccountsService + credential vault 独立通道，`configure()` 的 url/user/pass 形状不动。
-3. **能力遮罩**：账号类型 → 能力集合，枚举定型为**列出 / 读取 / 写入 / 移动 / 复制 / 删除**（改名归「移动」，建目录与上传归「写入」；列出默认拥有、不在用户界面显示）。云盘类型由驱动静态给定；**WebDAV 账号的能力由用户在表单里配置**（默认全量）。网络库行操作与多选工具栏按钮**先查遮罩再启用**；新建文件夹按钮同样按「写入」遮罩（网络库 AppBar 与目录选择器两处，已实现）。
+3. **能力遮罩**：账号类型 → 能力集合，枚举定型为**列出 / 读取 / 写入 / 创建文件夹 / 移动 / 复制 / 删除**（列出默认拥有、不在用户界面显示；「创建文件夹」按用户决定从「写入」拆出独立位，上传与写同步仍归「写入」）。云盘类型由驱动静态给定；**WebDAV 账号的能力由用户在表单里配置**（默认全量）。网络库行操作与多选工具栏按钮**先查遮罩再启用**；新建文件夹按钮按「创建文件夹」位遮罩（网络库 AppBar 与目录选择器两处，已实现）；WebDAV 表单的能力勾选区已实现（读取 / 写入 / 创建文件夹 / 移动 / 复制 / 删除）。**静态表登记原则（用户决定）**：`AccountCaps.staticCaps` 只登记已落地驱动（当前仅 `baidu_netdisk`），未落地盘先记 7.3.2 的核查表，落地时照表抄。
   - **与 OpenList 的对比（本轮查证）**：它的每驱动能力标志只有传输侧（`NoUpload` / `OnlyProxy` / `NoLinkURL` / `PreferProxy`，`internal/driver/config.go`），**写操作没有能力位、不做按钮遮罩**——只读驱动（openlist_share 等）在操作时返回 `errs.NotImplement` 由前端弹错；WebDAV 层按用户权限位（WEBDAV_READ / WEBDAV_MANAGE）拦截。WDMM 按本项目「禁用即隐藏」的决策在按钮层遮罩，比 OpenList 更进一步，属于有意差异。
 4. **驱动范围已定界**：除 7.3 / 7.4 / 7.5 列出的驱动外，其余一律不做，不进文档不展开。
 5. **读取能力的绑定**（用户原话「缓存音乐、下载文件、浏览、播放、流式传输功能绑定到账号类型的读取能力」）：这五类功能都要求账号具备「读取」。
@@ -287,7 +287,15 @@
 - **存储映射**：refresh_token / client_id / client_secret / api_url_address / local_refresh / access_token 缓存 → `AccountsService.saveDriverConfig`（secure storage JSON，按账号隔离，删号即清）；remote_path / provider_type → accounts 表。
 - **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
 - **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动）、`cloud_drive_service.dart`（工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。
-- **阶段 1 真机清单**：添加账号（换 token 成功 / 错误 token 原文报错不落库）；浏览（远程路径生效）；下载 / 缓存音乐 / 本地播放；视频与音乐流式（直链 302 + UA `pan.baidu.com`）；重命名 / 删除 / 移动 / 复制；新建文件夹按钮已按「写入」能力遮罩隐藏（网络库 AppBar + 目录选择器两处，见 7.2.6）。
+- **阶段 1 真机清单**：添加账号（换 token 成功 / 错误 token 原文报错不落库）；浏览（远程路径生效）；下载 / 缓存音乐 / 本地播放；视频与音乐流式（直链 302 + UA `pan.baidu.com`）；重命名 / 删除 / 移动 / 复制；新建文件夹按钮按「创建文件夹」位遮罩；baidu 含该位，云盘账号可建目录，WebDAV 由表单勾选决定（见 7.2.6）。
+
+### 7.3.2 mkdir（创建文件夹）能力逐盘核查（OpenList 源码，本轮查证）
+
+- **机制**：Go 版把 MakeDir / Move / Rename / Copy / Remove / Put 做成 `internal/driver` 的**可选接口**（方法名是 `MakeDir`，不是 Mkdir），87 个驱动都有方法签名，只读 / 索引驱动在方法体里返回 `errs.NotImplement`（桩实现）；op 层 type-switch 调用。Worker TS 把 mkdir 做成 `StorageDriver` 必备方法，行为与 Go 一致——真实现或抛「not supported」。**两版能力面一致**（worker 是我们的移植底稿）。
+- **首批 9 盘全部真实现 mkdir**（静态表 mkdir = 有）：`baidu_netdisk`（Go `driver.go:96` MakeDir → `create(path, 0, 1)` isdir=1，已验真；worker 同）、`aliyundrive_open`、`quark`、`115open`（worker `driver.ts:339` → `client.mkdir` 真调用，勿被「方法体含 throw」的粗扫误判）、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。
+- **只读家族 mkdir = 无（桩）**：`115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`；`url_tree` 疑似桩（落表前再确认一次）。
+- **待开发**：`netease_music` 无 mkdir（桩）；`crypt` 透传内挂驱动，落表时按宿主动态给位、不进静态表。
+- **登记**：已落地 → `AccountCaps.staticCaps`；未落地 → 本表，落地时照表抄（用户决定：写代码会影响运行的先只进文档）。
 
 ### 7.4 只读家族（能力遮罩 = 只读）
 
@@ -324,4 +332,4 @@
 1. crypt 的「本地流桥 vs 仅下载」取舍（开工 crypt 前定）。
 2. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 7.6）。baidu 首轮真机验收就是第一手数据。
 3. 后续驱动（`aliyundrive_open` 等）落实表单时仍按 7.3.1 的模式先报字段清单给用户确认；教程文案统一链 OpenList 官方文档对应驱动页。
-4. 若想让 baidu 账号也能「新建文件夹」（OpenList 的 baidu 驱动支持 mkdir），需把 mkdir 从「写入」拆成独立能力位——当前按已定型映射（建目录归写入、云盘 write=false）隐藏，有真实需求再议。
+
