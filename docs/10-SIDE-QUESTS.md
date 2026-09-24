@@ -56,3 +56,12 @@
 - **适合顺手的时机**：下一次改动正好碰通知或打包配置。
 - **判断条件**：`values/strings.xml` 目前**不存在**（已核实），所以这是新增而非改写；渠道 ID 变更会让老用户看到新旧两个渠道，需要接受这一点。
 - **边界**：不要顺手改通知的其它行为（[07](07-NOTIFICATIONS.md) 里渠道参数两侧必须一致那条约束仍然有效）。
+
+### T6 · 账号模型补 `providerType` 字段  `待发布`
+
+- **来源**：云盘 Provider 立项（[99 §7](99-IN-PROGRESS.md)）。
+- **目标**：`WebDavAccount`（`lib/models/webdav_account.dart`）加 `providerType` 字段（默认 `'webdav'`），`toMap` / `fromMap` / `copyWith` 同步，`AccountsService` 读写透传，数据库表加列迁移；**不接 UI、不改任何现有行为**。
+- **适合顺手的时机**：云盘 Provider 开工前的地基；或下一次正好动账号 / 数据库迁移。
+- **判断条件**：纯模型与迁移的小改，不需要新的设计决定（字段值先只用 `'webdav'` 一个值占位，驱动枚举等 [99 §7](99-IN-PROGRESS.md) 定型后再补）。
+- **边界**：不改 `WebDavService`、不加账号类型 UI。
+- **验收**：`flutter analyze` + `flutter test`；旧库升级后账号读写不丢。

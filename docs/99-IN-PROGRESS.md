@@ -248,3 +248,62 @@
 ### 6.4 需要用户决定的三件事
 
 1. 目标语言（中 + 英？）；2. 范围（全量还是先跑通一两个模块）；3. 要不要应用内语言切换。**未决定前不开工。**
+
+## 7. 云盘 Provider（OpenList 驱动移植，已立项定界，未开工）
+
+**用户决策原话**：「砍掉上传功能，采用路线B，尽量不要改动WebDavService」「按照A表全部删除」「B的话建立新的网络库功能列表，分类不同网络库支持的能力并在对应的按钮功能前加上检测，尽量保证WebDavService实现的功能全面，由账号对应的能力遮罩判断功能是否开启」「C中保留crypt列入待开发功能，其他的砍掉不进入文档」「netease_music加入待开发文档」「几个优先做的加入文档并开始讨论细节」。
+
+相关完整文档：[02 §10 占位](02-NETWORK-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)（下载带自定义头）、[08](08-SYNC-AND-BACKUP.md)（云端写路径禁用）、[10 T6](10-SIDE-QUESTS.md)（账号模型地基）。
+
+### 7.1 路线与参照物
+
+- **路线 B**：把 OpenList 的驱动层（REST 直连各家网盘）移植成 Dart provider。**不移植** worker 的 WebDAV/XML 协议层——WDMM 本身是 WebDAV 客户端，自己转 WebDAV 再解析回去是绕路。
+- 参照实现已克隆到 `localdev/`（已 gitignore，不入库）：`OpenListTeam/OpenList-Worker`（TS，HEAD `a355867`，移植底稿）+ `OpenListTeam/OpenList`（Go main，语义兜底）。驱动代码与 worker 运行时零耦合（抽样 quark：`env.|KV|waitUntil|durable` 零命中），移植是机械工作。
+- 下载模型天然契合：驱动 `get()` 返回 `FileItem{raw_url, raw_url_headers}`（直链 + 必需请求头），正好对上现有 `WebDavStreamSource{uri, headers}`（`webdav_stream.dart`）；视频流式与下载都走「直链 + 头」。
+
+### 7.2 已定型的取舍
+
+1. **上传砍掉**：`CloudDriver` 接口无 put；云盘账号上 `writeBytes` / `ensureDirectory` 与 backup / sync / playlist 的云端写路径一律禁用（显式报语义，不做静默失败）。WebDAV 账号行为不变。
+2. **`WebDavService` 对外 API 与行为不变**（14 个文件直接 import 它，全部零改动）。唯一接入缝：`_connFor` / `_resolve`（`webdav_service.dart:44-54`）之后按账号类型转调 `CloudDriveService` 同名方法。绕不开的配套：`WebDavAccount.providerType`（[10 T6](10-SIDE-QUESTS.md)）；云盘凭证走 AccountsService + credential vault 独立通道，`configure()` 的 url/user/pass 形状不动。
+3. **能力遮罩**：账号类型 → 能力集合（浏览 / 下载 / 流式 / 建目录 / 删除 / 改名 / 移动 / 复制），WebDAV = 全量。网络库行操作与多选工具栏按钮**先查遮罩再启用**。实现先做账号类型静态表；账号级覆盖等有真实需求再议（7.8）。
+4. **驱动范围已定界**：除 7.3 / 7.4 / 7.5 列出的驱动外，其余一律不做，不进文档不展开。
+
+### 7.3 首批驱动（优先做）
+
+`aliyundrive_open`、`baidu_netdisk`、`quark`、`115open`、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。共同特征：refresh_token 或 cookie **粘贴式**登录、直链 + 必需头、写操作全、无重加密（worker 驱动 18–40KB）。移植底稿 `localdev/OpenList-Worker/src/backend/drivers/<name>/`，语义兜底对照 Go 版同目录。
+注意：`139` 带字符集标记，真机要先验编码。
+
+### 7.4 只读家族（能力遮罩 = 只读）
+
+`115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`、`url_tree`——浏览 / 下载 / 流式可用，写操作按遮罩隐藏（worker 驱动内五项写方法全部显式抛「不支持」，二次扫描证实）。实施批次未定（7.8）。
+
+### 7.5 待开发（计划未实现，不在本次范围）
+
+- **crypt**：rclone 兼容加密层（worker 侧 aes + hash-wasm）。它是 MustProxy 驱动——开工前必须先定「本地流桥」（应用内 127.0.0.1 HttpServer 把驱动字节流转成 media_kit 可拉的 URL）还是「仅下载播放」。
+- **netease_music**：cookie + rsa/aes 登录；只支持删除，不能建目录 / 改名 / 移动 / 复制。对音乐管理器语义贴合。
+
+### 7.6 关键技术点（移植时要一起处理的）
+
+- token / cookie 刷新与持久化：worker 的 cookie 持久化机制（`persistStorageCookie`）要有 Dart 版，落 secure storage。
+- path→id 缓存：worker 驱动实例内的 Map 缓存（如 quark）在移动端的生命周期与失效策略。
+- 直链必需头贯穿下载链路：`WebDavStreamSource` 已带 headers；`download_queue` 的下载请求要能带同样的头，[04](04-DOWNLOAD-QUEUE.md) 待补。
+- Range：流式必须；上游拒绝 / 忽略 Range 时按 worker 的做法降级（去掉 Range 重试一次）。
+- refresh_token「粘贴式获取」逐盘实测：部分盘可能必须应用内回调页，查不到的以真机为准。
+
+### 7.7 分阶段（每段独立交付、独立验收）
+
+| 阶段 | 内容 | 验收 |
+|---|---|---|
+| 0 | 地基：[10 T6](10-SIDE-QUESTS.md) 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
+| 1 | 首个驱动端到端（推荐 `aliyundrive_open` 或 `baidu_netdisk`，refresh_token 最干净） | 真机：添加账号 → 浏览 → 下载 → 流式 |
+| 2 | 能力遮罩接线 UI：行操作 / 多选按钮按遮罩启用禁用 + 只读账号语义 | 真机：只读账号无写按钮 |
+| 3 | 首批其余驱动逐个移植 | 逐盘真机验收 |
+| 4 | 云端写路径禁用语义（backup / sync / playlist 对云盘账号的提示） | 真机：云盘账号同步入口有明确文案 |
+
+### 7.8 待讨论细节（已开始，未定型）
+
+1. 能力遮罩的判定层级（账号类型静态表 vs 账号级覆盖）。
+2. 凭证录入三类交互（refresh_token / cookie / 账密）的表单信息架构与逐盘 schema。
+3. 首个打通的驱动选谁。
+4. 只读家族的实施批次（先 1–2 个验证遮罩，还是全量一起）。
+5. 云端写禁用的 UI 形态（隐藏入口 vs 置灰 + 提示）。

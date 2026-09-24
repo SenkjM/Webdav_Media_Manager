@@ -110,3 +110,7 @@
 - `lib/services/library_actions.dart`：音乐库侧的动作（下载 / 分享 / 删除缓存）。
 - `lib/services/webdav_service.dart`：列目录 / 读写 / 复制 / 移动 / 远端流式源。
 - `lib/widgets/track_status_chip.dart`：状态标签唯一定义。
+
+## 10. 云盘 Provider（开发中，占位）
+
+账号将支持 WebDAV 之外的网络库类型（云盘直连 provider），行操作与多选按钮按「账号能力遮罩」启用 / 禁用；云盘账号不做上传与云端写同步。语义、取舍与驱动范围见 [99 §7](99-IN-PROGRESS.md)（crypt 加密层与 netease_music 为「计划（未实现）」，见同节 7.5）。
