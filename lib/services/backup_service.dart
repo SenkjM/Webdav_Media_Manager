@@ -97,7 +97,11 @@ class BackupService extends ChangeNotifier {
     }
 
     final accounts = <Map<String, dynamic>>[];
+    // 云盘账号不进备份：上传已砍（99 §7.2.1），档案里的账号行没有驱动配置
+    // 也无法恢复可用（refresh_token 在 secure storage，不随档案走），只会
+    // 占用名称并误导恢复（用户决定：备份只遍历 WebDAV 类型）。
     for (final a in _accounts.accounts) {
+      if (a.providerType != 'webdav') continue;
       final pass = await _accounts.passwordFor(a.id) ?? '';
       accounts.add({
         ...a.toMap(),

@@ -130,7 +130,10 @@ class CredentialVaultService extends ChangeNotifier {
     final encrypt =
         (encryptPassword ?? _settings.syncEncryptPassword) && passphrase.isNotEmpty;
     final entries = <Map<String, dynamic>>[];
+    // 凭证库只管 WebDAV 服务器（URL + 用户名 + 密码三件套）；云盘账号的
+    // 令牌走 secure storage 独立通道，不在这里（99 §7.2.8）。
     for (final a in _accounts.accounts) {
+      if (a.providerType != 'webdav') continue;
       final pass = await _accounts.passwordFor(a.id) ?? '';
       var stored = pass;
       var encrypted = false;

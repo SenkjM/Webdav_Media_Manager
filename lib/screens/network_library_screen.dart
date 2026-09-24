@@ -306,22 +306,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   Future<void> _openVideo(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
-    final source = await context.read<WebDavService>().resolveStreamSource(
-      remotePath: item.path,
-      name: item.name,
-      accountId: accountId,
-    );
-    if (source == null) {
-      AppSnack.show(context, 'WebDAV 未连接，无法流式播放');
-      return;
-    }
-    // 用户把后缀改掉（音频改成 .mp4 之类）时，源本身会按**内容无关**的后缀
-    // 被当视频打开：那会白白起一个 VideoController 解码一个没有画面的流。
-    // 音频只有一条流、没有视频轨，直接路由到音乐界面更省电，界面也更合适。
-    if (source.kind == StreamKind.music) {
-      await _openMusicStream(item, accountId: accountId, source: source);
-      return;
-    }
     // Build a play queue from this folder: the already-listed videos seed it so
     // playback starts immediately, and the player keeps scanning in the
     // background to extend 上一个 / 下一个.
@@ -331,9 +315,18 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       current: item,
       siblings: _items.where((e) => e.isVideo).toList(),
     );
+    // 界面先落地：源解析交给页内 loader（云盘要三跳网络，原来会卡住整条
+    // 跳转链）；「伪装成视频的音频」由视频页解析后路由去音乐页（99 §7.2.9）。
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => VideoPlayerScreen(source: source, seed: seed),
+        builder: (_) => VideoPlayerScreen(
+          sourceLoader: () => context.read<WebDavService>().resolveStreamSource(
+            remotePath: item.path,
+            name: item.name,
+            accountId: accountId,
+          ),
+          seed: seed,
+        ),
       ),
     );
   }

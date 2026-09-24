@@ -191,8 +191,65 @@ class AccountsScreen extends StatelessWidget {
     var obscureToken = true;
     var caps = AccountCaps.normalizeStored(existing?.capabilities ?? AccountCaps.all);
 
-    /// Show the form; keeps the typed values so a rejected warning can re-open it.
+    Map<String, dynamic>? cloudConfig;
+
+    /// 点击「保存」后在弹窗内完成全部校验（99 §7.2.7）：名称 / 重名 / 身份
+    /// 变更确认 / refresh_token / 云盘真连验证。返回 false 时**不关弹窗**，
+    /// 已填内容都在，保存按钮恢复可点。
+    Future<bool> validateAndPrepare() async {
+      final name = nameCtrl.text.trim();
+      final isCloud = CloudDriveService.isCloudType(providerType);
+      if (name.isEmpty) {
+        AppSnack.error(context, '请填写名称');
+        return false;
+      }
+      if (!await _confirmDuplicateName(context, accounts, name, existing?.id)) {
+        return false;
+      }
+      if (existing != null) {
+        final renamed = name != existing.name.trim();
+        final userChanged =
+            !isCloud && userCtrl.text.trim() != existing.username.trim();
+        if ((renamed || userChanged) &&
+            !await _confirmIdentityChange(context, existing, name, renamed)) {
+          return false;
+        }
+      }
+      if (isCloud) {
+        // 百度网盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
+        if (refreshCtrl.text.trim().isEmpty) {
+          AppSnack.error(context, '请填写 refresh_token');
+          return false;
+        }
+        cloudConfig = {
+          'refresh_token': refreshCtrl.text.trim(),
+          'api_url_address': renewCtrl.text.trim(),
+          'local_refresh': localRefresh,
+          'client_id': clientIdCtrl.text.trim(),
+          'client_secret': clientSecretCtrl.text.trim(),
+        };
+        try {
+          await cloudDrive.verifyNewAccount(
+            WebDavAccount(
+              id: existing?.id ?? 'pending',
+              name: name,
+              url: '',
+              username: '',
+              providerType: providerType,
+            ),
+            cloudConfig!,
+          );
+        } on CloudDriverException catch (e) {
+          if (context.mounted) AppSnack.error(context, e.toString());
+          return false;
+        }
+      }
+      return true;
+    }
+
+    /// Show the form. 点击保存后按钮变圈等待，校验通过才关弹窗。
     Future<bool> showForm() async {
+      var saving = false;
       final saved = await showDialog<bool>(
         context: context,
         builder: (ctx) {
@@ -419,12 +476,30 @@ class AccountsScreen extends StatelessWidget {
                 ),
                 actions: [
                   TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
+                    onPressed: saving
+                        ? null
+                        : () => Navigator.pop(ctx, false),
                     child: const Text('取消'),
                   ),
                   FilledButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('保存'),
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            setLocal(() => saving = true);
+                            final ok = await validateAndPrepare();
+                            if (!ok) {
+                              setLocal(() => saving = false);
+                              return;
+                            }
+                            if (ctx.mounted) Navigator.pop(ctx, true);
+                          },
+                    child: saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('保存'),
                   ),
                 ],
               );
@@ -435,64 +510,7 @@ class AccountsScreen extends StatelessWidget {
       return saved == true;
     }
 
-    // A name is the library's binding key, so it cannot be empty and two disks
-    // must not share one: the same path on two mounts would then be the *same*
-    // song and they would overwrite each other's cache and metadata.
-    //
-    // Every rejection re-opens the form with the typed values intact, so a
-    // warning never costs the user their input.
-    Map<String, dynamic>? cloudConfig;
-    while (true) {
-      if (!await showForm() || !context.mounted) return;
-      final name = nameCtrl.text.trim();
-      final isCloud = CloudDriveService.isCloudType(providerType);
-      if (name.isEmpty) {
-        AppSnack.error(context, '请填写名称');
-        continue;
-      }
-      if (!await _confirmDuplicateName(context, accounts, name, existing?.id)) {
-        continue;
-      }
-      if (existing != null) {
-        final renamed = name != existing.name.trim();
-        final userChanged = !isCloud &&
-            userCtrl.text.trim() != existing.username.trim();
-        if ((renamed || userChanged) &&
-            !await _confirmIdentityChange(context, existing, name, renamed)) {
-          continue;
-        }
-      }
-      if (isCloud) {
-        // 百度网盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
-        if (refreshCtrl.text.trim().isEmpty) {
-          AppSnack.error(context, '请填写 refresh_token');
-          continue;
-        }
-        cloudConfig = {
-          'refresh_token': refreshCtrl.text.trim(),
-          'api_url_address': renewCtrl.text.trim(),
-          'local_refresh': localRefresh,
-          'client_id': clientIdCtrl.text.trim(),
-          'client_secret': clientSecretCtrl.text.trim(),
-        };
-        try {
-          await cloudDrive.verifyNewAccount(
-            WebDavAccount(
-              id: existing?.id ?? 'pending',
-              name: name,
-              url: '',
-              username: '',
-              providerType: providerType,
-            ),
-            cloudConfig,
-          );
-        } on CloudDriverException catch (e) {
-          if (context.mounted) AppSnack.error(context, e.toString());
-          continue; // 回到表单，已填内容都在
-        }
-      }
-      break;
-    }
+    if (!await showForm() || !context.mounted) return;
 
     final remotePath = WebDavAccount.normalizeRemotePath(remotePathCtrl.text);
     if (cloudConfig != null) {
@@ -505,7 +523,11 @@ class AccountsScreen extends StatelessWidget {
           providerType: providerType,
           remotePath: remotePath,
         );
-        await accounts.saveDriverConfig(account.id, cloudConfig);
+        await accounts.saveDriverConfig(account.id, cloudConfig!);
+        // 云盘添加成功：提示后随表单一起关闭（99 §7.2.7）。
+        if (context.mounted) {
+          AppSnack.show(context, '成功添加（\${nameCtrl.text.trim()}）');
+        }
       } else {
         await accounts.updateAccount(
           id: existing.id,
@@ -515,7 +537,7 @@ class AccountsScreen extends StatelessWidget {
           providerType: providerType,
           remotePath: remotePath,
         );
-        await accounts.saveDriverConfig(existing.id, cloudConfig);
+        await accounts.saveDriverConfig(existing.id, cloudConfig!);
       }
     } else if (existing == null) {
       await accounts.addAccount(

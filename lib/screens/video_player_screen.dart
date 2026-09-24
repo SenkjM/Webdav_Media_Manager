@@ -19,6 +19,7 @@ import '../theme/app_theme.dart';
 import '../utils/video_pip.dart';
 import '../widgets/app_bottom_sheet.dart';
 import '../utils/app_snack.dart';
+import 'music_stream_screen.dart';
 
 /// Everything the player needs to build a play queue for one video.
 class VideoQueueSeed {
@@ -59,9 +60,19 @@ class VideoQueueSeed {
 /// * the queue comes from a progressive folder scan, so 上一个 / 下一个 and
 ///   auto-advance work while the scan is still running.
 class VideoPlayerScreen extends StatefulWidget {
-  const VideoPlayerScreen({super.key, required this.source, this.seed});
+  const VideoPlayerScreen({
+    super.key,
+    this.source,
+    this.sourceLoader,
+    this.seed,
+  }) : assert(source != null || sourceLoader != null);
 
-  final WebDavStreamSource source;
+  /// 已解析好的远端流。调用方已经拿到网络结果时直接传。
+  final WebDavStreamSource? source;
+
+  /// 还没解析时的加载器：界面先落地，解析在页内异步进行，跳转不再被
+  /// 网络卡住（与音乐流式页同款，99 §7.2.9）。不修改任何 UI 元素。
+  final Future<WebDavStreamSource?> Function()? sourceLoader;
 
   /// When present, a queue is built by scanning [VideoQueueSeed.folderPath].
   final VideoQueueSeed? seed;
@@ -109,11 +120,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   StreamSubscription<bool>? _pipSub;
   StreamSubscription<bool>? _completedSub;
 
+  /// 页内解析出的最终流（[sourceLoader] 路径）；直接传 source 时同值。
+  WebDavStreamSource? _resolved;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _title.value = widget.source.name;
+    _title.value = widget.source?.name ?? '';
     _pipSub = pictureInPictureChanges.listen((active) {
       _pip.value = active;
       if (active) _controlsVisible.value = false;
@@ -130,11 +144,34 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _service = service;
     _buildQueue();
     try {
+      var source = widget.source;
+      if (source == null) {
+        // 界面已落地，这里才做网络解析（云盘要列表 + filemetas + HEAD）。
+        source = await widget.sourceLoader?.call();
+        if (!mounted) return;
+        if (source == null) {
+          throw 'WebDAV 未连接，无法播放';
+        }
+        // 用户把音频后缀改成视频类时源会判成音乐：路由去音乐页，
+        // 复用同一个队列 seed，不再起一个没有画面的解码器。
+        if (source.kind == StreamKind.music) {
+          if (!mounted) return;
+          await Navigator.of(context, rootNavigator: true).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) =>
+                  MusicStreamScreen(source: source, seed: widget.seed),
+            ),
+          );
+          return;
+        }
+      }
+      _resolved = source;
+      _title.value = source.name;
       // Music and video must never play at the same time.
       await music.pauseForVideo();
       final restored = SettingsService.clampVideoRate(settings.videoLastRate);
       final player = await service.prepare(
-        widget.source,
+        source,
         bufferSizeMb: settings.videoBufferSizeMb,
         initialRate: restored,
       );
@@ -153,7 +190,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         await player.setRate(restored);
         _rate.value = restored;
       }
-      await player.open(service.mediaFor(widget.source));
+      await player.open(service.mediaFor(source));
       // 播放器实例与流式音乐页共用：把音乐页可能设上的循环清掉，
       // 否则听完一首歌再来看视频，视频也会跟着循环。
       await player.setPlaylistMode(PlaylistMode.none);
@@ -312,10 +349,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   Future<WebDavStreamSource?> _streamFor(WebDavItem item) {
     final queue = _queue;
+    final accountId = queue?.accountId ??
+        _resolved?.accountId ??
+        widget.source?.accountId;
+    if (accountId == null) return Future.value(null);
     return context.read<WebDavService>().resolveStreamSource(
       remotePath: item.path,
       name: item.name,
-      accountId: queue?.accountId ?? widget.source.accountId,
+      accountId: accountId,
     );
   }
 
@@ -592,7 +633,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               const CircularProgressIndicator(),
               const SizedBox(height: 16),
               Text(
-                widget.source.name,
+                _resolved?.name ?? widget.source?.name ?? '',
                 style: const TextStyle(color: Colors.white70),
               ),
             ],
