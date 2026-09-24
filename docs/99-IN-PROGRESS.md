@@ -309,13 +309,17 @@
 
 #### crypt（阶段进行中：cipher 层已完成并互操作验证）
 
-- **格式**：逐字节对齐 rclone crypt（OpenList crypt 直接包 rclone 的 cipher，v1.75.1）。内容 = 魔数 "RCLONE\\0\\0"(8B) + 随机 nonce(24B) + 64KiB 明文分块 secretbox（XSalsa20-Poly1305，16B MAC，块 nonce = 文件 nonce + 块号 LE 加法）；KDF = scrypt(N=16384, r=8, p=1, 80B → dataKey32 / nameKey32 / nameTweak16)，空密码 = 全零密钥（格式一部分）；名字 = PKCS7(16) + EME(AES-256, nameTweak，≤128 块) + Base32（Hex 表小写去填充），off 模式 = 原名 + `.bin`（文件）/ 原名（目录），混淆 = rclone obfuscate 方案（含 `!` 双写、latin1 / ≥U+100 区段）。
-- **实现**：`lib/services/cloud_drivers/crypt/cipher/`（salsa20 / secretbox / eme / name_codec / rclone_cipher），pointycastle 组合，无新增原生依赖。
+- **格式**：逐字节对齐 rclone crypt（OpenList crypt 直接包 rclone 的 cipher，v1.75.1）。内容 = 魔数 "RCLONE\\0\\0"(8B) + 随机 nonce(24B) + 64KiB 明文分块 secretbox（XSalsa20-Poly1305，16B MAC，块 nonce = 文件 nonce + 块号 LE 加法）；KDF = scrypt(N=16384, r=8, p=1, 80B → dataKey32 / nameKey32 / nameTweak16)，空密码 = 全零密钥（格式一部分）；名字 = PKCS7(16) + EME(AES-256, nameTweak，≤128 块) + Base32（Hex 表小写去填充）/ Base64（URL 安全去填充，OpenList 默认）/ Base32768（与 rclone SafeEncoding 同表）三选一，off 模式 = 原名 + `.bin`（文件）/ 原名（目录），混淆 = rclone obfuscate 方案（含 `!` 双写、latin1 / ≥U+100 区段）。
+- **实现**：`lib/services/cloud_drivers/crypt/cipher/`（salsa20 / secretbox / eme / name_codec / base32768 + base32768_table / rclone_cipher），pointycastle 组合，无新增原生依赖。
 - **互操作验证**：本机编译 rclone v1.75.1 生成金标向量（名字 ×4、内容 ×2、混淆 ×1）+ NaCl 官方向量，`test/crypt_cipher_test.dart` 固化；生成环境在 localdev（gitignored）。
-- **字段（照 OpenList meta.go）**：filename_encryption（off/standard/obfuscate）、directory_name_encryption、password、salt；另加源账号引用与源目录（用户决定：源 = 已有账号 id，**WebDAV 也可作源**；crypt 浏览根 = 源账号远程路径 + 源目录，如源账号根 /456 + 源目录 /789 → 实际落 /456/789）。
-- **坏名字行为（照 OpenList driver.go 202-219）**：解密失败用原名原大小透传，条目绝不丢。
+- **字段（照 OpenList meta.go，默认值也照抄）**：filename_encryption（off/standard/obfuscate，默认 off）、directory_name_encryption（默认 false）、filename_encoding（base64/base32/base32768，默认 base64）、encrypted_suffix（默认 .bin，仅文件名加密=off 时生效）、password、salt；另加源账号引用与源目录（用户决定：源 = 已有账号 id，**WebDAV 也可作源**；crypt 浏览根 = 源账号远程路径 + 源目录，如源账号根 /456 + 源目录 /789 → 实际落 /456/789）。
+- **坏名字行为（照 OpenList driver.go 202-219）**：解密失败用原名原大小透传。本驱动只读取、不改动远端，透传既不写入也不做二次加密（早期「宁可不加密也不丢文件」的说法不成立，已删）。
 - **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（7.2.1）。
-- **待办（下一批）**：CryptSource 接口 + 云盘 / WebDAV 适配器与兼容层注入（CloudDriverEnv，源不存在 → 浏览时报错不炸注册）；本地流桥（下载走内存流 openContent；流式播放内存流优先、不可行再本地 HTTP，桥只服务 crypt 不碰原播放逻辑）；libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）。
+- **已完成**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）；名称编码三档（base32768 用 rclone 官方 17 条 golden 向量验证）。
+- **待办（下一批）**：本地流桥（下载走内存流 `openContent`；流式播放内存流优先、不可行再本地 HTTP，桥只服务 crypt 不碰原播放逻辑）；libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。
+- **盐**：rclone `cipher.go` 内置 `defaultSalt`（16 字节 `A8 0D F4 3A 8F BD 03 08 A7 CA B8 3E 58 1F 86 B1`），salt 为空即用它；OpenList 把 salt 去掉 obfuscated 前缀后作 `password2` 交给 rclone，语义相同 → 我方「留空用内置默认盐」与两端一致。密码与盐一律按 UTF-8 字节进 scrypt（对应 Go 的 `[]byte(s)`）。
+- **本批修复（真机反馈）**：① 云盘表单 `CloudDriverField` 的控制器创建曾被误删 → 密码填了仍报「请填写密码」（TextField 自建内部控制器，校验读到 null）；② 表单校验错误改为弹窗内联显示（SnackBar 被 AlertDialog 盖住，真机只露出一条边）；③ 下拉框加 `isExpanded` 并去掉标签长括号，消除右溢出。
+- **base32768 移植**：`cipher/base32768.dart`（逐条对齐上游 `Max-Sum/base32768`：15 位块 + 末块 7 位、补 1、排序后前 4 字符为尾部字母表）与 `cipher/base32768_table.dart`（由 localdev 脚本从上游包生成，1028 个码点）；测试 `test/base32768_test.dart` 用 rclone `TestEncodeFileNameBase32768` 的 17 条向量 + 非法输入位置 + 0..200 全长度往返。
 
 - **crypt**：rclone 兼容加密层（worker 侧 aes + hash-wasm）。它是 MustProxy 驱动——开工前必须先定「本地流桥」（应用内 127.0.0.1 HttpServer 把驱动字节流转成 media_kit 可拉的 URL）还是「仅下载播放」。
 - **netease_music**：cookie + rsa/aes 登录；只支持删除，不能建目录 / 改名 / 移动 / 复制。对音乐管理器语义贴合。

@@ -194,6 +194,10 @@ class AccountsScreen extends StatelessWidget {
       fieldObscure = <String, bool>{};
       for (final item in s?.form ?? const <CloudDriverFormItem>[]) {
         if (item is CloudDriverField) {
+          final stored = existingCfg[item.key] as String?;
+          fieldCtrls[item.key] = TextEditingController(
+            text: stored?.isNotEmpty == true ? stored : item.defaultValue,
+          );
           fieldObscure[item.key] = item.obscure;
         } else if (item is CloudDriverSwitchField) {
           switchValues[item.key] =
@@ -215,6 +219,15 @@ class AccountsScreen extends StatelessWidget {
 
     Map<String, dynamic>? cloudConfig;
 
+    /// 弹窗内的错误展示位：SnackBar 会被 AlertDialog 盖住（真机只露出一条边），
+    /// 所以表单校验失败一律显示在弹窗内部。
+    String? dialogError;
+    void Function(void Function())? dialogSet;
+    void fail(String message) {
+      dialogError = message;
+      dialogSet?.call(() {});
+    }
+
     /// 点击「保存」后在弹窗内完成全部校验（99 §7.2.7）：名称 / 重名 / 身份
     /// 变更确认 / refresh_token / 云盘真连验证。返回 false 时**不关弹窗**，
     /// 已填内容都在，保存按钮恢复可点。
@@ -222,7 +235,7 @@ class AccountsScreen extends StatelessWidget {
       final name = nameCtrl.text.trim();
       final isCloud = CloudDriveService.isCloudType(providerType);
       if (name.isEmpty) {
-        AppSnack.error(context, '请填写名称');
+        fail('请填写名称');
         return false;
       }
       if (!await _confirmDuplicateName(context, accounts, name, existing?.id)) {
@@ -240,7 +253,7 @@ class AccountsScreen extends StatelessWidget {
       if (isCloud) {
         final s = spec;
         if (s == null) {
-          AppSnack.error(context, '未知云盘类型：$providerType');
+          fail('未知云盘类型：$providerType');
           return false;
         }
         // 配置的键 / 必填项 / 默认值全部来自驱动声明（99 §7.2.10）。
@@ -249,21 +262,21 @@ class AccountsScreen extends StatelessWidget {
           if (item is CloudDriverField) {
             final text = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && text.isEmpty) {
-              AppSnack.error(context, '请填写 ${item.label}');
+              fail('请填写 ${item.label}');
               return false;
             }
             cfg[item.key] = text;
           } else if (item is CloudDriverSelectField) {
             final v = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && v.isEmpty) {
-              AppSnack.error(context, '请选择${item.label}');
+              fail('请选择${item.label}');
               return false;
             }
             cfg[item.key] = v;
           } else if (item is CloudDriverAccountField) {
             final v = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && v.isEmpty) {
-              AppSnack.error(context, '请选择${item.label}');
+              fail('请选择${item.label}');
               return false;
             }
             cfg[item.key] = v;
@@ -283,7 +296,7 @@ class AccountsScreen extends StatelessWidget {
             cloudConfig!,
           );
         } on CloudDriverException catch (e) {
-          if (context.mounted) AppSnack.error(context, e.toString());
+          fail(e.toString());
           return false;
         }
       }
@@ -298,6 +311,7 @@ class AccountsScreen extends StatelessWidget {
         builder: (ctx) {
           return StatefulBuilder(
             builder: (ctx, setLocal) {
+              dialogSet = setLocal;
               return AlertDialog(
                 title: Text(existing == null ? '添加服务器' : '编辑服务器'),
                 content: SingleChildScrollView(
@@ -493,6 +507,7 @@ class AccountsScreen extends StatelessWidget {
                             )
                           else if (item is CloudDriverSelectField)
                             DropdownButtonFormField<String>(
+                              isExpanded: true,
                               initialValue: item.options.any((o) => o.$1 == (fieldCtrls[item.key]?.text ?? ''))
                                   ? fieldCtrls[item.key]!.text
                                   : (item.defaultValue.isNotEmpty ? item.defaultValue : null),
@@ -511,6 +526,7 @@ class AccountsScreen extends StatelessWidget {
                             )
                           else if (item is CloudDriverAccountField)
                             DropdownButtonFormField<String>(
+                              isExpanded: true,
                               initialValue: accounts.accounts
                                       .any((a) => a.id == (fieldCtrls[item.key]?.text ?? ''))
                                   ? fieldCtrls[item.key]!.text
@@ -533,6 +549,19 @@ class AccountsScreen extends StatelessWidget {
                           const SizedBox(height: 12),
                         ],
                       ],
+                      if (dialogError != null) ...[
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            dialogError!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -547,7 +576,10 @@ class AccountsScreen extends StatelessWidget {
                     onPressed: saving
                         ? null
                         : () async {
-                            setLocal(() => saving = true);
+                            setLocal(() {
+                              saving = true;
+                              dialogError = null;
+                            });
                             final ok = await validateAndPrepare();
                             if (!ok) {
                               setLocal(() => saving = false);

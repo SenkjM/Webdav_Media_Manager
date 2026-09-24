@@ -73,7 +73,7 @@ class CryptDriver extends CloudDriver {
           ? _cipher.decryptDirName(e.name)
           : _cipher.decryptFileName(e.name);
     } catch (_) {
-      // 底线：解不开也原样列出，条目绝不丢（99 §7.5）。
+      // 解不开的名字按原名列出：只读取、不改动远端，也不做二次加密（99 §7.5）。
     }
     var size = e.size;
     if (!e.isDir) {
@@ -263,10 +263,11 @@ class CryptSpec extends CloudDriverSpec {
           required: true,
           defaultValue: 'base64',
           options: [
-            ('base64', 'Base64（OpenList 默认）'),
-            ('base32', 'Base32（rclone 传统）'),
+            ('base64', 'Base64'),
+            ('base32', 'Base32'),
+            ('base32768', 'Base32768'),
           ],
-          hint: '与 rclone 的 filename_encoding 对应；base32768 暂不支持',
+          hint: '与 rclone 的 filename_encoding 对应（base32 / base64 / base32768）',
         ),
         CloudDriverField(
           key: 'encrypted_suffix',
@@ -284,7 +285,7 @@ class CryptSpec extends CloudDriverSpec {
           key: 'salt',
           label: '盐值（可选）',
           obscure: true,
-          hint: '留空用内置默认盐；与 rclone 相同密码 + 盐可互认',
+          hint: '留空用 rclone 内置默认盐；密码 + 盐相同即可与 rclone / OpenList 互认',
         ),
         CloudDriverSelectField(
           key: 'filename_encryption',

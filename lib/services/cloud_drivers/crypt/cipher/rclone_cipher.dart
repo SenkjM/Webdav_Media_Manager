@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:pointycastle/export.dart';
 
 import 'eme.dart';
+import 'base32768.dart';
 import 'name_codec.dart';
 import 'secretbox.dart';
 
@@ -76,7 +77,7 @@ class RcloneCipher {
   final bool dirNameEncrypt;
 
   /// 名字编码：'base32'（rclone 传统）或 'base64'（OpenList 默认）。
-  /// base32768 暂不支持（同名条目解密失败会按坏名透传，不丢）。
+  /// base32768 与 rclone SafeEncoding 同表，见 base32768.dart。
   final String nameEncoding;
 
   /// filename_encryption=off 时附加的后缀（OpenList encrypted_suffix）。
@@ -90,10 +91,10 @@ class RcloneCipher {
     // rclone：空密码 = 全零密钥（格式的一部分，测试依赖）。
     final key = Uint8List(80);
     if (password.isNotEmpty) {
-      final saltBytes = salt.isEmpty ? kDefaultSaltBytes : Uint8List.fromList(salt.codeUnits.map((c) => c & 0xFF).toList());
+      final saltBytes = salt.isEmpty ? kDefaultSaltBytes : Uint8List.fromList(utf8.encode(salt));
       final derivator = KeyDerivator('scrypt');
       derivator.init(ScryptParameters(16384, 8, 1, key.length, saltBytes));
-      key.setAll(0, derivator.process(Uint8List.fromList(password.codeUnits)));
+      key.setAll(0, derivator.process(Uint8List.fromList(utf8.encode(password))));
     }
     _dataKey = Uint8List.sublistView(key, 0, 32);
     _nameKey = Uint8List.sublistView(key, 32, 64);
@@ -103,13 +104,27 @@ class RcloneCipher {
 
   // ── 名字 ──
 
-  String _encodeName(Uint8List ct) => nameEncoding == 'base64'
-      ? base64UrlNoPadEncode(ct)
-      : base32HexLowerEncode(ct);
+  String _encodeName(Uint8List ct) {
+    switch (nameEncoding) {
+      case 'base64':
+        return base64UrlNoPadEncode(ct);
+      case 'base32768':
+        return Base32768Encoding.safe.encode(ct);
+      default:
+        return base32HexLowerEncode(ct);
+    }
+  }
 
-  Uint8List _decodeName(String s) => nameEncoding == 'base64'
-      ? base64UrlNoPadDecode(s)
-      : base32HexLowerDecode(s);
+  Uint8List _decodeName(String s) {
+    switch (nameEncoding) {
+      case 'base64':
+        return base64UrlNoPadDecode(s);
+      case 'base32768':
+        return Base32768Encoding.safe.decode(s);
+      default:
+        return base32HexLowerDecode(s);
+    }
+  }
 
   String _encryptSegment(String plaintext) {
     if (plaintext.isEmpty) return '';
