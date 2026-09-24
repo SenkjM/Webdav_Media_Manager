@@ -229,6 +229,9 @@ class AccountsScreen extends StatelessWidget {
     void fail(String message) {
       dialogError = message;
       dialogSet?.call(() {});
+      // 弹窗内联文字可能落在滚动区之外（或被键盘顶出可视区），所以同时推一条
+      // 最顶层横幅——它挂在 Navigator 之上，对话框盖不住（99 §7.5 真机反馈）。
+      AppSnack.show(context, message, error: true);
     }
 
     /// 点击「保存」后在弹窗内完成全部校验（99 §7.2.7）：名称 / 重名 / 身份
@@ -300,8 +303,10 @@ class AccountsScreen extends StatelessWidget {
             ),
             cloudConfig!,
           );
-        } on CloudDriverException catch (e) {
-          fail(e.toString());
+        } catch (e) {
+          // 不只 CloudDriverException：驱动/网络层抛出的任何异常都必须变成
+          // 用户看得见的一句提示，绝不让保存按钮默默恢复（99 §7.3.1）。
+          fail(e is CloudDriverException ? e.toString() : '验证失败：$e');
           return false;
         }
       }

@@ -15,6 +15,11 @@ abstract class CloudDriver {
   Stream<List<int>> openContent(String path) =>
       throw UnsupportedError('该驱动不支持内容流读取');
 
+  /// MustProxy 驱动的区间读取（含端点，语义同 HTTP `Range: bytes=start-end`）。
+  /// 本地流桥按播放器/ffmpeg 的 Range 请求调用它（99 §7.5）。
+  Stream<List<int>> openContentRange(String path, int start, int end) =>
+      throw UnsupportedError('该驱动不支持区间读取');
+
   /// 列出目录。[path] 是账号内绝对路径（浏览根拼接归 CloudDriveService）。
   Future<List<CloudFileItem>> list(String path);
 

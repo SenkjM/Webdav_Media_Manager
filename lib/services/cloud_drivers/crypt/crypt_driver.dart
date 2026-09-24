@@ -194,6 +194,76 @@ class CryptDriver extends CloudDriver {
   /// * 每块立即 yield —— 下载队列的进度随块推进，内存占用只有一块；
   /// * 源忽略 Range（一次返回整包）或大小未知时，退回整包解密。
   Stream<List<int>> openContent(String path) async* {
+    final t = await _openTarget(path);
+    try {
+      if (t.wholeBody) {
+        // 源不支持 Range（一次回整包）或长度未知：整包兜底。
+        yield _cipher.decrypt(t.header);
+        return;
+      }
+      var offset = kFileHeaderSize;
+      var block = 0;
+      while (offset < t.cipherSize) {
+        var end = offset + kBlockSize - 1;
+        if (end > t.cipherSize - 1) end = t.cipherSize - 1;
+        final chunk = await _fetchRange(t.dio, t.url, t.headers, offset, end);
+        if (chunk.isEmpty) {
+          throw CloudDriverException('crypt 内容在第 $block 块处中断');
+        }
+        yield _cipher.decryptBlock(t.nonce, block, chunk);
+        offset = end + 1;
+        block++;
+      }
+    } finally {
+      t.dio.close();
+    }
+  }
+
+  /// 明文区间 [start, end]（含端点）→ 只拉取覆盖它的密文块并解密，
+  /// 首尾块按需裁剪。ffmpeg 拖动进度条时靠它（99 §7.5 本地流桥）。
+  @override
+  Stream<List<int>> openContentRange(String path, int start, int end) async* {
+    if (start < 0 || end < start) return;
+    final t = await _openTarget(path);
+    try {
+      if (t.wholeBody) {
+        final plain = _cipher.decrypt(t.header);
+        if (start >= plain.length) return;
+        final last = end < plain.length - 1 ? end : plain.length - 1;
+        yield Uint8List.sublistView(plain, start, last + 1);
+        return;
+      }
+      final plainSize = RcloneCipher.decryptedSize(t.cipherSize);
+      if (start >= plainSize) return;
+      final last = end < plainSize - 1 ? end : plainSize - 1;
+      final firstBlock = start ~/ kBlockDataSize;
+      final lastBlock = last ~/ kBlockDataSize;
+      for (var b = firstBlock; b <= lastBlock; b++) {
+        final cipherStart = kFileHeaderSize + b * kBlockSize;
+        var cipherEnd = cipherStart + kBlockSize - 1;
+        if (cipherEnd > t.cipherSize - 1) cipherEnd = t.cipherSize - 1;
+        final chunk =
+            await _fetchRange(t.dio, t.url, t.headers, cipherStart, cipherEnd);
+        if (chunk.isEmpty) {
+          throw CloudDriverException('crypt 内容在第 $b 块处中断');
+        }
+        final plain = _cipher.decryptBlock(t.nonce, b, chunk);
+        final from = b == firstBlock ? start - b * kBlockDataSize : 0;
+        final to = b == lastBlock ? last - b * kBlockDataSize + 1 : plain.length;
+        if (from <= 0 && to >= plain.length) {
+          yield plain;
+        } else {
+          yield Uint8List.sublistView(plain, from, to);
+        }
+      }
+    } finally {
+      t.dio.close();
+    }
+  }
+
+  /// 解析一次目标：密文直链 + 请求头 + 文件 nonce + 密文长度。
+  /// 失败时关闭 Dio，成功时由调用方在 finally 关闭。
+  Future<_CryptTarget> _openTarget(String path) async {
     final src = _requireSource();
     final inner = await src.get(_mapToInner(path, lastIsFile: true));
     final url = inner.rawUrl;
@@ -212,28 +282,17 @@ class CryptDriver extends CloudDriver {
       if (header.length < kFileHeaderSize) {
         throw const CloudDriverException('crypt 内容不完整（读不到文件头）');
       }
-      final nonce = RcloneCipher.fileNonceOf(header);
-      final total = inner.size;
-      if (header.length > kFileHeaderSize || total <= kFileHeaderSize) {
-        // 一次就拿到了整包（源不支持 Range）或长度未知：整包兜底。
-        yield _cipher.decrypt(header);
-        return;
-      }
-      var offset = kFileHeaderSize;
-      var block = 0;
-      while (offset < total) {
-        var end = offset + kBlockSize - 1;
-        if (end > total - 1) end = total - 1;
-        final chunk = await _fetchRange(dio, url, inner.rawHeaders, offset, end);
-        if (chunk.isEmpty) {
-          throw CloudDriverException('crypt 内容在第 $block 块处中断');
-        }
-        yield _cipher.decryptBlock(nonce, block, chunk);
-        offset = end + 1;
-        block++;
-      }
-    } finally {
+      return _CryptTarget(
+        dio: dio,
+        url: url,
+        headers: inner.rawHeaders,
+        header: header,
+        nonce: RcloneCipher.fileNonceOf(header),
+        cipherSize: inner.size,
+      );
+    } catch (_) {
       dio.close();
+      rethrow;
     }
   }
 
@@ -362,4 +421,27 @@ class CryptSpec extends CloudDriverSpec {
   }) {
     return CryptDriver(config: config, env: env);
   }
+}
+/// 一次解析的结果：密文直链、请求头、文件 nonce 与密文长度。
+/// [wholeBody] 为真表示第一次请求就拿回了整包（源不支持 Range）或长度
+/// 未知 —— 这时只能整包解密。
+class _CryptTarget {
+  _CryptTarget({
+    required this.dio,
+    required this.url,
+    required this.headers,
+    required this.header,
+    required this.nonce,
+    required this.cipherSize,
+  });
+
+  final Dio dio;
+  final String url;
+  final Map<String, String>? headers;
+  final Uint8List header;
+  final Uint8List nonce;
+  final int cipherSize;
+
+  bool get wholeBody =>
+      header.length > kFileHeaderSize || cipherSize <= kFileHeaderSize;
 }

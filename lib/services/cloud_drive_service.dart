@@ -11,6 +11,7 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
 import 'cloud_driver.dart';
+import 'cloud_drivers/crypt/crypt_stream_bridge.dart';
 import 'cloud_drivers/driver_registry.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
@@ -107,6 +108,21 @@ class CloudDriveService extends ChangeNotifier {
       return '$srcName Crypt';
     }
     return cloudDriverSpec(a.providerType)?.displayName ?? a.providerType;
+  }
+
+  CryptStreamBridge? _bridgeInstance;
+
+  /// crypt 的本地流桥：播放器拿到的是 127.0.0.1 的 URL（99 §7.5）。
+  CryptStreamBridge get _streamBridge =>
+      _bridgeInstance ??= CryptStreamBridge(_requireDriver);
+
+  @override
+  void dispose() {
+    final bridge = _bridgeInstance;
+    _bridgeInstance = null;
+    // 关服务器是异步的；服务销毁时不必等它（force 关闭会立刻断连接）。
+    bridge?.dispose();
+    super.dispose();
   }
 
   CloudDriver _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
@@ -363,9 +379,25 @@ class CloudDriveService extends ChangeNotifier {
     final item = await _fileWithLink(accountId, remotePath);
     final raw = item.rawUrl;
     if (raw == null) {
-      // crypt 等 MustProxy 驱动：流式播放需要本地流桥（99 §7.5，下一批落地），
-      // 先以明确错误拒绝，不给出密文直链。
-      throw CloudDriverException('该账号类型暂不支持流式播放，请先下载后播放');
+      // crypt 等 MustProxy 驱动（99 §7.5）：media_kit 只认 URL，交给本地流桥
+      // 按 Range 逐块解密。大小未知时回不了 Content-Length，明确拒绝。
+      if (item.size <= 0) {
+        throw CloudDriverException('无法确定「$name」的大小，暂不支持流式播放');
+      }
+      final bridged = await _streamBridge.expose(
+        accountId: accountId,
+        remotePath: remotePath,
+        size: item.size,
+        name: name,
+      );
+      return WebDavStreamSource(
+        uri: bridged.toString(),
+        headers: const {},
+        name: name,
+        remotePath: remotePath,
+        accountId: accountId,
+        kind: streamKind,
+      );
     }
     return WebDavStreamSource(
       uri: raw,
