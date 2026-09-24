@@ -66,12 +66,21 @@ class RcloneCipher {
     required String salt,
     this.mode = NameEncryptionMode.standard,
     this.dirNameEncrypt = true,
+    this.nameEncoding = 'base32',
+    this.encryptedSuffix = kDefaultEncryptedSuffix,
   }) {
     _derive(password, salt);
   }
 
   final NameEncryptionMode mode;
   final bool dirNameEncrypt;
+
+  /// 名字编码：'base32'（rclone 传统）或 'base64'（OpenList 默认）。
+  /// base32768 暂不支持（同名条目解密失败会按坏名透传，不丢）。
+  final String nameEncoding;
+
+  /// filename_encryption=off 时附加的后缀（OpenList encrypted_suffix）。
+  final String encryptedSuffix;
   late final Uint8List _dataKey;
   late final Uint8List _nameKey;
   late final Uint8List _nameTweak;
@@ -94,16 +103,24 @@ class RcloneCipher {
 
   // ── 名字 ──
 
+  String _encodeName(Uint8List ct) => nameEncoding == 'base64'
+      ? base64UrlNoPadEncode(ct)
+      : base32HexLowerEncode(ct);
+
+  Uint8List _decodeName(String s) => nameEncoding == 'base64'
+      ? base64UrlNoPadDecode(s)
+      : base32HexLowerDecode(s);
+
   String _encryptSegment(String plaintext) {
     if (plaintext.isEmpty) return '';
     final padded = pkcs7Pad16(Uint8List.fromList(utf8.encode(plaintext)));
     final ct = _eme.transform(_nameTweak, padded, true);
-    return base32HexLowerEncode(ct);
+    return _encodeName(ct);
   }
 
   String _decryptSegment(String ciphertext) {
     if (ciphertext.isEmpty) return '';
-    final raw = base32HexLowerDecode(ciphertext);
+    final raw = _decodeName(ciphertext);
     if (raw.length % kNameCipherBlockSize != 0) {
       throw const RcloneCipherException('not a multiple of blocksize');
     }
@@ -132,16 +149,16 @@ class RcloneCipher {
   }
 
   String encryptFileName(String name) {
-    if (mode == NameEncryptionMode.off) return name + kDefaultEncryptedSuffix;
+    if (mode == NameEncryptionMode.off) return name + encryptedSuffix;
     return _mapPath(name, true, false);
   }
 
   String decryptFileName(String name) {
     if (mode == NameEncryptionMode.off) {
-      if (!name.endsWith(kDefaultEncryptedSuffix)) {
+      if (!name.endsWith(encryptedSuffix) || encryptedSuffix.isEmpty) {
         throw const RcloneCipherException('suffix missing');
       }
-      return name.substring(0, name.length - kDefaultEncryptedSuffix.length);
+      return name.substring(0, name.length - encryptedSuffix.length);
     }
     return _mapPath(name, false, false);
   }

@@ -16,8 +16,10 @@ class CryptDriver extends CloudDriver {
     _cipher = RcloneCipher(
       password: (config['password'] as String?) ?? '',
       salt: (config['salt'] as String?) ?? '',
-      mode: nameModeFromConfig((config['filename_encryption'] as String?) ?? 'standard'),
-      dirNameEncrypt: (config['directory_name_encryption'] as bool?) ?? true,
+      mode: nameModeFromConfig((config['filename_encryption'] as String?) ?? 'off'),
+      dirNameEncrypt: (config['directory_name_encryption'] as bool?) ?? false,
+      nameEncoding: (config['filename_encoding'] as String?) ?? 'base64',
+      encryptedSuffix: (config['encrypted_suffix'] as String?) ?? kDefaultEncryptedSuffix,
     );
     _sourceAccountId = (config['source_account_id'] as String?) ?? '';
     _sourceDir = (config['source_dir'] as String?) ?? '/';
@@ -255,6 +257,23 @@ class CryptSpec extends CloudDriverSpec {
           label: '源目录',
           hint: '源账号浏览根下的目录，默认 /（加密文件就存在这里）',
         ),
+        CloudDriverSelectField(
+          key: 'filename_encoding',
+          label: '文件名编码',
+          required: true,
+          defaultValue: 'base64',
+          options: [
+            ('base64', 'Base64（OpenList 默认）'),
+            ('base32', 'Base32（rclone 传统）'),
+          ],
+          hint: '与 rclone 的 filename_encoding 对应；base32768 暂不支持',
+        ),
+        CloudDriverField(
+          key: 'encrypted_suffix',
+          label: '文件名后缀',
+          defaultValue: '.bin',
+          hint: '仅文件名加密=关闭时生效（OpenList encrypted_suffix）',
+        ),
         CloudDriverField(
           key: 'password',
           label: '密码',
@@ -271,7 +290,7 @@ class CryptSpec extends CloudDriverSpec {
           key: 'filename_encryption',
           label: '文件名加密',
           required: true,
-          defaultValue: 'standard',
+          defaultValue: 'off',
           options: [
             ('standard', '标准 (EME)'),
             ('obfuscate', '混淆'),
@@ -281,8 +300,8 @@ class CryptSpec extends CloudDriverSpec {
         CloudDriverSwitchField(
           key: 'directory_name_encryption',
           label: '目录名加密',
-          subtitle: '关闭后目录名保持明文（对应 rclone directory_name_encryption）',
-          defaultValue: true,
+          subtitle: 'OpenList 默认关闭；开启后目录名同样加密',
+          defaultValue: false,
         ),
       ];
 

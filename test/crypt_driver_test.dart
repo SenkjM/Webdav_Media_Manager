@@ -131,6 +131,7 @@ CryptDriver buildDriver(FakeCloudSource source) {
     'salt': 'testsalt',
     'filename_encryption': 'standard',
     'directory_name_encryption': true,
+    'filename_encoding': 'base32',
   }, env: env);
   return driver;
 }
@@ -161,6 +162,8 @@ void main() {
       'source_dir': '/',
       'password': 'testpass',
       'salt': 'testsalt',
+      'filename_encryption': 'standard',
+      'filename_encoding': 'base32',
     }, env: CloudDriverEnv(resolveSource: (_) => null));
     await expectLater(driver.list('/'), throwsA(isA<CloudDriverException>()));
   });

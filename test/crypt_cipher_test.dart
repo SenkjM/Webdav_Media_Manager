@@ -102,6 +102,41 @@ void main() {
     });
   });
 
+
+  group('rclone base64 encoding and suffix vectors', () {
+    final c64 = RcloneCipher(
+      password: 'testpass',
+      salt: 'testsalt',
+      mode: NameEncryptionMode.standard,
+      dirNameEncrypt: true,
+      nameEncoding: 'base64',
+    );
+    test('base64 name matches rclone output', () {
+      expect(c64.encryptFileName('hello.txt'), 'TmJEJ9qXjRzmjF5BAgxIYQ');
+      expect(c64.decryptFileName('TmJEJ9qXjRzmjF5BAgxIYQ'), 'hello.txt');
+    });
+    test('base64 ciphertext decrypts to plaintext', () {
+      expect(
+          utf8.decode(c64.decrypt(hexDecode(
+        '52434c4f4e4500004d50b1a26c918189d8b380ba0e04e8d806465cd386316012'
+        '5ad1d999bef11bfd162438c154c9859842ce76a8f993e45fb1912f43a88c44d9'
+        '4d30'
+          ))),
+          'hello crypt 你好');
+    });
+    test('off mode uses custom suffix', () {
+      final off = RcloneCipher(
+        password: 'testpass',
+        salt: 'testsalt',
+        mode: NameEncryptionMode.off,
+        dirNameEncrypt: true,
+        encryptedSuffix: '.bin',
+      );
+      expect(off.encryptFileName('emptyish.txt'), 'emptyish.txt.bin');
+      expect(off.decryptFileName('emptyish.txt.bin'), 'emptyish.txt');
+    });
+  });
+
   group('roundtrip', () {
     final c = standardCipher();
     for (final size in [0, 1, 15, 16, 17, 65535, 65536, 65537, 131072, 200000]) {

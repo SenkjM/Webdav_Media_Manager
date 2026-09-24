@@ -194,14 +194,19 @@ class AccountsScreen extends StatelessWidget {
       fieldObscure = <String, bool>{};
       for (final item in s?.form ?? const <CloudDriverFormItem>[]) {
         if (item is CloudDriverField) {
-          final stored = existingCfg[item.key] as String?;
-          fieldCtrls[item.key] = TextEditingController(
-            text: stored?.isNotEmpty == true ? stored : item.defaultValue,
-          );
           fieldObscure[item.key] = item.obscure;
         } else if (item is CloudDriverSwitchField) {
           switchValues[item.key] =
               existingCfg[item.key] as bool? ?? item.defaultValue;
+        } else if (item is CloudDriverAccountField) {
+          fieldCtrls[item.key] = TextEditingController(
+            text: existingCfg[item.key] as String? ?? '',
+          );
+        } else if (item is CloudDriverSelectField) {
+          final stored = existingCfg[item.key] as String?;
+          fieldCtrls[item.key] = TextEditingController(
+            text: stored?.isNotEmpty == true ? stored : item.defaultValue,
+          );
         }
       }
     }
@@ -248,8 +253,20 @@ class AccountsScreen extends StatelessWidget {
               return false;
             }
             cfg[item.key] = text;
-          } else if (item is CloudDriverSwitchField) {
-            cfg[item.key] = switchValues[item.key] ?? false;
+          } else if (item is CloudDriverSelectField) {
+            final v = fieldCtrls[item.key]?.text.trim() ?? '';
+            if (item.required && v.isEmpty) {
+              AppSnack.error(context, '请选择${item.label}');
+              return false;
+            }
+            cfg[item.key] = v;
+          } else if (item is CloudDriverAccountField) {
+            final v = fieldCtrls[item.key]?.text.trim() ?? '';
+            if (item.required && v.isEmpty) {
+              AppSnack.error(context, '请选择${item.label}');
+              return false;
+            }
+            cfg[item.key] = v;
           }
         }
         // 云盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
@@ -473,6 +490,45 @@ class AccountsScreen extends StatelessWidget {
                               value: switchValues[item.key] ?? false,
                               onChanged: (v) =>
                                   setLocal(() => switchValues[item.key] = v),
+                            )
+                          else if (item is CloudDriverSelectField)
+                            DropdownButtonFormField<String>(
+                              initialValue: item.options.any((o) => o.$1 == (fieldCtrls[item.key]?.text ?? ''))
+                                  ? fieldCtrls[item.key]!.text
+                                  : (item.defaultValue.isNotEmpty ? item.defaultValue : null),
+                              decoration: InputDecoration(
+                                labelText: item.label,
+                                helperText: item.hint,
+                                helperMaxLines: 2,
+                                border: const OutlineInputBorder(),
+                              ),
+                              items: [
+                                for (final (val, lab) in item.options)
+                                  DropdownMenuItem(value: val, child: Text(lab)),
+                              ],
+                              onChanged: (v) => setLocal(
+                                  () => fieldCtrls[item.key]?.text = v ?? ''),
+                            )
+                          else if (item is CloudDriverAccountField)
+                            DropdownButtonFormField<String>(
+                              initialValue: accounts.accounts
+                                      .any((a) => a.id == (fieldCtrls[item.key]?.text ?? ''))
+                                  ? fieldCtrls[item.key]!.text
+                                  : null,
+                              decoration: InputDecoration(
+                                labelText: item.label,
+                                helperText: item.hint,
+                                helperMaxLines: 2,
+                                border: const OutlineInputBorder(),
+                              ),
+                              items: [
+                                for (final a in accounts.accounts)
+                                  if (a.providerType != 'crypt')
+                                    DropdownMenuItem(
+                                        value: a.id, child: Text(a.name)),
+                              ],
+                              onChanged: (v) => setLocal(
+                                  () => fieldCtrls[item.key]?.text = v ?? ''),
                             ),
                           const SizedBox(height: 12),
                         ],

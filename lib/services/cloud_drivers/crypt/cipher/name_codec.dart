@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'dart:typed_data';
 
 /// rclone crypt 的名字层：Base32（Hex 表，小写、去填充）+ PKCS7 + 混淆。
@@ -171,4 +173,13 @@ String deobfuscateSegment(String ciphertext, Uint8List nameKey) {
     }
   }
   return out.toString();
+}
+
+/// Base64 URL-safe 无填充（OpenList filename_encoding=base64 默认）。
+String base64UrlNoPadEncode(Uint8List src) =>
+    base64Url.encode(src).replaceAll('=', '');
+
+Uint8List base64UrlNoPadDecode(String s) {
+  final padLen = (4 - (s.length % 4)) % 4;
+  return base64Url.decode(s + ('===='.substring(0, padLen)));
 }
