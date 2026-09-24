@@ -3,6 +3,7 @@ import '../utils/app_snack.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/account_capabilities.dart';
 import '../models/webdav_account.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
@@ -188,6 +189,7 @@ class AccountsScreen extends StatelessWidget {
     var localRefresh = existingCfg['local_refresh'] as bool? ?? false;
     var obscure = true;
     var obscureToken = true;
+    var caps = AccountCaps.normalizeStored(existing?.capabilities ?? AccountCaps.all);
 
     /// Show the form; keeps the typed values so a rejected warning can re-open it.
     Future<bool> showForm() async {
@@ -293,6 +295,34 @@ class AccountsScreen extends StatelessWidget {
                               onPressed: () => setLocal(() => obscure = !obscure),
                             ),
                           ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('权限'),
+                        ),
+                        Wrap(
+                          spacing: 8,
+                          children: [
+                            for (final (label, bit) in const [
+                              ('读取', AccountCaps.read),
+                              ('写入', AccountCaps.write),
+                              ('创建文件夹', AccountCaps.mkdir),
+                              ('移动', AccountCaps.move),
+                              ('复制', AccountCaps.copy),
+                              ('删除', AccountCaps.delete),
+                            ])
+                              FilterChip(
+                                label: Text(
+                                  label,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                selected: (caps & bit) != 0,
+                                onSelected: (v) => setLocal(
+                                  () => caps = v ? (caps | bit) : (caps & ~bit),
+                                ),
+                              ),
+                          ],
                         ),
                       ] else ...[
                         const SizedBox(height: 12),
@@ -494,6 +524,7 @@ class AccountsScreen extends StatelessWidget {
         username: userCtrl.text,
         password: passCtrl.text,
         remotePath: remotePath,
+        capabilities: caps,
       );
     } else {
       await accounts.updateAccount(
@@ -503,6 +534,7 @@ class AccountsScreen extends StatelessWidget {
         username: userCtrl.text,
         password: passCtrl.text.isEmpty ? null : passCtrl.text,
         remotePath: remotePath,
+        capabilities: caps,
       );
     }
     if (context.mounted) {

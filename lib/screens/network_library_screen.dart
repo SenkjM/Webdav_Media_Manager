@@ -234,11 +234,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// used the stale cached id.
   String? get _accountId => context.read<AccountsService>().activeAccountId;
 
-  /// 当前浏览账号是否具备「写入」能力（新建文件夹按钮的遮罩，99 §7.2.6）。
-  bool get _canWriteToActiveAccount {
+  /// 当前浏览账号是否具备「创建文件夹」能力（按钮遮罩，99 §7.2.6）。
+  bool get _canCreateFolder {
     final id = _accountId;
     if (id == null) return false;
-    return context.read<CloudDriveService>().can(id, AccountCaps.write);
+    return context.read<CloudDriveService>().can(id, AccountCaps.mkdir);
   }
 
   /// Library binding name for a local WebDAV account id.
@@ -968,9 +968,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         leading: const DrawerMenuButton(),
         title: Text(folderDisplayName(_path)),
         actions: [
-          // 新建文件夹按「写入」能力遮罩（99 §7.2.3 / §7.2.6）：无能力直接
-          // 隐藏而非置灰；驱动层的语义错误是第二道防线。
-          if (accounts.hasAccounts && _canWriteToActiveAccount)
+          // 新建文件夹按「创建文件夹」能力遮罩（99 §7.2.3 / §7.2.6）：无能力
+          // 直接隐藏而非置灰；驱动层的语义错误是第二道防线。
+          if (accounts.hasAccounts && _canCreateFolder)
             IconButton(
               icon: const Icon(Icons.create_new_folder_outlined),
               tooltip: '新建文件夹',

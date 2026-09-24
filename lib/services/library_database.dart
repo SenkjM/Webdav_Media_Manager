@@ -18,7 +18,7 @@ class LibraryDatabase {
   Database? _db;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 6;
+  static const schemaVersion = 7;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   username TEXT NOT NULL,
   provider_type TEXT NOT NULL DEFAULT 'webdav',
   remote_path TEXT NOT NULL DEFAULT '/',
-  capabilities INTEGER NOT NULL DEFAULT 63
+  capabilities INTEGER NOT NULL DEFAULT 127
 )
 ''');
     await db.execute('''
@@ -211,8 +211,12 @@ CREATE TABLE IF NOT EXISTS sync_state (
     }
     if (!cols.contains('capabilities')) {
       await db.execute(
-          'ALTER TABLE accounts ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 63');
+          'ALTER TABLE accounts ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 127');
     }
+    // 旧默认 63（六位掩码）→ 当前全量 127：能力勾选 UI 上线前不存在自定义值，
+    // 全量替换安全（99 §7.2.3 的 mkdir 拆位）。
+    await db.execute(
+        'UPDATE accounts SET capabilities = 127 WHERE capabilities = 63');
   }
 
   // --- Accounts ---

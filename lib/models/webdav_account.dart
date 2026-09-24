@@ -44,7 +44,7 @@ class WebDavAccount {
         remotePath:
             WebDavAccount.normalizeRemotePath(map['remote_path'] as String? ?? '/'),
         capabilities:
-            (map['capabilities'] as int?) ?? AccountCaps.all,
+            AccountCaps.normalizeStored((map['capabilities'] as int?) ?? AccountCaps.all),
       );
 
   WebDavAccount copyWith({

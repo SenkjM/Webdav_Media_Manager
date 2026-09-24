@@ -166,10 +166,10 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
               onPressed:
                   _stack.length > 1 ? () => setState(() => _goUp()) : null,
             ),
-            // 新建文件夹按「写入」能力遮罩（99 §7.2.6）：无能力直接隐藏。
+            // 新建文件夹按「创建文件夹」能力遮罩（99 §7.2.6）：无能力直接隐藏。
             if (context
                 .read<CloudDriveService>()
-                .can(widget.accountId, AccountCaps.write))
+                .can(widget.accountId, AccountCaps.mkdir))
               IconButton(
                 icon: const Icon(Icons.create_new_folder_outlined),
                 tooltip: '新建文件夹',

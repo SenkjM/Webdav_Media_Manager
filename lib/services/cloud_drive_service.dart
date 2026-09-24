@@ -208,8 +208,11 @@ class CloudDriveService extends ChangeNotifier {
     throw UnsupportedError(_writeDisabled);
   }
 
-  Future<void> createFolder(String accountId, String path) {
-    throw UnsupportedError(_writeDisabled);
+  /// 新建文件夹：mkdir 已从「写入」拆为独立能力位（99 §7.2.3 / §7.3.2）。
+  /// 已落地驱动（baidu）真实现；UI 按能力位遮罩，无该位的驱动在驱动层抛错。
+  Future<void> createFolder(String accountId, String path) async {
+    final driver = _requireDriver(accountId);
+    await driver.mkdir(_remote(accountId, path));
   }
 
   Future<void> deletePath(String accountId, String path) async {
