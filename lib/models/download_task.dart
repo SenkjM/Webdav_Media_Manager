@@ -56,6 +56,8 @@ class DownloadTask {
     this.bytesReceived = 0,
     this.cacheGroupId,
     this.target = DownloadTarget.cache,
+    this.attempts = 0,
+    this.nextRetryAt,
   });
 
   final String id;
@@ -78,6 +80,14 @@ class DownloadTask {
 
   /// Destination the file was (or will be) written to.
   DownloadTarget target;
+
+  /// 自动重试已经用掉几次（见 download_queue_service 的退避策略）。
+  /// 手动点「重试」会清零。
+  int attempts;
+
+  /// 下一次允许尝试的时间；null = 立即可跑。无网时不消耗 [attempts]，
+  /// 只把这个时间推远，等网络事件把队列唤醒。
+  DateTime? nextRetryAt;
 
   /// True when the file went to a **public** collection (system gallery or the
   /// Downloads folder) rather than the app-private audio cache.
@@ -106,6 +116,8 @@ class DownloadTask {
     'bytes_received': bytesReceived,
     'cache_group_id': cacheGroupId,
     'target': target.storageKey,
+    'attempts': attempts,
+    'next_retry_at': nextRetryAt?.toIso8601String(),
   };
 
   factory DownloadTask.fromMap(Map<String, dynamic> map) => DownloadTask(
@@ -131,6 +143,10 @@ class DownloadTask {
     bytesReceived: (map['bytes_received'] as int?) ?? 0,
     cacheGroupId: map['cache_group_id'] as String?,
     target: DownloadTargetX.fromStorageKey(map['target'] as String?),
+    attempts: (map['attempts'] as int?) ?? 0,
+    nextRetryAt: map['next_retry_at'] != null
+        ? DateTime.parse(map['next_retry_at'] as String)
+        : null,
   );
 
   DownloadTask copyWith({

@@ -13,6 +13,7 @@ import 'accounts_service.dart';
 import 'cloud_driver.dart';
 import 'cloud_drivers/crypt/crypt_stream_bridge.dart';
 import 'cloud_drivers/driver_registry.dart';
+import 'resumable_download.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
 ///
@@ -241,16 +242,23 @@ class CloudDriveService extends ChangeNotifier {
     File localFile, {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
+    int resumeFrom = 0,
   }) async {
     final item = await _fileWithLink(accountId, remotePath);
     await localFile.parent.create(recursive: true);
     if (item.rawUrl == null) {
-      // MustProxy（crypt，99 §7.5）：内存流解密后直接写目标文件。
+      // MustProxy（crypt，99 §7.5）：解密流直接写目标文件；续传交给驱动的区间
+      // 读取——crypt 的 openContentRange 会按块边界精确解密，不重下前面的块。
       final driver = _requireDriver(accountId);
-      var received = 0;
-      final sink = localFile.openWrite();
+      final canResume = resumeFrom > 0 && item.size > resumeFrom;
+      var received = canResume ? resumeFrom : 0;
+      final sink = localFile.openWrite(
+        mode: canResume ? FileMode.append : FileMode.write,
+      );
       try {
-        await for (final chunk in driver.openContent(remotePath)) {
+        await for (final chunk in canResume
+            ? driver.openContentRange(remotePath, resumeFrom, item.size - 1)
+            : driver.openContent(remotePath)) {
           sink.add(chunk);
           received += chunk.length;
           onProgress?.call(received, item.size > 0 ? item.size : received);
@@ -261,11 +269,13 @@ class CloudDriveService extends ChangeNotifier {
       }
       return;
     }
-    await _dio.download(
+    await downloadResumable(
+      _dio,
       item.rawUrl!,
-      localFile.path,
-      options: Options(headers: item.rawHeaders),
-      onReceiveProgress: onProgress,
+      item.rawHeaders ?? const <String, String>{},
+      localFile,
+      resumeFrom: resumeFrom,
+      onProgress: onProgress,
       cancelToken: cancelToken,
     );
   }

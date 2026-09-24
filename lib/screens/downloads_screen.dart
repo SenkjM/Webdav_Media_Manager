@@ -358,8 +358,15 @@ class _TaskTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final queue = context.read<DownloadQueueService>();
+    final retryWaiting =
+        task.status == DownloadStatus.pending && task.nextRetryAt != null;
     final (label, color) = switch (task.status) {
-      DownloadStatus.pending => ('等待中', AppColors.mutedText),
+      DownloadStatus.pending => (
+        retryWaiting
+            ? '重试中 (${task.attempts}/${DownloadQueueService.maxAutoRetries})'
+            : '等待中',
+        retryWaiting ? AppColors.accent : AppColors.mutedText,
+      ),
       DownloadStatus.active => ('下载中', AppColors.accent),
       DownloadStatus.completed => ('已完成', const Color(0xFF66BB6A)),
       DownloadStatus.failed => ('失败', AppColors.error),
@@ -460,11 +467,16 @@ class _TaskTile extends StatelessWidget {
               ),
             ],
             if (task.errorMessage != null &&
-                task.status == DownloadStatus.failed) ...[
+                (task.status == DownloadStatus.failed ||
+                    retryWaiting)) ...[
               const SizedBox(height: 4),
               Text(
                 task.errorMessage!,
-                style: const TextStyle(color: AppColors.error),
+                style: TextStyle(
+                  color: task.status == DownloadStatus.failed
+                      ? AppColors.error
+                      : AppColors.mutedText,
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),

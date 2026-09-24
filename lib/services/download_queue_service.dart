@@ -3,7 +3,6 @@ import 'dart:collection';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -20,6 +19,11 @@ import 'download_store.dart';
 import 'library_service.dart';
 import 'platform_export_service.dart';
 import 'webdav_service.dart';
+import 'dart:math';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'cloud_drivers/crypt/cipher/rclone_cipher.dart';
+import 'settings_service.dart';
+import 'package:flutter/widgets.dart';
 
 /// Background async download queue. Does not block UI/navigation.
 /// Ordering: FIFO by [createdAt]. Only one active download at a time.
@@ -28,7 +32,7 @@ import 'webdav_service.dart';
 /// * music → app-internal audio cache (the only place playback reads from)
 /// * video → the **system gallery** via MediaStore, so downloads show up in
 ///   the device's video app rather than an app-private folder
-class DownloadQueueService extends ChangeNotifier {
+class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   DownloadQueueService({
     required WebDavService webDav,
     required CacheService cache,
@@ -38,6 +42,7 @@ class DownloadQueueService extends ChangeNotifier {
     bool Function(String name)? isMusicFile,
     DownloadNotificationService? notifications,
     String? Function(String sourceName)? accountIdForSource,
+    SettingsService? settings,
   }) : _webDav = webDav,
        _cache = cache,
        _library = library,
@@ -45,10 +50,14 @@ class DownloadQueueService extends ChangeNotifier {
        _export = export ?? const PlatformExportService(),
        _notify = notifications ?? DownloadNotificationService(),
        _isMusicFile = isMusicFile ?? isAudioFileName,
-       _accountIdForSource = accountIdForSource ?? ((_) => null);
+       _accountIdForSource = accountIdForSource ?? ((_) => null),
+       _settings = settings;
 
   final WebDavService _webDav;
   final CacheService _cache;
+
+  /// 半截文件清理的上限来自设置（设置 → 下载队列）；测试里可以为 null。
+  final SettingsService? _settings;
   LibraryService? _library;
   final DownloadStore _store;
   final PlatformExportService _export;
@@ -110,6 +119,77 @@ class DownloadQueueService extends ChangeNotifier {
 
   bool _running = false;
   bool _initialized = false;
+
+  /// 自动重试上限（只对网络类错误计数）。手动点「重试」不受此限。
+  static const int maxAutoRetries = 5;
+
+  /// 完全没网时的等待时间：**不消耗重试次数**，网络事件能提前唤醒。
+  ///
+  /// 别调大：断网时用户等的就是这个间隔，5 分钟看起来和「卡死」没区别。
+  static const Duration offlineRetryDelay = Duration(seconds: 10);
+
+  Timer? _retryTimer;
+
+  /// 原地重试正等在这次退避上时，网络事件用它提前叫醒。
+  Completer<void>? _wake;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
+  /// 退避：2/4/8/16/32 秒，加 0~1 秒抖动（抖动避免多任务同时回头打源站）。
+  static Duration retryDelay(int attempt) {
+    final seconds = 1 << attempt.clamp(1, 5);
+    return Duration(
+      milliseconds: seconds * 1000 + Random().nextInt(1000),
+    );
+  }
+
+  /// 第 [attempts] 次失败后等多久再试。
+  ///
+  /// 没网固定 10 秒（这时等网络回来最要紧，退避拉长反而像卡死），
+  /// 其余按 2/4/8/16/32 退避。**两种情况都算一次尝试**——计数只有一个来源。
+  static Duration retryDelayFor(int attempts, {required bool offline}) =>
+      offline ? offlineRetryDelay : retryDelay(attempts);
+
+  /// 错误值不值得自动重试。
+  ///
+  /// **默认倾向可重试**：认不出来的错误也必须落到退避兜底（用户要求），
+  /// 只有明确「重试也没用」的才直接判失败。
+  static bool isRetryable(Object error) {
+    if (error is RcloneCipherException) return false;
+    if (error is StateError) return false;
+    if (error is DioException) {
+      switch (error.type) {
+        case DioExceptionType.cancel:
+          return false;
+        case DioExceptionType.badResponse:
+          final code = error.response?.statusCode ?? 0;
+          return code == 408 || code == 429 || code >= 500;
+        default:
+          return true;
+      }
+    }
+    final text = error.toString().toLowerCase();
+    if (text.contains('401') ||
+        text.contains('403') ||
+        text.contains('404') ||
+        text.contains('unauthorized') ||
+        text.contains('forbidden')) {
+      return false;
+    }
+    return true;
+  }
+
+  /// 这个失败是不是「当前根本没网」——这类失败不该消耗重试次数。
+  static bool isOfflineError(Object error) {
+    final text = error is DioException
+        ? (error.error ?? error).toString().toLowerCase()
+        : error.toString().toLowerCase();
+    return text.contains('network is unreachable') ||
+        text.contains('network is down') ||
+        text.contains('failed host lookup') ||
+        text.contains('unable to resolve host') ||
+        text.contains('no address associated') ||
+        text.contains('nodename nor servname');
+  }
 
   /// Last failure while persisting/starting a task.
   ///
@@ -195,6 +275,13 @@ class DownloadQueueService extends ChangeNotifier {
       if (t.status != DownloadStatus.completed) _sessionIds.add(t.id);
     }
     _initialized = true;
+    // Timer 在后台会被挂起；回到前台补一次唤醒，别等下一次退避到期。
+    try {
+      WidgetsBinding.instance.addObserver(this);
+    } catch (_) {}
+    unawaited(_pump());
+    // 启动顺手收拾半截文件，不阻塞队列（.part 是续传的现场，不能无脑删）。
+    unawaited(cleanupStaleParts());
     notifyListeners();
     unawaited(_pump());
   }
@@ -1056,6 +1143,9 @@ class DownloadQueueService extends ChangeNotifier {
     old.errorMessage = null;
     old.progress = 0;
     old.bytesReceived = 0;
+    // 手动重试是明确的用户意图：重置自动重试计数（半截文件仍然复用）。
+    old.attempts = 0;
+    old.nextRetryAt = null;
     _sessionIds.add(old.id);
     await _store.upsert(old);
     notifyListeners();
@@ -1116,8 +1206,17 @@ class DownloadQueueService extends ChangeNotifier {
   }
 
   static List<DownloadTask> orderPending(List<DownloadTask> tasks) {
+    final now = DateTime.now();
+    // 正在等退避 / 等网络的任务不算「可以跑」——否则 _pump 的 while(true)
+    // 会空转，而且一个等待中的任务会把整条队列堵在后面。
     final pending =
-        tasks.where((t) => t.status == DownloadStatus.pending).toList()
+        tasks
+            .where(
+              (t) =>
+                  t.status == DownloadStatus.pending &&
+                  (t.nextRetryAt == null || !t.nextRetryAt!.isAfter(now)),
+            )
+            .toList()
           ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return pending;
   }
@@ -1219,33 +1318,238 @@ class DownloadQueueService extends ChangeNotifier {
     }
   }
 
+  /// 一次下载失败后的统一处理：立刻失败 / 退避重试 / 等网络。
+  ///
+  /// 文案是用户定死的：重试中「网络中断，正在重试 (n/5)」，耗尽后
+  /// 「重试 5 次仍失败：<原因>」。
+  Future<void> _handleFailure(
+    DownloadTask task,
+    Object error, {
+    bool cancelled = false,
+  }) async {
+    if (cancelled || task.status == DownloadStatus.cancelled) {
+      task.status = DownloadStatus.cancelled;
+      task.errorMessage = '已取消';
+      task.nextRetryAt = null;
+    } else if (isRetryable(error) && task.attempts < maxAutoRetries) {
+      // 计数**只有一个来源**：task.attempts。没网也照样 +1 —— 否则
+      // 「重试中 (n/5)」会停在原地不动，看起来就是卡死（真机反馈）。
+      final offline = isOfflineError(error);
+      task.attempts += 1;
+      task.nextRetryAt = DateTime.now().add(
+        retryDelayFor(task.attempts, offline: offline),
+      );
+      task.status = DownloadStatus.pending;
+      task.errorMessage = offline
+          ? '网络不可用，${offlineRetryDelay.inSeconds} 秒后重试 '
+                '(${task.attempts}/$maxAutoRetries)'
+          : '网络中断，正在重试 (${task.attempts}/$maxAutoRetries)';
+    } else {
+      task.status = DownloadStatus.failed;
+      task.nextRetryAt = null;
+      final why = isOfflineError(error) ? '网络不可用' : _describeError(error);
+      task.errorMessage = task.attempts >= maxAutoRetries
+          ? '重试 $maxAutoRetries 次仍失败：$why'
+          : why;
+    }
+    await _guardPersist(() => _store.upsert(task));
+    if (task.status != DownloadStatus.pending) _completeWaiter(task);
+    notifyListeners();
+    _publishProgress();
+    if (task.status == DownloadStatus.pending) _scheduleRetryWake();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _retryTimer?.cancel();
+      unawaited(_pump());
+    }
+  }
+
+  @override
+  void dispose() {
+    _retryTimer?.cancel();
+    unawaited(_connectivitySub?.cancel());
+    try {
+      WidgetsBinding.instance.removeObserver(this);
+    } catch (_) {}
+    super.dispose();
+  }
+
+  /// 清理半截文件（.part）。
+  ///
+  /// 保留 .part 是断点续传的前提，但失败任务堆着不放会吃满磁盘，所以按设置
+  /// 里的「保留时长」和「总体积上限」收拾：
+  /// * 仍属于未完成任务（pending / active）的**一律保留**——那是续传的现场；
+  /// * 其余超过保留时长的删；
+  /// * 总量仍超上限时，从最旧的开始删到上限内。
+  /// 返回删除的文件数。
+  Future<int> cleanupStaleParts() async {
+    final maxAge = Duration(
+      hours: _settings?.downloadPartMaxAgeHours ??
+          SettingsService.defaultDownloadPartMaxAgeHours,
+    );
+    final maxBytes =
+        (_settings?.downloadPartMaxMb ??
+            SettingsService.defaultDownloadPartMaxMb) *
+        1024 *
+        1024;
+    final now = DateTime.now();
+    final alive = <String>{
+      for (final t in _tasks)
+        if (t.status == DownloadStatus.pending ||
+            t.status == DownloadStatus.active)
+          t.id,
+    };
+    final files = <File>[];
+    Future<void> collect(Directory dir) async {
+      if (!await dir.exists()) return;
+      await for (final entity in dir.list(followLinks: false)) {
+        if (entity is! File || !entity.path.endsWith('.part')) continue;
+        final name = p.basename(entity.path);
+        if (alive.any(name.contains)) continue;
+        files.add(entity);
+      }
+    }
+    try {
+      await collect(_cache.cacheDir);
+      await collect(
+        Directory(p.join((await getTemporaryDirectory()).path, 'public_dl')),
+      );
+    } catch (e) {
+      debugPrint('DownloadQueueService 扫描半截文件失败: $e');
+    }
+    if (files.isEmpty) return 0;
+    final stat = <File, FileStat>{};
+    for (final file in files) {
+      try {
+        stat[file] = await file.stat();
+      } catch (_) {}
+    }
+    final ordered = stat.keys.toList()
+      ..sort((a, b) => stat[a]!.modified.compareTo(stat[b]!.modified));
+    var removed = 0;
+    var total = stat.values.fold<int>(0, (sum, s) => sum + s.size);
+    for (final file in ordered) {
+      final info = stat[file]!;
+      if (total <= maxBytes && now.difference(info.modified) <= maxAge) break;
+      try {
+        await file.delete();
+        total -= info.size;
+        removed++;
+      } catch (_) {}
+    }
+    if (removed > 0) {
+      debugPrint('DownloadQueueService 清理半截文件：$removed 个');
+    }
+    return removed;
+  }
+
+  /// 退避到期自己回来——网络事件是加速器，不是唯一唤醒源。
+  void _scheduleRetryWake() {
+    final waiting =
+        _tasks
+            .where(
+              (t) =>
+                  t.status == DownloadStatus.pending && t.nextRetryAt != null,
+            )
+            .toList();
+    if (waiting.isEmpty) return;
+    waiting.sort((a, b) => a.nextRetryAt!.compareTo(b.nextRetryAt!));
+    final delay = waiting.first.nextRetryAt!.difference(DateTime.now());
+    _retryTimer?.cancel();
+    _retryTimer = Timer(
+      delay.isNegative ? Duration.zero : delay,
+      () => unawaited(_pump()),
+    );
+  }
+
+  /// 网络恢复就叫醒正在等的退避；**不碰任何计数**。
+  ///
+  /// 早期版本在这里还维护了一套「事件唤醒连败」计数（`_eventStrikes` /
+  /// `_ignoreEventUntil`），语义上和 `task.attempts` 撞车，真机表现为
+  /// 「一直卡在第二次重试」。兜底的计数只能有一个来源。
+  void _listenConnectivity() {
+    _connectivitySub ??= Connectivity().onConnectivityChanged.listen((
+      results,
+    ) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (!online) return;
+      // 原地重试正等在这次退避上：直接叫醒，不用等满。
+      if (_wake != null) {
+        _wake!.complete();
+        _wake = null;
+        return;
+      }
+      if (!_running) unawaited(_pump());
+    });
+  }
+
+  /// 跑一次任务；连 `_runOne` 自己都没接住的异常也交给统一失败处理。
+  ///
+  /// 顺带记录这一跑是不是网络事件唤醒的（事件连赔要冷却，见 `_handleFailure`）。
+  Future<void> _attempt(DownloadTask task) async {
+    try {
+      await _runOne(task);
+    } catch (e) {
+      // A task that throws before its own try/catch (e.g. a schema error
+      // while persisting, or an unresolvable source disk) must not stall the
+      // whole queue forever — and the failure has to be **persisted**, or the
+      // row stays `active` in the database while memory says failed.
+      _lastError = _describeError(e);
+      debugPrint('DownloadQueueService _runOne failed: $e');
+      // 这里也走统一失败处理：认不出来的错误默认按可重试兜底，
+      // 而不是把任务直接判死（99 §7.5 之后的下载可靠性要求）。
+      await _handleFailure(task, e);
+    }
+  }
+
+  /// 等这次退避到期；网络事件（`_wake`）会提前叫醒。
+  Future<void> _waitForRetry(DownloadTask task) async {
+    final when = task.nextRetryAt;
+    if (when == null) return;
+    final delay = when.difference(DateTime.now());
+    if (delay <= Duration.zero) return;
+    final wake = _wake = Completer<void>();
+    try {
+      await Future.any(<Future<void>>[
+        Future<void>.delayed(delay),
+        wake.future,
+      ]);
+    } finally {
+      if (identical(_wake, wake)) _wake = null;
+    }
+  }
+
   Future<void> _pump() async {
     if (_running) return;
     _running = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _listenConnectivity();
     try {
       while (true) {
         final pending = orderPending(_tasks);
         if (pending.isEmpty) break;
         final task = pending.first;
-        try {
-          await _runOne(task);
-        } catch (e) {
-          // A task that throws before its own try/catch (e.g. a schema error
-          // while persisting, or an unresolvable source disk) must not stall the
-          // whole queue forever — and the failure has to be **persisted**, or the
-          // row stays `active` in the database while memory says failed.
-          _lastError = _describeError(e);
-          task.status = DownloadStatus.failed;
-          task.errorMessage = _lastError;
-          debugPrint('DownloadQueueService _runOne failed: $e');
-          await _guardPersist(() => _store.upsert(task));
-          notifyListeners();
+        await _attempt(task);
+        // 原地重试：任务自己约了下一次尝试，就别把它放回队尾去「等待」——
+        // 它继续占着当前这个位置（进度不重置、后面的任务不插队），
+        // 列表里也一直显示成这一条在重试。
+        while (task.status == DownloadStatus.pending &&
+            task.nextRetryAt != null) {
+          await _waitForRetry(task);
+          task.nextRetryAt = null;
+          await _attempt(task);
         }
       }
     } finally {
       _running = false;
       // Whatever finished, reflect the drained (or still busy) queue.
       _publishProgress();
+      // 还有在等退避 / 等网络的任务：安排下一次唤醒，否则队列就停在这了。
+      _scheduleRetryWake();
     }
   }
 
@@ -1281,11 +1585,15 @@ class DownloadQueueService extends ChangeNotifier {
     final tmpDir = Directory(p.join(tmpRoot.path, 'public_dl'));
     if (!await tmpDir.exists()) await tmpDir.create(recursive: true);
     final tmp = File(p.join(tmpDir.path, '${task.id}.part'));
+    // 续传：上次失败留下的 .part 还在，就从它的长度继续（源不支持 Range 时
+    // downloadResumable 会自己截断重下，不会拼出坏文件）。
+    final have = await tmp.exists() ? await tmp.length() : 0;
     try {
       await _webDav.downloadToFile(
         accountId,
         task.remotePath,
         tmp,
+        resumeFrom: have,
         cancelToken: token,
         onProgress: (received, total) {
           task.bytesReceived = received;
@@ -1318,26 +1626,26 @@ class DownloadQueueService extends ChangeNotifier {
       task.progress = 1.0;
       task.completedAt = DateTime.now();
       task.errorMessage = null;
+      task.attempts = 0;
       await _store.upsert(task);
       _completeWaiter(task);
       notifyListeners();
       _publishProgress();
     } catch (e) {
-      if (task.status == DownloadStatus.cancelled || token.isCancelled) {
-        task.status = DownloadStatus.cancelled;
-        task.errorMessage = '已取消';
-      } else {
-        task.status = DownloadStatus.failed;
-        task.errorMessage = e.toString();
-      }
-      await _store.upsert(task);
-      _completeWaiter(task);
-      notifyListeners();
+      await _handleFailure(
+        task,
+        e,
+        cancelled: task.status == DownloadStatus.cancelled || token.isCancelled,
+      );
     } finally {
-      if (await tmp.exists()) {
-        try {
-          await tmp.delete();
-        } catch (_) {}
+      // 失败时**保留** .part 供下次续传；清理交给 cleanupStaleParts 与设置在管。
+      if (task.status == DownloadStatus.completed ||
+          task.status == DownloadStatus.cancelled) {
+        if (await tmp.exists()) {
+          try {
+            await tmp.delete();
+          } catch (_) {}
+        }
       }
     }
   }
@@ -1352,12 +1660,14 @@ class DownloadQueueService extends ChangeNotifier {
       sourceName: task.sourceName,
     );
     final tmp = File('${dest.path}.part');
+    final have = await tmp.exists() ? await tmp.length() : 0;
 
     try {
       await _webDav.downloadToFile(
         accountId,
         task.remotePath,
         tmp,
+        resumeFrom: have,
         cancelToken: token,
         onProgress: (received, total) {
           task.bytesReceived = received;
@@ -1378,6 +1688,7 @@ class DownloadQueueService extends ChangeNotifier {
       task.progress = 1.0;
       task.completedAt = DateTime.now();
       task.errorMessage = null;
+      task.attempts = 0;
       await _cache.registerCompleted(
         task.sourceName,
         task.remotePath,
@@ -1392,21 +1703,14 @@ class DownloadQueueService extends ChangeNotifier {
       _completeWaiter(task);
       notifyListeners();
     } catch (e) {
-      if (task.status == DownloadStatus.cancelled || token.isCancelled) {
-        task.status = DownloadStatus.cancelled;
-        task.errorMessage = '已取消';
-      } else {
-        task.status = DownloadStatus.failed;
-        task.errorMessage = e.toString();
-      }
-      if (await tmp.exists()) {
+      final cancelled =
+          task.status == DownloadStatus.cancelled || token.isCancelled;
+      if (cancelled && await tmp.exists()) {
         try {
           await tmp.delete();
         } catch (_) {}
       }
-      await _store.upsert(task);
-      _completeWaiter(task);
-      notifyListeners();
+      await _handleFailure(task, e, cancelled: cancelled);
     }
   }
 

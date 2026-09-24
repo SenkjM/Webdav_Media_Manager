@@ -74,6 +74,7 @@ class AppState extends ChangeNotifier {
       webDav: webDav,
       cache: cache,
       library: library,
+      settings: settings,
       // The network library classifies entries with the configured extension
       // sets, so the queue must use the same list (never a hard-coded one).
       isMusicFile: (name) =>

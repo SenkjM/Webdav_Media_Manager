@@ -270,7 +270,9 @@ class CryptDriver extends CloudDriver {
     if (url == null || url.isEmpty) {
       throw const CloudDriverException('crypt 源不提供直链，无法解密内容');
     }
-    final dio = Dio();
+    final dio = Dio(
+      BaseOptions(connectTimeout: const Duration(seconds: 20)),
+    );
     try {
       final header = await _fetchRange(
         dio,

@@ -9,6 +9,7 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/cloud_drive_service.dart';
 import '../utils/audio_extensions.dart';
+import 'resumable_download.dart';
 
 /// Thin WebDAV client wrapper.
 ///
@@ -265,23 +266,55 @@ class WebDavService extends ChangeNotifier {
 
   /// Download a remote file into [localFile] **from a specific account**.
   /// Never used for streaming playback.
+  /// [resumeFrom] > 0 表示复用半截文件续传（见 resumable_download.dart）。
   Future<void> downloadToFile(
     String accountId,
     String remotePath,
     File localFile, {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
+    int resumeFrom = 0,
   }) async {
     final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.downloadToFile(accountId, remotePath, localFile, onProgress: onProgress, cancelToken: cancelToken);
-    final client = _requireClient(accountId);
+    if (cloud != null) {
+      return cloud.downloadToFile(
+        accountId,
+        remotePath,
+        localFile,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+        resumeFrom: resumeFrom,
+      );
+    }
+    final conn = _resolve(accountId);
+    if (conn == null) {
+      throw StateError('账号未连接：$accountId');
+    }
     await localFile.parent.create(recursive: true);
-    await client.read2File(
-      remotePath,
-      localFile.path,
-      onProgress: onProgress,
-      cancelToken: cancelToken,
+    // webdav_client 的 read2File 不支持 Range，续传要自己走 dio；认证头与
+    // buildStreamSource 保持同一套（Basic）。
+    final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
+    final headers = <String, String>{'User-Agent': 'WebdavMediaManager/1.0'};
+    if (conn.username.isNotEmpty || conn.password.isNotEmpty) {
+      final token = base64Encode(utf8.encode('${conn.username}:${conn.password}'));
+      headers['Authorization'] = 'Basic $token';
+    }
+    final dio = Dio(
+      BaseOptions(connectTimeout: const Duration(seconds: 20)),
     );
+    try {
+      await downloadResumable(
+        dio,
+        uri,
+        headers,
+        localFile,
+        resumeFrom: resumeFrom,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+    } finally {
+      dio.close();
+    }
   }
 
   Future<Uint8List> readAsBytes(String accountId, String remotePath) async {

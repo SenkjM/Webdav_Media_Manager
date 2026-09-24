@@ -18,6 +18,7 @@ import 'home_shell.dart';
 import 'sync_screen.dart';
 import 'video_settings_screen.dart';
 import '../utils/app_snack.dart';
+import 'download_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -234,6 +235,26 @@ class _SettingsScreenState extends State<SettingsScreen>
             },
           ),
           const Divider(height: 40),
+          Text(
+            '下载',
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.download_outlined),
+            title: const Text('下载队列'),
+            subtitle: const Text('断点续传的临时文件保留上限与清理'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const DownloadSettingsScreen(),
+                ),
+              );
+            },
+          ),
           Text(
             '主页与导航',
             style: Theme.of(context).textTheme.titleMedium
