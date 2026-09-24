@@ -70,3 +70,6 @@ TUNNEL-SKILL-TEST-RECORD.md
 *.apk
 *.aab
 *.ipa
+
+# Local dev clones (e.g. openlist-worker) — never part of the app
+/localdev/
