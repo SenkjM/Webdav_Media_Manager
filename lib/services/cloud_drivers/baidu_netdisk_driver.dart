@@ -380,7 +380,7 @@ class BaiduClient {
 }
 
 /// 百度网盘 CloudDriver 实现。
-class BaiduNetdiskDriver implements CloudDriver {
+class BaiduNetdiskDriver extends CloudDriver {
   BaiduNetdiskDriver({
     required BaiduAddition addition,
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
@@ -588,6 +588,7 @@ class BaiduNetdiskSpec extends CloudDriverSpec {
   CloudDriver create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
+    CloudDriverEnv? env,
   }) {
     return BaiduNetdiskDriver(
       addition: BaiduAddition.fromJson(config),

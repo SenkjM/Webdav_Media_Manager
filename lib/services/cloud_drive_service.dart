@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'dart:io' hide BytesBuilder;
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -56,7 +57,10 @@ class CloudDriveService extends ChangeNotifier {
     if (a.providerType == 'webdav') {
       return AccountCaps.forWebdav(a.capabilities);
     }
-    // 云盘：能力位是驱动自描述（99 §7.2.10）；未注册类型保守只给列出。
+    // 云盘：优先运行时能力（crypt 随源映射并剥 write，99 §7.5），
+    // 回落驱动静态表；未注册类型保守只给列出。
+    final runtime = _drivers[accountId]?.runtimeCapabilities;
+    if (runtime != null) return runtime;
     return cloudDriverSpec(a.providerType)?.capabilities ?? AccountCaps.list;
   }
 
@@ -88,12 +92,40 @@ class CloudDriveService extends ChangeNotifier {
     if (spec == null) {
       throw CloudDriverException('未知云盘类型：${a.providerType}');
     }
-    // 驱动的全部知识都在其 spec（99 §7.2.10）；兼容层只管查表与持久化。
+    // 驱动的全部知识都在其 spec（99 §7.2.10）；兼容层只管查表、持久化
+    // 与运行环境注入（crypt 的源解析，99 §7.5）。
     return spec.create(
       cfg ?? const <String, dynamic>{},
       onTokenUpdate: (patch) => _persistTokens(a.id, patch),
+      env: _buildEnv(),
     );
   }
+
+  /// WebDAV 源工厂（crypt 的 WebDAV 源需要）。由装配层注入——兼容层
+  /// 只认 [CloudSource] 抽象，不反向依赖 WebDavService（保持解耦）。
+  CloudSource? Function(String accountId)? _webDavSourceFactory;
+
+  void attachWebDavSourceFactory(CloudSource? Function(String accountId) f) =>
+      _webDavSourceFactory = f;
+
+  /// crypt 等包装驱动的源解析：WebDAV / 云盘账号各给一个适配器视图；
+  /// 源不存在返回 null（由驱动在浏览时报错，99 §7.5）。
+  CloudSource? _resolveSource(String accountId) {
+    final a = _accounts.accountById(accountId);
+    if (a == null) return null;
+    if (a.providerType == 'webdav') {
+      return _webDavSourceFactory?.call(accountId);
+    }
+    final driver = _drivers[accountId];
+    if (driver == null) return null;
+    return CloudAccountSource(
+      driver: driver,
+      basePath: WebDavAccount.normalizeRemotePath(a.remotePath),
+      capabilities: cloudDriverSpec(a.providerType)?.capabilities ?? AccountCaps.list,
+    );
+  }
+
+  CloudDriverEnv _buildEnv() => CloudDriverEnv(resolveSource: _resolveSource);
 
   /// 令牌轮换持久化（驱动回调）：patch 原样合并进存储的配置。
   Future<void> _persistTokens(String accountId, Map<String, dynamic> patch) async {
@@ -113,7 +145,7 @@ class CloudDriveService extends ChangeNotifier {
     if (spec == null) {
       throw CloudDriverException('未知云盘类型：${account.providerType}');
     }
-    await spec.verify(config);
+    await spec.verify(config, env: _buildEnv());
   }
 
   /// 该账号的驱动；未接入返回 null。
@@ -174,6 +206,23 @@ class CloudDriveService extends ChangeNotifier {
   }) async {
     final item = await _fileWithLink(accountId, remotePath);
     await localFile.parent.create(recursive: true);
+    if (item.rawUrl == null) {
+      // MustProxy（crypt，99 §7.5）：内存流解密后直接写目标文件。
+      final driver = _requireDriver(accountId);
+      var received = 0;
+      final sink = localFile.openWrite();
+      try {
+        await for (final chunk in driver.openContent(remotePath)) {
+          sink.add(chunk);
+          received += chunk.length;
+          onProgress?.call(received, item.size > 0 ? item.size : received);
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
+      }
+      return;
+    }
     await _dio.download(
       item.rawUrl!,
       localFile.path,
@@ -185,6 +234,14 @@ class CloudDriveService extends ChangeNotifier {
 
   Future<Uint8List> readAsBytes(String accountId, String remotePath) async {
     final item = await _fileWithLink(accountId, remotePath);
+    if (item.rawUrl == null) {
+      final driver = _requireDriver(accountId);
+      final out = BytesBuilder();
+      await for (final chunk in driver.openContent(remotePath)) {
+        out.add(chunk);
+      }
+      return out.toBytes();
+    }
     final res = await _dio.get<List<int>>(
       item.rawUrl!,
       options: Options(
@@ -282,8 +339,14 @@ class CloudDriveService extends ChangeNotifier {
             ? StreamKind.music
             : StreamKind.video);
     final item = await _fileWithLink(accountId, remotePath);
+    final raw = item.rawUrl;
+    if (raw == null) {
+      // crypt 等 MustProxy 驱动：流式播放需要本地流桥（99 §7.5，下一批落地），
+      // 先以明确错误拒绝，不给出密文直链。
+      throw CloudDriverException('该账号类型暂不支持流式播放，请先下载后播放');
+    }
     return WebDavStreamSource(
-      uri: item.rawUrl!,
+      uri: raw,
       headers: item.rawHeaders ?? const {},
       name: name,
       remotePath: remotePath,
@@ -306,17 +369,14 @@ class CloudDriveService extends ChangeNotifier {
     return joinRemotePath(_requireAccount(accountId), path);
   }
 
-  /// 取文件条目并校验直链存在。
+  /// 取文件条目。rawUrl 可能为 null（crypt 等 MustProxy 驱动，99 §7.5），
+  /// 由调用方决定走直链还是 openContent。
   Future<CloudFileItem> _fileWithLink(
     String accountId,
     String remotePath,
   ) async {
     final driver = _requireDriver(accountId);
-    final item = await driver.get(_remote(accountId, remotePath));
-    if (item.rawUrl == null || item.rawUrl!.isEmpty) {
-      throw CloudDriverException('该驱动未返回下载直链：${item.name}');
-    }
-    return item;
+    return driver.get(_remote(accountId, remotePath));
   }
 
   WebDavAccount _requireAccount(String accountId) {

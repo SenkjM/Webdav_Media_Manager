@@ -7,10 +7,12 @@
 import '../cloud_driver.dart';
 
 import 'baidu_netdisk_driver.dart';
+import 'crypt/crypt_driver.dart';
 
 /// 已落地的驱动；顺序即账号表单类型下拉的显示顺序。
 const List<CloudDriverSpec> kCloudDriverSpecs = <CloudDriverSpec>[
   BaiduNetdiskSpec(),
+  CryptSpec(),
 ];
 
 /// 按存库的 provider_type 查驱动描述符；未注册返回 null。
