@@ -3,6 +3,7 @@ import '../utils/app_snack.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/account_capabilities.dart';
 import '../models/download_task.dart';
 import '../models/file_actions.dart';
 import '../models/webdav_stream.dart';
@@ -12,6 +13,7 @@ import '../models/webdav_item.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
+import '../services/cloud_drive_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/video_playback_service.dart';
@@ -232,6 +234,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// used the stale cached id.
   String? get _accountId => context.read<AccountsService>().activeAccountId;
 
+  /// 当前浏览账号是否具备「写入」能力（新建文件夹按钮的遮罩，99 §7.2.6）。
+  bool get _canWriteToActiveAccount {
+    final id = _accountId;
+    if (id == null) return false;
+    return context.read<CloudDriveService>().can(id, AccountCaps.write);
+  }
+
   /// Library binding name for a local WebDAV account id.
   String _nameFor(String accountId) =>
       context.read<AccountsService>().nameForAccount(accountId) ?? '';
@@ -298,7 +307,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   Future<void> _openVideo(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
-    final source = context.read<WebDavService>().buildStreamSource(
+    final source = await context.read<WebDavService>().resolveStreamSource(
       remotePath: item.path,
       name: item.name,
       accountId: accountId,
@@ -385,7 +394,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
     final accountId = _accountId;
     if (accountId == null) return;
-    final source = context.read<WebDavService>().buildStreamSource(
+    final source = await context.read<WebDavService>().resolveStreamSource(
       remotePath: item.path,
       name: item.name,
       accountId: accountId,
@@ -959,11 +968,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         leading: const DrawerMenuButton(),
         title: Text(folderDisplayName(_path)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.create_new_folder_outlined),
-            tooltip: '新建文件夹',
-            onPressed: accounts.hasAccounts ? _createFolder : null,
-          ),
+          // 新建文件夹按「写入」能力遮罩（99 §7.2.3 / §7.2.6）：无能力直接
+          // 隐藏而非置灰；驱动层的语义错误是第二道防线。
+          if (accounts.hasAccounts && _canWriteToActiveAccount)
+            IconButton(
+              icon: const Icon(Icons.create_new_folder_outlined),
+              tooltip: '新建文件夹',
+              onPressed: _createFolder,
+            ),
           IconButton(
             icon: const Icon(Icons.dns_outlined),
             tooltip: '管理服务器',

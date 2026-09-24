@@ -274,7 +274,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final player = _player;
     final service = _service;
     if (player == null || service == null || _switching) return;
-    final source = _streamFor(item);
+    final source = await _streamFor(item);
     if (source == null) {
       AppSnack.show(context, 'WebDAV 未连接，无法播放');
       return;
@@ -310,9 +310,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
   }
 
-  WebDavStreamSource? _streamFor(WebDavItem item) {
+  Future<WebDavStreamSource?> _streamFor(WebDavItem item) {
     final queue = _queue;
-    return context.read<WebDavService>().buildStreamSource(
+    return context.read<WebDavService>().resolveStreamSource(
       remotePath: item.path,
       name: item.name,
       accountId: queue?.accountId ?? widget.source.accountId,

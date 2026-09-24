@@ -6,6 +6,9 @@ import 'package:provider/provider.dart';
 import '../models/webdav_account.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
+import '../services/cloud_drive_service.dart';
+import '../services/cloud_driver.dart';
+import '../services/cloud_drivers/baidu_netdisk_driver.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/marquee_text.dart';
@@ -20,7 +23,7 @@ class AccountsScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: const Text('WebDAV 服务器')),
+      appBar: AppBar(title: const Text('网盘账号')),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _editAccount(context),
         child: const Icon(Icons.add),
@@ -30,7 +33,7 @@ class AccountsScreen extends StatelessWidget {
           const _BindingHint(),
           Expanded(
             child: accounts.accounts.isEmpty
-                ? const Center(child: Text('尚未添加服务器。点击右下角添加。'))
+                ? const Center(child: Text('尚未添加账号。点击右下角添加。'))
                 : ListView.builder(
                     itemCount: accounts.accounts.length,
                     itemBuilder: (context, i) {
@@ -46,7 +49,7 @@ class AccountsScreen extends StatelessWidget {
                         // 名称（用户名）：同一主机上多个挂载点一眼可分。
                         title: Text(webDavAccountLabel(a)),
                         subtitle: Text(
-                          a.url,
+                          a.url.isEmpty ? '百度网盘' : a.url,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -102,8 +105,19 @@ class AccountsScreen extends StatelessWidget {
 
   Future<void> _test(BuildContext context, WebDavAccount a) async {
     final app = context.read<AppState>();
-    final pass = await context.read<AccountsService>().passwordFor(a.id) ?? '';
     final webDav = context.read<WebDavService>();
+    if (CloudDriveService.isCloudType(a.providerType)) {
+      // 云盘账号：分流缝会把 testConnection 转给 CloudDriveService。
+      final ok = await webDav.testConnection(accountId: a.id);
+      if (!context.mounted) return;
+      if (ok) {
+        AppSnack.show(context, '连接成功');
+      } else {
+        await showWebDavErrorDialog(context, webDav.lastError ?? '连接失败');
+      }
+      return;
+    }
+    final pass = await context.read<AccountsService>().passwordFor(a.id) ?? '';
     // Refresh just this account's client; testing must not disturb which account
     // the network library is browsing.
     webDav.configure(
@@ -156,8 +170,24 @@ class AccountsScreen extends StatelessWidget {
     final urlCtrl = TextEditingController(text: existing?.url ?? '');
     final userCtrl = TextEditingController(text: existing?.username ?? '');
     final passCtrl = TextEditingController();
-    var obscure = true;
+    final remotePathCtrl = TextEditingController(text: existing?.remotePath ?? '/');
     final accounts = context.read<AccountsService>();
+    final cloudDrive = context.read<CloudDriveService>();
+    var providerType = existing?.providerType ?? 'webdav';
+    final existingCfg = existing == null
+        ? const <String, dynamic>{}
+        : (await accounts.loadDriverConfig(existing.id) ?? const <String, dynamic>{});
+    final refreshCtrl = TextEditingController(text: existingCfg['refresh_token'] as String? ?? '');
+    final renewCtrl = TextEditingController(
+      text: (existingCfg['api_url_address'] as String?)?.isNotEmpty == true
+          ? existingCfg['api_url_address'] as String
+          : BaiduClient.defaultRenewApi,
+    );
+    final clientIdCtrl = TextEditingController(text: existingCfg['client_id'] as String? ?? '');
+    final clientSecretCtrl = TextEditingController(text: existingCfg['client_secret'] as String? ?? '');
+    var localRefresh = existingCfg['local_refresh'] as bool? ?? false;
+    var obscure = true;
+    var obscureToken = true;
 
     /// Show the form; keeps the typed values so a rejected warning can re-open it.
     Future<bool> showForm() async {
@@ -200,40 +230,160 @@ class AccountsScreen extends StatelessWidget {
                           ),
                         ),
                       const SizedBox(height: 12),
-                      TextField(
-                        controller: urlCtrl,
+                      DropdownButtonFormField<String>(
+                        initialValue: providerType,
                         decoration: const InputDecoration(
-                          labelText: '服务器 URL',
-                          hintText: 'https://example.com/dav',
+                          labelText: '类型',
                           border: OutlineInputBorder(),
                         ),
-                        keyboardType: TextInputType.url,
-                        autocorrect: false,
+                        items: const [
+                          DropdownMenuItem(value: 'webdav', child: Text('WebDAV')),
+                          DropdownMenuItem(
+                              value: 'baidu_netdisk', child: Text('百度网盘')),
+                        ],
+                        // 已建账号不改类型：换类型等于换一套实现，删了重加。
+                        onChanged: existing == null
+                            ? (v) => setLocal(() {
+                                  if (v != null) providerType = v;
+                                })
+                            : null,
                       ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: userCtrl,
-                        decoration: const InputDecoration(
-                          labelText: '用户名',
-                          border: OutlineInputBorder(),
+                      if (providerType == 'webdav') ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: urlCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '服务器 URL',
+                            hintText: 'https://example.com/dav',
+                            border: OutlineInputBorder(),
+                          ),
+                          keyboardType: TextInputType.url,
+                          autocorrect: false,
                         ),
-                        autocorrect: false,
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: passCtrl,
-                        obscureText: obscure,
-                        decoration: InputDecoration(
-                          labelText: existing == null ? '密码' : '密码（留空则不修改）',
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              obscure ? Icons.visibility : Icons.visibility_off,
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: remotePathCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '远程路径',
+                            helperText: '浏览根，默认 /（空置也是 /）',
+                            border: OutlineInputBorder(),
+                          ),
+                          autocorrect: false,
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: userCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '用户名',
+                            border: OutlineInputBorder(),
+                          ),
+                          autocorrect: false,
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: passCtrl,
+                          obscureText: obscure,
+                          decoration: InputDecoration(
+                            labelText: existing == null ? '密码' : '密码（留空则不修改）',
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                obscure ? Icons.visibility : Icons.visibility_off,
+                              ),
+                              onPressed: () => setLocal(() => obscure = !obscure),
                             ),
-                            onPressed: () => setLocal(() => obscure = !obscure),
                           ),
                         ),
-                      ),
+                      ] else ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: refreshCtrl,
+                          obscureText: obscureToken,
+                          decoration: InputDecoration(
+                            labelText: 'refresh_token',
+                            helperText:
+                                '必填；获取方法见 OpenList 官方文档（baidu_netdisk 驱动页）',
+                            helperMaxLines: 2,
+                            border: const OutlineInputBorder(),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                obscureToken
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                              ),
+                              onPressed: () =>
+                                  setLocal(() => obscureToken = !obscureToken),
+                            ),
+                          ),
+                          autocorrect: false,
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: remotePathCtrl,
+                          decoration: const InputDecoration(
+                            labelText: '远程路径',
+                            helperText: '浏览根，/ = 整个网盘；空置也是 /',
+                            border: OutlineInputBorder(),
+                          ),
+                          autocorrect: false,
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: renewCtrl,
+                          enabled: !localRefresh,
+                          decoration: InputDecoration(
+                            labelText: '在线续期地址',
+                            helperText: localRefresh
+                                ? '已切到本地刷新，该地址停用'
+                                : '默认用 OpenList 维护的公共服务',
+                            helperMaxLines: 2,
+                            border: const OutlineInputBorder(),
+                            filled: localRefresh,
+                          ),
+                          autocorrect: false,
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('在本地处理令牌刷新',
+                              style: TextStyle(fontSize: 14)),
+                          subtitle: const Text(
+                            '开启后用自建百度应用刷新（需填 Client ID / Secret），在线续期停用',
+                            style: TextStyle(fontSize: 11),
+                          ),
+                          value: localRefresh,
+                          onChanged: (v) => setLocal(() => localRefresh = v),
+                        ),
+                        if (localRefresh) ...[
+                          const SizedBox(height: 4),
+                          TextField(
+                            controller: clientIdCtrl,
+                            decoration: const InputDecoration(
+                              labelText: 'Client ID',
+                              border: OutlineInputBorder(),
+                            ),
+                            autocorrect: false,
+                          ),
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: clientSecretCtrl,
+                            obscureText: obscure,
+                            decoration: InputDecoration(
+                              labelText: 'Client Secret',
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  obscure
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                ),
+                                onPressed: () =>
+                                    setLocal(() => obscure = !obscure),
+                              ),
+                            ),
+                            autocorrect: false,
+                          ),
+                        ],
+                      ],
                     ],
                   ),
                 ),
@@ -261,9 +411,11 @@ class AccountsScreen extends StatelessWidget {
     //
     // Every rejection re-opens the form with the typed values intact, so a
     // warning never costs the user their input.
+    Map<String, dynamic>? cloudConfig;
     while (true) {
       if (!await showForm() || !context.mounted) return;
       final name = nameCtrl.text.trim();
+      final isCloud = CloudDriveService.isCloudType(providerType);
       if (name.isEmpty) {
         AppSnack.error(context, '请填写名称');
         continue;
@@ -273,21 +425,75 @@ class AccountsScreen extends StatelessWidget {
       }
       if (existing != null) {
         final renamed = name != existing.name.trim();
-        final userChanged = userCtrl.text.trim() != existing.username.trim();
+        final userChanged = !isCloud &&
+            userCtrl.text.trim() != existing.username.trim();
         if ((renamed || userChanged) &&
             !await _confirmIdentityChange(context, existing, name, renamed)) {
           continue;
         }
       }
+      if (isCloud) {
+        // 百度网盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
+        if (refreshCtrl.text.trim().isEmpty) {
+          AppSnack.error(context, '请填写 refresh_token');
+          continue;
+        }
+        cloudConfig = {
+          'refresh_token': refreshCtrl.text.trim(),
+          'api_url_address': renewCtrl.text.trim(),
+          'local_refresh': localRefresh,
+          'client_id': clientIdCtrl.text.trim(),
+          'client_secret': clientSecretCtrl.text.trim(),
+        };
+        try {
+          await cloudDrive.verifyNewAccount(
+            WebDavAccount(
+              id: existing?.id ?? 'pending',
+              name: name,
+              url: '',
+              username: '',
+              providerType: providerType,
+            ),
+            cloudConfig,
+          );
+        } on CloudDriverException catch (e) {
+          if (context.mounted) AppSnack.error(context, e.toString());
+          continue; // 回到表单，已填内容都在
+        }
+      }
       break;
     }
 
-    if (existing == null) {
+    final remotePath = WebDavAccount.normalizeRemotePath(remotePathCtrl.text);
+    if (cloudConfig != null) {
+      if (existing == null) {
+        final account = await accounts.addAccount(
+          name: nameCtrl.text,
+          url: '',
+          username: '',
+          password: '',
+          providerType: providerType,
+          remotePath: remotePath,
+        );
+        await accounts.saveDriverConfig(account.id, cloudConfig);
+      } else {
+        await accounts.updateAccount(
+          id: existing.id,
+          name: nameCtrl.text,
+          url: '',
+          username: '',
+          providerType: providerType,
+          remotePath: remotePath,
+        );
+        await accounts.saveDriverConfig(existing.id, cloudConfig);
+      }
+    } else if (existing == null) {
       await accounts.addAccount(
         name: nameCtrl.text,
         url: urlCtrl.text,
         username: userCtrl.text,
         password: passCtrl.text,
+        remotePath: remotePath,
       );
     } else {
       await accounts.updateAccount(
@@ -296,6 +502,7 @@ class AccountsScreen extends StatelessWidget {
         url: urlCtrl.text,
         username: userCtrl.text,
         password: passCtrl.text.isEmpty ? null : passCtrl.text,
+        remotePath: remotePath,
       );
     }
     if (context.mounted) {

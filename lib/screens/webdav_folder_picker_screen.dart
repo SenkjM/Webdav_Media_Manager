@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/account_capabilities.dart';
 import '../models/webdav_item.dart';
+import '../services/cloud_drive_service.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
@@ -164,11 +166,15 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
               onPressed:
                   _stack.length > 1 ? () => setState(() => _goUp()) : null,
             ),
-            IconButton(
-              icon: const Icon(Icons.create_new_folder_outlined),
-              tooltip: '新建文件夹',
-              onPressed: _createFolder,
-            ),
+            // 新建文件夹按「写入」能力遮罩（99 §7.2.6）：无能力直接隐藏。
+            if (context
+                .read<CloudDriveService>()
+                .can(widget.accountId, AccountCaps.write))
+              IconButton(
+                icon: const Icon(Icons.create_new_folder_outlined),
+                tooltip: '新建文件夹',
+                onPressed: _createFolder,
+              ),
           ],
         ),
         body: Column(

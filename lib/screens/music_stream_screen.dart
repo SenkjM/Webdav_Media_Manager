@@ -71,13 +71,13 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   final TextEditingController _playlistSearch = TextEditingController();
   String _playlistFilter = '';
 
-  WebDavStreamSource _sourceFor(WebDavItem item) =>
-      context.read<WebDavService>().buildStreamSource(
-        remotePath: item.path,
-        name: item.name,
-        accountId: widget.source.accountId,
-        kind: StreamKind.music,
-      ) ??
+  Future<WebDavStreamSource> _sourceFor(WebDavItem item) async =>
+      await context.read<WebDavService>().resolveStreamSource(
+            remotePath: item.path,
+            name: item.name,
+            accountId: widget.source.accountId,
+            kind: StreamKind.music,
+          ) ??
       widget.source;
 
   @override
@@ -471,7 +471,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     if (queue == null) return;
     final item = queue.selectIndex(index);
     if (item == null) return;
-    await _open(_sourceFor(item));
+    await _open(await _sourceFor(item));
   }
 
   @override

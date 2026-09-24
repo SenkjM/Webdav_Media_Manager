@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:dio/dio.dart' show CancelToken;
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/account_capabilities.dart';
@@ -10,18 +10,19 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
 import 'cloud_driver.dart';
+import 'cloud_drivers/baidu_netdisk_driver.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
 ///
-/// 阶段 0 骨架：
-/// - 账号类型判定（[handles]，WebDavService 分流缝的另一半）与能力解析
-///   （[capabilitiesFor]，能力遮罩 UI 在阶段 2 接线）；
-/// - 驱动注册位（[_drivers]，阶段 1 起逐盘落地，首个 `baidu_netdisk`）；
+/// 阶段 1（首个驱动 `baidu_netdisk`）：
+/// - [registerAccounts] 按 providerType 实例化驱动（凭证 / 配置走
+///   AccountsService 的 secure storage 通道）；
+/// - 下载 / 流式走「直链 + 必需头」（worker 的 raw_url + raw_url_headers 语义）；
 /// - 上传 / 云端写同步按 99 §7.2.1 **永久禁用**（显式报语义，不是静默失败）；
-/// - 其余方法在对应驱动落地前抛 [UnsupportedError]。
+/// - 未接入驱动的类型在注册时跳过（启动不崩），对应方法抛 [UnsupportedError]。
 ///
-/// [WebDavItem] 会被保留为网络库的展示模型：云盘驱动返回的
-/// [CloudFileItem] 由 [_toWebDavItem] 适配，UI 层无感知。
+/// [WebDavItem] 保留为网络库展示模型：驱动返回的 [CloudFileItem] 由
+/// [_toWebDavItem] 适配，UI 层无感知。
 class CloudDriveService extends ChangeNotifier {
   CloudDriveService({required AccountsService accounts}) : _accounts = accounts;
 
@@ -29,6 +30,15 @@ class CloudDriveService extends ChangeNotifier {
 
   /// accountId → 驱动实例。只含云盘账号。
   final Map<String, CloudDriver> _drivers = {};
+
+  final Dio _dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 120),
+      followRedirects: true,
+      validateStatus: (s) => s != null && s < 400,
+    ),
+  );
 
   /// 'webdav' 之外的一切类型都算云盘 provider。
   static bool isCloudType(String providerType) => providerType != 'webdav';
@@ -46,21 +56,70 @@ class CloudDriveService extends ChangeNotifier {
     return AccountCaps.forAccountValues(a.providerType, a.capabilities);
   }
 
+  /// 账号是否具备某能力位（UI 按钮遮罩用，99 §7.2.3 / §7.2.6）。
+  bool can(String accountId, int cap) =>
+      AccountCaps.has(capabilitiesFor(accountId), cap);
+
   /// 启动 / 账号变更时登记云盘账号（AppState.registerAllAccounts 调用）。
-  /// 阶段 0 只维持集合语义；驱动实例化与登录态由阶段 1 逐盘接入。
-  void registerAccounts(Iterable<WebDavAccount> accounts) {
+  /// 总是按最新配置重建驱动实例——access_token 缓存存在配置里，重建不丢登录态。
+  /// 配置缺失或类型未接入时跳过该账号（启动不崩），表单保存后会重新注册。
+  Future<void> registerAccounts(Iterable<WebDavAccount> accounts) async {
     final wanted = <String>{};
     for (final a in accounts) {
       if (!isCloudType(a.providerType)) continue;
       wanted.add(a.id);
-      // TODO(99 §7 阶段 1): 按 providerType 实例化驱动，如
-      // _drivers[a.id] = BaiduNetdiskDriver(addition: ...) 并 init()。
-      _drivers.remove(a.id);
+      try {
+        _drivers[a.id] = _createDriver(a, await _accounts.loadDriverConfig(a.id));
+      } on CloudDriverException catch (e) {
+        _drivers.remove(a.id);
+        if (kDebugMode) debugPrint('[cloud] 跳过账号 ${a.name}：$e');
+      }
     }
     _drivers.removeWhere((id, _) => !wanted.contains(id));
+    notifyListeners();
   }
 
-  /// 该账号的驱动；未落地返回 null（上层抛「尚未接入」）。
+  CloudDriver _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
+    switch (a.providerType) {
+      case 'baidu_netdisk':
+        return BaiduNetdiskDriver(
+          addition: BaiduAddition.fromJson(cfg ?? const {}),
+          onTokenUpdate: ({required accessToken, required refreshToken}) =>
+              _persistTokens(
+            a.id,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+          ),
+        );
+      default:
+        throw CloudDriverException('未知云盘类型：${a.providerType}');
+    }
+  }
+
+  /// 令牌轮换持久化（驱动回调）：新 access_token / refresh_token 写回配置。
+  Future<void> _persistTokens(
+    String accountId, {
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    final cfg = await _accounts.loadDriverConfig(accountId) ??
+        <String, dynamic>{};
+    cfg['access_token'] = accessToken;
+    cfg['refresh_token'] = refreshToken;
+    await _accounts.saveDriverConfig(accountId, cfg);
+  }
+
+  /// 表单保存前的真连校验（99 §7.3.1：能换到 access_token 才保存）。
+  /// 失败原样抛 [CloudDriverException]，由表单展示给用户。
+  Future<void> verifyNewAccount(
+    WebDavAccount account,
+    Map<String, dynamic> config,
+  ) async {
+    final driver = _createDriver(account, config);
+    await driver.init();
+  }
+
+  /// 该账号的驱动；未接入返回 null。
   CloudDriver? driverFor(String accountId) => _drivers[accountId];
 
   /// 远程路径（浏览根）拼接：account.remotePath + path。
@@ -75,7 +134,6 @@ class CloudDriveService extends ChangeNotifier {
   // --- 对外方法（与 WebDavService 同形，分流缝的接对面） ---
 
   /// WebDAV 的 ping / readDir 探活：云盘侧等价于驱动登录态校验。
-  /// 未接入驱动的类型一律 false（阶段 2 的 UI 会按类型给出文案）。
   Future<bool> testConnection(String accountId) async {
     final driver = _drivers[accountId];
     if (driver == null) return false;
@@ -98,8 +156,7 @@ class CloudDriveService extends ChangeNotifier {
     final remote = joinRemotePath(account, path);
     final files = await driver.list(remote);
     final items = <WebDavItem>[
-      for (final f in files)
-        _toWebDavItem(f, remote, types),
+      for (final f in files) _toWebDavItem(f, remote, types),
     ];
     items.sort((a, b) {
       if (a.isDirectory != b.isDirectory) {
@@ -110,6 +167,7 @@ class CloudDriveService extends ChangeNotifier {
     return items;
   }
 
+  /// 直链下载：driver.get() → rawUrl + 必需头 → dio 流式落盘。
   Future<void> downloadToFile(
     String accountId,
     String remotePath,
@@ -117,11 +175,27 @@ class CloudDriveService extends ChangeNotifier {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    throw UnsupportedError(_notReady(accountId));
+    final item = await _fileWithLink(accountId, remotePath);
+    await localFile.parent.create(recursive: true);
+    await _dio.download(
+      item.rawUrl!,
+      localFile.path,
+      options: Options(headers: item.rawHeaders),
+      onReceiveProgress: onProgress,
+      cancelToken: cancelToken,
+    );
   }
 
   Future<Uint8List> readAsBytes(String accountId, String remotePath) async {
-    throw UnsupportedError(_notReady(accountId));
+    final item = await _fileWithLink(accountId, remotePath);
+    final res = await _dio.get<List<int>>(
+      item.rawUrl!,
+      options: Options(
+        responseType: ResponseType.bytes,
+        headers: item.rawHeaders,
+      ),
+    );
+    return Uint8List.fromList(res.data ?? <int>[]);
   }
 
   /// 云端写路径**永久禁用**（99 §7.2.1：上传砍掉）。这个错误是语义，不是未完成。
@@ -139,7 +213,8 @@ class CloudDriveService extends ChangeNotifier {
   }
 
   Future<void> deletePath(String accountId, String path) async {
-    throw UnsupportedError(_notReady(accountId));
+    final driver = _requireDriver(accountId);
+    await driver.remove(_remote(accountId, path));
   }
 
   Future<void> renamePath(
@@ -148,15 +223,28 @@ class CloudDriveService extends ChangeNotifier {
     String newPath, {
     bool overwrite = false,
   }) async {
-    throw UnsupportedError(_notReady(accountId));
+    final driver = _requireDriver(accountId);
+    await driver.rename(_remote(accountId, oldPath), _remote(accountId, newPath));
   }
 
   Future<void> copyPath(String accountId, String oldPath, String newPath) async {
-    throw UnsupportedError(_notReady(accountId));
+    final driver = _requireDriver(accountId);
+    final dst = _remote(accountId, newPath);
+    await driver.copy(
+      _remote(accountId, oldPath),
+      cloudDirname(dst),
+      cloudBasename(dst),
+    );
   }
 
   Future<void> movePath(String accountId, String oldPath, String newPath) async {
-    throw UnsupportedError(_notReady(accountId));
+    final driver = _requireDriver(accountId);
+    final dst = _remote(accountId, newPath);
+    await driver.move(
+      _remote(accountId, oldPath),
+      cloudDirname(dst),
+      cloudBasename(dst),
+    );
   }
 
   /// 与 WebDavService 同构的递归收集（走 [listDirectory]，自动继承分流与分类）。
@@ -182,15 +270,26 @@ class CloudDriveService extends ChangeNotifier {
     return result;
   }
 
-  /// 流式源：直链 + 必需头（99 §7.1 的契合点）。驱动未接入前抛错；
-  /// 接入后由 driver.get() 的 rawUrl / rawHeaders 组装。
-  WebDavStreamSource? buildStreamSource({
+  /// 异步流式源：driver.get() → 直链 + 头；后缀判定与 WebDAV 版一致。
+  Future<WebDavStreamSource?> resolveStreamSource({
     required String remotePath,
     required String name,
     required String accountId,
     StreamKind? kind,
-  }) {
-    throw UnsupportedError(_notReady(accountId));
+  }) async {
+    final streamKind = kind ??
+        (FileTypeConfig().categoryFor(name) == FileCategory.music
+            ? StreamKind.music
+            : StreamKind.video);
+    final item = await _fileWithLink(accountId, remotePath);
+    return WebDavStreamSource(
+      uri: item.rawUrl!,
+      headers: item.rawHeaders ?? const {},
+      name: name,
+      remotePath: remotePath,
+      accountId: accountId,
+      kind: streamKind,
+    );
   }
 
   // --- 内部 ---
@@ -201,6 +300,23 @@ class CloudDriveService extends ChangeNotifier {
   String _notReady(String accountId) {
     final a = _accounts.accountById(accountId);
     return '云盘驱动尚未接入：${a?.providerType ?? accountId}';
+  }
+
+  String _remote(String accountId, String path) {
+    return joinRemotePath(_requireAccount(accountId), path);
+  }
+
+  /// 取文件条目并校验直链存在。
+  Future<CloudFileItem> _fileWithLink(
+    String accountId,
+    String remotePath,
+  ) async {
+    final driver = _requireDriver(accountId);
+    final item = await driver.get(_remote(accountId, remotePath));
+    if (item.rawUrl == null || item.rawUrl!.isEmpty) {
+      throw CloudDriverException('该驱动未返回下载直链：${item.name}');
+    }
+    return item;
   }
 
   WebDavAccount _requireAccount(String accountId) {

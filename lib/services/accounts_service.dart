@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -150,6 +151,32 @@ class AccountsService extends ChangeNotifier {
     return _secure.read(key: '$_kPassPrefix$accountId');
   }
 
+  /// 云盘驱动的凭证与配置（99 §7.2.2）：JSON 存 secure storage，按账号隔离。
+  /// 内容例：refresh_token / client_id / client_secret / api_url_address /
+  /// local_refresh / access_token 缓存。
+  static const _kDriverCfgPrefix = 'cloud_driver_cfg_';
+
+  Future<void> saveDriverConfig(
+    String accountId,
+    Map<String, dynamic> config,
+  ) async {
+    await _secure.write(
+      key: '$_kDriverCfgPrefix$accountId',
+      value: jsonEncode(config),
+    );
+  }
+
+  Future<Map<String, dynamic>?> loadDriverConfig(String accountId) async {
+    final raw = await _secure.read(key: '$_kDriverCfgPrefix$accountId');
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<WebDavAccount> addAccount({
     required String name,
     required String url,
@@ -217,6 +244,7 @@ class AccountsService extends ChangeNotifier {
   Future<void> deleteAccount(String id) async {
     await _db.deleteAccount(id);
     await _secure.delete(key: '$_kPassPrefix$id');
+    await _secure.delete(key: '$_kDriverCfgPrefix$id');
     _accounts.removeWhere((a) => a.id == id);
     if (_activeAccountId == id) {
       _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;

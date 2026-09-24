@@ -139,15 +139,8 @@ class WebDavService extends ChangeNotifier {
         (FileTypeConfig().categoryFor(name) == FileCategory.music
             ? StreamKind.music
             : StreamKind.video);
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) {
-      return cloud.buildStreamSource(
-        remotePath: remotePath,
-        name: name,
-        accountId: accountId,
-        kind: kind,
-      );
-    }
+    // 云盘账号：直链要异步取（驱动 get），请走 [resolveStreamSource]；这里 null。
+    if (_cloudOf(accountId) != null) return null;
     final conn = _resolve(accountId);
     if (conn == null) return null;
     final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
@@ -165,6 +158,31 @@ class WebDavService extends ChangeNotifier {
       remotePath: remotePath,
       accountId: accountId,
       kind: streamKind,
+    );
+  }
+
+  /// 流式源的异步统一入口：云盘账号要先取直链（驱动 get），
+  /// WebDAV 账号沿用同步 [buildStreamSource]。新代码一律用这个。
+  Future<WebDavStreamSource?> resolveStreamSource({
+    required String remotePath,
+    required String name,
+    required String accountId,
+    StreamKind? kind,
+  }) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) {
+      return cloud.resolveStreamSource(
+        remotePath: remotePath,
+        name: name,
+        accountId: accountId,
+        kind: kind,
+      );
+    }
+    return buildStreamSource(
+      remotePath: remotePath,
+      name: name,
+      accountId: accountId,
+      kind: kind,
     );
   }
 

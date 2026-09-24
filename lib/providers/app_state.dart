@@ -174,7 +174,7 @@ class AppState extends ChangeNotifier {
     for (final id in webDav.registeredAccountIds) {
       if (!live.contains(id)) webDav.disconnect(accountId: id);
     }
-    cloudDrive.registerAccounts(
+    await cloudDrive.registerAccounts(
       accounts.accounts
           .where((a) => CloudDriveService.isCloudType(a.providerType)),
     );
