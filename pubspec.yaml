@@ -66,6 +66,7 @@ dependencies:
   package_info_plus: ^10.2.1
   crypto: ^3.0.7
   share_plus: ^13.3.0
+  pointycastle: ^4.0.0
 
 dev_dependencies:
   flutter_test:
