@@ -271,7 +271,9 @@
 5. **读取能力的绑定**（用户原话「缓存音乐、下载文件、浏览、播放、流式传输功能绑定到账号类型的读取能力」）：这五类功能都要求账号具备「读取」。
 6. **禁用即隐藏**：能力被遮罩时，单文件「更多」菜单的对应条目与多选工具栏的对应按钮**隐藏而非置灰**；「更多」按钮本身只要还有可用条目就保留。
 7. **账号表单定型**：第一行名称、第二行类型（默认 WebDAV），选类型后动态出该盘自身字段。WebDAV 在服务器 URL 之下新增「远程路径」（默认 `/`，空置视为 `/`），**云盘账号同样有远程路径**；保存时 URL 结尾 `/` 隐式清除（`configure()` 已有同样的 trim，表单层保持同一规则）。云盘字段默认照 worker `Addition` 原样保留以便移植，逐盘细节落实时询问用户。
-8. **云端写目标唯一选择点**（本轮查证）：`sync_screen.dart:697-714`「① 选择网盘」下拉（落 `settings.syncAccountId`；凭证 / 歌单 / 音乐库 / 备份共用这条远端路径）——**只列出具备「写入」能力的账号**。`backup_service.dart:100` 的全量账号遍历是备份档案的**凭据导出**（密码加密入档），不是写目标选择，不过滤，云盘账号凭据也该进备份；playlist / library sync 经 `SyncService.targetAccount` 汇到同一选择点，无需单独过滤。
+8. **云端写目标唯一选择点**（已按用户决定简化落地）：`sync_screen.dart`「① 选择网盘」下拉（落 `settings.syncAccountId`；凭证 / 歌单 / 音乐库 / 备份共用这条远端路径）与 `SyncService.targetAccount`（含活跃账号兜底）**只认 WebDAV 类型**——云盘没有写路径（7.2.1），用户原话「同步和备份也无法实现，只遍历 webdav 类型即可」。`backup_service.dart` 的账号遍历（备份档案凭据导出）与 `credential_vault_service.dart` 的条目构建同样只收 WebDAV：**推翻早前「云盘凭据也进备份」的说法**——档案里没有 secure storage 的驱动配置，云盘账号行恢复不了，只会占名误导。
+
+9. **流式体验：界面先落地**（用户决定，已实现）：音乐与视频两条流式入口的跳转都**不等源解析**——网络库把解析交给页内 loader（云盘解析要列表 + filemetas + HEAD 三跳，原来会卡住整条跳转链），解析失败在页内错误态表达；「伪装成视频的音频」由视频页解析后 `pushReplacement` 去音乐页（复用同一队列 seed）。音乐页缓冲可视化（不改其它 UI 元素）：删除「已缓冲」文字，已缓冲区间 = 播放进度条**二级轨道**（实心）；源解析 / 起播前的老式等待缓冲 = 二级轨道铺满**左右渐变**（自定义轨道形状）。**账号表单保存流**（用户决定，已实现）：点保存不关弹窗，保存按钮变圈等待，校验（名称 / 重名 / 身份确认 / refresh_token / 云盘真连验证）在弹窗内完成；失败报错留在表单，云盘添加成功提示「成功添加（名称）」后随表单关闭。
 
 ### 7.3 首批驱动（优先做）
 
@@ -287,7 +289,7 @@
 - **存储映射**：refresh_token / client_id / client_secret / api_url_address / local_refresh / access_token 缓存 → `AccountsService.saveDriverConfig`（secure storage JSON，按账号隔离，删号即清）；remote_path / provider_type → accounts 表。
 - **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
 - **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动）、`cloud_drive_service.dart`（工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。
-- **阶段 1 真机清单**：添加账号（换 token 成功 / 错误 token 原文报错不落库）；浏览（远程路径生效）；下载 / 缓存音乐 / 本地播放；视频与音乐流式（直链 302 + UA `pan.baidu.com`）；重命名 / 删除 / 移动 / 复制；新建文件夹按钮按「创建文件夹」位遮罩；baidu 含该位，云盘账号可建目录，WebDAV 由表单勾选决定（见 7.2.6）。
+- **阶段 1 真机清单**：添加账号（换 token 成功 / 错误 token 原文报错不落库）；浏览（远程路径生效）；下载 / 缓存音乐 / 本地播放；视频与音乐流式（直链 302 + UA `pan.baidu.com`）；重命名 / 删除 / 移动 / 复制；新建文件夹按钮按「创建文件夹」位遮罩；baidu 含该位，云盘账号可建目录，WebDAV 由表单勾选决定（见 7.2.6）；添加账号保存全程（保存变圈等待 → 失败原文报错留表单 → 成功提示「成功添加（名称）」后退出，见 7.2.9）。
 
 ### 7.3.2 mkdir（创建文件夹）能力逐盘核查（OpenList 源码，本轮查证）
 
