@@ -275,6 +275,8 @@
 
 9. **流式体验：界面先落地**（用户决定，已实现）：音乐与视频两条流式入口的跳转都**不等源解析**——网络库把解析交给页内 loader（云盘解析要列表 + filemetas + HEAD 三跳，原来会卡住整条跳转链），解析失败在页内错误态表达；「伪装成视频的音频」由视频页解析后 `pushReplacement` 去音乐页（复用同一队列 seed）。音乐页缓冲可视化（不改其它 UI 元素）：删除「已缓冲」文字，已缓冲区间 = 播放进度条**二级轨道**（实心）；源解析 / 起播前的老式等待缓冲 = 二级轨道铺满**左右渐变**（自定义轨道形状）。**账号表单保存流**（用户决定，已实现）：点保存不关弹窗，保存按钮变圈等待，校验（名称 / 重名 / 身份确认 / refresh_token / 云盘真连验证）在弹窗内完成；失败报错留在表单，云盘添加成功提示「成功添加（名称）」后随表单关闭。
 
+10. **驱动自描述与注册表**（用户决定，已实现，99 §7.2.10）：处理逻辑、能力遮罩、表单配置参数**全部收进驱动文件**（`cloud_drivers/<name>_driver.dart`：驱动 + Addition + `XxxSpec extends CloudDriverSpec`）；`driver_registry.dart` 是唯一注册点（对齐 OpenList 的 bootstrap/drivers）——**新增一个盘 = 新增一个文件 + 注册表加一行**。账号表单按 `spec.form`（`CloudDriverField` / `CloudDriverSwitchField`，支持 visibleWhenSwitch / enabledWhenSwitch 依赖开关）通用渲染，类型下拉读 `kCloudDriverSpecs`，保存校验与配置组装按 spec 声明的键 / 必填 / 默认值执行；兼容层 `CloudDriveService` 只查表（`cloudDriverSpec(typeId)`）做构造 / 校验 / 令牌 patch 持久化，`AccountCaps` 只剩通用位定义与 WebDAV 归一（`staticCaps` / `forType` 已删）。**接口层独立**：`CloudDriver` + `CloudFileItem` + `CloudDriverException` + spec 全在 `cloud_driver.dart`，不依赖账号 / 存储；crypt 这类中间处理层以后实现同一 spec，`create()` 包住内层驱动、注册即接入。顺带：远程路径提为通用字段（类型之后、动态区之前），百度动态区顺序变为 spec 声明序（refresh_token → 在线续期地址 → 本地刷新开关 → Client ID / Secret）。
+
 ### 7.3 首批驱动（优先做）
 
 `aliyundrive_open`、`baidu_netdisk`、`quark`、`115open`、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。共同特征：refresh_token 或 cookie **粘贴式**登录、直链 + 必需头、写操作全、无重加密（worker 驱动 18–40KB）。移植底稿 `localdev/OpenList-Worker/src/backend/drivers/<name>/`，语义兜底对照 Go 版同目录。
@@ -288,7 +290,7 @@
 - **保存语义（用户原话）**：「能获取到access_token即保存，不能获取到的话则原样传递报错。」保存前 `verifyNewAccount` 真连一次（换 token + uinfo 校验），失败把 `CloudDriverException` 原文弹给用户、不落库、表单内容保留。
 - **存储映射**：refresh_token / client_id / client_secret / api_url_address / local_refresh / access_token 缓存 → `AccountsService.saveDriverConfig`（secure storage JSON，按账号隔离，删号即清）；remote_path / provider_type → accounts 表。
 - **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
-- **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动）、`cloud_drive_service.dart`（工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。
+- **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动 + **spec 自描述**：能力遮罩 / 表单参数 / 构造，见 7.2.10）、`cloud_drive_service.dart`（查表工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单按 spec 通用渲染）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。
 - **阶段 1 真机清单**：添加账号（换 token 成功 / 错误 token 原文报错不落库）；浏览（远程路径生效）；下载 / 缓存音乐 / 本地播放；视频与音乐流式（直链 302 + UA `pan.baidu.com`）；重命名 / 删除 / 移动 / 复制；新建文件夹按钮按「创建文件夹」位遮罩；baidu 含该位，云盘账号可建目录，WebDAV 由表单勾选决定（见 7.2.6）；添加账号保存全程（保存变圈等待 → 失败原文报错留表单 → 成功提示「成功添加（名称）」后退出，见 7.2.9）。
 
 ### 7.3.2 mkdir（创建文件夹）能力逐盘核查（OpenList 源码，本轮查证）
