@@ -444,7 +444,9 @@ class _TaskTile extends StatelessWidget {
                 ),
               ),
             ],
-            if (task.target != DownloadTarget.cache &&
+            // 只对系统相册显示落盘位置：下载目录那条路径显示不正确（且无修复
+            // 价值），已按要求移除（99 §7.5 真机反馈）。
+            if (task.target == DownloadTarget.gallery &&
                 task.status == DownloadStatus.completed) ...[
               const SizedBox(height: 4),
               Text(

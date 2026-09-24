@@ -77,14 +77,36 @@ class CloudDriveService extends ChangeNotifier {
       if (!isCloudType(a.providerType)) continue;
       wanted.add(a.id);
       try {
-        _drivers[a.id] = _createDriver(a, await _accounts.loadDriverConfig(a.id));
+        final cfg = await _accounts.loadDriverConfig(a.id);
+        _drivers[a.id] = _createDriver(a, cfg);
+        if (a.providerType == 'crypt') {
+          final srcId = cfg?['source_account_id'] as String?;
+          _cryptSourceTypes[a.id] =
+              srcId == null ? null : _accounts.accountById(srcId)?.providerType;
+        }
       } on CloudDriverException catch (e) {
         _drivers.remove(a.id);
         if (kDebugMode) debugPrint('[cloud] 跳过账号 ${a.name}：$e');
       }
     }
     _drivers.removeWhere((id, _) => !wanted.contains(id));
+    _cryptSourceTypes.removeWhere((id, _) => !wanted.contains(id));
     notifyListeners();
+  }
+
+  /// crypt 账号的源网盘类型（源缺失时为 null），只在 [registerAccounts] 填充。
+  final Map<String, String?> _cryptSourceTypes = <String, String?>{};
+
+  /// 账号列表 / 下拉里显示的类型名。crypt 显示「<源网盘类型> Crypt」，
+  /// 源已被删除时退化为「Crypt」（99 §7.5 真机反馈）。
+  String typeLabelFor(WebDavAccount a) {
+    if (a.providerType == 'crypt') {
+      final srcType = _cryptSourceTypes[a.id];
+      final srcName = srcType == null ? null : cloudDriverSpec(srcType)?.displayName;
+      if (srcName == null || srcName.isEmpty) return 'Crypt';
+      return '$srcName Crypt';
+    }
+    return cloudDriverSpec(a.providerType)?.displayName ?? a.providerType;
   }
 
   CloudDriver _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {

@@ -200,4 +200,61 @@ void main() {
   });
 
 
+
+  group('分段读取（下载进度走块，99 §7.5）', () {
+    test('逐块解密与整包解密一致', () {
+      final c = standardCipher();
+      // 跨 3 个块：2 个满块 + 余块。
+      final plain = Uint8List.fromList(
+        List<int>.generate(kBlockDataSize * 2 + 1234, (i) => (i * 37 + 11) & 0xFF),
+      );
+      final enc = c.encrypt(plain);
+      expect(enc.length, RcloneCipher.encryptedSize(plain.length));
+
+      final nonce = RcloneCipher.fileNonceOf(
+        Uint8List.sublistView(enc, 0, kFileHeaderSize),
+      );
+      final out = BytesBuilder();
+      var off = kFileHeaderSize;
+      var block = 0;
+      while (off < enc.length) {
+        final n =
+            (enc.length - off) < kBlockSize ? (enc.length - off) : kBlockSize;
+        out.add(
+          c.decryptBlock(nonce, block, Uint8List.sublistView(enc, off, off + n)),
+        );
+        off += n;
+        block++;
+      }
+      expect(block, 3);
+      expect(out.toBytes(), plain);
+      expect(c.decrypt(enc), plain);
+    });
+
+    test('坏块与坏文件头立即报错', () {
+      final c = standardCipher();
+      final enc =
+          c.encrypt(Uint8List.fromList(List.filled(kBlockDataSize + 10, 5)));
+      final header = Uint8List.sublistView(enc, 0, kFileHeaderSize);
+      final nonce = RcloneCipher.fileNonceOf(header);
+      final good = Uint8List.sublistView(enc, kFileHeaderSize, kFileHeaderSize + kBlockSize);
+      final tampered = Uint8List.fromList(good);
+      tampered[0] ^= 0xFF;
+      expect(
+        () => c.decryptBlock(nonce, 0, tampered),
+        throwsA(isA<RcloneCipherException>()),
+      );
+      // 同一块用错块号（nonce 不同）也必须失败。
+      expect(
+        () => c.decryptBlock(nonce, 1, good),
+        throwsA(isA<RcloneCipherException>()),
+      );
+      final badHeader = Uint8List.fromList(header);
+      badHeader[0] = 0;
+      expect(
+        () => RcloneCipher.fileNonceOf(badHeader),
+        throwsA(isA<RcloneCipherException>()),
+      );
+    });
+  });
 }

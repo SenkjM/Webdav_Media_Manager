@@ -86,8 +86,8 @@ class WebDavMusicApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Webdav Media Manager',
         debugShowCheckedModeBanner: false,
-        // Lets context-free callers (the download queue) post in-app messages.
-        scaffoldMessengerKey: AppSnack.messengerKey,
+        // 应用内消息渲染在 Navigator 之上（底部、任何弹窗都盖不住）。
+        builder: AppSnack.hostBuilder,
         themeMode: ThemeMode.light,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,

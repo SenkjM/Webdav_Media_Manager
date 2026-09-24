@@ -188,6 +188,11 @@ class CryptDriver extends CloudDriver {
   /// 解密后的内容流（下载 / 缓存的内存流路径，99 §7.5）。
   /// 取内层密文直链 → 拉全量 → 分块认证解密；块失败即抛，不落坏数据。
   @override
+  /// 分段读取 + 逐块解密（99 §7.5）：
+  /// * 先取 32 字节文件头拿到 nonce；
+  /// * 再按 rclone 块（64KiB 明文 + 16B MAC）逐块 Range 拉取、逐块认证；
+  /// * 每块立即 yield —— 下载队列的进度随块推进，内存占用只有一块；
+  /// * 源忽略 Range（一次返回整包）或大小未知时，退回整包解密。
   Stream<List<int>> openContent(String path) async* {
     final src = _requireSource();
     final inner = await src.get(_mapToInner(path, lastIsFile: true));
@@ -197,18 +202,61 @@ class CryptDriver extends CloudDriver {
     }
     final dio = Dio();
     try {
-      final res = await dio.get<List<int>>(
+      final header = await _fetchRange(
+        dio,
         url,
-        options: Options(
-          responseType: ResponseType.bytes,
-          headers: inner.rawHeaders,
-        ),
+        inner.rawHeaders,
+        0,
+        kFileHeaderSize - 1,
       );
-      final cipherBytes = Uint8List.fromList(res.data ?? const <int>[]);
-      yield _cipher.decrypt(cipherBytes);
+      if (header.length < kFileHeaderSize) {
+        throw const CloudDriverException('crypt 内容不完整（读不到文件头）');
+      }
+      final nonce = RcloneCipher.fileNonceOf(header);
+      final total = inner.size;
+      if (header.length > kFileHeaderSize || total <= kFileHeaderSize) {
+        // 一次就拿到了整包（源不支持 Range）或长度未知：整包兜底。
+        yield _cipher.decrypt(header);
+        return;
+      }
+      var offset = kFileHeaderSize;
+      var block = 0;
+      while (offset < total) {
+        var end = offset + kBlockSize - 1;
+        if (end > total - 1) end = total - 1;
+        final chunk = await _fetchRange(dio, url, inner.rawHeaders, offset, end);
+        if (chunk.isEmpty) {
+          throw CloudDriverException('crypt 内容在第 $block 块处中断');
+        }
+        yield _cipher.decryptBlock(nonce, block, chunk);
+        offset = end + 1;
+        block++;
+      }
     } finally {
       dio.close();
     }
+  }
+
+  /// 取源的 `[start, end]` 字节区间（含端点，与 HTTP Range 语义一致）。
+  Future<Uint8List> _fetchRange(
+    Dio dio,
+    String url,
+    Map<String, String>? headers,
+    int start,
+    int end,
+  ) async {
+    final res = await dio.get<List<int>>(
+      url,
+      options: Options(
+        responseType: ResponseType.bytes,
+        headers: <String, String>{
+          ...?headers,
+          'Range': 'bytes=$start-$end',
+        },
+        validateStatus: (code) => code != null && code >= 200 && code < 400,
+      ),
+    );
+    return Uint8List.fromList(res.data ?? const <int>[]);
   }
 
   @override

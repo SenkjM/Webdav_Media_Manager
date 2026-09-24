@@ -249,6 +249,37 @@ class RcloneCipher {
     return out.toBytes();
   }
 
+  /// 校验文件头并取出 24 字节文件 nonce（分段读取用）。
+  static Uint8List fileNonceOf(Uint8List header) {
+    if (header.length < kFileHeaderSize) {
+      throw const RcloneCipherException('file too short');
+    }
+    for (var i = 0; i < kFileMagic.length; i++) {
+      if (header[i] != kFileMagic[i]) {
+        throw const RcloneCipherException('bad magic');
+      }
+    }
+    return Uint8List.fromList(Uint8List.sublistView(header, 8, 32));
+  }
+
+  /// 解密单个密文块（[blockIndex] 从 0 起，块长 = 明文长 + 16 字节 MAC）。
+  /// 分段读取用：每块独立认证，坏块立即抛错，不必等整文件。
+  Uint8List decryptBlock(
+    Uint8List fileNonce,
+    int blockIndex,
+    Uint8List cipherBlock,
+  ) {
+    final plain = secretboxOpen(
+      cipherBlock,
+      _blockNonce(fileNonce, blockIndex),
+      _dataKey,
+    );
+    if (plain == null) {
+      throw RcloneCipherException('bad block #$blockIndex');
+    }
+    return plain;
+  }
+
   /// 全量解密。任一块认证失败即抛（宁报错不落坏数据）。
   Uint8List decrypt(Uint8List cipher) {
     if (cipher.length < kFileHeaderSize) {

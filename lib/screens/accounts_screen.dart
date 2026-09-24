@@ -21,6 +21,7 @@ class AccountsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accounts = context.watch<AccountsService>();
+    final cloudDrive = context.watch<CloudDriveService>();
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
@@ -49,8 +50,10 @@ class AccountsScreen extends StatelessWidget {
                         ),
                         // 名称（用户名）：同一主机上多个挂载点一眼可分。
                         title: Text(webDavAccountLabel(a)),
+                        // WebDAV 显示地址；云盘 / crypt 显示类型名
+                        // （crypt = 源类型 + Crypt，见 CloudDriveService.typeLabelFor）。
                         subtitle: Text(
-                          a.url.isEmpty ? '百度网盘' : a.url,
+                          a.url.isNotEmpty ? a.url : cloudDrive.typeLabelFor(a),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -280,6 +283,8 @@ class AccountsScreen extends StatelessWidget {
               return false;
             }
             cfg[item.key] = v;
+          } else if (item is CloudDriverSwitchField) {
+            cfg[item.key] = switchValues[item.key] ?? item.defaultValue;
           }
         }
         // 云盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
