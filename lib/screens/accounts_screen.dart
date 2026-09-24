@@ -9,7 +9,7 @@ import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/cloud_driver.dart';
-import '../services/cloud_drivers/baidu_netdisk_driver.dart';
+import '../services/cloud_drivers/driver_registry.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/marquee_text.dart';
@@ -178,17 +178,34 @@ class AccountsScreen extends StatelessWidget {
     final existingCfg = existing == null
         ? const <String, dynamic>{}
         : (await accounts.loadDriverConfig(existing.id) ?? const <String, dynamic>{});
-    final refreshCtrl = TextEditingController(text: existingCfg['refresh_token'] as String? ?? '');
-    final renewCtrl = TextEditingController(
-      text: (existingCfg['api_url_address'] as String?)?.isNotEmpty == true
-          ? existingCfg['api_url_address'] as String
-          : BaiduClient.defaultRenewApi,
-    );
-    final clientIdCtrl = TextEditingController(text: existingCfg['client_id'] as String? ?? '');
-    final clientSecretCtrl = TextEditingController(text: existingCfg['client_secret'] as String? ?? '');
-    var localRefresh = existingCfg['local_refresh'] as bool? ?? false;
     var obscure = true;
-    var obscureToken = true;
+    // 云盘动态控件按驱动 spec 生成（99 §7.2.10）：控制器 / 开关值 / 明暗态
+    // 三个映射，键都是驱动声明的字段 key；切换类型（仅新增时）重建。
+    CloudDriverSpec? spec = cloudDriverSpec(providerType);
+    var fieldCtrls = <String, TextEditingController>{};
+    var switchValues = <String, bool>{};
+    var fieldObscure = <String, bool>{};
+    void ensureSpecControls() {
+      final s = cloudDriverSpec(providerType);
+      if (identical(s, spec) && fieldCtrls.isNotEmpty) return;
+      spec = s;
+      fieldCtrls = <String, TextEditingController>{};
+      switchValues = <String, bool>{};
+      fieldObscure = <String, bool>{};
+      for (final item in s?.form ?? const <CloudDriverFormItem>[]) {
+        if (item is CloudDriverField) {
+          final stored = existingCfg[item.key] as String?;
+          fieldCtrls[item.key] = TextEditingController(
+            text: stored?.isNotEmpty == true ? stored : item.defaultValue,
+          );
+          fieldObscure[item.key] = item.obscure;
+        } else if (item is CloudDriverSwitchField) {
+          switchValues[item.key] =
+              existingCfg[item.key] as bool? ?? item.defaultValue;
+        }
+      }
+    }
+    ensureSpecControls();
     var caps = AccountCaps.normalizeStored(existing?.capabilities ?? AccountCaps.all);
 
     Map<String, dynamic>? cloudConfig;
@@ -216,18 +233,27 @@ class AccountsScreen extends StatelessWidget {
         }
       }
       if (isCloud) {
-        // 百度网盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
-        if (refreshCtrl.text.trim().isEmpty) {
-          AppSnack.error(context, '请填写 refresh_token');
+        final s = spec;
+        if (s == null) {
+          AppSnack.error(context, '未知云盘类型：$providerType');
           return false;
         }
-        cloudConfig = {
-          'refresh_token': refreshCtrl.text.trim(),
-          'api_url_address': renewCtrl.text.trim(),
-          'local_refresh': localRefresh,
-          'client_id': clientIdCtrl.text.trim(),
-          'client_secret': clientSecretCtrl.text.trim(),
-        };
+        // 配置的键 / 必填项 / 默认值全部来自驱动声明（99 §7.2.10）。
+        final cfg = <String, dynamic>{};
+        for (final item in s.form) {
+          if (item is CloudDriverField) {
+            final text = fieldCtrls[item.key]?.text.trim() ?? '';
+            if (item.required && text.isEmpty) {
+              AppSnack.error(context, '请填写 ${item.label}');
+              return false;
+            }
+            cfg[item.key] = text;
+          } else if (item is CloudDriverSwitchField) {
+            cfg[item.key] = switchValues[item.key] ?? false;
+          }
+        }
+        // 云盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
+        cloudConfig = cfg;
         try {
           await cloudDrive.verifyNewAccount(
             WebDavAccount(
@@ -295,17 +321,33 @@ class AccountsScreen extends StatelessWidget {
                           labelText: '类型',
                           border: OutlineInputBorder(),
                         ),
-                        items: const [
-                          DropdownMenuItem(value: 'webdav', child: Text('WebDAV')),
-                          DropdownMenuItem(
-                              value: 'baidu_netdisk', child: Text('百度网盘')),
+                        items: [
+                          const DropdownMenuItem(
+                              value: 'webdav', child: Text('WebDAV')),
+                          // 云盘类型来自驱动注册表（99 §7.2.10），顺序即注册顺序。
+                          for (final s in kCloudDriverSpecs)
+                            DropdownMenuItem(
+                                value: s.typeId, child: Text(s.displayName)),
                         ],
                         // 已建账号不改类型：换类型等于换一套实现，删了重加。
                         onChanged: existing == null
                             ? (v) => setLocal(() {
                                   if (v != null) providerType = v;
+                                  ensureSpecControls();
                                 })
                             : null,
+                      ),
+                      // 远程路径（浏览根）是通用字段：WebDAV 与云盘同语义，
+                      // 都放在类型之后（99 §7.2.7 / §7.2.10）。
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: remotePathCtrl,
+                        decoration: const InputDecoration(
+                          labelText: '远程路径',
+                          helperText: '浏览根，默认 /（空置也是 /）',
+                          border: OutlineInputBorder(),
+                        ),
+                        autocorrect: false,
                       ),
                       if (providerType == 'webdav') ...[
                         const SizedBox(height: 12),
@@ -317,16 +359,6 @@ class AccountsScreen extends StatelessWidget {
                             border: OutlineInputBorder(),
                           ),
                           keyboardType: TextInputType.url,
-                          autocorrect: false,
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: remotePathCtrl,
-                          decoration: const InputDecoration(
-                            labelText: '远程路径',
-                            helperText: '浏览根，默认 /（空置也是 /）',
-                            border: OutlineInputBorder(),
-                          ),
                           autocorrect: false,
                         ),
                         const SizedBox(height: 12),
@@ -382,93 +414,67 @@ class AccountsScreen extends StatelessWidget {
                           ],
                         ),
                       ] else ...[
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: refreshCtrl,
-                          obscureText: obscureToken,
-                          decoration: InputDecoration(
-                            labelText: 'refresh_token',
-                            helperText:
-                                '必填；获取方法见 OpenList 官方文档（baidu_netdisk 驱动页）',
-                            helperMaxLines: 2,
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                obscureToken
-                                    ? Icons.visibility
-                                    : Icons.visibility_off,
-                              ),
-                              onPressed: () =>
-                                  setLocal(() => obscureToken = !obscureToken),
+                        // 云盘动态区完全按驱动 spec 渲染（99 §7.2.10）：
+                        // 表单不含任何具体盘的知识，新增盘零改动。
+                        for (final item in spec?.form ??
+                            const <CloudDriverFormItem>[]) ...[
+                          if (item is CloudDriverField)
+                            Builder(
+                              builder: (_) {
+                                final f = item;
+                                final enabled = f.enabledWhenSwitch == null ||
+                                    (switchValues[f.enabledWhenSwitch] ??
+                                        false);
+                                final visible = f.visibleWhenSwitch == null ||
+                                    (switchValues[f.visibleWhenSwitch] ??
+                                        false);
+                                if (!visible) return const SizedBox.shrink();
+                                final isOff =
+                                    f.enabledWhenSwitch != null && !enabled;
+                                return TextField(
+                                  controller: fieldCtrls[f.key],
+                                  obscureText: fieldObscure[f.key] ?? false,
+                                  enabled: enabled,
+                                  decoration: InputDecoration(
+                                    labelText: f.label,
+                                    helperText: isOff
+                                        ? (f.disabledHint ?? f.hint)
+                                        : f.hint,
+                                    helperMaxLines: 2,
+                                    border: const OutlineInputBorder(),
+                                    filled: isOff,
+                                    suffixIcon: f.obscure
+                                        ? IconButton(
+                                            icon: Icon(
+                                              (fieldObscure[f.key] ?? false)
+                                                  ? Icons.visibility
+                                                  : Icons.visibility_off,
+                                            ),
+                                            onPressed: () => setLocal(
+                                              () =>
+                                                  fieldObscure[f.key] =
+                                                      !(fieldObscure[f.key] ??
+                                                          false),
+                                            ),
+                                          )
+                                        : null,
+                                  ),
+                                  autocorrect: false,
+                                );
+                              },
+                            )
+                          else if (item is CloudDriverSwitchField)
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(item.label,
+                                  style: const TextStyle(fontSize: 14)),
+                              subtitle: Text(item.subtitle,
+                                  style: const TextStyle(fontSize: 11)),
+                              value: switchValues[item.key] ?? false,
+                              onChanged: (v) =>
+                                  setLocal(() => switchValues[item.key] = v),
                             ),
-                          ),
-                          autocorrect: false,
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: remotePathCtrl,
-                          decoration: const InputDecoration(
-                            labelText: '远程路径',
-                            helperText: '浏览根，/ = 整个网盘；空置也是 /',
-                            border: OutlineInputBorder(),
-                          ),
-                          autocorrect: false,
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: renewCtrl,
-                          enabled: !localRefresh,
-                          decoration: InputDecoration(
-                            labelText: '在线续期地址',
-                            helperText: localRefresh
-                                ? '已切到本地刷新，该地址停用'
-                                : '默认用 OpenList 维护的公共服务',
-                            helperMaxLines: 2,
-                            border: const OutlineInputBorder(),
-                            filled: localRefresh,
-                          ),
-                          autocorrect: false,
-                        ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('在本地处理令牌刷新',
-                              style: TextStyle(fontSize: 14)),
-                          subtitle: const Text(
-                            '开启后用自建百度应用刷新（需填 Client ID / Secret），在线续期停用',
-                            style: TextStyle(fontSize: 11),
-                          ),
-                          value: localRefresh,
-                          onChanged: (v) => setLocal(() => localRefresh = v),
-                        ),
-                        if (localRefresh) ...[
-                          const SizedBox(height: 4),
-                          TextField(
-                            controller: clientIdCtrl,
-                            decoration: const InputDecoration(
-                              labelText: 'Client ID',
-                              border: OutlineInputBorder(),
-                            ),
-                            autocorrect: false,
-                          ),
                           const SizedBox(height: 12),
-                          TextField(
-                            controller: clientSecretCtrl,
-                            obscureText: obscure,
-                            decoration: InputDecoration(
-                              labelText: 'Client Secret',
-                              border: const OutlineInputBorder(),
-                              suffixIcon: IconButton(
-                                icon: Icon(
-                                  obscure
-                                      ? Icons.visibility
-                                      : Icons.visibility_off,
-                                ),
-                                onPressed: () =>
-                                    setLocal(() => obscure = !obscure),
-                              ),
-                            ),
-                            autocorrect: false,
-                          ),
                         ],
                       ],
                     ],

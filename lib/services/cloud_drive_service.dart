@@ -10,7 +10,7 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
 import 'cloud_driver.dart';
-import 'cloud_drivers/baidu_netdisk_driver.dart';
+import 'cloud_drivers/driver_registry.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
 ///
@@ -53,7 +53,11 @@ class CloudDriveService extends ChangeNotifier {
   int capabilitiesFor(String accountId) {
     final a = _accounts.accountById(accountId);
     if (a == null) return AccountCaps.list;
-    return AccountCaps.forAccountValues(a.providerType, a.capabilities);
+    if (a.providerType == 'webdav') {
+      return AccountCaps.forWebdav(a.capabilities);
+    }
+    // 云盘：能力位是驱动自描述（99 §7.2.10）；未注册类型保守只给列出。
+    return cloudDriverSpec(a.providerType)?.capabilities ?? AccountCaps.list;
   }
 
   /// 账号是否具备某能力位（UI 按钮遮罩用，99 §7.2.3 / §7.2.6）。
@@ -80,32 +84,22 @@ class CloudDriveService extends ChangeNotifier {
   }
 
   CloudDriver _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
-    switch (a.providerType) {
-      case 'baidu_netdisk':
-        return BaiduNetdiskDriver(
-          addition: BaiduAddition.fromJson(cfg ?? const {}),
-          onTokenUpdate: ({required accessToken, required refreshToken}) =>
-              _persistTokens(
-            a.id,
-            accessToken: accessToken,
-            refreshToken: refreshToken,
-          ),
-        );
-      default:
-        throw CloudDriverException('未知云盘类型：${a.providerType}');
+    final spec = cloudDriverSpec(a.providerType);
+    if (spec == null) {
+      throw CloudDriverException('未知云盘类型：${a.providerType}');
     }
+    // 驱动的全部知识都在其 spec（99 §7.2.10）；兼容层只管查表与持久化。
+    return spec.create(
+      cfg ?? const <String, dynamic>{},
+      onTokenUpdate: (patch) => _persistTokens(a.id, patch),
+    );
   }
 
-  /// 令牌轮换持久化（驱动回调）：新 access_token / refresh_token 写回配置。
-  Future<void> _persistTokens(
-    String accountId, {
-    required String accessToken,
-    required String refreshToken,
-  }) async {
+  /// 令牌轮换持久化（驱动回调）：patch 原样合并进存储的配置。
+  Future<void> _persistTokens(String accountId, Map<String, dynamic> patch) async {
     final cfg = await _accounts.loadDriverConfig(accountId) ??
         <String, dynamic>{};
-    cfg['access_token'] = accessToken;
-    cfg['refresh_token'] = refreshToken;
+    cfg.addAll(patch);
     await _accounts.saveDriverConfig(accountId, cfg);
   }
 
@@ -115,8 +109,11 @@ class CloudDriveService extends ChangeNotifier {
     WebDavAccount account,
     Map<String, dynamic> config,
   ) async {
-    final driver = _createDriver(account, config);
-    await driver.init();
+    final spec = cloudDriverSpec(account.providerType);
+    if (spec == null) {
+      throw CloudDriverException('未知云盘类型：${account.providerType}');
+    }
+    await spec.verify(config);
   }
 
   /// 该账号的驱动；未接入返回 null。

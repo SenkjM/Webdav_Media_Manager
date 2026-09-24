@@ -10,6 +10,7 @@ import '../models/account_capabilities.dart';
 import '../models/webdav_account.dart';
 import '../utils/credential_vault_crypto.dart';
 import '../utils/track_identity.dart';
+import 'cloud_drivers/driver_registry.dart';
 import 'library_database.dart';
 
 /// Multi-WebDAV account management. Passwords in secure storage.
@@ -196,7 +197,9 @@ class AccountsService extends ChangeNotifier {
       capabilities: capabilities ??
           (providerType == 'webdav'
               ? AccountCaps.all
-              : AccountCaps.forType(providerType)),
+              // 云盘静态位由驱动声明（99 §7.2.10）；读取时也以注册表为准。
+              : (cloudDriverSpec(providerType)?.capabilities ??
+                  AccountCaps.list)),
     );
     await _db.upsertAccount(account);
     await _secure.write(key: '$_kPassPrefix${account.id}', value: password);

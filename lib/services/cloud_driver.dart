@@ -75,3 +75,104 @@ String cloudDirname(String p) {
   if (segs.length <= 1) return '/';
   return '/${segs.sublist(0, segs.length - 1).join('/')}';
 }
+
+// ─── 驱动自描述层（99 §7.2.10）───────────────────────────────────
+// 每个驱动文件导出一个 CloudDriverSpec 常量：类型、显示名、能力遮罩、
+// 表单参数、构造与校验全部收在驱动文件里；注册表（cloud_drivers/
+// driver_registry.dart）只认这个形状。账号表单按 spec 通用渲染，兼容层
+// 只查表——新增一个盘 = 新增一个文件 + 注册表加一行（OpenList 同款）。
+// crypt 这类中间处理层以后同样实现 spec：create() 里把内层驱动包起来。
+
+/// 表单项基类：字段与开关按声明顺序渲染。
+sealed class CloudDriverFormItem {
+  const CloudDriverFormItem();
+}
+
+/// 文本字段（粘贴令牌 / 地址 / 密钥类）。
+class CloudDriverField extends CloudDriverFormItem {
+  const CloudDriverField({
+    required this.key,
+    required this.label,
+    this.hint,
+    this.required = false,
+    this.obscure = false,
+    this.defaultValue = '',
+    this.visibleWhenSwitch,
+    this.enabledWhenSwitch,
+    this.disabledHint,
+  });
+
+  /// 写入驱动配置 JSON 的键（与 Addition 序列化键一致）。
+  final String key;
+
+  /// 界面显示名。
+  final String label;
+
+  /// 辅助说明（helperText）。
+  final String? hint;
+
+  /// 必填校验由表单按此标记执行（缺省时报「请填写 [label]」）。
+  final bool required;
+
+  /// 密文输入（粘贴令牌 / 密钥），带明暗切换。
+  final bool obscure;
+
+  /// 默认值（如百度在线续期地址的公共服务）。
+  final String defaultValue;
+
+  /// 依赖开关：开关打开才**显示**该字段（如本地刷新的 Client ID / Secret）。
+  final String? visibleWhenSwitch;
+
+  /// 依赖开关：开关打开才**可编辑**（如本地刷新时的在线续期地址）。
+  final String? enabledWhenSwitch;
+
+  /// 因 [enabledWhenSwitch] 停用时替代 [hint] 的提示。
+  final String? disabledHint;
+}
+
+/// 开关字段。
+class CloudDriverSwitchField extends CloudDriverFormItem {
+  const CloudDriverSwitchField({
+    required this.key,
+    required this.label,
+    required this.subtitle,
+    this.defaultValue = false,
+  });
+
+  final String key;
+  final String label;
+  final String subtitle;
+  final bool defaultValue;
+}
+
+/// 驱动注册描述符：驱动的全部「对外知识」收在这里。
+abstract class CloudDriverSpec {
+  const CloudDriverSpec();
+
+  /// provider_type 存库值（如 'baidu_netdisk'）。
+  String get typeId;
+
+  /// 界面显示名（类型下拉）。
+  String get displayName;
+
+  /// 静态能力位（AccountCaps 位或）。write 一律不给（99 §7.2.1）。
+  int get capabilities;
+
+  /// 动态表单项（顺序即界面顺序）。远程路径是通用字段，不在这里。
+  List<CloudDriverFormItem> get form;
+
+  /// 用表单值构造驱动实例。[onTokenUpdate] 收令牌轮换 patch（键值对），
+  /// 兼容层负责持久化；中间件类驱动可转发给内层驱动。
+  CloudDriver create(
+    Map<String, dynamic> config, {
+    void Function(Map<String, dynamic> patch)? onTokenUpdate,
+  });
+
+  /// 表单保存前的真连校验：默认构造实例并 init()（99 §7.3.1）。
+  Future<void> verify(
+    Map<String, dynamic> config, {
+    void Function(Map<String, dynamic> patch)? onTokenUpdate,
+  }) async {
+    await create(config, onTokenUpdate: onTokenUpdate).init();
+  }
+}

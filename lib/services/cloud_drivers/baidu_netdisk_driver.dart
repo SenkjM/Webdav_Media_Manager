@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 
+import '../../models/account_capabilities.dart';
 import '../cloud_driver.dart';
 
 /// 百度网盘驱动（99 §7.3 首个端到端）。
@@ -113,8 +114,7 @@ class BaiduClient {
 
   BaiduAddition addition;
   String accessToken;
-  final void Function({required String accessToken, required String refreshToken})?
-      onTokenUpdate;
+  final void Function(Map<String, dynamic> patch)? onTokenUpdate;
   final Dio _dio;
 
   Future<void> login() async {
@@ -194,7 +194,10 @@ class BaiduClient {
     accessToken = access;
     addition.accessToken = access;
     addition.refreshToken = refresh;
-    onTokenUpdate?.call(accessToken: access, refreshToken: refresh);
+    onTokenUpdate?.call(<String, dynamic>{
+      'access_token': access,
+      'refresh_token': refresh,
+    });
   }
 
   /// pan.baidu.com API 请求：带 token、errno 解析、令牌错误自动刷新、
@@ -380,8 +383,7 @@ class BaiduClient {
 class BaiduNetdiskDriver implements CloudDriver {
   BaiduNetdiskDriver({
     required BaiduAddition addition,
-    void Function({required String accessToken, required String refreshToken})?
-        onTokenUpdate,
+    void Function(Map<String, dynamic> patch)? onTokenUpdate,
   }) : _client = BaiduClient(addition, onTokenUpdate: onTokenUpdate);
 
   final BaiduClient _client;
@@ -522,5 +524,74 @@ class BaiduNetdiskDriver implements CloudDriver {
     } catch (_) {
       return raw;
     }
+  }
+}
+
+/// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造
+/// 全部收在本文件——账号表单按 spec 通用渲染，兼容层只查注册表。
+/// register 表：cloud_drivers/driver_registry.dart 里加一行即接入。
+class BaiduNetdiskSpec extends CloudDriverSpec {
+  const BaiduNetdiskSpec();
+
+  @override
+  String get typeId => 'baidu_netdisk';
+
+  @override
+  String get displayName => '百度网盘';
+
+  // 列出 / 读取 / 创建文件夹 / 移动 / 复制 / 删除；write 一律不给
+  //（上传已砍，99 §7.2.1；mkdir 逐盘核查见 99 §7.3.2）。
+  @override
+  int get capabilities => AccountCaps.list |
+      AccountCaps.read |
+      AccountCaps.mkdir |
+      AccountCaps.move |
+      AccountCaps.copy |
+      AccountCaps.delete;
+
+  @override
+  List<CloudDriverFormItem> get form => const [
+        CloudDriverField(
+          key: 'refresh_token',
+          label: 'refresh_token',
+          hint: '必填；获取方法见 OpenList 官方文档（baidu_netdisk 驱动页）',
+          required: true,
+          obscure: true,
+        ),
+        CloudDriverField(
+          key: 'api_url_address',
+          label: '在线续期地址',
+          hint: '默认用 OpenList 维护的公共服务',
+          defaultValue: BaiduClient.defaultRenewApi,
+          enabledWhenSwitch: 'local_refresh',
+          disabledHint: '已切到本地刷新，该地址停用',
+        ),
+        CloudDriverSwitchField(
+          key: 'local_refresh',
+          label: '在本地处理令牌刷新',
+          subtitle: '开启后用自建百度应用刷新（需填 Client ID / Secret），在线续期停用',
+        ),
+        CloudDriverField(
+          key: 'client_id',
+          label: 'Client ID',
+          visibleWhenSwitch: 'local_refresh',
+        ),
+        CloudDriverField(
+          key: 'client_secret',
+          label: 'Client Secret',
+          obscure: true,
+          visibleWhenSwitch: 'local_refresh',
+        ),
+      ];
+
+  @override
+  CloudDriver create(
+    Map<String, dynamic> config, {
+    void Function(Map<String, dynamic> patch)? onTokenUpdate,
+  }) {
+    return BaiduNetdiskDriver(
+      addition: BaiduAddition.fromJson(config),
+      onTokenUpdate: onTokenUpdate,
+    );
   }
 }
