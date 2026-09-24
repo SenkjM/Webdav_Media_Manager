@@ -275,7 +275,7 @@
 ### 7.3 首批驱动（优先做）
 
 `aliyundrive_open`、`baidu_netdisk`、`quark`、`115open`、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。共同特征：refresh_token 或 cookie **粘贴式**登录、直链 + 必需头、写操作全、无重加密（worker 驱动 18–40KB）。移植底稿 `localdev/OpenList-Worker/src/backend/drivers/<name>/`，语义兜底对照 Go 版同目录。
-**首个端到端驱动：`baidu_netdisk`**（用户有测试条件）；`aliyundrive_open` 顺延——缺少测试条件，发布后靠其他用户反馈验收。
+**首个端到端驱动：`baidu_netdisk`**（用户有测试条件）；`aliyundrive_open` 顺延——缺少测试条件，发布后靠其他用户反馈验收。移植 baidu 时**砍掉 crack 下载 API**（`download_api=crack/crack_video`、`custom_crack_ua`、`getCrackLink` / `getCrackVideoLink`，只走官方 dlink）——用户决定。
 注意：`139` 带字符集标记，真机要先验编码。
 
 ### 7.4 只读家族（能力遮罩 = 只读）
@@ -299,14 +299,16 @@
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| 0 | 地基：[10 T6](10-SIDE-QUESTS.md) 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
+| 0 | 地基：[10 T6](10-SIDE-QUESTS.md) 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表。**已完成**：`flutter analyze` 全清 + 244 测试全过，[10 T6](10-SIDE-QUESTS.md) 随之删除 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
 | 1 | 首个驱动端到端：`baidu_netdisk`（用户有测试条件） | 真机：添加账号 → 浏览 → 下载 → 流式 |
 | 2 | 能力遮罩接线 UI：WebDAV 表单能力勾选 + 行操作 / 多选按钮按遮罩隐藏 + 只读试点（`openlist_share` + `github_releases`） | 真机：只读账号无写入口；WebDAV 能力勾选生效 |
 | 3 | 首批其余驱动逐个移植（`aliyundrive_open` 靠后，验收依赖发布后用户反馈） | 逐盘真机验收 |
 | 4 | 云端写路径禁用语义（backup / sync / playlist 对云盘账号的提示） | 真机：云盘账号同步入口有明确文案 |
 
+阶段 0 代码落点：`lib/models/account_capabilities.dart`（能力位 + 静态表）、`lib/models/webdav_account.dart`（`providerType` / `remotePath` / `capabilities`）、`lib/services/cloud_driver.dart`（接口 + `CloudFileItem`）、`lib/services/cloud_drive_service.dart`（骨架：类型判定 / 能力解析 / 写路径永久禁用）、`lib/services/webdav_service.dart`（`_cloudOf` 分流缝，12 个方法头）、`lib/services/library_database.dart`（v6，accounts 补列 `provider_type` / `remote_path` / `capabilities`）、`lib/services/accounts_service.dart`（`accountById` + 扩参）、`lib/providers/app_state.dart` 与 `lib/main.dart`（装配）。
+
 ### 7.8 剩余未定
 
-1. 逐盘表单字段与「如何获取 token / cookie」的教程文案（worker `Addition` 原样起步，落实每个驱动时询问用户）。
+1. 逐盘表单字段（worker `Addition` 原样起步，落实每个驱动时询问用户）；「如何获取 token / cookie」的教程文案**不自维护**，链 OpenList 官方文档对应驱动页兜底（同逻辑由他们维护）——用户决定。
 2. crypt 的「本地流桥 vs 仅下载」取舍（开工 crypt 前定）。
 3. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 7.6）。
