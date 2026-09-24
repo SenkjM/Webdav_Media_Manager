@@ -16,7 +16,6 @@ import '../services/audio_player_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/settings_service.dart';
-import '../services/video_playback_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/back_handler_registry.dart';
@@ -320,7 +319,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // 被当视频打开：那会白白起一个 VideoController 解码一个没有画面的流。
     // 音频只有一条流、没有视频轨，直接路由到音乐界面更省电，界面也更合适。
     if (source.kind == StreamKind.music) {
-      await _openMusicStream(source, item);
+      await _openMusicStream(item, accountId: accountId, source: source);
       return;
     }
     // Build a play queue from this folder: the already-listed videos seed it so
@@ -394,43 +393,40 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
     final accountId = _accountId;
     if (accountId == null) return;
-    final source = await context.read<WebDavService>().resolveStreamSource(
-      remotePath: item.path,
-      name: item.name,
-      accountId: accountId,
-      kind: StreamKind.music,
-    );
-    if (source == null) {
-      AppSnack.error(context, '无法建立流式地址，请检查账户配置');
-      return;
-    }
-    await _openMusicStream(source, item);
+    await _openMusicStream(item, accountId: accountId);
   }
 
   /// 打开音乐流式播放界面（音频与「被当成视频的音频」共用这一条路径）。
+  ///
+  /// 界面**先落地**：没带 [source] 时把解析交给页内 loader，跳转不再等
+  /// 网络——云盘账号的解析要走列表 + filemetas + HEAD，原来会把整条 UI
+  /// 链卡住（流式体验改造，见 99 §7.2.7）。prepare 只做媒体会话登记，
+  /// 不碰网络，交给页内 _open 处理。
   Future<void> _openMusicStream(
-    WebDavStreamSource source,
-    WebDavItem item,
-  ) async {
-    final playback = context.read<VideoPlaybackService>();
-    // 先建好源再进界面：起播不用等界面第一帧。
-    try {
-      await playback.prepare(source, bufferSizeMb: 48);
-    } catch (e) {
-      if (!mounted) return;
-      AppSnack.error(context, '流式播放失败：$e');
-      return;
-    }
-    if (!mounted) return;
+    WebDavItem item, {
+    required String accountId,
+    WebDavStreamSource? source,
+  }) async {
     final seed = VideoQueueSeed(
-      accountId: source.accountId,
+      accountId: accountId,
       folderPath: _path,
       current: item,
       siblings: _items.where((e) => e.category == FileCategory.music).toList(),
     );
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => MusicStreamScreen(source: source, seed: seed),
+        builder: (_) => MusicStreamScreen(
+          source: source,
+          sourceLoader: source != null
+              ? null
+              : () => context.read<WebDavService>().resolveStreamSource(
+                    remotePath: item.path,
+                    name: item.name,
+                    accountId: accountId,
+                    kind: StreamKind.music,
+                  ),
+          seed: seed,
+        ),
       ),
     );
   }
