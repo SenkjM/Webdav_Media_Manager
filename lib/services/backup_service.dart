@@ -10,6 +10,8 @@ import '../utils/backup_crypto.dart';
 import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
+import 'cloud_drive_service.dart';
+import 'cloud_drivers/driver_registry.dart';
 import '../utils/wmp_container.dart';
 import 'cache_service.dart';
 import 'cover_service.dart';
@@ -97,10 +99,36 @@ class BackupService extends ChangeNotifier {
     }
 
     final accounts = <Map<String, dynamic>>[];
-    // 云盘账号不进备份：上传已砍（99 §7.2.1），档案里的账号行没有驱动配置
-    // 也无法恢复可用（refresh_token 在 secure storage，不随档案走），只会
-    // 占用名称并误导恢复（用户决定：备份只遍历 WebDAV 类型）。
+    // 账号凭证全量进备份（取代 99 §4.2.8「云盘账号不进备份」）：WebDAV 三件套
+    // 之外，云盘账号的驱动配置 JSON 一并入库——其中「配置界面默认为密码」的
+    // 字段（spec.secretFieldKeys，即表单 obscure）按口令逐字段加密；URL/
+    // 名称/开关类字段保持明文，坏口令时账号与配置仍可恢复，仅密文留空。
     for (final a in _accounts.accounts) {
+      if (CloudDriveService.isCloudType(a.providerType)) {
+        final spec = cloudDriverSpec(a.providerType);
+        final raw = await _accounts.loadDriverConfig(a.id) ?? const {};
+        final cfg = <String, dynamic>{};
+        for (final e in raw.entries) {
+          final value = e.value;
+          if (passphrase.isNotEmpty &&
+              value is String &&
+              value.isNotEmpty &&
+              spec != null &&
+              spec.secretFieldKeys.contains(e.key) &&
+              !CredentialVaultCrypto.isEncrypted(value)) {
+            cfg[e.key] = await _encodePassword(value, passphrase);
+          } else {
+            cfg[e.key] = value;
+          }
+        }
+        accounts.add({
+          ...a.toMap(),
+          'password': '',
+          'passwordEncrypted': false,
+          'driverConfig': cfg,
+        });
+        continue;
+      }
       if (a.providerType != 'webdav') continue;
       final pass = await _accounts.passwordFor(a.id) ?? '';
       accounts.add({

@@ -15,7 +15,7 @@
 
 | 数据 | 云端位置 | 派生 getter（`settings_service.dart`） |
 |------|----------|------------------------------------------|
-| WebDAV 凭证 | `/player/credentials.json` | `credentialsRemotePath` |
+| 账号凭证 | `/player/credentials.json` | `credentialsRemotePath` |
 | 歌单 | `/player/playlists/` | `playlistRemotePath` |
 | 音乐库 | `/player/library/` | `libraryRemotePath` |
 | 全部备份 | `/player/backup/` | `backupRemotePath` |
@@ -37,7 +37,7 @@
 
 | 数据 | 行为 |
 |------|------|
-| WebDAV 凭证 | **真同步**：与云端 `credentials.json` 双向合并；`autoScan()` 在启动 / 切换账号 / 定时到点时跑 |
+| 账号凭证 | **真同步**：与云端 `credentials.json` 双向合并；`autoScan()` 在启动 / 切换账号 / 定时到点时跑 |
 | 歌单 | **真同步**：双向 M3U8，`updatedAt` 最后写入胜出；改动即时上传，启动 / 切换账号 / 定时拉取 |
 
 歌单文件是扩展 M3U8：`#EXTM3U` + `#EXT-X-WMP-ID` / `-UPDATED` / `-NAME`，路径行 `wmp://<accountId>/<remotePath>`；最后写入胜出由 `-UPDATED` 判定。**`WMP` 前缀是历史产品缩写、属于磁盘格式，不要改名**——已同步的歌单依赖它。编解码在 `lib/utils/m3u8_playlist.dart`。
@@ -46,8 +46,10 @@
 
 凭证加密与恢复：
 
-- `credentials.json` 里地址 / 用户名明文，只有密码加密（`AESGCMv1:`，PBKDF2-SHA256 120k + AES-256-GCM）。`passwordEncrypted: true` 表示是密文。
-- `tryDecrypt` 失败时**账号照常恢复、密码留空**（`AccountsService` 返回 missing 列表供 UI 提示），**绝不**因缺密钥中止整次同步。
+- `credentials.json`（formatVersion 2）覆盖**全部账号**：WebDAV 条目（地址 / 用户名 / 密码三件套）+ 云盘驱动条目（`providerType` + `driverConfig`，即 secure storage 里 `cloud_driver_cfg_<id>` 的 JSON）。v1 文件（只有 WebDAV 条目）按原语义读取。
+- **「配置界面默认为密码」的数据才加密**（`AESGCMv1:`，PBKDF2-SHA256 120k + AES-256-GCM）：WebDAV 的密码；云盘驱动配置里 spec 表单声明为 `obscure` 的字段（cookie / refresh_token / client_secret / crypt password+salt 等，见 `CloudDriverSpec.secretFieldKeys`——单一事实来源就是表单声明，新驱动加 obscure 字段自动纳入）。地址 / 用户名 / 开关类字段保持明文，坏口令时账号与配置仍可恢复，仅密文留空待补填。
+- `tryDecrypt` 失败时**账号照常恢复、密码留空**（`AccountsService` 返回 missing 列表供 UI 提示），**绝不**因缺密钥中止整次同步。云盘条目的密文字段逐字段处理：解不开时留用本地现值（有则不丢），账号全新则该字段留空。
+- **恢复时静默过滤不支持的网盘类型**：条目的 `providerType` 在本机未注册（`cloudDriverSpec` 查不到）→ 直接跳过，不报错、不建空壳账号；装回支持该驱动的版本即可再恢复。
 - 统一加密密钥由用户在同步页指定，存在 Keystore，与网盘登录密码**无关**（密钥若取自某网盘密码，改密码或换盘就会让已同步的密码全部解不开）。未设置密钥时，自动扫描会跳过凭证拉取，歌单照常合并。
 - 密钥不写进备份 / 导出文件；换机恢复必须手动再输一次。
 - 曲目按**网盘名 + remote_path** 绑定，云端清单里没有地址 / 用户名 / 密码；来源网盘改名会让行显示「来源网盘未绑定」（见 [03](03-MUSIC-LIBRARY.md)）。
@@ -63,7 +65,7 @@
 
 - **长任务提示走全局槽位**：重建 / 同步 / 备份可能跑几分钟，用户常常直接退出设置，因此结果一律用 `AppSnack.showGlobal(…)`（见 [07 §3](07-NOTIFICATIONS.md)），不因页面消失而沉默。自动扫描与下载后的后台增量保持静默——它们不是用户动作。
 - 设置页的「同步与备份」入口是 `ListTile` + `Icons.chevron_right` 箭头行（与「视频播放设置」「文件后缀管理」一致：打开另一个界面用箭头行，不用按钮），副标题显示当前远端路径。
-- 页面按区块排列：定时同步 → 远端路径 → WebDAV 凭证 → 歌单 → 音乐库 → 全部备份 → 本地导入导出；除了「远端路径」那一条，任何地方都不再出现路径输入。
+- 页面按区块排列：定时同步 → 远端路径 → 账号凭证 → 歌单 → 音乐库 → 全部备份 → 本地导入导出；除了「远端路径」那一条，任何地方都不再出现路径输入。
 - 音乐库区块除「同步 / 重建 / 整理」外，另有上下两个**红底白字的不可逆动作**。两者都要二次确认：确认框正文说会发生什么，小一号字补后果，最后**手打 `YES`（不区分大小写）**确认按钮才可用。两个动作是一对反义词——一个把云端拉到本地，一个把本地的删除推到云端。
   - **从云端覆写音乐库**：只清索引（tracks / CUE / 墓碑 / 同步游标，`LibraryDatabase.clearLibraryIndex()`）再整库拉一次。cache annex、封面与已下载音频保留，所以拉回来的行仍指向本地文件；未推上云端的本地改动会随索引消失。
     - **方向是单向的**：`AppState.overwriteLibraryFromCloud()` = `prepareCloudOverwrite()`（清索引 + 清内存）+ `syncLibraryIncremental()`（只读云端）。它**不会上传、也不会重建云端**——重建是反方向的那个动作。
@@ -80,8 +82,8 @@
 ## 5. 全部备份归档（BackupService）
 
 - `formatVersion = 5`；一个 `WmpContainer`（kind `BK`）：META（含 format 标记）+ TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections（credentials / playlists / settings / cueAlbums）。
-- 内容 = 全部凭证 + 全部音乐库行（tracks + cue_slices + cue_albums）+ 全部歌单 + 封面缩略图 + 设置；**不含** `music_cache` 音频与下载队列。
-- 加密：可选口令，魔数 `WDMMEN01` + PBKDF2 + AES-256-GCM（`backup_crypto.dart`）；归档内凭证的密码另行按 `credentials.json` 的规则加密。
+- 内容 = 全部账号凭证（WebDAV 三件套 + 云盘驱动配置，取代早前「云盘账号不进备份」的决定，见 [99 §4.2.8](99-IN-PROGRESS.md)）+ 全部音乐库行（tracks + cue_slices + cue_albums）+ 全部歌单 + 封面缩略图 + 设置；**不含** `music_cache` 音频与下载队列。
+- 加密：可选口令，魔数 `WDMMEN01` + PBKDF2 + AES-256-GCM（`backup_crypto.dart`）；归档内凭证按 `credentials.json` 的规则另行逐字段加密（WebDAV 密码 + 云盘配置的 obscure 字段）。恢复时同样静默过滤未注册的网盘类型。
 - **恢复策略**：恢复后 cache annex 一律清空 → 「库以为有文件但播不了」不可能发生；封面写回后再把各行的 `cover_path` 重写为本地路径。
 - 备份的写入与列出都只认 `<远端路径>backup/`，没有按站点分目录。
 
@@ -97,4 +99,4 @@
 
 ## 8. 相关代码
 
-`sync_service.dart`（编排 / `syncDestination`）、`credential_vault_service.dart`（`credentials.json` 读写）、`credential_vault_crypto.dart`（仅密码加密）、`library_sync_store.dart` + `library_shard_codec.dart` + `utils/library_index_merge.dart`（清单与分片）、`playlist_service.dart`（M3U8 双向）、`backup_service.dart`（归档）、`sync_screen.dart`（界面）、`settings_service.dart`（远端路径与账号键）。
+`sync_service.dart`（编排 / `syncDestination`）、`credential_vault_service.dart`（`credentials.json` 读写）、`credential_vault_crypto.dart`（密码类字段加密，AESGCMv1）、`cloud_driver.dart` 的 `CloudDriverSpec.secretFieldKeys`（密文字段 = 表单 obscure 声明）、`accounts_service.dart`（`loadDriverConfig` / `restoreFromBackup` 云盘条目恢复）、`library_sync_store.dart` + `library_shard_codec.dart` + `utils/library_index_merge.dart`（清单与分片）、`playlist_service.dart`（M3U8 双向）、`backup_service.dart`（归档）、`sync_screen.dart`（界面）、`settings_service.dart`（远端路径与账号键）。

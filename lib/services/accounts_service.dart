@@ -178,6 +178,19 @@ class AccountsService extends ChangeNotifier {
     }
   }
 
+  /// 按**账号名**找驱动配置（凭证恢复兜底：账号被删后重添同名账号，
+  /// id 变了但名字没变——与 crypt 的 resolveSourceByName 同一先例）。
+  Future<Map<String, dynamic>?> loadDriverConfigByName(String name) async {
+    final wanted = name.trim().toLowerCase();
+    if (wanted.isEmpty) return null;
+    for (final a in _accounts) {
+      if (a.name.trim().toLowerCase() != wanted) continue;
+      final cfg = await loadDriverConfig(a.id);
+      if (cfg != null && cfg.isNotEmpty) return cfg;
+    }
+    return null;
+  }
+
   Future<WebDavAccount> addAccount({
     required String name,
     required String url,
@@ -339,6 +352,10 @@ class AccountsService extends ChangeNotifier {
   ///
   /// Passwords may be `AESGCMv1:` blobs; entries that cannot be decrypted with
   /// [passphrase] are restored with an empty password rather than aborting.
+  ///
+  /// 云盘账号（v2 备份）：驱动配置 JSON（含 cookie/refresh_token 等令牌）随
+  /// 档案走，密文字段逐字段解密；本机未注册的 providerType **静默跳过**
+  /// （不支持 = 不报错、不建账号）。返回无法解密密码的账号名列表。
   Future<List<String>> restoreFromBackup(
     Map<String, dynamic> json, {
     String passphrase = '',
@@ -355,14 +372,54 @@ class AccountsService extends ChangeNotifier {
     final keepIds = <String>{};
     for (final raw in list) {
       final m = Map<String, dynamic>.from(raw as Map);
+      final providerType = m['providerType'] as String? ?? 'webdav';
+      // 不支持的网盘类型：静默过滤，不报错也不留空壳账号。
+      if (providerType != 'webdav' && cloudDriverSpec(providerType) == null) {
+        continue;
+      }
       final account = WebDavAccount(
         id: m['id'] as String,
         name: m['name'] as String? ?? m['url'] as String? ?? '服务器',
         url: (m['url'] as String? ?? '').trim().replaceAll(RegExp(r'/+$'), ''),
         username: m['username'] as String? ?? '',
+        providerType: providerType,
+        remotePath: m['remote_path'] as String? ?? '/',
       );
       keepIds.add(account.id);
       await _db.upsertAccount(account);
+
+      // 云盘条目：恢复驱动配置（密文字段逐字段尝试解密）。
+      if (providerType != 'webdav') {
+        final rawCfg = m['driverConfig'];
+        final cfg = rawCfg is Map ? Map<String, dynamic>.from(rawCfg) : null;
+        if (cfg != null) {
+          var secretsRecovered = true;
+          for (final e in List<MapEntry<String, dynamic>>.from(
+            cfg.entries.toList(),
+          )) {
+            final value = e.value;
+            if (value is String && CredentialVaultCrypto.isEncrypted(value)) {
+              final clear = await CredentialVaultCrypto.tryDecrypt(
+                encoded: value,
+                passphrase: passphrase,
+              );
+              if (clear == null) {
+                cfg[e.key] = '';
+                secretsRecovered = false;
+              } else {
+                cfg[e.key] = clear;
+              }
+            }
+          }
+          await _secure.write(
+            key: '$_kDriverCfgPrefix${account.id}',
+            value: jsonEncode(cfg),
+          );
+          if (!secretsRecovered) missing.add(account.name);
+        }
+        continue;
+      }
+
       final rawPass = m['password'] as String? ?? '';
       String pass = rawPass;
       if (CredentialVaultCrypto.isEncrypted(rawPass)) {
@@ -383,6 +440,7 @@ class AccountsService extends ChangeNotifier {
       if (!keepIds.contains(a.id)) {
         await _db.deleteAccount(a.id);
         await _secure.delete(key: '$_kPassPrefix${a.id}');
+        await _secure.delete(key: '$_kDriverCfgPrefix${a.id}');
       }
     }
     _accounts

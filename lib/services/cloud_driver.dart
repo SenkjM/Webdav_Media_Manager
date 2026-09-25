@@ -263,6 +263,16 @@ abstract class CloudDriverSpec {
   /// 动态表单项（顺序即界面顺序）。远程路径是通用字段，不在这里。
   List<CloudDriverFormItem> get form;
 
+  /// 驱动配置 JSON 里的**密文字段**键集合（账号凭证同步/备份的加密范围）。
+  ///
+  /// 单一事实来源是表单声明：渲染为密码输入（[CloudDriverField.obscure]）
+  /// 的字段即密文——「配置界面默认为密码的数据」与加密范围永远一致，
+  /// 新驱动加 obscure 字段自动纳入，无需另维护清单。
+  Set<String> get secretFieldKeys => {
+        for (final item in form)
+          if (item is CloudDriverField && item.obscure) item.key,
+      };
+
   /// 解析某个开关字段的当前值，供渲染与保存共用（单一事实来源）。
   ///
   /// 优先级：[values] 里的实时值 → 该开关声明的 [CloudDriverSwitchField.defaultValue]

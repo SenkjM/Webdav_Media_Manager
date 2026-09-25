@@ -5,10 +5,17 @@ import 'package:flutter/foundation.dart';
 import '../models/webdav_account.dart';
 import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
+import 'cloud_drive_service.dart';
+import 'cloud_drivers/driver_registry.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
-/// One account entry inside the WebDAV credential vault.
+/// One account entry inside the credential vault.
+///
+/// v2: WebDAV 服务器条目（url+username+password 三件套）之外，新增云盘
+/// 驱动条目——凭证收在驱动配置 JSON（secure storage `cloud_driver_cfg_<id>`）
+/// 里，其中「配置界面默认为密码」的字段（spec.secretFieldKeys，即
+/// CloudDriverField.obscure）逐字段按 [CredentialVaultCrypto] 加密。
 class VaultEntry {
   const VaultEntry({
     required this.id,
@@ -17,6 +24,9 @@ class VaultEntry {
     required this.username,
     required this.password,
     required this.passwordEncrypted,
+    this.providerType = 'webdav',
+    this.remotePath = '/',
+    this.driverConfig,
   });
 
   final String id;
@@ -32,25 +42,46 @@ class VaultEntry {
   final String password;
   final bool passwordEncrypted;
 
+  /// 账号类型：'webdav' 或云盘驱动 typeId（99 §7.2.10）。
+  final String providerType;
+
+  /// 云盘账号的远端路径（WebDAV 条目恒 '/'）。
+  final String remotePath;
+
+  /// 云盘驱动的配置 JSON；null = WebDAV 条目。密文字段带 `AESGCMv1:` 前缀。
+  final Map<String, dynamic>? driverConfig;
+
+  bool get isCloud => providerType != 'webdav';
+
   bool get isActive => false;
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        if (isCloud) 'providerType': providerType,
         'url': url,
         'username': username,
         'password': password,
         'passwordEncrypted': passwordEncrypted,
+        'remote_path': remotePath,
+        if (driverConfig != null) 'driverConfig': driverConfig,
       };
 
   factory VaultEntry.fromJson(Map<String, dynamic> json) => VaultEntry(
         id: json['id'] as String? ?? '',
-        name: json['name'] as String? ?? json['url'] as String? ?? '服务器',
+        name: json['name'] as String? ??
+            json['url'] as String? ??
+            '服务器',
+        providerType: json['providerType'] as String? ?? 'webdav',
         url: json['url'] as String? ?? '',
         username: json['username'] as String? ?? '',
         password: json['password'] as String? ?? '',
         passwordEncrypted: json['passwordEncrypted'] as bool? ??
             CredentialVaultCrypto.isEncrypted(json['password'] as String?),
+        remotePath: json['remote_path'] as String? ?? '/',
+        driverConfig: json['driverConfig'] is Map
+            ? Map<String, dynamic>.from(json['driverConfig'] as Map)
+            : null,
       );
 }
 
@@ -61,6 +92,7 @@ class VaultApplyResult {
     required this.updated,
     required this.passwordsRestored,
     required this.passwordsMissing,
+    this.skippedUnknown = 0,
   });
 
   final int imported;
@@ -72,23 +104,30 @@ class VaultApplyResult {
   /// Accounts whose password stayed empty because no matching key was given.
   final int passwordsMissing;
 
+  /// 静默过滤掉的条目数：providerType 在本机构未注册（不支持）的网盘类型。
+  /// 不报错、不建账号——只是跳过。
+  final int skippedUnknown;
+
   bool get hasMissingPasswords => passwordsMissing > 0;
 
   String get summary =>
       '账号：新增 $imported，更新 $updated；'
       '密码恢复 $passwordsRestored，'
-      '留空 $passwordsMissing${hasMissingPasswords ? '（缺少统一解密密钥，可稍后手动填写）' : ''}';
+      '留空 $passwordsMissing${hasMissingPasswords ? '（缺少统一解密密钥，可稍后手动填写）' : ''}'
+      '${skippedUnknown > 0 ? '；跳过 $skippedUnknown 个不支持的网盘类型' : ''}';
 }
 
-/// WebDAV credential vault stored **on the WebDAV cloud**.
+/// Account credential vault stored **on the WebDAV cloud** (同步根目录).
 ///
 /// Layout under [SettingsService.syncRemoteRoot]:
-/// * `credentials.json` — account list with **plaintext URL + username** and
-///   either an encrypted (`AESGCMv1:`) or plaintext password.
+/// * `credentials.json` — all accounts: WebDAV mounts with **plaintext
+///   URL + username** and an encrypted (`AESGCMv1:`) or plaintext password,
+///   plus cloud-driver accounts whose driver config carries the credentials
+///   (cookie / refresh_token / client_secret / crypt password+salt …).
 ///
-/// Only the password is ever encrypted, which is what makes recovery possible
-/// without the passphrase: URL/username still identify the mount, and the
-/// password is simply left empty until the user types it in.
+/// Only「配置界面默认为密码」的数据 is ever encrypted, which is what makes
+/// recovery possible without the passphrase: the rest still identifies the
+/// account, and empty secrets are simply left for the user to fill in.
 class CredentialVaultService extends ChangeNotifier {
   CredentialVaultService({
     required AccountsService accounts,
@@ -104,7 +143,10 @@ class CredentialVaultService extends ChangeNotifier {
 
   static const fileName = 'credentials.json';
   static const format = 'webdav_media_manager_credentials';
-  static const formatVersion = 1;
+
+  /// v2：新增云盘驱动条目（providerType + driverConfig，密文字段逐个加密）。
+  /// v1 文件（只有 WebDAV 条目）按原语义读取。
+  static const formatVersion = 2;
 
   bool busy = false;
   String? lastError;
@@ -130,10 +172,42 @@ class CredentialVaultService extends ChangeNotifier {
     final encrypt =
         (encryptPassword ?? _settings.syncEncryptPassword) && passphrase.isNotEmpty;
     final entries = <Map<String, dynamic>>[];
-    // 凭证库只管 WebDAV 服务器（URL + 用户名 + 密码三件套）；云盘账号的
-    // 令牌走 secure storage 独立通道，不在这里（99 §7.2.8）。
+    // 账号凭证库：WebDAV 三件套 + 云盘驱动配置。云盘条目的密文字段
+    // （spec.secretFieldKeys）逐字段加密，地址类字段保持明文可辨识。
     for (final a in _accounts.accounts) {
-      if (a.providerType != 'webdav') continue;
+      if (CloudDriveService.isCloudType(a.providerType)) {
+        final spec = cloudDriverSpec(a.providerType);
+        final raw = await _accounts.loadDriverConfig(a.id) ?? const {};
+        final stored = <String, dynamic>{};
+        for (final e in raw.entries) {
+          final value = e.value;
+          if (encrypt &&
+              value is String &&
+              value.isNotEmpty &&
+              spec != null &&
+              spec.secretFieldKeys.contains(e.key) &&
+              !CredentialVaultCrypto.isEncrypted(value)) {
+            stored[e.key] = await CredentialVaultCrypto.encrypt(
+              plaintext: value,
+              passphrase: passphrase,
+            );
+          } else {
+            stored[e.key] = value;
+          }
+        }
+        entries.add(VaultEntry(
+          id: a.id,
+          name: a.name,
+          providerType: a.providerType,
+          remotePath: a.remotePath,
+          url: '',
+          username: '',
+          password: '',
+          passwordEncrypted: false,
+          driverConfig: stored,
+        ).toJson());
+        continue;
+      }
       final pass = await _accounts.passwordFor(a.id) ?? '';
       var stored = pass;
       var encrypted = false;
@@ -144,14 +218,14 @@ class CredentialVaultService extends ChangeNotifier {
         );
         encrypted = true;
       }
-      entries.add({
-        'id': a.id,
-        'name': a.name,
-        'url': a.url,
-        'username': a.username,
-        'password': stored,
-        'passwordEncrypted': encrypted,
-      });
+      entries.add(VaultEntry(
+        id: a.id,
+        name: a.name,
+        url: a.url,
+        username: a.username,
+        password: stored,
+        passwordEncrypted: encrypted,
+      ).toJson());
     }
     return {
       'format': format,
@@ -160,8 +234,8 @@ class CredentialVaultService extends ChangeNotifier {
       'activeAccountId': _accounts.activeAccountId,
       'passwordEncryption': encrypt ? 'aes-256-gcm' : 'none',
       'note': encrypt
-          ? '仅密码加密（AES-256-GCM），地址与用户名为明文。'
-          : '密码为明文存储。',
+          ? '密码类字段（含云盘驱动令牌）加密（AES-256-GCM），其余字段为明文。'
+          : '密码类字段为明文存储。',
       'accountCount': entries.length,
       'accounts': entries,
     };
@@ -190,8 +264,8 @@ class CredentialVaultService extends ChangeNotifier {
       await _webDav.ensureDirectory(accountId, _settings.syncRemoteRoot);
       await _webDav.writeBytes(accountId, remotePath, bytes);
       lastMessage = (json['passwordEncryption'] == 'aes-256-gcm')
-          ? '凭证已同步到云端（密码已加密）'
-          : '凭证已同步到云端（明文密码）';
+          ? '账号凭证已同步到云端（密码已加密）'
+          : '账号凭证已同步到云端（明文密码）';
       return json;
     } catch (e) {
       lastError = e.toString();
@@ -243,7 +317,7 @@ class CredentialVaultService extends ChangeNotifier {
         return null;
       }
       final result = await applyJson(json, passphrase: passphrase);
-      lastMessage = '已从云端恢复凭证：${result.summary}';
+      lastMessage = '已从云端恢复账号凭证：${result.summary}';
       return result;
     } catch (e) {
       lastError = e.toString();
@@ -257,7 +331,9 @@ class CredentialVaultService extends ChangeNotifier {
   /// Merge a vault JSON into the local account list.
   ///
   /// Other local accounts are never deleted, so a partial vault cannot wipe
-  /// mounts that were added after the last upload.
+  /// mounts that were added after the last upload. Entries whose
+  /// providerType is not registered on this build are **silently skipped**
+  /// (不支持的网盘类型：不报错、不建账号).
   Future<VaultApplyResult> applyJson(
     Map<String, dynamic> json, {
     required String passphrase,
@@ -268,9 +344,32 @@ class CredentialVaultService extends ChangeNotifier {
     var updated = 0;
     var restored = 0;
     var missing = 0;
+    var skippedUnknown = 0;
     for (final raw in list) {
       if (raw is! Map) continue;
       final entry = VaultEntry.fromJson(Map<String, dynamic>.from(raw));
+
+      // 云盘条目走驱动配置通道；本机没有注册该类型时静默跳过。
+      if (entry.isCloud) {
+        final spec = cloudDriverSpec(entry.providerType);
+        if (spec == null) {
+          skippedUnknown++;
+          continue;
+        }
+        final outcome = await _applyCloudEntry(entry, passphrase);
+        if (outcome.restoredSecrets) {
+          restored++;
+        } else {
+          missing++;
+        }
+        if (outcome.imported) {
+          imported++;
+        } else {
+          updated++;
+        }
+        continue;
+      }
+
       if (entry.url.trim().isEmpty) continue;
       final String resolved;
       if (entry.passwordEncrypted && CredentialVaultCrypto.isEncrypted(entry.password)) {
@@ -326,7 +425,75 @@ class CredentialVaultService extends ChangeNotifier {
       updated: updated,
       passwordsRestored: restored,
       passwordsMissing: missing,
+      skippedUnknown: skippedUnknown,
     );
+  }
+
+  /// Apply one cloud-driver vault entry.
+  ///
+  /// Per-field recovery: a secret field that cannot be decrypted keeps the
+  /// **local** value when there is one and only counts as missing when the
+  /// account is brand new (or the local field is empty too) — one lost field
+  /// must not blank out tokens that still work.
+  Future<({bool imported, bool restoredSecrets})> _applyCloudEntry(
+    VaultEntry entry,
+    String passphrase,
+  ) async {
+    final raw = entry.driverConfig ?? const <String, dynamic>{};
+    final local = (await _accounts.loadDriverConfig(entry.id)) ??
+        (await _accounts.loadDriverConfigByName(entry.name)) ??
+        const <String, dynamic>{};
+    final merged = <String, dynamic>{...local};
+    var restoredSecrets = true;
+    for (final e in raw.entries) {
+      final value = e.value;
+      if (value is String && CredentialVaultCrypto.isEncrypted(value)) {
+        final clear = await CredentialVaultCrypto.tryDecrypt(
+          encoded: value,
+          passphrase: passphrase,
+        );
+        if (clear == null) {
+          // 留用本地值（若有）；新账号则该字段留空待用户补填。
+          final localValue = local[e.key];
+          if (localValue is! String || localValue.isEmpty) {
+            restoredSecrets = false;
+          }
+          continue;
+        }
+        merged[e.key] = clear;
+      } else {
+        merged[e.key] = value;
+      }
+    }
+    if (!restoredSecrets) {
+      missingPasswordAccounts.add(
+          entry.name.isEmpty ? entry.providerType : entry.name);
+    }
+
+    final existing = _accounts.accounts
+        .cast<WebDavAccount?>()
+        .firstWhere((a) => a?.id == entry.id, orElse: () => null);
+    if (existing == null) {
+      final account = await _accounts.addAccount(
+        name: entry.name,
+        url: '',
+        username: '',
+        password: '',
+        providerType: entry.providerType,
+        remotePath: entry.remotePath,
+      );
+      await _accounts.saveDriverConfig(account.id, merged);
+      return (imported: true, restoredSecrets: restoredSecrets);
+    }
+    await _accounts.updateAccount(
+      id: existing.id,
+      name: entry.name.isEmpty ? existing.name : entry.name,
+      url: existing.url,
+      username: existing.username,
+      remotePath: entry.remotePath,
+    );
+    await _accounts.saveDriverConfig(existing.id, merged);
+    return (imported: false, restoredSecrets: restoredSecrets);
   }
 
   /// Throws when the destination account has no registered client.

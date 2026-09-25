@@ -18,7 +18,7 @@ import '../widgets/marquee_text.dart';
 /// 同步 / 备份.
 ///
 /// Three data kinds, three behaviours — no per-site isolation:
-/// * **WebDAV 凭证** and **歌单** are true two-way syncs that also run
+/// * **账号凭证** and **歌单** are true two-way syncs that also run
 ///   automatically on startup / account switch / the 定时同步 interval;
 /// * the **music library** syncs incrementally with local changes and can be
 ///   pushed in full on demand;
@@ -481,7 +481,7 @@ class _SyncScreenState extends State<SyncScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
         title: const Text('确认恢复'),
-        content: const Text('将用备份覆盖本机凭证、音乐库与歌单，不可撤销。'),
+        content: const Text('将用备份覆盖本机账号凭证、音乐库与歌单，不可撤销。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -591,7 +591,7 @@ class _SyncScreenState extends State<SyncScreen> {
   /// 路径 field above is never a guess.
   Widget _derivedPaths(SettingsService settings) {
     final rows = <(String, String)>[
-      ('WebDAV 凭证', settings.credentialsRemotePath),
+      ('账号凭证', settings.credentialsRemotePath),
       ('歌单', settings.playlistRemotePath),
       ('音乐库', settings.libraryRemotePath),
       ('全部备份', settings.backupRemotePath),
@@ -754,9 +754,10 @@ class _SyncScreenState extends State<SyncScreen> {
 
           const Divider(height: 28),
 
-          _sectionTitle('WebDAV 凭证'),
+          _sectionTitle('账号凭证'),
           Text(
-            '云端 ${settings.credentialsRemotePath}：地址与用户名明文，仅密码加密。',
+            '云端 ${settings.credentialsRemotePath}：全部网盘账号；密码类字段加密，'
+            '不支持类型的账号恢复时自动跳过。',
             style: const TextStyle(
               color: AppColors.secondaryText,
               fontSize: 12,
@@ -766,7 +767,7 @@ class _SyncScreenState extends State<SyncScreen> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.lock_outline),
-            title: const Text('加密密码'),
+            title: const Text('加密密码类字段'),
             subtitle: Text(
               settings.syncEncryptPassword ? '口令不匹配时密码留空' : '明文保存密码',
             ),
