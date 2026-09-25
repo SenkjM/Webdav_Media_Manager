@@ -1,4 +1,4 @@
-// 驱动注册表（对齐 OpenList 的 bootstrap/drivers 注册点，99 §7.2.10）。
+﻿// 驱动注册表（对齐 OpenList 的 bootstrap/drivers 注册点，99 §7.2.10）。
 //
 // 新增一个网盘 = 新增驱动文件（驱动 + Addition + 能力遮罩 + 表单参数
 // 全在里头）+ 在 kCloudDriverSpecs 加一行；账号表单与兼容层零改动。
@@ -6,12 +6,14 @@
 
 import '../cloud_driver.dart';
 
+import 'aliyundrive_open_driver.dart';
 import 'baidu_netdisk_driver.dart';
 import 'crypt/crypt_driver.dart';
 
 /// 已落地的驱动；顺序即账号表单类型下拉的显示顺序。
 const List<CloudDriverSpec> kCloudDriverSpecs = <CloudDriverSpec>[
   BaiduNetdiskSpec(),
+  AliyundriveOpenSpec(),
   CryptSpec(),
 ];
 
