@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -10,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/cache_policy.dart';
 import '../models/library_track.dart';
 import '../utils/audio_extensions.dart';
+import '../utils/cache_group_codec.dart';
 import '../utils/track_identity.dart';
 import 'library_database.dart';
 
@@ -23,9 +23,8 @@ class CacheService extends ChangeNotifier {
       : _prefs = prefs,
         _libraryDb = libraryDb;
 
-  static const _kAccessPrefix = 'cache_access_';
-  static const _kGroupPrefix = 'cache_group_';
-  static const _kGroupMembersPrefix = 'cache_group_members_';
+  // Legacy prefs key prefixes moved to [cache_group_codec.dart]; only used here
+  // for the one-time migration in [_migrateLegacyPrefs].
 
   SharedPreferences? _prefs;
   LibraryDatabase? _libraryDb;
@@ -46,6 +45,7 @@ class CacheService extends ChangeNotifier {
       await _cacheDir!.create(recursive: true);
     }
     await _reloadAnnexFromDb();
+    await _migrateLegacyPrefs();
     await reconcileStaleAnnex();
   }
 
@@ -58,6 +58,39 @@ class CacheService extends ChangeNotifier {
       final path = e['local_path'] as String?;
       if (id != null && path != null && path.isNotEmpty) {
         _annex[id] = path;
+      }
+    }
+  }
+
+  /// One-time move of the legacy prefs group membership into
+  /// `music_library.db` (`cache_groups`), then drop the old keys.
+  ///
+  /// The legacy `cache_group_*` keys are `String.hashCode`-suffixed: the
+  /// member lists (stored in the value) are recoverable, but the per-path LRU
+  /// `cache_access_*` timestamps are not — those keys are simply removed and
+  /// expiry falls back to file mtime (the existing behaviour when no timestamp
+  /// is recorded).
+  Future<void> _migrateLegacyPrefs() async {
+    final prefs = _prefs;
+    final db = _libraryDb;
+    if (prefs == null || db == null) return;
+
+    final keys = prefs.getKeys();
+    final entries = <String, String>{};
+    for (final k in keys) {
+      final v = prefs.getString(k);
+      if (v != null) entries[k] = v;
+    }
+
+    final groups = parseLegacyCacheGroups(entries);
+    for (final g in groups) {
+      await db.bindCacheGroupMembers(groupId: g.groupId, identities: g.members);
+    }
+
+    for (final k in keys) {
+      if (k.startsWith(legacyCacheGroupKeyPrefix) ||
+          k.startsWith(legacyCacheAccessKeyPrefix)) {
+        await prefs.remove(k);
       }
     }
   }
@@ -234,48 +267,33 @@ class CacheService extends ChangeNotifier {
     );
   }
 
-  String _accessKey(String sourceName, String remotePath) =>
-      '$_kAccessPrefix${trackIdentityKey(sourceName, remotePath).hashCode}';
-
-  String _groupKey(String sourceName, String remotePath) =>
-      '$_kGroupPrefix${trackIdentityKey(sourceName, remotePath).hashCode}';
-  String _groupMembersKey(String groupId) =>
-      '$_kGroupMembersPrefix${groupId.hashCode}';
-
   Future<void> bindCacheGroup({
     required String sourceName,
     required String remotePath,
     required String groupId,
   }) async {
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_groupKey(sourceName, remotePath), groupId);
-    final members = List<String>.from(groupMemberIdentities(groupId));
-    final id = trackIdentityKey(sourceName, remotePath);
-    if (!members.contains(id)) {
-      members.add(id);
-      await _prefs!.setString(_groupMembersKey(groupId), jsonEncode(members));
-    }
+    if (groupId.isEmpty) return;
+    final db = _libraryDb;
+    if (db == null) return;
+    await db.bindCacheGroupMembers(
+      groupId: groupId,
+      identities: [trackIdentityKey(sourceName, remotePath)],
+    );
   }
 
-  String? cacheGroupIdFor(String sourceName, String remotePath) =>
-      _prefs?.getString(_groupKey(sourceName, remotePath));
-
-  List<String> groupMemberIdentities(String groupId) {
-    final raw = _prefs?.getString(_groupMembersKey(groupId));
-    if (raw == null || raw.isEmpty) return const [];
-    try {
-      return (jsonDecode(raw) as List).map((e) => e.toString()).toList();
-    } catch (_) {
-      return const [];
-    }
+  Future<List<String>> groupMemberIdentities(String groupId) async {
+    final db = _libraryDb;
+    if (db == null) return const [];
+    return db.cacheGroupMembers(groupId);
   }
 
-  List<String> groupMemberFileNames(String groupId) =>
-      groupMemberIdentities(groupId).map((id) {
-        final parts = id.split('\u0000');
-        final remote = parts.length > 1 ? parts.sublist(1).join('\u0000') : id;
-        return p.basename(remote);
-      }).toList();
+  Future<List<String>> groupMemberFileNames(String groupId) async {
+    final ids = await groupMemberIdentities(groupId);
+    return ids
+        .map((id) => splitCacheIdentity(id)?.remotePath ?? id)
+        .map(p.basename)
+        .toList();
+  }
 
   Future<bool> deleteLocalFile({
     required String sourceName,
@@ -296,7 +314,7 @@ class CacheService extends ChangeNotifier {
         await part.delete();
       } catch (_) {}
     }
-    await _prefs?.remove(_accessKey(sourceName, remotePath));
+    await _libraryDb?.deleteCacheAccess(sourceName: sourceName, remotePath: remotePath);
     _annex.remove(musicId);
     await _libraryDb?.deleteCacheEntry(musicId);
     if (removed) notifyListeners();
@@ -305,33 +323,31 @@ class CacheService extends ChangeNotifier {
 
   Future<int> deleteCacheGroup(String groupId) async {
     var removed = 0;
-    for (final identity in groupMemberIdentities(groupId)) {
-      final parts = identity.split('\u0000');
-      final sourceName = parts.isNotEmpty ? parts.first : '';
-      final remote =
-          parts.length > 1 ? parts.sublist(1).join('\u0000') : identity;
-      if (await deleteLocalFile(sourceName: sourceName, remotePath: remote)) {
+    final identities = await groupMemberIdentities(groupId);
+    for (final identity in identities) {
+      final parts = splitCacheIdentity(identity);
+      if (parts == null) continue;
+      if (await deleteLocalFile(
+        sourceName: parts.sourceName,
+        remotePath: parts.remotePath,
+      )) {
         removed++;
       }
-      await _prefs?.remove(_groupKey(sourceName, remote));
     }
-    await _prefs?.remove(_groupMembersKey(groupId));
+    await _libraryDb?.deleteCacheGroup(groupId);
     if (removed > 0) notifyListeners();
     return removed;
   }
 
   Future<void> touch(String sourceName, String remotePath) async {
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(
-      _accessKey(sourceName, remotePath),
-      DateTime.now().toIso8601String(),
+    await _libraryDb?.touchCacheAccess(
+      sourceName: sourceName,
+      remotePath: remotePath,
     );
   }
 
-  DateTime? lastAccessed(String sourceName, String remotePath) {
-    final raw = _prefs?.getString(_accessKey(sourceName, remotePath));
-    if (raw == null) return null;
-    return DateTime.tryParse(raw);
+  Future<DateTime?> lastAccessed(String sourceName, String remotePath) async {
+    return _libraryDb?.cacheAccessedAt(sourceName, remotePath);
   }
 
   Future<void> registerCompleted(
@@ -435,12 +451,13 @@ class CacheService extends ChangeNotifier {
       if (!await file.exists()) continue;
       final isPlaying = playingIdentityKey == identity;
       final isDownloading = downloadingIdentityKeys.contains(identity);
-      final parts = identity.split('\u0000');
-      final sourceName = parts.isNotEmpty ? parts.first : '';
-      final remote =
-          parts.length > 1 ? parts.sublist(1).join('\u0000') : identity;
+      final parts = splitCacheIdentity(identity);
+      if (parts == null) continue;
+      final sourceName = parts.sourceName;
+      final remote = parts.remotePath;
       final accessed =
-          lastAccessed(sourceName, remote) ?? (await file.stat()).modified;
+          await lastAccessed(sourceName, remote) ??
+          (await file.stat()).modified;
       if (policy.shouldDelete(
         lastAccessed: accessed,
         now: clock,
@@ -449,7 +466,10 @@ class CacheService extends ChangeNotifier {
       )) {
         try {
           await file.delete();
-          await _prefs?.remove(_accessKey(sourceName, remote));
+          await _libraryDb?.deleteCacheAccess(
+            sourceName: sourceName,
+            remotePath: remote,
+          );
           await _libraryDb?.deleteCacheEntry(
             musicIdForRemote(sourceName, remote),
           );

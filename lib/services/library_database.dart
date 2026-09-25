@@ -4,21 +4,25 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/library_track.dart';
 import '../models/webdav_account.dart';
+import '../utils/cache_group_codec.dart';
 import '../utils/track_identity.dart';
 
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
-/// Schema v5:
+/// Schema v8:
 /// - `accounts` — site (stable sourceName; display name separate)
 /// - `tracks` — music_id PK, library identity (survives cache clear)
 /// - `cue_albums` / `cue_slices` — CUE identity + clips stay in library
 /// - `cache` — annex: music_id → localPath (reconcile against disk)
+/// - `cache_groups` — runtime CUE-album membership (group id → member rows);
+///   moved out of SharedPreferences in v8 (99 §6.2 T1)
+/// - `cache_access` — runtime LRU timestamps (source + path → last play)
 class LibraryDatabase {
   Database? _db;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 7;
+  static const schemaVersion = 8;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -36,6 +40,8 @@ class LibraryDatabase {
         // every library row is bound to, and they are not part of this schema.
         for (final table in [
           'cache',
+          'cache_access',
+          'cache_groups',
           'cue_slices',
           'cue_albums',
           'tracks',
@@ -143,6 +149,27 @@ CREATE TABLE IF NOT EXISTS cache (
   size_bytes INTEGER,
   etag TEXT,
   cached_at TEXT NOT NULL
+)
+''');
+    // Runtime「CUE 整专辑一组」membership. Keyed by the CUE group id (not by
+    // String.hashCode, so different groups can never collide); `members` is a
+    // JSON array of `sourceName\u0000remotePath` identities. This used to live
+    // in SharedPreferences and is migrated once in CacheService.init().
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS cache_groups (
+  group_id TEXT PRIMARY KEY,
+  members TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+)
+''');
+    // Runtime LRU timestamps for cache expiry, keyed by real source + path
+    // (the old prefs keys hashed the identity and could not be reversed).
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS cache_access (
+  source_name TEXT NOT NULL,
+  remote_path TEXT NOT NULL,
+  accessed_at TEXT NOT NULL,
+  PRIMARY KEY (source_name, remote_path)
 )
 ''');
     // Deletions live in their **own** table, never as a soft-delete column on
@@ -750,12 +777,110 @@ CREATE TABLE IF NOT EXISTS sync_state (
     return removed;
   }
 
+  // --- Cache groups (runtime CUE album membership) ---
 
-  /// Wipe all library-persisted rows: tracks, cue_albums, cue_slices, cache annex,
-  /// tombstones and sync cursors. Does **not** delete WebDAV accounts.
+  /// Member identities of a cache group, or empty when the group is unknown.
+  Future<List<String>> cacheGroupMembers(String groupId) async {
+    if (groupId.isEmpty) return const [];
+    final db = await database;
+    final rows = await db.query(
+      'cache_groups',
+      columns: ['members'],
+      where: 'group_id = ?',
+      whereArgs: [groupId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return const [];
+    return decodeCacheGroupMembers(rows.first['members'] as String?);
+  }
+
+  /// Add [identities] to a group, keeping existing members (idempotent).
+  ///
+  /// The membership row is keyed by the real group id, so two groups can no
+  /// longer collide the way the legacy `hashCode`-keyed prefs entries could.
+  Future<void> bindCacheGroupMembers({
+    required String groupId,
+    required Iterable<String> identities,
+  }) async {
+    if (groupId.isEmpty) return;
+    final merged = (await cacheGroupMembers(groupId)).toSet();
+    var added = false;
+    for (final id in identities) {
+      if (id.isEmpty) continue;
+      if (merged.add(id)) added = true;
+    }
+    if (!added) return;
+    final db = await database;
+    await db.insert('cache_groups', {
+      'group_id': groupId,
+      'members': encodeCacheGroupMembers(merged),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Drop a group's membership row (the caller deletes its files separately).
+  Future<void> deleteCacheGroup(String groupId) async {
+    if (groupId.isEmpty) return;
+    final db = await database;
+    await db.delete('cache_groups', where: 'group_id = ?', whereArgs: [groupId]);
+  }
+
+  Future<List<Map<String, dynamic>>> allCacheGroups() async {
+    final db = await database;
+    return db.query('cache_groups');
+  }
+
+  // --- Cache access (runtime LRU timestamps) ---
+
+  Future<void> touchCacheAccess({
+    required String sourceName,
+    required String remotePath,
+  }) async {
+    final db = await database;
+    await db.insert('cache_access', {
+      'source_name': sourceName,
+      'remote_path': remotePath,
+      'accessed_at': DateTime.now().toUtc().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<DateTime?> cacheAccessedAt(
+    String sourceName,
+    String remotePath,
+  ) async {
+    final db = await database;
+    final rows = await db.query(
+      'cache_access',
+      columns: ['accessed_at'],
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, remotePath],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return DateTime.tryParse(rows.first['accessed_at'] as String? ?? '');
+  }
+
+  Future<void> deleteCacheAccess({
+    required String sourceName,
+    required String remotePath,
+  }) async {
+    final db = await database;
+    await db.delete(
+      'cache_access',
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, remotePath],
+    );
+  }
+
+
+  /// Wipe all library-persisted rows: tracks, cue_albums, cue_slices, cache
+  /// annex, runtime cache groups / LRU timestamps, tombstones and sync cursors.
+  /// Does **not** delete WebDAV accounts.
   Future<void> clearAllLibraryData() async {
     final db = await database;
     await db.delete('cache');
+    await db.delete('cache_access');
+    await db.delete('cache_groups');
     await db.delete('cue_slices');
     await db.delete('cue_albums');
     await db.delete('tracks');
@@ -764,8 +889,9 @@ CREATE TABLE IF NOT EXISTS sync_state (
   }
 
   /// Wipe the library **index** only: tracks, CUE tables, tombstones and the sync
-  /// cursor. The cache annex stays, so audio already on disk keeps its entry and
-  /// the rows pulled back from the cloud still resolve to local files.
+  /// cursor. The cache annex and its runtime groups / LRU timestamps stay, so
+  /// audio already on disk keeps its entry and the rows pulled back from the
+  /// cloud still resolve to local files.
   ///
   /// Used by「从云端覆写音乐库」: the index is replaced, the files are not.
   Future<void> clearLibraryIndex() async {

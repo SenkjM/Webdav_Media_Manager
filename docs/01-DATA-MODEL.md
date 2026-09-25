@@ -21,20 +21,24 @@
 
 **曲目身份 = 网盘名 + remote_path**。曲库行、云端清单里**不含** URL / 用户名 / 密码，只有 `source_name`；`网盘名 → url / 用户名 / 密码` 只由本机 `accounts` 表解析（`AccountsService.accountForSource` / `idForSource` / `nameForAccount`）。所以把网盘改名会让旧行变成「来源网盘未绑定」（见 [03](03-MUSIC-LIBRARY.md)），改回来即恢复。
 
-## 2. 本地数据库 `music_library.db`（schema v5）
+## 2. 本地数据库 `music_library.db`（schema v8）
 
 | 表 | 含义 |
 |----|------|
-| `accounts` | WebDAV 站点（id / name / url / username）；密码在 secure storage |
-| `tracks` | 普通曲目标签；PK = `music_id`，`UNIQUE(account_id, remote_path)` |
-| `cue_albums` | CUE 专辑身份 |
+| `accounts` | WebDAV / 云盘账号（id / name / url / username / provider_type / remote_path / capabilities）；密码在 secure storage |
+| `tracks` | 普通曲目标签；PK = `music_id`，`UNIQUE(source_name, remote_path)` |
+| `cue_albums` | CUE 专辑身份（含 `cache_group_id`） |
 | `cue_slices` | 虚拟分片（clip 起止、audio_music_id、cache_group_id） |
 | `cache` | **annex**：`music_id → local_path`（与磁盘对账） |
+| `cache_groups` | **运行态**：CUE 缓存组 `group_id → members`（JSON 身份数组，v8 从 prefs 迁入） |
+| `cache_access` | **运行态**：LRU 播放时间戳 `(source_name, remote_path) → accessed_at`（v8 从 prefs 迁入） |
 | `deleted_tracks` | 删除记录（不做软删列） |
 | `sync_state` | 同步游标 |
 
 - `tracks` / `cue_*` 用 `source_name` + `rev`；删除走独立表。
-- **没有渐进 migration**：`onUpgrade` 直接 DROP 重建，改 schema 就 bump `LibraryDatabase.schemaVersion`。
+- **没有渐进 migration**：`onUpgrade` 直接 DROP 重建，改 schema 就 bump `LibraryDatabase.schemaVersion`。唯一例外是 **v7→v8 的 prefs 迁移**：`cache_group_members_*` 的成员表能从值里还原（`cache_group_codec.dart`），迁完删旧键；`cache_access_*` 的键是 `hashCode`、不可逆，直接删除，过期清理回落到文件 mtime。
+- 「CUE 整专辑一组」的**每行归属**仍由 `cue_albums.cache_group_id` / `cue_slices.cache_group_id` / `download_tasks.cache_group_id` 承担；`cache_groups` 只存**成员清单**（组 → 哪些文件），删除组 = 删成员文件 + 删这一行（`CacheService.deleteCacheGroup`）。
+- `cache_groups` / `cache_access` 是运行态缓存数据：随 `clearAllLibraryData()` 一起清、随 `clearLibraryIndex()` 一起留（与 cache annex 同去留）；**不进**备份与云端分片。
 - 其它库：`download_queue.db`（下载任务）、`playlists.db`（本地歌单）。封面缩略图在应用文档目录 `covers/`，音频在缓存目录。
 
 ## 3. cache annex：什么算「已缓存」

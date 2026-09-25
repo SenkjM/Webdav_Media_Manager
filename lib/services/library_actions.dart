@@ -123,7 +123,7 @@ Future<void> deleteTracksLocalCache(
   if (groupIds.isNotEmpty) {
     final names = <String>{};
     for (final gid in groupIds) {
-      var n = cache.groupMemberFileNames(gid);
+      var n = await cache.groupMemberFileNames(gid);
       if (n.isEmpty) {
         for (final t in tracks.where(
           (x) =>
@@ -255,7 +255,7 @@ Future<void> destroyLibraryTracks(
             : null);
     if (t.isCueVirtual && gid != null) {
       groupIds.add(gid);
-      final members = cache.groupMemberFileNames(gid);
+      final members = await cache.groupMemberFileNames(gid);
       if (members.isEmpty) {
         files.add(p.basename(t.effectiveAudioRemotePath));
       } else {
