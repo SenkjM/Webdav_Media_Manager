@@ -69,6 +69,9 @@ class _FakeSource implements CloudSource {
   String get basePath => '/src456';
 
   @override
+  String get displayName => 'Fake';
+
+  @override
   int get capabilities => 0xFFFF;
 
   @override

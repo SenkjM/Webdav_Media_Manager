@@ -20,6 +20,9 @@ class FakeCloudSource implements CloudSource {
   @override
   String get basePath => '/src456';
 
+  @override
+  String get displayName => 'Fake';
+
   final Map<String, (bool, int)> entries = {};
   final Map<String, Uint8List> contents = {};
   final List<String> mkdirCalls = [];

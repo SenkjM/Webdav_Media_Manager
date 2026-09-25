@@ -14,6 +14,7 @@ import '../utils/app_snack.dart';
 import '../utils/cue_sheet.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
+import 'cloud_driver.dart';
 import 'download_notification_service.dart';
 import 'download_store.dart';
 import 'library_service.dart';
@@ -21,7 +22,6 @@ import 'platform_export_service.dart';
 import 'webdav_service.dart';
 import 'dart:math';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:openlist_crypt/openlist_crypt.dart';
 import 'settings_service.dart';
 import 'package:flutter/widgets.dart';
 
@@ -154,7 +154,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// **默认倾向可重试**：认不出来的错误也必须落到退避兜底（用户要求），
   /// 只有明确「重试也没用」的才直接判失败。
   static bool isRetryable(Object error) {
-    if (error is RcloneCipherException) return false;
+    // 内容本身坏了（解密 / 认证失败）：同一份字节再拉一次还是坏的。
+    if (error is CloudDriverDataException) return false;
     if (error is StateError) return false;
     if (error is DioException) {
       switch (error.type) {

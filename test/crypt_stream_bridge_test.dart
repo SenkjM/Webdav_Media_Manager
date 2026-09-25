@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openlist_crypt/openlist_crypt.dart';
 import 'package:webdav_media_manager/services/cloud_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/crypt/crypt_driver.dart';
-import 'package:webdav_media_manager/services/cloud_drivers/crypt/crypt_stream_bridge.dart';
+import 'package:webdav_media_manager/services/cloud_drivers/stream_bridge.dart';
 
 import 'crypt_driver_test.dart' show FakeCloudSource;
 
@@ -118,11 +118,12 @@ void main() {
   test('桥：HEAD / 全量 / Range / 后缀 Range / 未知 token', () async {
     final bytes = Uint8List.fromList(List<int>.generate(1000, (i) => i & 0xFF));
     final driver = _SliceDriver(bytes);
-    final bridge = CryptStreamBridge((_) => driver);
+    final bridge = LocalStreamBridge();
     final uri = await bridge.expose(
       accountId: 'a1',
       remotePath: '/f.bin',
       size: bytes.length,
+      ranges: driver.openContentRange,
     );
     expect(uri.host, '127.0.0.1');
     final client = HttpClient();
@@ -201,11 +202,12 @@ void main() {
     expect(part.toBytes(), plain.sublist(65000, 132001));
 
     // 桥端到端：播放器式 Range 请求拿到解密后的字节。
-    final bridge = CryptStreamBridge((_) => driver);
+    final bridge = LocalStreamBridge();
     final uri = await bridge.expose(
       accountId: 'a1',
       remotePath: '/movie.mp4',
       size: plain.length,
+      ranges: driver.openContentRange,
     );
     final client = HttpClient();
     final request = await client.getUrl(uri);
