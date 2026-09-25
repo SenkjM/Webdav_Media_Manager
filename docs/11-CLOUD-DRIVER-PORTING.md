@@ -83,7 +83,6 @@
 ## 9. 还没做的（不要把计划当现状）
 
 - libsodium FFI 引擎，以及与纯 Dart 实现的手动切换（两套实现同格式，可随时互切）。
-- `netease_music`：cookie + rsa/aes 登录；只支持删除，不能建目录 / 改名 / 移动 / 复制（[99 §4.5](99-IN-PROGRESS.md)）。
 - OpenList 驱动清单里其余条目：批次方案与逐盘评估见 [99 §4.9](99-IN-PROGRESS.md)（只读家族 = 能力遮罩，不单独实现写路径）。
 - 跨会话的 path→id 缓存与离线可用性策略。
 - 云盘账号的其它播放形态（后台播放、投屏等）未评估。
@@ -99,3 +98,26 @@
 - **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
 - **开关极性缺陷记录**（真机反馈后修正）：`localRefresh` 开关的联动极性曾接反——关掉开关时 online_api 变灰，正确语义是**开启**时才禁用 online_api、显示自建凭证输入。联动判定与 `disabledWhenSwitch` 的取值见 `baidu_netdisk_driver.dart` 的 spec 与 `test/baidu_refresh_switch_test.dart`。
 - **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动 + spec 自描述：能力遮罩 / 表单参数 / 构造，见 §6）、`cloud_drive_service.dart`（查表工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单按 spec 通用渲染）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。
+
+## 11. 已落地驱动实录：netease_music
+
+第一个带**自定义请求加密**的驱动（已实现，真机验收见 [99 §4.3.3](99-IN-PROGRESS.md)）。移植工序照 [12](12-DRIVER-PORTING-GUIDE.md)，`lib/` 只动两个文件（驱动 + 注册表）。
+
+- **能力面**：`list | read | delete`。上游 `MakeDir` / `Rename` / `Move` / `Copy` 四个方法在 Go 与 worker 两版里**都是 `errs.NotSupport` 桩**，所以不给 mkdir / move / copy 位（窗口「隐藏而非置灰」，99 §4.2.6）；上传按 §8 全局砍掉。
+- **表单**：`cookie`（必填、obscure、带教程指引）+ `song_limit`（默认 `200`，照抄 Go `meta.go` 的 `default:"200"`）。没有开关，因此不涉及 §6 的联动极性。
+- **登录**：Cookie 必须同时含 `__csrf` 与 `MUSIC_U`，否则 `init()` 直接抛可读错误。保存前 `spec.verify` **真连**一次（拉一页列表），对齐百度「能拿到才保存」的语义（§10）。
+- **请求加密（`netease_music_crypto.dart`）**：这是本驱动唯一「必须逐字节对齐」的部分。
+  - `weapi`：AES-128-CBC（预设密钥 `0CoJUm6Qyw8W8jud` + 固定 IV）→ base64 → AES-128-CBC（**随机密钥的逆序**）→ base64；随机密钥（62 字符表）经 **raw RSA**（无填充）得到 `encSecKey`。
+  - `linuxapi`：AES-128-ECB（`rFgB&h#%2?^eDg:Q`）→ **大写** hex；原始 URL 塞进载荷，实际打到 `/api/linux/forward` 并带 Linux Chrome UA。
+  - raw RSA 的明文布局是「128 字节缓冲、密钥放**末 16 字节**、前 112 字节为零」，指数固定 65537。
+- **两版上游的三处差异与取舍**（细节见该文件头注释）：
+  1. `weapi` 第二层的明文，Go 版与 NeteaseCloudMusicApi 参考实现都用**内层 base64 字符串**；worker TS 直接送内层原始字节。本实现按 **Go 版**（语义兜底优先），并在测试里单独锁这一条。
+  2. RSA 输出补足到 128 字节（worker 行为，长度恒定 256 hex）；Go 的 `c.Bytes()` 会去前导零，服务端按大整数解析，两者等价。
+  3. JSON 键顺序：Go 的 map 按 key 排序、worker 保留插入顺序。服务端把明文当 JSON 解析，**键顺序无语义**；测试里两种顺序的向量都固化。
+- **两处相对上游的有意增强**（与 §10 同一取舍思路）：
+  1. **拿不到直链时抛真实原因**：worker 把空 url 写进 `raw_url` 并记 `raw_url_error`，客户端里下游必然失败；本实现按 `CloudDriver.get` 契约抛 `CloudDriverException`（VIP / 版权受限 / 已下架都走这条）。
+  2. **校验响应 `code`**：上游两版都不看响应码，Cookie 失效的表现是「空列表」；本实现在 `code` 存在且非 200 时报错，`301` 单独翻成「Cookie 可能已过期」。
+- **不移植**：Go 版的 `.lrc` 歌词条目（worker 底稿已删；本应用播放链路不消费远端歌词，`Link` 的 `parsed` / `RangeReader` 语义依赖 OpenList 自身的 `/p` 代理端点，在对端客户端里没有对应物）。
+- **路径语义**：网易云盘是**单层平铺**（只有歌曲，没有目录树），所以驱动 `list()` 忽略路径，永远返回全部歌曲；`get()` / `remove()` 按**文件名**定位。账号的「远程路径」对它是纯虚拟前缀——条目路径由上层拼接，驱动只认文件名，改远程路径不会让条目失联。
+- **测试**：`test/netease_music_crypto_test.dart`（用 Go 上游工具生成的**金标向量**：AES-CBC / AES-ECB / raw RSA / weapi / linuxapi 各若干条，并核对 worker 硬编码的 modulus 与 Go 版 PEM 是同一把密钥）、`test/netease_music_driver_test.dart`（请求形状 / 能力位 / 直链必需头 / 错误原文透传 / 未实现操作）。
+- **落点**：`lib/services/cloud_drivers/netease_music_driver.dart`（Addition + Client + 驱动 + spec）、`netease_music_crypto.dart`（weapi / linuxapi）、`driver_registry.dart`（加一行）。
