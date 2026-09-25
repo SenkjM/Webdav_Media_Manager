@@ -336,24 +336,36 @@ void main() {
       expect(hits.single.host, 'openapi.aliyundrive.com');
     });
 
-    test('本地刷新缺 client_id → 用内置缺省值；OAuth 失败时兜底在线分支', () async {
-      handler = (hit) {
-        if (hit.host == 'openapi.aliyundrive.com') {
-          return (400, '{"code":"InvalidParameter","message":"bad client"}');
-        }
-        return (200, '{"access_token":"at-online-fallback"}');
-      };
+    test('本地刷新缺 client_id → 用内置缺省值，成功即返回', () async {
+      handler = (hit) => (200, '{"access_token":"at-default-cid"}');
       final client = AliyundriveOpenClient(
-        // localRefresh = true 但没填 client 凭证：OAuth 会失败，随后落到在线续期。
-        addition(localRefresh: true),
+        addition(localRefresh: true, clientSecret: 'sec'),
         dio: dio,
       );
       await client.refreshAccessToken();
 
-      expect(client.accessToken, 'at-online-fallback');
-      expect(hits.first.host, 'openapi.aliyundrive.com',
-          reason: '本地刷新模式下先试直连 OAuth');
-      expect(hits.first.json['client_id'], AliyundriveOpenClient.defaultClientId);
+      expect(client.accessToken, 'at-default-cid');
+      expect(hits, hasLength(1), reason: '本地刷新只试 OAuth 一次');
+      expect(hits.single.json['client_id'], AliyundriveOpenClient.defaultClientId);
+    });
+
+    test('本地刷新失败 → 绝不回落到在线续期地址（开关打开即不用 online api）', () async {
+      handler = (hit) {
+        if (hit.host == 'openapi.aliyundrive.com') {
+          return (400, '{"code":"InvalidParameter","message":"bad client"}');
+        }
+        fail('本地刷新开启时不得请求在线续期地址：${hit.url}');
+      };
+      final client = AliyundriveOpenClient(
+        addition(localRefresh: true, clientId: 'cid', clientSecret: 'sec'),
+        dio: dio,
+      );
+
+      await expectLater(
+        client.refreshAccessToken(),
+        throwsA(isA<CloudDriverException>()),
+      );
+      expect(hits.every((h) => h.host == 'openapi.aliyundrive.com'), isTrue);
     });
 
     test('OAuth 报错原文被带进最终异常', () async {

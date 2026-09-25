@@ -247,20 +247,21 @@ class AliyundriveOpenClient {
     if (accessToken.isEmpty) await refreshAccessToken();
   }
 
-  /// 刷新令牌，三条路（对齐 worker `refreshAccessToken`）：
+  /// 刷新令牌（对齐 worker `refreshAccessToken`）。
   ///
-  /// 1. **在线 API 中转**（默认）：把候选地址**逐个试**，第一个成功的就用，
-  ///    全失败才往下走。参数 `refresh_ui` + `refresh_token`（都是令牌值）+
-  ///    `server_use=true` + `driver_txt`；`access_token` / `refresh_token`
-  ///    顶层和 `data` 里**两处都看**。
-  /// 2. **直连 OAuth**：`POST /oauth/access_token`，
-  ///    `{grant_type:'refresh_token', refresh_token, client_id[, client_secret]}`。
-  /// 3. 都失败才抛错，错误信息带「检查 refresh_token / api_url_address /
-  ///    client 凭证」的指引。
+  /// **`localRefresh` 关（默认）** —— 走「在线 API 中转」分支，把候选地址
+  /// **逐个试**，第一个成功的就用；全失败再落到直连 OAuth 兜底。
+  /// 参数 `refresh_ui` + `refresh_token`（都是令牌值）+ `server_use=true` +
+  /// `driver_txt`；`access_token` / `refresh_token` 顶层和 `data` 里**两处都看**。
   ///
-  /// 注意 `localRefresh` 的语义是**跳过第 1 步**（而不是「只做第 2 步」）：
-  /// 用户填了 client 凭证却填错时，仍能靠在线续期拿到令牌；两处凭证都没填时
-  /// 才会拿到那条包含全部排查指引的聚合错误（对齐 worker 的策略 1 → 策略 2）。
+  /// **`localRefresh` 开** —— 只走「直连 OAuth」分支：
+  /// `POST /oauth/access_token`，
+  /// `{grant_type:'refresh_token', refresh_token, client_id[, client_secret]}`。
+  /// 在线续期地址**完全不用**（与百度 `local_refresh` 的语义一致：一旦打开
+  /// 就不使用 online api 逻辑，12 §3.1）。
+  ///
+  /// 两条路都失败才抛错，错误信息带「检查 refresh_token / api_url_address /
+  /// client 凭证」的指引与逐个地址的尝试记录。
   Future<void> refreshAccessToken() async {
     final token = addition.refreshToken.trim();
     if (token.isEmpty) {
