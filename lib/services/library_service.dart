@@ -589,7 +589,7 @@ class LibraryService extends ChangeNotifier {
 
   /// Destroy the entire local music library: DB track/cue rows, cover thumbs
   /// (and full covers), and in-memory index. Does not touch WebDAV accounts.
-  /// Caller should also delete local audio files / annex and clean playlists.
+  /// Caller should also delete local audio files and clean playlists.
   Future<void> destroyAll() async {
     await _db.clearAllLibraryData();
     await _covers.deleteAllCovers();
@@ -598,13 +598,13 @@ class LibraryService extends ChangeNotifier {
   }
 
   /// Hand the index over to the cloud: drop every index row (tracks, CUE,
-  /// tombstones, sync cursor) and forget the in-memory list, keeping the cache
-  /// annex and the covers.
+  /// tombstones, sync cursor) and forget the in-memory list, keeping the runtime
+  /// cache tables and the covers.
   ///
   /// The next incremental sync then finds an empty local index and no cursor, so
-  /// it re-reads the cloud and adopts the whole library — and because the annex
-  /// survived, rows that have a file on disk come back as local instead of
-  /// triggering a second full download.
+  /// it re-reads the cloud and adopts the whole library — and because cached
+  /// state is derived from disk (v9), rows that have a file on disk come back as
+  /// local instead of triggering a second full download.
   Future<void> prepareCloudOverwrite() async {
     await _db.clearLibraryIndex();
     _tracks.clear();
@@ -620,7 +620,7 @@ class LibraryService extends ChangeNotifier {
   ///
   /// Distinct from [removeTrack] (rows only) and from cache deletion (audio files
   /// only, metadata kept). The audio file itself is the caller's business:
-  /// `AppState.destroyLibraryTrack` owns both the annex and the disk.
+  /// `AppState.destroyLibraryTrack` owns the disk file.
   Future<void> destroyTrack(LibraryTrack track) async {
     // Tombstone first, so a sync that runs while we delete still learns about the
     // removal (and cannot pull the song back).

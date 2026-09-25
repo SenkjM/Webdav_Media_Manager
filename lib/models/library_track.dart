@@ -84,7 +84,8 @@ class LibraryTrack {
   /// Legacy playlist / UI key (网盘名 + remotePath). Prefer [musicId].
   String get identityKey => trackIdentityKey(sourceName, remotePath);
 
-  /// music_id used for cache annex lookups (audio file, not virtual slice).
+  /// music_id of the backing audio file (not the virtual slice itself).
+  /// Used to derive the cache file name (v9).
   String get cacheMusicId =>
       audioMusicId ??
       (audioRemotePath != null

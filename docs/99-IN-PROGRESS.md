@@ -379,27 +379,31 @@
 - **现状**：已实现「id 优先、名字兜底」+ 保存时源名快照 + 错误信息用源名（[11 §4](11-CLOUD-DRIVER-PORTING.md)）；测试 `crypt_source_name_binding_test.dart`。**待真机验收**：删源 → 报错可读 → 重添同名源 → crypt 复活。
 - **代码位置**：`crypt_driver.dart` 的 `_requireSource`、`cloud_drive_service.dart` 的 `_resolveSourceByName` / `_cryptSourceTypes`、`accounts_screen.dart` 的配置组装（`<key>_name` 快照）。
 
-## 6. 存储层合并待办（T1 / T3 已实现，T2 待立项）
+## 6. 存储层合并（T1 / T2 / T3 全部完成）
 
-本地数据现状全景（2026-09-25 调研，基线 feature/openlist-driver-port-batch2；T1 落地后 `music_library.db` 已是 **v8**、cache 附属键已从 prefs 迁出）：**5 个介质**——3 个 SQLite 库（`music_library.db` v8 / `download_queue.db` v6 / `playlists.db` v1，均在 `getApplicationDocumentsDirectory()`）+ SharedPreferences（settings 57 键 / `active_account_id`）+ secure storage（`webdav_pass_*` / `cloud_driver_cfg_*` / vault 口令）。目录侧 `covers/` `music_cache/` 是文件不是数据库。
+本地数据现状全景（T2 落地后 `music_library.db` 已是 **v9**）：**4 个介质**——3 个 SQLite 库（`music_library.db` v9 / `download_queue.db` v6 / `playlists.db` v1，均在 `getApplicationDocumentsDirectory()`）+ SharedPreferences（settings 57 键 / `active_account_id`）+ secure storage（`webdav_pass_*` / `cloud_driver_cfg_*` / vault 口令）。目录侧 `covers/` `music_cache/` 是文件不是数据库。
 
-**已落地（T1 + T3，分支 `feature/storage-merge-t1`）**：cache group 成员表与 `touch()` LRU 时间戳从 prefs 迁入 `music_library.db`（`cache_groups` / `cache_access` 两张运行态表，schema v8）；`cue_albums.cache_group_id` / `download_tasks.cache_group_id` 维持「每行归属」不动。迁移与去留语义收口进 [01 §2](01-DATA-MODEL.md)。**真机验收未做**：老库升级（v7→v8）后 CUE 组删除、按保留期自动清理两条链路。
+**已落地（T1 + T3，squash 合入 main，`8fee224`）**：cache group 成员表与 `touch()` LRU 时间戳从 prefs 迁入 `music_library.db`（`cache_groups` / `cache_access` 两张运行态表）；`cue_albums.cache_group_id` / `download_tasks.cache_group_id` 维持「每行归属」不动。
+
+**已落地（T2，分支 `feature/storage-annex-b`）**：选了第三条路——**不搬 annex 表，直接删掉**。考古发现它的每一列都是可推导 / 无读取方的（`local_path` 恒等于 `fileForRemote` 推导值、`etag`/`size_bytes` 死列、`cached_at` 备份时硬编码空数组），于是「已缓存」改为**对推导路径的一次惰性 `File.exists`**（v9，[01 §3](01-DATA-MODEL.md)）：
+
+- 分片同步、`onUpgrade` DROP 连坐、备份导出特例三个耦合点**全部消失**（表没了）。
+- 启动 `reconcileStaleAnnex`（每行一次 stat）删除；惰性验证不可能 stale。
+- `deleteTrack` / `deleteTracksForSource` 不再连带删 annex 行；`markAllUncached()` 留 no-op 兼容备份恢复调用点。
+- 代价：`etag` 远端变更检测从未实现过（列本来就是死的），无实际损失。
+
+**真机验收未做**（跨 T1+T2）：老库升级（v7→v9）后 CUE 组删除、按保留期自动清理、已缓存标记在升级后是否正确显示（靠推导路径自动恢复）。
 
 ### 6.1 不合并的（现状已合理，勿动）
 
 - **playlists.db 独立**：文件头注释即约定「Independent from audio cache — never wiped by CacheService cleanup」；且有远端 M3U8 镜像层，生命周期独立。
 - **download_queue.db 独立**：瞬态任务队列（重试 / 进度），与曲库标签无外键关联（`taskForRemote` 靠 `source_name + remote_path` 运行期对上，不落库 join）；合并会让「销毁音乐库」触碰队列服务。
 - **凭证在 secure、账号元数据在 SQLite**：密文 vs 可同步明文，职责分界正确。
-- **music_library.db 内 9 张表**：tracks / cue / deleted / sync_state 是同一次 `onUpgrade` DROP 重建的原子单元，强绑定有意为之；`cache_groups` / `cache_access` 是 v8 新增的运行态表（与 `cache` annex 同生命周期，见 [01 §2](01-DATA-MODEL.md)）。
+- **music_library.db 内 8 张表**：tracks / cue / deleted / sync_state 是同一次 `onUpgrade` DROP 重建的原子单元，强绑定有意为之；`cache_groups` / `cache_access` 是 v8 新增的运行态表（见 [01 §2](01-DATA-MODEL.md)）。
 
-### 6.2 cache annex 表拆出 music_library.db（涉及 schema 语义重划，先讨论再动）
+### 6.2 明确不做
 
-- **问题**：`cache` 表是**运行态缓存**（`music_id → local_path`，会被「清空音频缓存」整表清），却寄生在**可同步曲库**里：分片同步（`seg-*.wdmm`）必须排除它、`onUpgrade` DROP 时连坐清空、备份导出单独处理（[01 §3](01-DATA-MODEL.md) 的三行删除语义表是它的全部约束）。
-- **方案**（二选一，未定）：拆到 download_queue.db（同为运行态）或独立 cache.db。
-- **影响面**：`onUpgrade` DROP 列表、`reconcileStaleAnnex`、备份导出三处；语义重划牵动 [01](01-DATA-MODEL.md) / [03](03-MUSIC-LIBRARY.md) / [04](04-DOWNLOAD-QUEUE.md) 三篇。**必须先立项定方案再动。**
-
-### 6.3 明确不做
-
+- cache 表迁往 download_queue.db 或独立 cache.db：**被 T2 的删除方案取代**——比搬家更彻底，运行态寄生问题连根拔掉。若未来需要 `etag` 远端变更检测，再立新项（届时放 download_queue.db 侧）。
 - prefs 57 个 settings 键不搬 SQLite：真·配置数据，KV 合适、无关系语义。
 - `sync_state` 游标不并入 prefs：跟 tracks 的 rev 时钟强耦合（[01 §6](01-DATA-MODEL.md)），同库 DROP 重建是对的。
 - 三个 SQLite 合成一个库：备份 / 销毁 / 清缓存三类操作的正交性就是靠库边界划的，合并是倒退。

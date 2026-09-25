@@ -484,7 +484,7 @@ class AppState extends ChangeNotifier {
   /// 「从云端覆写音乐库」: drop the local index and pull the cloud copy whole.
   ///
   /// Only the index goes (tracks / CUE / tombstones / sync cursor) — the cache
-  /// annex, covers and downloaded audio stay, so the rows coming back still
+  /// audio stays, so the rows coming back still
   /// resolve to local files instead of queueing a second full download. The cost
   /// is that local changes not yet pushed disappear with the index; the
   /// confirmation dialog states that.

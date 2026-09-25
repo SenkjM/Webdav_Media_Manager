@@ -25,12 +25,10 @@ import 'platform_export_service.dart';
 import 'settings_service.dart';
 import 'share_rename_service.dart';
 
-/// Whether the track's audio is local: cache annex + file on disk.
-/// Shown when a library row is bound to a disk name that has no local account.
+/// Whether the track's audio is local: derived cache file exists on disk.
 String unboundSourceMessage(String sourceName) =>
     '未绑定网盘「$sourceName」';
 
-/// Stale annex rows are cleared when the file is missing.
 bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
   return cache.isLocalTrack(track);
 }

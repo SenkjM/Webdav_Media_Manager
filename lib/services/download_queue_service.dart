@@ -1033,8 +1033,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         localPathFor: (remote) =>
             _cache.fileForRemote(remote, sourceName: cueTask.sourceName).path,
       );
-      // Re-bind cache annex for backing audio — ingestCueAlbum deletes
-      // standalone track rows which previously also wiped annex entries.
+      // Re-register the backing audio files — ingestCueAlbum deletes
+      // standalone track rows that previously also wiped cache group members.
       for (final audioRemote in sheet.audioRemotePaths(cueTask.remotePath)) {
         final f = _cache.fileForRemote(
           audioRemote,

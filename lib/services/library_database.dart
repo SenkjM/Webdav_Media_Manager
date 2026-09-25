@@ -10,19 +10,23 @@ import '../utils/track_identity.dart';
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
-/// Schema v8:
+/// Schema v9:
 /// - `accounts` — site (stable sourceName; display name separate)
 /// - `tracks` — music_id PK, library identity (survives cache clear)
 /// - `cue_albums` / `cue_slices` — CUE identity + clips stay in library
-/// - `cache` — annex: music_id → localPath (reconcile against disk)
 /// - `cache_groups` — runtime CUE-album membership (group id → member rows);
 ///   moved out of SharedPreferences in v8 (99 §6.2 T1)
 /// - `cache_access` — runtime LRU timestamps (source + path → last play)
+///
+/// v9 drops the `cache` annex: no column ever carried information that could
+/// not be derived from (source_name, remote_path) — local_path was always the
+/// deterministic cache file name, etag / size_bytes had no readers. isLocal is
+/// now a lazy File.exists on the derived path (CacheService).
 class LibraryDatabase {
   Database? _db;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 8;
+  static const schemaVersion = 9;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -140,15 +144,6 @@ CREATE TABLE IF NOT EXISTS cue_slices (
   last_downloaded_at TEXT NOT NULL,
   last_tag_read_at TEXT NOT NULL,
   UNIQUE(source_name, remote_path)
-)
-''');
-    await db.execute('''
-CREATE TABLE IF NOT EXISTS cache (
-  music_id TEXT PRIMARY KEY,
-  local_path TEXT NOT NULL,
-  size_bytes INTEGER,
-  etag TEXT,
-  cached_at TEXT NOT NULL
 )
 ''');
     // Runtime「CUE 整专辑一组」membership. Keyed by the CUE group id (not by
@@ -489,33 +484,15 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
   Future<void> deleteTracksForSource(String sourceName) async {
     final db = await database;
-    // Collect audio music_ids for cache cleanup of this account's library.
-    final slices = await db.query(
-      'cue_slices',
-      columns: ['audio_music_id'],
-      where: 'source_name = ?',
-      whereArgs: [sourceName],
-    );
-    final trackIds = await db.query(
-      'tracks',
-      columns: ['music_id'],
-      where: 'source_name = ?',
-      whereArgs: [sourceName],
-    );
     await db.delete('cue_slices', where: 'source_name = ?', whereArgs: [sourceName]);
     await db.delete('cue_albums', where: 'source_name = ?', whereArgs: [sourceName]);
     await db.delete('tracks', where: 'source_name = ?', whereArgs: [sourceName]);
-    for (final r in [...slices, ...trackIds]) {
-      final id = (r['audio_music_id'] ?? r['music_id']) as String?;
-      if (id != null) {
-        await db.delete('cache', where: 'music_id = ?', whereArgs: [id]);
-      }
-    }
+    // No cache-annex cleanup since v9: cache files are derived from
+    // (source_name, remote_path), never keyed off library rows.
   }
 
   Future<void> deleteTrack(String sourceName, String remotePath) async {
     final db = await database;
-    final existing = await getTrack(sourceName, remotePath);
     await db.delete(
       'tracks',
       where: 'source_name = ? AND remote_path = ?',
@@ -526,29 +503,12 @@ CREATE TABLE IF NOT EXISTS sync_state (
       where: 'source_name = ? AND remote_path = ?',
       whereArgs: [sourceName, remotePath],
     );
-    // Do not drop cache annex if cue_slices still use this music_id as audio.
-    // ingestCueAlbum deletes standalone audio rows after writing slices; wiping
-    // annex there made virtual tracks look uncached despite files on disk.
-    if (existing != null && !existing.isCueVirtual) {
-      final stillUsed = await db.query(
-        'cue_slices',
-        columns: ['music_id'],
-        where: 'audio_music_id = ?',
-        whereArgs: [existing.musicId],
-        limit: 1,
-      );
-      if (stillUsed.isEmpty) {
-        await db.delete(
-          'cache',
-          where: 'music_id = ?',
-          whereArgs: [existing.musicId],
-        );
-      }
-    }
+    // No cache-annex cleanup since v9: whether the audio file survives is a
+    // cache-side concern (deleteLocalFile), keyed by identity, not by rows.
   }
 
   /// Remove every library row belonging to a CUE album (virtual clips stay
-  /// removable as a group; cache annex for audio is left to CacheService).
+  /// removable as a group; audio files are left to CacheService).
   Future<int> deleteTracksForCue(String sourceName, String cueRemotePath) async {
     final db = await database;
     final cueId = cueIdFor(sourceName, cueRemotePath);
@@ -710,73 +670,6 @@ CREATE TABLE IF NOT EXISTS sync_state (
     return out;
   }
 
-  // --- Cache annex ---
-
-  Future<void> upsertCacheEntry({
-    required String musicId,
-    required String localPath,
-    int? sizeBytes,
-    String? etag,
-  }) async {
-    final db = await database;
-    await db.insert(
-      'cache',
-      {
-        'music_id': musicId,
-        'local_path': localPath,
-        'size_bytes': sizeBytes,
-        'etag': etag,
-        'cached_at': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<Map<String, dynamic>?> getCacheEntry(String musicId) async {
-    final db = await database;
-    final rows = await db.query(
-      'cache',
-      where: 'music_id = ?',
-      whereArgs: [musicId],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-    return rows.first;
-  }
-
-  Future<void> deleteCacheEntry(String musicId) async {
-    final db = await database;
-    await db.delete('cache', where: 'music_id = ?', whereArgs: [musicId]);
-  }
-
-  Future<void> clearAllCacheEntries() async {
-    final db = await database;
-    await db.delete('cache');
-  }
-
-  Future<List<Map<String, dynamic>>> allCacheEntries() async {
-    final db = await database;
-    return db.query('cache');
-  }
-
-  /// Drop cache rows whose local_path is missing on disk.
-  Future<int> reconcileStaleCacheEntries({
-    required bool Function(String localPath) fileExists,
-  }) async {
-    final entries = await allCacheEntries();
-    var removed = 0;
-    for (final e in entries) {
-      final path = e['local_path'] as String?;
-      final id = e['music_id'] as String?;
-      if (id == null) continue;
-      if (path == null || path.isEmpty || !fileExists(path)) {
-        await deleteCacheEntry(id);
-        removed++;
-      }
-    }
-    return removed;
-  }
-
   // --- Cache groups (runtime CUE album membership) ---
 
   /// Member identities of a cache group, or empty when the group is unknown.
@@ -873,12 +766,11 @@ CREATE TABLE IF NOT EXISTS sync_state (
   }
 
 
-  /// Wipe all library-persisted rows: tracks, cue_albums, cue_slices, cache
-  /// annex, runtime cache groups / LRU timestamps, tombstones and sync cursors.
+  /// Wipe all library-persisted rows: tracks, cue_albums, cue_slices, runtime
+  /// cache groups / LRU timestamps, tombstones and sync cursors.
   /// Does **not** delete WebDAV accounts.
   Future<void> clearAllLibraryData() async {
     final db = await database;
-    await db.delete('cache');
     await db.delete('cache_access');
     await db.delete('cache_groups');
     await db.delete('cue_slices');
@@ -889,9 +781,8 @@ CREATE TABLE IF NOT EXISTS sync_state (
   }
 
   /// Wipe the library **index** only: tracks, CUE tables, tombstones and the sync
-  /// cursor. The cache annex and its runtime groups / LRU timestamps stay, so
-  /// audio already on disk keeps its entry and the rows pulled back from the
-  /// cloud still resolve to local files.
+  /// cursor. Runtime groups / LRU timestamps stay, and audio already on disk
+  /// keeps resolving to local files through the deterministic cache path.
   ///
   /// Used by「从云端覆写音乐库」: the index is replaced, the files are not.
   Future<void> clearLibraryIndex() async {

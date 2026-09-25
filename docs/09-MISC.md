@@ -24,7 +24,7 @@
 | 下载队列 / 入队 / ingest / 相册目标 | `download_queue_service.dart`、`library_service.dart`、`models/download_task.dart`（[04](04-DOWNLOAD-QUEUE.md)） |
 | 网络库浏览 / 多选 / 行操作 | `network_library_screen.dart`、`library_actions.dart`（[02](02-NETWORK-LIBRARY.md)） |
 | 音乐库 / 销毁 / 多选删除 | `library_screen.dart`、`library_actions.dart`（[03](03-MUSIC-LIBRARY.md)） |
-| 缓存路径 / 过期清理 / annex | `cache_service.dart`（[01](01-DATA-MODEL.md)） |
+| 缓存路径 / 过期清理 / 已缓存判定 | `cache_service.dart`（[01](01-DATA-MODEL.md)） |
 | DB schema / 曲目身份 | `library_database.dart`、`utils/track_identity.dart`（[01](01-DATA-MODEL.md)） |
 | 同步 / 备份 / 云端分片 | `sync_service.dart`、`backup_service.dart`、`library_sync_store.dart`（[08](08-SYNC-AND-BACKUP.md)） |
 | 通知 / 通道 / 权限 | `media_notification_channel.dart`、`notification_permission_service.dart`、`download_notification_service.dart`（[07](07-NOTIFICATIONS.md)） |
@@ -123,11 +123,11 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 | **idle 拆掉媒体通知** | 播放状态误报 idle | 只在 `_index < 0` 时广播 idle（[05 §6](05-AUDIO-PLAYBACK.md)） |
 | **未下载显示「排队中」** | 远程浏览误用 queued 状态 | `TrackUiState.remote` → 不显示 chip（[02 §1](02-NETWORK-LIBRARY.md)） |
 | **播放器顺手下载** | 在 play 路径 enqueue | 拒绝并提示先下载（[05 §1](05-AUDIO-PLAYBACK.md)） |
-| **清缓存误删曲库** | 把 tracks 和文件绑死 | 标签在 DB，cache 是 annex，销毁才是 wipe（[01 §3](01-DATA-MODEL.md)） |
+| **清缓存误删曲库** | 把 tracks 和文件绑死 | 标签在 DB，缓存只是 `music_cache/` 下的文件，销毁才是 wipe（[01 §3](01-DATA-MODEL.md)） |
 | **清缓存后整库挂「错误」标签** | `invalidateMissingCompleted` 曾把 stale 任务标成 `cancelled`，而 `uiStateFor` 把 cancelled 当 error | 删任务行、跳过相册 / 下载目录任务（[04 §5](04-DOWNLOAD-QUEUE.md)） |
 | **相册任务被判「文件不存在」** | 它们的 `localPath` 是 `content://` URI，`File(...).existsSync()` 永远为假 | 判定前先看 `isPublic`（[04 §5](04-DOWNLOAD-QUEUE.md)） |
 | **音乐后缀判定两份实现** | 队列用硬编码后缀表、网络库用用户配置，`.m4a`/`.aac` 下载后在 ingest 抛错 | 后缀真相只有 `file_type_config.dart`；队列由 `configureFileTypes` 注入 |
-| **备份恢复后假「已缓存」** | 恢复了 annex 路径但文件没打包 | 恢复后 status 一律 uncached，除非磁盘上真有（[08 §5](08-SYNC-AND-BACKUP.md)） |
+| **备份恢复后假「已缓存」** | 旧版恢复了 annex 路径但文件没打包 | v9 起已缓存=推导路径文件在，天然不可能假（[08 §5](08-SYNC-AND-BACKUP.md)） |
 | **schema 升级丢库** | `onUpgrade` 直接 DROP 重建 | bump version 前告知用户；没有渐进 migration（[01 §2](01-DATA-MODEL.md)） |
 | **OEM 无媒体通知** | 通道重要性过低 / 未声明 typed FGS | 保留 vendor 补丁与 v4 通道；真机测 ColorOS / 一加（[05 §7](05-AUDIO-PLAYBACK.md)） |
 | **通道状态查不到 / 与系统不一致** | 通道原先只由首次播放时的原生代码创建 | 通道唯一定义在 `media_notification_channel.dart`，启动时创建，参数两侧必须一致（[07 §2](07-NOTIFICATIONS.md)） |

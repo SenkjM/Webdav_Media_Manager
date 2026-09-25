@@ -15,7 +15,7 @@
 
 页签分 **标题**（全部曲目的平铺列表）、**流派**（用户可见的页签名，代码与库内字段仍叫 genre / 标签；按 `groupedByGenre()` 分组，缺流派信息的归「未分类」）、**播放列表**（数据模型见 [01](01-DATA-MODEL.md)，双向同步见 [08](08-SYNC-AND-BACKUP.md)）。点流派的组进子界面看该组曲目，长按进子界面时**直接带着整组多选**。
 
-- 「是否已缓存」只有一个判定：cache annex 有行 **且** 文件存在（见 [01 §3](01-DATA-MODEL.md)）。
+- 「是否已缓存」只有一个判定：推导路径上 `File.exists`（v9 起无 annex 表，见 [01 §3](01-DATA-MODEL.md)）。
 - 标签复用 `TrackUiState` 那一套（`lib/widgets/track_status_chip.dart`）：下载中显示百分比、就绪是绿色、未缓存不显示标签。
 - 清空音频缓存后，曾经下载过的行应回到「未下载」；**不应该**出现「错误」标签（队列里的 stale 任务行会被删除，见 [04 §4](04-DOWNLOAD-QUEUE.md)）。
 - 性能约定：列表不要 `context.watch<AudioPlayerService>`（会按帧重建），用 `read` + 局部订阅。
@@ -24,8 +24,8 @@
 
 | 操作 | 多选工具条显示 | 效果 |
 |------|----------------|------|
-| 删除缓存 | 该条有缓存时显示 | 删音频 + annex，标签 / 封面 / 歌单引用保留 |
-| 销毁 | 总是显示 | 标签、cue 行、封面、对应音频、annex 一并删；歌单去掉失效引用 |
+| 删除缓存 | 该条有缓存时显示 | 删音频文件，标签 / 封面 / 歌单引用保留 |
+| 销毁 | 总是显示 | 标签、cue 行、封面、对应音频一并删；歌单去掉失效引用 |
 | 混合选择 | 两个都显示 | 各自按上面执行 |
 
 多选工具条左端那个按钮是「全选」/「取消全选」，判定用**计数器对比**：选中数打满时它才变成叉号，作用是取消全选而**不是**退出多选；退出多选靠返回键（或点掉最后一项）。与网络库同一套交互，见 [02 §5](02-NETWORK-LIBRARY.md)。
@@ -62,4 +62,4 @@
 
 ## 7. 相关代码
 
-`library_screen.dart`（列表 / 多选 / 销毁入口）、`library_actions.dart`（删除缓存、分享、入队）、`library_service.dart`（ingest / destroyTracks）、`library_database.dart`（schema）、`cache_service.dart`（annex 与文件）、`models/library_track.dart`。
+`library_screen.dart`（列表 / 多选 / 销毁入口）、`library_actions.dart`（删除缓存、分享、入队）、`library_service.dart`（ingest / destroyTracks）、`library_database.dart`（schema）、`cache_service.dart`（缓存文件与已缓存判定）、`models/library_track.dart`。

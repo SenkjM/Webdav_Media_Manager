@@ -93,36 +93,22 @@ void main() {
     });
   });
 
-  group('isLocal requires annex + file exists', () {
-    test('policy: missing annex → not local', () {
-      expect(
-        CacheService.isLocalPolicy(annexLocalPath: null, fileExists: true),
-        isFalse,
-      );
-      expect(
-        CacheService.isLocalPolicy(annexLocalPath: '', fileExists: true),
-        isFalse,
-      );
+  group('isLocal is pure derived-file check (v9: no annex)', () {
+    test('policy: file missing → not local', () {
+      expect(CacheService.isLocalPolicy(fileExists: false), isFalse);
     });
 
-    test('policy: annex + missing file → not local', () {
-      expect(
-        CacheService.isLocalPolicy(
-          annexLocalPath: '/cache/a.mp3',
-          fileExists: false,
-        ),
-        isFalse,
-      );
+    test('policy: file exists → local', () {
+      expect(CacheService.isLocalPolicy(fileExists: true), isTrue);
     });
 
-    test('policy: annex + file exists → local', () {
-      expect(
-        CacheService.isLocalPolicy(
-          annexLocalPath: '/cache/a.mp3',
-          fileExists: true,
-        ),
-        isTrue,
-      );
+    test('derived path is deterministic from identity', () {
+      // The cache file name must be a pure function of (source, path):
+      // same identity → same file; different disk → different file.
+      final stem = identityHashStem('disk-a', '/music/a.flac');
+      final stemB = identityHashStem('disk-b', '/music/a.flac');
+      expect(stem.length, 16);
+      expect(stem, isNot(equals(stemB)));
     });
   });
 

@@ -24,7 +24,7 @@
 | 编号 | 文档 | 覆盖 |
 |------|------|------|
 | 00 | 本文件 | 文档用法、agent 约束、整体规划 |
-| 01 | [01-DATA-MODEL.md](01-DATA-MODEL.md) | 本地 / 云端文件的语义约定：曲目身份、数据库、cache annex、容器与魔数 |
+| 01 | [01-DATA-MODEL.md](01-DATA-MODEL.md) | 本地 / 云端文件的语义约定：曲目身份、数据库、已缓存判定、容器与魔数 |
 | 02 | [02-NETWORK-LIBRARY.md](02-NETWORK-LIBRARY.md) | WebDAV 浏览、行操作、多选、入队、返回层级 |
 | 03 | [03-MUSIC-LIBRARY.md](03-MUSIC-LIBRARY.md) | 曲库内容、缓存状态与标签、删除 / 销毁、CUE 分片、封面、分享 |
 | 04 | [04-DOWNLOAD-QUEUE.md](04-DOWNLOAD-QUEUE.md) | 队列模型、入队与 ingest、目标（缓存 / 相册 / 下载目录）、失败与重试 |

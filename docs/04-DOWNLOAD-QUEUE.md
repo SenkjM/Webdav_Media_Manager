@@ -30,7 +30,7 @@
 ## 3. 入队语义（`enqueue`）
 
 1. 已有 completed 且 `localPath` 文件**存在**的同名任务 → 直接复用，顺手重新 ingest 一次标签。
-2. 否则检查 cache annex 命中（文件已在缓存里）→ 造一条 completed 任务并 ingest。
+2. 否则检查推导缓存路径命中（文件已在缓存里，`hasLocalFile`）→ 造一条 completed 任务并 ingest。
 3. 否则若已有 pending / active 的同名任务 → 等待它，不重复排。
 4. 否则新建 pending 任务并 `_pump`。
 
@@ -46,7 +46,7 @@
 
 ## 5. 与缓存清理的联动
 
-设置里「手动清空音频缓存」= `AppState.manualClearCache()`：先 `cache.clearAll(...)`（删文件 + 清 annex，保护正在播放 / 下载的文件），再调 `downloads.invalidateMissingCompleted()`。
+设置里「手动清空音频缓存」= `AppState.manualClearCache()`：先 `cache.clearAll(...)`（删 `music_cache/` 下文件，保护正在播放 / 下载的），再调 `downloads.invalidateMissingCompleted()`。
 
 `invalidateMissingCompleted()` 的语义（**新近修正**）：
 

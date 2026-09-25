@@ -34,7 +34,8 @@ import 'webdav_service.dart';
 /// plus the cover thumbnails those rows reference.
 ///
 /// Never includes cached audio files or the download queue. On restore the
-/// cache annex is cleared, so the player never believes a file exists unless it
+/// cached state is derived from disk, so the player never believes a file
+  /// exists unless it
 /// really is on disk.
 ///
 /// Format: a `WmpContainer` (magic `WDMMBK01`), optionally wrapped in AES-256-GCM
@@ -561,7 +562,8 @@ class BackupService extends ChangeNotifier {
       for (final t in tracks) {
         await _libraryDb.upsertTrack(t);
       }
-      // Never trust the archived cache annex: files must exist on disk.
+      // Cached state is derived from disk (v9): nothing to clear, kept for the
+    // call-site contract.
       if (_cache != null) {
         await _cache.markAllUncached();
       }

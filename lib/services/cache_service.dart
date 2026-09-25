@@ -16,8 +16,10 @@ import 'library_database.dart';
 /// Local file cache for downloaded music. Playback always uses these files.
 /// Cleanup NEVER touches library DB tracks/cue tables or cover thumbs.
 ///
-/// Cache annex (`cache` table) maps music_id → localPath. [isLocal] requires
-/// both a cache row and File.exists — stale rows are reconciled away.
+/// Since library schema v9 there is no cache annex: a cache file's location
+/// is **derived** from (source_name, remote_path) via [fileForRemote], so
+/// isLocal is a lazy `File.exists` on the derived path — no table, no
+/// startup reconciliation, nothing to go stale.
 class CacheService extends ChangeNotifier {
   CacheService({SharedPreferences? prefs, LibraryDatabase? libraryDb})
       : _prefs = prefs,
@@ -30,9 +32,6 @@ class CacheService extends ChangeNotifier {
   LibraryDatabase? _libraryDb;
   Directory? _cacheDir;
 
-  /// In-memory annex: music_id → local_path (source of truth with DB).
-  final Map<String, String> _annex = {};
-
   void attachLibraryDb(LibraryDatabase db) {
     _libraryDb = db;
   }
@@ -44,22 +43,7 @@ class CacheService extends ChangeNotifier {
     if (!await _cacheDir!.exists()) {
       await _cacheDir!.create(recursive: true);
     }
-    await _reloadAnnexFromDb();
     await _migrateLegacyPrefs();
-    await reconcileStaleAnnex();
-  }
-
-  Future<void> _reloadAnnexFromDb() async {
-    _annex.clear();
-    final db = _libraryDb;
-    if (db == null) return;
-    for (final e in await db.allCacheEntries()) {
-      final id = e['music_id'] as String?;
-      final path = e['local_path'] as String?;
-      if (id != null && path != null && path.isNotEmpty) {
-        _annex[id] = path;
-      }
-    }
   }
 
   /// One-time move of the legacy prefs group membership into
@@ -113,130 +97,33 @@ class CacheService extends ChangeNotifier {
     return File(p.join(cacheDir.path, '${stem}_$base'));
   }
 
-  /// Drop annex rows whose files are gone.
-  /// After backup restore: drop annex so nothing looks cached without files.
-  Future<void> markAllUncached() async {
-    _annex.clear();
-    await _libraryDb?.clearAllCacheEntries();
-    notifyListeners();
+  /// No-op since v9: with no annex there is nothing to mark. Kept for the
+  /// backup-restore call site (files must exist on disk to be considered
+  /// cached, which the derived path already guarantees).
+  Future<void> markAllUncached() async {}
+
+  /// Sync isLocal for a music_id via the derived cache path.
+  /// The caller must know the remote path — identity, not the hash, names
+  /// the file (stem is only the first 16 hex of music_id).
+  bool isLocalForMusicId(String musicId, String remotePath) {
+    return fileForMusicId(musicId, remotePath).existsSync();
   }
 
-    Future<int> reconcileStaleAnnex() async {
-    final db = _libraryDb;
-    if (db == null) return 0;
-    final n = await db.reconcileStaleCacheEntries(
-      fileExists: (path) => File(path).existsSync(),
-    );
-    // Drop stale from memory too.
-    _annex.removeWhere((id, path) => !File(path).existsSync());
-    if (n > 0) notifyListeners();
-    return n;
-  }
-
-  /// Sync isLocal for a music_id via in-memory annex + file exists.
-  bool isLocalForMusicId(String musicId) {
-    final annexPath = _annex[musicId];
-    if (annexPath == null || annexPath.isEmpty) return false;
-    if (File(annexPath).existsSync()) return true;
-    _annex.remove(musicId);
-    unawaited(_libraryDb?.deleteCacheEntry(musicId) ?? Future<void>.value());
-    return false;
-  }
-
-  /// Strict isLocal: annex row + file exists. Reconciles stale rows.
-  Future<bool> isLocalAsync(String musicId) async {
-    final path = _annex[musicId];
-    if (path != null && File(path).existsSync()) return true;
-    final db = _libraryDb;
-    if (db == null) {
-      _annex.remove(musicId);
-      return false;
-    }
-    final entry = await db.getCacheEntry(musicId);
-    if (entry == null) {
-      _annex.remove(musicId);
-      return false;
-    }
-    final dbPath = entry['local_path'] as String?;
-    if (dbPath == null || dbPath.isEmpty || !File(dbPath).existsSync()) {
-      _annex.remove(musicId);
-      await db.deleteCacheEntry(musicId);
-      notifyListeners();
-      return false;
-    }
-    _annex[musicId] = dbPath;
-    return true;
-  }
-
-  /// Library-track isLocal: annex row for [LibraryTrack.cacheMusicId] AND
-  /// File(path).existsSync(). Stale annex (missing file) is cleared.
+  /// Library-track isLocal: derived cache file for the track's audio exists.
   bool isLocalTrack(LibraryTrack track) {
-    final musicId = track.cacheMusicId;
-    final annexPath = _annex[musicId];
-    final audioRemote = track.effectiveAudioRemotePath;
-    final file = fileForRemote(audioRemote, sourceName: track.sourceName);
-
-    if (annexPath != null) {
-      if (File(annexPath).existsSync()) return true;
-      // Stale annex row.
-      _annex.remove(musicId);
-      unawaited(_libraryDb?.deleteCacheEntry(musicId) ?? Future.value());
-      return false;
-    }
-
-    // No annex: not local even if a leftover file exists. Callers that finish
-    // downloads must [registerCompleted] / [ensureAnnexForFile].
-    // Exception: if the deterministic cache file exists, treat as local and
-    // schedule annex repair so green dots recover after upgrade.
-    if (file.existsSync()) {
-      _annex[musicId] = file.path;
-      unawaited(
-        ensureAnnexForFile(musicId: musicId, localPath: file.path),
-      );
-      return true;
-    }
-    return false;
+    return fileForRemote(
+      track.effectiveAudioRemotePath,
+      sourceName: track.sourceName,
+    ).existsSync();
   }
 
-  /// Pure policy helper for tests: annex path + file exists.
-  static bool isLocalPolicy({
-    required String? annexLocalPath,
-    required bool fileExists,
-  }) {
-    if (annexLocalPath == null || annexLocalPath.isEmpty) return false;
+  /// Pure policy helper for tests: derived file exists.
+  static bool isLocalPolicy({required bool fileExists}) {
     return fileExists;
   }
 
-  /// Ensure annex matches an existing file (after download or reconcile).
-  Future<void> ensureAnnexForFile({
-    required String musicId,
-    required String localPath,
-    int? sizeBytes,
-  }) async {
-    if (!File(localPath).existsSync()) {
-      _annex.remove(musicId);
-      await _libraryDb?.deleteCacheEntry(musicId);
-      return;
-    }
-    _annex[musicId] = localPath;
-    final db = _libraryDb;
-    if (db == null) return;
-    await db.upsertCacheEntry(
-      musicId: musicId,
-      localPath: localPath,
-      sizeBytes: sizeBytes ?? await File(localPath).length(),
-    );
-  }
-
   Future<bool> isCached(String remotePath, {required String sourceName}) async {
-    final musicId = musicIdForRemote(sourceName, remotePath);
-    final f = fileForRemote(remotePath, sourceName: sourceName);
-    if (!await f.exists()) {
-      await _libraryDb?.deleteCacheEntry(musicId);
-      return false;
-    }
-    await ensureAnnexForFile(musicId: musicId, localPath: f.path);
-    return true;
+    return fileForRemote(remotePath, sourceName: sourceName).exists();
   }
 
   /// Sync check whether the audio file is present in the local cache.
@@ -249,13 +136,10 @@ class CacheService extends ChangeNotifier {
     required String sourceName,
   }) async {
     final f = fileForRemote(remotePath, sourceName: sourceName);
-    final musicId = musicIdForRemote(sourceName, remotePath);
     if (await f.exists()) {
       await touch(sourceName, remotePath);
-      await ensureAnnexForFile(musicId: musicId, localPath: f.path);
       return f.path;
     }
-    await _libraryDb?.deleteCacheEntry(musicId);
     return null;
   }
 
@@ -300,7 +184,6 @@ class CacheService extends ChangeNotifier {
     required String remotePath,
   }) async {
     final f = fileForRemote(remotePath, sourceName: sourceName);
-    final musicId = musicIdForRemote(sourceName, remotePath);
     var removed = false;
     if (await f.exists()) {
       try {
@@ -308,15 +191,16 @@ class CacheService extends ChangeNotifier {
         removed = true;
       } catch (_) {}
     }
-    final part = File('${f.path}.part');
+    final part = File('$f.part');
     if (await part.exists()) {
       try {
         await part.delete();
       } catch (_) {}
     }
-    await _libraryDb?.deleteCacheAccess(sourceName: sourceName, remotePath: remotePath);
-    _annex.remove(musicId);
-    await _libraryDb?.deleteCacheEntry(musicId);
+    await _libraryDb?.deleteCacheAccess(
+      sourceName: sourceName,
+      remotePath: remotePath,
+    );
     if (removed) notifyListeners();
     return removed;
   }
@@ -365,13 +249,11 @@ class CacheService extends ChangeNotifier {
         groupId: cacheGroupId,
       );
     }
-    final id = musicId ?? musicIdForRemote(sourceName, remotePath);
-    await ensureAnnexForFile(musicId: id, localPath: localPath);
     notifyListeners();
   }
 
   /// Manual clear of all audio cache except playing / downloading.
-  /// Does not delete library metadata or cover thumbs. Clears cache annex.
+  /// Does not delete library metadata or cover thumbs.
   Future<int> clearAll({
     String? playingRemotePath,
     String? playingSourceName,
@@ -381,12 +263,10 @@ class CacheService extends ChangeNotifier {
     if (_cacheDir == null || !await _cacheDir!.exists()) return 0;
     final protected = <String>{...protectedLocalPaths};
     if (playingLocalPath != null) protected.add(playingLocalPath);
-    String? protectedMusicId;
     if (playingRemotePath != null && playingSourceName != null) {
       final f = fileForRemote(playingRemotePath, sourceName: playingSourceName);
       protected.add(f.path);
-      protected.add('${f.path}.part');
-      protectedMusicId = musicIdForRemote(playingSourceName, playingRemotePath);
+      protected.add('$f.part');
     }
     var removed = 0;
     await for (final entity in _cacheDir!.list()) {
@@ -397,23 +277,7 @@ class CacheService extends ChangeNotifier {
         removed++;
       } catch (_) {}
     }
-    // Clear annex except currently playing audio.
-    final keepPath = protectedMusicId != null ? _annex[protectedMusicId] : null;
-    final toRemove = _annex.keys
-        .where((id) => id != protectedMusicId)
-        .where((id) {
-          final path = _annex[id];
-          return path == null || !protected.contains(path);
-        })
-        .toList();
-    for (final id in toRemove) {
-      _annex.remove(id);
-      await _libraryDb?.deleteCacheEntry(id);
-    }
-    if (protectedMusicId != null && keepPath != null) {
-      _annex[protectedMusicId] = keepPath;
-    }
-    notifyListeners();
+    if (removed > 0) notifyListeners();
     return removed;
   }
 
@@ -470,9 +334,6 @@ class CacheService extends ChangeNotifier {
             sourceName: sourceName,
             remotePath: remote,
           );
-          await _libraryDb?.deleteCacheEntry(
-            musicIdForRemote(sourceName, remote),
-          );
           removed++;
         } catch (_) {}
       }
@@ -481,4 +342,3 @@ class CacheService extends ChangeNotifier {
     return removed;
   }
 }
-
