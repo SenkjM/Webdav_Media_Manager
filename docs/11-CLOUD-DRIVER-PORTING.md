@@ -79,7 +79,7 @@
 驱动配置 JSON 里的键分两类：**表单声明的**（`spec.form`，界面可见）与**隐式的**——Addition 里有、`onTokenUpdate` 会写回、或表单逻辑会派生，但不在表单里的键。**允许隐式键存在**（运行时令牌缓存本来就不该让用户手填），但每条隐式键必须定性，二选一：
 
 - 是凭证 → **必须**进 `runtimeSecretKeys`（加密随凭证库/备份走）；
-- 不是凭证 → 在 Addition 字段注释里写明来历（如 `source_account_id_name` 是表单通用写入的快照）。
+- 不是凭证 → 在 Addition 字段注释里写明来历（如 `source_account_id_name`）。
 
 > 反例就是百度 `access_token`：Addition 注释曾写「不进备份明文」，但代码没有任何机制保证——它不在表单里、没有 obscure 声明，第一版凭证同步就把它漏成明文。**注释不是约束，声明才是。**
 
@@ -90,7 +90,9 @@
 | `baidu_netdisk` | `refresh_token`、`client_secret`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `api_url_address`、`local_refresh`、`client_id` | `access_token`（运行时令牌缓存） |
 | `123_open` | `refresh_token`、`client_secret`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `api_url_address`、`local_refresh`、`client_id`、`root_folder_id` | `access_token`（运行时令牌缓存） |
 | `netease_music` | `cookie`（表单 obscure） | `song_limit` | 无（网易不轮换 Cookie，没有 onTokenUpdate 写回） |
-| `crypt` | `password`、`salt`（表单 obscure） | `source_account_id`、`source_dir`、`filename_encoding`、`encrypted_suffix`、`filename_encryption`、`directory_name_encryption` | `source_account_id_name`（表单通用写入的源账号名快照，非凭证） |
+| `crypt` | `password`、`salt`（表单 obscure） | `source_account_id`、`source_dir`、`filename_encoding`、`encrypted_suffix`、`filename_encryption`、`directory_name_encryption` | `source_account_id_name`（表单通用写入的源账号名快照，非凭证；**仅作 id 解析失败后的兜底**——主绑定是 `source_account_id`，语义见 §4） |
+
+**注意清点表的列语义**：「隐式键」不等于「备用键」——它只表示**该键不在 `spec.form` 里**。crypt 的主绑定 `source_account_id` 在表单里（`CloudDriverAccountField`），所以落在「非密文键」列；快照落在「隐式键」列不代表它参与主绑定。
 
 **新驱动落地时**（并入 §8.1 核对单）：对照 Addition 的 `fromJson`/`toJson` 与客户端里所有 `onTokenUpdate?.call({...})`，把每个键落进上表；测试里 `audited` 清单加一行、密文集合加键——漏登记的隐式键会从断言失败里暴露。
 

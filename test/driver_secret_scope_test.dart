@@ -67,8 +67,9 @@ void main() {
         },
         // netease：2 键全表单；cookie 密文；无令牌轮换。
         'netease_music': {'cookie'},
-        // crypt：9 键 = 表单 8 + 隐式 source_account_id_name（表单通用写入
-        // 的源账号名快照，非凭证，明文正确）；password/salt 密文。
+        // crypt：9 键 = 表单 8（含主绑定 source_account_id）+ 隐式
+        // source_account_id_name（表单通用写入的源账号名快照，仅作 id
+        // 解析失败后的兜底，非凭证，明文正确）；password/salt 密文。
         'crypt': {'password', 'salt'},
       };
       for (final spec in kCloudDriverSpecs) {
