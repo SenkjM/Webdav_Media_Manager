@@ -19,7 +19,7 @@
 | 各驱动的实际能力（靠人读源码判断） | 能力位 `AccountCaps` | 上游没有能力表，移植时逐个核对 |
 | `Link{URL, Header}` | `rawUrl` / `rawHeaders` | `rawUrl == null` 表示 MustProxy，见 §5 |
 
-**铁律**：驱动只描述自己（`CloudDriverSpec`）——表单渲染、校验、持久化、能力遮罩全由 spec 驱动，上游知识不要漏进界面层。
+**铁律**：驱动只描述自己（`CloudDriverSpec`）——表单渲染、校验、持久化、能力遮罩全由 spec 驱动，上游知识不要漏进界面层。**谁负责路由、三层可见性边界见 [§12](#12-分层与路由clouddriver-层负责全部网盘驱动)。**
 
 ## 2. 必须逐字节对齐的部分
 
@@ -51,11 +51,15 @@
 ## 5. 直链、Range 与本地流桥
 
 - 直链必需请求头（Cookie / Referer / UA）要贯穿下载与流式播放：`CloudFileItem.rawHeaders` → `WebDavStreamSource.headers`。
-- **源可能忽略 Range**：请求 `bytes=0-31` 却回 200 + 整包是常见行为。此时只能整包处理（crypt 的 `shape == wholeBody` 分支），不要假设一定拿到 206。
+- **源可能忽略 Range**：请求 `bytes=0-31`（或 `bytes=0-65583`，见下）却回 200 + 整包是常见行为。此时只能整包处理（crypt 的 `shape == wholeBody` 分支），不要假设一定拿到 206。**判定要用「响应体比请求的区间更长」**（`_CryptTarget.rangeIgnored`），不要用「响应体 > 32B」这类固定长度判断——元数据 size 过期时，按它裁短的首块会被误当成整包（已踩过，`crypt_size_race_test.dart` 锁死）。
 - **源适配层必须给 size**：`WebDavAccountSource.get()` 一度漏掉 size（真机反馈：流式报「无法确定大小」、下载产出 0B 文件），后来用单文件 PROPFIND（`statPath`）补上。任何新源的 `get()` 都要带回真实条目大小；拿不到就明说，交给上层报错。
-- **crypt 的大小判定是四态 `shape`**（`crypt_driver.dart` 的 `_CryptTarget`）：整包（响应体 > 32B）/ 空文件（密文恰 32B，明文 0B，合法）/ Range 分块 / 大小未知。**未知必须显式报错，绝不静默产出空内容**——这是竞态防线：元数据 size 与内容错位时，`Content-Range` 总长（与内容同请求）优先纠正元数据；两者都没有就报错。
+- **crypt 的大小判定是四态 `shape`**（`crypt_driver.dart` 的 `_CryptTarget`）：整包（响应比请求多）/ 空文件（密文恰 32B，明文 0B，合法）/ Range 分块 / 大小未知。**未知必须显式报错，绝不静默产出空内容**——这是竞态防线：元数据 size 与内容错位时，`Content-Range` 总长（与内容同请求）优先纠正元数据；两者都没有就报错。
+- **读取路径要按批、要缓存**（真机反馈「播放 / 下载加密文件一直转圈」后的优化，数字见 `test/crypt_read_path_test.dart`）：
+  - 解析与首块**合并成一个 Range**（`bytes=0-65583` = 文件头 32B + 一块），顺序读少一个往返；只有区间从第 0 块开始时才预取，远距离 seek 不白拉 64KiB；
+  - 数据块**按批取**（16 块 ≈ 1MiB 一个请求）。一块一个请求会把 700MB 文件拆成上万个往返，这是 streaming 卡顿的主因；每批之间让出一次事件循环，避免整批解密顶掉 UI 帧；
+  - **解析结果短时缓存**（45s、上限 8、LRU、目录被改动即整批失效），播放器反复拖进度条不会每次都重新解析直链；撞上直链过期（401/403/404/410）自动重新解析一次再继续。
 - 后缀区间 `bytes=-n`、开放区间 `bytes=a-` 都要按 HTTP 语义处理，越界要裁剪。
-- **播放器只认 URL 或本地路径**（media_kit / ffmpeg），不认 Dart 的 `Stream`。MustProxy 驱动要播放就必须有本地流桥，范例是 `crypt/crypt_stream_bridge.dart`：只监听 `127.0.0.1`、token 一次性映射 (accountId, path) 且 URL 不含凭证、HEAD 给 Content-Length、无 Range 回 200、有 Range 回 206 + Content-Range、按扩展名给 Content-Type、空闲自动关服务器。
+- **播放器只认 URL 或本地路径**（media_kit / ffmpeg），不认 Dart 的 `Stream`。MustProxy 驱动要播放就必须有本地流桥，通用设施是 `cloud_drivers/stream_bridge.dart`（`LocalStreamBridge`）：只监听 `127.0.0.1`、token 一次性映射 (accountId, path) 且 URL 不含凭证、HEAD 给 Content-Length、无 Range 回 200、有 Range 回 206 + Content-Range、按扩展名给 Content-Type、空闲自动关服务器。**桥本身不含任何盘 / 密码学知识**——字节流由调用方以 `expose(ranges: driver.openContentRange)` 传进去；桥由兼容层持有（驱动实例会被反复重建，桥不能跟着死），每次请求再解析当前驱动实例。
 - 桥接之后**播放入口不需要任何分支**：`resolveStreamSource` 统一返回「URL + 请求头」，调用方无感。
 
 ## 6. 表单与 spec
@@ -121,3 +125,54 @@
 - **路径语义**：网易云盘是**单层平铺**（只有歌曲，没有目录树），所以驱动 `list()` 忽略路径，永远返回全部歌曲；`get()` / `remove()` 按**文件名**定位。账号的「远程路径」对它是纯虚拟前缀——条目路径由上层拼接，驱动只认文件名，改远程路径不会让条目失联。
 - **测试**：`test/netease_music_crypto_test.dart`（用 Go 上游工具生成的**金标向量**：AES-CBC / AES-ECB / raw RSA / weapi / linuxapi 各若干条，并核对 worker 硬编码的 modulus 与 Go 版 PEM 是同一把密钥）、`test/netease_music_driver_test.dart`（请求形状 / 能力位 / 直链必需头 / 错误原文透传 / 未实现操作）。
 - **落点**：`lib/services/cloud_drivers/netease_music_driver.dart`（Addition + Client + 驱动 + spec）、`netease_music_crypto.dart`（weapi / linuxapi）、`driver_registry.dart`（加一行）。
+
+## 12. 分层与路由：CloudDriver 层负责全部网盘驱动
+
+### 12.1 路由归属
+
+**`CloudDriver` 层是全部网盘驱动的唯一路由点。** 任何云盘账号（`CloudDriveService.isCloudType()` 为真的一切类型）的每一次操作都必须走同一条路：
+
+```
+UI / 服务层
+  → CloudDriveService（只查表：cloudDriverSpec(type).create().list/get/mkdir/…）
+    → CloudDriver 实现（该盘的全部私有知识：登录、直链、路径、错误原文）
+```
+
+推论（违反即「耦合漏进来了」，与 [12 §1.1](12-DRIVER-PORTING-GUIDE.md) 同一套边界）：
+
+- 兼容层里**不允许**出现 `if (type == 'xxx')` 或按类型分支的行为差异；它只做 `create` / `verify` / 能力位 / 表单渲染。
+- 需要「按盘不同」的东西一律下沉到驱动或 spec，并由**通用钩子**取回：能力 → `runtimeCapabilities`，类型名 → `runtimeTypeLabel`，是否包装驱动 → `CloudDriverSpec.isWrapper`，跨请求资源释放 → `CloudDriver.dispose()`（默认空实现）。
+  例：账号列表的类型名以前是兼容层读 crypt 配置拼出来的（`if (a.providerType == 'crypt')`），现在是驱动自己答 `runtimeTypeLabel`（「百度网盘 Crypt」），兼容层照抄字符串即可。
+- 新增一个盘 = **新增驱动文件 + 注册表一行 + 一份测试**，`lib/` 其它文件零改动（[12 §1.1](12-DRIVER-PORTING-GUIDE.md) 第 4 条）。
+
+### 12.2 三层可见性边界
+
+| 层级 | 看不到什么 | 落点 |
+|---|---|---|
+| UI / 服务层（`screens/`、`providers/`、`services/` 顶层） | 看不到任何**具体云盘类型**，也看不到 crypt | 只认 `CloudDriver` / `CloudDriverSpec` |
+| `CloudDriver` 层（`cloud_driver.dart`、通用设施） | 看不到**具体盘的私有知识**（不 import 账号 / 存储 / 各盘 client） | `cloud_drivers/` |
+| crypt 驱动（`cloud_drivers/crypt/`） | 上面看不到它用的**密码学包** | `package:openlist_crypt` 只允许出现在这个目录里 |
+
+密码学包的隔离靠「异常翻译」落地：`openlist_crypt` 的异常在驱动内翻译成
+
+- `CloudDriverException`：一般失败（源不提供直链、内容不完整……）；
+- `CloudDriverDataException`（`cloud_driver.dart`）：**内容本身坏了**（解密 / 认证失败、密钥不匹配）→ 重试没有意义。
+
+于是 `download_queue_service.dart` 的 `isRetryable()` 只需要认 `CloudDriverDataException`，不必认识 `RcloneCipherException`（分层前它 `import package:openlist_crypt`，正是「Crypt 之上的包泄漏」）。
+
+### 12.3 无痛摘除（可验证的判据）
+
+「摘掉一个驱动」应当是**删目录 + 删注册表一行**，而不是全库搜类型名。当前状态（crypt 为例）：
+
+- 通用设施**不属于任何盘**：本地流桥 `cloud_drivers/stream_bridge.dart`、WebDAV 源适配 `cloud_drivers/webdav_source.dart`、包装驱动的 `CloudSource` / `CloudDriverEnv` 契约都在通用层；
+- 装配层（`app_state.dart`）只注入**通用**的 WebDAV 源工厂，不 import crypt；
+- 账号表单的「源账号」下拉用 `spec.isWrapper` 过滤，不写 `'crypt'` 字面量；
+- 驱动自有的跨请求资源（连接池、解析缓存）由 `CloudDriver.dispose()` 在兼容层重建 / 移除实例时释放。
+
+检查法：`git rm -r lib/services/cloud_drivers/crypt` + 删掉 `driver_registry.dart` 的那一行（连带它的 import），`flutter analyze lib` 必须零错误——已按此法验证过。
+
+### 12.4 唯一的例外：WebDAV 单列（现状，不要照抄）
+
+WebDAV **不走** `CloudDriver` 兼容层：它是独立实现（`WebDavService` 的 ping / readDir / PROPFIND / Range 读取），`CloudDriveService.isCloudType()` 明确把它排除在外，`_resolveSource()` 里也留着全库唯一的 `providerType == 'webdav'` 类型分支（因为包装驱动要一个 `CloudSource` 视图，而 WebDAV 的适配器由装配层注入）。
+
+这是**已知的丑缝**，当前不动它：新驱动不要照抄这个模式，也不要为了让 WebDAV 合一而顺手重构（会牵动播放、缓存、下载三条链路）。包装驱动（如 crypt）把 WebDAV 当源的能力由 `cloud_drivers/webdav_source.dart` 适配——那是通用设施，不是 WebDAV 本体的一部分。
