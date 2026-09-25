@@ -87,7 +87,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       _stack.add(settings.networkLastPath);
     }
     // Take the system back key for directory navigation / multi-select.
-    BackHandlerRegistry.register(_handleSystemBack);
+    BackHandlerRegistry.register(_handleSystemBack, tab: 2);
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureAndLoad());
   }
 

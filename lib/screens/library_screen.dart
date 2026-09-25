@@ -356,7 +356,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
   @override
   void initState() {
     super.initState();
-    BackHandlerRegistry.register(_handleSystemBack);
+    BackHandlerRegistry.register(_handleSystemBack, tab: 0);
   }
 
   @override
@@ -701,7 +701,7 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
   @override
   void initState() {
     super.initState();
-    BackHandlerRegistry.register(_handleSystemBack);
+    BackHandlerRegistry.register(_handleSystemBack, tab: 0);
     if (widget.startInSelection) {
       // 整组进来时选中全部：计数打满 → 工具栏那个按钮一开始就是叉号。
       _selection = _selection.enter(

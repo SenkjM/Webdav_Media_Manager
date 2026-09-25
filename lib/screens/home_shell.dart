@@ -53,6 +53,21 @@ class _HomeShellState extends State<HomeShell> {
   static const _settingsIndex = 4;
 
   @override
+  void initState() {
+    super.initState();
+    // 返回键分发的 tab 归属：各 tab 注册的处理器只在自己是活跃 tab 时参与，
+    // 否则 IndexedStack 里后台 tab 的处理器会吃掉别的 tab 的返回键
+    // （真机反馈：下载页按返回被网络库消费，退完目录栈才回设定主页）。
+    BackHandlerRegistry.activeTabIndex = _index;
+  }
+
+  @override
+  void dispose() {
+    BackHandlerRegistry.activeTabIndex = null;
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pages = [
       _TabNavigator(navigatorKey: _libraryNav, root: const LibraryScreen()),
@@ -88,6 +103,7 @@ class _HomeShellState extends State<HomeShell> {
           final home = context.read<SettingsService>().homeTab;
           if (_index != home) {
             setState(() => _index = home);
+            BackHandlerRegistry.activeTabIndex = home;
             return;
           }
           // Root back on home: send task to background (like Home) so
@@ -235,6 +251,7 @@ class _HomeShellState extends State<HomeShell> {
 
   void _select(int i) {
     setState(() => _index = i);
+    BackHandlerRegistry.activeTabIndex = i;
     Navigator.pop(context);
   }
 
