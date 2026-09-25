@@ -1,4 +1,4 @@
-﻿# 99 · 开发中文档
+# 99 · 开发中文档
 
 只记录**正在开发**的功能的原始语义：需求原话、取舍、临时决定、还没定型的实现。
 用法与收口规则见 [00-INDEX.md](00-INDEX.md) 的「完整文档与开发中文档」。
@@ -377,3 +377,37 @@
 - **用户语义**（真机反馈）：crypt 账号只需和**账户名**绑定；现在它绑的是源 id，源被删后报错界面显示一长串源 id，**即使重新添加源也无法恢复 crypt**。
 - **现状**：已实现「id 优先、名字兜底」+ 保存时源名快照 + 错误信息用源名（[11 §4](11-CLOUD-DRIVER-PORTING.md)）；测试 `crypt_source_name_binding_test.dart`。**待真机验收**：删源 → 报错可读 → 重添同名源 → crypt 复活。
 - **代码位置**：`crypt_driver.dart` 的 `_requireSource`、`cloud_drive_service.dart` 的 `_resolveSourceByName` / `_cryptSourceTypes`、`accounts_screen.dart` 的配置组装（`<key>_name` 快照）。
+
+## 6. 存储层合并待办（已调研，未开工，用户已确认记入待办）
+
+本地数据现状全景（2026-09-25 调研，基线 feature/openlist-driver-port-batch2）：**5 个介质**——3 个 SQLite 库（`music_library.db` v7 / `download_queue.db` v6 / `playlists.db` v1，均在 `getApplicationDocumentsDirectory()`）+ SharedPreferences（settings 57 键 / cache 附属键 / `active_account_id`）+ secure storage（`webdav_pass_*` / `cloud_driver_cfg_*` / vault 口令）。目录侧 `covers/` `music_cache/` 是文件不是数据库。
+
+### 6.1 不合并的（现状已合理，勿动）
+
+- **playlists.db 独立**：文件头注释即约定「Independent from audio cache — never wiped by CacheService cleanup」；且有远端 M3U8 镜像层，生命周期独立。
+- **download_queue.db 独立**：瞬态任务队列（重试 / 进度），与曲库标签无外键关联（`taskForRemote` 靠 `source_name + remote_path` 运行期对上，不落库 join）；合并会让「销毁音乐库」触碰队列服务。
+- **凭证在 secure、账号元数据在 SQLite**：密文 vs 可同步明文，职责分界正确。
+- **music_library.db 内 7 张表**：tracks / cue / deleted / sync_state 是同一次 `onUpgrade` DROP 重建的原子单元，强绑定有意为之。
+
+### 6.2 T1 · cache_group 三处分布收拢（推荐，收益最实）
+
+- **问题**：「CUE 整专辑一组」一个概念横跨三个存储——`cue_albums.cache_group_id`（music_library.db，`library_database.dart:132`）、`download_tasks.cache_group_id`（download_queue.db，`download_store.dart:56`）、CacheService 的 group 成员表在 **prefs**（`cache_service.dart:240-263` 的 `_groupKey` / `_groupMembersKey`，键还是 **`hashCode`**——碰撞会串组）。CUE 删除要清三处（`cache_service.dart:316-318`），漏一处留孤儿。
+- **方案**：prefs 的 group/members 键 + 语义统一进 music_library.db 一张 `cache_groups` 表（group_id PK + members）；`touch()` LRU 时间戳一并入库（现在每次播放写一次 prefs XML，全量重写代价随键数涨）。
+- **迁移**：一次性读旧 prefs 键写新表再删键；`schemaVersion` v7→v8（cache_groups 进 DROP 重建列表）。
+- **代价**：动 CacheService 核心与删除链路；已有 cache 用例覆盖，风险可控。**独立提交交付。**
+
+### 6.3 T2 · cache annex 表拆出 music_library.db（涉及 schema 语义重划，先讨论再动）
+
+- **问题**：`cache` 表是**运行态缓存**（`music_id → local_path`，会被「清空音频缓存」整表清），却寄生在**可同步曲库**里：分片同步（`seg-*.wdmm`）必须排除它、`onUpgrade` DROP 时连坐清空、备份导出单独处理（[01 §3](01-DATA-MODEL.md) 的三行删除语义表是它的全部约束）。
+- **方案**（二选一，未定）：拆到 download_queue.db（同为运行态）或独立 cache.db。
+- **影响面**：`onUpgrade` DROP 列表、`reconcileStaleAnnex`、备份导出三处；语义重划牵动 [01](01-DATA-MODEL.md) / [03](03-MUSIC-LIBRARY.md) / [04](04-DOWNLOAD-QUEUE.md) 三篇。**与 T1 正交可同做，但必须先立项定方案。**
+
+### 6.4 T3 · 01 文档校正（极小，随 T1 顺手做）
+
+[01 §2](01-DATA-MODEL.md) 两处笔误：标题「schema **v5**」实为 **v7**（`library_database.dart` `schemaVersion = 7`）；表注「`UNIQUE(account_id, remote_path)`」实为 `UNIQUE(source_name, remote_path)`（`library_database.dart:91`）。
+
+### 6.5 明确不做
+
+- prefs 57 个 settings 键不搬 SQLite：真·配置数据，KV 合适、无关系语义。
+- `sync_state` 游标不并入 prefs：跟 tracks 的 rev 时钟强耦合（[01 §6](01-DATA-MODEL.md)），同库 DROP 重建是对的。
+- 三个 SQLite 合成一个库：备份 / 销毁 / 清缓存三类操作的正交性就是靠库边界划的，合并是倒退。
