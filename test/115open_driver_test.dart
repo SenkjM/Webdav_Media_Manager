@@ -791,8 +791,6 @@ void main() {
       };
       final d = driverWith();
       final items = await d.list('/Movies/2024');
-      // ignore: avoid_print
-      print('DEBUG calls=$calls items=${items.map((e) => e.name).toList()}');
       // 逐层解析：/Movies → d1，再列 d1 定位 2024 → d2，最后列 d2 的内容
       expect(calls,
           containsAllInOrder(<String>['get_info', 'files:0', 'files:d1']));
