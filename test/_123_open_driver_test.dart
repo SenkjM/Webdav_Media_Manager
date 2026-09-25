@@ -30,6 +30,14 @@ import 'package:webdav_media_manager/services/cloud_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/_123_open_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/driver_registry.dart';
 
+/// 表单条目的 key（`CloudDriverFormItem` 是 sealed 基类，key 在具体子类上）。
+String _formKey(CloudDriverFormItem item) => switch (item) {
+      CloudDriverField(:final key) => key,
+      CloudDriverSelectField(:final key) => key,
+      CloudDriverAccountField(:final key) => key,
+      CloudDriverSwitchField(:final key) => key,
+    };
+
 /// 记录一次出站请求。
 class _Hit {
   _Hit(this.method, this.uri, this.headers, this.body);
@@ -38,6 +46,10 @@ class _Hit {
   final Uri uri;
   final Map<String, String> headers;
   final String body;
+
+  /// 便捷访问：断言里直接写 `hit.host` / `hit.path`。
+  String get host => uri.host;
+  String get path => uri.path;
 }
 
 /// 把出站请求按 host 分流：api.oplist.org → 本地续期服务器；
@@ -255,7 +267,7 @@ void main() {
     test('表单六项：refresh_token 必填密文、续期地址默认值、开关联动、根目录默认 0', () {
       const spec = Driver123OpenSpec();
       expect(
-        spec.form.map((f) => f.key).toList(),
+        spec.form.map(_formKey).toList(),
         ['refresh_token', 'api_url_address', 'local_refresh', 'client_id',
           'client_secret', 'root_folder_id'],
       );
@@ -860,8 +872,11 @@ void main() {
     });
 
     test('copy 未实现 → 抛 not supported', () async {
-      await expectLater(
-        driverWith(additionWith()).copy('/a.mp3', '/dst', 'a.mp3'),
+      // 驱动里 copy 是 `=> throw`（同步抛出，不是返回失败的 Future），
+      // 所以必须用 expect(() => ..., throwsA(...))；expectLater 会先求值
+      // 表达式，同步异常会直接逃逸出去、把断言变成「未捕获异常」。
+      expect(
+        () => driverWith(additionWith()).copy('/a.mp3', '/dst', 'a.mp3'),
         throwsA(isA<CloudDriverException>().having(
           (e) => e.message,
           'message',

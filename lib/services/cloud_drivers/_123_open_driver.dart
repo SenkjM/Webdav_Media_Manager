@@ -190,7 +190,12 @@ class Driver123OpenClient {
     final a = addition;
 
     // 1. 在线续期地址（默认路径）。
-    if (!a.localRefresh && a.refreshToken.isNotEmpty && a.apiUrlAddress.isNotEmpty) {
+    //
+    // `apiUrlAddress` 为空**不是**「不走在线续期」——[defaultRenewApi] 是它的
+    // 默认值（照 Go meta.go 的 default），空串要回落到默认公共服务地址。
+    // 早先这里多加了 `isNotEmpty` 守卫，导致「表单留空 → 两条路都不走 → 报
+    // no valid authentication method」，与百度同款行为不一致（百度空串回落）。
+    if (!a.localRefresh && a.refreshToken.isNotEmpty) {
       await _renewOnline();
       return;
     }
@@ -681,7 +686,10 @@ class Driver123Open extends CloudDriver {
         throw CloudDriverException("[123Open] Directory '${parts[i]}' not found");
       }
       currentId = next;
-      _pathCache['/${parts.sublist(0, i + 1).join('/')}'] = currentId;
+      // 缓存键必须与上面的查表键同形：[clean] 已去掉前导斜杠（`_clean`），
+      // 这里早先写成 `/${...}`（带前导斜杠）导致**永远查不中**，缓存形同虚设、
+      // 每次 list 都要逐层重新解析（还被「写操作后清缓存」的用例逮到）。
+      _pathCache[parts.sublist(0, i + 1).join('/')] = currentId;
     }
     return currentId;
   }
