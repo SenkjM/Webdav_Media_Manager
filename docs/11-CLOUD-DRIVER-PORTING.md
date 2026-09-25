@@ -83,8 +83,8 @@
 ## 9. 还没做的（不要把计划当现状）
 
 - libsodium FFI 引擎，以及与纯 Dart 实现的手动切换（两套实现同格式，可随时互切）。
-- `netease_music`：cookie + rsa/aes 登录；只支持删除，不能建目录 / 改名 / 移动 / 复制（[99 §4.5](99-IN-PROGRESS.md)）。
-- OpenList 驱动清单里其余条目：批次方案与逐盘评估见 [99 §4.9](99-IN-PROGRESS.md)（只读家族 = 能力遮罩，不单独实现写路径）。
+- OpenList 驱动清单里其余条目：批次方案与逐盘评估见 [99 §4.9](99-IN-PROGRESS.md) 与 [13](13-DRIVER-BATCH-PLAN.md)（只读家族 = 能力遮罩，不单独实现写路径）。
+- 下沉到后续批次的 P1 盘：`quark_open`（MustProxy，要通用流桥）、`139`（5 种账号形态 + 编码待验）、`quark`(cookie)（等 quark_open 的流桥形态一起做）——判定见 [13 §2.2](13-DRIVER-BATCH-PLAN.md)。
 - 跨会话的 path→id 缓存与离线可用性策略。
 - 云盘账号的其它播放形态（后台播放、投屏等）未评估。
 
@@ -99,3 +99,24 @@
 - **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
 - **开关极性缺陷记录**（真机反馈后修正）：`localRefresh` 开关的联动极性曾接反——关掉开关时 online_api 变灰，正确语义是**开启**时才禁用 online_api、显示自建凭证输入。联动判定与 `disabledWhenSwitch` 的取值见 `baidu_netdisk_driver.dart` 的 spec 与 `test/baidu_refresh_switch_test.dart`。
 - **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动 + spec 自描述：能力遮罩 / 表单参数 / 构造，见 §6）、`cloud_drive_service.dart`（查表工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单按 spec 通用渲染）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。
+
+## 11. 已落地驱动实录：粘贴凭证直连盘批次（123_open / aliyundrive_open / 115open / terabox）
+
+第二批驱动的共同形态：**粘贴式凭证 + 有公开直链 + 无重加密 + 单账号形态**（筛选标准与下沉判定见 [13 §1/§2](13-DRIVER-BATCH-PLAN.md)）。全部照 [12](12-DRIVER-PORTING-GUIDE.md) 的六步工序移植，`lib/` 只动驱动文件 + 注册表两个文件；每盘一个测试文件（出站请求全拦截，不真连网络）。**全部待真机验收。**
+
+| 驱动 | typeId | 能力位 | 登录 | 直链必需头 | 特殊机制 |
+|---|---|---|---|---|---|
+| 123_open | `123_open` | list/read/mkdir/move/delete（**无 copy**） | refresh_token + 在线续期 / 自建应用 | 无（公开 URL） | `code===401` 刷新重试一次；`update_at` 是 UTC+8 字符串 |
+| aliyundrive_open | `aliyundrive_open` | list/read/mkdir/move/copy/delete | refresh_token + 在线续期轮询 / OAuth | 无（带签名 URL） | 6 个续期地址**去重**轮询；drive_id 按 drive_type 三级选盘 + `UserNotAllowedAccessDrive` 自愈 |
+| 115open | `115open` | list/read/mkdir/move/copy/delete | refresh_token | **OpenList UA**（防盗链校验） | fid+UA 直链缓存 30 分钟（免费盘 downurl 有配额，406）；`state=false && code∈{99,401xx}` 判鉴权失败；`folder/get_info` 一次性解析、失败回退逐层 |
+| terabox | `terabox` | list/read/mkdir/move/copy/delete | **cookie 粘贴**（过期重贴） | **UA** | 官方下载 API 直链 + UA；签名（sign1/sign3）纯 Dart 复现并有金标向量；`errno===9000` 地区不可用 |
+
+批次共性与值得记的坑：
+
+- **`api_url_address` 空串 = 回落默认续期地址**，不是「不走在线续期」（与百度同款语义；123_open 曾在这里栽过——守卫多判了一个 `isNotEmpty`，表单留空直接报 no valid authentication method）。
+- **续期候选地址要去重**：aliyundrive_open 的表单默认值就是内置候选表的第一个地址，不去重会把同一地址打两遍（多耗一次请求，还让「全失败」用例的候选数对不上）。
+- **path→id 缓存的键形必须一致**：123_open 曾出现写入带前导斜杠、查询不带，缓存形同虚设、每次 list 都逐层重解析。写操作后整表 clear（照 worker）。
+- **`rename` 跨目录统一降级 move + rename**（接口契约，四盘一致）；115 的 copy 参数顺序是**目标 pid 在前**（上游如此，别按直觉接反）。
+- **worker 底稿的三类偷懒都按本项目契约修正**：拿不到直链时抛真实原因（不返回无直链条目）；`get()` 的 try 作用域收窄到「找条目」，直链异常原样上抛；时间解析失败返回 null 而不是伪造 `now()`。
+- **terabox 的签名**：上游 js sha1/aes 变体在纯 Dart 下可复现（`pointycastle` 原语 + 上游逐行对照），金标向量固化在测试里；若上游签名实现与真机不符，第一嫌疑是**明文收集时的符号溢出**（必须按无符号字节）。
+- 文件名带数字开头的驱动（`115open`）在 Dart 里类名/文件名不能以数字开头，用 `Open115*` + `open115_driver.dart`，**typeId 仍存 `'115open'`**（存库值与上游目录名一致）。
