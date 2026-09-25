@@ -7,54 +7,63 @@ import 'dart:typed_data';
 
 int _hexVal(int ch) {
   if (ch >= 0x30 && ch <= 0x39) return ch - 0x30;
-  if (ch >= 0x41 && ch <= 0x56) return ch - 0x41 + 10;
+  if (ch >= 0x41 && ch <= 0x56) return ch - 0x41 + 10; // A-V
+  if (ch >= 0x61 && ch <= 0x76) return ch - 0x61 + 10; // a-v
   return -1;
 }
 
-String _hexChar(int v) => v < 10
-    ? String.fromCharCode(0x30 + v)
-    : String.fromCharCode(0x61 + v - 10);
-
 Uint8List base32HexLowerDecode(String s) {
-  // 大小写不敏感；残位丢弃（rclone 同）。
-  final up = s.toUpperCase();
+  // 大小写不敏感（两套区段直接判，免去 toUpperCase 的整串复制）；
+  // 残位丢弃（rclone 同）。
+  final n = s.codeUnits.length;
+  final out = Uint8List((n * 5) ~/ 8);
   var bits = 0;
   var acc = 0;
-  final out = <int>[];
-  for (final ch in up.codeUnits) {
-    final v = _hexVal(ch);
+  var o = 0;
+  for (var i = 0; i < n; i++) {
+    final v = _hexVal(s.codeUnitAt(i));
     if (v < 0) throw const FormatException('bad base32 char');
     acc = (acc << 5) | v;
     bits += 5;
     if (bits >= 8) {
-      out.add((acc >> (bits - 8)) & 0xFF);
+      out[o++] = (acc >> (bits - 8)) & 0xFF;
       bits -= 8;
     }
   }
-  return Uint8List.fromList(out);
+  // 残位不足 8 bit：丢弃（out 预分配长度已按整字节算）。
+  return o == out.length ? out : Uint8List.sublistView(out, 0, o);
 }
 
 String base32HexLowerEncode(Uint8List src) {
+  // 5 bit 一字符；先填 int 列表再一次成串（避免 StringBuffer 逐字符拼接）。
+  final n = ((src.length * 8) + 4) ~/ 5;
+  final chars = Uint16List(n);
   var acc = 0;
   var bits = 0;
-  final out = StringBuffer();
-  for (final b in src) {
-    acc = (acc << 8) | b;
+  var o = 0;
+  for (var i = 0; i < src.length; i++) {
+    acc = (acc << 8) | src[i];
     bits += 8;
     while (bits >= 5) {
-      out.write(_hexChar((acc >> (bits - 5)) & 31));
+      final v = (acc >> (bits - 5)) & 31;
+      chars[o++] = v < 10 ? 0x30 + v : 0x61 + v - 10;
       bits -= 5;
     }
   }
   if (bits > 0) {
-    out.write(_hexChar((acc << (5 - bits)) & 31));
+    final v = (acc << (5 - bits)) & 31;
+    chars[o++] = v < 10 ? 0x30 + v : 0x61 + v - 10;
   }
-  return out.toString();
+  return String.fromCharCodes(chars, 0, o);
 }
 
 Uint8List pkcs7Pad16(Uint8List data) {
   final pad = 16 - (data.length % 16);
-  return Uint8List.fromList([...data, ...List.filled(pad, pad)]);
+  final out = Uint8List(data.length + pad);
+  out.setRange(0, data.length, data);
+  // PKCS7：填充字节值 = 填充长度。
+  out.fillRange(data.length, out.length, pad);
+  return out;
 }
 
 Uint8List pkcs7Unpad16(Uint8List data) {

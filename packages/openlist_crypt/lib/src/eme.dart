@@ -5,16 +5,32 @@ import 'package:pointycastle/export.dart';
 /// EME（ECB-Mix-ECB / Encrypt-Mix-Encrypt）宽块加密，Halevi & Rogaway 2003。
 /// 字面移植 github.com/rfjakob/eme（rclone 文件名加密用的就是这个包），
 /// 上限 128 个 16 字节块（2048 字节）。
+///
+/// 性能（目录列表路径，每文件名一次 [transform]）：
+/// - AES 密钥 schedule 在构造时按方向各扩展一次并复用。原实现每块
+///   `_aes..init(..)` 重跑一次 14 轮轮密钥扩展，而 EME 每次变换要跑
+///   2m+2 次块加密，密钥从不变化，逐块 re-init 纯属浪费。
+/// - L 表（table[i] = 2^(i+1)·E_K(0^16)，照 eme.go tabulateL）只依赖
+///   密钥，与 tweak/数据无关 → 按 key 缓存、按需增长（≤128 项 = 2 KiB）。
 class EmeCipher {
-  EmeCipher(Uint8List key32) : _key = Uint8List.fromList(key32);
+  EmeCipher(Uint8List key32) {
+    _enc = BlockCipher('AES')..init(true, KeyParameter(key32));
+    _dec = BlockCipher('AES')..init(false, KeyParameter(key32));
+  }
 
-  final Uint8List _key;
-  late final BlockCipher _aes = BlockCipher('AES');
+  late final BlockCipher _enc;
+  late final BlockCipher _dec;
 
+  /// 缓存的 L 表：_lTable[i] = 2^(i+1)·E_K(0^16)。
+  final List<Uint8List> _lTable = <Uint8List>[];
+
+  /// 倍增链当前状态 = 2^_lTable.length·E_K(0^16)（表空时仅是占位，
+  /// 会在 [ _tabulateL] 里先播种）。
+  Uint8List _lChain = Uint8List(16);
+
+  /// 单块 AES。密钥 schedule 已固定，不重 init。
   void _aesBlock(Uint8List out, int outOff, Uint8List src, int srcOff, bool enc) {
-    _aes
-      ..init(enc, KeyParameter(_key))
-      ..processBlock(src, srcOff, out, outOff);
+    (enc ? _enc : _dec).processBlock(src, srcOff, out, outOff);
   }
 
   static void _xor(Uint8List a, int ao, Uint8List b, int bo) {
@@ -32,15 +48,18 @@ class EmeCipher {
     return out;
   }
 
+  /// 返回缓存的 L 表前 m 项（必要时按倍增链增长）。
   List<Uint8List> _tabulateL(int m) {
-    final li = Uint8List(16);
-    _aesBlock(li, 0, Uint8List(16), 0, true);
-    final table = List<Uint8List>.generate(m, (_) => Uint8List(16));
-    for (var i = 0; i < m; i++) {
-      li.setAll(0, _multByTwo(li));
-      table[i].setAll(0, li);
+    if (_lTable.length >= m) return _lTable;
+    if (_lTable.isEmpty) {
+      // 链种子：E_K(0^16)。
+      _aesBlock(_lChain, 0, Uint8List(16), 0, true);
     }
-    return table;
+    while (_lTable.length < m) {
+      _lChain = _multByTwo(_lChain);
+      _lTable.add(_lChain);
+    }
+    return _lTable;
   }
 
   /// [data] 长度必须是 16 的非零倍且 ≤ 2048；[tweak] 16 字节。
