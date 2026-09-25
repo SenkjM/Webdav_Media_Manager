@@ -265,13 +265,23 @@ abstract class CloudDriverSpec {
 
   /// 驱动配置 JSON 里的**密文字段**键集合（账号凭证同步/备份的加密范围）。
   ///
-  /// 单一事实来源是表单声明：渲染为密码输入（[CloudDriverField.obscure]）
-  /// 的字段即密文——「配置界面默认为密码的数据」与加密范围永远一致，
-  /// 新驱动加 obscure 字段自动纳入，无需另维护清单。
+  /// 组成：表单声明（渲染为密码输入的 [CloudDriverField.obscure] 字段，
+  /// 即「配置界面默认为密码的数据」）∪ [runtimeSecretKeys]（运行时轮换
+  /// 的令牌缓存键）。新驱动加 obscure 字段自动纳入。
   Set<String> get secretFieldKeys => {
         for (final item in form)
           if (item is CloudDriverField && item.obscure) item.key,
+        ...runtimeSecretKeys,
       };
+
+  /// 运行时经 `onTokenUpdate` 写回驱动配置的**凭证缓存键**（令牌轮换类驱动
+  /// 必须声明）。
+  ///
+  /// 表单 obscure 只覆盖「用户粘贴进表单」的密文；驱动在运行时把轮换后的
+  /// 令牌（如百度 / 123 的 `access_token` 缓存）写回驱动配置，这些键不在
+  /// 表单里、`secretFieldKeys` 看不见——不声明就会明文进凭证库与备份。
+  /// 没有令牌轮换的驱动（netease / crypt 等）保持默认空集。
+  Set<String> get runtimeSecretKeys => const {};
 
   /// 解析某个开关字段的当前值，供渲染与保存共用（单一事实来源）。
   ///

@@ -775,6 +775,11 @@ class Driver123OpenSpec extends CloudDriverSpec {
   @override
   String get typeId => '123_open';
 
+  /// `access_token` 缓存：运行时经 onTokenUpdate 写回驱动配置（§4 令牌
+  /// 轮换），不在表单里——凭证加密范围靠这里补全（11 §6）。
+  @override
+  Set<String> get runtimeSecretKeys => const {'access_token'};
+
   @override
   String get displayName => '123 云盘开放平台';
 

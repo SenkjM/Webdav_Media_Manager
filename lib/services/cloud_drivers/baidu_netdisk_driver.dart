@@ -537,6 +537,11 @@ class BaiduNetdiskSpec extends CloudDriverSpec {
   @override
   String get typeId => 'baidu_netdisk';
 
+  /// `access_token` 缓存：运行时经 onTokenUpdate 写回驱动配置（§4 令牌
+  /// 轮换），不在表单里——凭证加密范围靠这里补全（11 §6）。
+  @override
+  Set<String> get runtimeSecretKeys => const {'access_token'};
+
   @override
   String get displayName => '百度网盘';
 
