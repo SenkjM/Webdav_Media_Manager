@@ -240,7 +240,16 @@ jobs:
           prev_tag="$(meta prev_tag)"
           sha="$(meta sha)"
           if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
-            echo "Release ${tag} already exists; skip."
+            # 同 tag 已有 release：清理残留 asset 后重传，不新开一张（重跑/补包场景）。
+            # 每次发版先清空旧 asset，避免用户下到过期包（用户要求）。
+            gh release view "$tag" --repo "$REPO" --json assets \
+              --jq '.assets[].name' | while IFS= read -r name; do
+                [ -n "$name" ] || continue
+                echo "删除旧 asset：$name"
+                gh release delete-asset "$tag" "$name" --repo "$REPO" --yes
+              done
+            gh release upload "$tag" dist/*.apk dist/*.aab --repo "$REPO" --clobber
+            echo "Release ${tag} 已更新（asset 已刷新）。"
             exit 0
           fi
           changes="$(bash .github/scripts/commit-list.sh "$prev_tag" "$sha")"

@@ -46,6 +46,9 @@
 5. **改完跑** `flutter analyze` 与相关 `flutter test`；改核心逻辑优先跑 [09](09-MISC.md) 列出的测试入口。
 6. **密钥一律不打印、不提交**：keystore、`key.properties`、token、`.env`、secrets。
 7. 提交信息用简短英文前缀（`feat:` / `fix:` / `docs:` / `deps:` / `ci:`）+ 说明。
+   - **纯文档提交必须用 `docs:` 前缀**（可带 scope，如 `docs(99):`、`docs(index):`），且**只改文档、不夹带代码**：Release notes 生成脚本（`.github/scripts/commit-list.sh`）按此约定过滤掉文档提交，发版列表只面向使用者展示功能与修复。
+   - 反过来：**带代码的提交不要用 `docs:` 前缀**，否则它的功能改动会从发版说明里消失。文档与代码混合改动时，用 `feat:` / `fix:` 等真实前缀（脚本还会兜底判断「改动文件是否全为文档」）。
+   - 被识别的文档路径：`docs/**`、`*.md`、`*.txt`、`LICENSE*`、`README*`——即使主题没写 `docs:`，只改这些文件也会被判为文档提交。
 8. UI 文案用中文，标识符 / 路径 / API 名保持英文。保持 AGPL-3.0 头。
 9. **开始大工程或新功能前**：先做拆分，把适合顺手做的小任务写进 [10](10-SIDE-QUESTS.md)（写清来源、边界与判断条件），**并问用户是否要一起做**——发不发布、拆不拆、合不合并由用户定，agent 只列理由。判断标准与流程见架构技能 `task-splitting-and-side-quests`。
 

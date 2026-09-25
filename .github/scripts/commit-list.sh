@@ -29,7 +29,40 @@ if [ "$count" = "0" ]; then
   exit 0
 fi
 
-git log --reverse --format='%H%x09%s' "${from}..${to}" | while IFS=$'\t' read -r full subject; do
+# 过滤纯文档提交：release notes 面向使用者，只列功能/修复相关的改动。
+# 识别规则（与 docs/00-INDEX.md §3.7 的命名规范一致）：
+#   1. 主题以 docs: 或 docs(scope): 开头（大小写不敏感）；
+#   2. 或该提交只改动了文档路径（docs/ 、*.md、99 文档等），且不含代码文件。
+is_docs_commit() {
+  local subject="$1" full="$2"
+  # 规则 1：约定前缀。
+  if printf '%s' "$subject" | grep -qiE '^docs(\([^)]*\))?!?:'; then
+    return 0
+  fi
+  # 规则 2：提交里的改动全是文档（没有非文档文件）。
+  local files
+  files="$(git show --pretty=format: --name-only "$full" | sed '/^$/d')"
+  [ -n "$files" ] || return 1
+  local f
+  while IFS= read -r f; do
+    case "$f" in
+      *.md|docs/*|*.txt|.github/*.md|LICENSE*|README*) ;;
+      *) return 1 ;;
+    esac
+  done <<< "$files"
+  return 0
+}
+
+shown=0
+while IFS=$'\t' read -r full subject; do
+  if is_docs_commit "$subject" "$full"; then
+    continue
+  fi
   short="${full:0:7}"
   printf -- '- [`%s`](%s/%s/commit/%s) %s\n' "$short" "$server" "$REPO" "$full" "$subject"
-done
+  shown=$((shown + 1))
+done < <(git log --reverse --format='%H%x09%s' "${from}..${to}")
+
+if [ "$shown" = "0" ]; then
+  printf '%s\n' "（本次只有文档改动。）"
+fi

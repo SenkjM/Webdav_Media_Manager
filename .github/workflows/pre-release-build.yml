@@ -252,8 +252,16 @@ jobs:
             printf 'base_tag=%s\nseq=%s\nsha=%s\n' "$base_tag" "$seq" "$sha"
           } > "$notes"
           if gh release view prerelease --repo "$REPO" >/dev/null 2>&1; then
+            # 每次发版先清空上一轮的 asset：版本号变了之后旧文件名不会被 --clobber
+            # 覆盖，留着会让用户下到过期包（用户要求：每次发版删除之前的 asset）。
+            gh release view prerelease --repo "$REPO" --json assets \
+              --jq '.assets[].name' | while IFS= read -r name; do
+                [ -n "$name" ] || continue
+                echo "删除旧 asset：$name"
+                gh release delete-asset prerelease "$name" --repo "$REPO" --yes
+              done
             gh release edit prerelease --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
-            gh release upload prerelease dist/*.apk --repo "$REPO" --clobber
+            gh release upload prerelease dist/*.apk dist/*.aab --repo "$REPO" --clobber
           else
-            gh release create prerelease dist/*.apk --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
+            gh release create prerelease dist/*.apk dist/*.aab --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
           fi
