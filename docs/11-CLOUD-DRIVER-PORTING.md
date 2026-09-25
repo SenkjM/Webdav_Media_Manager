@@ -74,6 +74,26 @@
 - **检查锚点**：`test/driver_secret_scope_test.dart`——每个已注册驱动一条实测（键集合锁定）+ 一条「范围为空必须说清原因」的全量兜底。新驱动落地时在这里加一条测试，凭证加密范围即算验收过。
 - **铁律**：`typeId` 是凭证库 / 备份 / 恢复的跨设备身份，落库后**永不改名**（改名 = 用户已同步的凭证条目全部被当「不支持类型」静默过滤掉）。
 
+### 6.2 隐式键清点（允许隐式，但密文必须标注）
+
+驱动配置 JSON 里的键分两类：**表单声明的**（`spec.form`，界面可见）与**隐式的**——Addition 里有、`onTokenUpdate` 会写回、或表单逻辑会派生，但不在表单里的键。**允许隐式键存在**（运行时令牌缓存本来就不该让用户手填），但每条隐式键必须定性，二选一：
+
+- 是凭证 → **必须**进 `runtimeSecretKeys`（加密随凭证库/备份走）；
+- 不是凭证 → 在 Addition 字段注释里写明来历（如 `source_account_id_name` 是表单通用写入的快照）。
+
+> 反例就是百度 `access_token`：Addition 注释曾写「不进备份明文」，但代码没有任何机制保证——它不在表单里、没有 obscure 声明，第一版凭证同步就把它漏成明文。**注释不是约束，声明才是。**
+
+**全量清点（2026-07 核对，锁定于 `test/driver_secret_scope_test.dart`）**：
+
+| 驱动 | 密文键（加密进凭证库/备份） | 非密文键（明文） | 隐式键 |
+|---|---|---|---|
+| `baidu_netdisk` | `refresh_token`、`client_secret`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `api_url_address`、`local_refresh`、`client_id` | `access_token`（运行时令牌缓存） |
+| `123_open` | `refresh_token`、`client_secret`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `api_url_address`、`local_refresh`、`client_id`、`root_folder_id` | `access_token`（运行时令牌缓存） |
+| `netease_music` | `cookie`（表单 obscure） | `song_limit` | 无（网易不轮换 Cookie，没有 onTokenUpdate 写回） |
+| `crypt` | `password`、`salt`（表单 obscure） | `source_account_id`、`source_dir`、`filename_encoding`、`encrypted_suffix`、`filename_encryption`、`directory_name_encryption` | `source_account_id_name`（表单通用写入的源账号名快照，非凭证） |
+
+**新驱动落地时**（并入 §8.1 核对单）：对照 Addition 的 `fromJson`/`toJson` 与客户端里所有 `onTokenUpdate?.call({...})`，把每个键落进上表；测试里 `audited` 清单加一行、密文集合加键——漏登记的隐式键会从断言失败里暴露。
+
 ## 7. 测试策略
 
 - **优先用上游生成金标向量**，而不是「两边同时跑起来比对」：编译上游工具生成向量并固化进 `test/`。crypt 就是这么做的（名字 ×4、内容 ×2、混淆 ×1 + NaCl 官方向量）。
@@ -94,7 +114,7 @@
 
 1. **注册表加一行**（`driver_registry.dart`）——唯一的手动注册点；漏了 = 类型下拉没有该盘、凭证恢复时该盘条目被静默过滤。
 2. **表单密文字段**全部声明 `obscure: true`（决定凭证加密范围，自动生效）。
-3. **运行时令牌缓存键**：有 `onTokenUpdate` 写回凭证类键的，补 `runtimeSecretKeys`（漏了 = 令牌明文进凭证库/备份）。
+3. **隐式键清点**（[§6.2](#62-隐式键清点允许隐式但密文必须标注)）：对照 Addition `fromJson`/`toJson` 与 `onTokenUpdate` 写回的键逐个定性——凭证类进 `runtimeSecretKeys`，非凭证注释说明；`test/driver_secret_scope_test.dart` 的 `audited` 清单加一行。
 4. **`test/driver_secret_scope_test.dart` 加一条实测**锁定键集合。
 5. `typeId` 定名后不改（跨设备凭证身份，见 §6.1 铁律）。
 

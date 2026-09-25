@@ -47,5 +47,45 @@ void main() {
         );
       }
     });
+
+    test('隐式键（表单之外写回/读取的配置键）必须定性：密文 → runtimeSecretKeys，非密文 → 表单显式声明或注释说明', () {
+      // 11 §6.2：允许隐式键（如运行时令牌缓存、表单写入的派生快照），
+      // 但每个隐式键必须落在三类之一。这里是**当前全量清点的锁定断言**：
+      // 新驱动 / 新键落地时更新此清单（对照 Addition.fromJson/toJson 与
+      // onTokenUpdate 写回的键），漏登记的隐式键会从这条断言的失败里暴露。
+      const audited = <String, Set<String>>{
+        // baidu：6 键 = 表单 5（refresh_token/api_url_address/local_refresh/
+        // client_id/client_secret）+ 隐式 access_token（运行时缓存，密文）。
+        'baidu_netdisk': {
+          'refresh_token', 'client_secret', 'access_token', // 密文
+          'api_url_address', 'client_id', // 非密文，表单声明
+        },
+        // 123：同构，多 root_folder_id（非密文，表单声明）。
+        '123_open': {
+          'refresh_token', 'client_secret', 'access_token', // 密文
+          'api_url_address', 'client_id', 'root_folder_id', // 非密文
+        },
+        // netease：2 键全表单；cookie 密文；无令牌轮换。
+        'netease_music': {'cookie'},
+        // crypt：9 键 = 表单 8 + 隐式 source_account_id_name（表单通用写入
+        // 的源账号名快照，非凭证，明文正确）；password/salt 密文。
+        'crypt': {'password', 'salt'},
+      };
+      for (final spec in kCloudDriverSpecs) {
+        final declared = audited[spec.typeId];
+        expect(
+          declared,
+          isNotNull,
+          reason: '${spec.typeId} 未进隐式键清点：对照 11 §6.2 补齐',
+        );
+        // 密文集合必须是清点集合的子集（加密范围 ⊆ 全部定性过的键）。
+        expect(
+          spec.secretFieldKeys.difference(declared!),
+          isEmpty,
+          reason: '${spec.typeId} 的密文键 ${spec.secretFieldKeys} 超出清点清单'
+              '（新密文键要先定性再进加密范围）',
+        );
+      }
+    });
   });
 }

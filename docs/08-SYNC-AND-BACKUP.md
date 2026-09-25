@@ -47,7 +47,7 @@
 凭证加密与恢复：
 
 - `credentials.json`（formatVersion 2）覆盖**全部账号**：WebDAV 条目（地址 / 用户名 / 密码三件套）+ 云盘驱动条目（`providerType` + `driverConfig`，即 secure storage 里 `cloud_driver_cfg_<id>` 的 JSON）。v1 文件（只有 WebDAV 条目）按原语义读取。
-- **「配置界面默认为密码」的数据才加密**（`AESGCMv1:`，PBKDF2-SHA256 120k + AES-256-GCM）：WebDAV 的密码；云盘驱动配置里 `spec.secretFieldKeys` 覆盖的字段 = 表单 `obscure` 声明（cookie / refresh_token / client_secret / crypt password+salt 等）∪ `runtimeSecretKeys`（运行时令牌缓存，如百度 / 123 的 `access_token`——不在表单里，驱动落地时人工声明，见 [11 §6.1](11-CLOUD-DRIVER-PORTING.md)）。范围外字段保持明文，坏口令时账号与配置仍可恢复，仅密文留空待补填。新驱动落地核对单：[11 §8.1](11-CLOUD-DRIVER-PORTING.md)；检查锚点 `test/driver_secret_scope_test.dart`。
+- **「配置界面默认为密码」的数据才加密**（`AESGCMv1:`，PBKDF2-SHA256 120k + AES-256-GCM）：WebDAV 的密码；云盘驱动配置里 `spec.secretFieldKeys` 覆盖的字段 = 表单 `obscure` 声明（cookie / refresh_token / client_secret / crypt password+salt 等）∪ `runtimeSecretKeys`（运行时令牌缓存，如百度 / 123 的 `access_token`——不在表单里，驱动落地时人工声明）。范围外字段保持明文，坏口令时账号与配置仍可恢复，仅密文留空待补填。**隐式键规则**（允许隐式、密文必须标注）与全驱动键清点表：[11 §6.2](11-CLOUD-DRIVER-PORTING.md)；新驱动落地核对单：[11 §8.1](11-CLOUD-DRIVER-PORTING.md)；检查锚点 `test/driver_secret_scope_test.dart`。
 - `tryDecrypt` 失败时**账号照常恢复、密码留空**（`AccountsService` 返回 missing 列表供 UI 提示），**绝不**因缺密钥中止整次同步。云盘条目的密文字段逐字段处理：解不开时留用本地现值（有则不丢），账号全新则该字段留空。
 - **恢复时静默过滤不支持的网盘类型**：条目的 `providerType` 在本机未注册（`cloudDriverSpec` 查不到）→ 直接跳过，不报错、不建空壳账号；装回支持该驱动的版本即可再恢复。
 - 统一加密密钥由用户在同步页指定，存在 Keystore，与网盘登录密码**无关**（密钥若取自某网盘密码，改密码或换盘就会让已同步的密码全部解不开）。未设置密钥时，自动扫描会跳过凭证拉取，歌单照常合并。
