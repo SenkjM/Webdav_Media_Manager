@@ -1,10 +1,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 
-import 'package:webdav_media_manager/services/cloud_drivers/crypt/cipher/rclone_cipher.dart';
-import 'package:webdav_media_manager/services/cloud_drivers/crypt/cipher/secretbox.dart';
+import 'package:openlist_crypt/openlist_crypt.dart';
 
 Uint8List hexDecode(String h) {
   final out = Uint8List(h.length ~/ 2);

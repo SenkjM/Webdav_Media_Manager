@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_media_manager/services/cloud_drivers/crypt/cipher/base32768.dart';
+import 'package:test/test.dart';
+import 'package:openlist_crypt/openlist_crypt.dart';
 
 /// base32768 移植的正确性由两类向量保证：
 /// * rclone 自带 golden 向量（backend/crypt/cipher_test.go 的 TestEncodeFileNameBase32768

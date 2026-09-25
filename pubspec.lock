@@ -679,6 +679,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "9.6.0"
+  openlist_crypt:
+    dependency: "direct main"
+    description:
+      path: "packages/openlist_crypt"
+      relative: true
+    source: path
+    version: "0.2.0"
   package_config:
     dependency: transitive
     description:

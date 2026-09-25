@@ -1,4 +1,4 @@
-// WebDAV 源的 crypt 适配层回归：get() 必须带回密文条目大小。
+// WebDAV 源的包装驱动适配层回归：get() 必须带回密文条目大小。
 //
 // 真机反馈（源 = WebDAV 时）：流式报「无法确定大小」、下载秒「完成」产出 0B
 // 文件——同根因：WebDavAccountSource.get() 返回的 CloudFileItem 没带 size，
@@ -10,7 +10,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/models/webdav_account.dart';
-import 'package:webdav_media_manager/services/cloud_drivers/crypt/crypt_adapters.dart';
+import 'package:webdav_media_manager/services/cloud_drivers/webdav_source.dart';
 import 'package:webdav_media_manager/services/webdav_service.dart';
 
 void main() {

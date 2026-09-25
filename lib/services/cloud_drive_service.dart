@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' hide BytesBuilder;
 import 'dart:typed_data';
 
@@ -12,8 +13,8 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
 import 'cloud_driver.dart';
-import 'cloud_drivers/crypt/crypt_stream_bridge.dart';
 import 'cloud_drivers/driver_registry.dart';
+import 'cloud_drivers/stream_bridge.dart';
 import 'resumable_download.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
@@ -72,63 +73,89 @@ class CloudDriveService extends ChangeNotifier {
       AccountCaps.has(capabilitiesFor(accountId), cap);
 
   /// 启动 / 账号变更时登记云盘账号（AppState.registerAllAccounts 调用）。
-  /// 总是按最新配置重建驱动实例——access_token 缓存存在配置里，重建不丢登录态。
+  ///
+  /// **配置没变就不重建驱动**：启动、每次进出账号页 / 网络库 / 同步页都会调到
+  /// 这里，而重建会丢掉驱动内部的 path→id 缓存、直链解析缓存与连接池（表现为
+  /// 浏览深层目录时重复解析、播放中途重新解析直链）。判据是整批指纹（见
+  /// [cloudAccountSignature]）：账号集合、账号侧字段或任一账号的驱动配置变了，
+  /// 就**整批**重建——这样包装驱动（crypt）缓存的源视图也绝不会指向被换掉的
+  /// 旧驱动实例。
+  ///
   /// 配置缺失或类型未接入时跳过该账号（启动不崩），表单保存后会重新注册。
   Future<void> registerAccounts(Iterable<WebDavAccount> accounts) async {
-    final wanted = <String>{};
+    final wanted = <WebDavAccount>[];
+    final ids = <String>{};
+    final cfgs = <String, Map<String, dynamic>?>{};
+    final fresh = <String, String>{};
     for (final a in accounts) {
       if (!isCloudType(a.providerType)) continue;
-      wanted.add(a.id);
+      wanted.add(a);
+      ids.add(a.id);
+      final cfg = await _accounts.loadDriverConfig(a.id);
+      cfgs[a.id] = cfg;
+      fresh[a.id] = cloudAccountSignature(a, cfg);
+    }
+    final batch = cloudRegistrationSignature(fresh);
+    if (_registrationComplete && batch == _registeredBatch) {
+      // 账号集合与配置都没变：保住每个驱动实例（连同它的缓存 / 连接池）。
+      // 什么都不用通知——没有变化就没有需要重绘的东西。
+      return;
+    }
+    final replaced = <CloudDriver>[];
+    var complete = true;
+    for (final a in wanted) {
       try {
-        final cfg = await _accounts.loadDriverConfig(a.id);
-        _drivers[a.id] = _createDriver(a, cfg);
-        if (a.providerType == 'crypt') {
-          final srcId = cfg?['source_account_id'] as String?;
-          var srcType =
-              srcId == null ? null : _accounts.accountById(srcId)?.providerType;
-          // id 找不到时按名字兜底（源被删后重添同名账号）。
-          if (srcType == null && srcId != null) {
-            final srcName = cfg?['source_account_id_name'] as String?;
-            if (srcName != null) {
-              final byName = _accounts.accounts
-                  .where((x) => x.providerType != 'crypt')
-                  .where((x) => x.name.trim() == srcName.trim())
-                  .firstOrNull;
-              srcType = byName?.providerType;
-            }
-          }
-          _cryptSourceTypes[a.id] = srcType;
-        }
+        final old = _drivers[a.id];
+        final driver = _createDriver(a, cfgs[a.id]);
+        if (old != null && !identical(old, driver)) replaced.add(old);
+        _drivers[a.id] = driver;
       } on CloudDriverException catch (e) {
-        _drivers.remove(a.id);
+        complete = false;
+        final old = _drivers.remove(a.id);
+        if (old != null) replaced.add(old);
         if (kDebugMode) debugPrint('[cloud] 跳过账号 ${a.name}：$e');
       }
     }
-    _drivers.removeWhere((id, _) => !wanted.contains(id));
-    _cryptSourceTypes.removeWhere((id, _) => !wanted.contains(id));
+    _drivers.removeWhere((id, driver) {
+      if (ids.contains(id)) return false;
+      replaced.add(driver);
+      return true;
+    });
+    // 被换掉的驱动实例在这里释放自己持有的跨请求资源（默认无操作）。
+    for (final d in replaced) {
+      unawaited(d.dispose());
+    }
+    _accountSignatures = fresh;
+    _registeredBatch = batch;
+    _registrationComplete = complete;
     notifyListeners();
   }
 
-  /// crypt 账号的源网盘类型（源缺失时为 null），只在 [registerAccounts] 填充。
-  final Map<String, String?> _cryptSourceTypes = <String, String?>{};
+  /// accountId → 该账号上次登记时的指纹（[cloudAccountSignature]）。
+  Map<String, String> _accountSignatures = <String, String>{};
 
-  /// 账号列表 / 下拉里显示的类型名。crypt 显示「<源网盘类型> Crypt」，
-  /// 源已被删除时退化为「Crypt」（99 §7.5 真机反馈）。
+  /// 上次登记时的整批指纹；[registerAccounts] 用它判断「要不要重建」。
+  String? _registeredBatch;
+
+  /// 上次登记是否**每个**账号都成功建了驱动。有失败就每次都重建（等于重试）。
+  bool _registrationComplete = false;
+
+  /// 账号列表 / 下拉里显示的类型名。
+  ///
+  /// 先问驱动要**运行时**类型名（包装驱动的类型名取决于它包住的源，静态表
+  /// 表达不了，如「百度网盘 Crypt」），驱动答不上来再回落 spec 的静态名。
   String typeLabelFor(WebDavAccount a) {
-    if (a.providerType == 'crypt') {
-      final srcType = _cryptSourceTypes[a.id];
-      final srcName = srcType == null ? null : cloudDriverSpec(srcType)?.displayName;
-      if (srcName == null || srcName.isEmpty) return 'Crypt';
-      return '$srcName Crypt';
-    }
+    final runtime = _drivers[a.id]?.runtimeTypeLabel;
+    if (runtime != null && runtime.isNotEmpty) return runtime;
     return cloudDriverSpec(a.providerType)?.displayName ?? a.providerType;
   }
 
-  CryptStreamBridge? _bridgeInstance;
+  LocalStreamBridge? _bridgeInstance;
 
-  /// crypt 的本地流桥：播放器拿到的是 127.0.0.1 的 URL（99 §7.5）。
-  CryptStreamBridge get _streamBridge =>
-      _bridgeInstance ??= CryptStreamBridge(_requireDriver);
+  /// MustProxy 驱动的本地流桥（99 §7.5）：播放器拿到的是 127.0.0.1 的 URL。
+  /// 由本服务持有——驱动实例会被 [registerAccounts] 反复重建，桥不能跟着死。
+  LocalStreamBridge get _streamBridge =>
+      _bridgeInstance ??= LocalStreamBridge();
 
   @override
   void dispose() {
@@ -136,6 +163,10 @@ class CloudDriveService extends ChangeNotifier {
     _bridgeInstance = null;
     // 关服务器是异步的；服务销毁时不必等它（force 关闭会立刻断连接）。
     bridge?.dispose();
+    for (final d in _drivers.values) {
+      unawaited(d.dispose());
+    }
+    _drivers.clear();
     super.dispose();
   }
 
@@ -160,7 +191,7 @@ class CloudDriveService extends ChangeNotifier {
   void attachWebDavSourceFactory(CloudSource? Function(String accountId) f) =>
       _webDavSourceFactory = f;
 
-  /// crypt 等包装驱动的源解析：WebDAV / 云盘账号各给一个适配器视图；
+  /// 包装驱动等所需的源解析：WebDAV / 云盘账号各给一个适配器视图；
   /// 源不存在返回 null（由驱动在浏览时报错，99 §7.5）。
   CloudSource? _resolveSource(String accountId) {
     final a = _accounts.accountById(accountId);
@@ -170,18 +201,20 @@ class CloudDriveService extends ChangeNotifier {
     }
     final driver = _drivers[accountId];
     if (driver == null) return null;
+    final spec = cloudDriverSpec(a.providerType);
     return CloudAccountSource(
       driver: driver,
       basePath: WebDavAccount.normalizeRemotePath(a.remotePath),
-      capabilities: cloudDriverSpec(a.providerType)?.capabilities ?? AccountCaps.list,
+      capabilities: spec?.capabilities ?? AccountCaps.list,
+      displayName: spec?.displayName ?? a.providerType,
     );
   }
 
-  /// crypt 源被删后按**名字**找回：重添同名账号即可恢复（真机反馈：
+  /// 源被删后按**名字**找回：重添同名账号即可恢复（真机反馈：
   /// 报错只显示一长串源 id，用户即使重加源也接不上）。
   CloudSource? _resolveSourceByName(String accountName) {
     final a = _accounts.accounts
-        .where((x) => x.providerType != 'crypt')
+        .where((x) => cloudDriverSpec(x.providerType)?.isWrapper != true)
         .where((x) => x.name.trim() == accountName.trim())
         .firstOrNull;
     if (a == null) return null;
@@ -194,11 +227,19 @@ class CloudDriveService extends ChangeNotifier {
   );
 
   /// 令牌轮换持久化（驱动回调）：patch 原样合并进存储的配置。
+  ///
+  /// 驱动自己写回的令牌缓存**不算**「用户改了配置」：同步更新该账号的指纹，
+  /// 下一次 [registerAccounts] 才不会因为一次令牌轮换白重建一遍驱动（那会丢掉
+  /// 驱动的内部缓存与连接池）。指纹同步后与「重新从存储读一遍配置」逐字节一致。
   Future<void> _persistTokens(String accountId, Map<String, dynamic> patch) async {
     final cfg = await _accounts.loadDriverConfig(accountId) ??
         <String, dynamic>{};
     cfg.addAll(patch);
     await _accounts.saveDriverConfig(accountId, cfg);
+    final account = _accounts.accountById(accountId);
+    if (account == null || !_accountSignatures.containsKey(accountId)) return;
+    _accountSignatures[accountId] = cloudAccountSignature(account, cfg);
+    _registeredBatch = cloudRegistrationSignature(_accountSignatures);
   }
 
   /// 表单保存前的真连校验（99 §7.3.1：能换到 access_token 才保存）。
@@ -422,8 +463,9 @@ class CloudDriveService extends ChangeNotifier {
     final item = await _fileWithLink(accountId, remotePath);
     final raw = item.rawUrl;
     if (raw == null) {
-      // crypt 等 MustProxy 驱动（99 §7.5）：media_kit 只认 URL，交给本地流桥
-      // 按 Range 逐块解密。大小未知时回不了 Content-Length，明确拒绝。
+      // MustProxy 驱动（拿不到直链，内容得由驱动自己解出来，99 §7.5）：
+      // media_kit 只认 URL，交给本地流桥按 Range 逐块取。大小未知时回不了
+      // Content-Length，明确拒绝。
       if (item.size <= 0) {
         throw CloudDriverException('无法确定「$name」的大小，暂不支持流式播放');
       }
@@ -432,6 +474,10 @@ class CloudDriveService extends ChangeNotifier {
         remotePath: remotePath,
         size: item.size,
         name: name,
+        // 每次请求都重新取当前驱动实例：驱动会被 registerAccounts 重建，
+        // 而播放中的 URL 不该因此失效。
+        ranges: (path, start, end) =>
+            _requireDriver(accountId).openContentRange(path, start, end),
       );
       return WebDavStreamSource(
         uri: bridged.toString(),
@@ -511,4 +557,46 @@ class CloudDriveService extends ChangeNotifier {
       category: f.isDir ? FileCategory.other : types.categoryFor(f.name),
     );
   }
+}
+
+/// 单个账号「驱动看到的配置」指纹：账号侧字段（类型 / 名字 / 浏览根）+ 驱动
+/// 配置全量（键排序，与写入顺序无关）。
+///
+/// 用途是判断「这次登记与上次有没有区别」（[CloudDriveService.registerAccounts]）
+/// ——没区别就不重建驱动，保住驱动内部的 path→id 缓存、直链解析缓存与连接池。
+/// 因此这里**不能**漏字段：漏掉的字段会让用户名下的改动「看起来没变」，
+/// 驱动继续用旧配置（例如改了源账号却还连着旧源）。纯函数，便于单测。
+String cloudAccountSignature(WebDavAccount a, Map<String, dynamic>? cfg) {
+  final b = StringBuffer()
+    ..write(a.providerType)
+    ..write('\u0000')
+    ..write(a.name)
+    ..write('\u0000')
+    ..write(a.remotePath)
+    ..write('\u0001');
+  if (cfg != null) {
+    final keys = cfg.keys.toList()..sort();
+    for (final k in keys) {
+      b
+        ..write(k)
+        ..write('\u0002')
+        ..write(cfg[k])
+        ..write('\u0003');
+    }
+  }
+  return b.toString();
+}
+
+/// 整批指纹：账号 id + 各自指纹，**按 id 排序**（与账号遍历顺序无关）。
+String cloudRegistrationSignature(Map<String, String> signatures) {
+  final ids = signatures.keys.toList()..sort();
+  final b = StringBuffer();
+  for (final id in ids) {
+    b
+      ..write(id)
+      ..write('\u0004')
+      ..write(signatures[id])
+      ..write('\u0005');
+  }
+  return b.toString();
 }

@@ -1,12 +1,19 @@
-import '../../../models/account_capabilities.dart';
-import '../../../models/webdav_account.dart';
-import '../../cloud_driver.dart';
-import '../../webdav_service.dart';
+import '../../models/account_capabilities.dart';
+import '../../models/webdav_account.dart';
+import '../cloud_driver.dart';
+import '../webdav_service.dart';
 
 /// WebDAV 账号 → [CloudSource]：转调 WebDavService 同名方法。
+///
+/// 存在的意义只有一个：WebDAV 不走 [CloudDriver] 兼容层（WebDavService 是
+/// 单列的），而包装驱动只认 [CloudSource] 抽象。装配层把「怎么把一个 WebDAV
+/// 账号包成 CloudSource」注入给兼容层（CloudDriveService.attachWebDavSourceFactory），
+/// 于是兼容层不必反向依赖 WebDavService。
 class WebDavAccountSource implements CloudSource {
-  WebDavAccountSource({required WebDavService webDav, required WebDavAccount account})
-      : _webDav = webDav,
+  WebDavAccountSource({
+    required WebDavService webDav,
+    required WebDavAccount account,
+  })  : _webDav = webDav,
         _account = account;
 
   final WebDavService _webDav;
@@ -14,6 +21,9 @@ class WebDavAccountSource implements CloudSource {
 
   @override
   String get basePath => WebDavAccount.normalizeRemotePath(_account.remotePath);
+
+  @override
+  String get displayName => 'WebDAV';
 
   @override
   int get capabilities => AccountCaps.forWebdav(_account.capabilities);
@@ -46,10 +56,10 @@ class WebDavAccountSource implements CloudSource {
     if (s == null) {
       throw const CloudDriverException('WebDAV 未连接，无法取源内容');
     }
-    // 密文条目的大小必须带给 crypt 层：流式回 Content-Length、下载进度、
-    // Range 分块判断（wholeBody）全依赖它。列表接口对单文件拿不到，
-    // 单独 PROPFIND 一次（statPath）；失败不阻断——size 留 0 由上层
-    // 的「无法确定大小」明确报错，而不是这里抛出含糊的网络错误。
+    // 条目大小必须完整带给包装驱动层：流式回 Content-Length、下载进度、
+    // Range 分块判断全依赖它。列表接口对单文件拿不到，单独 PROPFIND 一次
+    // （statPath）；失败不阻断——size 留 0 由上层的「无法确定大小」明确报错，
+    // 而不是这里抛出含糊的网络错误。
     var size = 0;
     DateTime? modified;
     try {

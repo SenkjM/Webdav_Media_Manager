@@ -1,0 +1,22 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.swiftpm/
+.idea/
+
+# Dart/Pub related
+**/doc/api/
+.dart_tool/
+.pub-cache/
+.pub/
+/build/
+
+# Test related
+coverage/
+pubspec.lock

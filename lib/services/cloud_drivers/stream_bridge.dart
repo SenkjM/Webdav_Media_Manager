@@ -2,24 +2,26 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
-import '../../cloud_driver.dart';
+import '../cloud_driver.dart';
 
-/// crypt 的本地流桥（99 §7.5）。
+/// MustProxy 驱动的本地流桥（99 §7.5）。
 ///
 /// media_kit / ffmpeg 只认 URL 或本地路径，不认 Dart 的字节流，所以把
 /// [CloudDriver.openContentRange] 包成一个**只监听回环地址**的 HTTP 端点：
-/// 播放器发 Range 请求，桥按 rclone 的块边界精确解密并回 206。
+/// 播放器发 Range 请求，桥转调驱动按（驱动的）块边界精确解密并回 206。
+///
+/// 这是**通用设施**，不含任何驱动 / 密码学知识：字节流由调用方以
+/// [expose] 的 `ranges` 回调传入，所以哪个驱动需要它、怎么解密都与本文件无关。
 ///
 /// * token 一次性映射 (accountId, path)，URL 里不含账号凭证，也不接受写请求；
 /// * 同一路径复用同一 token，重复播放不会积累条目；
-/// * 空闲 [idleTimeout] 后自动关服务器（播放中会被请求不断刷新）。
-class CryptStreamBridge {
-  CryptStreamBridge(
-    this._driverFor, {
+/// * 空闲 [idleTimeout] 后自动关服务器（播放中会被请求不断刷新）；
+/// * 由兼容层持有（跨驱动重建存活），驱动实例被重建不会掐断正在播放的流。
+class LocalStreamBridge {
+  LocalStreamBridge({
     this.idleTimeout = const Duration(minutes: 10),
   });
 
-  final CloudDriver Function(String accountId) _driverFor;
   final Duration idleTimeout;
 
   final Map<String, _BridgeEntry> _byKey = <String, _BridgeEntry>{};
@@ -29,13 +31,15 @@ class CryptStreamBridge {
   HttpServer? _server;
   Timer? _idle;
 
-  /// 把 [remotePath]（解密后 [size] 字节）暴露成一个可播放 URL。
+  /// 把 [remotePath]（明文 [size] 字节）暴露成一个可播放 URL。
   /// [name] 是解密后的文件名：按扩展名给 ffmpeg 一个像样的 Content-Type，
   /// 免得它把「未知二进制」当成不可播放的流。
+  /// [ranges] 是驱动的区间读取（含端点，语义同 HTTP `Range`）。
   Future<Uri> expose({
     required String accountId,
     required String remotePath,
     required int size,
+    required Stream<List<int>> Function(String path, int start, int end) ranges,
     String? name,
   }) async {
     final server = await _ensureServer();
@@ -50,9 +54,12 @@ class CryptStreamBridge {
         remotePath: remotePath,
         size: size,
         contentType: _contentTypeFor(name),
+        ranges: ranges,
       );
       _byKey[key] = entry;
       _byToken[entry.token] = entry;
+    } else {
+      entry.ranges = ranges;
     }
     _touch();
     return Uri.parse('http://127.0.0.1:${server.port}/s/${entry.token}');
@@ -119,12 +126,11 @@ class CryptStreamBridge {
         request.headers.value(HttpHeaders.rangeHeader),
         entry.size,
       );
-      final driver = _driverFor(entry.accountId);
       if (range == null) {
         response.statusCode = HttpStatus.ok;
         response.headers.contentLength = entry.size;
         await response.addStream(
-          driver.openContentRange(entry.remotePath, 0, entry.size - 1),
+          entry.ranges(entry.remotePath, 0, entry.size - 1),
         );
       } else {
         response.statusCode = HttpStatus.partialContent;
@@ -134,7 +140,7 @@ class CryptStreamBridge {
         );
         response.headers.contentLength = range.$2 - range.$1 + 1;
         await response.addStream(
-          driver.openContentRange(entry.remotePath, range.$1, range.$2),
+          entry.ranges(entry.remotePath, range.$1, range.$2),
         );
       }
       await response.close();
@@ -217,6 +223,7 @@ class _BridgeEntry {
     required this.remotePath,
     required this.size,
     required this.contentType,
+    required this.ranges,
   });
 
   final String token;
@@ -224,4 +231,7 @@ class _BridgeEntry {
   final String remotePath;
   final int size;
   final String contentType;
+
+  /// 驱动的区间读取；驱动实例被重建时由 [LocalStreamBridge.expose] 换新。
+  Stream<List<int>> Function(String path, int start, int end) ranges;
 }

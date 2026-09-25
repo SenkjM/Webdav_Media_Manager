@@ -25,7 +25,7 @@ import '../services/settings_service.dart';
 import '../services/sync_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/cloud_drive_service.dart';
-import '../services/cloud_drivers/crypt/crypt_adapters.dart';
+import '../services/cloud_drivers/webdav_source.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
@@ -40,7 +40,8 @@ class AppState extends ChangeNotifier {
     accounts = AccountsService(db: db);
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
-    // crypt 的 WebDAV 源解析：装配层注入工厂（99 §7.5），兼容层不依赖 WebDavService。
+    // 包装驱动（如 Crypt）的 WebDAV 源解析：装配层注入工厂（99 §7.5），
+    // 兼容层不依赖 WebDavService。
     cloudDrive.attachWebDavSourceFactory((id) {
       final acc = accounts.accountById(id);
       if (acc == null || acc.providerType != 'webdav') return null;

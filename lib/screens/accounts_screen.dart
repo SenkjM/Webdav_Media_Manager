@@ -587,7 +587,9 @@ class AccountsScreen extends StatelessWidget {
                               ),
                               items: [
                                 for (final a in accounts.accounts)
-                                  if (a.providerType != 'crypt')
+                                  // 包装驱动不当别人的源（防套娃）；UI 只问
+                                  // spec 的 isWrapper，不认识具体类型。
+                                  if (cloudDriverSpec(a.providerType)?.isWrapper != true)
                                     DropdownMenuItem(
                                         value: a.id, child: Text(a.name)),
                               ],
