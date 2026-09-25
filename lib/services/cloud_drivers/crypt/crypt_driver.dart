@@ -368,6 +368,15 @@ class CryptDriver extends CloudDriver {
   /// 突发的折中。每批之间让出一次事件循环，避免整批解密顶掉 UI 帧。
   static const int _blocksPerBatch = 16;
 
+  /// 下载路径同时在途的批次数上限（每批 ≈ 1MiB，因此最多约 [_fetchWindow] MiB
+  /// 在途）。实测 16MiB：顺序 904ms / 窗口 2：612 / 3：591 / 4：523 / 6：430 /
+  /// 8：440ms（本地每请求 20ms 延迟的服务器，CPU 地板 219ms）。
+  ///
+  /// 取 4 而不是拐点 6：真机瓶颈是每请求的服务端延迟，并行能把它叠起来，但
+  /// 同时压带宽与风控；移动网络共享瓶颈时更并并不更快，多花的只有内存与
+  /// 被限流的概率（限流有 [_CryptTarget.window] 退避兜底，见 [_fetchRange]）。
+  static const int _fetchWindow = 4;
+
   /// 解密后的内容流（下载 / 缓存的内存流路径，99 §7.5）。
   /// 取内层密文直链 → 分批 Range → 逐块认证解密；块失败即抛，不落坏数据。
   @override
@@ -390,27 +399,36 @@ class CryptDriver extends CloudDriver {
       }
       var offset = kFileHeaderSize;
       var block = 0;
-      // 开头的请求里通常已经带回了第 0 块（少一次往返）。
-      var pending = t.firstBlock;
-      while (offset < t.cipherSize) {
-        Uint8List chunk;
-        final bool fromNetwork;
-        if (pending != null) {
-          chunk = pending;
-          pending = null;
-          fromNetwork = false;
-        } else {
-          fromNetwork = true;
-          final remaining = t.cipherSize - offset;
-          final want = remaining < _blocksPerBatch * kBlockSize
-              ? remaining
-              : _blocksPerBatch * kBlockSize;
-          chunk = await _fetchRange(t, offset, offset + want - 1);
-          if (chunk.length < want) {
-            throw CloudDriverException(
-                'crypt 内容提前结束（第 $block 块起，期望 $want 字节，收到 ${chunk.length} 字节）');
-          }
+      // 预取窗口：[_fetchWindow] 个批次同时在途。
+      //
+      // 为什么是「多个在途」而不是「提前发下一个」：Dart 单线程，同步解密期间
+      // 事件循环不转，**单个**在途请求的响应回调跑不了，等于没重叠（实测
+      // 提前发下一个请求，每批等待仍是完整的 34ms）。多个在途请求的服务端延迟
+      // 则是并行的：实测 16 个 1MiB 区间同时发 90ms、顺序发 547ms。
+      final window = <Future<Uint8List>>[];
+      void fill() {
+        while (window.length < t.window && offset < t.cipherSize) {
+          final at = offset;
+          final want = _batchBytes(t, at);
+          final future = _fetchBatch(t, at);
+          // 消费者中途取消时这批可能没人 await：先挂个空 handler，免得上报成
+          // 未处理的异步错误（错误本身仍留给真正 await 它的那一方）。
+          unawaited(future.then((_) {}, onError: (Object _) {}));
+          window.add(future);
+          offset = at + want;
         }
+      }
+
+      // 开头的请求里通常已经带回了第 0 块（少一次往返）。
+      final first = t.firstBlock;
+      if (first != null) {
+        window.add(Future<Uint8List>.value(first));
+        offset = kFileHeaderSize + first.length;
+      }
+      fill();
+      while (window.isNotEmpty) {
+        final chunk = await window.removeAt(0);
+        fill(); // 解一批、补一批：窗口始终是满的。
         var p = 0;
         while (p < chunk.length) {
           final remaining = chunk.length - p;
@@ -419,11 +437,9 @@ class CryptDriver extends CloudDriver {
           p += take;
           block++;
         }
-        offset += chunk.length;
-        // 每批网络解密之间让出一次事件循环，别让整批 CPU 活顶掉 UI 帧。
-        if (fromNetwork && offset < t.cipherSize) {
-          await Future<void>.delayed(Duration.zero);
-        }
+        // 每批之间让出一次事件循环：把已经到达的响应处理掉，也别让整批 CPU 活
+        // 顶掉 UI 帧。
+        if (window.isNotEmpty) await Future<void>.delayed(Duration.zero);
       }
     } on CloudDriverDataException {
       _dropTarget(t); // 内容本身坏了：别让缓存的解析结果继续骗下一个人。
@@ -660,12 +676,46 @@ class CryptDriver extends CloudDriver {
     }
   }
 
+  /// 一批从 [offset] 起能取多少字节（按文件尾裁剪）。
+  static int _batchBytes(_CryptTarget t, int offset) {
+    final remaining = t.cipherSize - offset;
+    return remaining < _blocksPerBatch * kBlockSize
+        ? remaining
+        : _blocksPerBatch * kBlockSize;
+  }
+
+  /// 取一批密文（最多 [_blocksPerBatch] 块，按文件尾裁剪），并校验长度没有
+  /// 短缺——短了就是源提前结束，不能把错位的块当成后面几块用。
+  Future<Uint8List> _fetchBatch(_CryptTarget t, int offset) async {
+    final want = _batchBytes(t, offset);
+    final chunk = await _fetchRange(t, offset, offset + want - 1);
+    if (chunk.length < want) {
+      final block = (offset - kFileHeaderSize) ~/ kBlockSize;
+      throw CloudDriverException(
+          'crypt 内容提前结束（第 $block 块起，期望 $want 字节，收到 ${chunk.length} 字节）');
+    }
+    return chunk;
+  }
+
   /// 取源的 `[start, end]` 字节区间；直链过期时重新解析一次再试
   /// （真机反馈：百度 / 123 的直链有 TTL，长下载中途会 403）。
+  ///
+  /// 被源限流（429）时**退掉一半并发**再重试一次同一区间：预取窗口是我们的
+  /// 选择，源说不的时候就该收窄，而不是把限流当成永久失败（403/429 在下载
+  /// 队列里都是「不可重试」）。
   Future<Uint8List> _fetchRange(_CryptTarget t, int start, int end) async {
     try {
       return (await _fetchRangeWithMeta(t.dio, t.url, t.headers, start, end)).$1;
     } on DioException catch (e) {
+      if (e.response?.statusCode == 429) {
+        if (t.window > 1) {
+          final half = t.window ~/ 2;
+          t.window = half < 1 ? 1 : half;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        return (await _fetchRangeWithMeta(t.dio, t.url, t.headers, start, end))
+            .$1;
+      }
       if (!_isStaleLink(e)) rethrow;
       await _refreshTarget(t);
       return (await _fetchRangeWithMeta(t.dio, t.url, t.headers, start, end)).$1;
@@ -895,6 +945,10 @@ class _CryptTarget {
 
   /// 首块密文（解析时一并取回）；null = 需要时单独取。
   final Uint8List? firstBlock;
+
+  /// 该目标当前的预取窗口（并发批次数）。源限流（429）时减半，见
+  /// [CryptDriver._fetchRange]；上限是 [CryptDriver._fetchWindow]。
+  int window = CryptDriver._fetchWindow;
 
   final RcloneCipher cipher;
 

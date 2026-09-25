@@ -15,7 +15,8 @@ import 'package:webdav_media_manager/services/cloud_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/crypt/crypt_driver.dart';
 import 'package:webdav_media_manager/services/download_queue_service.dart';
 
-/// 计数版密文服务器：记录每个 Range 请求，并可按 URL 里的 `v` 模拟直链过期。
+/// 计数版密文服务器：记录每个 Range 请求、并发度，并可按 URL 里的 `v` 模拟
+/// 直链过期、按请求序号模拟限流。
 class CountingCipherServer {
   CountingCipherServer(this.body);
 
@@ -29,6 +30,16 @@ class CountingCipherServer {
   String? staleV;
   int denied = 0;
 
+  /// 每个请求的响应延迟（让并发真的能叠起来 / 让窗口可观测）。
+  Duration delay = Duration.zero;
+
+  /// 第 N 个请求回 429（只回一次），模拟源限流。
+  int? rateLimitRequest;
+  int rateLimited = 0;
+
+  int inflight = 0;
+  int maxInflight = 0;
+
   int get requestCount => rangeHeaders.length;
 
   Future<void> start() async {
@@ -36,32 +47,46 @@ class CountingCipherServer {
     server.listen((req) async {
       final range = req.headers.value('range');
       rangeHeaders.add(range ?? '(none)');
-      final m = range == null
-          ? null
-          : RegExp(r'bytes=(\d+)-(\d+)').firstMatch(range);
-      final start = m == null ? 0 : int.parse(m.group(1)!);
-      final v = req.uri.queryParameters['v'];
-      if (staleV != null && v == staleV && start > 0) {
-        denied++;
-        req.response.statusCode = HttpStatus.forbidden;
+      inflight++;
+      if (inflight > maxInflight) maxInflight = inflight;
+      try {
+        if (delay > Duration.zero) await Future<void>.delayed(delay);
+        final m = range == null
+            ? null
+            : RegExp(r'bytes=(\d+)-(\d+)').firstMatch(range);
+        final start = m == null ? 0 : int.parse(m.group(1)!);
+        final v = req.uri.queryParameters['v'];
+        if (staleV != null && v == staleV && start > 0) {
+          denied++;
+          req.response.statusCode = HttpStatus.forbidden;
+          await req.response.close();
+          return;
+        }
+        if (rateLimitRequest != null && rangeHeaders.length == rateLimitRequest) {
+          rateLimitRequest = null;
+          rateLimited++;
+          req.response.statusCode = HttpStatus.tooManyRequests;
+          await req.response.close();
+          return;
+        }
+        if (m != null) {
+          final s = start;
+          var e = int.parse(m.group(2)!);
+          if (e >= body.length) e = body.length - 1;
+          req.response.statusCode = HttpStatus.partialContent;
+          req.response.headers
+              .set('content-range', 'bytes $s-$e/${body.length}');
+          req.response.contentLength = e - s + 1;
+          req.response.add(body.sublist(s, e + 1));
+        } else {
+          req.response.statusCode = HttpStatus.ok;
+          req.response.contentLength = body.length;
+          req.response.add(body);
+        }
         await req.response.close();
-        return;
+      } finally {
+        inflight--;
       }
-      if (m != null) {
-        final s = start;
-        var e = int.parse(m.group(2)!);
-        if (e >= body.length) e = body.length - 1;
-        req.response.statusCode = HttpStatus.partialContent;
-        req.response.headers
-            .set('content-range', 'bytes $s-$e/${body.length}');
-        req.response.contentLength = e - s + 1;
-        req.response.add(body.sublist(s, e + 1));
-      } else {
-        req.response.statusCode = HttpStatus.ok;
-        req.response.contentLength = body.length;
-        req.response.add(body);
-      }
-      await req.response.close();
     });
   }
 
@@ -263,6 +288,54 @@ void main() {
         isFalse,
         reason: '同一份字节再拉一次还是坏的，重试没有意义',
       );
+    } finally {
+      await driver.dispose();
+      await srv.close();
+    }
+  });
+
+  test('预取窗口：多批同时在途（并发 > 1），内容仍逐字节正确', () async {
+    final plain =
+        Uint8List.fromList(List<int>.generate(4 * 1024 * 1024, (i) => i % 251));
+    final enc = cipher.encrypt(plain);
+    final srv = CountingCipherServer(enc);
+    // 每个请求 150ms：网络时延远大于 CPU（解密 4MiB 约 55ms），因此「有没有
+    // 真并发」能被墙钟时间区分开。
+    srv.delay = const Duration(milliseconds: 150);
+    await srv.start();
+    final source = _LinkSource(server: srv, cipherSize: enc.length);
+    final driver = buildDriver(source);
+    try {
+      final sw = Stopwatch()..start();
+      expect(await drain(driver.openContent('/big.bin')), plain);
+      sw.stop();
+      expect(srv.maxInflight, greaterThan(1),
+          reason: '多批必须同时在途：Dart 单线程下「提前发下一个」无法与同步解密重叠');
+      expect(srv.maxInflight, greaterThanOrEqualTo(3),
+          reason: '预取窗口要真的用满（实测 5 个请求里 4 个同时在途）');
+      expect(srv.maxInflight, lessThanOrEqualTo(4),
+          reason: '预取窗口是有上限的（内存 / 风控），不能无限并');
+      expect(srv.requestCount, 5,
+          reason: '4MiB = 64 块：头+首块一个请求，其余 63 块分 4 批');
+    } finally {
+      await driver.dispose();
+      await srv.close();
+    }
+  });
+
+  test('源限流 429：退掉并发并重试同一区间，内容完整', () async {
+    final plain =
+        Uint8List.fromList(List<int>.generate(3 * 65536, (i) => i % 251));
+    final enc = cipher.encrypt(plain);
+    final srv = CountingCipherServer(enc);
+    srv.rateLimitRequest = 2; // 第 2 个请求（第一个数据批）被限流一次
+    await srv.start();
+    final source = _LinkSource(server: srv, cipherSize: enc.length);
+    final driver = buildDriver(source);
+    try {
+      expect(await drain(driver.openContent('/limited.bin')), plain);
+      expect(srv.rateLimited, 1, reason: '确实撞上限流');
+      expect(srv.requestCount, greaterThan(0));
     } finally {
       await driver.dispose();
       await srv.close();
