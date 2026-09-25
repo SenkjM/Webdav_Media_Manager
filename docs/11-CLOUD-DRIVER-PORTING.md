@@ -46,6 +46,7 @@
 - 驱动实例由 `CloudDriveService.registerAccounts` 管：账号变更即重建；配置缺失或类型未接入时**跳过而不是崩**。
 - 上游驱动内部的 path→id 缓存：本应用实例级持有即可，随实例重建失效。跨会话缓存没做。
 - 凭证、token 一律不进日志、不进提交（`00 §3.6`）。
+- **包装驱动（crypt）的源解析必须是「id 优先、名字兜底」**：源账号 id 是主键，但表单保存时同时落一份**源账号名快照**（`<key>_name`）。源账号被删除后 id 永远找不到，此时按名字精确匹配（忽略首尾空白）找回——用户**重新添加一个同名源账号即可恢复 crypt**，不必重建 crypt 账号（真机反馈：报错只显示一长串源 id，重加源也接不上）。名字也对不上才报错，且错误信息用**源名字**表达而非裸 id，并直接告知「重新添加同名源账号即可恢复」。
 
 ## 5. 直链、Range 与本地流桥
 
@@ -60,7 +61,7 @@
 ## 6. 表单与 spec
 
 - 字段类型：`CloudDriverField`（文本）/ `CloudDriverSelectField` / `CloudDriverAccountField`（引用已有账号）/ `CloudDriverSwitchField`。
-- 字段联动有**两种极性**，别弄反：`visibleWhenSwitch` / `enabledWhenSwitch` = 开关打开才显示 / 可编辑；`disabledWhenSwitch` = 开关打开则**停用**（百度「在本地处理令牌刷新」开启后在线续期地址变灰就是它，99 §7.3.1）。选错极性的症状：该灰的不灰、不该灰的灰了。
+- 字段联动有**两种极性**，别弄反：`visibleWhenSwitch` / `enabledWhenSwitch` = 开关打开才显示 / 可编辑；`disabledWhenSwitch` = 开关打开则**停用**（百度「在本地处理令牌刷新」开启后在线续期地址变灰就是它，实例见 [§10](#10-已落地驱动实录baidu_netdisk)，验收项见 [99 §4.3.1](99-IN-PROGRESS.md)）。选错极性的症状：该灰的不灰、不该灰的灰了。
 - 「源账号」下拉必须排除包装类账号自身（crypt 不能以 crypt 为源），否则会自引用。
 - 实现坑：SelectField / SwitchField 的值必须真正写进 `cfg`（漏了会表现为「开关保存后又自己关掉」）；文本字段的 controller 要由表单统一创建复用；下拉加 `isExpanded`，否则长标签右溢出。
 - 校验失败必须有**看得见的提示**：弹窗内联 + 最顶层横幅双通道；驱动的真连验证（`spec.verify`）抛什么异常都要转成人话，不能让异常冒泡后按钮默默恢复。

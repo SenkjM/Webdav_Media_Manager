@@ -227,6 +227,8 @@
 - 视频与音乐流式：直链 302 + UA `pan.baidu.com`。
 - 本地刷新开关联动：**打开**时 online_api 变灰且出现 Client ID / Secret；**关闭**时 online_api 可编辑（极性修正后的可观察行为，见 [11 §10](11-CLOUD-DRIVER-PORTING.md)）。
 - 写操作四件套：重命名 / 删除 / 移动 / 复制；新建文件夹按钮按「创建文件夹」位遮罩（能力位见 4.3.2）。
+- **源被删后的恢复路径**（本轮修复，见 [11 §4](11-CLOUD-DRIVER-PORTING.md)）：源账号删除后 crypt 报错应显示**源名字**并提示可恢复；重新添加**同名**源账号后 crypt 直接可用（无需重建）。
+- **加载失败重试纪律**（本轮修复，见 [02 §6](02-NETWORK-LIBRARY.md)）：源被删状态下网络库不得无限自动重试拖慢应用；连续 3 次失败后停在错误界面等手动重试；恢复网络后自动补一次。
 
 ### 4.3.2 mkdir（创建文件夹）能力逐盘核查（OpenList 源码，本轮查证）
 
@@ -344,3 +346,9 @@
 - **用户语义**（真机反馈）：下载队列里「系统目录：content://xxx」对用户没用且不能反映实际下载地址，应删掉；用户要的是**可理解**的位置信息。
 - **现状**：无意义 URI 已从队列删除（`downloads_screen.dart`）；但「系统相册/下载目录」这两个目标在系统里的真实位置（如相册的 `Movies/WebdavMediaManager`）只在 [02 §7](02-NETWORK-LIBRARY.md) 有文档语义，界面没有向用户展示任何位置描述。
 - **差距**：若用户再报「不知道去哪找文件」，考虑在完成态补一行人类可读位置（如「已存入系统相册 › Movies/WebdavMediaManager」），不要回到原始 URI。
+
+### 5.3 crypt 源绑定只认 id（已修复，待真机验收）
+
+- **用户语义**（真机反馈）：crypt 账号只需和**账户名**绑定；现在它绑的是源 id，源被删后报错界面显示一长串源 id，**即使重新添加源也无法恢复 crypt**。
+- **现状**：已实现「id 优先、名字兜底」+ 保存时源名快照 + 错误信息用源名（[11 §4](11-CLOUD-DRIVER-PORTING.md)）；测试 `crypt_source_name_binding_test.dart`。**待真机验收**：删源 → 报错可读 → 重添同名源 → crypt 复活。
+- **代码位置**：`crypt_driver.dart` 的 `_requireSource`、`cloud_drive_service.dart` 的 `_resolveSourceByName` / `_cryptSourceTypes`、`accounts_screen.dart` 的配置组装（`<key>_name` 快照）。

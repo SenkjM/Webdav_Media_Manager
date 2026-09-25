@@ -1,6 +1,7 @@
 import 'dart:io' hide BytesBuilder;
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -83,8 +84,20 @@ class CloudDriveService extends ChangeNotifier {
         _drivers[a.id] = _createDriver(a, cfg);
         if (a.providerType == 'crypt') {
           final srcId = cfg?['source_account_id'] as String?;
-          _cryptSourceTypes[a.id] =
+          var srcType =
               srcId == null ? null : _accounts.accountById(srcId)?.providerType;
+          // id 找不到时按名字兜底（源被删后重添同名账号）。
+          if (srcType == null && srcId != null) {
+            final srcName = cfg?['source_account_id_name'] as String?;
+            if (srcName != null) {
+              final byName = _accounts.accounts
+                  .where((x) => x.providerType != 'crypt')
+                  .where((x) => x.name.trim() == srcName.trim())
+                  .firstOrNull;
+              srcType = byName?.providerType;
+            }
+          }
+          _cryptSourceTypes[a.id] = srcType;
         }
       } on CloudDriverException catch (e) {
         _drivers.remove(a.id);
@@ -164,7 +177,21 @@ class CloudDriveService extends ChangeNotifier {
     );
   }
 
-  CloudDriverEnv _buildEnv() => CloudDriverEnv(resolveSource: _resolveSource);
+  /// crypt 源被删后按**名字**找回：重添同名账号即可恢复（真机反馈：
+  /// 报错只显示一长串源 id，用户即使重加源也接不上）。
+  CloudSource? _resolveSourceByName(String accountName) {
+    final a = _accounts.accounts
+        .where((x) => x.providerType != 'crypt')
+        .where((x) => x.name.trim() == accountName.trim())
+        .firstOrNull;
+    if (a == null) return null;
+    return _resolveSource(a.id);
+  }
+
+  CloudDriverEnv _buildEnv() => CloudDriverEnv(
+    resolveSource: _resolveSource,
+    resolveSourceByName: _resolveSourceByName,
+  );
 
   /// 令牌轮换持久化（驱动回调）：patch 原样合并进存储的配置。
   Future<void> _persistTokens(String accountId, Map<String, dynamic> patch) async {
