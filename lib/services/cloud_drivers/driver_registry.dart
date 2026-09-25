@@ -7,6 +7,7 @@
 import '../cloud_driver.dart';
 
 import '_123_open_driver.dart';
+import 'aliyundrive_open_driver.dart';
 import 'baidu_netdisk_driver.dart';
 import 'crypt/crypt_driver.dart';
 
@@ -14,6 +15,7 @@ import 'crypt/crypt_driver.dart';
 const List<CloudDriverSpec> kCloudDriverSpecs = <CloudDriverSpec>[
   BaiduNetdiskSpec(),
   Driver123OpenSpec(),
+  AliyundriveOpenSpec(),
   CryptSpec(),
 ];
 
