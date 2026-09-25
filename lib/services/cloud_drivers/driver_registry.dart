@@ -7,14 +7,22 @@
 import '../cloud_driver.dart';
 
 import '_123_open_driver.dart';
+import 'open115_driver.dart';
+import 'aliyundrive_open_driver.dart';
+import 'terabox_driver.dart';
 import 'baidu_netdisk_driver.dart';
-import 'crypt/crypt_driver.dart';
 import 'netease_music_driver.dart';
+import 'crypt/crypt_driver.dart';
 
 /// 已落地的驱动；顺序即账号表单类型下拉的显示顺序。
+/// crypt 永远最后（包装层）；netease_music 是并行任务收编进来的，放最后一位
+/// 独立驱动（用户决定），其余按落地时间序。
 const List<CloudDriverSpec> kCloudDriverSpecs = <CloudDriverSpec>[
   BaiduNetdiskSpec(),
   Driver123OpenSpec(),
+  Open115Spec(),
+  AliyundriveOpenSpec(),
+  TeraboxSpec(),
   NeteaseMusicSpec(),
   CryptSpec(),
 ];

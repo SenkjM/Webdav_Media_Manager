@@ -19,7 +19,7 @@
 | 各驱动的实际能力（靠人读源码判断） | 能力位 `AccountCaps` | 上游没有能力表，移植时逐个核对 |
 | `Link{URL, Header}` | `rawUrl` / `rawHeaders` | `rawUrl == null` 表示 MustProxy，见 §5 |
 
-**铁律**：驱动只描述自己（`CloudDriverSpec`）——表单渲染、校验、持久化、能力遮罩全由 spec 驱动，上游知识不要漏进界面层。**谁负责路由、三层可见性边界见 [§12](#12-分层与路由clouddriver-层负责全部网盘驱动)。**
+**铁律**：驱动只描述自己（`CloudDriverSpec`）——表单渲染、校验、持久化、能力遮罩全由 spec 驱动，上游知识不要漏进界面层。**谁负责路由、三层可见性边界见 [§13](#13-分层与路由clouddriver-层负责全部网盘驱动)。**
 
 ## 2. 必须逐字节对齐的部分
 
@@ -43,7 +43,7 @@
 ## 4. 令牌、缓存与生命周期
 
 - `access_token` / cookie 缓存写进驱动配置（`onTokenUpdate` → `AccountsService.saveDriverConfig`），重建驱动不丢登录态。
-- 驱动实例由 `CloudDriveService.registerAccounts` 管：**账号集合与配置都没变就不重建**（判据是整批指纹 `cloudRegistrationSignature`，见 §12.1）；配置缺失或类型未接入时**跳过而不是崩**。
+- 驱动实例由 `CloudDriveService.registerAccounts` 管：**账号集合与配置都没变就不重建**（判据是整批指纹 `cloudRegistrationSignature`，见 §13.1）；配置缺失或类型未接入时**跳过而不是崩**。
 - 上游驱动内部的 path→id 缓存：本应用实例级持有即可，随实例重建失效。跨会话缓存没做。**因此「别白重建」值钱**：启动与每次进出账号页 / 网络库 / 同步页都会调 `registerAccounts`，白重建一次就丢掉 path→id 缓存、直链解析缓存与连接池（表现为浏览深层目录重复解析、播放中途重新解析直链）。
 - 驱动自己写回的令牌（`onTokenUpdate` → `_persistTokens`）**不算**用户改配置：写回时同步该账号指纹，否则一次令牌轮换就会白重建一遍驱动。
 - 凭证、token 一律不进日志、不进提交（`00 §3.6`）。
@@ -131,7 +131,8 @@
 ## 9. 还没做的（不要把计划当现状）
 
 - libsodium FFI 引擎，以及与纯 Dart 实现的手动切换（两套实现同格式，可随时互切）。
-- OpenList 驱动清单里其余条目：批次方案与逐盘评估见 [99 §4.9](99-IN-PROGRESS.md)（只读家族 = 能力遮罩，不单独实现写路径）。
+- OpenList 驱动清单里其余条目：批次方案与逐盘评估见 [99 §4.9](99-IN-PROGRESS.md) 与 [13](13-DRIVER-BATCH-PLAN.md)（只读家族 = 能力遮罩，不单独实现写路径）。
+- 下沉到后续批次的 P1 盘：`quark_open`（MustProxy，要通用流桥）、`139`（5 种账号形态 + 编码待验）、`quark`(cookie)（等 quark_open 的流桥形态一起做）——判定见 [13 §2.2](13-DRIVER-BATCH-PLAN.md)。
 - 跨会话的 path→id 缓存与离线可用性策略。
 - 云盘账号的其它播放形态（后台播放、投屏等）未评估。
 
@@ -146,6 +147,7 @@
 - **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
 - **开关极性缺陷记录**（真机反馈后修正）：`localRefresh` 开关的联动极性曾接反——关掉开关时 online_api 变灰，正确语义是**开启**时才禁用 online_api、显示自建凭证输入。联动判定与 `disabledWhenSwitch` 的取值见 `baidu_netdisk_driver.dart` 的 spec 与 `test/baidu_refresh_switch_test.dart`。
 - **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动 + spec 自描述：能力遮罩 / 表单参数 / 构造，见 §6）、`cloud_drive_service.dart`（查表工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单按 spec 通用渲染）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。
+
 
 ## 11. 已落地驱动实录：netease_music
 
@@ -171,9 +173,30 @@
 - **测试**：`test/netease_music_crypto_test.dart`（用 Go 上游工具生成的**金标向量**：AES-CBC / AES-ECB / raw RSA / weapi / linuxapi 各若干条，并核对 worker 硬编码的 modulus 与 Go 版 PEM 是同一把密钥）、`test/netease_music_driver_test.dart`（请求形状 / 能力位 / 直链必需头 / 错误原文透传 / 未实现操作）。
 - **落点**：`lib/services/cloud_drivers/netease_music_driver.dart`（Addition + Client + 驱动 + spec）、`netease_music_crypto.dart`（weapi / linuxapi）、`driver_registry.dart`（加一行）。
 
-## 12. 分层与路由：CloudDriver 层负责全部网盘驱动
+## 12. 已落地驱动实录：粘贴凭证直连盘批次（123_open / aliyundrive_open / 115open / terabox）
 
-### 12.1 路由归属
+第二批驱动的共同形态：**粘贴式凭证 + 有公开直链 + 无重加密 + 单账号形态**（筛选标准与下沉判定见 [13 §1/§2](13-DRIVER-BATCH-PLAN.md)）。全部照 [12](12-DRIVER-PORTING-GUIDE.md) 的六步工序移植，`lib/` 只动驱动文件 + 注册表两个文件；每盘一个测试文件（出站请求全拦截，不真连网络）。**真机验收已按通过处理（用户确认 2026-09-25；123_open 打开目录曾报一次 invalid_grant，用户决定不排查，现象留档 99 §4.3.4）。**
+
+| 驱动 | typeId | 能力位 | 登录 | 直链必需头 | 特殊机制 |
+|---|---|---|---|---|---|
+| 123_open | `123_open` | list/read/mkdir/move/delete（**无 copy**） | refresh_token + 在线续期 / 自建应用 | 无（公开 URL） | `code===401` 刷新重试一次；`update_at` 是 UTC+8 字符串 |
+| aliyundrive_open | `aliyundrive_open` | list/read/mkdir/move/copy/delete | refresh_token + 在线续期轮询 / OAuth | 无（带签名 URL） | 6 个续期地址**去重**轮询；drive_id 按 drive_type 三级选盘 + `UserNotAllowedAccessDrive` 自愈 |
+| 115open | `115open` | list/read/mkdir/move/copy/delete | refresh_token | **OpenList UA**（防盗链校验） | fid+UA 直链缓存 30 分钟（免费盘 downurl 有配额，406）；`state=false && code∈{99,401xx}` 判鉴权失败；`folder/get_info` 一次性解析、失败回退逐层 |
+| terabox | `terabox` | list/read/mkdir/move/copy/delete | **cookie 粘贴**（过期重贴） | **UA** | 官方下载 API 直链 + UA；签名（sign1/sign3）纯 Dart 复现并有金标向量；`errno===9000` 地区不可用 |
+
+批次共性与值得记的坑：
+
+- **`api_url_address` 空串 = 回落默认续期地址**，不是「不走在线续期」（与百度同款语义；123_open 曾在这里栽过——守卫多判了一个 `isNotEmpty`，表单留空直接报 no valid authentication method）。
+- **续期候选地址要去重**：aliyundrive_open 的表单默认值就是内置候选表的第一个地址，不去重会把同一地址打两遍（多耗一次请求，还让「全失败」用例的候选数对不上）。
+- **path→id 缓存的键形必须一致**：123_open 曾出现写入带前导斜杠、查询不带，缓存形同虚设、每次 list 都逐层重解析。写操作后整表 clear（照 worker）。
+- **`rename` 跨目录统一降级 move + rename**（接口契约，四盘一致）；115 的 copy 参数顺序是**目标 pid 在前**（上游如此，别按直觉接反）。
+- **worker 底稿的三类偷懒都按本项目契约修正**：拿不到直链时抛真实原因（不返回无直链条目）；`get()` 的 try 作用域收窄到「找条目」，直链异常原样上抛；时间解析失败返回 null 而不是伪造 `now()`。
+- **terabox 的签名**：上游 js sha1/aes 变体在纯 Dart 下可复现（`pointycastle` 原语 + 上游逐行对照），金标向量固化在测试里；若上游签名实现与真机不符，第一嫌疑是**明文收集时的符号溢出**（必须按无符号字节）。
+- 文件名带数字开头的驱动（`115open`）在 Dart 里类名/文件名不能以数字开头，用 `Open115*` + `open115_driver.dart`，**typeId 仍存 `'115open'`**（存库值与上游目录名一致）。
+
+## 13. 分层与路由：CloudDriver 层负责全部网盘驱动
+
+### 13.1 路由归属
 
 **`CloudDriver` 层是全部网盘驱动的唯一路由点。** 任何云盘账号（`CloudDriveService.isCloudType()` 为真的一切类型）的每一次操作都必须走同一条路：
 
@@ -191,7 +214,7 @@ UI / 服务层
 - **驱动实例的生命周期也归兼容层，且必须是「没事别重建」**：`registerAccounts` 在启动与每次进出账号页 / 网络库 / 同步页都会被调到，判据是整批指纹（`cloudAccountSignature` / `cloudRegistrationSignature`：账号集合 + 账号侧字段 + 驱动配置全量）。没变就整体跳过、连 `notifyListeners` 都不发；变了就**整批**重建——这样包装驱动（crypt）缓存的源视图绝不会指向被换掉的旧驱动实例。驱动自己写回的令牌经 `_persistTokens` 同步指纹，因此令牌轮换不会被误判成「用户改了配置」。
 - 新增一个盘 = **新增驱动文件 + 注册表一行 + 一份测试**，`lib/` 其它文件零改动（[12 §1.1](12-DRIVER-PORTING-GUIDE.md) 第 4 条）。
 
-### 12.2 三层可见性边界
+### 13.2 三层可见性边界
 
 | 层级 | 看不到什么 | 落点 |
 |---|---|---|
@@ -206,7 +229,7 @@ UI / 服务层
 
 于是 `download_queue_service.dart` 的 `isRetryable()` 只需要认 `CloudDriverDataException`，不必认识 `RcloneCipherException`（分层前它 `import package:openlist_crypt`，正是「Crypt 之上的包泄漏」）。
 
-### 12.3 无痛摘除（可验证的判据）
+### 13.3 无痛摘除（可验证的判据）
 
 「摘掉一个驱动」应当是**删目录 + 删注册表一行**，而不是全库搜类型名。当前状态（crypt 为例）：
 
@@ -217,7 +240,7 @@ UI / 服务层
 
 检查法：`git rm -r lib/services/cloud_drivers/crypt` + 删掉 `driver_registry.dart` 的那一行（连带它的 import），`flutter analyze lib` 必须零错误——已按此法验证过。
 
-### 12.4 唯一的例外：WebDAV 单列（现状，不要照抄）
+### 13.4 唯一的例外：WebDAV 单列（现状，不要照抄）
 
 WebDAV **不走** `CloudDriver` 兼容层：它是独立实现（`WebDavService` 的 ping / readDir / PROPFIND / Range 读取），`CloudDriveService.isCloudType()` 明确把它排除在外，`_resolveSource()` 里也留着全库唯一的 `providerType == 'webdav'` 类型分支（因为包装驱动要一个 `CloudSource` 视图，而 WebDAV 的适配器由装配层注入）。
 

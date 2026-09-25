@@ -236,9 +236,33 @@
 - **机制**：Go 版把 MakeDir / Move / Rename / Copy / Remove / Put 做成 `internal/driver` 的**可选接口**（方法名是 `MakeDir`，不是 Mkdir），87 个驱动都有方法签名，只读 / 索引驱动在方法体里返回 `errs.NotImplement`（桩实现）；op 层 type-switch 调用。Worker TS 把 mkdir 做成 `StorageDriver` 必备方法，行为与 Go 一致——真实现或抛「not supported」。**两版能力面一致**（worker 是我们的移植底稿）。
 - **首批 9 盘全部真实现 mkdir**（静态表 mkdir = 有）：`baidu_netdisk`（Go `driver.go:96` MakeDir → `create(path, 0, 1)` isdir=1，已验真；worker 同）、`aliyundrive_open`、`quark`、`115open`（worker `driver.ts:339` → `client.mkdir` 真调用，勿被「方法体含 throw」的粗扫误判）、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。
 - **只读家族 mkdir = 无（桩）**：`115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`；`url_tree` 疑似桩（落表前再确认一次）。
-- **已落地盘的能力位实录不再留在本表**：见 [11 §10](11-CLOUD-DRIVER-PORTING.md)（baidu_netdisk）、[11 §11](11-CLOUD-DRIVER-PORTING.md)（netease_music，`list | read | delete`——除删除外四个写方法上游全是桩）与各驱动实录节。
+- **已落地盘的能力位实录不再留在本表**：见 [11 §10](11-CLOUD-DRIVER-PORTING.md)（baidu_netdisk）、[11 §11](11-CLOUD-DRIVER-PORTING.md)（netease_music，`list | read | delete`——除删除外四个写方法上游全是桩）、[11 §12](11-CLOUD-DRIVER-PORTING.md)（粘贴凭证直连盘批次：123_open 无 copy，其余三盘五项全）与各驱动实录节。
 - **未落地**：`crypt` 透传内挂驱动，落表时按宿主动态给位、不进静态表。
 - **登记**：已落地 → `AccountCaps.staticCaps`；未落地 → 本表，落地时照表抄（用户决定：写代码会影响运行的先只进文档）。
+
+### 4.3.3 netease_music（已实现，待真机验收）
+
+实现语义、加密对齐与取舍已收口进 [11 §11](11-CLOUD-DRIVER-PORTING.md)。**待办只剩真机验收**：
+
+- **添加账号**：粘贴含 `__csrf` + `MUSIC_U` 的 Cookie → 真连校验（拉一页列表）通过才保存；Cookie 不全时表单内联报错且不出网；Cookie 过期（`code 301`）时提示「Cookie 可能已过期」、不落库、表单内容保留。
+- **浏览**：云盘歌曲以平铺列表出现（无目录层级）；远程路径只作虚拟前缀，改名后账号条目仍可打开。
+- **下载 / 缓存音乐 / 本地播放**：直链由网易 CDN 给出，能正常下载与播放。
+- **音乐流式**：VIP / 版权受限 / 已下架的歌曲要给出可读错误（不是空 URL、不是 0B 文件）。
+- **删除**：列表里删一首歌 → 云端确实少一首；再刷新列表确认。
+- **能力遮罩**：账号行**看不到**新建文件夹 / 重命名 / 移动 / 复制入口（隐藏而非置灰）；删除入口可见可用。
+- **`song_limit`**：填小值（如 5）后列表只剩 5 首；非法值回落 200。
+- **`weapi` / `linuxapi` 真连**：若网易改签（返回 `code -460` 之类），报错要带 code 与 message 原文，便于判断是风控还是实现问题。
+
+### 4.3.4 第二批四盘（已实现，真机验收通过——用户确认，123_open 打开目录报 invalid_grant 已按用户决定不排查）：123_open / aliyundrive_open / 115open / terabox
+
+按 4.9 的评估与 [13](13-DRIVER-BATCH-PLAN.md) 的筛选标准（粘贴凭证、有直链、无重加密、写方法真实现、单账号形态、worker 底稿完整）选出的快速批次，四盘全部走 [12](12-DRIVER-PORTING-GUIDE.md) 的工序（解耦检查 → 六步移植 → 一盘一测试）。语义与取舍收口进 [13 §4](13-DRIVER-BATCH-PLAN.md) 的字段清单与 [12](12-DRIVER-PORTING-GUIDE.md) 的表单/能力位规则。**共同语义**：直链必需头进 `rawHeaders`；`access_token` 只作缓存经 `onTokenUpdate` 持久化、不进表单；上传/排序字段不进表单；错误原文透传 `CloudDriverException`；`get()` 拿不到直链抛真实原因（不返回无直链条目，11 §10 的有意差异）。
+
+- **`123_open`**（`lib/services/cloud_drivers/_123_open_driver.dart`，前缀 `_` 因 Dart 标识符不能以数字开头；typeId 仍 `123_open`）：refresh_token + 在线续期（默认 `api.oplist.org/123cloud/renewapi`，空串回落默认值）+ 本地刷新开关（client_id/secret 联动，极性照百度）；`{code,message,data}` 包裹、`code===401` 刷新后重试一次防死循环；path→id 实例缓存（写后清）。**copy 上游未实现 → 能力位不给 copy**。真机重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
+- **`aliyundrive_open`**：refresh_token + 在线续期**多候选轮询**（自定义地址优先 + 6 内置，去重）→ 全失败落直连 OAuth（内置 client_id）；`drive_type`（resource/default/backup）决定 drive_id，`UserNotAllowedAccessDrive` 自愈重解析一次；`remove_way`（trash/delete）。能力位含 copy。
+- **`115open`**（文件名 `open115_*`，typeId 仍 `115open`）：refresh_token 每次刷新都轮换（`passportapi.115.com/open/refreshToken`，form 而非 JSON）；响应 `{state,code,message,data}`，`state=false` 且 code 99 / 401 开头 → 刷新重试一次，**430004 = 对象不存在**；直链必须配 OpenList UA（`rawHeaders` 贯穿）；**downurl 有每日配额 → 按 fid+UA 缓存 30 分钟**；`folder/get_info` 只认目录路径，430004/990002 回退逐层列目录。能力位含 copy。
+- **`terabox`**：cookie 粘贴式（会过期，重贴）；列表 `errno===9000` 是地区不可用；**jsToken 从首页正则抓取**（4000023/450016 失效重取）、errno -6 换域名；签名 `genSign()=sign(sign3, sign1)`，MD5 上游只用于上传（已砍）故无需 crypto 依赖；直链响应 `dlink` / `info` 两种形态都处理。五项写操作全真实现，能力位含 copy。
+- **实现中修复的驱动缺陷**（测试暴露，已随分支提交）：`123_open` path→id 缓存键与查表键不同形（缓存永远查不中）、续期地址空串不回落默认值；`aliyundrive_open` 在线续期候选地址未去重（custom 与 builtin 首项重复）。
+- **验收状态（用户确认）**：真机验收按通过处理——123_open 添加与浏览真机通过（打开目录曾报一次 invalid_grant，用户决定不排查、按验收通过收口），其余三盘按用户决定一并视为验收通过；通用清单见 [12 §9](12-DRIVER-PORTING-GUIDE.md)，逐盘重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
 
 ### 4.4 只读家族（能力遮罩 = 只读）
 
@@ -274,7 +298,7 @@
 | 0 | 地基：[10 T6](10-SIDE-QUESTS.md) 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表。**已完成**：`flutter analyze` 全清 + 244 测试全过，[10 T6](10-SIDE-QUESTS.md) 随之删除 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
 | 1 | 首个驱动端到端：`baidu_netdisk`。**代码已实现（表单 + 驱动 + 下载 / 流式全链路），待真机验收**，清单见 4.3.1 | 真机：添加账号 → 浏览 → 下载 → 流式 |
 | 2 | 能力遮罩接线 UI：WebDAV 表单能力勾选 + 行操作 / 多选按钮按遮罩隐藏 + 只读试点（`openlist_share` + `github_releases`）。**新建文件夹遮罩已提前接入**（网络库 AppBar + 目录选择器，按写入位隐藏） | 真机：只读账号无写入口；WebDAV 能力勾选生效 |
-| 3 | 首批其余驱动逐个移植（`aliyundrive_open` 靠后，验收依赖发布后用户反馈） | 逐盘真机验收 |
+| 3 | 首批其余驱动逐个移植。**已完成**：粘贴凭证直连盘批次 4 盘（`123_open` / `aliyundrive_open` / `115open` / `terabox`）——批量筛选与逐盘判定见 [13](13-DRIVER-BATCH-PLAN.md)，实现实录见 [11 §12](11-CLOUD-DRIVER-PORTING.md)；`flutter analyze` 无 issue、测试全过，**真机验收通过（用户确认）**。`quark_open`（MustProxy 需流桥）/ `139`（多形态）/ `quark`(cookie) 下沉到后续批 | 真机验收通过（用户确认） |
 | 4 | 云端写路径禁用语义（backup / sync / playlist 对云盘账号的提示） | 真机：云盘账号同步入口有明确文案 |
 
 阶段 0 代码落点：`lib/models/account_capabilities.dart`（能力位 + 静态表）、`lib/models/webdav_account.dart`（`providerType` / `remotePath` / `capabilities`）、`lib/services/cloud_driver.dart`（接口 + `CloudFileItem`）、`lib/services/cloud_drive_service.dart`（骨架：类型判定 / 能力解析 / 写路径永久禁用）、`lib/services/webdav_service.dart`（`_cloudOf` 分流缝，12 个方法头）、`lib/services/library_database.dart`（v6，accounts 补列 `provider_type` / `remote_path` / `capabilities`）、`lib/services/accounts_service.dart`（`accountById` + 扩参）、`lib/providers/app_state.dart` 与 `lib/main.dart`（装配）。
@@ -294,7 +318,7 @@
 | 批次 | 驱动 | 判定依据 |
 |------|------|----------|
 | **P0 已落地 / 进行中** | `baidu_netdisk`（已实现待验收）、`crypt`（cipher 完成） | 见 4.3.1 / 4.5 |
-| **P1 粘贴凭证直连盘** | `aliyundrive_open`、`115open`、`123_open`、`quark_open`、`terabox`、`139`、`quark`(cookie) | refresh_token / cookie 粘贴式登录、直链 + 必需头、写操作全、无重加密；依赖 `pkg/crypto` 或 `crypto-js` 的地方都有 Dart 对应（AES/RSA/MD5，pointycastle 覆盖） |
+| **P1 粘贴凭证直连盘** | **`123_open`、`aliyundrive_open`、`115open`、`terabox`（✅ 本轮已移植，见 4.3.4）**；`quark_open`、`139`、`quark`(cookie) 下沉（判定见 [13 §2.2](13-DRIVER-BATCH-PLAN.md)：MustProxy 要流桥 / 5 种账号形态） | refresh_token / cookie 粘贴式登录、直链 + 必需头、写操作全、无重加密；依赖 `pkg/crypto` 或 `crypto-js` 的地方都有 Dart 对应（AES/RSA/MD5，pointycastle 覆盖） |
 | **P2 只读家族**（能力遮罩=只读，浏览器式登录或分享链接） | `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`github_releases`、`lenovonas_share`、`autoindex`、`url_tree`、`quark_uc_tv`、`emby`、`google_photo` | 五项写方法全部显式抛「不支持」；接入成本 = `CloudSource` 适配 + 能力遮罩；先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制（4.4） |
 | **P3 OAuth 回调盘** | `onedrive`、`onedrive_app`、`google_drive`、`dropbox`、`yandex_disk`、`pikpak`、`febbox`、`halalcloud_open`、`thunder` | 需要 OAuth client_id/secret + 回调或设备码流程，本地刷新与百度同构（`localRefresh` 开关模式直接复用）；体积不小但模式统一，可模板化批量铺 |
 | **P4 协议 / 存储类** | `webdav`、`sftp`、`smb`、`ftp`、`alist_v3`、`openlist`、`cloudreve_v3`、`cloudreve_v4`、`seafile`、`kodbox`、`mega`、`proton_drive` | 与已有 WebDAV 能力重叠或需要额外协议栈（smb/ftp/sftp 要原生依赖，mega/proton 有自家加密）；`webdav` 驱动可作为「WebDAV 账号统一到云盘账号模型」的迁移出口，优先级单独评估 |
@@ -354,3 +378,37 @@
 - **用户语义**（真机反馈）：crypt 账号只需和**账户名**绑定；现在它绑的是源 id，源被删后报错界面显示一长串源 id，**即使重新添加源也无法恢复 crypt**。
 - **现状**：已实现「id 优先、名字兜底」+ 保存时源名快照 + 错误信息用源名（[11 §4](11-CLOUD-DRIVER-PORTING.md)）；测试 `crypt_source_name_binding_test.dart`。**待真机验收**：删源 → 报错可读 → 重添同名源 → crypt 复活。
 - **代码位置**：`crypt_driver.dart` 的 `_requireSource`、`cloud_drive_service.dart` 的 `_resolveSourceByName` / `_cryptSourceTypes`、`accounts_screen.dart` 的配置组装（`<key>_name` 快照）。
+
+## 6. 存储层合并待办（已调研，未开工，用户已确认记入待办）
+
+本地数据现状全景（2026-09-25 调研，基线 feature/openlist-driver-port-batch2）：**5 个介质**——3 个 SQLite 库（`music_library.db` v7 / `download_queue.db` v6 / `playlists.db` v1，均在 `getApplicationDocumentsDirectory()`）+ SharedPreferences（settings 57 键 / cache 附属键 / `active_account_id`）+ secure storage（`webdav_pass_*` / `cloud_driver_cfg_*` / vault 口令）。目录侧 `covers/` `music_cache/` 是文件不是数据库。
+
+### 6.1 不合并的（现状已合理，勿动）
+
+- **playlists.db 独立**：文件头注释即约定「Independent from audio cache — never wiped by CacheService cleanup」；且有远端 M3U8 镜像层，生命周期独立。
+- **download_queue.db 独立**：瞬态任务队列（重试 / 进度），与曲库标签无外键关联（`taskForRemote` 靠 `source_name + remote_path` 运行期对上，不落库 join）；合并会让「销毁音乐库」触碰队列服务。
+- **凭证在 secure、账号元数据在 SQLite**：密文 vs 可同步明文，职责分界正确。
+- **music_library.db 内 7 张表**：tracks / cue / deleted / sync_state 是同一次 `onUpgrade` DROP 重建的原子单元，强绑定有意为之。
+
+### 6.2 T1 · cache_group 三处分布收拢（推荐，收益最实）
+
+- **问题**：「CUE 整专辑一组」一个概念横跨三个存储——`cue_albums.cache_group_id`（music_library.db，`library_database.dart:132`）、`download_tasks.cache_group_id`（download_queue.db，`download_store.dart:56`）、CacheService 的 group 成员表在 **prefs**（`cache_service.dart:240-263` 的 `_groupKey` / `_groupMembersKey`，键还是 **`hashCode`**——碰撞会串组）。CUE 删除要清三处（`cache_service.dart:316-318`），漏一处留孤儿。
+- **方案**：prefs 的 group/members 键 + 语义统一进 music_library.db 一张 `cache_groups` 表（group_id PK + members）；`touch()` LRU 时间戳一并入库（现在每次播放写一次 prefs XML，全量重写代价随键数涨）。
+- **迁移**：一次性读旧 prefs 键写新表再删键；`schemaVersion` v7→v8（cache_groups 进 DROP 重建列表）。
+- **代价**：动 CacheService 核心与删除链路；已有 cache 用例覆盖，风险可控。**独立提交交付。**
+
+### 6.3 T2 · cache annex 表拆出 music_library.db（涉及 schema 语义重划，先讨论再动）
+
+- **问题**：`cache` 表是**运行态缓存**（`music_id → local_path`，会被「清空音频缓存」整表清），却寄生在**可同步曲库**里：分片同步（`seg-*.wdmm`）必须排除它、`onUpgrade` DROP 时连坐清空、备份导出单独处理（[01 §3](01-DATA-MODEL.md) 的三行删除语义表是它的全部约束）。
+- **方案**（二选一，未定）：拆到 download_queue.db（同为运行态）或独立 cache.db。
+- **影响面**：`onUpgrade` DROP 列表、`reconcileStaleAnnex`、备份导出三处；语义重划牵动 [01](01-DATA-MODEL.md) / [03](03-MUSIC-LIBRARY.md) / [04](04-DOWNLOAD-QUEUE.md) 三篇。**与 T1 正交可同做，但必须先立项定方案。**
+
+### 6.4 T3 · 01 文档校正（极小，随 T1 顺手做）
+
+[01 §2](01-DATA-MODEL.md) 两处笔误：标题「schema **v5**」实为 **v7**（`library_database.dart` `schemaVersion = 7`）；表注「`UNIQUE(account_id, remote_path)`」实为 `UNIQUE(source_name, remote_path)`（`library_database.dart:91`）。
+
+### 6.5 明确不做
+
+- prefs 57 个 settings 键不搬 SQLite：真·配置数据，KV 合适、无关系语义。
+- `sync_state` 游标不并入 prefs：跟 tracks 的 rev 时钟强耦合（[01 §6](01-DATA-MODEL.md)），同库 DROP 重建是对的。
+- 三个 SQLite 合成一个库：备份 / 销毁 / 清缓存三类操作的正交性就是靠库边界划的，合并是倒退。
