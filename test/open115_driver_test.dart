@@ -29,7 +29,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/models/account_capabilities.dart';
 import 'package:webdav_media_manager/services/cloud_driver.dart';
-import 'package:webdav_media_manager/services/cloud_drivers/115open_driver.dart';
+import 'package:webdav_media_manager/services/cloud_drivers/open115_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/driver_registry.dart';
 
 /// 一次出站请求的完整记录（host / path 都是**折叠前的真实值**）。
@@ -90,7 +90,7 @@ class _RoutingAdapter implements HttpClientAdapter {
       );
     }
 
-    final (status, payload) = handler(hit);
+    final (status, payload) = _handler!(hit);
     return ResponseBody.fromString(payload, status, headers: {
       'content-type': ['application/json'],
     });
@@ -101,7 +101,7 @@ class _RoutingAdapter implements HttpClientAdapter {
 }
 
 /// 当前用例的响应工厂（真实请求 → (状态码, JSON 体)）。
-late (int, String) Function(_Hit hit) handler;
+late (int, String) Function(_Hit hit)? _handler;
 
 /// 成功包裹：`{state: true, code: 0, message: 'ok', data: ...}`。
 String _okJson(Object? data, {int code = 0}) => jsonEncode(<String, dynamic>{
@@ -159,8 +159,8 @@ void main() {
   late List<Map<String, dynamic>> tokenUpdates;
 
   setUp(() {
-    handler = (hit) => (200, _okJson(<String, dynamic>{}));
-    adapter = _RoutingAdapter((hit) => handler(hit));
+    _handler = (hit) => (200, _okJson(<String, dynamic>{}));
+    adapter = _RoutingAdapter((hit) => _handler!(hit));
     dio = Dio(BaseOptions(validateStatus: (_) => true));
     dio.httpClientAdapter = adapter;
     tokenUpdates = <Map<String, dynamic>>[];
@@ -238,7 +238,7 @@ void main() {
 
   group('令牌刷新', () {
     test('打 passportapi 端点、form-urlencoded 带 refresh_token，两个 token 都更新', () async {
-      handler = (hit) => hit.path == '/open/refreshToken'
+      _handler = (hit) => hit.path == '/open/refreshToken'
           ? (200, _refreshJson('at-new', 'rt-new'))
           : (200, _okJson(<String, dynamic>{}));
       final client = Open115Client(
@@ -286,7 +286,7 @@ void main() {
     });
 
     test('刷新失败：错误原文（code + message + 提示）透传', () async {
-      handler = (hit) => (200, _errJson(4010101, 'refresh token 无效'));
+      _handler = (hit) => (200, _errJson(4010101, 'refresh token 无效'));
       final client = Open115Client(
         Open115Addition(refreshToken: 'rt-bad'),
         dio: dio,
@@ -302,7 +302,7 @@ void main() {
     });
 
     test('响应缺 refresh_token（只回 access_token）也算失败', () async {
-      handler = (hit) => (200, jsonEncode(<String, dynamic>{
+      _handler = (hit) => (200, jsonEncode(<String, dynamic>{
             'state': true,
             'code': 0,
             'message': 'ok',
@@ -322,7 +322,7 @@ void main() {
   group('鉴权错误 → 刷新后重试一次', () {
     test('code 99 且 state=false：先刷新，再用新 token 重打一次原请求', () async {
       var listCalls = 0;
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/refreshToken') {
           return (200, _refreshJson('at-fresh', 'rt-fresh'));
         }
@@ -351,7 +351,7 @@ void main() {
 
     test('code 401xxx 同样触发刷新重试', () async {
       var calls = 0;
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/refreshToken') {
           return (200, _refreshJson('at2', 'rt2'));
         }
@@ -369,7 +369,7 @@ void main() {
     });
 
     test('刷新后仍失败 → 抛错且**不再**刷新（防死循环）', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/refreshToken') {
           return (200, _refreshJson('at2', 'rt2'));
         }
@@ -389,7 +389,7 @@ void main() {
     });
 
     test('非鉴权错误（如 430004）不触发刷新', () async {
-      handler = (hit) =>
+      _handler = (hit) =>
           (200, _errJson(open115ErrObjectNotFound, '对象不存在'));
       final client = Open115Client(
         Open115Addition(refreshToken: 'rt-1', accessToken: 'at-1'),
@@ -403,7 +403,7 @@ void main() {
     });
 
     test('鉴权失败时 Authorization 头带 Bearer access_token', () async {
-      handler = (hit) => (200, _okJson({'user_id': 1}));
+      _handler = (hit) => (200, _okJson({'user_id': 1}));
       final client = Open115Client(
         Open115Addition(refreshToken: 'rt-1', accessToken: 'at-abc'),
         dio: dio,
@@ -417,7 +417,7 @@ void main() {
     test('分页翻完：按 count 推进，直到取满', () async {
       const pageSize = 2;
       final offsets = <String>[];
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           final offset = int.parse(hit.uri.queryParameters['offset'] ?? '0');
           offsets.add('$offset');
@@ -443,7 +443,7 @@ void main() {
     });
 
     test('请求参数：cid / limit / offset / asc=1 / o=file_name / showDir=1', () async {
-      handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3')], 1));
+      _handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3')], 1));
       final d = driverWith(pageSize: 200, rootId: '7');
       await d.list('/');
 
@@ -458,7 +458,7 @@ void main() {
     });
 
     test("fc === '0' 是目录（字符串判定），其余是文件", () async {
-      handler = (hit) => (200, _listJson([
+      _handler = (hit) => (200, _listJson([
             _entry(fid: 'd1', fn: 'dir', fc: '0', pc: ''),
             _entry(fid: 'f1', fn: 'file.mp4', fc: '1'),
           ], 2));
@@ -468,7 +468,7 @@ void main() {
     });
 
     test('upt（Unix 秒）→ DateTime 正确；fs → size', () async {
-      handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', upt: 1700000000, fs: 4096)], 1));
+      _handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', upt: 1700000000, fs: 4096)], 1));
       final item = (await driverWith().list('/')).single;
       expect(item.size, 4096);
       expect(item.modified,
@@ -476,20 +476,20 @@ void main() {
     });
 
     test('upt 为 0 / 缺失 → modified 为 null（不造出 1970 年时间）', () async {
-      handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', upt: 0)], 1));
+      _handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', upt: 0)], 1));
       final item = (await driverWith().list('/')).single;
       expect(item.modified, isNull);
     });
 
     test('目录列表条目不带直链（rawUrl 为 null，直链只在 get 里取）', () async {
-      handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3')], 1));
+      _handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3')], 1));
       final item = (await driverWith().list('/')).single;
       expect(item.rawUrl, isNull);
     });
 
     test('返回空页立即结束（不空转）', () async {
       var calls = 0;
-      handler = (hit) {
+      _handler = (hit) {
         calls++;
         return (200, _listJson(<Map<String, dynamic>>[], 0));
       };
@@ -501,7 +501,7 @@ void main() {
 
   group('直链', () {
     test('downurl 的 url.url 落到 rawUrl，rawHeaders 含 115 的 UA', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1));
         }
@@ -528,7 +528,7 @@ void main() {
     });
 
     test('downurl 请求形状：POST + form 带 pick_code + UA 头', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-9')], 1));
         }
@@ -549,7 +549,7 @@ void main() {
     });
 
     test('直链在「文件不存在」时不静默：抛真实原因', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson(<Map<String, dynamic>>[], 0));
         }
@@ -566,7 +566,7 @@ void main() {
     });
 
     test('downurl 返回空 url.url → 抛可读错误，不产出空直链条目', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1));
         }
@@ -588,7 +588,7 @@ void main() {
     });
 
     test('406 配额用尽：原文透传（不吞掉、不返回无直链条目）', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1));
         }
@@ -617,7 +617,7 @@ void main() {
   group('链接缓存（省 115 的 downurl 每日配额）', () {
     test('同一 fid 第二次取直链不再请求 downurl', () async {
       var downCalls = 0;
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1));
         }
@@ -642,7 +642,7 @@ void main() {
 
     test('缓存 key 带 UA：换 UA 会重新取（Go LinkCacheMode=UA 语义）', () async {
       var downCalls = 0;
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/downurl') {
           downCalls++;
           return (200, _okJson({
@@ -672,7 +672,7 @@ void main() {
       expect(Open115Client.defaultLinkTtl, const Duration(minutes: 30));
 
       var downCalls = 0;
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/downurl') {
           downCalls++;
           return (200, _okJson({
@@ -709,7 +709,7 @@ void main() {
     });
 
     test('未过期的缓存不被清掉（cachedLink 命中同一值）', () async {
-      handler = (hit) => (200, _okJson({
+      _handler = (hit) => (200, _okJson({
             'f1': {
               'url': {'url': 'https://cdn.115.com/a.mp3'}
             }
@@ -726,7 +726,7 @@ void main() {
 
   group('错误原文透传', () {
     test('430004 对象不存在：code 与 message 都在异常里', () async {
-      handler = (hit) => (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
+      _handler = (hit) => (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
       final client = Open115Client(
         Open115Addition(refreshToken: 'rt-1', accessToken: 'at-1'),
         dio: dio,
@@ -742,7 +742,7 @@ void main() {
     });
 
     test('上游把错误包在 JSON 里（HTTP 500 + 业务 message）：原文透传', () async {
-      handler = (hit) => (200, _errJson(500, '<html>gateway error</html>'));
+      _handler = (hit) => (200, _errJson(500, '<html>gateway error</html>'));
       final client = Open115Client(
         Open115Addition(refreshToken: 'rt-1', accessToken: 'at-1'),
         dio: dio,
@@ -761,7 +761,7 @@ void main() {
   group('路径解析', () {
     test('folder/get_info 报 430004 → 回退逐层列目录', () async {
       final calls = <String>[];
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           calls.add('get_info');
           return (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
@@ -798,7 +798,7 @@ void main() {
     });
 
     test('folder/get_info 报 990002（参数错误）→ 同样回退', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _errJson(open115ErrInvalidParams, '参数错误'));
         }
@@ -815,7 +815,7 @@ void main() {
 
     test('folder/get_info 成功时一次性解析，不再逐层列目录', () async {
       var listCalls = 0;
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _okJson({'file_id': 'd9', 'file_name': 'Movies'}));
         }
@@ -834,7 +834,7 @@ void main() {
     });
 
     test('其余错误（如 500）不透传成「回退」——原样抛出', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') return (200, _errJson(500, '服务器错误'));
         return (200, _listJson(<Map<String, dynamic>>[], 0));
       };
@@ -849,7 +849,7 @@ void main() {
     });
 
     test('目录不存在 → 可读错误', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
         }
@@ -866,7 +866,7 @@ void main() {
     });
 
     test('resolveFile 列父目录按 fn 匹配（列表接口才给 pick_code）', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _okJson({'file_id': 'd1', 'file_name': 'Movies'}));
         }
@@ -888,7 +888,7 @@ void main() {
     });
 
     test('uri 编码的名字也能匹配（decoded 名兜底）', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
         }
@@ -911,7 +911,7 @@ void main() {
 
     test('路径 → fid 缓存：同一目录第二次解析不再打 get_info', () async {
       var getInfoCalls = 0;
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           getInfoCalls++;
           return (200, _okJson({'file_id': 'd1', 'file_name': 'Movies'}));
@@ -930,7 +930,7 @@ void main() {
 
   group('写操作', () {
     test('mkdir：解析父目录 + POST /open/folder/add {pid, file_name}', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _okJson({'file_id': 'd1', 'file_name': 'Movies'}));
         }
@@ -948,7 +948,7 @@ void main() {
     });
 
     test('rename 同目录：POST /open/ufile/update {file_id, file_name}', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson([_entry(fid: 'f1', fn: 'old.mp3', pc: 'p1')], 1));
         }
@@ -961,7 +961,7 @@ void main() {
     });
 
     test('rename 跨目录：降级为 move + rename', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _okJson({'file_id': 'd2', 'file_name': 'Other'}));
         }
@@ -981,7 +981,7 @@ void main() {
     });
 
     test('remove：POST /open/ufile/delete {file_ids, parent_id}', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pid: 'd1', pc: 'p1')], 1));
         }
@@ -994,7 +994,7 @@ void main() {
     });
 
     test('move：POST /open/ufile/move {file_ids, to_cid}', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _okJson({'file_id': 'd9', 'file_name': 'Dest'}));
         }
@@ -1010,7 +1010,7 @@ void main() {
     });
 
     test('copy：参数顺序是 (目标 pid, 源 fileId) —— 上游顺序，别接反', () async {
-      handler = (hit) {
+      _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           return (200, _okJson({'file_id': 'd9', 'file_name': 'Dest'}));
         }
@@ -1030,7 +1030,7 @@ void main() {
   group('init 与令牌校验', () {
     test('有缓存 access_token：先 user/info 校验；page_size 夹到 1150', () async {
       final seen = <String>[];
-      handler = (hit) {
+      _handler = (hit) {
         seen.add(hit.path);
         return (200, _okJson({'user_id': 1}));
       };
@@ -1044,7 +1044,7 @@ void main() {
 
     test('无 access_token：先刷新再校验', () async {
       final seen = <String>[];
-      handler = (hit) {
+      _handler = (hit) {
         seen.add(hit.uri.host + hit.path);
         if (hit.path == '/open/refreshToken') return (200, _refreshJson('at-new', 'rt-new'));
         return (200, _okJson({'user_id': 1}));
@@ -1055,14 +1055,14 @@ void main() {
     });
 
     test('page_size 越小越界 → 回落到 200（Go Init 语义）', () async {
-      handler = (hit) => (200, _okJson({'user_id': 1}));
+      _handler = (hit) => (200, _okJson({'user_id': 1}));
       final d = driverWith(accessToken: 'at-1', pageSize: 0);
       await d.init();
       expect(d.client.addition.pageSize, 200);
     });
 
     test('令牌无效：错误里带 115 的原文与可读提示', () async {
-      handler = (hit) => (200, _errJson(4010101, 'access_token 无效'));
+      _handler = (hit) => (200, _errJson(4010101, 'access_token 无效'));
       await expectLater(
         driverWith(accessToken: 'at-bad').init(),
         throwsA(isA<CloudDriverException>().having(
