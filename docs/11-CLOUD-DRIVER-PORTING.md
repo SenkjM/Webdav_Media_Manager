@@ -60,6 +60,7 @@
 ## 6. 表单与 spec
 
 - 字段类型：`CloudDriverField`（文本）/ `CloudDriverSelectField` / `CloudDriverAccountField`（引用已有账号）/ `CloudDriverSwitchField`。
+- 字段联动有**两种极性**，别弄反：`visibleWhenSwitch` / `enabledWhenSwitch` = 开关打开才显示 / 可编辑；`disabledWhenSwitch` = 开关打开则**停用**（百度「在本地处理令牌刷新」开启后在线续期地址变灰就是它，99 §7.3.1）。选错极性的症状：该灰的不灰、不该灰的灰了。
 - 「源账号」下拉必须排除包装类账号自身（crypt 不能以 crypt 为源），否则会自引用。
 - 实现坑：SelectField / SwitchField 的值必须真正写进 `cfg`（漏了会表现为「开关保存后又自己关掉」）；文本字段的 controller 要由表单统一创建复用；下拉加 `isExpanded`，否则长标签右溢出。
 - 校验失败必须有**看得见的提示**：弹窗内联 + 最顶层横幅双通道；驱动的真连验证（`spec.verify`）抛什么异常都要转成人话，不能让异常冒泡后按钮默默恢复。

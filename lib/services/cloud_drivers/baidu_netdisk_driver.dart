@@ -100,17 +100,18 @@ class BaiduClient {
   static const retryCount = 3;
   static const retryWaitMs = 1000;
 
-  BaiduClient(this.addition, {this.onTokenUpdate})
+  BaiduClient(this.addition, {this.onTokenUpdate, Dio? dio})
       : accessToken = addition.accessToken,
-        _dio = Dio(
-          BaseOptions(
-            connectTimeout: const Duration(seconds: 15),
-            receiveTimeout: const Duration(seconds: 60),
-            headers: {'User-Agent': apiUA, 'Accept': 'application/json'},
-            // 非 2xx 也回来走 errno / 原文解析：「原样传递报错」需要读到 body。
-            validateStatus: (_) => true,
-          ),
-        );
+        _dio = dio ??
+            Dio(
+              BaseOptions(
+                connectTimeout: const Duration(seconds: 15),
+                receiveTimeout: const Duration(seconds: 60),
+                headers: {'User-Agent': apiUA, 'Accept': 'application/json'},
+                // 非 2xx 也回来走 errno / 原文解析：「原样传递报错」需要读到 body。
+                validateStatus: (_) => true,
+              ),
+            );
 
   BaiduAddition addition;
   String accessToken;
@@ -563,13 +564,13 @@ class BaiduNetdiskSpec extends CloudDriverSpec {
           label: '在线续期地址',
           hint: '默认用 OpenList 维护的公共服务',
           defaultValue: BaiduClient.defaultRenewApi,
-          enabledWhenSwitch: 'local_refresh',
-          disabledHint: '已切到本地刷新，该地址停用',
+          disabledWhenSwitch: 'local_refresh',
+          disabledHint: '已开启本地刷新（online api 停用），关闭开关后可编辑',
         ),
         CloudDriverSwitchField(
           key: 'local_refresh',
           label: '在本地处理令牌刷新',
-          subtitle: '开启后用自建百度应用刷新（需填 Client ID / Secret），在线续期停用',
+          subtitle: '关闭＝在线续期地址刷新；开启＝用自建百度应用刷新（需 Client ID / Secret），在线续期停用',
         ),
         CloudDriverField(
           key: 'client_id',

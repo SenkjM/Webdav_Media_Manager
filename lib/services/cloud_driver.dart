@@ -120,6 +120,7 @@ class CloudDriverField extends CloudDriverFormItem {
     this.defaultValue = '',
     this.visibleWhenSwitch,
     this.enabledWhenSwitch,
+    this.disabledWhenSwitch,
     this.disabledHint,
   });
 
@@ -144,10 +145,17 @@ class CloudDriverField extends CloudDriverFormItem {
   /// 依赖开关：开关打开才**显示**该字段（如本地刷新的 Client ID / Secret）。
   final String? visibleWhenSwitch;
 
-  /// 依赖开关：开关打开才**可编辑**（如本地刷新时的在线续期地址）。
+  /// 依赖开关：开关打开才**可编辑**。
   final String? enabledWhenSwitch;
 
-  /// 因 [enabledWhenSwitch] 停用时替代 [hint] 的提示。
+  /// 依赖开关：开关打开则**停用**（如百度「在本地处理令牌刷新」开启后的
+  /// 在线续期地址——99 §7.3.1：一旦打开就不使用 online api 逻辑）。
+  ///
+  /// 与 [enabledWhenSwitch] 极性相反：那个是「开了才可用」，这个是
+  /// 「开了就停用」。两个字段互斥声明，同时声明视为未声明。
+  final String? disabledWhenSwitch;
+
+  /// 因 [enabledWhenSwitch] / [disabledWhenSwitch] 停用时替代 [hint] 的提示。
   final String? disabledHint;
 }
 
@@ -247,6 +255,25 @@ abstract class CloudDriverSpec {
 
   /// 动态表单项（顺序即界面顺序）。远程路径是通用字段，不在这里。
   List<CloudDriverFormItem> get form;
+
+  /// 解析某个开关字段的当前值，供渲染与保存共用（单一事实来源）。
+  ///
+  /// 优先级：[values] 里的实时值 → 该开关声明的 [CloudDriverSwitchField.defaultValue]
+  /// → false。中间这一步不能省：表单控件重建时 [values] 可能缺键，此时若写死
+  /// false，「默认开」的开关就会被当成关，联动字段被错误隐藏 / 停用，
+  /// 且保存下来的值与界面显示相反（开关联动回退的根因）。
+  ///
+  /// [key] 不是本 spec 声明的开关时返回 false。
+  bool switchValue(String key, Map<String, bool> values) {
+    final live = values[key];
+    if (live != null) return live;
+    for (final item in form) {
+      if (item is CloudDriverSwitchField && item.key == key) {
+        return item.defaultValue;
+      }
+    }
+    return false;
+  }
 
   /// 用表单值构造驱动实例。[onTokenUpdate] 收令牌轮换 patch（键值对），
   /// 兼容层负责持久化；[env] 供 crypt 等需要源解析的驱动使用。
