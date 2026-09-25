@@ -73,28 +73,51 @@ class CloudDriveService extends ChangeNotifier {
       AccountCaps.has(capabilitiesFor(accountId), cap);
 
   /// 启动 / 账号变更时登记云盘账号（AppState.registerAllAccounts 调用）。
-  /// 总是按最新配置重建驱动实例——access_token 缓存存在配置里，重建不丢登录态。
+  ///
+  /// **配置没变就不重建驱动**：启动、每次进出账号页 / 网络库 / 同步页都会调到
+  /// 这里，而重建会丢掉驱动内部的 path→id 缓存、直链解析缓存与连接池（表现为
+  /// 浏览深层目录时重复解析、播放中途重新解析直链）。判据是整批指纹（见
+  /// [cloudAccountSignature]）：账号集合、账号侧字段或任一账号的驱动配置变了，
+  /// 就**整批**重建——这样包装驱动（crypt）缓存的源视图也绝不会指向被换掉的
+  /// 旧驱动实例。
+  ///
   /// 配置缺失或类型未接入时跳过该账号（启动不崩），表单保存后会重新注册。
   Future<void> registerAccounts(Iterable<WebDavAccount> accounts) async {
-    final wanted = <String>{};
-    final replaced = <CloudDriver>[];
+    final wanted = <WebDavAccount>[];
+    final ids = <String>{};
+    final cfgs = <String, Map<String, dynamic>?>{};
+    final fresh = <String, String>{};
     for (final a in accounts) {
       if (!isCloudType(a.providerType)) continue;
-      wanted.add(a.id);
+      wanted.add(a);
+      ids.add(a.id);
+      final cfg = await _accounts.loadDriverConfig(a.id);
+      cfgs[a.id] = cfg;
+      fresh[a.id] = cloudAccountSignature(a, cfg);
+    }
+    final batch = cloudRegistrationSignature(fresh);
+    if (_registrationComplete && batch == _registeredBatch) {
+      // 账号集合与配置都没变：保住每个驱动实例（连同它的缓存 / 连接池）。
+      // 什么都不用通知——没有变化就没有需要重绘的东西。
+      return;
+    }
+    final replaced = <CloudDriver>[];
+    var complete = true;
+    for (final a in wanted) {
       try {
-        final cfg = await _accounts.loadDriverConfig(a.id);
         final old = _drivers[a.id];
-        final driver = _createDriver(a, cfg);
+        final driver = _createDriver(a, cfgs[a.id]);
         if (old != null && !identical(old, driver)) replaced.add(old);
         _drivers[a.id] = driver;
       } on CloudDriverException catch (e) {
+        complete = false;
         final old = _drivers.remove(a.id);
         if (old != null) replaced.add(old);
         if (kDebugMode) debugPrint('[cloud] 跳过账号 ${a.name}：$e');
       }
     }
     _drivers.removeWhere((id, driver) {
-      if (wanted.contains(id)) return false;
+      if (ids.contains(id)) return false;
       replaced.add(driver);
       return true;
     });
@@ -102,8 +125,20 @@ class CloudDriveService extends ChangeNotifier {
     for (final d in replaced) {
       unawaited(d.dispose());
     }
+    _accountSignatures = fresh;
+    _registeredBatch = batch;
+    _registrationComplete = complete;
     notifyListeners();
   }
+
+  /// accountId → 该账号上次登记时的指纹（[cloudAccountSignature]）。
+  Map<String, String> _accountSignatures = <String, String>{};
+
+  /// 上次登记时的整批指纹；[registerAccounts] 用它判断「要不要重建」。
+  String? _registeredBatch;
+
+  /// 上次登记是否**每个**账号都成功建了驱动。有失败就每次都重建（等于重试）。
+  bool _registrationComplete = false;
 
   /// 账号列表 / 下拉里显示的类型名。
   ///
@@ -192,11 +227,19 @@ class CloudDriveService extends ChangeNotifier {
   );
 
   /// 令牌轮换持久化（驱动回调）：patch 原样合并进存储的配置。
+  ///
+  /// 驱动自己写回的令牌缓存**不算**「用户改了配置」：同步更新该账号的指纹，
+  /// 下一次 [registerAccounts] 才不会因为一次令牌轮换白重建一遍驱动（那会丢掉
+  /// 驱动的内部缓存与连接池）。指纹同步后与「重新从存储读一遍配置」逐字节一致。
   Future<void> _persistTokens(String accountId, Map<String, dynamic> patch) async {
     final cfg = await _accounts.loadDriverConfig(accountId) ??
         <String, dynamic>{};
     cfg.addAll(patch);
     await _accounts.saveDriverConfig(accountId, cfg);
+    final account = _accounts.accountById(accountId);
+    if (account == null || !_accountSignatures.containsKey(accountId)) return;
+    _accountSignatures[accountId] = cloudAccountSignature(account, cfg);
+    _registeredBatch = cloudRegistrationSignature(_accountSignatures);
   }
 
   /// 表单保存前的真连校验（99 §7.3.1：能换到 access_token 才保存）。
@@ -514,4 +557,46 @@ class CloudDriveService extends ChangeNotifier {
       category: f.isDir ? FileCategory.other : types.categoryFor(f.name),
     );
   }
+}
+
+/// 单个账号「驱动看到的配置」指纹：账号侧字段（类型 / 名字 / 浏览根）+ 驱动
+/// 配置全量（键排序，与写入顺序无关）。
+///
+/// 用途是判断「这次登记与上次有没有区别」（[CloudDriveService.registerAccounts]）
+/// ——没区别就不重建驱动，保住驱动内部的 path→id 缓存、直链解析缓存与连接池。
+/// 因此这里**不能**漏字段：漏掉的字段会让用户名下的改动「看起来没变」，
+/// 驱动继续用旧配置（例如改了源账号却还连着旧源）。纯函数，便于单测。
+String cloudAccountSignature(WebDavAccount a, Map<String, dynamic>? cfg) {
+  final b = StringBuffer()
+    ..write(a.providerType)
+    ..write('\u0000')
+    ..write(a.name)
+    ..write('\u0000')
+    ..write(a.remotePath)
+    ..write('\u0001');
+  if (cfg != null) {
+    final keys = cfg.keys.toList()..sort();
+    for (final k in keys) {
+      b
+        ..write(k)
+        ..write('\u0002')
+        ..write(cfg[k])
+        ..write('\u0003');
+    }
+  }
+  return b.toString();
+}
+
+/// 整批指纹：账号 id + 各自指纹，**按 id 排序**（与账号遍历顺序无关）。
+String cloudRegistrationSignature(Map<String, String> signatures) {
+  final ids = signatures.keys.toList()..sort();
+  final b = StringBuffer();
+  for (final id in ids) {
+    b
+      ..write(id)
+      ..write('\u0004')
+      ..write(signatures[id])
+      ..write('\u0005');
+  }
+  return b.toString();
 }
