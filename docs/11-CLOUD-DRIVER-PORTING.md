@@ -97,6 +97,9 @@
 |---|---|---|---|
 | `baidu_netdisk` | `refresh_token`、`client_secret`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `api_url_address`、`local_refresh`、`client_id` | `access_token`（运行时令牌缓存） |
 | `123_open` | `refresh_token`、`client_secret`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `api_url_address`、`local_refresh`、`client_id`、`root_folder_id` | `access_token`（运行时令牌缓存） |
+| `115open` | `refresh_token`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `root_id`、`page_size`、`limit_rate` | `access_token`（运行时令牌缓存） |
+| `aliyundrive_open` | `refresh_token`、`client_secret`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `drive_type`、`api_url_address`、`local_refresh`、`client_id`、`remove_way`、`root_folder_id`、`drive_id` | `access_token`（运行时令牌缓存）、`drive_id`（表单通用迁移写入的解析结果快照，非凭证） |
+| `terabox` | `cookie`（表单 obscure） | `root_folder_path` | 无（TeraBox 不轮换 Cookie，没有 onTokenUpdate 写回） |
 | `netease_music` | `cookie`（表单 obscure） | `song_limit` | 无（网易不轮换 Cookie，没有 onTokenUpdate 写回） |
 | `crypt` | `password`、`salt`（表单 obscure） | `source_account_id`、`source_dir`、`filename_encoding`、`encrypted_suffix`、`filename_encryption`、`directory_name_encryption` | `source_account_id_name`（表单通用写入的源账号名快照，非凭证；**仅作 id 解析失败后的兜底**——主绑定是 `source_account_id`，语义见 §4） |
 

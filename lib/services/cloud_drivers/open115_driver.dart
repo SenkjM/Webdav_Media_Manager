@@ -1,4 +1,4 @@
-﻿/// 115 网盘开放平台驱动（OpenList `115open` 移植）。
+/// 115 网盘开放平台驱动（OpenList `115open` 移植）。
 ///
 /// 移植自 `localdev/OpenList-Worker/src/backend/drivers/115open`
 /// （driver.ts + util.ts + types.ts，移植底稿）与
@@ -981,6 +981,12 @@ class Open115Spec extends CloudDriverSpec {
       AccountCaps.move |
       AccountCaps.copy |
       AccountCaps.delete;
+
+  /// 运行时令牌缓存：`access_token` 经 `onTokenUpdate` 写回驱动配置，
+  /// 不在表单里；不声明就会明文进凭证库与备份（[11 §6.2]）。refresh_token
+  /// 同样会被轮换写回，但它已在表单里 `obscure`，无需重复声明。
+  @override
+  Set<String> get runtimeSecretKeys => const {'access_token'};
 
   @override
   List<CloudDriverFormItem> get form => const [

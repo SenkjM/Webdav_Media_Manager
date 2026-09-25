@@ -92,6 +92,9 @@ class AliyundriveOpenAddition {
 
   /// 显式 drive_id；非空时**直接使用**，不再调 `/user/getDriveInfo`
   /// （对齐 worker `resolveDriveId` 的首个分支）。
+  ///
+  /// 隐式键（不在表单里）：表单通用迁移会把它当解析结果快照写入配置。
+  /// **非凭证、明文**，不进 `runtimeSecretKeys`（11 §6.2）。
   String driveId;
 
   /// 浏览根目录 id（上游 `root_folder_id`，Go `driver.Config.DefaultRoot`）。
@@ -1003,6 +1006,12 @@ class AliyundriveOpenSpec extends CloudDriverSpec {
       AccountCaps.move |
       AccountCaps.copy |
       AccountCaps.delete;
+
+  /// 运行时令牌缓存：`access_token` 经 `onTokenUpdate` 写回驱动配置，
+  /// 不在表单里；不声明就会明文进凭证库与备份（[11 §6.2]）。refresh_token
+  /// 同样会被轮换写回，但它已在表单里 `obscure`，无需重复声明。
+  @override
+  Set<String> get runtimeSecretKeys => const {'access_token'};
 
   @override
   List<CloudDriverFormItem> get form => const [

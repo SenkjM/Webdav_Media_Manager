@@ -34,6 +34,33 @@ void main() {
       expect(keys, isNot(contains('source_account_id')));
     });
 
+    test('115open：refresh_token（表单）+ access_token（运行时令牌缓存）', () {
+      final spec = cloudDriverSpec('115open')!;
+      expect(spec.secretFieldKeys, containsAll(['refresh_token', 'access_token']));
+      expect(spec.runtimeSecretKeys, {'access_token'});
+      expect(spec.secretFieldKeys, isNot(contains('root_id')));
+      expect(spec.secretFieldKeys, isNot(contains('page_size')));
+      expect(spec.secretFieldKeys, isNot(contains('limit_rate')));
+    });
+
+    test('aliyundrive_open：refresh_token / client_secret（表单）+ access_token（运行时）', () {
+      final spec = cloudDriverSpec('aliyundrive_open')!;
+      expect(
+        spec.secretFieldKeys,
+        containsAll(['refresh_token', 'client_secret', 'access_token']),
+      );
+      expect(spec.runtimeSecretKeys, {'access_token'});
+      expect(spec.secretFieldKeys, isNot(contains('client_id')));
+      expect(spec.secretFieldKeys, isNot(contains('drive_id')));
+      expect(spec.secretFieldKeys, isNot(contains('root_folder_id')));
+    });
+
+    test('terabox：仅 cookie（无令牌轮换 → runtimeSecretKeys 为空）', () {
+      final spec = cloudDriverSpec('terabox')!;
+      expect(spec.runtimeSecretKeys, isEmpty);
+      expect(spec.secretFieldKeys, ['cookie']);
+    });
+
     test('加密范围只来自 spec 声明：凭证库/备份不需要为每个驱动登记', () {
       // 结构性保证：所有已注册驱动的加密范围都能从 spec 推导出来（非空
       // 集至少含一个键——若某天出现零键驱动，说明它没有凭证也没有令牌，
@@ -64,6 +91,27 @@ void main() {
         '123_open': {
           'refresh_token', 'client_secret', 'access_token', // 密文
           'api_url_address', 'client_id', 'root_folder_id', // 非密文
+        },
+        // 115open：5 键 = 表单 4（refresh_token/root_id/page_size/limit_rate）
+        // + 隐式 access_token（运行时令牌缓存，密文）；refresh_token 表单密文。
+        '115open': {
+          'refresh_token', 'access_token', // 密文
+          'root_id', 'page_size', 'limit_rate', // 非密文，表单声明
+        },
+        // aliyundrive_open：10 键 = 表单 8（refresh_token/drive_type/
+        // api_url_address/local_refresh/client_id/client_secret/remove_way/
+        // root_folder_id）+ 隐式 access_token（运行时令牌缓存，密文）
+        // + 隐式 drive_id（表单通用迁移写入的解析结果快照，非凭证，明文）。
+        'aliyundrive_open': {
+          'refresh_token', 'client_secret', 'access_token', // 密文
+          'drive_type', 'api_url_address', 'local_refresh', 'client_id',
+          'remove_way', 'root_folder_id', // 非密文，表单声明
+          'drive_id', // 非密文，隐式（解析结果快照）
+        },
+        // terabox：2 键全表单；cookie 密文；无令牌轮换。
+        'terabox': {
+          'cookie', // 密文
+          'root_folder_path', // 非密文，表单声明
         },
         // netease：2 键全表单；cookie 密文；无令牌轮换。
         'netease_music': {'cookie'},
