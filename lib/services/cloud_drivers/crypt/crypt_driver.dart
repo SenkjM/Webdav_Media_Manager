@@ -22,12 +22,17 @@ class CryptDriver extends CloudDriver {
       encryptedSuffix: (config['encrypted_suffix'] as String?) ?? kDefaultEncryptedSuffix,
     );
     _sourceAccountId = (config['source_account_id'] as String?) ?? '';
+    _sourceAccountName = (config['source_account_id_name'] as String?) ?? '';
     _sourceDir = (config['source_dir'] as String?) ?? '/';
   }
 
   final CloudDriverEnv? _env;
   late RcloneCipher _cipher;
   late String _sourceAccountId;
+
+  /// 保存时的源账号名快照：源被删后重添**同名**账号可按名恢复
+  /// （真机反馈：报错显示一长串源 id，重加源也接不上）。
+  late String _sourceAccountName;
   late String _sourceDir;
   CloudSource? _source;
 
@@ -41,9 +46,16 @@ class CryptDriver extends CloudDriver {
   CloudSource _requireSource() {
     final cached = _source;
     if (cached != null) return cached;
-    final s = _env?.resolveSource(_sourceAccountId);
+    var s = _env?.resolveSource(_sourceAccountId);
+    if (s == null && _sourceAccountName.isNotEmpty) {
+      // id 找不到（源被删）→ 按名字找回：重添同名账号即恢复。
+      s = _env?.resolveSourceByName?.call(_sourceAccountName);
+    }
     if (s == null) {
-      throw CloudDriverException('crypt 源账号不存在或已删除（源 id：$_sourceAccountId）');
+      final whom = _sourceAccountName.isNotEmpty
+          ? '「$_sourceAccountName」'
+          : '（源 id：$_sourceAccountId）';
+      throw CloudDriverException('crypt 源账号不存在或已删除$whom；重新添加同名源账号即可恢复');
     }
     _source = s;
     return s;

@@ -1,5 +1,6 @@
-import '../utils/app_snack.dart';
+import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -17,6 +18,7 @@ import '../services/cloud_drive_service.dart';
 import '../services/download_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
+import '../utils/app_snack.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
@@ -53,6 +55,22 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 动画，旧路径的迟到响应绝不能再写回来（真机反馈的返回后打开错误目录）。
   int _loadSeq = 0;
 
+  /// [_ensureAndLoad] 防重入：它 await 期间 build 守卫可能每帧又满足一次
+  /// （crypt 源被删时 registerAccounts 抛错被跳过、notifyListeners 连环触发），
+  /// 不加标志会每帧并发一份全量重建——真机表现为「无限重试拖慢运行」。
+  bool _ensureInFlight = false;
+
+  /// 连续加载失败次数。自动重试（账号切换守卫 / 网络恢复）超过 [_kMaxLoadFailures]
+  /// 次后停手，停在错误界面等用户手动点「重试」。
+  /// 手动重试、成功加载都会清零。
+  int _loadFailures = 0;
+
+  static const int _kMaxLoadFailures = 3;
+
+  /// 网络恢复事件：失败停在错误界面时自动重试一次（复用下载队列的
+  /// connectivity_plus 模式；仅在线时唤醒，离线事件忽略）。
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
   /// 多选状态。选中数由 [SelectionController] 统一判定「是不是全选」，
   /// 全选按钮因此会在计数打满时变成叉号，而不必记住用户按过它。
   SelectionController _selection = const SelectionController();
@@ -88,16 +106,40 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
     // Take the system back key for directory navigation / multi-select.
     BackHandlerRegistry.register(_handleSystemBack, tab: 2);
+    // 网络恢复时若停在错误界面（自动重试已耗尽），补一次自动重试。
+    _connectivitySub ??=
+        Connectivity().onConnectivityChanged.listen((results) {
+          final online = results.any((r) => r != ConnectivityResult.none);
+          if (!online || !mounted) return;
+          if (_error != null && _loadFailures >= _kMaxLoadFailures) {
+            _loadFailures = 0; // 网络变化 = 新的一轮（用户要求网络检测可用于此）。
+            _ensureAndLoad();
+          }
+        });
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureAndLoad());
   }
 
   @override
   void dispose() {
     BackHandlerRegistry.unregister(_handleSystemBack);
+    _connectivitySub?.cancel();
+    _connectivitySub = null;
     super.dispose();
   }
 
   Future<void> _ensureAndLoad() async {
+    // 防重入：await 期间 build 守卫可能再次调度本函数（每帧一次），
+    // 并发多份 registerAllAccounts 会拖慢整个应用（真机反馈）。
+    if (_ensureInFlight) return;
+    _ensureInFlight = true;
+    try {
+      await _ensureAndLoadInner();
+    } finally {
+      _ensureInFlight = false;
+    }
+  }
+
+  Future<void> _ensureAndLoadInner() async {
     final app = context.read<AppState>();
     final accounts = context.read<AccountsService>();
     if (!accounts.hasAccounts) {
@@ -163,12 +205,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         _items = items;
         _browsedAccountId = accountId;
         _loading = false;
+        _loadFailures = 0; // 成功即清零。
         _syncSelectionTotal();
       });
     } catch (e) {
       if (!mounted || seq != _loadSeq) return; // 过期响应：丢弃错误。
+      _loadFailures++;
+      final giveUp = _loadFailures >= _kMaxLoadFailures;
       setState(() {
-        _error = e.toString();
+        _error = giveUp
+            ? '${e.toString()}\n\n已自动重试 $_loadFailures 次仍失败，等待手动重试。'
+            : e.toString();
         _loading = false;
         _items = [];
       });
@@ -946,7 +993,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
     // Reload when the active account changed from the one these items came from
     // (e.g. switched in the accounts screen, or from the drawer).
-    if (active != null && _browsedAccountId != active.id && !_loading) {
+    // 自动重试有上限：连续失败耗尽后停在错误界面，等用户手动「重试」
+    // 或网络恢复事件（真机反馈：crypt 源被删后无限重试拖慢运行）。
+    if (active != null &&
+        _browsedAccountId != active.id &&
+        !_loading &&
+        _loadFailures < _kMaxLoadFailures) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _stack
@@ -1068,7 +1120,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
               const SizedBox(height: 12),
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              FilledButton(onPressed: _ensureAndLoad, child: const Text('重试')),
+              FilledButton(
+                onPressed: () {
+                  _loadFailures = 0; // 手动重试 = 用户意志，重置上限。
+                  _ensureAndLoad();
+                },
+                child: const Text('重试'),
+              ),
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () async {

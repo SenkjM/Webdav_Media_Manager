@@ -298,6 +298,9 @@ class AccountsScreen extends StatelessWidget {
               return false;
             }
             cfg[item.key] = v;
+            // 源账号名快照：源被删后重添同名账号可按名恢复（crypt 场景）。
+            cfg['${item.key}_name'] =
+                accounts.accountById(v)?.name ?? '';
           } else if (item is CloudDriverSwitchField) {
             // 与联动渲染同源：缺键时回落到 spec 默认值，保证「界面看到的
             // 状态」与「保存下来的值」永远一致。

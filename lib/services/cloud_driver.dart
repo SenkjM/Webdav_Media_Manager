@@ -234,10 +234,17 @@ abstract class CloudSource {
 
 /// 兼容层注入给驱动的运行环境。
 class CloudDriverEnv {
-  const CloudDriverEnv({required this.resolveSource});
+  const CloudDriverEnv({
+    required this.resolveSource,
+    this.resolveSourceByName,
+  });
 
   /// 按账号 id 解析内容源（WebDAV 或云盘适配器）；源不存在返回 null。
   final CloudSource? Function(String accountId) resolveSource;
+
+  /// 按**账号名**解析内容源（crypt 源被删后重添同名账号可恢复，真机反馈）。
+  /// 精确匹配账号显示名，找不到返回 null；未注入时只认 id。
+  final CloudSource? Function(String accountName)? resolveSourceByName;
 }
 
 /// 驱动注册描述符：驱动的全部「对外知识」收在这里。
