@@ -15,6 +15,18 @@ import '../theme/app_theme.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/webdav_error_dialog.dart';
 
+/// 解析一个「开关字段」的当前值，供可见性 / 可编辑性联动使用。
+///
+/// 委派给 [CloudDriverSpec.switchValue]：渲染、联动、保存三条路径共用同一
+/// 份取值规则（实时值 → spec 默认值 → false），避免任何一处写死 false 导致
+/// 「默认开」的开关被误判为关。spec 为空（未知类型）时按 false 处理。
+bool _switchValue(
+  CloudDriverSpec? spec,
+  String key,
+  Map<String, bool> values,
+) =>
+    spec?.switchValue(key, values) ?? false;
+
 class AccountsScreen extends StatelessWidget {
   const AccountsScreen({super.key});
 
@@ -287,7 +299,9 @@ class AccountsScreen extends StatelessWidget {
             }
             cfg[item.key] = v;
           } else if (item is CloudDriverSwitchField) {
-            cfg[item.key] = switchValues[item.key] ?? item.defaultValue;
+            // 与联动渲染同源：缺键时回落到 spec 默认值，保证「界面看到的
+            // 状态」与「保存下来的值」永远一致。
+            cfg[item.key] = _switchValue(s, item.key, switchValues);
           }
         }
         // 云盘：能换到 access_token 才保存；失败原样抛给用户（99 §7.3.1）。
@@ -463,15 +477,33 @@ class AccountsScreen extends StatelessWidget {
                             Builder(
                               builder: (_) {
                                 final f = item;
-                                final enabled = f.enabledWhenSwitch == null ||
-                                    (switchValues[f.enabledWhenSwitch] ??
-                                        false);
+                                // 依赖开关的取值统一走 _switchValue：(a) 缺键时
+                                // 回落到该开关自己的 defaultValue，而不是写死
+                                // false——否则「默认开」的开关会把它联动的字段
+                                // 误判为隐藏 / 停用；(b) 与保存路径同源。
+                                //
+                                // 双极性：enabledWhenSwitch = 开了才可用；
+                                // disabledWhenSwitch = 开了就停用（百度本地刷新
+                                // 开关打开后在线续期地址变灰，99 §7.3.1）。
+                                // 两者同声明时视为无依赖（防误用）。
+                                final dependsEnabled =
+                                    f.enabledWhenSwitch != null &&
+                                        f.disabledWhenSwitch == null;
+                                final dependsDisabled =
+                                    f.disabledWhenSwitch != null &&
+                                        f.enabledWhenSwitch == null;
+                                final enabled = !dependsDisabled
+                                    ? (!dependsEnabled ||
+                                        _switchValue(spec,
+                                            f.enabledWhenSwitch!, switchValues))
+                                    : !_switchValue(spec,
+                                        f.disabledWhenSwitch!, switchValues);
                                 final visible = f.visibleWhenSwitch == null ||
-                                    (switchValues[f.visibleWhenSwitch] ??
-                                        false);
+                                    _switchValue(spec, f.visibleWhenSwitch!,
+                                        switchValues);
                                 if (!visible) return const SizedBox.shrink();
-                                final isOff =
-                                    f.enabledWhenSwitch != null && !enabled;
+                                final isOff = (dependsEnabled || dependsDisabled) &&
+                                    !enabled;
                                 return TextField(
                                   controller: fieldCtrls[f.key],
                                   obscureText: fieldObscure[f.key] ?? false,
@@ -511,7 +543,10 @@ class AccountsScreen extends StatelessWidget {
                                   style: const TextStyle(fontSize: 14)),
                               subtitle: Text(item.subtitle,
                                   style: const TextStyle(fontSize: 11)),
-                              value: switchValues[item.key] ?? false,
+                              // 缺省必须回落到 spec 的 defaultValue，与
+                              // ensureSpecControls 的初始化保持一致；写死
+                              // false 会让「默认开」的开关显示与保存值相反。
+                              value: _switchValue(spec, item.key, switchValues),
                               onChanged: (v) =>
                                   setLocal(() => switchValues[item.key] = v),
                             )

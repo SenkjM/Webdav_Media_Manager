@@ -285,8 +285,9 @@
 
 ### 7.3.1 baidu_netdisk 表单与驱动（已实现，待真机验收）
 
-- **动态区顺序**：refresh_token（必填，粘贴，可切换明文）→ 远程路径（默认 `/`，空置视为 `/`）→ 在线续期地址（默认 OpenList 公共服务 `api.oplist.org/baiduyun/renewapi`，常驻可编辑）→ 开关「在本地处理令牌刷新」→ Client ID / Secret（仅开关开启时显示）。
+- **动态区顺序**：refresh_token（必填，粘贴，可切换明文）→ 远程路径（默认 `/`，空置视为 `/`）→ 在线续期地址（默认 OpenList 公共服务 `api.oplist.org/baiduyun/renewapi`；开关**关闭**时可编辑，开关**打开**时变灰停用）→ 开关「在本地处理令牌刷新」→ Client ID / Secret（仅开关开启时显示）。
 - **开关语义（用户原话）**：「加一个开关：在本地处理令牌刷新，开启后显示Client ID和 Client Secret同时online_api变灰不可用，后端时也需要检查该开关，一旦打开就不使用online api逻辑而使用自建百度应用的刷新逻辑。」实现为 `BaiduAddition.localRefresh`，`BaiduClient.refreshToken()` 每次都检查。
+  - **本轮修复（UI 联动极性反了，真机反馈）**：在线续期地址原声明 `enabledWhenSwitch: local_refresh`（开了才可用），导致开关**关闭**（走 online api、需要填地址）时地址反而变灰、开关**打开**（本地刷新、地址无用）时反而可编辑——与语义正好相反。新增 `CloudDriverField.disabledWhenSwitch`（开关打开则停用，与 `enabledWhenSwitch` 极性相反），百度地址字段改用它；后端分支本就正确未动。回归：`test/driver_switch_value_test.dart`（联动极性）+ `test/baidu_refresh_switch_test.dart`（后端按开关分流，在线续期 / OAuth 两端点互斥）。
 - **保存语义（用户原话）**：「能获取到access_token即保存，不能获取到的话则原样传递报错。」保存前 `verifyNewAccount` 真连一次（换 token + uinfo 校验），失败把 `CloudDriverException` 原文弹给用户、不落库、表单内容保留。
 - **存储映射**：refresh_token / client_id / client_secret / api_url_address / local_refresh / access_token 缓存 → `AccountsService.saveDriverConfig`（secure storage JSON，按账号隔离，删号即清）；remote_path / provider_type → accounts 表。
 - **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
