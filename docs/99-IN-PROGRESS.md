@@ -8,7 +8,7 @@
 - 自动化的做完只是门槛：`flutter analyze` 干净 + `flutter test` 全过，不代表真机行为对。所以代码上了 `main`、真机还没碰过的，仍留在这里。
 - 开发完成后：删掉这里的条目，把语义按完整文档的写法补进对应功能块，并去掉占位。
 
-## 1. 音乐流式播放（初步实现，优化待定）
+## 1. 音乐流式播放（优化方向已定，未开工）
 
 **状态**：已初步实现并推 `main`（实验开关控制，默认关闭）。语义写在 [05 §9](05-AUDIO-PLAYBACK.md) 与 [06](06-VIDEO-PLAYBACK.md) 的对比表里。**真机没有验收，优化方案也还没有**。
 
@@ -24,33 +24,13 @@
 - **后缀改过的音频会走错页**：把 `.m4a` 改成 `.mp4` 的音频，进的是视频播放页而不是音乐流式页——路由按后缀判定，不看实际内容（**用户已报，暂不处理**）。
 - 流式**不得**顺手入队下载（[09 §4](09-MISC.md) 陷阱表：不要在播放路径上偷偷入队下载）。
 
-### 1.1 流式页的控制与设置（已实现，待真机验收）
-
-**状态**：播放模式轮换、播放列表面板（含搜索）、音频/视频各自的「搜索子目录」开关、新的「音频流式设置」子页都已落地并推 `main`。语义写进 [05 §9](05-AUDIO-PLAYBACK.md) 与 [06 §3](06-VIDEO-PLAYBACK.md)。
-
-**真机待验**：
-
-- 一首放完真的接下一首（此前从来没生效：连播的监听根本没写，见下）；顺序到队尾停住、列表循环回第一首、单曲循环从头再来，三种都对。
-- 播放模式按一下换一个，图标与提示跟着变，**退出再进页面还是刚才那个模式**。
-- 播放列表：面板里能跳转；搜索框中文与英文都能搜；开了子目录后同名曲靠行内的相对目录区分。
-- 「设置 → 音频流式 → 搜索子目录」关掉后，列表只剩当前这一层；「视频播放设置 → 搜索子目录」同理。两处互不影响。
-- 流式开关从「文件后缀管理」搬走后，旧用户的状态要能接上（旧键 `experimental_music_streaming` 只读一次做迁移）。
-
-**本轮查证到、值得记住的三件事**：
-
-- 「自动连播」此前是个**空的开关**：`VideoQueueController.autoAdvance` 只在两处被赋值，全库没有读取方；真正的推进是视频页自己监听 `player.stream.completed`，而音乐页**没有**这路订阅。文档里那句「放完自动下一首」是照视频抄过来的。
-- 流式页与视频页**共用同一个播放器实例**（`music_audio_handler.videoPlayer`）。所以播放模式必须两边都设：音乐页设了 `loop` / `single` 之后，视频页打开时要重置成 `none`，否则视频也跟着循环。
-- 到队尾**不能**靠播放器的 `PlaylistMode` 兜底：流式页在播放器眼里始终只有一条媒体（切歌是 `_open` 重新开流），`loop` 只会退化成重播同一首。
-
-**还没做的**：控制条挪走快退 / 快进后，这两个动作改到进度条下方的一行小按钮（保留了 15 秒步长）；没有做手势。
-
-### 1.2 流式传输音乐界面的 UI 优化（未开工，方向已定）
+### 1.1 流式传输音乐界面的 UI 优化（未开工，方向已定）
 
 **用户原话**：「新加一条流式传输音乐界面的 UI 优化，现在太丑了。」
 
 **为什么丑（可直接确认，不是主观印象）**：
 
-- **这一页现在根本没有深色底**：`AppColors.nearBlack` 等于 `background`（`0xFFFAFAFA`），`onDark` 等于 `primaryText`（墨黑）。所以「近黑底 + 亮点文字」写出来的其实是**浅灰底 + 深字**。视频页看着是黑的，靠的是 `media_kit_video` 自带的 `Video` 组件，与主题无关；音乐页刻意不建它，于是原形毕露。这是 [§5](99-IN-PROGRESS.md) 阶段一欠的账，不是这一页自己写错。
+- **这一页现在根本没有深色底**：`AppColors.nearBlack` 等于 `background`（`0xFFFAFAFA`），`onDark` 等于 `primaryText`（墨黑）。所以「近黑底 + 亮点文字」写出来的其实是**浅灰底 + 深字**。视频页看着是黑的，靠的是 `media_kit_video` 自带的 `Video` 组件，与主题无关；音乐页刻意不建它，于是原形毕露。这是 [§2](99-IN-PROGRESS.md) 阶段一欠的账，不是这一页自己写错。
 - 封面 200×200 **写死**，小屏顶边、大屏显小；72 px 纯灰图标没有任何层次。
 - 标题 18 px 与副标题「流式传输 · 未缓存」12 px 挤在一起，中间没有歌手 / 专辑层。
 - 进度条下方那行时间：左侧时间与右侧「已缓冲」字号相同、没有主次；进度条底轨是默认灰，拖动时的高亮也没接强调色。
@@ -60,13 +40,13 @@
 
 **用户已拍板的三件事**：
 
-1. **底色**：走 [§5](99-IN-PROGRESS.md) 阶段一（`AppColors` 上下文取色），**不**在这一页单独铺深色底。
+1. **底色**：走 [§2](99-IN-PROGRESS.md) 阶段一（`AppColors` 上下文取色），**不**在这一页单独铺深色底。
 2. **封面**：这轮**不抓远端图**，只把占位做得像样（尺寸自适应、圆角、阴影、强调色渐变图标）。内嵌封面是独立的一块（Range 读头部 + 解析 ID3 / FLAC 图块），不在本次范围。
 3. **范围**：视觉与布局都改，**元素一个不增不减**——大封面 + 标题层 + 紧致进度 + 居中控制条这套常规播放器骨架。
 
 **顺序**：阶段一必须先做。这一页的底色问题就是阶段一的产物，先重排布局等于照着浅色底调一遍，取色做完还得再调一遍。
 
-**阶段一的实测规模**（本轮查证，比 §5.1 记的数字更准）：
+**阶段一的实测规模**（本轮查证，比 §2.1 记的数字更准）：
 
 | 项 | 值 |
 |---|---|
@@ -98,7 +78,7 @@
 | 页面骨架 | `Center` + 滚动 | 去掉多余留白，短屏也不顶边 |
 
 **验收**：亮色主题下逐元素比对（**阶段一不能改变亮色观感**，这是它的安全底线）；暗色 + 重排之后，这一页应当是「深底 + 干净封面 + 居中控制条」，不再有浅灰残留。
-### 1.3 流式音乐播放的预载（未开工，方案待定）
+### 1.2 流式音乐播放的预载（未开工，方案待定）
 
 **用户原话**：「流式音乐播放的预载功能，自动加载向前 x 首向后 y 首，可在配置页面配置。」
 
@@ -132,68 +112,22 @@
 - 预载失败不能影响当前这一首的播放（静默降级）。
 - 队列短于 `x + y` 时按实际可用数量处理，到队首 / 队尾不绕圈。
 
-## 2. 网络库交互模型（已实现，待真机验收）
-
-**状态**：全选按计数器判定、全选按钮只取消选择不退出多选、三个入口共用 `judgeAction`、复制 / 移动走原生 `COPY` / `MOVE` 并自动加 ` (n)`。语义已进 [02](02-NETWORK-LIBRARY.md)。
-
-**待真机验收**：部分服务端对目录目标的 `Destination`（加不加结尾 `/`）处理不一致，要在真实网盘上各试一次。
-
-**已知未做**：
-
-- 移动 / 重命名远端文件后，本机音乐库里绑定旧路径的曲目**不会跟随**（需要一次「路径重写」才能做对）。
-- 复制 / 移动**没有进度与取消**：`webdav_client` 的 `copy` / `rename` 是单次请求，大文件只能等。
-
-## 3. 音乐库的两个不可逆动作（已实现，待真机验收）
-
-**状态**：从云端覆写音乐库 / 销毁音乐库，交互约定已进 [08](08-SYNC-AND-BACKUP.md)。**真机待验**：两个按钮的按压与确认框排版、进度条推进、终止 / 返回键取消、多选销毁。
-
-**已定型的取舍**（还没按完整文档的写法搬进 [08](08-SYNC-AND-BACKUP.md)）：
-
-- 覆写只清**索引**（`LibraryDatabase.clearLibraryIndex()`），不清 cache annex：连 annex 一起清的话，磁盘上已有的音频会被当成没下过，白白多出一次全量下载。
-- 销毁走**逐条**、不走 `clearAllLibraryData()` 整表清空：整表清空会连 `deleted_tracks`（墓碑）和 `sync_state`（游标）一起抹掉，云端永远收不到删除记录，下次同步还会把整库拉回来。顺序固定为**先墓碑、后删行**（`LibraryService.destroyTracks`），中途被杀掉留下的中间态是安全的。
-- 让曲目从本地列表消失的是「删行 + `_tracks.removeWhere` + `notifyListeners()`」，墓碑只影响同步的拉取判定。所以「只立墓碑」那版在本地毫无可见变化，用户要的是逐条删除。
-- 逐条会删掉本地已下载的音频，**不可逆**；云端那行同时被墓碑标记，重建云端库之后两边都没有了。
-- **CUE 组走「整组销毁、逐片落地」**：点中一片 = 销毁整张专辑，但删除与墓碑都按片做——每片各删自己的 `cue_slices` 行、各留各的墓碑（`library_service.destroyTrack`），`cue_albums` 行只在最后一片走完时删（`remainingSlicesForCue`）。
-  - **展开与落地的分工**：「整组」由 `AppState.destroyTargets()` 展开（查全库，只选一片时选中集合里只有一片），「逐片」由 `LibraryService.destroyTrack()` 落地。少了展开那一步，单首销毁就只掉一首——第一版逐片改动漏的正是这里。原来的写法是整组一次清空行、只给被点的那片留墓碑，墓碑范围比删行范围小；云端旧基础分片里的其余几片没有 `del-*` 记录挡着，下一次增量拉取 / 从云端覆写就会把它们带回来——这就是「销毁后重建，其他歌又出来」的成因，不是重建本身。
-- **「原子」指的是逻辑边界，不是数据库事务**：`destroyTrack` 内部没有 `db.transaction()`，一首歌要跨 `deleted_tracks` / 封面文件 / `tracks` / 内存四处写。取消只能在两首之间生效。
-- 进度条按「已处理 / 总数」推进。CUE 组改成逐片销毁之后，每一片都会真的删掉一行，所以进度与销毁数一致；早期版本里「整组行被第一片带走、兄弟片 `destroyLibraryTrack` 返回 false」的那个错位已经不存在。
-- 进度框是**模态**的，销毁不会在界面消失后继续跑——这正是「删除界面不要做成异步的」。每首都会 `notifyListeners()` 一次，换来的是一首歌一个完整动作、取消点永远落在歌与歌之间。
-- **重建后本地墓碑必须为 0**（硬约束，`sync_service.syncLibraryFull`）：重建后云端基础分片就是本地全部行的快照，删除意图也一起物化了，墓碑已无剩余职责。所以重建后先 `clearDeadTombstones()` **静默清掉**「行已不在」的墓碑，再数一次；若仍有残留（说明某条墓碑对应着还活着的行），写进 `outcome.warn` 提示用户「建议检查数据」。
-  - 顺带补上了 `purgeTombstonesUpTo(baseUpTo)` 的缺口：`baseUpTo` 只统计**活行**的 rev，而销毁后的墓碑 rev 通常更高，那一步天然漏掉一批。目前靠 `clearDeadTombstones()` 兜底，没有改 `baseUpTo` 的语义（它还要参与云端游标比较）。
-- 销毁结束把定时同步置为 `off` 是刻意的：推不推、什么时候推，交回用户手动决定。
-- 「其他行为干扰」的实现是**静默窗口**（`_quietLibraryWrites`）：暂停 20 s 推送防抖与定时扫描，并取消已排队的防抖。没有做互斥锁——已经在飞的同步不会被中断，只是不再有新的自动触发。
-- `LibraryService.destroyTracks(Iterable)` 保留为「没有进度界面时的循环封装」，目前没有调用方。
-
-## 4. 构建与发布（已实现，真机与体积未核）
-
-**安装包分包与压缩存放**：三个单 ABI 包（`arm64-v8a` / `armeabi-v7a` / `x86_64`）加一个去掉 x86 的合并包；原生库压缩存放（`useLegacyPackaging = true`）。v0.2.0 的 CI 已成功产出三个 split APK，**APK 的安装与体积没在真机上核过**。
-
-- 实测（v0.1.0 通用包 101.3 MiB）：`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB，非原生部分只有 2.7 MiB——所以分包才是主要收益。
-- 产物命名由构建工具决定，**不要写死**：Flutter 3.47.5 在 `build/app/outputs/flutter-apk/` 下出的是 `app-<abi>-prod-release.apk`（ABI 在前），而 `build/app/outputs/apk/prod/release/` 下仍是 `app-prod-<abi>-release.apk`（flavor 在前）。两份 workflow 已改成新序，并在收集前 `ls` 打印目录清单。
-- 教训见 [09 §4](09-MISC.md)：本地只跑 `--no-pub lib` 会漏掉 CI 完整 `flutter analyze` 能看见的 warning（v0.2.0 因此失败过一次）。
-
-**flavor 与本地 dev 环境**：`env` 维度两个 flavor，`dev` 带 `applicationIdSuffix = ".dev"` 与 `appName = Webdav Media Manager Dev`，可与正式包并存。`flutter run --flavor dev` 已在 PJZ110 上跑通；CI 侧随 v0.2.0 一起验证。存在 flavor 之后**所有构建都必须显式带 `--flavor`**。
-
-- 刻意**不动 `namespace`**：`MainActivity.kt` 包路径、`com.senkjm.media_manager/app`、通知 channel id 都是应用内部标识，与 applicationId 无关。
-
-**缓存音乐与下载两条线**：界面只有一个流程，扫描与去重在 `enqueueSelection`。**真机待验**：同时选中文件夹与其中的文件（缓存、下载各点一次）、窄屏下的工具栏、单文件夹 / 多文件夹 / 混选。
-
-## 5. 主题配色（已分析，未开工）
+## 2. 主题配色（已分析，未开工）
 
 相关完整文档：[09 §编码约定](09-MISC.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[07](07-NOTIFICATIONS.md)。待发布与拆分见 [10 T1 / T2](10-SIDE-QUESTS.md)。
 
-### 5.1 现状（可直接确认）
+### 2.1 现状（可直接确认）
 
 - `lib/theme/app_theme.dart` 里 `AppTheme.light` 与 `AppTheme.dark` **两套都已写完**，各约 240 行，覆盖 AppBar / Drawer / Card / ListTile / TabBar / Slider / Chip / Dialog / SnackBar / SegmentedButton 等。
 - `lib/main.dart` 已传 `theme:` 与 `darkTheme:`，但 `themeMode: ThemeMode.light` 是**写死**的——`AppTheme.dark` 现在是死代码。
 - `AppColors`（同文件）是 `static const Color`，全库 **24 个文件、325 处**直接引用。
 - 另有约 **417 处**裸颜色（`Colors.xxx` / `Color(0x…)`），分布在 25 个文件，其中一部分是**有意**的（封面占位、状态色、播放器黑底）。
 
-### 5.2 为什么不能只把 `themeMode` 打开
+### 2.2 为什么不能只把 `themeMode` 打开
 
 改成 `ThemeMode.dark` 会立刻得到「深色主题 + 一堆亮色残留」：`AppColors.xxx` 是编译期常量，不跟主题走，于是文字、分隔线、卡片底色仍是亮色值。这是这个功能真正的工作量所在。
 
-### 5.3 拆分（两阶段，各自独立可交付）
+### 2.3 拆分（两阶段，各自独立可交付）
 
 **阶段一 · 静态引用转上下文取色**
 
@@ -208,16 +142,16 @@
 - 自定义配色：边界**未定**（是只让用户改主色 accent，还是整套色板）。只改主色工作量小得多，但要让对比色（`onAccent`）跟着算出来。**需要先确认**。
 - 裸颜色审计与收敛，按类判断：哪些该跟主题、哪些本来就该固定。
 
-### 5.4 验收与回归点
+### 2.4 验收与回归点
 
 - 纯黑播放器页、下载进度 / 状态色、封面占位在两种模式下都要可读；`docs/05`、`06`、`07` 的界面描述要跟着补。
 - 阶段一落地后跑 `flutter analyze` 与 `flutter test`；阶段二补设置项相关的测试。
 
-## 6. 多语言（已分析，未决定，未开工）
+## 3. 多语言（已分析，未决定，未开工）
 
 用户问「多语言怎么处理」，只做了查证与拆分：**没有动代码**。相关完整文档：[10 T4 / T5](10-SIDE-QUESTS.md)。
 
-### 6.1 实测现状
+### 3.1 实测现状
 
 | 项 | 值 |
 |---|---|
@@ -229,13 +163,13 @@
 | `android/app/src/main/res/values*/strings.xml` | 不存在（应用名走 gradle `manifestPlaceholders["appName"]`） |
 | 文案最集中的文件 | `sync_screen` 112、`settings_screen` 84、`network_library_screen` 75、`video_player_screen` 64 |
 
-### 6.2 三个结构性难点（必须在批量替换**之前**处理）
+### 3.2 三个结构性难点（必须在批量替换**之前**处理）
 
 1. **枚举的显示名**：`models/` 下 38 个文件有中文，多为 `XxxLabel` / `label` 扩展（`CacheRetention`、`DownloadTarget`、`FileAction`、`SyncInterval`、`VideoGestureAction` …）。model 层拿不到 `BuildContext`。推荐给这些 label 扩一个 `AppLocalizations` 参数，而不是把映射表搬到 UI 层（后者要动几十个调用点）。
 2. **被持久化的字符串值**：`library_service.dart:503` 用 `'未分类'` 当 key 并参与排序比较；`playlist.dart:75` 落库默认值 `'未命名'`；`accounts_service.dart:127` 默认服务器名 `'默认服务器'`。**改字符串之前必须先脱钩**，否则旧数据对不上。真机数据库里是否已存在这些值，查不到。
 3. **后台服务的文案**：`services/` 下 18+ 个文件、38 组含中文，例如 `download_queue_service` 的 `_lastError`、`audio_player_service` 的 `'本地无缓存，请先下载'`、`backup_service` 的异常文案。service 层没有 `BuildContext`，正确做法是返回错误码 / 结构化结果、由 UI 层映射文案——这是重构，不是替换。
 
-### 6.3 分阶段（顺序不能调）
+### 3.3 分阶段（顺序不能调）
 
 | 阶段 | 内容 | 备注 |
 |---|---|---|
@@ -245,29 +179,29 @@
 | 3 | 平台侧资源（应用名、通知渠道名） | 见 [10 T5](10-SIDE-QUESTS.md) |
 | 4 | 语言切换（跟随系统 / 应用内切换 + 持久化） | 独立功能，可选 |
 
-### 6.4 需要用户决定的三件事
+### 3.4 需要用户决定的三件事
 
 1. 目标语言（中 + 英？）；2. 范围（全量还是先跑通一两个模块）；3. 要不要应用内语言切换。**未决定前不开工。**
 
-## 7. 云盘 Provider（OpenList 驱动移植，已立项定界，未开工）
+## 4. 云盘 Provider（OpenList 驱动移植，进行中）
 
 **用户决策原话**：「砍掉上传功能，采用路线B，尽量不要改动WebDavService」「按照A表全部删除」「B的话建立新的网络库功能列表，分类不同网络库支持的能力并在对应的按钮功能前加上检测，尽量保证WebDavService实现的功能全面，由账号对应的能力遮罩判断功能是否开启」「C中保留crypt列入待开发功能，其他的砍掉不进入文档」「netease_music加入待开发文档」「几个优先做的加入文档并开始讨论细节」。
 
 相关完整文档：[02 §10 占位](02-NETWORK-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)（下载带自定义头）、[08](08-SYNC-AND-BACKUP.md)（云端写路径禁用）、[10 T6](10-SIDE-QUESTS.md)（账号模型地基）。
 
-### 7.1 路线与参照物
+### 4.1 路线与参照物
 
 - **路线 B**：把 OpenList 的驱动层（REST 直连各家网盘）移植成 Dart provider。**不移植** worker 的 WebDAV/XML 协议层——WDMM 本身是 WebDAV 客户端，自己转 WebDAV 再解析回去是绕路。
 - 参照实现已克隆到 `localdev/`（已 gitignore，不入库）：`OpenListTeam/OpenList-Worker`（TS，HEAD `a355867`，移植底稿）+ `OpenListTeam/OpenList`（Go main，语义兜底）。驱动代码与 worker 运行时零耦合（抽样 quark：`env.|KV|waitUntil|durable` 零命中），移植是机械工作。
 - 下载模型天然契合：驱动 `get()` 返回 `FileItem{raw_url, raw_url_headers}`（直链 + 必需请求头），正好对上现有 `WebDavStreamSource{uri, headers}`（`webdav_stream.dart`）；视频流式与下载都走「直链 + 头」。
 
-### 7.2 已定型的取舍
+### 4.2 已定型的取舍
 
 1. **上传砍掉**：`CloudDriver` 接口无 put；云盘账号上 `writeBytes` / `ensureDirectory` 与 backup / sync / playlist 的云端写路径一律禁用（显式报语义，不做静默失败）。**例外**：`createFolder` 走独立「创建文件夹」位（见 7.2.3 / 7.3.2），baidu 支持。WebDAV 账号行为不变。
 2. **`WebDavService` 对外 API 与行为不变**（14 个文件直接 import 它，全部零改动）。唯一接入缝：`_connFor` / `_resolve`（`webdav_service.dart:44-54`）之后按账号类型转调 `CloudDriveService` 同名方法。绕不开的配套：`WebDavAccount.providerType`（[10 T6](10-SIDE-QUESTS.md)）；云盘凭证走 AccountsService + credential vault 独立通道，`configure()` 的 url/user/pass 形状不动。
 3. **能力遮罩**：账号类型 → 能力集合，枚举定型为**列出 / 读取 / 写入 / 创建文件夹 / 移动 / 复制 / 删除**（列出默认拥有、不在用户界面显示；「创建文件夹」按用户决定从「写入」拆出独立位，上传与写同步仍归「写入」）。云盘类型由驱动静态给定；**WebDAV 账号的能力由用户在表单里配置**（默认全量）。网络库行操作与多选工具栏按钮**先查遮罩再启用**；新建文件夹按钮按「创建文件夹」位遮罩（网络库 AppBar 与目录选择器两处，已实现）；WebDAV 表单的能力勾选区已实现（读取 / 写入 / 创建文件夹 / 移动 / 复制 / 删除）。**静态表登记原则（用户决定）**：`AccountCaps.staticCaps` 只登记已落地驱动（当前仅 `baidu_netdisk`），未落地盘先记 7.3.2 的核查表，落地时照表抄。
   - **与 OpenList 的对比（本轮查证）**：它的每驱动能力标志只有传输侧（`NoUpload` / `OnlyProxy` / `NoLinkURL` / `PreferProxy`，`internal/driver/config.go`），**写操作没有能力位、不做按钮遮罩**——只读驱动（openlist_share 等）在操作时返回 `errs.NotImplement` 由前端弹错；WebDAV 层按用户权限位（WEBDAV_READ / WEBDAV_MANAGE）拦截。WDMM 按本项目「禁用即隐藏」的决策在按钮层遮罩，比 OpenList 更进一步，属于有意差异。
-4. **驱动范围已定界**：除 7.3 / 7.4 / 7.5 列出的驱动外，其余一律不做，不进文档不展开。
+4. **驱动范围已定界**：除 4.3 / 4.4 / 4.5 / 4.9 列出的驱动外，其余一律不做，不进文档不展开。
 5. **读取能力的绑定**（用户原话「缓存音乐、下载文件、浏览、播放、流式传输功能绑定到账号类型的读取能力」）：这五类功能都要求账号具备「读取」。
 6. **禁用即隐藏**：能力被遮罩时，单文件「更多」菜单的对应条目与多选工具栏的对应按钮**隐藏而非置灰**；「更多」按钮本身只要还有可用条目就保留。
 7. **账号表单定型**：第一行名称、第二行类型（默认 WebDAV），选类型后动态出该盘自身字段。WebDAV 在服务器 URL 之下新增「远程路径」（默认 `/`，空置视为 `/`），**云盘账号同样有远程路径**；保存时 URL 结尾 `/` 隐式清除（`configure()` 已有同样的 trim，表单层保持同一规则）。云盘字段默认照 worker `Addition` 原样保留以便移植，逐盘细节落实时询问用户。
@@ -275,25 +209,25 @@
 
 9. **流式体验：界面先落地**（用户决定，已实现）：音乐与视频两条流式入口的跳转都**不等源解析**——网络库把解析交给页内 loader（云盘解析要列表 + filemetas + HEAD 三跳，原来会卡住整条跳转链），解析失败在页内错误态表达；「伪装成视频的音频」由视频页解析后 `pushReplacement` 去音乐页（复用同一队列 seed）。音乐页缓冲可视化（不改其它 UI 元素）：删除「已缓冲」文字，已缓冲区间 = 播放进度条**二级轨道**（实心）；源解析 / 起播前的老式等待缓冲 = 二级轨道铺满**左右渐变**（自定义轨道形状）。**账号表单保存流**（用户决定，已实现）：点保存不关弹窗，保存按钮变圈等待，校验（名称 / 重名 / 身份确认 / refresh_token / 云盘真连验证）在弹窗内完成；失败报错留在表单，云盘添加成功提示「成功添加（名称）」后随表单关闭。
 
-10. **驱动自描述与注册表**（用户决定，已实现，99 §7.2.10）：处理逻辑、能力遮罩、表单配置参数**全部收进驱动文件**（`cloud_drivers/<name>_driver.dart`：驱动 + Addition + `XxxSpec extends CloudDriverSpec`）；`driver_registry.dart` 是唯一注册点（对齐 OpenList 的 bootstrap/drivers）——**新增一个盘 = 新增一个文件 + 注册表加一行**。账号表单按 `spec.form`（`CloudDriverField` / `CloudDriverSwitchField`，支持 visibleWhenSwitch / enabledWhenSwitch 依赖开关）通用渲染，类型下拉读 `kCloudDriverSpecs`，保存校验与配置组装按 spec 声明的键 / 必填 / 默认值执行；兼容层 `CloudDriveService` 只查表（`cloudDriverSpec(typeId)`）做构造 / 校验 / 令牌 patch 持久化，`AccountCaps` 只剩通用位定义与 WebDAV 归一（`staticCaps` / `forType` 已删）。**接口层独立**：`CloudDriver` + `CloudFileItem` + `CloudDriverException` + spec 全在 `cloud_driver.dart`，不依赖账号 / 存储；crypt 这类中间处理层以后实现同一 spec，`create()` 包住内层驱动、注册即接入。顺带：远程路径提为通用字段（类型之后、动态区之前），百度动态区顺序变为 spec 声明序（refresh_token → 在线续期地址 → 本地刷新开关 → Client ID / Secret）。
+10. **驱动自描述与注册表**（用户决定，已实现，4.2.10）：处理逻辑、能力遮罩、表单配置参数**全部收进驱动文件**（`cloud_drivers/<name>_driver.dart`：驱动 + Addition + `XxxSpec extends CloudDriverSpec`）；`driver_registry.dart` 是唯一注册点（对齐 OpenList 的 bootstrap/drivers）——**新增一个盘 = 新增一个文件 + 注册表加一行**。账号表单按 `spec.form`（`CloudDriverField` / `CloudDriverSwitchField`，支持 visibleWhenSwitch / enabledWhenSwitch 依赖开关）通用渲染，类型下拉读 `kCloudDriverSpecs`，保存校验与配置组装按 spec 声明的键 / 必填 / 默认值执行；兼容层 `CloudDriveService` 只查表（`cloudDriverSpec(typeId)`）做构造 / 校验 / 令牌 patch 持久化，`AccountCaps` 只剩通用位定义与 WebDAV 归一（`staticCaps` / `forType` 已删）。**接口层独立**：`CloudDriver` + `CloudFileItem` + `CloudDriverException` + spec 全在 `cloud_driver.dart`，不依赖账号 / 存储；crypt 这类中间处理层以后实现同一 spec，`create()` 包住内层驱动、注册即接入。顺带：远程路径提为通用字段（类型之后、动态区之前），百度动态区顺序变为 spec 声明序（refresh_token → 在线续期地址 → 本地刷新开关 → Client ID / Secret）。
 
-### 7.3 首批驱动（优先做）
+### 4.3 首批驱动（优先做）
 
 `aliyundrive_open`、`baidu_netdisk`、`quark`、`115open`、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。共同特征：refresh_token 或 cookie **粘贴式**登录、直链 + 必需头、写操作全、无重加密（worker 驱动 18–40KB）。移植底稿 `localdev/OpenList-Worker/src/backend/drivers/<name>/`，语义兜底对照 Go 版同目录。
 **首个端到端驱动：`baidu_netdisk`**（用户有测试条件）；`aliyundrive_open` 顺延——缺少测试条件，发布后靠其他用户反馈验收。移植 baidu 时**砍掉 crack 下载 API**（`download_api=crack/crack_video`、`custom_crack_ua`、`getCrackLink` / `getCrackVideoLink`，只走官方 dlink）——用户决定。
 注意：`139` 带字符集标记，真机要先验编码。
 
-### 7.3.1 baidu_netdisk 表单与驱动（已实现，待真机验收）
+### 4.3.1 baidu_netdisk（已实现，待真机验收）
 
-- **动态区顺序**：refresh_token（必填，粘贴，可切换明文）→ 远程路径（默认 `/`，空置视为 `/`）→ 在线续期地址（默认 OpenList 公共服务 `api.oplist.org/baiduyun/renewapi`，常驻可编辑）→ 开关「在本地处理令牌刷新」→ Client ID / Secret（仅开关开启时显示）。
-- **开关语义（用户原话）**：「加一个开关：在本地处理令牌刷新，开启后显示Client ID和 Client Secret同时online_api变灰不可用，后端时也需要检查该开关，一旦打开就不使用online api逻辑而使用自建百度应用的刷新逻辑。」实现为 `BaiduAddition.localRefresh`，`BaiduClient.refreshToken()` 每次都检查。
-- **保存语义（用户原话）**：「能获取到access_token即保存，不能获取到的话则原样传递报错。」保存前 `verifyNewAccount` 真连一次（换 token + uinfo 校验），失败把 `CloudDriverException` 原文弹给用户、不落库、表单内容保留。
-- **存储映射**：refresh_token / client_id / client_secret / api_url_address / local_refresh / access_token 缓存 → `AccountsService.saveDriverConfig`（secure storage JSON，按账号隔离，删号即清）；remote_path / provider_type → accounts 表。
-- **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
-- **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动 + **spec 自描述**：能力遮罩 / 表单参数 / 构造，见 7.2.10）、`cloud_drive_service.dart`（查表工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单按 spec 通用渲染）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。
-- **阶段 1 真机清单**：添加账号（换 token 成功 / 错误 token 原文报错不落库）；浏览（远程路径生效）；下载 / 缓存音乐 / 本地播放；视频与音乐流式（直链 302 + UA `pan.baidu.com`）；重命名 / 删除 / 移动 / 复制；新建文件夹按钮按「创建文件夹」位遮罩；baidu 含该位，云盘账号可建目录，WebDAV 由表单勾选决定（见 7.2.6）；添加账号保存全程（保存变圈等待 → 失败原文报错留表单 → 成功提示「成功添加（名称）」后退出，见 7.2.9）。
+实现语义与取舍已收口进 [11 §10](11-CLOUD-DRIVER-PORTING.md)（动态区顺序、本地刷新开关、保存语义、存储映射、落点）。**待办只剩真机验收**：
 
-### 7.3.2 mkdir（创建文件夹）能力逐盘核查（OpenList 源码，本轮查证）
+- 添加账号：换 token 成功；错误 token 原文报错不落库；保存全程（变圈等待 → 失败留表单 → 成功提示「成功添加（名称）」后退出）。
+- 浏览：远程路径生效；解密名正确。
+- 下载 / 缓存音乐 / 本地播放。
+- 视频与音乐流式：直链 302 + UA `pan.baidu.com`。
+- 写操作四件套：重命名 / 删除 / 移动 / 复制；新建文件夹按钮按「创建文件夹」位遮罩（能力位见 4.3.2）。
+
+### 4.3.2 mkdir（创建文件夹）能力逐盘核查（OpenList 源码，本轮查证）
 
 - **机制**：Go 版把 MakeDir / Move / Rename / Copy / Remove / Put 做成 `internal/driver` 的**可选接口**（方法名是 `MakeDir`，不是 Mkdir），87 个驱动都有方法签名，只读 / 索引驱动在方法体里返回 `errs.NotImplement`（桩实现）；op 层 type-switch 调用。Worker TS 把 mkdir 做成 `StorageDriver` 必备方法，行为与 Go 一致——真实现或抛「not supported」。**两版能力面一致**（worker 是我们的移植底稿）。
 - **首批 9 盘全部真实现 mkdir**（静态表 mkdir = 有）：`baidu_netdisk`（Go `driver.go:96` MakeDir → `create(path, 0, 1)` isdir=1，已验真；worker 同）、`aliyundrive_open`、`quark`、`115open`（worker `driver.ts:339` → `client.mkdir` 真调用，勿被「方法体含 throw」的粗扫误判）、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。
@@ -301,39 +235,25 @@
 - **待开发**：`netease_music` 无 mkdir（桩）；`crypt` 透传内挂驱动，落表时按宿主动态给位、不进静态表。
 - **登记**：已落地 → `AccountCaps.staticCaps`；未落地 → 本表，落地时照表抄（用户决定：写代码会影响运行的先只进文档）。
 
-### 7.4 只读家族（能力遮罩 = 只读）
+### 4.4 只读家族（能力遮罩 = 只读）
 
 `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`、`url_tree`——浏览 / 下载 / 流式可用，写操作按遮罩隐藏（worker 驱动内五项写方法全部显式抛「不支持」，二次扫描证实）。批次已定：先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制，再批量铺其余。
 
-### 7.5 待开发
+### 4.5 待开发
 
-#### crypt（阶段进行中：cipher 层已完成并互操作验证）
+#### crypt（进行中：cipher 完成、下载/流式链路已通，剩 FFI 与收尾）
 
-- **格式**：逐字节对齐 rclone crypt（OpenList crypt 直接包 rclone 的 cipher，v1.75.1）。内容 = 魔数 "RCLONE\\0\\0"(8B) + 随机 nonce(24B) + 64KiB 明文分块 secretbox（XSalsa20-Poly1305，16B MAC，块 nonce = 文件 nonce + 块号 LE 加法）；KDF = scrypt(N=16384, r=8, p=1, 80B → dataKey32 / nameKey32 / nameTweak16)，空密码 = 全零密钥（格式一部分）；名字 = PKCS7(16) + EME(AES-256, nameTweak，≤128 块) + Base32（Hex 表小写去填充）/ Base64（URL 安全去填充，OpenList 默认）/ Base32768（与 rclone SafeEncoding 同表）三选一，off 模式 = 原名 + `.bin`（文件）/ 原名（目录），混淆 = rclone obfuscate 方案（含 `!` 双写、latin1 / ≥U+100 区段）。
-- **实现**：`lib/services/cloud_drivers/crypt/cipher/`（salsa20 / secretbox / eme / name_codec / base32768 + base32768_table / rclone_cipher），pointycastle 组合，无新增原生依赖。
-- **互操作验证**：本机编译 rclone v1.75.1 生成金标向量（名字 ×4、内容 ×2、混淆 ×1）+ NaCl 官方向量，`test/crypt_cipher_test.dart` 固化；生成环境在 localdev（gitignored）。
-- **字段（照 OpenList meta.go，默认值也照抄）**：filename_encryption（off/standard/obfuscate，默认 off）、directory_name_encryption（默认 false）、filename_encoding（base64/base32/base32768，默认 base64）、encrypted_suffix（默认 .bin，仅文件名加密=off 时生效）、password、salt；另加源账号引用与源目录（用户决定：源 = 已有账号 id，**WebDAV 也可作源**；crypt 浏览根 = 源账号远程路径 + 源目录，如源账号根 /456 + 源目录 /789 → 实际落 /456/789）。
-- **坏名字行为（照 OpenList driver.go 202-219）**：解密失败用原名原大小透传。本驱动只读取、不改动远端，透传既不写入也不做二次加密（早期「宁可不加密也不丢文件」的说法不成立，已删）。
-- **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（7.2.1）。
-- **已完成**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）；名称编码三档（base32768 用 rclone 官方 17 条 golden 向量验证）。
-- **待办（下一批）**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。
+- **格式**：逐字节对齐 rclone crypt（OpenList crypt 直接包 rclone 的 cipher，v1.75.1）。内容 = 魔数 "RCLONE\\0\\0"(8B) + 随机 nonce(24B) + 64KiB 明文分块 secretbox（XSalsa20-Poly1305，16B MAC，块 nonce = 文件 nonce + 块号 LE 加法）；KDF = scrypt(N=16384, r=8, p=1, 80B → dataKey32 / nameKey32 / nameTweak16)，空密码 = 全零密钥（格式一部分）；名字 = PKCS7(16) + EME(AES-256, nameTweak，≤128 块) + Base32（Hex 表小写去填充）/ Base64（URL 安全去填充，OpenList 默认）/ Base32768（与 rclone SafeEncoding 同表）三选一，off 模式 = 原名 + `.bin`（文件）/ 原名（目录），混淆 = rclone obfuscate 方案（含 `!` 双写、latin1 / ≥U+100 区段）。对齐细节与坑见 [11 §2/§3](11-CLOUD-DRIVER-PORTING.md)。
+- **实现**：`lib/services/cloud_drivers/crypt/cipher/`（salsa20 / secretbox / eme / name_codec / base32768 + base32768_table / rclone_cipher），pointycastle 组合，无新增原生依赖。互操作验证：本机编译 rclone v1.75.1 生成金标向量（名字 ×4、内容 ×2、混淆 ×1）+ NaCl 官方向量，`test/crypt_cipher_test.dart` 固化。
 - **盐**：rclone `cipher.go` 内置 `defaultSalt`（16 字节 `A8 0D F4 3A 8F BD 03 08 A7 CA B8 3E 58 1F 86 B1`），salt 为空即用它；OpenList 把 salt 去掉 obfuscated 前缀后作 `password2` 交给 rclone，语义相同 → 我方「留空用内置默认盐」与两端一致。密码与盐一律按 UTF-8 字节进 scrypt（对应 Go 的 `[]byte(s)`）。
-- **本批修复（真机反馈）**：① 云盘表单 `CloudDriverField` 的控制器创建曾被误删 → 密码填了仍报「请填写密码」（TextField 自建内部控制器，校验读到 null）；② 表单校验错误改为弹窗内联显示（SnackBar 被 AlertDialog 盖住，真机只露出一条边）；③ 下拉框加 `isExpanded` 并去掉标签长括号，消除右溢出。④ 应用内消息（`AppSnack`）改为**最顶层底部横幅**：挂在 `MaterialApp.builder` 的 Stack 里、Navigator 之上，位置仍在屏幕底部（用户澄清「置顶」= 层级最上，不是移到上方），对话框 / 键盘 / 底部导航都盖不住；音乐流式页切模式的提示也统一走 `AppSnack`，仓库里不再有裸 `showSnackBar`。
-- **本批修复（第二批，真机反馈）**：⑤ **下载进度**：crypt `openContent` 原为「整包下载 → 一次 yield」，队列进度只有 0 与 100；现改为 按 rclone 的块结构做 Range 分段（先取 32B 文件头拿 nonce，再按 65536+16B 逐块拉取、逐块认证、逐块 yield），进度随块推进且内存只占一块；源忽略 Range（一次回整个文件）或长度未知时退回整包解密。新增 `RcloneCipher.fileNonceOf` / `decryptBlock` 与「逐块 = 整包」等价测试。⑥ **账号类型名**：网盘账号列表的副标题原为 `a.url.isEmpty ? '百度网盘' : a.url`（写死），crypt 因此显示成源网盘名；改为 `CloudDriveService.typeLabelFor`，crypt 显示「<源网盘类型> Crypt」（源已删则退化为「Crypt」），其余云盘显示 spec 的 `displayName`。⑦ **AGP 9 Kotlin 弃用警告（查证结论：应用侧消不掉）**：删掉 `android/gradle.properties` 的 `android.builtInKotlin=false` 后再构建，Flutter 的 gradle migrator 会把它**自动写回**（注释由 `added by the Flutter template` 变成 `added automatically by Flutter migrator`），`:app` 的 `Deprecated 'org.jetbrains.kotlin.android' plugin usage` 警告照旧；同一警告还来自第三方插件（`:audio_service`）。Gradle 给的正解是「同时删 `android.builtInKotlin=true` 与 `android.newDsl=false` 并迁移到内置 Kotlin」，这要 Flutter 自身先完成迁移且会牵动第三方插件 → 保持现状，不再逐次删除。
-⑧ **本地流桥（crypt 流式播放落地）**：`crypt/crypt_stream_bridge.dart`。media_kit / ffmpeg 只认 URL 或本地路径，所以把新增的 `CloudDriver.openContentRange`（crypt 覆写：明文区间 → 只拉覆盖它的 rclone 块、逐块解密、首尾块裁剪）包成**只监听 127.0.0.1** 的 HTTP 端点：HEAD 回 Content-Length、无 Range 回 200 全量、有 Range 回 206 + Content-Range（含 `bytes=-n` 后缀区间），token 一次性映射 (accountId, path) 且 URL 里不含凭证，空闲 10 分钟自动关服务器。`CloudDriveService.resolveStreamSource` 对 MustProxy 驱动直接返回桥 URL，**播放入口（视频 / 音乐）不需要任何分支判断**；`size` 未知时明确报错，绝不给密文直链。测试 `test/crypt_stream_bridge_test.dart`：桥的 HTTP 语义 + 「本地密文服务 → Range → 块解密」端到端。
-⑨ **保存失败无提示**：表单 `fail()` 除了弹窗内联文字，同时推一条最顶层横幅（内联文字可能落在滚动区之外看不到）；`verifyNewAccount` 的捕获从 `on CloudDriverException` 放宽为全部异常 —— 此前网络层异常会直接冒泡，用户看不到任何提示、按钮默默恢复。
+- **字段（照 OpenList meta.go，默认值也照抄）**：filename_encryption（off/standard/obfuscate，默认 off）、directory_name_encryption（默认 false）、filename_encoding（base64/base32/base32768，默认 base64）、encrypted_suffix（默认 .bin，仅文件名加密=off 时生效）、password、salt；另加源账号引用与源目录（用户决定：源 = 已有账号 id，**WebDAV 也可作源**；crypt 浏览根 = 源账号远程路径 + 源目录，如源账号根 /456 + 源目录 /789 → 实际落 /456/789）。
+- **坏名字行为（照 OpenList driver.go 202-219）**：解密失败用原名原大小透传。本驱动只读取、不改动远端，透传既不写入也不做二次加密。
+- **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（4.2.1）。
+- **架构**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）。**源适配层必须给 size**（单文件 PROPFIND，`webdav_service.statPath`）——漏掉会让 crypt 误判成整包，产出 0B 文件（真机反馈，已修，[11 §5](11-CLOUD-DRIVER-PORTING.md)）。
+- **已落地增量（真机反馈驱动，语义已收口进固定文档）**：表单控制器与校验显示（[11 §6](11-CLOUD-DRIVER-PORTING.md)）；应用内消息最顶层横幅（[07](07-NOTIFICATIONS.md)）；下载进度按 rclone 块结构 Range 分段、逐块解密（[04 §3](04-DOWNLOAD-QUEUE.md)）；本地流桥（127.0.0.1 HTTP 端点包 `openContentRange`，播放入口无分支，[11 §5](11-CLOUD-DRIVER-PORTING.md)）；账号类型名 `typeLabelFor`（[02 §10](02-NETWORK-LIBRARY.md)）；下载重试三层兜底（分类 / 退避 / 断点续传）与超时补齐、原地重试、单一计数来源（[04 §7](04-DOWNLOAD-QUEUE.md)）；大小判定四态 shape + Content-Range 纠偏（[11 §5](11-CLOUD-DRIVER-PORTING.md)）。测试：`crypt_cipher_test` / `crypt_driver_test` / `crypt_stream_bridge_test` / `crypt_webdav_source_test` / `crypt_size_race_test`。
+- **待办**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）；真机验收 crypt 全链路（浏览 / 下载 / 流式 / 坏名字透传）。
 
-⑩ **网络中断的下载重试与断点续传（三层兜底，真机反馈：切网后下载直接失败）**：① 分类层 `DownloadQueueService.isRetryable` —— **认不出来的错误默认可重试**（用户要求未知错误也必须落进兜底），只有 401/403/404、用户取消、坏数据（`RcloneCipherException`）、`StateError` 直接判失败；`isOfflineError` 单独识别「根本没网」，这类失败**不消耗重试次数**。② 退避层 —— 2/4/8/16/32 秒 + 0~1 秒抖动、上限 5 次，文案「网络中断，正在重试 (n/5)」/「重试 5 次仍失败：<原因>」；等待中的任务不进 `orderPending`（否则 `_pump` 空转且堵住后面的任务），改由 `_scheduleRetryWake` 定时唤醒；`connectivity_plus` 只当**加速器**（网络恢复提前叫醒），连续 3 次事件唤醒都失败就冷却 5 分钟、回退纯退避 —— 事件只说明链路类型变了，不代表真能上网。③ 续传层 —— 失败**保留 .part**（不再一律删），重试按已下载长度 `resumeFrom` 续；`downloadResumable` 只在 **206 且 `Content-Range` 起点吻合**时追加，源忽略 Range 回了 200 一律截断重下（拼接错位会静默产出损坏文件，比多下一次糟糕）。设置 → 下载队列：保留时长（默认 72h）/ 体积上限（默认 2GB）/ 立即清理；启动也顺手清理孤儿半截文件（仍属于未完成任务的 .part 一律保留）。测试：`test/download_retry_test.dart`（分类 / 退避 / 调度）、`test/resumable_download_test.dart`（206 追加、200 截断、半截文件变短）。
-⑪ **断网后「没有自动重试、像被暂停」（真机反馈第二轮，根因不在重试逻辑）**：① **根因是缺超时** —— `WebDavService.downloadToFile` 与 crypt 驱动都用裸 `Dio()`，`downloadResumable` 也只设了 `receiveTimeout`，而 Dio 的 `connectTimeout` 默认 **null**：Wi‑Fi 一断，新建连接会一直挂着，任务停在 active、进度不动，既没有异常也没有重试，看起来就是「出错自动暂停」。修法是三处补齐 `connectTimeout: 20s`，并把 `receiveTimeout` 从 2 分钟收到 **45 秒**（它是两次数据之间的间隔，45 秒对慢源仍安全，2 分钟对用户就是卡死）。② 无网等待从 5 分钟改成 **10 秒**（不消耗重试次数，网络事件仍可提前唤醒），文案「网络不可用，10 秒后自动重试」——5 分钟和卡死的观感没有区别。③ 回到前台补一次唤醒：`DownloadQueueService` 混入 `WidgetsBindingObserver`，`resumed` 时取消定时器重新 `_pump()`（后台 Timer 会被系统挂起，只靠定时器会漏）。④ 列表把等待的缘由显示出来：`pending && nextRetryAt != null` 显示「重试等待中」，且 `pending` 也显示 `errorMessage`（此前只有 `failed` 才显示，等待中的原因用户完全看不到）。⑤ 设置 → 下载队列的滑条改为**手输 + 上下限**（保留时长 1~720 小时、总体积 64~65536 MB，超范围按边界保存并提示）。
-⑫ **重试改成「原地重试」（真机反馈第三轮）**：上一版把失败任务置回 `pending` 就放回了队列，用户看到的是「任务掉进等待列表，后面的任务插队」，他要的是**原地**重试。现在 `_pump` 在同一个任务上原地退避重试（`_attempt` 跑一次、`_waitForRetry` 等退避到期），任务继续占着当前这个位置：进度不重置、后面的任务不插队、列表里始终是这一条。网络事件用 `Completer`（`_wake`）提前叫醒正在等待的退避，不再只靠全局 Timer。**状态与数据库一行没动**（仍是 `pending` + `nextRetryAt`），所以重启后照样能被正常调度——这也是判断「要不要引入 `DownloadStatus.retrying`」时的结论：新枚举值/新列都得动 schema 与所有 switch，收益不值。列表文案 `重试中 (n/5)`（accent 色），「等待中」只留给真正排队的任务。**已知副作用**：某个任务的源彻底不可用时会阻塞后面的任务约 62 秒（2+4+8+16+32），这是「原地重试」语义的必然代价。
-⑬ **重试计数撞车（真机反馈第四轮：「一直卡在第二次重试」）**：上一版同时存在两套计数 —— `task.attempts`（每任务）与 `_eventStrikes` / `_ignoreEventUntil`（全局的「网络事件唤醒连败」冷却），而**没网那条路径不增加 attempts**（当时考虑的是「断网不该烧光重试额度」）。结果是断网后每 10 秒确实重试一次，但列表里的 `(n/5)` 永远停在第一次落进 offline 分支时的数字上，看起来就是卡死。现在**兜底只保留一个计数来源**：`task.attempts`，任何可重试失败（含没网）都 +1；退避时长由纯函数 `retryDelayFor(attempts, offline:)` 给出（没网固定 10 秒，其余 2/4/8/16/32），5 次后失败并给出「重试 5 次仍失败：网络不可用」，成功即 `attempts = 0`。那套全局事件计数整段删除 —— `connectivity_plus` 现在只负责「叫醒正在等的退避」（`_wake` Completer），不参与任何计数。
-> 移植过程中的映射表、必须逐字节对齐的格式、踩过的坑与测试策略，已收进 [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md)（后续每接一个上游驱动都按它自查）。
-- **base32768 移植**：`cipher/base32768.dart`（逐条对齐上游 `Max-Sum/base32768`：15 位块 + 末块 7 位、补 1、排序后前 4 字符为尾部字母表）与 `cipher/base32768_table.dart`（由 localdev 脚本从上游包生成，1028 个码点）；测试 `test/base32768_test.dart` 用 rclone `TestEncodeFileNameBase32768` 的 17 条向量 + 非法输入位置 + 0..200 全长度往返。
-
-- **crypt**：rclone 兼容加密层（worker 侧 aes + hash-wasm）。它是 MustProxy 驱动——开工前必须先定「本地流桥」（应用内 127.0.0.1 HttpServer 把驱动字节流转成 media_kit 可拉的 URL）还是「仅下载播放」。
-- **netease_music**：cookie + rsa/aes 登录；只支持删除，不能建目录 / 改名 / 移动 / 复制。对音乐管理器语义贴合。
-
-### 7.6 关键技术点（移植时要一起处理的）
+### 4.6 关键技术点（移植时要一起处理的）
 
 - token / cookie 刷新与持久化：worker 的 cookie 持久化机制（`persistStorageCookie`）要有 Dart 版，落 secure storage。
 - path→id 缓存：worker 驱动实例内的 Map 缓存（如 quark）在移动端的生命周期与失效策略。
@@ -342,21 +262,84 @@
 - Range：流式必须；上游拒绝 / 忽略 Range 时按 worker 的做法降级（去掉 Range 重试一次）。
 - refresh_token「粘贴式获取」逐盘实测：部分盘可能必须应用内回调页，查不到的以真机为准。
 
-### 7.7 分阶段（每段独立交付、独立验收）
+### 4.7 分阶段（每段独立交付、独立验收）
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
 | 0 | 地基：[10 T6](10-SIDE-QUESTS.md) 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表。**已完成**：`flutter analyze` 全清 + 244 测试全过，[10 T6](10-SIDE-QUESTS.md) 随之删除 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
-| 1 | 首个驱动端到端：`baidu_netdisk`。**代码已实现（表单 + 驱动 + 下载 / 流式全链路），待真机验收**，清单见 7.3.1 | 真机：添加账号 → 浏览 → 下载 → 流式 |
+| 1 | 首个驱动端到端：`baidu_netdisk`。**代码已实现（表单 + 驱动 + 下载 / 流式全链路），待真机验收**，清单见 4.3.1 | 真机：添加账号 → 浏览 → 下载 → 流式 |
 | 2 | 能力遮罩接线 UI：WebDAV 表单能力勾选 + 行操作 / 多选按钮按遮罩隐藏 + 只读试点（`openlist_share` + `github_releases`）。**新建文件夹遮罩已提前接入**（网络库 AppBar + 目录选择器，按写入位隐藏） | 真机：只读账号无写入口；WebDAV 能力勾选生效 |
 | 3 | 首批其余驱动逐个移植（`aliyundrive_open` 靠后，验收依赖发布后用户反馈） | 逐盘真机验收 |
 | 4 | 云端写路径禁用语义（backup / sync / playlist 对云盘账号的提示） | 真机：云盘账号同步入口有明确文案 |
 
 阶段 0 代码落点：`lib/models/account_capabilities.dart`（能力位 + 静态表）、`lib/models/webdav_account.dart`（`providerType` / `remotePath` / `capabilities`）、`lib/services/cloud_driver.dart`（接口 + `CloudFileItem`）、`lib/services/cloud_drive_service.dart`（骨架：类型判定 / 能力解析 / 写路径永久禁用）、`lib/services/webdav_service.dart`（`_cloudOf` 分流缝，12 个方法头）、`lib/services/library_database.dart`（v6，accounts 补列 `provider_type` / `remote_path` / `capabilities`）、`lib/services/accounts_service.dart`（`accountById` + 扩参）、`lib/providers/app_state.dart` 与 `lib/main.dart`（装配）。
 
-### 7.8 剩余未定
+### 4.8 剩余未定
 
 1. crypt 流桥形态（用户已定向，细节随实现定）：下载/缓存走内存流解密（已定）；流式播放内存流优先、media_kit 仅认 URL 时退本地 HTTP 桥（只服务 crypt，不碰原播放逻辑）；cipher 引擎切换（纯 Dart / libsodium FFI）的落点（设置全局 vs crypt 账号级）在引擎落地时定。
-2. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 7.6）。baidu 首轮真机验收就是第一手数据。
-3. 后续驱动（`aliyundrive_open` 等）落实表单时仍按 7.3.1 的模式先报字段清单给用户确认；教程文案统一链 OpenList 官方文档对应驱动页。
+2. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 4.6）。baidu 首轮真机验收就是第一手数据。
+3. 后续驱动（`aliyundrive_open` 等）落实表单时仍按 4.3.1 的模式先报字段清单给用户确认；教程文案统一链 OpenList 官方文档对应驱动页。
 
+### 4.9 全量驱动清单与批量移植评估（OpenList 源码逐盘核查）
+
+**数据基线**：worker 版 77 个驱动目录 + Go 版 88 个（`localdev/OpenList-Worker/src/backend/drivers/` 与 `localdev/OpenList/drivers/`），逐盘提取了 Addition 字段、方法实现、代理能力表（`internal/driver/proxy.ts` 是唯一真相）与 crypto 依赖。**能力面的两版一致性已核**：worker 的 mkdir / 写方法与 Go 的可选接口一致（4.3.2）。
+
+#### 批次方案（P0 已在做，P1 起每批独立交付、独立验收）
+
+| 批次 | 驱动 | 判定依据 |
+|------|------|----------|
+| **P0 已落地 / 进行中** | `baidu_netdisk`（已实现待验收）、`crypt`（cipher 完成） | 见 4.3.1 / 4.5 |
+| **P1 粘贴凭证直连盘** | `aliyundrive_open`、`115open`、`123_open`、`quark_open`、`terabox`、`139`、`quark`(cookie) | refresh_token / cookie 粘贴式登录、直链 + 必需头、写操作全、无重加密；依赖 `pkg/crypto` 或 `crypto-js` 的地方都有 Dart 对应（AES/RSA/MD5，pointycastle 覆盖） |
+| **P2 只读家族**（能力遮罩=只读，浏览器式登录或分享链接） | `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`github_releases`、`lenovonas_share`、`autoindex`、`url_tree`、`quark_uc_tv`、`emby`、`google_photo` | 五项写方法全部显式抛「不支持」；接入成本 = `CloudSource` 适配 + 能力遮罩；先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制（4.4） |
+| **P3 OAuth 回调盘** | `onedrive`、`onedrive_app`、`google_drive`、`dropbox`、`yandex_disk`、`pikpak`、`febbox`、`halalcloud_open`、`thunder` | 需要 OAuth client_id/secret + 回调或设备码流程，本地刷新与百度同构（`localRefresh` 开关模式直接复用）；体积不小但模式统一，可模板化批量铺 |
+| **P4 协议 / 存储类** | `webdav`、`sftp`、`smb`、`ftp`、`alist_v3`、`openlist`、`cloudreve_v3`、`cloudreve_v4`、`seafile`、`kodbox`、`mega`、`proton_drive` | 与已有 WebDAV 能力重叠或需要额外协议栈（smb/ftp/sftp 要原生依赖，mega/proton 有自家加密）；`webdav` 驱动可作为「WebDAV 账号统一到云盘账号模型」的迁移出口，优先级单独评估 |
+| **P5 对象存储 / 自建** | `s3`（+Doge）、`uss`、`azure_blob`、`bunny_storage`、`cloudflare_imgbed`、`ipfs_api` | 签名上传/下载为主，无浏览器登录问题；对媒体库场景价值取决于用户是否有这类存储 |
+| **不移植**（用户已砍或无意义） | 上传 6 字段相关、`alias`/`strm`/`virtual`/`chunk`（worker 组合层，语义由本地已有功能承担）、`local`（Go 本地盘）、`template`/`base`（基础设施）、`123_link`（直链专用）、`aliyundrive`（旧版已被 open 取代）、`doubao_new`/`doubao_share`/`thunder_browser`/`thunderx`/`ilanzou`/`123pan`(账号密码版) 等 Go 特有变体 | 用户决定：「C 中保留 crypt 列入待开发，其他的砍掉不进入文档」；变体驱动等首批同源驱动真机验收后再议 |
+
+#### 逐盘关键参数（P1/P3 全量，移植时按 4.3.1 模式先报字段清单）
+
+| 驱动 | 登录 | Addition 必填 | 关键依赖 / 坑 |
+|------|------|--------------|---------------|
+| `aliyundrive_open` | refresh_token 粘贴 | `drive_type` `refresh_token` | 13 字段；token 401 时要用 refresh_token 换新（驱动内自动） |
+| `115open` | refresh_token 粘贴 | 无（token 即凭证） | 7 字段；OSS 直传（`ossPutObject`）我们不用 |
+| `123_open` | refresh_token 粘贴 | 无 | 10 字段；`api_url_address` 在线续期与百度同构 |
+| `quark_open` | refresh_token + app_id + sign_key | 三项全必填 | 签名算法在 util；MustProxy（proxy 表：强制代理，无直链）→ 必须接流桥 |
+| `terabox` | cookie 粘贴 | `cookie` | 依赖 `pkg/crypto`（js sha1/aes 变体）；直链带 UA 校验 |
+| `139` | authorization 粘贴 | 无（可选 14 项） | **带字符集标记，真机先验编码**（4.3）；ProxyRangeOption |
+| `onedrive` | OAuth | region 等 | 16 字段，`use_online_api`+`api_url_address` 在线续期（百度同构）；region 决定 API host |
+| `onedrive_app` | OAuth(client+tenant) | client_id/secret | 12 字段；`getDirectUploadInfo` 不移植 |
+| `google_drive` | OAuth | client_id/secret/refresh | MustProxy（无公开直链）→ 必须接流桥；API key 可选 |
+| `dropbox` | OAuth | refresh_token | 10 字段；下载是 POST 流，不是 GET 直链（流桥要处理） |
+| `yandex_disk` | OAuth | refresh_token | 标准 REST；MustProxy=false 有直链 |
+| `pikpak` | OAuth(用户名密码换 token) | 无必填 | 12 字段；`pkg/crypto` 依赖 |
+| `thunder` | OAuth 设备码 | 无必填 | 11 字段；`crypto-js` 依赖 |
+| `febbox` / `halalcloud_open` | client_id+secret | 两项 | 模式与 P3 同 |
+
+> 登录方式注记：cookie 类（`quark` `139` `terabox` `weiyun` 等）过期要用户手动重贴，表单要放「打开网页复制」的教程链接（教程统一链 OpenList 官方文档对应驱动页，4.8）；OAuth 类的本地刷新直接复用百度「在本地处理令牌刷新」开关 + `disabledWhenSwitch` 联动极性（4.3.1）。
+
+#### 移植模板（批量铺开时的固定工序）
+
+1. 照 worker `types.ts` Addition 字段定 spec 表单（默认值照抄 Go `meta.go`），先报字段清单给用户确认（4.8）；
+2. 逐方法移植 `driver.ts`（list/get/mkdir/rename/move/copy/remove；**不移植 put**，4.2.1）；
+3. 能力位照 4.3.2 的静态表登记；MustProxy 驱动同步接流桥（crypt 的 `crypt_stream_bridge.dart` 是范例）；
+4. crypto 依赖对照：`pkg/crypto`/`crypto-js` 用到的原语（MD5/SHA1/AES/RSA）在 pointycastle 都有对应实现，逐个过测试向量；
+5. 直链必需头进 `rawHeaders` 贯穿下载与流式（[11 §5](11-CLOUD-DRIVER-PORTING.md)）；
+6. 一盘一测试文件：列表 / 直链头 / 錯误原文透传；cookie 类加「过期报错原文」用例。
+
+**评估结论**：批量移植的主要成本不在单个驱动的 API 对接，而在**登录形态**（粘贴 vs OAuth 回调）与**直链形态**（302 vs MustProxy+流桥）。这两维各收敛一套模板后，P1–P3 的 20+ 个驱动可以流水线化铺开；建议每批 2–4 个驱动、真机验收通过后再进下一批。
+## 5. 待修复的语义冲突（用户语义 vs 实际代码）
+
+用户语义本该成立、但当前代码不满足（或暂时搁置）的冲突。每条写明用户原话、现状、指向的固定文档小节与代码位置；修复后按 [00 §1](00-INDEX.md) 的收口规则把语义搬进对应正文，本节删除该条。
+
+### 5.1 后缀改过的音频走错播放页（用户已报，暂不处理）
+
+- **用户语义**：文件实际是音频（如 `.m4a` 改名成 `.mp4`），点开应该进音乐流式播放页，而不是视频播放页。
+- **现状**：路由按**后缀**判定（[02 §2](02-NETWORK-LIBRARY.md) 的动作模型），不看实际内容；改过名的音频进视频页。
+- **代码位置**：`network_library_screen.dart` 的 `_activateItem` / `_defaultActionFor`（后缀 → `FileCategory` → 动作）；类别判定在 `FileTypeConfig`。
+- **搁置原因**：内容嗅探（读文件头）要在打开前多一次 Range 请求，慢速源上会明显拖慢点开；用户此前同意暂不处理。
+
+### 5.2 下载完成后用户看不到「实际落在哪里」（部分修复，语义未完全满足）
+
+- **用户语义**（真机反馈）：下载队列里「系统目录：content://xxx」对用户没用且不能反映实际下载地址，应删掉；用户要的是**可理解**的位置信息。
+- **现状**：无意义 URI 已从队列删除（`downloads_screen.dart`）；但「系统相册/下载目录」这两个目标在系统里的真实位置（如相册的 `Movies/WebdavMediaManager`）只在 [02 §7](02-NETWORK-LIBRARY.md) 有文档语义，界面没有向用户展示任何位置描述。
+- **差距**：若用户再报「不知道去哪找文件」，考虑在完成态补一行人类可读位置（如「已存入系统相册 › Movies/WebdavMediaManager」），不要回到原始 URI。

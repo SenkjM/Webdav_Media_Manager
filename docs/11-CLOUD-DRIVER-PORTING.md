@@ -50,7 +50,9 @@
 ## 5. 直链、Range 与本地流桥
 
 - 直链必需请求头（Cookie / Referer / UA）要贯穿下载与流式播放：`CloudFileItem.rawHeaders` → `WebDavStreamSource.headers`。
-- **源可能忽略 Range**：请求 `bytes=0-31` 却回 200 + 整包是常见行为。此时只能整包处理（crypt 的 `wholeBody` 分支），不要假设一定拿到 206。
+- **源可能忽略 Range**：请求 `bytes=0-31` 却回 200 + 整包是常见行为。此时只能整包处理（crypt 的 `shape == wholeBody` 分支），不要假设一定拿到 206。
+- **源适配层必须给 size**：`WebDavAccountSource.get()` 一度漏掉 size（真机反馈：流式报「无法确定大小」、下载产出 0B 文件），后来用单文件 PROPFIND（`statPath`）补上。任何新源的 `get()` 都要带回真实条目大小；拿不到就明说，交给上层报错。
+- **crypt 的大小判定是四态 `shape`**（`crypt_driver.dart` 的 `_CryptTarget`）：整包（响应体 > 32B）/ 空文件（密文恰 32B，明文 0B，合法）/ Range 分块 / 大小未知。**未知必须显式报错，绝不静默产出空内容**——这是竞态防线：元数据 size 与内容错位时，`Content-Range` 总长（与内容同请求）优先纠正元数据；两者都没有就报错。
 - 后缀区间 `bytes=-n`、开放区间 `bytes=a-` 都要按 HTTP 语义处理，越界要裁剪。
 - **播放器只认 URL 或本地路径**（media_kit / ffmpeg），不认 Dart 的 `Stream`。MustProxy 驱动要播放就必须有本地流桥，范例是 `crypt/crypt_stream_bridge.dart`：只监听 `127.0.0.1`、token 一次性映射 (accountId, path) 且 URL 不含凭证、HEAD 给 Content-Length、无 Range 回 200、有 Range 回 206 + Content-Range、按扩展名给 Content-Type、空闲自动关服务器。
 - 桥接之后**播放入口不需要任何分支**：`resolveStreamSource` 统一返回「URL + 请求头」，调用方无感。
@@ -73,13 +75,25 @@
 
 - 一个驱动 = 一个文件（`cloud_drivers/<name>_driver.dart`）+ 在 `driver_registry.dart` 注册 spec + 一份测试。
 - 上游源码放 `localdev/`（gitignored），只读参考，不进构建。
-- **上传已砍**（[99](99-IN-PROGRESS.md) §7.2.1）：不要移植 `Put` 与上传相关代码。
+- **上传已砍**（[99 §4.2](99-IN-PROGRESS.md) 取舍 1）：不要移植 `Put` 与上传相关代码。
 - 文档收口按 `00 §1`：开发中写 [99](99-IN-PROGRESS.md)，完成后把语义搬进对应功能块，去掉占位。
 
 ## 9. 还没做的（不要把计划当现状）
 
 - libsodium FFI 引擎，以及与纯 Dart 实现的手动切换（两套实现同格式，可随时互切）。
-- `netease_music`：cookie + rsa/aes 登录；只支持删除，不能建目录 / 改名 / 移动 / 复制。
-- OpenList 驱动清单里其余条目（只读家族的取舍：只读 = 能力遮罩，不单独实现写路径）。
+- `netease_music`：cookie + rsa/aes 登录；只支持删除，不能建目录 / 改名 / 移动 / 复制（[99 §4.5](99-IN-PROGRESS.md)）。
+- OpenList 驱动清单里其余条目：批次方案与逐盘评估见 [99 §4.9](99-IN-PROGRESS.md)（只读家族 = 能力遮罩，不单独实现写路径）。
 - 跨会话的 path→id 缓存与离线可用性策略。
 - 云盘账号的其它播放形态（后台播放、投屏等）未评估。
+
+## 10. 已落地驱动实录：baidu_netdisk
+
+第一个走完「spec 自描述 → 表单通用渲染 → 能力遮罩 → 真连验证」全链路的驱动（已实现，真机验收清单在 [99 §4.3.1](99-IN-PROGRESS.md)）。后续驱动照这套模式铺（[99 §4.9](99-IN-PROGRESS.md) 的移植模板）。
+
+- **动态区顺序**：refresh_token（必填，粘贴，可切换明文）→ 远程路径（默认 `/`，空置视为 `/`）→ 在线续期地址（默认 OpenList 公共服务 `api.oplist.org/baiduyun/renewapi`，常驻可编辑）→ 开关「在本地处理令牌刷新」→ Client ID / Secret（仅开关开启时显示）。
+- **开关语义（用户原话）**：「加一个开关：在本地处理令牌刷新，开启后显示Client ID和 Client Secret同时online_api变灰不可用，后端时也需要检查该开关，一旦打开就不使用online api逻辑而使用自建百度应用的刷新逻辑。」实现为 `BaiduAddition.localRefresh`，`BaiduClient.refreshToken()` 每次都检查。
+- **保存语义（用户原话）**：「能获取到access_token即保存，不能获取到的话则原样传递报错。」保存前 `verifyNewAccount` 真连一次（换 token + uinfo 校验），失败把 `CloudDriverException` 原文弹给用户、不落库、表单内容保留。
+- **存储映射**：refresh_token / client_id / client_secret / api_url_address / local_refresh / access_token 缓存 → `AccountsService.saveDriverConfig`（secure storage JSON，按账号隔离，删号即清）；remote_path / provider_type → accounts 表。
+- **不进表单**：crack 全部、上传 6 字段、order_by / only_list_video_file（客户端自己排序 / 分类）、use_online_api 开关（被本地刷新开关取代，默认走在线续期）。
+- **开关极性缺陷记录**（真机反馈后修正）：`localRefresh` 开关的联动极性曾接反——关掉开关时 online_api 变灰，正确语义是**开启**时才禁用 online_api、显示自建凭证输入。联动判定与 `disabledWhenSwitch` 的取值见 `baidu_netdisk_driver.dart` 的 spec 与 `test/baidu_refresh_switch_test.dart`。
+- **落点**：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（BaiduClient + 驱动 + spec 自描述：能力遮罩 / 表单参数 / 构造，见 §6）、`cloud_drive_service.dart`（查表工厂 / 直链下载 / resolveStreamSource / 五个文件操作）、`accounts_screen.dart`（表单按 spec 通用渲染）、`accounts_service.dart`（驱动配置通道）、`webdav_service.dart`（`resolveStreamSource` 异步统一入口，四个调用点已切换）。

@@ -55,7 +55,9 @@ CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.
 | 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：相对上次 `prerelease` 有新提交才构建发布 |
 | 手动 `workflow_dispatch`（pre-release） | 同上；**所选引用不是 `main` 时跳过** |
 
-> **开发中**：安装包改为按 ABI 分包、原生库压缩存放，另出一个去掉 x86_64 的合并包。语义与影响面见 [99](99-IN-PROGRESS.md)；完成后并入本节。
+**分包与压缩存放**：三个单 ABI 包（`arm64-v8a` / `armeabi-v7a` / `x86_64`）加一个去掉 x86 的合并包；原生库压缩存放（`useLegacyPackaging = true`）。实测（v0.1.0 通用包 101.3 MiB）：`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB，非原生部分只有 2.7 MiB——所以分包才是主要收益。v0.2.0 起 CI 产出三个 split APK（安装与体积尚待真机核对，见 §6）。
+
+**产物命名不要写死**：Flutter 3.47.5 在 `build/app/outputs/flutter-apk/` 下出的是 `app-<abi>-prod-release.apk`（ABI 在前），而 `build/app/outputs/apk/prod/release/` 下仍是 `app-prod-<abi>-release.apk`（flavor 在前）；两份 workflow 都在收集前 `ls` 打印目录清单。教训见 §4：本地只跑 `--no-pub lib` 会漏掉 CI 完整 `flutter analyze` 能看见的 warning（v0.2.0 因此失败过一次）。
 
 **硬约束**：不要为了看构建结果加 `on: push`，不要擅自 `gh workflow run`；需要打 Pre-release 时先等用户确认。
 
@@ -101,7 +103,7 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 **Don't**
 
 - 不要在播放路径上偷偷 enqueue 下载（视频侧本来就流式播放）。
-- 音频流式播放只在实验开关打开时可用，且必须复用视频侧的远端流模式，不要另起播放栈，见 [99 §3](99-IN-PROGRESS.md)。
+- 音频流式播放只在实验开关打开时可用，且必须复用视频侧的远端流模式，不要另起播放栈，见 [05 §9](05-AUDIO-PLAYBACK.md)（优化方向 [99 §1](99-IN-PROGRESS.md)）。
 - 不要把未下载的远端文件标成「排队中」。
 - 不要分享 CUE 虚拟曲；不要恢复 ffmpeg CUE 导出分享。
 - 不要在 `MainActivity` 里 import `AudioService` 类。
@@ -173,8 +175,10 @@ flutter test                   # 或全量
 |----|------|
 | 启动黑屏约 1.4 s（`Skipped 85 frames`） | 未修；`main()` 里串行 init 导致，可异步化 |
 | 后台下载 `fail host lookup` | 未修，优先级最高，见 [04 §7](04-DOWNLOAD-QUEUE.md) |
-| 网络库「文件动作模型」T1–T5 | **已实现**（分支 `feature/network-action-model`，未真机验收），见 [02](02-NETWORK-LIBRARY.md) |
+| 分包 APK 的安装与体积 | 分包 CI 已出包，**真机未核**（装得上 / 体积收益兑现），见 §2 |
+| 缓存 / 下载多选混选 | 同选文件夹与其中的文件、窄屏工具栏、单 / 多 / 混选，真机未核 |
+| 网络库「文件动作模型」T1–T5 | **已实现**，见 [02](02-NETWORK-LIBRARY.md)；部分服务端目录 `Destination` 待真机核（见 [02 §8](02-NETWORK-LIBRARY.md)） |
 | 进度条没有缓冲进度第二层 | 未做；libmpv 有 `player.stream.buffer` 可用 |
 | 空闲若干秒自动隐藏控件 | 未做，需先确认是否要 |
 | 左右手势区首次使用引导 | 未做，需先确认是否要 |
-| 音频串流（复用视频侧流式栈） | 已接入（实验开关，默认关闭），**未真机验收**；分析与坑见 [99 §1](99-IN-PROGRESS.md)、[99 §3](99-IN-PROGRESS.md) |
+| 音频串流（复用视频侧流式栈） | 已接入（实验开关，默认关闭）；连播 / 模式记忆等清单见 [05 §9](05-AUDIO-PLAYBACK.md)，优化方向见 [99 §1](99-IN-PROGRESS.md) |
