@@ -48,6 +48,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   bool _loading = false;
   String? _error;
 
+  /// 列表请求序号：每次 [_load] 递增。响应回来若序号已过期（期间用户又点了
+  /// 其他目录或返回），直接丢弃结果——「动画先行」后页面已显示新路径的加载
+  /// 动画，旧路径的迟到响应绝不能再写回来（真机反馈的返回后打开错误目录）。
+  int _loadSeq = 0;
+
   /// 多选状态。选中数由 [SelectionController] 统一判定「是不是全选」，
   /// 全选按钮因此会在计数打满时变成叉号，而不必记住用户按过它。
   SelectionController _selection = const SelectionController();
@@ -114,11 +119,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     await _load();
   }
 
+  /// 拉取当前 [_path] 的列表。「动画先行」：调用方先改路径并 setState 出加载
+  /// 动画，这里只负责发请求。响应带请求序号，过期（期间又导航过）即丢弃，
+  /// 避免旧目录内容写进新路径的页面。
   Future<void> _load() async {
-    if (_loading) return; // never run two listings at once
+    final seq = ++_loadSeq;
     final webDav = context.read<WebDavService>();
     final accounts = context.read<AccountsService>();
     if (!accounts.hasAccounts) {
+      if (seq != _loadSeq) return;
       setState(() {
         _error = '请先添加 WebDAV 服务器';
         _items = [];
@@ -140,6 +149,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       // listing and [_browsedAccountId] can never disagree.
       final accountId = _accountId;
       if (accountId == null) {
+        if (seq != _loadSeq) return;
         setState(() => _loading = false);
         return;
       }
@@ -148,7 +158,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         _path,
         fileTypes: fileTypes,
       );
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return; // 过期响应：丢弃。
       setState(() {
         _items = items;
         _browsedAccountId = accountId;
@@ -156,7 +166,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         _syncSelectionTotal();
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || seq != _loadSeq) return; // 过期响应：丢弃错误。
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -185,15 +195,29 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     await _load();
   }
 
+  /// 进入子目录。「动画先行」（真机反馈）：**先**更新路径并立即显示加载动画，
+  /// 再发请求——用户点下去马上看到切页反馈，快速连点也只是换目标重新加载；
+  /// 旧目录的迟到响应由 [_loadSeq] 作废，不会再写回页面。
   void _enterDir(WebDavItem item) {
-    _stack.add(item.path);
+    setState(() {
+      _stack.add(item.path);
+      _items = [];
+      _error = null;
+      _loading = true;
+    });
     _persistPath();
     _load();
   }
 
+  /// 返回上一级。同样动画先行：立即显示上级路径的加载动画。
   void _goUp() {
     if (_stack.length <= 1) return;
-    _stack.removeLast();
+    setState(() {
+      _stack.removeLast();
+      _items = [];
+      _error = null;
+      _loading = true;
+    });
     _persistPath();
     _load();
   }

@@ -451,21 +451,9 @@ class _TaskTile extends StatelessWidget {
                 ),
               ),
             ],
-            // 只对系统相册显示落盘位置：下载目录那条路径显示不正确（且无修复
-            // 价值），已按要求移除（99 §7.5 真机反馈）。
-            if (task.target == DownloadTarget.gallery &&
-                task.status == DownloadStatus.completed) ...[
-              const SizedBox(height: 4),
-              Text(
-                '${task.target.labelZh}：${task.localPath ?? ''}',
-                style: const TextStyle(
-                  color: AppColors.mutedText,
-                  fontSize: 11,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+            // 落盘位置的原始 URI（content://…）对用户没有意义，已按要求不再
+            // 显示（真机反馈：既读不懂也反映不了实际位置）；目标信息由上方
+            // 的「已存入系统相册」标签承担。
             if (task.errorMessage != null &&
                 (task.status == DownloadStatus.failed ||
                     retryWaiting)) ...[
