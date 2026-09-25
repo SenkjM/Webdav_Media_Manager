@@ -1,8 +1,14 @@
-# 99 §4.9 补充 · 可快速实现驱动的筛选与任务规划
+# 99 §4.9 补充 · 可快速实现驱动的筛选与任务规划（**已完成**）
 
 本文件是 [99 §4.9](99-IN-PROGRESS.md) 全量评估的**执行侧收敛**：
 按「快速可实现」标准筛出本轮批次，给出统计与任务划分。
 工序照 [12-驱动移植指南](12-DRIVER-PORTING-GUIDE.md)；批次背景见 [99 §4.9](99-IN-PROGRESS.md)。
+
+> **执行结果（本轮收口）**：T1–T4 全部落地并已合并进
+> `feature/openlist-driver-port-batch2`——`123_open` / `aliyundrive_open` /
+> `115open`（文件名 `open115_*`，typeId 仍 `115open`）/ `terabox`，
+> 四盘能力位与下表一致；`flutter analyze` 干净、`flutter test` 513 过
+> （含四个新驱动 ~180 用例）。真机验收仍待（按 §6）。
 
 ## 1. 筛选标准
 
@@ -92,8 +98,31 @@
 
 ## 6. 验收
 
-- 自动化：`flutter analyze` 干净 + `flutter test` 全过（含 4 个新驱动测试）。
+- 自动化：**已完成**——`flutter analyze` 无 issue + `flutter test` 全过
+  （feature 分支 513 用例，其中四个新驱动测试见下）。
+- 解耦回归：**已验证**——`git diff --stat main..HEAD -- lib/ test/`
+  只有 4 个驱动文件 + 注册表（+8 行）+ 4 个测试文件，公共层零改动
+  （[12 §1.1](12-DRIVER-PORTING-GUIDE.md) 的检查方法）。
 - 真机：按 [12 §9](12-DRIVER-PORTING-GUIDE.md) 清单逐盘过；
   **A 类（有测试条件）先验，其余靠发布后用户反馈**（[99 §4.3](99-IN-PROGRESS.md) 的先例）。
-- 解耦回归：`git diff --stat` 除驱动 / 注册表 / 测试外不应出现 lib/ 文件
-  （[12 §1.1](12-DRIVER-PORTING-GUIDE.md)）。
+
+### 6.1 各盘真机验收要点（合并后新增）
+
+| 驱动 | 重点（除 [12 §9](12-DRIVER-PORTING-GUIDE.md) 通用清单外） |
+|---|---|
+| `123_open` | refresh_token 在线续期轮换后重进账号不失效；`root_folder_id` 与远程路径叠加语义 |
+| `aliyundrive_open` | `drive_type` 三种取值的列表与直链；`UserNotAllowedAccessDrive` 自愈（换盘类型提示） |
+| `115open` | 直链 UA 校验下的下载/流式；**链接缓存**是否显著减少 downurl 调用（免费号 406 配额）；`root_id` 挂载 |
+| `terabox` | Cookie 过期的报错可读性；直链两种响应形态（`dlink` / `info`）；非国内区域的 9000 错误 |
+
+### 6.2 过程记录（并行移植的教训，已固化进 [12 §11](12-DRIVER-PORTING-GUIDE.md)）
+
+- 首轮四个子代理**共享同一工作目录**，互相切分支、注册表被覆盖、`git add -A`
+  误暂存他人半成品——之后改为**每盘独立 `git worktree`**（`pub get` 单独跑，
+  不用 junction 共享 `.dart_tool`），冲突只余注册表一处且逐个合并即自动解决。
+- 测试侧两类系统性编译错误（sealed 基类取 `key`、构造参数标签），同一批出现两次；
+  已按 `_formKey` 模式统一修法。
+- 驱动实机的三处真实缺陷在跑测试时暴露并修复：
+  `123_open` 的 path→id 缓存键不同形（缓存永失效）、
+  `123_open` 续期地址空串不回落默认值、
+  `aliyundrive_open` 在线续期候选不去重（custom 与 builtin 首项重复）。

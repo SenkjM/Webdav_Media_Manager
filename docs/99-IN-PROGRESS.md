@@ -235,8 +235,33 @@
 - **机制**：Go 版把 MakeDir / Move / Rename / Copy / Remove / Put 做成 `internal/driver` 的**可选接口**（方法名是 `MakeDir`，不是 Mkdir），87 个驱动都有方法签名，只读 / 索引驱动在方法体里返回 `errs.NotImplement`（桩实现）；op 层 type-switch 调用。Worker TS 把 mkdir 做成 `StorageDriver` 必备方法，行为与 Go 一致——真实现或抛「not supported」。**两版能力面一致**（worker 是我们的移植底稿）。
 - **首批 9 盘全部真实现 mkdir**（静态表 mkdir = 有）：`baidu_netdisk`（Go `driver.go:96` MakeDir → `create(path, 0, 1)` isdir=1，已验真；worker 同）、`aliyundrive_open`、`quark`、`115open`（worker `driver.ts:339` → `client.mkdir` 真调用，勿被「方法体含 throw」的粗扫误判）、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。
 - **只读家族 mkdir = 无（桩）**：`115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`；`url_tree` 疑似桩（落表前再确认一次）。
-- **待开发**：`netease_music` 无 mkdir（桩）；`crypt` 透传内挂驱动，落表时按宿主动态给位、不进静态表。
+- **已落地**：`baidu_netdisk`（mkdir 有）、`123_open`（mkdir 有）、`netease_music`（mkdir 无，桩；删除外四个写方法也都是桩 → 能力位只有 `list | read | delete`，见 [11 §11](11-CLOUD-DRIVER-PORTING.md)）。
+- **未落地**：`crypt` 透传内挂驱动，落表时按宿主动态给位、不进静态表。
 - **登记**：已落地 → `AccountCaps.staticCaps`；未落地 → 本表，落地时照表抄（用户决定：写代码会影响运行的先只进文档）。
+
+### 4.3.3 netease_music（已实现，待真机验收）
+
+实现语义、加密对齐与取舍已收口进 [11 §11](11-CLOUD-DRIVER-PORTING.md)。**待办只剩真机验收**：
+
+- **添加账号**：粘贴含 `__csrf` + `MUSIC_U` 的 Cookie → 真连校验（拉一页列表）通过才保存；Cookie 不全时表单内联报错且不出网；Cookie 过期（`code 301`）时提示「Cookie 可能已过期」、不落库、表单内容保留。
+- **浏览**：云盘歌曲以平铺列表出现（无目录层级）；远程路径只作虚拟前缀，改名后账号条目仍可打开。
+- **下载 / 缓存音乐 / 本地播放**：直链由网易 CDN 给出，能正常下载与播放。
+- **音乐流式**：VIP / 版权受限 / 已下架的歌曲要给出可读错误（不是空 URL、不是 0B 文件）。
+- **删除**：列表里删一首歌 → 云端确实少一首；再刷新列表确认。
+- **能力遮罩**：账号行**看不到**新建文件夹 / 重命名 / 移动 / 复制入口（隐藏而非置灰）；删除入口可见可用。
+- **`song_limit`**：填小值（如 5）后列表只剩 5 首；非法值回落 200。
+- **`weapi` / `linuxapi` 真连**：若网易改签（返回 `code -460` 之类），报错要带 code 与 message 原文，便于判断是风控还是实现问题。
+
+### 4.3.4 第二批四盘（已实现待真机验收：123_open / aliyundrive_open / 115open / terabox）
+
+按 4.9 的评估与 [13](13-DRIVER-BATCH-PLAN.md) 的筛选标准（粘贴凭证、有直链、无重加密、写方法真实现、单账号形态、worker 底稿完整）选出的快速批次，四盘全部走 [12](12-DRIVER-PORTING-GUIDE.md) 的工序（解耦检查 → 六步移植 → 一盘一测试）。语义与取舍收口进 [13 §4](13-DRIVER-BATCH-PLAN.md) 的字段清单与 [12](12-DRIVER-PORTING-GUIDE.md) 的表单/能力位规则。**共同语义**：直链必需头进 `rawHeaders`；`access_token` 只作缓存经 `onTokenUpdate` 持久化、不进表单；上传/排序字段不进表单；错误原文透传 `CloudDriverException`；`get()` 拿不到直链抛真实原因（不返回无直链条目，11 §10 的有意差异）。
+
+- **`123_open`**（`lib/services/cloud_drivers/_123_open_driver.dart`，前缀 `_` 因 Dart 标识符不能以数字开头；typeId 仍 `123_open`）：refresh_token + 在线续期（默认 `api.oplist.org/123cloud/renewapi`，空串回落默认值）+ 本地刷新开关（client_id/secret 联动，极性照百度）；`{code,message,data}` 包裹、`code===401` 刷新后重试一次防死循环；path→id 实例缓存（写后清）。**copy 上游未实现 → 能力位不给 copy**。真机重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
+- **`aliyundrive_open`**：refresh_token + 在线续期**多候选轮询**（自定义地址优先 + 6 内置，去重）→ 全失败落直连 OAuth（内置 client_id）；`drive_type`（resource/default/backup）决定 drive_id，`UserNotAllowedAccessDrive` 自愈重解析一次；`remove_way`（trash/delete）。能力位含 copy。
+- **`115open`**（文件名 `open115_*`，typeId 仍 `115open`）：refresh_token 每次刷新都轮换（`passportapi.115.com/open/refreshToken`，form 而非 JSON）；响应 `{state,code,message,data}`，`state=false` 且 code 99 / 401 开头 → 刷新重试一次，**430004 = 对象不存在**；直链必须配 OpenList UA（`rawHeaders` 贯穿）；**downurl 有每日配额 → 按 fid+UA 缓存 30 分钟**；`folder/get_info` 只认目录路径，430004/990002 回退逐层列目录。能力位含 copy。
+- **`terabox`**：cookie 粘贴式（会过期，重贴）；列表 `errno===9000` 是地区不可用；**jsToken 从首页正则抓取**（4000023/450016 失效重取）、errno -6 换域名；签名 `genSign()=sign(sign3, sign1)`，MD5 上游只用于上传（已砍）故无需 crypto 依赖；直链响应 `dlink` / `info` 两种形态都处理。五项写操作全真实现，能力位含 copy。
+- **实现中修复的驱动缺陷**（测试暴露，已随分支提交）：`123_open` path→id 缓存键与查表键不同形（缓存永远查不中）、续期地址空串不回落默认值；`aliyundrive_open` 在线续期候选地址未去重（custom 与 builtin 首项重复）。
+- **待办只剩真机验收**：四盘通用清单见 [12 §9](12-DRIVER-PORTING-GUIDE.md)，逐盘重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
 
 ### 4.4 只读家族（能力遮罩 = 只读）
 
@@ -292,7 +317,7 @@
 | 批次 | 驱动 | 判定依据 |
 |------|------|----------|
 | **P0 已落地 / 进行中** | `baidu_netdisk`（已实现待验收）、`crypt`（cipher 完成） | 见 4.3.1 / 4.5 |
-| **P1 粘贴凭证直连盘** | `aliyundrive_open`、`115open`、`123_open`、`quark_open`、`terabox`、`139`、`quark`(cookie) | refresh_token / cookie 粘贴式登录、直链 + 必需头、写操作全、无重加密；依赖 `pkg/crypto` 或 `crypto-js` 的地方都有 Dart 对应（AES/RSA/MD5，pointycastle 覆盖） |
+| **P1 粘贴凭证直连盘** | **`123_open`、`aliyundrive_open`、`115open`、`terabox`（✅ 本轮已移植，见 4.3.4）**；`quark_open`、`139`、`quark`(cookie) 下沉（判定见 [13 §2.2](13-DRIVER-BATCH-PLAN.md)：MustProxy 要流桥 / 5 种账号形态） | refresh_token / cookie 粘贴式登录、直链 + 必需头、写操作全、无重加密；依赖 `pkg/crypto` 或 `crypto-js` 的地方都有 Dart 对应（AES/RSA/MD5，pointycastle 覆盖） |
 | **P2 只读家族**（能力遮罩=只读，浏览器式登录或分享链接） | `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`github_releases`、`lenovonas_share`、`autoindex`、`url_tree`、`quark_uc_tv`、`emby`、`google_photo` | 五项写方法全部显式抛「不支持」；接入成本 = `CloudSource` 适配 + 能力遮罩；先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制（4.4） |
 | **P3 OAuth 回调盘** | `onedrive`、`onedrive_app`、`google_drive`、`dropbox`、`yandex_disk`、`pikpak`、`febbox`、`halalcloud_open`、`thunder` | 需要 OAuth client_id/secret + 回调或设备码流程，本地刷新与百度同构（`localRefresh` 开关模式直接复用）；体积不小但模式统一，可模板化批量铺 |
 | **P4 协议 / 存储类** | `webdav`、`sftp`、`smb`、`ftp`、`alist_v3`、`openlist`、`cloudreve_v3`、`cloudreve_v4`、`seafile`、`kodbox`、`mega`、`proton_drive` | 与已有 WebDAV 能力重叠或需要额外协议栈（smb/ftp/sftp 要原生依赖，mega/proton 有自家加密）；`webdav` 驱动可作为「WebDAV 账号统一到云盘账号模型」的迁移出口，优先级单独评估 |
