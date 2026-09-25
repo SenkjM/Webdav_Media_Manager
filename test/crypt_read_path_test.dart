@@ -356,11 +356,11 @@ void main() {
       final smallItems = await buildDriver(smallSrc).list('/');
       expect(CryptDriver.nameIsolateRuns, 0, reason: '小目录不值得起 isolate');
 
-      // 大目录：整批丢 isolate。
+      // 大目录：整批丢 isolate（门槛按实测定在约 1900 条短名，这里留够余量）。
       final big = <(String, bool, int)>[
-        for (var i = 0; i < 200; i++)
+        for (var i = 0; i < 2500; i++)
           (
-            cipher.encryptFileName('track-${i.toString().padLeft(3, '0')}.flac'),
+            cipher.encryptFileName('track-${i.toString().padLeft(4, '0')}.flac'),
             false,
             1000,
           ),
@@ -369,9 +369,9 @@ void main() {
       final bigSrc = _LinkSource(server: srv, entries: big);
       CryptDriver.nameIsolateRuns = 0;
       final bigItems = await buildDriver(bigSrc).list('/');
-      expect(CryptDriver.nameIsolateRuns, 1, reason: '大目录整批丢 isolate');
+      expect(CryptDriver.nameIsolateRuns, 1, reason: '超大目录整批丢 isolate');
       expect(bigItems.length, big.length);
-      expect(bigItems.first.name, 'track-000.flac');
+      expect(bigItems.first.name, 'track-0000.flac');
       expect(bigItems.last.name, 'album');
       expect(bigItems.last.isDir, isTrue);
       expect(smallItems.first.name, 'hello.txt');
