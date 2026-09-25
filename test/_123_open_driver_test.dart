@@ -136,8 +136,6 @@ void main() {
   /// API 服务器收到的请求（path → 次数），断言端点用。
   late List<String> apiPaths;
 
-  /// API 用例里观察到的请求体（最近一次）。
-  late String lastApiBody;
 
   Map<String, dynamic> envelope(Object? data) =>
       <String, dynamic>{'code': 0, 'message': 'ok', 'data': data};
@@ -161,7 +159,6 @@ void main() {
   setUp(() async {
     renewRefreshes = <String>[];
     apiPaths = <String>[];
-    lastApiBody = '';
 
     renewServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     renewServer.listen((req) {
@@ -189,7 +186,6 @@ void main() {
     apiServer.listen((req) async {
       apiPaths.add(req.uri.path);
       final body = await utf8.decoder.bind(req).join();
-      lastApiBody = body;
       final payload = apiResponse(
         req.uri.path,
         req.uri.queryParameters,
