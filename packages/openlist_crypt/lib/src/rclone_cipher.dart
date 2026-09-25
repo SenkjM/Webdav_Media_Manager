@@ -202,7 +202,7 @@ class RcloneCipher {
     if (cipherSize < kFileHeaderSize) {
       throw const RcloneCipherException('file too short');
     }
-    var size = cipherSize - kFileHeaderSize;
+    final size = cipherSize - kFileHeaderSize;
     final blocks = size ~/ kBlockSize;
     final residue = size % kBlockSize;
     var decrypted = blocks * kBlockDataSize;

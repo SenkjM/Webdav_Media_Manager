@@ -21,7 +21,7 @@ import 'platform_export_service.dart';
 import 'webdav_service.dart';
 import 'dart:math';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'cloud_drivers/crypt/cipher/rclone_cipher.dart';
+import 'package:openlist_crypt/openlist_crypt.dart';
 import 'settings_service.dart';
 import 'package:flutter/widgets.dart';
 

@@ -2,9 +2,10 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
+import 'package:openlist_crypt/openlist_crypt.dart';
+
 import '../../../models/account_capabilities.dart';
 import '../../cloud_driver.dart';
-import 'cipher/rclone_cipher.dart';
 
 /// crypt 驱动（99 §7.5）：包一层源账号，名字 / 内容按 rclone crypt 格式
 /// 加解密。只读链路 + 目录名加密（建目录 / 改名 / 移动 / 复制），无内容上传。

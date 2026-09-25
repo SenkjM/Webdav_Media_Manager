@@ -3,9 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:openlist_crypt/openlist_crypt.dart';
 import 'package:webdav_media_manager/models/account_capabilities.dart';
 import 'package:webdav_media_manager/services/cloud_driver.dart';
-import 'package:webdav_media_manager/services/cloud_drivers/crypt/cipher/rclone_cipher.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/crypt/crypt_driver.dart';
 
 /// 内存内容源：条目名用真实 cipher 预加密，模拟源账号上的密文状态。
