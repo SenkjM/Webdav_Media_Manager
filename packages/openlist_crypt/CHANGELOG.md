@@ -1,3 +1,19 @@
+## 0.2.0
+
+Write-side encryption API:
+
+- `RcloneCipher.encryptBlock(fileNonce, blockIndex, plainBlock)` — inverse
+  of `decryptBlock`; per-block sealing for upload pipelines with strict
+  block-boundary and size validation.
+- `RcloneCipher.encrypt(plain, {nonce})` — optional explicit nonce for
+  deterministic output (golden vectors / resume scenarios); random by default.
+- `RcloneCipher.randomFileNonce()` — 24-byte CSPRNG file nonce.
+- `RcloneStreamEncrypter` — push-mode streaming encrypter (O(64 KiB) memory,
+  arbitrary chunk sizes, `cipherBytesProduced` progress counter).
+- 14 new tests: block round-trips, cross-checks against whole-buffer encrypt,
+  random-chunk streaming equivalence, empty file, misuse guards, fixed-nonce
+  golden vector. Suite total 45/45.
+
 ## 0.1.0
 
 Initial extraction from Webdav Media Manager (`lib/services/cloud_drivers/crypt/cipher/`).

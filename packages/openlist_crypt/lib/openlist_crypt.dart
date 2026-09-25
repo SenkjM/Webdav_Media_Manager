@@ -43,6 +43,7 @@
 library;
 
 export 'src/rclone_cipher.dart';
+export 'src/stream_encrypter.dart';
 export 'src/secretbox.dart';
 export 'src/base32768.dart';
 export 'src/name_codec.dart';

@@ -4,7 +4,7 @@ description: >-
   format: scrypt key derivation, EME filename encryption, XSalsa20-Poly1305
   content blocks, and base32/base64/base32768 filename encodings. Wire
   compatible with rclone backend/crypt and OpenList/Alist crypt storage.
-version: 0.1.0
+version: 0.2.0
 publish_to: none
 repository: https://github.com/SenkjM/Webdav_Media_Manager
 issue_tracker: https://github.com/SenkjM/Webdav_Media_Manager/issues

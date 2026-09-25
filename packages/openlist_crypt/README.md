@@ -56,6 +56,32 @@ final cipherLen = RcloneCipher.encryptedSize(plainLen);
 final plainLen2 = RcloneCipher.decryptedSize(cipherLen);
 ```
 
+## Writing (encrypt)
+
+```dart
+import 'package:openlist_crypt/openlist_crypt.dart';
+
+final cipher = RcloneCipher(password: 'testpass', salt: 'testsalt');
+
+// Whole-buffer, deterministic when an explicit nonce is given
+final nonce = RcloneCipher.randomFileNonce();
+final bytes = cipher.encrypt(plain, nonce: nonce);   // omit nonce → random
+
+// Streaming: O(64 KiB) memory for arbitrarily large files.
+// chunk sizes need no alignment — blocks are cut internally.
+final enc = RcloneStreamEncrypter(cipher, nonce: nonce);
+await sink.add(enc.header());                        // 32B magic + nonce
+await for (final chunk in source) {
+  for (final block in enc.push(chunk)) {             // 0..n full blocks
+    await sink.add(block);
+  }
+}
+for (final block in enc.close()) {                   // ≤1 partial block
+  await sink.add(block);
+}
+// enc.cipherBytesProduced — monotonic progress (excludes the 32B header)
+```
+
 ## Compatibility notes
 
 * **base32768** — ported from [`github.com/Max-Sum/base32768`][base32768]

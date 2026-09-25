@@ -222,28 +222,71 @@ class RcloneCipher {
     return n;
   }
 
-  /// 全量加密（测试 / 未来上传）。随机 nonce。
-  Uint8List encrypt(Uint8List plain) {
-    final out = BytesBuilder();
-    final nonce = Uint8List(24);
+  /// 生成 24 字节密码学随机文件 nonce（加密新文件用；断点续传场景应在
+  /// 开始前生成并随任务持久化，重试时复用同一个）。
+  static Uint8List randomFileNonce() {
+    final n = Uint8List(24);
     final rnd = Random.secure();
     for (var i = 0; i < 24; i++) {
-      nonce[i] = rnd.nextInt(256);
+      n[i] = rnd.nextInt(256);
     }
+    return n;
+  }
+
+  static Uint8List _validatedNonce(Uint8List? nonce) {
+    if (nonce == null) return randomFileNonce();
+    if (nonce.length != 24) {
+      throw const RcloneCipherException('file nonce must be 24 bytes');
+    }
+    return Uint8List.fromList(nonce);
+  }
+
+  /// 加密单个明文块，[decryptBlock] 的逆（上传管线按块写远端用）。
+  ///
+  /// 块边界纪律：除最后一块外每块必须恰为 [kBlockDataSize] 字节——块号
+  /// 参与块 nonce，错位会让远端密文整体不可解。[plainBlock] 上限
+  /// [kBlockDataSize]；返回值 = 明文 + 16 字节 MAC 前缀。
+  Uint8List encryptBlock(
+    Uint8List fileNonce,
+    int blockIndex,
+    Uint8List plainBlock,
+  ) {
+    if (fileNonce.length != 24) {
+      throw const RcloneCipherException('file nonce must be 24 bytes');
+    }
+    if (blockIndex < 0) {
+      throw const RcloneCipherException('block index must be >= 0');
+    }
+    if (plainBlock.length > kBlockDataSize) {
+      throw const RcloneCipherException('block too large');
+    }
+    return secretboxSeal(
+      plainBlock,
+      _blockNonce(fileNonce, blockIndex),
+      _dataKey,
+    );
+  }
+
+  /// 全量加密。[nonce] 缺省每次随机生成；指定后输出可复现
+  /// （黄金向量 / 续传复用同一 nonce 的场景）。大文件流式加密用
+  /// RcloneStreamEncrypter。
+  Uint8List encrypt(Uint8List plain, {Uint8List? nonce}) {
+    final n = _validatedNonce(nonce);
+    final out = BytesBuilder();
     out.add(kFileMagic);
-    out.add(nonce);
+    out.add(n);
     var off = 0;
     var block = 0;
     while (off < plain.length) {
-      final n = (plain.length - off) < kBlockDataSize
+      final len = (plain.length - off) < kBlockDataSize
           ? (plain.length - off)
           : kBlockDataSize;
-      out.add(secretboxSeal(
-        Uint8List.sublistView(plain, off, off + n),
-        _blockNonce(nonce, block),
-        _dataKey,
+      out.add(encryptBlock(
+        n,
+        block,
+        Uint8List.sublistView(plain, off, off + len),
       ));
-      off += n;
+      off += len;
       block++;
     }
     return out.toBytes();
