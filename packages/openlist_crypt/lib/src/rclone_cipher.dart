@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -26,6 +27,10 @@ const String kDefaultEncryptedSuffix = '.bin';
 
 /// rclone 内置默认盐（cipher.go defaultSalt：盐为空时使用）。
 final Uint8List kDefaultSaltBytes = Uint8List.fromList(const [0xA8, 0x0D, 0xF4, 0x3A, 0x8F, 0xBD, 0x03, 0x08, 0xA7, 0xCA, 0xB8, 0x3E, 0x58, 0x1F, 0x86, 0xB1]);
+
+/// 密钥材料长度：dataKey[32] + nameKey[32] + nameTweak[16]。
+const int kKeyMaterialLength = 80;
+
 class RcloneCipherException implements Exception {
   const RcloneCipherException(this.message);
 
@@ -60,6 +65,39 @@ void _nonceAdd(Uint8List nonce, int x) {
   }
 }
 
+/// scrypt(N=16384, r=8, p=1, dkLen=80) → dataKey[32] + nameKey[32] + nameTweak[16]。
+///
+/// 空密码 = 全零密钥（rclone 的格式的一部分，测试依赖）。纯计算、不碰任何
+/// 共享状态，因此可以直接搬进 [Isolate.run]（见 [deriveKeyMaterial]）。
+Uint8List deriveKeyMaterialSync({
+  required String password,
+  required String salt,
+}) {
+  final key = Uint8List(kKeyMaterialLength);
+  if (password.isEmpty) return key;
+  final saltBytes =
+      salt.isEmpty ? kDefaultSaltBytes : Uint8List.fromList(utf8.encode(salt));
+  final derivator = KeyDerivator('scrypt');
+  derivator.init(ScryptParameters(16384, 8, 1, key.length, saltBytes));
+  key.setAll(0, derivator.process(Uint8List.fromList(utf8.encode(password))));
+  return key;
+}
+
+/// [deriveKeyMaterialSync] 的异步版：把 scrypt 丢进独立 isolate 跑。
+///
+/// 单次派生在中端安卓机上是数百毫秒级（桌面约 100ms），跑在主 isolate 上
+/// 就是一次肉眼可见的卡顿。返回值与同步版逐字节相同（黄金向量见测试）。
+///
+/// 调用方自己决定要不要缓存结果——密钥材料是密码 + 盐的纯函数，进程内
+/// 复用不会让任何映射失效（名字 / 内容加解密都是密钥的确定性函数）。
+Future<Uint8List> deriveKeyMaterial({
+  required String password,
+  required String salt,
+}) =>
+    Isolate.run(
+      () => deriveKeyMaterialSync(password: password, salt: salt),
+    );
+
 /// rclone crypt cipher。
 class RcloneCipher {
   RcloneCipher({
@@ -70,7 +108,25 @@ class RcloneCipher {
     this.nameEncoding = 'base32',
     this.encryptedSuffix = kDefaultEncryptedSuffix,
   }) {
-    _derive(password, salt);
+    _install(deriveKeyMaterialSync(password: password, salt: salt));
+  }
+
+  /// 用已派生的 80 字节密钥材料构造（见 [deriveKeyMaterial]）。
+  ///
+  /// 给两条路用：把 scrypt 放在 isolate 里派生后在主 isolate 构造；以及在
+  /// 同一个 isolate 内为多份配置复用同一份密钥材料。
+  RcloneCipher.fromKeyMaterial(
+    Uint8List material, {
+    this.mode = NameEncryptionMode.standard,
+    this.dirNameEncrypt = true,
+    this.nameEncoding = 'base32',
+    this.encryptedSuffix = kDefaultEncryptedSuffix,
+  }) {
+    if (material.length != kKeyMaterialLength) {
+      throw RcloneCipherException(
+          'key material must be $kKeyMaterialLength bytes');
+    }
+    _install(material);
   }
 
   final NameEncryptionMode mode;
@@ -87,15 +143,7 @@ class RcloneCipher {
   late final Uint8List _nameTweak;
   late final EmeCipher _eme;
 
-  void _derive(String password, String salt) {
-    // rclone：空密码 = 全零密钥（格式的一部分，测试依赖）。
-    final key = Uint8List(80);
-    if (password.isNotEmpty) {
-      final saltBytes = salt.isEmpty ? kDefaultSaltBytes : Uint8List.fromList(utf8.encode(salt));
-      final derivator = KeyDerivator('scrypt');
-      derivator.init(ScryptParameters(16384, 8, 1, key.length, saltBytes));
-      key.setAll(0, derivator.process(Uint8List.fromList(utf8.encode(password))));
-    }
+  void _install(Uint8List key) {
     _dataKey = Uint8List.sublistView(key, 0, 32);
     _nameKey = Uint8List.sublistView(key, 32, 64);
     _nameTweak = Uint8List.sublistView(key, 64, 80);
