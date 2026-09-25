@@ -74,3 +74,5 @@ TUNNEL-SKILL-TEST-RECORD.md
 
 # Local dev clones (e.g. openlist-worker) — never part of the app
 /localdev/
+# per-agent git worktrees (created by agent-worktree.ps1)
+.agents/
