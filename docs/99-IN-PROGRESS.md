@@ -1,4 +1,4 @@
-# 99 · 开发中文档
+﻿# 99 · 开发中文档
 
 只记录**正在开发**的功能的原始语义：需求原话、取舍、临时决定、还没定型的实现。
 用法与收口规则见 [00-INDEX.md](00-INDEX.md) 的「完整文档与开发中文档」。
@@ -252,7 +252,7 @@
 - **`song_limit`**：填小值（如 5）后列表只剩 5 首；非法值回落 200。
 - **`weapi` / `linuxapi` 真连**：若网易改签（返回 `code -460` 之类），报错要带 code 与 message 原文，便于判断是风控还是实现问题。
 
-### 4.3.4 第二批四盘（已实现待真机验收：123_open / aliyundrive_open / 115open / terabox）
+### 4.3.4 第二批四盘（已实现，真机验收通过——用户确认，123_open 打开目录报 invalid_grant 已按用户决定不排查）：123_open / aliyundrive_open / 115open / terabox
 
 按 4.9 的评估与 [13](13-DRIVER-BATCH-PLAN.md) 的筛选标准（粘贴凭证、有直链、无重加密、写方法真实现、单账号形态、worker 底稿完整）选出的快速批次，四盘全部走 [12](12-DRIVER-PORTING-GUIDE.md) 的工序（解耦检查 → 六步移植 → 一盘一测试）。语义与取舍收口进 [13 §4](13-DRIVER-BATCH-PLAN.md) 的字段清单与 [12](12-DRIVER-PORTING-GUIDE.md) 的表单/能力位规则。**共同语义**：直链必需头进 `rawHeaders`；`access_token` 只作缓存经 `onTokenUpdate` 持久化、不进表单；上传/排序字段不进表单；错误原文透传 `CloudDriverException`；`get()` 拿不到直链抛真实原因（不返回无直链条目，11 §10 的有意差异）。
 
@@ -261,7 +261,7 @@
 - **`115open`**（文件名 `open115_*`，typeId 仍 `115open`）：refresh_token 每次刷新都轮换（`passportapi.115.com/open/refreshToken`，form 而非 JSON）；响应 `{state,code,message,data}`，`state=false` 且 code 99 / 401 开头 → 刷新重试一次，**430004 = 对象不存在**；直链必须配 OpenList UA（`rawHeaders` 贯穿）；**downurl 有每日配额 → 按 fid+UA 缓存 30 分钟**；`folder/get_info` 只认目录路径，430004/990002 回退逐层列目录。能力位含 copy。
 - **`terabox`**：cookie 粘贴式（会过期，重贴）；列表 `errno===9000` 是地区不可用；**jsToken 从首页正则抓取**（4000023/450016 失效重取）、errno -6 换域名；签名 `genSign()=sign(sign3, sign1)`，MD5 上游只用于上传（已砍）故无需 crypto 依赖；直链响应 `dlink` / `info` 两种形态都处理。五项写操作全真实现，能力位含 copy。
 - **实现中修复的驱动缺陷**（测试暴露，已随分支提交）：`123_open` path→id 缓存键与查表键不同形（缓存永远查不中）、续期地址空串不回落默认值；`aliyundrive_open` 在线续期候选地址未去重（custom 与 builtin 首项重复）。
-- **待办只剩真机验收**：四盘通用清单见 [12 §9](12-DRIVER-PORTING-GUIDE.md)，逐盘重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
+- **验收状态（用户确认）**：真机验收按通过处理——123_open 添加与浏览真机通过（打开目录曾报一次 invalid_grant，用户决定不排查、按验收通过收口），其余三盘按用户决定一并视为验收通过；通用清单见 [12 §9](12-DRIVER-PORTING-GUIDE.md)，逐盘重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
 
 ### 4.4 只读家族（能力遮罩 = 只读）
 
@@ -297,7 +297,7 @@
 | 0 | 地基：[10 T6](10-SIDE-QUESTS.md) 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表。**已完成**：`flutter analyze` 全清 + 244 测试全过，[10 T6](10-SIDE-QUESTS.md) 随之删除 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
 | 1 | 首个驱动端到端：`baidu_netdisk`。**代码已实现（表单 + 驱动 + 下载 / 流式全链路），待真机验收**，清单见 4.3.1 | 真机：添加账号 → 浏览 → 下载 → 流式 |
 | 2 | 能力遮罩接线 UI：WebDAV 表单能力勾选 + 行操作 / 多选按钮按遮罩隐藏 + 只读试点（`openlist_share` + `github_releases`）。**新建文件夹遮罩已提前接入**（网络库 AppBar + 目录选择器，按写入位隐藏） | 真机：只读账号无写入口；WebDAV 能力勾选生效 |
-| 3 | 首批其余驱动逐个移植。**已完成**：粘贴凭证直连盘批次 4 盘（`123_open` / `aliyundrive_open` / `115open` / `terabox`）——批量筛选与逐盘判定见 [13](13-DRIVER-BATCH-PLAN.md)，实现实录见 [11 §11](11-CLOUD-DRIVER-PORTING.md)；`flutter analyze` 无 issue、测试全过，**待真机验收**。`quark_open`（MustProxy 需流桥）/ `139`（多形态）/ `quark`(cookie) 下沉到后续批 | 逐盘真机验收 |
+| 3 | 首批其余驱动逐个移植。**已完成**：粘贴凭证直连盘批次 4 盘（`123_open` / `aliyundrive_open` / `115open` / `terabox`）——批量筛选与逐盘判定见 [13](13-DRIVER-BATCH-PLAN.md)，实现实录见 [11 §11](11-CLOUD-DRIVER-PORTING.md)；`flutter analyze` 无 issue、测试全过，**真机验收通过（用户确认）**。`quark_open`（MustProxy 需流桥）/ `139`（多形态）/ `quark`(cookie) 下沉到后续批 | 真机验收通过（用户确认） |
 | 4 | 云端写路径禁用语义（backup / sync / playlist 对云盘账号的提示） | 真机：云盘账号同步入口有明确文案 |
 
 阶段 0 代码落点：`lib/models/account_capabilities.dart`（能力位 + 静态表）、`lib/models/webdav_account.dart`（`providerType` / `remotePath` / `capabilities`）、`lib/services/cloud_driver.dart`（接口 + `CloudFileItem`）、`lib/services/cloud_drive_service.dart`（骨架：类型判定 / 能力解析 / 写路径永久禁用）、`lib/services/webdav_service.dart`（`_cloudOf` 分流缝，12 个方法头）、`lib/services/library_database.dart`（v6，accounts 补列 `provider_type` / `remote_path` / `capabilities`）、`lib/services/accounts_service.dart`（`accountById` + 扩参）、`lib/providers/app_state.dart` 与 `lib/main.dart`（装配）。
