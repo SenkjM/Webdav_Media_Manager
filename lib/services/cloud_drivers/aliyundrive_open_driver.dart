@@ -1,4 +1,4 @@
-﻿/// 阿里云盘开放平台驱动（OpenList `aliyundrive_open` 移植）。
+/// 阿里云盘开放平台驱动（OpenList `aliyundrive_open` 移植）。
 ///
 /// 移植自 `localdev/OpenList-Worker/src/backend/drivers/aliyundrive_open`
 /// （driver.ts + util.ts + types.ts，移植底稿）与
@@ -309,9 +309,14 @@ class AliyundriveOpenClient {
   /// 在线续期候选地址：自定义地址优先，其后是内置公共服务（worker 顺序）。
   List<String> _renewApiCandidates() {
     final custom = addition.apiUrlAddress.trim();
+    // 去重：表单默认值就是 builtinRenewApis 的第一个地址；不去重会在
+    // 「全部失败」路径上把同一个地址打两遍（多耗一次请求，候选数也对不上
+    // 内置表——回归用例「在线全失败 → 落到直连 OAuth」就是按内置表长度断言的）。
     return <String>[
-      if (custom.isNotEmpty) custom,
-      ...AliyundriveOpenClient.builtinRenewApis,
+      ...{
+        if (custom.isNotEmpty) custom,
+        ...AliyundriveOpenClient.builtinRenewApis,
+      },
     ];
   }
 

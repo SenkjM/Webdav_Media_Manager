@@ -32,6 +32,14 @@ import 'package:webdav_media_manager/services/cloud_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/aliyundrive_open_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/driver_registry.dart';
 
+/// 表单条目的 key（`CloudDriverFormItem` 是 sealed 基类，key 在具体子类上）。
+String _formKey(CloudDriverFormItem item) => switch (item) {
+      CloudDriverField(:final key) => key,
+      CloudDriverSelectField(:final key) => key,
+      CloudDriverAccountField(:final key) => key,
+      CloudDriverSwitchField(:final key) => key,
+    };
+
 /// 一次出站请求的完整记录。
 class _Hit {
   _Hit(this.method, this.url, this.headers, this.body);
@@ -606,7 +614,7 @@ void main() {
       };
 
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       final item = await driver.get('/a.mp4');
@@ -629,7 +637,7 @@ void main() {
         return (200, '{"items":[{"file_id":"f-1","name":"a.mp4","type":"file"}]}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       expect((await driver.get('/a.mp4')).rawUrl,
@@ -647,7 +655,7 @@ void main() {
         return (200, '{"items":[{"file_id":"f-1","name":"a.mp4","type":"file"}]}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       await expectLater(
@@ -673,7 +681,7 @@ void main() {
         return (200, '{"items":[{"file_id":"f-9","name":"movies","type":"folder"}]}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       final item = await driver.get('/movies');
@@ -822,7 +830,7 @@ void main() {
     test('init() 校验令牌并解析出 drive_id', () async {
       handler = tree;
       final driver = AliyundriveOpenDriver(
-        addition(refreshToken: 'rt-1', accessToken: 'at-1'),
+        addition: addition(refreshToken: 'rt-1', accessToken: 'at-1'),
         dio: dio,
       );
       await driver.init();
@@ -839,7 +847,7 @@ void main() {
         }
         return (200, '{"resource_drive_id":"d-1"}');
       };
-      final driver = AliyundriveOpenDriver(addition(), dio: dio);
+      final driver = AliyundriveOpenDriver(addition: addition(), dio: dio);
       await driver.init();
 
       expect(hits.first.host, 'api.oplist.org');
@@ -855,7 +863,7 @@ void main() {
         return (401, '{"code":"AccessTokenInvalid","message":"token is invalid"}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(refreshToken: 'rt-1', accessToken: 'at-bad'),
+        addition: addition(refreshToken: 'rt-1', accessToken: 'at-bad'),
         dio: dio,
       );
       await expectLater(driver.init(), throwsA(isA<CloudDriverException>()));
@@ -864,7 +872,7 @@ void main() {
     test('list() 逐层解析路径：/movies 用父目录里的 file_id 列子目录', () async {
       handler = tree;
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       final items = await driver.list('/movies');
@@ -881,7 +889,7 @@ void main() {
     test('list() 路径缓存生效：第二次同路径不重复解析', () async {
       handler = tree;
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       await driver.list('/movies');
@@ -896,7 +904,7 @@ void main() {
     test('list() 路径不存在 → 报可读错误', () async {
       handler = tree;
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       await expectLater(
@@ -922,7 +930,7 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1', removeWay: 'trash'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1', removeWay: 'trash'),
         dio: dio,
       );
       await driver.remove('/movies/a.mp4');
@@ -938,7 +946,7 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1', removeWay: 'delete'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1', removeWay: 'delete'),
         dio: dio,
       );
       await driver.remove('/movies/a.mp4');
@@ -966,7 +974,7 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       await driver.mkdir('/movies/newdir');
@@ -984,7 +992,7 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       await driver.rename('/movies/a.mp4', '/movies/b.mp4');
@@ -1007,7 +1015,7 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       await driver.rename('/movies/a.mp4', '/b.mp4');
@@ -1022,7 +1030,7 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       await driver.move('/movies/a.mp4', '/', 'a.mp4');
@@ -1044,7 +1052,7 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       await driver.copy('/movies/a.mp4', '/', 'a.mp4');
@@ -1054,7 +1062,7 @@ void main() {
     test('get("/") 返回目录占位，不出网', () async {
       handler = (hit) => fail('根目录不该发出请求，实际打到 ${hit.url}');
       final driver = AliyundriveOpenDriver(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
+        addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
       final item = await driver.get('/');
@@ -1088,7 +1096,7 @@ void main() {
 
     test('表单字段齐全且顺序正确', () {
       expect(
-        spec.form.map((f) => f.key).toList(),
+        spec.form.map(_formKey).toList(),
         [
           'refresh_token',
           'drive_type',
@@ -1101,10 +1109,10 @@ void main() {
         ],
       );
       // access_token 只作缓存，绝不进表单。
-      expect(spec.form.map((f) => f.key), isNot(contains('access_token')));
+      expect(spec.form.map(_formKey), isNot(contains('access_token')));
       // 排序与上传相关字段不进表单。
       for (final key in const ['order_by', 'order_direction', 'chunk_size']) {
-        expect(spec.form.map((f) => f.key), isNot(contains(key)));
+        expect(spec.form.map(_formKey), isNot(contains(key)));
       }
     });
 
