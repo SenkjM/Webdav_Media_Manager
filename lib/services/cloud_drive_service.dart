@@ -249,6 +249,12 @@ class CloudDriveService extends ChangeNotifier {
     if (item.rawUrl == null) {
       // MustProxy（crypt，99 §7.5）：解密流直接写目标文件；续传交给驱动的区间
       // 读取——crypt 的 openContentRange 会按块边界精确解密，不重下前面的块。
+      // 大小未知时拒绝下载：整包/分块的判定依赖密文总长，未知大小会被误当成
+      // 「源回了整包」，静默产出损坏的空文件比明确报错糟糕得多。
+      if (item.size <= 0) {
+        throw CloudDriverException(
+            '无法确定「${item.name}」的大小，下载已取消');
+      }
       final driver = _requireDriver(accountId);
       final canResume = resumeFrom > 0 && item.size > resumeFrom;
       var received = canResume ? resumeFrom : 0;

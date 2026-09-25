@@ -264,6 +264,33 @@ class WebDavService extends ChangeNotifier {
     return items;
   }
 
+  /// 单文件 PROPFIND：只取条目元数据（crypt 的 WebDAV 源适配层用，
+  /// 列表接口拿不到单个远端文件的大小）。
+  Future<WebDavItem?> statPath(String accountId, String path) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) {
+      // 云盘账号：driver.get() 不返回列表式 size 也无妨——crypt 源适配层
+      // 不会对云盘账号走这里（云盘源走 CloudAccountSource）。
+      return null;
+    }
+    final client = _requireClient(accountId);
+    final normalized = path.isEmpty ? '/' : path;
+    final f = await client.readProps(normalized);
+    final name = (f.name ?? '').isNotEmpty ? f.name! : normalized.split('/').last;
+    final isDir = f.isDir ?? false;
+    var itemPath = f.path ?? '';
+    if (itemPath.isEmpty) itemPath = normalized;
+    if (!itemPath.startsWith('/')) itemPath = '/$itemPath';
+    return WebDavItem(
+      name: name,
+      path: isDir && !itemPath.endsWith('/') ? '$itemPath/' : itemPath,
+      isDirectory: isDir,
+      size: f.size,
+      modified: f.mTime,
+      category: isDir ? FileCategory.other : FileTypeConfig().categoryFor(name),
+    );
+  }
+
   /// Download a remote file into [localFile] **from a specific account**.
   /// Never used for streaming playback.
   /// [resumeFrom] > 0 表示复用半截文件续传（见 resumable_download.dart）。

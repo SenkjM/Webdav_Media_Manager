@@ -630,7 +630,7 @@ class AccountsScreen extends StatelessWidget {
         await accounts.saveDriverConfig(account.id, cloudConfig!);
         // 云盘添加成功：提示后随表单一起关闭（99 §7.2.7）。
         if (context.mounted) {
-          AppSnack.show(context, '成功添加（\${nameCtrl.text.trim()}）');
+          AppSnack.show(context, '成功添加（${nameCtrl.text.trim()}）');
         }
       } else {
         await accounts.updateAccount(

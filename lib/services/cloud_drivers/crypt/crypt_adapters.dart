@@ -46,9 +46,22 @@ class WebDavAccountSource implements CloudSource {
     if (s == null) {
       throw const CloudDriverException('WebDAV 未连接，无法取源内容');
     }
+    // 密文条目的大小必须带给 crypt 层：流式回 Content-Length、下载进度、
+    // Range 分块判断（wholeBody）全依赖它。列表接口对单文件拿不到，
+    // 单独 PROPFIND 一次（statPath）；失败不阻断——size 留 0 由上层
+    // 的「无法确定大小」明确报错，而不是这里抛出含糊的网络错误。
+    var size = 0;
+    DateTime? modified;
+    try {
+      final stat = await _webDav.statPath(_account.id, p);
+      size = stat?.size ?? 0;
+      modified = stat?.modified;
+    } catch (_) {}
     return CloudFileItem(
       name: cloudBasename(p),
       isDir: false,
+      size: size,
+      modified: modified,
       rawUrl: s.uri,
       rawHeaders: s.headers,
     );

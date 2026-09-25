@@ -196,10 +196,19 @@ class CryptDriver extends CloudDriver {
   Stream<List<int>> openContent(String path) async* {
     final t = await _openTarget(path);
     try {
-      if (t.wholeBody) {
-        // 源不支持 Range（一次回整包）或长度未知：整包兜底。
-        yield _cipher.decrypt(t.header);
-        return;
+      switch (t.shape) {
+        case _CryptTarget.shapeWholeBody:
+          // 源不支持 Range（一次回整包）：整包解密。
+          yield _cipher.decrypt(t.header);
+          return;
+        case _CryptTarget.shapeEmptyFile:
+          // 密文只有文件头：合法的 0 字节明文文件。
+          return;
+        case _CryptTarget.shapeUnknownSize:
+          throw const CloudDriverException(
+              '无法确定加密内容的大小（源未提供长度且不支持 Range）');
+        default:
+          break; // shapeRanged：走下方分块解密。
       }
       var offset = kFileHeaderSize;
       var block = 0;
@@ -226,12 +235,20 @@ class CryptDriver extends CloudDriver {
     if (start < 0 || end < start) return;
     final t = await _openTarget(path);
     try {
-      if (t.wholeBody) {
-        final plain = _cipher.decrypt(t.header);
-        if (start >= plain.length) return;
-        final last = end < plain.length - 1 ? end : plain.length - 1;
-        yield Uint8List.sublistView(plain, start, last + 1);
-        return;
+      switch (t.shape) {
+        case _CryptTarget.shapeWholeBody:
+          final plain = _cipher.decrypt(t.header);
+          if (start >= plain.length) return;
+          final last = end < plain.length - 1 ? end : plain.length - 1;
+          yield Uint8List.sublistView(plain, start, last + 1);
+          return;
+        case _CryptTarget.shapeEmptyFile:
+          return; // 0 字节明文，任何区间都是空。
+        case _CryptTarget.shapeUnknownSize:
+          throw const CloudDriverException(
+              '无法确定加密内容的大小（源未提供长度且不支持 Range）');
+        default:
+          break; // shapeRanged：走下方分块解密。
       }
       final plainSize = RcloneCipher.decryptedSize(t.cipherSize);
       if (start >= plainSize) return;
@@ -263,6 +280,10 @@ class CryptDriver extends CloudDriver {
 
   /// 解析一次目标：密文直链 + 请求头 + 文件 nonce + 密文长度。
   /// 失败时关闭 Dio，成功时由调用方在 finally 关闭。
+  ///
+  /// 密文总长的取值优先级：响应 `Content-Range` 的总长（与内容**同请求**，
+  /// 不会与实际内容错位）> 源元数据给的 [CloudFileItem.size]。只有两者都
+  /// 拿不到（0）才算「大小未知」——用元数据校对内容，防二者错位的竞态。
   Future<_CryptTarget> _openTarget(String path) async {
     final src = _requireSource();
     final inner = await src.get(_mapToInner(path, lastIsFile: true));
@@ -274,15 +295,21 @@ class CryptDriver extends CloudDriver {
       BaseOptions(connectTimeout: const Duration(seconds: 20)),
     );
     try {
-      final header = await _fetchRange(
+      final head = await _fetchRangeWithMeta(
         dio,
         url,
         inner.rawHeaders,
         0,
         kFileHeaderSize - 1,
       );
+      final header = head.$1;
       if (header.length < kFileHeaderSize) {
         throw const CloudDriverException('crypt 内容不完整（读不到文件头）');
+      }
+      var cipherSize = inner.size > 0 ? inner.size : 0;
+      final rangeTotal = head.$2;
+      if (rangeTotal != null && rangeTotal > cipherSize) {
+        cipherSize = rangeTotal;
       }
       return _CryptTarget(
         dio: dio,
@@ -290,7 +317,7 @@ class CryptDriver extends CloudDriver {
         headers: inner.rawHeaders,
         header: header,
         nonce: RcloneCipher.fileNonceOf(header),
-        cipherSize: inner.size,
+        cipherSize: cipherSize,
       );
     } catch (_) {
       dio.close();
@@ -299,7 +326,8 @@ class CryptDriver extends CloudDriver {
   }
 
   /// 取源的 `[start, end]` 字节区间（含端点，与 HTTP Range 语义一致）。
-  Future<Uint8List> _fetchRange(
+  /// 返回 `(内容, Content-Range 总长或 null)`。
+  Future<(Uint8List, int?)> _fetchRangeWithMeta(
     Dio dio,
     String url,
     Map<String, String>? headers,
@@ -317,7 +345,31 @@ class CryptDriver extends CloudDriver {
         validateStatus: (code) => code != null && code >= 200 && code < 400,
       ),
     );
-    return Uint8List.fromList(res.data ?? const <int>[]);
+    return (
+      Uint8List.fromList(res.data ?? const <int>[]),
+      _parseContentRangeTotal(res.headers.value('content-range')),
+    );
+  }
+
+  /// 解析 `bytes a-b/total`（total 可为 `*`）→ 总长；无该头或格式不对返回 null。
+  static int? _parseContentRangeTotal(String? value) {
+    if (value == null) return null;
+    final m = RegExp(r'bytes\s+\d+-\d+/(\d+|\*)').firstMatch(value.trim());
+    if (m == null) return null;
+    final total = m.group(1)!;
+    if (total == '*') return null;
+    return int.tryParse(total);
+  }
+
+  /// 取源的 `[start, end]` 字节区间（含端点，与 HTTP Range 语义一致）。
+  Future<Uint8List> _fetchRange(
+    Dio dio,
+    String url,
+    Map<String, String>? headers,
+    int start,
+    int end,
+  ) async {
+    return (await _fetchRangeWithMeta(dio, url, headers, start, end)).$1;
   }
 
   @override
@@ -444,6 +496,25 @@ class _CryptTarget {
   final Uint8List nonce;
   final int cipherSize;
 
-  bool get wholeBody =>
-      header.length > kFileHeaderSize || cipherSize <= kFileHeaderSize;
+  /// 内容形态（互斥，判定必须按此顺序）：
+  /// - [shapeWholeBody]：第一次请求就回了大头条（源不支持 Range）→ 整包解密；
+  /// - [shapeEmptyFile]：密文恰好只有文件头（rclone 空文件的合法格式）→ 空明文；
+  /// - 其余按分块 Range 解密。
+  /// 「cipherSize 未知」**不再**折叠进 wholeBody：大小未知且头没有变大，
+  /// 说明既拿不到总长也拿不到整包，只能明确报错（静默返回空内容 =
+  /// 下载出 0 字节损坏文件，真机踩过）。判定见 [_openTarget]。
+  static const int shapeWholeBody = 0;
+  static const int shapeEmptyFile = 1;
+  static const int shapeRanged = 2;
+  static const int shapeUnknownSize = 3;
+
+  int get shape {
+    if (header.length > kFileHeaderSize) return shapeWholeBody;
+    if (cipherSize == kFileHeaderSize) return shapeEmptyFile;
+    if (cipherSize > kFileHeaderSize) return shapeRanged;
+    return shapeUnknownSize;
+  }
+
+  @Deprecated('改用 shape 三态判定，见 [shape] 注释')
+  bool get wholeBody => shape == shapeWholeBody || shape == shapeEmptyFile;
 }
