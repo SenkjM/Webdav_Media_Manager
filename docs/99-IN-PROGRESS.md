@@ -235,22 +235,9 @@
 - **机制**：Go 版把 MakeDir / Move / Rename / Copy / Remove / Put 做成 `internal/driver` 的**可选接口**（方法名是 `MakeDir`，不是 Mkdir），87 个驱动都有方法签名，只读 / 索引驱动在方法体里返回 `errs.NotImplement`（桩实现）；op 层 type-switch 调用。Worker TS 把 mkdir 做成 `StorageDriver` 必备方法，行为与 Go 一致——真实现或抛「not supported」。**两版能力面一致**（worker 是我们的移植底稿）。
 - **首批 9 盘全部真实现 mkdir**（静态表 mkdir = 有）：`baidu_netdisk`（Go `driver.go:96` MakeDir → `create(path, 0, 1)` isdir=1，已验真；worker 同）、`aliyundrive_open`、`quark`、`115open`（worker `driver.ts:339` → `client.mkdir` 真调用，勿被「方法体含 throw」的粗扫误判）、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。
 - **只读家族 mkdir = 无（桩）**：`115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`；`url_tree` 疑似桩（落表前再确认一次）。
-- **已落地**：`baidu_netdisk`（mkdir 有）、`123_open`（mkdir 有）、`netease_music`（mkdir 无，桩；删除外四个写方法也都是桩 → 能力位只有 `list | read | delete`，见 [11 §11](11-CLOUD-DRIVER-PORTING.md)）。
+- **已落地盘的能力位实录不再留在本表**：见 [11 §10](11-CLOUD-DRIVER-PORTING.md)（baidu_netdisk）、[11 §11](11-CLOUD-DRIVER-PORTING.md)（netease_music，`list | read | delete`——除删除外四个写方法上游全是桩）与各驱动实录节。
 - **未落地**：`crypt` 透传内挂驱动，落表时按宿主动态给位、不进静态表。
 - **登记**：已落地 → `AccountCaps.staticCaps`；未落地 → 本表，落地时照表抄（用户决定：写代码会影响运行的先只进文档）。
-
-### 4.3.3 netease_music（已实现，待真机验收）
-
-实现语义、加密对齐与取舍已收口进 [11 §11](11-CLOUD-DRIVER-PORTING.md)。**待办只剩真机验收**：
-
-- **添加账号**：粘贴含 `__csrf` + `MUSIC_U` 的 Cookie → 真连校验（拉一页列表）通过才保存；Cookie 不全时表单内联报错且不出网；Cookie 过期（`code 301`）时提示「Cookie 可能已过期」、不落库、表单内容保留。
-- **浏览**：云盘歌曲以平铺列表出现（无目录层级）；远程路径只作虚拟前缀，改名后账号条目仍可打开。
-- **下载 / 缓存音乐 / 本地播放**：直链由网易 CDN 给出，能正常下载与播放。
-- **音乐流式**：VIP / 版权受限 / 已下架的歌曲要给出可读错误（不是空 URL、不是 0B 文件）。
-- **删除**：列表里删一首歌 → 云端确实少一首；再刷新列表确认。
-- **能力遮罩**：账号行**看不到**新建文件夹 / 重命名 / 移动 / 复制入口（隐藏而非置灰）；删除入口可见可用。
-- **`song_limit`**：填小值（如 5）后列表只剩 5 首；非法值回落 200。
-- **`weapi` / `linuxapi` 真连**：若网易改签（返回 `code -460` 之类），报错要带 code 与 message 原文，便于判断是风控还是实现问题。
 
 ### 4.4 只读家族（能力遮罩 = 只读）
 

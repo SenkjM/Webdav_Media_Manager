@@ -101,11 +101,11 @@
 
 ## 11. 已落地驱动实录：netease_music
 
-第一个带**自定义请求加密**的驱动（已实现，真机验收见 [99 §4.3.3](99-IN-PROGRESS.md)）。移植工序照 [12](12-DRIVER-PORTING-GUIDE.md)，`lib/` 只动两个文件（驱动 + 注册表）。
+第一个带**自定义请求加密**的驱动（已实现并**真机验收通过**：添加账号 / 平铺浏览 / 下载与流式 / 删除 / 能力遮罩 / song_limit 容错）。移植工序照 [12](12-DRIVER-PORTING-GUIDE.md)，`lib/` 只动两个文件（驱动 + 注册表）。
 
-- **能力面**：`list | read | delete`。上游 `MakeDir` / `Rename` / `Move` / `Copy` 四个方法在 Go 与 worker 两版里**都是 `errs.NotSupport` 桩**，所以不给 mkdir / move / copy 位（窗口「隐藏而非置灰」，99 §4.2.6）；上传按 §8 全局砍掉。
-- **表单**：`cookie`（必填、obscure、带教程指引）+ `song_limit`（默认 `200`，照抄 Go `meta.go` 的 `default:"200"`）。没有开关，因此不涉及 §6 的联动极性。
-- **登录**：Cookie 必须同时含 `__csrf` 与 `MUSIC_U`，否则 `init()` 直接抛可读错误。保存前 `spec.verify` **真连**一次（拉一页列表），对齐百度「能拿到才保存」的语义（§10）。
+- **能力面**：`list | read | delete`。上游 `MakeDir` / `Rename` / `Move` / `Copy` 四个方法在 Go 与 worker 两版里**都是 `errs.NotSupport` 桩**，所以不给 mkdir / move / copy 位（界面「隐藏而非置灰」，真机验收确认账号行看不到这四个入口、删除入口可用）；上传按 §8 全局砍掉。
+- **表单**：`cookie`（必填、obscure、带教程指引）+ `song_limit`（默认 `200`，照抄 Go `meta.go` 的 `default:"200"`；非数字 / 小于 1 一律回默认——真机用小值验证过上限生效）。没有开关，因此不涉及 §6 的联动极性。
+- **登录**：Cookie 必须同时含 `__csrf` 与 `MUSIC_U`，否则 `init()` 直接抛可读错误。保存前 `spec.verify` **真连**一次（拉一页列表），对齐百度「能拿到才保存」的语义（§10）；Cookie 过期（`code 301`）报「Cookie 可能已过期」、不落库、表单内容保留。
 - **请求加密（`netease_music_crypto.dart`）**：这是本驱动唯一「必须逐字节对齐」的部分。
   - `weapi`：AES-128-CBC（预设密钥 `0CoJUm6Qyw8W8jud` + 固定 IV）→ base64 → AES-128-CBC（**随机密钥的逆序**）→ base64；随机密钥（62 字符表）经 **raw RSA**（无填充）得到 `encSecKey`。
   - `linuxapi`：AES-128-ECB（`rFgB&h#%2?^eDg:Q`）→ **大写** hex；原始 URL 塞进载荷，实际打到 `/api/linux/forward` 并带 Linux Chrome UA。
@@ -118,6 +118,7 @@
   1. **拿不到直链时抛真实原因**：worker 把空 url 写进 `raw_url` 并记 `raw_url_error`，客户端里下游必然失败；本实现按 `CloudDriver.get` 契约抛 `CloudDriverException`（VIP / 版权受限 / 已下架都走这条）。
   2. **校验响应 `code`**：上游两版都不看响应码，Cookie 失效的表现是「空列表」；本实现在 `code` 存在且非 200 时报错，`301` 单独翻成「Cookie 可能已过期」。
 - **不移植**：Go 版的 `.lrc` 歌词条目（worker 底稿已删；本应用播放链路不消费远端歌词，`Link` 的 `parsed` / `RangeReader` 语义依赖 OpenList 自身的 `/p` 代理端点，在对端客户端里没有对应物）。
-- **路径语义**：网易云盘是**单层平铺**（只有歌曲，没有目录树），所以驱动 `list()` 忽略路径，永远返回全部歌曲；`get()` / `remove()` 按**文件名**定位。账号的「远程路径」对它是纯虚拟前缀——条目路径由上层拼接，驱动只认文件名，改远程路径不会让条目失联。
+- **路径语义**：网易云盘是**单层平铺**（只有歌曲，没有目录树），所以驱动 `list()` 忽略路径，永远返回全部歌曲；`get()` / `remove()` 按**文件名**定位。账号的「远程路径」对它是纯虚拟前缀——条目路径由上层拼接，驱动只认文件名，改远程路径不会让条目失联（真机验收：改远程路径后账号条目仍可打开）。
+- **下载 / 流式**：直链由网易 CDN 直接给出，上游未声明必需请求头，本驱动仍带通用 API UA 进 `rawHeaders`（直链 302 + UA，真机验证下载 / 缓存 / 音乐流式 / 本地播放全通）。
 - **测试**：`test/netease_music_crypto_test.dart`（用 Go 上游工具生成的**金标向量**：AES-CBC / AES-ECB / raw RSA / weapi / linuxapi 各若干条，并核对 worker 硬编码的 modulus 与 Go 版 PEM 是同一把密钥）、`test/netease_music_driver_test.dart`（请求形状 / 能力位 / 直链必需头 / 错误原文透传 / 未实现操作）。
 - **落点**：`lib/services/cloud_drivers/netease_music_driver.dart`（Addition + Client + 驱动 + spec）、`netease_music_crypto.dart`（weapi / linuxapi）、`driver_registry.dart`（加一行）。
