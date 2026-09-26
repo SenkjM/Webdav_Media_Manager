@@ -225,20 +225,24 @@ CREATE TABLE IF NOT EXISTS sync_state (
         .toSet();
     if (!cols.contains('provider_type')) {
       await db.execute(
-          "ALTER TABLE accounts ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'webdav'");
+        "ALTER TABLE accounts ADD COLUMN provider_type TEXT NOT NULL DEFAULT 'webdav'",
+      );
     }
     if (!cols.contains('remote_path')) {
       await db.execute(
-          "ALTER TABLE accounts ADD COLUMN remote_path TEXT NOT NULL DEFAULT '/'");
+        "ALTER TABLE accounts ADD COLUMN remote_path TEXT NOT NULL DEFAULT '/'",
+      );
     }
     if (!cols.contains('capabilities')) {
       await db.execute(
-          'ALTER TABLE accounts ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 127');
+        'ALTER TABLE accounts ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 127',
+      );
     }
     // 旧默认 63（六位掩码）→ 当前全量 127：能力勾选 UI 上线前不存在自定义值，
     // 全量替换安全（99 §7.2.3 的 mkdir 拆位）。
     await db.execute(
-        'UPDATE accounts SET capabilities = 127 WHERE capabilities = 63');
+      'UPDATE accounts SET capabilities = 127 WHERE capabilities = 63',
+    );
   }
 
   // --- Accounts ---
@@ -280,24 +284,24 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
   Future<void> upsertCueSlice(LibraryTrack track) async {
     final db = await database;
+    await _upsertCueSlice(db, track);
+  }
+
+  Future<void> _upsertCueSlice(DatabaseExecutor db, LibraryTrack track) async {
     final cuePath = track.cueRemotePath;
     if (cuePath == null || cuePath.isEmpty) {
       throw StateError('cue_slices require cue_remote_path');
     }
     final cueId = track.cueId ?? cueIdFor(track.sourceName, cuePath);
-    await db.insert(
-      'cue_albums',
-      {
-        'cue_id': cueId,
-        'source_name': track.sourceName,
-        'cue_remote_path': normalizeRemotePath(cuePath),
-        'title': track.album,
-        'performer': track.albumArtist ?? track.artist,
-        'cache_group_id': track.cacheGroupId,
-        'created_at': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    );
+    await db.insert('cue_albums', {
+      'cue_id': cueId,
+      'source_name': track.sourceName,
+      'cue_remote_path': normalizeRemotePath(cuePath),
+      'title': track.album,
+      'performer': track.albumArtist ?? track.artist,
+      'cache_group_id': track.cacheGroupId,
+      'created_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
     // Refresh cache_group_id / title if album already existed.
     final albumPatch = <String, Object?>{
       if (track.cacheGroupId != null) 'cache_group_id': track.cacheGroupId,
@@ -333,7 +337,8 @@ CREATE TABLE IF NOT EXISTS sync_state (
       cueId: cueId,
       cueRemotePath: cuePath,
       cueTrackIndex: track.cueTrackIndex,
-      audioMusicId: track.audioMusicId ??
+      audioMusicId:
+          track.audioMusicId ??
           (track.audioRemotePath != null
               ? musicIdForRemote(track.sourceName, track.audioRemotePath!)
               : null),
@@ -419,9 +424,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
       'cue_slices',
       orderBy: 'title COLLATE NOCASE ASC, file_name COLLATE NOCASE ASC',
     );
-    final out = <LibraryTrack>[
-      ...normal.map(LibraryTrack.fromMap),
-    ];
+    final out = <LibraryTrack>[...normal.map(LibraryTrack.fromMap)];
     for (final s in slices) {
       out.add(await _hydrateSlice(s));
     }
@@ -484,9 +487,21 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
   Future<void> deleteTracksForSource(String sourceName) async {
     final db = await database;
-    await db.delete('cue_slices', where: 'source_name = ?', whereArgs: [sourceName]);
-    await db.delete('cue_albums', where: 'source_name = ?', whereArgs: [sourceName]);
-    await db.delete('tracks', where: 'source_name = ?', whereArgs: [sourceName]);
+    await db.delete(
+      'cue_slices',
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
+    );
+    await db.delete(
+      'cue_albums',
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
+    );
+    await db.delete(
+      'tracks',
+      where: 'source_name = ?',
+      whereArgs: [sourceName],
+    );
     // No cache-annex cleanup since v9: cache files are derived from
     // (source_name, remote_path), never keyed off library rows.
   }
@@ -507,9 +522,73 @@ CREATE TABLE IF NOT EXISTS sync_state (
     // cache-side concern (deleteLocalFile), keyed by identity, not by rows.
   }
 
+  /// Atomically replace one complete CUE album and remove any standalone rows
+  /// for its CUE/audio files. Callers stage/read all metadata before entering.
+  Future<void> replaceCueAlbumTracks({
+    required String sourceName,
+    required String cueRemotePath,
+    required List<String> audioRemotePaths,
+    required List<LibraryTrack> tracks,
+  }) async {
+    final db = await database;
+    final cueId = cueIdFor(sourceName, cueRemotePath);
+    final normalized = normalizeRemotePath(cueRemotePath);
+    await db.transaction((txn) async {
+      final albums = await txn.query(
+        'cue_albums',
+        columns: ['cue_id'],
+        where: 'cue_id = ? OR (source_name = ? AND cue_remote_path = ?)',
+        whereArgs: [cueId, sourceName, normalized],
+      );
+      final ids = <String>{cueId, ...albums.map((r) => r['cue_id'] as String)};
+      for (final id in ids) {
+        await txn.delete('cue_slices', where: 'cue_id = ?', whereArgs: [id]);
+        await txn.delete('cue_albums', where: 'cue_id = ?', whereArgs: [id]);
+      }
+
+      final paths = <String>{cueRemotePath, ...audioRemotePaths};
+      for (final path in paths) {
+        await txn.delete(
+          'tracks',
+          where: 'source_name = ? AND remote_path = ?',
+          whereArgs: [sourceName, path],
+        );
+        await txn.delete(
+          'cue_slices',
+          where: 'source_name = ? AND remote_path = ?',
+          whereArgs: [sourceName, path],
+        );
+      }
+      if (audioRemotePaths.isNotEmpty) {
+        final placeholders = List.filled(
+          audioRemotePaths.length,
+          '?',
+        ).join(', ');
+        await txn.delete(
+          'cue_slices',
+          where:
+              'source_name = ? AND (cue_remote_path = ? OR '
+              'audio_remote_path IN ($placeholders) OR remote_path IN ($placeholders))',
+          whereArgs: [
+            sourceName,
+            cueRemotePath,
+            ...audioRemotePaths,
+            ...audioRemotePaths,
+          ],
+        );
+      }
+      for (final track in tracks) {
+        await _upsertCueSlice(txn, track);
+      }
+    });
+  }
+
   /// Remove every library row belonging to a CUE album (virtual clips stay
   /// removable as a group; audio files are left to CacheService).
-  Future<int> deleteTracksForCue(String sourceName, String cueRemotePath) async {
+  Future<int> deleteTracksForCue(
+    String sourceName,
+    String cueRemotePath,
+  ) async {
     final db = await database;
     final cueId = cueIdFor(sourceName, cueRemotePath);
     final normalized = normalizeRemotePath(cueRemotePath);
@@ -537,7 +616,11 @@ CREATE TABLE IF NOT EXISTS sync_state (
   /// 整组一次性清空会让兄弟片拿不到墓碑，它们会被旧 base 从云端带回来。
   Future<int> deleteCueSlice(String sliceMusicId) async {
     final db = await database;
-    return db.delete('cue_slices', where: 'music_id = ?', whereArgs: [sliceMusicId]);
+    return db.delete(
+      'cue_slices',
+      where: 'music_id = ?',
+      whereArgs: [sliceMusicId],
+    );
   }
 
   /// Drop a CUE album row (its slices are already gone).
@@ -551,13 +634,19 @@ CREATE TABLE IF NOT EXISTS sync_state (
       where: 'cue_id = ? OR (source_name = ? AND cue_remote_path = ?)',
       whereArgs: [cueId, sourceName, normalized],
     );
-    for (final id in <String>{cueId, ...albums.map((r) => r['cue_id'] as String)}) {
+    for (final id in <String>{
+      cueId,
+      ...albums.map((r) => r['cue_id'] as String),
+    }) {
       await db.delete('cue_albums', where: 'cue_id = ?', whereArgs: [id]);
     }
   }
 
   /// How many slices a CUE album still has. 0 means the album can go too.
-  Future<int> remainingSlicesForCue(String sourceName, String cueRemotePath) async {
+  Future<int> remainingSlicesForCue(
+    String sourceName,
+    String cueRemotePath,
+  ) async {
     final db = await database;
     final cueId = cueIdFor(sourceName, cueRemotePath);
     final normalized = normalizeRemotePath(cueRemotePath);
@@ -570,10 +659,13 @@ CREATE TABLE IF NOT EXISTS sync_state (
     final ids = <String>{cueId, ...albums.map((r) => r['cue_id'] as String)};
     var n = 0;
     for (final id in ids) {
-      n += Sqflite.firstIntValue(await db.rawQuery(
-            'SELECT COUNT(*) FROM cue_slices WHERE cue_id = ?',
-            [id],
-          )) ??
+      n +=
+          Sqflite.firstIntValue(
+            await db.rawQuery(
+              'SELECT COUNT(*) FROM cue_slices WHERE cue_id = ?',
+              [id],
+            ),
+          ) ??
           0;
     }
     return n;
@@ -715,7 +807,11 @@ CREATE TABLE IF NOT EXISTS sync_state (
   Future<void> deleteCacheGroup(String groupId) async {
     if (groupId.isEmpty) return;
     final db = await database;
-    await db.delete('cache_groups', where: 'group_id = ?', whereArgs: [groupId]);
+    await db.delete(
+      'cache_groups',
+      where: 'group_id = ?',
+      whereArgs: [groupId],
+    );
   }
 
   Future<List<Map<String, dynamic>>> allCacheGroups() async {
@@ -764,7 +860,6 @@ CREATE TABLE IF NOT EXISTS sync_state (
       whereArgs: [sourceName, remotePath],
     );
   }
-
 
   /// Wipe all library-persisted rows: tracks, cue_albums, cue_slices, runtime
   /// cache groups / LRU timestamps, tombstones and sync cursors.
@@ -830,11 +925,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
   Future<List<Map<String, dynamic>>> unpushedTombstones() async {
     final db = await database;
-    return db.query(
-      'deleted_tracks',
-      where: 'pushed = 0',
-      orderBy: 'rev ASC',
-    );
+    return db.query('deleted_tracks', where: 'pushed = 0', orderBy: 'rev ASC');
   }
 
   Future<void> markTombstonesPushed(Iterable<int> revs) async {
@@ -853,11 +944,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
   /// Purge tombstones already materialised into a rebuilt base (`rev <= upTo`).
   Future<int> purgeTombstonesUpTo(int upTo) async {
     final db = await database;
-    return db.delete(
-      'deleted_tracks',
-      where: 'rev <= ?',
-      whereArgs: [upTo],
-    );
+    return db.delete('deleted_tracks', where: 'rev <= ?', whereArgs: [upTo]);
   }
 
   /// Song paths currently hidden by a tombstone (for the library UI + ingest).

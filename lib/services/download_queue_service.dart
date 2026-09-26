@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/download_task.dart';
+import '../models/library_track.dart';
 import '../models/webdav_item.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/app_snack.dart';
@@ -20,9 +21,13 @@ import 'download_store.dart';
 import 'library_service.dart';
 import 'platform_export_service.dart';
 import 'webdav_service.dart';
+
 import 'dart:math';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
+
 import 'settings_service.dart';
+
 import 'package:flutter/widgets.dart';
 
 /// Background async download queue. Does not block UI/navigation.
@@ -137,9 +142,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 退避：2/4/8/16/32 秒，加 0~1 秒抖动（抖动避免多任务同时回头打源站）。
   static Duration retryDelay(int attempt) {
     final seconds = 1 << attempt.clamp(1, 5);
-    return Duration(
-      milliseconds: seconds * 1000 + Random().nextInt(1000),
-    );
+    return Duration(milliseconds: seconds * 1000 + Random().nextInt(1000));
   }
 
   /// 第 [attempts] 次失败后等多久再试。
@@ -1054,6 +1057,62 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Re-read tags from an existing cache file. A CUE selection refreshes its
+  /// complete virtual album so cue-file metadata keeps precedence over audio tags.
+  Future<bool> refreshTrackTagsFromCache(LibraryTrack track) async {
+    final library = _library;
+    if (library == null) return false;
+    if (!track.isCueVirtual) {
+      final localPath = await _cache.localPathForTrack(track);
+      if (localPath == null) return false;
+      await library.refreshTrackTagsFromFile(
+        track: track,
+        localPath: localPath,
+      );
+      return true;
+    }
+
+    final cuePath = track.cueRemotePath;
+    if (cuePath == null) return false;
+    final cueLocal = await _cache.localPathIfCached(
+      cuePath,
+      sourceName: track.sourceName,
+    );
+    if (cueLocal == null) return false;
+    final sheet = CueSheetParser.tryParse(
+      decodeCueText(await File(cueLocal).readAsBytes()),
+    );
+    if (sheet == null) return false;
+    final audioPaths = sheet.audioRemotePaths(cuePath);
+    for (final path in audioPaths) {
+      if (!await _cache.isCached(path, sourceName: track.sourceName)) {
+        return false;
+      }
+    }
+    final groupId =
+        track.cacheGroupId ?? cueCacheGroupId(track.sourceName, cuePath);
+    await library.ingestCueAlbum(
+      sourceName: track.sourceName,
+      cueRemotePath: cuePath,
+      sheet: sheet,
+      cacheGroupId: groupId,
+      localPathFor: (remote) =>
+          _cache.fileForRemote(remote, sourceName: track.sourceName).path,
+    );
+    for (final path in audioPaths) {
+      final file = _cache.fileForRemote(path, sourceName: track.sourceName);
+      if (file.existsSync()) {
+        await _cache.registerCompleted(
+          track.sourceName,
+          path,
+          file.path,
+          cacheGroupId: groupId,
+        );
+      }
+    }
+    return true;
+  }
+
   Future<void> _ingest(DownloadTask task) async {
     final lib = _library;
     final local = task.localPath;
@@ -1078,6 +1137,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
     if (ownedByCue) return;
     try {
+      // Every completed cache download ingests current file tags, including a
+      // re-download after a library row was restored from cloud backup.
       await lib.ingestDownloaded(
         sourceName: task.sourceName,
         remotePath: task.remotePath,
@@ -1388,7 +1449,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 返回删除的文件数。
   Future<int> cleanupStaleParts() async {
     final maxAge = Duration(
-      hours: _settings?.downloadPartMaxAgeHours ??
+      hours:
+          _settings?.downloadPartMaxAgeHours ??
           SettingsService.defaultDownloadPartMaxAgeHours,
     );
     final maxBytes =
@@ -1413,6 +1475,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         files.add(entity);
       }
     }
+
     try {
       await collect(_cache.cacheDir);
       await collect(
@@ -1449,13 +1512,11 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   /// 退避到期自己回来——网络事件是加速器，不是唯一唤醒源。
   void _scheduleRetryWake() {
-    final waiting =
-        _tasks
-            .where(
-              (t) =>
-                  t.status == DownloadStatus.pending && t.nextRetryAt != null,
-            )
-            .toList();
+    final waiting = _tasks
+        .where(
+          (t) => t.status == DownloadStatus.pending && t.nextRetryAt != null,
+        )
+        .toList();
     if (waiting.isEmpty) return;
     waiting.sort((a, b) => a.nextRetryAt!.compareTo(b.nextRetryAt!));
     final delay = waiting.first.nextRetryAt!.difference(DateTime.now());
@@ -1472,9 +1533,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// `_ignoreEventUntil`），语义上和 `task.attempts` 撞车，真机表现为
   /// 「一直卡在第二次重试」。兜底的计数只能有一个来源。
   void _listenConnectivity() {
-    _connectivitySub ??= Connectivity().onConnectivityChanged.listen((
-      results,
-    ) {
+    _connectivitySub ??= Connectivity().onConnectivityChanged.listen((results) {
       final online = results.any((r) => r != ConnectivityResult.none);
       if (!online) return;
       // 原地重试正等在这次退避上：直接叫醒，不用等满。

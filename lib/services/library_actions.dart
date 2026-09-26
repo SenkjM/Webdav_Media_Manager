@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../utils/app_snack.dart';
+import '../widgets/tag_refresh_progress_dialog.dart';
 
 import 'package:share_plus/share_plus.dart';
 
@@ -26,11 +27,128 @@ import 'settings_service.dart';
 import 'share_rename_service.dart';
 
 /// Whether the track's audio is local: derived cache file exists on disk.
-String unboundSourceMessage(String sourceName) =>
-    '未绑定网盘「$sourceName」';
+String unboundSourceMessage(String sourceName) => '未绑定网盘「$sourceName」';
 
 bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
   return cache.isLocalTrack(track);
+}
+
+Future<bool> refreshOneLibraryTrackTags(
+  BuildContext context,
+  LibraryTrack track,
+) async =>
+    context.read<DownloadQueueService>().refreshTrackTagsFromCache(track);
+
+Future<({int updated, int skipped, int failed, bool cancelled})>
+refreshLibraryTrackTags(
+  BuildContext context,
+  List<LibraryTrack> tracks, {
+  bool showProgressDialog = true,
+}) async {
+  final unique = <String, LibraryTrack>{};
+  for (final track in tracks) {
+    final key = track.isCueVirtual && track.cueRemotePath != null
+        ? '${track.sourceName}:${track.cueRemotePath}'
+        : '${track.sourceName}:${track.effectiveAudioRemotePath}';
+    unique.putIfAbsent(key, () => track);
+  }
+  final items = unique.values.toList();
+  final downloads = context.read<DownloadQueueService>();
+  var updated = 0;
+  var skipped = 0;
+  var failed = 0;
+  var cancelled = false;
+
+  Future<void> run(
+    void Function(int processed, String currentName) onProgress,
+    bool Function() isCancelled,
+  ) async {
+    for (var i = 0; i < items.length; i++) {
+      if (isCancelled()) {
+        cancelled = true;
+        break;
+      }
+      final track = items[i];
+      onProgress(i, track.displayTitle);
+      try {
+        if (await downloads.refreshTrackTagsFromCache(track)) {
+          updated++;
+        } else {
+          skipped++;
+        }
+      } catch (_) {
+        failed++;
+      }
+      onProgress(i + 1, track.displayTitle);
+    }
+  }
+
+  if (showProgressDialog && context.mounted) {
+    final result = await showTagRefreshProgress(
+      context,
+      names: items.map((t) => t.displayTitle).toList(),
+      run: (onProgress, isCancelled) async {
+        await run(onProgress, isCancelled);
+        return (updated: updated, skipped: skipped, failed: failed);
+      },
+    );
+    cancelled = result.cancelled;
+  } else {
+    await run((_, _) {}, () => false);
+  }
+  return (
+    updated: updated,
+    skipped: skipped,
+    failed: failed,
+    cancelled: cancelled,
+  );
+}
+
+Future<int> downloadUncachedLibraryTracks(
+  BuildContext context,
+  List<LibraryTrack> tracks,
+) async {
+  final cache = context.read<CacheService>();
+  final accounts = context.read<AccountsService>();
+  final downloads = context.read<DownloadQueueService>();
+  final seen = <String>{};
+  var queued = 0;
+  var unavailable = 0;
+  for (final track in tracks) {
+    final key = track.isCueVirtual && track.cueRemotePath != null
+        ? '${track.sourceName}:${track.cueRemotePath}'
+        : '${track.sourceName}:${track.effectiveAudioRemotePath}';
+    if (!seen.add(key) || libraryTrackIsLocal(cache, track)) continue;
+    if (!accounts.isSourceBound(track.sourceName)) {
+      unavailable++;
+      continue;
+    }
+    try {
+      if (track.isCueVirtual && track.cueRemotePath != null) {
+        await downloads.enqueueCueGroup(
+          sourceName: track.sourceName,
+          cueRemotePath: track.cueRemotePath!,
+        );
+        queued++;
+      } else if (await downloads.ensureQueued(
+        track.sourceName,
+        track.effectiveAudioRemotePath,
+        fileName: track.fileName,
+      )) {
+        queued++;
+      }
+    } catch (_) {
+      unavailable++;
+    }
+  }
+  if (context.mounted) {
+    AppSnack.show(
+      context,
+      '已加入 $queued 项下载${unavailable > 0 ? ', $unavailable 项来源不可用' : ''}',
+      error: unavailable > 0 && queued == 0,
+    );
+  }
+  return queued;
 }
 
 /// Enqueue download for a non-local library track (CUE group or single file).
@@ -273,9 +391,7 @@ Future<void> destroyLibraryTracks(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              '将删除 ${all.length} 首曲目（缓存、库记录、元数据与封面），不可恢复。',
-            ),
+            Text('将删除 ${all.length} 首曲目（缓存、库记录、元数据与封面），不可恢复。'),
             if (groupIds.isNotEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 6),

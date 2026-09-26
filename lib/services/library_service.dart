@@ -114,8 +114,7 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
-  int _nextRev() =>
-      _revClock?.next() ?? DateTime.now().millisecondsSinceEpoch;
+  int _nextRev() => _revClock?.next() ?? DateTime.now().millisecondsSinceEpoch;
 
   /// Record a tombstone so a destroyed song is not pulled back by sync.
   ///
@@ -128,13 +127,11 @@ class LibraryService extends ChangeNotifier {
       rev: _nextRev(),
     );
   }
-  LibraryService({
-    LibraryDatabase? db,
-    TagService? tags,
-    CoverService? covers,
-  })  : _db = db ?? LibraryDatabase(),
-        _tags = tags ?? TagService(),
-        _covers = covers ?? CoverService();
+
+  LibraryService({LibraryDatabase? db, TagService? tags, CoverService? covers})
+    : _db = db ?? LibraryDatabase(),
+      _tags = tags ?? TagService(),
+      _covers = covers ?? CoverService();
 
   final LibraryDatabase _db;
   final TagService _tags;
@@ -154,6 +151,7 @@ class LibraryService extends ChangeNotifier {
       ..addAll(tracks);
     _loaded = true;
   }
+
   bool get loaded => _loaded;
   int get count => _tracks.length;
 
@@ -176,7 +174,6 @@ class LibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
-
   List<LibraryTrack> tracksForSource(String sourceName) =>
       _tracks.where((t) => t.sourceName == sourceName).toList();
 
@@ -187,7 +184,8 @@ class LibraryService extends ChangeNotifier {
       final idx = _tracks.indexWhere(
         (t) =>
             t.musicId == track.musicId ||
-            (t.sourceName == track.sourceName && t.remotePath == track.remotePath),
+            (t.sourceName == track.sourceName &&
+                t.remotePath == track.remotePath),
       );
       if (idx >= 0) {
         _tracks[idx] = track;
@@ -271,8 +269,10 @@ class LibraryService extends ChangeNotifier {
     required String remotePath,
     required String fileName,
     required String localPath,
+    bool updateDownloadTime = true,
   }) async {
     final now = DateTime.now();
+    final existing = await _db.getTrack(sourceName, remotePath);
     final read = await _tags.readFromFile(localPath);
     String? coverPath;
     if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
@@ -289,7 +289,6 @@ class LibraryService extends ChangeNotifier {
       );
     } else {
       // Keep previous thumb if re-download has no art.
-      final existing = await _db.getTrack(sourceName, remotePath);
       coverPath = existing?.coverPath;
       if (coverPath != null && !File(coverPath).existsSync()) {
         coverPath = null;
@@ -297,6 +296,7 @@ class LibraryService extends ChangeNotifier {
     }
 
     final track = LibraryTrack(
+      musicId: existing?.musicId,
       sourceName: sourceName,
       remotePath: remotePath,
       fileName: fileName,
@@ -314,7 +314,11 @@ class LibraryService extends ChangeNotifier {
       bitrate: read.bitrate,
       sampleRate: read.sampleRate,
       coverPath: coverPath,
-      lastDownloadedAt: now,
+      cacheGroupId: existing?.cacheGroupId,
+      rev: _nextRev(),
+      lastDownloadedAt: updateDownloadTime
+          ? now
+          : existing?.lastDownloadedAt ?? now,
       lastTagReadAt: now,
     );
     await _db.upsertTrack(track);
@@ -330,6 +334,23 @@ class LibraryService extends ChangeNotifier {
     return track;
   }
 
+  /// Re-read tags from an already cached, non-CUE audio file and replace its
+  /// library metadata. CUE slices must be refreshed as a whole album.
+  Future<LibraryTrack> refreshTrackTagsFromFile({
+    required LibraryTrack track,
+    required String localPath,
+  }) async {
+    if (track.isCueVirtual) {
+      throw ArgumentError('CUE tracks must be refreshed as an album');
+    }
+    return ingestDownloaded(
+      sourceName: track.sourceName,
+      remotePath: track.remotePath,
+      fileName: track.fileName,
+      localPath: localPath,
+      updateDownloadTime: false,
+    );
+  }
 
   Future<List<LibraryTrack>> ingestCueAlbum({
     required String sourceName,
@@ -339,17 +360,15 @@ class LibraryService extends ChangeNotifier {
     required String Function(String remotePath) localPathFor,
   }) async {
     final now = DateTime.now();
-    // Replace the whole CUE group so clear-cache + re-download cannot leave
-    // orphan virtual rows or a leftover standalone audio row (+1 drift).
-    await _db.deleteTracksForCue(sourceName, cueRemotePath);
-    _tracks.removeWhere(
-      (t) => t.sourceName == sourceName && t.cueRemotePath == cueRemotePath,
-    );
     final audioRemotes = sheet.audioRemotePaths(cueRemotePath);
     final fileTags = <String, ReadTags>{};
     final fileDurations = <String, Duration?>{};
     for (final audioRemote in audioRemotes) {
-      final tags = await _tags.readFromFile(localPathFor(audioRemote));
+      final localPath = localPathFor(audioRemote);
+      if (!await File(localPath).exists()) {
+        throw StateError('CUE audio disappeared from cache: $audioRemote');
+      }
+      final tags = await _tags.readFromFile(localPath);
       fileTags[audioRemote] = tags;
       final base = p.basename(audioRemote);
       if (tags.durationMs != null) {
@@ -365,15 +384,31 @@ class LibraryService extends ChangeNotifier {
     ReadTags? coverSource;
     for (final a in audioRemotes) {
       final tags = fileTags[a];
-      if (tags?.coverBytes != null && tags!.coverBytes!.isNotEmpty) { coverSource = tags; break; }
+      if (tags?.coverBytes != null && tags!.coverBytes!.isNotEmpty) {
+        coverSource = tags;
+        break;
+      }
     }
     for (var i = 0; i < sheet.tracks.length; i++) {
       final ct = sheet.tracks[i];
       final range = ranges[i];
       final base = p.basename(ct.fileName.replaceAll('\\', '/'));
-      final resolved = audioRemotes.firstWhere((r) => p.basename(r) == base, orElse: () => audioRemotes.isNotEmpty ? audioRemotes.first : ct.fileName);
+      final resolved = audioRemotes.firstWhere(
+        (r) => p.basename(r) == base,
+        orElse: () =>
+            audioRemotes.isNotEmpty ? audioRemotes.first : ct.fileName,
+      );
       final fileTag = fileTags[resolved] ?? const ReadTags();
-      final merged = mergeCueOverFileTags(sheet: sheet, cueTrack: ct, fileTitle: fileTag.title, fileArtist: fileTag.artist, fileAlbumArtist: fileTag.albumArtist, fileAlbum: fileTag.album, fileYear: fileTag.year, fileGenre: fileTag.genre);
+      final merged = mergeCueOverFileTags(
+        sheet: sheet,
+        cueTrack: ct,
+        fileTitle: fileTag.title,
+        fileArtist: fileTag.artist,
+        fileAlbumArtist: fileTag.albumArtist,
+        fileAlbum: fileTag.album,
+        fileYear: fileTag.year,
+        fileGenre: fileTag.genre,
+      );
       final virtualPath = cueVirtualRemotePath(resolved, ct.number);
       int? durationMs;
       if (range.end != null) {
@@ -386,8 +421,16 @@ class LibraryService extends ChangeNotifier {
       String? coverPath;
       final bytes = coverSource?.coverBytes ?? fileTag.coverBytes;
       if (bytes != null && bytes.isNotEmpty) {
-        coverPath = await _covers.saveThumb(sourceName: sourceName, remotePath: virtualPath, bytes: bytes);
-        await _covers.saveFull(sourceName: sourceName, remotePath: resolved, bytes: bytes);
+        coverPath = await _covers.saveThumb(
+          sourceName: sourceName,
+          remotePath: virtualPath,
+          bytes: bytes,
+        );
+        await _covers.saveFull(
+          sourceName: sourceName,
+          remotePath: resolved,
+          bytes: bytes,
+        );
       }
       final audioMid = musicIdForRemote(sourceName, resolved);
       final sliceMid = musicIdForCueSlice(sourceName, cueRemotePath, ct.number);
@@ -420,42 +463,26 @@ class LibraryService extends ChangeNotifier {
         lastTagReadAt: now,
         rev: _nextRev(),
       );
-      await _db.upsertTrack(track);
-      final idx = _tracks.indexWhere((x) => x.sourceName == sourceName && x.remotePath == virtualPath);
-      if (idx >= 0) {
-        _tracks[idx] = track;
-      } else {
-        _tracks.add(track);
-      }
       created.add(track);
     }
-    // Drop accidental standalone rows for the .cue itself or raw audio files
-    // (e.g. ensureQueued ingested audio without a cue group id).
+
+    // Read/build failures above leave the existing album untouched. Commit all
+    // persisted rows together, then replace the in-memory projection at once.
+    await _db.replaceCueAlbumTracks(
+      sourceName: sourceName,
+      cueRemotePath: cueRemotePath,
+      audioRemotePaths: audioRemotes,
+      tracks: created,
+    );
     final removePaths = <String>{cueRemotePath, ...audioRemotes};
-    for (final path in removePaths) {
-      await _db.deleteTrack(sourceName, path);
-      _tracks.removeWhere((t) => t.sourceName == sourceName && t.remotePath == path);
-    }
-    // Also drop any row whose audioRemotePath is one of this album's files but
-    // is not one of the virtual paths we just wrote (stale / wrong keys).
-    final keepVirtual = created.map((t) => t.remotePath).toSet();
-    final stale = _tracks
-        .where(
-          (t) =>
-              t.sourceName == sourceName &&
-              !keepVirtual.contains(t.remotePath) &&
-              (t.cueRemotePath == cueRemotePath ||
-                  (t.audioRemotePath != null &&
-                      audioRemotes.contains(t.audioRemotePath)) ||
-                  audioRemotes.contains(t.remotePath)),
-        )
-        .toList();
-    for (final t in stale) {
-      await _db.deleteTrack(t.sourceName, t.remotePath);
-      _tracks.removeWhere(
-        (x) => x.sourceName == t.sourceName && x.remotePath == t.remotePath,
-      );
-    }
+    _tracks.removeWhere(
+      (t) =>
+          t.sourceName == sourceName &&
+          (t.cueRemotePath == cueRemotePath ||
+              removePaths.contains(t.remotePath) ||
+              audioRemotes.contains(t.audioRemotePath)),
+    );
+    _tracks.addAll(created);
 
     notifyListeners();
     return created;
@@ -480,9 +507,11 @@ class LibraryService extends ChangeNotifier {
           t.displayArtist.toLowerCase().contains(q) ||
           t.displayAlbum.toLowerCase().contains(q);
     }).toList();
-    matched.sort(sort == LibrarySortMode.byAlbumTrack
-        ? compareTracksByAlbumOrder
-        : compareTracksByName);
+    matched.sort(
+      sort == LibrarySortMode.byAlbumTrack
+          ? compareTracksByAlbumOrder
+          : compareTracksByName,
+    );
     return matched;
   }
 
@@ -508,9 +537,11 @@ class LibraryService extends ChangeNotifier {
     final list = _tracks
         .where((t) => (t.genre ?? '').trim().toLowerCase() == g)
         .toList();
-    list.sort(sort == LibrarySortMode.byAlbumTrack
-        ? compareTracksByAlbumOrder
-        : compareTracksByName);
+    list.sort(
+      sort == LibrarySortMode.byAlbumTrack
+          ? compareTracksByAlbumOrder
+          : compareTracksByName,
+    );
     return list;
   }
 
@@ -540,11 +571,13 @@ class LibraryService extends ChangeNotifier {
     return LinkedHashMap.fromEntries(keys.map((k) => MapEntry(k, map[k]!)));
   }
 
-    List<LibraryTrack> byTitle({LibrarySortMode sort = LibrarySortMode.byName}) {
+  List<LibraryTrack> byTitle({LibrarySortMode sort = LibrarySortMode.byName}) {
     final list = List<LibraryTrack>.from(_tracks);
-    list.sort(sort == LibrarySortMode.byAlbumTrack
-        ? compareTracksByAlbumOrder
-        : compareTracksByName);
+    list.sort(
+      sort == LibrarySortMode.byAlbumTrack
+          ? compareTracksByAlbumOrder
+          : compareTracksByName,
+    );
     return list;
   }
 
@@ -553,9 +586,11 @@ class LibraryService extends ChangeNotifier {
     required LibrarySortMode sort,
   }) {
     final list = List<LibraryTrack>.from(source);
-    list.sort(sort == LibrarySortMode.byAlbumTrack
-        ? compareTracksByAlbumOrder
-        : compareTracksByName);
+    list.sort(
+      sort == LibrarySortMode.byAlbumTrack
+          ? compareTracksByAlbumOrder
+          : compareTracksByName,
+    );
     return list;
   }
 
@@ -585,7 +620,6 @@ class LibraryService extends ChangeNotifier {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return LinkedHashMap.fromEntries(keys.map((k) => MapEntry(k, map[k]!)));
   }
-
 
   /// Destroy the entire local music library: DB track/cue rows, cover thumbs
   /// (and full covers), and in-memory index. Does not touch WebDAV accounts.
@@ -634,7 +668,10 @@ class LibraryService extends ChangeNotifier {
       await _db.deleteCueSlice(track.musicId);
       _tracks.removeWhere((t) => t.musicId == track.musicId);
       // 整组最后一片走完，专辑行也就没有存在的理由了。
-      final remaining = await _db.remainingSlicesForCue(track.sourceName, cuePath);
+      final remaining = await _db.remainingSlicesForCue(
+        track.sourceName,
+        cuePath,
+      );
       if (remaining == 0) {
         await _db.deleteCueAlbum(track.sourceName, cuePath);
       }
@@ -661,7 +698,9 @@ class LibraryService extends ChangeNotifier {
   Future<void> removeTrack(String sourceName, String remotePath) async {
     await recordTombstone(sourceName, remotePath);
     await _db.deleteTrack(sourceName, remotePath);
-    _tracks.removeWhere((t) => t.sourceName == sourceName && t.remotePath == remotePath);
+    _tracks.removeWhere(
+      (t) => t.sourceName == sourceName && t.remotePath == remotePath,
+    );
     notifyListeners();
   }
 
