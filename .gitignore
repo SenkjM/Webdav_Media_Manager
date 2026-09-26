@@ -53,12 +53,6 @@ android/key.properties
 *.keystore
 signing-secrets/
 
-# Local one-off tooling / scratch records — never ship these.
-/.ab-bench.ps1
-/.standard-test.ps1
-/.orig.ps1
-TUNNEL-SKILL-TEST-RECORD.md
-
 # Local dev-run log (tool/dev-run.ps1 output)
 /.dev-run.log
 
@@ -74,5 +68,4 @@ TUNNEL-SKILL-TEST-RECORD.md
 
 # Local dev clones (e.g. openlist-worker) — never part of the app
 /localdev/
-# per-agent git worktrees (created by agent-worktree.ps1)
-.agents/
+/worktree/
