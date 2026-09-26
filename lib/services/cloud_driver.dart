@@ -1,11 +1,14 @@
+import 'package:dio/dio.dart';
+
 /// 云盘驱动的统一接口（99 §7 / 7.1）。
 ///
 /// 语义对齐 OpenList worker 的 `StorageDriver`
 /// （localdev/OpenList-Worker/src/backend/internal/driver/base.ts）：
 /// [get] 返回直链 + 必需请求头，下载与流式都走「直链 + 头」。
 /// **没有 put / 上传**——上传已按 99 §7.2.1 砍掉。
+enum CloudDownloadMode { cryptSequential, direct, cryptRange }
+
 abstract class CloudDriver {
-  /// 建立登录态（校验凭证、换 / 校验 token）。失败抛 [CloudDriverException]。
   Future<void> init();
 
   /// 运行时能力位（包装驱动随源映射）；null = 用 spec 的静态表。
@@ -27,6 +30,13 @@ abstract class CloudDriver {
   /// MustProxy 驱动覆写：产出解密后的内容流（下载内存流路径）。
   Stream<List<int>> openContent(String path) =>
       throw UnsupportedError('该驱动不支持内容流读取');
+
+  /// Download-only content stream. Drivers may override this for an optimized
+  /// sequential download path; the default preserves the existing stream path.
+  Stream<List<int>> openDownloadContent(
+    String path, {
+    CancelToken? cancelToken,
+  }) => openContent(path);
 
   /// MustProxy 驱动的区间读取（含端点，语义同 HTTP `Range: bytes=start-end`）。
   /// 本地流桥按播放器/ffmpeg 的 Range 请求调用它（99 §7.5）。
@@ -260,10 +270,7 @@ abstract class CloudSource {
 
 /// 兼容层注入给驱动的运行环境。
 class CloudDriverEnv {
-  const CloudDriverEnv({
-    required this.resolveSource,
-    this.resolveSourceByName,
-  });
+  const CloudDriverEnv({required this.resolveSource, this.resolveSourceByName});
 
   /// 按账号 id 解析内容源（WebDAV 或云盘适配器）；源不存在返回 null。
   final CloudSource? Function(String accountId) resolveSource;
@@ -301,10 +308,10 @@ abstract class CloudDriverSpec {
   /// 即「配置界面默认为密码的数据」）∪ [runtimeSecretKeys]（运行时轮换
   /// 的令牌缓存键）。新驱动加 obscure 字段自动纳入。
   Set<String> get secretFieldKeys => {
-        for (final item in form)
-          if (item is CloudDriverField && item.obscure) item.key,
-        ...runtimeSecretKeys,
-      };
+    for (final item in form)
+      if (item is CloudDriverField && item.obscure) item.key,
+    ...runtimeSecretKeys,
+  };
 
   /// 运行时经 `onTokenUpdate` 写回驱动配置的**凭证缓存键**（令牌轮换类驱动
   /// 必须声明）。
@@ -361,10 +368,10 @@ class CloudAccountSource implements CloudSource {
     required String basePath,
     required int capabilities,
     String displayName = '',
-  })  : _driver = driver,
-        basePath = basePath,
-        _capabilities = capabilities,
-        displayName = displayName;
+  }) : _driver = driver,
+       basePath = basePath,
+       _capabilities = capabilities,
+       displayName = displayName;
 
   final CloudDriver _driver;
 

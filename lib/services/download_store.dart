@@ -19,7 +19,7 @@ class DownloadStore {
   /// There is deliberately **no** migration code: an older on-disk schema is
   /// dropped and recreated (see [onUpgrade]). The queue is a transient list —
   /// losing it costs a re-enqueue, not data.
-  static const schemaVersion = 6;
+  static const schemaVersion = 7;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -56,6 +56,9 @@ CREATE TABLE download_tasks (
   cache_group_id TEXT,
   source_name TEXT NOT NULL DEFAULT '',
   target TEXT NOT NULL DEFAULT 'cache',
+  download_mode TEXT,
+  remote_size INTEGER,
+  remote_modified TEXT,
   attempts INTEGER NOT NULL DEFAULT 0,
   next_retry_at TEXT
 )
@@ -77,10 +80,7 @@ CREATE TABLE download_tasks (
 
   Future<List<DownloadTask>> loadAll() async {
     final db = await database;
-    final rows = await db.query(
-      'download_tasks',
-      orderBy: 'created_at ASC',
-    );
+    final rows = await db.query('download_tasks', orderBy: 'created_at ASC');
     return rows.map(DownloadTask.fromMap).toList();
   }
 

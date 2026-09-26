@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:webdav_client/webdav_client.dart' as webdav;
@@ -8,6 +9,7 @@ import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/cloud_drive_service.dart';
+import 'cloud_driver.dart';
 import '../utils/audio_extensions.dart';
 import 'resumable_download.dart';
 
@@ -136,7 +138,8 @@ class WebDavService extends ChangeNotifier {
     required String accountId,
     StreamKind? kind,
   }) {
-    final streamKind = kind ??
+    final streamKind =
+        kind ??
         (FileTypeConfig().categoryFor(name) == FileCategory.music
             ? StreamKind.music
             : StreamKind.video);
@@ -145,11 +148,11 @@ class WebDavService extends ChangeNotifier {
     final conn = _resolve(accountId);
     if (conn == null) return null;
     final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
-    final headers = <String, String>{
-      'User-Agent': 'WebdavMediaManager/1.0',
-    };
+    final headers = <String, String>{'User-Agent': 'WebdavMediaManager/1.0'};
     if (conn.username.isNotEmpty || conn.password.isNotEmpty) {
-      final token = base64Encode(utf8.encode('${conn.username}:${conn.password}'));
+      final token = base64Encode(
+        utf8.encode('${conn.username}:${conn.password}'),
+      );
       headers['Authorization'] = 'Basic $token';
     }
     return WebDavStreamSource(
@@ -229,7 +232,8 @@ class WebDavService extends ChangeNotifier {
     FileTypeConfig? fileTypes,
   }) async {
     final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.listDirectory(accountId, path, fileTypes: fileTypes);
+    if (cloud != null)
+      return cloud.listDirectory(accountId, path, fileTypes: fileTypes);
     final client = _requireClient(accountId);
     final types = fileTypes ?? FileTypeConfig();
     final normalized = path.isEmpty ? '/' : path;
@@ -246,14 +250,16 @@ class WebDavService extends ChangeNotifier {
       }
       if (!itemPath.startsWith('/')) itemPath = '/$itemPath';
       final isDir = f.isDir ?? false;
-      items.add(WebDavItem(
-        name: name,
-        path: isDir && !itemPath.endsWith('/') ? '$itemPath/' : itemPath,
-        isDirectory: isDir,
-        size: f.size,
-        modified: f.mTime,
-        category: isDir ? FileCategory.other : types.categoryFor(name),
-      ));
+      items.add(
+        WebDavItem(
+          name: name,
+          path: isDir && !itemPath.endsWith('/') ? '$itemPath/' : itemPath,
+          isDirectory: isDir,
+          size: f.size,
+          modified: f.mTime,
+          category: isDir ? FileCategory.other : types.categoryFor(name),
+        ),
+      );
     }
     items.sort((a, b) {
       if (a.isDirectory != b.isDirectory) {
@@ -276,7 +282,9 @@ class WebDavService extends ChangeNotifier {
     final client = _requireClient(accountId);
     final normalized = path.isEmpty ? '/' : path;
     final f = await client.readProps(normalized);
-    final name = (f.name ?? '').isNotEmpty ? f.name! : normalized.split('/').last;
+    final name = (f.name ?? '').isNotEmpty
+        ? f.name!
+        : normalized.split('/').last;
     final isDir = f.isDir ?? false;
     var itemPath = f.path ?? '';
     if (itemPath.isEmpty) itemPath = normalized;
@@ -301,6 +309,11 @@ class WebDavService extends ChangeNotifier {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
     int resumeFrom = 0,
+    bool useCryptSequentialDownload = false,
+    void Function(CloudDownloadMode mode)? onMode,
+    int? expectedRemoteSize,
+    DateTime? expectedRemoteModified,
+    void Function(int size, DateTime? modified)? onIdentity,
   }) async {
     final cloud = _cloudOf(accountId);
     if (cloud != null) {
@@ -311,6 +324,11 @@ class WebDavService extends ChangeNotifier {
         onProgress: onProgress,
         cancelToken: cancelToken,
         resumeFrom: resumeFrom,
+        useCryptSequentialDownload: useCryptSequentialDownload,
+        onMode: onMode,
+        expectedRemoteSize: expectedRemoteSize,
+        expectedRemoteModified: expectedRemoteModified,
+        onIdentity: onIdentity,
       );
     }
     final conn = _resolve(accountId);
@@ -323,12 +341,12 @@ class WebDavService extends ChangeNotifier {
     final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
     final headers = <String, String>{'User-Agent': 'WebdavMediaManager/1.0'};
     if (conn.username.isNotEmpty || conn.password.isNotEmpty) {
-      final token = base64Encode(utf8.encode('${conn.username}:${conn.password}'));
+      final token = base64Encode(
+        utf8.encode('${conn.username}:${conn.password}'),
+      );
       headers['Authorization'] = 'Basic $token';
     }
-    final dio = Dio(
-      BaseOptions(connectTimeout: const Duration(seconds: 20)),
-    );
+    final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 20)));
     try {
       await downloadResumable(
         dio,
@@ -397,12 +415,22 @@ class WebDavService extends ChangeNotifier {
     bool overwrite = false,
   }) async {
     final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.renamePath(accountId, oldPath, newPath, overwrite: overwrite);
+    if (cloud != null)
+      return cloud.renamePath(
+        accountId,
+        oldPath,
+        newPath,
+        overwrite: overwrite,
+      );
     final client = _requireClient(accountId);
     await client.rename(oldPath, newPath, overwrite);
   }
 
-  Future<void> copyPath(String accountId, String oldPath, String newPath) async {
+  Future<void> copyPath(
+    String accountId,
+    String oldPath,
+    String newPath,
+  ) async {
     final cloud = _cloudOf(accountId);
     if (cloud != null) return cloud.copyPath(accountId, oldPath, newPath);
     final client = _requireClient(accountId);
@@ -411,7 +439,11 @@ class WebDavService extends ChangeNotifier {
   }
 
   /// 移动（WebDAV MOVE）。语义等同重命名，但可以跨目录。
-  Future<void> movePath(String accountId, String oldPath, String newPath) async {
+  Future<void> movePath(
+    String accountId,
+    String oldPath,
+    String newPath,
+  ) async {
     final cloud = _cloudOf(accountId);
     if (cloud != null) return cloud.movePath(accountId, oldPath, newPath);
     final client = _requireClient(accountId);
@@ -434,8 +466,7 @@ class WebDavService extends ChangeNotifier {
     final queue = <String>[folderPath];
     while (queue.isNotEmpty) {
       final dir = queue.removeAt(0);
-      final items =
-          await listDirectory(accountId, dir, fileTypes: fileTypes);
+      final items = await listDirectory(accountId, dir, fileTypes: fileTypes);
       for (final item in items) {
         if (item.isDirectory) {
           queue.add(item.path);

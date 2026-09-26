@@ -1,3 +1,5 @@
+import '../services/cloud_driver.dart';
+
 String? _asString(Object? value) => value?.toString();
 
 DateTime? _asDate(Object? value) =>
@@ -63,6 +65,9 @@ class DownloadTask {
     this.target = DownloadTarget.cache,
     this.attempts = 0,
     this.nextRetryAt,
+    this.downloadMode,
+    this.remoteSize,
+    this.remoteModified,
   });
 
   final String id;
@@ -85,6 +90,9 @@ class DownloadTask {
 
   /// Destination the file was (or will be) written to.
   DownloadTarget target;
+  CloudDownloadMode? downloadMode;
+  int? remoteSize;
+  DateTime? remoteModified;
 
   /// 自动重试已经用掉几次（见 download_queue_service 的退避策略）。
   /// 手动点「重试」会清零。
@@ -121,6 +129,9 @@ class DownloadTask {
     'bytes_received': bytesReceived,
     'cache_group_id': cacheGroupId,
     'target': target.storageKey,
+    'download_mode': downloadMode?.name,
+    'remote_size': remoteSize,
+    'remote_modified': remoteModified?.toIso8601String(),
     'attempts': attempts,
     'next_retry_at': nextRetryAt?.toIso8601String(),
   };
@@ -148,6 +159,14 @@ class DownloadTask {
     bytesReceived: (map['bytes_received'] as int?) ?? 0,
     cacheGroupId: _asString(map['cache_group_id']),
     target: DownloadTargetX.fromStorageKey(_asString(map['target'])),
+    downloadMode: CloudDownloadMode.values.firstWhere(
+      (e) => e.name == _asString(map['download_mode']),
+      orElse: () => CloudDownloadMode.cryptRange,
+    ),
+    remoteSize: map['remote_size'] as int?,
+    remoteModified: map['remote_modified'] != null
+        ? _asDate(map['remote_modified'])
+        : null,
     attempts: (map['attempts'] as int?) ?? 0,
     nextRetryAt: map['next_retry_at'] != null
         ? _asDate(map['next_retry_at'])
@@ -164,6 +183,9 @@ class DownloadTask {
     int? bytesReceived,
     String? cacheGroupId,
     DownloadTarget? target,
+    CloudDownloadMode? downloadMode,
+    int? remoteSize,
+    DateTime? remoteModified,
   }) {
     return DownloadTask(
       id: id,
@@ -180,6 +202,9 @@ class DownloadTask {
       bytesReceived: bytesReceived ?? this.bytesReceived,
       cacheGroupId: cacheGroupId ?? this.cacheGroupId,
       target: target ?? this.target,
+      downloadMode: downloadMode ?? this.downloadMode,
+      remoteSize: remoteSize ?? this.remoteSize,
+      remoteModified: remoteModified ?? this.remoteModified,
     );
   }
 }
