@@ -11,6 +11,7 @@ import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_service.dart';
+import '../services/library_actions.dart';
 import '../services/tag_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cover_art.dart';
@@ -142,10 +143,7 @@ class PlayerScreen extends StatelessWidget {
         final isCue = track.isCueVirtual || (lib?.isCueVirtual ?? false);
         if (isCue) {
           row('类型', LibraryTrack.cueMultiSliceLabel);
-          row(
-            '说明',
-            '来自 CUE 分片，播放与缓存共用源音频。',
-          );
+          row('说明', '来自 CUE 分片，播放与缓存共用源音频。');
           row('CUE 文件', track.cueRemotePath ?? lib?.cueRemotePath);
           row('源音频', track.audioRemotePath ?? lib?.audioRemotePath);
           final idx = track.cueTrackIndex ?? lib?.cueTrackIndex;
@@ -300,6 +298,32 @@ class PlayerScreen extends StatelessWidget {
                     },
                   ),
                 ),
+                if (lib != null) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final updated = await refreshOneLibraryTrackTags(
+                            ctx,
+                            lib,
+                          );
+                          if (!ctx.mounted) return;
+                          if (updated) {
+                            AppSnack.show(ctx, '已从本地文件更新标签');
+                            Navigator.of(ctx).pop();
+                          } else {
+                            AppSnack.show(ctx, '该曲目尚未缓存，请先下载后再更新标签');
+                          }
+                        },
+                        icon: const Icon(Icons.sell_outlined),
+                        label: const Text('更新此曲标签'),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             );
           },

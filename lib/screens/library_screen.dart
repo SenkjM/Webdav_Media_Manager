@@ -413,6 +413,24 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
               await deleteTracksLocalCache(context, _selectedTracks);
               if (mounted) _exitSelect();
             },
+            onUpdateTags: () async {
+              final result = await refreshLibraryTrackTags(
+                context,
+                _selectedTracks,
+              );
+              if (context.mounted) {
+                final status = result.cancelled ? '已终止' : '更新完成';
+                AppSnack.show(
+                  context,
+                  '$status：更新 ${result.updated} 首，跳过 ${result.skipped} 首，失败 ${result.failed} 首',
+                );
+              }
+              if (mounted) _exitSelect();
+            },
+            onDownload: () async {
+              await downloadUncachedLibraryTracks(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
             onDestroy: () async {
               await destroyLibraryTracks(context, _selectedTracks);
               if (mounted) _exitSelect();
@@ -484,6 +502,8 @@ class _SelectionBar extends StatelessWidget {
     required this.onAdd,
     required this.onShare,
     required this.onDelete,
+    required this.onUpdateTags,
+    required this.onDownload,
     required this.onDestroy,
     required this.allSelected,
     required this.onSelectAll,
@@ -494,6 +514,8 @@ class _SelectionBar extends StatelessWidget {
   final VoidCallback onAdd;
   final VoidCallback onShare;
   final VoidCallback onDelete;
+  final VoidCallback onUpdateTags;
+  final VoidCallback onDownload;
   final VoidCallback onDestroy;
 
   /// 选中数已经等于可选总数（**计数对比**，不看按钮按过没有）：
@@ -546,10 +568,45 @@ class _SelectionBar extends StatelessWidget {
             onPressed: count == 0 ? null : onDelete,
             icon: const Icon(Icons.delete_outline, color: AppColors.error),
           ),
-        IconButton(
-          tooltip: '销毁（缓存 + 元数据 + 封面）',
-          onPressed: count == 0 ? null : onDestroy,
-          icon: const Icon(Icons.delete_forever, color: AppColors.error),
+        PopupMenuButton<String>(
+          tooltip: '更多操作',
+          enabled: count > 0,
+          onSelected: (action) {
+            switch (action) {
+              case 'tags':
+                onUpdateTags();
+                break;
+              case 'download':
+                onDownload();
+                break;
+              case 'destroy':
+                onDestroy();
+                break;
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(
+              value: 'tags',
+              child: ListTile(
+                leading: Icon(Icons.sell_outlined),
+                title: Text('更新标签'),
+              ),
+            ),
+            PopupMenuItem(
+              value: 'download',
+              child: ListTile(
+                leading: Icon(Icons.download_outlined),
+                title: Text('下载未缓存曲目'),
+              ),
+            ),
+            PopupMenuItem(
+              value: 'destroy',
+              child: ListTile(
+                leading: Icon(Icons.delete_forever, color: AppColors.error),
+                title: Text('销毁'),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -791,6 +848,24 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
             },
             onDelete: () async {
               await deleteTracksLocalCache(context, _selectedTracks);
+              if (mounted) _exitSelect();
+            },
+            onUpdateTags: () async {
+              final result = await refreshLibraryTrackTags(
+                context,
+                _selectedTracks,
+              );
+              if (context.mounted) {
+                final status = result.cancelled ? '已终止' : '更新完成';
+                AppSnack.show(
+                  context,
+                  '$status：更新 ${result.updated} 首，跳过 ${result.skipped} 首，失败 ${result.failed} 首',
+                );
+              }
+              if (mounted) _exitSelect();
+            },
+            onDownload: () async {
+              await downloadUncachedLibraryTracks(context, _selectedTracks);
               if (mounted) _exitSelect();
             },
             onDestroy: () async {

@@ -13,6 +13,9 @@ analyzer:
   exclude:
     - build/**
     - android/**
+    # openlist_crypt is an independent pure-Dart package; analyze it from
+    # packages/openlist_crypt so its own test dependency is resolved.
+    - packages/openlist_crypt/**
 
 linter:
   # The lint rules applied to this project can be customized in the

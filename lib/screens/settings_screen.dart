@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +8,7 @@ import '../models/snack_duration.dart';
 import '../providers/app_state.dart';
 import '../services/download_queue_service.dart';
 import '../services/library_service.dart';
+import '../services/library_actions.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
 import 'accounts_screen.dart';
@@ -133,6 +136,26 @@ class _SettingsScreenState extends State<SettingsScreen>
     await _refreshCacheSize();
     if (!context.mounted) return;
     AppSnack.show(context, '已清理 $n 个缓存文件（$libCount 首元数据保留）');
+  }
+
+  Future<void> _refreshLibraryTags(BuildContext context) async {
+    final library = context.read<LibraryService>();
+    if (library.tracks.isEmpty) {
+      AppSnack.show(context, '音乐库中没有曲目');
+      return;
+    }
+    AppSnack.show(context, '正在后台更新本地缓存曲目的标签');
+    final result = await refreshLibraryTrackTags(
+      context,
+      library.tracks.toList(),
+      showProgressDialog: false,
+    );
+    if (!context.mounted) return;
+    AppSnack.show(
+      context,
+      '标签更新完成：更新 ${result.updated} 首，跳过 ${result.skipped} 首，失败 ${result.failed} 首',
+      error: result.failed > 0 && result.updated == 0,
+    );
   }
 
   Future<void> _onNotificationTap(
@@ -342,6 +365,14 @@ class _SettingsScreenState extends State<SettingsScreen>
             },
           ),
           const Divider(height: 40),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.sell_outlined),
+            title: const Text('手动更新音乐库标签'),
+            subtitle: const Text('异步读取已缓存音乐文件的标签并更新曲库'),
+            onTap: () => unawaited(_refreshLibraryTags(context)),
+          ),
+          const SizedBox(height: 8),
           Text(
             '媒体通知',
             style: Theme.of(context).textTheme.titleMedium
