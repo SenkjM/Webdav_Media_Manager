@@ -75,6 +75,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   String? Function(String sourceName) _accountIdForSource;
 
   /// Re-point the resolver (called on init / after accounts change).
+  Future<void> closeDatabase() => _store.close();
+
   void configureAccountResolver(String? Function(String sourceName) resolve) {
     _accountIdForSource = resolve;
   }
@@ -123,6 +125,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   final Map<String, CueSheet> _cueSheetsByGroup = {};
 
   bool _running = false;
+  bool _pumpRequested = false;
   bool _initialized = false;
 
   /// 自动重试上限（只对网络类错误计数）。手动点「重试」不受此限。
@@ -1214,6 +1217,52 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_pump());
   }
 
+  /// Wake pending tasks immediately, including those waiting for retry backoff.
+  Future<void> downloadWaiting() async {
+    for (final task in _tasks) {
+      if (task.status == DownloadStatus.pending) {
+        task.nextRetryAt = null;
+        await _store.upsert(task);
+      }
+    }
+    _wake?.complete();
+    _wake = null;
+    notifyListeners();
+    unawaited(_pump());
+  }
+
+  /// Resume every non-completed task, resetting failed/cancelled rows.
+  Future<void> downloadAll() async {
+    for (final task in _tasks) {
+      if (task.status == DownloadStatus.failed ||
+          task.status == DownloadStatus.cancelled) {
+        task.status = DownloadStatus.pending;
+        task.errorMessage = null;
+        task.progress = 0;
+        task.bytesReceived = 0;
+        task.nextRetryAt = null;
+        task.attempts = 0;
+        _sessionIds.add(task.id);
+      } else if (task.status == DownloadStatus.pending) {
+        task.nextRetryAt = null;
+      }
+      if (task.status != DownloadStatus.completed) await _store.upsert(task);
+    }
+    _wake?.complete();
+    _wake = null;
+    notifyListeners();
+    unawaited(_pump());
+  }
+
+  Future<void> cancelAll() async {
+    for (final task in List<DownloadTask>.from(_tasks)) {
+      if (task.status == DownloadStatus.pending ||
+          task.status == DownloadStatus.active) {
+        await cancel(task.id);
+      }
+    }
+  }
+
   Future<void> clearCompleted() async {
     final done = _tasks
         .where((t) => t.status == DownloadStatus.completed)
@@ -1583,7 +1632,10 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> _pump() async {
-    if (_running) return;
+    if (_running) {
+      _pumpRequested = true;
+      return;
+    }
     _running = true;
     _retryTimer?.cancel();
     _retryTimer = null;
@@ -1610,6 +1662,10 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       _publishProgress();
       // 还有在等退避 / 等网络的任务：安排下一次唤醒，否则队列就停在这了。
       _scheduleRetryWake();
+      if (_pumpRequested) {
+        _pumpRequested = false;
+        unawaited(_pump());
+      }
     }
   }
 

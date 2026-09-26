@@ -6,6 +6,8 @@ import 'account_capabilities.dart';
 /// 云盘驱动（99 §7）。[remotePath] 限定浏览根（默认 `/`，空置视为 `/`）。
 /// [capabilities] 仅对 WebDAV 账号生效（用户可配，默认全量）；云盘类型由
 /// [AccountCaps] 的静态表给定，行里的值被忽略。
+String? _asString(Object? value) => value?.toString();
+
 class WebDavAccount {
   const WebDavAccount({
     required this.id,
@@ -26,26 +28,28 @@ class WebDavAccount {
   final int capabilities;
 
   Map<String, dynamic> toMap() => {
-        'id': id,
-        'name': name,
-        'url': url,
-        'username': username,
-        'provider_type': providerType,
-        'remote_path': remotePath,
-        'capabilities': capabilities,
-      };
+    'id': id,
+    'name': name,
+    'url': url,
+    'username': username,
+    'provider_type': providerType,
+    'remote_path': remotePath,
+    'capabilities': capabilities,
+  };
 
   factory WebDavAccount.fromMap(Map<String, dynamic> map) => WebDavAccount(
-        id: map['id'] as String,
-        name: map['name'] as String,
-        url: map['url'] as String,
-        username: map['username'] as String? ?? '',
-        providerType: map['provider_type'] as String? ?? 'webdav',
-        remotePath:
-            WebDavAccount.normalizeRemotePath(map['remote_path'] as String? ?? '/'),
-        capabilities:
-            AccountCaps.normalizeStored((map['capabilities'] as int?) ?? AccountCaps.all),
-      );
+    id: _asString(map['id']) ?? '',
+    name: _asString(map['name']) ?? '',
+    url: _asString(map['url']) ?? '',
+    username: _asString(map['username']) ?? '',
+    providerType: _asString(map['provider_type']) ?? 'webdav',
+    remotePath: WebDavAccount.normalizeRemotePath(
+      _asString(map['remote_path']) ?? '/',
+    ),
+    capabilities: AccountCaps.normalizeStored(
+      (map['capabilities'] as int?) ?? AccountCaps.all,
+    ),
+  );
 
   WebDavAccount copyWith({
     String? name,

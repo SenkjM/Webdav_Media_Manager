@@ -1,3 +1,8 @@
+String? _asString(Object? value) => value?.toString();
+
+DateTime? _asDate(Object? value) =>
+    value is DateTime ? value : DateTime.tryParse(value?.toString() ?? '');
+
 /// Download queue task statuses.
 enum DownloadStatus { pending, active, completed, failed, cancelled }
 
@@ -121,31 +126,31 @@ class DownloadTask {
   };
 
   factory DownloadTask.fromMap(Map<String, dynamic> map) => DownloadTask(
-    id: map['id'] as String,
+    id: _asString(map['id']) ?? '',
     sourceName:
-        (map['source_name'] as String?) ??
-        (map['account_id'] as String?) ??
+        _asString(map['source_name']) ??
+        _asString(map['account_id']) ??
         'legacy',
-    remotePath: map['remote_path'] as String,
-    fileName: map['file_name'] as String,
-    createdAt: DateTime.parse(map['created_at'] as String),
+    remotePath: _asString(map['remote_path']) ?? '',
+    fileName: _asString(map['file_name']) ?? '',
+    createdAt: _asDate(map['created_at']) ?? DateTime.now(),
     status: DownloadStatus.values.firstWhere(
-      (e) => e.name == map['status'],
+      (e) => e.name == _asString(map['status']),
       orElse: () => DownloadStatus.pending,
     ),
-    localPath: map['local_path'] as String?,
-    errorMessage: map['error_message'] as String?,
+    localPath: _asString(map['local_path']),
+    errorMessage: _asString(map['error_message']),
     progress: (map['progress'] as num?)?.toDouble() ?? 0.0,
     completedAt: map['completed_at'] != null
-        ? DateTime.parse(map['completed_at'] as String)
+        ? _asDate(map['completed_at'])
         : null,
     bytesTotal: map['bytes_total'] as int?,
     bytesReceived: (map['bytes_received'] as int?) ?? 0,
-    cacheGroupId: map['cache_group_id'] as String?,
-    target: DownloadTargetX.fromStorageKey(map['target'] as String?),
+    cacheGroupId: _asString(map['cache_group_id']),
+    target: DownloadTargetX.fromStorageKey(_asString(map['target'])),
     attempts: (map['attempts'] as int?) ?? 0,
     nextRetryAt: map['next_retry_at'] != null
-        ? DateTime.parse(map['next_retry_at'] as String)
+        ? _asDate(map['next_retry_at'])
         : null,
   );
 

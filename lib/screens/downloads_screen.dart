@@ -108,6 +108,32 @@ class DownloadsScreen extends StatelessWidget {
         leading: const DrawerMenuButton(),
         title: const Text('下载队列'),
         actions: [
+          IconButton(
+            tooltip: '全部下载',
+            onPressed: tasks.any((t) => t.status != DownloadStatus.completed)
+                ? () => queue.downloadAll()
+                : null,
+            icon: const Icon(Icons.download_for_offline_outlined),
+          ),
+          IconButton(
+            tooltip: '唤醒等待中任务',
+            onPressed: tasks.any((t) => t.status == DownloadStatus.pending)
+                ? () => queue.downloadWaiting()
+                : null,
+            icon: const Icon(Icons.playlist_play),
+          ),
+          IconButton(
+            tooltip: '全部取消',
+            onPressed:
+                tasks.any(
+                  (t) =>
+                      t.status == DownloadStatus.active ||
+                      t.status == DownloadStatus.pending,
+                )
+                ? () => queue.cancelAll()
+                : null,
+            icon: const Icon(Icons.stop_circle_outlined),
+          ),
           TextButton(
             onPressed: tasks.any((t) => t.status == DownloadStatus.completed)
                 ? () => queue.clearCompleted()
@@ -455,8 +481,7 @@ class _TaskTile extends StatelessWidget {
             // 显示（真机反馈：既读不懂也反映不了实际位置）；目标信息由上方
             // 的「已存入系统相册」标签承担。
             if (task.errorMessage != null &&
-                (task.status == DownloadStatus.failed ||
-                    retryWaiting)) ...[
+                (task.status == DownloadStatus.failed || retryWaiting)) ...[
               const SizedBox(height: 4),
               Text(
                 task.errorMessage!,

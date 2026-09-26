@@ -34,18 +34,20 @@ class LibraryTrack {
     this.rev,
     DateTime? lastDownloadedAt,
     DateTime? lastTagReadAt,
-  })  : musicId = musicId ??
-            musicIdForLibraryRow(
-              sourceName: sourceName,
-              remotePath: remotePath,
-              cueRemotePath: cueRemotePath,
-              cueTrackIndex: cueTrackIndex,
-            ),
-        lastDownloadedAt = lastDownloadedAt ?? DateTime.now(),
-        lastTagReadAt = lastTagReadAt ?? DateTime.now();
+  }) : musicId =
+           musicId ??
+           musicIdForLibraryRow(
+             sourceName: sourceName,
+             remotePath: remotePath,
+             cueRemotePath: cueRemotePath,
+             cueTrackIndex: cueTrackIndex,
+           ),
+       lastDownloadedAt = lastDownloadedAt ?? DateTime.now(),
+       lastTagReadAt = lastTagReadAt ?? DateTime.now();
 
   /// Stable offline primary key (SHA-1 hex).
   final String musicId;
+
   /// 网盘名 —— the single binding point (URL/username live in the account table).
   final String sourceName;
   final String remotePath;
@@ -64,18 +66,23 @@ class LibraryTrack {
   int? bitrate;
   int? sampleRate;
   String? coverPath;
+
   /// Cue album id when this row is a CUE slice.
   String? cueId;
+
   /// Absolute WebDAV path of the source `.cue`.
   String? cueRemotePath;
+
   /// CUE `TRACK` number.
   int? cueTrackIndex;
+
   /// music_id of the backing audio file (CUE slices).
   String? audioMusicId;
   String? audioRemotePath;
   int? clipStartMs;
   int? clipEndMs;
   String? cacheGroupId;
+
   /// Monotonic version of this row (see [RevClock]); the only value sync compares.
   int? rev;
   DateTime lastDownloadedAt;
@@ -129,106 +136,106 @@ class LibraryTrack {
   }
 
   Map<String, dynamic> toMap() => {
-        'music_id': musicId,
-        'source_name': sourceName,
-        'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
-        'remote_path': remotePath,
-        'file_name': fileName,
-        'title': title,
-        'artist': artist,
-        'album_artist': albumArtist,
-        'album': album,
-        'duration_ms': durationMs,
-        'track_number': trackNumber,
-        'track_total': trackTotal,
-        'disc_number': discNumber,
-        'disc_total': discTotal,
-        'year': year,
-        'genre': genre,
-        'bitrate': bitrate,
-        'sample_rate': sampleRate,
-        'cover_path': coverPath,
-        'cue_id': cueId,
-        'cue_remote_path': cueRemotePath,
-        'cue_track_index': cueTrackIndex,
-        'audio_music_id': audioMusicId,
-        'audio_remote_path': audioRemotePath,
-        'clip_start_ms': clipStartMs,
-        'clip_end_ms': clipEndMs,
-        'cache_group_id': cacheGroupId,
-        'last_downloaded_at': lastDownloadedAt.toIso8601String(),
-        'last_tag_read_at': lastTagReadAt.toIso8601String(),
-      };
+    'music_id': musicId,
+    'source_name': sourceName,
+    'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
+    'remote_path': remotePath,
+    'file_name': fileName,
+    'title': title,
+    'artist': artist,
+    'album_artist': albumArtist,
+    'album': album,
+    'duration_ms': durationMs,
+    'track_number': trackNumber,
+    'track_total': trackTotal,
+    'disc_number': discNumber,
+    'disc_total': discTotal,
+    'year': year,
+    'genre': genre,
+    'bitrate': bitrate,
+    'sample_rate': sampleRate,
+    'cover_path': coverPath,
+    'cue_id': cueId,
+    'cue_remote_path': cueRemotePath,
+    'cue_track_index': cueTrackIndex,
+    'audio_music_id': audioMusicId,
+    'audio_remote_path': audioRemotePath,
+    'clip_start_ms': clipStartMs,
+    'clip_end_ms': clipEndMs,
+    'cache_group_id': cacheGroupId,
+    'last_downloaded_at': lastDownloadedAt.toIso8601String(),
+    'last_tag_read_at': lastTagReadAt.toIso8601String(),
+  };
 
   /// Map for the `tracks` table (no CUE-only columns).
   Map<String, dynamic> toTrackTableMap() => {
-        'music_id': musicId,
-        'source_name': sourceName,
-        'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
-        'remote_path': remotePath,
-        'file_name': fileName,
-        'title': title,
-        'artist': artist,
-        'album_artist': albumArtist,
-        'album': album,
-        'duration_ms': durationMs,
-        'track_number': trackNumber,
-        'track_total': trackTotal,
-        'disc_number': discNumber,
-        'disc_total': discTotal,
-        'year': year,
-        'genre': genre,
-        'bitrate': bitrate,
-        'sample_rate': sampleRate,
-        'cover_path': coverPath,
-        'last_downloaded_at': lastDownloadedAt.toIso8601String(),
-        'last_tag_read_at': lastTagReadAt.toIso8601String(),
-      };
+    'music_id': musicId,
+    'source_name': sourceName,
+    'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
+    'remote_path': remotePath,
+    'file_name': fileName,
+    'title': title,
+    'artist': artist,
+    'album_artist': albumArtist,
+    'album': album,
+    'duration_ms': durationMs,
+    'track_number': trackNumber,
+    'track_total': trackTotal,
+    'disc_number': discNumber,
+    'disc_total': discTotal,
+    'year': year,
+    'genre': genre,
+    'bitrate': bitrate,
+    'sample_rate': sampleRate,
+    'cover_path': coverPath,
+    'last_downloaded_at': lastDownloadedAt.toIso8601String(),
+    'last_tag_read_at': lastTagReadAt.toIso8601String(),
+  };
 
   /// Map for the `cue_slices` table.
   Map<String, dynamic> toCueSliceTableMap() => {
-        'music_id': musicId,
-        'cue_id': cueId ??
-            (cueRemotePath != null
-                ? cueIdFor(sourceName, cueRemotePath!)
-                : ''),
-        'audio_music_id': audioMusicId ??
-            (audioRemotePath != null
-                ? musicIdForRemote(sourceName, audioRemotePath!)
-                : musicId),
-        'source_name': sourceName,
-        'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
-        'remote_path': remotePath,
-        'file_name': fileName,
-        'track_index': cueTrackIndex,
-        'title': title,
-        'artist': artist,
-        'album_artist': albumArtist,
-        'album': album,
-        'duration_ms': durationMs,
-        'track_number': trackNumber,
-        'track_total': trackTotal,
-        'disc_number': discNumber,
-        'disc_total': discTotal,
-        'year': year,
-        'genre': genre,
-        'bitrate': bitrate,
-        'sample_rate': sampleRate,
-        'cover_path': coverPath,
-        'audio_remote_path': audioRemotePath,
-        'clip_start_ms': clipStartMs,
-        'clip_end_ms': clipEndMs,
-        'cache_group_id': cacheGroupId,
-        'last_downloaded_at': lastDownloadedAt.toIso8601String(),
-        'last_tag_read_at': lastTagReadAt.toIso8601String(),
-      };
+    'music_id': musicId,
+    'cue_id':
+        cueId ??
+        (cueRemotePath != null ? cueIdFor(sourceName, cueRemotePath!) : ''),
+    'audio_music_id':
+        audioMusicId ??
+        (audioRemotePath != null
+            ? musicIdForRemote(sourceName, audioRemotePath!)
+            : musicId),
+    'source_name': sourceName,
+    'rev': rev ?? lastTagReadAt.millisecondsSinceEpoch,
+    'remote_path': remotePath,
+    'file_name': fileName,
+    'track_index': cueTrackIndex,
+    'title': title,
+    'artist': artist,
+    'album_artist': albumArtist,
+    'album': album,
+    'duration_ms': durationMs,
+    'track_number': trackNumber,
+    'track_total': trackTotal,
+    'disc_number': discNumber,
+    'disc_total': discTotal,
+    'year': year,
+    'genre': genre,
+    'bitrate': bitrate,
+    'sample_rate': sampleRate,
+    'cover_path': coverPath,
+    'audio_remote_path': audioRemotePath,
+    'clip_start_ms': clipStartMs,
+    'clip_end_ms': clipEndMs,
+    'cache_group_id': cacheGroupId,
+    'last_downloaded_at': lastDownloadedAt.toIso8601String(),
+    'last_tag_read_at': lastTagReadAt.toIso8601String(),
+  };
 
   factory LibraryTrack.fromMap(Map<String, dynamic> map) {
-    final sourceName = (map['source_name'] ?? map['account_id']) as String;
-    final remotePath = map['remote_path'] as String;
-    final cueRemotePath = map['cue_remote_path'] as String?;
+    final sourceName = _asString(map['source_name'] ?? map['account_id']) ?? '';
+    final remotePath = _asString(map['remote_path']) ?? '';
+    final cueRemotePath = _asString(map['cue_remote_path']);
     final cueTrackIndex = _asInt(map['cue_track_index'] ?? map['track_index']);
-    final storedId = map['music_id'] as String?;
+    final storedId = _asString(map['music_id']);
     return LibraryTrack(
       musicId: (storedId != null && storedId.isNotEmpty)
           ? storedId
@@ -240,39 +247,41 @@ class LibraryTrack {
             ),
       sourceName: sourceName,
       remotePath: remotePath,
-      fileName: map['file_name'] as String,
-      title: map['title'] as String?,
-      artist: map['artist'] as String?,
-      albumArtist: map['album_artist'] as String?,
-      album: map['album'] as String?,
+      fileName: _asString(map['file_name']) ?? '',
+      title: _asString(map['title']),
+      artist: _asString(map['artist']),
+      albumArtist: _asString(map['album_artist']),
+      album: _asString(map['album']),
       durationMs: map['duration_ms'] as int?,
       trackNumber: map['track_number'] as int?,
       trackTotal: map['track_total'] as int?,
       discNumber: map['disc_number'] as int?,
       discTotal: map['disc_total'] as int?,
       year: map['year'] as int?,
-      genre: map['genre'] as String?,
+      genre: _asString(map['genre']),
       bitrate: map['bitrate'] as int?,
       sampleRate: map['sample_rate'] as int?,
-      coverPath: map['cover_path'] as String?,
-      cueId: map['cue_id'] as String?,
+      coverPath: _asString(map['cover_path']),
+      cueId: _asString(map['cue_id']),
       cueRemotePath: cueRemotePath,
       cueTrackIndex: cueTrackIndex,
-      audioMusicId: map['audio_music_id'] as String?,
-      audioRemotePath: map['audio_remote_path'] as String?,
+      audioMusicId: _asString(map['audio_music_id']),
+      audioRemotePath: _asString(map['audio_remote_path']),
       clipStartMs: _asInt(map['clip_start_ms']),
       clipEndMs: _asInt(map['clip_end_ms']),
-      cacheGroupId: map['cache_group_id'] as String?,
+      cacheGroupId: _asString(map['cache_group_id']),
       rev: _asInt(map['rev']),
-      lastDownloadedAt: DateTime.tryParse(
-            map['last_downloaded_at'] as String? ?? '') ??
+      lastDownloadedAt:
+          DateTime.tryParse(_asString(map['last_downloaded_at']) ?? '') ??
           DateTime.now(),
-      lastTagReadAt: DateTime.tryParse(
-            map['last_tag_read_at'] as String? ?? '') ??
+      lastTagReadAt:
+          DateTime.tryParse(_asString(map['last_tag_read_at']) ?? '') ??
           DateTime.now(),
     );
   }
 }
+
+String? _asString(Object? value) => value?.toString();
 
 int? _asInt(Object? value) {
   if (value == null) return null;
@@ -292,14 +301,14 @@ enum LibrarySortMode {
 
 extension LibrarySortModeX on LibrarySortMode {
   String get storageKey => switch (this) {
-        LibrarySortMode.byName => 'name',
-        LibrarySortMode.byAlbumTrack => 'album_track',
-      };
+    LibrarySortMode.byName => 'name',
+    LibrarySortMode.byAlbumTrack => 'album_track',
+  };
 
   String get labelZh => switch (this) {
-        LibrarySortMode.byName => '按名称',
-        LibrarySortMode.byAlbumTrack => '按曲序',
-      };
+    LibrarySortMode.byName => '按名称',
+    LibrarySortMode.byAlbumTrack => '按曲序',
+  };
 
   static LibrarySortMode fromStorageKey(String? key) {
     switch (key) {
@@ -314,8 +323,9 @@ extension LibrarySortModeX on LibrarySortMode {
 
 /// Shared comparators for library lists.
 int compareTracksByName(LibraryTrack a, LibraryTrack b) {
-  final byTitle =
-      a.displayTitle.toLowerCase().compareTo(b.displayTitle.toLowerCase());
+  final byTitle = a.displayTitle.toLowerCase().compareTo(
+    b.displayTitle.toLowerCase(),
+  );
   if (byTitle != 0) return byTitle;
   return a.fileName.toLowerCase().compareTo(b.fileName.toLowerCase());
 }

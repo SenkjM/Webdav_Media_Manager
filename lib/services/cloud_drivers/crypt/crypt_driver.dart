@@ -8,7 +8,24 @@ import 'package:dio/dio.dart';
 import 'package:openlist_crypt/openlist_crypt.dart';
 
 import '../../../models/account_capabilities.dart';
+import '../../../utils/track_identity.dart';
 import '../../cloud_driver.dart';
+
+/// Decrypt a network-sized batch away from Flutter's UI isolate.
+Future<List<Uint8List>> _decryptBatchInIsolate({
+  required Uint8List material,
+  required Uint8List nonce,
+  required int firstBlock,
+  required List<Uint8List> blocks,
+}) {
+  return Isolate.run(() {
+    final cipher = RcloneCipher.fromKeyMaterial(material);
+    return <Uint8List>[
+      for (var i = 0; i < blocks.length; i++)
+        cipher.decryptBlock(nonce, firstBlock + i, blocks[i]),
+    ];
+  });
+}
 
 /// crypt 驱动（99 §7.5）：包一层源账号，名字 / 内容按 rclone crypt 格式
 /// 加解密。只读链路 + 目录名加密（建目录 / 改名 / 移动 / 复制），无内容上传。
@@ -41,7 +58,6 @@ class CryptDriver extends CloudDriver {
     } on RcloneCipherException catch (e) {
       throw CloudDriverDataException('crypt 配置无效：${e.message}', e);
     }
-    _sourceAccountId = (config['source_account_id'] as String?) ?? '';
     _sourceAccountName = (config['source_account_id_name'] as String?) ?? '';
     _sourceDir = (config['source_dir'] as String?) ?? '/';
     // 后台先把 scrypt 跑起来（在 isolate 里）：用户真正浏览时通常已经就绪。
@@ -56,7 +72,6 @@ class CryptDriver extends CloudDriver {
   final String _encryptedSuffix;
   final bool _dirNameEncrypt;
   late final NameEncryptionMode _nameMode;
-  late String _sourceAccountId;
 
   /// 保存时的源账号名快照：源被删后重添**同名**账号可按名恢复
   /// （真机反馈：报错显示一长串源 id，重加源也接不上）。
@@ -76,8 +91,16 @@ class CryptDriver extends CloudDriver {
   /// `registerAccounts` 都会被重建，不缓存就要反复付这笔钱。
   ///
   /// **只在内存里**：密钥材料不落盘（用户明确否决落盘缓存）。
-  static Future<Uint8List> _keyMaterial(String password, String salt) {
-    final cacheKey = '$password\u0000$salt';
+  ///
+  /// 缓存键带源账号名称：与读取时的同名恢复语义一致。源账号 ID 删除或
+  /// 重建后，只要名称相同，仍可复用同一份内存派生材料。
+  static Future<Uint8List> _keyMaterial(
+    String accountName,
+    String password,
+    String salt,
+  ) {
+    final cacheKey =
+        '${normalizeSourceName(accountName)}\u0000$password\u0000$salt';
     final cached = _keyCache[cacheKey];
     if (cached != null) return cached;
     final future = deriveKeyMaterial(password: password, salt: salt);
@@ -99,7 +122,11 @@ class CryptDriver extends CloudDriver {
     return future;
   }
 
-  late final Future<Uint8List> _materialFuture = _keyMaterial(_password, _salt);
+  late final Future<Uint8List> _materialFuture = _keyMaterial(
+    _sourceAccountName,
+    _password,
+    _salt,
+  );
 
   /// 懒构造：构造时**不做**任何 scrypt（那会把注册流程卡住），第一次真正
   /// 用到密钥时才 await；构造器已把派生提前踢出去了。
@@ -123,16 +150,15 @@ class CryptDriver extends CloudDriver {
   CloudSource _requireSource() {
     final cached = _source;
     if (cached != null) return cached;
-    var s = _env?.resolveSource(_sourceAccountId);
-    if (s == null && _sourceAccountName.isNotEmpty) {
-      // id 找不到（源被删）→ 按名字找回：重添同名账号即恢复。
-      s = _env?.resolveSourceByName?.call(_sourceAccountName);
+    final sourceName = normalizeSourceName(_sourceAccountName);
+    if (sourceName.isEmpty) {
+      throw const CloudDriverException('crypt 未保存源账号名称；请重新编辑并选择源账号');
     }
+    // 名称是 Crypt 源的唯一绑定关系。source_account_id 仅保留作旧配置
+    // 兼容字段，不参与实际解析；这样删除并重建账号后同名账号仍可恢复。
+    final s = _env?.resolveSourceByName?.call(sourceName);
     if (s == null) {
-      final whom = _sourceAccountName.isNotEmpty
-          ? '「$_sourceAccountName」'
-          : '（源 id：$_sourceAccountId）';
-      throw CloudDriverException('crypt 源账号不存在或已删除$whom；重新添加同名源账号即可恢复');
+      throw CloudDriverException('crypt 源账号不存在或已删除「$sourceName」；重新添加同名源账号即可恢复');
     }
     _source = s;
     return s;
@@ -394,7 +420,7 @@ class CryptDriver extends CloudDriver {
       switch (t.shape) {
         case _CryptTarget.shapeWholeBody:
           // 源不支持 Range（一次回整包）：整包解密。
-          yield _decryptAll(t);
+          yield await _decryptAll(t);
           return;
         case _CryptTarget.shapeEmptyFile:
           // 密文只有文件头：合法的 0 字节明文文件。
@@ -436,20 +462,18 @@ class CryptDriver extends CloudDriver {
       while (window.isNotEmpty) {
         final chunk = await window.removeAt(0);
         fill(); // 解一批、补一批：窗口始终是满的。
+        final blocks = <Uint8List>[];
         var p = 0;
         while (p < chunk.length) {
           final remaining = chunk.length - p;
           final take = remaining < kBlockSize ? remaining : kBlockSize;
-          yield _decryptBlock(
-            t,
-            block,
-            Uint8List.sublistView(chunk, p, p + take),
-          );
+          blocks.add(Uint8List.sublistView(chunk, p, p + take));
           p += take;
+        }
+        final plainBlocks = await _decryptBatch(t, block, blocks);
+        for (final plain in plainBlocks) {
+          yield plain;
           block++;
-          if (block % 2 == 0 && p < chunk.length) {
-            await Future<void>.delayed(Duration.zero);
-          }
         }
         // 每批之间让出一次事件循环：把已经到达的响应处理掉，也别让整批 CPU 活
         // 顶掉 UI 帧。
@@ -478,7 +502,7 @@ class CryptDriver extends CloudDriver {
     try {
       switch (t.shape) {
         case _CryptTarget.shapeWholeBody:
-          final plain = _decryptAll(t);
+          final plain = await _decryptAll(t);
           if (start >= plain.length) return;
           final last = end < plain.length - 1 ? end : plain.length - 1;
           yield Uint8List.sublistView(plain, start, last + 1);
@@ -499,7 +523,7 @@ class CryptDriver extends CloudDriver {
       // 解析请求可能已经把第 0 块顺手带回来了（区间从文件头开始时才会预取）：
       // 先把这一块消化掉，剩下的块再按批取。
       if (firstBlock == 0 && t.firstBlock != null) {
-        final plain = _decryptBlock(t, 0, t.firstBlock!);
+        final plain = (await _decryptBatch(t, 0, [t.firstBlock!])).single;
         final to = lastBlock == 0 ? last + 1 : plain.length;
         if (start <= 0 && to >= plain.length) {
           yield plain;
@@ -544,16 +568,18 @@ class CryptDriver extends CloudDriver {
         final batchLast = (b + _blocksPerBatch - 1) < lastBlock
             ? b + _blocksPerBatch - 1
             : lastBlock;
+        final cipherBlocks = <Uint8List>[];
         var p = 0;
         for (var i = b; i <= batchLast && p < chunk.length; i++) {
           final remaining = chunk.length - p;
           final take = remaining < kBlockSize ? remaining : kBlockSize;
-          final plain = _decryptBlock(
-            t,
-            i,
-            Uint8List.sublistView(chunk, p, p + take),
-          );
+          cipherBlocks.add(Uint8List.sublistView(chunk, p, p + take));
           p += take;
+        }
+        final plainBlocks = await _decryptBatch(t, b, cipherBlocks);
+        for (var n = 0; n < plainBlocks.length; n++) {
+          final i = b + n;
+          final plain = plainBlocks[n];
           final from = i == firstBlock ? start - i * kBlockDataSize : 0;
           final to = i == lastBlock
               ? last - i * kBlockDataSize + 1
@@ -579,26 +605,36 @@ class CryptDriver extends CloudDriver {
   }
 
   /// 解密单个块并把密码学异常翻译成分层后的错误（不越过本文件）。
-  Uint8List _decryptBlock(_CryptTarget t, int block, Uint8List cipherBlock) {
+  Future<List<Uint8List>> _decryptBatch(
+    _CryptTarget t,
+    int firstBlock,
+    List<Uint8List> blocks,
+  ) async {
+    if (blocks.isEmpty) return const <Uint8List>[];
     try {
-      return t.cipher.decryptBlock(t.nonce, block, cipherBlock);
-    } on RcloneCipherException catch (e) {
+      return await _decryptBatchInIsolate(
+        material: await _materialFuture,
+        nonce: t.nonce,
+        firstBlock: firstBlock,
+        blocks: blocks,
+      );
+    } catch (e) {
       throw CloudDriverDataException(
-        'crypt 第 $block 块解密失败（内容损坏或密钥不匹配）：${e.message}',
+        'crypt 第 $firstBlock 块起解密失败（内容损坏或密钥不匹配）',
         e,
       );
     }
   }
 
   /// 整包解密（源不支持 Range 时）。
-  Uint8List _decryptAll(_CryptTarget t) {
+  Future<Uint8List> _decryptAll(_CryptTarget t) async {
     try {
-      return t.cipher.decrypt(t.body);
-    } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException(
-        'crypt 内容解密失败（内容损坏或密钥不匹配）：${e.message}',
-        e,
+      final material = await _materialFuture;
+      return await Isolate.run(
+        () => RcloneCipher.fromKeyMaterial(material).decrypt(t.body),
       );
+    } on RcloneCipherException catch (e) {
+      throw CloudDriverDataException('crypt 内容解密失败（内容损坏或密钥不匹配）：', e);
     }
   }
 

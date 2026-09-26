@@ -107,13 +107,24 @@ class AppState extends ChangeNotifier {
 
   bool ready = false;
   String? initError;
+  String _initPhase = '未开始';
+
+  String get initPhase => _initPhase;
+
+  Future<void> closeDatabases() async {
+    await downloads.closeDatabase();
+    await playlists.closeDatabase();
+    await libraryDb.close();
+  }
 
   Future<void> init() async {
     try {
+      _initPhase = 'settings';
       await settings.init();
       AppSnack.attach(settings);
       _syncCoverThumbSize();
       _syncDownloadFileTypes();
+      _initPhase = 'cache';
       await cache.init();
       // The rev clock is the single version source sync compares; it starts from
       // the persisted high-water mark and reports every advance back.
@@ -124,7 +135,9 @@ class AppState extends ChangeNotifier {
           onAdvance: settings.setLastRev,
         ),
       );
+      _initPhase = 'library';
       await library.init();
+      _initPhase = 'accounts';
       await accounts.init();
       await registerAllAccounts();
       // The queue persists 网盘名, never an account id: it has to resolve one to
@@ -132,6 +145,7 @@ class AppState extends ChangeNotifier {
       // be judged "来源网盘未绑定".
       downloads.configureAccountResolver(accounts.idForSource);
       applySyncConfiguration();
+      _initPhase = 'playlists';
       await playlists.init();
       downloads.attachLibrary(library);
       // Incremental library sync: whenever a download (or a restore) changes
@@ -140,6 +154,7 @@ class AppState extends ChangeNotifier {
       // Changing 定时同步 in Settings must take effect immediately, not on the
       // next launch.
       settings.addListener(_onSettingsChanged);
+      _initPhase = 'downloads';
       await downloads.init();
       // Download notifications: create the channel and honour the setting.
       downloads.notificationsEnabled = settings.downloadNotificationsEnabled;
@@ -153,8 +168,10 @@ class AppState extends ChangeNotifier {
       unawaited(sync.autoScan());
       _schedulePeriodicSync();
       ready = true;
-    } catch (e) {
-      initError = e.toString();
+    } catch (e, stack) {
+      initError = '$_initPhase: $e';
+      debugPrint('AppState initialization failed at $_initPhase: $e');
+      debugPrintStack(stackTrace: stack);
       ready = true;
     }
     notifyListeners();
@@ -184,8 +201,9 @@ class AppState extends ChangeNotifier {
       if (!live.contains(id)) webDav.disconnect(accountId: id);
     }
     await cloudDrive.registerAccounts(
-      accounts.accounts
-          .where((a) => CloudDriveService.isCloudType(a.providerType)),
+      accounts.accounts.where(
+        (a) => CloudDriveService.isCloudType(a.providerType),
+      ),
     );
     webDav.setActiveAccount(accounts.activeAccountId ?? '');
   }
@@ -403,7 +421,9 @@ class AppState extends ChangeNotifier {
     for (final x in library.tracks) {
       final cuePath = x.cueRemotePath;
       if (!x.isCueVirtual || cuePath == null) continue;
-      parsed.putIfAbsent('${x.sourceName}\u0000$cuePath', () => <LibraryTrack>[]).add(x);
+      parsed
+          .putIfAbsent('${x.sourceName}\u0000$cuePath', () => <LibraryTrack>[])
+          .add(x);
     }
     final seen = <String>{};
     final out = <LibraryTrack>[];

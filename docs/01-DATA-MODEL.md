@@ -41,6 +41,7 @@ v9 删除了 `cache` annex 表：它的每一列都没有承载不可推导的�
 - 「CUE 整专辑一组」的**每行归属**仍由 `cue_albums.cache_group_id` / `cue_slices.cache_group_id` / `download_tasks.cache_group_id` 承担；`cache_groups` 只存**成员清单**（组 → 哪些文件），删除组 = 删成员文件 + 删这一行（`CacheService.deleteCacheGroup`）。
 - `cache_groups` / `cache_access` 是运行态缓存数据：随 `clearAllLibraryData()` 一起清、随 `clearLibraryIndex()` 一起留；**不进**备份与云端分片。
 - 其它库：`download_queue.db`（下载任务）、`playlists.db`（本地歌单）。封面缩略图在应用文档目录 `covers/`，音频在缓存目录。
+- **启动兜底恢复**：初始化抛异常时进入恢复界面（`DatabaseRecoveryScreen`）——先**导出**全部本地库（`music_library.db` / `download_queue.db` / `playlists.db` 连同 `-wal` / `-shm`）到下载目录 `WebdavMediaManager/recovery`，再由用户确认后关闭库连接并删除 `.db` / `-wal` / `-shm` 重进。删除前必须先关连接：进程持着 SQLite 句柄时删除是无效的。启动失败同时记录**阶段名 + 完整 stack trace**（`AppState.initPhase` / logcat），用于定位具体库。
 
 ## 3. 什么算「已缓存」
 

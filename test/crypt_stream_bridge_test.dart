@@ -27,7 +27,8 @@ class _SliceDriver extends CloudDriver {
   Future<void> init() async {}
 
   @override
-  Future<List<CloudFileItem>> list(String path) async => const <CloudFileItem>[];
+  Future<List<CloudFileItem>> list(String path) async =>
+      const <CloudFileItem>[];
 
   @override
   Future<CloudFileItem> get(String path) => throw UnimplementedError();
@@ -141,7 +142,10 @@ void main() {
     rangeReq.headers.set(HttpHeaders.rangeHeader, 'bytes=10-19');
     final part = await rangeReq.close();
     expect(part.statusCode, HttpStatus.partialContent);
-    expect(part.headers.value(HttpHeaders.contentRangeHeader), 'bytes 10-19/1000');
+    expect(
+      part.headers.value(HttpHeaders.contentRangeHeader),
+      'bytes 10-19/1000',
+    );
     expect(await collect(part), bytes.sublist(10, 20));
     expect(driver.calls.last, (10, 19));
 
@@ -176,15 +180,22 @@ void main() {
     final source = _LinkSource(cipher, url);
     source.entries['/x'] = (false, enc.length);
     source.contents['/x'] = enc;
-    final driver = CryptDriver(config: {
-      'source_account_id': 'src1',
-      'source_dir': '',
-      'password': 'testpass',
-      'salt': 'testsalt',
-      'filename_encryption': 'off',
-      'directory_name_encryption': false,
-      'filename_encoding': 'base32',
-    }, env: CloudDriverEnv(resolveSource: (_) => source));
+    final driver = CryptDriver(
+      config: {
+        'source_account_id': 'src1',
+        'source_account_id_name': 'src1',
+        'source_dir': '',
+        'password': 'testpass',
+        'salt': 'testsalt',
+        'filename_encryption': 'off',
+        'directory_name_encryption': false,
+        'filename_encoding': 'base32',
+      },
+      env: CloudDriverEnv(
+        resolveSource: (_) => source,
+        resolveSourceByName: (_) => source,
+      ),
+    );
     await driver.init();
 
     final whole = BytesBuilder();
@@ -195,8 +206,11 @@ void main() {
 
     // 65000..132000 跨第 0/1/2 块，首尾块都要裁剪。
     final part = BytesBuilder();
-    await for (final chunk in driver
-        .openContentRange('/movie.mp4', 65000, 132000)) {
+    await for (final chunk in driver.openContentRange(
+      '/movie.mp4',
+      65000,
+      132000,
+    )) {
       part.add(chunk);
     }
     expect(part.toBytes(), plain.sublist(65000, 132001));

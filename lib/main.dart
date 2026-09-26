@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'providers/app_state.dart';
 import 'screens/home_shell.dart';
+import 'widgets/database_recovery_screen.dart';
 import 'services/accounts_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/cache_service.dart';
@@ -60,7 +61,9 @@ class WebDavMusicApp extends StatelessWidget {
         ChangeNotifierProvider<AppState>.value(value: appState),
         ChangeNotifierProvider<SettingsService>.value(value: appState.settings),
         ChangeNotifierProvider<AccountsService>.value(value: appState.accounts),
-        ChangeNotifierProvider<PlaylistService>.value(value: appState.playlists),
+        ChangeNotifierProvider<PlaylistService>.value(
+          value: appState.playlists,
+        ),
         ChangeNotifierProvider<BackupService>.value(value: appState.backup),
         ChangeNotifierProvider<CredentialVaultService>.value(
           value: appState.credentials,
@@ -78,7 +81,9 @@ class WebDavMusicApp extends StatelessWidget {
         ChangeNotifierProvider<NotificationPermissionService>.value(
           value: appState.notificationPermission,
         ),
-        ChangeNotifierProvider<AudioPlayerService>.value(value: appState.player),
+        ChangeNotifierProvider<AudioPlayerService>.value(
+          value: appState.player,
+        ),
         ChangeNotifierProvider<VideoPlaybackService>.value(
           value: appState.videoPlayback,
         ),
@@ -92,8 +97,9 @@ class WebDavMusicApp extends StatelessWidget {
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         home: appState.initError != null
-            ? Scaffold(
-                body: Center(child: Text('初始化失败：${appState.initError}')),
+            ? RecoveryScreen(
+                error: appState.initError!,
+                beforeClear: appState.closeDatabases,
               )
             : const HomeShell(),
       ),

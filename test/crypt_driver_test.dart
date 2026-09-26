@@ -63,12 +63,14 @@ class FakeCloudSource implements CloudSource {
       final idx = full.lastIndexOf('/');
       final parent = idx <= 0 ? '/' : full.substring(0, idx);
       if (parent == p) {
-        out.add(CloudFileItem(
-          name: full.substring(idx + 1),
-          isDir: v.$1,
-          size: v.$2,
-          rawUrl: null,
-        ));
+        out.add(
+          CloudFileItem(
+            name: full.substring(idx + 1),
+            isDir: v.$1,
+            size: v.$2,
+            rawUrl: null,
+          ),
+        );
       }
     });
     return out;
@@ -126,48 +128,65 @@ CryptDriver buildDriver(FakeCloudSource source) {
   source.addPlainDir('/src456/789');
   source.addPlainDir('/src456/789/photos');
   source.addPlainFile('/src456/789/song.flac', 'hello crypt 你好');
-  final env = CloudDriverEnv(resolveSource: (id) => id == 'src1' ? source : null);
-  final driver = CryptDriver(config: {
-    'source_account_id': 'src1',
-    'source_dir': '/789',
-    'password': 'testpass',
-    'salt': 'testsalt',
-    'filename_encryption': 'standard',
-    'directory_name_encryption': true,
-    'filename_encoding': 'base32',
-  }, env: env);
+  final env = CloudDriverEnv(
+    resolveSource: (_) => null,
+    resolveSourceByName: (name) => name == '源A' ? source : null,
+  );
+  final driver = CryptDriver(
+    config: {
+      'source_account_id_name': '源A',
+      'source_dir': '/789',
+      'password': 'testpass',
+      'salt': 'testsalt',
+      'filename_encryption': 'standard',
+      'directory_name_encryption': true,
+      'filename_encoding': 'base32',
+    },
+    env: env,
+  );
   return driver;
 }
 
 void main() {
   test('list decrypts names and hides raw url', () async {
-    final source = FakeCloudSource(RcloneCipher(
-      password: 'testpass',
-      salt: 'testsalt',
-      mode: NameEncryptionMode.standard,
-      dirNameEncrypt: true,
-    ));
+    final source = FakeCloudSource(
+      RcloneCipher(
+        password: 'testpass',
+        salt: 'testsalt',
+        mode: NameEncryptionMode.standard,
+        dirNameEncrypt: true,
+      ),
+    );
     final driver = buildDriver(source);
     await driver.init();
     final items = await driver.list('/');
     final names = items.map((e) => e.name).toSet();
     expect(names, contains('photos'));
     expect(names, contains('song.flac'));
-    expect(items.every((e) => e.rawUrl == null), isTrue,
-        reason: 'crypt 是 MustProxy：密文直链不外泄');
+    expect(
+      items.every((e) => e.rawUrl == null),
+      isTrue,
+      reason: 'crypt 是 MustProxy：密文直链不外泄',
+    );
     final song = items.firstWhere((e) => e.name == 'song.flac');
     expect(song.size, utf8.encode('hello crypt 你好').length);
   });
 
   test('missing source surfaces a clear error on browse', () async {
-    final driver = CryptDriver(config: {
-      'source_account_id': 'gone',
-      'source_dir': '/',
-      'password': 'testpass',
-      'salt': 'testsalt',
-      'filename_encryption': 'standard',
-      'filename_encoding': 'base32',
-    }, env: CloudDriverEnv(resolveSource: (_) => null));
+    final driver = CryptDriver(
+      config: {
+        'source_account_id_name': '已删除',
+        'source_dir': '/',
+        'password': 'testpass',
+        'salt': 'testsalt',
+        'filename_encryption': 'standard',
+        'filename_encoding': 'base32',
+      },
+      env: CloudDriverEnv(
+        resolveSource: (_) => null,
+        resolveSourceByName: (_) => null,
+      ),
+    );
     await expectLater(driver.list('/'), throwsA(isA<CloudDriverException>()));
   });
 
@@ -183,17 +202,23 @@ void main() {
     final driver = buildDriver(source);
     await driver.init();
     final caps = driver.runtimeCapabilities!;
-    expect(AccountCaps.has(caps, AccountCaps.write), isFalse,
-        reason: '上传权限传递隔离（99 §7.5）');
+    expect(
+      AccountCaps.has(caps, AccountCaps.write),
+      isFalse,
+      reason: '上传权限传递隔离（99 §7.5）',
+    );
     expect(AccountCaps.has(caps, AccountCaps.read), isTrue);
     expect(AccountCaps.has(caps, AccountCaps.mkdir), isTrue);
   });
 
   test('runtime capabilities null when source missing', () {
-    final driver = CryptDriver(config: {
-      'source_account_id': 'gone',
-      'password': 'p',
-    }, env: CloudDriverEnv(resolveSource: (_) => null));
+    final driver = CryptDriver(
+      config: {'source_account_id_name': '已删除', 'password': 'p'},
+      env: CloudDriverEnv(
+        resolveSource: (_) => null,
+        resolveSourceByName: (_) => null,
+      ),
+    );
     expect(driver.runtimeCapabilities, isNull);
   });
 
@@ -235,23 +260,26 @@ void main() {
   test('spec declares required fields', () {
     final spec = CryptSpec();
     final keys = spec.form
-        .map((f) => switch (f) {
-              CloudDriverField() => f.key,
-              CloudDriverSelectField() => f.key,
-              CloudDriverAccountField() => f.key,
-              CloudDriverSwitchField() => f.key,
-            })
+        .map(
+          (f) => switch (f) {
+            CloudDriverField() => f.key,
+            CloudDriverSelectField() => f.key,
+            CloudDriverAccountField() => f.key,
+            CloudDriverSwitchField() => f.key,
+          },
+        )
         .toSet();
     expect(
-        keys,
-        containsAll([
-          'source_account_id',
-          'source_dir',
-          'password',
-          'salt',
-          'filename_encryption',
-          'directory_name_encryption',
-        ]));
+      keys,
+      containsAll([
+        'source_account_id',
+        'source_dir',
+        'password',
+        'salt',
+        'filename_encryption',
+        'directory_name_encryption',
+      ]),
+    );
     expect(AccountCaps.has(spec.capabilities, AccountCaps.write), isFalse);
   });
 }

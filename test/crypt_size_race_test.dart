@@ -23,10 +23,13 @@ class CipherServer {
 
   final Uint8List body;
   late HttpServer server;
+
   /// false = 忽略 Range（一次回整包 200）；true = 标准 206 + Content-Range。
   bool supportsRange = true;
+
   /// 是否回 Content-Range 头（「未知大小」模拟：回 206 但不给总长）。
   bool sendContentRange = true;
+
   /// 元数据侧谎报的 size（CloudFileItem.size）。
   int reportedSize = 0;
 
@@ -34,15 +37,19 @@ class CipherServer {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((req) async {
       final range = req.headers.value('range');
-      final m = range == null ? null : RegExp(r'bytes=(\d+)-(\d+)').firstMatch(range);
+      final m = range == null
+          ? null
+          : RegExp(r'bytes=(\d+)-(\d+)').firstMatch(range);
       if (supportsRange && m != null) {
         final s = int.parse(m.group(1)!);
         var e = int.parse(m.group(2)!);
         if (e >= body.length) e = body.length - 1;
         req.response.statusCode = HttpStatus.partialContent;
         if (sendContentRange) {
-          req.response.headers.set('content-range',
-              'bytes $s-$e/${body.length}');
+          req.response.headers.set(
+            'content-range',
+            'bytes $s-$e/${body.length}',
+          );
         }
         req.response.contentLength = e - s + 1;
         req.response.add(body.sublist(s, e + 1));
@@ -120,14 +127,20 @@ void main() {
   });
 
   CryptDriver buildDriver(_FakeSource source) {
-    final env = CloudDriverEnv(resolveSource: (id) => id == 'src1' ? source : null);
-    final driver = CryptDriver(config: {
-      'source_account_id': 'src1',
-      'source_dir': '/789',
-      'password': 'testpass',
-      'salt': 'testsalt',
-      'filename_encryption': 'off',
-    }, env: env);
+    final env = CloudDriverEnv(
+      resolveSource: (_) => null,
+      resolveSourceByName: (name) => name == '源A' ? source : null,
+    );
+    final driver = CryptDriver(
+      config: {
+        'source_account_id_name': '源A',
+        'source_dir': '/789',
+        'password': 'testpass',
+        'salt': 'testsalt',
+        'filename_encryption': 'off',
+      },
+      env: env,
+    );
     return driver;
   }
 
@@ -160,8 +173,7 @@ void main() {
     await for (final c in driver.openContent('/a.flac')) {
       out.add(c);
     }
-    expect(out.toBytes(), plain,
-        reason: 'Content-Range 总长与内容同请求，能纠正过期的元数据');
+    expect(out.toBytes(), plain, reason: 'Content-Range 总长与内容同请求，能纠正过期的元数据');
   });
 
   test('元数据 size=0 且源不回 Content-Range：明确报错，不产出空内容', () async {
@@ -191,7 +203,6 @@ void main() {
     await for (final c in driver.openContent('/big.flac')) {
       out.add(c);
     }
-    expect(out.toBytes(), plain,
-        reason: 'Content-Range 优先于过期元数据，不产出截断文件');
+    expect(out.toBytes(), plain, reason: 'Content-Range 优先于过期元数据，不产出截断文件');
   });
 }

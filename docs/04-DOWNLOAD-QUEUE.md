@@ -20,12 +20,15 @@
 | `progress` / `bytesReceived` / `bytesTotal` / `errorMessage` | 进度与失败原因 |
 | `isPublic` | `target != cache`，即「落到公共集合」；`isGallery` 单独判相册 |
 
+持久化读取（`DownloadTask.fromMap`）对旧库**类型宽容**：字符串 / 时间字段经 `_asString` / `_asDate` 转换，避免老 schema 行里混入的 bool / 数值让启动初始化崩溃。
+
 ## 2. 状态机与执行
 
-- **串行**：`_pump()` 一次只跑一个任务，取 `orderPending(_tasks)` 的第一个，跑完再取下一个；全部排空后统一刷新进度通知。
+- **串行**：`_pump()` 一次只跑一个任务，取 `orderPending(_tasks)` 的第一个，跑完再取下一个；全部排空后统一刷新进度通知。`_pump()` 正忙时被再次调用不会丢唤醒——请求被记录（`_pumpRequested`），当前任务退出后自动重启调度，所以「取消正在下载的任务」后下一个 pending 任务必定接续启动。
 - 启动时把落库的 `active` 任务改回 `pending`（上次进程被杀留下的残留）。
 - 任务抛异常也要**落库成 failed**（否则数据库里的行会永远停在 active，而内存说失败）。
 - 取消 / 重试：`cancel(id)` 把 pending / active 标 cancelled（active 还会触发取消 token）；`retry(id)` 把 failed / cancelled 复位成 pending 并重新入会话计数。
+- **手动唤醒**：工具栏提供三个动作——「全部下载」（把 failed / cancelled 全部复位并清空退避，再从 pending 起跑）、「唤醒等待中任务」（清空所有 pending 行的 `nextRetryAt`，让退避中的任务立即参与调度）、「全部取消」（终止 active、取消全部 pending）。
 
 ## 3. 入队语义（`enqueue`）
 

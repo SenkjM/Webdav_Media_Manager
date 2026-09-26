@@ -280,7 +280,7 @@
 - **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（4.2.1）。
 - **架构**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）。**源适配层必须给 size**（单文件 PROPFIND，`webdav_service.statPath`）——漏掉会让 crypt 误判成整包，产出 0B 文件（真机反馈，已修，[11 §5](11-CLOUD-DRIVER-PORTING.md)）。
 - **已落地增量（真机反馈驱动，语义已收口进固定文档）**：表单控制器与校验显示（[11 §6](11-CLOUD-DRIVER-PORTING.md)）；应用内消息最顶层横幅（[07](07-NOTIFICATIONS.md)）；下载进度按 rclone 块结构 Range 分段、逐块解密（[04 §3](04-DOWNLOAD-QUEUE.md)）；本地流桥（127.0.0.1 HTTP 端点包 `openContentRange`，播放入口无分支，[11 §5](11-CLOUD-DRIVER-PORTING.md)）；账号类型名 `typeLabelFor`（[02 §10](02-NETWORK-LIBRARY.md)）；下载重试三层兜底（分类 / 退避 / 断点续传）与超时补齐、原地重试、单一计数来源（[04 §7](04-DOWNLOAD-QUEUE.md)）；大小判定四态 shape + Content-Range 纠偏（[11 §5](11-CLOUD-DRIVER-PORTING.md)）。测试：`crypt_cipher_test` / `crypt_driver_test` / `crypt_stream_bridge_test` / `crypt_webdav_source_test` / `crypt_size_race_test`。
-- **待办**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）；真机验收 crypt 全链路（浏览 / 下载 / 流式 / 坏名字透传）。
+- **待办**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。真机验收：流式播放已通过（用户确认）；浏览 / 下载 / 坏名字透传仍待逐项确认。
 
 ### 4.6 关键技术点（移植时要一起处理的）
 
@@ -372,12 +372,6 @@
 - **用户语义**（真机反馈）：下载队列里「系统目录：content://xxx」对用户没用且不能反映实际下载地址，应删掉；用户要的是**可理解**的位置信息。
 - **现状**：无意义 URI 已从队列删除（`downloads_screen.dart`）；但「系统相册/下载目录」这两个目标在系统里的真实位置（如相册的 `Movies/WebdavMediaManager`）只在 [02 §7](02-NETWORK-LIBRARY.md) 有文档语义，界面没有向用户展示任何位置描述。
 - **差距**：若用户再报「不知道去哪找文件」，考虑在完成态补一行人类可读位置（如「已存入系统相册 › Movies/WebdavMediaManager」），不要回到原始 URI。
-
-### 5.3 crypt 源绑定只认 id（已修复，待真机验收）
-
-- **用户语义**（真机反馈）：crypt 账号只需和**账户名**绑定；现在它绑的是源 id，源被删后报错界面显示一长串源 id，**即使重新添加源也无法恢复 crypt**。
-- **现状**：已实现「id 优先、名字兜底」+ 保存时源名快照 + 错误信息用源名（[11 §4](11-CLOUD-DRIVER-PORTING.md)）；测试 `crypt_source_name_binding_test.dart`。**待真机验收**：删源 → 报错可读 → 重添同名源 → crypt 复活。
-- **代码位置**：`crypt_driver.dart` 的 `_requireSource`、`cloud_drive_service.dart` 的 `_resolveSourceByName` / `_cryptSourceTypes`、`accounts_screen.dart` 的配置组装（`<key>_name` 快照）。
 
 ## 6. 存储层合并（T1 / T2 / T3 全部完成）
 

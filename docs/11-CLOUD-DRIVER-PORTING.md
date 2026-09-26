@@ -47,7 +47,7 @@
 - 上游驱动内部的 path→id 缓存：本应用实例级持有即可，随实例重建失效。跨会话缓存没做。**因此「别白重建」值钱**：启动与每次进出账号页 / 网络库 / 同步页都会调 `registerAccounts`，白重建一次就丢掉 path→id 缓存、直链解析缓存与连接池（表现为浏览深层目录重复解析、播放中途重新解析直链）。
 - 驱动自己写回的令牌（`onTokenUpdate` → `_persistTokens`）**不算**用户改配置：写回时同步该账号指纹，否则一次令牌轮换就会白重建一遍驱动。
 - 凭证、token 一律不进日志、不进提交（`00 §3.6`）。
-- **包装驱动（crypt）的源解析必须是「id 优先、名字兜底」**：源账号 id 是主键，但表单保存时同时落一份**源账号名快照**（`<key>_name`）。源账号被删除后 id 永远找不到，此时按名字精确匹配（忽略首尾空白）找回——用户**重新添加一个同名源账号即可恢复 crypt**，不必重建 crypt 账号（真机反馈：报错只显示一长串源 id，重加源也接不上）。名字也对不上才报错，且错误信息用**源名字**表达而非裸 id，并直接告知「重新添加同名源账号即可恢复」。
+- **包装驱动（crypt）的源解析是「名称唯一绑定」**：表单保存时同时落一份**源账号名快照**（`<key>_name`），解析**只按名字**精确匹配（经 `normalizeSourceName` 归一空白）；`source_account_id` 仅作为表单字段与旧配置兼容数据保留，**不参与解析**。源账号被删除后**重新添加一个同名源账号即可恢复 crypt**，不必重建 crypt 账号（真机反馈：报错只显示一长串源 id，重加源也接不上）。名字缺失（旧配置无快照）或对不上才报错，错误信息用**源名字**表达，并直接告知「重新添加同名源账号即可恢复」。密钥材料缓存（`_keyMaterial`）的隔离键同样用**归一后的源账号名** + (密码, 盐)，与读取语义一致。
 
 ## 5. 直链、Range 与本地流桥
 
@@ -101,9 +101,9 @@
 | `aliyundrive_open` | `refresh_token`、`client_secret`（表单 obscure）+ `access_token`（`runtimeSecretKeys`） | `drive_type`、`api_url_address`、`local_refresh`、`client_id`、`remove_way`、`root_folder_id`、`drive_id` | `access_token`（运行时令牌缓存）、`drive_id`（表单通用迁移写入的解析结果快照，非凭证） |
 | `terabox` | `cookie`（表单 obscure） | `root_folder_path` | 无（TeraBox 不轮换 Cookie，没有 onTokenUpdate 写回） |
 | `netease_music` | `cookie`（表单 obscure） | `song_limit` | 无（网易不轮换 Cookie，没有 onTokenUpdate 写回） |
-| `crypt` | `password`、`salt`（表单 obscure） | `source_account_id`、`source_dir`、`filename_encoding`、`encrypted_suffix`、`filename_encryption`、`directory_name_encryption` | `source_account_id_name`（表单通用写入的源账号名快照，非凭证；**仅作 id 解析失败后的兜底**——主绑定是 `source_account_id`，语义见 §4） |
+| `crypt` | `password`、`salt`（表单 obscure） | `source_account_id`、`source_dir`、`filename_encoding`、`encrypted_suffix`、`filename_encryption`、`directory_name_encryption` | `source_account_id_name`（表单通用写入的源账号名快照，非凭证；**名称是唯一绑定**，解析只用它，语义见 §4） |
 
-**注意清点表的列语义**：「隐式键」不等于「备用键」——它只表示**该键不在 `spec.form` 里**。crypt 的主绑定 `source_account_id` 在表单里（`CloudDriverAccountField`），所以落在「非密文键」列；快照落在「隐式键」列不代表它参与主绑定。
+**注意清点表的列语义**：「隐式键」不等于「备用键」——它只表示**该键不在 `spec.form` 里**。crypt 的 `source_account_id` 在表单里（`CloudDriverAccountField`），落在「非密文键」列，但实际解析不使用它（名称才是唯一绑定，见 §4）。
 
 **新驱动落地时**（并入 §8.1 核对单）：对照 Addition 的 `fromJson`/`toJson` 与客户端里所有 `onTokenUpdate?.call({...})`，把每个键落进上表；测试里 `audited` 清单加一行、密文集合加键——漏登记的隐式键会从断言失败里暴露。
 

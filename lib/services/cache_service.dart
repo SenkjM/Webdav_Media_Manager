@@ -62,8 +62,10 @@ class CacheService extends ChangeNotifier {
     final keys = prefs.getKeys();
     final entries = <String, String>{};
     for (final k in keys) {
-      final v = prefs.getString(k);
-      if (v != null) entries[k] = v;
+      // Legacy preferences may contain bool/int values under keys that share
+      // the cache prefix. Only string values are cache-group payloads.
+      final v = prefs.get(k);
+      if (v is String) entries[k] = v;
     }
 
     final groups = parseLegacyCacheGroups(entries);

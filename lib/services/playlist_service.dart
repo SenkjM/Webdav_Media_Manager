@@ -11,11 +11,9 @@ import 'webdav_service.dart';
 
 /// Local playlist CRUD + optional WebDAV M3U8 sync (last-write-wins).
 class PlaylistService extends ChangeNotifier {
-  PlaylistService({
-    PlaylistStore? store,
-    required WebDavService webDav,
-  })  : _store = store ?? PlaylistStore(),
-        _webDav = webDav;
+  PlaylistService({PlaylistStore? store, required WebDavService webDav})
+    : _store = store ?? PlaylistStore(),
+      _webDav = webDav;
 
   final PlaylistStore _store;
   final WebDavService _webDav;
@@ -25,6 +23,7 @@ class PlaylistService extends ChangeNotifier {
   bool _loaded = false;
   String _remotePath = '/Playlists/';
   bool _syncEnabled = true;
+
   /// Account that owns the playlist M3U8 mirror (set from Settings)a The music
   /// library never depends on it.
   String? _syncAccountId;
@@ -37,6 +36,8 @@ class PlaylistService extends ChangeNotifier {
   bool get syncEnabled => _syncEnabled;
   String? get lastSyncError => _lastSyncError;
   PlaylistStore get store => _store;
+
+  Future<void> closeDatabase() => _store.close();
 
   /// Whether a usable destination account is configured for playlist sync.
   bool get canSync =>
@@ -154,7 +155,6 @@ class PlaylistService extends ChangeNotifier {
     unawaitedSyncUpload(pl);
   }
 
-
   /// Drop playlist entries whose identity is not in [validKeys]
   /// (`accountId\0remotePath` via [PlaylistEntry.identityKey]).
   /// Keeps playlist shells; empties entries that all became orphans.
@@ -196,7 +196,10 @@ class PlaylistService extends ChangeNotifier {
         final text = utf8.decode(bytes, allowMalformed: true);
         final decoded = M3u8PlaylistCodec.decode(
           text,
-          fallbackName: item.name.replaceAll(RegExp(r'\.m3u8?$', caseSensitive: false), ''),
+          fallbackName: item.name.replaceAll(
+            RegExp(r'\.m3u8?$', caseSensitive: false),
+            '',
+          ),
         );
         decoded.remoteFileName = item.name;
         remotes.add(decoded);
@@ -240,7 +243,11 @@ class PlaylistService extends ChangeNotifier {
     pl.remoteFileName ??= M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
     await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
     final body = M3u8PlaylistCodec.encode(pl);
-    await _webDav.writeBytes(_syncAccountId!, _remoteFilePath(pl), Uint8List.fromList(utf8.encode(body)));
+    await _webDav.writeBytes(
+      _syncAccountId!,
+      _remoteFilePath(pl),
+      Uint8List.fromList(utf8.encode(body)),
+    );
     await _store.upsert(pl);
   }
 
@@ -259,7 +266,8 @@ class PlaylistService extends ChangeNotifier {
   }
 
   String _remoteFilePath(Playlist pl) {
-    final file = pl.remoteFileName ?? M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
+    final file =
+        pl.remoteFileName ?? M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
     final base = _remotePath.endsWith('/') ? _remotePath : '$_remotePath/';
     return '$base$file';
   }
@@ -277,7 +285,6 @@ class PlaylistService extends ChangeNotifier {
     if (!p.endsWith('/')) p = '$p/';
     return p;
   }
-
 
   /// Playlists that reference [accountId] (any entry). Entries keep their accountId labels.
   List<Map<String, dynamic>> exportJsonForAccount(String accountId) {

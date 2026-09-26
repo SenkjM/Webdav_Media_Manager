@@ -35,7 +35,10 @@ CREATE TABLE playlists (
 
   Future<List<Playlist>> loadAll() async {
     final db = await database;
-    final rows = await db.query('playlists', orderBy: 'name COLLATE NOCASE ASC');
+    final rows = await db.query(
+      'playlists',
+      orderBy: 'name COLLATE NOCASE ASC',
+    );
     return rows.map(_fromRow).toList();
   }
 
@@ -53,17 +56,15 @@ CREATE TABLE playlists (
 
   Future<void> upsert(Playlist playlist) async {
     final db = await database;
-    await db.insert(
-      'playlists',
-      {
-        'id': playlist.id,
-        'name': playlist.name,
-        'updated_at': playlist.updatedAt.toUtc().toIso8601String(),
-        'remote_file_name': playlist.remoteFileName,
-        'entries_json': jsonEncode(playlist.entries.map((e) => e.toJson()).toList()),
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('playlists', {
+      'id': playlist.id,
+      'name': playlist.name,
+      'updated_at': playlist.updatedAt.toUtc().toIso8601String(),
+      'remote_file_name': playlist.remoteFileName,
+      'entries_json': jsonEncode(
+        playlist.entries.map((e) => e.toJson()).toList(),
+      ),
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> delete(String id) async {
@@ -86,23 +87,27 @@ CREATE TABLE playlists (
           'name': pl.name,
           'updated_at': pl.updatedAt.toUtc().toIso8601String(),
           'remote_file_name': pl.remoteFileName,
-          'entries_json': jsonEncode(pl.entries.map((e) => e.toJson()).toList()),
+          'entries_json': jsonEncode(
+            pl.entries.map((e) => e.toJson()).toList(),
+          ),
         });
       }
     });
   }
 
   Playlist _fromRow(Map<String, dynamic> row) {
-    final raw = row['entries_json'] as String? ?? '[]';
+    String? asString(Object? value) => value?.toString();
+    final raw = asString(row['entries_json']) ?? '[]';
     final list = (jsonDecode(raw) as List<dynamic>)
         .map((e) => PlaylistEntry.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
     return Playlist(
-      id: row['id'] as String,
-      name: row['name'] as String,
-      updatedAt: DateTime.tryParse(row['updated_at'] as String? ?? '') ??
+      id: asString(row['id']) ?? '',
+      name: asString(row['name']) ?? '',
+      updatedAt:
+          DateTime.tryParse(asString(row['updated_at']) ?? '') ??
           DateTime.now().toUtc(),
-      remoteFileName: row['remote_file_name'] as String?,
+      remoteFileName: asString(row['remote_file_name']),
       entries: list,
     );
   }

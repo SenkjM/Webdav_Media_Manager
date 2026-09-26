@@ -174,8 +174,8 @@ class SettingsService extends ChangeNotifier {
   bool _videoBackgroundPlayback = true;
   MusicStreamPlayMode _musicStreamPlayMode = MusicStreamPlayMode.sequential;
   bool _audioStreamingEnabled = false;
-  bool _audioScanSubdirs = true;
-  bool _videoScanSubdirs = true;
+  bool _audioScanSubdirs = false;
+  bool _videoScanSubdirs = false;
   bool _videoPipEnabled = false;
   bool _videoHardwareDecoding = true;
   int _videoBufferSizeMb = defaultVideoBufferMb;
@@ -395,8 +395,8 @@ class SettingsService extends ChangeNotifier {
     _musicStreamPlayMode = MusicStreamPlayModeX.fromStorageKey(
       _prefs!.getString(_kMusicStreamPlayMode),
     );
-    _audioScanSubdirs = _prefs!.getBool(_kAudioScanSubdirs) ?? true;
-    _videoScanSubdirs = _prefs!.getBool(_kVideoScanSubdirs) ?? true;
+    _audioScanSubdirs = _prefs!.getBool(_kAudioScanSubdirs) ?? false;
+    _videoScanSubdirs = _prefs!.getBool(_kVideoScanSubdirs) ?? false;
     _videoHardwareDecoding = _prefs!.getBool(_kVideoHardwareDecoding) ?? true;
     _videoBufferSizeMb = _clampBufferMb(
       _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
@@ -406,8 +406,10 @@ class SettingsService extends ChangeNotifier {
                 defaultDownloadPartMaxAgeHours)
             .clamp(1, 720);
     _downloadPartMaxMb =
-        (_prefs!.getInt(_kDownloadPartMaxMb) ?? defaultDownloadPartMaxMb)
-            .clamp(64, 1024 * 64);
+        (_prefs!.getInt(_kDownloadPartMaxMb) ?? defaultDownloadPartMaxMb).clamp(
+          64,
+          1024 * 64,
+        );
     _videoLongPressRate = _clampRate(
       _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
     );

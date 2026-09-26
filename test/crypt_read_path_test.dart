@@ -167,12 +167,15 @@ void main() {
 
   CryptDriver buildDriver(CloudSource source) => CryptDriver(
     config: {
-      'source_account_id': 'src1',
+      'source_account_id_name': '源A',
       'password': 'testpass',
       'salt': 'testsalt',
       'filename_encryption': 'off',
     },
-    env: CloudDriverEnv(resolveSource: (id) => id == 'src1' ? source : null),
+    env: CloudDriverEnv(
+      resolveSource: (_) => null,
+      resolveSourceByName: (name) => name == '源A' ? source : null,
+    ),
   );
 
   Future<Uint8List> drain(Stream<List<int>> stream) async {
@@ -483,8 +486,11 @@ void main() {
       final src = _LinkSource(server: srv);
       expect(buildDriver(src).runtimeTypeLabel, 'Fake Crypt');
       final orphan = CryptDriver(
-        config: const {'source_account_id': 'missing'},
-        env: CloudDriverEnv(resolveSource: (_) => null),
+        config: const {'source_account_id_name': 'missing'},
+        env: CloudDriverEnv(
+          resolveSource: (_) => null,
+          resolveSourceByName: (_) => null,
+        ),
       );
       expect(orphan.runtimeTypeLabel, 'Crypt');
     } finally {
