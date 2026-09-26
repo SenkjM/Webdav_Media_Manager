@@ -62,7 +62,8 @@ class CountingCipherServer {
           await req.response.close();
           return;
         }
-        if (rateLimitRequest != null && rangeHeaders.length == rateLimitRequest) {
+        if (rateLimitRequest != null &&
+            rangeHeaders.length == rateLimitRequest) {
           rateLimitRequest = null;
           rateLimited++;
           req.response.statusCode = HttpStatus.tooManyRequests;
@@ -74,8 +75,10 @@ class CountingCipherServer {
           var e = int.parse(m.group(2)!);
           if (e >= body.length) e = body.length - 1;
           req.response.statusCode = HttpStatus.partialContent;
-          req.response.headers
-              .set('content-range', 'bytes $s-$e/${body.length}');
+          req.response.headers.set(
+            'content-range',
+            'bytes $s-$e/${body.length}',
+          );
           req.response.contentLength = e - s + 1;
           req.response.add(body.sublist(s, e + 1));
         } else {
@@ -120,9 +123,9 @@ class _LinkSource implements CloudSource {
 
   @override
   Future<List<CloudFileItem>> list(String path) async => [
-        for (final (name, isDir, size) in entries)
-          CloudFileItem(name: name, isDir: isDir, size: size),
-      ];
+    for (final (name, isDir, size) in entries)
+      CloudFileItem(name: name, isDir: isDir, size: size),
+  ];
 
   @override
   Future<CloudFileItem> get(String path) async {
@@ -163,16 +166,14 @@ void main() {
   });
 
   CryptDriver buildDriver(CloudSource source) => CryptDriver(
-        config: {
-          'source_account_id': 'src1',
-          'password': 'testpass',
-          'salt': 'testsalt',
-          'filename_encryption': 'off',
-        },
-        env: CloudDriverEnv(
-          resolveSource: (id) => id == 'src1' ? source : null,
-        ),
-      );
+    config: {
+      'source_account_id': 'src1',
+      'password': 'testpass',
+      'salt': 'testsalt',
+      'filename_encryption': 'off',
+    },
+    env: CloudDriverEnv(resolveSource: (id) => id == 'src1' ? source : null),
+  );
 
   Future<Uint8List> drain(Stream<List<int>> stream) async {
     final out = BytesBuilder();
@@ -183,8 +184,9 @@ void main() {
   }
 
   test('按批 Range：2MiB + 尾巴只发 3 个请求（头/首块合并 + 两批）', () async {
-    final plain =
-        Uint8List.fromList(List<int>.generate(2 * 1024 * 1024 + 100, (i) => i % 251));
+    final plain = Uint8List.fromList(
+      List<int>.generate(2 * 1024 * 1024 + 100, (i) => i % 251),
+    );
     final enc = cipher.encrypt(plain);
     final srv = CountingCipherServer(enc);
     await srv.start();
@@ -193,10 +195,12 @@ void main() {
     try {
       expect(await drain(driver.openContent('/big.bin')), plain);
       // 33 个块：1 个请求带回头 + 首块，剩下 32 块分 2 批。
-      expect(srv.requestCount, 3,
-          reason: '一块一个请求会把大文件拆成上万个往返');
-      expect(srv.rangeHeaders.first, 'bytes=0-65583',
-          reason: '文件头与首块必须在同一个请求里取回');
+      expect(srv.requestCount, 3, reason: '一块一个请求会把大文件拆成上万个往返');
+      expect(
+        srv.rangeHeaders.first,
+        'bytes=0-65583',
+        reason: '文件头与首块必须在同一个请求里取回',
+      );
     } finally {
       await driver.dispose();
       await srv.close();
@@ -205,7 +209,8 @@ void main() {
 
   test('区间读取跨多块也只发一个请求', () async {
     final plain = Uint8List.fromList(
-        List<int>.generate(10 * 65536, (i) => i % 251));
+      List<int>.generate(10 * 65536, (i) => i % 251),
+    );
     final enc = cipher.encrypt(plain);
     final srv = CountingCipherServer(enc);
     await srv.start();
@@ -213,7 +218,9 @@ void main() {
     final driver = buildDriver(source);
     try {
       // 从第 1 块拖到第 9 块：8 个块必须在同一个 Range 里取。
-      final got = await drain(driver.openContentRange('/big.bin', 65536, 9 * 65536));
+      final got = await drain(
+        driver.openContentRange('/big.bin', 65536, 9 * 65536),
+      );
       expect(got, plain.sublist(65536, 9 * 65536 + 1));
       expect(srv.requestCount, 2, reason: '头 + 首块一个请求，其余块一个批量请求');
     } finally {
@@ -223,8 +230,9 @@ void main() {
   });
 
   test('解析缓存：连续读同一文件不重复解析直链 / 不重复取首块', () async {
-    final plain =
-        Uint8List.fromList(List<int>.generate(3 * 65536, (i) => i % 251));
+    final plain = Uint8List.fromList(
+      List<int>.generate(3 * 65536, (i) => i % 251),
+    );
     final enc = cipher.encrypt(plain);
     final srv = CountingCipherServer(enc);
     await srv.start();
@@ -238,8 +246,11 @@ void main() {
       expect(second, plain.sublist(200, 301));
       expect(first, plain.sublist(0, 101));
       expect(source.getCalls, 1, reason: '45s 内直链复用，不再解析');
-      expect(srv.requestCount, requestsAfterFirst,
-          reason: '首块已随解析请求带回，第二次读取不再打源站');
+      expect(
+        srv.requestCount,
+        requestsAfterFirst,
+        reason: '首块已随解析请求带回，第二次读取不再打源站',
+      );
 
       // 目录被改动过 → 缓存的直链可能已失效，整批丢掉重新解析。
       await driver.mkdir('/newdir');
@@ -252,8 +263,9 @@ void main() {
   });
 
   test('直链过期（403）：自动重解析一次后继续，不半途而废', () async {
-    final plain =
-        Uint8List.fromList(List<int>.generate(2 * 65536 + 10, (i) => i % 251));
+    final plain = Uint8List.fromList(
+      List<int>.generate(2 * 65536 + 10, (i) => i % 251),
+    );
     final enc = cipher.encrypt(plain);
     final srv = CountingCipherServer(enc);
     await srv.start();
@@ -295,8 +307,9 @@ void main() {
   });
 
   test('预取窗口：多批同时在途（并发 > 1），内容仍逐字节正确', () async {
-    final plain =
-        Uint8List.fromList(List<int>.generate(4 * 1024 * 1024, (i) => i % 251));
+    final plain = Uint8List.fromList(
+      List<int>.generate(4 * 1024 * 1024, (i) => i % 251),
+    );
     final enc = cipher.encrypt(plain);
     final srv = CountingCipherServer(enc);
     // 每个请求 150ms：网络时延远大于 CPU（解密 4MiB 约 55ms），因此「有没有
@@ -309,14 +322,74 @@ void main() {
       final sw = Stopwatch()..start();
       expect(await drain(driver.openContent('/big.bin')), plain);
       sw.stop();
-      expect(srv.maxInflight, greaterThan(1),
-          reason: '多批必须同时在途：Dart 单线程下「提前发下一个」无法与同步解密重叠');
-      expect(srv.maxInflight, greaterThanOrEqualTo(3),
-          reason: '预取窗口要真的用满（实测 5 个请求里 4 个同时在途）');
-      expect(srv.maxInflight, lessThanOrEqualTo(4),
-          reason: '预取窗口是有上限的（内存 / 风控），不能无限并');
-      expect(srv.requestCount, 5,
-          reason: '4MiB = 64 块：头+首块一个请求，其余 63 块分 4 批');
+      expect(
+        srv.maxInflight,
+        greaterThan(1),
+        reason: '多批必须同时在途：Dart 单线程下「提前发下一个」无法与同步解密重叠',
+      );
+      expect(
+        srv.maxInflight,
+        greaterThanOrEqualTo(3),
+        reason: '预取窗口要真的用满（实测 5 个请求里 4 个同时在途）',
+      );
+      expect(
+        srv.maxInflight,
+        lessThanOrEqualTo(4),
+        reason: '预取窗口是有上限的（内存 / 风控），不能无限并',
+      );
+      expect(srv.requestCount, 5, reason: '4MiB = 64 块：头+首块一个请求，其余 63 块分 4 批');
+    } finally {
+      await driver.dispose();
+      await srv.close();
+    }
+  });
+
+  test('区间预取窗口：多批同时在途，seek 区间内容正确', () async {
+    final plain = Uint8List.fromList(
+      List<int>.generate(4 * 1024 * 1024, (i) => i % 251),
+    );
+    final enc = cipher.encrypt(plain);
+    final srv = CountingCipherServer(enc);
+    srv.delay = const Duration(milliseconds: 150);
+    await srv.start();
+    final source = _LinkSource(server: srv, cipherSize: enc.length);
+    final driver = buildDriver(source);
+    try {
+      expect(
+        await drain(driver.openContentRange('/seek.bin', 0, plain.length - 1)),
+        plain,
+      );
+      expect(srv.maxInflight, greaterThanOrEqualTo(3));
+      expect(srv.maxInflight, lessThanOrEqualTo(4));
+      expect(srv.requestCount, 5);
+    } finally {
+      await driver.dispose();
+      await srv.close();
+    }
+  });
+
+  test('活动区间流在缓存失效后仍可完成', () async {
+    final plain = Uint8List.fromList(
+      List<int>.generate(2 * 1024 * 1024, (i) => i % 251),
+    );
+    final enc = cipher.encrypt(plain);
+    final srv = CountingCipherServer(enc);
+    srv.delay = const Duration(milliseconds: 100);
+    await srv.start();
+    final source = _LinkSource(server: srv, cipherSize: enc.length);
+    final driver = buildDriver(source);
+    final out = BytesBuilder();
+    try {
+      final subscription = driver
+          .openContentRange('/active.bin', 0, plain.length - 1)
+          .listen(out.add);
+      for (var i = 0; i < 100 && srv.inflight == 0; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(srv.inflight, greaterThan(0));
+      await driver.mkdir('/invalidate');
+      await subscription.asFuture<void>();
+      expect(out.takeBytes(), plain);
     } finally {
       await driver.dispose();
       await srv.close();
@@ -324,8 +397,9 @@ void main() {
   });
 
   test('源限流 429：退掉并发并重试同一区间，内容完整', () async {
-    final plain =
-        Uint8List.fromList(List<int>.generate(3 * 65536, (i) => i % 251));
+    final plain = Uint8List.fromList(
+      List<int>.generate(3 * 65536, (i) => i % 251),
+    );
     final enc = cipher.encrypt(plain);
     final srv = CountingCipherServer(enc);
     srv.rateLimitRequest = 2; // 第 2 个请求（第一个数据批）被限流一次
@@ -360,7 +434,9 @@ void main() {
       final big = <(String, bool, int)>[
         for (var i = 0; i < 2500; i++)
           (
-            cipher.encryptFileName('track-${i.toString().padLeft(4, '0')}.flac'),
+            cipher.encryptFileName(
+              'track-${i.toString().padLeft(4, '0')}.flac',
+            ),
             false,
             1000,
           ),
@@ -385,10 +461,13 @@ void main() {
     final srv = CountingCipherServer(Uint8List(0));
     await srv.start();
     try {
-      final src = _LinkSource(server: srv, entries: [
-        ('not-encrypted-at-all.txt', false, 10),
-        (cipher.encryptFileName('ok.txt'), false, 20),
-      ]);
+      final src = _LinkSource(
+        server: srv,
+        entries: [
+          ('not-encrypted-at-all.txt', false, 10),
+          (cipher.encryptFileName('ok.txt'), false, 20),
+        ],
+      );
       final items = await buildDriver(src).list('/');
       expect(items.first.name, 'not-encrypted-at-all.txt');
       expect(items[1].name, 'ok.txt');

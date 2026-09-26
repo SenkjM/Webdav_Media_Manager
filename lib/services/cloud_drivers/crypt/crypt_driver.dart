@@ -25,17 +25,15 @@ import '../../cloud_driver.dart';
 /// 分层纪律：`openlist_crypt` 的异常在这里全部翻译成 [CloudDriverException] /
 /// [CloudDriverDataException]，密码学细节不越过本文件。
 class CryptDriver extends CloudDriver {
-  CryptDriver({
-    required Map<String, dynamic> config,
-    CloudDriverEnv? env,
-  }) : _env = env,
-       _password = (config['password'] as String?) ?? '',
-       _salt = (config['salt'] as String?) ?? '',
-       _nameEncoding = (config['filename_encoding'] as String?) ?? 'base64',
-       _encryptedSuffix =
-           (config['encrypted_suffix'] as String?) ?? kDefaultEncryptedSuffix,
-       _dirNameEncrypt =
-           (config['directory_name_encryption'] as bool?) ?? false {
+  CryptDriver({required Map<String, dynamic> config, CloudDriverEnv? env})
+    : _env = env,
+      _password = (config['password'] as String?) ?? '',
+      _salt = (config['salt'] as String?) ?? '',
+      _nameEncoding = (config['filename_encoding'] as String?) ?? 'base64',
+      _encryptedSuffix =
+          (config['encrypted_suffix'] as String?) ?? kDefaultEncryptedSuffix,
+      _dirNameEncrypt =
+          (config['directory_name_encryption'] as bool?) ?? false {
     try {
       _nameMode = nameModeFromConfig(
         (config['filename_encryption'] as String?) ?? 'off',
@@ -101,8 +99,7 @@ class CryptDriver extends CloudDriver {
     return future;
   }
 
-  late final Future<Uint8List> _materialFuture =
-      _keyMaterial(_password, _salt);
+  late final Future<Uint8List> _materialFuture = _keyMaterial(_password, _salt);
 
   /// 懒构造：构造时**不做**任何 scrypt（那会把注册流程卡住），第一次真正
   /// 用到密钥时才 await；构造器已把派生提前踢出去了。
@@ -142,7 +139,10 @@ class CryptDriver extends CloudDriver {
   }
 
   /// 外层明文路径 → 内层密文路径：源浏览根 + 源目录 + 逐段加密。
-  Future<String> _mapToInner(String outerPath, {required bool lastIsFile}) async {
+  Future<String> _mapToInner(
+    String outerPath, {
+    required bool lastIsFile,
+  }) async {
     final src = _requireSource();
     final cipher = await _cipherFuture;
     final segs = outerPath.split('/').where((s) => s.isNotEmpty).toList();
@@ -150,9 +150,11 @@ class CryptDriver extends CloudDriver {
     parts.addAll(_sourceDir.split('/'));
     for (var i = 0; i < segs.length; i++) {
       final last = i == segs.length - 1;
-      parts.add((!last || !lastIsFile)
-          ? cipher.encryptDirName(segs[i])
-          : cipher.encryptFileName(segs[i]));
+      parts.add(
+        (!last || !lastIsFile)
+            ? cipher.encryptDirName(segs[i])
+            : cipher.encryptFileName(segs[i]),
+      );
     }
     return cloudJoinPath(parts);
   }
@@ -261,9 +263,7 @@ class CryptDriver extends CloudDriver {
     final inner = await src.list(await _mapToInner(path, lastIsFile: false));
     if (inner.isEmpty) return const <CloudFileItem>[];
     final names = await _decryptNames(inner);
-    return [
-      for (var i = 0; i < inner.length; i++) _reveal(inner[i], names[i]),
-    ];
+    return [for (var i = 0; i < inner.length; i++) _reveal(inner[i], names[i])];
   }
 
   @override
@@ -389,6 +389,7 @@ class CryptDriver extends CloudDriver {
   @override
   Stream<List<int>> openContent(String path) async* {
     final t = await _openTarget(path, prefetchFirstBlock: true);
+    t.retain();
     try {
       switch (t.shape) {
         case _CryptTarget.shapeWholeBody:
@@ -399,8 +400,7 @@ class CryptDriver extends CloudDriver {
           // 密文只有文件头：合法的 0 字节明文文件。
           return;
         case _CryptTarget.shapeUnknownSize:
-          throw const CloudDriverException(
-              '无法确定加密内容的大小（源未提供长度且不支持 Range）');
+          throw const CloudDriverException('无法确定加密内容的大小（源未提供长度且不支持 Range）');
         default:
           break; // shapeRanged：走下方分块解密。
       }
@@ -440,9 +440,16 @@ class CryptDriver extends CloudDriver {
         while (p < chunk.length) {
           final remaining = chunk.length - p;
           final take = remaining < kBlockSize ? remaining : kBlockSize;
-          yield _decryptBlock(t, block, Uint8List.sublistView(chunk, p, p + take));
+          yield _decryptBlock(
+            t,
+            block,
+            Uint8List.sublistView(chunk, p, p + take),
+          );
           p += take;
           block++;
+          if (block % 2 == 0 && p < chunk.length) {
+            await Future<void>.delayed(Duration.zero);
+          }
         }
         // 每批之间让出一次事件循环：把已经到达的响应处理掉，也别让整批 CPU 活
         // 顶掉 UI 帧。
@@ -451,6 +458,8 @@ class CryptDriver extends CloudDriver {
     } on CloudDriverDataException {
       _dropTarget(t); // 内容本身坏了：别让缓存的解析结果继续骗下一个人。
       rethrow;
+    } finally {
+      t.release();
     }
   }
 
@@ -465,6 +474,7 @@ class CryptDriver extends CloudDriver {
       path,
       prefetchFirstBlock: start < kBlockDataSize,
     );
+    t.retain();
     try {
       switch (t.shape) {
         case _CryptTarget.shapeWholeBody:
@@ -476,8 +486,7 @@ class CryptDriver extends CloudDriver {
         case _CryptTarget.shapeEmptyFile:
           return; // 0 字节明文，任何区间都是空。
         case _CryptTarget.shapeUnknownSize:
-          throw const CloudDriverException(
-              '无法确定加密内容的大小（源未提供长度且不支持 Range）');
+          throw const CloudDriverException('无法确定加密内容的大小（源未提供长度且不支持 Range）');
         default:
           break; // shapeRanged：走下方分块解密。
       }
@@ -500,40 +509,72 @@ class CryptDriver extends CloudDriver {
         if (lastBlock == 0) return; // 整个区间就在首块里。
         b = 1;
       }
-      while (b <= lastBlock) {
-        final batchLast = (b + _blocksPerBatch - 1) < lastBlock
-            ? (b + _blocksPerBatch - 1)
-            : lastBlock;
-        final cipherStart = kFileHeaderSize + b * kBlockSize;
-        var cipherEnd = kFileHeaderSize + (batchLast + 1) * kBlockSize - 1;
-        if (cipherEnd > t.cipherSize - 1) cipherEnd = t.cipherSize - 1;
-        final chunk = await _fetchRange(t, cipherStart, cipherEnd);
-        final expected = cipherEnd - cipherStart + 1;
-        if (chunk.length < expected) {
-          throw CloudDriverException(
-              'crypt 内容提前结束（第 $b 块起，期望 $expected 字节，收到 ${chunk.length} 字节）');
+      // 区间读取也要保持多个批次在途；否则每个 1MiB 批次的网络往返都会直接
+      // 暴露给播放器，吞吐接近播放速率时就会出现周期性断粮卡顿。
+      final window = <Future<Uint8List>>[];
+      var next = b;
+      void fill() {
+        while (window.length < t.window && next <= lastBlock) {
+          final batchFirst = next;
+          final batchLast = (batchFirst + _blocksPerBatch - 1) < lastBlock
+              ? batchFirst + _blocksPerBatch - 1
+              : lastBlock;
+          final cipherStart = kFileHeaderSize + batchFirst * kBlockSize;
+          var cipherEnd = kFileHeaderSize + (batchLast + 1) * kBlockSize - 1;
+          if (cipherEnd > t.cipherSize - 1) cipherEnd = t.cipherSize - 1;
+          final expected = cipherEnd - cipherStart + 1;
+          final future = _fetchRange(t, cipherStart, cipherEnd).then((chunk) {
+            if (chunk.length < expected) {
+              throw CloudDriverException(
+                'crypt 内容提前结束（第 $batchFirst 块起，期望 $expected 字节，收到 ${chunk.length} 字节）',
+              );
+            }
+            return chunk;
+          });
+          unawaited(future.then((_) {}, onError: (Object _) {}));
+          window.add(future);
+          next = batchLast + 1;
         }
+      }
+
+      fill();
+      while (window.isNotEmpty) {
+        final chunk = await window.removeAt(0);
+        fill();
+        final batchLast = (b + _blocksPerBatch - 1) < lastBlock
+            ? b + _blocksPerBatch - 1
+            : lastBlock;
         var p = 0;
         for (var i = b; i <= batchLast && p < chunk.length; i++) {
           final remaining = chunk.length - p;
           final take = remaining < kBlockSize ? remaining : kBlockSize;
-          final plain =
-              _decryptBlock(t, i, Uint8List.sublistView(chunk, p, p + take));
+          final plain = _decryptBlock(
+            t,
+            i,
+            Uint8List.sublistView(chunk, p, p + take),
+          );
           p += take;
           final from = i == firstBlock ? start - i * kBlockDataSize : 0;
-          final to = i == lastBlock ? last - i * kBlockDataSize + 1 : plain.length;
+          final to = i == lastBlock
+              ? last - i * kBlockDataSize + 1
+              : plain.length;
           if (from <= 0 && to >= plain.length) {
             yield plain;
           } else {
             yield Uint8List.sublistView(plain, from, to);
           }
+          if ((i - b) % 2 == 1 && i < batchLast) {
+            await Future<void>.delayed(Duration.zero);
+          }
         }
         b = batchLast + 1;
-        if (b <= lastBlock) await Future<void>.delayed(Duration.zero);
+        if (window.isNotEmpty) await Future<void>.delayed(Duration.zero);
       }
     } on CloudDriverDataException {
       _dropTarget(t);
       rethrow;
+    } finally {
+      t.release();
     }
   }
 
@@ -543,7 +584,9 @@ class CryptDriver extends CloudDriver {
       return t.cipher.decryptBlock(t.nonce, block, cipherBlock);
     } on RcloneCipherException catch (e) {
       throw CloudDriverDataException(
-          'crypt 第 $block 块解密失败（内容损坏或密钥不匹配）：${e.message}', e);
+        'crypt 第 $block 块解密失败（内容损坏或密钥不匹配）：${e.message}',
+        e,
+      );
     }
   }
 
@@ -552,7 +595,10 @@ class CryptDriver extends CloudDriver {
     try {
       return t.cipher.decrypt(t.body);
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException('crypt 内容解密失败（内容损坏或密钥不匹配）：${e.message}', e);
+      throw CloudDriverDataException(
+        'crypt 内容解密失败（内容损坏或密钥不匹配）：${e.message}',
+        e,
+      );
     }
   }
 
@@ -584,7 +630,7 @@ class CryptDriver extends CloudDriver {
   /// 目录被改动过 → 缓存的直链可能已经指向不存在的东西，整批丢掉。
   void _invalidateTargets() {
     for (final t in _targets.values) {
-      t.dio.close();
+      t.requestClose();
     }
     _targets.clear();
   }
@@ -592,7 +638,7 @@ class CryptDriver extends CloudDriver {
   void _dropTarget(_CryptTarget t) {
     _targets.removeWhere((_, x) {
       if (!identical(x, t)) return false;
-      x.dio.close();
+      x.requestClose();
       return true;
     });
   }
@@ -613,11 +659,12 @@ class CryptDriver extends CloudDriver {
     final now = DateTime.now();
     _targets.removeWhere((_, t) {
       if (!t.isExpired(now)) return false;
-      t.dio.close();
+      t.requestClose();
       return true;
     });
     final cached = _targets.remove(path);
     if (cached != null) {
+      cached.expiresAt = now.add(_targetTtl); // 命中时滑动续期，闲置目标才过期.
       _targets[path] = cached; // LRU 触碰：刚用过的排到最后。
       return cached;
     }
@@ -629,17 +676,22 @@ class CryptDriver extends CloudDriver {
     if (url == null || url.isEmpty) {
       throw const CloudDriverException('crypt 源不提供直链，无法解密内容');
     }
-    final dio = Dio(
-      BaseOptions(connectTimeout: const Duration(seconds: 20)),
-    );
+    final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 20)));
     try {
       var wantEnd = kFileHeaderSize - 1;
       if (prefetchFirstBlock) {
         wantEnd = kFileHeaderSize + kBlockSize - 1;
-        if (inner.size > 0 && wantEnd > inner.size - 1) wantEnd = inner.size - 1;
+        if (inner.size > 0 && wantEnd > inner.size - 1) {
+          wantEnd = inner.size - 1;
+        }
       }
-      final res =
-          await _fetchRangeWithMeta(dio, url, inner.rawHeaders, 0, wantEnd);
+      final res = await _fetchRangeWithMeta(
+        dio,
+        url,
+        inner.rawHeaders,
+        0,
+        wantEnd,
+      );
       final body = res.$1;
       if (body.length < kFileHeaderSize) {
         throw const CloudDriverException('crypt 内容不完整（读不到文件头）');
@@ -648,12 +700,15 @@ class CryptDriver extends CloudDriver {
       final rangeIgnored = body.length > wantEnd + 1;
       var cipherSize = inner.size > 0 ? inner.size : 0;
       final rangeTotal = res.$2;
-      if (rangeTotal != null && rangeTotal > cipherSize) cipherSize = rangeTotal;
+      if (rangeTotal != null && rangeTotal > cipherSize) {
+        cipherSize = rangeTotal;
+      }
       if (rangeIgnored) cipherSize = body.length;
       // 首块只有在**完整**时才留用：整块（kBlockSize）或它就是整个文件尾。
       // 元数据 size 可能过期（比真实小）——那时请求区间被裁短，手上这半块
       // 不能当块 0 用，否则解出来的是错位数据（宁可多一个请求）。
-      final firstBlock = (!rangeIgnored &&
+      final firstBlock =
+          (!rangeIgnored &&
               body.length > kFileHeaderSize &&
               (body.length - kFileHeaderSize == kBlockSize ||
                   body.length == cipherSize))
@@ -674,7 +729,7 @@ class CryptDriver extends CloudDriver {
       );
       _targets[path] = target;
       while (_targets.length > _targetCacheLimit) {
-        _targets.remove(_targets.keys.first)?.dio.close();
+        _targets.remove(_targets.keys.first)?.requestClose();
       }
       return target;
     } catch (_) {
@@ -699,7 +754,8 @@ class CryptDriver extends CloudDriver {
     if (chunk.length < want) {
       final block = (offset - kFileHeaderSize) ~/ kBlockSize;
       throw CloudDriverException(
-          'crypt 内容提前结束（第 $block 块起，期望 $want 字节，收到 ${chunk.length} 字节）');
+        'crypt 内容提前结束（第 $block 块起，期望 $want 字节，收到 ${chunk.length} 字节）',
+      );
     }
     return chunk;
   }
@@ -712,7 +768,13 @@ class CryptDriver extends CloudDriver {
   /// 队列里都是「不可重试」）。
   Future<Uint8List> _fetchRange(_CryptTarget t, int start, int end) async {
     try {
-      return (await _fetchRangeWithMeta(t.dio, t.url, t.headers, start, end)).$1;
+      return (await _fetchRangeWithMeta(
+        t.dio,
+        t.url,
+        t.headers,
+        start,
+        end,
+      )).$1;
     } on DioException catch (e) {
       if (e.response?.statusCode == 429) {
         if (t.window > 1) {
@@ -720,12 +782,23 @@ class CryptDriver extends CloudDriver {
           t.window = half < 1 ? 1 : half;
         }
         await Future<void>.delayed(const Duration(milliseconds: 300));
-        return (await _fetchRangeWithMeta(t.dio, t.url, t.headers, start, end))
-            .$1;
+        return (await _fetchRangeWithMeta(
+          t.dio,
+          t.url,
+          t.headers,
+          start,
+          end,
+        )).$1;
       }
       if (!_isStaleLink(e)) rethrow;
       await _refreshTarget(t);
-      return (await _fetchRangeWithMeta(t.dio, t.url, t.headers, start, end)).$1;
+      return (await _fetchRangeWithMeta(
+        t.dio,
+        t.url,
+        t.headers,
+        start,
+        end,
+      )).$1;
     }
   }
 
@@ -759,17 +832,16 @@ class CryptDriver extends CloudDriver {
       url,
       options: Options(
         responseType: ResponseType.bytes,
-        headers: <String, String>{
-          ...?headers,
-          'Range': 'bytes=$start-$end',
-        },
+        receiveTimeout: const Duration(seconds: 60),
+        headers: <String, String>{...?headers, 'Range': 'bytes=$start-$end'},
         validateStatus: (code) => code != null && code >= 200 && code < 400,
       ),
     );
-    return (
-      Uint8List.fromList(res.data ?? const <int>[]),
-      _parseContentRangeTotal(res.headers.value('content-range')),
-    );
+    final data = res.data;
+    final bytes = data is Uint8List
+        ? data
+        : Uint8List.fromList(data ?? const <int>[]);
+    return (bytes, _parseContentRangeTotal(res.headers.value('content-range')));
   }
 
   /// 解析 `bytes a-b/total`（total 可为 `*`）→ 总长；无该头或格式不对返回 null。
@@ -830,7 +902,8 @@ class CryptSpec extends CloudDriverSpec {
 
   // 静态保守值（运行时随源映射并剥 write，见 CryptDriver.runtimeCapabilities）。
   @override
-  int get capabilities => AccountCaps.list |
+  int get capabilities =>
+      AccountCaps.list |
       AccountCaps.read |
       AccountCaps.mkdir |
       AccountCaps.move |
@@ -839,65 +912,61 @@ class CryptSpec extends CloudDriverSpec {
 
   @override
   List<CloudDriverFormItem> get form => const [
-        CloudDriverAccountField(
-          key: 'source_account_id',
-          label: '源账号',
-          required: true,
-          hint: '选择现有 WebDAV 或网盘账号作为加密源',
-        ),
-        CloudDriverField(
-          key: 'source_dir',
-          label: '源目录',
-          hint: '源账号浏览根下的目录，默认 /（加密文件就存在这里）',
-        ),
-        CloudDriverSelectField(
-          key: 'filename_encoding',
-          label: '文件名编码',
-          required: true,
-          defaultValue: 'base64',
-          options: [
-            ('base64', 'Base64'),
-            ('base32', 'Base32'),
-            ('base32768', 'Base32768'),
-          ],
-          hint: '与 rclone 的 filename_encoding 对应（base32 / base64 / base32768）',
-        ),
-        CloudDriverField(
-          key: 'encrypted_suffix',
-          label: '文件名后缀',
-          defaultValue: '.bin',
-          hint: '仅文件名加密=关闭时生效（OpenList encrypted_suffix）',
-        ),
-        CloudDriverField(
-          key: 'password',
-          label: '密码',
-          required: true,
-          obscure: true,
-        ),
-        CloudDriverField(
-          key: 'salt',
-          label: '盐值（可选）',
-          obscure: true,
-          hint: '留空用 rclone 内置默认盐；密码 + 盐相同即可与 rclone / OpenList 互认',
-        ),
-        CloudDriverSelectField(
-          key: 'filename_encryption',
-          label: '文件名加密',
-          required: true,
-          defaultValue: 'off',
-          options: [
-            ('standard', '标准 (EME)'),
-            ('obfuscate', '混淆'),
-            ('off', '关闭'),
-          ],
-        ),
-        CloudDriverSwitchField(
-          key: 'directory_name_encryption',
-          label: '目录名加密',
-          subtitle: 'OpenList 默认关闭；开启后目录名同样加密',
-          defaultValue: false,
-        ),
-      ];
+    CloudDriverAccountField(
+      key: 'source_account_id',
+      label: '源账号',
+      required: true,
+      hint: '选择现有 WebDAV 或网盘账号作为加密源',
+    ),
+    CloudDriverField(
+      key: 'source_dir',
+      label: '源目录',
+      hint: '源账号浏览根下的目录，默认 /（加密文件就存在这里）',
+    ),
+    CloudDriverSelectField(
+      key: 'filename_encoding',
+      label: '文件名编码',
+      required: true,
+      defaultValue: 'base64',
+      options: [
+        ('base64', 'Base64'),
+        ('base32', 'Base32'),
+        ('base32768', 'Base32768'),
+      ],
+      hint: '与 rclone 的 filename_encoding 对应（base32 / base64 / base32768）',
+    ),
+    CloudDriverField(
+      key: 'encrypted_suffix',
+      label: '文件名后缀',
+      defaultValue: '.bin',
+      hint: '仅文件名加密=关闭时生效（OpenList encrypted_suffix）',
+    ),
+    CloudDriverField(
+      key: 'password',
+      label: '密码',
+      required: true,
+      obscure: true,
+    ),
+    CloudDriverField(
+      key: 'salt',
+      label: '盐值（可选）',
+      obscure: true,
+      hint: '留空用 rclone 内置默认盐；密码 + 盐相同即可与 rclone / OpenList 互认',
+    ),
+    CloudDriverSelectField(
+      key: 'filename_encryption',
+      label: '文件名加密',
+      required: true,
+      defaultValue: 'off',
+      options: [('standard', '标准 (EME)'), ('obfuscate', '混淆'), ('off', '关闭')],
+    ),
+    CloudDriverSwitchField(
+      key: 'directory_name_encryption',
+      label: '目录名加密',
+      subtitle: 'OpenList 默认关闭；开启后目录名同样加密',
+      defaultValue: false,
+    ),
+  ];
 
   @override
   CloudDriver create(
@@ -960,6 +1029,27 @@ class _CryptTarget {
   final RcloneCipher cipher;
 
   DateTime expiresAt;
+
+  int _readers = 0;
+  bool _closeRequested = false;
+
+  void retain() => _readers++;
+
+  void release() {
+    if (_readers > 0) _readers--;
+    if (_readers == 0 && _closeRequested) {
+      _closeRequested = false;
+      dio.close();
+    }
+  }
+
+  void requestClose() {
+    _closeRequested = true;
+    if (_readers == 0) {
+      _closeRequested = false;
+      dio.close();
+    }
+  }
 
   /// 重新解析内层条目（拿新的直链 / 头），nonce 与长度理论上不变。
   final Future<CloudFileItem> Function() refresh;
