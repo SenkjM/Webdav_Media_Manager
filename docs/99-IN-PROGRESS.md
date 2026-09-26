@@ -349,13 +349,172 @@
 #### 移植模板（批量铺开时的固定工序）
 
 1. 照 worker `types.ts` Addition 字段定 spec 表单（默认值照抄 Go `meta.go`），先报字段清单给用户确认（4.8）；
-2. 逐方法移植 `driver.ts`（list/get/mkdir/rename/move/copy/remove；**不移植 put**，4.2.1）；
+2. 逐方法移植 `driver.ts`（list/get/mkdir/rename/move/copy/remove；**当前只读批次不移植 put**，4.2.1；未来恢复上传时必须按 [4.10](#410-方案-b云盘上传恢复计划未开工) 的 U3–U7 批次与能力门槛单独加入）。
 3. 能力位照 4.3.2 的静态表登记；MustProxy 驱动同步接流桥（crypt 的 `crypt_stream_bridge.dart` 是范例）；
 4. crypto 依赖对照：`pkg/crypto`/`crypto-js` 用到的原语（MD5/SHA1/AES/RSA）在 pointycastle 都有对应实现，逐个过测试向量；
 5. 直链必需头进 `rawHeaders` 贯穿下载与流式（[11 §5](11-CLOUD-DRIVER-PORTING.md)）；
 6. 一盘一测试文件：列表 / 直链头 / 錯误原文透传；cookie 类加「过期报错原文」用例。
 
 **评估结论**：批量移植的主要成本不在单个驱动的 API 对接，而在**登录形态**（粘贴 vs OAuth 回调）与**直链形态**（302 vs MustProxy+流桥）。这两维各收敛一套模板后，P1–P3 的 20+ 个驱动可以流水线化铺开；建议每批 2–4 个驱动、真机验收通过后再进下一批。
+## 4.10 方案 B：云盘上传恢复计划（未开工）
+
+**状态**：未开工，仅作为后续实现参考；当前代码仍保持 [4.2.1](#42-已定型的取舍) 的语义：云盘账号上传与云端写同步禁用。本节不代表上传已经支持，也不改变当前版本的能力遮罩。
+
+**方案结论**：采用「调用方提供本地文件 / 可重读流，驱动自己完成真实上传」的方案。OpenList Go 的通用边界是 `Put(ctx, dstDir, model.FileStreamer, UpdateProgress)`（参照 `localdev/OpenList/internal/driver/driver.go`）；Worker 的 `put` 虽然使用 `Buffer`，也是由驱动持有上传协议。不要把百度、115、123、夸克、TeraBox 等盘的上传状态机上移到 `CloudDriveService`。
+
+### 4.10.1 目标与非目标
+
+- **目标**：在不破坏现有 `WebDavService` 对外 API 的前提下，为具备真实 `Put` 实现的云盘逐盘恢复写能力；小文件同步继续可走 `writeBytes`，大文件上传增加文件 / 流入口。
+- **目标**：上传协议、鉴权、哈希、分片、秒传、完成轮询、错误翻译全部留在具体驱动；兼容层只负责路由、能力查询、输入适配、取消与进度传递。
+- **目标**：复用 `AccountCaps.write`。它在本项目中的定义就是「上传 + 云端写同步」，不另造 upload 位；`mkdir` 继续使用独立位。
+- **非目标**：不把 OpenList Worker 的 WebDAV/XML 层移植进 App；不为了上传恢复顺手接入用户已砍掉的 crack 下载 API；不让只读 / 分享 / 索引驱动出现伪写能力；不默认开放所有 OpenList Go 驱动。
+- **当前产品边界**：先恢复驱动层能力与小文件写路径，再单独决定网络库「上传本地文件」UI、上传队列、云盘同步目标是否开放。
+
+### 4.10.2 推荐接口边界
+
+#### A. 输入源：文件优先，内存流兼容
+
+建议新增通用 `CloudUploadSource`（名称待实现时确定），至少表达以下信息：
+
+- `name`：远端文件名；
+- `size`：已知文件大小，绝大多数 OpenList Put 都需要；
+- `mimeType`：可选；
+- `openRead()`：可重复打开的顺序流；
+- `openRange(start, end)` 或等价的可重读能力：给百度 / 115 / 123 / 夸克等哈希校验、分片重试使用；
+- `materialize()`：对不可重读的内存流落临时文件，避免驱动各自实现不同的缓存策略。
+
+输入优先级：
+
+1. **本地 `File` / 文件路径**：大媒体文件的首选，支持随机访问和重复读取，不把整文件放进 Dart 堆；
+2. **`Stream<List<int>>` + size**：适合调用方已有流的场景，但必须在进入需要哈希或重试的驱动前确认可重读；
+3. **`Uint8List`**：只作为 `writeBytes` 小文件适配，凭证、M3U8、曲库分片、备份小档案可用；不作为大文件上传的唯一接口。
+
+OpenList Go 的 `FileStreamer` 会在需要时缓存到临时文件（例如百度快速上传 / 123 的哈希计算），Dart 侧应统一由通用输入适配层完成同样的事情，而不是让每个驱动各写一份内存转文件逻辑。
+
+#### B. 驱动接口：驱动负责真实上传
+
+示意边界（名称和返回值可在实现阶段调整）：
+
+```dart
+Future<CloudFileItem?> put(
+  String dstPath,
+  CloudUploadSource source, {
+  void Function(int sent, int total)? onProgress,
+  CancelToken? cancelToken,
+});
+```
+
+- `CloudDriveService` 只做 `accountId → driver`、远程根路径拼接、能力检查、输入适配和异常边界；不出现 `if (type == 'baidu_netdisk')` 一类协议分支。
+- `WebDavService.writeBytes` 继续是统一调用入口；云盘侧有 `write` 能力时转到 `CloudDriveService.putBytes`，无能力时保留明确的 `UnsupportedError`。
+- 具体驱动内部可调用通用的 HTTP / 分片 / 哈希 helper，但 helper 不能认识具体盘名或账号配置。
+- 需要返回远端对象的驱动实现 `PutResult` 语义时，返回 `CloudFileItem`；只需确认成功的驱动可以返回 `void`，由兼容层统一按成功 / 异常处理。
+
+#### C. 通用上传设施（先于驱动落地）
+
+建议放在 `lib/services/cloud_drivers/` 的通用文件中，不放进 `CloudDriveService` 的类型路由：
+
+- 可取消的流式 HTTP PUT / POST，统一接 `Dio CancelToken`；
+- `onSendProgress` 到统一进度回调的适配；
+- `Content-Length`、`Content-Range`、multipart 表单和文件流的构造；
+- 按分片读取本地文件，避免整文件内存占用；
+- 分片失败重试、429 / 5xx 退避、上传会话过期后的重新初始化；
+- MD5 / SHA-1 / SHA-256 的流式哈希和指定区间哈希；项目已有 `crypto`、`cryptography`、`pointycastle`，先复用，不新增原生依赖；
+- 内存流不可重读时统一落临时文件，完成或取消后清理；
+- 不把「所有分片并发」作为默认策略。OpenList Go 明确要求限制并发，否则会因待上传 chunk 缓冲造成内存增长；首版以串行 / 小窗口为主。
+
+### 4.10.3 按 OpenList Go Put 形态的实现分类
+
+| 分类 | 典型驱动 | OpenList Go 形态 | 方案 B 难度 | WDMM 落地策略 |
+|---|---|---|---|---|
+| **G0：只读 / 无 Put** | `*_share`、`openlist_share`、`github_releases`、`autoindex`、`emby`、`google_photo`、`quark_uc_tv` | Put 桩、缺失或语义上没有写路径 | 不适用 | 保持只读能力，不能因为接口新增 put 就默认开放 write |
+| **G1：简单单请求上传** | WebDAV、`alist_v3`、`openlist`、`yandex_disk` | 先获取目标 URL 或直接调用远端 `/api/fs/put`，流式 PUT/POST | 低 | 作为通用上传设施和输入源的验证批次；WebDAV 复用已有客户端 |
+| **G2：预签名 / 分片 URL** | `aliyundrive_open`、`onedrive`、`onedrive_app`、`google_drive`、`dropbox` | 建立上传会话，获得 URL，按分片 PUT/POST，完成会话 | 中 | 驱动负责会话与回执，通用层只负责字节搬运、进度、取消、重试 |
+| **G3：哈希秒传 + 分片状态机** | `baidu_netdisk`、`terabox`、`123_open`、`quark_open`、`quark_uc` | 预计算 MD5/SHA-1，秒传尝试；失败后 precreate / uploadid / 分片 / complete | 中高 | 必须使用可重读文件源；先移植 Go 语义，再用 Worker 做请求形状交叉核对 |
+| **G4：哈希 + 二次校验 + OSS / 自有签名** | `115open`、`pikpak`、部分国内盘 | 首 hash、指定区间 hash、获取临时凭证、OSS 或签名上传、回调确认 | 高 | 将签名和二次校验留在驱动；真机验证风控、过期凭证和大文件 |
+| **G5：包装 / 加密上传** | `crypt`、`chunk` 等 | 先转换内容或文件名，再委托内层 Put | 高 | 基础源具备 write 后再做；crypt 只按源能力动态暴露 write，不能无条件继承 |
+| **G6：协议 / 自有加密栈** | `sftp`、`smb`、`ftp`、`mega`、`proton_drive` | 非 HTTP 或包含自有加密 / 会话协议 | 高 / 很高 | 不作为本轮上传恢复目标，单独评估依赖、后台执行和安全性 |
+| **G7：对象存储** | `s3`、`uss`、`azure_blob`、`bunny_storage`、`ipfs_api` | SDK、签名 PUT、multipart 或 API add | 中高 | 作为独立 P5；先确定是否有真实用户场景，不因“协议简单”提前铺开 |
+
+### 4.10.4 具体驱动清单与难度
+
+#### 第一阶段：地基与低风险验证
+
+| 驱动 / 模块 | 难度 | 依据与材料 | 先做什么 |
+|---|---:|---|---|
+| 通用 `CloudUploadSource` | 中 | `CloudDriver`、`CloudDriveService`、OpenList `FileStreamer` | 先实现 File / Uint8List / 可重读 Stream 三种适配；补取消、size、临时文件清理测试 |
+| 通用 HTTP / multipart / chunk helper | 中 | OpenList `driver.Put` 注释中的取消、进度、限速要求 | 不绑定盘名；先做单请求、分片读取、哈希、重试；限制并发 |
+| WebDAV 写路径 | 低 | `webdav_service.dart:355-376` 已有 `writeBytes`；现有 WebDAV client | 用现有 WebDAV 行为验证新输入源和进度，不先改变云盘能力表 |
+| `alist_v3` / `openlist` | 低 | Go `drivers/alist_v3/driver.go`、`drivers/openlist/driver.go`：`PUT /api/fs/put` + `File-Path` | 如果未来接入，作为 HTTP 流式上传模板；当前仍受 4.9 范围约束 |
+
+#### 第二阶段：首批云盘上传
+
+| 驱动 | 难度 | OpenList Go 关键步骤 | 必须准备的材料 | 验收重点 |
+|---|---:|---|---|---|
+| `aliyundrive_open` | 中低 | create file → part info → get upload URL → 分片 PUT → complete | `drivers/aliyundrive_open/upload.go`、`types.go`、现有 Dart driver；有效 refresh token；至少一个可写测试盘 | 小文件、大文件、断点 / 取消、token 过期、分片失败重试、重复文件 |
+| `baidu_netdisk` | 中高 | rapid upload → precreate → slice MD5 → superfile2 → create；空文件拒绝 | Worker `driver.ts` 上传段、Go `driver.go` / `util.go`；MD5 向量；百度测试账号；upload API 字段是否重新暴露需单独确认 | 秒传命中、秒传失败后真实上传、uploadid 过期、动态域名、空文件、目录与文件名 |
+| `terabox` | 中高 | locateupload → precreate → 分片 superfile2 → create；Cookie + UA | Worker `driver.ts` 上传段、Go `driver.go`；已有 `genSign` 测试；可用 Cookie 和地区可用账号 | Cookie 过期、地区错误、分片 MD5、不完整上传清理、重试 |
+| `115open` | 高 | UploadInit：全 SHA1 / 首 128K / sign_check → upload token → OSS PUT / callback | Worker `driver.ts` `ossPutObject`；Go `upload.go`；OSS V1 签名材料；可写 refresh token | 秒传、二次校验区间、签名头、空文件、大文件流式、凭证过期、上传失败后远端残留 |
+| `123_open` | 中高 | SHA1 秒传 → create → MD5 etag → 分片上传 → complete 轮询 | Go `drivers/123_open/driver.go` 上传段；Worker 仅作请求格式参考；refresh token | 秒传、分片、complete 轮询、20103 等未知响应、超时取消、上传后重新 list |
+
+> 这五个驱动不能按“Worker 是否有 put”简单筛选：`123_open` 的 Worker Put 是因 stateless 环境限制而砍掉，Go 版才是本地 App 应采用的语义；`115open` 的 Worker 单 Buffer OSS 形态也不能直接照搬为大文件实现。
+
+#### 第三阶段：包装与复杂协议
+
+| 驱动 / 模块 | 难度 | 结论 |
+|---|---:|---|
+| `crypt` | 高 | Go 版是 EncryptData → 重新构造密文对象 → 内层 `op.Put`。WDMM 要补可写 `CloudSource`、内容加密输出、密文大小 / 文件名映射和源能力传递；必须保证源无 write 时 crypt 仍只读 |
+| `quark_open` | 高 | Go 版需要 MD5/SHA1、预上传、分片 URL、etag / commit；Worker 桩不能作为上传依据；MustProxy 只影响读取，不阻止上传 |
+| `quark` / `quark_uc` | 高 | 与 `quark_open` 类似，额外有 Cookie / 账号形态差异；等待 quark_open 的通用分片和签名材料收敛后再做 |
+| `139` | 很高 | Go 版按 PersonalNew、Group、Family、旧流上传等多形态分支；Worker 只有空壳；先完成字符集与账号形态核验再排期 |
+| `netease_music` | 高 | Go 版 `putSongStream` 要缓存完整文件、检查存在、分配 token、上传、发布信息；Worker 没有可用上传底稿；技术可行但不纳入第一轮 |
+
+#### 第四阶段：OAuth、协议和对象存储
+
+- **P3 OAuth**：`onedrive` / `onedrive_app` / `google_drive` / `dropbox` / `yandex_disk` / `pikpak` / `thunder` 等，上传协议本身多为标准会话或预签名 URL，难度中；真正的前置是 OAuth 回调、刷新和移动端后台生命周期。建议先完成一个 OneDrive 小文件 + 大文件会话模板，再批量展开。
+- **P4 协议类**：WebDAV 可低成本复用；`sftp` / `smb` / `ftp` 需要独立协议栈；`mega` / `proton_drive` 包含自有加密与会话，单独立项，不和 HTTP 上传混做。
+- **P5 对象存储**：`s3` / `uss` / `azure_blob` / `bunny_storage` / `ipfs_api`。需要准备签名、multipart、临时凭证和大文件测试材料；只有确认真实用户需求后再做。
+
+### 4.10.5 分阶段实施计划
+
+| 阶段 | 内容 | 完成判据 |
+|---|---|---|
+| U0 | 决定恢复上传的产品边界；确认 `write` 仍同时表示上传和同步；确定上传是否需要独立队列 | 用户确认：是否开放网络库本地文件上传；是否允许云盘成为同步 / 备份目标 |
+| U1 | `CloudUploadSource`、File/bytes/stream 适配；临时文件；取消、进度、size；通用 HTTP helper | 单元测试覆盖空流、短读、不可重读流、取消、临时文件清理；WebDAV 行为不变 |
+| U2 | WebDAV 走新输入源；恢复 `CloudDriveService.putBytes/putFile` 路由，但云盘仍按能力位关闭 | WebDAV 上传、覆盖策略、错误、进度、取消通过；无 write 云盘仍明确失败 |
+| U3 | `aliyundrive_open` 或 `baidu_netdisk` 首盘上传 | 真机：小文件、大文件、取消、失败重试、重复名、刷新列表；Go / Worker 请求形状有测试锁定 |
+| U4 | `terabox`、`115open`、`123_open` 逐盘落地 | 每盘一个测试文件；秒传 / 非秒传 / 分片 / 过期 / 错误原文 / 上传后 list 验收 |
+| U5 | 恢复云盘 `write` 能力遮罩；按能力决定 `writeBytes` 与 `ensureDirectory`；再讨论同步、备份、歌单目标放开 | 无能力按钮隐藏；有能力按钮可用；恢复旧配置不改变；WebDAV 回归通过 |
+| U6 | `crypt` 可写透传 | WebDAV / 一个云盘作为源分别验证明文→加密上传→重新读取解密；坏密文不得误报成功 |
+| U7 | P3 / P4 / P5 按用户需求独立批次 | 每批 2–4 个驱动；OAuth / 协议依赖单独验收，不与 U3/U4 混合提交 |
+
+### 4.10.6 每盘都必须准备的测试材料
+
+1. **可写测试账号**：独立目录、非主账号；支持删除测试文件；记录账号类型与远程根路径。
+2. **固定测试文件集**：0B、1B、空白文本、非 ASCII 文件名、1 个小于分片大小的文件、跨分片边界文件、较大媒体文件；MD5/SHA1 固定值写入测试说明，不写入凭证。
+3. **OpenList 对照材料**：Go `driver.go` / `upload.go` / `util.go` / `meta.go`；Worker `driver.ts` / `util.ts` 仅作为请求形状和字段参考；Go 行为优先。
+4. **失败注入**：取消首片 / 中间片 / complete 轮询；模拟 401、403、404、409、429、5xx；模拟 token 过期、uploadid 过期、直链过期。
+5. **一致性校验**：上传成功后重新 `list` / `get`，核对名称、大小、修改时间和可读链；对 crypt 还要核对密文大小与解密内容逐字节一致。
+6. **安全材料**：覆盖策略、远端残留清理、凭证不进日志、上传 URL / OSS 签名不落库；测试账号与 token 不进仓库。
+
+### 4.10.7 能力、UI 和同步边界
+
+- 驱动只有在 `put` 真实实现、测试通过、且当前批次决定开放时才给 `AccountCaps.write`；上游有 Put 不等于本项目自动开放。
+- `writeBytes` 与 `putFile` 都必须经过同一个能力检查；不能只在 UI 隐藏而在服务层放行，也不能只在服务层报错而 UI 仍显示入口。
+- `ensureDirectory` 继续单独检查 `AccountCaps.mkdir`；拥有 `mkdir` 不代表拥有 `write`。
+- `CloudDriveService` 不按类型实现上传协议；只调用 `driver.put`。驱动私有的 hash、签名、分片和错误翻译留在 `cloud_drivers/<name>_driver.dart`。
+- 账号配置中新增的上传专用字段必须进入对应 spec；秘密字段按 `secretFieldKeys` / `runtimeSecretKeys` 规则加密；上传临时 token 不得当成用户配置持久化。
+- 上传恢复后，`sync_service.dart` / `sync_screen.dart` 仍需单独决定是否把云盘列入同步目标；不要因为 `write` 位恢复就自动改变用户现有 WebDAV 同步选择。
+
+### 4.10.8 未决问题
+
+1. `CloudUploadSource` 是否直接依赖 `dart:io File`，还是抽象出可在桌面 / Web 端复用的随机访问源；当前产品 Android-first，倾向 File-first。
+2. 上传队列是否复用 `download_queue_service.dart` 的数据库与通知模型，还是先以同步调用完成小文件写入；建议先做同步调用，网络库大文件上传再单独建队列。
+3. 覆盖策略是否统一为 `overwrite / skip / rename`，还是逐盘照 OpenList 默认值；在统一策略未定前不开放批量上传。
+4. 分片并发默认值、后台保活、断点续传是否首版纳入；建议首版串行或小窗口，先保证正确性与可取消。
+5. `crypt` 加密输出是否完全复用现有纯 Dart cipher，还是等待 libsodium FFI；上传功能不应在 FFI 未落地前偷偷引入第二套格式。
+
+> 本节的核心顺序：先做输入源和通用传输地基，再做一个低风险上传驱动，随后按「哈希秒传 / 分片状态机 / 签名与二次校验 / 包装加密」逐类扩展。不要先在 `CloudDriveService` 堆一套按网盘类型分支的上传逻辑。
+
 ## 5. 待修复的语义冲突（用户语义 vs 实际代码）
 
 用户语义本该成立、但当前代码不满足（或暂时搁置）的冲突。每条写明用户原话、现状、指向的固定文档小节与代码位置；修复后按 [00 §1](00-INDEX.md) 的收口规则把语义搬进对应正文，本节删除该条。
