@@ -231,9 +231,12 @@ class CloudDriveService extends ChangeNotifier {
   /// 驱动自己写回的令牌缓存**不算**「用户改了配置」：同步更新该账号的指纹，
   /// 下一次 [registerAccounts] 才不会因为一次令牌轮换白重建一遍驱动（那会丢掉
   /// 驱动的内部缓存与连接池）。指纹同步后与「重新从存储读一遍配置」逐字节一致。
-  Future<void> _persistTokens(String accountId, Map<String, dynamic> patch) async {
-    final cfg = await _accounts.loadDriverConfig(accountId) ??
-        <String, dynamic>{};
+  Future<void> _persistTokens(
+    String accountId,
+    Map<String, dynamic> patch,
+  ) async {
+    final cfg =
+        await _accounts.loadDriverConfig(accountId) ?? <String, dynamic>{};
     cfg.addAll(patch);
     await _accounts.saveDriverConfig(accountId, cfg);
     final account = _accounts.accountById(accountId);
@@ -311,17 +314,44 @@ class CloudDriveService extends ChangeNotifier {
     void Function(int received, int total)? onProgress,
     CancelToken? cancelToken,
     int resumeFrom = 0,
+    bool useCryptSequentialDownload = false,
+    void Function(CloudDownloadMode mode)? onMode,
+    int? expectedRemoteSize,
+    DateTime? expectedRemoteModified,
+    void Function(int size, DateTime? modified)? onIdentity,
   }) async {
     final item = await _fileWithLink(accountId, remotePath);
     await localFile.parent.create(recursive: true);
+    onIdentity?.call(item.size, item.modified);
+    final identityChanged =
+        (expectedRemoteSize != null && expectedRemoteSize != item.size) ||
+        (expectedRemoteModified != null &&
+            item.modified != null &&
+            expectedRemoteModified != item.modified);
+    if (identityChanged && await localFile.exists()) {
+      await localFile.delete();
+      resumeFrom = 0;
+    }
+    if (resumeFrom > item.size && await localFile.exists()) {
+      await localFile.delete();
+      resumeFrom = 0;
+    }
+    if (item.rawUrl != null) {
+      onMode?.call(CloudDownloadMode.direct);
+    } else {
+      onMode?.call(
+        resumeFrom > 0 || !useCryptSequentialDownload
+            ? CloudDownloadMode.cryptRange
+            : CloudDownloadMode.cryptSequential,
+      );
+    }
     if (item.rawUrl == null) {
       // MustProxy（crypt，99 §7.5）：解密流直接写目标文件；续传交给驱动的区间
       // 读取——crypt 的 openContentRange 会按块边界精确解密，不重下前面的块。
       // 大小未知时拒绝下载：整包/分块的判定依赖密文总长，未知大小会被误当成
       // 「源回了整包」，静默产出损坏的空文件比明确报错糟糕得多。
       if (item.size <= 0) {
-        throw CloudDriverException(
-            '无法确定「${item.name}」的大小，下载已取消');
+        throw CloudDriverException('无法确定「${item.name}」的大小，下载已取消');
       }
       final driver = _requireDriver(accountId);
       final canResume = resumeFrom > 0 && item.size > resumeFrom;
@@ -330,9 +360,15 @@ class CloudDriveService extends ChangeNotifier {
         mode: canResume ? FileMode.append : FileMode.write,
       );
       try {
-        await for (final chunk in canResume
-            ? driver.openContentRange(remotePath, resumeFrom, item.size - 1)
-            : driver.openContent(remotePath)) {
+        await for (final chunk
+            in canResume
+                ? driver.openContentRange(remotePath, resumeFrom, item.size - 1)
+                : (useCryptSequentialDownload
+                      ? driver.openDownloadContent(
+                          remotePath,
+                          cancelToken: cancelToken,
+                        )
+                      : driver.openContent(remotePath))) {
           sink.add(chunk);
           received += chunk.length;
           onProgress?.call(received, item.size > 0 ? item.size : received);
@@ -403,10 +439,17 @@ class CloudDriveService extends ChangeNotifier {
     bool overwrite = false,
   }) async {
     final driver = _requireDriver(accountId);
-    await driver.rename(_remote(accountId, oldPath), _remote(accountId, newPath));
+    await driver.rename(
+      _remote(accountId, oldPath),
+      _remote(accountId, newPath),
+    );
   }
 
-  Future<void> copyPath(String accountId, String oldPath, String newPath) async {
+  Future<void> copyPath(
+    String accountId,
+    String oldPath,
+    String newPath,
+  ) async {
     final driver = _requireDriver(accountId);
     final dst = _remote(accountId, newPath);
     await driver.copy(
@@ -416,7 +459,11 @@ class CloudDriveService extends ChangeNotifier {
     );
   }
 
-  Future<void> movePath(String accountId, String oldPath, String newPath) async {
+  Future<void> movePath(
+    String accountId,
+    String oldPath,
+    String newPath,
+  ) async {
     final driver = _requireDriver(accountId);
     final dst = _remote(accountId, newPath);
     await driver.move(
@@ -456,7 +503,8 @@ class CloudDriveService extends ChangeNotifier {
     required String accountId,
     StreamKind? kind,
   }) async {
-    final streamKind = kind ??
+    final streamKind =
+        kind ??
         (FileTypeConfig().categoryFor(name) == FileCategory.music
             ? StreamKind.music
             : StreamKind.video);
@@ -500,8 +548,7 @@ class CloudDriveService extends ChangeNotifier {
 
   // --- 内部 ---
 
-  static const String _writeDisabled =
-      '云盘账号不支持上传与云端写同步（上传功能已砍，见 99 §7.2.1）';
+  static const String _writeDisabled = '云盘账号不支持上传与云端写同步（上传功能已砍，见 99 §7.2.1）';
 
   String _notReady(String accountId) {
     final a = _accounts.accountById(accountId);

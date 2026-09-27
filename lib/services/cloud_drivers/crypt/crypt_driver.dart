@@ -410,7 +410,96 @@ class CryptDriver extends CloudDriver {
   /// 被限流的概率（限流有 [_CryptTarget.window] 退避兜底，见 [_fetchRange]）。
   static const int _fetchWindow = 4;
 
-  /// 解密后的内容流（下载 / 缓存的内存流路径，99 §7.5）。
+  /// Download-only sequential path: one ciphertext GET, decrypted block by block.
+  /// Range playback and resumed downloads continue using the existing paths.
+  @override
+  Stream<List<int>> openDownloadContent(
+    String path, {
+    CancelToken? cancelToken,
+  }) async* {
+    final src = _requireSource();
+    final cipher = await _cipherFuture;
+    final innerPath = await _mapToInner(path, lastIsFile: true);
+    final inner = await src.get(innerPath);
+    final url = inner.rawUrl;
+    if (url == null || url.isEmpty) {
+      throw const CloudDriverException('crypt 源不提供直链，无法顺序下载');
+    }
+
+    final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 20)));
+    final pending = BytesBuilder(copy: false);
+    Uint8List? nonce;
+    var block = 0;
+    var total = 0;
+
+    void addRemainder(Uint8List data, int from) {
+      if (from < data.length) {
+        pending.add(Uint8List.sublistView(data, from));
+      }
+    }
+
+    try {
+      final response = await dio.get<ResponseBody>(
+        url,
+        cancelToken: cancelToken,
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: inner.rawHeaders,
+          validateStatus: (code) => code != null && code >= 200 && code < 400,
+        ),
+      );
+      final stream = response.data?.stream;
+      if (stream == null) {
+        throw const CloudDriverException('crypt 顺序下载没有响应体');
+      }
+
+      await for (final chunk in stream) {
+        pending.add(chunk);
+        if (nonce == null && pending.length >= kFileHeaderSize) {
+          final data = pending.takeBytes();
+          final header = Uint8List.sublistView(data, 0, kFileHeaderSize);
+          nonce = _fileNonce(header);
+          total += kFileHeaderSize;
+          addRemainder(data, kFileHeaderSize);
+        }
+        if (nonce == null) continue;
+
+        while (pending.length >= kBlockSize) {
+          final data = pending.takeBytes();
+          final encrypted = Uint8List.sublistView(data, 0, kBlockSize);
+          addRemainder(data, kBlockSize);
+          try {
+            yield cipher.decryptBlock(nonce, block++, encrypted);
+          } on RcloneCipherException catch (e) {
+            throw CloudDriverDataException(
+              'crypt 第 ${block - 1} 块解密失败（内容损坏或密钥不匹配）',
+              e,
+            );
+          }
+          total += encrypted.length;
+        }
+      }
+
+      if (nonce == null) {
+        throw const CloudDriverException('crypt 内容不完整（读不到文件头）');
+      }
+      if (pending.length > 0) {
+        final encrypted = pending.takeBytes();
+        try {
+          yield cipher.decryptBlock(nonce, block, encrypted);
+        } on RcloneCipherException catch (e) {
+          throw CloudDriverDataException('crypt 第 $block 块解密失败（内容损坏或密钥不匹配）', e);
+        }
+        total += encrypted.length;
+      }
+      if (inner.size > 0 && total != inner.size) {
+        throw CloudDriverException('crypt 内容长度不符（期望 ${inner.size}，收到 $total）');
+      }
+    } finally {
+      dio.close(force: true);
+    }
+  }
+
   /// 取内层密文直链 → 分批 Range → 逐块认证解密；块失败即抛，不落坏数据。
   @override
   Stream<List<int>> openContent(String path) async* {

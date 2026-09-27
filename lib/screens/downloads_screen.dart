@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../models/download_task.dart';
 import '../utils/cue_sheet.dart';
+import '../services/cloud_driver.dart';
 import '../services/download_queue_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
@@ -429,6 +430,12 @@ class _TaskTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (task.downloadMode == CloudDownloadMode.cryptSequential)
+                  _DestinationChip(
+                    icon: Icons.stream_outlined,
+                    label: 'Crypt 顺序流',
+                    color: AppColors.accent,
+                  ),
                 if (task.isGallery)
                   _DestinationChip(
                     icon: Icons.photo_library_outlined,

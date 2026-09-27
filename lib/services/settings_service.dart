@@ -50,6 +50,7 @@ class SettingsService extends ChangeNotifier {
   /// 断点续传的半截文件（.part）保留上限：时长与总体积。
   static const _kDownloadPartMaxAgeHours = 'download_part_max_age_hours';
   static const _kDownloadPartMaxMb = 'download_part_max_mb';
+  static const _kCryptSequentialDownload = 'crypt_sequential_download';
   static const _kVideoSubtitlePosition = 'video_subtitle_position';
   static const _kVideoSubtitleOffset = 'video_subtitle_offset';
   static const _kVideoSubtitleFontSize = 'video_subtitle_font_size';
@@ -181,6 +182,7 @@ class SettingsService extends ChangeNotifier {
   int _videoBufferSizeMb = defaultVideoBufferMb;
   int _downloadPartMaxAgeHours = defaultDownloadPartMaxAgeHours;
   int _downloadPartMaxMb = defaultDownloadPartMaxMb;
+  bool _cryptSequentialDownload = false;
   double _videoLongPressRate = defaultVideoLongPressRate;
   double _videoLastRate = 1.0;
   bool _videoConfirmExit = false;
@@ -269,6 +271,7 @@ class SettingsService extends ChangeNotifier {
 
   int get downloadPartMaxAgeHours => _downloadPartMaxAgeHours;
   int get downloadPartMaxMb => _downloadPartMaxMb;
+  bool get cryptSequentialDownloadEnabled => _cryptSequentialDownload;
 
   /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
   MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;
@@ -410,6 +413,8 @@ class SettingsService extends ChangeNotifier {
           64,
           1024 * 64,
         );
+    _cryptSequentialDownload =
+        _prefs!.getBool(_kCryptSequentialDownload) ?? false;
     _videoLongPressRate = _clampRate(
       _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
     );
@@ -746,6 +751,13 @@ class SettingsService extends ChangeNotifier {
     _downloadPartMaxMb = mb.clamp(64, 1024 * 64);
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setInt(_kDownloadPartMaxMb, _downloadPartMaxMb);
+    notifyListeners();
+  }
+
+  Future<void> setCryptSequentialDownloadEnabled(bool enabled) async {
+    _cryptSequentialDownload = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kCryptSequentialDownload, enabled);
     notifyListeners();
   }
 

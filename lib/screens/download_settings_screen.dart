@@ -46,9 +46,8 @@ class DownloadSettingsScreen extends StatelessWidget {
             value: settings.downloadPartMaxAgeHours,
             min: 1,
             max: 720,
-            onCommit: (v) => context
-                .read<SettingsService>()
-                .setDownloadPartMaxAgeHours(v),
+            onCommit: (v) =>
+                context.read<SettingsService>().setDownloadPartMaxAgeHours(v),
           ),
           _NumberField(
             key: const ValueKey('part-max-size'),
@@ -61,6 +60,15 @@ class DownloadSettingsScreen extends StatelessWidget {
                 context.read<SettingsService>().setDownloadPartMaxMb(v),
           ),
           const Divider(height: 24),
+          SwitchListTile(
+            secondary: const Icon(Icons.stream_outlined),
+            title: const Text('Crypt 顺序流下载'),
+            subtitle: const Text('仅影响下载任务，在线播放和传统续传不变'),
+            value: settings.cryptSequentialDownloadEnabled,
+            onChanged: (value) => context
+                .read<SettingsService>()
+                .setCryptSequentialDownloadEnabled(value),
+          ),
           ListTile(
             leading: const Icon(Icons.cleaning_services_outlined),
             title: const Text('立即清理'),

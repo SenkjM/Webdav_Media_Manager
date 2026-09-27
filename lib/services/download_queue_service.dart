@@ -1711,6 +1711,15 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         tmp,
         resumeFrom: have,
         cancelToken: token,
+        onMode: (mode) => task.downloadMode = mode,
+        expectedRemoteSize: task.remoteSize,
+        expectedRemoteModified: task.remoteModified,
+        onIdentity: (size, modified) {
+          task.remoteSize = size;
+          task.remoteModified = modified;
+        },
+        useCryptSequentialDownload:
+            _settings?.cryptSequentialDownloadEnabled ?? false,
         onProgress: (received, total) {
           task.bytesReceived = received;
           task.bytesTotal = total > 0 ? total : null;
@@ -1785,6 +1794,15 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         tmp,
         resumeFrom: have,
         cancelToken: token,
+        onMode: (mode) => task.downloadMode = mode,
+        expectedRemoteSize: task.remoteSize,
+        expectedRemoteModified: task.remoteModified,
+        onIdentity: (size, modified) {
+          task.remoteSize = size;
+          task.remoteModified = modified;
+        },
+        useCryptSequentialDownload:
+            _settings?.cryptSequentialDownloadEnabled ?? false,
         onProgress: (received, total) {
           task.bytesReceived = received;
           task.bytesTotal = total > 0 ? total : null;
