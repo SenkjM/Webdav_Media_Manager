@@ -532,8 +532,8 @@ Future<CloudFileItem?> put(
 5. **备份内嵌歌单与凭证文件（方案 c + c2′）**：备份归档里的歌单段不再装 JSON，改为**段内每歌单一条 record**，record 的 payload 是该歌单 `.wdmp` 文件的完整字节；凭证段同理改为内嵌 `WDMMCV01` 容器字节。恢复时走与拉取远端**完全相同**的解码路径，编码只有一处。
    - **c2′ 的原因**：段 id 是 `u8`（`entry.addByte(id)`，全表 256 个且必须唯一），所以「一个歌单一个段 **id**」最多撑 246 个歌单。改为「一个歌单一条**段内记录**」，容量无上限。
 6. **凭证包纳入本次改动**：远端 `credentials.json` 改为 `WDMMCV01` 容器文件，同步与备份共用同一编码。`credential_vault_crypto` 的**字段级加密语义不变**（url/username 明文，password 与 `secretFieldKeys` 逐字段 `AESGCMv1:`）——换的只是外层容器。
-7. **不保留历史兼容**：不写旧 M3U8 读取路径、不写旧 `credentials.json` 读取路径、不做旧备份兼容读取、不做一次性迁移工具。旧文件首次同步即删除。
-   - **顺序要求**：删远端 `credentials.json` 必须在新的 `CV` 文件写入并校验成功**之后**。凭证丢了等于登录不上云盘，不能反序。
+7. **不保留历史兼容**：不写旧 M3U8 读取路径、不写旧 `credentials.json` 读取路径、不做旧备份兼容读取、不做一次性迁移工具。
+   - **不主动删远端旧文件（用户决定）**：`.m3u` / `.m3u8` / 旧 `credentials.json` 一律**无视**，同步流程里不加删除动作。删除是不可逆的破坏性操作，而旧文件留着没有危害——本版本不再读它们，读路径只认 `WDMMPL01` / `WDMMCV01`。副产品是**降级回旧版本仍能读到旧格式内容**。
 
 **现状（错误绑定）**：
 
@@ -545,8 +545,8 @@ Future<CloudFileItem?> put(
 
 - 歌单条目与曲库行**解耦**。曲库里没有的歌只是「未解析」（界面显示「库中暂无」），**不构成删除理由**；条目删除只能来自用户显式操作。
 - 条目权威身份改为 `musicId`（与曲库同键），`sourceName` / `remotePath` 保留作显示与回退；CUE 分片加**显式字段** `cueTrackIndex`，不再依赖 `remotePath` 内嵌 `#cue:<n>`。
-- 远端格式换 `.wdmp`（`WmpFileKind` 新增 `PL`，magic `WDMMPL01`；新增 `ENTRIES` 段 id `9`），只认 `.wdmp`，旧 `.m3u` / `.m3u8` 一并清理。
-- 凭证远端文件换 `WDMMCV01` 容器（`WmpFileKind` 新增 `CV`），只用 `CREDENTIALS=5` 段装二进制 record 表；旧 `credentials.json` 清理。
+- 远端格式换 `.wdmp`（`WmpFileKind` 新增 `PL`，magic `WDMMPL01`；新增 `ENTRIES` 段 id `9`），只认 `.wdmp`；旧 `.m3u` / `.m3u8` **无视、不删**。
+- 凭证远端文件换 `WDMMCV01` 容器（`WmpFileKind` 新增 `CV`），只用 `CREDENTIALS=5` 段装二进制 record 表；旧 `credentials.json` **无视、不删**。
 - 备份归档的 `PLAYLISTS=6` / `CREDENTIALS=5` 两段改为内嵌 `PL` / `CV` 容器字节（走 `rawIds`），每歌单一条段内 record；`SETTINGS=7` / `CUE_ALBUMS=8` 保持 JSON 不动。
 
 **影响面（待改）**：`lib/utils/m3u8_playlist.dart`（替换）、`lib/models/playlist.dart`（`PlaylistEntry` 加 `musicId` / `cueTrackIndex`）、`lib/services/playlist_service.dart`（同步编排、去掉误删逻辑）、`lib/services/playlist_store.dart`（`entries_json` 是 JSON blob，**不需要改表、不需要 DB 版本迁移**）、`lib/utils/wmp_container.dart`（`PL` / `CV` 文件类 + `ENTRIES` 段 id）、`lib/services/playlist_codec.dart`（新）、`lib/services/credential_vault_codec.dart`（新）、`lib/services/credential_vault_service.dart`（远端文件换容器）、`lib/services/backup_service.dart`（两段改内嵌容器字节、恢复侧改调 codec）、`lib/utils/track_identity.dart`。
