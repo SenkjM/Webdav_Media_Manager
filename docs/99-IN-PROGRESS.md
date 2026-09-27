@@ -529,6 +529,8 @@ Future<CloudFileItem?> put(
 2. 「构建专有格式，使用二进制直接编码而不用 json 这种面向人类的格式以节省空间。」——`META` / `ENTRIES` 走现有 tag 记录编码；封面段走 `rawIds`（不 deflate）。
 3. 「区别是采用每个歌单独立文件进行管理。」——曲库是**一个大库分片**（`lib-` / `seg-` / `del-`，为增量）；歌单是**多个小库各自成文件**（每个歌单独立同步、独立删除）。这是刻意的不对称。
 4. **错误绑定修正**：「销毁曲目只影响音乐库，不影响歌单列表，歌单列表应视为与音乐库平行，但是主键和管理方式类似的一种格式，在某种意义上可以认为是一个小型音乐库。」
+5. **备份内嵌歌单文件（方案 c）**：备份归档里的歌单段不再装 JSON，改为内嵌**完整的 `.wdmp` 歌单文件字节**，恢复时走与拉取远端歌单**完全相同**的解码路径。编码只有一处，不会漂移。
+6. **不保留历史兼容**：不写旧 M3U8 读取路径、不做旧备份兼容读取、不做一次性迁移工具。`.m3u` / `.m3u8` 首次同步即删除。
 
 **现状（错误绑定）**：
 
@@ -540,11 +542,12 @@ Future<CloudFileItem?> put(
 
 - 歌单条目与曲库行**解耦**。曲库里没有的歌只是「未解析」（界面显示「库中暂无」），**不构成删除理由**；条目删除只能来自用户显式操作。
 - 条目权威身份改为 `musicId`（与曲库同键），`sourceName` / `remotePath` 保留作显示与回退；CUE 分片加**显式字段** `cueTrackIndex`，不再依赖 `remotePath` 内嵌 `#cue:<n>`。
-- 远端格式换 `.wdmp`（`WmpFileKind` 新增 `PL`，magic `WDMMPL01`），拉取时兼容读 `.m3u` / `.m3u8`，首次同步重写并删除旧文件。
+- 远端格式换 `.wdmp`（`WmpFileKind` 新增 `PL`，magic `WDMMPL01`；新增 `ENTRIES` 段 id `9`），只认 `.wdmp`，旧 `.m3u` / `.m3u8` 一并清理。
+- 备份归档的歌单段改为内嵌完整 `.wdmp` 文件字节（方案 c），与远端同步同一套编码。
 
-**影响面（待改）**：`lib/utils/m3u8_playlist.dart`（替换）、`lib/models/playlist.dart`（`PlaylistEntry` 加 `musicId` / `cueTrackIndex`）、`lib/services/playlist_service.dart`（同步编排、去掉误删逻辑）、`lib/services/playlist_store.dart`（`entries_json` 是 JSON blob，**不需要改表、不需要 DB 版本迁移**）、`lib/utils/wmp_container.dart`（登记 `PL` 文件类）、`lib/utils/track_identity.dart`。
+**影响面（待改）**：`lib/utils/m3u8_playlist.dart`（替换）、`lib/models/playlist.dart`（`PlaylistEntry` 加 `musicId` / `cueTrackIndex`）、`lib/services/playlist_service.dart`（同步编排、去掉误删逻辑）、`lib/services/playlist_store.dart`（`entries_json` 是 JSON blob，**不需要改表、不需要 DB 版本迁移**）、`lib/utils/wmp_container.dart`（登记 `PL` 文件类 + `ENTRIES` 段 id）、`lib/services/backup_service.dart`（歌单段改内嵌文件字节）、`lib/utils/track_identity.dart`。
 
-**验收（未做）**：`flutter analyze` 干净 + `flutter test` 全过；需补的测试：新旧格式 round-trip、旧 M3U8 读入、`musicId` 命中、CUE 分片区分、**销毁曲目后歌单条目仍在**。
+**验收（未做）**：`flutter analyze` 干净 + `flutter test` 全过；需补的测试：`.wdmp` round-trip、`musicId` 命中、CUE 分片区分、**销毁曲目后歌单条目仍在**、备份内嵌歌单文件往返。
 
 ### 5.1 后缀改过的音频走错播放页（用户已报，暂不处理）
 

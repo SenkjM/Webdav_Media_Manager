@@ -4,7 +4,7 @@
 
 歌单是与[音乐库](03-MUSIC-LIBRARY.md)**平行**的一等数据：它有自己的独立数据库、自己的远端目录、自己的持久化格式。它**不是**曲库的附属品，也不是曲库的视图。
 
-**当前状态（现状）**：歌单使用扩展 M3U8 文本格式（见 §3）。§4 起的二进制容器格式是**计划（未实现）**，原始语义与取舍见 [99 §X](99-IN-PROGRESS.md)。
+**当前状态（现状）**：歌单使用扩展 M3U8 文本格式（见 §3）。§4 起的二进制容器格式是**计划（未实现）**，原始语义与取舍见 [99 §5.0](99-IN-PROGRESS.md)。
 
 ## 1. 核心命题：歌单 = 小型音乐库
 
@@ -79,23 +79,69 @@ wmp://<网盘名>/<remotePath>
 
 复用音乐库与备份已有的 [WmpContainer](01-DATA-MODEL.md) 基础设施（魔数 `WDMM` + 文件类 + 段表 + CRC32 + deflate），**不发明第二套容器**。差异只在**文件类**与**段布局**。
 
+### 4.0 已使用的魔数（现状，一字不差）
+
+魔数固定 8 字节：`WDMM` + 文件类(2) + 布局版本(2)。
+
+| 常量 | 文件类 | 完整魔数 | 含义 |
+|------|--------|----------|------|
+| `appTag` | — | `WDMM` | 全局标识，每个二进制文件都以它开头 |
+| `layoutVersion` | — | `01` | 容器布局版本，所有文件类共用 |
+| `WmpFileKind.base` | `LB` | `WDMMLB01` | 曲库基础分片（重建时写的大切片） |
+| `WmpFileKind.seg` | `LS` | `WDMMLS01` | 曲库增量分片（只含新增 / 修改行） |
+| `WmpFileKind.tomb` | `LT` | `WDMMLT01` | 曲库墓碑分片（删除记录） |
+| `WmpFileKind.backup` | `BK` | `WDMMBK01` | 整机备份归档 |
+| `WmpFileKind.exportBundle` | `EX` | `WDMMEX01` | 保留：可分享的曲库包 |
+| `WmpFileKind.credentials` | `CR` | `WDMMCR01` | 保留：凭证 / 保管库包 |
+| `WmpFileKind.envelope` | `EN` | `WDMMEN01` | 加密外壳，**不是 document**，可包裹任意 document 类文件 |
+
+- `documents` 集合 = `{LB, LS, LT, BK, EX, CR}`；`EN` 刻意不在其中，因此 `looksLikeContainer` 永不接受一个加密外壳。
+- 段 id 现状（`WmpSections`）：`META=1`、`TRACKS=2`、`COVERS=3`、`TOMBS=4`、`CREDENTIALS=5`、`PLAYLISTS=6`、`SETTINGS=7`、`CUE_ALBUMS=8`。
+- 后四个段（`CREDENTIALS` / `PLAYLISTS` / `SETTINGS` / `CUE_ALBUMS`）的源码注释都标着「Backup archives only」——它们是**备份文件的内部分区**，不是独立文件类型。
+- 尤其注意：**`PLAYLISTS=6` 是备份归档内嵌的歌单 JSON 段**，不是本次要建的东西（见 §4.3）。
+- 读取规则：未知段 id 直接忽略，所以**新增段不需要升容器版本**。
+
 ### 4.1 文件类（magic）
 
-新增 `WmpFileKind` 成员 `PL`，magic 为 `WDMMPL01`。与现有 `LB` / `SE` / `DL` / `BK` / `EN` 并列，落在同一张文件类表里，因此 `WmpContainer.looksLikeContainer` / `kindOf` / 版本诊断（「由更新版本写入」）对歌单文件**自动生效**。
+新增 `WmpFileKind` 成员 `PL`，magic 为 `WDMMPL01`。登记进 `documents` 集合与 `WmpKind` 双生常量后，`WmpContainer.looksLikeContainer` / `kindOf` / 版本诊断（「由更新版本写入」）对歌单文件**自动生效**。
+
+按 `WmpFileKind` 的既定约定，加一个文件类是「这里一行 + `WmpKind` 双生一行」，另在 `metaKindOf` / `forMetaKind` 各加一个 case。
 
 ### 4.2 段布局
 
 | 段 id | 名称 | 内容 |
 |-------|------|------|
-| `META` | 元信息 | 歌单 `id` / 名称 / `updatedAt` / 条目数 / `deviceId` / `createdAt` / 格式版本 |
-| `ENTRIES` | 条目表 | 每条：`musicId` + `sourceName` + `remotePath` + `title` + `durationMs` + （CUE 分片时）`cueTrackIndex` |
-| `COVERS`（可选） | 封面 | 复用现有 COVERS 段与 `WmpCoverEntry` 布局 |
+| `META`(1) | 元信息 | 歌单 `id` / 名称 / `updatedAt` / 条目数 / `deviceId` / `createdAt`；复用现有 `WmpMeta` 标签 |
+| `ENTRIES`(9) | 条目表 | 每条：`musicId` + `sourceName` + `remotePath` + `title` + `durationMs` + （CUE 分片时）`cueTrackIndex` |
+| `COVERS`(3) | 封面（可选） | 复用现有 COVERS 段与 `WmpCoverEntry` 布局 |
 
-- `META` / `ENTRIES` 用现有的 **tag 记录编码**（`encodeRecords` / `decodeRecords`）与现有 tag 号分配表，与曲库分片同样紧凑：整数走变长、字符串走长度前缀。
+**`ENTRIES` 是什么**：歌单**条目表**——一个歌单里「有哪些歌」的完整列表，一条记录一首歌。它在结构上对应曲库的 `TRACKS`(2)，但**字段集不同**：
+
+- `TRACKS` 是**曲库行**，字段多（标题 / 艺术家 / 专辑 / 音轨号 / 比特率 / CUE 关系 / 封面索引 / 各种时间戳…），因为曲库要承载完整标签。
+- `ENTRIES` 是**歌单条目**，字段少——歌单只需要「指向哪首歌」+「显示什么」，**不复制标签**。标签永远从曲库取。这正是 §1 里「小型」的含义：歌单存的是**引用**，不是副本。
+
+**为什么不复用 `TRACKS=2`**：两者语义不同（引用 vs 实体），共用 id 会让人以为它们同构。段 id 新增是零成本的（未知 id 被忽略），所以用新 id `9`。
+
+**为什么不复用备份的 `PLAYLISTS=6`**：那个段的 payload 是 **UTF-8 JSON**（`backup_service.dart` 里 `jsonEncode(payload['playlists'])`），而 `ENTRIES` 是二进制 tag 记录表。同一个 id 在 `BK` 里是 JSON、在 `PL` 里是二进制记录表，必然误读。
+
+- `META` / `ENTRIES` 用现有的 **tag 记录编码**（`encodeRecords` / `decodeRecords`）与现有 tag 号分配表：整数走变长、字符串走长度前缀。
 - `COVERS` 段走 `rawIds`（不 deflate），与曲库分片一致——封面本来就是压缩图像。
-- `META.kind` 与文件魔数**互为校验**（沿用 `LibraryShardCodec.decode` 里那条「两者必须一致，否则不是该喂给本系统的文件」的规则）。
+- `META.kind` 与文件魔数**互为校验**（沿用 `LibraryShardCodec.decode` 那条「两者必须一致，否则不是该喂给本系统的文件」的规则）。
+- 约束：段表里 offset / length 是 `u32`，即**单段上限 4 GiB**。歌单条目表远不到，但不要假设无限增长。
 
-### 4.3 身份：`musicId` 成为歌单条目的权威身份
+### 4.3 备份里的歌单段改为内嵌完整歌单文件（用户决定）
+
+**现状**：备份用 `PLAYLISTS=6` 装一坨 **JSON**（`backup_service.dart` 的 `WmpSections.playlists` → `jsonEncode(payload['playlists'])`），恢复侧用 `jsonList(6)` 解回。
+
+**决定**：备份**不再内嵌歌单 JSON**，改为内嵌**完整的 `.wdmp` 歌单文件字节**。备份因此成为「歌单文件的容器」，与远端 `playlists/` 目录里放的东西**同一种编码**。
+
+- 备份里的一个歌单 = 一段，payload 就是该歌单 `.wdmp` 文件的原始字节（走 `rawIds` 不 deflate——它在写入前已是压缩容器）。
+- 恢复 = 把每段字节当作独立 `.wdmp` 文件解码，走与拉取远端歌单**完全相同**的解码路径。编码只有一处，不会漂移。
+- `PLAYLISTS=6` 的语义随之变化：从「歌单 JSON」变成「歌单文件字节」。因为不保留历史兼容，旧备份不读，所以不复用、不兼容——实现时直接改语义或换新 id 均可。
+- 收益：备份自包含且与同步同构；同一份歌单在两个出口只有一种编码。
+- 代价：备份文件略大（每个歌单各带自己的容器头 + META，而 JSON 版是一整坨共享一个头）。单歌单头部 12 字节 + 每段表项 18 字节，可忽略。
+
+### 4.4 身份：`musicId` 成为歌单条目的权威身份
 
 条目身份从 `sourceName + "\0" + remotePath`（原始字符串，**不归一化**）改为 `musicId`：
 
@@ -112,12 +158,15 @@ musicId = sha1(normalizeSourceName(源) + "\0" + normalizeRemotePath(路径))
 
 `sourceName` 与 `remotePath` **仍然保留在条目里**，作为显示信息与回退解析依据（旧的、没有 `musicId` 的数据靠它兜底）。
 
-### 4.4 兼容与迁移
+### 4.5 兼容与迁移
 
-- **读**：拉取时同时扫 `*.wdmp`（新）与 `*.m3u` / `*.m3u8`（旧）。同 `id` 时新格式优先。
-- **写**：一律写新格式。
-- **迁移**：首次同步把旧格式歌单重写为 `.wdmp` 并删除旧文件。删除是**必要**的——否则同一歌单会以两种格式各存在一份，下次拉取时按 `id` 合并虽然能去重，但旧文件会永远留着并可能被外部工具当成有效歌单。
-- **回退风险**：降级回旧版本 App 后，旧版本只认 `.m3u8`，会看不到全部歌单（本地 `playlists.db` 仍在，但任何一次拉取都看不到它们）。这是接受的代价，需在发版说明里写明。
+**不保留历史兼容（用户决定）**：不写旧 M3U8 的读取路径，不做旧备份的兼容读取。旧格式文件视为不存在。
+
+- **读**：只认 `.wdmp`。远端 `playlists/` 下的 `.m3u` / `.m3u8` **不再扫描**。
+- **写**：一律写 `.wdmp`。
+- **清理**：首次同步删除远端的 `.m3u` / `.m3u8`，避免同一歌单两种格式各留一份、且旧文件可能被外部工具当成有效歌单。
+- **回退风险**：降级回旧版本 App 后看不到任何云端歌单（本地 `playlists.db` 仍在，但旧版本只认 `.m3u8`）。这是明确接受的代价，需在发版说明里写明。
+- **不做一次性迁移工具**：按「不考虑历史兼容」的指示，旧 `.m3u8` 不转换。若实际存在需要保住云端歌单的用户，这一条要重新评估。
 
 ## 5. 实现位置
 
@@ -130,8 +179,8 @@ musicId = sha1(normalizeSourceName(源) + "\0" + normalizeRemotePath(路径))
 
 计划新增：
 
-- `lib/utils/wdmp_container.dart` 或扩展 `wmp_container.dart`：`PL` 文件类登记
-- `lib/services/playlist_codec.dart`：歌单容器编解码（含旧 M3U8 兼容读取）
+- `lib/utils/wmp_container.dart`：登记 `PL` 文件类与 `ENTRIES` 段 id
+- `lib/services/playlist_codec.dart`：歌单容器编解码（**不含**旧 M3U8 兼容读取）
 - `lib/utils/track_identity.dart`：`musicId` 参与歌单条目身份
 
 ## 6. 与其它文档的关系
