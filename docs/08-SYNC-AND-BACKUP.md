@@ -25,6 +25,8 @@
 - 同步页在路径框下方直接列出这四条派生路径，改路径的效果不需要靠猜。
 - 旧版歌单目录 `/Playlists/` 已并入总路径下的 `playlists/`。
 
+> **占位（格式变更进行中）**：凭证与歌单的远端编码都在换容器——`credentials.json` → `WDMMCV01` 容器文件，歌单 → `WDMMPL01`，备份归档的两段改为内嵌这两种容器的字节。语义与取舍见 [10](10-PLAYLIST-FORMAT.md) 与 [99 §5.0](99-IN-PROGRESS.md)。
+
 ### 迁移
 
 - 新键 `sync_account_id`；旧键 `sync_credentials_account_id` / `sync_playlists_account_id` / `sync_library_account_id` / `sync_backup_account_id` **只读不写**：`init()` 按此顺序取第一个非空值，避免升级后原地丢掉用户已选网盘。

@@ -529,8 +529,11 @@ Future<CloudFileItem?> put(
 2. 「构建专有格式，使用二进制直接编码而不用 json 这种面向人类的格式以节省空间。」——`META` / `ENTRIES` 走现有 tag 记录编码；封面段走 `rawIds`（不 deflate）。
 3. 「区别是采用每个歌单独立文件进行管理。」——曲库是**一个大库分片**（`lib-` / `seg-` / `del-`，为增量）；歌单是**多个小库各自成文件**（每个歌单独立同步、独立删除）。这是刻意的不对称。
 4. **错误绑定修正**：「销毁曲目只影响音乐库，不影响歌单列表，歌单列表应视为与音乐库平行，但是主键和管理方式类似的一种格式，在某种意义上可以认为是一个小型音乐库。」
-5. **备份内嵌歌单文件（方案 c）**：备份归档里的歌单段不再装 JSON，改为内嵌**完整的 `.wdmp` 歌单文件字节**，恢复时走与拉取远端歌单**完全相同**的解码路径。编码只有一处，不会漂移。
-6. **不保留历史兼容**：不写旧 M3U8 读取路径、不做旧备份兼容读取、不做一次性迁移工具。`.m3u` / `.m3u8` 首次同步即删除。
+5. **备份内嵌歌单与凭证文件（方案 c + c2′）**：备份归档里的歌单段不再装 JSON，改为**段内每歌单一条 record**，record 的 payload 是该歌单 `.wdmp` 文件的完整字节；凭证段同理改为内嵌 `WDMMCV01` 容器字节。恢复时走与拉取远端**完全相同**的解码路径，编码只有一处。
+   - **c2′ 的原因**：段 id 是 `u8`（`entry.addByte(id)`，全表 256 个且必须唯一），所以「一个歌单一个段 **id**」最多撑 246 个歌单。改为「一个歌单一条**段内记录**」，容量无上限。
+6. **凭证包纳入本次改动**：远端 `credentials.json` 改为 `WDMMCV01` 容器文件，同步与备份共用同一编码。`credential_vault_crypto` 的**字段级加密语义不变**（url/username 明文，password 与 `secretFieldKeys` 逐字段 `AESGCMv1:`）——换的只是外层容器。
+7. **不保留历史兼容**：不写旧 M3U8 读取路径、不写旧 `credentials.json` 读取路径、不做旧备份兼容读取、不做一次性迁移工具。旧文件首次同步即删除。
+   - **顺序要求**：删远端 `credentials.json` 必须在新的 `CV` 文件写入并校验成功**之后**。凭证丢了等于登录不上云盘，不能反序。
 
 **现状（错误绑定）**：
 
@@ -543,11 +546,12 @@ Future<CloudFileItem?> put(
 - 歌单条目与曲库行**解耦**。曲库里没有的歌只是「未解析」（界面显示「库中暂无」），**不构成删除理由**；条目删除只能来自用户显式操作。
 - 条目权威身份改为 `musicId`（与曲库同键），`sourceName` / `remotePath` 保留作显示与回退；CUE 分片加**显式字段** `cueTrackIndex`，不再依赖 `remotePath` 内嵌 `#cue:<n>`。
 - 远端格式换 `.wdmp`（`WmpFileKind` 新增 `PL`，magic `WDMMPL01`；新增 `ENTRIES` 段 id `9`），只认 `.wdmp`，旧 `.m3u` / `.m3u8` 一并清理。
-- 备份归档的歌单段改为内嵌完整 `.wdmp` 文件字节（方案 c），与远端同步同一套编码。
+- 凭证远端文件换 `WDMMCV01` 容器（`WmpFileKind` 新增 `CV`），只用 `CREDENTIALS=5` 段装二进制 record 表；旧 `credentials.json` 清理。
+- 备份归档的 `PLAYLISTS=6` / `CREDENTIALS=5` 两段改为内嵌 `PL` / `CV` 容器字节（走 `rawIds`），每歌单一条段内 record；`SETTINGS=7` / `CUE_ALBUMS=8` 保持 JSON 不动。
 
-**影响面（待改）**：`lib/utils/m3u8_playlist.dart`（替换）、`lib/models/playlist.dart`（`PlaylistEntry` 加 `musicId` / `cueTrackIndex`）、`lib/services/playlist_service.dart`（同步编排、去掉误删逻辑）、`lib/services/playlist_store.dart`（`entries_json` 是 JSON blob，**不需要改表、不需要 DB 版本迁移**）、`lib/utils/wmp_container.dart`（登记 `PL` 文件类 + `ENTRIES` 段 id）、`lib/services/backup_service.dart`（歌单段改内嵌文件字节）、`lib/utils/track_identity.dart`。
+**影响面（待改）**：`lib/utils/m3u8_playlist.dart`（替换）、`lib/models/playlist.dart`（`PlaylistEntry` 加 `musicId` / `cueTrackIndex`）、`lib/services/playlist_service.dart`（同步编排、去掉误删逻辑）、`lib/services/playlist_store.dart`（`entries_json` 是 JSON blob，**不需要改表、不需要 DB 版本迁移**）、`lib/utils/wmp_container.dart`（`PL` / `CV` 文件类 + `ENTRIES` 段 id）、`lib/services/playlist_codec.dart`（新）、`lib/services/credential_vault_codec.dart`（新）、`lib/services/credential_vault_service.dart`（远端文件换容器）、`lib/services/backup_service.dart`（两段改内嵌容器字节、恢复侧改调 codec）、`lib/utils/track_identity.dart`。
 
-**验收（未做）**：`flutter analyze` 干净 + `flutter test` 全过；需补的测试：`.wdmp` round-trip、`musicId` 命中、CUE 分片区分、**销毁曲目后歌单条目仍在**、备份内嵌歌单文件往返。
+**验收（未做）**：`flutter analyze` 干净 + `flutter test` 全过；需补的测试：`.wdmp` round-trip、`musicId` 命中、CUE 分片区分、**销毁曲目后歌单条目仍在**、`CV` 容器加解密往返、备份内嵌 `PL` / `CV` 往返、`rawIds` 不重复压缩。
 
 ### 5.1 后缀改过的音频走错播放页（用户已报，暂不处理）
 

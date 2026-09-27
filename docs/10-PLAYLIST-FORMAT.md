@@ -103,11 +103,33 @@ wmp://<网盘名>/<remotePath>
 
 ### 4.1 文件类（magic）
 
-新增 `WmpFileKind` 成员 `PL`，magic 为 `WDMMPL01`。登记进 `documents` 集合与 `WmpKind` 双生常量后，`WmpContainer.looksLikeContainer` / `kindOf` / 版本诊断（「由更新版本写入」）对歌单文件**自动生效**。
+新增**两个** `WmpFileKind` 成员：
+
+| 常量 | 文件类 | 完整魔数 | 含义 |
+|------|--------|----------|------|
+| `WmpFileKind.playlist` | `PL` | `WDMMPL01` | 一个歌单文件 |
+| `WmpFileKind.vault` | `CV` | `WDMMCV01` | 凭证包（保管库） |
+
+登记进 `documents` 集合与 `WmpKind` 双生常量后，`WmpContainer.looksLikeContainer` / `kindOf` / 版本诊断（「由更新版本写入」）对这两类文件**自动生效**。
 
 按 `WmpFileKind` 的既定约定，加一个文件类是「这里一行 + `WmpKind` 双生一行」，另在 `metaKindOf` / `forMetaKind` 各加一个 case。
 
-### 4.2 段布局
+### 4.1.1 段 id 是 `u8`，这是一个硬约束
+
+段表项的第一个字节就是段 id：
+
+```dart
+entry.addByte(id);          // wmp_container.dart:553 — 写
+id: bytes[base],            // wmp_container.dart:505 — 读
+```
+
+`encode()` 把 `sections` 当作 `Map<int, Uint8List>`（`ids = sections.keys.toList()..sort()`），**id 必须全局唯一且落在 0–255**。
+
+**推论（写代码前必读）**：**不能**给每个歌单分配一个独立段 id。那样全表只剩约 246 个可用 id，每加一个歌单都要动 id 分配表，且歌单数一超就写不出来。
+
+因此备份内嵌歌单采用 **c2′**：`PLAYLISTS=6` 仍是**唯一一个段**，**段内记录数 = 歌单数**，每个歌单占一条 record，容量无上限。下文 §4.3 的「一个歌单一段」指的是**段内一条独立记录**，不是独立段 id。
+
+### 4.2 歌单文件（`PL`）段布局
 
 | 段 id | 名称 | 内容 |
 |-------|------|------|
@@ -129,17 +151,84 @@ wmp://<网盘名>/<remotePath>
 - `META.kind` 与文件魔数**互为校验**（沿用 `LibraryShardCodec.decode` 那条「两者必须一致，否则不是该喂给本系统的文件」的规则）。
 - 约束：段表里 offset / length 是 `u32`，即**单段上限 4 GiB**。歌单条目表远不到，但不要假设无限增长。
 
-### 4.3 备份里的歌单段改为内嵌完整歌单文件（用户决定）
+### 4.2.1 凭证包（`CV`）段布局
 
-**现状**：备份用 `PLAYLISTS=6` 装一坨 **JSON**（`backup_service.dart` 的 `WmpSections.playlists` → `jsonEncode(payload['playlists'])`），恢复侧用 `jsonList(6)` 解回。
+| 段 id | 名称 | 内容 |
+|-------|------|------|
+| `META`(1) | 元信息 | `formatVersion` / `deviceId` / `createdAt` / 条目数；`WmpMeta.kind` = 新增的 `WmpKind.vault` |
+| `CREDENTIALS`(5) | 凭证条目表 | 每条一个账号：`id` / `name` / `providerType` / `url` / `username` / `password`(+是否加密) / `remotePath` / `driverConfig` |
 
-**决定**：备份**不再内嵌歌单 JSON**，改为内嵌**完整的 `.wdmp` 歌单文件字节**。备份因此成为「歌单文件的容器」，与远端 `playlists/` 目录里放的东西**同一种编码**。
+**关键规则：凭证包的加密语义完全不变，只换容器。**
 
-- 备份里的一个歌单 = 一段，payload 就是该歌单 `.wdmp` 文件的原始字节（走 `rawIds` 不 deflate——它在写入前已是压缩容器）。
-- 恢复 = 把每段字节当作独立 `.wdmp` 文件解码，走与拉取远端歌单**完全相同**的解码路径。编码只有一处，不会漂移。
-- `PLAYLISTS=6` 的语义随之变化：从「歌单 JSON」变成「歌单文件字节」。因为不保留历史兼容，旧备份不读，所以不复用、不兼容——实现时直接改语义或换新 id 均可。
-- 收益：备份自包含且与同步同构；同一份歌单在两个出口只有一种编码。
-- 代价：备份文件略大（每个歌单各带自己的容器头 + META，而 JSON 版是一整坨共享一个头）。单歌单头部 12 字节 + 每段表项 18 字节，可忽略。
+- `url` 与 `username` **保持明文**（现有设计如此，见 `credential_vault_service.dart` 注释「Stored in plain text by design」）。
+- `password` 以及 `driverConfig` 里 `spec.secretFieldKeys` 覆盖的字段，**仍然逐字段用 `CredentialVaultCrypto`（`AESGCMv1:` 前缀，PBKDF2-SHA256 120k + AES-256-GCM）加密**，密文原样存进 tag。
+- 也就是说：**加密是字段级、与应用层口令绑定的，与容器无关**。换容器不改变任何密钥派生或密文格式，口令仍然是用户的统一加密密钥。
+
+`CREDENTIALS=5` 这个段 id **不新增**——它本来就是「备份归档 only」的凭证段，本次把 payload 从 JSON 改为二进制 record 表，语义从「凭证 JSON」变成「凭证条目表」。
+
+**同步侧的 `credentials.json` 一并改为 `CV` 容器文件**（用户决定）：远端不再是 `.json`，而是一个 `WDMMCV01` 文件；备份内嵌的就是这个文件的字节。这样凭证在**同步与备份两个出口只有一种编码**，与歌单方案对称。
+
+- 文件名与远端路径随之变化（`credential_vault_service.dart` 的 `fileName = 'credentials.json'`）。因为不保留历史兼容，不做旧文件读取，旧 `.json` 视为不存在并按 §4.5 的规则清理。
+- 注意：`credential_vault_crypto.dart` 的字段级加密**不受影响**，它作用于字段值，不作用于文件外层。加密外壳（`WDMMEN01`）是另一回事，与本次无关。
+
+### 4.3 备份包内部实现：改动前 vs 改动后
+
+#### 改动前（现状）
+
+`backup_service.dart` 调 `WmpContainer.encode({...})`，**所有非曲库数据都以 UTF-8 JSON 塞进各自的段**：
+
+```
+WDMMBK01
+├─ META(1)         record 表：kind/count/deviceId/createdAt/note
+│                  note = jsonEncode({format, formatVersion,
+│                                    activeAccountId, passwordEncryption})
+├─ TRACKS(2)       曲库行 record 表（本就二进制）          ← 不变
+├─ CREDENTIALS(5)  jsonEncode(payload['credentials'])      ← JSON
+├─ PLAYLISTS(6)    jsonEncode(payload['playlists'])        ← JSON
+├─ SETTINGS(7)     jsonEncode(payload['settings'])         ← JSON
+└─ CUE_ALBUMS(8)   jsonEncode(payload['library']['cueAlbums']) ← JSON
+```
+
+- 段内一律是**一整坨 JSON 字节**，用 `jsonDecode` 解回。
+- **所有歌单挤在 `PLAYLISTS=6` 这一个 JSON 数组里**，歌单之间没有独立边界——想读第 5 个歌单也得先把整坨 JSON 解完。
+- 凭证是一个 JSON 对象（`jsonSection(5)`），与同步用的 `credentials.json` 是**两份独立维护的 JSON**，字段集靠人工保持一致。
+- 恢复侧：`_decodeContainer` 用 `jsonSection(id)` / `jsonList(id)` 把段解回 `Map` / `List`，组装成一个 `payload`，再交给 `_applyPayload`——即**恢复路径与同步路径是两条不同的解码逻辑**。
+
+#### 改动后（目标）
+
+```
+WDMMBK01
+├─ META(1)         record 表（同现状；note 字段保留）
+├─ TRACKS(2)       曲库行 record 表                        ← 不变
+├─ CREDENTIALS(5)  凭证 record 表                          ← 由 JSON 改为二进制
+│                   ⇒ 内容 = 一个完整 CV 容器文件的字节，
+│                     或逐条凭证 record（见下）
+├─ PLAYLISTS(6)    歌单 record 表                          ← 由 JSON 改为二进制
+│                   段内每歌单一条 record，record 的 blob tag
+│                   = 该歌单 .wdmp 文件的完整字节
+├─ SETTINGS(7)     设置 JSON                               ← 不变
+└─ CUE_ALBUMS(8)   CUE 专辑 JSON                           ← 不变
+```
+
+逐项差别：
+
+| 维度 | 改动前 | 改动后 |
+|------|--------|--------|
+| `PLAYLISTS=6` payload | 一个 JSON 数组，全部歌单挤在一起 | record 表，**每歌单一条记录**，容量无上限 |
+| 歌单在备份里的形态 | 内联的字段副本 | **内嵌完整 `.wdmp` 文件字节**（含自己的容器头 + META + CRC） |
+| 单个歌单可独立解出 | 否，必须先解整坨 JSON | **是**，取一条 record 即得一个完整容器文件 |
+| `CREDENTIALS=5` payload | JSON 对象 | **`WDMMCV01` 容器字节** |
+| 备份 vs 同步的凭证编码 | 两套独立 JSON，人工同步字段 | **同一份 `CV` 容器**，只有一种编码 |
+| 备份 vs 同步的歌单编码 | M3U8（同步）vs JSON（备份），两套 | **同一份 `PL` 容器**，只有一种编码 |
+| 恢复解码路径 | `jsonSection` / `jsonList` 组装 payload，再 `_applyPayload`——**与同步路径不同** | 内嵌字节直接喂给 `PL` / `CV` 的**同一个解码器**，与拉取远端走同一条路 |
+| CRC / 完整性 | 每个 JSON 段一个 CRC（段级） | 外层段有 CRC，**内嵌容器自己还有一整套段级 CRC**——双层校验 |
+| 体积 | 共享一个容器头，JSON 冗余键名 | 每歌单多 12 字节头 + 18 字节/段表项；但换来二进制编码、无键名冗余 |
+
+**一个必须说清的取舍**：改动后内嵌的 `.wdmp` / `.cv` 字节**不再 deflate**（走 `rawIds`），因为他们本身就是压缩容器。`WmpContainer.encode` 对非 `rawIds` 段默认做 deflate——**必须记得把它们加进 `rawIds`**，否则会对已压缩数据再压一次，白费 CPU 且略微增大。
+
+**嵌套深度只有一层**：备份 → 内嵌 `PL`/`CV` 容器，内嵌容器**不再内嵌任何容器**。不允许递归，避免解包放大攻击与深度失控。
+
+**恢复侧的对称性**：`_decodeContainer` 里 `jsonList(6)` 这类调用被替换为「读出每条 record 的 blob → 交给 `PlaylistCodec.decode`」。这样**远端拉取与备份恢复共用同一个解码函数**，编码语义不会再漂移——这是本次改动最实质的收益。
 
 ### 4.4 身份：`musicId` 成为歌单条目的权威身份
 
@@ -160,13 +249,17 @@ musicId = sha1(normalizeSourceName(源) + "\0" + normalizeRemotePath(路径))
 
 ### 4.5 兼容与迁移
 
-**不保留历史兼容（用户决定）**：不写旧 M3U8 的读取路径，不做旧备份的兼容读取。旧格式文件视为不存在。
+**不保留历史兼容（用户决定）**：不写旧 M3U8 的读取路径，不写旧 `credentials.json` 的读取路径，不做旧备份的兼容读取。旧格式文件视为不存在。
 
-- **读**：只认 `.wdmp`。远端 `playlists/` 下的 `.m3u` / `.m3u8` **不再扫描**。
-- **写**：一律写 `.wdmp`。
-- **清理**：首次同步删除远端的 `.m3u` / `.m3u8`，避免同一歌单两种格式各留一份、且旧文件可能被外部工具当成有效歌单。
-- **回退风险**：降级回旧版本 App 后看不到任何云端歌单（本地 `playlists.db` 仍在，但旧版本只认 `.m3u8`）。这是明确接受的代价，需在发版说明里写明。
-- **不做一次性迁移工具**：按「不考虑历史兼容」的指示，旧 `.m3u8` 不转换。若实际存在需要保住云端歌单的用户，这一条要重新评估。
+- **歌单读**：只认 `.wdmp`。远端 `playlists/` 下的 `.m3u` / `.m3u8` **不再扫描**。
+- **凭证读**：只认 `CV` 容器。远端 `credentials.json` **不再读取**。
+- **写**：一律写新格式。
+- **清理**：首次同步删除远端的 `.m3u` / `.m3u8` 与旧 `credentials.json`，避免新旧格式各留一份、且旧文件可能被外部工具当成有效数据。
+- **备份读**：只认新布局。`SETTINGS(7)` 与 `CUE_ALBUMS(8)` 保持 JSON 不变；`CREDENTIALS(5)` / `PLAYLISTS(6)` 按新二进制语义解。用旧版本备份恢复会失败——应给出明确错误，**不要静默丢数据**。
+- **回退风险**：降级回旧版本 App 后，云端歌单与凭证都读不到（本地 `playlists.db`、Keystore 与 secure storage 都还在，但旧版本只认 `.m3u8` / `credentials.json`）。这是明确接受的代价，需在发版说明里写明。
+- **不做一次性迁移工具**：按「不考虑历史兼容」的指示，旧文件不转换。若实际存在需要保住云端歌单 / 凭证的用户，这一条要重新评估。
+
+**一处必须谨慎的顺序要求**：凭证与歌单不同——歌单丢了可以重建，**凭证丢了就登录不上云盘**。虽然本次不做迁移，但首次同步删除远端 `credentials.json` 的时机必须保证「新的 `CV` 文件已成功写入并校验通过」。实现时应当 **先写新文件、确认写入成功、再删旧文件**，绝不反过来。这是顺序要求，不是兼容性要求。
 
 ## 5. 实现位置
 
@@ -176,15 +269,21 @@ musicId = sha1(normalizeSourceName(源) + "\0" + normalizeRemotePath(路径))
 - `lib/services/playlist_store.dart`：`playlists.db`（表 `playlists`，字段 `id` / `name` / `updated_at` / `remote_file_name` / `entries_json`）
 - `lib/models/playlist.dart`：`Playlist` / `PlaylistEntry`
 - `lib/utils/m3u8_playlist.dart`：M3U8 编解码（待替换）
+- `lib/services/credential_vault_service.dart`：`credentials.json` 读写（`fileName` / `formatVersion = 2` / `push` / `pull`），待改为 `CV` 容器
+- `lib/utils/credential_vault_crypto.dart`：字段级加密（`AESGCMv1:`），**本次不改**
+- `lib/services/backup_service.dart`：备份打包（`WmpContainer.encode`）与恢复（`_decodeContainer` 的 `jsonSection` / `jsonList`），待改
 
-计划新增：
+计划新增 / 改动：
 
-- `lib/utils/wmp_container.dart`：登记 `PL` 文件类与 `ENTRIES` 段 id
-- `lib/services/playlist_codec.dart`：歌单容器编解码（**不含**旧 M3U8 兼容读取）
+- `lib/utils/wmp_container.dart`：登记 `PL` / `CV` 两个文件类与 `WmpKind` 双生常量；新增 `ENTRIES=9` 段 id；`metaKindOf` / `forMetaKind` 各加 case
+- `lib/services/playlist_codec.dart`（新）：歌单容器编解码（**不含**旧 M3U8 兼容读取）
+- `lib/services/credential_vault_codec.dart`（新）：凭证容器编解码，与 `credential_vault_crypto` 的字段级加解密配合
+- `lib/services/backup_service.dart`：`PLAYLISTS=6` / `CREDENTIALS=5` 改为内嵌容器字节（走 `rawIds`），恢复侧改为调用两个 codec，**去掉 `jsonList(6)` / `jsonSection(5)`**
+- `lib/services/credential_vault_service.dart`：远端文件名与读写改为 `CV` 容器
 - `lib/utils/track_identity.dart`：`musicId` 参与歌单条目身份
 
 ## 6. 与其它文档的关系
 
 - [01-DATA-MODEL.md](01-DATA-MODEL.md)：容器与魔数、`musicId` 身份定义
 - [03-MUSIC-LIBRARY.md](03-MUSIC-LIBRARY.md)：销毁语义（谁删谁不删）
-- [08-SYNC-AND-BACKUP.md](08-SYNC-AND-BACKUP.md)：远端路径与同步方式
+- [08-SYNC-AND-BACKUP.md](08-SYNC-AND-BACKUP.md)：远端路径、凭证与歌单同步、备份归档
