@@ -176,7 +176,7 @@ flutter test                   # 或全量
 | 项 | 状态 |
 |----|------|
 | 启动黑屏约 1.4 s（`Skipped 85 frames`） | 未修；`main()` 里串行 init 导致，可异步化 |
-| 后台下载 `fail host lookup` | 未修，优先级最高，见 [04 §7](04-DOWNLOAD-QUEUE.md) |
+| 后台下载 `fail host lookup` | 未修，优先级最高；开发中，见 [99 §7](99-IN-PROGRESS.md) |
 | 分包 APK 的安装与体积 | 分包 CI 已出包，当前 main 代码状态按已测试结果收口，后续仅记录实际用户反馈 |
 | 缓存 / 下载多选混选 | 已按当前 main 测试状态收口；后续问题按用户反馈记录到 99 |
 | 网络库「文件动作模型」T1–T5 | **已实现并按当前 main 测试状态收口**，见 [02](02-NETWORK-LIBRARY.md)；服务端差异作为后续反馈记录 |
