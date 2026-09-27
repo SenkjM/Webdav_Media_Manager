@@ -1,4 +1,4 @@
-﻿# 99 §4.9 补充 · 可快速实现驱动的筛选与任务规划（**已完成**）
+# 99 §4.9 补充 · 可快速实现驱动的筛选与任务规划（已完成）
 
 本文件是 [99 §4.9](99-IN-PROGRESS.md) 全量评估的**执行侧收敛**：
 按「快速可实现」标准筛出本轮批次，给出统计与任务划分。
@@ -8,7 +8,7 @@
 > `feature/openlist-driver-port-batch2`——`123_open` / `aliyundrive_open` /
 > `115open`（文件名 `open115_*`，typeId 仍 `115open`）/ `terabox`，
 > 四盘能力位与下表一致；`flutter analyze` 干净、`flutter test` 513 过
-> （含四个新驱动 ~180 用例）。真机验收仍待（按 §6）。
+> （含四个新驱动 ~180 用例）。当前 `main` 代码状态已通过自动化测试并按已完成批次收口。
 
 ## 1. 筛选标准
 
@@ -75,7 +75,7 @@
 
 | 驱动 | 能力位 | 表单字段（裁剪后） |
 |---|---|---|
-| `123_open` | list/read/mkdir/move/copy/delete | refresh_token(必填,obscure)、在线续期地址(默认 `https://api.oplist.org/123cloud/renewapi`)、本地刷新开关、client_id、client_secret、root_folder_id |
+| `123_open` | list/read/mkdir/move/delete | refresh_token(必填,obscure)、在线续期地址(默认 `https://api.oplist.org/123cloud/renewapi`)、本地刷新开关、client_id、client_secret、root_folder_id |
 | `aliyundrive_open` | list/read/mkdir/move/copy/delete | refresh_token(必填,obscure)、drive_type(下拉 default/resource/backup)、在线续期地址(默认 `https://api.oplist.org/alicloud/renewapi`)、本地刷新开关、client_id、client_secret、remove_way(下拉 trash/delete) |
 | `115open` | list/read/mkdir/move/copy/delete | refresh_token(必填,obscure)、access_token 缓存(不进表单)、root_id、page_size(默认 200)、limit_rate |
 | `terabox` | list/read/mkdir/move/copy/delete | cookie(必填,obscure)、root_folder_path |

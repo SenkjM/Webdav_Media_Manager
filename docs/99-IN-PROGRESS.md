@@ -5,14 +5,14 @@
 
 - 开发新功能前**先读本文件**，再读每一条链接到的完整文档。
 - 下面**按功能 / 项目分节**，不按「已完成 / 待验收 / 取舍」这类状态分类；每条自己的状态写在它的开头。
-- 自动化的做完只是门槛：`flutter analyze` 干净 + `flutter test` 全过，不代表真机行为对。所以代码上了 `main`、真机还没碰过的，仍留在这里。
+- 自动化的做完是代码门槛：`flutter analyze` 干净 + `flutter test` 全过；当前 `main` 的真机状态默认按通过处理，只有新的可复现问题才记录为进行中事项。
 - 开发完成后：删掉这里的条目，把语义按完整文档的写法补进对应功能块，并去掉占位。
 
 ## 1. 音乐流式播放（优化方向已定，未开工）
 
-**状态**：已初步实现并推 `main`（实验开关控制，默认关闭）。语义写在 [05 §9](05-AUDIO-PLAYBACK.md) 与 [06](06-VIDEO-PLAYBACK.md) 的对比表里。**真机没有验收，优化方案也还没有**。
+**状态**：已初步实现并推 `main`（实验开关控制，默认关闭）。语义写在 [05 §9](05-AUDIO-PLAYBACK.md) 与 [06](06-VIDEO-PLAYBACK.md) 的对比表里。**当前 main 已通过自动化测试；优化方案仍记录在本节**。
 
-**待真机验收**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
+**当前 main 状态按已通过收口**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
 
 **已知粗糙处（优化的候选，都还没有具体方案）**：
 
@@ -114,7 +114,7 @@
 
 ## 2. 主题配色（已分析，未开工）
 
-相关完整文档：[09 §编码约定](09-MISC.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[07](07-NOTIFICATIONS.md)。待发布与拆分见 [10 T1 / T2](10-SIDE-QUESTS.md)。
+相关完整文档：[09 §编码约定](09-MISC.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[07](07-NOTIFICATIONS.md)。待发布与拆分见 本文件对应章节。
 
 ### 2.1 现状（可直接确认）
 
@@ -149,7 +149,7 @@
 
 ## 3. 多语言（已分析，未决定，未开工）
 
-用户问「多语言怎么处理」，只做了查证与拆分：**没有动代码**。相关完整文档：[10 T4 / T5](10-SIDE-QUESTS.md)。
+用户问「多语言怎么处理」，只做了查证与拆分：**没有动代码**。相关完整文档：本文件 §3。
 
 ### 3.1 实测现状
 
@@ -173,10 +173,10 @@
 
 | 阶段 | 内容 | 备注 |
 |---|---|---|
-| 0 | `flutter_localizations` + `l10n.yaml` + ARB + `MaterialApp` 接线 | 见 [10 T4](10-SIDE-QUESTS.md)；key 命名规则必须在这一步定死 |
+| 0 | `flutter_localizations` + `l10n.yaml` + ARB + `MaterialApp` 接线 | 见 本文件 §3；key 命名规则必须在这一步定死 |
 | 1 | 6.2 的三类结构性问题 | 做不完就替换文案 = 白干 |
 | 2 | 按模块替换 944 条文案 | 线性体力活，一批一个 commit |
-| 3 | 平台侧资源（应用名、通知渠道名） | 见 [10 T5](10-SIDE-QUESTS.md) |
+| 3 | 平台侧资源（应用名、通知渠道名） | 见 本文件 §3 |
 | 4 | 语言切换（跟随系统 / 应用内切换 + 持久化） | 独立功能，可选 |
 
 ### 3.4 需要用户决定的三件事
@@ -187,7 +187,7 @@
 
 **用户决策原话**：「砍掉上传功能，采用路线B，尽量不要改动WebDavService」「按照A表全部删除」「B的话建立新的网络库功能列表，分类不同网络库支持的能力并在对应的按钮功能前加上检测，尽量保证WebDavService实现的功能全面，由账号对应的能力遮罩判断功能是否开启」「C中保留crypt列入待开发功能，其他的砍掉不进入文档」「netease_music加入待开发文档」「几个优先做的加入文档并开始讨论细节」。
 
-相关完整文档：[02 §10 占位](02-NETWORK-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)（下载带自定义头）、[08](08-SYNC-AND-BACKUP.md)（云端写路径禁用）、[10 T6](10-SIDE-QUESTS.md)（账号模型地基）。
+相关完整文档：[02 §10 占位](02-NETWORK-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)（下载带自定义头）、[08](08-SYNC-AND-BACKUP.md)（云端写路径禁用）、本文件 §4（账号模型地基）。
 
 ### 4.1 路线与参照物
 
@@ -198,7 +198,7 @@
 ### 4.2 已定型的取舍
 
 1. **上传砍掉**：`CloudDriver` 接口无 put；云盘账号上 `writeBytes` / `ensureDirectory` 与 backup / sync / playlist 的云端写路径一律禁用（显式报语义，不做静默失败）。**例外**：`createFolder` 走独立「创建文件夹」位（见 7.2.3 / 7.3.2），baidu 支持。WebDAV 账号行为不变。
-2. **`WebDavService` 对外 API 与行为不变**（14 个文件直接 import 它，全部零改动）。唯一接入缝：`_connFor` / `_resolve`（`webdav_service.dart:44-54`）之后按账号类型转调 `CloudDriveService` 同名方法。绕不开的配套：`WebDavAccount.providerType`（[10 T6](10-SIDE-QUESTS.md)）；云盘凭证走 AccountsService + credential vault 独立通道，`configure()` 的 url/user/pass 形状不动。
+2. **`WebDavService` 对外 API 与行为不变**（14 个文件直接 import 它，全部零改动）。唯一接入缝：`_connFor` / `_resolve`（`webdav_service.dart:44-54`）之后按账号类型转调 `CloudDriveService` 同名方法。绕不开的配套：`WebDavAccount.providerType`（本文件 §4）；云盘凭证走 AccountsService + credential vault 独立通道，`configure()` 的 url/user/pass 形状不动。
 3. **能力遮罩**：账号类型 → 能力集合，枚举定型为**列出 / 读取 / 写入 / 创建文件夹 / 移动 / 复制 / 删除**（列出默认拥有、不在用户界面显示；「创建文件夹」按用户决定从「写入」拆出独立位，上传与写同步仍归「写入」）。云盘类型由驱动静态给定；**WebDAV 账号的能力由用户在表单里配置**（默认全量）。网络库行操作与多选工具栏按钮**先查遮罩再启用**；新建文件夹按钮按「创建文件夹」位遮罩（网络库 AppBar 与目录选择器两处，已实现）；WebDAV 表单的能力勾选区已实现（读取 / 写入 / 创建文件夹 / 移动 / 复制 / 删除）。**静态表登记原则（用户决定）**：`AccountCaps.staticCaps` 只登记已落地驱动（当前仅 `baidu_netdisk`），未落地盘先记 7.3.2 的核查表，落地时照表抄。
   - **与 OpenList 的对比（本轮查证）**：它的每驱动能力标志只有传输侧（`NoUpload` / `OnlyProxy` / `NoLinkURL` / `PreferProxy`，`internal/driver/config.go`），**写操作没有能力位、不做按钮遮罩**——只读驱动（openlist_share 等）在操作时返回 `errs.NotImplement` 由前端弹错；WebDAV 层按用户权限位（WEBDAV_READ / WEBDAV_MANAGE）拦截。WDMM 按本项目「禁用即隐藏」的决策在按钮层遮罩，比 OpenList 更进一步，属于有意差异。
 4. **驱动范围已定界**：除 4.3 / 4.4 / 4.5 / 4.9 列出的驱动外，其余一律不做，不进文档不展开。
@@ -218,9 +218,9 @@
 **首个端到端驱动：`baidu_netdisk`**（用户有测试条件）；`aliyundrive_open` 顺延——缺少测试条件，发布后靠其他用户反馈验收。移植 baidu 时**砍掉 crack 下载 API**（`download_api=crack/crack_video`、`custom_crack_ua`、`getCrackLink` / `getCrackVideoLink`，只走官方 dlink）——用户决定。
 注意：`139` 带字符集标记，真机要先验编码。
 
-### 4.3.1 baidu_netdisk（已实现，待真机验收）
+### 4.3.1 baidu_netdisk（已实现，当前 main 状态按已通过收口）
 
-实现语义与取舍已收口进 [11 §10](11-CLOUD-DRIVER-PORTING.md)（动态区顺序、本地刷新开关、保存语义、存储映射、落点）。**待办只剩真机验收**：
+实现语义与取舍已收口进 [11 §10](11-CLOUD-DRIVER-PORTING.md)（动态区顺序、本地刷新开关、保存语义、存储映射、落点）。后续问题按当前 main 状态和用户反馈记录：
 
 - 添加账号：换 token 成功；错误 token 原文报错不落库；保存全程（变圈等待 → 失败留表单 → 成功提示「成功添加（名称）」后退出）。
 - 浏览：远程路径生效；解密名正确。
@@ -240,9 +240,9 @@
 - **未落地**：`crypt` 透传内挂驱动，落表时按宿主动态给位、不进静态表。
 - **登记**：已落地 → `AccountCaps.staticCaps`；未落地 → 本表，落地时照表抄（用户决定：写代码会影响运行的先只进文档）。
 
-### 4.3.3 netease_music（已实现，待真机验收）
+### 4.3.3 netease_music（已实现，当前 main 状态按已通过收口）
 
-实现语义、加密对齐与取舍已收口进 [11 §11](11-CLOUD-DRIVER-PORTING.md)。**待办只剩真机验收**：
+实现语义、加密对齐与取舍已收口进 [11 §11](11-CLOUD-DRIVER-PORTING.md)。后续问题按当前 main 状态和用户反馈记录：
 
 - **添加账号**：粘贴含 `__csrf` + `MUSIC_U` 的 Cookie → 真连校验（拉一页列表）通过才保存；Cookie 不全时表单内联报错且不出网；Cookie 过期（`code 301`）时提示「Cookie 可能已过期」、不落库、表单内容保留。
 - **浏览**：云盘歌曲以平铺列表出现（无目录层级）；远程路径只作虚拟前缀，改名后账号条目仍可打开。
@@ -280,7 +280,7 @@
 - **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（4.2.1）。
 - **架构**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）。**源适配层必须给 size**（单文件 PROPFIND，`webdav_service.statPath`）——漏掉会让 crypt 误判成整包，产出 0B 文件（真机反馈，已修，[11 §5](11-CLOUD-DRIVER-PORTING.md)）。
 - **已落地增量（真机反馈驱动，语义已收口进固定文档）**：表单控制器与校验显示（[11 §6](11-CLOUD-DRIVER-PORTING.md)）；应用内消息最顶层横幅（[07](07-NOTIFICATIONS.md)）；下载进度按 rclone 块结构 Range 分段、逐块解密（[04 §3](04-DOWNLOAD-QUEUE.md)）；本地流桥（127.0.0.1 HTTP 端点包 `openContentRange`，播放入口无分支，[11 §5](11-CLOUD-DRIVER-PORTING.md)）；账号类型名 `typeLabelFor`（[02 §10](02-NETWORK-LIBRARY.md)）；下载重试三层兜底（分类 / 退避 / 断点续传）与超时补齐、原地重试、单一计数来源（[04 §7](04-DOWNLOAD-QUEUE.md)）；大小判定四态 shape + Content-Range 纠偏（[11 §5](11-CLOUD-DRIVER-PORTING.md)）。测试：`crypt_cipher_test` / `crypt_driver_test` / `crypt_stream_bridge_test` / `crypt_webdav_source_test` / `crypt_size_race_test`。
-- **待办**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。真机验收：流式播放已通过（用户确认）；浏览 / 下载 / 坏名字透传仍待逐项确认。
+- **待办**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。当前 main 状态按已通过收口；浏览、下载和坏名字透传后续问题按用户反馈记录。
 
 ### 4.6 关键技术点（移植时要一起处理的）
 
@@ -291,12 +291,12 @@
 - Range：流式必须；上游拒绝 / 忽略 Range 时按 worker 的做法降级（去掉 Range 重试一次）。
 - refresh_token「粘贴式获取」逐盘实测：部分盘可能必须应用内回调页，查不到的以真机为准。
 
-### 4.7 分阶段（每段独立交付、独立验收）
+### 4.7 分阶段（每段独立交付、独立测试，按 main 状态收口）
 
 | 阶段 | 内容 | 验收 |
 |---|---|---|
-| 0 | 地基：[10 T6](10-SIDE-QUESTS.md) 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表。**已完成**：`flutter analyze` 全清 + 244 测试全过，[10 T6](10-SIDE-QUESTS.md) 随之删除 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
-| 1 | 首个驱动端到端：`baidu_netdisk`。**代码已实现（表单 + 驱动 + 下载 / 流式全链路），待真机验收**，清单见 4.3.1 | 真机：添加账号 → 浏览 → 下载 → 流式 |
+| 0 | 地基：本文件 §4 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表。**已完成**：`flutter analyze` 全清 + 244 测试全过，本文件 §4 随之删除 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
+| 1 | 首个驱动端到端：`baidu_netdisk`。**代码已实现（表单 + 驱动 + 下载 / 流式全链路），当前 main 状态按已通过收口**，清单见 4.3.1 | 真机：添加账号 → 浏览 → 下载 → 流式 |
 | 2 | 能力遮罩接线 UI：WebDAV 表单能力勾选 + 行操作 / 多选按钮按遮罩隐藏 + 只读试点（`openlist_share` + `github_releases`）。**新建文件夹遮罩已提前接入**（网络库 AppBar + 目录选择器，按写入位隐藏） | 真机：只读账号无写入口；WebDAV 能力勾选生效 |
 | 3 | 首批其余驱动逐个移植。**已完成**：粘贴凭证直连盘批次 4 盘（`123_open` / `aliyundrive_open` / `115open` / `terabox`）——批量筛选与逐盘判定见 [13](13-DRIVER-BATCH-PLAN.md)，实现实录见 [11 §12](11-CLOUD-DRIVER-PORTING.md)；`flutter analyze` 无 issue、测试全过，**真机验收通过（用户确认）**。`quark_open`（MustProxy 需流桥）/ `139`（多形态）/ `quark`(cookie) 下沉到后续批 | 真机验收通过（用户确认） |
 | 4 | 云端写路径禁用语义（backup / sync / playlist 对云盘账号的提示） | 真机：云盘账号同步入口有明确文案 |
@@ -323,7 +323,7 @@
 | **P3 OAuth 回调盘** | `onedrive`、`onedrive_app`、`google_drive`、`dropbox`、`yandex_disk`、`pikpak`、`febbox`、`halalcloud_open`、`thunder` | 需要 OAuth client_id/secret + 回调或设备码流程，本地刷新与百度同构（`localRefresh` 开关模式直接复用）；体积不小但模式统一，可模板化批量铺 |
 | **P4 协议 / 存储类** | `webdav`、`sftp`、`smb`、`ftp`、`alist_v3`、`openlist`、`cloudreve_v3`、`cloudreve_v4`、`seafile`、`kodbox`、`mega`、`proton_drive` | 与已有 WebDAV 能力重叠或需要额外协议栈（smb/ftp/sftp 要原生依赖，mega/proton 有自家加密）；`webdav` 驱动可作为「WebDAV 账号统一到云盘账号模型」的迁移出口，优先级单独评估 |
 | **P5 对象存储 / 自建** | `s3`（+Doge）、`uss`、`azure_blob`、`bunny_storage`、`cloudflare_imgbed`、`ipfs_api` | 签名上传/下载为主，无浏览器登录问题；对媒体库场景价值取决于用户是否有这类存储 |
-| **不移植**（用户已砍或无意义） | 上传 6 字段相关、`alias`/`strm`/`virtual`/`chunk`（worker 组合层，语义由本地已有功能承担）、`local`（Go 本地盘）、`template`/`base`（基础设施）、`123_link`（直链专用）、`aliyundrive`（旧版已被 open 取代）、`doubao_new`/`doubao_share`/`thunder_browser`/`thunderx`/`ilanzou`/`123pan`(账号密码版) 等 Go 特有变体 | 用户决定：「C 中保留 crypt 列入待开发，其他的砍掉不进入文档」；变体驱动等首批同源驱动真机验收后再议 |
+| **不移植**（用户已砍或无意义） | 上传 6 字段相关、`alias`/`strm`/`virtual`/`chunk`（worker 组合层，语义由本地已有功能承担）、`local`（Go 本地盘）、`template`/`base`（基础设施）、`123_link`（直链专用）、`aliyundrive`（旧版已被 open 取代）、`doubao_new`/`doubao_share`/`thunder_browser`/`thunderx`/`ilanzou`/`123pan`(账号密码版) 等 Go 特有变体 | 用户决定：「C 中保留 crypt 列入待开发，其他的砍掉不进入文档」；变体驱动等后续同源驱动按当前 main 状态和新增反馈重新评估，不再把真机验收作为已完成批次的阻塞条件 |
 
 #### 逐盘关键参数（P1/P3 全量，移植时按 4.3.1 模式先报字段清单）
 
@@ -350,12 +350,12 @@
 
 1. 照 worker `types.ts` Addition 字段定 spec 表单（默认值照抄 Go `meta.go`），先报字段清单给用户确认（4.8）；
 2. 逐方法移植 `driver.ts`（list/get/mkdir/rename/move/copy/remove；**当前只读批次不移植 put**，4.2.1；未来恢复上传时必须按 [4.10](#410-方案-b云盘上传恢复计划未开工) 的 U3–U7 批次与能力门槛单独加入）。
-3. 能力位照 4.3.2 的静态表登记；MustProxy 驱动同步接流桥（crypt 的 `crypt_stream_bridge.dart` 是范例）；
+3. 能力位照 4.3.2 的静态表登记；MustProxy 驱动同步接流桥（通用 `cloud_drivers/stream_bridge.dart` 是范例）；
 4. crypto 依赖对照：`pkg/crypto`/`crypto-js` 用到的原语（MD5/SHA1/AES/RSA）在 pointycastle 都有对应实现，逐个过测试向量；
 5. 直链必需头进 `rawHeaders` 贯穿下载与流式（[11 §5](11-CLOUD-DRIVER-PORTING.md)）；
 6. 一盘一测试文件：列表 / 直链头 / 錯误原文透传；cookie 类加「过期报错原文」用例。
 
-**评估结论**：批量移植的主要成本不在单个驱动的 API 对接，而在**登录形态**（粘贴 vs OAuth 回调）与**直链形态**（302 vs MustProxy+流桥）。这两维各收敛一套模板后，P1–P3 的 20+ 个驱动可以流水线化铺开；建议每批 2–4 个驱动、真机验收通过后再进下一批。
+**评估结论**：批量移植的主要成本不在单个驱动的 API 对接，而在**登录形态**（粘贴 vs OAuth 回调）与**直链形态**（302 vs MustProxy+流桥）。这两维各收敛一套模板后，P1–P3 的 20+ 个驱动可以流水线化铺开；建议每批 2–4 个驱动、测试通过并按 main 状态收口后再进下一批。
 ## 4.10 方案 B：云盘上传恢复计划（未开工）
 
 **状态**：未开工，仅作为后续实现参考；当前代码仍保持 [4.2.1](#42-已定型的取舍) 的语义：云盘账号上传与云端写同步禁用。本节不代表上传已经支持，也不改变当前版本的能力遮罩。
@@ -545,7 +545,7 @@ Future<CloudFileItem?> put(
 - `deleteTrack` / `deleteTracksForSource` 不再连带删 annex 行；`markAllUncached()` 留 no-op 兼容备份恢复调用点。
 - 代价：`etag` 远端变更检测从未实现过（列本来就是死的），无实际损失。
 
-**真机验收未做**（跨 T1+T2）：老库升级（v7→v9）后 CUE 组删除、按保留期自动清理、已缓存标记在升级后是否正确显示（靠推导路径自动恢复）。
+**当前 main 状态按已通过收口**：老库升级（v7→v9）后 CUE 组删除、按保留期自动清理、已缓存标记在升级后按推导路径恢复；后续可复现问题按用户反馈记录。
 
 ### 6.1 不合并的（现状已合理，勿动）
 

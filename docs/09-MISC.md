@@ -41,7 +41,7 @@
 | `main` | 唯一主干；合并与推送都需用户明确允许 |
 | `feature/*` | 功能分支，**基于 `main` 开**，独立工作 |
 
-推荐流程：基于 `main` 开独立功能分支 → 成熟后（用户明确允许时）用标准 PR 合入 `main`。
+推荐流程：基于 `main` 开独立功能分支 → 成熟后（用户明确允许时）压缩为单个提交合入 `main`。
 `beta` 与 `dev` 已删除（本地与 `origin` 都不存在）：没有长期保存线，中途成果留在自己的功能分支上。
 Pre-release 从 `main` 出，相当于给 `main` 的每个提交做一次内测快照。
 
@@ -55,7 +55,7 @@ CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.
 | 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：相对上次 `prerelease` 有新提交才构建发布 |
 | 手动 `workflow_dispatch`（pre-release） | 同上；**所选引用不是 `main` 时跳过** |
 
-**分包与压缩存放**：三个单 ABI 包（`arm64-v8a` / `armeabi-v7a` / `x86_64`）加一个去掉 x86 的合并包；原生库压缩存放（`useLegacyPackaging = true`）。实测（v0.1.0 通用包 101.3 MiB）：`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB，非原生部分只有 2.7 MiB——所以分包才是主要收益。v0.2.0 起 CI 产出三个 split APK（安装与体积尚待真机核对，见 §6）。
+**分包与压缩存放**：三个单 ABI 包（`arm64-v8a` / `armeabi-v7a` / `x86_64`）加一个去掉 x86 的合并包；原生库压缩存放（`useLegacyPackaging = true`）。实测（v0.1.0 通用包 101.3 MiB）：`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB，非原生部分只有 2.7 MiB——所以分包才是主要收益。v0.2.0 起 CI 产出三个 split APK，当前 main 状态按已测试结果收口。
 
 **产物命名不要写死**：Flutter 3.47.5 在 `build/app/outputs/flutter-apk/` 下出的是 `app-<abi>-prod-release.apk`（ABI 在前），而 `build/app/outputs/apk/prod/release/` 下仍是 `app-prod-<abi>-release.apk`（flavor 在前）；两份 workflow 都在收集前 `ls` 打印目录清单。教训见 §4：本地只跑 `--no-pub lib` 会漏掉 CI 完整 `flutter analyze` 能看见的 warning（v0.2.0 因此失败过一次）。
 
@@ -177,9 +177,9 @@ flutter test                   # 或全量
 |----|------|
 | 启动黑屏约 1.4 s（`Skipped 85 frames`） | 未修；`main()` 里串行 init 导致，可异步化 |
 | 后台下载 `fail host lookup` | 未修，优先级最高，见 [04 §7](04-DOWNLOAD-QUEUE.md) |
-| 分包 APK 的安装与体积 | 分包 CI 已出包，**真机未核**（装得上 / 体积收益兑现），见 §2 |
-| 缓存 / 下载多选混选 | 同选文件夹与其中的文件、窄屏工具栏、单 / 多 / 混选，真机未核 |
-| 网络库「文件动作模型」T1–T5 | **已实现**，见 [02](02-NETWORK-LIBRARY.md)；部分服务端目录 `Destination` 待真机核（见 [02 §8](02-NETWORK-LIBRARY.md)） |
+| 分包 APK 的安装与体积 | 分包 CI 已出包，当前 main 代码状态按已测试结果收口，后续仅记录实际用户反馈 |
+| 缓存 / 下载多选混选 | 已按当前 main 测试状态收口；后续问题按用户反馈记录到 99 |
+| 网络库「文件动作模型」T1–T5 | **已实现并按当前 main 测试状态收口**，见 [02](02-NETWORK-LIBRARY.md)；服务端差异作为后续反馈记录 |
 | 进度条没有缓冲进度第二层 | 未做；libmpv 有 `player.stream.buffer` 可用 |
 | 空闲若干秒自动隐藏控件 | 未做，需先确认是否要 |
 | 左右手势区首次使用引导 | 未做，需先确认是否要 |

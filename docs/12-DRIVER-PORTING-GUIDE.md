@@ -202,7 +202,7 @@ class XxxSpec extends CloudDriverSpec {
 
 - **有直链**（多数）：`get()` 返回 `rawUrl` + `rawHeaders`，下载 / 流式直接走。
 - **MustProxy**（`quark_open` / `google_drive`）：拿不到公开直链 →
-  必须接本地流桥（范例 `crypt/crypt_stream_bridge.dart`，[11 §5](11-CLOUD-DRIVER-PORTING.md)）。
+  必须接本地流桥（通用设施为 `cloud_drivers/stream_bridge.dart`，[11 §5](11-CLOUD-DRIVER-PORTING.md)）。
   `rawUrl` 留 null → `CloudDriveService` 自动走 `openContent` / 流桥分支。
 - **POST 流**（`dropbox`）：下载不是 GET 直链，流桥要单独处理。
 
@@ -226,7 +226,7 @@ class XxxSpec extends CloudDriverSpec {
 1. **`CloudDriverEnv.resolveSource`**：由兼容层注入，驱动不反向依赖 `WebDavService`。
 2. **`runtimeCapabilities`**：随源映射并**剥掉 write**（防上传权限泄漏进 UI）。
 
-源解析必须是「**id 优先、名字兜底**」，且表单保存时落一份源名快照 `<key>_name`
+源解析必须按**源账号名唯一绑定**：表单保存时落一份源名快照 `<key>_name`，解析按归一化后的名字匹配；`source_account_id` 仅为旧配置兼容保留，不参与解析。源账号被删除后重新添加同名账号即可恢复。
 （[11 §4](11-CLOUD-DRIVER-PORTING.md)：源被删后重添同名账号即可恢复）。
 
 ---
@@ -310,7 +310,7 @@ class _RoutingAdapter implements HttpClientAdapter {
 **修正后的固定工序**：
 
 1. **每个驱动一个独立 `git worktree`**：
-   `git worktree add D:\Code\wmm-wt-<name> driver/<name>`——
+   `git worktree add worktree/<name> driver/<name>`——
    分支、文件、`HEAD` 完全隔离，注册表不再打架。
 2. **每个 worktree 单独 `flutter pub get`**（复制 `pubspec.lock` 保持依赖一致）。
    不要用 junction 复用主仓库的 `.dart_tool`——`package_config.json` 的相对
