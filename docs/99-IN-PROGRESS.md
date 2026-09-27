@@ -279,7 +279,7 @@
 - **坏名字行为（照 OpenList driver.go 202-219）**：解密失败用原名原大小透传。本驱动只读取、不改动远端，透传既不写入也不做二次加密。
 - **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（4.2.1）。
 - **架构**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）。**源适配层必须给 size**（单文件 PROPFIND，`webdav_service.statPath`）——漏掉会让 crypt 误判成整包，产出 0B 文件（真机反馈，已修，[11 §5](11-CLOUD-DRIVER-PORTING.md)）。
-- **已落地增量（真机反馈驱动，语义已收口进固定文档）**：表单控制器与校验显示（[11 §6](11-CLOUD-DRIVER-PORTING.md)）；应用内消息最顶层横幅（[07](07-NOTIFICATIONS.md)）；下载进度按 rclone 块结构 Range 分段、逐块解密（[04 §3](04-DOWNLOAD-QUEUE.md)）；本地流桥（127.0.0.1 HTTP 端点包 `openContentRange`，播放入口无分支，[11 §5](11-CLOUD-DRIVER-PORTING.md)）；账号类型名 `typeLabelFor`（[02 §10](02-NETWORK-LIBRARY.md)）；下载重试三层兜底（分类 / 退避 / 断点续传）与超时补齐、原地重试、单一计数来源（[04 §7](04-DOWNLOAD-QUEUE.md)）；大小判定四态 shape + Content-Range 纠偏（[11 §5](11-CLOUD-DRIVER-PORTING.md)）。测试：`crypt_cipher_test` / `crypt_driver_test` / `crypt_stream_bridge_test` / `crypt_webdav_source_test` / `crypt_size_race_test`。
+- **已落地增量（真机反馈驱动，语义已收口进固定文档）**：表单控制器与校验显示（[11 §6](11-CLOUD-DRIVER-PORTING.md)）；应用内消息最顶层横幅（[07](07-NOTIFICATIONS.md)）；下载进度按 rclone 块结构 Range 分段、逐块解密（[04 §3](04-DOWNLOAD-QUEUE.md)）；本地流桥（127.0.0.1 HTTP 端点包 `openContentRange`，播放入口无分支，[11 §5](11-CLOUD-DRIVER-PORTING.md)）；账号类型名 `typeLabelFor`（[02 §10](02-NETWORK-LIBRARY.md)）；下载重试三层兜底（分类 / 退避 / 断点续传）与超时补齐、原地重试、单一计数来源（退避见 [04 §2](04-DOWNLOAD-QUEUE.md)；后台失败与重试计数的后续变更见本文件 §7）；大小判定四态 shape + Content-Range 纠偏（[11 §5](11-CLOUD-DRIVER-PORTING.md)）。测试：`crypt_cipher_test` / `crypt_driver_test` / `crypt_stream_bridge_test` / `crypt_webdav_source_test` / `crypt_size_race_test`。
 - **待办**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。当前 main 状态按已通过收口；浏览、下载和坏名字透传后续问题按用户反馈记录。
 
 ### 4.6 关键技术点（移植时要一起处理的）
@@ -587,3 +587,128 @@ Future<CloudFileItem?> put(
 - prefs 57 个 settings 键不搬 SQLite：真·配置数据，KV 合适、无关系语义。
 - `sync_state` 游标不并入 prefs：跟 tracks 的 rev 时钟强耦合（[01 §6](01-DATA-MODEL.md)），同库 DROP 重建是对的。
 - 三个 SQLite 合成一个库：备份 / 销毁 / 清缓存三类操作的正交性就是靠库边界划的，合并是倒退。
+
+## 7. 后台下载保活（前台服务）
+
+**状态**：方案已定，关键取舍已由用户确认（保活默认开、FGS 通知常驻并加说明文字、后台断网重试 3 次、放弃实时活动；通知尽量沿用原路径——2001 仍由 `flutter_local_notifications` 更新，FGS 只借同 id 启动，S4 真机验证不过才改原生持有）；未开工代码，文档先行（S0）。分支 `feature/bg-download-keepalive`。
+
+相关完整文档（开发期间保留占位）：[04 §7](04-DOWNLOAD-QUEUE.md)（占位）、[07](07-NOTIFICATIONS.md)（下载进度通知 2001 仍由 Dart 更新，同时作为保活 FGS 的前台通知）、[05](05-AUDIO-PLAYBACK.md)（音乐 FGS 与 `androidStopForegroundOnPause`）、[09 §6](09-MISC.md)（占位）、[README.md](../README.md)（收口时补用户向说明）。
+
+**用户原话**：「dns解析问题本质上就是下载的前端保活错误造成的」「下载保活做成设置可配置的就行，在前台运行时尽量避免与现有的下载通知重叠出现，或者复用现有的下载通知」「可不可以配置成谷歌的实时活动类型的通知，color os似乎会兼容进流体云（灵动岛）」「通知尽量尝试使用原本的路径」。
+
+### 7.1 现象与根因
+
+- **现象**：切后台 / 锁屏后音乐下载失败，报 `Failed host lookup`；前台正常。
+- **根因**：下载没有**自己的**前台服务。进程退到后台后被系统限网（Doze / App Standby / 厂商后台管控）；每次重试 `WebDavService.downloadToFile` 都新建一个 `Dio`，第一步就是 DNS 解析，于是首先暴露为 `Failed host lookup`。本质是缺下载保活，不是 DNS 本身。
+- **现在为什么「有时能下」**：下载在「蹭」音乐的 `audio_service` FGS。`music_audio_handler.dart` 的 `AudioServiceConfig` 设了 `androidStopForegroundOnPause: false`，所以只要播放过一次，暂停后 FGS（mediaPlayback）+ wakelock 仍在，下载跟着活；没播过音乐就没有 FGS。
+- **放大器**（`download_queue_service.dart`，已核对）：
+  - `_handleFailure`：`isOfflineError`（含 `failed host lookup`）的失败**也 `attempts += 1`**，每次等 `offlineRetryDelay`（10 s），`maxAutoRetries = 5` → 约 50 s 后永久 `failed`（「重试 5 次仍失败：网络不可用」）。注意 `offlineRetryDelay` 的注释写着「不消耗重试次数」，与 `_handleFailure` 实际行为不符。
+  - `didChangeAppLifecycleState(resumed)` 只是取消 `_retryTimer` 再 `_pump()`：只会接着跑到期的 pending，已 `failed` 的任务不会复活。
+  - `_listenConnectivity`（`connectivity_plus`）只看设备级连通性，看不到「本应用被限网」，这时它一直报在线、不会触发唤醒。
+
+### 7.2 零代码验证（S1 前先做，A/B）
+
+同一台机、同一批 10 首未缓存歌曲，入队后按 Home 再锁屏 3 分钟：
+
+- **A**：冷启动后**从未播放音乐**直接入队 → 预期出现 `Failed host lookup`、任务停在「重试 5 次仍失败」。
+- **B**：先播一首再暂停（FGS 仍在），再入队 → 预期全部完成。
+
+A 失败 B 成功即坐实「蹭音乐 FGS」的根因判断；两者都成功或都失败则回来重新定位。
+
+### 7.3 方案（已定）
+
+**原生侧**
+- 新 Kotlin 服务 `DownloadKeepAliveService`，`android:foregroundServiceType="dataSync"`；manifest 加 `FOREGROUND_SERVICE_DATA_SYNC`（现有只有 `FOREGROUND_SERVICE` / `FOREGROUND_SERVICE_MEDIA_PLAYBACK` / `WAKE_LOCK`）。
+- 持 CPU `PARTIAL_WAKE_LOCK`，**带超时**（防泄漏），队列活着时续期。
+- Android 15+ dataSync 有累计时长上限（24 h 内约 6 h），实现 `Service.onTimeout(int, int)`：停 FGS、把当前任务挂起为等待、通知 Dart；不崩、不硬撑。
+- **启动时机**：Android 12+ 禁止后台启动 FGS，所以只在**应用前台**时启动——入队 / `_pump` 开跑时；保持到队列排空（**包括等待退避 / 等网络的 pending**）才停。启动失败（`ForegroundServiceStartNotAllowedException` 等）要 catch 并回报 Dart，写进诊断，不影响下载本身（退回今天的行为）。
+- MethodChannel：`com.senkjm.media_manager/download_keepalive`（与现有 `com.senkjm.media_manager/app` 同命名风格）。
+
+**通知：复用现有下载进度通知，不出现第二条；尽量沿用原路径（用户决定）**
+- FGS 的前台通知**就是**现有下载进度通知：id `2001`（`DownloadNotificationService.currentId`），通道 `com.senkjm.media_manager.downloads.v1`（Importance.low），普通进度通知（不做实时活动，见 §7.5）。
+- **默认方案：Dart 继续持有 2001**。`flutter_local_notifications` 照旧 `show(2001)` 创建与更新进度（`progressInterval` 700 ms 节流不变）；Kotlin `DownloadKeepAliveService` 只用**同一通道**构建一条最小通知（标题 + 小图标 + ongoing），调 `startForeground(2001, …)`，之后不再更新它，由 Dart 的下一次 `show(2001)` 按同 id 替换内容（系统保留 FGS 标记）。完成通知（id 2003，`downloads.done.v1`）仍由 Dart 发。
+- **S4 真机验证（ColorOS）**：同 id 替换无闪烁 / 无第二条；FGS 不被破坏（`dumpsys activity services` 仍在前台、`dumpsys notification` 2001 带 FGS 标记）；FGS 运行期间 Dart `cancel(2001)` 的表现（预期被忽略或通知被重建）；两侧通道 / 小图标 / ongoing 一致，最小通知不残留。
+- **备选（仅当上述验证失败）**：改为原生持有 2001——FGS 运行期间由 Kotlin 构建与更新进度，Dart 停止 `show(2001)`，改经 MethodChannel 推进度；关保活时 Dart 仍按原样发 2001（两条路径只能有一条在写 2001）。
+- **排空时的顺序**要写死：Dart 先停止更新 2001 → 原生 `stopForeground(STOP_FOREGROUND_REMOVE)` 移除 2001 → `stopSelf` → Dart 再发 2003 完成通知。避免「清进度」与「停 FGS」互相抢导致进度条残留或完成通知被带走。
+- 关闭保活开关时：不启 FGS，2001 行为与今天完全一致。
+
+**设置可配置**（已确认）
+- 新开关「后台下载保活」，**默认开**（用户已确认）。关 = 完全保持今天的行为（不启 FGS、不改重试）。
+- 保活开着时，即使用户关了「下载队列系统通知」，下载期间 2001 也会常驻（Android 要求 FGS 必须有通知）——**用户已接受**。要求：在开关旁写说明文字，如「开启后，下载期间通知栏会常驻一条下载通知（系统要求），关闭下载通知也会显示」。新增字符串 1–2 条（开关标题 + 说明）。
+
+**Dart 侧**
+- 新文件 `lib/services/download_keepalive.dart`：状态机 idle → starting → running → stopping（+ failed-to-start），对外只暴露 `ensureRunning()` / `release()` / 诊断（走 §7.3 备选时才加 `updateProgress()`）。
+- `download_queue_service.dart` 只加最小挂点：`_pump` 开跑时 `ensureRunning`、排空（`_pump` 的 finally 且无 pending）时 `release`、`_handleFailure` 里读前后台状态做 §7.4 的判定。
+
+**诊断**（S1 先落，失败时记录）：前后台状态、`Connectivity` 当前结果、错误类型（`isOfflineError` / DioException type）、保活 FGS 是否在跑；原生诊断方法返回 忽略电池优化与否、`ActivityManager.isBackgroundRestricted`、`ConnectivityManager.getRestrictBackgroundStatus`、`PowerManager.isDeviceIdleMode`。
+
+### 7.4 重试语义（已确认：后台断网重试 3 次）
+
+- 应用在**后台**且错误属于 offline 类（`isOfflineError`：`failed host lookup` / `network is unreachable` 等）→ 最多自动重试 **3 次**，耗尽即判 `failed`。
+- 前台保持现有规则不变（5 次；offline 固定 10 s、其余 2/4/8/16/32 s 退避）。
+- 实现上是 `_handleFailure` 按前后台状态取上限（后台 offline 3 / 其余 `maxAutoRetries` 5），**不改现有文案字符串**（§7.8）；不改 DB schema（`download_store.dart` 升版本即 `DROP TABLE` 重建）。
+- **未确认**：回到前台时是否自动恢复这些「后台断网 3 次失败」的任务。当前按**不自动恢复**写——用户手动「重试」/「全部下载」。
+- `test/download_retry_test.dart` 在 S5 补用例：后台 offline 上限 3、前台仍 5。
+
+### 7.5 实时活动 / 流体云
+
+**状态**：已放弃（用户决定）。不做。下载通知保持普通进度通知。以下只作查证记录，**不进计划**：
+
+- Android 16 [Live Updates](https://developer.android.com/develop/ui/views/notifications/live-update)：需 `POST_PROMOTED_NOTIFICATIONS` + `setRequestPromotedOngoing(true)`，API 36.1（16 QPR1）起才提升；要求 ongoing + 标题，不能自定义 RemoteViews / group summary / colorized，通道不能是 MIN；`androidx.core` 1.17.0+ 才有 `NotificationCompat.ProgressStyle`。
+- `flutter_local_notifications` 22.3.1 不支持（[issue #2773](https://github.com/MaikuB/flutter_local_notifications/issues/2773)）。
+- ColorOS 16 流体云接入原生 Live Updates（[IT之家](https://www.ithome.com/0/890/345.htm)；[社区实测](https://www.yehenest.com/posts/miao-time-dynamic-island-fluid-cloud) ColorOS 16.1 仅原生 API 可进流体云）；OxygenOS 16 第三方应用默认关；国行默认值与是否过滤下载场景未知。
+
+### 7.6 后续（计划，未排期，单独分支）：音乐前台保活「暂停后延迟释放」
+
+- 暂停 N 分钟（如 10，可配置）后 `stopForeground` + 释放 wakelock，但保留媒体通知 / 会话；恢复播放再进 FGS。
+- 风险（ColorOS）：停 FGS 后媒体通知 / 控制中心卡片可能被系统移除；从锁屏恢复播放时的 FGS 启动限制（当年设 `androidStopForegroundOnPause: false` 就是为了绕开 Android 12+ 的这个限制，见 [05](05-AUDIO-PLAYBACK.md)）。
+- **必须排在下载保活之后**：下载不再蹭音乐 FGS，才能放音乐 FGS 走。
+
+### 7.7 分步
+
+| 步 | 内容 |
+|---|---|
+| S0 | 本节文档；04 §7 / 09 §6 占位 |
+| S1 | 只加诊断字段 + 原生诊断方法；真机跑 §7.2 A/B |
+| S2 | 原生 `DownloadKeepAliveService` + manifest（`FOREGROUND_SERVICE_DATA_SYNC`）+ MethodChannel `com.senkjm.media_manager/download_keepalive`；`startForeground(2001)` 用的最小通知（同通道 `downloads.v1`，不做进度构建器） |
+| S3 | Dart `download_keepalive.dart` 状态机 + 「后台下载保活」设置项（默认开 + 说明文字） |
+| S4 | 通知复用：FGS 借 2001 启动、Dart 照旧更新同 id、排空顺序；ColorOS 真机验证（无闪烁、FGS 不被破坏、FGS 期间 `cancel(2001)`、通道 / 配置一致）；不过则切 §7.3 备选（原生持有 + MethodChannel 进度） |
+| S5 | §7.4 后台断网 3 次上限 + `test/download_retry_test.dart` 用例（后台 offline 上限 3） |
+| S6 | 电池优化 / ColorOS 引导文案（等 i18n 落地后做） |
+| S7 | `flutter analyze` / `flutter test` / 真机验收；语义收口进 04 §7、07、09、README，压缩提交 |
+| S8 | （以后，单独分支）§7.6 音乐 FGS 延迟释放 |
+
+### 7.8 与 i18n 重构的冲突面
+
+另一条分支在做全库 i18n。本项：不改 `_handleFailure` 里的现有文案字符串；新逻辑放新文件；新增用户可见字符串 ≤2 条；设置页 UI 改动最小（一个开关 + 至多一行说明）。
+
+### 7.9 验收
+
+- 保活开：锁屏 ≥10 分钟，10 首全部完成；日志无 `host lookup`；全程**只有一条**下载通知（不与 FGS 通知重叠）；关掉「下载队列系统通知」后下载期间仍显示这一条，排空后消失。
+- 后台真断网：offline 失败重试 3 次后判失败；回前台不自动恢复，手动重试可继续。
+- 开关旁说明文字可见；开关关 = 旧行为。
+
+### 7.10 风险 / 未知
+
+- ColorOS 对 dataSync FGS 的额外管控（未加入「允许后台运行」时是否仍被杀）。
+- Android 15+ dataSync 6 h 上限对超大队列的影响。
+- 蹭音乐 FGS 与保活 FGS 同时存在时的交互（两条通知是不同通道，不算重叠，但要确认）。
+- 默认方案（`flutter_local_notifications` 更新 FGS 借用的 2001）在 ColorOS 上是否可靠：闪烁、FGS 标记丢失、`cancel(2001)` 行为、通道 / 配置不一致（§7.3，S4 验证；不过则走原生持有备选）。
+- 后台断网 3 次失败后回前台是否自动恢复（§7.4，未确认）。
+- 后台限网时 `connectivity_plus` 仍报在线，后台 3 次可能在网络其实已恢复前就耗尽（保活生效后应少见）。
+
+**adb 测试命令**：
+
+```sh
+adb shell dumpsys deviceidle force-idle            # 强制 Doze；恢复：adb shell dumpsys deviceidle unforce
+adb shell am set-inactive <pkg> true               # App Standby
+adb shell am set-standby-bucket <pkg> restricted
+adb shell cmd appops set <pkg> RUN_ANY_IN_BACKGROUND ignore   # 恢复：allow
+adb shell dumpsys activity services <pkg>          # FGS 是否在跑
+adb shell dumpsys netpolicy                        # 后台限网
+adb shell dumpsys power                            # wakelock
+adb shell dumpsys notification | grep -A5 2001     # 下载通知是否唯一 / FGS 标记
+adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
+```
+
+`<pkg>`：prod / dev flavor 包名不同，分别测。
