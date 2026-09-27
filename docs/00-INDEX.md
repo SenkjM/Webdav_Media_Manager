@@ -35,9 +35,9 @@
 | 09 | [09-MISC.md](09-MISC.md) | 代码地图、构建发布、编码约定与陷阱、测试入口、历史回归、待办 |
 | 10 | [10-PLAYLIST-FORMAT.md](10-PLAYLIST-FORMAT.md) | **歌单格式与身份**：歌单 = 小型音乐库、与曲库的边界（销毁曲目不影响歌单）、现状 M3U8、计划中的二进制容器格式 |
 | 99 | [99-IN-PROGRESS.md](99-IN-PROGRESS.md) | **开发中文档**：正在开发的功能的原始语义、取舍与影响面；也是计划、待办和未决问题的唯一记录处 |
-| 11 | [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md) | **从 OpenList / rclone 移植驱动的要点与陷阱**：架构映射、必须逐字节对齐的格式、直链与本地流桥、测试策略、已落地驱动实录（baidu / netease_music / crypt）、分层与路由边界 |
-| 12 | [12-DRIVER-PORTING-GUIDE.md](12-DRIVER-PORTING-GUIDE.md) | **云盘驱动移植指南（操作手册）**：解耦检查（只动两个文件）、固定六步工序、表单字段与开关联动极性、测试手法、多盘并行移植的 worktree 工序、常见错误对照表 |
-| 13 | [13-DRIVER-BATCH-PLAN.md](13-DRIVER-BATCH-PLAN.md) | **驱动批次筛选与规划**：99 §4.9 的执行侧收敛——「快速可实现」六条筛选标准、本轮四盘（123_open / aliyundrive_open / 115open / terabox）的核查与验收、下沉批次的卡点记录 |
+| 11 | [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md) | **云盘驱动实现要点与陷阱**：驱动契约与能力位、与 rclone Crypt 逐字节兼容的加密格式、令牌生命周期、直链与本地流桥、测试策略、驱动实现实录（baidu / netease_music / crypt）、分层与路由边界 |
+| 12 | [12-DRIVER-PORTING-GUIDE.md](12-DRIVER-PORTING-GUIDE.md) | **云盘驱动接入指南（操作手册）**：解耦边界（只动两个文件）、固定六步接入流程、表单字段与开关联动极性、测试手法、多盘并行开发的 worktree 工序、常见错误对照表 |
+| 13 | [13-DRIVER-BATCH-PLAN.md](13-DRIVER-BATCH-PLAN.md) | **驱动能力核查与接入批次记录**：99 §4.9 的执行侧收敛——「快速可实现」六条筛选标准、四盘（123_open / aliyundrive_open / 115open / terabox）的能力核查与验收、未接入驱动族的卡点记录 |
 | 98 | [98-OPENLIST-MEDIA-CLIENT.md](98-OPENLIST-MEDIA-CLIENT.md) | **OpenList 媒体库客户端实现（远期，暂不实现）**：按 OpenList 媒体库概念重构音乐库为媒体库；本地库 / 多远程库同构、抽象层路由与鉴权；目标数据库架构（双方并集）、API 操作清单、身份模型、风险与未决问题 |
 
 ## 3. Agent 编码约束

@@ -1,4 +1,4 @@
-# 11 · 从 OpenList / rclone 移植云盘驱动
+# 11 · 云盘驱动实现要点与陷阱
 
 把上游驱动搬进本应用时的现场笔记：架构怎么映射、哪些字节必须一模一样、哪里踩过坑。
 **写的是现状与已验证的事实**；与源码冲突时以源码和测试为准。
@@ -16,7 +16,7 @@
 | `driver.Driver`（Init / List / Link / Mkdir / Rename / Move / Copy / Remove / Put） | `CloudDriver`（init / list / get / mkdir / rename / move / copy / remove） | `Link` 合并进 `get()`：`CloudFileItem.rawUrl` + `rawHeaders`；**没有 put** |
 | `model.Obj`（Name / Size / Modified / Path / IsFolder） | `CloudFileItem` | 名字一律用**解密 / 展示后**的名字 |
 | `driver.Addition`（驱动表单 JSON） | `CloudDriverSpec.form` | 见 §6 |
-| 各驱动的实际能力（靠人读源码判断） | 能力位 `AccountCaps` | 上游没有能力表，移植时逐个核对 |
+| 各驱动的实际能力（靠人读源码判断） | 能力位 `AccountCaps` | 上游没有能力表，接入时逐个核对 |
 | `Link{URL, Header}` | `rawUrl` / `rawHeaders` | `rawUrl == null` 表示 MustProxy，见 §5 |
 
 **铁律**：驱动只描述自己（`CloudDriverSpec`）——表单渲染、校验、持久化、能力遮罩全由 spec 驱动，上游知识不要漏进界面层。**谁负责路由、三层可见性边界见 [§13](#13-分层与路由clouddriver-层负责全部网盘驱动)。**
@@ -118,7 +118,7 @@
 
 - 一个驱动 = 一个文件（`cloud_drivers/<name>_driver.dart`）+ 在 `driver_registry.dart` 注册 spec + 一份测试。
 - 上游源码放 `localdev/`（gitignored），只读参考，不进构建。
-- **上传已砍**（[99 §4.2](99-IN-PROGRESS.md) 取舍 1）：不要移植 `Put` 与上传相关代码。
+- **上传已砍**（[99 §4.2](99-IN-PROGRESS.md) 取舍 1）：不要实现 `Put` 与上传相关代码。
 - 文档收口按 `00 §1`：开发中写 [99](99-IN-PROGRESS.md)，完成后把语义搬进对应功能块，去掉占位。
 
 ### 8.1 新驱动落地核对单
@@ -141,7 +141,7 @@
 
 ## 10. 已落地驱动实录：baidu_netdisk
 
-第一个走完「spec 自描述 → 表单通用渲染 → 能力遮罩 → 真连验证」全链路的驱动（已实现，真机验收清单在 [99 §4.3.1](99-IN-PROGRESS.md)）。后续驱动照这套模式铺（[99 §4.9](99-IN-PROGRESS.md) 的移植模板）。
+第一个走完「spec 自描述 → 表单通用渲染 → 能力遮罩 → 真连验证」全链路的驱动（已实现，真机验收清单在 [99 §4.3.1](99-IN-PROGRESS.md)）。后续驱动照这套模式铺（[99 §4.9](99-IN-PROGRESS.md) 的接入模板）。
 
 - **动态区顺序**：refresh_token（必填，粘贴，可切换明文）→ 远程路径（默认 `/`，空置视为 `/`）→ 在线续期地址（默认 OpenList 公共服务 `api.oplist.org/baiduyun/renewapi`，常驻可编辑）→ 开关「在本地处理令牌刷新」→ Client ID / Secret（仅开关开启时显示）。
 - **开关语义（用户原话）**：「加一个开关：在本地处理令牌刷新，开启后显示Client ID和 Client Secret同时online_api变灰不可用，后端时也需要检查该开关，一旦打开就不使用online api逻辑而使用自建百度应用的刷新逻辑。」实现为 `BaiduAddition.localRefresh`，`BaiduClient.refreshToken()` 每次都检查。
@@ -154,7 +154,7 @@
 
 ## 11. 已落地驱动实录：netease_music
 
-第一个带**自定义请求加密**的驱动（已实现并**真机验收通过**：添加账号 / 平铺浏览 / 下载与流式 / 删除 / 能力遮罩 / song_limit 容错）。移植工序照 [12](12-DRIVER-PORTING-GUIDE.md)，`lib/` 只动两个文件（驱动 + 注册表）。
+第一个带**自定义请求加密**的驱动（已实现并**真机验收通过**：添加账号 / 平铺浏览 / 下载与流式 / 删除 / 能力遮罩 / song_limit 容错）。接入工序照 [12](12-DRIVER-PORTING-GUIDE.md)，`lib/` 只动两个文件（驱动 + 注册表）。
 
 - **能力面**：`list | read | delete`。上游 `MakeDir` / `Rename` / `Move` / `Copy` 四个方法在 Go 与 worker 两版里**都是 `errs.NotSupport` 桩**，所以不给 mkdir / move / copy 位（界面「隐藏而非置灰」，真机验收确认账号行看不到这四个入口、删除入口可用）；上传按 §8 全局砍掉。
 - **表单**：`cookie`（必填、obscure、带教程指引）+ `song_limit`（默认 `200`，照抄 Go `meta.go` 的 `default:"200"`；非数字 / 小于 1 一律回默认——真机用小值验证过上限生效）。没有开关，因此不涉及 §6 的联动极性。
@@ -170,7 +170,7 @@
 - **两处相对上游的有意增强**（与 §10 同一取舍思路）：
   1. **拿不到直链时抛真实原因**：worker 把空 url 写进 `raw_url` 并记 `raw_url_error`，客户端里下游必然失败；本实现按 `CloudDriver.get` 契约抛 `CloudDriverException`（VIP / 版权受限 / 已下架都走这条）。
   2. **校验响应 `code`**：上游两版都不看响应码，Cookie 失效的表现是「空列表」；本实现在 `code` 存在且非 200 时报错，`301` 单独翻成「Cookie 可能已过期」。
-- **不移植**：Go 版的 `.lrc` 歌词条目（worker 底稿已删；本应用播放链路不消费远端歌词，`Link` 的 `parsed` / `RangeReader` 语义依赖 OpenList 自身的 `/p` 代理端点，在对端客户端里没有对应物）。
+- **不实现**：Go 版的 `.lrc` 歌词条目（worker 版已删；本应用播放链路不消费远端歌词，`Link` 的 `parsed` / `RangeReader` 语义依赖 OpenList 自身的 `/p` 代理端点，在对端客户端里没有对应物）。
 - **路径语义**：网易云盘是**单层平铺**（只有歌曲，没有目录树），所以驱动 `list()` 忽略路径，永远返回全部歌曲；`get()` / `remove()` 按**文件名**定位。账号的「远程路径」对它是纯虚拟前缀——条目路径由上层拼接，驱动只认文件名，改远程路径不会让条目失联（真机验收：改远程路径后账号条目仍可打开）。
 - **下载 / 流式**：直链由网易 CDN 直接给出，上游未声明必需请求头，本驱动仍带通用 API UA 进 `rawHeaders`（直链 302 + UA，真机验证下载 / 缓存 / 音乐流式 / 本地播放全通）。
 - **测试**：`test/netease_music_crypto_test.dart`（用 Go 上游工具生成的**金标向量**：AES-CBC / AES-ECB / raw RSA / weapi / linuxapi 各若干条，并核对 worker 硬编码的 modulus 与 Go 版 PEM 是同一把密钥）、`test/netease_music_driver_test.dart`（请求形状 / 能力位 / 直链必需头 / 错误原文透传 / 未实现操作）。
@@ -178,7 +178,7 @@
 
 ## 12. 已落地驱动实录：粘贴凭证直连盘批次（123_open / aliyundrive_open / 115open / terabox）
 
-第二批驱动的共同形态：**粘贴式凭证 + 有公开直链 + 无重加密 + 单账号形态**（筛选标准与下沉判定见 [13 §1/§2](13-DRIVER-BATCH-PLAN.md)）。全部照 [12](12-DRIVER-PORTING-GUIDE.md) 的六步工序移植，`lib/` 只动驱动文件 + 注册表两个文件；每盘一个测试文件（出站请求全拦截，不真连网络）。**真机验收已按通过处理（用户确认 2026-09-25；123_open 打开目录曾报一次 invalid_grant，用户决定不排查，现象留档 99 §4.3.4）。**
+第二批驱动的共同形态：**粘贴式凭证 + 有公开直链 + 无重加密 + 单账号形态**（筛选标准与下沉判定见 [13 §1/§2](13-DRIVER-BATCH-PLAN.md)）。全部照 [12](12-DRIVER-PORTING-GUIDE.md) 的六步工序接入，`lib/` 只动驱动文件 + 注册表两个文件；每盘一个测试文件（出站请求全拦截，不真连网络）。**真机验收已按通过处理（用户确认 2026-09-25；123_open 打开目录曾报一次 invalid_grant，用户决定不排查，现象留档 99 §4.3.4）。**
 
 | 驱动 | typeId | 能力位 | 登录 | 直链必需头 | 特殊机制 |
 |---|---|---|---|---|---|
@@ -193,7 +193,7 @@
 - **续期候选地址要去重**：aliyundrive_open 的表单默认值就是内置候选表的第一个地址，不去重会把同一地址打两遍（多耗一次请求，还让「全失败」用例的候选数对不上）。
 - **path→id 缓存的键形必须一致**：123_open 曾出现写入带前导斜杠、查询不带，缓存形同虚设、每次 list 都逐层重解析。写操作后整表 clear（照 worker）。
 - **`rename` 跨目录统一降级 move + rename**（接口契约，四盘一致）；115 的 copy 参数顺序是**目标 pid 在前**（上游如此，别按直觉接反）。
-- **worker 底稿的三类偷懒都按本项目契约修正**：拿不到直链时抛真实原因（不返回无直链条目）；`get()` 的 try 作用域收窄到「找条目」，直链异常原样上抛；时间解析失败返回 null 而不是伪造 `now()`。
+- **worker 参照实现的三类偷懒都按本项目契约修正**：拿不到直链时抛真实原因（不返回无直链条目）；`get()` 的 try 作用域收窄到「找条目」，直链异常原样上抛；时间解析失败返回 null 而不是伪造 `now()`。
 - **terabox 的签名**：上游 js sha1/aes 变体在纯 Dart 下可复现（`pointycastle` 原语 + 上游逐行对照），金标向量固化在测试里；若上游签名实现与真机不符，第一嫌疑是**明文收集时的符号溢出**（必须按无符号字节）。
 - 文件名带数字开头的驱动（`115open`）在 Dart 里类名/文件名不能以数字开头，用 `Open115*` + `open115_driver.dart`，**typeId 仍存 `'115open'`**（存库值与上游目录名一致）。
 

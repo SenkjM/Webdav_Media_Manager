@@ -2,7 +2,7 @@
 
 本文件是 [99 §4.9](99-IN-PROGRESS.md) 全量评估的**执行侧收敛**：
 按「快速可实现」标准筛出本轮批次，给出统计与任务划分。
-工序照 [12-驱动移植指南](12-DRIVER-PORTING-GUIDE.md)；批次背景见 [99 §4.9](99-IN-PROGRESS.md)。
+工序照 [12-驱动接入指南](12-DRIVER-PORTING-GUIDE.md)；批次背景见 [99 §4.9](99-IN-PROGRESS.md)。
 
 > **执行结果（本轮收口）**：T1–T4 全部落地并已合并进
 > `feature/openlist-driver-port-batch2`——`123_open` / `aliyundrive_open` /
@@ -21,7 +21,7 @@
 | S3 | **无重加密 / 无额外密码学**，或只需 pointycastle 已有原语（MD5/SHA1/AES/RSA） | 逐字节对齐格式是 crypt 级别的独立工程 |
 | S4 | **写方法真实现**（mkdir / rename / move / copy / remove）或明确只读 | 桩实现会让能力位说一套做一套 |
 | S5 | **单账号形态**（无 personal/family/group 多形态分支） | 多形态等于 N 个驱动的实现量 |
-| S6 | **上游 worker 底稿完整**（driver.ts 非空壳，无 `console.warn` 占位） | 空壳要从 Go 版重写，语义风险高 |
+| S6 | **上游 worker 参照实现完整**（driver.ts 非空壳，无 `console.warn` 占位） | 空壳要从 Go 版重写，语义风险高 |
 
 ## 2. 逐盘核查结果（本轮查证，源码级）
 
@@ -30,7 +30,7 @@
 | 驱动 | S1 | S2 | S3 | S4 | S5 | S6 | 判定 |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|---|
 | **`123_open`** | ✅ | ✅ PreferProxy（有直链） | ✅ 无 crypto | ✅ 五项真实现 | ✅ | ✅ | **入选** |
-| **`terabox`** | ✅ cookie | ✅ 有直链 | ⚠️ MD5 + js sha1/aes 变体 | ✅ 五项真实现（Go 已核） | ✅ | ✅ | **入选** |
+| **`terabox`** | ✅ cookie | ✅ 有直链 | ⚠️ RC4 式签名 + jsToken | ✅ 五项真实现（Go 已核） | ✅ | ✅ | **入选** |
 | **`115open`** | ✅ | ✅ 有直链 | ✅ 无 crypto（sha1 仅上传用） | ✅ 五项真实现 | ✅ | ✅ | **入选** |
 | **`aliyundrive_open`** | ✅ | ✅ 有直链 | ✅ 无 crypto | ✅ 五项真实现 | ✅ | ✅ | **入选** |
 | **`quark_open`** | ✅ | ❌ **MustProxy** | ✅ | ⚠️ copy 桩 | ✅ | ✅ | 下沉（要流桥） |
@@ -57,14 +57,14 @@
 | **T1** | `123_open` | `driver/123-open` | refresh_token + client_id/secret + 在线续期 | 最简，无 crypto，无分叉 |
 | **T2** | `aliyundrive_open` | `driver/aliyundrive-open` | 在线 API 多端点轮询 + drive_id 解析 | 中等，有 drive_id 解析逻辑 |
 | **T3** | `115open` | `driver/115open` | refresh_token + 直链带 UA + 链接缓存 | 中等，有 fid 路径解析与 30 分钟链接缓存 |
-| **T4** | `terabox` | `driver/terabox` | cookie 粘贴 + UA 校验直链 | 中等，有 MD5 签名 |
+| **T4** | `terabox` | `driver/terabox` | cookie 粘贴 + UA 校验直链 | 中等，有 RC4 式签名（teraboxSign：KSA+PRGA 异或 + base64） |
 
 **共同约定**（每盘都要遵守，来自 [12](12-DRIVER-PORTING-GUIDE.md)）：
 
 1. **只动两个文件**：新增 `lib/services/cloud_drivers/<name>_driver.dart` +
    `driver_registry.dart` 加一行 + 新增 `test/<name>_driver_test.dart`。
-2. **不移植 put / 上传**（99 §4.2.1）。上游的 OSS 直传、分片上传代码全部砍掉。
-3. **不移植 `order_by` / `order_direction` / `only_list_video_file`**（客户端自己排序）。
+2. **不实现 put / 上传**（99 §4.2.1）。上游的 OSS 直传、分片上传代码全部砍掉。
+3. **不实现 `order_by` / `order_direction` / `only_list_video_file`**（客户端自己排序）。
 4. **`api_url_address` / client 凭证 / access_token 缓存**照百度模式：
    `onTokenUpdate` 持久化、`access_token` 不进表单。
 5. 能力位按各盘 `mkdir` 实情给（见 §4）；`write` 一律不给。
@@ -115,7 +115,7 @@
 | `115open` | 直链 UA 校验下的下载/流式；**链接缓存**是否显著减少 downurl 调用（免费号 406 配额）；`root_id` 挂载 |
 | `terabox` | Cookie 过期的报错可读性；直链两种响应形态（`dlink` / `info`）；非国内区域的 9000 错误 |
 
-### 6.2 过程记录（并行移植的教训，已固化进 [12 §11](12-DRIVER-PORTING-GUIDE.md)）
+### 6.2 过程记录（并行接入的教训，已固化进 [12 §11](12-DRIVER-PORTING-GUIDE.md)）
 
 - 首轮四个子代理**共享同一工作目录**，互相切分支、注册表被覆盖、`git add -A`
   误暂存他人半成品——之后改为**每盘独立 `git worktree`**（`pub get` 单独跑，

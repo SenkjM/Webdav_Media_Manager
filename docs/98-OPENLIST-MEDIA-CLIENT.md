@@ -2,7 +2,7 @@
 
 > **状态：远期项目，暂不实现。本文件只保留路径与设计，不排期、不开工。**
 > 总索引：[00-INDEX.md](00-INDEX.md)
-> 关联：[01](01-DATA-MODEL.md)（身份约定）、[03](03-MUSIC-LIBRARY.md)（现有音乐库）、[08](08-SYNC-AND-BACKUP.md)（同步与备份）、[11](11-CLOUD-DRIVER-PORTING.md)（云盘驱动移植）、[99](99-IN-PROGRESS.md)（开发中文档）
+> 关联：[01](01-DATA-MODEL.md)（身份约定）、[03](03-MUSIC-LIBRARY.md)（现有音乐库）、[08](08-SYNC-AND-BACKUP.md)（同步与备份）、[11](11-CLOUD-DRIVER-PORTING.md)（云盘驱动实现）、[99](99-IN-PROGRESS.md)（开发中文档）
 
 本文登记一条**远期路线**：把现有音乐库按 **OpenList 媒体库**的概念重构为通用媒体库。
 上游参照物是 `OpenListTeam/OpenList` 的 **`dev-media` 分支**（beta 预发布，仍在迭代）——

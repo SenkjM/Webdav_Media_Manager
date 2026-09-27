@@ -183,7 +183,7 @@
 
 1. 目标语言（中 + 英？）；2. 范围（全量还是先跑通一两个模块）；3. 要不要应用内语言切换。**未决定前不开工。**
 
-## 4. 云盘 Provider（OpenList 驱动移植，进行中）
+## 4. 云盘 Provider（网盘直连驱动，进行中）
 
 **用户决策原话**：「砍掉上传功能，采用路线B，尽量不要改动WebDavService」「按照A表全部删除」「B的话建立新的网络库功能列表，分类不同网络库支持的能力并在对应的按钮功能前加上检测，尽量保证WebDavService实现的功能全面，由账号对应的能力遮罩判断功能是否开启」「C中保留crypt列入待开发功能，其他的砍掉不进入文档」「netease_music加入待开发文档」「几个优先做的加入文档并开始讨论细节」。
 
@@ -191,8 +191,8 @@
 
 ### 4.1 路线与参照物
 
-- **路线 B**：把 OpenList 的驱动层（REST 直连各家网盘）移植成 Dart provider。**不移植** worker 的 WebDAV/XML 协议层——WDMM 本身是 WebDAV 客户端，自己转 WebDAV 再解析回去是绕路。
-- 参照实现已克隆到 `localdev/`（已 gitignore，不入库）：`OpenListTeam/OpenList-Worker`（TS，HEAD `a355867`，移植底稿）+ `OpenListTeam/OpenList`（Go main，语义兜底）。驱动代码与 worker 运行时零耦合（抽样 quark：`env.|KV|waitUntil|durable` 零命中），移植是机械工作。
+- **路线 B**：驱动层以 Dart provider 直连各家网盘 REST API。**不引入** worker 的 WebDAV/XML 协议层——WDMM 本身是 WebDAV 客户端，自己转 WebDAV 再解析回去是绕路。
+- 参照实现已克隆到 `localdev/`（已 gitignore，不入库）：`OpenListTeam/OpenList-Worker`（TS，HEAD `a355867`，实现底稿）+ `OpenListTeam/OpenList`（Go main，语义兜底）。驱动代码与 worker 运行时零耦合（抽样 quark：`env.|KV|waitUntil|durable` 零命中），逐盘对接是机械工作。
 - 下载模型天然契合：驱动 `get()` 返回 `FileItem{raw_url, raw_url_headers}`（直链 + 必需请求头），正好对上现有 `WebDavStreamSource{uri, headers}`（`webdav_stream.dart`）；视频流式与下载都走「直链 + 头」。
 
 ### 4.2 已定型的取舍
@@ -204,7 +204,7 @@
 4. **驱动范围已定界**：除 4.3 / 4.4 / 4.5 / 4.9 列出的驱动外，其余一律不做，不进文档不展开。
 5. **读取能力的绑定**（用户原话「缓存音乐、下载文件、浏览、播放、流式传输功能绑定到账号类型的读取能力」）：这五类功能都要求账号具备「读取」。
 6. **禁用即隐藏**：能力被遮罩时，单文件「更多」菜单的对应条目与多选工具栏的对应按钮**隐藏而非置灰**；「更多」按钮本身只要还有可用条目就保留。
-7. **账号表单定型**：第一行名称、第二行类型（默认 WebDAV），选类型后动态出该盘自身字段。WebDAV 在服务器 URL 之下新增「远程路径」（默认 `/`，空置视为 `/`），**云盘账号同样有远程路径**；保存时 URL 结尾 `/` 隐式清除（`configure()` 已有同样的 trim，表单层保持同一规则）。云盘字段默认照 worker `Addition` 原样保留以便移植，逐盘细节落实时询问用户。
+7. **账号表单定型**：第一行名称、第二行类型（默认 WebDAV），选类型后动态出该盘自身字段。WebDAV 在服务器 URL 之下新增「远程路径」（默认 `/`，空置视为 `/`），**云盘账号同样有远程路径**；保存时 URL 结尾 `/` 隐式清除（`configure()` 已有同样的 trim，表单层保持同一规则）。云盘字段默认照 worker `Addition` 原样保留以便对接，逐盘细节落实时询问用户。
 8. **云端写目标唯一选择点**（已按用户决定简化落地）：`sync_screen.dart`「① 选择网盘」下拉（落 `settings.syncAccountId`；凭证 / 歌单 / 音乐库 / 备份共用这条远端路径）与 `SyncService.targetAccount`（含活跃账号兜底）**只认 WebDAV 类型**——云盘没有写路径（7.2.1），用户原话「同步和备份也无法实现，只遍历 webdav 类型即可」。
    - **账号凭证进备份 / 同步（用户决定，2026-07 追加，推翻本条早前的排除段）**：用户原话「同步与备份功能中的WebDav凭证改为账号凭证……除了原有的webdav备份字段，还应该备份其他类型的网盘凭证」「从云端恢复时静默过滤不支持的网盘类型」「加密凭证配置也同步到所有在配置界面默认为密码的数据」。落地：`credentials.json` 升 formatVersion 2（WebDAV 条目 + 云盘条目 `providerType` + `driverConfig`）；云盘配置里 spec 表单 `obscure` 字段（`CloudDriverSpec.secretFieldKeys`）逐字段 AESGCMv1 加密，其余明文；恢复端 `cloudDriverSpec(typeId)` 查不到的类型**静默跳过**（不报错、不建空壳账号）；备份归档的账号遍历同步放开（`BackupService.buildPayload`）。早前「云盘凭据不进备份（档案里没有 secure storage 的驱动配置，恢复不了）」的前提已消失——驱动配置现在随档案 / 凭证库走。细节收口进 [08 §2 / §5](08-SYNC-AND-BACKUP.md)。
 
@@ -214,8 +214,8 @@
 
 ### 4.3 首批驱动（优先做）
 
-`aliyundrive_open`、`baidu_netdisk`、`quark`、`115open`、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。共同特征：refresh_token 或 cookie **粘贴式**登录、直链 + 必需头、写操作全、无重加密（worker 驱动 18–40KB）。移植底稿 `localdev/OpenList-Worker/src/backend/drivers/<name>/`，语义兜底对照 Go 版同目录。
-**首个端到端驱动：`baidu_netdisk`**（用户有测试条件）；`aliyundrive_open` 顺延——缺少测试条件，发布后靠其他用户反馈验收。移植 baidu 时**砍掉 crack 下载 API**（`download_api=crack/crack_video`、`custom_crack_ua`、`getCrackLink` / `getCrackVideoLink`，只走官方 dlink）——用户决定。
+`aliyundrive_open`、`baidu_netdisk`、`quark`、`115open`、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。共同特征：refresh_token 或 cookie **粘贴式**登录、直链 + 必需头、写操作全、无重加密（worker 驱动 18–40KB）。实现底稿 `localdev/OpenList-Worker/src/backend/drivers/<name>/`，语义兜底对照 Go 版同目录。
+**首个端到端驱动：`baidu_netdisk`**（用户有测试条件）；`aliyundrive_open` 顺延——缺少测试条件，发布后靠其他用户反馈验收。实现 baidu 时**砍掉 crack 下载 API**（`download_api=crack/crack_video`、`custom_crack_ua`、`getCrackLink` / `getCrackVideoLink`，只走官方 dlink）——用户决定。
 注意：`139` 带字符集标记，真机要先验编码。
 
 ### 4.3.1 baidu_netdisk（已实现，当前 main 状态按已通过收口）
@@ -233,7 +233,7 @@
 
 ### 4.3.2 mkdir（创建文件夹）能力逐盘核查（OpenList 源码，本轮查证）
 
-- **机制**：Go 版把 MakeDir / Move / Rename / Copy / Remove / Put 做成 `internal/driver` 的**可选接口**（方法名是 `MakeDir`，不是 Mkdir），87 个驱动都有方法签名，只读 / 索引驱动在方法体里返回 `errs.NotImplement`（桩实现）；op 层 type-switch 调用。Worker TS 把 mkdir 做成 `StorageDriver` 必备方法，行为与 Go 一致——真实现或抛「not supported」。**两版能力面一致**（worker 是我们的移植底稿）。
+- **机制**：Go 版把 MakeDir / Move / Rename / Copy / Remove / Put 做成 `internal/driver` 的**可选接口**（方法名是 `MakeDir`，不是 Mkdir），87 个驱动都有方法签名，只读 / 索引驱动在方法体里返回 `errs.NotImplement`（桩实现）；op 层 type-switch 调用。Worker TS 把 mkdir 做成 `StorageDriver` 必备方法，行为与 Go 一致——真实现或抛「not supported」。**两版能力面一致**（worker 是我们的实现底稿）。
 - **首批 9 盘全部真实现 mkdir**（静态表 mkdir = 有）：`baidu_netdisk`（Go `driver.go:96` MakeDir → `create(path, 0, 1)` isdir=1，已验真；worker 同）、`aliyundrive_open`、`quark`、`115open`（worker `driver.ts:339` → `client.mkdir` 真调用，勿被「方法体含 throw」的粗扫误判）、`123_open`、`onedrive`、`onedrive_app`、`terabox`、`139`。
 - **只读家族 mkdir = 无（桩）**：`115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`；`url_tree` 疑似桩（落表前再确认一次）。
 - **已落地盘的能力位实录不再留在本表**：见 [11 §10](11-CLOUD-DRIVER-PORTING.md)（baidu_netdisk）、[11 §11](11-CLOUD-DRIVER-PORTING.md)（netease_music，`list | read | delete`——除删除外四个写方法上游全是桩）、[11 §12](11-CLOUD-DRIVER-PORTING.md)（粘贴凭证直连盘批次：123_open 无 copy，其余三盘五项全）与各驱动实录节。
@@ -255,7 +255,7 @@
 
 ### 4.3.4 第二批四盘（已实现，真机验收通过——用户确认，123_open 打开目录报 invalid_grant 已按用户决定不排查）：123_open / aliyundrive_open / 115open / terabox
 
-按 4.9 的评估与 [13](13-DRIVER-BATCH-PLAN.md) 的筛选标准（粘贴凭证、有直链、无重加密、写方法真实现、单账号形态、worker 底稿完整）选出的快速批次，四盘全部走 [12](12-DRIVER-PORTING-GUIDE.md) 的工序（解耦检查 → 六步移植 → 一盘一测试）。语义与取舍收口进 [13 §4](13-DRIVER-BATCH-PLAN.md) 的字段清单与 [12](12-DRIVER-PORTING-GUIDE.md) 的表单/能力位规则。**共同语义**：直链必需头进 `rawHeaders`；`access_token` 只作缓存经 `onTokenUpdate` 持久化、不进表单；上传/排序字段不进表单；错误原文透传 `CloudDriverException`；`get()` 拿不到直链抛真实原因（不返回无直链条目，11 §10 的有意差异）。
+按 4.9 的评估与 [13](13-DRIVER-BATCH-PLAN.md) 的筛选标准（粘贴凭证、有直链、无重加密、写方法真实现、单账号形态、worker 底稿完整）选出的快速批次，四盘全部走 [12](12-DRIVER-PORTING-GUIDE.md) 的工序（解耦检查 → 六步接入 → 一盘一测试）。语义与取舍收口进 [13 §4](13-DRIVER-BATCH-PLAN.md) 的字段清单与 [12](12-DRIVER-PORTING-GUIDE.md) 的表单/能力位规则。**共同语义**：直链必需头进 `rawHeaders`；`access_token` 只作缓存经 `onTokenUpdate` 持久化、不进表单；上传/排序字段不进表单；错误原文透传 `CloudDriverException`；`get()` 拿不到直链抛真实原因（不返回无直链条目，11 §10 的有意差异）。
 
 - **`123_open`**（`lib/services/cloud_drivers/_123_open_driver.dart`，前缀 `_` 因 Dart 标识符不能以数字开头；typeId 仍 `123_open`）：refresh_token + 在线续期（默认 `api.oplist.org/123cloud/renewapi`，空串回落默认值）+ 本地刷新开关（client_id/secret 联动，极性照百度）；`{code,message,data}` 包裹、`code===401` 刷新后重试一次防死循环；path→id 实例缓存（写后清）。**copy 上游未实现 → 能力位不给 copy**。真机重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
 - **`aliyundrive_open`**：refresh_token + 在线续期**多候选轮询**（自定义地址优先 + 6 内置，去重）→ 全失败落直连 OAuth（内置 client_id）；`drive_type`（resource/default/backup）决定 drive_id，`UserNotAllowedAccessDrive` 自愈重解析一次；`remove_way`（trash/delete）。能力位含 copy。
@@ -282,7 +282,7 @@
 - **已落地增量（真机反馈驱动，语义已收口进固定文档）**：表单控制器与校验显示（[11 §6](11-CLOUD-DRIVER-PORTING.md)）；应用内消息最顶层横幅（[07](07-NOTIFICATIONS.md)）；下载进度按 rclone 块结构 Range 分段、逐块解密（[04 §3](04-DOWNLOAD-QUEUE.md)）；本地流桥（127.0.0.1 HTTP 端点包 `openContentRange`，播放入口无分支，[11 §5](11-CLOUD-DRIVER-PORTING.md)）；账号类型名 `typeLabelFor`（[02 §10](02-NETWORK-LIBRARY.md)）；下载重试三层兜底（分类 / 退避 / 断点续传）与超时补齐、原地重试、单一计数来源（退避见 [04 §2](04-DOWNLOAD-QUEUE.md)；后台失败与重试计数的后续变更见本文件 §7）；大小判定四态 shape + Content-Range 纠偏（[11 §5](11-CLOUD-DRIVER-PORTING.md)）。测试：`crypt_cipher_test` / `crypt_driver_test` / `crypt_stream_bridge_test` / `crypt_webdav_source_test` / `crypt_size_race_test`。
 - **待办**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。当前 main 状态按已通过收口；浏览、下载和坏名字透传后续问题按用户反馈记录。
 
-### 4.6 关键技术点（移植时要一起处理的）
+### 4.6 关键技术点（接入时要一起处理的）
 
 - token / cookie 刷新与持久化：worker 的 cookie 持久化机制（`persistStorageCookie`）要有 Dart 版，落 secure storage。
 - path→id 缓存：worker 驱动实例内的 Map 缓存（如 quark）在移动端的生命周期与失效策略。
@@ -298,7 +298,7 @@
 | 0 | 地基：本文件 §4 迁移、`CloudDriver` 接口 + `CloudDriveService` 骨架、`WebDavService` 缝、能力遮罩枚举与静态表。**已完成**：`flutter analyze` 全清 + 244 测试全过，本文件 §4 随之删除 | `flutter analyze` + `flutter test`；WebDAV 账号行为不变 |
 | 1 | 首个驱动端到端：`baidu_netdisk`。**代码已实现（表单 + 驱动 + 下载 / 流式全链路），当前 main 状态按已通过收口**，清单见 4.3.1 | 真机：添加账号 → 浏览 → 下载 → 流式 |
 | 2 | 能力遮罩接线 UI：WebDAV 表单能力勾选 + 行操作 / 多选按钮按遮罩隐藏 + 只读试点（`openlist_share` + `github_releases`）。**新建文件夹遮罩已提前接入**（网络库 AppBar + 目录选择器，按写入位隐藏） | 真机：只读账号无写入口；WebDAV 能力勾选生效 |
-| 3 | 首批其余驱动逐个移植。**已完成**：粘贴凭证直连盘批次 4 盘（`123_open` / `aliyundrive_open` / `115open` / `terabox`）——批量筛选与逐盘判定见 [13](13-DRIVER-BATCH-PLAN.md)，实现实录见 [11 §12](11-CLOUD-DRIVER-PORTING.md)；`flutter analyze` 无 issue、测试全过，**真机验收通过（用户确认）**。`quark_open`（MustProxy 需流桥）/ `139`（多形态）/ `quark`(cookie) 下沉到后续批 | 真机验收通过（用户确认） |
+| 3 | 首批其余驱动逐个接入。**已完成**：粘贴凭证直连盘批次 4 盘（`123_open` / `aliyundrive_open` / `115open` / `terabox`）——批量筛选与逐盘判定见 [13](13-DRIVER-BATCH-PLAN.md)，实现实录见 [11 §12](11-CLOUD-DRIVER-PORTING.md)；`flutter analyze` 无 issue、测试全过，**真机验收通过（用户确认）**。`quark_open`（MustProxy 需流桥）/ `139`（多形态）/ `quark`(cookie) 下沉到后续批 | 真机验收通过（用户确认） |
 | 4 | 云端写路径禁用语义（backup / sync / playlist 对云盘账号的提示） | 真机：云盘账号同步入口有明确文案 |
 
 阶段 0 代码落点：`lib/models/account_capabilities.dart`（能力位 + 静态表）、`lib/models/webdav_account.dart`（`providerType` / `remotePath` / `capabilities`）、`lib/services/cloud_driver.dart`（接口 + `CloudFileItem`）、`lib/services/cloud_drive_service.dart`（骨架：类型判定 / 能力解析 / 写路径永久禁用）、`lib/services/webdav_service.dart`（`_cloudOf` 分流缝，12 个方法头）、`lib/services/library_database.dart`（v6，accounts 补列 `provider_type` / `remote_path` / `capabilities`）、`lib/services/accounts_service.dart`（`accountById` + 扩参）、`lib/providers/app_state.dart` 与 `lib/main.dart`（装配）。
@@ -309,7 +309,7 @@
 2. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 4.6）。baidu 首轮真机验收就是第一手数据。
 3. 后续驱动（`aliyundrive_open` 等）落实表单时仍按 4.3.1 的模式先报字段清单给用户确认；教程文案统一链 OpenList 官方文档对应驱动页。
 
-### 4.9 全量驱动清单与批量移植评估（OpenList 源码逐盘核查）
+### 4.9 全量驱动清单与驱动接入评估（OpenList 源码逐盘核查）
 
 **数据基线**：worker 版 77 个驱动目录 + Go 版 88 个（`localdev/OpenList-Worker/src/backend/drivers/` 与 `localdev/OpenList/drivers/`），逐盘提取了 Addition 字段、方法实现、代理能力表（`internal/driver/proxy.ts` 是唯一真相）与 crypto 依赖。**能力面的两版一致性已核**：worker 的 mkdir / 写方法与 Go 的可选接口一致（4.3.2）。
 
@@ -318,14 +318,14 @@
 | 批次 | 驱动 | 判定依据 |
 |------|------|----------|
 | **P0 已落地 / 进行中** | `baidu_netdisk`（已实现待验收）、`crypt`（cipher 完成） | 见 4.3.1 / 4.5 |
-| **P1 粘贴凭证直连盘** | **`123_open`、`aliyundrive_open`、`115open`、`terabox`（✅ 本轮已移植，见 4.3.4）**；`quark_open`、`139`、`quark`(cookie) 下沉（判定见 [13 §2.2](13-DRIVER-BATCH-PLAN.md)：MustProxy 要流桥 / 5 种账号形态） | refresh_token / cookie 粘贴式登录、直链 + 必需头、写操作全、无重加密；依赖 `pkg/crypto` 或 `crypto-js` 的地方都有 Dart 对应（AES/RSA/MD5，pointycastle 覆盖） |
+| **P1 粘贴凭证直连盘** | **`123_open`、`aliyundrive_open`、`115open`、`terabox`（✅ 本轮已接入，见 4.3.4）**；`quark_open`、`139`、`quark`(cookie) 下沉（判定见 [13 §2.2](13-DRIVER-BATCH-PLAN.md)：MustProxy 要流桥 / 5 种账号形态） | refresh_token / cookie 粘贴式登录、直链 + 必需头、写操作全、无重加密；依赖 `pkg/crypto` 或 `crypto-js` 的地方都有 Dart 对应（AES/RSA/MD5，pointycastle 覆盖） |
 | **P2 只读家族**（能力遮罩=只读，浏览器式登录或分享链接） | `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`github_releases`、`lenovonas_share`、`autoindex`、`url_tree`、`quark_uc_tv`、`emby`、`google_photo` | 五项写方法全部显式抛「不支持」；接入成本 = `CloudSource` 适配 + 能力遮罩；先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制（4.4） |
 | **P3 OAuth 回调盘** | `onedrive`、`onedrive_app`、`google_drive`、`dropbox`、`yandex_disk`、`pikpak`、`febbox`、`halalcloud_open`、`thunder` | 需要 OAuth client_id/secret + 回调或设备码流程，本地刷新与百度同构（`localRefresh` 开关模式直接复用）；体积不小但模式统一，可模板化批量铺 |
 | **P4 协议 / 存储类** | `webdav`、`sftp`、`smb`、`ftp`、`alist_v3`、`openlist`、`cloudreve_v3`、`cloudreve_v4`、`seafile`、`kodbox`、`mega`、`proton_drive` | 与已有 WebDAV 能力重叠或需要额外协议栈（smb/ftp/sftp 要原生依赖，mega/proton 有自家加密）；`webdav` 驱动可作为「WebDAV 账号统一到云盘账号模型」的迁移出口，优先级单独评估 |
 | **P5 对象存储 / 自建** | `s3`（+Doge）、`uss`、`azure_blob`、`bunny_storage`、`cloudflare_imgbed`、`ipfs_api` | 签名上传/下载为主，无浏览器登录问题；对媒体库场景价值取决于用户是否有这类存储 |
-| **不移植**（用户已砍或无意义） | 上传 6 字段相关、`alias`/`strm`/`virtual`/`chunk`（worker 组合层，语义由本地已有功能承担）、`local`（Go 本地盘）、`template`/`base`（基础设施）、`123_link`（直链专用）、`aliyundrive`（旧版已被 open 取代）、`doubao_new`/`doubao_share`/`thunder_browser`/`thunderx`/`ilanzou`/`123pan`(账号密码版) 等 Go 特有变体 | 用户决定：「C 中保留 crypt 列入待开发，其他的砍掉不进入文档」；变体驱动等后续同源驱动按当前 main 状态和新增反馈重新评估，不再把真机验收作为已完成批次的阻塞条件 |
+| **不接入**（用户已砍或无意义） | 上传 6 字段相关、`alias`/`strm`/`virtual`/`chunk`（worker 组合层，语义由本地已有功能承担）、`local`（Go 本地盘）、`template`/`base`（基础设施）、`123_link`（直链专用）、`aliyundrive`（旧版已被 open 取代）、`doubao_new`/`doubao_share`/`thunder_browser`/`thunderx`/`ilanzou`/`123pan`(账号密码版) 等 Go 特有变体 | 用户决定：「C 中保留 crypt 列入待开发，其他的砍掉不进入文档」；变体驱动等后续同源驱动按当前 main 状态和新增反馈重新评估，不再把真机验收作为已完成批次的阻塞条件 |
 
-#### 逐盘关键参数（P1/P3 全量，移植时按 4.3.1 模式先报字段清单）
+#### 逐盘关键参数（P1/P3 全量，接入时按 4.3.1 模式先报字段清单）
 
 | 驱动 | 登录 | Addition 必填 | 关键依赖 / 坑 |
 |------|------|--------------|---------------|
@@ -336,7 +336,7 @@
 | `terabox` | cookie 粘贴 | `cookie` | 依赖 `pkg/crypto`（js sha1/aes 变体）；直链带 UA 校验 |
 | `139` | authorization 粘贴 | 无（可选 14 项） | **带字符集标记，真机先验编码**（4.3）；ProxyRangeOption |
 | `onedrive` | OAuth | region 等 | 16 字段，`use_online_api`+`api_url_address` 在线续期（百度同构）；region 决定 API host |
-| `onedrive_app` | OAuth(client+tenant) | client_id/secret | 12 字段；`getDirectUploadInfo` 不移植 |
+| `onedrive_app` | OAuth(client+tenant) | client_id/secret | 12 字段；`getDirectUploadInfo` 不接入 |
 | `google_drive` | OAuth | client_id/secret/refresh | MustProxy（无公开直链）→ 必须接流桥；API key 可选 |
 | `dropbox` | OAuth | refresh_token | 10 字段；下载是 POST 流，不是 GET 直链（流桥要处理） |
 | `yandex_disk` | OAuth | refresh_token | 标准 REST；MustProxy=false 有直链 |
@@ -346,16 +346,16 @@
 
 > 登录方式注记：cookie 类（`quark` `139` `terabox` `weiyun` 等）过期要用户手动重贴，表单要放「打开网页复制」的教程链接（教程统一链 OpenList 官方文档对应驱动页，4.8）；OAuth 类的本地刷新直接复用百度「在本地处理令牌刷新」开关 + `disabledWhenSwitch` 联动极性（4.3.1）。
 
-#### 移植模板（批量铺开时的固定工序）
+#### 接入模板（批量铺开时的固定工序）
 
 1. 照 worker `types.ts` Addition 字段定 spec 表单（默认值照抄 Go `meta.go`），先报字段清单给用户确认（4.8）；
-2. 逐方法移植 `driver.ts`（list/get/mkdir/rename/move/copy/remove；**当前只读批次不移植 put**，4.2.1；未来恢复上传时必须按 [4.10](#410-方案-b云盘上传恢复计划未开工) 的 U3–U7 批次与能力门槛单独加入）。
+2. 逐方法对接 `driver.ts`（list/get/mkdir/rename/move/copy/remove；**当前只读批次不实现 put**，4.2.1；未来恢复上传时必须按 [4.10](#410-方案-b云盘上传恢复计划未开工) 的 U3–U7 批次与能力门槛单独加入）。
 3. 能力位照 4.3.2 的静态表登记；MustProxy 驱动同步接流桥（通用 `cloud_drivers/stream_bridge.dart` 是范例）；
 4. crypto 依赖对照：`pkg/crypto`/`crypto-js` 用到的原语（MD5/SHA1/AES/RSA）在 pointycastle 都有对应实现，逐个过测试向量；
 5. 直链必需头进 `rawHeaders` 贯穿下载与流式（[11 §5](11-CLOUD-DRIVER-PORTING.md)）；
 6. 一盘一测试文件：列表 / 直链头 / 錯误原文透传；cookie 类加「过期报错原文」用例。
 
-**评估结论**：批量移植的主要成本不在单个驱动的 API 对接，而在**登录形态**（粘贴 vs OAuth 回调）与**直链形态**（302 vs MustProxy+流桥）。这两维各收敛一套模板后，P1–P3 的 20+ 个驱动可以流水线化铺开；建议每批 2–4 个驱动、测试通过并按 main 状态收口后再进下一批。
+**评估结论**：批量接入的主要成本不在单个驱动的 API 对接，而在**登录形态**（粘贴 vs OAuth 回调）与**直链形态**（302 vs MustProxy+流桥）。这两维各收敛一套模板后，P1–P3 的 20+ 个驱动可以流水线化铺开；建议每批 2–4 个驱动、测试通过并按 main 状态收口后再进下一批。
 ## 4.10 方案 B：云盘上传恢复计划（未开工）
 
 **状态**：未开工，仅作为后续实现参考；当前代码仍保持 [4.2.1](#42-已定型的取舍) 的语义：云盘账号上传与云端写同步禁用。本节不代表上传已经支持，也不改变当前版本的能力遮罩。
@@ -367,7 +367,7 @@
 - **目标**：在不破坏现有 `WebDavService` 对外 API 的前提下，为具备真实 `Put` 实现的云盘逐盘恢复写能力；小文件同步继续可走 `writeBytes`，大文件上传增加文件 / 流入口。
 - **目标**：上传协议、鉴权、哈希、分片、秒传、完成轮询、错误翻译全部留在具体驱动；兼容层只负责路由、能力查询、输入适配、取消与进度传递。
 - **目标**：复用 `AccountCaps.write`。它在本项目中的定义就是「上传 + 云端写同步」，不另造 upload 位；`mkdir` 继续使用独立位。
-- **非目标**：不把 OpenList Worker 的 WebDAV/XML 层移植进 App；不为了上传恢复顺手接入用户已砍掉的 crack 下载 API；不让只读 / 分享 / 索引驱动出现伪写能力；不默认开放所有 OpenList Go 驱动。
+- **非目标**：不把 OpenList Worker 的 WebDAV/XML 层引入 App；不为了上传恢复顺手接入用户已砍掉的 crack 下载 API；不让只读 / 分享 / 索引驱动出现伪写能力；不默认开放所有 OpenList Go 驱动。
 - **当前产品边界**：先恢复驱动层能力与小文件写路径，再单独决定网络库「上传本地文件」UI、上传队列、云盘同步目标是否开放。
 
 ### 4.10.2 推荐接口边界
@@ -429,7 +429,7 @@ Future<CloudFileItem?> put(
 | **G0：只读 / 无 Put** | `*_share`、`openlist_share`、`github_releases`、`autoindex`、`emby`、`google_photo`、`quark_uc_tv` | Put 桩、缺失或语义上没有写路径 | 不适用 | 保持只读能力，不能因为接口新增 put 就默认开放 write |
 | **G1：简单单请求上传** | WebDAV、`alist_v3`、`openlist`、`yandex_disk` | 先获取目标 URL 或直接调用远端 `/api/fs/put`，流式 PUT/POST | 低 | 作为通用上传设施和输入源的验证批次；WebDAV 复用已有客户端 |
 | **G2：预签名 / 分片 URL** | `aliyundrive_open`、`onedrive`、`onedrive_app`、`google_drive`、`dropbox` | 建立上传会话，获得 URL，按分片 PUT/POST，完成会话 | 中 | 驱动负责会话与回执，通用层只负责字节搬运、进度、取消、重试 |
-| **G3：哈希秒传 + 分片状态机** | `baidu_netdisk`、`terabox`、`123_open`、`quark_open`、`quark_uc` | 预计算 MD5/SHA-1，秒传尝试；失败后 precreate / uploadid / 分片 / complete | 中高 | 必须使用可重读文件源；先移植 Go 语义，再用 Worker 做请求形状交叉核对 |
+| **G3：哈希秒传 + 分片状态机** | `baidu_netdisk`、`terabox`、`123_open`、`quark_open`、`quark_uc` | 预计算 MD5/SHA-1，秒传尝试；失败后 precreate / uploadid / 分片 / complete | 中高 | 必须使用可重读文件源；先按 Go 语义实现，再用 Worker 做请求形状交叉核对 |
 | **G4：哈希 + 二次校验 + OSS / 自有签名** | `115open`、`pikpak`、部分国内盘 | 首 hash、指定区间 hash、获取临时凭证、OSS 或签名上传、回调确认 | 高 | 将签名和二次校验留在驱动；真机验证风控、过期凭证和大文件 |
 | **G5：包装 / 加密上传** | `crypt`、`chunk` 等 | 先转换内容或文件名，再委托内层 Put | 高 | 基础源具备 write 后再做；crypt 只按源能力动态暴露 write，不能无条件继承 |
 | **G6：协议 / 自有加密栈** | `sftp`、`smb`、`ftp`、`mega`、`proton_drive` | 非 HTTP 或包含自有加密 / 会话协议 | 高 / 很高 | 不作为本轮上传恢复目标，单独评估依赖、后台执行和安全性 |
@@ -466,7 +466,7 @@ Future<CloudFileItem?> put(
 | `quark_open` | 高 | Go 版需要 MD5/SHA1、预上传、分片 URL、etag / commit；Worker 桩不能作为上传依据；MustProxy 只影响读取，不阻止上传 |
 | `quark` / `quark_uc` | 高 | 与 `quark_open` 类似，额外有 Cookie / 账号形态差异；等待 quark_open 的通用分片和签名材料收敛后再做 |
 | `139` | 很高 | Go 版按 PersonalNew、Group、Family、旧流上传等多形态分支；Worker 只有空壳；先完成字符集与账号形态核验再排期 |
-| `netease_music` | 高 | Go 版 `putSongStream` 要缓存完整文件、检查存在、分配 token、上传、发布信息；Worker 没有可用上传底稿；技术可行但不纳入第一轮 |
+| `netease_music` | 高 | Go 版 `putSongStream` 要缓存完整文件、检查存在、分配 token、上传、发布信息；Worker 没有可用的上传实现参照；技术可行但不纳入第一轮 |
 
 #### 第四阶段：OAuth、协议和对象存储
 
