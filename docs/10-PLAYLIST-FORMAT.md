@@ -86,7 +86,7 @@ wmp://<网盘名>/<remotePath>
 | 常量 | 文件类 | 完整魔数 | 含义 |
 |------|--------|----------|------|
 | `appTag` | — | `WDMM` | 全局标识，每个二进制文件都以它开头 |
-| `layoutVersion` | — | `01` | 容器布局版本，所有文件类共用 |
+| `layoutVersion` | — | `01` | 容器布局版本，**所有文件类共用一个值**（见 §4.1.2） |
 | `WmpFileKind.base` | `LB` | `WDMMLB01` | 曲库基础分片（重建时写的大切片） |
 | `WmpFileKind.seg` | `LS` | `WDMMLS01` | 曲库增量分片（只含新增 / 修改行） |
 | `WmpFileKind.tomb` | `LT` | `WDMMLT01` | 曲库墓碑分片（删除记录） |
@@ -94,6 +94,8 @@ wmp://<网盘名>/<remotePath>
 | `WmpFileKind.exportBundle` | `EX` | `WDMMEX01` | 保留：可分享的曲库包 |
 | `WmpFileKind.credentials` | `CR` | `WDMMCR01` | 保留：凭证 / 保管库包 |
 | `WmpFileKind.envelope` | `EN` | `WDMMEN01` | 加密外壳，**不是 document**，可包裹任意 document 类文件 |
+
+**注意版本号是两套，别混**：魔数末两位是**容器物理布局**版本（全局 `'01'`，§4.1.2）；而数据模型版本另在文件内部——曲库清单在 `index.json` 的 `formatVersion`，备份在 `META.note` 的 `formatVersion`，凭证在 `CredentialVaultService.formatVersion`。**加字段、加段都不需要动魔数**（未知段 id 直接忽略）。
 
 - `documents` 集合 = `{LB, LS, LT, BK, EX, CR}`；`EN` 刻意不在其中，因此 `looksLikeContainer` 永不接受一个加密外壳。
 - 段 id 现状（`WmpSections`）：`META=1`、`TRACKS=2`、`COVERS=3`、`TOMBS=4`、`CREDENTIALS=5`、`PLAYLISTS=6`、`SETTINGS=7`、`CUE_ALBUMS=8`。
@@ -114,6 +116,8 @@ wmp://<网盘名>/<remotePath>
 
 按 `WmpFileKind` 的既定约定，加一个文件类是「这里一行 + `WmpKind` 双生一行」，另在 `metaKindOf` / `forMetaKind` 各加一个 case。
 
+**但魔数末两位（布局版本）不是按文件类的**，加文件类时不要以为可以给 `PL` 单独指定版本——见 §4.1.2。
+
 ### 4.1.1 段 id 是 `u8`，这是一个硬约束
 
 段表项的第一个字节就是段 id：
@@ -128,6 +132,52 @@ id: bytes[base],            // wmp_container.dart:505 — 读
 **推论（写代码前必读）**：**不能**给每个歌单分配一个独立段 id。那样全表只剩约 246 个可用 id，每加一个歌单都要动 id 分配表，且歌单数一超就写不出来。
 
 因此备份内嵌歌单采用 **c2′**：`PLAYLISTS=6` 仍是**唯一一个段**，**段内记录数 = 歌单数**，每个歌单占一条 record，容量无上限。下文 §4.3 的「一个歌单一段」指的是**段内一条独立记录**，不是独立段 id。
+
+### 4.1.2 `layoutVersion` 是全局共享的（现状约束与陷阱）
+
+**事实**：魔数第 6–8 字节是 `WmpContainer.layoutVersion`，它是**一个全局常量 `'01'`**，**不属于任何文件类**。
+
+```dart
+static const String layoutVersion = '01';                       // :388
+static Uint8List magicFor(String kind) =>                       // :404
+    Uint8List.fromList(utf8.encode('$appTag$kind$layoutVersion'));
+static bool looksLikeContainer(Uint8List bytes) {               // :464
+  ...
+  return layoutOf(bytes) == layoutVersion;                      // :468
+}
+```
+
+**陷阱**：`magicFor(kind)` 的签名长得像「版本跟着 kind 走」（参数只有 kind），但 `layoutVersion` 是常量。**未来有人在 `PL` 上想升版本时，很可能以为只影响 `PL`，实际会同时废弃全部文件类。**
+
+**改动的完整影响面**（已核查，全部触点）：
+
+| 类别 | 位置 | 说明 |
+|------|------|------|
+| 常量 | `wmp_container.dart:388` | 单一常量需变为按 kind 查表 |
+| 写魔数 | `:405` `magicFor` | 按 kind 取版本 |
+| 读门禁 | `:468` `looksLikeContainer` | 需按**该文件的 kind** 取期望版本 |
+| 读门禁 | `:492` `fromBytes` | 同上——**这是唯一的解析入口** |
+| 写头 | `:545` | 已带 kind 参数，不用改 |
+| 调用方 | `backup_service.dart:406` / `:435` | 仅经上面两个入口，不自解魔数 |
+| 调用方 | `library_shard_codec.dart:253` | 同上 |
+| 测试 | `test/wmp_container_test.dart:252-271` | 固化「版本全局」假设；仅在真升某 kind 版本时需改 |
+| 测试 | `test/backup_container_test.dart:181` | 不受影响 |
+
+**结论：保持现状，不改为按类独立。** 理由：
+
+1. **当前只有 `01` 一个版本**，改成按类独立立刻多出「kind × 版本」矩阵逻辑，而收益要等到真需要「只升级一种文件」时才兑现——是纯预付费。
+2. **与本次改动有交互风险**：§4.3 设计了备份内嵌 `.wdmp` / `.cv` 文件字节，若版本按类独立，备份内可同时存在 `BK01` + 内嵌 `PL01`/`PL02`/`CV01`，读取就变成「外层版本 × 内层版本」矩阵，**备份的兼容性 = 所有内嵌文件兼容性的交集**——一个旧 `PL01` 就能让整个备份恢复失败。现状的「一刀切」反而更简单：要么整包能读，要么整包不能读。
+3. **拖延不会让改动变大**，因为解析入口只有 `looksLikeContainer` / `fromBytes` 两个。
+
+**未来改动预案**（仅当确实需要「只升级一种文件」时执行）：
+
+1. 把 `layoutVersion` 从常量改为 `layoutVersionFor(String kind)` 查表，默认 `'01'`。
+2. `magicFor(kind)` 与两处门禁改为查表；`fromBytes` 先读 `kindOf`、再比该 kind 的期望版本。
+3. **明确定义多版本共存策略**——必须回答三个问题，否则不要动手：
+   - 同一 kind 的多个版本**是否同时可读**？建议：**否**，一种 kind 只认一个当前版本（与现状对齐，避免解析分支膨胀）。
+   - **嵌套**怎么判？备份内嵌的 `PL` 版本比外层旧时，是**按内层自己的版本判**（推荐，各文件自治），还是拒绝整个备份？建议各文件自治，但**恢复时必须把「哪个内嵌文件因版本不匹配被跳过」报告给用户**，不能静默丢。
+   - `envelope`（`EN`）的版本跟谁走？建议**跟被包裹的 document 走**，`EN` 自身不承担版本语义（它现在是 `WDMMEN01`，且刻意不在 `documents` 里）。
+4. 补测试：跨 kind 版本共存（`PL02` + `LB01` 同目录可读）、同 kind 旧版本被明确拒绝并给出可读错误、内嵌旧版本的部分跳过与报告。
 
 ### 4.2 歌单文件（`PL`）段布局
 
