@@ -212,6 +212,11 @@ mode_release() {
     TAG="${REF_NAME}"
     SHA="$(git rev-parse "refs/tags/${TAG}^{}")"
   fi
+  if printf '%s' "$TAG" | grep -Eq '^v(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)-[0-9a-f]{7}$'; then
+    echo "${TAG} 是预发布标签，由 pre-release workflow 处理；正式版 workflow 跳过。"
+    set_out proceed false
+    exit 0
+  fi
   check_release_tag
 }
 
@@ -223,7 +228,7 @@ mode_prerelease() {
   fi
   git fetch origin main --tags --force
   git checkout --detach origin/main
-  local base head release_sha last="" seq=1
+  local base head release_sha short name tag
   base="$(highest_other "")"
   if [ -z "$base" ]; then
     remind_missing
@@ -231,63 +236,90 @@ mode_prerelease() {
   fi
   head="$(git rev-parse HEAD)"
   release_sha="$(git rev-parse "${base}^{}")"
-  if git rev-parse -q --verify refs/tags/prerelease >/dev/null; then
-    last="$(git rev-parse "refs/tags/prerelease^{}")"
-  fi
-  local old_base="" old_seq="" old_sha="" msg body published_sha=""
-  body="$(gh release view prerelease --repo "$REPO" --json body --jq .body 2>/dev/null || true)"
-  published_sha="$(printf '%s\n' "$body" | sed -n 's/^sha=//p' | head -n 1 || true)"
-  if [ -n "$last" ]; then
-    msg="$(git tag -l --format='%(contents)' prerelease || true)"
-    old_base="$(printf '%s\n' "$msg" | sed -n 's/^base_tag=//p' | head -n 1 || true)"
-    old_seq="$(printf '%s\n' "$msg" | sed -n 's/^seq=//p' | head -n 1 || true)"
-    old_sha="$(printf '%s\n' "$msg" | sed -n 's/^sha=//p' | head -n 1 || true)"
-  fi
-  if [ -z "$old_seq" ]; then
-    old_base="$(printf '%s\n' "$body" | sed -n 's/^base_tag=//p' | head -n 1 || true)"
-    old_seq="$(printf '%s\n' "$body" | sed -n 's/^seq=//p' | head -n 1 || true)"
-    old_sha="$(printf '%s\n' "$body" | sed -n 's/^sha=//p' | head -n 1 || true)"
-  fi
-  if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-    if [ -n "$published_sha" ] && [ "$published_sha" = "$head" ]; then
-      echo "main 的该提交已经发过 Pre-release。"
-      set_out proceed false
-      exit 0
-    fi
-    if [ -n "$old_sha" ] && [ "$old_sha" = "$head" ]; then
-      echo "main 的该提交已经记入 prerelease 标签。"
-      set_out proceed false
-      exit 0
-    fi
-    if [ "$head" = "$release_sha" ]; then
-      echo "main 与正式标签指向同一提交，跳过预发布。"
-      set_out proceed false
-      exit 0
-    fi
-  fi
-  if ! printf '%s' "$old_seq" | grep -Eq '^[0-9]+$'; then
-    old_seq=""
-  fi
-  if [ -n "$old_sha" ] && [ "$old_sha" = "$head" ] && [ -n "$old_seq" ]; then
-    seq="$old_seq"
-  elif [ -n "$old_base" ] && [ "$old_base" = "$base" ] && [ -n "$old_seq" ]; then
-    seq=$((old_seq + 1))
-  fi
-  if [ "$seq" -gt 999 ]; then
-    notify "预发布序号已用尽：${base}" "$(printf '基准标签 %s 的后三位已到 999，未构建。\n\n- 运行：%s\n' "$base" "$RUN_URL")" || true
+  if [ "$EVENT_NAME" != "workflow_dispatch" ] && [ "$head" = "$release_sha" ]; then
+    echo "main 与正式标签指向同一提交，跳过预发布。"
     set_out proceed false
-    exit 1
+    exit 0
   fi
-  split_ver "$base"
-  local code short name
-  code="$(version_code "$SPLIT_MAJOR" "$SPLIT_MINOR" "$SPLIT_PATCH" "$seq")"
-  if [ "$code" -gt 2100000000 ]; then
-    notify "预发布 versionCode 超限：${base}" "$(printf '计算出的 versionCode %s 超过 2100000000，未构建。\n\n- 运行：%s\n' "$code" "$RUN_URL")" || true
-    set_out proceed false
-    exit 1
-  fi
+
   short="$(git rev-parse --short=7 HEAD | cut -c1-7)"
   name="${base}-${short}"
+  tag="$name"
+
+  # 同一基准下从既有独立标签的 metadata 续号；旧 prerelease 标签只作为迁移兼容来源。
+  local max_seq=0 t msg t_base t_seq
+  while IFS= read -r t; do
+    [ -z "$t" ] && continue
+    msg="$(git tag -l --format='%(contents)' "$t" || true)"
+    t_base="$(printf '%s\n' "$msg" | sed -n 's/^base_tag=//p' | head -n 1 || true)"
+    t_seq="$(printf '%s\n' "$msg" | sed -n 's/^seq=//p' | head -n 1 || true)"
+    [ "$t_base" = "$base" ] || continue
+    printf '%s' "$t_seq" | grep -Eq '^[0-9]+$' || continue
+    if [ "$t_seq" -gt "$max_seq" ]; then
+      max_seq="$t_seq"
+    fi
+  done < <(git tag -l "${base}-*"; git tag -l 'prerelease')
+
+  local existing_sha existing_seq existing_code
+  existing_sha=""
+  existing_seq=""
+  existing_code=""
+  if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+    existing_sha="$(git rev-parse "${tag}^{}")"
+    if [ "$existing_sha" != "$head" ]; then
+      echo "::error::标签 ${tag} 已存在且指向 ${existing_sha}，与当前 main 提交 ${head} 不一致，拒绝覆盖。"
+      set_out proceed false
+      exit 1
+    fi
+    msg="$(git tag -l --format='%(contents)' "$tag" || true)"
+    existing_seq="$(printf '%s\n' "$msg" | sed -n 's/^seq=//p' | head -n 1 || true)"
+    existing_code="$(printf '%s\n' "$msg" | sed -n 's/^version_code=//p' | head -n 1 || true)"
+    if ! printf '%s' "$existing_seq" | grep -Eq '^[0-9]+$' || ! printf '%s' "$existing_code" | grep -Eq '^[0-9]+$'; then
+      echo "::error::标签 ${tag} 缺少有效的 seq/version_code metadata，无法安全重用。"
+      set_out proceed false
+      exit 1
+    fi
+    if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+      if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+        echo "main 的该提交已经发过 Pre-release（${tag}）。"
+        set_out proceed false
+        exit 0
+      fi
+      echo "发现未完成发布的预发布标签 ${tag}，本次复用它补发。"
+    else
+      echo "手动重跑同一提交，复用标签 ${tag} 及其 versionCode。"
+    fi
+  fi
+
+  if [ -z "$existing_sha" ] && [ "$EVENT_NAME" != "workflow_dispatch" ] && git rev-parse -q --verify refs/tags/prerelease >/dev/null; then
+    legacy_sha="$(git rev-parse 'refs/tags/prerelease^{}')"
+    if [ "$legacy_sha" = "$head" ] && gh release view prerelease --repo "$REPO" >/dev/null 2>&1; then
+      echo "main 的该提交已经由旧 prerelease Release 发布。"
+      set_out proceed false
+      exit 0
+    fi
+  fi
+
+  local seq code
+  if [ -n "$existing_seq" ]; then
+    seq="$existing_seq"
+    code="$existing_code"
+  else
+    seq=$((max_seq + 1))
+    if [ "$seq" -gt 999 ]; then
+      notify "预发布序号已用尽：${base}" "$(printf '基准标签 %s 的后三位已到 999，未构建。\n\n- 运行：%s\n' "$base" "$RUN_URL")" || true
+      set_out proceed false
+      exit 1
+    fi
+    split_ver "$base"
+    code="$(version_code "$SPLIT_MAJOR" "$SPLIT_MINOR" "$SPLIT_PATCH" "$seq")"
+    if [ "$code" -gt 2100000000 ]; then
+      notify "预发布 versionCode 超限：${base}" "$(printf '计算出的 versionCode %s 超过 2100000000，未构建。\n\n- 运行：%s\n' "$code" "$RUN_URL")" || true
+      set_out proceed false
+      exit 1
+    fi
+  fi
+
   set_out proceed true
   set_out version_name "$name"
   set_out version_code "$code"
@@ -295,7 +327,7 @@ mode_prerelease() {
   set_out base_tag "$base"
   set_out sha "$head"
   set_out seq "$seq"
-  set_out tag "$base"
+  set_out tag "$tag"
 }
 
 case "$GATE_MODE" in

@@ -2,6 +2,8 @@ name: Pre-release Build
 
 # 预发布的检查、编译与发版，同一流程内串行：check → build → release。
 # 与 Release 同源 main：预发布也算 main 的提交，基准是上一个正式版标签。
+# 每次预发布使用独立标签 <版本名>（如 v0.2.2-b6d252e）和独立 Release，历史预发布全部保留。
+# 不移动、不删除旧 prerelease 标签或 Release；同标签重跑只覆盖该 Release 中的同名 asset。
 # 发版直接用同一次运行的产物，不再由 workflow_run 接续。编译步骤保持不变。
 # 没有合法标签或不需要构建时，不上传产物。
 
@@ -29,6 +31,7 @@ jobs:
       base_tag: ${{ steps.decision.outputs.base_tag }}
       sha: ${{ steps.decision.outputs.sha }}
       seq: ${{ steps.decision.outputs.seq }}
+      tag: ${{ steps.decision.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -190,7 +193,8 @@ jobs:
             printf 'base_tag=%s\n' "${{ needs.check.outputs.base_tag }}"
             printf 'sha=%s\n' "${{ needs.check.outputs.sha }}"
             printf 'seq=%s\n' "${{ needs.check.outputs.seq }}"
-          } > dist/meta.env
+           printf 'tag=%s\n' "${{ needs.check.outputs.tag }}"
+           } > dist/meta.env
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
@@ -234,11 +238,21 @@ jobs:
           short_sha="$(meta short_sha)"
           base_tag="$(meta base_tag)"
           sha="$(meta sha)"
-          seq="$(meta seq)"
+           seq="$(meta seq)"
+           tag="$(meta tag)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a prerelease "$sha" -f -m "$(printf 'version_name=%s\nversion_code=%s\nbase_tag=%s\nseq=%s\nsha=%s\n' "$version_name" "$version_code" "$base_tag" "$seq" "$sha")"
-          git push "https://github.com/${REPO}.git" "+refs/tags/prerelease:refs/tags/prerelease"
+          if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+             existing_sha="$(git rev-parse "${tag}^{}")"
+             if [ "$existing_sha" != "$sha" ]; then
+               echo "::error::标签 ${tag} 已存在且指向 ${existing_sha}，与本次构建提交 ${sha} 不一致，拒绝移动。"
+               exit 1
+             fi
+             echo "标签 ${tag} 已存在，保持不动。"
+           else
+             git tag -a "$tag" "$sha" -m "$(printf 'version_name=%s\nversion_code=%s\nbase_tag=%s\nseq=%s\nsha=%s\n' "$version_name" "$version_code" "$base_tag" "$seq" "$sha")"
+          fi
+           git push "https://github.com/${REPO}.git" "refs/tags/${tag}:refs/tags/${tag}"
           git fetch origin main --tags --force
           script="$(mktemp)"
           git show origin/main:.github/scripts/commit-list.sh > "$script"
@@ -251,17 +265,9 @@ jobs:
             printf '自上一正式版以来：\n\n%s\n\n' "$changes"
             printf 'base_tag=%s\nseq=%s\nsha=%s\n' "$base_tag" "$seq" "$sha"
           } > "$notes"
-          if gh release view prerelease --repo "$REPO" >/dev/null 2>&1; then
-            # 每次发版先清空上一轮的 asset：版本号变了之后旧文件名不会被 --clobber
-            # 覆盖，留着会让用户下到过期包（用户要求：每次发版删除之前的 asset）。
-            gh release view prerelease --repo "$REPO" --json assets \
-              --jq '.assets[].name' | while IFS= read -r name; do
-                [ -n "$name" ] || continue
-                echo "删除旧 asset：$name"
-                gh release delete-asset prerelease "$name" --repo "$REPO" --yes
-              done
-            gh release edit prerelease --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
-            gh release upload prerelease dist/*.apk dist/*.aab --repo "$REPO" --clobber
+          if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
+             gh release edit "$tag" --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
+            gh release upload "$tag" dist/*.apk dist/*.aab --repo "$REPO" --clobber
           else
-            gh release create prerelease dist/*.apk dist/*.aab --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
+            gh release create "$tag" dist/*.apk dist/*.aab --repo "$REPO" --target "$sha" --title "Pre-release ${version_name} (${version_code})" --notes-file "$notes" --prerelease
           fi

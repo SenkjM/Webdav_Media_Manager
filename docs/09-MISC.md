@@ -52,8 +52,8 @@ CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.
 | 任意分支 push | **不**触发构建 |
 | 推 `v*` 标签（release） | 检查标签合法且严格递增 → 编译 → 建 Release |
 | 手动 `workflow_dispatch`（release） | 给当前 `main` 打标签，再做同一套检查；所选引用不是 `main` 时拦下 |
-| 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：相对上次 `prerelease` 有新提交才构建发布 |
-| 手动 `workflow_dispatch`（pre-release） | 同上；**所选引用不是 `main` 时跳过** |
+| 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：当前提交已有独立预发布标签则跳过，否则使用版本名作为独立标签和独立 Release 发布，历史预发布保留 |
+| 手动 `workflow_dispatch`（pre-release） | 同一提交复用已有标签并刷新该 Release；**所选引用不是 `main` 时跳过** |
 
 **分包与压缩存放**：三个单 ABI 包（`arm64-v8a` / `armeabi-v7a` / `x86_64`）加一个去掉 x86 的合并包；原生库压缩存放（`useLegacyPackaging = true`）。实测（v0.1.0 通用包 101.3 MiB）：`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB，非原生部分只有 2.7 MiB——所以分包才是主要收益。v0.2.0 起 CI 产出三个 split APK，当前 main 状态按已测试结果收口。
 
