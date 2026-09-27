@@ -33,6 +33,7 @@
 | 07 | [07-NOTIFICATIONS.md](07-NOTIFICATIONS.md) | 媒体通知、下载进度 / 完成通知、权限与通道定义 |
 | 08 | [08-SYNC-AND-BACKUP.md](08-SYNC-AND-BACKUP.md) | 远端路径、凭证 / 歌单 / 曲库同步、备份归档与恢复 |
 | 09 | [09-MISC.md](09-MISC.md) | 代码地图、构建发布、编码约定与陷阱、测试入口、历史回归、待办 |
+| 10 | [10-PLAYLIST-FORMAT.md](10-PLAYLIST-FORMAT.md) | **歌单格式与身份**：歌单 = 小型音乐库、与曲库的边界（销毁曲目不影响歌单）、现状 M3U8、计划中的二进制容器格式 |
 | 99 | [99-IN-PROGRESS.md](99-IN-PROGRESS.md) | **开发中文档**：正在开发的功能的原始语义、取舍与影响面；也是计划、待办和未决问题的唯一记录处 |
 | 11 | [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md) | **从 OpenList / rclone 移植驱动的要点与陷阱**：架构映射、必须逐字节对齐的格式、直链与本地流桥、测试策略、已落地驱动实录（baidu / netease_music / crypt）、分层与路由边界 |
 | 12 | [12-DRIVER-PORTING-GUIDE.md](12-DRIVER-PORTING-GUIDE.md) | **云盘驱动移植指南（操作手册）**：解耦检查（只动两个文件）、固定六步工序、表单字段与开关联动极性、测试手法、多盘并行移植的 worktree 工序、常见错误对照表 |

@@ -41,6 +41,8 @@
 | 歌单 | **真同步**：双向 M3U8，`updatedAt` 最后写入胜出；改动即时上传，启动 / 切换账号 / 定时拉取 |
 
 歌单文件是扩展 M3U8：`#EXTM3U` + `#EXT-X-WMP-ID` / `-UPDATED` / `-NAME`，路径行 `wmp://<accountId>/<remotePath>`；最后写入胜出由 `-UPDATED` 判定。**`WMP` 前缀是历史产品缩写、属于磁盘格式，不要改名**——已同步的歌单依赖它。编解码在 `lib/utils/m3u8_playlist.dart`。
+
+> **占位（格式变更进行中）**：歌单格式计划从扩展 M3U8 换为二进制容器（`WDMMPL01`），条目身份改为 `musicId`；同时修正「销毁曲目影响歌单条目」的错误绑定。语义与取舍见 [10](10-PLAYLIST-FORMAT.md) 与 [99](99-IN-PROGRESS.md)。
 | 音乐库 | **增量**：`library.addListener` 防抖 20 s 后 `syncLibraryIncremental()`；手动「重建」`syncLibraryFull()` 才对齐删除。**重建会把云端库整体替换成本地快照**：旧基础分片、增量段与 `del-*` 墓碑文件全部删除，本地墓碑随即清零 |
 | 全部备份 | `backupTo(passphrase:)` 打成**一个**归档写到 `<远端路径>backup/` |
 

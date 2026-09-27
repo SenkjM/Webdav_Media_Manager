@@ -519,6 +519,33 @@ Future<CloudFileItem?> put(
 
 用户语义本该成立、但当前代码不满足（或暂时搁置）的冲突。每条写明用户原话、现状、指向的固定文档小节与代码位置；修复后按 [00 §1](00-INDEX.md) 的收口规则把语义搬进对应正文，本节删除该条。
 
+### 5.0 歌单格式换二进制容器 + 主键统一 + 解绑曲库（文档已落地，代码未开工）
+
+**状态**：文档已落地（[10](10-PLAYLIST-FORMAT.md) 已建；本节记录原始语义），**代码未动**。
+
+**用户原话与决定**：
+
+1. 「我想使用方案 B，并使用和外部导出数据库类似的逻辑。」——即复用曲库分片 / 备份归档已有的二进制容器（`WmpContainer`，魔数 `WDMM` + 文件类 + 段表 + CRC32 + deflate），**不发明第二套容器**。
+2. 「构建专有格式，使用二进制直接编码而不用 json 这种面向人类的格式以节省空间。」——`META` / `ENTRIES` 走现有 tag 记录编码；封面段走 `rawIds`（不 deflate）。
+3. 「区别是采用每个歌单独立文件进行管理。」——曲库是**一个大库分片**（`lib-` / `seg-` / `del-`，为增量）；歌单是**多个小库各自成文件**（每个歌单独立同步、独立删除）。这是刻意的不对称。
+4. **错误绑定修正**：「销毁曲目只影响音乐库，不影响歌单列表，歌单列表应视为与音乐库平行，但是主键和管理方式类似的一种格式，在某种意义上可以认为是一个小型音乐库。」
+
+**现状（错误绑定）**：
+
+- `PlaylistService.removeEntriesNotIn(validKeys)` 会把「不在曲库里的歌单条目」当作孤儿**直接删除**（`playlist_service.dart`），即歌单条目被曲库存亡绑架。曲库重建、扫描不全、路径书写变体都会**静默删掉用户歌单条目**。
+- 另有 `AppState.destroyMusicLibrary()` 调 `removeEntriesNotIn(const {})` 清空全部歌单条目——**这一条是正确的**（用户显式选择销毁整库），保留。
+- 推断出的第二条风险（未构造数据复现）：`identityKey` 用**未归一化**的原始 `remotePath` 拼键，而曲库 `musicId` 用 `normalizeRemotePath`；两者不等价，是「明明有这条却匹配不上」的根源，也是上面静默删除的触发器之一。
+
+**应有的语义**：
+
+- 歌单条目与曲库行**解耦**。曲库里没有的歌只是「未解析」（界面显示「库中暂无」），**不构成删除理由**；条目删除只能来自用户显式操作。
+- 条目权威身份改为 `musicId`（与曲库同键），`sourceName` / `remotePath` 保留作显示与回退；CUE 分片加**显式字段** `cueTrackIndex`，不再依赖 `remotePath` 内嵌 `#cue:<n>`。
+- 远端格式换 `.wdmp`（`WmpFileKind` 新增 `PL`，magic `WDMMPL01`），拉取时兼容读 `.m3u` / `.m3u8`，首次同步重写并删除旧文件。
+
+**影响面（待改）**：`lib/utils/m3u8_playlist.dart`（替换）、`lib/models/playlist.dart`（`PlaylistEntry` 加 `musicId` / `cueTrackIndex`）、`lib/services/playlist_service.dart`（同步编排、去掉误删逻辑）、`lib/services/playlist_store.dart`（`entries_json` 是 JSON blob，**不需要改表、不需要 DB 版本迁移**）、`lib/utils/wmp_container.dart`（登记 `PL` 文件类）、`lib/utils/track_identity.dart`。
+
+**验收（未做）**：`flutter analyze` 干净 + `flutter test` 全过；需补的测试：新旧格式 round-trip、旧 M3U8 读入、`musicId` 命中、CUE 分片区分、**销毁曲目后歌单条目仍在**。
+
 ### 5.1 后缀改过的音频走错播放页（用户已报，暂不处理）
 
 - **用户语义**：文件实际是音频（如 `.m4a` 改名成 `.mp4`），点开应该进音乐流式播放页，而不是视频播放页。
