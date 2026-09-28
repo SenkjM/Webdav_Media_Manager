@@ -37,6 +37,7 @@
 | 11 | [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md) | **从 OpenList / rclone 移植驱动的要点与陷阱**：架构映射、必须逐字节对齐的格式、直链与本地流桥、测试策略、已落地驱动实录（baidu / netease_music / crypt）、分层与路由边界 |
 | 12 | [12-DRIVER-PORTING-GUIDE.md](12-DRIVER-PORTING-GUIDE.md) | **云盘驱动移植指南（操作手册）**：解耦检查（只动两个文件）、固定六步工序、表单字段与开关联动极性、测试手法、多盘并行移植的 worktree 工序、常见错误对照表 |
 | 13 | [13-DRIVER-BATCH-PLAN.md](13-DRIVER-BATCH-PLAN.md) | **驱动批次筛选与规划**：99 §4.9 的执行侧收敛——「快速可实现」六条筛选标准、本轮四盘（123_open / aliyundrive_open / 115open / terabox）的核查与验收、下沉批次的卡点记录 |
+| 14 | [14-LOCALIZATION-AND-MEDIA-LIFECYCLE.md](14-LOCALIZATION-AND-MEDIA-LIFECYCLE.md) | 应用语言偏好、ARB 维护、服务层错误本地化与 Android media_kit native 生命周期约定 |
 
 ## 3. Agent 编码约束
 
