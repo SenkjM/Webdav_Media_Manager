@@ -10,6 +10,7 @@ import 'package:media_kit/media_kit.dart';
 
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
+import '../utils/l10n_host.dart';
 import 'media_notification_channel.dart';
 
 // The「音乐播放」channel definition lives in media_notification_channel.dart and
@@ -104,8 +105,8 @@ enum AudioHandlerMode {
 /// clipEnd) to match the previous just_audio ClippingAudioSource behavior.
 class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   MusicAudioHandler({Player? player, Player? videoPlayer})
-      : _player = player ?? Player(),
-        _videoPlayer = videoPlayer {
+    : _player = player ?? Player(),
+      _videoPlayer = videoPlayer {
     _playingSub = _player.stream.playing.listen((_) {
       if (mode == AudioHandlerMode.music) _broadcastState();
     });
@@ -232,9 +233,8 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       (_index >= 0 && _index < _tracks.length) ? _tracks[_index] : null;
 
   /// Active player: video while streaming, otherwise the music queue player.
-  Player get player => _mode == AudioHandlerMode.video
-      ? (_videoPlayer ?? _player)
-      : _player;
+  Player get player =>
+      _mode == AudioHandlerMode.video ? (_videoPlayer ?? _player) : _player;
 
   bool get playing => player.state.playing;
 
@@ -285,7 +285,9 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     try {
       final session = await AudioSession.instance;
       await session.configure(const AudioSessionConfiguration.music());
-      _interruptionSub = session.interruptionEventStream.listen(_onInterruption);
+      _interruptionSub = session.interruptionEventStream.listen(
+        _onInterruption,
+      );
       _becomingNoisySub = session.becomingNoisyEventStream.listen((_) {
         unawaited(pause());
       });
@@ -309,7 +311,9 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       switch (event.type) {
         case AudioInterruptionType.duck:
           _duckedByInterruption = true;
-          unawaited(_player.setVolume((_player.state.volume * 0.5).clamp(0.0, 100.0)));
+          unawaited(
+            _player.setVolume((_player.state.volume * 0.5).clamp(0.0, 100.0)),
+          );
           break;
         case AudioInterruptionType.pause:
         case AudioInterruptionType.unknown:
@@ -381,16 +385,18 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     // Publish non-idle BEFORE open(). A transient idle broadcast here would
     // make native audio_service call AudioService.stop() and kill the
     // MediaStyle notification.
-    playbackState.add(playbackState.value.copyWith(
-      controls: _controls(playing: false),
-      systemActions: _kSystemActions,
-      androidCompactActionIndices: const [0, 1, 3],
-      processingState: AudioProcessingState.buffering,
-      playing: false,
-      updatePosition: Duration.zero,
-      bufferedPosition: Duration.zero,
-      queueIndex: _index,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _controls(playing: false),
+        systemActions: _kSystemActions,
+        androidCompactActionIndices: const [0, 1, 3],
+        processingState: AudioProcessingState.buffering,
+        playing: false,
+        updatePosition: Duration.zero,
+        bufferedPosition: Duration.zero,
+        queueIndex: _index,
+      ),
+    );
 
     try {
       await _player.open(_mediaFor(_tracks[_index], localPath), play: false);
@@ -417,10 +423,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// Video has no queue: play/pause + stop only, and no seek system actions.
   List<MediaControl> _videoControls({required bool playing}) {
-    return [
-      if (playing) _kPauseControl else _kPlayControl,
-      _kStopControl,
-    ];
+    return [if (playing) _kPauseControl else _kPlayControl, _kStopControl];
   }
 
   static const Set<MediaAction> _kVideoSystemActions = {
@@ -448,17 +451,19 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     } else {
       proc = AudioProcessingState.ready;
     }
-    playbackState.add(playbackState.value.copyWith(
-      controls: _controls(playing: playingNow),
-      systemActions: _kSystemActions,
-      androidCompactActionIndices: const [0, 1, 3],
-      processingState: proc,
-      playing: playingNow,
-      updatePosition: position,
-      bufferedPosition: _clipRelative(_player.state.buffer),
-      speed: _player.state.rate,
-      queueIndex: _index >= 0 ? _index : null,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _controls(playing: playingNow),
+        systemActions: _kSystemActions,
+        androidCompactActionIndices: const [0, 1, 3],
+        processingState: proc,
+        playing: playingNow,
+        updatePosition: position,
+        bufferedPosition: _clipRelative(_player.state.buffer),
+        speed: _player.state.rate,
+        queueIndex: _index >= 0 ? _index : null,
+      ),
+    );
     _notifLog('playbackState playing=$playingNow proc=$proc idx=$_index');
   }
 
@@ -474,17 +479,19 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     } else {
       proc = AudioProcessingState.ready;
     }
-    playbackState.add(playbackState.value.copyWith(
-      controls: _videoControls(playing: playingNow),
-      systemActions: _kVideoSystemActions,
-      androidCompactActionIndices: const [0, 1],
-      processingState: proc,
-      playing: playingNow,
-      updatePosition: vp.state.position,
-      bufferedPosition: vp.state.buffer,
-      speed: vp.state.rate,
-      queueIndex: null,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        controls: _videoControls(playing: playingNow),
+        systemActions: _kVideoSystemActions,
+        androidCompactActionIndices: const [0, 1],
+        processingState: proc,
+        playing: playingNow,
+        updatePosition: vp.state.position,
+        bufferedPosition: vp.state.buffer,
+        speed: vp.state.rate,
+        queueIndex: null,
+      ),
+    );
     _notifLog('video playbackState playing=$playingNow proc=$proc');
   }
 
@@ -501,10 +508,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// control set. The paused music queue (`_tracks` / `_index`) is **kept**, so
   /// leaving the video restores the music session exactly where it was paused.
   /// Must be paired with [exitVideoMode].
-  Future<void> enterVideoMode(
-    WebDavStreamSource source, {
-    Media? media,
-  }) async {
+  Future<void> enterVideoMode(WebDavStreamSource source, {Media? media}) async {
     _gateEvents = true;
     try {
       _mode = AudioHandlerMode.video;
@@ -515,8 +519,10 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       final item = MediaItem(
         id: '${isMusic ? 'stream' : 'video'}|${source.accountId}|${source.remotePath}',
         title: source.name,
-        album: isMusic ? '流式播放' : '视频',
-        artist: 'WebDAV 流媒体',
+        album: isMusic
+            ? L10nHost.current.streamPlayback
+            : L10nHost.current.netVideo,
+        artist: L10nHost.current.mediaArtistWebdav,
         extras: {
           'kind': isMusic ? 'stream_music' : 'video',
           'accountId': source.accountId,
@@ -527,16 +533,18 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       // A queue-less session keeps the notification but hides skip controls.
       queue.add(const []);
 
-      playbackState.add(playbackState.value.copyWith(
-        controls: _videoControls(playing: false),
-        systemActions: _kVideoSystemActions,
-        androidCompactActionIndices: const [0, 1],
-        processingState: AudioProcessingState.buffering,
-        playing: false,
-        updatePosition: Duration.zero,
-        bufferedPosition: Duration.zero,
-        queueIndex: null,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          controls: _videoControls(playing: false),
+          systemActions: _kVideoSystemActions,
+          androidCompactActionIndices: const [0, 1],
+          processingState: AudioProcessingState.buffering,
+          playing: false,
+          updatePosition: Duration.zero,
+          bufferedPosition: Duration.zero,
+          queueIndex: null,
+        ),
+      );
       if (media != null) {
         await videoPlayer.open(media, play: false);
         final dur = videoPlayer.state.duration;
@@ -572,30 +580,34 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         queue.add(items);
         mediaItem.add(items[_index]);
         _durationController.add(_clipDuration(_player.state.duration));
-        playbackState.add(playbackState.value.copyWith(
-          controls: _controls(playing: false),
-          systemActions: _kSystemActions,
-          androidCompactActionIndices: const [0, 1, 3],
-          processingState: AudioProcessingState.ready,
-          playing: false,
-          updatePosition: position,
-          bufferedPosition: _clipRelative(_player.state.buffer),
-          speed: _player.state.rate,
-          queueIndex: _index,
-        ));
+        playbackState.add(
+          playbackState.value.copyWith(
+            controls: _controls(playing: false),
+            systemActions: _kSystemActions,
+            androidCompactActionIndices: const [0, 1, 3],
+            processingState: AudioProcessingState.ready,
+            playing: false,
+            updatePosition: position,
+            bufferedPosition: _clipRelative(_player.state.buffer),
+            speed: _player.state.rate,
+            queueIndex: _index,
+          ),
+        );
       } else {
         mediaItem.add(null);
         queue.add(const []);
         _durationController.add(null);
-        playbackState.add(playbackState.value.copyWith(
-          controls: _controls(playing: false),
-          systemActions: _kSystemActions,
-          androidCompactActionIndices: const [0, 1, 3],
-          processingState: AudioProcessingState.idle,
-          playing: false,
-          updatePosition: Duration.zero,
-          queueIndex: null,
-        ));
+        playbackState.add(
+          playbackState.value.copyWith(
+            controls: _controls(playing: false),
+            systemActions: _kSystemActions,
+            androidCompactActionIndices: const [0, 1, 3],
+            processingState: AudioProcessingState.idle,
+            playing: false,
+            updatePosition: Duration.zero,
+            queueIndex: null,
+          ),
+        );
       }
     } finally {
       _gateEvents = false;
@@ -632,19 +644,21 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     if (local == null || !File(local).existsSync()) {
       _gateEvents = false;
-      throw StateError('本地文件不可用');
+      throw StateError(L10nHost.current.svcLocalFileUnavailable);
     }
     final item = mediaItemFor(track);
     mediaItem.add(item);
     queue.add(_tracks.map(mediaItemFor).toList());
-    playbackState.add(playbackState.value.copyWith(
-      processingState: AudioProcessingState.buffering,
-      playing: false,
-      controls: _controls(playing: false),
-      systemActions: _kSystemActions,
-      androidCompactActionIndices: const [0, 1, 3],
-      queueIndex: _index,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.buffering,
+        playing: false,
+        controls: _controls(playing: false),
+        systemActions: _kSystemActions,
+        androidCompactActionIndices: const [0, 1, 3],
+        queueIndex: _index,
+      ),
+    );
     try {
       await _player.open(_mediaFor(track, local), play: false);
       final dur = _clipDuration(_player.state.duration);
@@ -660,32 +674,37 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> play() async {
     if (_mode == AudioHandlerMode.video) {
-      playbackState.add(playbackState.value.copyWith(
-        playing: true,
-        controls: _videoControls(playing: true),
-        systemActions: _kVideoSystemActions,
-        androidCompactActionIndices: const [0, 1],
-        processingState: playbackState.value.processingState ==
-                AudioProcessingState.idle
-            ? AudioProcessingState.buffering
-            : playbackState.value.processingState,
-        updatePosition: videoPlayer.state.position,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          playing: true,
+          controls: _videoControls(playing: true),
+          systemActions: _kVideoSystemActions,
+          androidCompactActionIndices: const [0, 1],
+          processingState:
+              playbackState.value.processingState == AudioProcessingState.idle
+              ? AudioProcessingState.buffering
+              : playbackState.value.processingState,
+          updatePosition: videoPlayer.state.position,
+        ),
+      );
       unawaited(_audioSession?.setActive(true));
       await videoPlayer.play();
       return;
     }
-    playbackState.add(playbackState.value.copyWith(
-      playing: true,
-      processingState: playbackState.value.processingState == AudioProcessingState.idle
-          ? AudioProcessingState.buffering
-          : playbackState.value.processingState,
-      controls: _controls(playing: true),
-      systemActions: _kSystemActions,
-      androidCompactActionIndices: const [0, 1, 3],
-      updatePosition: position,
-      queueIndex: _index >= 0 ? _index : null,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        playing: true,
+        processingState:
+            playbackState.value.processingState == AudioProcessingState.idle
+            ? AudioProcessingState.buffering
+            : playbackState.value.processingState,
+        controls: _controls(playing: true),
+        systemActions: _kSystemActions,
+        androidCompactActionIndices: const [0, 1, 3],
+        updatePosition: position,
+        queueIndex: _index >= 0 ? _index : null,
+      ),
+    );
     _notifLog('play() -> playing=true');
     unawaited(_audioSession?.setActive(true));
     await _player.play();
@@ -694,23 +713,27 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   @override
   Future<void> pause() async {
     if (_mode == AudioHandlerMode.video) {
-      playbackState.add(playbackState.value.copyWith(
-        playing: false,
-        controls: _videoControls(playing: false),
-        systemActions: _kVideoSystemActions,
-        androidCompactActionIndices: const [0, 1],
-        updatePosition: videoPlayer.state.position,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          playing: false,
+          controls: _videoControls(playing: false),
+          systemActions: _kVideoSystemActions,
+          androidCompactActionIndices: const [0, 1],
+          updatePosition: videoPlayer.state.position,
+        ),
+      );
       await videoPlayer.pause();
       return;
     }
-    playbackState.add(playbackState.value.copyWith(
-      playing: false,
-      controls: _controls(playing: false),
-      systemActions: _kSystemActions,
-      androidCompactActionIndices: const [0, 1, 3],
-      updatePosition: position,
-    ));
+    playbackState.add(
+      playbackState.value.copyWith(
+        playing: false,
+        controls: _controls(playing: false),
+        systemActions: _kSystemActions,
+        androidCompactActionIndices: const [0, 1, 3],
+        updatePosition: position,
+      ),
+    );
     await _player.pause();
   }
 
@@ -737,12 +760,14 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       _index = -1;
       _tracks.clear();
       _durationController.add(null);
-      playbackState.add(playbackState.value.copyWith(
-        processingState: AudioProcessingState.idle,
-        playing: false,
-        updatePosition: Duration.zero,
-        queueIndex: null,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          processingState: AudioProcessingState.idle,
+          playing: false,
+          updatePosition: Duration.zero,
+          queueIndex: null,
+        ),
+      );
     }
   }
 
@@ -815,22 +840,35 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
         final model = map['model']?.toString() ?? '';
         final sdk = map['sdk'];
         final hint = (!posted || channelBlocked)
-            ? ' | 若仍无通知: 设置→应用→Webdav Media Manager→耗电管理=不限制;'
-                '通知=允许(含锁屏/悬浮); 通道「音乐播放」勿关闭'
+            ? L10nHost.current.ntfProbeHint(
+                L10nHost.current.ntfMediaChannelName,
+              )
             : '';
-        return '服务=${svc ? "运行" : "无"} 会话=${active ? "活跃" : "否"} '
-            '通知=${posted ? "已发布" : "未发布"} '
-            '系统通知开关=$perm 通道=$chName'
-            '${channelExists ? "" : "(未创建)"}'
-            '${channelBlocked ? "(已关闭)" : ""} 重要性=$chImp '
-            '本包会话数=$ourSessions '
-            '设备=$mfr $model sdk=$sdk$hint';
+        return L10nHost.current.ntfProbeReport(
+          svc
+              ? L10nHost.current.ntfProbeRunning
+              : L10nHost.current.ntfProbeNone,
+          active
+              ? L10nHost.current.ntfProbeActive
+              : L10nHost.current.ntfProbeInactive,
+          posted
+              ? L10nHost.current.ntfProbePosted
+              : L10nHost.current.ntfProbeNotPosted,
+          '$perm',
+          '$chName',
+          '${channelExists ? "" : L10nHost.current.ntfProbeChanMissing}'
+              '${channelBlocked ? L10nHost.current.ntfProbeChanBlocked : ""}',
+          '$chImp',
+          '$ourSessions',
+          '$mfr $model sdk=$sdk',
+          hint,
+        );
       }
-      return '探测返回: $raw';
+      return L10nHost.current.ntfProbeReturn('$raw');
     } on MissingPluginException {
-      return '原生探测通道不可用（需完整 APK）';
+      return L10nHost.current.ntfProbeChannelUnavailable;
     } on PlatformException catch (e) {
-      return '探测失败: ${e.message}';
+      return L10nHost.current.ntfProbeFailed('${e.message}');
     }
   }
 
@@ -853,10 +891,11 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
     if (track == null || path == null || !File(path).existsSync()) {
       final probe = await probeMediaNotificationNative();
-      return '无可用本地音频。请先播放一首歌，再点测试。\n$probe$_asyncErrorSuffix';
+      return L10nHost.current.ntfForceNoAudio(probe, _asyncErrorSuffix);
     }
     final idx = _tracks.indexWhere(
-      (t) => t.remotePath == track!.remotePath && t.accountId == track.accountId,
+      (t) =>
+          t.remotePath == track!.remotePath && t.accountId == track.accountId,
     );
     await loadAndPlay(
       playlist: idx >= 0 ? _tracks : [track],
@@ -867,10 +906,12 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     await Future<void>.delayed(const Duration(milliseconds: 350));
     final st = playbackState.value;
     final probe = await probeMediaNotificationNative();
-    return '已强制播放「${track.displayTitle}」 '
-        'playing=${st.playing} proc=${st.processingState}\n'
-        '$probe$_asyncErrorSuffix\n'
-        '请查看通知栏 / 媒体控制中心。';
+    return L10nHost.current.ntfForcePlayed(
+      '${track.displayTitle}',
+      'playing=${st.playing} proc=${st.processingState}',
+      probe,
+      _asyncErrorSuffix,
+    );
   }
 
   /// Reports the last error audio_service swallowed from a platform-channel
@@ -880,7 +921,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final at = _lastAsyncErrorAt;
     if (err == null || at == null) return '';
     if (DateTime.now().difference(at) > const Duration(minutes: 2)) return '';
-    return '\n\u26a0 audio_service 桥接错误: $err';
+    return L10nHost.current.ntfAsyncError('$err');
   }
 
   Future<void> disposePlayer() async {
@@ -942,6 +983,7 @@ Future<MusicAudioHandler> initMusicAudioService() {
     ),
   );
 }
+
 /// Pure [TrackInfo] → [MediaItem] mapping for the media session.
 ///
 /// Top-level on purpose: the identity / title / art rules are worth testing

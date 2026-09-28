@@ -1,3 +1,4 @@
+import '../l10n/generated/app_localizations.dart';
 import 'file_type_config.dart';
 import 'download_task.dart';
 
@@ -33,21 +34,21 @@ extension FileActionX on FileAction {
     FileAction.streamMusic => 'stream_music',
   };
 
-  String get labelZh => switch (this) {
-    FileAction.cacheMusic => '缓存音乐',
-    FileAction.download => '下载',
-    FileAction.stream => '流式传输',
-    FileAction.readCue => 'cue 读取',
-    FileAction.streamMusic => '流式传输（音乐）',
+  String label(AppLocalizations l10n) => switch (this) {
+    FileAction.cacheMusic => l10n.actionCacheMusic,
+    FileAction.download => l10n.actionDownload,
+    FileAction.stream => l10n.actionStream,
+    FileAction.readCue => l10n.actionReadCue,
+    FileAction.streamMusic => l10n.actionStreamMusic,
   };
 
   /// 短标签，给多选工具栏这类空间紧张的地方用。
-  String get shortLabelZh => switch (this) {
-    FileAction.cacheMusic => '缓存',
-    FileAction.download => '下载',
-    FileAction.stream => '播放',
-    FileAction.readCue => 'CUE',
-    FileAction.streamMusic => '流播',
+  String shortLabel(AppLocalizations l10n) => switch (this) {
+    FileAction.cacheMusic => l10n.actionShortCache,
+    FileAction.download => l10n.actionShortDownload,
+    FileAction.stream => l10n.actionShortStream,
+    FileAction.readCue => l10n.actionShortCue,
+    FileAction.streamMusic => l10n.actionShortStreamMusic,
   };
 
   /// 该动作落盘到哪里。流式播放不落盘，返回 null。
@@ -232,13 +233,13 @@ class FileActionDecision {
   final FileAction action;
   final bool allowed;
 
-  /// 不允许时给用户看的原因（中文）。
-  final String? reason;
+  /// 不允许时给用户看的原因（结构化，UI 层渲染成本地化文案）。
+  final FileActionDeny? reason;
 
   static FileActionDecision allow(FileAction action) =>
       FileActionDecision(action: action, allowed: true);
 
-  static FileActionDecision deny(FileAction action, String reason) =>
+  static FileActionDecision deny(FileAction action, FileActionDeny reason) =>
       FileActionDecision(action: action, allowed: false, reason: reason);
 }
 
@@ -253,23 +254,55 @@ FileActionDecision judgeAction({
   required bool isDirectory,
 }) {
   if (isDirectory) {
-    return FileActionDecision.deny(action, '这是文件夹，不能按文件动作处理');
+    return FileActionDecision.deny(action, const FileActionDenyFolder());
   }
   if (!FileActionCatalog.isAllowed(category, action)) {
     return FileActionDecision.deny(
       action,
-      '「${action.labelZh}」不适用于${categoryLabelZh(category)}',
+      FileActionDenyNotApplicable(action: action, category: category),
     );
   }
   return FileActionDecision.allow(action);
 }
 
-String categoryLabelZh(FileCategory category) => switch (category) {
-  FileCategory.music => '音乐文件',
-  FileCategory.video => '视频文件',
-  FileCategory.cue => 'CUE 文件',
-  FileCategory.other => '普通文件',
-};
+/// 判定拒绝原因的结构化载体：UI 层用 [FileActionDenyLabelX.label] 渲染，
+/// 服务层保持无 locale 依赖。
+sealed class FileActionDeny {
+  const FileActionDeny();
+}
+
+/// 条目是文件夹，文件动作不适用。
+final class FileActionDenyFolder extends FileActionDeny {
+  const FileActionDenyFolder();
+}
+
+/// 动作与类别不匹配（例如对视频选了「缓存音乐」）。
+final class FileActionDenyNotApplicable extends FileActionDeny {
+  const FileActionDenyNotApplicable({
+    required this.action,
+    required this.category,
+  });
+
+  final FileAction action;
+  final FileCategory category;
+}
+
+extension FileActionDenyLabelX on FileActionDeny {
+  String label(AppLocalizations l10n) => switch (this) {
+    FileActionDenyFolder() => l10n.fileActionIsFolder,
+    FileActionDenyNotApplicable(:final action, :final category) =>
+      l10n.fileActionNotApplicable(action.label(l10n), category.label(l10n)),
+  };
+}
+
+extension FileCategoryLabelX on FileCategory {
+  String label(AppLocalizations l10n) => switch (this) {
+    FileCategory.music => l10n.catMusicFile,
+    FileCategory.video => l10n.catVideoFile,
+    FileCategory.cue => l10n.catCueFile,
+    FileCategory.other => l10n.catOtherFile,
+  };
+}
 
 /// 多选工具栏要显示的那一个「按类型分发」的下载动作。
 ///

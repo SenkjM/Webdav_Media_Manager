@@ -43,6 +43,11 @@
 1. **先读本索引，再读对应功能块文档**；改动前确认它描述的就是现状。
 2. **开发新功能前先读 [99](99-IN-PROGRESS.md)**，再读它链到的完整文档；开发期间同时维护 `99` 与完整文档里的占位，完成后按 §1 收口。
 3. **分支**：`main` 是唯一主干，只有用户明确允许才可合并。新功能一律**基于 `main` 开独立功能分支**，成熟后**压缩成单个提交**合入 `main`（除非用户另有要求，例如要保留每一步的提交历史）。**压缩时要重写 commit 名称与描述**，不要沿用分支上某一条的信息、也不要罗列原始提交：按整条分支实际做了什么重新组织，一条读完就知道改了什么、为什么改。不开长期保存线，中途成果留在自己的功能分支上。使用 worktree 进行分支工作，统一建立在仓库根目录的 `worktree/<name>` 下面。
+   - 创建：`git worktree add -b <branch> worktree/<name> main`；一个功能只绑定一个 worktree，已有 worktree 不复用。
+   - 初始化：进入新 worktree 后单独执行 `flutter pub get`；`.dart_tool/`、`build/`、插件生成文件等本地产物不跨 worktree 复制、链接或提交。
+   - 执行顺序：同一个 worktree 内不要并行运行会写 `.dart_tool/` 或 `build/` 的 Flutter 命令；按 `pub get`、代码生成、`analyze`、`test`、`build` 串行执行。
+   - 清理：worktree 完成并确认无未提交改动后，用 `git worktree remove worktree/<name>`；需要删除已合并分支时再单独执行 `git branch -d <branch>`。发现 `prunable` worktree 先用 `git worktree prune` 清理注册信息。
+   - 核验：开始和结束都检查 `git worktree list`、`git status --short --branch`；不要在一个 worktree 中操作另一个 worktree 的文件。
 4. **CI**：不要为了看构建结果给 workflow 加 `on: push`，不要擅自 `gh workflow run`，不要推 `main`，不要打 Pre-release——除非用户明确要求。细节见 [09](09-MISC.md)。
 5. **改完跑** `flutter analyze` 与相关 `flutter test`；改核心逻辑优先跑 [09](09-MISC.md) 列出的测试入口。
 6. **密钥一律不打印、不提交**：keystore、`key.properties`、token、`.env`、secrets。

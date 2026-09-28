@@ -7,9 +7,7 @@ void main() {
   testWidgets('remote state chip renders empty', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(
-        home: Scaffold(
-          body: TrackStatusChip(state: TrackUiState.remote),
-        ),
+        home: Scaffold(body: TrackStatusChip(state: TrackUiState.remote)),
       ),
     );
     expect(find.byType(Chip), findsNothing);

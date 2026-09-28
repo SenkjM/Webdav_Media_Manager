@@ -21,7 +21,8 @@ import 'package:webdav_media_manager/services/cloud_drivers/netease_music_crypto
 final List<int> kFixedSecretKey = utf8.encode('0123456789abcdef');
 
 /// Go 上游工具产出的向量（`go run .` → golden.json）。
-const String kGoldenAesCbcPreset = 'g8Uyi6RhgxZQYHHeFWYyQzNvMCpJGM4tJ35lOBGeA3I=';
+const String kGoldenAesCbcPreset =
+    'g8Uyi6RhgxZQYHHeFWYyQzNvMCpJGM4tJ35lOBGeA3I=';
 const String kGoldenAesEcbLinuxapi =
     'A0D9583F4C5FF68DE851D2893A49DE98EB5ED82623DE97FC5B2C33BF822A02E3C7B5FE886E6FAE4B2DF4B83CA80414AE'
     '7863C000529ABEA139CB1B4CAAB60DD3C3750991E197E7834A1CB5A7E22C0EB06B83FAF8DBFABA3150BAB26C3BDC68'
@@ -93,7 +94,8 @@ void main() {
     test('AES-ECB（linuxapi 密钥）匹配上游向量，输出为大写 hex', () {
       final out = aesEcbEncrypt(
         utf8.encode(
-            '{"method":"POST","params":{"br":"999000","ids":"[123456]"},"url":"https://music.163.com/api/song/enhance/player/url"}'),
+          '{"method":"POST","params":{"br":"999000","ids":"[123456]"},"url":"https://music.163.com/api/song/enhance/player/url"}',
+        ),
         kNeteaseLinuxApiKey,
       );
       expect(toHex(out).toUpperCase(), kGoldenAesEcbLinuxapi);
@@ -135,15 +137,23 @@ void main() {
     });
 
     test('密钥长度不是 16 字节时报错（上游布局：末 16 字节）', () {
-      expect(() => neteaseRsaRawEncrypt(List.filled(15, 1)), throwsArgumentError);
-      expect(() => neteaseRsaRawEncrypt(List.filled(17, 1)), throwsArgumentError);
+      expect(
+        () => neteaseRsaRawEncrypt(List.filled(15, 1)),
+        throwsArgumentError,
+      );
+      expect(
+        () => neteaseRsaRawEncrypt(List.filled(17, 1)),
+        throwsArgumentError,
+      );
     });
 
     test('密钥放末 16 字节：前 112 字节为零等价于小整数明文', () {
       // m = 0x00...00 || key，即 m = key 的大端整数。
       // c = m^65537 mod n 与直接用小整数做模幂等价。
-      final m = kFixedSecretKey
-          .fold<BigInt>(BigInt.zero, (a, b) => (a << 8) | BigInt.from(b));
+      final m = kFixedSecretKey.fold<BigInt>(
+        BigInt.zero,
+        (a, b) => (a << 8) | BigInt.from(b),
+      );
       final n = BigInt.parse(kNeteaseRsaModulusHex, radix: 16);
       final expected = m.modPow(BigInt.from(65537), n);
       final actual = neteaseRsaRawEncrypt(kFixedSecretKey);
@@ -157,19 +167,18 @@ void main() {
 
   group('weapi 完整输出', () {
     test('cloud/get（limit/offset）匹配上游向量', () {
-      final r = neteaseWeapi(
-        const {'limit': '200', 'offset': '0'},
-        secretKey: kFixedSecretKey,
-      );
+      final r = neteaseWeapi(const {
+        'limit': '200',
+        'offset': '0',
+      }, secretKey: kFixedSecretKey);
       expect(r.params, kGoldenWeapiGetParams);
       expect(r.encSecKey, kGoldenRsaRawHex);
     });
 
     test('cloud/del（songIds）匹配上游向量', () {
-      final r = neteaseWeapi(
-        const {'songIds': '[123456]'},
-        secretKey: kFixedSecretKey,
-      );
+      final r = neteaseWeapi(const {
+        'songIds': '[123456]',
+      }, secretKey: kFixedSecretKey);
       expect(r.params, kGoldenWeapiDelParams);
       expect(r.encSecKey, kGoldenRsaRawHex);
     });
@@ -208,18 +217,19 @@ void main() {
 
     test('逆序密钥：内层用逆序、encSecKey 用原始（上游 getSecretKey 语义）', () {
       // 固定密钥下，若误用原始密钥做第二层，params 会与向量不符。
-      final r = neteaseWeapi(
-        const {'limit': '200', 'offset': '0'},
-        secretKey: kFixedSecretKey,
-      );
-      expect(r.params, kGoldenWeapiGetParams,
-          reason: '第二层必须用逆序密钥（reversed）');
+      final r = neteaseWeapi(const {
+        'limit': '200',
+        'offset': '0',
+      }, secretKey: kFixedSecretKey);
+      expect(r.params, kGoldenWeapiGetParams, reason: '第二层必须用逆序密钥（reversed）');
     });
 
     test('第二层明文是内层 base64 字符串（Go 语义，非 worker 原始字节）', () {
       // 手工重算：AES-CBC(base64(AES-CBC(text, preset, iv)), reversed, iv)
       final text = utf8.encode('{"limit":"200","offset":"0"}');
-      final inner = base64.encode(aesCbcEncrypt(text, kNeteasePresetKey, kNeteaseIv));
+      final inner = base64.encode(
+        aesCbcEncrypt(text, kNeteasePresetKey, kNeteaseIv),
+      );
       final reversed = kFixedSecretKey.reversed.toList();
       final outer = aesCbcEncrypt(utf8.encode(inner), reversed, kNeteaseIv);
       expect(base64.encode(outer), kGoldenWeapiGetParams);

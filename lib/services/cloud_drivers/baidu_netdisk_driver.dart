@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
 import '../cloud_driver.dart';
+import '../../utils/l10n_host.dart';
 
 /// 百度网盘驱动（99 §7.3 首个端到端）。
 ///
@@ -31,22 +32,22 @@ class BaiduAddition {
   });
 
   factory BaiduAddition.fromJson(Map<String, dynamic> json) => BaiduAddition(
-        refreshToken: json['refresh_token'] as String? ?? '',
-        clientId: json['client_id'] as String? ?? '',
-        clientSecret: json['client_secret'] as String? ?? '',
-        apiUrlAddress: json['api_url_address'] as String? ?? '',
-        localRefresh: json['local_refresh'] as bool? ?? false,
-        accessToken: json['access_token'] as String? ?? '',
-      );
+    refreshToken: json['refresh_token'] as String? ?? '',
+    clientId: json['client_id'] as String? ?? '',
+    clientSecret: json['client_secret'] as String? ?? '',
+    apiUrlAddress: json['api_url_address'] as String? ?? '',
+    localRefresh: json['local_refresh'] as bool? ?? false,
+    accessToken: json['access_token'] as String? ?? '',
+  );
 
   Map<String, dynamic> toJson() => {
-        'refresh_token': refreshToken,
-        'client_id': clientId,
-        'client_secret': clientSecret,
-        'api_url_address': apiUrlAddress,
-        'local_refresh': localRefresh,
-        'access_token': accessToken,
-      };
+    'refresh_token': refreshToken,
+    'client_id': clientId,
+    'client_secret': clientSecret,
+    'api_url_address': apiUrlAddress,
+    'local_refresh': localRefresh,
+    'access_token': accessToken,
+  };
 
   /// 刷新令牌（必填）。在线续期会轮换它，轮换结果经 onTokenUpdate 持久化。
   String refreshToken;
@@ -101,17 +102,18 @@ class BaiduClient {
   static const retryWaitMs = 1000;
 
   BaiduClient(this.addition, {this.onTokenUpdate, Dio? dio})
-      : accessToken = addition.accessToken,
-        _dio = dio ??
-            Dio(
-              BaseOptions(
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 60),
-                headers: {'User-Agent': apiUA, 'Accept': 'application/json'},
-                // 非 2xx 也回来走 errno / 原文解析：「原样传递报错」需要读到 body。
-                validateStatus: (_) => true,
-              ),
-            );
+    : accessToken = addition.accessToken,
+      _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 60),
+              headers: {'User-Agent': apiUA, 'Accept': 'application/json'},
+              // 非 2xx 也回来走 errno / 原文解析：「原样传递报错」需要读到 body。
+              validateStatus: (_) => true,
+            ),
+          );
 
   BaiduAddition addition;
   String accessToken;
@@ -147,19 +149,24 @@ class BaiduClient {
       } catch (_) {}
       if (data == null) {
         throw CloudDriverException(
-          '在线 API 刷新失败 (HTTP ${res.statusCode})：${raw.length > 300 ? raw.substring(0, 300) : (raw.isEmpty ? '非 JSON 响应' : raw)}。'
-          '请确认 refresh_token 是通过 https://api.oplist.org/ 获取的有效令牌。',
+          raw.isEmpty
+              ? 'err.refreshOnlineFailedNonJson|${res.statusCode}'
+              : 'err.refreshOnlineFailed|${res.statusCode}|'
+                    '${raw.length > 300 ? raw.substring(0, 300) : raw}',
         );
       }
       if (data['refresh_token'] == null || data['access_token'] == null) {
         throw CloudDriverException(
           (data['text'] as String?) ??
               (res.statusCode != 200
-                  ? '在线 API 返回 HTTP ${res.statusCode}'
+                  ? 'err.refreshOnlineNon200|${res.statusCode}'
                   : 'empty token returned from official API, a wrong refresh token may have been used'),
         );
       }
-      _applyTokens(data['access_token'] as String, data['refresh_token'] as String);
+      _applyTokens(
+        data['access_token'] as String,
+        data['refresh_token'] as String,
+      );
       return;
     }
 
@@ -180,7 +187,9 @@ class BaiduClient {
         ? Map<String, dynamic>.from(res.data as Map)
         : <String, dynamic>{};
     if (data['error'] != null) {
-      throw CloudDriverException('${data['error']}: ${data['error_description'] ?? ''}');
+      throw CloudDriverException(
+        '${data['error']}: ${data['error_description'] ?? ''}',
+      );
     }
     if (data['refresh_token'] == null) {
       throw CloudDriverException('empty refresh token returned from OAuth');
@@ -214,18 +223,24 @@ class BaiduClient {
     Object? lastErr;
     for (var attempt = 0; attempt < retryCount; attempt++) {
       try {
-        return await _doRequest(pathname, method: method, params: params, form: form);
+        return await _doRequest(
+          pathname,
+          method: method,
+          params: params,
+          form: form,
+        );
       } on CloudDriverException {
         rethrow; // 业务错误（errno / 风控 / 非 JSON）不重试
       } catch (e) {
         lastErr = e;
         if (attempt < retryCount - 1) {
           await Future<void>.delayed(
-              Duration(milliseconds: retryWaitMs << attempt));
+            Duration(milliseconds: retryWaitMs << attempt),
+          );
         }
       }
     }
-    throw CloudDriverException('百度网盘请求失败', lastErr);
+    throw CloudDriverException('err.baiduRequestFailed', lastErr);
   }
 
   Future<Map<String, dynamic>> _doRequest(
@@ -272,10 +287,7 @@ class BaiduClient {
       final base =
           'req: [$pathname] ,errno: $errno, refer to https://pan.baidu.com/union/doc/';
       if (errno == 31023) {
-        throw CloudDriverException(
-          '$base 百度网盘风控（触发安全策略，通常数分钟至数小时后自动解除）。'
-          'refresh_token 无效或非官方渠道获取也可能触发；请确认通过 https://api.oplist.org/ 获取。',
-        );
+        throw CloudDriverException('err.baiduRiskControl|$base');
       }
       throw CloudDriverException(base);
     }
@@ -286,14 +298,17 @@ class BaiduClient {
   Future<List<BaiduFile>> getFiles(String dir) async {
     final out = <BaiduFile>[];
     const limit = 1000;
-    for (var start = 0;; start += limit) {
-      final body = await request('/xpan/file', params: {
-        'method': 'list',
-        'dir': dir,
-        'web': 'web',
-        'start': '$start',
-        'limit': '$limit',
-      });
+    for (var start = 0; ; start += limit) {
+      final body = await request(
+        '/xpan/file',
+        params: {
+          'method': 'list',
+          'dir': dir,
+          'web': 'web',
+          'start': '$start',
+          'limit': '$limit',
+        },
+      );
       final list = body['list'];
       if (list is! List || list.isEmpty) break;
       out.addAll([
@@ -309,11 +324,10 @@ class BaiduClient {
   Future<({String url, Map<String, String> headers})> getOfficialLink(
     int fsId,
   ) async {
-    final body = await request('/xpan/multimedia', params: {
-      'method': 'filemetas',
-      'fsids': '[$fsId]',
-      'dlink': '1',
-    });
+    final body = await request(
+      '/xpan/multimedia',
+      params: {'method': 'filemetas', 'fsids': '[$fsId]', 'dlink': '1'},
+    );
     final list = body['list'];
     final dlink = (list is List && list.isNotEmpty)
         ? ((list.first as Map<String, dynamic>)['dlink'] as String?)
@@ -331,10 +345,7 @@ class BaiduClient {
       ),
     );
     final location = head.headers.value('location') ?? u;
-    return (
-      url: _sanitizeDlink(location),
-      headers: {'User-Agent': downloadUA},
-    );
+    return (url: _sanitizeDlink(location), headers: {'User-Agent': downloadUA});
   }
 
   String _sanitizeDlink(String dlink) {
@@ -355,11 +366,7 @@ class BaiduClient {
       '/xpan/file',
       method: 'POST',
       params: {'method': 'filemanager', 'opera': opera},
-      form: {
-        'async': '0',
-        'filelist': jsonEncode(filelist),
-        'ondup': 'fail',
-      },
+      form: {'async': '0', 'filelist': jsonEncode(filelist), 'ondup': 'fail'},
     );
   }
 
@@ -441,7 +448,7 @@ class BaiduNetdiskDriver extends CloudDriver {
       } on CloudDriverException {
         rethrow;
       } catch (e) {
-        throw CloudDriverException('获取下载直链失败：$e');
+        throw CloudDriverException('err.baiduDirectLinkFailed|$e');
       }
     }
     return item;
@@ -462,11 +469,7 @@ class BaiduNetdiskDriver extends CloudDriver {
       ]);
     } else {
       await _client.manage('move', [
-        {
-          'path': bp,
-          'dest': cloudDirname(dst),
-          'newname': cloudBasename(dst),
-        },
+        {'path': bp, 'dest': cloudDirname(dst), 'newname': cloudBasename(dst)},
       ]);
     }
   }
@@ -543,12 +546,13 @@ class BaiduNetdiskSpec extends CloudDriverSpec {
   Set<String> get runtimeSecretKeys => const {'access_token'};
 
   @override
-  String get displayName => '百度网盘';
+  String get displayName => L10nHost.current.driverNameBaidu;
 
   // 列出 / 读取 / 创建文件夹 / 移动 / 复制 / 删除；write 一律不给
   //（上传已砍，99 §7.2.1；mkdir 逐盘核查见 99 §7.3.2）。
   @override
-  int get capabilities => AccountCaps.list |
+  int get capabilities =>
+      AccountCaps.list |
       AccountCaps.read |
       AccountCaps.mkdir |
       AccountCaps.move |
@@ -556,39 +560,39 @@ class BaiduNetdiskSpec extends CloudDriverSpec {
       AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => const [
-        CloudDriverField(
-          key: 'refresh_token',
-          label: 'refresh_token',
-          hint: '必填；获取方法见 OpenList 官方文档（baidu_netdisk 驱动页）',
-          required: true,
-          obscure: true,
-        ),
-        CloudDriverField(
-          key: 'api_url_address',
-          label: '在线续期地址',
-          hint: '默认用 OpenList 维护的公共服务',
-          defaultValue: BaiduClient.defaultRenewApi,
-          disabledWhenSwitch: 'local_refresh',
-          disabledHint: '已开启本地刷新（online api 停用），关闭开关后可编辑',
-        ),
-        CloudDriverSwitchField(
-          key: 'local_refresh',
-          label: '在本地处理令牌刷新',
-          subtitle: '关闭＝在线续期地址刷新；开启＝用自建百度应用刷新（需 Client ID / Secret），在线续期停用',
-        ),
-        CloudDriverField(
-          key: 'client_id',
-          label: 'Client ID',
-          visibleWhenSwitch: 'local_refresh',
-        ),
-        CloudDriverField(
-          key: 'client_secret',
-          label: 'Client Secret',
-          obscure: true,
-          visibleWhenSwitch: 'local_refresh',
-        ),
-      ];
+  List<CloudDriverFormItem> get form => [
+    CloudDriverField(
+      key: 'refresh_token',
+      label: 'refresh_token',
+      hint: L10nHost.current.formHintOpenListDoc('baidu_netdisk'),
+      required: true,
+      obscure: true,
+    ),
+    CloudDriverField(
+      key: 'api_url_address',
+      label: L10nHost.current.formLabelRenewApi,
+      hint: L10nHost.current.formHintRenewApiDefault,
+      defaultValue: BaiduClient.defaultRenewApi,
+      disabledWhenSwitch: 'local_refresh',
+      disabledHint: L10nHost.current.formHintLocalRefreshDisabled,
+    ),
+    CloudDriverSwitchField(
+      key: 'local_refresh',
+      label: L10nHost.current.formLabelLocalRefresh,
+      subtitle: L10nHost.current.formSubLocalRefreshBaidu,
+    ),
+    CloudDriverField(
+      key: 'client_id',
+      label: 'Client ID',
+      visibleWhenSwitch: 'local_refresh',
+    ),
+    CloudDriverField(
+      key: 'client_secret',
+      label: 'Client Secret',
+      obscure: true,
+      visibleWhenSwitch: 'local_refresh',
+    ),
+  ];
 
   @override
   CloudDriver create(

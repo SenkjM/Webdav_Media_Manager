@@ -74,9 +74,13 @@ class _FakeAdapter implements HttpClientAdapter {
     hits.add(hit);
 
     final json = jsonEncode(respond(uri, hit.form));
-    return ResponseBody.fromString(json, 200, headers: {
-      'content-type': ['application/json'],
-    });
+    return ResponseBody.fromString(
+      json,
+      200,
+      headers: {
+        'content-type': ['application/json'],
+      },
+    );
   }
 
   @override
@@ -89,27 +93,26 @@ void main() {
 
   /// 一份典型的云盘列表响应。
   Map<String, dynamic> songList(List<Map<String, dynamic>> songs) => {
-        'size': songs.length,
-        'maxSize': 100000,
-        'data': songs,
-        'code': 200,
-      };
+    'size': songs.length,
+    'maxSize': 100000,
+    'data': songs,
+    'code': 200,
+  };
 
   Map<String, dynamic> song(
     int id,
     String name, {
     int size = 1024,
     int addTime = 1700000000000,
-  }) =>
-      {
-        'songId': id,
-        'fileName': name,
-        'fileSize': size,
-        'addTime': addTime,
-        'simpleSong': {
-          'al': {'picUrl': 'https://p1.music.126.net/x.jpg'},
-        },
-      };
+  }) => {
+    'songId': id,
+    'fileName': name,
+    'fileSize': size,
+    'addTime': addTime,
+    'simpleSong': {
+      'al': {'picUrl': 'https://p1.music.126.net/x.jpg'},
+    },
+  };
 
   setUp(() {
     adapter = _FakeAdapter((uri, form) => <String, dynamic>{'code': 200});
@@ -175,11 +178,13 @@ void main() {
       final d = driverWith(cookie: '__csrf=tok');
       await expectLater(
         d.init(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('__csrf'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.neteaseCookieRequired'),
+          ),
+        ),
       );
       expect(adapter.hits, isEmpty);
     });
@@ -228,8 +233,10 @@ void main() {
       expect(items.single.name, 'a.mp3');
       expect(items.single.isDir, isFalse);
       expect(items.single.size, 1024);
-      expect(items.single.modified,
-          DateTime.fromMillisecondsSinceEpoch(1700000000000));
+      expect(
+        items.single.modified,
+        DateTime.fromMillisecondsSinceEpoch(1700000000000),
+      );
     });
 
     test('limit 写进请求体（表单上限生效）', () async {
@@ -264,21 +271,20 @@ void main() {
 
     test('条目缺 fileName / songId → 跳过该条，不整体失败', () async {
       adapter.respond = (uri, form) => {
-            'code': 200,
-            'data': [
-              {'songId': 1}, // 无 fileName
-              {'fileName': 'ok.mp3', 'songId': 2, 'fileSize': 5},
-              {'fileName': 'noid.mp3'}, // 无 songId
-            ],
-          };
+        'code': 200,
+        'data': [
+          {'songId': 1}, // 无 fileName
+          {'fileName': 'ok.mp3', 'songId': 2, 'fileSize': 5},
+          {'fileName': 'noid.mp3'}, // 无 songId
+        ],
+      };
       final items = await driverWith().list('/');
       expect(items.map((e) => e.name), ['ok.mp3']);
       expect(items.single.size, 5);
     });
 
     test('addTime 为 0 → modified 为 null（不伪造时间）', () async {
-      adapter.respond = (uri, form) =>
-          songList([song(1, 'a.mp3', addTime: 0)]);
+      adapter.respond = (uri, form) => songList([song(1, 'a.mp3', addTime: 0)]);
       final items = await driverWith().list('/');
       expect(items.single.modified, isNull);
     });
@@ -347,11 +353,13 @@ void main() {
       adapter.respond = (uri, form) => songList([song(1, 'other.mp3')]);
       await expectLater(
         driverWith().get('/missing.mp3'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('missing.mp3'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('missing.mp3'),
+          ),
+        ),
       );
       expect(adapter.hits.length, 1, reason: '只应发列表请求');
     });
@@ -365,11 +373,13 @@ void main() {
       };
       await expectLater(
         driverWith().get('/vip.mp3'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('未返回播放链接'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.neteaseNoSongLink'),
+          ),
+        ),
       );
     });
 
@@ -436,11 +446,17 @@ void main() {
       final d = driverWith();
       await expectLater(d.mkdir('/x'), throwsA(isA<CloudDriverException>()));
       await expectLater(
-          d.rename('/a', '/b'), throwsA(isA<CloudDriverException>()));
+        d.rename('/a', '/b'),
+        throwsA(isA<CloudDriverException>()),
+      );
       await expectLater(
-          d.move('/a', '/d', 'b'), throwsA(isA<CloudDriverException>()));
+        d.move('/a', '/d', 'b'),
+        throwsA(isA<CloudDriverException>()),
+      );
       await expectLater(
-          d.copy('/a', '/d', 'b'), throwsA(isA<CloudDriverException>()));
+        d.copy('/a', '/d', 'b'),
+        throwsA(isA<CloudDriverException>()),
+      );
       expect(adapter.hits, isEmpty, reason: '不支持的写操作不应出网');
     });
   });
@@ -450,11 +466,13 @@ void main() {
       adapter.respond = (uri, form) => {'code': 301, 'message': 'need login'};
       await expectLater(
         driverWith().list('/'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('301'), contains('Cookie')),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('err.neteaseLoginExpired'), contains('301')),
+          ),
+        ),
       );
     });
 
@@ -462,11 +480,13 @@ void main() {
       adapter.respond = (uri, form) => {'code': -460, 'message': 'Cheating'};
       await expectLater(
         driverWith().list('/'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('-460'), contains('Cheating')),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('-460'), contains('Cheating')),
+          ),
+        ),
       );
     });
 
@@ -479,11 +499,13 @@ void main() {
       );
       await expectLater(
         d.list('/'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('非 JSON'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.neteaseNonJson'),
+          ),
+        ),
       );
     });
   });
@@ -502,11 +524,13 @@ void main() {
       adapter.respond = (uri, form) => {'code': 301, 'message': 'need login'};
       await expectLater(
         driverWith(cookie: '__csrf=a; MUSIC_U=b').client.verifyLogin(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('Cookie'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.neteaseLoginExpired'),
+          ),
+        ),
       );
     });
 
@@ -533,18 +557,30 @@ void main() {
     test('fromJson 默认值与容错', () {
       expect(NeteaseMusicAddition.fromJson(const {}).songLimit, 200);
       expect(
-          NeteaseMusicAddition.fromJson(const {'song_limit': '50'}).songLimit, 50);
+        NeteaseMusicAddition.fromJson(const {'song_limit': '50'}).songLimit,
+        50,
+      );
       expect(
-          NeteaseMusicAddition.fromJson(const {'song_limit': 50}).songLimit, 50);
+        NeteaseMusicAddition.fromJson(const {'song_limit': 50}).songLimit,
+        50,
+      );
       // 非法值回默认
       expect(
-          NeteaseMusicAddition.fromJson(const {'song_limit': 'abc'}).songLimit, 200);
+        NeteaseMusicAddition.fromJson(const {'song_limit': 'abc'}).songLimit,
+        200,
+      );
       expect(
-          NeteaseMusicAddition.fromJson(const {'song_limit': '0'}).songLimit, 200);
-      expect(NeteaseMusicAddition.fromJson(const {'song_limit': -5}).songLimit,
-          200);
-      expect(NeteaseMusicAddition.fromJson(const {'song_limit': null}).songLimit,
-          200);
+        NeteaseMusicAddition.fromJson(const {'song_limit': '0'}).songLimit,
+        200,
+      );
+      expect(
+        NeteaseMusicAddition.fromJson(const {'song_limit': -5}).songLimit,
+        200,
+      );
+      expect(
+        NeteaseMusicAddition.fromJson(const {'song_limit': null}).songLimit,
+        200,
+      );
     });
 
     test('toJson 往返一致', () {
@@ -564,8 +600,13 @@ class _PlainAdapter implements HttpClientAdapter {
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
   ) async {
-    return ResponseBody.fromString('<html>502 bad gateway</html>', 502,
-        headers: {'content-type': ['text/html']});
+    return ResponseBody.fromString(
+      '<html>502 bad gateway</html>',
+      502,
+      headers: {
+        'content-type': ['text/html'],
+      },
+    );
   }
 
   @override

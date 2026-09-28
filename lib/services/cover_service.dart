@@ -130,10 +130,7 @@ class CoverService {
     return null;
   }
 
-  Future<String?> fullCoverPath(
-    String sourceName,
-    String remotePath,
-  ) async {
+  Future<String?> fullCoverPath(String sourceName, String remotePath) async {
     final dir = await coversFullDir;
     final stem = identityHashStem(sourceName, remotePath);
     for (final ext in const ['jpg', 'jpeg', 'png', 'webp']) {

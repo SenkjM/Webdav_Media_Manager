@@ -6,10 +6,7 @@ import 'package:webdav_media_manager/utils/track_identity.dart';
 void main() {
   group('playlist identity', () {
     test('entry identity matches library trackIdentityKey', () {
-      const e = PlaylistEntry(
-        sourceName: 'acc-1',
-        remotePath: '/Music/a.mp3',
-      );
+      const e = PlaylistEntry(sourceName: 'acc-1', remotePath: '/Music/a.mp3');
       expect(e.identityKey, trackIdentityKey('acc-1', '/Music/a.mp3'));
       expect(
         e,
@@ -32,17 +29,13 @@ void main() {
         id: 'p1',
         name: 'local',
         updatedAt: DateTime.utc(2026, 1, 1),
-        entries: const [
-          PlaylistEntry(sourceName: 'a', remotePath: '/x.mp3'),
-        ],
+        entries: const [PlaylistEntry(sourceName: 'a', remotePath: '/x.mp3')],
       );
       final remote = Playlist(
         id: 'p1',
         name: 'remote',
         updatedAt: DateTime.utc(2026, 2, 1),
-        entries: const [
-          PlaylistEntry(sourceName: 'a', remotePath: '/y.mp3'),
-        ],
+        entries: const [PlaylistEntry(sourceName: 'a', remotePath: '/y.mp3')],
       );
       final merged = mergePlaylistsLastWriteWins(local, remote);
       expect(merged.name, 'remote');

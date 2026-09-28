@@ -83,8 +83,11 @@ void main() {
         status: DownloadStatus.cancelled,
       );
 
-      final ordered =
-          DownloadQueueService.orderPending([failed, cancelled, pending]);
+      final ordered = DownloadQueueService.orderPending([
+        failed,
+        cancelled,
+        pending,
+      ]);
       expect(ordered, hasLength(1));
       expect(ordered.single.id, 'p');
     });

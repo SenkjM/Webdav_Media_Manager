@@ -195,13 +195,13 @@ class WebDavService extends ChangeNotifier {
     final cloud = _cloudOf(accountId);
     if (cloud != null) {
       final ok = await cloud.testConnection(accountId);
-      _lastError = ok ? null : '云盘驱动尚未接入';
+      _lastError = ok ? null : 'err.driverNotReady';
       notifyListeners();
       return ok;
     }
     final conn = _resolve(accountId);
     if (conn == null) {
-      _lastError = '未配置 WebDAV';
+      _lastError = 'err.webdavNotConfigured';
       notifyListeners();
       return false;
     }
@@ -232,8 +232,9 @@ class WebDavService extends ChangeNotifier {
     FileTypeConfig? fileTypes,
   }) async {
     final cloud = _cloudOf(accountId);
-    if (cloud != null)
+    if (cloud != null) {
       return cloud.listDirectory(accountId, path, fileTypes: fileTypes);
+    }
     final client = _requireClient(accountId);
     final types = fileTypes ?? FileTypeConfig();
     final normalized = path.isEmpty ? '/' : path;
@@ -333,7 +334,7 @@ class WebDavService extends ChangeNotifier {
     }
     final conn = _resolve(accountId);
     if (conn == null) {
-      throw StateError('账号未连接：$accountId');
+      throw StateError('err.accountNotConnected|$accountId');
     }
     await localFile.parent.create(recursive: true);
     // webdav_client 的 read2File 不支持 Range，续传要自己走 dio；认证头与
@@ -415,13 +416,14 @@ class WebDavService extends ChangeNotifier {
     bool overwrite = false,
   }) async {
     final cloud = _cloudOf(accountId);
-    if (cloud != null)
+    if (cloud != null) {
       return cloud.renamePath(
         accountId,
         oldPath,
         newPath,
         overwrite: overwrite,
       );
+    }
     final client = _requireClient(accountId);
     await client.rename(oldPath, newPath, overwrite);
   }
@@ -505,7 +507,7 @@ class UnknownWebDavAccountException implements Exception {
   final String accountId;
 
   @override
-  String toString() => '来源网盘已移除或未配置（$accountId）';
+  String toString() => 'err.sourceUnbound|$accountId';
 }
 
 /// Cancel token for in-flight downloads (dio).

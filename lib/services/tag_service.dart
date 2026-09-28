@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 
+import '../l10n/generated/app_localizations.dart';
+
 /// Tag fields read from a local audio file after download.
 class ReadTags {
   const ReadTags({
@@ -42,45 +44,45 @@ class ReadTags {
   final Uint8List? coverBytes;
 
   /// Flat map of non-null display fields for “More” / details UI.
-  Map<String, String> toDisplayMap() {
+  Map<String, String> toDisplayMap(AppLocalizations l10n) {
     final m = <String, String>{};
     void put(String k, String? v) {
       final t = v?.trim();
       if (t != null && t.isNotEmpty) m[k] = t;
     }
 
-    put('标题', title);
-    put('艺术家', artist);
-    put('专辑艺术家', albumArtist);
-    put('专辑', album);
+    put(l10n.tagTitle, title);
+    put(l10n.tagArtist, artist);
+    put(l10n.tagAlbumArtist, albumArtist);
+    put(l10n.tagAlbum, album);
     if (trackNumber != null) {
       put(
-        '曲目',
+        l10n.tagTrack,
         trackTotal != null ? '$trackNumber / $trackTotal' : '$trackNumber',
       );
     }
     if (discNumber != null) {
       put(
-        '碟片',
+        l10n.tagDisc,
         discTotal != null ? '$discNumber / $discTotal' : '$discNumber',
       );
     }
-    if (year != null && year! > 0) put('年份', '$year');
-    put('流派', genre);
+    if (year != null && year! > 0) put(l10n.tagYear, '$year');
+    put(l10n.tagGenre, genre);
     if (durationMs != null && durationMs! > 0) {
       final d = Duration(milliseconds: durationMs!);
       final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
       final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-      put('时长', d.inHours > 0 ? '${d.inHours}:$mm:$ss' : '$mm:$ss');
+      put(l10n.tagDuration, d.inHours > 0 ? '${d.inHours}:$mm:$ss' : '$mm:$ss');
     }
     if (bitrate != null && bitrate! > 0) {
-      put('比特率', '${(bitrate! / 1000).round()} kbps');
+      put(l10n.tagBitrate, '${(bitrate! / 1000).round()} kbps');
     }
     if (sampleRate != null && sampleRate! > 0) {
-      put('采样率', '$sampleRate Hz');
+      put(l10n.tagSampleRate, '$sampleRate Hz');
     }
-    put('语言', language);
-    put('歌词', lyrics);
+    put(l10n.tagLanguage, language);
+    put(l10n.tagLyrics, lyrics);
     return m;
   }
 }
@@ -109,8 +111,9 @@ class TagService {
 
       final durationMs = meta.duration?.inMilliseconds;
       final artist = meta.artist ?? meta.albumArtist;
-      final genre =
-          meta.genres.isNotEmpty ? meta.genres.where((g) => g.trim().isNotEmpty).join(', ') : null;
+      final genre = meta.genres.isNotEmpty
+          ? meta.genres.where((g) => g.trim().isNotEmpty).join(', ')
+          : null;
       final year = meta.year?.year;
       return ReadTags(
         title: meta.title,

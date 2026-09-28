@@ -9,6 +9,7 @@ import '../models/library_track.dart';
 import '../utils/backup_crypto.dart';
 import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
+import '../utils/l10n_host.dart';
 import 'accounts_service.dart';
 import 'cloud_drive_service.dart';
 import 'cloud_drivers/driver_registry.dart';
@@ -35,7 +36,7 @@ import 'webdav_service.dart';
 ///
 /// Never includes cached audio files or the download queue. On restore the
 /// cached state is derived from disk, so the player never believes a file
-  /// exists unless it
+/// exists unless it
 /// really is on disk.
 ///
 /// Format: a `WmpContainer` (magic `WDMMBK01`), optionally wrapped in AES-256-GCM
@@ -50,14 +51,14 @@ class BackupService extends ChangeNotifier {
     required WebDavService webDav,
     CacheService? cache,
     CoverService? covers,
-  })  : _libraryDb = libraryDb,
-        _library = library,
-        _accounts = accounts,
-        _settings = settings,
-        _playlists = playlists,
-        _webDav = webDav,
-        _cache = cache,
-        _covers = covers ?? library.covers;
+  }) : _libraryDb = libraryDb,
+       _library = library,
+       _accounts = accounts,
+       _settings = settings,
+       _playlists = playlists,
+       _webDav = webDav,
+       _cache = cache,
+       _covers = covers ?? library.covers;
 
   final LibraryDatabase _libraryDb;
   final LibraryService _library;
@@ -147,12 +148,13 @@ class BackupService extends ChangeNotifier {
       'activeAccountId': _accounts.activeAccountId,
       'passwordEncryption': passphrase.isEmpty ? 'none' : 'aes-256-gcm',
       // 1. WebDAV credentials
-      'credentials': {
-        'accounts': accounts,
-      },
+      'credentials': {'accounts': accounts},
       // 2. Music library
       'library': {
-        'tracks': tracks.where((t) => !t.isCueVirtual).map((t) => t.toMap()).toList(),
+        'tracks': tracks
+            .where((t) => !t.isCueVirtual)
+            .map((t) => t.toMap())
+            .toList(),
         'cueAlbums': cueAlbums,
         'cueSlices': cueSlices,
         'cache': <Map<String, dynamic>>[],
@@ -170,17 +172,15 @@ class BackupService extends ChangeNotifier {
   /// `CREDENTIALS` / `PLAYLISTS` / `SETTINGS` as JSON. Binary on purpose: the
   /// rows are compressed with deflate while the already-compressed covers are
   /// stored as-is — a ZIP would deflate those again for nothing.
-  Future<Uint8List> buildArchiveBytes({
-    required String passphrase,
-  }) async {
+  Future<Uint8List> buildArchiveBytes({required String passphrase}) async {
     final payload = await buildPayload(passphrase: passphrase);
     final tracks = <LibraryTrack>[];
-    for (final raw in (payload['library']?['tracks'] as List<dynamic>? ??
-        const [])) {
+    for (final raw
+        in (payload['library']?['tracks'] as List<dynamic>? ?? const [])) {
       tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
     }
-    for (final raw in (payload['library']?['cueSlices'] as List<dynamic>? ??
-        const [])) {
+    for (final raw
+        in (payload['library']?['cueSlices'] as List<dynamic>? ?? const [])) {
       tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
     }
 
@@ -198,7 +198,9 @@ class BackupService extends ChangeNotifier {
         }
       }
       coverBlobs.add(blob);
-      coverKinds.add(blob == null ? WmpImageKind.none : WmpImageKind.detect(blob));
+      coverKinds.add(
+        blob == null ? WmpImageKind.none : WmpImageKind.detect(blob),
+      );
     }
 
     Uint8List json(Uint8List Function() encode) => encode();
@@ -220,17 +222,23 @@ class BackupService extends ChangeNotifier {
         ]),
         WmpSections.tracks: _trackRecordsOnly(tracks, coverBlobs, coverKinds),
         WmpSections.credentials: json(
-          () => Uint8List.fromList(utf8.encode(jsonEncode(payload['credentials']))),
+          () => Uint8List.fromList(
+            utf8.encode(jsonEncode(payload['credentials'])),
+          ),
         ),
         WmpSections.playlists: json(
-          () => Uint8List.fromList(utf8.encode(jsonEncode(payload['playlists']))),
+          () =>
+              Uint8List.fromList(utf8.encode(jsonEncode(payload['playlists']))),
         ),
         WmpSections.settings: json(
-          () => Uint8List.fromList(utf8.encode(jsonEncode(payload['settings']))),
+          () =>
+              Uint8List.fromList(utf8.encode(jsonEncode(payload['settings']))),
         ),
         WmpSections.cueAlbums: json(
           () => Uint8List.fromList(
-            utf8.encode(jsonEncode(payload['library']?['cueAlbums'] ?? const [])),
+            utf8.encode(
+              jsonEncode(payload['library']?['cueAlbums'] ?? const []),
+            ),
           ),
         ),
         if (coverBlobs.any((b) => b != null))
@@ -313,7 +321,7 @@ class BackupService extends ChangeNotifier {
     notifyListeners();
     try {
       if (!_webDav.hasAccount(accountId)) {
-        throw StateError('备份目的地网盘未配置');
+        throw StateError('err.backupDestNotConfigured');
       }
       final dir = normalizeDir(remoteDir);
       final name = fileName ?? backupFileNameNow();
@@ -322,8 +330,10 @@ class BackupService extends ChangeNotifier {
       final remote = '$dir$name';
       await _webDav.writeBytes(accountId, remote, bytes);
       await _webDav.writeBytes(accountId, '$dir$defaultFileName', bytes);
-      lastMessage =
-          '已备份到 $remote（${_fmtBytes(bytes.length)}；并更新 latest）';
+      lastMessage = L10nHost.current.backupDoneLatest(
+        remote,
+        _fmtBytes(bytes.length),
+      );
     } catch (e) {
       lastError = e.toString();
       rethrow;
@@ -351,11 +361,12 @@ class BackupService extends ChangeNotifier {
     final dir = normalizeDir(remoteDir);
     try {
       final items = await _webDav.listDirectory(accountId, dir);
-      final files = items
-          .where((e) => !e.isDirectory && e.name.endsWith('.wdmm'))
-          .map((e) => e.name)
-          .toList()
-        ..sort((a, b) => b.compareTo(a));
+      final files =
+          items
+              .where((e) => !e.isDirectory && e.name.endsWith('.wdmm'))
+              .map((e) => e.name)
+              .toList()
+            ..sort((a, b) => b.compareTo(a));
       return files;
     } catch (e) {
       final msg = e.toString().toLowerCase();
@@ -397,7 +408,7 @@ class BackupService extends ChangeNotifier {
       Uint8List bytes = data;
       if (BackupCrypto.looksEncrypted(data)) {
         if (passphrase.isEmpty) {
-          throw StateError('此备份已加密，请输入口令');
+          throw StateError('err.backupEncryptedNeedPassphrase');
         }
         bytes = await BackupCrypto.decrypt(data: data, passphrase: passphrase);
       }
@@ -409,16 +420,18 @@ class BackupService extends ChangeNotifier {
         // Readable JSON export (no cover bytes) — accepted as an interchange
         // format for troubleshooting / hand editing.
         final decoded = jsonDecode(utf8.decode(bytes));
-        if (decoded is! Map) throw StateError('无法识别的备份内容');
+        if (decoded is! Map) throw StateError('err.backupUnrecognizedContent');
         payload = Map<String, dynamic>.from(decoded);
       }
 
       final missing = await _applyPayload(payload, passphrase);
       lastMessage = missing.isEmpty
-          ? '备份已恢复：${payload['credentials']?['accounts']?.length ?? 0} 个服务器、'
-              '音乐库与歌单已写回'
-          : '备份已恢复，但以下服务器的密码无法解密并已留空：'
-              '${missing.join('、')}。请在账号管理中补填。';
+          ? L10nHost.current.backupRestoredFull(
+              payload['credentials']?['accounts']?.length ?? 0,
+            )
+          : L10nHost.current.backupRestoredMissingPasswords(
+              missing.join(L10nHost.current.nameJoiner),
+            );
     } catch (e) {
       lastError = e.toString();
       rethrow;
@@ -437,9 +450,7 @@ class BackupService extends ChangeNotifier {
     // failing later on a missing section.
     if (container.kind != WmpFileKind.backup &&
         container.kind != WmpFileKind.exportBundle) {
-      throw WmpFormatException(
-        '这是 ${container.kind} 类文件，不是备份归档',
-      );
+      throw WmpFormatException('err.notBackupArchive|${container.kind}');
     }
     Map<String, dynamic> jsonSection(int id) {
       final raw = container.readSection(id);
@@ -518,7 +529,9 @@ class BackupService extends ChangeNotifier {
       final docs = await getApplicationDocumentsDirectory();
       final dir = Directory(p.join(docs.path, 'covers'));
       if (!await dir.exists()) await dir.create(recursive: true);
-      final file = File(p.join(dir.path, _covers.coverFileName(sourceName, remotePath)));
+      final file = File(
+        p.join(dir.path, _covers.coverFileName(sourceName, remotePath)),
+      );
       await file.writeAsBytes(blob, flush: true);
       return file.path;
     } catch (_) {
@@ -542,7 +555,10 @@ class BackupService extends ChangeNotifier {
       final list = accountsJson['accounts'] as List<dynamic>? ?? const [];
       if (list.isNotEmpty) {
         missing.addAll(
-          await _accounts.restoreFromBackup(accountsJson, passphrase: passphrase),
+          await _accounts.restoreFromBackup(
+            accountsJson,
+            passphrase: passphrase,
+          ),
         );
       }
     }
@@ -563,12 +579,11 @@ class BackupService extends ChangeNotifier {
         await _libraryDb.upsertTrack(t);
       }
       // Cached state is derived from disk (v9): nothing to clear, kept for the
-    // call-site contract.
+      // call-site contract.
       if (_cache != null) {
         await _cache.markAllUncached();
       }
     }
-
 
     // 4. Playlists.
     final playlists = payload['playlists'];

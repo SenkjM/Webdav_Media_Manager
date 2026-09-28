@@ -3,6 +3,7 @@ import '../utils/app_snack.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../providers/app_state.dart';
@@ -79,7 +80,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     // previous extension list after the user edits it here.
     if (mounted) context.read<AppState>().refreshFileTypeClassifiers();
     if (!mounted) return;
-    AppSnack.show(context, '后缀配置已保存');
+    AppSnack.show(context, AppLocalizations.of(context)!.fileExtSaved);
   }
 
   void _restoreDefault(FileCategory category) {
@@ -104,23 +105,25 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
     final actions = settings.fileActions;
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: const Text('文件后缀管理')),
+      appBar: AppBar(title: Text(l10n.fileExtensionSettings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            '按后缀识别文件类型；多个后缀用空格或逗号分隔。返回网络库刷新后生效。'
-            '下面每一类的「单击行为」就是网络库点按该文件时的动作，'
-            '多选工具栏与「更多」菜单遵循同一套判定。',
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+          Text(
+            l10n.fileExtIntro,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 16),
           _buildSection(
-            title: '音乐文件',
-            subtitle: '点按默认动作：${actions.music.labelZh}',
+            title: l10n.fileCatMusic,
+            subtitle: l10n.fileExtDefaultAction(actions.music.label(l10n)),
             controller: _musicController,
             onApply: () => _apply(FileCategory.music),
             onRestore: () => _restoreDefault(FileCategory.music),
@@ -128,8 +131,8 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
           ),
           const SizedBox(height: 16),
           _buildSection(
-            title: '视频文件',
-            subtitle: '点按默认动作：${actions.video.labelZh}',
+            title: l10n.fileCatVideo,
+            subtitle: l10n.fileExtDefaultAction(actions.video.label(l10n)),
             controller: _videoController,
             onApply: () => _apply(FileCategory.video),
             onRestore: () => _restoreDefault(FileCategory.video),
@@ -137,10 +140,8 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
           ),
           const SizedBox(height: 16),
           _buildSection(
-            title: 'CUE 文件',
-            subtitle:
-                '点按默认动作：${actions.cue.labelZh}'
-                '（CUE 读取会解析分片并整组下载）',
+            title: l10n.fileCatCue,
+            subtitle: l10n.fileExtCueNote(actions.cue.label(l10n)),
             controller: _cueController,
             onApply: () => _apply(FileCategory.cue),
             onRestore: () => _restoreDefault(FileCategory.cue),
@@ -148,10 +149,8 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
           ),
           const SizedBox(height: 16),
           _buildSection(
-            title: '普通文件',
-            subtitle:
-                '点按默认动作：${actions.other.labelZh}'
-                '（不在上面三张列表里的后缀，下载到系统下载目录）',
+            title: l10n.fileCatOther,
+            subtitle: l10n.fileExtOtherNote(actions.other.label(l10n)),
             controller: null,
             onApply: null,
             onRestore: null,
@@ -163,19 +162,20 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
   }
 
   Widget _buildActionDropdown(SettingsService settings, FileCategory category) {
+    final l10n = AppLocalizations.of(context)!;
     final actions = settings.fileActions;
     final choices = actions.choicesFor(category);
     final value = actions.forCategory(category);
     return DropdownButtonFormField<FileAction>(
       initialValue: choices.contains(value) ? value : choices.first,
-      decoration: const InputDecoration(
-        labelText: '点按行为',
-        border: OutlineInputBorder(),
+      decoration: InputDecoration(
+        labelText: AppLocalizations.of(context)!.fileExtTapBehavior,
+        border: const OutlineInputBorder(),
         isDense: true,
       ),
       items: [
         for (final a in choices)
-          DropdownMenuItem(value: a, child: Text(a.labelZh)),
+          DropdownMenuItem(value: a, child: Text(a.label(l10n))),
       ],
       onChanged: (v) {
         if (v != null) {
@@ -194,6 +194,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     Widget? actionDropdown,
     Widget? footer,
   }) {
+    final l10n = AppLocalizations.of(context)!;
     return Card(
       color: AppColors.elevated,
       child: Padding(
@@ -216,7 +217,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
                   TextButton.icon(
                     onPressed: onRestore,
                     icon: const Icon(Icons.restore, size: 18),
-                    label: const Text('恢复默认'),
+                    label: Text(l10n.restoreDefault),
                   ),
               ],
             ),
@@ -231,10 +232,10 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
               const SizedBox(height: 8),
               TextField(
                 controller: controller,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isDense: true,
-                  hintText: '例如：mp3 flac m4a',
-                  labelText: '后缀列表',
+                  hintText: l10n.fileExtHintExample,
+                  labelText: l10n.fileExtListLabel,
                 ),
                 onEditingComplete: onApply,
               ),
@@ -250,7 +251,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
                 alignment: Alignment.centerRight,
                 child: FilledButton.tonal(
                   onPressed: onApply,
-                  child: const Text('应用'),
+                  child: Text(l10n.apply),
                 ),
               ),
             ],

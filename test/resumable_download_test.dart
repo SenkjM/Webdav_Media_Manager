@@ -10,7 +10,9 @@ Future<HttpServer> _serve({required bool honourRange}) async {
   final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   server.listen((req) {
     final range = req.headers.value('range');
-    final match = range == null ? null : RegExp(r'bytes=(\d+)-').firstMatch(range);
+    final match = range == null
+        ? null
+        : RegExp(r'bytes=(\d+)-').firstMatch(range);
     if (honourRange && match != null) {
       final start = int.parse(match.group(1)!);
       req.response

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/cache_policy.dart';
 import '../models/snack_duration.dart';
 import '../providers/app_state.dart';
@@ -234,13 +235,13 @@ class _SettingsScreenState extends State<SettingsScreen>
       backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
-        title: const Text('设置'),
+        title: Text(AppLocalizations.of(context)!.settings),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            'WebDAV 服务器',
+            AppLocalizations.of(context)!.webdavServer,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -248,8 +249,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.dns_outlined),
-            title: const Text('管理多服务器账号'),
-            subtitle: const Text('添加 / 编辑 / 删除 WebDAV 服务器'),
+            title: Text(AppLocalizations.of(context)!.accountsTitle),
+            subtitle: Text(AppLocalizations.of(context)!.accountsSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(
@@ -259,7 +260,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const Divider(height: 40),
           Text(
-            '下载',
+            AppLocalizations.of(context)!.download,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -267,8 +268,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.download_outlined),
-            title: const Text('下载队列'),
-            subtitle: const Text('断点续传的临时文件保留上限与清理'),
+            title: Text(AppLocalizations.of(context)!.downloadQueue),
+            subtitle: Text(AppLocalizations.of(context)!.downloadQueueSettingsSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
@@ -279,7 +280,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             },
           ),
           Text(
-            '主页与导航',
+            AppLocalizations.of(context)!.homeAndNavigation,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -287,16 +288,16 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.home_outlined),
-            title: const Text('自定义主页'),
-            subtitle: const Text('从其他界面返回时回到此主页'),
+            title: Text(AppLocalizations.of(context)!.customHome),
+            subtitle: Text(AppLocalizations.of(context)!.customHomeSubtitle),
             trailing: DropdownButton<int>(
               value: settings.homeTab,
-              items: const [
-                DropdownMenuItem(value: 0, child: Text('音乐库')),
-                DropdownMenuItem(value: 1, child: Text('歌单')),
-                DropdownMenuItem(value: 2, child: Text('网络库')),
-                DropdownMenuItem(value: 3, child: Text('下载队列')),
-                DropdownMenuItem(value: 4, child: Text('设置')),
+              items: [
+                DropdownMenuItem(value: 0, child: Text(AppLocalizations.of(context)!.library)),
+                DropdownMenuItem(value: 1, child: Text(AppLocalizations.of(context)!.playlists)),
+                DropdownMenuItem(value: 2, child: Text(AppLocalizations.of(context)!.networkLibrary)),
+                DropdownMenuItem(value: 3, child: Text(AppLocalizations.of(context)!.downloadQueue)),
+                DropdownMenuItem(value: 4, child: Text(AppLocalizations.of(context)!.settings)),
               ],
               onChanged: (v) {
                 if (v != null) context.read<SettingsService>().setHomeTab(v);
@@ -306,15 +307,15 @@ class _SettingsScreenState extends State<SettingsScreen>
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.history),
-            title: const Text('网络库记住上次路径'),
-            subtitle: const Text('下次进入网络库时恢复上次浏览的目录'),
+            title: Text(AppLocalizations.of(context)!.rememberNetworkPath),
+            subtitle: Text(AppLocalizations.of(context)!.rememberNetworkPathSubtitle),
             value: settings.networkRememberLastPath,
             onChanged: (v) =>
                 context.read<SettingsService>().setNetworkRememberLastPath(v),
           ),
           const Divider(height: 40),
           Text(
-            '视频播放',
+            AppLocalizations.of(context)!.videoPlayback,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -322,8 +323,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.video_library_outlined),
-            title: const Text('视频播放设置'),
-            subtitle: const Text('流式参数 / 手势 / 后台播放 / 画中画'),
+            title: Text(AppLocalizations.of(context)!.videoSettings),
+            subtitle: Text(AppLocalizations.of(context)!.videoSettingsSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
@@ -334,8 +335,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.graphic_eq),
-            title: const Text('音频流式设置'),
-            subtitle: const Text('流式传输开关 / 搜索子目录'),
+            title: Text(AppLocalizations.of(context)!.audioStreamingTitle),
+            subtitle: Text(AppLocalizations.of(context)!.audioStreamingSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
@@ -347,7 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const Divider(height: 40),
           Text(
-            '文件类型',
+            AppLocalizations.of(context)!.fileTypes,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -355,8 +356,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.extension_outlined),
-            title: const Text('文件后缀管理'),
-            subtitle: const Text('音乐 / 视频 / CUE 后缀与默认操作'),
+            title: Text(AppLocalizations.of(context)!.fileTypesManage),
+            subtitle: Text(AppLocalizations.of(context)!.fileTypesManageSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
@@ -368,13 +369,13 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.sell_outlined),
-            title: const Text('手动更新音乐库标签'),
-            subtitle: const Text('异步读取已缓存音乐文件的标签并更新曲库'),
+            title: Text(AppLocalizations.of(context)!.refreshLibraryTags),
+            subtitle: Text(AppLocalizations.of(context)!.refreshLibraryTagsSubtitle),
             onTap: () => unawaited(_refreshLibraryTags(context)),
           ),
           const SizedBox(height: 8),
           Text(
-            '媒体通知',
+            AppLocalizations.of(context)!.mediaNotifications,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -386,7 +387,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   ? Icons.notifications_active_outlined
                   : Icons.notifications_off_outlined,
             ),
-            title: const Text('播放通知权限'),
+            title: Text(AppLocalizations.of(context)!.mediaNotifications),
             subtitle: Text(_notificationSubtitle(notif)),
             value: notif.isGranted,
             onChanged: (_) => _onNotificationTap(context, notif),
@@ -394,11 +395,11 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.graphic_eq),
-            title: const Text('「音乐播放」通道'),
+            title: Text(AppLocalizations.of(context)!.ntfMediaChannelName),
             subtitle: Text(notif.channelStatusLabel),
             trailing: TextButton(
               onPressed: () => _refreshNotificationState(context, notif),
-              child: const Text('刷新'),
+              child: Text(AppLocalizations.of(context)!.refresh),
             ),
           ),
           if (!notif.isGranted)
@@ -416,13 +417,13 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
           const Divider(height: 40),
           Text(
-            '封面缩略图尺寸',
+            AppLocalizations.of(context)!.coverThumbSize,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
           Text(
-            '新封面按此边长生成；已有封面需重新生成。',
+            AppLocalizations.of(context)!.coverThumbHint,
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
@@ -467,7 +468,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
                       isDense: true,
-                      labelText: '边长 (px)',
+                      labelText: AppLocalizations.of(context)!.coverSize,
                       border: const OutlineInputBorder(),
                       helperText: '$minCoverThumbSize–$maxCoverThumbSize',
                     ),
@@ -477,7 +478,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const SizedBox(width: 12),
                 FilledButton.tonal(
                   onPressed: _applyCustomCoverSize,
-                  child: const Text('应用'),
+                  child: Text(AppLocalizations.of(context)!.apply),
                 ),
               ],
             ),
@@ -489,12 +490,12 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const Divider(height: 40),
           Text(
-            '缓存清理',
+            AppLocalizations.of(context)!.cacheCleanup,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          Text('仅清理音频缓存（播放/下载中的保留），标签与封面不受影响。'),
+          Text(AppLocalizations.of(context)!.cacheCleanupHint),
           const SizedBox(height: 12),
           Card(
             color: AppColors.elevated,
@@ -503,16 +504,16 @@ class _SettingsScreenState extends State<SettingsScreen>
                 Icons.sd_storage_outlined,
                 color: AppColors.accent,
               ),
-              title: const Text('当前缓存占用'),
+              title: Text(AppLocalizations.of(context)!.currentCacheUsage),
               subtitle: Text(
                 _cacheSizeLoading
-                    ? '计算中…'
+                    ? AppLocalizations.of(context)!.calculating
                     : (_cacheBytes == null
-                          ? '未知'
+                          ? AppLocalizations.of(context)!.unknown
                           : formatByteSize(_cacheBytes!)),
               ),
               trailing: IconButton(
-                tooltip: '刷新',
+                tooltip: AppLocalizations.of(context)!.refresh,
                 icon: const Icon(Icons.refresh),
                 onPressed: _cacheSizeLoading ? null : _refreshCacheSize,
               ),
@@ -524,19 +525,19 @@ class _SettingsScreenState extends State<SettingsScreen>
             segments: [
               ButtonSegment(
                 value: CacheRetention.oneDay,
-                label: Text(CacheRetention.oneDay.labelZh),
+                label: Text(CacheRetention.oneDay.label(AppLocalizations.of(context)!)),
               ),
               ButtonSegment(
                 value: CacheRetention.oneWeek,
-                label: Text(CacheRetention.oneWeek.labelZh),
+                label: Text(CacheRetention.oneWeek.label(AppLocalizations.of(context)!)),
               ),
               ButtonSegment(
                 value: CacheRetention.custom,
-                label: Text(CacheRetention.custom.labelZh),
+                label: Text(CacheRetention.custom.label(AppLocalizations.of(context)!)),
               ),
               ButtonSegment(
                 value: CacheRetention.never,
-                label: Text(CacheRetention.never.labelZh),
+                label: Text(CacheRetention.never.label(AppLocalizations.of(context)!)),
               ),
             ],
             selected: {settings.retention},
@@ -551,7 +552,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (settings.retention == CacheRetention.custom) ...[
             const SizedBox(height: 12),
             Text(
-              '自定义保留时长（至少 1 小时）',
+              AppLocalizations.of(context)!.customRetentionHint,
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -562,9 +563,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                   child: TextField(
                     controller: _customDaysController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       isDense: true,
-                      labelText: '天',
+                      labelText: AppLocalizations.of(context)!.days,
                       border: OutlineInputBorder(),
                     ),
                     onEditingComplete: _applyCustomRetention,
@@ -576,9 +577,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                   child: TextField(
                     controller: _customHoursController,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       isDense: true,
-                      labelText: '小时',
+                      labelText: AppLocalizations.of(context)!.hours,
                       border: OutlineInputBorder(),
                     ),
                     onEditingComplete: _applyCustomRetention,
@@ -587,7 +588,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 const SizedBox(width: 12),
                 FilledButton.tonal(
                   onPressed: _applyCustomRetention,
-                  child: const Text('应用'),
+                  child: Text(AppLocalizations.of(context)!.apply),
                 ),
               ],
             ),
@@ -600,7 +601,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           if (settings.retention == CacheRetention.never) ...[
             const SizedBox(height: 8),
             Text(
-              '已关闭自动清理，可用下方按钮手动清空。',
+              AppLocalizations.of(context)!.autoCleanupDisabled,
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
@@ -608,7 +609,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           OutlinedButton.icon(
             onPressed: () => _clearCache(context),
             icon: const Icon(Icons.delete_outline),
-            label: const Text('手动清空音频缓存'),
+            label: Text(AppLocalizations.of(context)!.clearAudioCache),
           ),
 
           const Divider(height: 40),
@@ -627,12 +628,12 @@ class _SettingsScreenState extends State<SettingsScreen>
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.timer_outlined),
             title: const Text('提示显示时长'),
-            subtitle: Text(settings.snackMode.labelZh),
+            subtitle: Text(settings.snackMode.label(AppLocalizations.of(context)!)),
             trailing: DropdownButton<SnackDuration>(
               value: settings.snackMode,
               items: [
                 for (final m in SnackDuration.values)
-                  DropdownMenuItem(value: m, child: Text(m.labelZh)),
+                  DropdownMenuItem(value: m, child: Text(m.label(AppLocalizations.of(context)!))),
               ],
               onChanged: (v) {
                 if (v != null) settings.setSnackMode(v);
@@ -676,24 +677,24 @@ class _SettingsScreenState extends State<SettingsScreen>
 
           const Divider(height: 40),
           Text(
-            '分享',
+            AppLocalizations.of(context)!.shareAction,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          Text('分享时按标签重命名文件名。', style: Theme.of(context).textTheme.bodySmall),
+          Text(AppLocalizations.of(context)!.shareRenameHint, style: Theme.of(context).textTheme.bodySmall),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.drive_file_rename_outline),
-            title: const Text('分享时按标签重命名'),
-            subtitle: const Text('默认开启；分享单个文件时仍可再修改文件名'),
+            title: Text(AppLocalizations.of(context)!.shareRenameTitle),
+            subtitle: Text(AppLocalizations.of(context)!.shareRenameSubtitle),
             value: settings.shareTagRenameEnabled,
             onChanged: (v) => settings.setShareTagRenameEnabled(v),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.text_fields),
-            title: const Text('重命名模板'),
+            title: Text(AppLocalizations.of(context)!.renameTemplate),
             subtitle: Text(
               '${settings.shareTagRenamePattern}\n'
               '占位符：{artist} {title} {album} {albumArtist} '
@@ -706,7 +707,7 @@ class _SettingsScreenState extends State<SettingsScreen>
 
           const Divider(height: 40),
           Text(
-            '同步与备份',
+            AppLocalizations.of(context)!.syncAndBackup,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -716,7 +717,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.sync),
-            title: const Text('同步与备份设置'),
+            title: Text(AppLocalizations.of(context)!.syncSettings),
             subtitle: Text(
               '凭证 / 歌单 / 音乐库 / 备份共用一条远端路径：\n'
               '${settings.syncRemoteRoot}',
@@ -747,7 +748,7 @@ class _SettingsScreenState extends State<SettingsScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
-        title: const Text('分享重命名模板'),
+        title: Text(AppLocalizations.of(context)!.shareRenameTemplate),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -755,7 +756,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             TextField(
               controller: controller,
               autofocus: true,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
+              decoration: InputDecoration(border: OutlineInputBorder()),
             ),
             const SizedBox(height: 8),
             const Text(
@@ -767,11 +768,11 @@ class _SettingsScreenState extends State<SettingsScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppLocalizations.of(context)!.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('保存'),
+            child: Text(AppLocalizations.of(context)!.save),
           ),
         ],
       ),

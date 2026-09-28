@@ -1,4 +1,5 @@
 import '../models/playlist.dart';
+import '../models/playlist_sentinels.dart';
 
 /// Encode / decode playlist as extended M3U8 with Webdav Media Manager extensions.
 ///
@@ -31,12 +32,18 @@ class M3u8PlaylistCodec {
       final secs = e.durationMs != null ? (e.durationMs! / 1000).round() : -1;
       final title = _escape(e.title ?? e.remotePath.split('/').last);
       buf.writeln('#EXTINF:$secs,$title');
-      buf.writeln('$pathScheme${e.sourceName}${e.remotePath.startsWith('/') ? '' : '/'}${e.remotePath}');
+      buf.writeln(
+        '$pathScheme${e.sourceName}${e.remotePath.startsWith('/') ? '' : '/'}${e.remotePath}',
+      );
     }
     return buf.toString();
   }
 
-  static Playlist decode(String text, {String? fallbackId, String? fallbackName}) {
+  static Playlist decode(
+    String text, {
+    String? fallbackId,
+    String? fallbackName,
+  }) {
     final lines = text
         .split(RegExp(r'\r?\n'))
         .map((l) => l.trim())
@@ -44,7 +51,7 @@ class M3u8PlaylistCodec {
         .toList();
 
     String id = fallbackId ?? '';
-    String name = fallbackName ?? '未命名';
+    String name = fallbackName ?? kUnnamedPlaylistName;
     DateTime updatedAt = DateTime.now().toUtc();
     final entries = <PlaylistEntry>[];
     String? pendingTitle;
@@ -54,7 +61,8 @@ class M3u8PlaylistCodec {
       if (line.startsWith(idTag)) {
         id = line.substring(idTag.length).trim();
       } else if (line.startsWith(updatedTag)) {
-        updatedAt = DateTime.tryParse(line.substring(updatedTag.length).trim())
+        updatedAt =
+            DateTime.tryParse(line.substring(updatedTag.length).trim())
                 ?.toUtc() ??
             updatedAt;
       } else if (line.startsWith(nameTag)) {
@@ -72,12 +80,14 @@ class M3u8PlaylistCodec {
       } else {
         final parsed = parsePathLine(line);
         if (parsed != null) {
-          entries.add(PlaylistEntry(
-            sourceName: parsed.$1,
-            remotePath: parsed.$2,
-            title: pendingTitle,
-            durationMs: pendingDurationMs,
-          ));
+          entries.add(
+            PlaylistEntry(
+              sourceName: parsed.$1,
+              remotePath: parsed.$2,
+              title: pendingTitle,
+              durationMs: pendingDurationMs,
+            ),
+          );
         }
         pendingTitle = null;
         pendingDurationMs = null;
@@ -88,12 +98,7 @@ class M3u8PlaylistCodec {
       id = fallbackId ?? 'imported-${updatedAt.millisecondsSinceEpoch}';
     }
 
-    return Playlist(
-      id: id,
-      name: name,
-      entries: entries,
-      updatedAt: updatedAt,
-    );
+    return Playlist(id: id, name: name, entries: entries, updatedAt: updatedAt);
   }
 
   /// Parse `wmp://accountId/remote/path` or plain `/remote/path` (account empty).
@@ -123,6 +128,7 @@ class M3u8PlaylistCodec {
     return '${stem}_$shortId.m3u8';
   }
 
-  static String _escape(String s) => s.replaceAll('\n', ' ').replaceAll('\r', '');
+  static String _escape(String s) =>
+      s.replaceAll('\n', ' ').replaceAll('\r', '');
   static String _unescape(String s) => s;
 }

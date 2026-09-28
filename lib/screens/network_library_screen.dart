@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/account_capabilities.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/download_task.dart';
 import '../models/file_actions.dart';
 import '../models/webdav_stream.dart';
@@ -107,15 +108,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // Take the system back key for directory navigation / multi-select.
     BackHandlerRegistry.register(_handleSystemBack, tab: 2);
     // 网络恢复时若停在错误界面（自动重试已耗尽），补一次自动重试。
-    _connectivitySub ??=
-        Connectivity().onConnectivityChanged.listen((results) {
-          final online = results.any((r) => r != ConnectivityResult.none);
-          if (!online || !mounted) return;
-          if (_error != null && _loadFailures >= _kMaxLoadFailures) {
-            _loadFailures = 0; // 网络变化 = 新的一轮（用户要求网络检测可用于此）。
-            _ensureAndLoad();
-          }
-        });
+    _connectivitySub ??= Connectivity().onConnectivityChanged.listen((results) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (!online || !mounted) return;
+      if (_error != null && _loadFailures >= _kMaxLoadFailures) {
+        _loadFailures = 0; // 网络变化 = 新的一轮（用户要求网络检测可用于此）。
+        _ensureAndLoad();
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _ensureAndLoad());
   }
 
@@ -140,11 +140,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   }
 
   Future<void> _ensureAndLoadInner() async {
+    final l10n = AppLocalizations.of(context)!;
     final app = context.read<AppState>();
     final accounts = context.read<AccountsService>();
     if (!accounts.hasAccounts) {
       setState(() {
-        _error = '请先添加 WebDAV 服务器';
+        _error = l10n.accountRequired;
         _items = [];
       });
       return;
@@ -165,13 +166,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 动画，这里只负责发请求。响应带请求序号，过期（期间又导航过）即丢弃，
   /// 避免旧目录内容写进新路径的页面。
   Future<void> _load() async {
+    final l10n = AppLocalizations.of(context)!;
     final seq = ++_loadSeq;
     final webDav = context.read<WebDavService>();
     final accounts = context.read<AccountsService>();
     if (!accounts.hasAccounts) {
       if (seq != _loadSeq) return;
       setState(() {
-        _error = '请先添加 WebDAV 服务器';
+        _error = l10n.accountRequired;
         _items = [];
         _loading = false;
       });
@@ -214,7 +216,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       final giveUp = _loadFailures >= _kMaxLoadFailures;
       setState(() {
         _error = giveUp
-            ? '${e.toString()}\n\n已自动重试 $_loadFailures 次仍失败，等待手动重试。'
+            ? AppLocalizations.of(context)!
+                  .netLoadGiveUpFailed(e.toString(), _loadFailures)
             : e.toString();
         _loading = false;
         _items = [];
@@ -351,7 +354,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       isDirectory: item.isDirectory,
     );
     if (!decision.allowed) {
-      AppSnack.error(context, decision.reason ?? '该动作不适用于这个文件');
+      AppSnack.error(
+        context,
+        decision.reason?.label(AppLocalizations.of(context)!) ??
+            AppLocalizations.of(context)!.fileActionNotApplicableGeneric,
+      );
       return;
     }
     await _runAction(item, decision.action);
@@ -416,7 +423,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       await downloads.ensureQueued(sourceName, item.path, fileName: item.name);
     } catch (e) {
       if (!mounted) return;
-      AppSnack.error(context, '加入下载失败：${downloads.lastError ?? e}');
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.error(
+        context,
+        l10n.netEnqueueFailed(
+          DownloadQueueService.describeError(
+            downloads.lastError ?? e.toString(),
+            l10n,
+          ),
+        ),
+      );
     }
   }
 
@@ -433,10 +449,21 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         fileName: item.name,
       );
       if (!mounted) return;
-      if (!queued) AppSnack.show(context, '该文件已在下载队列或已下载');
+      if (!queued) {
+        AppSnack.show(context, AppLocalizations.of(context)!.fileQueuedOrSaved);
+      }
     } catch (e) {
       if (!mounted) return;
-      AppSnack.error(context, '加入下载失败：${downloads.lastError ?? e}');
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.error(
+        context,
+        l10n.netEnqueueFailed(
+          DownloadQueueService.describeError(
+            downloads.lastError ?? e.toString(),
+            l10n,
+          ),
+        ),
+      );
     }
   }
 
@@ -452,7 +479,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 文件来解析标签。完整取舍见 docs/99 的《音乐流式传输可行性分析》。
   Future<void> _streamMusic(WebDavItem item) async {
     if (!context.read<SettingsService>().audioStreamingEnabled) {
-      AppSnack.error(context, '音乐流式传输是实验功能，请先在设置里打开');
+      AppSnack.error(
+        context,
+        AppLocalizations.of(context)!.netStreamingExperimental,
+      );
       return;
     }
     final accountId = _accountId;
@@ -484,11 +514,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           sourceLoader: source != null
               ? null
               : () => context.read<WebDavService>().resolveStreamSource(
-                    remotePath: item.path,
-                    name: item.name,
-                    accountId: accountId,
-                    kind: StreamKind.music,
-                  ),
+                  remotePath: item.path,
+                  name: item.name,
+                  accountId: accountId,
+                  kind: StreamKind.music,
+                ),
           seed: seed,
         ),
       ),
@@ -509,12 +539,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => const AlertDialog(
+      builder: (ctx) => AlertDialog(
         content: Row(
           children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 20),
-            Expanded(child: Text('正在解析 CUE…')),
+            const CircularProgressIndicator(),
+            const SizedBox(width: 20),
+            Expanded(child: Text(AppLocalizations.of(ctx)!.netParsingCue)),
           ],
         ),
       ),
@@ -526,14 +556,20 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // close loading
       if (sheet == null) {
-        AppSnack.show(context, '无法解析的 CUE：需要标准 FILE + TRACK/INDEX');
+        AppSnack.show(context, AppLocalizations.of(context)!.dlErrCueMalformed);
         return;
       }
       await _showCuePreview(item, sheet);
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      AppSnack.show(context, '读取 CUE 失败：$e');
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.show(
+        context,
+        l10n.netCueReadFailed(
+          DownloadQueueService.describeError(e.toString(), l10n),
+        ),
+      );
     }
   }
 
@@ -597,19 +633,24 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                   child: Text(
-                    '多歌曲合并分片 · CUE · ${sheet.tracks.length} 曲'
-                    '${multiFile ? ' · ${byFile.length} 个音频文件' : ''}',
+                    multiFile
+                        ? AppLocalizations.of(ctx)!.netCueGroupTitleMulti(
+                            byFile.length,
+                            sheet.tracks.length,
+                          )
+                        : AppLocalizations.of(ctx)!
+                              .netCueGroupTitle(sheet.tracks.length),
                     style: const TextStyle(
                       color: AppColors.mutedText,
                       fontSize: 12,
                     ),
                   ),
                 ),
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Text(
-                    '将整张专辑按分片导入音乐库。',
-                    style: TextStyle(
+                    AppLocalizations.of(ctx)!.netCueGroupSubtitle,
+                    style: const TextStyle(
                       color: AppColors.secondaryText,
                       fontSize: 12,
                     ),
@@ -658,7 +699,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () => Navigator.pop(ctx, 'close'),
-                          child: const Text('关闭'),
+                          child: Text(AppLocalizations.of(ctx)!.close),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -666,7 +707,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                         child: FilledButton.icon(
                           onPressed: () => Navigator.pop(ctx, 'download'),
                           icon: const Icon(Icons.download),
-                          label: const Text('下载'),
+                          label: Text(AppLocalizations.of(ctx)!.download),
                         ),
                       ),
                     ],
@@ -696,7 +737,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      AppSnack.error(context, 'CUE 下载失败：$e');
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.error(
+        context,
+        l10n.netCueDownloadFailed(
+          DownloadQueueService.describeError(e.toString(), l10n),
+        ),
+      );
     }
   }
 
@@ -710,6 +757,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final settings = context.read<SettingsService>();
+    final l10n = AppLocalizations.of(context)!;
     final defaultAction = settings.fileActions.forCategory(item.category);
     final otherActions = FileActionCatalog.forCategory(item.category)
         .where((a) => a != defaultAction)
@@ -742,8 +790,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ),
                   subtitle: Text(
                     item.isDirectory
-                        ? '文件夹'
-                        : '${categoryLabelZh(item.category)} · 点按＝${defaultAction.labelZh}',
+                        ? l10n.netFolder
+                        : l10n.netItemSubtitle(
+                            defaultAction.label(l10n),
+                            item.category.label(l10n),
+                          ),
                     style: const TextStyle(color: AppColors.mutedText),
                   ),
                 ),
@@ -752,8 +803,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 if (item.isDirectory) ...[
                   ListTile(
                     leading: const Icon(Icons.library_music_outlined),
-                    title: const Text('缓存文件夹中的音频'),
-                    subtitle: const Text('递归扫描，音频进缓存并进音乐库'),
+                    title: Text(l10n.netCacheFolderAudio),
+                    subtitle: Text(l10n.netCacheFolderAudioDesc),
                     onTap: () {
                       Navigator.pop(ctx);
                       _enqueueFolder(item);
@@ -763,8 +814,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     // 下载就是下载：图标跟工具栏、跟文件行一致，不因对象是
                     // 文件夹就换一个（用户明确要求）。
                     leading: const Icon(Icons.download),
-                    title: const Text('下载整个文件夹'),
-                    subtitle: const Text('递归下载目录树，不挑文件类型'),
+                    title: Text(l10n.netDownloadWholeFolder),
+                    subtitle: Text(l10n.netDownloadWholeFolderDesc),
                     onTap: () {
                       Navigator.pop(ctx);
                       _downloadSelection([item], const []);
@@ -773,8 +824,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ] else ...[
                   ListTile(
                     leading: Icon(_actionIcon(defaultAction)),
-                    title: Text(defaultAction.labelZh),
-                    subtitle: const Text('设置里的默认动作'),
+                    title: Text(defaultAction.label(l10n)),
+                    subtitle: Text(l10n.netDefaultActionFromSettings),
                     onTap: () {
                       Navigator.pop(ctx);
                       _runDefaultAction(item);
@@ -783,9 +834,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   for (final action in otherActions)
                     ListTile(
                       leading: Icon(_actionIcon(action)),
-                      title: Text(action.labelZh),
+                      title: Text(action.label(l10n)),
                       subtitle: action == FileAction.streamMusic
-                          ? const Text('实验性：不下载、不进音乐库')
+                          ? Text(l10n.netExperimentalNoDownload)
                           : null,
                       onTap: () {
                         Navigator.pop(ctx);
@@ -796,8 +847,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   if (item.isVideo)
                     ListTile(
                       leading: const Icon(Icons.photo_library_outlined),
-                      title: const Text('下载到系统相册'),
-                      subtitle: const Text('保存到 Movies/WebdavMediaManager'),
+                      title: Text(l10n.netDownloadToGallery),
+                      subtitle: Text(l10n.netDownloadToGalleryDesc),
                       onTap: () {
                         Navigator.pop(ctx);
                         _downloadToGallery(item);
@@ -807,7 +858,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 const Divider(height: 1, color: AppColors.divider),
                 ListTile(
                   leading: const Icon(Icons.drive_file_rename_outline),
-                  title: const Text('重命名'),
+                  title: Text(l10n.rename),
                   onTap: () {
                     Navigator.pop(ctx);
                     _renameItem(item);
@@ -815,7 +866,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.copy_outlined),
-                  title: const Text('复制到…'),
+                  title: Text(l10n.netCopyTo),
                   onTap: () {
                     Navigator.pop(ctx);
                     _copyOrMove([item], move: false);
@@ -823,7 +874,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.drive_file_move_outline),
-                  title: const Text('移动到…'),
+                  title: Text(l10n.netMoveTo),
                   onTap: () {
                     Navigator.pop(ctx);
                     _copyOrMove([item], move: true);
@@ -834,7 +885,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     Icons.delete_outline,
                     color: AppColors.error,
                   ),
-                  title: const Text('删除'),
+                  title: Text(l10n.delete),
                   onTap: () {
                     Navigator.pop(ctx);
                     _deleteItem(item);
@@ -883,10 +934,24 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         fileName: item.name,
       );
       if (!mounted) return;
-      if (!queued) AppSnack.show(context, '该文件已在队列或已保存');
+      if (!queued) {
+        AppSnack.show(
+          context,
+          AppLocalizations.of(context)!.fileQueuedOrSavedShort,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
-      AppSnack.error(context, '加入下载失败：${downloads.lastError ?? e}');
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.error(
+        context,
+        l10n.netEnqueueFailed(
+          DownloadQueueService.describeError(
+            downloads.lastError ?? e.toString(),
+            l10n,
+          ),
+        ),
+      );
     }
   }
 
@@ -895,20 +960,22 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建文件夹'),
+        title: Text(AppLocalizations.of(ctx)!.newFolder),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: '名称'),
+          decoration: InputDecoration(
+            labelText: AppLocalizations.of(ctx)!.nameLabel,
+          ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppLocalizations.of(ctx)!.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('创建'),
+            child: Text(AppLocalizations.of(ctx)!.create),
           ),
         ],
       ),
@@ -927,20 +994,22 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('重命名'),
+        title: Text(AppLocalizations.of(ctx)!.rename),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: '新名称'),
+          decoration: InputDecoration(
+            labelText: AppLocalizations.of(ctx)!.netNewName,
+          ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppLocalizations.of(ctx)!.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('确定'),
+            child: Text(AppLocalizations.of(ctx)!.confirm),
           ),
         ],
       ),
@@ -963,16 +1032,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('确认删除'),
-        content: Text('确定删除「${item.name}」？此操作不可撤销。'),
+        title: Text(AppLocalizations.of(ctx)!.netConfirmDeleteTitle),
+        content: Text(AppLocalizations.of(ctx)!.netConfirmDeleteMsg(item.name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppLocalizations.of(ctx)!.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(AppLocalizations.of(ctx)!.delete),
           ),
         ],
       ),
@@ -1021,6 +1090,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     AudioPlayerService player,
     WebDavAccount? active,
   ) {
+    final l10n = AppLocalizations.of(context)!;
     // 服务器多起来时菜单别顶到屏幕外：最多半屏，超出部分在里面滚动。
     // 菜单默认会「向下放不下就往上弹」，限高之后基本只会向下展开。
     final menuMaxHeight = MediaQuery.sizeOf(context).height / 2;
@@ -1031,19 +1101,19 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         // back key (see BackHandlerRegistry), so the top-left is reserved for the
         // side menu like every other tab.
         leading: const DrawerMenuButton(),
-        title: Text(folderDisplayName(_path)),
+        title: Text(folderDisplayName(_path, rootLabel: l10n.rootFolder)),
         actions: [
           // 新建文件夹按「创建文件夹」能力遮罩（99 §7.2.3 / §7.2.6）：无能力
           // 直接隐藏而非置灰；驱动层的语义错误是第二道防线。
           if (accounts.hasAccounts && _canCreateFolder)
             IconButton(
               icon: const Icon(Icons.create_new_folder_outlined),
-              tooltip: '新建文件夹',
+              tooltip: l10n.newFolder,
               onPressed: _createFolder,
             ),
           IconButton(
             icon: const Icon(Icons.dns_outlined),
-            tooltip: '管理服务器',
+            tooltip: l10n.manageServers,
             onPressed: () async {
               await Navigator.of(
                 context,
@@ -1070,9 +1140,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 // 选中项撑满按钮宽度：否则长名字会把菜单撑得比按钮宽，
                 // 半屏限高后更容易显得不对称。
                 isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: '当前服务器',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.currentServer,
+                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
                 items: accounts.accounts
@@ -1082,7 +1152,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                         // 名称（用户名）so two mounts on the same host are
                         // distinguishable at a glance.
                         child: Text(
-                          webDavAccountLabel(a),
+                          webDavAccountLabel(a, l10n),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -1125,7 +1195,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   _loadFailures = 0; // 手动重试 = 用户意志，重置上限。
                   _ensureAndLoad();
                 },
-                child: const Text('重试'),
+                child: Text(AppLocalizations.of(context)!.retry),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -1135,7 +1205,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   );
                   if (mounted) await _ensureAndLoad();
                 },
-                child: const Text('管理服务器'),
+                child: Text(AppLocalizations.of(context)!.manageServers),
               ),
             ],
           ),
@@ -1143,7 +1213,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       );
     }
     if (_items.isEmpty) {
-      return const Center(child: Text('空目录'));
+      return Center(child: Text(AppLocalizations.of(context)!.emptyDirectory));
     }
     final sourceName =
         context.read<AccountsService>().nameForAccount(active?.id ?? '') ?? '';
@@ -1162,7 +1232,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     const Icon(Icons.folder_rounded, color: AppColors.accent),
                   ),
                   title: Text(item.name),
-                  subtitle: const Text('目录'),
+                  subtitle: Text(AppLocalizations.of(context)!.directory),
                   trailing: _itemMenuButton(item),
                   onTap: () => _onEntryTap(item),
                   onLongPress: () => _enterSelect(item),
@@ -1176,7 +1246,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ),
                   title: Text(item.name),
                   subtitle: Text(
-                    item.size != null ? _fmtSize(item.size!) : 'CUE 文件',
+                    item.size != null
+                        ? _fmtSize(item.size!)
+                        : AppLocalizations.of(context)!.cueFile,
                   ),
                   trailing: _itemMenuButton(item),
                   onTap: () => _onEntryTap(item),
@@ -1202,8 +1274,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   title: Text(item.name),
                   subtitle: Text(
                     [
-                      item.size != null ? _fmtSize(item.size!) : '视频',
-                      if (saved) '系统相册',
+                      item.size != null
+                          ? _fmtSize(item.size!)
+                          : AppLocalizations.of(context)!.netVideo,
+                      if (saved)
+                        AppLocalizations.of(context)!.locationSystemGallery,
                     ].join(' · '),
                   ),
                   // Videos expose only 播放 here; 下载 appears on long-press
@@ -1213,7 +1288,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     children: [
                       IconButton(
                         icon: const Icon(Icons.play_circle_outline),
-                        tooltip: '播放视频',
+                        tooltip: AppLocalizations.of(context)!.playVideo,
                         onPressed: () => _openVideo(item),
                       ),
                       _itemMenuButton(item),
@@ -1231,7 +1306,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ),
                   title: Text(item.name),
                   subtitle: Text(
-                    item.size != null ? _fmtSize(item.size!) : '文件',
+                    item.size != null
+                        ? _fmtSize(item.size!)
+                        : AppLocalizations.of(context)!.netFile,
                   ),
                   trailing: _itemMenuButton(item),
                   onTap: () => _onEntryTap(item),
@@ -1264,9 +1341,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 title: Text(item.name),
                 subtitle: Text(
                   [
-                    item.size != null ? _fmtSize(item.size!) : '音频',
+                    item.size != null
+                        ? _fmtSize(item.size!)
+                        : AppLocalizations.of(context)!.netAudio,
                     // 没有下载按钮：整行就是下载动作。
-                    if (state == TrackUiState.remote) '点按下载',
+                    if (state == TrackUiState.remote)
+                      AppLocalizations.of(context)!.netTapDownload,
                   ].join(' · '),
                 ),
                 trailing: Row(
@@ -1309,7 +1389,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (_selecting) return const SizedBox.shrink();
     return IconButton(
       icon: const Icon(Icons.more_vert),
-      tooltip: '更多操作',
+      tooltip: AppLocalizations.of(context)!.moreActions,
       onPressed: () => _showItemMenu(item),
     );
   }
@@ -1367,20 +1447,20 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         // 只在「计数打满」时出现的叉号：它是取消全选，不是关闭界面。
         if (allSelected)
           IconButton(
-            tooltip: '取消全选',
+            tooltip: AppLocalizations.of(context)!.cancelSelection,
             onPressed: _toggleSelectAll,
             icon: const Icon(Icons.deselect),
           )
         else
           IconButton(
-            tooltip: '全选',
+            tooltip: AppLocalizations.of(context)!.selectAll,
             onPressed: _items.isEmpty ? null : _toggleSelectAll,
             icon: const Icon(Icons.select_all),
           ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Text(
-            '已选 ${items.length} 项',
+            AppLocalizations.of(context)!.netSelectedCount(items.length),
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
@@ -1396,28 +1476,28 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         // 下载是基本功能：不挑个数、不挑类型，文件夹递归全下——音频、视频、
         // CUE 都照下，不跳过任何东西。
         IconButton(
-          tooltip: '缓存音乐',
+          tooltip: AppLocalizations.of(context)!.cacheMusic,
           onPressed: canCacheMusic
               ? () => _cacheMusicSelection(folders, files)
               : null,
           icon: const Icon(Icons.library_music_outlined),
         ),
         IconButton(
-          tooltip: '下载',
+          tooltip: AppLocalizations.of(context)!.download,
           onPressed: canDownload
               ? () => _downloadSelection(folders, files)
               : null,
           icon: const Icon(Icons.download),
         ),
         IconButton(
-          tooltip: '复制到…',
+          tooltip: AppLocalizations.of(context)!.netCopyTo,
           onPressed: items.isEmpty
               ? null
               : () => _copyOrMove(items, move: false),
           icon: const Icon(Icons.copy_outlined),
         ),
         IconButton(
-          tooltip: '移动到…',
+          tooltip: AppLocalizations.of(context)!.netMoveTo,
           onPressed: items.isEmpty
               ? null
               : () => _copyOrMove(items, move: true),
@@ -1437,8 +1517,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     folders,
     files,
     target: DownloadTarget.cache,
-    busyText: '正在缓存音乐…',
-    emptyText: '这里没有新的音频',
+    busyText: AppLocalizations.of(context)!.netCachingMusic,
+    emptyText: AppLocalizations.of(context)!.netNoNewAudio,
   );
 
   /// 下载：把选中内容落系统下载目录。
@@ -1452,8 +1532,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     folders,
     files,
     target: DownloadTarget.downloads,
-    busyText: '正在加入下载队列…',
-    emptyText: '所选内容里没有可下载的文件',
+    busyText: AppLocalizations.of(context)!.netEnqueueing,
+    emptyText: AppLocalizations.of(context)!.netNothingDownloadable,
   );
 
   /// 两条线共用的排队流程。
@@ -1489,9 +1569,20 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         return;
       }
       final parts = <String>[];
-      if (r.ok > 0) parts.add('已加入 ${r.ok} 项');
-      if (r.failed > 0) parts.add('失败 ${r.failed} 个文件夹');
-      AppSnack.show(context, parts.isEmpty ? emptyText : parts.join('，'));
+      if (r.ok > 0) {
+        parts.add(AppLocalizations.of(context)!.netEnqueuedCount(r.ok));
+      }
+      if (r.failed > 0) {
+        parts.add(
+          AppLocalizations.of(context)!.netEnqueueFailedFolders(r.failed),
+        );
+      }
+      AppSnack.show(
+        context,
+        parts.isEmpty
+            ? emptyText
+            : parts.join(AppLocalizations.of(context)!.netJoinSep),
+      );
     } catch (e) {
       if (!mounted) return;
       await showWebDavErrorDialog(context, e);

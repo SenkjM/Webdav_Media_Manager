@@ -36,10 +36,7 @@ void main() {
         audioRemotePath: '/album/disc.flac',
       );
       expect(cue.musicId, musicIdForCueSlice('a1', '/album/disc.cue', 2));
-      expect(
-        cue.cacheMusicId,
-        musicIdForRemote('a1', '/album/disc.flac'),
-      );
+      expect(cue.cacheMusicId, musicIdForRemote('a1', '/album/disc.flac'));
       expect(cue.musicId, isNot(equals(cue.cacheMusicId)));
     });
 
@@ -82,10 +79,7 @@ void main() {
     });
 
     test('cueId is stable for account + cue path', () {
-      expect(
-        cueIdFor('acc', '/a/x.cue'),
-        cueIdFor('acc', 'a/x.cue'),
-      );
+      expect(cueIdFor('acc', '/a/x.cue'), cueIdFor('acc', 'a/x.cue'));
       expect(
         cueIdFor('acc', '/a/x.cue'),
         isNot(equals(cueIdFor('other', '/a/x.cue'))),
@@ -122,14 +116,13 @@ void main() {
         cueTrackIndex: 1,
         audioRemotePath: '/a.flac',
       );
-      expect(cue.cueTypeLabel, LibraryTrack.cueMultiSliceLabel);
-      expect(cue.cueTypeLabel, '多歌曲合并分片');
+      expect(cue.isCueVirtual, isTrue);
       final plain = LibraryTrack(
         sourceName: 'a',
         remotePath: '/b.mp3',
         fileName: 'b.mp3',
       );
-      expect(plain.cueTypeLabel, isNull);
+      expect(plain.isCueVirtual, isFalse);
     });
   });
 
@@ -165,9 +158,7 @@ void main() {
       };
       expect(payload['cache'], isEmpty);
       final roundtrip = LibraryTrack.fromMap(
-        Map<String, dynamic>.from(
-          (payload['tracks'] as List).first as Map,
-        ),
+        Map<String, dynamic>.from((payload['tracks'] as List).first as Map),
       );
       expect(roundtrip.musicId, musicIdForRemote('acc', '/a.mp3'));
     });

@@ -52,12 +52,18 @@ void main() {
     expect(p.shouldAutoRetry(accountChanged: true, loading: false), isTrue);
     for (var i = 0; i < _RetryPolicy.maxFailures; i++) {
       p.enter();
-      expect(p.load(ok: false), i + 1 == _RetryPolicy.maxFailures,
-          reason: '第 ${_RetryPolicy.maxFailures} 次失败即应放弃自动重试');
+      expect(
+        p.load(ok: false),
+        i + 1 == _RetryPolicy.maxFailures,
+        reason: '第 ${_RetryPolicy.maxFailures} 次失败即应放弃自动重试',
+      );
       p.leave();
     }
-    expect(p.shouldAutoRetry(accountChanged: true, loading: false), isFalse,
-        reason: '超限后除手动/网络恢复外不得再自动调度');
+    expect(
+      p.shouldAutoRetry(accountChanged: true, loading: false),
+      isFalse,
+      reason: '超限后除手动/网络恢复外不得再自动调度',
+    );
   });
 
   test('防重入：await 期间重复进入被拒（真机拖慢的根因）', () {
@@ -70,15 +76,22 @@ void main() {
 
   test('手动重试与网络恢复都会重置上限', () {
     final p = _RetryPolicy();
-    for (var i = 0; i < _RetryPolicy.maxFailures; i++) { p.load(ok: false); }
+    for (var i = 0; i < _RetryPolicy.maxFailures; i++) {
+      p.load(ok: false);
+    }
     expect(p.failures, _RetryPolicy.maxFailures);
     p.manualRetry();
     expect(p.failures, 0);
     expect(p.shouldAutoRetry(accountChanged: true, loading: false), isTrue);
-    for (var i = 0; i < _RetryPolicy.maxFailures; i++) { p.load(ok: false); }
+    for (var i = 0; i < _RetryPolicy.maxFailures; i++) {
+      p.load(ok: false);
+    }
     p.networkRecovered();
-    expect(p.shouldAutoRetry(accountChanged: true, loading: false), isTrue,
-        reason: '网络变化 = 新的一轮');
+    expect(
+      p.shouldAutoRetry(accountChanged: true, loading: false),
+      isTrue,
+      reason: '网络变化 = 新的一轮',
+    );
   });
 
   test('中间一次成功即清零：瞬时故障不会累积', () {

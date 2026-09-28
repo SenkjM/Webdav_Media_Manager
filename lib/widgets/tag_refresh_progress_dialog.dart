@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/generated/app_localizations.dart';
+
 import '../theme/app_theme.dart';
 
 class TagRefreshProgressDialog extends StatelessWidget {
@@ -20,41 +22,47 @@ class TagRefreshProgressDialog extends StatelessWidget {
   final VoidCallback onStop;
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    backgroundColor: AppColors.elevated,
-    title: const Text('正在更新标签'),
-    content: ValueListenableBuilder<int>(
-      valueListenable: progress,
-      builder: (context, processed, _) => Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          LinearProgressIndicator(value: total == 0 ? 0 : processed / total),
-          const SizedBox(height: 10),
-          Text('已处理 $processed / $total 首'),
-          const SizedBox(height: 6),
-          ValueListenableBuilder<String>(
-            valueListenable: currentName,
-            builder: (context, name, _) => Text(
-              name,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      backgroundColor: AppColors.elevated,
+      title: Text(l10n.tagRefreshInProgress),
+      content: ValueListenableBuilder<int>(
+        valueListenable: progress,
+        builder: (context, processed, _) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LinearProgressIndicator(value: total == 0 ? 0 : processed / total),
+            const SizedBox(height: 10),
+            Text(l10n.processedOfTotal(processed, total)),
+            const SizedBox(height: 6),
+            ValueListenableBuilder<String>(
+              valueListenable: currentName,
+              builder: (context, name, _) => Text(
+                name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.secondaryText,
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              l10n.tagRefreshStopHint,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 color: AppColors.secondaryText,
               ),
             ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            '只读取本地缓存；终止后保留已更新的曲目。',
-            style: TextStyle(fontSize: 11, color: AppColors.secondaryText),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-    actions: [TextButton(onPressed: onStop, child: const Text('终止'))],
-  );
+      actions: [TextButton(onPressed: onStop, child: Text(l10n.actionStop))],
+    );
+  }
 }
 
 Future<({int updated, int skipped, int failed, bool cancelled})>
@@ -68,7 +76,9 @@ showTagRefreshProgress(
   run,
 }) async {
   final progress = ValueNotifier<int>(0);
-  final currentName = ValueNotifier<String>('准备中');
+  final currentName = ValueNotifier<String>(
+    AppLocalizations.of(context)!.tagRefreshPreparing,
+  );
   var cancelled = false;
   var open = true;
   unawaited(

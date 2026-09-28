@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
 import '../cloud_driver.dart';
+import '../../utils/l10n_host.dart';
 
 /// TeraBox（terabox）驱动。
 ///
@@ -42,10 +43,7 @@ import '../cloud_driver.dart';
 /// `/api/download` 的 `sign` 参数就是它；另有 `vip: "2"` 与 Unix 秒
 /// `timestamp`，三者都不是加密，只是普通查询参数。
 class TeraboxAddition {
-  TeraboxAddition({
-    required this.cookie,
-    this.rootFolderPath = '/',
-  });
+  TeraboxAddition({required this.cookie, this.rootFolderPath = '/'});
 
   factory TeraboxAddition.fromJson(Map<String, dynamic> json) =>
       TeraboxAddition(
@@ -54,9 +52,9 @@ class TeraboxAddition {
       );
 
   Map<String, dynamic> toJson() => {
-        'cookie': cookie,
-        'root_folder_path': rootFolderPath,
-      };
+    'cookie': cookie,
+    'root_folder_path': rootFolderPath,
+  };
 
   /// TeraBox 的 Cookie（必填，会过期，过期后需重新粘贴）。
   String cookie;
@@ -81,13 +79,13 @@ class TeraboxFile {
   });
 
   factory TeraboxFile.fromMap(Map<String, dynamic> m) => TeraboxFile(
-        fsId: (m['fs_id'] as num?)?.toInt() ?? 0,
-        path: m['path'] as String? ?? '',
-        serverFilename: m['server_filename'] as String? ?? '',
-        size: (m['size'] as num?)?.toInt() ?? 0,
-        isdir: (m['isdir'] as num?)?.toInt() ?? 0,
-        serverMtime: (m['server_mtime'] as num?)?.toInt() ?? 0,
-      );
+    fsId: (m['fs_id'] as num?)?.toInt() ?? 0,
+    path: m['path'] as String? ?? '',
+    serverFilename: m['server_filename'] as String? ?? '',
+    size: (m['size'] as num?)?.toInt() ?? 0,
+    isdir: (m['isdir'] as num?)?.toInt() ?? 0,
+    serverMtime: (m['server_mtime'] as num?)?.toInt() ?? 0,
+  );
 
   /// 文件 id：`/api/download` 的 `fidlist` 要它。
   final int fsId;
@@ -118,9 +116,7 @@ String teraboxSign(String s1, String s2) {
     // 上游 JS：v = 0 → `q % v` = NaN → charCodeAt(NaN) = NaN → a[q]=NaN，
     // 后续算术全 NaN。Go：s1 空时 `q % v` 除零 panic。两边都不是可用行为，
     // 这里明确报错而不是产出一个「看起来能跑」的签名。
-    throw const CloudDriverException(
-      'TeraBox 签名失败：sign3 密钥为空（上游 /api/home/info 未返回 sign3）',
-    );
+    throw const CloudDriverException('err.teraboxSignKeyEmpty');
   }
   final a = List<int>.filled(256, 0);
   final p = List<int>.generate(256, (i) => i);
@@ -181,23 +177,24 @@ class TeraboxClient {
   static const statPageSize = 1000;
 
   TeraboxClient(this.addition, {Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 60),
-                headers: {
-                  'User-Agent': apiUA,
-                  'Accept': acceptHeader,
-                  'Referer': defaultBaseUrl,
-                  'X-Requested-With': xRequestedWith,
-                },
-                // 非 2xx 也回来读 body：errno 与「原文报错」都在 body 里。
-                validateStatus: (_) => true,
-                // 直链那一跳要自己读 Location（util.ts:249-260）。
-                followRedirects: false,
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 60),
+              headers: {
+                'User-Agent': apiUA,
+                'Accept': acceptHeader,
+                'Referer': defaultBaseUrl,
+                'X-Requested-With': xRequestedWith,
+              },
+              // 非 2xx 也回来读 body：errno 与「原文报错」都在 body 里。
+              validateStatus: (_) => true,
+              // 直链那一跳要自己读 Location（util.ts:249-260）。
+              followRedirects: false,
+            ),
+          );
 
   final TeraboxAddition addition;
   final Dio _dio;
@@ -238,7 +235,9 @@ class TeraboxClient {
     Map<String, dynamic>? jsonBody,
     int retryCount = 0,
   }) async {
-    final full = pathOrUrl.startsWith('http') ? pathOrUrl : '$baseUrl$pathOrUrl';
+    final full = pathOrUrl.startsWith('http')
+        ? pathOrUrl
+        : '$baseUrl$pathOrUrl';
 
     final query = <String, String>{
       'app_id': '250528',
@@ -280,7 +279,7 @@ class TeraboxClient {
       );
     } on DioException catch (e) {
       throw CloudDriverException(
-        'TeraBox 请求失败 [$method ${Uri.parse(full).path}]：${e.message ?? e.type.name}',
+        'err.teraboxRequestFailed|[$method ${Uri.parse(full).path}]：${e.message ?? e.type.name}',
         e,
       );
     }
@@ -342,7 +341,10 @@ class TeraboxClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException('Failed to fetch TeraBox home page: ${e.message}', e);
+      throw CloudDriverException(
+        'Failed to fetch TeraBox home page: ${e.message}',
+        e,
+      );
     }
     if (res.statusCode != null && res.statusCode! >= 400) {
       throw CloudDriverException(
@@ -358,7 +360,8 @@ class TeraboxClient {
       jsToken = encoded.group(1)!;
       return;
     }
-    final simple = RegExp(r'''jsToken\s*=\s*["']([^"']+)["']''').firstMatch(html);
+    final simple = RegExp(r'''jsToken\s*=\s*["']([^"']+)["']''')
+        .firstMatch(html);
     if (simple != null && simple.group(1)!.isNotEmpty) {
       jsToken = simple.group(1)!;
       return;
@@ -393,12 +396,11 @@ class TeraboxClient {
   /// util.go:156-187）。`errno == 9000` 是地区不可用。
   Future<List<TeraboxFile>> listDir(String dir) async {
     final out = <TeraboxFile>[];
-    for (var page = 1;; page++) {
-      final body = await request('/api/list', params: {
-        'dir': dir,
-        'page': '$page',
-        'num': '$pageSize',
-      });
+    for (var page = 1; ; page++) {
+      final body = await request(
+        '/api/list',
+        params: {'dir': dir, 'page': '$page', 'num': '$pageSize'},
+      );
       if (_errnoOf(body) == 9000) {
         throw const CloudDriverException(
           'TeraBox is not yet available in this area',
@@ -407,7 +409,8 @@ class TeraboxClient {
       final list = body['list'];
       if (list is! List || list.isEmpty) break;
       for (final e in list) {
-        if (e is Map) out.add(TeraboxFile.fromMap(Map<String, dynamic>.from(e)));
+        if (e is Map)
+          out.add(TeraboxFile.fromMap(Map<String, dynamic>.from(e)));
       }
     }
     return out;
@@ -423,13 +426,16 @@ class TeraboxClient {
     int fsId,
   ) async {
     final sign = await genSign();
-    final body = await request('/api/download', params: {
-      'type': 'dlink',
-      'fidlist': '[$fsId]',
-      'sign': sign,
-      'vip': '2',
-      'timestamp': '${DateTime.now().millisecondsSinceEpoch ~/ 1000}',
-    });
+    final body = await request(
+      '/api/download',
+      params: {
+        'type': 'dlink',
+        'fidlist': '[$fsId]',
+        'sign': sign,
+        'vip': '2',
+        'timestamp': '${DateTime.now().millisecondsSinceEpoch ~/ 1000}',
+      },
+    );
 
     final dlink = _firstDlink(body);
     if (dlink == null || dlink.isEmpty) {
@@ -448,17 +454,14 @@ class TeraboxClient {
           followRedirects: false,
           validateStatus: (_) => true,
           responseType: ResponseType.bytes,
-          headers: {
-            'Cookie': addition.cookie,
-            'User-Agent': downloadUA,
-          },
+          headers: {'Cookie': addition.cookie, 'User-Agent': downloadUA},
         ),
       );
       final loc = res.headers.value('location');
       url = (loc != null && loc.isNotEmpty) ? loc : dlink;
     } on DioException catch (e) {
       throw CloudDriverException(
-        'TeraBox 直链重定向失败（fid $fsId）：${e.message ?? e.type.name}',
+        'err.teraboxRedirectFailed|fid $fsId：${e.message ?? e.type.name}',
         e,
       );
     }
@@ -490,11 +493,7 @@ class TeraboxClient {
       '/api/create',
       method: 'POST',
       params: {'a': 'commit'},
-      form: {
-        'path': path,
-        'isdir': '1',
-        'block_list': '[]',
-      },
+      form: {'path': path, 'isdir': '1', 'block_list': '[]'},
     );
   }
 
@@ -534,10 +533,8 @@ class TeraboxClient {
 
 /// TeraBox 驱动的 [CloudDriver] 实现。
 class TeraboxDriver extends CloudDriver {
-  TeraboxDriver({
-    required TeraboxAddition addition,
-    Dio? dio,
-  }) : _client = TeraboxClient(addition, dio: dio);
+  TeraboxDriver({required TeraboxAddition addition, Dio? dio})
+    : _client = TeraboxClient(addition, dio: dio);
 
   final TeraboxClient _client;
 
@@ -565,11 +562,14 @@ class TeraboxDriver extends CloudDriver {
     final parent = cloudDirname(clean);
     final fileName = cloudBasename(clean);
 
-    final body = await _client.request('/api/list', params: {
-      'dir': parent,
-      'page': '1',
-      'num': '${TeraboxClient.statPageSize}',
-    });
+    final body = await _client.request(
+      '/api/list',
+      params: {
+        'dir': parent,
+        'page': '1',
+        'num': '${TeraboxClient.statPageSize}',
+      },
+    );
     if ((body['errno'] as num?)?.toInt() == 9000) {
       throw const CloudDriverException(
         'TeraBox is not yet available in this area',
@@ -653,11 +653,11 @@ class TeraboxDriver extends CloudDriver {
   }
 
   CloudFileItem _toItem(TeraboxFile f) => CloudFileItem(
-        name: _nameOf(f),
-        isDir: f.isdir == 1,
-        size: f.size,
-        modified: teraboxMtime(f.serverMtime),
-      );
+    name: _nameOf(f),
+    isDir: f.isdir == 1,
+    size: f.size,
+    modified: teraboxMtime(f.serverMtime),
+  );
 
   String _nameOf(TeraboxFile f) =>
       f.serverFilename.isNotEmpty ? f.serverFilename : cloudBasename(f.path);
@@ -693,7 +693,8 @@ class TeraboxSpec extends CloudDriverSpec {
   /// 且签名 / 请求构造没有加密卡点（见 [teraboxSign] 注释）。
   /// `write` 一律不给（上传已砍）。
   @override
-  int get capabilities => AccountCaps.list |
+  int get capabilities =>
+      AccountCaps.list |
       AccountCaps.read |
       AccountCaps.mkdir |
       AccountCaps.move |
@@ -701,20 +702,20 @@ class TeraboxSpec extends CloudDriverSpec {
       AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => const [
-        CloudDriverField(
-          key: 'cookie',
-          label: 'Cookie',
-          hint: '必填；从浏览器复制 TeraBox 的 Cookie；过期后需重新粘贴',
-          required: true,
-          obscure: true,
-        ),
-        CloudDriverField(
-          key: 'root_folder_path',
-          label: '根目录路径',
-          defaultValue: '/',
-        ),
-      ];
+  List<CloudDriverFormItem> get form => [
+    CloudDriverField(
+      key: 'cookie',
+      label: 'Cookie',
+      hint: L10nHost.current.formHintTeraboxCookie,
+      required: true,
+      obscure: true,
+    ),
+    CloudDriverField(
+      key: 'root_folder_path',
+      label: L10nHost.current.formLabelRootPath,
+      defaultValue: '/',
+    ),
+  ];
 
   @override
   CloudDriver create(

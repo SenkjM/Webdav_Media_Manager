@@ -26,14 +26,19 @@ import 'dart:typed_data';
 import 'package:pointycastle/export.dart';
 
 /// 预设 AES 密钥（上游 `presetKey`）。
-final Uint8List kNeteasePresetKey = Uint8List.fromList(utf8.encode('0CoJUm6Qyw8W8jud'));
+final Uint8List kNeteasePresetKey = Uint8List.fromList(
+  utf8.encode('0CoJUm6Qyw8W8jud'),
+);
 
 /// 固定 IV（上游 `iv`）。
-final Uint8List kNeteaseIv = Uint8List.fromList(utf8.encode('0102030405060708'));
+final Uint8List kNeteaseIv = Uint8List.fromList(
+  utf8.encode('0102030405060708'),
+);
 
 /// linuxapi 的 AES-ECB 密钥（上游 `linuxapiKey`）。
-final Uint8List kNeteaseLinuxApiKey =
-    Uint8List.fromList(utf8.encode('rFgB&h#%2?^eDg:Q'));
+final Uint8List kNeteaseLinuxApiKey = Uint8List.fromList(
+  utf8.encode('rFgB&h#%2?^eDg:Q'),
+);
 
 /// 随机密钥的字符集（上游 `stdChars`）。
 const String kNeteaseStdChars =
@@ -87,19 +92,17 @@ Uint8List pkcs7Pad(List<int> src, [int blockSize = 16]) {
 
 /// AES-CBC 加密（PKCS7 补齐），语义同上游 `aesCBCEncrypt`。
 Uint8List aesCbcEncrypt(List<int> src, List<int> key, List<int> iv) {
-  final cipher = PaddedBlockCipherImpl(
-    PKCS7Padding(),
-    CBCBlockCipher(AESEngine()),
-  )..init(
-      true,
-      PaddedBlockCipherParameters<CipherParameters, CipherParameters>(
-        ParametersWithIV<KeyParameter>(
-          KeyParameter(neteaseAesKeyPending(key)),
-          Uint8List.fromList(iv),
+  final cipher =
+      PaddedBlockCipherImpl(PKCS7Padding(), CBCBlockCipher(AESEngine()))..init(
+        true,
+        PaddedBlockCipherParameters<CipherParameters, CipherParameters>(
+          ParametersWithIV<KeyParameter>(
+            KeyParameter(neteaseAesKeyPending(key)),
+            Uint8List.fromList(iv),
+          ),
+          null,
         ),
-        null,
-      ),
-    );
+      );
   return cipher.process(Uint8List.fromList(src));
 }
 
@@ -128,7 +131,7 @@ Uint8List bigIntToBytes(BigInt n, int length) {
     v = v >> 8;
   }
   if (bytes.length > length) {
-    throw StateError('大整数超出 $length 字节');
+    throw StateError('err.bigintOverflow|$length');
   }
   final out = Uint8List(length);
   out.setRange(length - bytes.length, length, bytes);
@@ -143,7 +146,10 @@ Uint8List bigIntToBytes(BigInt n, int length) {
 Uint8List neteaseRsaRawEncrypt(List<int> secretKey) {
   if (secretKey.length != 16) {
     throw ArgumentError.value(
-        secretKey.length, 'secretKey', '网易 raw RSA 的密钥必须是 16 字节');
+      secretKey.length,
+      'secretKey',
+      'err.neteaseRsaKeyLength',
+    );
   }
   final full = Uint8List(128)..setRange(128 - 16, 128, secretKey);
   var m = BigInt.zero;
@@ -168,7 +174,9 @@ Uint8List neteaseRsaRawEncrypt(List<int> secretKey) {
   final key = Uint8List(16);
   final reversed = Uint8List(16);
   for (var i = 0; i < 16; i++) {
-    final code = kNeteaseStdChars.codeUnitAt(rnd.nextInt(kNeteaseStdChars.length));
+    final code = kNeteaseStdChars.codeUnitAt(
+      rnd.nextInt(kNeteaseStdChars.length),
+    );
     key[i] = code;
     reversed[15 - i] = code;
   }
@@ -219,7 +227,9 @@ WeapiResult neteaseWeapi(Map<String, String> data, {List<int>? secretKey}) {
 /// 键顺序构造（键顺序无语义，见文件头注释）。
 Map<String, String> neteaseLinuxapi(Map<String, dynamic> body) {
   final text = utf8.encode(jsonEncode(body));
-  return {'eparams': _hex(aesEcbEncrypt(text, kNeteaseLinuxApiKey)).toUpperCase()};
+  return {
+    'eparams': _hex(aesEcbEncrypt(text, kNeteaseLinuxApiKey)).toUpperCase(),
+  };
 }
 
 String _hex(List<int> bytes) {

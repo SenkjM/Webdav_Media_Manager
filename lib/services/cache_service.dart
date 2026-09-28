@@ -10,6 +10,7 @@ import '../models/cache_policy.dart';
 import '../models/library_track.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/cache_group_codec.dart';
+import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'library_database.dart';
 
@@ -22,8 +23,8 @@ import 'library_database.dart';
 /// startup reconciliation, nothing to go stale.
 class CacheService extends ChangeNotifier {
   CacheService({SharedPreferences? prefs, LibraryDatabase? libraryDb})
-      : _prefs = prefs,
-        _libraryDb = libraryDb;
+    : _prefs = prefs,
+      _libraryDb = libraryDb;
 
   // Legacy prefs key prefixes moved to [cache_group_codec.dart]; only used here
   // for the one-time migration in [_migrateLegacyPrefs].
@@ -83,7 +84,7 @@ class CacheService extends ChangeNotifier {
 
   Directory get cacheDir {
     final d = _cacheDir;
-    if (d == null) throw StateError('CacheService 未初始化');
+    if (d == null) throw StateError(L10nHost.current.svcCacheNotInitialized);
     return d;
   }
 

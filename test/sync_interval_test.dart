@@ -1,17 +1,23 @@
+import 'dart:ui' show Locale;
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:webdav_media_manager/l10n/generated/app_localizations.dart';
 import 'package:webdav_media_manager/models/sync_interval.dart';
 
 void main() {
   group('SyncInterval', () {
-    test('off means no timer at all', () {
+    test('off means no timer at all', () async {
       expect(SyncInterval.off.duration, isNull);
-      expect(SyncInterval.off.labelZh, contains('关闭'));
+      final l10n = await AppLocalizations.delegate.load(
+        const Locale('zh', 'CN'),
+      );
+      expect(SyncInterval.off.label(l10n), contains('关闭'));
     });
 
     test('every option that runs has a positive period', () {
       for (final v in SyncInterval.values) {
         if (v == SyncInterval.off) continue;
-        expect(v.duration, isNotNull, reason: v.labelZh);
+        expect(v.duration, isNotNull, reason: v.storageKey);
         expect(v.duration!.inMinutes, greaterThan(0));
       }
     });

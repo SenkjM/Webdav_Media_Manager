@@ -10,9 +10,11 @@ import 'package:uuid/uuid.dart';
 import '../models/download_task.dart';
 import '../models/library_track.dart';
 import '../models/webdav_item.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/app_snack.dart';
 import '../utils/cue_sheet.dart';
+import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'cloud_driver.dart';
@@ -207,12 +209,84 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   String? get lastError => _lastError;
 
   String _describeError(Object e) {
-    final raw = e.toString();
+    var raw = e.toString();
+    for (final prefix in const [
+      'Bad state: ',
+      'WmpFormatException: ',
+      'Unsupported operation: ',
+      'Invalid argument(s): ',
+    ]) {
+      if (raw.startsWith(prefix)) raw = raw.substring(prefix.length);
+    }
     // sqflite's "no column named X" is the classic schema-drift symptom.
     if (raw.contains('has no column named')) {
-      return '下载队列数据库结构过旧（$raw）。请重启应用以升级数据库。';
+      return 'err.dlQueueSchemaDrift|$raw';
     }
     return raw;
+  }
+
+  /// Map persisted stable error codes (and their `Bad state:` /
+  /// `WmpFormatException:` wrappers) to localized text; unknown values pass
+  /// through unchanged so pre-i18n rows keep their raw text.
+  static String describeError(String raw, AppLocalizations l10n) {
+    var text = raw;
+    for (final prefix in const [
+      'Bad state: ',
+      'WmpFormatException: ',
+      'Unsupported operation: ',
+      'Invalid argument(s): ',
+    ]) {
+      if (text.startsWith(prefix)) text = text.substring(prefix.length);
+    }
+    final bar = text.indexOf('|');
+    final code = bar > 0 ? text.substring(0, bar) : text;
+    final detail = bar > 0 ? text.substring(bar + 1) : '';
+    switch (code) {
+      case 'err.cancelled':
+        return l10n.downloadCancelled;
+      case 'err.queueCleared':
+        return l10n.dlErrQueueCleared;
+      case 'err.cueMalformed':
+        return l10n.dlErrCueMalformed;
+      case 'err.writePublicFailed':
+        return l10n.dlErrWritePublicFailed;
+      case 'err.dlOffline':
+        return l10n.dlErrOffline;
+      case 'err.sourceUnbound':
+        return l10n.dlErrSourceUnbound(detail);
+      case 'err.dlQueueSchemaDrift':
+        return l10n.dlErrQueueSchemaDrift(detail);
+      case 'err.dlOfflineRetryWait':
+        final wait = detail.split('|');
+        if (wait.length >= 3) {
+          return l10n.dlOfflineRetryWait(wait[0], wait[1], wait[2]);
+        }
+        return text;
+      case 'err.dlNetworkInterruptedRetry':
+        final retryParts = detail.split('|');
+        if (retryParts.length >= 2) {
+          return l10n.dlNetworkInterruptedRetry(retryParts[0], retryParts[1]);
+        }
+        return text;
+      case 'err.dlRetryExhausted':
+        final bar2 = detail.indexOf('|');
+        if (bar2 > 0) {
+          return l10n.dlRetryExhausted(
+            detail.substring(0, bar2),
+            describeError(detail.substring(bar2 + 1), l10n),
+          );
+        }
+        return text;
+      case 'err.shardKindMismatch':
+        final shardParts = detail.split('|');
+        if (shardParts.length >= 2) {
+          return l10n.errShardKindMismatch(shardParts[0], shardParts[1]);
+        }
+        return text;
+      case 'err.notWdmmFile':
+        return l10n.errNotWdmmFile;
+    }
+    return text;
   }
 
   Future<void> _guardPersist(Future<void> Function() body) async {
@@ -701,7 +775,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }) async {
     final accountId = _accountIdFor(sourceName);
     if (accountId == null) {
-      _lastError = '来源网盘未绑定（）';
+      _lastError = 'err.sourceUnbound|$sourceName';
       notifyListeners();
       return (ok: 0, failed: 1, scanned: 0, firstError: _lastError);
     }
@@ -764,12 +838,12 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     } else {
       final accountId = _accountIdFor(sourceName);
       if (accountId == null) {
-        throw StateError('来源网盘未绑定（$sourceName）');
+        throw StateError('err.sourceUnbound|$sourceName');
       }
       final bytes = await _webDav.readAsBytes(accountId, cueRemotePath);
       final parsed = CueSheetParser.tryParse(decodeCueText(bytes));
       if (parsed == null) {
-        throw StateError('无法解析的 CUE：需要标准 FILE + TRACK/INDEX');
+        throw StateError('err.cueMalformed');
       }
       sheet = parsed;
     }
@@ -1188,7 +1262,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (task.status == DownloadStatus.pending ||
         task.status == DownloadStatus.active) {
       task.status = DownloadStatus.cancelled;
-      task.errorMessage = '已取消';
+      task.errorMessage = 'err.cancelled';
       await _store.upsert(task);
       _completeWaiter(task);
       notifyListeners();
@@ -1299,11 +1373,11 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     for (final t in List<DownloadTask>.from(_tasks)) {
       if (!t.isTerminal) {
         t.status = DownloadStatus.cancelled;
-        t.errorMessage = '队列已清空';
+        t.errorMessage = 'err.queueCleared';
       }
       final waiter = _waiters.remove(t.id);
       if (waiter != null && !waiter.isCompleted) {
-        waiter.completeError(StateError('队列已清空'));
+        waiter.completeError(StateError('err.queueCleared'));
       }
     }
     for (final t in List<DownloadTask>.from(_tasks)) {
@@ -1406,12 +1480,13 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     required int failed,
     required int cancelled,
   }) {
+    final l10n = L10nHost.current;
     final parts = <String>[
-      '成功 $completed',
-      if (failed > 0) '失败 $failed',
-      if (cancelled > 0) '取消 $cancelled',
+      l10n.dlDoneOkCount(completed),
+      if (failed > 0) l10n.dlDoneFailedCount(failed),
+      if (cancelled > 0) l10n.dlDoneCancelledCount(cancelled),
     ];
-    return '下载完成：${parts.join(' · ')}';
+    return l10n.dlDoneTitle(parts.join(l10n.dlDoneSep));
   }
 
   /// Best-effort creation of the download notification channel (startup).
@@ -1440,7 +1515,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }) async {
     if (cancelled || task.status == DownloadStatus.cancelled) {
       task.status = DownloadStatus.cancelled;
-      task.errorMessage = '已取消';
+      task.errorMessage = 'err.cancelled';
       task.nextRetryAt = null;
     } else if (isRetryable(error) && task.attempts < maxAutoRetries) {
       // 计数**只有一个来源**：task.attempts。没网也照样 +1 —— 否则
@@ -1452,15 +1527,17 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       );
       task.status = DownloadStatus.pending;
       task.errorMessage = offline
-          ? '网络不可用，${offlineRetryDelay.inSeconds} 秒后重试 '
-                '(${task.attempts}/$maxAutoRetries)'
-          : '网络中断，正在重试 (${task.attempts}/$maxAutoRetries)';
+          ? 'err.dlOfflineRetryWait|${task.attempts}|$maxAutoRetries|'
+                '${offlineRetryDelay.inSeconds}'
+          : 'err.dlNetworkInterruptedRetry|${task.attempts}|$maxAutoRetries';
     } else {
       task.status = DownloadStatus.failed;
       task.nextRetryAt = null;
-      final why = isOfflineError(error) ? '网络不可用' : _describeError(error);
+      final why = isOfflineError(error)
+          ? 'err.dlOffline'
+          : _describeError(error);
       task.errorMessage = task.attempts >= maxAutoRetries
-          ? '重试 $maxAutoRetries 次仍失败：$why'
+          ? 'err.dlRetryExhausted|$maxAutoRetries|$why'
           : why;
     }
     await _guardPersist(() => _store.upsert(task));
@@ -1695,7 +1772,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _runPublicDownload(DownloadTask task, CancelToken token) async {
     final accountId = _accountIdFor(task.sourceName);
     if (accountId == null) {
-      throw StateError('来源网盘未绑定（）');
+      throw StateError('err.sourceUnbound|${task.sourceName}');
     }
     final tmpRoot = await getTemporaryDirectory();
     final tmpDir = Directory(p.join(tmpRoot.path, 'public_dl'));
@@ -1744,7 +1821,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
               mimeType: galleryMimeFor(task.fileName),
             );
       if (!result.ok) {
-        throw StateError(result.error ?? '写入公共目录失败');
+        throw StateError(result.error ?? 'err.writePublicFailed');
       }
       task.localPath = result.uri ?? result.path;
       task.status = DownloadStatus.completed;
@@ -1778,7 +1855,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _runCacheDownload(DownloadTask task, CancelToken token) async {
     final accountId = _accountIdFor(task.sourceName);
     if (accountId == null) {
-      throw StateError('来源网盘未绑定（）');
+      throw StateError('err.sourceUnbound|${task.sourceName}');
     }
     final dest = _cache.fileForRemote(
       task.remotePath,

@@ -1,3 +1,5 @@
+import '../l10n/generated/app_localizations.dart';
+
 /// Detect permission / auth failures from WebDAV / Dio errors.
 bool isWebDavPermissionError(Object error) {
   final s = error.toString().toLowerCase();
@@ -10,9 +12,9 @@ bool isWebDavPermissionError(Object error) {
   return false;
 }
 
-String webDavErrorMessage(Object error) {
+String webDavErrorMessage(Object error, AppLocalizations l10n) {
   if (isWebDavPermissionError(error)) {
-    return '权限不足或未授权（401/403）';
+    return l10n.webdavErrorPermDetail;
   }
   return error.toString();
 }

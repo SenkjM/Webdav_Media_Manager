@@ -46,19 +46,21 @@ void main() {
   });
 
   group('cover thumb policy', () {
-    test('resizeCoverToThumb produces ${coverThumbSize}x$coverThumbSize JPEG',
-        () {
-      final src = img.Image(width: 400, height: 300);
-      img.fill(src, color: img.ColorRgb8(255, 0, 0));
-      final bytes = Uint8List.fromList(img.encodePng(src));
-      final thumb = resizeCoverToThumb(bytes);
-      expect(thumb, isNotNull);
-      final decoded = img.decodeJpg(thumb!);
-      expect(decoded, isNotNull);
-      expect(decoded!.width, coverThumbSize);
-      expect(decoded.height, coverThumbSize);
-      expect(isCoverThumbSize(decoded.width, decoded.height), isTrue);
-    });
+    test(
+      'resizeCoverToThumb produces ${coverThumbSize}x$coverThumbSize JPEG',
+      () {
+        final src = img.Image(width: 400, height: 300);
+        img.fill(src, color: img.ColorRgb8(255, 0, 0));
+        final bytes = Uint8List.fromList(img.encodePng(src));
+        final thumb = resizeCoverToThumb(bytes);
+        expect(thumb, isNotNull);
+        final decoded = img.decodeJpg(thumb!);
+        expect(decoded, isNotNull);
+        expect(decoded!.width, coverThumbSize);
+        expect(decoded.height, coverThumbSize);
+        expect(isCoverThumbSize(decoded.width, decoded.height), isTrue);
+      },
+    );
 
     test('invalid bytes return null', () {
       expect(resizeCoverToThumb(Uint8List.fromList([1, 2, 3])), isNull);
@@ -107,7 +109,10 @@ void main() {
 
   group('webdav permission errors', () {
     test('detects 401/403', () {
-      expect(isWebDavPermissionError(Exception('HTTP 401 Unauthorized')), isTrue);
+      expect(
+        isWebDavPermissionError(Exception('HTTP 401 Unauthorized')),
+        isTrue,
+      );
       expect(isWebDavPermissionError(Exception('status: 403')), isTrue);
       expect(isWebDavPermissionError(Exception('network timeout')), isFalse);
     });

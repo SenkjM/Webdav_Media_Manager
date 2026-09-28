@@ -69,9 +69,7 @@ void main() {
     });
 
     test('ignores other accountId tracks', () {
-      final local = [
-        track(path: '/a.mp3', tagAt: DateTime.utc(2026, 1, 1)),
-      ];
+      final local = [track(path: '/a.mp3', tagAt: DateTime.utc(2026, 1, 1))];
       final remote = [
         track(
           path: '/a.mp3',

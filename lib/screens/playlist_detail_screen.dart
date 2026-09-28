@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/library_track.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/playlist.dart';
+import '../models/playlist_sentinels.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
@@ -23,9 +25,10 @@ class PlaylistDetailScreen extends StatelessWidget {
     final library = context.watch<LibraryService>();
     final pl = service.findById(playlistId);
     if (pl == null) {
+      final l10n = AppLocalizations.of(context)!;
       return Scaffold(
-        appBar: AppBar(title: const Text('歌单')),
-        body: const Center(child: Text('歌单不存在')),
+        appBar: AppBar(title: Text(l10n.playlistsTitle)),
+        body: Center(child: Text(l10n.playlistNotFound)),
       );
     }
 
@@ -43,21 +46,25 @@ class PlaylistDetailScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
-        title: Text(pl.name),
+        title: Text(
+          isUnnamedPlaylistName(pl.name)
+              ? AppLocalizations.of(context)!.unnamedPlaylist
+              : pl.name,
+        ),
         actions: [
           IconButton(
-            tooltip: '从音乐库添加',
+            tooltip: AppLocalizations.of(context)!.playlistAddFromLibrary,
             icon: const Icon(Icons.library_add_outlined),
             onPressed: () => _pickFromLibrary(context, pl),
           ),
         ],
       ),
       body: pl.entries.isEmpty
-          ? const Center(
+          ? Center(
               child: Text(
-                '歌单为空，可从音乐库添加。',
+                AppLocalizations.of(context)!.playlistEmpty,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.secondaryText),
+                style: const TextStyle(color: AppColors.secondaryText),
               ),
             )
           : ListView(
@@ -78,7 +85,10 @@ class PlaylistDetailScreen extends StatelessWidget {
                   ListTile(
                     leading: const Icon(Icons.music_off_outlined),
                     title: Text(e.title ?? e.remotePath.split('/').last),
-                    subtitle: Text('库中暂无 · ${e.sourceName}'),
+                    subtitle: Text(
+                      AppLocalizations.of(context)!
+                          .playlistMissingInLibrary(e.sourceName),
+                    ),
                     trailing: IconButton(
                       icon: const Icon(Icons.remove_circle_outline),
                       onPressed: () => service.removeTrack(pl.id, e),
@@ -90,17 +100,18 @@ class PlaylistDetailScreen extends StatelessWidget {
   }
 
   Future<void> _pickFromLibrary(BuildContext context, Playlist pl) async {
+    final l10n = AppLocalizations.of(context)!;
     final library = context.read<LibraryService>();
     final all = library.tracks.toList();
     final selected = await showDialog<LibraryTrack>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('从音乐库添加'),
+        title: Text(l10n.playlistAddFromLibrary),
         content: SizedBox(
           width: double.maxFinite,
           height: 400,
           child: all.isEmpty
-              ? const Center(child: Text('音乐库为空'))
+              ? Center(child: Text(l10n.libraryEmpty))
               : ListView.builder(
                   itemCount: all.length,
                   itemBuilder: (_, i) {
@@ -114,20 +125,23 @@ class PlaylistDetailScreen extends StatelessWidget {
                 ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancel),
+          ),
         ],
       ),
     );
     if (selected == null || !context.mounted) return;
     await context.read<PlaylistService>().addTrack(
-          pl.id,
-          PlaylistEntry(
-            sourceName: selected.sourceName,
-            remotePath: selected.remotePath,
-            title: selected.displayTitle,
-            durationMs: selected.durationMs,
-          ),
-        );
+      pl.id,
+      PlaylistEntry(
+        sourceName: selected.sourceName,
+        remotePath: selected.remotePath,
+        title: selected.displayTitle,
+        durationMs: selected.durationMs,
+      ),
+    );
   }
 }
 
@@ -161,8 +175,9 @@ class _PlaylistTrackTile extends StatelessWidget {
       ),
       subtitle: Text(
         [
-          if (track.isCueVirtual) LibraryTrack.cueMultiSliceLabel,
-          if (!isLocal) '未下载',
+          if (track.isCueVirtual)
+            AppLocalizations.of(context)!.cueMultiSliceLabel,
+          if (!isLocal) AppLocalizations.of(context)!.notDownloaded,
           track.displayArtist,
           if (isLocal) track.displayAlbum,
         ].join(' · '),
@@ -171,14 +186,18 @@ class _PlaylistTrackTile extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Tooltip(
-            message: isLocal ? '已下载' : '点按加入下载',
+            message: isLocal
+                ? AppLocalizations.of(context)!.downloaded
+                : AppLocalizations.of(context)!.tapToDownload,
             child: Container(
               width: 10,
               height: 10,
               margin: const EdgeInsets.only(right: 8),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isLocal ? AppColors.localReady : AppColors.remotePlaceholder,
+                color: isLocal
+                    ? AppColors.localReady
+                    : AppColors.remotePlaceholder,
               ),
             ),
           ),

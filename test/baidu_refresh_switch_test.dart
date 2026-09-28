@@ -52,7 +52,8 @@ class _RoutingAdapter implements HttpClientAdapter {
   ) async {
     final client = HttpClient();
     final target = Uri.parse(
-        'http://127.0.0.1:${server.port}${options.uri.path}?${options.uri.query}');
+      'http://127.0.0.1:${server.port}${options.uri.path}?${options.uri.query}',
+    );
     final req = await client.getUrl(target);
     final res = await req.close();
     final bytes = <int>[];
@@ -61,9 +62,13 @@ class _RoutingAdapter implements HttpClientAdapter {
     }
     client.close(force: true);
     final ct = res.headers.contentType?.mimeType ?? 'text/plain';
-    return ResponseBody.fromBytes(bytes, res.statusCode, headers: {
-      'content-type': [ct],
-    });
+    return ResponseBody.fromBytes(
+      bytes,
+      res.statusCode,
+      headers: {
+        'content-type': [ct],
+      },
+    );
   }
 
   @override
@@ -93,7 +98,9 @@ void main() {
         req.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
-          ..write('{"access_token":"online-access","refresh_token":"online-refresh"}');
+          ..write(
+            '{"access_token":"online-access","refresh_token":"online-refresh"}',
+          );
       } else {
         req.response
           ..statusCode = HttpStatus.badRequest
@@ -111,7 +118,9 @@ void main() {
         req.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
-          ..write('{"access_token":"local-access","refresh_token":"local-refresh"}');
+          ..write(
+            '{"access_token":"local-access","refresh_token":"local-refresh"}',
+          );
       } else {
         req.response
           ..statusCode = HttpStatus.badRequest
@@ -132,7 +141,11 @@ void main() {
   group('local_refresh = false（开关关闭）→ 走 online api', () {
     test('请求打到在线续期地址，绝不带 client 凭证', () async {
       final client = BaiduClient(
-        BaiduAddition(refreshToken: 'rt-1', clientId: 'cid', clientSecret: 'csecret'),
+        BaiduAddition(
+          refreshToken: 'rt-1',
+          clientId: 'cid',
+          clientSecret: 'csecret',
+        ),
         dio: dio,
       );
       await client.refreshToken();
@@ -160,10 +173,7 @@ void main() {
 
     test('在线 API 失败：错误原文透传，不落 OAuth 兜底', () async {
       // 续期服务器只认 refresh_ui 非空；给它一个空值触发 400 分支。
-      final client = BaiduClient(
-        BaiduAddition(refreshToken: ''),
-        dio: dio,
-      );
+      final client = BaiduClient(BaiduAddition(refreshToken: ''), dio: dio);
       await expectLater(
         client.refreshToken(),
         throwsA(isA<CloudDriverException>()),

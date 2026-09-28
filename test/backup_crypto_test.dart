@@ -12,10 +12,7 @@ void main() {
       passphrase: 'test-pass',
     );
     expect(BackupCrypto.looksEncrypted(enc), isTrue);
-    final dec = await BackupCrypto.decrypt(
-      data: enc,
-      passphrase: 'test-pass',
-    );
+    final dec = await BackupCrypto.decrypt(data: enc, passphrase: 'test-pass');
     expect(utf8.decode(dec), 'hello backup secrets');
   });
 

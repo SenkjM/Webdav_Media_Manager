@@ -1,3 +1,5 @@
+import '../l10n/generated/app_localizations.dart';
+
 /// How often the background scan runs (credentials + playlists + library push).
 ///
 /// A single knob instead of a hidden 30-minute timer: a user who syncs rarely
@@ -26,13 +28,13 @@ extension SyncIntervalX on SyncInterval {
     SyncInterval.daily => '24h',
   };
 
-  String get labelZh => switch (this) {
-    SyncInterval.off => '关闭（仅手动）',
-    SyncInterval.every15m => '每 15 分钟',
-    SyncInterval.every30m => '每 30 分钟',
-    SyncInterval.hourly => '每 1 小时',
-    SyncInterval.every6h => '每 6 小时',
-    SyncInterval.daily => '每 24 小时',
+  String label(AppLocalizations l10n) => switch (this) {
+    SyncInterval.off => l10n.syncOff,
+    SyncInterval.every15m => l10n.syncEvery15m,
+    SyncInterval.every30m => l10n.syncEvery30m,
+    SyncInterval.hourly => l10n.syncHourly,
+    SyncInterval.every6h => l10n.syncEvery6h,
+    SyncInterval.daily => l10n.syncDaily,
   };
 
   /// Null when the scan is disabled.

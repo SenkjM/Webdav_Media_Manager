@@ -18,9 +18,7 @@ import '../cloud_driver.dart';
 /// * 空闲 [idleTimeout] 后自动关服务器（播放中会被请求不断刷新）；
 /// * 由兼容层持有（跨驱动重建存活），驱动实例被重建不会掐断正在播放的流。
 class LocalStreamBridge {
-  LocalStreamBridge({
-    this.idleTimeout = const Duration(minutes: 10),
-  });
+  LocalStreamBridge({this.idleTimeout = const Duration(minutes: 10)});
 
   final Duration idleTimeout;
 

@@ -13,8 +13,8 @@ class WebDavAccountSource implements CloudSource {
   WebDavAccountSource({
     required WebDavService webDav,
     required WebDavAccount account,
-  })  : _webDav = webDav,
-        _account = account;
+  }) : _webDav = webDav,
+       _account = account;
 
   final WebDavService _webDav;
   final WebDavAccount _account;
@@ -54,7 +54,7 @@ class WebDavAccountSource implements CloudSource {
       name: cloudBasename(p),
     );
     if (s == null) {
-      throw const CloudDriverException('WebDAV 未连接，无法取源内容');
+      throw const CloudDriverException('err.webdavSourceNotConnected');
     }
     // 条目大小必须完整带给包装驱动层：流式回 Content-Length、下载进度、
     // Range 分块判断全依赖它。列表接口对单文件拿不到，单独 PROPFIND 一次
@@ -78,22 +78,22 @@ class WebDavAccountSource implements CloudSource {
   }
 
   @override
-  Future<void> mkdir(String path) => _webDav.createFolder(_account.id, _join(path));
+  Future<void> mkdir(String path) =>
+      _webDav.createFolder(_account.id, _join(path));
 
   @override
   Future<void> rename(String path, String newPath) =>
       _webDav.renamePath(_account.id, _join(path), _join(newPath));
 
   @override
-  Future<void> remove(String path) => _webDav.deletePath(_account.id, _join(path));
+  Future<void> remove(String path) =>
+      _webDav.deletePath(_account.id, _join(path));
 
   @override
-  Future<void> move(String srcPath, String dstDir, String newName) =>
-      _webDav.movePath(
-          _account.id, _join(srcPath), cloudJoinPath([dstDir, newName]));
+  Future<void> move(String srcPath, String dstDir, String newName) => _webDav
+      .movePath(_account.id, _join(srcPath), cloudJoinPath([dstDir, newName]));
 
   @override
-  Future<void> copy(String srcPath, String dstDir, String newName) =>
-      _webDav.copyPath(
-          _account.id, _join(srcPath), cloudJoinPath([dstDir, newName]));
+  Future<void> copy(String srcPath, String dstDir, String newName) => _webDav
+      .copyPath(_account.id, _join(srcPath), cloudJoinPath([dstDir, newName]));
 }

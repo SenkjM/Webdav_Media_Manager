@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../models/webdav_account.dart';
+import '../utils/l10n_host.dart';
 import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
 import 'cloud_drive_service.dart';
@@ -56,33 +57,32 @@ class VaultEntry {
   bool get isActive => false;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        if (isCloud) 'providerType': providerType,
-        'url': url,
-        'username': username,
-        'password': password,
-        'passwordEncrypted': passwordEncrypted,
-        'remote_path': remotePath,
-        if (driverConfig != null) 'driverConfig': driverConfig,
-      };
+    'id': id,
+    'name': name,
+    if (isCloud) 'providerType': providerType,
+    'url': url,
+    'username': username,
+    'password': password,
+    'passwordEncrypted': passwordEncrypted,
+    'remote_path': remotePath,
+    if (driverConfig != null) 'driverConfig': driverConfig,
+  };
 
   factory VaultEntry.fromJson(Map<String, dynamic> json) => VaultEntry(
-        id: json['id'] as String? ?? '',
-        name: json['name'] as String? ??
-            json['url'] as String? ??
-            '服务器',
-        providerType: json['providerType'] as String? ?? 'webdav',
-        url: json['url'] as String? ?? '',
-        username: json['username'] as String? ?? '',
-        password: json['password'] as String? ?? '',
-        passwordEncrypted: json['passwordEncrypted'] as bool? ??
-            CredentialVaultCrypto.isEncrypted(json['password'] as String?),
-        remotePath: json['remote_path'] as String? ?? '/',
-        driverConfig: json['driverConfig'] is Map
-            ? Map<String, dynamic>.from(json['driverConfig'] as Map)
-            : null,
-      );
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? json['url'] as String? ?? '服务器',
+    providerType: json['providerType'] as String? ?? 'webdav',
+    url: json['url'] as String? ?? '',
+    username: json['username'] as String? ?? '',
+    password: json['password'] as String? ?? '',
+    passwordEncrypted:
+        json['passwordEncrypted'] as bool? ??
+        CredentialVaultCrypto.isEncrypted(json['password'] as String?),
+    remotePath: json['remote_path'] as String? ?? '/',
+    driverConfig: json['driverConfig'] is Map
+        ? Map<String, dynamic>.from(json['driverConfig'] as Map)
+        : null,
+  );
 }
 
 /// Result of applying a vault to the local account list.
@@ -110,11 +110,13 @@ class VaultApplyResult {
 
   bool get hasMissingPasswords => passwordsMissing > 0;
 
-  String get summary =>
-      '账号：新增 $imported，更新 $updated；'
-      '密码恢复 $passwordsRestored，'
-      '留空 $passwordsMissing${hasMissingPasswords ? '（缺少统一解密密钥，可稍后手动填写）' : ''}'
-      '${skippedUnknown > 0 ? '；跳过 $skippedUnknown 个不支持的网盘类型' : ''}';
+  String get summary {
+    final l10n = L10nHost.current;
+    return '${l10n.vaultSummaryAccounts(imported, updated)}'
+        '${l10n.vaultSummaryPasswords(passwordsMissing, passwordsRestored)}'
+        '${hasMissingPasswords ? l10n.vaultSummaryMissingNote : ''}'
+        '${skippedUnknown > 0 ? l10n.vaultSummarySkipped(skippedUnknown) : ''}';
+  }
 }
 
 /// Account credential vault stored **on the WebDAV cloud** (同步根目录).
@@ -133,9 +135,9 @@ class CredentialVaultService extends ChangeNotifier {
     required AccountsService accounts,
     required SettingsService settings,
     required WebDavService webDav,
-  })  : _accounts = accounts,
-        _settings = settings,
-        _webDav = webDav;
+  }) : _accounts = accounts,
+       _settings = settings,
+       _webDav = webDav;
 
   final AccountsService _accounts;
   final SettingsService _settings;
@@ -170,7 +172,8 @@ class CredentialVaultService extends ChangeNotifier {
     bool? encryptPassword,
   }) async {
     final encrypt =
-        (encryptPassword ?? _settings.syncEncryptPassword) && passphrase.isNotEmpty;
+        (encryptPassword ?? _settings.syncEncryptPassword) &&
+        passphrase.isNotEmpty;
     final entries = <Map<String, dynamic>>[];
     // 账号凭证库：WebDAV 三件套 + 云盘驱动配置。云盘条目的密文字段
     // （spec.secretFieldKeys）逐字段加密，地址类字段保持明文可辨识。
@@ -195,17 +198,19 @@ class CredentialVaultService extends ChangeNotifier {
             stored[e.key] = value;
           }
         }
-        entries.add(VaultEntry(
-          id: a.id,
-          name: a.name,
-          providerType: a.providerType,
-          remotePath: a.remotePath,
-          url: '',
-          username: '',
-          password: '',
-          passwordEncrypted: false,
-          driverConfig: stored,
-        ).toJson());
+        entries.add(
+          VaultEntry(
+            id: a.id,
+            name: a.name,
+            providerType: a.providerType,
+            remotePath: a.remotePath,
+            url: '',
+            username: '',
+            password: '',
+            passwordEncrypted: false,
+            driverConfig: stored,
+          ).toJson(),
+        );
         continue;
       }
       final pass = await _accounts.passwordFor(a.id) ?? '';
@@ -218,14 +223,16 @@ class CredentialVaultService extends ChangeNotifier {
         );
         encrypted = true;
       }
-      entries.add(VaultEntry(
-        id: a.id,
-        name: a.name,
-        url: a.url,
-        username: a.username,
-        password: stored,
-        passwordEncrypted: encrypted,
-      ).toJson());
+      entries.add(
+        VaultEntry(
+          id: a.id,
+          name: a.name,
+          url: a.url,
+          username: a.username,
+          password: stored,
+          passwordEncrypted: encrypted,
+        ).toJson(),
+      );
     }
     return {
       'format': format,
@@ -234,8 +241,8 @@ class CredentialVaultService extends ChangeNotifier {
       'activeAccountId': _accounts.activeAccountId,
       'passwordEncryption': encrypt ? 'aes-256-gcm' : 'none',
       'note': encrypt
-          ? '密码类字段（含云盘驱动令牌）加密（AES-256-GCM），其余字段为明文。'
-          : '密码类字段为明文存储。',
+          ? L10nHost.current.vaultNoteEncrypted
+          : L10nHost.current.vaultNotePlain,
       'accountCount': entries.length,
       'accounts': entries,
     };
@@ -264,8 +271,8 @@ class CredentialVaultService extends ChangeNotifier {
       await _webDav.ensureDirectory(accountId, _settings.syncRemoteRoot);
       await _webDav.writeBytes(accountId, remotePath, bytes);
       lastMessage = (json['passwordEncryption'] == 'aes-256-gcm')
-          ? '账号凭证已同步到云端（密码已加密）'
-          : '账号凭证已同步到云端（明文密码）';
+          ? L10nHost.current.vaultSyncedEncrypted
+          : L10nHost.current.vaultSyncedPlaintext;
       return json;
     } catch (e) {
       lastError = e.toString();
@@ -279,9 +286,7 @@ class CredentialVaultService extends ChangeNotifier {
   /// Download the vault JSON from [accountId].
   ///
   /// Returns null when the file does not exist yet (nothing to pull).
-  Future<Map<String, dynamic>?> fetchJson({
-    required String accountId,
-  }) async {
+  Future<Map<String, dynamic>?> fetchJson({required String accountId}) async {
     _requireAccount(accountId);
     try {
       final bytes = await _webDav.readAsBytes(accountId, remotePath);
@@ -290,7 +295,8 @@ class CredentialVaultService extends ChangeNotifier {
       return Map<String, dynamic>.from(decoded);
     } catch (e) {
       final msg = e.toString().toLowerCase();
-      final missing = msg.contains('404') ||
+      final missing =
+          msg.contains('404') ||
           msg.contains('not found') ||
           msg.contains('does not exist');
       if (missing) return null;
@@ -313,11 +319,11 @@ class CredentialVaultService extends ChangeNotifier {
     try {
       final json = await fetchJson(accountId: accountId);
       if (json == null) {
-        lastMessage = '云端暂无凭证文件（$remotePath），已跳过';
+        lastMessage = L10nHost.current.vaultCloudNoFile(remotePath);
         return null;
       }
       final result = await applyJson(json, passphrase: passphrase);
-      lastMessage = '已从云端恢复账号凭证：${result.summary}';
+      lastMessage = L10nHost.current.vaultRestoredFromCloud(result.summary);
       return result;
     } catch (e) {
       lastError = e.toString();
@@ -372,7 +378,8 @@ class CredentialVaultService extends ChangeNotifier {
 
       if (entry.url.trim().isEmpty) continue;
       final String resolved;
-      if (entry.passwordEncrypted && CredentialVaultCrypto.isEncrypted(entry.password)) {
+      if (entry.passwordEncrypted &&
+          CredentialVaultCrypto.isEncrypted(entry.password)) {
         final clear = await CredentialVaultCrypto.tryDecrypt(
           encoded: entry.password,
           passphrase: passphrase,
@@ -393,12 +400,10 @@ class CredentialVaultService extends ChangeNotifier {
         restored++;
       }
 
-      final existing = _accounts.accounts
-          .cast<WebDavAccount?>()
-          .firstWhere(
-            (a) => a?.id == entry.id || a?.url == entry.url,
-            orElse: () => null,
-          );
+      final existing = _accounts.accounts.cast<WebDavAccount?>().firstWhere(
+        (a) => a?.id == entry.id || a?.url == entry.url,
+        orElse: () => null,
+      );
       if (existing == null) {
         await _accounts.addAccount(
           name: entry.name,
@@ -440,7 +445,8 @@ class CredentialVaultService extends ChangeNotifier {
     String passphrase,
   ) async {
     final raw = entry.driverConfig ?? const <String, dynamic>{};
-    final local = (await _accounts.loadDriverConfig(entry.id)) ??
+    final local =
+        (await _accounts.loadDriverConfig(entry.id)) ??
         (await _accounts.loadDriverConfigByName(entry.name)) ??
         const <String, dynamic>{};
     final merged = <String, dynamic>{...local};
@@ -467,12 +473,14 @@ class CredentialVaultService extends ChangeNotifier {
     }
     if (!restoredSecrets) {
       missingPasswordAccounts.add(
-          entry.name.isEmpty ? entry.providerType : entry.name);
+        entry.name.isEmpty ? entry.providerType : entry.name,
+      );
     }
 
-    final existing = _accounts.accounts
-        .cast<WebDavAccount?>()
-        .firstWhere((a) => a?.id == entry.id, orElse: () => null);
+    final existing = _accounts.accounts.cast<WebDavAccount?>().firstWhere(
+      (a) => a?.id == entry.id,
+      orElse: () => null,
+    );
     if (existing == null) {
       final account = await _accounts.addAccount(
         name: entry.name,
@@ -499,7 +507,7 @@ class CredentialVaultService extends ChangeNotifier {
   /// Throws when the destination account has no registered client.
   void _requireAccount(String accountId) {
     if (!_webDav.hasAccount(accountId)) {
-      throw StateError('凭证同步目的地网盘未配置');
+      throw StateError('err.vaultDestNotConfigured');
     }
   }
 }

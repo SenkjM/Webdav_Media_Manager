@@ -139,8 +139,10 @@ class AppTheme {
         indicatorColor: AppColors.accent,
         dividerColor: AppColors.divider,
         labelStyle: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        unselectedLabelStyle:
-            TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+        unselectedLabelStyle: TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+        ),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.accent,
@@ -164,7 +166,9 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.accent,
           foregroundColor: AppColors.onAccent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -393,8 +397,10 @@ class AppTheme {
         indicatorColor: accent,
         dividerColor: divider,
         labelStyle: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-        unselectedLabelStyle:
-            TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+        unselectedLabelStyle: TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
+        ),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: accent,
@@ -418,8 +424,9 @@ class AppTheme {
         style: FilledButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: onAccent,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(

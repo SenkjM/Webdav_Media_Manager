@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/playlist.dart';
+import '../models/playlist_sentinels.dart';
 import '../services/audio_player_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
@@ -9,29 +11,38 @@ import 'home_shell.dart';
 import 'playlist_detail_screen.dart';
 import '../utils/app_snack.dart';
 
+String _playlistDisplayName(BuildContext context, String name) {
+  final l10n = AppLocalizations.of(context)!;
+  return isUnnamedPlaylistName(name) ? l10n.unnamedPlaylist : name;
+}
+
 class PlaylistsScreen extends StatelessWidget {
   const PlaylistsScreen({super.key});
 
   Future<void> _createFromQueue(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
     final player = context.read<AudioPlayerService>();
     final queue = player.queue;
     if (queue.isEmpty) {
-      AppSnack.show(context, '当前播放列表为空');
+      AppSnack.show(context, l10n.playlistQueueEmpty);
       return;
     }
     final controller = TextEditingController(
-      text: '播放列表 ${DateTime.now().month}/${DateTime.now().day}',
+      text: l10n.playlistQueueDefaultName(
+        DateTime.now().month,
+        DateTime.now().day,
+      ),
     );
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('从当前播放列表创建'),
+        title: Text(l10n.playlistCreateFromQueue),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '复制当前队列 ${queue.length} 首到新歌单。',
+              l10n.playlistCreateFromQueueBody(queue.length),
               style: const TextStyle(
                 fontSize: 13,
                 color: AppColors.secondaryText,
@@ -41,18 +52,18 @@ class PlaylistsScreen extends StatelessWidget {
             TextField(
               controller: controller,
               autofocus: true,
-              decoration: const InputDecoration(labelText: '歌单名称'),
+              decoration: InputDecoration(labelText: l10n.playlistNameLabel),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('创建'),
+            child: Text(l10n.create),
           ),
         ],
       ),
@@ -73,7 +84,10 @@ class PlaylistsScreen extends StatelessWidget {
       queueEntries: entries,
     );
     if (!context.mounted) return;
-    AppSnack.show(context, '已创建歌单「${pl.name}」');
+    AppSnack.show(
+      context,
+      l10n.playlistCreated(_playlistDisplayName(context, pl.name)),
+    );
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PlaylistDetailScreen(playlistId: pl.id),
@@ -82,25 +96,26 @@ class PlaylistsScreen extends StatelessWidget {
   }
 
   Future<void> _create(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建歌单'),
+        title: Text(l10n.playlistNew),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(labelText: '名称'),
+          decoration: InputDecoration(labelText: l10n.nameLabel),
           onSubmitted: (v) => Navigator.pop(ctx, v),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('创建'),
+            child: Text(l10n.create),
           ),
         ],
       ),
@@ -118,14 +133,15 @@ class PlaylistsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final service = context.watch<PlaylistService>();
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
-        title: const Text('歌单'),
+        title: Text(l10n.playlistsTitle),
         actions: [
           IconButton(
-            tooltip: '从 WebDAV 同步',
+            tooltip: l10n.playlistSyncTooltip,
             icon: const Icon(Icons.cloud_sync_outlined),
             onPressed: () async {
               await service.pullAndMergeFromWebDav();
@@ -133,31 +149,31 @@ class PlaylistsScreen extends StatelessWidget {
               AppSnack.show(
                 context,
                 service.lastSyncError == null
-                    ? '已同步歌单'
-                    : '同步失败：${service.lastSyncError}',
+                    ? l10n.playlistSynced
+                    : l10n.playlistSyncFailed(service.lastSyncError!),
               );
             },
           ),
           IconButton(
-            tooltip: '从当前播放列表创建',
+            tooltip: l10n.playlistCreateFromQueue,
             icon: const Icon(Icons.playlist_add_check),
             onPressed: () => _createFromQueue(context),
           ),
           IconButton(
-            tooltip: '新建歌单',
+            tooltip: l10n.playlistNew,
             icon: const Icon(Icons.add),
             onPressed: () => _create(context),
           ),
         ],
       ),
       body: service.playlists.isEmpty
-          ? const Center(
+          ? Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
                 child: Text(
-                  '暂无歌单：右上角「+」新建，或在音乐库长按曲目添加。',
+                  l10n.playlistsEmpty,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.secondaryText),
+                  style: const TextStyle(color: AppColors.secondaryText),
                 ),
               ),
             )
@@ -170,25 +186,31 @@ class PlaylistsScreen extends StatelessWidget {
                     Icons.queue_music,
                     color: AppColors.accent,
                   ),
-                  title: Text(pl.name),
-                  subtitle: Text('${pl.length} 首'),
+                  title: Text(_playlistDisplayName(context, pl.name)),
+                  subtitle: Text(l10n.playlistTrackCount(pl.length)),
                   trailing: PopupMenuButton<String>(
                     onSelected: (v) async {
                       if (v == 'rename') {
-                        final c = TextEditingController(text: pl.name);
+                        final c = TextEditingController(
+                          text: _playlistDisplayName(context, pl.name),
+                        );
                         final name = await showDialog<String>(
                           context: context,
                           builder: (ctx) => AlertDialog(
-                            title: const Text('重命名歌单'),
+                            title: Text(
+                              AppLocalizations.of(context)!.playlistRename,
+                            ),
                             content: TextField(controller: c, autofocus: true),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx),
-                                child: const Text('取消'),
+                                child: Text(
+                                  AppLocalizations.of(context)!.cancel,
+                                ),
                               ),
                               FilledButton(
                                 onPressed: () => Navigator.pop(ctx, c.text),
-                                child: const Text('保存'),
+                                child: Text(AppLocalizations.of(context)!.save),
                               ),
                             ],
                           ),
@@ -200,18 +222,25 @@ class PlaylistsScreen extends StatelessWidget {
                         final ok = await showDialog<bool>(
                           context: context,
                           builder: (ctx) => AlertDialog(
-                            title: const Text('删除歌单'),
+                            title: Text(
+                              AppLocalizations.of(context)!.playlistDelete,
+                            ),
                             content: Text(
-                              '确定删除「${pl.name}」？本地与 WebDAV 上的对应文件都会删除。',
+                              AppLocalizations.of(context)!
+                                  .playlistDeleteConfirm(pl.name),
                             ),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(ctx, false),
-                                child: const Text('取消'),
+                                child: Text(
+                                  AppLocalizations.of(context)!.cancel,
+                                ),
                               ),
                               FilledButton(
                                 onPressed: () => Navigator.pop(ctx, true),
-                                child: const Text('删除'),
+                                child: Text(
+                                  AppLocalizations.of(context)!.delete,
+                                ),
                               ),
                             ],
                           ),
@@ -221,9 +250,15 @@ class PlaylistsScreen extends StatelessWidget {
                         }
                       }
                     },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'rename', child: Text('重命名')),
-                      PopupMenuItem(value: 'delete', child: Text('删除')),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'rename',
+                        child: Text(AppLocalizations.of(context)!.rename),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text(AppLocalizations.of(context)!.delete),
+                      ),
                     ],
                   ),
                   onTap: () {
@@ -244,14 +279,14 @@ class PlaylistsScreen extends StatelessWidget {
             heroTag: 'from_queue',
             onPressed: () => _createFromQueue(context),
             icon: const Icon(Icons.playlist_add_check),
-            label: const Text('从当前播放列表创建'),
+            label: Text(l10n.playlistCreateFromQueue),
           ),
           const SizedBox(height: 12),
           FloatingActionButton.extended(
             heroTag: 'new_playlist',
             onPressed: () => _create(context),
             icon: const Icon(Icons.add),
-            label: const Text('新建歌单'),
+            label: Text(l10n.playlistNew),
           ),
         ],
       ),
@@ -265,6 +300,7 @@ Future<void> showAddToPlaylistDialog(
   PlaylistEntry entry,
 ) async {
   final service = context.read<PlaylistService>();
+  final l10n = AppLocalizations.of(context)!;
   final choice = await showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
@@ -274,7 +310,7 @@ Future<void> showAddToPlaylistDialog(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const ListTile(title: Text('添加到歌单')),
+            ListTile(title: Text(l10n.playlistAddTo)),
             Flexible(
               child: ListView(
                 shrinkWrap: true,
@@ -282,12 +318,12 @@ Future<void> showAddToPlaylistDialog(
                   for (final pl in list)
                     ListTile(
                       leading: const Icon(Icons.queue_music),
-                      title: Text(pl.name),
+                      title: Text(_playlistDisplayName(context, pl.name)),
                       onTap: () => Navigator.pop(ctx, pl.id),
                     ),
                   ListTile(
                     leading: const Icon(Icons.add),
-                    title: const Text('新建歌单…'),
+                    title: Text(l10n.playlistNewEllipsis),
                     onTap: () => Navigator.pop(ctx, '__new__'),
                   ),
                 ],
@@ -304,16 +340,16 @@ Future<void> showAddToPlaylistDialog(
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建歌单'),
+        title: Text(l10n.playlistNew),
         content: TextField(controller: c, autofocus: true),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, c.text),
-            child: const Text('创建'),
+            child: Text(l10n.create),
           ),
         ],
       ),
@@ -325,7 +361,7 @@ Future<void> showAddToPlaylistDialog(
     await service.addTrack(choice, entry);
   }
   if (!context.mounted) return;
-  AppSnack.show(context, '已添加到歌单');
+  AppSnack.show(context, l10n.playlistAdded);
 }
 
 /// Add multiple entries to one playlist (or create).
@@ -335,6 +371,7 @@ Future<void> showAddManyToPlaylistDialog(
 ) async {
   if (entries.isEmpty) return;
   final service = context.read<PlaylistService>();
+  final l10n = AppLocalizations.of(context)!;
   final choice = await showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
@@ -344,7 +381,7 @@ Future<void> showAddManyToPlaylistDialog(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(title: Text('添加 ${entries.length} 首到歌单')),
+            ListTile(title: Text(l10n.playlistAddMany(entries.length))),
             Flexible(
               child: ListView(
                 shrinkWrap: true,
@@ -352,12 +389,12 @@ Future<void> showAddManyToPlaylistDialog(
                   for (final pl in list)
                     ListTile(
                       leading: const Icon(Icons.queue_music),
-                      title: Text(pl.name),
+                      title: Text(_playlistDisplayName(context, pl.name)),
                       onTap: () => Navigator.pop(ctx, pl.id),
                     ),
                   ListTile(
                     leading: const Icon(Icons.add),
-                    title: const Text('新建歌单…'),
+                    title: Text(l10n.playlistNewEllipsis),
                     onTap: () => Navigator.pop(ctx, '__new__'),
                   ),
                 ],
@@ -375,16 +412,16 @@ Future<void> showAddManyToPlaylistDialog(
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建歌单'),
+        title: Text(l10n.playlistNew),
         content: TextField(controller: c, autofocus: true),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, c.text),
-            child: const Text('创建'),
+            child: Text(l10n.create),
           ),
         ],
       ),
@@ -397,5 +434,5 @@ Future<void> showAddManyToPlaylistDialog(
     await service.addTrack(playlistId, e);
   }
   if (!context.mounted) return;
-  AppSnack.show(context, '已添加 ${entries.length} 首到歌单');
+  AppSnack.show(context, l10n.playlistAddedMany(entries.length));
 }

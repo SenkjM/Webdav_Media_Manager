@@ -96,15 +96,18 @@ void main() {
       expect(d.reason, isNotNull);
     });
 
-    test('拒绝时给出中文原因', () {
+    test('拒绝时给出结构化原因（动作与类别）', () {
       final d = judgeAction(
         action: FileAction.cacheMusic,
         category: FileCategory.video,
         isDirectory: false,
       );
       expect(d.allowed, isFalse);
-      expect(d.reason, contains('缓存音乐'));
-      expect(d.reason, contains('视频'));
+      final reason = d.reason;
+      expect(reason, isA<FileActionDenyNotApplicable>());
+      final n = reason as FileActionDenyNotApplicable;
+      expect(n.action, FileAction.cacheMusic);
+      expect(n.category, FileCategory.video);
     });
   });
 

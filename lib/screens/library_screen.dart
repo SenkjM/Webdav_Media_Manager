@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
+import '../models/library_sentinels.dart';
 import '../models/library_track.dart';
 import '../services/accounts_service.dart';
 import '../models/webdav_item.dart';
@@ -53,8 +55,8 @@ class _LibraryScreenState extends State<LibraryScreen> {
               ? TextField(
                   controller: _searchCtrl,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: '搜索标题 / 艺术家 / 专辑',
+                  decoration: InputDecoration(
+                    hintText: AppLocalizations.of(context)!.searchPlaceholder,
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
@@ -64,10 +66,12 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   style: const TextStyle(color: AppColors.onDark, fontSize: 16),
                   onChanged: (v) => setState(() => _query = v),
                 )
-              : const Text('音乐库'),
+              : Text(AppLocalizations.of(context)!.library),
           actions: [
             IconButton(
-              tooltip: _searchOpen ? '关闭搜索' : '搜索',
+              tooltip: _searchOpen
+                  ? AppLocalizations.of(context)!.closeSearch
+                  : AppLocalizations.of(context)!.searchAction,
               icon: Icon(_searchOpen ? Icons.close : Icons.search),
               onPressed: () {
                 setState(() {
@@ -80,7 +84,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               },
             ),
             PopupMenuButton<LibrarySortMode>(
-              tooltip: '排序',
+              tooltip: AppLocalizations.of(context)!.sortTooltip,
               initialValue: settings.librarySort,
               onSelected: (mode) =>
                   context.read<SettingsService>().setLibrarySort(mode),
@@ -97,7 +101,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           size: 18,
                         ),
                         const SizedBox(width: 8),
-                        Text(mode.labelZh),
+                        Text(mode.label(AppLocalizations.of(context)!)),
                       ],
                     ),
                   ),
@@ -105,22 +109,22 @@ class _LibraryScreenState extends State<LibraryScreen> {
               icon: const Icon(Icons.sort),
             ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: '专辑'),
-              Tab(text: '作者'),
-              Tab(text: '音乐名'),
-              Tab(text: '流派'),
+              Tab(text: AppLocalizations.of(context)!.tabAlbums),
+              Tab(text: AppLocalizations.of(context)!.tabArtists),
+              Tab(text: AppLocalizations.of(context)!.tabTitles),
+              Tab(text: AppLocalizations.of(context)!.tabGenres),
             ],
           ),
         ),
         body: library.count == 0
-            ? const Center(
+            ? Center(
                 child: Padding(
-                  padding: EdgeInsets.all(24),
+                  padding: const EdgeInsets.all(24),
                   child: Text(
-                    '暂无曲目：先在「网络库」下载音乐。',
+                    AppLocalizations.of(context)!.libraryEmptyGuide,
                     textAlign: TextAlign.center,
                     style: TextStyle(color: AppColors.secondaryText),
                   ),
@@ -158,7 +162,10 @@ class _TitleTab extends StatelessWidget {
     final tracks = query.trim().isEmpty
         ? library.byTitle(sort: sort)
         : library.search(query, sort: sort);
-    return _SelectableTrackList(tracks: tracks, emptyHint: '无匹配曲目');
+    return _SelectableTrackList(
+      tracks: tracks,
+      emptyHint: AppLocalizations.of(context)!.libraryNoMatch,
+    );
   }
 }
 
@@ -190,7 +197,8 @@ class _ArtistTab extends StatelessWidget {
       groups: groups,
       cache: cache,
       placeholderIcon: Icons.person_outline,
-      subtitleOf: (tracks) => '${tracks.length} 首',
+      subtitleOf: (tracks) =>
+          AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
       detailSort: LibrarySortMode.byName,
     );
   }
@@ -225,7 +233,7 @@ class _AlbumTab extends StatelessWidget {
       cache: cache,
       placeholderIcon: Icons.album,
       subtitleOf: (tracks) =>
-          '${tracks.length} 首 · ${tracks.first.displayArtist}',
+          '${AppLocalizations.of(context)!.playlistTrackCount(tracks.length)} · ${tracks.first.displayArtist}',
       detailSort: LibrarySortMode.byAlbumTrack,
     );
   }
@@ -238,6 +246,7 @@ class _TagsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     var groups = library.groupedByGenre();
     final q = query.trim().toLowerCase();
     if (q.isNotEmpty) {
@@ -255,9 +264,9 @@ class _TagsTab extends StatelessWidget {
       );
     }
     if (groups.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          '暂无流派：下载带流派元数据的曲目后出现。',
+          AppLocalizations.of(context)!.genreEmpty,
           textAlign: TextAlign.center,
           style: TextStyle(color: AppColors.secondaryText),
         ),
@@ -269,24 +278,32 @@ class _TagsTab extends StatelessWidget {
       itemCount: tags.length,
       itemBuilder: (context, i) {
         final tag = tags[i];
+        final displayTag = isUncategorizedGenre(tag) ? l10n.uncategorized : tag;
         final tracks = groups[tag]!;
         return ListTile(
           leading: CircleAvatar(
             backgroundColor: AppColors.elevatedHigh,
             child: Icon(
-              tag == '未分类' ? Icons.label_off_outlined : Icons.label_outline,
+              isUncategorizedGenre(tag)
+                  ? Icons.label_off_outlined
+                  : Icons.label_outline,
               color: AppColors.accent,
               size: 20,
             ),
           ),
-          title: Text(tag, style: const TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: Text('${tracks.length} 首'),
+          title: Text(
+            displayTag,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
+          ),
           trailing: const Icon(Icons.chevron_right),
           onTap: () {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => _TrackListPage(
-                  title: tag,
+                  title: displayTag,
                   tracks: tracks,
                   defaultSort: LibrarySortMode.byName,
                 ),
@@ -297,7 +314,7 @@ class _TagsTab extends StatelessWidget {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => _TrackListPage(
-                  title: tag,
+                  title: displayTag,
                   tracks: tracks,
                   defaultSort: LibrarySortMode.byName,
                   startInSelection: true,
@@ -387,8 +404,11 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
   @override
   Widget build(BuildContext context) {
     if (widget.keys.isEmpty) {
-      return const Center(
-        child: Text('无匹配结果', style: TextStyle(color: AppColors.secondaryText)),
+      return Center(
+        child: Text(
+          AppLocalizations.of(context)!.noMatchResult,
+          style: const TextStyle(color: AppColors.secondaryText),
+        ),
       );
     }
     return Column(
@@ -419,10 +439,17 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                 _selectedTracks,
               );
               if (context.mounted) {
-                final status = result.cancelled ? '已终止' : '更新完成';
+                final status = result.cancelled
+                    ? AppLocalizations.of(context)!.updateCancelled
+                    : AppLocalizations.of(context)!.updateDone;
                 AppSnack.show(
                   context,
-                  '$status：更新 ${result.updated} 首，跳过 ${result.skipped} 首，失败 ${result.failed} 首',
+                  AppLocalizations.of(context)!.updateSummary(
+                    status,
+                    result.updated,
+                    result.skipped,
+                    result.failed,
+                  ),
                 );
               }
               if (mounted) _exitSelect();
@@ -532,13 +559,13 @@ class _SelectionBar extends StatelessWidget {
         // 退不出多选是故意的：返回键负责退出，那个按钮不该兼职关闭。
         if (allSelected)
           IconButton(
-            tooltip: '取消全选',
+            tooltip: AppLocalizations.of(context)!.cancelSelection,
             onPressed: onSelectAll,
             icon: const Icon(Icons.deselect),
           )
         else
           IconButton(
-            tooltip: '全选',
+            tooltip: AppLocalizations.of(context)!.selectAll,
             onPressed: count == 0 ? null : onSelectAll,
             icon: const Icon(Icons.select_all),
           ),
@@ -547,29 +574,29 @@ class _SelectionBar extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Text(
-            '已选 $count 项',
+            AppLocalizations.of(context)!.netSelectedCount(count),
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ),
         IconButton(
-          tooltip: '添加到歌单',
+          tooltip: AppLocalizations.of(context)!.playlistAddTo,
           onPressed: count == 0 ? null : onAdd,
           icon: const Icon(Icons.playlist_add),
         ),
         IconButton(
-          tooltip: '分享',
+          tooltip: AppLocalizations.of(context)!.shareAction,
           onPressed: count == 0 ? null : onShare,
           icon: const Icon(Icons.share_outlined),
         ),
         // No cached file in the selection → nothing to delete.
         if (hasCachedSelection)
           IconButton(
-            tooltip: '删除缓存（保留元数据与封面）',
+            tooltip: AppLocalizations.of(context)!.deleteCacheKeepMeta,
             onPressed: count == 0 ? null : onDelete,
             icon: const Icon(Icons.delete_outline, color: AppColors.error),
           ),
         PopupMenuButton<String>(
-          tooltip: '更多操作',
+          tooltip: AppLocalizations.of(context)!.moreActions,
           enabled: count > 0,
           onSelected: (action) {
             switch (action) {
@@ -584,26 +611,28 @@ class _SelectionBar extends StatelessWidget {
                 break;
             }
           },
-          itemBuilder: (context) => const [
+          itemBuilder: (context) => [
             PopupMenuItem(
               value: 'tags',
               child: ListTile(
                 leading: Icon(Icons.sell_outlined),
-                title: Text('更新标签'),
+                title: Text(AppLocalizations.of(context)!.updateTags),
               ),
             ),
             PopupMenuItem(
               value: 'download',
               child: ListTile(
                 leading: Icon(Icons.download_outlined),
-                title: Text('下载未缓存曲目'),
+                title: Text(
+                  AppLocalizations.of(context)!.downloadUncachedTracks,
+                ),
               ),
             ),
             PopupMenuItem(
               value: 'destroy',
               child: ListTile(
                 leading: Icon(Icons.delete_forever, color: AppColors.error),
-                title: Text('销毁'),
+                title: Text(AppLocalizations.of(context)!.destroyLibraryAction),
               ),
             ),
           ],
@@ -729,13 +758,13 @@ class _SelectableTrackList extends StatefulWidget {
   const _SelectableTrackList({
     super.key,
     required this.tracks,
-    this.emptyHint = '暂无曲目',
+    this.emptyHint,
     this.startInSelection = false,
     this.onSelectingChanged,
   });
 
   final List<LibraryTrack> tracks;
-  final String emptyHint;
+  final String? emptyHint;
   final bool startInSelection;
 
   /// 多选开 / 关时通知父级。子界面靠它在自己的 `PopScope` 里决定返回键
@@ -823,7 +852,7 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
     if (widget.tracks.isEmpty) {
       return Center(
         child: Text(
-          widget.emptyHint,
+          widget.emptyHint ?? AppLocalizations.of(context)!.libraryTracksEmpty,
           style: const TextStyle(color: AppColors.secondaryText),
         ),
       );
@@ -856,10 +885,17 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
                 _selectedTracks,
               );
               if (context.mounted) {
-                final status = result.cancelled ? '已终止' : '更新完成';
+                final status = result.cancelled
+                    ? AppLocalizations.of(context)!.updateCancelled
+                    : AppLocalizations.of(context)!.updateDone;
                 AppSnack.show(
                   context,
-                  '$status：更新 ${result.updated} 首，跳过 ${result.skipped} 首，失败 ${result.failed} 首',
+                  AppLocalizations.of(context)!.updateSummary(
+                    status,
+                    result.updated,
+                    result.skipped,
+                    result.failed,
+                  ),
                 );
               }
               if (mounted) _exitSelect();
@@ -931,12 +967,15 @@ class _TrackListPageState extends State<_TrackListPage> {
         title: Text(widget.title),
         actions: [
           PopupMenuButton<LibrarySortMode>(
-            tooltip: '排序',
+            tooltip: AppLocalizations.of(context)!.sortTooltip,
             initialValue: _sort,
             onSelected: (mode) => setState(() => _sort = mode),
             itemBuilder: (context) => [
               for (final mode in LibrarySortMode.values)
-                PopupMenuItem(value: mode, child: Text(mode.labelZh)),
+                PopupMenuItem(
+                  value: mode,
+                  child: Text(mode.label(AppLocalizations.of(context)!)),
+                ),
             ],
             icon: const Icon(Icons.sort),
           ),
@@ -1037,12 +1076,14 @@ class _TrackTile extends StatelessWidget {
       ),
       subtitle: Text(
         [
-          if (track.isCueVirtual) LibraryTrack.cueMultiSliceLabel,
-          if (!sourceBound) '来源网盘未绑定',
+          if (track.isCueVirtual)
+            AppLocalizations.of(context)!.cueMultiSliceLabel,
+          if (!sourceBound) AppLocalizations.of(context)!.sourceUnbound,
           if (isDownloading && task!.progress > 0)
-            '下载中 ${(task.progress * 100).toStringAsFixed(0)}%'
+            AppLocalizations.of(context)!
+                .downloadingPercent((task.progress * 100).toStringAsFixed(0))
           else if (!isLocal)
-            '未下载',
+            AppLocalizations.of(context)!.notDownloaded,
           track.displayArtist,
           if (isLocal) track.displayAlbum,
         ].join(' · '),
@@ -1062,7 +1103,9 @@ class _TrackTile extends StatelessWidget {
               ),
             ),
           Tooltip(
-            message: isLocal ? '已下载' : '点按加入下载',
+            message: isLocal
+                ? AppLocalizations.of(context)!.downloaded
+                : AppLocalizations.of(context)!.tapToDownload,
             child: Container(
               width: 10,
               height: 10,
@@ -1107,7 +1150,10 @@ class _TrackTile extends StatelessWidget {
     }
     final accountsService = context.read<AccountsService>();
     if (!accountsService.isSourceBound(track.sourceName)) {
-      AppSnack.error(context, unboundSourceMessage(track.sourceName));
+      AppSnack.error(
+        context,
+        unboundSourceMessage(AppLocalizations.of(context)!, track.sourceName),
+      );
       return;
     }
     final player = context.read<AudioPlayerService>();

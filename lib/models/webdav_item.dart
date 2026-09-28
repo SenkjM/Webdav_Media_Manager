@@ -1,3 +1,4 @@
+import '../l10n/generated/app_localizations.dart';
 import '../models/file_type_config.dart';
 
 class WebDavItem {
@@ -52,8 +53,10 @@ class TrackInfo {
     this.clipEnd,
     this.cacheGroupId,
   });
+
   /// 网盘名 —— the library binding point (cache / identity side).
   final String sourceName;
+
   /// Local WebDAV account resolved from [sourceName] for the HTTP transfer.
   final String accountId;
   final String remotePath;
@@ -82,21 +85,31 @@ class TrackInfo {
   bool get isDownloaded => localPath != null;
   bool get isCueVirtual =>
       cueTrackIndex != null && (cueRemotePath?.isNotEmpty ?? false);
-  /// See [LibraryTrack.cueMultiSliceLabel].
-  String? get cueTypeLabel =>
-      isCueVirtual ? '多歌曲合并分片' : null;
+
   String get effectiveAudioRemotePath => audioRemotePath ?? remotePath;
   String get displayTitle {
-    if (isDownloaded && title != null && title!.trim().isNotEmpty) return title!;
+    if (isDownloaded && title != null && title!.trim().isNotEmpty) {
+      return title!;
+    }
     final t = title?.trim();
     if (t != null && t.isNotEmpty) return t;
     return fileName;
   }
+
   String get displayArtist {
     final a = artist?.trim();
     if (a != null && a.isNotEmpty) return a;
     return '未知艺术家';
   }
+
+  /// Locale-aware render of [displayArtist]; the raw getter keeps a stable
+  /// '未知艺术家' fallback for queue/metadata consumers.
+  String displayArtistFor(AppLocalizations l10n) {
+    final a = artist?.trim();
+    if (a != null && a.isNotEmpty) return a;
+    return l10n.artistUnknown;
+  }
+
   String get displayAlbum {
     final a = album?.trim();
     if (a != null && a.isNotEmpty) return a;

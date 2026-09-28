@@ -96,15 +96,14 @@ Map<String, dynamic> _entry(
   int isdir = 0,
   int size = 0,
   int mtime = 0,
-}) =>
-    {
-      'fs_id': fsId,
-      'server_filename': name,
-      'isdir': isdir,
-      'size': size,
-      'server_mtime': mtime,
-      'path': '/$name',
-    };
+}) => {
+  'fs_id': fsId,
+  'server_filename': name,
+  'isdir': isdir,
+  'size': size,
+  'server_mtime': mtime,
+  'path': '/$name',
+};
 
 void main() {
   late _RoutingAdapter adapter;
@@ -113,12 +112,16 @@ void main() {
   /// 每个用例设置自己期望的响应；缺省 404 好让漏配的端点暴露出来。
   late Future<_Reply> Function(_Hit hit) responder;
 
-  Future<TeraboxClient> makeClient({String cookie = 'ndus=abc; ndut_fmt=x'}) async {
+  Future<TeraboxClient> makeClient({
+    String cookie = 'ndus=abc; ndut_fmt=x',
+  }) async {
     return TeraboxClient(TeraboxAddition(cookie: cookie), dio: dio);
   }
 
-  TeraboxDriver makeDriver() =>
-      TeraboxDriver(addition: TeraboxAddition(cookie: 'ndus=abc'), dio: dio);
+  TeraboxDriver makeDriver() => TeraboxDriver(
+    addition: TeraboxAddition(cookie: 'ndus=abc'),
+    dio: dio,
+  );
 
   setUp(() {
     responder = (_) async => const _Reply('{}', status: 404);
@@ -129,23 +132,26 @@ void main() {
 
   // ────────────────────────────────────────────────────────────────
   group('1 · cookie 失效：错误原文透传', () {
-    test('check/login errno != 0 → CloudDriverException 带上游原文与 errno', () async {
-      responder = (_) async => const _Reply('{"errno":-6}');
-      final client = await makeClient();
-      await expectLater(
-        client.checkLogin(),
-        throwsA(
-          isA<CloudDriverException>().having(
-            (e) => e.message,
-            'message',
-            allOf(
-              contains('Failed to verify TeraBox login status'),
-              contains('errno -6'),
+    test(
+      'check/login errno != 0 → CloudDriverException 带上游原文与 errno',
+      () async {
+        responder = (_) async => const _Reply('{"errno":-6}');
+        final client = await makeClient();
+        await expectLater(
+          client.checkLogin(),
+          throwsA(
+            isA<CloudDriverException>().having(
+              (e) => e.message,
+              'message',
+              allOf(
+                contains('Failed to verify TeraBox login status'),
+                contains('errno -6'),
+              ),
             ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
 
     test('cookie 完全失效 errno=-6 且带 Url-Domain-Prefix 时换域名重试一次', () async {
       // util.ts:183-193：errno -6 + 响应头 → 换 baseUrl 重试。
@@ -154,9 +160,12 @@ void main() {
       responder = (_) async {
         n++;
         if (n == 1) {
-          return const _Reply('{"errno":-6}', headers: {
-            'url-domain-prefix': ['us'],
-          });
+          return const _Reply(
+            '{"errno":-6}',
+            headers: {
+              'url-domain-prefix': ['us'],
+            },
+          );
         }
         return const _Reply('{"errno":0}');
       };
@@ -225,13 +234,15 @@ void main() {
       // 第 1 页给条目、第 2 页给空列表——否则每页都非空，驱动会永远翻下去。
       responder = (h) async {
         if (h.query['page'] == '1') {
-          return _Reply(jsonEncode({
-            'errno': 0,
-            'list': [
-              _entry('albums', fsId: 1, isdir: 1),
-              _entry('song.flac', fsId: 2, size: 4096, mtime: 1700000000),
-            ],
-          }));
+          return _Reply(
+            jsonEncode({
+              'errno': 0,
+              'list': [
+                _entry('albums', fsId: 1, isdir: 1),
+                _entry('song.flac', fsId: 2, size: 4096, mtime: 1700000000),
+              ],
+            }),
+          );
         }
         return const _Reply('{"errno":0,"list":[]}');
       };
@@ -282,11 +293,13 @@ void main() {
       final client = await makeClient();
       await expectLater(
         client.listDir('/'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('not yet available in this area'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('not yet available in this area'),
+          ),
+        ),
       );
     });
 
@@ -295,11 +308,13 @@ void main() {
       final client = await makeClient();
       await expectLater(
         client.checkLogin(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('not yet available in this area'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('not yet available in this area'),
+          ),
+        ),
       );
     });
 
@@ -309,11 +324,13 @@ void main() {
 
       await expectLater(
         driver.get('/Movies/a.mkv'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('not yet available in this area'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('not yet available in this area'),
+          ),
+        ),
       );
     });
   });
@@ -333,9 +350,12 @@ void main() {
           return _Reply(downloadBody);
         }
         if (h.uri.path == '/dl/origin') {
-          return const _Reply('', headers: {
-            'location': ['https://cdn.terabox.com/real/file.mkv?token=xyz'],
-          });
+          return const _Reply(
+            '',
+            headers: {
+              'location': ['https://cdn.terabox.com/real/file.mkv?token=xyz'],
+            },
+          );
         }
         return const _Reply('{}', status: 404);
       };
@@ -386,11 +406,13 @@ void main() {
       final client = await makeClient();
       await expectLater(
         client.linkOfficial(777),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('777'), contains('-9')),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('777'), contains('-9')),
+          ),
+        ),
       );
     });
 
@@ -399,11 +421,13 @@ void main() {
       final client = await makeClient();
       await expectLater(
         client.genSign(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('sign keys'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('sign keys'),
+          ),
+        ),
       );
     });
 
@@ -413,7 +437,9 @@ void main() {
           return const _Reply('{"errno":0,"data":{"sign1":"a","sign3":"b"}}');
         }
         if (h.uri.path == '/api/download') {
-          return const _Reply('{"errno":0,"dlink":[{"dlink":"https://www.terabox.com/direct"}]}');
+          return const _Reply(
+            '{"errno":0,"dlink":[{"dlink":"https://www.terabox.com/direct"}]}',
+          );
         }
         return const _Reply('binary', status: 200); // 无 Location
       };
@@ -428,22 +454,33 @@ void main() {
     test('文件：列父目录找到条目 → 返回带 rawUrl 与 UA 的条目', () async {
       responder = (h) async {
         if (h.uri.path == '/api/list') {
-          return _Reply(jsonEncode({
-            'errno': 0,
-            'list': [
-              _entry('other.mkv', fsId: 1),
-              _entry('movie.mkv', fsId: 99, size: 555, mtime: 1700000000),
-            ],
-          }));
+          return _Reply(
+            jsonEncode({
+              'errno': 0,
+              'list': [
+                _entry('other.mkv', fsId: 1),
+                _entry('movie.mkv', fsId: 99, size: 555, mtime: 1700000000),
+              ],
+            }),
+          );
         }
         if (h.uri.path == '/api/home/info') {
-          return const _Reply('{"errno":0,"data":{"sign1":"sign1data","sign3":"sign3key"}}');
+          return const _Reply(
+            '{"errno":0,"data":{"sign1":"sign1data","sign3":"sign3key"}}',
+          );
         }
         if (h.uri.path == '/api/download') {
-          return const _Reply('{"errno":0,"dlink":[{"dlink":"https://www.terabox.com/dl/origin"}]}');
+          return const _Reply(
+            '{"errno":0,"dlink":[{"dlink":"https://www.terabox.com/dl/origin"}]}',
+          );
         }
         if (h.uri.path == '/dl/origin') {
-          return const _Reply('', headers: {'location': ['https://cdn/x.mkv']});
+          return const _Reply(
+            '',
+            headers: {
+              'location': ['https://cdn/x.mkv'],
+            },
+          );
         }
         return const _Reply('{}', status: 404);
       };
@@ -463,10 +500,12 @@ void main() {
     });
 
     test('目录：不取直链，只返回目录条目', () async {
-      responder = (h) async => _Reply(jsonEncode({
-            'errno': 0,
-            'list': [_entry('sub', fsId: 5, isdir: 1, mtime: 1700000000)],
-          }));
+      responder = (h) async => _Reply(
+        jsonEncode({
+          'errno': 0,
+          'list': [_entry('sub', fsId: 5, isdir: 1, mtime: 1700000000)],
+        }),
+      );
       final driver = makeDriver();
 
       final item = await driver.get('/sub');
@@ -493,21 +532,25 @@ void main() {
 
       await expectLater(
         driver.get('/Movies/missing.mkv'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('file not found: missing.mkv'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('file not found: missing.mkv'),
+          ),
+        ),
       );
     });
 
     test('文件但直链拿不到 → 抛带真实原因的 CloudDriverException', () async {
       responder = (h) async {
         if (h.uri.path == '/api/list') {
-          return _Reply(jsonEncode({
-            'errno': 0,
-            'list': [_entry('movie.mkv', fsId: 99, size: 1)],
-          }));
+          return _Reply(
+            jsonEncode({
+              'errno': 0,
+              'list': [_entry('movie.mkv', fsId: 99, size: 1)],
+            }),
+          );
         }
         if (h.uri.path == '/api/home/info') {
           return const _Reply('{"errno":0,"data":{}}');
@@ -529,25 +572,28 @@ void main() {
     Map<String, String> formOf(_Hit h) =>
         Uri.splitQueryString(h.body.isEmpty ? 'x=' : h.body);
 
-    test('mkdir → POST /api/create?a=commit，form: path/isdir=1/block_list=[]', () async {
-      responder = (_) async => const _Reply('{"errno":0}');
-      final driver = makeDriver();
+    test(
+      'mkdir → POST /api/create?a=commit，form: path/isdir=1/block_list=[]',
+      () async {
+        responder = (_) async => const _Reply('{"errno":0}');
+        final driver = makeDriver();
 
-      await driver.mkdir('/Movies/New Folder');
+        await driver.mkdir('/Movies/New Folder');
 
-      final hit = adapter.hits.single;
-      expect(hit.method, 'POST');
-      expect(hit.uri.path, '/api/create');
-      expect(hit.query['a'], 'commit');
-      final form = formOf(hit);
-      expect(form['path'], '/Movies/New Folder');
-      expect(form['isdir'], '1');
-      expect(form['block_list'], '[]');
-      expect(
-        (hit.headers[Headers.contentTypeHeader] as String?) ?? '',
-        contains('application/x-www-form-urlencoded'),
-      );
-    });
+        final hit = adapter.hits.single;
+        expect(hit.method, 'POST');
+        expect(hit.uri.path, '/api/create');
+        expect(hit.query['a'], 'commit');
+        final form = formOf(hit);
+        expect(form['path'], '/Movies/New Folder');
+        expect(form['isdir'], '1');
+        expect(form['block_list'], '[]');
+        expect(
+          (hit.headers[Headers.contentTypeHeader] as String?) ?? '',
+          contains('application/x-www-form-urlencoded'),
+        );
+      },
+    );
 
     test('rename → POST /api/filemanager?opera=rename&onnest=fail，filelist 是 JSON 字符串', () async {
       responder = (_) async => const _Reply('{"errno":0}');
@@ -592,10 +638,7 @@ void main() {
       expect(hit.method, 'POST');
       expect(hit.uri.path, '/api/filemanager');
       expect(hit.query['opera'], 'delete');
-      expect(
-        jsonDecode(formOf(hit)['filelist']!),
-        ['/Movies/gone.mkv'],
-      );
+      expect(jsonDecode(formOf(hit)['filelist']!), ['/Movies/gone.mkv']);
     });
 
     test('move → opera=move，filelist 含 path / dest / newname', () async {
@@ -631,7 +674,9 @@ void main() {
       final driver = makeDriver();
 
       await driver.remove('//A//B//c.mkv/');
-      expect(jsonDecode(formOf(adapter.hits.single)['filelist']!), ['/A/B/c.mkv']);
+      expect(jsonDecode(formOf(adapter.hits.single)['filelist']!), [
+        '/A/B/c.mkv',
+      ]);
     });
   });
 

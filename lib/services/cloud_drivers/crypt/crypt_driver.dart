@@ -10,6 +10,7 @@ import 'package:openlist_crypt/openlist_crypt.dart';
 import '../../../models/account_capabilities.dart';
 import '../../../utils/track_identity.dart';
 import '../../cloud_driver.dart';
+import '../../../utils/l10n_host.dart';
 
 /// Decrypt a network-sized batch away from Flutter's UI isolate.
 Future<List<Uint8List>> _decryptBatchInIsolate({
@@ -56,7 +57,7 @@ class CryptDriver extends CloudDriver {
         (config['filename_encryption'] as String?) ?? 'off',
       );
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException('crypt 配置无效：${e.message}', e);
+      throw CloudDriverDataException('err.cryptInvalidConfig|${e.message}', e);
     }
     _sourceAccountName = (config['source_account_id_name'] as String?) ?? '';
     _sourceDir = (config['source_dir'] as String?) ?? '/';
@@ -152,13 +153,13 @@ class CryptDriver extends CloudDriver {
     if (cached != null) return cached;
     final sourceName = normalizeSourceName(_sourceAccountName);
     if (sourceName.isEmpty) {
-      throw const CloudDriverException('crypt 未保存源账号名称；请重新编辑并选择源账号');
+      throw const CloudDriverException('err.cryptNoSourceName');
     }
     // 名称是 Crypt 源的唯一绑定关系。source_account_id 仅保留作旧配置
     // 兼容字段，不参与实际解析；这样删除并重建账号后同名账号仍可恢复。
     final s = _env?.resolveSourceByName?.call(sourceName);
     if (s == null) {
-      throw CloudDriverException('crypt 源账号不存在或已删除「$sourceName」；重新添加同名源账号即可恢复');
+      throw CloudDriverException('err.cryptSourceMissing|$sourceName');
     }
     _source = s;
     return s;
@@ -423,7 +424,7 @@ class CryptDriver extends CloudDriver {
     final inner = await src.get(innerPath);
     final url = inner.rawUrl;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException('crypt 源不提供直链，无法顺序下载');
+      throw const CloudDriverException('err.cryptNoDirectLinkStream');
     }
 
     final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 20)));
@@ -450,7 +451,7 @@ class CryptDriver extends CloudDriver {
       );
       final stream = response.data?.stream;
       if (stream == null) {
-        throw const CloudDriverException('crypt 顺序下载没有响应体');
+        throw const CloudDriverException('err.cryptNoResponseBody');
       }
 
       await for (final chunk in stream) {
@@ -472,7 +473,7 @@ class CryptDriver extends CloudDriver {
             yield cipher.decryptBlock(nonce, block++, encrypted);
           } on RcloneCipherException catch (e) {
             throw CloudDriverDataException(
-              'crypt 第 ${block - 1} 块解密失败（内容损坏或密钥不匹配）',
+              'err.cryptBlockDecryptFailed|${block - 1}',
               e,
             );
           }
@@ -481,19 +482,24 @@ class CryptDriver extends CloudDriver {
       }
 
       if (nonce == null) {
-        throw const CloudDriverException('crypt 内容不完整（读不到文件头）');
+        throw const CloudDriverException('err.cryptNoHeader');
       }
       if (pending.length > 0) {
         final encrypted = pending.takeBytes();
         try {
           yield cipher.decryptBlock(nonce, block, encrypted);
         } on RcloneCipherException catch (e) {
-          throw CloudDriverDataException('crypt 第 $block 块解密失败（内容损坏或密钥不匹配）', e);
+          throw CloudDriverDataException(
+            'err.cryptBlockDecryptFailed|$block',
+            e,
+          );
         }
         total += encrypted.length;
       }
       if (inner.size > 0 && total != inner.size) {
-        throw CloudDriverException('crypt 内容长度不符（期望 ${inner.size}，收到 $total）');
+        throw CloudDriverException(
+          'err.cryptLengthMismatch|${inner.size}|$total',
+        );
       }
     } finally {
       dio.close(force: true);
@@ -515,7 +521,7 @@ class CryptDriver extends CloudDriver {
           // 密文只有文件头：合法的 0 字节明文文件。
           return;
         case _CryptTarget.shapeUnknownSize:
-          throw const CloudDriverException('无法确定加密内容的大小（源未提供长度且不支持 Range）');
+          throw const CloudDriverException('err.cryptSizeUnknown');
         default:
           break; // shapeRanged：走下方分块解密。
       }
@@ -599,7 +605,7 @@ class CryptDriver extends CloudDriver {
         case _CryptTarget.shapeEmptyFile:
           return; // 0 字节明文，任何区间都是空。
         case _CryptTarget.shapeUnknownSize:
-          throw const CloudDriverException('无法确定加密内容的大小（源未提供长度且不支持 Range）');
+          throw const CloudDriverException('err.cryptSizeUnknown');
         default:
           break; // shapeRanged：走下方分块解密。
       }
@@ -639,7 +645,7 @@ class CryptDriver extends CloudDriver {
           final future = _fetchRange(t, cipherStart, cipherEnd).then((chunk) {
             if (chunk.length < expected) {
               throw CloudDriverException(
-                'crypt 内容提前结束（第 $batchFirst 块起，期望 $expected 字节，收到 ${chunk.length} 字节）',
+                'err.cryptEarlyEof|$batchFirst|$expected|${chunk.length}',
               );
             }
             return chunk;
@@ -709,7 +715,7 @@ class CryptDriver extends CloudDriver {
       );
     } catch (e) {
       throw CloudDriverDataException(
-        'crypt 第 $firstBlock 块起解密失败（内容损坏或密钥不匹配）',
+        'err.cryptBlockRangeDecryptFailed|$firstBlock',
         e,
       );
     }
@@ -723,7 +729,7 @@ class CryptDriver extends CloudDriver {
         () => RcloneCipher.fromKeyMaterial(material).decrypt(t.body),
       );
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException('crypt 内容解密失败（内容损坏或密钥不匹配）：', e);
+      throw CloudDriverDataException('err.cryptDecryptFailed', e);
     }
   }
 
@@ -731,7 +737,10 @@ class CryptDriver extends CloudDriver {
     try {
       return RcloneCipher.decryptedSize(cipherSize);
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException('crypt 密文长度不合法：${e.message}', e);
+      throw CloudDriverDataException(
+        'err.cryptBadCipherLength|${e.message}',
+        e,
+      );
     }
   }
 
@@ -739,7 +748,7 @@ class CryptDriver extends CloudDriver {
     try {
       return RcloneCipher.fileNonceOf(header);
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException('不是有效的 rclone 加密文件：${e.message}', e);
+      throw CloudDriverDataException('err.cryptNotRcloneFile|${e.message}', e);
     }
   }
 
@@ -799,7 +808,7 @@ class CryptDriver extends CloudDriver {
     final inner = await src.get(innerPath);
     final url = inner.rawUrl;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException('crypt 源不提供直链，无法解密内容');
+      throw const CloudDriverException('err.cryptNoDirectLinkDecrypt');
     }
     final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 20)));
     try {
@@ -819,7 +828,7 @@ class CryptDriver extends CloudDriver {
       );
       final body = res.$1;
       if (body.length < kFileHeaderSize) {
-        throw const CloudDriverException('crypt 内容不完整（读不到文件头）');
+        throw const CloudDriverException('err.cryptNoHeader');
       }
       // 回了比请求更多的字节 = 服务器无视 Range，手上就是整包。
       final rangeIgnored = body.length > wantEnd + 1;
@@ -879,7 +888,7 @@ class CryptDriver extends CloudDriver {
     if (chunk.length < want) {
       final block = (offset - kFileHeaderSize) ~/ kBlockSize;
       throw CloudDriverException(
-        'crypt 内容提前结束（第 $block 块起，期望 $want 字节，收到 ${chunk.length} 字节）',
+        'err.cryptEarlyEof|$block|$want|${chunk.length}',
       );
     }
     return chunk;
@@ -932,7 +941,7 @@ class CryptDriver extends CloudDriver {
     final inner = await t.refresh();
     final url = inner.rawUrl;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException('crypt 源不再提供直链，无法继续解密内容');
+      throw const CloudDriverException('err.cryptNoDirectLinkAnymore');
     }
     t.url = url;
     t.headers = inner.rawHeaders;
@@ -1019,7 +1028,7 @@ class CryptSpec extends CloudDriverSpec {
   String get typeId => 'crypt';
 
   @override
-  String get displayName => 'Crypt 加密目录';
+  String get displayName => L10nHost.current.driverNameCrypt;
 
   /// 包装驱动：自己包住另一个账号当源，因此不出现在「源账号」下拉里。
   @override
@@ -1036,21 +1045,21 @@ class CryptSpec extends CloudDriverSpec {
       AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => const [
+  List<CloudDriverFormItem> get form => [
     CloudDriverAccountField(
       key: 'source_account_id',
-      label: '源账号',
+      label: L10nHost.current.formLabelSourceAccount,
       required: true,
-      hint: '选择现有 WebDAV 或网盘账号作为加密源',
+      hint: L10nHost.current.formHintSourceAccount,
     ),
     CloudDriverField(
       key: 'source_dir',
-      label: '源目录',
-      hint: '源账号浏览根下的目录，默认 /（加密文件就存在这里）',
+      label: L10nHost.current.formLabelSourceDir,
+      hint: L10nHost.current.formHintSourceDir,
     ),
     CloudDriverSelectField(
       key: 'filename_encoding',
-      label: '文件名编码',
+      label: L10nHost.current.formLabelFilenameEncoding,
       required: true,
       defaultValue: 'base64',
       options: [
@@ -1058,37 +1067,41 @@ class CryptSpec extends CloudDriverSpec {
         ('base32', 'Base32'),
         ('base32768', 'Base32768'),
       ],
-      hint: '与 rclone 的 filename_encoding 对应（base32 / base64 / base32768）',
+      hint: L10nHost.current.formHintFilenameEncoding,
     ),
     CloudDriverField(
       key: 'encrypted_suffix',
-      label: '文件名后缀',
+      label: L10nHost.current.formLabelEncryptedSuffix,
       defaultValue: '.bin',
-      hint: '仅文件名加密=关闭时生效（OpenList encrypted_suffix）',
+      hint: L10nHost.current.formHintEncryptedSuffix,
     ),
     CloudDriverField(
       key: 'password',
-      label: '密码',
+      label: L10nHost.current.formLabelPassword,
       required: true,
       obscure: true,
     ),
     CloudDriverField(
       key: 'salt',
-      label: '盐值（可选）',
+      label: L10nHost.current.formLabelSalt,
       obscure: true,
-      hint: '留空用 rclone 内置默认盐；密码 + 盐相同即可与 rclone / OpenList 互认',
+      hint: L10nHost.current.formHintSalt,
     ),
     CloudDriverSelectField(
       key: 'filename_encryption',
-      label: '文件名加密',
+      label: L10nHost.current.formLabelFilenameEncryption,
       required: true,
       defaultValue: 'off',
-      options: [('standard', '标准 (EME)'), ('obfuscate', '混淆'), ('off', '关闭')],
+      options: [
+        ('standard', L10nHost.current.optionCryptStandard),
+        ('obfuscate', L10nHost.current.optionCryptObfuscate),
+        ('off', L10nHost.current.optionCryptOff),
+      ],
     ),
     CloudDriverSwitchField(
       key: 'directory_name_encryption',
-      label: '目录名加密',
-      subtitle: 'OpenList 默认关闭；开启后目录名同样加密',
+      label: L10nHost.current.formLabelDirNameEncryption,
+      subtitle: L10nHost.current.formSubDirNameEncryption,
       defaultValue: false,
     ),
   ];

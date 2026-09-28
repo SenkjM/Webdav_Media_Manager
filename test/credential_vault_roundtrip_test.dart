@@ -160,8 +160,7 @@ void main() {
         passphrase: '统一口令',
         encryptPassword: true,
       );
-      final entry = (json['accounts'] as List).first
-          as Map<String, dynamic>;
+      final entry = (json['accounts'] as List).first as Map<String, dynamic>;
 
       expect(entry['providerType'], isNull); // webdav 条目不写类型键
       expect(entry['password'], startsWith('AESGCMv1:'));
@@ -197,7 +196,10 @@ void main() {
       // 密文字段（spec.secretFieldKeys：obscure 表单项）被加密…
       expect(entry['driverConfig']['cookie'], startsWith('AESGCMv1:'));
       // …非密码字段保持明文…
-      expect(entry['driverConfig']['api_url_address'], 'https://api.example.com');
+      expect(
+        entry['driverConfig']['api_url_address'],
+        'https://api.example.com',
+      );
       // …开关原样保留。
       expect(entry['driverConfig']['local_refresh'], false);
       expect(json['formatVersion'], 2);
@@ -257,8 +259,10 @@ void main() {
       expect(result.skippedUnknown, 1);
       expect(result.imported, 1); // 只有 NAS
       expect(accounts.accounts.map((a) => a.name), ['NAS']);
-      expect(accounts.accounts.every((a) => a.providerType != 'ghost_drive_2099'),
-          isTrue);
+      expect(
+        accounts.accounts.every((a) => a.providerType != 'ghost_drive_2099'),
+        isTrue,
+      );
     });
 
     test('坏口令：WebDAV 密码留空并计入 missing，云盘密文字段留空', () async {
@@ -293,8 +297,9 @@ void main() {
       final result = await freshVault.applyJson(json, passphrase: '错误口令');
       // webdav 密码 + 云盘 cookie，两处密文都解不开。
       expect(result.passwordsMissing, 2);
-      final cloudEntry =
-          freshAccounts.accounts.firstWhere((a) => a.providerType == 'netease_music');
+      final cloudEntry = freshAccounts.accounts.firstWhere(
+        (a) => a.providerType == 'netease_music',
+      );
       // 云盘密文字段解不开 → 字段留空待补填（账号本身仍在）。
       final cfg = await freshAccounts.loadDriverConfig(cloudEntry.id);
       expect(cfg?['cookie'] ?? '', '');
@@ -333,9 +338,14 @@ void main() {
       final list = (payload['credentials']['accounts'] as List)
           .cast<Map<String, dynamic>>();
 
-      final cloudRow = list.firstWhere((m) => m['provider_type'] == 'netease_music');
+      final cloudRow = list.firstWhere(
+        (m) => m['provider_type'] == 'netease_music',
+      );
       expect(cloudRow['driverConfig']['cookie'], startsWith('AESGCMv1:'));
-      expect(cloudRow['driverConfig']['api_url_address'], 'https://api.example.com');
+      expect(
+        cloudRow['driverConfig']['api_url_address'],
+        'https://api.example.com',
+      );
       final webRow = list.firstWhere((m) => m['provider_type'] == 'webdav');
       expect(webRow['password'], startsWith('AESGCMv1:'));
     });
@@ -378,11 +388,16 @@ void main() {
         ],
       };
 
-      final missing = await accounts.restoreFromBackup(json, passphrase: '归档口令');
+      final missing = await accounts.restoreFromBackup(
+        json,
+        passphrase: '归档口令',
+      );
       expect(missing, isEmpty);
       expect(accounts.accounts.map((a) => a.name), containsAll(['NAS', '网易云']));
-      expect(accounts.accounts.any((a) => a.providerType == 'ghost_drive_2099'),
-          isFalse);
+      expect(
+        accounts.accounts.any((a) => a.providerType == 'ghost_drive_2099'),
+        isFalse,
+      );
 
       final nt = accounts.accounts.firstWhere((a) => a.name == '网易云');
       expect(nt.remotePath, '/音乐');
@@ -419,14 +434,18 @@ void main() {
       final bytes = await backup.buildArchiveBytes(passphrase: '');
       final container = WmpContainer.fromBytes(bytes);
       final section = container.readSection(WmpSections.credentials)!;
-      final credentials = jsonDecode(utf8.decode(section)) as Map<String, dynamic>;
-      final list = (credentials['accounts'] as List).cast<Map<String, dynamic>>();
+      final credentials =
+          jsonDecode(utf8.decode(section)) as Map<String, dynamic>;
+      final list = (credentials['accounts'] as List)
+          .cast<Map<String, dynamic>>();
       expect(
         list.where((m) => m['provider_type'] == 'netease_music'),
         hasLength(1),
       );
       // 明文口令为空：cookie 原样保留（无加密）。
-      final cloud = list.firstWhere((m) => m['provider_type'] == 'netease_music');
+      final cloud = list.firstWhere(
+        (m) => m['provider_type'] == 'netease_music',
+      );
       expect(cloud['driverConfig']['cookie'], 'MUSIC_U=c1');
       expect(netease.id, isNotEmpty);
     });

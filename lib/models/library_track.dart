@@ -1,3 +1,4 @@
+import '../l10n/generated/app_localizations.dart';
 import '../utils/track_identity.dart';
 
 /// Persisted library record. Identity is [musicId] (stable offline hash).
@@ -103,12 +104,6 @@ class LibraryTrack {
   bool get isCueVirtual =>
       cueTrackIndex != null && (cueRemotePath?.isNotEmpty ?? false);
 
-  /// Chinese label for CUE multi-song merged/sliced items (details UI).
-  static const cueMultiSliceLabel = '多歌曲合并分片';
-
-  /// Non-null when this track is part of a CUE album (not a standalone file).
-  String? get cueTypeLabel => isCueVirtual ? cueMultiSliceLabel : null;
-
   String get effectiveAudioRemotePath => audioRemotePath ?? remotePath;
 
   String get displayTitle {
@@ -123,6 +118,14 @@ class LibraryTrack {
     return '未知艺术家';
   }
 
+  /// Locale-aware render of [displayArtist]; the raw getter keeps a stable
+  /// '未知艺术家' fallback for grouping/metadata consumers.
+  String displayArtistFor(AppLocalizations l10n) {
+    final a = artist?.trim();
+    if (a != null && a.isNotEmpty) return a;
+    return l10n.artistUnknown;
+  }
+
   String get displayAlbumArtist {
     final a = albumArtist?.trim();
     if (a != null && a.isNotEmpty) return a;
@@ -133,6 +136,14 @@ class LibraryTrack {
     final a = album?.trim();
     if (a != null && a.isNotEmpty) return a;
     return '未知专辑';
+  }
+
+  /// Locale-aware render of [displayAlbum]; raw fallback ('未知专辑') stays a
+  /// stable grouping sentinel.
+  String displayAlbumFor(AppLocalizations l10n) {
+    final a = album?.trim();
+    if (a != null && a.isNotEmpty) return a;
+    return l10n.albumUnknown;
   }
 
   Map<String, dynamic> toMap() => {
@@ -305,9 +316,9 @@ extension LibrarySortModeX on LibrarySortMode {
     LibrarySortMode.byAlbumTrack => 'album_track',
   };
 
-  String get labelZh => switch (this) {
-    LibrarySortMode.byName => '按名称',
-    LibrarySortMode.byAlbumTrack => '按曲序',
+  String label(AppLocalizations l10n) => switch (this) {
+    LibrarySortMode.byName => l10n.libSortByName,
+    LibrarySortMode.byAlbumTrack => l10n.libSortByAlbumTrack,
   };
 
   static LibrarySortMode fromStorageKey(String? key) {

@@ -7,8 +7,7 @@ import 'package:webdav_media_manager/utils/track_identity.dart';
 /// Legacy key builders, mirroring the pre-v8 prefs layout exactly:
 /// `cache_group_<identity.hashCode>`, `cache_group_members_<groupId.hashCode>`
 /// and `cache_access_<identity.hashCode>`.
-String legacyGroupKey(String identity) =>
-    'cache_group_${identity.hashCode}';
+String legacyGroupKey(String identity) => 'cache_group_${identity.hashCode}';
 
 String legacyGroupMembersKey(String groupId) =>
     'cache_group_members_${groupId.hashCode}';
@@ -86,9 +85,7 @@ void main() {
     });
 
     test('skips corrupt member lists', () {
-      final entries = <String, String>{
-        'cache_group_members_12345': 'not-json',
-      };
+      final entries = <String, String>{'cache_group_members_12345': 'not-json'};
       expect(parseLegacyCacheGroups(entries), isEmpty);
     });
 

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:path/path.dart' as p;
 
+import '../models/library_sentinels.dart';
 import '../models/library_track.dart';
 import '../utils/cue_sheet.dart';
 import '../utils/rev_clock.dart';
@@ -534,9 +535,11 @@ class LibraryService extends ChangeNotifier {
     LibrarySortMode sort = LibrarySortMode.byName,
   }) {
     final g = genre.trim().toLowerCase();
-    final list = _tracks
-        .where((t) => (t.genre ?? '').trim().toLowerCase() == g)
-        .toList();
+    final list = isUncategorizedGenre(genre)
+        ? _tracks.where((t) => (t.genre ?? '').trim().isEmpty).toList()
+        : _tracks
+              .where((t) => (t.genre ?? '').trim().toLowerCase() == g)
+              .toList();
     list.sort(
       sort == LibrarySortMode.byAlbumTrack
           ? compareTracksByAlbumOrder
@@ -545,7 +548,7 @@ class LibraryService extends ChangeNotifier {
     return list;
   }
 
-  /// Group tracks by genre for the tags browser (empty genre → 未分类).
+  /// Group tracks by genre for the tags browser (empty genre → sentinel).
   Map<String, List<LibraryTrack>> groupedByGenre() {
     final map = <String, List<LibraryTrack>>{};
     final keyByLower = <String, String>{};
@@ -553,7 +556,7 @@ class LibraryService extends ChangeNotifier {
       final g = t.genre?.trim();
       final String key;
       if (g == null || g.isEmpty) {
-        key = '未分类';
+        key = kUncategorizedGenre;
       } else {
         key = keyByLower.putIfAbsent(g.toLowerCase(), () => g);
       }
@@ -564,8 +567,8 @@ class LibraryService extends ChangeNotifier {
     }
     final keys = map.keys.toList()
       ..sort((a, b) {
-        if (a == '未分类') return 1;
-        if (b == '未分类') return -1;
+        if (isUncategorizedGenre(a)) return 1;
+        if (isUncategorizedGenre(b)) return -1;
         return a.toLowerCase().compareTo(b.toLowerCase());
       });
     return LinkedHashMap.fromEntries(keys.map((k) => MapEntry(k, map[k]!)));

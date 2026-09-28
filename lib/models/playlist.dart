@@ -1,4 +1,5 @@
 import '../utils/track_identity.dart';
+import 'playlist_sentinels.dart';
 
 /// A playlist track identity: 网盘名 + remotePath (library key).
 class PlaylistEntry {
@@ -17,19 +18,18 @@ class PlaylistEntry {
   String get identityKey => trackIdentityKey(sourceName, remotePath);
 
   Map<String, dynamic> toJson() => {
-        'sourceName': sourceName,
-        'remotePath': remotePath,
-        if (title != null) 'title': title,
-        if (durationMs != null) 'durationMs': durationMs,
-      };
+    'sourceName': sourceName,
+    'remotePath': remotePath,
+    if (title != null) 'title': title,
+    if (durationMs != null) 'durationMs': durationMs,
+  };
 
   factory PlaylistEntry.fromJson(Map<String, dynamic> json) => PlaylistEntry(
-        sourceName:
-            (json['sourceName'] ?? json['accountId']) as String? ?? '',
-        remotePath: json['remotePath'] as String? ?? '',
-        title: json['title'] as String?,
-        durationMs: json['durationMs'] as int?,
-      );
+    sourceName: (json['sourceName'] ?? json['accountId']) as String? ?? '',
+    remotePath: json['remotePath'] as String? ?? '',
+    title: json['title'] as String?,
+    durationMs: json['durationMs'] as int?,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -49,8 +49,8 @@ class Playlist {
     List<PlaylistEntry>? entries,
     DateTime? updatedAt,
     this.remoteFileName,
-  })  : entries = List<PlaylistEntry>.from(entries ?? const []),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : entries = List<PlaylistEntry>.from(entries ?? const []),
+       updatedAt = updatedAt ?? DateTime.now();
 
   final String id;
   String name;
@@ -63,23 +63,23 @@ class Playlist {
   int get length => entries.length;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'updatedAt': updatedAt.toIso8601String(),
-        'remoteFileName': remoteFileName,
-        'entries': entries.map((e) => e.toJson()).toList(),
-      };
+    'id': id,
+    'name': name,
+    'updatedAt': updatedAt.toIso8601String(),
+    'remoteFileName': remoteFileName,
+    'entries': entries.map((e) => e.toJson()).toList(),
+  };
 
   factory Playlist.fromJson(Map<String, dynamic> json) => Playlist(
-        id: json['id'] as String,
-        name: json['name'] as String? ?? '未命名',
-        updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
-            DateTime.now(),
-        remoteFileName: json['remoteFileName'] as String?,
-        entries: (json['entries'] as List<dynamic>? ?? [])
-            .map((e) => PlaylistEntry.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-      );
+    id: json['id'] as String,
+    name: json['name'] as String? ?? kUnnamedPlaylistName,
+    updatedAt:
+        DateTime.tryParse(json['updatedAt'] as String? ?? '') ?? DateTime.now(),
+    remoteFileName: json['remoteFileName'] as String?,
+    entries: (json['entries'] as List<dynamic>? ?? [])
+        .map((e) => PlaylistEntry.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList(),
+  );
 
   Playlist copyWith({
     String? name,

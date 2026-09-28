@@ -1,3 +1,5 @@
+import '../l10n/generated/app_localizations.dart';
+
 /// How long in-app messages (SnackBars) stay on screen.
 ///
 /// They are always single-slot — a new message replaces the current one and
@@ -29,12 +31,12 @@ extension SnackDurationX on SnackDuration {
     SnackDuration.off => 'off',
   };
 
-  String get labelZh => switch (this) {
-    SnackDuration.short => '很短',
-    SnackDuration.normal => '默认',
-    SnackDuration.long => '较长',
-    SnackDuration.untilDismissed => '点击才消失',
-    SnackDuration.off => '关闭',
+  String label(AppLocalizations l10n) => switch (this) {
+    SnackDuration.short => l10n.snackShort,
+    SnackDuration.normal => l10n.snackNormal,
+    SnackDuration.long => l10n.snackLong,
+    SnackDuration.untilDismissed => l10n.snackUntilDismissed,
+    SnackDuration.off => l10n.snackOff,
   };
 
   /// Whether messages are shown at all.

@@ -107,7 +107,7 @@ class AppState extends ChangeNotifier {
 
   bool ready = false;
   String? initError;
-  String _initPhase = '未开始';
+  String _initPhase = 'not_started';
 
   String get initPhase => _initPhase;
 

@@ -72,7 +72,11 @@ void main() {
     });
 
     test('从整组进入多选，逐条取消到最后一条时按钮变回「全选」', () {
-      var s = fresh().enter('', entry: SelectionEntry.selectAll, selectOnly: keys);
+      var s = fresh().enter(
+        '',
+        entry: SelectionEntry.selectAll,
+        selectOnly: keys,
+      );
       expect(s.showsDeselect, isTrue);
       for (final k in ['a', 'b', 'c']) {
         s = s.toggle(k);

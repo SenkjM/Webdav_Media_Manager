@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/library_track.dart';
+import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import '../utils/wmp_container.dart';
 import 'cover_service.dart';
@@ -159,8 +160,9 @@ class RebuildEstimate {
 
   String get sizeLabel => _fmt(bytes);
 
-  String get label =>
-      '预计 $shards 个分片 · ${withCovers ? '含封面' : '不含封面'}约 $sizeLabel';
+  String get label => withCovers
+      ? L10nHost.current.estimateLabelWithCovers(shards, sizeLabel)
+      : L10nHost.current.estimateLabelNoCovers(shards, sizeLabel);
 
   static String _fmt(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -244,14 +246,15 @@ class LibraryAudit {
   bool get healthy => orphans.isEmpty && missing.isEmpty;
 
   String get summary {
+    final l10n = L10nHost.current;
     final parts = <String>[
-      '基础分片 $baseShards 个',
-      '增量 $segments 个',
-      '墓碑 $tombstones 个',
-      '合计 ${RebuildEstimate._fmt(totalBytes)}',
+      l10n.auditBaseShards(baseShards),
+      l10n.auditSegments(segments),
+      l10n.auditTombstones(tombstones),
+      l10n.auditTotalBytes(RebuildEstimate._fmt(totalBytes)),
     ];
-    if (orphans.isNotEmpty) parts.add('孤儿文件 ${orphans.length} 个');
-    if (missing.isNotEmpty) parts.add('缺失文件 ${missing.length} 个');
+    if (orphans.isNotEmpty) parts.add(l10n.auditOrphans(orphans.length));
+    if (missing.isNotEmpty) parts.add(l10n.auditMissing(missing.length));
     return parts.join(' · ');
   }
 }

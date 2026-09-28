@@ -1,3 +1,4 @@
+import '../l10n/generated/app_localizations.dart';
 import '../services/cloud_driver.dart';
 
 String? _asString(Object? value) => value?.toString();
@@ -7,6 +8,16 @@ DateTime? _asDate(Object? value) =>
 
 /// Download queue task statuses.
 enum DownloadStatus { pending, active, completed, failed, cancelled }
+
+extension DownloadStatusX on DownloadStatus {
+  String label(AppLocalizations l10n) => switch (this) {
+    DownloadStatus.pending => l10n.downloadPending,
+    DownloadStatus.active => l10n.downloadActive,
+    DownloadStatus.completed => l10n.downloadCompleted,
+    DownloadStatus.failed => l10n.downloadFailed,
+    DownloadStatus.cancelled => l10n.downloadCancelled,
+  };
+}
 
 /// Where a downloaded file is written.
 enum DownloadTarget {
@@ -32,13 +43,11 @@ extension DownloadTargetX on DownloadTarget {
     DownloadTarget.downloads => 'downloads',
   };
 
-  /// Short badge shown in the download queue and library lists.
-  String get labelZh => switch (this) {
-    DownloadTarget.cache => '应用缓存',
-    DownloadTarget.gallery => '系统相册',
-    DownloadTarget.downloads => '系统下载目录',
+  String label(AppLocalizations l10n) => switch (this) {
+    DownloadTarget.cache => l10n.targetCache,
+    DownloadTarget.gallery => l10n.targetGallery,
+    DownloadTarget.downloads => l10n.targetDownloads,
   };
-
   static DownloadTarget fromStorageKey(String? key) => switch (key) {
     'gallery' => DownloadTarget.gallery,
     'downloads' => DownloadTarget.downloads,

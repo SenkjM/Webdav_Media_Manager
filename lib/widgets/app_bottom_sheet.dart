@@ -26,21 +26,21 @@ class AppBottomSheet extends StatelessWidget {
 
   /// Standard rounded surface used by every sheet in the app.
   static RoundedRectangleBorder get shape => const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      );
+    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+  );
 
   /// Drag handle shown at the top of a sheet.
   static Widget handle() => Center(
-        child: Container(
-          width: 36,
-          height: 4,
-          margin: const EdgeInsets.only(top: 8, bottom: 4),
-          decoration: BoxDecoration(
-            color: AppColors.divider,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-      );
+    child: Container(
+      width: 36,
+      height: 4,
+      margin: const EdgeInsets.only(top: 8, bottom: 4),
+      decoration: BoxDecoration(
+        color: AppColors.divider,
+        borderRadius: BorderRadius.circular(2),
+      ),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {

@@ -24,7 +24,8 @@ class CoverArt extends StatelessWidget {
   final IconData? icon;
 
   bool get _hasBytes => bytes != null && bytes!.isNotEmpty;
-  bool get _hasFile => path != null && path!.isNotEmpty && File(path!).existsSync();
+  bool get _hasFile =>
+      path != null && path!.isNotEmpty && File(path!).existsSync();
 
   @override
   Widget build(BuildContext context) {
@@ -44,8 +45,8 @@ class CoverArt extends StatelessWidget {
                     _hasFile ? _fileImage() : _placeholder(),
               )
             : _hasFile
-                ? _fileImage()
-                : _placeholder(),
+            ? _fileImage()
+            : _placeholder(),
       ),
     );
   }

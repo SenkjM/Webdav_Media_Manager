@@ -31,39 +31,30 @@ class _SwitchSpec extends CloudDriverSpec {
 
   @override
   List<CloudDriverFormItem> get form => const [
-        CloudDriverSwitchField(
-          key: 'on_by_default',
-          label: '默认开',
-          subtitle: '',
-          defaultValue: true,
-        ),
-        CloudDriverSwitchField(
-          key: 'off_by_default',
-          label: '默认关',
-          subtitle: '',
-        ),
-      ];
+    CloudDriverSwitchField(
+      key: 'on_by_default',
+      label: '默认开',
+      subtitle: '',
+      defaultValue: true,
+    ),
+    CloudDriverSwitchField(key: 'off_by_default', label: '默认关', subtitle: ''),
+  ];
 
   @override
   CloudDriver create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
     CloudDriverEnv? env,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 }
 
 /// 复刻 accounts_screen 渲染层的双极性判定，锁定「界面实际行为」。
 /// enabledWhenSwitch = 开了才可用；disabledWhenSwitch = 开了就停用。
 /// 两者同声明视为无依赖（防误用，渲染层同一规则）。
-bool _fieldEnabled(
-  CloudDriverSpec spec,
-  String key,
-  Map<String, bool> values,
-) {
-  final f = spec.form
-      .whereType<CloudDriverField>()
-      .firstWhere((f) => f.key == key);
+bool _fieldEnabled(CloudDriverSpec spec, String key, Map<String, bool> values) {
+  final f = spec.form.whereType<CloudDriverField>().firstWhere(
+    (f) => f.key == key,
+  );
   final dependsEnabled =
       f.enabledWhenSwitch != null && f.disabledWhenSwitch == null;
   final dependsDisabled =
@@ -77,14 +68,10 @@ bool _fieldEnabled(
   return true;
 }
 
-bool _fieldVisible(
-  CloudDriverSpec spec,
-  String key,
-  Map<String, bool> values,
-) {
-  final f = spec.form
-      .whereType<CloudDriverField>()
-      .firstWhere((f) => f.key == key);
+bool _fieldVisible(CloudDriverSpec spec, String key, Map<String, bool> values) {
+  final f = spec.form.whereType<CloudDriverField>().firstWhere(
+    (f) => f.key == key,
+  );
   if (f.visibleWhenSwitch == null) return true;
   return spec.switchValue(f.visibleWhenSwitch!, values);
 }
@@ -94,11 +81,15 @@ void main() {
     test('实时值优先于 spec 默认值', () {
       const spec = _SwitchSpec();
       // 默认开的开关被用户拨到关：必须读到关，不能回落到默认值。
-      expect(spec.switchValue('on_by_default', {'on_by_default': false}),
-          isFalse);
+      expect(
+        spec.switchValue('on_by_default', {'on_by_default': false}),
+        isFalse,
+      );
       // 默认关的开关被拨到开。
-      expect(spec.switchValue('off_by_default', {'off_by_default': true}),
-          isTrue);
+      expect(
+        spec.switchValue('off_by_default', {'off_by_default': true}),
+        isTrue,
+      );
     });
 
     test('缺键时回落到 spec 默认值，而不是 false', () {
@@ -152,12 +143,16 @@ void main() {
       // 开关关闭（false）→ 在线续期地址必须可编辑（正在用 online api）。
       expect(_fieldEnabled(spec, 'api_url_address', const {}), isTrue);
       // 开关打开（true）→ 地址停用（后端已不走 online api）。
-      expect(_fieldEnabled(spec, 'api_url_address',
-          const {'local_refresh': true}), isFalse);
+      expect(
+        _fieldEnabled(spec, 'api_url_address', const {'local_refresh': true}),
+        isFalse,
+      );
       // Client ID / Secret 只在开关打开时显示。
       expect(_fieldVisible(spec, 'client_id', const {}), isFalse);
-      expect(_fieldVisible(spec, 'client_id',
-          const {'local_refresh': true}), isTrue);
+      expect(
+        _fieldVisible(spec, 'client_id', const {'local_refresh': true}),
+        isTrue,
+      );
     });
 
     test('联动引用的开关确实存在于 form 里（防拼写错导致永远 false）', () {
@@ -167,16 +162,25 @@ void main() {
           .toSet();
       for (final f in spec.form.whereType<CloudDriverField>()) {
         if (f.visibleWhenSwitch != null) {
-          expect(switchKeys, contains(f.visibleWhenSwitch),
-              reason: 'visibleWhenSwitch 指向了不存在的开关');
+          expect(
+            switchKeys,
+            contains(f.visibleWhenSwitch),
+            reason: 'visibleWhenSwitch 指向了不存在的开关',
+          );
         }
         if (f.enabledWhenSwitch != null) {
-          expect(switchKeys, contains(f.enabledWhenSwitch),
-              reason: 'enabledWhenSwitch 指向了不存在的开关');
+          expect(
+            switchKeys,
+            contains(f.enabledWhenSwitch),
+            reason: 'enabledWhenSwitch 指向了不存在的开关',
+          );
         }
         if (f.disabledWhenSwitch != null) {
-          expect(switchKeys, contains(f.disabledWhenSwitch),
-              reason: 'disabledWhenSwitch 指向了不存在的开关');
+          expect(
+            switchKeys,
+            contains(f.disabledWhenSwitch),
+            reason: 'disabledWhenSwitch 指向了不存在的开关',
+          );
         }
       }
     });
