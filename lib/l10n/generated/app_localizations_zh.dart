@@ -863,7 +863,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get libraryEmpty => '音乐库为空';
+  String get libraryEmpty => '音乐库中没有曲目';
 
   @override
   String get notDownloaded => '未下载';
@@ -3271,6 +3271,122 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get videoGestureSettingsHint => '双击 / 长按动作与长按倍速';
+
+  @override
+  String cacheCleared(Object count, Object libraryCount) {
+    return '已清理 $count 个缓存文件（$libraryCount 首元数据保留）';
+  }
+
+  @override
+  String get tagRefreshStarted => '正在后台更新本地缓存曲目的标签';
+
+  @override
+  String tagRefreshCompleted(Object failed, Object skipped, Object updated) {
+    return '标签更新完成：更新 $updated 首，跳过 $skipped 首，失败 $failed 首';
+  }
+
+  @override
+  String get notificationEnabled => '通知权限已开启，播放时会显示媒体通知';
+
+  @override
+  String get notificationOpenSettings => '请在系统设置中允许通知后返回应用';
+
+  @override
+  String get notificationOpenSettingsFailed => '无法打开系统设置，请手动允许通知权限';
+
+  @override
+  String get notificationGranted => '已授予通知权限';
+
+  @override
+  String get notificationDenied => '未授予通知权限，媒体通知可能无法显示';
+
+  @override
+  String retentionDaysHours(Object days, Object hours) {
+    return '当前：保留 $days 天 $hours 小时未访问的音频';
+  }
+
+  @override
+  String retentionDays(Object days) {
+    return '当前：保留 $days 天未访问的音频';
+  }
+
+  @override
+  String retentionHours(Object hours) {
+    return '当前：保留 $hours 小时未访问的音频';
+  }
+
+  @override
+  String get notificationChecking => '正在检查…';
+
+  @override
+  String get notificationStatusAllowed => '已允许，播放/暂停时显示媒体通知';
+
+  @override
+  String get notificationChannelBlocked => '「音乐播放」通道被关闭，点此打开系统设置';
+
+  @override
+  String get notificationStatusDenied => '已拒绝，点此打开系统设置';
+
+  @override
+  String get notificationChannelMissing => '「音乐播放」通道未创建，播放一次或点「刷新」重试';
+
+  @override
+  String get notificationNotGranted => '未授权，点此请求通知权限';
+
+  @override
+  String get hintsAndNotifications => '提示与通知';
+
+  @override
+  String get hintsSubtitle => '屏幕底部提示同时只显示一条，点「知道了」立即关闭。';
+
+  @override
+  String get hintDuration => '提示显示时长';
+
+  @override
+  String get downloadNotifications => '下载队列系统通知';
+
+  @override
+  String get downloadNotificationsHint => '下载进度与完成结果显示在通知栏';
+
+  @override
+  String get sendTestNotification => '发送测试通知';
+
+  @override
+  String get sendTestNotificationHint => '立即发一条进度与一条完成通知，用来排查系统是否拦截';
+
+  @override
+  String get testNotificationSent => '测试通知已发送（进度 + 完成各一条）';
+
+  @override
+  String testNotificationFailed(Object error) {
+    return '测试通知失败：$error';
+  }
+
+  @override
+  String get confirmCloseVideo => '确认关闭视频吗？';
+
+  @override
+  String get webdavNotConnectedPlay => 'WebDAV 未连接，无法播放';
+
+  @override
+  String get videoQueueEmpty => '当前没有播放列表';
+
+  @override
+  String get pipUnsupported => '当前设备/系统不支持画中画';
+
+  @override
+  String videoPlayFailed(Object error) {
+    return '无法播放：$error';
+  }
+
+  @override
+  String get scanningFolder => '扫描文件夹中…';
+
+  @override
+  String get buffering => '缓冲中…';
+
+  @override
+  String get opening => '正在打开';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -4131,7 +4247,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   }
 
   @override
-  String get libraryEmpty => '音乐库为空';
+  String get libraryEmpty => '音乐库中没有曲目';
 
   @override
   String get notDownloaded => '未下载';
@@ -6539,6 +6655,122 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get videoGestureSettingsHint => '双击 / 长按动作与长按倍速';
+
+  @override
+  String cacheCleared(Object count, Object libraryCount) {
+    return '已清理 $count 个缓存文件（$libraryCount 首元数据保留）';
+  }
+
+  @override
+  String get tagRefreshStarted => '正在后台更新本地缓存曲目的标签';
+
+  @override
+  String tagRefreshCompleted(Object failed, Object skipped, Object updated) {
+    return '标签更新完成：更新 $updated 首，跳过 $skipped 首，失败 $failed 首';
+  }
+
+  @override
+  String get notificationEnabled => '通知权限已开启，播放时会显示媒体通知';
+
+  @override
+  String get notificationOpenSettings => '请在系统设置中允许通知后返回应用';
+
+  @override
+  String get notificationOpenSettingsFailed => '无法打开系统设置，请手动允许通知权限';
+
+  @override
+  String get notificationGranted => '已授予通知权限';
+
+  @override
+  String get notificationDenied => '未授予通知权限，媒体通知可能无法显示';
+
+  @override
+  String retentionDaysHours(Object days, Object hours) {
+    return '当前：保留 $days 天 $hours 小时未访问的音频';
+  }
+
+  @override
+  String retentionDays(Object days) {
+    return '当前：保留 $days 天未访问的音频';
+  }
+
+  @override
+  String retentionHours(Object hours) {
+    return '当前：保留 $hours 小时未访问的音频';
+  }
+
+  @override
+  String get notificationChecking => '正在检查…';
+
+  @override
+  String get notificationStatusAllowed => '已允许，播放/暂停时显示媒体通知';
+
+  @override
+  String get notificationChannelBlocked => '「音乐播放」通道被关闭，点此打开系统设置';
+
+  @override
+  String get notificationStatusDenied => '已拒绝，点此打开系统设置';
+
+  @override
+  String get notificationChannelMissing => '「音乐播放」通道未创建，播放一次或点「刷新」重试';
+
+  @override
+  String get notificationNotGranted => '未授权，点此请求通知权限';
+
+  @override
+  String get hintsAndNotifications => '提示与通知';
+
+  @override
+  String get hintsSubtitle => '屏幕底部提示同时只显示一条，点「知道了」立即关闭。';
+
+  @override
+  String get hintDuration => '提示显示时长';
+
+  @override
+  String get downloadNotifications => '下载队列系统通知';
+
+  @override
+  String get downloadNotificationsHint => '下载进度与完成结果显示在通知栏';
+
+  @override
+  String get sendTestNotification => '发送测试通知';
+
+  @override
+  String get sendTestNotificationHint => '立即发一条进度与一条完成通知，用来排查系统是否拦截';
+
+  @override
+  String get testNotificationSent => '测试通知已发送（进度 + 完成各一条）';
+
+  @override
+  String testNotificationFailed(Object error) {
+    return '测试通知失败：$error';
+  }
+
+  @override
+  String get confirmCloseVideo => '确认关闭视频吗？';
+
+  @override
+  String get webdavNotConnectedPlay => 'WebDAV 未连接，无法播放';
+
+  @override
+  String get videoQueueEmpty => '当前没有播放列表';
+
+  @override
+  String get pipUnsupported => '当前设备/系统不支持画中画';
+
+  @override
+  String videoPlayFailed(Object error) {
+    return '无法播放：$error';
+  }
+
+  @override
+  String get scanningFolder => '扫描文件夹中…';
+
+  @override
+  String get buffering => '缓冲中…';
+
+  @override
+  String get opening => '正在打开';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7400,7 +7632,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get libraryEmpty => '音樂庫為空';
+  String get libraryEmpty => '音樂庫中沒有曲目';
 
   @override
   String get notDownloaded => '未下載';
@@ -9808,4 +10040,120 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get videoGestureSettingsHint => '雙擊 / 長按動作與長按倍速';
+
+  @override
+  String cacheCleared(Object count, Object libraryCount) {
+    return '已清理 $count 個快取檔案（保留 $libraryCount 首元資料）';
+  }
+
+  @override
+  String get tagRefreshStarted => '正在背景更新本地快取曲目的標籤';
+
+  @override
+  String tagRefreshCompleted(Object failed, Object skipped, Object updated) {
+    return '標籤更新完成：更新 $updated 首，略過 $skipped 首，失敗 $failed 首';
+  }
+
+  @override
+  String get notificationEnabled => '通知權限已開啟，播放時會顯示媒體通知';
+
+  @override
+  String get notificationOpenSettings => '請在系統設定中允許通知後返回應用程式';
+
+  @override
+  String get notificationOpenSettingsFailed => '無法開啟系統設定，請手動允許通知權限';
+
+  @override
+  String get notificationGranted => '已授予通知權限';
+
+  @override
+  String get notificationDenied => '未授予通知權限，媒體通知可能無法顯示';
+
+  @override
+  String retentionDaysHours(Object days, Object hours) {
+    return '目前：保留 $days 天 $hours 小時未存取的音訊';
+  }
+
+  @override
+  String retentionDays(Object days) {
+    return '目前：保留 $days 天未存取的音訊';
+  }
+
+  @override
+  String retentionHours(Object hours) {
+    return '目前：保留 $hours 小時未存取的音訊';
+  }
+
+  @override
+  String get notificationChecking => '正在檢查…';
+
+  @override
+  String get notificationStatusAllowed => '已允許，播放/暫停時顯示媒體通知';
+
+  @override
+  String get notificationChannelBlocked => '「音樂播放」頻道已關閉，點此開啟系統設定';
+
+  @override
+  String get notificationStatusDenied => '已拒絕，點此開啟系統設定';
+
+  @override
+  String get notificationChannelMissing => '「音樂播放」頻道未建立，播放一次或點「重新整理」重試';
+
+  @override
+  String get notificationNotGranted => '未授權，點此要求通知權限';
+
+  @override
+  String get hintsAndNotifications => '提示與通知';
+
+  @override
+  String get hintsSubtitle => '螢幕底部提示同時只顯示一則，點「知道了」立即關閉。';
+
+  @override
+  String get hintDuration => '提示顯示時長';
+
+  @override
+  String get downloadNotifications => '下載佇列系統通知';
+
+  @override
+  String get downloadNotificationsHint => '下載進度與完成結果顯示在通知列';
+
+  @override
+  String get sendTestNotification => '傳送測試通知';
+
+  @override
+  String get sendTestNotificationHint => '立即傳送一則進度與一則完成通知，用於排查系統是否攔截';
+
+  @override
+  String get testNotificationSent => '測試通知已傳送（進度 + 完成各一則）';
+
+  @override
+  String testNotificationFailed(Object error) {
+    return '測試通知失敗：$error';
+  }
+
+  @override
+  String get confirmCloseVideo => '確認關閉影片嗎？';
+
+  @override
+  String get webdavNotConnectedPlay => 'WebDAV 未連線，無法播放';
+
+  @override
+  String get videoQueueEmpty => '目前沒有播放佇列';
+
+  @override
+  String get pipUnsupported => '目前裝置/系統不支援子母畫面';
+
+  @override
+  String videoPlayFailed(Object error) {
+    return '無法播放：$error';
+  }
+
+  @override
+  String get scanningFolder => '正在掃描資料夾…';
+
+  @override
+  String get buffering => '緩衝中…';
+
+  @override
+  String get opening => '正在開啟';
 }

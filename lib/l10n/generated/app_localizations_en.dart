@@ -3407,4 +3407,132 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get videoGestureSettingsHint =>
       'Double-tap / long-press actions and hold speed';
+
+  @override
+  String cacheCleared(Object count, Object libraryCount) {
+    return 'Cleared $count cache files ($libraryCount metadata entries retained)';
+  }
+
+  @override
+  String get tagRefreshStarted =>
+      'Updating tags for cached tracks in the background';
+
+  @override
+  String tagRefreshCompleted(Object failed, Object skipped, Object updated) {
+    return 'Tag update complete: $updated updated, $skipped skipped, $failed failed';
+  }
+
+  @override
+  String get notificationEnabled =>
+      'Notifications enabled; media controls will appear during playback';
+
+  @override
+  String get notificationOpenSettings =>
+      'Allow notifications in system settings, then return to the app';
+
+  @override
+  String get notificationOpenSettingsFailed =>
+      'Could not open system settings; allow notifications manually';
+
+  @override
+  String get notificationGranted => 'Notification permission granted';
+
+  @override
+  String get notificationDenied =>
+      'Notification permission denied; media controls may be unavailable';
+
+  @override
+  String retentionDaysHours(Object days, Object hours) {
+    return 'Current: keep audio not accessed for ${days}d ${hours}h';
+  }
+
+  @override
+  String retentionDays(Object days) {
+    return 'Current: keep audio not accessed for ${days}d';
+  }
+
+  @override
+  String retentionHours(Object hours) {
+    return 'Current: keep audio not accessed for ${hours}h';
+  }
+
+  @override
+  String get notificationChecking => 'Checking…';
+
+  @override
+  String get notificationStatusAllowed =>
+      'Allowed; media controls appear during playback';
+
+  @override
+  String get notificationChannelBlocked =>
+      'The music channel is blocked; tap to open system settings';
+
+  @override
+  String get notificationStatusDenied => 'Denied; tap to open system settings';
+
+  @override
+  String get notificationChannelMissing =>
+      'Music channel not created; play once or refresh to retry';
+
+  @override
+  String get notificationNotGranted => 'Not granted; tap to request permission';
+
+  @override
+  String get hintsAndNotifications => 'Hints and notifications';
+
+  @override
+  String get hintsSubtitle =>
+      'Only one bottom hint is shown at a time; tap “Got it” to dismiss.';
+
+  @override
+  String get hintDuration => 'Hint duration';
+
+  @override
+  String get downloadNotifications => 'Download queue notifications';
+
+  @override
+  String get downloadNotificationsHint =>
+      'Download progress and results appear in notifications';
+
+  @override
+  String get sendTestNotification => 'Send test notification';
+
+  @override
+  String get sendTestNotificationHint =>
+      'Send one progress and one completion notification to diagnose blocking';
+
+  @override
+  String get testNotificationSent =>
+      'Test notifications sent (one progress and one completion)';
+
+  @override
+  String testNotificationFailed(Object error) {
+    return 'Test notification failed: $error';
+  }
+
+  @override
+  String get confirmCloseVideo => 'Close this video?';
+
+  @override
+  String get webdavNotConnectedPlay => 'WebDAV is not connected; cannot play';
+
+  @override
+  String get videoQueueEmpty => 'There is no play queue';
+
+  @override
+  String get pipUnsupported => 'Picture-in-picture is not supported';
+
+  @override
+  String videoPlayFailed(Object error) {
+    return 'Playback failed: $error';
+  }
+
+  @override
+  String get scanningFolder => 'Scanning folder…';
+
+  @override
+  String get buffering => 'Buffering…';
+
+  @override
+  String get opening => 'Opening';
 }

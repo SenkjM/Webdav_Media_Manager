@@ -151,7 +151,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         source = await widget.sourceLoader?.call();
         if (!mounted) return;
         if (source == null) {
-          throw 'WebDAV 未连接，无法播放';
+          throw AppLocalizations.of(context)!.webdavNotConnectedPlay;
         }
         // 用户把音频后缀改成视频类时源会判成音乐：路由去音乐页，
         // 复用同一个队列 seed，不再起一个没有画面的解码器。
@@ -314,7 +314,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (player == null || service == null || _switching) return;
     final source = await _streamFor(item);
     if (source == null) {
-      AppSnack.show(context, 'WebDAV 未连接，无法播放');
+      AppSnack.show(context, AppLocalizations.of(context)!.webdavNotConnectedPlay);
       return;
     }
     setState(() {
@@ -365,7 +365,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final queue = _queue;
     if (queue == null) {
       if (!auto) {
-        AppSnack.show(context, '当前没有播放列表');
+        AppSnack.show(context, AppLocalizations.of(context)!.videoQueueEmpty);
       }
       return;
     }
@@ -388,7 +388,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   Future<void> _playPrevious() async {
     final queue = _queue;
     if (queue == null) {
-      AppSnack.show(context, '当前没有播放列表');
+      AppSnack.show(context, AppLocalizations.of(context)!.videoQueueEmpty);
       return;
     }
     // Standard player behavior: restart the current video first.
@@ -449,7 +449,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppColors.elevated,
-          content: const Text('确认关闭视频吗？'),
+          content: Text(AppLocalizations.of(context)!.confirmCloseVideo),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -596,7 +596,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final ok = await enterPictureInPicture();
     if (!mounted) return;
     if (!ok) {
-      AppSnack.show(context, '当前设备/系统不支持画中画');
+      AppSnack.show(context, AppLocalizations.of(context)!.pipUnsupported);
       return;
     }
     _controlsVisible.value = false;
@@ -659,7 +659,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '无法播放：$_error',
+                  AppLocalizations.of(context)!.videoPlayFailed(_error ?? ''),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70),
                 ),
@@ -1368,7 +1368,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         ),
                         SizedBox(width: 10),
                         Text(
-                          '扫描文件夹中…',
+                          AppLocalizations.of(context)!.scanningFolder,
                           style: TextStyle(
                             color: AppColors.mutedText,
                             fontSize: 12,
@@ -1803,7 +1803,7 @@ class _BufferingBadge extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(18),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
@@ -1816,7 +1816,7 @@ class _BufferingBadge extends StatelessWidget {
               ),
               SizedBox(width: 10),
               Text(
-                '缓冲中…',
+                AppLocalizations.of(context)!.buffering,
                 style: TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ],
@@ -1852,8 +1852,8 @@ class _SwitchingOverlay extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              const Text(
-                '正在打开',
+              Text(
+                AppLocalizations.of(context)!.opening,
                 style: TextStyle(color: Colors.white70, fontSize: 12),
               ),
               const SizedBox(height: 4),

@@ -1663,7 +1663,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryEmpty.
   ///
   /// In zh_CN, this message translates to:
-  /// **'音乐库为空'**
+  /// **'音乐库中没有曲目'**
   String get libraryEmpty;
 
   /// No description provided for @notDownloaded.
@@ -5687,6 +5687,210 @@ abstract class AppLocalizations {
   /// In zh_CN, this message translates to:
   /// **'双击 / 长按动作与长按倍速'**
   String get videoGestureSettingsHint;
+
+  /// No description provided for @cacheCleared.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'已清理 {count} 个缓存文件（{libraryCount} 首元数据保留）'**
+  String cacheCleared(Object count, Object libraryCount);
+
+  /// No description provided for @tagRefreshStarted.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'正在后台更新本地缓存曲目的标签'**
+  String get tagRefreshStarted;
+
+  /// No description provided for @tagRefreshCompleted.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'标签更新完成：更新 {updated} 首，跳过 {skipped} 首，失败 {failed} 首'**
+  String tagRefreshCompleted(Object failed, Object skipped, Object updated);
+
+  /// No description provided for @notificationEnabled.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'通知权限已开启，播放时会显示媒体通知'**
+  String get notificationEnabled;
+
+  /// No description provided for @notificationOpenSettings.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'请在系统设置中允许通知后返回应用'**
+  String get notificationOpenSettings;
+
+  /// No description provided for @notificationOpenSettingsFailed.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'无法打开系统设置，请手动允许通知权限'**
+  String get notificationOpenSettingsFailed;
+
+  /// No description provided for @notificationGranted.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'已授予通知权限'**
+  String get notificationGranted;
+
+  /// No description provided for @notificationDenied.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'未授予通知权限，媒体通知可能无法显示'**
+  String get notificationDenied;
+
+  /// No description provided for @retentionDaysHours.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'当前：保留 {days} 天 {hours} 小时未访问的音频'**
+  String retentionDaysHours(Object days, Object hours);
+
+  /// No description provided for @retentionDays.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'当前：保留 {days} 天未访问的音频'**
+  String retentionDays(Object days);
+
+  /// No description provided for @retentionHours.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'当前：保留 {hours} 小时未访问的音频'**
+  String retentionHours(Object hours);
+
+  /// No description provided for @notificationChecking.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'正在检查…'**
+  String get notificationChecking;
+
+  /// No description provided for @notificationStatusAllowed.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'已允许，播放/暂停时显示媒体通知'**
+  String get notificationStatusAllowed;
+
+  /// No description provided for @notificationChannelBlocked.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'「音乐播放」通道被关闭，点此打开系统设置'**
+  String get notificationChannelBlocked;
+
+  /// No description provided for @notificationStatusDenied.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'已拒绝，点此打开系统设置'**
+  String get notificationStatusDenied;
+
+  /// No description provided for @notificationChannelMissing.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'「音乐播放」通道未创建，播放一次或点「刷新」重试'**
+  String get notificationChannelMissing;
+
+  /// No description provided for @notificationNotGranted.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'未授权，点此请求通知权限'**
+  String get notificationNotGranted;
+
+  /// No description provided for @hintsAndNotifications.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'提示与通知'**
+  String get hintsAndNotifications;
+
+  /// No description provided for @hintsSubtitle.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'屏幕底部提示同时只显示一条，点「知道了」立即关闭。'**
+  String get hintsSubtitle;
+
+  /// No description provided for @hintDuration.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'提示显示时长'**
+  String get hintDuration;
+
+  /// No description provided for @downloadNotifications.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'下载队列系统通知'**
+  String get downloadNotifications;
+
+  /// No description provided for @downloadNotificationsHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'下载进度与完成结果显示在通知栏'**
+  String get downloadNotificationsHint;
+
+  /// No description provided for @sendTestNotification.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'发送测试通知'**
+  String get sendTestNotification;
+
+  /// No description provided for @sendTestNotificationHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'立即发一条进度与一条完成通知，用来排查系统是否拦截'**
+  String get sendTestNotificationHint;
+
+  /// No description provided for @testNotificationSent.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'测试通知已发送（进度 + 完成各一条）'**
+  String get testNotificationSent;
+
+  /// No description provided for @testNotificationFailed.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'测试通知失败：{error}'**
+  String testNotificationFailed(Object error);
+
+  /// No description provided for @confirmCloseVideo.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'确认关闭视频吗？'**
+  String get confirmCloseVideo;
+
+  /// No description provided for @webdavNotConnectedPlay.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'WebDAV 未连接，无法播放'**
+  String get webdavNotConnectedPlay;
+
+  /// No description provided for @videoQueueEmpty.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'当前没有播放列表'**
+  String get videoQueueEmpty;
+
+  /// No description provided for @pipUnsupported.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'当前设备/系统不支持画中画'**
+  String get pipUnsupported;
+
+  /// No description provided for @videoPlayFailed.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'无法播放：{error}'**
+  String videoPlayFailed(Object error);
+
+  /// No description provided for @scanningFolder.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'扫描文件夹中…'**
+  String get scanningFolder;
+
+  /// No description provided for @buffering.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'缓冲中…'**
+  String get buffering;
+
+  /// No description provided for @opening.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'正在打开'**
+  String get opening;
 }
 
 class _AppLocalizationsDelegate

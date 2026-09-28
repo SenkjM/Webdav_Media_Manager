@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
+import '../models/app_locale.dart';
 import '../models/cache_policy.dart';
 import '../models/snack_duration.dart';
 import '../providers/app_state.dart';
@@ -136,16 +137,16 @@ class _SettingsScreenState extends State<SettingsScreen>
     final libCount = context.read<LibraryService>().count;
     await _refreshCacheSize();
     if (!context.mounted) return;
-    AppSnack.show(context, '已清理 $n 个缓存文件（$libCount 首元数据保留）');
+    AppSnack.show(context, AppLocalizations.of(context)!.cacheCleared(n, libCount));
   }
 
   Future<void> _refreshLibraryTags(BuildContext context) async {
     final library = context.read<LibraryService>();
     if (library.tracks.isEmpty) {
-      AppSnack.show(context, '音乐库中没有曲目');
+      AppSnack.show(context, AppLocalizations.of(context)!.libraryEmpty);
       return;
     }
-    AppSnack.show(context, '正在后台更新本地缓存曲目的标签');
+    AppSnack.show(context, AppLocalizations.of(context)!.tagRefreshStarted);
     final result = await refreshLibraryTrackTags(
       context,
       library.tracks.toList(),
@@ -154,7 +155,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (!context.mounted) return;
     AppSnack.show(
       context,
-      '标签更新完成：更新 ${result.updated} 首，跳过 ${result.skipped} 首，失败 ${result.failed} 首',
+      AppLocalizations.of(context)!.tagRefreshCompleted(result.updated, result.skipped, result.failed),
       error: result.failed > 0 && result.updated == 0,
     );
   }
@@ -164,7 +165,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     NotificationPermissionService perms,
   ) async {
     if (perms.isGranted) {
-      AppSnack.show(context, '通知权限已开启，播放时会显示媒体通知');
+      AppSnack.show(context, AppLocalizations.of(context)!.notificationEnabled);
       return;
     }
     if (perms.isChannelBlocked || perms.isPermanentlyDenied) {
@@ -172,13 +173,13 @@ class _SettingsScreenState extends State<SettingsScreen>
       if (!context.mounted) return;
       AppSnack.show(
         context,
-        opened ? '请在系统设置中允许通知后返回应用' : '无法打开系统设置，请手动允许通知权限',
+        opened ? AppLocalizations.of(context)!.notificationOpenSettings : AppLocalizations.of(context)!.notificationOpenSettingsFailed,
       );
       return;
     }
     final granted = await perms.request();
     if (!context.mounted) return;
-    AppSnack.show(context, granted ? '已授予通知权限' : '未授予通知权限，媒体通知可能无法显示');
+    AppSnack.show(context, granted ? AppLocalizations.of(context)!.notificationGranted : AppLocalizations.of(context)!.notificationDenied);
   }
 
   String _customRetentionSummary(SettingsService settings) {
@@ -186,29 +187,29 @@ class _SettingsScreenState extends State<SettingsScreen>
     final days = total ~/ 24;
     final hours = total % 24;
     if (days > 0 && hours > 0) {
-      return '当前：保留 $days 天 $hours 小时未访问的音频';
+      return AppLocalizations.of(context)!.retentionDaysHours(days, hours);
     }
     if (days > 0) {
-      return '当前：保留 $days 天未访问的音频';
+      return AppLocalizations.of(context)!.retentionDays(days);
     }
-    return '当前：保留 $hours 小时未访问的音频';
+    return AppLocalizations.of(context)!.retentionHours(hours);
   }
 
   String _notificationSubtitle(NotificationPermissionService perms) {
-    if (!perms.loaded) return '正在检查…';
+    if (!perms.loaded) return AppLocalizations.of(context)!.notificationChecking;
     if (perms.isGranted) {
-      return '已允许，播放/暂停时显示媒体通知';
+      return AppLocalizations.of(context)!.notificationStatusAllowed;
     }
     if (perms.isChannelBlocked) {
-      return '「音乐播放」通道被关闭，点此打开系统设置';
+      return AppLocalizations.of(context)!.notificationChannelBlocked;
     }
     if (perms.isPermanentlyDenied) {
-      return '已拒绝，点此打开系统设置';
+      return AppLocalizations.of(context)!.notificationStatusDenied;
     }
     if (perms.isChannelMissing) {
-      return '「音乐播放」通道未创建，播放一次或点「刷新」重试';
+      return AppLocalizations.of(context)!.notificationChannelMissing;
     }
-    return '未授权，点此请求通知权限';
+    return AppLocalizations.of(context)!.notificationNotGranted;
   }
 
   /// Re-reads permission +「音乐播放」channel state from the system and
@@ -240,6 +241,27 @@ class _SettingsScreenState extends State<SettingsScreen>
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+           ListTile(
+             contentPadding: EdgeInsets.zero,
+             leading: const Icon(Icons.language),
+             title: Text(AppLocalizations.of(context)!.language),
+             subtitle: Text(AppLocalizations.of(context)!.languageSettingSubtitle),
+             trailing: DropdownButton<AppLocalePreference>(
+               value: settings.appLocale,
+               items: [
+                 DropdownMenuItem(value: AppLocalePreference.system, child: Text(AppLocalizations.of(context)!.languageSystem)),
+                 DropdownMenuItem(value: AppLocalePreference.zhCN, child: Text(AppLocalizations.of(context)!.languageSimplifiedChinese)),
+                 DropdownMenuItem(value: AppLocalePreference.zhTW, child: Text(AppLocalizations.of(context)!.languageTraditionalChinese)),
+                 DropdownMenuItem(value: AppLocalePreference.en, child: Text(AppLocalizations.of(context)!.languageEnglish)),
+               ],
+               onChanged: (value) {
+                 if (value != null) {
+                   context.read<SettingsService>().setAppLocale(value);
+                 }
+               },
+             ),
+           ),
+           const Divider(height: 40),
           Text(
             AppLocalizations.of(context)!.webdavServer,
             style: Theme.of(context).textTheme.titleMedium
@@ -614,20 +636,20 @@ class _SettingsScreenState extends State<SettingsScreen>
 
           const Divider(height: 40),
           Text(
-            '提示与通知',
+            AppLocalizations.of(context)!.hintsAndNotifications,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
           Text(
-            '屏幕底部提示同时只显示一条，点「知道了」立即关闭。',
+            AppLocalizations.of(context)!.hintsSubtitle,
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.timer_outlined),
-            title: const Text('提示显示时长'),
+            title: Text(AppLocalizations.of(context)!.hintDuration),
             subtitle: Text(settings.snackMode.label(AppLocalizations.of(context)!)),
             trailing: DropdownButton<SnackDuration>(
               value: settings.snackMode,
@@ -643,8 +665,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.download_outlined),
-            title: const Text('下载队列系统通知'),
-            subtitle: const Text('下载进度与完成结果显示在通知栏'),
+            title: Text(AppLocalizations.of(context)!.downloadNotifications),
+            subtitle: Text(AppLocalizations.of(context)!.downloadNotificationsHint),
             value: settings.downloadNotificationsEnabled,
             onChanged: (v) async {
               await settings.setDownloadNotificationsEnabled(v);
@@ -656,9 +678,9 @@ class _SettingsScreenState extends State<SettingsScreen>
             contentPadding: EdgeInsets.zero,
             dense: true,
             leading: const Icon(Icons.notifications_active_outlined, size: 20),
-            title: const Text('发送测试通知', style: TextStyle(fontSize: 14)),
-            subtitle: const Text(
-              '立即发一条进度与一条完成通知，用来排查系统是否拦截',
+            title: Text(AppLocalizations.of(context)!.sendTestNotification, style: TextStyle(fontSize: 14)),
+            subtitle: Text(
+              AppLocalizations.of(context)!.sendTestNotificationHint,
               style: TextStyle(fontSize: 11),
             ),
             onTap: () async {
@@ -668,9 +690,9 @@ class _SettingsScreenState extends State<SettingsScreen>
                   .selfTest();
               if (!context.mounted) return;
               if (err == null) {
-                AppSnack.show(context, '测试通知已发送（进度 + 完成各一条）');
+                AppSnack.show(context, AppLocalizations.of(context)!.testNotificationSent);
               } else {
-                AppSnack.error(context, '测试通知失败：$err');
+                AppSnack.error(context, AppLocalizations.of(context)!.testNotificationFailed(err));
               }
             },
           ),
