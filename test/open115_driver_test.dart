@@ -955,8 +955,9 @@ void main() {
 
     test('其余错误（如 500）不透传成「回退」——原样抛出', () async {
       _handler = (hit) {
-        if (hit.path == '/open/folder/get_info')
+        if (hit.path == '/open/folder/get_info') {
           return (200, _errJson(500, '服务器错误'));
+        }
         return (200, _listJson(<Map<String, dynamic>>[], 0));
       };
       await expectLater(
@@ -1210,8 +1211,9 @@ void main() {
       final seen = <String>[];
       _handler = (hit) {
         seen.add(hit.uri.host + hit.path);
-        if (hit.path == '/open/refreshToken')
+        if (hit.path == '/open/refreshToken') {
           return (200, _refreshJson('at-new', 'rt-new'));
+        }
         return (200, _okJson({'user_id': 1}));
       };
       await driverWith().init();

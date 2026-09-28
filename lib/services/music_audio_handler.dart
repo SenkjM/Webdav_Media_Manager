@@ -907,7 +907,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final st = playbackState.value;
     final probe = await probeMediaNotificationNative();
     return L10nHost.current.ntfForcePlayed(
-      '${track.displayTitle}',
+      track.displayTitle,
       'playing=${st.playing} proc=${st.processingState}',
       probe,
       _asyncErrorSuffix,
@@ -921,7 +921,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     final at = _lastAsyncErrorAt;
     if (err == null || at == null) return '';
     if (DateTime.now().difference(at) > const Duration(minutes: 2)) return '';
-    return L10nHost.current.ntfAsyncError('$err');
+    return L10nHost.current.ntfAsyncError(err);
   }
 
   Future<void> disposePlayer() async {

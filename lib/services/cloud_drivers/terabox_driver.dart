@@ -409,8 +409,9 @@ class TeraboxClient {
       final list = body['list'];
       if (list is! List || list.isEmpty) break;
       for (final e in list) {
-        if (e is Map)
+        if (e is Map) {
           out.add(TeraboxFile.fromMap(Map<String, dynamic>.from(e)));
+        }
       }
     }
     return out;

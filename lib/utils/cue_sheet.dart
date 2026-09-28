@@ -209,8 +209,9 @@ class CueSheetParser {
         index01 = d;
         continue;
       }
-      if (u.startsWith('ISRC ') && inTrack)
+      if (u.startsWith('ISRC ') && inTrack) {
         trackIsrc = _uq(line.substring(5).trim());
+      }
     }
     flush();
     if (incomplete || files.isEmpty || tracks.isEmpty) return null;
@@ -237,8 +238,9 @@ class CueSheetParser {
         s < 0 ||
         s > 59 ||
         f < 0 ||
-        f > 74)
+        f > 74) {
       return null;
+    }
     return Duration(
       milliseconds: ((m * 60 + s) * 1000) + ((f * 1000) / 75).round(),
     );

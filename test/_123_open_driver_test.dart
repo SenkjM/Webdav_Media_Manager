@@ -83,8 +83,9 @@ class _RoutingAdapter implements HttpClientAdapter {
       }, body),
     );
 
-    if (uri.host == 'api.oplist.org')
+    if (uri.host == 'api.oplist.org') {
       return _forward(renewServer, options, body);
+    }
     if (uri.host == 'open-api.123pan.com') {
       return _forward(apiServer, options, body);
     }

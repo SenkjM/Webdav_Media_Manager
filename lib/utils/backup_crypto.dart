@@ -70,8 +70,9 @@ class BackupCrypto {
     final nonce = data.sublist(offset, offset + _nonceLen);
     offset += _nonceLen;
     final rest = data.sublist(offset);
-    if (rest.length < 16)
+    if (rest.length < 16) {
       throw FormatException(L10nHost.current.backupCiphertextDamaged);
+    }
     final macBytes = rest.sublist(rest.length - 16);
     final cipherText = rest.sublist(0, rest.length - 16);
     final secretKey = await _pbkdf2.deriveKeyFromPassword(
