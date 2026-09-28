@@ -1,13 +1,18 @@
-# baidu_netdisk 驱动功能实现清单（已作废 · 重写参考）
+# baidu_netdisk 驱动功能规格（已作废 · 重写参考）
 
-> **状态声明**：本驱动已按维护者决定作废、待重写。本文档记录当前实现的完整功能面，供将来重写参考。全部事实来自源码，主要出处：
+> **状态声明**：本驱动的既有实现已按维护者决定整体作废、待重写。本文档是该实现的
+> 功能性规格档案，记录完整功能面供重写时对照；不代表仍受支持的行为，也不构成使用建议。
 >
-> - 主实现：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（604 行，下文引用时记作 `driver.dart`）
-> - 测试：`test/baidu_refresh_switch_test.dart`（210 行，下文记作 `test.dart`）
-> - 基类契约：`lib/services/cloud_driver.dart`（414 行，下文记作 `base.dart`）
-> - 能力位定义：`lib/models/account_capabilities.dart`（35 行，下文记作 `caps.dart`）
->
-> 与上游 OpenList 的差异仅记录代码注释明确提到的内容，并注明出处行号。
+> **来源与版权声明**：本文档为独立整理的功能性规格，仅描述本项目自有实现的可观察行为
+> 与接口契约；**不参考、不引用、不包含来自 OpenList / OpenList-Worker 的任何源码或其
+> 衍生内容**。
+
+全部事实来自本项目源码，主要出处：
+
+- 主实现：`lib/services/cloud_drivers/baidu_netdisk_driver.dart`（604 行，下文引用时记作 `driver.dart`）
+- 测试：`test/baidu_refresh_switch_test.dart`（210 行，下文记作 `test.dart`）
+- 基类契约：`lib/services/cloud_driver.dart`（414 行，下文记作 `base.dart`）
+- 能力位定义：`lib/models/account_capabilities.dart`（35 行，下文记作 `caps.dart`）
 
 ## 1. 标识
 
@@ -19,12 +24,10 @@
 | 驱动类 | `BaiduNetdiskDriver extends CloudDriver`（driver.dart:384） |
 | 辅助类 | `BaiduAddition`（配置模型，driver.dart:23）/ `BaiduFile`（列表条目，driver.dart:68）/ `BaiduClient`（HTTP 客户端，driver.dart:85），全部同文件 |
 | 文件路径 | `lib/services/cloud_drivers/baidu_netdisk_driver.dart` |
-| 上游 TS 版 | `localdev/OpenList-Worker/src/backend/drivers/baidu_netdisk`（driver.ts / util.ts / types.ts） |
-| 上游 Go 版 | `localdev/OpenList/drivers/baidu_netdisk`（driver.go / meta.go / types.go / util.go） |
 
 补充说明：
 
-- 文件头注释（driver.dart:9-22）声明来源：「移植自 localdev/OpenList-Worker/src/backend/drivers/baidu_netdisk（driver.ts + util.ts，Go 版语义兜底）」，并列出裁剪与差异决策（详见第 7 章）。
+- 文件头注释（driver.dart:9-22）列出裁剪与差异决策（详见第 7 章）。
 - 注册方式（driver.dart:531-533 尾注）：spec 自描述收在驱动文件内，「register 表：cloud_drivers/driver_registry.dart 里加一行即接入」。
 - `BaiduNetdiskDriver` 构造参数：`{required BaiduAddition addition, void Function(Map<String, dynamic> patch)? onTokenUpdate}`（driver.dart:385-388）；内部直接构造 `BaiduClient`，不透传 Dio。
 
@@ -53,7 +56,7 @@ int get capabilities => AccountCaps.list |
 | `copy` | `1 << 5` | 复制 |
 | `delete` | `1 << 6` | 删除 |
 
-- 合计掩码值 = `123`（0b1111011）。**`write` 一律不给**——上传已砍（99 §7.2.1；driver.dart:548-549 注释，另注「mkdir 逐盘核查见 99 §7.3.2」）。
+- 合计掩码值 = `123`（0b1111011）。**`write` 一律不给**——上传已砍（driver.dart:548-549 注释）。
 - `runtimeCapabilities`：**未覆写**（base.dart:14-15 默认 null = 用 spec 静态表）。
 - `runtimeTypeLabel`：未覆写（base.dart:22 默认 null）。
 - `dispose()` / `openContent()` / `openContentRange()` / `openDownloadContent()` 均未覆写：非 MustProxy 驱动、无跨请求资源、无本地流桥需求。
@@ -72,20 +75,20 @@ int get capabilities => AccountCaps.list |
 | 4 | `client_id` | CloudDriverField | Client ID | ✗ | ✗ | `''` | `visibleWhenSwitch: 'local_refresh'` |
 | 5 | `client_secret` | CloudDriverField | Client Secret | ✗ | ✔ | `''` | `visibleWhenSwitch: 'local_refresh'` |
 
-hint / subtitle 原文（driver.dart:563、570、573、578）：
+hint / subtitle（driver.dart:563、570、573、578）：
 
-- `refresh_token`：「必填；获取方法见 OpenList 官方文档（baidu_netdisk 驱动页）」
-- `api_url_address`：「默认用 OpenList 维护的公共服务」
-- `api_url_address` disabledHint：「已开启本地刷新（online api 停用），关闭开关后可编辑」
-- `local_refresh` subtitle：「关闭＝在线续期地址刷新；开启＝用自建百度应用刷新（需 Client ID / Secret），在线续期停用」
+- `refresh_token`：必填；在线续期模式下需为通过 `https://api.oplist.org/` 签发的有效 refresh_token；本地刷新模式下用自建百度应用授权获得的 refresh_token。
+- `api_url_address`：默认使用公共续期服务（`https://api.oplist.org/baiduyun/renewapi`）。
+- `api_url_address` disabledHint：「已开启本地刷新（online api 停用），关闭开关后可编辑」。
+- `local_refresh` subtitle：「关闭＝在线续期地址刷新；开启＝用自建百度应用刷新（需 Client ID / Secret），在线续期停用」。
 
 开关联动语义（base.dart:177-191）：
 
 - `visibleWhenSwitch`：开关打开才**显示**该字段。
-- `disabledWhenSwitch`：开关打开则**停用**该字段（极性与 `enabledWhenSwitch` 相反；两者互斥，同时声明视为未声明）。本驱动用它在「本地刷新」开启后停用在线续期地址输入——对应 99 §7.3.1「一旦打开就不使用 online api 逻辑」。
+- `disabledWhenSwitch`：开关打开则**停用**该字段（极性与 `enabledWhenSwitch` 相反；两者互斥，同时声明视为未声明）。本驱动用它在「本地刷新」开启后停用在线续期地址输入——对应「一旦打开就不使用 online api 逻辑」的用户决策（原话见 test.dart:3-4）。
 - 联动开关值解析由基类 `switchValue(key, values)` 统一处理（base.dart:333-342）：实时值 → 开关 defaultValue → false。
 
-**runtimeSecretKeys** = `const {'access_token'}`（driver.dart:540-543；注释引「§4 令牌轮换」「11 §6」）：`access_token` 缓存运行时经 `onTokenUpdate` 写回驱动配置、**不在表单里**——凭证加密范围靠它补全，不声明就会明文进凭证库与备份（base.dart:316-323 注释）。
+**runtimeSecretKeys** = `const {'access_token'}`（driver.dart:540-543）：`access_token` 缓存运行时经 `onTokenUpdate` 写回驱动配置、**不在表单里**——凭证加密范围靠它补全，不声明就会明文进凭证库与备份（base.dart:316-323 注释）。
 
 **secretFieldKeys**（基类派生规则：obscure 表单字段 ∪ runtimeSecretKeys，base.dart:310-314）= `{ refresh_token, client_secret, access_token }`。
 
@@ -169,7 +172,7 @@ _dio.get<dynamic>(oauthApi, queryParameters: {
 | `errno == 31023` | `CloudDriverException('<base> 百度网盘风控（触发安全策略，通常数分钟至数小时后自动解除）。refresh_token 无效或非官方渠道获取也可能触发；请确认通过 https://api.oplist.org/ 获取。')` |
 | 其余 errno | `CloudDriverException('req: [<pathname>] ,errno: <errno>, refer to https://pan.baidu.com/union/doc/')` |
 
-其中 `<base>` = `'req: [<pathname>] ,errno: <errno>, refer to https://pan.baidu.com/union/doc/'`（driver.dart:272-273）。tokenErrors 注释（driver.dart:97）：「worker 实测：111 文档标准、-6 与 20016 实测」。
+其中 `<base>` = `'req: [<pathname>] ,errno: <errno>, refer to https://pan.baidu.com/union/doc/'`（driver.dart:272-273）。tokenErrors 说明（driver.dart:97）：111 为文档标准错误码；-6 与 20016 为实测补充。
 
 ### 4.4 Dio 注入方式
 
@@ -194,9 +197,9 @@ Dio(BaseOptions(
 |---|---|---|
 | `oauthApi` | `https://openapi.baidu.com/oauth/2.0/token` | 本地刷新端点 |
 | `panApi` | `https://pan.baidu.com/rest/2.0` | pan API 前缀 |
-| `defaultRenewApi` | `https://api.oplist.org/baiduyun/renewapi` | OpenList 公共续期服务 |
-| `apiUA` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/142.0.0.0 OpenList/425.6.30` | 普通 API UA；注释：对齐 Go 版 drivers/base/client.go UserAgentNT |
-| `downloadUA` | `pan.baidu.com` | 下载直链必需 UA；注释：worker getOfficialLink 证实 |
+| `defaultRenewApi` | `https://api.oplist.org/baiduyun/renewapi` | 在线续期默认地址（公共续期服务；错误文案中的令牌获取指引同域） |
+| `apiUA` | `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Safari/537.36 Chrome/142.0.0.0 OpenList/425.6.30` | 普通 API UA；既有实现的既定值（含 `OpenList/425.6.30` 版本后缀，实测行为依赖，逐字节保留） |
+| `downloadUA` | `pan.baidu.com` | 下载直链必需 UA（实测：直链请求头只认这个 UA） |
 | `tokenErrors` | `{111, -6, 20016}` | token 失效 errno 集合 |
 | `retryCount` / `retryWaitMs` | `3` / `1000` | 重试次数与基础退避 |
 
@@ -247,7 +250,7 @@ params: {
 ### 5.2 get(path)（driver.dart:405-448）
 
 - 根路径：直接返回 `const CloudFileItem(name: '/', isDir: true)`（无 rawUrl）。
-- 注释（driver.dart:411）：「百度没有按路径查单文件的 API：列父目录找到目标（对齐 worker）」→
+- 实现注释（driver.dart:411）：百度没有按路径查单文件的 API——列父目录找到目标：
   - `parent = cloudDirname(bp)`、`rawName = cloudBasename(bp)`；
   - `decoded = _tryDecode(rawName)`（`Uri.decodeComponent`，异常回退原文——处理百分号编码路径，driver.dart:522-528）；
   - `files = await _client.getFiles(parent)`（复用 5.1 的分页列表）。
@@ -263,7 +266,7 @@ f.fsId.toString() == rawName
 - 未命中 → `CloudDriverException('file not found: <rawName>')`。
 - 命中且是目录 → 返回 `_toItem`（无 rawUrl）。
 - 命中且是文件 → `_client.getOfficialLink(file.fsId)`：
-  - `CloudDriverException` 原样 rethrow（**与 worker 的有意差异**：直说真实原因，见第 7 章第 4 条）；
+  - `CloudDriverException` 原样 rethrow（直说真实原因，见第 7 章第 5 条）；
   - 其他异常包装为 `CloudDriverException('获取下载直链失败：$e')`；
   - 返回的 `CloudFileItem` 带 `rawUrl` + `rawHeaders`，其余字段沿用 `_toItem`。
 
@@ -334,32 +337,34 @@ f.fsId.toString() == rawName
 **rawHeaders 具体值**：
 
 - 仅 `{'User-Agent': 'pan.baidu.com'}`。
-- **没有 Referer、没有 Cookie**（base.dart:88 注释提到网盘直链可能需要 Cookie/Referer/UA，本驱动实测只需 UA——driver.dart:94-95 注释「下载直链必需的 UA（worker getOfficialLink 证实）」）。
+- **没有 Referer、没有 Cookie**（base.dart:88 注释提到网盘直链可能需要 Cookie/Referer/UA，本驱动实测只需 UA——driver.dart:94-95 注释「下载直链必需的 UA」）。
 
-## 7. 特殊机制与取舍（与上游差异 · 全部出自代码注释并注明出处）
+## 7. 特殊机制与取舍（设计决策）
 
 **裁剪（不实现）**：
 
 1. **砍掉 crack 下载 API**：`download_api` / `custom_crack_ua` / getCrackLink / getCrackVideoLink，只走官方 dlink——文件头注释（driver.dart:13），「按用户决策」。
-2. **砍掉全部上传字段与逻辑**（99 §7.2.1，上传整体已砍）——文件头注释（driver.dart:14）。
+2. **砍掉全部上传字段与逻辑**（上传整体已砍）——文件头注释（driver.dart:14）。
 3. **`order_by` / `order_direction` / `only_list_video_file` 不暴露**：客户端自己排序 / 分类——文件头注释（driver.dart:15）。
 4. **create 的上传相关参数一并不实现**——createDir 注释（driver.dart:366）。
 
-**与 worker 的有意行为差异**：
+**有意行为差异（相对「返回无直链条目」的备选方案）**：
 
-5. **get 拿不到直链时抛出真实原因（风控 / 无权限）**：worker 只记 warning 返回无直链条目；「客户端里下游必然失败，不如直说」——文件头注释（driver.dart:18-19）。
-6. **表单开关「在本地处理令牌刷新」双分支**：开启走自建百度应用 OAuth 刷新（client_id + client_secret），关闭走续期地址（默认 OpenList 公共服务）；「后端每次刷新都会检查该开关」——文件头注释（driver.dart:20-22）；用户决策原话另见 test.dart:3-4。
+5. **get 拿不到直链时抛出真实原因（风控 / 无权限）**，而非静默返回无直链条目——「客户端里下游必然失败，不如直说」——文件头注释（driver.dart:18-19）。
+6. **表单开关「在本地处理令牌刷新」双分支**：开启走自建百度应用 OAuth 刷新（client_id + client_secret），关闭走续期地址（默认公共续期服务）；「后端每次刷新都会检查该开关」——文件头注释（driver.dart:20-22）；用户决策原话另见 test.dart:3-4。
 
 **实现注记**：
 
-7. **apiUA 对齐 Go 版** `drivers/base/client.go` 的 `UserAgentNT`——注释（driver.dart:90-92）。
-8. **tokenErrors 集合来自 worker 实测**：111 文档标准、-6 与 20016 实测——注释（driver.dart:97）。
+7. **apiUA 为既有实现的既定值**（含 `OpenList/425.6.30` 版本后缀）——既定 UA 串逐字节保留（driver.dart:90-92 注释）。
+8. **tokenErrors 集合的构成**：111 为文档标准错误码，-6 与 20016 为实测补充——注释（driver.dart:97）。
 9. **filemanager 四操作共用一条通路**（rename / move / copy / delete）——manage 注释（driver.dart:352）。
 10. **uinfo 作为令牌校验探针**（无效 / 风控在此抛出）——uinfo 注释（driver.dart:376）。
 
-（小计：特殊机制 / 取舍共 **10 条**——1-4 为裁剪、5-6 为与 worker 的有意行为差异、7-10 为实现注记。）
+（小计：特殊机制 / 取舍共 **10 条**——1-4 为裁剪、5-6 为有意行为差异、7-10 为实现注记。）
 
-## 8. 测试覆盖（test/baidu_refresh_switch_test.dart，210 行）
+## 8. 行为契约（既有测试套件锁定，重写必须保持）
+
+测试文件：`test/baidu_refresh_switch_test.dart`（210 行，记作 test.dart）。
 
 **测试基建**（test.dart:25-71）：
 
@@ -408,7 +413,7 @@ f.fsId.toString() == rawName
 
 ## 9. 重写注意事项（从实现中提炼的陷阱）
 
-1. **令牌错误「刷新但不重试」**：`_doRequest` 遇 `errno ∈ {111, -6, 20016}` 先 `refreshToken()`，随后**仍抛 errno 错误**；外层 `request()` 对 `CloudDriverException` 一律 rethrow——本次调用不会用新令牌重跑，只有下一次请求受益。注释（driver.dart:269「Go：先刷新令牌，外层重试再跑一次」）与实际控制流不符。重写时明确语义：要么刷新后真正重试一次，要么文档化「只刷新不重试」。
+1. **令牌错误「刷新但不重试」**：`_doRequest` 遇 `errno ∈ {111, -6, 20016}` 先 `refreshToken()`，随后**仍抛 errno 错误**；外层 `request()` 对 `CloudDriverException` 一律 rethrow——本次调用不会用新令牌重跑，只有下一次请求受益。实现内注释（driver.dart:269）描述与实际控制流不符（注释称刷新后外层重试再跑一次）。重写时明确语义：要么刷新后真正重试一次，要么文档化「只刷新不重试」。
 2. **api_url_address 默认值三处不一致**：表单 defaultValue = defaultRenewApi（driver.dart:571）；`BaiduAddition` 构造器默认 = defaultRenewApi（driver.dart:28）；`fromJson` 缺省 = `''`（driver.dart:37）。空值回落靠 `refreshToken()` 里 `trim().isNotEmpty` 判断兜底。重写应收敛为单一默认值来源。
 3. **refresh_token 是轮换型凭证**：在线续期成功会换新 refresh_token（字段注释 driver.dart:51），旧的可能作废。onTokenUpdate 必须同时持久化 `access_token` + `refresh_token`；持久化失败应视为登录失败，否则下次启动账号失效。
 4. **直链必须去 token，且 HEAD 回落路径可疑**：Location 头缺失时 `location = u`（`dlink&access_token=…`），经 `_sanitizeDlink` 后变成**无 token 的 dlink**——该回落的可用性实现未验证。重写时要么显式报错，要么验证无 token dlink 可下载。

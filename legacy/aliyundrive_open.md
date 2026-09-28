@@ -1,6 +1,12 @@
-# aliyundrive_open 驱动功能实现清单（已作废 · 重写参考）
+# aliyundrive_open 驱动功能规格（已作废 · 重写参考）
 
-> **状态声明**：本驱动已按维护者决定整体作废、待重写。本文档记录当前实现的完整功能面，仅供重写时参考；不代表仍受支持的行为，也不构成使用建议。全部事实来自仓库源码（截至本文写作时），行号引用对应下列文件。
+> **状态声明**：本驱动的既有实现已按维护者决定整体作废、待重写。本文档是该实现
+> 的功能性规格档案，记录完整功能面供重写时对照；不代表仍受支持的行为，也不构成
+> 使用建议。全部事实来自本项目源码（截至本文写作时），行号引用对应下列文件。
+>
+> **来源与版权声明**：本文档为独立整理的功能性规格，仅描述本项目自有实现的
+> 可观察行为与接口契约；**不参考、不引用、不包含来自 OpenList / OpenList-Worker
+> 的任何源码或其衍生内容**。
 
 - 主文件：`lib/services/cloud_drivers/aliyundrive_open_driver.dart`（1090 行）
 - 测试：`test/aliyundrive_open_driver_test.dart`（1236 行）
@@ -13,15 +19,12 @@
 
 | 项 | 值 |
 |---|---|
-| typeId | `aliyundrive_open`（`AliyundriveOpenSpec.typeId`，与 OpenList 驱动目录名一致） |
+| typeId | `aliyundrive_open`（`AliyundriveOpenSpec.typeId`） |
 | displayName | `阿里云盘开放平台` |
 | spec 类 | `AliyundriveOpenSpec extends CloudDriverSpec` |
 | 驱动类 | `AliyundriveOpenDriver extends CloudDriver` |
-| 协作类 | `AliyundriveOpenAddition`（配置，对齐上游 `AliyundriveOpenAddition`）、`AliyundriveOpenClient`（API 客户端）、`AliyundriveOpenFile`（条目，对齐上游 `AliyunFileItem` / Go `File`） |
+| 协作类 | `AliyundriveOpenAddition`（配置）、`AliyundriveOpenClient`（API 客户端）、`AliyundriveOpenFile`（条目） |
 | 注册 | `driver_registry.dart` 中按 typeId 注册；测试用 `cloudDriverSpec('aliyundrive_open')` 验证接入点 |
-| 上游来源（TS 参照） | `localdev/OpenList-Worker/src/backend/drivers/aliyundrive_open/`（`driver.ts` + `util.ts` + `types.ts`，注释标注为「实现参照」） |
-| 上游来源（Go 兜底） | `localdev/OpenList/drivers/aliyundrive_open/`（`driver.go` / `util.go` / `meta.go` / `types.go`，注释标注为「语义兜底」；目录另含 `callback.go`、`callback_test.go`、`upload.go`、`limiter.go`，本驱动未实现对应功能） |
-| 文件头溯源注释 | `aliyundrive_open_driver.dart:1-6`、`aliyundrive_open_driver_test.dart:2-5` |
 
 ## 2. 能力位
 
@@ -42,7 +45,7 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 
 | key | 控件类型 | label | required | obscure | 默认值 | 开关联动 |
 |---|---|---|---|---|---|---|
-| `refresh_token` | CloudDriverField | `refresh_token` | ✔ | ✔ | — | —（hint：获取方法见 OpenList 官方文档 aliyundrive_open 驱动页） |
+| `refresh_token` | CloudDriverField | `refresh_token` | ✔ | ✔ | — | —（hint：必填；在线续期模式下需为通过 https://api.oplist.org/ 签发的有效 refresh_token；本地刷新模式下用自建阿里云盘开放平台应用授权获得的 refresh_token） |
 | `drive_type` | CloudDriverSelectField | 网盘类型 | ✔ | — | `resource` | —（选项：`resource` 资源盘 / `default` 默认盘 / `backup` 备份盘；hint：对应同一账号下的不同 drive_id） |
 | `api_url_address` | CloudDriverField | 在线续期地址 | — | — | `https://api.oplist.org/alicloud/renewapi` | `disabledWhenSwitch: local_refresh`（开启本地刷新后停用，disabledHint 提示关闭开关后可编辑） |
 | `local_refresh` | CloudDriverSwitchField | 在本地处理令牌刷新 | — | — | `false` | —（subtitle：关闭＝用在线续期地址轮询；开启＝用自建阿里云应用直接刷新，需 Client ID / Secret） |
@@ -61,8 +64,8 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 
 ### 4.1 init()（`aliyundrive_open_driver.dart:747-753`）
 
-1. `_client.login()`：缓存的 `access_token` 为空才刷新一次（对齐 worker `ensureToken` 的首跳；有缓存则零网络请求）。
-2. `_client.getDriveInfo()`：**强制真连** `/user/getDriveInfo`（内部先清空 `driveId` 再走 `resolveDriveId()`，因此即使配置里填了 drive_id 也能起到「令牌真的可用」的校验作用；对齐 Go `Init` 用 getDriveInfo 做首连的做法）。保存账号时的表单校验走的就是这条（默认 `CloudDriverSpec.verify` → `create().init()`）。
+1. `_client.login()`：缓存的 `access_token` 为空才刷新一次（有缓存则零网络请求）。
+2. `_client.getDriveInfo()`：**强制真连** `/user/getDriveInfo`（内部先清空 `driveId` 再走 `resolveDriveId()`，因此即使配置里填了 drive_id 也能起到「令牌真的可用」的校验作用）。保存账号时的表单校验走的就是这条（默认 `CloudDriverSpec.verify` → `create().init()`）。
 
 ### 4.2 drive_id 解析（`resolveDriveId`，`aliyundrive_open_driver.dart:516-559`）
 
@@ -70,7 +73,7 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 - 否则 `POST /user/getDriveInfo`，按 `drive_type`（空则回落 `resource`）取 `resource_drive_id` / `default_drive_id` / `backup_drive_id`；所选类型为空时按 **resource → default → backup** 顺序兜底。
 - 三个 id 都空 → `CloudDriverException`「getDriveInfo 未返回任何 drive_id（resource / default / backup 都为空）：请确认账号已开通阿里云盘」。
 - `forceResource: true` 时忽略配置 drive_id、按 `resource` 类型解析——供 `UserNotAllowedAccessDrive` 自愈用（见 §5/§7）。
-- 各操作方法前置 `_requireDriveId()`：字段已解析直接用，否则触发解析（对齐 worker 各方法的 `if (!this.driveId)` 前置）。
+- 各操作方法前置 `_requireDriveId()`：字段已解析直接用，否则触发解析。
 
 ### 4.3 令牌刷新（`refreshAccessToken`，`aliyundrive_open_driver.dart:268-310`）
 
@@ -78,10 +81,10 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 - **`localRefresh` 关（默认）— 在线 API 中转分支**：候选地址逐个试（`_renewApiCandidates()`），第一个成功即用；全失败后落到直连 OAuth 兜底。
   - 候选顺序：自定义 `api_url_address`（非空时排最前）→ `builtinRenewApis` 6 个内置地址（`aliyundrive_open_driver.dart:188-195`）：`https://api.oplist.org/alicloud/renewapi`、`https://api.oplist.org/ali_open/token`、`https://api.oplist.org/aliyundrive/token`、`https://api.alist.nn.ci/alist/ali_open/token`、`https://api.alist.nn.ci/aliyundrive/token`、`https://api-sam.oplist.org/aliyundrive/token`。
   - 自定义地址与内置首地址相同时**去重**（表单默认值就是内置第一个；不去重会在全失败路径上把同一地址打两遍——注释指出回归用例「在线全失败 → 落到直连 OAuth」按内置表长度断言）。
-  - 请求形态：`GET <url>?refresh_ui=<token>&refresh_token=<token>&server_use=true&driver_txt=alicloud_qr`（注释：`refresh_ui` 是 alist 续期服务的字段名，上游两个参数都传令牌值）。
-  - 响应解析：顶层 `access_token` / `refresh_token` 与 `data` 包裹形态**两处都看**；`access_token` 缺失抛错由调用方继续轮询；续期服务不轮换 `refresh_token` 时保留原值（注释引用上游 `if (newToken) this.refreshTokenVal = newToken`）。
-- **`localRefresh` 开 — 直连 OAuth 分支**：只走 `POST https://openapi.aliyundrive.com/oauth/access_token`，body `{grant_type: 'refresh_token', refresh_token, client_id[, client_secret]}`；空 `client_secret` 不进 body（注释引用 worker `if (clientSecret) payload.client_secret = ...`）；`client_id` 为空用内置 `defaultClientId = '25ab4837190e48718a28f80073574a4d'`。**在线续期地址完全不用**——失败也绝不回落在线分支（注释：与百度 `local_refresh` 语义一致，一旦打开就不使用 online api 逻辑，引用「12 §3.1」）。
-- OAuth 域名注释（`:175-178`）：worker 用 `openapi.aliyundrive.com`，Go 版用 `openapi.alipan.com`，两者同服务，本实现照抄 worker 版。
+  - 请求形态：`GET <url>?refresh_ui=<token>&refresh_token=<token>&server_use=true&driver_txt=alicloud_qr`（注释：`refresh_ui` 为续期服务侧定义的字段名，`refresh_ui` 与 `refresh_token` 两参数均传令牌值）。
+  - 响应解析：顶层 `access_token` / `refresh_token` 与 `data` 包裹形态**两处都看**；`access_token` 缺失抛错由调用方继续轮询；续期服务不轮换 `refresh_token` 时保留原值。
+- **`localRefresh` 开 — 直连 OAuth 分支**：只走 `POST https://openapi.aliyundrive.com/oauth/access_token`，body `{grant_type: 'refresh_token', refresh_token, client_id[, client_secret]}`；空 `client_secret` 不进 body；`client_id` 为空用内置 `defaultClientId = '25ab4837190e48718a28f80073574a4d'`。**在线续期地址完全不用**——失败也绝不回落在线分支（注释：与百度 `local_refresh` 语义一致，一旦打开就不使用 online api 逻辑，引用「12 §3.1」）。
+- OAuth 域名注释（`:175-178`）：本实现使用 `openapi.aliyundrive.com`（`openapi.alipan.com` 为同一服务的另一域名，本实现未采用）。
 - 两条路都失败 → 聚合 `CloudDriverException`：固定指引文案「请依次检查：1) refresh_token … 2) api_url_address … 3) client_id / client_secret …」+ 逐地址尝试记录（`url → 错误信息 | …`）。
 
 ### 4.4 onTokenUpdate 写回（`_applyTokens`，`aliyundrive_open_driver.dart:446-454`）
@@ -91,11 +94,11 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 ### 4.5 Dio 注入
 
 - 构造函数接受可选 `Dio`（测试注入自定义 `HttpClientAdapter`，生产留空走默认）。
-- 默认 `BaseOptions`（`:226-235`）：`connectTimeout` 15s、`receiveTimeout` 60s、头 `Accept: application/json`、**`validateStatus: (_) => true`**——非 2xx 不是异常，回来看 body 拿上游原文再包异常（注释引用「12 §2 第 2 步」）。
+- 默认 `BaseOptions`（`:226-235`）：`connectTimeout` 15s、`receiveTimeout` 60s、头 `Accept: application/json`、**`validateStatus: (_) => true`**——非 2xx 不是异常，回来看 body 拿服务端原文再包异常（注释引用「12 §2 第 2 步」）。
 
 ## 5. 接口实现逐条
 
-所有 OpenAPI 请求统一走 `openApiRequest(path, body)`（`:460-508`）：`POST https://openapi.aliyundrive.com/adrive/v1.0<path>` + JSON body + 头 `Authorization: Bearer <access_token>`；`access_token` 为空先刷新；**401 时刷新令牌并重试一次**（`retry` 参数，只一次防死循环，对齐 worker `openApiRequest` 的 `retry`）；非 200 抛 `CloudDriverException('[AliyundriveOpen] API error [<status>] <path>: <原文截断300字>')`；200 但 body 非 JSON 对象同样抛错。网络层 `DioException` 翻译为 `[AliyundriveOpen] 网络请求失败 <path>：…`。
+所有 OpenAPI 请求统一走 `openApiRequest(path, body)`（`:460-508`）：`POST https://openapi.aliyundrive.com/adrive/v1.0<path>` + JSON body + 头 `Authorization: Bearer <access_token>`；`access_token` 为空先刷新；**401 时刷新令牌并重试一次**（`retry` 参数，只一次防死循环）；非 200 抛 `CloudDriverException('[AliyundriveOpen] API error [<status>] <path>: <原文截断300字>')`；200 但 body 非 JSON 对象同样抛错。网络层 `DioException` 翻译为 `[AliyundriveOpen] 网络请求失败 <path>：…`。
 
 端点总览（全部 POST + JSON，基址 `https://openapi.aliyundrive.com/adrive/v1.0`）：
 
@@ -114,17 +117,17 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 
 ### 5.1 list（`AliyundriveOpenDriver.list`，`:756-760` + `client.listFiles` `:571-614`）
 
-- 端点：`POST /openFile/list`。body：`drive_id`、`parent_file_id`、`limit=100`（`pageSize`）、`order_by='updated_at'`、`order_direction='DESC'`（表单不暴露排序，固定上游缺省值）、有游标时 `marker`。
-- 分页：`next_marker` 非空就继续翻，**翻完为止**（worker `listFiles` 的 do/while）；异常防御：对端一直回同一游标时 `guard > 1000` 强制退出。
+- 端点：`POST /openFile/list`。body：`drive_id`、`parent_file_id`、`limit=100`（`pageSize`）、`order_by='updated_at'`、`order_direction='DESC'`（表单不暴露排序，固定缺省值）、有游标时 `marker`。
+- 分页：`next_marker` 非空就继续翻，**翻完为止**（do/while）；异常防御：对端一直回同一游标时 `guard > 1000` 强制退出。
 - 响应映射：`resp['items']` 逐条 `AliyundriveOpenFile.fromMap`（`file_id`/`name`/`type`/`size`/`parent_file_id`/`created_at`/`updated_at`）；`type == 'folder'` 判目录，其余当文件；`modified` 取 `updated_at`，缺则回落 `created_at`，都缺为 `null`（不伪造时间；ISO8601 交给 `DateTime.tryParse` 后 `toLocal()`）。
 - 驱动层先 `_resolveFileId(path)` 把绝对路径逐层解析成 file_id（见 §7 缓存与三段匹配），失败抛 `[AliyundriveOpen] Path '<段名>' not found`。
-- **`UserNotAllowedAccessDrive` 自愈**：列表请求抛出的异常消息包含该字符串时，`resolveDriveId(forceResource: true)` 以 resource 类型重新解析 drive_id，用新 id **重试一次**（上游的自愈逻辑）；其他错误原样 rethrow。
+- **`UserNotAllowedAccessDrive` 自愈**：列表请求抛出的异常消息包含该字符串时，`resolveDriveId(forceResource: true)` 以 resource 类型重新解析 drive_id，用新 id **重试一次**；其他错误原样 rethrow。
 
 ### 5.2 get（`:767-812`）
 
 - 空（根）路径 → 直接返回目录占位 `CloudFileItem(name: '/', isDir: true)`，不出网。
-- `_resolveFileId` 后先 `POST /openFile/get`（body：`drive_id`、`file_id`）拿元信息；异常吞掉当 null（对齐 worker `getFile(fileId).catch(() => null)`）。
-- 元信息是目录 → 直接返回 `isDir: true` 条目（无 rawUrl）；是文件 → `POST /openFile/getDownloadUrl`（body：`drive_id`、`file_id`、`expire_sec=14400`），取 `url || download_url`，**空直链抛错**（与 worker 返回空串是有意差异，见 §7）；组装 `CloudFileItem` 带 `rawUrl` 与空 `rawHeaders`。
+- `_resolveFileId` 后先 `POST /openFile/get`（body：`drive_id`、`file_id`）拿元信息；异常吞掉当 null（`getFile(fileId).catch(() => null)` 等价语义）。
+- 元信息是目录 → 直接返回 `isDir: true` 条目（无 rawUrl）；是文件 → `POST /openFile/getDownloadUrl`（body：`drive_id`、`file_id`、`expire_sec=14400`），取 `url || download_url`，**空直链抛错**（有意差异，见 §7 第 1 条）；组装 `CloudFileItem` 带 `rawUrl` 与空 `rawHeaders`。
 - 元信息拿不到 → 探测是否目录：列一次 `listFiles(fileId)`，能列就是目录（返回 `isDir: true` 占位）；也失败 → `CloudDriverException('[AliyundriveOpen] 无法获取条目或直链：<path>（file_id=<id>）')`。
 
 ### 5.3 mkdir（`:814-824`）
@@ -150,42 +153,42 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 ### 5.7 copy（`:865-878`）
 
 - `POST /openFile/copy`：`drive_id`、`file_id`、`to_parent_file_id`、`auto_rename: true`。
-- 上游 copy **没有 new_name 参数**：需要改名时复制完成后重新列目标目录、按原名 `_findInDir` 定位新 file_id 再 `/openFile/update`（注释：复制出来的新 file_id 上游才回传，本实现靠重列定位）。
+- copy 接口**没有 new_name 参数**：需要改名时复制完成后重新列目标目录、按原名 `_findInDir` 定位新 file_id 再 `/openFile/update`（注释：复制响应不回传新 file_id，本实现靠重列定位）。
 
 ### 5.8 错误翻译总结
 
-- 本驱动**从不抛 `CloudDriverDataException`**——所有失败都翻成 `CloudDriverException`（内容不可用类异常是给 crypt 等解密层用的；本驱动无解密语义）。
-- 错误信息一律带上游原文（截断 300 字）与端点路径，满足「原样传递报错」的契约（注释引用「12 §2 第 2 步 / 11 §10」）。
+- 本驱动**从不抛 `CloudDriverDataException`**——所有失败都翻成 `CloudDriverException`（内容不可用类异常是给解密层用的；本驱动无解密语义）。
+- 错误信息一律带服务端原文（截断 300 字）与端点路径，满足「原样传递报错」的契约（注释引用「12 §2 第 2 步 / 11 §10」）。
 
 ## 6. 直链与请求头
 
 - **rawUrl 来源**：`/openFile/getDownloadUrl` 响应的 `url`，缺则 `download_url`（`_firstNonEmpty` 兜底）；两者都空抛「未返回直链（url / download_url 都为空）」。
-- **有效期**：请求参数 `expire_sec` 固定 `14400`（`linkExpireSec`，4 小时；注释：上游 `expire_sec` 固定值）。直链本身是**带签名的公开 URL**。
+- **有效期**：请求参数 `expire_sec` 固定 `14400`（`linkExpireSec`，4 小时；注释：`expire_sec` 固定值）。直链本身是**带签名的公开 URL**。
 - **缓存**：驱动层**不缓存直链**——每次 `get()` 现场请求；直链仅在 `CloudFileItem.rawUrl` 上随条目返回，有效期管理交给消费方。
-- **rawHeaders**：恒为 `const <String, String>{}`——注释（`:796-797`）：「阿里云盘直链是带签名的公开 URL，上游 / Go 版都没有声明必需请求头」。即无 UA / Referer / Cookie 要求。
+- **rawHeaders**：恒为 `const <String, String>{}`——注释（`:796-797`）：「阿里云盘直链是带签名的公开 URL，无需必需请求头」。即无 UA / Referer / Cookie 要求。
 
-## 7. 特殊机制与取舍（含与上游的差异）
+## 7. 特殊机制与取舍（设计决策）
 
-1. **直链失败抛真实原因（有意差异，唯一被注释明确标注的行为差异）**：worker 的 `get()` 拿不到直链时静默返回 `raw_url: ""`；本驱动让 `getDownloadUrl` 的异常自然抛出（`aliyundrive_open_driver.dart:22-25`、`:762-766`；理由：对齐 `CloudDriver.get` 的契约，引用「11 §10」）。目录探测分支（`getFile` 为空 → 列一次目录判断是不是文件夹）**照抄保留**。
+1. **直链失败抛真实原因（有意差异，唯一被注释明确标注的行为差异）**：备选方案是拿不到直链时静默返回 `raw_url: ""` 的无直链条目；本驱动让 `getDownloadUrl` 的异常自然抛出（`aliyundrive_open_driver.dart:22-25`、`:762-766`；理由：对齐 `CloudDriver.get` 的契约，引用「11 §10」）。目录探测分支（`getFile` 为空 → 列一次目录判断是不是文件夹）**保留**。
 2. **字段/功能裁剪**（文件头注释 `:13-20`，引用「12 §2 字段裁剪规则 / 99 §7.2.1」）：
    - `putFile`（`/openFile/create` 传 content 的上传段）与秒传相关字段——上传整体砍掉；
-   - `order_by` / `order_direction` 不进表单，列表固定 `updated_at` + `DESC`（与上游 util.ts 缺省一致）；
+   - `order_by` / `order_direction` 不进表单，列表固定 `updated_at` + `DESC`（服务端缺省值）；
    - `use_online_api` 开关被「在本地处理令牌刷新」（`local_refresh`）**反相取代**，默认走在线续期；
-   - `alipan_type` 固定取 QR 分支 `alicloud_qr`（`driverTxt` 常量，`driver_type` 不影响它）；
+   - 在线续期请求的 `driver_txt` 固定为 `alicloud_qr`（常量；`drive_type` 不影响该值）；
    - `chunk_size` / `rapid_upload` / `internal_upload` / `livp_download_format` 等上传与代理下载字段全不实现。
-3. **path→id 缓存**：上游用文件 id、本应用给绝对路径，实例内维护 `_pathCache`（键为去首尾斜杠的规范路径，根为空串；对齐 worker `pathFileIdCache`）。**任何写操作（mkdir/rename/remove/move/copy）成功后整表 clear**；缓存随驱动实例重建失效（注释引用「12 §3 注记 / 99 §4.6」）。`_resolveFileId` 逐层解析，**每一段单独吃缓存**；段名匹配三段式：原始段名 → `Uri.decodeComponent` 解码名 → 段名本身就是 file_id（上游 `resolveFileId` 的三段匹配）。
+3. **path→id 缓存**：OpenAPI 以 file_id 为寻址单位、本应用给驱动绝对路径，实例内维护 `_pathCache`（键为去首尾斜杠的规范路径，根为空串）。**任何写操作（mkdir/rename/remove/move/copy）成功后整表 clear**；缓存随驱动实例重建失效（注释引用「12 §3 注记 / 99 §4.6」）。`_resolveFileId` 逐层解析，**每一段单独吃缓存**；段名匹配三段式：原始段名 → `Uri.decodeComponent` 解码名 → 段名本身就是 file_id。
 4. **`UserNotAllowedAccessDrive` 自愈**：配置的 drive_type 对应盘无权访问（如 backup 盘被拒）时，以 resource 类型强制重解析 drive_id 并重试一次（`:587-595`）。
 5. **续期候选去重**：自定义地址与内置表首地址相同时去重，避免全失败路径重复请求同一地址（`:312-324` 注释）。
-6. **在线续期双参数**：`refresh_ui` 与 `refresh_token` 都传令牌值（`:336` 注释：`refresh_ui` 是 alist 续期服务的字段名）。
+6. **在线续期双参数**：`refresh_ui` 与 `refresh_token` 都传令牌值（`:336` 注释）。
 7. **分页死循环防御**：`next_marker` 持续相同/非空时 `guard > 1000` 退出（`:609-611`）。
 8. **401 重试恰一次**：`openApiRequest` 的 `retry` 参数防死循环（`:484-487`）。
 9. **错误原文截断**：`_clip` 300 字，避免整页 HTML 灌进异常信息（`:716-718`）。
-10. **copy 无 new_name**：上游 `/openFile/copy` 无改名参数，本实现 `auto_rename: true` 后重列目标目录按原名定位再改名（`:869-876` 注释）。
+10. **copy 无 new_name**：`/openFile/copy` 无改名参数，本实现 `auto_rename: true` 后重列目标目录按原名定位再改名（`:869-876` 注释）。
 11. **不伪造时间**：`updated_at`/`created_at` 都缺失时 `modified` 为 null（`:162-164` 注释「按契约给 null，不伪造时间」）。
 12. **rootFolderId 与远程路径叠加**：`root_folder_id` 是不透明 id（默认 `root`），账号的「远程路径」是虚拟前缀，由 `CloudDriveService.joinRemotePath` 拼在驱动路径前（`:100-105` 注释，引用「12 §6.3」）——重写时需保持两层路径模型的边界。
 13. 本驱动未覆写 `dispose` / `openContent` / `openContentRange` / `openDownloadContent`：无本地流桥，下载全部走「直链 + 头」路径。
 
-## 8. 测试覆盖（重写必须保持的契约）
+## 8. 行为契约（既有测试套件锁定，重写必须保持）
 
 测试手法：自定义 `HttpClientAdapter`（`_RoutingAdapter`）拦截全部出站请求，按还原后的真实 URL 决定响应并记录 method/path/headers/body，不真连网络（`aliyundrive_open_driver_test.dart:17-22`）。
 
@@ -223,7 +226,7 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 23. 目录条目不带直链、不请求 getDownloadUrl，直接 `isDir: true` 返回。
 
 **错误透传与 401 重试**（:695-792）：
-24. 非 2xx 上游原文（code + message）连同端点路径进 `CloudDriverException`。
+24. 非 2xx 服务端原文（code + message）连同端点路径进 `CloudDriverException`。
 25. 401 → 刷新令牌并重试一次，重试必须用刷新后的令牌。
 26. 持续 401 → 只重试一次不死循环，原文抛出；只刷新一次令牌。
 27. 令牌轮换经 `onTokenUpdate` 透出 `access_token` + `refresh_token` 两键。
@@ -250,14 +253,14 @@ AccountCaps.list | AccountCaps.read | AccountCaps.mkdir
 
 ## 9. 重写注意事项
 
-1. **两条路径模型的边界**：上游全用 file_id，本应用给绝对路径——重写必须保留 path→id 解析层，并决定缓存失效粒度（现实现是写后整表 clear，粗但安全；逐层缓存使 `/a/b/c` 与 `/a/b` 共享解析前缀）。
-2. **三段名字匹配**（原始名 / URL 解码名 / file_id）：来自上游，测试未直接覆盖但实现保留——重写若丢弃某一段，编码过的文件名路径会失配。
+1. **两条路径模型的边界**：OpenAPI 全用 file_id，本应用给绝对路径——重写必须保留 path→id 解析层，并决定缓存失效粒度（现实现是写后整表 clear，粗但安全；逐层缓存使 `/a/b/c` 与 `/a/b` 共享解析前缀）。
+2. **三段名字匹配**（原始名 / URL 解码名 / file_id）：测试未直接覆盖但实现保留——重写若丢弃某一段，编码过的文件名路径会失配。
 3. **直链失败必须抛真实原因**，不得返回无直链条目（契约 + 测试 22 锁定）。
 4. **401 只重试一次**；**marker 分页加 guard**；**续期候选去重**——三处都是防死循环/重复请求的防御，注释各有回归理由。
 5. **`local_refresh` 的极性**：开关打开即完全绕开在线续期分支（连兜底都不许），与百度驱动同语义；表单上 `api_url_address` 由 `disabledWhenSwitch` 停用。重写改动极性会同时破坏语义与测试 10/12。
 6. **`access_token` 的敏感键治理**：不在表单、但必须进 `runtimeSecretKeys`，否则明文进凭证库与备份；`drive_id` 恰恰相反（明文快照，不进敏感键）。
 7. **`validateStatus` 全放行**是错误透传设计的前提——非 2xx 必须读到 body 原文再包异常；重写若恢复 dio 默认抛错行为，会丢失原文并破坏测试 24。
 8. **自愈重试只一层**：`UserNotAllowedAccessDrive` 仅在列表接口处理，重解析 + 重试各恰一次；其他接口遇同错误不触发自愈。
-9. **copy 的改名定位**依赖「重列目标目录按原名找新条目」，目录内有同名旧文件时会定位错——上游接口限制，重写时若无新 file_id 回传仍是坑。
+9. **copy 的改名定位**依赖「重列目标目录按原名找新条目」，目录内有同名旧文件时会定位错——服务端接口限制，重写时若无新 file_id 回传仍是坑。
 10. **时间戳不做格式假设**：直接 `DateTime.tryParse`，解析失败返回 null；不要自造时区转换逻辑。
-11. 上游 Go 版还有 `callback.go`（扫码回调）、`upload.go`、`limiter.go`，本驱动均未实现；重写若考虑上传/限流需另读上游源码，本文档不覆盖。
+11. 扫码回调、上传、限流等功能本驱动均未实现；重写若要引入这些功能需另行设计与评审，本文档不覆盖。
