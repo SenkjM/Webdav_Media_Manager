@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../models/account_sentinels.dart';
 import '../models/library_track.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/webdav_item.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
@@ -30,7 +32,12 @@ class PlayerScreen extends StatelessWidget {
     return '$m:$s';
   }
 
-  List<String> _metaChips(TrackInfo? track, LibraryTrack? lib) {
+  List<String> _metaChips(
+    BuildContext context,
+    TrackInfo? track,
+    LibraryTrack? lib,
+  ) {
+    final l10n = AppLocalizations.of(context)!;
     final chips = <String>[];
     void add(String? v) {
       final t = v?.trim();
@@ -41,25 +48,33 @@ class PlayerScreen extends StatelessWidget {
     add(album);
 
     if (track?.isCueVirtual == true || lib?.isCueVirtual == true) {
-      add(LibraryTrack.cueMultiSliceLabel);
+      add(l10n.cueMultiSliceLabel);
     }
 
     final albumArtist = track?.albumArtist ?? lib?.albumArtist;
     if (albumArtist != null &&
         albumArtist.trim().isNotEmpty &&
         albumArtist.trim() != (track?.displayArtist ?? '')) {
-      add('专辑艺人 · $albumArtist');
+      add(l10n.playerChipAlbumArtist(albumArtist));
     }
 
     final tn = track?.trackNumber ?? lib?.trackNumber;
     final tt = track?.trackTotal ?? lib?.trackTotal;
     if (tn != null) {
-      add(tt != null ? '曲目 $tn/$tt' : '曲目 $tn');
+      add(
+        tt != null
+            ? l10n.playerChipTrackNumber(tn, tt)
+            : l10n.playerChipTrackNoTotal(tn),
+      );
     }
     final dn = track?.discNumber ?? lib?.discNumber;
     final dt = track?.discTotal ?? lib?.discTotal;
     if (dn != null) {
-      add(dt != null ? '碟 $dn/$dt' : '碟 $dn');
+      add(
+        dt != null
+            ? l10n.playerChipDiscNumber(dn, dt)
+            : l10n.playerChipDiscNoTotal(dn),
+      );
     }
     final year = track?.year ?? lib?.year;
     if (year != null && year > 0) add('$year');
@@ -98,7 +113,10 @@ class PlayerScreen extends StatelessWidget {
     String? serverUrl;
     for (final a in accounts.accounts) {
       if (a.id == track.accountId) {
-        accountLabel = a.name;
+        accountLabel = localizedAccountName(
+          AppLocalizations.of(context)!,
+          a.name,
+        );
         serverUrl = a.url;
         break;
       }
@@ -130,24 +148,28 @@ class PlayerScreen extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx)!;
         final rows = <MapEntry<String, String>>[];
         void row(String k, String? v) {
           final t = v?.trim();
           if (t != null && t.isNotEmpty) rows.add(MapEntry(k, t));
         }
 
-        row('账号', accountLabel);
-        row('服务器', serverUrl);
-        row('远程路径', track.remotePath);
-        row('文件名', track.fileName);
+        row(l10n.playerRowAccount, accountLabel);
+        row(l10n.playerRowServer, serverUrl);
+        row(l10n.playerRowRemotePath, track.remotePath);
+        row(l10n.playerRowFileName, track.fileName);
         final isCue = track.isCueVirtual || (lib?.isCueVirtual ?? false);
         if (isCue) {
-          row('类型', LibraryTrack.cueMultiSliceLabel);
-          row('说明', '来自 CUE 分片，播放与缓存共用源音频。');
-          row('CUE 文件', track.cueRemotePath ?? lib?.cueRemotePath);
-          row('源音频', track.audioRemotePath ?? lib?.audioRemotePath);
+          row(l10n.playerRowType, l10n.cueMultiSliceLabel);
+          row(l10n.playerRowCueNoteKey, l10n.playerRowCueNote);
+          row(l10n.playerRowCueFile, track.cueRemotePath ?? lib?.cueRemotePath);
+          row(
+            l10n.playerRowSourceAudio,
+            track.audioRemotePath ?? lib?.audioRemotePath,
+          );
           final idx = track.cueTrackIndex ?? lib?.cueTrackIndex;
-          if (idx != null) row('CUE 曲序', '$idx');
+          if (idx != null) row(l10n.playerRowCueTrackIndex, '$idx');
           final start =
               track.clipStart ??
               (lib?.clipStartMs != null
@@ -159,18 +181,18 @@ class PlayerScreen extends StatelessWidget {
                   ? Duration(milliseconds: lib!.clipEndMs!)
                   : null);
           if (start != null) {
-            final endLabel = end != null ? _fmt(end) : '结尾';
-            row('分片区间', '${_fmt(start)} – $endLabel');
+            final endLabel = end != null ? _fmt(end) : l10n.playerClipEnd;
+            row(l10n.playerRowClipRange, '${_fmt(start)} – $endLabel');
           }
         }
-        row('本地缓存', localPath ?? '未下载');
+        row(l10n.playerRowLocalCache, localPath ?? l10n.playerNotDownloaded);
         if (fileSize != null) {
-          row('文件大小', _formatBytes(fileSize));
+          row(l10n.playerRowFileSize, _formatBytes(fileSize));
         }
 
         final tagMap = <String, String>{};
         if (liveTags != null) {
-          tagMap.addAll(liveTags.toDisplayMap());
+          tagMap.addAll(liveTags.toDisplayMap(l10n));
         } else if (lib != null) {
           tagMap.addAll(
             ReadTags(
@@ -187,7 +209,7 @@ class PlayerScreen extends StatelessWidget {
               genre: lib.genre,
               bitrate: lib.bitrate,
               sampleRate: lib.sampleRate,
-            ).toDisplayMap(),
+            ).toDisplayMap(l10n),
           );
         } else {
           tagMap.addAll(
@@ -205,7 +227,7 @@ class PlayerScreen extends StatelessWidget {
               genre: track.genre,
               bitrate: track.bitrate,
               sampleRate: track.sampleRate,
-            ).toDisplayMap(),
+            ).toDisplayMap(l10n),
           );
         }
         for (final e in tagMap.entries) {
@@ -233,9 +255,9 @@ class PlayerScreen extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
                   child: Row(
                     children: [
-                      const Expanded(
+                      Expanded(
                         child: Text(
-                          '文件详情',
+                          l10n.playerFileDetails,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
@@ -244,7 +266,7 @@ class PlayerScreen extends StatelessWidget {
                         ),
                       ),
                       IconButton(
-                        tooltip: '复制全部',
+                        tooltip: l10n.copyAll,
                         onPressed: () async {
                           final buf = StringBuffer();
                           for (final e in rows) {
@@ -254,7 +276,7 @@ class PlayerScreen extends StatelessWidget {
                             ClipboardData(text: buf.toString()),
                           );
                           if (context.mounted) {
-                            AppSnack.show(context, '已复制到剪贴板');
+                            AppSnack.show(context, l10n.copiedToClipboard);
                           }
                         },
                         icon: const Icon(Icons.copy_outlined),
@@ -291,7 +313,7 @@ class PlayerScreen extends StatelessWidget {
                         onLongPress: () async {
                           await Clipboard.setData(ClipboardData(text: e.value));
                           if (context.mounted) {
-                            AppSnack.show(context, '已复制：${e.key}');
+                            AppSnack.show(context, l10n.copiedKey(e.key));
                           }
                         },
                       );
@@ -312,14 +334,14 @@ class PlayerScreen extends StatelessWidget {
                           );
                           if (!ctx.mounted) return;
                           if (updated) {
-                            AppSnack.show(ctx, '已从本地文件更新标签');
+                            AppSnack.show(ctx, l10n.tagsUpdatedFromLocal);
                             Navigator.of(ctx).pop();
                           } else {
-                            AppSnack.show(ctx, '该曲目尚未缓存，请先下载后再更新标签');
+                            AppSnack.show(ctx, l10n.tagsNeedDownloadFirst);
                           }
                         },
                         icon: const Icon(Icons.sell_outlined),
-                        label: const Text('更新此曲标签'),
+                        label: Text(l10n.updateThisTrackTags),
                       ),
                     ),
                   ),
@@ -353,7 +375,7 @@ class PlayerScreen extends StatelessWidget {
     final maxMs = duration.inMilliseconds > 0 ? duration.inMilliseconds : 1;
     final posMs = position.inMilliseconds.clamp(0, maxMs);
     final artSize = MediaQuery.sizeOf(context).width * 0.68;
-    final chips = _metaChips(track, lib);
+    final chips = _metaChips(context, track, lib);
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
@@ -367,10 +389,10 @@ class PlayerScreen extends StatelessWidget {
               AppBar(
                 backgroundColor: Colors.transparent,
                 elevation: 0,
-                title: const Text('正在播放'),
+                title: Text(AppLocalizations.of(context)!.nowPlaying),
                 actions: [
                   IconButton(
-                    tooltip: '播放列表',
+                    tooltip: AppLocalizations.of(context)!.nowPlayingQueueTitle,
                     onPressed: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
@@ -382,7 +404,7 @@ class PlayerScreen extends StatelessWidget {
                   ),
                   if (track != null)
                     IconButton(
-                      tooltip: '更多',
+                      tooltip: AppLocalizations.of(context)!.more,
                       onPressed: () => _showMore(context),
                       icon: const Icon(Icons.more_vert),
                     ),
@@ -419,7 +441,9 @@ class PlayerScreen extends StatelessWidget {
                                 ),
                               const SizedBox(height: 28),
                               Text(
-                                track?.displayTitle ?? '未选择曲目',
+                                track?.displayTitle ??
+                                    AppLocalizations.of(context)!
+                                        .noTrackSelected,
                                 textAlign: TextAlign.center,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,

@@ -5,6 +5,7 @@ import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/cover_art.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// Ephemeral now-playing queue viewer. Does NOT auto-sync to saved playlists.
 class NowPlayingQueueScreen extends StatelessWidget {
@@ -19,14 +20,19 @@ class NowPlayingQueueScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(queue.isEmpty ? '当前播放列表' : '当前播放列表（${queue.length}）'),
+        title: Text(
+          queue.isEmpty
+              ? AppLocalizations.of(context)!.nowPlayingQueueTitle
+              : AppLocalizations.of(context)!
+                    .nowPlayingQueueCount(queue.length),
+        ),
       ),
       body: queue.isEmpty
-          ? const Center(
+          ? Center(
               child: Padding(
-                padding: EdgeInsets.all(24),
+                padding: const EdgeInsets.all(24),
                 child: Text(
-                  '当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。',
+                  AppLocalizations.of(context)!.nowPlayingQueueEmpty,
                   textAlign: TextAlign.center,
                   style: TextStyle(color: AppColors.secondaryText),
                 ),

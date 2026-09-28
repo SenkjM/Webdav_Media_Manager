@@ -15,7 +15,11 @@ class _LoadSequencer {
   int issue() => ++_seq;
 
   /// 复刻 _load 的响应处理：过期丢弃，最新才应用。
-  void complete({required int issued, required String path, bool throws = false}) {
+  void complete({
+    required int issued,
+    required String path,
+    bool throws = false,
+  }) {
     if (issued != _seq) return; // 过期响应：丢弃（_load 的 seq != _loadSeq 分支）。
     applied.add(throws ? 'error:$path' : 'items:$path');
   }

@@ -32,11 +32,11 @@ import 'package:webdav_media_manager/services/cloud_drivers/driver_registry.dart
 
 /// 表单条目的 key（`CloudDriverFormItem` 是 sealed 基类，key 在具体子类上）。
 String _formKey(CloudDriverFormItem item) => switch (item) {
-      CloudDriverField(:final key) => key,
-      CloudDriverSelectField(:final key) => key,
-      CloudDriverAccountField(:final key) => key,
-      CloudDriverSwitchField(:final key) => key,
-    };
+  CloudDriverField(:final key) => key,
+  CloudDriverSelectField(:final key) => key,
+  CloudDriverAccountField(:final key) => key,
+  CloudDriverSwitchField(:final key) => key,
+};
 
 /// 记录一次出站请求。
 class _Hit {
@@ -76,12 +76,16 @@ class _RoutingAdapter implements HttpClientAdapter {
       body = utf8.decode(bytes, allowMalformed: true);
     }
     final uri = Uri.parse(options.uri.toString());
-    hits.add(_Hit(options.method, uri, {
-      for (final e in options.headers.entries)
-        if (e.value != null) e.key.toLowerCase(): '${e.value}',
-    }, body));
+    hits.add(
+      _Hit(options.method, uri, {
+        for (final e in options.headers.entries)
+          if (e.value != null) e.key.toLowerCase(): '${e.value}',
+      }, body),
+    );
 
-    if (uri.host == 'api.oplist.org') return _forward(renewServer, options, body);
+    if (uri.host == 'api.oplist.org') {
+      return _forward(renewServer, options, body);
+    }
     if (uri.host == 'open-api.123pan.com') {
       return _forward(apiServer, options, body);
     }
@@ -95,7 +99,8 @@ class _RoutingAdapter implements HttpClientAdapter {
   ) async {
     final client = HttpClient();
     final target = Uri.parse(
-        'http://127.0.0.1:${server.port}${options.uri.path}?${options.uri.query}');
+      'http://127.0.0.1:${server.port}${options.uri.path}?${options.uri.query}',
+    );
     final req = await client.openUrl(options.method, target);
     if (body.isNotEmpty) {
       req.headers.contentType = ContentType.json;
@@ -108,9 +113,13 @@ class _RoutingAdapter implements HttpClientAdapter {
     }
     client.close(force: true);
     final ct = res.headers.contentType?.mimeType ?? 'application/json';
-    return ResponseBody.fromBytes(bytes, res.statusCode, headers: {
-      'content-type': [ct],
-    });
+    return ResponseBody.fromBytes(
+      bytes,
+      res.statusCode,
+      headers: {
+        'content-type': [ct],
+      },
+    );
   }
 
   @override
@@ -131,14 +140,17 @@ void main() {
     String path,
     Map<String, String> query,
     String body,
-  ) apiResponse;
+  )
+  apiResponse;
 
   /// API 服务器收到的请求（path → 次数），断言端点用。
   late List<String> apiPaths;
 
-
-  Map<String, dynamic> envelope(Object? data) =>
-      <String, dynamic>{'code': 0, 'message': 'ok', 'data': data};
+  Map<String, dynamic> envelope(Object? data) => <String, dynamic>{
+    'code': 0,
+    'message': 'ok',
+    'data': data,
+  };
 
   Map<String, dynamic> fileMap(
     int id,
@@ -146,15 +158,14 @@ void main() {
     int type = 2,
     int size = 1024,
     String? updateAt,
-  }) =>
-      <String, dynamic>{
-        'fileId': id,
-        'filename': name,
-        'size': size,
-        'type': type,
-        'update_at': updateAt ?? '2024-01-02 03:04:05',
-        'trashed': 0,
-      };
+  }) => <String, dynamic>{
+    'fileId': id,
+    'filename': name,
+    'size': size,
+    'type': type,
+    'update_at': updateAt ?? '2024-01-02 03:04:05',
+    'trashed': 0,
+  };
 
   setUp(() async {
     renewRefreshes = <String>[];
@@ -172,7 +183,9 @@ void main() {
         req.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType = ContentType.json
-          ..write('{"access_token":"online-access","refresh_token":"online-refresh"}');
+          ..write(
+            '{"access_token":"online-access","refresh_token":"online-refresh"}',
+          );
       } else {
         req.response
           ..statusCode = HttpStatus.badRequest
@@ -186,11 +199,7 @@ void main() {
     apiServer.listen((req) async {
       apiPaths.add(req.uri.path);
       final body = await utf8.decoder.bind(req).join();
-      final payload = apiResponse(
-        req.uri.path,
-        req.uri.queryParameters,
-        body,
-      );
+      final payload = apiResponse(req.uri.path, req.uri.queryParameters, body);
       req.response
         ..statusCode = HttpStatus.ok
         ..headers.contentType = ContentType.json
@@ -224,16 +233,15 @@ void main() {
     bool localRefresh = false,
     String? rootFolderId,
     String? accessToken,
-  }) =>
-      Driver123OpenAddition(
-        refreshToken: refreshToken ?? 'rt-1',
-        clientId: clientId ?? '',
-        clientSecret: clientSecret ?? '',
-        apiUrlAddress: apiUrlAddress ?? Driver123OpenClient.defaultRenewApi,
-        localRefresh: localRefresh,
-        rootFolderId: rootFolderId ?? '0',
-        accessToken: accessToken ?? '',
-      );
+  }) => Driver123OpenAddition(
+    refreshToken: refreshToken ?? 'rt-1',
+    clientId: clientId ?? '',
+    clientSecret: clientSecret ?? '',
+    apiUrlAddress: apiUrlAddress ?? Driver123OpenClient.defaultRenewApi,
+    localRefresh: localRefresh,
+    rootFolderId: rootFolderId ?? '0',
+    accessToken: accessToken ?? '',
+  );
 
   Driver123Open driverWith(Driver123OpenAddition addition) =>
       Driver123Open(addition: addition, dio: dio);
@@ -262,11 +270,14 @@ void main() {
 
     test('表单六项：refresh_token 必填密文、续期地址默认值、开关联动、根目录默认 0', () {
       const spec = Driver123OpenSpec();
-      expect(
-        spec.form.map(_formKey).toList(),
-        ['refresh_token', 'api_url_address', 'local_refresh', 'client_id',
-          'client_secret', 'root_folder_id'],
-      );
+      expect(spec.form.map(_formKey).toList(), [
+        'refresh_token',
+        'api_url_address',
+        'local_refresh',
+        'client_id',
+        'client_secret',
+        'root_folder_id',
+      ]);
 
       final rt = spec.form.first as CloudDriverField;
       expect(rt.required, isTrue);
@@ -310,7 +321,11 @@ void main() {
       expect(apiPaths, isEmpty, reason: '在线分支不该打到 123 开放平台');
       expect(client.accessToken, 'online-access');
       expect(addition.accessToken, 'online-access');
-      expect(addition.refreshToken, 'online-refresh', reason: '轮换后的 refresh_token 必须存下来');
+      expect(
+        addition.refreshToken,
+        'online-refresh',
+        reason: '轮换后的 refresh_token 必须存下来',
+      );
 
       final hit = adapter.hits.single;
       expect(hit.method, 'GET');
@@ -356,11 +371,13 @@ void main() {
       final client = Driver123OpenClient(addition, dio: dio);
       await expectLater(
         client.getAccessToken(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('bad refresh token'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('bad refresh token'),
+          ),
+        ),
       );
       // 在线续期失败绝不再拿 client 凭证兜底（两条路互斥）。
       expect(apiPaths, isEmpty);
@@ -426,11 +443,13 @@ void main() {
       );
       await expectLater(
         client.getAccessToken(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('client invalid'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('client invalid'),
+          ),
+        ),
       );
       expect(tokenCalls, 1, reason: '令牌端点不能被 401 重试包装（会无限递归）');
     });
@@ -438,14 +457,19 @@ void main() {
 
   group('缺必填 refresh_token', () {
     test('默认配置（无 client 凭证）报可读错误且不出网', () async {
-      final client = Driver123OpenClient(additionWith(refreshToken: ''), dio: dio);
+      final client = Driver123OpenClient(
+        additionWith(refreshToken: ''),
+        dio: dio,
+      );
       await expectLater(
         client.getAccessToken(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('refresh_token'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.missingRefreshToken'),
+          ),
+        ),
       );
       expect(adapter.hits, isEmpty);
     });
@@ -454,19 +478,24 @@ void main() {
       final d = driverWith(additionWith(refreshToken: ''));
       await expectLater(
         d.init(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('refresh_token'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.missingRefreshToken'),
+          ),
+        ),
       );
       expect(adapter.hits, isEmpty);
     });
 
     test('带缓存 access_token 时不刷新，直接 user/info 校验', () async {
-      apiResponse = (path, query, body) =>
-          path == '/api/v1/user/info' ? envelope(<String, dynamic>{'uid': 1}) : envelope(null);
-      final d = driverWith(additionWith(refreshToken: '', accessToken: 'cached'));
+      apiResponse = (path, query, body) => path == '/api/v1/user/info'
+          ? envelope(<String, dynamic>{'uid': 1})
+          : envelope(null);
+      final d = driverWith(
+        additionWith(refreshToken: '', accessToken: 'cached'),
+      );
       await d.init();
       expect(renewRefreshes, isEmpty);
       expect(apiPaths, ['/api/v1/user/info']);
@@ -499,8 +528,9 @@ void main() {
       final items = await d.list('/');
 
       // 两页都翻了。
-      final listHits =
-          adapter.hits.where((h) => h.uri.path == '/api/v2/file/list').toList();
+      final listHits = adapter.hits
+          .where((h) => h.uri.path == '/api/v2/file/list')
+          .toList();
       expect(listHits.length, 2);
       expect(listHits[0].uri.queryParameters['lastFileId'], '0');
       expect(listHits[0].uri.queryParameters['limit'], '100');
@@ -517,27 +547,24 @@ void main() {
       expect(items[1].size, 4096);
 
       // UTC+8 墙钟 2024-01-02 03:04:05 → UTC 2024-01-01 19:04:05。
-      expect(
-        items[1].modified!.toUtc(),
-        DateTime.utc(2024, 1, 1, 19, 4, 5),
-      );
+      expect(items[1].modified!.toUtc(), DateTime.utc(2024, 1, 1, 19, 4, 5));
     });
 
     test('trashed !== 0 的条目被过滤掉', () async {
       apiResponse = (path, query, body) => envelope(<String, dynamic>{
-            'last_file_id': -1,
-            'file_list': [
-              fileMap(1, 'keep.mp3'),
-              <String, dynamic>{
-                'fileId': 2,
-                'filename': 'gone.mp3',
-                'size': 1,
-                'type': 2,
-                'update_at': '2024-01-02 03:04:05',
-                'trashed': 1,
-              },
-            ],
-          });
+        'last_file_id': -1,
+        'file_list': [
+          fileMap(1, 'keep.mp3'),
+          <String, dynamic>{
+            'fileId': 2,
+            'filename': 'gone.mp3',
+            'size': 1,
+            'type': 2,
+            'update_at': '2024-01-02 03:04:05',
+            'trashed': 1,
+          },
+        ],
+      });
       final items = await driverWith(additionWith()).list('/');
       expect(items.map((i) => i.name).toList(), ['keep.mp3']);
     });
@@ -568,7 +595,10 @@ void main() {
       apiResponse = (path, query, body) {
         if (path != '/api/v2/file/list') return envelope(null);
         parents.add(query['parentFileId'] ?? '');
-        return envelope(<String, dynamic>{'last_file_id': -1, 'file_list': <dynamic>[]});
+        return envelope(<String, dynamic>{
+          'last_file_id': -1,
+          'file_list': <dynamic>[],
+        });
       };
       await driverWith(additionWith(rootFolderId: '999')).list('/');
       expect(parents, ['999']);
@@ -581,7 +611,14 @@ void main() {
         if (path == '/api/v2/file/list') {
           return envelope(<String, dynamic>{
             'last_file_id': -1,
-            'file_list': [fileMap(555, 'a.mp3', size: 4096, updateAt: '2024-01-02 03:04:05')],
+            'file_list': [
+              fileMap(
+                555,
+                'a.mp3',
+                size: 4096,
+                updateAt: '2024-01-02 03:04:05',
+              ),
+            ],
           });
         }
         if (path == '/api/v1/file/download_info') {
@@ -599,8 +636,9 @@ void main() {
       expect(item.rawUrl, 'https://cdn.123pan.com/dl/a.mp3?auth=1');
       expect(item.modified!.toUtc(), DateTime.utc(2024, 1, 1, 19, 4, 5));
 
-      final dl = adapter.hits
-          .firstWhere((h) => h.uri.path == '/api/v1/file/download_info');
+      final dl = adapter.hits.firstWhere(
+        (h) => h.uri.path == '/api/v1/file/download_info',
+      );
       expect(dl.uri.queryParameters['fileId'], '555');
       expect(dl.headers['authorization'], 'Bearer online-access');
     });
@@ -614,20 +652,19 @@ void main() {
           });
         }
         if (path == '/api/v1/file/download_info') {
-          return <String, dynamic>{
-            'code': 403,
-            'message': '该文件无下载权限',
-          };
+          return <String, dynamic>{'code': 403, 'message': '该文件无下载权限'};
         }
         return envelope(null);
       };
       await expectLater(
         driverWith(additionWith()).get('/a.mp3'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('该文件无下载权限'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('该文件无下载权限'),
+          ),
+        ),
       );
     });
 
@@ -644,33 +681,37 @@ void main() {
       final item = await driverWith(additionWith()).get('/dirA');
       expect(item.isDir, isTrue);
       expect(item.rawUrl, isNull);
-      expect(adapter.hits.any((h) => h.uri.path == '/api/v1/file/download_info'),
-          isFalse);
+      expect(
+        adapter.hits.any((h) => h.uri.path == '/api/v1/file/download_info'),
+        isFalse,
+      );
     });
   });
 
   group('错误原文透传', () {
     test('code !== 0 时 message 含上游原文', () async {
       apiResponse = (path, query, body) => <String, dynamic>{
-            'code': 1001,
-            'message': '参数错误：parentFileId 非法',
-          };
+        'code': 1001,
+        'message': '参数错误：parentFileId 非法',
+      };
       final d = driverWith(additionWith());
       await expectLater(
         d.list('/'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('参数错误：parentFileId 非法'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('参数错误：parentFileId 非法'),
+          ),
+        ),
       );
     });
 
     test('mkdir / move / rename / remove 的错误原文同样透传', () async {
       apiResponse = (path, query, body) => <String, dynamic>{
-            'code': 500,
-            'message': '服务端拒绝',
-          };
+        'code': 500,
+        'message': '服务端拒绝',
+      };
       final d = driverWith(additionWith());
       // 先让路径解析能成功，才能走到写端点。
       for (final f in <Future<void> Function()>[
@@ -690,11 +731,13 @@ void main() {
         };
         await expectLater(
           f(),
-          throwsA(isA<CloudDriverException>().having(
-            (e) => e.message,
-            'message',
-            contains('服务端拒绝'),
-          )),
+          throwsA(
+            isA<CloudDriverException>().having(
+              (e) => e.message,
+              'message',
+              contains('服务端拒绝'),
+            ),
+          ),
         );
       }
     });
@@ -725,8 +768,9 @@ void main() {
       expect(renewRefreshes, ['rt-x'], reason: '401 应触发一次刷新');
       expect(listCalls, 2, reason: '应重试一次');
       // 重试带上新令牌。
-      final listHits =
-          adapter.hits.where((h) => h.uri.path == '/api/v2/file/list').toList();
+      final listHits = adapter.hits
+          .where((h) => h.uri.path == '/api/v2/file/list')
+          .toList();
       expect(listHits[0].headers['authorization'], 'Bearer stale');
       expect(listHits[1].headers['authorization'], 'Bearer online-access');
     });
@@ -741,12 +785,15 @@ void main() {
         return envelope(null);
       };
       await expectLater(
-        driverWith(additionWith(refreshToken: 'rt-y', accessToken: 'stale')).list('/'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('token expired'),
-        )),
+        driverWith(additionWith(refreshToken: 'rt-y', accessToken: 'stale'))
+            .list('/'),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('token expired'),
+          ),
+        ),
       );
       expect(listCalls, 2, reason: '只重试一次');
       expect(renewRefreshes, ['rt-y'], reason: '只刷新一次');
@@ -801,53 +848,69 @@ void main() {
           if (parent == '0') {
             return envelope(<String, dynamic>{
               'last_file_id': -1,
-              'file_list': [
-                fileMap(7, 'old.mp3'),
-                fileMap(9, 'dst', type: 1),
-              ],
+              'file_list': [fileMap(7, 'old.mp3'), fileMap(9, 'dst', type: 1)],
             });
           }
-          return envelope(<String, dynamic>{'last_file_id': -1, 'file_list': <dynamic>[]});
+          return envelope(<String, dynamic>{
+            'last_file_id': -1,
+            'file_list': <dynamic>[],
+          });
         }
         return envelope(null);
       };
       await driverWith(additionWith()).rename('/old.mp3', '/dst/new.mp3');
 
-      final move = adapter.hits
-          .firstWhere((h) => h.uri.path == '/api/v1/file/move');
+      final move = adapter.hits.firstWhere(
+        (h) => h.uri.path == '/api/v1/file/move',
+      );
       expect(move.method, 'POST');
       final moveBody = jsonDecode(move.body) as Map<String, dynamic>;
       expect(moveBody['fileIDs'], [7]);
       expect(moveBody['toParentFileID'], '9');
 
-      final name =
-          adapter.hits.firstWhere((h) => h.uri.path == '/api/v1/file/name');
-      expect((jsonDecode(name.body) as Map<String, dynamic>)['fileName'], 'new.mp3');
+      final name = adapter.hits.firstWhere(
+        (h) => h.uri.path == '/api/v1/file/name',
+      );
+      expect(
+        (jsonDecode(name.body) as Map<String, dynamic>)['fileName'],
+        'new.mp3',
+      );
     });
 
-    test('move：POST /api/v1/file/move {fileIDs:[id], toParentFileID}', () async {
-      apiResponse = (path, query, body) {
-        if (path == '/api/v2/file/list') {
-          final parent = query['parentFileId'];
-          if (parent == '0') {
+    test(
+      'move：POST /api/v1/file/move {fileIDs:[id], toParentFileID}',
+      () async {
+        apiResponse = (path, query, body) {
+          if (path == '/api/v2/file/list') {
+            final parent = query['parentFileId'];
+            if (parent == '0') {
+              return envelope(<String, dynamic>{
+                'last_file_id': -1,
+                'file_list': [fileMap(7, 'a.mp3'), fileMap(9, 'dst', type: 1)],
+              });
+            }
             return envelope(<String, dynamic>{
               'last_file_id': -1,
-              'file_list': [fileMap(7, 'a.mp3'), fileMap(9, 'dst', type: 1)],
+              'file_list': <dynamic>[],
             });
           }
-          return envelope(<String, dynamic>{'last_file_id': -1, 'file_list': <dynamic>[]});
-        }
-        return envelope(null);
-      };
-      await driverWith(additionWith()).move('/a.mp3', '/dst', 'a.mp3');
+          return envelope(null);
+        };
+        await driverWith(additionWith()).move('/a.mp3', '/dst', 'a.mp3');
 
-      final hit = adapter.hits.firstWhere((h) => h.uri.path == '/api/v1/file/move');
-      final body = jsonDecode(hit.body) as Map<String, dynamic>;
-      expect(body['fileIDs'], [7]);
-      expect(body['toParentFileID'], '9');
-      // 同名移动不该多发一次 rename。
-      expect(adapter.hits.any((h) => h.uri.path == '/api/v1/file/name'), isFalse);
-    });
+        final hit = adapter.hits.firstWhere(
+          (h) => h.uri.path == '/api/v1/file/move',
+        );
+        final body = jsonDecode(hit.body) as Map<String, dynamic>;
+        expect(body['fileIDs'], [7]);
+        expect(body['toParentFileID'], '9');
+        // 同名移动不该多发一次 rename。
+        expect(
+          adapter.hits.any((h) => h.uri.path == '/api/v1/file/name'),
+          isFalse,
+        );
+      },
+    );
 
     test('remove：POST /api/v1/file/trash {fileIDs:[id]}', () async {
       apiResponse = (path, query, body) {
@@ -873,11 +936,13 @@ void main() {
       // 表达式，同步异常会直接逃逸出去、把断言变成「未捕获异常」。
       expect(
         () => driverWith(additionWith()).copy('/a.mp3', '/dst', 'a.mp3'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('copy not supported'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('copy not supported'),
+          ),
+        ),
       );
       expect(adapter.hits, isEmpty);
     });

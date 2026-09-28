@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/snack_duration.dart';
 import '../services/settings_service.dart';
 
@@ -57,12 +58,7 @@ class AppSnack {
   /// keyboard can never cover it; it stays at the bottom of the screen where
   /// users expect an in-app message (置顶 = 置于顶层, not "moved to the top").
   static Widget hostBuilder(BuildContext context, Widget? child) {
-    return Stack(
-      children: <Widget>[
-        ?child,
-        const _BannerHost(),
-      ],
-    );
+    return Stack(children: <Widget>[?child, const _BannerHost()]);
   }
 
   /// Same contract as [show], for callers without a `BuildContext` (the
@@ -96,15 +92,8 @@ class AppSnack {
 
     // Replace, never queue.
     _remove();
-    _current.value = AppSnackMessage(
-      text: text,
-      error: error,
-      token: ++_token,
-    );
-    _timer = Timer(
-      _settings?.snackMode.duration ?? defaultDuration,
-      _remove,
-    );
+    _current.value = AppSnackMessage(text: text, error: error, token: ++_token);
+    _timer = Timer(_settings?.snackMode.duration ?? defaultDuration, _remove);
   }
 
   static void _remove() {
@@ -188,8 +177,9 @@ class _BannerCard extends StatelessWidget {
     final background = message.error
         ? const Color(0xFFB3261E)
         : theme.colorScheme.inverseSurface;
-    final foreground =
-        message.error ? Colors.white : theme.colorScheme.onInverseSurface;
+    final foreground = message.error
+        ? Colors.white
+        : theme.colorScheme.onInverseSurface;
     return Material(
       color: background,
       elevation: 6,
@@ -206,7 +196,9 @@ class _BannerCard extends StatelessWidget {
                   message.text,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: foreground,
+                  ),
                 ),
               ),
               TextButton(
@@ -214,11 +206,13 @@ class _BannerCard extends StatelessWidget {
                 style: TextButton.styleFrom(
                   foregroundColor: foreground,
                   minimumSize: Size.zero,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-                child: const Text('知道了'),
+                child: Text(AppLocalizations.of(context)!.snackGotIt),
               ),
             ],
           ),

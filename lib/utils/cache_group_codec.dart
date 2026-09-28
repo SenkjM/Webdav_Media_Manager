@@ -36,8 +36,9 @@ List<String> decodeCacheGroupMembers(String? raw) {
   final parts = identity.split('\u0000');
   if (parts.isEmpty) return null;
   final sourceName = parts.first;
-  final remotePath =
-      parts.length > 1 ? parts.sublist(1).join('\u0000') : identity;
+  final remotePath = parts.length > 1
+      ? parts.sublist(1).join('\u0000')
+      : identity;
   return (sourceName: sourceName, remotePath: remotePath);
 }
 
@@ -75,8 +76,7 @@ List<LegacyCacheGroup> parseLegacyCacheGroups(Map<String, String> entries) {
   entries.forEach((key, value) {
     if (key.startsWith(legacyCacheGroupMembersKeyPrefix)) {
       memberKeys[key] = value;
-    } else if (key.startsWith(legacyCacheGroupKeyPrefix) &&
-        value.isNotEmpty) {
+    } else if (key.startsWith(legacyCacheGroupKeyPrefix) && value.isNotEmpty) {
       candidateIds.add(value);
     }
   });
@@ -94,8 +94,7 @@ List<LegacyCacheGroup> parseLegacyCacheGroups(Map<String, String> entries) {
   for (final entry in memberKeys.entries) {
     final members = decodeLegacyMemberList(entry.value);
     if (members.isEmpty) continue;
-    final suffix =
-        entry.key.substring(legacyCacheGroupMembersKeyPrefix.length);
+    final suffix = entry.key.substring(legacyCacheGroupMembersKeyPrefix.length);
     final groupId =
         byHash[suffix] ?? _resolveGroupIdFromMembers(members, entries);
     if (groupId == null || groupId.isEmpty) continue;

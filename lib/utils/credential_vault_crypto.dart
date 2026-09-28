@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
+import 'l10n_host.dart';
+
 /// Per-field passphrase encryption used by the WebDAV credential vault.
 ///
 /// The vault keeps the WebDAV **URL and username in plain text** (so an
@@ -60,7 +62,7 @@ class CredentialVaultCrypto {
     if (!isEncrypted(encoded)) return encoded;
     final raw = base64Decode(encoded.substring(prefix.length));
     if (raw.length < _saltLen + _nonceLen + 16) {
-      throw const FormatException('凭证密文损坏');
+      throw FormatException(L10nHost.current.vaultCiphertextDamaged);
     }
     var offset = 0;
     final salt = raw.sublist(offset, offset + _saltLen);

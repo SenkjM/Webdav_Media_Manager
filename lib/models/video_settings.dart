@@ -1,3 +1,5 @@
+import '../l10n/generated/app_localizations.dart';
+
 /// Actions bindable to a video-player gesture (left/right double-tap or
 /// long-press). Values are persisted by their [storageKey].
 enum VideoGestureAction {
@@ -12,25 +14,25 @@ enum VideoGestureAction {
 
 extension VideoGestureActionX on VideoGestureAction {
   String get storageKey => switch (this) {
-        VideoGestureAction.none => 'none',
-        VideoGestureAction.back10s => 'back10s',
-        VideoGestureAction.forward10s => 'forward10s',
-        VideoGestureAction.back30s => 'back30s',
-        VideoGestureAction.forward30s => 'forward30s',
-        VideoGestureAction.toggleRate2x => 'toggle2x',
-        VideoGestureAction.playPause => 'play_pause',
-      };
+    VideoGestureAction.none => 'none',
+    VideoGestureAction.back10s => 'back10s',
+    VideoGestureAction.forward10s => 'forward10s',
+    VideoGestureAction.back30s => 'back30s',
+    VideoGestureAction.forward30s => 'forward30s',
+    VideoGestureAction.toggleRate2x => 'toggle2x',
+    VideoGestureAction.playPause => 'play_pause',
+  };
 
-  String get labelZh => switch (this) {
-        VideoGestureAction.none => '无操作',
-        VideoGestureAction.back10s => '后退 10 秒',
-        VideoGestureAction.forward10s => '前进 10 秒',
-        VideoGestureAction.back30s => '后退 30 秒',
-        VideoGestureAction.forward30s => '前进 30 秒',
-        // Long-press only: hold to speed up, release to restore.
-        VideoGestureAction.toggleRate2x => '长按临时加速（松手恢复）',
-        VideoGestureAction.playPause => '播放 / 暂停',
-      };
+  String label(AppLocalizations l10n) => switch (this) {
+    VideoGestureAction.none => l10n.videoGestureNone,
+    VideoGestureAction.back10s => l10n.videoGestureBack10s,
+    VideoGestureAction.forward10s => l10n.videoGestureForward10s,
+    VideoGestureAction.back30s => l10n.videoGestureBack30s,
+    VideoGestureAction.forward30s => l10n.videoGestureForward30s,
+    // Long-press only: hold to speed up, release to restore.
+    VideoGestureAction.toggleRate2x => l10n.videoGestureHoldSpeedUp,
+    VideoGestureAction.playPause => l10n.videoGesturePlayPause,
+  };
 
   static VideoGestureAction fromStorageKey(String? key) {
     switch (key) {
@@ -70,19 +72,18 @@ enum VideoSubtitlePosition {
 
 extension VideoSubtitlePositionX on VideoSubtitlePosition {
   String get storageKey => switch (this) {
-        VideoSubtitlePosition.visible => 'visible',
-        VideoSubtitlePosition.hidden => 'hidden',
-      };
+    VideoSubtitlePosition.visible => 'visible',
+    VideoSubtitlePosition.hidden => 'hidden',
+  };
 
-  String get labelZh => switch (this) {
-        VideoSubtitlePosition.visible => '显示字幕',
-        VideoSubtitlePosition.hidden => '不显示',
-      };
+  String label(AppLocalizations l10n) => switch (this) {
+    VideoSubtitlePosition.visible => l10n.videoSubtitleVisible,
+    VideoSubtitlePosition.hidden => l10n.videoSubtitleHidden,
+  };
 
-  static VideoSubtitlePosition fromStorageKey(String? key) =>
-      key == 'hidden'
-          ? VideoSubtitlePosition.hidden
-          : VideoSubtitlePosition.visible;
+  static VideoSubtitlePosition fromStorageKey(String? key) => key == 'hidden'
+      ? VideoSubtitlePosition.hidden
+      : VideoSubtitlePosition.visible;
 }
 
 /// Default primary (tap) action for a video file in the network library.
@@ -96,14 +97,14 @@ enum VideoTapAction {
 
 extension VideoTapActionX on VideoTapAction {
   String get storageKey => switch (this) {
-        VideoTapAction.open => 'open',
-        VideoTapAction.download => 'download',
-      };
+    VideoTapAction.open => 'open',
+    VideoTapAction.download => 'download',
+  };
 
-  String get labelZh => switch (this) {
-        VideoTapAction.open => '打开视频',
-        VideoTapAction.download => '下载',
-      };
+  String label(AppLocalizations l10n) => switch (this) {
+    VideoTapAction.open => l10n.videoTapOpen,
+    VideoTapAction.download => l10n.videoTapDownload,
+  };
 
   static VideoTapAction fromStorageKey(String? key) =>
       key == 'download' ? VideoTapAction.download : VideoTapAction.open;
@@ -120,14 +121,14 @@ enum MusicTapAction {
 
 extension MusicTapActionX on MusicTapAction {
   String get storageKey => switch (this) {
-        MusicTapAction.download => 'download',
-        MusicTapAction.play => 'play',
-      };
+    MusicTapAction.download => 'download',
+    MusicTapAction.play => 'play',
+  };
 
-  String get labelZh => switch (this) {
-        MusicTapAction.download => '下载音乐',
-        MusicTapAction.play => '播放（已缓存则播放，否则下载）',
-      };
+  String label(AppLocalizations l10n) => switch (this) {
+    MusicTapAction.download => l10n.musicTapDownload,
+    MusicTapAction.play => l10n.musicTapPlayCached,
+  };
 
   static MusicTapAction fromStorageKey(String? key) =>
       key == 'play' ? MusicTapAction.play : MusicTapAction.download;

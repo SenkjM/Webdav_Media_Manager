@@ -91,9 +91,13 @@ class _RoutingAdapter implements HttpClientAdapter {
     }
 
     final (status, payload) = _handler!(hit);
-    return ResponseBody.fromString(payload, status, headers: {
-      'content-type': ['application/json'],
-    });
+    return ResponseBody.fromString(
+      payload,
+      status,
+      headers: {
+        'content-type': ['application/json'],
+      },
+    );
   }
 
   @override
@@ -105,19 +109,19 @@ late (int, String) Function(_Hit hit)? _handler;
 
 /// 成功包裹：`{state: true, code: 0, message: 'ok', data: ...}`。
 String _okJson(Object? data, {int code = 0}) => jsonEncode(<String, dynamic>{
-      'state': true,
-      'code': code,
-      'message': 'ok',
-      'data': data,
-    });
+  'state': true,
+  'code': code,
+  'message': 'ok',
+  'data': data,
+});
 
 /// 失败包裹（鉴权错误 / 上游业务错误）。
 String _errJson(Object code, String message) => jsonEncode(<String, dynamic>{
-      'state': false,
-      'code': code,
-      'message': message,
-      'data': null,
-    });
+  'state': false,
+  'code': code,
+  'message': message,
+  'data': null,
+});
 
 /// 列表响应（data + count）。
 String _listJson(List<Map<String, dynamic>> files, int count) =>
@@ -142,16 +146,15 @@ Map<String, dynamic> _entry({
   int upt = 1700000000,
   int fs = 1024,
   String pid = '0',
-}) =>
-    <String, dynamic>{
-      'fid': fid,
-      'pid': pid,
-      'fc': fc,
-      'fn': fn,
-      'pc': pc ?? 'pc-$fid',
-      'upt': upt,
-      'fs': fs,
-    };
+}) => <String, dynamic>{
+  'fid': fid,
+  'pid': pid,
+  'fc': fc,
+  'fn': fn,
+  'pc': pc ?? 'pc-$fid',
+  'upt': upt,
+  'fs': fs,
+};
 
 void main() {
   late _RoutingAdapter adapter;
@@ -172,18 +175,17 @@ void main() {
     String rootId = '0',
     int pageSize = 200,
     double limitRate = 0,
-  }) =>
-      Open115Driver(
-        addition: Open115Addition(
-          refreshToken: refreshToken,
-          accessToken: accessToken,
-          rootId: rootId,
-          pageSize: pageSize,
-          limitRate: limitRate,
-        ),
-        onTokenUpdate: (patch) => tokenUpdates.add(patch),
-        dio: dio,
-      );
+  }) => Open115Driver(
+    addition: Open115Addition(
+      refreshToken: refreshToken,
+      accessToken: accessToken,
+      rootId: rootId,
+      pageSize: pageSize,
+      limitRate: limitRate,
+    ),
+    onTokenUpdate: (patch) => tokenUpdates.add(patch),
+    dio: dio,
+  );
 
   List<_Hit> hitsFor(String host) =>
       adapter.hits.where((h) => h.host == host).toList();
@@ -212,15 +214,22 @@ void main() {
     test('表单：refresh_token 必填密文；root_id / page_size / limit_rate 带默认值', () {
       const spec = Open115Spec();
       final fields = spec.form.whereType<CloudDriverField>().toList();
-      expect(fields.map((f) => f.key).toList(),
-          <String>['refresh_token', 'root_id', 'page_size', 'limit_rate']);
+      expect(fields.map((f) => f.key).toList(), <String>[
+        'refresh_token',
+        'root_id',
+        'page_size',
+        'limit_rate',
+      ]);
 
       final refresh = fields.firstWhere((f) => f.key == 'refresh_token');
       expect(refresh.required, isTrue);
       expect(refresh.obscure, isTrue);
 
       expect(fields.firstWhere((f) => f.key == 'root_id').defaultValue, '0');
-      expect(fields.firstWhere((f) => f.key == 'page_size').defaultValue, '200');
+      expect(
+        fields.firstWhere((f) => f.key == 'page_size').defaultValue,
+        '200',
+      );
       expect(fields.firstWhere((f) => f.key == 'limit_rate').defaultValue, '0');
 
       // access_token 只作缓存，不进表单。
@@ -237,38 +246,49 @@ void main() {
   });
 
   group('令牌刷新', () {
-    test('打 passportapi 端点、form-urlencoded 带 refresh_token，两个 token 都更新', () async {
-      _handler = (hit) => hit.path == '/open/refreshToken'
-          ? (200, _refreshJson('at-new', 'rt-new'))
-          : (200, _okJson(<String, dynamic>{}));
-      final client = Open115Client(
-        Open115Addition(refreshToken: 'rt-old'),
-        onTokenUpdate: (patch) => tokenUpdates.add(patch),
-        dio: dio,
-      );
-      await client.refreshToken();
+    test(
+      '打 passportapi 端点、form-urlencoded 带 refresh_token，两个 token 都更新',
+      () async {
+        _handler = (hit) => hit.path == '/open/refreshToken'
+            ? (200, _refreshJson('at-new', 'rt-new'))
+            : (200, _okJson(<String, dynamic>{}));
+        final client = Open115Client(
+          Open115Addition(refreshToken: 'rt-old'),
+          onTokenUpdate: (patch) => tokenUpdates.add(patch),
+          dio: dio,
+        );
+        await client.refreshToken();
 
-      expect(adapter.hits.length, 1);
-      final hit = adapter.hits.single;
-      expect(hit.host, 'passportapi.115.com');
-      expect(hit.path, '/open/refreshToken');
-      expect(hit.method, 'POST');
-      expect(hit.headers['content-type'], contains('application/x-www-form-urlencoded'));
-      // **form-urlencoded，不是 JSON**：JSON 解析必然失败（body 不是合法 JSON
-      // 才对），refresh_token 以 form 字段出现、而不是 JSON 键。
-      expect(() => jsonDecode(hit.body), throwsFormatException,
-          reason: 'body 不应是 JSON（form-urlencoded 才对）');
-      expect(hit.form['refresh_token'], 'rt-old');
+        expect(adapter.hits.length, 1);
+        final hit = adapter.hits.single;
+        expect(hit.host, 'passportapi.115.com');
+        expect(hit.path, '/open/refreshToken');
+        expect(hit.method, 'POST');
+        expect(
+          hit.headers['content-type'],
+          contains('application/x-www-form-urlencoded'),
+        );
+        // **form-urlencoded，不是 JSON**：JSON 解析必然失败（body 不是合法 JSON
+        // 才对），refresh_token 以 form 字段出现、而不是 JSON 键。
+        expect(
+          () => jsonDecode(hit.body),
+          throwsFormatException,
+          reason: 'body 不应是 JSON（form-urlencoded 才对）',
+        );
+        expect(hit.form['refresh_token'], 'rt-old');
 
-      expect(client.accessToken, 'at-new');
-      expect(client.refreshTokenValue, 'rt-new');
-      // 两个 token 都经 onTokenUpdate 持久化
-      expect(tokenUpdates, hasLength(1));
-      expect(tokenUpdates.single,
-          {'access_token': 'at-new', 'refresh_token': 'rt-new'});
-    });
+        expect(client.accessToken, 'at-new');
+        expect(client.refreshTokenValue, 'rt-new');
+        // 两个 token 都经 onTokenUpdate 持久化
+        expect(tokenUpdates, hasLength(1));
+        expect(tokenUpdates.single, {
+          'access_token': 'at-new',
+          'refresh_token': 'rt-new',
+        });
+      },
+    );
 
-    test('空 refresh_token → 抛「115 网盘缺少 refresh_token（必填）」且不出网', () async {
+    test('空 refresh_token → 抛「err.open115MissingRefreshToken」且不出网', () async {
       final client = Open115Client(
         Open115Addition(refreshToken: ''),
         onTokenUpdate: (patch) => tokenUpdates.add(patch),
@@ -276,11 +296,13 @@ void main() {
       );
       await expectLater(
         client.refreshToken(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('115 网盘缺少 refresh_token（必填）'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.open115MissingRefreshToken'),
+          ),
+        ),
       );
       expect(adapter.hits, isEmpty, reason: '缺必填项时不应发出任何请求');
     });
@@ -293,21 +315,26 @@ void main() {
       );
       await expectLater(
         client.refreshToken(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('4010101'), contains('refresh token 无效')),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('4010101'), contains('refresh token 无效')),
+          ),
+        ),
       );
     });
 
     test('响应缺 refresh_token（只回 access_token）也算失败', () async {
-      _handler = (hit) => (200, jsonEncode(<String, dynamic>{
-            'state': true,
-            'code': 0,
-            'message': 'ok',
-            'data': {'access_token': 'at-only'},
-          }));
+      _handler = (hit) => (
+        200,
+        jsonEncode(<String, dynamic>{
+          'state': true,
+          'code': 0,
+          'message': 'ok',
+          'data': {'access_token': 'at-only'},
+        }),
+      );
       final client = Open115Client(
         Open115Addition(refreshToken: 'rt-1'),
         dio: dio,
@@ -389,8 +416,7 @@ void main() {
     });
 
     test('非鉴权错误（如 430004）不触发刷新', () async {
-      _handler = (hit) =>
-          (200, _errJson(open115ErrObjectNotFound, '对象不存在'));
+      _handler = (hit) => (200, _errJson(open115ErrObjectNotFound, '对象不存在'));
       final client = Open115Client(
         Open115Addition(refreshToken: 'rt-1', accessToken: 'at-1'),
         dio: dio,
@@ -428,7 +454,7 @@ void main() {
               _listJson([
                 _entry(fid: 'd1', fn: '目录', fc: '0', pc: ''),
                 _entry(fid: 'f1', fn: 'a.mp3'),
-              ], 3)
+              ], 3),
             );
           }
           return (200, _listJson([_entry(fid: 'f2', fn: 'b.mp3')], 3));
@@ -439,44 +465,63 @@ void main() {
       final items = await d.list('/');
 
       expect(offsets, <String>['0', '2']);
-      expect(items.map((i) => i.name).toList(), <String>['目录', 'a.mp3', 'b.mp3']);
+      expect(items.map((i) => i.name).toList(), <String>[
+        '目录',
+        'a.mp3',
+        'b.mp3',
+      ]);
     });
 
-    test('请求参数：cid / limit / offset / asc=1 / o=file_name / showDir=1', () async {
-      _handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3')], 1));
-      final d = driverWith(pageSize: 200, rootId: '7');
-      await d.list('/');
+    test(
+      '请求参数：cid / limit / offset / asc=1 / o=file_name / showDir=1',
+      () async {
+        _handler = (hit) =>
+            (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3')], 1));
+        final d = driverWith(pageSize: 200, rootId: '7');
+        await d.list('/');
 
-      final q = adapter.hits.single.uri.queryParameters;
-      expect(adapter.hits.single.path, '/open/ufile/files');
-      expect(q['cid'], '7', reason: '根路径用 root_id');
-      expect(q['limit'], '200');
-      expect(q['offset'], '0');
-      expect(q['asc'], '1');
-      expect(q['o'], 'file_name');
-      expect(q['showDir'], '1');
-    });
+        final q = adapter.hits.single.uri.queryParameters;
+        expect(adapter.hits.single.path, '/open/ufile/files');
+        expect(q['cid'], '7', reason: '根路径用 root_id');
+        expect(q['limit'], '200');
+        expect(q['offset'], '0');
+        expect(q['asc'], '1');
+        expect(q['o'], 'file_name');
+        expect(q['showDir'], '1');
+      },
+    );
 
     test("fc === '0' 是目录（字符串判定），其余是文件", () async {
-      _handler = (hit) => (200, _listJson([
-            _entry(fid: 'd1', fn: 'dir', fc: '0', pc: ''),
-            _entry(fid: 'f1', fn: 'file.mp4', fc: '1'),
-          ], 2));
+      _handler = (hit) => (
+        200,
+        _listJson([
+          _entry(fid: 'd1', fn: 'dir', fc: '0', pc: ''),
+          _entry(fid: 'f1', fn: 'file.mp4', fc: '1'),
+        ], 2),
+      );
       final items = await driverWith().list('/');
       expect(items[0].isDir, isTrue);
       expect(items[1].isDir, isFalse);
     });
 
     test('upt（Unix 秒）→ DateTime 正确；fs → size', () async {
-      _handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', upt: 1700000000, fs: 4096)], 1));
+      _handler = (hit) => (
+        200,
+        _listJson([
+          _entry(fid: 'f1', fn: 'a.mp3', upt: 1700000000, fs: 4096),
+        ], 1),
+      );
       final item = (await driverWith().list('/')).single;
       expect(item.size, 4096);
-      expect(item.modified,
-          DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000));
+      expect(
+        item.modified,
+        DateTime.fromMillisecondsSinceEpoch(1700000000 * 1000),
+      );
     });
 
     test('upt 为 0 / 缺失 → modified 为 null（不造出 1970 年时间）', () async {
-      _handler = (hit) => (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', upt: 0)], 1));
+      _handler = (hit) =>
+          (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', upt: 0)], 1));
       final item = (await driverWith().list('/')).single;
       expect(item.modified, isNull);
     });
@@ -503,25 +548,30 @@ void main() {
     test('downurl 的 url.url 落到 rawUrl，rawHeaders 含 115 的 UA', () async {
       _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1),
+          );
         }
         if (hit.path == '/open/ufile/downurl') {
-          return (200, _okJson({
-            'f1': {
-              'file_name': 'a.mp3',
-              'file_size': 1024,
-              'pick_code': 'pick-1',
-              'url': {'url': 'https://cdn.115.com/a.mp3?sig=1'},
-            }
-          }));
+          return (
+            200,
+            _okJson({
+              'f1': {
+                'file_name': 'a.mp3',
+                'file_size': 1024,
+                'pick_code': 'pick-1',
+                'url': {'url': 'https://cdn.115.com/a.mp3?sig=1'},
+              },
+            }),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
       final item = await driverWith().get('/a.mp3');
 
       expect(item.rawUrl, 'https://cdn.115.com/a.mp3?sig=1');
-      expect(item.rawHeaders,
-          {'User-Agent': Open115Client.open115UserAgent});
+      expect(item.rawHeaders, {'User-Agent': Open115Client.open115UserAgent});
       expect(item.rawHeaders!['User-Agent'], contains('OpenList/425.6.30'));
       expect(item.isDir, isFalse);
       expect(item.size, 1024);
@@ -530,25 +580,35 @@ void main() {
     test('downurl 请求形状：POST + form 带 pick_code + UA 头', () async {
       _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-9')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-9')], 1),
+          );
         }
         if (hit.path == '/open/ufile/downurl') {
-          return (200, _okJson({
-            'f1': {'url': {'url': 'https://cdn.115.com/a.mp3'}}
-          }));
+          return (
+            200,
+            _okJson({
+              'f1': {
+                'url': {'url': 'https://cdn.115.com/a.mp3'},
+              },
+            }),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
       await driverWith().get('/a.mp3');
 
-      final hit = adapter.hits.firstWhere((h) => h.path == '/open/ufile/downurl');
+      final hit = adapter.hits.firstWhere(
+        (h) => h.path == '/open/ufile/downurl',
+      );
       expect(hit.method, 'POST');
       expect(hit.host, 'proapi.115.com');
       expect(hit.form['pick_code'], 'pick-9');
       expect(hit.headers['user-agent'], Open115Client.open115UserAgent);
     });
 
-    test('直链在「文件不存在」时不静默：抛真实原因', () async {
+    test('直链在「err.open115FileNotFound」时不静默：抛真实原因', () async {
       _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
           return (200, _listJson(<Map<String, dynamic>>[], 0));
@@ -557,40 +617,55 @@ void main() {
       };
       await expectLater(
         driverWith().get('/missing.mp3'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('115 网盘文件不存在'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.open115FileNotFound'),
+          ),
+        ),
       );
     });
 
     test('downurl 返回空 url.url → 抛可读错误，不产出空直链条目', () async {
       _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1),
+          );
         }
         if (hit.path == '/open/ufile/downurl') {
-          return (200, _okJson({
-            'f1': {'url': {'url': ''}}
-          }));
+          return (
+            200,
+            _okJson({
+              'f1': {
+                'url': {'url': ''},
+              },
+            }),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
       await expectLater(
         driverWith().get('/a.mp3'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('直链'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.open115DownurlEmptyUrl'),
+          ),
+        ),
       );
     });
 
     test('406 配额用尽：原文透传（不吞掉、不返回无直链条目）', () async {
       _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1),
+          );
         }
         if (hit.path == '/open/ufile/downurl') {
           return (200, _errJson(406, '请求过于频繁，请稍后再试'));
@@ -599,11 +674,13 @@ void main() {
       };
       await expectLater(
         driverWith().get('/a.mp3'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('406'), contains('请求过于频繁')),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('406'), contains('请求过于频繁')),
+          ),
+        ),
       );
     });
 
@@ -619,15 +696,21 @@ void main() {
       var downCalls = 0;
       _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'pick-1')], 1),
+          );
         }
         if (hit.path == '/open/ufile/downurl') {
           downCalls++;
-          return (200, _okJson({
-            'f1': {
-              'url': {'url': 'https://cdn.115.com/a.mp3?sig=$downCalls'}
-            }
-          }));
+          return (
+            200,
+            _okJson({
+              'f1': {
+                'url': {'url': 'https://cdn.115.com/a.mp3?sig=$downCalls'},
+              },
+            }),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
@@ -645,15 +728,21 @@ void main() {
       _handler = (hit) {
         if (hit.path == '/open/ufile/downurl') {
           downCalls++;
-          return (200, _okJson({
-            'f1': {
-              'url': {'url': 'https://cdn.115.com/a.mp3?sig=$downCalls'}
-            }
-          }));
+          return (
+            200,
+            _okJson({
+              'f1': {
+                'url': {'url': 'https://cdn.115.com/a.mp3?sig=$downCalls'},
+              },
+            }),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
-      final client = Open115Client(Open115Addition(refreshToken: 'rt-1'), dio: dio);
+      final client = Open115Client(
+        Open115Addition(refreshToken: 'rt-1'),
+        dio: dio,
+      );
       final file = Open115File(
         fid: 'f1',
         pid: '0',
@@ -675,11 +764,14 @@ void main() {
       _handler = (hit) {
         if (hit.path == '/open/ufile/downurl') {
           downCalls++;
-          return (200, _okJson({
-            'f1': {
-              'url': {'url': 'https://cdn.115.com/a.mp3?sig=$downCalls'}
-            }
-          }));
+          return (
+            200,
+            _okJson({
+              'f1': {
+                'url': {'url': 'https://cdn.115.com/a.mp3?sig=$downCalls'},
+              },
+            }),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
@@ -709,15 +801,27 @@ void main() {
     });
 
     test('未过期的缓存不被清掉（cachedLink 命中同一值）', () async {
-      _handler = (hit) => (200, _okJson({
-            'f1': {
-              'url': {'url': 'https://cdn.115.com/a.mp3'}
-            }
-          }));
-      final client = Open115Client(Open115Addition(refreshToken: 'rt-1'), dio: dio);
-      client.cacheLink('f1', Open115Client.open115UserAgent, 'https://cdn.115.com/a.mp3');
-      expect(client.cachedLink('f1', Open115Client.open115UserAgent),
-          'https://cdn.115.com/a.mp3');
+      _handler = (hit) => (
+        200,
+        _okJson({
+          'f1': {
+            'url': {'url': 'https://cdn.115.com/a.mp3'},
+          },
+        }),
+      );
+      final client = Open115Client(
+        Open115Addition(refreshToken: 'rt-1'),
+        dio: dio,
+      );
+      client.cacheLink(
+        'f1',
+        Open115Client.open115UserAgent,
+        'https://cdn.115.com/a.mp3',
+      );
+      expect(
+        client.cachedLink('f1', Open115Client.open115UserAgent),
+        'https://cdn.115.com/a.mp3',
+      );
       // 没缓存的 key 返回 null，不发请求。
       expect(client.cachedLink('nope', Open115Client.open115UserAgent), isNull);
       expect(adapter.hits, isEmpty);
@@ -726,18 +830,21 @@ void main() {
 
   group('错误原文透传', () {
     test('430004 对象不存在：code 与 message 都在异常里', () async {
-      _handler = (hit) => (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
+      _handler = (hit) =>
+          (200, _errJson(open115ErrObjectNotFound, 'err.open115FileNotFound'));
       final client = Open115Client(
         Open115Addition(refreshToken: 'rt-1', accessToken: 'at-1'),
         dio: dio,
       );
       await expectLater(
         client.userInfo(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('430004'), contains('文件不存在')),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('430004'), contains('err.open115FileNotFound')),
+          ),
+        ),
       );
     });
 
@@ -749,11 +856,13 @@ void main() {
       );
       await expectLater(
         client.userInfo(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          allOf(contains('500'), contains('gateway error')),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('500'), contains('gateway error')),
+          ),
+        ),
       );
     });
   });
@@ -764,26 +873,34 @@ void main() {
       _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
           calls.add('get_info');
-          return (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
+          return (
+            200,
+            _errJson(open115ErrObjectNotFound, 'err.open115FileNotFound'),
+          );
         }
         if (hit.path == '/open/ufile/files') {
           calls.add('files:${hit.uri.queryParameters['cid']}');
           final cid = hit.uri.queryParameters['cid'];
           if (cid == '0') {
-            return (200, _listJson([
-              _entry(fid: 'd1', fn: 'Movies', fc: '0', pc: ''),
-            ], 1));
+            return (
+              200,
+              _listJson([_entry(fid: 'd1', fn: 'Movies', fc: '0', pc: '')], 1),
+            );
           }
           if (cid == 'd1') {
-            return (200, _listJson([
-              _entry(fid: 'd2', fn: '2024', fc: '0', pc: ''),
-            ], 1));
+            return (
+              200,
+              _listJson([_entry(fid: 'd2', fn: '2024', fc: '0', pc: '')], 1),
+            );
           }
           if (cid == 'd2') {
             // /Movies/2024 的内容：最终 list() 应返回这里的东西。
-            return (200, _listJson([
-              _entry(fid: 'f-1', fn: 'a.mp4', fc: '1', pc: 'pc-1'),
-            ], 1));
+            return (
+              200,
+              _listJson([
+                _entry(fid: 'f-1', fn: 'a.mp4', fc: '1', pc: 'pc-1'),
+              ], 1),
+            );
           }
           return (200, _listJson(<Map<String, dynamic>>[], 0));
         }
@@ -792,8 +909,10 @@ void main() {
       final d = driverWith();
       final items = await d.list('/Movies/2024');
       // 逐层解析：/Movies → d1，再列 d1 定位 2024 → d2，最后列 d2 的内容
-      expect(calls,
-          containsAllInOrder(<String>['get_info', 'files:0', 'files:d1']));
+      expect(
+        calls,
+        containsAllInOrder(<String>['get_info', 'files:0', 'files:d1']),
+      );
       expect(items.single.name, 'a.mp4');
     });
 
@@ -803,9 +922,10 @@ void main() {
           return (200, _errJson(open115ErrInvalidParams, '参数错误'));
         }
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([
-            _entry(fid: 'd1', fn: 'Movies', fc: '0', pc: ''),
-          ], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'd1', fn: 'Movies', fc: '0', pc: '')], 1),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
@@ -835,33 +955,42 @@ void main() {
 
     test('其余错误（如 500）不透传成「回退」——原样抛出', () async {
       _handler = (hit) {
-        if (hit.path == '/open/folder/get_info') return (200, _errJson(500, '服务器错误'));
+        if (hit.path == '/open/folder/get_info') {
+          return (200, _errJson(500, '服务器错误'));
+        }
         return (200, _listJson(<Map<String, dynamic>>[], 0));
       };
       await expectLater(
         driverWith().list('/Movies'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('服务器错误'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('服务器错误'),
+          ),
+        ),
       );
     });
 
-    test('目录不存在 → 可读错误', () async {
+    test('err.open115FolderNotFound → 可读错误', () async {
       _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
-          return (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
+          return (
+            200,
+            _errJson(open115ErrObjectNotFound, 'err.open115FileNotFound'),
+          );
         }
         return (200, _listJson(<Map<String, dynamic>>[], 0));
       };
       await expectLater(
         driverWith().list('/Nope'),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('115 网盘目录不存在'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.open115FolderNotFound'),
+          ),
+        ),
       );
     });
 
@@ -871,14 +1000,20 @@ void main() {
           return (200, _okJson({'file_id': 'd1', 'file_name': 'Movies'}));
         }
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([
-            _entry(fid: 'f1', fn: 'a.mp4', pc: 'pick-a'),
-          ], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'a.mp4', pc: 'pick-a')], 1),
+          );
         }
         if (hit.path == '/open/ufile/downurl') {
-          return (200, _okJson({
-            'f1': {'url': {'url': 'https://cdn.115.com/a.mp4'}}
-          }));
+          return (
+            200,
+            _okJson({
+              'f1': {
+                'url': {'url': 'https://cdn.115.com/a.mp4'},
+              },
+            }),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
@@ -890,21 +1025,32 @@ void main() {
     test('uri 编码的名字也能匹配（decoded 名兜底）', () async {
       _handler = (hit) {
         if (hit.path == '/open/folder/get_info') {
-          return (200, _errJson(open115ErrObjectNotFound, '文件不存在'));
+          return (
+            200,
+            _errJson(open115ErrObjectNotFound, 'err.open115FileNotFound'),
+          );
         }
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([
-            _entry(fid: 'f1', fn: '中文 名.mp4', pc: 'pick-c'),
-          ], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: '中文 名.mp4', pc: 'pick-c')], 1),
+          );
         }
         if (hit.path == '/open/ufile/downurl') {
-          return (200, _okJson({
-            'f1': {'url': {'url': 'https://cdn.115.com/c.mp4'}}
-          }));
+          return (
+            200,
+            _okJson({
+              'f1': {
+                'url': {'url': 'https://cdn.115.com/c.mp4'},
+              },
+            }),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
-      final item = await driverWith().get('/%E4%B8%AD%E6%96%87%20%E5%90%8D.mp4');
+      final item = await driverWith().get(
+        '/%E4%B8%AD%E6%96%87%20%E5%90%8D.mp4',
+      );
       expect(item.name, '中文 名.mp4');
       expect(item.rawUrl, 'https://cdn.115.com/c.mp4');
     });
@@ -940,8 +1086,7 @@ void main() {
         return (200, _okJson(<String, dynamic>{}));
       };
       await driverWith().mkdir('/Movies/NewDir');
-      final hit = adapter.hits
-          .firstWhere((h) => h.path == '/open/folder/add');
+      final hit = adapter.hits.firstWhere((h) => h.path == '/open/folder/add');
       expect(hit.method, 'POST');
       expect(hit.form['pid'], 'd1');
       expect(hit.form['file_name'], 'NewDir');
@@ -950,12 +1095,17 @@ void main() {
     test('rename 同目录：POST /open/ufile/update {file_id, file_name}', () async {
       _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'old.mp3', pc: 'p1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'old.mp3', pc: 'p1')], 1),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
       await driverWith().rename('/old.mp3', '/new.mp3');
-      final hit = adapter.hits.firstWhere((h) => h.path == '/open/ufile/update');
+      final hit = adapter.hits.firstWhere(
+        (h) => h.path == '/open/ufile/update',
+      );
       expect(hit.form['file_id'], 'f1');
       expect(hit.form['file_name'], 'new.mp3');
     });
@@ -966,7 +1116,10 @@ void main() {
           return (200, _okJson({'file_id': 'd2', 'file_name': 'Other'}));
         }
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'old.mp3', pc: 'p1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'old.mp3', pc: 'p1')], 1),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
@@ -974,8 +1127,9 @@ void main() {
       final move = adapter.hits.firstWhere((h) => h.path == '/open/ufile/move');
       expect(move.form['file_ids'], 'f1');
       expect(move.form['to_cid'], 'd2');
-      final update =
-          adapter.hits.firstWhere((h) => h.path == '/open/ufile/update');
+      final update = adapter.hits.firstWhere(
+        (h) => h.path == '/open/ufile/update',
+      );
       expect(update.form['file_id'], 'f1');
       expect(update.form['file_name'], 'new.mp3');
     });
@@ -983,12 +1137,17 @@ void main() {
     test('remove：POST /open/ufile/delete {file_ids, parent_id}', () async {
       _handler = (hit) {
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pid: 'd1', pc: 'p1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'a.mp3', pid: 'd1', pc: 'p1')], 1),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
       await driverWith().remove('/a.mp3');
-      final hit = adapter.hits.firstWhere((h) => h.path == '/open/ufile/delete');
+      final hit = adapter.hits.firstWhere(
+        (h) => h.path == '/open/ufile/delete',
+      );
       expect(hit.form['file_ids'], 'f1');
       expect(hit.form['parent_id'], 'd1');
     });
@@ -999,7 +1158,10 @@ void main() {
           return (200, _okJson({'file_id': 'd9', 'file_name': 'Dest'}));
         }
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'p1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f1', fn: 'a.mp3', pc: 'p1')], 1),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
@@ -1015,7 +1177,10 @@ void main() {
           return (200, _okJson({'file_id': 'd9', 'file_name': 'Dest'}));
         }
         if (hit.path == '/open/ufile/files') {
-          return (200, _listJson([_entry(fid: 'f-src', fn: 'a.mp3', pc: 'p1')], 1));
+          return (
+            200,
+            _listJson([_entry(fid: 'f-src', fn: 'a.mp3', pc: 'p1')], 1),
+          );
         }
         return (200, _okJson(<String, dynamic>{}));
       };
@@ -1046,7 +1211,9 @@ void main() {
       final seen = <String>[];
       _handler = (hit) {
         seen.add(hit.uri.host + hit.path);
-        if (hit.path == '/open/refreshToken') return (200, _refreshJson('at-new', 'rt-new'));
+        if (hit.path == '/open/refreshToken') {
+          return (200, _refreshJson('at-new', 'rt-new'));
+        }
         return (200, _okJson({'user_id': 1}));
       };
       await driverWith().init();
@@ -1065,15 +1232,17 @@ void main() {
       _handler = (hit) => (200, _errJson(4010101, 'access_token 无效'));
       await expectLater(
         driverWith(accessToken: 'at-bad').init(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          allOf(
-            contains('4010101'),
-            contains('access_token 无效'),
-            contains('access_token / refresh_token 有效'),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            allOf(
+              contains('4010101'),
+              contains('access_token 无效'),
+              contains('err.open115TokenVerifyFailed'),
+            ),
           ),
-        )),
+        ),
       );
     });
 
@@ -1082,11 +1251,13 @@ void main() {
       adapter.failWith = 'Connection refused';
       await expectLater(
         driverWith(accessToken: 'at-1').init(),
-        throwsA(isA<CloudDriverException>().having(
-          (e) => e.message,
-          'message',
-          contains('proapi.115.com 可能无法从当前部署环境访问'),
-        )),
+        throwsA(
+          isA<CloudDriverException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.open115NetworkConnectFailed'),
+          ),
+        ),
       );
     });
   });
@@ -1133,7 +1304,10 @@ void main() {
     });
 
     test('root_id 空串回落到 0', () {
-      final a = Open115Addition.fromJson({'refresh_token': 'rt', 'root_id': ''});
+      final a = Open115Addition.fromJson({
+        'refresh_token': 'rt',
+        'root_id': '',
+      });
       expect(a.rootId, '0');
     });
 

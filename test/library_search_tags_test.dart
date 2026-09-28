@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:webdav_media_manager/models/library_sentinels.dart';
 import 'package:webdav_media_manager/models/library_track.dart';
 import 'package:webdav_media_manager/services/library_service.dart';
 
@@ -24,7 +25,12 @@ void main() {
   test('search matches title artist album', () {
     final svc = LibraryService();
     svc.debugSetTracksForTest([
-      _t(path: '/1.mp3', title: 'Blue Moon', artist: 'Jazz Band', album: 'Night'),
+      _t(
+        path: '/1.mp3',
+        title: 'Blue Moon',
+        artist: 'Jazz Band',
+        album: 'Night',
+      ),
       _t(path: '/2.mp3', title: 'Red Sun', artist: 'Rockers', album: 'Day'),
     ]);
     expect(svc.search('moon').map((t) => t.title), ['Blue Moon']);
@@ -45,7 +51,7 @@ void main() {
     expect(genres.map((g) => g.toLowerCase()).toSet(), {'jazz', 'rock'});
     expect(svc.tracksWithGenre('Jazz').length, 2);
     final grouped = svc.groupedByGenre();
-    expect(grouped.containsKey('未分类'), isTrue);
-    expect(grouped['未分类']!.single.title, 'C');
+    expect(grouped.containsKey(kUncategorizedGenre), isTrue);
+    expect(grouped[kUncategorizedGenre]!.single.title, 'C');
   });
 }

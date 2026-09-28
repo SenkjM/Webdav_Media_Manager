@@ -6,6 +6,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/app_state.dart';
+import 'models/app_locale.dart';
+import 'l10n/generated/app_localizations.dart';
 import 'screens/home_shell.dart';
 import 'widgets/database_recovery_screen.dart';
 import 'services/accounts_service.dart';
@@ -26,6 +28,7 @@ import 'services/cloud_drive_service.dart';
 import 'services/webdav_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/app_snack.dart';
+import 'utils/l10n_host.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -43,6 +46,18 @@ Future<void> main() async {
   }
   final app = AppState(audioHandler: audioHandler);
   await app.init();
+  // Re-resolve the locale from persisted settings on every call so an
+  // in-app language switch applies to services immediately.
+  L10nHost.configure(() {
+    final preference = app.settings.appLocale;
+    final locale =
+        preference.locale ?? WidgetsBinding.instance.platformDispatcher.locale;
+    try {
+      return lookupAppLocalizations(locale);
+    } on FlutterError {
+      return lookupAppLocalizations(const Locale('zh', 'CN'));
+    }
+  });
   if (!kIsWeb && Platform.isAndroid) {
     await app.notificationPermission.request();
   }
@@ -88,20 +103,25 @@ class WebDavMusicApp extends StatelessWidget {
           value: appState.videoPlayback,
         ),
       ],
-      child: MaterialApp(
-        title: 'Webdav Media Manager',
-        debugShowCheckedModeBanner: false,
-        // 应用内消息渲染在 Navigator 之上（底部、任何弹窗都盖不住）。
-        builder: AppSnack.hostBuilder,
-        themeMode: ThemeMode.light,
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
-        home: appState.initError != null
-            ? RecoveryScreen(
-                error: appState.initError!,
-                beforeClear: appState.closeDatabases,
-              )
-            : const HomeShell(),
+      child: Consumer<SettingsService>(
+        builder: (context, settings, _) => MaterialApp(
+          title: 'Webdav Media Manager',
+          locale: settings.appLocale.locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          debugShowCheckedModeBanner: false,
+          // 应用内消息渲染在 Navigator 之上（底部、任何弹窗都盖不住）。
+          builder: AppSnack.hostBuilder,
+          themeMode: ThemeMode.light,
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          home: appState.initError != null
+              ? RecoveryScreen(
+                  error: appState.initError!,
+                  beforeClear: appState.closeDatabases,
+                )
+              : const HomeShell(),
+        ),
       ),
     );
   }

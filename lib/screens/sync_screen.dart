@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/sync_interval.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
@@ -49,28 +50,28 @@ class _SyncScreenState extends State<SyncScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
-        title: const Text('重建提示阈值'),
+        title: Text(AppLocalizations.of(ctx)!.rebuildHintThreshold),
         content: TextField(
           controller: ctrl,
           autofocus: true,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: '云端分片数',
-            helperText: '达到这个数量时提示重建（2–500）',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: AppLocalizations.of(ctx)!.cloudFragmentCountLabel,
+            helperText: AppLocalizations.of(ctx)!.cloudFragmentCountHelper,
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppLocalizations.of(ctx)!.cancel),
           ),
           FilledButton(
             onPressed: () {
               final parsed = int.tryParse(ctrl.text.trim());
               Navigator.pop(ctx, parsed);
             },
-            child: const Text('确定'),
+            child: Text(AppLocalizations.of(ctx)!.confirm),
           ),
         ],
       ),
@@ -122,7 +123,11 @@ class _SyncScreenState extends State<SyncScreen> {
     try {
       await body();
     } catch (e) {
-      AppSnack.showGlobal('操作失败：$e', error: true);
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.showGlobal(
+        l10n.operationFailed(SyncOutcome.describeError(e.toString(), l10n)),
+        error: true,
+      );
     } finally {
       if (mounted) setState(() => _running = false);
     }
@@ -165,11 +170,12 @@ class _SyncScreenState extends State<SyncScreen> {
           TextField(
             controller: _passphrase,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: '统一加密密钥（由你指定）',
-              helperText: '只保存在本机；留空则以明文存储。',
+            decoration: InputDecoration(
+              labelText: AppLocalizations.of(context)!.unifiedEncryptionKey,
+              helperText: AppLocalizations.of(context)!
+                  .unifiedEncryptionKeyHint,
               helperMaxLines: 2,
-              border: OutlineInputBorder(),
+              border: const OutlineInputBorder(),
               isDense: true,
             ),
             onChanged: (_) => setState(() {}),
@@ -181,8 +187,9 @@ class _SyncScreenState extends State<SyncScreen> {
               Expanded(
                 child: Text(
                   _pass.trim().isEmpty
-                      ? '当前：未设置（凭证与备份里的密码为明文）'
-                      : '当前：已设置（长度 ${_pass.trim().length}）',
+                      ? AppLocalizations.of(context)!.keyNotSetLong
+                      : AppLocalizations.of(context)!
+                            .keySetLong(_pass.trim().length),
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.secondaryText,
@@ -194,10 +201,12 @@ class _SyncScreenState extends State<SyncScreen> {
                     ? null
                     : () async {
                         await _rememberKey();
-                        AppSnack.showGlobal('加密密钥已保存到本机');
+                        AppSnack.showGlobal(
+                          AppLocalizations.of(context)!.keySavedNotice,
+                        );
                       },
                 icon: const Icon(Icons.key_outlined, size: 18),
-                label: const Text('保存密钥'),
+                label: Text(AppLocalizations.of(context)!.saveKey),
               ),
             ],
           ),
@@ -238,12 +247,13 @@ class _SyncScreenState extends State<SyncScreen> {
   /// 「从云端覆写音乐库」：本地索引被云端那份替换。
   Future<void> _overwriteLibraryFromCloud() async {
     final app = context.read<AppState>();
+    final l10n = AppLocalizations.of(context)!;
     final ok = await _confirmDestructive(
-      title: '从云端覆写音乐库',
-      body: '会从云端下载音乐库数据库并覆写本地。',
-      note: '本地索引、标签与尚未同步的改动会被云端那份替换；已下载的音频、封面与缓存不会删除。',
-      action: '覆写',
-      phrase: '如果确认覆写请输入 YES',
+      title: l10n.overwriteLibraryTitle,
+      body: l10n.overwriteLibraryBody,
+      note: l10n.overwriteLibraryNote,
+      action: l10n.overwriteLibraryAction,
+      phrase: l10n.overwriteLibraryPhrase,
     );
     if (ok != true || !mounted) return;
     await _guard(() async {
@@ -256,12 +266,13 @@ class _SyncScreenState extends State<SyncScreen> {
   /// 「销毁音乐库」：对全库逐条销毁（墓碑 + 缓存 + 封面 + 行），再关掉定时同步。
   Future<void> _destroyLibrary() async {
     final app = context.read<AppState>();
+    final l10n = AppLocalizations.of(context)!;
     final ok = await _confirmDestructive(
-      title: '销毁音乐库',
-      body: '会逐条销毁本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。',
-      note: '删除记录会在下次同步时上传到云端，云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。',
-      action: '销毁',
-      phrase: '如果确认销毁请输入 YES',
+      title: l10n.destroyLibraryTitle,
+      body: l10n.destroyLibraryBody,
+      note: l10n.destroyLibraryNote,
+      action: l10n.destroyLibraryAction,
+      phrase: l10n.destroyLibraryPhrase,
     );
     if (ok != true || !mounted) return;
     await _guard(() async {
@@ -274,7 +285,9 @@ class _SyncScreenState extends State<SyncScreen> {
         ),
       );
       if (!mounted) return;
-      AppSnack.showGlobal('已销毁 $destroyed 首；下次同步上传删除记录，定时同步已关闭');
+      AppSnack.showGlobal(
+        AppLocalizations.of(context)!.destroyLibraryDone(destroyed),
+      );
     });
   }
 
@@ -327,12 +340,10 @@ class _SyncScreenState extends State<SyncScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('取消'),
+                child: Text(AppLocalizations.of(ctx)!.cancel),
               ),
               FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.error,
-                ),
+                style: FilledButton.styleFrom(backgroundColor: AppColors.error),
                 onPressed: confirmed ? () => Navigator.pop(ctx, true) : null,
                 child: Text(action),
               ),
@@ -350,7 +361,10 @@ class _SyncScreenState extends State<SyncScreen> {
     try {
       audit = await sync.auditLibrary();
     } catch (e) {
-      AppSnack.showGlobal('读取云端库失败：$e', error: true);
+      AppSnack.showGlobal(
+        AppLocalizations.of(context)!.readCloudLibraryFailed(e.toString()),
+        error: true,
+      );
       return;
     }
     if (!mounted) return;
@@ -358,7 +372,7 @@ class _SyncScreenState extends State<SyncScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
-        title: const Text('整理云端音乐库'),
+        title: Text(AppLocalizations.of(ctx)!.tidyCloudLibraryTitle),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -367,24 +381,33 @@ class _SyncScreenState extends State<SyncScreen> {
               Text(audit.summary),
               const SizedBox(height: 8),
               if (audit.missing.isNotEmpty) ...[
-                const Text(
-                  '有分片缺失，只能重建。',
-                  style: TextStyle(color: AppColors.error, fontSize: 12),
+                Text(
+                  AppLocalizations.of(ctx)!.missingFragments,
+                  style: const TextStyle(color: AppColors.error, fontSize: 12),
                 ),
                 const SizedBox(height: 4),
                 for (final name in audit.missing.take(8))
-                  Text('• 缺 $name', style: const TextStyle(fontSize: 12)),
+                  Text(
+                    AppLocalizations.of(ctx)!.missingFragmentName(name),
+                    style: const TextStyle(fontSize: 12),
+                  ),
               ],
               if (audit.orphans.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                const Text('孤儿文件：清单没引用，可删除。', style: TextStyle(fontSize: 12)),
+                Text(
+                  AppLocalizations.of(ctx)!.orphanFiles,
+                  style: const TextStyle(fontSize: 12),
+                ),
                 for (final name in audit.orphans.take(8))
                   Text('• $name', style: const TextStyle(fontSize: 12)),
               ],
               if (audit.healthy)
-                const Padding(
-                  padding: EdgeInsets.only(top: 4),
-                  child: Text('一切一致，无需处理。', style: TextStyle(fontSize: 12)),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    AppLocalizations.of(ctx)!.auditHealthy,
+                    style: const TextStyle(fontSize: 12),
+                  ),
                 ),
             ],
           ),
@@ -392,17 +415,17 @@ class _SyncScreenState extends State<SyncScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('关闭'),
+            child: Text(AppLocalizations.of(ctx)!.close),
           ),
           if (audit.orphans.isNotEmpty)
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'orphans'),
-              child: const Text('删除孤儿文件'),
+              child: Text(AppLocalizations.of(ctx)!.deleteOrphans),
             ),
           if (audit.missing.isNotEmpty)
             FilledButton(
               onPressed: () => Navigator.pop(ctx, 'rebuild'),
-              child: const Text('以本机为准重建'),
+              child: Text(AppLocalizations.of(ctx)!.rebuildFromLocal),
             ),
         ],
       ),
@@ -411,7 +434,7 @@ class _SyncScreenState extends State<SyncScreen> {
     if (action == 'orphans') {
       await _guard(() async {
         final n = await sync.tidyLibraryOrphans(audit);
-        AppSnack.showGlobal('已删除 $n 个孤儿文件');
+        AppSnack.showGlobal(AppLocalizations.of(context)!.orphansDeleted(n));
       });
     } else if (action == 'rebuild') {
       await _rebuild();
@@ -469,7 +492,10 @@ class _SyncScreenState extends State<SyncScreen> {
         _selectedBackupFile = files.isEmpty ? null : files.first;
       });
     } catch (e) {
-      AppSnack.showGlobal('读取备份列表失败：$e', error: true);
+      AppSnack.showGlobal(
+        AppLocalizations.of(context)!.readBackupsListFailed('$e'),
+        error: true,
+      );
     }
   }
 
@@ -480,16 +506,16 @@ class _SyncScreenState extends State<SyncScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
-        title: const Text('确认恢复'),
-        content: const Text('将用备份覆盖本机账号凭证、音乐库与歌单，不可撤销。'),
+        title: Text(AppLocalizations.of(ctx)!.restoreConfirmTitle),
+        content: Text(AppLocalizations.of(ctx)!.restoreConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppLocalizations.of(ctx)!.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('恢复'),
+            child: Text(AppLocalizations.of(ctx)!.restore),
           ),
         ],
       ),
@@ -516,10 +542,16 @@ class _SyncScreenState extends State<SyncScreen> {
         passphrase: _pass,
         readableJson: readableJson,
       );
+      final l10n = AppLocalizations.of(context)!;
       AppSnack.showGlobal(
         result.ok
-            ? '已导出到${result.location}：${result.fileName}'
-            : '导出失败：${result.error}',
+            ? l10n.exportedTo(
+                result.fileName,
+                PlatformExportService.describeLocation(result.location, l10n),
+              )
+            : l10n.exportFailed(
+                PlatformExportService.describeError(result.error ?? '', l10n),
+              ),
         error: !result.ok,
       );
     });
@@ -531,7 +563,13 @@ class _SyncScreenState extends State<SyncScreen> {
     );
     if (!mounted) return;
     if (!picked.ok) {
-      AppSnack.showGlobal('选择文件失败：${picked.error}', error: true);
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.showGlobal(
+        l10n.pickFileFailed(
+          PlatformExportService.describeError(picked.error ?? '', l10n),
+        ),
+        error: true,
+      );
       return;
     }
     if (picked.cancelled) return;
@@ -555,7 +593,7 @@ class _SyncScreenState extends State<SyncScreen> {
   Future<void> _importBase64() async {
     final text = _base64Controller.text.trim();
     if (text.isEmpty) {
-      AppSnack.showGlobal('请先粘贴备份内容（Base64）');
+      AppSnack.showGlobal(AppLocalizations.of(context)!.pasteBase64First);
       return;
     }
     final sync = context.read<SyncService>();
@@ -584,17 +622,20 @@ class _SyncScreenState extends State<SyncScreen> {
     if (!mounted) return;
     // Show the normalised value (the setter adds the leading/trailing slash).
     setState(() => _rootController.text = settings.syncRemoteRoot);
-    AppSnack.showGlobal('远端路径已更新：${settings.syncRemoteRoot}');
+    AppSnack.showGlobal(
+      AppLocalizations.of(context)!.remoteRootUpdated(settings.syncRemoteRoot),
+    );
   }
 
   /// One row listing the four derived cloud locations, so the effect of the
   /// 路径 field above is never a guess.
   Widget _derivedPaths(SettingsService settings) {
+    final l10n = AppLocalizations.of(context)!;
     final rows = <(String, String)>[
-      ('账号凭证', settings.credentialsRemotePath),
-      ('歌单', settings.playlistRemotePath),
-      ('音乐库', settings.libraryRemotePath),
-      ('全部备份', settings.backupRemotePath),
+      (l10n.derivedPathCredentials, settings.credentialsRemotePath),
+      (l10n.derivedPathPlaylists, settings.playlistRemotePath),
+      (l10n.derivedPathLibrary, settings.libraryRemotePath),
+      (l10n.derivedPathBackups, settings.backupRemotePath),
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -603,11 +644,8 @@ class _SyncScreenState extends State<SyncScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Text(
-              '$label：$path',
-              style: const TextStyle(
-                fontSize: 11,
-                color: AppColors.mutedText,
-              ),
+              l10n.labelValuePair(label, path),
+              style: const TextStyle(fontSize: 11, color: AppColors.mutedText),
             ),
           ),
       ],
@@ -621,6 +659,7 @@ class _SyncScreenState extends State<SyncScreen> {
     final settings = context.watch<SettingsService>();
     final accounts = context.watch<AccountsService>();
     final sync = context.watch<SyncService>();
+    final l10n = AppLocalizations.of(context)!;
 
     // Non-listening handle used by the action closures below: they must keep
     // working after this screen is gone.
@@ -634,19 +673,23 @@ class _SyncScreenState extends State<SyncScreen> {
         )) {
       // 兜底也只认 WebDAV 类型：活跃账号是云盘时没有同步目标。
       final active = accounts.activeAccount;
-      rootAccountId =
-          active != null && active.providerType == 'webdav' ? active.id : null;
+      rootAccountId = active != null && active.providerType == 'webdav'
+          ? active.id
+          : null;
     }
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: const Text('同步与备份')),
+      appBar: AppBar(title: Text(l10n.syncAndBackup)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            '凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。',
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+          Text(
+            l10n.syncIntroLong,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+            ),
           ),
           const Divider(height: 28),
 
@@ -654,18 +697,21 @@ class _SyncScreenState extends State<SyncScreen> {
           FilledButton.icon(
             onPressed: _running || accounts.accounts.isEmpty ? null : _syncAll,
             icon: const Icon(Icons.sync),
-            label: const Text('全部同步'),
+            label: Text(l10n.syncAll),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
             visualDensity: VisualDensity.compact,
             leading: const Icon(Icons.schedule, size: 20),
-            title: const Text('定时同步', style: TextStyle(fontSize: 14)),
+            title: Text(
+              l10n.scheduledSync,
+              style: const TextStyle(fontSize: 14),
+            ),
             subtitle: Text(
               settings.syncInterval == SyncInterval.off
-                  ? '已关闭，仅手动同步'
-                  : '${settings.syncInterval.labelZh} 自动同步',
+                  ? l10n.scheduledSyncOff
+                  : l10n.scheduledSyncAuto(settings.syncInterval.label(l10n)),
               style: const TextStyle(fontSize: 11),
             ),
             trailing: DropdownButton<SyncInterval>(
@@ -673,7 +719,7 @@ class _SyncScreenState extends State<SyncScreen> {
               underline: const SizedBox.shrink(),
               items: [
                 for (final v in SyncInterval.values)
-                  DropdownMenuItem(value: v, child: Text(v.labelZh)),
+                  DropdownMenuItem(value: v, child: Text(v.label(l10n))),
               ],
               onChanged: (v) {
                 if (v != null) settings.setSyncInterval(v);
@@ -687,24 +733,24 @@ class _SyncScreenState extends State<SyncScreen> {
             dense: true,
             visualDensity: VisualDensity.compact,
             leading: const Icon(Icons.cloud_outlined, size: 20),
-            title: const Text('远端路径', style: TextStyle(fontSize: 14)),
-            subtitle: const Text(
-              '凭证、歌单、音乐库与备份都放在这条路径下面',
-              style: TextStyle(fontSize: 11),
+            title: Text(l10n.remotePath, style: const TextStyle(fontSize: 14)),
+            subtitle: Text(
+              l10n.remotePathSubtitleLong,
+              style: const TextStyle(fontSize: 11),
             ),
           ),
           if (accounts.accounts.isEmpty)
-            const Text(
-              '请先添加 WebDAV 服务器。',
-              style: TextStyle(color: AppColors.error, fontSize: 12),
+            Text(
+              l10n.needWebdavServer,
+              style: const TextStyle(color: AppColors.error, fontSize: 12),
             )
           else ...[
             DropdownButtonFormField<String>(
               key: ValueKey('sync-root-account-$rootAccountId'),
               initialValue: rootAccountId,
-              decoration: const InputDecoration(
-                labelText: '① 选择网盘',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.selectCloudDrive,
+                border: const OutlineInputBorder(),
                 isDense: true,
               ),
               items: [
@@ -714,7 +760,7 @@ class _SyncScreenState extends State<SyncScreen> {
                   if (a.providerType == 'webdav')
                     DropdownMenuItem(
                       value: a.id,
-                      child: MarqueeText(webDavAccountLabel(a)),
+                      child: MarqueeText(webDavAccountLabel(a, l10n)),
                     ),
               ],
               onChanged: _running
@@ -728,12 +774,12 @@ class _SyncScreenState extends State<SyncScreen> {
                 Expanded(
                   child: TextField(
                     controller: _rootController,
-                    decoration: const InputDecoration(
-                      labelText: '② 路径',
+                    decoration: InputDecoration(
+                      labelText: l10n.pathStep,
                       hintText: '/player/',
-                      helperText: '例如填 /player，音乐库就在 /player/library/',
+                      helperText: l10n.pathExampleLong,
                       helperMaxLines: 2,
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                     onEditingComplete: _applyRemoteRoot,
@@ -744,7 +790,7 @@ class _SyncScreenState extends State<SyncScreen> {
                   padding: const EdgeInsets.only(top: 4),
                   child: FilledButton.tonal(
                     onPressed: _running ? null : _applyRemoteRoot,
-                    child: const Text('应用'),
+                    child: Text(l10n.apply),
                   ),
                 ),
               ],
@@ -754,10 +800,9 @@ class _SyncScreenState extends State<SyncScreen> {
 
           const Divider(height: 28),
 
-          _sectionTitle('账号凭证'),
+          _sectionTitle(l10n.credentialsSection),
           Text(
-            '云端 ${settings.credentialsRemotePath}：全部网盘账号；密码类字段加密，'
-            '不支持类型的账号恢复时自动跳过。',
+            l10n.credentialsSectionDesc(settings.credentialsRemotePath),
             style: const TextStyle(
               color: AppColors.secondaryText,
               fontSize: 12,
@@ -767,9 +812,11 @@ class _SyncScreenState extends State<SyncScreen> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.lock_outline),
-            title: const Text('加密密码类字段'),
+            title: Text(l10n.encryptPasswordField),
             subtitle: Text(
-              settings.syncEncryptPassword ? '口令不匹配时密码留空' : '明文保存密码',
+              settings.syncEncryptPassword
+                  ? l10n.encryptPasswordOn
+                  : l10n.encryptPasswordOff,
             ),
             value: settings.syncEncryptPassword,
             onChanged: (v) => settings.setSyncEncryptPassword(v),
@@ -778,7 +825,7 @@ class _SyncScreenState extends State<SyncScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '上次自动扫描：${_fmtTime(sync.lastAutoSyncAt!)}',
+                l10n.lastAutoScan(_fmtTime(sync.lastAutoSyncAt!)),
                 style: const TextStyle(
                   color: AppColors.mutedText,
                   fontSize: 11,
@@ -796,7 +843,7 @@ class _SyncScreenState extends State<SyncScreen> {
                           () => sync.pushCredentials(passphrase: _pass),
                         ),
                   icon: const Icon(Icons.cloud_upload_outlined),
-                  label: const Text('上传凭证'),
+                  label: Text(l10n.uploadCredentials),
                 ),
               ),
               const SizedBox(width: 8),
@@ -808,7 +855,7 @@ class _SyncScreenState extends State<SyncScreen> {
                           () => sync.pullCredentials(passphrase: _pass),
                         ),
                   icon: const Icon(Icons.cloud_download_outlined),
-                  label: const Text('下载凭证'),
+                  label: Text(l10n.downloadCredentials),
                 ),
               ),
             ],
@@ -816,9 +863,9 @@ class _SyncScreenState extends State<SyncScreen> {
 
           const Divider(height: 32),
 
-          _sectionTitle('歌单'),
+          _sectionTitle(l10n.playlistsSection),
           Text(
-            '双向 M3U8 同步，改动即时上传：${settings.playlistRemotePath}',
+            l10n.playlistsSectionDesc(settings.playlistRemotePath),
             style: const TextStyle(
               color: AppColors.secondaryText,
               fontSize: 12,
@@ -830,15 +877,14 @@ class _SyncScreenState extends State<SyncScreen> {
                 ? null
                 : () => _runSync(sync.syncPlaylistsNow),
             icon: const Icon(Icons.playlist_play),
-            label: const Text('立即同步歌单'),
+            label: Text(l10n.syncPlaylistsNow),
           ),
 
           const Divider(height: 32),
 
-          _sectionTitle('音乐库'),
+          _sectionTitle(l10n.librarySection),
           Text(
-            '${settings.libraryRemotePath}index.json 清单 + lib/seg/del 分片；'
-            '只传变化，删除在重建时落实。',
+            l10n.librarySectionDesc(settings.libraryRemotePath),
             style: const TextStyle(
               color: AppColors.secondaryText,
               fontSize: 12,
@@ -848,9 +894,12 @@ class _SyncScreenState extends State<SyncScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                '云端分片：${sync.cloudFragmentCount} 个'
-                '（约 ${_fmtBytes(sync.cloudFragmentBytes)}）'
-                '${sync.cloudFragmentCount >= settings.libraryRebuildHintFragments ? ' · 建议重建' : ''}',
+                l10n.cloudFragmentsLine(
+                  sync.cloudFragmentCount,
+                  _fmtBytes(sync.cloudFragmentBytes),
+                  sync.cloudFragmentCount >=
+                      settings.libraryRebuildHintFragments,
+                ),
                 style: TextStyle(
                   fontSize: 12,
                   color:
@@ -869,7 +918,7 @@ class _SyncScreenState extends State<SyncScreen> {
               Expanded(
                 child: _compactButton(
                   icon: Icons.sync,
-                  label: '同步',
+                  label: l10n.syncAction,
                   onPressed: _running || accounts.accounts.isEmpty
                       ? null
                       : () => _runSync(() async {
@@ -883,7 +932,7 @@ class _SyncScreenState extends State<SyncScreen> {
               Expanded(
                 child: _compactButton(
                   icon: Icons.auto_awesome_motion,
-                  label: '重建',
+                  label: l10n.rebuildAction,
                   onPressed: _running || accounts.accounts.isEmpty
                       ? null
                       : _rebuild,
@@ -893,7 +942,7 @@ class _SyncScreenState extends State<SyncScreen> {
               Expanded(
                 child: _compactButton(
                   icon: Icons.cleaning_services_outlined,
-                  label: '整理',
+                  label: l10n.tidyAction,
                   onPressed: _running || accounts.accounts.isEmpty
                       ? null
                       : _tidy,
@@ -907,12 +956,19 @@ class _SyncScreenState extends State<SyncScreen> {
             dense: true,
             visualDensity: VisualDensity.compact,
             leading: const Icon(Icons.notifications_active_outlined, size: 20),
-            title: const Text('重建提示阈值', style: TextStyle(fontSize: 14)),
+            title: Text(
+              l10n.rebuildHintThreshold,
+              style: const TextStyle(fontSize: 14),
+            ),
             subtitle: Text(
               sync.cloudFragmentCount > 0
-                  ? '当前云端分片 ${sync.cloudFragmentCount} 个，'
-                        '达到 ${settings.libraryRebuildHintFragments} 个时提示重建'
-                  : '云端分片达到 ${settings.libraryRebuildHintFragments} 个时提示重建',
+                  ? l10n.rebuildHintNow(
+                      sync.cloudFragmentCount,
+                      settings.libraryRebuildHintFragments,
+                    )
+                  : l10n.rebuildHintTarget(
+                      settings.libraryRebuildHintFragments,
+                    ),
               style: const TextStyle(fontSize: 11),
             ),
             trailing: DropdownButton<int>(
@@ -927,8 +983,10 @@ class _SyncScreenState extends State<SyncScreen> {
                     SettingsService.rebuildHintPresets.contains(
                           settings.libraryRebuildHintFragments,
                         )
-                        ? '自定义…'
-                        : '自定义（${settings.libraryRebuildHintFragments}）',
+                        ? l10n.customThreshold
+                        : l10n.customThresholdValue(
+                            settings.libraryRebuildHintFragments,
+                          ),
                   ),
                 ),
               ],
@@ -962,7 +1020,7 @@ class _SyncScreenState extends State<SyncScreen> {
                   ? null
                   : _overwriteLibraryFromCloud,
               icon: const Icon(Icons.cloud_download_outlined),
-              label: const Text('从云端覆写音乐库'),
+              label: Text(l10n.overwriteLibraryTitle),
             ),
           ),
           const SizedBox(height: 8),
@@ -975,14 +1033,14 @@ class _SyncScreenState extends State<SyncScreen> {
               ),
               onPressed: _running ? null : _destroyLibrary,
               icon: const Icon(Icons.delete_forever_outlined),
-              label: const Text('销毁音乐库'),
+              label: Text(l10n.destroyLibraryTitle),
             ),
           ),
           const Divider(height: 32),
 
-          _sectionTitle('全部备份'),
+          _sectionTitle(l10n.allBackupsSection),
           Text(
-            '把凭证 + 音乐库 + 歌单写成一个归档到 ${settings.backupRemotePath}。',
+            l10n.allBackupsSectionDesc(settings.backupRemotePath),
             style: const TextStyle(
               color: AppColors.secondaryText,
               fontSize: 12,
@@ -990,30 +1048,30 @@ class _SyncScreenState extends State<SyncScreen> {
           ),
           const SizedBox(height: 8),
           if (accounts.accounts.isEmpty)
-            const Text(
-              '请先添加 WebDAV 服务器。',
-              style: TextStyle(color: AppColors.error, fontSize: 12),
+            Text(
+              l10n.needWebdavServer,
+              style: const TextStyle(color: AppColors.error, fontSize: 12),
             )
           else ...[
             FilledButton.icon(
               onPressed: _running ? null : _backup,
               icon: const Icon(Icons.backup_outlined),
-              label: const Text('开始备份'),
+              label: Text(l10n.startBackup),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _running ? null : () => _guard(_loadBackupList),
               icon: const Icon(Icons.refresh),
-              label: const Text('读取该路径下的备份'),
+              label: Text(l10n.readBackupsUnderPath),
             ),
             if (_backupFiles.isNotEmpty) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 key: ValueKey('backup-file-${_selectedBackupFile ?? ''}'),
                 initialValue: _selectedBackupFile,
-                decoration: const InputDecoration(
-                  labelText: '要恢复的备份',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.backupToRestore,
+                  border: const OutlineInputBorder(),
                   isDense: true,
                 ),
                 items: [
@@ -1026,43 +1084,46 @@ class _SyncScreenState extends State<SyncScreen> {
               OutlinedButton.icon(
                 onPressed: _running ? null : _restore,
                 icon: const Icon(Icons.restore),
-                label: const Text('从所选备份恢复'),
+                label: Text(l10n.restoreFromSelectedBackup),
               ),
             ],
           ],
 
           const Divider(height: 32),
 
-          _sectionTitle('本地导入导出'),
-          const Text(
-            '导出、导入同样使用上面那把密钥。',
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+          _sectionTitle(l10n.localImportExportSection),
+          Text(
+            l10n.localImportExportDesc,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: _running ? null : _exportLocal,
             icon: const Icon(Icons.save_alt),
-            label: const Text('导出到系统下载目录'),
+            label: Text(l10n.exportToDownloads),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _running ? null : () => _exportLocal(readableJson: true),
             icon: const Icon(Icons.data_object),
-            label: const Text('导出可读 JSON（排障，不含封面）'),
+            label: Text(l10n.exportReadableJson),
           ),
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _running ? null : _importLocal,
             icon: const Icon(Icons.folder_open),
-            label: const Text('从本地文件导入…'),
+            label: Text(l10n.importFromLocalFile),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _base64Controller,
             maxLines: 3,
-            decoration: const InputDecoration(
-              labelText: '或粘贴备份内容（Base64）',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: l10n.pasteBase64Label,
+              border: const OutlineInputBorder(),
               isDense: true,
             ),
           ),
@@ -1070,7 +1131,7 @@ class _SyncScreenState extends State<SyncScreen> {
           OutlinedButton.icon(
             onPressed: _running ? null : _importBase64,
             icon: const Icon(Icons.content_paste),
-            label: const Text('从粘贴内容导入'),
+            label: Text(l10n.importFromPaste),
           ),
 
           if (sync.busy || _running) ...[
@@ -1085,7 +1146,7 @@ class _SyncScreenState extends State<SyncScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    sync.progressLabel ?? '处理中…',
+                    sync.progressLabel ?? l10n.processing,
                     style: const TextStyle(color: AppColors.mutedText),
                   ),
                 ),
@@ -1179,15 +1240,15 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
     final est = _estimate;
     return AlertDialog(
       backgroundColor: AppColors.elevated,
-      title: const Text('重建云端音乐库'),
+      title: Text(AppLocalizations.of(context)!.rebuildCloudLibraryTitle),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('以本机为准重写全部分片，并落实删除。'),
+            Text(AppLocalizations.of(context)!.rebuildCloudLibraryDesc),
             const SizedBox(height: 12),
-            const Text('每个分片包含歌曲数'),
+            Text(AppLocalizations.of(context)!.tracksPerShard),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -1206,8 +1267,10 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
             const SizedBox(height: 8),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('把封面缩略图写进分片'),
-              subtitle: const Text('每首歌独立存一份，不去重；关闭则云端不含封面'),
+              title: Text(AppLocalizations.of(context)!.embedCoversInShards),
+              subtitle: Text(
+                AppLocalizations.of(context)!.embedCoversInShardsDesc,
+              ),
               value: _withCovers,
               onChanged: (v) {
                 setState(() => _withCovers = v);
@@ -1216,7 +1279,11 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
             ),
             const SizedBox(height: 4),
             Text(
-              est == null ? (_loading ? '正在估算…' : '估算不可用') : est.label,
+              est == null
+                  ? (_loading
+                        ? AppLocalizations.of(context)!.estimating
+                        : AppLocalizations.of(context)!.estimateUnavailable)
+                  : est.label,
               style: const TextStyle(
                 fontSize: 12,
                 color: AppColors.secondaryText,
@@ -1228,14 +1295,14 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
+          child: Text(AppLocalizations.of(context)!.cancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(context, (
             perShard: _perShard,
             withCovers: _withCovers,
           )),
-          child: const Text('重建'),
+          child: Text(AppLocalizations.of(context)!.rebuildAction),
         ),
       ],
     );

@@ -29,8 +29,11 @@ void main() {
       final b = _t(file: 'a.mp3', title: 'apple');
       final c = _t(file: 'm.mp3', title: 'Cherry');
       final list = [a, c, b]..sort(compareTracksByName);
-      expect(list.map((t) => t.displayTitle).toList(),
-          ['apple', 'Banana', 'Cherry']);
+      expect(list.map((t) => t.displayTitle).toList(), [
+        'apple',
+        'Banana',
+        'Cherry',
+      ]);
     });
 
     test('falls back to fileName when title missing', () {
@@ -86,8 +89,7 @@ void main() {
         _t(file: 'b.mp3', title: 'B', album: 'X', track: 2),
         _t(file: 'a.mp3', title: 'A', album: 'X', track: 1),
       ];
-      final sorted =
-          svc.sortedCopy(tracks, sort: LibrarySortMode.byAlbumTrack);
+      final sorted = svc.sortedCopy(tracks, sort: LibrarySortMode.byAlbumTrack);
       expect(sorted.map((t) => t.title).toList(), ['A', 'B']);
     });
   });
@@ -96,8 +98,10 @@ void main() {
     test('roundtrips keys', () {
       expect(LibrarySortMode.byName.storageKey, 'name');
       expect(LibrarySortMode.byAlbumTrack.storageKey, 'album_track');
-      expect(LibrarySortModeX.fromStorageKey('album_track'),
-          LibrarySortMode.byAlbumTrack);
+      expect(
+        LibrarySortModeX.fromStorageKey('album_track'),
+        LibrarySortMode.byAlbumTrack,
+      );
       expect(LibrarySortModeX.fromStorageKey(null), LibrarySortMode.byName);
     });
   });

@@ -9,16 +9,25 @@ import 'package:webdav_media_manager/services/cloud_drivers/driver_registry.dart
 /// 是否已声明**要人工确认（表单看不见运行时写回的键）。
 void main() {
   group('spec 加密范围（secretFieldKeys）', () {
-    test('baidu_netdisk：refresh_token / client_secret（表单）+ access_token（运行时）', () {
-      final keys = cloudDriverSpec('baidu_netdisk')!.secretFieldKeys;
-      expect(keys, containsAll(['refresh_token', 'client_secret', 'access_token']));
-      expect(keys, isNot(contains('api_url_address')));
-      expect(keys, isNot(contains('client_id')));
-    });
+    test(
+      'baidu_netdisk：refresh_token / client_secret（表单）+ access_token（运行时）',
+      () {
+        final keys = cloudDriverSpec('baidu_netdisk')!.secretFieldKeys;
+        expect(
+          keys,
+          containsAll(['refresh_token', 'client_secret', 'access_token']),
+        );
+        expect(keys, isNot(contains('api_url_address')));
+        expect(keys, isNot(contains('client_id')));
+      },
+    );
 
     test('123_open：refresh_token / client_secret（表单）+ access_token（运行时）', () {
       final keys = cloudDriverSpec('123_open')!.secretFieldKeys;
-      expect(keys, containsAll(['refresh_token', 'client_secret', 'access_token']));
+      expect(
+        keys,
+        containsAll(['refresh_token', 'client_secret', 'access_token']),
+      );
       expect(keys, isNot(contains('root_folder_id')));
     });
 
@@ -36,24 +45,30 @@ void main() {
 
     test('115open：refresh_token（表单）+ access_token（运行时令牌缓存）', () {
       final spec = cloudDriverSpec('115open')!;
-      expect(spec.secretFieldKeys, containsAll(['refresh_token', 'access_token']));
+      expect(
+        spec.secretFieldKeys,
+        containsAll(['refresh_token', 'access_token']),
+      );
       expect(spec.runtimeSecretKeys, {'access_token'});
       expect(spec.secretFieldKeys, isNot(contains('root_id')));
       expect(spec.secretFieldKeys, isNot(contains('page_size')));
       expect(spec.secretFieldKeys, isNot(contains('limit_rate')));
     });
 
-    test('aliyundrive_open：refresh_token / client_secret（表单）+ access_token（运行时）', () {
-      final spec = cloudDriverSpec('aliyundrive_open')!;
-      expect(
-        spec.secretFieldKeys,
-        containsAll(['refresh_token', 'client_secret', 'access_token']),
-      );
-      expect(spec.runtimeSecretKeys, {'access_token'});
-      expect(spec.secretFieldKeys, isNot(contains('client_id')));
-      expect(spec.secretFieldKeys, isNot(contains('drive_id')));
-      expect(spec.secretFieldKeys, isNot(contains('root_folder_id')));
-    });
+    test(
+      'aliyundrive_open：refresh_token / client_secret（表单）+ access_token（运行时）',
+      () {
+        final spec = cloudDriverSpec('aliyundrive_open')!;
+        expect(
+          spec.secretFieldKeys,
+          containsAll(['refresh_token', 'client_secret', 'access_token']),
+        );
+        expect(spec.runtimeSecretKeys, {'access_token'});
+        expect(spec.secretFieldKeys, isNot(contains('client_id')));
+        expect(spec.secretFieldKeys, isNot(contains('drive_id')));
+        expect(spec.secretFieldKeys, isNot(contains('root_folder_id')));
+      },
+    );
 
     test('terabox：仅 cookie（无令牌轮换 → runtimeSecretKeys 为空）', () {
       final spec = cloudDriverSpec('terabox')!;
@@ -69,7 +84,8 @@ void main() {
         expect(
           spec.secretFieldKeys,
           isNotEmpty,
-          reason: '${spec.typeId} 的加密范围为空：确认该驱动真的无凭证、'
+          reason:
+              '${spec.typeId} 的加密范围为空：确认该驱动真的无凭证、'
               '无令牌缓存，否则补 obscure 声明或 runtimeSecretKeys',
         );
       }
@@ -131,7 +147,8 @@ void main() {
         expect(
           spec.secretFieldKeys.difference(declared!),
           isEmpty,
-          reason: '${spec.typeId} 的密文键 ${spec.secretFieldKeys} 超出清点清单'
+          reason:
+              '${spec.typeId} 的密文键 ${spec.secretFieldKeys} 超出清点清单'
               '（新密文键要先定性再进加密范围）',
         );
       }

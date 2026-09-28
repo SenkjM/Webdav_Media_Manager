@@ -38,7 +38,11 @@ void main() {
 
     test('id stays usable when no account id was resolved', () {
       final item = mediaItemForTrack(
-        TrackInfo(sourceName: 'nas', remotePath: '/a/b.flac', fileName: 'b.flac'),
+        TrackInfo(
+          sourceName: 'nas',
+          remotePath: '/a/b.flac',
+          fileName: 'b.flac',
+        ),
       );
       expect(item.id, 'nas|/a/b.flac');
       expect(item.id.startsWith('|'), isFalse);

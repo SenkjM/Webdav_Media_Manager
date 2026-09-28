@@ -6,6 +6,7 @@ import '../services/download_queue_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// 设置 → 下载队列。
 ///
@@ -18,31 +19,31 @@ class DownloadSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: const Text('下载队列')),
+      appBar: AppBar(title: Text(l10n.downloadQueue)),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
             child: Text(
-              '断点续传的临时文件',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              l10n.dlPartFilesTitle,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Text(
-              '网络中断重试时会从半截文件接着下。文件留着才续得上，所以这里配的是上限：'
-              '超过上限的部分会被自动清掉（没有对应下载任务的孤儿文件也会清）。',
-              style: TextStyle(fontSize: 12, color: Colors.white70),
+              l10n.dlPartFilesIntro,
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
             ),
           ),
           _NumberField(
             key: const ValueKey('part-max-age'),
-            title: '保留时长',
-            unit: '小时',
+            title: l10n.dlRetainDuration,
+            unit: l10n.unitHours,
             value: settings.downloadPartMaxAgeHours,
             min: 1,
             max: 720,
@@ -51,7 +52,7 @@ class DownloadSettingsScreen extends StatelessWidget {
           ),
           _NumberField(
             key: const ValueKey('part-max-size'),
-            title: '总体积上限',
+            title: l10n.dlTotalSizeLimit,
             unit: 'MB',
             value: settings.downloadPartMaxMb,
             min: 64,
@@ -62,8 +63,8 @@ class DownloadSettingsScreen extends StatelessWidget {
           const Divider(height: 24),
           SwitchListTile(
             secondary: const Icon(Icons.stream_outlined),
-            title: const Text('Crypt 顺序流下载'),
-            subtitle: const Text('仅影响下载任务，在线播放和传统续传不变'),
+            title: Text(l10n.dlCryptSequential),
+            subtitle: Text(l10n.dlCryptSequentialSub),
             value: settings.cryptSequentialDownloadEnabled,
             onChanged: (value) => context
                 .read<SettingsService>()
@@ -71,15 +72,17 @@ class DownloadSettingsScreen extends StatelessWidget {
           ),
           ListTile(
             leading: const Icon(Icons.cleaning_services_outlined),
-            title: const Text('立即清理'),
-            subtitle: const Text('按上面的上限删掉过期的半截文件'),
+            title: Text(l10n.dlCleanNow),
+            subtitle: Text(l10n.dlCleanNowSub),
             onTap: () async {
               final queue = context.read<DownloadQueueService>();
               final removed = await queue.cleanupStaleParts();
               if (!context.mounted) return;
               AppSnack.show(
                 context,
-                removed == 0 ? '没有需要清理的半截文件' : '已清理 $removed 个半截文件',
+                removed == 0
+                    ? l10n.dlNothingToClean
+                    : l10n.dlCleanedCount(removed),
               );
             },
           ),
@@ -124,18 +127,25 @@ class _NumberFieldState extends State<_NumberField> {
   }
 
   void _commit() {
+    final l10n = AppLocalizations.of(context)!;
     final field = widget.title;
     final parsed = int.tryParse(_controller.text.trim());
     if (parsed == null) {
       _controller.text = '${widget.value}';
-      AppSnack.show(context, '$field请填数字', error: true);
+      AppSnack.show(context, l10n.dlFieldNotNumber(field), error: true);
       return;
     }
     final clamped = parsed.clamp(widget.min, widget.max);
     if (clamped != parsed) {
       AppSnack.show(
         context,
-        '$field只能在 ${widget.min}~${widget.max}${widget.unit} 之间，已按 $clamped 保存',
+        l10n.dlFieldClamped(
+          field,
+          widget.min,
+          widget.max,
+          widget.unit,
+          clamped,
+        ),
       );
     }
     _controller.text = '$clamped';
@@ -156,8 +166,8 @@ class _NumberFieldState extends State<_NumberField> {
         decoration: InputDecoration(
           labelText: widget.title,
           suffixText: widget.unit,
-          helperText:
-              '范围 ${widget.min} ~ ${widget.max} ${widget.unit}，超范围按边界保存',
+          helperText: AppLocalizations.of(context)!
+              .dlRangeHint(widget.min, widget.max, widget.unit),
           border: const OutlineInputBorder(),
         ),
         onSubmitted: (_) => _commit(),

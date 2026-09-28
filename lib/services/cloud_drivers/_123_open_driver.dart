@@ -28,6 +28,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
 import '../cloud_driver.dart';
+import '../../utils/l10n_host.dart';
 
 /// 驱动配置（对齐上游 `Driver123OpenAddition`；键名与上游一致，便于对照排错）。
 class Driver123OpenAddition {
@@ -47,22 +48,24 @@ class Driver123OpenAddition {
         clientId: json['client_id'] as String? ?? '',
         clientSecret: json['client_secret'] as String? ?? '',
         apiUrlAddress:
-            json['api_url_address'] as String? ?? Driver123OpenClient.defaultRenewApi,
+            json['api_url_address'] as String? ??
+            Driver123OpenClient.defaultRenewApi,
         localRefresh: json['local_refresh'] as bool? ?? false,
         rootFolderId:
-            json['root_folder_id'] as String? ?? Driver123OpenClient.defaultRoot,
+            json['root_folder_id'] as String? ??
+            Driver123OpenClient.defaultRoot,
         accessToken: json['access_token'] as String? ?? '',
       );
 
   Map<String, dynamic> toJson() => {
-        'refresh_token': refreshToken,
-        'client_id': clientId,
-        'client_secret': clientSecret,
-        'api_url_address': apiUrlAddress,
-        'local_refresh': localRefresh,
-        'root_folder_id': rootFolderId,
-        'access_token': accessToken,
-      };
+    'refresh_token': refreshToken,
+    'client_id': clientId,
+    'client_secret': clientSecret,
+    'api_url_address': apiUrlAddress,
+    'local_refresh': localRefresh,
+    'root_folder_id': rootFolderId,
+    'access_token': accessToken,
+  };
 
   /// 刷新令牌（表单必填）。在线续期会轮换它，轮换结果经 onTokenUpdate 持久化。
   String refreshToken;
@@ -102,12 +105,12 @@ class Driver123OpenFile {
   });
 
   static Driver123OpenFile fromMap(Map<String, dynamic> m) => Driver123OpenFile(
-        fileId: (m['fileId'] as num?)?.toInt() ?? 0,
-        filename: m['filename'] as String? ?? '',
-        size: (m['size'] as num?)?.toInt() ?? 0,
-        type: (m['type'] as num?)?.toInt() ?? 0,
-        updateAt: m['update_at'] as String? ?? '',
-      );
+    fileId: (m['fileId'] as num?)?.toInt() ?? 0,
+    filename: m['filename'] as String? ?? '',
+    size: (m['size'] as num?)?.toInt() ?? 0,
+    type: (m['type'] as num?)?.toInt() ?? 0,
+    updateAt: m['update_at'] as String? ?? '',
+  );
 
   final int fileId;
   final String filename;
@@ -132,7 +135,8 @@ class Driver123OpenClient {
   static const String api = 'https://open-api.123pan.com';
 
   /// 在线续期地址默认值（照抄 Go `meta.go` 的 `api_url_address` default）。
-  static const String defaultRenewApi = 'https://api.oplist.org/123cloud/renewapi';
+  static const String defaultRenewApi =
+      'https://api.oplist.org/123cloud/renewapi';
 
   /// 默认浏览根 id（Go `driver.Config.DefaultRoot`）。
   static const String defaultRoot = '0';
@@ -150,17 +154,18 @@ class Driver123OpenClient {
   static const int lastPageSentinel = -1;
 
   Driver123OpenClient(this.addition, {this.onTokenUpdate, Dio? dio})
-      : accessToken = addition.accessToken,
-        _dio = dio ??
-            Dio(
-              BaseOptions(
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 60),
-                headers: {'Accept': 'application/json'},
-                // 非 2xx 也回来走 code / 原文解析：「原样传递报错」需要读到 body。
-                validateStatus: (_) => true,
-              ),
-            );
+    : accessToken = addition.accessToken,
+      _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 60),
+              headers: {'Accept': 'application/json'},
+              // 非 2xx 也回来走 code / 原文解析：「原样传递报错」需要读到 body。
+              validateStatus: (_) => true,
+            ),
+          );
 
   final Driver123OpenAddition addition;
   String accessToken;
@@ -208,9 +213,7 @@ class Driver123OpenClient {
 
     // 缺必填 refresh_token 时给出可读原因（表单已标必填，这是后端兜底）。
     if (a.refreshToken.trim().isEmpty) {
-      throw const CloudDriverException(
-        '123 云盘缺少 refresh_token：请填写 refresh_token（获取方法见 OpenList 官方文档 123_open 驱动页）',
-      );
+      throw const CloudDriverException('err.missingRefreshToken');
     }
     throw const CloudDriverException(
       '[123Open] no valid authentication method '
@@ -243,22 +246,28 @@ class Driver123OpenClient {
     }
     final access = data?['access_token'] as String?;
     final refresh = data?['refresh_token'] as String?;
-    if (access != null && access.isNotEmpty && refresh != null && refresh.isNotEmpty) {
+    if (access != null &&
+        access.isNotEmpty &&
+        refresh != null &&
+        refresh.isNotEmpty) {
       _applyTokens(access, refresh);
       return;
     }
     // 续期服务把原因放在这些字段里（顺序对齐上游）。
-    final err = (data?['error_description'] ??
-            data?['text'] ??
-            data?['message'] ??
-            data?['error']) as String?;
+    final err =
+        (data?['error_description'] ??
+                data?['text'] ??
+                data?['message'] ??
+                data?['error'])
+            as String?;
     if (err != null && err.isNotEmpty) {
       throw CloudDriverException('[123Open] $err');
     }
     throw CloudDriverException(
-      '在线 API 刷新失败 (HTTP ${res.statusCode})：'
-      '${raw.isEmpty ? '非 JSON 响应' : (raw.length > 300 ? raw.substring(0, 300) : raw)}。'
-      '请确认 refresh_token 是通过 https://api.oplist.org/ 获取的有效令牌。',
+      raw.isEmpty
+          ? 'err.refreshOnlineFailedNonJson|${res.statusCode}'
+          : 'err.refreshOnlineFailed|${res.statusCode}|'
+                '${raw.length > 300 ? raw.substring(0, 300) : raw}',
     );
   }
 
@@ -281,7 +290,9 @@ class Driver123OpenClient {
       );
     }
     final data = resp['data'];
-    final map = data is Map ? Map<String, dynamic>.from(data) : <String, dynamic>{};
+    final map = data is Map
+        ? Map<String, dynamic>.from(data)
+        : <String, dynamic>{};
     final access = map['access_token'] as String?;
     if (access == null || access.isEmpty) {
       throw const CloudDriverException('[123Open] empty access token');
@@ -320,7 +331,7 @@ class Driver123OpenClient {
       rethrow; // 业务错误不重试。
     } catch (e) {
       throw CloudDriverException(
-        '123 云盘请求失败：${pathname ?? path}',
+        'err.driver123RequestFailed|${pathname ?? path}',
         e,
       );
     }
@@ -364,7 +375,9 @@ class Driver123OpenClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException('[123Open] 网络请求失败：${e.message ?? e}');
+      throw CloudDriverException(
+        'err.driver123NetworkFailed|${e.message ?? e}',
+      );
     }
     final text = res.data ?? '';
     Map<String, dynamic> decoded;
@@ -499,11 +512,7 @@ class Driver123OpenClient {
   /// 真连校验：`/api/v1/user/info`（Go 版 `GetDetails` 用的端点）。
   /// 令牌失效 / 无权限在此抛出可读原因。
   Future<void> userInfo() async {
-    await _request(
-      '/api/v1/user/info',
-      method: 'GET',
-      pathname: 'user/info',
-    );
+    await _request('/api/v1/user/info', method: 'GET', pathname: 'user/info');
   }
 }
 
@@ -518,10 +527,10 @@ class Driver123Open extends CloudDriver {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
     Dio? dio,
   }) : _client = Driver123OpenClient(
-          addition,
-          onTokenUpdate: onTokenUpdate,
-          dio: dio,
-        );
+         addition,
+         onTokenUpdate: onTokenUpdate,
+         dio: dio,
+       );
 
   final Driver123OpenClient _client;
 
@@ -602,7 +611,7 @@ class Driver123Open extends CloudDriver {
       await _resolveDirId(clean);
       return CloudFileItem(name: rawName, isDir: true);
     } on CloudDriverException {
-      throw CloudDriverException('123 云盘文件不存在：$rawName');
+      throw CloudDriverException('err.driver123FileNotFound|$rawName');
     }
   }
 
@@ -611,7 +620,7 @@ class Driver123Open extends CloudDriver {
     final clean = _clean(path);
     final name = cloudBasename(clean);
     if (name.isEmpty) {
-      throw const CloudDriverException('[123Open] 不能创建根目录');
+      throw const CloudDriverException('err.mkdirRoot');
     }
     final parentId = await _resolveDirId(cloudDirname(clean));
     await _client.mkdir(parentId, name);
@@ -683,7 +692,9 @@ class Driver123Open extends CloudDriver {
         }
       }
       if (next == null) {
-        throw CloudDriverException("[123Open] Directory '${parts[i]}' not found");
+        throw CloudDriverException(
+          "[123Open] Directory '${parts[i]}' not found",
+        );
       }
       currentId = next;
       // 缓存键必须与上面的查表键同形：[clean] 已去掉前导斜杠（`_clean`），
@@ -699,7 +710,7 @@ class Driver123Open extends CloudDriver {
     final clean = _clean(path);
     final name = cloudBasename(clean);
     if (name.isEmpty) {
-      throw const CloudDriverException('[123Open] 不能对根目录执行该操作');
+      throw const CloudDriverException('err.rootOp');
     }
     final parentId = await _resolveDirId(cloudDirname(clean));
     final files = await _client.getFiles(parentId);
@@ -721,11 +732,11 @@ class Driver123Open extends CloudDriver {
   }
 
   CloudFileItem _toItem(Driver123OpenFile f) => CloudFileItem(
-        name: f.filename,
-        isDir: f.isDir,
-        size: f.size,
-        modified: parse123OpenTime(f.updateAt),
-      );
+    name: f.filename,
+    isDir: f.isDir,
+    size: f.size,
+    modified: parse123OpenTime(f.updateAt),
+  );
 }
 
 /// 解析 123 云盘的 `update_at` / `create_at` 时间串。
@@ -739,7 +750,9 @@ DateTime? parse123OpenTime(String? s) {
   if (v.isEmpty) return null;
   // 带 T 的形态也走同一个解析器（把 T 归一成空格）；只有带显式时区偏移
   // 的 ISO 串才交给 DateTime.parse 自己处理。
-  final normalized = v.contains(' ') || !v.contains('T') ? v : v.replaceFirst('T', ' ');
+  final normalized = v.contains(' ') || !v.contains('T')
+      ? v
+      : v.replaceFirst('T', ' ');
   final m = RegExp(
     r'^(\d{4})-(\d{2})-(\d{2})[ ](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$',
   ).firstMatch(normalized);
@@ -753,7 +766,12 @@ DateTime? parse123OpenTime(String? s) {
   final h = int.tryParse(m.group(4)!);
   final mi = int.tryParse(m.group(5)!);
   final sec = int.tryParse(m.group(6)!);
-  if (y == null || mo == null || d == null || h == null || mi == null || sec == null) {
+  if (y == null ||
+      mo == null ||
+      d == null ||
+      h == null ||
+      mi == null ||
+      sec == null) {
     return null;
   }
   final utc = DateTime.utc(y, mo, d, h, mi, sec);
@@ -781,58 +799,59 @@ class Driver123OpenSpec extends CloudDriverSpec {
   Set<String> get runtimeSecretKeys => const {'access_token'};
 
   @override
-  String get displayName => '123 云盘开放平台';
+  String get displayName => L10nHost.current.driverName123Open;
 
   /// 列出 / 读取 / 创建文件夹 / 移动 / 删除。
   /// **没有 copy**：worker `copy()` 抛 not supported，Go 版依赖上传秒传
   /// （上传已砍，99 §7.2.1）。write 一律不给。
   @override
-  int get capabilities => AccountCaps.list |
+  int get capabilities =>
+      AccountCaps.list |
       AccountCaps.read |
       AccountCaps.mkdir |
       AccountCaps.move |
       AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => const [
-        CloudDriverField(
-          key: 'refresh_token',
-          label: 'refresh_token',
-          hint: '必填；获取方法见 OpenList 官方文档（123_open 驱动页）',
-          required: true,
-          obscure: true,
-        ),
-        CloudDriverField(
-          key: 'api_url_address',
-          label: '在线续期地址',
-          hint: '默认用 OpenList 维护的公共服务',
-          defaultValue: Driver123OpenClient.defaultRenewApi,
-          disabledWhenSwitch: 'local_refresh',
-          disabledHint: '已开启本地刷新（在线续期停用），关闭开关后可编辑',
-        ),
-        CloudDriverSwitchField(
-          key: 'local_refresh',
-          label: '在本地处理令牌刷新',
-          subtitle: '关闭＝在线续期；开启＝用自建 123 应用刷新（需 Client ID / Secret），在线续期停用',
-        ),
-        CloudDriverField(
-          key: 'client_id',
-          label: 'Client ID',
-          visibleWhenSwitch: 'local_refresh',
-        ),
-        CloudDriverField(
-          key: 'client_secret',
-          label: 'Client Secret',
-          obscure: true,
-          visibleWhenSwitch: 'local_refresh',
-        ),
-        CloudDriverField(
-          key: 'root_folder_id',
-          label: '根目录 ID',
-          hint: '不透明 id，默认 0（网盘根目录）；与账号的远程路径叠加生效',
-          defaultValue: Driver123OpenClient.defaultRoot,
-        ),
-      ];
+  List<CloudDriverFormItem> get form => [
+    CloudDriverField(
+      key: 'refresh_token',
+      label: 'refresh_token',
+      hint: L10nHost.current.formHintOpenListDoc('123_open'),
+      required: true,
+      obscure: true,
+    ),
+    CloudDriverField(
+      key: 'api_url_address',
+      label: L10nHost.current.formLabelRenewApi,
+      hint: L10nHost.current.formHintRenewApiDefault,
+      defaultValue: Driver123OpenClient.defaultRenewApi,
+      disabledWhenSwitch: 'local_refresh',
+      disabledHint: L10nHost.current.formHintLocalRefreshDisabled,
+    ),
+    CloudDriverSwitchField(
+      key: 'local_refresh',
+      label: L10nHost.current.formLabelLocalRefresh,
+      subtitle: L10nHost.current.formSubLocalRefresh123,
+    ),
+    CloudDriverField(
+      key: 'client_id',
+      label: 'Client ID',
+      visibleWhenSwitch: 'local_refresh',
+    ),
+    CloudDriverField(
+      key: 'client_secret',
+      label: 'Client Secret',
+      obscure: true,
+      visibleWhenSwitch: 'local_refresh',
+    ),
+    CloudDriverField(
+      key: 'root_folder_id',
+      label: L10nHost.current.formLabelRootId,
+      hint: L10nHost.current.formHintRootIdOpaque('0'),
+      defaultValue: Driver123OpenClient.defaultRoot,
+    ),
+  ];
 
   @override
   CloudDriver create(

@@ -19,8 +19,11 @@ void main() {
     );
     expect(item.isAudio, isTrue);
     expect(item.isVideo, isFalse);
-    const dir =
-        WebDavItem(name: 'Album', path: '/music/Album/', isDirectory: true);
+    const dir = WebDavItem(
+      name: 'Album',
+      path: '/music/Album/',
+      isDirectory: true,
+    );
     expect(dir.isAudio, isFalse);
   });
 
@@ -52,7 +55,8 @@ void main() {
   });
 
   test('folderDisplayName shows only current folder', () {
-    expect(folderDisplayName('/'), '根目录');
+    expect(folderDisplayName('/'), '/');
+    expect(folderDisplayName('/', rootLabel: 'Root'), 'Root');
     expect(folderDisplayName('/music/Album/'), 'Album');
     expect(folderDisplayName('/music/Album'), 'Album');
   });

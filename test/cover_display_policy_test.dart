@@ -6,6 +6,7 @@ import 'package:image/image.dart' as img;
 import 'package:webdav_media_manager/utils/cover_image.dart';
 import 'package:webdav_media_manager/widgets/cover_art.dart';
 import 'package:webdav_media_manager/services/tag_service.dart';
+import 'package:webdav_media_manager/l10n/generated/app_localizations.dart';
 
 void main() {
   group('resolveLibraryCoverPath', () {
@@ -73,17 +74,16 @@ void main() {
   });
 
   group('CoverArt local full vs thumb', () {
-    testWidgets('shows Image.memory for full bytes (local full art)',
-        (tester) async {
+    testWidgets('shows Image.memory for full bytes (local full art)', (
+      tester,
+    ) async {
       final src = img.Image(width: 200, height: 200);
       img.fill(src, color: img.ColorRgb8(10, 20, 30));
       final bytes = Uint8List.fromList(img.encodePng(src));
 
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(
-            body: CoverArt(bytes: bytes, size: 80),
-          ),
+          home: Scaffold(body: CoverArt(bytes: bytes, size: 80)),
         ),
       );
       expect(find.byType(Image), findsOneWidget);
@@ -91,21 +91,21 @@ void main() {
       expect(find.byIcon(Icons.music_note), findsNothing);
     });
 
-    testWidgets('shows placeholder when no path/bytes (missing cover)',
-        (tester) async {
+    testWidgets('shows placeholder when no path/bytes (missing cover)', (
+      tester,
+    ) async {
       await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: CoverArt(size: 80),
-          ),
-        ),
+        const MaterialApp(home: Scaffold(body: CoverArt(size: 80))),
       );
       expect(find.byIcon(Icons.music_note), findsOneWidget);
     });
   });
 
   group('ReadTags display map', () {
-    test('includes extended fields when present', () {
+    test('includes extended fields when present', () async {
+      final l10n = await AppLocalizations.delegate.load(
+        const Locale('zh', 'CN'),
+      );
       final map = const ReadTags(
         title: 'T',
         artist: 'A',
@@ -119,14 +119,14 @@ void main() {
         bitrate: 320000,
         sampleRate: 44100,
         durationMs: 125000,
-      ).toDisplayMap();
-      expect(map['标题'], 'T');
-      expect(map['专辑艺术家'], 'AA');
-      expect(map['曲目'], '2 / 10');
-      expect(map['年份'], '2020');
-      expect(map['流派'], 'Rock');
-      expect(map['比特率'], '320 kbps');
-      expect(map['采样率'], '44100 Hz');
+      ).toDisplayMap(l10n);
+      expect(map[l10n.tagTitle], 'T');
+      expect(map[l10n.tagAlbumArtist], 'AA');
+      expect(map[l10n.tagTrack], '2 / 10');
+      expect(map[l10n.tagYear], '2020');
+      expect(map[l10n.tagGenre], 'Rock');
+      expect(map[l10n.tagBitrate], '320 kbps');
+      expect(map[l10n.tagSampleRate], '44100 Hz');
     });
   });
 

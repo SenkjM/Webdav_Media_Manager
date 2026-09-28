@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../l10n/generated/app_localizations.dart';
+
 import 'package:provider/provider.dart';
 
 import '../screens/player_screen.dart';
@@ -20,8 +23,8 @@ class MiniPlayer extends StatelessWidget {
     final track = player.current;
     if (track == null) return const SizedBox.shrink();
 
-    final playProgress = (player.duration != null &&
-            player.duration!.inMilliseconds > 0)
+    final playProgress =
+        (player.duration != null && player.duration!.inMilliseconds > 0)
         ? player.position.inMilliseconds / player.duration!.inMilliseconds
         : 0.0;
 
@@ -33,9 +36,10 @@ class MiniPlayer extends StatelessWidget {
         top: false,
         child: InkWell(
           onTap: () {
-            Navigator.of(context, rootNavigator: true).push(
-              MaterialPageRoute(builder: (_) => const PlayerScreen()),
-            );
+            Navigator.of(
+              context,
+              rootNavigator: true,
+            ).push(MaterialPageRoute(builder: (_) => const PlayerScreen()));
           },
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -43,24 +47,25 @@ class MiniPlayer extends StatelessWidget {
               _MiniProgressBar(
                 progress: playProgress,
                 enabled:
-                    player.duration != null && player.duration!.inMilliseconds > 0,
+                    player.duration != null &&
+                    player.duration!.inMilliseconds > 0,
                 onSeek: (fraction) {
                   final total = player.duration;
                   if (total == null || total.inMilliseconds <= 0) return;
                   player.seek(
                     Duration(
-                      milliseconds:
-                          (total.inMilliseconds * fraction).round().clamp(
-                                0,
-                                total.inMilliseconds,
-                              ),
+                      milliseconds: (total.inMilliseconds * fraction)
+                          .round()
+                          .clamp(0, total.inMilliseconds),
                     ),
                   );
                 },
               ),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     CoverArt(
@@ -113,8 +118,11 @@ class MiniPlayer extends StatelessWidget {
                       onPressed: () => player.playPause(),
                     ),
                     IconButton(
-                      tooltip: '播放列表',
-                      icon: const Icon(Icons.queue_music, color: AppColors.onDark),
+                      tooltip: AppLocalizations.of(context)!.playQueueTitle,
+                      icon: const Icon(
+                        Icons.queue_music,
+                        color: AppColors.onDark,
+                      ),
                       onPressed: () {
                         Navigator.of(context, rootNavigator: true).push(
                           MaterialPageRoute(
@@ -222,9 +230,8 @@ class _MiniProgressBarState extends State<_MiniProgressBar> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final inset = (_MiniProgressBar._hitHeight -
-                _MiniProgressBar._lineHeight) /
-            2;
+        final inset =
+            (_MiniProgressBar._hitHeight - _MiniProgressBar._lineHeight) / 2;
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onHorizontalDragStart: (d) => _dragTo(d.localPosition.dx, width),

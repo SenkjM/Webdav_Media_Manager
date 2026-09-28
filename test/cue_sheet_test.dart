@@ -24,13 +24,22 @@ FILE "great.flac" WAVE
   });
   test('cue wins tags', () {
     final s = CueSheetParser.parse(sample);
-    final m = mergeCueOverFileTags(sheet: s, cueTrack: s.tracks[0], fileTitle: 'X', fileArtist: 'Y');
+    final m = mergeCueOverFileTags(
+      sheet: s,
+      cueTrack: s.tracks[0],
+      fileTitle: 'X',
+      fileArtist: 'Y',
+    );
     expect(m.title, 'Intro');
     expect(m.artist, 'Band');
   });
   test('album performer fallback', () {
     final s = CueSheetParser.parse(sample);
-    final m = mergeCueOverFileTags(sheet: s, cueTrack: s.tracks[1], fileArtist: 'File');
+    final m = mergeCueOverFileTags(
+      sheet: s,
+      cueTrack: s.tracks[1],
+      fileArtist: 'File',
+    );
     expect(m.artist, 'Album Artist');
   });
   test('virtual path', () {

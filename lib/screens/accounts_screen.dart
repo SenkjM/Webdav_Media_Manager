@@ -3,11 +3,14 @@ import '../utils/app_snack.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/account_capabilities.dart';
+import '../models/account_sentinels.dart';
 import '../models/webdav_account.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/cloud_drive_service.dart';
+import '../services/cloud_driver_errors.dart';
 import '../services/cloud_driver.dart';
 import '../services/cloud_drivers/driver_registry.dart';
 import '../services/webdav_service.dart';
@@ -24,8 +27,7 @@ bool _switchValue(
   CloudDriverSpec? spec,
   String key,
   Map<String, bool> values,
-) =>
-    spec?.switchValue(key, values) ?? false;
+) => spec?.switchValue(key, values) ?? false;
 
 class AccountsScreen extends StatelessWidget {
   const AccountsScreen({super.key});
@@ -34,10 +36,11 @@ class AccountsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final accounts = context.watch<AccountsService>();
     final cloudDrive = context.watch<CloudDriveService>();
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: const Text('网盘账号')),
+      appBar: AppBar(title: Text(l10n.accountsTitle)),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _editAccount(context),
         child: const Icon(Icons.add),
@@ -47,7 +50,7 @@ class AccountsScreen extends StatelessWidget {
           const _BindingHint(),
           Expanded(
             child: accounts.accounts.isEmpty
-                ? const Center(child: Text('尚未添加账号。点击右下角添加。'))
+                ? Center(child: Text(l10n.noAccounts))
                 : ListView.builder(
                     itemCount: accounts.accounts.length,
                     itemBuilder: (context, i) {
@@ -61,7 +64,7 @@ class AccountsScreen extends StatelessWidget {
                               : null,
                         ),
                         // 名称（用户名）：同一主机上多个挂载点一眼可分。
-                        title: Text(webDavAccountLabel(a)),
+                        title: Text(webDavAccountLabel(a, l10n)),
                         // WebDAV 显示地址；云盘 / crypt 显示类型名
                         // （crypt = 源类型 + Crypt，见 CloudDriveService.typeLabelFor）。
                         subtitle: Text(
@@ -90,21 +93,21 @@ class AccountsScreen extends StatelessWidget {
                             }
                           },
                           itemBuilder: (_) => [
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'use',
-                              child: Text('设为当前'),
+                              child: Text(l10n.setCurrent),
                             ),
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'edit',
-                              child: Text('编辑'),
+                              child: Text(l10n.edit),
                             ),
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'test',
-                              child: Text('测试连接'),
+                              child: Text(l10n.testConnection),
                             ),
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'delete',
-                              child: Text('删除'),
+                              child: Text(l10n.delete),
                             ),
                           ],
                         ),
@@ -120,6 +123,7 @@ class AccountsScreen extends StatelessWidget {
   }
 
   Future<void> _test(BuildContext context, WebDavAccount a) async {
+    final l10n = AppLocalizations.of(context)!;
     final app = context.read<AppState>();
     final webDav = context.read<WebDavService>();
     if (CloudDriveService.isCloudType(a.providerType)) {
@@ -127,9 +131,14 @@ class AccountsScreen extends StatelessWidget {
       final ok = await webDav.testConnection(accountId: a.id);
       if (!context.mounted) return;
       if (ok) {
-        AppSnack.show(context, '连接成功');
+        AppSnack.show(context, l10n.connectionSuccess);
       } else {
-        await showWebDavErrorDialog(context, webDav.lastError ?? '连接失败');
+        await showWebDavErrorDialog(
+          context,
+          webDav.lastError == null
+              ? l10n.connectionFailed
+              : CloudDriverErrors.describe(webDav.lastError!, l10n),
+        );
       }
       return;
     }
@@ -146,29 +155,37 @@ class AccountsScreen extends StatelessWidget {
     final ok = await webDav.testConnection(accountId: a.id);
     if (!context.mounted) return;
     if (ok) {
-      AppSnack.show(context, '连接成功');
+      AppSnack.show(context, l10n.connectionSuccess);
     } else {
-      await showWebDavErrorDialog(context, webDav.lastError ?? '连接失败');
+      await showWebDavErrorDialog(
+        context,
+        webDav.lastError == null
+            ? l10n.connectionFailed
+            : CloudDriverErrors.describe(webDav.lastError!, l10n),
+      );
     }
     // Restore active account connection.
     await app.registerAllAccounts();
   }
 
   Future<void> _delete(BuildContext context, WebDavAccount a) async {
+    final l10n = AppLocalizations.of(context)!;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('删除服务器'),
-        content: Text('确定删除「${a.name}」？其曲目会变成「未绑定网盘」，加回同名即可恢复。'),
+        title: Text(l10n.deleteServer),
+        content: Text(
+          l10n.confirmDeleteServer(localizedAccountName(l10n, a.name)),
+        ),
 
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除'),
+            child: Text(l10n.delete),
           ),
         ],
       ),
@@ -186,13 +203,17 @@ class AccountsScreen extends StatelessWidget {
     final urlCtrl = TextEditingController(text: existing?.url ?? '');
     final userCtrl = TextEditingController(text: existing?.username ?? '');
     final passCtrl = TextEditingController();
-    final remotePathCtrl = TextEditingController(text: existing?.remotePath ?? '/');
+    final remotePathCtrl = TextEditingController(
+      text: existing?.remotePath ?? '/',
+    );
     final accounts = context.read<AccountsService>();
+    final l10n = AppLocalizations.of(context)!;
     final cloudDrive = context.read<CloudDriveService>();
     var providerType = existing?.providerType ?? 'webdav';
     final existingCfg = existing == null
         ? const <String, dynamic>{}
-        : (await accounts.loadDriverConfig(existing.id) ?? const <String, dynamic>{});
+        : (await accounts.loadDriverConfig(existing.id) ??
+              const <String, dynamic>{});
     var obscure = true;
     // 云盘动态控件按驱动 spec 生成（99 §7.2.10）：控制器 / 开关值 / 明暗态
     // 三个映射，键都是驱动声明的字段 key；切换类型（仅新增时）重建。
@@ -229,8 +250,11 @@ class AccountsScreen extends StatelessWidget {
         }
       }
     }
+
     ensureSpecControls();
-    var caps = AccountCaps.normalizeStored(existing?.capabilities ?? AccountCaps.all);
+    var caps = AccountCaps.normalizeStored(
+      existing?.capabilities ?? AccountCaps.all,
+    );
 
     Map<String, dynamic>? cloudConfig;
 
@@ -253,7 +277,7 @@ class AccountsScreen extends StatelessWidget {
       final name = nameCtrl.text.trim();
       final isCloud = CloudDriveService.isCloudType(providerType);
       if (name.isEmpty) {
-        fail('请填写名称');
+        fail(l10n.accountFillName);
         return false;
       }
       if (!await _confirmDuplicateName(context, accounts, name, existing?.id)) {
@@ -271,7 +295,7 @@ class AccountsScreen extends StatelessWidget {
       if (isCloud) {
         final s = spec;
         if (s == null) {
-          fail('未知云盘类型：$providerType');
+          fail(l10n.accountUnknownProvider(providerType));
           return false;
         }
         // 配置的键 / 必填项 / 默认值全部来自驱动声明（99 §7.2.10）。
@@ -280,27 +304,26 @@ class AccountsScreen extends StatelessWidget {
           if (item is CloudDriverField) {
             final text = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && text.isEmpty) {
-              fail('请填写 ${item.label}');
+              fail(l10n.accountFillField(item.label));
               return false;
             }
             cfg[item.key] = text;
           } else if (item is CloudDriverSelectField) {
             final v = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && v.isEmpty) {
-              fail('请选择${item.label}');
+              fail(l10n.accountSelectField(item.label));
               return false;
             }
             cfg[item.key] = v;
           } else if (item is CloudDriverAccountField) {
             final v = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && v.isEmpty) {
-              fail('请选择${item.label}');
+              fail(l10n.accountSelectField(item.label));
               return false;
             }
             cfg[item.key] = v;
             // 源账号名快照：源被删后重添同名账号可按名恢复（crypt 场景）。
-            cfg['${item.key}_name'] =
-                accounts.accountById(v)?.name ?? '';
+            cfg['${item.key}_name'] = accounts.accountById(v)?.name ?? '';
           } else if (item is CloudDriverSwitchField) {
             // 与联动渲染同源：缺键时回落到 spec 默认值，保证「界面看到的
             // 状态」与「保存下来的值」永远一致。
@@ -323,7 +346,7 @@ class AccountsScreen extends StatelessWidget {
         } catch (e) {
           // 不只 CloudDriverException：驱动/网络层抛出的任何异常都必须变成
           // 用户看得见的一句提示，绝不让保存按钮默默恢复（99 §7.3.1）。
-          fail(e is CloudDriverException ? e.toString() : '验证失败：$e');
+          fail(CloudDriverErrors.describeException(e, l10n));
           return false;
         }
       }
@@ -340,17 +363,21 @@ class AccountsScreen extends StatelessWidget {
             builder: (ctx, setLocal) {
               dialogSet = setLocal;
               return AlertDialog(
-                title: Text(existing == null ? '添加服务器' : '编辑服务器'),
+                title: Text(
+                  existing == null
+                      ? l10n.accountAddServer
+                      : l10n.accountEditServer,
+                ),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       TextField(
                         controller: nameCtrl,
-                        decoration: const InputDecoration(
-                          labelText: '名称',
+                        decoration: InputDecoration(
+                          labelText: l10n.accountName,
                           // The name is not a label: it is the library's binding key.
-                          helperText: '曲库按此名称绑定，必须唯一；改名等同换盘',
+                          helperText: l10n.accountNameHint,
                           helperMaxLines: 2,
                           border: OutlineInputBorder(),
                         ),
@@ -362,10 +389,10 @@ class AccountsScreen extends StatelessWidget {
                                 exceptId: existing?.id,
                               ) !=
                               null)
-                        const Padding(
+                        Padding(
                           padding: EdgeInsets.only(top: 6),
                           child: Text(
-                            '该名称已被占用，建议换一个',
+                            l10n.accountNameTaken,
                             style: TextStyle(
                               color: AppColors.error,
                               fontSize: 12,
@@ -375,24 +402,28 @@ class AccountsScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
                         initialValue: providerType,
-                        decoration: const InputDecoration(
-                          labelText: '类型',
+                        decoration: InputDecoration(
+                          labelText: l10n.accountType,
                           border: OutlineInputBorder(),
                         ),
                         items: [
                           const DropdownMenuItem(
-                              value: 'webdav', child: Text('WebDAV')),
+                            value: 'webdav',
+                            child: Text('WebDAV'),
+                          ),
                           // 云盘类型来自驱动注册表（99 §7.2.10），顺序即注册顺序。
                           for (final s in kCloudDriverSpecs)
                             DropdownMenuItem(
-                                value: s.typeId, child: Text(s.displayName)),
+                              value: s.typeId,
+                              child: Text(s.displayName),
+                            ),
                         ],
                         // 已建账号不改类型：换类型等于换一套实现，删了重加。
                         onChanged: existing == null
                             ? (v) => setLocal(() {
-                                  if (v != null) providerType = v;
-                                  ensureSpecControls();
-                                })
+                                if (v != null) providerType = v;
+                                ensureSpecControls();
+                              })
                             : null,
                       ),
                       // 远程路径（浏览根）是通用字段：WebDAV 与云盘同语义，
@@ -400,9 +431,9 @@ class AccountsScreen extends StatelessWidget {
                       const SizedBox(height: 12),
                       TextField(
                         controller: remotePathCtrl,
-                        decoration: const InputDecoration(
-                          labelText: '远程路径',
-                          helperText: '浏览根，默认 /（空置也是 /）',
+                        decoration: InputDecoration(
+                          labelText: l10n.accountRemotePath,
+                          helperText: l10n.accountRemotePathHint,
                           border: OutlineInputBorder(),
                         ),
                         autocorrect: false,
@@ -411,8 +442,8 @@ class AccountsScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         TextField(
                           controller: urlCtrl,
-                          decoration: const InputDecoration(
-                            labelText: '服务器 URL',
+                          decoration: InputDecoration(
+                            labelText: l10n.accountServerUrl,
                             hintText: 'https://example.com/dav',
                             border: OutlineInputBorder(),
                           ),
@@ -422,8 +453,8 @@ class AccountsScreen extends StatelessWidget {
                         const SizedBox(height: 12),
                         TextField(
                           controller: userCtrl,
-                          decoration: const InputDecoration(
-                            labelText: '用户名',
+                          decoration: InputDecoration(
+                            labelText: l10n.accountUsername,
                             border: OutlineInputBorder(),
                           ),
                           autocorrect: false,
@@ -433,31 +464,36 @@ class AccountsScreen extends StatelessWidget {
                           controller: passCtrl,
                           obscureText: obscure,
                           decoration: InputDecoration(
-                            labelText: existing == null ? '密码' : '密码（留空则不修改）',
+                            labelText: existing == null
+                                ? l10n.accountPassword
+                                : l10n.accountPasswordKeep,
                             border: const OutlineInputBorder(),
                             suffixIcon: IconButton(
                               icon: Icon(
-                                obscure ? Icons.visibility : Icons.visibility_off,
+                                obscure
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
                               ),
-                              onPressed: () => setLocal(() => obscure = !obscure),
+                              onPressed: () =>
+                                  setLocal(() => obscure = !obscure),
                             ),
                           ),
                         ),
                         const SizedBox(height: 4),
-                        const Align(
+                        Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('权限'),
+                          child: Text(l10n.accountPermissions),
                         ),
                         Wrap(
                           spacing: 8,
                           children: [
-                            for (final (label, bit) in const [
-                              ('读取', AccountCaps.read),
-                              ('写入', AccountCaps.write),
-                              ('创建文件夹', AccountCaps.mkdir),
-                              ('移动', AccountCaps.move),
-                              ('复制', AccountCaps.copy),
-                              ('删除', AccountCaps.delete),
+                            for (final (label, bit) in [
+                              (l10n.permissionRead, AccountCaps.read),
+                              (l10n.permissionWrite, AccountCaps.write),
+                              (l10n.permissionCreateFolder, AccountCaps.mkdir),
+                              (l10n.permissionMove, AccountCaps.move),
+                              (l10n.permissionCopy, AccountCaps.copy),
+                              (l10n.permissionDelete, AccountCaps.delete),
                             ])
                               FilterChip(
                                 label: Text(
@@ -474,8 +510,8 @@ class AccountsScreen extends StatelessWidget {
                       ] else ...[
                         // 云盘动态区完全按驱动 spec 渲染（99 §7.2.10）：
                         // 表单不含任何具体盘的知识，新增盘零改动。
-                        for (final item in spec?.form ??
-                            const <CloudDriverFormItem>[]) ...[
+                        for (final item
+                            in spec?.form ?? const <CloudDriverFormItem>[]) ...[
                           if (item is CloudDriverField)
                             Builder(
                               builder: (_) {
@@ -491,21 +527,32 @@ class AccountsScreen extends StatelessWidget {
                                 // 两者同声明时视为无依赖（防误用）。
                                 final dependsEnabled =
                                     f.enabledWhenSwitch != null &&
-                                        f.disabledWhenSwitch == null;
+                                    f.disabledWhenSwitch == null;
                                 final dependsDisabled =
                                     f.disabledWhenSwitch != null &&
-                                        f.enabledWhenSwitch == null;
+                                    f.enabledWhenSwitch == null;
                                 final enabled = !dependsDisabled
                                     ? (!dependsEnabled ||
-                                        _switchValue(spec,
-                                            f.enabledWhenSwitch!, switchValues))
-                                    : !_switchValue(spec,
-                                        f.disabledWhenSwitch!, switchValues);
-                                final visible = f.visibleWhenSwitch == null ||
-                                    _switchValue(spec, f.visibleWhenSwitch!,
-                                        switchValues);
+                                          _switchValue(
+                                            spec,
+                                            f.enabledWhenSwitch!,
+                                            switchValues,
+                                          ))
+                                    : !_switchValue(
+                                        spec,
+                                        f.disabledWhenSwitch!,
+                                        switchValues,
+                                      );
+                                final visible =
+                                    f.visibleWhenSwitch == null ||
+                                    _switchValue(
+                                      spec,
+                                      f.visibleWhenSwitch!,
+                                      switchValues,
+                                    );
                                 if (!visible) return const SizedBox.shrink();
-                                final isOff = (dependsEnabled || dependsDisabled) &&
+                                final isOff =
+                                    (dependsEnabled || dependsDisabled) &&
                                     !enabled;
                                 return TextField(
                                   controller: fieldCtrls[f.key],
@@ -527,10 +574,9 @@ class AccountsScreen extends StatelessWidget {
                                                   : Icons.visibility_off,
                                             ),
                                             onPressed: () => setLocal(
-                                              () =>
-                                                  fieldObscure[f.key] =
-                                                      !(fieldObscure[f.key] ??
-                                                          false),
+                                              () => fieldObscure[f.key] =
+                                                  !(fieldObscure[f.key] ??
+                                                      false),
                                             ),
                                           )
                                         : null,
@@ -542,10 +588,14 @@ class AccountsScreen extends StatelessWidget {
                           else if (item is CloudDriverSwitchField)
                             SwitchListTile(
                               contentPadding: EdgeInsets.zero,
-                              title: Text(item.label,
-                                  style: const TextStyle(fontSize: 14)),
-                              subtitle: Text(item.subtitle,
-                                  style: const TextStyle(fontSize: 11)),
+                              title: Text(
+                                item.label,
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              subtitle: Text(
+                                item.subtitle,
+                                style: const TextStyle(fontSize: 11),
+                              ),
                               // 缺省必须回落到 spec 的 defaultValue，与
                               // ensureSpecControls 的初始化保持一致；写死
                               // false 会让「默认开」的开关显示与保存值相反。
@@ -556,9 +606,16 @@ class AccountsScreen extends StatelessWidget {
                           else if (item is CloudDriverSelectField)
                             DropdownButtonFormField<String>(
                               isExpanded: true,
-                              initialValue: item.options.any((o) => o.$1 == (fieldCtrls[item.key]?.text ?? ''))
+                              initialValue:
+                                  item.options.any(
+                                    (o) =>
+                                        o.$1 ==
+                                        (fieldCtrls[item.key]?.text ?? ''),
+                                  )
                                   ? fieldCtrls[item.key]!.text
-                                  : (item.defaultValue.isNotEmpty ? item.defaultValue : null),
+                                  : (item.defaultValue.isNotEmpty
+                                        ? item.defaultValue
+                                        : null),
                               decoration: InputDecoration(
                                 labelText: item.label,
                                 helperText: item.hint,
@@ -567,16 +624,24 @@ class AccountsScreen extends StatelessWidget {
                               ),
                               items: [
                                 for (final (val, lab) in item.options)
-                                  DropdownMenuItem(value: val, child: Text(lab)),
+                                  DropdownMenuItem(
+                                    value: val,
+                                    child: Text(lab),
+                                  ),
                               ],
                               onChanged: (v) => setLocal(
-                                  () => fieldCtrls[item.key]?.text = v ?? ''),
+                                () => fieldCtrls[item.key]?.text = v ?? '',
+                              ),
                             )
                           else if (item is CloudDriverAccountField)
                             DropdownButtonFormField<String>(
                               isExpanded: true,
-                              initialValue: accounts.accounts
-                                      .any((a) => a.id == (fieldCtrls[item.key]?.text ?? ''))
+                              initialValue:
+                                  accounts.accounts.any(
+                                    (a) =>
+                                        a.id ==
+                                        (fieldCtrls[item.key]?.text ?? ''),
+                                  )
                                   ? fieldCtrls[item.key]!.text
                                   : null,
                               decoration: InputDecoration(
@@ -589,12 +654,17 @@ class AccountsScreen extends StatelessWidget {
                                 for (final a in accounts.accounts)
                                   // 包装驱动不当别人的源（防套娃）；UI 只问
                                   // spec 的 isWrapper，不认识具体类型。
-                                  if (cloudDriverSpec(a.providerType)?.isWrapper != true)
+                                  if (cloudDriverSpec(a.providerType)
+                                          ?.isWrapper !=
+                                      true)
                                     DropdownMenuItem(
-                                        value: a.id, child: Text(a.name)),
+                                      value: a.id,
+                                      child: Text(a.name),
+                                    ),
                               ],
                               onChanged: (v) => setLocal(
-                                  () => fieldCtrls[item.key]?.text = v ?? ''),
+                                () => fieldCtrls[item.key]?.text = v ?? '',
+                              ),
                             ),
                           const SizedBox(height: 12),
                         ],
@@ -617,10 +687,8 @@ class AccountsScreen extends StatelessWidget {
                 ),
                 actions: [
                   TextButton(
-                    onPressed: saving
-                        ? null
-                        : () => Navigator.pop(ctx, false),
-                    child: const Text('取消'),
+                    onPressed: saving ? null : () => Navigator.pop(ctx, false),
+                    child: Text(l10n.cancel),
                   ),
                   FilledButton(
                     onPressed: saving
@@ -643,7 +711,7 @@ class AccountsScreen extends StatelessWidget {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Text('保存'),
+                        : Text(l10n.accountSave),
                   ),
                 ],
               );
@@ -670,7 +738,7 @@ class AccountsScreen extends StatelessWidget {
         await accounts.saveDriverConfig(account.id, cloudConfig!);
         // 云盘添加成功：提示后随表单一起关闭（99 §7.2.7）。
         if (context.mounted) {
-          AppSnack.show(context, '成功添加（${nameCtrl.text.trim()}）');
+          AppSnack.show(context, l10n.accountAdded(nameCtrl.text.trim()));
         }
       } else {
         await accounts.updateAccount(
@@ -719,25 +787,23 @@ class AccountsScreen extends StatelessWidget {
     String name,
     String? exceptId,
   ) async {
+    final l10n = AppLocalizations.of(context)!;
     final clash = accounts.accountNamed(name, exceptId: exceptId);
     if (clash == null) return true;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
-        title: const Text('名称已被占用'),
-        content: Text(
-          '已有同名网盘「${clash.name}」：\n${clash.url}\n\n'
-          '同名会被当成同一来源。',
-        ),
+        title: Text(l10n.accountDuplicateTitle),
+        content: Text(l10n.accountDuplicateContent(clash.name, clash.url)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('改个名字'),
+            child: Text(l10n.accountChangeName),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('仍然使用'),
+            child: Text(l10n.accountKeepName),
           ),
         ],
       ),
@@ -752,25 +818,27 @@ class AccountsScreen extends StatelessWidget {
     String newName,
     bool renamed,
   ) async {
+    final l10n = AppLocalizations.of(context)!;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
-        title: Text(renamed ? '改名等同于换盘' : '用户名已修改'),
+        title: Text(
+          renamed ? l10n.accountRenameTitle : l10n.accountUsernameChangedTitle,
+        ),
         content: Text(
           renamed
-              ? '「${existing.name}」的曲目将变为「未绑定网盘」，改回原名即可恢复。\n'
-                    '仅改地址时请保持名称不变。'
-              : '用户名不参与绑定；新用户名对应别的目录时原路径可能不存在。',
+              ? l10n.accountRenameContent(existing.name)
+              : l10n.accountUsernameChangedContent,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确认修改'),
+            child: Text(l10n.accountConfirmChange),
           ),
         ],
       ),
@@ -789,9 +857,9 @@ class _BindingHint extends StatelessWidget {
       width: double.infinity,
       color: AppColors.elevated,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-      child: const Text(
-        '曲目按「名称 + 路径」绑定；改名等同于换盘。',
-        style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+      child: Text(
+        AppLocalizations.of(context)!.accountBindingHint,
+        style: const TextStyle(color: AppColors.secondaryText, fontSize: 12),
       ),
     );
   }

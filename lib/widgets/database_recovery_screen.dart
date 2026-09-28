@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/local_database_recovery_service.dart';
 
 class RecoveryScreen extends StatefulWidget {
@@ -16,17 +17,18 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
   bool busy = false;
   String? message;
   Future<void> export() async {
+    final l10n = AppLocalizations.of(context)!;
     setState(() => busy = true);
     try {
       final files = await recovery.exportAll();
       final ok = files.where((r) => r.ok).length;
       setState(
         () => message = files.isEmpty
-            ? '未找到可导出的本地数据库'
-            : '已导出 $ok/${files.length} 个数据库文件到下载目录',
+            ? l10n.recoveryNothingToExport
+            : l10n.recoveryExportedCount(ok, files.length),
       );
     } catch (e) {
-      setState(() => message = '导出失败：$e');
+      setState(() => message = l10n.recoveryExportFailed('$e'));
     }
     if (mounted) setState(() => busy = false);
   }
@@ -34,17 +36,17 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
   Future<void> clearAndExit() async {
     final yes = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('清除本地数据库？'),
-        content: const Text('建议先导出数据库。清除后请重新打开应用，网盘账号和本地索引需要重新配置。'),
+      builder: (dialogCtx) => AlertDialog(
+        title: Text(AppLocalizations.of(dialogCtx)!.recoveryClearTitle),
+        content: Text(AppLocalizations.of(dialogCtx)!.recoveryClearContent),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: Text(AppLocalizations.of(dialogCtx)!.dialogCancel),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('清除并退出'),
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: Text(AppLocalizations.of(dialogCtx)!.recoveryClearAndExit),
           ),
         ],
       ),
@@ -56,7 +58,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     if (!mounted) return;
     setState(() {
       busy = false;
-      message = '已清除 $count 个数据库文件，请重新打开应用';
+      message = AppLocalizations.of(context)!.recoveryClearedCount(count);
     });
     await Future<void>.delayed(const Duration(milliseconds: 250));
     await SystemNavigator.pop();
@@ -64,7 +66,7 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('需要恢复本地数据')),
+    appBar: AppBar(title: Text(AppLocalizations.of(context)!.recoveryTitle)),
     body: Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 620),
@@ -74,14 +76,17 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '数据库初始化失败',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              Text(
+                AppLocalizations.of(context)!.recoveryHeading,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               Text(widget.error),
               const SizedBox(height: 16),
-              const Text('请先导出全部本地数据库，再清除并重新进入应用。'),
+              Text(AppLocalizations.of(context)!.recoveryBody),
               const SizedBox(height: 20),
               Wrap(
                 spacing: 12,
@@ -90,12 +95,16 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
                   OutlinedButton.icon(
                     onPressed: busy ? null : export,
                     icon: const Icon(Icons.save_alt),
-                    label: const Text('导出全部本地数据库'),
+                    label: Text(
+                      AppLocalizations.of(context)!.recoveryExportAll,
+                    ),
                   ),
                   FilledButton.icon(
                     onPressed: busy ? null : clearAndExit,
                     icon: const Icon(Icons.delete_forever),
-                    label: const Text('清除数据并重新进入'),
+                    label: Text(
+                      AppLocalizations.of(context)!.recoveryClearAndReenter,
+                    ),
                   ),
                 ],
               ),

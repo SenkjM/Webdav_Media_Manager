@@ -1,4 +1,4 @@
-﻿// 阿里云盘开放平台驱动（aliyundrive_open）的行为回归。
+// 阿里云盘开放平台驱动（aliyundrive_open）的行为回归。
 //
 // 上游参照：`localdev/OpenList-Worker/src/backend/drivers/aliyundrive_open/`
 // （driver.ts + util.ts + types.ts，移植底稿）、
@@ -34,11 +34,11 @@ import 'package:webdav_media_manager/services/cloud_drivers/driver_registry.dart
 
 /// 表单条目的 key（`CloudDriverFormItem` 是 sealed 基类，key 在具体子类上）。
 String _formKey(CloudDriverFormItem item) => switch (item) {
-      CloudDriverField(:final key) => key,
-      CloudDriverSelectField(:final key) => key,
-      CloudDriverAccountField(:final key) => key,
-      CloudDriverSwitchField(:final key) => key,
-    };
+  CloudDriverField(:final key) => key,
+  CloudDriverSelectField(:final key) => key,
+  CloudDriverAccountField(:final key) => key,
+  CloudDriverSwitchField(:final key) => key,
+};
 
 /// 一次出站请求的完整记录。
 class _Hit {
@@ -56,8 +56,9 @@ class _Hit {
   /// 折叠前的 path。
   String get path => url.path;
 
-  Map<String, dynamic> get json =>
-      body.isEmpty ? <String, dynamic>{} : Map<String, dynamic>.from(jsonDecode(body) as Map);
+  Map<String, dynamic> get json => body.isEmpty
+      ? <String, dynamic>{}
+      : Map<String, dynamic>.from(jsonDecode(body) as Map);
 }
 
 /// 拦截全部出站请求，按**还原后的真实 URL**交给 [handler] 决定响应。
@@ -87,21 +88,20 @@ class _RoutingAdapter implements HttpClientAdapter {
       body = utf8.decode(bytes, allowMalformed: true);
     }
     final uri = Uri.parse(options.uri.toString());
-    final hit = _Hit(
-      options.method,
-      uri,
-      <String, String>{
-        for (final e in options.headers.entries)
-          if (e.value != null) e.key.toLowerCase(): '${e.value}',
-      },
-      body,
-    );
+    final hit = _Hit(options.method, uri, <String, String>{
+      for (final e in options.headers.entries)
+        if (e.value != null) e.key.toLowerCase(): '${e.value}',
+    }, body);
     hits.add(hit);
 
     final (status, payload) = handler(hit);
-    return ResponseBody.fromString(payload, status, headers: {
-      'content-type': ['application/json'],
-    });
+    return ResponseBody.fromString(
+      payload,
+      status,
+      headers: {
+        'content-type': ['application/json'],
+      },
+    );
   }
 
   @override
@@ -127,19 +127,18 @@ void main() {
     String clientId = '',
     String clientSecret = '',
     String accessToken = '',
-  }) =>
-      AliyundriveOpenAddition(
-        refreshToken: refreshToken,
-        driveType: driveType,
-        driveId: driveId,
-        rootFolderId: rootFolderId,
-        removeWay: removeWay,
-        apiUrlAddress: apiUrlAddress,
-        localRefresh: localRefresh,
-        clientId: clientId,
-        clientSecret: clientSecret,
-        accessToken: accessToken,
-      );
+  }) => AliyundriveOpenAddition(
+    refreshToken: refreshToken,
+    driveType: driveType,
+    driveId: driveId,
+    rootFolderId: rootFolderId,
+    removeWay: removeWay,
+    apiUrlAddress: apiUrlAddress,
+    localRefresh: localRefresh,
+    clientId: clientId,
+    clientSecret: clientSecret,
+    accessToken: accessToken,
+  );
 
   setUp(() {
     handler = (hit) => (200, '{}');
@@ -153,7 +152,8 @@ void main() {
 
   group('令牌刷新 · 在线 API 中转', () {
     test('顶层 access_token / refresh_token 直接用', () async {
-      handler = (hit) => (200, '{"access_token":"at-1","refresh_token":"rt-2"}');
+      handler = (hit) =>
+          (200, '{"access_token":"at-1","refresh_token":"rt-2"}');
       final client = AliyundriveOpenClient(addition(), dio: dio);
       await client.refreshAccessToken();
 
@@ -172,8 +172,10 @@ void main() {
     });
 
     test('令牌裹在 data 里也能取到', () async {
-      handler = (hit) =>
-          (200, '{"data":{"access_token":"at-data","refresh_token":"rt-data"}}');
+      handler = (hit) => (
+        200,
+        '{"data":{"access_token":"at-data","refresh_token":"rt-data"}}',
+      );
       final client = AliyundriveOpenClient(addition(), dio: dio);
       await client.refreshAccessToken();
 
@@ -182,8 +184,10 @@ void main() {
     });
 
     test('顶层缺 access_token 但 data 里有，照样成功', () async {
-      handler = (hit) =>
-          (200, '{"refresh_token":"rt-top","data":{"access_token":"at-nested"}}');
+      handler = (hit) => (
+        200,
+        '{"refresh_token":"rt-top","data":{"access_token":"at-nested"}}',
+      );
       final client = AliyundriveOpenClient(addition(), dio: dio);
       await client.refreshAccessToken();
 
@@ -193,7 +197,10 @@ void main() {
 
     test('续期服务不轮换 refresh_token 时保留原值', () async {
       handler = (hit) => (200, '{"access_token":"at-only"}');
-      final client = AliyundriveOpenClient(addition(refreshToken: 'rt-keep'), dio: dio);
+      final client = AliyundriveOpenClient(
+        addition(refreshToken: 'rt-keep'),
+        dio: dio,
+      );
       await client.refreshAccessToken();
 
       expect(client.accessToken, 'at-only');
@@ -210,7 +217,10 @@ void main() {
           return (500, '{"text":"first builtin down"}');
         }
         if (hit.host == 'api.oplist.org' && hit.path == '/ali_open/token') {
-          return (200, '{"data":{"access_token":"at-fallback","refresh_token":"rt-fallback"}}');
+          return (
+            200,
+            '{"data":{"access_token":"at-fallback","refresh_token":"rt-fallback"}}',
+          );
         }
         return (404, 'not found');
       };
@@ -236,7 +246,10 @@ void main() {
 
     test('自定义地址与自定义 drive_type 一样不影响 driver_txt（固定 QR 分支）', () async {
       handler = (hit) => (200, '{"access_token":"at-qr"}');
-      final client = AliyundriveOpenClient(addition(driveType: 'backup'), dio: dio);
+      final client = AliyundriveOpenClient(
+        addition(driveType: 'backup'),
+        dio: dio,
+      );
       await client.refreshAccessToken();
       expect(hits.single.url.queryParameters['driver_txt'], 'alicloud_qr');
     });
@@ -245,7 +258,10 @@ void main() {
       handler = (hit) {
         if (hit.host == 'openapi.aliyundrive.com') {
           expect(hit.path, '/oauth/access_token');
-          return (200, '{"access_token":"at-oauth","refresh_token":"rt-oauth"}');
+          return (
+            200,
+            '{"access_token":"at-oauth","refresh_token":"rt-oauth"}',
+          );
         }
         return (500, '{"text":"online down"}');
       };
@@ -256,13 +272,19 @@ void main() {
       expect(client.addition.refreshToken, 'rt-oauth');
       // 6 个在线候选全试过，第 7 次才打 OAuth。
       final onlineHits = hits.where((h) => h.host != 'openapi.aliyundrive.com');
-      expect(onlineHits, hasLength(AliyundriveOpenClient.builtinRenewApis.length));
+      expect(
+        onlineHits,
+        hasLength(AliyundriveOpenClient.builtinRenewApis.length),
+      );
       final oauth = hits.last;
       expect(oauth.method, 'POST');
       expect(oauth.json['grant_type'], 'refresh_token');
       expect(oauth.json['client_id'], AliyundriveOpenClient.defaultClientId);
-      expect(oauth.json.containsKey('client_secret'), isFalse,
-          reason: '空 client_secret 不进 body');
+      expect(
+        oauth.json.containsKey('client_secret'),
+        isFalse,
+        reason: '空 client_secret 不进 body',
+      );
     });
 
     test('全部失败 → 抛出带排查指引的聚合错误', () async {
@@ -276,10 +298,9 @@ void main() {
             (e) => e.message,
             'message',
             allOf(
-              contains('All token refresh strategies failed'),
-              contains('refresh_token'),
-              contains('api_url_address'),
-              contains('client_id'),
+              contains('err.aliyunRefreshAllFailed'),
+              contains(' ; '),
+              contains(AliyundriveOpenClient.oauthApi),
             ),
           ),
         ),
@@ -287,7 +308,10 @@ void main() {
     });
 
     test('refresh_token 为空 → 直接报错，不出网', () async {
-      final client = AliyundriveOpenClient(addition(refreshToken: '  '), dio: dio);
+      final client = AliyundriveOpenClient(
+        addition(refreshToken: '  '),
+        dio: dio,
+      );
       await expectLater(
         client.refreshAccessToken(),
         throwsA(isA<CloudDriverException>()),
@@ -300,7 +324,8 @@ void main() {
 
   group('令牌刷新 · 本地直连 OAuth', () {
     test('打 OAuth 端点，带 grant_type / client_id / client_secret', () async {
-      handler = (hit) => (200, '{"access_token":"at-local","refresh_token":"rt-local"}');
+      handler = (hit) =>
+          (200, '{"access_token":"at-local","refresh_token":"rt-local"}');
       final client = AliyundriveOpenClient(
         addition(
           refreshToken: 'rt-3',
@@ -354,7 +379,10 @@ void main() {
 
       expect(client.accessToken, 'at-default-cid');
       expect(hits, hasLength(1), reason: '本地刷新只试 OAuth 一次');
-      expect(hits.single.json['client_id'], AliyundriveOpenClient.defaultClientId);
+      expect(
+        hits.single.json['client_id'],
+        AliyundriveOpenClient.defaultClientId,
+      );
     });
 
     test('本地刷新失败 → 绝不回落到在线续期地址（开关打开即不用 online api）', () async {
@@ -379,7 +407,10 @@ void main() {
     test('OAuth 报错原文被带进最终异常', () async {
       handler = (hit) {
         if (hit.host == 'openapi.aliyundrive.com') {
-          return (400, '{"code":"InvalidParameter","message":"refresh token expired"}');
+          return (
+            400,
+            '{"code":"InvalidParameter","message":"refresh token expired"}',
+          );
         }
         return (500, '{"text":"online down"}');
       };
@@ -394,7 +425,7 @@ void main() {
           isA<CloudDriverException>().having(
             (e) => e.message,
             'message',
-            contains('refresh_token'),
+            contains('err.aliyunRefreshAllFailed'),
           ),
         ),
       );
@@ -414,29 +445,32 @@ void main() {
       expect(hits, isEmpty);
     });
 
-    test('无 drive_id → 调 getDriveInfo，按 drive_type=resource 选 resource_drive_id', () async {
-      handler = (hit) {
-        expect(hit.path, '/adrive/v1.0/user/getDriveInfo');
-        expect(hit.method, 'POST');
-        expect(hit.headers['authorization'], 'Bearer at-1');
-        return (
-          200,
-          '{"default_drive_id":"d-default","resource_drive_id":"d-resource",'
-              '"backup_drive_id":"d-backup"}'
+    test(
+      '无 drive_id → 调 getDriveInfo，按 drive_type=resource 选 resource_drive_id',
+      () async {
+        handler = (hit) {
+          expect(hit.path, '/adrive/v1.0/user/getDriveInfo');
+          expect(hit.method, 'POST');
+          expect(hit.headers['authorization'], 'Bearer at-1');
+          return (
+            200,
+            '{"default_drive_id":"d-default","resource_drive_id":"d-resource",'
+                '"backup_drive_id":"d-backup"}',
+          );
+        };
+        final client = AliyundriveOpenClient(
+          addition(driveType: 'resource', accessToken: 'at-1'),
+          dio: dio,
         );
-      };
-      final client = AliyundriveOpenClient(
-        addition(driveType: 'resource', accessToken: 'at-1'),
-        dio: dio,
-      );
-      expect(await client.resolveDriveId(), 'd-resource');
-    });
+        expect(await client.resolveDriveId(), 'd-resource');
+      },
+    );
 
     test('drive_type=default 选 default_drive_id', () async {
       handler = (hit) => (
         200,
         '{"default_drive_id":"d-default","resource_drive_id":"d-resource",'
-            '"backup_drive_id":"d-backup"}'
+            '"backup_drive_id":"d-backup"}',
       );
       final client = AliyundriveOpenClient(
         addition(driveType: 'default', accessToken: 'at-1'),
@@ -449,7 +483,7 @@ void main() {
       handler = (hit) => (
         200,
         '{"default_drive_id":"d-default","resource_drive_id":"d-resource",'
-            '"backup_drive_id":"d-backup"}'
+            '"backup_drive_id":"d-backup"}',
       );
       final client = AliyundriveOpenClient(
         addition(driveType: 'backup', accessToken: 'at-1'),
@@ -501,13 +535,13 @@ void main() {
           200,
           '{"items":[{"file_id":"f-1","name":"movies","type":"folder"},'
               '{"file_id":"f-2","name":"a.mp4","type":"file","size":1234}],'
-              '"next_marker":"m-2"}'
+              '"next_marker":"m-2"}',
         );
       }
       expect(body['marker'], 'm-2');
       return (
         200,
-        '{"items":[{"file_id":"f-3","name":"b.mkv","type":"file","size":5678}]}'
+        '{"items":[{"file_id":"f-3","name":"b.mkv","type":"file","size":5678}]}',
       );
     }
 
@@ -525,37 +559,43 @@ void main() {
       expect(files[2].isDir, isFalse);
       expect(files[1].size, 1234);
       // 第 1 次是根目录（触发分页），第 2 次带 marker。
-      final listHits = hits.where((h) => h.path.endsWith('/openFile/list')).toList();
+      final listHits = hits
+          .where((h) => h.path.endsWith('/openFile/list'))
+          .toList();
       expect(listHits, hasLength(2));
-      expect(listHits[0].json.containsKey('marker'), isFalse,
-          reason: '首页不带 marker');
+      expect(
+        listHits[0].json.containsKey('marker'),
+        isFalse,
+        reason: '首页不带 marker',
+      );
       expect(listHits[1].json['marker'], 'm-2');
     });
 
-    test('ISO8601 updated_at / created_at 解析成时间，缺 updated_at 回落到 created_at', () async {
-      handler = (hit) => (
-        200,
-        '{"items":['
-            '{"file_id":"f-1","name":"x","type":"folder",'
-            '"updated_at":"2024-01-02T03:04:05.000Z","created_at":"2020-01-01T00:00:00.000Z"},'
-            '{"file_id":"f-2","name":"y","type":"file","created_at":"2021-06-07T08:09:10.000Z"},'
-            '{"file_id":"f-3","name":"z","type":"file"}'
-            ']}'
-      );
-      final client = AliyundriveOpenClient(
-        addition(driveId: 'd-1', accessToken: 'at-1'),
-        dio: dio,
-      );
-      final files = await client.listFiles('root');
+    test(
+      'ISO8601 updated_at / created_at 解析成时间，缺 updated_at 回落到 created_at',
+      () async {
+        handler = (hit) => (
+          200,
+          '{"items":['
+              '{"file_id":"f-1","name":"x","type":"folder",'
+              '"updated_at":"2024-01-02T03:04:05.000Z","created_at":"2020-01-01T00:00:00.000Z"},'
+              '{"file_id":"f-2","name":"y","type":"file","created_at":"2021-06-07T08:09:10.000Z"},'
+              '{"file_id":"f-3","name":"z","type":"file"}'
+              ']}',
+        );
+        final client = AliyundriveOpenClient(
+          addition(driveId: 'd-1', accessToken: 'at-1'),
+          dio: dio,
+        );
+        final files = await client.listFiles('root');
 
-      expect(files[0].modified!.toUtc(),
-          DateTime.utc(2024, 1, 2, 3, 4, 5));
-      // 没有 updated_at → 回落 created_at。
-      expect(files[1].modified!.toUtc(),
-          DateTime.utc(2021, 6, 7, 8, 9, 10));
-      // 两个都没有 → null（不伪造时间）。
-      expect(files[2].modified, isNull);
-    });
+        expect(files[0].modified!.toUtc(), DateTime.utc(2024, 1, 2, 3, 4, 5));
+        // 没有 updated_at → 回落 created_at。
+        expect(files[1].modified!.toUtc(), DateTime.utc(2021, 6, 7, 8, 9, 10));
+        // 两个都没有 → null（不伪造时间）。
+        expect(files[2].modified, isNull);
+      },
+    );
 
     test('列表报 UserNotAllowedAccessDrive → 以 resource 重新解析 drive_id 再重试一次', () async {
       var listCalls = 0;
@@ -563,17 +603,23 @@ void main() {
         if (hit.path.endsWith('/user/getDriveInfo')) {
           return (
             200,
-            '{"default_drive_id":"d-default","resource_drive_id":"d-resource"}'
+            '{"default_drive_id":"d-default","resource_drive_id":"d-resource"}',
           );
         }
         listCalls++;
         if (listCalls == 1) {
           // 首次用的是配置里的 backup 盘 id → 被拒。
           expect(hit.json['drive_id'], 'd-backup');
-          return (403, '{"code":"UserNotAllowedAccessDrive","message":"no access"}');
+          return (
+            403,
+            '{"code":"UserNotAllowedAccessDrive","message":"no access"}',
+          );
         }
-        expect(hit.json['drive_id'], 'd-resource',
-            reason: '自愈后必须用 resource 类型的 drive_id 重试');
+        expect(
+          hit.json['drive_id'],
+          'd-resource',
+          reason: '自愈后必须用 resource 类型的 drive_id 重试',
+        );
         return (200, '{"items":[{"file_id":"f-1","name":"ok","type":"file"}]}');
       };
       final client = AliyundriveOpenClient(
@@ -596,7 +642,7 @@ void main() {
           return (
             200,
             '{"file_id":"f-1","name":"a.mp4","type":"file","size":4096,'
-                '"updated_at":"2024-01-02T03:04:05.000Z"}'
+                '"updated_at":"2024-01-02T03:04:05.000Z"}',
           );
         }
         if (hit.path.endsWith('/openFile/getDownloadUrl')) {
@@ -607,7 +653,7 @@ void main() {
         if (hit.path.endsWith('/openFile/list')) {
           return (
             200,
-            '{"items":[{"file_id":"f-1","name":"a.mp4","type":"file","size":4096}]}'
+            '{"items":[{"file_id":"f-1","name":"a.mp4","type":"file","size":4096}]}',
           );
         }
         return (404, 'not found');
@@ -634,14 +680,19 @@ void main() {
         if (hit.path.endsWith('/openFile/getDownloadUrl')) {
           return (200, '{"download_url":"https://cdn.example.com/alt.mp4"}');
         }
-        return (200, '{"items":[{"file_id":"f-1","name":"a.mp4","type":"file"}]}');
+        return (
+          200,
+          '{"items":[{"file_id":"f-1","name":"a.mp4","type":"file"}]}',
+        );
       };
       final driver = AliyundriveOpenDriver(
         addition: addition(driveId: 'd-1', accessToken: 'at-1'),
         dio: dio,
       );
-      expect((await driver.get('/a.mp4')).rawUrl,
-          'https://cdn.example.com/alt.mp4');
+      expect(
+        (await driver.get('/a.mp4')).rawUrl,
+        'https://cdn.example.com/alt.mp4',
+      );
     });
 
     test('拿不到直链 → 抛 CloudDriverException（不返回无直链条目）', () async {
@@ -652,7 +703,10 @@ void main() {
         if (hit.path.endsWith('/openFile/getDownloadUrl')) {
           return (200, '{}');
         }
-        return (200, '{"items":[{"file_id":"f-1","name":"a.mp4","type":"file"}]}');
+        return (
+          200,
+          '{"items":[{"file_id":"f-1","name":"a.mp4","type":"file"}]}',
+        );
       };
       final driver = AliyundriveOpenDriver(
         addition: addition(driveId: 'd-1', accessToken: 'at-1'),
@@ -664,7 +718,7 @@ void main() {
           isA<CloudDriverException>().having(
             (e) => e.message,
             'message',
-            contains('未返回直链'),
+            contains('err.aliyunNoDirectLink'),
           ),
         ),
       );
@@ -678,7 +732,10 @@ void main() {
         if (hit.path.endsWith('/openFile/getDownloadUrl')) {
           fail('目录不该请求直链');
         }
-        return (200, '{"items":[{"file_id":"f-9","name":"movies","type":"folder"}]}');
+        return (
+          200,
+          '{"items":[{"file_id":"f-9","name":"movies","type":"folder"}]}',
+        );
       };
       final driver = AliyundriveOpenDriver(
         addition: addition(driveId: 'd-1', accessToken: 'at-1'),
@@ -696,7 +753,7 @@ void main() {
     test('非 2xx 的上游原文被带进 CloudDriverException（含端点）', () async {
       handler = (hit) => (
         400,
-        '{"code":"InvalidParameter","message":"The resource drive_id is invalid."}'
+        '{"code":"InvalidParameter","message":"The resource drive_id is invalid."}',
       );
       final client = AliyundriveOpenClient(
         addition(driveId: 'd-1', accessToken: 'at-1'),
@@ -730,8 +787,11 @@ void main() {
           expect(hit.headers['authorization'], 'Bearer at-1');
           return (401, '{"code":"AccessTokenExpired","message":"expired"}');
         }
-        expect(hit.headers['authorization'], 'Bearer at-2',
-            reason: '重试必须用刷新后的令牌');
+        expect(
+          hit.headers['authorization'],
+          'Bearer at-2',
+          reason: '重试必须用刷新后的令牌',
+        );
         return (200, '{"items":[{"file_id":"f-1","name":"ok","type":"file"}]}');
       };
       final client = AliyundriveOpenClient(
@@ -771,13 +831,17 @@ void main() {
         ),
       );
       expect(listCalls, 2, reason: '只重试一次（防死循环）');
-      expect(hits.where((h) => h.host == 'api.oplist.org'), hasLength(1),
-          reason: '只刷新一次令牌');
+      expect(
+        hits.where((h) => h.host == 'api.oplist.org'),
+        hasLength(1),
+        reason: '只刷新一次令牌',
+      );
     });
 
     test('令牌轮换经 onTokenUpdate 透出（access_token + refresh_token 两个都存）', () async {
       Map<String, dynamic>? patch;
-      handler = (hit) => (200, '{"access_token":"at-new","refresh_token":"rt-new"}');
+      handler = (hit) =>
+          (200, '{"access_token":"at-new","refresh_token":"rt-new"}');
       final client = AliyundriveOpenClient(
         addition(),
         onTokenUpdate: (p) => patch = p,
@@ -805,20 +869,20 @@ void main() {
             return (
               200,
               '{"items":[{"file_id":"dir-movies","name":"movies","type":"folder"},'
-                  '{"file_id":"f-top","name":"top.mp4","type":"file","size":10}]}'
+                  '{"file_id":"f-top","name":"top.mp4","type":"file","size":10}]}',
             );
           }
           if (body['parent_file_id'] == 'dir-movies') {
             return (
               200,
-              '{"items":[{"file_id":"f-a","name":"a.mp4","type":"file","size":20}]}'
+              '{"items":[{"file_id":"f-a","name":"a.mp4","type":"file","size":20}]}',
             );
           }
           return (200, '{"items":[]}');
         case '/adrive/v1.0/openFile/get':
           return (
             200,
-            '{"file_id":"f-a","name":"a.mp4","type":"file","size":20}'
+            '{"file_id":"f-a","name":"a.mp4","type":"file","size":20}',
           );
         case '/adrive/v1.0/openFile/getDownloadUrl':
           return (200, '{"url":"https://cdn.example.com/a.mp4"}');
@@ -860,7 +924,10 @@ void main() {
         if (hit.host == 'api.oplist.org') {
           return (200, '{"access_token":"at-bad","refresh_token":"rt-bad"}');
         }
-        return (401, '{"code":"AccessTokenInvalid","message":"token is invalid"}');
+        return (
+          401,
+          '{"code":"AccessTokenInvalid","message":"token is invalid"}',
+        );
       };
       final driver = AliyundriveOpenDriver(
         addition: addition(refreshToken: 'rt-1', accessToken: 'at-bad'),
@@ -880,7 +947,9 @@ void main() {
       expect(items.single.name, 'a.mp4');
       expect(items.single.size, 20);
       // 第一次列 root（解析 movies），第二次列 dir-movies。
-      final listHits = hits.where((h) => h.path.endsWith('/openFile/list')).toList();
+      final listHits = hits
+          .where((h) => h.path.endsWith('/openFile/list'))
+          .toList();
       expect(listHits, hasLength(2));
       expect(listHits[0].json['parent_file_id'], 'root');
       expect(listHits[1].json['parent_file_id'], 'dir-movies');
@@ -930,7 +999,11 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition: addition(driveId: 'd-1', accessToken: 'at-1', removeWay: 'trash'),
+        addition: addition(
+          driveId: 'd-1',
+          accessToken: 'at-1',
+          removeWay: 'trash',
+        ),
         dio: dio,
       );
       await driver.remove('/movies/a.mp4');
@@ -946,14 +1019,15 @@ void main() {
         return (200, '{}');
       };
       final driver = AliyundriveOpenDriver(
-        addition: addition(driveId: 'd-1', accessToken: 'at-1', removeWay: 'delete'),
+        addition: addition(
+          driveId: 'd-1',
+          accessToken: 'at-1',
+          removeWay: 'delete',
+        ),
         dio: dio,
       );
       await driver.remove('/movies/a.mp4');
-      expect(
-        hits.map((h) => h.path),
-        contains('/adrive/v1.0/openFile/delete'),
-      );
+      expect(hits.map((h) => h.path), contains('/adrive/v1.0/openFile/delete'));
       expect(
         hits.map((h) => h.path),
         isNot(contains('/adrive/v1.0/openFile/recyclebin')),
@@ -1036,8 +1110,11 @@ void main() {
       await driver.move('/movies/a.mp4', '/', 'a.mp4');
       final paths = hits.map((h) => h.path).toList();
       expect(paths, contains('/adrive/v1.0/openFile/move'));
-      expect(paths, isNot(contains('/adrive/v1.0/openFile/update')),
-          reason: '名字没变就不该多发一次 rename');
+      expect(
+        paths,
+        isNot(contains('/adrive/v1.0/openFile/update')),
+        reason: '名字没变就不该多发一次 rename',
+      );
     });
 
     test('copy() 用 auto_rename: true', () async {
@@ -1095,19 +1172,16 @@ void main() {
     });
 
     test('表单字段齐全且顺序正确', () {
-      expect(
-        spec.form.map(_formKey).toList(),
-        [
-          'refresh_token',
-          'drive_type',
-          'api_url_address',
-          'local_refresh',
-          'client_id',
-          'client_secret',
-          'remove_way',
-          'root_folder_id',
-        ],
-      );
+      expect(spec.form.map(_formKey).toList(), [
+        'refresh_token',
+        'drive_type',
+        'api_url_address',
+        'local_refresh',
+        'client_id',
+        'client_secret',
+        'remove_way',
+        'root_folder_id',
+      ]);
       // access_token 只作缓存，绝不进表单。
       expect(spec.form.map(_formKey), isNot(contains('access_token')));
       // 排序与上传相关字段不进表单。
@@ -1117,15 +1191,17 @@ void main() {
     });
 
     test('refresh_token 必填且密文', () {
-      final f = spec.form.whereType<CloudDriverField>()
-          .firstWhere((f) => f.key == 'refresh_token');
+      final f = spec.form.whereType<CloudDriverField>().firstWhere(
+        (f) => f.key == 'refresh_token',
+      );
       expect(f.required, isTrue);
       expect(f.obscure, isTrue);
     });
 
     test('drive_type 下拉选项与默认值', () {
-      final f = spec.form.whereType<CloudDriverSelectField>()
-          .firstWhere((f) => f.key == 'drive_type');
+      final f = spec.form.whereType<CloudDriverSelectField>().firstWhere(
+        (f) => f.key == 'drive_type',
+      );
       expect(f.options, [
         ('resource', '资源盘'),
         ('default', '默认盘'),
@@ -1136,12 +1212,10 @@ void main() {
     });
 
     test('remove_way 下拉选项与默认值', () {
-      final f = spec.form.whereType<CloudDriverSelectField>()
-          .firstWhere((f) => f.key == 'remove_way');
-      expect(f.options, [
-        ('trash', '移入回收站'),
-        ('delete', '彻底删除'),
-      ]);
+      final f = spec.form.whereType<CloudDriverSelectField>().firstWhere(
+        (f) => f.key == 'remove_way',
+      );
+      expect(f.options, [('trash', '移入回收站'), ('delete', '彻底删除')]);
       expect(f.defaultValue, 'trash');
     });
 
@@ -1161,8 +1235,10 @@ void main() {
     });
 
     test('联动引用的开关确实存在于 form 里（防拼写错导致永远 false）', () {
-      final switchKeys =
-          spec.form.whereType<CloudDriverSwitchField>().map((s) => s.key).toSet();
+      final switchKeys = spec.form
+          .whereType<CloudDriverSwitchField>()
+          .map((s) => s.key)
+          .toSet();
       expect(switchKeys, contains('local_refresh'));
       for (final f in spec.form.whereType<CloudDriverField>()) {
         for (final ref in [

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/audio_player_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
@@ -69,6 +70,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final pages = [
       _TabNavigator(navigatorKey: _libraryNav, root: const LibraryScreen()),
       _TabNavigator(navigatorKey: _playlistsNav, root: const PlaylistsScreen()),
@@ -132,7 +134,7 @@ class _HomeShellState extends State<HomeShell> {
                               bottom: BorderSide(color: AppColors.divider),
                             ),
                           ),
-                          child: const Align(
+                          child: Align(
                             alignment: Alignment.bottomLeft,
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -145,7 +147,7 @@ class _HomeShellState extends State<HomeShell> {
                                 ),
                                 SizedBox(height: 12),
                                 Text(
-                                  'Webdav Media Manager',
+                                  l10n.appTitle,
                                   style: TextStyle(
                                     color: AppColors.onDark,
                                     fontSize: 18,
@@ -159,31 +161,31 @@ class _HomeShellState extends State<HomeShell> {
                         const SizedBox(height: 8),
                         _DrawerItem(
                           icon: Icons.library_music,
-                          label: '音乐库',
+                          label: l10n.library,
                           selected: _index == 0,
                           onTap: () => _select(0),
                         ),
                         _DrawerItem(
                           icon: Icons.queue_music,
-                          label: '歌单',
+                          label: l10n.playlists,
                           selected: _index == 1,
                           onTap: () => _select(1),
                         ),
                         _DrawerItem(
                           icon: Icons.cloud_outlined,
-                          label: '网络库',
+                          label: l10n.networkLibrary,
                           selected: _index == 2,
                           onTap: () => _select(2),
                         ),
                         _DrawerItem(
                           icon: Icons.download_outlined,
-                          label: '下载队列',
+                          label: l10n.downloadQueue,
                           selected: _index == 3,
                           onTap: () => _select(3),
                         ),
                         _DrawerItem(
                           icon: Icons.settings_outlined,
-                          label: '设置',
+                          label: l10n.settings,
                           selected: _index == 4,
                           onTap: () => _select(4),
                         ),
@@ -196,7 +198,7 @@ class _HomeShellState extends State<HomeShell> {
                         ),
                         _DrawerItem(
                           icon: Icons.info_outline,
-                          label: '关于 / AGPL',
+                          label: l10n.aboutAgpl,
                           selected: false,
                           onTap: () {
                             Navigator.pop(context);
@@ -216,7 +218,7 @@ class _HomeShellState extends State<HomeShell> {
                   ),
                   _DrawerItem(
                     icon: Icons.exit_to_app,
-                    label: '退出应用',
+                    label: l10n.exitApp,
                     selected: false,
                     onTap: () => _confirmExit(context),
                   ),
@@ -256,28 +258,29 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   Future<void> _confirmExit(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
-        title: const Text(
-          '退出应用',
-          style: TextStyle(color: AppColors.onDark),
+        title: Text(
+          l10n.exitApp,
+          style: const TextStyle(color: AppColors.onDark),
         ),
-        content: const Text(
-          '确定退出？播放将停止。',
-          style: TextStyle(color: AppColors.secondaryText),
+        content: Text(
+          l10n.exitConfirm,
+          style: const TextStyle(color: AppColors.secondaryText),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              '退出',
-              style: TextStyle(color: AppColors.accent),
+            child: Text(
+              l10n.exit,
+              style: const TextStyle(color: AppColors.accent),
             ),
           ),
         ],
@@ -294,10 +297,7 @@ class _HomeShellState extends State<HomeShell> {
 /// Keeps tab pushes (album/artist detail, playlist detail, …) above the
 /// shell mini player instead of covering the whole [HomeShell].
 class _TabNavigator extends StatelessWidget {
-  const _TabNavigator({
-    required this.navigatorKey,
-    required this.root,
-  });
+  const _TabNavigator({required this.navigatorKey, required this.root});
 
   final GlobalKey<NavigatorState> navigatorKey;
   final Widget root;
@@ -362,9 +362,10 @@ class DrawerMenuButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return IconButton(
       icon: const Icon(Icons.menu),
-      tooltip: '菜单',
+      tooltip: l10n.menu,
       onPressed: () => RootScaffold.openDrawer(context),
     );
   }

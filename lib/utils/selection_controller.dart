@@ -117,7 +117,8 @@ class SelectionController {
       setEquals(other.selected, selected);
 
   @override
-  int get hashCode => Object.hash(active, total, Object.hashAllUnordered(selected));
+  int get hashCode =>
+      Object.hash(active, total, Object.hashAllUnordered(selected));
 
   @override
   String toString() =>

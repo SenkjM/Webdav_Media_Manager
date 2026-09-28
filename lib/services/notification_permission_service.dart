@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../utils/l10n_host.dart';
 import 'media_notification_channel.dart';
 
 /// Android notification state for media playback, owned by
@@ -21,7 +22,7 @@ import 'media_notification_channel.dart';
 ///   「已授予通知权限」.
 class NotificationPermissionService extends ChangeNotifier {
   NotificationPermissionService({FlutterLocalNotificationsPlugin? plugin})
-      : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
+    : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   final FlutterLocalNotificationsPlugin _plugin;
 
@@ -72,19 +73,20 @@ class NotificationPermissionService extends ChangeNotifier {
   /// Kept as a label so UI code doesn't have to import
   /// `flutter_local_notifications` just to render the state.
   String? get channelImportanceLabel {
+    final l10n = L10nHost.current;
     switch (_channelImportance) {
       case Importance.none:
-        return '已关闭';
+        return l10n.ntfImportanceOff;
       case Importance.min:
-        return '最低';
+        return l10n.ntfImportanceMin;
       case Importance.low:
-        return '低';
+        return l10n.ntfImportanceLow;
       case Importance.defaultImportance:
-        return '默认';
+        return l10n.ntfImportanceDefault;
       case Importance.high:
-        return '高';
+        return l10n.ntfImportanceHigh;
       case Importance.max:
-        return '最高';
+        return l10n.ntfImportanceMax;
       default:
         return null;
     }
@@ -92,17 +94,22 @@ class NotificationPermissionService extends ChangeNotifier {
 
   /// One-line channel diagnosis for the Settings page.
   String get channelStatusLabel {
-    if (!_loaded) return '正在检查…';
-    if (!supportsChannels) return '当前平台无通知通道';
-    if (!_channelExists) return '未创建';
-    if (_channelBlocked) return '已关闭（请在系统通知设置中重新开启）';
+    final l10n = L10nHost.current;
+    if (!_loaded) return l10n.ntfStatusChecking;
+    if (!supportsChannels) return l10n.ntfStatusNoChannels;
+    if (!_channelExists) return l10n.ntfStatusNotCreated;
+    if (_channelBlocked) return l10n.ntfStatusBlocked;
     final importance = channelImportanceLabel;
-    return importance == null ? '已创建' : '已创建 · 重要性 $importance';
+    return importance == null
+        ? l10n.ntfStatusCreated
+        : l10n.ntfStatusCreatedImportance(importance);
   }
 
   AndroidFlutterLocalNotificationsPlugin? get _android {
-    return _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    return _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
   }
 
   Future<void> _ensureInitialized() async {
@@ -131,7 +138,20 @@ class NotificationPermissionService extends ChangeNotifier {
     final android = _android;
     if (android == null) return false;
     try {
-      await android.createNotificationChannel(kMediaNotificationChannel);
+      // Re-create with current-locale name/description: Android updates
+      // name/desc of an existing channel (only importance is frozen).
+      final l10n = L10nHost.current;
+      await android.createNotificationChannel(
+        AndroidNotificationChannel(
+          kMediaNotificationChannelId,
+          l10n.ntfMediaChannelName,
+          description: l10n.ntfMediaChannelDesc,
+          importance: Importance.defaultImportance,
+          playSound: false,
+          enableVibration: false,
+          showBadge: false,
+        ),
+      );
       _channelEnsured = true;
       return true;
     } catch (_) {

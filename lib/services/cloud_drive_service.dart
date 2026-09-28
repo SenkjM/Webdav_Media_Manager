@@ -173,7 +173,7 @@ class CloudDriveService extends ChangeNotifier {
   CloudDriver _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
     final spec = cloudDriverSpec(a.providerType);
     if (spec == null) {
-      throw CloudDriverException('未知云盘类型：${a.providerType}');
+      throw CloudDriverException('err.unknownDriverType|${a.providerType}');
     }
     // 驱动的全部知识都在其 spec（99 §7.2.10）；兼容层只管查表、持久化
     // 与运行环境注入（crypt 的源解析，99 §7.5）。
@@ -253,7 +253,9 @@ class CloudDriveService extends ChangeNotifier {
   ) async {
     final spec = cloudDriverSpec(account.providerType);
     if (spec == null) {
-      throw CloudDriverException('未知云盘类型：${account.providerType}');
+      throw CloudDriverException(
+        'err.unknownDriverType|${account.providerType}',
+      );
     }
     await spec.verify(config, env: _buildEnv());
   }
@@ -351,7 +353,7 @@ class CloudDriveService extends ChangeNotifier {
       // 大小未知时拒绝下载：整包/分块的判定依赖密文总长，未知大小会被误当成
       // 「源回了整包」，静默产出损坏的空文件比明确报错糟糕得多。
       if (item.size <= 0) {
-        throw CloudDriverException('无法确定「${item.name}」的大小，下载已取消');
+        throw CloudDriverException('err.downloadSizeUnknown|${item.name}');
       }
       final driver = _requireDriver(accountId);
       final canResume = resumeFrom > 0 && item.size > resumeFrom;
@@ -515,7 +517,7 @@ class CloudDriveService extends ChangeNotifier {
       // media_kit 只认 URL，交给本地流桥按 Range 逐块取。大小未知时回不了
       // Content-Length，明确拒绝。
       if (item.size <= 0) {
-        throw CloudDriverException('无法确定「$name」的大小，暂不支持流式播放');
+        throw CloudDriverException('err.streamSizeUnknown|$name');
       }
       final bridged = await _streamBridge.expose(
         accountId: accountId,
@@ -548,11 +550,11 @@ class CloudDriveService extends ChangeNotifier {
 
   // --- 内部 ---
 
-  static const String _writeDisabled = '云盘账号不支持上传与云端写同步（上传功能已砍，见 99 §7.2.1）';
+  static const String _writeDisabled = 'err.cloudWriteDisabled';
 
   String _notReady(String accountId) {
     final a = _accounts.accountById(accountId);
-    return '云盘驱动尚未接入：${a?.providerType ?? accountId}';
+    return 'err.driverNotReady|${a?.providerType ?? accountId}';
   }
 
   String _remote(String accountId, String path) {
@@ -572,7 +574,7 @@ class CloudDriveService extends ChangeNotifier {
   WebDavAccount _requireAccount(String accountId) {
     final a = _accounts.accountById(accountId);
     if (a == null) {
-      throw StateError('云盘账号不存在：$accountId');
+      throw StateError('err.cloudAccountMissing|$accountId');
     }
     return a;
   }

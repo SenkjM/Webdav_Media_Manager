@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cache_policy.dart';
+import '../models/app_locale.dart';
 import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
@@ -25,6 +26,7 @@ class SettingsService extends ChangeNotifier {
        _secure = secureStorage ?? const FlutterSecureStorage();
 
   static const _kRetention = 'cache_retention';
+  static const _kAppLocale = 'app_locale';
   static const _kCustomRetentionHours = 'cache_custom_retention_hours';
   static const _kLibrarySort = 'library_sort_mode';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
@@ -219,7 +221,19 @@ class SettingsService extends ChangeNotifier {
   /// The single 网盘 every sync feature (凭证 / 歌单 / 音乐库 / 备份) writes to;
   /// null means「跟随当前选中的网盘」.
   String? _syncAccountId;
+  AppLocalePreference _appLocale = AppLocalePreference.system;
   bool _loaded = false;
+
+  /// Current UI language preference; null Locale means follow the system.
+  AppLocalePreference get appLocale => _appLocale;
+
+  Future<void> setAppLocale(AppLocalePreference value) async {
+    if (value == _appLocale) return;
+    _appLocale = value;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kAppLocale, value.storageKey);
+    notifyListeners();
+  }
 
   CacheRetention get retention => _retention;
   Duration get customRetentionDuration =>
@@ -356,6 +370,9 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
+    _appLocale = AppLocalePreferenceX.fromStorageKey(
+      _prefs!.getString(_kAppLocale),
+    );
     _retention = CacheRetentionX.fromStorageKey(_prefs!.getString(_kRetention));
     final storedHours = _prefs!.getInt(_kCustomRetentionHours);
     _customRetentionHours = _clampCustomHours(

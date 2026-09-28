@@ -1,0 +1,7 @@
+arb-dir: lib/l10n
+output-dir: lib/l10n/generated
+template-arb-file: app_zh_CN.arb
+output-localization-file: app_localizations.dart
+output-class: AppLocalizations
+preferred-supported-locales: [zh_CN, zh_TW, en]
+untranslated-messages-file: build/l10n_untranslated.txt

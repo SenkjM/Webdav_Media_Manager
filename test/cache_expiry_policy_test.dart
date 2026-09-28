@@ -192,10 +192,7 @@ void main() {
         CacheRetentionX.fromStorageKey(CacheRetention.custom.storageKey),
         CacheRetention.custom,
       );
-      expect(
-        CacheRetentionX.fromStorageKey(null),
-        CacheRetention.oneWeek,
-      );
+      expect(CacheRetentionX.fromStorageKey(null), CacheRetention.oneWeek);
     });
   });
 }

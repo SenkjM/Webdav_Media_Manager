@@ -38,6 +38,7 @@
 | 11 | [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md) | **云盘驱动实现要点与陷阱**：驱动契约与能力位、与 rclone Crypt 逐字节兼容的加密格式、令牌生命周期、直链与本地流桥、测试策略、驱动实现实录（baidu / netease_music / crypt）、分层与路由边界 |
 | 12 | [12-DRIVER-PORTING-GUIDE.md](12-DRIVER-PORTING-GUIDE.md) | **云盘驱动接入指南（操作手册）**：解耦边界（只动两个文件）、固定六步接入流程、表单字段与开关联动极性、测试手法、多盘并行开发的 worktree 工序、常见错误对照表 |
 | 13 | [13-DRIVER-BATCH-PLAN.md](13-DRIVER-BATCH-PLAN.md) | **驱动能力核查与接入批次记录**：99 §4.9 的执行侧收敛——「快速可实现」六条筛选标准、四盘（123_open / aliyundrive_open / 115open / terabox）的能力核查与验收、未接入驱动族的卡点记录 |
+| 14 | [14-LOCALIZATION-AND-MEDIA-LIFECYCLE.md](14-LOCALIZATION-AND-MEDIA-LIFECYCLE.md) | 应用语言偏好、ARB 维护、服务层错误本地化与 Android media_kit native 生命周期约定 |
 | 98 | [98-OPENLIST-MEDIA-CLIENT.md](98-OPENLIST-MEDIA-CLIENT.md) | **OpenList 媒体库客户端实现（远期，暂不实现）**：按 OpenList 媒体库概念重构音乐库为媒体库；本地库 / 多远程库同构、抽象层路由与鉴权；目标数据库架构（双方并集）、API 操作清单、身份模型、风险与未决问题 |
 
 ## 3. Agent 编码约束
@@ -45,6 +46,11 @@
 1. **先读本索引，再读对应功能块文档**；改动前确认它描述的就是现状。
 2. **开发新功能前先读 [99](99-IN-PROGRESS.md)**，再读它链到的完整文档；开发期间同时维护 `99` 与完整文档里的占位，完成后按 §1 收口。
 3. **分支**：`main` 是唯一主干，只有用户明确允许才可合并。新功能一律**基于 `main` 开独立功能分支**，成熟后**压缩成单个提交**合入 `main`（除非用户另有要求，例如要保留每一步的提交历史）。**压缩时要重写 commit 名称与描述**，不要沿用分支上某一条的信息、也不要罗列原始提交：按整条分支实际做了什么重新组织，一条读完就知道改了什么、为什么改。不开长期保存线，中途成果留在自己的功能分支上。使用 worktree 进行分支工作，统一建立在仓库根目录的 `worktree/<name>` 下面。
+   - 创建：`git worktree add -b <branch> worktree/<name> main`；一个功能只绑定一个 worktree，已有 worktree 不复用。
+   - 初始化：进入新 worktree 后单独执行 `flutter pub get`；`.dart_tool/`、`build/`、插件生成文件等本地产物不跨 worktree 复制、链接或提交。
+   - 执行顺序：同一个 worktree 内不要并行运行会写 `.dart_tool/` 或 `build/` 的 Flutter 命令；按 `pub get`、代码生成、`analyze`、`test`、`build` 串行执行。
+   - 清理：worktree 完成并确认无未提交改动后，用 `git worktree remove worktree/<name>`；需要删除已合并分支时再单独执行 `git branch -d <branch>`。发现 `prunable` worktree 先用 `git worktree prune` 清理注册信息。
+   - 核验：开始和结束都检查 `git worktree list`、`git status --short --branch`；不要在一个 worktree 中操作另一个 worktree 的文件。
 4. **CI**：不要为了看构建结果给 workflow 加 `on: push`，不要擅自 `gh workflow run`，不要推 `main`，不要打 Pre-release——除非用户明确要求。细节见 [09](09-MISC.md)。
 5. **改完跑** `flutter analyze` 与相关 `flutter test`；改核心逻辑优先跑 [09](09-MISC.md) 列出的测试入口。
 6. **密钥一律不打印、不提交**：keystore、`key.properties`、token、`.env`、secrets。

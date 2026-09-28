@@ -33,6 +33,7 @@ import 'package:dio/dio.dart';
 import '../../models/account_capabilities.dart';
 import '../cloud_driver.dart';
 import 'netease_music_crypto.dart';
+import '../../utils/l10n_host.dart';
 
 /// 驱动配置（对齐上游 Addition；默认值照抄 Go `meta.go`）。
 class NeteaseMusicAddition {
@@ -47,10 +48,7 @@ class NeteaseMusicAddition {
         songLimit: _parseLimit(json['song_limit']),
       );
 
-  Map<String, dynamic> toJson() => {
-        'cookie': cookie,
-        'song_limit': songLimit,
-      };
+  Map<String, dynamic> toJson() => {'cookie': cookie, 'song_limit': songLimit};
 
   /// 网易云音乐网页版 Cookie（必填）。必须含 `__csrf` 与 `MUSIC_U`。
   String cookie;
@@ -105,24 +103,24 @@ class NeteaseSong {
   final int addTime;
   final String picUrl;
 
-  DateTime? get modified => addTime > 0
-      ? DateTime.fromMillisecondsSinceEpoch(addTime)
-      : null;
+  DateTime? get modified =>
+      addTime > 0 ? DateTime.fromMillisecondsSinceEpoch(addTime) : null;
 }
 
 /// 网易云音乐 API 客户端（上游 `ClientNeteaseMusic` / Go 的 request 封装）。
 class NeteaseMusicClient {
   NeteaseMusicClient(this.addition, {Dio? dio})
-      : _dio = dio ??
-            Dio(
-              BaseOptions(
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 60),
-                headers: {'User-Agent': apiUA},
-                // 非 2xx 也回来读 body：「原样传递报错」需要读到网易的 code。
-                validateStatus: (_) => true,
-              ),
-            );
+    : _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 60),
+              headers: {'User-Agent': apiUA},
+              // 非 2xx 也回来读 body：「原样传递报错」需要读到网易的 code。
+              validateStatus: (_) => true,
+            ),
+          );
 
   /// 普通 API 的 UA（对齐 Go 版 base 客户端的 UserAgentNT）。
   static const String apiUA =
@@ -133,7 +131,8 @@ class NeteaseMusicClient {
       'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.90 Safari/537.36';
 
   /// linuxapi 的转发端点（上游固定）。
-  static const String linuxApiForward = 'https://music.163.com/api/linux/forward';
+  static const String linuxApiForward =
+      'https://music.163.com/api/linux/forward';
 
   static const String referer = 'https://music.163.com';
 
@@ -141,7 +140,8 @@ class NeteaseMusicClient {
   static const String cloudGetUrl = 'https://music.163.com/weapi/v1/cloud/get';
 
   /// 播放直链端点（走 linuxapi 加密）。
-  static const String songUrlApi = 'https://music.163.com/api/song/enhance/player/url';
+  static const String songUrlApi =
+      'https://music.163.com/api/song/enhance/player/url';
 
   /// 删除云盘歌曲端点（**上游两版都是 http**，逐字节保留）。
   static const String cloudDelUrl = 'http://music.163.com/weapi/cloud/del';
@@ -163,10 +163,7 @@ class NeteaseMusicClient {
     _csrfToken = getCookie('__csrf');
     _musicU = getCookie('MUSIC_U');
     if (_csrfToken.isEmpty || _musicU.isEmpty) {
-      throw const CloudDriverException(
-        'Cookie 必须同时包含 __csrf 与 MUSIC_U：'
-        '请在网页版 music.163.com 登录后，从开发者工具复制完整 Cookie',
-      );
+      throw const CloudDriverException('err.neteaseCookieRequired');
     }
   }
 
@@ -191,9 +188,7 @@ class NeteaseMusicClient {
     Map<String, String>? cookies,
   }) async {
     var target = url;
-    final headers = <String, String>{
-      'Cookie': _cookieHeader(cookies),
-    };
+    final headers = <String, String>{'Cookie': _cookieHeader(cookies)};
     if (target.contains('music.163.com')) {
       headers['Referer'] = referer;
     }
@@ -211,7 +206,7 @@ class NeteaseMusicClient {
       headers['User-Agent'] = linuxApiUA;
       target = linuxApiForward;
     } else {
-      throw CloudDriverException('未知的加密方式：$crypto');
+      throw CloudDriverException('err.neteaseUnknownCrypto|$crypto');
     }
 
     final Response<String> res;
@@ -226,7 +221,9 @@ class NeteaseMusicClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException('网易云音乐请求失败：${_short(e.message ?? '$e')}');
+      throw CloudDriverException(
+        'err.neteaseRequestFailed|${_short(e.message ?? '$e')}',
+      );
     }
 
     final text = res.data ?? '';
@@ -235,11 +232,13 @@ class NeteaseMusicClient {
       decoded = jsonDecode(text);
     } catch (_) {
       throw CloudDriverException(
-        '网易云音乐返回了非 JSON 响应（HTTP ${res.statusCode}）：${_short(text)}',
+        'err.neteaseNonJson|HTTP ${res.statusCode} ${_short(text)}',
       );
     }
     if (decoded is! Map<String, dynamic>) {
-      throw CloudDriverException('网易云音乐返回了非预期结构：${_short(text)}');
+      throw CloudDriverException(
+        'err.neteaseUnexpectedStructure|${_short(text)}',
+      );
     }
     _throwOnApiError(decoded, res.statusCode);
     return decoded;
@@ -250,24 +249,16 @@ class NeteaseMusicClient {
     final code = (body['code'] as num?)?.toInt();
     if (code == null || code == 200) return;
     final message = (body['message'] as String?)?.trim();
-    final detail = (message == null || message.isEmpty)
-        ? ''
-        : '：$message';
+    final detail = (message == null || message.isEmpty) ? '' : '：$message';
     if (code == 301 || code == 250) {
-      throw CloudDriverException(
-        '网易云音乐登录态已失效（code $code$detail）。'
-        'Cookie 可能已过期，请重新登录网页版并更新 Cookie',
-      );
+      throw CloudDriverException('err.neteaseLoginExpired|code $code$detail');
     }
-    throw CloudDriverException('网易云音乐接口报错（code $code$detail）');
+    throw CloudDriverException('err.neteaseApiError|code $code$detail');
   }
 
   /// 把 URL 里的 `/<xxx>api/` 段替换为目标段（上游正则 `/\w*api/`）。
   static String _rewriteApiSegment(String url, String segment) {
-    return url.replaceFirstMapped(
-      RegExp(r'/\w*api/'),
-      (_) => '/$segment/',
-    );
+    return url.replaceFirstMapped(RegExp(r'/\w*api/'), (_) => '/$segment/');
   }
 
   String _cookieHeader(Map<String, String>? extra) {
@@ -310,27 +301,19 @@ class NeteaseMusicClient {
     );
     final data = body['data'];
     if (data is! List || data.isEmpty) {
-      throw const CloudDriverException(
-        '网易云音乐未返回播放链接（可能是 VIP / 版权受限 / 已下架的歌曲）',
-      );
+      throw const CloudDriverException('err.neteaseNoSongLink');
     }
     final first = data.first;
     final url = first is Map ? first['url'] as String? : null;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException(
-        '网易云音乐未返回播放链接（可能是 VIP / 版权受限 / 已下架的歌曲）',
-      );
+      throw const CloudDriverException('err.neteaseNoSongLink');
     }
     return url;
   }
 
   /// 删除云盘歌曲（上游 `removeSong`）。
   Future<void> removeSong(String id) async {
-    await request(
-      cloudDelUrl,
-      crypto: 'weapi',
-      data: {'songIds': '[$id]'},
-    );
+    await request(cloudDelUrl, crypto: 'weapi', data: {'songIds': '[$id]'});
   }
 
   /// 真连校验：拉一次列表（上限 1）确认 Cookie 真的可用。
@@ -339,7 +322,8 @@ class NeteaseMusicClient {
     await getSongObjs(1);
   }
 
-  static String _short(String s) => s.length > 300 ? '${s.substring(0, 300)}…' : s;
+  static String _short(String s) =>
+      s.length > 300 ? '${s.substring(0, 300)}…' : s;
 }
 
 /// 网易云音乐云盘驱动。
@@ -350,10 +334,8 @@ class NeteaseMusicClient {
 /// 账号的「远程路径」对它是**纯虚拟前缀**：条目路径由上层拼接，驱动只认
 /// 文件名，所以改远程路径不会让条目失联。
 class NeteaseMusicDriver extends CloudDriver {
-  NeteaseMusicDriver({
-    required NeteaseMusicAddition addition,
-    Dio? dio,
-  }) : _client = NeteaseMusicClient(addition, dio: dio);
+  NeteaseMusicDriver({required NeteaseMusicAddition addition, Dio? dio})
+    : _client = NeteaseMusicClient(addition, dio: dio);
 
   final NeteaseMusicClient _client;
 
@@ -383,7 +365,7 @@ class NeteaseMusicDriver extends CloudDriver {
     }
     final song = await _findByName(name);
     if (song == null) {
-      throw CloudDriverException('文件不存在：$name');
+      throw CloudDriverException('err.neteaseFileNotFound|$name');
     }
     final item = _toItem(song);
     final url = await _client.getSongLink('${song.songId}');
@@ -403,11 +385,11 @@ class NeteaseMusicDriver extends CloudDriver {
   Future<void> remove(String path) async {
     final name = cloudBasename(path);
     if (name.isEmpty) {
-      throw const CloudDriverException('网易云音乐不支持删除根目录');
+      throw const CloudDriverException('err.neteaseRootDelete');
     }
     final song = await _findByName(name);
     if (song == null) {
-      throw CloudDriverException('文件不存在：$name');
+      throw CloudDriverException('err.neteaseFileNotFound|$name');
     }
     await _client.removeSong('${song.songId}');
   }
@@ -417,25 +399,23 @@ class NeteaseMusicDriver extends CloudDriver {
   /// 注意：返回**失败的 Future** 而不是同步 throw——`async` 之外的同步
   /// 抛出会绕过 `await` / `expectLater` 的错误通道，调用方拿不到可读原因。
   @override
-  Future<void> mkdir(String path) async => throw _unsupported('新建文件夹');
+  Future<void> mkdir(String path) async =>
+      throw const CloudDriverException('err.neteaseMkdirUnsupported');
 
   /// 上游 `Rename` 是 `errs.NotSupport` 桩。
   @override
   Future<void> rename(String path, String newPath) async =>
-      throw _unsupported('重命名');
+      throw const CloudDriverException('err.neteaseRenameUnsupported');
 
   /// 上游 `Move` 是 `errs.NotSupport` 桩。
   @override
   Future<void> move(String srcPath, String dstDir, String newName) async =>
-      throw _unsupported('移动');
+      throw const CloudDriverException('err.neteaseMoveUnsupported');
 
   /// 上游 `Copy` 是 `errs.NotSupport` 桩。
   @override
   Future<void> copy(String srcPath, String dstDir, String newName) async =>
-      throw _unsupported('复制');
-
-  CloudDriverException _unsupported(String what) =>
-      CloudDriverException('网易云音乐云盘不支持$what（上游驱动未实现该操作）');
+      throw const CloudDriverException('err.neteaseCopyUnsupported');
 
   Future<NeteaseSong?> _findByName(String name) async {
     final songs = await _client.getSongObjs(addition.songLimit);
@@ -446,11 +426,11 @@ class NeteaseMusicDriver extends CloudDriver {
   }
 
   CloudFileItem _toItem(NeteaseSong s) => CloudFileItem(
-        name: s.fileName,
-        isDir: false,
-        size: s.fileSize,
-        modified: s.modified,
-      );
+    name: s.fileName,
+    isDir: false,
+    size: s.fileSize,
+    modified: s.modified,
+  );
 }
 
 /// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造
@@ -462,7 +442,7 @@ class NeteaseMusicSpec extends CloudDriverSpec {
   String get typeId => 'netease_music';
 
   @override
-  String get displayName => '网易云音乐';
+  String get displayName => L10nHost.current.driverNameNetease;
 
   /// 列出 / 读取 / 删除。**没有** mkdir / move / copy：
   /// 上游四个写方法中除 Remove 外全是 `errs.NotSupport` 桩（99 §7.3.2）。
@@ -471,23 +451,21 @@ class NeteaseMusicSpec extends CloudDriverSpec {
       AccountCaps.list | AccountCaps.read | AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => const [
-        CloudDriverField(
-          key: 'cookie',
-          label: 'Cookie',
-          hint: '必填；需含 __csrf 与 MUSIC_U。'
-              '登录 music.163.com 后从开发者工具复制完整 Cookie'
-              '（获取方法见 OpenList 官方文档 netease_music 驱动页）',
-          required: true,
-          obscure: true,
-        ),
-        CloudDriverField(
-          key: 'song_limit',
-          label: '歌曲数量上限',
-          hint: '默认 $kDefaultSongLimit；网易云盘接口按此上限一次列取',
-          defaultValue: '$kDefaultSongLimit',
-        ),
-      ];
+  List<CloudDriverFormItem> get form => [
+    CloudDriverField(
+      key: 'cookie',
+      label: 'Cookie',
+      hint: L10nHost.current.formHintNeteaseCookie,
+      required: true,
+      obscure: true,
+    ),
+    CloudDriverField(
+      key: 'song_limit',
+      label: L10nHost.current.formLabelSongLimit,
+      hint: L10nHost.current.formHintSongLimit('$kDefaultSongLimit'),
+      defaultValue: '$kDefaultSongLimit',
+    ),
+  ];
 
   @override
   CloudDriver create(
@@ -507,8 +485,11 @@ class NeteaseMusicSpec extends CloudDriverSpec {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
     CloudDriverEnv? env,
   }) async {
-    final driver = create(config,
-        onTokenUpdate: onTokenUpdate, env: env) as NeteaseMusicDriver;
+    final driver = create(
+      config,
+      onTokenUpdate: onTokenUpdate,
+      env: env,
+    ) as NeteaseMusicDriver;
     await driver.client.verifyLogin();
   }
 }

@@ -12,10 +12,9 @@ class FileTypeConfig {
     List<String>? musicExtensions,
     List<String>? videoExtensions,
     List<String>? cueExtensions,
-  })  : musicExtensions = _normalize(musicExtensions ?? defaultMusicExtensions),
-        videoExtensions =
-            _normalize(videoExtensions ?? defaultVideoExtensions),
-        cueExtensions = _normalize(cueExtensions ?? defaultCueExtensions);
+  }) : musicExtensions = _normalize(musicExtensions ?? defaultMusicExtensions),
+       videoExtensions = _normalize(videoExtensions ?? defaultVideoExtensions),
+       cueExtensions = _normalize(cueExtensions ?? defaultCueExtensions);
 
   static const List<String> defaultMusicExtensions = [
     'mp3',
@@ -87,10 +86,10 @@ class FileTypeConfig {
   }
 
   Map<String, dynamic> toJson() => {
-        'music': musicExtensions,
-        'video': videoExtensions,
-        'cue': cueExtensions,
-      };
+    'music': musicExtensions,
+    'video': videoExtensions,
+    'cue': cueExtensions,
+  };
 
   factory FileTypeConfig.fromJson(Map<String, dynamic>? json) {
     if (json == null) return FileTypeConfig();

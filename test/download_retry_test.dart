@@ -24,7 +24,10 @@ DioException _dio(DioExceptionType type, {int? status}) => DioException(
   type: type,
   response: status == null
       ? null
-      : Response(requestOptions: RequestOptions(path: '/a'), statusCode: status),
+      : Response(
+          requestOptions: RequestOptions(path: '/a'),
+          statusCode: status,
+        ),
 );
 
 void main() {
@@ -60,7 +63,9 @@ void main() {
 
     test('网络与 5xx 可重试', () {
       expect(
-        DownloadQueueService.isRetryable(_dio(DioExceptionType.connectionError)),
+        DownloadQueueService.isRetryable(
+          _dio(DioExceptionType.connectionError),
+        ),
         isTrue,
       );
       expect(
@@ -138,7 +143,10 @@ void main() {
     });
 
     test('超过上限不再增长', () {
-      expect(DownloadQueueService.retryDelay(9).inMilliseconds, lessThan(33000));
+      expect(
+        DownloadQueueService.retryDelay(9).inMilliseconds,
+        lessThan(33000),
+      );
     });
   });
 

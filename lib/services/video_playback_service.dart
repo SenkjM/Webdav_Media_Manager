@@ -20,7 +20,8 @@ import 'music_audio_handler.dart';
 /// video with play/pause — that foreground service is also what keeps video
 /// playing after pressing Home.
 class VideoPlaybackService extends ChangeNotifier {
-  VideoPlaybackService({required MusicAudioHandler handler}) : _handler = handler {
+  VideoPlaybackService({required MusicAudioHandler handler})
+    : _handler = handler {
     // Music playback takes the MediaSession back by calling exitVideoMode()
     // directly; keep our own state in sync so the screen/lifecycle stops
     // treating the (now idle) video player as active.

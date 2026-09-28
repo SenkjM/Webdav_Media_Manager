@@ -401,9 +401,8 @@ class WmpContainer {
   final int flags;
 
   /// The 8 magic bytes for [kind].
-  static Uint8List magicFor(String kind) => Uint8List.fromList(
-    utf8.encode('$appTag$kind$layoutVersion'),
-  );
+  static Uint8List magicFor(String kind) =>
+      Uint8List.fromList(utf8.encode('$appTag$kind$layoutVersion'));
 
   /// Magic code of [bytes], or null when it is not one of our files.
   ///
@@ -481,16 +480,16 @@ class WmpContainer {
     }
     final code = kindOf(bytes);
     if (code == null) {
-      throw const WmpFormatException(
-        '不是 Webdav Media Manager 文件（缺少 WDMM 标识）',
-      );
+      throw const WmpFormatException('err.notWdmmFile');
     }
     if (!WmpFileKind.isDocument(code)) {
       throw WmpFormatException('unsupported file kind "$code"');
     }
     final layout = layoutOf(bytes);
     if (layout != layoutVersion) {
-      throw WmpFormatException('unsupported layout version $layout for kind $code');
+      throw WmpFormatException(
+        'unsupported layout version $layout for kind $code',
+      );
     }
     final count = _u16(bytes, 8);
     final flags = _u16(bytes, 10);

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/download_task.dart';
 import '../models/webdav_item.dart';
+import '../utils/l10n_host.dart';
 import 'download_queue_service.dart';
 import 'music_audio_handler.dart';
 import 'notification_permission_service.dart';
@@ -21,9 +22,9 @@ class AudioPlayerService extends ChangeNotifier {
     required DownloadQueueService downloads,
     required MusicAudioHandler handler,
     NotificationPermissionService? notificationPermission,
-  })  : _downloads = downloads,
-        _notifications = notificationPermission,
-        _handler = handler {
+  }) : _downloads = downloads,
+       _notifications = notificationPermission,
+       _handler = handler {
     _handler.resolveLocalPath = _resolveLocalPath;
     _posSub = _handler.positionStream.listen((p) {
       _position = p;
@@ -62,6 +63,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   TrackInfo? get current => _handler.currentTrack;
   String? get currentRemotePath => current?.remotePath;
+
   /// 网盘名 of the playing track (cache / identity side).
   String? get currentSourceName => current?.sourceName;
   List<TrackInfo> get queue => _handler.tracks;
@@ -90,10 +92,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// Play a track that is already local. Non-local tracks are rejected —
   /// use the download queue from library / network UI instead.
-  Future<void> playTrack(
-    TrackInfo track, {
-    List<TrackInfo>? playlist,
-  }) async {
+  Future<void> playTrack(TrackInfo track, {List<TrackInfo>? playlist}) async {
     _error = null;
     final list = <TrackInfo>[];
     if (playlist != null && playlist.isNotEmpty) {
@@ -115,7 +114,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     final local = await _resolveLocalPath(list[idx]);
     if (local == null) {
-      _error = '本地无缓存，请先下载';
+      _error = L10nHost.current.svcNoLocalCache;
       notifyListeners();
       return;
     }
@@ -125,8 +124,6 @@ class AudioPlayerService extends ChangeNotifier {
     await _ensureNotificationPermission();
     await _loadAndPlay(list, idx);
   }
-
-
 
   Future<void> _ensureNotificationPermission() async {
     final svc = _notifications;
@@ -154,7 +151,7 @@ class AudioPlayerService extends ChangeNotifier {
       final track = playlist[index];
       final local = await _resolveLocalPath(track);
       if (local == null) {
-        throw StateError('本地无缓存，请先下载');
+        throw StateError(L10nHost.current.svcNoLocalCache);
       }
       await _handler.loadAndPlay(
         playlist: playlist,
@@ -179,7 +176,7 @@ class AudioPlayerService extends ChangeNotifier {
         final idx = _handler.index < 0 ? 0 : _handler.index;
         final local = await _resolveLocalPath(_handler.tracks[idx]);
         if (local == null) {
-          _error = '本地无缓存，请先下载';
+          _error = L10nHost.current.svcNoLocalCache;
           notifyListeners();
           return;
         }

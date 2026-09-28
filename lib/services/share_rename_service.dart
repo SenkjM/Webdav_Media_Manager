@@ -2,6 +2,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/library_track.dart';
 import '../models/webdav_item.dart';
+import '../utils/l10n_host.dart';
 import 'settings_service.dart';
 import 'tag_service.dart';
 
@@ -26,16 +27,19 @@ class ShareRenameService {
     '{fileName}',
   ];
 
-  static const Map<String, String> placeholderLabels = {
-    '{artist}': '作者',
-    '{title}': '标题',
-    '{album}': '专辑',
-    '{albumArtist}': '专辑作者',
-    '{track}': '音轨号',
-    '{year}': '年份',
-    '{genre}': '流派',
-    '{fileName}': '原文件名',
-  };
+  static Map<String, String> get placeholderLabels {
+    final l10n = L10nHost.current;
+    return {
+      '{artist}': l10n.phArtist,
+      '{title}': l10n.phTitle,
+      '{album}': l10n.phAlbum,
+      '{albumArtist}': l10n.phAlbumArtist,
+      '{track}': l10n.phTrack,
+      '{year}': l10n.phYear,
+      '{genre}': l10n.phGenre,
+      '{fileName}': l10n.phFileName,
+    };
+  }
 
   /// Render [pattern] for [track]. Empty placeholders collapse; unknown
   /// placeholders are kept verbatim so the user sees their typo.

@@ -31,6 +31,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
 import '../cloud_driver.dart';
+import '../../utils/l10n_host.dart';
 
 /// 驱动配置（对齐上游 `AliyundriveOpenAddition`）。
 ///
@@ -50,36 +51,38 @@ class AliyundriveOpenAddition {
     this.accessToken = '',
   });
 
-  factory AliyundriveOpenAddition.fromJson(Map<String, dynamic> json) =>
-      AliyundriveOpenAddition(
-        refreshToken: json['refresh_token'] as String? ?? '',
-        driveType:
-            json['drive_type'] as String? ?? AliyundriveOpenClient.defaultDriveType,
-        driveId: json['drive_id'] as String? ?? '',
-        rootFolderId:
-            json['root_folder_id'] as String? ?? AliyundriveOpenClient.defaultRoot,
-        removeWay:
-            json['remove_way'] as String? ?? AliyundriveOpenClient.defaultRemoveWay,
-        apiUrlAddress: json['api_url_address'] as String? ??
-            AliyundriveOpenClient.defaultRenewApi,
-        localRefresh: json['local_refresh'] as bool? ?? false,
-        clientId: json['client_id'] as String? ?? '',
-        clientSecret: json['client_secret'] as String? ?? '',
-        accessToken: json['access_token'] as String? ?? '',
-      );
+  factory AliyundriveOpenAddition.fromJson(
+    Map<String, dynamic> json,
+  ) => AliyundriveOpenAddition(
+    refreshToken: json['refresh_token'] as String? ?? '',
+    driveType:
+        json['drive_type'] as String? ?? AliyundriveOpenClient.defaultDriveType,
+    driveId: json['drive_id'] as String? ?? '',
+    rootFolderId:
+        json['root_folder_id'] as String? ?? AliyundriveOpenClient.defaultRoot,
+    removeWay:
+        json['remove_way'] as String? ?? AliyundriveOpenClient.defaultRemoveWay,
+    apiUrlAddress:
+        json['api_url_address'] as String? ??
+        AliyundriveOpenClient.defaultRenewApi,
+    localRefresh: json['local_refresh'] as bool? ?? false,
+    clientId: json['client_id'] as String? ?? '',
+    clientSecret: json['client_secret'] as String? ?? '',
+    accessToken: json['access_token'] as String? ?? '',
+  );
 
   Map<String, dynamic> toJson() => {
-        'refresh_token': refreshToken,
-        'drive_type': driveType,
-        'drive_id': driveId,
-        'root_folder_id': rootFolderId,
-        'remove_way': removeWay,
-        'api_url_address': apiUrlAddress,
-        'local_refresh': localRefresh,
-        'client_id': clientId,
-        'client_secret': clientSecret,
-        'access_token': accessToken,
-      };
+    'refresh_token': refreshToken,
+    'drive_type': driveType,
+    'drive_id': driveId,
+    'root_folder_id': rootFolderId,
+    'remove_way': removeWay,
+    'api_url_address': apiUrlAddress,
+    'local_refresh': localRefresh,
+    'client_id': clientId,
+    'client_secret': clientSecret,
+    'access_token': accessToken,
+  };
 
   /// 刷新令牌（表单必填）。在线续期会轮换它，轮换结果经 `onTokenUpdate` 持久化。
   String refreshToken;
@@ -160,7 +163,8 @@ class AliyundriveOpenFile {
   bool get isDir => type == 'folder';
 
   /// 上游 `f.updated_at || f.created_at`（都没有则按契约给 null，不伪造时间）。
-  DateTime? get modified => parseAliyundriveOpenTime(updatedAt) ??
+  DateTime? get modified =>
+      parseAliyundriveOpenTime(updatedAt) ??
       parseAliyundriveOpenTime(createdAt);
 }
 
@@ -222,17 +226,18 @@ class AliyundriveOpenClient {
   static const int linkExpireSec = 14400;
 
   AliyundriveOpenClient(this.addition, {this.onTokenUpdate, Dio? dio})
-      : accessToken = addition.accessToken,
-        _dio = dio ??
-            Dio(
-              BaseOptions(
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 60),
-                headers: {'Accept': 'application/json'},
-                // 非 2xx 也回来走原文解析：「原样传递报错」需要读到 body。
-                validateStatus: (_) => true,
-              ),
-            );
+    : accessToken = addition.accessToken,
+      _dio =
+          dio ??
+          Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 15),
+              receiveTimeout: const Duration(seconds: 60),
+              headers: {'Accept': 'application/json'},
+              // 非 2xx 也回来走原文解析：「原样传递报错」需要读到 body。
+              validateStatus: (_) => true,
+            ),
+          );
 
   final AliyundriveOpenAddition addition;
   String accessToken;
@@ -268,10 +273,7 @@ class AliyundriveOpenClient {
   Future<void> refreshAccessToken() async {
     final token = addition.refreshToken.trim();
     if (token.isEmpty) {
-      throw const CloudDriverException(
-        '阿里云盘缺少 refresh_token：请在账号表单填写 refresh_token'
-        '（获取方法见 OpenList 官方文档 aliyundrive_open 驱动页）。',
-      );
+      throw const CloudDriverException('err.aliyunMissingRefreshToken');
     }
 
     final failures = <String>[];
@@ -283,7 +285,9 @@ class AliyundriveOpenClient {
           _applyTokens(tokens.access, tokens.refresh);
           return; // 第一个成功的就用（worker：Success!）。
         } on CloudDriverException catch (e) {
-          failures.add('$url → ${e.message}');
+          failures.add(
+            '$url → ${e.message.startsWith('err.') ? e.message.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '') : e.message}',
+          );
         } catch (e) {
           failures.add('$url → $e');
         }
@@ -295,17 +299,15 @@ class AliyundriveOpenClient {
       _applyTokens(tokens.access, tokens.refresh);
       return;
     } on CloudDriverException catch (e) {
-      failures.add('${AliyundriveOpenClient.oauthApi} → ${e.message}');
+      failures.add(
+        '${AliyundriveOpenClient.oauthApi} → ${e.message.startsWith('err.') ? e.message.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '') : e.message}',
+      );
     } catch (e) {
       failures.add('${AliyundriveOpenClient.oauthApi} → $e');
     }
 
     throw CloudDriverException(
-      '[AliyundriveOpen] All token refresh strategies failed. '
-      '请依次检查：1) refresh_token 是否有效且未过期；'
-      '2) api_url_address 是否可访问；'
-      '3) 若使用直连 OAuth，client_id / client_secret 是否正确。'
-      '${failures.isEmpty ? '' : '尝试记录：${failures.join(' | ')}'}',
+      'err.aliyunRefreshAllFailed|${failures.join(' ; ')}',
     );
   }
 
@@ -345,8 +347,10 @@ class AliyundriveOpenClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException('[Status ${e.response?.statusCode ?? '-'}] '
-          '${e.message ?? e}');
+      throw CloudDriverException(
+        '[Status ${e.response?.statusCode ?? '-'}] '
+        '${e.message ?? e}',
+      );
     }
 
     final raw = res.data ?? '';
@@ -359,8 +363,7 @@ class AliyundriveOpenClient {
     }
     if (body == null) {
       throw CloudDriverException(
-        '[Status ${res.statusCode}] 非 JSON 响应：'
-        '${raw.isEmpty ? '(空响应)' : _clip(raw)}',
+        'err.aliyunNonJson|[Status ${res.statusCode}] ${raw.isEmpty ? '(no body)' : _clip(raw)}',
       );
     }
 
@@ -411,8 +414,10 @@ class AliyundriveOpenClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException('[Status ${e.response?.statusCode ?? '-'}] '
-          '${e.message ?? e}');
+      throw CloudDriverException(
+        '[Status ${e.response?.statusCode ?? '-'}] '
+        '${e.message ?? e}',
+      );
     }
 
     final raw = res.data ?? '';
@@ -425,8 +430,7 @@ class AliyundriveOpenClient {
     }
     if (body == null) {
       throw CloudDriverException(
-        '[Status ${res.statusCode}] 非 JSON 响应：'
-        '${raw.isEmpty ? '(空响应)' : _clip(raw)}',
+        'err.aliyunNonJson|[Status ${res.statusCode}] ${raw.isEmpty ? '(no body)' : _clip(raw)}',
       );
     }
 
@@ -477,7 +481,7 @@ class AliyundriveOpenClient {
       );
     } on DioException catch (e) {
       throw CloudDriverException(
-        '[AliyundriveOpen] 网络请求失败 $path：${e.message ?? e}',
+        'err.aliyunNetworkFailed|$path：${e.message ?? e}',
       );
     }
 
@@ -519,12 +523,15 @@ class AliyundriveOpenClient {
       return driveId;
     }
 
-    final res = await openApiRequest('/user/getDriveInfo', const <String, dynamic>{});
+    final res = await openApiRequest(
+      '/user/getDriveInfo',
+      const <String, dynamic>{},
+    );
     final driveType = forceResource
         ? 'resource'
         : (addition.driveType.trim().isEmpty
-            ? AliyundriveOpenClient.defaultDriveType
-            : addition.driveType.trim());
+              ? AliyundriveOpenClient.defaultDriveType
+              : addition.driveType.trim());
 
     String pick(String type) {
       switch (type) {
@@ -541,18 +548,16 @@ class AliyundriveOpenClient {
 
     var picked = pick(driveType);
     if (picked.isEmpty) {
-      picked = _firstNonEmpty([
-        res['resource_drive_id'] as String?,
-        res['default_drive_id'] as String?,
-        res['backup_drive_id'] as String?,
-      ]) ??
+      picked =
+          _firstNonEmpty([
+            res['resource_drive_id'] as String?,
+            res['default_drive_id'] as String?,
+            res['backup_drive_id'] as String?,
+          ]) ??
           '';
     }
     if (picked.isEmpty) {
-      throw const CloudDriverException(
-        '[AliyundriveOpen] getDriveInfo 未返回任何 drive_id'
-        '（resource / default / backup 都为空）：请确认账号已开通阿里云盘。',
-      );
+      throw const CloudDriverException('err.aliyunNoDriveId');
     }
     driveId = picked;
     return driveId;
@@ -598,7 +603,9 @@ class AliyundriveOpenClient {
       if (list is List) {
         for (final e in list) {
           if (e is Map) {
-            items.add(AliyundriveOpenFile.fromMap(Map<String, dynamic>.from(e)));
+            items.add(
+              AliyundriveOpenFile.fromMap(Map<String, dynamic>.from(e)),
+            );
           }
         }
       }
@@ -636,9 +643,7 @@ class AliyundriveOpenClient {
       resp['download_url'] as String?,
     ]);
     if (url == null) {
-      throw const CloudDriverException(
-        '[AliyundriveOpen] getDownloadUrl 未返回直链（url / download_url 都为空）',
-      );
+      throw const CloudDriverException('err.aliyunNoDirectLink');
     }
     return url;
   }
@@ -729,10 +734,10 @@ class AliyundriveOpenDriver extends CloudDriver {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
     Dio? dio,
   }) : _client = AliyundriveOpenClient(
-          addition,
-          onTokenUpdate: onTokenUpdate,
-          dio: dio,
-        );
+         addition,
+         onTokenUpdate: onTokenUpdate,
+         dio: dio,
+       );
 
   final AliyundriveOpenClient _client;
 
@@ -806,7 +811,7 @@ class AliyundriveOpenDriver extends CloudDriver {
       // 3. 两者都不是：报真实原因（worker 在这里返回一个 is_dir:false 的
       //    无直链条目，本应用按契约直说）。
       throw CloudDriverException(
-        '[AliyundriveOpen] 无法获取条目或直链：$clean（file_id=$fileId）',
+        'err.aliyunEntryOrLinkFailed|$clean (file_id=$fileId)',
       );
     }
   }
@@ -816,7 +821,7 @@ class AliyundriveOpenDriver extends CloudDriver {
     final clean = _clean(path);
     final name = cloudBasename(clean);
     if (name.isEmpty) {
-      throw const CloudDriverException('[AliyundriveOpen] 不能创建根目录');
+      throw const CloudDriverException('err.mkdirRoot');
     }
     final parentId = await _resolveFileId(cloudDirname(clean));
     await _client.mkdir(parentId, name);
@@ -903,9 +908,7 @@ class AliyundriveOpenDriver extends CloudDriver {
       final items = await _client.listFiles(currentId);
       AliyundriveOpenFile? target;
       for (final f in items) {
-        if (f.name == rawPart ||
-            f.name == decodedPart ||
-            f.fileId == rawPart) {
+        if (f.name == rawPart || f.name == decodedPart || f.fileId == rawPart) {
           target = f;
           break;
         }
@@ -926,7 +929,7 @@ class AliyundriveOpenDriver extends CloudDriver {
     final clean = _clean(path);
     final name = cloudBasename(clean);
     if (name.isEmpty) {
-      throw const CloudDriverException('[AliyundriveOpen] 不能对根目录执行该操作');
+      throw const CloudDriverException('err.rootOp');
     }
     final parentId = await _resolveFileId(cloudDirname(clean));
     final found = await _findInDir(parentId, name);
@@ -966,11 +969,11 @@ class AliyundriveOpenDriver extends CloudDriver {
   }
 
   CloudFileItem _toItem(AliyundriveOpenFile f) => CloudFileItem(
-        name: f.name,
-        isDir: f.isDir,
-        size: f.size,
-        modified: f.modified,
-      );
+    name: f.name,
+    isDir: f.isDir,
+    size: f.size,
+    modified: f.modified,
+  );
 }
 
 /// 解析阿里云盘的时间戳。
@@ -995,12 +998,13 @@ class AliyundriveOpenSpec extends CloudDriverSpec {
   String get typeId => 'aliyundrive_open';
 
   @override
-  String get displayName => '阿里云盘开放平台';
+  String get displayName => L10nHost.current.driverNameAliyunOpen;
 
   /// 列出 / 读取 / 创建文件夹 / 移动 / 复制 / 删除；write 一律不给
   /// （上传已砍，99 §7.2.1）。
   @override
-  int get capabilities => AccountCaps.list |
+  int get capabilities =>
+      AccountCaps.list |
       AccountCaps.read |
       AccountCaps.mkdir |
       AccountCaps.move |
@@ -1014,67 +1018,67 @@ class AliyundriveOpenSpec extends CloudDriverSpec {
   Set<String> get runtimeSecretKeys => const {'access_token'};
 
   @override
-  List<CloudDriverFormItem> get form => const [
-        CloudDriverField(
-          key: 'refresh_token',
-          label: 'refresh_token',
-          hint: '必填；获取方法见 OpenList 官方文档（aliyundrive_open 驱动页）',
-          required: true,
-          obscure: true,
-        ),
-        CloudDriverSelectField(
-          key: 'drive_type',
-          label: '网盘类型',
-          hint: '资源盘 / 默认盘 / 备份盘，对应同一个账号下的不同 drive_id',
-          options: [
-            ('resource', '资源盘'),
-            ('default', '默认盘'),
-            ('backup', '备份盘'),
-          ],
-          defaultValue: AliyundriveOpenClient.defaultDriveType,
-          required: true,
-        ),
-        CloudDriverField(
-          key: 'api_url_address',
-          label: '在线续期地址',
-          hint: '默认用 OpenList 维护的公共服务',
-          defaultValue: AliyundriveOpenClient.defaultRenewApi,
-          disabledWhenSwitch: 'local_refresh',
-          disabledHint: '已开启本地刷新（在线续期分支停用），关闭开关后可编辑',
-        ),
-        CloudDriverSwitchField(
-          key: 'local_refresh',
-          label: '在本地处理令牌刷新',
-          subtitle: '关闭＝用在线续期地址轮询；开启＝用自建阿里云应用直接刷新（需 Client ID / Secret）',
-        ),
-        CloudDriverField(
-          key: 'client_id',
-          label: 'Client ID',
-          visibleWhenSwitch: 'local_refresh',
-        ),
-        CloudDriverField(
-          key: 'client_secret',
-          label: 'Client Secret',
-          obscure: true,
-          visibleWhenSwitch: 'local_refresh',
-        ),
-        CloudDriverSelectField(
-          key: 'remove_way',
-          label: '删除方式',
-          hint: '移入回收站可在阿里云盘里找回；彻底删除不可恢复',
-          options: [
-            ('trash', '移入回收站'),
-            ('delete', '彻底删除'),
-          ],
-          defaultValue: AliyundriveOpenClient.defaultRemoveWay,
-        ),
-        CloudDriverField(
-          key: 'root_folder_id',
-          label: '根目录 ID',
-          hint: '不透明 id，默认 root（网盘根目录）；与账号的远程路径叠加生效',
-          defaultValue: AliyundriveOpenClient.defaultRoot,
-        ),
-      ];
+  List<CloudDriverFormItem> get form => [
+    CloudDriverField(
+      key: 'refresh_token',
+      label: 'refresh_token',
+      hint: L10nHost.current.formHintOpenListDoc('aliyundrive_open'),
+      required: true,
+      obscure: true,
+    ),
+    CloudDriverSelectField(
+      key: 'drive_type',
+      label: L10nHost.current.formLabelDriveType,
+      hint: L10nHost.current.formHintDriveType,
+      options: [
+        ('resource', L10nHost.current.optionDriveResource),
+        ('default', L10nHost.current.optionDriveDefault),
+        ('backup', L10nHost.current.optionDriveBackup),
+      ],
+      defaultValue: AliyundriveOpenClient.defaultDriveType,
+      required: true,
+    ),
+    CloudDriverField(
+      key: 'api_url_address',
+      label: L10nHost.current.formLabelRenewApi,
+      hint: L10nHost.current.formHintRenewApiDefault,
+      defaultValue: AliyundriveOpenClient.defaultRenewApi,
+      disabledWhenSwitch: 'local_refresh',
+      disabledHint: L10nHost.current.formHintLocalRefreshDisabled,
+    ),
+    CloudDriverSwitchField(
+      key: 'local_refresh',
+      label: L10nHost.current.formLabelLocalRefresh,
+      subtitle: L10nHost.current.formSubLocalRefreshAliyun,
+    ),
+    CloudDriverField(
+      key: 'client_id',
+      label: 'Client ID',
+      visibleWhenSwitch: 'local_refresh',
+    ),
+    CloudDriverField(
+      key: 'client_secret',
+      label: 'Client Secret',
+      obscure: true,
+      visibleWhenSwitch: 'local_refresh',
+    ),
+    CloudDriverSelectField(
+      key: 'remove_way',
+      label: L10nHost.current.formLabelDeleteMode,
+      hint: L10nHost.current.formHintDeleteMode,
+      options: [
+        ('trash', L10nHost.current.optionDeleteTrash),
+        ('delete', L10nHost.current.optionDeletePermanent),
+      ],
+      defaultValue: AliyundriveOpenClient.defaultRemoveWay,
+    ),
+    CloudDriverField(
+      key: 'root_folder_id',
+      label: L10nHost.current.formLabelRootId,
+      hint: L10nHost.current.formHintRootIdOpaque('root'),
+      defaultValue: AliyundriveOpenClient.defaultRoot,
+    ),
+  ];
 
   @override
   CloudDriver create(

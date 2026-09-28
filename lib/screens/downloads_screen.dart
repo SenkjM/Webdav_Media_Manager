@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/download_task.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../utils/cue_sheet.dart';
 import '../services/cloud_driver.dart';
 import '../services/download_queue_service.dart';
@@ -63,6 +64,7 @@ class DownloadsScreen extends StatelessWidget {
     DownloadQueueService queue,
     List<DownloadTask> tasks,
   ) async {
+    final l10n = AppLocalizations.of(context)!;
     final running = tasks
         .where(
           (t) =>
@@ -74,19 +76,22 @@ class DownloadsScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.elevated,
-        title: const Text('清除所有队列？'),
+        title: Text(l10n.clearQueueConfirm),
         content: Text(
-          '将移除 ${tasks.length} 条队列记录${running > 0 ? '，并取消 $running 个进行中的下载' : ''}；已下载的文件保留。',
+          l10n.clearQueueDetails(
+            tasks.length,
+            running > 0 ? l10n.runningDownloads(running) : '',
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('清除全部'),
+            child: Text(l10n.clearAll),
           ),
         ],
       ),
@@ -94,12 +99,13 @@ class DownloadsScreen extends StatelessWidget {
     if (ok != true || !context.mounted) return;
     await queue.clearAll();
     if (!context.mounted) return;
-    AppSnack.show(context, '下载队列已清空');
+    AppSnack.show(context, l10n.queueCleared);
   }
 
   @override
   Widget build(BuildContext context) {
     final queue = context.watch<DownloadQueueService>();
+    final l10n = AppLocalizations.of(context)!;
     final tasks = queue.tasks.reversed.toList();
     final rows = _rowsFor(tasks, queue);
 
@@ -107,24 +113,24 @@ class DownloadsScreen extends StatelessWidget {
       backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
-        title: const Text('下载队列'),
+        title: Text(l10n.downloadQueue),
         actions: [
           IconButton(
-            tooltip: '全部下载',
+            tooltip: l10n.downloadAll,
             onPressed: tasks.any((t) => t.status != DownloadStatus.completed)
                 ? () => queue.downloadAll()
                 : null,
             icon: const Icon(Icons.download_for_offline_outlined),
           ),
           IconButton(
-            tooltip: '唤醒等待中任务',
+            tooltip: l10n.wakeWaiting,
             onPressed: tasks.any((t) => t.status == DownloadStatus.pending)
                 ? () => queue.downloadWaiting()
                 : null,
             icon: const Icon(Icons.playlist_play),
           ),
           IconButton(
-            tooltip: '全部取消',
+            tooltip: l10n.cancelAll,
             onPressed:
                 tasks.any(
                   (t) =>
@@ -139,10 +145,10 @@ class DownloadsScreen extends StatelessWidget {
             onPressed: tasks.any((t) => t.status == DownloadStatus.completed)
                 ? () => queue.clearCompleted()
                 : null,
-            child: const Text('清除已完成'),
+            child: Text(l10n.clearCompleted),
           ),
           PopupMenuButton<String>(
-            tooltip: '更多',
+            tooltip: l10n.more,
             onSelected: (v) {
               if (v == 'clear_all') _confirmClearAll(context, queue, tasks);
             },
@@ -150,8 +156,8 @@ class DownloadsScreen extends StatelessWidget {
               PopupMenuItem(
                 value: 'clear_all',
                 enabled: tasks.isNotEmpty,
-                child: const Text(
-                  '清除所有队列',
+                child: Text(
+                  l10n.clearAllQueue,
                   style: TextStyle(color: AppColors.error),
                 ),
               ),
@@ -160,9 +166,9 @@ class DownloadsScreen extends StatelessWidget {
         ],
       ),
       body: rows.isEmpty
-          ? const Center(
+          ? Center(
               child: Text(
-                '暂无下载任务',
+                l10n.noDownloadTasks,
                 style: TextStyle(color: AppColors.secondaryText),
               ),
             )
@@ -251,20 +257,23 @@ class _CueGroupTile extends StatelessWidget {
     final allDone =
         members.isNotEmpty &&
         members.every((t) => t.status == DownloadStatus.completed);
+    final l10n = AppLocalizations.of(context)!;
     final (label, color) = failed
-        ? ('失败', AppColors.error)
+        ? (l10n.downloadFailed, AppColors.error)
         : active
-        ? ('下载中', AppColors.accent)
+        ? (l10n.downloadActive, AppColors.accent)
         : pending
-        ? ('等待中', AppColors.mutedText)
+        ? (l10n.downloadPending, AppColors.mutedText)
         : allDone
-        ? ('已完成', const Color(0xFF66BB6A))
-        : ('进行中', AppColors.mutedText);
+        ? (l10n.downloadCompleted, const Color(0xFF66BB6A))
+        : (l10n.inProgress, AppColors.mutedText);
     final progress = members.isEmpty
         ? 0.0
         : members.map((t) => t.progress).reduce((a, b) => a + b) /
               members.length;
-    final songLabel = songs != null && songs > 0 ? '$songs 首歌' : 'CUE 专辑';
+    final songLabel = songs != null && songs > 0
+        ? l10n.songCount(songs)
+        : l10n.cueAlbum;
 
     return Card(
       color: AppColors.elevated,
@@ -346,7 +355,7 @@ class _CueGroupTile extends StatelessWidget {
                         }
                       }
                     },
-                    child: const Text('取消'),
+                    child: Text(l10n.cancel),
                   ),
                 if (failed)
                   TextButton(
@@ -358,7 +367,7 @@ class _CueGroupTile extends StatelessWidget {
                         }
                       }
                     },
-                    child: const Text('重试'),
+                    child: Text(l10n.retry),
                   ),
                 TextButton(
                   onPressed: () {
@@ -366,7 +375,7 @@ class _CueGroupTile extends StatelessWidget {
                       queue.remove(t.id);
                     }
                   },
-                  child: const Text('删除'),
+                  child: Text(l10n.delete),
                 ),
               ],
             ),
@@ -385,19 +394,19 @@ class _TaskTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final queue = context.read<DownloadQueueService>();
+    final l10n = AppLocalizations.of(context)!;
     final retryWaiting =
         task.status == DownloadStatus.pending && task.nextRetryAt != null;
-    final (label, color) = switch (task.status) {
-      DownloadStatus.pending => (
-        retryWaiting
-            ? '重试中 (${task.attempts}/${DownloadQueueService.maxAutoRetries})'
-            : '等待中',
+    final label = retryWaiting
+        ? '${l10n.downloadActive} (${task.attempts}/${DownloadQueueService.maxAutoRetries})'
+        : task.status.label(l10n);
+    final color = switch (task.status) {
+      DownloadStatus.pending =>
         retryWaiting ? AppColors.accent : AppColors.mutedText,
-      ),
-      DownloadStatus.active => ('下载中', AppColors.accent),
-      DownloadStatus.completed => ('已完成', const Color(0xFF66BB6A)),
-      DownloadStatus.failed => ('失败', AppColors.error),
-      DownloadStatus.cancelled => ('已取消', AppColors.mutedText),
+      DownloadStatus.active => AppColors.accent,
+      DownloadStatus.completed => const Color(0xFF66BB6A),
+      DownloadStatus.failed => AppColors.error,
+      DownloadStatus.cancelled => AppColors.mutedText,
     };
     final savedToGallery =
         task.isGallery && task.status == DownloadStatus.completed;
@@ -433,19 +442,23 @@ class _TaskTile extends StatelessWidget {
                 if (task.downloadMode == CloudDownloadMode.cryptSequential)
                   _DestinationChip(
                     icon: Icons.stream_outlined,
-                    label: 'Crypt 顺序流',
+                    label: l10n.dlCryptSequential,
                     color: AppColors.accent,
                   ),
                 if (task.isGallery)
                   _DestinationChip(
                     icon: Icons.photo_library_outlined,
-                    label: savedToGallery ? '已存入系统相册' : '目标：系统相册',
+                    label: savedToGallery
+                        ? l10n.dlSavedToGallery
+                        : l10n.dlTargetGallery,
                     color: AppColors.accent,
                   ),
                 if (task.target == DownloadTarget.downloads)
                   _DestinationChip(
                     icon: Icons.folder_outlined,
-                    label: savedToDownloads ? '已存入下载目录' : '目标：下载目录',
+                    label: savedToDownloads
+                        ? l10n.dlSavedToDownloads
+                        : l10n.dlTargetDownloads,
                     color: AppColors.accent,
                   ),
                 Container(
@@ -491,7 +504,7 @@ class _TaskTile extends StatelessWidget {
                 (task.status == DownloadStatus.failed || retryWaiting)) ...[
               const SizedBox(height: 4),
               Text(
-                task.errorMessage!,
+                DownloadQueueService.describeError(task.errorMessage!, l10n),
                 style: TextStyle(
                   color: task.status == DownloadStatus.failed
                       ? AppColors.error
@@ -509,17 +522,17 @@ class _TaskTile extends StatelessWidget {
                     task.status == DownloadStatus.active)
                   TextButton(
                     onPressed: () => queue.cancel(task.id),
-                    child: const Text('取消'),
+                    child: Text(l10n.cancel),
                   ),
                 if (task.status == DownloadStatus.failed ||
                     task.status == DownloadStatus.cancelled)
                   TextButton(
                     onPressed: () => queue.retry(task.id),
-                    child: const Text('重试'),
+                    child: Text(l10n.retry),
                   ),
                 TextButton(
                   onPressed: () => queue.remove(task.id),
-                  child: const Text('删除'),
+                  child: Text(l10n.delete),
                 ),
               ],
             ),

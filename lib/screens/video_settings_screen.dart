@@ -1,3 +1,4 @@
+import '../l10n/generated/app_localizations.dart';
 import '../utils/app_snack.dart';
 
 import 'package:flutter/material.dart';
@@ -42,7 +43,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
     if (!mounted) return;
     _bufferController.text =
         '${context.read<SettingsService>().videoBufferSizeMb}';
-    AppSnack.show(context, '缓冲大小已保存，下次播放生效');
+    AppSnack.show(context, AppLocalizations.of(context)!.videoBufferSaved);
   }
 
   @override
@@ -51,45 +52,52 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: const Text('视频播放')),
+      appBar: AppBar(title: Text(AppLocalizations.of(context)!.videoPlayback)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            '流式播放',
+            AppLocalizations.of(context)!.streamPlayback,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          const Text(
-            '视频直接流式播放，不下载到本地。',
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+          Text(
+            AppLocalizations.of(context)!.videoStreamingHint,
+            style: const TextStyle(
+              color: AppColors.secondaryText,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.memory_outlined),
-            title: const Text('硬件解码'),
-            subtitle: const Text('关闭后改用软件解码，个别设备更稳定'),
+            title: Text(AppLocalizations.of(context)!.videoHardwareDecoding),
+            subtitle: Text(
+              AppLocalizations.of(context)!.videoHardwareDecodingHint,
+            ),
             value: settings.videoHardwareDecoding,
             onChanged: (v) => settings.setVideoHardwareDecoding(v),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.account_tree_outlined),
-            title: const Text('搜索子目录'),
-            subtitle: const Text('播放列表是否包含子目录里的视频'),
+            title: Text(AppLocalizations.of(context)!.scanSubdirectories),
+            subtitle: Text(AppLocalizations.of(context)!.videoScanSubdirsHint),
             value: settings.videoScanSubdirs,
             onChanged: (v) => settings.setVideoScanSubdirs(v),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.storage_outlined),
-            title: const Text('缓冲大小'),
+            title: Text(AppLocalizations.of(context)!.videoBufferSize),
             subtitle: Text(
-              '当前 ${settings.videoBufferSizeMb} MB（范围 '
-              '${SettingsService.minVideoBufferMb}–'
-              '${SettingsService.maxVideoBufferMb} MB）',
+              AppLocalizations.of(context)!.videoBufferCurrent(
+                settings.videoBufferSizeMb,
+                SettingsService.minVideoBufferMb,
+                SettingsService.maxVideoBufferMb,
+              ),
             ),
           ),
           Row(
@@ -99,10 +107,10 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
                 child: TextField(
                   controller: _bufferController,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
-                    labelText: '缓冲 (MB)',
-                    border: OutlineInputBorder(),
+                    labelText: AppLocalizations.of(context)!.videoBufferInput,
+                    border: const OutlineInputBorder(),
                   ),
                   onEditingComplete: _applyBuffer,
                 ),
@@ -110,29 +118,29 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
               const SizedBox(width: 12),
               FilledButton.tonal(
                 onPressed: _applyBuffer,
-                child: const Text('应用'),
+                child: Text(AppLocalizations.of(context)!.apply),
               ),
             ],
           ),
           const Divider(height: 40),
           Text(
-            '手势',
+            AppLocalizations.of(context)!.videoGestures,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 8),
           _gestureTile(
-            label: '左侧双击',
+            label: AppLocalizations.of(context)!.videoGestureLeftDoubleTap,
             value: settings.videoLeftDoubleTap,
             onChanged: (v) => settings.setVideoLeftDoubleTap(v),
           ),
           _gestureTile(
-            label: '右侧双击',
+            label: AppLocalizations.of(context)!.videoGestureRightDoubleTap,
             value: settings.videoRightDoubleTap,
             onChanged: (v) => settings.setVideoRightDoubleTap(v),
           ),
           _gestureTile(
-            label: '长按',
+            label: AppLocalizations.of(context)!.videoGestureLongPress,
             value: settings.videoLongPress,
             onChanged: (v) => settings.setVideoLongPress(v),
           ),
@@ -141,9 +149,11 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.speed),
-              title: const Text('长按临时倍速'),
+              title: Text(AppLocalizations.of(context)!.videoLongPressRate),
               subtitle: Text(
-                '按住加速到 ${settings.videoLongPressRate.toStringAsFixed(2)}×，松手恢复',
+                AppLocalizations.of(context)!.videoLongPressCurrent(
+                  settings.videoLongPressRate.toStringAsFixed(2),
+                ),
               ),
             ),
             Wrap(
@@ -173,9 +183,13 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.slow_motion_video),
-            title: const Text('默认播放倍速'),
+            title: Text(AppLocalizations.of(context)!.videoDefaultRate),
             subtitle: Text(
-              '当前 ${settings.videoLastRate.toStringAsFixed(2)}×（范围 ${SettingsService.minVideoRate.toStringAsFixed(1)}×–${SettingsService.maxVideoRate.toStringAsFixed(1)}×）',
+              AppLocalizations.of(context)!.videoDefaultRateCurrent(
+                settings.videoLastRate.toStringAsFixed(2),
+                SettingsService.minVideoRate.toStringAsFixed(1),
+                SettingsService.maxVideoRate.toStringAsFixed(1),
+              ),
             ),
           ),
           Slider(
@@ -191,13 +205,13 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           ),
           const Divider(height: 40),
           Text(
-            '字幕',
+            AppLocalizations.of(context)!.videoSubtitles,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          const Text(
-            '控件显示时画在控件条上方，隐藏时贴窗口底部。',
+          Text(
+            AppLocalizations.of(context)!.videoSubtitleHint,
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const SizedBox(height: 8),
@@ -205,7 +219,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             showSelectedIcon: false,
             segments: [
               for (final p in VideoSubtitlePosition.values)
-                ButtonSegment(value: p, label: Text(p.labelZh)),
+                ButtonSegment(value: p, label: Text(p.label(AppLocalizations.of(context)!))),
             ],
             selected: {settings.videoSubtitlePosition},
             onSelectionChanged: (sel) =>
@@ -217,11 +231,13 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             ListTile(
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.format_size),
-              title: const Text('字幕大小'),
+              title: Text(AppLocalizations.of(context)!.videoSubtitleSize),
               subtitle: Text(
-                '当前 ${settings.videoSubtitleFontSize.toStringAsFixed(0)} sp'
-                '（范围 ${SettingsService.minVideoSubtitleFontSize.toStringAsFixed(0)}–'
-                '${SettingsService.maxVideoSubtitleFontSize.toStringAsFixed(0)} sp）',
+                AppLocalizations.of(context)!.videoSubtitleSizeCurrent(
+                  settings.videoSubtitleFontSize.toStringAsFixed(0),
+                  SettingsService.minVideoSubtitleFontSize.toStringAsFixed(0),
+                  SettingsService.maxVideoSubtitleFontSize.toStringAsFixed(0),
+                ),
               ),
             ),
             Wrap(
@@ -252,7 +268,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           ],
           const Divider(height: 40),
           Text(
-            '播放行为',
+            AppLocalizations.of(context)!.videoPlaybackBehavior,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -260,16 +276,18 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.headset_outlined),
-            title: const Text('后台播放'),
-            subtitle: const Text('离开播放器后继续播放声音'),
+            title: Text(AppLocalizations.of(context)!.videoBackgroundPlayback),
+            subtitle: Text(
+              AppLocalizations.of(context)!.videoBackgroundPlaybackHint,
+            ),
             value: settings.videoBackgroundPlayback,
             onChanged: (v) => settings.setVideoBackgroundPlayback(v),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.picture_in_picture_alt_outlined),
-            title: const Text('画中画（小窗）'),
-            subtitle: const Text('播放控件中显示画中画按钮（Android 8+）'),
+            title: Text(AppLocalizations.of(context)!.videoPip),
+            subtitle: Text(AppLocalizations.of(context)!.videoPipHint),
             value: settings.videoPipEnabled,
             onChanged: (v) => settings.setVideoPipEnabled(v),
           ),
@@ -291,7 +309,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
         value: value,
         items: [
           for (final a in VideoGestureAction.values)
-            DropdownMenuItem(value: a, child: Text(a.labelZh)),
+            DropdownMenuItem(value: a, child: Text(a.label(AppLocalizations.of(context)!))),
         ],
         onChanged: (v) {
           if (v != null) onChanged(v);

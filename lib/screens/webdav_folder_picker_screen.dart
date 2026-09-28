@@ -11,6 +11,7 @@ import '../utils/audio_extensions.dart';
 import '../utils/remote_path.dart';
 import '../utils/webdav_errors.dart';
 import '../widgets/webdav_error_dialog.dart';
+import '../l10n/generated/app_localizations.dart';
 
 /// 远端目录选择器：挑一个目标文件夹，供复制 / 移动使用。
 ///
@@ -57,7 +58,6 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
-
   /// 当前位置是否就是被排除的那个目录（移动文件夹时不能选它）。
   bool get _isExcluded {
     final ex = widget.excludedPath;
@@ -86,7 +86,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = webDavErrorMessage(e);
+        _error = webDavErrorMessage(e, AppLocalizations.of(context)!);
         _loading = false;
         _items = const [];
       });
@@ -111,20 +111,22 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('新建文件夹'),
+        title: Text(AppLocalizations.of(context)!.newFolder),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(labelText: '名称'),
+          decoration: InputDecoration(
+            labelText: AppLocalizations.of(context)!.nameLabel,
+          ),
           autofocus: true,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
+            child: Text(AppLocalizations.of(context)!.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('创建'),
+            child: Text(AppLocalizations.of(context)!.create),
           ),
         ],
       ),
@@ -132,15 +134,17 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
     if (name == null || name.isEmpty || !mounted) return;
     final parent = _path.endsWith('/') ? _path : '$_path/';
     await runWebDavAction(context, () async {
-      await context
-          .read<WebDavService>()
-          .createFolder(widget.accountId, '$parent$name');
+      await context.read<WebDavService>().createFolder(
+        widget.accountId,
+        '$parent$name',
+      );
       await _load();
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
@@ -154,25 +158,32 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
             // 左上角是「关闭选择器」，不是「上一级」——上一级在右上角，两者
             // 混用会让人以为退出了、其实只是上了一层目录。
             icon: const Icon(Icons.close),
-            tooltip: '关闭',
+            tooltip: l10n.close,
             onPressed: () => Navigator.of(context).pop(),
           ),
-          title: Text('${widget.purpose}：${folderDisplayName(_path)}'),
+          title: Text(
+            l10n.folderPickerTitle(
+              widget.purpose,
+              folderDisplayName(_path, rootLabel: l10n.rootFolder),
+            ),
+          ),
           actions: [
             IconButton(
               key: const Key('picker-up'),
               icon: const Icon(Icons.arrow_upward),
-              tooltip: '上一级',
-              onPressed:
-                  _stack.length > 1 ? () => setState(() => _goUp()) : null,
+              tooltip: l10n.parentFolder,
+              onPressed: _stack.length > 1
+                  ? () => setState(() => _goUp())
+                  : null,
             ),
             // 新建文件夹按「创建文件夹」能力遮罩（99 §7.2.6）：无能力直接隐藏。
-            if (context
-                .read<CloudDriveService>()
-                .can(widget.accountId, AccountCaps.mkdir))
+            if (context.read<CloudDriveService>().can(
+              widget.accountId,
+              AccountCaps.mkdir,
+            ))
               IconButton(
                 icon: const Icon(Icons.create_new_folder_outlined),
-                tooltip: '新建文件夹',
+                tooltip: AppLocalizations.of(context)!.newFolder,
                 onPressed: _createFolder,
               ),
           ],
@@ -206,7 +217,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        child: const Text('关闭'),
+                        child: Text(AppLocalizations.of(context)!.close),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -215,7 +226,9 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
                         onPressed: _isExcluded
                             ? null
                             : () => Navigator.of(context).pop(_path),
-                        child: Text('到此文件夹'),
+                        child: Text(
+                          AppLocalizations.of(context)!.pickThisFolder,
+                        ),
                       ),
                     ),
                   ],
@@ -243,14 +256,17 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
               const SizedBox(height: 12),
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 12),
-              FilledButton(onPressed: _load, child: const Text('重试')),
+              FilledButton(
+                onPressed: _load,
+                child: Text(AppLocalizations.of(context)!.retry),
+              ),
             ],
           ),
         ),
       );
     }
     if (_items.isEmpty) {
-      return const Center(child: Text('这个目录里没有子文件夹'));
+      return Center(child: Text(AppLocalizations.of(context)!.noSubfolders));
     }
     return ListView.builder(
       itemCount: _items.length,
@@ -283,7 +299,9 @@ Future<void> copyOrMoveItems(
   required Future<void> Function() onDone,
 }) async {
   if (items.isEmpty) return;
-  final purpose = move ? '移动到' : '复制到';
+  final purpose = move
+      ? AppLocalizations.of(context)!.moveTo
+      : AppLocalizations.of(context)!.copyTo;
   final onlyDir = items.length == 1 && items.first.isDirectory;
 
   final target = await Navigator.of(context).push<String>(
@@ -298,6 +316,7 @@ Future<void> copyOrMoveItems(
   );
   if (target == null || !context.mounted) return;
 
+  final l10n = AppLocalizations.of(context)!;
   final webDav = context.read<WebDavService>();
   final done = <String>[];
   final failed = <String>[];
@@ -317,19 +336,22 @@ Future<void> copyOrMoveItems(
       }
       done.add(item.name);
     } catch (e) {
-      failed.add('${item.name}：${webDavErrorMessage(e)}');
+      failed.add(l10n.itemWithMessage(item.name, webDavErrorMessage(e, l10n)));
     }
   }
   if (!context.mounted) return;
 
   if (failed.isEmpty) {
-    AppSnack.show(context, move ? '已移动 ${done.length} 项' : '已复制 ${done.length} 项');
+    AppSnack.show(
+      context,
+      move ? l10n.movedItems(done.length) : l10n.copiedItems(done.length),
+    );
   } else if (done.isEmpty) {
-    AppSnack.error(context, '失败：${failed.first}');
+    AppSnack.error(context, l10n.failedWith(failed.first));
   } else {
     AppSnack.error(
       context,
-      '成功 ${done.length} 项，失败 ${failed.length} 项：${failed.first}',
+      l10n.movePartialResult(done.length, failed.length, failed.first),
     );
   }
   await onDone();

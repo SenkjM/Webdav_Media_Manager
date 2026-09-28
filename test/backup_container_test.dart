@@ -184,14 +184,11 @@ void main() {
     });
 
     test('a container body survives the deflate round-trip byte for byte', () {
-      final container = WmpContainer.encode(
-        {
-          WmpSections.settings: Uint8List.fromList(
-            utf8.encode(jsonEncode({'a': 1, 'b': '中文'})),
-          ),
-        },
-        kind: WmpFileKind.backup,
-      );
+      final container = WmpContainer.encode({
+        WmpSections.settings: Uint8List.fromList(
+          utf8.encode(jsonEncode({'a': 1, 'b': '中文'})),
+        ),
+      }, kind: WmpFileKind.backup);
       final parsed = WmpContainer.fromBytes(container);
       expect(
         jsonDecode(utf8.decode(parsed.readSection(WmpSections.settings)!)),

@@ -79,7 +79,11 @@ Future<void> downloadResumable(
 
 /// `bytes 100-999/1000` 的解析结果。
 class ContentRange {
-  const ContentRange({required this.start, required this.end, required this.total});
+  const ContentRange({
+    required this.start,
+    required this.end,
+    required this.total,
+  });
 
   final int start;
   final int end;

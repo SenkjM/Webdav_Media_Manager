@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 
 import '../models/library_track.dart';
 import '../models/webdav_account.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../utils/backup_paths.dart';
+import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'accounts_service.dart';
 import 'backup_service.dart';
@@ -34,10 +36,58 @@ class SyncOutcome {
   void warn(String message) => warnings.add(message);
 
   String get message {
-    if (!ok) return '操作失败：${error ?? '未知错误'}';
-    final body = steps.isEmpty ? '无变更' : steps.join('；');
-    final warn = warnings.isEmpty ? '' : '\n注意：${warnings.join('；')}';
+    final l10n = L10nHost.current;
+    if (!ok) {
+      return l10n.syncOperationFailed(
+        describeError(error ?? l10n.syncUnknownError, l10n),
+      );
+    }
+    final body = steps.isEmpty
+        ? l10n.syncNoChanges
+        : steps.join(l10n.syncListSep);
+    final warn = warnings.isEmpty
+        ? ''
+        : '\n${l10n.syncNotePrefix}${warnings.join(l10n.syncListSep)}';
     return '$body$warn';
+  }
+
+  /// Map stable error codes (and their `Bad state:` / `WmpFormatException:`
+  /// wrappers) to localized text; unknown values pass through unchanged.
+  static String describeError(String raw, AppLocalizations l10n) {
+    var text = raw;
+    for (final prefix in const ['Bad state: ', 'WmpFormatException: ']) {
+      if (text.startsWith(prefix)) text = text.substring(prefix.length);
+    }
+    final bar = text.indexOf('|');
+    if (bar > 0) {
+      final code = text.substring(0, bar);
+      final detail = text.substring(bar + 1);
+      if (code == 'err.notBackupArchive') {
+        return l10n.errNotBackupArchive(detail);
+      }
+      if (code == 'err.shardKindMismatch') {
+        final bar2 = detail.indexOf('|');
+        return l10n.errShardKindMismatch(
+          bar2 > 0 ? detail.substring(0, bar2) : detail,
+          bar2 > 0 ? detail.substring(bar2 + 1) : '',
+        );
+      }
+    }
+    switch (text) {
+      case 'err.noWebdavAccount':
+        return l10n.errNoWebdavAccount;
+      case 'err.vaultDestNotConfigured':
+        return l10n.errVaultDestNotConfigured;
+      case 'err.backupDestNotConfigured':
+        return l10n.errBackupDestNotConfigured;
+      case 'err.backupEncryptedNeedPassphrase':
+        return l10n.errBackupEncryptedNeedPassphrase;
+      case 'err.backupUnrecognizedContent':
+        return l10n.errBackupUnrecognizedContent;
+      case 'err.notWdmmFile':
+        return l10n.errNotWdmmFile;
+    }
+    return text;
   }
 }
 
@@ -161,11 +211,11 @@ class SyncService extends ChangeNotifier {
     busy = true;
     lastError = null;
     lastMessage = null;
-    _progress('准备中…', 0.02);
+    _progress(L10nHost.current.progressPreparing, 0.02);
     notifyListeners();
     try {
       await body();
-      _progress('完成', 1);
+      _progress(L10nHost.current.progressDone, 1);
     } catch (e) {
       outcome.ok = false;
       outcome.error = e.toString();
@@ -196,27 +246,26 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
       if (pass.isEmpty) {
-        outcome.step('凭证同步已跳过（未设置统一加密密钥）');
+        outcome.step(L10nHost.current.warnCredentialsSkippedNoKey);
       } else {
-        _progress('扫描云端凭证…', 0.3);
+        _progress(L10nHost.current.progressScanningCloudCredentials, 0.3);
         try {
-          final result = await _vault.pull(
-            accountId: dest,
-            passphrase: pass,
-          );
+          final result = await _vault.pull(accountId: dest, passphrase: pass);
           if (result != null) outcome.step(result.summary);
         } catch (e) {
-          outcome.warn('凭证扫描跳过：$e');
+          outcome.warn(L10nHost.current.warnCredentialScanSkipped('$e'));
         }
       }
-      _progress('扫描歌单…', 0.7);
+      _progress(L10nHost.current.progressScanningPlaylists, 0.7);
       _playlists.configureSync(
         remotePath: _settings.playlistRemotePath,
         enabled: true,
         accountId: dest,
       );
       await _playlists.pullAndMergeFromWebDav();
-      outcome.step('歌单已合并（${_playlists.playlists.length} 个）');
+      outcome.step(
+        L10nHost.current.stepPlaylistsMerged(_playlists.playlists.length),
+      );
     });
     lastAutoSyncAt = DateTime.now();
     lastAutoSyncSummary = outcome.message;
@@ -238,11 +287,13 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'push');
     await _run(outcome, () async {
       final dest = await syncDestination();
-      if (dest == null) throw StateError('请先添加 WebDAV 账号');
+      if (dest == null) throw StateError('err.noWebdavAccount');
       final pass = passphrase ?? _settings.vaultPassphrase;
-      _progress('上传凭证…', 0.5);
+      _progress(L10nHost.current.progressUploadingCredentials, 0.5);
       await _vault.push(accountId: dest, passphrase: pass);
-      outcome.step('凭证已同步到云端（${_accounts.accounts.length} 个服务器）');
+      outcome.step(
+        L10nHost.current.stepCredentialsUploaded(_accounts.accounts.length),
+      );
     });
     return outcome;
   }
@@ -253,11 +304,11 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'pull');
     await _run(outcome, () async {
       final dest = await syncDestination();
-      if (dest == null) throw StateError('请先添加 WebDAV 账号');
+      if (dest == null) throw StateError('err.noWebdavAccount');
       final pass = passphrase ?? _settings.vaultPassphrase;
-      _progress('下载凭证…', 0.5);
+      _progress(L10nHost.current.progressDownloadingCredentials, 0.5);
       final result = await _vault.pull(accountId: dest, passphrase: pass);
-      outcome.step(result?.summary ?? '云端暂无凭证文件');
+      outcome.step(result?.summary ?? L10nHost.current.stepCloudNoCredentials);
       await _accounts.init();
     });
     return outcome;
@@ -269,18 +320,20 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
       final dest = await syncDestination();
-      if (dest == null) throw StateError('请先添加 WebDAV 账号');
+      if (dest == null) throw StateError('err.noWebdavAccount');
       _playlists.configureSync(
         remotePath: _settings.playlistRemotePath,
         enabled: true,
         accountId: dest,
       );
-      _progress('合并歌单…', 0.5);
+      _progress(L10nHost.current.progressMergingPlaylists, 0.5);
       await _playlists.pullAndMergeFromWebDav();
       for (final pl in _playlists.playlists) {
         await _playlists.uploadPlaylist(pl);
       }
-      outcome.step('歌单已同步（${_playlists.playlists.length} 个）');
+      outcome.step(
+        L10nHost.current.stepPlaylistsSynced(_playlists.playlists.length),
+      );
     });
     return outcome;
   }
@@ -301,10 +354,10 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
       final dest = await syncDestination();
-      if (dest == null) throw StateError('请先添加 WebDAV 账号');
+      if (dest == null) throw StateError('err.noWebdavAccount');
       final store = await _libraryStore();
 
-      _progress('读取云端曲库索引…', 0.3);
+      _progress(L10nHost.current.progressReadingCloudIndex, 0.3);
       final manifest = await store.readManifest(dest);
       cloudFragmentCount = manifest.fragmentCount;
       cloudFragmentBytes = manifest.fragmentBytes;
@@ -358,7 +411,10 @@ class SyncService extends ChangeNotifier {
       }
 
       if (toAdopt.isNotEmpty) {
-        _progress('采纳云端 ${toAdopt.length} 首…', 0.5);
+        _progress(
+          L10nHost.current.progressAdoptingCloudTracks(toAdopt.length),
+          0.5,
+        );
         await _library.upsertTracks(toAdopt);
         for (final t in toAdopt) {
           _library.observeRev(t.rev ?? 0);
@@ -400,12 +456,15 @@ class SyncService extends ChangeNotifier {
             (a, t) => (t.rev ?? 0) > a ? (t.rev ?? 0) : a,
           ),
         );
-        outcome.step('增量同步：无变化（未上传任何内容）');
+        outcome.step(L10nHost.current.stepIncrementalNoChange);
         return;
       }
 
       if (toPublishTombs.isNotEmpty) {
-        _progress('上传 ${toPublishTombs.length} 条删除记录…', 0.7);
+        _progress(
+          L10nHost.current.progressUploadingTombstones(toPublishTombs.length),
+          0.7,
+        );
         final m = await store.appendTombstones(
           destAccountId: dest,
           tombstones: toPublishTombs,
@@ -417,7 +476,10 @@ class SyncService extends ChangeNotifier {
         cloudFragmentBytes = m.fragmentBytes;
       }
       if (toUpload.isNotEmpty) {
-        _progress('追加 ${toUpload.length} 首到云端增量分片…', 0.85);
+        _progress(
+          L10nHost.current.progressAppendingSegments(toUpload.length),
+          0.85,
+        );
         final m = await store.appendDelta(
           destAccountId: dest,
           changed: toUpload,
@@ -437,8 +499,11 @@ class SyncService extends ChangeNotifier {
       );
       await _library.refresh();
       outcome.step(
-        '增量同步：上传 ${toUpload.length} 首，采纳 ${toAdopt.length} 首，'
-        '删除 ${toPublishTombs.length} 条',
+        L10nHost.current.stepIncrementalUploaded(
+          toAdopt.length,
+          toPublishTombs.length,
+          toUpload.length,
+        ),
       );
     });
     return outcome;
@@ -454,10 +519,10 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'push');
     await _run(outcome, () async {
       final dest = await syncDestination();
-      if (dest == null) throw StateError('请先添加 WebDAV 账号');
+      if (dest == null) throw StateError('err.noWebdavAccount');
       final store = await _libraryStore();
 
-      _progress('读取云端曲库索引…', 0.2);
+      _progress(L10nHost.current.progressReadingCloudIndex, 0.2);
       final manifest = await store.readManifest(dest);
       final cloud = await store.readCloud(dest, manifest);
       // Adopt cloud rows this device is missing, but never resurrect a row this
@@ -479,7 +544,7 @@ class SyncService extends ChangeNotifier {
         }
       }
 
-      _progress('上传完整曲库分片…', 0.6);
+      _progress(L10nHost.current.progressUploadingFullShards, 0.6);
       final written = await store.rebuild(
         destAccountId: dest,
         tracks: _library.tracks,
@@ -497,17 +562,20 @@ class SyncService extends ChangeNotifier {
       final leftoverTombs = await _library.allTombstones();
       if (leftoverTombs.isNotEmpty) {
         outcome.warn(
-          '重建后仍残留 ${leftoverTombs.length} 条墓碑（有活行与墓碑同时存在），建议检查数据',
+          L10nHost.current.warnLeftoverTombstones(leftoverTombs.length),
         );
       } else if (clearedDead > 0) {
-        outcome.step('清理了 $clearedDead 条已失效的墓碑');
+        outcome.step(L10nHost.current.stepClearedDeadTombstones(clearedDead));
       }
       // Every part name changed; the cursor is meaningless now.
       await _library.clearSyncCursor();
       await _library.refresh();
       outcome.step(
-        '重建完成：${written.shards.length} 个分片，'
-        'base 覆盖到 rev ${written.baseUpTo}（本机 ${_library.tracks.length} 首）',
+        L10nHost.current.stepRebuildDone(
+          _library.tracks.length,
+          written.baseUpTo,
+          written.shards.length,
+        ),
       );
     });
     return outcome;
@@ -516,7 +584,7 @@ class SyncService extends ChangeNotifier {
   /// Compare the cloud manifest with the directory's real contents.
   Future<LibraryAudit> auditLibrary() async {
     final dest = await syncDestination();
-    if (dest == null) throw StateError('请先添加 WebDAV 账号');
+    if (dest == null) throw StateError('err.noWebdavAccount');
     final store = await _libraryStore();
     return store.audit(dest);
   }
@@ -524,7 +592,7 @@ class SyncService extends ChangeNotifier {
   /// Delete the orphan files an audit found (best effort).
   Future<int> tidyLibraryOrphans(LibraryAudit audit) async {
     final dest = await syncDestination();
-    if (dest == null) throw StateError('请先添加 WebDAV 账号');
+    if (dest == null) throw StateError('err.noWebdavAccount');
     final store = await _libraryStore();
     return store.deleteOrphans(dest, audit);
   }
@@ -598,14 +666,14 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'backup');
     await _run(outcome, () async {
       final dest = await syncDestination();
-      if (dest == null) throw StateError('请先添加 WebDAV 账号');
-      _progress('打包凭证 / 音乐库 / 歌单…', 0.4);
+      if (dest == null) throw StateError('err.noWebdavAccount');
+      _progress(L10nHost.current.progressPackingBackup, 0.4);
       await _backup.uploadBackup(
         accountId: dest,
         passphrase: passphrase,
         remoteDir: _settings.backupRemotePath,
       );
-      outcome.step(_backup.lastMessage ?? '备份完成');
+      outcome.step(_backup.lastMessage ?? L10nHost.current.stepBackupDone);
     });
     return outcome;
   }
@@ -628,15 +696,15 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'restore');
     await _run(outcome, () async {
       final dest = await syncDestination();
-      if (dest == null) throw StateError('请先添加 WebDAV 账号');
-      _progress('下载并恢复…', 0.5);
+      if (dest == null) throw StateError('err.noWebdavAccount');
+      _progress(L10nHost.current.progressDownloadingRestore, 0.5);
       await _backup.restoreFromWebDav(
         accountId: dest,
         passphrase: passphrase,
         remoteDir: _settings.backupRemotePath,
         fileName: fileName,
       );
-      outcome.step(_backup.lastMessage ?? '恢复完成');
+      outcome.step(_backup.lastMessage ?? L10nHost.current.stepRestoreDone);
       await _accounts.init();
       await _library.refresh();
       await _playlists.refresh();
@@ -659,12 +727,12 @@ class SyncService extends ChangeNotifier {
     busy = true;
     lastError = null;
     lastMessage = null;
-    _progress('生成备份…', 0.2);
+    _progress(L10nHost.current.progressGeneratingBackup, 0.2);
     try {
       final bytes = readableJson
           ? await _backup.buildJsonExport(passphrase: passphrase)
           : await _backup.buildArchiveBytes(passphrase: passphrase);
-      _progress('写入下载目录…', 0.8);
+      _progress(L10nHost.current.progressWritingDownloads, 0.8);
       final name =
           fileName ??
           (readableJson
@@ -680,7 +748,11 @@ class SyncService extends ChangeNotifier {
         subdir: localExportSubdir,
       );
       if (result.ok) {
-        lastMessage = '已导出到${result.location}：${result.fileName}';
+        final l10n = L10nHost.current;
+        lastMessage = l10n.exportedTo(
+          result.fileName,
+          PlatformExportService.describeLocation(result.location, l10n),
+        );
       } else {
         lastError = result.error;
       }
@@ -700,13 +772,15 @@ class SyncService extends ChangeNotifier {
   }) async {
     final outcome = SyncOutcome(direction: 'import');
     await _run(outcome, () async {
-      _progress('解包并恢复…', 0.3);
+      _progress(L10nHost.current.progressUnpackingRestore, 0.3);
       await _backup.restoreFromBytes(data: bytes, passphrase: passphrase);
-      outcome.step(_backup.lastMessage ?? '本地备份已导入');
+      outcome.step(
+        _backup.lastMessage ?? L10nHost.current.stepLocalBackupImported,
+      );
       await _accounts.init();
       await _library.refresh();
       await _playlists.refresh();
-      _progress('完成', 1);
+      _progress(L10nHost.current.progressDone, 1);
     });
     return outcome;
   }

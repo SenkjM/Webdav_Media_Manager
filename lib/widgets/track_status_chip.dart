@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/webdav_item.dart';
 import '../theme/app_theme.dart';
 
@@ -16,17 +17,34 @@ class TrackStatusChip extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
+    final l10n = AppLocalizations.of(context)!;
     final (label, color, icon) = switch (state) {
       TrackUiState.remote => ('', AppColors.mutedText, Icons.circle_outlined),
-      TrackUiState.queued => ('排队', AppColors.mutedText, Icons.schedule),
+      TrackUiState.queued => (
+        l10n.trackStateQueued,
+        AppColors.mutedText,
+        Icons.schedule,
+      ),
       TrackUiState.downloading => (
-          '下载中',
-          AppColors.accent,
-          Icons.downloading,
-        ),
-      TrackUiState.ready => ('就绪', const Color(0xFF66BB6A), Icons.check_circle_outline),
-      TrackUiState.playing => ('播放中', AppColors.accent, Icons.equalizer),
-      TrackUiState.error => ('错误', AppColors.error, Icons.error_outline),
+        l10n.trackStateDownloading,
+        AppColors.accent,
+        Icons.downloading,
+      ),
+      TrackUiState.ready => (
+        l10n.trackStateReady,
+        const Color(0xFF66BB6A),
+        Icons.check_circle_outline,
+      ),
+      TrackUiState.playing => (
+        l10n.trackStatePlaying,
+        AppColors.accent,
+        Icons.equalizer,
+      ),
+      TrackUiState.error => (
+        l10n.trackStateError,
+        AppColors.error,
+        Icons.error_outline,
+      ),
     };
 
     return Chip(

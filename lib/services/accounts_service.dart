@@ -7,8 +7,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/account_capabilities.dart';
+import '../models/account_sentinels.dart';
 import '../models/webdav_account.dart';
 import '../utils/credential_vault_crypto.dart';
+import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'cloud_drivers/driver_registry.dart';
 import 'library_database.dart';
@@ -19,9 +21,9 @@ class AccountsService extends ChangeNotifier {
     required LibraryDatabase db,
     FlutterSecureStorage? secureStorage,
     SharedPreferences? prefs,
-  })  : _db = db,
-        _secure = secureStorage ?? const FlutterSecureStorage(),
-        _prefs = prefs;
+  }) : _db = db,
+       _secure = secureStorage ?? const FlutterSecureStorage(),
+       _prefs = prefs;
 
   static const _kActiveAccount = 'active_webdav_account_id';
   static const _kPassPrefix = 'webdav_pass_';
@@ -82,8 +84,7 @@ class AccountsService extends ChangeNotifier {
   }
 
   /// Disk names already taken (used to warn about the single binding point).
-  List<String> get sourceNames =>
-      [for (final a in _accounts) a.name.trim()];
+  List<String> get sourceNames => [for (final a in _accounts) a.name.trim()];
 
   /// An account that already uses [name] (case-insensitive), if any.
   WebDavAccount? accountNamed(String name, {String? exceptId}) {
@@ -135,7 +136,7 @@ class AccountsService extends ChangeNotifier {
     final id = _uuid.v4();
     final account = WebDavAccount(
       id: id,
-      name: '默认服务器',
+      name: kDefaultServerName,
       url: url.trim(),
       username: user,
     );
@@ -207,12 +208,13 @@ class AccountsService extends ChangeNotifier {
       username: username,
       providerType: providerType,
       remotePath: WebDavAccount.normalizeRemotePath(remotePath),
-      capabilities: capabilities ??
+      capabilities:
+          capabilities ??
           (providerType == 'webdav'
               ? AccountCaps.all
               // 云盘静态位由驱动声明（99 §7.2.10）；读取时也以注册表为准。
               : (cloudDriverSpec(providerType)?.capabilities ??
-                  AccountCaps.list)),
+                    AccountCaps.list)),
     );
     await _db.upsertAccount(account);
     await _secure.write(key: '$_kPassPrefix${account.id}', value: password);
@@ -282,7 +284,6 @@ class AccountsService extends ChangeNotifier {
     notifyListeners();
   }
 
-
   /// Restore **one** account from a per-site backup without touching other mounts.
   /// Never copies credentials onto a different account id.
   /// Recreates the mount if [account.id] is missing locally.
@@ -296,17 +297,20 @@ class AccountsService extends ChangeNotifier {
   }) async {
     final id = accountJson['id'] as String?;
     if (id == null || id.isEmpty) {
-      throw StateError('备份账号缺少 id，无法安全恢复');
+      throw StateError(L10nHost.current.svcBackupAccountMissingId);
     }
-    final url = (accountJson['url'] as String? ?? '')
-        .trim()
-        .replaceAll(RegExp(r'/+$'), '');
-    final name = accountJson['name'] as String? ??
+    final url = (accountJson['url'] as String? ?? '').trim().replaceAll(
+      RegExp(r'/+$'),
+      '',
+    );
+    final name =
+        accountJson['name'] as String? ??
         accountJson['url'] as String? ??
         '服务器';
     final username = accountJson['username'] as String? ?? '';
     final rawPass = accountJson['password'] as String? ?? '';
-    final encrypted = accountJson['passwordEncrypted'] as bool? ??
+    final encrypted =
+        accountJson['passwordEncrypted'] as bool? ??
         CredentialVaultCrypto.isEncrypted(rawPass);
     var passwordRecovered = true;
     String pass = rawPass;
@@ -460,5 +464,4 @@ class AccountsService extends ChangeNotifier {
     notifyListeners();
     return missing;
   }
-
 }

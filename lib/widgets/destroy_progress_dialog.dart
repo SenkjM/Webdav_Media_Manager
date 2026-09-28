@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../l10n/generated/app_localizations.dart';
+
 import '../theme/app_theme.dart';
 
 /// 「正在销毁」的进度框：一首一首地走，中途可以按「终止」，也可以直接返回。
@@ -24,34 +26,34 @@ class DestroyProgressDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return AlertDialog(
       backgroundColor: AppColors.elevated,
-      title: const Text('正在销毁'),
+      title: Text(l10n.destroyInProgress),
       content: ValueListenableBuilder<int>(
         valueListenable: progress,
         builder: (context, processed, _) => Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            LinearProgressIndicator(
-              value: total == 0 ? 0 : processed / total,
-            ),
+            LinearProgressIndicator(value: total == 0 ? 0 : processed / total),
             const SizedBox(height: 10),
             Text(
-              '已处理 $processed / $total 首',
+              l10n.processedOfTotal(processed, total),
               style: const TextStyle(fontSize: 13),
             ),
             const SizedBox(height: 6),
-            const Text(
-              '「终止」或直接返回都会停在当前这首之后；已经销毁的不会恢复。',
-              style: TextStyle(fontSize: 11, color: AppColors.secondaryText),
+            Text(
+              l10n.destroyStopHint,
+              style: const TextStyle(
+                fontSize: 11,
+                color: AppColors.secondaryText,
+              ),
             ),
           ],
         ),
       ),
-      actions: [
-        TextButton(onPressed: onStop, child: const Text('终止')),
-      ],
+      actions: [TextButton(onPressed: onStop, child: Text(l10n.actionStop))],
     );
   }
 }

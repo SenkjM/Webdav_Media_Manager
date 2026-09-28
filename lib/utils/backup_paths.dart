@@ -6,8 +6,9 @@ import '../models/webdav_account.dart';
 String backupAccountDirName(WebDavAccount account) {
   final idPart = account.id.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '');
   final shortId = idPart.length <= 8 ? idPart : idPart.substring(0, 8);
-  final rawName =
-      account.name.trim().isNotEmpty ? account.name.trim() : 'account';
+  final rawName = account.name.trim().isNotEmpty
+      ? account.name.trim()
+      : 'account';
   final buf = StringBuffer();
   for (final rune in rawName.runes) {
     final ch = String.fromCharCode(rune);
@@ -33,7 +34,8 @@ String utcStamp({DateTime? now}) {
 }
 
 /// Timestamped cloud backup file name, e.g. `backup-20260920T080000Z.wdmm`.
-String backupFileNameNow({DateTime? now}) => 'backup-${utcStamp(now: now)}.wdmm';
+String backupFileNameNow({DateTime? now}) =>
+    'backup-${utcStamp(now: now)}.wdmm';
 
 /// Join base backup root with per-account subdirectory.
 String perAccountBackupDir(String backupRoot, WebDavAccount account) {

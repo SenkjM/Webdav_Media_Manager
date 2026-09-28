@@ -34,9 +34,11 @@ FILE "great.flac" WAVE
     final bytes = <int>[
       ...utf8.encode('PERFORMER "'),
       0xD6, 0xD0, 0xCE, 0xC4, // GBK-ish bytes
-      ...utf8.encode('"\nTITLE "Album"\nFILE "a.flac" WAVE\n'
-          '  TRACK 01 AUDIO\n    TITLE "T1"\n    INDEX 01 00:00:00\n'
-          '  TRACK 02 AUDIO\n    TITLE "T2"\n    INDEX 01 01:00:00\n'),
+      ...utf8.encode(
+        '"\nTITLE "Album"\nFILE "a.flac" WAVE\n'
+        '  TRACK 01 AUDIO\n    TITLE "T1"\n    INDEX 01 00:00:00\n'
+        '  TRACK 02 AUDIO\n    TITLE "T2"\n    INDEX 01 01:00:00\n',
+      ),
     ];
     // Must not throw (File.readAsString would).
     final text = decodeCueText(bytes);
@@ -75,7 +77,6 @@ FILE "great.flac" WAVE
       audioRemotePath: '/album/disc.flac',
     );
     expect(slice.isCueVirtual, isTrue);
-    expect(slice.cueTypeLabel, LibraryTrack.cueMultiSliceLabel);
     expect(isCueFileName('disc.cue'), isTrue);
     // Virtual marker means remotePath is not a plain audio filename.
     expect(isAudioFileName(slice.remotePath), isFalse);

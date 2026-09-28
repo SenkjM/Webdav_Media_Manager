@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/download_task.dart';
+import '../utils/l10n_host.dart';
 
 /// Android notification channels for the download queue.
 ///
@@ -15,34 +16,9 @@ import '../models/download_task.dart';
 ///
 /// Both are separate from the media channel, which is owned by `audio_service`.
 const String kDownloadChannelId = 'com.senkjm.media_manager.downloads.v1';
-const String kDownloadChannelName = '下载进度';
-const String kDownloadChannelDescription = '下载队列进行中的进度';
 
 const String kDownloadDoneChannelId =
     'com.senkjm.media_manager.downloads.done.v1';
-const String kDownloadDoneChannelName = '下载完成';
-const String kDownloadDoneChannelDescription = '全部下载完成后的结果汇总';
-
-const AndroidNotificationChannel kDownloadChannel = AndroidNotificationChannel(
-  kDownloadChannelId,
-  kDownloadChannelName,
-  description: kDownloadChannelDescription,
-  importance: Importance.low,
-  playSound: false,
-  enableVibration: false,
-  showBadge: false,
-);
-
-const AndroidNotificationChannel kDownloadDoneChannel =
-    AndroidNotificationChannel(
-      kDownloadDoneChannelId,
-      kDownloadDoneChannelName,
-      description: kDownloadDoneChannelDescription,
-      importance: Importance.defaultImportance,
-      playSound: false,
-      enableVibration: false,
-      showBadge: false,
-    );
 
 /// System notifications for the download queue.
 ///
@@ -94,8 +70,29 @@ class DownloadNotificationService {
     if (kIsWeb || !Platform.isAndroid) return false;
     await _ensureInitialized();
     try {
-      await _android?.createNotificationChannel(kDownloadChannel);
-      await _android?.createNotificationChannel(kDownloadDoneChannel);
+      final l10n = L10nHost.current;
+      await _android?.createNotificationChannel(
+        AndroidNotificationChannel(
+          kDownloadChannelId,
+          l10n.dlChannelProgressName,
+          description: l10n.dlChannelProgressDesc,
+          importance: Importance.low,
+          playSound: false,
+          enableVibration: false,
+          showBadge: false,
+        ),
+      );
+      await _android?.createNotificationChannel(
+        AndroidNotificationChannel(
+          kDownloadDoneChannelId,
+          l10n.dlChannelDoneName,
+          description: l10n.dlChannelDoneDesc,
+          importance: Importance.defaultImportance,
+          playSound: false,
+          enableVibration: false,
+          showBadge: false,
+        ),
+      );
       return true;
     } catch (e) {
       debugPrint('DownloadNotification: ensureChannel failed: $e');
@@ -122,8 +119,8 @@ class DownloadNotificationService {
       NotificationDetails(
         android: AndroidNotificationDetails(
           kDownloadChannelId,
-          kDownloadChannelName,
-          channelDescription: kDownloadChannelDescription,
+          L10nHost.current.dlChannelProgressName,
+          channelDescription: L10nHost.current.dlChannelProgressDesc,
           importance: Importance.low,
           priority: Priority.low,
           onlyAlertOnce: true,
@@ -144,8 +141,8 @@ class DownloadNotificationService {
   static NotificationDetails _summaryDetails() => NotificationDetails(
     android: AndroidNotificationDetails(
       kDownloadDoneChannelId,
-      kDownloadDoneChannelName,
-      channelDescription: kDownloadDoneChannelDescription,
+      L10nHost.current.dlChannelDoneName,
+      channelDescription: L10nHost.current.dlChannelDoneDesc,
       importance: Importance.defaultImportance,
       priority: Priority.defaultPriority,
       onlyAlertOnce: true,
@@ -194,15 +191,16 @@ class DownloadNotificationService {
     _lastDone = done;
     _lastTotal = total;
     final safeTotal = total == 0 ? 1 : total;
-    final name = currentName ?? '准备中';
+    final l10n = L10nHost.current;
+    final name = currentName ?? l10n.progressPreparing;
     final counts = queuePercent == currentPercent
-        ? '已完成 $done / $safeTotal'
-        : '总进度 $queuePercent% · 已完成 $done / $safeTotal';
+        ? l10n.ntfDoneCount(done, safeTotal)
+        : l10n.ntfDoneCountPercent(done, queuePercent, safeTotal);
     await _ensureInitialized();
     try {
       await _plugin.show(
         id: currentId,
-        title: '正在下载（第 $index / $safeTotal 个）',
+        title: l10n.ntfDownloadingTitle(index, safeTotal),
         body: '$name\n$currentPercent% · $counts',
         notificationDetails: _progressDetails(percent: currentPercent),
       );
@@ -216,24 +214,26 @@ class DownloadNotificationService {
   /// what the system said, so 「看不到通知」 can be pinned to a cause without a
   /// real download. Returns null on success, else a short reason.
   Future<String?> selfTest() async {
-    if (kIsWeb || !Platform.isAndroid) return '仅 Android 支持';
+    if (kIsWeb || !Platform.isAndroid) {
+      return L10nHost.current.ntfSelfTestAndroidOnly;
+    }
     final wasEnabled = enabled;
     enabled = true;
     try {
       final allowed = await _android?.areNotificationsEnabled();
-      if (allowed == false) return '系统已关闭本应用的通知';
+      if (allowed == false) return L10nHost.current.ntfSelfTestBlocked;
       await ensureChannel();
       await _ensureInitialized();
       await _plugin.show(
         id: currentId,
-        title: '正在下载（第 1 / 1 个）',
-        body: '测试通知 · 50% · 已完成 0 / 1',
+        title: L10nHost.current.ntfDownloadingTitle(1, 1),
+        body: L10nHost.current.ntfSelfTestBody,
         notificationDetails: _progressDetails(percent: 50),
       );
       await _plugin.show(
         id: summaryId,
-        title: '全部下载完成',
-        body: '成功：1 个（测试）',
+        title: L10nHost.current.ntfAllDone,
+        body: L10nHost.current.ntfSelfTestSummary,
         notificationDetails: _summaryDetails(),
       );
       return null;
@@ -268,16 +268,17 @@ class DownloadNotificationService {
     if (!enabled || kIsWeb || !Platform.isAndroid) return;
     if (completed == 0 && failed == 0 && cancelled == 0) return;
     final allOk = failed == 0 && cancelled == 0;
+    final l10n = L10nHost.current;
     final parts = <String>[
-      '成功：$completed 个',
-      if (failed > 0) '失败：$failed 个',
-      if (cancelled > 0) '取消：$cancelled 个',
+      l10n.ntfSummaryOk(completed),
+      if (failed > 0) l10n.ntfSummaryFailed(failed),
+      if (cancelled > 0) l10n.ntfSummaryCancelled(cancelled),
     ];
     await _ensureInitialized();
     try {
       await _plugin.show(
         id: summaryId,
-        title: allOk ? '全部下载完成' : '下载结束（有失败）',
+        title: allOk ? l10n.ntfAllDone : l10n.ntfDoneWithFailures,
         body: parts.join('　'),
         notificationDetails: _summaryDetails(),
       );

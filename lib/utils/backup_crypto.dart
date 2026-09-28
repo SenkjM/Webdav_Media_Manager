@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
+import 'l10n_host.dart';
 import 'wmp_container.dart';
 
 /// Passphrase-based AES-256-GCM encryption for backup archives.
@@ -40,10 +41,7 @@ class BackupCrypto {
       password: passphrase,
       nonce: salt,
     );
-    final secretBox = await _aes.encrypt(
-      plaintext,
-      secretKey: secretKey,
-    );
+    final secretBox = await _aes.encrypt(plaintext, secretKey: secretKey);
     final out = BytesBuilder();
     out.add(utf8.encode(magic));
     out.add(salt);
@@ -58,12 +56,12 @@ class BackupCrypto {
     required String passphrase,
   }) async {
     if (data.length < magic.length + _saltLen + _nonceLen + 16) {
-      throw FormatException('备份文件过短或损坏');
+      throw FormatException(L10nHost.current.backupTooShort);
     }
     final magicBytes = utf8.encode(magic);
     for (var i = 0; i < magicBytes.length; i++) {
       if (data[i] != magicBytes[i]) {
-        throw FormatException('不是加密备份（缺少 $magic 头）');
+        throw FormatException(L10nHost.current.backupNotEncrypted(magic));
       }
     }
     var offset = magic.length;
@@ -72,18 +70,16 @@ class BackupCrypto {
     final nonce = data.sublist(offset, offset + _nonceLen);
     offset += _nonceLen;
     final rest = data.sublist(offset);
-    if (rest.length < 16) throw FormatException('备份密文损坏');
+    if (rest.length < 16) {
+      throw FormatException(L10nHost.current.backupCiphertextDamaged);
+    }
     final macBytes = rest.sublist(rest.length - 16);
     final cipherText = rest.sublist(0, rest.length - 16);
     final secretKey = await _pbkdf2.deriveKeyFromPassword(
       password: passphrase,
       nonce: salt,
     );
-    final box = SecretBox(
-      cipherText,
-      nonce: nonce,
-      mac: Mac(macBytes),
-    );
+    final box = SecretBox(cipherText, nonce: nonce, mac: Mac(macBytes));
     final clear = await _aes.decrypt(box, secretKey: secretKey);
     return Uint8List.fromList(clear);
   }

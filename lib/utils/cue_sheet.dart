@@ -43,7 +43,6 @@ String decodeCueText(List<int> bytes) {
   }
 }
 
-
 class CueSheet {
   const CueSheet({
     required this.files,
@@ -70,6 +69,7 @@ class CueSheet {
     }
     return out;
   }
+
   static String joinRemote(String dir, String fileName) {
     final cleaned = fileName.replaceAll('\\', '/');
     final base = cleaned.contains('/') ? p.posix.basename(cleaned) : cleaned;
@@ -99,7 +99,7 @@ class CueTrack {
 class CueSheetParser {
   static CueSheet parse(String text) {
     final r = tryParse(text);
-    if (r == null) throw StateError('无法解析的 CUE：需要标准 FILE + TRACK/INDEX');
+    if (r == null) throw StateError('err.cueMalformed');
     return r;
   }
 
@@ -122,15 +122,33 @@ class CueSheetParser {
       if (file == null || file.isEmpty || index == null) {
         incomplete = true;
         inTrack = false;
-        trackNumber = null; trackTitle = null; trackPerformer = null; trackIsrc = null; index01 = null;
+        trackNumber = null;
+        trackTitle = null;
+        trackPerformer = null;
+        trackIsrc = null;
+        index01 = null;
         return;
       }
-      tracks.add(CueTrack(number: number, fileName: file, index01: index, title: trackTitle, performer: trackPerformer, isrc: trackIsrc));
+      tracks.add(
+        CueTrack(
+          number: number,
+          fileName: file,
+          index01: index,
+          title: trackTitle,
+          performer: trackPerformer,
+          isrc: trackIsrc,
+        ),
+      );
       inTrack = false;
-      trackNumber = null; trackTitle = null; trackPerformer = null; trackIsrc = null; index01 = null;
+      trackNumber = null;
+      trackTitle = null;
+      trackPerformer = null;
+      trackIsrc = null;
+      index01 = null;
     }
 
-    for (var raw in text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
+    for (var raw
+        in text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
       var line = raw.trim();
       if (line.startsWith('\uFEFF')) line = line.substring(1).trim();
       if (line.isEmpty) continue;
@@ -174,9 +192,13 @@ class CueSheetParser {
       if (u.startsWith('TRACK ')) {
         flush();
         if (currentFile == null) return null;
-        final n = int.tryParse(line.substring(6).trim().split(RegExp(r'\s+')).first);
+        final n = int.tryParse(
+          line.substring(6).trim().split(RegExp(r'\s+')).first,
+        );
         if (n == null || n < 1) return null;
-        inTrack = true; trackNumber = n; continue;
+        inTrack = true;
+        trackNumber = n;
+        continue;
       }
       if (u.startsWith('INDEX ')) {
         if (!inTrack) continue;
@@ -184,21 +206,44 @@ class CueSheetParser {
         if (parts.length < 2 || int.tryParse(parts[0]) != 1) continue;
         final d = parseCueIndexTime(parts[1]);
         if (d == null) return null;
-        index01 = d; continue;
+        index01 = d;
+        continue;
       }
-      if (u.startsWith('ISRC ') && inTrack) trackIsrc = _uq(line.substring(5).trim());
+      if (u.startsWith('ISRC ') && inTrack) {
+        trackIsrc = _uq(line.substring(5).trim());
+      }
     }
     flush();
     if (incomplete || files.isEmpty || tracks.isEmpty) return null;
-    return CueSheet(files: List.unmodifiable(files), tracks: List.unmodifiable(tracks), title: albumTitle, performer: albumPerformer, remGenre: remGenre, remDate: remDate);
+    return CueSheet(
+      files: List.unmodifiable(files),
+      tracks: List.unmodifiable(tracks),
+      title: albumTitle,
+      performer: albumPerformer,
+      remGenre: remGenre,
+      remDate: remDate,
+    );
   }
 
   static Duration? parseCueIndexTime(String raw) {
     final parts = raw.trim().split(':');
     if (parts.length != 3) return null;
-    final m = int.tryParse(parts[0]); final s = int.tryParse(parts[1]); final f = int.tryParse(parts[2]);
-    if (m == null || s == null || f == null || m < 0 || s < 0 || s > 59 || f < 0 || f > 74) return null;
-    return Duration(milliseconds: ((m * 60 + s) * 1000) + ((f * 1000) / 75).round());
+    final m = int.tryParse(parts[0]);
+    final s = int.tryParse(parts[1]);
+    final f = int.tryParse(parts[2]);
+    if (m == null ||
+        s == null ||
+        f == null ||
+        m < 0 ||
+        s < 0 ||
+        s > 59 ||
+        f < 0 ||
+        f > 74) {
+      return null;
+    }
+    return Duration(
+      milliseconds: ((m * 60 + s) * 1000) + ((f * 1000) / 75).round(),
+    );
   }
 
   static String? _file(String rest) {
@@ -211,30 +256,52 @@ class CueSheetParser {
   }
 
   static String _uq(String s) {
-    if (s.length >= 2 && ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")))) {
+    if (s.length >= 2 &&
+        ((s.startsWith('"') && s.endsWith('"')) ||
+            (s.startsWith("'") && s.endsWith("'")))) {
       return s.substring(1, s.length - 1);
     }
     return s;
   }
 }
 
-List<({Duration start, Duration? end})> cueClipRanges(List<CueTrack> tracks, {Map<String, Duration?> fileDurations = const {}}) {
+List<({Duration start, Duration? end})> cueClipRanges(
+  List<CueTrack> tracks, {
+  Map<String, Duration?> fileDurations = const {},
+}) {
   final byFile = <String, List<int>>{};
   for (var i = 0; i < tracks.length; i++) {
     byFile.putIfAbsent(tracks[i].fileName, () => []).add(i);
   }
-  final out = List<({Duration start, Duration? end})>.generate(tracks.length, (i) => (start: tracks[i].index01, end: null));
+  final out = List<({Duration start, Duration? end})>.generate(
+    tracks.length,
+    (i) => (start: tracks[i].index01, end: null),
+  );
   for (final e in byFile.entries) {
     final idxs = e.value;
     for (var j = 0; j < idxs.length; j++) {
       final i = idxs[j];
-      out[i] = (start: tracks[i].index01, end: j + 1 < idxs.length ? tracks[idxs[j + 1]].index01 : fileDurations[e.key]);
+      out[i] = (
+        start: tracks[i].index01,
+        end: j + 1 < idxs.length
+            ? tracks[idxs[j + 1]].index01
+            : fileDurations[e.key],
+      );
     }
   }
   return out;
 }
 
-({String? title, String? artist, String? albumArtist, String? album, int? trackNumber, int? year, String? genre}) mergeCueOverFileTags({
+({
+  String? title,
+  String? artist,
+  String? albumArtist,
+  String? album,
+  int? trackNumber,
+  int? year,
+  String? genre,
+})
+mergeCueOverFileTags({
   required CueSheet sheet,
   required CueTrack cueTrack,
   String? fileTitle,
@@ -245,12 +312,17 @@ List<({Duration start, Duration? end})> cueClipRanges(List<CueTrack> tracks, {Ma
   int? fileYear,
   String? fileGenre,
 }) {
-  final dateParts = sheet.remDate?.trim().split(RegExp(r'\D+')) ?? const <String>[];
+  final dateParts =
+      sheet.remDate?.trim().split(RegExp(r'\D+')) ?? const <String>[];
   final cueYear = dateParts.isEmpty ? null : int.tryParse(dateParts.first);
   String? first(List<String?> vs) {
-    for (final v in vs) { final t = v?.trim(); if (t != null && t.isNotEmpty) return t; }
+    for (final v in vs) {
+      final t = v?.trim();
+      if (t != null && t.isNotEmpty) return t;
+    }
     return null;
   }
+
   String? prefer(String? a, String? b) => first([a, b]);
   return (
     title: prefer(cueTrack.title, fileTitle),

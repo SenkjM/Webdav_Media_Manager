@@ -153,7 +153,13 @@ void main() {
           BaseShard(file: 'lib-0001-a1.wdmm', count: 500, bytes: 412233),
         ],
         segments: const [
-          IndexPart(file: 'seg-1-b2.wdmm', from: 1, to: 9, count: 3, bytes: 700),
+          IndexPart(
+            file: 'seg-1-b2.wdmm',
+            from: 1,
+            to: 9,
+            count: 3,
+            bytes: 700,
+          ),
         ],
         tombstones: const [
           IndexPart(
@@ -314,8 +320,10 @@ void main() {
   group('standard shard slicing', () {
     test('fixed-size chunks, ordered by disk then path', () {
       final tracks = [
-        for (var i = 0; i < 5; i++) _t('/b/$i.flac', source: 'aliyun', rev: i + 1),
-        for (var i = 0; i < 5; i++) _t('/a/$i.flac', source: '123pan', rev: i + 1),
+        for (var i = 0; i < 5; i++)
+          _t('/b/$i.flac', source: 'aliyun', rev: i + 1),
+        for (var i = 0; i < 5; i++)
+          _t('/a/$i.flac', source: '123pan', rev: i + 1),
       ];
       final slices = chunkTracksForRebuild(tracks, perShard: 4);
       expect(slices.map((s) => s.length), [4, 4, 2]);

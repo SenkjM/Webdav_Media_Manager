@@ -208,10 +208,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
 }
 
 /// Pick the best cover source among album/artist tracks for grid tiles.
-LibraryTrack? pickCoverTrack(
-  List<LibraryTrack> tracks,
-  CacheService cache,
-) {
+LibraryTrack? pickCoverTrack(List<LibraryTrack> tracks, CacheService cache) {
   // Prefer a track that is local (full art available).
   for (final t in tracks) {
     if (cache.hasLocalFile(t.remotePath, sourceName: t.sourceName)) {
@@ -246,6 +243,7 @@ class PlayerCoverArt extends StatefulWidget {
   });
 
   final String sourceName;
+
   /// Prefer effective audio remote path (not CUE virtual `#cue:N`).
   final String remotePath;
   final String? localAudioPath;
@@ -300,11 +298,15 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     final covers = library.covers;
     await covers.init();
 
-    final localPath = widget.localAudioPath ??
+    final localPath =
+        widget.localAudioPath ??
         (cache.hasLocalFile(widget.remotePath, sourceName: widget.sourceName)
             ? cache
-                .fileForRemote(widget.remotePath, sourceName: widget.sourceName)
-                .path
+                  .fileForRemote(
+                    widget.remotePath,
+                    sourceName: widget.sourceName,
+                  )
+                  .path
             : null);
 
     if (localPath == null) {
@@ -318,8 +320,10 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
       return;
     }
 
-    final fullPath =
-        await covers.fullCoverPath(widget.sourceName, widget.remotePath);
+    final fullPath = await covers.fullCoverPath(
+      widget.sourceName,
+      widget.remotePath,
+    );
     if (fullPath != null) {
       if (!mounted) return;
       setState(() {

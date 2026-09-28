@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 
@@ -14,49 +15,50 @@ class AudioStreamSettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: const Text('音频流式')),
+      appBar: AppBar(title: Text(l10n.audioStreamingTitle)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            '流式播放',
+            l10n.streamPlayback,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          const Text(
-            '音乐不下载到本地，直接从网盘边听边传。',
+          Text(
+            l10n.streamPlaybackHint,
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.music_note_outlined),
-            title: const Text('流式传输音乐'),
-            subtitle: const Text('打开后音乐的文件动作里可以选「流式传输（音乐）」。关掉时该动作会被退回默认。'),
+            title: Text(l10n.streamMusic),
+            subtitle: Text(l10n.streamMusicHint),
             value: settings.audioStreamingEnabled,
             onChanged: (v) => settings.setAudioStreamingEnabled(v),
           ),
           const Divider(height: 40),
           Text(
-            '列表扫描',
+            l10n.scanList,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          const Text(
-            '决定流式播放的「上一首 / 下一首」列表里都有什么。',
+          Text(
+            l10n.scanListHint,
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
           const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.account_tree_outlined),
-            title: const Text('搜索子目录'),
-            subtitle: const Text('打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。'),
+            title: Text(l10n.scanSubdirectories),
+            subtitle: Text(l10n.scanSubdirectoriesHint),
             value: settings.audioScanSubdirs,
             onChanged: (v) => settings.setAudioScanSubdirs(v),
           ),

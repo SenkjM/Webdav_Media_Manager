@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_media_manager/models/snack_duration.dart';
 import 'package:webdav_media_manager/services/settings_service.dart';
+import 'package:webdav_media_manager/l10n/generated/app_localizations.dart';
 import 'package:webdav_media_manager/utils/app_snack.dart';
 
 /// The user-facing contract of in-app messages:
@@ -17,6 +18,9 @@ void main() {
   Future<void> pumpHost(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
+        locale: const Locale('zh', 'CN'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
         builder: AppSnack.hostBuilder,
         home: Scaffold(
           body: Builder(

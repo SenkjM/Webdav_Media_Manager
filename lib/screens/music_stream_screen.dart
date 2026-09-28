@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../utils/app_snack.dart';
+
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/file_type_config.dart';
 import '../models/music_stream.dart';
 import '../models/webdav_item.dart';
@@ -90,11 +92,11 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
         widget.seed?.accountId;
     if (accountId == null) return null;
     return context.read<WebDavService>().resolveStreamSource(
-          remotePath: item.path,
-          name: item.name,
-          accountId: accountId,
-          kind: StreamKind.music,
-        );
+      remotePath: item.path,
+      name: item.name,
+      accountId: accountId,
+      kind: StreamKind.music,
+    );
   }
 
   @override
@@ -146,7 +148,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     }
     if (!mounted) return;
     if (source == null) {
-      setState(() => _error = 'WebDAV 未连接，无法流式播放');
+      setState(() => _error = AppLocalizations.of(context)!.streamNotConnected);
       return;
     }
     await _open(source);
@@ -258,8 +260,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     final player = _player;
     if (player != null) await _applyPlaylistMode(player);
     if (mounted) {
-      AppSnack.show(context, next.labelZh);
-
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.show(context, next.label(l10n));
     }
   }
 
@@ -313,9 +315,10 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
 
   /// 控制条最左边那个按钮：三个模式轮换，图标与提示跟着变。
   Widget _buildModeButton() {
+    final l10n = AppLocalizations.of(context)!;
     final looping = _mode != MusicStreamPlayMode.sequential;
     return IconButton(
-      tooltip: '播放模式：${_mode.labelZh}',
+      tooltip: '${l10n.playbackMode}: ${_mode.label(l10n)}',
       iconSize: 32,
       onPressed: _cyclePlayMode,
       icon: Stack(
@@ -374,16 +377,17 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: Row(
                         children: [
-                          const Text(
-                            '播放列表',
-                            style: TextStyle(
+                          Text(
+                            AppLocalizations.of(context)!.playlistSheetTitle,
+                            style: const TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 16,
                             ),
                           ),
                           const Spacer(),
                           Text(
-                            '${all.length} 首',
+                            AppLocalizations.of(context)!
+                                .playlistTrackCount(all.length),
                             style: const TextStyle(
                               color: AppColors.secondaryText,
                               fontSize: 12,
@@ -399,7 +403,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                         onChanged: (v) => setSheet(() => _playlistFilter = v),
                         decoration: InputDecoration(
                           isDense: true,
-                          hintText: '搜索列表',
+                          hintText: AppLocalizations.of(context)!.searchList,
                           prefixIcon: const Icon(Icons.search, size: 20),
                           border: const OutlineInputBorder(),
                           suffixIcon: _playlistFilter.isEmpty
@@ -419,10 +423,10 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                         listenable: queue,
                         builder: (ctx, _) {
                           if (shown.isEmpty) {
-                            return const Center(
+                            return Center(
                               child: Text(
-                                '没有匹配的曲目',
-                                style: TextStyle(
+                                AppLocalizations.of(context)!.noMatchingTracks,
+                                style: const TextStyle(
                                   color: AppColors.secondaryText,
                                 ),
                               ),
@@ -511,7 +515,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     final source = await _sourceFor(item);
     if (!mounted) return;
     if (source == null) {
-      setState(() => _error = '无法建立流式地址，请检查账户配置');
+      setState(() => _error = AppLocalizations.of(context)!.streamUrlFailed);
       return;
     }
     await _open(source);
@@ -519,11 +523,13 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final queue = _queue;
-    final title = queue?.current?.name ??
+    final title =
+        queue?.current?.name ??
         _playback?.source?.name ??
         widget.source?.name ??
-        '加载中…';
+        l10n.loading;
     final hasPrev = (queue?.index ?? 0) > 0;
     final hasNext = queue?.hasNext ?? false;
     return Scaffold(
@@ -533,10 +539,13 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.keyboard_arrow_down),
-          tooltip: '返回',
+          tooltip: l10n.back,
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        title: Text(folderDisplayName(title), overflow: TextOverflow.ellipsis),
+        title: Text(
+          folderDisplayName(title, rootLabel: l10n.rootFolder),
+          overflow: TextOverflow.ellipsis,
+        ),
       ),
       body: SafeArea(
         child: Center(
@@ -559,9 +568,9 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                   ),
                 ),
                 const SizedBox(height: 6),
-                const Text(
-                  '流式传输 · 未缓存',
-                  style: TextStyle(
+                Text(
+                  l10n.streamingNotCached,
+                  style: const TextStyle(
                     color: AppColors.secondaryText,
                     fontSize: 12,
                   ),
@@ -573,7 +582,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                 if (_error != null) ...[
                   const SizedBox(height: 16),
                   Text(
-                    '播放失败：$_error',
+                    l10n.playbackFailed(_error ?? ''),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: AppColors.error,
@@ -607,6 +616,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   }
 
   Widget _buildProgress() {
+    final l10n = AppLocalizations.of(context)!;
     final total = _duration.inMilliseconds;
     final value = _dragging
         ? _dragValue
@@ -664,7 +674,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                   ? null
                   : () => _seekBy(const Duration(seconds: -15)),
               icon: const Icon(Icons.replay_10, size: 20),
-              label: const Text('15 秒'),
+              label: Text(l10n.seekSeconds(15)),
             ),
             const SizedBox(width: 24),
             TextButton.icon(
@@ -672,7 +682,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                   ? null
                   : () => _seekBy(const Duration(seconds: 15)),
               icon: const Icon(Icons.forward_10, size: 20),
-              label: const Text('15 秒'),
+              label: Text(l10n.seekSeconds(15)),
             ),
           ],
         ),
@@ -691,6 +701,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   }
 
   Widget _buildControls({required bool hasPrev, required bool hasNext}) {
+    final l10n = AppLocalizations.of(context)!;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -698,28 +709,28 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
         _buildModeButton(),
         const SizedBox(width: 8),
         IconButton(
-          tooltip: '上一首',
+          tooltip: l10n.previousTrack,
           iconSize: 36,
           onPressed: hasPrev ? () => _switchTo(_queue!.index - 1) : null,
           icon: const Icon(Icons.skip_previous),
         ),
         const SizedBox(width: 8),
         IconButton.filled(
-          tooltip: _playing ? '暂停' : '播放',
+          tooltip: _playing ? l10n.pause : l10n.play,
           iconSize: 40,
           onPressed: _opening ? null : _togglePlay,
           icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
         ),
         const SizedBox(width: 8),
         IconButton(
-          tooltip: '下一首',
+          tooltip: l10n.nextTrack,
           iconSize: 36,
           onPressed: hasNext ? () => _switchTo(_queue!.index + 1) : null,
           icon: const Icon(Icons.skip_next),
         ),
         const SizedBox(width: 8),
         IconButton(
-          tooltip: '播放列表',
+          tooltip: l10n.playlistSheetTitle,
           iconSize: 32,
           onPressed: _queue == null ? null : _showPlaylist,
           icon: const Icon(Icons.queue_music),

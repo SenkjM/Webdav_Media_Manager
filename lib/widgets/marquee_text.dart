@@ -1,22 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/generated/app_localizations.dart';
+import '../models/account_sentinels.dart';
 import '../models/webdav_account.dart';
 
 /// Display label: 名称（用户名）
-String webDavAccountLabel(WebDavAccount account) {
+String webDavAccountLabel(WebDavAccount account, AppLocalizations l10n) {
+  final name = localizedAccountName(l10n, account.name);
   final user = account.username.trim();
-  if (user.isEmpty) return account.name;
-  return '${account.name}（$user）';
+  if (user.isEmpty) return name;
+  return l10n.accountWithName(name, user);
 }
 
 /// Horizontally auto-scrolling text when overflow; otherwise static.
 class MarqueeText extends StatefulWidget {
-  const MarqueeText(
-    this.text, {
-    super.key,
-    this.style,
-    this.height = 20,
-  });
+  const MarqueeText(this.text, {super.key, this.style, this.height = 20});
 
   final String text;
   final TextStyle? style;
@@ -60,13 +58,16 @@ class _MarqueeTextState extends State<MarqueeText>
       _controller.jumpTo(0);
       return;
     }
-    _anim = AnimationController(
-      vsync: this,
-      duration: Duration(milliseconds: (max * 40).clamp(4000, 16000).toInt()),
-    )..addListener(() {
-        if (!_controller.hasClients) return;
-        _controller.jumpTo(max * _anim!.value);
-      });
+    _anim =
+        AnimationController(
+          vsync: this,
+          duration: Duration(
+            milliseconds: (max * 40).clamp(4000, 16000).toInt(),
+          ),
+        )..addListener(() {
+          if (!_controller.hasClients) return;
+          _controller.jumpTo(max * _anim!.value);
+        });
     Future<void> loop() async {
       while (mounted && _needsScroll && _anim != null) {
         await Future<void>.delayed(const Duration(milliseconds: 800));
@@ -77,6 +78,7 @@ class _MarqueeTextState extends State<MarqueeText>
         _controller.jumpTo(0);
       }
     }
+
     loop();
   }
 

@@ -30,7 +30,8 @@ import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
 class AppState extends ChangeNotifier {
-  AppState({required MusicAudioHandler audioHandler}) {
+  AppState({required MusicAudioHandler audioHandler})
+    : _audioHandler = audioHandler {
     settings = SettingsService();
     notificationPermission = NotificationPermissionService();
     final db = LibraryDatabase();
@@ -89,6 +90,8 @@ class AppState extends ChangeNotifier {
     videoPlayback = VideoPlaybackService(handler: audioHandler);
   }
 
+  final MusicAudioHandler _audioHandler;
+
   late final SettingsService settings;
   late final WebDavService webDav;
   late final CloudDriveService cloudDrive;
@@ -107,7 +110,7 @@ class AppState extends ChangeNotifier {
 
   bool ready = false;
   String? initError;
-  String _initPhase = '未开始';
+  String _initPhase = 'not_started';
 
   String get initPhase => _initPhase;
 
@@ -115,6 +118,41 @@ class AppState extends ChangeNotifier {
     await downloads.closeDatabase();
     await playlists.closeDatabase();
     await libraryDb.close();
+  }
+
+  Future<void>? _shutdownFuture;
+
+  Future<void> shutdown() {
+    return _shutdownFuture ??= _shutdownImpl();
+  }
+
+  Future<void> _shutdownImpl() async {
+    try {
+      await videoPlayback.stop();
+    } catch (_) {}
+    try {
+      await _audioHandler.disposePlayer();
+    } catch (_) {}
+    _disposeServices();
+  }
+
+  void _disposeServices() {
+    videoPlayback.dispose();
+    player.dispose();
+    downloads.dispose();
+    cache.dispose();
+    webDav.dispose();
+    library.dispose();
+    accounts.dispose();
+    playlists.dispose();
+    backup.dispose();
+    _periodicSync?.cancel();
+    _libraryPushDebounce?.cancel();
+    library.removeListener(_onLibraryChanged);
+    credentials.dispose();
+    sync.dispose();
+    settings.dispose();
+    notificationPermission.dispose();
   }
 
   Future<void> init() async {
@@ -519,22 +557,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
-    videoPlayback.dispose();
-    player.dispose();
-    downloads.dispose();
-    cache.dispose();
-    webDav.dispose();
-    library.dispose();
-    accounts.dispose();
-    playlists.dispose();
-    backup.dispose();
-    _periodicSync?.cancel();
-    _libraryPushDebounce?.cancel();
-    library.removeListener(_onLibraryChanged);
-    credentials.dispose();
-    sync.dispose();
-    settings.dispose();
-    notificationPermission.dispose();
+    unawaited(shutdown());
     super.dispose();
   }
 }

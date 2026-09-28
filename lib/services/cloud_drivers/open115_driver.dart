@@ -39,6 +39,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
 import '../cloud_driver.dart';
+import '../../utils/l10n_host.dart';
 
 /// 上游 SDK 错误码：对象不存在（`ERR_OBJECT_NOT_FOUND`，util.ts）。
 const int open115ErrObjectNotFound = 430004;
@@ -79,12 +80,12 @@ class Open115Addition {
       );
 
   Map<String, dynamic> toJson() => {
-        'refresh_token': refreshToken,
-        'root_id': rootId,
-        'page_size': pageSize,
-        'limit_rate': limitRate,
-        'access_token': accessToken,
-      };
+    'refresh_token': refreshToken,
+    'root_id': rootId,
+    'page_size': pageSize,
+    'limit_rate': limitRate,
+    'access_token': accessToken,
+  };
 
   /// 刷新令牌（必填）。115 每次刷新都会轮换它，轮换结果经 `onTokenUpdate`
   /// 持久化（两个 token 都必须存）。
@@ -132,15 +133,15 @@ class Open115File {
   });
 
   static Open115File fromMap(Map<String, dynamic> m) => Open115File(
-        fid: _text(m['fid']),
-        pid: _text(m['pid']),
-        // fc 是**字符串**：'0' = 目录，'1' = 文件（Go `IsDir: o.Fc == "0"`）。
-        fc: _text(m['fc']),
-        fn: m['fn'] as String? ?? '',
-        pc: _text(m['pc']),
-        upt: _num(m['upt']),
-        fs: _num(m['fs']),
-      );
+    fid: _text(m['fid']),
+    pid: _text(m['pid']),
+    // fc 是**字符串**：'0' = 目录，'1' = 文件（Go `IsDir: o.Fc == "0"`）。
+    fc: _text(m['fc']),
+    fn: m['fn'] as String? ?? '',
+    pc: _text(m['pc']),
+    upt: _num(m['upt']),
+    fs: _num(m['fs']),
+  );
 
   /// 文件 ID。
   final String fid;
@@ -181,19 +182,25 @@ class Open115Client {
     this.onTokenUpdate,
     Dio? dio,
     Duration? linkTtl,
-  })  : linkTtl = linkTtl ?? defaultLinkTtl,
-        accessToken = addition.accessToken,
-        _dio = dio ??
-            Dio(
-              BaseOptions(
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 60),
-                headers: {'User-Agent': open115UserAgent, 'Accept': 'application/json'},
-                // 非 2xx 也回来读 body：「原样传递报错」需要读到 115 的 code。
-                validateStatus: (_) => true,
-              ),
-            ) {
-    _rateLimitMs = addition.limitRate > 0 ? (1000 / addition.limitRate).round() : 0;
+  }) : linkTtl = linkTtl ?? defaultLinkTtl,
+       accessToken = addition.accessToken,
+       _dio =
+           dio ??
+           Dio(
+             BaseOptions(
+               connectTimeout: const Duration(seconds: 15),
+               receiveTimeout: const Duration(seconds: 60),
+               headers: {
+                 'User-Agent': open115UserAgent,
+                 'Accept': 'application/json',
+               },
+               // 非 2xx 也回来读 body：「原样传递报错」需要读到 115 的 code。
+               validateStatus: (_) => true,
+             ),
+           ) {
+    _rateLimitMs = addition.limitRate > 0
+        ? (1000 / addition.limitRate).round()
+        : 0;
     _rateClock.start();
   }
 
@@ -256,7 +263,7 @@ class Open115Client {
   /// 轮换 refresh_token，不存下去下次就刷不动了。
   Future<void> refreshToken() async {
     if (refreshTokenValue.isEmpty) {
-      throw const CloudDriverException('115 网盘缺少 refresh_token（必填）');
+      throw const CloudDriverException('err.open115MissingRefreshToken');
     }
     final res = await _send(
       refreshTokenUrl,
@@ -267,14 +274,15 @@ class Open115Client {
     );
     final body = _decodeBody(res);
     final data = body['data'];
-    final map = data is Map ? Map<String, dynamic>.from(data) : const <String, dynamic>{};
+    final map = data is Map
+        ? Map<String, dynamic>.from(data)
+        : const <String, dynamic>{};
     // 两个 token 都按文本取（上游只判空，不假设类型）。
     final access = _asToken(map['access_token']);
     final refresh = _asToken(map['refresh_token']);
     if (body['code'] != 0 || access.isEmpty || refresh.isEmpty) {
       throw CloudDriverException(
-        '115 网盘 token 刷新失败（code ${body['code']} ${body['message'] ?? ''}）：'
-        '请确认 refresh_token 有效。',
+        'err.open115RefreshFailed|code ${body['code']} ${body['message'] ?? ''}',
       );
     }
     _applyTokens(access, refresh);
@@ -305,8 +313,13 @@ class Open115Client {
     String? ua,
     bool skipAuthRetry = false,
   }) async {
-    var body = await _doRequest(url,
-        method: method, query: query, form: form, ua: ua);
+    var body = await _doRequest(
+      url,
+      method: method,
+      query: query,
+      form: form,
+      ua: ua,
+    );
     final state = body['state'];
     if (state != false) return body;
 
@@ -314,8 +327,13 @@ class Open115Client {
     if (open115IsAuthError(code) && !skipAuthRetry) {
       // 令牌失效：刷新一次再打一遍，且这一次不再刷新（防死循环）。
       await refreshToken();
-      body = await _doRequest(url,
-          method: method, query: query, form: form, ua: ua);
+      body = await _doRequest(
+        url,
+        method: method,
+        query: query,
+        form: form,
+        ua: ua,
+      );
       if (body['state'] != false) return body;
       throw _apiException(url, body);
     }
@@ -326,7 +344,7 @@ class Open115Client {
     final code = body['code'];
     // 上游错误原文：code 与 message 一起带上（430004 由调用方按 code 判定）。
     return _Open115ApiException(
-      '115 网盘 API 错误（code $code ${body['message'] ?? ''}）',
+      'err.open115ApiError|code $code ${body['message'] ?? ''}',
       code: code,
       url: url,
     );
@@ -366,9 +384,8 @@ class Open115Client {
       headers['Authorization'] = 'Bearer $accessToken';
     }
     // 空值跳过（上游 `if (v !== "")`）。
-    final qp = <String, dynamic>{
-      ...?query?.map((k, v) => MapEntry(k, v)),
-    }..removeWhere((_, v) => v == '');
+    final qp = <String, dynamic>{...?query?.map((k, v) => MapEntry(k, v))}
+      ..removeWhere((_, v) => v == '');
     final formData = form == null
         ? null
         : (Map<String, String>.from(form)..removeWhere((_, v) => v.isEmpty));
@@ -383,8 +400,9 @@ class Open115Client {
           options: Options(
             method: method,
             responseType: ResponseType.plain,
-            contentType:
-                formData == null ? null : Headers.formUrlEncodedContentType,
+            contentType: formData == null
+                ? null
+                : Headers.formUrlEncodedContentType,
             headers: headers,
           ),
         );
@@ -392,11 +410,12 @@ class Open115Client {
         lastErr = e;
         if (attempt < networkRetries - 1) {
           await Future<void>.delayed(
-              Duration(milliseconds: _retryBaseMs * (attempt + 1)));
+            Duration(milliseconds: _retryBaseMs * (attempt + 1)),
+          );
         }
       }
     }
-    throw CloudDriverException('115 网盘网络请求失败（$url）', lastErr);
+    throw CloudDriverException('err.open115NetworkFailed|$url', lastErr);
   }
 
   Future<void> _waitRateLimit() async {
@@ -444,14 +463,17 @@ class Open115Client {
     String o = 'file_name',
     bool showDir = true,
   }) async {
-    final body = await request('$apiBase/open/ufile/files', query: {
-      'cid': cid,
-      'limit': '$limit',
-      'offset': '$offset',
-      'asc': asc ? '1' : '0',
-      'o': o,
-      'showDir': showDir ? '1' : '0',
-    });
+    final body = await request(
+      '$apiBase/open/ufile/files',
+      query: {
+        'cid': cid,
+        'limit': '$limit',
+        'offset': '$offset',
+        'asc': asc ? '1' : '0',
+        'o': o,
+        'showDir': showDir ? '1' : '0',
+      },
+    );
     final data = body['data'];
     final files = <Open115File>[];
     if (data is List) {
@@ -462,7 +484,9 @@ class Open115Client {
     final count = body['count'];
     return (
       files: files,
-      count: count is num ? count.toInt() : (int.tryParse('${count ?? ''}') ?? 0),
+      count: count is num
+          ? count.toInt()
+          : (int.tryParse('${count ?? ''}') ?? 0),
     );
   }
 
@@ -494,7 +518,7 @@ class Open115Client {
     );
     final data = body['data'];
     if (data is! Map) {
-      throw const CloudDriverException('115 网盘 downurl 未返回直链数据（data 为空）');
+      throw const CloudDriverException('err.open115DownurlEmptyData');
     }
     for (final entry in data.values) {
       if (entry is! Map) continue;
@@ -502,7 +526,7 @@ class Open115Client {
       final link = url is Map ? url['url'] as String? : null;
       if (link != null && link.isNotEmpty) return link;
     }
-    throw const CloudDriverException('115 网盘 downurl 未返回可用直链（url.url 为空）');
+    throw const CloudDriverException('err.open115DownurlEmptyUrl');
   }
 
   /// 直链缓存查询（key = `fid|UA`）。过期返回 null。
@@ -524,11 +548,14 @@ class Open115Client {
   }
 
   /// 取直链（带缓存）。缓存命中不发出任何请求。
-  Future<String> linkFor(Open115File file, {String ua = open115UserAgent}) async {
+  Future<String> linkFor(
+    Open115File file, {
+    String ua = open115UserAgent,
+  }) async {
     final cached = cachedLink(file.fid, ua);
     if (cached != null) return cached;
     if (file.pc.isEmpty) {
-      throw CloudDriverException('115 网盘条目缺少 pick_code，无法获取直链：${file.fn}');
+      throw CloudDriverException('err.open115MissingPickCode|${file.fn}');
     }
     final url = await downUrl(file.pc, ua: ua);
     cacheLink(file.fid, ua, url);
@@ -539,33 +566,48 @@ class Open115Client {
 
   /// `POST /open/folder/add`。
   Future<void> mkdir(String pid, String fileName) async {
-    await request('$apiBase/open/folder/add',
-        method: 'POST', form: {'pid': pid, 'file_name': fileName});
+    await request(
+      '$apiBase/open/folder/add',
+      method: 'POST',
+      form: {'pid': pid, 'file_name': fileName},
+    );
   }
 
   /// `POST /open/ufile/update`（改名）。
   Future<void> updateFile(String fileId, String fileName) async {
-    await request('$apiBase/open/ufile/update',
-        method: 'POST', form: {'file_id': fileId, 'file_name': fileName});
+    await request(
+      '$apiBase/open/ufile/update',
+      method: 'POST',
+      form: {'file_id': fileId, 'file_name': fileName},
+    );
   }
 
   /// `POST /open/ufile/move`。[fileIds] 上游是逗号分隔的字符串。
   Future<void> move(String fileIds, String toCid) async {
-    await request('$apiBase/open/ufile/move',
-        method: 'POST', form: {'file_ids': fileIds, 'to_cid': toCid});
+    await request(
+      '$apiBase/open/ufile/move',
+      method: 'POST',
+      form: {'file_ids': fileIds, 'to_cid': toCid},
+    );
   }
 
   /// `POST /open/ufile/copy`。**参数顺序是 (目标 pid, 源 fileId)**，
   /// 与直觉相反——上游 `copy(srcObj, dstDir)` 里 `PID = dstDir.GetID()`。
   Future<void> copy(String pid, String fileId) async {
-    await request('$apiBase/open/ufile/copy',
-        method: 'POST', form: {'pid': pid, 'file_id': fileId, 'no_dupli': '1'});
+    await request(
+      '$apiBase/open/ufile/copy',
+      method: 'POST',
+      form: {'pid': pid, 'file_id': fileId, 'no_dupli': '1'},
+    );
   }
 
   /// `POST /open/ufile/delete`。[fileIds] 上游是逗号分隔的字符串。
   Future<void> delFile(String fileIds, String parentId) async {
-    await request('$apiBase/open/ufile/delete',
-        method: 'POST', form: {'file_ids': fileIds, 'parent_id': parentId});
+    await request(
+      '$apiBase/open/ufile/delete',
+      method: 'POST',
+      form: {'file_ids': fileIds, 'parent_id': parentId},
+    );
   }
 }
 
@@ -608,18 +650,21 @@ class Open115Driver extends CloudDriver {
     required Open115Addition addition,
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
     Dio? dio,
-  }) : _client = Open115Client(addition, onTokenUpdate: onTokenUpdate, dio: dio);
+  }) : _client = Open115Client(
+         addition,
+         onTokenUpdate: onTokenUpdate,
+         dio: dio,
+       );
 
   factory Open115Driver.fromConfig(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
     Dio? dio,
-  }) =>
-      Open115Driver(
-        addition: Open115Addition.fromJson(config),
-        onTokenUpdate: onTokenUpdate,
-        dio: dio,
-      );
+  }) => Open115Driver(
+    addition: Open115Addition.fromJson(config),
+    onTokenUpdate: onTokenUpdate,
+    dio: dio,
+  );
 
   final Open115Client _client;
 
@@ -648,23 +693,32 @@ class Open115Driver extends CloudDriver {
     } on _Open115ApiException catch (e) {
       // 对象不存在这类上游错误原样透传。
       if (e.isObjectNotFound) rethrow;
+      final strippedApi = e.message.startsWith('err.')
+          ? e.message.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '')
+          : e.message;
       throw CloudDriverException(
-        '115 网盘 token 验证失败：${e.message}。请确认 access_token / refresh_token 有效。',
+        'err.open115TokenVerifyFailed|$strippedApi',
         e.cause,
       );
     } on CloudDriverException catch (e) {
       final msg = e.message;
       if (e.cause is DioException ||
+          msg.startsWith('err.open115NetworkFailed') ||
           msg.contains('网络') ||
           msg.contains('SocketException')) {
+        final strippedNet = msg.startsWith('err.')
+            ? msg.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '')
+            : msg;
         throw CloudDriverException(
-          '115 网盘网络连接失败（$msg）：proapi.115.com 可能无法从当前部署环境访问'
-          '（数据中心 IP 可能被 115 拦截），请稍后重试或更换部署环境。',
+          'err.open115NetworkConnectFailed|$strippedNet',
           e.cause,
         );
       }
+      final strippedMsg = msg.startsWith('err.')
+          ? msg.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '')
+          : msg;
       throw CloudDriverException(
-        '115 网盘 token 验证失败：$msg。请确认 access_token / refresh_token 有效。',
+        'err.open115TokenVerifyFailed|$strippedMsg',
         e.cause,
       );
     }
@@ -723,7 +777,13 @@ class Open115Driver extends CloudDriver {
       if (e.message.contains('downurl') || e.message.contains('pick_code')) {
         rethrow;
       }
-      throw CloudDriverException('获取 115 网盘直链失败：${e.message}', e.cause);
+      final strippedDl = e.message.startsWith('err.')
+          ? e.message.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '')
+          : e.message;
+      throw CloudDriverException(
+        'err.open115DirectLinkFailed|$strippedDl',
+        e.cause,
+      );
     }
   }
 
@@ -787,7 +847,7 @@ class Open115Driver extends CloudDriver {
       // 副本的 fid 未知：列一次目标目录把它找出来改名（rename 需要 fid）。
       final copied = await _findInDir(dstDir, currentName);
       if (copied == null || copied.fid.isEmpty) {
-        throw CloudDriverException('115 网盘复制完成但未找到副本，无法改名为 $newName');
+        throw CloudDriverException('err.open115CopyRenameFailed|$newName');
       }
       await _client.updateFile(copied.fid, newName);
     }
@@ -852,7 +912,7 @@ class Open115Driver extends CloudDriver {
         }
       }
       if (folder == null) {
-        throw CloudDriverException('115 网盘目录不存在：$prefix');
+        throw CloudDriverException('err.open115FolderNotFound|$prefix');
       }
       cid = folder.fid;
       _fidCache[prefix] = cid;
@@ -868,7 +928,7 @@ class Open115Driver extends CloudDriver {
     final clean = _clean(path);
     final segs = clean.split('/').where((s) => s.isNotEmpty).toList();
     if (segs.isEmpty) {
-      throw CloudDriverException('115 网盘文件不存在：$clean');
+      throw CloudDriverException('err.open115FileNotFound|$clean');
     }
     final rawName = segs.removeLast();
     final decodedName = _tryDecode(rawName);
@@ -897,7 +957,7 @@ class Open115Driver extends CloudDriver {
       if (page.files.isEmpty || offset + page.files.length >= page.count) break;
       offset += page.files.length;
     }
-    throw CloudDriverException('115 网盘文件不存在：$rawName');
+    throw CloudDriverException('err.open115FileNotFound|$rawName');
   }
 
   /// 在 [dir] 下按名字找一个条目（copy 改名用）。
@@ -930,8 +990,7 @@ class Open115Driver extends CloudDriver {
     return '/${segs.join('/')}';
   }
 
-  String _joinPath(String dir, String name) =>
-      _clean('${_clean(dir)}/$name');
+  String _joinPath(String dir, String name) => _clean('${_clean(dir)}/$name');
 
   /// uri 解码失败时用原名（上游的 try/catch 语义）。
   String _tryDecode(String raw) {
@@ -950,14 +1009,14 @@ class Open115Driver extends CloudDriver {
   }
 
   CloudFileItem _toItem(Open115File f) => CloudFileItem(
-        name: f.fn,
-        isDir: f.isDir,
-        size: f.fs,
-        // upt 是 Unix **秒**（Go `time.Unix(o.Upt, 0)`）。
-        modified: f.upt > 0
-            ? DateTime.fromMillisecondsSinceEpoch(f.upt * 1000)
-            : null,
-      );
+    name: f.fn,
+    isDir: f.isDir,
+    size: f.fs,
+    // upt 是 Unix **秒**（Go `time.Unix(o.Upt, 0)`）。
+    modified: f.upt > 0
+        ? DateTime.fromMillisecondsSinceEpoch(f.upt * 1000)
+        : null,
+  );
 }
 
 /// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造全部收在
@@ -970,12 +1029,13 @@ class Open115Spec extends CloudDriverSpec {
   String get typeId => '115open';
 
   @override
-  String get displayName => '115网盘';
+  String get displayName => L10nHost.current.driverName115;
 
   // 列出 / 读取 / 创建文件夹 / 移动 / 复制 / 删除；**write 一律不给**
   //（上传已砍，99 §4.2.1；mkdir 核查见 99 §4.3.2——115open 是真实现）。
   @override
-  int get capabilities => AccountCaps.list |
+  int get capabilities =>
+      AccountCaps.list |
       AccountCaps.read |
       AccountCaps.mkdir |
       AccountCaps.move |
@@ -989,34 +1049,33 @@ class Open115Spec extends CloudDriverSpec {
   Set<String> get runtimeSecretKeys => const {'access_token'};
 
   @override
-  List<CloudDriverFormItem> get form => const [
-        CloudDriverField(
-          key: 'refresh_token',
-          label: 'refresh_token',
-          hint: '必填；获取方法见 OpenList 官方文档（115 Open 驱动页）。'
-              '115 每次刷新都会轮换它，轮换结果会自动保存',
-          required: true,
-          obscure: true,
-        ),
-        CloudDriverField(
-          key: 'root_id',
-          label: '根目录 ID',
-          hint: '默认 0（整体根目录）；填非 0 的目录 ID 可把账号挂到该目录下',
-          defaultValue: '0',
-        ),
-        CloudDriverField(
-          key: 'page_size',
-          label: '分页大小',
-          hint: '范围 1~1150，默认 200（超出会被夹到边界；115 单次上限 1150）',
-          defaultValue: '200',
-        ),
-        CloudDriverField(
-          key: 'limit_rate',
-          label: '限速（次/秒）',
-          hint: '默认 0 = 不限速；填正数则两次 API 请求之间至少间隔 1/该值 秒',
-          defaultValue: '0',
-        ),
-      ];
+  List<CloudDriverFormItem> get form => [
+    CloudDriverField(
+      key: 'refresh_token',
+      label: 'refresh_token',
+      hint: L10nHost.current.formHint115RefreshToken,
+      required: true,
+      obscure: true,
+    ),
+    CloudDriverField(
+      key: 'root_id',
+      label: L10nHost.current.formLabelRootId,
+      hint: L10nHost.current.formHint115RootId,
+      defaultValue: '0',
+    ),
+    CloudDriverField(
+      key: 'page_size',
+      label: L10nHost.current.formLabelPageSize,
+      hint: L10nHost.current.formHintPageSize,
+      defaultValue: '200',
+    ),
+    CloudDriverField(
+      key: 'limit_rate',
+      label: L10nHost.current.formLabelRateLimit,
+      hint: L10nHost.current.formHintRateLimit,
+      defaultValue: '0',
+    ),
+  ];
 
   @override
   CloudDriver create(
@@ -1024,9 +1083,6 @@ class Open115Spec extends CloudDriverSpec {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
     CloudDriverEnv? env,
   }) {
-    return Open115Driver.fromConfig(
-      config,
-      onTokenUpdate: onTokenUpdate,
-    );
+    return Open115Driver.fromConfig(config, onTokenUpdate: onTokenUpdate);
   }
 }

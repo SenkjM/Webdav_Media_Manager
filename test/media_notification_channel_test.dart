@@ -7,10 +7,7 @@ import 'package:webdav_media_manager/services/notification_permission_service.da
 
 void main() {
   test('media channel id stays the v4 ColorOS-fresh channel', () {
-    expect(
-      kMediaNotificationChannelId,
-      'com.senkjm.media_manager.audio.v4',
-    );
+    expect(kMediaNotificationChannelId, 'com.senkjm.media_manager.audio.v4');
     // Still re-exported from music_audio_handler.dart for existing importers.
     expect(handler.kMediaNotificationChannelId, kMediaNotificationChannelId);
   });

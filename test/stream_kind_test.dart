@@ -12,8 +12,8 @@ void main() {
 
   StreamKind kindFor(String name) =>
       types.categoryFor(name) == FileCategory.music
-          ? StreamKind.music
-          : StreamKind.video;
+      ? StreamKind.music
+      : StreamKind.video;
 
   test('音乐后缀走音乐用途', () {
     for (final n in ['a.mp3', 'a.FLAC', 'a.m4a', 'a.opus']) {

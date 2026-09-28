@@ -11,6 +11,7 @@ import '../widgets/tag_refresh_progress_dialog.dart';
 
 import 'package:share_plus/share_plus.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/library_track.dart';
 import '../models/playlist.dart';
 import '../providers/app_state.dart';
@@ -27,7 +28,8 @@ import 'settings_service.dart';
 import 'share_rename_service.dart';
 
 /// Whether the track's audio is local: derived cache file exists on disk.
-String unboundSourceMessage(String sourceName) => '未绑定网盘「$sourceName」';
+String unboundSourceMessage(AppLocalizations l10n, String sourceName) =>
+    l10n.unboundSource(sourceName);
 
 bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
   return cache.isLocalTrack(track);
@@ -144,7 +146,7 @@ Future<int> downloadUncachedLibraryTracks(
   if (context.mounted) {
     AppSnack.show(
       context,
-      '已加入 $queued 项下载${unavailable > 0 ? ', $unavailable 项来源不可用' : ''}',
+      '${AppLocalizations.of(context)!.libQueuedCount(queued)}${unavailable > 0 ? ', ${AppLocalizations.of(context)!.libQueuedUnavailable(unavailable)}' : ''}',
       error: unavailable > 0 && queued == 0,
     );
   }
@@ -163,7 +165,10 @@ Future<void> enqueueLibraryTrackDownload(
   final accounts = context.read<AccountsService>();
   if (!accounts.isSourceBound(track.sourceName)) {
     if (context.mounted) {
-      AppSnack.error(context, unboundSourceMessage(track.sourceName));
+      AppSnack.error(
+        context,
+        unboundSourceMessage(AppLocalizations.of(context)!, track.sourceName),
+      );
     }
     return;
   }
@@ -185,7 +190,7 @@ Future<void> enqueueLibraryTrackDownload(
     );
   }
   if (showSnack && context.mounted) {
-    AppSnack.show(context, '已加入下载');
+    AppSnack.show(context, AppLocalizations.of(context)!.libQueuedAdded);
   }
 }
 
@@ -262,7 +267,11 @@ Future<void> deleteTracksLocalCache(
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(groupIds.length == 1 ? '删除整个 CUE 缓存组？' : '删除多个 CUE 缓存组？'),
+        title: Text(
+          groupIds.length == 1
+              ? AppLocalizations.of(ctx)!.cueGroupDeleteTitle
+              : AppLocalizations.of(ctx)!.cueGroupDeleteTitleMulti,
+        ),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -270,23 +279,25 @@ Future<void> deleteTracksLocalCache(
             children: [
               Text(
                 groupIds.length == 1
-                    ? '将删除整组：'
-                    : '将删除 ${groupIds.length} 个 CUE 组：',
+                    ? AppLocalizations.of(ctx)!.cueGroupDeleteBodyIntro
+                    : AppLocalizations.of(ctx)!
+                          .cueGroupDeleteBodyIntroCount(groupIds.length),
               ),
               const SizedBox(height: 8),
               for (final n in names.take(40)) Text('• $n'),
-              if (names.length > 40) Text('…共 ${names.length} 个文件'),
+              if (names.length > 40)
+                Text(AppLocalizations.of(ctx)!.moreFilesCount(names.length)),
             ],
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
+            child: Text(AppLocalizations.of(ctx)!.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('删除整组'),
+            child: Text(AppLocalizations.of(ctx)!.cueGroupDeleteWhole),
           ),
         ],
       ),
@@ -297,7 +308,7 @@ Future<void> deleteTracksLocalCache(
       n += await cache.deleteCacheGroup(gid);
     }
     if (!context.mounted) return;
-    AppSnack.show(context, '已删除 CUE 缓存组（$n 个文件）');
+    AppSnack.show(context, AppLocalizations.of(context)!.cueGroupDeleted(n));
   }
 
   if (plain.isEmpty) return;
@@ -311,20 +322,22 @@ Future<void> deleteTracksLocalCache(
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('删除本地音频缓存？'),
+      title: Text(AppLocalizations.of(ctx)!.cacheDeleteTitle),
       content: Text(
         unique.length == 1
-            ? '将删除「${p.basename(unique.first.effectiveAudioRemotePath)}」的音频缓存，标签与封面保留。'
-            : '将删除 ${unique.length} 个缓存文件，标签与封面保留。',
+            ? AppLocalizations.of(ctx)!.cacheDeleteBodyOne(
+                p.basename(unique.first.effectiveAudioRemotePath),
+              )
+            : AppLocalizations.of(ctx)!.cacheDeleteBodyMany(unique.length),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('取消'),
+          child: Text(AppLocalizations.of(ctx)!.cancel),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('删除'),
+          child: Text(AppLocalizations.of(ctx)!.delete),
         ),
       ],
     ),
@@ -340,7 +353,10 @@ Future<void> deleteTracksLocalCache(
     }
   }
   if (!context.mounted) return;
-  AppSnack.show(context, '已删除 $removed 个本地音频缓存');
+  AppSnack.show(
+    context,
+    AppLocalizations.of(context)!.cacheDeletedCount(removed),
+  );
 }
 
 /// Destroy tracks: delete their audio cache, remove them from the music
@@ -385,33 +401,34 @@ Future<void> destroyLibraryTracks(
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('销毁所选曲目？'),
+      title: Text(AppLocalizations.of(ctx)!.destroyTracksTitle),
       content: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('将删除 ${all.length} 首曲目（缓存、库记录、元数据与封面），不可恢复。'),
+            Text(AppLocalizations.of(ctx)!.destroyTracksBody(all.length)),
             if (groupIds.isNotEmpty)
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text('（CUE 分片整组删除）'),
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(AppLocalizations.of(ctx)!.destroyTracksCueNote),
               ),
             const SizedBox(height: 8),
             for (final n in files.take(30)) Text('• $n'),
-            if (files.length > 30) Text('…共 ${files.length} 个文件'),
+            if (files.length > 30)
+              Text(AppLocalizations.of(ctx)!.moreFilesCount(files.length)),
           ],
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx, false),
-          child: const Text('取消'),
+          child: Text(AppLocalizations.of(ctx)!.cancel),
         ),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: AppColors.error),
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('销毁'),
+          child: Text(AppLocalizations.of(ctx)!.destroyAction),
         ),
       ],
     ),
@@ -430,7 +447,10 @@ Future<void> destroyLibraryTracks(
   );
 
   if (!context.mounted) return;
-  AppSnack.show(context, '已销毁 $destroyed 首曲目');
+  AppSnack.show(
+    context,
+    AppLocalizations.of(context)!.destroyedTracksCount(destroyed),
+  );
 }
 
 /// Share already-cached **non-CUE** audio files via the system share sheet.
@@ -467,11 +487,13 @@ Future<void> shareLibraryTracks(
   if (localNonCue.isEmpty) {
     final String msg;
     if (cueCount > 0 && notLocalCount == 0) {
-      msg = 'CUE 音轨不支持分享';
+      msg = AppLocalizations.of(context)!.shareCueUnsupported;
     } else if (cueCount > 0) {
-      msg = 'CUE 音轨不支持分享；其余曲目尚未下载到本地';
+      msg = AppLocalizations.of(context)!.shareCueUnsupportedAndNotLocal;
     } else {
-      msg = notLocalCount == 1 ? '该曲目尚未下载到本地，无法分享' : '所选曲目均未下载到本地，无法分享';
+      msg = notLocalCount == 1
+          ? AppLocalizations.of(context)!.shareNotLocalOne
+          : AppLocalizations.of(context)!.shareNotLocalAll;
     }
     if (!context.mounted) return;
     AppSnack.error(context, msg);
@@ -481,11 +503,16 @@ Future<void> shareLibraryTracks(
   if (cueCount > 0 && context.mounted) {
     AppSnack.show(
       context,
-      cueCount == 1 ? 'CUE 音轨不支持分享' : '已跳过 $cueCount 首 CUE 音轨（不支持分享）',
+      cueCount == 1
+          ? AppLocalizations.of(context)!.shareCueUnsupported
+          : AppLocalizations.of(context)!.shareCueSkipped(cueCount),
     );
   }
   if (notLocalCount > 0 && context.mounted) {
-    AppSnack.show(context, '已跳过 $notLocalCount 首未下载曲目');
+    AppSnack.show(
+      context,
+      AppLocalizations.of(context)!.shareNotLocalSkipped(notLocalCount),
+    );
   }
 
   final plan = <_SharePlan>[];
@@ -503,7 +530,7 @@ Future<void> shareLibraryTracks(
   }
   if (plan.isEmpty) {
     if (!context.mounted) return;
-    AppSnack.error(context, '没有可分享的文件');
+    AppSnack.error(context, AppLocalizations.of(context)!.shareNothingToShare);
     return;
   }
 
@@ -525,7 +552,10 @@ Future<void> shareLibraryTracks(
     final built = await _materializeShareFiles(plan, rename: applyRename);
     if (built.files.isEmpty) {
       if (!context.mounted) return;
-      AppSnack.error(context, '没有可分享的文件');
+      AppSnack.error(
+        context,
+        AppLocalizations.of(context)!.shareNothingToShare,
+      );
       return;
     }
     await SharePlus.instance.share(ShareParams(files: built.files));
@@ -534,10 +564,16 @@ Future<void> shareLibraryTracks(
       unawaited(File(path).delete().catchError((_) => File(path)));
     }
     if (!context.mounted) return;
-    AppSnack.show(context, '已分享 ${built.files.length} 个文件');
+    AppSnack.show(
+      context,
+      AppLocalizations.of(context)!.shareDoneCount(built.files.length),
+    );
   } catch (e) {
     if (!context.mounted) return;
-    AppSnack.error(context, '分享失败：$e');
+    AppSnack.error(
+      context,
+      AppLocalizations.of(context)!.shareFailed(e.toString()),
+    );
   }
 }
 
@@ -574,13 +610,14 @@ Future<String?> _askShareName(
     context: context,
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.elevated,
-      title: const Text('分享文件名'),
+      title: Text(AppLocalizations.of(ctx)!.shareNameTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '按标签重命名 · 模板 ${settings.shareTagRenamePattern}',
+            AppLocalizations.of(ctx)!
+                .shareRenameTemplateHint,
             style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
           ),
           const SizedBox(height: 10),
@@ -588,15 +625,16 @@ Future<String?> _askShareName(
             controller: controller,
             autofocus: true,
             decoration: InputDecoration(
-              labelText: '文件名',
-              helperText: '扩展名固定为 $ext',
+              labelText: AppLocalizations.of(ctx)!.fileNameLabel,
+              helperText: AppLocalizations.of(ctx)!.shareExtFixed(ext),
               suffixText: ext,
               border: const OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 10),
           Text(
-            '原文件：${p.basename(plan.localPath)}',
+            AppLocalizations.of(ctx)!
+                .shareOriginalFile(p.basename(plan.localPath)),
             style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -606,11 +644,11 @@ Future<String?> _askShareName(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
-          child: const Text('取消'),
+          child: Text(AppLocalizations.of(ctx)!.cancel),
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, ''),
-          child: const Text('用原文件名'),
+          child: Text(AppLocalizations.of(ctx)!.shareUseOriginalName),
         ),
         FilledButton(
           onPressed: () => Navigator.pop(
@@ -618,7 +656,7 @@ Future<String?> _askShareName(
             // The field holds the stem only; put the extension back.
             ShareRenameService.finalizeEditedName(controller.text, plan.name),
           ),
-          child: const Text('分享'),
+          child: Text(AppLocalizations.of(ctx)!.shareAction),
         ),
       ],
     ),

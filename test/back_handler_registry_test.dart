@@ -13,8 +13,11 @@ void main() {
     BackHandlerRegistry.register(() => networkHandled = true, tab: 2);
 
     BackHandlerRegistry.activeTabIndex = 3; // 下载页
-    expect(BackHandlerRegistry.tryHandleBack(), isFalse,
-        reason: '网络库在后台，不得消费下载页的返回');
+    expect(
+      BackHandlerRegistry.tryHandleBack(),
+      isFalse,
+      reason: '网络库在后台，不得消费下载页的返回',
+    );
     expect(networkHandled, isFalse);
 
     BackHandlerRegistry.activeTabIndex = 2; // 网络库

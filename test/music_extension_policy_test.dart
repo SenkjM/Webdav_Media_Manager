@@ -27,9 +27,7 @@ void main() {
     });
 
     test('custom extension added by the user counts as music', () {
-      final custom = FileTypeConfig(
-        musicExtensions: ['mp3', 'tak'],
-      );
+      final custom = FileTypeConfig(musicExtensions: ['mp3', 'tak']);
       expect(custom.categoryFor('song.tak'), FileCategory.music);
       expect(custom.categoryFor('song.mp3'), FileCategory.music);
       // Removed from the set → no longer music.

@@ -16,20 +16,23 @@ library;
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../utils/l10n_host.dart';
+
 /// Channel id.
 ///
 /// The `.v4` suffix is deliberate: Android does not upgrade the importance of an
 /// already-created channel, so a fresh id is the only way to move existing
 /// installs off the old LOW-importance channel. `MainActivity`'s
 /// `mediaNotificationDiagnostics` probe reads this same id.
-const String kMediaNotificationChannelId =
-    'com.senkjm.media_manager.audio.v4';
+const String kMediaNotificationChannelId = 'com.senkjm.media_manager.audio.v4';
 
 /// Channel name shown in the system notification settings.
-const String kMediaNotificationChannelName = '音乐播放';
+String get kMediaNotificationChannelName =>
+    L10nHost.current.ntfMediaChannelName;
 
 /// Channel description shown in the system notification settings.
-const String kMediaNotificationChannelDescription = '正在播放的音乐控制';
+String get kMediaNotificationChannelDescription =>
+    L10nHost.current.ntfMediaChannelDesc;
 
 /// Small icon used by the MediaStyle notification (`drawable/ic_stat_music`;
 /// never an adaptive launcher icon).
@@ -41,13 +44,13 @@ const String kMediaNotificationIcon = 'drawable/ic_stat_music';
 /// Mirrors `AudioService.createChannel()` in the vendored `audio_service`:
 /// `IMPORTANCE_DEFAULT` + `setSound(null, null)` + `enableVibration(false)` +
 /// `setShowBadge(androidShowNotificationBadge)` + `VISIBILITY_PUBLIC`.
-const AndroidNotificationChannel kMediaNotificationChannel =
+AndroidNotificationChannel get kMediaNotificationChannel =>
     AndroidNotificationChannel(
-  kMediaNotificationChannelId,
-  kMediaNotificationChannelName,
-  description: kMediaNotificationChannelDescription,
-  importance: Importance.defaultImportance,
-  playSound: false,
-  enableVibration: false,
-  showBadge: false,
-);
+      kMediaNotificationChannelId,
+      kMediaNotificationChannelName,
+      description: kMediaNotificationChannelDescription,
+      importance: Importance.defaultImportance,
+      playSound: false,
+      enableVibration: false,
+      showBadge: false,
+    );

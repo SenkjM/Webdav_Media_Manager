@@ -57,10 +57,7 @@ String sanitizeFileName(String name) {
 /// `webdav_client` stores decoded paths (spaces / non-ASCII as literal
 /// characters), so a streaming URL handed to libmpv must re-encode them.
 String encodeWebDavPath(String path) {
-  return path
-      .split('/')
-      .map((seg) => Uri.encodeComponent(seg))
-      .join('/');
+  return path.split('/').map((seg) => Uri.encodeComponent(seg)).join('/');
 }
 
 /// Stable cache file name derived from the disk name + remote path (avoids
@@ -77,20 +74,22 @@ String cacheFileNameForRemote(String remotePath, {String? sourceName}) {
 }
 
 /// Current folder name for breadcrumb (never show full remote path).
-String folderDisplayName(String path) {
-  if (path.isEmpty || path == '/') return '根目录';
+String folderDisplayName(String path, {String? rootLabel}) {
+  String root() => rootLabel ?? '/';
+  if (path.isEmpty || path == '/') return root();
   final trimmed = path.endsWith('/') && path.length > 1
       ? path.substring(0, path.length - 1)
       : path;
   final name = p.basename(trimmed);
-  return name.isEmpty ? '根目录' : name;
+  return name.isEmpty ? root() : name;
 }
-
 
 String formatByteSize(int bytes) {
   if (bytes < 1024) return '$bytes B';
   if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-  if (bytes < 1024 * 1024 * 1024) return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  if (bytes < 1024 * 1024 * 1024) {
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
   return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
 }
 

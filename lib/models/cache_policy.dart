@@ -1,19 +1,15 @@
+import '../l10n/generated/app_localizations.dart';
+
 /// Auto-cleanup retention for downloaded cache files.
-enum CacheRetention {
-  oneDay,
-  oneWeek,
-  custom,
-  never,
-}
+enum CacheRetention { oneDay, oneWeek, custom, never }
 
 extension CacheRetentionX on CacheRetention {
-  String get labelZh => switch (this) {
-        CacheRetention.oneDay => '1 天',
-        CacheRetention.oneWeek => '1 周',
-        CacheRetention.custom => '自定义',
-        CacheRetention.never => '永不',
-      };
-
+  String label(AppLocalizations l10n) => switch (this) {
+    CacheRetention.oneDay => l10n.cacheOneDay,
+    CacheRetention.oneWeek => l10n.cacheOneWeek,
+    CacheRetention.custom => l10n.cacheCustom,
+    CacheRetention.never => l10n.cacheNever,
+  };
   String get storageKey => name;
 
   static CacheRetention fromStorageKey(String? key) {
@@ -26,10 +22,7 @@ extension CacheRetentionX on CacheRetention {
 
 /// Pure policy used by [CacheService] and unit tests.
 class CacheExpiryPolicy {
-  const CacheExpiryPolicy({
-    required this.retention,
-    this.customDuration,
-  });
+  const CacheExpiryPolicy({required this.retention, this.customDuration});
 
   final CacheRetention retention;
 
@@ -39,12 +32,11 @@ class CacheExpiryPolicy {
 
   /// Effective retention window, or `null` when auto-delete is disabled.
   Duration? get effectiveDuration => switch (retention) {
-        CacheRetention.oneDay => const Duration(days: 1),
-        CacheRetention.oneWeek => const Duration(days: 7),
-        CacheRetention.never => null,
-        CacheRetention.custom =>
-          customDuration ?? const Duration(days: 7),
-      };
+    CacheRetention.oneDay => const Duration(days: 1),
+    CacheRetention.oneWeek => const Duration(days: 7),
+    CacheRetention.never => null,
+    CacheRetention.custom => customDuration ?? const Duration(days: 7),
+  };
 
   /// Returns true if [lastAccessed] is older than retention and the file
   /// is neither currently playing nor mid-download.

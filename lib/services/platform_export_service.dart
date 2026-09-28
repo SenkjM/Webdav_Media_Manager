@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
+
 const _kAppChannel = MethodChannel('com.senkjm.media_manager/app');
 
 /// Broadcasts Android picture-in-picture transitions reported by MainActivity.
@@ -66,12 +68,8 @@ class ExportResult {
   /// Audio falls back to the Music collection and reports false.
   final bool gallery;
 
-  static ExportResult failure(String error) => ExportResult(
-        ok: false,
-        fileName: '',
-        location: '',
-        error: error,
-      );
+  static ExportResult failure(String error) =>
+      ExportResult(ok: false, fileName: '', location: '', error: error);
 }
 
 /// Result of the system document picker.
@@ -112,15 +110,14 @@ class PlatformExportService {
     required String fileName,
     String? mimeType,
     String album = 'WebdavMediaManager',
-  }) =>
-      _save(
-        method: 'saveToGallery',
-        sourcePath: sourcePath,
-        fileName: fileName,
-        mimeType: mimeType,
-        extraKey: 'album',
-        extraValue: album,
-      );
+  }) => _save(
+    method: 'saveToGallery',
+    sourcePath: sourcePath,
+    fileName: fileName,
+    mimeType: mimeType,
+    extraKey: 'album',
+    extraValue: album,
+  );
 
   /// Copy [sourcePath] into the public Downloads collection.
   Future<ExportResult> saveToDownloads({
@@ -128,15 +125,65 @@ class PlatformExportService {
     required String fileName,
     String? mimeType,
     String subdir = 'WebdavMediaManager',
-  }) =>
-      _save(
-        method: 'saveToDownloads',
-        sourcePath: sourcePath,
-        fileName: fileName,
-        mimeType: mimeType,
-        extraKey: 'subdir',
-        extraValue: subdir,
-      );
+  }) => _save(
+    method: 'saveToDownloads',
+    sourcePath: sourcePath,
+    fileName: fileName,
+    mimeType: mimeType,
+    extraKey: 'subdir',
+    extraValue: subdir,
+  );
+
+  /// Map a stable error code (see [_save]/[pickFile]) to localized text.
+  /// Values that are not ours (native passthrough messages) return as-is.
+  static String describeError(String raw, AppLocalizations l10n) {
+    final bar = raw.indexOf('|');
+    if (bar > 0) {
+      final code = raw.substring(0, bar);
+      final detail = raw.substring(bar + 1);
+      switch (code) {
+        case 'exportErr.sourceMissing':
+          return l10n.exportErrSourceMissing(detail);
+        case 'exportErr.badNativeResponse':
+          return l10n.exportErrBadNativeResponse(detail);
+        case 'exportErr.failedWith':
+          return l10n.exportErrFailedWith(detail);
+      }
+    }
+    switch (raw) {
+      case 'exportErr.unsupportedPlatform':
+        return l10n.exportErrUnsupportedPlatform;
+      case 'exportErr.failed':
+        return l10n.exportErrFailed;
+      case 'exportErr.channelUnavailable':
+        return l10n.exportErrChannelUnavailable;
+      case 'pickerErr.unsupportedPlatform':
+        return l10n.pickerErrUnsupportedPlatform;
+      case 'pickerErr.badResponse':
+        return l10n.pickerErrBadResponse;
+      case 'pickerErr.failed':
+        return l10n.pickerErrFailed;
+      case 'pickerErr.channelUnavailable':
+        return l10n.pickerErrChannelUnavailable;
+    }
+    return raw;
+  }
+
+  /// Map a location value (stable code, known Chinese from native, or a
+  /// passthrough path) to localized text.
+  static String describeLocation(String raw, AppLocalizations l10n) {
+    switch (raw) {
+      case 'loc.systemGallery':
+      case '系统相册':
+        return l10n.locationSystemGallery;
+      case '下载目录':
+        return l10n.locationDownloads;
+    }
+    if (raw.startsWith('下载目录/')) {
+      return l10n.locationDownloadsSubdir(raw.substring('下载目录/'.length));
+    }
+    return raw;
+  }
 
   Future<ExportResult> _save({
     required String method,
@@ -147,11 +194,11 @@ class PlatformExportService {
     required String extraValue,
   }) async {
     if (!supported) {
-      return ExportResult.failure('当前平台不支持写入系统相册/下载目录');
+      return ExportResult.failure('exportErr.unsupportedPlatform');
     }
     final src = File(sourcePath);
     if (!await src.exists()) {
-      return ExportResult.failure('源文件不存在：$sourcePath');
+      return ExportResult.failure('exportErr.sourceMissing|$sourcePath');
     }
     try {
       final raw = await _kAppChannel.invokeMethod<dynamic>(method, {
@@ -161,28 +208,32 @@ class PlatformExportService {
         extraKey: extraValue,
       });
       if (raw is! Map) {
-        return ExportResult.failure('导出失败：原生返回 ${raw.runtimeType}');
+        return ExportResult.failure(
+          'exportErr.badNativeResponse|${raw.runtimeType}',
+        );
       }
       final map = raw.map((k, v) => MapEntry(k.toString(), v));
       if (map['ok'] != true) {
         return ExportResult.failure(
-          map['error']?.toString() ?? '导出失败',
+          map['error']?.toString() ?? 'exportErr.failed',
         );
       }
       return ExportResult(
         ok: true,
         fileName: map['fileName']?.toString() ?? fileName,
-        location: map['location']?.toString() ?? '系统相册',
+        location: map['location']?.toString() ?? 'loc.systemGallery',
         uri: map['uri']?.toString(),
         path: map['path']?.toString(),
         gallery: (map['collection']?.toString() ?? 'gallery') == 'gallery',
       );
     } on MissingPluginException {
-      return ExportResult.failure('原生导出通道不可用（需完整 APK）');
+      return ExportResult.failure('exportErr.channelUnavailable');
     } on PlatformException catch (e) {
-      return ExportResult.failure('导出失败：${e.message ?? e.code}');
+      return ExportResult.failure(
+        'exportErr.failedWith|${e.message ?? e.code}',
+      );
     } catch (e) {
-      return ExportResult.failure('导出失败：$e');
+      return ExportResult.failure('exportErr.failedWith|$e');
     }
   }
 
@@ -201,7 +252,10 @@ class PlatformExportService {
   /// backs out; unsupported platforms return a failure with a message.
   Future<PickedFile> pickFile({String? mimeType}) async {
     if (!supported) {
-      return const PickedFile(ok: false, error: '当前平台不支持系统文件选择器');
+      return const PickedFile(
+        ok: false,
+        error: 'pickerErr.unsupportedPlatform',
+      );
     }
     try {
       final raw = await _kAppChannel.invokeMethod<dynamic>('pickFile', {
@@ -209,13 +263,13 @@ class PlatformExportService {
       });
       if (raw == null) return const PickedFile(ok: true);
       if (raw is! Map) {
-        return const PickedFile(ok: false, error: '文件选择返回异常');
+        return const PickedFile(ok: false, error: 'pickerErr.badResponse');
       }
       final map = raw.map((k, v) => MapEntry(k.toString(), v));
       if (map['ok'] != true) {
         return PickedFile(
           ok: false,
-          error: map['error']?.toString() ?? '文件选择失败',
+          error: map['error']?.toString() ?? 'pickerErr.failed',
         );
       }
       return PickedFile(
@@ -225,7 +279,7 @@ class PlatformExportService {
         size: (map['size'] as num?)?.toInt(),
       );
     } on MissingPluginException {
-      return const PickedFile(ok: false, error: '原生文件选择器不可用（需完整 APK）');
+      return const PickedFile(ok: false, error: 'pickerErr.channelUnavailable');
     } on PlatformException catch (e) {
       return PickedFile(ok: false, error: e.message ?? e.code);
     } catch (e) {
@@ -258,9 +312,7 @@ class PlatformExportService {
 
 /// Strip characters that are illegal in export file names.
 String sanitizeExportFileName(String name) {
-  final cleaned = name
-      .replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_')
-      .trim();
+  final cleaned = name.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_').trim();
   return cleaned.isEmpty ? 'file' : cleaned;
 }
 

@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
 import '../models/video_settings.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
@@ -150,7 +151,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         source = await widget.sourceLoader?.call();
         if (!mounted) return;
         if (source == null) {
-          throw 'WebDAV 未连接，无法播放';
+          throw AppLocalizations.of(context)!.webdavNotConnectedPlay;
         }
         // 用户把音频后缀改成视频类时源会判成音乐：路由去音乐页，
         // 复用同一个队列 seed，不再起一个没有画面的解码器。
@@ -313,7 +314,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (player == null || service == null || _switching) return;
     final source = await _streamFor(item);
     if (source == null) {
-      AppSnack.show(context, 'WebDAV 未连接，无法播放');
+      AppSnack.show(context, AppLocalizations.of(context)!.webdavNotConnectedPlay);
       return;
     }
     setState(() {
@@ -364,7 +365,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final queue = _queue;
     if (queue == null) {
       if (!auto) {
-        AppSnack.show(context, '当前没有播放列表');
+        AppSnack.show(context, AppLocalizations.of(context)!.videoQueueEmpty);
       }
       return;
     }
@@ -387,7 +388,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   Future<void> _playPrevious() async {
     final queue = _queue;
     if (queue == null) {
-      AppSnack.show(context, '当前没有播放列表');
+      AppSnack.show(context, AppLocalizations.of(context)!.videoQueueEmpty);
       return;
     }
     // Standard player behavior: restart the current video first.
@@ -448,15 +449,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: AppColors.elevated,
-          content: const Text('确认关闭视频吗？'),
+          content: Text(AppLocalizations.of(context)!.confirmCloseVideo),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消'),
+              child: Text(AppLocalizations.of(context)!.cancel),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('关闭'),
+              child: Text(AppLocalizations.of(context)!.close),
             ),
           ],
         ),
@@ -481,16 +482,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       case VideoGestureAction.none:
         break;
       case VideoGestureAction.back10s:
-        await _seekBy(const Duration(seconds: -10), label: '后退 10 秒');
+        await _seekBy(const Duration(seconds: -10), label: AppLocalizations.of(context)!.videoGestureBack10s);
         break;
       case VideoGestureAction.forward10s:
-        await _seekBy(const Duration(seconds: 10), label: '前进 10 秒');
+        await _seekBy(const Duration(seconds: 10), label: AppLocalizations.of(context)!.videoGestureForward10s);
         break;
       case VideoGestureAction.back30s:
-        await _seekBy(const Duration(seconds: -30), label: '后退 30 秒');
+        await _seekBy(const Duration(seconds: -30), label: AppLocalizations.of(context)!.videoGestureBack30s);
         break;
       case VideoGestureAction.forward30s:
-        await _seekBy(const Duration(seconds: 30), label: '前进 30 秒');
+        await _seekBy(const Duration(seconds: 30), label: AppLocalizations.of(context)!.videoGestureForward30s);
         break;
       case VideoGestureAction.toggleRate2x:
         await _applyRate(_rate.value == 2.0 ? 1.0 : 2.0);
@@ -595,7 +596,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final ok = await enterPictureInPicture();
     if (!mounted) return;
     if (!ok) {
-      AppSnack.show(context, '当前设备/系统不支持画中画');
+      AppSnack.show(context, AppLocalizations.of(context)!.pipUnsupported);
       return;
     }
     _controlsVisible.value = false;
@@ -658,14 +659,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '无法播放：$_error',
+                  AppLocalizations.of(context)!.videoPlayFailed(_error ?? ''),
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.white70),
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: () => _handleExit(),
-                  child: const Text('返回'),
+                  child: Text(AppLocalizations.of(context)!.back),
                 ),
               ],
             ),
@@ -1003,7 +1004,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               children: [
                 _RoundIconButton(
                   icon: Icons.arrow_back,
-                  tooltip: '返回',
+                  tooltip: AppLocalizations.of(context)!.back,
                   onTap: _handleBackPress,
                 ),
                 Expanded(
@@ -1020,12 +1021,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 if (_queue != null)
                   _RoundIconButton(
                     icon: Icons.playlist_play,
-                    tooltip: '播放列表',
+                    tooltip: AppLocalizations.of(context)!.playQueueTitle,
                     onTap: _showQueueSheet,
                   ),
                 _RoundIconButton(
                   icon: Icons.more_vert,
-                  tooltip: '更多设置',
+                  tooltip: AppLocalizations.of(context)!.moreActions,
                   onTap: _showMoreSettings,
                 ),
               ],
@@ -1094,17 +1095,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         if (_queue != null)
                           _TransportButton(
                             icon: Icons.skip_previous,
-                            tooltip: '上一个视频',
+                            tooltip: AppLocalizations.of(context)!.videoPrevious,
                             onTap: _playPrevious,
                           )
                         else
                           const SizedBox(width: 44),
                         _TransportButton(
                           icon: Icons.replay_10,
-                          tooltip: '后退 10 秒',
+                          tooltip: AppLocalizations.of(context)!.videoGestureBack10s,
                           onTap: () => _seekBy(
                             const Duration(seconds: -10),
-                            label: '后退 10 秒',
+                            label: AppLocalizations.of(context)!.videoGestureBack10s,
                           ),
                         ),
                         Expanded(
@@ -1116,7 +1117,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                                     icon: playing
                                         ? Icons.pause
                                         : Icons.play_arrow,
-                                    tooltip: playing ? '暂停' : '播放',
+                                    tooltip: playing ? AppLocalizations.of(context)!.pause : AppLocalizations.of(context)!.play,
                                     size: 38,
                                     onTap: _togglePlayPause,
                                   ),
@@ -1125,16 +1126,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         ),
                         _TransportButton(
                           icon: Icons.forward_10,
-                          tooltip: '前进 10 秒',
+                          tooltip: AppLocalizations.of(context)!.videoGestureForward10s,
                           onTap: () => _seekBy(
                             const Duration(seconds: 10),
-                            label: '前进 10 秒',
+                            label: AppLocalizations.of(context)!.videoGestureForward10s,
                           ),
                         ),
                         if (_queue != null)
                           _TransportButton(
                             icon: Icons.skip_next,
-                            tooltip: '下一个视频',
+                            tooltip: AppLocalizations.of(context)!.videoNext,
                             onTap: () => _playNext(),
                           )
                         else
@@ -1146,14 +1147,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       children: [
                         _RoundIconButton(
                           icon: Icons.lock_outline,
-                          tooltip: '锁定屏幕',
+                          tooltip: AppLocalizations.of(context)!.videoLockScreen,
                           onTap: _toggleLock,
                         ),
                         // Orientation toggle lives with the controls, not buried
                         // in 更多设置 — it is a primary playback action here.
                         _RoundIconButton(
                           icon: Icons.screen_rotation,
-                          tooltip: '切换横竖屏',
+                          tooltip: AppLocalizations.of(context)!.videoOrientation,
                           onTap: _toggleOrientation,
                         ),
                         const Spacer(),
@@ -1165,7 +1166,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         if (settings.videoPipEnabled)
                           _RoundIconButton(
                             icon: Icons.picture_in_picture_alt,
-                            tooltip: '画中画',
+                            tooltip: AppLocalizations.of(context)!.videoPip,
                             onTap: _enterPip,
                           ),
                       ],
@@ -1298,10 +1299,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Padding(
+                Padding(
                   padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
                   child: Text(
-                    '播放列表',
+                    AppLocalizations.of(context)!.playQueueTitle,
                     style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                   ),
                 ),
@@ -1356,7 +1357,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   ),
                 ),
                 if (queue.scanning)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.all(12),
                     child: Row(
                       children: [
@@ -1367,7 +1368,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         ),
                         SizedBox(width: 10),
                         Text(
-                          '扫描文件夹中…',
+                          AppLocalizations.of(context)!.scanningFolder,
                           style: TextStyle(
                             color: AppColors.mutedText,
                             fontSize: 12,
@@ -1511,12 +1512,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const ListTile(title: Text('更多设置'), subtitle: Text('视频播放器')),
+              ListTile(title: Text(AppLocalizations.of(context)!.moreActions), subtitle: Text(AppLocalizations.of(context)!.videoPlayback)),
               const Divider(height: 1, color: AppColors.divider),
               SwitchListTile(
                 secondary: const Icon(Icons.lock_outline),
-                title: const Text('锁定屏幕'),
-                subtitle: const Text('隐藏控件并禁用手势，长按解锁'),
+                title: Text(AppLocalizations.of(context)!.videoLockScreen),
+                subtitle: Text(AppLocalizations.of(context)!.videoLockHint),
                 value: _locked.value,
                 onChanged: (_) {
                   _toggleLock();
@@ -1525,8 +1526,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.screen_lock_rotation_outlined),
-                title: const Text('锁定旋转方向'),
-                subtitle: const Text('固定为当前横屏/竖屏'),
+                title: Text(AppLocalizations.of(context)!.videoOrientationLock),
+                subtitle: Text(AppLocalizations.of(context)!.videoOrientationLockHint),
                 value: _rotationLocked.value,
                 onChanged: (_) {
                   _toggleRotationLock();
@@ -1535,29 +1536,29 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.exit_to_app),
-                title: const Text('退出时二次确认'),
-                subtitle: const Text('返回时二次确认'),
+                title: Text(AppLocalizations.of(context)!.videoExitConfirm),
+                subtitle: Text(AppLocalizations.of(context)!.videoExitConfirmHint),
                 value: settings.videoConfirmExit,
                 onChanged: (v) => settings.setVideoConfirmExit(v),
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.picture_in_picture_alt),
-                title: const Text('允许画中画'),
-                subtitle: const Text('此开关保存在设置中'),
+                title: Text(AppLocalizations.of(context)!.videoPip),
+                subtitle: Text(AppLocalizations.of(context)!.videoPipHint),
                 value: settings.videoPipEnabled,
                 onChanged: (v) => settings.setVideoPipEnabled(v),
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.headset_outlined),
-                title: const Text('后台播放'),
-                subtitle: const Text('主页键挂后台继续播放'),
+                title: Text(AppLocalizations.of(context)!.videoBackgroundPlayback),
+                subtitle: Text(AppLocalizations.of(context)!.videoBackgroundPlaybackHint),
                 value: settings.videoBackgroundPlayback,
                 onChanged: (v) => settings.setVideoBackgroundPlayback(v),
               ),
               ListTile(
                 leading: const Icon(Icons.touch_app_outlined),
-                title: const Text('手势设置'),
-                subtitle: const Text('双击 / 长按动作与长按倍速'),
+                title: Text(AppLocalizations.of(context)!.videoGestures),
+                subtitle: Text(AppLocalizations.of(context)!.videoGestureSettingsHint),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -1595,7 +1596,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
                       '手势设置',
@@ -1605,7 +1606,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       ),
                     ),
                   ),
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: Text(
                       '单击显示/隐藏控件，双击中间播放/暂停。',
@@ -1673,7 +1674,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         settings.setVideoLongPressRate(v);
                       },
                     ),
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
                         '按住加速，松手恢复。',
@@ -1711,7 +1712,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               isExpanded: true,
               items: [
                 for (final a in VideoGestureAction.values)
-                  DropdownMenuItem(value: a, child: Text(a.labelZh)),
+                  DropdownMenuItem(value: a, child: Text(a.label(AppLocalizations.of(context)!))),
               ],
               onChanged: (v) {
                 if (v != null) onChanged(v);
@@ -1802,7 +1803,7 @@ class _BufferingBadge extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.5),
             borderRadius: BorderRadius.circular(18),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
@@ -1815,7 +1816,7 @@ class _BufferingBadge extends StatelessWidget {
               ),
               SizedBox(width: 10),
               Text(
-                '缓冲中…',
+                AppLocalizations.of(context)!.buffering,
                 style: TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ],
@@ -1851,8 +1852,8 @@ class _SwitchingOverlay extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              const Text(
-                '正在打开',
+              Text(
+                AppLocalizations.of(context)!.opening,
                 style: TextStyle(color: Colors.white70, fontSize: 12),
               ),
               const SizedBox(height: 4),

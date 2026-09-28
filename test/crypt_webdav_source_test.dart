@@ -25,7 +25,8 @@ void main() {
     server.listen((req) async {
       if (req.method == 'PROPFIND') {
         propfindHits++;
-        final body = '<?xml version="1.0" encoding="utf-8"?>'
+        final body =
+            '<?xml version="1.0" encoding="utf-8"?>'
             '<D:multistatus xmlns:D="DAV:"><D:response>'
             '<D:href>/dav/enc.bin</D:href>'
             '<D:propstat><D:prop>'
@@ -34,7 +35,10 @@ void main() {
             '<D:resourcetype/></D:prop><D:status>HTTP/1.1 200 OK</D:status>'
             '</D:propstat></D:response></D:multistatus>';
         req.response.statusCode = HttpStatus.multiStatus;
-        req.response.headers.set('Content-Type', 'application/xml; charset=utf-8');
+        req.response.headers.set(
+          'Content-Type',
+          'application/xml; charset=utf-8',
+        );
         req.response.add(utf8.encode(body));
         await req.response.close();
         return;
@@ -64,13 +68,20 @@ void main() {
     );
     final src = WebDavAccountSource(webDav: webDav, account: account);
     final item = await src.get('/enc.bin');
-    expect(item.size, cipherSize,
-        reason: 'get() 必须带回密文大小——流式 Content-Length、下载进度、'
-            'crypt wholeBody 判定都依赖它');
+    expect(
+      item.size,
+      cipherSize,
+      reason:
+          'get() 必须带回密文大小——流式 Content-Length、下载进度、'
+          'crypt wholeBody 判定都依赖它',
+    );
     expect(item.modified, isNotNull);
     expect(item.rawUrl, isNotNull, reason: '直链仍要带回（crypt 拉密文用）');
-    expect(propfindHits, greaterThanOrEqualTo(1),
-        reason: '必须单独 PROPFIND 一次拿元数据');
+    expect(
+      propfindHits,
+      greaterThanOrEqualTo(1),
+      reason: '必须单独 PROPFIND 一次拿元数据',
+    );
   });
 
   test('statPath 正常返回单文件元数据', () async {
