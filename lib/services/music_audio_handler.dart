@@ -924,7 +924,20 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     return L10nHost.current.ntfAsyncError(err);
   }
 
-  Future<void> disposePlayer() async {
+  Future<void>? _disposeFuture;
+
+  Future<void> disposePlayer() {
+    return _disposeFuture ??= _disposePlayerImpl();
+  }
+
+  Future<void> _disposePlayerImpl() async {
+    try {
+      await _videoPlayer?.stop();
+    } catch (_) {}
+    try {
+      await _player.stop();
+    } catch (_) {}
+
     await _playingSub?.cancel();
     await _bufferingSub?.cancel();
     await _positionSub?.cancel();
