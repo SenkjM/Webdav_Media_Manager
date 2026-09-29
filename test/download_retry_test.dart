@@ -150,6 +150,75 @@ void main() {
     });
   });
 
+  group('后台 offline 上限', () {
+    test('后台 offline 3 次到顶，前台 offline 与其它错误仍是 5', () {
+      expect(DownloadQueueService.backgroundOfflineMaxAutoRetries, 3);
+      expect(DownloadQueueService.maxAutoRetries, 5);
+      expect(
+        DownloadQueueService.autoRetryCap(inBackground: true, offline: true),
+        3,
+      );
+      expect(
+        DownloadQueueService.autoRetryCap(inBackground: false, offline: true),
+        5,
+      );
+      expect(
+        DownloadQueueService.autoRetryCap(inBackground: true, offline: false),
+        5,
+      );
+
+      const offline = SocketException('Failed host lookup: example.com');
+      expect(
+        DownloadQueueService.shouldAutoRetry(
+          attempts: 2,
+          error: offline,
+          inBackground: true,
+        ),
+        isTrue,
+      );
+      expect(
+        DownloadQueueService.shouldAutoRetry(
+          attempts: 3,
+          error: offline,
+          inBackground: true,
+        ),
+        isFalse,
+      );
+      expect(
+        DownloadQueueService.shouldAutoRetry(
+          attempts: 4,
+          error: offline,
+          inBackground: false,
+        ),
+        isTrue,
+      );
+      expect(
+        DownloadQueueService.shouldAutoRetry(
+          attempts: 5,
+          error: offline,
+          inBackground: false,
+        ),
+        isFalse,
+      );
+      expect(
+        DownloadQueueService.shouldAutoRetry(
+          attempts: 4,
+          error: _dio(DioExceptionType.connectionTimeout),
+          inBackground: true,
+        ),
+        isTrue,
+      );
+      expect(
+        DownloadQueueService.shouldAutoRetry(
+          attempts: 0,
+          error: StateError('x'),
+          inBackground: true,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('调度', () {
     test('等退避中的任务不参与本轮调度', () {
       final now = DateTime.now();

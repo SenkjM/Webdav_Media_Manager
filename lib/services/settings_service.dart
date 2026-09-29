@@ -67,6 +67,7 @@ class SettingsService extends ChangeNotifier {
   static const _kLastRev = 'sync_last_rev';
   static const _kSnackDuration = 'snack_duration';
   static const _kDownloadNotifications = 'download_notifications';
+  static const _kDownloadKeepAlive = 'download_keep_alive';
   static const _kMusicStreamPlayMode = 'music_stream_play_mode';
   static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
   static const _kAudioScanSubdirs = 'audio_scan_subdirs';
@@ -218,6 +219,10 @@ class SettingsService extends ChangeNotifier {
   /// Whether the download queue posts system notifications.
   bool _downloadNotifications = true;
 
+  /// Whether downloads keep a dataSync foreground service while the queue runs.
+  /// Default on. Off means today's behavior (no FGS, foreground retry cap).
+  bool _downloadKeepAlive = true;
+
   /// The single 网盘 every sync feature (凭证 / 歌单 / 音乐库 / 备份) writes to;
   /// null means「跟随当前选中的网盘」.
   String? _syncAccountId;
@@ -363,6 +368,9 @@ class SettingsService extends ChangeNotifier {
   /// Whether the download queue posts system notifications.
   bool get downloadNotificationsEnabled => _downloadNotifications;
 
+  /// 后台下载保活。默认开。
+  bool get downloadKeepAliveEnabled => _downloadKeepAlive;
+
   /// 网盘 every sync feature writes to (null → the active account).
   String? get syncAccountId => _syncAccountId;
 
@@ -482,6 +490,7 @@ class SettingsService extends ChangeNotifier {
     }
     _lastRev = _prefs!.getInt(_kLastRev) ?? 0;
     _downloadNotifications = _prefs!.getBool(_kDownloadNotifications) ?? true;
+    _downloadKeepAlive = _prefs!.getBool(_kDownloadKeepAlive) ?? true;
     _syncAccountId = _readSyncAccountId();
     _loaded = true;
     notifyListeners();
@@ -855,6 +864,14 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Toggle the download dataSync foreground service. Default is on.
+  Future<void> setDownloadKeepAliveEnabled(bool enabled) async {
+    _downloadKeepAlive = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kDownloadKeepAlive, enabled);
+    notifyListeners();
+  }
+
   /// Persist the in-app message duration.
   Future<void> setSnackMode(SnackDuration mode) async {
     _snackMode = mode;
@@ -1003,6 +1020,7 @@ class SettingsService extends ChangeNotifier {
     'sync_encrypt_password': _syncEncryptPassword,
     'snack_duration': _snackMode.storageKey,
     'download_notifications': _downloadNotifications,
+    'download_keep_alive': _downloadKeepAlive,
   };
 
   Future<Map<String, dynamic>> exportForBackupAsync() async =>
@@ -1188,6 +1206,9 @@ class SettingsService extends ChangeNotifier {
       await setDownloadNotificationsEnabled(
         json['download_notifications'] as bool,
       );
+    }
+    if (json['download_keep_alive'] is bool) {
+      await setDownloadKeepAliveEnabled(json['download_keep_alive'] as bool);
     }
     if (json['snack_duration'] != null) {
       await setSnackMode(

@@ -109,6 +109,7 @@ class MainActivity : AudioServiceFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+        registerDownloadKeepAliveChannel(flutterEngine)
     }
 
     /**
@@ -548,6 +549,54 @@ class MainActivity : AudioServiceFragmentActivity() {
             "model" to Build.MODEL,
             "servicePresentHint" to posted,
         )
+    }
+
+    private fun registerDownloadKeepAliveChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DownloadKeepAliveService.CHANNEL,
+        )
+        DownloadKeepAliveService.flutterChannel = channel
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val title = (args?.get("title") as? String)?.takeIf { it.isNotBlank() }
+                        ?: DownloadKeepAliveService.DEFAULT_TITLE
+                    val notificationId = (args?.get("notificationId") as? Number)?.toInt()
+                        ?: DownloadKeepAliveService.DEFAULT_NOTIFICATION_ID
+                    val channelId = (args?.get("channelId") as? String)?.takeIf { it.isNotBlank() }
+                        ?: DownloadKeepAliveService.DEFAULT_CHANNEL_ID
+                    try {
+                        ContextCompat.startForegroundService(
+                            this,
+                            DownloadKeepAliveService.startIntent(
+                                this,
+                                title,
+                                notificationId,
+                                channelId,
+                            ),
+                        )
+                        result.success(mapOf("ok" to true))
+                    } catch (e: Exception) {
+                        result.success(
+                            mapOf(
+                                "ok" to false,
+                                "error" to "${e.javaClass.simpleName}: ${e.message}",
+                            ),
+                        )
+                    }
+                }
+                "stop" -> {
+                    DownloadKeepAliveService.stopIfRunning()
+                    result.success(true)
+                }
+                "diagnostics" -> {
+                    result.success(DownloadKeepAliveService.diagnostics(applicationContext))
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     companion object {

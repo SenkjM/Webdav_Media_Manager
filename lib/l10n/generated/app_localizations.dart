@@ -5891,6 +5891,18 @@ abstract class AppLocalizations {
   /// In zh_CN, this message translates to:
   /// **'正在打开'**
   String get opening;
+
+  /// No description provided for @downloadKeepAlive.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'后台下载保活'**
+  String get downloadKeepAlive;
+
+  /// No description provided for @downloadKeepAliveHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'开启后，下载期间通知栏会常驻一条下载通知（系统要求），关闭下载通知也会显示'**
+  String get downloadKeepAliveHint;
 }
 
 class _AppLocalizationsDelegate

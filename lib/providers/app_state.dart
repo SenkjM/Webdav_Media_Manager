@@ -193,6 +193,7 @@ class AppState extends ChangeNotifier {
       // next launch.
       settings.addListener(_onSettingsChanged);
       _initPhase = 'downloads';
+      downloads.keepAliveEnabled = settings.downloadKeepAliveEnabled;
       await downloads.init();
       // Download notifications: create the channel and honour the setting.
       downloads.notificationsEnabled = settings.downloadNotificationsEnabled;
@@ -311,6 +312,11 @@ class AppState extends ChangeNotifier {
   /// playlist sync when the shared 远端路径 changes.
   void _onSettingsChanged() {
     if (!ready) return;
+    if (downloads.keepAliveEnabled != settings.downloadKeepAliveEnabled) {
+      unawaited(
+        downloads.setKeepAliveEnabled(settings.downloadKeepAliveEnabled),
+      );
+    }
     if (settings.syncRemoteRoot != _appliedSyncRoot ||
         settings.syncAccountId != _appliedSyncAccountId) {
       applySyncConfiguration();

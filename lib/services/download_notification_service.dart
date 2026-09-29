@@ -56,6 +56,22 @@ class DownloadNotificationService {
 
   /// Last time a notification was actually posted (throttling).
   DateTime? _lastPost;
+
+  /// Bumped when a keep-alive drain asks Dart to stop rewriting 2001.
+  int _progressEpoch = 0;
+  bool _progressPaused = false;
+
+  bool get progressUpdatesPaused => _progressPaused;
+
+  void pauseProgressUpdates() {
+    _progressPaused = true;
+    _progressEpoch++;
+  }
+
+  void resumeProgressUpdates() {
+    _progressPaused = false;
+  }
+
   int? _lastCurrentPercent;
   int? _lastQueuePercent;
   int _lastDone = -1;
@@ -168,7 +184,8 @@ class DownloadNotificationService {
     required double fileProgress,
     bool force = false,
   }) async {
-    if (!enabled || kIsWeb || !Platform.isAndroid) return;
+    if (!enabled || _progressPaused || kIsWeb || !Platform.isAndroid) return;
+    final epoch = _progressEpoch;
     final currentPercent = (fileProgress.clamp(0.0, 1.0) * 100).round();
     final queueFraction = total == 0
         ? 0.0
@@ -196,7 +213,9 @@ class DownloadNotificationService {
     final counts = queuePercent == currentPercent
         ? l10n.ntfDoneCount(done, safeTotal)
         : l10n.ntfDoneCountPercent(done, queuePercent, safeTotal);
+    if (_progressPaused || epoch != _progressEpoch) return;
     await _ensureInitialized();
+    if (_progressPaused || epoch != _progressEpoch) return;
     try {
       await _plugin.show(
         id: currentId,
@@ -291,6 +310,20 @@ class DownloadNotificationService {
   /// Progress line for a single task (used when only one is running).
   String describe(DownloadTask task) =>
       '${task.fileName} · ${(task.progress * 100).toStringAsFixed(0)}%';
+
+  /// Drop the retired queue notification and the completion one, but leave
+  /// 2001. Used when download notifications are turned off while the keep-alive
+  /// FGS still has to show that id.
+  Future<void> cancelExceptProgress() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    await _ensureInitialized();
+    try {
+      await _plugin.cancel(id: legacyQueueId);
+      await _plugin.cancel(id: summaryId);
+    } catch (e) {
+      debugPrint('DownloadNotification: cancelExceptProgress failed: $e');
+    }
+  }
 
   /// Cancel everything this service ever posted (used when the feature is turned
   /// off or the queue is cleared).
