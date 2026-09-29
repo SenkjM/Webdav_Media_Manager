@@ -879,6 +879,19 @@ class _SyncScreenState extends State<SyncScreen> {
             icon: const Icon(Icons.playlist_play),
             label: Text(l10n.syncPlaylistsNow),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _running || accounts.accounts.isEmpty
+                ? null
+                : () => _runSync(sync.compactPlaylistDeletions),
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: Text(l10n.compactPlaylistDeletions),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.compactPlaylistDeletionsHint,
+            style: const TextStyle(color: AppColors.mutedText, fontSize: 11),
+          ),
 
           const Divider(height: 32),
 

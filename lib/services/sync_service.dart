@@ -75,13 +75,20 @@ class SyncOutcome {
       // `err.playlistKindMismatch|<found>|<expected>`, and the vault twin with
       // the same two-part shape.
       if (code == 'err.playlistKindMismatch' ||
+          code == 'err.playlistDeletionKindMismatch' ||
           code == 'err.vaultKindMismatch') {
         final bar2 = detail.indexOf('|');
         final found = bar2 > 0 ? detail.substring(0, bar2) : detail;
         final expected = bar2 > 0 ? detail.substring(bar2 + 1) : '';
-        return code == 'err.playlistKindMismatch'
-            ? l10n.errPlaylistKindMismatch(found, expected)
-            : l10n.errVaultKindMismatch(found, expected);
+        return switch (code) {
+          'err.playlistKindMismatch' => l10n.errPlaylistKindMismatch(
+            found,
+            expected,
+          ),
+          'err.playlistDeletionKindMismatch' =>
+            l10n.errPlaylistDeletionKindMismatch(found, expected),
+          _ => l10n.errVaultKindMismatch(found, expected),
+        };
       }
     }
     switch (text) {
@@ -99,6 +106,8 @@ class SyncOutcome {
         return l10n.errNotWdmmFile;
       case 'err.playlistMissingId':
         return l10n.errPlaylistMissingId;
+      case 'err.playlistDeletionMissingId':
+        return l10n.errPlaylistDeletionMissingId;
     }
     return text;
   }
@@ -114,7 +123,7 @@ class SyncOutcome {
 /// | data | behaviour |
 /// |------|-----------|
 /// | WebDAV 凭证 | **真同步**：与云端 `credentials.json` 双向合并；地址/用户名明文、仅密码可选加密；启动与切换账号时自动扫描 |
-/// | 歌单 | **真同步**：双向 M3U8，`updatedAt` 最后写入胜出；改动即时上传，启动/切换账号/定期拉取 |
+/// | 歌单 | **真同步**：整份 `WDMMPL01` 最后写入胜出；删除记在该歌单自己的 `WDMMPD01` 包里，拉取不会把本地副本无条件传回去 |
 /// | 音乐库 | **增量**：本地新增即上传、云端新增即下载；也可手动**全量同步**（对齐删除） |
 /// | 全部备份 | 凭证 + 音乐库 + 歌单打成一个归档，写到用户选定的网盘与路径；可恢复、可导出到本地下载目录 |
 class SyncService extends ChangeNotifier {
@@ -341,12 +350,27 @@ class SyncService extends ChangeNotifier {
       );
       _progress(L10nHost.current.progressMergingPlaylists, 0.5);
       await _playlists.pullAndMergeFromWebDav();
-      for (final pl in _playlists.playlists) {
-        await _playlists.uploadPlaylist(pl);
-      }
       outcome.step(
         L10nHost.current.stepPlaylistsSynced(_playlists.playlists.length),
       );
+    });
+    return outcome;
+  }
+
+  /// Manual compact of the per-playlist deletion packs. No reminder, no timer.
+  Future<SyncOutcome> compactPlaylistDeletions() async {
+    final outcome = SyncOutcome(direction: 'sync');
+    await _run(outcome, () async {
+      final dest = await syncDestination();
+      if (dest == null) throw StateError('err.noWebdavAccount');
+      _playlists.configureSync(
+        remotePath: _settings.playlistRemotePath,
+        enabled: true,
+        accountId: dest,
+      );
+      _progress(L10nHost.current.progressCompactingPlaylistDeletions, 0.5);
+      await _playlists.compactDeletionQueue();
+      outcome.step(L10nHost.current.stepPlaylistDeletionsCompacted);
     });
     return outcome;
   }

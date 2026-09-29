@@ -33,7 +33,7 @@
 | 07 | [07-NOTIFICATIONS.md](07-NOTIFICATIONS.md) | 媒体通知、下载进度 / 完成通知、权限与通道定义 |
 | 08 | [08-SYNC-AND-BACKUP.md](08-SYNC-AND-BACKUP.md) | 远端路径、凭证 / 歌单 / 曲库同步、备份归档与恢复 |
 | 09 | [09-MISC.md](09-MISC.md) | 代码地图、构建发布、编码约定与陷阱、测试入口、历史回归、待办 |
-| 10 | [10-PLAYLIST-FORMAT.md](10-PLAYLIST-FORMAT.md) | **歌单格式与身份**：歌单 = 小型音乐库、与曲库的边界（销毁曲目不影响歌单）、现状 M3U8、计划中的二进制容器格式 |
+| 10 | [10-PLAYLIST-FORMAT.md](10-PLAYLIST-FORMAT.md) | **歌单格式与身份**：歌单 = 小型音乐库、与曲库的边界、`WDMMPL01` 文档、每个歌单自己的 `WDMMPD01` 删除包 |
 | 99 | [99-IN-PROGRESS.md](99-IN-PROGRESS.md) | **开发中文档**：正在开发的功能的原始语义、取舍与影响面；也是计划、待办和未决问题的唯一记录处 |
 | 11 | [11-CLOUD-DRIVER-PORTING.md](11-CLOUD-DRIVER-PORTING.md) | **云盘驱动实现要点与陷阱**：驱动契约与能力位、与 rclone Crypt 逐字节兼容的加密格式、令牌生命周期、直链与本地流桥、测试策略、驱动实现实录（baidu / netease_music / crypt）、分层与路由边界 |
 | 12 | [12-DRIVER-PORTING-GUIDE.md](12-DRIVER-PORTING-GUIDE.md) | **云盘驱动接入指南（操作手册）**：解耦边界（只动两个文件）、固定六步接入流程、表单字段与开关联动极性、测试手法、多盘并行开发的 worktree 工序、常见错误对照表 |

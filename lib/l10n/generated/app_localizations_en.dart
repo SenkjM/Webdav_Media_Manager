@@ -1322,11 +1322,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String playlistsSectionDesc(Object path) {
-    return 'Two-way M3U8 sync, changes upload instantly: $path';
+    return 'Two-way sync. A playlist stays one document (last write wins); each playlist also has a deletion pack so another device cannot upload a removed playlist or track back: $path';
   }
 
   @override
   String get syncPlaylistsNow => 'Sync playlists now';
+
+  @override
+  String get compactPlaylistDeletions => 'Clear deletion records';
+
+  @override
+  String get compactPlaylistDeletionsHint =>
+      'Treat the current playlists as the snapshot and delete each playlist\'s deletion pack. No scheduled prompt.';
 
   @override
   String get librarySection => 'Library';
@@ -1699,6 +1706,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get progressMergingPlaylists => 'Merging playlists…';
 
   @override
+  String get progressCompactingPlaylistDeletions =>
+      'Clearing playlist deletion records…';
+
+  @override
   String get progressReadingCloudIndex => 'Reading cloud library index…';
 
   @override
@@ -1766,6 +1777,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String stepPlaylistsSynced(Object count) {
     return 'Playlists synced ($count)';
   }
+
+  @override
+  String get stepPlaylistDeletionsCompacted =>
+      'Playlist deletion records cleared';
 
   @override
   String get stepIncrementalNoChange =>
@@ -1885,6 +1900,15 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get errPlaylistMissingId =>
       'Playlist document has no playlistId and cannot be identified';
+
+  @override
+  String errPlaylistDeletionKindMismatch(Object expected, Object kind) {
+    return 'This is a $kind file, not a playlist deletion pack (expected $expected)';
+  }
+
+  @override
+  String get errPlaylistDeletionMissingId =>
+      'Playlist deletion pack has no playlistId and cannot be identified';
 
   @override
   String errVaultKindMismatch(Object expected, Object kind) {

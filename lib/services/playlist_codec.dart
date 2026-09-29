@@ -44,7 +44,8 @@ class DecodedPlaylist {
   /// Image kind of that entry's cover, or [WmpImageKind.none].
   int coverKindFor(int entryIndex) {
     final idx = _coverIndexByEntry[entryIndex];
-    if (idx == null || idx < 0 || idx >= _covers.length) return WmpImageKind.none;
+    if (idx == null || idx < 0 || idx >= _covers.length)
+      return WmpImageKind.none;
     return _covers[idx].kind;
   }
 }
@@ -166,10 +167,10 @@ class PlaylistCodec {
         : (decodeRecords(metaRaw, intTags: kMetaIntTags).firstOrNull ??
               const <int, Object?>{});
 
-    final kind = (meta[WmpMeta.kind] as int?) ?? WmpKind.playlist;
-    // The magic says what the file is; META repeats it. They must agree, or this
-    // is not a playlist we should be feeding into the store.
-    if (WmpFileKind.metaKindOf(container.kind) != kind) {
+    final kind = (meta[WmpMeta.kind] as int?) ?? -1;
+    // Magic and META must both say "playlist". A deletion pack is a different
+    // kind even when it reuses playlist id tags, so it must not decode as one.
+    if (container.kind != WmpFileKind.playlist || kind != WmpKind.playlist) {
       throw WmpFormatException(
         'err.playlistKindMismatch|${container.kind}|$kind',
       );
@@ -246,9 +247,7 @@ class PlaylistCodec {
         WmpMeta.createdAt: DateTime.now().toUtc().toIso8601String(),
         WmpPlaylistMeta.playlistId: playlist.id,
         WmpPlaylistMeta.name: playlist.name,
-        WmpPlaylistMeta.updatedAt: playlist.updatedAt
-            .toUtc()
-            .toIso8601String(),
+        WmpPlaylistMeta.updatedAt: playlist.updatedAt.toUtc().toIso8601String(),
       },
     ]);
   }
@@ -261,10 +260,10 @@ class PlaylistCodec {
     // so the two can never drift.
     final kind =
         (decodeRecords(
-                  sections[WmpSections.meta]!,
-                  intTags: kMetaIntTags,
-                ).firstOrNull?[WmpMeta.kind]
-                as int?) ??
+              sections[WmpSections.meta]!,
+              intTags: kMetaIntTags,
+            ).firstOrNull?[WmpMeta.kind]
+            as int?) ??
         WmpKind.playlist;
     return WmpContainer.encode(
       sections,

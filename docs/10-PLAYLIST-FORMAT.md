@@ -4,7 +4,7 @@
 
 歌单是与[音乐库](03-MUSIC-LIBRARY.md)**平行**的一等数据：它有自己的独立数据库、自己的远端目录、自己的持久化格式。它**不是**曲库的附属品，也不是曲库的视图。
 
-**当前状态（现状）**：歌单使用扩展 M3U8 文本格式（见 §3）。§4 起的二进制容器格式是**计划（未实现）**，原始语义与取舍见 [99 §5.0](99-IN-PROGRESS.md)。
+**当前状态（现状）**：一个歌单一个 `WDMMPL01` 文档（`.wdmp`）。每个歌单另有自己的删除记录包 `WDMMPD01`（§7），不进曲库分片。扩展 M3U8 只是历史格式，不再读写（§3）。
 
 ## 1. 核心命题：歌单 = 小型音乐库
 
@@ -14,10 +14,10 @@
 |------|--------|------|
 | 本地权威存储 | `music_library.db` | `playlists.db` |
 | 远端镜像目录 | `<远端路径>library/` | `<远端路径>playlists/` |
-| 远端编码 | 二进制容器，`lib-` / `seg-` / `del-` 分片 | 计划：二进制容器，一首歌单一个文件 |
-| 条目身份 | `musicId` = `sha1(网盘名 + 归一化路径)` | 计划：同 `musicId` + 歌单自身 `id` |
-| 删除语义 | 墓碑 `del-*.wdmm` | 计划：文件删除 + 墓碑 |
-| 改动传输 | 增量（只传变化行） | 计划：整文件重写（单文件小） |
+| 远端编码 | 二进制容器，`lib-` / `seg-` / `del-` 分片 | 二进制容器，一个歌单一个 `WDMMPL01` |
+| 条目身份 | `musicId` = `sha1(网盘名 + 归一化路径)` | 同 `musicId`，另有歌单自身 `id` |
+| 删除语义 | 墓碑 `del-*.wdmm` | 该歌单自己的删除包 `pdel_*.wdmp`（`WDMMPD01`），不写曲库墓碑 |
+| 改动传输 | 增量（只传变化行） | 整份文档重写（不按行合并）；删除另走该歌单的删除包 |
 
 **关键区别**：曲库是**一个大库分片存储**（因为可能上万行，分片才能增量）；歌单是**多个小库各自成文件**（每个歌单独立管理、独立同步、独立删除）。这是刻意的：歌单数量多但每个都很小，按文件管理比按行管理更自然，也让单个歌单的增删不影响其它歌单。
 
@@ -51,7 +51,7 @@
 
 这些一律显示为「库中暂无」，**不触发任何删除**。
 
-## 3. 现状实现：扩展 M3U8（待替换）
+## 3. 历史格式：扩展 M3U8（已停写，不再读取）
 
 每个歌单一个文件，落在 `<远端路径>playlists/<安全名>_<id 前 8 位>.m3u8`。
 
@@ -75,7 +75,7 @@ wmp://<网盘名>/<remotePath>
 
 结论：这个文件对任何非本项目的软件都是「解析得动、但一条都放不出来」的歌单。**通用格式带来的唯一"收益"是误导，因此不再保留。**
 
-## 4. 计划格式：`WdmpContainer` 二进制容器（未实现）
+## 4. 二进制容器（现状）
 
 复用音乐库与备份已有的 [WmpContainer](01-DATA-MODEL.md) 基础设施（魔数 `WDMM` + 文件类 + 段表 + CRC32 + deflate），**不发明第二套容器**。差异只在**文件类**与**段布局**。
 
@@ -314,27 +314,44 @@ musicId = sha1(normalizeSourceName(源) + "\0" + normalizeRemotePath(路径))
 
 ## 5. 实现位置
 
-现状：
-
-- `lib/services/playlist_service.dart`：CRUD、双向同步编排、LWW 合并
-- `lib/services/playlist_store.dart`：`playlists.db`（表 `playlists`，字段 `id` / `name` / `updated_at` / `remote_file_name` / `entries_json`）
+- `lib/services/playlist_service.dart`：CRUD、拉取合并、删除包上传。拉取不会把每份本地歌单无条件传回云端
+- `lib/services/playlist_sync_plan.dart`：整文档 last-write-wins，再按墓碑过滤（纯函数）
+- `lib/services/playlist_codec.dart`：`WDMMPL01` 编解码（不读 M3U8）
+- `lib/services/playlist_deletion_codec.dart`：`WDMMPD01` 编解码
+- `lib/services/playlist_deletion_log.dart`：`playlists.db` 的 `playlist_deletions` 队列
+- `lib/services/playlist_store.dart`：`playlists` 表
 - `lib/models/playlist.dart`：`Playlist` / `PlaylistEntry`
-- `lib/utils/m3u8_playlist.dart`：M3U8 编解码（待替换）
-- `lib/services/credential_vault_service.dart`：`credentials.json` 读写（`fileName` / `formatVersion = 2` / `push` / `pull`），待改为 `CV` 容器
-- `lib/utils/credential_vault_crypto.dart`：字段级加密（`AESGCMv1:`），**本次不改**
-- `lib/services/backup_service.dart`：备份打包（`WmpContainer.encode`）与恢复（`_decodeContainer` 的 `jsonSection` / `jsonList`），待改
-
-计划新增 / 改动：
-
-- `lib/utils/wmp_container.dart`：登记 `PL` / `CV` 两个文件类与 `WmpKind` 双生常量；新增 `ENTRIES=9` 段 id；`metaKindOf` / `forMetaKind` 各加 case
-- `lib/services/playlist_codec.dart`（新）：歌单容器编解码（**不含**旧 M3U8 兼容读取）
-- `lib/services/credential_vault_codec.dart`（新）：凭证容器编解码，与 `credential_vault_crypto` 的字段级加解密配合
-- `lib/services/backup_service.dart`：`PLAYLISTS=6` / `CREDENTIALS=5` 改为内嵌容器字节（走 `rawIds`），恢复侧改为调用两个 codec，**去掉 `jsonList(6)` / `jsonSection(5)`**
-- `lib/services/credential_vault_service.dart`：远端文件名与读写改为 `CV` 容器
-- `lib/utils/track_identity.dart`：`musicId` 参与歌单条目身份
+- `lib/screens/sync_screen.dart`：歌单区的「立即同步歌单」和「清理删除记录」
+- `lib/utils/m3u8_playlist.dart`：历史编解码，同步路径不再调用
 
 ## 6. 与其它文档的关系
 
 - [01-DATA-MODEL.md](01-DATA-MODEL.md)：容器与魔数、`musicId` 身份定义
 - [03-MUSIC-LIBRARY.md](03-MUSIC-LIBRARY.md)：销毁语义（谁删谁不删）
 - [08-SYNC-AND-BACKUP.md](08-SYNC-AND-BACKUP.md)：远端路径、凭证与歌单同步、备份归档
+
+## 7. 删除记录（每个歌单一包）
+
+歌单不借用曲库分片，不写入 `deleted_tracks`，也不使用 `WmpKind.tomb` / `LB` / `LS` / `LT`。
+
+每个歌单最多一份删除包：
+
+| | 歌单文档 | 删除包 |
+|--|----------|--------|
+| 魔数 | `WDMMPL01` | `WDMMPD01` |
+| `META.kind` | `WmpKind.playlist` | `WmpKind.playlistDeletion` |
+| 段 | `ENTRIES`(9) | `playlistDeletions`(10)，不是曲库 `TOMBS`(4) |
+| 文件名 | `<安全名>_<id 前 8 位>.wdmp` | `pdel_<playlistId>.wdmp` |
+
+文件名只方便列举时把两类分开。认种类以包内魔数、`META.kind` 和段为准：名字不对的 `WDMMPD01` 仍是删除包。
+
+记录两种：`scope = 1` 整单删除；`scope = 0` 加 `musicId` 删一首。同一歌单一旦有整单记录，单曲记录不再单独保留。
+
+合并（`planPlaylistSync`）：
+
+- 正文仍是整份文档 last-write-wins。不把两边的曲目按行拼起来；留下的顺序就是胜出那份的顺序。
+- 整单墓碑一直有效，直到用户手动清理删除记录。另一台设备上更「新」的本地副本也不能把这个歌单传回去。
+- 单曲墓碑只在文档 `updatedAt` 不晚于墓碑时，从胜出文档里滤掉那一首。之后重新加入（文档时间更新）会留下它。
+- 拉取后只上传真正变化的文档和删除包。远端已经是胜者时，不把本地文件再传一遍。`syncPlaylistsNow` 不再在拉取之后无条件上传全部歌单。启动自动扫描仍只调用这一次合并。
+
+设置 → 备份与同步 → 歌单中的「清理删除记录」是手动动作：先按上面的规则合并，再删除云端全部 `WDMMPD01` 并清空本地队列。没有分片计数，也没有到点提醒。清理之后，一台还拿着旧副本、又没拉过这次快照的设备，仍可能把旧歌单传上来；这和曲库重建丢掉 `del-*` 是同一类取舍。

@@ -4,11 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/playlist.dart';
+import '../models/playlist_deletion.dart';
 import '../utils/cover_image.dart';
+import '../utils/wmp_container.dart';
 import 'cover_service.dart';
 import 'playlist_codec.dart';
 import 'playlist_cover_policy.dart';
+import 'playlist_deletion_codec.dart';
+import 'playlist_deletion_log.dart';
 import 'playlist_store.dart';
+import 'playlist_sync_plan.dart';
 import 'webdav_service.dart';
 
 /// Local playlist CRUD + optional WebDAV `WDMMPL01` sync (last-write-wins).
@@ -20,14 +25,17 @@ import 'webdav_service.dart';
 class PlaylistService extends ChangeNotifier {
   PlaylistService({
     PlaylistStore? store,
+    PlaylistDeletionLog? deletions,
     required WebDavService webDav,
     CoverService? covers,
   }) : _store = store ?? PlaylistStore(),
+       _deletions = deletions,
        _webDav = webDav,
        coverPolicy = PlaylistCoverPolicy(covers: covers),
        _coverService = covers;
 
   final PlaylistStore _store;
+  PlaylistDeletionLog? _deletions;
   final WebDavService _webDav;
   final CoverService? _coverService;
   final _uuid = const Uuid();
@@ -52,6 +60,9 @@ class PlaylistService extends ChangeNotifier {
   bool get syncEnabled => _syncEnabled;
   String? get lastSyncError => _lastSyncError;
   PlaylistStore get store => _store;
+
+  PlaylistDeletionLog get _log =>
+      _deletions ??= SqlitePlaylistDeletionLog(() => _store.database);
 
   /// Library-side thumb edge length, used when [coverPolicy] has no override.
   int get _libraryCoverEdge => _coverService?.thumbSize ?? coverThumbSize;
@@ -143,12 +154,15 @@ class PlaylistService extends ChangeNotifier {
     await _store.delete(id);
     _playlists.removeWhere((p) => p.id == id);
     notifyListeners();
-    if (deleteRemote && pl != null && canSync) {
-      final remote = _remoteFilePath(pl);
+    if (!deleteRemote || pl == null) return;
+    final deletedAt = DateTime.now().toUtc();
+    await _log.upsert([PlaylistDeletion(playlistId: id, deletedAt: deletedAt)]);
+    _publish(() async {
+      await _uploadPack(id);
       try {
-        await _webDav.deletePath(_syncAccountId!, remote);
+        await _webDav.deletePath(_syncAccountId!, _remoteFilePath(pl));
       } catch (_) {}
-    }
+    });
   }
 
   Future<void> addTrack(String playlistId, PlaylistEntry entry) async {
@@ -167,11 +181,24 @@ class PlaylistService extends ChangeNotifier {
     final idx = _playlists.indexWhere((p) => p.id == playlistId);
     if (idx < 0) return;
     final pl = _playlists[idx];
+    final before = pl.entries.length;
     pl.entries.removeWhere((e) => e.identityKey == entry.identityKey);
-    pl.updatedAt = DateTime.now().toUtc();
+    if (pl.entries.length == before) return;
+    final now = DateTime.now().toUtc();
+    pl.updatedAt = now;
+    await _log.upsert([
+      PlaylistDeletion(
+        playlistId: playlistId,
+        entryIdentity: entry.identityKey,
+        deletedAt: now,
+      ),
+    ]);
     await _store.upsert(pl);
     notifyListeners();
-    unawaitedSyncUpload(pl);
+    _publish(() async {
+      await _uploadPack(playlistId);
+      await uploadPlaylist(pl);
+    });
   }
 
   /// Drop playlist entries whose identity is not in [validKeys]
@@ -180,14 +207,30 @@ class PlaylistService extends ChangeNotifier {
   Future<int> removeEntriesNotIn(Set<String> validKeys) async {
     var removed = 0;
     for (final pl in _playlists) {
-      final before = pl.entries.length;
-      pl.entries.removeWhere((e) => !validKeys.contains(e.identityKey));
-      final n = before - pl.entries.length;
+      final removedEntries = <PlaylistEntry>[];
+      pl.entries.removeWhere((e) {
+        if (validKeys.contains(e.identityKey)) return false;
+        removedEntries.add(e);
+        return true;
+      });
+      final n = removedEntries.length;
       if (n > 0) {
         removed += n;
-        pl.updatedAt = DateTime.now().toUtc();
+        final now = DateTime.now().toUtc();
+        pl.updatedAt = now;
+        await _log.upsert([
+          for (final entry in removedEntries)
+            PlaylistDeletion(
+              playlistId: pl.id,
+              entryIdentity: entry.identityKey,
+              deletedAt: now,
+            ),
+        ]);
         await _store.upsert(pl);
-        unawaitedSyncUpload(pl);
+        _publish(() async {
+          await _uploadPack(pl.id);
+          await uploadPlaylist(pl);
+        });
       }
     }
     if (removed > 0) notifyListeners();
@@ -196,70 +239,141 @@ class PlaylistService extends ChangeNotifier {
 
   Future<void> clearAllLocal() async {
     await _store.clearAll();
+    await _log.clear();
     _playlists.clear();
     notifyListeners();
   }
 
-  /// Pull remote `.wdmp` documents and merge last-write-wins into the local
-  /// store.
+  /// Pull remote playlist documents and per-playlist deletion packs.
   ///
-  /// Legacy `.m3u`/`.m3u8` files are **ignored, not read and not deleted**
-  /// (docs/10 §4.5): a downgrade still finds them, and we never destroy data we
-  /// did not write. A single malformed document is skipped rather than failing
-  /// the whole pull — one bad file must not block every other playlist.
-  Future<void> pullAndMergeFromWebDav() async {
-    if (!canSync) return;
+  /// Legacy `.m3u`/`.m3u8` files are **ignored, not read and not deleted**.
+  /// A malformed file is skipped. Unchanged local playlists are **not**
+  /// uploaded: re-uploading every document after a pull is how a delete on
+  /// another device comes back.
+  ///
+  /// Returns false when the pull itself failed (nothing was published).
+  Future<bool> pullAndMergeFromWebDav({bool publishPacks = true}) async {
+    if (!canSync) return false;
     try {
       await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
       final items = await _webDav.listDirectory(_syncAccountId!, _remotePath);
-      final remotes = <({String fileName, Playlist playlist})>[];
+      final remotes = <Playlist>[];
+      final remotePacks = <String, List<PlaylistDeletion>>{};
+      final stalePackNames = <String>[];
+      final canonicalPackSeen = <String>{};
       for (final item in items) {
         if (item.isDirectory) continue;
-        if (!item.name.toLowerCase().endsWith('.${PlaylistCodec.fileExtension}')) {
+        if (!item.name.toLowerCase().endsWith(
+          '.${PlaylistCodec.fileExtension}',
+        )) {
           continue;
         }
         try {
           final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
-          final decoded = PlaylistCodec.decode(bytes);
-          remotes.add((fileName: item.name, playlist: decoded.playlist));
+          final kind = WmpContainer.kindOf(bytes);
+          if (kind == WmpFileKind.playlistDeletion) {
+            final decoded = PlaylistDeletionCodec.decode(bytes);
+            remotePacks
+                .putIfAbsent(decoded.playlistId, () => [])
+                .addAll(decoded.records);
+            if (item.name ==
+                PlaylistDeletionCodec.fileNameFor(decoded.playlistId)) {
+              canonicalPackSeen.add(decoded.playlistId);
+            } else {
+              // Content is merged, but the canonical name is what the next
+              // pull looks up. A misnamed pack is rewritten, then removed.
+              stalePackNames.add(item.name);
+            }
+          } else if (kind == WmpFileKind.playlist) {
+            final decoded = PlaylistCodec.decode(bytes);
+            decoded.playlist.remoteFileName = item.name;
+            remotes.add(decoded.playlist);
+          }
         } catch (e) {
           // Format/CRC failure on one file: skip it, keep the rest.
           _lastSyncError = e.toString();
         }
       }
 
-      final byId = {for (final p in _playlists) p.id: p};
-      for (final remote in remotes) {
-        final local = byId[remote.playlist.id];
-        // The file name is cosmetic but has to survive, or the next upload would
-        // write a second copy of the same playlist under a different name.
-        remote.playlist.remoteFileName = remote.fileName;
-        if (local == null) {
-          byId[remote.playlist.id] = remote.playlist;
-        } else {
-          final winner = mergePlaylistsLastWriteWins(local, remote.playlist);
-          winner.remoteFileName = remote.fileName;
-          byId[remote.playlist.id] = winner;
-        }
-      }
-
-      final merged = byId.values.toList();
-      await _store.replaceAll(merged);
+      final localDeletions = await _log.loadAll();
+      final plan = planPlaylistSync(
+        local: _playlists,
+        remote: remotes,
+        tombstones: [
+          ...localDeletions,
+          for (final rows in remotePacks.values) ...rows,
+        ],
+        remotePacks: remotePacks,
+      );
+      await _store.replaceAll(plan.playlists);
+      await _log.replaceAll(plan.tombstones);
       _playlists
         ..clear()
-        ..addAll(merged);
+        ..addAll(plan.playlists);
       _sortLocal();
       notifyListeners();
 
-      // Push locals that won / are newer.
-      for (final pl in _playlists) {
+      if (publishPacks) {
+        final packIds = {
+          ...plan.uploadPackIds,
+          for (final record in plan.tombstones)
+            if (!canonicalPackSeen.contains(record.playlistId))
+              record.playlistId,
+        };
+        for (final id in packIds) {
+          await _uploadPack(id);
+        }
+      }
+      for (final name in {...stalePackNames, ...plan.deleteRemoteNames}) {
+        try {
+          await _webDav.deletePath(_syncAccountId!, _filePath(name));
+        } catch (_) {}
+      }
+      for (final pl in plan.upload) {
         await uploadPlaylist(pl);
       }
       _lastSyncError = null;
+      return true;
     } catch (e) {
       _lastSyncError = e.toString();
       notifyListeners();
+      return false;
     }
+  }
+
+  /// Materialise the current playlists, then drop every deletion pack.
+  ///
+  /// Manual only. There is no periodic prompt: after this, an offline device
+  /// that still has the old copy can upload it again, the same way a library
+  /// rebuild drops `del-*` once the snapshot is the truth.
+  Future<void> compactDeletionQueue() async {
+    if (!canSync) throw StateError('err.noWebdavAccount');
+    final ok = await pullAndMergeFromWebDav(publishPacks: false);
+    if (!ok) {
+      throw StateError(_lastSyncError ?? 'err.noWebdavAccount');
+    }
+    final items = await _webDav.listDirectory(_syncAccountId!, _remotePath);
+    for (final item in items) {
+      if (item.isDirectory) continue;
+      if (!item.name.toLowerCase().endsWith(
+        '.${PlaylistCodec.fileExtension}',
+      )) {
+        continue;
+      }
+      try {
+        final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
+        if (WmpContainer.kindOf(bytes) != WmpFileKind.playlistDeletion) {
+          continue;
+        }
+        await _webDav.deletePath(_syncAccountId!, item.path);
+      } catch (e) {
+        _lastSyncError = e.toString();
+        notifyListeners();
+        throw StateError(_lastSyncError!);
+      }
+    }
+    await _log.clear();
+    _lastSyncError = null;
   }
 
   /// Encode one playlist as a `WDMMPL01` document (with its entries' covers)
@@ -295,11 +409,14 @@ class PlaylistService extends ChangeNotifier {
   }
 
   void unawaitedSyncUpload(Playlist pl) {
+    _publish(() => uploadPlaylist(pl));
+  }
+
+  void _publish(Future<void> Function() body) {
     if (!canSync) return;
-    // Fire-and-forget; errors stored on service.
     Future(() async {
       try {
-        await uploadPlaylist(pl);
+        await body();
         _lastSyncError = null;
       } catch (e) {
         _lastSyncError = e.toString();
@@ -308,11 +425,31 @@ class PlaylistService extends ChangeNotifier {
     });
   }
 
+  Future<void> _uploadPack(String playlistId) async {
+    if (!canSync) return;
+    final records = [
+      for (final record in await _log.loadAll())
+        if (record.playlistId == playlistId) record,
+    ];
+    if (records.isEmpty) return;
+    await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
+    final bytes = PlaylistDeletionCodec.encode(playlistId, records);
+    await _webDav.writeBytes(
+      _syncAccountId!,
+      _filePath(PlaylistDeletionCodec.fileNameFor(playlistId)),
+      bytes,
+    );
+  }
+
   String _remoteFilePath(Playlist pl) {
     final file =
         pl.remoteFileName ?? PlaylistCodec.safeFileName(pl.name, pl.id);
+    return _filePath(file);
+  }
+
+  String _filePath(String fileName) {
     final base = _remotePath.endsWith('/') ? _remotePath : '$_remotePath/';
-    return '$base$file';
+    return '$base$fileName';
   }
 
   void _sortLocal() {

@@ -67,7 +67,7 @@ v9 删除了 `cache` annex 表：它的每一列都没有承载不可推导的�
 | 文件 / 目录 | 语义 |
 |-------------|------|
 | `credentials.json` | WebDAV 账号表；**地址与用户名明文，只有密码加密**（`AESGCMv1:`） |
-| `playlists/*.m3u8` | 歌单，一份一个文件；`updatedAt` 最后写入胜出 |
+| `playlists/*.wdmp` | 歌单文档 `WDMMPL01`，一份一个文件，整份最后写入胜出；删除包是同目录的 `pdel_*.wdmp`（`WDMMPD01`），不进 `deleted_tracks` |
 | `library/index.json` | 曲库清单：分片文件名 / 片数 / 字节数 / rev 区间 |
 | `library/lib-*.wdmm` | 基础分片（重建产出） |
 | `library/seg-*.wdmm` | 增量分片（每次同步追加） |
@@ -89,6 +89,9 @@ v9 删除了 `cache` annex 表：它的每一列都没有承载不可推导的�
 | `WDMMEN01` | `EN` | 口令加密信封（AES-256-GCM + PBKDF2），解密后才是上面某种文件或 JSON |
 | `WDMMEX01` | `EX` | 预留：分享用曲库文件 |
 | `WDMMCR01` | `CR` | 预留：凭证二进制包 |
+| `WDMMPL01` | `PL` | 一个歌单文档 |
+| `WDMMCV01` | `CV` | 凭证包 |
+| `WDMMPD01` | `PD` | 一个歌单的删除记录包（不是 `LT`） |
 
 新增种类 = `WmpFileKind` 加一行 + `WmpKind` 加对应数字（`metaKindOf` / `forMetaKind` 互相映射）；解析时交叉校验「魔数种类」与「META.kind」。
 

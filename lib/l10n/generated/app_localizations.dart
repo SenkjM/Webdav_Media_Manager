@@ -2388,7 +2388,7 @@ abstract class AppLocalizations {
   /// No description provided for @playlistsSectionDesc.
   ///
   /// In zh, this message translates to:
-  /// **'双向 M3U8 同步，改动即时上传：{path}'**
+  /// **'双向同步。整份歌单按最后写入合并；每个歌单另有一份删除记录，避免其它设备把已删歌单或曲目重新传上来：{path}'**
   String playlistsSectionDesc(Object path);
 
   /// No description provided for @syncPlaylistsNow.
@@ -2396,6 +2396,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'立即同步歌单'**
   String get syncPlaylistsNow;
+
+  /// No description provided for @compactPlaylistDeletions.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理删除记录'**
+  String get compactPlaylistDeletions;
+
+  /// No description provided for @compactPlaylistDeletionsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'以当前歌单为快照，删掉各歌单的删除记录包。没有定时提醒。'**
+  String get compactPlaylistDeletionsHint;
 
   /// No description provided for @librarySection.
   ///
@@ -3045,6 +3057,12 @@ abstract class AppLocalizations {
   /// **'合并歌单…'**
   String get progressMergingPlaylists;
 
+  /// No description provided for @progressCompactingPlaylistDeletions.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理歌单删除记录…'**
+  String get progressCompactingPlaylistDeletions;
+
   /// No description provided for @progressReadingCloudIndex.
   ///
   /// In zh, this message translates to:
@@ -3146,6 +3164,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'歌单已同步（{count} 个）'**
   String stepPlaylistsSynced(Object count);
+
+  /// No description provided for @stepPlaylistDeletionsCompacted.
+  ///
+  /// In zh, this message translates to:
+  /// **'歌单删除记录已清理'**
+  String get stepPlaylistDeletionsCompacted;
 
   /// No description provided for @stepIncrementalNoChange.
   ///
@@ -3305,6 +3329,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'歌单文档缺少 playlistId，无法识别'**
   String get errPlaylistMissingId;
+
+  /// No description provided for @errPlaylistDeletionKindMismatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'这是 {kind} 类文件，不是歌单删除记录（期望 {expected}）'**
+  String errPlaylistDeletionKindMismatch(Object expected, Object kind);
+
+  /// No description provided for @errPlaylistDeletionMissingId.
+  ///
+  /// In zh, this message translates to:
+  /// **'歌单删除记录缺少 playlistId，无法识别'**
+  String get errPlaylistDeletionMissingId;
 
   /// No description provided for @errVaultKindMismatch.
   ///

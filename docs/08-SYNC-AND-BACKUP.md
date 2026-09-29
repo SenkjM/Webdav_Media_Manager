@@ -16,7 +16,7 @@
 | 数据 | 云端位置 | 派生 getter（`settings_service.dart`） |
 |------|----------|------------------------------------------|
 | 账号凭证 | `/player/credentials.json` | `credentialsRemotePath` |
-| 歌单 | `/player/playlists/` | `playlistRemotePath` |
+| 歌单 | `/player/playlists/*.wdmp`（文档 `WDMMPL01`，删除包 `pdel_*.wdmp` / `WDMMPD01`） | `playlistRemotePath` |
 | 音乐库 | `/player/library/` | `libraryRemotePath` |
 | 全部备份 | `/player/backup/` | `backupRemotePath` |
 
@@ -24,8 +24,6 @@
 - 真正用的账号：`SyncService.syncDestination()` = `syncAccountId ?? 当前选中账号`。备份、凭证、歌单、曲库都走它，不可能各挑各的盘。
 - 同步页在路径框下方直接列出这四条派生路径，改路径的效果不需要靠猜。
 - 旧版歌单目录 `/Playlists/` 已并入总路径下的 `playlists/`。
-
-> **占位（格式变更进行中）**：凭证与歌单的远端编码都在换容器——`credentials.json` → `WDMMCV01` 容器文件，歌单 → `WDMMPL01`，备份归档的两段改为内嵌这两种容器的字节。语义与取舍见 [10](10-PLAYLIST-FORMAT.md) 与 [99 §5.0](99-IN-PROGRESS.md)。
 
 ### 迁移
 
@@ -40,13 +38,13 @@
 | 数据 | 行为 |
 |------|------|
 | 账号凭证 | **真同步**：与云端 `credentials.json` 双向合并；`autoScan()` 在启动 / 切换账号 / 定时到点时跑 |
-| 歌单 | **真同步**：双向 M3U8，`updatedAt` 最后写入胜出；改动即时上传，启动 / 切换账号 / 定时拉取 |
+| 歌单 | **真同步**：整份 `WDMMPL01` 最后写入胜出；删除记在该歌单自己的 `WDMMPD01` 里。拉取不会把每份本地歌单无条件传回去。设置里可手动「清理删除记录」，没有定时提醒 |
 
-歌单文件是扩展 M3U8：`#EXTM3U` + `#EXT-X-WMP-ID` / `-UPDATED` / `-NAME`，路径行 `wmp://<accountId>/<remotePath>`；最后写入胜出由 `-UPDATED` 判定。**`WMP` 前缀是历史产品缩写、属于磁盘格式，不要改名**——已同步的歌单依赖它。编解码在 `lib/utils/m3u8_playlist.dart`。
-
-> **占位（格式变更进行中）**：歌单格式计划从扩展 M3U8 换为二进制容器（`WDMMPL01`），条目身份改为 `musicId`；同时修正「销毁曲目影响歌单条目」的错误绑定。语义与取舍见 [10](10-PLAYLIST-FORMAT.md) 与 [99](99-IN-PROGRESS.md)。
 | 音乐库 | **增量**：`library.addListener` 防抖 20 s 后 `syncLibraryIncremental()`；手动「重建」`syncLibraryFull()` 才对齐删除。**重建会把云端库整体替换成本地快照**：旧基础分片、增量段与 `del-*` 墓碑文件全部删除，本地墓碑随即清零 |
 | 全部备份 | `backupTo(passphrase:)` 打成**一个**归档写到 `<远端路径>backup/` |
+
+歌单文件是 `WDMMPL01`（一个歌单一个 `.wdmp`）。正文整份 last-write-wins，不按行合并。删除另写该歌单的 `WDMMPD01`（`pdel_<id>.wdmp`），包内用文件类和 `playlistDeletions` 段区分，不只靠文件名。这样删歌单或删曲目之后，另一台设备不会靠「拉取完再把本地副本全传上去」把它救回来。手动「清理删除记录」会在快照落地后丢掉这些包。细节见 [10 §7](10-PLAYLIST-FORMAT.md)。历史 M3U8 编解码还在 `lib/utils/m3u8_playlist.dart`，同步不再读写它。
+
 
 凭证加密与恢复：
 
@@ -103,4 +101,4 @@
 
 ## 8. 相关代码
 
-`sync_service.dart`（编排 / `syncDestination`）、`credential_vault_service.dart`（`credentials.json` 读写）、`credential_vault_crypto.dart`（密码类字段加密，AESGCMv1）、`cloud_driver.dart` 的 `CloudDriverSpec.secretFieldKeys`（密文字段 = 表单 obscure 声明）、`accounts_service.dart`（`loadDriverConfig` / `restoreFromBackup` 云盘条目恢复）、`library_sync_store.dart` + `library_shard_codec.dart` + `utils/library_index_merge.dart`（清单与分片）、`playlist_service.dart`（M3U8 双向）、`backup_service.dart`（归档）、`sync_screen.dart`（界面）、`settings_service.dart`（远端路径与账号键）。
+`sync_service.dart`（编排 / `syncDestination`）、`credential_vault_service.dart`（`credentials.json` 读写）、`credential_vault_crypto.dart`（密码类字段加密，AESGCMv1）、`cloud_driver.dart` 的 `CloudDriverSpec.secretFieldKeys`（密文字段 = 表单 obscure 声明）、`accounts_service.dart`（`loadDriverConfig` / `restoreFromBackup` 云盘条目恢复）、`library_sync_store.dart` + `library_shard_codec.dart` + `utils/library_index_merge.dart`（清单与分片）、`playlist_service.dart`（`WDMMPL01` 双向 + 每歌单删除包）、`backup_service.dart`（归档）、`sync_screen.dart`（界面）、`settings_service.dart`（远端路径与账号键）。

@@ -1279,11 +1279,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String playlistsSectionDesc(Object path) {
-    return '双向 M3U8 同步，改动即时上传：$path';
+    return '双向同步。整份歌单按最后写入合并；每个歌单另有一份删除记录，避免其它设备把已删歌单或曲目重新传上来：$path';
   }
 
   @override
   String get syncPlaylistsNow => '立即同步歌单';
+
+  @override
+  String get compactPlaylistDeletions => '清理删除记录';
+
+  @override
+  String get compactPlaylistDeletionsHint => '以当前歌单为快照，删掉各歌单的删除记录包。没有定时提醒。';
 
   @override
   String get librarySection => '音乐库';
@@ -1644,6 +1650,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get progressMergingPlaylists => '合并歌单…';
 
   @override
+  String get progressCompactingPlaylistDeletions => '清理歌单删除记录…';
+
+  @override
   String get progressReadingCloudIndex => '读取云端曲库索引…';
 
   @override
@@ -1709,6 +1718,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String stepPlaylistsSynced(Object count) {
     return '歌单已同步（$count 个）';
   }
+
+  @override
+  String get stepPlaylistDeletionsCompacted => '歌单删除记录已清理';
 
   @override
   String get stepIncrementalNoChange => '增量同步：无变化（未上传任何内容）';
@@ -1820,6 +1832,14 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get errPlaylistMissingId => '歌单文档缺少 playlistId，无法识别';
+
+  @override
+  String errPlaylistDeletionKindMismatch(Object expected, Object kind) {
+    return '这是 $kind 类文件，不是歌单删除记录（期望 $expected）';
+  }
+
+  @override
+  String get errPlaylistDeletionMissingId => '歌单删除记录缺少 playlistId，无法识别';
 
   @override
   String errVaultKindMismatch(Object expected, Object kind) {
@@ -4867,11 +4887,17 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String playlistsSectionDesc(Object path) {
-    return '雙向 M3U8 同步，改動即時上傳：$path';
+    return '雙向同步。整份歌單按最後寫入合併；每個歌單另有一份刪除記錄，避免其它裝置把已刪歌單或曲目重新傳上來：$path';
   }
 
   @override
   String get syncPlaylistsNow => '立即同步歌單';
+
+  @override
+  String get compactPlaylistDeletions => '清理刪除記錄';
+
+  @override
+  String get compactPlaylistDeletionsHint => '以目前歌單為快照，刪掉各歌單的刪除記錄包。沒有定時提醒。';
 
   @override
   String get librarySection => '音樂庫';
@@ -5232,6 +5258,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get progressMergingPlaylists => '合併歌單…';
 
   @override
+  String get progressCompactingPlaylistDeletions => '清理歌單刪除記錄…';
+
+  @override
   String get progressReadingCloudIndex => '讀取雲端曲庫索引…';
 
   @override
@@ -5297,6 +5326,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String stepPlaylistsSynced(Object count) {
     return '歌單已同步（$count 個）';
   }
+
+  @override
+  String get stepPlaylistDeletionsCompacted => '歌單刪除記錄已清理';
 
   @override
   String get stepIncrementalNoChange => '增量同步：無變更（未上傳任何內容）';
@@ -5408,6 +5440,14 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get errPlaylistMissingId => '歌單文件缺少 playlistId，無法辨識';
+
+  @override
+  String errPlaylistDeletionKindMismatch(Object expected, Object kind) {
+    return '這是 $kind 類檔案，不是歌單刪除記錄（期望 $expected）';
+  }
+
+  @override
+  String get errPlaylistDeletionMissingId => '歌單刪除記錄缺少 playlistId，無法辨識';
 
   @override
   String errVaultKindMismatch(Object expected, Object kind) {

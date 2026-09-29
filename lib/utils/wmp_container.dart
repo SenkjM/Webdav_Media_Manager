@@ -45,6 +45,11 @@ class WmpSections {
 
   /// Playlist files (`PL`): the ordered entry table (see [WmpPlaylistEntry]).
   static const int entries = 9;
+
+  /// Per-playlist deletion pack (`PD`): one record per removed entry, or a
+  /// single whole-playlist record. Not the library [tombs] section — playlist
+  /// deletes must stay out of `deleted_tracks` and `LT` shards.
+  static const int playlistDeletions = 10;
 }
 
 /// Per-section storage codec.
@@ -86,6 +91,10 @@ class WmpKind {
 
   /// A credential vault document (`WDMMCV01`).
   static const int vault = 7;
+
+  /// One playlist's deletion pack (`WDMMPD01`). Not [tomb] — that id is the
+  /// library shard only.
+  static const int playlistDeletion = 8;
 }
 
 /// File classes, carried in the first 8 bytes of every binary file we write.
@@ -133,6 +142,11 @@ class WmpFileKind {
   /// account root, field-level crypto inside).
   static const String vault = 'CV';
 
+  /// One playlist's deletion pack (`WDMMPD01`). Filename may also differ
+  /// (`pdel_*.wdmp`) so a listing can find it; the magic is what makes it a
+  /// deletion pack even if the name is wrong.
+  static const String playlistDeletion = 'PD';
+
   /// Encrypted wrapper (see `BackupCrypto`); wraps any document kind. Deliberately
   /// **not** a document, so `looksLikeContainer` never accepts an envelope.
   static const String envelope = 'EN';
@@ -147,6 +161,7 @@ class WmpFileKind {
     credentials,
     playlist,
     vault,
+    playlistDeletion,
   };
 
   static bool isDocument(String code) => documents.contains(code);
@@ -161,6 +176,7 @@ class WmpFileKind {
     credentials => WmpKind.credentials,
     playlist => WmpKind.playlist,
     vault => WmpKind.vault,
+    playlistDeletion => WmpKind.playlistDeletion,
     _ => -1,
   };
 
@@ -173,6 +189,7 @@ class WmpFileKind {
     WmpKind.credentials => credentials,
     WmpKind.playlist => playlist,
     WmpKind.vault => vault,
+    WmpKind.playlistDeletion => playlistDeletion,
     _ => '',
   };
 }
@@ -284,6 +301,26 @@ class WmpPlaylistMeta {
 
   /// Last-write timestamp (ISO-8601 UTC) driving the last-write-wins merge.
   static const int updatedAt = 11;
+}
+
+/// Record tag ids inside a playlist deletion pack (`PD`).
+///
+/// One record is either "this entry was removed" or "the whole playlist was
+/// removed". This is not [WmpTomb]: those tags belong to library `LT` shards.
+class WmpPlaylistDeletion {
+  WmpPlaylistDeletion._();
+
+  /// `1` = the whole playlist, `0` = a single entry.
+  static const int scope = 1;
+
+  /// Entry identity (`musicId`). Absent when [scope] is the whole playlist.
+  static const int musicId = 2;
+
+  /// When the delete happened (ISO-8601 UTC).
+  static const int deletedAt = 3;
+
+  static const int scopePlaylist = 1;
+  static const int scopeEntry = 0;
 }
 
 /// Record tag ids inside a `BK` backup archive's PLAYLISTS section.
@@ -878,6 +915,9 @@ const Set<int> kPlaylistEntryIntTags = {
   WmpPlaylistEntry.cueTrackIndex,
   WmpPlaylistEntry.coverIndex,
 };
+
+/// Varint tags inside a `PD` pack's deletion section.
+const Set<int> kPlaylistDeletionIntTags = {WmpPlaylistDeletion.scope};
 
 /// Varint tags inside a `CV` file's META section (on top of [kMetaIntTags]).
 const Set<int> kVaultMetaIntTags = {
