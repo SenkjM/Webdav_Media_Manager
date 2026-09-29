@@ -2054,7 +2054,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get netStreamingExperimental =>
-      'Music streaming is experimental; enable it in Settings first';
+      'Music streaming is off; enable it in Settings first';
 
   @override
   String get netParsingCue => 'Parsing CUE…';
@@ -2106,8 +2106,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get netDefaultActionFromSettings => 'Default action from Settings';
 
   @override
-  String get netExperimentalNoDownload =>
-      'Experimental: no download, not added to library';
+  String get netExperimentalNoDownload => 'No download, not added to library';
 
   @override
   String get netDownloadToGallery => 'Download to system gallery';
@@ -3591,11 +3590,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'How many images to prefetch on each side (previous and next), from 1 to 5. The whole album is not loaded at once. Default is 1 per side.';
 
   @override
-  String get imageScanSubdirs => 'Scan subdirectories (experimental)';
+  String get imageScanSubdirs => 'Scan subdirectories';
 
   @override
   String get imageScanSubdirsHint =>
-      'Experimental and off by default. When on, the album also includes images in subfolders. Scanning can be slow.';
+      'Off by default. When on, the album also includes images in subfolders. Scanning can be slow.';
 
   @override
   String get actionViewImage => 'View image';

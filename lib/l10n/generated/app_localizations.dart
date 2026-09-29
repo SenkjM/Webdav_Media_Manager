@@ -3544,7 +3544,7 @@ abstract class AppLocalizations {
   /// No description provided for @netStreamingExperimental.
   ///
   /// In zh_CN, this message translates to:
-  /// **'音乐流式传输是实验功能，请先在设置里打开'**
+  /// **'音乐流式传输未打开，请先在设置里打开'**
   String get netStreamingExperimental;
 
   /// No description provided for @netParsingCue.
@@ -3622,7 +3622,7 @@ abstract class AppLocalizations {
   /// No description provided for @netExperimentalNoDownload.
   ///
   /// In zh_CN, this message translates to:
-  /// **'实验性：不下载、不进音乐库'**
+  /// **'不下载、不进音乐库'**
   String get netExperimentalNoDownload;
 
   /// No description provided for @netDownloadToGallery.
@@ -5991,13 +5991,13 @@ abstract class AppLocalizations {
   /// No description provided for @imageScanSubdirs.
   ///
   /// In zh_CN, this message translates to:
-  /// **'搜索子目录（实验）'**
+  /// **'搜索子目录'**
   String get imageScanSubdirs;
 
   /// No description provided for @imageScanSubdirsHint.
   ///
   /// In zh_CN, this message translates to:
-  /// **'实验性功能，默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。'**
+  /// **'默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。'**
   String get imageScanSubdirsHint;
 
   /// No description provided for @actionViewImage.

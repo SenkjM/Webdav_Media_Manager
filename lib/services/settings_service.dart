@@ -335,7 +335,7 @@ class SettingsService extends ChangeNotifier {
   String get imageFit => _imageFit;
   int get imagePrefetchCount => _imagePrefetchCount;
 
-  /// 实验性：图片相册是否扫描子目录。默认关。键 `image_scan_subdirs`。
+  /// 图片相册是否扫描子目录。默认关。键 `image_scan_subdirs`。
   bool get imageScanSubdirs => _imageScanSubdirs;
 
   /// Temporary playback rate applied while the video screen is long-pressed.
@@ -616,10 +616,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 新安装：音乐流式开关默认开，单击动作走 [FileAction.streamMusic]。
+  /// 新安装：音乐流式开关默认开。单击动作仍是 [FileAction.cacheMusic]，
+  /// 不走 [FileAction.streamMusic]（见 [FileActionCatalog.defaultFor]）。
   ///
-  /// 已经存过 `file_action_config_json` 或旧的单击键时，不改用户选过的动作；
-  /// 开关缺失则维持旧默认（关），除非 JSON 里还有 legacy 实验标记。
+  /// 开关默认开只在 `audio_streaming_enabled` 不存在、且没有已保存的动作
+  /// 配置或旧单击键时生效。已经存过 `file_action_config_json` 或旧单击键时，
+  /// 不改用户选过的动作；开关键缺失则维持旧默认（关），除非 JSON 里还有
+  /// legacy 标记。已写入的开关值不会被覆盖。
   bool _resolveAudioStreamingEnabled() {
     if (_prefs!.containsKey(_kAudioStreamingEnabled)) {
       return _prefs!.getBool(_kAudioStreamingEnabled) ?? false;
@@ -640,7 +643,7 @@ class SettingsService extends ChangeNotifier {
   /// 迁移只发生一次：写完新键之后旧键不再被读。旧语义 → 新动作：
   /// 音乐 `play`（已缓存则播放，否则下载）与 `download` 都是「缓存音乐」，
   /// 视频 `open` → 流式传输、`download` → 下载。
-  /// 完全没有旧键的新安装不走迁移表，直接用出厂默认（音乐流式）。
+  /// 完全没有旧键的新安装不走迁移表，直接用出厂默认（音乐是缓存，不是流式）。
   FileActionConfig _readFileActions() {
     final streaming = _resolveAudioStreamingEnabled();
     final raw = _prefs!.getString(_kFileActionConfig);
@@ -708,7 +711,7 @@ class SettingsService extends ChangeNotifier {
   Future<void> setFileAction(FileCategory category, FileAction action) =>
       setFileActions(_fileActions.withAction(category, action));
 
-  /// 音乐流式传输实验开关（T6）。
+  /// 音乐流式传输开关（T6）。旧名保留，避免调用方再找一次。
   Future<void> setExperimentalMusicStreaming(bool enabled) =>
       setAudioStreamingEnabled(enabled);
 
@@ -792,7 +795,8 @@ class SettingsService extends ChangeNotifier {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kAudioStreamingEnabled, enabled);
     // 关掉时把已选中的「流式传输（音乐）」退回缓存并写回。开着时不改用户
-    // 已经选过的动作（出厂默认是流式，但存过 cache 的不能被打开开关改掉）。
+    // 已经选过的动作。出厂单击是缓存，不是流式；打开开关也不能把 cache
+    // 改成 streamMusic。
     _fileActions = FileActionConfig(
       actions: _fileActions.actions,
       allowMusicStreaming: enabled,

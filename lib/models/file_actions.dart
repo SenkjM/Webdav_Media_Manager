@@ -21,7 +21,7 @@ enum FileAction {
   /// CUE：读取并解析，整组下载。
   readCue,
 
-  /// 音乐：远端流式播放（实验性，见 docs/99 的可行性分析）。
+  /// 音乐：远端流式播放（见 docs/99 的可行性分析）。不是单击出厂默认。
   streamMusic,
 
   /// 图片：临时文件查看，不进下载队列、不进音乐缓存。
@@ -77,8 +77,8 @@ class FileActionCatalog {
   const FileActionCatalog._();
 
   static const List<FileAction> music = [
-    FileAction.streamMusic,
     FileAction.cacheMusic,
+    FileAction.streamMusic,
     FileAction.download,
   ];
 
@@ -118,8 +118,9 @@ class FileActionCatalog {
 
   /// 该类别的出厂默认动作。
   static FileAction defaultFor(FileCategory category) => switch (category) {
-    // 新安装的出厂默认。已保存的配置不走这里（见 SettingsService）。
-    FileCategory.music => FileAction.streamMusic,
+    // 单击出厂默认。音乐是缓存，不是流式；流式开关另见 SettingsService。
+    // 已保存的配置不走这里。
+    FileCategory.music => FileAction.cacheMusic,
     FileCategory.cue => FileAction.readCue,
     FileCategory.video => FileAction.stream,
     FileCategory.image => FileAction.viewImage,
@@ -230,8 +231,9 @@ class FileActionConfig {
     required bool allowMusicStreaming,
   }) {
     var next = action;
-    // 出厂默认已经是 streamMusic。开关关闭时不能再退回 defaultFor，
-    // 否则会退回它自己。已保存的 cache / download 不受影响。
+    // 关掉开关时，已选的 streamMusic 退回缓存。不要退回 defaultFor：
+    // 出厂单击默认就是缓存，但这里写死，避免以后默认再被改成流式时
+    // 「关开关」退回它自己。已保存的 cache / download 不受影响。
     if (next == FileAction.streamMusic && !allowMusicStreaming) {
       next = FileAction.cacheMusic;
     }

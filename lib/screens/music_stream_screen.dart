@@ -20,7 +20,7 @@ import '../theme/app_theme.dart';
 import '../utils/audio_extensions.dart';
 import 'video_player_screen.dart' show VideoQueueSeed;
 
-/// 音乐流式播放界面（实验性）。
+/// 音乐流式播放界面。
 
 /// 为什么单独一个界面，而不是复用视频播放页：
 

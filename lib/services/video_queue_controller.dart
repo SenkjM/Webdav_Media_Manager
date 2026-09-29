@@ -14,8 +14,8 @@ import 'webdav_service.dart';
 /// of the same [category] in as they arrive — it never blocks the first frame
 /// on a full listing.
 ///
-/// The video player is the original user of this class; the experimental
-/// music streaming screen reuses it with `category: FileCategory.music`, which
+/// The video player is the original user of this class; the music streaming
+/// screen reuses it with `category: FileCategory.music`, which
 /// is why the filter is a parameter instead of a hard-coded `isVideo`.
 ///
 /// Ordering is by name (case-insensitive), so the merged queue is identical to
