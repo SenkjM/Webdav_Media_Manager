@@ -12,25 +12,26 @@ import '../utils/subtitle_sidecar.dart';
 /// A subtitle the user imported for the current episode only.
 class ManualSubtitle {
   const ManualSubtitle({
+    required this.id,
     required this.fileName,
     required this.format,
     required this.bytes,
   });
 
+  /// Stable for this playback only. Not persisted.
+  final String id;
   final String fileName;
   final String format;
   final List<int> bytes;
-
-  String get id => 'manual';
 
   SubtitleRowLabel get label =>
       labelManualSubtitle(fileName: fileName, format: format);
 }
 
 /// Loads external text sidecars and applies [Player.setSubtitleTrack] after
-/// the screen has opened the episode. Manual import and the encoding override
-/// are memory only: import dies with the episode, encoding lasts until the
-/// player route is disposed.
+/// the screen has opened the episode. Manual imports and the encoding override
+/// are memory only: every import from this episode stays in the picker until
+/// the episode changes, and encoding lasts until the player route is disposed.
 class VideoSubtitleBinder {
   VideoSubtitleBinder({
     required this.listDirectory,
@@ -47,7 +48,7 @@ class VideoSubtitleBinder {
   final void Function(String code)? onError;
 
   int epoch = 0;
-  ManualSubtitle? manual;
+  List<ManualSubtitle> manuals = [];
   SubtitleEncodingChoice encoding = SubtitleEncodingChoice.auto;
   List<SidecarHit> sidecars = const [];
   List<EmbeddedSubtitleCue> embedded = const [];
@@ -61,17 +62,26 @@ class VideoSubtitleBinder {
   String? _appliedKey;
   Directory? _tempDir;
   final List<File> _tempFiles = [];
+  int _manualSeq = 0;
+
+  /// File subtitle ids seen before the first external sub-add. Null until
+  /// that add freezes the snapshot. Later track-list ids are not embedded.
+  Set<String>? _capturedEmbeddedIds;
+  Set<String> _pendingEmbeddedIds = {};
 
   /// Drop the previous episode's manual import and start a new selection.
   /// Encoding override is kept for this player session.
   void prepareEpisode({required String uiLanguageKey}) {
     epoch++;
-    manual = null;
+    manuals = [];
+    _manualSeq = 0;
     userPicked = false;
     _appliedKey = null;
     sidecars = const [];
     embedded = const [];
     _embeddedTracks.clear();
+    _capturedEmbeddedIds = null;
+    _pendingEmbeddedIds = {};
     tracksReady = false;
     sidecarsReady = false;
     this.uiLanguageKey = uiLanguageKey;
@@ -137,9 +147,24 @@ class VideoSubtitleBinder {
 
   void onTracks(List<SubtitleTrack> tracks) {
     final token = epoch;
+    if (_capturedEmbeddedIds == null) {
+      _pendingEmbeddedIds = {
+        for (final track in tracks)
+          if (_isFileEmbeddedId(track)) track.id,
+      };
+    }
+    final allowed = embeddedSubtitleIds(
+      ids: [for (final track in tracks) track.id],
+      languages: [
+        for (final track in tracks)
+          track.uri || track.data ? 'auto' : track.language,
+      ],
+      capturedIds: _capturedEmbeddedIds,
+    ).toSet();
     final cues = <EmbeddedSubtitleCue>[];
     _embeddedTracks.clear();
     for (final track in tracks) {
+      if (!allowed.contains(track.id)) continue;
       final cue = embeddedCueFromTrack(
         id: track.id,
         language: track.language,
@@ -160,6 +185,22 @@ class VideoSubtitleBinder {
     }
   }
 
+  /// Real file subtitle id. Placeholders and the synthetic `auto` language
+  /// from sub-add are not part of the open snapshot.
+  bool _isFileEmbeddedId(SubtitleTrack track) {
+    if (track.uri || track.data) return false;
+    if (track.id == 'auto' || track.id == 'no' || track.id.isEmpty) {
+      return false;
+    }
+    return (track.language ?? '').trim().toLowerCase() != 'auto';
+  }
+
+  /// Lock the embedded id set before the first external sub-add. Track-list
+  /// entries that show up afterwards were added by us.
+  void _freezeEmbeddedSnapshot() {
+    _capturedEmbeddedIds ??= Set<String>.of(_pendingEmbeddedIds);
+  }
+
   Future<void> selectNone() => _applyNone(epoch, user: true);
 
   Future<void> selectEmbedded(String id) async {
@@ -177,10 +218,10 @@ class VideoSubtitleBinder {
     await _applySidecar(hit, epoch, user: true);
   }
 
-  Future<void> selectManual() async {
-    final current = manual;
+  Future<void> selectManual(String id) async {
+    final current = _manual(id);
     if (current == null) return;
-    await _applyManual(epoch, user: true);
+    await _applyManual(current, epoch, user: true);
   }
 
   Future<bool> importBytes({
@@ -204,9 +245,15 @@ class VideoSubtitleBinder {
       onError?.call(looksLikeBinarySubtitle(bytes) ? 'binary' : 'decode');
       return false;
     }
-    manual = ManualSubtitle(fileName: fileName, format: format, bytes: bytes);
+    final item = ManualSubtitle(
+      id: 'm${_manualSeq++}',
+      fileName: fileName,
+      format: format,
+      bytes: bytes,
+    );
+    manuals = [...manuals, item];
     onChanged();
-    await _applyManual(epoch, user: true);
+    await _applyManual(item, epoch, user: true);
     return true;
   }
 
@@ -220,7 +267,9 @@ class VideoSubtitleBinder {
       final hit = path == null ? null : _hit(path);
       if (hit != null) await _applySidecar(hit, epoch, user: true);
     } else if (key.startsWith('manual:')) {
-      await _applyManual(epoch, user: true);
+      final id = _manualIdFromKey(key);
+      final item = id == null ? null : _manual(id);
+      if (item != null) await _applyManual(item, epoch, user: true);
     }
   }
 
@@ -258,10 +307,32 @@ class VideoSubtitleBinder {
     return null;
   }
 
+  ManualSubtitle? _manual(String id) {
+    for (final item in manuals) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+
+  String _manualKey(String id) => 'manual:$id:${encoding.wireName}';
+
+  String? _manualIdFromKey(String key) {
+    const prefix = 'manual:';
+    if (!key.startsWith(prefix)) return null;
+    final body = key.substring(prefix.length);
+    for (final choice in SubtitleEncodingChoice.values) {
+      final suffix = ':${choice.wireName}';
+      if (body.endsWith(suffix) && body.length > suffix.length) {
+        return body.substring(0, body.length - suffix.length);
+      }
+    }
+    return body.isEmpty ? null : body;
+  }
+
   Future<void> _applyAuto(int token) async {
     if (token != epoch || userPicked) return;
-    if (manual != null) {
-      await _applyManual(token, user: false);
+    if (manuals.isNotEmpty) {
+      await _applyManual(manuals.last, token, user: false);
       return;
     }
     if (!tracksReady) return;
@@ -329,6 +400,10 @@ class VideoSubtitleBinder {
     if (token != epoch) return;
     if (user) userPicked = true;
     final key = _sideKey(hit.path);
+    if (!user && _appliedKey == key) {
+      onChanged();
+      return;
+    }
     _appliedKey = key;
     try {
       final bytes = _bytesCache[hit.path] ?? await readBytes(hit.path);
@@ -354,6 +429,8 @@ class VideoSubtitleBinder {
         }
         return;
       }
+      if (token != epoch) return;
+      _freezeEmbeddedSnapshot();
       await setTrack(
         SubtitleTrack.uri(
           file.uri.toString(),
@@ -370,17 +447,24 @@ class VideoSubtitleBinder {
     if (token == epoch) onChanged();
   }
 
-  Future<void> _applyManual(int token, {required bool user}) async {
-    final current = manual;
-    if (current == null || token != epoch) return;
+  Future<void> _applyManual(
+    ManualSubtitle current,
+    int token, {
+    required bool user,
+  }) async {
+    if (token != epoch) return;
     if (user) userPicked = true;
-    final key = 'manual:${encoding.wireName}';
+    final key = _manualKey(current.id);
+    if (!user && _appliedKey == key) {
+      onChanged();
+      return;
+    }
     _appliedKey = key;
     try {
       final file = await _materialize(
         current.bytes,
         current.format,
-        current.fileName,
+        '${current.id}:${current.fileName}',
       );
       if (token != epoch || file == null) {
         if (file == null && token == epoch) {
@@ -390,6 +474,8 @@ class VideoSubtitleBinder {
         }
         return;
       }
+      if (token != epoch) return;
+      _freezeEmbeddedSnapshot();
       await setTrack(
         SubtitleTrack.uri(
           file.uri.toString(),
@@ -478,7 +564,7 @@ class VideoSubtitleBinder {
     if (key == 'none') return 'none';
     if (key.startsWith('emb:')) return key.substring(4);
     if (key.startsWith('side:')) return _pathFromSideKey(key);
-    if (key.startsWith('manual:')) return 'manual';
+    if (key.startsWith('manual:')) return _manualIdFromKey(key);
     return null;
   }
 }

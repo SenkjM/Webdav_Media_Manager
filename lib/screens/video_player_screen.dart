@@ -1621,11 +1621,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final rows = <VideoSubtitleSheetRow>[
       VideoSubtitleSheetRow(keyId: 'none', title: l10n.videoSubtitleOff),
     ];
-    final manual = binder.manual;
-    if (manual != null) {
+    for (final manual in binder.manuals) {
       rows.add(
         VideoSubtitleSheetRow(
-          keyId: 'manual',
+          keyId: 'manual:${manual.id}',
           title: manual.label.title,
           formatTag: manual.label.formatTag,
         ),
@@ -1663,7 +1662,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   String? _selectedSubtitleRow(VideoSubtitleBinder binder) {
     final id = binder.selectedKey;
-    if (id == null || id == 'none' || id == 'manual') return id;
+    if (id == null || id == 'none') return id;
+    if (binder.manuals.any((item) => item.id == id)) return 'manual:$id';
     if (binder.embedded.any((cue) => cue.id == id)) return 'emb:$id';
     return 'side:$id';
   }
@@ -1673,8 +1673,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (binder == null) return;
     if (keyId == 'none') {
       await binder.selectNone();
-    } else if (keyId == 'manual') {
-      await binder.selectManual();
+    } else if (keyId.startsWith('manual:')) {
+      await binder.selectManual(keyId.substring('manual:'.length));
     } else if (keyId.startsWith('emb:')) {
       await binder.selectEmbedded(keyId.substring(4));
     } else if (keyId.startsWith('side:')) {

@@ -8,7 +8,12 @@ import 'package:webdav_media_manager/services/settings_service.dart';
 import 'package:webdav_media_manager/utils/subtitle_encoding.dart';
 import 'package:webdav_media_manager/utils/subtitle_sidecar.dart';
 
-WebDavItem file(String name, {String? path, bool directory = false, int? size}) {
+WebDavItem file(
+  String name, {
+  String? path,
+  bool directory = false,
+  int? size,
+}) {
   return WebDavItem(
     name: name,
     path: path ?? '/show/$name',
@@ -31,7 +36,8 @@ void main() {
       );
       expect(exact, isNotNull);
       expect(exact!.exact, isTrue);
-      expect(exact.language, isEmpty);
+      expect(exact.language, '默认');
+      expect(exact.languageKey, isEmpty);
       expect(exact.format, 'srt');
 
       final zh = matchSubtitleFileName(
@@ -39,7 +45,8 @@ void main() {
         subtitleFileName: 'video.zh-CN.ass',
         videoExtensions: videos,
       );
-      expect(zh!.language, 'zh');
+      expect(zh!.language, 'zh-CN');
+      expect(zh.languageKey, 'zh');
       expect(zh.format, 'ass');
       expect(zh.exact, isFalse);
       expect(
@@ -47,7 +54,7 @@ void main() {
           videoFileName: 'video.mkv',
           subtitleFileName: 'video.chs.srt',
           videoExtensions: videos,
-        )!.language,
+        )!.languageKey,
         'zh',
       );
       expect(
@@ -55,7 +62,7 @@ void main() {
           videoFileName: 'video.mkv',
           subtitleFileName: 'video.chi.srt',
           videoExtensions: videos,
-        )!.language,
+        )!.languageKey,
         'zh',
       );
       expect(
@@ -63,36 +70,86 @@ void main() {
           videoFileName: 'video.mkv',
           subtitleFileName: 'video.zh-Hans.srt',
           videoExtensions: videos,
-        )!.language,
+        )!.languageKey,
         'zh',
       );
-      expect(
-        matchSubtitleFileName(
-          videoFileName: 'video.mkv',
-          subtitleFileName: 'video.eng.vtt',
-          videoExtensions: videos,
-        )!.language,
-        'en',
-      );
+      final eng = matchSubtitleFileName(
+        videoFileName: 'video.mkv',
+        subtitleFileName: 'video.eng.vtt',
+        videoExtensions: videos,
+      )!;
+      expect(eng.language, 'eng');
+      expect(eng.languageKey, 'en');
     });
 
-    test('不把多余单词当成语言，也不匹配目录', () {
+    test('中间段不限语言代码，多点仍是一条，精确同名是默认', () {
+      const stem =
+          '[Nekomoe kissaten&VCB-Studio] Cyberpunk Edgerunners [01][Ma10p_1080p][x265_flac]';
+      final jpsc = matchSubtitleFileName(
+        videoFileName: '$stem.mkv',
+        subtitleFileName: '$stem.JPSC.ass',
+        videoExtensions: videos,
+      )!;
+      expect(jpsc.language, 'JPSC');
+      expect(jpsc.languageKey, 'jpsc');
+      expect(jpsc.format, 'ass');
+      expect(jpsc.exact, isFalse);
+      final jpscLabel = labelSameDirectorySidecar(
+        language: jpsc.language,
+        format: jpsc.format,
+      );
+      expect(jpscLabel.title, 'JPSC');
+      expect(jpscLabel.formatTag, 'ass');
+
+      final dotted = matchSubtitleFileName(
+        videoFileName: 'video.mkv',
+        subtitleFileName: 'video.a.b.ass',
+        videoExtensions: videos,
+      )!;
+      expect(dotted.language, 'a.b');
+      expect(dotted.format, 'ass');
+      expect(dotted.exact, isFalse);
+      final dottedHits = collectSidecars(
+        videoFileName: 'video.mkv',
+        sameDirectory: [file('video.a.b.ass')],
+        videoExtensions: videos,
+      );
+      expect(dottedHits, hasLength(1));
+      expect(dottedHits.single.label.title, 'a.b');
+      expect(dottedHits.single.label.formatTag, 'ass');
+
+      final forced = matchSubtitleFileName(
+        videoFileName: 'video.mkv',
+        subtitleFileName: 'video.zh.forced.srt',
+        videoExtensions: videos,
+      )!;
+      expect(forced.language, 'zh.forced');
       expect(
         matchSubtitleFileName(
           videoFileName: 'Movie.mkv',
           subtitleFileName: 'Movie.Chinese.srt',
           videoExtensions: videos,
-        ),
-        isNull,
+        )!.language,
+        'Chinese',
       );
-      expect(
-        matchSubtitleFileName(
-          videoFileName: 'video.mkv',
-          subtitleFileName: 'video.zh.forced.srt',
-          videoExtensions: videos,
-        ),
-        isNull,
+
+      final plain = matchSubtitleFileName(
+        videoFileName: '电影.mkv',
+        subtitleFileName: '电影.ass',
+        videoExtensions: videos,
+      )!;
+      expect(plain.exact, isTrue);
+      expect(plain.language, '默认');
+      expect(plain.language, isNot('auto'));
+      final plainLabel = labelSameDirectorySidecar(
+        language: plain.language,
+        format: plain.format,
       );
+      expect(plainLabel.title, '默认');
+      expect(plainLabel.formatTag, 'ass');
+    });
+
+    test('不匹配别的文件，也不匹配目录', () {
       final hits = collectSidecars(
         videoFileName: 'video.mkv',
         sameDirectory: [
@@ -140,7 +197,7 @@ void main() {
       expect(same.formatTag, 'ass');
 
       final empty = labelSameDirectorySidecar(language: '', format: 'srt');
-      expect(empty.title, isEmpty);
+      expect(empty.title, '默认');
       expect(empty.formatTag, 'srt');
 
       final sub = labelSubdirectorySidecar(
@@ -154,6 +211,20 @@ void main() {
       final embedded = labelEmbeddedSubtitle('zh');
       expect(embedded.title, '[内嵌] zh');
       expect(embedded.formatTag, isNull);
+      final embeddedDefault = labelEmbeddedSubtitle('');
+      expect(embeddedDefault.title, '[内嵌] 默认');
+      expect(embeddedDefault.formatTag, isNull);
+      expect(
+        embeddedCueFromTrack(id: '8', language: null)!.label.title,
+        '[内嵌] 默认',
+      );
+      expect(
+        embeddedCueFromTrack(id: '8', language: '')!.label.formatTag,
+        isNull,
+      );
+      expect(embeddedCueFromTrack(id: '9', language: 'auto'), isNull);
+      expect(embeddedCueFromTrack(id: 'auto', language: 'zh'), isNull);
+      expect(embeddedCueFromTrack(id: 'no', language: 'en'), isNull);
 
       final manual = labelManualSubtitle(fileName: 'extra.ssa', format: 'ssa');
       expect(manual.title, 'extra.ssa');
@@ -162,7 +233,11 @@ void main() {
 
     test('位图内嵌轨道不进列表，文本内嵌优先界面语言', () {
       expect(
-        embeddedCueFromTrack(id: '1', codec: 'hdmv_pgs_subtitle', language: 'zh'),
+        embeddedCueFromTrack(
+          id: '1',
+          codec: 'hdmv_pgs_subtitle',
+          language: 'zh',
+        ),
         isNull,
       );
       expect(
@@ -174,11 +249,7 @@ void main() {
         codec: 'subrip',
         language: 'chi',
       )!;
-      final en = embeddedCueFromTrack(
-        id: '4',
-        codec: 'ass',
-        language: 'eng',
-      )!;
+      final en = embeddedCueFromTrack(id: '4', codec: 'ass', language: 'eng')!;
       expect(zh.label.title, '[内嵌] zh');
       expect(zh.label.formatTag, isNull);
       expect(pickEmbedded([en, zh], 'zh')!.id, '3');
@@ -220,6 +291,48 @@ void main() {
         SubtitleAutoKind.sidecar,
       );
     });
+
+    test('打开后新出现的轨和合成 auto 语言不算内嵌', () {
+      expect(
+        embeddedSubtitleIds(
+          ids: const ['auto', 'no', '1', '2'],
+          languages: const [null, null, 'zh', null],
+          capturedIds: const {'1', '2'},
+        ),
+        ['1', '2'],
+      );
+      expect(
+        embeddedSubtitleIds(
+          ids: const ['1', '3', '4'],
+          languages: const [null, 'auto', 'auto'],
+          capturedIds: const {'1'},
+        ),
+        ['1'],
+      );
+      expect(
+        embeddedSubtitleIds(
+          ids: const ['5', '6'],
+          languages: const ['auto', 'AUTO'],
+          capturedIds: const <String>{},
+        ),
+        isEmpty,
+      );
+      expect(
+        embeddedSubtitleIds(
+          ids: const ['7'],
+          languages: const ['jpsc'],
+          capturedIds: const {'1'},
+        ),
+        isEmpty,
+      );
+      expect(
+        embeddedSubtitleIds(
+          ids: const ['1', '8'],
+          languages: const ['zh', 'en'],
+        ),
+        ['1', '8'],
+      );
+    });
   });
 
   group('字幕编码', () {
@@ -251,9 +364,18 @@ void main() {
         )!.text,
         text,
       );
-      expect(looksLikeBinarySubtitle(const [0x00, 0x00, 0x01, 0xBA, 0x00]), isTrue);
-      expect(subtitlePayloadIsText(const [0x00, 0x00, 0x01, 0xBA], 'sub'), isFalse);
-      expect(subtitlePayloadIsText(utf8SubtitleBytes('1\nhello'), 'srt'), isTrue);
+      expect(
+        looksLikeBinarySubtitle(const [0x00, 0x00, 0x01, 0xBA, 0x00]),
+        isTrue,
+      );
+      expect(
+        subtitlePayloadIsText(const [0x00, 0x00, 0x01, 0xBA], 'sub'),
+        isFalse,
+      );
+      expect(
+        subtitlePayloadIsText(utf8SubtitleBytes('1\nhello'), 'srt'),
+        isTrue,
+      );
     });
   });
 
@@ -266,7 +388,10 @@ void main() {
     expect(settings.videoSubtitleSubdir, 'sub');
     expect(settings.videoScanSubdirs, isFalse);
     expect(settings.exportForBackup()['video_auto_subtitle'], isTrue);
-    expect(settings.exportForBackup()['video_subtitle_subdir_enabled'], isFalse);
+    expect(
+      settings.exportForBackup()['video_subtitle_subdir_enabled'],
+      isFalse,
+    );
     expect(sanitizeSubtitleSubdir('/sub'), 'sub');
     expect(sanitizeSubtitleSubdir('a/b'), isNull);
     expect(await settings.setVideoSubtitleSubdir('a/b'), isFalse);

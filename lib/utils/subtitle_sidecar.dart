@@ -10,12 +10,6 @@ const Set<String> subtitleSidecarExtensions = {
   'sub',
 };
 
-/// One language segment: `zh`, `en`, `chi`, `zh-CN`, `zh-Hans`. Not `Chinese`.
-final RegExp _languageSegment = RegExp(
-  r'^[a-z]{2,3}(?:[_-][a-z]{2,4})?$',
-  caseSensitive: false,
-);
-
 /// Filename without its last video extension, compared case-insensitively.
 String videoStem(String fileName, Set<String> videoExtensions) {
   final dot = fileName.lastIndexOf('.');
@@ -69,11 +63,12 @@ class SubtitleNameMatch {
     required this.exact,
   });
 
-  /// Display language. Empty when the file has no language segment.
-  /// Known aliases become `zh` / `en`; anything else keeps the segment.
+  /// Picker label for the middle segment. Exact names use `默认`.
+  /// This is the raw middle (`JPSC`, `a.b`, `zh-CN`), not forced to `zh` / `en`.
   final String language;
 
-  /// Lowercase key used for UI-language comparison. Empty if [language] is.
+  /// Lowercase key used for UI-language comparison. Known aliases fold to
+  /// `zh` / `en`. Empty for an exact name.
   final String languageKey;
 
   /// Lowercase extension without the dot.
@@ -99,27 +94,23 @@ SubtitleNameMatch? matchSubtitleFileName({
   if (!lowerName.endsWith(dotExt)) return null;
   if (lowerName == '$lowerStem$dotExt') {
     return SubtitleNameMatch(
-      language: '',
+      language: '默认',
       languageKey: '',
       format: format,
       exact: true,
     );
   }
   if (!lowerName.startsWith('$lowerStem.')) return null;
-  final middle = lowerName.substring(
-    lowerStem.length + 1,
-    lowerName.length - dotExt.length,
-  );
-  if (middle.isEmpty || middle.contains('.')) return null;
-  if (!_languageSegment.hasMatch(middle)) return null;
-  final rawMiddle = subtitleFileName.substring(
-    lowerStem.length + 1,
-    subtitleFileName.length - dotExt.length,
-  );
-  final language = displaySubtitleLanguage(rawMiddle);
+  final start = lowerStem.length + 1;
+  final end = lowerName.length - dotExt.length;
+  if (end <= start) return null;
+  // Everything between the stem and the extension, including extra dots.
+  final rawMiddle = subtitleFileName.substring(start, end);
+  if (rawMiddle.isEmpty) return null;
+  final normalized = displaySubtitleLanguage(rawMiddle);
   return SubtitleNameMatch(
-    language: language,
-    languageKey: language.toLowerCase(),
+    language: rawMiddle,
+    languageKey: normalized.isEmpty ? '' : normalized.toLowerCase(),
     format: format,
     exact: false,
   );
@@ -181,7 +172,10 @@ class SubtitleRowLabel {
 SubtitleRowLabel labelSameDirectorySidecar({
   required String language,
   required String format,
-}) => SubtitleRowLabel(title: language, formatTag: format.toLowerCase());
+}) {
+  final title = language.trim().isEmpty ? '默认' : language;
+  return SubtitleRowLabel(title: title, formatTag: format.toLowerCase());
+}
 
 SubtitleRowLabel labelSubdirectorySidecar({
   required String subdirectory,
@@ -193,9 +187,10 @@ SubtitleRowLabel labelSubdirectorySidecar({
   return SubtitleRowLabel(title: title, formatTag: format.toLowerCase());
 }
 
-SubtitleRowLabel labelEmbeddedSubtitle(String language) => SubtitleRowLabel(
-  title: language.isEmpty ? '[内嵌]' : '[内嵌] $language',
-);
+SubtitleRowLabel labelEmbeddedSubtitle(String language) {
+  final shown = language.trim().isEmpty ? '默认' : language;
+  return SubtitleRowLabel(title: '[内嵌] $shown');
+}
 
 SubtitleRowLabel labelManualSubtitle({
   required String fileName,
@@ -291,6 +286,9 @@ EmbeddedSubtitleCue? embeddedCueFromTrack({
 }) {
   if (external) return null;
   if (id == 'auto' || id == 'no' || id.isEmpty) return null;
+  // media_kit sub-add turns a null language into the synthetic tag `auto`.
+  // That row is not an embedded track from the file.
+  if ((language ?? '').trim().toLowerCase() == 'auto') return null;
   if (isBitmapSubtitleCodec(codec)) return null;
   final display = displaySubtitleLanguage(language);
   return EmbeddedSubtitleCue(
@@ -346,11 +344,12 @@ List<SidecarHit> collectSidecars({
 SidecarHit? pickSidecar(List<SidecarHit> hits, String uiLanguageKey) {
   if (hits.isEmpty) return null;
   final ui = uiLanguageKey.toLowerCase();
-  final sorted = [...hits]..sort((a, b) {
-    final rank = _sidecarRank(a, ui).compareTo(_sidecarRank(b, ui));
-    if (rank != 0) return rank;
-    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-  });
+  final sorted = [...hits]
+    ..sort((a, b) {
+      final rank = _sidecarRank(a, ui).compareTo(_sidecarRank(b, ui));
+      if (rank != 0) return rank;
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
   return sorted.first;
 }
 
@@ -372,15 +371,16 @@ EmbeddedSubtitleCue? pickEmbedded(
       ? cues
       : cues.where((c) => c.languageKey == ui).toList();
   final pool = matched.isNotEmpty ? matched : cues;
-  final sorted = [...pool]..sort((a, b) {
-    final pref = (b.isDefault ? 1 : 0).compareTo(a.isDefault ? 1 : 0);
-    if (pref != 0) return pref;
-    final an = (a.title ?? a.language).toLowerCase();
-    final bn = (b.title ?? b.language).toLowerCase();
-    final byName = an.compareTo(bn);
-    if (byName != 0) return byName;
-    return a.id.compareTo(b.id);
-  });
+  final sorted = [...pool]
+    ..sort((a, b) {
+      final pref = (b.isDefault ? 1 : 0).compareTo(a.isDefault ? 1 : 0);
+      if (pref != 0) return pref;
+      final an = (a.title ?? a.language).toLowerCase();
+      final bn = (b.title ?? b.language).toLowerCase();
+      final byName = an.compareTo(bn);
+      if (byName != 0) return byName;
+      return a.id.compareTo(b.id);
+    });
   return sorted.first;
 }
 
@@ -393,6 +393,34 @@ class SubtitleAutoSelection {
 
   /// Manual token, embedded track id, or sidecar path.
   final String? id;
+}
+
+/// Ids from a player track-list that should appear as embedded subtitles.
+///
+/// [capturedIds] is the snapshot of file subtitle ids taken when the video's
+/// own tracks first arrived, before any external `sub-add`. Null means that
+/// snapshot is not frozen yet, so every id in this list is still a candidate.
+/// After it is frozen, an id that was not in the snapshot was added later and
+/// is not embedded.
+///
+/// Player placeholders (`auto` / `no`) are never embedded. A language of
+/// `auto` is the synthetic value `sub-add` writes for a null language and is
+/// never an embedded row either, even if its id was captured.
+List<String> embeddedSubtitleIds({
+  required List<String> ids,
+  List<String?> languages = const <String?>[],
+  Set<String>? capturedIds,
+}) {
+  final out = <String>[];
+  for (var i = 0; i < ids.length; i++) {
+    final id = ids[i];
+    if (id == 'auto' || id == 'no' || id.isEmpty) continue;
+    final language = i < languages.length ? languages[i] : null;
+    if ((language ?? '').trim().toLowerCase() == 'auto') continue;
+    if (capturedIds != null && !capturedIds.contains(id)) continue;
+    out.add(id);
+  }
+  return out;
 }
 
 /// Manual (this episode) > embedded text > external sidecar > nothing.
