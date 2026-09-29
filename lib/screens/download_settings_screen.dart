@@ -30,25 +30,38 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
     });
   }
 
-  /// 开关为开时补上 `.nomedia`。关着什么都不删——删除只发生在用户关掉开关时。
+  /// 开关为开时，仅在下载目录里还没有 `.nomedia` 才补文件。
+  /// 关着什么都不删——删除只发生在用户关掉开关、且文件还在时。
+  /// 已经一致（外部放好或已经删掉）不算错误，这里也不再提示。
   Future<void> _ensureNomedia() async {
     final settings = context.read<SettingsService>();
     if (!settings.downloadNomediaEnabled) return;
-    final err = await const PlatformExportService().setDownloadsNomedia(enabled: true);
-    if (!mounted || err == null) return;
-    AppSnack.error(context, err);
+    final result =
+        await const PlatformExportService().setDownloadsNomedia(enabled: true);
+    if (!mounted || result.error == null) return;
+    AppSnack.error(context, result.error!);
   }
 
   Future<void> _toggleNomedia(bool value) async {
     final settings = context.read<SettingsService>();
     await settings.setDownloadNomediaEnabled(value);
-    final err = await const PlatformExportService().setDownloadsNomedia(enabled: value);
+    final result =
+        await const PlatformExportService().setDownloadsNomedia(enabled: value);
     if (!mounted) return;
-    if (err != null) {
+    if (result.error != null) {
       await settings.setDownloadNomediaEnabled(!value);
       if (!mounted) return;
-      AppSnack.error(context, err);
+      AppSnack.error(context, result.error!);
+      return;
     }
+    if (!result.alreadyMatched) return;
+    final l10n = AppLocalizations.of(context)!;
+    AppSnack.show(
+      context,
+      value
+          ? l10n.downloadNomediaAlreadyPresent
+          : l10n.downloadNomediaAlreadyAbsent,
+    );
   }
 
   @override

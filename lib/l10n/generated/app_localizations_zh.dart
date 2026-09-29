@@ -3510,6 +3510,12 @@ class AppLocalizationsZh extends AppLocalizations {
       '打开后在下载目录写入 .nomedia，系统扫描会跳过该文件夹；关闭后删除该文件';
 
   @override
+  String get downloadNomediaAlreadyPresent => '下载目录里已经有 .nomedia，已按外部操作完成';
+
+  @override
+  String get downloadNomediaAlreadyAbsent => '下载目录里已经没有 .nomedia，已按外部操作完成';
+
+  @override
   String get actionShortGallery => '相册';
 
   @override
@@ -7019,6 +7025,12 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   @override
   String get downloadNomediaSubtitle =>
       '打开后在下载目录写入 .nomedia，系统扫描会跳过该文件夹；关闭后删除该文件';
+
+  @override
+  String get downloadNomediaAlreadyPresent => '下载目录里已经有 .nomedia，已按外部操作完成';
+
+  @override
+  String get downloadNomediaAlreadyAbsent => '下载目录里已经没有 .nomedia，已按外部操作完成';
 
   @override
   String get actionShortGallery => '相册';
@@ -10531,6 +10543,12 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   @override
   String get downloadNomediaSubtitle =>
       '開啟後在下載目錄寫入 .nomedia，系統掃描會略過該資料夾；關閉後刪除該檔案';
+
+  @override
+  String get downloadNomediaAlreadyPresent => '下載目錄裡已經有 .nomedia，已按外部操作完成';
+
+  @override
+  String get downloadNomediaAlreadyAbsent => '下載目錄裡已經沒有 .nomedia，已按外部操作完成';
 
   @override
   String get actionShortGallery => '相簿';

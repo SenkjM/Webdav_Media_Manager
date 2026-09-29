@@ -753,3 +753,14 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - `.nomedia` 偏好键 `download_nomedia`，默认 false。打开才创建，关掉才删除；冷启动只在开关为开时补文件，不会因为开关关着就删。API 28 直接写公共文件且不扫描；API 29+ 走 `MediaStore.Downloads`，显示名 `.nomedia`；API 28 以下忽略。相册导出不写这个文件。
 - 图片动作存储键 `download_to_gallery`，只允许图片类别，出厂默认仍是查看图片。视频相册仍是「⋮」里的单独入口，不改单击默认。
 
+
+## 9. 预发布标签名与已有 .nomedia（本分支实现）
+
+**状态**：本分支实现。语义已写入 [04](04-DOWNLOAD-QUEUE.md)、[09](09-MISC.md) 与 README。收口前不要删。
+
+**用户原话（2026-09-29）**：新的预发布标签只用 `${base}-${versionCode}`（例 `v0.2.2-2020004`），不改 Release 标题模板，不改已有标签和已有 Release 标题。同一提交重跑仍复用该标签及其 versionCode，按标签 metadata 的 sha / seq / version_code 查找，不靠标签名里的短 SHA。`.nomedia` 开关：先查 `Download/WebdavMediaManager`。打开时已经有真正的 `.nomedia`，或关闭时已经没有，则不写不删，保存设置并提示外部操作已完成（「下载目录里已经有 .nomedia，已按外部操作完成」 / 「下载目录里已经没有 .nomedia，已按外部操作完成」）。状态不一致才按原逻辑写入或删除；只有这一步失败才拨回开关并报错。API 29+ 只认显示名恰好为 `.nomedia` 的 MediaStore.Downloads 行；API 28 认磁盘文件；API 27 及以下忽略。相册路径不动。
+
+**取舍**：
+
+- 新标签名在算出 seq / versionCode 之后才确定。旧标签 `v0.2.2-f046956`、`v0.2.2-ba29461`、`v0.2.2-0d5148a` 与浮动 `prerelease` 不改名、不移动。`version_name` 仍等于标签名，所以新版本的标题会变成 `Pre-release v0.2.2-<versionCode> (<versionCode>)`，模板那一行不改。
+- 开关的「已经一致」走原生返回的 `already`，不是错误。冷启动和进入下载设置时若开关为开，仍然只在缺失时补文件，不弹「外部操作」提示。

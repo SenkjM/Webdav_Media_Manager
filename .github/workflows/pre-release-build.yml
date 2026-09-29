@@ -2,7 +2,7 @@ name: Pre-release Build
 
 # 预发布的检查、编译与发版，同一流程内串行：check → build → release。
 # 与 Release 同源 main：预发布也算 main 的提交，基准是上一个正式版标签。
-# 每次预发布使用独立标签 <版本名>（如 v0.2.2-b6d252e）和独立 Release，历史预发布全部保留。
+# 每次预发布使用独立标签 <版本名>（新标签如 v0.2.2-2020004，即 versionCode；已有短 SHA 标签不改名）和独立 Release，历史预发布全部保留。
 # 不移动、不删除旧 prerelease 标签或 Release；同标签重跑只覆盖该 Release 中的同名 asset。
 # 发版直接用同一次运行的产物，不再由 workflow_run 接续。编译步骤保持不变。
 # 没有合法标签或不需要构建时，不上传产物。

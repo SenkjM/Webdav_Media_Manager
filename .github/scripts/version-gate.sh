@@ -212,7 +212,8 @@ mode_release() {
     TAG="${REF_NAME}"
     SHA="$(git rev-parse "refs/tags/${TAG}^{}")"
   fi
-  if printf '%s' "$TAG" | grep -Eq '^v(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)-[0-9a-f]{7}$'; then
+  # 旧标签是 vX.Y.Z-<7位短SHA>；新标签是 vX.Y.Z-<versionCode>。两者都不是正式版。
+  if printf '%s' "$TAG" | grep -Eq '^v(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)-([0-9a-f]{7}|[0-9]+)$'; then
     echo "${TAG} 是预发布标签，由 pre-release workflow 处理；正式版 workflow 跳过。"
     set_out proceed false
     exit 0
@@ -243,68 +244,71 @@ mode_prerelease() {
   fi
 
   short="$(git rev-parse --short=7 HEAD | cut -c1-7)"
-  name="${base}-${short}"
-  tag="$name"
 
-  # 同一基准下从既有独立标签的 metadata 续号；旧 prerelease 标签只作为迁移兼容来源。
-  local max_seq=0 t msg t_base t_seq
+  # 同一基准下从既有独立标签的 metadata 续号。
+  # 重跑同一提交时按标签上已有的 sha / seq / version_code 找回标签，
+  # 不看标签名里的短 SHA。旧 prerelease 标签只作为迁移兼容来源，不拿来当新标签名。
+  local max_seq=0 t msg t_base t_seq t_sha t_code obj
+  local existing_tag="" existing_seq="" existing_code=""
   while IFS= read -r t; do
     [ -z "$t" ] && continue
     msg="$(git tag -l --format='%(contents)' "$t" || true)"
     t_base="$(printf '%s\n' "$msg" | sed -n 's/^base_tag=//p' | head -n 1 || true)"
     t_seq="$(printf '%s\n' "$msg" | sed -n 's/^seq=//p' | head -n 1 || true)"
+    t_sha="$(printf '%s\n' "$msg" | sed -n 's/^sha=//p' | head -n 1 || true)"
+    t_code="$(printf '%s\n' "$msg" | sed -n 's/^version_code=//p' | head -n 1 || true)"
     [ "$t_base" = "$base" ] || continue
     printf '%s' "$t_seq" | grep -Eq '^[0-9]+$' || continue
     if [ "$t_seq" -gt "$max_seq" ]; then
       max_seq="$t_seq"
     fi
+    [ "$t" = "prerelease" ] && continue
+    [ "$t_sha" = "$head" ] || continue
+    if ! printf '%s' "$t_code" | grep -Eq '^[0-9]+$'; then
+      echo "::error::标签 ${t} 的 metadata sha 是当前提交，但缺少有效的 version_code，无法安全重用。"
+      set_out proceed false
+      exit 1
+    fi
+    obj="$(git rev-parse "${t}^{}")"
+    if [ "$obj" != "$head" ]; then
+      echo "::error::标签 ${t} 的 metadata sha 是当前提交，但标签对象指向 ${obj}，拒绝移动。"
+      set_out proceed false
+      exit 1
+    fi
+    if [ -n "$existing_tag" ] && [ "$existing_tag" != "$t" ]; then
+      echo "::error::当前提交已有多个预发布标签（${existing_tag} 与 ${t}），拒绝再选一个。"
+      set_out proceed false
+      exit 1
+    fi
+    existing_tag="$t"
+    existing_seq="$t_seq"
+    existing_code="$t_code"
   done < <(git tag -l "${base}-*"; git tag -l 'prerelease')
 
-  local existing_sha existing_seq existing_code
-  existing_sha=""
-  existing_seq=""
-  existing_code=""
-  if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-    existing_sha="$(git rev-parse "${tag}^{}")"
-    if [ "$existing_sha" != "$head" ]; then
-      echo "::error::标签 ${tag} 已存在且指向 ${existing_sha}，与当前 main 提交 ${head} 不一致，拒绝覆盖。"
-      set_out proceed false
-      exit 1
-    fi
-    msg="$(git tag -l --format='%(contents)' "$tag" || true)"
-    existing_seq="$(printf '%s\n' "$msg" | sed -n 's/^seq=//p' | head -n 1 || true)"
-    existing_code="$(printf '%s\n' "$msg" | sed -n 's/^version_code=//p' | head -n 1 || true)"
-    if ! printf '%s' "$existing_seq" | grep -Eq '^[0-9]+$' || ! printf '%s' "$existing_code" | grep -Eq '^[0-9]+$'; then
-      echo "::error::标签 ${tag} 缺少有效的 seq/version_code metadata，无法安全重用。"
-      set_out proceed false
-      exit 1
-    fi
+  local seq code tag name
+  if [ -n "$existing_tag" ]; then
     if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
-      if gh release view "$tag" --repo "$REPO" >/dev/null 2>&1; then
-        echo "main 的该提交已经发过 Pre-release（${tag}）。"
+      if gh release view "$existing_tag" --repo "$REPO" >/dev/null 2>&1; then
+        echo "main 的该提交已经发过 Pre-release（${existing_tag}）。"
         set_out proceed false
         exit 0
       fi
-      echo "发现未完成发布的预发布标签 ${tag}，本次复用它补发。"
+      echo "发现未完成发布的预发布标签 ${existing_tag}，本次复用它补发。"
     else
-      echo "手动重跑同一提交，复用标签 ${tag} 及其 versionCode。"
+      echo "手动重跑同一提交，复用标签 ${existing_tag} 及其 versionCode。"
     fi
-  fi
-
-  if [ -z "$existing_sha" ] && [ "$EVENT_NAME" != "workflow_dispatch" ] && git rev-parse -q --verify refs/tags/prerelease >/dev/null; then
-    legacy_sha="$(git rev-parse 'refs/tags/prerelease^{}')"
-    if [ "$legacy_sha" = "$head" ] && gh release view prerelease --repo "$REPO" >/dev/null 2>&1; then
-      echo "main 的该提交已经由旧 prerelease Release 发布。"
-      set_out proceed false
-      exit 0
-    fi
-  fi
-
-  local seq code
-  if [ -n "$existing_seq" ]; then
     seq="$existing_seq"
     code="$existing_code"
+    tag="$existing_tag"
   else
+    if [ "$EVENT_NAME" != "workflow_dispatch" ] && git rev-parse -q --verify refs/tags/prerelease >/dev/null; then
+      legacy_sha="$(git rev-parse 'refs/tags/prerelease^{}')"
+      if [ "$legacy_sha" = "$head" ] && gh release view prerelease --repo "$REPO" >/dev/null 2>&1; then
+        echo "main 的该提交已经由旧 prerelease Release 发布。"
+        set_out proceed false
+        exit 0
+      fi
+    fi
     seq=$((max_seq + 1))
     if [ "$seq" -gt 999 ]; then
       notify "预发布序号已用尽：${base}" "$(printf '基准标签 %s 的后三位已到 999，未构建。\n\n- 运行：%s\n' "$base" "$RUN_URL")" || true
@@ -318,7 +322,16 @@ mode_prerelease() {
       set_out proceed false
       exit 1
     fi
+    # 新标签名只用 versionCode。已有短 SHA 标签不改名、不移动。
+    tag="${base}-${code}"
+    if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
+      obj="$(git rev-parse "${tag}^{}")"
+      echo "::error::标签 ${tag} 已存在且指向 ${obj}，与当前 main 提交 ${head} 不一致或 metadata 无法确认，拒绝覆盖。"
+      set_out proceed false
+      exit 1
+    fi
   fi
+  name="$tag"
 
   set_out proceed true
   set_out version_name "$name"

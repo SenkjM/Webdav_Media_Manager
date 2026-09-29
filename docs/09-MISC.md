@@ -52,7 +52,7 @@ CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.
 | 任意分支 push | **不**触发构建 |
 | 推 `v*` 标签（release） | 检查标签合法且严格递增 → 编译 → 建 Release |
 | 手动 `workflow_dispatch`（release） | 给当前 `main` 打标签，再做同一套检查；所选引用不是 `main` 时拦下 |
-| 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：当前提交已有独立预发布标签则跳过，否则使用版本名作为独立标签和独立 Release 发布，历史预发布保留 |
+| 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：按标签 metadata 的 `sha` / `seq` / `version_code` 发现当前提交已有预发布则跳过，否则用新标签 `vX.Y.Z-<versionCode>` 发独立 Release，历史预发布保留 |
 | 手动 `workflow_dispatch`（pre-release） | 同一提交复用已有标签并刷新该 Release；**所选引用不是 `main` 时跳过** |
 
 **分包与压缩存放**：三个单 ABI 包（`arm64-v8a` / `armeabi-v7a` / `x86_64`）加一个去掉 x86 的合并包；原生库压缩存放（`useLegacyPackaging = true`）。实测（v0.1.0 通用包 101.3 MiB）：`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB，非原生部分只有 2.7 MiB——所以分包才是主要收益。v0.2.0 起 CI 产出三个 split APK，当前 main 状态按已测试结果收口。
@@ -85,7 +85,7 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 
 - Flutter **stable**（`environment.sdk: ^3.13.4`）；本机 SDK 装在 `D:\flutter`，`android/local.properties` 里的 `flutter.sdk` 只对本机有效，换机器会重新生成。
 - Android SDK + JDK 17（与 CI `setup-java` 一致）；CI 里 `flutter test` 前需 `apt install libmpv-dev mpv`（media_kit 的 Linux 后端）。
-- 版本号：正式版 `VERSION_NAME` = 标签（如 `v0.1.0`）；预发布 = 上一个正式版标签 + `-` + 短 SHA。`VERSION_CODE` = 主×1e8 + 次×1e6 + 修订×1e4 + 序号（正式版序号 0，预发布 1–999），单调递增便于覆盖安装。
+- 版本号：正式版 `VERSION_NAME` = 标签（如 `v0.1.0`）。新的预发布标签 = 上一个正式版标签 + `-` + `versionCode`（如 `v0.2.2-2020004`）。同一提交重跑按标签 metadata 里的 `sha` / `seq` / `version_code` 复用已有标签及其 versionCode（含旧的短 SHA 标签名），不移动旧标签，也不改已发出的 Release 标题。`VERSION_CODE` = 主×1e8 + 次×1e6 + 修订×1e4 + 序号（正式版序号 0，预发布 1–999），单调递增便于覆盖安装。
 - 签名：CI 用固定内测 keystore（Secrets：`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`）。本地没有 `android/key.properties` 时 release 会回落到 debug 签名，仅够自测；**不要提交** `key.properties`、keystore、token、`.env`。
 
 ## 3. 编码约定
