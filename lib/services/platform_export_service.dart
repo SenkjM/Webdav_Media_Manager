@@ -93,6 +93,18 @@ class PickedFile {
   bool get cancelled => ok && path == null;
 }
 
+/// Outcome of toggling `.nomedia` in `Download/WebdavMediaManager`.
+class DownloadsNomediaResult {
+  const DownloadsNomediaResult({this.error, this.alreadyMatched = false});
+
+  /// User-visible failure. Null when the platform call succeeded or did nothing.
+  final String? error;
+
+  /// On-disk / MediaStore state already matched the request, so nothing was
+  /// written or deleted. Not an error.
+  final bool alreadyMatched;
+}
+
 /// MediaStore / Downloads exports and the SAF file picker, implemented natively
 /// in `MainActivity`.
 ///
@@ -121,27 +133,35 @@ class PlatformExportService {
 
   /// Create or delete `.nomedia` in `Download/WebdavMediaManager` only.
   ///
-  /// Returns null on success (including a no-op on non-Android or API < 28).
-  /// A non-null string is a user-visible error; MediaStore rejecting the
-  /// display name `.nomedia` is reported, not swallowed.
+  /// [DownloadsNomediaResult.error] is null on success, including a no-op on
+  /// non-Android or API < 28. [DownloadsNomediaResult.alreadyMatched] means the
+  /// folder already had (or already lacked) a real `.nomedia`, so this call
+  /// did not write or delete. A renamed MediaStore display name is not a match
+  /// and still surfaces as an error when the insert does not keep `.nomedia`.
   /// Gallery export ([saveToGallery]) never calls this.
-  Future<String?> setDownloadsNomedia({required bool enabled}) async {
-    if (!supported) return null;
+  Future<DownloadsNomediaResult> setDownloadsNomedia({required bool enabled}) async {
+    if (!supported) return const DownloadsNomediaResult();
     try {
       final raw = await _kAppChannel.invokeMethod<dynamic>('setDownloadsNomedia', {
         'enabled': enabled,
       });
-      if (raw is! Map) return 'exportErr.badNativeResponse';
+      if (raw is! Map) {
+        return const DownloadsNomediaResult(error: 'exportErr.badNativeResponse');
+      }
       final map = raw.map((k, v) => MapEntry(k.toString(), v));
-      if (map['ok'] == true) return null;
+      if (map['ok'] == true) {
+        return DownloadsNomediaResult(alreadyMatched: map['already'] == true);
+      }
       final error = map['error']?.toString();
-      return (error == null || error.isEmpty) ? 'exportErr.failed' : error;
+      return DownloadsNomediaResult(
+        error: (error == null || error.isEmpty) ? 'exportErr.failed' : error,
+      );
     } on MissingPluginException {
-      return 'exportErr.channelUnavailable';
+      return const DownloadsNomediaResult(error: 'exportErr.channelUnavailable');
     } on PlatformException catch (e) {
-      return e.message ?? e.code;
+      return DownloadsNomediaResult(error: e.message ?? e.code);
     } catch (e) {
-      return '$e';
+      return DownloadsNomediaResult(error: '$e');
     }
   }
 

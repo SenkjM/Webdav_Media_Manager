@@ -162,7 +162,7 @@ class AppState extends ChangeNotifier {
       await settings.init();
       AppSnack.attach(settings);
       if (settings.downloadNomediaEnabled) {
-        // 只在开关为开时补文件。关着不删：删除只由用户关掉开关触发。
+        // 只在开关为开且目录里还没有时补文件。已经有不算失败，关着不删。
         unawaited(const PlatformExportService().setDownloadsNomedia(enabled: true));
       }
       _syncCoverThumbSize();

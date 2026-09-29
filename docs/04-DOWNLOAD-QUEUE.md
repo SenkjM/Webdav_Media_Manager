@@ -37,7 +37,7 @@
 3. 否则若已有 pending / active 的同名任务 → 等待它，不重复排。
 4. 否则新建 pending 任务并 `_pump`。
 
-相册与下载目录另走 `enqueueGallery` / `enqueueToDownloads`（`enqueuePublic`），**不入音频缓存**。视频相册进 `Movies/WebdavMediaManager`，图片「下载到系统相册」进 `Pictures/WebdavMediaManager`，两条都不写 `.nomedia`。`.nomedia` 只可能出现在「下载」用的 `Download/WebdavMediaManager`，而且要用户在下载设置里打开「排除媒体扫描」（默认关）。
+相册与下载目录另走 `enqueueGallery` / `enqueueToDownloads`（`enqueuePublic`），**不入音频缓存**。视频相册进 `Movies/WebdavMediaManager`，图片「下载到系统相册」进 `Pictures/WebdavMediaManager`，两条都不写 `.nomedia`。`.nomedia` 只可能出现在「下载」用的 `Download/WebdavMediaManager`，而且要用户在下载设置里打开「排除媒体扫描」（默认关）。拨开关时先看这个目录：API 29+ 只认 `MediaStore.Downloads` 里显示名恰好是 `.nomedia` 的行（改过显示名不算），API 28 认磁盘上的该文件，API 27 及以下忽略。状态已经和开关一致（打开时已经有，或关闭时已经没有）则不写、不删，保存设置并提示这是外部操作已经完成；不一致才写入或删除。只有写入或删除失败才把开关拨回去并报错。
 
 ## 4. 完成之后（ingest）
 

@@ -396,12 +396,19 @@ class MainActivity : AudioServiceFragmentActivity() {
      * `Download/WebdavMediaManager` (the 「下载」 action). Gallery export
      * (Pictures / Movies) must not call this.
      *
-     * API < 28 is ignored. API 28 writes the file directly and does **not**
-     * scan it. API 29+ uses MediaStore.Downloads with display name `.nomedia`.
+     * API < 28 is ignored. API 28 looks at the file on disk and does **not**
+     * scan it. API 29+ looks at a MediaStore.Downloads row whose display name
+     * is exactly `.nomedia` (a renamed display name does not count).
+     *
+     * If that state already matches [enabled], nothing is written or deleted
+     * (`already` = true). A write or delete runs only when it does not match.
      */
     private fun setDownloadsNomedia(enabled: Boolean): Map<String, Any?> {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             return mapOf("ok" to true, "skipped" to true, "reason" to "api<28")
+        }
+        if (downloadsNomediaPresent() == enabled) {
+            return mapOf("ok" to true, "already" to true)
         }
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             if (enabled) insertNomediaQ() else deleteNomediaQ()
@@ -412,6 +419,25 @@ class MainActivity : AudioServiceFragmentActivity() {
         }
     }
 
+    /** API 28 file, or API 29+ MediaStore row with display name `.nomedia`. */
+    private fun downloadsNomediaPresent(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            findNomediaUris(contentResolver).isNotEmpty()
+        } else {
+            nomediaFileApi28().isFile
+        }
+    }
+
+    private fun nomediaFileApi28(): File {
+        return File(
+            File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "WebdavMediaManager",
+            ),
+            ".nomedia",
+        )
+    }
+
     private fun nomediaRelativePaths(): List<String> {
         val base = "${Environment.DIRECTORY_DOWNLOADS}/WebdavMediaManager"
         return listOf(base, "$base/")
@@ -420,7 +446,7 @@ class MainActivity : AudioServiceFragmentActivity() {
     private fun insertNomediaQ(): Map<String, Any?> {
         val resolver = contentResolver
         if (findNomediaUris(resolver).isNotEmpty()) {
-            return mapOf("ok" to true, "existed" to true)
+            return mapOf("ok" to true, "already" to true)
         }
         val relative = "${Environment.DIRECTORY_DOWNLOADS}/WebdavMediaManager"
         val values = ContentValues().apply {
@@ -473,8 +499,21 @@ class MainActivity : AudioServiceFragmentActivity() {
 
     private fun deleteNomediaQ(): Map<String, Any?> {
         val resolver = contentResolver
-        for (uri in findNomediaUris(resolver)) {
-            resolver.delete(uri, null, null)
+        val uris = findNomediaUris(resolver)
+        if (uris.isEmpty()) {
+            return mapOf("ok" to true, "already" to true)
+        }
+        for (uri in uris) {
+            try {
+                if (resolver.delete(uri, null, null) <= 0) {
+                    return mapOf("ok" to false, "error" to "无法删除 .nomedia")
+                }
+            } catch (e: Exception) {
+                return mapOf(
+                    "ok" to false,
+                    "error" to (e.message ?: "无法删除 .nomedia"),
+                )
+            }
         }
         return mapOf("ok" to true)
     }
@@ -502,40 +541,37 @@ class MainActivity : AudioServiceFragmentActivity() {
         return found
     }
 
-    /** API 28 only. Do not media-scan `.nomedia`. */
+    /** API 28 only. Do not media-scan `.nomedia`. Does not create a second file. */
     private fun writeNomediaApi28(): Map<String, Any?> {
-        val dir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "WebdavMediaManager",
-        )
+        val file = nomediaFileApi28()
+        if (file.isFile) {
+            return mapOf("ok" to true, "already" to true, "path" to file.absolutePath)
+        }
+        val dir = file.parentFile
+            ?: return mapOf("ok" to false, "error" to "无法创建 .nomedia")
         if (!dir.exists() && !dir.mkdirs()) {
             return mapOf("ok" to false, "error" to "无法创建目录：${dir.absolutePath}")
         }
-        val file = File(dir, ".nomedia")
-        if (!file.exists()) {
-            try {
-                if (!file.createNewFile()) {
-                    return mapOf("ok" to false, "error" to "无法创建 .nomedia")
-                }
-            } catch (e: SecurityException) {
-                return mapOf("ok" to false, "error" to (e.message ?: "写入 .nomedia 被拒绝"))
+        try {
+            if (!file.createNewFile()) {
+                return mapOf("ok" to false, "error" to "无法创建 .nomedia")
             }
+        } catch (e: SecurityException) {
+            return mapOf("ok" to false, "error" to (e.message ?: "写入 .nomedia 被拒绝"))
         }
         return mapOf("ok" to true, "path" to file.absolutePath)
     }
 
     private fun deleteNomediaApi28(): Map<String, Any?> {
-        val file = File(
-            File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "WebdavMediaManager",
-            ),
-            ".nomedia",
-        )
-        if (file.exists() && !file.delete()) {
-            return mapOf("ok" to false, "error" to "无法删除 .nomedia")
+        val file = nomediaFileApi28()
+        if (!file.exists()) {
+            return mapOf("ok" to true, "already" to true)
         }
-        return mapOf("ok" to true)
+        return if (file.delete()) {
+            mapOf("ok" to true)
+        } else {
+            mapOf("ok" to false, "error" to "无法删除 .nomedia")
+        }
     }
 
     /**

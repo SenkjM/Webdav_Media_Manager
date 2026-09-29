@@ -3664,6 +3664,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'When on, writes .nomedia into the download folder so the media scanner skips it. When off, deletes that file.';
 
   @override
+  String get downloadNomediaAlreadyPresent =>
+      'The download folder already has .nomedia; kept as an external change.';
+
+  @override
+  String get downloadNomediaAlreadyAbsent =>
+      'The download folder already has no .nomedia; kept as an external change.';
+
+  @override
   String get actionShortGallery => 'Gallery';
 
   @override

@@ -6120,6 +6120,18 @@ abstract class AppLocalizations {
   /// **'打开后在下载目录写入 .nomedia，系统扫描会跳过该文件夹；关闭后删除该文件'**
   String get downloadNomediaSubtitle;
 
+  /// No description provided for @downloadNomediaAlreadyPresent.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'下载目录里已经有 .nomedia，已按外部操作完成'**
+  String get downloadNomediaAlreadyPresent;
+
+  /// No description provided for @downloadNomediaAlreadyAbsent.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'下载目录里已经没有 .nomedia，已按外部操作完成'**
+  String get downloadNomediaAlreadyAbsent;
+
   /// No description provided for @actionShortGallery.
   ///
   /// In zh_CN, this message translates to:

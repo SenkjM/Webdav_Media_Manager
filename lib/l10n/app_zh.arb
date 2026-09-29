@@ -1014,6 +1014,8 @@
   "settingsShareSubtitle": "分享时按标签重命名",
   "downloadNomedia": "排除媒体扫描",
   "downloadNomediaSubtitle": "打开后在下载目录写入 .nomedia，系统扫描会跳过该文件夹；关闭后删除该文件",
+  "downloadNomediaAlreadyPresent": "下载目录里已经有 .nomedia，已按外部操作完成",
+  "downloadNomediaAlreadyAbsent": "下载目录里已经没有 .nomedia，已按外部操作完成",
   "actionShortGallery": "相册",
   "netDownloadToGalleryPictures": "保存到 Pictures/WebdavMediaManager"
 

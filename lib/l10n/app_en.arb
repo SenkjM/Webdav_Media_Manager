@@ -1014,6 +1014,8 @@
   "settingsShareSubtitle": "Rename shared files from tags",
   "downloadNomedia": "Exclude from media scan",
   "downloadNomediaSubtitle": "When on, writes .nomedia into the download folder so the media scanner skips it. When off, deletes that file.",
+  "downloadNomediaAlreadyPresent": "The download folder already has .nomedia; kept as an external change.",
+  "downloadNomediaAlreadyAbsent": "The download folder already has no .nomedia; kept as an external change.",
   "actionShortGallery": "Gallery",
   "netDownloadToGalleryPictures": "Save to Pictures/WebdavMediaManager"
 
