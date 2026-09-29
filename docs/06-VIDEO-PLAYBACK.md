@@ -67,7 +67,7 @@
 - **匹配**：比的是 `WebDavItem.name`，不是 URL。主名是去掉最后一个视频后缀。外挂从主名后第一个 `.` 到最后一个 `.`（扩展名）取中间段，不要求是语言代码，中间可以有多个点，整段仍是一条（`[主名].JPSC.ass`、`video.a.b.ass`）。列表上中间段原样显示，不收成 `zh` / `en`。自动选择时常见中文/英文代码仍按 `zh` / `en` 比较。没有中间段（`电影.ass` 对 `电影.mkv`）标签是 `默认`，不是空，也不是 `auto`。只认文件，跳过目录。父目录是这部视频自己的上一级；种子里已经有的同目录列表不再 PROPFIND，子目录里的视频要列它自己的父目录。
 - **列表标签**：同目录外挂显示中间段原文（没有中间段就是 `默认`），格式（`ass`、`srt` 等）是单独的小标签。子目录外挂是 `/sub/` 加中间段，再加格式标签。内嵌是 `[内嵌] zh`；没有语言标签时是 `[内嵌] 默认`，没有格式标签。格式标签只出现在外挂和手动导入上。打开后、第一次外挂或导入 `sub-add` 之前记下文件自己的字幕轨 id；之后 track-list 里新出现的 id 不算内嵌（`sub-add` 会把空语言写成 `auto`）。语言只有合成 `auto` 的轨不显示。`SubtitleTrack.auto()` / `no()` 仍排除。手动导入用所选文件名当标题，可以带格式标签。
 - **设置**：在视频播放设置页，不新开顶层分区。`video_auto_subtitle` 默认开（同目录扫描）。`video_subtitle_subdir_enabled` 默认关；开启后才多列 `<视频父目录>/<子目录>` 这一层。子目录名存在 `video_subtitle_subdir`（建议 `sub`，留空等于关）。这两个键不是 `video_scan_subdirs`，也不是 `image_scan_subdirs`。
-- **编码**：不假设 UTF-8。文本会在 UTF-8、UTF-16 LE/BE、GBK、GB18030、Big5 里选一个合法且最不像乱码的。播放界面可以手动指定编码兜底，只作用于外挂和导入的文本，记在当前播放器会话里，不写入设置。解码后的 UTF-8 写到带原后缀的临时文件，再用 `SubtitleTrack.uri`。不用 `SubtitleTrack.data` 交 GBK。二进制 `.sub` / `.idx` 认不出来就不放进列表。PGS / VobSub 这类位图内嵌轨不提供选择。
+- **编码**：不假设 UTF-8。文本会在 UTF-8、UTF-16 LE/BE、GBK、GB18030、Big5 里选一个合法且最不像乱码的。播放界面可以手动指定编码兜底，只作用于外挂和导入的文本，记在当前播放器会话的内存里，不写入设置：切集还在，离开播放器才丢。手动导入本身切集或离开播放器就清。解码后的 UTF-8 写到带原后缀的临时文件，再用 `SubtitleTrack.uri`。不用 `SubtitleTrack.data` 交 GBK。二进制 `.sub`（认不出文本的）和 `.idx` 不放进列表。PGS / VobSub 这类位图内嵌轨不提供选择。
 - **加载**：外挂走当前账号已登录的 `WebDavService.readAsBytes`，不进下载队列，也不把裸 URL 交给 mpv。`setSubtitleTrack` 发生在这一集最后一次 `player.open` 之后。
 
 代码：`lib/utils/subtitle_sidecar.dart`、`lib/utils/subtitle_encoding.dart`、`lib/services/video_subtitle_binder.dart`，设置页 `video_settings_screen.dart`，播放页字幕按钮。
