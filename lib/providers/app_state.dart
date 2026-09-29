@@ -20,6 +20,7 @@ import '../services/library_service.dart';
 import '../utils/rev_clock.dart';
 import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
+import '../services/platform_export_service.dart';
 import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
 import '../services/sync_service.dart';
@@ -160,6 +161,10 @@ class AppState extends ChangeNotifier {
       _initPhase = 'settings';
       await settings.init();
       AppSnack.attach(settings);
+      if (settings.downloadNomediaEnabled) {
+        // 只在开关为开时补文件。关着不删：删除只由用户关掉开关触发。
+        unawaited(const PlatformExportService().setDownloadsNomedia(enabled: true));
+      }
       _syncCoverThumbSize();
       _syncDownloadFileTypes();
       _initPhase = 'cache';

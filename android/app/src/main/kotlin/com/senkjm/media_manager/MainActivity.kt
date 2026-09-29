@@ -2,6 +2,7 @@ package com.senkjm.media_manager
 
 import android.app.Activity
 import android.app.NotificationManager
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -98,6 +99,15 @@ class MainActivity : AudioServiceFragmentActivity() {
                                 args?.get("subdir") as? String,
                             )
                         }.getOrElse { e ->
+                            mapOf("ok" to false, "error" to (e.message ?: e.toString()))
+                        },
+                    )
+                }
+                "setDownloadsNomedia" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val enabled = args?.get("enabled") == true
+                    result.success(
+                        runCatching { setDownloadsNomedia(enabled) }.getOrElse { e ->
                             mapOf("ok" to false, "error" to (e.message ?: e.toString()))
                         },
                     )
@@ -382,6 +392,153 @@ class MainActivity : AudioServiceFragmentActivity() {
     }
 
     /**
+     * `.nomedia` lives only in the public download folder
+     * `Download/WebdavMediaManager` (the 「下载」 action). Gallery export
+     * (Pictures / Movies) must not call this.
+     *
+     * API < 28 is ignored. API 28 writes the file directly and does **not**
+     * scan it. API 29+ uses MediaStore.Downloads with display name `.nomedia`.
+     */
+    private fun setDownloadsNomedia(enabled: Boolean): Map<String, Any?> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            return mapOf("ok" to true, "skipped" to true, "reason" to "api<28")
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (enabled) insertNomediaQ() else deleteNomediaQ()
+        } else if (enabled) {
+            writeNomediaApi28()
+        } else {
+            deleteNomediaApi28()
+        }
+    }
+
+    private fun nomediaRelativePaths(): List<String> {
+        val base = "${Environment.DIRECTORY_DOWNLOADS}/WebdavMediaManager"
+        return listOf(base, "$base/")
+    }
+
+    private fun insertNomediaQ(): Map<String, Any?> {
+        val resolver = contentResolver
+        if (findNomediaUris(resolver).isNotEmpty()) {
+            return mapOf("ok" to true, "existed" to true)
+        }
+        val relative = "${Environment.DIRECTORY_DOWNLOADS}/WebdavMediaManager"
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, ".nomedia")
+            put(MediaStore.MediaColumns.MIME_TYPE, "application/octet-stream")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relative)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = try {
+            resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        } catch (e: Exception) {
+            return mapOf(
+                "ok" to false,
+                "error" to "MediaStore 拒绝了显示名 .nomedia：${e.message ?: e}",
+            )
+        } ?: return mapOf("ok" to false, "error" to "MediaStore 拒绝了显示名 .nomedia")
+        try {
+            resolver.openOutputStream(uri).use { out ->
+                if (out == null) throw IllegalStateException("无法打开输出流")
+            }
+            resolver.update(
+                uri,
+                ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) },
+                null,
+                null,
+            )
+        } catch (e: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            return mapOf(
+                "ok" to false,
+                "error" to "MediaStore 拒绝了显示名 .nomedia：${e.message ?: e}",
+            )
+        }
+        val stored = resolver.query(
+            uri,
+            arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        if (stored != null && stored != ".nomedia") {
+            runCatching { resolver.delete(uri, null, null) }
+            return mapOf(
+                "ok" to false,
+                "error" to "MediaStore 未保留显示名 .nomedia（实际为 $stored）",
+            )
+        }
+        return mapOf("ok" to true, "uri" to uri.toString(), "fileName" to ".nomedia")
+    }
+
+    private fun deleteNomediaQ(): Map<String, Any?> {
+        val resolver = contentResolver
+        for (uri in findNomediaUris(resolver)) {
+            resolver.delete(uri, null, null)
+        }
+        return mapOf("ok" to true)
+    }
+
+    private fun findNomediaUris(resolver: android.content.ContentResolver): List<Uri> {
+        val found = mutableListOf<Uri>()
+        val projection = arrayOf(MediaStore.Downloads._ID)
+        for (rel in nomediaRelativePaths()) {
+            resolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                projection,
+                "${MediaStore.Downloads.DISPLAY_NAME}=? AND ${MediaStore.Downloads.RELATIVE_PATH}=?",
+                arrayOf(".nomedia", rel),
+                null,
+            )?.use { c ->
+                val idIdx = c.getColumnIndexOrThrow(MediaStore.Downloads._ID)
+                while (c.moveToNext()) {
+                    found += ContentUris.withAppendedId(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                        c.getLong(idIdx),
+                    )
+                }
+            }
+        }
+        return found
+    }
+
+    /** API 28 only. Do not media-scan `.nomedia`. */
+    private fun writeNomediaApi28(): Map<String, Any?> {
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "WebdavMediaManager",
+        )
+        if (!dir.exists() && !dir.mkdirs()) {
+            return mapOf("ok" to false, "error" to "无法创建目录：${dir.absolutePath}")
+        }
+        val file = File(dir, ".nomedia")
+        if (!file.exists()) {
+            try {
+                if (!file.createNewFile()) {
+                    return mapOf("ok" to false, "error" to "无法创建 .nomedia")
+                }
+            } catch (e: SecurityException) {
+                return mapOf("ok" to false, "error" to (e.message ?: "写入 .nomedia 被拒绝"))
+            }
+        }
+        return mapOf("ok" to true, "path" to file.absolutePath)
+    }
+
+    private fun deleteNomediaApi28(): Map<String, Any?> {
+        val file = File(
+            File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                "WebdavMediaManager",
+            ),
+            ".nomedia",
+        )
+        if (file.exists() && !file.delete()) {
+            return mapOf("ok" to false, "error" to "无法删除 .nomedia")
+        }
+        return mapOf("ok" to true)
+    }
+
+    /**
      * Legacy (API < 29) public-directory write. Returns the file that must be
      * scanned into MediaStore; [File.createNewFile] fails when the file already
      * exists, so a numeric suffix is added instead of silently overwriting.
@@ -450,6 +607,7 @@ class MainActivity : AudioServiceFragmentActivity() {
             "jpg", "jpeg" -> "image/jpeg"
             "png" -> "image/png"
             "webp" -> "image/webp"
+            "gif" -> "image/gif"
             "zip" -> "application/zip"
             "json" -> "application/json"
             else -> "application/octet-stream"

@@ -26,6 +26,10 @@ enum FileAction {
 
   /// 图片：临时文件查看，不进下载队列、不进音乐缓存。
   viewImage,
+
+  /// 图片：下载到系统相册（MediaStore Images / Pictures）。
+  /// 与「下载」分开；不写 `.nomedia`，也不受下载目录排除扫描开关影响。
+  downloadToGallery,
 }
 
 extension FileActionX on FileAction {
@@ -36,6 +40,7 @@ extension FileActionX on FileAction {
     FileAction.readCue => 'read_cue',
     FileAction.streamMusic => 'stream_music',
     FileAction.viewImage => 'view_image',
+    FileAction.downloadToGallery => 'download_to_gallery',
   };
 
   String label(AppLocalizations l10n) => switch (this) {
@@ -45,6 +50,7 @@ extension FileActionX on FileAction {
     FileAction.readCue => l10n.actionReadCue,
     FileAction.streamMusic => l10n.actionStreamMusic,
     FileAction.viewImage => l10n.actionViewImage,
+    FileAction.downloadToGallery => l10n.netDownloadToGallery,
   };
 
   /// 短标签，给多选工具栏这类空间紧张的地方用。
@@ -55,6 +61,7 @@ extension FileActionX on FileAction {
     FileAction.readCue => l10n.actionShortCue,
     FileAction.streamMusic => l10n.actionShortStreamMusic,
     FileAction.viewImage => l10n.actionShortViewImage,
+    FileAction.downloadToGallery => l10n.actionShortGallery,
   };
 
   /// 该动作落盘到哪里。流式播放不落盘，返回 null。
@@ -62,6 +69,7 @@ extension FileActionX on FileAction {
     FileAction.cacheMusic => DownloadTarget.cache,
     FileAction.download => DownloadTarget.downloads,
     FileAction.readCue => DownloadTarget.cache,
+    FileAction.downloadToGallery => DownloadTarget.gallery,
     FileAction.stream || FileAction.streamMusic || FileAction.viewImage => null,
   };
 
@@ -91,6 +99,7 @@ class FileActionCatalog {
 
   static const List<FileAction> image = [
     FileAction.viewImage,
+    FileAction.downloadToGallery,
     FileAction.download,
   ];
 

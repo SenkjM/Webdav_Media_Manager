@@ -119,6 +119,32 @@ class PlatformExportService {
     extraValue: album,
   );
 
+  /// Create or delete `.nomedia` in `Download/WebdavMediaManager` only.
+  ///
+  /// Returns null on success (including a no-op on non-Android or API < 28).
+  /// A non-null string is a user-visible error; MediaStore rejecting the
+  /// display name `.nomedia` is reported, not swallowed.
+  /// Gallery export ([saveToGallery]) never calls this.
+  Future<String?> setDownloadsNomedia({required bool enabled}) async {
+    if (!supported) return null;
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('setDownloadsNomedia', {
+        'enabled': enabled,
+      });
+      if (raw is! Map) return 'exportErr.badNativeResponse';
+      final map = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (map['ok'] == true) return null;
+      final error = map['error']?.toString();
+      return (error == null || error.isEmpty) ? 'exportErr.failed' : error;
+    } on MissingPluginException {
+      return 'exportErr.channelUnavailable';
+    } on PlatformException catch (e) {
+      return e.message ?? e.code;
+    } catch (e) {
+      return '$e';
+    }
+  }
+
   /// Copy [sourcePath] into the public Downloads collection.
   Future<ExportResult> saveToDownloads({
     required String sourcePath,

@@ -142,6 +142,8 @@ String galleryMimeFor(String fileName) {
       return 'image/png';
     case '.webp':
       return 'image/webp';
+    case '.gif':
+      return 'image/gif';
     case '.zip':
       return 'application/zip';
     case '.json':

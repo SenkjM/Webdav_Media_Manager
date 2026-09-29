@@ -9,7 +9,7 @@
   "languageEnglish": "English",
   "webdavServer": "WebDAV server",
   "download": "Downloads",
-  "homeAndNavigation": "Home and navigation",
+  "homeAndNavigation": "Library home and navigation",
   "videoPlayback": "Video playback",
   "fileTypes": "File types",
   "mediaNotifications": "Media notifications",
@@ -58,7 +58,7 @@
   "uncategorized": "Uncategorized",
   "unnamedPlaylist": "Unnamed playlist",
   "defaultServer": "Default server",
-  "accountsTitle": "Network accounts",
+  "accountsTitle": "Cloud account management",
   "noAccounts": "No accounts yet. Tap the add button to create one.",
   "setCurrent": "Set as current",
   "edit": "Edit",
@@ -362,7 +362,7 @@
   "derivedPathPlaylists": "Playlists",
   "derivedPathLibrary": "Library",
   "derivedPathBackups": "All backups",
-  "syncAndBackup": "Sync & backup",
+  "syncAndBackup": "Backup and sync",
   "syncIntroLong": "Credentials, playlists, and the library share one remote path: pick a drive and fill in the path below.",
   "scheduledSyncOff": "Off; manual sync only",
   "scheduledSyncAuto": "{interval} auto sync",
@@ -1007,5 +1007,14 @@
   "imageViewerPrevious": "Previous",
   "imageViewerNext": "Next",
   "imageViewerOpenSettings": "Image settings",
-  "imageScanningSubdirs": "Scanning subdirectories…"
+  "imageScanningSubdirs": "Scanning subdirectories…",
+  "settingsMisc": "Miscellaneous",
+  "settingsThumbnails": "Thumbnails",
+  "settingsThumbnailsSubtitle": "Cover thumbnail size; only newly written images change",
+  "settingsShareSubtitle": "Rename shared files from tags",
+  "downloadNomedia": "Exclude from media scan",
+  "downloadNomediaSubtitle": "When on, writes .nomedia into the download folder so the media scanner skips it. When off, deletes that file.",
+  "actionShortGallery": "Gallery",
+  "netDownloadToGalleryPictures": "Save to Pictures/WebdavMediaManager"
+
 }

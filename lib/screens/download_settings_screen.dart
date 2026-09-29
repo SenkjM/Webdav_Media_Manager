@@ -3,18 +3,53 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/download_queue_service.dart';
+import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../l10n/generated/app_localizations.dart';
 
-/// 设置 → 下载队列。
+/// 设置 → 网络库 → 下载。
 ///
 /// 断点续传靠保留半截文件（`.part`，见 services/resumable_download.dart），
 /// 但失败任务堆着不放会吃满磁盘，所以保留时长与总体积上限在这里可配；
 /// 「立即清理」按当前设置跑一次（启动时也会顺手跑一次同样的清理）。
-class DownloadSettingsScreen extends StatelessWidget {
+class DownloadSettingsScreen extends StatefulWidget {
   const DownloadSettingsScreen({super.key});
+
+  @override
+  State<DownloadSettingsScreen> createState() => _DownloadSettingsScreenState();
+}
+
+class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureNomedia();
+    });
+  }
+
+  /// 开关为开时补上 `.nomedia`。关着什么都不删——删除只发生在用户关掉开关时。
+  Future<void> _ensureNomedia() async {
+    final settings = context.read<SettingsService>();
+    if (!settings.downloadNomediaEnabled) return;
+    final err = await const PlatformExportService().setDownloadsNomedia(enabled: true);
+    if (!mounted || err == null) return;
+    AppSnack.error(context, err);
+  }
+
+  Future<void> _toggleNomedia(bool value) async {
+    final settings = context.read<SettingsService>();
+    await settings.setDownloadNomediaEnabled(value);
+    final err = await const PlatformExportService().setDownloadsNomedia(enabled: value);
+    if (!mounted) return;
+    if (err != null) {
+      await settings.setDownloadNomediaEnabled(!value);
+      if (!mounted) return;
+      AppSnack.error(context, err);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +104,58 @@ class DownloadSettingsScreen extends StatelessWidget {
             onChanged: (value) => context
                 .read<SettingsService>()
                 .setCryptSequentialDownloadEnabled(value),
+          ),
+          const Divider(height: 24),
+          SwitchListTile(
+            secondary: const Icon(Icons.hide_image_outlined),
+            title: Text(l10n.downloadNomedia),
+            subtitle: Text(l10n.downloadNomediaSubtitle),
+            value: settings.downloadNomediaEnabled,
+            onChanged: (value) => _toggleNomedia(value),
+          ),
+          const Divider(height: 24),
+          SwitchListTile(
+            secondary: const Icon(Icons.download_outlined),
+            title: Text(l10n.downloadNotifications),
+            subtitle: Text(l10n.downloadNotificationsHint),
+            value: settings.downloadNotificationsEnabled,
+            onChanged: (v) async {
+              await settings.setDownloadNotificationsEnabled(v);
+              if (!context.mounted) return;
+              await context.read<DownloadQueueService>().setNotifications(v);
+            },
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.downloading_outlined),
+            title: Text(l10n.downloadKeepAlive),
+            subtitle: Text(l10n.downloadKeepAliveHint),
+            value: settings.downloadKeepAliveEnabled,
+            onChanged: (v) async {
+              await settings.setDownloadKeepAliveEnabled(v);
+              if (!context.mounted) return;
+              await context.read<DownloadQueueService>().setKeepAliveEnabled(v);
+            },
+          ),
+          ListTile(
+            dense: true,
+            leading: const Icon(Icons.notifications_active_outlined, size: 20),
+            title: Text(l10n.sendTestNotification, style: const TextStyle(fontSize: 14)),
+            subtitle: Text(
+              l10n.sendTestNotificationHint,
+              style: const TextStyle(fontSize: 11),
+            ),
+            onTap: () async {
+              final err = await context
+                  .read<DownloadQueueService>()
+                  .notificationService
+                  .selfTest();
+              if (!context.mounted) return;
+              if (err == null) {
+                AppSnack.show(context, l10n.testNotificationSent);
+              } else {
+                AppSnack.error(context, l10n.testNotificationFailed(err));
+              }
+            },
           ),
           ListTile(
             leading: const Icon(Icons.cleaning_services_outlined),

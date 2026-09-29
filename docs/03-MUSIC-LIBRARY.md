@@ -53,12 +53,12 @@
 ## 5. 分享与重命名
 
 - 分享已有缓存的曲目时弹出「改文件名」对话框，默认模板 `{artist}-{title}`，也可「用原文件名」。
-- 开关与模板在 **设置 → 分享**（不在同步页）。
+- 开关与模板在 **设置 → 媒体库主页和导航 → 分享**（不在同步页）。
 - 实现：`share_rename_service.dart`、`library_actions.dart`。
 
 ## 6. 封面缩略图
 
-- 默认边长 100，预设大图 300，也可自定义正方形边长（`clampCoverThumbSize`）。
+- 默认边长 100，预设大图 300，也可自定义正方形边长（`clampCoverThumbSize`）。入口是 **设置 → 媒体库主页和导航 → 缩略图**。
 - 设置只影响**新写入**的缩略图；已有文件要重新下载 / 重写标签 / 销毁后重下才会变尺寸。
 - `AppState.setCoverThumbSize` 会同步到 `CoverService.thumbSize`。
 

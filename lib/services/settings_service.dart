@@ -68,6 +68,7 @@ class SettingsService extends ChangeNotifier {
   static const _kSnackDuration = 'snack_duration';
   static const _kDownloadNotifications = 'download_notifications';
   static const _kDownloadKeepAlive = 'download_keep_alive';
+  static const _kDownloadNomedia = 'download_nomedia';
   static const _kMusicStreamPlayMode = 'music_stream_play_mode';
   static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
   static const _kAudioScanSubdirs = 'audio_scan_subdirs';
@@ -249,6 +250,9 @@ class SettingsService extends ChangeNotifier {
   /// Default on. Off means today's behavior (no FGS, foreground retry cap).
   bool _downloadKeepAlive = true;
 
+  /// 公共下载目录是否写入 `.nomedia`。默认关，已有安装保持可被媒体库扫描。
+  bool _downloadNomedia = false;
+
   /// The single 网盘 every sync feature (凭证 / 歌单 / 音乐库 / 备份) writes to;
   /// null means「跟随当前选中的网盘」.
   String? _syncAccountId;
@@ -407,6 +411,9 @@ class SettingsService extends ChangeNotifier {
   /// 后台下载保活。默认开。
   bool get downloadKeepAliveEnabled => _downloadKeepAlive;
 
+  /// 下载目录排除媒体扫描。默认关。
+  bool get downloadNomediaEnabled => _downloadNomedia;
+
   /// 网盘 every sync feature writes to (null → the active account).
   String? get syncAccountId => _syncAccountId;
 
@@ -543,6 +550,7 @@ class SettingsService extends ChangeNotifier {
     _lastRev = _prefs!.getInt(_kLastRev) ?? 0;
     _downloadNotifications = _prefs!.getBool(_kDownloadNotifications) ?? true;
     _downloadKeepAlive = _prefs!.getBool(_kDownloadKeepAlive) ?? true;
+    _downloadNomedia = _prefs!.getBool(_kDownloadNomedia) ?? false;
     _syncAccountId = _readSyncAccountId();
     _loaded = true;
     notifyListeners();
@@ -1018,6 +1026,16 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setDownloadNomediaEnabled(bool enabled) async {
+    if (_downloadNomedia == enabled && _prefs?.containsKey(_kDownloadNomedia) == true) {
+      return;
+    }
+    _downloadNomedia = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kDownloadNomedia, enabled);
+    notifyListeners();
+  }
+
   /// Persist the in-app message duration.
   Future<void> setSnackMode(SnackDuration mode) async {
     _snackMode = mode;
@@ -1173,6 +1191,7 @@ class SettingsService extends ChangeNotifier {
     'snack_duration': _snackMode.storageKey,
     'download_notifications': _downloadNotifications,
     'download_keep_alive': _downloadKeepAlive,
+    'download_nomedia': _downloadNomedia,
   };
 
   Future<Map<String, dynamic>> exportForBackupAsync() async =>
@@ -1389,6 +1408,9 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['download_keep_alive'] is bool) {
       await setDownloadKeepAliveEnabled(json['download_keep_alive'] as bool);
+    }
+    if (json['download_nomedia'] is bool) {
+      await setDownloadNomediaEnabled(json['download_nomedia'] as bool);
     }
     if (json['snack_duration'] != null) {
       await setSnackMode(

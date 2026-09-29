@@ -380,6 +380,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         await _streamMusic(item);
       case FileAction.viewImage:
         await _openImage(item);
+      case FileAction.downloadToGallery:
+        await _downloadToGallery(item);
     }
   }
 
@@ -855,9 +857,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     ListTile(
                       leading: Icon(_actionIcon(action)),
                       title: Text(action.label(l10n)),
-                      subtitle: action == FileAction.streamMusic
-                          ? Text(l10n.netExperimentalNoDownload)
-                          : null,
+                      subtitle: switch (action) {
+                        FileAction.streamMusic => Text(l10n.netExperimentalNoDownload),
+                        FileAction.downloadToGallery => Text(l10n.netDownloadToGalleryPictures),
+                        _ => null,
+                      },
                       onTap: () {
                         Navigator.pop(ctx);
                         _runAction(item, action);
@@ -926,6 +930,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     FileAction.readCue => Icons.queue_music_outlined,
     FileAction.streamMusic => Icons.stream,
     FileAction.viewImage => Icons.image_outlined,
+    FileAction.downloadToGallery => Icons.photo_library_outlined,
   };
 
   /// 复制 / 移动选中的条目到另一个远端文件夹。
@@ -942,7 +947,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
   }
 
-  /// 视频 → 系统相册（与「下载」分开的一条落盘路径）。
+  /// 视频 / 图片 → 系统相册（与「下载」分开的一条落盘路径）。
+  /// 图片走同一条 `enqueueGallery`，MediaStore 按 MIME 落到 Images / Pictures，不写 `.nomedia`。
   Future<void> _downloadToGallery(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null) return;
