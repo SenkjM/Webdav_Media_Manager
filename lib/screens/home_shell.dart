@@ -16,6 +16,26 @@ import 'network_library_screen.dart';
 import 'playlists_screen.dart';
 import 'settings_screen.dart';
 
+/// Drawer index of the network library inside [HomeShell].
+const int kNetworkLibraryTabIndex = 2;
+
+/// Active shell tab. [IndexedStack] mounts every page at startup, so a page
+/// that must not talk to the network until it is shown has to read this
+/// instead of loading from [State.initState].
+class HomeTabScope extends InheritedWidget {
+  const HomeTabScope({super.key, required this.index, required super.child});
+
+  final int index;
+
+  /// Current tab, or null when this screen is not under [HomeShell].
+  static int? maybeIndexOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<HomeTabScope>()?.index;
+  }
+
+  @override
+  bool updateShouldNotify(HomeTabScope oldWidget) => index != oldWidget.index;
+}
+
 /// Provides [openDrawer] to nested page AppBars.
 class RootScaffold extends InheritedWidget {
   const RootScaffold({
@@ -84,157 +104,160 @@ class _HomeShellState extends State<HomeShell> {
 
     return RootScaffold(
       scaffoldKey: _scaffoldKey,
-      child: PopScope(
-        canPop: false,
-        onPopInvokedWithResult: (didPop, _) {
-          if (didPop) return;
-          // A tab root that navigates internally (network library directory
-          // stack, multi-select) gets first refusal.
-          if (BackHandlerRegistry.tryHandleBack()) return;
-          final nav = _activeNavKey?.currentState;
-          if (nav != null && nav.canPop()) {
-            nav.pop();
-            return;
-          }
-          final rootNav = Navigator.of(context, rootNavigator: true);
-          if (rootNav.canPop()) {
-            rootNav.pop();
-            return;
-          }
-          // Not on the configured home tab → return to it instead of exiting.
-          final home = context.read<SettingsService>().homeTab;
-          if (_index != home) {
-            setState(() => _index = home);
-            BackHandlerRegistry.activeTabIndex = home;
-            return;
-          }
-          // Root back on home: send task to background (like Home) so
-          // audio_service keeps playing. Do NOT SystemNavigator.pop() — that
-          // finishes the Activity and disposes AppState/player.
-          moveAppToBackground();
-        },
-        child: Scaffold(
-          key: _scaffoldKey,
-          backgroundColor: AppColors.nearBlack,
-          drawer: Drawer(
-            backgroundColor: AppColors.surface,
-            child: SafeArea(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: ListView(
-                      padding: EdgeInsets.zero,
-                      children: [
-                        Container(
-                          height: 140,
-                          padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-                          decoration: const BoxDecoration(
-                            color: AppColors.elevated,
-                            border: Border(
-                              bottom: BorderSide(color: AppColors.divider),
-                            ),
-                          ),
-                          child: Align(
-                            alignment: Alignment.bottomLeft,
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  Icons.library_music,
-                                  color: AppColors.accent,
-                                  size: 32,
-                                ),
-                                SizedBox(height: 12),
-                                Text(
-                                  l10n.appTitle,
-                                  style: TextStyle(
-                                    color: AppColors.onDark,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _DrawerItem(
-                          icon: Icons.library_music,
-                          label: l10n.library,
-                          selected: _index == 0,
-                          onTap: () => _select(0),
-                        ),
-                        _DrawerItem(
-                          icon: Icons.queue_music,
-                          label: l10n.playlists,
-                          selected: _index == 1,
-                          onTap: () => _select(1),
-                        ),
-                        _DrawerItem(
-                          icon: Icons.cloud_outlined,
-                          label: l10n.networkLibrary,
-                          selected: _index == 2,
-                          onTap: () => _select(2),
-                        ),
-                        _DrawerItem(
-                          icon: Icons.download_outlined,
-                          label: l10n.downloadQueue,
-                          selected: _index == 3,
-                          onTap: () => _select(3),
-                        ),
-                        _DrawerItem(
-                          icon: Icons.settings_outlined,
-                          label: l10n.settings,
-                          selected: _index == 4,
-                          onTap: () => _select(4),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          child: Divider(color: AppColors.divider),
-                        ),
-                        _DrawerItem(
-                          icon: Icons.info_outline,
-                          label: l10n.aboutAgpl,
-                          selected: false,
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.of(context, rootNavigator: true).push(
-                              MaterialPageRoute(
-                                builder: (_) => const AboutScreen(),
+      child: HomeTabScope(
+        index: _index,
+        child: PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            // A tab root that navigates internally (network library directory
+            // stack, multi-select) gets first refusal.
+            if (BackHandlerRegistry.tryHandleBack()) return;
+            final nav = _activeNavKey?.currentState;
+            if (nav != null && nav.canPop()) {
+              nav.pop();
+              return;
+            }
+            final rootNav = Navigator.of(context, rootNavigator: true);
+            if (rootNav.canPop()) {
+              rootNav.pop();
+              return;
+            }
+            // Not on the configured home tab → return to it instead of exiting.
+            final home = context.read<SettingsService>().homeTab;
+            if (_index != home) {
+              setState(() => _index = home);
+              BackHandlerRegistry.activeTabIndex = home;
+              return;
+            }
+            // Root back on home: send task to background (like Home) so
+            // audio_service keeps playing. Do NOT SystemNavigator.pop() — that
+            // finishes the Activity and disposes AppState/player.
+            moveAppToBackground();
+          },
+          child: Scaffold(
+            key: _scaffoldKey,
+            backgroundColor: AppColors.nearBlack,
+            drawer: Drawer(
+              backgroundColor: AppColors.surface,
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: ListView(
+                        padding: EdgeInsets.zero,
+                        children: [
+                          Container(
+                            height: 140,
+                            padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                            decoration: const BoxDecoration(
+                              color: AppColors.elevated,
+                              border: Border(
+                                bottom: BorderSide(color: AppColors.divider),
                               ),
-                            );
-                          },
-                        ),
-                      ],
+                            ),
+                            child: Align(
+                              alignment: Alignment.bottomLeft,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    Icons.library_music,
+                                    color: AppColors.accent,
+                                    size: 32,
+                                  ),
+                                  SizedBox(height: 12),
+                                  Text(
+                                    l10n.appTitle,
+                                    style: TextStyle(
+                                      color: AppColors.onDark,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _DrawerItem(
+                            icon: Icons.library_music,
+                            label: l10n.library,
+                            selected: _index == 0,
+                            onTap: () => _select(0),
+                          ),
+                          _DrawerItem(
+                            icon: Icons.queue_music,
+                            label: l10n.playlists,
+                            selected: _index == 1,
+                            onTap: () => _select(1),
+                          ),
+                          _DrawerItem(
+                            icon: Icons.cloud_outlined,
+                            label: l10n.networkLibrary,
+                            selected: _index == 2,
+                            onTap: () => _select(2),
+                          ),
+                          _DrawerItem(
+                            icon: Icons.download_outlined,
+                            label: l10n.downloadQueue,
+                            selected: _index == 3,
+                            onTap: () => _select(3),
+                          ),
+                          _DrawerItem(
+                            icon: Icons.settings_outlined,
+                            label: l10n.settings,
+                            selected: _index == 4,
+                            onTap: () => _select(4),
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            child: Divider(color: AppColors.divider),
+                          ),
+                          _DrawerItem(
+                            icon: Icons.info_outline,
+                            label: l10n.aboutAgpl,
+                            selected: false,
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.of(context, rootNavigator: true).push(
+                                MaterialPageRoute(
+                                  builder: (_) => const AboutScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Divider(color: AppColors.divider),
-                  ),
-                  _DrawerItem(
-                    icon: Icons.exit_to_app,
-                    label: l10n.exitApp,
-                    selected: false,
-                    onTap: () => _confirmExit(context),
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Divider(color: AppColors.divider),
+                    ),
+                    _DrawerItem(
+                      icon: Icons.exit_to_app,
+                      label: l10n.exitApp,
+                      selected: false,
+                      onTap: () => _confirmExit(context),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
             ),
-          ),
-          body: Column(
-            children: [
-              Expanded(
-                child: IndexedStack(index: _index, children: pages),
-              ),
-              // Global mini bar on all main tabs except Settings.
-              if (_index != _settingsIndex) const MiniPlayer(),
-            ],
+            body: Column(
+              children: [
+                Expanded(
+                  child: IndexedStack(index: _index, children: pages),
+                ),
+                // Global mini bar on all main tabs except Settings.
+                if (_index != _settingsIndex) const MiniPlayer(),
+              ],
+            ),
           ),
         ),
       ),

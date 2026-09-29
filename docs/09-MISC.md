@@ -146,6 +146,7 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 | **旧库行类型不兼容导致启动崩溃** | 老 schema 行里混入 bool / 数值，读取处 `as String?` 直接抛 `type 'bool' is not a subtype of type 'String?'`；SharedPreferences 里同类脏值让 `getString` 抛同样错误（真机确认：`cache_*` 旧键） | 数据库行读取用 `_asString` / `_asDate` 宽松转换（tracks / accounts / playlists / download_tasks）；prefs 迁移先 `get()` 再 `is String` 判断（[01 §2](01-DATA-MODEL.md)） |
 | **取消下载后队列卡死** | `_pump()` 正在跑任务时 `cancel()` 内再调 `_pump()` 直接 return，唤醒请求被丢，下一个 pending 永远等待 | `_pumpRequested` 记录请求，当前任务退出后自动重启调度（[04 §2](04-DOWNLOAD-QUEUE.md)） |
 | **本地全绿、CI 的 Analyze 失败** | 本地只跑 `flutter analyze --no-pub lib`，CI 跑完整 `flutter analyze`——测试目录里的 `unused_import` 之类 warning 只有完整分析才报 | 提交前跑**完整** `flutter analyze`（v0.2.0 因此失败过一次：`test/file_action_model_test.dart` 的未用 import） |
+| **启动时网络库就弹出 401/403** | `IndexedStack` 启动即挂载网络库，`initState` 第一帧 `_ensureAndLoad()` 在用户打开标签前就 `listDirectory` | 只在第一次选中网络库标签时列目录；再切回不重新列。账号切换 / 刷新按钮仍会列（[02 §6](02-NETWORK-LIBRARY.md)） |
 
 本轮相关提交：`fa0c92f`（缓存 / 下载分成两条线）、`c366b2a`（扫描与去重收进 `enqueueSelection`）、`a408c5b`（音乐库工具栏 `Expanded`）、`65d7a55`（选择器逐级返回）、`b9ecd65`（文件夹下载图标）、`0ec8349`（下拉框限高半屏）。
 

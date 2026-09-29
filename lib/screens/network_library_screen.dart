@@ -38,6 +38,17 @@ import 'music_stream_screen.dart';
 import 'video_player_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 
+/// 第一次选中网络库标签时才允许列目录。
+///
+/// [shellTab] 为 null（不在壳里）或还停在别的标签时不列；已经列过
+/// （[alreadyOpened]）再切回也不列。IndexedStack 会在启动时挂上本页。
+bool shouldOpenNetworkLibrary({
+  required int? shellTab,
+  required bool alreadyOpened,
+}) {
+  return !alreadyOpened && shellTab == kNetworkLibraryTabIndex;
+}
+
 /// 网络库：multi-WebDAV browse. Shows entry names only (no full remote paths).
 class NetworkLibraryScreen extends StatefulWidget {
   const NetworkLibraryScreen({super.key});
@@ -73,6 +84,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// connectivity_plus 模式；仅在线时唤醒，离线事件忽略）。
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
+  /// 用户是否已经选中过网络库标签。IndexedStack 会在启动时就把本页
+  /// 挂上，initState 里列目录会在用户打开标签前打到 WebDAV / 云盘
+  /// （401/403）。只在第一次真正选中时置位；之后切走再切回不重新列。
+  bool _openedNetworkTab = false;
+
   /// 多选状态。选中数由 [SelectionController] 统一判定「是不是全选」，
   /// 全选按钮因此会在计数打满时变成叉号，而不必记住用户按过它。
   SelectionController _selection = const SelectionController();
@@ -107,7 +123,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       _stack.add(settings.networkLastPath);
     }
     // Take the system back key for directory navigation / multi-select.
-    BackHandlerRegistry.register(_handleSystemBack, tab: 2);
+    BackHandlerRegistry.register(
+      _handleSystemBack,
+      tab: kNetworkLibraryTabIndex,
+    );
     // 网络恢复时若停在错误界面（自动重试已耗尽），补一次自动重试。
     _connectivitySub ??= Connectivity().onConnectivityChanged.listen((results) {
       final online = results.any((r) => r != ConnectivityResult.none);
@@ -117,7 +136,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         _ensureAndLoad();
       }
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _ensureAndLoad());
   }
 
   @override
@@ -154,7 +172,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // Make sure every account has a client before the first request. Without
     // this the very first listing could go out with no credentials and fail as
     // 401/403 for every configured account — which popped one permission dialog
-    // per account on every app start.
+    // per account the first time the library was listed.
     await app.registerAllAccounts();
     // Bring the browsing pointer in line with the selected account. Previously
     // this was only done when the ids differed, and the reload loop below could
@@ -859,8 +877,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       leading: Icon(_actionIcon(action)),
                       title: Text(action.label(l10n)),
                       subtitle: switch (action) {
-                        FileAction.streamMusic => Text(l10n.netExperimentalNoDownload),
-                        FileAction.downloadToGallery => Text(l10n.netDownloadToGalleryPictures),
+                        FileAction.streamMusic => Text(
+                          l10n.netExperimentalNoDownload,
+                        ),
+                        FileAction.downloadToGallery => Text(
+                          l10n.netDownloadToGalleryPictures,
+                        ),
                         _ => null,
                       },
                       onTap: () {
@@ -1088,11 +1110,28 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final player = context.watch<AudioPlayerService>();
     final active = accounts.activeAccount;
 
+    // 壳用 IndexedStack，本页在启动时就挂上。只有用户真正选中网络库
+    // 标签才列目录；切走再切回不重新列（刷新仍走下拉按钮 / 账号切换）。
+    final shellTab = HomeTabScope.maybeIndexOf(context);
+    if (shouldOpenNetworkLibrary(
+      shellTab: shellTab,
+      alreadyOpened: _openedNetworkTab,
+    )) {
+      _openedNetworkTab = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureAndLoad();
+      });
+    }
+
     // Reload when the active account changed from the one these items came from
     // (e.g. switched in the accounts screen, or from the drawer).
     // 自动重试有上限：连续失败耗尽后停在错误界面，等用户手动「重试」
     // 或网络恢复事件（真机反馈：crypt 源被删后无限重试拖慢运行）。
-    if (active != null &&
+    // 标签还没打开时不要借这条守卫去列目录——_browsedAccountId 一开始是
+    // null，条件会在启动第一帧就成立。
+    if (_openedNetworkTab &&
+        active != null &&
         _browsedAccountId != active.id &&
         !_loading &&
         _loadFailures < _kMaxLoadFailures) {
