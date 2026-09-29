@@ -222,10 +222,12 @@ class PlaylistCodec {
   /// The name is cosmetic; identity travels inside the document. Sanitising
   /// keeps the name safe for every WebDAV server we might be talking to.
   static String safeFileName(String name, String id) {
+    // 先 trim 再折叠空白：否则全是空白的名字会先变成 "_"，永远走不到下面的
+    // 兜底分支。
     final sanitized = name
+        .trim()
         .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
-        .replaceAll(RegExp(r'\s+'), '_')
-        .trim();
+        .replaceAll(RegExp(r'\s+'), '_');
     final stem = sanitized.isEmpty ? 'playlist' : sanitized;
     final shortId = id.length > 8 ? id.substring(0, 8) : id;
     return '${stem}_$shortId.$fileExtension';

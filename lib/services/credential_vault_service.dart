@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 
 import '../models/webdav_account.dart';
@@ -162,8 +160,8 @@ class CredentialVaultService extends ChangeNotifier {
   String? lastError;
   String? lastMessage;
 
-  /// Passwords left empty by the last [pull]/[applyJson] because the vault was
-  /// encrypted with a key we could not reproduce.
+  /// Passwords left empty by the last [pull] / [applyVault] because the vault
+  /// was encrypted with a key we could not reproduce.
   final List<String> missingPasswordAccounts = [];
 
   String get remotePath {
@@ -270,6 +268,26 @@ class CredentialVaultService extends ChangeNotifier {
     );
   }
 
+  /// Encode the current account list as one `WDMMCV01` document.
+  ///
+  /// The backup archive embeds **these exact bytes** (docs/10 §4.3), so the
+  /// vault has a single encoding and two exits — the sync root and the archive
+  /// can never drift apart. Deliberately free of side effects: [push] owns the
+  /// sync status fields, and building a backup must not disturb them.
+  Future<Uint8List> encodeVaultBytes({
+    required String passphrase,
+    bool? encryptPassword,
+  }) async {
+    final records = await buildRecords(
+      passphrase: passphrase,
+      encryptPassword: encryptPassword,
+    );
+    return _encodeRecords(records);
+  }
+
+  Uint8List _encodeRecords(List<VaultRecord> records) =>
+      CredentialVaultCodec.encode(records, formatVersion: formatVersion);
+
   /// Upload the vault to [accountId] (the credentials destination the user
   /// configured for this feature).
   Future<List<VaultRecord>> push({
@@ -287,10 +305,7 @@ class CredentialVaultService extends ChangeNotifier {
         passphrase: passphrase,
         encryptPassword: encryptPassword,
       );
-      final bytes = CredentialVaultCodec.encode(
-        records,
-        formatVersion: formatVersion,
-      );
+      final bytes = _encodeRecords(records);
       await _webDav.ensureDirectory(accountId, _settings.syncRemoteRoot);
       await _webDav.writeBytes(accountId, remotePath, bytes);
       lastMessage = _lastBuildEncrypted

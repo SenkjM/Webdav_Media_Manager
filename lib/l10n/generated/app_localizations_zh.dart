@@ -1814,6 +1814,19 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String errPlaylistKindMismatch(Object expected, Object kind) {
+    return '这是 $kind 类文件，不是歌单文档（期望 $expected）';
+  }
+
+  @override
+  String get errPlaylistMissingId => '歌单文档缺少 playlistId，无法识别';
+
+  @override
+  String errVaultKindMismatch(Object expected, Object kind) {
+    return '这是 $kind 类文件，不是凭证库（期望 $expected）';
+  }
+
+  @override
   String estimateLabelWithCovers(Object shards, Object sizeLabel) {
     return '预计 $shards 个分片 · 含封面约 $sizeLabel';
   }
@@ -5385,6 +5398,19 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   @override
   String errNotBackupArchive(Object kind) {
     return '这是 $kind 类文件，不是备份归档';
+  }
+
+  @override
+  String errPlaylistKindMismatch(Object expected, Object kind) {
+    return '这是 $kind 类文件，不是歌单文档（期望 $expected）';
+  }
+
+  @override
+  String get errPlaylistMissingId => '歌单文档缺少 playlistId，无法识别';
+
+  @override
+  String errVaultKindMismatch(Object expected, Object kind) {
+    return '这是 $kind 类文件，不是凭证库（期望 $expected）';
   }
 
   @override
@@ -8960,6 +8986,19 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   @override
   String errNotBackupArchive(Object kind) {
     return '這是 $kind 類檔案，不是備份封存';
+  }
+
+  @override
+  String errPlaylistKindMismatch(Object expected, Object kind) {
+    return '這是 $kind 類檔案，不是歌單文件（期望 $expected）';
+  }
+
+  @override
+  String get errPlaylistMissingId => '歌單文件缺少 playlistId，無法辨識';
+
+  @override
+  String errVaultKindMismatch(Object expected, Object kind) {
+    return '這是 $kind 類檔案，不是憑證庫（期望 $expected）';
   }
 
   @override

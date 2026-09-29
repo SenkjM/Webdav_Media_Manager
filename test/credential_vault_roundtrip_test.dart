@@ -4,14 +4,22 @@ import 'dart:typed_data';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/models/playlist.dart';
 import 'package:webdav_media_manager/models/webdav_account.dart';
 import 'package:webdav_media_manager/services/accounts_service.dart';
+import 'package:webdav_media_manager/services/backup_service.dart';
 import 'package:webdav_media_manager/services/credential_vault_codec.dart';
 import 'package:webdav_media_manager/services/credential_vault_service.dart';
 import 'package:webdav_media_manager/services/library_database.dart';
+import 'package:webdav_media_manager/services/library_service.dart';
+import 'package:webdav_media_manager/services/playlist_codec.dart';
+import 'package:webdav_media_manager/services/playlist_service.dart';
+import 'package:webdav_media_manager/services/playlist_store.dart';
 import 'package:webdav_media_manager/services/settings_service.dart';
 import 'package:webdav_media_manager/services/webdav_service.dart';
+import 'package:webdav_media_manager/utils/backup_crypto.dart';
 import 'package:webdav_media_manager/utils/credential_vault_crypto.dart';
 import 'package:webdav_media_manager/utils/wmp_container.dart';
 
@@ -117,6 +125,43 @@ class _FakeWebDav extends WebDavService {
     }
     return f;
   }
+}
+
+/// In-memory stand-in for the playlist sqlite table (these tests only need the
+/// in-memory list the service keeps).
+class _MemoryPlaylistStore implements PlaylistStore {
+  final Map<String, Playlist> rows = {};
+
+  @override
+  Future<Database> get database async => throw UnimplementedError();
+
+  @override
+  Future<List<Playlist>> loadAll() async => rows.values.toList();
+
+  @override
+  Future<Playlist?> getById(String id) async => rows[id];
+
+  @override
+  Future<void> upsert(Playlist playlist) async => rows[playlist.id] = playlist;
+
+  @override
+  Future<void> delete(String id) async => rows.remove(id);
+
+  @override
+  Future<void> clearAll() async => rows.clear();
+
+  @override
+  Future<void> replaceAll(List<Playlist> playlists) async {
+    rows
+      ..clear()
+      ..addEntries(playlists.map((p) => MapEntry(p.id, p)));
+  }
+
+  @override
+  Future<String> databasePath() async => 'memory:playlists.db';
+
+  @override
+  Future<void> close() async {}
 }
 
 void main() {
@@ -406,6 +451,263 @@ void main() {
 
     test('fetchVault 对不存在的文件返回 null（而不是抛错）', () async {
       expect(await vault.fetchVault(accountId: 'dest'), isNull);
+    });
+  });
+
+  group('备份归档（内嵌 CV / PL 容器）', () {
+    late PlaylistService playlists;
+    late BackupService backup;
+
+    setUp(() {
+      playlists = PlaylistService(store: _MemoryPlaylistStore(), webDav: webDav);
+      backup = BackupService(
+        libraryDb: db,
+        library: LibraryService(db: db),
+        accounts: accounts,
+        settings: settings,
+        playlists: playlists,
+        credentials: vault,
+        webDav: webDav,
+      );
+    });
+
+    test('CREDENTIALS 段内嵌完整 CV 文档，与同步出口是同一种编码', () async {
+      await accounts.addAccount(
+        name: 'NAS',
+        url: 'https://nas.example.com',
+        username: 'alice',
+        password: 'hunter2',
+      );
+      final netease = await accounts.addAccount(
+        name: '网易云',
+        url: '',
+        username: '',
+        password: '',
+        providerType: 'netease_music',
+        remotePath: '/音乐',
+      );
+      await accounts.saveDriverConfig(netease.id, {
+        'cookie': 'MUSIC_U=secret',
+        'api_url_address': 'https://api.example.com',
+      });
+
+      final archive = await backup.buildArchiveBytes(passphrase: '归档口令');
+      // 非空口令会套一层 EN 信封（BackupCrypto）；解开才是 BK 容器。
+      expect(BackupCrypto.looksEncrypted(archive), isTrue);
+      final container = WmpContainer.fromBytes(
+        await BackupCrypto.decrypt(data: archive, passphrase: '归档口令'),
+      );
+      expect(container.kind, WmpFileKind.backup);
+
+      final section = container.readSection(WmpSections.credentials)!;
+      // 段里就是一份完整的 CV 文档，不是 JSON。
+      expect(WmpContainer.looksLikeContainer(section), isTrue);
+      expect(WmpContainer.kindOf(section), WmpFileKind.vault);
+      expect(utf8.decode(section.sublist(0, 8)), 'WDMMCV01');
+
+      final embedded = CredentialVaultCodec.decode(section);
+      expect(embedded.entryCount, 2);
+      expect(embedded.formatVersion, CredentialVaultService.formatVersion);
+      final cloud = embedded.entries.firstWhere(
+        (e) => e.providerType == 'netease_music',
+      );
+      expect(cloud.remotePath, '/音乐');
+      expect(cloud.driverConfig!['cookie'], startsWith('AESGCMv1:'));
+      expect(cloud.driverConfig!['api_url_address'], 'https://api.example.com');
+      final web = embedded.entries.firstWhere((e) => e.providerType == 'webdav');
+      expect(web.password, startsWith('AESGCMv1:'));
+      expect(web.url, 'https://nas.example.com');
+
+      // 同步出口写出去的也是同一份文档：同样的条目、同样的编码。
+      // 密文本身每次都不同（AES-GCM 每次新盐新随机数），所以比的是解出来的明文。
+      await vault.push(accountId: 'dest', passphrase: '归档口令');
+      final remoteBytes = webDav.files[vault.remotePath]!;
+      expect(WmpContainer.kindOf(remoteBytes), WmpFileKind.vault);
+      final remoteDoc = CredentialVaultCodec.decode(remoteBytes);
+      expect(remoteDoc.entryCount, embedded.entryCount);
+
+      Future<String> plain(VaultRecord e) async {
+        final pwd = e.passwordEncrypted
+            ? await CredentialVaultCrypto.tryDecrypt(
+                encoded: e.password,
+                passphrase: '归档口令',
+              )
+            : e.password;
+        final cookie = e.driverConfig?['cookie'];
+        final secret = cookie is String
+            ? await CredentialVaultCrypto.tryDecrypt(
+                encoded: cookie,
+                passphrase: '归档口令',
+              )
+            : null;
+        return '${e.id}|${e.name}|${e.providerType}|${e.url}|${e.username}|'
+            '${e.remotePath}|$pwd|encrypted=${e.passwordEncrypted}|'
+            '${e.driverConfig?['api_url_address']}|$secret';
+      }
+
+      expect(
+        [for (final e in embedded.entries) await plain(e)],
+        [for (final e in remoteDoc.entries) await plain(e)],
+      );
+      // 而且两个出口都是真密文：密文格式在，且解出来就是原始明文（密钥一致）。
+      final webEntry = embedded.entries.firstWhere(
+        (e) => e.providerType == 'webdav',
+      );
+      expect(webEntry.passwordEncrypted, isTrue);
+      expect(CredentialVaultCrypto.isEncrypted(webEntry.password), isTrue);
+      final cloudEntry = embedded.entries.firstWhere(
+        (e) => e.providerType == 'netease_music',
+      );
+      expect(
+        CredentialVaultCrypto.isEncrypted(
+          cloudEntry.driverConfig!['cookie']! as String,
+        ),
+        isTrue,
+      );
+      final plains = [for (final e in embedded.entries) await plain(e)].join('\n');
+      expect(plains, contains('hunter2'));
+      expect(plains, contains('MUSIC_U=secret'));
+
+      // 恢复侧：这段字节直接喂给同一个解码器，与拉取远端走同一条路。
+      secure.store.clear();
+      final freshAccounts = AccountsService(
+        db: _FakeLibraryDatabase(),
+        secureStorage: secure,
+      );
+      await freshAccounts.init();
+      final freshVault = CredentialVaultService(
+        accounts: freshAccounts,
+        settings: settings,
+        webDav: webDav,
+      );
+      final applied = await freshVault.applyVault(
+        CredentialVaultCodec.decode(section),
+        passphrase: '归档口令',
+      );
+      expect(applied.imported, 2);
+      expect(applied.passwordsMissing, 0);
+      final nas = freshAccounts.accounts.firstWhere((a) => a.name == 'NAS');
+      expect(await freshAccounts.passwordFor(nas.id), 'hunter2');
+      final restoredCloud = freshAccounts.accounts.firstWhere(
+        (a) => a.providerType == 'netease_music',
+      );
+      final cfg = await freshAccounts.loadDriverConfig(restoredCloud.id);
+      expect(cfg?['cookie'], 'MUSIC_U=secret');
+      expect(cfg?['api_url_address'], 'https://api.example.com');
+    });
+
+    test('PLAYLISTS 段每歌单一条 blob 记录，用的是 .wdmp 同一个解码函数', () async {
+      final pl = await playlists.create(
+        name: '最爱',
+        entries: [
+          const PlaylistEntry(
+            sourceName: '123pan',
+            remotePath: '/m/a.flac',
+            title: 'a.flac',
+            durationMs: 215000,
+          ),
+        ],
+      );
+
+      final archive = await backup.buildArchiveBytes(passphrase: '');
+      final container = WmpContainer.fromBytes(archive);
+      final raw = container.readSection(WmpSections.playlists)!;
+
+      final records = decodeRecords(
+        raw,
+        intTags: const {},
+        bytesTags: const {WmpBackupPlaylist.blob},
+      );
+      expect(records, hasLength(1));
+      final blob = records.single[WmpBackupPlaylist.blob];
+      expect(blob, isA<Uint8List>());
+      expect(WmpContainer.kindOf(blob! as Uint8List), WmpFileKind.playlist);
+
+      final doc = PlaylistCodec.decode(blob as Uint8List);
+      expect(doc.playlist.id, pl.id);
+      expect(doc.playlist.name, '最爱');
+      expect(doc.entryCount, 1);
+      expect(
+        doc.playlist.entries.single.identityKey,
+        pl.entries.single.identityKey,
+      );
+      // 单播出口（上传远端用）产出的也是同一类文档。
+      expect(
+        WmpContainer.kindOf(await playlists.encodePlaylistBytes(pl)),
+        WmpFileKind.playlist,
+      );
+
+      // 恢复：解出来直接交给 merge，不删本地其它歌单。
+      final target = PlaylistService(
+        store: _MemoryPlaylistStore(),
+        webDav: webDav,
+      );
+      await target.mergeFromPlaylists([doc.playlist]);
+      expect(target.playlists.single.id, pl.id);
+      expect(target.playlists.single.entries, hasLength(1));
+    });
+
+    test('没有歌单时不写 PLAYLISTS 段', () async {
+      final archive = await backup.buildArchiveBytes(passphrase: '');
+      final container = WmpContainer.fromBytes(archive);
+      expect(container.has(WmpSections.playlists), isFalse);
+    });
+
+    test('restoreFromBackup 接受云盘行并写回驱动配置；未知类型静默跳过', () async {
+      final cookie = await CredentialVaultCrypto.encrypt(
+        plaintext: 'MUSIC_U=restored',
+        passphrase: '归档口令',
+      );
+      final json = {
+        'activeAccountId': 'wd-1',
+        'accounts': [
+          {
+            'id': 'wd-1',
+            'name': 'NAS',
+            'url': 'https://nas.example.com',
+            'username': 'u',
+            'password': 'p',
+            'providerType': 'webdav',
+          },
+          {
+            'id': 'nt-1',
+            'name': '网易云',
+            'url': '',
+            'username': '',
+            'password': '',
+            'providerType': 'netease_music',
+            'remote_path': '/音乐',
+            'driverConfig': {'cookie': cookie, 'api_url_address': 'https://x'},
+          },
+          {
+            'id': 'gz-1',
+            'name': '未来盘',
+            'url': '',
+            'username': '',
+            'password': '',
+            'providerType': 'ghost_drive_2099',
+            'driverConfig': {'refresh_token': 't'},
+          },
+        ],
+      };
+
+      final missing = await accounts.restoreFromBackup(
+        json,
+        passphrase: '归档口令',
+      );
+      expect(missing, isEmpty);
+      expect(accounts.accounts.map((a) => a.name), containsAll(['NAS', '网易云']));
+      expect(
+        accounts.accounts.any((a) => a.providerType == 'ghost_drive_2099'),
+        isFalse,
+      );
+
+      final nt = accounts.accounts.firstWhere((a) => a.name == '网易云');
+      expect(nt.remotePath, '/音乐');
+      final cfg = await accounts.loadDriverConfig(nt.id);
+      expect(cfg?['cookie'], 'MUSIC_U=restored');
+      expect(cfg?['api_url_address'], 'https://x');
+      expect(secure.store['webdav_pass_wd-1'], 'p');
     });
   });
 }

@@ -1878,6 +1878,20 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String errPlaylistKindMismatch(Object expected, Object kind) {
+    return 'This is a $kind file, not a playlist document (expected $expected)';
+  }
+
+  @override
+  String get errPlaylistMissingId =>
+      'Playlist document has no playlistId and cannot be identified';
+
+  @override
+  String errVaultKindMismatch(Object expected, Object kind) {
+    return 'This is a $kind file, not a credential vault (expected $expected)';
+  }
+
+  @override
   String estimateLabelWithCovers(Object shards, Object sizeLabel) {
     return '~$shards shards · with covers, about $sizeLabel';
   }

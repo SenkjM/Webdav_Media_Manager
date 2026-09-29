@@ -3295,6 +3295,24 @@ abstract class AppLocalizations {
   /// **'这是 {kind} 类文件，不是备份归档'**
   String errNotBackupArchive(Object kind);
 
+  /// No description provided for @errPlaylistKindMismatch.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'这是 {kind} 类文件，不是歌单文档（期望 {expected}）'**
+  String errPlaylistKindMismatch(Object expected, Object kind);
+
+  /// No description provided for @errPlaylistMissingId.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'歌单文档缺少 playlistId，无法识别'**
+  String get errPlaylistMissingId;
+
+  /// No description provided for @errVaultKindMismatch.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'这是 {kind} 类文件，不是凭证库（期望 {expected}）'**
+  String errVaultKindMismatch(Object expected, Object kind);
+
   /// No description provided for @estimateLabelWithCovers.
   ///
   /// In zh_CN, this message translates to:

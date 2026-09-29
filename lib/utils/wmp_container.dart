@@ -286,6 +286,24 @@ class WmpPlaylistMeta {
   static const int updatedAt = 11;
 }
 
+/// Record tag ids inside a `BK` backup archive's PLAYLISTS section.
+///
+/// One record per playlist; the payload is that playlist's complete `PL` file
+/// (stored raw, never re-deflated). Playlist identity, display name and
+/// `updatedAt` all live inside that blob — they are deliberately **not**
+/// duplicated here, or the two copies could disagree.
+///
+/// There is exactly one record per playlist rather than one section per
+/// playlist because section ids are a single byte ([WmpSections] is written
+/// with `addByte`), so a section-per-playlist layout would cap the archive at
+/// 246 playlists.
+class WmpBackupPlaylist {
+  WmpBackupPlaylist._();
+
+  /// Complete bytes of one `WDMMPL01` playlist file.
+  static const int blob = 1;
+}
+
 /// META tag ids used **only** by vault (`CV`) files, on top of [WmpMeta].
 class WmpVaultMeta {
   WmpVaultMeta._();
@@ -712,7 +730,9 @@ int crc32(List<int> data) {
 
 /// Writer for one tag/value record.
 ///
-/// Supported values: `int` (varint) and `String` (UTF-8, length-prefixed).
+/// Supported values: `int` (varint), `String` (UTF-8, length-prefixed) and
+/// `Uint8List` (raw, length-prefixed — used to embed whole containers such as
+/// a playlist's `PL` bytes inside a backup archive).
 class WmpRecordWriter {
   final BytesBuilder _out = BytesBuilder();
 
@@ -728,6 +748,16 @@ class WmpRecordWriter {
     final bytes = utf8.encode(value);
     _out.add(encodeVarint(bytes.length));
     _out.add(bytes);
+  }
+
+  /// Raw byte string, length-prefixed exactly like [text] but never
+  /// UTF-8-encoded — the reader must be told via `bytesTags` that this tag is
+  /// binary, or it would try to decode it as text.
+  void bytes(int tag, Uint8List? value) {
+    if (value == null) return;
+    _out.addByte(tag);
+    _out.add(encodeVarint(value.length));
+    _out.add(value);
   }
 
   Uint8List finish() {
@@ -751,6 +781,8 @@ Uint8List encodeRecords(List<Map<int, Object?>> records) {
           w.integer(tag, v);
         case String v:
           w.text(tag, v);
+        case Uint8List v:
+          w.bytes(tag, v);
         default:
           throw WmpFormatException(
             'record tag $tag has unsupported type ${value.runtimeType}',
@@ -764,13 +796,15 @@ Uint8List encodeRecords(List<Map<int, Object?>> records) {
 
 /// Decode records produced by [encodeRecords].
 ///
-/// [intTags] must list every tag in this section that holds a varint; everything
-/// else is a UTF-8 string. Tags are numbered per section family (tag 1 is
-/// `META.kind` *and* `TRACK.sourceName`), so the expected type has to come from
-/// the caller rather than a global table.
+/// [intTags] must list every tag in this section that holds a varint; [bytesTags]
+/// must list every tag that holds raw bytes. Everything else is a UTF-8 string.
+/// Tags are numbered per section family (tag 1 is `META.kind` *and*
+/// `TRACK.sourceName`), so the expected type has to come from the caller rather
+/// than a global table.
 List<Map<int, Object?>> decodeRecords(
   Uint8List raw, {
   required Set<int> intTags,
+  Set<int> bytesTags = const {},
 }) {
   final out = <Map<int, Object?>>[];
   var at = 0;
@@ -782,7 +816,12 @@ List<Map<int, Object?>> decodeRecords(
       current = <int, Object?>{};
       continue;
     }
-    final (value, next) = _readValue(raw, at, intTags.contains(tag));
+    final (value, next) = _readValue(
+      raw,
+      at,
+      intTags.contains(tag),
+      bytesTags.contains(tag),
+    );
     at = next;
     current![tag] = value;
   }
@@ -792,12 +831,15 @@ List<Map<int, Object?>> decodeRecords(
   return out;
 }
 
-(Object, int) _readValue(Uint8List raw, int at, bool isInt) {
+(Object, int) _readValue(Uint8List raw, int at, bool isInt, bool isBytes) {
   final (length, afterLength) = decodeVarint(raw, at);
   if (isInt) return (length, afterLength);
   final end = afterLength + length;
   if (end > raw.length) {
     throw const WmpFormatException('text runs past end of record');
+  }
+  if (isBytes) {
+    return (Uint8List.sublistView(raw, afterLength, end), end);
   }
   return (utf8.decode(Uint8List.sublistView(raw, afterLength, end)), end);
 }
