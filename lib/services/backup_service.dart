@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/library_track.dart';
+import '../models/playlist.dart';
 import '../utils/backup_crypto.dart';
 import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
@@ -16,7 +17,10 @@ import 'cloud_drivers/driver_registry.dart';
 import '../utils/wmp_container.dart';
 import 'cache_service.dart';
 import 'cover_service.dart';
+import 'credential_vault_codec.dart';
+import 'credential_vault_service.dart';
 import 'library_shard_codec.dart';
+import 'playlist_codec.dart';
 import 'library_database.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';

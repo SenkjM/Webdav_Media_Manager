@@ -7,11 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_media_manager/models/library_track.dart';
 import 'package:webdav_media_manager/models/webdav_account.dart';
 import 'package:webdav_media_manager/services/accounts_service.dart';
-import 'package:webdav_media_manager/services/backup_service.dart';
+import 'package:webdav_media_manager/services/credential_vault_codec.dart';
 import 'package:webdav_media_manager/services/credential_vault_service.dart';
 import 'package:webdav_media_manager/services/library_database.dart';
-import 'package:webdav_media_manager/services/library_service.dart';
-import 'package:webdav_media_manager/services/playlist_service.dart';
 import 'package:webdav_media_manager/services/settings_service.dart';
 import 'package:webdav_media_manager/services/webdav_service.dart';
 import 'package:webdav_media_manager/utils/credential_vault_crypto.dart';
@@ -147,8 +145,31 @@ void main() {
     );
   });
 
-  group('账号凭证库（credential vault v2）', () {
-    test('WebDAV 条目保持 v1 语义：密码加密、地址用户名明文', () async {
+  /// Round-trip local accounts through the binary `WDMMCV01` document:
+  /// build records → encode → decode → apply. This is the whole point of the
+  /// container format, so every round-trip test goes through it rather than
+  /// poking at [CredentialVaultCodec] directly.
+  Future<Uint8List> encodeLocal({required String passphrase}) async {
+    final records = await vault.buildRecords(passphrase: passphrase);
+    return CredentialVaultCodec.encode(
+      records,
+      formatVersion: CredentialVaultService.formatVersion,
+    );
+  }
+
+  Future<VaultApplyResult> applyTo(
+    CredentialVaultService target,
+    Uint8List bytes, {
+    required String passphrase,
+  }) {
+    return target.applyVault(
+      CredentialVaultCodec.decode(bytes),
+      passphrase: passphrase,
+    );
+  }
+
+  group('账号凭证库（credential vault 二进制容器）', () {
+    test('WebDAV 条目：密码加密、地址用户名明文，圆回还原', () async {
       await accounts.addAccount(
         name: '家里NAS',
         url: 'https://nas.example.com',
@@ -156,20 +177,30 @@ void main() {
         password: 'hunter2',
       );
 
-      final json = await vault.buildJson(
-        passphrase: '统一口令',
-        encryptPassword: true,
-      );
-      final entry = (json['accounts'] as List).first as Map<String, dynamic>;
+      final bytes = await encodeLocal(passphrase: '统一口令');
 
-      expect(entry['providerType'], isNull); // webdav 条目不写类型键
-      expect(entry['password'], startsWith('AESGCMv1:'));
-      expect(entry['url'], 'https://nas.example.com');
-      expect(entry['username'], 'alice');
+      // 魔数：这是本应用写出的 CV 文档，布局版本 01。
+      expect(WmpContainer.kindOf(bytes), WmpFileKind.vault);
+      expect(
+        utf8.decode(bytes.sublist(0, 8)),
+        'WDMM${WmpFileKind.vault}${WmpContainer.layoutVersion}',
+      );
+
+      final doc = CredentialVaultCodec.decode(bytes);
+      expect(doc.formatVersion, CredentialVaultService.formatVersion);
+      final entry = doc.entries.single;
+      expect(entry.providerType, 'webdav');
+      expect(entry.isCloud, isFalse);
+      expect(entry.password, startsWith('AESGCMv1:'));
+      expect(entry.passwordEncrypted, isTrue);
+      // 地址类字段保持明文，无口令也能辨识账号。
+      expect(entry.url, 'https://nas.example.com');
+      expect(entry.username, 'alice');
 
       // 圆回：同口令解出原密码
-      final back = await vault.applyJson(json, passphrase: '统一口令');
+      final back = await applyTo(vault, bytes, passphrase: '统一口令');
       expect(back.passwordsRestored, 1);
+      expect(back.passwordsMissing, 0);
       expect(await accounts.passwordFor(accounts.accounts.first.id), 'hunter2');
     });
 
@@ -188,26 +219,27 @@ void main() {
         'local_refresh': false,
       });
 
-      final json = await vault.buildJson(passphrase: '统一口令');
-      final entry = (json['accounts'] as List)
-          .whereType<Map<String, dynamic>>()
-          .firstWhere((e) => e['providerType'] == 'netease_music');
+      final bytes = await encodeLocal(passphrase: '统一口令');
+      final entry = CredentialVaultCodec.decode(
+        bytes,
+      ).entries.firstWhere((e) => e.providerType == 'netease_music');
 
+      expect(entry.isCloud, isTrue);
+      expect(entry.remotePath, '/音乐');
       // 密文字段（spec.secretFieldKeys：obscure 表单项）被加密…
-      expect(entry['driverConfig']['cookie'], startsWith('AESGCMv1:'));
+      expect(entry.driverConfig!['cookie'], startsWith('AESGCMv1:'));
       // …非密码字段保持明文…
       expect(
-        entry['driverConfig']['api_url_address'],
+        entry.driverConfig!['api_url_address'],
         'https://api.example.com',
       );
       // …开关原样保留。
-      expect(entry['driverConfig']['local_refresh'], false);
-      expect(json['formatVersion'], 2);
+      expect(entry.driverConfig!['local_refresh'], false);
 
       // 换一个全新环境圆回（账号行保留、仅凭证清空）：同 id 命中 → 更新；
       // 配置与 cookie 完整还原。
       secure.store.remove('cloud_driver_cfg_${netease.id}');
-      final back = await vault.applyJson(json, passphrase: '统一口令');
+      final back = await applyTo(vault, bytes, passphrase: '统一口令');
       expect(back.imported, 0);
       expect(back.updated, 1);
       final restored = await accounts.loadDriverConfig(netease.id);
@@ -226,36 +258,40 @@ void main() {
       await accounts.saveDriverConfig(netease.id, {'cookie': 'MUSIC_U=x'});
       settings.setSyncEncryptPassword(false);
 
-      final json = await vault.buildJson(passphrase: '统一口令');
-      final entry = (json['accounts'] as List).first as Map<String, dynamic>;
-      expect(entry['driverConfig']['cookie'], 'MUSIC_U=x');
+      final bytes = await encodeLocal(passphrase: '统一口令');
+      final entry = CredentialVaultCodec.decode(bytes).entries.single;
+      expect(entry.driverConfig!['cookie'], 'MUSIC_U=x');
     });
 
     test('恢复时静默过滤未注册的网盘类型（不报错、不建账号）', () async {
-      final json = {
-        'format': CredentialVaultService.format,
-        'formatVersion': 2,
-        'accounts': [
-          {
-            'id': 'ghost-1',
-            'name': '幽灵盘',
-            'providerType': 'ghost_drive_2099',
-            'url': '',
-            'username': '',
-            'password': '',
-            'driverConfig': {'refresh_token': 't'},
-          },
-          {
-            'id': 'wd-1',
-            'name': 'NAS',
-            'url': 'https://nas.example.com',
-            'username': 'alice',
-            'password': '',
-          },
+      final bytes = CredentialVaultCodec.encode(
+        const [
+          VaultRecord(
+            id: 'ghost-1',
+            name: '幽灵盘',
+            providerType: 'ghost_drive_2099',
+            url: '',
+            username: '',
+            password: '',
+            passwordEncrypted: false,
+            remotePath: '/',
+            driverConfig: {'refresh_token': 't'},
+          ),
+          VaultRecord(
+            id: 'wd-1',
+            name: 'NAS',
+            providerType: 'webdav',
+            url: 'https://nas.example.com',
+            username: 'alice',
+            password: '',
+            passwordEncrypted: false,
+            remotePath: '/',
+          ),
         ],
-      };
+        formatVersion: CredentialVaultService.formatVersion,
+      );
 
-      final result = await vault.applyJson(json, passphrase: '');
+      final result = await applyTo(vault, bytes, passphrase: '');
       expect(result.skippedUnknown, 1);
       expect(result.imported, 1); // 只有 NAS
       expect(accounts.accounts.map((a) => a.name), ['NAS']);
@@ -281,7 +317,7 @@ void main() {
       );
       await accounts.saveDriverConfig(netease.id, {'cookie': 'MUSIC_U=c'});
 
-      final json = await vault.buildJson(passphrase: '正确口令');
+      final bytes = await encodeLocal(passphrase: '正确口令');
 
       // 全新环境（本地无任何账号与配置），用错误口令恢复。
       secure.store.clear();
@@ -294,9 +330,10 @@ void main() {
         webDav: webDav,
       );
 
-      final result = await freshVault.applyJson(json, passphrase: '错误口令');
+      final result = await applyTo(freshVault, bytes, passphrase: '错误口令');
       // webdav 密码 + 云盘 cookie，两处密文都解不开。
       expect(result.passwordsMissing, 2);
+      expect(freshVault.missingPasswordAccounts, hasLength(2));
       final cloudEntry = freshAccounts.accounts.firstWhere(
         (a) => a.providerType == 'netease_music',
       );
@@ -304,21 +341,48 @@ void main() {
       final cfg = await freshAccounts.loadDriverConfig(cloudEntry.id);
       expect(cfg?['cookie'] ?? '', '');
     });
-  });
 
-  group('备份归档（backup payload v2）', () {
-    test('云盘账号随档案走：驱动配置密文字段加密、明文字段保留', () async {
-      final netease = await accounts.addAccount(
-        name: '网易云',
-        url: '',
-        username: '',
-        password: '',
-        providerType: 'netease_music',
+    test('无口令时密码明文入库（与旧 JSON 语义一致）', () async {
+      await accounts.addAccount(
+        name: 'NAS',
+        url: 'https://nas.example.com',
+        username: 'u',
+        password: 'plain-pw',
       );
-      await accounts.saveDriverConfig(netease.id, {
-        'cookie': 'MUSIC_U=token-1',
-        'api_url_address': 'https://api.example.com',
-      });
+
+      final bytes = await encodeLocal(passphrase: '');
+      final entry = CredentialVaultCodec.decode(bytes).entries.single;
+      expect(entry.password, 'plain-pw');
+      expect(entry.passwordEncrypted, isFalse);
+
+      final back = await applyTo(vault, bytes, passphrase: '');
+      expect(back.passwordsRestored, 1);
+      expect(back.passwordsMissing, 0);
+    });
+
+    test('decode 拒绝 magic 与 META.kind 不一致的文档', () {
+      // 伪造一份 CV 魔数、却把 META.kind 写成 playlist 的文档。
+      final meta = encodeRecords([
+        {WmpMeta.kind: WmpKind.playlist, WmpMeta.count: 0},
+      ]);
+      final bogus = WmpContainer.encode(
+        {WmpSections.meta: meta},
+        kind: WmpFileKind.vault,
+      );
+
+      expect(
+        () => CredentialVaultCodec.decode(bogus),
+        throwsA(
+          isA<WmpFormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('err.vaultKindMismatch'),
+          ),
+        ),
+      );
+    });
+
+    test('push/fetchVault 走 .wdmcv 二进制文件', () async {
       await accounts.addAccount(
         name: 'NAS',
         url: 'https://nas.example.com',
@@ -326,128 +390,22 @@ void main() {
         password: 'p',
       );
 
-      final backup = BackupService(
-        libraryDb: db,
-        library: LibraryService(db: db),
-        accounts: accounts,
-        settings: settings,
-        playlists: PlaylistService(webDav: webDav),
-        webDav: webDav,
-      );
-      final payload = await backup.buildPayload(passphrase: '归档口令');
-      final list = (payload['credentials']['accounts'] as List)
-          .cast<Map<String, dynamic>>();
+      await vault.push(accountId: 'dest', passphrase: '统一口令');
+      expect(vault.remotePath, endsWith(CredentialVaultService.fileName));
+      expect(vault.remotePath, endsWith('.wdmcv'));
 
-      final cloudRow = list.firstWhere(
-        (m) => m['provider_type'] == 'netease_music',
-      );
-      expect(cloudRow['driverConfig']['cookie'], startsWith('AESGCMv1:'));
-      expect(
-        cloudRow['driverConfig']['api_url_address'],
-        'https://api.example.com',
-      );
-      final webRow = list.firstWhere((m) => m['provider_type'] == 'webdav');
-      expect(webRow['password'], startsWith('AESGCMv1:'));
+      final stored = webDav.files[vault.remotePath];
+      expect(stored, isNotNull);
+      expect(WmpContainer.kindOf(stored!), WmpFileKind.vault);
+
+      final fetched = await vault.fetchVault(accountId: 'dest');
+      expect(fetched, isNotNull);
+      expect(fetched!.entryCount, 1);
+      expect(fetched.formatVersion, CredentialVaultService.formatVersion);
     });
 
-    test('restoreFromBackup 接受云盘行并写回驱动配置；未知类型静默跳过', () async {
-      final cookie = await CredentialVaultCrypto.encrypt(
-        plaintext: 'MUSIC_U=restored',
-        passphrase: '归档口令',
-      );
-      final json = {
-        'activeAccountId': 'wd-1',
-        'accounts': [
-          {
-            'id': 'wd-1',
-            'name': 'NAS',
-            'url': 'https://nas.example.com',
-            'username': 'u',
-            'password': 'p',
-            'providerType': 'webdav',
-          },
-          {
-            'id': 'nt-1',
-            'name': '网易云',
-            'url': '',
-            'username': '',
-            'password': '',
-            'providerType': 'netease_music',
-            'remote_path': '/音乐',
-            'driverConfig': {'cookie': cookie, 'api_url_address': 'https://x'},
-          },
-          {
-            'id': 'gz-1',
-            'name': '未来盘',
-            'url': '',
-            'username': '',
-            'password': '',
-            'providerType': 'ghost_drive_2099',
-            'driverConfig': {'refresh_token': 't'},
-          },
-        ],
-      };
-
-      final missing = await accounts.restoreFromBackup(
-        json,
-        passphrase: '归档口令',
-      );
-      expect(missing, isEmpty);
-      expect(accounts.accounts.map((a) => a.name), containsAll(['NAS', '网易云']));
-      expect(
-        accounts.accounts.any((a) => a.providerType == 'ghost_drive_2099'),
-        isFalse,
-      );
-
-      final nt = accounts.accounts.firstWhere((a) => a.name == '网易云');
-      expect(nt.remotePath, '/音乐');
-      final cfg = await accounts.loadDriverConfig(nt.id);
-      expect(cfg?['cookie'], 'MUSIC_U=restored');
-      expect(cfg?['api_url_address'], 'https://x');
-      expect(secure.store['webdav_pass_wd-1'], 'p');
-    });
-
-    test('归档容器往返：CREDENTIALS 段带上云盘条目', () async {
-      final netease = await accounts.addAccount(
-        name: '网易云',
-        url: '',
-        username: '',
-        password: '',
-        providerType: 'netease_music',
-      );
-      await accounts.saveDriverConfig(netease.id, {'cookie': 'MUSIC_U=c1'});
-      await accounts.addAccount(
-        name: 'NAS',
-        url: 'https://nas.example.com',
-        username: 'u',
-        password: 'p',
-      );
-
-      final backup = BackupService(
-        libraryDb: db,
-        library: LibraryService(db: db),
-        accounts: accounts,
-        settings: settings,
-        playlists: PlaylistService(webDav: webDav),
-        webDav: webDav,
-      );
-      final bytes = await backup.buildArchiveBytes(passphrase: '');
-      final container = WmpContainer.fromBytes(bytes);
-      final section = container.readSection(WmpSections.credentials)!;
-      final credentials =
-          jsonDecode(utf8.decode(section)) as Map<String, dynamic>;
-      final list = (credentials['accounts'] as List)
-          .cast<Map<String, dynamic>>();
-      expect(
-        list.where((m) => m['provider_type'] == 'netease_music'),
-        hasLength(1),
-      );
-      // 明文口令为空：cookie 原样保留（无加密）。
-      final cloud = list.firstWhere(
-        (m) => m['provider_type'] == 'netease_music',
-      );
-      expect(cloud['driverConfig']['cookie'], 'MUSIC_U=c1');
-      expect(netease.id, isNotEmpty);
+    test('fetchVault 对不存在的文件返回 null（而不是抛错）', () async {
+      expect(await vault.fetchVault(accountId: 'dest'), isNull);
     });
   });
 }

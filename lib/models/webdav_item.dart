@@ -1,5 +1,6 @@
 import '../l10n/generated/app_localizations.dart';
 import '../models/file_type_config.dart';
+import '../utils/track_identity.dart';
 
 class WebDavItem {
   const WebDavItem({
@@ -88,6 +89,20 @@ class TrackInfo {
       cueTrackIndex != null && (cueRemotePath?.isNotEmpty ?? false);
 
   String get effectiveAudioRemotePath => audioRemotePath ?? remotePath;
+
+  /// 权威身份键，与曲库 [LibraryTrack.musicId] 同源（docs/10 §4.4）。
+  ///
+  /// CUE 虚拟切片用 `musicIdForCueSlice(网盘名, cuePath, idx)` 区分单曲；普通
+  /// 条目用 `musicIdForRemote(网盘名, remotePath)`。注意这与
+  /// [PlaylistEntry.identityKey] 的 CUE 回退不同——后者在缺少显式 id 时退回
+  /// backing audio 的整轨 hash，因为虚拟路径无法反推 .cue 源路径。
+  String get musicId => musicIdForLibraryRow(
+    sourceName: sourceName,
+    remotePath: remotePath,
+    cueRemotePath: cueRemotePath,
+    cueTrackIndex: cueTrackIndex,
+  );
+
   String get displayTitle {
     if (isDownloaded && title != null && title!.trim().isNotEmpty) {
       return title!;

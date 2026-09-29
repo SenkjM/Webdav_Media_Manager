@@ -26,11 +26,15 @@ class WmpSections {
   /// Tombstone records (deletions), same tag/value shape as [tracks].
   static const int tombs = 4;
 
-  /// Backup archives only: WebDAV accounts (URL/username in clear, password may
-  /// be an `AESGCMv1:` blob).
+  /// Credential vault: one account record per row (see [WmpVaultAccount]).
+  ///
+  /// Inside a `BK` backup archive this section instead holds the **complete
+  /// bytes of a `WDMMCV01` credential-vault container** (stored raw — it is
+  /// itself a self-describing container, never re-deflate it).
   static const int credentials = 5;
 
-  /// Backup archives only: playlists JSON payload.
+  /// Backup archives only: one record per playlist whose `blob` tag holds the
+  /// complete bytes of that playlist's `WDMMPL01` file (stored raw).
   static const int playlists = 6;
 
   /// Backup archives only: settings JSON payload.
@@ -38,6 +42,9 @@ class WmpSections {
 
   /// Backup archives only: CUE album rows (small JSON payload).
   static const int cueAlbums = 8;
+
+  /// Playlist files (`PL`): the ordered entry table (see [WmpPlaylistEntry]).
+  static const int entries = 9;
 }
 
 /// Per-section storage codec.
@@ -73,6 +80,12 @@ class WmpKind {
 
   /// Reserved: a credentials/vault bundle.
   static const int credentials = 5;
+
+  /// A single playlist document (`WDMMPL01`).
+  static const int playlist = 6;
+
+  /// A credential vault document (`WDMMCV01`).
+  static const int vault = 7;
 }
 
 /// File classes, carried in the first 8 bytes of every binary file we write.
@@ -112,6 +125,14 @@ class WmpFileKind {
   /// Reserved: credentials/vault bundle.
   static const String credentials = 'CR';
 
+  /// One playlist document — the binary playlist format (one file per
+  /// playlist, synced to `/Playlists/*.wdmp`).
+  static const String playlist = 'PL';
+
+  /// Credential vault document — the binary account vault (one file per
+  /// account root, field-level crypto inside).
+  static const String vault = 'CV';
+
   /// Encrypted wrapper (see `BackupCrypto`); wraps any document kind. Deliberately
   /// **not** a document, so `looksLikeContainer` never accepts an envelope.
   static const String envelope = 'EN';
@@ -124,6 +145,8 @@ class WmpFileKind {
     backup,
     exportBundle,
     credentials,
+    playlist,
+    vault,
   };
 
   static bool isDocument(String code) => documents.contains(code);
@@ -136,6 +159,8 @@ class WmpFileKind {
     backup => WmpKind.backup,
     exportBundle => WmpKind.exportBundle,
     credentials => WmpKind.credentials,
+    playlist => WmpKind.playlist,
+    vault => WmpKind.vault,
     _ => -1,
   };
 
@@ -146,6 +171,8 @@ class WmpFileKind {
     WmpKind.backup => backup,
     WmpKind.exportBundle => exportBundle,
     WmpKind.credentials => credentials,
+    WmpKind.playlist => playlist,
+    WmpKind.vault => vault,
     _ => '',
   };
 }
@@ -210,6 +237,85 @@ class WmpTomb {
   static const int remotePath = 2;
   static const int rev = 3;
   static const int deletedAt = 4;
+}
+
+/// Playlist-entry record tag ids (ENTRIES section of a `PL` file).
+///
+/// Entries are **references**, not track copies: the full track row stays in
+/// the music library, the playlist only pins identity + display fields.
+class WmpPlaylistEntry {
+  WmpPlaylistEntry._();
+
+  /// Primary identity: `sha1(normalizedSourceName + '\0' + normalizedRemotePath)`
+  /// — the same value the music library uses for a track row (CUE slices get
+  /// `'\0' + trackIndex` appended).
+  static const int musicId = 1;
+
+  /// Kept for display and best-effort fallback matching only.
+  static const int sourceName = 2;
+  static const int remotePath = 3;
+  static const int title = 4;
+  static const int durationMs = 5;
+
+  /// Present only for CUE-slice entries: the 1-based slice index inside the
+  /// CUE album. Absent (0) for regular tracks.
+  static const int cueTrackIndex = 6;
+
+  /// Index into this file's COVERS table (that entry's own copy).
+  ///
+  /// Absent means "no cover": either the library row had none, or the entry
+  /// could not be resolved against the library at all. The playlist keeps the
+  /// entry either way — a missing cover is never a decode error.
+  static const int coverIndex = 7;
+}
+
+/// META tag ids used **only** by playlist (`PL`) files, on top of [WmpMeta].
+///
+/// These are strings, so they are deliberately absent from [kMetaIntTags] — the
+/// decoder reads every tag outside that set as length-prefixed UTF-8.
+class WmpPlaylistMeta {
+  WmpPlaylistMeta._();
+
+  /// Playlist identity (uuid). Required: a document without it is rejected.
+  static const int playlistId = 9;
+
+  /// Display name; cosmetic, defaults to the unnamed sentinel.
+  static const int name = 10;
+
+  /// Last-write timestamp (ISO-8601 UTC) driving the last-write-wins merge.
+  static const int updatedAt = 11;
+}
+
+/// META tag ids used **only** by vault (`CV`) files, on top of [WmpMeta].
+class WmpVaultMeta {
+  WmpVaultMeta._();
+
+  /// Data-model version of the vault payload (see
+  /// `CredentialVaultService.formatVersion`). Varint, unlike the playlist
+  /// extensions above.
+  static const int formatVersion = 12;
+}
+
+/// Vault-account record tag ids (CREDENTIALS section of a `CV` file).
+class WmpVaultAccount {
+  WmpVaultAccount._();
+
+  static const int id = 1;
+  static const int name = 2;
+  static const int providerType = 3;
+
+  /// Plaintext by design (see docs/10 §4.2.1).
+  static const int url = 4;
+  static const int username = 5;
+
+  /// Plaintext or `AESGCMv1:` blob — same semantics as the old JSON vault.
+  static const int password = 6;
+  static const int passwordEncrypted = 7;
+  static const int remotePath = 8;
+
+  /// Cloud drivers only: JSON-encoded config map; secret fields are already
+  /// encrypted individually before this record is written.
+  static const int driverConfig = 9;
 }
 
 /// Encoding of an inline cover blob.
@@ -723,6 +829,22 @@ const Set<int> kTrackIntTags = {
 
 /// Varint tags inside the TOMBS section.
 const Set<int> kTombIntTags = {WmpTomb.rev};
+
+/// Varint tags inside a `PL` file's ENTRIES section.
+const Set<int> kPlaylistEntryIntTags = {
+  WmpPlaylistEntry.durationMs,
+  WmpPlaylistEntry.cueTrackIndex,
+  WmpPlaylistEntry.coverIndex,
+};
+
+/// Varint tags inside a `CV` file's META section (on top of [kMetaIntTags]).
+const Set<int> kVaultMetaIntTags = {
+  ...kMetaIntTags,
+  WmpVaultMeta.formatVersion,
+};
+
+/// Varint tags inside a `CV` file's CREDENTIALS section.
+const Set<int> kVaultAccountIntTags = {WmpVaultAccount.passwordEncrypted};
 
 /// Varint (LEB128) helpers, shared by every record in the container.
 Uint8List encodeVarint(int value) {
