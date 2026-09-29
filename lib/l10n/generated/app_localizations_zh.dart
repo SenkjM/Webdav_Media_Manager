@@ -3520,6 +3520,63 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get netDownloadToGalleryPictures => '保存到 Pictures/WebdavMediaManager';
+
+  @override
+  String get videoAutoSidecar => '自动加载同目录外挂字幕';
+
+  @override
+  String get videoAutoSidecarHint => '播放时在视频自己的目录里匹配同名字幕。这一集的手动导入优先。';
+
+  @override
+  String get videoSubtitleSubdir => '同时搜索指定子目录';
+
+  @override
+  String get videoSubtitleSubdirHint => '开启后，额外只列视频所在目录下这一层子目录。默认关闭。';
+
+  @override
+  String get videoSubtitleSubdirEmpty => '留空等于不搜索。只填一个文件夹名，例如 sub。';
+
+  @override
+  String get videoSubtitleSubdirName => '子目录名';
+
+  @override
+  String get videoSubtitleSubdirInvalid => '子目录只能是一层文件夹名';
+
+  @override
+  String get videoSubtitlePick => '选择字幕';
+
+  @override
+  String get videoSubtitleOff => '关闭字幕';
+
+  @override
+  String get videoSubtitleNone => '没有可用字幕';
+
+  @override
+  String get videoSubtitleExternal => '外挂字幕';
+
+  @override
+  String get videoSubtitleEncoding => '字幕编码';
+
+  @override
+  String get videoSubtitleEncodingHint => '手动指定编码只影响这一次播放的外挂和导入字幕，用来兜底。';
+
+  @override
+  String get videoSubtitleEncodingAuto => '自动检测';
+
+  @override
+  String get videoSubtitleImportRemote => '从当前网盘导入';
+
+  @override
+  String get videoSubtitleImportLocal => '从本地文件导入';
+
+  @override
+  String get videoSubtitleBinarySkipped => '这个字幕不是文本，已跳过';
+
+  @override
+  String get videoSubtitleUnsupported => '只支持 srt、ass、ssa、vtt、sub';
+
+  @override
+  String get videoSubtitleLoadFailed => '字幕加载失败';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -7037,6 +7094,63 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get netDownloadToGalleryPictures => '保存到 Pictures/WebdavMediaManager';
+
+  @override
+  String get videoAutoSidecar => '自动加载同目录外挂字幕';
+
+  @override
+  String get videoAutoSidecarHint => '播放时在视频自己的目录里匹配同名字幕。这一集的手动导入优先。';
+
+  @override
+  String get videoSubtitleSubdir => '同时搜索指定子目录';
+
+  @override
+  String get videoSubtitleSubdirHint => '开启后，额外只列视频所在目录下这一层子目录。默认关闭。';
+
+  @override
+  String get videoSubtitleSubdirEmpty => '留空等于不搜索。只填一个文件夹名，例如 sub。';
+
+  @override
+  String get videoSubtitleSubdirName => '子目录名';
+
+  @override
+  String get videoSubtitleSubdirInvalid => '子目录只能是一层文件夹名';
+
+  @override
+  String get videoSubtitlePick => '选择字幕';
+
+  @override
+  String get videoSubtitleOff => '关闭字幕';
+
+  @override
+  String get videoSubtitleNone => '没有可用字幕';
+
+  @override
+  String get videoSubtitleExternal => '外挂字幕';
+
+  @override
+  String get videoSubtitleEncoding => '字幕编码';
+
+  @override
+  String get videoSubtitleEncodingHint => '手动指定编码只影响这一次播放的外挂和导入字幕，用来兜底。';
+
+  @override
+  String get videoSubtitleEncodingAuto => '自动检测';
+
+  @override
+  String get videoSubtitleImportRemote => '从当前网盘导入';
+
+  @override
+  String get videoSubtitleImportLocal => '从本地文件导入';
+
+  @override
+  String get videoSubtitleBinarySkipped => '这个字幕不是文本，已跳过';
+
+  @override
+  String get videoSubtitleUnsupported => '只支持 srt、ass、ssa、vtt、sub';
+
+  @override
+  String get videoSubtitleLoadFailed => '字幕加载失败';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10555,4 +10669,61 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get netDownloadToGalleryPictures => '儲存到 Pictures/WebdavMediaManager';
+
+  @override
+  String get videoAutoSidecar => '自動載入同目錄外掛字幕';
+
+  @override
+  String get videoAutoSidecarHint => '播放時在影片自己的目錄裡比對同名字幕。這一集的手動匯入優先。';
+
+  @override
+  String get videoSubtitleSubdir => '同時搜尋指定子目錄';
+
+  @override
+  String get videoSubtitleSubdirHint => '開啟後，額外只列出影片所在目錄下這一層子目錄。預設關閉。';
+
+  @override
+  String get videoSubtitleSubdirEmpty => '留空等於不搜尋。只填一個資料夾名稱，例如 sub。';
+
+  @override
+  String get videoSubtitleSubdirName => '子目錄名稱';
+
+  @override
+  String get videoSubtitleSubdirInvalid => '子目錄只能是一層資料夾名稱';
+
+  @override
+  String get videoSubtitlePick => '選擇字幕';
+
+  @override
+  String get videoSubtitleOff => '關閉字幕';
+
+  @override
+  String get videoSubtitleNone => '沒有可用字幕';
+
+  @override
+  String get videoSubtitleExternal => '外掛字幕';
+
+  @override
+  String get videoSubtitleEncoding => '字幕編碼';
+
+  @override
+  String get videoSubtitleEncodingHint => '手動指定編碼只影響這一次播放的外掛和匯入字幕，用來兜底。';
+
+  @override
+  String get videoSubtitleEncodingAuto => '自動偵測';
+
+  @override
+  String get videoSubtitleImportRemote => '從目前網盤匯入';
+
+  @override
+  String get videoSubtitleImportLocal => '從本機檔案匯入';
+
+  @override
+  String get videoSubtitleBinarySkipped => '這個字幕不是文字，已略過';
+
+  @override
+  String get videoSubtitleUnsupported => '只支援 srt、ass、ssa、vtt、sub';
+
+  @override
+  String get videoSubtitleLoadFailed => '字幕載入失敗';
 }

@@ -14,6 +14,7 @@ import '../models/snack_duration.dart';
 import '../models/sync_interval.dart';
 import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
+import '../utils/subtitle_sidecar.dart';
 import 'library_sync_store.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
@@ -56,6 +57,9 @@ class SettingsService extends ChangeNotifier {
   static const _kVideoSubtitlePosition = 'video_subtitle_position';
   static const _kVideoSubtitleOffset = 'video_subtitle_offset';
   static const _kVideoSubtitleFontSize = 'video_subtitle_font_size';
+  static const _kVideoAutoSubtitle = 'video_auto_subtitle';
+  static const _kVideoSubtitleSubdirEnabled = 'video_subtitle_subdir_enabled';
+  static const _kVideoSubtitleSubdir = 'video_subtitle_subdir';
   static const _kShareTagRenameEnabled = 'share_tag_rename_enabled';
   static const _kShareTagRenamePattern = 'share_tag_rename_pattern';
   static const _kSyncRemoteRoot = 'sync_remote_root';
@@ -219,6 +223,9 @@ class SettingsService extends ChangeNotifier {
   VideoSubtitlePosition _videoSubtitlePosition = VideoSubtitlePosition.visible;
   double _videoSubtitleOffset = defaultVideoSubtitleOffset;
   double _videoSubtitleFontSize = defaultVideoSubtitleFontSize;
+  bool _videoAutoSubtitle = true;
+  bool _videoSubtitleSubdirEnabled = false;
+  String _videoSubtitleSubdir = 'sub';
   bool _shareTagRenameEnabled = defaultShareTagRename;
   String _shareTagRenamePattern = defaultShareTagRenamePattern;
   String _syncRemoteRoot = defaultSyncRemoteRoot;
@@ -360,6 +367,16 @@ class SettingsService extends ChangeNotifier {
 
   /// Subtitle font size (sp).
   double get videoSubtitleFontSize => _videoSubtitleFontSize;
+
+  /// Scan the video's own directory for sidecar subtitles. Default on.
+  bool get videoAutoSubtitle => _videoAutoSubtitle;
+
+  /// Extra depth-1 listing of `<video parent>/<subdir>`. Default off.
+  /// Not the same switch as [videoScanSubdirs].
+  bool get videoSubtitleSubdirEnabled => _videoSubtitleSubdirEnabled;
+
+  /// Single path segment. Empty means the subdirectory scan stays off.
+  String get videoSubtitleSubdir => _videoSubtitleSubdir;
 
   /// Whether sharing a cached audio file offers a tag-based default name.
   bool get shareTagRenameEnabled => _shareTagRenameEnabled;
@@ -514,6 +531,10 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getDouble(_kVideoSubtitleFontSize) ??
           defaultVideoSubtitleFontSize,
     );
+    _videoAutoSubtitle = _prefs!.getBool(_kVideoAutoSubtitle) ?? true;
+    _videoSubtitleSubdirEnabled =
+        _prefs!.getBool(_kVideoSubtitleSubdirEnabled) ?? false;
+    _videoSubtitleSubdir = _prefs!.getString(_kVideoSubtitleSubdir) ?? 'sub';
     _shareTagRenameEnabled =
         _prefs!.getBool(_kShareTagRenameEnabled) ?? defaultShareTagRename;
     _shareTagRenamePattern =
@@ -1003,6 +1024,32 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setVideoAutoSubtitle(bool enabled) async {
+    _videoAutoSubtitle = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kVideoAutoSubtitle, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setVideoSubtitleSubdirEnabled(bool enabled) async {
+    _videoSubtitleSubdirEnabled = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kVideoSubtitleSubdirEnabled, enabled);
+    notifyListeners();
+  }
+
+  /// Stores a single folder name. Invalid values (more than one segment) are
+  /// ignored. Empty disables the subdirectory scan even if the switch is on.
+  Future<bool> setVideoSubtitleSubdir(String raw) async {
+    final next = sanitizeSubtitleSubdir(raw);
+    if (next == null) return false;
+    _videoSubtitleSubdir = next;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kVideoSubtitleSubdir, next);
+    notifyListeners();
+    return true;
+  }
+
   static double _clampSubtitleFontSize(double sp) {
     if (sp.isNaN) return defaultVideoSubtitleFontSize;
     if (sp < minVideoSubtitleFontSize) return minVideoSubtitleFontSize;
@@ -1182,6 +1229,9 @@ class SettingsService extends ChangeNotifier {
     'video_subtitle_position': _videoSubtitlePosition.storageKey,
     'video_subtitle_offset': _videoSubtitleOffset,
     'video_subtitle_font_size': _videoSubtitleFontSize,
+    'video_auto_subtitle': _videoAutoSubtitle,
+    'video_subtitle_subdir_enabled': _videoSubtitleSubdirEnabled,
+    'video_subtitle_subdir': _videoSubtitleSubdir,
     'share_tag_rename_enabled': _shareTagRenameEnabled,
     'share_tag_rename_pattern': _shareTagRenamePattern,
     'library_rebuild_hint_fragments': _libraryRebuildHintFragments,
@@ -1376,6 +1426,17 @@ class SettingsService extends ChangeNotifier {
       await setVideoSubtitleFontSize(
         (json['video_subtitle_font_size'] as num).toDouble(),
       );
+    }
+    if (json['video_auto_subtitle'] is bool) {
+      await setVideoAutoSubtitle(json['video_auto_subtitle'] as bool);
+    }
+    if (json['video_subtitle_subdir_enabled'] is bool) {
+      await setVideoSubtitleSubdirEnabled(
+        json['video_subtitle_subdir_enabled'] as bool,
+      );
+    }
+    if (json['video_subtitle_subdir'] is String) {
+      await setVideoSubtitleSubdir(json['video_subtitle_subdir'] as String);
     }
     if (json['share_tag_rename_enabled'] is bool) {
       await setShareTagRenameEnabled(json['share_tag_rename_enabled'] as bool);

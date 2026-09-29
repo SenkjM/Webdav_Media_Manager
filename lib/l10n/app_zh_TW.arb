@@ -1017,6 +1017,25 @@
   "downloadNomediaAlreadyPresent": "下載目錄裡已經有 .nomedia，已按外部操作完成",
   "downloadNomediaAlreadyAbsent": "下載目錄裡已經沒有 .nomedia，已按外部操作完成",
   "actionShortGallery": "相簿",
-  "netDownloadToGalleryPictures": "儲存到 Pictures/WebdavMediaManager"
+  "netDownloadToGalleryPictures": "儲存到 Pictures/WebdavMediaManager",
+  "videoAutoSidecar": "自動載入同目錄外掛字幕",
+  "videoAutoSidecarHint": "播放時在影片自己的目錄裡比對同名字幕。這一集的手動匯入優先。",
+  "videoSubtitleSubdir": "同時搜尋指定子目錄",
+  "videoSubtitleSubdirHint": "開啟後，額外只列出影片所在目錄下這一層子目錄。預設關閉。",
+  "videoSubtitleSubdirEmpty": "留空等於不搜尋。只填一個資料夾名稱，例如 sub。",
+  "videoSubtitleSubdirName": "子目錄名稱",
+  "videoSubtitleSubdirInvalid": "子目錄只能是一層資料夾名稱",
+  "videoSubtitlePick": "選擇字幕",
+  "videoSubtitleOff": "關閉字幕",
+  "videoSubtitleNone": "沒有可用字幕",
+  "videoSubtitleExternal": "外掛字幕",
+  "videoSubtitleEncoding": "字幕編碼",
+  "videoSubtitleEncodingHint": "手動指定編碼只影響這一次播放的外掛和匯入字幕，用來兜底。",
+  "videoSubtitleEncodingAuto": "自動偵測",
+  "videoSubtitleImportRemote": "從目前網盤匯入",
+  "videoSubtitleImportLocal": "從本機檔案匯入",
+  "videoSubtitleBinarySkipped": "這個字幕不是文字，已略過",
+  "videoSubtitleUnsupported": "只支援 srt、ass、ssa、vtt、sub",
+  "videoSubtitleLoadFailed": "字幕載入失敗"
 
 }

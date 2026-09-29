@@ -19,21 +19,40 @@ class VideoSettingsScreen extends StatefulWidget {
 
 class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
   late final TextEditingController _bufferController;
+  late final TextEditingController _subtitleSubdirController;
 
   @override
   void initState() {
     super.initState();
     _bufferController = TextEditingController();
+    _subtitleSubdirController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _bufferController.text =
-          '${context.read<SettingsService>().videoBufferSizeMb}';
+      final settings = context.read<SettingsService>();
+      _bufferController.text = '${settings.videoBufferSizeMb}';
+      _subtitleSubdirController.text = settings.videoSubtitleSubdir;
     });
   }
 
   @override
   void dispose() {
     _bufferController.dispose();
+    _subtitleSubdirController.dispose();
     super.dispose();
+  }
+
+  Future<void> _applySubtitleSubdir() async {
+    final ok = await context.read<SettingsService>().setVideoSubtitleSubdir(
+      _subtitleSubdirController.text,
+    );
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    if (!ok) {
+      AppSnack.show(context, l10n.videoSubtitleSubdirInvalid);
+      return;
+    }
+    _subtitleSubdirController.text = context
+        .read<SettingsService>()
+        .videoSubtitleSubdir;
   }
 
   Future<void> _applyBuffer() async {
@@ -214,6 +233,57 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             AppLocalizations.of(context)!.videoSubtitleHint,
             style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
           ),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.subtitles_outlined),
+            title: Text(AppLocalizations.of(context)!.videoAutoSidecar),
+            subtitle: Text(AppLocalizations.of(context)!.videoAutoSidecarHint),
+            value: settings.videoAutoSubtitle,
+            onChanged: (v) => settings.setVideoAutoSubtitle(v),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.folder_outlined),
+            title: Text(AppLocalizations.of(context)!.videoSubtitleSubdir),
+            subtitle: Text(
+              AppLocalizations.of(context)!.videoSubtitleSubdirHint,
+            ),
+            value: settings.videoSubtitleSubdirEnabled,
+            onChanged: (v) => settings.setVideoSubtitleSubdirEnabled(v),
+          ),
+          if (settings.videoSubtitleSubdirEnabled) ...[
+            Text(
+              AppLocalizations.of(context)!.videoSubtitleSubdirEmpty,
+              style: const TextStyle(
+                color: AppColors.secondaryText,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _subtitleSubdirController,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: AppLocalizations.of(
+                        context,
+                      )!.videoSubtitleSubdirName,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onEditingComplete: _applySubtitleSubdir,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.tonal(
+                  onPressed: _applySubtitleSubdir,
+                  child: Text(AppLocalizations.of(context)!.apply),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           SegmentedButton<VideoSubtitlePosition>(
             showSelectedIcon: false,
