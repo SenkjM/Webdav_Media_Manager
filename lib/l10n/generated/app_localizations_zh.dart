@@ -3387,6 +3387,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get opening => '正在打开';
+
+  @override
+  String get downloadKeepAlive => '后台下载保活';
+
+  @override
+  String get downloadKeepAliveHint => '开启后，下载期间通知栏会常驻一条下载通知（系统要求），关闭下载通知也会显示';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -6771,6 +6777,12 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get opening => '正在打开';
+
+  @override
+  String get downloadKeepAlive => '后台下载保活';
+
+  @override
+  String get downloadKeepAliveHint => '开启后，下载期间通知栏会常驻一条下载通知（系统要求），关闭下载通知也会显示';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10156,4 +10168,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get opening => '正在開啟';
+
+  @override
+  String get downloadKeepAlive => '後台下載保活';
+
+  @override
+  String get downloadKeepAliveHint => '開啟後，下載期間通知列會常駐一則下載通知（系統要求），關閉下載通知也會顯示';
 }

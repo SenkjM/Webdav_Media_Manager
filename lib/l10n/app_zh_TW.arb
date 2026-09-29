@@ -975,5 +975,7 @@
   "videoPlayFailed": "無法播放：{error}",
   "scanningFolder": "正在掃描資料夾…",
   "buffering": "緩衝中…",
-  "opening": "正在開啟"
+  "opening": "正在開啟",
+  "downloadKeepAlive": "後台下載保活",
+  "downloadKeepAliveHint": "開啟後，下載期間通知列會常駐一則下載通知（系統要求），關閉下載通知也會顯示"
 }

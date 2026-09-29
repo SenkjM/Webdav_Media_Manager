@@ -975,5 +975,7 @@
   "videoPlayFailed": "无法播放：{error}",
   "scanningFolder": "扫描文件夹中…",
   "buffering": "缓冲中…",
-  "opening": "正在打开"
+  "opening": "正在打开",
+  "downloadKeepAlive": "后台下载保活",
+  "downloadKeepAliveHint": "开启后，下载期间通知栏会常驻一条下载通知（系统要求），关闭下载通知也会显示"
 }

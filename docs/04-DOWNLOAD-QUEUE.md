@@ -67,7 +67,7 @@
 
 ## 7. 计划（未实现）：后台下载 `fail host lookup`
 
-开发中：后台下载保活（前台服务）方案与语义见 [99 §7](99-IN-PROGRESS.md)。
+开发中：后台下载保活的代码在 `feature/bg-download-keepalive`，ColorOS 真机验收未做。语义与未通过的检查见 [99 §7](99-IN-PROGRESS.md)。
 
 ## 8. 相关代码
 

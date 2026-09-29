@@ -3535,4 +3535,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get opening => 'Opening';
+
+  @override
+  String get downloadKeepAlive => 'Keep downloads alive in background';
+
+  @override
+  String get downloadKeepAliveHint =>
+      'While this is on, a download notification stays in the shade for the whole transfer (required by the system), even if download notifications are turned off.';
 }

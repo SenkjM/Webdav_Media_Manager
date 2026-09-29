@@ -598,7 +598,23 @@ Future<CloudFileItem?> put(
 
 ## 7. 后台下载保活（前台服务）
 
-**状态**：方案已定，关键取舍已由用户确认（保活默认开、FGS 通知常驻并加说明文字、后台断网重试 3 次、放弃实时活动；通知尽量沿用原路径——2001 仍由 `flutter_local_notifications` 更新，FGS 只借同 id 启动，S4 真机验证不过才改原生持有）；未开工代码，文档先行（S0）。分支 `feature/bg-download-keepalive`。
+**状态**（2026-09-29，分支 `feature/bg-download-keepalive`）：默认方案的代码已落地。**ColorOS / 一加真机验收没有做，下面任何一条真机检查都不要当成已通过。**
+
+已落地（本分支）：
+- S1 诊断：失败时 Dart 打前后台、`Connectivity`、`isOfflineError` / `DioException.type`、FGS 是否在跑；原生 `diagnostics` 返回忽略电池优化、`isBackgroundRestricted`、`getRestrictBackgroundStatus`、`isDeviceIdleMode`。
+- S2 `DownloadKeepAliveService`（`foregroundServiceType=dataSync`）、`FOREGROUND_SERVICE_DATA_SYNC`、部分唤醒锁（10 分钟超时，服务活着时每 4 分钟续期）、Android 15+ `onTimeout`（停 FGS、通知 Dart，任务挂起为等待，30 分钟内不再立刻重启 FGS）。
+- S3 `lib/services/download_keepalive.dart` 状态机（idle → starting → running → stopping / failed-to-start）+ 设置「后台下载保活」默认开，旁有说明文字（ARB：`downloadKeepAlive` / `downloadKeepAliveHint`）。只在应用处于前台时启动，队列排空（含退避中的 pending）才停。启动失败只记诊断，下载继续。
+- S4 **默认路径已接线**：Kotlin 用同通道最小通知 `startForeground(2001)` 之后不再更新；Dart 继续以 700 ms 节流 `show(2001)` 替换内容；完成通知 2003 仍由 Dart 发。排空顺序：Dart 停更 2001 → `stopForeground(STOP_FOREGROUND_REMOVE)` → `stopSelf` → Dart 发 2003。关保活 = 不启 FGS，2001 走原来的路径。**原生持有 2001 的备选没有写代码**，仍是 S4 真机验证失败后的退路。
+- S5 后台 offline 自动重试上限 3、前台及其余错误仍是 5（`autoRetryCap` / `shouldAutoRetry`，`_handleFailure` 里取上限）。不改现有失败文案码，不改数据库。后台 3 次失败后回前台不自动恢复。`test/download_retry_test.dart` 覆盖这个上限。
+- 本机 `flutter analyze` 无问题，`flutter test` 595 通过、1 跳过。这不是真机结果。
+
+未做，必须真机或另开工作：
+- §7.2 零代码 A/B（冷启动从不播放 vs 先播再暂停）没有在设备上跑。
+- S4 ColorOS 检查：同 id 替换无闪烁 / 无第二条；`dumpsys activity services` 仍在前台；`dumpsys notification` 里 2001 带 FGS 标记；FGS 期间 Dart `cancel(2001)` 的表现；通道 / 小图标 / ongoing 一致且最小通知不残留。
+- §7.9 验收（锁屏 ≥10 分钟 10 首下完、关掉下载通知仍有一条、排空后消失、后台断网 3 次、开关文案）未做。
+- S6 电池优化 / ColorOS 引导文案未做。
+- S7 语义收口进 04 §7、07、09、README，以及压缩进 `main`，都未做。
+- S8 / §7.6 音乐 FGS 延迟释放不在本分支。
 
 相关完整文档（开发期间保留占位）：[04 §7](04-DOWNLOAD-QUEUE.md)（占位）、[07](07-NOTIFICATIONS.md)（下载进度通知 2001 仍由 Dart 更新，同时作为保活 FGS 的前台通知）、[05](05-AUDIO-PLAYBACK.md)（音乐 FGS 与 `androidStopForegroundOnPause`）、[09 §6](09-MISC.md)（占位）、[README.md](../README.md)（收口时补用户向说明）。
 

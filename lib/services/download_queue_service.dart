@@ -18,6 +18,7 @@ import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'cloud_driver.dart';
+import 'download_keepalive.dart';
 import 'download_notification_service.dart';
 import 'download_store.dart';
 import 'library_service.dart';
@@ -30,6 +31,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'settings_service.dart';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
 /// Background async download queue. Does not block UI/navigation.
@@ -50,6 +52,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     DownloadNotificationService? notifications,
     String? Function(String sourceName)? accountIdForSource,
     SettingsService? settings,
+    DownloadKeepAlive? keepAlive,
   }) : _webDav = webDav,
        _cache = cache,
        _library = library,
@@ -58,13 +61,26 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
        _notify = notifications ?? DownloadNotificationService(),
        _isMusicFile = isMusicFile ?? isAudioFileName,
        _accountIdForSource = accountIdForSource ?? ((_) => null),
-       _settings = settings;
+       _settings = settings,
+       _keepAlive = keepAlive ?? DownloadKeepAlive() {
+    _keepAlive.onTimeout = _onKeepAliveTimeout;
+  }
 
   final WebDavService _webDav;
   final CacheService _cache;
 
   /// 半截文件清理的上限来自设置（设置 → 下载队列）；测试里可以为 null。
   final SettingsService? _settings;
+
+  /// 下载自己的 dataSync 前台服务。测试可注入；默认不碰通道直到真的要启动。
+  final DownloadKeepAlive _keepAlive;
+
+  /// 后台下载保活。默认开；关掉则不启 FGS、不改重试上限。
+  bool keepAliveEnabled = true;
+
+  bool _orderedDrainActive = false;
+  final Set<String> _fgsTimeoutSuspendIds = <String>{};
+  DateTime? _fgsCooldownUntil;
   LibraryService? _library;
   final DownloadStore _store;
   final PlatformExportService _export;
@@ -130,10 +146,34 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   bool _pumpRequested = false;
   bool _initialized = false;
 
-  /// 自动重试上限（只对网络类错误计数）。手动点「重试」不受此限。
+  /// 自动重试上限（网络类错误）。手动点「重试」不受此限。
   static const int maxAutoRetries = 5;
 
-  /// 完全没网时的等待时间：**不消耗重试次数**，网络事件能提前唤醒。
+  /// 应用在后台且错误属于 [isOfflineError] 时的自动重试上限。
+  /// 前台，以及后台的非 offline 错误，仍用 [maxAutoRetries]。
+  static const int backgroundOfflineMaxAutoRetries = 3;
+
+  /// `_handleFailure` 用的上限。后台 offline 为 3，其余为 5。
+  static int autoRetryCap({required bool inBackground, required bool offline}) {
+    if (inBackground && offline) return backgroundOfflineMaxAutoRetries;
+    return maxAutoRetries;
+  }
+
+  /// 这次失败还该不该自动再试。取消与不可重试的错误由调用方另判。
+  static bool shouldAutoRetry({
+    required int attempts,
+    required Object error,
+    required bool inBackground,
+  }) {
+    if (!isRetryable(error)) return false;
+    return attempts <
+        autoRetryCap(
+          inBackground: inBackground,
+          offline: isOfflineError(error),
+        );
+  }
+
+  /// 完全没网时的等待时间。网络事件能提前唤醒。次数仍算进 [autoRetryCap]。
   ///
   /// 别调大：断网时用户等的就是这个间隔，5 分钟看起来和「卡死」没区别。
   static const Duration offlineRetryDelay = Duration(seconds: 10);
@@ -187,7 +227,9 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
-  /// 这个失败是不是「当前根本没网」——这类失败不该消耗重试次数。
+  /// 这个失败是不是「当前根本没网」（DNS / unreachable）。
+  ///
+  /// 计数仍走 [autoRetryCap]：后台这类失败最多 3 次，前台与其它错误仍是 5 次。
   static bool isOfflineError(Object error) {
     final text = error is DioException
         ? (error.error ?? error).toString().toLowerCase()
@@ -1385,9 +1427,20 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     _tasks.clear();
     _sessionIds.clear();
+    _orderedDrainActive = false;
     _lastError = null;
-    unawaited(_notify.cancel());
+    unawaited(_stopKeepAliveThenCancelNotifications());
     notifyListeners();
+  }
+
+  Future<void> _stopKeepAliveThenCancelNotifications() async {
+    _notify.pauseProgressUpdates();
+    try {
+      await _releaseKeepAliveIfAndroid();
+    } finally {
+      _notify.resumeProgressUpdates();
+    }
+    await _notify.cancel();
   }
 
   static List<DownloadTask> orderPending(List<DownloadTask> tasks) {
@@ -1411,7 +1464,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// Called from hot paths (progress ticks, status changes); the notification
   /// service throttles internally so this is cheap enough to call often.
   void _publishProgress() {
-    if (!notificationsEnabled) return;
+    if (!notificationsEnabled && !_keepAlive.holdsOrStarting) return;
     DownloadTask? current;
     var running = 0;
     var pendingCount = 0;
@@ -1435,31 +1488,49 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     if (running == 0 && pendingCount == 0) {
-      // Queue drained: the progress notifications go away, the counters reset,
-      // and one fresh 「全部下载完成」 notification reports this batch.
+      // Queue drained. With the keep-alive FGS up, the order is fixed:
+      // stop Dart updates of 2001, stopForeground(REMOVE), stopSelf, then 2003.
+      // Toggle off keeps today's clear-then-summary path.
+      if (_orderedDrainActive) return;
+      if (_sessionIds.isEmpty && !_keepAlive.holdsOrStarting) return;
+      final postSummary =
+          notificationsEnabled && (completed + failed + cancelled > 0);
       _sessionIds.clear();
-      unawaited(_notify.clearProgress());
-      if (completed + failed + cancelled > 0) {
+      if (_keepAlive.holdsOrStarting) {
+        _orderedDrainActive = true;
         unawaited(
-          _notify.showSummary(
+          _orderedDrain(
             completed: completed,
             failed: failed,
             cancelled: cancelled,
+            postSummary: postSummary,
           ),
         );
-        // The same batch, once, in-app — the queue has no BuildContext, so this
-        // goes through AppSnack's global slot.
-        AppSnack.showGlobal(
-          _completionMessage(
-            completed: completed,
-            failed: failed,
-            cancelled: cancelled,
-          ),
-          error: failed > 0,
-        );
+      } else {
+        unawaited(_notify.clearProgress());
+        if (postSummary) {
+          unawaited(
+            _notify.showSummary(
+              completed: completed,
+              failed: failed,
+              cancelled: cancelled,
+            ),
+          );
+          // The same batch, once, in-app — the queue has no BuildContext, so this
+          // goes through AppSnack's global slot.
+          AppSnack.showGlobal(
+            _completionMessage(
+              completed: completed,
+              failed: failed,
+              cancelled: cancelled,
+            ),
+            error: failed > 0,
+          );
+        }
       }
       return;
     }
+    if (!notificationsEnabled || _notify.progressUpdatesPaused) return;
     final done = completed + failed + cancelled;
     unawaited(
       _notify.showProgress(
@@ -1489,6 +1560,39 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return l10n.dlDoneTitle(parts.join(l10n.dlDoneSep));
   }
 
+  /// 排空：先停 Dart 对 2001 的更新，再让原生移除前台通知并 stopSelf，最后才发 2003。
+  Future<void> _orderedDrain({
+    required int completed,
+    required int failed,
+    required int cancelled,
+    required bool postSummary,
+  }) async {
+    _notify.pauseProgressUpdates();
+    try {
+      await _releaseKeepAliveIfAndroid();
+    } finally {
+      _notify.resumeProgressUpdates();
+    }
+    try {
+      if (!postSummary) return;
+      await _notify.showSummary(
+        completed: completed,
+        failed: failed,
+        cancelled: cancelled,
+      );
+      AppSnack.showGlobal(
+        _completionMessage(
+          completed: completed,
+          failed: failed,
+          cancelled: cancelled,
+        ),
+        error: failed > 0,
+      );
+    } finally {
+      _orderedDrainActive = false;
+    }
+  }
+
   /// Best-effort creation of the download notification channel (startup).
   Future<void> initNotifications() => _notify.ensureChannel();
 
@@ -1497,47 +1601,93 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     notificationsEnabled = value;
     _notify.enabled = value;
     if (!value) {
-      await _notify.cancel();
+      // 保活开着时 2001 是 FGS 通知，不能被「关掉下载通知」清掉。
+      if (_keepAlive.holdsOrStarting) {
+        await _notify.cancelExceptProgress();
+      } else {
+        await _notify.cancel();
+      }
     } else {
       await _notify.ensureChannel();
       _publishProgress();
     }
   }
 
+  /// 设置里的「后台下载保活」。关 = 立刻拆掉 FGS，2001 回到今天的行为。
+  Future<void> setKeepAliveEnabled(bool value) async {
+    if (keepAliveEnabled == value) return;
+    keepAliveEnabled = value;
+    if (!value) {
+      _notify.pauseProgressUpdates();
+      try {
+        await _releaseKeepAliveIfAndroid();
+      } finally {
+        _notify.resumeProgressUpdates();
+      }
+      if (notificationsEnabled) {
+        _publishProgress();
+      } else {
+        await _notify.cancel();
+      }
+      return;
+    }
+    await _ensureKeepAliveBounded();
+  }
+
   /// 一次下载失败后的统一处理：立刻失败 / 退避重试 / 等网络。
   ///
-  /// 文案是用户定死的：重试中「网络中断，正在重试 (n/5)」，耗尽后
-  /// 「重试 5 次仍失败：<原因>」。
+  /// 文案码不变（`err.dlNetworkInterruptedRetry` / `err.dlOfflineRetryWait` /
+  /// `err.dlRetryExhausted`）。次数上限见 [autoRetryCap]：前台 5，后台 offline 3。
   Future<void> _handleFailure(
     DownloadTask task,
     Object error, {
     bool cancelled = false,
   }) async {
-    if (cancelled || task.status == DownloadStatus.cancelled) {
+    if (_takeFgsTimeoutSuspend(task)) {
+      task.status = DownloadStatus.pending;
+      task.nextRetryAt =
+          _fgsCooldownUntil ??
+          DateTime.now().add(DownloadKeepAlive.timeoutCooldown);
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+      _publishProgress();
+      _scheduleRetryWake();
+      return;
+    }
+    final userCancelled = cancelled || task.status == DownloadStatus.cancelled;
+    if (!userCancelled) {
+      unawaited(_recordFailureDiagnostics(error));
+    }
+    final offline = isOfflineError(error);
+    final inBackground = _isBackground;
+    final cap = autoRetryCap(inBackground: inBackground, offline: offline);
+    if (userCancelled) {
       task.status = DownloadStatus.cancelled;
       task.errorMessage = 'err.cancelled';
       task.nextRetryAt = null;
-    } else if (isRetryable(error) && task.attempts < maxAutoRetries) {
+    } else if (shouldAutoRetry(
+      attempts: task.attempts,
+      error: error,
+      inBackground: inBackground,
+    )) {
       // 计数**只有一个来源**：task.attempts。没网也照样 +1 —— 否则
       // 「重试中 (n/5)」会停在原地不动，看起来就是卡死（真机反馈）。
-      final offline = isOfflineError(error);
+      // 后台 offline 的上限是 3，其余仍是 5；文案码本身不改。
       task.attempts += 1;
       task.nextRetryAt = DateTime.now().add(
         retryDelayFor(task.attempts, offline: offline),
       );
       task.status = DownloadStatus.pending;
       task.errorMessage = offline
-          ? 'err.dlOfflineRetryWait|${task.attempts}|$maxAutoRetries|'
+          ? 'err.dlOfflineRetryWait|${task.attempts}|$cap|'
                 '${offlineRetryDelay.inSeconds}'
-          : 'err.dlNetworkInterruptedRetry|${task.attempts}|$maxAutoRetries';
+          : 'err.dlNetworkInterruptedRetry|${task.attempts}|$cap';
     } else {
       task.status = DownloadStatus.failed;
       task.nextRetryAt = null;
-      final why = isOfflineError(error)
-          ? 'err.dlOffline'
-          : _describeError(error);
-      task.errorMessage = task.attempts >= maxAutoRetries
-          ? 'err.dlRetryExhausted|$maxAutoRetries|$why'
+      final why = offline ? 'err.dlOffline' : _describeError(error);
+      task.errorMessage = task.attempts >= cap
+          ? 'err.dlRetryExhausted|$cap|$why'
           : why;
     }
     await _guardPersist(() => _store.upsert(task));
@@ -1545,6 +1695,102 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     _publishProgress();
     if (task.status == DownloadStatus.pending) _scheduleRetryWake();
+  }
+
+  bool get _isBackground => DownloadKeepAlive.lifecycleIsBackground();
+
+  bool get _queueHasWork => _tasks.any(
+    (t) =>
+        t.status == DownloadStatus.pending || t.status == DownloadStatus.active,
+  );
+
+  bool _takeFgsTimeoutSuspend(DownloadTask task) =>
+      _fgsTimeoutSuspendIds.remove(task.id);
+
+  void _onKeepAliveTimeout() {
+    unawaited(_suspendQueueForFgsTimeout());
+  }
+
+  /// dataSync 配额用尽：停掉的是原生服务。这里把还没完的任务挂起为等待，
+  /// 不增加 attempts，也不写新的失败文案。回前台不会自动把已失败的任务捞起来。
+  Future<void> _suspendQueueForFgsTimeout() async {
+    final until = DateTime.now().add(DownloadKeepAlive.timeoutCooldown);
+    _fgsCooldownUntil = until;
+    _keepAlive.suppressStartUntil(until);
+    for (final task in _tasks) {
+      if (task.status == DownloadStatus.active) {
+        _fgsTimeoutSuspendIds.add(task.id);
+        _cancelTokens[task.id]?.cancel('fgs-timeout');
+      } else if (task.status == DownloadStatus.pending) {
+        final when = task.nextRetryAt;
+        if (when == null || when.isBefore(until)) {
+          task.nextRetryAt = until;
+          try {
+            await _store.upsert(task);
+          } catch (e) {
+            debugPrint('DownloadKeepAlive suspend persist failed: $e');
+          }
+        }
+      }
+    }
+    debugPrint('DownloadKeepAlive onTimeout: queue waiting until $until');
+    notifyListeners();
+    _scheduleRetryWake();
+  }
+
+  Future<void> _recordFailureDiagnostics(Object error) async {
+    try {
+      String connectivity;
+      try {
+        final results = await Connectivity().checkConnectivity();
+        connectivity = results.map((r) => r.name).join(',');
+      } catch (e) {
+        connectivity = 'unavailable:$e';
+      }
+      Map<String, Object?> native = const {};
+      if (!kIsWeb && Platform.isAndroid) {
+        native = await _keepAlive.diagnostics();
+      }
+      final dioType = error is DioException ? error.type.name : null;
+      debugPrint(
+        'DownloadQueue KeepAlive failure '
+        'background=$_isBackground '
+        'connectivity=$connectivity '
+        'offline=${isOfflineError(error)} '
+        'dioType=$dioType '
+        'fgsRunning=${_keepAlive.isRunning} '
+        'phase=${_keepAlive.phase.name} '
+        'startError=${_keepAlive.lastStartError} '
+        'native=$native '
+        'error=$error',
+      );
+    } catch (e) {
+      debugPrint('DownloadQueue KeepAlive diagnostics failed: $e');
+    }
+  }
+
+  Future<void> _ensureKeepAliveBounded() async {
+    if (!keepAliveEnabled) return;
+    if (kIsWeb || !Platform.isAndroid) return;
+    if (_isBackground) return;
+    if (!_queueHasWork) return;
+    try {
+      await _keepAlive
+          .ensureRunning(
+            title: L10nHost.current.ntfDownloadingTitle(1, 1),
+            notificationId: DownloadNotificationService.currentId,
+            channelId: kDownloadChannelId,
+            isForeground: () => !_isBackground,
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('DownloadKeepAlive ensure skipped: $e');
+    }
+  }
+
+  Future<void> _releaseKeepAliveIfAndroid() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    await _keepAlive.release();
   }
 
   @override
@@ -1559,6 +1805,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   void dispose() {
     _retryTimer?.cancel();
     unawaited(_connectivitySub?.cancel());
+    unawaited(_releaseKeepAliveIfAndroid());
     try {
       WidgetsBinding.instance.removeObserver(this);
     } catch (_) {}
@@ -1677,6 +1924,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 顺带记录这一跑是不是网络事件唤醒的（事件连赔要冷却，见 `_handleFailure`）。
   Future<void> _attempt(DownloadTask task) async {
     try {
+      await _ensureKeepAliveBounded();
       await _runOne(task);
     } catch (e) {
       // A task that throws before its own try/catch (e.g. a schema error
@@ -1736,7 +1984,13 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     } finally {
       _running = false;
       // Whatever finished, reflect the drained (or still busy) queue.
+      // 保活要留到队列排空，包括还在退避 / 等网络的 pending。
       _publishProgress();
+      if (!_queueHasWork &&
+          !_orderedDrainActive &&
+          _keepAlive.holdsOrStarting) {
+        unawaited(_releaseKeepAliveIfAndroid());
+      }
       // 还有在等退避 / 等网络的任务：安排下一次唤醒，否则队列就停在这了。
       _scheduleRetryWake();
       if (_pumpRequested) {
@@ -1824,6 +2078,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         throw StateError(result.error ?? 'err.writePublicFailed');
       }
       task.localPath = result.uri ?? result.path;
+      _fgsTimeoutSuspendIds.remove(task.id);
       task.status = DownloadStatus.completed;
       task.progress = 1.0;
       task.completedAt = DateTime.now();
@@ -1895,6 +2150,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       if (await dest.exists()) await dest.delete();
       await tmp.rename(dest.path);
       task.localPath = dest.path;
+      _fgsTimeoutSuspendIds.remove(task.id);
       task.status = DownloadStatus.completed;
       task.progress = 1.0;
       task.completedAt = DateTime.now();

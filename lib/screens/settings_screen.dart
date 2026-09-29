@@ -674,6 +674,18 @@ class _SettingsScreenState extends State<SettingsScreen>
               await context.read<DownloadQueueService>().setNotifications(v);
             },
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.downloading_outlined),
+            title: Text(AppLocalizations.of(context)!.downloadKeepAlive),
+            subtitle: Text(AppLocalizations.of(context)!.downloadKeepAliveHint),
+            value: settings.downloadKeepAliveEnabled,
+            onChanged: (v) async {
+              await settings.setDownloadKeepAliveEnabled(v);
+              if (!context.mounted) return;
+              await context.read<DownloadQueueService>().setKeepAliveEnabled(v);
+            },
+          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             dense: true,
