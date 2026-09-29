@@ -1983,7 +1983,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get netStreamingExperimental => '音乐流式传输是实验功能，请先在设置里打开';
+  String get netStreamingExperimental => '音乐流式传输未打开，请先在设置里打开';
 
   @override
   String get netParsingCue => '正在解析 CUE…';
@@ -2032,7 +2032,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get netDefaultActionFromSettings => '设置里的默认动作';
 
   @override
-  String get netExperimentalNoDownload => '实验性：不下载、不进音乐库';
+  String get netExperimentalNoDownload => '不下载、不进音乐库';
 
   @override
   String get netDownloadToGallery => '下载到系统相册';
@@ -3439,10 +3439,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imagePrefetchHint => '向前、向后各预取这么多张（1–5），不会一次载入整本相册。默认每侧 1 张。';
 
   @override
-  String get imageScanSubdirs => '搜索子目录（实验）';
+  String get imageScanSubdirs => '搜索子目录';
 
   @override
-  String get imageScanSubdirsHint => '实验性功能，默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。';
+  String get imageScanSubdirsHint => '默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。';
 
   @override
   String get actionViewImage => '查看图片';
@@ -5469,7 +5469,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   }
 
   @override
-  String get netStreamingExperimental => '音乐流式传输是实验功能，请先在设置里打开';
+  String get netStreamingExperimental => '音乐流式传输未打开，请先在设置里打开';
 
   @override
   String get netParsingCue => '正在解析 CUE…';
@@ -5518,7 +5518,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get netDefaultActionFromSettings => '设置里的默认动作';
 
   @override
-  String get netExperimentalNoDownload => '实验性：不下载、不进音乐库';
+  String get netExperimentalNoDownload => '不下载、不进音乐库';
 
   @override
   String get netDownloadToGallery => '下载到系统相册';
@@ -6925,10 +6925,10 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get imagePrefetchHint => '向前、向后各预取这么多张（1–5），不会一次载入整本相册。默认每侧 1 张。';
 
   @override
-  String get imageScanSubdirs => '搜索子目录（实验）';
+  String get imageScanSubdirs => '搜索子目录';
 
   @override
-  String get imageScanSubdirsHint => '实验性功能，默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。';
+  String get imageScanSubdirsHint => '默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。';
 
   @override
   String get actionViewImage => '查看图片';
@@ -8956,7 +8956,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get netStreamingExperimental => '音樂串流是實驗功能，請先在設定裡開啟';
+  String get netStreamingExperimental => '音樂串流未開啟，請先在設定裡開啟';
 
   @override
   String get netParsingCue => '正在解析 CUE…';
@@ -9005,7 +9005,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get netDefaultActionFromSettings => '設定裡的預設動作';
 
   @override
-  String get netExperimentalNoDownload => '實驗性：不下載、不進音樂庫';
+  String get netExperimentalNoDownload => '不下載、不進音樂庫';
 
   @override
   String get netDownloadToGallery => '下載到系統相簿';
@@ -10412,10 +10412,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get imagePrefetchHint => '向前、向後各預取這麼多張（1–5），不會一次載入整本相簿。預設每側 1 張。';
 
   @override
-  String get imageScanSubdirs => '搜尋子目錄（實驗）';
+  String get imageScanSubdirs => '搜尋子目錄';
 
   @override
-  String get imageScanSubdirsHint => '實驗性功能，預設關閉。開啟後相簿會包含子目錄中的圖片，掃描可能較慢。';
+  String get imageScanSubdirsHint => '預設關閉。開啟後相簿會包含子目錄中的圖片，掃描可能較慢。';
 
   @override
   String get actionViewImage => '檢視圖片';

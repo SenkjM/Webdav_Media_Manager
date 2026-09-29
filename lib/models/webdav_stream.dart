@@ -26,6 +26,6 @@ class WebDavStreamSource {
   final String remotePath;
   final String accountId;
 
-  /// 这条流是视频还是音乐（实验性流式播放）。只影响媒体会话的文案与队列语义。
+  /// 这条流是视频还是音乐。只影响媒体会话的文案与队列语义。
   final StreamKind kind;
 }

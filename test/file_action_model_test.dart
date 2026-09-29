@@ -48,10 +48,10 @@ void main() {
       expect(cleared.categoryFor('a.mp3'), FileCategory.music);
     });
 
-    test('默认动作：音乐流式、cue 读取、视频流式、图片查看、普通下载', () {
+    test('默认动作：音乐缓存、cue 读取、视频流式、图片查看、普通下载', () {
       expect(
         FileActionCatalog.defaultFor(FileCategory.music),
-        FileAction.streamMusic,
+        FileAction.cacheMusic,
       );
       expect(
         FileActionCatalog.defaultFor(FileCategory.image),
@@ -98,7 +98,7 @@ void main() {
       );
     });
 
-    test('视频那个流式传输不适用于音乐（音乐要用实验性的 streamMusic）', () {
+    test('视频那个流式传输不适用于音乐（音乐要用 streamMusic）', () {
       expect(
         judgeAction(
           action: FileAction.stream,
@@ -165,7 +165,7 @@ void main() {
       expect(cfg.other, FileAction.download);
     });
 
-    test('实验开关关掉时音乐流式退回缓存', () {
+    test('流式开关关掉时音乐流式退回缓存', () {
       final cfg = FileActionConfig(
         allowMusicStreaming: false,
         actions: {FileCategory.music: FileAction.streamMusic},
@@ -177,8 +177,9 @@ void main() {
       );
     });
 
-    test('打开实验开关后音乐流式可选', () {
+    test('打开流式开关后音乐流式可选，单击默认仍是缓存', () {
       final cfg = FileActionConfig(allowMusicStreaming: true);
+      expect(cfg.music, FileAction.cacheMusic);
       expect(
         cfg.choicesFor(FileCategory.music),
         contains(FileAction.streamMusic),
@@ -227,13 +228,19 @@ void main() {
         actions: {FileCategory.video: FileAction.download},
       );
       expect(cfg.forFileName('a.mkv', types), FileAction.download);
-      // 开关关着时出厂的 streamMusic 会被退回缓存，已有断言保持这个语义。
+      // 开关关着时，就算动作写成 streamMusic 也会退回缓存。
       expect(cfg.forFileName('a.flac', types), FileAction.cacheMusic);
       expect(cfg.forFileName('a.cue', types), FileAction.readCue);
       expect(cfg.forFileName('a.jpg', types), FileAction.viewImage);
       expect(cfg.forFileName('a.zip', types), FileAction.download);
+      // 开关开着也不把单击出厂默认改成流式；要流式得显式选。
       final streaming = FileActionConfig(allowMusicStreaming: true);
-      expect(streaming.forFileName('a.flac', types), FileAction.streamMusic);
+      expect(streaming.forFileName('a.flac', types), FileAction.cacheMusic);
+      final chosen = FileActionConfig(
+        allowMusicStreaming: true,
+        actions: {FileCategory.music: FileAction.streamMusic},
+      );
+      expect(chosen.forFileName('a.flac', types), FileAction.streamMusic);
     });
   });
 
@@ -293,15 +300,16 @@ void main() {
       await again.init();
       expect(again.fileActions.video, FileAction.download);
       expect(again.audioStreamingEnabled, isTrue);
-      expect(again.fileActions.music, FileAction.streamMusic);
+      expect(again.fileActions.music, FileAction.cacheMusic);
     });
 
-    test('新安装音乐流式默认开启', () async {
+    test('新安装音乐流式开关默认开，单击仍是缓存', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final s = SettingsService();
       await s.init();
       expect(s.audioStreamingEnabled, isTrue);
-      expect(s.fileActions.music, FileAction.streamMusic);
+      expect(s.fileActions.music, FileAction.cacheMusic);
+      expect(s.fileActions.video, FileAction.stream);
       expect(s.fileActions.image, FileAction.viewImage);
     });
 
@@ -314,12 +322,28 @@ void main() {
       expect(s.audioStreamingEnabled, isFalse);
       expect(s.fileActions.music, FileAction.cacheMusic);
       expect(s.fileActions.image, FileAction.viewImage);
+      await s.setAudioStreamingEnabled(true);
+      expect(s.fileActions.music, FileAction.cacheMusic);
+    });
+
+    test('已保存的流式开关不会被新安装默认盖掉', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'audio_streaming_enabled': false,
+        'file_action_config_json':
+            '{"music":"download","video":"stream","cue":"read_cue","other":"download"}',
+      });
+      final s = SettingsService();
+      await s.init();
+      expect(s.audioStreamingEnabled, isFalse);
+      expect(s.fileActions.music, FileAction.download);
     });
 
     test('关掉音乐流式时已选的流式退回缓存', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final s = SettingsService();
       await s.init();
+      expect(s.fileActions.music, FileAction.cacheMusic);
+      await s.setFileAction(FileCategory.music, FileAction.streamMusic);
       expect(s.fileActions.music, FileAction.streamMusic);
       await s.setAudioStreamingEnabled(false);
       expect(s.fileActions.music, FileAction.cacheMusic);
@@ -359,7 +383,7 @@ void main() {
       expect(backup['image_slideshow_enabled'], isFalse);
       expect(backup['file_action_config'], isA<Map>());
       expect((backup['file_action_config'] as Map)['image'], 'view_image');
-      expect((backup['file_action_config'] as Map)['music'], 'stream_music');
+      expect((backup['file_action_config'] as Map)['music'], 'cache_music');
     });
   });
 }
