@@ -157,7 +157,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeAndNavigation.
   ///
   /// In zh_CN, this message translates to:
-  /// **'主页与导航'**
+  /// **'媒体库主页和导航'**
   String get homeAndNavigation;
 
   /// No description provided for @videoPlayback.
@@ -451,7 +451,7 @@ abstract class AppLocalizations {
   /// No description provided for @accountsTitle.
   ///
   /// In zh_CN, this message translates to:
-  /// **'网盘账号'**
+  /// **'网盘账号管理'**
   String get accountsTitle;
 
   /// No description provided for @noAccounts.
@@ -2281,7 +2281,7 @@ abstract class AppLocalizations {
   /// No description provided for @syncAndBackup.
   ///
   /// In zh_CN, this message translates to:
-  /// **'同步与备份'**
+  /// **'备份与同步'**
   String get syncAndBackup;
 
   /// No description provided for @syncIntroLong.
@@ -6083,6 +6083,54 @@ abstract class AppLocalizations {
   /// In zh_CN, this message translates to:
   /// **'正在搜索子目录…'**
   String get imageScanningSubdirs;
+
+  /// No description provided for @settingsMisc.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'杂项'**
+  String get settingsMisc;
+
+  /// No description provided for @settingsThumbnails.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'缩略图'**
+  String get settingsThumbnails;
+
+  /// No description provided for @settingsThumbnailsSubtitle.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'封面缩略图边长，只影响之后新写入的图'**
+  String get settingsThumbnailsSubtitle;
+
+  /// No description provided for @settingsShareSubtitle.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'分享时按标签重命名'**
+  String get settingsShareSubtitle;
+
+  /// No description provided for @downloadNomedia.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'排除媒体扫描'**
+  String get downloadNomedia;
+
+  /// No description provided for @downloadNomediaSubtitle.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'打开后在下载目录写入 .nomedia，系统扫描会跳过该文件夹；关闭后删除该文件'**
+  String get downloadNomediaSubtitle;
+
+  /// No description provided for @actionShortGallery.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'相册'**
+  String get actionShortGallery;
+
+  /// No description provided for @netDownloadToGalleryPictures.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'保存到 Pictures/WebdavMediaManager'**
+  String get netDownloadToGalleryPictures;
 }
 
 class _AppLocalizationsDelegate

@@ -22,11 +22,11 @@
 | 音乐 | 缓存音乐 | 流式传输（音乐，需开关）、下载 |
 | 视频 | 流式传输 | 下载 |
 | CUE | cue 读取 | 下载 |
-| 图片 | 查看图片 | 下载 |
+| 图片 | 查看图片 | 下载到系统相册、下载 |
 | 普通文件 | 下载 | — |
 
 - 「下载」= 落系统下载目录（`DownloadTarget.downloads`），**不是**缓存；音频缓存只由「缓存音乐」产生。
-- 任何文件都可以用「下载」；缓存音乐只对音乐合法，视频那个流式传输只对视频合法，查看图片只对图片合法。
+- 任何文件都可以用「下载」；缓存音乐只对音乐合法，视频那个流式传输只对视频合法，查看图片只对图片合法。「下载到系统相册」只对图片合法（存储键 `download_to_gallery`，落盘 `DownloadTarget.gallery`）。视频的相册入口仍是「⋮」里单独的一项，不进这张表的默认动作。
 - 音乐的出厂单击是缓存音乐，不是流式。新安装的流式开关默认开（偏好键不存在时），但不会把单击改成流式；已经保存过单击动作或开关的安装保持原选择。关掉开关时，已选的流式退回缓存音乐，不退回「当前出厂默认」这条路径本身（避免默认以后再被改成流式时关开关退回它自己）。旧的 music / video 单击键迁移仍是缓存音乐，且不会被改成流式；那些安装没有单独存过流式开关时，开关保持关。
 - 判定只有一份实现：`FileActionCatalog.isAllowed` / `judgeAction`。动作与类型不匹配时**直接说明原因**，不静默换成别的动作。
 - 三个入口共用同一份判定：整行点按、多选工具栏、右侧「更多」菜单。更多菜单的第一条永远是当前默认动作，并标注「设置里的默认动作」。
@@ -39,7 +39,7 @@
 - **后缀**：类别 `FileCategory.image`，默认 jpg / jpeg / png / webp / gif（与相册导出里图片那一半一致）。旧配置没有 `image` 键时补这组默认后缀，不改已有音乐 / 视频列表。HEIC 不在默认后缀里。
 - **相册**：默认只含当前目录里的图片，按文件名大小写不敏感排序（`imageAlbumFrom`）。不伪造一条替身条目。「搜索子目录」在图片查看设置里，默认关闭（偏好键 `image_scan_subdirs`）。
 - **手势**：左点上一张，右点下一张，中点打开**同一**图片设置页。点击区让出 `systemGestureInsets` / `padding`，避免系统返回手势和导航条吃掉点击。退出恢复系统 UI。不加入媒体会话，不启动 `DownloadKeepAliveService`。手动翻页只重置幻灯片间隔，不关掉幻灯片开关。不共用视频页的手势（视频是点按显隐控件、双击 seek）。
-- **设置**：设置页「流式传输」分区下的第三行「图片查看」（分区标题文案键 `streamingSection`；视频设置页 AppBar 仍用「视频播放设置」）。独立设置页，不塞进 `VideoSettingsScreen`。幻灯片默认关，间隔 3 秒（可调 1–30），循环默认开，适应方式默认 `contain`（另有 `cover`），预取数量默认 1。预取是**左右各 N 张**（上一张和下一张都算），不是一共 N 张邻居，也不是整本相册；N 限制在 1–5。这些字段在 `exportForBackup()` 里，随设置进备份（见 [08 §5](08-SYNC-AND-BACKUP.md)）。
+- **设置**：设置页「网络库」下的「图片查看」（视频设置页 AppBar 仍用「视频播放设置」）。独立设置页，不塞进 `VideoSettingsScreen`。幻灯片默认关，间隔 3 秒（可调 1–30），循环默认开，适应方式默认 `contain`（另有 `cover`），预取数量默认 1。预取是**左右各 N 张**（上一张和下一张都算），不是一共 N 张邻居，也不是整本相册；N 限制在 1–5。这些字段在 `exportForBackup()` 里，随设置进备份（见 [08 §5](08-SYNC-AND-BACKUP.md)）。
 - **取图**：不用 `Image.network`。下载走现有 `downloadToFile`（WebDAV 的 Basic + User-Agent，云盘的 rawUrl + rawHeaders；没有直链时该方法内部已经走 `openContent`，crypt 走同一条），只落在临时目录 `image_viewer/<会话>/`。不用 `readAsBytes`。用 `Image.file`，按屏幕尺寸设 `cacheWidth` / `cacheHeight`。只预取配置的邻居。退出时删掉临时文件。
 - **多选**：工具栏不加「查看」。列表行可以用图片图标，分发只走 `judgeAction`。
 - **刻意不做**：不烘焙 EXIF 方向（整图进内存会撑爆）；GIF / 动画 WebP 交给引擎自己播，幻灯片不等动画结束；没有屏幕常亮（不引入 wakelock）。
@@ -112,8 +112,9 @@
 | 条目 | 目标 |
 |------|------|
 | 音频（缓存音乐） | 应用音频缓存，随后 ingest 进[音乐库](03-MUSIC-LIBRARY.md) |
-| 视频（⋮ → 下载到系统相册） | 系统相册 `Movies/WebdavMediaManager`（MediaStore），不进音频缓存 |
-| 任何文件（下载） | 系统下载目录（MediaStore `Downloads`） |
+| 视频（⋮ → 下载到系统相册） | 系统相册 `Movies/WebdavMediaManager`（MediaStore Video），不进音频缓存，不写 `.nomedia` |
+| 图片（下载到系统相册，存储键 `download_to_gallery`） | 系统相册 `Pictures/WebdavMediaManager`（MediaStore Images），不进下载目录，不写 `.nomedia` |
+| 任何文件（下载） | 系统下载目录 `Download/WebdavMediaManager`（MediaStore `Downloads`）。设置 → 网络库 → 下载里的「排除媒体扫描」打开后，只在这个目录写 `.nomedia`（默认关） |
 
 队列状态、进度通知与失败处理见 [04](04-DOWNLOAD-QUEUE.md) 与 [07](07-NOTIFICATIONS.md)。
 

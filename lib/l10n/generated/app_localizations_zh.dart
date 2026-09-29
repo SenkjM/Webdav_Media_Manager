@@ -37,7 +37,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get download => '下载';
 
   @override
-  String get homeAndNavigation => '主页与导航';
+  String get homeAndNavigation => '媒体库主页和导航';
 
   @override
   String get videoPlayback => '视频播放';
@@ -186,7 +186,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get defaultServer => '默认服务器';
 
   @override
-  String get accountsTitle => '网盘账号';
+  String get accountsTitle => '网盘账号管理';
 
   @override
   String get noAccounts => '尚未添加账号。点击右下角添加。';
@@ -1218,7 +1218,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get derivedPathBackups => '全部备份';
 
   @override
-  String get syncAndBackup => '同步与备份';
+  String get syncAndBackup => '备份与同步';
 
   @override
   String get syncIntroLong => '凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。';
@@ -3489,6 +3489,31 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get imageScanningSubdirs => '正在搜索子目录…';
+
+  @override
+  String get settingsMisc => '杂项';
+
+  @override
+  String get settingsThumbnails => '缩略图';
+
+  @override
+  String get settingsThumbnailsSubtitle => '封面缩略图边长，只影响之后新写入的图';
+
+  @override
+  String get settingsShareSubtitle => '分享时按标签重命名';
+
+  @override
+  String get downloadNomedia => '排除媒体扫描';
+
+  @override
+  String get downloadNomediaSubtitle =>
+      '打开后在下载目录写入 .nomedia，系统扫描会跳过该文件夹；关闭后删除该文件';
+
+  @override
+  String get actionShortGallery => '相册';
+
+  @override
+  String get netDownloadToGalleryPictures => '保存到 Pictures/WebdavMediaManager';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -3523,7 +3548,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get download => '下载';
 
   @override
-  String get homeAndNavigation => '主页与导航';
+  String get homeAndNavigation => '媒体库主页和导航';
 
   @override
   String get videoPlayback => '视频播放';
@@ -3672,7 +3697,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get defaultServer => '默认服务器';
 
   @override
-  String get accountsTitle => '网盘账号';
+  String get accountsTitle => '网盘账号管理';
 
   @override
   String get noAccounts => '尚未添加账号。点击右下角添加。';
@@ -4704,7 +4729,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get derivedPathBackups => '全部备份';
 
   @override
-  String get syncAndBackup => '同步与备份';
+  String get syncAndBackup => '备份与同步';
 
   @override
   String get syncIntroLong => '凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。';
@@ -6975,6 +7000,31 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get imageScanningSubdirs => '正在搜索子目录…';
+
+  @override
+  String get settingsMisc => '杂项';
+
+  @override
+  String get settingsThumbnails => '缩略图';
+
+  @override
+  String get settingsThumbnailsSubtitle => '封面缩略图边长，只影响之后新写入的图';
+
+  @override
+  String get settingsShareSubtitle => '分享时按标签重命名';
+
+  @override
+  String get downloadNomedia => '排除媒体扫描';
+
+  @override
+  String get downloadNomediaSubtitle =>
+      '打开后在下载目录写入 .nomedia，系统扫描会跳过该文件夹；关闭后删除该文件';
+
+  @override
+  String get actionShortGallery => '相册';
+
+  @override
+  String get netDownloadToGalleryPictures => '保存到 Pictures/WebdavMediaManager';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7009,7 +7059,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get download => '下載';
 
   @override
-  String get homeAndNavigation => '首頁與導覽';
+  String get homeAndNavigation => '媒體庫首頁和導覽';
 
   @override
   String get videoPlayback => '影片播放';
@@ -7158,7 +7208,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get defaultServer => '預設伺服器';
 
   @override
-  String get accountsTitle => '網路磁碟帳號';
+  String get accountsTitle => '網盤帳號管理';
 
   @override
   String get noAccounts => '尚未新增帳號。點擊右下角新增。';
@@ -8191,7 +8241,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get derivedPathBackups => '全部備份';
 
   @override
-  String get syncAndBackup => '同步與備份';
+  String get syncAndBackup => '備份與同步';
 
   @override
   String get syncIntroLong => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選網盤、填路徑即可。';
@@ -10462,4 +10512,29 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get imageScanningSubdirs => '正在搜尋子目錄…';
+
+  @override
+  String get settingsMisc => '雜項';
+
+  @override
+  String get settingsThumbnails => '縮圖';
+
+  @override
+  String get settingsThumbnailsSubtitle => '封面縮圖邊長，只影響之後新寫入的圖';
+
+  @override
+  String get settingsShareSubtitle => '分享時依標籤重新命名';
+
+  @override
+  String get downloadNomedia => '排除媒體掃描';
+
+  @override
+  String get downloadNomediaSubtitle =>
+      '開啟後在下載目錄寫入 .nomedia，系統掃描會略過該資料夾；關閉後刪除該檔案';
+
+  @override
+  String get actionShortGallery => '相簿';
+
+  @override
+  String get netDownloadToGalleryPictures => '儲存到 Pictures/WebdavMediaManager';
 }

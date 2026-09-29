@@ -37,7 +37,7 @@
 3. 否则若已有 pending / active 的同名任务 → 等待它，不重复排。
 4. 否则新建 pending 任务并 `_pump`。
 
-相册与下载目录另走 `enqueueGallery` / `enqueueToDownloads`（`enqueuePublic`），**不入音频缓存**。
+相册与下载目录另走 `enqueueGallery` / `enqueueToDownloads`（`enqueuePublic`），**不入音频缓存**。视频相册进 `Movies/WebdavMediaManager`，图片「下载到系统相册」进 `Pictures/WebdavMediaManager`，两条都不写 `.nomedia`。`.nomedia` 只可能出现在「下载」用的 `Download/WebdavMediaManager`，而且要用户在下载设置里打开「排除媒体扫描」（默认关）。
 
 ## 4. 完成之后（ingest）
 

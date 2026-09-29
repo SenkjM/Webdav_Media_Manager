@@ -37,7 +37,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get download => 'Downloads';
 
   @override
-  String get homeAndNavigation => 'Home and navigation';
+  String get homeAndNavigation => 'Library home and navigation';
 
   @override
   String get videoPlayback => 'Video playback';
@@ -187,7 +187,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get defaultServer => 'Default server';
 
   @override
-  String get accountsTitle => 'Network accounts';
+  String get accountsTitle => 'Cloud account management';
 
   @override
   String get noAccounts => 'No accounts yet. Tap the add button to create one.';
@@ -1257,7 +1257,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get derivedPathBackups => 'All backups';
 
   @override
-  String get syncAndBackup => 'Sync & backup';
+  String get syncAndBackup => 'Backup and sync';
 
   @override
   String get syncIntroLong =>
@@ -3642,4 +3642,31 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get imageScanningSubdirs => 'Scanning subdirectories…';
+
+  @override
+  String get settingsMisc => 'Miscellaneous';
+
+  @override
+  String get settingsThumbnails => 'Thumbnails';
+
+  @override
+  String get settingsThumbnailsSubtitle =>
+      'Cover thumbnail size; only newly written images change';
+
+  @override
+  String get settingsShareSubtitle => 'Rename shared files from tags';
+
+  @override
+  String get downloadNomedia => 'Exclude from media scan';
+
+  @override
+  String get downloadNomediaSubtitle =>
+      'When on, writes .nomedia into the download folder so the media scanner skips it. When off, deletes that file.';
+
+  @override
+  String get actionShortGallery => 'Gallery';
+
+  @override
+  String get netDownloadToGalleryPictures =>
+      'Save to Pictures/WebdavMediaManager';
 }

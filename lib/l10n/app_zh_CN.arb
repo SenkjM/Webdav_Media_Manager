@@ -9,7 +9,7 @@
   "languageEnglish": "English",
   "webdavServer": "WebDAV 服务器",
   "download": "下载",
-  "homeAndNavigation": "主页与导航",
+  "homeAndNavigation": "媒体库主页和导航",
   "videoPlayback": "视频播放",
   "fileTypes": "文件类型",
   "mediaNotifications": "媒体通知",
@@ -58,7 +58,7 @@
   "uncategorized": "未分类",
   "unnamedPlaylist": "未命名歌单",
   "defaultServer": "默认服务器",
-  "accountsTitle": "网盘账号",
+  "accountsTitle": "网盘账号管理",
   "noAccounts": "尚未添加账号。点击右下角添加。",
   "setCurrent": "设为当前",
   "edit": "编辑",
@@ -362,7 +362,7 @@
   "derivedPathPlaylists": "歌单",
   "derivedPathLibrary": "音乐库",
   "derivedPathBackups": "全部备份",
-  "syncAndBackup": "同步与备份",
+  "syncAndBackup": "备份与同步",
   "syncIntroLong": "凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。",
   "scheduledSyncOff": "已关闭，仅手动同步",
   "scheduledSyncAuto": "{interval} 自动同步",
@@ -1007,5 +1007,14 @@
   "imageViewerPrevious": "上一张",
   "imageViewerNext": "下一张",
   "imageViewerOpenSettings": "图片设置",
-  "imageScanningSubdirs": "正在搜索子目录…"
+  "imageScanningSubdirs": "正在搜索子目录…",
+  "settingsMisc": "杂项",
+  "settingsThumbnails": "缩略图",
+  "settingsThumbnailsSubtitle": "封面缩略图边长，只影响之后新写入的图",
+  "settingsShareSubtitle": "分享时按标签重命名",
+  "downloadNomedia": "排除媒体扫描",
+  "downloadNomediaSubtitle": "打开后在下载目录写入 .nomedia，系统扫描会跳过该文件夹；关闭后删除该文件",
+  "actionShortGallery": "相册",
+  "netDownloadToGalleryPictures": "保存到 Pictures/WebdavMediaManager"
+
 }

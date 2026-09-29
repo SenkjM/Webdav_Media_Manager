@@ -150,6 +150,19 @@ void main() {
       expect(FileAction.stream.downloadTarget, isNull);
       expect(FileAction.streamMusic.downloadTarget, isNull);
       expect(FileAction.viewImage.downloadTarget, isNull);
+      expect(FileAction.downloadToGallery.downloadTarget, DownloadTarget.gallery);
+      expect(
+        FileActionCatalog.isAllowed(FileCategory.image, FileAction.downloadToGallery),
+        isTrue,
+      );
+      expect(
+        FileActionCatalog.isAllowed(FileCategory.video, FileAction.downloadToGallery),
+        isFalse,
+      );
+      expect(
+        FileActionCatalog.forCategory(FileCategory.image),
+        contains(FileAction.downloadToGallery),
+      );
     });
   });
 
@@ -311,6 +324,13 @@ void main() {
       expect(s.fileActions.music, FileAction.cacheMusic);
       expect(s.fileActions.video, FileAction.stream);
       expect(s.fileActions.image, FileAction.viewImage);
+      expect(s.downloadNomediaEnabled, isFalse);
+      expect(s.exportForBackup()['download_nomedia'], isFalse);
+      await s.setDownloadNomediaEnabled(true);
+      final againNomedia = SettingsService();
+      await againNomedia.init();
+      expect(againNomedia.downloadNomediaEnabled, isTrue);
+      expect(againNomedia.exportForBackup()['download_nomedia'], isTrue);
     });
 
     test('已保存的音乐动作不会被新默认覆盖', () async {
@@ -383,6 +403,13 @@ void main() {
       expect(backup['image_slideshow_enabled'], isFalse);
       expect(backup['file_action_config'], isA<Map>());
       expect((backup['file_action_config'] as Map)['image'], 'view_image');
+      final gallery = FileActionConfig(
+        actions: {FileCategory.image: FileAction.downloadToGallery},
+      );
+      expect(gallery.image, FileAction.downloadToGallery);
+      expect(gallery.toJson()['image'], 'download_to_gallery');
+      final backGallery = FileActionConfig.fromJson(gallery.toJson());
+      expect(backGallery!.image, FileAction.downloadToGallery);
       expect((backup['file_action_config'] as Map)['music'], 'cache_music');
     });
   });

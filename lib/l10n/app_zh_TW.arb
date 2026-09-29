@@ -9,7 +9,7 @@
   "languageEnglish": "English",
   "webdavServer": "WebDAV 伺服器",
   "download": "下載",
-  "homeAndNavigation": "首頁與導覽",
+  "homeAndNavigation": "媒體庫首頁和導覽",
   "videoPlayback": "影片播放",
   "fileTypes": "檔案類型",
   "mediaNotifications": "媒體通知",
@@ -58,7 +58,7 @@
   "uncategorized": "未分類",
   "unnamedPlaylist": "未命名歌單",
   "defaultServer": "預設伺服器",
-  "accountsTitle": "網路磁碟帳號",
+  "accountsTitle": "網盤帳號管理",
   "noAccounts": "尚未新增帳號。點擊右下角新增。",
   "setCurrent": "設為目前",
   "edit": "編輯",
@@ -362,7 +362,7 @@
   "derivedPathPlaylists": "歌單",
   "derivedPathLibrary": "音樂庫",
   "derivedPathBackups": "全部備份",
-  "syncAndBackup": "同步與備份",
+  "syncAndBackup": "備份與同步",
   "syncIntroLong": "憑證、歌單與音樂庫共用一條遠端路徑：在下面選網盤、填路徑即可。",
   "scheduledSyncOff": "已關閉，僅手動同步",
   "scheduledSyncAuto": "{interval} 自動同步",
@@ -1007,5 +1007,14 @@
   "imageViewerPrevious": "上一張",
   "imageViewerNext": "下一張",
   "imageViewerOpenSettings": "圖片設定",
-  "imageScanningSubdirs": "正在搜尋子目錄…"
+  "imageScanningSubdirs": "正在搜尋子目錄…",
+  "settingsMisc": "雜項",
+  "settingsThumbnails": "縮圖",
+  "settingsThumbnailsSubtitle": "封面縮圖邊長，只影響之後新寫入的圖",
+  "settingsShareSubtitle": "分享時依標籤重新命名",
+  "downloadNomedia": "排除媒體掃描",
+  "downloadNomediaSubtitle": "開啟後在下載目錄寫入 .nomedia，系統掃描會略過該資料夾；關閉後刪除該檔案",
+  "actionShortGallery": "相簿",
+  "netDownloadToGalleryPictures": "儲存到 Pictures/WebdavMediaManager"
+
 }

@@ -5,7 +5,7 @@ import '../l10n/generated/app_localizations.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 
-/// 图片查看设置。网络库查看器点中间、设置里「流式传输」下的「图片查看」
+/// 图片查看设置。网络库查看器点中间、设置里「网络库」下的「图片查看」
 /// 都进这一页，读写的是同一组 [SettingsService] 偏好，没有第二套模型。
 class ImageSettingsScreen extends StatelessWidget {
   const ImageSettingsScreen({super.key});
