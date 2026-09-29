@@ -12,7 +12,7 @@ extension AppLocalePreferenceX on AppLocalePreference {
 
   Locale? get locale => switch (this) {
     AppLocalePreference.system => null,
-    AppLocalePreference.zhCN => const Locale('zh', 'CN'),
+    AppLocalePreference.zhCN => const Locale('zh'),
     AppLocalePreference.zhTW => const Locale('zh', 'TW'),
     AppLocalePreference.en => const Locale('en'),
   };

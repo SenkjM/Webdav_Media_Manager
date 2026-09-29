@@ -55,7 +55,7 @@ Future<void> main() async {
     try {
       return lookupAppLocalizations(locale);
     } on FlutterError {
-      return lookupAppLocalizations(const Locale('zh', 'CN'));
+      return lookupAppLocalizations(const Locale('zh'));
     }
   });
   if (!kIsWeb && Platform.isAndroid) {

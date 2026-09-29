@@ -8,7 +8,7 @@ import '../l10n/generated/app_localizations.dart';
 /// Configured once from `main()` with a resolver that re-reads the persisted
 /// locale preference on every call, so a settings change applies immediately.
 /// Unconfigured access (service unit tests) falls back to Simplified Chinese,
-/// matching the generated lookup for `Locale('zh', 'CN')`.
+/// matching the generated lookup for `Locale('zh')`.
 class L10nHost {
   L10nHost._();
 
@@ -20,10 +20,11 @@ class L10nHost {
     _resolver = resolver;
   }
 
-  /// The active localization bundle. Falls back to zh_CN when unconfigured.
+  /// The active localization bundle. Falls back to Simplified Chinese when
+  /// unconfigured.
   static AppLocalizations get current {
     final resolver = _resolver;
     if (resolver != null) return resolver();
-    return lookupAppLocalizations(const Locale('zh', 'CN'));
+    return lookupAppLocalizations(const Locale('zh'));
   }
 }
