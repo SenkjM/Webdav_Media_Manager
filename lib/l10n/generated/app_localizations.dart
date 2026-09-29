@@ -6143,6 +6143,120 @@ abstract class AppLocalizations {
   /// In zh_CN, this message translates to:
   /// **'保存到 Pictures/WebdavMediaManager'**
   String get netDownloadToGalleryPictures;
+
+  /// No description provided for @videoAutoSidecar.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'自动加载同目录外挂字幕'**
+  String get videoAutoSidecar;
+
+  /// No description provided for @videoAutoSidecarHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'播放时在视频自己的目录里匹配同名字幕。这一集的手动导入优先。'**
+  String get videoAutoSidecarHint;
+
+  /// No description provided for @videoSubtitleSubdir.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'同时搜索指定子目录'**
+  String get videoSubtitleSubdir;
+
+  /// No description provided for @videoSubtitleSubdirHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'开启后，额外只列视频所在目录下这一层子目录。默认关闭。'**
+  String get videoSubtitleSubdirHint;
+
+  /// No description provided for @videoSubtitleSubdirEmpty.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'留空等于不搜索。只填一个文件夹名，例如 sub。'**
+  String get videoSubtitleSubdirEmpty;
+
+  /// No description provided for @videoSubtitleSubdirName.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'子目录名'**
+  String get videoSubtitleSubdirName;
+
+  /// No description provided for @videoSubtitleSubdirInvalid.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'子目录只能是一层文件夹名'**
+  String get videoSubtitleSubdirInvalid;
+
+  /// No description provided for @videoSubtitlePick.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'选择字幕'**
+  String get videoSubtitlePick;
+
+  /// No description provided for @videoSubtitleOff.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'关闭字幕'**
+  String get videoSubtitleOff;
+
+  /// No description provided for @videoSubtitleNone.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'没有可用字幕'**
+  String get videoSubtitleNone;
+
+  /// No description provided for @videoSubtitleExternal.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'外挂字幕'**
+  String get videoSubtitleExternal;
+
+  /// No description provided for @videoSubtitleEncoding.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'字幕编码'**
+  String get videoSubtitleEncoding;
+
+  /// No description provided for @videoSubtitleEncodingHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'手动指定编码只影响这一次播放的外挂和导入字幕，用来兜底。'**
+  String get videoSubtitleEncodingHint;
+
+  /// No description provided for @videoSubtitleEncodingAuto.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'自动检测'**
+  String get videoSubtitleEncodingAuto;
+
+  /// No description provided for @videoSubtitleImportRemote.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'从当前网盘导入'**
+  String get videoSubtitleImportRemote;
+
+  /// No description provided for @videoSubtitleImportLocal.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'从本地文件导入'**
+  String get videoSubtitleImportLocal;
+
+  /// No description provided for @videoSubtitleBinarySkipped.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'这个字幕不是文本，已跳过'**
+  String get videoSubtitleBinarySkipped;
+
+  /// No description provided for @videoSubtitleUnsupported.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'只支持 srt、ass、ssa、vtt、sub'**
+  String get videoSubtitleUnsupported;
+
+  /// No description provided for @videoSubtitleLoadFailed.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'字幕加载失败'**
+  String get videoSubtitleLoadFailed;
 }
 
 class _AppLocalizationsDelegate

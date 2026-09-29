@@ -3677,4 +3677,68 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get netDownloadToGalleryPictures =>
       'Save to Pictures/WebdavMediaManager';
+
+  @override
+  String get videoAutoSidecar => 'Load sidecars from the same folder';
+
+  @override
+  String get videoAutoSidecarHint =>
+      'Match same-name subtitles in the video\'s own folder. A manual import for this episode wins.';
+
+  @override
+  String get videoSubtitleSubdir => 'Also scan a subdirectory';
+
+  @override
+  String get videoSubtitleSubdirHint =>
+      'When on, also list one extra folder under the video\'s own parent. Off by default.';
+
+  @override
+  String get videoSubtitleSubdirEmpty =>
+      'Leave empty to skip. One folder name only, for example sub.';
+
+  @override
+  String get videoSubtitleSubdirName => 'Subdirectory name';
+
+  @override
+  String get videoSubtitleSubdirInvalid =>
+      'The subdirectory must be a single folder name';
+
+  @override
+  String get videoSubtitlePick => 'Subtitles';
+
+  @override
+  String get videoSubtitleOff => 'Off';
+
+  @override
+  String get videoSubtitleNone => 'No subtitles';
+
+  @override
+  String get videoSubtitleExternal => 'External subtitle';
+
+  @override
+  String get videoSubtitleEncoding => 'Subtitle encoding';
+
+  @override
+  String get videoSubtitleEncodingHint =>
+      'A manual encoding applies only to external and imported text subtitles for this playback.';
+
+  @override
+  String get videoSubtitleEncodingAuto => 'Detect';
+
+  @override
+  String get videoSubtitleImportRemote => 'Import from this account';
+
+  @override
+  String get videoSubtitleImportLocal => 'Import a local file';
+
+  @override
+  String get videoSubtitleBinarySkipped =>
+      'This subtitle is not text and was skipped';
+
+  @override
+  String get videoSubtitleUnsupported =>
+      'Only srt, ass, ssa, vtt, and sub are supported';
+
+  @override
+  String get videoSubtitleLoadFailed => 'Could not load the subtitle';
 }

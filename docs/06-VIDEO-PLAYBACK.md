@@ -57,3 +57,18 @@
 ## 7. 相关代码
 
 `video_player_screen.dart`（控件 / 手势 / 播放列表 UI）、`video_queue_controller.dart`（渐进扫描队列）、`video_playback_service.dart`（打开远端流）、`utils/video_pip.dart`（PiP 通道）、`models/video_settings.dart`（设置枚举与默认值）、`video_settings_screen.dart`（设置页）。
+
+## 8. 字幕选择
+
+播放器用 `player.stream.subtitle` 的文本画字幕（libass 关着），所以只能选文本轨。
+
+- **来源**：同目录外挂、可选的一层子目录外挂、打开后播放器报上来的内嵌文本轨、当集手动导入。手动导入可以是当前账号里的远端文件，或本机文件。不跨账号，不写入设置。切集或离开播放器就丢掉。它有效时压过自动选择。
+- **自动优先级**：当集手动导入 > 内嵌文本 > 外挂。都没有就不显示字幕。多条内嵌时优先界面语言，其余留在列表里。多条外挂时先精确同名（`{主名}.srt|ass|ssa|vtt|sub`），再界面语言，再文件名。
+- **匹配**：比的是 `WebDavItem.name`，不是 URL。主名是去掉最后一个视频后缀。语言后缀只能是一段、中间不带点（`video.zh.srt`、`video.zh-CN.ass`、`video.chi.srt`、`video.chs.srt`）。`Movie.Chinese.srt` 这种多出来的单词不算。`zh-CN` / `chs` / `chi` / `zh-Hans` 显示成 `zh`，`en` / `eng` 显示成 `en`，不认识的语言段原样显示。没有语言段就不编一个 `zh`。只认文件，跳过目录。父目录是这部视频自己的上一级；种子里已经有的同目录列表不再 PROPFIND，子目录里的视频要列它自己的父目录。
+- **列表标签**：同目录外挂只显示语言（`zh`），格式（`ass`、`srt` 等）是单独的小标签。子目录外挂是 `/sub/zh` 再加格式标签。内嵌是 `[内嵌] zh`，没有格式标签。手动导入用所选文件名当标题，可以带格式标签。
+- **设置**：在视频播放设置页，不新开顶层分区。`video_auto_subtitle` 默认开（同目录扫描）。`video_subtitle_subdir_enabled` 默认关；开启后才多列 `<视频父目录>/<子目录>` 这一层。子目录名存在 `video_subtitle_subdir`（建议 `sub`，留空等于关）。这两个键不是 `video_scan_subdirs`，也不是 `image_scan_subdirs`。
+- **编码**：不假设 UTF-8。文本会在 UTF-8、UTF-16 LE/BE、GBK、GB18030、Big5 里选一个合法且最不像乱码的。播放界面可以手动指定编码兜底，只作用于外挂和导入的文本，记在当前播放器会话里，不写入设置。解码后的 UTF-8 写到带原后缀的临时文件，再用 `SubtitleTrack.uri`。不用 `SubtitleTrack.data` 交 GBK。二进制 `.sub` / `.idx` 认不出来就不放进列表。PGS / VobSub 这类位图内嵌轨不提供选择。
+- **加载**：外挂走当前账号已登录的 `WebDavService.readAsBytes`，不进下载队列，也不把裸 URL 交给 mpv。`setSubtitleTrack` 发生在这一集最后一次 `player.open` 之后。
+
+代码：`lib/utils/subtitle_sidecar.dart`、`lib/utils/subtitle_encoding.dart`、`lib/services/video_subtitle_binder.dart`，设置页 `video_settings_screen.dart`，播放页字幕按钮。
+

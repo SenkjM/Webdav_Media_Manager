@@ -1017,6 +1017,25 @@
   "downloadNomediaAlreadyPresent": "下载目录里已经有 .nomedia，已按外部操作完成",
   "downloadNomediaAlreadyAbsent": "下载目录里已经没有 .nomedia，已按外部操作完成",
   "actionShortGallery": "相册",
-  "netDownloadToGalleryPictures": "保存到 Pictures/WebdavMediaManager"
+  "netDownloadToGalleryPictures": "保存到 Pictures/WebdavMediaManager",
+  "videoAutoSidecar": "自动加载同目录外挂字幕",
+  "videoAutoSidecarHint": "播放时在视频自己的目录里匹配同名字幕。这一集的手动导入优先。",
+  "videoSubtitleSubdir": "同时搜索指定子目录",
+  "videoSubtitleSubdirHint": "开启后，额外只列视频所在目录下这一层子目录。默认关闭。",
+  "videoSubtitleSubdirEmpty": "留空等于不搜索。只填一个文件夹名，例如 sub。",
+  "videoSubtitleSubdirName": "子目录名",
+  "videoSubtitleSubdirInvalid": "子目录只能是一层文件夹名",
+  "videoSubtitlePick": "选择字幕",
+  "videoSubtitleOff": "关闭字幕",
+  "videoSubtitleNone": "没有可用字幕",
+  "videoSubtitleExternal": "外挂字幕",
+  "videoSubtitleEncoding": "字幕编码",
+  "videoSubtitleEncodingHint": "手动指定编码只影响这一次播放的外挂和导入字幕，用来兜底。",
+  "videoSubtitleEncodingAuto": "自动检测",
+  "videoSubtitleImportRemote": "从当前网盘导入",
+  "videoSubtitleImportLocal": "从本地文件导入",
+  "videoSubtitleBinarySkipped": "这个字幕不是文本，已跳过",
+  "videoSubtitleUnsupported": "只支持 srt、ass、ssa、vtt、sub",
+  "videoSubtitleLoadFailed": "字幕加载失败"
 
 }

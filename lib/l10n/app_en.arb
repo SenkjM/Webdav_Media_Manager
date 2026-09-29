@@ -1017,6 +1017,25 @@
   "downloadNomediaAlreadyPresent": "The download folder already has .nomedia; kept as an external change.",
   "downloadNomediaAlreadyAbsent": "The download folder already has no .nomedia; kept as an external change.",
   "actionShortGallery": "Gallery",
-  "netDownloadToGalleryPictures": "Save to Pictures/WebdavMediaManager"
+  "netDownloadToGalleryPictures": "Save to Pictures/WebdavMediaManager",
+  "videoAutoSidecar": "Load sidecars from the same folder",
+  "videoAutoSidecarHint": "Match same-name subtitles in the video's own folder. A manual import for this episode wins.",
+  "videoSubtitleSubdir": "Also scan a subdirectory",
+  "videoSubtitleSubdirHint": "When on, also list one extra folder under the video's own parent. Off by default.",
+  "videoSubtitleSubdirEmpty": "Leave empty to skip. One folder name only, for example sub.",
+  "videoSubtitleSubdirName": "Subdirectory name",
+  "videoSubtitleSubdirInvalid": "The subdirectory must be a single folder name",
+  "videoSubtitlePick": "Subtitles",
+  "videoSubtitleOff": "Off",
+  "videoSubtitleNone": "No subtitles",
+  "videoSubtitleExternal": "External subtitle",
+  "videoSubtitleEncoding": "Subtitle encoding",
+  "videoSubtitleEncodingHint": "A manual encoding applies only to external and imported text subtitles for this playback.",
+  "videoSubtitleEncodingAuto": "Detect",
+  "videoSubtitleImportRemote": "Import from this account",
+  "videoSubtitleImportLocal": "Import a local file",
+  "videoSubtitleBinarySkipped": "This subtitle is not text and was skipped",
+  "videoSubtitleUnsupported": "Only srt, ass, ssa, vtt, and sub are supported",
+  "videoSubtitleLoadFailed": "Could not load the subtitle"
 
 }

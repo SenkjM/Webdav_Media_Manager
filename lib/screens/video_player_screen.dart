@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -8,19 +9,25 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
+import '../models/app_locale.dart';
 import '../models/video_settings.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/audio_player_service.dart';
+import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
+import '../services/video_subtitle_binder.dart';
 import '../services/video_playback_service.dart';
 import '../services/video_queue_controller.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/subtitle_sidecar.dart';
 import '../utils/video_pip.dart';
 import '../widgets/app_bottom_sheet.dart';
+import '../widgets/video_subtitle_sheet.dart';
 import '../utils/app_snack.dart';
 import 'music_stream_screen.dart';
+import 'subtitle_remote_picker_screen.dart';
 
 /// Everything the player needs to build a play queue for one video.
 class VideoQueueSeed {
@@ -29,6 +36,7 @@ class VideoQueueSeed {
     required this.folderPath,
     required this.current,
     this.siblings = const [],
+    this.folderListing,
   });
 
   final String accountId;
@@ -42,6 +50,11 @@ class VideoQueueSeed {
   /// Videos already known in [folderPath] (the listing the user tapped in), so
   /// playback can start without waiting for the scan.
   final List<WebDavItem> siblings;
+
+  /// Full listing of [folderPath], including non-video files. Same-directory
+  /// subtitle matching uses it and does not PROPFIND that folder again.
+  /// Null when the caller does not have the listing.
+  final List<WebDavItem>? folderListing;
 }
 
 /// Full-screen WebDAV video player (streaming via media_kit).
@@ -118,6 +131,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   /// Current subtitle text (only used by 视频下方 mode, which renders its own).
   final ValueNotifier<String> _subtitleText = ValueNotifier('');
 
+  VideoSubtitleBinder? _subtitleBinder;
+  WebDavService? _subtitleWebDav;
+  String? _subtitleAccountId;
+
   StreamSubscription<bool>? _pipSub;
   StreamSubscription<bool>? _completedSub;
 
@@ -192,6 +209,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         _rate.value = restored;
       }
       await player.open(service.mediaFor(source));
+      _armSubtitles(
+        WebDavItem(
+          name: source.name,
+          path: source.remotePath,
+          isDirectory: false,
+        ),
+      );
       // 播放器实例与流式音乐页共用：把音乐页可能设上的循环清掉，
       // 否则听完一首歌再来看视频，视频也会跟着循环。
       await player.setPlaylistMode(PlaylistMode.none);
@@ -262,6 +286,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     // Keep the active subtitle text for 视频下方 mode (the built-in subtitle view
     // is disabled there, so we render the lines ourselves).
     _subs.add(
+      player.stream.tracks.listen((tracks) {
+        _subtitleBinder?.onTracks(tracks.subtitle);
+      }),
+    );
+    _subs.add(
       player.stream.subtitle.listen((lines) {
         if (!mounted) return;
         _subtitleText.value = lines
@@ -285,6 +314,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     _queue?.removeListener(_onQueueChanged);
     _queue?.dispose();
     unawaited(_service?.endBoost() ?? Future<void>.value());
+    unawaited(_subtitleBinder?.dispose() ?? Future<void>.value());
     for (final s in _subs) {
       s.cancel();
     }
@@ -335,6 +365,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       _title.value = item.name;
       await player.open(service.mediaFor(source), play: true);
       if ((rate - 1.0).abs() > 0.001) await player.setRate(rate);
+      _armSubtitles(item);
     } catch (e) {
       if (!mounted) return;
       AppSnack.show(context, '切换视频失败：$e');
@@ -1025,6 +1056,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                     onTap: _showQueueSheet,
                   ),
                 _RoundIconButton(
+                  icon: Icons.subtitles_outlined,
+                  tooltip: AppLocalizations.of(context)!.videoSubtitlePick,
+                  onTap: _showSubtitleSheet,
+                ),
+                _RoundIconButton(
                   icon: Icons.more_vert,
                   tooltip: AppLocalizations.of(context)!.moreActions,
                   onTap: _showMoreSettings,
@@ -1494,6 +1530,214 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         ),
       ),
     );
+  }
+
+  // --- Subtitles --------------------------------------------------------
+
+  void _armSubtitles(WebDavItem item) {
+    final settings = context.read<SettingsService>();
+    final accountId =
+        _queue?.accountId ?? _resolved?.accountId ?? widget.source?.accountId;
+    if (accountId == null) return;
+    _subtitleAccountId = accountId;
+    _subtitleWebDav ??= context.read<WebDavService>();
+    final webDav = _subtitleWebDav!;
+    final binder = _subtitleBinder ??= VideoSubtitleBinder(
+      listDirectory: (dir) {
+        final id = _subtitleAccountId;
+        if (id == null) return Future.value(const <WebDavItem>[]);
+        return webDav.listDirectory(
+          id,
+          dir,
+          fileTypes: settings.fileTypes,
+        );
+      },
+      readBytes: (path) {
+        final id = _subtitleAccountId;
+        if (id == null) return Future<List<int>>.error(StateError('no account'));
+        return webDav.readAsBytes(id, path);
+      },
+      setTrack: (track) async {
+        final player = _player;
+        if (player == null) return;
+        await player.setSubtitleTrack(track);
+      },
+      onChanged: () {
+        if (mounted) setState(() {});
+      },
+      onError: (code) {
+        if (!mounted) return;
+        final l10n = AppLocalizations.of(context)!;
+        final message = switch (code) {
+          'binary' => l10n.videoSubtitleBinarySkipped,
+          'unsupported' => l10n.videoSubtitleUnsupported,
+          _ => l10n.videoSubtitleLoadFailed,
+        };
+        AppSnack.show(context, message);
+      },
+    );
+    final locale =
+        settings.appLocale.locale ?? Localizations.localeOf(context);
+    binder.prepareEpisode(
+      uiLanguageKey: uiSubtitleLanguageKey(locale.languageCode),
+    );
+    final player = _player;
+    if (player != null) {
+      binder.onTracks(player.state.tracks.subtitle);
+    }
+    final seed = widget.seed;
+    final known = seed != null &&
+            seed.folderListing != null &&
+            sameDirectory(item.path, seed.folderPath)
+        ? seed.folderListing
+        : null;
+    final extensions = <String>{
+      for (final ext in settings.fileTypes.videoExtensions) ext.toLowerCase(),
+    };
+    final own = _fileExtension(item.name);
+    if (own != null) extensions.add(own);
+    unawaited(
+      binder.scan(
+        video: item,
+        knownSameDirectory: known,
+        sameDirEnabled: settings.videoAutoSubtitle,
+        subdirEnabled: settings.videoSubtitleSubdirEnabled,
+        subdirName: settings.videoSubtitleSubdir,
+        videoExtensions: extensions,
+      ),
+    );
+  }
+
+  String? _fileExtension(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot <= 0 || dot == name.length - 1) return null;
+    return name.substring(dot + 1).toLowerCase();
+  }
+
+  Future<void> _showSubtitleSheet() async {
+    final binder = _subtitleBinder;
+    if (binder == null) return;
+    final l10n = AppLocalizations.of(context)!;
+    final rows = <VideoSubtitleSheetRow>[
+      VideoSubtitleSheetRow(keyId: 'none', title: l10n.videoSubtitleOff),
+    ];
+    final manual = binder.manual;
+    if (manual != null) {
+      rows.add(
+        VideoSubtitleSheetRow(
+          keyId: 'manual',
+          title: manual.label.title,
+          formatTag: manual.label.formatTag,
+        ),
+      );
+    }
+    for (final cue in binder.embedded) {
+      rows.add(
+        VideoSubtitleSheetRow(
+          keyId: 'emb:${cue.id}',
+          title: cue.label.title,
+          formatTag: cue.label.formatTag,
+        ),
+      );
+    }
+    for (final hit in binder.sidecars) {
+      rows.add(
+        VideoSubtitleSheetRow(
+          keyId: 'side:${hit.path}',
+          title: hit.label.title,
+          formatTag: hit.label.formatTag,
+        ),
+      );
+    }
+    await showVideoSubtitleSheet(
+      context: context,
+      rows: rows,
+      selectedKey: _selectedSubtitleRow(binder),
+      encoding: binder.encoding,
+      onSelect: _onSubtitleRow,
+      onEncoding: binder.setEncoding,
+      onImportRemote: _importRemoteSubtitle,
+      onImportLocal: _importLocalSubtitle,
+    );
+  }
+
+  String? _selectedSubtitleRow(VideoSubtitleBinder binder) {
+    final id = binder.selectedKey;
+    if (id == null || id == 'none' || id == 'manual') return id;
+    if (binder.embedded.any((cue) => cue.id == id)) return 'emb:$id';
+    return 'side:$id';
+  }
+
+  Future<void> _onSubtitleRow(String keyId) async {
+    final binder = _subtitleBinder;
+    if (binder == null) return;
+    if (keyId == 'none') {
+      await binder.selectNone();
+    } else if (keyId == 'manual') {
+      await binder.selectManual();
+    } else if (keyId.startsWith('emb:')) {
+      await binder.selectEmbedded(keyId.substring(4));
+    } else if (keyId.startsWith('side:')) {
+      await binder.selectSidecar(keyId.substring(5));
+    }
+  }
+
+  Future<void> _importRemoteSubtitle() async {
+    final accountId = _subtitleAccountId;
+    final webDav = _subtitleWebDav;
+    if (accountId == null || webDav == null) return;
+    final currentPath = _queue?.current?.path ?? _resolved?.remotePath;
+    final start = currentPath == null ? '/' : videoParentDirectory(currentPath);
+    final item = await Navigator.of(context).push<WebDavItem>(
+      MaterialPageRoute(
+        builder: (_) => SubtitleRemotePickerScreen(
+          accountId: accountId,
+          initialDirectory: start,
+        ),
+      ),
+    );
+    if (item == null || !mounted) return;
+    try {
+      final bytes = await webDav.readAsBytes(accountId, item.path);
+      if (!mounted) return;
+      await _subtitleBinder?.importBytes(fileName: item.name, bytes: bytes);
+    } catch (_) {
+      if (!mounted) return;
+      AppSnack.show(
+        context,
+        AppLocalizations.of(context)!.videoSubtitleLoadFailed,
+      );
+    }
+  }
+
+  Future<void> _importLocalSubtitle() async {
+    final picked = await const PlatformExportService().pickFile(
+      mimeType: '*/*',
+    );
+    if (!mounted) return;
+    if (picked.cancelled) return;
+    if (!picked.ok || picked.path == null) {
+      AppSnack.show(
+        context,
+        AppLocalizations.of(context)!.videoSubtitleLoadFailed,
+      );
+      return;
+    }
+    try {
+      final bytes = await File(picked.path!).readAsBytes();
+      final name = (picked.fileName == null || picked.fileName!.isEmpty)
+          ? picked.path!.split(Platform.pathSeparator).last
+          : picked.fileName!;
+      await _subtitleBinder?.importBytes(fileName: name, bytes: bytes);
+    } catch (_) {
+      if (!mounted) return;
+      AppSnack.show(
+        context,
+        AppLocalizations.of(context)!.videoSubtitleLoadFailed,
+      );
+    } finally {
+      await PlatformExportService.discardPickedFile(picked.path);
+    }
   }
 
   // --- More settings sheet ----------------------------------------------

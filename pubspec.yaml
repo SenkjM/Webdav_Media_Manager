@@ -73,6 +73,9 @@ dependencies:
   crypto: ^3.0.7
   share_plus: ^13.3.0
   pointycastle: ^4.0.0
+  # Sidecar subtitles are often GBK / GB18030 / Big5, not UTF-8.
+  charset: ^2.0.1
+  enough_convert: ^1.6.0
 
 dev_dependencies:
   flutter_test:

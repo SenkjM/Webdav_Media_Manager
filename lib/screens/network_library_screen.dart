@@ -414,6 +414,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       folderPath: _path,
       current: item,
       siblings: _items.where((e) => e.isVideo).toList(),
+      folderListing: _items,
     );
     // 界面先落地：源解析交给页内 loader（云盘要三跳网络，原来会卡住整条
     // 跳转链）；「伪装成视频的音频」由视频页解析后路由去音乐页（99 §7.2.9）。
