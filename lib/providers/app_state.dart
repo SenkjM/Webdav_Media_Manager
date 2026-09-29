@@ -49,20 +49,25 @@ class AppState extends ChangeNotifier {
       if (acc == null || acc.providerType != 'webdav') return null;
       return WebDavAccountSource(webDav: webDav, account: acc);
     });
-    playlists = PlaylistService(webDav: webDav);
+    // Cover tier follows the music-library setting, so an embedded playlist
+    // cover is the same art the library would show (docs/10 §4.2 cover policy).
+    playlists = PlaylistService(webDav: webDav, covers: library.covers);
+    // Built before BackupService: the archive embeds `encodeVaultBytes()`'s
+    // output, so the vault service has to exist first (docs/10 §4.3).
+    credentials = CredentialVaultService(
+      accounts: accounts,
+      settings: settings,
+      webDav: webDav,
+    );
     backup = BackupService(
       libraryDb: db,
       library: library,
       accounts: accounts,
       settings: settings,
       playlists: playlists,
+      credentials: credentials,
       webDav: webDav,
       cache: cache,
-    );
-    credentials = CredentialVaultService(
-      accounts: accounts,
-      settings: settings,
-      webDav: webDav,
     );
     sync = SyncService(
       accounts: accounts,

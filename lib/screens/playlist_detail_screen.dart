@@ -35,7 +35,11 @@ class PlaylistDetailScreen extends StatelessWidget {
     final tracks = <LibraryTrack>[];
     final missing = <PlaylistEntry>[];
     for (final e in pl.entries) {
-      final t = library.find(e.sourceName, e.remotePath);
+      // Resolve by authoritative identity first (musicId); fall back to
+      // sourceName+remotePath for entries whose hash no longer matches.
+      final t =
+          library.findByMusicId(e.identityKey) ??
+          library.find(e.sourceName, e.remotePath);
       if (t != null) {
         tracks.add(t);
       } else {
@@ -78,6 +82,8 @@ class PlaylistDetailScreen extends StatelessWidget {
                       PlaylistEntry(
                         sourceName: tracks[i].sourceName,
                         remotePath: tracks[i].remotePath,
+                        musicId: tracks[i].musicId,
+                        cueTrackIndex: tracks[i].cueTrackIndex,
                       ),
                     ),
                   ),
@@ -138,8 +144,10 @@ class PlaylistDetailScreen extends StatelessWidget {
       PlaylistEntry(
         sourceName: selected.sourceName,
         remotePath: selected.remotePath,
+        musicId: selected.musicId,
         title: selected.displayTitle,
         durationMs: selected.durationMs,
+        cueTrackIndex: selected.cueTrackIndex,
       ),
     );
   }

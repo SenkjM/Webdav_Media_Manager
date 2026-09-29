@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/library_track.dart';
+import '../models/playlist.dart';
 import '../utils/backup_crypto.dart';
 import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
@@ -16,7 +17,10 @@ import 'cloud_drivers/driver_registry.dart';
 import '../utils/wmp_container.dart';
 import 'cache_service.dart';
 import 'cover_service.dart';
+import 'credential_vault_codec.dart';
+import 'credential_vault_service.dart';
 import 'library_shard_codec.dart';
+import 'playlist_codec.dart';
 import 'library_database.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';
@@ -48,6 +52,7 @@ class BackupService extends ChangeNotifier {
     required AccountsService accounts,
     required SettingsService settings,
     required PlaylistService playlists,
+    required CredentialVaultService credentials,
     required WebDavService webDav,
     CacheService? cache,
     CoverService? covers,
@@ -56,6 +61,7 @@ class BackupService extends ChangeNotifier {
        _accounts = accounts,
        _settings = settings,
        _playlists = playlists,
+       _credentials = credentials,
        _webDav = webDav,
        _cache = cache,
        _covers = covers ?? library.covers;
@@ -65,6 +71,10 @@ class BackupService extends ChangeNotifier {
   final AccountsService _accounts;
   final SettingsService _settings;
   final PlaylistService _playlists;
+
+  /// Owns the vault encoding. The archive embeds the **same bytes** this
+  /// service uploads to the sync root (docs/10 §4.3) — one encoding, two exits.
+  final CredentialVaultService _credentials;
   final WebDavService _webDav;
   final CacheService? _cache;
   final CoverService _covers;
@@ -82,10 +92,14 @@ class BackupService extends ChangeNotifier {
 
   /// Serialise everything into `{ credentials, library, playlists }` JSON.
   ///
-  /// Exposed because the local export and the cloud backup share this payload;
-  /// the ZIP wrapper (and optional encryption) is applied by
-  /// [buildArchiveBytes].
-  Future<Map<String, dynamic>> buildPayload({
+  /// **Only the human-readable export uses this** ([buildJsonExport]). The
+  /// binary archive does not: its `CREDENTIALS` / `PLAYLISTS` sections carry
+  /// whole `WDMMCV01` / `WDMMPL01` documents, built by
+  /// [CredentialVaultService.encodeVaultBytes] and
+  /// [PlaylistService.encodePlaylistBytes] (docs/10 §4.3). Keeping the JSON
+  /// shape here means a hand-edited export still restores through
+  /// [restoreFromBytes].
+  Future<Map<String, dynamic>> _buildPayload({
     required String passphrase,
   }) async {
     final tracks = await _libraryDb.allTracks();
@@ -168,21 +182,27 @@ class BackupService extends ChangeNotifier {
   /// Build the backup archive as a [WmpContainer] (optionally encrypted).
   ///
   /// Sections: `META` + `TRACKS` (every row, CUE slices included, **each with its
-  /// own cover copy** in the raw `COVERS` section) + `CUEALBUMS` +
-  /// `CREDENTIALS` / `PLAYLISTS` / `SETTINGS` as JSON. Binary on purpose: the
-  /// rows are compressed with deflate while the already-compressed covers are
-  /// stored as-is — a ZIP would deflate those again for nothing.
+  /// own cover copy** in the raw `COVERS` section) + `SETTINGS` / `CUEALBUMS`
+  /// as JSON, all of those deflated. On top of them two sections hold **whole
+  /// documents** instead of JSON:
+  ///
+  /// * `CREDENTIALS` — the complete bytes of one `WDMMCV01` file, the very same
+  ///   bytes [CredentialVaultService.push] uploads to the sync root.
+  /// * `PLAYLISTS` — one record per playlist, whose [WmpBackupPlaylist.blob]
+  ///   holds that playlist's complete `WDMMPL01` file.
+  ///
+  /// Both are listed in `rawIds`: their payloads are already-compressed
+  /// containers, so deflating them again would burn CPU and shrink nothing
+  /// (docs/10 §4.3). Nesting stops at this one level — an embedded container
+  /// never embeds another.
   Future<Uint8List> buildArchiveBytes({required String passphrase}) async {
-    final payload = await buildPayload(passphrase: passphrase);
-    final tracks = <LibraryTrack>[];
-    for (final raw
-        in (payload['library']?['tracks'] as List<dynamic>? ?? const [])) {
-      tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
-    }
-    for (final raw
-        in (payload['library']?['cueSlices'] as List<dynamic>? ?? const [])) {
-      tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
-    }
+    final allTracks = await _libraryDb.allTracks();
+    // Non-CUE rows first, then CUE slices: the order the JSON payload used, so
+    // cover indices stay aligned with what earlier archives produced.
+    final tracks = <LibraryTrack>[
+      ...allTracks.where((t) => !t.isCueVirtual),
+      ...allTracks.where((t) => t.isCueVirtual),
+    ];
 
     final coverBlobs = <Uint8List?>[];
     final coverKinds = <int>[];
@@ -203,7 +223,19 @@ class BackupService extends ChangeNotifier {
       );
     }
 
-    Uint8List json(Uint8List Function() encode) => encode();
+    final cueAlbums = await _libraryDb.allCueAlbums();
+
+    final credentialsBytes = await _credentials.encodeVaultBytes(
+      passphrase: passphrase,
+    );
+
+    final playlistRecords = <Map<int, Object?>>[];
+    for (final pl in _playlists.playlists) {
+      playlistRecords.add({
+        WmpBackupPlaylist.blob: await _playlists.encodePlaylistBytes(pl),
+      });
+    }
+
     final container = WmpContainer.encode(
       {
         WmpSections.meta: encodeRecords([
@@ -215,32 +247,20 @@ class BackupService extends ChangeNotifier {
             WmpMeta.note: jsonEncode({
               'format': format,
               'formatVersion': formatVersion,
-              'activeAccountId': payload['activeAccountId'],
-              'passwordEncryption': payload['passwordEncryption'],
+              'activeAccountId': _accounts.activeAccountId,
+              'passwordEncryption': passphrase.isEmpty
+                  ? 'none'
+                  : 'aes-256-gcm',
             }),
           },
         ]),
         WmpSections.tracks: _trackRecordsOnly(tracks, coverBlobs, coverKinds),
-        WmpSections.credentials: json(
-          () => Uint8List.fromList(
-            utf8.encode(jsonEncode(payload['credentials'])),
-          ),
-        ),
-        WmpSections.playlists: json(
-          () =>
-              Uint8List.fromList(utf8.encode(jsonEncode(payload['playlists']))),
-        ),
-        WmpSections.settings: json(
-          () =>
-              Uint8List.fromList(utf8.encode(jsonEncode(payload['settings']))),
-        ),
-        WmpSections.cueAlbums: json(
-          () => Uint8List.fromList(
-            utf8.encode(
-              jsonEncode(payload['library']?['cueAlbums'] ?? const []),
-            ),
-          ),
-        ),
+        if (credentialsBytes.isNotEmpty)
+          WmpSections.credentials: credentialsBytes,
+        if (playlistRecords.isNotEmpty)
+          WmpSections.playlists: encodeRecords(playlistRecords),
+        WmpSections.settings: _jsonBytes(_settings.exportForBackup()),
+        WmpSections.cueAlbums: _jsonBytes(cueAlbums),
         if (coverBlobs.any((b) => b != null))
           WmpSections.covers: buildCoverSection([
             for (var i = 0; i < coverBlobs.length; i++)
@@ -249,15 +269,26 @@ class BackupService extends ChangeNotifier {
           ]),
       },
       kind: WmpFileKind.backup,
-      rawIds: {WmpSections.covers},
+      rawIds: {
+        WmpSections.covers,
+        WmpSections.credentials,
+        WmpSections.playlists,
+      },
     );
     if (passphrase.isEmpty) return container;
     return BackupCrypto.encrypt(plaintext: container, passphrase: passphrase);
   }
 
+  /// UTF-8 JSON section payload (used for the sections that stay JSON).
+  static Uint8List _jsonBytes(Object? value) =>
+      Uint8List.fromList(utf8.encode(jsonEncode(value)));
+
   /// Readable JSON export (no cover bytes) for troubleshooting / hand editing.
+  ///
+  /// Not the archive format: it stays JSON on purpose so a human can diff and
+  /// edit it, and [restoreFromBytes] still accepts it.
   Future<Uint8List> buildJsonExport({required String passphrase}) async {
-    final payload = await buildPayload(passphrase: passphrase);
+    final payload = await _buildPayload(passphrase: passphrase);
     return Uint8List.fromList(
       utf8.encode(const JsonEncoder.withIndent('  ').convert(payload)),
     );
@@ -425,10 +456,15 @@ class BackupService extends ChangeNotifier {
       }
 
       final missing = await _applyPayload(payload, passphrase);
+      // Two credential shapes reach here: a [DecodedVault] from a binary
+      // archive section, or the `{accounts: [...]}` map from a JSON export.
+      final accountCount = switch (payload['credentials']) {
+        DecodedVault v => v.entryCount,
+        Map m => (m['accounts'] as List<dynamic>?)?.length ?? 0,
+        _ => 0,
+      };
       lastMessage = missing.isEmpty
-          ? L10nHost.current.backupRestoredFull(
-              payload['credentials']?['accounts']?.length ?? 0,
-            )
+          ? L10nHost.current.backupRestoredFull(accountCount)
           : L10nHost.current.backupRestoredMissingPasswords(
               missing.join(L10nHost.current.nameJoiner),
             );
@@ -444,6 +480,11 @@ class BackupService extends ChangeNotifier {
   /// Decode a [WmpContainer] archive into the payload shape [_applyPayload]
   /// expects. Covers are written into this device's cover cache here, so the
   /// restored rows point at real local files.
+  ///
+  /// `credentials` comes out as a [DecodedVault] and `playlists` as
+  /// `List<Playlist>` — the very objects the WebDAV pull path applies, so a
+  /// restored archive and a pulled sync cannot disagree. `settings` and
+  /// `cueAlbums` stay JSON.
   Future<Map<String, dynamic>> _decodeContainer(Uint8List bytes) async {
     final container = WmpContainer.fromBytes(bytes);
     // A shard is a valid container but not a backup: say so plainly instead of
@@ -502,19 +543,44 @@ class BackupService extends ChangeNotifier {
       tracks.add({...track.toMap(), 'cover_path': coverPath});
     }
 
+    // Credentials: this section is one whole `WDMMCV01` document (or absent).
+    // Decoding through the vault codec — rather than re-inventing the fields —
+    // is what makes the archive and the sync root share a single encoder.
+    final credentialsRaw = container.readSection(WmpSections.credentials);
+    final vault = (credentialsRaw == null || credentialsRaw.isEmpty)
+        ? null
+        : CredentialVaultCodec.decode(credentialsRaw);
+
+    // Playlists: one record per playlist, each blob a whole `WDMMPL01` file.
+    final playlistsRaw = container.readSection(WmpSections.playlists);
+    final playlistRecords = (playlistsRaw == null || playlistsRaw.isEmpty)
+        ? const <Map<int, Object?>>[]
+        : decodeRecords(
+            playlistsRaw,
+            intTags: const {},
+            bytesTags: const {WmpBackupPlaylist.blob},
+          );
+    final playlists = <Playlist>[];
+    for (final record in playlistRecords) {
+      final blob = record[WmpBackupPlaylist.blob];
+      if (blob is! Uint8List || blob.isEmpty) continue;
+      // The same decoder the WebDAV pull uses (docs/10 §4.3).
+      playlists.add(PlaylistCodec.decode(blob).playlist);
+    }
+
     return {
       'format': header['format'] ?? format,
       'formatVersion': header['formatVersion'] ?? formatVersion,
       'activeAccountId': header['activeAccountId'],
       'passwordEncryption': header['passwordEncryption'],
-      'credentials': jsonSection(WmpSections.credentials),
+      'credentials': vault,
       'library': {
         'tracks': tracks,
         'cueSlices': const <dynamic>[],
         'cueAlbums': jsonList(WmpSections.cueAlbums),
         'cache': const <dynamic>[],
       },
-      'playlists': jsonList(WmpSections.playlists),
+      'playlists': playlists,
       'settings': jsonSection(WmpSections.settings),
     };
   }
@@ -548,9 +614,24 @@ class BackupService extends ChangeNotifier {
     final docs = await getApplicationDocumentsDirectory();
     final missing = <String>[];
 
-    // 1. Credentials.
+    // 1. Credentials — a [DecodedVault] from a binary archive section, or the
+    //    `{accounts: [...]}` map from a readable JSON export.
     final credentials = payload['credentials'];
-    if (credentials is Map) {
+    if (credentials is DecodedVault) {
+      final result = await _credentials.applyVault(
+        credentials,
+        passphrase: passphrase,
+      );
+      missing.addAll(_credentials.missingPasswordAccounts);
+      if (result.skippedUnknown > 0) {
+        // Unregistered cloud types are skipped by design (不报错、不建账号);
+        // note it for debugging instead of failing the whole restore.
+        debugPrint(
+          'backup restore: skipped ${result.skippedUnknown} vault entries '
+          'whose cloud provider type is not registered on this build',
+        );
+      }
+    } else if (credentials is Map) {
       final accountsJson = Map<String, dynamic>.from(credentials);
       final list = accountsJson['accounts'] as List<dynamic>? ?? const [];
       if (list.isNotEmpty) {
@@ -587,7 +668,12 @@ class BackupService extends ChangeNotifier {
 
     // 4. Playlists.
     final playlists = payload['playlists'];
-    if (playlists is List) {
+    if (playlists is List<Playlist>) {
+      // Decoded `.wdmp` documents: last-write-wins merge, never a wipe, so a
+      // restored archive cannot delete a list created after the backup.
+      await _playlists.mergeFromPlaylists(playlists);
+    } else if (playlists is List) {
+      // Readable JSON export — notes-only, same merge contract downstream.
       await _playlists.importFromJson(playlists);
     }
 

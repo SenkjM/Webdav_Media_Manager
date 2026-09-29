@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 
 import '../models/webdav_account.dart';
@@ -8,6 +6,7 @@ import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
 import 'cloud_drive_service.dart';
 import 'cloud_drivers/driver_registry.dart';
+import 'credential_vault_codec.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
@@ -143,7 +142,14 @@ class CredentialVaultService extends ChangeNotifier {
   final SettingsService _settings;
   final WebDavService _webDav;
 
-  static const fileName = 'credentials.json';
+  /// Remote file name of the vault document (`WDMMCV01`).
+  ///
+  /// Renamed from `credentials.json`: the content is now a binary container, and
+  /// a `.json` extension would be a lie that also makes a downgraded build fail
+  /// with a parse error instead of a clear "unsupported kind". The old file is
+  /// left on the server untouched (docs/10 §4.5) — deleting is irreversible and
+  /// the stale file is harmless.
+  static const fileName = 'credentials.wdmcv';
   static const format = 'webdav_media_manager_credentials';
 
   /// v2：新增云盘驱动条目（providerType + driverConfig，密文字段逐个加密）。
@@ -154,8 +160,8 @@ class CredentialVaultService extends ChangeNotifier {
   String? lastError;
   String? lastMessage;
 
-  /// Passwords left empty by the last [pull]/[applyJson] because the vault was
-  /// encrypted with a key we could not reproduce.
+  /// Passwords left empty by the last [pull] / [applyVault] because the vault
+  /// was encrypted with a key we could not reproduce.
   final List<String> missingPasswordAccounts = [];
 
   String get remotePath {
@@ -163,18 +169,20 @@ class CredentialVaultService extends ChangeNotifier {
     return root.endsWith('/') ? '$root$fileName' : '$root/$fileName';
   }
 
-  /// Build the vault JSON from the local account list.
+  /// Build the vault records from the local account list.
   ///
   /// [passphrase] empty (or [encryptPassword] false) stores plaintext
-  /// passwords — the same trust level as the old backup archives.
-  Future<Map<String, dynamic>> buildJson({
+  /// passwords — the same trust level as the old backup archives. Only fields
+  /// the UI treats as secrets are ever encrypted; address fields stay readable
+  /// so a vault without the key still identifies the accounts.
+  Future<List<VaultRecord>> buildRecords({
     required String passphrase,
     bool? encryptPassword,
   }) async {
     final encrypt =
         (encryptPassword ?? _settings.syncEncryptPassword) &&
         passphrase.isNotEmpty;
-    final entries = <Map<String, dynamic>>[];
+    final entries = <VaultRecord>[];
     // 账号凭证库：WebDAV 三件套 + 云盘驱动配置。云盘条目的密文字段
     // （spec.secretFieldKeys）逐字段加密，地址类字段保持明文可辨识。
     for (final a in _accounts.accounts) {
@@ -199,7 +207,7 @@ class CredentialVaultService extends ChangeNotifier {
           }
         }
         entries.add(
-          VaultEntry(
+          VaultRecord(
             id: a.id,
             name: a.name,
             providerType: a.providerType,
@@ -209,7 +217,7 @@ class CredentialVaultService extends ChangeNotifier {
             password: '',
             passwordEncrypted: false,
             driverConfig: stored,
-          ).toJson(),
+          ),
         );
         continue;
       }
@@ -224,33 +232,65 @@ class CredentialVaultService extends ChangeNotifier {
         encrypted = true;
       }
       entries.add(
-        VaultEntry(
+        VaultRecord(
           id: a.id,
           name: a.name,
+          providerType: 'webdav',
           url: a.url,
           username: a.username,
           password: stored,
           passwordEncrypted: encrypted,
-        ).toJson(),
+          remotePath: '/',
+        ),
       );
     }
-    return {
-      'format': format,
-      'formatVersion': formatVersion,
-      'updatedAt': DateTime.now().toUtc().toIso8601String(),
-      'activeAccountId': _accounts.activeAccountId,
-      'passwordEncryption': encrypt ? 'aes-256-gcm' : 'none',
-      'note': encrypt
-          ? L10nHost.current.vaultNoteEncrypted
-          : L10nHost.current.vaultNotePlain,
-      'accountCount': entries.length,
-      'accounts': entries,
-    };
+    return entries;
   }
+
+  /// Whether the last [buildRecords] run encrypted anything.
+  ///
+  /// Kept as state so callers can report the same「已加密同步 / 明文同步」
+  /// message the JSON form used to derive from its own payload.
+  bool _lastBuildEncrypted = false;
+
+  /// Build the vault records and remember whether encryption was applied.
+  Future<List<VaultRecord>> buildRecordsTracked({
+    required String passphrase,
+    bool? encryptPassword,
+  }) async {
+    final encrypt =
+        (encryptPassword ?? _settings.syncEncryptPassword) &&
+        passphrase.isNotEmpty;
+    _lastBuildEncrypted = encrypt;
+    return buildRecords(
+      passphrase: passphrase,
+      encryptPassword: encryptPassword,
+    );
+  }
+
+  /// Encode the current account list as one `WDMMCV01` document.
+  ///
+  /// The backup archive embeds **these exact bytes** (docs/10 §4.3), so the
+  /// vault has a single encoding and two exits — the sync root and the archive
+  /// can never drift apart. Deliberately free of side effects: [push] owns the
+  /// sync status fields, and building a backup must not disturb them.
+  Future<Uint8List> encodeVaultBytes({
+    required String passphrase,
+    bool? encryptPassword,
+  }) async {
+    final records = await buildRecords(
+      passphrase: passphrase,
+      encryptPassword: encryptPassword,
+    );
+    return _encodeRecords(records);
+  }
+
+  Uint8List _encodeRecords(List<VaultRecord> records) =>
+      CredentialVaultCodec.encode(records, formatVersion: formatVersion);
 
   /// Upload the vault to [accountId] (the credentials destination the user
   /// configured for this feature).
-  Future<Map<String, dynamic>> push({
+  Future<List<VaultRecord>> push({
     required String accountId,
     required String passphrase,
     bool? encryptPassword,
@@ -261,19 +301,17 @@ class CredentialVaultService extends ChangeNotifier {
     notifyListeners();
     try {
       _requireAccount(accountId);
-      final json = await buildJson(
+      final records = await buildRecordsTracked(
         passphrase: passphrase,
         encryptPassword: encryptPassword,
       );
-      final bytes = Uint8List.fromList(
-        utf8.encode(const JsonEncoder.withIndent('  ').convert(json)),
-      );
+      final bytes = _encodeRecords(records);
       await _webDav.ensureDirectory(accountId, _settings.syncRemoteRoot);
       await _webDav.writeBytes(accountId, remotePath, bytes);
-      lastMessage = (json['passwordEncryption'] == 'aes-256-gcm')
+      lastMessage = _lastBuildEncrypted
           ? L10nHost.current.vaultSyncedEncrypted
           : L10nHost.current.vaultSyncedPlaintext;
-      return json;
+      return records;
     } catch (e) {
       lastError = e.toString();
       rethrow;
@@ -283,16 +321,16 @@ class CredentialVaultService extends ChangeNotifier {
     }
   }
 
-  /// Download the vault JSON from [accountId].
+  /// Download and decode the vault document from [accountId].
   ///
   /// Returns null when the file does not exist yet (nothing to pull).
-  Future<Map<String, dynamic>?> fetchJson({required String accountId}) async {
+  /// A file whose magic is not `WDMMCV01` throws — we never guess at a
+  /// half-understood payload when the thing at stake is credentials.
+  Future<DecodedVault?> fetchVault({required String accountId}) async {
     _requireAccount(accountId);
     try {
       final bytes = await _webDav.readAsBytes(accountId, remotePath);
-      final decoded = jsonDecode(utf8.decode(bytes));
-      if (decoded is! Map) return null;
-      return Map<String, dynamic>.from(decoded);
+      return CredentialVaultCodec.decode(bytes);
     } catch (e) {
       final msg = e.toString().toLowerCase();
       final missing =
@@ -317,12 +355,12 @@ class CredentialVaultService extends ChangeNotifier {
     lastMessage = null;
     notifyListeners();
     try {
-      final json = await fetchJson(accountId: accountId);
-      if (json == null) {
+      final vault = await fetchVault(accountId: accountId);
+      if (vault == null) {
         lastMessage = L10nHost.current.vaultCloudNoFile(remotePath);
         return null;
       }
-      final result = await applyJson(json, passphrase: passphrase);
+      final result = await applyVault(vault, passphrase: passphrase);
       lastMessage = L10nHost.current.vaultRestoredFromCloud(result.summary);
       return result;
     } catch (e) {
@@ -334,27 +372,23 @@ class CredentialVaultService extends ChangeNotifier {
     }
   }
 
-  /// Merge a vault JSON into the local account list.
+  /// Merge a decoded vault into the local account list.
   ///
   /// Other local accounts are never deleted, so a partial vault cannot wipe
   /// mounts that were added after the last upload. Entries whose
   /// providerType is not registered on this build are **silently skipped**
   /// (不支持的网盘类型：不报错、不建账号).
-  Future<VaultApplyResult> applyJson(
-    Map<String, dynamic> json, {
+  Future<VaultApplyResult> applyVault(
+    DecodedVault vault, {
     required String passphrase,
   }) async {
     missingPasswordAccounts.clear();
-    final list = json['accounts'] as List<dynamic>? ?? const [];
     var imported = 0;
     var updated = 0;
     var restored = 0;
     var missing = 0;
     var skippedUnknown = 0;
-    for (final raw in list) {
-      if (raw is! Map) continue;
-      final entry = VaultEntry.fromJson(Map<String, dynamic>.from(raw));
-
+    for (final entry in vault.entries) {
       // 云盘条目走驱动配置通道；本机没有注册该类型时静默跳过。
       if (entry.isCloud) {
         final spec = cloudDriverSpec(entry.providerType);
@@ -441,7 +475,7 @@ class CredentialVaultService extends ChangeNotifier {
   /// account is brand new (or the local field is empty too) — one lost field
   /// must not blank out tokens that still work.
   Future<({bool imported, bool restoredSecrets})> _applyCloudEntry(
-    VaultEntry entry,
+    VaultRecord entry,
     String passphrase,
   ) async {
     final raw = entry.driverConfig ?? const <String, dynamic>{};

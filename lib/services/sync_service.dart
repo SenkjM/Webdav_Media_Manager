@@ -72,6 +72,17 @@ class SyncOutcome {
           bar2 > 0 ? detail.substring(bar2 + 1) : '',
         );
       }
+      // `err.playlistKindMismatch|<found>|<expected>`, and the vault twin with
+      // the same two-part shape.
+      if (code == 'err.playlistKindMismatch' ||
+          code == 'err.vaultKindMismatch') {
+        final bar2 = detail.indexOf('|');
+        final found = bar2 > 0 ? detail.substring(0, bar2) : detail;
+        final expected = bar2 > 0 ? detail.substring(bar2 + 1) : '';
+        return code == 'err.playlistKindMismatch'
+            ? l10n.errPlaylistKindMismatch(found, expected)
+            : l10n.errVaultKindMismatch(found, expected);
+      }
     }
     switch (text) {
       case 'err.noWebdavAccount':
@@ -86,6 +97,8 @@ class SyncOutcome {
         return l10n.errBackupUnrecognizedContent;
       case 'err.notWdmmFile':
         return l10n.errNotWdmmFile;
+      case 'err.playlistMissingId':
+        return l10n.errPlaylistMissingId;
     }
     return text;
   }

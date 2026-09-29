@@ -3,14 +3,20 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/models/library_track.dart';
+import 'package:webdav_media_manager/models/playlist.dart';
+import 'package:webdav_media_manager/services/credential_vault_codec.dart';
 import 'package:webdav_media_manager/services/library_shard_codec.dart';
+import 'package:webdav_media_manager/services/playlist_codec.dart';
+import 'package:webdav_media_manager/utils/track_identity.dart';
 import 'package:webdav_media_manager/utils/wmp_container.dart';
 
 /// The backup archive is a container: META + TRACKS (every row, CUE slices
-/// included) + raw COVERS (one own copy per row) + JSON side sections.
-/// This mirrors `BackupService.buildArchiveBytes` without touching the
-/// filesystem, so the *format* is pinned even though the service itself needs
-/// path_provider.
+/// included) + raw COVERS (one own copy per row) + SETTINGS/CUE_ALBUMS as JSON
+/// + **embedded container bytes** for CREDENTIALS (a whole `WDMMCV01` document)
+/// and PLAYLISTS (one record per playlist, `blob` = that playlist's whole
+/// `WDMMPL01` document). This mirrors `BackupService.buildArchiveBytes` without
+/// touching the filesystem, so the *format* is pinned even though the service
+/// itself needs path_provider.
 LibraryTrack _track(
   String path, {
   String source = '123pan',
@@ -32,9 +38,47 @@ LibraryTrack _track(
 Uint8List _blob(int length, int seed) =>
     Uint8List.fromList(List<int>.generate(length, (i) => (i + seed) & 0xFF));
 
+/// A one-playlist `WDMMPL01` document, built the way the service builds it.
+Uint8List _playlistBytes({String id = 'pl-1', String name = '最爱'}) =>
+    PlaylistCodec.encode(
+      Playlist(
+        id: id,
+        name: name,
+        updatedAt: DateTime.utc(2026, 9, 20),
+        entries: [
+          PlaylistEntry(
+            sourceName: '123pan',
+            remotePath: '/m/a.flac',
+            musicId: musicIdForRemote('123pan', '/m/a.flac'),
+            title: 'a.flac',
+            durationMs: 215000,
+          ),
+        ],
+      ),
+      deviceId: 'dev-1',
+    );
+
+/// A one-entry `WDMMCV01` document, built the way the service builds it.
+Uint8List _vaultBytes() => CredentialVaultCodec.encode(
+  const [
+    VaultRecord(
+      id: 'acc-1',
+      name: '123pan',
+      providerType: 'webdav',
+      url: 'https://nas.example.com',
+      username: 'alice',
+      password: 'AESGCMv1:x',
+      passwordEncrypted: true,
+      remotePath: '/',
+    ),
+  ],
+  formatVersion: 2,
+  deviceId: 'dev-1',
+);
+
 void main() {
   group('backup container', () {
-    test('round-trips rows, per-track covers and the JSON side sections', () {
+    test('round-trips rows, per-track covers and the embedded container sections', () {
       final tracks = [
         _track('/m/a.flac'),
         _track(
@@ -60,6 +104,10 @@ void main() {
           ),
         );
       }
+
+      final vaultBytes = _vaultBytes();
+      final playlistBytes = _playlistBytes();
+
       final container = WmpContainer.encode(
         {
           WmpSections.meta: encodeRecords([
@@ -80,22 +128,12 @@ void main() {
             (bytes: coverA, kind: WmpImageKind.jpeg),
             (bytes: coverC, kind: WmpImageKind.webp),
           ]),
-          WmpSections.credentials: Uint8List.fromList(
-            utf8.encode(
-              jsonEncode({
-                'accounts': [
-                  {'id': 'acc-1', 'name': '123pan', 'password': 'AESGCMv1:x'},
-                ],
-              }),
-            ),
-          ),
-          WmpSections.playlists: Uint8List.fromList(
-            utf8.encode(
-              jsonEncode([
-                {'id': 'pl-1', 'name': '最爱'},
-              ]),
-            ),
-          ),
+          WmpSections.credentials: vaultBytes,
+          // 段 id 是单字节（全表 256 个），所以一个歌单一条 record，
+          // 不是「一个歌单一个段」。
+          WmpSections.playlists: encodeRecords([
+            {WmpBackupPlaylist.blob: playlistBytes},
+          ]),
           WmpSections.settings: Uint8List.fromList(
             utf8.encode(jsonEncode({'cache_retention': 'one_week'})),
           ),
@@ -108,7 +146,11 @@ void main() {
           ),
         },
         kind: WmpFileKind.backup,
-        rawIds: {WmpSections.covers},
+        rawIds: {
+          WmpSections.covers,
+          WmpSections.credentials,
+          WmpSections.playlists,
+        },
       );
 
       // Sanity: it really is a container, not JSON.
@@ -151,21 +193,91 @@ void main() {
       expect(coverTable[0].kind, WmpImageKind.jpeg);
       expect(coverTable[1].kind, WmpImageKind.webp);
 
-      final creds = jsonDecode(
-        utf8.decode(parsed.readSection(WmpSections.credentials)!),
-      ) as Map;
-      expect((creds['accounts'] as List).single['name'], '123pan');
+      // CREDENTIALS 段整段就是远端那份 CV 文档，恢复侧直接喂 codec。
+      final credsRaw = parsed.readSection(WmpSections.credentials)!;
+      expect(credsRaw, vaultBytes);
+      expect(WmpContainer.kindOf(credsRaw), WmpFileKind.vault);
+      final vault = CredentialVaultCodec.decode(credsRaw);
+      expect(vault.entryCount, 1);
+      expect(vault.entries.single.name, '123pan');
+      expect(vault.entries.single.password, 'AESGCMv1:x');
+
+      // PLAYLISTS 段：每歌单一条 record，blob 是完整 .wdmp 字节。
+      final playlistRaw = parsed.readSection(WmpSections.playlists)!;
+      final playlistRecords = decodeRecords(
+        playlistRaw,
+        intTags: const {},
+        bytesTags: const {WmpBackupPlaylist.blob},
+      );
+      expect(playlistRecords, hasLength(1));
+      final blob = playlistRecords.single[WmpBackupPlaylist.blob];
+      expect(blob, isA<Uint8List>());
+      expect(blob! as Uint8List, playlistBytes);
+      // 与远端拉取共用同一个解码函数。
+      final playlist = PlaylistCodec.decode(blob as Uint8List);
+      expect(playlist.playlist.id, 'pl-1');
+      expect(playlist.playlist.name, '最爱');
+      expect(playlist.entryCount, 1);
+
+      // SETTINGS / CUE_ALBUMS 保持 JSON 不变。
       expect(
-        jsonDecode(
-          utf8.decode(parsed.readSection(WmpSections.playlists)!),
-        )[0]['name'],
-        '最爱',
+        jsonDecode(utf8.decode(parsed.readSection(WmpSections.settings)!))[
+            'cache_retention'],
+        'one_week',
       );
       expect(
-        jsonDecode(
-          utf8.decode(parsed.readSection(WmpSections.cueAlbums)!),
-        )[0]['title'],
+        jsonDecode(utf8.decode(parsed.readSection(WmpSections.cueAlbums)!))[0][
+            'title'],
         '专辑',
+      );
+    });
+
+    test('rawIds：内嵌容器段原样落盘，不二次 deflate', () {
+      final vaultBytes = _vaultBytes();
+      final playlistBytes = _playlistBytes();
+
+      final sections = {
+        WmpSections.credentials: vaultBytes,
+        WmpSections.playlists: encodeRecords([
+          {WmpBackupPlaylist.blob: playlistBytes},
+        ]),
+      };
+
+      final raw = WmpContainer.fromBytes(
+        WmpContainer.encode(
+          sections,
+          kind: WmpFileKind.backup,
+          rawIds: {WmpSections.credentials, WmpSections.playlists},
+        ),
+      );
+      // raw：段字节原样落盘，连编解码标记都是 raw。
+      expect(raw.info(WmpSections.credentials)!.codec, WmpCodec.raw);
+      expect(raw.storedBytes(WmpSections.credentials), vaultBytes);
+      expect(raw.info(WmpSections.playlists)!.codec, WmpCodec.raw);
+      expect(
+        raw.storedBytes(WmpSections.playlists),
+        sections[WmpSections.playlists],
+      );
+      expect(raw.readSection(WmpSections.credentials), vaultBytes);
+
+      // 不在 rawIds 里就真的再压一次：内嵌容器本身已经是压缩过的字节，deflate
+      // 只能退化成 stored block——字节变了、体积反而更大（每个块多 5 字节头）。
+      // 这正是 backup_service 必须把这两段列进 rawIds 的原因。
+      final deflated = WmpContainer.fromBytes(
+        WmpContainer.encode(sections, kind: WmpFileKind.backup),
+      );
+      expect(deflated.info(WmpSections.credentials)!.codec, WmpCodec.deflate);
+      expect(deflated.storedBytes(WmpSections.credentials), isNot(vaultBytes));
+      expect(
+        deflated.storedBytes(WmpSections.credentials).length,
+        greaterThanOrEqualTo(vaultBytes.length),
+        reason: '对已压缩数据再 deflate 至少不会变小（实测为 stored block，更胖）',
+      );
+      // 但无论压没压，读回来必须逐字节一致。
+      expect(deflated.readSection(WmpSections.credentials), vaultBytes);
+      expect(
+        deflated.readSection(WmpSections.playlists),
+        sections[WmpSections.playlists],
       );
     });
 

@@ -1,31 +1,47 @@
 import 'dart:collection';
-import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/playlist.dart';
-import '../utils/m3u8_playlist.dart';
+import '../utils/cover_image.dart';
+import 'cover_service.dart';
+import 'playlist_codec.dart';
+import 'playlist_cover_policy.dart';
 import 'playlist_store.dart';
 import 'webdav_service.dart';
 
-/// Local playlist CRUD + optional WebDAV M3U8 sync (last-write-wins).
+/// Local playlist CRUD + optional WebDAV `WDMMPL01` sync (last-write-wins).
+///
+/// Each playlist is one self-contained `.wdmp` document — see docs/10 §4.2.
+/// There is no `.m3u8` write path any more: the plan is to write only the new
+/// format and never delete whatever legacy files a server already holds
+/// (docs/10 §4.5).
 class PlaylistService extends ChangeNotifier {
-  PlaylistService({PlaylistStore? store, required WebDavService webDav})
-    : _store = store ?? PlaylistStore(),
-      _webDav = webDav;
+  PlaylistService({
+    PlaylistStore? store,
+    required WebDavService webDav,
+    CoverService? covers,
+  }) : _store = store ?? PlaylistStore(),
+       _webDav = webDav,
+       coverPolicy = PlaylistCoverPolicy(covers: covers),
+       _coverService = covers;
 
   final PlaylistStore _store;
   final WebDavService _webDav;
+  final CoverService? _coverService;
   final _uuid = const Uuid();
+
+  /// Cover tier / edge-length for embedded playlist art.
+  final PlaylistCoverPolicy coverPolicy;
 
   final List<Playlist> _playlists = [];
   bool _loaded = false;
   String _remotePath = '/Playlists/';
   bool _syncEnabled = true;
 
-  /// Account that owns the playlist M3U8 mirror (set from Settings)a The music
-  /// library never depends on it.
+  /// Account that owns the playlist `.wdmp` mirror (set from Settings). The
+  /// music library never depends on it.
   String? _syncAccountId;
   String? _lastSyncError;
 
@@ -36,6 +52,9 @@ class PlaylistService extends ChangeNotifier {
   bool get syncEnabled => _syncEnabled;
   String? get lastSyncError => _lastSyncError;
   PlaylistStore get store => _store;
+
+  /// Library-side thumb edge length, used when [coverPolicy] has no override.
+  int get _libraryCoverEdge => _coverService?.thumbSize ?? coverThumbSize;
 
   Future<void> closeDatabase() => _store.close();
 
@@ -89,7 +108,7 @@ class PlaylistService extends ChangeNotifier {
       entries: entries,
       updatedAt: DateTime.now().toUtc(),
     );
-    pl.remoteFileName = M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
+    pl.remoteFileName = PlaylistCodec.safeFileName(pl.name, pl.id);
     await _store.upsert(pl);
     _playlists.add(pl);
     _sortLocal();
@@ -112,7 +131,7 @@ class PlaylistService extends ChangeNotifier {
     final pl = _playlists[idx];
     pl.name = name.trim().isEmpty ? pl.name : name.trim();
     pl.updatedAt = DateTime.now().toUtc();
-    pl.remoteFileName ??= M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
+    pl.remoteFileName ??= PlaylistCodec.safeFileName(pl.name, pl.id);
     await _store.upsert(pl);
     _sortLocal();
     notifyListeners();
@@ -181,42 +200,47 @@ class PlaylistService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Pull remote M3U8 files and merge last-write-wins into local store.
+  /// Pull remote `.wdmp` documents and merge last-write-wins into the local
+  /// store.
+  ///
+  /// Legacy `.m3u`/`.m3u8` files are **ignored, not read and not deleted**
+  /// (docs/10 §4.5): a downgrade still finds them, and we never destroy data we
+  /// did not write. A single malformed document is skipped rather than failing
+  /// the whole pull — one bad file must not block every other playlist.
   Future<void> pullAndMergeFromWebDav() async {
     if (!canSync) return;
     try {
       await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
       final items = await _webDav.listDirectory(_syncAccountId!, _remotePath);
-      final remotes = <Playlist>[];
+      final remotes = <({String fileName, Playlist playlist})>[];
       for (final item in items) {
         if (item.isDirectory) continue;
-        final name = item.name.toLowerCase();
-        if (!name.endsWith('.m3u8') && !name.endsWith('.m3u')) continue;
-        final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
-        final text = utf8.decode(bytes, allowMalformed: true);
-        final decoded = M3u8PlaylistCodec.decode(
-          text,
-          fallbackName: item.name.replaceAll(
-            RegExp(r'\.m3u8?$', caseSensitive: false),
-            '',
-          ),
-        );
-        decoded.remoteFileName = item.name;
-        remotes.add(decoded);
+        if (!item.name.toLowerCase().endsWith('.${PlaylistCodec.fileExtension}')) {
+          continue;
+        }
+        try {
+          final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
+          final decoded = PlaylistCodec.decode(bytes);
+          remotes.add((fileName: item.name, playlist: decoded.playlist));
+        } catch (e) {
+          // Format/CRC failure on one file: skip it, keep the rest.
+          _lastSyncError = e.toString();
+        }
       }
 
       final byId = {for (final p in _playlists) p.id: p};
       for (final remote in remotes) {
-        final local = byId[remote.id];
+        final local = byId[remote.playlist.id];
+        // The file name is cosmetic but has to survive, or the next upload would
+        // write a second copy of the same playlist under a different name.
+        remote.playlist.remoteFileName = remote.fileName;
         if (local == null) {
-          byId[remote.id] = remote;
+          byId[remote.playlist.id] = remote.playlist;
         } else {
-          byId[remote.id] = mergePlaylistsLastWriteWins(local, remote);
+          final winner = mergePlaylistsLastWriteWins(local, remote.playlist);
+          winner.remoteFileName = remote.fileName;
+          byId[remote.playlist.id] = winner;
         }
-      }
-      // Also match by remote file name if id differs (imported plain m3u8).
-      for (final remote in remotes) {
-        if (byId.containsKey(remote.id)) continue;
       }
 
       final merged = byId.values.toList();
@@ -225,30 +249,49 @@ class PlaylistService extends ChangeNotifier {
         ..clear()
         ..addAll(merged);
       _sortLocal();
-      _lastSyncError = null;
       notifyListeners();
 
       // Push locals that won / are newer.
       for (final pl in _playlists) {
         await uploadPlaylist(pl);
       }
+      _lastSyncError = null;
     } catch (e) {
       _lastSyncError = e.toString();
       notifyListeners();
     }
   }
 
+  /// Encode one playlist as a `WDMMPL01` document (with its entries' covers)
+  /// and upload it.
+  ///
+  /// Cover bytes are read fresh from disk on every upload instead of being
+  /// cached: the library can re-ingest art at any time, and a stale embedded
+  /// copy is worse than no copy. Missing art is not an error — the entry is
+  /// written without a `coverIndex`.
   Future<void> uploadPlaylist(Playlist pl) async {
     if (!canSync) return;
-    pl.remoteFileName ??= M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
+    pl.remoteFileName ??= PlaylistCodec.safeFileName(pl.name, pl.id);
     await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
-    final body = M3u8PlaylistCodec.encode(pl);
-    await _webDav.writeBytes(
-      _syncAccountId!,
-      _remoteFilePath(pl),
-      Uint8List.fromList(utf8.encode(body)),
-    );
+    final bytes = await encodePlaylistBytes(pl);
+    await _webDav.writeBytes(_syncAccountId!, _remoteFilePath(pl), bytes);
     await _store.upsert(pl);
+  }
+
+  /// Encode [pl] to bytes without uploading — used by backup embedding (⑥) and
+  /// by tests.
+  Future<Uint8List> encodePlaylistBytes(
+    Playlist pl, {
+    bool withCovers = true,
+  }) async {
+    final covers = withCovers
+        ? await readCoversForPlaylist(
+            pl,
+            policy: coverPolicy,
+            fallbackEdgeSize: _libraryCoverEdge,
+          )
+        : null;
+    return PlaylistCodec.encode(pl, coverBlobs: covers);
   }
 
   void unawaitedSyncUpload(Playlist pl) {
@@ -267,7 +310,7 @@ class PlaylistService extends ChangeNotifier {
 
   String _remoteFilePath(Playlist pl) {
     final file =
-        pl.remoteFileName ?? M3u8PlaylistCodec.safeFileName(pl.name, pl.id);
+        pl.remoteFileName ?? PlaylistCodec.safeFileName(pl.name, pl.id);
     final base = _remotePath.endsWith('/') ? _remotePath : '$_remotePath/';
     return '$base$file';
   }
@@ -286,7 +329,7 @@ class PlaylistService extends ChangeNotifier {
     return p;
   }
 
-  /// Playlists that reference [accountId] (any entry). Entries keep their accountId labels.
+  /// Playlists that reference [accountId] (any entry). Entries keep their sourceName labels.
   List<Map<String, dynamic>> exportJsonForAccount(String accountId) {
     return _playlists
         .where((p) => p.entries.any((e) => e.sourceName == accountId))
@@ -294,22 +337,25 @@ class PlaylistService extends ChangeNotifier {
         .toList();
   }
 
-  /// Merge playlists from backup/sync JSON without wiping unrelated local lists.
-  Future<void> mergeFromJson(List<dynamic> list) async {
-    for (final raw in list) {
-      final incoming = Playlist.fromJson(Map<String, dynamic>.from(raw as Map));
-      final local = findById(incoming.id);
-      if (local == null) {
-        await _store.upsert(incoming);
-      } else {
-        final winner = mergePlaylistsLastWriteWins(local, incoming);
-        await _store.upsert(winner);
+  /// Merge playlists decoded from a backup document without wiping unrelated
+  /// local lists.
+  Future<void> mergeFromPlaylists(List<Playlist> incoming) async {
+    for (final pl in incoming) {
+      final local = findById(pl.id);
+      final winner = local == null
+          ? pl
+          : mergePlaylistsLastWriteWins(local, pl);
+      // Keep the file name we already know; the backup blob carries no name.
+      if (winner.remoteFileName == null && local != null) {
+        winner.remoteFileName = local.remoteFileName;
       }
+      await _store.upsert(winner);
     }
     await refresh();
   }
 
-  /// Export all playlists as JSON (for backup).
+  /// Export all playlists as JSON — human-inspectable export channel only
+  /// (`buildJsonExport`). The sync and backup paths use `encodePlaylistBytes`.
   List<Map<String, dynamic>> exportJson() =>
       _playlists.map((p) => p.toJson()).toList();
 

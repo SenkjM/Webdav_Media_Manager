@@ -205,8 +205,10 @@ Future<void> addTracksToPlaylist(
         (t) => PlaylistEntry(
           sourceName: t.sourceName,
           remotePath: t.remotePath,
+          musicId: t.musicId,
           title: t.displayTitle,
           durationMs: t.durationMs,
+          cueTrackIndex: t.cueTrackIndex,
         ),
       )
       .toList();
