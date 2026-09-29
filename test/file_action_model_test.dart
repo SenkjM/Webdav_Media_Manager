@@ -14,17 +14,48 @@ void main() {
   final types = FileTypeConfig();
 
   group('按后缀判类型', () {
-    test('音乐 / 视频 / cue / 普通', () {
+    test('音乐 / 视频 / cue / 图片 / 普通', () {
       expect(types.categoryFor('song.flac'), FileCategory.music);
       expect(types.categoryFor('movie.mkv'), FileCategory.video);
       expect(types.categoryFor('album.cue'), FileCategory.cue);
+      expect(types.categoryFor('cover.JPG'), FileCategory.image);
+      expect(types.categoryFor('a.jpeg'), FileCategory.image);
+      expect(types.categoryFor('a.png'), FileCategory.image);
+      expect(types.categoryFor('a.webp'), FileCategory.image);
+      expect(types.categoryFor('a.gif'), FileCategory.image);
       expect(types.categoryFor('readme.pdf'), FileCategory.other);
     });
 
-    test('默认动作：音乐缓存、cue 读取、视频流式、普通下载', () {
+    test('旧配置没有 image 键时用默认图片后缀，不冲掉音乐', () {
+      final old = FileTypeConfig.fromJson({
+        'music': ['mp3', 'flac'],
+        'video': ['mp4'],
+        'cue': ['cue'],
+      });
+      expect(old.musicExtensions, ['mp3', 'flac']);
+      expect(old.videoExtensions, ['mp4']);
+      expect(old.imageExtensions, FileTypeConfig.defaultImageExtensions);
+      expect(old.categoryFor('song.flac'), FileCategory.music);
+      expect(old.categoryFor('cover.jpg'), FileCategory.image);
+      final cleared = FileTypeConfig.fromJson({
+        'music': ['mp3'],
+        'video': ['mp4'],
+        'cue': ['cue'],
+        'image': [],
+      });
+      expect(cleared.imageExtensions, isEmpty);
+      expect(cleared.categoryFor('a.jpg'), FileCategory.other);
+      expect(cleared.categoryFor('a.mp3'), FileCategory.music);
+    });
+
+    test('默认动作：音乐流式、cue 读取、视频流式、图片查看、普通下载', () {
       expect(
         FileActionCatalog.defaultFor(FileCategory.music),
-        FileAction.cacheMusic,
+        FileAction.streamMusic,
+      );
+      expect(
+        FileActionCatalog.defaultFor(FileCategory.image),
+        FileAction.viewImage,
       );
       expect(
         FileActionCatalog.defaultFor(FileCategory.cue),
@@ -118,6 +149,7 @@ void main() {
       expect(FileAction.readCue.downloadTarget, DownloadTarget.cache);
       expect(FileAction.stream.downloadTarget, isNull);
       expect(FileAction.streamMusic.downloadTarget, isNull);
+      expect(FileAction.viewImage.downloadTarget, isNull);
     });
   });
 
@@ -173,8 +205,21 @@ void main() {
       expect(back.music, FileAction.streamMusic);
       expect(back.video, FileAction.download);
       expect(back.cue, FileAction.readCue);
+      expect(back.image, FileAction.viewImage);
       expect(back.other, FileAction.download);
+      expect(back.toJson()['image'], 'view_image');
       expect(back.allowMusicStreaming, isTrue);
+    });
+
+    test('旧动作 JSON 缺 image 键时回退到查看图片', () {
+      final back = FileActionConfig.fromJson({
+        'music': 'cache_music',
+        'video': 'stream',
+        'cue': 'read_cue',
+        'other': 'download',
+      }, allowMusicStreaming: true)!;
+      expect(back.music, FileAction.cacheMusic);
+      expect(back.image, FileAction.viewImage);
     });
 
     test('forFileName 先判类型再取动作', () {
@@ -182,9 +227,13 @@ void main() {
         actions: {FileCategory.video: FileAction.download},
       );
       expect(cfg.forFileName('a.mkv', types), FileAction.download);
+      // 开关关着时出厂的 streamMusic 会被退回缓存，已有断言保持这个语义。
       expect(cfg.forFileName('a.flac', types), FileAction.cacheMusic);
       expect(cfg.forFileName('a.cue', types), FileAction.readCue);
+      expect(cfg.forFileName('a.jpg', types), FileAction.viewImage);
       expect(cfg.forFileName('a.zip', types), FileAction.download);
+      final streaming = FileActionConfig(allowMusicStreaming: true);
+      expect(streaming.forFileName('a.flac', types), FileAction.streamMusic);
     });
   });
 
@@ -243,6 +292,74 @@ void main() {
       final again = SettingsService();
       await again.init();
       expect(again.fileActions.video, FileAction.download);
+      expect(again.audioStreamingEnabled, isTrue);
+      expect(again.fileActions.music, FileAction.streamMusic);
+    });
+
+    test('新安装音乐流式默认开启', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final s = SettingsService();
+      await s.init();
+      expect(s.audioStreamingEnabled, isTrue);
+      expect(s.fileActions.music, FileAction.streamMusic);
+      expect(s.fileActions.image, FileAction.viewImage);
+    });
+
+    test('已保存的音乐动作不会被新默认覆盖', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'file_action_config_json': '{"music":"cache_music","video":"stream","cue":"read_cue","other":"download"}',
+      });
+      final s = SettingsService();
+      await s.init();
+      expect(s.audioStreamingEnabled, isFalse);
+      expect(s.fileActions.music, FileAction.cacheMusic);
+      expect(s.fileActions.image, FileAction.viewImage);
+    });
+
+    test('关掉音乐流式时已选的流式退回缓存', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final s = SettingsService();
+      await s.init();
+      expect(s.fileActions.music, FileAction.streamMusic);
+      await s.setAudioStreamingEnabled(false);
+      expect(s.fileActions.music, FileAction.cacheMusic);
+      final again = SettingsService();
+      await again.init();
+      expect(again.audioStreamingEnabled, isFalse);
+      expect(again.fileActions.music, FileAction.cacheMusic);
+    });
+  });
+
+  group('图片查看设置', () {
+    test('默认关幻灯片、每侧预取 1、子目录扫描关，并进备份', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final s = SettingsService();
+      await s.init();
+      expect(s.imageSlideshowEnabled, isFalse);
+      expect(s.imageSlideshowIntervalSeconds, 3);
+      expect(s.imageSlideshowLoop, isTrue);
+      expect(s.imageFit, SettingsService.imageFitContain);
+      expect(s.imagePrefetchCount, 1);
+      expect(s.imageScanSubdirs, isFalse);
+      await s.setImagePrefetchCount(9);
+      await s.setImageSlideshowIntervalSeconds(0);
+      await s.setImageFit('cover');
+      await s.setImageScanSubdirs(true);
+      expect(s.imagePrefetchCount, 5);
+      expect(s.imageSlideshowIntervalSeconds, 1);
+      expect(s.imageFit, SettingsService.imageFitCover);
+      final again = SettingsService();
+      await again.init();
+      expect(again.imagePrefetchCount, 5);
+      expect(again.imageScanSubdirs, isTrue);
+      expect(again.imageFit, SettingsService.imageFitCover);
+      final backup = again.exportForBackup();
+      expect(backup['image_scan_subdirs'], isTrue);
+      expect(backup['image_prefetch_count'], 5);
+      expect(backup['image_slideshow_enabled'], isFalse);
+      expect(backup['file_action_config'], isA<Map>());
+      expect((backup['file_action_config'] as Map)['image'], 'view_image');
+      expect((backup['file_action_config'] as Map)['music'], 'stream_music');
     });
   });
 }

@@ -23,6 +23,7 @@ class WebDavItem {
   bool get isAudio => !isDirectory && category == FileCategory.music;
   bool get isVideo => !isDirectory && category == FileCategory.video;
   bool get isCue => !isDirectory && category == FileCategory.cue;
+  bool get isImage => !isDirectory && category == FileCategory.image;
 }
 
 class TrackInfo {

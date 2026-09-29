@@ -494,7 +494,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fileExtensionSettingsSubtitle =>
-      'Music / video / CUE extensions and default actions';
+      'Music / video / image / CUE extensions and default actions';
 
   @override
   String get refreshLibraryTags => 'Update music library tags';
@@ -3309,7 +3309,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fileTypesManageSubtitle =>
-      'Music / video / CUE extensions and default actions';
+      'Music / video / image / CUE extensions and default actions';
 
   @override
   String get coverThumbSize => 'Cover thumbnail size';
@@ -3542,4 +3542,105 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get downloadKeepAliveHint =>
       'While this is on, a download notification stays in the shade for the whole transfer (required by the system), even if download notifications are turned off.';
+
+  @override
+  String get streamingSection => 'Streaming';
+
+  @override
+  String get imageViewer => 'Image viewer';
+
+  @override
+  String get imageViewerSubtitle => 'Slideshow, fit, and prefetch';
+
+  @override
+  String get imageSlideshow => 'Slideshow';
+
+  @override
+  String get imageSlideshowHint =>
+      'Advance automatically. Turning a page by hand restarts the timer and does not turn this off.';
+
+  @override
+  String get imageSlideshowInterval => 'Interval';
+
+  @override
+  String imageSlideshowSeconds(Object seconds) {
+    return '$seconds s';
+  }
+
+  @override
+  String get imageSlideshowLoop => 'Loop';
+
+  @override
+  String get imageSlideshowLoopHint =>
+      'After the last image, return to the first';
+
+  @override
+  String get imageFit => 'Fit';
+
+  @override
+  String get imageFitContain => 'Contain';
+
+  @override
+  String get imageFitCover => 'Cover';
+
+  @override
+  String get imagePrefetchCount => 'Prefetch count';
+
+  @override
+  String get imagePrefetchHint =>
+      'How many images to prefetch on each side (previous and next), from 1 to 5. The whole album is not loaded at once. Default is 1 per side.';
+
+  @override
+  String get imageScanSubdirs => 'Scan subdirectories (experimental)';
+
+  @override
+  String get imageScanSubdirsHint =>
+      'Experimental and off by default. When on, the album also includes images in subfolders. Scanning can be slow.';
+
+  @override
+  String get actionViewImage => 'View image';
+
+  @override
+  String get actionShortViewImage => 'View';
+
+  @override
+  String get fileCatImage => 'Image files';
+
+  @override
+  String get catImageFile => 'image file';
+
+  @override
+  String get netImage => 'Image';
+
+  @override
+  String get imageViewerEmpty => 'No images to view in this folder';
+
+  @override
+  String imageLoadFailed(Object error) {
+    return 'Could not load this image: $error';
+  }
+
+  @override
+  String get imageViewerRetry => 'Retry';
+
+  @override
+  String get imageViewerGestureHint =>
+      'Tap left for previous, right for next, center for settings';
+
+  @override
+  String imageViewerCount(Object index, Object total) {
+    return '$index / $total';
+  }
+
+  @override
+  String get imageViewerPrevious => 'Previous';
+
+  @override
+  String get imageViewerNext => 'Next';
+
+  @override
+  String get imageViewerOpenSettings => 'Image settings';
+
+  @override
+  String get imageScanningSubdirs => 'Scanning subdirectories…';
 }

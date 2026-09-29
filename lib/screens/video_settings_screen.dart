@@ -52,7 +52,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.nearBlack,
-      appBar: AppBar(title: Text(AppLocalizations.of(context)!.videoPlayback)),
+      appBar: AppBar(title: Text(AppLocalizations.of(context)!.videoSettings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

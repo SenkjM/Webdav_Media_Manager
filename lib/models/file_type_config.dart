@@ -1,7 +1,7 @@
 import '../utils/audio_extensions.dart';
 
 /// Broad classification of a WebDAV file based on its extension.
-enum FileCategory { music, video, cue, other }
+enum FileCategory { music, video, cue, image, other }
 
 /// Extension sets the network library uses to classify files.
 ///
@@ -12,9 +12,11 @@ class FileTypeConfig {
     List<String>? musicExtensions,
     List<String>? videoExtensions,
     List<String>? cueExtensions,
+    List<String>? imageExtensions,
   }) : musicExtensions = _normalize(musicExtensions ?? defaultMusicExtensions),
        videoExtensions = _normalize(videoExtensions ?? defaultVideoExtensions),
-       cueExtensions = _normalize(cueExtensions ?? defaultCueExtensions);
+       cueExtensions = _normalize(cueExtensions ?? defaultCueExtensions),
+       imageExtensions = _normalize(imageExtensions ?? defaultImageExtensions);
 
   static const List<String> defaultMusicExtensions = [
     'mp3',
@@ -44,15 +46,26 @@ class FileTypeConfig {
 
   static const List<String> defaultCueExtensions = ['cue'];
 
+  /// Same image set as PlatformExportService.isGalleryMedia's image half.
+  static const List<String> defaultImageExtensions = [
+    'jpg',
+    'jpeg',
+    'png',
+    'webp',
+    'gif',
+  ];
+
   /// Lowercase extensions WITHOUT a leading dot (e.g. `mp4`).
   final List<String> musicExtensions;
   final List<String> videoExtensions;
   final List<String> cueExtensions;
+  final List<String> imageExtensions;
 
   FileCategory categoryFor(String name) {
     if (isAudioFileNameWith(name, musicExtensions)) return FileCategory.music;
     if (isVideoFileNameWith(name, videoExtensions)) return FileCategory.video;
     if (isCueFileNameWith(name, cueExtensions)) return FileCategory.cue;
+    if (isImageFileNameWith(name, imageExtensions)) return FileCategory.image;
     return FileCategory.other;
   }
 
@@ -89,6 +102,7 @@ class FileTypeConfig {
     'music': musicExtensions,
     'video': videoExtensions,
     'cue': cueExtensions,
+    'image': imageExtensions,
   };
 
   factory FileTypeConfig.fromJson(Map<String, dynamic>? json) {
@@ -97,6 +111,11 @@ class FileTypeConfig {
       musicExtensions: _asStringList(json['music']),
       videoExtensions: _asStringList(json['video']),
       cueExtensions: _asStringList(json['cue']),
+      // Missing key (old backups) keeps the defaults. An explicit empty list
+      // still means the user cleared image extensions.
+      imageExtensions: json.containsKey('image')
+          ? _asStringList(json['image'])
+          : null,
     );
   }
 

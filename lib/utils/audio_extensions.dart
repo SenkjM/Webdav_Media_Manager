@@ -48,6 +48,9 @@ bool isAudioFileNameWith(String name, List<String> extensions) =>
 bool isVideoFileNameWith(String name, List<String> extensions) =>
     extensions.any((e) => name.toLowerCase().endsWith('.$e'));
 
+bool isImageFileNameWith(String name, List<String> extensions) =>
+    extensions.any((e) => name.toLowerCase().endsWith('.$e'));
+
 String sanitizeFileName(String name) {
   return name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
 }

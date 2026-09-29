@@ -15,6 +15,7 @@ import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
 import 'accounts_screen.dart';
 import 'audio_stream_settings_screen.dart';
+import 'image_settings_screen.dart';
 import '../theme/app_theme.dart';
 import '../utils/cover_image.dart';
 import '../utils/audio_extensions.dart';
@@ -337,7 +338,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           const Divider(height: 40),
           Text(
-            AppLocalizations.of(context)!.videoPlayback,
+            AppLocalizations.of(context)!.streamingSection,
             style: Theme.of(context).textTheme.titleMedium
                 ?.copyWith(color: AppColors.accent),
           ),
@@ -365,6 +366,18 @@ class _SettingsScreenState extends State<SettingsScreen>
                 MaterialPageRoute(
                   builder: (_) => const AudioStreamSettingsScreen(),
                 ),
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.image_outlined),
+            title: Text(AppLocalizations.of(context)!.imageViewer),
+            subtitle: Text(AppLocalizations.of(context)!.imageViewerSubtitle),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ImageSettingsScreen()),
               );
             },
           ),

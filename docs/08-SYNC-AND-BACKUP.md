@@ -86,7 +86,7 @@
 ## 5. 全部备份归档（BackupService）
 
 - `formatVersion = 5`；一个 `WmpContainer`（kind `BK`）：META（含 format 标记）+ TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections（credentials / playlists / settings / cueAlbums）。
-- 内容 = 全部账号凭证（WebDAV 三件套 + 云盘驱动配置，取代早前「云盘账号不进备份」的决定，见 [99 §4.2.8](99-IN-PROGRESS.md)）+ 全部音乐库行（tracks + cue_slices + cue_albums）+ 全部歌单 + 封面缩略图 + 设置；**不含** `music_cache` 音频与下载队列。
+- 内容 = 全部账号凭证（WebDAV 三件套 + 云盘驱动配置，取代早前「云盘账号不进备份」的决定，见 [99 §4.2.8](99-IN-PROGRESS.md)）+ 全部音乐库行（tracks + cue_slices + cue_albums）+ 全部歌单 + 封面缩略图 + 设置；**不含** `music_cache` 音频与下载队列。设置段随 `exportForBackup()` 带走图片查看偏好（幻灯片开关、间隔、循环、适应方式、预取数量、搜索子目录），不另开归档版本。
 - 加密：可选口令，魔数 `WDMMEN01` + PBKDF2 + AES-256-GCM（`backup_crypto.dart`）；归档内凭证按 `credentials.json` 的规则另行逐字段加密（WebDAV 密码 + 云盘配置的 obscure 字段）。恢复时同样静默过滤未注册的网盘类型。
 - **恢复策略**：v9 起已缓存由推导路径决定，恢复后磁盘上真有文件才算（`markAllUncached()` 为 no-op）→ 「库以为有文件但播不了」不可能发生；封面写回后再把各行的 `cover_path` 重写为本地路径。
 - 备份的写入与列出都只认 `<远端路径>backup/`，没有按站点分目录。

@@ -480,7 +480,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get fileExtensionSettings => '文件后缀管理';
 
   @override
-  String get fileExtensionSettingsSubtitle => '音乐 / 视频 / CUE 后缀与默认操作';
+  String get fileExtensionSettingsSubtitle => '音乐 / 视频 / 图片 / CUE 后缀与默认操作';
 
   @override
   String get refreshLibraryTags => '手动更新音乐库标签';
@@ -3180,7 +3180,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get fileTypesManage => '文件后缀管理';
 
   @override
-  String get fileTypesManageSubtitle => '音乐 / 视频 / CUE 后缀与默认操作';
+  String get fileTypesManageSubtitle => '音乐 / 视频 / 图片 / CUE 后缀与默认操作';
 
   @override
   String get coverThumbSize => '封面缩略图尺寸';
@@ -3393,6 +3393,102 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get downloadKeepAliveHint => '开启后，下载期间通知栏会常驻一条下载通知（系统要求），关闭下载通知也会显示';
+
+  @override
+  String get streamingSection => '流式传输';
+
+  @override
+  String get imageViewer => '图片查看';
+
+  @override
+  String get imageViewerSubtitle => '幻灯片、适应方式、预取数量';
+
+  @override
+  String get imageSlideshow => '幻灯片播放';
+
+  @override
+  String get imageSlideshowHint => '按间隔自动切换到下一张。手动翻页会重新计时，不会关闭这个开关。';
+
+  @override
+  String get imageSlideshowInterval => '间隔';
+
+  @override
+  String imageSlideshowSeconds(Object seconds) {
+    return '$seconds 秒';
+  }
+
+  @override
+  String get imageSlideshowLoop => '循环';
+
+  @override
+  String get imageSlideshowLoopHint => '播到最后一张后回到第一张';
+
+  @override
+  String get imageFit => '适应方式';
+
+  @override
+  String get imageFitContain => '完整显示';
+
+  @override
+  String get imageFitCover => '铺满';
+
+  @override
+  String get imagePrefetchCount => '预取数量';
+
+  @override
+  String get imagePrefetchHint => '向前、向后各预取这么多张（1–5），不会一次载入整本相册。默认每侧 1 张。';
+
+  @override
+  String get imageScanSubdirs => '搜索子目录（实验）';
+
+  @override
+  String get imageScanSubdirsHint => '实验性功能，默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。';
+
+  @override
+  String get actionViewImage => '查看图片';
+
+  @override
+  String get actionShortViewImage => '查看';
+
+  @override
+  String get fileCatImage => '图片文件';
+
+  @override
+  String get catImageFile => '图片文件';
+
+  @override
+  String get netImage => '图片';
+
+  @override
+  String get imageViewerEmpty => '这个目录里没有可查看的图片';
+
+  @override
+  String imageLoadFailed(Object error) {
+    return '无法加载这张图片：$error';
+  }
+
+  @override
+  String get imageViewerRetry => '重试';
+
+  @override
+  String get imageViewerGestureHint => '轻点左侧上一张，右侧下一张，中间打开设置';
+
+  @override
+  String imageViewerCount(Object index, Object total) {
+    return '$index / $total';
+  }
+
+  @override
+  String get imageViewerPrevious => '上一张';
+
+  @override
+  String get imageViewerNext => '下一张';
+
+  @override
+  String get imageViewerOpenSettings => '图片设置';
+
+  @override
+  String get imageScanningSubdirs => '正在搜索子目录…';
 }
 
 /// The translations for Chinese, as used in China (`zh_CN`).
@@ -3870,7 +3966,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get fileExtensionSettings => '文件后缀管理';
 
   @override
-  String get fileExtensionSettingsSubtitle => '音乐 / 视频 / CUE 后缀与默认操作';
+  String get fileExtensionSettingsSubtitle => '音乐 / 视频 / 图片 / CUE 后缀与默认操作';
 
   @override
   String get refreshLibraryTags => '手动更新音乐库标签';
@@ -6570,7 +6666,7 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
   String get fileTypesManage => '文件后缀管理';
 
   @override
-  String get fileTypesManageSubtitle => '音乐 / 视频 / CUE 后缀与默认操作';
+  String get fileTypesManageSubtitle => '音乐 / 视频 / 图片 / CUE 后缀与默认操作';
 
   @override
   String get coverThumbSize => '封面缩略图尺寸';
@@ -6783,6 +6879,102 @@ class AppLocalizationsZhCn extends AppLocalizationsZh {
 
   @override
   String get downloadKeepAliveHint => '开启后，下载期间通知栏会常驻一条下载通知（系统要求），关闭下载通知也会显示';
+
+  @override
+  String get streamingSection => '流式传输';
+
+  @override
+  String get imageViewer => '图片查看';
+
+  @override
+  String get imageViewerSubtitle => '幻灯片、适应方式、预取数量';
+
+  @override
+  String get imageSlideshow => '幻灯片播放';
+
+  @override
+  String get imageSlideshowHint => '按间隔自动切换到下一张。手动翻页会重新计时，不会关闭这个开关。';
+
+  @override
+  String get imageSlideshowInterval => '间隔';
+
+  @override
+  String imageSlideshowSeconds(Object seconds) {
+    return '$seconds 秒';
+  }
+
+  @override
+  String get imageSlideshowLoop => '循环';
+
+  @override
+  String get imageSlideshowLoopHint => '播到最后一张后回到第一张';
+
+  @override
+  String get imageFit => '适应方式';
+
+  @override
+  String get imageFitContain => '完整显示';
+
+  @override
+  String get imageFitCover => '铺满';
+
+  @override
+  String get imagePrefetchCount => '预取数量';
+
+  @override
+  String get imagePrefetchHint => '向前、向后各预取这么多张（1–5），不会一次载入整本相册。默认每侧 1 张。';
+
+  @override
+  String get imageScanSubdirs => '搜索子目录（实验）';
+
+  @override
+  String get imageScanSubdirsHint => '实验性功能，默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。';
+
+  @override
+  String get actionViewImage => '查看图片';
+
+  @override
+  String get actionShortViewImage => '查看';
+
+  @override
+  String get fileCatImage => '图片文件';
+
+  @override
+  String get catImageFile => '图片文件';
+
+  @override
+  String get netImage => '图片';
+
+  @override
+  String get imageViewerEmpty => '这个目录里没有可查看的图片';
+
+  @override
+  String imageLoadFailed(Object error) {
+    return '无法加载这张图片：$error';
+  }
+
+  @override
+  String get imageViewerRetry => '重试';
+
+  @override
+  String get imageViewerGestureHint => '轻点左侧上一张，右侧下一张，中间打开设置';
+
+  @override
+  String imageViewerCount(Object index, Object total) {
+    return '$index / $total';
+  }
+
+  @override
+  String get imageViewerPrevious => '上一张';
+
+  @override
+  String get imageViewerNext => '下一张';
+
+  @override
+  String get imageViewerOpenSettings => '图片设置';
+
+  @override
+  String get imageScanningSubdirs => '正在搜索子目录…';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7261,7 +7453,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get fileExtensionSettings => '檔案副檔名管理';
 
   @override
-  String get fileExtensionSettingsSubtitle => '音樂／影片／CUE 副檔名與預設動作';
+  String get fileExtensionSettingsSubtitle => '音樂／影片／圖片／CUE 副檔名與預設動作';
 
   @override
   String get refreshLibraryTags => '手動更新音樂庫標籤';
@@ -9961,7 +10153,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get fileTypesManage => '檔案副檔名管理';
 
   @override
-  String get fileTypesManageSubtitle => '音樂 / 影片 / CUE 副檔名與預設動作';
+  String get fileTypesManageSubtitle => '音樂 / 影片 / 圖片 / CUE 副檔名與預設動作';
 
   @override
   String get coverThumbSize => '封面縮圖尺寸';
@@ -10174,4 +10366,100 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get downloadKeepAliveHint => '開啟後，下載期間通知列會常駐一則下載通知（系統要求），關閉下載通知也會顯示';
+
+  @override
+  String get streamingSection => '串流傳輸';
+
+  @override
+  String get imageViewer => '圖片檢視';
+
+  @override
+  String get imageViewerSubtitle => '幻燈片、適應方式、預取數量';
+
+  @override
+  String get imageSlideshow => '幻燈片播放';
+
+  @override
+  String get imageSlideshowHint => '按間隔自動切到下一張。手動翻頁會重新計時，不會關閉這個開關。';
+
+  @override
+  String get imageSlideshowInterval => '間隔';
+
+  @override
+  String imageSlideshowSeconds(Object seconds) {
+    return '$seconds 秒';
+  }
+
+  @override
+  String get imageSlideshowLoop => '循環';
+
+  @override
+  String get imageSlideshowLoopHint => '放到最後一張後回到第一張';
+
+  @override
+  String get imageFit => '適應方式';
+
+  @override
+  String get imageFitContain => '完整顯示';
+
+  @override
+  String get imageFitCover => '鋪滿';
+
+  @override
+  String get imagePrefetchCount => '預取數量';
+
+  @override
+  String get imagePrefetchHint => '向前、向後各預取這麼多張（1–5），不會一次載入整本相簿。預設每側 1 張。';
+
+  @override
+  String get imageScanSubdirs => '搜尋子目錄（實驗）';
+
+  @override
+  String get imageScanSubdirsHint => '實驗性功能，預設關閉。開啟後相簿會包含子目錄中的圖片，掃描可能較慢。';
+
+  @override
+  String get actionViewImage => '檢視圖片';
+
+  @override
+  String get actionShortViewImage => '檢視';
+
+  @override
+  String get fileCatImage => '圖片檔案';
+
+  @override
+  String get catImageFile => '圖片檔案';
+
+  @override
+  String get netImage => '圖片';
+
+  @override
+  String get imageViewerEmpty => '這個目錄裡沒有可檢視的圖片';
+
+  @override
+  String imageLoadFailed(Object error) {
+    return '無法載入這張圖片：$error';
+  }
+
+  @override
+  String get imageViewerRetry => '重試';
+
+  @override
+  String get imageViewerGestureHint => '輕點左側上一張，右側下一張，中間開啟設定';
+
+  @override
+  String imageViewerCount(Object index, Object total) {
+    return '$index / $total';
+  }
+
+  @override
+  String get imageViewerPrevious => '上一張';
+
+  @override
+  String get imageViewerNext => '下一張';
+
+  @override
+  String get imageViewerOpenSettings => '圖片設定';
+
+  @override
+  String get imageScanningSubdirs => '正在搜尋子目錄…';
 }

@@ -33,6 +33,7 @@ import '../widgets/webdav_error_dialog.dart';
 import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
 import 'home_shell.dart';
+import 'image_viewer_screen.dart';
 import 'music_stream_screen.dart';
 import 'video_player_screen.dart';
 import 'webdav_folder_picker_screen.dart';
@@ -377,7 +378,26 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         await _openCue(item);
       case FileAction.streamMusic:
         await _streamMusic(item);
+      case FileAction.viewImage:
+        await _openImage(item);
     }
+  }
+
+  /// 图片 → 临时文件查看。不进下载队列，也不走视频手势。
+  Future<void> _openImage(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final siblings = _items.where((e) => e.isImage).toList();
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen(
+          accountId: accountId,
+          folderPath: _path,
+          initial: item,
+          siblings: siblings,
+        ),
+      ),
+    );
   }
 
   /// 视频 → 远端流式播放（复用视频播放页与它的后台/通知栈）。
@@ -905,6 +925,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     FileAction.stream => Icons.play_circle_outline,
     FileAction.readCue => Icons.queue_music_outlined,
     FileAction.streamMusic => Icons.stream,
+    FileAction.viewImage => Icons.image_outlined,
   };
 
   /// 复制 / 移动选中的条目到另一个远端文件夹。
@@ -1294,6 +1315,23 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       _itemMenuButton(item),
                     ],
                   ),
+                  onTap: () => _onEntryTap(item),
+                  onLongPress: () => _enterSelect(item),
+                );
+              }
+              if (item.isImage) {
+                return ListTile(
+                  leading: _selectionLeading(
+                    item,
+                    const Icon(Icons.image_outlined, color: AppColors.accent),
+                  ),
+                  title: Text(item.name),
+                  subtitle: Text(
+                    item.size != null
+                        ? '${_fmtSize(item.size!)} · ${AppLocalizations.of(context)!.netImage}'
+                        : AppLocalizations.of(context)!.netImage,
+                  ),
+                  trailing: _itemMenuButton(item),
                   onTap: () => _onEntryTap(item),
                   onLongPress: () => _enterSelect(item),
                 );

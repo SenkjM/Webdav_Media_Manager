@@ -72,6 +72,12 @@ class SettingsService extends ChangeNotifier {
   static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
   static const _kAudioScanSubdirs = 'audio_scan_subdirs';
   static const _kVideoScanSubdirs = 'video_scan_subdirs';
+  static const _kImageSlideshow = 'image_slideshow_enabled';
+  static const _kImageSlideshowSeconds = 'image_slideshow_interval_seconds';
+  static const _kImageSlideshowLoop = 'image_slideshow_loop';
+  static const _kImageFit = 'image_fit';
+  static const _kImagePrefetch = 'image_prefetch_count';
+  static const _kImageScanSubdirs = 'image_scan_subdirs';
 
   /// **One** destination 网盘 for 凭证 / 歌单 / 音乐库 / 备份.
   static const _kSyncAccountId = 'sync_account_id';
@@ -113,6 +119,20 @@ class SettingsService extends ChangeNotifier {
 
   /// Slider granularity: (3.0 - 0.5) / 0.05 = 50 steps.
   static const int videoRateDivisions = 50;
+
+  /// Image viewer. Slideshow starts off. Prefetch count is neighbors on
+  /// EACH side (previous N and next N), clamped so a large album cannot be
+  /// decoded all at once.
+  static const bool defaultImageSlideshow = false;
+  static const int defaultImageSlideshowSeconds = 3;
+  static const int minImageSlideshowSeconds = 1;
+  static const int maxImageSlideshowSeconds = 30;
+  static const bool defaultImageSlideshowLoop = true;
+  static const String imageFitContain = 'contain';
+  static const String imageFitCover = 'cover';
+  static const int defaultImagePrefetchCount = 1;
+  static const int minImagePrefetchCount = 1;
+  static const int maxImagePrefetchCount = 5;
 
   /// Long-press speed boost default (temporary 2× while the finger is down).
   static const double defaultVideoLongPressRate = 2.0;
@@ -180,6 +200,12 @@ class SettingsService extends ChangeNotifier {
   bool _audioStreamingEnabled = false;
   bool _audioScanSubdirs = false;
   bool _videoScanSubdirs = false;
+  bool _imageSlideshowEnabled = defaultImageSlideshow;
+  int _imageSlideshowIntervalSeconds = defaultImageSlideshowSeconds;
+  bool _imageSlideshowLoop = defaultImageSlideshowLoop;
+  String _imageFit = imageFitContain;
+  int _imagePrefetchCount = defaultImagePrefetchCount;
+  bool _imageScanSubdirs = false;
   bool _videoPipEnabled = false;
   bool _videoHardwareDecoding = true;
   int _videoBufferSizeMb = defaultVideoBufferMb;
@@ -298,9 +324,19 @@ class SettingsService extends ChangeNotifier {
   /// 音乐是否走流式传输。原来只有「文件后缀管理」页能改，现在归音频流式设置页。
   bool get audioStreamingEnabled => _audioStreamingEnabled;
 
-  /// 流式扫描是否递归子目录。音频与视频各一份，默认都开（等于旧行为）。
+  /// 流式扫描是否递归子目录。音频与视频各一份，默认都关。
   bool get audioScanSubdirs => _audioScanSubdirs;
   bool get videoScanSubdirs => _videoScanSubdirs;
+
+  /// 图片查看。幻灯片默认关。预取数量是左右各 N 张，不是整本相册。
+  bool get imageSlideshowEnabled => _imageSlideshowEnabled;
+  int get imageSlideshowIntervalSeconds => _imageSlideshowIntervalSeconds;
+  bool get imageSlideshowLoop => _imageSlideshowLoop;
+  String get imageFit => _imageFit;
+  int get imagePrefetchCount => _imagePrefetchCount;
+
+  /// 实验性：图片相册是否扫描子目录。默认关。键 `image_scan_subdirs`。
+  bool get imageScanSubdirs => _imageScanSubdirs;
 
   /// Temporary playback rate applied while the video screen is long-pressed.
   double get videoLongPressRate => _videoLongPressRate;
@@ -400,10 +436,14 @@ class SettingsService extends ChangeNotifier {
     _videoTapAction = VideoTapActionX.fromStorageKey(
       _prefs!.getString(_kVideoTapAction),
     );
+    _audioStreamingEnabled = _resolveAudioStreamingEnabled();
+    // Persist the new-install default so a later file-action write cannot
+    // make the next launch look like "config exists, switch missing → off".
+    if (!_prefs!.containsKey(_kAudioStreamingEnabled) &&
+        _audioStreamingEnabled) {
+      await _prefs!.setBool(_kAudioStreamingEnabled, true);
+    }
     _fileActions = _readFileActions();
-    _audioStreamingEnabled =
-        _prefs!.getBool(_kAudioStreamingEnabled) ??
-        _legacyMusicStreaming(_prefs!.getString(_kFileActionConfig));
     _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
@@ -425,6 +465,18 @@ class SettingsService extends ChangeNotifier {
     );
     _audioScanSubdirs = _prefs!.getBool(_kAudioScanSubdirs) ?? false;
     _videoScanSubdirs = _prefs!.getBool(_kVideoScanSubdirs) ?? false;
+    _imageSlideshowEnabled =
+        _prefs!.getBool(_kImageSlideshow) ?? defaultImageSlideshow;
+    _imageSlideshowIntervalSeconds = _clampImageSlideshowSeconds(
+      _prefs!.getInt(_kImageSlideshowSeconds) ?? defaultImageSlideshowSeconds,
+    );
+    _imageSlideshowLoop =
+        _prefs!.getBool(_kImageSlideshowLoop) ?? defaultImageSlideshowLoop;
+    _imageFit = _normalizeImageFit(_prefs!.getString(_kImageFit));
+    _imagePrefetchCount = _clampImagePrefetch(
+      _prefs!.getInt(_kImagePrefetch) ?? defaultImagePrefetchCount,
+    );
+    _imageScanSubdirs = _prefs!.getBool(_kImageScanSubdirs) ?? false;
     _videoHardwareDecoding = _prefs!.getBool(_kVideoHardwareDecoding) ?? true;
     _videoBufferSizeMb = _clampBufferMb(
       _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
@@ -564,17 +616,34 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 新安装：音乐流式开关默认开，单击动作走 [FileAction.streamMusic]。
+  ///
+  /// 已经存过 `file_action_config_json` 或旧的单击键时，不改用户选过的动作；
+  /// 开关缺失则维持旧默认（关），除非 JSON 里还有 legacy 实验标记。
+  bool _resolveAudioStreamingEnabled() {
+    if (_prefs!.containsKey(_kAudioStreamingEnabled)) {
+      return _prefs!.getBool(_kAudioStreamingEnabled) ?? false;
+    }
+    final raw = _prefs!.getString(_kFileActionConfig);
+    if (raw != null && raw.isNotEmpty) {
+      return _legacyMusicStreaming(raw);
+    }
+    if (_prefs!.containsKey(_kMusicTapAction) ||
+        _prefs!.containsKey(_kVideoTapAction)) {
+      return false;
+    }
+    return true;
+  }
+
   /// 读统一动作配置；没有就按旧的 music/video 单击行为迁移一次。
   ///
   /// 迁移只发生一次：写完新键之后旧键不再被读。旧语义 → 新动作：
   /// 音乐 `play`（已缓存则播放，否则下载）与 `download` 都是「缓存音乐」，
   /// 视频 `open` → 流式传输、`download` → 下载。
+  /// 完全没有旧键的新安装不走迁移表，直接用出厂默认（音乐流式）。
   FileActionConfig _readFileActions() {
+    final streaming = _resolveAudioStreamingEnabled();
     final raw = _prefs!.getString(_kFileActionConfig);
-    // 流式开关原来只有 `experimental_music_streaming` 一处。新键存在就用新键，
-    // 否则拿旧值当默认——用户点过一次的开关不该再点第二次。
-    final streaming =
-        _prefs!.getBool(_kAudioStreamingEnabled) ?? _legacyMusicStreaming(raw);
     if (raw != null && raw.isNotEmpty) {
       try {
         final json = jsonDecode(raw);
@@ -588,7 +657,16 @@ class SettingsService extends ChangeNotifier {
       } catch (_) {
         // fall through to the legacy migration
       }
+      return _legacyFileActions(streaming);
     }
+    if (_prefs!.containsKey(_kMusicTapAction) ||
+        _prefs!.containsKey(_kVideoTapAction)) {
+      return _legacyFileActions(streaming);
+    }
+    return FileActionConfig(allowMusicStreaming: streaming);
+  }
+
+  FileActionConfig _legacyFileActions(bool streaming) {
     return FileActionConfig(
       allowMusicStreaming: streaming,
       actions: {
@@ -598,6 +676,7 @@ class SettingsService extends ChangeNotifier {
             ? FileAction.download
             : FileAction.stream,
         FileCategory.cue: FileAction.readCue,
+        FileCategory.image: FileAction.viewImage,
         FileCategory.other: FileAction.download,
       },
     );
@@ -712,10 +791,13 @@ class SettingsService extends ChangeNotifier {
     _audioStreamingEnabled = enabled;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kAudioStreamingEnabled, enabled);
-    // 关掉时重建一次动作配置：`copyWith()` 会走一遍解析，把已经选中的
-    // 「流式传输（音乐）」退回默认。否则界面里会留着一个点了没反应的动作。
+    // 关掉时把已选中的「流式传输（音乐）」退回缓存并写回。开着时不改用户
+    // 已经选过的动作（出厂默认是流式，但存过 cache 的不能被打开开关改掉）。
+    _fileActions = FileActionConfig(
+      actions: _fileActions.actions,
+      allowMusicStreaming: enabled,
+    );
     if (!enabled) {
-      _fileActions = _fileActions.copyWith();
       await _prefs!.setString(
         _kFileActionConfig,
         jsonEncode(_fileActions.toJson()),
@@ -737,6 +819,66 @@ class SettingsService extends ChangeNotifier {
     await _prefs!.setBool(_kVideoScanSubdirs, enabled);
     notifyListeners();
   }
+
+  Future<void> setImageSlideshowEnabled(bool enabled) async {
+    _imageSlideshowEnabled = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kImageSlideshow, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setImageSlideshowIntervalSeconds(int seconds) async {
+    _imageSlideshowIntervalSeconds = _clampImageSlideshowSeconds(seconds);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(
+      _kImageSlideshowSeconds,
+      _imageSlideshowIntervalSeconds,
+    );
+    notifyListeners();
+  }
+
+  Future<void> setImageSlideshowLoop(bool enabled) async {
+    _imageSlideshowLoop = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kImageSlideshowLoop, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setImageFit(String fit) async {
+    _imageFit = _normalizeImageFit(fit);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kImageFit, _imageFit);
+    notifyListeners();
+  }
+
+  Future<void> setImagePrefetchCount(int count) async {
+    _imagePrefetchCount = _clampImagePrefetch(count);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kImagePrefetch, _imagePrefetchCount);
+    notifyListeners();
+  }
+
+  Future<void> setImageScanSubdirs(bool enabled) async {
+    _imageScanSubdirs = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kImageScanSubdirs, enabled);
+    notifyListeners();
+  }
+
+  static int _clampImageSlideshowSeconds(int seconds) {
+    if (seconds < minImageSlideshowSeconds) return minImageSlideshowSeconds;
+    if (seconds > maxImageSlideshowSeconds) return maxImageSlideshowSeconds;
+    return seconds;
+  }
+
+  static int _clampImagePrefetch(int count) {
+    if (count < minImagePrefetchCount) return minImagePrefetchCount;
+    if (count > maxImagePrefetchCount) return maxImagePrefetchCount;
+    return count;
+  }
+
+  static String _normalizeImageFit(String? fit) =>
+      fit == imageFitCover ? imageFitCover : imageFitContain;
 
   Future<void> setVideoBackgroundPlayback(bool enabled) async {
     _videoBackgroundPlayback = enabled;
@@ -1003,6 +1145,12 @@ class SettingsService extends ChangeNotifier {
     'audio_streaming_enabled': _audioStreamingEnabled,
     'audio_scan_subdirs': _audioScanSubdirs,
     'video_scan_subdirs': _videoScanSubdirs,
+    'image_slideshow_enabled': _imageSlideshowEnabled,
+    'image_slideshow_interval_seconds': _imageSlideshowIntervalSeconds,
+    'image_slideshow_loop': _imageSlideshowLoop,
+    'image_fit': _imageFit,
+    'image_prefetch_count': _imagePrefetchCount,
+    'image_scan_subdirs': _imageScanSubdirs,
     'video_pip_enabled': _videoPipEnabled,
     'video_hardware_decoding': _videoHardwareDecoding,
     'video_buffer_size_mb': _videoBufferSizeMb,
@@ -1057,14 +1205,19 @@ class SettingsService extends ChangeNotifier {
       );
     }
     if (json['file_action_config'] is Map) {
+      final allow = json['audio_streaming_enabled'] is bool
+          ? json['audio_streaming_enabled'] as bool
+          : _audioStreamingEnabled;
       final parsed = FileActionConfig.fromJson(
         Map<String, dynamic>.from(json['file_action_config'] as Map),
+        allowMusicStreaming: allow,
       );
       if (parsed != null) await setFileActions(parsed);
     } else if (json['music_tap_action'] != null ||
         json['video_tap_action'] != null) {
       await setFileActions(
         FileActionConfig(
+          allowMusicStreaming: json['audio_streaming_enabled'] == true,
           actions: {
             FileCategory.music: FileAction.cacheMusic,
             FileCategory.video:
@@ -1075,6 +1228,7 @@ class SettingsService extends ChangeNotifier {
                 ? FileAction.download
                 : FileAction.stream,
             FileCategory.cue: FileAction.readCue,
+            FileCategory.image: FileAction.viewImage,
             FileCategory.other: FileAction.download,
           },
         ),
@@ -1135,6 +1289,28 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['video_scan_subdirs'] is bool) {
       await setVideoScanSubdirs(json['video_scan_subdirs'] as bool);
+    }
+    if (json['image_slideshow_enabled'] is bool) {
+      await setImageSlideshowEnabled(json['image_slideshow_enabled'] as bool);
+    }
+    if (json['image_slideshow_interval_seconds'] is num) {
+      await setImageSlideshowIntervalSeconds(
+        (json['image_slideshow_interval_seconds'] as num).toInt(),
+      );
+    }
+    if (json['image_slideshow_loop'] is bool) {
+      await setImageSlideshowLoop(json['image_slideshow_loop'] as bool);
+    }
+    if (json['image_fit'] is String) {
+      await setImageFit(json['image_fit'] as String);
+    }
+    if (json['image_prefetch_count'] is num) {
+      await setImagePrefetchCount(
+        (json['image_prefetch_count'] as num).toInt(),
+      );
+    }
+    if (json['image_scan_subdirs'] is bool) {
+      await setImageScanSubdirs(json['image_scan_subdirs'] as bool);
     }
     if (json['video_background_playback'] is bool) {
       await setVideoBackgroundPlayback(

@@ -991,7 +991,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileExtensionSettingsSubtitle.
   ///
   /// In zh_CN, this message translates to:
-  /// **'音乐 / 视频 / CUE 后缀与默认操作'**
+  /// **'音乐 / 视频 / 图片 / CUE 后缀与默认操作'**
   String get fileExtensionSettingsSubtitle;
 
   /// No description provided for @refreshLibraryTags.
@@ -5505,7 +5505,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileTypesManageSubtitle.
   ///
   /// In zh_CN, this message translates to:
-  /// **'音乐 / 视频 / CUE 后缀与默认操作'**
+  /// **'音乐 / 视频 / 图片 / CUE 后缀与默认操作'**
   String get fileTypesManageSubtitle;
 
   /// No description provided for @coverThumbSize.
@@ -5903,6 +5903,186 @@ abstract class AppLocalizations {
   /// In zh_CN, this message translates to:
   /// **'开启后，下载期间通知栏会常驻一条下载通知（系统要求），关闭下载通知也会显示'**
   String get downloadKeepAliveHint;
+
+  /// No description provided for @streamingSection.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'流式传输'**
+  String get streamingSection;
+
+  /// No description provided for @imageViewer.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'图片查看'**
+  String get imageViewer;
+
+  /// No description provided for @imageViewerSubtitle.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'幻灯片、适应方式、预取数量'**
+  String get imageViewerSubtitle;
+
+  /// No description provided for @imageSlideshow.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'幻灯片播放'**
+  String get imageSlideshow;
+
+  /// No description provided for @imageSlideshowHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'按间隔自动切换到下一张。手动翻页会重新计时，不会关闭这个开关。'**
+  String get imageSlideshowHint;
+
+  /// No description provided for @imageSlideshowInterval.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'间隔'**
+  String get imageSlideshowInterval;
+
+  /// No description provided for @imageSlideshowSeconds.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'{seconds} 秒'**
+  String imageSlideshowSeconds(Object seconds);
+
+  /// No description provided for @imageSlideshowLoop.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'循环'**
+  String get imageSlideshowLoop;
+
+  /// No description provided for @imageSlideshowLoopHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'播到最后一张后回到第一张'**
+  String get imageSlideshowLoopHint;
+
+  /// No description provided for @imageFit.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'适应方式'**
+  String get imageFit;
+
+  /// No description provided for @imageFitContain.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'完整显示'**
+  String get imageFitContain;
+
+  /// No description provided for @imageFitCover.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'铺满'**
+  String get imageFitCover;
+
+  /// No description provided for @imagePrefetchCount.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'预取数量'**
+  String get imagePrefetchCount;
+
+  /// No description provided for @imagePrefetchHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'向前、向后各预取这么多张（1–5），不会一次载入整本相册。默认每侧 1 张。'**
+  String get imagePrefetchHint;
+
+  /// No description provided for @imageScanSubdirs.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'搜索子目录（实验）'**
+  String get imageScanSubdirs;
+
+  /// No description provided for @imageScanSubdirsHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'实验性功能，默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。'**
+  String get imageScanSubdirsHint;
+
+  /// No description provided for @actionViewImage.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'查看图片'**
+  String get actionViewImage;
+
+  /// No description provided for @actionShortViewImage.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'查看'**
+  String get actionShortViewImage;
+
+  /// No description provided for @fileCatImage.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'图片文件'**
+  String get fileCatImage;
+
+  /// No description provided for @catImageFile.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'图片文件'**
+  String get catImageFile;
+
+  /// No description provided for @netImage.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'图片'**
+  String get netImage;
+
+  /// No description provided for @imageViewerEmpty.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'这个目录里没有可查看的图片'**
+  String get imageViewerEmpty;
+
+  /// No description provided for @imageLoadFailed.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'无法加载这张图片：{error}'**
+  String imageLoadFailed(Object error);
+
+  /// No description provided for @imageViewerRetry.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'重试'**
+  String get imageViewerRetry;
+
+  /// No description provided for @imageViewerGestureHint.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'轻点左侧上一张，右侧下一张，中间打开设置'**
+  String get imageViewerGestureHint;
+
+  /// No description provided for @imageViewerCount.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'{index} / {total}'**
+  String imageViewerCount(Object index, Object total);
+
+  /// No description provided for @imageViewerPrevious.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'上一张'**
+  String get imageViewerPrevious;
+
+  /// No description provided for @imageViewerNext.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'下一张'**
+  String get imageViewerNext;
+
+  /// No description provided for @imageViewerOpenSettings.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'图片设置'**
+  String get imageViewerOpenSettings;
+
+  /// No description provided for @imageScanningSubdirs.
+  ///
+  /// In zh_CN, this message translates to:
+  /// **'正在搜索子目录…'**
+  String get imageScanningSubdirs;
 }
 
 class _AppLocalizationsDelegate

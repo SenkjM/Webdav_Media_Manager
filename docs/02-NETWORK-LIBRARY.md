@@ -1,7 +1,7 @@
 # 02 · 网络库
 
 > 编号 02 · 总索引：[00-INDEX.md](00-INDEX.md)  
-> 代码：`lib/screens/network_library_screen.dart`、`lib/models/file_actions.dart`、`lib/screens/webdav_folder_picker_screen.dart`
+> 代码：`lib/screens/network_library_screen.dart`、`lib/models/file_actions.dart`、`lib/screens/image_viewer_screen.dart`、`lib/screens/webdav_folder_picker_screen.dart`
 
 网络库是 WebDAV 的浏览器：列目录、预览、把条目送进[下载队列](04-DOWNLOAD-QUEUE.md)或播放器。它**不是**曲库，也不代表本地有什么。
 
@@ -14,21 +14,35 @@
 
 ## 2. 文件动作模型
 
-类型由后缀决定（[`FileTypeConfig`](01-DATA-MODEL.md)）：音乐 / 视频 / CUE / 普通文件。
+类型由后缀决定（[`FileTypeConfig`](01-DATA-MODEL.md)）：音乐 / 视频 / CUE / 图片 / 普通文件。
 每个类别在设置里有一个默认动作，格式为 `<类型> → <默认动作>`：
 
 | 类别 | 默认动作 | 其它可选动作 |
 |------|----------|--------------|
-| 音乐 | 缓存音乐 | 流式传输（实验性，需开关）、下载 |
+| 音乐 | 流式传输（音乐）（新安装；已保存的选择不改） | 缓存音乐、下载 |
 | 视频 | 流式传输 | 下载 |
 | CUE | cue 读取 | 下载 |
+| 图片 | 查看图片 | 下载 |
 | 普通文件 | 下载 | — |
 
 - 「下载」= 落系统下载目录（`DownloadTarget.downloads`），**不是**缓存；音频缓存只由「缓存音乐」产生。
-- 任何文件都可以用「下载」；缓存音乐只对音乐合法，视频那个流式传输只对视频合法。
+- 任何文件都可以用「下载」；缓存音乐只对音乐合法，视频那个流式传输只对视频合法，查看图片只对图片合法。
+- 音乐的出厂单击是流式传输。新安装开关默认开；已经保存过单击动作的安装保持原选择。关掉开关时，已选的流式退回缓存音乐——不能退回「现在的出厂默认」，否则会退回它自己。旧的 music / video 单击键迁移仍是缓存音乐，开关保持关。
 - 判定只有一份实现：`FileActionCatalog.isAllowed` / `judgeAction`。动作与类型不匹配时**直接说明原因**，不静默换成别的动作。
 - 三个入口共用同一份判定：整行点按、多选工具栏、右侧「更多」菜单。更多菜单的第一条永远是当前默认动作，并标注「设置里的默认动作」。
 - 设置界面见 `file_extensions_screen.dart`：每个类别一个下拉框，选项就是上表的允许列表。
+
+### 图片查看
+
+点按图片执行 `FileAction.viewImage`（存储键 `view_image`），打开全屏查看器 `image_viewer_screen.dart`。不复用 `stream` / `streamMusic` / `cacheMusic`，`downloadTarget` 为 null：不进下载队列，不进 `music_cache`、`covers/` 或系统下载目录。
+
+- **后缀**：类别 `FileCategory.image`，默认 jpg / jpeg / png / webp / gif（与相册导出里图片那一半一致）。旧配置没有 `image` 键时补这组默认后缀，不改已有音乐 / 视频列表。HEIC 不在默认后缀里。
+- **相册**：默认只含当前目录里的图片，按文件名大小写不敏感排序（`imageAlbumFrom`）。不伪造一条替身条目。实验性「搜索子目录」在图片查看设置里，文案标明实验且默认关闭（偏好键 `image_scan_subdirs`）。
+- **手势**：左点上一张，右点下一张，中点打开**同一**图片设置页。点击区让出 `systemGestureInsets` / `padding`，避免系统返回手势和导航条吃掉点击。退出恢复系统 UI。不加入媒体会话，不启动 `DownloadKeepAliveService`。手动翻页只重置幻灯片间隔，不关掉幻灯片开关。不共用视频页的手势（视频是点按显隐控件、双击 seek）。
+- **设置**：设置页「流式传输」分区下的第三行「图片查看」（分区标题文案键 `streamingSection`；视频设置页 AppBar 仍用「视频播放设置」）。独立设置页，不塞进 `VideoSettingsScreen`。幻灯片默认关，间隔 3 秒（可调 1–30），循环默认开，适应方式默认 `contain`（另有 `cover`），预取数量默认 1。预取是**左右各 N 张**（上一张和下一张都算），不是一共 N 张邻居，也不是整本相册；N 限制在 1–5。这些字段在 `exportForBackup()` 里，随设置进备份（见 [08 §5](08-SYNC-AND-BACKUP.md)）。
+- **取图**：不用 `Image.network`。下载走现有 `downloadToFile`（WebDAV 的 Basic + User-Agent，云盘的 rawUrl + rawHeaders；没有直链时该方法内部已经走 `openContent`，crypt 走同一条），只落在临时目录 `image_viewer/<会话>/`。不用 `readAsBytes`。用 `Image.file`，按屏幕尺寸设 `cacheWidth` / `cacheHeight`。只预取配置的邻居。退出时删掉临时文件。
+- **多选**：工具栏不加「查看」。列表行可以用图片图标，分发只走 `judgeAction`。
+- **刻意不做**：不烘焙 EXIF 方向（整图进内存会撑爆）；GIF / 动画 WebP 交给引擎自己播，幻灯片不等动画结束；没有屏幕常亮（不引入 wakelock）。
 
 ## 3. 行操作
 
@@ -69,7 +83,7 @@
   - **下载**是基本功能：不挑类型也不挑个数，文件夹递归全下——音频、视频、CUE 一律照下，**不跳过任何东西**。
   - 两者互不排斥：同一批内容两个都点就会各排一遍。
   - 复制到… / 移动到… 对任意选中项都可用。
-- **没有播放按钮**：流式播放一次只能放一个，放个「播放全部」只会误导；要播就点那一行（或在「⋮」里选）。
+- **没有播放按钮，也没有「查看」**：流式播放一次只能放一个，放个「播放全部」只会误导；要播或要看图片就点那一行（或在「⋮」里选）。
 - 工具栏外壳（底色、铺满整宽、横向滚动）是网络库与音乐库**共用的** `lib/widgets/selection_toolbar.dart`；里面的按钮与业务各写各的——两个库只有「多选」这件事通用。
 - 铺满整宽必须用**具体**宽度（`constraints.maxWidth`）：横向滚动层给子级的宽度约束是无限的，那里写 `minWidth: double.infinity` 是不可满足约束，整条工具栏会直接不画（踩过一次）。
 - 放进外壳的按钮里**不能用 `Expanded` / `Flexible` / `Spacer`**：它们要分配「剩余空间」，而横向滚动层里宽度无限，没有剩余空间可分，整条工具栏会在渲染时炸掉（音乐库这样炸过一次，`flutter analyze` 与测试都发现不了——只有跑起来才看得见）。文字用 `Padding` + `Text` 自然宽度。
@@ -105,7 +119,7 @@
 
 ## 8. 当前限制与后续优化
 
-- **音乐流式传输**：实验开关打开后，音乐条目会复用视频的远端流管线直接播放（不下载、不缓存、不入队），界面是独立的[音乐流式播放页](05-AUDIO-PLAYBACK.md)（不渲染视频、无手势、控件不自动隐藏、不旋转、不画中画）。后缀被改掉、内容其实是音频的条目也会路由到这一页。封面与时长不取；流式的优化方向见 [99 §3](99-IN-PROGRESS.md)。
+- **音乐流式传输**：新安装默认开（见 §2）。打开后音乐条目复用视频的远端流管线直接播放（不下载、不缓存、不入队），界面是独立的[音乐流式播放页](05-AUDIO-PLAYBACK.md)（不渲染视频、无手势、控件不自动隐藏、不旋转、不画中画）。封面与时长不取；界面与预载的优化方向见 [99 §1](99-IN-PROGRESS.md)。
 - **移动 / 重命名后库内路径不跟随**：远端文件被移动 / 重命名后，本机音乐库里绑定旧路径的曲目不会跟随，需要一次「路径重写」才能做对。
 - **复制 / 移动没有进度与取消**：`webdav_client` 的 `copy` / `rename` 是单次请求，大文件只能等。
 - **部分服务端的目录 `Destination` 处理不一致**（结尾 `/` 加不加），复制 / 移动到目录的目标要在真实网盘上各试一次。
@@ -113,7 +127,8 @@
 
 ## 9. 相关代码
 
-- `network_library_screen.dart`：目录列表、多选、动作分发（`_runAction`）、CUE 入口。
+- `network_library_screen.dart`：目录列表、多选、动作分发（`_runAction`）、CUE 入口、图片查看入口。
+- `lib/screens/image_viewer_screen.dart`、`image_settings_screen.dart`、`lib/utils/image_album.dart`：全屏查看、图片设置、相册排序。
 - `lib/models/file_actions.dart`：动作模型、允许列表、判定与设置解析。
 - `lib/screens/webdav_folder_picker_screen.dart`：目录选择器与复制 / 移动流程。
 - `lib/utils/selection_controller.dart`：多选的唯一状态源（计数对比全选）。

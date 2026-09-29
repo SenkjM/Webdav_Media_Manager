@@ -23,6 +23,9 @@ enum FileAction {
 
   /// 音乐：远端流式播放（实验性，见 docs/99 的可行性分析）。
   streamMusic,
+
+  /// 图片：临时文件查看，不进下载队列、不进音乐缓存。
+  viewImage,
 }
 
 extension FileActionX on FileAction {
@@ -32,6 +35,7 @@ extension FileActionX on FileAction {
     FileAction.stream => 'stream',
     FileAction.readCue => 'read_cue',
     FileAction.streamMusic => 'stream_music',
+    FileAction.viewImage => 'view_image',
   };
 
   String label(AppLocalizations l10n) => switch (this) {
@@ -40,6 +44,7 @@ extension FileActionX on FileAction {
     FileAction.stream => l10n.actionStream,
     FileAction.readCue => l10n.actionReadCue,
     FileAction.streamMusic => l10n.actionStreamMusic,
+    FileAction.viewImage => l10n.actionViewImage,
   };
 
   /// 短标签，给多选工具栏这类空间紧张的地方用。
@@ -49,6 +54,7 @@ extension FileActionX on FileAction {
     FileAction.stream => l10n.actionShortStream,
     FileAction.readCue => l10n.actionShortCue,
     FileAction.streamMusic => l10n.actionShortStreamMusic,
+    FileAction.viewImage => l10n.actionShortViewImage,
   };
 
   /// 该动作落盘到哪里。流式播放不落盘，返回 null。
@@ -56,7 +62,7 @@ extension FileActionX on FileAction {
     FileAction.cacheMusic => DownloadTarget.cache,
     FileAction.download => DownloadTarget.downloads,
     FileAction.readCue => DownloadTarget.cache,
-    FileAction.stream || FileAction.streamMusic => null,
+    FileAction.stream || FileAction.streamMusic || FileAction.viewImage => null,
   };
 
   static FileAction fromStorageKey(String? key, FileAction fallback) =>
@@ -71,8 +77,8 @@ class FileActionCatalog {
   const FileActionCatalog._();
 
   static const List<FileAction> music = [
-    FileAction.cacheMusic,
     FileAction.streamMusic,
+    FileAction.cacheMusic,
     FileAction.download,
   ];
 
@@ -83,6 +89,11 @@ class FileActionCatalog {
 
   static const List<FileAction> cue = [FileAction.readCue, FileAction.download];
 
+  static const List<FileAction> image = [
+    FileAction.viewImage,
+    FileAction.download,
+  ];
+
   static const List<FileAction> other = [FileAction.download];
 
   /// [FileCategory] → 允许的动作列表。
@@ -91,6 +102,7 @@ class FileActionCatalog {
         FileCategory.music => music,
         FileCategory.video => video,
         FileCategory.cue => cue,
+        FileCategory.image => image,
         FileCategory.other => other,
       };
 
@@ -106,9 +118,11 @@ class FileActionCatalog {
 
   /// 该类别的出厂默认动作。
   static FileAction defaultFor(FileCategory category) => switch (category) {
-    FileCategory.music => FileAction.cacheMusic,
+    // 新安装的出厂默认。已保存的配置不走这里（见 SettingsService）。
+    FileCategory.music => FileAction.streamMusic,
     FileCategory.cue => FileAction.readCue,
     FileCategory.video => FileAction.stream,
+    FileCategory.image => FileAction.viewImage,
     FileCategory.other => FileAction.download,
   };
 }
@@ -140,6 +154,7 @@ class FileActionConfig {
   FileAction get music => actions[FileCategory.music]!;
   FileAction get video => actions[FileCategory.video]!;
   FileAction get cue => actions[FileCategory.cue]!;
+  FileAction get image => actions[FileCategory.image]!;
   FileAction get other => actions[FileCategory.other]!;
 
   FileAction forCategory(FileCategory category) => actions[category]!;
@@ -172,6 +187,7 @@ class FileActionConfig {
     'music': music.storageKey,
     'video': video.storageKey,
     'cue': cue.storageKey,
+    'image': image.storageKey,
     'other': other.storageKey,
   };
 
@@ -196,6 +212,10 @@ class FileActionConfig {
           json['cue'] as String?,
           FileActionCatalog.defaultFor(FileCategory.cue),
         ),
+        FileCategory.image: FileActionX.fromStorageKey(
+          json['image'] as String?,
+          FileActionCatalog.defaultFor(FileCategory.image),
+        ),
         FileCategory.other: FileActionX.fromStorageKey(
           json['other'] as String?,
           FileActionCatalog.defaultFor(FileCategory.other),
@@ -209,13 +229,19 @@ class FileActionConfig {
     FileAction action, {
     required bool allowMusicStreaming,
   }) {
-    if (action == FileAction.streamMusic && !allowMusicStreaming) {
-      return FileActionCatalog.defaultFor(category);
+    var next = action;
+    // 出厂默认已经是 streamMusic。开关关闭时不能再退回 defaultFor，
+    // 否则会退回它自己。已保存的 cache / download 不受影响。
+    if (next == FileAction.streamMusic && !allowMusicStreaming) {
+      next = FileAction.cacheMusic;
     }
-    if (!FileActionCatalog.isAllowed(category, action)) {
-      return FileActionCatalog.defaultFor(category);
+    if (!FileActionCatalog.isAllowed(category, next)) {
+      next = FileActionCatalog.defaultFor(category);
+      if (next == FileAction.streamMusic && !allowMusicStreaming) {
+        next = FileAction.cacheMusic;
+      }
     }
-    return action;
+    return next;
   }
 }
 
@@ -300,6 +326,7 @@ extension FileCategoryLabelX on FileCategory {
     FileCategory.music => l10n.catMusicFile,
     FileCategory.video => l10n.catVideoFile,
     FileCategory.cue => l10n.catCueFile,
+    FileCategory.image => l10n.catImageFile,
     FileCategory.other => l10n.catOtherFile,
   };
 }

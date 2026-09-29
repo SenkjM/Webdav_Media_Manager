@@ -25,6 +25,7 @@ class FileExtensionsScreen extends StatefulWidget {
 class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
   late final TextEditingController _musicController;
   late final TextEditingController _videoController;
+  late final TextEditingController _imageController;
   late final TextEditingController _cueController;
 
   @override
@@ -32,6 +33,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     super.initState();
     _musicController = TextEditingController();
     _videoController = TextEditingController();
+    _imageController = TextEditingController();
     _cueController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncFromSettings());
   }
@@ -44,6 +46,9 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     _videoController.text = FileTypeConfig.displayList(
       settings.fileTypes.videoExtensions,
     );
+    _imageController.text = FileTypeConfig.displayList(
+      settings.fileTypes.imageExtensions,
+    );
     _cueController.text = FileTypeConfig.displayList(
       settings.fileTypes.cueExtensions,
     );
@@ -53,6 +58,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
   void dispose() {
     _musicController.dispose();
     _videoController.dispose();
+    _imageController.dispose();
     _cueController.dispose();
     super.dispose();
   }
@@ -66,6 +72,9 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     final video = category == FileCategory.video
         ? FileTypeConfig.parseInput(_videoController.text)
         : current.videoExtensions;
+    final image = category == FileCategory.image
+        ? FileTypeConfig.parseInput(_imageController.text)
+        : current.imageExtensions;
     final cue = category == FileCategory.cue
         ? FileTypeConfig.parseInput(_cueController.text)
         : current.cueExtensions;
@@ -73,6 +82,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
       FileTypeConfig(
         musicExtensions: music,
         videoExtensions: video,
+        imageExtensions: image,
         cueExtensions: cue,
       ),
     );
@@ -91,6 +101,9 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
         break;
       case FileCategory.video:
         _videoController.text = FileTypeConfig.displayList(def.videoExtensions);
+        break;
+      case FileCategory.image:
+        _imageController.text = FileTypeConfig.displayList(def.imageExtensions);
         break;
       case FileCategory.cue:
         _cueController.text = FileTypeConfig.displayList(def.cueExtensions);
@@ -137,6 +150,15 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
             onApply: () => _apply(FileCategory.video),
             onRestore: () => _restoreDefault(FileCategory.video),
             actionDropdown: _buildActionDropdown(settings, FileCategory.video),
+          ),
+          const SizedBox(height: 16),
+          _buildSection(
+            title: l10n.fileCatImage,
+            subtitle: l10n.fileExtDefaultAction(actions.image.label(l10n)),
+            controller: _imageController,
+            onApply: () => _apply(FileCategory.image),
+            onRestore: () => _restoreDefault(FileCategory.image),
+            actionDropdown: _buildActionDropdown(settings, FileCategory.image),
           ),
           const SizedBox(height: 16),
           _buildSection(
