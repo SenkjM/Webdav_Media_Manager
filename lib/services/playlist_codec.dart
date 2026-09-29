@@ -44,8 +44,9 @@ class DecodedPlaylist {
   /// Image kind of that entry's cover, or [WmpImageKind.none].
   int coverKindFor(int entryIndex) {
     final idx = _coverIndexByEntry[entryIndex];
-    if (idx == null || idx < 0 || idx >= _covers.length)
+    if (idx == null || idx < 0 || idx >= _covers.length) {
       return WmpImageKind.none;
+    }
     return _covers[idx].kind;
   }
 }
