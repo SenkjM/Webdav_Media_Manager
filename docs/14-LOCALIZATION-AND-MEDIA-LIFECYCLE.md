@@ -50,4 +50,4 @@ flutter analyze
 - `flutter test --no-pub`：589 passed，1 skipped
 - Android debug 构建已生成 `build/app/outputs/flutter-apk/app-dev-debug.apk`；Flutter 命令的最终产物探测提示路径不一致，但 APK 文件实际存在。
 
-项目级 Android Gradle JVM 代理配置位于 `android/gradle.properties`，仅用于依赖下载，不要提交包含凭据的代理 URL。
+Android Gradle 代理不进仓库。需要时写在本机 `~/.gradle/gradle.properties`（`systemProp.http.proxyHost` / `proxyPort` 与 https 对应项），或单次构建用 `-Dhttp.proxyHost` 临时指定。`android/gradle.properties` 里写代理会让 CI 走本机端口而失败。
