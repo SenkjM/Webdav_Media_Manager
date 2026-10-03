@@ -62,10 +62,36 @@ void main() {
     expect(dark.visualDensity, VisualDensity.compact);
     expect(light.brightness, Brightness.light);
     expect(dark.brightness, Brightness.dark);
-    expect(light.colorScheme.primary, expectedLight.primary);
-    expect(light.colorScheme.onPrimary, expectedLight.onPrimary);
+    // Dark stays the fidelity scheme. Light is lifted after fromSeed.
     expect(dark.colorScheme.primary, expectedDark.primary);
     expect(dark.colorScheme.onPrimary, expectedDark.onPrimary);
+    expect(dark.colorScheme.primaryContainer, expectedDark.primaryContainer);
+    expect(dark.colorScheme.surface, expectedDark.surface);
+    expect(light.colorScheme.primary, isNot(expectedLight.primary));
+    expect(
+      light.colorScheme.primary.computeLuminance(),
+      greaterThan(expectedLight.primary.computeLuminance()),
+    );
+    expect(
+      light.colorScheme.primaryContainer.computeLuminance(),
+      greaterThan(expectedLight.primaryContainer.computeLuminance()),
+    );
+    expect(
+      light.colorScheme.surface.computeLuminance(),
+      greaterThan(expectedLight.surface.computeLuminance()),
+    );
+    expect(
+      light.colorScheme.surfaceContainerHigh.computeLuminance(),
+      greaterThan(expectedLight.surfaceContainerHigh.computeLuminance()),
+    );
+    expect(
+      _contrast(light.colorScheme.primary, light.colorScheme.onPrimary),
+      greaterThanOrEqualTo(4.5),
+    );
+    expect(
+      _contrast(light.colorScheme.surface, light.colorScheme.onSurface),
+      greaterThanOrEqualTo(4.5),
+    );
     expect(light.colorScheme.primary, isNot(dark.colorScheme.primary));
     expect(
       (light.cardTheme.shape! as RoundedRectangleBorder).borderRadius,
@@ -122,8 +148,15 @@ void main() {
       brightness: Brightness.light,
       dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
     );
-    expect(light.colorScheme.primary, expected.primary);
-    expect(light.colorScheme.onPrimary, expected.onPrimary);
+    expect(light.colorScheme.primary, isNot(expected.primary));
+    expect(
+      light.colorScheme.primary.computeLuminance(),
+      greaterThan(expected.primary.computeLuminance()),
+    );
+    expect(
+      _contrast(light.colorScheme.primary, light.colorScheme.onPrimary),
+      greaterThanOrEqualTo(4.5),
+    );
     expect(
       light.colorScheme.primary,
       isNot(AppTheme.light.colorScheme.primary),
@@ -166,4 +199,11 @@ void main() {
       }
     }
   });
+}
+
+double _contrast(Color a, Color b) {
+  final lighter = a.computeLuminance() > b.computeLuminance() ? a : b;
+  final darker = identical(lighter, a) ? b : a;
+  return (lighter.computeLuminance() + 0.05) /
+      (darker.computeLuminance() + 0.05);
 }

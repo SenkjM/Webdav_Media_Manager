@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:material_color_utilities/material_color_utilities.dart';
 
 /// Light default palette (浅色系). Teal accent aligns with app icon branding.
 /// Info-density cues inspired by Poweramp / Salt Player — not a clone / no trademarked assets.
@@ -70,12 +71,24 @@ class AppTheme {
   /// Classic M3 tonal scheme. [DynamicSchemeVariant.fidelity] keeps a bright
   /// seed (the default teal) from being flattened into a pastel primary.
   /// Not the expressive variant.
+  ///
+  /// Fidelity is kept for both brightnesses. It is what makes the light
+  /// scheme too dark: light `primary` is forced near HCT tone 40 (lower when
+  /// the seed itself is dark) and `primaryContainer` is pinned to the seed
+  /// tone, so progress bars and accent fills on the streaming player (and the
+  /// same roles elsewhere) read as dark teal instead of the bright seed.
+  /// Switching the light variant to `tonalSpot` does not lift `primary` (it
+  /// stays tone ~40). [_liftLightScheme] raises light surfaces and accent
+  /// fills after [ColorScheme.fromSeed]. Dark mode is not adjusted.
   static ThemeData _build(Color seed, Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
+    final seeded = ColorScheme.fromSeed(
       seedColor: seed,
       brightness: brightness,
       dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
     );
+    final scheme = brightness == Brightness.dark
+        ? seeded
+        : _liftLightScheme(seeded, seed);
     final onSurface = scheme.onSurface;
     final variant = scheme.onSurfaceVariant;
     final muted = scheme.outline;
@@ -296,5 +309,95 @@ class AppTheme {
         ),
       ),
     );
+  }
+
+  /// Light accent fills were HCT tone ~40. Tone 68 is clearly lighter while
+  /// a tone-20 foreground still clears 4.5:1 (tone 68 vs 20 is ~5.4).
+  static const double _minLightAccentTone = 68;
+
+  /// Fidelity containers sit on the seed tone (~72 for the default teal,
+  /// darker for a dark seed). Tone 90 is the usual light container.
+  static const double _minLightContainerTone = 90;
+
+  /// Dark text/icon tone on a lifted accent. Contrast with tone 68 is ~5.4.
+  static const double _onAccentTone = 20;
+
+  static ColorScheme _liftLightScheme(ColorScheme scheme, Color seed) {
+    // Tone 40 clips chroma, so raising that color's own HCT turns the accent
+    // pastel. Keep the seed chroma (fidelity's point) on primary only.
+    final seedChroma = Hct.fromInt(seed.toARGB32()).chroma;
+    final primary = _minTone(
+      scheme.primary,
+      _minLightAccentTone,
+      chroma: seedChroma,
+    );
+    final secondary = _minTone(scheme.secondary, _minLightAccentTone);
+    final tertiary = _minTone(scheme.tertiary, _minLightAccentTone);
+    final primaryContainer = _minTone(
+      scheme.primaryContainer,
+      _minLightContainerTone,
+    );
+    final secondaryContainer = _minTone(
+      scheme.secondaryContainer,
+      _minLightContainerTone,
+    );
+    final tertiaryContainer = _minTone(
+      scheme.tertiaryContainer,
+      _minLightContainerTone,
+    );
+    final surface = _minTone(scheme.surface, 99);
+    return scheme.copyWith(
+      primary: primary,
+      onPrimary: _onAccent(primary, scheme.onPrimary),
+      primaryContainer: primaryContainer,
+      onPrimaryContainer: _onAccent(
+        primaryContainer,
+        scheme.onPrimaryContainer,
+      ),
+      secondary: secondary,
+      onSecondary: _onAccent(secondary, scheme.onSecondary),
+      secondaryContainer: secondaryContainer,
+      onSecondaryContainer: _onAccent(
+        secondaryContainer,
+        scheme.onSecondaryContainer,
+      ),
+      tertiary: tertiary,
+      onTertiary: _onAccent(tertiary, scheme.onTertiary),
+      tertiaryContainer: tertiaryContainer,
+      onTertiaryContainer: _onAccent(
+        tertiaryContainer,
+        scheme.onTertiaryContainer,
+      ),
+      surface: surface,
+      surfaceBright: _minTone(scheme.surfaceBright, 99),
+      surfaceDim: _minTone(scheme.surfaceDim, 93),
+      surfaceContainerLowest: _minTone(scheme.surfaceContainerLowest, 100),
+      surfaceContainerLow: _minTone(scheme.surfaceContainerLow, 98),
+      surfaceContainer: _minTone(scheme.surfaceContainer, 97),
+      surfaceContainerHigh: _minTone(scheme.surfaceContainerHigh, 95),
+      surfaceContainerHighest: _minTone(scheme.surfaceContainerHighest, 93),
+      surfaceTint: primary,
+    );
+  }
+
+  /// Raise [color] to [tone] in HCT. [chroma] overrides the source chroma
+  /// (used so primary keeps the seed's chroma). No-op when already there.
+  static Color _minTone(Color color, double tone, {double? chroma}) {
+    final hct = Hct.fromInt(color.toARGB32());
+    final nextChroma = chroma ?? hct.chroma;
+    final toneOk = hct.tone >= tone - 0.05;
+    final chromaOk = chroma == null || hct.chroma + 0.5 >= chroma;
+    if (toneOk && chromaOk) return color;
+    return Color(Hct.from(hct.hue, nextChroma, tone).toInt());
+  }
+
+  /// Keep [current] when it still clears 4.5:1 on [background]. Otherwise
+  /// white, if that clears, else a dark tone of the same hue.
+  static Color _onAccent(Color background, Color current) {
+    final bg = Hct.fromInt(background.toARGB32());
+    final fg = Hct.fromInt(current.toARGB32());
+    if (Contrast.ratioOfTones(bg.tone, fg.tone) >= 4.5) return current;
+    if (Contrast.ratioOfTones(bg.tone, 100) >= 4.5) return Colors.white;
+    return Color(Hct.from(bg.hue, bg.chroma, _onAccentTone).toInt());
   }
 }
