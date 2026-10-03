@@ -804,7 +804,7 @@ adb shell dumpsys notification | grep -A5 2001     # 下载通知是否唯一 / 
 adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 ```
 
-`<pkg>`：prod / dev flavor 包名不同，分别测。
+`<pkg>`：prod / dev / test flavor 包名不同（`com.senkjm.media_manager`、`.dev`、`.test`），分别测。
 
 ## 8. 设置页重排、下载目录排除扫描、图片存相册
 
