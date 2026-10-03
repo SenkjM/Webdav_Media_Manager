@@ -5,6 +5,8 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/webdav_item.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
+import '../utils/audio_extensions.dart';
 import '../utils/subtitle_sidecar.dart';
 
 /// Browse one account and pick a subtitle file. There is no account switcher:
@@ -106,12 +108,8 @@ class _SubtitleRemotePickerScreenState
               children: [
                 ListTile(
                   dense: true,
-                  title: Text(
-                    _directory,
-                    style: const TextStyle(
-                      color: AppColors.secondaryText,
-                      fontSize: 12,
-                    ),
+                  title: MetaText(
+                    folderDisplayName(_directory, rootLabel: l10n.rootFolder),
                   ),
                 ),
                 if (entries.isEmpty)

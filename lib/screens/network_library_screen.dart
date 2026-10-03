@@ -32,6 +32,7 @@ import '../utils/webdav_errors.dart';
 import '../widgets/webdav_error_dialog.dart';
 import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
 import 'music_stream_screen.dart';
@@ -673,7 +674,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                  child: Text(
+                  child: MetaText(
                     multiFile
                         ? AppLocalizations.of(ctx)!.netCueGroupTitleMulti(
                             byFile.length,
@@ -681,20 +682,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                           )
                         : AppLocalizations.of(ctx)!
                               .netCueGroupTitle(sheet.tracks.length),
-                    style: const TextStyle(
-                      color: AppColors.mutedText,
-                      fontSize: 12,
-                    ),
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Text(
+                  child: MetaText(
                     AppLocalizations.of(ctx)!.netCueGroupSubtitle,
-                    style: const TextStyle(
-                      color: AppColors.secondaryText,
-                      fontSize: 12,
-                    ),
+                    maxLines: 2,
                   ),
                 ),
                 const Divider(height: 1, color: AppColors.divider),
@@ -1296,10 +1290,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 return ListTile(
                   leading: _selectionLeading(
                     item,
-                    const Icon(Icons.folder_rounded, color: AppColors.accent),
+                    Icon(
+                      Icons.folder_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(AppLocalizations.of(context)!.directory),
                   trailing: _itemMenuButton(item),
                   onTap: () => _onEntryTap(item),
                   onLongPress: () => _enterSelect(item),
@@ -1312,7 +1308,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     const Icon(Icons.insert_drive_file_outlined),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(
+                  subtitle: MetaText(
                     item.size != null
                         ? _fmtSize(item.size!)
                         : AppLocalizations.of(context)!.cueFile,
@@ -1333,13 +1329,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 return ListTile(
                   leading: _selectionLeading(
                     item,
-                    const Icon(
+                    Icon(
                       Icons.videocam_outlined,
-                      color: AppColors.accent,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(
+                  subtitle: MetaText(
                     [
                       item.size != null
                           ? _fmtSize(item.size!)
@@ -1369,12 +1365,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 return ListTile(
                   leading: _selectionLeading(
                     item,
-                    const Icon(Icons.image_outlined, color: AppColors.accent),
+                    Icon(
+                      Icons.image_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(
+                  subtitle: MetaText(
                     item.size != null
-                        ? '${_fmtSize(item.size!)} · ${AppLocalizations.of(context)!.netImage}'
+                        ? _fmtSize(item.size!)
                         : AppLocalizations.of(context)!.netImage,
                   ),
                   trailing: _itemMenuButton(item),
@@ -1389,7 +1388,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     const Icon(Icons.insert_drive_file_outlined),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(
+                  subtitle: MetaText(
                     item.size != null
                         ? _fmtSize(item.size!)
                         : AppLocalizations.of(context)!.netFile,
@@ -1423,12 +1422,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ),
                 ),
                 title: Text(item.name),
-                subtitle: Text(
+                subtitle: MetaText(
                   [
                     item.size != null
                         ? _fmtSize(item.size!)
                         : AppLocalizations.of(context)!.netAudio,
-                    // 没有下载按钮：整行就是下载动作。
+                    // 没有下载按钮：整行就是下载动作。状态词留下。
                     if (state == TrackUiState.remote)
                       AppLocalizations.of(context)!.netTapDownload,
                   ].join(' · '),

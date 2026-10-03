@@ -9,6 +9,7 @@ import '../utils/cue_sheet.dart';
 import '../services/cloud_driver.dart';
 import '../services/download_queue_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import '../utils/app_snack.dart';
 import 'home_shell.dart';
 
@@ -315,10 +316,7 @@ class _CueGroupTile extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            Text(
-              songLabel,
-              style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
-            ),
+            MetaText(songLabel),
             if (active || pending) ...[
               const SizedBox(height: 10),
               ClipRRect(

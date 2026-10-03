@@ -68,6 +68,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeModeDark => 'Dark';
 
   @override
+  String get themeSeed => 'Theme color';
+
+  @override
+  String get themeSeedSubtitle =>
+      'Light and dark are both generated from this one color';
+
+  @override
+  String get themeSeedReset => 'Reset';
+
+  @override
+  String get themeSeedHue => 'Hue';
+
+  @override
+  String get themeSeedSaturation => 'Saturation';
+
+  @override
+  String get themeSeedValue => 'Brightness';
+
+  @override
   String get library => 'Music library';
 
   @override
@@ -304,11 +323,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get clearAllQueue => 'Clear all queue entries';
 
   @override
-  String get cueAlbum => 'CUE album';
+  String get cueAlbum => 'CUE';
 
   @override
   String songCount(Object count) {
-    return '$count songs';
+    return '$count';
   }
 
   @override
@@ -900,7 +919,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return 'Not in library · $name';
+    return 'Missing · $name';
   }
 
   @override
@@ -2119,12 +2138,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String netCueGroupTitle(Object tracks) {
-    return 'Multi-song merged segment · CUE · $tracks tracks';
+    return '$tracks';
   }
 
   @override
   String netCueGroupTitleMulti(Object files, Object tracks) {
-    return 'Multi-song merged segment · CUE · $tracks tracks · $files audio files';
+    return '$tracks · $files';
   }
 
   @override

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_media_manager/models/app_theme_mode.dart';
 import 'package:webdav_media_manager/services/settings_service.dart';
 import 'package:webdav_media_manager/theme/app_theme.dart';
+import 'package:webdav_media_manager/widgets/meta_text.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -98,5 +99,71 @@ void main() {
       tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode,
       ThemeMode.light,
     );
+  });
+
+  test('seed color persists beside theme mode', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final settings = SettingsService(prefs: prefs);
+    await settings.init();
+    expect(settings.themeSeed, const Color(0xFF2EC4B6));
+
+    const custom = Color(0xFF6750A4);
+    await settings.setThemeSeed(custom);
+    final restored = SettingsService(prefs: prefs);
+    await restored.init();
+    expect(restored.themeSeedArgb, 0xFF6750A4);
+    expect(prefs.getInt('theme_seed_argb'), 0xFF6750A4);
+
+    final light = AppTheme.lightFrom(restored.themeSeed);
+    final dark = AppTheme.darkFrom(restored.themeSeed);
+    final expected = ColorScheme.fromSeed(
+      seedColor: custom,
+      brightness: Brightness.light,
+      dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+    );
+    expect(light.colorScheme.primary, expected.primary);
+    expect(light.colorScheme.onPrimary, expected.onPrimary);
+    expect(
+      light.colorScheme.primary,
+      isNot(AppTheme.light.colorScheme.primary),
+    );
+    expect(dark.brightness, Brightness.dark);
+    expect(dark.colorScheme.onPrimary, isNotNull);
+  });
+
+  test('app bar stays opaque', () {
+    for (final theme in [AppTheme.light, AppTheme.dark]) {
+      final color = theme.appBarTheme.backgroundColor!;
+      expect((color.toARGB32() >> 24) & 0xFF, 255);
+      expect((theme.scaffoldBackgroundColor.toARGB32() >> 24) & 0xFF, 255);
+    }
+  });
+
+  testWidgets('secondary lines follow onSurfaceVariant for each seed', (
+    tester,
+  ) async {
+    for (final seed in [AppTheme.defaultSeed, const Color(0xFF6750A4)]) {
+      for (final dark in [false, true]) {
+        final light = AppTheme.lightFrom(seed);
+        final darkTheme = AppTheme.darkFrom(seed);
+        final theme = dark ? darkTheme : light;
+        await tester.pumpWidget(
+          MaterialApp(
+            themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+            theme: light,
+            darkTheme: darkTheme,
+            home: const Scaffold(body: MetaText('12')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final text = tester.widget<Text>(find.text('12'));
+        final scheme = Theme.of(tester.element(find.text('12'))).colorScheme;
+        expect(scheme.brightness, dark ? Brightness.dark : Brightness.light);
+        expect(text.style!.color, scheme.onSurfaceVariant);
+        expect(text.style!.fontSize, theme.textTheme.bodySmall!.fontSize);
+        expect(text.style!.color, isNot(scheme.onSurface));
+      }
+    }
   });
 }

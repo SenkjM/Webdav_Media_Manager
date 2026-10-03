@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../services/audio_player_service.dart';
 import '../services/settings_service.dart';
-import '../theme/app_theme.dart';
 import '../utils/android_background.dart';
 import '../utils/back_handler_registry.dart';
 import '../widgets/mini_player.dart';
@@ -137,9 +136,8 @@ class _HomeShellState extends State<HomeShell> {
           },
           child: Scaffold(
             key: _scaffoldKey,
-            backgroundColor: AppColors.nearBlack,
             drawer: Drawer(
-              backgroundColor: AppColors.surface,
+              backgroundColor: Theme.of(context).colorScheme.surface,
               child: SafeArea(
                 child: Column(
                   children: [
@@ -150,10 +148,16 @@ class _HomeShellState extends State<HomeShell> {
                           Container(
                             height: 140,
                             padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
-                            decoration: const BoxDecoration(
-                              color: AppColors.elevated,
+                            decoration: BoxDecoration(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerLow,
                               border: Border(
-                                bottom: BorderSide(color: AppColors.divider),
+                                bottom: BorderSide(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .outlineVariant,
+                                ),
                               ),
                             ),
                             child: Align(
@@ -164,14 +168,18 @@ class _HomeShellState extends State<HomeShell> {
                                 children: [
                                   Icon(
                                     Icons.library_music,
-                                    color: AppColors.accent,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
                                     size: 32,
                                   ),
                                   SizedBox(height: 12),
                                   Text(
                                     l10n.appTitle,
                                     style: TextStyle(
-                                      color: AppColors.onDark,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
                                       fontSize: 18,
                                       fontWeight: FontWeight.w700,
                                     ),
@@ -211,12 +219,16 @@ class _HomeShellState extends State<HomeShell> {
                             selected: _index == 4,
                             onTap: () => _select(4),
                           ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
                               horizontal: 16,
                               vertical: 8,
                             ),
-                            child: Divider(color: AppColors.divider),
+                            child: Divider(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant,
+                            ),
                           ),
                           _DrawerItem(
                             icon: Icons.info_outline,
@@ -234,9 +246,11 @@ class _HomeShellState extends State<HomeShell> {
                         ],
                       ),
                     ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Divider(color: AppColors.divider),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Divider(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
                     ),
                     _DrawerItem(
                       icon: Icons.exit_to_app,
@@ -285,15 +299,8 @@ class _HomeShellState extends State<HomeShell> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
-        title: Text(
-          l10n.exitApp,
-          style: const TextStyle(color: AppColors.onDark),
-        ),
-        content: Text(
-          l10n.exitConfirm,
-          style: const TextStyle(color: AppColors.secondaryText),
-        ),
+        title: Text(l10n.exitApp),
+        content: Text(l10n.exitConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -303,7 +310,7 @@ class _HomeShellState extends State<HomeShell> {
             onPressed: () => Navigator.pop(ctx, true),
             child: Text(
               l10n.exit,
-              style: const TextStyle(color: AppColors.accent),
+              style: TextStyle(color: Theme.of(ctx).colorScheme.primary),
             ),
           ),
         ],
@@ -356,23 +363,24 @@ class _DrawerItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       child: ListTile(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         leading: Icon(
           icon,
-          color: selected ? AppColors.accent : AppColors.secondaryText,
+          color: selected ? scheme.primary : scheme.onSurfaceVariant,
         ),
         title: Text(
           label,
           style: TextStyle(
-            color: selected ? AppColors.accent : AppColors.onDark,
+            color: selected ? scheme.primary : scheme.onSurface,
             fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
           ),
         ),
         selected: selected,
-        selectedTileColor: AppColors.accent.withValues(alpha: 0.14),
+        selectedTileColor: scheme.primary.withValues(alpha: 0.14),
         onTap: onTap,
       ),
     );

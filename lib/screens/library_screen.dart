@@ -13,6 +13,7 @@ import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import '../utils/app_snack.dart';
 import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
@@ -295,7 +296,7 @@ class _TagsTab extends StatelessWidget {
             displayTag,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-          subtitle: Text(
+          subtitle: MetaText(
             AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
           ),
           trailing: const Icon(Icons.chevron_right),
@@ -737,15 +738,7 @@ class _CoverTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.mutedText,
-                  fontSize: 11,
-                ),
-              ),
+              MetaText(subtitle),
             ],
           ),
         ),

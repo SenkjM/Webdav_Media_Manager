@@ -12,6 +12,7 @@ import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import '../widgets/library_cover_art.dart';
 
 class PlaylistDetailScreen extends StatelessWidget {
@@ -91,7 +92,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                   ListTile(
                     leading: const Icon(Icons.music_off_outlined),
                     title: Text(e.title ?? e.remotePath.split('/').last),
-                    subtitle: Text(
+                    subtitle: MetaText(
                       AppLocalizations.of(context)!
                           .playlistMissingInLibrary(e.sourceName),
                     ),

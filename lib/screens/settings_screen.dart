@@ -5,13 +5,12 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
-import '../models/app_theme_mode.dart';
 import '../models/snack_duration.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
-import '../theme/app_theme.dart';
+import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
 import 'audio_stream_settings_screen.dart';
@@ -132,7 +131,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     return Text(
       text,
       style: Theme.of(context).textTheme.titleMedium
-          ?.copyWith(color: AppColors.accent),
+          ?.copyWith(color: Theme.of(context).colorScheme.primary),
     );
   }
 
@@ -143,7 +142,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
         title: Text(l10n.settings),
@@ -347,33 +345,15 @@ class _SettingsScreenState extends State<SettingsScreen>
           const Divider(height: 40),
           _sectionTitle(context, l10n.settingsMisc),
           const SizedBox(height: 8),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.brightness_6_outlined),
-            title: Text(l10n.themeMode),
-            subtitle: Text(l10n.themeModeSubtitle),
-            trailing: DropdownButton<AppThemeMode>(
-              value: settings.appThemeMode,
-              items: [
-                DropdownMenuItem(
-                  value: AppThemeMode.system,
-                  child: Text(l10n.themeModeSystem),
-                ),
-                DropdownMenuItem(
-                  value: AppThemeMode.light,
-                  child: Text(l10n.themeModeLight),
-                ),
-                DropdownMenuItem(
-                  value: AppThemeMode.dark,
-                  child: Text(l10n.themeModeDark),
-                ),
-              ],
-              onChanged: (value) {
-                if (value != null) {
-                  context.read<SettingsService>().setAppThemeMode(value);
-                }
-              },
-            ),
+          ThemeSettingsSection(
+            mode: settings.appThemeMode,
+            onModeChanged: (value) {
+              context.read<SettingsService>().setAppThemeMode(value);
+            },
+            seed: settings.themeSeed,
+            onSeedChanged: (color) {
+              context.read<SettingsService>().setThemeSeed(color);
+            },
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,

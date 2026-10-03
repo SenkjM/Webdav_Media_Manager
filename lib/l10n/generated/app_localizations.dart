@@ -213,6 +213,42 @@ abstract class AppLocalizations {
   /// **'深色'**
   String get themeModeDark;
 
+  /// No description provided for @themeSeed.
+  ///
+  /// In zh, this message translates to:
+  /// **'主题色'**
+  String get themeSeed;
+
+  /// No description provided for @themeSeedSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'浅色和深色都由这一个颜色生成'**
+  String get themeSeedSubtitle;
+
+  /// No description provided for @themeSeedReset.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复默认'**
+  String get themeSeedReset;
+
+  /// No description provided for @themeSeedHue.
+  ///
+  /// In zh, this message translates to:
+  /// **'色相'**
+  String get themeSeedHue;
+
+  /// No description provided for @themeSeedSaturation.
+  ///
+  /// In zh, this message translates to:
+  /// **'饱和度'**
+  String get themeSeedSaturation;
+
+  /// No description provided for @themeSeedValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'明度'**
+  String get themeSeedValue;
+
   /// No description provided for @library.
   ///
   /// In zh, this message translates to:
@@ -672,13 +708,13 @@ abstract class AppLocalizations {
   /// No description provided for @cueAlbum.
   ///
   /// In zh, this message translates to:
-  /// **'CUE 专辑'**
+  /// **'CUE'**
   String get cueAlbum;
 
   /// No description provided for @songCount.
   ///
   /// In zh, this message translates to:
-  /// **'{count} 首歌'**
+  /// **'{count} 首'**
   String songCount(Object count);
 
   /// No description provided for @inProgress.
@@ -1686,7 +1722,7 @@ abstract class AppLocalizations {
   /// No description provided for @playlistMissingInLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'库中暂无 · {name}'**
+  /// **'暂无 · {name}'**
   String playlistMissingInLibrary(Object name);
 
   /// No description provided for @libraryEmpty.
@@ -3645,13 +3681,13 @@ abstract class AppLocalizations {
   /// No description provided for @netCueGroupTitle.
   ///
   /// In zh, this message translates to:
-  /// **'多歌曲合并分片 · CUE · {tracks} 曲'**
+  /// **'{tracks} 曲'**
   String netCueGroupTitle(Object tracks);
 
   /// No description provided for @netCueGroupTitleMulti.
   ///
   /// In zh, this message translates to:
-  /// **'多歌曲合并分片 · CUE · {tracks} 曲 · {files} 个音频文件'**
+  /// **'{tracks} 曲 · {files}'**
   String netCueGroupTitleMulti(Object files, Object tracks);
 
   /// No description provided for @netCueGroupSubtitle.

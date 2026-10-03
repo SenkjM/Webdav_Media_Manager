@@ -67,6 +67,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeModeDark => '深色';
 
   @override
+  String get themeSeed => '主题色';
+
+  @override
+  String get themeSeedSubtitle => '浅色和深色都由这一个颜色生成';
+
+  @override
+  String get themeSeedReset => '恢复默认';
+
+  @override
+  String get themeSeedHue => '色相';
+
+  @override
+  String get themeSeedSaturation => '饱和度';
+
+  @override
+  String get themeSeedValue => '明度';
+
+  @override
   String get library => '音乐库';
 
   @override
@@ -299,11 +317,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get clearAllQueue => '清除所有队列';
 
   @override
-  String get cueAlbum => 'CUE 专辑';
+  String get cueAlbum => 'CUE';
 
   @override
   String songCount(Object count) {
-    return '$count 首歌';
+    return '$count 首';
   }
 
   @override
@@ -874,7 +892,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return '库中暂无 · $name';
+    return '暂无 · $name';
   }
 
   @override
@@ -2043,12 +2061,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String netCueGroupTitle(Object tracks) {
-    return '多歌曲合并分片 · CUE · $tracks 曲';
+    return '$tracks 曲';
   }
 
   @override
   String netCueGroupTitleMulti(Object files, Object tracks) {
-    return '多歌曲合并分片 · CUE · $tracks 曲 · $files 个音频文件';
+    return '$tracks 曲 · $files';
   }
 
   @override
@@ -3689,6 +3707,24 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get themeModeDark => '深色';
 
   @override
+  String get themeSeed => '主題色';
+
+  @override
+  String get themeSeedSubtitle => '淺色和深色都由這一個顏色生成';
+
+  @override
+  String get themeSeedReset => '恢復預設';
+
+  @override
+  String get themeSeedHue => '色相';
+
+  @override
+  String get themeSeedSaturation => '飽和度';
+
+  @override
+  String get themeSeedValue => '明度';
+
+  @override
   String get library => '音樂庫';
 
   @override
@@ -3921,11 +3957,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get clearAllQueue => '清除所有佇列';
 
   @override
-  String get cueAlbum => 'CUE 專輯';
+  String get cueAlbum => 'CUE';
 
   @override
   String songCount(Object count) {
-    return '$count 首歌';
+    return '$count 首';
   }
 
   @override
@@ -4497,7 +4533,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return '庫中暫無 · $name';
+    return '暫無 · $name';
   }
 
   @override
@@ -5666,12 +5702,12 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String netCueGroupTitle(Object tracks) {
-    return '多歌曲合併分片 · CUE · $tracks 曲';
+    return '$tracks 曲';
   }
 
   @override
   String netCueGroupTitleMulti(Object files, Object tracks) {
-    return '多歌曲合併分片 · CUE · $tracks 曲 · $files 個音訊檔案';
+    return '$tracks 曲 · $files';
   }
 
   @override

@@ -7,6 +7,7 @@ import '../models/playlist_sentinels.dart';
 import '../services/audio_player_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import 'home_shell.dart';
 import 'playlist_detail_screen.dart';
 import '../utils/app_snack.dart';
@@ -184,12 +185,12 @@ class PlaylistsScreen extends StatelessWidget {
               itemBuilder: (context, i) {
                 final pl = service.playlists[i];
                 return ListTile(
-                  leading: const Icon(
+                  leading: Icon(
                     Icons.queue_music,
-                    color: AppColors.accent,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                   title: Text(_playlistDisplayName(context, pl.name)),
-                  subtitle: Text(l10n.playlistTrackCount(pl.length)),
+                  subtitle: MetaText(l10n.playlistTrackCount(pl.length)),
                   trailing: PopupMenuButton<String>(
                     onSelected: (v) async {
                       if (v == 'rename') {
