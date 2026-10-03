@@ -771,3 +771,13 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 - 新标签名在算出 seq / versionCode 之后才确定。旧标签 `v0.2.2-f046956`、`v0.2.2-ba29461`、`v0.2.2-0d5148a` 与浮动 `prerelease` 不改名、不移动。`version_name` 仍等于标签名，所以新版本的标题会变成 `Pre-release v0.2.2-<versionCode> (<versionCode>)`，模板那一行不改。
 - 开关的「已经一致」走原生返回的 `already`，不是错误。冷启动和进入下载设置时若开关为开，仍然只在缺失时补文件，不弹「外部操作」提示。
+
+## 10. 日语衬线字体（已分析，未开工）
+
+**状态**：2026-10-03 只分析，用户要求先记录，不改代码。
+
+**现象**：中文和英文仍是原来的无衬线字体。日语假名退化成衬线体，每台机器落到的衬线不一样。
+
+**原因**：`923007e` 把简体界面从 `Locale('zh', 'CN')` 改成 `Locale('zh')`，文案没变。Android 字体表按 `zh-CN` / `zh-Hans` / `ja` 登记，没有裸的 `zh`。汉字多半还能落到黑体，假名对不上就继续往下找，先碰到的常常是 Noto Serif CJK 一类衬线。跟系统时也一样：手机是 `zh_CN`，但 `supportedLocales` 只有裸 `zh`，解析会把地区丢掉。
+
+**最小改法（未做）**：不恢复 `app_zh_CN.arb`。`lookupAppLocalizations` 对 `zh_CN` 已经落到现有简体，只有 `TW` 走繁体。把简体偏好改回 `Locale('zh', 'CN')`，并在 `MaterialApp` 上加 `localeListResolutionCallback`，简体（含跟系统的 `zh_CN` / `zh_Hans`）固定返回 `Locale('zh', 'CN')`，避免又被收成裸 `zh`。繁体、英文不动。
