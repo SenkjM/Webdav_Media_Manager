@@ -112,7 +112,7 @@ class WebDavMusicApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           // 应用内消息渲染在 Navigator 之上（底部、任何弹窗都盖不住）。
           builder: AppSnack.hostBuilder,
-          themeMode: ThemeMode.light,
+          themeMode: settings.themeMode,
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,
           home: appState.initError != null

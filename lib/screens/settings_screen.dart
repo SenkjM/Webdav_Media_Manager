@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
+import '../models/app_theme_mode.dart';
 import '../models/snack_duration.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
@@ -31,7 +32,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -69,11 +71,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     if (!context.mounted) return;
     AppSnack.show(
       context,
-      AppLocalizations.of(context)!.tagRefreshCompleted(
-        result.updated,
-        result.skipped,
-        result.failed,
-      ),
+      AppLocalizations.of(context)!
+          .tagRefreshCompleted(result.updated, result.skipped, result.failed),
       error: result.failed > 0 && result.updated == 0,
     );
   }
@@ -92,13 +91,18 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       if (!context.mounted) return;
       AppSnack.show(
         context,
-        opened ? l10n.notificationOpenSettings : l10n.notificationOpenSettingsFailed,
+        opened
+            ? l10n.notificationOpenSettings
+            : l10n.notificationOpenSettingsFailed,
       );
       return;
     }
     final granted = await perms.request();
     if (!context.mounted) return;
-    AppSnack.show(context, granted ? l10n.notificationGranted : l10n.notificationDenied);
+    AppSnack.show(
+      context,
+      granted ? l10n.notificationGranted : l10n.notificationDenied,
+    );
   }
 
   String _notificationSubtitle(NotificationPermissionService perms) {
@@ -127,7 +131,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   Widget _sectionTitle(BuildContext context, String text) {
     return Text(
       text,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent),
+      style: Theme.of(context).textTheme.titleMedium
+          ?.copyWith(color: AppColors.accent),
     );
   }
 
@@ -173,7 +178,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             title: Text(l10n.rememberNetworkPath),
             subtitle: Text(l10n.rememberNetworkPathSubtitle),
             value: settings.networkRememberLastPath,
-            onChanged: (v) => context.read<SettingsService>().setNetworkRememberLastPath(v),
+            onChanged: (v) =>
+                context.read<SettingsService>().setNetworkRememberLastPath(v),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -195,7 +201,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ThumbnailSettingsScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const ThumbnailSettingsScreen(),
+                ),
               );
             },
           ),
@@ -267,9 +275,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             subtitle: Text(l10n.accountsSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AccountsScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AccountsScreen()));
             },
           ),
           ListTile(
@@ -280,7 +288,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DownloadSettingsScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const DownloadSettingsScreen(),
+                ),
               );
             },
           ),
@@ -304,7 +314,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AudioStreamSettingsScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const AudioStreamSettingsScreen(),
+                ),
               );
             },
           ),
@@ -337,19 +349,61 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.brightness_6_outlined),
+            title: Text(l10n.themeMode),
+            subtitle: Text(l10n.themeModeSubtitle),
+            trailing: DropdownButton<AppThemeMode>(
+              value: settings.appThemeMode,
+              items: [
+                DropdownMenuItem(
+                  value: AppThemeMode.system,
+                  child: Text(l10n.themeModeSystem),
+                ),
+                DropdownMenuItem(
+                  value: AppThemeMode.light,
+                  child: Text(l10n.themeModeLight),
+                ),
+                DropdownMenuItem(
+                  value: AppThemeMode.dark,
+                  child: Text(l10n.themeModeDark),
+                ),
+              ],
+              onChanged: (value) {
+                if (value != null) {
+                  context.read<SettingsService>().setAppThemeMode(value);
+                }
+              },
+            ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.language),
             title: Text(l10n.language),
             subtitle: Text(l10n.languageSettingSubtitle),
             trailing: DropdownButton<AppLocalePreference>(
               value: settings.appLocale,
               items: [
-                DropdownMenuItem(value: AppLocalePreference.system, child: Text(l10n.languageSystem)),
-                DropdownMenuItem(value: AppLocalePreference.zhCN, child: Text(l10n.languageSimplifiedChinese)),
-                DropdownMenuItem(value: AppLocalePreference.zhTW, child: Text(l10n.languageTraditionalChinese)),
-                DropdownMenuItem(value: AppLocalePreference.en, child: Text(l10n.languageEnglish)),
+                DropdownMenuItem(
+                  value: AppLocalePreference.system,
+                  child: Text(l10n.languageSystem),
+                ),
+                DropdownMenuItem(
+                  value: AppLocalePreference.zhCN,
+                  child: Text(l10n.languageSimplifiedChinese),
+                ),
+                DropdownMenuItem(
+                  value: AppLocalePreference.zhTW,
+                  child: Text(l10n.languageTraditionalChinese),
+                ),
+                DropdownMenuItem(
+                  value: AppLocalePreference.en,
+                  child: Text(l10n.languageEnglish),
+                ),
               ],
               onChanged: (value) {
-                if (value != null) context.read<SettingsService>().setAppLocale(value);
+                if (value != null) {
+                  context.read<SettingsService>().setAppLocale(value);
+                }
               },
             ),
           ),
@@ -383,9 +437,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             isThreeLine: true,
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SyncScreen()),
-              );
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
             },
           ),
           const Divider(height: 40),

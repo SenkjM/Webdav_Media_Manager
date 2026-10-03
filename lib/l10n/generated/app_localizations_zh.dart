@@ -52,6 +52,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get languageSettingSubtitle => '选择应用显示语言，重启后仍会保留';
 
   @override
+  String get themeMode => '主题';
+
+  @override
+  String get themeModeSubtitle => '浅色、深色，或跟随系统';
+
+  @override
+  String get themeModeSystem => '跟随系统';
+
+  @override
+  String get themeModeLight => '浅色';
+
+  @override
+  String get themeModeDark => '深色';
+
+  @override
   String get library => '音乐库';
 
   @override
@@ -3657,6 +3672,21 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get languageSettingSubtitle => '選擇應用程式顯示語言，重新啟動後仍會保留';
+
+  @override
+  String get themeMode => '主題';
+
+  @override
+  String get themeModeSubtitle => '淺色、深色，或跟隨系統';
+
+  @override
+  String get themeModeSystem => '跟隨系統';
+
+  @override
+  String get themeModeLight => '淺色';
+
+  @override
+  String get themeModeDark => '深色';
 
   @override
   String get library => '音樂庫';

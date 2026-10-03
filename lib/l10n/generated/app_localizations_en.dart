@@ -53,6 +53,21 @@ class AppLocalizationsEn extends AppLocalizations {
       'Choose the app language; your choice is kept after restart';
 
   @override
+  String get themeMode => 'Theme';
+
+  @override
+  String get themeModeSubtitle => 'Light, dark, or follow the system';
+
+  @override
+  String get themeModeSystem => 'Follow system';
+
+  @override
+  String get themeModeLight => 'Light';
+
+  @override
+  String get themeModeDark => 'Dark';
+
+  @override
   String get library => 'Music library';
 
   @override

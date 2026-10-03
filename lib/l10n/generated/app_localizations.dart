@@ -183,6 +183,36 @@ abstract class AppLocalizations {
   /// **'选择应用显示语言，重启后仍会保留'**
   String get languageSettingSubtitle;
 
+  /// No description provided for @themeMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'主题'**
+  String get themeMode;
+
+  /// No description provided for @themeModeSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'浅色、深色，或跟随系统'**
+  String get themeModeSubtitle;
+
+  /// No description provided for @themeModeSystem.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟随系统'**
+  String get themeModeSystem;
+
+  /// No description provided for @themeModeLight.
+  ///
+  /// In zh, this message translates to:
+  /// **'浅色'**
+  String get themeModeLight;
+
+  /// No description provided for @themeModeDark.
+  ///
+  /// In zh, this message translates to:
+  /// **'深色'**
+  String get themeModeDark;
+
   /// No description provided for @library.
   ///
   /// In zh, this message translates to:

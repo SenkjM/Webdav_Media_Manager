@@ -1,11 +1,12 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cache_policy.dart';
 import '../models/app_locale.dart';
+import '../models/app_theme_mode.dart';
 import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
@@ -28,6 +29,7 @@ class SettingsService extends ChangeNotifier {
 
   static const _kRetention = 'cache_retention';
   static const _kAppLocale = 'app_locale';
+  static const _kThemeMode = 'theme_mode';
   static const _kCustomRetentionHours = 'cache_custom_retention_hours';
   static const _kLibrarySort = 'library_sort_mode';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
@@ -264,6 +266,7 @@ class SettingsService extends ChangeNotifier {
   /// null means「跟随当前选中的网盘」.
   String? _syncAccountId;
   AppLocalePreference _appLocale = AppLocalePreference.system;
+  AppThemeMode _appThemeMode = AppThemeMode.light;
   bool _loaded = false;
 
   /// Current UI language preference; null Locale means follow the system.
@@ -274,6 +277,19 @@ class SettingsService extends ChangeNotifier {
     _appLocale = value;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_kAppLocale, value.storageKey);
+    notifyListeners();
+  }
+
+  /// Light / dark / follow system. Unset installs stay light.
+  AppThemeMode get appThemeMode => _appThemeMode;
+
+  ThemeMode get themeMode => _appThemeMode.themeMode;
+
+  Future<void> setAppThemeMode(AppThemeMode value) async {
+    if (value == _appThemeMode) return;
+    _appThemeMode = value;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kThemeMode, value.storageKey);
     notifyListeners();
   }
 
@@ -440,6 +456,9 @@ class SettingsService extends ChangeNotifier {
     _prefs ??= await SharedPreferences.getInstance();
     _appLocale = AppLocalePreferenceX.fromStorageKey(
       _prefs!.getString(_kAppLocale),
+    );
+    _appThemeMode = AppThemeModeX.fromStorageKey(
+      _prefs!.getString(_kThemeMode),
     );
     _retention = CacheRetentionX.fromStorageKey(_prefs!.getString(_kRetention));
     final storedHours = _prefs!.getInt(_kCustomRetentionHours);
@@ -1074,7 +1093,8 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> setDownloadNomediaEnabled(bool enabled) async {
-    if (_downloadNomedia == enabled && _prefs?.containsKey(_kDownloadNomedia) == true) {
+    if (_downloadNomedia == enabled &&
+        _prefs?.containsKey(_kDownloadNomedia) == true) {
       return;
     }
     _downloadNomedia = enabled;
