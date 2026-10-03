@@ -13,6 +13,7 @@ import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import '../utils/app_snack.dart';
 import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
@@ -48,7 +49,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return DefaultTabController(
       length: 4,
       child: Scaffold(
-        backgroundColor: AppColors.nearBlack,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
           leading: const DrawerMenuButton(),
           title: _searchOpen
@@ -63,7 +64,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     filled: false,
                     isDense: true,
                   ),
-                  style: const TextStyle(color: AppColors.onDark, fontSize: 16),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 16,
+                  ),
                   onChanged: (v) => setState(() => _query = v),
                 )
               : Text(AppLocalizations.of(context)!.library),
@@ -126,7 +130,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: Text(
                     AppLocalizations.of(context)!.libraryEmptyGuide,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.secondaryText),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               )
@@ -179,14 +185,17 @@ class _ArtistTab extends StatelessWidget {
     final cache = context.watch<CacheService>();
     var groups = library.groupedByArtist();
     final q = query.trim().toLowerCase();
+    final l10n = AppLocalizations.of(context)!;
     if (q.isNotEmpty) {
       groups = Map.fromEntries(
         groups.entries.where((e) {
-          if (e.key.toLowerCase().contains(q)) return true;
+          if (localizedLibraryGroupName(l10n, e.key).toLowerCase().contains(q)) {
+            return true;
+          }
           return e.value.any(
             (t) =>
                 t.displayTitle.toLowerCase().contains(q) ||
-                t.displayAlbum.toLowerCase().contains(q),
+                t.displayAlbumFor(l10n).toLowerCase().contains(q),
           );
         }),
       );
@@ -214,14 +223,17 @@ class _AlbumTab extends StatelessWidget {
     final cache = context.watch<CacheService>();
     var groups = library.groupedByAlbum();
     final q = query.trim().toLowerCase();
+    final l10n = AppLocalizations.of(context)!;
     if (q.isNotEmpty) {
       groups = Map.fromEntries(
         groups.entries.where((e) {
-          if (e.key.toLowerCase().contains(q)) return true;
+          if (localizedLibraryGroupName(l10n, e.key).toLowerCase().contains(q)) {
+            return true;
+          }
           return e.value.any(
             (t) =>
                 t.displayTitle.toLowerCase().contains(q) ||
-                t.displayArtist.toLowerCase().contains(q),
+                t.displayArtistFor(l10n).toLowerCase().contains(q),
           );
         }),
       );
@@ -233,7 +245,7 @@ class _AlbumTab extends StatelessWidget {
       cache: cache,
       placeholderIcon: Icons.album,
       subtitleOf: (tracks) =>
-          '${AppLocalizations.of(context)!.playlistTrackCount(tracks.length)} · ${tracks.first.displayArtist}',
+          '${AppLocalizations.of(context)!.playlistTrackCount(tracks.length)} · ${tracks.first.displayArtistFor(AppLocalizations.of(context)!)}',
       detailSort: LibrarySortMode.byAlbumTrack,
     );
   }
@@ -257,8 +269,8 @@ class _TagsTab extends StatelessWidget {
               e.value.any(
                 (t) =>
                     t.displayTitle.toLowerCase().contains(q) ||
-                    t.displayArtist.toLowerCase().contains(q) ||
-                    t.displayAlbum.toLowerCase().contains(q),
+                    t.displayArtistFor(l10n).toLowerCase().contains(q) ||
+                    t.displayAlbumFor(l10n).toLowerCase().contains(q),
               ),
         ),
       );
@@ -268,7 +280,9 @@ class _TagsTab extends StatelessWidget {
         child: Text(
           AppLocalizations.of(context)!.genreEmpty,
           textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.secondaryText),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -282,7 +296,7 @@ class _TagsTab extends StatelessWidget {
         final tracks = groups[tag]!;
         return ListTile(
           leading: CircleAvatar(
-            backgroundColor: AppColors.elevatedHigh,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
             child: Icon(
               isUncategorizedGenre(tag)
                   ? Icons.label_off_outlined
@@ -295,7 +309,7 @@ class _TagsTab extends StatelessWidget {
             displayTag,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-          subtitle: Text(
+          subtitle: MetaText(
             AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
           ),
           trailing: const Icon(Icons.chevron_right),
@@ -407,7 +421,9 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
       return Center(
         child: Text(
           AppLocalizations.of(context)!.noMatchResult,
-          style: const TextStyle(color: AppColors.secondaryText),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -478,9 +494,13 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
               final tracks = widget.groups[key]!;
               final coverTrack = pickCoverTrack(tracks, widget.cache);
               final selected = _selected.contains(key);
+              final title = localizedLibraryGroupName(
+                AppLocalizations.of(context)!,
+                key,
+              );
               return _CoverTile(
                 coverTrack: coverTrack,
-                title: key,
+                title: title,
                 subtitle: widget.subtitleOf(tracks),
                 placeholderIcon: widget.placeholderIcon,
                 selected: _selecting && selected,
@@ -493,7 +513,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => _TrackListPage(
-                        title: key,
+                        title: title,
                         tracks: tracks,
                         defaultSort: widget.detailSort,
                       ),
@@ -668,7 +688,7 @@ class _CoverTile extends StatelessWidget {
     return Material(
       color: selected
           ? AppColors.accent.withValues(alpha: 0.14)
-          : AppColors.elevated,
+          : Theme.of(context).colorScheme.surfaceContainer,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -717,7 +737,7 @@ class _CoverTile extends StatelessWidget {
                                 : Icons.circle_outlined,
                             color: selected
                                 ? AppColors.accent
-                                : AppColors.mutedText,
+                                : Theme.of(context).colorScheme.outline,
                           ),
                         ),
                       ],
@@ -730,22 +750,14 @@ class _CoverTile extends StatelessWidget {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.onDark,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
                 ),
               ),
               const SizedBox(height: 2),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.mutedText,
-                  fontSize: 11,
-                ),
-              ),
+              MetaText(subtitle),
             ],
           ),
         ),
@@ -853,7 +865,9 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
       return Center(
         child: Text(
           widget.emptyHint ?? AppLocalizations.of(context)!.libraryTracksEmpty,
-          style: const TextStyle(color: AppColors.secondaryText),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -962,7 +976,7 @@ class _TrackListPageState extends State<_TrackListPage> {
     final library = context.read<LibraryService>();
     final tracks = library.sortedCopy(widget.tracks, sort: _sort);
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
@@ -1056,7 +1070,9 @@ class _TrackTile extends StatelessWidget {
       leading: selecting
           ? Icon(
               selected ? Icons.check_circle : Icons.circle_outlined,
-              color: selected ? AppColors.accent : AppColors.mutedText,
+              color: selected
+                  ? AppColors.accent
+                  : Theme.of(context).colorScheme.outline,
             )
           : LibraryCoverArt.forTrack(
               track: track,
@@ -1069,7 +1085,9 @@ class _TrackTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: isLocal ? AppColors.onDark : AppColors.secondaryText,
+          color: isLocal
+              ? Theme.of(context).colorScheme.onSurface
+              : Theme.of(context).colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w500,
           fontSize: 14,
         ),
@@ -1084,12 +1102,15 @@ class _TrackTile extends StatelessWidget {
                 .downloadingPercent((task.progress * 100).toStringAsFixed(0))
           else if (!isLocal)
             AppLocalizations.of(context)!.notDownloaded,
-          track.displayArtist,
-          if (isLocal) track.displayAlbum,
+          track.displayArtistFor(AppLocalizations.of(context)!),
+          if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
         ].join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.outline,
+          fontSize: 12,
+        ),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1118,7 +1139,7 @@ class _TrackTile extends StatelessWidget {
                 border: Border.all(
                   color: isLocal
                       ? AppColors.localReady.withValues(alpha: 0.4)
-                      : AppColors.divider,
+                      : Theme.of(context).colorScheme.outlineVariant,
                   width: 1,
                 ),
               ),

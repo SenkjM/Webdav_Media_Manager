@@ -8,17 +8,20 @@
 - 自动化的做完是代码门槛：`flutter analyze` 干净 + `flutter test` 全过；当前 `main` 的真机状态默认按通过处理，只有新的可复现问题才记录为进行中事项。
 - 开发完成后：删掉这里的条目，把语义按完整文档的写法补进对应功能块，并去掉占位。
 
-## 1. 音乐流式播放（优化方向已定，未开工）
+## 1. 音乐流式播放（界面优化未开工；预载与封面已实现）
 
-**状态**：已初步实现并推 `main`。新安装的音乐流式开关默认开，单击动作仍是缓存音乐，不是流式；已经保存过单击动作的安装保持原选择。语义写在 [05 §9](05-AUDIO-PLAYBACK.md) 与 [06](06-VIDEO-PLAYBACK.md) 的对比表里。**优化方案仍记录在本节**（界面与预载都还没做）。
+**状态**：已初步实现并推 `main`。新安装的音乐流式开关默认开，单击动作仍是缓存音乐，不是流式；已经保存过单击动作的安装保持原选择。语义写在 [05 §9](05-AUDIO-PLAYBACK.md) 与 [06](06-VIDEO-PLAYBACK.md) 的对比表里。**界面优化（§1.1）还没做。预载与封面已按 §1.2 落地。**
 
 **当前 main 状态按已通过收口**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
+
+- 2026-10-03：进入 `MusicStreamScreen` 的首帧回调调用 `AudioPlayerService.pauseForVideo()` 暂停本地音乐并保留队列；页面销毁只停远端流，不自动恢复本地播放。
+- 2026-10-03：标题下的「流式传输 · 未缓存」已去掉。键 `streamingNotCached` 从 `app_zh.arb`、`app_zh_TW.arb`、`app_en.arb` 删除（没有 ja 等其它 locale），`MusicStreamScreen` 不再显示这行。流式缺封面仍是 `_buildCover` 里原来的 `ColorScheme` 占位，这一轮没有重画。
 
 **已知粗糙处（优化的候选，都还没有具体方案）**：
 
 - 离开音乐流式页会 `VideoPlaybackService.stop()`，而它内部是 `exitVideoMode()`——语义是「**恢复**本地音乐队列」。所以停下流式歌时通知栏会跳回之前暂停的本地歌。要更干净，得让远端流用途参与 `exitVideoMode` 的分支判断。
 - **没有屏幕常亮**：项目里没有 wakelock 依赖；视频页的常亮来自 `media_kit_video` 的 `Video` 组件，音乐页刻意不建它。
-- **封面与时长不取**（用户此前允许先不做）：流式拿不到本地文件，`audio_metadata_reader` 无从解析。要取得用 Range 读头部几 MB 再喂现有解码器，而 FLAC 的 `STREAMINFO`、MP4 的 `moov` 还可能落在文件尾部。
+- **时长不单独解析**：进度由播放器自己报。封面按 §1.2，用 Range 读内嵌图或同目录图片，不把整首音频下下来找图。
 - **没有「停止流式播放」的显式按钮**：退出页面才会结束。
 - 音乐流式的**切歌语义与本地不同**：本地有 CUE 裁切 / 队列语义，流式没有；从流式切回本地必须以「停止 + 清会话」结束，而不是暂停。
 - **后缀改过的音频会走错页**：把 `.m4a` 改成 `.mp4` 的音频，进的是视频播放页而不是音乐流式页——路由按后缀判定，不看实际内容（**用户已报，暂不处理**）。
@@ -41,7 +44,7 @@
 **用户已拍板的三件事**：
 
 1. **底色**：走 [§2](99-IN-PROGRESS.md) 阶段一（`AppColors` 上下文取色），**不**在这一页单独铺深色底。
-2. **封面**：这轮**不抓远端图**，只把占位做得像样（尺寸自适应、圆角、阴影、强调色渐变图标）。内嵌封面是独立的一块（Range 读头部 + 解析 ID3 / FLAC 图块），不在本次范围。
+2. **封面占位样式**：这一轮界面重排**不改占位的画法**（尺寸自适应、圆角、阴影、强调色渐变图标仍是未做的视觉项）。内嵌图和同目录封面已经按 §1.2 显示在现有 200×200 区域里；找不到图时仍是原来的占位图标。
 3. **范围**：视觉与布局都改，**元素一个不增不减**——大封面 + 标题层 + 紧致进度 + 居中控制条这套常规播放器骨架。
 
 **顺序**：阶段一必须先做。这一页的底色问题就是阶段一的产物，先重排布局等于照着浅色底调一遍，取色做完还得再调一遍。
@@ -78,41 +81,26 @@
 | 页面骨架 | `Center` + 滚动 | 去掉多余留白，短屏也不顶边 |
 
 **验收**：亮色主题下逐元素比对（**阶段一不能改变亮色观感**，这是它的安全底线）；暗色 + 重排之后，这一页应当是「深底 + 干净封面 + 居中控制条」，不再有浅灰残留。
-### 1.2 流式音乐播放的预载（未开工，方案待定）
+### 1.2 流式音乐播放的预载与封面（已实现，路线 A）
 
-**用户原话**：「流式音乐播放的预载功能，自动加载向前 x 首向后 y 首，可在配置页面配置。」
+**用户原话**：「流式音乐播放的预载功能，自动加载向前 x 首向后 y 首，可在配置页面配置。」同目录封面开关和可编辑的封面文件名也放在同一页。
 
-**放哪**：参数进「设置 → 音频流式」（`audio_stream_settings_screen.dart`，现在只有「流式传输音乐」和「搜索子目录」两项）。
+**放哪**：设置 → 音频流式（`audio_stream_settings_screen.dart`）。
 
-**能不能做 —— 关键卡点：流式页与视频页共用同一个 `Player` 实例**
+**已定并落地的行为**：
 
-`music_audio_handler.videoPlayer` 是单例（`music_audio_handler.dart:173`），视频页只是借它。media_kit 的预载手段是把媒体挂进 `Player` 的播放列表再用 `next()` / `previous()` 切换，而**列表是播放器的全局状态**：流式页预载了「当前 + 后 2 首」之后切到视频页，视频的 `player.open(Media)` 会把整份列表换掉。反之亦然。
+- 路线 **A**：共享 media_kit `Player` 的列表是「已打开过的曲目」，切歌用 `jump`，不靠 `player.open` 清空列表。第一次进入这一页（以及视频页把同一播放器的列表换掉之后回到这一页）只对**当前**一首 `open` 一次。视频页仍可能换掉列表；回到流式页会重建窗口。
+- 预载窗口两个整数，设置键 `audio_stream_prefetch_backward`（向前，上一首方向）和 `audio_stream_prefetch_forward`（向后，下一首方向）。默认都是 1，范围 0–5。0 表示该方向不预载。队首队尾不绕圈；队列短于窗口就用现有的几首。
+- 当前播放占一条网络。这条播放流不因为预载暂停或取消。预载共用第二条，不进下载队列，也不并行。同一轮在这一条线程上先补封面，再下音频。
+- 封面窗口和音频窗口相同：当前这首，加上向前 N 首、向后 M 首（先向前，再向后，不绕圈）。先取当前这首的封面并显示。然后逐首补窗口里其余曲目的封面，一次只处理一首；音频已经在播放列表里、或音频缓存已经完整的邻居，封面仍然要补。某一首封面失败只记在这一轮并继续下一首，不让后面的音频预载永远开始不了，也不打断正在播放的那首。邻居封面只进缓存，不更新界面，也不改当前会话的封面。之后切到这首时，当前封面路径命中已有文件，不再发请求。窗口里的封面都已缓存或这一轮已失败之后，才开始邻居音频。
+- 邻居音频仍是整文件、一次只下一首，先向前再向后。已经在播放列表里、这一轮已经打开过、或者缓存文件已经完整的，不再取。刚播完的那首留在列表里，滑进向前窗口时也不会再下。音频失败记一笔后继续，不打断当前这首。切歌、窗口变化，或音频文件还在下但窗口里仍有封面没处理时，取消的是这条预载中的音频文件，先把封面补完再继续音频。
+- 预载文件（音频和图片）在 `getApplicationCacheDirectory()/prefetch_cache`。每次启动、播放器创建之前清一次。滑出窗口不删，页面 dispose 也不删。不完整的文件先写 `.part`，成功后再改名。
+- 封面顺序（当前和邻居相同）：曲库里已有的封面文件（有则直接用，不走网络）→ 预载缓存 `covers` 里已经完整的文件（不走网络）→ 按**文件头**判断格式再 Range 取内嵌图（`coverFront` 优先，否则第一张）→ 同目录封面开关打开时按文件名匹配一张图 → 否则占位。后缀不可信：`ID3` 或 MP3 帧同步、`fLaC`、偏移 4 的 `ftyp`、`OggS`、`RIFF`+`WAVE`。其余（含裸 AAC）当没有内嵌图。只发 Range；服务器不按区间回（不是 206）就放弃，不把整首当封面下载。FLAC / MP3 / OGG 的图靠近文件头。M4A 的 `covr` 在 `moov` 里，头上没有就再取尾部。失败保持播放和占位图。
+- 同目录封面默认**关**。设置键 `audio_stream_sidecar_cover`。只看同一层，不进子目录。名字大小写不敏感。默认可编辑列表是 `cover, folder, front, album`（键 `audio_stream_sidecar_names`）；音频文件自己的主文件名始终额外试一次，不写进这份列表。扩展名只认 jpg、jpeg、png、webp。同名只是扩展名不同时按这个顺序挑一个，其它扩展名忽略。能用扫描时已经拿到的目录列表就用，否则只对该目录再列一次。只下载选中的那一张图。
 
-**另一处硬对抗**：现在切歌是 `_open()` → `player.open(Media(...))`。`open` **清空播放列表**。也就是说只要还走 `_open`，预载进去的条目下一次翻页就没了——预载等于白做。
+**仍不做**：不把预载写成「尽量播完不卡」的缓冲策略；`bufferSize` 没动。不提供「永久保留预载缓存」开关。§1.1 的界面重排仍未开工。
 
-**三条路线**：
-
-| 路线 | 做法 | 代价 |
-|------|------|------|
-| **A. 播放器原生列表**（唯一有真实预载效果的） | 流式页改成「播放器列表 = 向前 x 首 + 当前 + 向后 y 首」，切歌走 `next()` / `previous()` / `jump()`；队列变化时增量 `add` / `remove` | 要改切歌模型；要处理「视频页独占播放器时清空列表」；且**必须同时处理 `_open` 清空列表的问题** |
-| **B. HTTP 层预取** | 自己按 Range 预读下一首的起始分片 | 需要确认网盘是否可靠支持 Range；要做本地流缓存与失效；工作量最大，且不一定减少起播延迟 |
-| **C. 混合** | 列表预载 + 自己维护流缓存 | 两条都要做，收益是否叠加未验证 |
-
-**方案 A 的既有资产**：media_kit 的 `open` / `add` / `next` / `previous` / `jump` / `move` 都在（`media_kit-1.2.6` 的 `player.dart` 第 160–227 行），`open` 接受单个 `Media` **或 `List<Media>`**。所以不需要新依赖。
-
-**待用户决定**：
-
-1. 走哪条路线。**倾向上不建议 B**：它不一定减少起播延迟，却要动网络层；要动先做一次 Range 支持与真实延迟的实测。
-2. 预载的语义：是「让下一首**起播更快**」还是「尽量**不要中途卡**」。前者是列表级的预开流，后者才是缓冲级的（后者用 Android 上 media_kit 的 `bufferSize` 参数控制，它是 ExoPlayer 的缓冲策略，能否控制 HTTP 源的预取深度**未验证**）。
-3. `x` / `y` 的默认值与范围（默认向后 1、向前 1？上限按队列长度夹住，不循环）。
-
-**必须一起定下的边界**（无论选哪条路线）：
-
-- 预载**不得**触发任何下载入队——[09 §4](09-MISC.md) 的陷阱表写着「不要在播放路径上偷偷入队下载」。
-- 预载失败不能影响当前这一首的播放（静默降级）。
-- 队列短于 `x + y` 时按实际可用数量处理，到队首 / 队尾不绕圈。
-
-## 2. 主题配色（已分析，未开工）
+## 2. 主题配色（设置里已可切换；非整库换色）
 
 相关完整文档：[09 §编码约定](09-MISC.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[07](07-NOTIFICATIONS.md)。待发布与拆分见 本文件对应章节。
 
@@ -152,9 +140,36 @@
 
 本轮的 MD3 界面改造交接单（分支、worktree、逐文件改动点、本轮不改清单）已移到 [97 §H-001](97-AGENT-HANDOFF.md)。
 
-本节只保留方向与验收：§2.1 现状、§2.2 为什么不能只打开 `themeMode`、§2.3 两阶段拆分、§2.4 验收与回归点。执行侧一律写进 [97](97-AGENT-HANDOFF.md)，不回填这里。
+本节只保留方向与验收：§2.1 现状、§2.2 为什么不能只打开 `themeMode`、§2.3 两阶段拆分、§2.4 验收与回归点。执行侧的交接单仍在 [97](97-AGENT-HANDOFF.md)。下面只记已经落地、并入 `feat/l10n-leftovers` 的结果，不再把未做的交接清单回填到这里。
+
+### 2.6 本分支实际结果（feat/md3-theme，已并入 feat/l10n-leftovers）
+
+- 三态主题存在 `SettingsService` 键 `theme_mode`（`light` / `dark` / `system`）。没有存过的安装仍是浅色。`main.dart` 读这个值，不再写死 `ThemeMode.light`。
+- 种子色是一个不透明 ARGB，键 `theme_seed_argb`，默认 `0xFF2EC4B6`。浅色和深色都用 `ColorScheme.fromSeed`（`DynamicSchemeVariant.fidelity`，不是 Expressive）生成。`onPrimary` 来自方案。设置页在「杂项」里用现有列表行放三态下拉和种子色（当前色块 + 预设 + 色相/饱和度/明度）。
+- 抽屉、设置页分区标题、以及 `AppTheme` 里的组件色跟当前种子走。非播放器页面的脚手架和卡片底改为当前 `ColorScheme.surface` / `surfaceContainer`，默认种子和自定义种子都跟着走；这些页上原来写死的深色字改成 `onSurface` / `onSurfaceVariant`，避免深色底上看不见。播放器页、流式页、视频手势和黑白叠层、图片页码、迷你播放条、封面占位、缓存和下载队列服务没改。
+- 次要信息行用 `MetaText`：`bodySmall` + 当前方案的 `onSurfaceVariant`。默认种子和后来改的种子、浅色和深色都走这一条，不靠写死的 `AppColors.mutedText`。点名位置：网络库目录行去掉「目录」；有大小只显示大小，没有大小才留类别；「点按下载」和已存相册留下。歌单 / 艺人 / 专辑 / 标签数量仍是「{count} 首」（专辑仍可带艺人）。下载队列 CUE 数量改成「{count} 首」，没有曲目时类别改成「CUE」。CUE 弹层标题收成数量。歌单缺歌行收成「暂无 · 来源」。文件夹选择和字幕目录只显示末级路径。播放器页没改，流式页仍用原来的「{count} 首」。
+- 流体玻璃没有进产品。`BackdropFilter` / `ImageFilter.blur` 在 Flutter 3.47 上不用新插件就能用，也不必碰到 `media_kit`。不发的原因：应用栏和页面底现在是不透明的平面（圆角和紧凑密度要留着）；模糊只有内容滚到栏下才看得见，那时文字对比会跟着封面和行色变，保证不了；设置页底下没有可模糊的内容，要做出玻璃得另铺一层装饰，等于换外观；滚动列表上的 `saveLayer` 成本在这台没有 ColorOS 16 真机的环境里没法量。所以应用栏和脚手架背景保持不透明。
+- 预览只加了 `lib/preview/md3_widget_previews.dart`（`@Preview`，`kDebugMode`）。`main.dart` 和正式页面不引用它。`.widget_preview/` 本来就在忽略列表里。预览里有主题设置控件，以及文件夹行、一条带大小的音频行、一条歌单数量行。没有把整页拆成「一帧数据 + 动作接口」。没拆的页面：音乐库、歌单、歌单详情、网络库、下载、同步、账号、其余设置页、文件夹选择、字幕选择、正在播放、图片查看。播放器三页本来就不进预览。
+
+### 2.7 播放器与流式页的深色残留（本分支补了一轮，只改颜色）
+
+视频设置页脚手架本来就是 `ColorScheme.surface`，分区标题仍写死 `AppColors.accent`，已改成 `primary`。仍是浅色底、不跟主题的还有：视频控制条、倍速 / 字幕 / 手势 / 队列弹层、退出确认、流式音乐页、本地正在播放（含迷你条和详情弹层）、下载设置里的白字说明。这些改成 `surface` / `onSurface` / `onSurfaceVariant` / `outline`，强调用 `primary`。
+
+没动：贴在画面上的字幕字色和黑底、视频黑边、缓冲 / 切集 / 快进提示、手势分区、进度条怎么拖、封面模糊参数和图片本身、图片查看页、封面占位、`cover_image.dart`、缓存和下载队列行为。本地正在播放的白蒙层只在深色时换成 `surface`（透明度仍是 0.82），亮色仍是原来的白。
+
+播放器字幕弹层加了和设置页相同的字号：预设 12、14、16、20、24、30，滑条 10–40，默认 16。两边都写 `SettingsService.videoSubtitleFontSize`。占位符参数顺序是生成代码的字母序（`max`, `min`, `size`）。
+
+### 2.8 浅色取色偏暗（流式音乐页）
+
+没换变体。`DynamicSchemeVariant.fidelity` 仍生成深色，也仍是浅色的起点（种子彩度不被压成粉彩，不用 Expressive）。浅色偏暗是 fidelity 本身：`primary` 被压到色调约 40（种子更暗时更低），`primaryContainer` 钉在种子色调上。换 `tonalSpot` 抬不高 `primary`（还是约 40）。所以只在 `fromSeed` 之后抬浅色：表面色调上移（`surface` 到 99，容器大约 98–93），强调色至少到色调 68，主/次/第三容器至少到 90。白字对比不够时 `on*` 改成同色相色调 20 的深色字，对比仍不低于 4.5。深色不改。流式页的进度条和强调色跟着这套方案变亮，没有单独刷白。没动模糊、封面图、进度条手势。
+
+### 2.9 曲库缺封面占位跟主题（本分支）
+
+`CoverArt._placeholder` 不再写死 `AppColors.elevatedHigh` / `AppColors.mutedText`。底色用 `colorScheme.surfaceContainerHigh`，图标用 `colorScheme.onSurfaceVariant`，深色模式和种子色都跟着走。`PlayerCoverArt`、迷你条、正在播放队列在没有封面时共用这个占位，只跟着改颜色，其它样式不动。`MusicStreamScreen._buildCover`、`Image.memory` / `Image.file`、圆角、`LibraryCoverArt` 的分辨率、`cover_image.dart` 没动。
+
 
 ## 3. 多语言（已分析，未决定，未开工）
+
 
 用户问「多语言怎么处理」，只做了查证与拆分：**没有动代码**。相关完整文档：本文件 §3。
 
@@ -742,7 +757,7 @@ adb shell dumpsys notification | grep -A5 2001     # 下载通知是否唯一 / 
 adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 ```
 
-`<pkg>`：prod / dev flavor 包名不同，分别测。
+`<pkg>`：prod / dev / sandbox flavor 包名不同（`com.senkjm.media_manager`、`.dev`、`.test`），分别测。
 
 ## 8. 设置页重排、下载目录排除扫描、图片存相册
 
@@ -772,32 +787,52 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - 新标签名在算出 seq / versionCode 之后才确定。旧标签 `v0.2.2-f046956`、`v0.2.2-ba29461`、`v0.2.2-0d5148a` 与浮动 `prerelease` 不改名、不移动。`version_name` 仍等于标签名，所以新版本的标题会变成 `Pre-release v0.2.2-<versionCode> (<versionCode>)`，模板那一行不改。
 - 开关的「已经一致」走原生返回的 `already`，不是错误。冷启动和进入下载设置时若开关为开，仍然只在缺失时补文件，不弹「外部操作」提示。
 
-## 10. 日语衬线字体（已分析，未开工）
+## 10. 日语衬线字体（本分支已按最小改法落地）
 
-**状态**：2026-10-03 只分析，用户要求先记录，不改代码。
+**状态**：2026-10-03 `feat/l10n-leftovers` 已改代码。不恢复 `app_zh_CN.arb`。简体偏好改回 `Locale('zh', 'CN')`。`MaterialApp.localeListResolutionCallback` 用 `resolveAppLocaleList`：系统 `zh_CN`、`zh_Hans`、裸 `zh` 都解析成 `Locale('zh', 'CN')`；`zh_TW` 或 script `Hant` 仍是 `Locale('zh', 'TW')`；英文仍是 `Locale('en')`。`lookupAppLocalizations` 本来就把非 TW 的 zh 映到简体，`isSupported` 只看语言码。
 
 **现象**：中文和英文仍是原来的无衬线字体。日语假名退化成衬线体，每台机器落到的衬线不一样。
 
 **原因**：`923007e` 把简体界面从 `Locale('zh', 'CN')` 改成 `Locale('zh')`，文案没变。Android 字体表按 `zh-CN` / `zh-Hans` / `ja` 登记，没有裸的 `zh`。汉字多半还能落到黑体，假名对不上就继续往下找，先碰到的常常是 Noto Serif CJK 一类衬线。跟系统时也一样：手机是 `zh_CN`，但 `supportedLocales` 只有裸 `zh`，解析会把地区丢掉。
 
-**最小改法（未做）**：不恢复 `app_zh_CN.arb`。`lookupAppLocalizations` 对 `zh_CN` 已经落到现有简体，只有 `TW` 走繁体。把简体偏好改回 `Locale('zh', 'CN')`，并在 `MaterialApp` 上加 `localeListResolutionCallback`，简体（含跟系统的 `zh_CN` / `zh_Hans`）固定返回 `Locale('zh', 'CN')`，避免又被收成裸 `zh`。繁体、英文不动。
+**最小改法（本分支已做）**：见上面的状态。繁体、英文不动。
 
-## 11. 下拉菜单直角（已分析，未开工）
+## 11. 下拉菜单直角（本分支已按最小改法落地）
 
-**状态**：2026-10-03 只分析，用户要求先记录，不改代码。
+**状态**：2026-10-03 `feat/l10n-leftovers` 已改代码。每个 `DropdownButton` / `DropdownButtonFormField` 传入 `borderRadius: BorderRadius.circular(10)`（设置、同步、后缀、视频手势设置、视频播放页手势菜单、账号、网络库）。`AppTheme` 亮色和暗色都加了 `popupMenuTheme`，圆角同样是 10。没有新 UI kit，播放器手势区、进度条、底衬没有改样式。
 
 **现象**：设置、同步、后缀、视频手势、账号里的 `DropdownButton` / `DropdownButtonFormField` 弹出菜单是直角，和卡片、对话框、输入框的 10–16 圆角不是一套。
 
 **原因**：这些调用都没传 `borderRadius`。Flutter 3.47 的 `dropdown.dart` 在未传入时用 `BorderRadius.zero`。`AppTheme` 没有下拉菜单的总开关。
 
-**最小改法（未做）**：不加第三方库。每个 `DropdownButton` 把圆角设成和输入框一样的 10，或包一个只干这件事的下拉。`PopupMenuButton` 另走 `popupMenuTheme`，可在 `AppTheme` 里一次设成同一个圆角。不要换成 Material 3 `DropdownMenu`，那是另一轮替换。
+**最小改法（本分支已做）**：见上面的状态。没有换成 Material 3 `DropdownMenu`。
 
-## 12. 语言选项跟着界面语言变（已分析，未开工）
+## 12. 语言选项跟着界面语言变（已在 feat/md3-theme 落地，本合并保留）
 
-**状态**：2026-10-03 只分析并定方案，不改代码。
+**状态**：2026-10-03 先只分析。同日 `feat/md3-theme` 按该方案改了代码，本合并保留。语言菜单里简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」，写在 `AppLocalePreference.nativeName`。「跟随系统」仍用 `l10n.languageSystem`。根目录 `agent.md` 要求之后的开发沿用现有圆角、颜色角色和这条约定。
 
 **现象**：语言下拉在简体界面里「简体中文 / 繁体中文」都是简体字；切到繁体后这两项都变成繁体字；切到英文后变成 Simplified Chinese / Traditional Chinese。
 
 **原因**：`settings_screen.dart` 的选项用的是 `l10n.languageSimplifiedChinese` 等键。这三个键在 `app_zh.arb`、`app_zh_TW.arb`、`app_en.arb` 里各有一份译文，所以显示的是当前界面语言，不是该选项自己的语言。
 
-**方案（未做）**：语言名字不要走 l10n。在 `AppLocalePreference` 上写死自称：简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」。以后加语言只加这条自称，不把语言名翻译进每份 ARB。「跟随系统」不是一种语言，仍用当前界面的 `languageSystem`。
+**方案（已做）**：语言名字不要走 l10n。在 `AppLocalePreference` 上写死自称：简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」。以后加语言只加这条自称，不把语言名翻译进每份 ARB。「跟随系统」不是一种语言，仍用当前界面的 `languageSystem`。
+
+
+## 13. 界面残留中文、下载重试、一次性哨兵迁移（本分支）
+
+**状态**：`feat/l10n-leftovers` 未推送。`pubspec.yaml` 仍是 `1.0.0+1`，没有为这条迁移改版本号。注释里的 0.2.2 / 0.2.4 是用户指定的正式版本说法，不是 pubspec。
+
+**界面文案**：还露在界面上的简体写进 `app_zh.arb` / `app_zh_TW.arb` / `app_en.arb`，繁体和英文是各自的句子，不是简体副本。没有恢复 `app_zh_CN.arb`。
+
+**故意不翻译**：写进数据库或文件名的哨兵（`未知艺术家`、`未知专辑`、`未命名`、`新歌单`、`默认服务器`、`服务器`、`未分类`、`新文件夹`、`系统相册`、`下载目录`）仍是存储值。语言自称 `简体中文` / `繁體中文` / `English` 已按 §12 写在 `AppLocalePreference.nativeName`，不进 ARB。`debugPrint`、`MusicAudioHandler` 探测串、Open115 `msg.contains('网络')`、原生 Kotlin（`MainActivity` 错误、`DownloadKeepAliveService` 回退「下载进度 / 正在下载」）不动。
+
+**下载重试**：`DownloadQueueService.isRetryable` 不再把 401 / 403 / 404 / unauthorized / forbidden 或非 5xx 的 `badResponse` 排除。所有上游错误（含奇怪的授权失败）走原来的次数和退避。仍然不重试：用户取消、`StateError`、解密失败 `CloudDriverDataException`。
+
+**一次性迁移**：`migrateLegacySentinelsOnce`（`lib/services/legacy_sentinel_migration.dart`）在 `AppState.init` 里、缓存目录就绪之后、曲库 / 账号 / 歌单 / 下载把名字读进内存之前跑一次。文件头注释写明：这是正式版本 0.2.2；本迁移只在 0.2.2 运行；到 0.2.4 必须做完并删掉全部迁移代码；0.2.4 之后旧数据库不再兼容。没有第二套迁移框架，也没有抬高曲库 schema。
+
+只改两处精确匹配：
+
+- 歌单名 `未命名` → `__wdmm_unnamed_playlist__`（`playlists.name` 与 `entries_json` 里的 `sourceName` / `accountId`）。不碰 `新歌单`。改过的行抬高 `updated_at`，同步才能推稳定键。不在启动时去拉远端 `.wdmp`。
+- `默认服务器` → `__wdmm_default_server__`：`accounts.name`、各表 `source_name`、下载任务、歌单条目 `sourceName`，以及恰好是这个名字或以 `cue\0默认服务器\0` / `默认服务器\0` 开头的 `cache_group_id` / `cache_groups`。不碰默认名 `服务器`。`music_id` 不重算哈希；缓存和封面文件按旧 stem 改名到新 stem，`cover_path` 同样改。
+
+不改：真实流派标签 `未分类`（空流派已经是 `__wdmm_uncategorized__`）、`未知艺术家` / `未知专辑`（空艺术家 / 空专辑的分组键已经是稳定键，界面用 `displayArtistFor` / `displayAlbumFor`）、`新文件夹`、`系统相册`、`下载目录`、字幕存储值 `默认`、原生 Kotlin。再跑一次找不到这些中文哨兵。下一版（最迟到 0.2.4）删掉整个函数。

@@ -46,7 +46,7 @@
 `beta` 与 `dev` 已删除（本地与 `origin` 都不存在）：没有长期保存线，中途成果留在自己的功能分支上。
 Pre-release 从 `main` 出，相当于给 `main` 的每个提交做一次内测快照。
 
-CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.github/workflows/pre-release-build.yml`。两份都是「检查 → 编译 → 发版」串在同一次运行里，发版直接用本次运行的产物，不再靠 `workflow_run` 接续。
+CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.github/workflows/pre-release-build.yml`。两份都是「检查 → 编译 → 发版」串在同一次运行里，发版直接用本次运行的产物，不再靠 `workflow_run` 接续。旁路试装走 `.github/workflows/testbuild.yml`（workflow 名 Testbuild）：只有手动 `workflow_dispatch`，只编译 `test` flavor 的 arm64-v8a APK，上传 artifact `testbuild-arm64-v8a`；不打标签、不建 Release、不打 app bundle，也不解码 keystore。
 
 | 事件 | 行为 |
 |------|------|
@@ -55,6 +55,7 @@ CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.
 | 手动 `workflow_dispatch`（release） | 给当前 `main` 打标签，再做同一套检查；所选引用不是 `main` 时拦下 |
 | 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：按标签 metadata 的 `sha` / `seq` / `version_code` 发现当前提交已有预发布则跳过，否则用新标签 `vX.Y.Z-<versionCode>` 发独立 Release，历史预发布保留 |
 | 手动 `workflow_dispatch`（pre-release） | 同一提交复用已有标签并刷新该 Release；**所选引用不是 `main` 时跳过** |
+| 手动 `workflow_dispatch`（Testbuild） | 检出被触发的引用，只编译 `test` 的 arm64-v8a APK 并上传 artifact；不发版 |
 
 **分包与压缩存放**：三个单 ABI 包（`arm64-v8a` / `armeabi-v7a` / `x86_64`）加一个去掉 x86 的合并包；原生库压缩存放（`useLegacyPackaging = true`）。实测（v0.1.0 通用包 101.3 MiB）：`libmpv.so` 38.1 MiB、`libflutter.so` 31.8 MiB、`libapp.so` 28.4 MiB，非原生部分只有 2.7 MiB——所以分包才是主要收益。v0.2.0 起 CI 产出三个 split APK，当前 main 状态按已测试结果收口。
 
@@ -73,21 +74,23 @@ flutter run --flavor dev                    # 真机调试；会话内 r 热重�
 flutter build apk --release --flavor prod   # 本地 release；签名见下
 ```
 
-**flavor**（`env` 一个维度，`prod` / `dev` 两个）：构建**必须显式带** `--flavor`——AGP 只要存在 product flavor 就不再生成 `assembleRelease` 这类不带 flavor 的任务；`flutter analyze` / `flutter test` 不受影响。
+**flavor**（`env` 一个维度，`prod` / `dev` / `test` 三个）：构建**必须显式带** `--flavor`——AGP 只要存在 product flavor 就不再生成 `assembleRelease` 这类不带 flavor 的任务；`flutter analyze` / `flutter test` 不受影响。
 
 | flavor | applicationId | 应用名 | 用途 |
 |--------|---------------|--------|------|
-| `prod` | `com.senkjm.media_manager` | Webdav Media Manager | 正式包；本地 release 与 CI 都走它 |
+| `prod` | `com.senkjm.media_manager` | Webdav Media Manager | 正式包；本地 release 与正式 / 预发布 CI 都走它 |
 | `dev` | `com.senkjm.media_manager.dev` | Webdav Media Manager Dev | 本地调试；`versionNameSuffix = "-dev"` |
+| `sandbox` | `com.senkjm.media_manager.test` | Webdav Media Manager Test | 旁路试装；`versionNameSuffix = "-test"`。只含 `arm64-v8a`。Testbuild 编这个包，不发版 |
 
-- 两个包 applicationId 不同，能装在同一台手机上并存，数据库 / 偏好 / 安全存储目录各自独立。
-- flavor 只影响 `applicationId`、`versionName` 后缀和 `android:label`（走 `${appName}` 占位符）；`namespace` 与 Dart 代码不动，`MainActivity` 不搬家。
-- CI 的产物文件名随 flavor 变成 `app-prod-*.apk` / `build/app/outputs/bundle/prodRelease/app-prod-release.aab`。
+- 三个包 applicationId 不同，能装在同一台手机上并存，数据库 / 偏好 / 安全存储目录各自独立。
+- flavor 只影响 `applicationId`、`versionName` 后缀、`android:label`（走 `${appName}` 占位符），以及 `test` 的 ABI；`namespace` 与 Dart 代码不动，`MainActivity` 不搬家。
+- `ndk.abiFilters` 只写在 `test`（`arm64-v8a`）。`prod` / `dev` 不设，ABI 仍由各自的构建命令决定。
+- 正式 / 预发布 CI 的产物文件名随 flavor 变成 `app-prod-*.apk` / `build/app/outputs/bundle/prodRelease/app-prod-release.aab`。Testbuild 的命令是 `flutter build apk --release --flavor sandbox --target-platform android-arm64`，artifact 名 `testbuild-arm64-v8a`。
 
 - Flutter **stable**（`environment.sdk: ^3.13.4`）；本机 SDK 装在 `D:\flutter`，`android/local.properties` 里的 `flutter.sdk` 只对本机有效，换机器会重新生成。
 - Android SDK + JDK 17（与 CI `setup-java` 一致）；CI 里 `flutter test` 前需 `apt install libmpv-dev mpv`（media_kit 的 Linux 后端）。
 - 版本号：正式版 `VERSION_NAME` = 标签（如 `v0.1.0`）。新的预发布标签 = 上一个正式版标签 + `-` + `versionCode`（如 `v0.2.2-2020004`）。同一提交重跑按标签 metadata 里的 `sha` / `seq` / `version_code` 复用已有标签及其 versionCode（含旧的短 SHA 标签名），不移动旧标签，也不改已发出的 Release 标题。`VERSION_CODE` = 主×1e8 + 次×1e6 + 修订×1e4 + 序号（正式版序号 0，预发布 1–999），单调递增便于覆盖安装。
-- 签名：CI 用固定内测 keystore（Secrets：`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`）。本地没有 `android/key.properties` 时 release 会回落到 debug 签名，仅够自测；**不要提交** `key.properties`、keystore、token、`.env`。
+- 签名：正式 / 预发布 CI 用固定内测 keystore（Secrets：`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`）。本地没有 `android/key.properties` 时 release 会回落到 debug 签名，仅够自测。Testbuild 不读这些 secrets，同样走这条回落，不改 `prod` 的签名。**不要提交** `key.properties`、keystore、token、`.env`。
 
 ## 3. 编码约定
 

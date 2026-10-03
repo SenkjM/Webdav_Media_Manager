@@ -12,7 +12,8 @@ class ThumbnailSettingsScreen extends StatefulWidget {
   const ThumbnailSettingsScreen({super.key});
 
   @override
-  State<ThumbnailSettingsScreen> createState() => _ThumbnailSettingsScreenState();
+  State<ThumbnailSettingsScreen> createState() =>
+      _ThumbnailSettingsScreenState();
 }
 
 class _ThumbnailSettingsScreenState extends State<ThumbnailSettingsScreen> {
@@ -64,17 +65,21 @@ class _ThumbnailSettingsScreenState extends State<ThumbnailSettingsScreen> {
     final settings = context.watch<SettingsService>();
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.settingsThumbnails)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
             l10n.coverThumbSize,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 4),
-          Text(l10n.coverThumbHint, style: Theme.of(context).textTheme.bodySmall),
+          Text(
+            l10n.coverThumbHint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 8),
           SegmentedButton<String>(
             showSelectedIcon: false,
@@ -88,10 +93,14 @@ class _ThumbnailSettingsScreenState extends State<ThumbnailSettingsScreen> {
               final v = sel.first;
               if (v == '100') {
                 setState(() => _coverUiMode = null);
-                await context.read<AppState>().setCoverThumbSize(coverThumbSize);
+                await context.read<AppState>().setCoverThumbSize(
+                  coverThumbSize,
+                );
               } else if (v == '300') {
                 setState(() => _coverUiMode = null);
-                await context.read<AppState>().setCoverThumbSize(coverThumbSizeLarge);
+                await context.read<AppState>().setCoverThumbSize(
+                  coverThumbSizeLarge,
+                );
               } else {
                 setState(() {
                   _coverUiMode = 'custom';
@@ -130,7 +139,7 @@ class _ThumbnailSettingsScreenState extends State<ThumbnailSettingsScreen> {
           ],
           const SizedBox(height: 4),
           Text(
-            '当前：${settings.coverThumbSizePx}×${settings.coverThumbSizePx}',
+            l10n.coverThumbSizeCurrent('${settings.coverThumbSizePx}'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

@@ -20,6 +20,7 @@ import 'services/music_audio_handler.dart';
 import 'services/backup_service.dart';
 import 'services/notification_permission_service.dart';
 import 'services/platform_export_service.dart';
+import 'services/prefetch_cache.dart';
 import 'services/playlist_service.dart';
 import 'services/settings_service.dart';
 import 'services/sync_service.dart';
@@ -32,6 +33,8 @@ import 'utils/l10n_host.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Drop last run's prefetch bytes before any player opens a cached file.
+  await PrefetchCache.wipe();
   // Required once before any media_kit Player is created.
   MediaKit.ensureInitialized();
   // Native PiP transitions arrive on the shared app MethodChannel; install the
@@ -107,14 +110,15 @@ class WebDavMusicApp extends StatelessWidget {
         builder: (context, settings, _) => MaterialApp(
           title: 'Webdav Media Manager',
           locale: settings.appLocale.locale,
+          localeListResolutionCallback: resolveAppLocaleList,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           debugShowCheckedModeBanner: false,
           // 应用内消息渲染在 Navigator 之上（底部、任何弹窗都盖不住）。
           builder: AppSnack.hostBuilder,
-          themeMode: ThemeMode.light,
-          theme: AppTheme.light,
-          darkTheme: AppTheme.dark,
+          themeMode: settings.themeMode,
+          theme: AppTheme.lightFrom(settings.themeSeed),
+          darkTheme: AppTheme.darkFrom(settings.themeSeed),
           home: appState.initError != null
               ? RecoveryScreen(
                   error: appState.initError!,

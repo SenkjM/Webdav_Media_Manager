@@ -20,7 +20,6 @@ import '../services/video_subtitle_binder.dart';
 import '../services/video_playback_service.dart';
 import '../services/video_queue_controller.dart';
 import '../services/webdav_service.dart';
-import '../theme/app_theme.dart';
 import '../utils/subtitle_sidecar.dart';
 import '../utils/video_pip.dart';
 import '../widgets/app_bottom_sheet.dart';
@@ -264,7 +263,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       player.stream.error.listen((e) {
         if (!mounted || e.isEmpty) return;
         setState(() => _error = e);
-        AppSnack.show(context, '播放错误：$e');
+        AppSnack.show(
+          context,
+          AppLocalizations.of(context)!.videoPlaybackError(e),
+        );
       }),
     );
     // Auto-advance to the next video in the folder when one finishes.
@@ -344,7 +346,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (player == null || service == null || _switching) return;
     final source = await _streamFor(item);
     if (source == null) {
-      AppSnack.show(context, AppLocalizations.of(context)!.webdavNotConnectedPlay);
+      AppSnack.show(
+        context,
+        AppLocalizations.of(context)!.webdavNotConnectedPlay,
+      );
       return;
     }
     setState(() {
@@ -368,7 +373,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       _armSubtitles(item);
     } catch (e) {
       if (!mounted) return;
-      AppSnack.show(context, '切换视频失败：$e');
+      AppSnack.show(
+        context,
+        AppLocalizations.of(context)!.videoSwitchFailed('$e'),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -381,9 +389,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
 
   Future<WebDavStreamSource?> _streamFor(WebDavItem item) {
     final queue = _queue;
-    final accountId = queue?.accountId ??
-        _resolved?.accountId ??
-        widget.source?.accountId;
+    final accountId =
+        queue?.accountId ?? _resolved?.accountId ?? widget.source?.accountId;
     if (accountId == null) return Future.value(null);
     return context.read<WebDavService>().resolveStreamSource(
       remotePath: item.path,
@@ -403,9 +410,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final next = queue.next;
     if (next == null) {
       if (!auto) {
+        final l10n = AppLocalizations.of(context)!;
         AppSnack.show(
           context,
-          queue.scanning ? '已到列表末尾（仍在扫描文件夹…）' : '已是最后一个视频',
+          queue.scanning ? l10n.videoEndStillScanning : l10n.videoAlreadyLast,
         );
       } else {
         await _player?.pause();
@@ -424,12 +432,21 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
     // Standard player behavior: restart the current video first.
     if (_position.value > const Duration(seconds: 3)) {
-      await _seekBy(Duration.zero, label: '从头播放', toStart: true);
+      await _seekBy(
+        Duration.zero,
+        label: AppLocalizations.of(context)!.videoPlayFromStart,
+        toStart: true,
+      );
       return;
     }
     final prev = queue.previous;
     if (prev == null) {
-      AppSnack.show(context, queue.scanning ? '已是第一个视频（仍在扫描文件夹…）' : '已是第一个视频');
+      AppSnack.show(
+        context,
+        queue.scanning
+            ? AppLocalizations.of(context)!.videoAtFirstStillScanning
+            : AppLocalizations.of(context)!.videoAlreadyFirst,
+      );
       return;
     }
     queue.selectRemotePath(prev.path);
@@ -479,7 +496,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       final leave = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: AppColors.elevated,
           content: Text(AppLocalizations.of(context)!.confirmCloseVideo),
           actions: [
             TextButton(
@@ -513,16 +529,28 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       case VideoGestureAction.none:
         break;
       case VideoGestureAction.back10s:
-        await _seekBy(const Duration(seconds: -10), label: AppLocalizations.of(context)!.videoGestureBack10s);
+        await _seekBy(
+          const Duration(seconds: -10),
+          label: AppLocalizations.of(context)!.videoGestureBack10s,
+        );
         break;
       case VideoGestureAction.forward10s:
-        await _seekBy(const Duration(seconds: 10), label: AppLocalizations.of(context)!.videoGestureForward10s);
+        await _seekBy(
+          const Duration(seconds: 10),
+          label: AppLocalizations.of(context)!.videoGestureForward10s,
+        );
         break;
       case VideoGestureAction.back30s:
-        await _seekBy(const Duration(seconds: -30), label: AppLocalizations.of(context)!.videoGestureBack30s);
+        await _seekBy(
+          const Duration(seconds: -30),
+          label: AppLocalizations.of(context)!.videoGestureBack30s,
+        );
         break;
       case VideoGestureAction.forward30s:
-        await _seekBy(const Duration(seconds: 30), label: AppLocalizations.of(context)!.videoGestureForward30s);
+        await _seekBy(
+          const Duration(seconds: 30),
+          label: AppLocalizations.of(context)!.videoGestureForward30s,
+        );
         break;
       case VideoGestureAction.toggleRate2x:
         await _applyRate(_rate.value == 2.0 ? 1.0 : 2.0);
@@ -902,7 +930,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   child: Padding(
                     padding: const EdgeInsets.all(8),
                     child: Tooltip(
-                      message: '长按解锁',
+                      message: AppLocalizations.of(context)!
+                          .videoLongPressToUnlock,
                       child: GestureDetector(
                         // Long-press only: a single tap must not unlock, otherwise
                         // an accidental brush against the screen defeats the lock.
@@ -1007,6 +1036,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         : applyBoxFit(BoxFit.contain, Size(ar, 1), slot).destination;
     final videoTop = (size.height - fitted.height) / 2;
     final bandAbove = videoTop - media.padding.top;
+    final scheme = Theme.of(context).colorScheme;
     const stripHeight = 52.0;
     // Portrait: pin to the very top. Landscape: hug the picture's upper edge.
     final hugPicture = landscape && bandAbove > stripHeight;
@@ -1028,7 +1058,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.72),
+              color: scheme.surface.withValues(alpha: 0.94),
               borderRadius: BorderRadius.circular(22),
             ),
             child: Row(
@@ -1045,7 +1075,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      style: TextStyle(color: scheme.onSurface, fontSize: 13),
                     ),
                   ),
                 ),
@@ -1086,6 +1116,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final size = MediaQuery.of(context).size;
     final landscape = size.width > size.height;
     final bottomInset = MediaQuery.of(context).padding.bottom;
+    final scheme = Theme.of(context).colorScheme;
     // Mirror BoxFit.contain for the real aspect ratio (null until known, and we
     // then assume the full slot so the bar stays at the screen bottom).
     final slot = Size(landscape ? size.width : 860.0, size.height);
@@ -1118,7 +1149,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             child: DecoratedBox(
               decoration: BoxDecoration(
                 // Opaque enough to stay legible over bright video.
-                color: Colors.black.withValues(alpha: 0.72),
+                color: scheme.surface.withValues(alpha: 0.94),
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Padding(
@@ -1131,17 +1162,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         if (_queue != null)
                           _TransportButton(
                             icon: Icons.skip_previous,
-                            tooltip: AppLocalizations.of(context)!.videoPrevious,
+                            tooltip: AppLocalizations.of(context)!
+                                .videoPrevious,
                             onTap: _playPrevious,
                           )
                         else
                           const SizedBox(width: 44),
                         _TransportButton(
                           icon: Icons.replay_10,
-                          tooltip: AppLocalizations.of(context)!.videoGestureBack10s,
+                          tooltip: AppLocalizations.of(context)!
+                              .videoGestureBack10s,
                           onTap: () => _seekBy(
                             const Duration(seconds: -10),
-                            label: AppLocalizations.of(context)!.videoGestureBack10s,
+                            label: AppLocalizations.of(context)!
+                                .videoGestureBack10s,
                           ),
                         ),
                         Expanded(
@@ -1153,7 +1187,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                                     icon: playing
                                         ? Icons.pause
                                         : Icons.play_arrow,
-                                    tooltip: playing ? AppLocalizations.of(context)!.pause : AppLocalizations.of(context)!.play,
+                                    tooltip: playing
+                                        ? AppLocalizations.of(context)!.pause
+                                        : AppLocalizations.of(context)!.play,
                                     size: 38,
                                     onTap: _togglePlayPause,
                                   ),
@@ -1162,10 +1198,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         ),
                         _TransportButton(
                           icon: Icons.forward_10,
-                          tooltip: AppLocalizations.of(context)!.videoGestureForward10s,
+                          tooltip: AppLocalizations.of(context)!
+                              .videoGestureForward10s,
                           onTap: () => _seekBy(
                             const Duration(seconds: 10),
-                            label: AppLocalizations.of(context)!.videoGestureForward10s,
+                            label: AppLocalizations.of(context)!
+                                .videoGestureForward10s,
                           ),
                         ),
                         if (_queue != null)
@@ -1183,14 +1221,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       children: [
                         _RoundIconButton(
                           icon: Icons.lock_outline,
-                          tooltip: AppLocalizations.of(context)!.videoLockScreen,
+                          tooltip: AppLocalizations.of(context)!
+                              .videoLockScreen,
                           onTap: _toggleLock,
                         ),
                         // Orientation toggle lives with the controls, not buried
                         // in 更多设置 — it is a primary playback action here.
                         _RoundIconButton(
                           icon: Icons.screen_rotation,
-                          tooltip: AppLocalizations.of(context)!.videoOrientation,
+                          tooltip: AppLocalizations.of(context)!
+                              .videoOrientation,
                           onTap: _toggleOrientation,
                         ),
                         const Spacer(),
@@ -1224,17 +1264,19 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final idx = queue.index;
     final parts = <String>[
       if (idx >= 0) '${idx + 1} / $total' else '— / $total',
-      if (queue.scanning) '扫描中…',
+      if (queue.scanning) AppLocalizations.of(context)!.videoQueueScanning,
     ];
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.5),
+        color: scheme.onSurface.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(
         parts.join(' · '),
-        style: const TextStyle(color: Colors.white70, fontSize: 11),
+        style: Theme.of(context).textTheme.labelMedium
+            ?.copyWith(color: scheme.onSurfaceVariant, fontSize: 11),
       ),
     );
   }
@@ -1256,7 +1298,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             // a nested card here was what made the layout look stacked.
             return Row(
               children: [
-                Text(_fmt(position), style: _timeLabelStyle),
+                Text(
+                  _fmt(position),
+                  style: _timeLabelStyle(Theme.of(context).colorScheme),
+                ),
                 Expanded(
                   child: SliderTheme(
                     data: SliderTheme.of(context).copyWith(
@@ -1286,7 +1331,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                     ),
                   ),
                 ),
-                Text(_fmt(total), style: _timeLabelStyle),
+                Text(
+                  _fmt(total),
+                  style: _timeLabelStyle(Theme.of(context).colorScheme),
+                ),
               ],
             );
           },
@@ -1295,15 +1343,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     );
   }
 
-  /// Time labels need a hard shadow: the scrim is translucent and bright frames
-  /// (snow, sky, white text in the video) swallowed plain white70 text.
-  static const _timeLabelStyle = TextStyle(
-    color: Colors.white,
+  /// Time labels sit on the themed control bar, not on the picture.
+  static TextStyle _timeLabelStyle(ColorScheme scheme) => TextStyle(
+    color: scheme.onSurface,
     fontSize: 12,
-    fontFeatures: [FontFeature.tabularFigures()],
-    shadows: [
-      Shadow(blurRadius: 4, color: Colors.black87, offset: Offset(0, 1)),
-    ],
+    fontFeatures: const [FontFeature.tabularFigures()],
   );
 
   String _fmt(Duration d) {
@@ -1322,7 +1366,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     if (queue == null) return;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -1359,8 +1403,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                               '${i + 1}',
                               style: TextStyle(
                                 color: selected
-                                    ? AppColors.accent
-                                    : AppColors.mutedText,
+                                    ? Theme.of(ctx).colorScheme.primary
+                                    : Theme.of(ctx)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                 fontSize: 12,
                               ),
                             ),
@@ -1370,8 +1416,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 color: selected
-                                    ? AppColors.accent
-                                    : AppColors.onDark,
+                                    ? Theme.of(ctx).colorScheme.primary
+                                    : Theme.of(ctx).colorScheme.onSurface,
                               ),
                             ),
                             subtitle: t.size != null
@@ -1406,7 +1452,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                         Text(
                           AppLocalizations.of(context)!.scanningFolder,
                           style: TextStyle(
-                            color: AppColors.mutedText,
+                            color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                             fontSize: 12,
                           ),
                         ),
@@ -1433,7 +1479,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     var draft = _rate.value;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       isScrollControlled: true,
       shape: AppBottomSheet.shape,
       builder: (ctx) => StatefulBuilder(
@@ -1445,17 +1491,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
             children: [
               Row(
                 children: [
-                  const Icon(Icons.speed, color: AppColors.accent),
+                  Icon(Icons.speed, color: Theme.of(ctx).colorScheme.primary),
                   const SizedBox(width: 8),
-                  const Text(
-                    '播放倍速',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  Text(
+                    AppLocalizations.of(ctx)!.videoPlaybackSpeed,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
                   ),
                   const Spacer(),
                   Text(
                     '${draft.toStringAsFixed(2)}×',
-                    style: const TextStyle(
-                      color: AppColors.accent,
+                    style: TextStyle(
+                      color: Theme.of(ctx).colorScheme.primary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -1478,15 +1527,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 children: [
                   Text(
                     '${SettingsService.minVideoRate.toStringAsFixed(1)}×',
-                    style: const TextStyle(
-                      color: AppColors.mutedText,
+                    style: TextStyle(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                       fontSize: 12,
                     ),
                   ),
                   Text(
                     '${SettingsService.maxVideoRate.toStringAsFixed(1)}×',
-                    style: const TextStyle(
-                      color: AppColors.mutedText,
+                    style: TextStyle(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                       fontSize: 12,
                     ),
                   ),
@@ -1517,11 +1566,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                '长按画面可临时加速（当前 '
-                '${settings.videoLongPressRate.toStringAsFixed(2)}×，'
-                '可在「视频播放设置」中调整）。',
-                style: const TextStyle(
-                  color: AppColors.mutedText,
+                AppLocalizations.of(ctx)!.videoLongPressPictureHint(
+                  settings.videoLongPressRate.toStringAsFixed(2),
+                ),
+                style: TextStyle(
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                   fontSize: 12,
                 ),
               ),
@@ -1546,15 +1595,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       listDirectory: (dir) {
         final id = _subtitleAccountId;
         if (id == null) return Future.value(const <WebDavItem>[]);
-        return webDav.listDirectory(
-          id,
-          dir,
-          fileTypes: settings.fileTypes,
-        );
+        return webDav.listDirectory(id, dir, fileTypes: settings.fileTypes);
       },
       readBytes: (path) {
         final id = _subtitleAccountId;
-        if (id == null) return Future<List<int>>.error(StateError('no account'));
+        if (id == null) {
+          return Future<List<int>>.error(StateError('no account'));
+        }
         return webDav.readAsBytes(id, path);
       },
       setTrack: (track) async {
@@ -1576,8 +1623,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         AppSnack.show(context, message);
       },
     );
-    final locale =
-        settings.appLocale.locale ?? Localizations.localeOf(context);
+    final locale = settings.appLocale.locale ?? Localizations.localeOf(context);
     binder.prepareEpisode(
       uiLanguageKey: uiSubtitleLanguageKey(locale.languageCode),
     );
@@ -1586,7 +1632,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       binder.onTracks(player.state.tracks.subtitle);
     }
     final seed = widget.seed;
-    final known = seed != null &&
+    final known =
+        seed != null &&
             seed.folderListing != null &&
             sameDirectory(item.path, seed.folderPath)
         ? seed.folderListing
@@ -1634,8 +1681,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       rows.add(
         VideoSubtitleSheetRow(
           keyId: 'emb:${cue.id}',
-          title: cue.label.title,
-          formatTag: cue.label.formatTag,
+          title: cue.labelFor(l10n).title,
+          formatTag: cue.labelFor(l10n).formatTag,
         ),
       );
     }
@@ -1643,8 +1690,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       rows.add(
         VideoSubtitleSheetRow(
           keyId: 'side:${hit.path}',
-          title: hit.label.title,
-          formatTag: hit.label.formatTag,
+          title: hit.labelFor(l10n).title,
+          formatTag: hit.labelFor(l10n).formatTag,
         ),
       );
     }
@@ -1744,7 +1791,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
   Future<void> _showMoreSettings() async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       isScrollControlled: true,
       shape: AppBottomSheet.shape,
       builder: (ctx) {
@@ -1756,8 +1803,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(title: Text(AppLocalizations.of(context)!.moreActions), subtitle: Text(AppLocalizations.of(context)!.videoPlayback)),
-              const Divider(height: 1, color: AppColors.divider),
+              ListTile(
+                title: Text(AppLocalizations.of(context)!.moreActions),
+                subtitle: Text(AppLocalizations.of(context)!.videoPlayback),
+              ),
+              Divider(height: 1, color: Theme.of(ctx).colorScheme.outline),
               SwitchListTile(
                 secondary: const Icon(Icons.lock_outline),
                 title: Text(AppLocalizations.of(context)!.videoLockScreen),
@@ -1771,7 +1821,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               SwitchListTile(
                 secondary: const Icon(Icons.screen_lock_rotation_outlined),
                 title: Text(AppLocalizations.of(context)!.videoOrientationLock),
-                subtitle: Text(AppLocalizations.of(context)!.videoOrientationLockHint),
+                subtitle: Text(
+                  AppLocalizations.of(context)!.videoOrientationLockHint,
+                ),
                 value: _rotationLocked.value,
                 onChanged: (_) {
                   _toggleRotationLock();
@@ -1781,7 +1833,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               SwitchListTile(
                 secondary: const Icon(Icons.exit_to_app),
                 title: Text(AppLocalizations.of(context)!.videoExitConfirm),
-                subtitle: Text(AppLocalizations.of(context)!.videoExitConfirmHint),
+                subtitle: Text(
+                  AppLocalizations.of(context)!.videoExitConfirmHint,
+                ),
                 value: settings.videoConfirmExit,
                 onChanged: (v) => settings.setVideoConfirmExit(v),
               ),
@@ -1794,15 +1848,21 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.headset_outlined),
-                title: Text(AppLocalizations.of(context)!.videoBackgroundPlayback),
-                subtitle: Text(AppLocalizations.of(context)!.videoBackgroundPlaybackHint),
+                title: Text(
+                  AppLocalizations.of(context)!.videoBackgroundPlayback,
+                ),
+                subtitle: Text(
+                  AppLocalizations.of(context)!.videoBackgroundPlaybackHint,
+                ),
                 value: settings.videoBackgroundPlayback,
                 onChanged: (v) => settings.setVideoBackgroundPlayback(v),
               ),
               ListTile(
                 leading: const Icon(Icons.touch_app_outlined),
                 title: Text(AppLocalizations.of(context)!.videoGestures),
-                subtitle: Text(AppLocalizations.of(context)!.videoGestureSettingsHint),
+                subtitle: Text(
+                  AppLocalizations.of(context)!.videoGestureSettingsHint,
+                ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -1820,7 +1880,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final settings = context.read<SettingsService>();
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -1843,8 +1903,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
-                      '手势设置',
-                      style: TextStyle(
+                      AppLocalizations.of(ctx)!.videoGestureSettingsTitle,
+                      style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 16,
                       ),
@@ -1853,16 +1913,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   Padding(
                     padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: Text(
-                      '单击显示/隐藏控件，双击中间播放/暂停。',
+                      AppLocalizations.of(ctx)!.videoGestureBasicHint,
                       style: TextStyle(
-                        color: AppColors.mutedText,
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),
                   ),
                   _gestureDropdown(
                     ctx,
-                    label: '左侧双击',
+                    label: AppLocalizations.of(ctx)!.videoGestureLeftDoubleTap,
                     value: left,
                     onChanged: (v) {
                       setLocal(() => left = v);
@@ -1871,7 +1931,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   ),
                   _gestureDropdown(
                     ctx,
-                    label: '右侧双击',
+                    label: AppLocalizations.of(ctx)!.videoGestureRightDoubleTap,
                     value: right,
                     onChanged: (v) {
                       setLocal(() => right = v);
@@ -1880,7 +1940,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   ),
                   _gestureDropdown(
                     ctx,
-                    label: '长按',
+                    label: AppLocalizations.of(ctx)!.videoGestureLongPress,
                     value: long,
                     onChanged: (v) {
                       setLocal(() => long = v);
@@ -1888,16 +1948,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                     },
                   ),
                   if (long == VideoGestureAction.toggleRate2x) ...[
-                    const Divider(height: 24, color: AppColors.divider),
+                    Divider(
+                      height: 24,
+                      color: Theme.of(ctx).colorScheme.outline,
+                    ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
                         children: [
-                          const Expanded(child: Text('长按临时倍速')),
+                          Expanded(
+                            child: Text(
+                              AppLocalizations.of(ctx)!.videoLongPressRate,
+                            ),
+                          ),
                           Text(
                             '${longRate.toStringAsFixed(2)}×',
-                            style: const TextStyle(
-                              color: AppColors.accent,
+                            style: TextStyle(
+                              color: Theme.of(ctx).colorScheme.primary,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -1921,9 +1988,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                     Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
-                        '按住加速，松手恢复。',
+                        AppLocalizations.of(ctx)!.videoHoldReleaseHint,
                         style: TextStyle(
-                          color: AppColors.mutedText,
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
@@ -1952,11 +2019,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           SizedBox(width: 80, child: Text(label)),
           Expanded(
             child: DropdownButton<VideoGestureAction>(
+              borderRadius: BorderRadius.circular(10),
               value: value,
               isExpanded: true,
               items: [
                 for (final a in VideoGestureAction.values)
-                  DropdownMenuItem(value: a, child: Text(a.label(AppLocalizations.of(context)!))),
+                  DropdownMenuItem(
+                    value: a,
+                    child: Text(a.label(AppLocalizations.of(context)!)),
+                  ),
               ],
               onChanged: (v) {
                 if (v != null) onChanged(v);
@@ -2266,7 +2337,7 @@ class _SpeedButton extends StatelessWidget {
       builder: (context, rate, _) => TextButton(
         onPressed: onTap,
         style: TextButton.styleFrom(
-          foregroundColor: Colors.white,
+          foregroundColor: Theme.of(context).colorScheme.onSurface,
           minimumSize: const Size(52, 40),
           padding: const EdgeInsets.symmetric(horizontal: 8),
         ),
@@ -2304,7 +2375,7 @@ class _TransportButton extends StatelessWidget {
       child: IconButton(
         padding: EdgeInsets.zero,
         iconSize: size,
-        icon: Icon(icon, color: Colors.white),
+        icon: Icon(icon, color: Theme.of(context).colorScheme.onSurface),
         tooltip: tooltip,
         onPressed: onTap,
       ),
@@ -2326,7 +2397,7 @@ class _RoundIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: Icon(icon, color: Colors.white),
+      icon: Icon(icon, color: Theme.of(context).colorScheme.onSurface),
       tooltip: tooltip,
       onPressed: onTap,
     );

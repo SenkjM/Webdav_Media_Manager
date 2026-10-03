@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
+import 'stream_window.dart';
 import 'webdav_service.dart';
 
 /// Progressive media queue for the player.
@@ -59,6 +60,7 @@ class VideoQueueController extends ChangeNotifier {
 
   final List<WebDavItem> _tracks = [];
   final Set<String> _knownPaths = {};
+  final Map<String, List<String>> _namesByDir = {};
   String? _currentRemotePath;
   bool _scanning = false;
   bool _scanComplete = false;
@@ -115,6 +117,17 @@ class VideoQueueController extends ChangeNotifier {
   WebDavItem? selectRemotePath(String remotePath) =>
       selectIndex(_tracks.indexWhere((t) => t.path == remotePath));
 
+  /// File names from a directory this scan (or the stream page) already listed.
+  List<String>? namesFor(String remoteFilePath) =>
+      _namesByDir[normDir(directoryOf(remoteFilePath))];
+
+  void noteListing(String dir, List<WebDavItem> items) {
+    _namesByDir[normDir(dir)] = [
+      for (final item in items)
+        if (!item.isDirectory) item.name,
+    ];
+  }
+
   /// Kick off the background scan. Safe to call more than once.
   void startScan() {
     if (_scanning || _scanComplete) return;
@@ -143,6 +156,7 @@ class VideoQueueController extends ChangeNotifier {
             dir,
             fileTypes: _fileTypes,
           );
+          noteListing(dir, items);
           final media = items.where((e) => e.category == category).toList();
           if (deepScan) {
             final dirs = items.where((e) => e.isDirectory).map((e) => e.path);

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
-
 /// 多选工具栏的外壳。网络库与音乐库**共用同一个**，宽度与滚动行为不会再
 /// 各自走样。
 ///
@@ -25,7 +23,7 @@ class SelectionToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppColors.elevated,
+      color: Theme.of(context).colorScheme.surfaceContainer,
       child: SafeArea(
         bottom: false,
         child: LayoutBuilder(

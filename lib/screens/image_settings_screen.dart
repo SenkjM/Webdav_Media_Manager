@@ -16,7 +16,7 @@ class ImageSettingsScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.imageViewer)),
       body: ListView(
         padding: const EdgeInsets.all(16),

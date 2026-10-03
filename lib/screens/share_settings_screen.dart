@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../services/settings_service.dart';
-import '../theme/app_theme.dart';
 
 /// 分享重命名：开关 + 模板。要填模板，所以从设置主页收进二级页。
 class ShareSettingsScreen extends StatelessWidget {
@@ -14,12 +13,15 @@ class ShareSettingsScreen extends StatelessWidget {
     final settings = context.watch<SettingsService>();
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.shareAction)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(l10n.shareRenameHint, style: Theme.of(context).textTheme.bodySmall),
+          Text(
+            l10n.shareRenameHint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.drive_file_rename_outline),
@@ -34,8 +36,7 @@ class ShareSettingsScreen extends StatelessWidget {
             title: Text(l10n.renameTemplate),
             subtitle: Text(
               '${settings.shareTagRenamePattern}\n'
-              '占位符：{artist} {title} {album} {albumArtist} '
-              '{track} {year} {genre} {fileName}',
+              '${l10n.shareRenamePlaceholderList}',
             ),
             isThreeLine: true,
             trailing: const Icon(Icons.edit_outlined),
@@ -46,12 +47,17 @@ class ShareSettingsScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _editPattern(BuildContext context, SettingsService settings) async {
-    final controller = TextEditingController(text: settings.shareTagRenamePattern);
+  Future<void> _editPattern(
+    BuildContext context,
+    SettingsService settings,
+  ) async {
+    final controller = TextEditingController(
+      text: settings.shareTagRenamePattern,
+    );
     final value = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         title: Text(AppLocalizations.of(context)!.shareRenameTemplate),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -65,7 +71,10 @@ class ShareSettingsScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               AppLocalizations.of(context)!.shareRenameTemplateHint,
-              style: const TextStyle(color: AppColors.mutedText, fontSize: 11),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.outline,
+                fontSize: 11,
+              ),
             ),
           ],
         ),

@@ -113,6 +113,19 @@ class VideoPlaybackService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Update the session title after a stream track change.
+  ///
+  /// Does not call [Player.open], so a prefetched playlist stays intact.
+  void retarget(WebDavStreamSource source) {
+    _source = source;
+    _handler.retargetStream(source);
+    notifyListeners();
+  }
+
+  void setStreamArtUri(Uri? artUri) {
+    _handler.setStreamArtUri(artUri);
+  }
+
   /// Apply the user's speed choice and remember it for the next video.
   Future<void> setRate(double rate) async {
     final p = player;

@@ -15,6 +15,7 @@ import '../services/backup_service.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
 import '../services/download_queue_service.dart';
+import '../services/legacy_sentinel_migration.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
 import '../utils/rev_clock.dart';
@@ -172,8 +173,24 @@ class AppState extends ChangeNotifier {
       }
       _syncCoverThumbSize();
       _syncDownloadFileTypes();
+      // Existing schema path first (onCreate / onUpgrade, including account
+      // column compat). The 0.2.2 sentinel only rewrites rows and must not
+      // run against tables the open has not created yet.
+      _initPhase = 'databases';
+      final openedLibrary = await libraryDb.database;
+      final openedPlaylists = await playlists.openDatabase();
+      final openedDownloads = await downloads.openDatabase();
       _initPhase = 'cache';
       await cache.init();
+      _initPhase = 'legacy-sentinels';
+      await migrateLegacySentinelsOnce(
+        libraryDb: openedLibrary,
+        playlistDb: openedPlaylists,
+        downloadDb: openedDownloads,
+        cacheDir: cache.cacheDir,
+        coversDir: await library.covers.coversDir,
+        coversFullDir: await library.covers.coversFullDir,
+      );
       // The rev clock is the single version source sync compares; it starts from
       // the persisted high-water mark and reports every advance back.
       library.attachRevClock(

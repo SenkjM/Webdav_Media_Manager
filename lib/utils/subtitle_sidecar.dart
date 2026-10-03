@@ -1,3 +1,4 @@
+import '../l10n/generated/app_localizations.dart';
 import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 
@@ -169,12 +170,23 @@ class SubtitleRowLabel {
   final String? formatTag;
 }
 
+/// Exact-name sidecars store language `默认` as a stable label, not a language
+/// key. Translate that sentinel (and an empty language) only here.
+String _shownSubtitleLanguage(String language, AppLocalizations l10n) {
+  final trimmed = language.trim();
+  if (trimmed.isEmpty || trimmed == '默认') return l10n.subtitleDefault;
+  return language;
+}
+
 SubtitleRowLabel labelSameDirectorySidecar({
   required String language,
   required String format,
+  required AppLocalizations l10n,
 }) {
-  final title = language.trim().isEmpty ? '默认' : language;
-  return SubtitleRowLabel(title: title, formatTag: format.toLowerCase());
+  return SubtitleRowLabel(
+    title: _shownSubtitleLanguage(language, l10n),
+    formatTag: format.toLowerCase(),
+  );
 }
 
 SubtitleRowLabel labelSubdirectorySidecar({
@@ -187,9 +199,12 @@ SubtitleRowLabel labelSubdirectorySidecar({
   return SubtitleRowLabel(title: title, formatTag: format.toLowerCase());
 }
 
-SubtitleRowLabel labelEmbeddedSubtitle(String language) {
-  final shown = language.trim().isEmpty ? '默认' : language;
-  return SubtitleRowLabel(title: '[内嵌] $shown');
+SubtitleRowLabel labelEmbeddedSubtitle(
+  String language,
+  AppLocalizations l10n,
+) {
+  final shown = _shownSubtitleLanguage(language, l10n);
+  return SubtitleRowLabel(title: l10n.subtitleEmbedded(shown));
 }
 
 SubtitleRowLabel labelManualSubtitle({
@@ -223,8 +238,8 @@ class SidecarHit {
   /// Remote size when the listing provided one. Used to skip huge `.sub` files.
   final int? size;
 
-  SubtitleRowLabel get label => subdirectory == null
-      ? labelSameDirectorySidecar(language: language, format: format)
+  SubtitleRowLabel labelFor(AppLocalizations l10n) => subdirectory == null
+      ? labelSameDirectorySidecar(language: language, format: format, l10n: l10n)
       : labelSubdirectorySidecar(
           subdirectory: subdirectory!,
           language: language,
@@ -248,7 +263,8 @@ class EmbeddedSubtitleCue {
   final String? title;
   final bool isDefault;
 
-  SubtitleRowLabel get label => labelEmbeddedSubtitle(language);
+  SubtitleRowLabel labelFor(AppLocalizations l10n) =>
+      labelEmbeddedSubtitle(language, l10n);
 }
 
 const Set<String> _bitmapSubtitleCodecs = {

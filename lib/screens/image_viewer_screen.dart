@@ -4,24 +4,23 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/webdav_item.dart';
+import '../services/prefetch_cache.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
-import '../utils/audio_extensions.dart';
 import '../utils/image_album.dart';
 import 'image_settings_screen.dart';
 
 /// Fullscreen image viewer for the network library.
 ///
 /// Files are downloaded with [WebDavService.downloadToFile] (WebDAV Basic +
-/// User-Agent, or the cloud driver's raw URL / `openContent` path) into a
-/// private temp directory and decoded with [Image.file]. Nothing here joins
-/// the media session, the download queue, or the music cache.
+/// User-Agent, or the cloud driver's raw URL / `openContent` path) into the
+/// process prefetch cache and decoded with [Image.file]. Completed files stay
+/// until the next launch wipes that cache. Nothing here joins the media
+/// session, the download queue, or the music cache.
 class ImageViewerScreen extends StatefulWidget {
   const ImageViewerScreen({
     super.key,
@@ -46,7 +45,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   late final List<WebDavItem> _seed;
   List<WebDavItem> _album = const [];
   int _index = 0;
-  Directory? _sessionDir;
+  bool _cacheReady = false;
   SettingsService? _settings;
   WebDavService? _webDav;
   Timer? _slide;
@@ -74,7 +73,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      unawaited(_prepareTemp());
+      unawaited(_prepareCache());
       _captureSettings(notify: false);
       _armSlideshow();
       if (_settings?.imageScanSubdirs ?? false) {
@@ -106,14 +105,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     }
     _inflight.clear();
     _settings?.removeListener(_onSettings);
-    final dir = _sessionDir;
-    if (dir != null) {
-      try {
-        dir.deleteSync(recursive: true);
-      } catch (_) {
-        // Temp files are best-effort. The OS will reap the cache dir later.
-      }
-    }
+    // Prefetch bytes stay for this process. The next launch wipes them.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
@@ -160,19 +152,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     }
   }
 
-  Future<void> _prepareTemp() async {
-    final root = await getTemporaryDirectory();
-    final dir = Directory(
-      p.join(root.path, 'image_viewer', '${identityHashCode(this)}'),
-    );
-    await dir.create(recursive: true);
-    if (_disposed) {
-      try {
-        dir.deleteSync(recursive: true);
-      } catch (_) {}
+  Future<void> _prepareCache() async {
+    try {
+      await PrefetchCache.root();
+    } catch (_) {
       return;
     }
-    _sessionDir = dir;
+    if (_disposed) return;
+    _cacheReady = true;
     _syncWindow();
   }
 
@@ -274,8 +261,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   }
 
   void _syncWindow() {
-    final dir = _sessionDir;
-    if (dir == null || _album.isEmpty) return;
+    if (!_cacheReady || _album.isEmpty) return;
     final n = (_settings?.imagePrefetchCount ?? _prefetch).clamp(
       SettingsService.minImagePrefetchCount,
       SettingsService.maxImagePrefetchCount,
@@ -292,40 +278,48 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       if (keep.contains(remote)) continue;
       _inflight.remove(remote)?.cancel('window');
     }
-    for (final remote in _localByRemote.keys.toList()) {
-      if (keep.contains(remote)) continue;
-      final path = _localByRemote.remove(remote);
-      if (path == null) continue;
-      final file = File(path);
-      if (file.existsSync()) {
-        try {
-          file.deleteSync();
-        } catch (_) {}
-      }
-    }
+    // Completed files stay after they leave the window. Only this launch's
+    // startup wipe removes them.
   }
 
   Future<void> _download(WebDavItem item) async {
     final webDav = _webDav;
-    final dir = _sessionDir;
-    if (webDav == null || dir == null || _disposed) return;
+    if (webDav == null || !_cacheReady || _disposed) return;
     final existing = _localByRemote[item.path];
-    if (existing != null && File(existing).existsSync()) return;
+    if (existing != null &&
+        File(existing).existsSync() &&
+        File(existing).lengthSync() > 0) {
+      return;
+    }
     if (_inflight.containsKey(item.path)) return;
     final token = CancelToken();
     _inflight[item.path] = token;
-    final dest = File(
-      p.join(
-        dir.path,
-        '${item.path.hashCode.toUnsigned(32).toRadixString(16)}_${sanitizeFileName(item.name)}',
-      ),
+    final dest = await PrefetchCache.file(
+      bucket: 'images',
+      accountId: widget.accountId,
+      remotePath: item.path,
+      name: item.name,
     );
+    if (PrefetchCache.isComplete(dest)) {
+      _localByRemote[item.path] = dest.path;
+      if (!mounted || _disposed) return;
+      setState(() {
+        if (_current?.path == item.path) {
+          _error = null;
+          _progress = null;
+        }
+      });
+      _precache(dest);
+      _inflight.remove(item.path);
+      return;
+    }
+    final part = File('${dest.path}.part');
     try {
-      if (dest.existsSync()) dest.deleteSync();
+      if (part.existsSync()) part.deleteSync();
       await webDav.downloadToFile(
         widget.accountId,
         item.path,
-        dest,
+        part,
         cancelToken: token,
         onProgress: (received, total) {
           if (!mounted || _disposed || token.isCancelled) return;
@@ -334,9 +328,12 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         },
       );
       if (_disposed || token.isCancelled) {
-        if (dest.existsSync()) dest.deleteSync();
+        if (part.existsSync()) part.deleteSync();
         return;
       }
+      if (!part.existsSync() || part.lengthSync() <= 0) return;
+      if (dest.existsSync()) dest.deleteSync();
+      await part.rename(dest.path);
       _localByRemote[item.path] = dest.path;
       if (!mounted) return;
       setState(() {
@@ -348,16 +345,16 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       _precache(dest);
     } catch (e) {
       if (e is DioException && CancelToken.isCancel(e)) {
-        if (dest.existsSync()) {
+        if (part.existsSync()) {
           try {
-            dest.deleteSync();
+            part.deleteSync();
           } catch (_) {}
         }
         return;
       }
-      if (dest.existsSync()) {
+      if (part.existsSync()) {
         try {
-          dest.deleteSync();
+          part.deleteSync();
         } catch (_) {}
       }
       if (!mounted || _disposed) return;

@@ -1,5 +1,6 @@
 import '../l10n/generated/app_localizations.dart';
 import '../utils/track_identity.dart';
+import 'library_sentinels.dart';
 
 /// Persisted library record. Identity is [musicId] (stable offline hash).
 /// Survives audio cache deletion; [coverPath] is a small local thumb only.
@@ -112,14 +113,15 @@ class LibraryTrack {
     return fileName;
   }
 
+  /// Grouping key. Empty artist is [kUnknownArtist], never a localized word,
+  /// so a real tag of that word stays a separate group.
   String get displayArtist {
     final a = artist?.trim();
     if (a != null && a.isNotEmpty) return a;
-    return '未知艺术家';
+    return kUnknownArtist;
   }
 
-  /// Locale-aware render of [displayArtist]; the raw getter keeps a stable
-  /// '未知艺术家' fallback for grouping/metadata consumers.
+  /// Locale-aware render of [displayArtist].
   String displayArtistFor(AppLocalizations l10n) {
     final a = artist?.trim();
     if (a != null && a.isNotEmpty) return a;
@@ -132,14 +134,14 @@ class LibraryTrack {
     return displayArtist;
   }
 
+  /// Grouping key. Empty album is [kUnknownAlbum], never a localized word.
   String get displayAlbum {
     final a = album?.trim();
     if (a != null && a.isNotEmpty) return a;
-    return '未知专辑';
+    return kUnknownAlbum;
   }
 
-  /// Locale-aware render of [displayAlbum]; raw fallback ('未知专辑') stays a
-  /// stable grouping sentinel.
+  /// Locale-aware render of [displayAlbum].
   String displayAlbumFor(AppLocalizations l10n) {
     final a = album?.trim();
     if (a != null && a.isNotEmpty) return a;

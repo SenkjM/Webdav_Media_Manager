@@ -12,6 +12,7 @@ import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/playlist_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import '../widgets/library_cover_art.dart';
 
 class PlaylistDetailScreen extends StatelessWidget {
@@ -48,7 +49,7 @@ class PlaylistDetailScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(
           isUnnamedPlaylistName(pl.name)
@@ -68,7 +69,9 @@ class PlaylistDetailScreen extends StatelessWidget {
               child: Text(
                 AppLocalizations.of(context)!.playlistEmpty,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.secondaryText),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           : ListView(
@@ -91,7 +94,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                   ListTile(
                     leading: const Icon(Icons.music_off_outlined),
                     title: Text(e.title ?? e.remotePath.split('/').last),
-                    subtitle: Text(
+                    subtitle: MetaText(
                       AppLocalizations.of(context)!
                           .playlistMissingInLibrary(e.sourceName),
                     ),
@@ -124,7 +127,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                     final t = all[i];
                     return ListTile(
                       title: Text(t.displayTitle),
-                      subtitle: Text(t.displayArtist),
+                      subtitle: Text(t.displayArtistFor(l10n)),
                       onTap: () => Navigator.pop(ctx, t),
                     );
                   },
@@ -178,7 +181,9 @@ class _PlaylistTrackTile extends StatelessWidget {
       title: Text(
         track.displayTitle,
         style: TextStyle(
-          color: isLocal ? AppColors.onDark : AppColors.secondaryText,
+          color: isLocal
+              ? Theme.of(context).colorScheme.onSurface
+              : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
       subtitle: Text(
@@ -186,8 +191,8 @@ class _PlaylistTrackTile extends StatelessWidget {
           if (track.isCueVirtual)
             AppLocalizations.of(context)!.cueMultiSliceLabel,
           if (!isLocal) AppLocalizations.of(context)!.notDownloaded,
-          track.displayArtist,
-          if (isLocal) track.displayAlbum,
+          track.displayArtistFor(AppLocalizations.of(context)!),
+          if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
         ].join(' · '),
       ),
       trailing: Row(

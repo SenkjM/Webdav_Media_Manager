@@ -52,6 +52,39 @@ class AppLocalizationsZh extends AppLocalizations {
   String get languageSettingSubtitle => '选择应用显示语言，重启后仍会保留';
 
   @override
+  String get themeMode => '主题';
+
+  @override
+  String get themeModeSubtitle => '浅色、深色，或跟随系统';
+
+  @override
+  String get themeModeSystem => '跟随系统';
+
+  @override
+  String get themeModeLight => '浅色';
+
+  @override
+  String get themeModeDark => '深色';
+
+  @override
+  String get themeSeed => '主题色';
+
+  @override
+  String get themeSeedSubtitle => '浅色和深色都由这一个颜色生成';
+
+  @override
+  String get themeSeedReset => '恢复默认';
+
+  @override
+  String get themeSeedHue => '色相';
+
+  @override
+  String get themeSeedSaturation => '饱和度';
+
+  @override
+  String get themeSeedValue => '明度';
+
+  @override
   String get library => '音乐库';
 
   @override
@@ -245,6 +278,29 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scanSubdirectoriesHint => '打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。';
 
   @override
+  String get streamSidecarCover => '同目录封面';
+
+  @override
+  String get streamSidecarCoverHint => '按文件名在同一目录找封面图。默认关闭。找不到时仍显示占位图。';
+
+  @override
+  String get streamSidecarNames => '封面文件名';
+
+  @override
+  String get streamSidecarNamesHint =>
+      '用逗号或空格分隔。歌曲文件名（不含扩展名）总会再试一次。只认 jpg、jpeg、png、webp。同名只是扩展名不同时优先 jpg。斜杠会被去掉，不会进子目录。';
+
+  @override
+  String get streamPrefetchBackward => '向前预载';
+
+  @override
+  String get streamPrefetchForward => '向后预载';
+
+  @override
+  String get streamPrefetchHint =>
+      '一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。';
+
+  @override
   String get downloadPending => '等待中';
 
   @override
@@ -284,11 +340,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get clearAllQueue => '清除所有队列';
 
   @override
-  String get cueAlbum => 'CUE 专辑';
+  String get cueAlbum => 'CUE';
 
   @override
   String songCount(Object count) {
-    return '$count 首歌';
+    return '$count 首';
   }
 
   @override
@@ -859,7 +915,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return '库中暂无 · $name';
+    return '暂无 · $name';
   }
 
   @override
@@ -894,9 +950,6 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get back => '返回';
-
-  @override
-  String get streamingNotCached => '流式传输 · 未缓存';
 
   @override
   String seekSeconds(Object seconds) {
@@ -2028,12 +2081,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String netCueGroupTitle(Object tracks) {
-    return '多歌曲合并分片 · CUE · $tracks 曲';
+    return '$tracks 曲';
   }
 
   @override
   String netCueGroupTitleMulti(Object files, Object tracks) {
-    return '多歌曲合并分片 · CUE · $tracks 曲 · $files 个音频文件';
+    return '$tracks 曲 · $files';
   }
 
   @override
@@ -3610,6 +3663,93 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get videoSubtitleLoadFailed => '字幕加载失败';
+
+  @override
+  String notificationDiagnosticAllowed(Object channel, Object status) {
+    return '通知权限：已允许｜通道「$channel」：$status';
+  }
+
+  @override
+  String notificationDiagnosticDenied(Object channel, Object status) {
+    return '通知权限：未允许｜通道「$channel」：$status';
+  }
+
+  @override
+  String get openSystemSettings => '打开系统设置';
+
+  @override
+  String get requestNotificationPermission => '请求通知权限';
+
+  @override
+  String get settingsSyncSharedPath => '凭证 / 歌单 / 音乐库 / 备份共用一条远端路径：';
+
+  @override
+  String get settingsPlaybackFooter => '音乐先下载再本地播放；视频直接流式播放并按文件夹连播。';
+
+  @override
+  String get shareRenamePlaceholderList =>
+      '占位符：{artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}';
+
+  @override
+  String coverThumbSizeCurrent(Object px) {
+    return '当前：$px×$px';
+  }
+
+  @override
+  String videoPlaybackError(Object error) {
+    return '播放错误：$error';
+  }
+
+  @override
+  String videoSwitchFailed(Object error) {
+    return '切换视频失败：$error';
+  }
+
+  @override
+  String get videoEndStillScanning => '已到列表末尾（仍在扫描文件夹…）';
+
+  @override
+  String get videoAlreadyLast => '已是最后一个视频';
+
+  @override
+  String get videoPlayFromStart => '从头播放';
+
+  @override
+  String get videoAtFirstStillScanning => '已是第一个视频（仍在扫描文件夹…）';
+
+  @override
+  String get videoAlreadyFirst => '已是第一个视频';
+
+  @override
+  String get videoLongPressToUnlock => '长按解锁';
+
+  @override
+  String get videoQueueScanning => '扫描中…';
+
+  @override
+  String get videoPlaybackSpeed => '播放倍速';
+
+  @override
+  String videoLongPressPictureHint(Object rate) {
+    return '长按画面可临时加速（当前 $rate×，可在「视频播放设置」中调整）。';
+  }
+
+  @override
+  String get videoGestureSettingsTitle => '手势设置';
+
+  @override
+  String get videoGestureBasicHint => '单击显示/隐藏控件，双击中间播放/暂停。';
+
+  @override
+  String get videoHoldReleaseHint => '按住加速，松手恢复。';
+
+  @override
+  String get subtitleDefault => '默认';
+
+  @override
+  String subtitleEmbedded(Object language) {
+    return '[内嵌] $language';
+  }
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -3657,6 +3797,39 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get languageSettingSubtitle => '選擇應用程式顯示語言，重新啟動後仍會保留';
+
+  @override
+  String get themeMode => '主題';
+
+  @override
+  String get themeModeSubtitle => '淺色、深色，或跟隨系統';
+
+  @override
+  String get themeModeSystem => '跟隨系統';
+
+  @override
+  String get themeModeLight => '淺色';
+
+  @override
+  String get themeModeDark => '深色';
+
+  @override
+  String get themeSeed => '主題色';
+
+  @override
+  String get themeSeedSubtitle => '淺色和深色都由這一個顏色生成';
+
+  @override
+  String get themeSeedReset => '恢復預設';
+
+  @override
+  String get themeSeedHue => '色相';
+
+  @override
+  String get themeSeedSaturation => '飽和度';
+
+  @override
+  String get themeSeedValue => '明度';
 
   @override
   String get library => '音樂庫';
@@ -3852,6 +4025,29 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get scanSubdirectoriesHint => '開啟：目前目錄及所有子目錄的音訊都加入清單。關閉：只列出目前這一層。';
 
   @override
+  String get streamSidecarCover => '同目錄封面';
+
+  @override
+  String get streamSidecarCoverHint => '按檔名在同一目錄找封面圖。預設關閉。找不到時仍顯示佔位圖。';
+
+  @override
+  String get streamSidecarNames => '封面檔名';
+
+  @override
+  String get streamSidecarNamesHint =>
+      '用逗號或空格分隔。歌曲檔名（不含副檔名）總會再試一次。只認 jpg、jpeg、png、webp。同名只是副檔名不同時優先 jpg。斜線會被去掉，不會進子目錄。';
+
+  @override
+  String get streamPrefetchBackward => '向前預載';
+
+  @override
+  String get streamPrefetchForward => '向後預載';
+
+  @override
+  String get streamPrefetchHint =>
+      '一次只預載一首：先向前（上一首方向），再向後。已經在播放清單裡、或快取檔案已經完整的，不會再取。0 表示該方向不預載。滑出視窗不刪，下次啟動才清空。';
+
+  @override
   String get downloadPending => '等待中';
 
   @override
@@ -3891,11 +4087,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get clearAllQueue => '清除所有佇列';
 
   @override
-  String get cueAlbum => 'CUE 專輯';
+  String get cueAlbum => 'CUE';
 
   @override
   String songCount(Object count) {
-    return '$count 首歌';
+    return '$count 首';
   }
 
   @override
@@ -4467,7 +4663,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return '庫中暫無 · $name';
+    return '暫無 · $name';
   }
 
   @override
@@ -4502,9 +4698,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get back => '返回';
-
-  @override
-  String get streamingNotCached => '串流傳輸 · 未快取';
 
   @override
   String seekSeconds(Object seconds) {
@@ -5636,12 +5829,12 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String netCueGroupTitle(Object tracks) {
-    return '多歌曲合併分片 · CUE · $tracks 曲';
+    return '$tracks 曲';
   }
 
   @override
   String netCueGroupTitleMulti(Object files, Object tracks) {
-    return '多歌曲合併分片 · CUE · $tracks 曲 · $files 個音訊檔案';
+    return '$tracks 曲 · $files';
   }
 
   @override
@@ -7218,4 +7411,91 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get videoSubtitleLoadFailed => '字幕載入失敗';
+
+  @override
+  String notificationDiagnosticAllowed(Object channel, Object status) {
+    return '通知權限：已允許｜頻道「$channel」：$status';
+  }
+
+  @override
+  String notificationDiagnosticDenied(Object channel, Object status) {
+    return '通知權限：未允許｜頻道「$channel」：$status';
+  }
+
+  @override
+  String get openSystemSettings => '開啟系統設定';
+
+  @override
+  String get requestNotificationPermission => '請求通知權限';
+
+  @override
+  String get settingsSyncSharedPath => '憑證 / 歌單 / 音樂庫 / 備份共用一條遠端路徑：';
+
+  @override
+  String get settingsPlaybackFooter => '音樂先下載再本機播放；影片直接串流播放並依資料夾連續播放。';
+
+  @override
+  String get shareRenamePlaceholderList =>
+      '佔位符：{artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}';
+
+  @override
+  String coverThumbSizeCurrent(Object px) {
+    return '目前：$px×$px';
+  }
+
+  @override
+  String videoPlaybackError(Object error) {
+    return '播放錯誤：$error';
+  }
+
+  @override
+  String videoSwitchFailed(Object error) {
+    return '切換影片失敗：$error';
+  }
+
+  @override
+  String get videoEndStillScanning => '已到清單末尾（仍在掃描資料夾…）';
+
+  @override
+  String get videoAlreadyLast => '已是最後一個影片';
+
+  @override
+  String get videoPlayFromStart => '從頭播放';
+
+  @override
+  String get videoAtFirstStillScanning => '已是第一個影片（仍在掃描資料夾…）';
+
+  @override
+  String get videoAlreadyFirst => '已是第一個影片';
+
+  @override
+  String get videoLongPressToUnlock => '長按解鎖';
+
+  @override
+  String get videoQueueScanning => '掃描中…';
+
+  @override
+  String get videoPlaybackSpeed => '播放倍速';
+
+  @override
+  String videoLongPressPictureHint(Object rate) {
+    return '長按畫面可暫時加速（目前 $rate×，可在「影片播放設定」中調整）。';
+  }
+
+  @override
+  String get videoGestureSettingsTitle => '手勢設定';
+
+  @override
+  String get videoGestureBasicHint => '單擊顯示/隱藏控制項，雙擊中間播放/暫停。';
+
+  @override
+  String get videoHoldReleaseHint => '按住加速，放手恢復。';
+
+  @override
+  String get subtitleDefault => '預設';
+
+  @override
+  String subtitleEmbedded(Object language) {
+    return '[內嵌] $language';
+  }
 }

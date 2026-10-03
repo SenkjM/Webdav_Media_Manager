@@ -53,6 +53,40 @@ class AppLocalizationsEn extends AppLocalizations {
       'Choose the app language; your choice is kept after restart';
 
   @override
+  String get themeMode => 'Theme';
+
+  @override
+  String get themeModeSubtitle => 'Light, dark, or follow the system';
+
+  @override
+  String get themeModeSystem => 'Follow system';
+
+  @override
+  String get themeModeLight => 'Light';
+
+  @override
+  String get themeModeDark => 'Dark';
+
+  @override
+  String get themeSeed => 'Theme color';
+
+  @override
+  String get themeSeedSubtitle =>
+      'Light and dark are both generated from this one color';
+
+  @override
+  String get themeSeedReset => 'Reset';
+
+  @override
+  String get themeSeedHue => 'Hue';
+
+  @override
+  String get themeSeedSaturation => 'Saturation';
+
+  @override
+  String get themeSeedValue => 'Brightness';
+
+  @override
   String get library => 'Music library';
 
   @override
@@ -250,6 +284,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'On: include audio in this directory and all subdirectories. Off: list only this directory.';
 
   @override
+  String get streamSidecarCover => 'Same-directory cover';
+
+  @override
+  String get streamSidecarCoverHint =>
+      'Match a cover image in the same folder by file name. Off by default. A miss still shows the placeholder.';
+
+  @override
+  String get streamSidecarNames => 'Cover file names';
+
+  @override
+  String get streamSidecarNamesHint =>
+      'Separate names with commas or spaces. The audio file name without its extension is always tried as well. Only jpg, jpeg, png, and webp are considered. When several files share a name and differ only by extension, jpg is preferred. Slashes are removed, so names cannot select a subdirectory.';
+
+  @override
+  String get streamPrefetchBackward => 'Prefetch behind';
+
+  @override
+  String get streamPrefetchForward => 'Prefetch ahead';
+
+  @override
+  String get streamPrefetchHint =>
+      'One file at a time: backward (previous tracks) first, then forward. A track already in the player list, or already a complete cache file, is not fetched again. 0 disables that direction. Files that leave the window stay until the next launch.';
+
+  @override
   String get downloadPending => 'Waiting';
 
   @override
@@ -289,11 +347,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get clearAllQueue => 'Clear all queue entries';
 
   @override
-  String get cueAlbum => 'CUE album';
+  String get cueAlbum => 'CUE';
 
   @override
   String songCount(Object count) {
-    return '$count songs';
+    return '$count';
   }
 
   @override
@@ -885,7 +943,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return 'Not in library · $name';
+    return 'Missing · $name';
   }
 
   @override
@@ -922,9 +980,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get back => 'Back';
-
-  @override
-  String get streamingNotCached => 'Streaming · not cached';
 
   @override
   String seekSeconds(Object seconds) {
@@ -2104,12 +2159,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String netCueGroupTitle(Object tracks) {
-    return 'Multi-song merged segment · CUE · $tracks tracks';
+    return '$tracks';
   }
 
   @override
   String netCueGroupTitleMulti(Object files, Object tracks) {
-    return 'Multi-song merged segment · CUE · $tracks tracks · $files audio files';
+    return '$tracks · $files';
   }
 
   @override
@@ -3779,4 +3834,96 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get videoSubtitleLoadFailed => 'Could not load the subtitle';
+
+  @override
+  String notificationDiagnosticAllowed(Object channel, Object status) {
+    return 'Notifications: allowed | Channel \"$channel\": $status';
+  }
+
+  @override
+  String notificationDiagnosticDenied(Object channel, Object status) {
+    return 'Notifications: not allowed | Channel \"$channel\": $status';
+  }
+
+  @override
+  String get openSystemSettings => 'Open system settings';
+
+  @override
+  String get requestNotificationPermission => 'Request notification permission';
+
+  @override
+  String get settingsSyncSharedPath =>
+      'Credentials, playlists, the library, and backups share one remote path:';
+
+  @override
+  String get settingsPlaybackFooter =>
+      'Music is downloaded before local playback. Video streams directly and continues through the folder.';
+
+  @override
+  String get shareRenamePlaceholderList =>
+      'Placeholders: {artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}';
+
+  @override
+  String coverThumbSizeCurrent(Object px) {
+    return 'Current: $px×$px';
+  }
+
+  @override
+  String videoPlaybackError(Object error) {
+    return 'Playback error: $error';
+  }
+
+  @override
+  String videoSwitchFailed(Object error) {
+    return 'Couldn\'t switch video: $error';
+  }
+
+  @override
+  String get videoEndStillScanning =>
+      'End of the list (still scanning the folder…)';
+
+  @override
+  String get videoAlreadyLast => 'This is the last video';
+
+  @override
+  String get videoPlayFromStart => 'Play from the start';
+
+  @override
+  String get videoAtFirstStillScanning =>
+      'This is the first video (still scanning the folder…)';
+
+  @override
+  String get videoAlreadyFirst => 'This is the first video';
+
+  @override
+  String get videoLongPressToUnlock => 'Long-press to unlock';
+
+  @override
+  String get videoQueueScanning => 'Scanning…';
+
+  @override
+  String get videoPlaybackSpeed => 'Playback speed';
+
+  @override
+  String videoLongPressPictureHint(Object rate) {
+    return 'Long-press the picture to temporarily speed up (currently $rate×; change it in Video playback settings).';
+  }
+
+  @override
+  String get videoGestureSettingsTitle => 'Gesture settings';
+
+  @override
+  String get videoGestureBasicHint =>
+      'Tap to show or hide controls. Double-tap the center to play or pause.';
+
+  @override
+  String get videoHoldReleaseHint => 'Hold to speed up, release to restore.';
+
+  @override
+  String get subtitleDefault => 'Default';
+
+  @override
+  String subtitleEmbedded(Object language) {
+    return '[Embedded] $language';
+  }
 }

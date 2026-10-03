@@ -183,6 +183,72 @@ abstract class AppLocalizations {
   /// **'选择应用显示语言，重启后仍会保留'**
   String get languageSettingSubtitle;
 
+  /// No description provided for @themeMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'主题'**
+  String get themeMode;
+
+  /// No description provided for @themeModeSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'浅色、深色，或跟随系统'**
+  String get themeModeSubtitle;
+
+  /// No description provided for @themeModeSystem.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟随系统'**
+  String get themeModeSystem;
+
+  /// No description provided for @themeModeLight.
+  ///
+  /// In zh, this message translates to:
+  /// **'浅色'**
+  String get themeModeLight;
+
+  /// No description provided for @themeModeDark.
+  ///
+  /// In zh, this message translates to:
+  /// **'深色'**
+  String get themeModeDark;
+
+  /// No description provided for @themeSeed.
+  ///
+  /// In zh, this message translates to:
+  /// **'主题色'**
+  String get themeSeed;
+
+  /// No description provided for @themeSeedSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'浅色和深色都由这一个颜色生成'**
+  String get themeSeedSubtitle;
+
+  /// No description provided for @themeSeedReset.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复默认'**
+  String get themeSeedReset;
+
+  /// No description provided for @themeSeedHue.
+  ///
+  /// In zh, this message translates to:
+  /// **'色相'**
+  String get themeSeedHue;
+
+  /// No description provided for @themeSeedSaturation.
+  ///
+  /// In zh, this message translates to:
+  /// **'饱和度'**
+  String get themeSeedSaturation;
+
+  /// No description provided for @themeSeedValue.
+  ///
+  /// In zh, this message translates to:
+  /// **'明度'**
+  String get themeSeedValue;
+
   /// No description provided for @library.
   ///
   /// In zh, this message translates to:
@@ -561,6 +627,48 @@ abstract class AppLocalizations {
   /// **'打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。'**
   String get scanSubdirectoriesHint;
 
+  /// No description provided for @streamSidecarCover.
+  ///
+  /// In zh, this message translates to:
+  /// **'同目录封面'**
+  String get streamSidecarCover;
+
+  /// No description provided for @streamSidecarCoverHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'按文件名在同一目录找封面图。默认关闭。找不到时仍显示占位图。'**
+  String get streamSidecarCoverHint;
+
+  /// No description provided for @streamSidecarNames.
+  ///
+  /// In zh, this message translates to:
+  /// **'封面文件名'**
+  String get streamSidecarNames;
+
+  /// No description provided for @streamSidecarNamesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用逗号或空格分隔。歌曲文件名（不含扩展名）总会再试一次。只认 jpg、jpeg、png、webp。同名只是扩展名不同时优先 jpg。斜杠会被去掉，不会进子目录。'**
+  String get streamSidecarNamesHint;
+
+  /// No description provided for @streamPrefetchBackward.
+  ///
+  /// In zh, this message translates to:
+  /// **'向前预载'**
+  String get streamPrefetchBackward;
+
+  /// No description provided for @streamPrefetchForward.
+  ///
+  /// In zh, this message translates to:
+  /// **'向后预载'**
+  String get streamPrefetchForward;
+
+  /// No description provided for @streamPrefetchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。'**
+  String get streamPrefetchHint;
+
   /// No description provided for @downloadPending.
   ///
   /// In zh, this message translates to:
@@ -642,13 +750,13 @@ abstract class AppLocalizations {
   /// No description provided for @cueAlbum.
   ///
   /// In zh, this message translates to:
-  /// **'CUE 专辑'**
+  /// **'CUE'**
   String get cueAlbum;
 
   /// No description provided for @songCount.
   ///
   /// In zh, this message translates to:
-  /// **'{count} 首歌'**
+  /// **'{count} 首'**
   String songCount(Object count);
 
   /// No description provided for @inProgress.
@@ -1656,7 +1764,7 @@ abstract class AppLocalizations {
   /// No description provided for @playlistMissingInLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'库中暂无 · {name}'**
+  /// **'暂无 · {name}'**
   String playlistMissingInLibrary(Object name);
 
   /// No description provided for @libraryEmpty.
@@ -1724,12 +1832,6 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'返回'**
   String get back;
-
-  /// No description provided for @streamingNotCached.
-  ///
-  /// In zh, this message translates to:
-  /// **'流式传输 · 未缓存'**
-  String get streamingNotCached;
 
   /// No description provided for @seekSeconds.
   ///
@@ -3615,13 +3717,13 @@ abstract class AppLocalizations {
   /// No description provided for @netCueGroupTitle.
   ///
   /// In zh, this message translates to:
-  /// **'多歌曲合并分片 · CUE · {tracks} 曲'**
+  /// **'{tracks} 曲'**
   String netCueGroupTitle(Object tracks);
 
   /// No description provided for @netCueGroupTitleMulti.
   ///
   /// In zh, this message translates to:
-  /// **'多歌曲合并分片 · CUE · {tracks} 曲 · {files} 个音频文件'**
+  /// **'{tracks} 曲 · {files}'**
   String netCueGroupTitleMulti(Object files, Object tracks);
 
   /// No description provided for @netCueGroupSubtitle.
@@ -6310,6 +6412,150 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'字幕加载失败'**
   String get videoSubtitleLoadFailed;
+
+  /// No description provided for @notificationDiagnosticAllowed.
+  ///
+  /// In zh, this message translates to:
+  /// **'通知权限：已允许｜通道「{channel}」：{status}'**
+  String notificationDiagnosticAllowed(Object channel, Object status);
+
+  /// No description provided for @notificationDiagnosticDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'通知权限：未允许｜通道「{channel}」：{status}'**
+  String notificationDiagnosticDenied(Object channel, Object status);
+
+  /// No description provided for @openSystemSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开系统设置'**
+  String get openSystemSettings;
+
+  /// No description provided for @requestNotificationPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求通知权限'**
+  String get requestNotificationPermission;
+
+  /// No description provided for @settingsSyncSharedPath.
+  ///
+  /// In zh, this message translates to:
+  /// **'凭证 / 歌单 / 音乐库 / 备份共用一条远端路径：'**
+  String get settingsSyncSharedPath;
+
+  /// No description provided for @settingsPlaybackFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐先下载再本地播放；视频直接流式播放并按文件夹连播。'**
+  String get settingsPlaybackFooter;
+
+  /// No description provided for @shareRenamePlaceholderList.
+  ///
+  /// In zh, this message translates to:
+  /// **'占位符：\'{artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}\''**
+  String get shareRenamePlaceholderList;
+
+  /// No description provided for @coverThumbSizeCurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前：{px}×{px}'**
+  String coverThumbSizeCurrent(Object px);
+
+  /// No description provided for @videoPlaybackError.
+  ///
+  /// In zh, this message translates to:
+  /// **'播放错误：{error}'**
+  String videoPlaybackError(Object error);
+
+  /// No description provided for @videoSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换视频失败：{error}'**
+  String videoSwitchFailed(Object error);
+
+  /// No description provided for @videoEndStillScanning.
+  ///
+  /// In zh, this message translates to:
+  /// **'已到列表末尾（仍在扫描文件夹…）'**
+  String get videoEndStillScanning;
+
+  /// No description provided for @videoAlreadyLast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是最后一个视频'**
+  String get videoAlreadyLast;
+
+  /// No description provided for @videoPlayFromStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'从头播放'**
+  String get videoPlayFromStart;
+
+  /// No description provided for @videoAtFirstStillScanning.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是第一个视频（仍在扫描文件夹…）'**
+  String get videoAtFirstStillScanning;
+
+  /// No description provided for @videoAlreadyFirst.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是第一个视频'**
+  String get videoAlreadyFirst;
+
+  /// No description provided for @videoLongPressToUnlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按解锁'**
+  String get videoLongPressToUnlock;
+
+  /// No description provided for @videoQueueScanning.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描中…'**
+  String get videoQueueScanning;
+
+  /// No description provided for @videoPlaybackSpeed.
+  ///
+  /// In zh, this message translates to:
+  /// **'播放倍速'**
+  String get videoPlaybackSpeed;
+
+  /// No description provided for @videoLongPressPictureHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按画面可临时加速（当前 {rate}×，可在「视频播放设置」中调整）。'**
+  String videoLongPressPictureHint(Object rate);
+
+  /// No description provided for @videoGestureSettingsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'手势设置'**
+  String get videoGestureSettingsTitle;
+
+  /// No description provided for @videoGestureBasicHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'单击显示/隐藏控件，双击中间播放/暂停。'**
+  String get videoGestureBasicHint;
+
+  /// No description provided for @videoHoldReleaseHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'按住加速，松手恢复。'**
+  String get videoHoldReleaseHint;
+
+  /// No description provided for @subtitleDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认'**
+  String get subtitleDefault;
+
+  /// No description provided for @subtitleEmbedded.
+  ///
+  /// In zh, this message translates to:
+  /// **'[内嵌] {language}'**
+  String subtitleEmbedded(Object language);
 }
 
 class _AppLocalizationsDelegate

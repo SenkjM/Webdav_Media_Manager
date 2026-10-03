@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -10,13 +11,16 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/file_type_config.dart';
 import '../models/music_stream.dart';
-import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
+import '../services/accounts_service.dart';
+import '../services/audio_player_service.dart';
+import '../services/audio_stream_engine.dart';
+import '../services/library_service.dart';
 import '../services/settings_service.dart';
+import '../services/stream_window.dart';
 import '../services/video_playback_service.dart';
 import '../services/video_queue_controller.dart';
 import '../services/webdav_service.dart';
-import '../theme/app_theme.dart';
 import '../utils/audio_extensions.dart';
 import 'video_player_screen.dart' show VideoQueueSeed;
 
@@ -81,23 +85,13 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   /// 进页面时读一次，按一下就写回去。
   MusicStreamPlayMode _mode = MusicStreamPlayMode.sequential;
 
+  AudioStreamEngine? _engine;
+  SettingsService? _settings;
+  String? _coverPath;
+
   /// 播放列表面板的搜索框。控制器挂在 State 上，面板关掉也不丢已输入的字。
   final TextEditingController _playlistSearch = TextEditingController();
   String _playlistFilter = '';
-
-  Future<WebDavStreamSource?> _sourceFor(WebDavItem item) async {
-    final accountId =
-        widget.source?.accountId ??
-        _playback?.source?.accountId ??
-        widget.seed?.accountId;
-    if (accountId == null) return null;
-    return context.read<WebDavService>().resolveStreamSource(
-      remotePath: item.path,
-      name: item.name,
-      accountId: accountId,
-      kind: StreamKind.music,
-    );
-  }
 
   @override
   void initState() {
@@ -122,12 +116,82 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
       _queue!.addListener(_onQueueChanged);
       _queue!.startScan();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _openInitial());
+    final settings = context.read<SettingsService>();
+    _settings = settings;
+    settings.addListener(_onStreamSettings);
+    _engine = AudioStreamEngine(
+      webDav: context.read<WebDavService>(),
+      playback: context.read<VideoPlaybackService>(),
+      accountId: widget.source?.accountId ?? widget.seed?.accountId ?? '',
+      tracks: () => _queue?.tracks ?? const [],
+      currentIndex: () => _queue?.index ?? -1,
+      backward: () => _settings?.audioStreamPrefetchBackward ?? 1,
+      forward: () => _settings?.audioStreamPrefetchForward ?? 1,
+      sidecarEnabled: () => _settings?.audioStreamSidecarCover ?? false,
+      sidecarNames: () =>
+          _settings?.audioStreamSidecarNames ??
+          SettingsService.defaultSidecarNames,
+      onCover: (path) {
+        if (!mounted) return;
+        setState(() => _coverPath = path);
+      },
+      namesFor: (path) => _queue?.namesFor(path),
+      listNames: _listCoverNames,
+      libraryCover: _libraryCover,
+      isActive: () => mounted,
+    );
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _pauseLocalPlaybackAndOpen(),
+    );
+  }
+
+  void _onStreamSettings() => _engine?.nudge();
+
+  String? _libraryCover(String remotePath) {
+    if (!mounted) return null;
+    final id = _engine?.accountId;
+    if (id == null || id.isEmpty) return null;
+    final account = context.read<AccountsService>().accountById(id);
+    if (account == null) return null;
+    final cover = context
+        .read<LibraryService>()
+        .find(account.name, remotePath)
+        ?.coverPath;
+    if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
+      return null;
+    }
+    return cover;
+  }
+
+  Future<List<String>> _listCoverNames(String remotePath) async {
+    if (!mounted) return const [];
+    final known = _queue?.namesFor(remotePath);
+    if (known != null) return known;
+    final id = _engine?.accountId;
+    if (id == null || id.isEmpty) return const [];
+    final dir = directoryOf(remotePath);
+    final items = await context.read<WebDavService>().listDirectory(id, dir);
+    if (!mounted) return const [];
+    _queue?.noteListing(dir, items);
+    return [
+      for (final item in items)
+        if (!item.isDirectory) item.name,
+    ];
+  }
+
+  /// Pause local music before this screen takes over the shared media session.
+  /// The queue remains intact; leaving this page must not resume it.
+  Future<void> _pauseLocalPlaybackAndOpen() async {
+    if (!mounted) return;
+    await context.read<AudioPlayerService>().pauseForVideo();
+    if (!mounted) return;
+    await _openInitial();
   }
 
   void _onQueueChanged() {
     if (!mounted) return;
     setState(() {});
+    _engine?.nudge();
   }
 
   /// 界面先落地：已带 source 直接开流；否则先在页内异步解析源。
@@ -162,21 +226,13 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     setState(() {
       _opening = true;
       _error = null;
+      _coverPath = null;
       _position = Duration.zero;
       _duration = Duration.zero;
       _buffered = Duration.zero;
     });
     try {
-      // 调用方（网络库）通常已经 prepare 过同一条流，进界面就不用再开一次。
-      final open = playback.source;
-      final sameStream =
-          open != null &&
-          open.remotePath == source.remotePath &&
-          open.accountId == source.accountId;
-      final player = sameStream
-          ? (playback.player ??
-                await playback.prepare(source, bufferSizeMb: 48))
-          : await playback.prepare(source, bufferSizeMb: 48);
+      final player = await _engine!.start(source);
       if (!mounted) return;
       _player = player;
       _attach(player);
@@ -282,6 +338,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
 
   @override
   void dispose() {
+    _settings?.removeListener(_onStreamSettings);
+    unawaited(_engine?.dispose() ?? Future<void>.value());
     _playlistSearch.dispose();
     _queue?.removeListener(_onQueueChanged);
     _queue?.cancelScan();
@@ -316,6 +374,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   /// 控制条最左边那个按钮：三个模式轮换，图标与提示跟着变。
   Widget _buildModeButton() {
     final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
     final looping = _mode != MusicStreamPlayMode.sequential;
     return IconButton(
       tooltip: '${l10n.playbackMode}: ${_mode.label(l10n)}',
@@ -326,13 +385,20 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
         children: [
           Icon(
             Icons.repeat,
-            color: looping ? AppColors.accent : AppColors.mutedText,
+            color: looping ? scheme.primary : scheme.onSurfaceVariant,
           ),
           if (_mode == MusicStreamPlayMode.single)
-            const Positioned(
+            Positioned(
               right: -4,
               bottom: -2,
-              child: Text('1', style: TextStyle(fontSize: 11, height: 1)),
+              child: Text(
+                '1',
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1,
+                  color: scheme.onSurface,
+                ),
+              ),
             ),
         ],
       ),
@@ -345,7 +411,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     if (queue == null) return;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -388,10 +454,12 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                           Text(
                             AppLocalizations.of(context)!
                                 .playlistTrackCount(all.length),
-                            style: const TextStyle(
-                              color: AppColors.secondaryText,
-                              fontSize: 12,
-                            ),
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
                           ),
                         ],
                       ),
@@ -426,9 +494,12 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                             return Center(
                               child: Text(
                                 AppLocalizations.of(context)!.noMatchingTracks,
-                                style: const TextStyle(
-                                  color: AppColors.secondaryText,
-                                ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
                               ),
                             );
                           }
@@ -446,12 +517,14 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                                 selected: selected,
                                 leading: Text(
                                   '${all.indexOf(track) + 1}',
-                                  style: TextStyle(
-                                    color: selected
-                                        ? AppColors.accent
-                                        : AppColors.mutedText,
-                                    fontSize: 12,
-                                  ),
+                                  style: Theme.of(ctx).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: selected
+                                            ? Theme.of(ctx).colorScheme.primary
+                                            : Theme.of(ctx)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                      ),
                                 ),
                                 title: Text(
                                   track.name,
@@ -459,8 +532,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: selected
-                                        ? AppColors.accent
-                                        : AppColors.onDark,
+                                        ? Theme.of(ctx).colorScheme.primary
+                                        : Theme.of(ctx).colorScheme.onSurface,
                                   ),
                                 ),
                                 subtitle: dir.isEmpty
@@ -469,10 +542,15 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                                         dir,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: AppColors.secondaryText,
-                                          fontSize: 11,
-                                        ),
+                                        style: Theme.of(ctx)
+                                            .textTheme
+                                            .labelMedium
+                                            ?.copyWith(
+                                              color: Theme.of(ctx)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                              fontSize: 11,
+                                            ),
                                       ),
                                 onTap: () {
                                   Navigator.of(ctx).pop();
@@ -509,16 +587,34 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
 
   Future<void> _switchTo(int index) async {
     final queue = _queue;
-    if (queue == null) return;
+    final engine = _engine;
+    if (queue == null || engine == null) return;
     final item = queue.selectIndex(index);
     if (item == null) return;
-    final source = await _sourceFor(item);
-    if (!mounted) return;
-    if (source == null) {
+    final playback = _playback ?? context.read<VideoPlaybackService>();
+    _playback = playback;
+    await _detach();
+    setState(() {
+      _opening = true;
+      _error = null;
+      _coverPath = null;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+      _buffered = Duration.zero;
+    });
+    try {
+      final player = await engine.activate(item);
+      if (!mounted) return;
+      _player = player;
+      _attach(player);
+      await _applyPlaylistMode(player);
+      await player.play();
+    } catch (e) {
+      if (!mounted) return;
       setState(() => _error = AppLocalizations.of(context)!.streamUrlFailed);
-      return;
+    } finally {
+      if (mounted) setState(() => _opening = false);
     }
-    await _open(source);
   }
 
   @override
@@ -533,7 +629,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     final hasPrev = (queue?.index ?? 0) > 0;
     final hasNext = queue?.hasNext ?? false;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -561,18 +657,10 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.primaryText,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  l10n.streamingNotCached,
-                  style: const TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12,
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -584,10 +672,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                   Text(
                     l10n.playbackFailed(_error ?? ''),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppColors.error,
-                      fontSize: 12,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.error),
                   ),
                 ],
               ],
@@ -598,20 +684,35 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     );
   }
 
-  /// 封面占位：这一版刻意不抓远端封面（要额外 Range 读文件头）。
   Widget _buildCover() {
+    final path = _coverPath;
+    final file = path == null ? null : File(path);
+    final ready = file != null && file.existsSync();
     return Container(
       width: 200,
       height: 200,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: AppColors.elevated,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Icon(
-        _opening ? Icons.graphic_eq : Icons.music_note,
-        size: 72,
-        color: AppColors.secondaryText,
-      ),
+      child: ready
+          ? Image.file(
+              file,
+              width: 200,
+              height: 200,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => _coverIcon(),
+            )
+          : _coverIcon(),
+    );
+  }
+
+  Widget _coverIcon() {
+    return Icon(
+      _opening ? Icons.graphic_eq : Icons.music_note,
+      size: 72,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
     );
   }
 
@@ -691,8 +792,14 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(_fmt(_position), style: _timeStyle),
-              Text(total == 0 ? '--:--' : _fmt(_duration), style: _timeStyle),
+              Text(
+                _fmt(_position),
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+              Text(
+                total == 0 ? '--:--' : _fmt(_duration),
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
             ],
           ),
         ),
@@ -738,11 +845,6 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
       ],
     );
   }
-
-  static const _timeStyle = TextStyle(
-    color: AppColors.secondaryText,
-    fontSize: 12,
-  );
 
   String _fmt(Duration d) {
     final h = d.inHours;

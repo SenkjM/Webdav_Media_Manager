@@ -9,7 +9,6 @@ import 'package:provider/provider.dart';
 import '../screens/player_screen.dart';
 import '../screens/now_playing_queue_screen.dart';
 import '../services/audio_player_service.dart';
-import '../theme/app_theme.dart';
 import 'cover_art.dart';
 
 /// Global mini play bar. Only shown when a local track is current —
@@ -28,8 +27,9 @@ class MiniPlayer extends StatelessWidget {
         ? player.position.inMilliseconds / player.duration!.inMilliseconds
         : 0.0;
 
+    final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: AppColors.elevated,
+      color: scheme.surface,
       elevation: 12,
       shadowColor: Colors.black26,
       child: SafeArea(
@@ -84,25 +84,29 @@ class MiniPlayer extends StatelessWidget {
                             track.displayTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppColors.onDark,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
-                              height: 1.2,
-                            ),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: scheme.onSurface,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                  height: 1.2,
+                                ),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            player.error ?? track.displayArtist,
+                            player.error ??
+                                track.displayArtistFor(
+                                  AppLocalizations.of(context)!,
+                                ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: player.error != null
-                                  ? AppColors.error
-                                  : AppColors.secondaryText,
-                              fontSize: 12,
-                              height: 1.2,
-                            ),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: player.error != null
+                                      ? scheme.error
+                                      : scheme.onSurfaceVariant,
+                                  height: 1.2,
+                                ),
                           ),
                         ],
                       ),
@@ -112,16 +116,16 @@ class MiniPlayer extends StatelessWidget {
                         player.playing
                             ? Icons.pause_rounded
                             : Icons.play_arrow_rounded,
-                        color: AppColors.accent,
+                        color: scheme.primary,
                       ),
                       iconSize: 30,
                       onPressed: () => player.playPause(),
                     ),
                     IconButton(
                       tooltip: AppLocalizations.of(context)!.playQueueTitle,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.queue_music,
-                        color: AppColors.onDark,
+                        color: scheme.onSurface,
                       ),
                       onPressed: () {
                         Navigator.of(context, rootNavigator: true).push(
@@ -132,9 +136,9 @@ class MiniPlayer extends StatelessWidget {
                       },
                     ),
                     IconButton(
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.skip_next_rounded,
-                        color: AppColors.onDark,
+                        color: scheme.onSurface,
                       ),
                       onPressed: () => player.skipNext(),
                     ),
@@ -250,8 +254,8 @@ class _MiniProgressBarState extends State<_MiniProgressBar> {
                   child: LinearProgressIndicator(
                     value: value,
                     minHeight: _MiniProgressBar._lineHeight,
-                    backgroundColor: AppColors.elevatedHigh,
-                    color: AppColors.accent,
+                    backgroundColor: Theme.of(context).colorScheme.outline,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
                 ),
                 if (dragging)
@@ -261,8 +265,8 @@ class _MiniProgressBarState extends State<_MiniProgressBar> {
                     child: Container(
                       width: _MiniProgressBar._thumbSize,
                       height: _MiniProgressBar._thumbSize,
-                      decoration: const BoxDecoration(
-                        color: AppColors.accent,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primary,
                         shape: BoxShape.circle,
                       ),
                     ),

@@ -42,11 +42,11 @@ class CoverArt extends StatelessWidget {
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
                 errorBuilder: (context, error, stackTrace) =>
-                    _hasFile ? _fileImage() : _placeholder(),
+                    _hasFile ? _fileImage() : _placeholder(context),
               )
             : _hasFile
             ? _fileImage()
-            : _placeholder(),
+            : _placeholder(context),
       ),
     );
   }
@@ -58,18 +58,19 @@ class CoverArt extends StatelessWidget {
       height: size,
       fit: BoxFit.cover,
       gaplessPlayback: true,
-      errorBuilder: (context, error, stackTrace) => _placeholder(),
+      errorBuilder: (context, error, stackTrace) => _placeholder(context),
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ColoredBox(
-      color: AppColors.elevatedHigh,
+      color: scheme.surfaceContainerHigh,
       child: Center(
         child: Icon(
           icon ?? Icons.music_note,
           size: size * 0.45,
-          color: AppColors.mutedText,
+          color: scheme.onSurfaceVariant,
         ),
       ),
     );
@@ -89,10 +90,12 @@ class CoverBackdrop extends StatelessWidget {
     final hasBytes = bytes != null && bytes!.isNotEmpty;
     final hasFile =
         path != null && path!.isNotEmpty && File(path!).existsSync();
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final surface = Theme.of(context).colorScheme.surface;
     return Stack(
       fit: StackFit.expand,
       children: [
-        const ColoredBox(color: AppColors.background),
+        ColoredBox(color: dark ? surface : AppColors.background),
         if (hasBytes)
           ImageFiltered(
             imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
@@ -114,7 +117,11 @@ class CoverBackdrop extends StatelessWidget {
             ),
           ),
         if (hasBytes || hasFile)
-          ColoredBox(color: Colors.white.withValues(alpha: 0.82)),
+          ColoredBox(
+            color: dark
+                ? surface.withValues(alpha: 0.82)
+                : Colors.white.withValues(alpha: 0.82),
+          ),
         child,
       ],
     );

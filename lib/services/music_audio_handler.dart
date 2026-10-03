@@ -558,6 +558,36 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  /// Point the stream session at another track without touching the player
+  /// playlist. Artwork is cleared; the screen sets it when a picture exists.
+  void retargetStream(WebDavStreamSource source) {
+    if (_mode != AudioHandlerMode.video) return;
+    _videoSource = source;
+    final isMusic = source.kind == StreamKind.music;
+    mediaItem.add(
+      MediaItem(
+        id: '${isMusic ? 'stream' : 'video'}|${source.accountId}|${source.remotePath}',
+        title: source.name,
+        album: isMusic
+            ? L10nHost.current.streamPlayback
+            : L10nHost.current.netVideo,
+        artist: L10nHost.current.mediaArtistWebdav,
+        extras: {
+          'kind': isMusic ? 'stream_music' : 'video',
+          'accountId': source.accountId,
+          'remotePath': source.remotePath,
+        },
+      ),
+    );
+  }
+
+  /// Local or content URI the existing notification path can load.
+  void setStreamArtUri(Uri? artUri) {
+    final current = mediaItem.value;
+    if (current == null || _videoSource == null) return;
+    mediaItem.add(current.copyWith(artUri: artUri));
+  }
+
   /// Leave video mode.
   ///
   /// Restores the music session: if a music queue was paused when the video
@@ -1024,7 +1054,7 @@ MediaItem mediaItemForTrack(TrackInfo track) {
     id: '${track.sourceName}|${track.remotePath}',
     title: title,
     album: track.album,
-    artist: track.displayArtist,
+    artist: track.displayArtistFor(L10nHost.current),
     duration: duration,
     artUri: artUri,
     extras: {

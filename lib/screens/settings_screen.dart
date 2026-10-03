@@ -10,7 +10,7 @@ import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
-import '../theme/app_theme.dart';
+import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
 import 'audio_stream_settings_screen.dart';
@@ -31,7 +31,8 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObserver {
+class _SettingsScreenState extends State<SettingsScreen>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
@@ -69,11 +70,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     if (!context.mounted) return;
     AppSnack.show(
       context,
-      AppLocalizations.of(context)!.tagRefreshCompleted(
-        result.updated,
-        result.skipped,
-        result.failed,
-      ),
+      AppLocalizations.of(context)!
+          .tagRefreshCompleted(result.updated, result.skipped, result.failed),
       error: result.failed > 0 && result.updated == 0,
     );
   }
@@ -92,13 +90,18 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
       if (!context.mounted) return;
       AppSnack.show(
         context,
-        opened ? l10n.notificationOpenSettings : l10n.notificationOpenSettingsFailed,
+        opened
+            ? l10n.notificationOpenSettings
+            : l10n.notificationOpenSettingsFailed,
       );
       return;
     }
     final granted = await perms.request();
     if (!context.mounted) return;
-    AppSnack.show(context, granted ? l10n.notificationGranted : l10n.notificationDenied);
+    AppSnack.show(
+      context,
+      granted ? l10n.notificationGranted : l10n.notificationDenied,
+    );
   }
 
   String _notificationSubtitle(NotificationPermissionService perms) {
@@ -117,17 +120,22 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   ) async {
     await perms.refresh();
     if (!context.mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    final channel = l10n.ntfMediaChannelName;
+    final status = perms.channelStatusLabel;
     AppSnack.show(
       context,
-      '通知权限：${perms.isGranted ? '已允许' : '未允许'}｜'
-      '通道「音乐播放」：${perms.channelStatusLabel}',
+      perms.isGranted
+          ? l10n.notificationDiagnosticAllowed(channel, status)
+          : l10n.notificationDiagnosticDenied(channel, status),
     );
   }
 
   Widget _sectionTitle(BuildContext context, String text) {
     return Text(
       text,
-      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: AppColors.accent),
+      style: Theme.of(context).textTheme.titleMedium
+          ?.copyWith(color: Theme.of(context).colorScheme.primary),
     );
   }
 
@@ -138,7 +146,6 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
         title: Text(l10n.settings),
@@ -154,6 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             title: Text(l10n.customHome),
             subtitle: Text(l10n.customHomeSubtitle),
             trailing: DropdownButton<int>(
+              borderRadius: BorderRadius.circular(10),
               value: settings.homeTab,
               items: [
                 DropdownMenuItem(value: 0, child: Text(l10n.library)),
@@ -173,7 +181,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             title: Text(l10n.rememberNetworkPath),
             subtitle: Text(l10n.rememberNetworkPathSubtitle),
             value: settings.networkRememberLastPath,
-            onChanged: (v) => context.read<SettingsService>().setNetworkRememberLastPath(v),
+            onChanged: (v) =>
+                context.read<SettingsService>().setNetworkRememberLastPath(v),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -195,7 +204,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ThumbnailSettingsScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const ThumbnailSettingsScreen(),
+                ),
               );
             },
           ),
@@ -230,8 +241,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 icon: const Icon(Icons.notification_add_outlined),
                 label: Text(
                   (notif.isPermanentlyDenied || notif.isChannelBlocked)
-                      ? '打开系统设置'
-                      : '请求通知权限',
+                      ? l10n.openSystemSettings
+                      : l10n.requestNotificationPermission,
                 ),
               ),
             ),
@@ -267,9 +278,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             subtitle: Text(l10n.accountsSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AccountsScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => const AccountsScreen()));
             },
           ),
           ListTile(
@@ -280,7 +291,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DownloadSettingsScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const DownloadSettingsScreen(),
+                ),
               );
             },
           ),
@@ -304,7 +317,9 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AudioStreamSettingsScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const AudioStreamSettingsScreen(),
+                ),
               );
             },
           ),
@@ -335,21 +350,46 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           const Divider(height: 40),
           _sectionTitle(context, l10n.settingsMisc),
           const SizedBox(height: 8),
+          ThemeSettingsSection(
+            mode: settings.appThemeMode,
+            onModeChanged: (value) {
+              context.read<SettingsService>().setAppThemeMode(value);
+            },
+            seed: settings.themeSeed,
+            onSeedChanged: (color) {
+              context.read<SettingsService>().setThemeSeed(color);
+            },
+          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.language),
             title: Text(l10n.language),
             subtitle: Text(l10n.languageSettingSubtitle),
             trailing: DropdownButton<AppLocalePreference>(
+              borderRadius: BorderRadius.circular(10),
               value: settings.appLocale,
               items: [
-                DropdownMenuItem(value: AppLocalePreference.system, child: Text(l10n.languageSystem)),
-                DropdownMenuItem(value: AppLocalePreference.zhCN, child: Text(l10n.languageSimplifiedChinese)),
-                DropdownMenuItem(value: AppLocalePreference.zhTW, child: Text(l10n.languageTraditionalChinese)),
-                DropdownMenuItem(value: AppLocalePreference.en, child: Text(l10n.languageEnglish)),
+                DropdownMenuItem(
+                  value: AppLocalePreference.system,
+                  child: Text(l10n.languageSystem),
+                ),
+                DropdownMenuItem(
+                  value: AppLocalePreference.zhCN,
+                  child: Text(AppLocalePreference.zhCN.nativeName!),
+                ),
+                DropdownMenuItem(
+                  value: AppLocalePreference.zhTW,
+                  child: Text(AppLocalePreference.zhTW.nativeName!),
+                ),
+                DropdownMenuItem(
+                  value: AppLocalePreference.en,
+                  child: Text(AppLocalePreference.en.nativeName!),
+                ),
               ],
               onChanged: (value) {
-                if (value != null) context.read<SettingsService>().setAppLocale(value);
+                if (value != null) {
+                  context.read<SettingsService>().setAppLocale(value);
+                }
               },
             ),
           ),
@@ -359,6 +399,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             title: Text(l10n.hintDuration),
             subtitle: Text(settings.snackMode.label(l10n)),
             trailing: DropdownButton<SnackDuration>(
+              borderRadius: BorderRadius.circular(10),
               value: settings.snackMode,
               items: [
                 for (final m in SnackDuration.values)
@@ -377,20 +418,19 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             leading: const Icon(Icons.sync),
             title: Text(l10n.syncSettings),
             subtitle: Text(
-              '凭证 / 歌单 / 音乐库 / 备份共用一条远端路径：\n'
+              '${l10n.settingsSyncSharedPath}\n'
               '${settings.syncRemoteRoot}',
             ),
             isThreeLine: true,
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SyncScreen()),
-              );
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
             },
           ),
           const Divider(height: 40),
           Text(
-            '音乐先下载再本地播放；视频直接流式播放并按文件夹连播。',
+            l10n.settingsPlaybackFooter,
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

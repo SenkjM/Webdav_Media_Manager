@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../l10n/generated/app_localizations.dart';
 
-import '../theme/app_theme.dart';
-
 /// 「正在销毁」的进度框：一首一首地走，中途可以按「终止」，也可以直接返回。
 ///
 /// 三种取消方式（终止按钮 / 点外部 / 返回键）都只把取消标志置起来，真正的停止
@@ -28,7 +26,7 @@ class DestroyProgressDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     return AlertDialog(
-      backgroundColor: AppColors.elevated,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       title: Text(l10n.destroyInProgress),
       content: ValueListenableBuilder<int>(
         valueListenable: progress,
@@ -45,9 +43,9 @@ class DestroyProgressDialog extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               l10n.destroyStopHint,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: AppColors.secondaryText,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],

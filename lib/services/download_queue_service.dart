@@ -32,6 +32,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'settings_service.dart';
 
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:flutter/widgets.dart';
 
 /// Background async download queue. Does not block UI/navigation.
@@ -94,6 +95,10 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Re-point the resolver (called on init / after accounts change).
   Future<void> closeDatabase() => _store.close();
+
+  /// Opens the queue database. The 0.2.2 sentinel migration uses this before
+  /// [init] loads tasks.
+  Future<Database> openDatabase() => _store.database;
 
   void configureAccountResolver(String? Function(String sourceName) resolve) {
     _accountIdForSource = resolve;
@@ -202,26 +207,11 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// **默认倾向可重试**：认不出来的错误也必须落到退避兜底（用户要求），
   /// 只有明确「重试也没用」的才直接判失败。
   static bool isRetryable(Object error) {
-    // 内容本身坏了（解密 / 认证失败）：同一份字节再拉一次还是坏的。
+    // 内容本身坏了（解密失败）：同一份字节再拉一次还是坏的。
+    // 上游错误（含 401 / 403 / 奇怪的授权失败）一律重试，不再按状态码或文案排除。
     if (error is CloudDriverDataException) return false;
     if (error is StateError) return false;
-    if (error is DioException) {
-      switch (error.type) {
-        case DioExceptionType.cancel:
-          return false;
-        case DioExceptionType.badResponse:
-          final code = error.response?.statusCode ?? 0;
-          return code == 408 || code == 429 || code >= 500;
-        default:
-          return true;
-      }
-    }
-    final text = error.toString().toLowerCase();
-    if (text.contains('401') ||
-        text.contains('403') ||
-        text.contains('404') ||
-        text.contains('unauthorized') ||
-        text.contains('forbidden')) {
+    if (error is DioException && error.type == DioExceptionType.cancel) {
       return false;
     }
     return true;

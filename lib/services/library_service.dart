@@ -504,9 +504,7 @@ class LibraryService extends ChangeNotifier {
           has(t.album) ||
           has(t.fileName) ||
           has(t.genre) ||
-          t.displayTitle.toLowerCase().contains(q) ||
-          t.displayArtist.toLowerCase().contains(q) ||
-          t.displayAlbum.toLowerCase().contains(q);
+          t.displayTitle.toLowerCase().contains(q);
     }).toList();
     matched.sort(
       sort == LibrarySortMode.byAlbumTrack

@@ -32,6 +32,7 @@ import '../utils/webdav_errors.dart';
 import '../widgets/webdav_error_dialog.dart';
 import 'accounts_screen.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
 import 'music_stream_screen.dart';
@@ -508,16 +509,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
   }
 
-  /// 音乐 → 远端流式播放（T6）。
+  /// 音乐 → 远端流式播放。
   ///
-  /// 当前分支只做到「能播就行」：复用视频那套远端源与媒体通知，封面与时长
-  /// 不额外取（流式播放拿不到本地文件来解析标签）。完整取舍见 docs/99 的
-  /// 《音乐流式传输可行性分析》。
-  /// 把远端音频直接交给播放栈流式播放（不下载、不缓存、不入队）。
-  ///
-  /// 复用视频那套远端源与媒体通知（同一个 Player、同一个媒体会话），所以
-  /// 后台播放与锁屏控制跟着工作。封面与时长不额外取：流式播放拿不到本地
-  /// 文件来解析标签。完整取舍见 docs/99 的《音乐流式传输可行性分析》。
+  /// 不下载进曲库、不入队。封面在播放页用 Range 读内嵌图，或按设置找同目录
+  /// 图片；时长由播放器自己报。取舍见 docs/99 §1.2。
   Future<void> _streamMusic(WebDavItem item) async {
     if (!context.read<SettingsService>().audioStreamingEnabled) {
       AppSnack.error(
@@ -627,7 +622,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final action = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.elevated,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -645,7 +640,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.divider,
+                      color: Theme.of(context).colorScheme.outlineVariant,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -656,10 +651,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     (sheet.title != null && sheet.title!.isNotEmpty)
                         ? sheet.title!
                         : item.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.onDark,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -668,12 +663,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
                       sheet.performer!,
-                      style: const TextStyle(color: AppColors.mutedText),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
                     ),
                   ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                  child: Text(
+                  child: MetaText(
                     multiFile
                         ? AppLocalizations.of(ctx)!.netCueGroupTitleMulti(
                             byFile.length,
@@ -681,23 +678,19 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                           )
                         : AppLocalizations.of(ctx)!
                               .netCueGroupTitle(sheet.tracks.length),
-                    style: const TextStyle(
-                      color: AppColors.mutedText,
-                      fontSize: 12,
-                    ),
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Text(
+                  child: MetaText(
                     AppLocalizations.of(ctx)!.netCueGroupSubtitle,
-                    style: const TextStyle(
-                      color: AppColors.secondaryText,
-                      fontSize: 12,
-                    ),
+                    maxLines: 2,
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 Expanded(
                   child: ListView(
                     children: [
@@ -732,7 +725,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                   child: Row(
@@ -809,7 +805,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.elevated,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       isScrollControlled: true,
       shape: AppBottomSheet.shape,
       builder: (ctx) {
@@ -824,8 +820,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     item.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.onDark,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -836,10 +832,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                             defaultAction.label(l10n),
                             item.category.label(l10n),
                           ),
-                    style: const TextStyle(color: AppColors.mutedText),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 // 文件夹也是两条独立的线：缓存里面的音频，或整棵目录树下载。
                 if (item.isDirectory) ...[
                   ListTile(
@@ -902,7 +903,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       },
                     ),
                 ],
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 ListTile(
                   leading: const Icon(Icons.drive_file_rename_outline),
                   title: Text(l10n.rename),
@@ -1162,7 +1166,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // 菜单默认会「向下放不下就往上弹」，限高之后基本只会向下展开。
     final menuMaxHeight = MediaQuery.sizeOf(context).height / 2;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         // Always the drawer button: directory navigation is done by the system
         // back key (see BackHandlerRegistry), so the top-left is reserved for the
@@ -1200,6 +1204,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: DropdownButtonFormField<String>(
+                borderRadius: BorderRadius.circular(10),
                 // ignore: deprecated_member_use
                 value: active?.id,
                 // 菜单最多半屏，超出可滚动。
@@ -1296,10 +1301,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 return ListTile(
                   leading: _selectionLeading(
                     item,
-                    const Icon(Icons.folder_rounded, color: AppColors.accent),
+                    Icon(
+                      Icons.folder_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(AppLocalizations.of(context)!.directory),
                   trailing: _itemMenuButton(item),
                   onTap: () => _onEntryTap(item),
                   onLongPress: () => _enterSelect(item),
@@ -1312,7 +1319,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     const Icon(Icons.insert_drive_file_outlined),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(
+                  subtitle: MetaText(
                     item.size != null
                         ? _fmtSize(item.size!)
                         : AppLocalizations.of(context)!.cueFile,
@@ -1333,13 +1340,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 return ListTile(
                   leading: _selectionLeading(
                     item,
-                    const Icon(
+                    Icon(
                       Icons.videocam_outlined,
-                      color: AppColors.accent,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(
+                  subtitle: MetaText(
                     [
                       item.size != null
                           ? _fmtSize(item.size!)
@@ -1369,12 +1376,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 return ListTile(
                   leading: _selectionLeading(
                     item,
-                    const Icon(Icons.image_outlined, color: AppColors.accent),
+                    Icon(
+                      Icons.image_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(
+                  subtitle: MetaText(
                     item.size != null
-                        ? '${_fmtSize(item.size!)} · ${AppLocalizations.of(context)!.netImage}'
+                        ? _fmtSize(item.size!)
                         : AppLocalizations.of(context)!.netImage,
                   ),
                   trailing: _itemMenuButton(item),
@@ -1389,7 +1399,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     const Icon(Icons.insert_drive_file_outlined),
                   ),
                   title: Text(item.name),
-                  subtitle: Text(
+                  subtitle: MetaText(
                     item.size != null
                         ? _fmtSize(item.size!)
                         : AppLocalizations.of(context)!.netFile,
@@ -1423,12 +1433,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ),
                 ),
                 title: Text(item.name),
-                subtitle: Text(
+                subtitle: MetaText(
                   [
                     item.size != null
                         ? _fmtSize(item.size!)
                         : AppLocalizations.of(context)!.netAudio,
-                    // 没有下载按钮：整行就是下载动作。
+                    // 没有下载按钮：整行就是下载动作。状态词留下。
                     if (state == TrackUiState.remote)
                       AppLocalizations.of(context)!.netTapDownload,
                   ].join(' · '),
@@ -1463,7 +1473,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final selected = _selection.contains(_itemKey(item));
     return Icon(
       selected ? Icons.check_circle : Icons.circle_outlined,
-      color: selected ? AppColors.accent : AppColors.mutedText,
+      color: selected
+          ? AppColors.accent
+          : Theme.of(context).colorScheme.outline,
     );
   }
 
