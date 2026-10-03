@@ -93,7 +93,7 @@ class MiniPlayer extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            player.error ?? track.displayArtist,
+                            player.error ?? track.displayArtistFor(AppLocalizations.of(context)!),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(

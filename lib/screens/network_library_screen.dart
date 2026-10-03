@@ -1200,6 +1200,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: DropdownButtonFormField<String>(
+                borderRadius: BorderRadius.circular(10),
                 // ignore: deprecated_member_use
                 value: active?.id,
                 // 菜单最多半屏，超出可滚动。

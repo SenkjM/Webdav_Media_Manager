@@ -3779,4 +3779,96 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get videoSubtitleLoadFailed => 'Could not load the subtitle';
+
+  @override
+  String notificationDiagnosticAllowed(Object channel, Object status) {
+    return 'Notifications: allowed | Channel \"$channel\": $status';
+  }
+
+  @override
+  String notificationDiagnosticDenied(Object channel, Object status) {
+    return 'Notifications: not allowed | Channel \"$channel\": $status';
+  }
+
+  @override
+  String get openSystemSettings => 'Open system settings';
+
+  @override
+  String get requestNotificationPermission => 'Request notification permission';
+
+  @override
+  String get settingsSyncSharedPath =>
+      'Credentials, playlists, the library, and backups share one remote path:';
+
+  @override
+  String get settingsPlaybackFooter =>
+      'Music is downloaded before local playback. Video streams directly and continues through the folder.';
+
+  @override
+  String get shareRenamePlaceholderList =>
+      'Placeholders: {artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}';
+
+  @override
+  String coverThumbSizeCurrent(Object px) {
+    return 'Current: $px×$px';
+  }
+
+  @override
+  String videoPlaybackError(Object error) {
+    return 'Playback error: $error';
+  }
+
+  @override
+  String videoSwitchFailed(Object error) {
+    return 'Couldn\'t switch video: $error';
+  }
+
+  @override
+  String get videoEndStillScanning =>
+      'End of the list (still scanning the folder…)';
+
+  @override
+  String get videoAlreadyLast => 'This is the last video';
+
+  @override
+  String get videoPlayFromStart => 'Play from the start';
+
+  @override
+  String get videoAtFirstStillScanning =>
+      'This is the first video (still scanning the folder…)';
+
+  @override
+  String get videoAlreadyFirst => 'This is the first video';
+
+  @override
+  String get videoLongPressToUnlock => 'Long-press to unlock';
+
+  @override
+  String get videoQueueScanning => 'Scanning…';
+
+  @override
+  String get videoPlaybackSpeed => 'Playback speed';
+
+  @override
+  String videoLongPressPictureHint(Object rate) {
+    return 'Long-press the picture to temporarily speed up (currently $rate×; change it in Video playback settings).';
+  }
+
+  @override
+  String get videoGestureSettingsTitle => 'Gesture settings';
+
+  @override
+  String get videoGestureBasicHint =>
+      'Tap to show or hide controls. Double-tap the center to play or pause.';
+
+  @override
+  String get videoHoldReleaseHint => 'Hold to speed up, release to restore.';
+
+  @override
+  String get subtitleDefault => 'Default';
+
+  @override
+  String subtitleEmbedded(Object language) {
+    return '[Embedded] $language';
+  }
 }

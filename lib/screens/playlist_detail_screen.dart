@@ -124,7 +124,7 @@ class PlaylistDetailScreen extends StatelessWidget {
                     final t = all[i];
                     return ListTile(
                       title: Text(t.displayTitle),
-                      subtitle: Text(t.displayArtist),
+                      subtitle: Text(t.displayArtistFor(l10n)),
                       onTap: () => Navigator.pop(ctx, t),
                     );
                   },
@@ -186,8 +186,8 @@ class _PlaylistTrackTile extends StatelessWidget {
           if (track.isCueVirtual)
             AppLocalizations.of(context)!.cueMultiSliceLabel,
           if (!isLocal) AppLocalizations.of(context)!.notDownloaded,
-          track.displayArtist,
-          if (isLocal) track.displayAlbum,
+          track.displayArtistFor(AppLocalizations.of(context)!),
+          if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
         ].join(' · '),
       ),
       trailing: Row(

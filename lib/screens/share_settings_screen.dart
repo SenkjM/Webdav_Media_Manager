@@ -34,8 +34,7 @@ class ShareSettingsScreen extends StatelessWidget {
             title: Text(l10n.renameTemplate),
             subtitle: Text(
               '${settings.shareTagRenamePattern}\n'
-              '占位符：{artist} {title} {album} {albumArtist} '
-              '{track} {year} {genre} {fileName}',
+              '${l10n.shareRenamePlaceholderList}',
             ),
             isThreeLine: true,
             trailing: const Icon(Icons.edit_outlined),

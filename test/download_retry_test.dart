@@ -37,28 +37,41 @@ void main() {
       expect(DownloadQueueService.isRetryable(Object()), isTrue);
     });
 
-    test('明确的客户端错误不重试', () {
+    test('上游错误都重试，包括授权和 404', () {
       expect(
         DownloadQueueService.isRetryable(
           _dio(DioExceptionType.badResponse, status: 404),
         ),
-        isFalse,
+        isTrue,
       );
       expect(
         DownloadQueueService.isRetryable(
           _dio(DioExceptionType.badResponse, status: 403),
         ),
-        isFalse,
+        isTrue,
       );
+      expect(
+        DownloadQueueService.isRetryable(
+          _dio(DioExceptionType.badResponse, status: 401),
+        ),
+        isTrue,
+      );
+      expect(
+        DownloadQueueService.isRetryable(Exception('HTTP 401 Unauthorized')),
+        isTrue,
+      );
+      expect(
+        DownloadQueueService.isRetryable(Exception('403 forbidden')),
+        isTrue,
+      );
+    });
+
+    test('取消和本地状态错误不重试', () {
       expect(
         DownloadQueueService.isRetryable(_dio(DioExceptionType.cancel)),
         isFalse,
       );
       expect(DownloadQueueService.isRetryable(StateError('x')), isFalse);
-      expect(
-        DownloadQueueService.isRetryable(Exception('HTTP 401 Unauthorized')),
-        isFalse,
-      );
     });
 
     test('网络与 5xx 可重试', () {

@@ -117,10 +117,14 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
   ) async {
     await perms.refresh();
     if (!context.mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    final channel = l10n.ntfMediaChannelName;
+    final status = perms.channelStatusLabel;
     AppSnack.show(
       context,
-      '通知权限：${perms.isGranted ? '已允许' : '未允许'}｜'
-      '通道「音乐播放」：${perms.channelStatusLabel}',
+      perms.isGranted
+          ? l10n.notificationDiagnosticAllowed(channel, status)
+          : l10n.notificationDiagnosticDenied(channel, status),
     );
   }
 
@@ -154,6 +158,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             title: Text(l10n.customHome),
             subtitle: Text(l10n.customHomeSubtitle),
             trailing: DropdownButton<int>(
+              borderRadius: BorderRadius.circular(10),
               value: settings.homeTab,
               items: [
                 DropdownMenuItem(value: 0, child: Text(l10n.library)),
@@ -230,8 +235,8 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
                 icon: const Icon(Icons.notification_add_outlined),
                 label: Text(
                   (notif.isPermanentlyDenied || notif.isChannelBlocked)
-                      ? '打开系统设置'
-                      : '请求通知权限',
+                      ? l10n.openSystemSettings
+                      : l10n.requestNotificationPermission,
                 ),
               ),
             ),
@@ -341,6 +346,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             title: Text(l10n.language),
             subtitle: Text(l10n.languageSettingSubtitle),
             trailing: DropdownButton<AppLocalePreference>(
+              borderRadius: BorderRadius.circular(10),
               value: settings.appLocale,
               items: [
                 DropdownMenuItem(value: AppLocalePreference.system, child: Text(l10n.languageSystem)),
@@ -359,6 +365,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             title: Text(l10n.hintDuration),
             subtitle: Text(settings.snackMode.label(l10n)),
             trailing: DropdownButton<SnackDuration>(
+              borderRadius: BorderRadius.circular(10),
               value: settings.snackMode,
               items: [
                 for (final m in SnackDuration.values)
@@ -377,7 +384,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
             leading: const Icon(Icons.sync),
             title: Text(l10n.syncSettings),
             subtitle: Text(
-              '凭证 / 歌单 / 音乐库 / 备份共用一条远端路径：\n'
+              '${l10n.settingsSyncSharedPath}\n'
               '${settings.syncRemoteRoot}',
             ),
             isThreeLine: true,
@@ -390,7 +397,7 @@ class _SettingsScreenState extends State<SettingsScreen> with WidgetsBindingObse
           ),
           const Divider(height: 40),
           Text(
-            '音乐先下载再本地播放；视频直接流式播放并按文件夹连播。',
+            l10n.settingsPlaybackFooter,
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

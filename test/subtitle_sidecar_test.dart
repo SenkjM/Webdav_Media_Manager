@@ -1,6 +1,9 @@
+import 'dart:ui' show Locale;
+
 import 'package:charset/charset.dart' as charset;
 import 'package:enough_convert/enough_convert.dart' as extra;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:webdav_media_manager/l10n/generated/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_media_manager/models/file_type_config.dart';
 import 'package:webdav_media_manager/models/webdav_item.dart';
@@ -22,7 +25,13 @@ WebDavItem file(
   );
 }
 
+late AppLocalizations l10n;
+
 void main() {
+  setUpAll(() async {
+    l10n = await AppLocalizations.delegate.load(const Locale('zh'));
+  });
+
   final videos = FileTypeConfig.defaultVideoExtensions.toSet();
 
   group('字幕文件名匹配', () {
@@ -97,6 +106,7 @@ void main() {
       final jpscLabel = labelSameDirectorySidecar(
         language: jpsc.language,
         format: jpsc.format,
+        l10n: l10n,
       );
       expect(jpscLabel.title, 'JPSC');
       expect(jpscLabel.formatTag, 'ass');
@@ -115,8 +125,8 @@ void main() {
         videoExtensions: videos,
       );
       expect(dottedHits, hasLength(1));
-      expect(dottedHits.single.label.title, 'a.b');
-      expect(dottedHits.single.label.formatTag, 'ass');
+      expect(dottedHits.single.labelFor(l10n).title, 'a.b');
+      expect(dottedHits.single.labelFor(l10n).formatTag, 'ass');
 
       final forced = matchSubtitleFileName(
         videoFileName: 'video.mkv',
@@ -144,6 +154,7 @@ void main() {
       final plainLabel = labelSameDirectorySidecar(
         language: plain.language,
         format: plain.format,
+        l10n: l10n,
       );
       expect(plainLabel.title, '默认');
       expect(plainLabel.formatTag, 'ass');
@@ -192,11 +203,11 @@ void main() {
 
   group('字幕列表标签', () {
     test('同目录只显示语言和格式标签，子目录带前缀，内嵌没有格式', () {
-      final same = labelSameDirectorySidecar(language: 'zh', format: 'ASS');
+      final same = labelSameDirectorySidecar(language: 'zh', format: 'ASS', l10n: l10n);
       expect(same.title, 'zh');
       expect(same.formatTag, 'ass');
 
-      final empty = labelSameDirectorySidecar(language: '', format: 'srt');
+      final empty = labelSameDirectorySidecar(language: '', format: 'srt', l10n: l10n);
       expect(empty.title, '默认');
       expect(empty.formatTag, 'srt');
 
@@ -208,18 +219,18 @@ void main() {
       expect(sub.title, '/sub/zh');
       expect(sub.formatTag, 'srt');
 
-      final embedded = labelEmbeddedSubtitle('zh');
+      final embedded = labelEmbeddedSubtitle('zh', l10n);
       expect(embedded.title, '[内嵌] zh');
       expect(embedded.formatTag, isNull);
-      final embeddedDefault = labelEmbeddedSubtitle('');
+      final embeddedDefault = labelEmbeddedSubtitle('', l10n);
       expect(embeddedDefault.title, '[内嵌] 默认');
       expect(embeddedDefault.formatTag, isNull);
       expect(
-        embeddedCueFromTrack(id: '8', language: null)!.label.title,
+        embeddedCueFromTrack(id: '8', language: null)!.labelFor(l10n).title,
         '[内嵌] 默认',
       );
       expect(
-        embeddedCueFromTrack(id: '8', language: '')!.label.formatTag,
+        embeddedCueFromTrack(id: '8', language: '')!.labelFor(l10n).formatTag,
         isNull,
       );
       expect(embeddedCueFromTrack(id: '9', language: 'auto'), isNull);
@@ -250,8 +261,8 @@ void main() {
         language: 'chi',
       )!;
       final en = embeddedCueFromTrack(id: '4', codec: 'ass', language: 'eng')!;
-      expect(zh.label.title, '[内嵌] zh');
-      expect(zh.label.formatTag, isNull);
+      expect(zh.labelFor(l10n).title, '[内嵌] zh');
+      expect(zh.labelFor(l10n).formatTag, isNull);
       expect(pickEmbedded([en, zh], 'zh')!.id, '3');
       expect(
         selectSubtitle(

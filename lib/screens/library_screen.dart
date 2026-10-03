@@ -179,14 +179,17 @@ class _ArtistTab extends StatelessWidget {
     final cache = context.watch<CacheService>();
     var groups = library.groupedByArtist();
     final q = query.trim().toLowerCase();
+    final l10n = AppLocalizations.of(context)!;
     if (q.isNotEmpty) {
       groups = Map.fromEntries(
         groups.entries.where((e) {
-          if (e.key.toLowerCase().contains(q)) return true;
+          if (localizedLibraryGroupName(l10n, e.key).toLowerCase().contains(q)) {
+            return true;
+          }
           return e.value.any(
             (t) =>
                 t.displayTitle.toLowerCase().contains(q) ||
-                t.displayAlbum.toLowerCase().contains(q),
+                t.displayAlbumFor(l10n).toLowerCase().contains(q),
           );
         }),
       );
@@ -214,14 +217,17 @@ class _AlbumTab extends StatelessWidget {
     final cache = context.watch<CacheService>();
     var groups = library.groupedByAlbum();
     final q = query.trim().toLowerCase();
+    final l10n = AppLocalizations.of(context)!;
     if (q.isNotEmpty) {
       groups = Map.fromEntries(
         groups.entries.where((e) {
-          if (e.key.toLowerCase().contains(q)) return true;
+          if (localizedLibraryGroupName(l10n, e.key).toLowerCase().contains(q)) {
+            return true;
+          }
           return e.value.any(
             (t) =>
                 t.displayTitle.toLowerCase().contains(q) ||
-                t.displayArtist.toLowerCase().contains(q),
+                t.displayArtistFor(l10n).toLowerCase().contains(q),
           );
         }),
       );
@@ -233,7 +239,7 @@ class _AlbumTab extends StatelessWidget {
       cache: cache,
       placeholderIcon: Icons.album,
       subtitleOf: (tracks) =>
-          '${AppLocalizations.of(context)!.playlistTrackCount(tracks.length)} · ${tracks.first.displayArtist}',
+          '${AppLocalizations.of(context)!.playlistTrackCount(tracks.length)} · ${tracks.first.displayArtistFor(AppLocalizations.of(context)!)}',
       detailSort: LibrarySortMode.byAlbumTrack,
     );
   }
@@ -257,8 +263,8 @@ class _TagsTab extends StatelessWidget {
               e.value.any(
                 (t) =>
                     t.displayTitle.toLowerCase().contains(q) ||
-                    t.displayArtist.toLowerCase().contains(q) ||
-                    t.displayAlbum.toLowerCase().contains(q),
+                    t.displayArtistFor(l10n).toLowerCase().contains(q) ||
+                    t.displayAlbumFor(l10n).toLowerCase().contains(q),
               ),
         ),
       );
@@ -478,9 +484,13 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
               final tracks = widget.groups[key]!;
               final coverTrack = pickCoverTrack(tracks, widget.cache);
               final selected = _selected.contains(key);
+              final title = localizedLibraryGroupName(
+                AppLocalizations.of(context)!,
+                key,
+              );
               return _CoverTile(
                 coverTrack: coverTrack,
-                title: key,
+                title: title,
                 subtitle: widget.subtitleOf(tracks),
                 placeholderIcon: widget.placeholderIcon,
                 selected: _selecting && selected,
@@ -493,7 +503,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => _TrackListPage(
-                        title: key,
+                        title: title,
                         tracks: tracks,
                         defaultSort: widget.detailSort,
                       ),
@@ -1084,8 +1094,8 @@ class _TrackTile extends StatelessWidget {
                 .downloadingPercent((task.progress * 100).toStringAsFixed(0))
           else if (!isLocal)
             AppLocalizations.of(context)!.notDownloaded,
-          track.displayArtist,
-          if (isLocal) track.displayAlbum,
+          track.displayArtistFor(AppLocalizations.of(context)!),
+          if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
         ].join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,

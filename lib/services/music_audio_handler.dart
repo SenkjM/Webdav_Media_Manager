@@ -1024,7 +1024,7 @@ MediaItem mediaItemForTrack(TrackInfo track) {
     id: '${track.sourceName}|${track.remotePath}',
     title: title,
     album: track.album,
-    artist: track.displayArtist,
+    artist: track.displayArtistFor(L10nHost.current),
     duration: duration,
     artUri: artUri,
     extras: {

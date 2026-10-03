@@ -715,6 +715,7 @@ class _SyncScreenState extends State<SyncScreen> {
               style: const TextStyle(fontSize: 11),
             ),
             trailing: DropdownButton<SyncInterval>(
+              borderRadius: BorderRadius.circular(10),
               value: settings.syncInterval,
               underline: const SizedBox.shrink(),
               items: [
@@ -746,6 +747,7 @@ class _SyncScreenState extends State<SyncScreen> {
             )
           else ...[
             DropdownButtonFormField<String>(
+              borderRadius: BorderRadius.circular(10),
               key: ValueKey('sync-root-account-$rootAccountId'),
               initialValue: rootAccountId,
               decoration: InputDecoration(
@@ -985,6 +987,7 @@ class _SyncScreenState extends State<SyncScreen> {
               style: const TextStyle(fontSize: 11),
             ),
             trailing: DropdownButton<int>(
+              borderRadius: BorderRadius.circular(10),
               value: _thresholdChoice(settings.libraryRebuildHintFragments),
               underline: const SizedBox.shrink(),
               items: [
@@ -1080,6 +1083,7 @@ class _SyncScreenState extends State<SyncScreen> {
             if (_backupFiles.isNotEmpty) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
+                borderRadius: BorderRadius.circular(10),
                 key: ValueKey('backup-file-${_selectedBackupFile ?? ''}'),
                 initialValue: _selectedBackupFile,
                 decoration: InputDecoration(

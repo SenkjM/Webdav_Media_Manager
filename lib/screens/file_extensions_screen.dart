@@ -189,6 +189,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     final choices = actions.choicesFor(category);
     final value = actions.forCategory(category);
     return DropdownButtonFormField<FileAction>(
+      borderRadius: BorderRadius.circular(10),
       initialValue: choices.contains(value) ? value : choices.first,
       decoration: InputDecoration(
         labelText: AppLocalizations.of(context)!.fileExtTapBehavior,

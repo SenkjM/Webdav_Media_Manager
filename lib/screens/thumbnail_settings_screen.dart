@@ -130,7 +130,7 @@ class _ThumbnailSettingsScreenState extends State<ThumbnailSettingsScreen> {
           ],
           const SizedBox(height: 4),
           Text(
-            '当前：${settings.coverThumbSizePx}×${settings.coverThumbSizePx}',
+            l10n.coverThumbSizeCurrent('${settings.coverThumbSizePx}'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ],

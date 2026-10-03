@@ -401,6 +401,7 @@ class AccountsScreen extends StatelessWidget {
                         ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
+                        borderRadius: BorderRadius.circular(10),
                         initialValue: providerType,
                         decoration: InputDecoration(
                           labelText: l10n.accountType,
@@ -605,6 +606,7 @@ class AccountsScreen extends StatelessWidget {
                             )
                           else if (item is CloudDriverSelectField)
                             DropdownButtonFormField<String>(
+                              borderRadius: BorderRadius.circular(10),
                               isExpanded: true,
                               initialValue:
                                   item.options.any(
@@ -635,6 +637,7 @@ class AccountsScreen extends StatelessWidget {
                             )
                           else if (item is CloudDriverAccountField)
                             DropdownButtonFormField<String>(
+                              borderRadius: BorderRadius.circular(10),
                               isExpanded: true,
                               initialValue:
                                   accounts.accounts.any(

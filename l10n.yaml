@@ -5,3 +5,4 @@ output-localization-file: app_localizations.dart
 output-class: AppLocalizations
 preferred-supported-locales: [zh, zh_TW, en]
 untranslated-messages-file: build/l10n_untranslated.txt
+use-escaping: true

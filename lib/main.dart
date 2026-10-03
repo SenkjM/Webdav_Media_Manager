@@ -107,6 +107,7 @@ class WebDavMusicApp extends StatelessWidget {
         builder: (context, settings, _) => MaterialApp(
           title: 'Webdav Media Manager',
           locale: settings.appLocale.locale,
+          localeListResolutionCallback: resolveAppLocaleList,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           debugShowCheckedModeBanner: false,

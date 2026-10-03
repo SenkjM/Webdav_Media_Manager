@@ -199,6 +199,11 @@ class AppTheme {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       ),
+      popupMenuTheme: const PopupMenuThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(10)),
+        ),
+      ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: const Color(0xFF2A2A30),
         contentTextStyle: const TextStyle(color: Color(0xFFF5F5F7)),
@@ -456,6 +461,11 @@ class AppTheme {
         backgroundColor: elevated,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      popupMenuTheme: const PopupMenuThemeData(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(10)),
+        ),
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: elevatedHigh,

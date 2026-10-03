@@ -63,7 +63,7 @@ class NowPlayingQueueScreen extends StatelessWidget {
                   ),
                   subtitle: Text(
                     [
-                      t.displayArtist,
+                      t.displayArtistFor(AppLocalizations.of(context)!),
                       if (t.displayAlbum.isNotEmpty) t.displayAlbum,
                     ].join(' · '),
                     maxLines: 1,

@@ -15,6 +15,7 @@ import '../services/backup_service.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
 import '../services/download_queue_service.dart';
+import '../services/legacy_sentinel_migration.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
 import '../utils/rev_clock.dart';
@@ -174,6 +175,15 @@ class AppState extends ChangeNotifier {
       _syncDownloadFileTypes();
       _initPhase = 'cache';
       await cache.init();
+      _initPhase = 'legacy-sentinels';
+      await migrateLegacySentinelsOnce(
+        libraryDb: await libraryDb.database,
+        playlistDb: await playlists.openDatabase(),
+        downloadDb: await downloads.openDatabase(),
+        cacheDir: cache.cacheDir,
+        coversDir: await library.covers.coversDir,
+        coversFullDir: await library.covers.coversFullDir,
+      );
       // The rev clock is the single version source sync compares; it starts from
       // the persisted high-water mark and reports every advance back.
       library.attachRevClock(

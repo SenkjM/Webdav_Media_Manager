@@ -1,6 +1,7 @@
 import '../l10n/generated/app_localizations.dart';
 import '../models/file_type_config.dart';
 import '../utils/track_identity.dart';
+import 'library_sentinels.dart';
 
 class WebDavItem {
   const WebDavItem({
@@ -112,14 +113,14 @@ class TrackInfo {
     return fileName;
   }
 
+  /// Empty artist uses [kUnknownArtist]. Display goes through [displayArtistFor].
   String get displayArtist {
     final a = artist?.trim();
     if (a != null && a.isNotEmpty) return a;
-    return '未知艺术家';
+    return kUnknownArtist;
   }
 
-  /// Locale-aware render of [displayArtist]; the raw getter keeps a stable
-  /// '未知艺术家' fallback for queue/metadata consumers.
+  /// Locale-aware render of [displayArtist].
   String displayArtistFor(AppLocalizations l10n) {
     final a = artist?.trim();
     if (a != null && a.isNotEmpty) return a;

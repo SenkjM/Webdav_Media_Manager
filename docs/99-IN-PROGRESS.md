@@ -772,25 +772,25 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - 新标签名在算出 seq / versionCode 之后才确定。旧标签 `v0.2.2-f046956`、`v0.2.2-ba29461`、`v0.2.2-0d5148a` 与浮动 `prerelease` 不改名、不移动。`version_name` 仍等于标签名，所以新版本的标题会变成 `Pre-release v0.2.2-<versionCode> (<versionCode>)`，模板那一行不改。
 - 开关的「已经一致」走原生返回的 `already`，不是错误。冷启动和进入下载设置时若开关为开，仍然只在缺失时补文件，不弹「外部操作」提示。
 
-## 10. 日语衬线字体（已分析，未开工）
+## 10. 日语衬线字体（本分支已按最小改法落地）
 
-**状态**：2026-10-03 只分析，用户要求先记录，不改代码。
+**状态**：2026-10-03 `feat/l10n-leftovers` 已改代码。不恢复 `app_zh_CN.arb`。简体偏好改回 `Locale('zh', 'CN')`。`MaterialApp.localeListResolutionCallback` 用 `resolveAppLocaleList`：系统 `zh_CN`、`zh_Hans`、裸 `zh` 都解析成 `Locale('zh', 'CN')`；`zh_TW` 或 script `Hant` 仍是 `Locale('zh', 'TW')`；英文仍是 `Locale('en')`。`lookupAppLocalizations` 本来就把非 TW 的 zh 映到简体，`isSupported` 只看语言码。
 
 **现象**：中文和英文仍是原来的无衬线字体。日语假名退化成衬线体，每台机器落到的衬线不一样。
 
 **原因**：`923007e` 把简体界面从 `Locale('zh', 'CN')` 改成 `Locale('zh')`，文案没变。Android 字体表按 `zh-CN` / `zh-Hans` / `ja` 登记，没有裸的 `zh`。汉字多半还能落到黑体，假名对不上就继续往下找，先碰到的常常是 Noto Serif CJK 一类衬线。跟系统时也一样：手机是 `zh_CN`，但 `supportedLocales` 只有裸 `zh`，解析会把地区丢掉。
 
-**最小改法（未做）**：不恢复 `app_zh_CN.arb`。`lookupAppLocalizations` 对 `zh_CN` 已经落到现有简体，只有 `TW` 走繁体。把简体偏好改回 `Locale('zh', 'CN')`，并在 `MaterialApp` 上加 `localeListResolutionCallback`，简体（含跟系统的 `zh_CN` / `zh_Hans`）固定返回 `Locale('zh', 'CN')`，避免又被收成裸 `zh`。繁体、英文不动。
+**最小改法（本分支已做）**：见上面的状态。繁体、英文不动。
 
-## 11. 下拉菜单直角（已分析，未开工）
+## 11. 下拉菜单直角（本分支已按最小改法落地）
 
-**状态**：2026-10-03 只分析，用户要求先记录，不改代码。
+**状态**：2026-10-03 `feat/l10n-leftovers` 已改代码。每个 `DropdownButton` / `DropdownButtonFormField` 传入 `borderRadius: BorderRadius.circular(10)`（设置、同步、后缀、视频手势设置、视频播放页手势菜单、账号、网络库）。`AppTheme` 亮色和暗色都加了 `popupMenuTheme`，圆角同样是 10。没有新 UI kit，播放器手势区、进度条、底衬没有改样式。
 
 **现象**：设置、同步、后缀、视频手势、账号里的 `DropdownButton` / `DropdownButtonFormField` 弹出菜单是直角，和卡片、对话框、输入框的 10–16 圆角不是一套。
 
 **原因**：这些调用都没传 `borderRadius`。Flutter 3.47 的 `dropdown.dart` 在未传入时用 `BorderRadius.zero`。`AppTheme` 没有下拉菜单的总开关。
 
-**最小改法（未做）**：不加第三方库。每个 `DropdownButton` 把圆角设成和输入框一样的 10，或包一个只干这件事的下拉。`PopupMenuButton` 另走 `popupMenuTheme`，可在 `AppTheme` 里一次设成同一个圆角。不要换成 Material 3 `DropdownMenu`，那是另一轮替换。
+**最小改法（本分支已做）**：见上面的状态。没有换成 Material 3 `DropdownMenu`。
 
 ## 12. 语言选项跟着界面语言变（已分析，未开工）
 
@@ -801,3 +801,23 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 **原因**：`settings_screen.dart` 的选项用的是 `l10n.languageSimplifiedChinese` 等键。这三个键在 `app_zh.arb`、`app_zh_TW.arb`、`app_en.arb` 里各有一份译文，所以显示的是当前界面语言，不是该选项自己的语言。
 
 **方案（未做）**：语言名字不要走 l10n。在 `AppLocalePreference` 上写死自称：简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」。以后加语言只加这条自称，不把语言名翻译进每份 ARB。「跟随系统」不是一种语言，仍用当前界面的 `languageSystem`。
+
+
+## 13. 界面残留中文、下载重试、一次性哨兵迁移（本分支）
+
+**状态**：`feat/l10n-leftovers` 未推送。`pubspec.yaml` 仍是 `1.0.0+1`，没有为这条迁移改版本号。注释里的 0.2.2 / 0.2.4 是用户指定的正式版本说法，不是 pubspec。
+
+**界面文案**：还露在界面上的简体写进 `app_zh.arb` / `app_zh_TW.arb` / `app_en.arb`，繁体和英文是各自的句子，不是简体副本。没有恢复 `app_zh_CN.arb`。
+
+**故意不翻译**：写进数据库或文件名的哨兵（`未知艺术家`、`未知专辑`、`未命名`、`新歌单`、`默认服务器`、`服务器`、`未分类`、`新文件夹`、`系统相册`、`下载目录`）仍是存储值。语言自称 `简体中文` / `繁體中文` / `English` 与 §12 仍未改。`debugPrint`、`MusicAudioHandler` 探测串、Open115 `msg.contains('网络')`、原生 Kotlin（`MainActivity` 错误、`DownloadKeepAliveService` 回退「下载进度 / 正在下载」）不动。
+
+**下载重试**：`DownloadQueueService.isRetryable` 不再把 401 / 403 / 404 / unauthorized / forbidden 或非 5xx 的 `badResponse` 排除。所有上游错误（含奇怪的授权失败）走原来的次数和退避。仍然不重试：用户取消、`StateError`、解密失败 `CloudDriverDataException`。
+
+**一次性迁移**：`migrateLegacySentinelsOnce`（`lib/services/legacy_sentinel_migration.dart`）在 `AppState.init` 里、缓存目录就绪之后、曲库 / 账号 / 歌单 / 下载把名字读进内存之前跑一次。文件头注释写明：这是正式版本 0.2.2；本迁移只在 0.2.2 运行；到 0.2.4 必须做完并删掉全部迁移代码；0.2.4 之后旧数据库不再兼容。没有第二套迁移框架，也没有抬高曲库 schema。
+
+只改两处精确匹配：
+
+- 歌单名 `未命名` → `__wdmm_unnamed_playlist__`（`playlists.name` 与 `entries_json` 里的 `sourceName` / `accountId`）。不碰 `新歌单`。改过的行抬高 `updated_at`，同步才能推稳定键。不在启动时去拉远端 `.wdmp`。
+- `默认服务器` → `__wdmm_default_server__`：`accounts.name`、各表 `source_name`、下载任务、歌单条目 `sourceName`，以及恰好是这个名字或以 `cue\0默认服务器\0` / `默认服务器\0` 开头的 `cache_group_id` / `cache_groups`。不碰默认名 `服务器`。`music_id` 不重算哈希；缓存和封面文件按旧 stem 改名到新 stem，`cover_path` 同样改。
+
+不改：真实流派标签 `未分类`（空流派已经是 `__wdmm_uncategorized__`）、`未知艺术家` / `未知专辑`（空艺术家 / 空专辑的分组键已经是稳定键，界面用 `displayArtistFor` / `displayAlbumFor`）、`新文件夹`、`系统相册`、`下载目录`、字幕存储值 `默认`、原生 Kotlin。再跑一次找不到这些中文哨兵。下一版（最迟到 0.2.4）删掉整个函数。

@@ -7,10 +7,10 @@ void main() {
     'generated account and playlist names have stable sentinel compatibility',
     () {
       expect(isDefaultServerName(kDefaultServerName), isTrue);
-      expect(isDefaultServerName(kLegacyDefaultServerName), isTrue);
+      expect(isDefaultServerName('默认服务器'), isFalse);
       expect(isDefaultServerName('My server'), isFalse);
       expect(isUnnamedPlaylistName(kUnnamedPlaylistName), isTrue);
-      expect(isUnnamedPlaylistName(kLegacyUnnamedPlaylistName), isTrue);
+      expect(isUnnamedPlaylistName('未命名'), isFalse);
       expect(isUnnamedPlaylistName('Favorites'), isFalse);
     },
   );

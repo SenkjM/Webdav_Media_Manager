@@ -457,7 +457,7 @@ class PlayerScreen extends StatelessWidget {
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                player.error ?? track?.displayArtist ?? '',
+                                player.error ?? track?.displayArtistFor(AppLocalizations.of(context)!) ?? '',
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,

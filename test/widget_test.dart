@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/models/file_type_config.dart';
+import 'package:webdav_media_manager/models/library_sentinels.dart';
 import 'package:webdav_media_manager/models/webdav_item.dart';
 import 'package:webdav_media_manager/utils/audio_extensions.dart';
 
@@ -45,7 +46,7 @@ void main() {
     expect(t.isDownloaded, isFalse);
     // Library may retain tags after cache cleanup — show title when present.
     expect(t.displayTitle, 'Secret');
-    expect(t.displayArtist, '未知艺术家');
+    expect(t.displayArtist, kUnknownArtist);
     final bare = TrackInfo(
       sourceName: 'acc1',
       remotePath: '/a/c.mp3',

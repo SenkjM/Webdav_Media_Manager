@@ -1,6 +1,7 @@
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/playlist.dart';
@@ -84,6 +85,10 @@ class PlaylistService extends ChangeNotifier {
     _syncEnabled = enabled;
     _syncAccountId = accountId;
   }
+
+  /// Opens the local playlist database. The 0.2.2 sentinel migration uses this
+  /// before [init] loads names into memory.
+  Future<Database> openDatabase() => _store.database;
 
   Future<void> init() async {
     await _store.database;

@@ -264,7 +264,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       player.stream.error.listen((e) {
         if (!mounted || e.isEmpty) return;
         setState(() => _error = e);
-        AppSnack.show(context, '播放错误：$e');
+        AppSnack.show(context, AppLocalizations.of(context)!.videoPlaybackError(e));
       }),
     );
     // Auto-advance to the next video in the folder when one finishes.
@@ -368,7 +368,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       _armSubtitles(item);
     } catch (e) {
       if (!mounted) return;
-      AppSnack.show(context, '切换视频失败：$e');
+      AppSnack.show(context, AppLocalizations.of(context)!.videoSwitchFailed('$e'));
     } finally {
       if (mounted) {
         setState(() {
@@ -403,9 +403,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final next = queue.next;
     if (next == null) {
       if (!auto) {
+        final l10n = AppLocalizations.of(context)!;
         AppSnack.show(
           context,
-          queue.scanning ? '已到列表末尾（仍在扫描文件夹…）' : '已是最后一个视频',
+          queue.scanning ? l10n.videoEndStillScanning : l10n.videoAlreadyLast,
         );
       } else {
         await _player?.pause();
@@ -424,12 +425,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     }
     // Standard player behavior: restart the current video first.
     if (_position.value > const Duration(seconds: 3)) {
-      await _seekBy(Duration.zero, label: '从头播放', toStart: true);
+      await _seekBy(Duration.zero, label: AppLocalizations.of(context)!.videoPlayFromStart, toStart: true);
       return;
     }
     final prev = queue.previous;
     if (prev == null) {
-      AppSnack.show(context, queue.scanning ? '已是第一个视频（仍在扫描文件夹…）' : '已是第一个视频');
+      AppSnack.show(context, queue.scanning ? AppLocalizations.of(context)!.videoAtFirstStillScanning : AppLocalizations.of(context)!.videoAlreadyFirst);
       return;
     }
     queue.selectRemotePath(prev.path);
@@ -902,7 +903,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   child: Padding(
                     padding: const EdgeInsets.all(8),
                     child: Tooltip(
-                      message: '长按解锁',
+                      message: AppLocalizations.of(context)!.videoLongPressToUnlock,
                       child: GestureDetector(
                         // Long-press only: a single tap must not unlock, otherwise
                         // an accidental brush against the screen defeats the lock.
@@ -1224,7 +1225,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final idx = queue.index;
     final parts = <String>[
       if (idx >= 0) '${idx + 1} / $total' else '— / $total',
-      if (queue.scanning) '扫描中…',
+      if (queue.scanning) AppLocalizations.of(context)!.videoQueueScanning,
     ];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
@@ -1447,9 +1448,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                 children: [
                   const Icon(Icons.speed, color: AppColors.accent),
                   const SizedBox(width: 8),
-                  const Text(
-                    '播放倍速',
-                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  Text(
+                    AppLocalizations.of(ctx)!.videoPlaybackSpeed,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
                   ),
                   const Spacer(),
                   Text(
@@ -1517,9 +1518,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
               ),
               const SizedBox(height: 8),
               Text(
-                '长按画面可临时加速（当前 '
-                '${settings.videoLongPressRate.toStringAsFixed(2)}×，'
-                '可在「视频播放设置」中调整）。',
+                AppLocalizations.of(ctx)!.videoLongPressPictureHint(
+                  settings.videoLongPressRate.toStringAsFixed(2),
+                ),
                 style: const TextStyle(
                   color: AppColors.mutedText,
                   fontSize: 12,
@@ -1634,8 +1635,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       rows.add(
         VideoSubtitleSheetRow(
           keyId: 'emb:${cue.id}',
-          title: cue.label.title,
-          formatTag: cue.label.formatTag,
+          title: cue.labelFor(l10n).title,
+          formatTag: cue.labelFor(l10n).formatTag,
         ),
       );
     }
@@ -1643,8 +1644,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       rows.add(
         VideoSubtitleSheetRow(
           keyId: 'side:${hit.path}',
-          title: hit.label.title,
-          formatTag: hit.label.formatTag,
+          title: hit.labelFor(l10n).title,
+          formatTag: hit.labelFor(l10n).formatTag,
         ),
       );
     }
@@ -1843,8 +1844,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
-                      '手势设置',
-                      style: TextStyle(
+                      AppLocalizations.of(ctx)!.videoGestureSettingsTitle,
+                      style: const TextStyle(
                         fontWeight: FontWeight.w600,
                         fontSize: 16,
                       ),
@@ -1853,8 +1854,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   Padding(
                     padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: Text(
-                      '单击显示/隐藏控件，双击中间播放/暂停。',
-                      style: TextStyle(
+                      AppLocalizations.of(ctx)!.videoGestureBasicHint,
+                      style: const TextStyle(
                         color: AppColors.mutedText,
                         fontSize: 12,
                       ),
@@ -1862,7 +1863,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   ),
                   _gestureDropdown(
                     ctx,
-                    label: '左侧双击',
+                    label: AppLocalizations.of(ctx)!.videoGestureLeftDoubleTap,
                     value: left,
                     onChanged: (v) {
                       setLocal(() => left = v);
@@ -1871,7 +1872,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   ),
                   _gestureDropdown(
                     ctx,
-                    label: '右侧双击',
+                    label: AppLocalizations.of(ctx)!.videoGestureRightDoubleTap,
                     value: right,
                     onChanged: (v) {
                       setLocal(() => right = v);
@@ -1880,7 +1881,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                   ),
                   _gestureDropdown(
                     ctx,
-                    label: '长按',
+                    label: AppLocalizations.of(ctx)!.videoGestureLongPress,
                     value: long,
                     onChanged: (v) {
                       setLocal(() => long = v);
@@ -1893,7 +1894,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Row(
                         children: [
-                          const Expanded(child: Text('长按临时倍速')),
+                          Expanded(child: Text(AppLocalizations.of(ctx)!.videoLongPressRate)),
                           Text(
                             '${longRate.toStringAsFixed(2)}×',
                             style: const TextStyle(
@@ -1921,8 +1922,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                     Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
                       child: Text(
-                        '按住加速，松手恢复。',
-                        style: TextStyle(
+                        AppLocalizations.of(ctx)!.videoHoldReleaseHint,
+                        style: const TextStyle(
                           color: AppColors.mutedText,
                           fontSize: 12,
                         ),
@@ -1952,6 +1953,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
           SizedBox(width: 80, child: Text(label)),
           Expanded(
             child: DropdownButton<VideoGestureAction>(
+              borderRadius: BorderRadius.circular(10),
               value: value,
               isExpanded: true,
               items: [

@@ -6310,6 +6310,150 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'字幕加载失败'**
   String get videoSubtitleLoadFailed;
+
+  /// No description provided for @notificationDiagnosticAllowed.
+  ///
+  /// In zh, this message translates to:
+  /// **'通知权限：已允许｜通道「{channel}」：{status}'**
+  String notificationDiagnosticAllowed(Object channel, Object status);
+
+  /// No description provided for @notificationDiagnosticDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'通知权限：未允许｜通道「{channel}」：{status}'**
+  String notificationDiagnosticDenied(Object channel, Object status);
+
+  /// No description provided for @openSystemSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开系统设置'**
+  String get openSystemSettings;
+
+  /// No description provided for @requestNotificationPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求通知权限'**
+  String get requestNotificationPermission;
+
+  /// No description provided for @settingsSyncSharedPath.
+  ///
+  /// In zh, this message translates to:
+  /// **'凭证 / 歌单 / 音乐库 / 备份共用一条远端路径：'**
+  String get settingsSyncSharedPath;
+
+  /// No description provided for @settingsPlaybackFooter.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐先下载再本地播放；视频直接流式播放并按文件夹连播。'**
+  String get settingsPlaybackFooter;
+
+  /// No description provided for @shareRenamePlaceholderList.
+  ///
+  /// In zh, this message translates to:
+  /// **'占位符：\'{artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}\''**
+  String get shareRenamePlaceholderList;
+
+  /// No description provided for @coverThumbSizeCurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前：{px}×{px}'**
+  String coverThumbSizeCurrent(Object px);
+
+  /// No description provided for @videoPlaybackError.
+  ///
+  /// In zh, this message translates to:
+  /// **'播放错误：{error}'**
+  String videoPlaybackError(Object error);
+
+  /// No description provided for @videoSwitchFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'切换视频失败：{error}'**
+  String videoSwitchFailed(Object error);
+
+  /// No description provided for @videoEndStillScanning.
+  ///
+  /// In zh, this message translates to:
+  /// **'已到列表末尾（仍在扫描文件夹…）'**
+  String get videoEndStillScanning;
+
+  /// No description provided for @videoAlreadyLast.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是最后一个视频'**
+  String get videoAlreadyLast;
+
+  /// No description provided for @videoPlayFromStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'从头播放'**
+  String get videoPlayFromStart;
+
+  /// No description provided for @videoAtFirstStillScanning.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是第一个视频（仍在扫描文件夹…）'**
+  String get videoAtFirstStillScanning;
+
+  /// No description provided for @videoAlreadyFirst.
+  ///
+  /// In zh, this message translates to:
+  /// **'已是第一个视频'**
+  String get videoAlreadyFirst;
+
+  /// No description provided for @videoLongPressToUnlock.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按解锁'**
+  String get videoLongPressToUnlock;
+
+  /// No description provided for @videoQueueScanning.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描中…'**
+  String get videoQueueScanning;
+
+  /// No description provided for @videoPlaybackSpeed.
+  ///
+  /// In zh, this message translates to:
+  /// **'播放倍速'**
+  String get videoPlaybackSpeed;
+
+  /// No description provided for @videoLongPressPictureHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按画面可临时加速（当前 {rate}×，可在「视频播放设置」中调整）。'**
+  String videoLongPressPictureHint(Object rate);
+
+  /// No description provided for @videoGestureSettingsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'手势设置'**
+  String get videoGestureSettingsTitle;
+
+  /// No description provided for @videoGestureBasicHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'单击显示/隐藏控件，双击中间播放/暂停。'**
+  String get videoGestureBasicHint;
+
+  /// No description provided for @videoHoldReleaseHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'按住加速，松手恢复。'**
+  String get videoHoldReleaseHint;
+
+  /// No description provided for @subtitleDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认'**
+  String get subtitleDefault;
+
+  /// No description provided for @subtitleEmbedded.
+  ///
+  /// In zh, this message translates to:
+  /// **'[内嵌] {language}'**
+  String subtitleEmbedded(Object language);
 }
 
 class _AppLocalizationsDelegate

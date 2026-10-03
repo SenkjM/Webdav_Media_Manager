@@ -376,6 +376,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
       leading: const Icon(Icons.touch_app_outlined),
       title: Text(label),
       trailing: DropdownButton<VideoGestureAction>(
+        borderRadius: BorderRadius.circular(10),
         value: value,
         items: [
           for (final a in VideoGestureAction.values)

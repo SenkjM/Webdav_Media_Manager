@@ -3610,6 +3610,93 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get videoSubtitleLoadFailed => '字幕加载失败';
+
+  @override
+  String notificationDiagnosticAllowed(Object channel, Object status) {
+    return '通知权限：已允许｜通道「$channel」：$status';
+  }
+
+  @override
+  String notificationDiagnosticDenied(Object channel, Object status) {
+    return '通知权限：未允许｜通道「$channel」：$status';
+  }
+
+  @override
+  String get openSystemSettings => '打开系统设置';
+
+  @override
+  String get requestNotificationPermission => '请求通知权限';
+
+  @override
+  String get settingsSyncSharedPath => '凭证 / 歌单 / 音乐库 / 备份共用一条远端路径：';
+
+  @override
+  String get settingsPlaybackFooter => '音乐先下载再本地播放；视频直接流式播放并按文件夹连播。';
+
+  @override
+  String get shareRenamePlaceholderList =>
+      '占位符：{artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}';
+
+  @override
+  String coverThumbSizeCurrent(Object px) {
+    return '当前：$px×$px';
+  }
+
+  @override
+  String videoPlaybackError(Object error) {
+    return '播放错误：$error';
+  }
+
+  @override
+  String videoSwitchFailed(Object error) {
+    return '切换视频失败：$error';
+  }
+
+  @override
+  String get videoEndStillScanning => '已到列表末尾（仍在扫描文件夹…）';
+
+  @override
+  String get videoAlreadyLast => '已是最后一个视频';
+
+  @override
+  String get videoPlayFromStart => '从头播放';
+
+  @override
+  String get videoAtFirstStillScanning => '已是第一个视频（仍在扫描文件夹…）';
+
+  @override
+  String get videoAlreadyFirst => '已是第一个视频';
+
+  @override
+  String get videoLongPressToUnlock => '长按解锁';
+
+  @override
+  String get videoQueueScanning => '扫描中…';
+
+  @override
+  String get videoPlaybackSpeed => '播放倍速';
+
+  @override
+  String videoLongPressPictureHint(Object rate) {
+    return '长按画面可临时加速（当前 $rate×，可在「视频播放设置」中调整）。';
+  }
+
+  @override
+  String get videoGestureSettingsTitle => '手势设置';
+
+  @override
+  String get videoGestureBasicHint => '单击显示/隐藏控件，双击中间播放/暂停。';
+
+  @override
+  String get videoHoldReleaseHint => '按住加速，松手恢复。';
+
+  @override
+  String get subtitleDefault => '默认';
+
+  @override
+  String subtitleEmbedded(Object language) {
+    return '[内嵌] $language';
+  }
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7218,4 +7305,91 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get videoSubtitleLoadFailed => '字幕載入失敗';
+
+  @override
+  String notificationDiagnosticAllowed(Object channel, Object status) {
+    return '通知權限：已允許｜頻道「$channel」：$status';
+  }
+
+  @override
+  String notificationDiagnosticDenied(Object channel, Object status) {
+    return '通知權限：未允許｜頻道「$channel」：$status';
+  }
+
+  @override
+  String get openSystemSettings => '開啟系統設定';
+
+  @override
+  String get requestNotificationPermission => '請求通知權限';
+
+  @override
+  String get settingsSyncSharedPath => '憑證 / 歌單 / 音樂庫 / 備份共用一條遠端路徑：';
+
+  @override
+  String get settingsPlaybackFooter => '音樂先下載再本機播放；影片直接串流播放並依資料夾連續播放。';
+
+  @override
+  String get shareRenamePlaceholderList =>
+      '佔位符：{artist} {title} {album} {albumArtist} {track} {year} {genre} {fileName}';
+
+  @override
+  String coverThumbSizeCurrent(Object px) {
+    return '目前：$px×$px';
+  }
+
+  @override
+  String videoPlaybackError(Object error) {
+    return '播放錯誤：$error';
+  }
+
+  @override
+  String videoSwitchFailed(Object error) {
+    return '切換影片失敗：$error';
+  }
+
+  @override
+  String get videoEndStillScanning => '已到清單末尾（仍在掃描資料夾…）';
+
+  @override
+  String get videoAlreadyLast => '已是最後一個影片';
+
+  @override
+  String get videoPlayFromStart => '從頭播放';
+
+  @override
+  String get videoAtFirstStillScanning => '已是第一個影片（仍在掃描資料夾…）';
+
+  @override
+  String get videoAlreadyFirst => '已是第一個影片';
+
+  @override
+  String get videoLongPressToUnlock => '長按解鎖';
+
+  @override
+  String get videoQueueScanning => '掃描中…';
+
+  @override
+  String get videoPlaybackSpeed => '播放倍速';
+
+  @override
+  String videoLongPressPictureHint(Object rate) {
+    return '長按畫面可暫時加速（目前 $rate×，可在「影片播放設定」中調整）。';
+  }
+
+  @override
+  String get videoGestureSettingsTitle => '手勢設定';
+
+  @override
+  String get videoGestureBasicHint => '單擊顯示/隱藏控制項，雙擊中間播放/暫停。';
+
+  @override
+  String get videoHoldReleaseHint => '按住加速，放手恢復。';
+
+  @override
+  String get subtitleDefault => '預設';
+
+  @override
+  String subtitleEmbedded(Object language) {
+    return '[內嵌] $language';
+  }
 }

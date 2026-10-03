@@ -24,6 +24,7 @@ void main() {
     );
     expect(AppLocalePreference.system.locale, isNull);
     expect(AppLocalePreference.zhCN.locale?.languageCode, 'zh');
+    expect(AppLocalePreference.zhCN.locale?.countryCode, 'CN');
     expect(AppLocalePreference.zhTW.locale?.countryCode, 'TW');
     expect(AppLocalePreference.en.locale?.languageCode, 'en');
   });
@@ -67,5 +68,35 @@ void main() {
     await restored.init();
     expect(restored.appLocale, AppLocalePreference.zhTW);
     expect(prefs.getString('app_locale'), 'zh-TW');
+  });
+
+  test('simplified locales resolve to zh_CN, traditional and english stay', () {
+    expect(
+      resolveAppLocaleList(const [Locale('zh', 'CN')], const []),
+      const Locale('zh', 'CN'),
+    );
+    expect(
+      resolveAppLocaleList(const [Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hans')], const []),
+      const Locale('zh', 'CN'),
+    );
+    expect(
+      resolveAppLocaleList(const [Locale('zh')], const []),
+      const Locale('zh', 'CN'),
+    );
+    expect(
+      resolveAppLocaleList(const [Locale('zh', 'TW')], const []),
+      const Locale('zh', 'TW'),
+    );
+    expect(
+      resolveAppLocaleList(
+        const [Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant')],
+        const [],
+      ),
+      const Locale('zh', 'TW'),
+    );
+    expect(
+      resolveAppLocaleList(const [Locale('en', 'US')], const []),
+      const Locale('en'),
+    );
   });
 }
