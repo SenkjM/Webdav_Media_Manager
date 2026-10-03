@@ -14,6 +14,8 @@
 
 **当前 main 状态按已通过收口**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
 
+- 2026-10-03：进入 `MusicStreamScreen` 的首帧回调调用 `AudioPlayerService.pauseForVideo()` 暂停本地音乐并保留队列；页面销毁只停远端流，不自动恢复本地播放。
+
 **已知粗糙处（优化的候选，都还没有具体方案）**：
 
 - 离开音乐流式页会 `VideoPlaybackService.stop()`，而它内部是 `exitVideoMode()`——语义是「**恢复**本地音乐队列」。所以停下流式歌时通知栏会跳回之前暂停的本地歌。要更干净，得让远端流用途参与 `exitVideoMode` 的分支判断。

@@ -12,6 +12,7 @@ import '../models/file_type_config.dart';
 import '../models/music_stream.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
+import '../services/audio_player_service.dart';
 import '../services/settings_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/video_queue_controller.dart';
@@ -121,7 +122,18 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
       _queue!.addListener(_onQueueChanged);
       _queue!.startScan();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _openInitial());
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _pauseLocalPlaybackAndOpen(),
+    );
+  }
+
+  /// Pause local music before this screen takes over the shared media session.
+  /// The queue remains intact; leaving this page must not resume it.
+  Future<void> _pauseLocalPlaybackAndOpen() async {
+    if (!mounted) return;
+    await context.read<AudioPlayerService>().pauseForVideo();
+    if (!mounted) return;
+    await _openInitial();
   }
 
   void _onQueueChanged() {
