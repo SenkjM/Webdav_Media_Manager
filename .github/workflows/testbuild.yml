@@ -1,0 +1,68 @@
+name: Testbuild
+
+# 手动旁路编译：只出 test flavor 的 arm64-v8a APK，上传 Actions artifact。
+# 不打标签、不建 GitHub Release、不打 app bundle，也不跑预发布的定时任务。
+# 不解码 keystore。没有 secrets 时 release 构建回落到 debug 签名，够旁路安装。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # upload-artifact 在显式 permissions 下需要 actions: write；不授予 contents: write。
+  actions: write
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install Android SDK compile dependencies
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ ! -x "$SDKMANAGER" ]; then
+            echo "sdkmanager not found; leaving SDK components to Gradle."
+            exit 0
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build arm64-v8a test APK
+        run: flutter build apk --release --flavor test --target-platform android-arm64
+
+      - name: Upload testbuild APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: testbuild-arm64-v8a
+          path: build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
