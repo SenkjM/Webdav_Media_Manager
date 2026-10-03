@@ -1833,12 +1833,6 @@ abstract class AppLocalizations {
   /// **'返回'**
   String get back;
 
-  /// No description provided for @streamingNotCached.
-  ///
-  /// In zh, this message translates to:
-  /// **'流式传输 · 未缓存'**
-  String get streamingNotCached;
-
   /// No description provided for @seekSeconds.
   ///
   /// In zh, this message translates to:

@@ -952,9 +952,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get back => '返回';
 
   @override
-  String get streamingNotCached => '流式传输 · 未缓存';
-
-  @override
   String seekSeconds(Object seconds) {
     return '$seconds 秒';
   }
@@ -4701,9 +4698,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get back => '返回';
-
-  @override
-  String get streamingNotCached => '串流傳輸 · 未快取';
 
   @override
   String seekSeconds(Object seconds) {

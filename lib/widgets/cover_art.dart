@@ -42,11 +42,11 @@ class CoverArt extends StatelessWidget {
                 fit: BoxFit.cover,
                 gaplessPlayback: true,
                 errorBuilder: (context, error, stackTrace) =>
-                    _hasFile ? _fileImage() : _placeholder(),
+                    _hasFile ? _fileImage() : _placeholder(context),
               )
             : _hasFile
             ? _fileImage()
-            : _placeholder(),
+            : _placeholder(context),
       ),
     );
   }
@@ -58,18 +58,19 @@ class CoverArt extends StatelessWidget {
       height: size,
       fit: BoxFit.cover,
       gaplessPlayback: true,
-      errorBuilder: (context, error, stackTrace) => _placeholder(),
+      errorBuilder: (context, error, stackTrace) => _placeholder(context),
     );
   }
 
-  Widget _placeholder() {
+  Widget _placeholder(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return ColoredBox(
-      color: AppColors.elevatedHigh,
+      color: scheme.surfaceContainerHigh,
       child: Center(
         child: Icon(
           icon ?? Icons.music_note,
           size: size * 0.45,
-          color: AppColors.mutedText,
+          color: scheme.onSurfaceVariant,
         ),
       ),
     );

@@ -15,6 +15,7 @@
 **当前 main 状态按已通过收口**：后台切换、锁屏控制、耳机按键、断网、切回本地播放。
 
 - 2026-10-03：进入 `MusicStreamScreen` 的首帧回调调用 `AudioPlayerService.pauseForVideo()` 暂停本地音乐并保留队列；页面销毁只停远端流，不自动恢复本地播放。
+- 2026-10-03：标题下的「流式传输 · 未缓存」已去掉。键 `streamingNotCached` 从 `app_zh.arb`、`app_zh_TW.arb`、`app_en.arb` 删除（没有 ja 等其它 locale），`MusicStreamScreen` 不再显示这行。流式缺封面仍是 `_buildCover` 里原来的 `ColorScheme` 占位，这一轮没有重画。
 
 **已知粗糙处（优化的候选，都还没有具体方案）**：
 
@@ -161,6 +162,10 @@
 ### 2.8 浅色取色偏暗（流式音乐页）
 
 没换变体。`DynamicSchemeVariant.fidelity` 仍生成深色，也仍是浅色的起点（种子彩度不被压成粉彩，不用 Expressive）。浅色偏暗是 fidelity 本身：`primary` 被压到色调约 40（种子更暗时更低），`primaryContainer` 钉在种子色调上。换 `tonalSpot` 抬不高 `primary`（还是约 40）。所以只在 `fromSeed` 之后抬浅色：表面色调上移（`surface` 到 99，容器大约 98–93），强调色至少到色调 68，主/次/第三容器至少到 90。白字对比不够时 `on*` 改成同色相色调 20 的深色字，对比仍不低于 4.5。深色不改。流式页的进度条和强调色跟着这套方案变亮，没有单独刷白。没动模糊、封面图、进度条手势。
+
+### 2.9 曲库缺封面占位跟主题（本分支）
+
+`CoverArt._placeholder` 不再写死 `AppColors.elevatedHigh` / `AppColors.mutedText`。底色用 `colorScheme.surfaceContainerHigh`，图标用 `colorScheme.onSurfaceVariant`，深色模式和种子色都跟着走。`PlayerCoverArt`、迷你条、正在播放队列在没有封面时共用这个占位，只跟着改颜色，其它样式不动。`MusicStreamScreen._buildCover`、`Image.memory` / `Image.file`、圆角、`LibraryCoverArt` 的分辨率、`cover_image.dart` 没动。
 
 
 ## 3. 多语言（已分析，未决定，未开工）

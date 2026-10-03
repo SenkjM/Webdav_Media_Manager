@@ -288,7 +288,6 @@
   "streamUrlFailed": "无法建立流式地址，请检查账户配置",
   "loading": "加载中…",
   "back": "返回",
-  "streamingNotCached": "流式传输 · 未缓存",
   "seekSeconds": "{seconds} 秒",
   "previousTrack": "上一首",
   "pause": "暂停",

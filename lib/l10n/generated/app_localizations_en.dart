@@ -982,9 +982,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get back => 'Back';
 
   @override
-  String get streamingNotCached => 'Streaming · not cached';
-
-  @override
   String seekSeconds(Object seconds) {
     return '${seconds}s';
   }

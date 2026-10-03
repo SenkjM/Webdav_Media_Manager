@@ -288,7 +288,6 @@
   "streamUrlFailed": "Failed to build the stream URL. Check the account settings.",
   "loading": "Loading…",
   "back": "Back",
-  "streamingNotCached": "Streaming · not cached",
   "seekSeconds": "{seconds}s",
   "previousTrack": "Previous track",
   "pause": "Pause",
