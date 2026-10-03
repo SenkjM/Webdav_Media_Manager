@@ -17,6 +17,12 @@ fun envOrProp(name: String): String? =
     System.getenv(name)?.takeIf { it.isNotBlank() }
         ?: keystoreProperties.getProperty(name)?.takeIf { it.isNotBlank() }
 
+// `flutter build apk --split-per-abi` 传入 -Psplit-per-abi=true，会给每个
+// variant 打开 splits.abi。AGP 只要任一 variant 还留着 ndk.abiFilters 就失败，
+// 包括正在编 prod 时一并配置的 sandbox。
+val splitPerAbi =
+    findProperty("split-per-abi")?.toString()?.toBoolean() == true
+
 android {
     namespace = "com.senkjm.media_manager"
     compileSdk = maxOf(flutter.compileSdkVersion, 35)
@@ -43,7 +49,9 @@ android {
     // 独立的数据库 / 偏好 / 安全存储目录。
     // 注意：一旦存在 product flavor，AGP 就不再生成不带 flavor 的
     // assembleRelease 之类任务，所有构建都必须显式带 --flavor。
-    // abiFilters 只写在 sandbox 上。prod / dev 不设，仍由各自的构建命令决定 ABI。
+    // abiFilters 只在非 split-per-abi 时写在 sandbox 上。prod / dev 不设，
+    // 仍由各自的构建命令决定 ABI。分包构建不能带这份过滤，否则 prod 的
+    // --split-per-abi 会在配置 sandbox variant 时失败。
     // flavor 不能叫 test：AGP 禁止 ProductFlavor 名字以 test 开头。
     flavorDimensions += "env"
     productFlavors {
@@ -61,8 +69,10 @@ android {
             applicationIdSuffix = ".test"
             versionNameSuffix = "-test"
             manifestPlaceholders["appName"] = "Webdav Media Manager Test"
-            ndk {
-                abiFilters += "arm64-v8a"
+            if (!splitPerAbi) {
+                ndk {
+                    abiFilters += "arm64-v8a"
+                }
             }
         }
     }
