@@ -8,7 +8,6 @@ import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../providers/app_state.dart';
 import '../services/settings_service.dart';
-import '../theme/app_theme.dart';
 
 /// 管理「哪些后缀算音乐 / 视频 / CUE」以及**每一类文件的单击行为**。
 ///
@@ -121,15 +120,15 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.fileExtensionSettings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
             l10n.fileExtIntro,
-            style: const TextStyle(
-              color: AppColors.secondaryText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
           ),
@@ -218,7 +217,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
   }) {
     final l10n = AppLocalizations.of(context)!;
     return Card(
-      color: AppColors.elevated,
+      color: Theme.of(context).colorScheme.surfaceContainer,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -229,8 +228,8 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
-                      color: AppColors.primaryText,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -245,8 +244,8 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
             ),
             Text(
               subtitle,
-              style: const TextStyle(
-                color: AppColors.secondaryText,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 12,
               ),
             ),

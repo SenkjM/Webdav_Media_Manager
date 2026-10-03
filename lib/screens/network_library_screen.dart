@@ -628,7 +628,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final action = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.elevated,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -646,7 +646,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: AppColors.divider,
+                      color: Theme.of(context).colorScheme.outlineVariant,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -657,10 +657,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     (sheet.title != null && sheet.title!.isNotEmpty)
                         ? sheet.title!
                         : item.name,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.onDark,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -669,7 +669,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
                       sheet.performer!,
-                      style: const TextStyle(color: AppColors.mutedText),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.outline,
+                      ),
                     ),
                   ),
                 Padding(
@@ -691,7 +693,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     maxLines: 2,
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 Expanded(
                   child: ListView(
                     children: [
@@ -726,7 +731,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     ],
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                   child: Row(
@@ -803,7 +811,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.elevated,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       isScrollControlled: true,
       shape: AppBottomSheet.shape,
       builder: (ctx) {
@@ -818,8 +826,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     item.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.onDark,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -830,10 +838,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                             defaultAction.label(l10n),
                             item.category.label(l10n),
                           ),
-                    style: const TextStyle(color: AppColors.mutedText),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                 ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 // 文件夹也是两条独立的线：缓存里面的音频，或整棵目录树下载。
                 if (item.isDirectory) ...[
                   ListTile(
@@ -896,7 +909,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       },
                     ),
                 ],
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 ListTile(
                   leading: const Icon(Icons.drive_file_rename_outline),
                   title: Text(l10n.rename),
@@ -1156,7 +1172,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // 菜单默认会「向下放不下就往上弹」，限高之后基本只会向下展开。
     final menuMaxHeight = MediaQuery.sizeOf(context).height / 2;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         // Always the drawer button: directory navigation is done by the system
         // back key (see BackHandlerRegistry), so the top-left is reserved for the
@@ -1462,7 +1478,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final selected = _selection.contains(_itemKey(item));
     return Icon(
       selected ? Icons.check_circle : Icons.circle_outlined,
-      color: selected ? AppColors.accent : AppColors.mutedText,
+      color: selected
+          ? AppColors.accent
+          : Theme.of(context).colorScheme.outline,
     );
   }
 

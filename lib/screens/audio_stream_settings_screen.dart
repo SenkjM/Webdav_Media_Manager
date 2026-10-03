@@ -18,7 +18,7 @@ class AudioStreamSettingsScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.audioStreamingTitle)),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -31,7 +31,10 @@ class AudioStreamSettingsScreen extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             l10n.streamPlaybackHint,
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 8),
           SwitchListTile(
@@ -51,7 +54,10 @@ class AudioStreamSettingsScreen extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             l10n.scanListHint,
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 8),
           SwitchListTile(

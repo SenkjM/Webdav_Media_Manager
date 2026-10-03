@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../theme/app_theme.dart';
-
 /// Shared bottom-sheet shell.
 ///
 /// Every sheet in this app that is just a stack of tiles has to be scrollable:
@@ -31,13 +29,15 @@ class AppBottomSheet extends StatelessWidget {
 
   /// Drag handle shown at the top of a sheet.
   static Widget handle() => Center(
-    child: Container(
-      width: 36,
-      height: 4,
-      margin: const EdgeInsets.only(top: 8, bottom: 4),
-      decoration: BoxDecoration(
-        color: AppColors.divider,
-        borderRadius: BorderRadius.circular(2),
+    child: Builder(
+      builder: (context) => Container(
+        width: 36,
+        height: 4,
+        margin: const EdgeInsets.only(top: 8, bottom: 4),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.outlineVariant,
+          borderRadius: BorderRadius.circular(2),
+        ),
       ),
     ),
   );

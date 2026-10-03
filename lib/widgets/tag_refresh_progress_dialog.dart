@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../l10n/generated/app_localizations.dart';
 
-import '../theme/app_theme.dart';
-
 class TagRefreshProgressDialog extends StatelessWidget {
   const TagRefreshProgressDialog({
     super.key,
@@ -25,7 +23,7 @@ class TagRefreshProgressDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     return AlertDialog(
-      backgroundColor: AppColors.elevated,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       title: Text(l10n.tagRefreshInProgress),
       content: ValueListenableBuilder<int>(
         valueListenable: progress,
@@ -43,18 +41,18 @@ class TagRefreshProgressDialog extends StatelessWidget {
                 name,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AppColors.secondaryText,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
             const SizedBox(height: 6),
             Text(
               l10n.tagRefreshStopHint,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 11,
-                color: AppColors.secondaryText,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],

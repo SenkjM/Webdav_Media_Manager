@@ -49,7 +49,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     return DefaultTabController(
       length: 4,
       child: Scaffold(
-        backgroundColor: AppColors.nearBlack,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
           leading: const DrawerMenuButton(),
           title: _searchOpen
@@ -64,7 +64,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                     filled: false,
                     isDense: true,
                   ),
-                  style: const TextStyle(color: AppColors.onDark, fontSize: 16),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 16,
+                  ),
                   onChanged: (v) => setState(() => _query = v),
                 )
               : Text(AppLocalizations.of(context)!.library),
@@ -127,7 +130,9 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   child: Text(
                     AppLocalizations.of(context)!.libraryEmptyGuide,
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.secondaryText),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
               )
@@ -269,7 +274,9 @@ class _TagsTab extends StatelessWidget {
         child: Text(
           AppLocalizations.of(context)!.genreEmpty,
           textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.secondaryText),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -283,7 +290,7 @@ class _TagsTab extends StatelessWidget {
         final tracks = groups[tag]!;
         return ListTile(
           leading: CircleAvatar(
-            backgroundColor: AppColors.elevatedHigh,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
             child: Icon(
               isUncategorizedGenre(tag)
                   ? Icons.label_off_outlined
@@ -408,7 +415,9 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
       return Center(
         child: Text(
           AppLocalizations.of(context)!.noMatchResult,
-          style: const TextStyle(color: AppColors.secondaryText),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -669,7 +678,7 @@ class _CoverTile extends StatelessWidget {
     return Material(
       color: selected
           ? AppColors.accent.withValues(alpha: 0.14)
-          : AppColors.elevated,
+          : Theme.of(context).colorScheme.surfaceContainer,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -718,7 +727,7 @@ class _CoverTile extends StatelessWidget {
                                 : Icons.circle_outlined,
                             color: selected
                                 ? AppColors.accent
-                                : AppColors.mutedText,
+                                : Theme.of(context).colorScheme.outline,
                           ),
                         ),
                       ],
@@ -731,8 +740,8 @@ class _CoverTile extends StatelessWidget {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.onDark,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
                   fontWeight: FontWeight.w600,
                   fontSize: 13,
                 ),
@@ -846,7 +855,9 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
       return Center(
         child: Text(
           widget.emptyHint ?? AppLocalizations.of(context)!.libraryTracksEmpty,
-          style: const TextStyle(color: AppColors.secondaryText),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       );
     }
@@ -955,7 +966,7 @@ class _TrackListPageState extends State<_TrackListPage> {
     final library = context.read<LibraryService>();
     final tracks = library.sortedCopy(widget.tracks, sort: _sort);
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
@@ -1049,7 +1060,9 @@ class _TrackTile extends StatelessWidget {
       leading: selecting
           ? Icon(
               selected ? Icons.check_circle : Icons.circle_outlined,
-              color: selected ? AppColors.accent : AppColors.mutedText,
+              color: selected
+                  ? AppColors.accent
+                  : Theme.of(context).colorScheme.outline,
             )
           : LibraryCoverArt.forTrack(
               track: track,
@@ -1062,7 +1075,9 @@ class _TrackTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: isLocal ? AppColors.onDark : AppColors.secondaryText,
+          color: isLocal
+              ? Theme.of(context).colorScheme.onSurface
+              : Theme.of(context).colorScheme.onSurfaceVariant,
           fontWeight: FontWeight.w500,
           fontSize: 14,
         ),
@@ -1082,7 +1097,10 @@ class _TrackTile extends StatelessWidget {
         ].join(' · '),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.outline,
+          fontSize: 12,
+        ),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1111,7 +1129,7 @@ class _TrackTile extends StatelessWidget {
                 border: Border.all(
                   color: isLocal
                       ? AppColors.localReady.withValues(alpha: 0.4)
-                      : AppColors.divider,
+                      : Theme.of(context).colorScheme.outlineVariant,
                   width: 1,
                 ),
               ),

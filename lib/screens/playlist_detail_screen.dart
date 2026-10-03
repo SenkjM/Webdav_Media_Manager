@@ -49,7 +49,7 @@ class PlaylistDetailScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(
           isUnnamedPlaylistName(pl.name)
@@ -69,7 +69,9 @@ class PlaylistDetailScreen extends StatelessWidget {
               child: Text(
                 AppLocalizations.of(context)!.playlistEmpty,
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.secondaryText),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           : ListView(
@@ -179,7 +181,9 @@ class _PlaylistTrackTile extends StatelessWidget {
       title: Text(
         track.displayTitle,
         style: TextStyle(
-          color: isLocal ? AppColors.onDark : AppColors.secondaryText,
+          color: isLocal
+              ? Theme.of(context).colorScheme.onSurface
+              : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
       subtitle: Text(

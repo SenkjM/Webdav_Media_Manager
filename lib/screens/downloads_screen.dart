@@ -76,7 +76,7 @@ class DownloadsScreen extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         title: Text(l10n.clearQueueConfirm),
         content: Text(
           l10n.clearQueueDetails(
@@ -111,7 +111,7 @@ class DownloadsScreen extends StatelessWidget {
     final rows = _rowsFor(tasks, queue);
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
         title: Text(l10n.downloadQueue),
@@ -170,7 +170,9 @@ class DownloadsScreen extends StatelessWidget {
           ? Center(
               child: Text(
                 l10n.noDownloadTasks,
-                style: TextStyle(color: AppColors.secondaryText),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           : ListView.builder(
@@ -264,10 +266,10 @@ class _CueGroupTile extends StatelessWidget {
         : active
         ? (l10n.downloadActive, AppColors.accent)
         : pending
-        ? (l10n.downloadPending, AppColors.mutedText)
+        ? (l10n.downloadPending, Theme.of(context).colorScheme.outline)
         : allDone
         ? (l10n.downloadCompleted, const Color(0xFF66BB6A))
-        : (l10n.inProgress, AppColors.mutedText);
+        : (l10n.inProgress, Theme.of(context).colorScheme.outline);
     final progress = members.isEmpty
         ? 0.0
         : members.map((t) => t.progress).reduce((a, b) => a + b) /
@@ -277,7 +279,7 @@ class _CueGroupTile extends StatelessWidget {
         : l10n.cueAlbum;
 
     return Card(
-      color: AppColors.elevated,
+      color: Theme.of(context).colorScheme.surfaceContainer,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -291,9 +293,9 @@ class _CueGroupTile extends StatelessWidget {
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: AppColors.onDark,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -324,7 +326,9 @@ class _CueGroupTile extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: active ? progress.clamp(0.0, 1.0) : null,
                   minHeight: 4,
-                  backgroundColor: AppColors.elevatedHigh,
+                  backgroundColor: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHigh,
                   color: AppColors.accent,
                 ),
               ),
@@ -332,8 +336,8 @@ class _CueGroupTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '${(progress * 100).toStringAsFixed(0)}%',
-                  style: const TextStyle(
-                    color: AppColors.mutedText,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
                     fontSize: 12,
                   ),
                 ),
@@ -400,11 +404,11 @@ class _TaskTile extends StatelessWidget {
         : task.status.label(l10n);
     final color = switch (task.status) {
       DownloadStatus.pending =>
-        retryWaiting ? AppColors.accent : AppColors.mutedText,
+        retryWaiting ? AppColors.accent : Theme.of(context).colorScheme.outline,
       DownloadStatus.active => AppColors.accent,
       DownloadStatus.completed => const Color(0xFF66BB6A),
       DownloadStatus.failed => AppColors.error,
-      DownloadStatus.cancelled => AppColors.mutedText,
+      DownloadStatus.cancelled => Theme.of(context).colorScheme.outline,
     };
     final savedToGallery =
         task.isGallery && task.status == DownloadStatus.completed;
@@ -413,7 +417,7 @@ class _TaskTile extends StatelessWidget {
         task.status == DownloadStatus.completed;
 
     return Card(
-      color: AppColors.elevated,
+      color: Theme.of(context).colorScheme.surfaceContainer,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -429,9 +433,9 @@ class _TaskTile extends StatelessWidget {
                   constraints: const BoxConstraints(maxWidth: 220),
                   child: Text(
                     task.fileName,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: AppColors.onDark,
+                      color: Theme.of(context).colorScheme.onSurface,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -482,15 +486,17 @@ class _TaskTile extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: task.progress.clamp(0.0, 1.0),
                   minHeight: 4,
-                  backgroundColor: AppColors.elevatedHigh,
+                  backgroundColor: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHigh,
                   color: AppColors.accent,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 '${(task.progress * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  color: AppColors.mutedText,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.outline,
                   fontSize: 12,
                 ),
               ),
@@ -506,7 +512,7 @@ class _TaskTile extends StatelessWidget {
                 style: TextStyle(
                   color: task.status == DownloadStatus.failed
                       ? AppColors.error
-                      : AppColors.mutedText,
+                      : Theme.of(context).colorScheme.outline,
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,

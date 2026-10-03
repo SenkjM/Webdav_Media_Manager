@@ -153,7 +153,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
         if (!_goUp()) Navigator.of(context).pop();
       },
       child: Scaffold(
-        backgroundColor: AppColors.nearBlack,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
           leading: IconButton(
             // 左上角是「关闭选择器」，不是「上一级」——上一级在右上角，两者

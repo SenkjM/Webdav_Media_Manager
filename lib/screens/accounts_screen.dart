@@ -39,7 +39,7 @@ class AccountsScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.accountsTitle)),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _editAccount(context),
@@ -793,7 +793,7 @@ class AccountsScreen extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         title: Text(l10n.accountDuplicateTitle),
         content: Text(l10n.accountDuplicateContent(clash.name, clash.url)),
         actions: [
@@ -822,7 +822,7 @@ class AccountsScreen extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         title: Text(
           renamed ? l10n.accountRenameTitle : l10n.accountUsernameChangedTitle,
         ),
@@ -855,11 +855,14 @@ class _BindingHint extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      color: AppColors.elevated,
+      color: Theme.of(context).colorScheme.surfaceContainer,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       child: Text(
         AppLocalizations.of(context)!.accountBindingHint,
-        style: const TextStyle(color: AppColors.secondaryText, fontSize: 12),
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+          fontSize: 12,
+        ),
       ),
     );
   }

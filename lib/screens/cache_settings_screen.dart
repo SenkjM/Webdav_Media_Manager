@@ -69,7 +69,9 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
     final hours = int.tryParse(_customHoursController.text.trim()) ?? 0;
     var totalHours = days * 24 + hours;
     if (totalHours < 1) totalHours = 1;
-    await context.read<AppState>().setCustomRetentionDuration(Duration(hours: totalHours));
+    await context.read<AppState>().setCustomRetentionDuration(
+      Duration(hours: totalHours),
+    );
     if (!mounted) return;
     _syncCustomFieldsFromSettings();
   }
@@ -90,7 +92,10 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
     final libCount = context.read<LibraryService>().count;
     await _refreshCacheSize();
     if (!mounted) return;
-    AppSnack.show(context, AppLocalizations.of(context)!.cacheCleared(n, libCount));
+    AppSnack.show(
+      context,
+      AppLocalizations.of(context)!.cacheCleared(n, libCount),
+    );
   }
 
   @override
@@ -98,7 +103,7 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
     final settings = context.watch<SettingsService>();
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.cacheCleanup)),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -106,14 +111,19 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
           Text(l10n.cacheCleanupHint),
           const SizedBox(height: 12),
           Card(
-            color: AppColors.elevated,
+            color: Theme.of(context).colorScheme.surfaceContainer,
             child: ListTile(
-              leading: const Icon(Icons.sd_storage_outlined, color: AppColors.accent),
+              leading: const Icon(
+                Icons.sd_storage_outlined,
+                color: AppColors.accent,
+              ),
               title: Text(l10n.currentCacheUsage),
               subtitle: Text(
                 _cacheSizeLoading
                     ? l10n.calculating
-                    : (_cacheBytes == null ? l10n.unknown : formatByteSize(_cacheBytes!)),
+                    : (_cacheBytes == null
+                          ? l10n.unknown
+                          : formatByteSize(_cacheBytes!)),
               ),
               trailing: IconButton(
                 tooltip: l10n.refresh,
@@ -133,12 +143,17 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
             onSelectionChanged: (s) {
               final next = s.first;
               context.read<AppState>().setRetention(next);
-              if (next == CacheRetention.custom) _syncCustomFieldsFromSettings();
+              if (next == CacheRetention.custom) {
+                _syncCustomFieldsFromSettings();
+              }
             },
           ),
           if (settings.retention == CacheRetention.custom) ...[
             const SizedBox(height: 12),
-            Text(l10n.customRetentionHint, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              l10n.customRetentionHint,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 8),
             Row(
               children: [
@@ -177,11 +192,17 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
               ],
             ),
             const SizedBox(height: 4),
-            Text(_customRetentionSummary(settings), style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              _customRetentionSummary(settings),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
           if (settings.retention == CacheRetention.never) ...[
             const SizedBox(height: 8),
-            Text(l10n.autoCleanupDisabled, style: Theme.of(context).textTheme.bodySmall),
+            Text(
+              l10n.autoCleanupDisabled,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
           const SizedBox(height: 16),
           OutlinedButton.icon(

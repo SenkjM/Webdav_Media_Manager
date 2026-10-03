@@ -6,7 +6,6 @@ import '../models/playlist.dart';
 import '../models/playlist_sentinels.dart';
 import '../services/audio_player_service.dart';
 import '../services/playlist_service.dart';
-import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
 import 'home_shell.dart';
 import 'playlist_detail_screen.dart';
@@ -44,9 +43,9 @@ class PlaylistsScreen extends StatelessWidget {
           children: [
             Text(
               l10n.playlistCreateFromQueueBody(queue.length),
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
-                color: AppColors.secondaryText,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: 12),
@@ -138,7 +137,7 @@ class PlaylistsScreen extends StatelessWidget {
     final service = context.watch<PlaylistService>();
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
         title: Text(l10n.playlistsTitle),
@@ -176,7 +175,9 @@ class PlaylistsScreen extends StatelessWidget {
                 child: Text(
                   l10n.playlistsEmpty,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppColors.secondaryText),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             )
