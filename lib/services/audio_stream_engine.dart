@@ -14,10 +14,15 @@ import 'webdav_service.dart';
 
 /// Playlist window and the single prefetch thread for music streaming.
 ///
-/// Playback of the current track uses the shared player. Everything else
-/// (cover ranges, then one audio file at a time) runs on [_run]. Backward
-/// tracks are fetched before forward tracks. A path already in the player
-/// list, or already present as a complete cache file, is not downloaded again.
+/// Playback of the current track uses the shared player and is not paused
+/// or cancelled for prefetch. Everything else runs on [_run], one request
+/// at a time: the current cover (only that one updates the UI), then every
+/// other cover in the same window, then one neighbor audio file at a time.
+/// Backward neighbors come before forward neighbors. A window change cancels
+/// the in-flight prefetch request so the next pass finishes missing covers
+/// before it resumes audio files. A path already in the player list, or
+/// already present as a complete audio file, is not downloaded again; its
+/// cover is still fetched when the window includes it.
 class AudioStreamEngine {
   AudioStreamEngine({
     required this.webDav,
@@ -151,11 +156,28 @@ class AudioStreamEngine {
 
   Future<void> _run(int gen) async {
     final token = _token;
+    // Failures are only for this pass. The next pass (switch, settings, or
+    // a queue change) may retry a cover, but a miss must not block audio.
+    final coverFailed = <String>{};
     try {
       if (gen != _gen || _disposed) return;
       final cancelled = await _cover(gen, token);
       if (cancelled || gen != _gen || _disposed) return;
       while (gen == _gen && !_disposed) {
+        final coverItem = await _nextMissingCover(coverFailed);
+        if (coverItem != null) {
+          // Covers outrank neighbor audio. If a file download is what the
+          // previous pass was doing, its token was already cancelled.
+          final coverCancelled = await _ensureCover(
+            coverItem,
+            show: false,
+            gen: gen,
+            token: token,
+          );
+          if (coverCancelled || gen != _gen || _disposed) return;
+          if (!await _hasCover(coverItem)) coverFailed.add(coverItem.path);
+          continue;
+        }
         final adopt = await _pick(cachedOnly: true);
         if (adopt != null) {
           final file = await _cached(adopt.path, adopt.name);
@@ -166,6 +188,8 @@ class AudioStreamEngine {
           });
           continue;
         }
+        // Do not start an audio file while a window cover is still missing.
+        if (await _nextMissingCover(coverFailed) != null) continue;
         final job = await _pick(cachedOnly: false);
         if (job == null) break;
         try {
@@ -176,6 +200,9 @@ class AudioStreamEngine {
             await _insert(job.path, Media(file.path));
           });
         } catch (e) {
+          // Window change or a newer pass cancels this file. Playback of
+          // the current track is a different request and stays up. The next
+          // [_run] fetches covers before it resumes audio.
           if (gen != _gen || _isCancel(e)) break;
           _failed.add(job.path);
           final part = await _partFile(job.path, job.name);
@@ -330,26 +357,115 @@ class AudioStreamEngine {
     );
   }
 
+  Future<WebDavItem?> _nextMissingCover(Set<String> failed) async {
+    final queue = tracks();
+    final indexes = prefetchNeighborIndexes(
+      current: currentIndex(),
+      length: queue.length,
+      backward: backward(),
+      forward: forward(),
+    );
+    for (final i in indexes) {
+      final item = queue[i];
+      if (failed.contains(item.path)) continue;
+      if (await _hasCover(item)) continue;
+      return item;
+    }
+    return null;
+  }
+
+  /// Library file, embedded bytes already in the covers bucket, or a sidecar
+  /// image already downloaded. No network.
+  Future<bool> _hasCover(WebDavItem item) async {
+    try {
+      final library = libraryCover(item.path);
+      if (library != null && File(library).existsSync()) return true;
+      if (await _cachedCoverFile(item.path) != null) return true;
+      if (await _cachedSidecar(item) != null) return true;
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<File?> _cachedCoverFile(String remotePath) async {
+    for (final name in const [
+      'cover.jpg',
+      'cover.png',
+      'cover.webp',
+      'cover.img',
+    ]) {
+      final file = await PrefetchCache.file(
+        bucket: 'covers',
+        accountId: accountId,
+        remotePath: remotePath,
+        name: name,
+      );
+      if (PrefetchCache.isComplete(file)) return file;
+    }
+    return null;
+  }
+
+  /// Sidecar cache hit from a listing we already have. Does not list again.
+  Future<File?> _cachedSidecar(WebDavItem item) async {
+    final names = namesFor(item.path);
+    if (names == null) return null;
+    final match = matchSidecarCover(names, item.name, sidecarNames());
+    if (match == null) return null;
+    final dir = directoryOf(item.path);
+    final remote = dir == '/' ? '/$match' : '$dir/$match';
+    final dest = await PrefetchCache.file(
+      bucket: 'covers',
+      accountId: accountId,
+      remotePath: remote,
+      name: match,
+    );
+    return PrefetchCache.isComplete(dest) ? dest : null;
+  }
+
   Future<bool> _cover(int gen, CancelToken? token) async {
     final index = currentIndex();
     final queue = tracks();
     if (index < 0 || index >= queue.length) return false;
-    final item = queue[index];
+    return _ensureCover(queue[index], show: true, gen: gen, token: token);
+  }
+
+  /// Cache [item]'s cover. [show] is only for the track that is current when
+  /// this pass started; neighbors must not touch the player artwork.
+  /// Returns true when the pass was cancelled.
+  Future<bool> _ensureCover(
+    WebDavItem item, {
+    required bool show,
+    required int gen,
+    required CancelToken? token,
+  }) async {
     try {
       final library = libraryCover(item.path);
       if (library != null && File(library).existsSync()) {
         if (gen != _gen) return true;
-        _show(library);
+        if (show) _show(library);
+        return false;
+      }
+      final cached = await _cachedCoverFile(item.path);
+      if (gen != _gen || (token?.isCancelled ?? false)) return true;
+      if (cached != null) {
+        if (show) _show(cached.path);
+        return false;
+      }
+      final sidecarHit = await _cachedSidecar(item);
+      if (gen != _gen || (token?.isCancelled ?? false)) return true;
+      if (sidecarHit != null) {
+        if (show) _show(sidecarHit.path);
         return false;
       }
       var source = _resolved[item.path];
       if (source == null || source.uri.isEmpty) {
         source = await _resolve(item);
       }
-      if (gen != _gen) return true;
+      if (gen != _gen || (token?.isCancelled ?? false)) return true;
       if (source != null && source.uri.isNotEmpty) {
         final bytes = await _covers.extract(source, cancel: token);
-        if (gen != _gen) return true;
+        if (gen != _gen || (token?.isCancelled ?? false)) return true;
         if (bytes != null && bytes.isNotEmpty) {
           final ext = _imageExt(bytes);
           final file = await PrefetchCache.writeBytes(
@@ -360,13 +476,13 @@ class AudioStreamEngine {
             bytes: bytes,
           );
           if (gen != _gen) return true;
-          _show(file.path);
+          if (show) _show(file.path);
           return false;
         }
       }
       if (!sidecarEnabled()) return false;
       final names = namesFor(item.path) ?? await listNames(item.path);
-      if (gen != _gen) return true;
+      if (gen != _gen || (token?.isCancelled ?? false)) return true;
       final match = matchSidecarCover(names, item.name, sidecarNames());
       if (match == null) return false;
       final dir = directoryOf(item.path);
@@ -386,13 +502,13 @@ class AudioStreamEngine {
           part,
           cancelToken: token,
         );
-        if (gen != _gen) return true;
+        if (gen != _gen || (token?.isCancelled ?? false)) return true;
         if (!part.existsSync() || part.lengthSync() <= 0) return false;
         if (dest.existsSync()) dest.deleteSync();
         await part.rename(dest.path);
       }
       if (gen != _gen) return true;
-      if (PrefetchCache.isComplete(dest)) _show(dest.path);
+      if (show && PrefetchCache.isComplete(dest)) _show(dest.path);
       return false;
     } catch (e) {
       if (_isCancel(e) || gen != _gen) return true;

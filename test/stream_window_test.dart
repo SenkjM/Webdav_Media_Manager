@@ -134,6 +134,51 @@ void main() {
     });
   });
 
+  group('cover prefetch plan', () {
+    test('neighbors stay in backward-then-forward order, ends do not wrap', () {
+      expect(
+        prefetchNeighborIndexes(current: 2, length: 6, backward: 2, forward: 2),
+        [1, 0, 3, 4],
+      );
+      expect(
+        prefetchNeighborIndexes(current: 0, length: 4, backward: 2, forward: 0),
+        isEmpty,
+      );
+      expect(
+        prefetchNeighborIndexes(current: 1, length: 4, backward: 0, forward: 2),
+        [2, 3],
+      );
+      expect(
+        prefetchNeighborIndexes(
+          current: -1,
+          length: 4,
+          backward: 1,
+          forward: 1,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('window covers precede audio, including cached audio', () {
+      final neighbors = prefetchNeighborIndexes(
+        current: 2,
+        length: 5,
+        backward: 1,
+        forward: 2,
+      );
+      // Index 1 is already cached or in the player. Its cover is still due.
+      final plan = prefetchPlan(
+        neighbors: neighbors,
+        coverDone: (i) => i == 3,
+        audioSkip: (i) => i == 1,
+      );
+      expect(
+        plan.map((step) => '${step.cover ? 'cover' : 'audio'}:${step.index}'),
+        ['cover:1', 'cover:4', 'audio:3', 'audio:4'],
+      );
+    });
+  });
+
   test('playlistInsertAt keeps queue order', () {
     expect(
       playlistInsertAt(

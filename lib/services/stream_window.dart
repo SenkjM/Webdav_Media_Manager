@@ -97,3 +97,60 @@ String? matchSidecarCover(
   }
   return null;
 }
+
+/// Neighbors in the prefetch window, backward first, then forward.
+///
+/// The current index is not included. Ends do not wrap. This is the cover
+/// order and the audio order. Whether an audio file is already cached is
+/// not an input: a cached neighbor still needs a cover.
+List<int> prefetchNeighborIndexes({
+  required int current,
+  required int length,
+  required int backward,
+  required int forward,
+}) {
+  if (length <= 0 || current < 0 || current >= length) return const [];
+  final indexes = <int>[];
+  for (var delta = 1; delta <= backward; delta++) {
+    final i = current - delta;
+    if (i < 0) break;
+    indexes.add(i);
+  }
+  for (var delta = 1; delta <= forward; delta++) {
+    final i = current + delta;
+    if (i >= length) break;
+    indexes.add(i);
+  }
+  return indexes;
+}
+
+/// One prefetch job. Covers in the window are scheduled before any audio.
+class PrefetchStep {
+  const PrefetchStep.cover(this.index) : cover = true;
+  const PrefetchStep.audio(this.index) : cover = false;
+
+  final int index;
+  final bool cover;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PrefetchStep && other.index == index && other.cover == cover;
+
+  @override
+  int get hashCode => Object.hash(index, cover);
+}
+
+/// Pending covers first, in [neighbors] order, then audio jobs that [audioSkip]
+/// does not drop. An audio-complete neighbor is still a cover job.
+List<PrefetchStep> prefetchPlan({
+  required List<int> neighbors,
+  required bool Function(int index) coverDone,
+  required bool Function(int index) audioSkip,
+}) {
+  return [
+    for (final index in neighbors)
+      if (!coverDone(index)) PrefetchStep.cover(index),
+    for (final index in neighbors)
+      if (!audioSkip(index)) PrefetchStep.audio(index),
+  ];
+}
