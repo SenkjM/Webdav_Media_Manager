@@ -781,3 +781,23 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 **原因**：`923007e` 把简体界面从 `Locale('zh', 'CN')` 改成 `Locale('zh')`，文案没变。Android 字体表按 `zh-CN` / `zh-Hans` / `ja` 登记，没有裸的 `zh`。汉字多半还能落到黑体，假名对不上就继续往下找，先碰到的常常是 Noto Serif CJK 一类衬线。跟系统时也一样：手机是 `zh_CN`，但 `supportedLocales` 只有裸 `zh`，解析会把地区丢掉。
 
 **最小改法（未做）**：不恢复 `app_zh_CN.arb`。`lookupAppLocalizations` 对 `zh_CN` 已经落到现有简体，只有 `TW` 走繁体。把简体偏好改回 `Locale('zh', 'CN')`，并在 `MaterialApp` 上加 `localeListResolutionCallback`，简体（含跟系统的 `zh_CN` / `zh_Hans`）固定返回 `Locale('zh', 'CN')`，避免又被收成裸 `zh`。繁体、英文不动。
+
+## 11. 下拉菜单直角（已分析，未开工）
+
+**状态**：2026-10-03 只分析，用户要求先记录，不改代码。
+
+**现象**：设置、同步、后缀、视频手势、账号里的 `DropdownButton` / `DropdownButtonFormField` 弹出菜单是直角，和卡片、对话框、输入框的 10–16 圆角不是一套。
+
+**原因**：这些调用都没传 `borderRadius`。Flutter 3.47 的 `dropdown.dart` 在未传入时用 `BorderRadius.zero`。`AppTheme` 没有下拉菜单的总开关。
+
+**最小改法（未做）**：不加第三方库。每个 `DropdownButton` 把圆角设成和输入框一样的 10，或包一个只干这件事的下拉。`PopupMenuButton` 另走 `popupMenuTheme`，可在 `AppTheme` 里一次设成同一个圆角。不要换成 Material 3 `DropdownMenu`，那是另一轮替换。
+
+## 12. 语言选项跟着界面语言变（已分析，未开工）
+
+**状态**：2026-10-03 只分析并定方案，不改代码。
+
+**现象**：语言下拉在简体界面里「简体中文 / 繁体中文」都是简体字；切到繁体后这两项都变成繁体字；切到英文后变成 Simplified Chinese / Traditional Chinese。
+
+**原因**：`settings_screen.dart` 的选项用的是 `l10n.languageSimplifiedChinese` 等键。这三个键在 `app_zh.arb`、`app_zh_TW.arb`、`app_en.arb` 里各有一份译文，所以显示的是当前界面语言，不是该选项自己的语言。
+
+**方案（未做）**：语言名字不要走 l10n。在 `AppLocalePreference` 上写死自称：简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」。以后加语言只加这条自称，不把语言名翻译进每份 ARB。「跟随系统」不是一种语言，仍用当前界面的 `languageSystem`。
