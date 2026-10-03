@@ -9,9 +9,8 @@ import '../models/playlist_sentinels.dart';
 import '../utils/cache_group_codec.dart';
 import '../utils/track_identity.dart';
 
-/// 这是正式版本 0.2.2。本迁移只在 0.2.2 运行。
-/// 到 0.2.4 必须做完并删掉全部迁移代码。
-/// 0.2.4 之后，旧数据库不再兼容。
+/// 这份兼容是给正式版 0.2.2 的，会在 0.2.4 删掉。
+/// 0.2.4 之后，旧数据库不再支持。
 ///
 /// One-version startup rewrite. Delete this file by 0.2.4.
 /// After the rewrite, the rest of the app must not match the Chinese literals.
@@ -69,7 +68,8 @@ Future<void> migrateLegacySentinelsOnce({
     }
     await _rewriteCoverPaths(txn, 'tracks', stemMap);
     await _rewriteCoverPaths(txn, 'cue_slices', stemMap);
-    await _rewriteCacheGroupColumn(txn, 'tracks', 'music_id');
+    // `tracks` has no cache_group_id column. Membership for ordinary
+    // rows lives in `cache_groups`; only CUE tables store the column.
     await _rewriteCacheGroupColumn(txn, 'cue_slices', 'music_id');
     await _rewriteCacheGroupColumn(txn, 'cue_albums', 'cue_id');
     await _rewriteCacheGroupRows(txn);

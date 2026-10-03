@@ -173,13 +173,20 @@ class AppState extends ChangeNotifier {
       }
       _syncCoverThumbSize();
       _syncDownloadFileTypes();
+      // Existing schema path first (onCreate / onUpgrade, including account
+      // column compat). The 0.2.2 sentinel only rewrites rows and must not
+      // run against tables the open has not created yet.
+      _initPhase = 'databases';
+      final openedLibrary = await libraryDb.database;
+      final openedPlaylists = await playlists.openDatabase();
+      final openedDownloads = await downloads.openDatabase();
       _initPhase = 'cache';
       await cache.init();
       _initPhase = 'legacy-sentinels';
       await migrateLegacySentinelsOnce(
-        libraryDb: await libraryDb.database,
-        playlistDb: await playlists.openDatabase(),
-        downloadDb: await downloads.openDatabase(),
+        libraryDb: openedLibrary,
+        playlistDb: openedPlaylists,
+        downloadDb: openedDownloads,
         cacheDir: cache.cacheDir,
         coversDir: await library.covers.coversDir,
         coversFullDir: await library.covers.coversFullDir,
