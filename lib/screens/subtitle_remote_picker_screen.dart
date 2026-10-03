@@ -4,7 +4,8 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/webdav_item.dart';
 import '../services/webdav_service.dart';
-import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
+import '../utils/audio_extensions.dart';
 import '../utils/subtitle_sidecar.dart';
 
 /// Browse one account and pick a subtitle file. There is no account switcher:
@@ -81,7 +82,7 @@ class _SubtitleRemotePickerScreenState
         if (item.isDirectory || _isSubtitleFile(item)) item,
     ];
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(l10n.videoSubtitleImportRemote),
         actions: [
@@ -106,12 +107,8 @@ class _SubtitleRemotePickerScreenState
               children: [
                 ListTile(
                   dense: true,
-                  title: Text(
-                    _directory,
-                    style: const TextStyle(
-                      color: AppColors.secondaryText,
-                      fontSize: 12,
-                    ),
+                  title: MetaText(
+                    folderDisplayName(_directory, rootLabel: l10n.rootFolder),
                   ),
                 ),
                 if (entries.isEmpty)
@@ -119,7 +116,9 @@ class _SubtitleRemotePickerScreenState
                     padding: const EdgeInsets.all(24),
                     child: Text(
                       l10n.videoSubtitleNone,
-                      style: const TextStyle(color: AppColors.secondaryText),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 for (final item in entries)

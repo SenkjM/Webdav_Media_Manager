@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../services/download_queue_service.dart';
 import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
-import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../l10n/generated/app_localizations.dart';
 
@@ -36,8 +35,9 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
   Future<void> _ensureNomedia() async {
     final settings = context.read<SettingsService>();
     if (!settings.downloadNomediaEnabled) return;
-    final result =
-        await const PlatformExportService().setDownloadsNomedia(enabled: true);
+    final result = await const PlatformExportService().setDownloadsNomedia(
+      enabled: true,
+    );
     if (!mounted || result.error == null) return;
     AppSnack.error(context, result.error!);
   }
@@ -45,8 +45,9 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
   Future<void> _toggleNomedia(bool value) async {
     final settings = context.read<SettingsService>();
     await settings.setDownloadNomediaEnabled(value);
-    final result =
-        await const PlatformExportService().setDownloadsNomedia(enabled: value);
+    final result = await const PlatformExportService().setDownloadsNomedia(
+      enabled: value,
+    );
     if (!mounted) return;
     if (result.error != null) {
       await settings.setDownloadNomediaEnabled(!value);
@@ -69,7 +70,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
     final settings = context.watch<SettingsService>();
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.downloadQueue)),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -152,7 +153,10 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
           ListTile(
             dense: true,
             leading: const Icon(Icons.notifications_active_outlined, size: 20),
-            title: Text(l10n.sendTestNotification, style: const TextStyle(fontSize: 14)),
+            title: Text(
+              l10n.sendTestNotification,
+              style: const TextStyle(fontSize: 14),
+            ),
             subtitle: Text(
               l10n.sendTestNotificationHint,
               style: const TextStyle(fontSize: 11),

@@ -18,7 +18,7 @@ class NowPlayingQueueScreen extends StatelessWidget {
     final currentIndex = player.index;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(
           queue.isEmpty
@@ -34,7 +34,9 @@ class NowPlayingQueueScreen extends StatelessWidget {
                 child: Text(
                   AppLocalizations.of(context)!.nowPlayingQueueEmpty,
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.secondaryText),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             )
@@ -58,7 +60,9 @@ class NowPlayingQueueScreen extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontWeight: playing ? FontWeight.w700 : FontWeight.w500,
-                      color: playing ? AppColors.accent : AppColors.primaryText,
+                      color: playing
+                          ? AppColors.accent
+                          : Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                   subtitle: Text(
@@ -68,8 +72,8 @@ class NowPlayingQueueScreen extends StatelessWidget {
                     ].join(' · '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.mutedText,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
                       fontSize: 12,
                     ),
                   ),
@@ -77,7 +81,9 @@ class NowPlayingQueueScreen extends StatelessWidget {
                       ? const Icon(Icons.graphic_eq, color: AppColors.accent)
                       : Text(
                           '${i + 1}',
-                          style: const TextStyle(color: AppColors.mutedText),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
                         ),
                   onTap: () async {
                     await player.playTrack(t, playlist: queue);

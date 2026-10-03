@@ -49,7 +49,7 @@ class _SyncScreenState extends State<SyncScreen> {
     final value = await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         title: Text(AppLocalizations.of(ctx)!.rebuildHintThreshold),
         content: TextField(
           controller: ctrl,
@@ -190,9 +190,9 @@ class _SyncScreenState extends State<SyncScreen> {
                       ? AppLocalizations.of(context)!.keyNotSetLong
                       : AppLocalizations.of(context)!
                             .keySetLong(_pass.trim().length),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AppColors.secondaryText,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -307,7 +307,7 @@ class _SyncScreenState extends State<SyncScreen> {
         builder: (ctx, setLocal) {
           final confirmed = typed.text.trim().toLowerCase() == 'yes';
           return AlertDialog(
-            backgroundColor: AppColors.elevated,
+            backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
             title: Text(title),
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -317,9 +317,9 @@ class _SyncScreenState extends State<SyncScreen> {
                 const SizedBox(height: 8),
                 Text(
                   note,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
-                    color: AppColors.secondaryText,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -371,7 +371,7 @@ class _SyncScreenState extends State<SyncScreen> {
     final action = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         title: Text(AppLocalizations.of(ctx)!.tidyCloudLibraryTitle),
         content: SingleChildScrollView(
           child: Column(
@@ -505,7 +505,7 @@ class _SyncScreenState extends State<SyncScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.elevated,
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         title: Text(AppLocalizations.of(ctx)!.restoreConfirmTitle),
         content: Text(AppLocalizations.of(ctx)!.restoreConfirmBody),
         actions: [
@@ -645,7 +645,10 @@ class _SyncScreenState extends State<SyncScreen> {
             padding: const EdgeInsets.only(top: 2),
             child: Text(
               l10n.labelValuePair(label, path),
-              style: const TextStyle(fontSize: 11, color: AppColors.mutedText),
+              style: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.outline,
+              ),
             ),
           ),
       ],
@@ -679,15 +682,15 @@ class _SyncScreenState extends State<SyncScreen> {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(l10n.syncAndBackup)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Text(
             l10n.syncIntroLong,
-            style: const TextStyle(
-              color: AppColors.secondaryText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
           ),
@@ -805,8 +808,8 @@ class _SyncScreenState extends State<SyncScreen> {
           _sectionTitle(l10n.credentialsSection),
           Text(
             l10n.credentialsSectionDesc(settings.credentialsRemotePath),
-            style: const TextStyle(
-              color: AppColors.secondaryText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
           ),
@@ -828,8 +831,8 @@ class _SyncScreenState extends State<SyncScreen> {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 l10n.lastAutoScan(_fmtTime(sync.lastAutoSyncAt!)),
-                style: const TextStyle(
-                  color: AppColors.mutedText,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.outline,
                   fontSize: 11,
                 ),
               ),
@@ -868,8 +871,8 @@ class _SyncScreenState extends State<SyncScreen> {
           _sectionTitle(l10n.playlistsSection),
           Text(
             l10n.playlistsSectionDesc(settings.playlistRemotePath),
-            style: const TextStyle(
-              color: AppColors.secondaryText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
           ),
@@ -892,7 +895,10 @@ class _SyncScreenState extends State<SyncScreen> {
           const SizedBox(height: 4),
           Text(
             l10n.compactPlaylistDeletionsHint,
-            style: const TextStyle(color: AppColors.mutedText, fontSize: 11),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.outline,
+              fontSize: 11,
+            ),
           ),
 
           const Divider(height: 32),
@@ -900,8 +906,8 @@ class _SyncScreenState extends State<SyncScreen> {
           _sectionTitle(l10n.librarySection),
           Text(
             l10n.librarySectionDesc(settings.libraryRemotePath),
-            style: const TextStyle(
-              color: AppColors.secondaryText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
           ),
@@ -921,7 +927,7 @@ class _SyncScreenState extends State<SyncScreen> {
                       sync.cloudFragmentCount >=
                           settings.libraryRebuildHintFragments
                       ? AppColors.accent
-                      : AppColors.mutedText,
+                      : Theme.of(context).colorScheme.outline,
                 ),
               ),
             ),
@@ -1057,8 +1063,8 @@ class _SyncScreenState extends State<SyncScreen> {
           _sectionTitle(l10n.allBackupsSection),
           Text(
             l10n.allBackupsSectionDesc(settings.backupRemotePath),
-            style: const TextStyle(
-              color: AppColors.secondaryText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
           ),
@@ -1111,8 +1117,8 @@ class _SyncScreenState extends State<SyncScreen> {
           _sectionTitle(l10n.localImportExportSection),
           Text(
             l10n.localImportExportDesc,
-            style: const TextStyle(
-              color: AppColors.secondaryText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
           ),
@@ -1164,7 +1170,9 @@ class _SyncScreenState extends State<SyncScreen> {
                 Expanded(
                   child: Text(
                     sync.progressLabel ?? l10n.processing,
-                    style: const TextStyle(color: AppColors.mutedText),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
                   ),
                 ),
               ],
@@ -1256,7 +1264,7 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
   Widget build(BuildContext context) {
     final est = _estimate;
     return AlertDialog(
-      backgroundColor: AppColors.elevated,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       title: Text(AppLocalizations.of(context)!.rebuildCloudLibraryTitle),
       content: SingleChildScrollView(
         child: Column(
@@ -1301,9 +1309,9 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
                         ? AppLocalizations.of(context)!.estimating
                         : AppLocalizations.of(context)!.estimateUnavailable)
                   : est.label,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
-                color: AppColors.secondaryText,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ],

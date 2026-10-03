@@ -70,7 +70,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
     final settings = context.watch<SettingsService>();
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(title: Text(AppLocalizations.of(context)!.videoSettings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -83,8 +83,8 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           const SizedBox(height: 4),
           Text(
             AppLocalizations.of(context)!.videoStreamingHint,
-            style: const TextStyle(
-              color: AppColors.secondaryText,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontSize: 12,
             ),
           ),
@@ -114,8 +114,8 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             subtitle: Text(
               AppLocalizations.of(context)!.videoBufferCurrent(
                 settings.videoBufferSizeMb,
-                SettingsService.minVideoBufferMb,
                 SettingsService.maxVideoBufferMb,
+                SettingsService.minVideoBufferMb,
               ),
             ),
           ),
@@ -205,9 +205,9 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             title: Text(AppLocalizations.of(context)!.videoDefaultRate),
             subtitle: Text(
               AppLocalizations.of(context)!.videoDefaultRateCurrent(
-                settings.videoLastRate.toStringAsFixed(2),
-                SettingsService.minVideoRate.toStringAsFixed(1),
                 SettingsService.maxVideoRate.toStringAsFixed(1),
+                SettingsService.minVideoRate.toStringAsFixed(1),
+                settings.videoLastRate.toStringAsFixed(2),
               ),
             ),
           ),
@@ -231,7 +231,10 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           const SizedBox(height: 4),
           Text(
             AppLocalizations.of(context)!.videoSubtitleHint,
-            style: TextStyle(color: AppColors.secondaryText, fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 8),
           SwitchListTile(
@@ -255,8 +258,8 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           if (settings.videoSubtitleSubdirEnabled) ...[
             Text(
               AppLocalizations.of(context)!.videoSubtitleSubdirEmpty,
-              style: const TextStyle(
-                color: AppColors.secondaryText,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 12,
               ),
             ),
@@ -268,9 +271,8 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
                     controller: _subtitleSubdirController,
                     decoration: InputDecoration(
                       isDense: true,
-                      labelText: AppLocalizations.of(
-                        context,
-                      )!.videoSubtitleSubdirName,
+                      labelText: AppLocalizations.of(context)!
+                          .videoSubtitleSubdirName,
                       border: const OutlineInputBorder(),
                     ),
                     onEditingComplete: _applySubtitleSubdir,
@@ -289,7 +291,10 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             showSelectedIcon: false,
             segments: [
               for (final p in VideoSubtitlePosition.values)
-                ButtonSegment(value: p, label: Text(p.label(AppLocalizations.of(context)!))),
+                ButtonSegment(
+                  value: p,
+                  label: Text(p.label(AppLocalizations.of(context)!)),
+                ),
             ],
             selected: {settings.videoSubtitlePosition},
             onSelectionChanged: (sel) =>
@@ -304,9 +309,9 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
               title: Text(AppLocalizations.of(context)!.videoSubtitleSize),
               subtitle: Text(
                 AppLocalizations.of(context)!.videoSubtitleSizeCurrent(
-                  settings.videoSubtitleFontSize.toStringAsFixed(0),
-                  SettingsService.minVideoSubtitleFontSize.toStringAsFixed(0),
                   SettingsService.maxVideoSubtitleFontSize.toStringAsFixed(0),
+                  SettingsService.minVideoSubtitleFontSize.toStringAsFixed(0),
+                  settings.videoSubtitleFontSize.toStringAsFixed(0),
                 ),
               ),
             ),
@@ -380,7 +385,10 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
         value: value,
         items: [
           for (final a in VideoGestureAction.values)
-            DropdownMenuItem(value: a, child: Text(a.label(AppLocalizations.of(context)!))),
+            DropdownMenuItem(
+              value: a,
+              child: Text(a.label(AppLocalizations.of(context)!)),
+            ),
         ],
         onChanged: (v) {
           if (v != null) onChanged(v);

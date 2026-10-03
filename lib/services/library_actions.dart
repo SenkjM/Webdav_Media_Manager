@@ -611,16 +611,18 @@ Future<String?> _askShareName(
   return showDialog<String>(
     context: context,
     builder: (ctx) => AlertDialog(
-      backgroundColor: AppColors.elevated,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       title: Text(AppLocalizations.of(ctx)!.shareNameTitle),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            AppLocalizations.of(ctx)!
-                .shareRenameTemplateHint,
-            style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+            AppLocalizations.of(ctx)!.shareRenameTemplateHint,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.outline,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -637,7 +639,10 @@ Future<String?> _askShareName(
           Text(
             AppLocalizations.of(ctx)!
                 .shareOriginalFile(p.basename(plan.localPath)),
-            style: const TextStyle(color: AppColors.mutedText, fontSize: 12),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.outline,
+              fontSize: 12,
+            ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),

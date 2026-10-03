@@ -6,6 +6,7 @@ import '../models/webdav_item.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/meta_text.dart';
 import '../utils/app_snack.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/remote_path.dart';
@@ -152,7 +153,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
         if (!_goUp()) Navigator.of(context).pop();
       },
       child: Scaffold(
-        backgroundColor: AppColors.nearBlack,
+        backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
           leading: IconButton(
             // 左上角是「关闭选择器」，不是「上一级」——上一级在右上角，两者
@@ -190,21 +191,14 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
         ),
         body: Column(
           children: [
-            // 长路径要能滚动查看，而不是被省略号吃掉。
-            SizedBox(
-              height: 21,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                children: [
-                  Text(
-                    _path,
-                    style: const TextStyle(
-                      color: AppColors.secondaryText,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+            // 路径是次要信息：只留末级，颜色跟当前方案的 onSurfaceVariant。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: MetaText(
+                  folderDisplayName(_path, rootLabel: l10n.rootFolder),
+                ),
               ),
             ),
             Expanded(child: _buildList()),

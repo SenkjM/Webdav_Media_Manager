@@ -112,7 +112,7 @@
 - 预载失败不能影响当前这一首的播放（静默降级）。
 - 队列短于 `x + y` 时按实际可用数量处理，到队首 / 队尾不绕圈。
 
-## 2. 主题配色（已分析，未开工）
+## 2. 主题配色（设置里已可切换；非整库换色）
 
 相关完整文档：[09 §编码约定](09-MISC.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[07](07-NOTIFICATIONS.md)。待发布与拆分见 本文件对应章节。
 
@@ -152,7 +152,16 @@
 
 本轮的 MD3 界面改造交接单（分支、worktree、逐文件改动点、本轮不改清单）已移到 [97 §H-001](97-AGENT-HANDOFF.md)。
 
-本节只保留方向与验收：§2.1 现状、§2.2 为什么不能只打开 `themeMode`、§2.3 两阶段拆分、§2.4 验收与回归点。执行侧一律写进 [97](97-AGENT-HANDOFF.md)，不回填这里。
+本节只保留方向与验收：§2.1 现状、§2.2 为什么不能只打开 `themeMode`、§2.3 两阶段拆分、§2.4 验收与回归点。执行侧的交接单仍在 [97](97-AGENT-HANDOFF.md)。下面只记已经落地、并入 `feat/l10n-leftovers` 的结果，不再把未做的交接清单回填到这里。
+
+### 2.6 本分支实际结果（feat/md3-theme，已并入 feat/l10n-leftovers）
+
+- 三态主题存在 `SettingsService` 键 `theme_mode`（`light` / `dark` / `system`）。没有存过的安装仍是浅色。`main.dart` 读这个值，不再写死 `ThemeMode.light`。
+- 种子色是一个不透明 ARGB，键 `theme_seed_argb`，默认 `0xFF2EC4B6`。浅色和深色都用 `ColorScheme.fromSeed`（`DynamicSchemeVariant.fidelity`，不是 Expressive）生成。`onPrimary` 来自方案。设置页在「杂项」里用现有列表行放三态下拉和种子色（当前色块 + 预设 + 色相/饱和度/明度）。
+- 抽屉、设置页分区标题、以及 `AppTheme` 里的组件色跟当前种子走。非播放器页面的脚手架和卡片底改为当前 `ColorScheme.surface` / `surfaceContainer`，默认种子和自定义种子都跟着走；这些页上原来写死的深色字改成 `onSurface` / `onSurfaceVariant`，避免深色底上看不见。播放器页、流式页、视频手势和黑白叠层、图片页码、迷你播放条、封面占位、缓存和下载队列服务没改。
+- 次要信息行用 `MetaText`：`bodySmall` + 当前方案的 `onSurfaceVariant`。默认种子和后来改的种子、浅色和深色都走这一条，不靠写死的 `AppColors.mutedText`。点名位置：网络库目录行去掉「目录」；有大小只显示大小，没有大小才留类别；「点按下载」和已存相册留下。歌单 / 艺人 / 专辑 / 标签数量仍是「{count} 首」（专辑仍可带艺人）。下载队列 CUE 数量改成「{count} 首」，没有曲目时类别改成「CUE」。CUE 弹层标题收成数量。歌单缺歌行收成「暂无 · 来源」。文件夹选择和字幕目录只显示末级路径。播放器页没改，流式页仍用原来的「{count} 首」。
+- 流体玻璃没有进产品。`BackdropFilter` / `ImageFilter.blur` 在 Flutter 3.47 上不用新插件就能用，也不必碰到 `media_kit`。不发的原因：应用栏和页面底现在是不透明的平面（圆角和紧凑密度要留着）；模糊只有内容滚到栏下才看得见，那时文字对比会跟着封面和行色变，保证不了；设置页底下没有可模糊的内容，要做出玻璃得另铺一层装饰，等于换外观；滚动列表上的 `saveLayer` 成本在这台没有 ColorOS 16 真机的环境里没法量。所以应用栏和脚手架背景保持不透明。
+- 预览只加了 `lib/preview/md3_widget_previews.dart`（`@Preview`，`kDebugMode`）。`main.dart` 和正式页面不引用它。`.widget_preview/` 本来就在忽略列表里。预览里有主题设置控件，以及文件夹行、一条带大小的音频行、一条歌单数量行。没有把整页拆成「一帧数据 + 动作接口」。没拆的页面：音乐库、歌单、歌单详情、网络库、下载、同步、账号、其余设置页、文件夹选择、字幕选择、正在播放、图片查看。播放器三页本来就不进预览。
 
 ## 3. 多语言（已分析，未决定，未开工）
 
@@ -742,7 +751,7 @@ adb shell dumpsys notification | grep -A5 2001     # 下载通知是否唯一 / 
 adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 ```
 
-`<pkg>`：prod / dev flavor 包名不同，分别测。
+`<pkg>`：prod / dev / sandbox flavor 包名不同（`com.senkjm.media_manager`、`.dev`、`.test`），分别测。
 
 ## 8. 设置页重排、下载目录排除扫描、图片存相册
 
@@ -792,15 +801,15 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 **最小改法（本分支已做）**：见上面的状态。没有换成 Material 3 `DropdownMenu`。
 
-## 12. 语言选项跟着界面语言变（已分析，未开工）
+## 12. 语言选项跟着界面语言变（已在 feat/md3-theme 落地，本合并保留）
 
-**状态**：2026-10-03 只分析并定方案，不改代码。
+**状态**：2026-10-03 先只分析。同日 `feat/md3-theme` 按该方案改了代码，本合并保留。语言菜单里简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」，写在 `AppLocalePreference.nativeName`。「跟随系统」仍用 `l10n.languageSystem`。根目录 `agent.md` 要求之后的开发沿用现有圆角、颜色角色和这条约定。
 
 **现象**：语言下拉在简体界面里「简体中文 / 繁体中文」都是简体字；切到繁体后这两项都变成繁体字；切到英文后变成 Simplified Chinese / Traditional Chinese。
 
 **原因**：`settings_screen.dart` 的选项用的是 `l10n.languageSimplifiedChinese` 等键。这三个键在 `app_zh.arb`、`app_zh_TW.arb`、`app_en.arb` 里各有一份译文，所以显示的是当前界面语言，不是该选项自己的语言。
 
-**方案（未做）**：语言名字不要走 l10n。在 `AppLocalePreference` 上写死自称：简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」。以后加语言只加这条自称，不把语言名翻译进每份 ARB。「跟随系统」不是一种语言，仍用当前界面的 `languageSystem`。
+**方案（已做）**：语言名字不要走 l10n。在 `AppLocalePreference` 上写死自称：简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」。以后加语言只加这条自称，不把语言名翻译进每份 ARB。「跟随系统」不是一种语言，仍用当前界面的 `languageSystem`。
 
 
 ## 13. 界面残留中文、下载重试、一次性哨兵迁移（本分支）
@@ -809,7 +818,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 **界面文案**：还露在界面上的简体写进 `app_zh.arb` / `app_zh_TW.arb` / `app_en.arb`，繁体和英文是各自的句子，不是简体副本。没有恢复 `app_zh_CN.arb`。
 
-**故意不翻译**：写进数据库或文件名的哨兵（`未知艺术家`、`未知专辑`、`未命名`、`新歌单`、`默认服务器`、`服务器`、`未分类`、`新文件夹`、`系统相册`、`下载目录`）仍是存储值。语言自称 `简体中文` / `繁體中文` / `English` 与 §12 仍未改。`debugPrint`、`MusicAudioHandler` 探测串、Open115 `msg.contains('网络')`、原生 Kotlin（`MainActivity` 错误、`DownloadKeepAliveService` 回退「下载进度 / 正在下载」）不动。
+**故意不翻译**：写进数据库或文件名的哨兵（`未知艺术家`、`未知专辑`、`未命名`、`新歌单`、`默认服务器`、`服务器`、`未分类`、`新文件夹`、`系统相册`、`下载目录`）仍是存储值。语言自称 `简体中文` / `繁體中文` / `English` 已按 §12 写在 `AppLocalePreference.nativeName`，不进 ARB。`debugPrint`、`MusicAudioHandler` 探测串、Open115 `msg.contains('网络')`、原生 Kotlin（`MainActivity` 错误、`DownloadKeepAliveService` 回退「下载进度 / 正在下载」）不动。
 
 **下载重试**：`DownloadQueueService.isRetryable` 不再把 401 / 403 / 404 / unauthorized / forbidden 或非 5xx 的 `badResponse` 排除。所有上游错误（含奇怪的授权失败）走原来的次数和退避。仍然不重试：用户取消、`StateError`、解密失败 `CloudDriverDataException`。
 
