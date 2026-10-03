@@ -114,8 +114,8 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             subtitle: Text(
               AppLocalizations.of(context)!.videoBufferCurrent(
                 settings.videoBufferSizeMb,
-                SettingsService.minVideoBufferMb,
                 SettingsService.maxVideoBufferMb,
+                SettingsService.minVideoBufferMb,
               ),
             ),
           ),
@@ -205,9 +205,9 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             title: Text(AppLocalizations.of(context)!.videoDefaultRate),
             subtitle: Text(
               AppLocalizations.of(context)!.videoDefaultRateCurrent(
-                settings.videoLastRate.toStringAsFixed(2),
-                SettingsService.minVideoRate.toStringAsFixed(1),
                 SettingsService.maxVideoRate.toStringAsFixed(1),
+                SettingsService.minVideoRate.toStringAsFixed(1),
+                settings.videoLastRate.toStringAsFixed(2),
               ),
             ),
           ),
@@ -309,9 +309,9 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
               title: Text(AppLocalizations.of(context)!.videoSubtitleSize),
               subtitle: Text(
                 AppLocalizations.of(context)!.videoSubtitleSizeCurrent(
-                  settings.videoSubtitleFontSize.toStringAsFixed(0),
-                  SettingsService.minVideoSubtitleFontSize.toStringAsFixed(0),
                   SettingsService.maxVideoSubtitleFontSize.toStringAsFixed(0),
+                  SettingsService.minVideoSubtitleFontSize.toStringAsFixed(0),
+                  settings.videoSubtitleFontSize.toStringAsFixed(0),
                 ),
               ),
             ),
