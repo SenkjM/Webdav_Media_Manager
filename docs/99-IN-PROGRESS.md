@@ -833,3 +833,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 - 新标签名在算出 seq / versionCode 之后才确定。旧标签 `v0.2.2-f046956`、`v0.2.2-ba29461`、`v0.2.2-0d5148a` 与浮动 `prerelease` 不改名、不移动。`version_name` 仍等于标签名，所以新版本的标题会变成 `Pre-release v0.2.2-<versionCode> (<versionCode>)`，模板那一行不改。
 - 开关的「已经一致」走原生返回的 `already`，不是错误。冷启动和进入下载设置时若开关为开，仍然只在缺失时补文件，不弹「外部操作」提示。
+
+## 10. 语言选项自称（本分支）
+
+2026-10-03 按用户决定实现，不新开分支。语言菜单里简体永远是「简体中文」，繁体永远是「繁體中文」，英文永远是「English」，写在 `AppLocalePreference.nativeName`。`「跟随系统」` 仍用 `l10n.languageSystem`。根目录 `agent.md` 要求之后的开发沿用现有圆角、颜色角色和这条约定。

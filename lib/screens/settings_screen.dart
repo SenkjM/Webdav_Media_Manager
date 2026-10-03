@@ -369,15 +369,15 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
                 DropdownMenuItem(
                   value: AppLocalePreference.zhCN,
-                  child: Text(l10n.languageSimplifiedChinese),
+                  child: Text(AppLocalePreference.zhCN.nativeName!),
                 ),
                 DropdownMenuItem(
                   value: AppLocalePreference.zhTW,
-                  child: Text(l10n.languageTraditionalChinese),
+                  child: Text(AppLocalePreference.zhTW.nativeName!),
                 ),
                 DropdownMenuItem(
                   value: AppLocalePreference.en,
-                  child: Text(l10n.languageEnglish),
+                  child: Text(AppLocalePreference.en.nativeName!),
                 ),
               ],
               onChanged: (value) {

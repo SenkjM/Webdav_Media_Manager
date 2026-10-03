@@ -166,12 +166,28 @@ class _HomeShellState extends State<HomeShell> {
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Icon(
-                                    Icons.library_music,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .primary,
-                                    size: 32,
+                                  AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 200),
+                                    switchInCurve: Curves.easeOut,
+                                    switchOutCurve: Curves.easeIn,
+                                    transitionBuilder: (child, animation) {
+                                      return FadeTransition(
+                                        opacity: animation,
+                                        child: ScaleTransition(
+                                          scale: Tween<double>(begin: 0.85, end: 1)
+                                              .animate(animation),
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: Icon(
+                                      _drawerIcon,
+                                      key: ValueKey<int>(_index),
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary,
+                                      size: 32,
+                                    ),
                                   ),
                                   SizedBox(height: 12),
                                   Text(
@@ -277,6 +293,15 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
   }
+
+  IconData get _drawerIcon => switch (_index) {
+        0 => Icons.library_music,
+        1 => Icons.queue_music,
+        2 => Icons.cloud_outlined,
+        3 => Icons.download_outlined,
+        4 => Icons.settings_outlined,
+        _ => Icons.library_music,
+      };
 
   GlobalKey<NavigatorState>? get _activeNavKey {
     return switch (_index) {
