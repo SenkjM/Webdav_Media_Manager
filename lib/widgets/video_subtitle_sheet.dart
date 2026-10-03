@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
-import '../theme/app_theme.dart';
+import '../services/settings_service.dart';
 import '../utils/subtitle_encoding.dart';
 import '../widgets/app_bottom_sheet.dart';
 
@@ -27,9 +28,10 @@ Future<void> showVideoSubtitleSheet({
   required Future<void> Function() onImportRemote,
   required Future<void> Function() onImportLocal,
 }) {
+  final scheme = Theme.of(context).colorScheme;
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: AppColors.surface,
+    backgroundColor: scheme.surface,
     isScrollControlled: true,
     shape: AppBottomSheet.shape,
     builder: (ctx) {
@@ -46,7 +48,7 @@ Future<void> showVideoSubtitleSheet({
                   title: Text(l10n.videoSubtitlePick),
                   subtitle: Text(l10n.videoSubtitleEncodingHint),
                 ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(height: 1, color: Theme.of(ctx).colorScheme.outline),
                 for (final row in rows)
                   ListTile(
                     leading: Icon(
@@ -54,11 +56,13 @@ Future<void> showVideoSubtitleSheet({
                           ? Icons.check_circle
                           : Icons.subtitles_outlined,
                       color: selectedKey == row.keyId
-                          ? AppColors.accent
+                          ? Theme.of(ctx).colorScheme.primary
                           : null,
                     ),
                     title: Text(
-                      row.title.isEmpty ? l10n.videoSubtitleExternal : row.title,
+                      row.title.isEmpty
+                          ? l10n.videoSubtitleExternal
+                          : row.title,
                     ),
                     trailing: row.formatTag == null
                         ? null
@@ -68,7 +72,7 @@ Future<void> showVideoSubtitleSheet({
                       await onSelect(row.keyId);
                     },
                   ),
-                const Divider(height: 1, color: AppColors.divider),
+                Divider(height: 1, color: Theme.of(ctx).colorScheme.outline),
                 ListTile(
                   leading: const Icon(Icons.cloud_outlined),
                   title: Text(l10n.videoSubtitleImportRemote),
@@ -89,9 +93,8 @@ Future<void> showVideoSubtitleSheet({
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                   child: Text(
                     l10n.videoSubtitleEncoding,
-                    style: const TextStyle(
-                      color: AppColors.secondaryText,
-                      fontSize: 12,
+                    style: Theme.of(ctx).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -114,6 +117,7 @@ Future<void> showVideoSubtitleSheet({
                     ],
                   ),
                 ),
+                const _SubtitleSizeControls(),
               ],
             ),
           );
@@ -121,6 +125,62 @@ Future<void> showVideoSubtitleSheet({
       );
     },
   );
+}
+
+/// Same presets and range as video settings. Writes the shared setting so the
+/// settings screen and this sheet stay in sync.
+class _SubtitleSizeControls extends StatelessWidget {
+  const _SubtitleSizeControls();
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = context.watch<SettingsService>();
+    final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
+    final size = settings.videoSubtitleFontSize;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(l10n.videoSubtitleSize),
+          const SizedBox(height: 4),
+          Text(
+            l10n.videoSubtitleSizeCurrent(
+              SettingsService.maxVideoSubtitleFontSize.toStringAsFixed(0),
+              SettingsService.minVideoSubtitleFontSize.toStringAsFixed(0),
+              size.toStringAsFixed(0),
+            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final preset in SettingsService.videoSubtitleFontSizePresets)
+                ChoiceChip(
+                  label: Text(preset.toStringAsFixed(0)),
+                  selected: (size - preset).abs() < 0.001,
+                  onSelected: (_) => settings.setVideoSubtitleFontSize(preset),
+                ),
+            ],
+          ),
+          Slider(
+            value: size.clamp(
+              SettingsService.minVideoSubtitleFontSize,
+              SettingsService.maxVideoSubtitleFontSize,
+            ),
+            min: SettingsService.minVideoSubtitleFontSize,
+            max: SettingsService.maxVideoSubtitleFontSize,
+            divisions: 30,
+            label: '${size.toStringAsFixed(0)} sp',
+            onChanged: (v) => settings.setVideoSubtitleFontSize(v),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 String _encodingLabel(AppLocalizations l10n, SubtitleEncodingChoice choice) {
@@ -142,15 +202,17 @@ class _FormatTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: AppColors.divider,
         borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: scheme.outline),
       ),
       child: Text(
         format.toLowerCase(),
-        style: const TextStyle(fontSize: 10, color: AppColors.secondaryText),
+        style: Theme.of(context).textTheme.labelMedium
+            ?.copyWith(fontSize: 10, color: scheme.onSurfaceVariant),
       ),
     );
   }

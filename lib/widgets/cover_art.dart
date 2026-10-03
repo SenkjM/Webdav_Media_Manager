@@ -89,10 +89,12 @@ class CoverBackdrop extends StatelessWidget {
     final hasBytes = bytes != null && bytes!.isNotEmpty;
     final hasFile =
         path != null && path!.isNotEmpty && File(path!).existsSync();
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final surface = Theme.of(context).colorScheme.surface;
     return Stack(
       fit: StackFit.expand,
       children: [
-        const ColoredBox(color: AppColors.background),
+        ColoredBox(color: dark ? surface : AppColors.background),
         if (hasBytes)
           ImageFiltered(
             imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
@@ -114,7 +116,11 @@ class CoverBackdrop extends StatelessWidget {
             ),
           ),
         if (hasBytes || hasFile)
-          ColoredBox(color: Colors.white.withValues(alpha: 0.82)),
+          ColoredBox(
+            color: dark
+                ? surface.withValues(alpha: 0.82)
+                : Colors.white.withValues(alpha: 0.82),
+          ),
         child,
       ],
     );

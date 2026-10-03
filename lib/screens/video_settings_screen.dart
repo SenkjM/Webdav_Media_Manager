@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../models/video_settings.dart';
 import '../services/settings_service.dart';
-import '../theme/app_theme.dart';
 
 /// Video playback settings (WebDAV streaming parameters, gestures, background
 /// playback & picture-in-picture). Reachable from the main Settings list.
@@ -78,14 +77,13 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           Text(
             AppLocalizations.of(context)!.streamPlayback,
             style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(color: AppColors.accent),
+                ?.copyWith(color: Theme.of(context).colorScheme.primary),
           ),
           const SizedBox(height: 4),
           Text(
             AppLocalizations.of(context)!.videoStreamingHint,
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontSize: 12,
             ),
           ),
           const SizedBox(height: 8),
@@ -145,7 +143,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           Text(
             AppLocalizations.of(context)!.videoGestures,
             style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(color: AppColors.accent),
+                ?.copyWith(color: Theme.of(context).colorScheme.primary),
           ),
           const SizedBox(height: 8),
           _gestureTile(
@@ -226,14 +224,13 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           Text(
             AppLocalizations.of(context)!.videoSubtitles,
             style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(color: AppColors.accent),
+                ?.copyWith(color: Theme.of(context).colorScheme.primary),
           ),
           const SizedBox(height: 4),
           Text(
             AppLocalizations.of(context)!.videoSubtitleHint,
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontSize: 12,
             ),
           ),
           const SizedBox(height: 8),
@@ -258,9 +255,8 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           if (settings.videoSubtitleSubdirEnabled) ...[
             Text(
               AppLocalizations.of(context)!.videoSubtitleSubdirEmpty,
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 12,
               ),
             ),
             const SizedBox(height: 8),
@@ -345,7 +341,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
           Text(
             AppLocalizations.of(context)!.videoPlaybackBehavior,
             style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(color: AppColors.accent),
+                ?.copyWith(color: Theme.of(context).colorScheme.primary),
           ),
           const SizedBox(height: 8),
           SwitchListTile(

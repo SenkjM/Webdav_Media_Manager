@@ -16,7 +16,6 @@ import '../services/settings_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/video_queue_controller.dart';
 import '../services/webdav_service.dart';
-import '../theme/app_theme.dart';
 import '../utils/audio_extensions.dart';
 import 'video_player_screen.dart' show VideoQueueSeed;
 
@@ -316,6 +315,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   /// 控制条最左边那个按钮：三个模式轮换，图标与提示跟着变。
   Widget _buildModeButton() {
     final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
     final looping = _mode != MusicStreamPlayMode.sequential;
     return IconButton(
       tooltip: '${l10n.playbackMode}: ${_mode.label(l10n)}',
@@ -326,13 +326,20 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
         children: [
           Icon(
             Icons.repeat,
-            color: looping ? AppColors.accent : AppColors.mutedText,
+            color: looping ? scheme.primary : scheme.onSurfaceVariant,
           ),
           if (_mode == MusicStreamPlayMode.single)
-            const Positioned(
+            Positioned(
               right: -4,
               bottom: -2,
-              child: Text('1', style: TextStyle(fontSize: 11, height: 1)),
+              child: Text(
+                '1',
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1,
+                  color: scheme.onSurface,
+                ),
+              ),
             ),
         ],
       ),
@@ -345,7 +352,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     if (queue == null) return;
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
@@ -388,10 +395,12 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                           Text(
                             AppLocalizations.of(context)!
                                 .playlistTrackCount(all.length),
-                            style: const TextStyle(
-                              color: AppColors.secondaryText,
-                              fontSize: 12,
-                            ),
+                            style: Theme.of(context).textTheme.labelMedium
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
                           ),
                         ],
                       ),
@@ -426,9 +435,12 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                             return Center(
                               child: Text(
                                 AppLocalizations.of(context)!.noMatchingTracks,
-                                style: const TextStyle(
-                                  color: AppColors.secondaryText,
-                                ),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
                               ),
                             );
                           }
@@ -446,12 +458,14 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                                 selected: selected,
                                 leading: Text(
                                   '${all.indexOf(track) + 1}',
-                                  style: TextStyle(
-                                    color: selected
-                                        ? AppColors.accent
-                                        : AppColors.mutedText,
-                                    fontSize: 12,
-                                  ),
+                                  style: Theme.of(ctx).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: selected
+                                            ? Theme.of(ctx).colorScheme.primary
+                                            : Theme.of(ctx)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                      ),
                                 ),
                                 title: Text(
                                   track.name,
@@ -459,8 +473,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     color: selected
-                                        ? AppColors.accent
-                                        : AppColors.onDark,
+                                        ? Theme.of(ctx).colorScheme.primary
+                                        : Theme.of(ctx).colorScheme.onSurface,
                                   ),
                                 ),
                                 subtitle: dir.isEmpty
@@ -469,10 +483,15 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                                         dir,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: AppColors.secondaryText,
-                                          fontSize: 11,
-                                        ),
+                                        style: Theme.of(ctx)
+                                            .textTheme
+                                            .labelMedium
+                                            ?.copyWith(
+                                              color: Theme.of(ctx)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                              fontSize: 11,
+                                            ),
                                       ),
                                 onTap: () {
                                   Navigator.of(ctx).pop();
@@ -533,7 +552,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     final hasPrev = (queue?.index ?? 0) > 0;
     final hasNext = queue?.hasNext ?? false;
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -561,8 +580,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.primaryText,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                   ),
@@ -570,9 +589,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                 const SizedBox(height: 6),
                 Text(
                   l10n.streamingNotCached,
-                  style: const TextStyle(
-                    color: AppColors.secondaryText,
-                    fontSize: 12,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -584,10 +602,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
                   Text(
                     l10n.playbackFailed(_error ?? ''),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: AppColors.error,
-                      fontSize: 12,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: Theme.of(context).colorScheme.error),
                   ),
                 ],
               ],
@@ -604,13 +620,13 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
       width: 200,
       height: 200,
       decoration: BoxDecoration(
-        color: AppColors.elevated,
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Icon(
         _opening ? Icons.graphic_eq : Icons.music_note,
         size: 72,
-        color: AppColors.secondaryText,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
     );
   }
@@ -691,8 +707,14 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(_fmt(_position), style: _timeStyle),
-              Text(total == 0 ? '--:--' : _fmt(_duration), style: _timeStyle),
+              Text(
+                _fmt(_position),
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
+              Text(
+                total == 0 ? '--:--' : _fmt(_duration),
+                style: Theme.of(context).textTheme.labelMedium,
+              ),
             ],
           ),
         ),
@@ -738,11 +760,6 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
       ],
     );
   }
-
-  static const _timeStyle = TextStyle(
-    color: AppColors.secondaryText,
-    fontSize: 12,
-  );
 
   String _fmt(Duration d) {
     final h = d.inHours;

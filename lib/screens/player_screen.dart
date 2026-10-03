@@ -15,7 +15,6 @@ import '../services/cache_service.dart';
 import '../services/library_service.dart';
 import '../services/library_actions.dart';
 import '../services/tag_service.dart';
-import '../theme/app_theme.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
 import 'now_playing_queue_screen.dart';
@@ -143,7 +142,7 @@ class PlayerScreen extends StatelessWidget {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -247,7 +246,7 @@ class PlayerScreen extends StatelessWidget {
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: AppColors.elevatedHigh,
+                    color: Theme.of(context).colorScheme.outline,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -258,11 +257,12 @@ class PlayerScreen extends StatelessWidget {
                       Expanded(
                         child: Text(
                           l10n.playerFileDetails,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primaryText,
-                          ),
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
                         ),
                       ),
                       IconButton(
@@ -297,15 +297,17 @@ class PlayerScreen extends StatelessWidget {
                         dense: true,
                         title: Text(
                           e.key,
-                          style: const TextStyle(
-                            color: AppColors.mutedText,
-                            fontSize: 12,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
                         ),
                         subtitle: SelectableText(
                           e.value,
-                          style: const TextStyle(
-                            color: AppColors.primaryText,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onSurface,
                             fontSize: 14,
                             height: 1.35,
                           ),
@@ -378,7 +380,7 @@ class PlayerScreen extends StatelessWidget {
     final chips = _metaChips(context, track, lib);
 
     return Scaffold(
-      backgroundColor: AppColors.nearBlack,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: _PlayerBackdrop(
         sourceName: track?.sourceName,
         audioRemotePath: track?.effectiveAudioRemotePath,
@@ -447,24 +449,33 @@ class PlayerScreen extends StatelessWidget {
                                 textAlign: TextAlign.center,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  color: AppColors.onDark,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.2,
-                                  letterSpacing: 0.15,
-                                ),
+                                style: Theme.of(context).textTheme.headlineSmall
+                                    ?.copyWith(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w700,
+                                      height: 1.2,
+                                      letterSpacing: 0.15,
+                                    ),
                               ),
                               const SizedBox(height: 8),
                               Text(
-                                player.error ?? track?.displayArtistFor(AppLocalizations.of(context)!) ?? '',
+                                player.error ??
+                                    track?.displayArtistFor(
+                                      AppLocalizations.of(context)!,
+                                    ) ??
+                                    '',
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: player.error != null
-                                      ? AppColors.error
-                                      : AppColors.secondaryText,
+                                      ? Theme.of(context).colorScheme.error
+                                      : Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
                                   fontSize: 15,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -483,18 +494,24 @@ class PlayerScreen extends StatelessWidget {
                                           vertical: 5,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: AppColors.elevated,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withValues(alpha: 0.08),
                                           borderRadius: BorderRadius.circular(
                                             16,
                                           ),
                                         ),
                                         child: Text(
                                           c,
-                                          style: const TextStyle(
-                                            color: AppColors.secondaryText,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelMedium
+                                              ?.copyWith(
+                                                color: Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                              ),
                                         ),
                                       ),
                                   ],
@@ -532,23 +549,31 @@ class PlayerScreen extends StatelessWidget {
                                   children: [
                                     Text(
                                       _fmt(position),
-                                      style: const TextStyle(
-                                        color: AppColors.mutedText,
-                                        fontSize: 12,
-                                        fontFeatures: [
-                                          FontFeature.tabularFigures(),
-                                        ],
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                            fontFeatures: const [
+                                              FontFeature.tabularFigures(),
+                                            ],
+                                          ),
                                     ),
                                     Text(
                                       _fmt(duration),
-                                      style: const TextStyle(
-                                        color: AppColors.mutedText,
-                                        fontSize: 12,
-                                        fontFeatures: [
-                                          FontFeature.tabularFigures(),
-                                        ],
-                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelMedium
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                            fontFeatures: const [
+                                              FontFeature.tabularFigures(),
+                                            ],
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -559,7 +584,9 @@ class PlayerScreen extends StatelessWidget {
                                 children: [
                                   IconButton(
                                     iconSize: 42,
-                                    color: AppColors.onDark,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface,
                                     onPressed: () => player.skipPrevious(),
                                     icon: const Icon(
                                       Icons.skip_previous_rounded,
@@ -567,7 +594,9 @@ class PlayerScreen extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 20),
                                   Material(
-                                    color: AppColors.accent,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
                                     shape: const CircleBorder(),
                                     elevation: 4,
                                     child: InkWell(
@@ -583,7 +612,9 @@ class PlayerScreen extends StatelessWidget {
                                               ? Icons.pause_rounded
                                               : Icons.play_arrow_rounded,
                                           size: 42,
-                                          color: AppColors.onAccent,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onPrimary,
                                         ),
                                       ),
                                     ),
@@ -591,7 +622,9 @@ class PlayerScreen extends StatelessWidget {
                                   const SizedBox(width: 20),
                                   IconButton(
                                     iconSize: 42,
-                                    color: AppColors.onDark,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface,
                                     onPressed: () => player.skipNext(),
                                     icon: const Icon(Icons.skip_next_rounded),
                                   ),
