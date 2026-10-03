@@ -278,6 +278,29 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scanSubdirectoriesHint => '打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。';
 
   @override
+  String get streamSidecarCover => '同目录封面';
+
+  @override
+  String get streamSidecarCoverHint => '按文件名在同一目录找封面图。默认关闭。找不到时仍显示占位图。';
+
+  @override
+  String get streamSidecarNames => '封面文件名';
+
+  @override
+  String get streamSidecarNamesHint =>
+      '用逗号或空格分隔。歌曲文件名（不含扩展名）总会再试一次。只认 jpg、jpeg、png、webp。同名只是扩展名不同时优先 jpg。斜杠会被去掉，不会进子目录。';
+
+  @override
+  String get streamPrefetchBackward => '向前预载';
+
+  @override
+  String get streamPrefetchForward => '向后预载';
+
+  @override
+  String get streamPrefetchHint =>
+      '一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。';
+
+  @override
   String get downloadPending => '等待中';
 
   @override
@@ -4003,6 +4026,29 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get scanSubdirectoriesHint => '開啟：目前目錄及所有子目錄的音訊都加入清單。關閉：只列出目前這一層。';
+
+  @override
+  String get streamSidecarCover => '同目錄封面';
+
+  @override
+  String get streamSidecarCoverHint => '按檔名在同一目錄找封面圖。預設關閉。找不到時仍顯示佔位圖。';
+
+  @override
+  String get streamSidecarNames => '封面檔名';
+
+  @override
+  String get streamSidecarNamesHint =>
+      '用逗號或空格分隔。歌曲檔名（不含副檔名）總會再試一次。只認 jpg、jpeg、png、webp。同名只是副檔名不同時優先 jpg。斜線會被去掉，不會進子目錄。';
+
+  @override
+  String get streamPrefetchBackward => '向前預載';
+
+  @override
+  String get streamPrefetchForward => '向後預載';
+
+  @override
+  String get streamPrefetchHint =>
+      '一次只預載一首：先向前（上一首方向），再向後。已經在播放清單裡、或快取檔案已經完整的，不會再取。0 表示該方向不預載。滑出視窗不刪，下次啟動才清空。';
 
   @override
   String get downloadPending => '等待中';

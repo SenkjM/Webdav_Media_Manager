@@ -80,6 +80,10 @@ class SettingsService extends ChangeNotifier {
   static const _kMusicStreamPlayMode = 'music_stream_play_mode';
   static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
   static const _kAudioScanSubdirs = 'audio_scan_subdirs';
+  static const _kAudioStreamSidecarCover = 'audio_stream_sidecar_cover';
+  static const _kAudioStreamSidecarNames = 'audio_stream_sidecar_names';
+  static const _kAudioStreamPrefetchBackward = 'audio_stream_prefetch_backward';
+  static const _kAudioStreamPrefetchForward = 'audio_stream_prefetch_forward';
   static const _kVideoScanSubdirs = 'video_scan_subdirs';
   static const _kImageSlideshow = 'image_slideshow_enabled';
   static const _kImageSlideshowSeconds = 'image_slideshow_interval_seconds';
@@ -128,6 +132,22 @@ class SettingsService extends ChangeNotifier {
 
   /// Slider granularity: (3.0 - 0.5) / 0.05 = 50 steps.
   static const int videoRateDivisions = 50;
+
+  /// Same-directory cover base names, comma or space separated.
+  /// The audio file stem is always tried in addition to this list.
+  static const String defaultSidecarNames = 'cover, folder, front, album';
+
+  /// How many tracks before (backward) and after (forward) the current one
+  /// the stream page prefetches. 0 disables that direction.
+  static const int defaultStreamPrefetch = 1;
+  static const int minStreamPrefetch = 0;
+  static const int maxStreamPrefetch = 5;
+
+  static int clampStreamPrefetch(int value) {
+    if (value < minStreamPrefetch) return minStreamPrefetch;
+    if (value > maxStreamPrefetch) return maxStreamPrefetch;
+    return value;
+  }
 
   /// Image viewer. Slideshow starts off. Prefetch count is neighbors on
   /// EACH side (previous N and next N), clamped so a large album cannot be
@@ -208,6 +228,10 @@ class SettingsService extends ChangeNotifier {
   MusicStreamPlayMode _musicStreamPlayMode = MusicStreamPlayMode.sequential;
   bool _audioStreamingEnabled = false;
   bool _audioScanSubdirs = false;
+  bool _audioStreamSidecarCover = false;
+  String _audioStreamSidecarNames = defaultSidecarNames;
+  int _audioStreamPrefetchBackward = defaultStreamPrefetch;
+  int _audioStreamPrefetchForward = defaultStreamPrefetch;
   bool _videoScanSubdirs = false;
   bool _imageSlideshowEnabled = defaultImageSlideshow;
   int _imageSlideshowIntervalSeconds = defaultImageSlideshowSeconds;
@@ -370,6 +394,20 @@ class SettingsService extends ChangeNotifier {
 
   /// 流式扫描是否递归子目录。音频与视频各一份，默认都关。
   bool get audioScanSubdirs => _audioScanSubdirs;
+
+  /// Same-directory images when an audio stream has no embedded picture.
+  /// Default off.
+  bool get audioStreamSidecarCover => _audioStreamSidecarCover;
+
+  /// Editable base names for [audioStreamSidecarCover].
+  String get audioStreamSidecarNames => _audioStreamSidecarNames;
+
+  /// Tracks before the current one (backward). Default 1.
+  int get audioStreamPrefetchBackward => _audioStreamPrefetchBackward;
+
+  /// Tracks after the current one (forward). Default 1.
+  int get audioStreamPrefetchForward => _audioStreamPrefetchForward;
+
   bool get videoScanSubdirs => _videoScanSubdirs;
 
   /// 图片查看。幻灯片默认关。预取数量是左右各 N 张，不是整本相册。
@@ -526,6 +564,16 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getString(_kMusicStreamPlayMode),
     );
     _audioScanSubdirs = _prefs!.getBool(_kAudioScanSubdirs) ?? false;
+    _audioStreamSidecarCover =
+        _prefs!.getBool(_kAudioStreamSidecarCover) ?? false;
+    _audioStreamSidecarNames =
+        _prefs!.getString(_kAudioStreamSidecarNames) ?? defaultSidecarNames;
+    _audioStreamPrefetchBackward = clampStreamPrefetch(
+      _prefs!.getInt(_kAudioStreamPrefetchBackward) ?? defaultStreamPrefetch,
+    );
+    _audioStreamPrefetchForward = clampStreamPrefetch(
+      _prefs!.getInt(_kAudioStreamPrefetchForward) ?? defaultStreamPrefetch,
+    );
     _videoScanSubdirs = _prefs!.getBool(_kVideoScanSubdirs) ?? false;
     _imageSlideshowEnabled =
         _prefs!.getBool(_kImageSlideshow) ?? defaultImageSlideshow;
@@ -881,6 +929,40 @@ class SettingsService extends ChangeNotifier {
     _audioScanSubdirs = enabled;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kAudioScanSubdirs, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setAudioStreamSidecarCover(bool enabled) async {
+    _audioStreamSidecarCover = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kAudioStreamSidecarCover, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setAudioStreamSidecarNames(String raw) async {
+    _audioStreamSidecarNames = raw;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kAudioStreamSidecarNames, raw);
+    notifyListeners();
+  }
+
+  Future<void> setAudioStreamPrefetchBackward(int value) async {
+    _audioStreamPrefetchBackward = clampStreamPrefetch(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(
+      _kAudioStreamPrefetchBackward,
+      _audioStreamPrefetchBackward,
+    );
+    notifyListeners();
+  }
+
+  Future<void> setAudioStreamPrefetchForward(int value) async {
+    _audioStreamPrefetchForward = clampStreamPrefetch(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(
+      _kAudioStreamPrefetchForward,
+      _audioStreamPrefetchForward,
+    );
     notifyListeners();
   }
 
@@ -1252,6 +1334,10 @@ class SettingsService extends ChangeNotifier {
     'music_stream_play_mode': _musicStreamPlayMode.storageKey,
     'audio_streaming_enabled': _audioStreamingEnabled,
     'audio_scan_subdirs': _audioScanSubdirs,
+    'audio_stream_sidecar_cover': _audioStreamSidecarCover,
+    'audio_stream_sidecar_names': _audioStreamSidecarNames,
+    'audio_stream_prefetch_backward': _audioStreamPrefetchBackward,
+    'audio_stream_prefetch_forward': _audioStreamPrefetchForward,
     'video_scan_subdirs': _videoScanSubdirs,
     'image_slideshow_enabled': _imageSlideshowEnabled,
     'image_slideshow_interval_seconds': _imageSlideshowIntervalSeconds,
@@ -1398,6 +1484,26 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['audio_scan_subdirs'] is bool) {
       await setAudioScanSubdirs(json['audio_scan_subdirs'] as bool);
+    }
+    if (json['audio_stream_sidecar_cover'] is bool) {
+      await setAudioStreamSidecarCover(
+        json['audio_stream_sidecar_cover'] as bool,
+      );
+    }
+    if (json['audio_stream_sidecar_names'] is String) {
+      await setAudioStreamSidecarNames(
+        json['audio_stream_sidecar_names'] as String,
+      );
+    }
+    if (json['audio_stream_prefetch_backward'] is num) {
+      await setAudioStreamPrefetchBackward(
+        (json['audio_stream_prefetch_backward'] as num).toInt(),
+      );
+    }
+    if (json['audio_stream_prefetch_forward'] is num) {
+      await setAudioStreamPrefetchForward(
+        (json['audio_stream_prefetch_forward'] as num).toInt(),
+      );
     }
     if (json['video_scan_subdirs'] is bool) {
       await setVideoScanSubdirs(json['video_scan_subdirs'] as bool);

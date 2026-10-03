@@ -20,6 +20,7 @@ import 'services/music_audio_handler.dart';
 import 'services/backup_service.dart';
 import 'services/notification_permission_service.dart';
 import 'services/platform_export_service.dart';
+import 'services/prefetch_cache.dart';
 import 'services/playlist_service.dart';
 import 'services/settings_service.dart';
 import 'services/sync_service.dart';
@@ -32,6 +33,8 @@ import 'utils/l10n_host.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Drop last run's prefetch bytes before any player opens a cached file.
+  await PrefetchCache.wipe();
   // Required once before any media_kit Player is created.
   MediaKit.ensureInitialized();
   // Native PiP transitions arrive on the shared app MethodChannel; install the

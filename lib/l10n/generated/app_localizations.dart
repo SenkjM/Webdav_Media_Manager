@@ -627,6 +627,48 @@ abstract class AppLocalizations {
   /// **'打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。'**
   String get scanSubdirectoriesHint;
 
+  /// No description provided for @streamSidecarCover.
+  ///
+  /// In zh, this message translates to:
+  /// **'同目录封面'**
+  String get streamSidecarCover;
+
+  /// No description provided for @streamSidecarCoverHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'按文件名在同一目录找封面图。默认关闭。找不到时仍显示占位图。'**
+  String get streamSidecarCoverHint;
+
+  /// No description provided for @streamSidecarNames.
+  ///
+  /// In zh, this message translates to:
+  /// **'封面文件名'**
+  String get streamSidecarNames;
+
+  /// No description provided for @streamSidecarNamesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用逗号或空格分隔。歌曲文件名（不含扩展名）总会再试一次。只认 jpg、jpeg、png、webp。同名只是扩展名不同时优先 jpg。斜杠会被去掉，不会进子目录。'**
+  String get streamSidecarNamesHint;
+
+  /// No description provided for @streamPrefetchBackward.
+  ///
+  /// In zh, this message translates to:
+  /// **'向前预载'**
+  String get streamPrefetchBackward;
+
+  /// No description provided for @streamPrefetchForward.
+  ///
+  /// In zh, this message translates to:
+  /// **'向后预载'**
+  String get streamPrefetchForward;
+
+  /// No description provided for @streamPrefetchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。'**
+  String get streamPrefetchHint;
+
   /// No description provided for @downloadPending.
   ///
   /// In zh, this message translates to:

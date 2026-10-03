@@ -284,6 +284,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'On: include audio in this directory and all subdirectories. Off: list only this directory.';
 
   @override
+  String get streamSidecarCover => 'Same-directory cover';
+
+  @override
+  String get streamSidecarCoverHint =>
+      'Match a cover image in the same folder by file name. Off by default. A miss still shows the placeholder.';
+
+  @override
+  String get streamSidecarNames => 'Cover file names';
+
+  @override
+  String get streamSidecarNamesHint =>
+      'Separate names with commas or spaces. The audio file name without its extension is always tried as well. Only jpg, jpeg, png, and webp are considered. When several files share a name and differ only by extension, jpg is preferred. Slashes are removed, so names cannot select a subdirectory.';
+
+  @override
+  String get streamPrefetchBackward => 'Prefetch behind';
+
+  @override
+  String get streamPrefetchForward => 'Prefetch ahead';
+
+  @override
+  String get streamPrefetchHint =>
+      'One file at a time: backward (previous tracks) first, then forward. A track already in the player list, or already a complete cache file, is not fetched again. 0 disables that direction. Files that leave the window stay until the next launch.';
+
+  @override
   String get downloadPending => 'Waiting';
 
   @override
