@@ -1,6 +1,6 @@
 name: Testbuild
 
-# 手动旁路编译：只出 test flavor 的 arm64-v8a APK，上传 Actions artifact。
+# 手动旁路编译：只出 sandbox flavor 的 arm64-v8a APK，上传 Actions artifact。
 # 不打标签、不建 GitHub Release、不打 app bundle，也不跑预发布的定时任务。
 # 不解码 keystore。没有 secrets 时 release 构建回落到 debug 签名，够旁路安装。
 
@@ -58,7 +58,7 @@ jobs:
         run: flutter pub get
 
       - name: Build arm64-v8a test APK
-        run: flutter build apk --release --flavor test --target-platform android-arm64
+        run: flutter build apk --release --flavor sandbox --target-platform android-arm64
 
       - name: Upload testbuild APK
         uses: actions/upload-artifact@v7

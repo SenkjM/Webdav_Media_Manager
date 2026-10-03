@@ -43,7 +43,8 @@ android {
     // 独立的数据库 / 偏好 / 安全存储目录。
     // 注意：一旦存在 product flavor，AGP 就不再生成不带 flavor 的
     // assembleRelease 之类任务，所有构建都必须显式带 --flavor。
-    // abiFilters 只写在 test 上。prod / dev 不设，仍由各自的构建命令决定 ABI。
+    // abiFilters 只写在 sandbox 上。prod / dev 不设，仍由各自的构建命令决定 ABI。
+    // flavor 不能叫 test：AGP 禁止 ProductFlavor 名字以 test 开头。
     flavorDimensions += "env"
     productFlavors {
         create("prod") {
@@ -55,7 +56,7 @@ android {
             versionNameSuffix = "-dev"
             manifestPlaceholders["appName"] = "Webdav Media Manager Dev"
         }
-        create("test") {
+        create("sandbox") {
             dimension = "env"
             applicationIdSuffix = ".test"
             versionNameSuffix = "-test"

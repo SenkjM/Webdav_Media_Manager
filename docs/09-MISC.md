@@ -80,12 +80,12 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 |--------|---------------|--------|------|
 | `prod` | `com.senkjm.media_manager` | Webdav Media Manager | 正式包；本地 release 与正式 / 预发布 CI 都走它 |
 | `dev` | `com.senkjm.media_manager.dev` | Webdav Media Manager Dev | 本地调试；`versionNameSuffix = "-dev"` |
-| `test` | `com.senkjm.media_manager.test` | Webdav Media Manager Test | 旁路试装；`versionNameSuffix = "-test"`。只含 `arm64-v8a`。Testbuild 编这个包，不发版 |
+| `sandbox` | `com.senkjm.media_manager.test` | Webdav Media Manager Test | 旁路试装；`versionNameSuffix = "-test"`。只含 `arm64-v8a`。Testbuild 编这个包，不发版 |
 
 - 三个包 applicationId 不同，能装在同一台手机上并存，数据库 / 偏好 / 安全存储目录各自独立。
 - flavor 只影响 `applicationId`、`versionName` 后缀、`android:label`（走 `${appName}` 占位符），以及 `test` 的 ABI；`namespace` 与 Dart 代码不动，`MainActivity` 不搬家。
 - `ndk.abiFilters` 只写在 `test`（`arm64-v8a`）。`prod` / `dev` 不设，ABI 仍由各自的构建命令决定。
-- 正式 / 预发布 CI 的产物文件名随 flavor 变成 `app-prod-*.apk` / `build/app/outputs/bundle/prodRelease/app-prod-release.aab`。Testbuild 的命令是 `flutter build apk --release --flavor test --target-platform android-arm64`，artifact 名 `testbuild-arm64-v8a`。
+- 正式 / 预发布 CI 的产物文件名随 flavor 变成 `app-prod-*.apk` / `build/app/outputs/bundle/prodRelease/app-prod-release.aab`。Testbuild 的命令是 `flutter build apk --release --flavor sandbox --target-platform android-arm64`，artifact 名 `testbuild-arm64-v8a`。
 
 - Flutter **stable**（`environment.sdk: ^3.13.4`）；本机 SDK 装在 `D:\flutter`，`android/local.properties` 里的 `flutter.sdk` 只对本机有效，换机器会重新生成。
 - Android SDK + JDK 17（与 CI `setup-java` 一致）；CI 里 `flutter test` 前需 `apt install libmpv-dev mpv`（media_kit 的 Linux 后端）。
