@@ -6,9 +6,9 @@ name: Testbuild
 #   sandbox flavor 再追加 versionNameSuffix "-test"）；
 #   versionCode = 该标签的正式版 versionCode（主×1e8 + 次×1e6 + 修订×1e4）+ 本 workflow 的 run_number。
 #   sandbox 包名独立（.test），不与 prod 的 versionCode 冲突；run_number 单调递增，便于覆盖安装。
-# 签名：sandbox flavor 在 android/app/build.gradle.kts 里写死用 debug 签名，
-#   与正式 / 预发布的 internal keystore 分开。本 workflow 不解码 keystore，也不读 ANDROID_KEY* secrets。
-#   runner 每次新生成 ~/.android/debug.keystore，跨次覆盖安装需先卸载 .test 包。
+# 签名：sandbox flavor 用固定测试 keystore（Secrets：ANDROID_SANDBOX_KEYSTORE_BASE64 /
+#   ANDROID_SANDBOX_KEYSTORE_PASSWORD / ANDROID_SANDBOX_KEY_ALIAS / ANDROID_SANDBOX_KEY_PASSWORD），
+#   与正式 / 预发布的 ANDROID_KEY* / ANDROID_KEYSTORE_* 分开；跨次可覆盖安装 .test 包。
 
 on:
   workflow_dispatch:
@@ -95,7 +95,24 @@ jobs:
             echo "version_code=${code}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Decode sandbox keystore
+        env:
+          ANDROID_SANDBOX_KEYSTORE_BASE64: ${{ secrets.ANDROID_SANDBOX_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_SANDBOX_KEYSTORE_BASE64:-}" ]; then
+            echo "Missing secret ANDROID_SANDBOX_KEYSTORE_BASE64 — cannot produce a stable-signed sandbox APK."
+            exit 1
+          fi
+          echo "$ANDROID_SANDBOX_KEYSTORE_BASE64" | base64 -d > "$GITHUB_WORKSPACE/android/app/sandbox.jks"
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/android/app/sandbox.jks" >> "$GITHUB_ENV"
+
       - name: Build arm64-v8a test APK
+        env:
+          ANDROID_SANDBOX_KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
+          ANDROID_SANDBOX_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_SANDBOX_KEYSTORE_PASSWORD }}
+          ANDROID_SANDBOX_KEY_ALIAS: ${{ secrets.ANDROID_SANDBOX_KEY_ALIAS }}
+          ANDROID_SANDBOX_KEY_PASSWORD: ${{ secrets.ANDROID_SANDBOX_KEY_PASSWORD }}
         run: |
           flutter build apk --release --flavor sandbox --target-platform android-arm64 \
             --build-name="${{ steps.version.outputs.version_name }}" \

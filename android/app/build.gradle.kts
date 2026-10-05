@@ -35,6 +35,7 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
+
     // Optional libsodium for openlist_crypt secretbox (arm64-v8a only in this
     // experiment). Other ABIs simply omit the .so and stay on the Dart path.
     // Does not set abiFilters — sandbox abiFilters / split-per-abi rules unchanged.
@@ -66,6 +67,18 @@ android {
                 this.keyPassword = keyPassword
             }
         }
+        create("sandbox") {
+            val storePath = envOrProp("ANDROID_SANDBOX_KEYSTORE_PATH")
+            val storePassword = envOrProp("ANDROID_SANDBOX_KEYSTORE_PASSWORD")
+            val keyAlias = envOrProp("ANDROID_SANDBOX_KEY_ALIAS")
+            val keyPassword = envOrProp("ANDROID_SANDBOX_KEY_PASSWORD")
+            if (storePath != null && storePassword != null && keyAlias != null && keyPassword != null) {
+                storeFile = file(storePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
     }
 
     // flavor 只决定「装成哪个包、叫什么名字」，不碰 namespace 与 Dart 代码：
@@ -80,12 +93,15 @@ android {
     // 签名按 flavor 写死（buildType release 不再设 signingConfig，否则会盖过 flavor）：
     // - prod / dev：有 internal keystore（CI secrets 或 android/key.properties）就用它，
     //   本地没有时回落 debug，仅够自测。正式 / 预发布 CI 必须带 internal。
-    // - sandbox：固定用 debug 签名，即使环境里有 internal keystore 也不用，
-    //   与正式 / 预发布签名分开（Testbuild 不读 ANDROID_KEY* secrets）。
+    // - sandbox：有 sandbox 专用 keystore（ANDROID_SANDBOX_* secrets / key.properties）就用它，
+    //   本地没有时回落 debug。Testbuild 解码固定测试 keystore，跨次可覆盖安装。
     // debug buildType 仍用 AGP 默认的 debug 签名。
     val internalSigning = signingConfigs.getByName("internal")
     val releaseSigning =
         if (internalSigning.storeFile != null) internalSigning else signingConfigs.getByName("debug")
+    val sandboxKeySigning = signingConfigs.getByName("sandbox")
+    val sandboxSigning =
+        if (sandboxKeySigning.storeFile != null) sandboxKeySigning else signingConfigs.getByName("debug")
 
     flavorDimensions += "env"
     productFlavors {
@@ -105,7 +121,7 @@ android {
             applicationIdSuffix = ".test"
             versionNameSuffix = "-test"
             manifestPlaceholders["appName"] = "Webdav Media Manager Test"
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = sandboxSigning
             if (!splitPerAbi) {
                 ndk {
                     abiFilters += "arm64-v8a"
