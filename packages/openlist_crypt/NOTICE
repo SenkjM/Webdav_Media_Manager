@@ -1,0 +1,17 @@
+openlist_crypt
+Copyright (c) 2026 The OpenList Authors and contributors to
+SenkjM/Webdav_Media_Manager.
+
+Licensed under the GNU Affero General Public License v3.0.
+See LICENSE.
+
+This package includes or is derived from:
+
+- rclone (https://github.com/rclone/rclone), MIT License
+- Max-Sum/base32768 (https://github.com/Max-Sum/base32768), MIT License
+- golang.org/x/crypto nacl/salsa20 layout, BSD-3-Clause
+
+Optional bundled native binary:
+
+- libsodium (https://github.com/jedisct1/libsodium), ISC License
+  See native/LICENSE.libsodium

@@ -106,10 +106,13 @@ dart test        # 31 tests, all golden-vector backed
 
 ## Credits & licensing
 
-MIT. A Dart port of algorithms from [rclone][rclone] (MIT), and
+**AGPL-3.0** (same as the app). See [LICENSE](LICENSE).
+
+This package ports algorithms from [rclone][rclone] (MIT) and
 [Max-Sum/base32768][base32768] (MIT); the secretbox/salsa20 layout follows
-golang.org/x/crypto (BSD-3-Clause). See [LICENSE](LICENSE) for the full
-text and attribution.
+golang.org/x/crypto (BSD-3-Clause). Upstream notices remain in
+[NOTICE](NOTICE). Optional libsodium binaries stay under ISC; see
+`native/LICENSE.libsodium` and `native/LICENSE_NOTE.md`.
 
 [rclone]: https://github.com/rclone/rclone
 [base32768]: https://github.com/Max-Sum/base32768

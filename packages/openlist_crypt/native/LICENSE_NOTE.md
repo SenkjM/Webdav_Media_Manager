@@ -8,7 +8,7 @@ license texts themselves.
 | Component | License (as shipped in-tree) | Location |
 |---|---|---|
 | WebDAV Media Manager (app) | **AGPL-3.0** | repo root `LICENSE` |
-| `packages/openlist_crypt` (Dart port) | **MIT** (+ notices for rclone / base32768 / golang.org/x/crypto) | `packages/openlist_crypt/LICENSE` |
+| `packages/openlist_crypt` (Dart port) | **AGPL-3.0** (+ upstream notices for rclone / base32768 / golang.org/x/crypto) | `packages/openlist_crypt/LICENSE`, `packages/openlist_crypt/NOTICE` |
 | libsodium (native `.so`) | **ISC** | `packages/openlist_crypt/native/LICENSE.libsodium` (from upstream 1.0.20) |
 
 ## What the ISC text requires (verbatim gist)
@@ -23,21 +23,16 @@ So redistributing the precompiled `libsodium.so` is consistent with ISC when
 the copyright + permission notice is preserved (this directory keeps
 `LICENSE.libsodium`).
 
-## AGPL-3.0 host app
+## AGPL-3.0 package and host app
 
-AGPL-3.0 allows combining with other works; the ISC notice obligation for
-libsodium remains. Shipping the `.so` inside an AGPL app does **not** by itself
-re-license libsodium as AGPL—the ISC terms still apply to that binary, and the
-app remains AGPL for its own code. Keep conveying both:
+Both the app and `openlist_crypt` are AGPL-3.0. The ISC notice obligation for
+libsodium remains. Shipping the `.so` inside an AGPL package does **not** by
+itself re-license libsodium as AGPL—the ISC terms still apply to that binary.
+Keep conveying:
 
-1. App AGPL-3.0 (`LICENSE` at repo root / distribution notices the project already uses).
-2. libsodium ISC notice (`native/LICENSE.libsodium`) alongside the binary.
-
-## openlist_crypt MIT package
-
-The Dart package license is MIT. Adding an optional ISC-covered native binary
-under `native/` does not remove MIT obligations for the Dart sources; document
-the extra ISC file when distributing the package with the `.so`.
+1. AGPL-3.0 for app and Dart sources (`LICENSE` / package `LICENSE`).
+2. Upstream attributions in `packages/openlist_crypt/NOTICE`.
+3. libsodium ISC notice (`native/LICENSE.libsodium`) alongside the binary.
 
 ## Notices to keep when shipping an APK that includes the `.so`
 
