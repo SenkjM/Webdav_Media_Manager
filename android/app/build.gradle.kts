@@ -44,39 +44,6 @@ android {
         manifestPlaceholders["appName"] = "Webdav Media Manager"
     }
 
-    // flavor 只决定「装成哪个包、叫什么名字」，不碰 namespace 与 Dart 代码：
-    // prod、dev 与 test 的 applicationId 不同，所以能并存在同一台手机上，各自持有
-    // 独立的数据库 / 偏好 / 安全存储目录。
-    // 注意：一旦存在 product flavor，AGP 就不再生成不带 flavor 的
-    // assembleRelease 之类任务，所有构建都必须显式带 --flavor。
-    // abiFilters 只在非 split-per-abi 时写在 sandbox 上。prod / dev 不设，
-    // 仍由各自的构建命令决定 ABI。分包构建不能带这份过滤，否则 prod 的
-    // --split-per-abi 会在配置 sandbox variant 时失败。
-    // flavor 不能叫 test：AGP 禁止 ProductFlavor 名字以 test 开头。
-    flavorDimensions += "env"
-    productFlavors {
-        create("prod") {
-            dimension = "env"
-        }
-        create("dev") {
-            dimension = "env"
-            applicationIdSuffix = ".dev"
-            versionNameSuffix = "-dev"
-            manifestPlaceholders["appName"] = "Webdav Media Manager Dev"
-        }
-        create("sandbox") {
-            dimension = "env"
-            applicationIdSuffix = ".test"
-            versionNameSuffix = "-test"
-            manifestPlaceholders["appName"] = "Webdav Media Manager Test"
-            if (!splitPerAbi) {
-                ndk {
-                    abiFilters += "arm64-v8a"
-                }
-            }
-        }
-    }
-
     signingConfigs {
         create("internal") {
             val storePath = envOrProp("ANDROID_KEYSTORE_PATH")
@@ -90,6 +57,67 @@ android {
                 this.keyPassword = keyPassword
             }
         }
+        create("sandbox") {
+            val storePath = envOrProp("ANDROID_SANDBOX_KEYSTORE_PATH")
+            val storePassword = envOrProp("ANDROID_SANDBOX_KEYSTORE_PASSWORD")
+            val keyAlias = envOrProp("ANDROID_SANDBOX_KEY_ALIAS")
+            val keyPassword = envOrProp("ANDROID_SANDBOX_KEY_PASSWORD")
+            if (storePath != null && storePassword != null && keyAlias != null && keyPassword != null) {
+                storeFile = file(storePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
+    }
+
+    // flavor 只决定「装成哪个包、叫什么名字」，不碰 namespace 与 Dart 代码：
+    // prod、dev 与 test 的 applicationId 不同，所以能并存在同一台手机上，各自持有
+    // 独立的数据库 / 偏好 / 安全存储目录。
+    // 注意：一旦存在 product flavor，AGP 就不再生成不带 flavor 的
+    // assembleRelease 之类任务，所有构建都必须显式带 --flavor。
+    // abiFilters 只在非 split-per-abi 时写在 sandbox 上。prod / dev 不设，
+    // 仍由各自的构建命令决定 ABI。分包构建不能带这份过滤，否则 prod 的
+    // --split-per-abi 会在配置 sandbox variant 时失败。
+    // flavor 不能叫 test：AGP 禁止 ProductFlavor 名字以 test 开头。
+    // 签名按 flavor 写死（buildType release 不再设 signingConfig，否则会盖过 flavor）：
+    // - prod / dev：有 internal keystore（CI secrets 或 android/key.properties）就用它，
+    //   本地没有时回落 debug，仅够自测。正式 / 预发布 CI 必须带 internal。
+    // - sandbox：有 sandbox 专用 keystore（ANDROID_SANDBOX_* secrets / key.properties）就用它，
+    //   本地没有时回落 debug。Testbuild 解码固定测试 keystore，跨次可覆盖安装。
+    // debug buildType 仍用 AGP 默认的 debug 签名。
+    val internalSigning = signingConfigs.getByName("internal")
+    val releaseSigning =
+        if (internalSigning.storeFile != null) internalSigning else signingConfigs.getByName("debug")
+    val sandboxKeySigning = signingConfigs.getByName("sandbox")
+    val sandboxSigning =
+        if (sandboxKeySigning.storeFile != null) sandboxKeySigning else signingConfigs.getByName("debug")
+
+    flavorDimensions += "env"
+    productFlavors {
+        create("prod") {
+            dimension = "env"
+            signingConfig = releaseSigning
+        }
+        create("dev") {
+            dimension = "env"
+            signingConfig = releaseSigning
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            manifestPlaceholders["appName"] = "Webdav Media Manager Dev"
+        }
+        create("sandbox") {
+            dimension = "env"
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+            manifestPlaceholders["appName"] = "Webdav Media Manager Test"
+            signingConfig = sandboxSigning
+            if (!splitPerAbi) {
+                ndk {
+                    abiFilters += "arm64-v8a"
+                }
+            }
+        }
     }
 
     // 原生库压缩存放：APK 明显变小，代价是安装时要解压（安装更慢、占用更多存储）。
@@ -100,18 +128,7 @@ android {
         }
     }
 
-    buildTypes {
-        release {
-            val internal = signingConfigs.getByName("internal")
-            signingConfig =
-                if (internal.storeFile != null) {
-                    internal
-                } else {
-                    // Local fallback only; CI must use the fixed internal keystore.
-                    signingConfigs.getByName("debug")
-                }
-        }
-    }
+    // release 的签名由各 flavor 决定（见 productFlavors 上方注释），这里不设。
 }
 
 kotlin {
