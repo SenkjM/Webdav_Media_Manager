@@ -150,7 +150,8 @@ class RcloneCipher {
     _eme = EmeCipher(_nameKey);
   }
 
-  // ── 名字 ──
+  // ── 名字（EME / obfuscate / encoding：纯 Dart，与 secretboxBackend 无关）──
+  // preferLibsodiumSecretbox 只切换内容块 secretbox；勿在此路径调用 secretbox*。
 
   String _encodeName(Uint8List ct) {
     switch (nameEncoding) {

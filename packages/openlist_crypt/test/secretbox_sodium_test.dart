@@ -88,4 +88,66 @@ void main() {
     final box = secretboxSeal(msg, nonce, key);
     expect(secretboxOpen(box, nonce, key), msg);
   });
+
+  /// Regression: preferLibsodiumSecretbox / secretboxBackend must never
+  /// change EME / filename / dirname codecs (pure Dart only).
+  test('filename and dirname codecs ignore secretboxBackend', () {
+    final cipher = RcloneCipher(
+      password: 'testpass',
+      salt: 'testsalt',
+      mode: NameEncryptionMode.standard,
+      dirNameEncrypt: true,
+    );
+
+    preferDartSecretbox();
+    expect(secretboxBackend, SecretboxBackend.dart);
+    final fileDart = cipher.encryptFileName('hello.txt');
+    final dirDart = cipher.encryptDirName('photos');
+    final pathDart = cipher.encryptFileName('photos/trip 2026 report.pdf');
+    final filePlain = cipher.decryptFileName(fileDart);
+    final dirPlain = cipher.decryptDirName(dirDart);
+
+    // Golden rclone vectors (same as crypt_cipher_test).
+    expect(fileDart, '9ph489uqiu6hppkcbp0g4328c4');
+    expect(dirDart, 'ghd9crjufd2a4sartqaskk87rc');
+
+    // Flip preference; name output must stay identical regardless of whether
+    // libsodium actually loads.
+    preferLibsodiumSecretbox();
+    final fileSodiumPref = cipher.encryptFileName('hello.txt');
+    final dirSodiumPref = cipher.encryptDirName('photos');
+    final pathSodiumPref =
+        cipher.encryptFileName('photos/trip 2026 report.pdf');
+
+    expect(fileSodiumPref, fileDart);
+    expect(dirSodiumPref, dirDart);
+    expect(pathSodiumPref, pathDart);
+    expect(cipher.decryptFileName(fileSodiumPref), filePlain);
+    expect(cipher.decryptDirName(dirSodiumPref), dirPlain);
+    expect(cipher.decryptFileName(pathSodiumPref), 'photos/trip 2026 report.pdf');
+
+    // Force backend enum to libsodium even without a successful load so
+    // name APIs are still pure Dart if someone mis-wires secretbox later.
+    secretboxBackend = SecretboxBackend.libsodium;
+    secretboxRequireLibsodium = false;
+    expect(cipher.encryptFileName('hello.txt'), fileDart);
+    expect(cipher.encryptDirName('photos'), dirDart);
+    expect(
+      cipher.encryptFileName('photos/trip 2026 report.pdf'),
+      pathDart,
+    );
+
+    // Obfuscate path likewise must ignore secretbox backend.
+    final obf = RcloneCipher(
+      password: 'testpass',
+      salt: 'testsalt',
+      mode: NameEncryptionMode.obfuscate,
+      dirNameEncrypt: true,
+    );
+    preferDartSecretbox();
+    final obfDart = obf.encryptFileName('hello.txt');
+    secretboxBackend = SecretboxBackend.libsodium;
+    expect(obf.encryptFileName('hello.txt'), obfDart);
+    expect(obfDart, '162.vszzC.HLH');
+  });
 }
