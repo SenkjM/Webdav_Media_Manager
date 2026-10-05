@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
+import '../services/backup_service.dart';
+import '../utils/backup_pass_check.dart';
 import '../models/sync_interval.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
@@ -13,6 +17,7 @@ import '../services/library_sync_store.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
+import '../utils/l10n_host.dart';
 import '../widgets/destroy_progress_dialog.dart';
 import '../widgets/marquee_text.dart';
 
@@ -499,6 +504,52 @@ class _SyncScreenState extends State<SyncScreen> {
     }
   }
 
+
+  /// Pre-check the backup passphrase before writing the DB.
+  ///
+  /// Returns `true` when restore may proceed (matched / not needed / user
+  /// chose force-continue). Returns `false` when the user cancels.
+  Future<bool> _confirmPassphraseProbe(Uint8List bytes) async {
+    final probe = await BackupService.probePassphrase(
+      data: bytes,
+      passphrase: _pass,
+    );
+    if (probe == BackupPassphraseProbe.notNeeded ||
+        probe == BackupPassphraseProbe.matched) {
+      return true;
+    }
+    if (!mounted) return false;
+    final l10n = AppLocalizations.of(context)!;
+    final unverifiable = probe == BackupPassphraseProbe.unverifiable;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        title: Text(
+          unverifiable
+              ? l10n.restorePassphraseUnverifiableTitle
+              : l10n.restorePassphraseMismatchTitle,
+        ),
+        content: Text(
+          unverifiable
+              ? l10n.restorePassphraseUnverifiableBody
+              : l10n.restorePassphraseMismatchBody,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.restoreForceContinue),
+          ),
+        ],
+      ),
+    );
+    return go == true;
+  }
+
   Future<void> _restore() async {
     final sync = context.read<SyncService>();
     final app = context.read<AppState>();
@@ -522,9 +573,15 @@ class _SyncScreenState extends State<SyncScreen> {
     );
     if (confirmed != true || !mounted) return;
     await _runSync(() async {
-      final outcome = await sync.restoreFrom(
+      final bytes = await sync.downloadBackup(fileName: _selectedBackupFile);
+      final ok = await _confirmPassphraseProbe(bytes);
+      if (!ok) {
+        return SyncOutcome(direction: 'restore')
+          ..step(L10nHost.current.restoreCancelled);
+      }
+      final outcome = await sync.restoreFromBytes(
+        bytes: bytes,
         passphrase: _pass,
-        fileName: _selectedBackupFile,
       );
       await app.registerAllAccounts();
       await app.library.refresh();
@@ -578,8 +635,14 @@ class _SyncScreenState extends State<SyncScreen> {
     final app = context.read<AppState>();
     await _runSync(() async {
       try {
-        final outcome = await sync.importLocalFile(
-          file: File(path),
+        final bytes = await File(path).readAsBytes();
+        final ok = await _confirmPassphraseProbe(bytes);
+        if (!ok) {
+          return SyncOutcome(direction: 'import')
+            ..step(L10nHost.current.restoreCancelled);
+        }
+        final outcome = await sync.importLocalArchive(
+          bytes: bytes,
           passphrase: _pass,
         );
         await app.registerAllAccounts();
@@ -599,8 +662,14 @@ class _SyncScreenState extends State<SyncScreen> {
     final sync = context.read<SyncService>();
     final app = context.read<AppState>();
     await _runSync(() async {
-      final outcome = await sync.importLocalBase64(
-        base64Text: text,
+      final bytes = Uint8List.fromList(base64Decode(text));
+      final ok = await _confirmPassphraseProbe(bytes);
+      if (!ok) {
+        return SyncOutcome(direction: 'import')
+          ..step(L10nHost.current.restoreCancelled);
+      }
+      final outcome = await sync.importLocalArchive(
+        bytes: bytes,
         passphrase: _pass,
       );
       await app.registerAllAccounts();

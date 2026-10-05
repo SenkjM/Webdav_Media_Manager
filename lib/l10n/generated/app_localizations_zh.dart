@@ -1264,6 +1264,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get restoreConfirmBody => '将用备份覆盖本机账号凭证、音乐库与歌单，不可撤销。';
 
   @override
+  String get restorePassphraseMismatchTitle => '备份口令可能不正确';
+
+  @override
+  String get restorePassphraseMismatchBody =>
+      '输入的口令未通过校验。若继续恢复，可能出现预料之外的问题（例如密码等密文字段被解成空）。可取消后改正口令，或强制按现有逻辑继续。';
+
+  @override
+  String get restorePassphraseUnverifiableTitle => '无法预检备份口令';
+
+  @override
+  String get restorePassphraseUnverifiableBody =>
+      '这份旧备份没有校验块，也无法用已有密文字段试解。若口令不对，继续恢复可能出现预料之外的问题（例如空密文）。可取消，或强制按现有逻辑继续。';
+
+  @override
+  String get restoreForceContinue => '强制继续';
+
+  @override
+  String get restoreCancelled => '已取消恢复';
+
+  @override
   String get restore => '恢复';
 
   @override
@@ -5041,6 +5061,26 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get restoreConfirmBody => '將用備份覆蓋本機帳號憑證、音樂庫與歌單，不可撤銷。';
+
+  @override
+  String get restorePassphraseMismatchTitle => '備份口令可能不正確';
+
+  @override
+  String get restorePassphraseMismatchBody =>
+      '輸入的口令未通過校驗。若繼續還原，可能出現預料之外的問題（例如密碼等密文字段被解成空）。可取消後改正口令，或強制按現有邏輯繼續。';
+
+  @override
+  String get restorePassphraseUnverifiableTitle => '無法預檢備份口令';
+
+  @override
+  String get restorePassphraseUnverifiableBody =>
+      '這份舊備份沒有校驗塊，也無法用既有密文字段試解。若口令不對，繼續還原可能出現預料之外的問題（例如空密文）。可取消，或強制按現有邏輯繼續。';
+
+  @override
+  String get restoreForceContinue => '強制繼續';
+
+  @override
+  String get restoreCancelled => '已取消還原';
 
   @override
   String get restore => '恢復';

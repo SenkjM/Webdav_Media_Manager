@@ -2373,6 +2373,42 @@ abstract class AppLocalizations {
   /// **'将用备份覆盖本机账号凭证、音乐库与歌单，不可撤销。'**
   String get restoreConfirmBody;
 
+  /// No description provided for @restorePassphraseMismatchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份口令可能不正确'**
+  String get restorePassphraseMismatchTitle;
+
+  /// No description provided for @restorePassphraseMismatchBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入的口令未通过校验。若继续恢复，可能出现预料之外的问题（例如密码等密文字段被解成空）。可取消后改正口令，或强制按现有逻辑继续。'**
+  String get restorePassphraseMismatchBody;
+
+  /// No description provided for @restorePassphraseUnverifiableTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法预检备份口令'**
+  String get restorePassphraseUnverifiableTitle;
+
+  /// No description provided for @restorePassphraseUnverifiableBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这份旧备份没有校验块，也无法用已有密文字段试解。若口令不对，继续恢复可能出现预料之外的问题（例如空密文）。可取消，或强制按现有逻辑继续。'**
+  String get restorePassphraseUnverifiableBody;
+
+  /// No description provided for @restoreForceContinue.
+  ///
+  /// In zh, this message translates to:
+  /// **'强制继续'**
+  String get restoreForceContinue;
+
+  /// No description provided for @restoreCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取消恢复'**
+  String get restoreCancelled;
+
   /// No description provided for @restore.
   ///
   /// In zh, this message translates to:

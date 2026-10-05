@@ -83,9 +83,15 @@
 
 ## 5. 全部备份归档（BackupService）
 
-- `formatVersion = 5`；一个 `WmpContainer`（kind `BK`）：META（含 format 标记）+ TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections（credentials / playlists / settings / cueAlbums）。
+- `formatVersion = 6`；一个 `WmpContainer`（kind `BK`）：META（含 format 标记）+ TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections（credentials / playlists / settings / cueAlbums）+ 可选 **口令校验块**（`WmpSections.passCheck = 11`）。
 - 内容 = 全部账号凭证（WebDAV 三件套 + 云盘驱动配置，取代早前「云盘账号不进备份」的决定，见 [99 §4.2.8](99-IN-PROGRESS.md)）+ 全部音乐库行（tracks + cue_slices + cue_albums）+ 全部歌单 + 封面缩略图 + 设置；**不含** `music_cache` 音频与下载队列。设置段随 `exportForBackup()` 带走图片查看偏好（幻灯片开关、间隔、循环、适应方式、预取数量、搜索子目录），不另开归档版本。
 - 加密：可选口令，魔数 `WDMMEN01` + PBKDF2 + AES-256-GCM（`backup_crypto.dart`）；归档内凭证按 `credentials.json` 的规则另行逐字段加密（WebDAV 密码 + 云盘配置的 obscure 字段）。恢复时同样静默过滤未注册的网盘类型。
+- **口令校验块（v6）**：新建带口令的归档在容器内写入 `passCheck` 段（`AESGCMv1:` 密封固定明文 `WDMM-BACKUP-PASS-OK\u0001`，与凭证字段同一套 `CredentialVaultCrypto`）；可读 JSON 导出则写顶层 `passCheck`。无口令归档不写此段。
+- **恢复前预检**（本机导入 / 云端恢复，写库之前）：`BackupPassCheck.probe`
+  - 无加密迹象 → 跳过，直接按现有逻辑恢复；
+  - 口令正确（外层 `WDMMEN01` 解得开，和/或校验块 / 样例密文字段试解成功）→ 按现有逻辑恢复；
+  - 口令错误或空但归档需要口令 → 弹确认：提示可能出现预料之外的问题 / 空密文等，用户可取消或**强制继续**（强制后走原 `restoreFromBytes` 语义）；
+  - 旧归档无校验块且找不到可试解密文、但 META/`passwordEncryption` 声称加密 → 「无法预检」，同样给取消 / 强制继续。
 - **恢复策略**：v9 起已缓存由推导路径决定，恢复后磁盘上真有文件才算（`markAllUncached()` 为 no-op）→ 「库以为有文件但播不了」不可能发生；封面写回后再把各行的 `cover_path` 重写为本地路径。
 - 备份的写入与列出都只认 `<远端路径>backup/`，没有按站点分目录。
 
@@ -101,4 +107,4 @@
 
 ## 8. 相关代码
 
-`sync_service.dart`（编排 / `syncDestination`）、`credential_vault_service.dart`（`credentials.json` 读写）、`credential_vault_crypto.dart`（密码类字段加密，AESGCMv1）、`cloud_driver.dart` 的 `CloudDriverSpec.secretFieldKeys`（密文字段 = 表单 obscure 声明）、`accounts_service.dart`（`loadDriverConfig` / `restoreFromBackup` 云盘条目恢复）、`library_sync_store.dart` + `library_shard_codec.dart` + `utils/library_index_merge.dart`（清单与分片）、`playlist_service.dart`（`WDMMPL01` 双向 + 每歌单删除包）、`backup_service.dart`（归档）、`sync_screen.dart`（界面）、`settings_service.dart`（远端路径与账号键）。
+`sync_service.dart`（编排 / `syncDestination`）、`credential_vault_service.dart`（`credentials.json` 读写）、`credential_vault_crypto.dart`（密码类字段加密，AESGCMv1）、`cloud_driver.dart` 的 `CloudDriverSpec.secretFieldKeys`（密文字段 = 表单 obscure 声明）、`accounts_service.dart`（`loadDriverConfig` / `restoreFromBackup` 云盘条目恢复）、`library_sync_store.dart` + `library_shard_codec.dart` + `utils/library_index_merge.dart`（清单与分片）、`playlist_service.dart`（`WDMMPL01` 双向 + 每歌单删除包）、`backup_service.dart`（归档）、`backup_pass_check.dart`（恢复前口令预检）、`sync_screen.dart`（界面）、`settings_service.dart`（远端路径与账号键）。

@@ -725,7 +725,24 @@ class SyncService extends ChangeNotifier {
     );
   }
 
+  /// Download a whole-app archive from `<远端路径>backup/` without restoring.
+  ///
+  /// UI probes the passphrase on these bytes before calling
+  /// [restoreFromBytes].
+  Future<Uint8List> downloadBackup({String? fileName}) async {
+    final dest = await syncDestination();
+    if (dest == null) throw StateError('err.noWebdavAccount');
+    return _backup.downloadBackupBytes(
+      accountId: dest,
+      remoteDir: _settings.backupRemotePath,
+      fileName: fileName,
+    );
+  }
+
   /// Restore a whole-app archive from `<远端路径>backup/`.
+  ///
+  /// Prefer downloading with [downloadBackup], probing the passphrase, then
+  /// [restoreFromBytes] when the UI needs a pre-check dialog.
   Future<SyncOutcome> restoreFrom({
     required String passphrase,
     String? fileName,
@@ -741,6 +758,23 @@ class SyncService extends ChangeNotifier {
         remoteDir: _settings.backupRemotePath,
         fileName: fileName,
       );
+      outcome.step(_backup.lastMessage ?? L10nHost.current.stepRestoreDone);
+      await _accounts.init();
+      await _library.refresh();
+      await _playlists.refresh();
+    });
+    return outcome;
+  }
+
+  /// Restore already-downloaded archive bytes (after passphrase pre-check).
+  Future<SyncOutcome> restoreFromBytes({
+    required Uint8List bytes,
+    required String passphrase,
+  }) async {
+    final outcome = SyncOutcome(direction: 'restore');
+    await _run(outcome, () async {
+      _progress(L10nHost.current.progressUnpackingRestore, 0.5);
+      await _backup.restoreFromBytes(data: bytes, passphrase: passphrase);
       outcome.step(_backup.lastMessage ?? L10nHost.current.stepRestoreDone);
       await _accounts.init();
       await _library.refresh();

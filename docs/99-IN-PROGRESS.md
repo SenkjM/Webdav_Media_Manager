@@ -848,3 +848,15 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 **取舍**：
 - `HomeShell` 冷启动读 `SettingsService.homeTab` 作为 `_index`（原先写死 `0`）；返回键回主页逻辑本来就会读该值，只是首帧没用上。
 - `network_last_path`：进程内字段保留，供「记住上次路径」在**同一运行期**、网络库 State 被重建时恢复；`SharedPreferences` 与备份 JSON 不再读写该键；`init` 清掉旧安装残留；冷启动始终从 `/`。开关 `network_remember_last_path` 仍持久化，文案改为标明不跨冷启动。
+
+## 16. 备份恢复前口令校验块（feat/libsodium-secretbox）
+
+**状态**：本分支实现中 / 已落代码。
+
+**用户原话**：恢复（本机/云端）在真正写库前先校验备份口令；密码正确按现有逻辑恢复；密码错误/空但归档需要口令 → 弹确认（提示可能出现预料之外的问题/空密文等，可取消或强制按现有逻辑继续）；无加密备份跳过校验。新建归档带可验证校验块；旧归档无校验块时尽量用已有密文字段试解，否则明确「无法预检」。
+
+**落地**：
+
+- 格式：`formatVersion = 6`；`WmpSections.passCheck = 11`（`AESGCMv1:` canary）；JSON 导出顶层 `passCheck`。
+- 预检：`lib/utils/backup_pass_check.dart`（`BackupPassCheck.probe`）；UI：`sync_screen` 云端恢复 / 本地导入 / Base64 导入。
+- 文档：[08 §5](08-SYNC-AND-BACKUP.md)。测试：`test/backup_pass_check_test.dart`。

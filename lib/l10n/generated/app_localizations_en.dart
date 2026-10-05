@@ -1306,6 +1306,27 @@ class AppLocalizationsEn extends AppLocalizations {
       'The backup will overwrite local account credentials, library, and playlists. Irreversible.';
 
   @override
+  String get restorePassphraseMismatchTitle => 'Backup passphrase may be wrong';
+
+  @override
+  String get restorePassphraseMismatchBody =>
+      'The passphrase did not pass verification. Continuing the restore may cause unexpected problems (for example password fields becoming empty ciphertext). Cancel to correct the passphrase, or force-continue with the existing restore logic.';
+
+  @override
+  String get restorePassphraseUnverifiableTitle =>
+      'Cannot pre-check backup passphrase';
+
+  @override
+  String get restorePassphraseUnverifiableBody =>
+      'This older backup has no check block, and no existing ciphertext field could be tried. If the passphrase is wrong, continuing may cause unexpected problems (for example empty ciphertext). Cancel, or force-continue with the existing restore logic.';
+
+  @override
+  String get restoreForceContinue => 'Force continue';
+
+  @override
+  String get restoreCancelled => 'Restore cancelled';
+
+  @override
   String get restore => 'Restore';
 
   @override
