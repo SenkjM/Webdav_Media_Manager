@@ -160,7 +160,7 @@
   "customHome": "自訂首頁",
   "customHomeSubtitle": "從其他介面返回時回到此首頁",
   "rememberNetworkPath": "網路庫記住上次路徑",
-  "rememberNetworkPathSubtitle": "下次進入網路庫時恢復上次瀏覽的目錄",
+  "rememberNetworkPathSubtitle": "同一執行期間再次開啟網路庫時恢復上次目錄（不跨冷啟動）",
   "videoSettings": "影片播放設定",
   "videoSettingsSubtitle": "串流參數／手勢／背景播放／子母畫面",
   "audioSettings": "音訊串流設定",

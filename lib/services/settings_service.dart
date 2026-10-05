@@ -42,6 +42,7 @@ class SettingsService extends ChangeNotifier {
   static const _kFileActionConfig = 'file_action_config_json';
   static const _kHomeTab = 'home_tab_index';
   static const _kNetworkRememberLastPath = 'network_remember_last_path';
+  /// Legacy prefs key; path is no longer persisted (scrubbed on [init]).
   static const _kNetworkLastPath = 'network_last_path';
   static const _kVideoLeftDoubleTap = 'video_left_double_tap';
   static const _kVideoRightDoubleTap = 'video_right_double_tap';
@@ -547,7 +548,12 @@ class SettingsService extends ChangeNotifier {
     _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
-    _networkLastPath = _prefs!.getString(_kNetworkLastPath) ?? '/';
+    // network_last_path is session-only (memory). Never restore from prefs /
+    // backup; scrub any leftover key from older installs.
+    _networkLastPath = '/';
+    if (_prefs!.containsKey(_kNetworkLastPath)) {
+      await _prefs!.remove(_kNetworkLastPath);
+    }
     _videoLeftDoubleTap = VideoGestureActionX.fromStorageKey(
       _prefs!.getString(_kVideoLeftDoubleTap),
     );
@@ -865,13 +871,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Session-only browse cursor for the network library. Not written to
+  /// SharedPreferences or backup JSON — cold start always begins at `/`.
   Future<void> setNetworkLastPath(String path) async {
     var p = path.trim();
     if (p.isEmpty) p = '/';
     if (!p.startsWith('/')) p = '/$p';
     _networkLastPath = p;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kNetworkLastPath, p);
     // Avoid notifyListeners() spam on every folder navigation.
   }
 
@@ -1326,7 +1332,7 @@ class SettingsService extends ChangeNotifier {
     'video_tap_action': _videoTapAction.storageKey,
     'home_tab_index': _homeTab,
     'network_remember_last_path': _networkRememberLastPath,
-    'network_last_path': _networkLastPath,
+    // network_last_path intentionally omitted — session-only, not backup state.
     'video_left_double_tap': _videoLeftDoubleTap.storageKey,
     'video_right_double_tap': _videoRightDoubleTap.storageKey,
     'video_long_press': _videoLongPress.storageKey,
@@ -1450,9 +1456,7 @@ class SettingsService extends ChangeNotifier {
         json['network_remember_last_path'] as bool,
       );
     }
-    if (json['network_last_path'] is String) {
-      await setNetworkLastPath(json['network_last_path'] as String);
-    }
+    // Ignore legacy backup field network_last_path — path is session-only.
     if (json['video_left_double_tap'] != null) {
       await setVideoLeftDoubleTap(
         VideoGestureActionX.fromStorageKey(

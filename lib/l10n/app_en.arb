@@ -160,7 +160,7 @@
   "customHome": "Custom home",
   "customHomeSubtitle": "Return to this home from other screens",
   "rememberNetworkPath": "Remember last network library path",
-  "rememberNetworkPathSubtitle": "Restore the last browsed directory when opening the network library",
+  "rememberNetworkPathSubtitle": "Restore the last browsed directory within the same app run (not across cold starts)",
   "videoSettings": "Video playback settings",
   "videoSettingsSubtitle": "Streaming / gestures / background playback / picture-in-picture",
   "audioSettings": "Audio streaming settings",

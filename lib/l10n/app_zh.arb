@@ -160,7 +160,7 @@
   "customHome": "自定义主页",
   "customHomeSubtitle": "从其他界面返回时回到此主页",
   "rememberNetworkPath": "网络库记住上次路径",
-  "rememberNetworkPathSubtitle": "下次进入网络库时恢复上次浏览的目录",
+  "rememberNetworkPathSubtitle": "同一运行期内再次打开网络库时恢复上次目录（不跨冷启动）",
   "videoSettings": "视频播放设置",
   "videoSettingsSubtitle": "流式参数 / 手势 / 后台播放 / 画中画",
   "audioSettings": "音频流式设置",

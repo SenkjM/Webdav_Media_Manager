@@ -836,3 +836,15 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - `默认服务器` → `__wdmm_default_server__`：`accounts.name`、各表 `source_name`、下载任务、歌单条目 `sourceName`，以及恰好是这个名字或以 `cue\0默认服务器\0` / `默认服务器\0` 开头的 `cache_group_id` / `cache_groups`。不碰默认名 `服务器`。`music_id` 不重算哈希；缓存和封面文件按旧 stem 改名到新 stem，`cover_path` 同样改。
 
 不改：真实流派标签 `未分类`（空流派已经是 `__wdmm_uncategorized__`）、`未知艺术家` / `未知专辑`（空艺术家 / 空专辑的分组键已经是稳定键，界面用 `displayArtistFor` / `displayAlbumFor`）、`新文件夹`、`系统相册`、`下载目录`、字幕存储值 `默认`、原生 Kotlin。再跑一次找不到这些中文哨兵。下一版（最迟到 0.2.4）删掉整个函数。
+
+## 15. 启动默认主页 tab 与网络库路径仅内存（feat/libsodium-secretbox）
+
+**状态**：本分支进行中（2026-10-06）。相关：[02](02-NETWORK-LIBRARY.md)、设置「主页和导航」。
+
+**用户原话**：
+1. `network_last_path`（上次访问网盘路径）不要持久化到数据库/prefs，只放内存。
+2. 即使设了 `home_tab_index: 2`，启动仍默认音乐库——要修好，启动时真正打开用户设定的默认主页 tab。
+
+**取舍**：
+- `HomeShell` 冷启动读 `SettingsService.homeTab` 作为 `_index`（原先写死 `0`）；返回键回主页逻辑本来就会读该值，只是首帧没用上。
+- `network_last_path`：进程内字段保留，供「记住上次路径」在**同一运行期**、网络库 State 被重建时恢复；`SharedPreferences` 与备份 JSON 不再读写该键；`init` 清掉旧安装残留；冷启动始终从 `/`。开关 `network_remember_last_path` 仍持久化，文案改为标明不跨冷启动。

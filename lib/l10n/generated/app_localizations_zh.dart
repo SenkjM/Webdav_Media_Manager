@@ -518,7 +518,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get rememberNetworkPath => '网络库记住上次路径';
 
   @override
-  String get rememberNetworkPathSubtitle => '下次进入网络库时恢复上次浏览的目录';
+  String get rememberNetworkPathSubtitle => '同一运行期内再次打开网络库时恢复上次目录（不跨冷启动）';
 
   @override
   String get videoSettings => '视频播放设置';
@@ -4266,7 +4266,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get rememberNetworkPath => '網路庫記住上次路徑';
 
   @override
-  String get rememberNetworkPathSubtitle => '下次進入網路庫時恢復上次瀏覽的目錄';
+  String get rememberNetworkPathSubtitle => '同一執行期間再次開啟網路庫時恢復上次目錄（不跨冷啟動）';
 
   @override
   String get videoSettings => '影片播放設定';

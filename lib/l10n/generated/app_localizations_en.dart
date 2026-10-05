@@ -531,7 +531,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get rememberNetworkPathSubtitle =>
-      'Restore the last browsed directory when opening the network library';
+      'Restore the last browsed directory within the same app run (not across cold starts)';
 
   @override
   String get videoSettings => 'Video playback settings';

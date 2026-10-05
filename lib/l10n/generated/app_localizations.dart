@@ -1062,7 +1062,7 @@ abstract class AppLocalizations {
   /// No description provided for @rememberNetworkPathSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'下次进入网络库时恢复上次浏览的目录'**
+  /// **'同一运行期内再次打开网络库时恢复上次目录（不跨冷启动）'**
   String get rememberNetworkPathSubtitle;
 
   /// No description provided for @videoSettings.
