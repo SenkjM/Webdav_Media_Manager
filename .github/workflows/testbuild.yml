@@ -2,7 +2,13 @@ name: Testbuild
 
 # 手动旁路编译：只出 sandbox flavor 的 arm64-v8a APK，上传 Actions artifact。
 # 不打标签、不建 GitHub Release、不打 app bundle，也不跑预发布的定时任务。
-# 不解码 keystore。没有 secrets 时 release 构建回落到 debug 签名，够旁路安装。
+# 版本：versionName = 最新正式版标签 + "-" + 7 位短哈希（如 v0.2.3-055ee9c，
+#   sandbox flavor 再追加 versionNameSuffix "-test"）；
+#   versionCode = 该标签的正式版 versionCode（主×1e8 + 次×1e6 + 修订×1e4）+ 本 workflow 的 run_number。
+#   sandbox 包名独立（.test），不与 prod 的 versionCode 冲突；run_number 单调递增，便于覆盖安装。
+# 签名：sandbox flavor 在 android/app/build.gradle.kts 里写死用 debug 签名，
+#   与正式 / 预发布的 internal keystore 分开。本 workflow 不解码 keystore，也不读 ANDROID_KEY* secrets。
+#   runner 每次新生成 ~/.android/debug.keystore，跨次覆盖安装需先卸载 .test 包。
 
 on:
   workflow_dispatch:
@@ -20,6 +26,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
+          # 需要完整标签来找最新正式版。
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Setup Java 17
         uses: actions/setup-java@v6
@@ -57,8 +66,40 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Compute test version
+        id: version
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          # 最新正式版：合法 vX.Y.Z 标签（规则同 .github/scripts/version-gate.sh）里最高的一个。
+          base="$(git tag -l 'v*' \
+            | grep -E '^v(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)$' \
+            | sort -V | tail -n 1 || true)"
+          if [ -z "$base" ]; then
+            echo "::error::没有合法的 vX.Y.Z 正式版标签，无法生成 Testbuild 版本号。"
+            exit 1
+          fi
+          short="$(git rev-parse --short=7 HEAD)"
+          t="${base#v}"
+          major="${t%%.*}"; rest="${t#*.}"; minor="${rest%%.*}"; patch="${rest#*.}"
+          if [ "$RUN_NUMBER" -lt 1 ] || [ "$RUN_NUMBER" -gt 9999 ]; then
+            echo "::error::run_number=${RUN_NUMBER} 超出 1–9999，versionCode 会越过下一个修订号。"
+            exit 1
+          fi
+          code=$(( major * 100000000 + minor * 1000000 + patch * 10000 + RUN_NUMBER ))
+          name="${base}-${short}"
+          echo "Testbuild version: ${name} (${code}); base=${base}"
+          {
+            echo "version_name=${name}"
+            echo "version_code=${code}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build arm64-v8a test APK
-        run: flutter build apk --release --flavor sandbox --target-platform android-arm64
+        run: |
+          flutter build apk --release --flavor sandbox --target-platform android-arm64 \
+            --build-name="${{ steps.version.outputs.version_name }}" \
+            --build-number="${{ steps.version.outputs.version_code }}"
 
       - name: Upload testbuild APK
         uses: actions/upload-artifact@v7

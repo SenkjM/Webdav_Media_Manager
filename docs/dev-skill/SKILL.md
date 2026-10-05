@@ -19,7 +19,7 @@ description: 在改 SenkjM/Webdav_Media_Manager 时使用：分支、提交、�
 - 有 product flavor 之后，所有 Android 构建必须带 `--flavor`。`flutter analyze` / `flutter test` 不用。维度是 `env`，三个 flavor：`prod`、`dev`、`sandbox`。见 `android/app/build.gradle.kts`。
 - 不要把 flavor 命名为 `test`，也不要以 `test` 开头。AGP 禁止这种 ProductFlavor 名字。旁路包的 flavor 名是 `sandbox`，`applicationIdSuffix` 才是 `.test`，包名 `com.senkjm.media_manager.test`。`prod` 是 `com.senkjm.media_manager`，`dev` 是 `com.senkjm.media_manager.dev`。
 - `ndk.abiFilters` 只在 **没有** `-Psplit-per-abi=true` 时写在 `sandbox` 上，值为 `arm64-v8a`。`prod` / `dev` 不设。`flutter build apk --split-per-abi` 会给每个 variant 打开 `splits.abi`；AGP 只要任一 variant（包括这次没在编的 sandbox）还留着 `abiFilters` 就失败。所以分包构建不能看到这份过滤。修法在 `9ec1dc7`，说明在 [09](../09-MISC.md) 的 flavor 小节。09 开头仍有两句把 Testbuild 写成 `test` flavor，以 gradle 和同文对照表的 `sandbox` 为准，不要按那两句改名。
-- Testbuild 是手动 workflow，命令是 `flutter build apk --release --flavor sandbox --target-platform android-arm64`。不要擅自跑它。
+- Testbuild 是手动 workflow，命令是 `flutter build apk --release --flavor sandbox --target-platform android-arm64`，带 `--build-name=<最新正式版标签>-<7 位短哈希>`、`--build-number=<正式版 versionCode + run_number>`。sandbox flavor 在 gradle 里写死用 debug 签名，不用 internal keystore。不要擅自跑它。
 
 ## 不要顺手改的界面
 
