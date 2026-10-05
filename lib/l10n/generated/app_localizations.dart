@@ -1041,6 +1041,60 @@ abstract class AppLocalizations {
   /// **'断点续传的临时文件保留上限与清理'**
   String get downloadQueueSettingsSubtitle;
 
+  /// No description provided for @encryptionSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'加密设置'**
+  String get encryptionSettings;
+
+  /// No description provided for @encryptionSettingsSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Crypt 顺序流与 secretbox 引擎'**
+  String get encryptionSettingsSubtitle;
+
+  /// No description provided for @encryptionCryptSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'Crypt 下载'**
+  String get encryptionCryptSection;
+
+  /// No description provided for @encryptionSecretboxSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'内容 secretbox 引擎'**
+  String get encryptionSecretboxSection;
+
+  /// No description provided for @cryptLibsodiumPrefer.
+  ///
+  /// In zh, this message translates to:
+  /// **'优先使用 libsodium'**
+  String get cryptLibsodiumPrefer;
+
+  /// No description provided for @cryptLibsodiumPreferSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。目前原生库仅打包 arm64-v8a，其它 ABI 自动走 Dart。'**
+  String get cryptLibsodiumPreferSub;
+
+  /// No description provided for @cryptLibsodiumUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前设备无法加载 libsodium（原生库仅 arm64-v8a），已使用 Dart 实现'**
+  String get cryptLibsodiumUnavailable;
+
+  /// No description provided for @cryptLibsodiumStatusDart.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前引擎：纯 Dart'**
+  String get cryptLibsodiumStatusDart;
+
+  /// No description provided for @cryptLibsodiumStatusSodium.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前引擎：libsodium {version}'**
+  String cryptLibsodiumStatusSodium(String version);
+
   /// No description provided for @customHome.
   ///
   /// In zh, this message translates to:

@@ -16,6 +16,8 @@ import '../models/sync_interval.dart';
 import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
 import '../utils/subtitle_sidecar.dart';
+import 'package:openlist_crypt/openlist_crypt.dart';
+
 import 'library_sync_store.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
@@ -59,6 +61,13 @@ class SettingsService extends ChangeNotifier {
   static const _kDownloadPartMaxAgeHours = 'download_part_max_age_hours';
   static const _kDownloadPartMaxMb = 'download_part_max_mb';
   static const _kCryptSequentialDownload = 'crypt_sequential_download';
+  /// Prefer libsodium FFI for crypt content secretbox (falls back to Dart).
+  static const _kPreferLibsodiumSecretbox = 'prefer_libsodium_secretbox';
+  /// Compile-time default from `--dart-define=OPENLIST_CRYPT_LIBSODIUM=true`.
+  static const bool defaultPreferLibsodiumSecretbox = bool.fromEnvironment(
+    'OPENLIST_CRYPT_LIBSODIUM',
+    defaultValue: false,
+  );
   static const _kVideoSubtitlePosition = 'video_subtitle_position';
   static const _kVideoSubtitleOffset = 'video_subtitle_offset';
   static const _kVideoSubtitleFontSize = 'video_subtitle_font_size';
@@ -246,6 +255,7 @@ class SettingsService extends ChangeNotifier {
   int _downloadPartMaxAgeHours = defaultDownloadPartMaxAgeHours;
   int _downloadPartMaxMb = defaultDownloadPartMaxMb;
   bool _cryptSequentialDownload = false;
+  bool _preferLibsodiumSecretbox = defaultPreferLibsodiumSecretbox;
   double _videoLongPressRate = defaultVideoLongPressRate;
   double _videoLastRate = 1.0;
   bool _videoConfirmExit = false;
@@ -386,6 +396,14 @@ class SettingsService extends ChangeNotifier {
   int get downloadPartMaxAgeHours => _downloadPartMaxAgeHours;
   int get downloadPartMaxMb => _downloadPartMaxMb;
   bool get cryptSequentialDownloadEnabled => _cryptSequentialDownload;
+
+  /// User preference: try libsodium for crypt content secretbox.
+  /// Actual engine may still be Dart when the shared library cannot load
+  /// (non–arm64-v8a devices only ship the Dart path).
+  bool get preferLibsodiumSecretboxEnabled => _preferLibsodiumSecretbox;
+
+  /// Whether [tryLoadLibsodium] succeeded (arm64-v8a APK / system lib).
+  bool get libsodiumSecretboxAvailable => tryLoadLibsodium();
 
   /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
   MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;
@@ -608,6 +626,10 @@ class SettingsService extends ChangeNotifier {
         );
     _cryptSequentialDownload =
         _prefs!.getBool(_kCryptSequentialDownload) ?? false;
+    _preferLibsodiumSecretbox =
+        _prefs!.getBool(_kPreferLibsodiumSecretbox) ??
+            defaultPreferLibsodiumSecretbox;
+    applySecretboxBackendPreference();
     _videoLongPressRate = _clampRate(
       _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
     );
@@ -1086,6 +1108,26 @@ class SettingsService extends ChangeNotifier {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kCryptSequentialDownload, enabled);
     notifyListeners();
+  }
+
+  /// Persist prefer-libsodium and apply [preferLibsodiumSecretbox] /
+  /// [preferDartSecretbox] immediately.
+  Future<void> setPreferLibsodiumSecretboxEnabled(bool enabled) async {
+    _preferLibsodiumSecretbox = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kPreferLibsodiumSecretbox, enabled);
+    applySecretboxBackendPreference();
+    notifyListeners();
+  }
+
+  /// Apply the persisted preference to the openlist_crypt secretbox backend.
+  /// Safe to call at startup after prefs load and whenever the toggle changes.
+  void applySecretboxBackendPreference() {
+    if (_preferLibsodiumSecretbox) {
+      preferLibsodiumSecretbox();
+    } else {
+      preferDartSecretbox();
+    }
   }
 
   static int _clampBufferMb(int mb) {

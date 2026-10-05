@@ -157,6 +157,22 @@
   "manageAccountsSubtitle": "Add / edit / delete WebDAV servers",
   "downloadQueueSettings": "Download queue",
   "downloadQueueSettingsSubtitle": "Resume-download temporary-file retention and cleanup",
+  "encryptionSettings": "Encryption",
+  "encryptionSettingsSubtitle": "Crypt sequential stream and secretbox engine",
+  "encryptionCryptSection": "Crypt downloads",
+  "encryptionSecretboxSection": "Content secretbox engine",
+  "cryptLibsodiumPrefer": "Prefer libsodium",
+  "cryptLibsodiumPreferSub": "Affects rclone crypt content blocks only; filename codecs stay Dart. Native lib is packaged for arm64-v8a only; other ABIs use Dart.",
+  "cryptLibsodiumUnavailable": "libsodium could not be loaded on this device (native lib is arm64-v8a only); using Dart",
+  "cryptLibsodiumStatusDart": "Active engine: pure Dart",
+  "cryptLibsodiumStatusSodium": "Active engine: libsodium {version}",
+  "@cryptLibsodiumStatusSodium": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
   "customHome": "Custom home",
   "customHomeSubtitle": "Return to this home from other screens",
   "rememberNetworkPath": "Remember last network library path",

@@ -521,6 +521,38 @@ class AppLocalizationsEn extends AppLocalizations {
       'Resume-download temporary-file retention and cleanup';
 
   @override
+  String get encryptionSettings => 'Encryption';
+
+  @override
+  String get encryptionSettingsSubtitle =>
+      'Crypt sequential stream and secretbox engine';
+
+  @override
+  String get encryptionCryptSection => 'Crypt downloads';
+
+  @override
+  String get encryptionSecretboxSection => 'Content secretbox engine';
+
+  @override
+  String get cryptLibsodiumPrefer => 'Prefer libsodium';
+
+  @override
+  String get cryptLibsodiumPreferSub =>
+      'Affects rclone crypt content blocks only; filename codecs stay Dart. Native lib is packaged for arm64-v8a only; other ABIs use Dart.';
+
+  @override
+  String get cryptLibsodiumUnavailable =>
+      'libsodium could not be loaded on this device (native lib is arm64-v8a only); using Dart';
+
+  @override
+  String get cryptLibsodiumStatusDart => 'Active engine: pure Dart';
+
+  @override
+  String cryptLibsodiumStatusSodium(String version) {
+    return 'Active engine: libsodium $version';
+  }
+
+  @override
   String get customHome => 'Custom home';
 
   @override

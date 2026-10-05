@@ -509,6 +509,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadQueueSettingsSubtitle => '断点续传的临时文件保留上限与清理';
 
   @override
+  String get encryptionSettings => '加密设置';
+
+  @override
+  String get encryptionSettingsSubtitle => 'Crypt 顺序流与 secretbox 引擎';
+
+  @override
+  String get encryptionCryptSection => 'Crypt 下载';
+
+  @override
+  String get encryptionSecretboxSection => '内容 secretbox 引擎';
+
+  @override
+  String get cryptLibsodiumPrefer => '优先使用 libsodium';
+
+  @override
+  String get cryptLibsodiumPreferSub =>
+      '只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。目前原生库仅打包 arm64-v8a，其它 ABI 自动走 Dart。';
+
+  @override
+  String get cryptLibsodiumUnavailable =>
+      '当前设备无法加载 libsodium（原生库仅 arm64-v8a），已使用 Dart 实现';
+
+  @override
+  String get cryptLibsodiumStatusDart => '当前引擎：纯 Dart';
+
+  @override
+  String cryptLibsodiumStatusSodium(String version) {
+    return '当前引擎：libsodium $version';
+  }
+
+  @override
   String get customHome => '自定义主页';
 
   @override
@@ -4255,6 +4286,37 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get downloadQueueSettingsSubtitle => '續傳暫存檔保留上限與清理';
+
+  @override
+  String get encryptionSettings => '加密設定';
+
+  @override
+  String get encryptionSettingsSubtitle => 'Crypt 順序流與 secretbox 引擎';
+
+  @override
+  String get encryptionCryptSection => 'Crypt 下載';
+
+  @override
+  String get encryptionSecretboxSection => '內容 secretbox 引擎';
+
+  @override
+  String get cryptLibsodiumPrefer => '優先使用 libsodium';
+
+  @override
+  String get cryptLibsodiumPreferSub =>
+      '只影響 rclone crypt 內容塊解密/加密；檔名編碼仍用 Dart。目前原生庫僅打包 arm64-v8a，其它 ABI 自動走 Dart。';
+
+  @override
+  String get cryptLibsodiumUnavailable =>
+      '目前裝置無法載入 libsodium（原生庫僅 arm64-v8a），已使用 Dart 實作';
+
+  @override
+  String get cryptLibsodiumStatusDart => '目前引擎：純 Dart';
+
+  @override
+  String cryptLibsodiumStatusSodium(String version) {
+    return '目前引擎：libsodium $version';
+  }
 
   @override
   String get customHome => '自訂首頁';

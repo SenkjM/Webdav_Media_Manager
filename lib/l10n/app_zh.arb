@@ -157,6 +157,22 @@
   "manageAccountsSubtitle": "添加 / 编辑 / 删除 WebDAV 服务器",
   "downloadQueueSettings": "下载队列",
   "downloadQueueSettingsSubtitle": "断点续传的临时文件保留上限与清理",
+  "encryptionSettings": "加密设置",
+  "encryptionSettingsSubtitle": "Crypt 顺序流与 secretbox 引擎",
+  "encryptionCryptSection": "Crypt 下载",
+  "encryptionSecretboxSection": "内容 secretbox 引擎",
+  "cryptLibsodiumPrefer": "优先使用 libsodium",
+  "cryptLibsodiumPreferSub": "只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。目前原生库仅打包 arm64-v8a，其它 ABI 自动走 Dart。",
+  "cryptLibsodiumUnavailable": "当前设备无法加载 libsodium（原生库仅 arm64-v8a），已使用 Dart 实现",
+  "cryptLibsodiumStatusDart": "当前引擎：纯 Dart",
+  "cryptLibsodiumStatusSodium": "当前引擎：libsodium {version}",
+  "@cryptLibsodiumStatusSodium": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
   "customHome": "自定义主页",
   "customHomeSubtitle": "从其他界面返回时回到此主页",
   "rememberNetworkPath": "网络库记住上次路径",

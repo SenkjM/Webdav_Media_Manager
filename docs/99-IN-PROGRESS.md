@@ -302,7 +302,7 @@
 - **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（4.2.1）。
 - **架构**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）。**源适配层必须给 size**（单文件 PROPFIND，`webdav_service.statPath`）——漏掉会让 crypt 误判成整包，产出 0B 文件（真机反馈，已修，[11 §5](11-CLOUD-DRIVER-PORTING.md)）。
 - **已落地增量（真机反馈驱动，语义已收口进固定文档）**：表单控制器与校验显示（[11 §6](11-CLOUD-DRIVER-PORTING.md)）；应用内消息最顶层横幅（[07](07-NOTIFICATIONS.md)）；下载进度按 rclone 块结构 Range 分段、逐块解密（[04 §3](04-DOWNLOAD-QUEUE.md)）；本地流桥（127.0.0.1 HTTP 端点包 `openContentRange`，播放入口无分支，[11 §5](11-CLOUD-DRIVER-PORTING.md)）；账号类型名 `typeLabelFor`（[02 §10](02-NETWORK-LIBRARY.md)）；下载重试三层兜底（分类 / 退避 / 断点续传）与超时补齐、原地重试、单一计数来源（退避见 [04 §2](04-DOWNLOAD-QUEUE.md)；后台失败与重试计数的后续变更见本文件 §7）；大小判定四态 shape + Content-Range 纠偏（[11 §5](11-CLOUD-DRIVER-PORTING.md)）。测试：`crypt_cipher_test` / `crypt_driver_test` / `crypt_stream_bridge_test` / `crypt_webdav_source_test` / `crypt_size_race_test`。
-- **待办（部分开工）**：libsodium FFI 仅覆盖 **内容 secretbox**（EME/文件名仍纯 Dart）。实验分支 `feat/libsodium-secretbox`（worktree `worktree/libsodium-secretbox`）：可选后端 + Android 预编译 `arm64-v8a` libsodium **1.0.20**（官方 `android-armv8-a.sh` + NDK r27c），默认仍走 Dart；开关 `preferLibsodiumSecretbox()` / `--dart-define=OPENLIST_CRYPT_LIBSODIUM=true`。许可证对照见 `packages/openlist_crypt/native/LICENSE_NOTE.md`（AGPL 应用 + MIT 包 + ISC 二进制通知，非法律意见）。设置 UI / 账号级落点仍未定。当前 main 状态按已通过收口；浏览、下载和坏名字透传后续问题按用户反馈记录。
+- **待办（部分开工）**：libsodium FFI 仅覆盖 **内容 secretbox**（EME/文件名仍纯 Dart）。实验分支 `feat/libsodium-secretbox`（worktree `worktree/libsodium-secretbox`）：可选后端 + Android 预编译 `arm64-v8a` libsodium **1.0.20**（官方 `android-armv8-a.sh` + NDK r27c），默认仍走 Dart；开关 `preferLibsodiumSecretbox()` / `--dart-define=OPENLIST_CRYPT_LIBSODIUM=true`。许可证对照见 `packages/openlist_crypt/native/LICENSE_NOTE.md`（AGPL 应用 + MIT 包 + ISC 二进制通知，非法律意见）。**设置 UI（本轮）**：设置 → 网络库 →「加密设置」子页；Crypt 顺序流解密从下载设置挪到该页；「优先使用 libsodium」持久化键 `prefer_libsodium_secretbox`（默认跟 dart-define），启动 `SettingsService.init` 读设置并 `applySecretboxBackendPreference()`；非 v8a / 加载失败时开关禁用并提示仅 arm64-v8a。账号级落点仍未定。当前 main 状态按已通过收口；浏览、下载和坏名字透传后续问题按用户反馈记录。
 
 ### 4.6 关键技术点（接入时要一起处理的）
 
@@ -327,7 +327,7 @@
 
 ### 4.8 剩余未定
 
-1. crypt 流桥形态（用户已定向，细节随实现定）：下载/缓存走内存流解密（已定）；流式播放内存流优先、media_kit 仅认 URL 时退本地 HTTP 桥（只服务 crypt，不碰原播放逻辑）；cipher 引擎切换（纯 Dart / libsodium FFI）的落点（设置全局 vs crypt 账号级）在引擎落地时定。
+1. crypt 流桥形态（用户已定向，细节随实现定）：下载/缓存走内存流解密（已定）；流式播放内存流优先、media_kit 仅认 URL 时退本地 HTTP 桥（只服务 crypt，不碰原播放逻辑）；cipher 引擎切换（纯 Dart / libsodium FFI）**已落设置全局**（加密设置子页）；账号级切换仍未定。
 2. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 4.6）。baidu 首轮真机验收就是第一手数据。
 3. 后续驱动（`aliyundrive_open` 等）落实表单时仍按 4.3.1 的模式先报字段清单给用户确认；教程文案统一链 OpenList 官方文档对应驱动页。
 
