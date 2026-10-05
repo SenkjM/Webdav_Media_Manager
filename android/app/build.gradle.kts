@@ -35,6 +35,15 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
+    // Optional libsodium for openlist_crypt secretbox (arm64-v8a only in this
+    // experiment). Other ABIs simply omit the .so and stay on the Dart path.
+    // Does not set abiFilters — sandbox abiFilters / split-per-abi rules unchanged.
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDir("../../packages/openlist_crypt/native/android")
+        }
+    }
+
     defaultConfig {
         applicationId = "com.senkjm.media_manager"
         minSdk = maxOf(flutter.minSdkVersion, 24)

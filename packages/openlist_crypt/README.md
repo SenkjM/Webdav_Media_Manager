@@ -113,3 +113,19 @@ text and attribution.
 
 [rclone]: https://github.com/rclone/rclone
 [base32768]: https://github.com/Max-Sum/base32768
+
+## Optional libsodium secretbox (experiment)
+
+Content blocks can use precompiled **libsodium** (`crypto_secretbox_easy`) via
+FFI instead of the pure-Dart XSalsa20-Poly1305 path. Filename EME / encodings
+are unchanged.
+
+```dart
+preferLibsodiumSecretbox(); // no-op fallback to Dart if .so missing
+// or: --dart-define=OPENLIST_CRYPT_LIBSODIUM=true
+```
+
+Android ships `native/android/arm64-v8a/libsodium.so` (official 1.0.20 build;
+see `native/README.md` and `native/LICENSE_NOTE.md`). On a host without that
+`.so`, unit tests still cover the Dart path; set
+`OPENLIST_CRYPT_LIBSODIUM_PATH` to a system `libsodium.so` to exercise FFI.

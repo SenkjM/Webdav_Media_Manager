@@ -133,7 +133,7 @@
 
 ## 9. 还没做的（不要把计划当现状）
 
-- libsodium FFI 引擎，以及与纯 Dart 实现的手动切换（两套实现同格式，可随时互切）。
+- libsodium FFI 引擎（**实验中**：仅 secretbox；见 [99 §4.5](99-IN-PROGRESS.md) 与 `packages/openlist_crypt/native/`），以及与纯 Dart 实现的手动切换（两套实现同格式，可随时互切；设置 UI 未做）。
 - OpenList 驱动清单里其余条目：批次方案与逐盘评估见 [99 §4.9](99-IN-PROGRESS.md) 与 [13](13-DRIVER-BATCH-PLAN.md)（只读家族 = 能力遮罩，不单独实现写路径）。
 - 下沉到后续批次的 P1 盘：`quark_open`（MustProxy，要通用流桥）、`139`（5 种账号形态 + 编码待验）、`quark`(cookie)（等 quark_open 的流桥形态一起做）——判定见 [13 §2.2](13-DRIVER-BATCH-PLAN.md)。
 - 跨会话的 path→id 缓存与离线可用性策略。

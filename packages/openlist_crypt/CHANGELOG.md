@@ -24,3 +24,9 @@ per-file random nonce, `RCLONE\0\0` magic header), filename encryption
 suffix), filename encodings (base32-hex-lower, base64 URL-safe no padding,
 base32768), scrypt key derivation with rclone default salt, and size
 arithmetic helpers. Golden vectors from rclone v1.75.1 `backend/crypt`.
+
+## 0.2.1 (unreleased experiment)
+
+* Optional libsodium FFI backend for content secretbox only (`preferLibsodiumSecretbox`,
+  `--dart-define=OPENLIST_CRYPT_LIBSODIUM=true`). Pure-Dart path remains default.
+* Vendored Android `arm64-v8a` libsodium 1.0.20 under `native/` (ISC notice retained).

@@ -1,5 +1,5 @@
-/// Pure-Dart implementation of the rclone/OpenList **crypt** encrypted-storage
-/// format.
+/// rclone/OpenList **crypt** encrypted-storage format (pure Dart by default;
+/// optional libsodium FFI for content secretbox only).
 ///
 /// Everything needed to read (and write) remote directories whose contents are
 /// encrypted by rclone's `crypt` backend or OpenList/Alist's crypt storage —

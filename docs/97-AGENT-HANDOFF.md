@@ -19,6 +19,18 @@
 
 ## 3. 交接条目
 
+
+### H-002 · libsodium secretbox 实验（feat/libsodium-secretbox）
+
+- **日期**：2026-10-06
+- **发言人**：executor agent
+- **状态**：功能分支已实现并跑包测；待真机验 FFI 加载
+- **需求语义**：[99 §4.5](99-IN-PROGRESS.md) crypt 待办（FFI）
+- **分支 / worktree**：`feat/libsodium-secretbox` @ `worktree/libsodium-secretbox`。**不要推 main，不要跑 workflow。**
+- **已做**：可选 libsodium secretbox；vendored `arm64-v8a` 1.0.20；`native/LICENSE_NOTE.md`；gradle `jniLibs.srcDir`；Dart 默认回退。
+- **下一步**：一加 / sandbox 真机确认 `libsodium.so` 加载与解密吞吐；决定是否要设置项。
+
+
 ### H-001 · MD3 界面改造（预览非播放器页 + 明暗切换 + 种子色）
 
 - **日期**：2026-10-02
