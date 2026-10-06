@@ -525,11 +525,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get cryptLibsodiumPreferSub =>
-      '只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。目前原生库仅打包 arm64-v8a，其它 ABI 自动走 Dart。';
+      '只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。原生库按设备架构随应用打包，加载不了时自动走 Dart。';
 
   @override
   String get cryptLibsodiumUnavailable =>
-      '当前设备无法加载 libsodium（原生库仅 arm64-v8a），已使用 Dart 实现';
+      '当前平台没有可用的 libsodium，或加载失败，已使用 Dart 实现';
 
   @override
   String get cryptLibsodiumStatusDart => '当前引擎：纯 Dart';
@@ -740,6 +740,9 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get aboutLicenseText =>
       '本项目采用 GNU Affero General Public License v3.0（AGPL-3.0）授权。\\n\\n你可以自由使用、修改与分发本软件，但若发布修改版，或通过网络提供基于本软件的服务，必须按 AGPL-3.0 公开对应完整源代码。完整文本见仓库 LICENSE 文件。';
+
+  @override
+  String get aboutOpenSourceLicenses => '开源许可';
 
   @override
   String get fileExtSaved => '后缀配置已保存';
@@ -4324,11 +4327,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get cryptLibsodiumPreferSub =>
-      '只影響 rclone crypt 內容塊解密/加密；檔名編碼仍用 Dart。目前原生庫僅打包 arm64-v8a，其它 ABI 自動走 Dart。';
+      '只影響 rclone crypt 內容塊解密/加密；檔名編碼仍用 Dart。原生庫依裝置架構隨應用程式打包，無法載入時自動走 Dart。';
 
   @override
   String get cryptLibsodiumUnavailable =>
-      '目前裝置無法載入 libsodium（原生庫僅 arm64-v8a），已使用 Dart 實作';
+      '目前平台沒有可用的 libsodium，或載入失敗，已使用 Dart 實作';
 
   @override
   String get cryptLibsodiumStatusDart => '目前引擎：純 Dart';
@@ -4539,6 +4542,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   @override
   String get aboutLicenseText =>
       '本專案採用 GNU Affero General Public License v3.0（AGPL-3.0）授權。\\n\\n你可以自由使用、修改與散布本軟體，但若發布修改版，或透過網路提供基於本軟體的服務，必須依 AGPL-3.0 公開對應完整原始碼。完整文字請見儲存庫 LICENSE 檔案。';
+
+  @override
+  String get aboutOpenSourceLicenses => '開源授權';
 
   @override
   String get fileExtSaved => '副檔名設定已儲存';

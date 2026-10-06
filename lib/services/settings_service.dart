@@ -399,11 +399,18 @@ class SettingsService extends ChangeNotifier {
 
   /// User preference: try libsodium for crypt content secretbox.
   /// Actual engine may still be Dart when the shared library cannot load
-  /// (non–arm64-v8a devices only ship the Dart path).
+  /// (no bundled library for this platform / ABI, or the load failed).
   bool get preferLibsodiumSecretboxEnabled => _preferLibsodiumSecretbox;
 
-  /// Whether [tryLoadLibsodium] succeeded (arm64-v8a APK / system lib).
-  bool get libsodiumSecretboxAvailable => tryLoadLibsodium();
+  /// Whether libsodium FFI is usable on this device.
+  ///
+  /// Attempts the load once ([tryLoadLibsodium] caches the result), then
+  /// reports [libsodiumSecretboxReady]. Not tied to any ABI: openlist_crypt's
+  /// build hook bundles the library for whichever ABI the APK targets.
+  bool get libsodiumSecretboxAvailable {
+    tryLoadLibsodium();
+    return libsodiumSecretboxReady;
+  }
 
   /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
   MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;

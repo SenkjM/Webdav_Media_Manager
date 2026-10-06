@@ -67,8 +67,14 @@ dependencies:
   flutter_local_notifications: ^22.3.1
   audio_service:
     path: packages/audio_service
+  # rclone / OpenList crypt format. Standalone package; its build hook
+  # (native assets) bundles libsodium 1.0.20 for the target ABI only.
+  # Local dev against an unpushed checkout: put a git-ignored
+  # pubspec_overrides.yaml with `dependency_overrides: openlist_crypt: path: ...`.
   openlist_crypt:
-    path: packages/openlist_crypt
+    git:
+      url: https://github.com/SenkjM/openlist_crypt.git
+      ref: ff3d47dac11792702cff34a50249bacd42d98965
   audio_session: ^0.2.2
   cryptography: ^2.9.0
   package_info_plus: ^10.2.1

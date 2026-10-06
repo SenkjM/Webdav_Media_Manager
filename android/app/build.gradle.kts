@@ -23,6 +23,14 @@ fun envOrProp(name: String): String? =
 val splitPerAbi =
     findProperty("split-per-abi")?.toString()?.toBoolean() == true
 
+// 不分包时 Flutter Gradle 插件默认会把 defaultConfig.ndk.abiFilters 清空并
+// 写成下面这三个 ABI；AGP 把 defaultConfig 与 flavor 的 abiFilters 取并集，
+// 于是 sandbox 的 arm64-v8a 过滤不起作用（插件 AAR 的 v7a / x86_64 库照样进包）。
+// gradle.properties 里设了 disable-abi-filtering=true 关掉这份默认，
+// 改由各 flavor 自己写：prod / dev 保持 Flutter 原来的三个 ABI，sandbox 只留 arm64。
+// split-per-abi 时插件本来就不写 abiFilters，这里也一个都不写。
+val flutterDefaultAbis = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+
 android {
     namespace = "com.senkjm.media_manager"
     compileSdk = maxOf(flutter.compileSdkVersion, 35)
@@ -33,16 +41,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
         // Required by flutter_local_notifications (desugaring of java.time APIs).
         isCoreLibraryDesugaringEnabled = true
-    }
-
-
-    // Optional libsodium for openlist_crypt secretbox (arm64-v8a only in this
-    // experiment). Other ABIs simply omit the .so and stay on the Dart path.
-    // Does not set abiFilters — sandbox abiFilters / split-per-abi rules unchanged.
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDir("../../packages/openlist_crypt/native/android")
-        }
     }
 
     defaultConfig {
@@ -86,9 +84,11 @@ android {
     // 独立的数据库 / 偏好 / 安全存储目录。
     // 注意：一旦存在 product flavor，AGP 就不再生成不带 flavor 的
     // assembleRelease 之类任务，所有构建都必须显式带 --flavor。
-    // abiFilters 只在非 split-per-abi 时写在 sandbox 上。prod / dev 不设，
-    // 仍由各自的构建命令决定 ABI。分包构建不能带这份过滤，否则 prod 的
-    // --split-per-abi 会在配置 sandbox variant 时失败。
+    // abiFilters 只在非 split-per-abi 时写在各 flavor 上（见文件头 flutterDefaultAbis）：
+    // prod / dev 是 Flutter 默认的三个 ABI，sandbox 只有 arm64-v8a。分包构建不能带
+    // 任何过滤，否则 prod 的 --split-per-abi 会在配置 sandbox variant 时失败。
+    // libsodium 由 openlist_crypt 的 native assets hook 按 --target-platform 只打包
+    // 对应 ABI，不再走 jniLibs。
     // flavor 不能叫 test：AGP 禁止 ProductFlavor 名字以 test 开头。
     // 签名按 flavor 写死（buildType release 不再设 signingConfig，否则会盖过 flavor）：
     // - prod / dev：有 internal keystore（CI secrets 或 android/key.properties）就用它，
@@ -108,6 +108,11 @@ android {
         create("prod") {
             dimension = "env"
             signingConfig = releaseSigning
+            if (!splitPerAbi) {
+                ndk {
+                    abiFilters += flutterDefaultAbis
+                }
+            }
         }
         create("dev") {
             dimension = "env"
@@ -115,6 +120,11 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             manifestPlaceholders["appName"] = "Webdav Media Manager Dev"
+            if (!splitPerAbi) {
+                ndk {
+                    abiFilters += flutterDefaultAbis
+                }
+            }
         }
         create("sandbox") {
             dimension = "env"

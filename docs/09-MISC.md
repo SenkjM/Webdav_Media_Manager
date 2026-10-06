@@ -84,7 +84,8 @@ flutter build apk --release --flavor prod   # 本地 release；签名见下
 
 - 三个包 applicationId 不同，能装在同一台手机上并存，数据库 / 偏好 / 安全存储目录各自独立。
 - flavor 只影响 `applicationId`、`versionName` 后缀、`android:label`（走 `${appName}` 占位符），以及 `test` 的 ABI；`namespace` 与 Dart 代码不动，`MainActivity` 不搬家。
-- `ndk.abiFilters` 只在**没有** `-Psplit-per-abi=true` 时写在 `sandbox`（`arm64-v8a`）。`prod` / `dev` 不设，ABI 仍由各自的构建命令决定。正式版 `flutter build apk --split-per-abi` 会给整个工程打开 `splits.abi`；AGP 只要任一 variant（包括这次没在编的 sandbox）带了 `abiFilters` 就失败。因此分包构建不写这份过滤。Testbuild 与 `assembleSandboxRelease` 不传该属性，sandbox 仍然只有 `arm64-v8a`。
+- `ndk.abiFilters` 只在**没有** `-Psplit-per-abi=true` 时写在各 flavor 上：`prod` / `dev` 是 `armeabi-v7a`、`arm64-v8a`、`x86_64`（与 Flutter 插件原来的默认相同），`sandbox` 只有 `arm64-v8a`。不分包时 Flutter Gradle 插件会把 `defaultConfig.ndk.abiFilters` 强行写成那三个 ABI，AGP 再与 flavor 的过滤取并集，sandbox 的过滤就形同虚设（插件 AAR 的 v7a / x86_64 库照样进包）；所以 `android/gradle.properties` 设了 `disable-abi-filtering=true` 关掉插件默认，过滤改由 flavor 自己写。正式版 `flutter build apk --split-per-abi` 会给整个工程打开 `splits.abi`；AGP 只要任一 variant（包括这次没在编的 sandbox）带了 `abiFilters` 就失败。因此分包构建一个过滤都不写（插件在分包时本来也不写，`disable-abi-filtering` 对分包无影响）。Testbuild 与 `assembleSandboxRelease` 不传该属性，sandbox 只有 `arm64-v8a`。
+- libsodium（crypt 内容 secretbox 的可选原生后端）由依赖 [`openlist_crypt`](https://github.com/SenkjM/openlist_crypt) 的 native assets 构建 hook 按 `--target-platform` / 分包 ABI 只打包对应的那一份，不走 `jniLibs`，也不受上面 `abiFilters` 影响。
 - 正式 / 预发布 CI 的产物文件名随 flavor 变成 `app-prod-*.apk` / `build/app/outputs/bundle/prodRelease/app-prod-release.aab`。Testbuild 的命令是 `flutter build apk --release --flavor sandbox --target-platform android-arm64 --build-name=<版本名> --build-number=<versionCode>`，artifact 名 `testbuild-arm64-v8a`。
 
 - Flutter **stable**（`environment.sdk: ^3.13.4`）；本机 SDK 装在 `D:\flutter`，`android/local.properties` 里的 `flutter.sdk` 只对本机有效，换机器会重新生成。

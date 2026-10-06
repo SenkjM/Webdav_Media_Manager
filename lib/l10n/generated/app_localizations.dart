@@ -1074,13 +1074,13 @@ abstract class AppLocalizations {
   /// No description provided for @cryptLibsodiumPreferSub.
   ///
   /// In zh, this message translates to:
-  /// **'只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。目前原生库仅打包 arm64-v8a，其它 ABI 自动走 Dart。'**
+  /// **'只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。原生库按设备架构随应用打包，加载不了时自动走 Dart。'**
   String get cryptLibsodiumPreferSub;
 
   /// No description provided for @cryptLibsodiumUnavailable.
   ///
   /// In zh, this message translates to:
-  /// **'当前设备无法加载 libsodium（原生库仅 arm64-v8a），已使用 Dart 实现'**
+  /// **'当前平台没有可用的 libsodium，或加载失败，已使用 Dart 实现'**
   String get cryptLibsodiumUnavailable;
 
   /// No description provided for @cryptLibsodiumStatusDart.
@@ -1478,6 +1478,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'本项目采用 GNU Affero General Public License v3.0（AGPL-3.0）授权。\\n\\n你可以自由使用、修改与分发本软件，但若发布修改版，或通过网络提供基于本软件的服务，必须按 AGPL-3.0 公开对应完整源代码。完整文本见仓库 LICENSE 文件。'**
   String get aboutLicenseText;
+
+  /// No description provided for @aboutOpenSourceLicenses.
+  ///
+  /// In zh, this message translates to:
+  /// **'开源许可'**
+  String get aboutOpenSourceLicenses;
 
   /// No description provided for @fileExtSaved.
   ///

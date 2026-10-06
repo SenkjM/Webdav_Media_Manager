@@ -162,8 +162,8 @@
   "encryptionCryptSection": "Crypt 下載",
   "encryptionSecretboxSection": "內容 secretbox 引擎",
   "cryptLibsodiumPrefer": "優先使用 libsodium",
-  "cryptLibsodiumPreferSub": "只影響 rclone crypt 內容塊解密/加密；檔名編碼仍用 Dart。目前原生庫僅打包 arm64-v8a，其它 ABI 自動走 Dart。",
-  "cryptLibsodiumUnavailable": "目前裝置無法載入 libsodium（原生庫僅 arm64-v8a），已使用 Dart 實作",
+  "cryptLibsodiumPreferSub": "只影響 rclone crypt 內容塊解密/加密；檔名編碼仍用 Dart。原生庫依裝置架構隨應用程式打包，無法載入時自動走 Dart。",
+  "cryptLibsodiumUnavailable": "目前平台沒有可用的 libsodium，或載入失敗，已使用 Dart 實作",
   "cryptLibsodiumStatusDart": "目前引擎：純 Dart",
   "cryptLibsodiumStatusSodium": "目前引擎：libsodium {version}",
   "@cryptLibsodiumStatusSodium": {
@@ -237,6 +237,7 @@
   "aboutConcept": "創意與需求框架：SenkjM",
   "aboutLicense": "授權條款",
   "aboutLicenseText": "本專案採用 GNU Affero General Public License v3.0（AGPL-3.0）授權。\\n\\n你可以自由使用、修改與散布本軟體，但若發布修改版，或透過網路提供基於本軟體的服務，必須依 AGPL-3.0 公開對應完整原始碼。完整文字請見儲存庫 LICENSE 檔案。",
+  "aboutOpenSourceLicenses": "開源授權",
   "fileExtSaved": "副檔名設定已儲存",
   "fileExtIntro": "依副檔名辨識檔案類型；多個副檔名以空格或逗號分隔。返回網路庫重新整理後生效。下面每一類的「點按行為」就是網路庫點按該檔案時的動作，多選工具列與「更多」選單遵循同一套判定。",
   "fileCatMusic": "音樂檔案",

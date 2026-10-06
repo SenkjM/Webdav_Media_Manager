@@ -162,8 +162,8 @@
   "encryptionCryptSection": "Crypt 下载",
   "encryptionSecretboxSection": "内容 secretbox 引擎",
   "cryptLibsodiumPrefer": "优先使用 libsodium",
-  "cryptLibsodiumPreferSub": "只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。目前原生库仅打包 arm64-v8a，其它 ABI 自动走 Dart。",
-  "cryptLibsodiumUnavailable": "当前设备无法加载 libsodium（原生库仅 arm64-v8a），已使用 Dart 实现",
+  "cryptLibsodiumPreferSub": "只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。原生库按设备架构随应用打包，加载不了时自动走 Dart。",
+  "cryptLibsodiumUnavailable": "当前平台没有可用的 libsodium，或加载失败，已使用 Dart 实现",
   "cryptLibsodiumStatusDart": "当前引擎：纯 Dart",
   "cryptLibsodiumStatusSodium": "当前引擎：libsodium {version}",
   "@cryptLibsodiumStatusSodium": {
@@ -237,6 +237,7 @@
   "aboutConcept": "创意与需求框架：SenkjM",
   "aboutLicense": "许可证",
   "aboutLicenseText": "本项目采用 GNU Affero General Public License v3.0（AGPL-3.0）授权。\\n\\n你可以自由使用、修改与分发本软件，但若发布修改版，或通过网络提供基于本软件的服务，必须按 AGPL-3.0 公开对应完整源代码。完整文本见仓库 LICENSE 文件。",
+  "aboutOpenSourceLicenses": "开源许可",
   "fileExtSaved": "后缀配置已保存",
   "fileExtIntro": "按后缀识别文件类型；多个后缀用空格或逗号分隔。返回网络库刷新后生效。下面每一类的「单击行为」就是网络库点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。",
   "fileCatMusic": "音乐文件",

@@ -162,8 +162,8 @@
   "encryptionCryptSection": "Crypt downloads",
   "encryptionSecretboxSection": "Content secretbox engine",
   "cryptLibsodiumPrefer": "Prefer libsodium",
-  "cryptLibsodiumPreferSub": "Affects rclone crypt content blocks only; filename codecs stay Dart. Native lib is packaged for arm64-v8a only; other ABIs use Dart.",
-  "cryptLibsodiumUnavailable": "libsodium could not be loaded on this device (native lib is arm64-v8a only); using Dart",
+  "cryptLibsodiumPreferSub": "Affects rclone crypt content blocks only; filename codecs stay Dart. The native library ships for the device architecture; if it cannot be loaded, Dart is used.",
+  "cryptLibsodiumUnavailable": "libsodium is not available on this platform or failed to load; using Dart",
   "cryptLibsodiumStatusDart": "Active engine: pure Dart",
   "cryptLibsodiumStatusSodium": "Active engine: libsodium {version}",
   "@cryptLibsodiumStatusSodium": {
@@ -237,6 +237,7 @@
   "aboutConcept": "Concept and requirements: SenkjM",
   "aboutLicense": "License",
   "aboutLicenseText": "This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).\\n\\nYou may use, modify, and distribute this software freely, but modified versions or network services based on it must publish the complete corresponding source under AGPL-3.0. See the LICENSE file in the repository for the full text.",
+  "aboutOpenSourceLicenses": "Open-source licenses",
   "fileExtSaved": "Extension settings saved",
   "fileExtIntro": "Files are identified by extension; separate multiple extensions with spaces or commas. Changes take effect after returning to the network library. Each category below has a tap action used by the network library; the multi-select toolbar and More menu follow the same rules.",
   "fileCatMusic": "Music files",

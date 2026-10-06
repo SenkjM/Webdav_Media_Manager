@@ -27,7 +27,7 @@
 - **状态**：设置 UI 已接上；待真机验 FFI 加载与开关
 - **需求语义**：[99 §4.5](99-IN-PROGRESS.md) crypt 待办（FFI + 加密设置）
 - **分支 / worktree**：`feat/libsodium-secretbox` @ `worktree/libsodium-secretbox`。**不要推 main，不要跑 workflow。**
-- **已做**：可选 libsodium secretbox；vendored `arm64-v8a` 1.0.20；设置 → 加密设置子页（顺序流 + prefer libsodium prefs / 启动 apply；非 v8a 禁用）。
+- **已做**：可选 libsodium secretbox；设置 → 加密设置子页（顺序流 + prefer libsodium prefs / 启动 apply；库加载不了时禁用）。`openlist_crypt` 已换成独立包 [SenkjM/openlist_crypt](https://github.com/SenkjM/openlist_crypt)（git 依赖，固定提交），libsodium 1.0.20 由其 native assets hook 按 ABI 打包（Android 四个 ABI、16 KB 对齐），分支 `feat/openlist-crypt-standalone` @ `worktree/openlist-crypt-standalone`（基于本分支）。
 - **下一步**：一加 / sandbox 真机确认 `libsodium.so` 加载、开关切换与解密吞吐。
 
 

@@ -7,8 +7,10 @@ import '../services/settings_service.dart';
 
 /// 设置 → 网络库 → 加密设置。
 ///
-/// Crypt 顺序流下载与 content secretbox 引擎（Dart / libsodium）放在这里；
-/// 原生 libsodium 仅打包 arm64-v8a，其它 ABI 开关禁用并提示走 Dart。
+/// Crypt 顺序流下载与 content secretbox 引擎（Dart / libsodium）放在这里。
+/// libsodium 由 openlist_crypt 的构建 hook 按目标 ABI 随包；开关只看库是否
+/// 真的加载成功（[SettingsService.libsodiumSecretboxAvailable]），加载不了就
+/// 禁用并提示走 Dart，不按 ABI 判断。
 class EncryptionSettingsScreen extends StatelessWidget {
   const EncryptionSettingsScreen({super.key});
 

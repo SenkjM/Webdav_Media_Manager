@@ -695,10 +695,12 @@ packages:
   openlist_crypt:
     dependency: "direct main"
     description:
-      path: "packages/openlist_crypt"
-      relative: true
-    source: path
-    version: "0.2.1"
+      path: "."
+      ref: ff3d47dac11792702cff34a50249bacd42d98965
+      resolved-ref: ff3d47dac11792702cff34a50249bacd42d98965
+      url: "https://github.com/SenkjM/openlist_crypt.git"
+    source: git
+    version: "0.1.0"
   package_config:
     dependency: transitive
     description:

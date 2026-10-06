@@ -69,3 +69,6 @@ signing-secrets/
 # Local dev clones (e.g. openlist-worker) — never part of the app
 /localdev/
 /worktree/
+
+# Local dependency overrides (e.g. openlist_crypt -> unpushed local checkout)
+pubspec_overrides.yaml

@@ -538,11 +538,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get cryptLibsodiumPreferSub =>
-      'Affects rclone crypt content blocks only; filename codecs stay Dart. Native lib is packaged for arm64-v8a only; other ABIs use Dart.';
+      'Affects rclone crypt content blocks only; filename codecs stay Dart. The native library ships for the device architecture; if it cannot be loaded, Dart is used.';
 
   @override
   String get cryptLibsodiumUnavailable =>
-      'libsodium could not be loaded on this device (native lib is arm64-v8a only); using Dart';
+      'libsodium is not available on this platform or failed to load; using Dart';
 
   @override
   String get cryptLibsodiumStatusDart => 'Active engine: pure Dart';
@@ -765,6 +765,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get aboutLicenseText =>
       'This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).\\n\\nYou may use, modify, and distribute this software freely, but modified versions or network services based on it must publish the complete corresponding source under AGPL-3.0. See the LICENSE file in the repository for the full text.';
+
+  @override
+  String get aboutOpenSourceLicenses => 'Open-source licenses';
 
   @override
   String get fileExtSaved => 'Extension settings saved';
