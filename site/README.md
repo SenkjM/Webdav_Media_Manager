@@ -17,23 +17,35 @@
 
 ### 重新部署（`site/` → `gh-pages`）
 
-```bash
-# 1. 造一个只含站点文件的提交，推到 gh-pages
-tmp=$(mktemp -d)
-git worktree add --detach "$tmp"
-cd "$tmp"
-git checkout --orphan gh-pages
-git rm -r --cached . >/dev/null
-cp "<repo>/site/index.html" "<repo>/site/404.html" "<repo>/site/icon.svg" \
-   "<repo>/site/CNAME"      "<repo>/site/.nojekyll" .
-git add -A
-git commit -m "site: redeploy homepage"
-git push origin gh-pages
-cd - && git worktree remove "$tmp"
+`gh-pages` 是**部署产物分支**：根目录直接对应当前 `site/` 里的站点文件，本 `README.md` 不上线。
+用 git 底层命令从 `site/` 的 blob 直接造一个无历史的提交，不动工作区：
 
-# 2. 确认 Pages 仍然挂在这个分支上（分支曾被删除时需要重新启用）
-gh api repos/SenkjM/Webdav_Media_Manager/pages
+```bash
+# 1. 确认 site/ 已提交，记下当前提交
+h=$(git rev-parse HEAD)
+
+# 2. 用 site/ 里要上线的 5 个文件组装 gh-pages 根 tree（只含 LF 路径，别用 PowerShell 管道拼）
+printf '100644 blob %s\t%s\n' \
+  "$(git rev-parse $h:site/index.html)" index.html \
+  "$(git rev-parse $h:site/404.html)"  404.html \
+  "$(git rev-parse $h:site/icon.svg)"  icon.svg \
+  "$(git rev-parse $h:site/CNAME)"     CNAME \
+  "$(git rev-parse $h:site/.nojekyll)" .nojekyll > /tmp/entries
+tree=$(git mktree < /tmp/entries)
+
+# 3. 造提交并指向 gh-pages
+printf 'site: deploy homepage\n\nGenerated from site/ on main (%s).\n' "$h" > /tmp/msg
+commit=$(git commit-tree "$tree" < /tmp/msg)
+git update-ref refs/heads/gh-pages "$commit"
+git push <remote> refs/heads/gh-pages:refs/heads/gh-pages
+
+# 4. 核验
+gh api repos/<owner>/<repo>/pages                 # source.branch 应为 gh-pages、status 为 built
+curl -sI https://wdmm.senkjm.top/                 # 200
 ```
 
-`.github/workflows/pages.yml` 是手动触发的**备用**通道，只在 Pages 的构建源被切成「GitHub Actions」
-时可用；当前构建源是 `gh-pages` 分支，所以日常发布走上面的流程。
+注意：用 PowerShell 的 `$entries | git mktree` 会把 CRLF 带进 tree 记录，生成名为 `".nojekyll\r"`
+的条目、`.nojekyll` 实际缺失；要用 `cmd /c "git mktree < file"` 或直接在 Bash 里跑。
+
+`.github/workflows/pages.yml` 是手动触发的**备用**通道（把 `site/` 作为 Actions Pages 源再发一次），
+只在 Pages 的构建源被切成「GitHub Actions」时才用得上；当前构建源是 `gh-pages` 分支。
