@@ -4,12 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Webdav Media Manager — 网盘媒体管理器</title>
-  <meta name="description" content="面向 Android 的网盘媒体管理器：浏览 WebDAV，下载到本地后再播放。适合把 NAS、网盘当作音乐库，在手机上离线收听。">
+  <meta name="description" content="面向 Android 的网盘媒体管理器：浏览 WebDAV，也直连百度、123、阿里云盘等网盘，下载到本地后再播放。适合把 NAS、网盘当作音乐库，在手机上离线收听。">
   <meta name="theme-color" content="#2EC4B6">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
   <link rel="canonical" href="https://wdmm.senkjm.top/">
   <meta property="og:title" content="Webdav Media Manager">
-  <meta property="og:description" content="浏览 WebDAV，下载到本地后再播放。开源、AGPL-3.0。">
+  <meta property="og:description" content="浏览 WebDAV 与网盘云盘，下载到本地后再播放，支持 rclone Crypt 兼容的加密源。开源、AGPL-3.0。">
   <meta property="og:url" content="https://wdmm.senkjm.top/">
   <meta property="og:type" content="website">
   <style>
@@ -231,9 +231,9 @@
 
     <section class="hero" id="top">
       <div>
-        <div class="kicker">Android · WebDAV · Offline-first</div>
+        <div class="kicker">Android · WebDAV + 云盘 · Offline-first</div>
         <h1>网盘当曲库，<br>下载后再听。</h1>
-        <p class="lead">面向 Android 的开源媒体管理器。浏览 NAS / 网盘 / 自建 WebDAV，把音频缓存到本地再播放，不做网络流式听歌。</p>
+        <p class="lead">面向 Android 的开源媒体管理器。浏览 NAS / 自建 WebDAV，或直连百度网盘、123 云盘等云盘；把音频缓存到本地再播放，需要时也能流式。</p>
         <div class="cta">
           <a class="btn" href="https://github.com/SenkjM/Webdav_Media_Manager/releases">下载 APK</a>
           <a class="btn ghost" href="https://github.com/SenkjM/Webdav_Media_Manager">查看源码</a>
@@ -255,7 +255,7 @@
           </div>
           <div class="track">
             <strong>先下载，再播放</strong>
-            <span>本地缓存 · 锁屏控制 · 歌单同步</span>
+            <span>本地缓存 · 锁屏控制 · 曲库同步</span>
           </div>
           <div class="bar"><i></i></div>
           <div class="controls"><span>1:24</span><span>3:41</span></div>
@@ -269,33 +269,48 @@
       <div class="grid">
         <article>
           <span class="chip">网盘</span>
-          <h3>多 WebDAV 站点</h3>
-          <p>任意添加 NAS、网盘或自建服务，顶部一键切换。支持建文件夹、重命名、删除，权限不足会明确提示。</p>
+          <h3>WebDAV + 云盘直连</h3>
+          <p>多个 WebDAV 站点任选，也可直连百度网盘、123 云盘、阿里云盘、115、TeraBox、网易云音乐等，顶部一键切换。支持建文件夹、重命名、移动、复制、删除；只读网盘按能力隐藏写入口。</p>
+        </article>
+        <article>
+          <span class="chip">加密</span>
+          <h3>rclone Crypt 兼容</h3>
+          <p>与 rclone / OpenList 逐字节兼容的加密源：文件名与内容解密正确，目录名加密、混淆模式、Base64 / Base32 / Base32768 编码齐全。只读挂载，可直接浏览、下载与播放。</p>
         </article>
         <article>
           <span class="chip">下载</span>
           <h3>队列后台缓存</h3>
-          <p>点按即入队，完成后才用本地文件播放。可取消、重试、清除；系统通知显示进度与结果。</p>
+          <p>点按即入队，完成后才用本地文件播放。可取消、重试、清除；系统通知显示进度与结果。长按文件夹可递归下载整个目录。</p>
         </article>
         <article>
           <span class="chip">曲库</span>
           <h3>专辑 / 作者 / 标签</h3>
-          <p>缓存过的曲目进入本地库，带封面与元数据。CUE 分轨按整张专辑展开。删除缓存不会毁掉曲库身份。</p>
+          <p>缓存过的曲目进入本地库，带封面与元数据。CUE 分轨按整张专辑展开，分享时可按标签模板重命名，删除缓存不会毁掉曲库身份。</p>
         </article>
         <article>
           <span class="chip">播放</span>
-          <h3>通知栏与锁屏</h3>
-          <p>完整播放页 + 迷你条 + 临时队列。视频走流式播放，支持画中画、倍速、字幕与手势。</p>
+          <h3>本地优先，也可流式</h3>
+          <p>完整播放页 + 迷你条 + 临时队列；通知栏 / 锁屏 / 耳机控制。音乐可选流式并预热后续曲目，视频流式支持画中画、后台播放、倍速、外挂与内嵌字幕、手势。</p>
+        </article>
+        <article>
+          <span class="chip">图片</span>
+          <h3>目录内看图</h3>
+          <p>在网络库里全屏查看当前目录的图片，点左侧上一张、点右侧下一张，支持幻灯片、适应方式与相邻预取；不进下载队列，也不进音乐缓存。</p>
         </article>
         <article>
           <span class="chip">歌单</span>
-          <h3>本地 + M3U8</h3>
-          <p>从队列或曲库创建歌单，可双向同步为 WebDAV 上的 M3U8，按更新时间合并。</p>
+          <h3>二进制双向同步</h3>
+          <p>从队列或曲库创建歌单，双向同步为 WebDAV 上的二进制歌单，按更新时间合并；删除另记一包，避免别的设备把已删歌单传回去。</p>
         </article>
         <article>
-          <span class="chip">备份</span>
-          <h3>凭证、库、歌单</h3>
-          <p>统一加密密钥只保护密码。支持云端增量同步、<code>.wdmm</code> 归档备份，以及定时任务。</p>
+          <span class="chip">同步</span>
+          <h3>曲库增量同步</h3>
+          <p>音乐库走 base + 分片（<code>lib-</code> / <code>seg-</code> / <code>del-*.wdmm</code>），只传变化，可手动「重建」与「整理」；支持定时同步。</p>
+        </article>
+        <article>
+          <span class="chip">外观</span>
+          <h3>浅色 / 深色 / 多语言</h3>
+          <p>浅色、深色或跟随系统，并用一个主题色生成整套配色。语言支持跟随系统、简体中文、繁体中文与 English，设置页直接切换并持久化。</p>
         </article>
       </div>
     </section>
@@ -304,14 +319,15 @@
       <div class="split">
         <div class="panel">
           <h2>获取应用</h2>
-          <p class="sub">包名 <code>com.senkjm.media_manager</code>。当前持续完善中，核心流程已可用。</p>
+          <p class="sub">包名 <code>com.senkjm.media_manager</code>。<strong>v0.2.3</strong> 已正式发布，核心流程可用。</p>
           <ul>
-            <li><strong>Pre-release</strong>：来自 <code>main</code>，每次预发布是独立的 GitHub Release，可覆盖安装。</li>
-            <li><strong>Release</strong>：来自 <code>main</code>，Actions 一键正式发版。</li>
+            <li><strong>Pre-release</strong>：来自 <code>main</code>，版本名形如 <code>v0.2.3-2030002</code>，每次独立标签、独立 Release，可覆盖安装。</li>
+            <li><strong>Release</strong>：由合法且递增的 <code>vX.Y.Z</code> 标签触发，Actions 一键正式发版。</li>
+            <li>非 WebDAV 云盘目前以读取为主，上传与云端写同步不开放。</li>
             <li>首次从旧签名换成当前内测签名时，需要先卸载再安装。</li>
           </ul>
           <div class="cta">
-            <a class="btn" href="https://github.com/SenkjM/Webdav_Media_Manager/releases">最新预发布</a>
+            <a class="btn" href="https://github.com/SenkjM/Webdav_Media_Manager/releases">最新发布</a>
             <a class="btn ghost" href="https://github.com/SenkjM/Webdav_Media_Manager">仓库</a>
           </div>
         </div>
