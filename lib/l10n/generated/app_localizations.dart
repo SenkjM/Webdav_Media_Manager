@@ -6872,7 +6872,7 @@ abstract class AppLocalizations {
   /// No description provided for @mediaScanMaxDepthHint.
   ///
   /// In zh, this message translates to:
-  /// **'默认 1。与播放列表深度 prefs 不共用。'**
+  /// **'默认 1。与播放列表深度相互独立。'**
   String get mediaScanMaxDepthHint;
 
   /// Label above embedded lyrics on the music stream screen

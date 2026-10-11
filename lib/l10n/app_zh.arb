@@ -1163,7 +1163,7 @@
   "mediaScanRecursive": "刮削时搜索子目录",
   "mediaScanRecursiveHint": "默认开。关闭则刮削只处理选中的当前层。",
   "mediaScanMaxDepth": "刮削最大深度",
-  "mediaScanMaxDepthHint": "默认 1。与播放列表深度 prefs 不共用。",
+  "mediaScanMaxDepthHint": "默认 1。与播放列表深度相互独立。",
   "lyricsSourceEmbedded": "内嵌歌词",
   "@lyricsSourceEmbedded": {
     "description": "Label above embedded lyrics on the music stream screen"

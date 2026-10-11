@@ -3920,7 +3920,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaScanMaxDepth => '刮削最大深度';
 
   @override
-  String get mediaScanMaxDepthHint => '默认 1。与播放列表深度 prefs 不共用。';
+  String get mediaScanMaxDepthHint => '默认 1。与播放列表深度相互独立。';
 
   @override
   String get lyricsSourceEmbedded => '内嵌歌词';
@@ -7951,7 +7951,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mediaScanMaxDepth => '刮削最大深度';
 
   @override
-  String get mediaScanMaxDepthHint => '預設 1。與播放清單深度 prefs 不共用。';
+  String get mediaScanMaxDepthHint => '預設 1。與播放清單深度相互獨立。';
 
   @override
   String get lyricsSourceEmbedded => '內嵌歌詞';
