@@ -138,6 +138,8 @@ enum TrackUiState {
   remote,
   /// In library (or known playable) but no local audio cache yet.
   streamable,
+  /// Confirmed missing on the remote (persisted red-dot).
+  remoteMissing,
   queued,
   downloading,
   ready,

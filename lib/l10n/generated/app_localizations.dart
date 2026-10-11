@@ -252,7 +252,7 @@ abstract class AppLocalizations {
   /// No description provided for @library.
   ///
   /// In zh, this message translates to:
-  /// **'音乐库'**
+  /// **'媒体库'**
   String get library;
 
   /// No description provided for @playlists.
@@ -6886,6 +6886,156 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'可串流'**
   String get trackStateStreamable;
+
+  /// No description provided for @trackStateRemoteMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端不存在'**
+  String get trackStateRemoteMissing;
+
+  /// No description provided for @remoteMissingRetrying.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在重试远端…'**
+  String get remoteMissingRetrying;
+
+  /// No description provided for @remoteMissingTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端文件不存在'**
+  String get remoteMissingTitle;
+
+  /// No description provided for @remoteMissingBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'再试仍找不到。删除库内条目，或重定向到新的远端路径？'**
+  String get remoteMissingBody;
+
+  /// No description provided for @remoteMissingRedirect.
+  ///
+  /// In zh, this message translates to:
+  /// **'重定向'**
+  String get remoteMissingRedirect;
+
+  /// No description provided for @actionStreamMusicOnce.
+  ///
+  /// In zh, this message translates to:
+  /// **'串流播放（仅本次）'**
+  String get actionStreamMusicOnce;
+
+  /// No description provided for @select.
+  ///
+  /// In zh, this message translates to:
+  /// **'多选'**
+  String get select;
+
+  /// No description provided for @mediaScanAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描入库'**
+  String get mediaScanAction;
+
+  /// No description provided for @mediaScanCounting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在统计将刮削的曲目…'**
+  String get mediaScanCounting;
+
+  /// No description provided for @mediaScanConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认刮削'**
+  String get mediaScanConfirmTitle;
+
+  /// mediaScanConfirmBody
+  ///
+  /// In zh, this message translates to:
+  /// **'将处理 {count} 首（仅路径不在库中的）。开始？'**
+  String mediaScanConfirmBody(int count);
+
+  /// No description provided for @mediaScanStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始刮削'**
+  String get mediaScanStart;
+
+  /// No description provided for @mediaScanNothingNew.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有需要入库的新路径'**
+  String get mediaScanNothingNew;
+
+  /// mediaScanQueued
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入 {count} 个刮削任务'**
+  String mediaScanQueued(int count);
+
+  /// No description provided for @mediaLibrarySettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'媒体库设置'**
+  String get mediaLibrarySettings;
+
+  /// No description provided for @mediaLibrarySettingsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐默认打开、刮削深度、标签更新'**
+  String get mediaLibrarySettingsHint;
+
+  /// No description provided for @musicDefaultOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐默认打开方式'**
+  String get musicDefaultOpen;
+
+  /// No description provided for @musicDefaultOpenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络库点按音乐时的默认动作（缓存或串流）。后缀页不再管理音乐默认打开。'**
+  String get musicDefaultOpenHint;
+
+  /// No description provided for @musicDefaultCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存后播放'**
+  String get musicDefaultCache;
+
+  /// No description provided for @musicDefaultStream.
+  ///
+  /// In zh, this message translates to:
+  /// **'串流播放'**
+  String get musicDefaultStream;
+
+  /// No description provided for @musicDefaultInExtensionsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐默认打开已移至「设置 → 媒体库」。'**
+  String get musicDefaultInExtensionsHint;
+
+  /// No description provided for @refreshTagsFromLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'从本地更新标签'**
+  String get refreshTagsFromLocal;
+
+  /// No description provided for @refreshTagsFromLocalHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'读取已缓存音频的标签与封面'**
+  String get refreshTagsFromLocalHint;
+
+  /// No description provided for @refreshTagsFromCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'从云端更新标签'**
+  String get refreshTagsFromCloud;
+
+  /// No description provided for @refreshTagsFromCloudHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'以任务队列 Range 拉取标签与封面'**
+  String get refreshTagsFromCloudHint;
 }
 
 class _AppLocalizationsDelegate

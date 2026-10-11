@@ -13,12 +13,15 @@ import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
+import '../services/library_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/app_snack.dart';
+import '../utils/task_error.dart';
+import '../utils/scan_candidates.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
@@ -356,6 +359,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 这个条目在这份设置下的默认动作。
   FileAction _defaultActionFor(WebDavItem item) {
     final settings = context.read<SettingsService>();
+    if (item.category == FileCategory.music) {
+      return settings.musicDefaultOpenAction;
+    }
     return settings.fileActions.forCategory(item.category);
   }
 
@@ -1571,6 +1577,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           icon: const Icon(Icons.library_music_outlined),
         ),
         IconButton(
+          tooltip: AppLocalizations.of(context)!.mediaScanAction,
+          onPressed: canCacheMusic
+              ? () => unawaited(_scanSelection(folders, files))
+              : null,
+          icon: const Icon(Icons.manage_search_outlined),
+        ),
+        IconButton(
           tooltip: AppLocalizations.of(context)!.download,
           onPressed: canDownload
               ? () => _downloadSelection(folders, files)
@@ -1593,6 +1606,115 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         ),
       ],
     );
+  }
+
+
+  /// 刮削：先统计再入队 TaskKind.scan（增量：路径已在库则跳过）。
+  Future<void> _scanSelection(
+    List<WebDavItem> folders,
+    List<WebDavItem> files,
+  ) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final accounts = context.read<AccountsService>();
+    final account = accounts.accountById(accountId);
+    final sourceName = account?.name;
+    if (sourceName == null || sourceName.isEmpty) return;
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.read<SettingsService>();
+    final library = context.read<LibraryService>();
+    final webDav = context.read<WebDavService>();
+    final walk = settings.mediaScanWalkOptions;
+    final queue = context.read<TaskQueueService>();
+
+    final roots = <WebDavItem>[
+      ...folders,
+      ...files.where((e) => e.category == FileCategory.music),
+    ];
+    if (roots.isEmpty) {
+      AppSnack.show(context, l10n.netNoNewAudio);
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Expanded(child: Text(l10n.mediaScanCounting)),
+          ],
+        ),
+      ),
+    );
+
+    var total = 0;
+    final plan = <({WebDavItem root, int count})>[];
+    try {
+      for (final root in roots) {
+        final candidates = await collectScanCandidates(
+          webDav: webDav,
+          accountId: accountId,
+          sourceName: sourceName,
+          rootPath: root.path,
+          rootIsFile: !root.isDirectory,
+          walk: walk,
+          isMusic: (name) =>
+              settings.fileTypes.categoryFor(name) == FileCategory.music,
+          alreadyInLibrary: (path) => library.find(sourceName, path) != null,
+        );
+        plan.add((root: root, count: candidates.length));
+        total += candidates.length;
+      }
+    } catch (e) {
+      if (context.mounted) Navigator.of(context).pop();
+      if (context.mounted) {
+        AppSnack.error(context, TaskError.classify(e).detail);
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    Navigator.of(context).pop();
+
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.mediaScanConfirmTitle),
+        content: Text(l10n.mediaScanConfirmBody(total)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.mediaScanStart),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !context.mounted) return;
+    if (total == 0) {
+      AppSnack.show(context, l10n.mediaScanNothingNew);
+      return;
+    }
+    var queued = 0;
+    for (final row in plan) {
+      if (row.count == 0) continue;
+      await queue.enqueueScan(
+        sourceName: sourceName,
+        remotePath: row.root.path,
+        fileName: row.root.name,
+        unitsTotal: row.count,
+      );
+      queued++;
+    }
+    if (context.mounted) {
+      AppSnack.show(context, l10n.mediaScanQueued(queued));
+      _exitSelect();
+    }
   }
 
   /// 缓存音乐：把选中内容里的音频收进缓存，随后 ingest 进音乐库。

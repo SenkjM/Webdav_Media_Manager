@@ -25,7 +25,7 @@
   "themeSeedHue": "Hue",
   "themeSeedSaturation": "Saturation",
   "themeSeedValue": "Brightness",
-  "library": "Music library",
+  "library": "Media library",
   "playlists": "Playlists",
   "networkLibrary": "Network library",
   "downloadQueue": "Task queue",
@@ -1151,5 +1151,46 @@
   "trackStateStreamable": "Streamable",
   "@trackStateStreamable": {
     "description": "Library row with no local cache but streamable"
-  }
+  },
+  "trackStateRemoteMissing": "Missing on cloud",
+  "remoteMissingRetrying": "Retrying remote…",
+  "remoteMissingTitle": "File missing on cloud",
+  "remoteMissingBody": "Still not found. Delete the library row, or redirect to a new remote path?",
+  "remoteMissingRedirect": "Redirect",
+  "actionStreamMusicOnce": "Stream once",
+  "select": "Select",
+  "mediaScanAction": "Scan into library",
+  "mediaScanCounting": "Counting tracks to scrape…",
+  "mediaScanConfirmTitle": "Confirm scrape",
+  "mediaScanConfirmBody": "Will process {count} tracks (paths not already in the library). Start?",
+  "@mediaScanConfirmBody": {
+    "description": "mediaScanConfirmBody",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaScanStart": "Start scrape",
+  "mediaScanNothingNew": "No new paths to ingest",
+  "mediaScanQueued": "Queued {count} scrape tasks",
+  "@mediaScanQueued": {
+    "description": "mediaScanQueued",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaLibrarySettings": "Media library settings",
+  "mediaLibrarySettingsHint": "Music default open, scrape depth, tag refresh",
+  "musicDefaultOpen": "Music default open",
+  "musicDefaultOpenHint": "Default action when tapping music in the network library (cache or stream). Extension settings no longer set the music default.",
+  "musicDefaultCache": "Cache then play",
+  "musicDefaultStream": "Stream",
+  "musicDefaultInExtensionsHint": "Music default open moved to Settings → Media library.",
+  "refreshTagsFromLocal": "Update tags from local",
+  "refreshTagsFromLocalHint": "Read tags and covers from cached audio",
+  "refreshTagsFromCloud": "Update tags from cloud",
+  "refreshTagsFromCloudHint": "Queue Range fetches for tags and covers"
 }

@@ -27,6 +27,11 @@ class TrackStatusChip extends StatelessWidget {
         scheme.primary,
         Icons.stream,
       ),
+      TrackUiState.remoteMissing => (
+        l10n.trackStateRemoteMissing,
+        AppColors.error,
+        Icons.error_outline,
+      ),
       TrackUiState.queued => (
         l10n.trackStateQueued,
         scheme.secondary,

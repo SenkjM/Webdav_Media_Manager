@@ -34,6 +34,7 @@ class LibraryTrack {
     this.clipEndMs,
     this.cacheGroupId,
     this.rev,
+    this.remoteMissing = false,
     DateTime? lastDownloadedAt,
     DateTime? lastTagReadAt,
   }) : musicId =
@@ -87,6 +88,8 @@ class LibraryTrack {
 
   /// Monotonic version of this row (see [RevClock]); the only value sync compares.
   int? rev;
+  /// Confirmed missing on the cloud (list red-dot).
+  bool remoteMissing;
   DateTime lastDownloadedAt;
   DateTime lastTagReadAt;
 
@@ -178,6 +181,7 @@ class LibraryTrack {
     'cache_group_id': cacheGroupId,
     'last_downloaded_at': lastDownloadedAt.toIso8601String(),
     'last_tag_read_at': lastTagReadAt.toIso8601String(),
+    'remote_missing': remoteMissing ? 1 : 0,
   };
 
   /// Map for the `tracks` table (no CUE-only columns).
@@ -203,6 +207,7 @@ class LibraryTrack {
     'cover_path': coverPath,
     'last_downloaded_at': lastDownloadedAt.toIso8601String(),
     'last_tag_read_at': lastTagReadAt.toIso8601String(),
+    'remote_missing': remoteMissing ? 1 : 0,
   };
 
   /// Map for the `cue_slices` table.
@@ -241,6 +246,7 @@ class LibraryTrack {
     'cache_group_id': cacheGroupId,
     'last_downloaded_at': lastDownloadedAt.toIso8601String(),
     'last_tag_read_at': lastTagReadAt.toIso8601String(),
+    'remote_missing': remoteMissing ? 1 : 0,
   };
 
   factory LibraryTrack.fromMap(Map<String, dynamic> map) {
@@ -290,11 +296,19 @@ class LibraryTrack {
       lastTagReadAt:
           DateTime.tryParse(_asString(map['last_tag_read_at']) ?? '') ??
           DateTime.now(),
+      remoteMissing: _asBoolFlag(map['remote_missing']),
     );
   }
 }
 
 String? _asString(Object? value) => value?.toString();
+
+bool _asBoolFlag(Object? value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  final s = value?.toString().toLowerCase();
+  return s == '1' || s == 'true';
+}
 
 int? _asInt(Object? value) {
   if (value == null) return null;

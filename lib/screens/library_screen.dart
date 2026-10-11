@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,6 +23,10 @@ import '../widgets/library_cover_art.dart';
 import '../widgets/selection_toolbar.dart';
 import '../widgets/track_status_chip.dart';
 import 'home_shell.dart';
+import 'webdav_folder_picker_screen.dart';
+import '../services/webdav_service.dart';
+import '../models/webdav_stream.dart';
+import '../utils/task_error.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -1053,15 +1058,22 @@ class _TrackTile extends StatelessWidget {
     final sourceBound = context.read<AccountsService>().isSourceBound(
       track.sourceName,
     );
-    final state = downloads.uiStateFor(
+    var state = downloads.uiStateFor(
       track.sourceName,
       track.effectiveAudioRemotePath,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,
       libraryRow: true,
     );
+    if (track.remoteMissing &&
+        state != TrackUiState.playing &&
+        state != TrackUiState.downloading &&
+        state != TrackUiState.queued) {
+      state = TrackUiState.remoteMissing;
+    }
     final showChip =
         state == TrackUiState.streamable ||
+        state == TrackUiState.remoteMissing ||
         state == TrackUiState.queued ||
         state == TrackUiState.downloading ||
         state == TrackUiState.error ||
@@ -1128,22 +1140,28 @@ class _TrackTile extends StatelessWidget {
               ),
             ),
           Tooltip(
-            message: isLocal
-                ? AppLocalizations.of(context)!.downloaded
-                : AppLocalizations.of(context)!.trackStateStreamable,
+            message: track.remoteMissing
+                ? AppLocalizations.of(context)!.trackStateRemoteMissing
+                : isLocal
+                    ? AppLocalizations.of(context)!.downloaded
+                    : AppLocalizations.of(context)!.trackStateStreamable,
             child: Container(
               width: 10,
               height: 10,
               margin: const EdgeInsets.only(right: 4),
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: isLocal
-                    ? Theme.of(context).colorScheme.tertiary
-                    : Theme.of(context).colorScheme.primary,
+                color: track.remoteMissing
+                    ? AppColors.error
+                    : isLocal
+                        ? Theme.of(context).colorScheme.tertiary
+                        : Theme.of(context).colorScheme.primary,
                 border: Border.all(
-                  color: (isLocal
-                          ? Theme.of(context).colorScheme.tertiary
-                          : Theme.of(context).colorScheme.primary)
+                  color: (track.remoteMissing
+                          ? AppColors.error
+                          : isLocal
+                              ? Theme.of(context).colorScheme.tertiary
+                              : Theme.of(context).colorScheme.primary)
                       .withValues(alpha: 0.4),
                   width: 1,
                 ),
@@ -1157,6 +1175,10 @@ class _TrackTile extends StatelessWidget {
           onToggleSelect?.call();
           return;
         }
+        if (track.remoteMissing && !isLocal) {
+          unawaited(_onRemoteMissingTap(context));
+          return;
+        }
         _onTap(context, isLocal: isLocal);
       },
       onLongPress: () {
@@ -1164,12 +1186,12 @@ class _TrackTile extends StatelessWidget {
           onToggleSelect?.call();
           return;
         }
-        onEnterSelect?.call();
+        unawaited(_onLongPressMenu(context, isLocal: isLocal));
       },
     );
   }
 
-  Future<void> _onTap(BuildContext context, {required bool isLocal}) async {
+  Future<void> _onTap(BuildContext context, {required bool isLocal, bool forceStream = false}) async {
     final accountsService = context.read<AccountsService>();
     if (!accountsService.isSourceBound(track.sourceName)) {
       AppSnack.error(
@@ -1215,10 +1237,164 @@ class _TrackTile extends StatelessWidget {
       track.effectiveAudioRemotePath,
       sourceName: track.sourceName,
     );
-    final info = _toTrackInfo(track, local, accountId);
+    final effectiveLocal = forceStream ? null : local;
+    final info = _toTrackInfo(track, effectiveLocal, accountId);
+    if (forceStream) {
+      // One-shot stream: drop local paths so resolvePlayable uses URL.
+      for (var i = 0; i < playlistInfos.length; i++) {
+        final row = playlistInfos[i];
+        playlistInfos[i] = TrackInfo(
+          sourceName: row.sourceName,
+          accountId: row.accountId,
+          remotePath: row.remotePath,
+          fileName: row.fileName,
+          title: row.title,
+          artist: row.artist,
+          albumArtist: row.albumArtist,
+          album: row.album,
+          duration: row.duration,
+          trackNumber: row.trackNumber,
+          trackTotal: row.trackTotal,
+          discNumber: row.discNumber,
+          discTotal: row.discTotal,
+          year: row.year,
+          genre: row.genre,
+          bitrate: row.bitrate,
+          sampleRate: row.sampleRate,
+          coverPath: row.coverPath,
+          cueRemotePath: row.cueRemotePath,
+          cueTrackIndex: row.cueTrackIndex,
+          audioRemotePath: row.audioRemotePath,
+          clipStart: row.clipStart,
+          clipEnd: row.clipEnd,
+          cacheGroupId: row.cacheGroupId,
+        );
+      }
+    }
     if (playlistInfos.isEmpty) playlistInfos.add(info);
     if (!context.mounted) return;
     await player.playTrack(info, playlist: playlistInfos);
+    if (player.error != null && context.mounted) {
+      final err = TaskError.classify(StateError(player.error!));
+      AppSnack.error(
+        context,
+        err.code == 'err.cloud.notFound'
+            ? AppLocalizations.of(context)!.trackStateRemoteMissing
+            : player.error!,
+      );
+    }
+  }
+
+
+  Future<void> _onRemoteMissingTap(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    final accounts = context.read<AccountsService>();
+    final accountId = accounts.idForSource(track.sourceName);
+    if (accountId == null) {
+      AppSnack.error(context, unboundSourceMessage(l10n, track.sourceName));
+      return;
+    }
+    AppSnack.show(context, l10n.remoteMissingRetrying);
+    try {
+      final source = await context.read<WebDavService>().resolveStreamSource(
+        accountId: accountId,
+        remotePath: track.effectiveAudioRemotePath,
+        name: track.fileName,
+        kind: StreamKind.music,
+      );
+      if (!context.mounted) return;
+      if (source == null || source.uri.isEmpty) {
+        throw StateError('err.cloud.notFound|missing');
+      }
+      await context.read<LibraryService>().clearRemoteMissing(
+        sourceName: track.sourceName,
+        remotePath: track.remotePath,
+      );
+      if (!context.mounted) return;
+      await _onTap(context, isLocal: false);
+    } catch (e) {
+      if (!context.mounted) return;
+      final code = TaskError.classify(e).code;
+      if (code != 'err.cloud.notFound') {
+        AppSnack.error(context, TaskError.classify(e).detail);
+        return;
+      }
+      final action = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.remoteMissingTitle),
+          content: Text(l10n.remoteMissingBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'delete'),
+              child: Text(l10n.delete),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'redirect'),
+              child: Text(l10n.remoteMissingRedirect),
+            ),
+          ],
+        ),
+      );
+      if (!context.mounted || action == null || action == 'cancel') return;
+      if (action == 'delete') {
+        await destroyLibraryTracks(context, [track]);
+        return;
+      }
+      if (action == 'redirect') {
+        final picked = await pickWebDavFile(
+          context,
+          accountId: accountId,
+          musicOnly: true,
+        );
+        if (!context.mounted || picked == null) return;
+        await context.read<LibraryService>().retargetTrack(
+          track: track,
+          newRemotePath: picked.path,
+          newFileName: picked.name,
+        );
+      }
+    }
+  }
+
+  Future<void> _onLongPressMenu(
+    BuildContext context, {
+    required bool isLocal,
+  }) async {
+    final l10n = AppLocalizations.of(context)!;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.stream),
+              title: Text(l10n.actionStreamMusicOnce),
+              onTap: () => Navigator.pop(ctx, 'stream'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.checklist),
+              title: Text(l10n.select),
+              onTap: () => Navigator.pop(ctx, 'select'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (choice == 'select') {
+      onEnterSelect?.call();
+      return;
+    }
+    if (choice == 'stream') {
+      await _onTap(context, isLocal: false, forceStream: true);
+    }
   }
 
   static TrackInfo _toTrackInfo(

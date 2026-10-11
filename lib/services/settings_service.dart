@@ -89,6 +89,7 @@ class SettingsService extends ChangeNotifier {
   static const _kDownloadKeepAlive = 'download_keep_alive';
   static const _kDownloadNomedia = 'download_nomedia';
   static const _kMusicStreamPlayMode = 'music_stream_play_mode';
+  static const _kMusicDefaultStream = 'music_default_stream';
   static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
   static const _kAudioScanSubdirs = 'audio_scan_subdirs';
   static const _kAudioPlaylistMaxDepth = 'audio_playlist_max_depth';
@@ -243,6 +244,7 @@ class SettingsService extends ChangeNotifier {
   bool _videoBackgroundPlayback = true;
   MusicStreamPlayMode _musicStreamPlayMode = MusicStreamPlayMode.sequential;
   bool _audioStreamingEnabled = false;
+  bool _musicDefaultStream = false;
   bool _audioScanSubdirs = false;
   int _audioPlaylistMaxDepth = 1;
   bool _audioStreamSidecarCover = false;
@@ -429,6 +431,13 @@ class SettingsService extends ChangeNotifier {
   /// 音乐是否走流式传输。原来只有「文件后缀管理」页能改，现在归音频流式设置页。
   bool get audioStreamingEnabled => _audioStreamingEnabled;
 
+  /// Network-library music tap: stream when true, cache when false.
+  bool get musicDefaultStream => _musicDefaultStream;
+
+  FileAction get musicDefaultOpenAction => _musicDefaultStream
+      ? FileAction.streamMusic
+      : FileAction.cacheMusic;
+
   /// 音乐从网络库打开时的播放列表是否含子目录。默认关。键 `audio_scan_subdirs`。
   /// 与视频播列表、媒体库刮削 prefs **完全独立**。
   bool get audioScanSubdirs => _audioScanSubdirs;
@@ -588,6 +597,7 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getString(_kVideoTapAction),
     );
     _audioStreamingEnabled = _resolveAudioStreamingEnabled();
+
     // Persist the new-install default so a later file-action write cannot
     // make the next launch look like "config exists, switch missing → off".
     if (!_prefs!.containsKey(_kAudioStreamingEnabled) &&
@@ -595,6 +605,12 @@ class SettingsService extends ChangeNotifier {
       await _prefs!.setBool(_kAudioStreamingEnabled, true);
     }
     _fileActions = _readFileActions();
+    _musicDefaultStream =
+        _prefs!.getBool(_kMusicDefaultStream) ?? false;
+    if (!_prefs!.containsKey(_kMusicDefaultStream) &&
+        _fileActions.music == FileAction.streamMusic) {
+      _musicDefaultStream = true;
+    }
     _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
@@ -975,6 +991,13 @@ class SettingsService extends ChangeNotifier {
 
   /// 音乐流式传输开关。旧配置键 `experimental_music_streaming`（存在
   /// `file_action_config_json` 里）保留为**兼容读**，见 [_readFileActions]。
+  Future<void> setMusicDefaultStream(bool stream) async {
+    _musicDefaultStream = stream;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMusicDefaultStream, stream);
+    notifyListeners();
+  }
+
   Future<void> setAudioStreamingEnabled(bool enabled) async {
     _audioStreamingEnabled = enabled;
     _prefs ??= await SharedPreferences.getInstance();

@@ -9,6 +9,7 @@ import '../models/queue_task.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../utils/l10n_host.dart';
+import '../utils/task_error.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
 import 'library_service.dart';
@@ -274,9 +275,28 @@ class AudioPlayerService extends ChangeNotifier {
         startIndex: index,
         playable: playable,
       );
+      unawaited(
+        _library.clearRemoteMissing(
+          sourceName: track.sourceName,
+          remotePath: track.remotePath,
+        ),
+      );
       _startPrefetch(playlist, index, track.accountId);
     } catch (e) {
       _error = e.toString();
+      final classified = TaskError.classify(e);
+      final track = playlist[index];
+      final hasLocal = track.localPath != null &&
+          File(track.localPath!).existsSync();
+      if (!hasLocal && classified.code == 'err.cloud.notFound') {
+        unawaited(
+          _library.markRemoteMissing(
+            sourceName: track.sourceName,
+            remotePath: track.remotePath,
+            hasLocalCache: false,
+          ),
+        );
+      }
       try {
         await _handler.stop();
       } catch (_) {}

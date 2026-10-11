@@ -886,7 +886,12 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
   - 预载：`MusicPrefetchService`（挂在 AudioPlayerService；标签→封面→音频进 `prefetch_cache`）。已删 `MusicStreamScreen` 与 `AudioStreamEngine`。
   - 队列：网络库按当前路径 siblings；媒体库按列表/歌单。视频仍走 `VideoPlaybackService`（video mode）；音乐起播会 `exitVideoMode`，流式音乐不再占用 video mode。
   - 状态点：`streamable` / `ready` 主题色；红点未做。
-- 后续：红点 / 重定向、刮削执行器、设置「媒体库」改名等。
+- **红点 / 刮削 / 设置（§17.12 第 6–7 步）**：**已落地**。
+  - Schema v10：`tracks` / `cue_slices`.`remote_missing`；起播 404 写红点（有本地缓存跳过）；点红点再试 → 删除/重定向。
+  - `TaskKind.scan` 执行器 + 网络库多选「扫描入库」（先统计再入队，units 进度，增量只比路径）。
+  - `TaskKind.retagCloud` 执行器；设置「从云端更新标签」入队。
+  - 顶栏「媒体库」；音乐设置进子页；音乐默认打开（缓存/串流）独立 pref；后缀页音乐不再改默认打开；库长按「串流（仅本次）」。
+- 后续：列表封面桶细化、全量匹配任务（可选）等。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
 
@@ -979,8 +984,8 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 3. ~~遍历 / 深度（网络库音乐列表、视频列表、刮削深度分设）~~ **已落地**（三套独立 prefs，见上）
 4. ~~入库与预载（Range 标签先入库再预载；sidecar 保留）~~ **第一段已落地**（见上）
 5. ~~播放合一（同一套底部控件；串流 / 缓存只差本地文件）~~ **已落地**
-6. 红点 / 重定向（持久化、再试、删除 / 重定向选择器）
-7. 扫描与更新标签（多选并列、统计后刮削、从本地 / 从云端）
+6. ~~红点 / 重定向~~ **已落地**
+7. ~~扫描与更新标签~~ **已落地**
 
 ### 17.13 stream-tags（Range 读标签）依赖说明
 

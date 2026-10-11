@@ -87,7 +87,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeSeedValue => 'Brightness';
 
   @override
-  String get library => 'Music library';
+  String get library => 'Media library';
 
   @override
   String get playlists => 'Playlists';
@@ -4110,4 +4110,89 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get trackStateStreamable => 'Streamable';
+
+  @override
+  String get trackStateRemoteMissing => 'Missing on cloud';
+
+  @override
+  String get remoteMissingRetrying => 'Retrying remote…';
+
+  @override
+  String get remoteMissingTitle => 'File missing on cloud';
+
+  @override
+  String get remoteMissingBody =>
+      'Still not found. Delete the library row, or redirect to a new remote path?';
+
+  @override
+  String get remoteMissingRedirect => 'Redirect';
+
+  @override
+  String get actionStreamMusicOnce => 'Stream once';
+
+  @override
+  String get select => 'Select';
+
+  @override
+  String get mediaScanAction => 'Scan into library';
+
+  @override
+  String get mediaScanCounting => 'Counting tracks to scrape…';
+
+  @override
+  String get mediaScanConfirmTitle => 'Confirm scrape';
+
+  @override
+  String mediaScanConfirmBody(int count) {
+    return 'Will process $count tracks (paths not already in the library). Start?';
+  }
+
+  @override
+  String get mediaScanStart => 'Start scrape';
+
+  @override
+  String get mediaScanNothingNew => 'No new paths to ingest';
+
+  @override
+  String mediaScanQueued(int count) {
+    return 'Queued $count scrape tasks';
+  }
+
+  @override
+  String get mediaLibrarySettings => 'Media library settings';
+
+  @override
+  String get mediaLibrarySettingsHint =>
+      'Music default open, scrape depth, tag refresh';
+
+  @override
+  String get musicDefaultOpen => 'Music default open';
+
+  @override
+  String get musicDefaultOpenHint =>
+      'Default action when tapping music in the network library (cache or stream). Extension settings no longer set the music default.';
+
+  @override
+  String get musicDefaultCache => 'Cache then play';
+
+  @override
+  String get musicDefaultStream => 'Stream';
+
+  @override
+  String get musicDefaultInExtensionsHint =>
+      'Music default open moved to Settings → Media library.';
+
+  @override
+  String get refreshTagsFromLocal => 'Update tags from local';
+
+  @override
+  String get refreshTagsFromLocalHint =>
+      'Read tags and covers from cached audio';
+
+  @override
+  String get refreshTagsFromCloud => 'Update tags from cloud';
+
+  @override
+  String get refreshTagsFromCloudHint =>
+      'Queue Range fetches for tags and covers';
 }

@@ -10,6 +10,7 @@ import '../utils/track_identity.dart';
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
+/// Schema v10 adds `remote_missing` on tracks/cue_slices.
 /// Schema v9:
 /// - `accounts` — site (stable sourceName; display name separate)
 /// - `tracks` — music_id PK, library identity (survives cache clear)
@@ -26,7 +27,7 @@ class LibraryDatabase {
   Database? _db;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 9;
+  static const schemaVersion = 10;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -98,6 +99,7 @@ CREATE TABLE IF NOT EXISTS tracks (
   rev INTEGER NOT NULL DEFAULT 0,
   last_downloaded_at TEXT NOT NULL,
   last_tag_read_at TEXT NOT NULL,
+  remote_missing INTEGER NOT NULL DEFAULT 0,
   UNIQUE(source_name, remote_path)
 )
 ''');
@@ -143,6 +145,7 @@ CREATE TABLE IF NOT EXISTS cue_slices (
   rev INTEGER NOT NULL DEFAULT 0,
   last_downloaded_at TEXT NOT NULL,
   last_tag_read_at TEXT NOT NULL,
+  remote_missing INTEGER NOT NULL DEFAULT 0,
   UNIQUE(source_name, remote_path)
 )
 ''');

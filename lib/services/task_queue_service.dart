@@ -31,6 +31,11 @@ import 'dart:math';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'settings_service.dart';
+import 'stream_cover_reader.dart';
+import 'tag_service.dart';
+import '../models/webdav_stream.dart';
+import '../utils/directory_walk.dart';
+import '../utils/scan_candidates.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -453,6 +458,58 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (libraryRow) return TrackUiState.streamable;
     // Network browser: not downloaded and never enqueued — no status chip.
     return TrackUiState.remote;
+  }
+
+
+  /// Enqueue a media-library scrape for one root (file or folder).
+  Future<QueueTask> enqueueScan({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+    int? unitsTotal,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: fileName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.scan,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: unitsTotal,
+      unitsDone: 0,
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
+  /// Cloud retag (+ cover) for one library row.
+  Future<QueueTask> enqueueRetagCloud({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: fileName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.retagCloud,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: 1,
+      unitsDone: 0,
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
   }
 
   /// Enqueue download. If already completed/cached, returns existing task.
@@ -1369,13 +1426,14 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final now = DateTime.now();
     // 正在等退避 / 等网络的任务不算「可以跑」——否则 _pump 的 while(true)
     // 会空转，而且一个等待中的任务会把整条队列堵在后面。
-    // 外壳阶段：只有 download 有执行器；scan / retag 可入队展示，但不参与调度。
     final pending =
         tasks
             .where(
               (t) =>
                   t.status == TaskStatus.pending &&
-                  t.kind == TaskKind.download &&
+                  (t.kind == TaskKind.download ||
+                      t.kind == TaskKind.scan ||
+                      t.kind == TaskKind.retagCloud) &&
                   (t.nextRetryAt == null || !t.nextRetryAt!.isAfter(now)),
             )
             .toList()
@@ -1945,24 +2003,36 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> _runOne(QueueTask task) async {
     if (task.status != TaskStatus.pending) return;
-    if (task.kind != TaskKind.download) {
-      // No executor yet for scan / retag — should not be scheduled.
-      return;
-    }
     task.status = TaskStatus.active;
     task.progress = 0;
-    task.progressMode = TaskProgressMode.bytes;
+    task.progressMode = task.kind == TaskKind.download
+        ? TaskProgressMode.bytes
+        : TaskProgressMode.units;
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
 
     final token = CancelToken();
     _cancelTokens[task.id] = token;
-    if (task.target == DownloadTarget.cache) {
-      await _runCacheDownload(task, token);
-    } else {
-      await _runPublicDownload(task, token);
+    try {
+      switch (task.kind) {
+        case TaskKind.download:
+          if (task.target == DownloadTarget.cache) {
+            await _runCacheDownload(task, token);
+          } else {
+            await _runPublicDownload(task, token);
+          }
+        case TaskKind.scan:
+          await _runScan(task, token);
+        case TaskKind.retagCloud:
+          await _runRetagCloud(task, token);
+        case TaskKind.retagLocal:
+          // Local retag stays interactive (settings); not scheduled here.
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+      }
+    } finally {
+      _cancelTokens.remove(task.id);
     }
-    _cancelTokens.remove(task.id);
     // Status changed (one file finished, the next is about to start): refresh the
     // aggregate notification so pending/running counts stay honest.
     _publishProgress();
@@ -2147,4 +2217,134 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     return map;
   }
+
+  Future<void> _runScan(QueueTask task, CancelToken token) async {
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+    final library = _library;
+    if (library == null) {
+      throw StateError('err.unknown|library unavailable');
+    }
+    final walk = _settings?.mediaScanWalkOptions ?? const WalkOptions();
+    final rootIsFile = !task.fileName.contains('/') &&
+        _isMusicFile(task.fileName) &&
+        !task.remotePath.endsWith('/');
+    final candidates = await collectScanCandidates(
+      webDav: _webDav,
+      accountId: accountId,
+      sourceName: task.sourceName,
+      rootPath: task.remotePath,
+      rootIsFile: rootIsFile,
+      walk: walk,
+      isMusic: _isMusicFile,
+      alreadyInLibrary: (path) => library.find(task.sourceName, path) != null,
+      cancel: token,
+    );
+    task.unitsTotal = candidates.length;
+    task.unitsDone = 0;
+    task.syncProgressFromCounters();
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    final covers = StreamCoverReader();
+    var done = 0;
+    for (final item in candidates) {
+      if (token.isCancelled) {
+        task.status = TaskStatus.cancelled;
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return;
+      }
+      try {
+        if (library.find(task.sourceName, item.path) != null) {
+          done++;
+          await reportUnitsProgress(
+            task.id,
+            done: done,
+            total: candidates.length,
+          );
+          continue;
+        }
+        final source = await _webDav.resolveStreamSource(
+          remotePath: item.path,
+          name: item.name,
+          accountId: accountId,
+          kind: StreamKind.music,
+        );
+        if (source == null || source.uri.isEmpty) {
+          throw StateError('err.cloud.notFound|${item.path}');
+        }
+        final tags = await covers.extractTags(source, cancel: token);
+        await library.ingestFromTags(
+          sourceName: task.sourceName,
+          remotePath: item.path,
+          fileName: item.name,
+          tags: tags ?? const ReadTags(),
+        );
+      } catch (e) {
+        if (token.isCancelled || (e is DioException && CancelToken.isCancel(e))) {
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+          notifyListeners();
+          return;
+        }
+        task.errorMessage = TaskError.classify(e).persisted;
+        debugPrint('scan unit failed ${item.path}: $e');
+      }
+      done++;
+      await reportUnitsProgress(task.id, done: done, total: candidates.length);
+    }
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    task.progress = 1;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+  Future<void> _runRetagCloud(QueueTask task, CancelToken token) async {
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+    final library = _library;
+    if (library == null) {
+      throw StateError('err.unknown|library unavailable');
+    }
+    task.unitsTotal = 1;
+    task.unitsDone = 0;
+    await reportUnitsProgress(task.id, done: 0, total: 1);
+    final source = await _webDav.resolveStreamSource(
+      remotePath: task.remotePath,
+      name: task.fileName,
+      accountId: accountId,
+      kind: StreamKind.music,
+    );
+    if (source == null || source.uri.isEmpty) {
+      throw StateError('err.cloud.notFound|${task.remotePath}');
+    }
+    final tags = await StreamCoverReader().extractTags(source, cancel: token);
+    if (tags == null) {
+      throw StateError('err.unknown|no tags');
+    }
+    await library.ingestFromTags(
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+      fileName: task.fileName,
+      tags: tags,
+    );
+    await library.clearRemoteMissing(
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+    );
+    task.unitsDone = 1;
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    task.progress = 1;
+    await reportUnitsProgress(task.id, done: 1, total: 1);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
 }

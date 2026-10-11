@@ -335,7 +335,76 @@ class LibraryService extends ChangeNotifier {
     return track;
   }
 
-  /// Upsert tags (and optional cover) without requiring a local audio file.
+  /// Persist confirmed cloud absence (list red-dot). Skip when [hasLocalCache].
+  Future<void> markRemoteMissing({
+    required String sourceName,
+    required String remotePath,
+    bool hasLocalCache = false,
+  }) async {
+    if (hasLocalCache) return;
+    final existing = find(sourceName, remotePath);
+    if (existing == null) return;
+    if (existing.remoteMissing) return;
+    existing.remoteMissing = true;
+    existing.rev = _nextRev();
+    await _db.upsertTrack(existing);
+    notifyListeners();
+  }
+
+  Future<void> clearRemoteMissing({
+    required String sourceName,
+    required String remotePath,
+  }) async {
+    final existing = find(sourceName, remotePath);
+    if (existing == null || !existing.remoteMissing) return;
+    existing.remoteMissing = false;
+    existing.rev = _nextRev();
+    await _db.upsertTrack(existing);
+    notifyListeners();
+  }
+
+  /// Point a library row at a new remote path (redirect after missing).
+  Future<LibraryTrack> retargetTrack({
+    required LibraryTrack track,
+    required String newRemotePath,
+    String? newFileName,
+  }) async {
+    final name = newFileName ?? newRemotePath.split('/').where((s) => s.isNotEmpty).last;
+    await _db.deleteTrack(track.sourceName, track.remotePath);
+    _tracks.removeWhere(
+      (t) => t.sourceName == track.sourceName && t.remotePath == track.remotePath,
+    );
+    final next = LibraryTrack(
+      sourceName: track.sourceName,
+      remotePath: newRemotePath,
+      fileName: name.isEmpty ? track.fileName : name,
+      title: track.title,
+      artist: track.artist,
+      albumArtist: track.albumArtist,
+      album: track.album,
+      durationMs: track.durationMs,
+      trackNumber: track.trackNumber,
+      trackTotal: track.trackTotal,
+      discNumber: track.discNumber,
+      discTotal: track.discTotal,
+      year: track.year,
+      genre: track.genre,
+      bitrate: track.bitrate,
+      sampleRate: track.sampleRate,
+      coverPath: track.coverPath,
+      cacheGroupId: track.cacheGroupId,
+      rev: _nextRev(),
+      lastDownloadedAt: track.lastDownloadedAt,
+      lastTagReadAt: track.lastTagReadAt,
+      remoteMissing: false,
+    );
+    await _db.upsertTrack(next);
+    _tracks.add(next);
+    notifyListeners();
+    return next;
+  }
+
+    /// Upsert tags (and optional cover) without requiring a local audio file.
   ///
   /// Used after HTTP Range / stream tag reads. Does **not** bump
   /// [LibraryTrack.lastDownloadedAt] — a later [ingestDownloaded] still

@@ -85,7 +85,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeSeedValue => '明度';
 
   @override
-  String get library => '音乐库';
+  String get library => '媒体库';
 
   @override
   String get playlists => '歌单';
@@ -3928,6 +3928,85 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get trackStateStreamable => '可串流';
+
+  @override
+  String get trackStateRemoteMissing => '云端不存在';
+
+  @override
+  String get remoteMissingRetrying => '正在重试远端…';
+
+  @override
+  String get remoteMissingTitle => '云端文件不存在';
+
+  @override
+  String get remoteMissingBody => '再试仍找不到。删除库内条目，或重定向到新的远端路径？';
+
+  @override
+  String get remoteMissingRedirect => '重定向';
+
+  @override
+  String get actionStreamMusicOnce => '串流播放（仅本次）';
+
+  @override
+  String get select => '多选';
+
+  @override
+  String get mediaScanAction => '扫描入库';
+
+  @override
+  String get mediaScanCounting => '正在统计将刮削的曲目…';
+
+  @override
+  String get mediaScanConfirmTitle => '确认刮削';
+
+  @override
+  String mediaScanConfirmBody(int count) {
+    return '将处理 $count 首（仅路径不在库中的）。开始？';
+  }
+
+  @override
+  String get mediaScanStart => '开始刮削';
+
+  @override
+  String get mediaScanNothingNew => '没有需要入库的新路径';
+
+  @override
+  String mediaScanQueued(int count) {
+    return '已加入 $count 个刮削任务';
+  }
+
+  @override
+  String get mediaLibrarySettings => '媒体库设置';
+
+  @override
+  String get mediaLibrarySettingsHint => '音乐默认打开、刮削深度、标签更新';
+
+  @override
+  String get musicDefaultOpen => '音乐默认打开方式';
+
+  @override
+  String get musicDefaultOpenHint => '网络库点按音乐时的默认动作（缓存或串流）。后缀页不再管理音乐默认打开。';
+
+  @override
+  String get musicDefaultCache => '缓存后播放';
+
+  @override
+  String get musicDefaultStream => '串流播放';
+
+  @override
+  String get musicDefaultInExtensionsHint => '音乐默认打开已移至「设置 → 媒体库」。';
+
+  @override
+  String get refreshTagsFromLocal => '从本地更新标签';
+
+  @override
+  String get refreshTagsFromLocalHint => '读取已缓存音频的标签与封面';
+
+  @override
+  String get refreshTagsFromCloud => '从云端更新标签';
+
+  @override
+  String get refreshTagsFromCloudHint => '以任务队列 Range 拉取标签与封面';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -4010,7 +4089,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get themeSeedValue => '明度';
 
   @override
-  String get library => '音樂庫';
+  String get library => '媒體庫';
 
   @override
   String get playlists => '歌單';
@@ -7854,4 +7933,83 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get trackStateStreamable => '可串流';
+
+  @override
+  String get trackStateRemoteMissing => '雲端不存在';
+
+  @override
+  String get remoteMissingRetrying => '正在重試遠端…';
+
+  @override
+  String get remoteMissingTitle => '雲端檔案不存在';
+
+  @override
+  String get remoteMissingBody => '再試仍找不到。刪除庫內條目，或重新導向到新的遠端路徑？';
+
+  @override
+  String get remoteMissingRedirect => '重新導向';
+
+  @override
+  String get actionStreamMusicOnce => '串流播放（僅本次）';
+
+  @override
+  String get select => '多選';
+
+  @override
+  String get mediaScanAction => '掃描入庫';
+
+  @override
+  String get mediaScanCounting => '正在統計將刮削的曲目…';
+
+  @override
+  String get mediaScanConfirmTitle => '確認刮削';
+
+  @override
+  String mediaScanConfirmBody(int count) {
+    return '將處理 $count 首（僅路徑不在庫中的）。開始？';
+  }
+
+  @override
+  String get mediaScanStart => '開始刮削';
+
+  @override
+  String get mediaScanNothingNew => '沒有需要入庫的新路徑';
+
+  @override
+  String mediaScanQueued(int count) {
+    return '已加入 $count 個刮削任務';
+  }
+
+  @override
+  String get mediaLibrarySettings => '媒體庫設定';
+
+  @override
+  String get mediaLibrarySettingsHint => '音樂預設開啟、刮削深度、標籤更新';
+
+  @override
+  String get musicDefaultOpen => '音樂預設開啟方式';
+
+  @override
+  String get musicDefaultOpenHint => '網路庫點按音樂時的預設動作（快取或串流）。副檔名頁不再管理音樂預設開啟。';
+
+  @override
+  String get musicDefaultCache => '快取後播放';
+
+  @override
+  String get musicDefaultStream => '串流播放';
+
+  @override
+  String get musicDefaultInExtensionsHint => '音樂預設開啟已移至「設定 → 媒體庫」。';
+
+  @override
+  String get refreshTagsFromLocal => '從本機更新標籤';
+
+  @override
+  String get refreshTagsFromLocalHint => '讀取已快取音訊的標籤與封面';
+
+  @override
+  String get refreshTagsFromCloud => '從雲端更新標籤';
+
+  @override
+  String get refreshTagsFromCloudHint => '以任務佇列 Range 拉取標籤與封面';
 }

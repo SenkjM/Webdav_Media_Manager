@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/account_capabilities.dart';
+import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/webdav_service.dart';
@@ -381,4 +382,139 @@ Future<String> resolveAvailableRemotePath({
     if (!taken.contains(candidate)) return '$parent$candidate';
   }
   return '$parent$name';
+}
+
+
+/// Pick a single music file for library redirect.
+Future<WebDavItem?> pickWebDavFile(
+  BuildContext context, {
+  required String accountId,
+  bool musicOnly = true,
+  String initialPath = '/',
+}) {
+  return Navigator.of(context).push<WebDavItem>(
+    MaterialPageRoute(
+      builder: (_) => _WebDavFilePickerScreen(
+        accountId: accountId,
+        musicOnly: musicOnly,
+        initialPath: initialPath,
+      ),
+    ),
+  );
+}
+
+class _WebDavFilePickerScreen extends StatefulWidget {
+  const _WebDavFilePickerScreen({
+    required this.accountId,
+    required this.musicOnly,
+    required this.initialPath,
+  });
+
+  final String accountId;
+  final bool musicOnly;
+  final String initialPath;
+
+  @override
+  State<_WebDavFilePickerScreen> createState() =>
+      _WebDavFilePickerScreenState();
+}
+
+class _WebDavFilePickerScreenState extends State<_WebDavFilePickerScreen> {
+  final List<String> _stack = ['/'];
+  List<WebDavItem> _items = const [];
+  bool _loading = false;
+  String? _error;
+
+  String get _path => _stack.last;
+
+  @override
+  void initState() {
+    super.initState();
+    _stack.addAll(remoteAncestors(widget.initialPath));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final items = await context.read<WebDavService>().listDirectory(
+        widget.accountId,
+        _path,
+      );
+      if (!mounted) return;
+      setState(() {
+        _items = items
+            .where(
+              (e) =>
+                  e.isDirectory ||
+                  !widget.musicOnly ||
+                  e.category == FileCategory.music,
+            )
+            .toList();
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = webDavErrorMessage(e, AppLocalizations.of(context)!);
+        _loading = false;
+        _items = const [];
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(l10n.remoteMissingRedirect),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(child: Text(_error!))
+              : ListView.builder(
+                  itemCount: _items.length + (_stack.length > 1 ? 1 : 0),
+                  itemBuilder: (context, i) {
+                    if (_stack.length > 1 && i == 0) {
+                      return ListTile(
+                        leading: const Icon(Icons.arrow_upward),
+                        title: Text(l10n.parentFolder),
+                        onTap: () {
+                          _stack.removeLast();
+                          _load();
+                        },
+                      );
+                    }
+                    final item = _items[i - (_stack.length > 1 ? 1 : 0)];
+                    if (item.isDirectory) {
+                      return ListTile(
+                        leading: const Icon(
+                          Icons.folder_rounded,
+                          color: AppColors.accent,
+                        ),
+                        title: Text(item.name),
+                        onTap: () {
+                          _stack.add(item.path);
+                          _load();
+                        },
+                      );
+                    }
+                    return ListTile(
+                      leading: const Icon(Icons.audiotrack),
+                      title: Text(item.name),
+                      onTap: () => Navigator.pop(context, item),
+                    );
+                  },
+                ),
+    );
+  }
 }
