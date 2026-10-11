@@ -1685,14 +1685,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         total += candidates.length;
       }
     } catch (e) {
-      if (context.mounted) Navigator.of(context).pop();
+      // Counting dialog used default root navigator — pop the same stack.
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
       if (context.mounted) {
         AppSnack.error(context, TaskError.classify(e).detail);
       }
       return;
     }
     if (!context.mounted) return;
-    Navigator.of(context).pop();
+    Navigator.of(context, rootNavigator: true).pop();
 
     final go = await showDialog<bool>(
       context: context,
