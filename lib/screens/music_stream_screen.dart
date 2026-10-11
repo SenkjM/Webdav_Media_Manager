@@ -27,6 +27,10 @@ import '../utils/audio_extensions.dart';
 import 'video_player_screen.dart' show VideoQueueSeed;
 
 /// 音乐流式播放界面。
+///
+/// **过渡**：库内未缓存点播也走本页（与网络流式同一引擎 / 媒体会话）。
+/// 长期目标是并进 [AudioPlayerService] 与底部控件；本页可视为薄封装，勿再
+/// 扩展旁路能力。
 
 /// 为什么单独一个界面，而不是复用视频播放页：
 
@@ -147,6 +151,9 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
         if (current != null && current != remotePath) return;
         setState(() => _tags = tags);
       },
+      onIngestTags: (remotePath, fileName, tags) {
+        unawaited(_ingestStreamTags(remotePath, tags, fileName: fileName));
+      },
       namesFor: (path) => _queue?.namesFor(path),
       listNames: _listCoverNames,
       libraryCover: _libraryCover,
@@ -158,6 +165,32 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   }
 
   void _onStreamSettings() => _engine?.nudge();
+
+
+  /// Persist Range / prefetch tags into the music library (covers → covers/).
+  Future<void> _ingestStreamTags(
+    String remotePath,
+    ReadTags tags, {
+    String? fileName,
+  }) async {
+    if (!mounted) return;
+    final id = _engine?.accountId;
+    if (id == null || id.isEmpty) return;
+    final account = context.read<AccountsService>().accountById(id);
+    if (account == null) return;
+    final derived = remotePath.split('/').where((s) => s.isNotEmpty).last;
+    final name = (fileName != null && fileName.isNotEmpty) ? fileName : derived;
+    try {
+      await context.read<LibraryService>().ingestFromTags(
+        sourceName: account.name,
+        remotePath: remotePath,
+        fileName: name.isEmpty ? remotePath : name,
+        tags: tags,
+      );
+    } catch (_) {
+      // Best-effort; streaming must not fail because of library upsert.
+    }
+  }
 
   String? _libraryCover(String remotePath) {
     if (!mounted) return null;

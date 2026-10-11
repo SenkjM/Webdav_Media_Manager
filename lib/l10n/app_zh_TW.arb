@@ -1147,5 +1147,6 @@
   "mediaScanRecursiveHint": "預設開。關閉則刮削只處理選取的目前這一層。",
   "mediaScanMaxDepth": "刮削最大深度",
   "mediaScanMaxDepthHint": "預設 1。與播放清單深度 prefs 不共用。",
-  "lyricsSourceEmbedded": "內嵌歌詞"
+  "lyricsSourceEmbedded": "內嵌歌詞",
+  "trackStateStreamable": "可串流"
 }

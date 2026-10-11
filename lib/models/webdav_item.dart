@@ -134,4 +134,13 @@ class TrackInfo {
   }
 }
 
-enum TrackUiState { remote, queued, downloading, ready, playing, error }
+enum TrackUiState {
+  remote,
+  /// In library (or known playable) but no local audio cache yet.
+  streamable,
+  queued,
+  downloading,
+  ready,
+  playing,
+  error,
+}

@@ -3925,6 +3925,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get lyricsSourceEmbedded => '内嵌歌词';
+
+  @override
+  String get trackStateStreamable => '可串流';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7848,4 +7851,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get lyricsSourceEmbedded => '內嵌歌詞';
+
+  @override
+  String get trackStateStreamable => '可串流';
 }

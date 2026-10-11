@@ -12,32 +12,39 @@ class TrackStatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Undownloaded / never queued: no badge (filename only).
+    // Network-browser "never touched": no badge.
     if (state == TrackUiState.remote) {
       return const SizedBox.shrink();
     }
 
     final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
+    // Cached / streamable / downloading use theme normal colors — not grey / warning red.
     final (label, color, icon) = switch (state) {
-      TrackUiState.remote => ('', AppColors.mutedText, Icons.circle_outlined),
+      TrackUiState.remote => ('', scheme.outline, Icons.circle_outlined),
+      TrackUiState.streamable => (
+        l10n.trackStateStreamable,
+        scheme.primary,
+        Icons.stream,
+      ),
       TrackUiState.queued => (
         l10n.trackStateQueued,
-        AppColors.mutedText,
+        scheme.secondary,
         Icons.schedule,
       ),
       TrackUiState.downloading => (
         l10n.trackStateDownloading,
-        AppColors.accent,
+        scheme.primary,
         Icons.downloading,
       ),
       TrackUiState.ready => (
         l10n.trackStateReady,
-        const Color(0xFF66BB6A),
+        scheme.tertiary,
         Icons.check_circle_outline,
       ),
       TrackUiState.playing => (
         l10n.trackStatePlaying,
-        AppColors.accent,
+        scheme.primary,
         Icons.equalizer,
       ),
       TrackUiState.error => (

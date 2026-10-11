@@ -879,7 +879,13 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
   2. 音乐网络库播列表：`audio_scan_subdirs`（默认关）+ `audio_playlist_max_depth`
   3. 媒体库刮削：`media_scan_recursive`（默认**开**）+ `media_scan_max_depth`
   图片 `image_scan_subdirs` 保持独立、不复用。视频/音乐渐进扫描已接 WalkOptions；刮削执行器未做。
-- 后续步（入库与预载起）未开工。
+- **入库与预载 / 播放收口起步（§17.12 第 4–5 步部分）**：已落地第一段。
+  - Range 标签：cherry-pick `ebe8424` → 本分支 `StreamCoverReader.extractTags` / 歌词可用。
+  - 入库：`LibraryService.ingestFromTags`（流式 / 预载读到的 `ReadTags` upsert `tracks`，封面进 `covers/`；**不**改 `lastDownloadedAt`；完整 `ingestDownloaded` 仍可覆盖）。DB schema **未**加 `tag_source` 列（用 `lastTagReadAt` + 是否有下载时间区分）。
+  - 预载：统一走 `AudioStreamEngine`；邻居标签经 `onIngestTags` **先入库再**继续封面/音频预载窗口。
+  - 播放：库内有本地文件 → `AudioPlayerService.playTrack`；无文件 → `MusicStreamScreen`（共享媒体会话；页头标明过渡，待并进底部控件）。
+  - 状态点：库行无缓存为 `TrackUiState.streamable`（主题 primary）；有缓存 `ready` 用 tertiary；红点持久化未做。
+- 后续：底部控件完全合一、红点 / 重定向、刮削执行器。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
 
@@ -970,16 +976,15 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 1. ~~错误模型（短码 + 详情全文）~~ **已落地**
 2. ~~任务队列外壳（改名、`kind`、列表 / 详情）~~ **已落地**
 3. ~~遍历 / 深度（网络库音乐列表、视频列表、刮削深度分设）~~ **已落地**（三套独立 prefs，见上）
-4. 入库与预载（Range 标签先入库再预载；sidecar 保留）
-5. 播放合一（同一套底部控件；串流 / 缓存只差本地文件）
+4. ~~入库与预载（Range 标签先入库再预载；sidecar 保留）~~ **第一段已落地**（见上）
+5. 播放合一（同一套底部控件；串流 / 缓存只差本地文件）— **起步**：库内未缓存可点播；MiniPlayer 仍主要跟本地队列
 6. 红点 / 重定向（持久化、再试、删除 / 重定向选择器）
 7. 扫描与更新标签（多选并列、统计后刮削、从本地 / 从云端）
 
 ### 17.13 stream-tags（Range 读标签）依赖说明
 
 - 提交 `ebe8424`（`feat: read stream tags, cover and lyrics over HTTP Range`）在分支 `feat/stream-tags`，**尚未合入 `main`**。
-- 本改动若要用其 Range 读标签 / 封面 / 歌词能力：在实现「入库与预载」步时**cherry-pick 或按需重做**，**不要假装该能力已在 main**。
-- 合入前本分支文档与代码均按「main 无此能力」规划接口边界。
+- **本分支已 cherry-pick** 该能力（见落地进度）；`main` 仍无。勿在合入 main 前假装全树已有。
 
 ### 17.14 未决
 

@@ -4107,4 +4107,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get lyricsSourceEmbedded => 'Embedded lyrics';
+
+  @override
+  String get trackStateStreamable => 'Streamable';
 }

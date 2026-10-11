@@ -22,6 +22,11 @@ import '../widgets/library_cover_art.dart';
 import '../widgets/selection_toolbar.dart';
 import '../widgets/track_status_chip.dart';
 import 'home_shell.dart';
+import 'music_stream_screen.dart';
+import 'video_player_screen.dart' show VideoQueueSeed;
+import '../models/file_type_config.dart';
+import '../models/webdav_stream.dart';
+import '../services/webdav_service.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -1058,11 +1063,15 @@ class _TrackTile extends StatelessWidget {
       track.effectiveAudioRemotePath,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,
+      libraryRow: true,
     );
     final showChip =
-        task != null &&
-        state != TrackUiState.ready &&
-        state != TrackUiState.playing;
+        state == TrackUiState.streamable ||
+        state == TrackUiState.queued ||
+        state == TrackUiState.downloading ||
+        state == TrackUiState.error ||
+        state == TrackUiState.ready ||
+        state == TrackUiState.playing;
     final isDownloading = state == TrackUiState.downloading;
     return ListTile(
       selected: selected,
@@ -1101,7 +1110,7 @@ class _TrackTile extends StatelessWidget {
             AppLocalizations.of(context)!
                 .downloadingPercent((task.progress * 100).toStringAsFixed(0))
           else if (!isLocal)
-            AppLocalizations.of(context)!.notDownloaded,
+            AppLocalizations.of(context)!.trackStateStreamable,
           track.displayArtistFor(AppLocalizations.of(context)!),
           if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
         ].join(' · '),
@@ -1120,13 +1129,13 @@ class _TrackTile extends StatelessWidget {
               padding: const EdgeInsets.only(right: 6),
               child: TrackStatusChip(
                 state: state,
-                progress: isDownloading ? task.progress : null,
+                progress: isDownloading ? task?.progress : null,
               ),
             ),
           Tooltip(
             message: isLocal
                 ? AppLocalizations.of(context)!.downloaded
-                : AppLocalizations.of(context)!.tapToDownload,
+                : AppLocalizations.of(context)!.trackStateStreamable,
             child: Container(
               width: 10,
               height: 10,
@@ -1134,12 +1143,13 @@ class _TrackTile extends StatelessWidget {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: isLocal
-                    ? AppColors.localReady
-                    : AppColors.remotePlaceholder,
+                    ? Theme.of(context).colorScheme.tertiary
+                    : Theme.of(context).colorScheme.primary,
                 border: Border.all(
-                  color: isLocal
-                      ? AppColors.localReady.withValues(alpha: 0.4)
-                      : Theme.of(context).colorScheme.outlineVariant,
+                  color: (isLocal
+                          ? Theme.of(context).colorScheme.tertiary
+                          : Theme.of(context).colorScheme.primary)
+                      .withValues(alpha: 0.4),
                   width: 1,
                 ),
               ),
@@ -1165,12 +1175,16 @@ class _TrackTile extends StatelessWidget {
   }
 
   Future<void> _onTap(BuildContext context, {required bool isLocal}) async {
-    if (!isLocal) {
-      await enqueueLibraryTrackDownload(context, track);
-      return;
-    }
     final accountsService = context.read<AccountsService>();
     if (!accountsService.isSourceBound(track.sourceName)) {
+      AppSnack.error(
+        context,
+        unboundSourceMessage(AppLocalizations.of(context)!, track.sourceName),
+      );
+      return;
+    }
+    final accountId = accountsService.idForSource(track.sourceName);
+    if (accountId == null || accountId.isEmpty) {
       AppSnack.error(
         context,
         unboundSourceMessage(AppLocalizations.of(context)!, track.sourceName),
@@ -1183,36 +1197,75 @@ class _TrackTile extends StatelessWidget {
       track.effectiveAudioRemotePath,
       sourceName: track.sourceName,
     );
-    if (local == null) {
-      // Race: cache deleted between check and play — treat as download link.
-      if (context.mounted) {
-        await enqueueLibraryTrackDownload(context, track);
+    if (local != null) {
+      final localPlaylist = <TrackInfo>[];
+      for (final t in playlist) {
+        final path = await cache.localPathIfCached(
+          t.effectiveAudioRemotePath,
+          sourceName: t.sourceName,
+        );
+        if (path == null) continue;
+        localPlaylist.add(
+          _toTrackInfo(t, path, accountsService.idForSource(t.sourceName) ?? ''),
+        );
       }
+      final info = _toTrackInfo(track, local, accountId);
+      if (localPlaylist.isEmpty) localPlaylist.add(info);
+      if (!context.mounted) return;
+      await player.playTrack(info, playlist: localPlaylist);
       return;
     }
-    // Only local tracks enter the play queue.
-    final accounts = context.read<AccountsService>();
-    final localPlaylist = <TrackInfo>[];
-    for (final t in playlist) {
-      final path = await cache.localPathIfCached(
-        t.effectiveAudioRemotePath,
-        sourceName: t.sourceName,
-      );
-      if (path == null) continue;
-      localPlaylist.add(
-        _toTrackInfo(t, path, accounts.idForSource(t.sourceName) ?? ''),
-      );
-    }
-    final info = _toTrackInfo(
-      track,
-      local,
-      accounts.idForSource(track.sourceName) ?? '',
-    );
-    if (localPlaylist.isEmpty) {
-      localPlaylist.add(info);
-    }
+
+    // No local file: stream via MusicStreamScreen (shared media session).
+    // Full AudioPlayerService merge lands later; this step unlocks library play.
     if (!context.mounted) return;
-    await player.playTrack(info, playlist: localPlaylist);
+    final current = _toWebDavItem(track);
+    final siblings = [
+      for (final t in playlist)
+        if (!t.isCueVirtual) _toWebDavItem(t),
+    ];
+    if (siblings.isEmpty) siblings.add(current);
+    final folder = current.path.contains('/')
+        ? current.path.substring(0, current.path.lastIndexOf('/'))
+        : '/';
+    final folderPath = folder.isEmpty ? '/' : folder;
+    final source = await context.read<WebDavService>().resolveStreamSource(
+      accountId: accountId,
+      remotePath: current.path,
+      name: current.name,
+      kind: StreamKind.music,
+    );
+    if (!context.mounted) return;
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => MusicStreamScreen(
+          source: source,
+          sourceLoader: source != null
+              ? null
+              : () => context.read<WebDavService>().resolveStreamSource(
+                    accountId: accountId,
+                    remotePath: current.path,
+                    name: current.name,
+                    kind: StreamKind.music,
+                  ),
+          seed: VideoQueueSeed(
+            accountId: accountId,
+            folderPath: folderPath,
+            siblings: siblings,
+            current: current,
+          ),
+        ),
+      ),
+    );
+  }
+
+  static WebDavItem _toWebDavItem(LibraryTrack track) {
+    return WebDavItem(
+      name: track.fileName,
+      path: track.effectiveAudioRemotePath,
+      isDirectory: false,
+      category: FileCategory.music,
+    );
   }
 
   static TrackInfo _toTrackInfo(

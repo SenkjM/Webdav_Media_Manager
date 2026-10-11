@@ -6880,6 +6880,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'内嵌歌词'**
   String get lyricsSourceEmbedded;
+
+  /// Library row with no local cache but streamable
+  ///
+  /// In zh, this message translates to:
+  /// **'可串流'**
+  String get trackStateStreamable;
 }
 
 class _AppLocalizationsDelegate

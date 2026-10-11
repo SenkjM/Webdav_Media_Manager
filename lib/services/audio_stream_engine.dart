@@ -37,6 +37,7 @@ class AudioStreamEngine {
     required this.sidecarNames,
     required this.onCover,
     required this.onTags,
+    this.onIngestTags,
     required this.namesFor,
     required this.listNames,
     required this.libraryCover,
@@ -54,6 +55,9 @@ class AudioStreamEngine {
   final String Function() sidecarNames;
   final void Function(String? path) onCover;
   final void Function(String remotePath, ReadTags? tags) onTags;
+  /// Fired for every successfully extracted tag set (current + neighbors).
+  final void Function(String remotePath, String fileName, ReadTags tags)?
+  onIngestTags;
   final List<String>? Function(String remotePath) namesFor;
   final Future<List<String>> Function(String remotePath) listNames;
   final String? Function(String remotePath) libraryCover;
@@ -513,6 +517,7 @@ class AudioStreamEngine {
           if (gen != _gen || (token?.isCancelled ?? false)) return true;
           if (tags != null) {
             _tags[item.path] = tags;
+            onIngestTags?.call(item.path, item.name, tags);
             if (show) _emitTags(item.path, tags);
             final bytes = tags.coverBytes;
             if (!haveCover && bytes != null && bytes.isNotEmpty) {
@@ -580,6 +585,12 @@ class AudioStreamEngine {
     }
     final tags = await _tagService.readFromFile(localPath);
     _tags[remotePath] = tags;
+    final name = remotePath.split('/').where((s) => s.isNotEmpty).last;
+    onIngestTags?.call(
+      remotePath,
+      name.isEmpty ? remotePath : name,
+      tags,
+    );
     if (show) _emitTags(remotePath, tags);
   }
 

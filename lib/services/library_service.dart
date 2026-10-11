@@ -335,6 +335,73 @@ class LibraryService extends ChangeNotifier {
     return track;
   }
 
+  /// Upsert tags (and optional cover) without requiring a local audio file.
+  ///
+  /// Used after HTTP Range / stream tag reads. Does **not** bump
+  /// [LibraryTrack.lastDownloadedAt] — a later [ingestDownloaded] still
+  /// overwrites tags and records the download time.
+  Future<LibraryTrack> ingestFromTags({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+    required ReadTags tags,
+  }) async {
+    final now = DateTime.now();
+    final existing = await _db.getTrack(sourceName, remotePath);
+    String? coverPath = existing?.coverPath;
+    if (tags.coverBytes != null && tags.coverBytes!.isNotEmpty) {
+      coverPath = await _covers.saveThumb(
+        sourceName: sourceName,
+        remotePath: remotePath,
+        bytes: tags.coverBytes!,
+      );
+      await _covers.saveFull(
+        sourceName: sourceName,
+        remotePath: remotePath,
+        bytes: tags.coverBytes!,
+      );
+    } else if (coverPath != null && !File(coverPath).existsSync()) {
+      coverPath = null;
+    }
+
+    final track = LibraryTrack(
+      musicId: existing?.musicId,
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: fileName,
+      title: tags.title ?? existing?.title,
+      artist: tags.artist ?? existing?.artist,
+      albumArtist: tags.albumArtist ?? existing?.albumArtist,
+      album: tags.album ?? existing?.album,
+      durationMs: tags.durationMs ?? existing?.durationMs,
+      trackNumber: tags.trackNumber ?? existing?.trackNumber,
+      trackTotal: tags.trackTotal ?? existing?.trackTotal,
+      discNumber: tags.discNumber ?? existing?.discNumber,
+      discTotal: tags.discTotal ?? existing?.discTotal,
+      year: tags.year ?? existing?.year,
+      genre: tags.genre ?? existing?.genre,
+      bitrate: tags.bitrate ?? existing?.bitrate,
+      sampleRate: tags.sampleRate ?? existing?.sampleRate,
+      coverPath: coverPath,
+      cacheGroupId: existing?.cacheGroupId,
+      rev: _nextRev(),
+      lastDownloadedAt: existing?.lastDownloadedAt ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      lastTagReadAt: now,
+    );
+    await _db.upsertTrack(track);
+    final idx = _tracks.indexWhere(
+      (t) => t.sourceName == sourceName && t.remotePath == remotePath,
+    );
+    if (idx >= 0) {
+      _tracks[idx] = track;
+    } else {
+      _tracks.add(track);
+    }
+    notifyListeners();
+    return track;
+  }
+
   /// Re-read tags from an already cached, non-CUE audio file and replace its
   /// library metadata. CUE slices must be refreshed as a whole album.
   Future<LibraryTrack> refreshTrackTagsFromFile({

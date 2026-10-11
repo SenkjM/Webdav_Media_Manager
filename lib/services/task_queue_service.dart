@@ -417,6 +417,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     String remotePath, {
     String? playingRemotePath,
     String? playingSourceName,
+    bool libraryRow = false,
   }) {
     final cached = _cache.fileForRemote(remotePath, sourceName: sourceName);
     final task = taskForRemote(sourceName, remotePath);
@@ -448,7 +449,9 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         File(task!.localPath!).existsSync()) {
       return TrackUiState.ready;
     }
-    // Not downloaded and never explicitly enqueued — show no status chip.
+    // Library rows without a cache file are still playable via stream.
+    if (libraryRow) return TrackUiState.streamable;
+    // Network browser: not downloaded and never enqueued — no status chip.
     return TrackUiState.remote;
   }
 

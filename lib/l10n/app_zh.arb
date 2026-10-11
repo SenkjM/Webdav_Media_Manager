@@ -1167,5 +1167,9 @@
   "lyricsSourceEmbedded": "内嵌歌词",
   "@lyricsSourceEmbedded": {
     "description": "Label above embedded lyrics on the music stream screen"
+  },
+  "trackStateStreamable": "可串流",
+  "@trackStateStreamable": {
+    "description": "Library row with no local cache but streamable"
   }
 }

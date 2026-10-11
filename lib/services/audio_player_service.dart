@@ -11,9 +11,12 @@ import 'task_queue_service.dart';
 import 'music_audio_handler.dart';
 import 'notification_permission_service.dart';
 
-/// Local-file-only player facade. Never streams from WebDAV and never
-/// enqueues downloads as part of playback — callers must only start play
-/// after a cache file exists.
+/// Local-cache player facade for [playTrack].
+///
+/// Uncached library / network streams still open via [MusicStreamScreen] +
+/// [AudioStreamEngine] (shared media session). Prefer routing new call sites
+/// through this service once stream mode is merged here; do not enqueue
+/// downloads as part of playback.
 ///
 /// On Android/iOS, playback goes through [MusicAudioHandler] so the system
 /// MediaStyle notification / media session stays active with metadata.
@@ -90,8 +93,8 @@ class AudioPlayerService extends ChangeNotifier {
     return null;
   }
 
-  /// Play a track that is already local. Non-local tracks are rejected —
-  /// use the download queue from library / network UI instead.
+  /// Play a track that is already local. Non-local tracks are rejected here —
+  /// library UI opens [MusicStreamScreen] for uncached rows instead.
   Future<void> playTrack(TrackInfo track, {List<TrackInfo>? playlist}) async {
     _error = null;
     final list = <TrackInfo>[];
