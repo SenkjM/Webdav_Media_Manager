@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
 
@@ -463,11 +464,15 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
 
   /// Enqueue a media-library scrape for one root (file or folder).
+  ///
+  /// When [paths] is provided (from the UI lightweight walk), it is stored as a
+  /// sidecar JSON and used by [_runScan] so execution does not re-list.
   Future<QueueTask> enqueueScan({
     required String sourceName,
     required String remotePath,
     required String fileName,
     int? unitsTotal,
+    List<ScanPathEntry>? paths,
   }) async {
     final task = QueueTask(
       id: _uuid.v4(),
@@ -477,15 +482,48 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       createdAt: DateTime.now(),
       kind: TaskKind.scan,
       progressMode: TaskProgressMode.units,
-      unitsTotal: unitsTotal,
+      unitsTotal: unitsTotal ?? paths?.length,
       unitsDone: 0,
     );
+    if (paths != null && paths.isNotEmpty) {
+      final payload = await _scanPayloadFile(task.id);
+      await payload.writeAsString(
+        jsonEncode([for (final e in paths) e.toJson()]),
+        flush: true,
+      );
+      task.localPath = payload.path;
+    }
     _tasks.add(task);
     _sessionIds.add(task.id);
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
     unawaited(_pump());
     return task;
+  }
+
+  Future<File> _scanPayloadFile(String taskId) async {
+    final root = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(root.path, 'scan_payloads'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return File(p.join(dir.path, '$taskId.json'));
+  }
+
+  Future<List<ScanPathEntry>?> _readScanPayload(QueueTask task) async {
+    final path = task.localPath;
+    if (path == null || path.isEmpty || !path.endsWith('.json')) return null;
+    final f = File(path);
+    if (!await f.exists()) return null;
+    try {
+      final raw = jsonDecode(await f.readAsString());
+      if (raw is! List) return null;
+      return [
+        for (final e in raw)
+          if (e is Map)
+            ScanPathEntry.fromJson(Map<String, dynamic>.from(e)),
+      ];
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Cloud retag (+ cover) for one library row.
@@ -2262,27 +2300,33 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             _isMusicFile(task.remotePath) ||
             lower.endsWith('.cue') ||
             isCueFileName(task.fileName));
-    final candidates = await collectScanCandidates(
-      webDav: _webDav,
-      accountId: accountId,
-      sourceName: task.sourceName,
-      rootPath: task.remotePath,
-      rootIsFile: rootIsFile,
-      walk: walk,
-      isMusic: _isMusicFile,
-      isCue: isCueFileName,
-      alreadyInLibrary: (path) => library.find(task.sourceName, path) != null,
-      cueAlbumInLibrary: (cuePath) => library.tracks.any(
-        (tr) =>
-            tr.sourceName == task.sourceName && tr.cueRemotePath == cuePath,
-      ),
-      audioCoveredByCue: (audioPath) => library.tracks.any(
-        (tr) =>
-            tr.sourceName == task.sourceName &&
-            tr.audioRemotePath == audioPath,
-      ),
-      cancel: token,
-    );
+    List<WebDavItem> candidates;
+    final prelisted = await _readScanPayload(task);
+    if (prelisted != null && prelisted.isNotEmpty) {
+      candidates = [for (final e in prelisted) e.toItem()];
+    } else {
+      candidates = await collectScanCandidates(
+        webDav: _webDav,
+        accountId: accountId,
+        sourceName: task.sourceName,
+        rootPath: task.remotePath,
+        rootIsFile: rootIsFile,
+        walk: walk,
+        isMusic: _isMusicFile,
+        isCue: isCueFileName,
+        alreadyInLibrary: (path) => library.find(task.sourceName, path) != null,
+        cueAlbumInLibrary: (cuePath) => library.tracks.any(
+          (tr) =>
+              tr.sourceName == task.sourceName && tr.cueRemotePath == cuePath,
+        ),
+        audioCoveredByCue: (audioPath) => library.tracks.any(
+          (tr) =>
+              tr.sourceName == task.sourceName &&
+              tr.audioRemotePath == audioPath,
+        ),
+        cancel: token,
+      );
+    }
     task.unitsTotal = candidates.length;
     task.unitsDone = 0;
     task.syncProgressFromCounters();

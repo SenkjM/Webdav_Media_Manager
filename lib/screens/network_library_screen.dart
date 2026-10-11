@@ -13,7 +13,6 @@ import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
-import '../services/library_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/task_queue_service.dart';
@@ -1625,7 +1624,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (sourceName == null || sourceName.isEmpty) return;
     final l10n = AppLocalizations.of(context)!;
     final settings = context.read<SettingsService>();
-    final library = context.read<LibraryService>();
     final webDav = context.read<WebDavService>();
     final walk = settings.mediaScanWalkOptions;
     final queue = context.read<TaskQueueService>();
@@ -1642,60 +1640,38 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       return;
     }
 
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(width: 16),
-            Expanded(child: Text(l10n.mediaScanCounting)),
-          ],
-        ),
-      ),
-    );
-
+    // One lightweight walk → path list (no library / CUE parse / modal blocker).
+    bool isMusic(String name) =>
+        settings.fileTypes.categoryFor(name) == FileCategory.music;
+    bool isCue(String name) =>
+        settings.fileTypes.categoryFor(name) == FileCategory.cue;
+    final plan = <({WebDavItem root, List<ScanPathEntry> paths})>[];
     var total = 0;
-    final plan = <({WebDavItem root, int count})>[];
     try {
       for (final root in roots) {
-        final candidates = await collectScanCandidates(
+        final paths = await listScanPaths(
           webDav: webDav,
           accountId: accountId,
-          sourceName: sourceName,
           rootPath: root.path,
           rootIsFile: !root.isDirectory,
           walk: walk,
-          isMusic: (name) =>
-              settings.fileTypes.categoryFor(name) == FileCategory.music,
-          isCue: (name) =>
-              settings.fileTypes.categoryFor(name) == FileCategory.cue,
-          alreadyInLibrary: (path) => library.find(sourceName, path) != null,
-          cueAlbumInLibrary: (cuePath) => library.tracks.any(
-            (t) =>
-                t.sourceName == sourceName && t.cueRemotePath == cuePath,
-          ),
-          audioCoveredByCue: (audioPath) => library.tracks.any(
-            (t) =>
-                t.sourceName == sourceName && t.audioRemotePath == audioPath,
-          ),
+          isMusic: isMusic,
+          isCue: isCue,
         );
-        plan.add((root: root, count: candidates.length));
-        total += candidates.length;
+        plan.add((root: root, paths: paths));
+        total += paths.length;
       }
     } catch (e) {
-      // Counting dialog used default root navigator — pop the same stack.
-      if (context.mounted) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
       if (context.mounted) {
         AppSnack.error(context, TaskError.classify(e).detail);
       }
       return;
     }
     if (!context.mounted) return;
-    Navigator.of(context, rootNavigator: true).pop();
+    if (total == 0) {
+      AppSnack.show(context, l10n.mediaScanNothingNew);
+      return;
+    }
 
     final go = await showDialog<bool>(
       context: context,
@@ -1715,18 +1691,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       ),
     );
     if (go != true || !context.mounted) return;
-    if (total == 0) {
-      AppSnack.show(context, l10n.mediaScanNothingNew);
-      return;
-    }
+
     var queued = 0;
     for (final row in plan) {
-      if (row.count == 0) continue;
+      if (row.paths.isEmpty) continue;
       await queue.enqueueScan(
         sourceName: sourceName,
         remotePath: row.root.path,
         fileName: row.root.name,
-        unitsTotal: row.count,
+        unitsTotal: row.paths.length,
+        paths: row.paths,
       );
       queued++;
     }

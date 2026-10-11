@@ -5,59 +5,67 @@ import '../models/webdav_item.dart';
 import '../services/webdav_service.dart';
 import 'directory_walk.dart';
 
-/// Walk [rootPath] and return music + CUE file paths not yet in the library.
+/// One music/CUE file path from a lightweight directory walk.
+class ScanPathEntry {
+  const ScanPathEntry({
+    required this.path,
+    required this.name,
+    required this.isCue,
+  });
+
+  final String path;
+  final String name;
+  final bool isCue;
+
+  Map<String, dynamic> toJson() => {
+        'path': path,
+        'name': name,
+        'cue': isCue,
+      };
+
+  factory ScanPathEntry.fromJson(Map<String, dynamic> json) {
+    return ScanPathEntry(
+      path: json['path'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      isCue: json['cue'] == true,
+    );
+  }
+
+  WebDavItem toItem() => WebDavItem(
+        name: name,
+        path: path,
+        isDirectory: false,
+        category: isCue ? FileCategory.cue : FileCategory.music,
+      );
+}
+
+/// Lightweight walk: listDirectory only → music + CUE paths (CUE first).
 ///
-/// **Stats / scrape shared walker** — only lists paths (no CUE parse, no tags).
-/// CUE entries are listed first so the scrape executor can ingest them before
-/// plain audio. [audioCoveredByCue] skips raw audio already represented by an
-/// existing CUE album (incremental). Stats count one unit per .cue path (not
-/// per slice).
-Future<List<WebDavItem>> collectScanCandidates({
+/// No library lookups, no CUE parse, no tags. Yields after each directory.
+Future<List<ScanPathEntry>> listScanPaths({
   required WebDavService webDav,
   required String accountId,
-  required String sourceName,
   required String rootPath,
   required bool rootIsFile,
   required WalkOptions walk,
   required bool Function(String name) isMusic,
   required bool Function(String name) isCue,
-  required bool Function(String remotePath) alreadyInLibrary,
-  /// True when any library slice already binds this `.cue` path.
-  required bool Function(String cueRemotePath) cueAlbumInLibrary,
-  /// True when a raw audio path is already the backing file of a CUE slice.
-  required bool Function(String audioRemotePath) audioCoveredByCue,
   CancelToken? cancel,
 }) async {
   if (rootIsFile) {
     final name = rootPath.split('/').where((s) => s.isNotEmpty).last;
     if (isCue(name)) {
-      if (cueAlbumInLibrary(rootPath)) return const [];
-      return [
-        WebDavItem(
-          name: name,
-          path: rootPath,
-          isDirectory: false,
-          category: FileCategory.cue,
-        ),
-      ];
+      return [ScanPathEntry(path: rootPath, name: name, isCue: true)];
     }
-    if (!isMusic(rootPath) && !isMusic(name)) return const [];
-    if (alreadyInLibrary(rootPath) || audioCoveredByCue(rootPath)) {
-      return const [];
+    if (isMusic(name) || isMusic(rootPath)) {
+      return [ScanPathEntry(path: rootPath, name: name, isCue: false)];
     }
-    return [
-      WebDavItem(
-        name: name,
-        path: rootPath,
-        isDirectory: false,
-        category: FileCategory.music,
-      ),
-    ];
+    return const [];
   }
 
   final walker = DirectoryWalker(rootPath: rootPath, options: walk);
-  final cues = <WebDavItem>[];
-  final music = <WebDavItem>[];
+  final cues = <ScanPathEntry>[];
+  final music = <ScanPathEntry>[];
   while (true) {
     if (cancel?.isCancelled ?? false) break;
     final dir = walker.nextDirectory();
@@ -70,16 +78,56 @@ Future<List<WebDavItem>> collectScanCandidates({
         continue;
       }
       if (isCue(item.name)) {
-        if (!cueAlbumInLibrary(item.path)) cues.add(item);
+        cues.add(ScanPathEntry(path: item.path, name: item.name, isCue: true));
         continue;
       }
-      if (!isMusic(item.name)) continue;
-      if (alreadyInLibrary(item.path)) continue;
-      if (audioCoveredByCue(item.path)) continue;
-      music.add(item);
+      if (isMusic(item.name)) {
+        music.add(
+          ScanPathEntry(path: item.path, name: item.name, isCue: false),
+        );
+      }
     }
     walker.acceptChildren(dir, childDirs);
+    await Future<void>.delayed(Duration.zero);
   }
-  // CUE first so scrape can mark covered audio before plain ingest.
   return [...cues, ...music];
+}
+
+/// Fallback walk when a scan task has no prelisted payload (old tasks / resume).
+///
+/// Applies incremental library filters. CUE first. No CUE parse / tags.
+Future<List<WebDavItem>> collectScanCandidates({
+  required WebDavService webDav,
+  required String accountId,
+  required String sourceName,
+  required String rootPath,
+  required bool rootIsFile,
+  required WalkOptions walk,
+  required bool Function(String name) isMusic,
+  required bool Function(String name) isCue,
+  required bool Function(String remotePath) alreadyInLibrary,
+  required bool Function(String cueRemotePath) cueAlbumInLibrary,
+  required bool Function(String audioRemotePath) audioCoveredByCue,
+  CancelToken? cancel,
+}) async {
+  final listed = await listScanPaths(
+    webDav: webDav,
+    accountId: accountId,
+    rootPath: rootPath,
+    rootIsFile: rootIsFile,
+    walk: walk,
+    isMusic: isMusic,
+    isCue: isCue,
+    cancel: cancel,
+  );
+  final out = <WebDavItem>[];
+  for (final e in listed) {
+    if (e.isCue) {
+      if (!cueAlbumInLibrary(e.path)) out.add(e.toItem());
+    } else {
+      if (alreadyInLibrary(e.path) || audioCoveredByCue(e.path)) continue;
+      out.add(e.toItem());
+    }
+  }
+  return out;
 }
