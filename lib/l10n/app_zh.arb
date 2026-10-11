@@ -1114,5 +1114,28 @@
   "videoGestureBasicHint": "单击显示/隐藏控件，双击中间播放/暂停。",
   "videoHoldReleaseHint": "按住加速，松手恢复。",
   "subtitleDefault": "默认",
-  "subtitleEmbedded": "[内嵌] {language}"
+  "subtitleEmbedded": "[内嵌] {language}",
+  "taskErrNetDns": "网络错误：DNS",
+  "taskErrNetTimeout": "网络错误：超时",
+  "taskErrNetUnreachable": "网络错误：不可达",
+  "taskErrNetConnection": "网络错误：连接失败",
+  "taskErrCloudUnauthorized": "云端未授权",
+  "taskErrCloudForbidden": "云端权限不足",
+  "taskErrCloudNotFound": "云端文件不存在",
+  "taskErrCloudServer": "云端服务器错误",
+  "taskErrCloudHttp": "云端请求失败",
+  "taskErrUnknown": "其它错误",
+  "taskErrRetryExhausted": "重试已尽 · {reason}",
+  "@taskErrRetryExhausted": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "taskErrSourceUnbound": "来源网盘未绑定",
+  "taskErrQueueSchemaDrift": "队列数据库需升级",
+  "taskErrDetailTitle": "错误详情",
+  "taskErrViewDetail": "详情",
+  "taskErrLongPressHint": "长按查看完整错误"
 }

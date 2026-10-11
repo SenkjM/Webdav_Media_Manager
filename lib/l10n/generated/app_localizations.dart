@@ -6682,6 +6682,102 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'[内嵌] {language}'**
   String subtitleEmbedded(Object language);
+
+  /// No description provided for @taskErrNetDns.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络错误：DNS'**
+  String get taskErrNetDns;
+
+  /// No description provided for @taskErrNetTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络错误：超时'**
+  String get taskErrNetTimeout;
+
+  /// No description provided for @taskErrNetUnreachable.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络错误：不可达'**
+  String get taskErrNetUnreachable;
+
+  /// No description provided for @taskErrNetConnection.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络错误：连接失败'**
+  String get taskErrNetConnection;
+
+  /// No description provided for @taskErrCloudUnauthorized.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端未授权'**
+  String get taskErrCloudUnauthorized;
+
+  /// No description provided for @taskErrCloudForbidden.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端权限不足'**
+  String get taskErrCloudForbidden;
+
+  /// No description provided for @taskErrCloudNotFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端文件不存在'**
+  String get taskErrCloudNotFound;
+
+  /// No description provided for @taskErrCloudServer.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端服务器错误'**
+  String get taskErrCloudServer;
+
+  /// No description provided for @taskErrCloudHttp.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端请求失败'**
+  String get taskErrCloudHttp;
+
+  /// No description provided for @taskErrUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'其它错误'**
+  String get taskErrUnknown;
+
+  /// No description provided for @taskErrRetryExhausted.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试已尽 · {reason}'**
+  String taskErrRetryExhausted(String reason);
+
+  /// No description provided for @taskErrSourceUnbound.
+  ///
+  /// In zh, this message translates to:
+  /// **'来源网盘未绑定'**
+  String get taskErrSourceUnbound;
+
+  /// No description provided for @taskErrQueueSchemaDrift.
+  ///
+  /// In zh, this message translates to:
+  /// **'队列数据库需升级'**
+  String get taskErrQueueSchemaDrift;
+
+  /// No description provided for @taskErrDetailTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'错误详情'**
+  String get taskErrDetailTitle;
+
+  /// No description provided for @taskErrViewDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'详情'**
+  String get taskErrViewDetail;
+
+  /// No description provided for @taskErrLongPressHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按查看完整错误'**
+  String get taskErrLongPressHint;
 }
 
 class _AppLocalizationsDelegate

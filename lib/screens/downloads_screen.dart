@@ -507,21 +507,36 @@ class _TaskTile extends StatelessWidget {
             if (task.errorMessage != null &&
                 (task.status == DownloadStatus.failed || retryWaiting)) ...[
               const SizedBox(height: 4),
-              Text(
-                DownloadQueueService.describeError(task.errorMessage!, l10n),
-                style: TextStyle(
-                  color: task.status == DownloadStatus.failed
-                      ? AppColors.error
-                      : Theme.of(context).colorScheme.outline,
+              GestureDetector(
+                onLongPress: () => _showTaskErrorDetail(
+                  context,
+                  task.errorMessage!,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                child: Text(
+                  DownloadQueueService.describeError(task.errorMessage!, l10n),
+                  style: TextStyle(
+                    color: task.status == DownloadStatus.failed
+                        ? AppColors.error
+                        : Theme.of(context).colorScheme.outline,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
             const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (task.errorMessage != null &&
+                    (task.status == DownloadStatus.failed || retryWaiting))
+                  TextButton(
+                    onPressed: () => _showTaskErrorDetail(
+                      context,
+                      task.errorMessage!,
+                    ),
+                    child: Text(l10n.taskErrViewDetail),
+                  ),
                 if (task.status == DownloadStatus.pending ||
                     task.status == DownloadStatus.active)
                   TextButton(
@@ -545,6 +560,29 @@ class _TaskTile extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _showTaskErrorDetail(BuildContext context, String raw) async {
+  final l10n = AppLocalizations.of(context)!;
+  final short = DownloadQueueService.describeError(raw, l10n);
+  final detail = DownloadQueueService.describeErrorDetail(raw);
+  final body = detail == short ? detail : '$short\n\n$detail';
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      title: Text(l10n.taskErrDetailTitle),
+      content: SingleChildScrollView(
+        child: SelectableText(body),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(l10n.cancel),
+        ),
+      ],
+    ),
+  );
 }
 
 /// Small pill marking the destination of a download (e.g. 系统相册).

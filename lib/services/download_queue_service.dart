@@ -15,6 +15,7 @@ import '../utils/audio_extensions.dart';
 import '../utils/app_snack.dart';
 import '../utils/cue_sheet.dart';
 import '../utils/l10n_host.dart';
+import '../utils/task_error.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'cloud_driver.dart';
@@ -240,86 +241,14 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   String? _lastError;
   String? get lastError => _lastError;
 
-  String _describeError(Object e) {
-    var raw = e.toString();
-    for (final prefix in const [
-      'Bad state: ',
-      'WmpFormatException: ',
-      'Unsupported operation: ',
-      'Invalid argument(s): ',
-    ]) {
-      if (raw.startsWith(prefix)) raw = raw.substring(prefix.length);
-    }
-    // sqflite's "no column named X" is the classic schema-drift symptom.
-    if (raw.contains('has no column named')) {
-      return 'err.dlQueueSchemaDrift|$raw';
-    }
-    return raw;
-  }
+  String _describeError(Object e) => TaskError.classify(e).persisted;
 
-  /// Map persisted stable error codes (and their `Bad state:` /
-  /// `WmpFormatException:` wrappers) to localized text; unknown values pass
-  /// through unchanged so pre-i18n rows keep their raw text.
-  static String describeError(String raw, AppLocalizations l10n) {
-    var text = raw;
-    for (final prefix in const [
-      'Bad state: ',
-      'WmpFormatException: ',
-      'Unsupported operation: ',
-      'Invalid argument(s): ',
-    ]) {
-      if (text.startsWith(prefix)) text = text.substring(prefix.length);
-    }
-    final bar = text.indexOf('|');
-    final code = bar > 0 ? text.substring(0, bar) : text;
-    final detail = bar > 0 ? text.substring(bar + 1) : '';
-    switch (code) {
-      case 'err.cancelled':
-        return l10n.downloadCancelled;
-      case 'err.queueCleared':
-        return l10n.dlErrQueueCleared;
-      case 'err.cueMalformed':
-        return l10n.dlErrCueMalformed;
-      case 'err.writePublicFailed':
-        return l10n.dlErrWritePublicFailed;
-      case 'err.dlOffline':
-        return l10n.dlErrOffline;
-      case 'err.sourceUnbound':
-        return l10n.dlErrSourceUnbound(detail);
-      case 'err.dlQueueSchemaDrift':
-        return l10n.dlErrQueueSchemaDrift(detail);
-      case 'err.dlOfflineRetryWait':
-        final wait = detail.split('|');
-        if (wait.length >= 3) {
-          return l10n.dlOfflineRetryWait(wait[0], wait[1], wait[2]);
-        }
-        return text;
-      case 'err.dlNetworkInterruptedRetry':
-        final retryParts = detail.split('|');
-        if (retryParts.length >= 2) {
-          return l10n.dlNetworkInterruptedRetry(retryParts[0], retryParts[1]);
-        }
-        return text;
-      case 'err.dlRetryExhausted':
-        final bar2 = detail.indexOf('|');
-        if (bar2 > 0) {
-          return l10n.dlRetryExhausted(
-            detail.substring(0, bar2),
-            describeError(detail.substring(bar2 + 1), l10n),
-          );
-        }
-        return text;
-      case 'err.shardKindMismatch':
-        final shardParts = detail.split('|');
-        if (shardParts.length >= 2) {
-          return l10n.errShardKindMismatch(shardParts[0], shardParts[1]);
-        }
-        return text;
-      case 'err.notWdmmFile':
-        return l10n.errNotWdmmFile;
-    }
-    return text;
-  }
+  /// List / snackbar: short localized label. Full exception → [describeErrorDetail].
+  static String describeError(String raw, AppLocalizations l10n) =>
+      TaskError.shortLabel(raw, l10n);
+
+  /// Full original detail for the error dialog (unwraps retry wrappers).
+  static String describeErrorDetail(String raw) => TaskError.detailText(raw);
 
   Future<void> _guardPersist(Future<void> Function() body) async {
     try {
@@ -1675,7 +1604,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     } else {
       task.status = DownloadStatus.failed;
       task.nextRetryAt = null;
-      final why = offline ? 'err.dlOffline' : _describeError(error);
+      // Persist a stable short code + full detail (DNS/timeout/403…), not a Dio dump alone.
+      final why = _describeError(error);
       task.errorMessage = task.attempts >= cap
           ? 'err.dlRetryExhausted|$cap|$why'
           : why;

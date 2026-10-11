@@ -3999,4 +3999,54 @@ class AppLocalizationsEn extends AppLocalizations {
   String subtitleEmbedded(Object language) {
     return '[Embedded] $language';
   }
+
+  @override
+  String get taskErrNetDns => 'Network error: DNS';
+
+  @override
+  String get taskErrNetTimeout => 'Network error: timeout';
+
+  @override
+  String get taskErrNetUnreachable => 'Network error: unreachable';
+
+  @override
+  String get taskErrNetConnection => 'Network error: connection failed';
+
+  @override
+  String get taskErrCloudUnauthorized => 'Cloud unauthorized';
+
+  @override
+  String get taskErrCloudForbidden => 'Cloud permission denied';
+
+  @override
+  String get taskErrCloudNotFound => 'Cloud file not found';
+
+  @override
+  String get taskErrCloudServer => 'Cloud server error';
+
+  @override
+  String get taskErrCloudHttp => 'Cloud request failed';
+
+  @override
+  String get taskErrUnknown => 'Other error';
+
+  @override
+  String taskErrRetryExhausted(String reason) {
+    return 'Retries exhausted · $reason';
+  }
+
+  @override
+  String get taskErrSourceUnbound => 'Source drive unbound';
+
+  @override
+  String get taskErrQueueSchemaDrift => 'Queue database needs upgrade';
+
+  @override
+  String get taskErrDetailTitle => 'Error details';
+
+  @override
+  String get taskErrViewDetail => 'Details';
+
+  @override
+  String get taskErrLongPressHint => 'Long-press for full error';
 }

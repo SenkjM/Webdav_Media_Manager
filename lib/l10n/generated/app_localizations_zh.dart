@@ -3820,6 +3820,56 @@ class AppLocalizationsZh extends AppLocalizations {
   String subtitleEmbedded(Object language) {
     return '[内嵌] $language';
   }
+
+  @override
+  String get taskErrNetDns => '网络错误：DNS';
+
+  @override
+  String get taskErrNetTimeout => '网络错误：超时';
+
+  @override
+  String get taskErrNetUnreachable => '网络错误：不可达';
+
+  @override
+  String get taskErrNetConnection => '网络错误：连接失败';
+
+  @override
+  String get taskErrCloudUnauthorized => '云端未授权';
+
+  @override
+  String get taskErrCloudForbidden => '云端权限不足';
+
+  @override
+  String get taskErrCloudNotFound => '云端文件不存在';
+
+  @override
+  String get taskErrCloudServer => '云端服务器错误';
+
+  @override
+  String get taskErrCloudHttp => '云端请求失败';
+
+  @override
+  String get taskErrUnknown => '其它错误';
+
+  @override
+  String taskErrRetryExhausted(String reason) {
+    return '重试已尽 · $reason';
+  }
+
+  @override
+  String get taskErrSourceUnbound => '来源网盘未绑定';
+
+  @override
+  String get taskErrQueueSchemaDrift => '队列数据库需升级';
+
+  @override
+  String get taskErrDetailTitle => '错误详情';
+
+  @override
+  String get taskErrViewDetail => '详情';
+
+  @override
+  String get taskErrLongPressHint => '长按查看完整错误';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7638,4 +7688,54 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String subtitleEmbedded(Object language) {
     return '[內嵌] $language';
   }
+
+  @override
+  String get taskErrNetDns => '網路錯誤：DNS';
+
+  @override
+  String get taskErrNetTimeout => '網路錯誤：逾時';
+
+  @override
+  String get taskErrNetUnreachable => '網路錯誤：不可達';
+
+  @override
+  String get taskErrNetConnection => '網路錯誤：連線失敗';
+
+  @override
+  String get taskErrCloudUnauthorized => '雲端未授權';
+
+  @override
+  String get taskErrCloudForbidden => '雲端權限不足';
+
+  @override
+  String get taskErrCloudNotFound => '雲端檔案不存在';
+
+  @override
+  String get taskErrCloudServer => '雲端伺服器錯誤';
+
+  @override
+  String get taskErrCloudHttp => '雲端請求失敗';
+
+  @override
+  String get taskErrUnknown => '其它錯誤';
+
+  @override
+  String taskErrRetryExhausted(String reason) {
+    return '重試已盡 · $reason';
+  }
+
+  @override
+  String get taskErrSourceUnbound => '來源網路磁碟未綁定';
+
+  @override
+  String get taskErrQueueSchemaDrift => '佇列資料庫需升級';
+
+  @override
+  String get taskErrDetailTitle => '錯誤詳情';
+
+  @override
+  String get taskErrViewDetail => '詳情';
+
+  @override
+  String get taskErrLongPressHint => '長按查看完整錯誤';
 }

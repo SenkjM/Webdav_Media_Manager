@@ -1114,5 +1114,21 @@
   "videoGestureBasicHint": "Tap to show or hide controls. Double-tap the center to play or pause.",
   "videoHoldReleaseHint": "Hold to speed up, release to restore.",
   "subtitleDefault": "Default",
-  "subtitleEmbedded": "[Embedded] {language}"
+  "subtitleEmbedded": "[Embedded] {language}",
+  "taskErrNetDns": "Network error: DNS",
+  "taskErrNetTimeout": "Network error: timeout",
+  "taskErrNetUnreachable": "Network error: unreachable",
+  "taskErrNetConnection": "Network error: connection failed",
+  "taskErrCloudUnauthorized": "Cloud unauthorized",
+  "taskErrCloudForbidden": "Cloud permission denied",
+  "taskErrCloudNotFound": "Cloud file not found",
+  "taskErrCloudServer": "Cloud server error",
+  "taskErrCloudHttp": "Cloud request failed",
+  "taskErrUnknown": "Other error",
+  "taskErrRetryExhausted": "Retries exhausted · {reason}",
+  "taskErrSourceUnbound": "Source drive unbound",
+  "taskErrQueueSchemaDrift": "Queue database needs upgrade",
+  "taskErrDetailTitle": "Error details",
+  "taskErrViewDetail": "Details",
+  "taskErrLongPressHint": "Long-press for full error"
 }

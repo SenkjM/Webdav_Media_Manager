@@ -867,9 +867,13 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - 预检：`lib/utils/backup_pass_check.dart`；UI：`sync_screen`。
 - 测试：`test/backup_pass_check_test.dart`。
 
-## 17. 媒体库 / 任务队列 / 播放合一（重大改动，文档已定稿，代码未开工）
+## 17. 媒体库 / 任务队列 / 播放合一（重大改动，进行中）
 
-**状态**：2026-10-12 基于 `origin/main` tip `8c2b6c5` 开分支 `feat/media-library-unify`，本步只立文档与分支，**不展开大段业务代码**。不要历史包袱：可删过时测试、可改 DB schema、功能级重构优于叠补丁。
+**状态**：2026-10-12 基于 `origin/main` tip `8c2b6c5` 开分支 `feat/media-library-unify`。不要历史包袱：可删过时测试、可改 DB schema、功能级重构优于叠补丁。
+
+**落地进度**：
+- **错误模型（§17.12 第 1 步）**：已落地。稳定短码（`err.net.dns` / `err.net.timeout` / `err.cloud.forbidden` / `err.cloud.notFound` / `err.cancelled` 等）+ `detail` 原文；列表短文案，详情按钮 / 长按看全文。见 `lib/utils/task_error.dart`、`DownloadQueueService.describeError` / `describeErrorDetail`、`downloads_screen`。
+- 后续步（任务队列外壳起）未开工。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
 
@@ -934,7 +938,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 - 「下载队列」**改名**为任务队列（界面与导航文案）。
 - 任务 `kind` 含至少：`download` / `scan` / `retag` 等（可扩展）。
-- 列表行只显示**短错误码**；点进详情看**全文**错误信息。
+- 列表行只显示**短错误文案**；点「详情」或长按错误行看**全文**（已落地，见上「落地进度」）。
 
 ### 17.11 视频播放列表深度
 
@@ -950,7 +954,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 **建议落地顺序**（写进本节，后续实现按此切步）：
 
-1. 错误模型（短码 + 详情全文）
+1. ~~错误模型（短码 + 详情全文）~~ **已落地**
 2. 任务队列外壳（改名、`kind`、列表 / 详情）
 3. 遍历 / 深度（网络库音乐列表、视频列表、刮削深度分设）
 4. 入库与预载（Range 标签先入库再预载；sidecar 保留）
@@ -971,4 +975,4 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 ### 17.15 分支与范围
 
 - 分支：`feat/media-library-unify`（worktree：`worktree/media-library-unify`）。
-- 本步：仅文档 + 分支；不推 `main`、不发版、不开大段业务重构。
+- 不推 `main`、不发版。按 §17.12 顺序逐步落地业务代码。

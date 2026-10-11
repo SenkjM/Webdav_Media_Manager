@@ -1114,5 +1114,21 @@
   "videoGestureBasicHint": "單擊顯示/隱藏控制項，雙擊中間播放/暫停。",
   "videoHoldReleaseHint": "按住加速，放手恢復。",
   "subtitleDefault": "預設",
-  "subtitleEmbedded": "[內嵌] {language}"
+  "subtitleEmbedded": "[內嵌] {language}",
+  "taskErrNetDns": "網路錯誤：DNS",
+  "taskErrNetTimeout": "網路錯誤：逾時",
+  "taskErrNetUnreachable": "網路錯誤：不可達",
+  "taskErrNetConnection": "網路錯誤：連線失敗",
+  "taskErrCloudUnauthorized": "雲端未授權",
+  "taskErrCloudForbidden": "雲端權限不足",
+  "taskErrCloudNotFound": "雲端檔案不存在",
+  "taskErrCloudServer": "雲端伺服器錯誤",
+  "taskErrCloudHttp": "雲端請求失敗",
+  "taskErrUnknown": "其它錯誤",
+  "taskErrRetryExhausted": "重試已盡 · {reason}",
+  "taskErrSourceUnbound": "來源網路磁碟未綁定",
+  "taskErrQueueSchemaDrift": "佇列資料庫需升級",
+  "taskErrDetailTitle": "錯誤詳情",
+  "taskErrViewDetail": "詳情",
+  "taskErrLongPressHint": "長按查看完整錯誤"
 }
