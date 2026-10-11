@@ -12,6 +12,7 @@ import '../services/cache_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
+import '../services/stream_cover_reader.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
@@ -618,7 +619,7 @@ class _SelectionBar extends StatelessWidget {
           IconButton(
             tooltip: AppLocalizations.of(context)!.deleteCacheKeepMeta,
             onPressed: count == 0 ? null : onDelete,
-            icon: const Icon(Icons.delete_outline, color: AppColors.error),
+            icon: const Icon(Icons.cleaning_services_outlined, color: AppColors.error),
           ),
         PopupMenuButton<String>(
           tooltip: AppLocalizations.of(context)!.moreActions,
@@ -1352,11 +1353,34 @@ class _TrackTile extends StatelessWidget {
           musicOnly: true,
         );
         if (!context.mounted || picked == null) return;
-        await context.read<LibraryService>().retargetTrack(
+        final library = context.read<LibraryService>();
+        final next = await library.retargetTrack(
           track: track,
           newRemotePath: picked.path,
           newFileName: picked.name,
         );
+        // Re-ingest tags from the new remote (§17 redirect → ingest).
+        try {
+          final source = await context.read<WebDavService>().resolveStreamSource(
+            accountId: accountId,
+            remotePath: next.remotePath,
+            name: next.fileName,
+            kind: StreamKind.music,
+          );
+          if (source != null && source.uri.isNotEmpty) {
+            final tags = await StreamCoverReader().extractTags(source);
+            if (tags != null && context.mounted) {
+              await library.ingestFromTags(
+                sourceName: next.sourceName,
+                remotePath: next.remotePath,
+                fileName: next.fileName,
+                tags: tags,
+              );
+            }
+          }
+        } catch (_) {
+          // Redirect succeeded even if tag re-read fails.
+        }
       }
     }
   }

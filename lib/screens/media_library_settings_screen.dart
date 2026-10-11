@@ -49,16 +49,13 @@ class MediaLibrarySettingsScreen extends StatelessWidget {
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            enabled: settings.audioStreamingEnabled,
             title: Text(l10n.musicDefaultStream),
             leading: Icon(
               settings.musicDefaultStream
                   ? Icons.radio_button_checked
                   : Icons.radio_button_off,
             ),
-            onTap: settings.audioStreamingEnabled
-                ? () => unawaited(settings.setMusicDefaultStream(true))
-                : null,
+            onTap: () => unawaited(settings.setMusicDefaultStream(true)),
           ),
           const Divider(height: 32),
           Text(
@@ -127,6 +124,14 @@ class MediaLibrarySettingsScreen extends StatelessWidget {
             subtitle: Text(l10n.refreshTagsFromCloudHint),
             onTap: () => unawaited(_refreshCloud(context)),
           ),
+          const Divider(height: 32),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.travel_explore_outlined),
+            title: Text(l10n.matchRemoteTitle),
+            subtitle: Text(l10n.matchRemoteHint),
+            onTap: () => unawaited(_matchRemote(context)),
+          ),
         ],
       ),
     );
@@ -178,4 +183,21 @@ class MediaLibrarySettingsScreen extends StatelessWidget {
       AppSnack.show(context, l10n.mediaScanQueued(tracks.length));
     }
   }
+  Future<void> _matchRemote(BuildContext context) async {
+    final library = context.read<LibraryService>();
+    final queue = context.read<TaskQueueService>();
+    final l10n = AppLocalizations.of(context)!;
+    if (library.tracks.isEmpty) {
+      AppSnack.show(context, l10n.libraryEmpty);
+      return;
+    }
+    await queue.enqueueMatchRemote(
+      sourceName: '*',
+      unitsTotal: library.tracks.length,
+    );
+    if (context.mounted) {
+      AppSnack.show(context, l10n.matchRemoteQueued);
+    }
+  }
+
 }

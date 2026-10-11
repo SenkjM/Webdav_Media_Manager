@@ -369,12 +369,12 @@
   "overwriteLibraryNote": "本地索引、标签与尚未同步的改动会被云端那份替换；已下载的音频、封面与缓存不会删除。",
   "overwriteLibraryAction": "覆写",
   "overwriteLibraryPhrase": "如果确认覆写请输入 YES",
-  "destroyLibraryTitle": "销毁音乐库",
-  "destroyLibraryBody": "会逐条销毁本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。",
-  "destroyLibraryNote": "删除记录会在下次同步时上传到云端，云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。",
-  "destroyLibraryAction": "销毁",
-  "destroyLibraryPhrase": "如果确认销毁请输入 YES",
-  "destroyLibraryDone": "已销毁 {count} 首；下次同步上传删除记录，定时同步已关闭",
+  "destroyLibraryTitle": "删除媒体库？",
+  "destroyLibraryBody": "会逐条删除本地媒体库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。",
+  "destroyLibraryNote": "删除记录会在下次同步时上传；云端重建无法恢复已删除内容。之后会关闭自动同步。",
+  "destroyLibraryAction": "删除媒体库",
+  "destroyLibraryPhrase": "输入 YES 确认删除",
+  "destroyLibraryDone": "已删除 {count} 首曲目；删除记录将在下次同步上传，定时同步已关闭",
   "readCloudLibraryFailed": "读取云端库失败：{error}",
   "tidyCloudLibraryTitle": "整理云端音乐库",
   "missingFragments": "有分片缺失，只能重建。",
@@ -472,13 +472,13 @@
   "webdavErrorPerm": "权限错误",
   "webdavErrorGeneric": "操作失败",
   "dialogOk": "确定",
-  "destroyInProgress": "正在销毁",
+  "destroyInProgress": "删除中…",
   "processedOfTotal": "已处理 {processed} / {total} 首",
   "@processedOfTotal": {
     "processed": {},
     "total": {}
   },
-  "destroyStopHint": "「终止」或直接返回都会停在当前这首之后；已经销毁的不会恢复。",
+  "destroyStopHint": "停止或返回会在当前曲目结束后生效；已删除的曲目不会恢复。",
   "actionStop": "终止",
   "tagRefreshInProgress": "正在更新标签",
   "tagRefreshStopHint": "只读取本地缓存；终止后保留已更新的曲目。",
@@ -714,11 +714,11 @@
   "cacheDeleteBodyOne": "将删除「{name}」的音频缓存，标签与封面保留。",
   "cacheDeleteBodyMany": "将删除 {count} 个缓存文件，标签与封面保留。",
   "cacheDeletedCount": "已删除 {count} 个本地音频缓存",
-  "destroyTracksTitle": "销毁所选曲目？",
+  "destroyTracksTitle": "删除所选曲目？",
   "destroyTracksBody": "将删除 {count} 首曲目（缓存、库记录、元数据与封面），不可恢复。",
   "destroyTracksCueNote": "（CUE 分片整组删除）",
-  "destroyAction": "销毁",
-  "destroyedTracksCount": "已销毁 {count} 首曲目",
+  "destroyAction": "删除",
+  "destroyedTracksCount": "已删除 {count} 首曲目",
   "shareCueUnsupported": "CUE 音轨不支持分享",
   "shareCueUnsupportedAndNotLocal": "CUE 音轨不支持分享；其余曲目尚未下载到本地",
   "shareNotLocalOne": "该曲目尚未下载到本地，无法分享",
@@ -749,7 +749,7 @@
   "updateCancelled": "已终止",
   "updateDone": "更新完成",
   "updateSummary": "{a}：更新 {b} 首，跳过 {c} 首，失败 {d} 首",
-  "deleteCacheKeepMeta": "删除缓存（保留元数据与封面）",
+  "deleteCacheKeepMeta": "清理缓存（保留标签）",
   "updateTags": "更新标签",
   "downloadUncachedTracks": "下载未缓存曲目",
   "libraryTracksEmpty": "暂无曲目",
@@ -979,7 +979,7 @@
   "days": "天",
   "hours": "小时",
   "autoCleanupDisabled": "已关闭自动清理，可用下方按钮手动清空。",
-  "clearAudioCache": "手动清空音频缓存",
+  "clearAudioCache": "清理音频缓存",
   "shareRenameHint": "分享时按标签重命名文件名。",
   "shareRenameTitle": "分享时按标签重命名",
   "shareRenameSubtitle": "默认开启；分享单个文件时仍可再修改文件名",
@@ -1212,5 +1212,23 @@
   "refreshTagsFromLocal": "从本地更新标签",
   "refreshTagsFromLocalHint": "读取已缓存音频的标签与封面",
   "refreshTagsFromCloud": "从云端更新标签",
-  "refreshTagsFromCloudHint": "以任务队列 Range 拉取标签与封面"
+  "refreshTagsFromCloudHint": "以任务队列 Range 拉取标签与封面",
+  "destroyTracksAction": "删除所选曲目",
+  "taskKindMatchRemote": "全量匹配",
+  "matchRemoteTitle": "全量匹配远端",
+  "matchRemoteHint": "探测媒体库曲目在云端是否仍存在；不存在则标红点（有本地缓存的跳过）。",
+  "matchRemoteQueued": "已加入全量匹配任务",
+  "destroyLibraryConfirm": "删除整个媒体库",
+  "@taskKindMatchRemote": {
+    "description": "Task queue kind for optional full remote existence match"
+  },
+  "@matchRemoteTitle": {
+    "description": "Settings entry title for full remote match"
+  },
+  "@matchRemoteHint": {
+    "description": "Settings subtitle for full remote match"
+  },
+  "@matchRemoteQueued": {
+    "description": "Snack after enqueueing match remote task"
+  }
 }

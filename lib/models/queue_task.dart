@@ -13,6 +13,8 @@ enum TaskKind {
   scan,
   retagCloud,
   retagLocal,
+  /// Optional full-library remote existence probe (writes remote_missing).
+  matchRemote,
 }
 
 extension TaskKindX on TaskKind {
@@ -21,6 +23,7 @@ extension TaskKindX on TaskKind {
     TaskKind.scan => 'scan',
     TaskKind.retagCloud => 'retag_cloud',
     TaskKind.retagLocal => 'retag_local',
+    TaskKind.matchRemote => 'match_remote',
   };
 
   String label(AppLocalizations l10n) => switch (this) {
@@ -28,12 +31,14 @@ extension TaskKindX on TaskKind {
     TaskKind.scan => l10n.taskKindScan,
     TaskKind.retagCloud => l10n.taskKindRetagCloud,
     TaskKind.retagLocal => l10n.taskKindRetagLocal,
+    TaskKind.matchRemote => l10n.taskKindMatchRemote,
   };
 
   static TaskKind fromStorageKey(String? key) => switch (key) {
     'scan' => TaskKind.scan,
     'retag_cloud' => TaskKind.retagCloud,
     'retag_local' => TaskKind.retagLocal,
+    'match_remote' => TaskKind.matchRemote,
     _ => TaskKind.download,
   };
 }

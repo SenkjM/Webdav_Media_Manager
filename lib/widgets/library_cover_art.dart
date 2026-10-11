@@ -8,6 +8,10 @@ import '../models/library_track.dart';
 import '../services/cache_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/library_service.dart';
+import '../services/webdav_service.dart';
+import '../services/stream_cover_reader.dart';
+import '../services/accounts_service.dart';
+import '../models/webdav_stream.dart';
 import '../services/tag_service.dart';
 import '../utils/cover_image.dart';
 import 'cover_art.dart';
@@ -20,6 +24,7 @@ class LibraryCoverArt extends StatefulWidget {
     super.key,
     required this.sourceName,
     required this.remotePath,
+    this.libraryRemotePath,
     this.thumbPath,
     this.fileName,
     required this.size,
@@ -41,6 +46,7 @@ class LibraryCoverArt extends StatefulWidget {
       sourceName: track.sourceName,
       // Virtual cue rows enqueue/check the real audio file, not #cue:N paths.
       remotePath: track.effectiveAudioRemotePath,
+      libraryRemotePath: track.remotePath,
       thumbPath: track.coverPath,
       fileName: track.fileName,
       size: size,
@@ -52,6 +58,8 @@ class LibraryCoverArt extends StatefulWidget {
 
   final String sourceName;
   final String remotePath;
+  /// Library row path (may be CUE virtual); used when persisting browse thumbs.
+  final String? libraryRemotePath;
   final String? thumbPath;
   final String? fileName;
   final double size;
@@ -120,6 +128,12 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
             fileName: widget.fileName,
           ),
         );
+      }
+      // §17.6 list cover bucket: Range-fetch cover into covers/ without audio.
+      final thumb = widget.thumbPath;
+      final needBrowse = thumb == null || thumb.isEmpty;
+      if (needBrowse) {
+        unawaited(_fetchBrowseCover());
       }
       if (!mounted) return;
       setState(() {
@@ -191,6 +205,47 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
       _fullBytes = null;
       _resolved = true;
     });
+  }
+
+
+  /// Persist a list-browse thumb under covers/ via Range tags (no audio cache).
+  Future<void> _fetchBrowseCover() async {
+    if (!mounted) return;
+    final library = context.read<LibraryService>();
+    final accounts = context.read<AccountsService>();
+    final webDav = context.read<WebDavService>();
+    final accountId = accounts.idForSource(widget.sourceName);
+    if (accountId == null) return;
+    try {
+      final source = await webDav.resolveStreamSource(
+        remotePath: widget.remotePath,
+        name: widget.fileName ?? widget.remotePath.split('/').last,
+        accountId: accountId,
+        kind: StreamKind.music,
+      );
+      if (source == null || source.uri.isEmpty) return;
+      final tags = await StreamCoverReader().extractTags(source);
+      final bytes = tags?.coverBytes;
+      if (bytes == null || bytes.isEmpty) return;
+      final coverKey = widget.libraryRemotePath ?? widget.remotePath;
+      final path = await library.covers.saveThumb(
+        sourceName: widget.sourceName,
+        remotePath: coverKey,
+        bytes: bytes,
+      );
+      if (path == null) return;
+      await library.updateCoverPath(
+        sourceName: widget.sourceName,
+        remotePath: coverKey,
+        coverPath: path,
+      );
+      if (!mounted) return;
+      setState(() {
+        _displayPath = path;
+      });
+    } catch (_) {
+      // Silent: list scroll must not surface cover probe errors.
+    }
   }
 
   @override

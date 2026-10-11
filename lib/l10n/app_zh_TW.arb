@@ -369,12 +369,12 @@
   "overwriteLibraryNote": "本機索引、標籤與尚未同步的改動會被雲端那份替換；已下載的音訊、封面與快取不會刪除。",
   "overwriteLibraryAction": "覆寫",
   "overwriteLibraryPhrase": "如果確認覆寫請輸入 YES",
-  "destroyLibraryTitle": "銷毀音樂庫",
-  "destroyLibraryBody": "會逐條銷毀本機音樂庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。",
-  "destroyLibraryNote": "刪除記錄會在下次同步時上傳到雲端，雲端重建也恢復不了這次銷毀的內容。此操作後會關閉自動同步。",
-  "destroyLibraryAction": "銷毀",
-  "destroyLibraryPhrase": "如果確認銷毀請輸入 YES",
-  "destroyLibraryDone": "已銷毀 {count} 首；下次同步上傳刪除記錄，定時同步已關閉",
+  "destroyLibraryTitle": "刪除媒體庫？",
+  "destroyLibraryBody": "會逐條刪除本機媒體庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。",
+  "destroyLibraryNote": "刪除記錄會在下次同步時上傳；雲端重建無法復原已刪除內容。之後會關閉自動同步。",
+  "destroyLibraryAction": "刪除媒體庫",
+  "destroyLibraryPhrase": "輸入 YES 確認刪除",
+  "destroyLibraryDone": "已刪除 {count} 首曲目；刪除記錄將在下次同步上傳，排程同步已關閉",
   "readCloudLibraryFailed": "讀取雲端庫失敗：{error}",
   "tidyCloudLibraryTitle": "整理雲端音樂庫",
   "missingFragments": "有分片缺失，只能重建。",
@@ -472,13 +472,13 @@
   "webdavErrorPerm": "權限錯誤",
   "webdavErrorGeneric": "操作失敗",
   "dialogOk": "確定",
-  "destroyInProgress": "正在銷毀",
+  "destroyInProgress": "刪除中…",
   "processedOfTotal": "已處理 {processed} / {total} 首",
   "@processedOfTotal": {
     "processed": {},
     "total": {}
   },
-  "destroyStopHint": "「終止」或直接返回都會停在當前這首之後；已經銷毀的不會恢復。",
+  "destroyStopHint": "停止或返回會在目前曲目結束後生效；已刪除的曲目不會復原。",
   "actionStop": "終止",
   "tagRefreshInProgress": "正在更新標籤",
   "tagRefreshStopHint": "只讀取本機快取；終止後保留已更新的曲目。",
@@ -714,11 +714,11 @@
   "cacheDeleteBodyOne": "將刪除「{name}」的音訊快取，標籤與封面保留。",
   "cacheDeleteBodyMany": "將刪除 {count} 個快取檔案，標籤與封面保留。",
   "cacheDeletedCount": "已刪除 {count} 個本地音訊快取",
-  "destroyTracksTitle": "銷毀所選曲目？",
+  "destroyTracksTitle": "刪除所選曲目？",
   "destroyTracksBody": "將刪除 {count} 首曲目（快取、庫記錄、詮釋資料與封面），不可復原。",
   "destroyTracksCueNote": "（CUE 分片整組刪除）",
-  "destroyAction": "銷毀",
-  "destroyedTracksCount": "已銷毀 {count} 首曲目",
+  "destroyAction": "刪除",
+  "destroyedTracksCount": "已刪除 {count} 首曲目",
   "shareCueUnsupported": "CUE 音軌不支援分享",
   "shareCueUnsupportedAndNotLocal": "CUE 音軌不支援分享；其餘曲目尚未下載到本地",
   "shareNotLocalOne": "該曲目尚未下載到本地，無法分享",
@@ -749,7 +749,7 @@
   "updateCancelled": "已終止",
   "updateDone": "更新完成",
   "updateSummary": "{a}：更新 {b} 首，跳過 {c} 首，失敗 {d} 首",
-  "deleteCacheKeepMeta": "刪除快取（保留詮釋資料與封面）",
+  "deleteCacheKeepMeta": "清理快取（保留標籤）",
   "updateTags": "更新標籤",
   "downloadUncachedTracks": "下載未快取曲目",
   "libraryTracksEmpty": "暫無曲目",
@@ -979,7 +979,7 @@
   "days": "天",
   "hours": "小時",
   "autoCleanupDisabled": "已關閉自動清理，可使用下方按鈕手動清空。",
-  "clearAudioCache": "手動清空音訊快取",
+  "clearAudioCache": "清理音訊快取",
   "shareRenameHint": "分享時按標籤重新命名檔案名稱。",
   "shareRenameTitle": "分享時按標籤重新命名",
   "shareRenameSubtitle": "預設開啟；分享單一檔案時仍可修改檔名",
@@ -1173,5 +1173,23 @@
   "refreshTagsFromLocal": "從本機更新標籤",
   "refreshTagsFromLocalHint": "讀取已快取音訊的標籤與封面",
   "refreshTagsFromCloud": "從雲端更新標籤",
-  "refreshTagsFromCloudHint": "以任務佇列 Range 拉取標籤與封面"
+  "refreshTagsFromCloudHint": "以任務佇列 Range 拉取標籤與封面",
+  "destroyTracksAction": "刪除所選曲目",
+  "taskKindMatchRemote": "全量匹配",
+  "matchRemoteTitle": "全量匹配遠端",
+  "matchRemoteHint": "探測媒體庫曲目在雲端是否仍存在；不存在則標紅點（有本機快取的跳過）。",
+  "matchRemoteQueued": "已加入全量匹配任務",
+  "destroyLibraryConfirm": "刪除整個媒體庫",
+  "@taskKindMatchRemote": {
+    "description": "taskKindMatchRemote"
+  },
+  "@matchRemoteTitle": {
+    "description": "matchRemoteTitle"
+  },
+  "@matchRemoteHint": {
+    "description": "matchRemoteHint"
+  },
+  "@matchRemoteQueued": {
+    "description": "matchRemoteQueued"
+  }
 }

@@ -2280,37 +2280,37 @@ abstract class AppLocalizations {
   /// No description provided for @destroyLibraryTitle.
   ///
   /// In zh, this message translates to:
-  /// **'销毁音乐库'**
+  /// **'删除媒体库？'**
   String get destroyLibraryTitle;
 
   /// No description provided for @destroyLibraryBody.
   ///
   /// In zh, this message translates to:
-  /// **'会逐条销毁本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。'**
+  /// **'会逐条删除本地媒体库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。'**
   String get destroyLibraryBody;
 
   /// No description provided for @destroyLibraryNote.
   ///
   /// In zh, this message translates to:
-  /// **'删除记录会在下次同步时上传到云端，云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。'**
+  /// **'删除记录会在下次同步时上传；云端重建无法恢复已删除内容。之后会关闭自动同步。'**
   String get destroyLibraryNote;
 
   /// No description provided for @destroyLibraryAction.
   ///
   /// In zh, this message translates to:
-  /// **'销毁'**
+  /// **'删除媒体库'**
   String get destroyLibraryAction;
 
   /// No description provided for @destroyLibraryPhrase.
   ///
   /// In zh, this message translates to:
-  /// **'如果确认销毁请输入 YES'**
+  /// **'输入 YES 确认删除'**
   String get destroyLibraryPhrase;
 
   /// No description provided for @destroyLibraryDone.
   ///
   /// In zh, this message translates to:
-  /// **'已销毁 {count} 首；下次同步上传删除记录，定时同步已关闭'**
+  /// **'已删除 {count} 首曲目；删除记录将在下次同步上传，定时同步已关闭'**
   String destroyLibraryDone(Object count);
 
   /// No description provided for @readCloudLibraryFailed.
@@ -2898,7 +2898,7 @@ abstract class AppLocalizations {
   /// No description provided for @destroyInProgress.
   ///
   /// In zh, this message translates to:
-  /// **'正在销毁'**
+  /// **'删除中…'**
   String get destroyInProgress;
 
   /// No description provided for @processedOfTotal.
@@ -2910,7 +2910,7 @@ abstract class AppLocalizations {
   /// No description provided for @destroyStopHint.
   ///
   /// In zh, this message translates to:
-  /// **'「终止」或直接返回都会停在当前这首之后；已经销毁的不会恢复。'**
+  /// **'停止或返回会在当前曲目结束后生效；已删除的曲目不会恢复。'**
   String get destroyStopHint;
 
   /// No description provided for @actionStop.
@@ -4269,7 +4269,7 @@ abstract class AppLocalizations {
   /// No description provided for @destroyTracksTitle.
   ///
   /// In zh, this message translates to:
-  /// **'销毁所选曲目？'**
+  /// **'删除所选曲目？'**
   String get destroyTracksTitle;
 
   /// No description provided for @destroyTracksBody.
@@ -4287,13 +4287,13 @@ abstract class AppLocalizations {
   /// No description provided for @destroyAction.
   ///
   /// In zh, this message translates to:
-  /// **'销毁'**
+  /// **'删除'**
   String get destroyAction;
 
   /// No description provided for @destroyedTracksCount.
   ///
   /// In zh, this message translates to:
-  /// **'已销毁 {count} 首曲目'**
+  /// **'已删除 {count} 首曲目'**
   String destroyedTracksCount(Object count);
 
   /// No description provided for @shareCueUnsupported.
@@ -4479,7 +4479,7 @@ abstract class AppLocalizations {
   /// No description provided for @deleteCacheKeepMeta.
   ///
   /// In zh, this message translates to:
-  /// **'删除缓存（保留元数据与封面）'**
+  /// **'清理缓存（保留标签）'**
   String get deleteCacheKeepMeta;
 
   /// No description provided for @updateTags.
@@ -5870,7 +5870,7 @@ abstract class AppLocalizations {
   /// No description provided for @clearAudioCache.
   ///
   /// In zh, this message translates to:
-  /// **'手动清空音频缓存'**
+  /// **'清理音频缓存'**
   String get clearAudioCache;
 
   /// No description provided for @shareRenameHint.
@@ -7036,6 +7036,42 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'以任务队列 Range 拉取标签与封面'**
   String get refreshTagsFromCloudHint;
+
+  /// No description provided for @destroyTracksAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除所选曲目'**
+  String get destroyTracksAction;
+
+  /// Task queue kind for optional full remote existence match
+  ///
+  /// In zh, this message translates to:
+  /// **'全量匹配'**
+  String get taskKindMatchRemote;
+
+  /// Settings entry title for full remote match
+  ///
+  /// In zh, this message translates to:
+  /// **'全量匹配远端'**
+  String get matchRemoteTitle;
+
+  /// Settings subtitle for full remote match
+  ///
+  /// In zh, this message translates to:
+  /// **'探测媒体库曲目在云端是否仍存在；不存在则标红点（有本地缓存的跳过）。'**
+  String get matchRemoteHint;
+
+  /// Snack after enqueueing match remote task
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入全量匹配任务'**
+  String get matchRemoteQueued;
+
+  /// No description provided for @destroyLibraryConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除整个媒体库'**
+  String get destroyLibraryConfirm;
 }
 
 class _AppLocalizationsDelegate

@@ -1246,7 +1246,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get overwriteLibraryPhrase => 'Type YES to confirm overwriting';
 
   @override
-  String get destroyLibraryTitle => 'Destroy library';
+  String get destroyLibraryTitle => 'Destroy media library?';
 
   @override
   String get destroyLibraryBody =>
@@ -1257,7 +1257,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Deletion records upload on the next sync; a cloud rebuild cannot restore destroyed content. Auto-sync is turned off afterwards.';
 
   @override
-  String get destroyLibraryAction => 'Destroy';
+  String get destroyLibraryAction => 'Destroy media library';
 
   @override
   String get destroyLibraryPhrase => 'Type YES to confirm destroying';
@@ -2501,7 +2501,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String destroyTracksBody(Object count) {
-    return 'This will delete $count tracks (cache, library records, metadata, and covers). This cannot be undone.';
+    return 'This will destroy $count tracks (cache, library records, metadata, and covers). This cannot be undone.';
   }
 
   @override
@@ -2625,7 +2625,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get deleteCacheKeepMeta => 'Delete cache (keep metadata & covers)';
+  String get deleteCacheKeepMeta => 'Clear cache (keep tags)';
 
   @override
   String get updateTags => 'Update tags';
@@ -3520,7 +3520,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Automatic cleanup is off; use the button below to clear manually.';
 
   @override
-  String get clearAudioCache => 'Clear audio cache manually';
+  String get clearAudioCache => 'Clear audio cache';
 
   @override
   String get shareRenameHint => 'Rename shared filenames using tags.';
@@ -4195,4 +4195,23 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get refreshTagsFromCloudHint =>
       'Queue Range fetches for tags and covers';
+
+  @override
+  String get destroyTracksAction => 'Destroy selected tracks';
+
+  @override
+  String get taskKindMatchRemote => 'Match remote';
+
+  @override
+  String get matchRemoteTitle => 'Match remote files';
+
+  @override
+  String get matchRemoteHint =>
+      'Probe whether library tracks still exist in the cloud; mark missing ones with a red dot (skips tracks that have a local cache).';
+
+  @override
+  String get matchRemoteQueued => 'Match-remote task queued';
+
+  @override
+  String get destroyLibraryConfirm => 'Destroy entire media library';
 }

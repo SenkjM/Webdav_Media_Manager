@@ -1208,24 +1208,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get overwriteLibraryPhrase => '如果确认覆写请输入 YES';
 
   @override
-  String get destroyLibraryTitle => '销毁音乐库';
+  String get destroyLibraryTitle => '删除媒体库？';
 
   @override
-  String get destroyLibraryBody => '会逐条销毁本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。';
+  String get destroyLibraryBody => '会逐条删除本地媒体库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。';
 
   @override
-  String get destroyLibraryNote =>
-      '删除记录会在下次同步时上传到云端，云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。';
+  String get destroyLibraryNote => '删除记录会在下次同步时上传；云端重建无法恢复已删除内容。之后会关闭自动同步。';
 
   @override
-  String get destroyLibraryAction => '销毁';
+  String get destroyLibraryAction => '删除媒体库';
 
   @override
-  String get destroyLibraryPhrase => '如果确认销毁请输入 YES';
+  String get destroyLibraryPhrase => '输入 YES 确认删除';
 
   @override
   String destroyLibraryDone(Object count) {
-    return '已销毁 $count 首；下次同步上传删除记录，定时同步已关闭';
+    return '已删除 $count 首曲目；删除记录将在下次同步上传，定时同步已关闭';
   }
 
   @override
@@ -1559,7 +1558,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dialogOk => '确定';
 
   @override
-  String get destroyInProgress => '正在销毁';
+  String get destroyInProgress => '删除中…';
 
   @override
   String processedOfTotal(Object processed, Object total) {
@@ -1567,7 +1566,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get destroyStopHint => '「终止」或直接返回都会停在当前这首之后；已经销毁的不会恢复。';
+  String get destroyStopHint => '停止或返回会在当前曲目结束后生效；已删除的曲目不会恢复。';
 
   @override
   String get actionStop => '终止';
@@ -2410,7 +2409,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get destroyTracksTitle => '销毁所选曲目？';
+  String get destroyTracksTitle => '删除所选曲目？';
 
   @override
   String destroyTracksBody(Object count) {
@@ -2421,11 +2420,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get destroyTracksCueNote => '（CUE 分片整组删除）';
 
   @override
-  String get destroyAction => '销毁';
+  String get destroyAction => '删除';
 
   @override
   String destroyedTracksCount(Object count) {
-    return '已销毁 $count 首曲目';
+    return '已删除 $count 首曲目';
   }
 
   @override
@@ -2533,7 +2532,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get deleteCacheKeepMeta => '删除缓存（保留元数据与封面）';
+  String get deleteCacheKeepMeta => '清理缓存（保留标签）';
 
   @override
   String get updateTags => '更新标签';
@@ -3380,7 +3379,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get autoCleanupDisabled => '已关闭自动清理，可用下方按钮手动清空。';
 
   @override
-  String get clearAudioCache => '手动清空音频缓存';
+  String get clearAudioCache => '清理音频缓存';
 
   @override
   String get shareRenameHint => '分享时按标签重命名文件名。';
@@ -4007,6 +4006,24 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get refreshTagsFromCloudHint => '以任务队列 Range 拉取标签与封面';
+
+  @override
+  String get destroyTracksAction => '删除所选曲目';
+
+  @override
+  String get taskKindMatchRemote => '全量匹配';
+
+  @override
+  String get matchRemoteTitle => '全量匹配远端';
+
+  @override
+  String get matchRemoteHint => '探测媒体库曲目在云端是否仍存在；不存在则标红点（有本地缓存的跳过）。';
+
+  @override
+  String get matchRemoteQueued => '已加入全量匹配任务';
+
+  @override
+  String get destroyLibraryConfirm => '删除整个媒体库';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -5213,24 +5230,23 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get overwriteLibraryPhrase => '如果確認覆寫請輸入 YES';
 
   @override
-  String get destroyLibraryTitle => '銷毀音樂庫';
+  String get destroyLibraryTitle => '刪除媒體庫？';
 
   @override
-  String get destroyLibraryBody => '會逐條銷毀本機音樂庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。';
+  String get destroyLibraryBody => '會逐條刪除本機媒體庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。';
 
   @override
-  String get destroyLibraryNote =>
-      '刪除記錄會在下次同步時上傳到雲端，雲端重建也恢復不了這次銷毀的內容。此操作後會關閉自動同步。';
+  String get destroyLibraryNote => '刪除記錄會在下次同步時上傳；雲端重建無法復原已刪除內容。之後會關閉自動同步。';
 
   @override
-  String get destroyLibraryAction => '銷毀';
+  String get destroyLibraryAction => '刪除媒體庫';
 
   @override
-  String get destroyLibraryPhrase => '如果確認銷毀請輸入 YES';
+  String get destroyLibraryPhrase => '輸入 YES 確認刪除';
 
   @override
   String destroyLibraryDone(Object count) {
-    return '已銷毀 $count 首；下次同步上傳刪除記錄，定時同步已關閉';
+    return '已刪除 $count 首曲目；刪除記錄將在下次同步上傳，排程同步已關閉';
   }
 
   @override
@@ -5564,7 +5580,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get dialogOk => '確定';
 
   @override
-  String get destroyInProgress => '正在銷毀';
+  String get destroyInProgress => '刪除中…';
 
   @override
   String processedOfTotal(Object processed, Object total) {
@@ -5572,7 +5588,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get destroyStopHint => '「終止」或直接返回都會停在當前這首之後；已經銷毀的不會恢復。';
+  String get destroyStopHint => '停止或返回會在目前曲目結束後生效；已刪除的曲目不會復原。';
 
   @override
   String get actionStop => '終止';
@@ -6415,7 +6431,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get destroyTracksTitle => '銷毀所選曲目？';
+  String get destroyTracksTitle => '刪除所選曲目？';
 
   @override
   String destroyTracksBody(Object count) {
@@ -6426,11 +6442,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get destroyTracksCueNote => '（CUE 分片整組刪除）';
 
   @override
-  String get destroyAction => '銷毀';
+  String get destroyAction => '刪除';
 
   @override
   String destroyedTracksCount(Object count) {
-    return '已銷毀 $count 首曲目';
+    return '已刪除 $count 首曲目';
   }
 
   @override
@@ -6538,7 +6554,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get deleteCacheKeepMeta => '刪除快取（保留詮釋資料與封面）';
+  String get deleteCacheKeepMeta => '清理快取（保留標籤）';
 
   @override
   String get updateTags => '更新標籤';
@@ -7385,7 +7401,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get autoCleanupDisabled => '已關閉自動清理，可使用下方按鈕手動清空。';
 
   @override
-  String get clearAudioCache => '手動清空音訊快取';
+  String get clearAudioCache => '清理音訊快取';
 
   @override
   String get shareRenameHint => '分享時按標籤重新命名檔案名稱。';
@@ -8012,4 +8028,22 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get refreshTagsFromCloudHint => '以任務佇列 Range 拉取標籤與封面';
+
+  @override
+  String get destroyTracksAction => '刪除所選曲目';
+
+  @override
+  String get taskKindMatchRemote => '全量匹配';
+
+  @override
+  String get matchRemoteTitle => '全量匹配遠端';
+
+  @override
+  String get matchRemoteHint => '探測媒體庫曲目在雲端是否仍存在；不存在則標紅點（有本機快取的跳過）。';
+
+  @override
+  String get matchRemoteQueued => '已加入全量匹配任務';
+
+  @override
+  String get destroyLibraryConfirm => '刪除整個媒體庫';
 }

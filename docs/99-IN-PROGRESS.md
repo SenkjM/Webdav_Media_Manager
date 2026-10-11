@@ -891,7 +891,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
   - `TaskKind.scan` 执行器 + 网络库多选「扫描入库」（先统计再入队，units 进度，增量只比路径）。
   - `TaskKind.retagCloud` 执行器；设置「从云端更新标签」入队。
   - 顶栏「媒体库」；音乐设置进子页；音乐默认打开（缓存/串流）独立 pref；后缀页音乐不再改默认打开；库长按「串流（仅本次）」。
-- 后续：列表封面桶细化、全量匹配任务（可选）等。
+- **剩余缺口（本轮）**：全量匹配写红点（`TaskKind.matchRemote` + 设置入口）、列表封面桶（无本地时 Range 写入 `covers/`）、刮削走 `ingestCueRemote`、网络库音乐默认不再受旧流式开关牵制、重定向后 Range 再 ingest。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
 

@@ -5,7 +5,10 @@ import '../models/webdav_item.dart';
 import '../services/webdav_service.dart';
 import 'directory_walk.dart';
 
-/// Walk [rootPath] with [walk] and return music files not yet in the library.
+/// Walk [rootPath] with [walk] and return music + CUE files not yet in library.
+///
+/// CUE paths are included so the scan executor can run [ingestCueRemote]
+/// instead of treating them as plain audio.
 Future<List<WebDavItem>> collectScanCandidates({
   required WebDavService webDav,
   required String accountId,
@@ -14,14 +17,27 @@ Future<List<WebDavItem>> collectScanCandidates({
   required bool rootIsFile,
   required WalkOptions walk,
   required bool Function(String name) isMusic,
+  required bool Function(String name) isCue,
   required bool Function(String remotePath) alreadyInLibrary,
+  /// For a .cue root/file: true when the cue album is already represented
+  /// (any slice with this cueRemotePath exists).
+  required bool Function(String cueRemotePath) cueAlbumInLibrary,
   CancelToken? cancel,
 }) async {
   if (rootIsFile) {
-    if (!isMusic(rootPath) && !isMusic(rootPath.split('/').last)) {
-      return const [];
-    }
     final name = rootPath.split('/').where((s) => s.isNotEmpty).last;
+    if (isCue(name)) {
+      if (cueAlbumInLibrary(rootPath)) return const [];
+      return [
+        WebDavItem(
+          name: name,
+          path: rootPath,
+          isDirectory: false,
+          category: FileCategory.cue,
+        ),
+      ];
+    }
+    if (!isMusic(rootPath) && !isMusic(name)) return const [];
     if (alreadyInLibrary(rootPath)) return const [];
     return [
       WebDavItem(
@@ -44,6 +60,10 @@ Future<List<WebDavItem>> collectScanCandidates({
     for (final item in items) {
       if (item.isDirectory) {
         childDirs.add(item.path);
+        continue;
+      }
+      if (isCue(item.name)) {
+        if (!cueAlbumInLibrary(item.path)) out.add(item);
         continue;
       }
       if (!isMusic(item.name)) continue;

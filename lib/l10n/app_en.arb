@@ -369,10 +369,10 @@
   "overwriteLibraryNote": "Local index, tags, and unsynced changes are replaced by the cloud copy; downloaded audio, covers, and caches are kept.",
   "overwriteLibraryAction": "Overwrite",
   "overwriteLibraryPhrase": "Type YES to confirm overwriting",
-  "destroyLibraryTitle": "Destroy library",
+  "destroyLibraryTitle": "Destroy media library?",
   "destroyLibraryBody": "Destroys the local library track by track: each track’s cached audio, covers, and library rows are deleted, leaving one tombstone each.",
   "destroyLibraryNote": "Deletion records upload on the next sync; a cloud rebuild cannot restore destroyed content. Auto-sync is turned off afterwards.",
-  "destroyLibraryAction": "Destroy",
+  "destroyLibraryAction": "Destroy media library",
   "destroyLibraryPhrase": "Type YES to confirm destroying",
   "destroyLibraryDone": "Destroyed {count} tracks; deletion records upload on next sync, scheduled sync off",
   "readCloudLibraryFailed": "Failed to read cloud library: {error}",
@@ -715,7 +715,7 @@
   "cacheDeleteBodyMany": "This will delete {count} cache files; tags and covers are kept.",
   "cacheDeletedCount": "Deleted {count} local audio caches",
   "destroyTracksTitle": "Destroy the selected tracks?",
-  "destroyTracksBody": "This will delete {count} tracks (cache, library records, metadata, and covers). This cannot be undone.",
+  "destroyTracksBody": "This will destroy {count} tracks (cache, library records, metadata, and covers). This cannot be undone.",
   "destroyTracksCueNote": "(CUE slices deleted as one group)",
   "destroyAction": "Destroy",
   "destroyedTracksCount": "Destroyed {count} tracks",
@@ -749,7 +749,7 @@
   "updateCancelled": "Cancelled",
   "updateDone": "Update finished",
   "updateSummary": "{a}: updated {b}, skipped {c}, failed {d}",
-  "deleteCacheKeepMeta": "Delete cache (keep metadata & covers)",
+  "deleteCacheKeepMeta": "Clear cache (keep tags)",
   "updateTags": "Update tags",
   "downloadUncachedTracks": "Download uncached tracks",
   "libraryTracksEmpty": "No tracks yet",
@@ -979,7 +979,7 @@
   "days": "days",
   "hours": "hours",
   "autoCleanupDisabled": "Automatic cleanup is off; use the button below to clear manually.",
-  "clearAudioCache": "Clear audio cache manually",
+  "clearAudioCache": "Clear audio cache",
   "shareRenameHint": "Rename shared filenames using tags.",
   "shareRenameTitle": "Rename shares using tags",
   "shareRenameSubtitle": "Enabled by default; individual filenames can still be changed",
@@ -1192,5 +1192,23 @@
   "refreshTagsFromLocal": "Update tags from local",
   "refreshTagsFromLocalHint": "Read tags and covers from cached audio",
   "refreshTagsFromCloud": "Update tags from cloud",
-  "refreshTagsFromCloudHint": "Queue Range fetches for tags and covers"
+  "refreshTagsFromCloudHint": "Queue Range fetches for tags and covers",
+  "destroyTracksAction": "Destroy selected tracks",
+  "taskKindMatchRemote": "Match remote",
+  "matchRemoteTitle": "Match remote files",
+  "matchRemoteHint": "Probe whether library tracks still exist in the cloud; mark missing ones with a red dot (skips tracks that have a local cache).",
+  "matchRemoteQueued": "Match-remote task queued",
+  "destroyLibraryConfirm": "Destroy entire media library",
+  "@taskKindMatchRemote": {
+    "description": "taskKindMatchRemote"
+  },
+  "@matchRemoteTitle": {
+    "description": "matchRemoteTitle"
+  },
+  "@matchRemoteHint": {
+    "description": "matchRemoteHint"
+  },
+  "@matchRemoteQueued": {
+    "description": "matchRemoteQueued"
+  }
 }

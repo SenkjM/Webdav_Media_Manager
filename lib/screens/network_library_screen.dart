@@ -515,13 +515,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
   /// 音乐 → 统一播放（有缓存走文件，无缓存串流；同一 MiniPlayer）。
   Future<void> _streamMusic(WebDavItem item) async {
-    if (!context.read<SettingsService>().audioStreamingEnabled) {
-      AppSnack.error(
-        context,
-        AppLocalizations.of(context)!.netStreamingExperimental,
-      );
-      return;
-    }
     final accountId = _accountId;
     if (accountId == null) return;
     await _openMusicStream(item, accountId: accountId);
@@ -796,9 +789,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final defaultAction = settings.fileActions.forCategory(item.category);
     final otherActions = FileActionCatalog.forCategory(item.category)
         .where((a) => a != defaultAction)
-        .where(
-          (a) => a != FileAction.streamMusic || settings.audioStreamingEnabled,
-        )
         .toList();
 
     await showModalBottomSheet<void>(
@@ -1663,7 +1653,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           walk: walk,
           isMusic: (name) =>
               settings.fileTypes.categoryFor(name) == FileCategory.music,
+          isCue: (name) =>
+              settings.fileTypes.categoryFor(name) == FileCategory.cue,
           alreadyInLibrary: (path) => library.find(sourceName, path) != null,
+          cueAlbumInLibrary: (cuePath) => library.tracks.any(
+            (t) =>
+                t.sourceName == sourceName && t.cueRemotePath == cuePath,
+          ),
         );
         plan.add((root: root, count: candidates.length));
         total += candidates.length;

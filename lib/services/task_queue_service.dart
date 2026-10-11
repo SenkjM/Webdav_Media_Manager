@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/file_type_config.dart';
 import '../models/queue_task.dart';
 import '../models/library_track.dart';
 import '../models/webdav_item.dart';
@@ -502,6 +503,30 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       kind: TaskKind.retagCloud,
       progressMode: TaskProgressMode.units,
       unitsTotal: 1,
+      unitsDone: 0,
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
+  /// Probe every library row for this source (or all sources) and write red dots.
+  Future<QueueTask> enqueueMatchRemote({
+    required String sourceName,
+    int? unitsTotal,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: '/',
+      fileName: 'match_remote',
+      createdAt: DateTime.now(),
+      kind: TaskKind.matchRemote,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: unitsTotal,
       unitsDone: 0,
     );
     _tasks.add(task);
@@ -1433,7 +1458,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
                   t.status == TaskStatus.pending &&
                   (t.kind == TaskKind.download ||
                       t.kind == TaskKind.scan ||
-                      t.kind == TaskKind.retagCloud) &&
+                      t.kind == TaskKind.retagCloud ||
+                      t.kind == TaskKind.matchRemote) &&
                   (t.nextRetryAt == null || !t.nextRetryAt!.isAfter(now)),
             )
             .toList()
@@ -2025,6 +2051,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           await _runScan(task, token);
         case TaskKind.retagCloud:
           await _runRetagCloud(task, token);
+        case TaskKind.matchRemote:
+          await _runMatchRemote(task, token);
         case TaskKind.retagLocal:
           // Local retag stays interactive (settings); not scheduled here.
           task.status = TaskStatus.cancelled;
@@ -2228,9 +2256,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       throw StateError('err.unknown|library unavailable');
     }
     final walk = _settings?.mediaScanWalkOptions ?? const WalkOptions();
-    final rootIsFile = !task.fileName.contains('/') &&
-        _isMusicFile(task.fileName) &&
-        !task.remotePath.endsWith('/');
+    final lower = task.fileName.toLowerCase();
+    final rootIsFile = !task.remotePath.endsWith('/') &&
+        (_isMusicFile(task.fileName) ||
+            _isMusicFile(task.remotePath) ||
+            lower.endsWith('.cue') ||
+            isCueFileName(task.fileName));
     final candidates = await collectScanCandidates(
       webDav: _webDav,
       accountId: accountId,
@@ -2239,7 +2270,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       rootIsFile: rootIsFile,
       walk: walk,
       isMusic: _isMusicFile,
+      isCue: isCueFileName,
       alreadyInLibrary: (path) => library.find(task.sourceName, path) != null,
+      cueAlbumInLibrary: (cuePath) => library.tracks.any(
+        (tr) =>
+            tr.sourceName == task.sourceName && tr.cueRemotePath == cuePath,
+      ),
       cancel: token,
     );
     task.unitsTotal = candidates.length;
@@ -2258,33 +2294,61 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       try {
-        if (library.find(task.sourceName, item.path) != null) {
-          done++;
-          await reportUnitsProgress(
-            task.id,
-            done: done,
-            total: candidates.length,
+        if (isCueFileName(item.name) || item.category == FileCategory.cue) {
+          final already = library.tracks.any(
+            (tr) =>
+                tr.sourceName == task.sourceName &&
+                tr.cueRemotePath == item.path,
           );
-          continue;
+          if (already) {
+            done++;
+            await reportUnitsProgress(
+              task.id,
+              done: done,
+              total: candidates.length,
+            );
+            continue;
+          }
+          final bytes = await _webDav.readAsBytes(accountId, item.path);
+          final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
+          if (sheet == null) {
+            throw StateError('err.cueMalformed|${item.path}');
+          }
+          await library.ingestCueRemote(
+            sourceName: task.sourceName,
+            cueRemotePath: item.path,
+            sheet: sheet,
+          );
+        } else {
+          if (library.find(task.sourceName, item.path) != null) {
+            done++;
+            await reportUnitsProgress(
+              task.id,
+              done: done,
+              total: candidates.length,
+            );
+            continue;
+          }
+          final source = await _webDav.resolveStreamSource(
+            remotePath: item.path,
+            name: item.name,
+            accountId: accountId,
+            kind: StreamKind.music,
+          );
+          if (source == null || source.uri.isEmpty) {
+            throw StateError('err.cloud.notFound|${item.path}');
+          }
+          final tags = await covers.extractTags(source, cancel: token);
+          await library.ingestFromTags(
+            sourceName: task.sourceName,
+            remotePath: item.path,
+            fileName: item.name,
+            tags: tags ?? const ReadTags(),
+          );
         }
-        final source = await _webDav.resolveStreamSource(
-          remotePath: item.path,
-          name: item.name,
-          accountId: accountId,
-          kind: StreamKind.music,
-        );
-        if (source == null || source.uri.isEmpty) {
-          throw StateError('err.cloud.notFound|${item.path}');
-        }
-        final tags = await covers.extractTags(source, cancel: token);
-        await library.ingestFromTags(
-          sourceName: task.sourceName,
-          remotePath: item.path,
-          fileName: item.name,
-          tags: tags ?? const ReadTags(),
-        );
       } catch (e) {
-        if (token.isCancelled || (e is DioException && CancelToken.isCancel(e))) {
+        if (token.isCancelled ||
+            (e is DioException && CancelToken.isCancel(e))) {
           task.status = TaskStatus.cancelled;
           await _guardPersist(() => _store.upsert(task));
           notifyListeners();
@@ -2345,6 +2409,118 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     await reportUnitsProgress(task.id, done: 1, total: 1);
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+  }
+
+
+  Future<void> _runMatchRemote(QueueTask task, CancelToken token) async {
+    final library = _library;
+    if (library == null) {
+      throw StateError('err.unknown|library unavailable');
+    }
+    final cache = _cache;
+    final targets = <LibraryTrack>[];
+    for (final tr in library.tracks) {
+      if (task.sourceName.isNotEmpty &&
+          task.sourceName != '*' &&
+          tr.sourceName != task.sourceName) {
+        continue;
+      }
+      final probePath = tr.isCueVirtual
+          ? (tr.audioRemotePath ?? tr.remotePath)
+          : tr.remotePath;
+      if (cache.hasLocalFile(probePath, sourceName: tr.sourceName)) {
+        continue;
+      }
+      targets.add(tr);
+    }
+    task.unitsTotal = targets.length;
+    task.unitsDone = 0;
+    task.syncProgressFromCounters();
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    var done = 0;
+    for (final tr in targets) {
+      if (token.isCancelled) {
+        task.status = TaskStatus.cancelled;
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return;
+      }
+      final accountId = _accountIdFor(tr.sourceName);
+      if (accountId == null) {
+        done++;
+        await reportUnitsProgress(task.id, done: done, total: targets.length);
+        continue;
+      }
+      final probePath = tr.isCueVirtual
+          ? (tr.audioRemotePath ?? tr.remotePath)
+          : tr.remotePath;
+      final probeName = probePath.split('/').where((s) => s.isNotEmpty).last;
+      try {
+        final exists = await _remoteExists(
+          accountId: accountId,
+          remotePath: probePath,
+          name: probeName.isEmpty ? tr.fileName : probeName,
+        );
+        if (exists) {
+          await library.clearRemoteMissing(
+            sourceName: tr.sourceName,
+            remotePath: tr.remotePath,
+          );
+        } else {
+          await library.markRemoteMissing(
+            sourceName: tr.sourceName,
+            remotePath: tr.remotePath,
+          );
+        }
+      } catch (e) {
+        if (token.isCancelled ||
+            (e is DioException && CancelToken.isCancel(e))) {
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+          notifyListeners();
+          return;
+        }
+        debugPrint('matchRemote unit failed ${tr.remotePath}: $e');
+        task.errorMessage = TaskError.classify(e).persisted;
+      }
+      done++;
+      await reportUnitsProgress(task.id, done: done, total: targets.length);
+    }
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    task.progress = 1;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+  Future<bool> _remoteExists({
+    required String accountId,
+    required String remotePath,
+    required String name,
+  }) async {
+    try {
+      final item = await _webDav.statPath(accountId, remotePath);
+      if (item != null) return true;
+    } catch (_) {
+      // Fall through to stream resolve (cloud / crypt).
+    }
+    try {
+      final source = await _webDav.resolveStreamSource(
+        remotePath: remotePath,
+        name: name,
+        accountId: accountId,
+        kind: StreamKind.music,
+      );
+      return source != null && source.uri.isNotEmpty;
+    } catch (e) {
+      final code = TaskError.classify(e).code;
+      if (code == 'err.cloud.notFound') {
+        return false;
+      }
+      rethrow;
+    }
   }
 
 }
