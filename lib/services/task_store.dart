@@ -2,16 +2,16 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
-import '../models/download_task.dart';
+import '../models/queue_task.dart';
 
-/// SQLite persistence for the download queue.
+/// SQLite persistence for the task queue.
 ///
 /// IMPORTANT: [upsert] passes `task.toMap()` straight to `db.insert`, so **the
-/// map keys are the column names**. Any field added to [DownloadTask] must get a
+/// map keys are the column names**. Any field added to [QueueTask] must get a
 /// matching column here and a schema bump, or every insert throws
-/// `table download_tasks has no column named <field>` and the queue silently
-/// stays empty (the error used to be swallowed by `enqueue(...).ignore()`).
-class DownloadStore {
+/// `table queue_tasks has no column named <field>` and the queue silently
+/// stays empty.
+class TaskStore {
   Database? _db;
 
   /// Bumped whenever the queue schema changes.
@@ -19,12 +19,12 @@ class DownloadStore {
   /// There is deliberately **no** migration code: an older on-disk schema is
   /// dropped and recreated (see [onUpgrade]). The queue is a transient list —
   /// losing it costs a re-enqueue, not data.
-  static const schemaVersion = 7;
+  static const schemaVersion = 8;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
     final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'download_queue.db');
+    final path = p.join(dir.path, 'task_queue.db');
     _db = await openDatabase(
       path,
       version: schemaVersion,
@@ -32,6 +32,7 @@ class DownloadStore {
         await _createSchema(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
+        await db.execute('DROP TABLE IF EXISTS queue_tasks');
         await db.execute('DROP TABLE IF EXISTS download_tasks');
         await _createSchema(db);
       },
@@ -41,18 +42,22 @@ class DownloadStore {
 
   Future<void> _createSchema(Database db) async {
     await db.execute('''
-CREATE TABLE download_tasks (
+CREATE TABLE queue_tasks (
   id TEXT PRIMARY KEY,
   remote_path TEXT NOT NULL,
   file_name TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'download',
   status TEXT NOT NULL,
   local_path TEXT,
   error_message TEXT,
   progress REAL NOT NULL DEFAULT 0,
+  progress_mode TEXT NOT NULL DEFAULT 'bytes',
   completed_at TEXT,
   bytes_total INTEGER,
   bytes_received INTEGER NOT NULL DEFAULT 0,
+  units_total INTEGER,
+  units_done INTEGER NOT NULL DEFAULT 0,
   cache_group_id TEXT,
   source_name TEXT NOT NULL DEFAULT '',
   target TEXT NOT NULL DEFAULT 'cache',
@@ -68,26 +73,29 @@ CREATE TABLE download_tasks (
 
   Future<void> _createIndexes(Database db) async {
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_tasks_status ON download_tasks(status)',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_status ON queue_tasks(status)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_tasks_created ON download_tasks(created_at)',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_kind ON queue_tasks(kind)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_tasks_source_path ON download_tasks(source_name, remote_path)',
+      'CREATE INDEX IF NOT EXISTS idx_tasks_created ON queue_tasks(created_at)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_tasks_source_path ON queue_tasks(source_name, remote_path)',
     );
   }
 
-  Future<List<DownloadTask>> loadAll() async {
+  Future<List<QueueTask>> loadAll() async {
     final db = await database;
-    final rows = await db.query('download_tasks', orderBy: 'created_at ASC');
-    return rows.map(DownloadTask.fromMap).toList();
+    final rows = await db.query('queue_tasks', orderBy: 'created_at ASC');
+    return rows.map(QueueTask.fromMap).toList();
   }
 
-  Future<void> upsert(DownloadTask task) async {
+  Future<void> upsert(QueueTask task) async {
     final db = await database;
     await db.insert(
-      'download_tasks',
+      'queue_tasks',
       task.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
@@ -95,38 +103,38 @@ CREATE TABLE download_tasks (
 
   Future<void> delete(String id) async {
     final db = await database;
-    await db.delete('download_tasks', where: 'id = ?', whereArgs: [id]);
+    await db.delete('queue_tasks', where: 'id = ?', whereArgs: [id]);
   }
 
-  Future<void> deleteByStatus(DownloadStatus status) async {
+  Future<void> deleteByStatus(TaskStatus status) async {
     final db = await database;
     await db.delete(
-      'download_tasks',
+      'queue_tasks',
       where: 'status = ?',
       whereArgs: [status.name],
     );
   }
 
-  Future<DownloadTask?> findByRemotePath(
+  Future<QueueTask?> findByRemotePath(
     String remotePath, {
     String? accountId,
   }) async {
     final db = await database;
     final rows = accountId == null
         ? await db.query(
-            'download_tasks',
+            'queue_tasks',
             where: 'remote_path = ?',
             whereArgs: [remotePath],
             limit: 1,
           )
         : await db.query(
-            'download_tasks',
+            'queue_tasks',
             where: 'source_name = ? AND remote_path = ?',
             whereArgs: [accountId, remotePath],
             limit: 1,
           );
     if (rows.isEmpty) return null;
-    return DownloadTask.fromMap(rows.first);
+    return QueueTask.fromMap(rows.first);
   }
 
   Future<void> close() async {

@@ -8,7 +8,7 @@ import '../services/accounts_service.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
-import '../services/download_queue_service.dart';
+import '../services/task_queue_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
@@ -1036,7 +1036,7 @@ class _TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
-    final downloads = context.watch<DownloadQueueService>();
+    final downloads = context.watch<TaskQueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
     final trackLabel = track.trackNumber != null
         ? '${track.trackNumber}. '

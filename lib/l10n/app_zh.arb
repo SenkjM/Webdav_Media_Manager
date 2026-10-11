@@ -28,7 +28,7 @@
   "library": "音乐库",
   "playlists": "歌单",
   "networkLibrary": "网络库",
-  "downloadQueue": "下载队列",
+  "downloadQueue": "任务队列",
   "aboutAgpl": "关于 / AGPL",
   "exitApp": "退出应用",
   "cancel": "取消",
@@ -105,8 +105,8 @@
   "cancelAll": "全部取消",
   "clearCompleted": "清除已完成",
   "more": "更多",
-  "noDownloadTasks": "暂无下载任务",
-  "queueCleared": "下载队列已清空",
+  "noDownloadTasks": "暂无任务",
+  "queueCleared": "任务队列已清空",
   "clearAllQueue": "清除所有队列",
   "cueAlbum": "CUE",
   "songCount": "{count} 首",
@@ -155,7 +155,7 @@
   "accountBindingHint": "曲目按「名称 + 路径」绑定；改名等同于换盘。",
   "manageAccounts": "管理多服务器账号",
   "manageAccountsSubtitle": "添加 / 编辑 / 删除 WebDAV 服务器",
-  "downloadQueueSettings": "下载队列",
+  "downloadQueueSettings": "任务队列",
   "downloadQueueSettingsSubtitle": "断点续传的临时文件保留上限与清理",
   "encryptionSettings": "加密设置",
   "encryptionSettingsSubtitle": "Crypt 顺序流与 secretbox 引擎",
@@ -200,7 +200,7 @@
   "copyTo": "复制到",
   "moveTo": "移动到",
   "downloadAction": "下载",
-  "fileQueuedOrSaved": "该文件已在下载队列或已下载",
+  "fileQueuedOrSaved": "该文件已在任务队列或已下载",
   "fileQueuedOrSavedShort": "该文件已在队列或已保存",
   "accountRequired": "请先添加 WebDAV 服务器",
   "syncTitle": "同步与备份",
@@ -621,7 +621,7 @@
   "locationDownloads": "下载目录",
   "locationDownloadsSubdir": "下载目录/{dir}",
   "dlChannelProgressName": "下载进度",
-  "dlChannelProgressDesc": "下载队列进行中的进度",
+  "dlChannelProgressDesc": "任务队列进行中的进度",
   "dlChannelDoneName": "下载完成",
   "dlChannelDoneDesc": "全部下载完成后的结果汇总",
   "dlDoneCancelledCount": "取消 {count}",
@@ -632,7 +632,7 @@
   "dlErrCueMalformed": "无法解析的 CUE：需要标准 FILE + TRACK/INDEX",
   "dlErrOffline": "网络不可用",
   "dlErrQueueCleared": "队列已清空",
-  "dlErrQueueSchemaDrift": "下载队列数据库结构过旧（{raw}）。请重启应用以升级数据库。",
+  "dlErrQueueSchemaDrift": "任务队列数据库结构过旧（{raw}）。请重启应用以升级数据库。",
   "dlErrSourceUnbound": "来源网盘未绑定（{source}）",
   "dlErrWritePublicFailed": "写入公共目录失败",
   "dlNetworkInterruptedRetry": "网络中断，正在重试 ({attempts}/{max})",
@@ -663,7 +663,7 @@
   "netSelectedCount": "已选 {n} 项",
   "netCachingMusic": "正在缓存音乐…",
   "netNoNewAudio": "这里没有新的音频",
-  "netEnqueueing": "正在加入下载队列…",
+  "netEnqueueing": "正在加入任务队列…",
   "netNothingDownloadable": "所选内容里没有可下载的文件",
   "netEnqueuedCount": "已加入 {n} 项",
   "netEnqueueFailedFolders": "失败 {n} 个文件夹",
@@ -1016,7 +1016,7 @@
   "hintsAndNotifications": "提示与通知",
   "hintsSubtitle": "屏幕底部提示同时只显示一条，点「知道了」立即关闭。",
   "hintDuration": "提示显示时长",
-  "downloadNotifications": "下载队列系统通知",
+  "downloadNotifications": "任务队列系统通知",
   "downloadNotificationsHint": "下载进度与完成结果显示在通知栏",
   "sendTestNotification": "发送测试通知",
   "sendTestNotificationHint": "立即发一条进度与一条完成通知，用来排查系统是否拦截",
@@ -1137,5 +1137,22 @@
   "taskErrQueueSchemaDrift": "队列数据库需升级",
   "taskErrDetailTitle": "错误详情",
   "taskErrViewDetail": "详情",
-  "taskErrLongPressHint": "长按查看完整错误"
+  "taskErrLongPressHint": "长按查看完整错误",
+  "taskQueue": "任务队列",
+  "noTaskQueueItems": "暂无任务",
+  "taskKindDownload": "下载",
+  "taskKindScan": "刮削",
+  "taskKindRetagCloud": "更新标签（云端）",
+  "taskKindRetagLocal": "更新标签（本地）",
+  "taskProgressUnits": "{done} / {total}",
+  "@taskProgressUnits": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  }
 }

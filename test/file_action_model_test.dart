@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_media_manager/models/download_task.dart';
+import 'package:webdav_media_manager/models/queue_task.dart';
 import 'package:webdav_media_manager/models/file_actions.dart';
 import 'package:webdav_media_manager/models/file_type_config.dart';
 import 'package:webdav_media_manager/services/settings_service.dart';

@@ -9,7 +9,7 @@ import '../utils/android_background.dart';
 import '../utils/back_handler_registry.dart';
 import '../widgets/mini_player.dart';
 import 'about_screen.dart';
-import 'downloads_screen.dart';
+import 'tasks_screen.dart';
 import 'library_screen.dart';
 import 'network_library_screen.dart';
 import 'playlists_screen.dart';
@@ -101,7 +101,7 @@ class _HomeShellState extends State<HomeShell> {
         navigatorKey: _networkNav,
         root: const NetworkLibraryScreen(),
       ),
-      _TabNavigator(navigatorKey: _downloadsNav, root: const DownloadsScreen()),
+      _TabNavigator(navigatorKey: _downloadsNav, root: const TasksScreen()),
       const SettingsScreen(),
     ];
 
@@ -229,7 +229,7 @@ class _HomeShellState extends State<HomeShell> {
                           ),
                           _DrawerItem(
                             icon: Icons.download_outlined,
-                            label: l10n.downloadQueue,
+                            label: l10n.taskQueue,
                             selected: _index == 3,
                             onTap: () => _select(3),
                           ),

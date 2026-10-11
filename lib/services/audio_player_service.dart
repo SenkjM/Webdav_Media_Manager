@@ -4,10 +4,10 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 
-import '../models/download_task.dart';
+import '../models/queue_task.dart';
 import '../models/webdav_item.dart';
 import '../utils/l10n_host.dart';
-import 'download_queue_service.dart';
+import 'task_queue_service.dart';
 import 'music_audio_handler.dart';
 import 'notification_permission_service.dart';
 
@@ -19,10 +19,10 @@ import 'notification_permission_service.dart';
 /// MediaStyle notification / media session stays active with metadata.
 class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
-    required DownloadQueueService downloads,
+    required TaskQueueService taskQueue,
     required MusicAudioHandler handler,
     NotificationPermissionService? notificationPermission,
-  }) : _downloads = downloads,
+  }) : _taskQueue = taskQueue,
        _notifications = notificationPermission,
        _handler = handler {
     _handler.resolveLocalPath = _resolveLocalPath;
@@ -44,7 +44,7 @@ class AudioPlayerService extends ChangeNotifier {
     });
   }
 
-  final DownloadQueueService _downloads;
+  final TaskQueueService _taskQueue;
   final NotificationPermissionService? _notifications;
   final MusicAudioHandler _handler;
 
@@ -79,9 +79,9 @@ class AudioPlayerService extends ChangeNotifier {
     final existing = track.localPath;
     if (existing != null && File(existing).existsSync()) return existing;
     final audioRemote = track.effectiveAudioRemotePath;
-    final task = _downloads.taskForRemote(track.sourceName, audioRemote);
+    final task = _taskQueue.taskForRemote(track.sourceName, audioRemote);
     if (task != null &&
-        task.status == DownloadStatus.completed &&
+        task.status == TaskStatus.completed &&
         task.localPath != null &&
         File(task.localPath!).existsSync()) {
       track.localPath = task.localPath;

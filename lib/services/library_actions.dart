@@ -22,7 +22,7 @@ import '../utils/track_identity.dart';
 import '../widgets/destroy_progress_dialog.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
-import 'download_queue_service.dart';
+import 'task_queue_service.dart';
 import 'platform_export_service.dart';
 import 'settings_service.dart';
 import 'share_rename_service.dart';
@@ -39,7 +39,7 @@ Future<bool> refreshOneLibraryTrackTags(
   BuildContext context,
   LibraryTrack track,
 ) async =>
-    context.read<DownloadQueueService>().refreshTrackTagsFromCache(track);
+    context.read<TaskQueueService>().refreshTrackTagsFromCache(track);
 
 Future<({int updated, int skipped, int failed, bool cancelled})>
 refreshLibraryTrackTags(
@@ -55,7 +55,7 @@ refreshLibraryTrackTags(
     unique.putIfAbsent(key, () => track);
   }
   final items = unique.values.toList();
-  final downloads = context.read<DownloadQueueService>();
+  final downloads = context.read<TaskQueueService>();
   var updated = 0;
   var skipped = 0;
   var failed = 0;
@@ -112,7 +112,7 @@ Future<int> downloadUncachedLibraryTracks(
 ) async {
   final cache = context.read<CacheService>();
   final accounts = context.read<AccountsService>();
-  final downloads = context.read<DownloadQueueService>();
+  final downloads = context.read<TaskQueueService>();
   final seen = <String>{};
   var queued = 0;
   var unavailable = 0;
@@ -172,7 +172,7 @@ Future<void> enqueueLibraryTrackDownload(
     }
     return;
   }
-  final downloads = context.read<DownloadQueueService>();
+  final downloads = context.read<TaskQueueService>();
   if (track.isCueVirtual && track.cueRemotePath != null) {
     unawaited(
       downloads.enqueueCueGroup(

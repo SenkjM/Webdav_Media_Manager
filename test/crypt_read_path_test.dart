@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openlist_crypt/openlist_crypt.dart';
 import 'package:webdav_media_manager/services/cloud_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/crypt/crypt_driver.dart';
-import 'package:webdav_media_manager/services/download_queue_service.dart';
+import 'package:webdav_media_manager/services/task_queue_service.dart';
 
 /// 计数版密文服务器：记录每个 Range 请求、并发度，并可按 URL 里的 `v` 模拟
 /// 直链过期、按请求序号模拟限流。
@@ -299,7 +299,7 @@ void main() {
         throwsA(isA<CloudDriverDataException>()),
       );
       expect(
-        DownloadQueueService.isRetryable(const CloudDriverDataException('坏块')),
+        TaskQueueService.isRetryable(const CloudDriverDataException('坏块')),
         isFalse,
         reason: '同一份字节再拉一次还是坏的，重试没有意义',
       );

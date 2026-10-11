@@ -1,15 +1,15 @@
 # 04 · 下载队列
 
 > 编号 04 · 总索引：[00-INDEX.md](00-INDEX.md)  
-> 代码：`lib/services/download_queue_service.dart`、`lib/screens/downloads_screen.dart`、`lib/models/download_task.dart`
+> 代码：`lib/services/task_queue_service.dart`、`lib/screens/tasks_screen.dart`、`lib/models/queue_task.dart`（开发中语义见 [99 §17](99-IN-PROGRESS.md)）
 
 所有下载都经由队列——网络库的每一次入队、CUE 整组下载、视频存相册都走这里。队列是**唯一**的下载真相，界面只是它的投影。
 
-> **占位（开发中）**：下载队列将改名为任务队列，`kind` 含 download / scan / retag 等，列表短错误码、详情全文；语义见 [99 §17](99-IN-PROGRESS.md)。
+> **占位（开发中）**：已改名任务队列并落地 `kind` / 双进度外壳；扫描执行器等见 [99 §17](99-IN-PROGRESS.md)。
 
 ## 1. 任务模型
 
-`DownloadTask`（持久化在 `download_queue.db`）：
+`QueueTask`（持久化在 `task_queue.db` / 表 `queue_tasks`；外壳已支持 `kind` 与计数进度，见 [99 §17](99-IN-PROGRESS.md)）：
 
 | 字段 | 语义 |
 |------|------|
@@ -22,7 +22,7 @@
 | `progress` / `bytesReceived` / `bytesTotal` / `errorMessage` | 进度与失败原因 |
 | `isPublic` | `target != cache`，即「落到公共集合」；`isGallery` 单独判相册 |
 
-持久化读取（`DownloadTask.fromMap`）对旧库**类型宽容**：字符串 / 时间字段经 `_asString` / `_asDate` 转换，避免老 schema 行里混入的 bool / 数值让启动初始化崩溃。
+持久化读取（`QueueTask.fromMap`）对旧库**类型宽容**：字符串 / 时间字段经 `_asString` / `_asDate` 转换，避免老 schema 行里混入的 bool / 数值让启动初始化崩溃。
 
 ## 2. 状态机与执行
 
@@ -73,4 +73,4 @@
 
 ## 8. 相关代码
 
-`download_queue_service.dart`（队列 / 入队 / 传输 / ingest 派发）、`download_store.dart`（持久化）、`models/download_task.dart`（模型与枚举）、`downloads_screen.dart`（队列界面）、`library_service.dart`（ingest）。
+`task_queue_service.dart`（队列 / 入队 / 传输 / ingest 派发）、`task_store.dart`（持久化）、`models/queue_task.dart`（模型与枚举）、`tasks_screen.dart`（队列界面）、`library_service.dart`（ingest）。

@@ -3,23 +3,23 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/download_task.dart';
+import '../models/queue_task.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../utils/cue_sheet.dart';
 import '../services/cloud_driver.dart';
-import '../services/download_queue_service.dart';
+import '../services/task_queue_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
 import '../utils/app_snack.dart';
 import 'home_shell.dart';
 
-class DownloadsScreen extends StatelessWidget {
-  const DownloadsScreen({super.key});
+class TasksScreen extends StatelessWidget {
+  const TasksScreen({super.key});
 
   /// Collapse CUE cache-group members into one queue row.
   static List<_QueueRow> _rowsFor(
-    List<DownloadTask> tasksNewestFirst,
-    DownloadQueueService queue,
+    List<QueueTask> tasksNewestFirst,
+    TaskQueueService queue,
   ) {
     final seenGroups = <String>{};
     final rows = <_QueueRow>[];
@@ -33,8 +33,8 @@ class DownloadsScreen extends StatelessWidget {
             .where(
               (x) =>
                   x.cacheGroupId == gid &&
-                  x.status != DownloadStatus.cancelled &&
-                  x.status != DownloadStatus.failed,
+                  x.status != TaskStatus.cancelled &&
+                  x.status != TaskStatus.failed,
             )
             .toList();
         if (members.isEmpty) {
@@ -43,7 +43,7 @@ class DownloadsScreen extends StatelessWidget {
               .toList();
         }
         // Dedupe by remotePath (keep newest).
-        final byPath = <String, DownloadTask>{};
+        final byPath = <String, QueueTask>{};
         for (final m in members) {
           final prev = byPath[m.remotePath];
           if (prev == null || m.createdAt.isAfter(prev.createdAt)) {
@@ -62,15 +62,15 @@ class DownloadsScreen extends StatelessWidget {
   /// this also drops pending/failed entries and cancels running transfers.
   Future<void> _confirmClearAll(
     BuildContext context,
-    DownloadQueueService queue,
-    List<DownloadTask> tasks,
+    TaskQueueService queue,
+    List<QueueTask> tasks,
   ) async {
     final l10n = AppLocalizations.of(context)!;
     final running = tasks
         .where(
           (t) =>
-              t.status == DownloadStatus.active ||
-              t.status == DownloadStatus.pending,
+              t.status == TaskStatus.active ||
+              t.status == TaskStatus.pending,
         )
         .length;
     final ok = await showDialog<bool>(
@@ -105,7 +105,7 @@ class DownloadsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final queue = context.watch<DownloadQueueService>();
+    final queue = context.watch<TaskQueueService>();
     final l10n = AppLocalizations.of(context)!;
     final tasks = queue.tasks.reversed.toList();
     final rows = _rowsFor(tasks, queue);
@@ -114,18 +114,18 @@ class DownloadsScreen extends StatelessWidget {
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         leading: const DrawerMenuButton(),
-        title: Text(l10n.downloadQueue),
+        title: Text(l10n.taskQueue),
         actions: [
           IconButton(
             tooltip: l10n.downloadAll,
-            onPressed: tasks.any((t) => t.status != DownloadStatus.completed)
+            onPressed: tasks.any((t) => t.status != TaskStatus.completed)
                 ? () => queue.downloadAll()
                 : null,
             icon: const Icon(Icons.download_for_offline_outlined),
           ),
           IconButton(
             tooltip: l10n.wakeWaiting,
-            onPressed: tasks.any((t) => t.status == DownloadStatus.pending)
+            onPressed: tasks.any((t) => t.status == TaskStatus.pending)
                 ? () => queue.downloadWaiting()
                 : null,
             icon: const Icon(Icons.playlist_play),
@@ -135,15 +135,15 @@ class DownloadsScreen extends StatelessWidget {
             onPressed:
                 tasks.any(
                   (t) =>
-                      t.status == DownloadStatus.active ||
-                      t.status == DownloadStatus.pending,
+                      t.status == TaskStatus.active ||
+                      t.status == TaskStatus.pending,
                 )
                 ? () => queue.cancelAll()
                 : null,
             icon: const Icon(Icons.stop_circle_outlined),
           ),
           TextButton(
-            onPressed: tasks.any((t) => t.status == DownloadStatus.completed)
+            onPressed: tasks.any((t) => t.status == TaskStatus.completed)
                 ? () => queue.clearCompleted()
                 : null,
             child: Text(l10n.clearCompleted),
@@ -169,7 +169,7 @@ class DownloadsScreen extends StatelessWidget {
       body: rows.isEmpty
           ? Center(
               child: Text(
-                l10n.noDownloadTasks,
+                l10n.noTaskQueueItems,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -201,12 +201,12 @@ class _QueueRow {
     this.groupId,
     this.songCount,
   });
-  factory _QueueRow.single(DownloadTask t) =>
+  factory _QueueRow.single(QueueTask t) =>
       _QueueRow._([t], isCueGroup: false);
   factory _QueueRow.cueGroup(
     String id,
-    List<DownloadTask> members,
-    DownloadQueueService queue,
+    List<QueueTask> members,
+    TaskQueueService queue,
   ) => _QueueRow._(
     members,
     isCueGroup: true,
@@ -214,7 +214,7 @@ class _QueueRow {
     songCount: queue.cueSongCountForGroup(id),
   );
 
-  final List<DownloadTask> members;
+  final List<QueueTask> members;
   final bool isCueGroup;
   final String? groupId;
   final int? songCount;
@@ -227,14 +227,14 @@ class _CueGroupTile extends StatelessWidget {
     this.songCount,
   });
 
-  final List<DownloadTask> members;
+  final List<QueueTask> members;
   final String groupId;
   final int? songCount;
 
   @override
   Widget build(BuildContext context) {
-    final queue = context.read<DownloadQueueService>();
-    final cue = members.cast<DownloadTask?>().firstWhere(
+    final queue = context.read<TaskQueueService>();
+    final cue = members.cast<QueueTask?>().firstWhere(
       (t) => t!.remotePath.toLowerCase().endsWith('.cue'),
       orElse: () => null,
     );
@@ -254,12 +254,12 @@ class _CueGroupTile extends StatelessWidget {
         } catch (_) {}
       }
     }
-    final failed = members.any((t) => t.status == DownloadStatus.failed);
-    final active = members.any((t) => t.status == DownloadStatus.active);
-    final pending = members.any((t) => t.status == DownloadStatus.pending);
+    final failed = members.any((t) => t.status == TaskStatus.failed);
+    final active = members.any((t) => t.status == TaskStatus.active);
+    final pending = members.any((t) => t.status == TaskStatus.pending);
     final allDone =
         members.isNotEmpty &&
-        members.every((t) => t.status == DownloadStatus.completed);
+        members.every((t) => t.status == TaskStatus.completed);
     final l10n = AppLocalizations.of(context)!;
     final (label, color) = failed
         ? (l10n.downloadFailed, AppColors.error)
@@ -351,8 +351,8 @@ class _CueGroupTile extends StatelessWidget {
                   TextButton(
                     onPressed: () {
                       for (final t in members) {
-                        if (t.status == DownloadStatus.pending ||
-                            t.status == DownloadStatus.active) {
+                        if (t.status == TaskStatus.pending ||
+                            t.status == TaskStatus.active) {
                           queue.cancel(t.id);
                         }
                       }
@@ -363,8 +363,8 @@ class _CueGroupTile extends StatelessWidget {
                   TextButton(
                     onPressed: () {
                       for (final t in members) {
-                        if (t.status == DownloadStatus.failed ||
-                            t.status == DownloadStatus.cancelled) {
+                        if (t.status == TaskStatus.failed ||
+                            t.status == TaskStatus.cancelled) {
                           queue.retry(t.id);
                         }
                       }
@@ -391,30 +391,30 @@ class _CueGroupTile extends StatelessWidget {
 class _TaskTile extends StatelessWidget {
   const _TaskTile({required this.task});
 
-  final DownloadTask task;
+  final QueueTask task;
 
   @override
   Widget build(BuildContext context) {
-    final queue = context.read<DownloadQueueService>();
+    final queue = context.read<TaskQueueService>();
     final l10n = AppLocalizations.of(context)!;
     final retryWaiting =
-        task.status == DownloadStatus.pending && task.nextRetryAt != null;
+        task.status == TaskStatus.pending && task.nextRetryAt != null;
     final label = retryWaiting
-        ? '${l10n.downloadActive} (${task.attempts}/${DownloadQueueService.maxAutoRetries})'
+        ? '${l10n.downloadActive} (${task.attempts}/${TaskQueueService.maxAutoRetries})'
         : task.status.label(l10n);
     final color = switch (task.status) {
-      DownloadStatus.pending =>
+      TaskStatus.pending =>
         retryWaiting ? AppColors.accent : Theme.of(context).colorScheme.outline,
-      DownloadStatus.active => AppColors.accent,
-      DownloadStatus.completed => const Color(0xFF66BB6A),
-      DownloadStatus.failed => AppColors.error,
-      DownloadStatus.cancelled => Theme.of(context).colorScheme.outline,
+      TaskStatus.active => AppColors.accent,
+      TaskStatus.completed => const Color(0xFF66BB6A),
+      TaskStatus.failed => AppColors.error,
+      TaskStatus.cancelled => Theme.of(context).colorScheme.outline,
     };
     final savedToGallery =
-        task.isGallery && task.status == DownloadStatus.completed;
+        task.isGallery && task.status == TaskStatus.completed;
     final savedToDownloads =
         task.target == DownloadTarget.downloads &&
-        task.status == DownloadStatus.completed;
+        task.status == TaskStatus.completed;
 
     return Card(
       color: Theme.of(context).colorScheme.surfaceContainer,
@@ -441,6 +441,12 @@ class _TaskTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (task.kind != TaskKind.download)
+                  _DestinationChip(
+                    icon: Icons.task_alt_outlined,
+                    label: task.kind.label(l10n),
+                    color: AppColors.accent,
+                  ),
                 if (task.downloadMode == CloudDownloadMode.cryptSequential)
                   _DestinationChip(
                     icon: Icons.stream_outlined,
@@ -479,12 +485,12 @@ class _TaskTile extends StatelessWidget {
                 ),
               ],
             ),
-            if (task.status == DownloadStatus.active) ...[
+            if (task.status == TaskStatus.active) ...[
               const SizedBox(height: 10),
               ClipRRect(
                 borderRadius: BorderRadius.circular(2),
                 child: LinearProgressIndicator(
-                  value: task.progress.clamp(0.0, 1.0),
+                  value: task.displayProgress,
                   minHeight: 4,
                   backgroundColor: Theme.of(context)
                       .colorScheme
@@ -494,7 +500,10 @@ class _TaskTile extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                '${(task.progress * 100).toStringAsFixed(0)}%',
+                task.progressMode == TaskProgressMode.units &&
+                        task.unitsTotal != null
+                    ? l10n.taskProgressUnits(task.unitsDone, task.unitsTotal!)
+                    : '${(task.displayProgress * 100).toStringAsFixed(0)}%',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.outline,
                   fontSize: 12,
@@ -505,7 +514,7 @@ class _TaskTile extends StatelessWidget {
             // 显示（真机反馈：既读不懂也反映不了实际位置）；目标信息由上方
             // 的「已存入系统相册」标签承担。
             if (task.errorMessage != null &&
-                (task.status == DownloadStatus.failed || retryWaiting)) ...[
+                (task.status == TaskStatus.failed || retryWaiting)) ...[
               const SizedBox(height: 4),
               GestureDetector(
                 onLongPress: () => _showTaskErrorDetail(
@@ -513,9 +522,9 @@ class _TaskTile extends StatelessWidget {
                   task.errorMessage!,
                 ),
                 child: Text(
-                  DownloadQueueService.describeError(task.errorMessage!, l10n),
+                  TaskQueueService.describeError(task.errorMessage!, l10n),
                   style: TextStyle(
-                    color: task.status == DownloadStatus.failed
+                    color: task.status == TaskStatus.failed
                         ? AppColors.error
                         : Theme.of(context).colorScheme.outline,
                   ),
@@ -529,7 +538,7 @@ class _TaskTile extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (task.errorMessage != null &&
-                    (task.status == DownloadStatus.failed || retryWaiting))
+                    (task.status == TaskStatus.failed || retryWaiting))
                   TextButton(
                     onPressed: () => _showTaskErrorDetail(
                       context,
@@ -537,14 +546,14 @@ class _TaskTile extends StatelessWidget {
                     ),
                     child: Text(l10n.taskErrViewDetail),
                   ),
-                if (task.status == DownloadStatus.pending ||
-                    task.status == DownloadStatus.active)
+                if (task.status == TaskStatus.pending ||
+                    task.status == TaskStatus.active)
                   TextButton(
                     onPressed: () => queue.cancel(task.id),
                     child: Text(l10n.cancel),
                   ),
-                if (task.status == DownloadStatus.failed ||
-                    task.status == DownloadStatus.cancelled)
+                if (task.status == TaskStatus.failed ||
+                    task.status == TaskStatus.cancelled)
                   TextButton(
                     onPressed: () => queue.retry(task.id),
                     child: Text(l10n.retry),
@@ -564,8 +573,8 @@ class _TaskTile extends StatelessWidget {
 
 Future<void> _showTaskErrorDetail(BuildContext context, String raw) async {
   final l10n = AppLocalizations.of(context)!;
-  final short = DownloadQueueService.describeError(raw, l10n);
-  final detail = DownloadQueueService.describeErrorDetail(raw);
+  final short = TaskQueueService.describeError(raw, l10n);
+  final detail = TaskQueueService.describeErrorDetail(raw);
   final body = detail == short ? detail : '$short\n\n$detail';
   await showDialog<void>(
     context: context,

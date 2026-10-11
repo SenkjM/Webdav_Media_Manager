@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../services/download_queue_service.dart';
+import '../services/task_queue_service.dart';
 import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
 import '../utils/app_snack.dart';
@@ -71,7 +71,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(title: Text(l10n.downloadQueue)),
+      appBar: AppBar(title: Text(l10n.taskQueue)),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
@@ -128,7 +128,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             onChanged: (v) async {
               await settings.setDownloadNotificationsEnabled(v);
               if (!context.mounted) return;
-              await context.read<DownloadQueueService>().setNotifications(v);
+              await context.read<TaskQueueService>().setNotifications(v);
             },
           ),
           SwitchListTile(
@@ -139,7 +139,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             onChanged: (v) async {
               await settings.setDownloadKeepAliveEnabled(v);
               if (!context.mounted) return;
-              await context.read<DownloadQueueService>().setKeepAliveEnabled(v);
+              await context.read<TaskQueueService>().setKeepAliveEnabled(v);
             },
           ),
           ListTile(
@@ -155,7 +155,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             ),
             onTap: () async {
               final err = await context
-                  .read<DownloadQueueService>()
+                  .read<TaskQueueService>()
                   .notificationService
                   .selfTest();
               if (!context.mounted) return;
@@ -171,7 +171,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             title: Text(l10n.dlCleanNow),
             subtitle: Text(l10n.dlCleanNowSub),
             onTap: () async {
-              final queue = context.read<DownloadQueueService>();
+              final queue = context.read<TaskQueueService>();
               final removed = await queue.cleanupStaleParts();
               if (!context.mounted) return;
               AppSnack.show(

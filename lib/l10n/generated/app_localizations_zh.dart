@@ -94,7 +94,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get networkLibrary => '网络库';
 
   @override
-  String get downloadQueue => '下载队列';
+  String get downloadQueue => '任务队列';
 
   @override
   String get aboutAgpl => '关于 / AGPL';
@@ -331,10 +331,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get more => '更多';
 
   @override
-  String get noDownloadTasks => '暂无下载任务';
+  String get noDownloadTasks => '暂无任务';
 
   @override
-  String get queueCleared => '下载队列已清空';
+  String get queueCleared => '任务队列已清空';
 
   @override
   String get clearAllQueue => '清除所有队列';
@@ -503,7 +503,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get manageAccountsSubtitle => '添加 / 编辑 / 删除 WebDAV 服务器';
 
   @override
-  String get downloadQueueSettings => '下载队列';
+  String get downloadQueueSettings => '任务队列';
 
   @override
   String get downloadQueueSettingsSubtitle => '断点续传的临时文件保留上限与清理';
@@ -621,7 +621,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadAction => '下载';
 
   @override
-  String get fileQueuedOrSaved => '该文件已在下载队列或已下载';
+  String get fileQueuedOrSaved => '该文件已在任务队列或已下载';
 
   @override
   String get fileQueuedOrSavedShort => '该文件已在队列或已保存';
@@ -2060,7 +2060,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dlChannelProgressName => '下载进度';
 
   @override
-  String get dlChannelProgressDesc => '下载队列进行中的进度';
+  String get dlChannelProgressDesc => '任务队列进行中的进度';
 
   @override
   String get dlChannelDoneName => '下载完成';
@@ -2102,7 +2102,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String dlErrQueueSchemaDrift(Object raw) {
-    return '下载队列数据库结构过旧（$raw）。请重启应用以升级数据库。';
+    return '任务队列数据库结构过旧（$raw）。请重启应用以升级数据库。';
   }
 
   @override
@@ -2220,7 +2220,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get netNoNewAudio => '这里没有新的音频';
 
   @override
-  String get netEnqueueing => '正在加入下载队列…';
+  String get netEnqueueing => '正在加入任务队列…';
 
   @override
   String get netNothingDownloadable => '所选内容里没有可下载的文件';
@@ -3499,7 +3499,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get hintDuration => '提示显示时长';
 
   @override
-  String get downloadNotifications => '下载队列系统通知';
+  String get downloadNotifications => '任务队列系统通知';
 
   @override
   String get downloadNotificationsHint => '下载进度与完成结果显示在通知栏';
@@ -3870,6 +3870,29 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get taskErrLongPressHint => '长按查看完整错误';
+
+  @override
+  String get taskQueue => '任务队列';
+
+  @override
+  String get noTaskQueueItems => '暂无任务';
+
+  @override
+  String get taskKindDownload => '下载';
+
+  @override
+  String get taskKindScan => '刮削';
+
+  @override
+  String get taskKindRetagCloud => '更新标签（云端）';
+
+  @override
+  String get taskKindRetagLocal => '更新标签（本地）';
+
+  @override
+  String taskProgressUnits(int done, int total) {
+    return '$done / $total';
+  }
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -3961,7 +3984,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get networkLibrary => '網路庫';
 
   @override
-  String get downloadQueue => '下載佇列';
+  String get downloadQueue => '任務佇列';
 
   @override
   String get aboutAgpl => '關於 / AGPL';
@@ -4198,10 +4221,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get more => '更多';
 
   @override
-  String get noDownloadTasks => '目前沒有下載工作';
+  String get noDownloadTasks => '暫無任務';
 
   @override
-  String get queueCleared => '下載佇列已清空';
+  String get queueCleared => '任務佇列已清空';
 
   @override
   String get clearAllQueue => '清除所有佇列';
@@ -4371,7 +4394,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get manageAccountsSubtitle => '新增／編輯／刪除 WebDAV 伺服器';
 
   @override
-  String get downloadQueueSettings => '下載佇列';
+  String get downloadQueueSettings => '任務佇列';
 
   @override
   String get downloadQueueSettingsSubtitle => '續傳暫存檔保留上限與清理';
@@ -4489,7 +4512,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get downloadAction => '下載';
 
   @override
-  String get fileQueuedOrSaved => '檔案已在下載佇列或已下載';
+  String get fileQueuedOrSaved => '該檔案已在任務佇列或已下載';
 
   @override
   String get fileQueuedOrSavedShort => '檔案已在佇列或已儲存';
@@ -5928,7 +5951,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get dlChannelProgressName => '下載進度';
 
   @override
-  String get dlChannelProgressDesc => '下載佇列進行中的進度';
+  String get dlChannelProgressDesc => '任務佇列進行中的進度';
 
   @override
   String get dlChannelDoneName => '下載完成';
@@ -5970,7 +5993,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String dlErrQueueSchemaDrift(Object raw) {
-    return '下載佇列資料庫結構過舊（$raw）。請重新啟動應用程式以升級資料庫。';
+    return '任務佇列資料庫結構過舊（$raw）。請重新啟動應用程式以升級資料庫。';
   }
 
   @override
@@ -6088,7 +6111,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get netNoNewAudio => '這裡沒有新的音訊';
 
   @override
-  String get netEnqueueing => '正在加入下載佇列…';
+  String get netEnqueueing => '正在加入任務佇列…';
 
   @override
   String get netNothingDownloadable => '所選內容裡沒有可下載的檔案';
@@ -7367,7 +7390,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get hintDuration => '提示顯示時長';
 
   @override
-  String get downloadNotifications => '下載佇列系統通知';
+  String get downloadNotifications => '任務佇列系統通知';
 
   @override
   String get downloadNotificationsHint => '下載進度與完成結果顯示在通知列';
@@ -7738,4 +7761,27 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get taskErrLongPressHint => '長按查看完整錯誤';
+
+  @override
+  String get taskQueue => '任務佇列';
+
+  @override
+  String get noTaskQueueItems => '暫無任務';
+
+  @override
+  String get taskKindDownload => '下載';
+
+  @override
+  String get taskKindScan => '刮削';
+
+  @override
+  String get taskKindRetagCloud => '更新標籤（雲端）';
+
+  @override
+  String get taskKindRetagLocal => '更新標籤（本地）';
+
+  @override
+  String taskProgressUnits(int done, int total) {
+    return '$done / $total';
+  }
 }

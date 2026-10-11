@@ -96,7 +96,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get networkLibrary => 'Network library';
 
   @override
-  String get downloadQueue => 'Download queue';
+  String get downloadQueue => 'Task queue';
 
   @override
   String get aboutAgpl => 'About / AGPL';
@@ -338,10 +338,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get more => 'More';
 
   @override
-  String get noDownloadTasks => 'No download tasks';
+  String get noDownloadTasks => 'No tasks';
 
   @override
-  String get queueCleared => 'Download queue cleared';
+  String get queueCleared => 'Task queue cleared';
 
   @override
   String get clearAllQueue => 'Clear all queue entries';
@@ -514,7 +514,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get manageAccountsSubtitle => 'Add / edit / delete WebDAV servers';
 
   @override
-  String get downloadQueueSettings => 'Download queue';
+  String get downloadQueueSettings => 'Task queue';
 
   @override
   String get downloadQueueSettingsSubtitle =>
@@ -639,7 +639,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get downloadAction => 'Download';
 
   @override
-  String get fileQueuedOrSaved => 'This file is already queued or downloaded';
+  String get fileQueuedOrSaved =>
+      'This file is already in the task queue or downloaded';
 
   @override
   String get fileQueuedOrSavedShort => 'This file is already queued or saved';
@@ -2139,7 +2140,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dlChannelProgressName => 'Download progress';
 
   @override
-  String get dlChannelProgressDesc => 'Progress of the active download queue';
+  String get dlChannelProgressDesc => 'Progress of the active task queue';
 
   @override
   String get dlChannelDoneName => 'Downloads complete';
@@ -2182,7 +2183,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String dlErrQueueSchemaDrift(Object raw) {
-    return 'Download queue database schema is too old ($raw). Restart the app to upgrade it.';
+    return 'Task queue database schema is too old ($raw). Restart the app to upgrade it.';
   }
 
   @override
@@ -2304,7 +2305,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get netNoNewAudio => 'No new audio here';
 
   @override
-  String get netEnqueueing => 'Adding to download queue…';
+  String get netEnqueueing => 'Adding to task queue…';
 
   @override
   String get netNothingDownloadable =>
@@ -3653,7 +3654,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get hintDuration => 'Hint duration';
 
   @override
-  String get downloadNotifications => 'Download queue notifications';
+  String get downloadNotifications => 'Task queue system notifications';
 
   @override
   String get downloadNotificationsHint =>
@@ -4049,4 +4050,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get taskErrLongPressHint => 'Long-press for full error';
+
+  @override
+  String get taskQueue => 'Task queue';
+
+  @override
+  String get noTaskQueueItems => 'No tasks';
+
+  @override
+  String get taskKindDownload => 'Download';
+
+  @override
+  String get taskKindScan => 'Scan';
+
+  @override
+  String get taskKindRetagCloud => 'Retag (cloud)';
+
+  @override
+  String get taskKindRetagLocal => 'Retag (local)';
+
+  @override
+  String taskProgressUnits(int done, int total) {
+    return '$done / $total';
+  }
 }

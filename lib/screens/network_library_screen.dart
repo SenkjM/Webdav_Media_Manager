@@ -6,7 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/account_capabilities.dart';
 import '../l10n/generated/app_localizations.dart';
-import '../models/download_task.dart';
+import '../models/queue_task.dart';
 import '../models/file_actions.dart';
 import '../models/webdav_stream.dart';
 import '../models/file_type_config.dart';
@@ -16,7 +16,7 @@ import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cloud_drive_service.dart';
-import '../services/download_queue_service.dart';
+import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/app_snack.dart';
@@ -460,7 +460,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
+    final downloads = context.read<TaskQueueService>();
     try {
       await downloads.ensureQueued(sourceName, item.path, fileName: item.name);
     } catch (e) {
@@ -469,7 +469,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netEnqueueFailed(
-          DownloadQueueService.describeError(
+          TaskQueueService.describeError(
             downloads.lastError ?? e.toString(),
             l10n,
           ),
@@ -483,7 +483,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
+    final downloads = context.read<TaskQueueService>();
     try {
       final queued = await downloads.enqueueToDownloads(
         sourceName,
@@ -500,7 +500,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netEnqueueFailed(
-          DownloadQueueService.describeError(
+          TaskQueueService.describeError(
             downloads.lastError ?? e.toString(),
             l10n,
           ),
@@ -603,7 +603,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.show(
         context,
         l10n.netCueReadFailed(
-          DownloadQueueService.describeError(e.toString(), l10n),
+          TaskQueueService.describeError(e.toString(), l10n),
         ),
       );
     }
@@ -766,7 +766,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
     try {
-      await context.read<DownloadQueueService>().enqueueCueGroup(
+      await context.read<TaskQueueService>().enqueueCueGroup(
         sourceName: sourceName,
         cueRemotePath: item.path,
         cueFileName: item.name,
@@ -778,7 +778,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netCueDownloadFailed(
-          DownloadQueueService.describeError(e.toString(), l10n),
+          TaskQueueService.describeError(e.toString(), l10n),
         ),
       );
     }
@@ -980,7 +980,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
+    final downloads = context.read<TaskQueueService>();
     try {
       final queued = await downloads.enqueueGallery(
         sourceName,
@@ -1000,7 +1000,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netEnqueueFailed(
-          DownloadQueueService.describeError(
+          TaskQueueService.describeError(
             downloads.lastError ?? e.toString(),
             l10n,
           ),
@@ -1110,7 +1110,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final accounts = context.watch<AccountsService>();
-    final downloads = context.watch<DownloadQueueService>();
+    final downloads = context.watch<TaskQueueService>();
     final player = context.watch<AudioPlayerService>();
     final active = accounts.activeAccount;
 
@@ -1157,7 +1157,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
   Widget _buildScaffold(
     AccountsService accounts,
-    DownloadQueueService downloads,
+    TaskQueueService downloads,
     AudioPlayerService player,
     WebDavAccount? active,
   ) {
@@ -1240,7 +1240,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   }
 
   Widget _buildBody(
-    DownloadQueueService downloads,
+    TaskQueueService downloads,
     AudioPlayerService player,
     WebDavAccount? active,
   ) {
@@ -1336,7 +1336,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 final saved =
                     task != null &&
                     task.isGallery &&
-                    task.status == DownloadStatus.completed;
+                    task.status == TaskStatus.completed;
                 return ListTile(
                   leading: _selectionLeading(
                     item,
@@ -1450,7 +1450,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     if (state != TrackUiState.remote)
                       TrackStatusChip(
                         state: state,
-                        progress: task?.status == DownloadStatus.active
+                        progress: task?.status == TaskStatus.active
                             ? task?.progress
                             : null,
                       ),
@@ -1635,7 +1635,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 两条线共用的排队流程。
   ///
   /// 界面只管把「选中的文件夹」和「选中的文件」一起交出去：扫描、去重、
-  /// 入队全在服务层（[DownloadQueueService.enqueueSelection]）。界面这边再分
+  /// 入队全在服务层（[TaskQueueService.enqueueSelection]）。界面这边再分
   /// 「文件夹那条路 / 文件那条路」，一旦同时选中文件夹和里面的文件，同一个
   /// 路径就会从两个入口各排一次。
   Future<void> _queueSelection(
@@ -1648,7 +1648,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null || (folders.isEmpty && files.isEmpty)) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
+    final downloads = context.read<TaskQueueService>();
     AppSnack.show(context, busyText);
     try {
       final r = await downloads.enqueueSelection(

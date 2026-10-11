@@ -270,7 +270,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadQueue.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列'**
+  /// **'任务队列'**
   String get downloadQueue;
 
   /// No description provided for @aboutAgpl.
@@ -732,13 +732,13 @@ abstract class AppLocalizations {
   /// No description provided for @noDownloadTasks.
   ///
   /// In zh, this message translates to:
-  /// **'暂无下载任务'**
+  /// **'暂无任务'**
   String get noDownloadTasks;
 
   /// No description provided for @queueCleared.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列已清空'**
+  /// **'任务队列已清空'**
   String get queueCleared;
 
   /// No description provided for @clearAllQueue.
@@ -1032,7 +1032,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadQueueSettings.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列'**
+  /// **'任务队列'**
   String get downloadQueueSettings;
 
   /// No description provided for @downloadQueueSettingsSubtitle.
@@ -1260,7 +1260,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileQueuedOrSaved.
   ///
   /// In zh, this message translates to:
-  /// **'该文件已在下载队列或已下载'**
+  /// **'该文件已在任务队列或已下载'**
   String get fileQueuedOrSaved;
 
   /// No description provided for @fileQueuedOrSavedShort.
@@ -3711,7 +3711,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlChannelProgressDesc.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列进行中的进度'**
+  /// **'任务队列进行中的进度'**
   String get dlChannelProgressDesc;
 
   /// No description provided for @dlChannelDoneName.
@@ -3777,7 +3777,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlErrQueueSchemaDrift.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列数据库结构过旧（{raw}）。请重启应用以升级数据库。'**
+  /// **'任务队列数据库结构过旧（{raw}）。请重启应用以升级数据库。'**
   String dlErrQueueSchemaDrift(Object raw);
 
   /// No description provided for @dlErrSourceUnbound.
@@ -3963,7 +3963,7 @@ abstract class AppLocalizations {
   /// No description provided for @netEnqueueing.
   ///
   /// In zh, this message translates to:
-  /// **'正在加入下载队列…'**
+  /// **'正在加入任务队列…'**
   String get netEnqueueing;
 
   /// No description provided for @netNothingDownloadable.
@@ -6092,7 +6092,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadNotifications.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列系统通知'**
+  /// **'任务队列系统通知'**
   String get downloadNotifications;
 
   /// No description provided for @downloadNotificationsHint.
@@ -6778,6 +6778,48 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'长按查看完整错误'**
   String get taskErrLongPressHint;
+
+  /// No description provided for @taskQueue.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务队列'**
+  String get taskQueue;
+
+  /// No description provided for @noTaskQueueItems.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无任务'**
+  String get noTaskQueueItems;
+
+  /// No description provided for @taskKindDownload.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载'**
+  String get taskKindDownload;
+
+  /// No description provided for @taskKindScan.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削'**
+  String get taskKindScan;
+
+  /// No description provided for @taskKindRetagCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新标签（云端）'**
+  String get taskKindRetagCloud;
+
+  /// No description provided for @taskKindRetagLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新标签（本地）'**
+  String get taskKindRetagLocal;
+
+  /// No description provided for @taskProgressUnits.
+  ///
+  /// In zh, this message translates to:
+  /// **'{done} / {total}'**
+  String taskProgressUnits(int done, int total);
 }
 
 class _AppLocalizationsDelegate

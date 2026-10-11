@@ -1,6 +1,6 @@
 import '../l10n/generated/app_localizations.dart';
 import 'file_type_config.dart';
-import 'download_task.dart';
+import 'queue_task.dart';
 
 /// 网络库对文件能做的事。
 ///

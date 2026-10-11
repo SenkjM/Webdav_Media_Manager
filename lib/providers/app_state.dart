@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../models/cache_policy.dart';
-import '../models/download_task.dart';
+import '../models/queue_task.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
 import '../models/sync_interval.dart';
@@ -14,7 +14,7 @@ import '../services/audio_player_service.dart';
 import '../services/backup_service.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
-import '../services/download_queue_service.dart';
+import '../services/task_queue_service.dart';
 import '../services/legacy_sentinel_migration.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
@@ -79,7 +79,7 @@ class AppState extends ChangeNotifier {
       playlists: playlists,
       backup: backup,
     );
-    downloads = DownloadQueueService(
+    taskQueue = TaskQueueService(
       webDav: webDav,
       cache: cache,
       library: library,
@@ -90,7 +90,7 @@ class AppState extends ChangeNotifier {
           settings.fileTypes.categoryFor(name) == FileCategory.music,
     );
     player = AudioPlayerService(
-      downloads: downloads,
+      taskQueue: taskQueue,
       handler: audioHandler,
       notificationPermission: notificationPermission,
     );
@@ -110,7 +110,7 @@ class AppState extends ChangeNotifier {
   late final BackupService backup;
   late final CredentialVaultService credentials;
   late final SyncService sync;
-  late final DownloadQueueService downloads;
+  late final TaskQueueService taskQueue;
   late final NotificationPermissionService notificationPermission;
   late final AudioPlayerService player;
   late final VideoPlaybackService videoPlayback;
@@ -122,7 +122,7 @@ class AppState extends ChangeNotifier {
   String get initPhase => _initPhase;
 
   Future<void> closeDatabases() async {
-    await downloads.closeDatabase();
+    await taskQueue.closeDatabase();
     await playlists.closeDatabase();
     await libraryDb.close();
   }
@@ -146,7 +146,7 @@ class AppState extends ChangeNotifier {
   void _disposeServices() {
     videoPlayback.dispose();
     player.dispose();
-    downloads.dispose();
+    taskQueue.dispose();
     cache.dispose();
     webDav.dispose();
     library.dispose();
@@ -179,7 +179,7 @@ class AppState extends ChangeNotifier {
       _initPhase = 'databases';
       final openedLibrary = await libraryDb.database;
       final openedPlaylists = await playlists.openDatabase();
-      final openedDownloads = await downloads.openDatabase();
+      final openedDownloads = await taskQueue.openDatabase();
       _initPhase = 'cache';
       await cache.init();
       _initPhase = 'legacy-sentinels';
@@ -208,25 +208,25 @@ class AppState extends ChangeNotifier {
       // The queue persists 网盘名, never an account id: it has to resolve one to
       // the other **after** the account list is loaded, or every transfer would
       // be judged "来源网盘未绑定".
-      downloads.configureAccountResolver(accounts.idForSource);
+      taskQueue.configureAccountResolver(accounts.idForSource);
       applySyncConfiguration();
       _initPhase = 'playlists';
       await playlists.init();
-      downloads.attachLibrary(library);
+      taskQueue.attachLibrary(library);
       // Incremental library sync: whenever a download (or a restore) changes
       // the local library, push just the new rows to the cloud index.
       library.addListener(_onLibraryChanged);
       // Changing 定时同步 in Settings must take effect immediately, not on the
       // next launch.
       settings.addListener(_onSettingsChanged);
-      _initPhase = 'downloads';
-      downloads.keepAliveEnabled = settings.downloadKeepAliveEnabled;
-      await downloads.init();
+      _initPhase = 'taskQueue';
+      taskQueue.keepAliveEnabled = settings.downloadKeepAliveEnabled;
+      await taskQueue.init();
       // Download notifications: create the channel and honour the setting.
-      downloads.notificationsEnabled = settings.downloadNotificationsEnabled;
-      downloads.notificationService.enabled =
+      taskQueue.notificationsEnabled = settings.downloadNotificationsEnabled;
+      taskQueue.notificationService.enabled =
           settings.downloadNotificationsEnabled;
-      unawaited(downloads.initNotifications());
+      unawaited(taskQueue.initNotifications());
       await notificationPermission.refresh();
       unawaited(runCacheCleanup());
       // Startup scan: credentials + playlists both ways (best-effort, never
@@ -339,9 +339,9 @@ class AppState extends ChangeNotifier {
   /// playlist sync when the shared 远端路径 changes.
   void _onSettingsChanged() {
     if (!ready) return;
-    if (downloads.keepAliveEnabled != settings.downloadKeepAliveEnabled) {
+    if (taskQueue.keepAliveEnabled != settings.downloadKeepAliveEnabled) {
       unawaited(
-        downloads.setKeepAliveEnabled(settings.downloadKeepAliveEnabled),
+        taskQueue.setKeepAliveEnabled(settings.downloadKeepAliveEnabled),
       );
     }
     if (settings.syncRemoteRoot != _appliedSyncRoot ||
@@ -396,7 +396,7 @@ class AppState extends ChangeNotifier {
     return cache.cleanupKnown(
       retention: settings.retention,
       customDuration: settings.customRetentionDuration,
-      identityToLocal: downloads.completedIdentityToLocal,
+      identityToLocal: taskQueue.completedIdentityToLocal,
       playingIdentityKey:
           player.currentSourceName != null && player.currentRemotePath != null
           ? trackIdentityKey(
@@ -404,15 +404,15 @@ class AppState extends ChangeNotifier {
               player.currentRemotePath!,
             )
           : null,
-      downloadingIdentityKeys: downloads.downloadingIdentityKeys,
+      downloadingIdentityKeys: taskQueue.downloadingIdentityKeys,
     );
   }
 
   Future<int> manualClearCache() async {
     final protected = <String>{};
-    for (final t in downloads.tasks) {
-      if (t.status == DownloadStatus.active ||
-          t.status == DownloadStatus.pending) {
+    for (final t in taskQueue.tasks) {
+      if (t.status == TaskStatus.active ||
+          t.status == TaskStatus.pending) {
         final f = cache.fileForRemote(t.remotePath, sourceName: t.sourceName);
         protected.add(f.path);
         protected.add('${f.path}.part');
@@ -426,7 +426,7 @@ class AppState extends ChangeNotifier {
     );
     // Drop stale completed entries so CUE clips re-download cleanly and
     // clip trimming still applies from library DB metadata.
-    await downloads.invalidateMissingCompleted();
+    await taskQueue.invalidateMissingCompleted();
     return removed;
   }
 
@@ -450,7 +450,7 @@ class AppState extends ChangeNotifier {
   /// Keep the download queue's music classifier aligned with the configured
   /// extension sets (they are user-editable in 「文件后缀管理」).
   void _syncDownloadFileTypes() {
-    downloads.configureFileTypes(
+    taskQueue.configureFileTypes(
       (name) => settings.fileTypes.categoryFor(name) == FileCategory.music,
     );
   }
@@ -548,7 +548,7 @@ class AppState extends ChangeNotifier {
       );
       // 库空了，歌单里指向它的引用成了悬空引用，下载队列也要重新对账。
       await playlists.removeEntriesNotIn(const <String>{});
-      await downloads.invalidateMissingCompleted();
+      await taskQueue.invalidateMissingCompleted();
       await settings.setSyncInterval(SyncInterval.off);
       return destroyed;
     });
