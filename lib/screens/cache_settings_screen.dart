@@ -207,7 +207,7 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
           const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: _clearCache,
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(Icons.cleaning_services_outlined),
             label: Text(l10n.clearAudioCache),
           ),
         ],
