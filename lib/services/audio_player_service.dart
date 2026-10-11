@@ -336,17 +336,15 @@ class AudioPlayerService extends ChangeNotifier {
         _applyReadTags(t, tags);
         final item = _handler.mediaItem.valueOrNull;
         if (item != null) {
+          final title = tags.title?.trim();
+          final artist = tags.artist?.trim();
+          final album = tags.album?.trim();
           _handler.mediaItem.add(
             item.copyWith(
-              title: (tags.title != null && tags.title!.trim().isNotEmpty)
-                  ? tags.title
-                  : item.title,
-              artist: (tags.artist != null && tags.artist!.trim().isNotEmpty)
-                  ? tags.artist
-                  : item.artist,
-              album: (tags.album != null && tags.album!.trim().isNotEmpty)
-                  ? tags.album
-                  : item.album,
+              title: (title != null && title.isNotEmpty) ? title : item.title,
+              artist:
+                  (artist != null && artist.isNotEmpty) ? artist : item.artist,
+              album: (album != null && album.isNotEmpty) ? album : item.album,
               duration: (tags.durationMs != null && tags.durationMs! > 0)
                   ? Duration(milliseconds: tags.durationMs!)
                   : item.duration,
