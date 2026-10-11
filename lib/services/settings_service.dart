@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/directory_walk.dart';
 import '../models/cache_policy.dart';
 import '../models/app_locale.dart';
 import '../models/app_theme_mode.dart';
@@ -90,11 +91,16 @@ class SettingsService extends ChangeNotifier {
   static const _kMusicStreamPlayMode = 'music_stream_play_mode';
   static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
   static const _kAudioScanSubdirs = 'audio_scan_subdirs';
+  static const _kAudioPlaylistMaxDepth = 'audio_playlist_max_depth';
   static const _kAudioStreamSidecarCover = 'audio_stream_sidecar_cover';
   static const _kAudioStreamSidecarNames = 'audio_stream_sidecar_names';
   static const _kAudioStreamPrefetchBackward = 'audio_stream_prefetch_backward';
   static const _kAudioStreamPrefetchForward = 'audio_stream_prefetch_forward';
   static const _kVideoScanSubdirs = 'video_scan_subdirs';
+  static const _kVideoPlaylistMaxDepth = 'video_playlist_max_depth';
+  /// Media-library scrape (scan task). Independent from playlist prefs.
+  static const _kMediaScanRecursive = 'media_scan_recursive';
+  static const _kMediaScanMaxDepth = 'media_scan_max_depth';
   static const _kImageSlideshow = 'image_slideshow_enabled';
   static const _kImageSlideshowSeconds = 'image_slideshow_interval_seconds';
   static const _kImageSlideshowLoop = 'image_slideshow_loop';
@@ -238,11 +244,16 @@ class SettingsService extends ChangeNotifier {
   MusicStreamPlayMode _musicStreamPlayMode = MusicStreamPlayMode.sequential;
   bool _audioStreamingEnabled = false;
   bool _audioScanSubdirs = false;
+  int _audioPlaylistMaxDepth = 1;
   bool _audioStreamSidecarCover = false;
   String _audioStreamSidecarNames = defaultSidecarNames;
   int _audioStreamPrefetchBackward = defaultStreamPrefetch;
   int _audioStreamPrefetchForward = defaultStreamPrefetch;
   bool _videoScanSubdirs = false;
+  int _videoPlaylistMaxDepth = 1;
+  /// Scrape defaults: recursive ON, depth 1 (independent of playlist prefs).
+  bool _mediaScanRecursive = true;
+  int _mediaScanMaxDepth = 1;
   bool _imageSlideshowEnabled = defaultImageSlideshow;
   int _imageSlideshowIntervalSeconds = defaultImageSlideshowSeconds;
   bool _imageSlideshowLoop = defaultImageSlideshowLoop;
@@ -418,8 +429,12 @@ class SettingsService extends ChangeNotifier {
   /// 音乐是否走流式传输。原来只有「文件后缀管理」页能改，现在归音频流式设置页。
   bool get audioStreamingEnabled => _audioStreamingEnabled;
 
-  /// 流式扫描是否递归子目录。音频与视频各一份，默认都关。
+  /// 音乐从网络库打开时的播放列表是否含子目录。默认关。键 `audio_scan_subdirs`。
+  /// 与视频播列表、媒体库刮削 prefs **完全独立**。
   bool get audioScanSubdirs => _audioScanSubdirs;
+
+  /// 音乐网络库播放列表最大子目录深度（默认 1）。键 `audio_playlist_max_depth`。
+  int get audioPlaylistMaxDepth => _audioPlaylistMaxDepth;
 
   /// Same-directory images when an audio stream has no embedded picture.
   /// Default off.
@@ -434,7 +449,17 @@ class SettingsService extends ChangeNotifier {
   /// Tracks after the current one (forward). Default 1.
   int get audioStreamPrefetchForward => _audioStreamPrefetchForward;
 
+  /// 视频连播 / 播放列表是否含子目录。默认关。键 `video_scan_subdirs`。
   bool get videoScanSubdirs => _videoScanSubdirs;
+
+  /// 视频播放列表最大子目录深度（默认 1）。键 `video_playlist_max_depth`。
+  int get videoPlaylistMaxDepth => _videoPlaylistMaxDepth;
+
+  /// 媒体库刮削是否递归子目录。默认**开**。键 `media_scan_recursive`。
+  bool get mediaScanRecursive => _mediaScanRecursive;
+
+  /// 媒体库刮削最大深度（默认 1）。键 `media_scan_max_depth`。
+  int get mediaScanMaxDepth => _mediaScanMaxDepth;
 
   /// 图片查看。幻灯片默认关。预取数量是左右各 N 张，不是整本相册。
   bool get imageSlideshowEnabled => _imageSlideshowEnabled;
@@ -595,6 +620,9 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getString(_kMusicStreamPlayMode),
     );
     _audioScanSubdirs = _prefs!.getBool(_kAudioScanSubdirs) ?? false;
+    _audioPlaylistMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kAudioPlaylistMaxDepth) ?? WalkOptions.defaultMaxDepth,
+    );
     _audioStreamSidecarCover =
         _prefs!.getBool(_kAudioStreamSidecarCover) ?? false;
     _audioStreamSidecarNames =
@@ -606,6 +634,13 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getInt(_kAudioStreamPrefetchForward) ?? defaultStreamPrefetch,
     );
     _videoScanSubdirs = _prefs!.getBool(_kVideoScanSubdirs) ?? false;
+    _videoPlaylistMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kVideoPlaylistMaxDepth) ?? WalkOptions.defaultMaxDepth,
+    );
+    _mediaScanRecursive = _prefs!.getBool(_kMediaScanRecursive) ?? true;
+    _mediaScanMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kMediaScanMaxDepth) ?? WalkOptions.defaultMaxDepth,
+    );
     _imageSlideshowEnabled =
         _prefs!.getBool(_kImageSlideshow) ?? defaultImageSlideshow;
     _imageSlideshowIntervalSeconds = _clampImageSlideshowSeconds(
@@ -967,6 +1002,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setAudioPlaylistMaxDepth(int value) async {
+    _audioPlaylistMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kAudioPlaylistMaxDepth, _audioPlaylistMaxDepth);
+    notifyListeners();
+  }
+
   Future<void> setAudioStreamSidecarCover(bool enabled) async {
     _audioStreamSidecarCover = enabled;
     _prefs ??= await SharedPreferences.getInstance();
@@ -1007,6 +1049,45 @@ class SettingsService extends ChangeNotifier {
     await _prefs!.setBool(_kVideoScanSubdirs, enabled);
     notifyListeners();
   }
+
+  Future<void> setVideoPlaylistMaxDepth(int value) async {
+    _videoPlaylistMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kVideoPlaylistMaxDepth, _videoPlaylistMaxDepth);
+    notifyListeners();
+  }
+
+  Future<void> setMediaScanRecursive(bool enabled) async {
+    _mediaScanRecursive = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMediaScanRecursive, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setMediaScanMaxDepth(int value) async {
+    _mediaScanMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kMediaScanMaxDepth, _mediaScanMaxDepth);
+    notifyListeners();
+  }
+
+  /// Walk options for video playlist / 连播 (prefs: video_scan_subdirs + video_playlist_max_depth).
+  WalkOptions get videoPlaylistWalkOptions => WalkOptions(
+    includeSubdirs: videoScanSubdirs,
+    maxDepth: videoPlaylistMaxDepth,
+  );
+
+  /// Walk options for music opened from the network library.
+  WalkOptions get audioPlaylistWalkOptions => WalkOptions(
+    includeSubdirs: audioScanSubdirs,
+    maxDepth: audioPlaylistMaxDepth,
+  );
+
+  /// Walk options for media-library scrape tasks (executor lands later).
+  WalkOptions get mediaScanWalkOptions => WalkOptions(
+    includeSubdirs: mediaScanRecursive,
+    maxDepth: mediaScanMaxDepth,
+  );
 
   Future<void> setImageSlideshowEnabled(bool enabled) async {
     _imageSlideshowEnabled = enabled;
@@ -1389,11 +1470,15 @@ class SettingsService extends ChangeNotifier {
     'music_stream_play_mode': _musicStreamPlayMode.storageKey,
     'audio_streaming_enabled': _audioStreamingEnabled,
     'audio_scan_subdirs': _audioScanSubdirs,
+    'audio_playlist_max_depth': _audioPlaylistMaxDepth,
     'audio_stream_sidecar_cover': _audioStreamSidecarCover,
     'audio_stream_sidecar_names': _audioStreamSidecarNames,
     'audio_stream_prefetch_backward': _audioStreamPrefetchBackward,
     'audio_stream_prefetch_forward': _audioStreamPrefetchForward,
     'video_scan_subdirs': _videoScanSubdirs,
+    'video_playlist_max_depth': _videoPlaylistMaxDepth,
+    'media_scan_recursive': _mediaScanRecursive,
+    'media_scan_max_depth': _mediaScanMaxDepth,
     'image_slideshow_enabled': _imageSlideshowEnabled,
     'image_slideshow_interval_seconds': _imageSlideshowIntervalSeconds,
     'image_slideshow_loop': _imageSlideshowLoop,
@@ -1538,6 +1623,11 @@ class SettingsService extends ChangeNotifier {
     if (json['audio_scan_subdirs'] is bool) {
       await setAudioScanSubdirs(json['audio_scan_subdirs'] as bool);
     }
+    if (json['audio_playlist_max_depth'] is num) {
+      await setAudioPlaylistMaxDepth(
+        (json['audio_playlist_max_depth'] as num).toInt(),
+      );
+    }
     if (json['audio_stream_sidecar_cover'] is bool) {
       await setAudioStreamSidecarCover(
         json['audio_stream_sidecar_cover'] as bool,
@@ -1560,6 +1650,17 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['video_scan_subdirs'] is bool) {
       await setVideoScanSubdirs(json['video_scan_subdirs'] as bool);
+    }
+    if (json['video_playlist_max_depth'] is num) {
+      await setVideoPlaylistMaxDepth(
+        (json['video_playlist_max_depth'] as num).toInt(),
+      );
+    }
+    if (json['media_scan_recursive'] is bool) {
+      await setMediaScanRecursive(json['media_scan_recursive'] as bool);
+    }
+    if (json['media_scan_max_depth'] is num) {
+      await setMediaScanMaxDepth((json['media_scan_max_depth'] as num).toInt());
     }
     if (json['image_slideshow_enabled'] is bool) {
       await setImageSlideshowEnabled(json['image_slideshow_enabled'] as bool);

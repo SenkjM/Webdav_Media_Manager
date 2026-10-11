@@ -111,7 +111,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
         // 自动连播由本页的 completed 订阅实现（控制器的 autoAdvance 只是声明）。
         // 流式播放是「听专辑」的场景，放完一首就停住反而要用户每次回来点一下。
         autoAdvance: true,
-        deepScan: context.read<SettingsService>().audioScanSubdirs,
+        walkOptions: context.read<SettingsService>().audioPlaylistWalkOptions,
       );
       _queue!.addListener(_onQueueChanged);
       _queue!.startScan();

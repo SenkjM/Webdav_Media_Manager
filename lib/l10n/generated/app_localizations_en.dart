@@ -281,7 +281,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get scanSubdirectoriesHint =>
-      'On: include audio in this directory and all subdirectories. Off: list only this directory.';
+      'When on, playlists opened from the network library include subfolders (see depth below); when off, only the current folder. Independent from video playlist and scrape settings.';
 
   @override
   String get streamSidecarCover => 'Same-directory cover';
@@ -3387,7 +3387,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get videoScanSubdirsHint =>
-      'Include videos from subdirectories in the playlist';
+      'When on, the video playlist includes subfolders (see depth below); when off, only the current folder. Independent from music playlist and scrape settings.';
 
   @override
   String get videoBufferSize => 'Buffer size';
@@ -4073,4 +4073,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String taskProgressUnits(int done, int total) {
     return '$done / $total';
   }
+
+  @override
+  String get playlistMaxDepth => 'Max subdirectory depth';
+
+  @override
+  String get playlistMaxDepthHint =>
+      '0 = current folder only; 1 = one level below (default). Range 0–20.';
+
+  @override
+  String get playlistMaxDepthInput => 'Depth';
+
+  @override
+  String get mediaScanSection => 'Library scrape';
+
+  @override
+  String get mediaScanSectionHint =>
+      'Recursive depth for scrape tasks (executor lands later). Fully independent from video/music playlist settings.';
+
+  @override
+  String get mediaScanRecursive => 'Scan subdirectories when scraping';
+
+  @override
+  String get mediaScanRecursiveHint =>
+      'Default on. When off, scrape only the selected folder.';
+
+  @override
+  String get mediaScanMaxDepth => 'Scrape max depth';
+
+  @override
+  String get mediaScanMaxDepthHint =>
+      'Default 1. Does not share prefs with playlist depth.';
 }

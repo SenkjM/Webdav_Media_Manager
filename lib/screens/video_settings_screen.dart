@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../models/video_settings.dart';
 import '../services/settings_service.dart';
+import '../utils/directory_walk.dart';
 
 /// Video playback settings (WebDAV streaming parameters, gestures, background
 /// playback & picture-in-picture). Reachable from the main Settings list.
@@ -18,16 +19,19 @@ class VideoSettingsScreen extends StatefulWidget {
 
 class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
   late final TextEditingController _bufferController;
+  late final TextEditingController _depthController;
   late final TextEditingController _subtitleSubdirController;
 
   @override
   void initState() {
     super.initState();
     _bufferController = TextEditingController();
+    _depthController = TextEditingController();
     _subtitleSubdirController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final settings = context.read<SettingsService>();
       _bufferController.text = '${settings.videoBufferSizeMb}';
+      _depthController.text = '${settings.videoPlaylistMaxDepth}';
       _subtitleSubdirController.text = settings.videoSubtitleSubdir;
     });
   }
@@ -35,6 +39,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
   @override
   void dispose() {
     _bufferController.dispose();
+    _depthController.dispose();
     _subtitleSubdirController.dispose();
     super.dispose();
   }
@@ -62,6 +67,15 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
     _bufferController.text =
         '${context.read<SettingsService>().videoBufferSizeMb}';
     AppSnack.show(context, AppLocalizations.of(context)!.videoBufferSaved);
+  }
+
+  Future<void> _applyDepth() async {
+    final raw = int.tryParse(_depthController.text.trim());
+    if (raw == null) return;
+    await context.read<SettingsService>().setVideoPlaylistMaxDepth(raw);
+    if (!mounted) return;
+    _depthController.text =
+        '${context.read<SettingsService>().videoPlaylistMaxDepth}';
   }
 
   @override
@@ -105,6 +119,46 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
             value: settings.videoScanSubdirs,
             onChanged: (v) => settings.setVideoScanSubdirs(v),
           ),
+          if (settings.videoScanSubdirs) ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.layers_outlined),
+              title: Text(AppLocalizations.of(context)!.playlistMaxDepth),
+              subtitle: Text(AppLocalizations.of(context)!.playlistMaxDepthHint),
+            ),
+            Row(
+              children: [
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: _depthController,
+                    enabled: settings.videoScanSubdirs,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText:
+                          AppLocalizations.of(context)!.playlistMaxDepthInput,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onEditingComplete: _applyDepth,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.tonal(
+                  onPressed: _applyDepth,
+                  child: Text(AppLocalizations.of(context)!.apply),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '0–${WalkOptions.maxDepthClamp}',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.storage_outlined),

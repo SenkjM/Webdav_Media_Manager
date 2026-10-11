@@ -87,7 +87,7 @@
   "scanList": "清單掃描",
   "scanListHint": "決定串流播放的「上一首／下一首」清單內容。",
   "scanSubdirectories": "搜尋子目錄",
-  "scanSubdirectoriesHint": "開啟：目前目錄及所有子目錄的音訊都加入清單。關閉：只列出目前這一層。",
+  "scanSubdirectoriesHint": "開啟後，從網路庫開啟音樂時的播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與影片播清單、刮削設定獨立。",
   "streamSidecarCover": "同目錄封面",
   "streamSidecarCoverHint": "按檔名在同一目錄找封面圖。預設關閉。找不到時仍顯示佔位圖。",
   "streamSidecarNames": "封面檔名",
@@ -940,7 +940,7 @@
   "videoStreamingHint": "影片直接串流播放，不下載到本機。",
   "videoHardwareDecoding": "硬體解碼",
   "videoHardwareDecodingHint": "關閉後改用軟體解碼，部分裝置更穩定",
-  "videoScanSubdirsHint": "播放清單是否包含子目錄中的影片",
+  "videoScanSubdirsHint": "開啟後，影片播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與音樂播清單、刮削設定獨立。",
   "videoBufferSize": "緩衝大小",
   "videoBufferInput": "緩衝 (MB)",
   "videoGestures": "手勢",
@@ -1137,5 +1137,14 @@
   "taskKindScan": "刮削",
   "taskKindRetagCloud": "更新標籤（雲端）",
   "taskKindRetagLocal": "更新標籤（本地）",
-  "taskProgressUnits": "{done} / {total}"
+  "taskProgressUnits": "{done} / {total}",
+  "playlistMaxDepth": "最大子目錄深度",
+  "playlistMaxDepthHint": "0 = 僅目前目錄；1 = 目前目錄再下一層（預設）。範圍 0–20。",
+  "playlistMaxDepthInput": "深度",
+  "mediaScanSection": "媒體庫刮削",
+  "mediaScanSectionHint": "刮削任務用的遞迴與深度（執行器後續落地）。與影片/音樂播放清單設定完全獨立。",
+  "mediaScanRecursive": "刮削時搜尋子目錄",
+  "mediaScanRecursiveHint": "預設開。關閉則刮削只處理選取的目前這一層。",
+  "mediaScanMaxDepth": "刮削最大深度",
+  "mediaScanMaxDepthHint": "預設 1。與播放清單深度 prefs 不共用。"
 }

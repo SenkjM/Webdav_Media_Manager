@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../services/settings_service.dart';
+import '../utils/directory_walk.dart';
 import '../theme/app_theme.dart';
 
 /// 音频流式设置：音乐要不要走流式传输、同目录封面，以及预载窗口。
@@ -19,6 +20,7 @@ class AudioStreamSettingsScreen extends StatefulWidget {
 
 class _AudioStreamSettingsScreenState extends State<AudioStreamSettingsScreen> {
   final TextEditingController _names = TextEditingController();
+  final TextEditingController _depth = TextEditingController();
   var _seeded = false;
 
   @override
@@ -26,12 +28,15 @@ class _AudioStreamSettingsScreenState extends State<AudioStreamSettingsScreen> {
     super.didChangeDependencies();
     if (_seeded) return;
     _seeded = true;
-    _names.text = context.read<SettingsService>().audioStreamSidecarNames;
+    final s = context.read<SettingsService>();
+    _names.text = s.audioStreamSidecarNames;
+    _depth.text = '${s.audioPlaylistMaxDepth}';
   }
 
   @override
   void dispose() {
     _names.dispose();
+    _depth.dispose();
     super.dispose();
   }
 
@@ -149,6 +154,56 @@ class _AudioStreamSettingsScreenState extends State<AudioStreamSettingsScreen> {
             value: settings.audioScanSubdirs,
             onChanged: (v) => settings.setAudioScanSubdirs(v),
           ),
+          if (settings.audioScanSubdirs) ...[
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.layers_outlined),
+              title: Text(l10n.playlistMaxDepth),
+              subtitle: Text(l10n.playlistMaxDepthHint),
+            ),
+            Row(
+              children: [
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: _depth,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: l10n.playlistMaxDepthInput,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onEditingComplete: () async {
+                      final raw = int.tryParse(_depth.text.trim());
+                      if (raw == null) return;
+                      await settings.setAudioPlaylistMaxDepth(raw);
+                      if (!context.mounted) return;
+                      _depth.text = '${settings.audioPlaylistMaxDepth}';
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.tonal(
+                  onPressed: () async {
+                    final raw = int.tryParse(_depth.text.trim());
+                    if (raw == null) return;
+                    await settings.setAudioPlaylistMaxDepth(raw);
+                    if (!context.mounted) return;
+                    _depth.text = '${settings.audioPlaylistMaxDepth}';
+                  },
+                  child: Text(l10n.apply),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '0–${WalkOptions.maxDepthClamp}',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
+          ],
         ],
       ),
     );

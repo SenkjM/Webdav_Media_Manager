@@ -87,7 +87,7 @@
   "scanList": "列表扫描",
   "scanListHint": "决定流式播放的「上一首 / 下一首」列表里都有什么。",
   "scanSubdirectories": "搜索子目录",
-  "scanSubdirectoriesHint": "打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。",
+  "scanSubdirectoriesHint": "打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。",
   "streamSidecarCover": "同目录封面",
   "streamSidecarCoverHint": "按文件名在同一目录找封面图。默认关闭。找不到时仍显示占位图。",
   "streamSidecarNames": "封面文件名",
@@ -940,7 +940,7 @@
   "videoStreamingHint": "视频直接流式播放，不下载到本地。",
   "videoHardwareDecoding": "硬件解码",
   "videoHardwareDecodingHint": "关闭后改用软件解码，个别设备更稳定",
-  "videoScanSubdirsHint": "播放列表是否包含子目录里的视频",
+  "videoScanSubdirsHint": "打开后，视频播放列表包含子目录（深度见下方）；关闭则只列当前层。与音乐播列表、刮削设置独立。",
   "videoBufferSize": "缓冲大小",
   "videoBufferInput": "缓冲 (MB)",
   "videoGestures": "手势",
@@ -1154,5 +1154,14 @@
         "type": "int"
       }
     }
-  }
+  },
+  "playlistMaxDepth": "最大子目录深度",
+  "playlistMaxDepthHint": "0 = 仅当前目录；1 = 当前目录再下一层（默认）。范围 0–20。",
+  "playlistMaxDepthInput": "深度",
+  "mediaScanSection": "媒体库刮削",
+  "mediaScanSectionHint": "刮削任务用的递归与深度（执行器后续落地）。与视频/音乐播放列表设置完全独立。",
+  "mediaScanRecursive": "刮削时搜索子目录",
+  "mediaScanRecursiveHint": "默认开。关闭则刮削只处理选中的当前层。",
+  "mediaScanMaxDepth": "刮削最大深度",
+  "mediaScanMaxDepthHint": "默认 1。与播放列表深度 prefs 不共用。"
 }

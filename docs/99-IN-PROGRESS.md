@@ -873,8 +873,13 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 **落地进度**：
 - **错误模型（§17.12 第 1 步）**：已落地。见 `lib/utils/task_error.dart`、`TaskQueueService.describeError` / `describeErrorDetail`、`tasks_screen`。
-- **任务队列外壳（§17.12 第 2 步）**：已落地。用户文案「任务队列」；`QueueTask.kind`（`download` / `scan` / `retagCloud` / `retagLocal`）；字节与分子分母双进度（`TaskProgressMode`）；`DownloadQueueService`→`TaskQueueService`、`downloads_screen`→`tasks_screen`；非 download kind 可入队展示但不调度。扫描执行器未做。
-- 后续步（遍历 / 深度起）未开工。
+- **任务队列外壳（§17.12 第 2 步）**：已落地。用户文案「任务队列」；`QueueTask.kind`；双进度；`TaskQueueService` / `TasksScreen`；非 download kind 可入队展示但不调度。扫描执行器未做。
+- **遍历 / 深度（§17.12 第 3 步）**：已落地共用 `WalkOptions` / `DirectoryWalker`（防环 + maxEntries 默认 500）。**三套 prefs 完全独立**（默认 maxDepth=1）：
+  1. 视频播列表：`video_scan_subdirs`（默认关）+ `video_playlist_max_depth`
+  2. 音乐网络库播列表：`audio_scan_subdirs`（默认关）+ `audio_playlist_max_depth`
+  3. 媒体库刮削：`media_scan_recursive`（默认**开**）+ `media_scan_max_depth`
+  图片 `image_scan_subdirs` 保持独立、不复用。视频/音乐渐进扫描已接 WalkOptions；刮削执行器未做。
+- 后续步（入库与预载起）未开工。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
 
@@ -941,10 +946,17 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - 任务 `kind` 含至少：`download` / `scan` / `retag` 等（可扩展）。
 - 列表行只显示**短错误文案**；点「详情」或长按错误行看**全文**（已落地，见上「落地进度」）。
 
-### 17.11 视频播放列表深度
+### 17.11 目录遍历深度（三套独立 prefs）
 
-- 视频播放列表也要**最大子目录深度**，**默认 1**。
-- 与刮削深度、与音乐网络库播放列表深度均为**独立设置**，互不共用一个偏好键。
+| 用途 | includeSubdirs 键 | 默认 | maxDepth 键 | 默认 |
+|------|-------------------|------|-------------|------|
+| 视频连播 / 视频播放列表 | `video_scan_subdirs` | **关** | `video_playlist_max_depth` | **1** |
+| 音乐从网络库打开的播放列表 | `audio_scan_subdirs` | **关** | `audio_playlist_max_depth` | **1** |
+| 媒体库刮削 | `media_scan_recursive` | **开** | `media_scan_max_depth` | **1** |
+
+- 共用逻辑：`WalkOptions` / `DirectoryWalker`（visited 防环；`maxEntries` 保险丝默认 **500**）。
+- 图片查看 `image_scan_subdirs` **保持独立**，不要拿来复用。
+- 深度语义：`0` = 仅当前目录；`1` = 当前 + 下一层；clamp 0–20。
 
 ### 17.12 实现原则与建议落地顺序
 
@@ -957,7 +969,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 1. ~~错误模型（短码 + 详情全文）~~ **已落地**
 2. ~~任务队列外壳（改名、`kind`、列表 / 详情）~~ **已落地**
-3. 遍历 / 深度（网络库音乐列表、视频列表、刮削深度分设）
+3. ~~遍历 / 深度（网络库音乐列表、视频列表、刮削深度分设）~~ **已落地**（三套独立 prefs，见上）
 4. 入库与预载（Range 标签先入库再预载；sidecar 保留）
 5. 播放合一（同一套底部控件；串流 / 缓存只差本地文件）
 6. 红点 / 重定向（持久化、再试、删除 / 重定向选择器）

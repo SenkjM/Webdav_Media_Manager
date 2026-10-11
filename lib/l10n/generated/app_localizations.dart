@@ -624,7 +624,7 @@ abstract class AppLocalizations {
   /// No description provided for @scanSubdirectoriesHint.
   ///
   /// In zh, this message translates to:
-  /// **'打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。'**
+  /// **'打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。'**
   String get scanSubdirectoriesHint;
 
   /// No description provided for @streamSidecarCover.
@@ -5636,7 +5636,7 @@ abstract class AppLocalizations {
   /// No description provided for @videoScanSubdirsHint.
   ///
   /// In zh, this message translates to:
-  /// **'播放列表是否包含子目录里的视频'**
+  /// **'打开后，视频播放列表包含子目录（深度见下方）；关闭则只列当前层。与音乐播列表、刮削设置独立。'**
   String get videoScanSubdirsHint;
 
   /// No description provided for @videoBufferSize.
@@ -6820,6 +6820,60 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'{done} / {total}'**
   String taskProgressUnits(int done, int total);
+
+  /// No description provided for @playlistMaxDepth.
+  ///
+  /// In zh, this message translates to:
+  /// **'最大子目录深度'**
+  String get playlistMaxDepth;
+
+  /// No description provided for @playlistMaxDepthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'0 = 仅当前目录；1 = 当前目录再下一层（默认）。范围 0–20。'**
+  String get playlistMaxDepthHint;
+
+  /// No description provided for @playlistMaxDepthInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'深度'**
+  String get playlistMaxDepthInput;
+
+  /// No description provided for @mediaScanSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'媒体库刮削'**
+  String get mediaScanSection;
+
+  /// No description provided for @mediaScanSectionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削任务用的递归与深度（执行器后续落地）。与视频/音乐播放列表设置完全独立。'**
+  String get mediaScanSectionHint;
+
+  /// No description provided for @mediaScanRecursive.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削时搜索子目录'**
+  String get mediaScanRecursive;
+
+  /// No description provided for @mediaScanRecursiveHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认开。关闭则刮削只处理选中的当前层。'**
+  String get mediaScanRecursiveHint;
+
+  /// No description provided for @mediaScanMaxDepth.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削最大深度'**
+  String get mediaScanMaxDepth;
+
+  /// No description provided for @mediaScanMaxDepthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认 1。与播放列表深度 prefs 不共用。'**
+  String get mediaScanMaxDepthHint;
 }
 
 class _AppLocalizationsDelegate

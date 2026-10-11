@@ -10,6 +10,7 @@ import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
+import '../utils/directory_walk.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
@@ -257,6 +258,56 @@ class _SettingsScreenState extends State<SettingsScreen>
             subtitle: Text(l10n.refreshLibraryTagsSubtitle),
             onTap: () => unawaited(_refreshLibraryTags(context)),
           ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.mediaScanSection,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.mediaScanSectionHint,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.account_tree_outlined),
+            title: Text(l10n.mediaScanRecursive),
+            subtitle: Text(l10n.mediaScanRecursiveHint),
+            value: settings.mediaScanRecursive,
+            onChanged: (v) => unawaited(settings.setMediaScanRecursive(v)),
+          ),
+          if (settings.mediaScanRecursive)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.layers_outlined),
+              title: Text(l10n.mediaScanMaxDepth),
+              subtitle: Text(
+                '${l10n.mediaScanMaxDepthHint}\n'
+                '${settings.mediaScanMaxDepth} (0–${WalkOptions.maxDepthClamp})',
+              ),
+              trailing: SizedBox(
+                width: 72,
+                child: TextFormField(
+                  key: ValueKey('media-scan-depth-${settings.mediaScanMaxDepth}'),
+                  initialValue: '${settings.mediaScanMaxDepth}',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onFieldSubmitted: (v) {
+                    final n = int.tryParse(v);
+                    if (n != null) {
+                      unawaited(settings.setMediaScanMaxDepth(n));
+                    }
+                  },
+                ),
+              ),
+            ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.sd_storage_outlined),

@@ -275,7 +275,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scanSubdirectories => '搜索子目录';
 
   @override
-  String get scanSubdirectoriesHint => '打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。';
+  String get scanSubdirectoriesHint =>
+      '打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。';
 
   @override
   String get streamSidecarCover => '同目录封面';
@@ -3253,7 +3254,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get videoHardwareDecodingHint => '关闭后改用软件解码，个别设备更稳定';
 
   @override
-  String get videoScanSubdirsHint => '播放列表是否包含子目录里的视频';
+  String get videoScanSubdirsHint =>
+      '打开后，视频播放列表包含子目录（深度见下方）；关闭则只列当前层。与音乐播列表、刮削设置独立。';
 
   @override
   String get videoBufferSize => '缓冲大小';
@@ -3893,6 +3895,33 @@ class AppLocalizationsZh extends AppLocalizations {
   String taskProgressUnits(int done, int total) {
     return '$done / $total';
   }
+
+  @override
+  String get playlistMaxDepth => '最大子目录深度';
+
+  @override
+  String get playlistMaxDepthHint => '0 = 仅当前目录；1 = 当前目录再下一层（默认）。范围 0–20。';
+
+  @override
+  String get playlistMaxDepthInput => '深度';
+
+  @override
+  String get mediaScanSection => '媒体库刮削';
+
+  @override
+  String get mediaScanSectionHint => '刮削任务用的递归与深度（执行器后续落地）。与视频/音乐播放列表设置完全独立。';
+
+  @override
+  String get mediaScanRecursive => '刮削时搜索子目录';
+
+  @override
+  String get mediaScanRecursiveHint => '默认开。关闭则刮削只处理选中的当前层。';
+
+  @override
+  String get mediaScanMaxDepth => '刮削最大深度';
+
+  @override
+  String get mediaScanMaxDepthHint => '默认 1。与播放列表深度 prefs 不共用。';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -4165,7 +4194,8 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get scanSubdirectories => '搜尋子目錄';
 
   @override
-  String get scanSubdirectoriesHint => '開啟：目前目錄及所有子目錄的音訊都加入清單。關閉：只列出目前這一層。';
+  String get scanSubdirectoriesHint =>
+      '開啟後，從網路庫開啟音樂時的播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與影片播清單、刮削設定獨立。';
 
   @override
   String get streamSidecarCover => '同目錄封面';
@@ -7144,7 +7174,8 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get videoHardwareDecodingHint => '關閉後改用軟體解碼，部分裝置更穩定';
 
   @override
-  String get videoScanSubdirsHint => '播放清單是否包含子目錄中的影片';
+  String get videoScanSubdirsHint =>
+      '開啟後，影片播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與音樂播清單、刮削設定獨立。';
 
   @override
   String get videoBufferSize => '緩衝大小';
@@ -7784,4 +7815,31 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String taskProgressUnits(int done, int total) {
     return '$done / $total';
   }
+
+  @override
+  String get playlistMaxDepth => '最大子目錄深度';
+
+  @override
+  String get playlistMaxDepthHint => '0 = 僅目前目錄；1 = 目前目錄再下一層（預設）。範圍 0–20。';
+
+  @override
+  String get playlistMaxDepthInput => '深度';
+
+  @override
+  String get mediaScanSection => '媒體庫刮削';
+
+  @override
+  String get mediaScanSectionHint => '刮削任務用的遞迴與深度（執行器後續落地）。與影片/音樂播放清單設定完全獨立。';
+
+  @override
+  String get mediaScanRecursive => '刮削時搜尋子目錄';
+
+  @override
+  String get mediaScanRecursiveHint => '預設開。關閉則刮削只處理選取的目前這一層。';
+
+  @override
+  String get mediaScanMaxDepth => '刮削最大深度';
+
+  @override
+  String get mediaScanMaxDepthHint => '預設 1。與播放清單深度 prefs 不共用。';
 }

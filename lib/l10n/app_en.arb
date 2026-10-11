@@ -87,7 +87,7 @@
   "scanList": "Queue scanning",
   "scanListHint": "Choose which files appear in the previous/next list for streaming playback.",
   "scanSubdirectories": "Search subdirectories",
-  "scanSubdirectoriesHint": "On: include audio in this directory and all subdirectories. Off: list only this directory.",
+  "scanSubdirectoriesHint": "When on, playlists opened from the network library include subfolders (see depth below); when off, only the current folder. Independent from video playlist and scrape settings.",
   "streamSidecarCover": "Same-directory cover",
   "streamSidecarCoverHint": "Match a cover image in the same folder by file name. Off by default. A miss still shows the placeholder.",
   "streamSidecarNames": "Cover file names",
@@ -940,7 +940,7 @@
   "videoStreamingHint": "Video streams directly without downloading locally.",
   "videoHardwareDecoding": "Hardware decoding",
   "videoHardwareDecodingHint": "Software decoding may be more stable on some devices.",
-  "videoScanSubdirsHint": "Include videos from subdirectories in the playlist",
+  "videoScanSubdirsHint": "When on, the video playlist includes subfolders (see depth below); when off, only the current folder. Independent from music playlist and scrape settings.",
   "videoBufferSize": "Buffer size",
   "videoBufferInput": "Buffer (MB)",
   "videoGestures": "Gestures",
@@ -1137,5 +1137,14 @@
   "taskKindScan": "Scan",
   "taskKindRetagCloud": "Retag (cloud)",
   "taskKindRetagLocal": "Retag (local)",
-  "taskProgressUnits": "{done} / {total}"
+  "taskProgressUnits": "{done} / {total}",
+  "playlistMaxDepth": "Max subdirectory depth",
+  "playlistMaxDepthHint": "0 = current folder only; 1 = one level below (default). Range 0–20.",
+  "playlistMaxDepthInput": "Depth",
+  "mediaScanSection": "Library scrape",
+  "mediaScanSectionHint": "Recursive depth for scrape tasks (executor lands later). Fully independent from video/music playlist settings.",
+  "mediaScanRecursive": "Scan subdirectories when scraping",
+  "mediaScanRecursiveHint": "Default on. When off, scrape only the selected folder.",
+  "mediaScanMaxDepth": "Scrape max depth",
+  "mediaScanMaxDepthHint": "Default 1. Does not share prefs with playlist depth."
 }

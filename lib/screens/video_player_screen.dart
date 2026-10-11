@@ -241,7 +241,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       initialRemotePath: seed.current.path,
       fileTypes: context.read<SettingsService>().fileTypes,
       autoAdvance: true,
-      deepScan: context.read<SettingsService>().videoScanSubdirs,
+      walkOptions: context.read<SettingsService>().videoPlaylistWalkOptions,
     );
     queue.addListener(_onQueueChanged);
     _queue = queue;
