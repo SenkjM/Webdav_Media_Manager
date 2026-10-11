@@ -25,7 +25,7 @@
   "themeSeedHue": "Hue",
   "themeSeedSaturation": "Saturation",
   "themeSeedValue": "Brightness",
-  "library": "Media library",
+  "library": "Music library",
   "playlists": "Playlists",
   "networkLibrary": "Network library",
   "downloadQueue": "Task queue",
@@ -369,10 +369,10 @@
   "overwriteLibraryNote": "Local index, tags, and unsynced changes are replaced by the cloud copy; downloaded audio, covers, and caches are kept.",
   "overwriteLibraryAction": "Overwrite",
   "overwriteLibraryPhrase": "Type YES to confirm overwriting",
-  "destroyLibraryTitle": "Destroy media library?",
+  "destroyLibraryTitle": "Destroy music library?",
   "destroyLibraryBody": "Destroys the local library track by track: each track’s cached audio, covers, and library rows are deleted, leaving one tombstone each.",
   "destroyLibraryNote": "Deletion records upload on the next sync; a cloud rebuild cannot restore destroyed content. Auto-sync is turned off afterwards.",
-  "destroyLibraryAction": "Destroy media library",
+  "destroyLibraryAction": "Destroy music library",
   "destroyLibraryPhrase": "Type YES to confirm destroying",
   "destroyLibraryDone": "Destroyed {count} tracks; deletion records upload on next sync, scheduled sync off",
   "readCloudLibraryFailed": "Failed to read cloud library: {error}",
@@ -1141,8 +1141,8 @@
   "playlistMaxDepth": "Max subdirectory depth",
   "playlistMaxDepthHint": "0 = current folder only; 1 = one level below (default). Range 0–20.",
   "playlistMaxDepthInput": "Depth",
-  "mediaScanSection": "Library scrape",
-  "mediaScanSectionHint": "Recursive depth for scrape tasks (executor lands later). Fully independent from video/music playlist settings.",
+  "mediaScanSection": "Scrape",
+  "mediaScanSectionHint": "Recursion and max depth",
   "mediaScanRecursive": "Scan subdirectories when scraping",
   "mediaScanRecursiveHint": "Default on. When off, scrape only the selected folder.",
   "mediaScanMaxDepth": "Scrape max depth",
@@ -1160,9 +1160,9 @@
   "actionStreamMusicOnce": "Stream once",
   "select": "Select",
   "mediaScanAction": "Scan into library",
-  "mediaScanCounting": "Counting paths…",
+  "mediaScanCounting": "Listing paths…",
   "mediaScanConfirmTitle": "Confirm scrape",
-  "mediaScanConfirmBody": "About {count} paths not yet in the library (each CUE counts as one file, not slices). Start scrape?",
+  "mediaScanConfirmBody": "Scrape {count} items?",
   "@mediaScanConfirmBody": {
     "description": "mediaScanConfirmBody",
     "placeholders": {
@@ -1182,23 +1182,23 @@
       }
     }
   },
-  "mediaLibrarySettings": "Media library settings",
-  "mediaLibrarySettingsHint": "Music default open, scrape depth, tag refresh",
-  "musicDefaultOpen": "Music default open",
-  "musicDefaultOpenHint": "Default action when tapping music in the network library (cache or stream). Extension settings no longer set the music default.",
+  "mediaLibrarySettings": "Music library",
+  "mediaLibrarySettingsHint": "Default open, scrape, tags",
+  "musicDefaultOpen": "Default open",
+  "musicDefaultOpenHint": "Network library tap: cache or stream",
   "musicDefaultCache": "Cache then play",
   "musicDefaultStream": "Stream",
-  "musicDefaultInExtensionsHint": "Music default open moved to Settings → Media library.",
+  "musicDefaultInExtensionsHint": "Moved to Settings → Media library → Music library.",
   "refreshTagsFromLocal": "Update tags from local",
-  "refreshTagsFromLocalHint": "Read tags and covers from cached audio",
+  "refreshTagsFromLocalHint": "Read tags from cached audio",
   "refreshTagsFromCloud": "Update tags from cloud",
-  "refreshTagsFromCloudHint": "Queue Range fetches for tags and covers",
+  "refreshTagsFromCloudHint": "Queue cloud tag fetches",
   "destroyTracksAction": "Destroy selected tracks",
   "taskKindMatchRemote": "Match remote",
-  "matchRemoteTitle": "Match remote files",
-  "matchRemoteHint": "Probe whether library tracks still exist in the cloud; mark missing ones with a red dot (skips tracks that have a local cache).",
+  "matchRemoteTitle": "Match remote",
+  "matchRemoteHint": "Probe cloud existence; mark missing with a red dot",
   "matchRemoteQueued": "Match-remote task queued",
-  "destroyLibraryConfirm": "Destroy entire media library",
+  "destroyLibraryConfirm": "Destroy entire music library",
   "@taskKindMatchRemote": {
     "description": "taskKindMatchRemote"
   },
@@ -1215,8 +1215,12 @@
   "@netScanMusic": {
     "description": "netScanMusic"
   },
-  "netScanMusicDesc": "Walk this folder with media-library scrape settings and queue music/CUE paths not yet in the library (path count only; no download).",
+  "netScanMusicDesc": "Scrape music and CUE in this folder",
   "@netScanMusicDesc": {
     "description": "netScanMusicDesc"
+  },
+  "mediaLibrarySection": "Media library",
+  "@mediaLibrarySection": {
+    "description": "Settings section title only (not drawer)"
   }
 }

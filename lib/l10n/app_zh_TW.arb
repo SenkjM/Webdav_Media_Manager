@@ -25,7 +25,7 @@
   "themeSeedHue": "色相",
   "themeSeedSaturation": "飽和度",
   "themeSeedValue": "明度",
-  "library": "媒體庫",
+  "library": "音樂庫",
   "playlists": "歌單",
   "networkLibrary": "網路庫",
   "downloadQueue": "任務佇列",
@@ -369,10 +369,10 @@
   "overwriteLibraryNote": "本機索引、標籤與尚未同步的改動會被雲端那份替換；已下載的音訊、封面與快取不會刪除。",
   "overwriteLibraryAction": "覆寫",
   "overwriteLibraryPhrase": "如果確認覆寫請輸入 YES",
-  "destroyLibraryTitle": "刪除媒體庫？",
-  "destroyLibraryBody": "會逐條刪除本機媒體庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。",
+  "destroyLibraryTitle": "刪除音樂庫？",
+  "destroyLibraryBody": "會逐條刪除本機音樂庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。",
   "destroyLibraryNote": "刪除記錄會在下次同步時上傳；雲端重建無法復原已刪除內容。之後會關閉自動同步。",
-  "destroyLibraryAction": "刪除媒體庫",
+  "destroyLibraryAction": "刪除音樂庫",
   "destroyLibraryPhrase": "輸入 YES 確認刪除",
   "destroyLibraryDone": "已刪除 {count} 首曲目；刪除記錄將在下次同步上傳，排程同步已關閉",
   "readCloudLibraryFailed": "讀取雲端庫失敗：{error}",
@@ -1141,8 +1141,8 @@
   "playlistMaxDepth": "最大子目錄深度",
   "playlistMaxDepthHint": "0 = 僅目前目錄；1 = 目前目錄再下一層（預設）。範圍 0–20。",
   "playlistMaxDepthInput": "深度",
-  "mediaScanSection": "媒體庫刮削",
-  "mediaScanSectionHint": "刮削任務用的遞迴與深度（執行器後續落地）。與影片/音樂播放清單設定完全獨立。",
+  "mediaScanSection": "刮削",
+  "mediaScanSectionHint": "遞迴與最大深度",
   "mediaScanRecursive": "刮削時搜尋子目錄",
   "mediaScanRecursiveHint": "預設開。關閉則刮削只處理選取的目前這一層。",
   "mediaScanMaxDepth": "刮削最大深度",
@@ -1157,29 +1157,29 @@
   "actionStreamMusicOnce": "串流播放（僅本次）",
   "select": "多選",
   "mediaScanAction": "掃描入庫",
-  "mediaScanCounting": "正在統計路徑…",
+  "mediaScanCounting": "列出路徑…",
   "mediaScanConfirmTitle": "確認刮削",
-  "mediaScanConfirmBody": "約 {count} 個路徑尚未入庫（CUE 按檔案計，不含分片）。開始刮削？",
+  "mediaScanConfirmBody": "將刮削 {count} 項，開始？",
   "mediaScanStart": "開始刮削",
   "mediaScanNothingNew": "沒有需要入庫的新路徑",
   "mediaScanQueued": "已加入 {count} 個刮削任務",
-  "mediaLibrarySettings": "媒體庫設定",
-  "mediaLibrarySettingsHint": "音樂預設開啟、刮削深度、標籤更新",
-  "musicDefaultOpen": "音樂預設開啟方式",
-  "musicDefaultOpenHint": "網路庫點按音樂時的預設動作（快取或串流）。副檔名頁不再管理音樂預設開啟。",
+  "mediaLibrarySettings": "音樂庫",
+  "mediaLibrarySettingsHint": "預設開啟、刮削、標籤",
+  "musicDefaultOpen": "預設開啟",
+  "musicDefaultOpenHint": "網路庫點按音樂時：快取或串流",
   "musicDefaultCache": "快取後播放",
   "musicDefaultStream": "串流播放",
-  "musicDefaultInExtensionsHint": "音樂預設開啟已移至「設定 → 媒體庫」。",
+  "musicDefaultInExtensionsHint": "已移至「設定 → 媒體庫 → 音樂庫」。",
   "refreshTagsFromLocal": "從本機更新標籤",
-  "refreshTagsFromLocalHint": "讀取已快取音訊的標籤與封面",
+  "refreshTagsFromLocalHint": "讀取已快取音訊的標籤",
   "refreshTagsFromCloud": "從雲端更新標籤",
-  "refreshTagsFromCloudHint": "以任務佇列 Range 拉取標籤與封面",
+  "refreshTagsFromCloudHint": "排隊從雲端拉取標籤",
   "destroyTracksAction": "刪除所選曲目",
   "taskKindMatchRemote": "全量匹配",
-  "matchRemoteTitle": "全量匹配遠端",
-  "matchRemoteHint": "探測媒體庫曲目在雲端是否仍存在；不存在則標紅點（有本機快取的跳過）。",
+  "matchRemoteTitle": "全量匹配",
+  "matchRemoteHint": "探測雲端是否仍存在，缺失標紅點",
   "matchRemoteQueued": "已加入全量匹配任務",
-  "destroyLibraryConfirm": "刪除整個媒體庫",
+  "destroyLibraryConfirm": "刪除整個音樂庫",
   "@taskKindMatchRemote": {
     "description": "taskKindMatchRemote"
   },
@@ -1196,7 +1196,7 @@
   "@netScanMusic": {
     "description": "netScanMusic"
   },
-  "netScanMusicDesc": "依媒體庫刮削設定遍歷本資料夾，將未入庫的音樂/CUE 加入刮削任務（僅統計路徑，不下載）。",
+  "netScanMusicDesc": "刮削本資料夾中的音樂與 CUE",
   "@netScanMusicDesc": {
     "description": "netScanMusicDesc"
   },
@@ -1207,5 +1207,9 @@
         "type": "int"
       }
     }
+  },
+  "mediaLibrarySection": "媒體庫",
+  "@mediaLibrarySection": {
+    "description": "Settings section title only (not drawer)"
   }
 }

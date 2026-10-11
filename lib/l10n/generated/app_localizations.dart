@@ -252,7 +252,7 @@ abstract class AppLocalizations {
   /// No description provided for @library.
   ///
   /// In zh, this message translates to:
-  /// **'媒体库'**
+  /// **'音乐库'**
   String get library;
 
   /// No description provided for @playlists.
@@ -2280,13 +2280,13 @@ abstract class AppLocalizations {
   /// No description provided for @destroyLibraryTitle.
   ///
   /// In zh, this message translates to:
-  /// **'删除媒体库？'**
+  /// **'删除音乐库？'**
   String get destroyLibraryTitle;
 
   /// No description provided for @destroyLibraryBody.
   ///
   /// In zh, this message translates to:
-  /// **'会逐条删除本地媒体库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。'**
+  /// **'会逐条删除本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。'**
   String get destroyLibraryBody;
 
   /// No description provided for @destroyLibraryNote.
@@ -2298,7 +2298,7 @@ abstract class AppLocalizations {
   /// No description provided for @destroyLibraryAction.
   ///
   /// In zh, this message translates to:
-  /// **'删除媒体库'**
+  /// **'删除音乐库'**
   String get destroyLibraryAction;
 
   /// No description provided for @destroyLibraryPhrase.
@@ -6842,13 +6842,13 @@ abstract class AppLocalizations {
   /// No description provided for @mediaScanSection.
   ///
   /// In zh, this message translates to:
-  /// **'媒体库刮削'**
+  /// **'刮削'**
   String get mediaScanSection;
 
   /// No description provided for @mediaScanSectionHint.
   ///
   /// In zh, this message translates to:
-  /// **'刮削任务用的递归与深度（执行器后续落地）。与视频/音乐播放列表设置完全独立。'**
+  /// **'递归与最大深度'**
   String get mediaScanSectionHint;
 
   /// No description provided for @mediaScanRecursive.
@@ -6938,7 +6938,7 @@ abstract class AppLocalizations {
   /// No description provided for @mediaScanCounting.
   ///
   /// In zh, this message translates to:
-  /// **'正在统计路径…'**
+  /// **'列出路径…'**
   String get mediaScanCounting;
 
   /// No description provided for @mediaScanConfirmTitle.
@@ -6950,7 +6950,7 @@ abstract class AppLocalizations {
   /// mediaScanConfirmBody
   ///
   /// In zh, this message translates to:
-  /// **'约 {count} 个路径尚未入库（CUE 按文件计，不含分片）。开始刮削？'**
+  /// **'将刮削 {count} 项，开始？'**
   String mediaScanConfirmBody(int count);
 
   /// No description provided for @mediaScanStart.
@@ -6974,25 +6974,25 @@ abstract class AppLocalizations {
   /// No description provided for @mediaLibrarySettings.
   ///
   /// In zh, this message translates to:
-  /// **'媒体库设置'**
+  /// **'音乐库'**
   String get mediaLibrarySettings;
 
   /// No description provided for @mediaLibrarySettingsHint.
   ///
   /// In zh, this message translates to:
-  /// **'音乐默认打开、刮削深度、标签更新'**
+  /// **'默认打开、刮削、标签'**
   String get mediaLibrarySettingsHint;
 
   /// No description provided for @musicDefaultOpen.
   ///
   /// In zh, this message translates to:
-  /// **'音乐默认打开方式'**
+  /// **'默认打开'**
   String get musicDefaultOpen;
 
   /// No description provided for @musicDefaultOpenHint.
   ///
   /// In zh, this message translates to:
-  /// **'网络库点按音乐时的默认动作（缓存或串流）。后缀页不再管理音乐默认打开。'**
+  /// **'网络库点按音乐时：缓存或串流'**
   String get musicDefaultOpenHint;
 
   /// No description provided for @musicDefaultCache.
@@ -7010,7 +7010,7 @@ abstract class AppLocalizations {
   /// No description provided for @musicDefaultInExtensionsHint.
   ///
   /// In zh, this message translates to:
-  /// **'音乐默认打开已移至「设置 → 媒体库」。'**
+  /// **'已移至「设置 → 媒体库 → 音乐库」。'**
   String get musicDefaultInExtensionsHint;
 
   /// No description provided for @refreshTagsFromLocal.
@@ -7022,7 +7022,7 @@ abstract class AppLocalizations {
   /// No description provided for @refreshTagsFromLocalHint.
   ///
   /// In zh, this message translates to:
-  /// **'读取已缓存音频的标签与封面'**
+  /// **'读取已缓存音频的标签'**
   String get refreshTagsFromLocalHint;
 
   /// No description provided for @refreshTagsFromCloud.
@@ -7034,7 +7034,7 @@ abstract class AppLocalizations {
   /// No description provided for @refreshTagsFromCloudHint.
   ///
   /// In zh, this message translates to:
-  /// **'以任务队列 Range 拉取标签与封面'**
+  /// **'排队从云端拉取标签'**
   String get refreshTagsFromCloudHint;
 
   /// No description provided for @destroyTracksAction.
@@ -7052,13 +7052,13 @@ abstract class AppLocalizations {
   /// Settings entry title for full remote match
   ///
   /// In zh, this message translates to:
-  /// **'全量匹配远端'**
+  /// **'全量匹配'**
   String get matchRemoteTitle;
 
   /// Settings subtitle for full remote match
   ///
   /// In zh, this message translates to:
-  /// **'探测媒体库曲目在云端是否仍存在；不存在则标红点（有本地缓存的跳过）。'**
+  /// **'探测云端是否仍存在，缺失标红点'**
   String get matchRemoteHint;
 
   /// Snack after enqueueing match remote task
@@ -7070,7 +7070,7 @@ abstract class AppLocalizations {
   /// No description provided for @destroyLibraryConfirm.
   ///
   /// In zh, this message translates to:
-  /// **'删除整个媒体库'**
+  /// **'删除整个音乐库'**
   String get destroyLibraryConfirm;
 
   /// netScanMusic
@@ -7082,8 +7082,14 @@ abstract class AppLocalizations {
   /// netScanMusicDesc
   ///
   /// In zh, this message translates to:
-  /// **'按媒体库刮削设置遍历本文件夹，将未入库的音乐/CUE 加入刮削任务（仅统计路径，不下载）。'**
+  /// **'刮削本文件夹中的音乐与 CUE'**
   String get netScanMusicDesc;
+
+  /// Settings section title only (not drawer)
+  ///
+  /// In zh, this message translates to:
+  /// **'媒体库'**
+  String get mediaLibrarySection;
 }
 
 class _AppLocalizationsDelegate

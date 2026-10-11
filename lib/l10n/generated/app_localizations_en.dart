@@ -87,7 +87,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeSeedValue => 'Brightness';
 
   @override
-  String get library => 'Media library';
+  String get library => 'Music library';
 
   @override
   String get playlists => 'Playlists';
@@ -1246,7 +1246,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get overwriteLibraryPhrase => 'Type YES to confirm overwriting';
 
   @override
-  String get destroyLibraryTitle => 'Destroy media library?';
+  String get destroyLibraryTitle => 'Destroy music library?';
 
   @override
   String get destroyLibraryBody =>
@@ -1257,7 +1257,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Deletion records upload on the next sync; a cloud rebuild cannot restore destroyed content. Auto-sync is turned off afterwards.';
 
   @override
-  String get destroyLibraryAction => 'Destroy media library';
+  String get destroyLibraryAction => 'Destroy music library';
 
   @override
   String get destroyLibraryPhrase => 'Type YES to confirm destroying';
@@ -4085,11 +4085,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get playlistMaxDepthInput => 'Depth';
 
   @override
-  String get mediaScanSection => 'Library scrape';
+  String get mediaScanSection => 'Scrape';
 
   @override
-  String get mediaScanSectionHint =>
-      'Recursive depth for scrape tasks (executor lands later). Fully independent from video/music playlist settings.';
+  String get mediaScanSectionHint => 'Recursion and max depth';
 
   @override
   String get mediaScanRecursive => 'Scan subdirectories when scraping';
@@ -4137,14 +4136,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mediaScanAction => 'Scan into library';
 
   @override
-  String get mediaScanCounting => 'Counting paths…';
+  String get mediaScanCounting => 'Listing paths…';
 
   @override
   String get mediaScanConfirmTitle => 'Confirm scrape';
 
   @override
   String mediaScanConfirmBody(int count) {
-    return 'About $count paths not yet in the library (each CUE counts as one file, not slices). Start scrape?';
+    return 'Scrape $count items?';
   }
 
   @override
@@ -4159,18 +4158,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get mediaLibrarySettings => 'Media library settings';
+  String get mediaLibrarySettings => 'Music library';
 
   @override
-  String get mediaLibrarySettingsHint =>
-      'Music default open, scrape depth, tag refresh';
+  String get mediaLibrarySettingsHint => 'Default open, scrape, tags';
 
   @override
-  String get musicDefaultOpen => 'Music default open';
+  String get musicDefaultOpen => 'Default open';
 
   @override
-  String get musicDefaultOpenHint =>
-      'Default action when tapping music in the network library (cache or stream). Extension settings no longer set the music default.';
+  String get musicDefaultOpenHint => 'Network library tap: cache or stream';
 
   @override
   String get musicDefaultCache => 'Cache then play';
@@ -4180,21 +4177,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get musicDefaultInExtensionsHint =>
-      'Music default open moved to Settings → Media library.';
+      'Moved to Settings → Media library → Music library.';
 
   @override
   String get refreshTagsFromLocal => 'Update tags from local';
 
   @override
-  String get refreshTagsFromLocalHint =>
-      'Read tags and covers from cached audio';
+  String get refreshTagsFromLocalHint => 'Read tags from cached audio';
 
   @override
   String get refreshTagsFromCloud => 'Update tags from cloud';
 
   @override
-  String get refreshTagsFromCloudHint =>
-      'Queue Range fetches for tags and covers';
+  String get refreshTagsFromCloudHint => 'Queue cloud tag fetches';
 
   @override
   String get destroyTracksAction => 'Destroy selected tracks';
@@ -4203,22 +4198,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get taskKindMatchRemote => 'Match remote';
 
   @override
-  String get matchRemoteTitle => 'Match remote files';
+  String get matchRemoteTitle => 'Match remote';
 
   @override
   String get matchRemoteHint =>
-      'Probe whether library tracks still exist in the cloud; mark missing ones with a red dot (skips tracks that have a local cache).';
+      'Probe cloud existence; mark missing with a red dot';
 
   @override
   String get matchRemoteQueued => 'Match-remote task queued';
 
   @override
-  String get destroyLibraryConfirm => 'Destroy entire media library';
+  String get destroyLibraryConfirm => 'Destroy entire music library';
 
   @override
   String get netScanMusic => 'Scan music';
 
   @override
-  String get netScanMusicDesc =>
-      'Walk this folder with media-library scrape settings and queue music/CUE paths not yet in the library (path count only; no download).';
+  String get netScanMusicDesc => 'Scrape music and CUE in this folder';
+
+  @override
+  String get mediaLibrarySection => 'Media library';
 }

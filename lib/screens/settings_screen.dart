@@ -226,7 +226,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
             ),
           const Divider(height: 40),
-          _sectionTitle(context, l10n.library),
+          _sectionTitle(context, l10n.mediaLibrarySection),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,

@@ -85,7 +85,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get themeSeedValue => '明度';
 
   @override
-  String get library => '媒体库';
+  String get library => '音乐库';
 
   @override
   String get playlists => '歌单';
@@ -1208,16 +1208,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get overwriteLibraryPhrase => '如果确认覆写请输入 YES';
 
   @override
-  String get destroyLibraryTitle => '删除媒体库？';
+  String get destroyLibraryTitle => '删除音乐库？';
 
   @override
-  String get destroyLibraryBody => '会逐条删除本地媒体库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。';
+  String get destroyLibraryBody => '会逐条删除本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。';
 
   @override
   String get destroyLibraryNote => '删除记录会在下次同步时上传；云端重建无法恢复已删除内容。之后会关闭自动同步。';
 
   @override
-  String get destroyLibraryAction => '删除媒体库';
+  String get destroyLibraryAction => '删除音乐库';
 
   @override
   String get destroyLibraryPhrase => '输入 YES 确认删除';
@@ -3905,10 +3905,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playlistMaxDepthInput => '深度';
 
   @override
-  String get mediaScanSection => '媒体库刮削';
+  String get mediaScanSection => '刮削';
 
   @override
-  String get mediaScanSectionHint => '刮削任务用的递归与深度（执行器后续落地）。与视频/音乐播放列表设置完全独立。';
+  String get mediaScanSectionHint => '递归与最大深度';
 
   @override
   String get mediaScanRecursive => '刮削时搜索子目录';
@@ -3953,14 +3953,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaScanAction => '扫描入库';
 
   @override
-  String get mediaScanCounting => '正在统计路径…';
+  String get mediaScanCounting => '列出路径…';
 
   @override
   String get mediaScanConfirmTitle => '确认刮削';
 
   @override
   String mediaScanConfirmBody(int count) {
-    return '约 $count 个路径尚未入库（CUE 按文件计，不含分片）。开始刮削？';
+    return '将刮削 $count 项，开始？';
   }
 
   @override
@@ -3975,16 +3975,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get mediaLibrarySettings => '媒体库设置';
+  String get mediaLibrarySettings => '音乐库';
 
   @override
-  String get mediaLibrarySettingsHint => '音乐默认打开、刮削深度、标签更新';
+  String get mediaLibrarySettingsHint => '默认打开、刮削、标签';
 
   @override
-  String get musicDefaultOpen => '音乐默认打开方式';
+  String get musicDefaultOpen => '默认打开';
 
   @override
-  String get musicDefaultOpenHint => '网络库点按音乐时的默认动作（缓存或串流）。后缀页不再管理音乐默认打开。';
+  String get musicDefaultOpenHint => '网络库点按音乐时：缓存或串流';
 
   @override
   String get musicDefaultCache => '缓存后播放';
@@ -3993,19 +3993,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get musicDefaultStream => '串流播放';
 
   @override
-  String get musicDefaultInExtensionsHint => '音乐默认打开已移至「设置 → 媒体库」。';
+  String get musicDefaultInExtensionsHint => '已移至「设置 → 媒体库 → 音乐库」。';
 
   @override
   String get refreshTagsFromLocal => '从本地更新标签';
 
   @override
-  String get refreshTagsFromLocalHint => '读取已缓存音频的标签与封面';
+  String get refreshTagsFromLocalHint => '读取已缓存音频的标签';
 
   @override
   String get refreshTagsFromCloud => '从云端更新标签';
 
   @override
-  String get refreshTagsFromCloudHint => '以任务队列 Range 拉取标签与封面';
+  String get refreshTagsFromCloudHint => '排队从云端拉取标签';
 
   @override
   String get destroyTracksAction => '删除所选曲目';
@@ -4014,23 +4014,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get taskKindMatchRemote => '全量匹配';
 
   @override
-  String get matchRemoteTitle => '全量匹配远端';
+  String get matchRemoteTitle => '全量匹配';
 
   @override
-  String get matchRemoteHint => '探测媒体库曲目在云端是否仍存在；不存在则标红点（有本地缓存的跳过）。';
+  String get matchRemoteHint => '探测云端是否仍存在，缺失标红点';
 
   @override
   String get matchRemoteQueued => '已加入全量匹配任务';
 
   @override
-  String get destroyLibraryConfirm => '删除整个媒体库';
+  String get destroyLibraryConfirm => '删除整个音乐库';
 
   @override
   String get netScanMusic => '扫描音乐';
 
   @override
-  String get netScanMusicDesc =>
-      '按媒体库刮削设置遍历本文件夹，将未入库的音乐/CUE 加入刮削任务（仅统计路径，不下载）。';
+  String get netScanMusicDesc => '刮削本文件夹中的音乐与 CUE';
+
+  @override
+  String get mediaLibrarySection => '媒体库';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -4113,7 +4115,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get themeSeedValue => '明度';
 
   @override
-  String get library => '媒體庫';
+  String get library => '音樂庫';
 
   @override
   String get playlists => '歌單';
@@ -5237,16 +5239,16 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get overwriteLibraryPhrase => '如果確認覆寫請輸入 YES';
 
   @override
-  String get destroyLibraryTitle => '刪除媒體庫？';
+  String get destroyLibraryTitle => '刪除音樂庫？';
 
   @override
-  String get destroyLibraryBody => '會逐條刪除本機媒體庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。';
+  String get destroyLibraryBody => '會逐條刪除本機音樂庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。';
 
   @override
   String get destroyLibraryNote => '刪除記錄會在下次同步時上傳；雲端重建無法復原已刪除內容。之後會關閉自動同步。';
 
   @override
-  String get destroyLibraryAction => '刪除媒體庫';
+  String get destroyLibraryAction => '刪除音樂庫';
 
   @override
   String get destroyLibraryPhrase => '輸入 YES 確認刪除';
@@ -7934,10 +7936,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get playlistMaxDepthInput => '深度';
 
   @override
-  String get mediaScanSection => '媒體庫刮削';
+  String get mediaScanSection => '刮削';
 
   @override
-  String get mediaScanSectionHint => '刮削任務用的遞迴與深度（執行器後續落地）。與影片/音樂播放清單設定完全獨立。';
+  String get mediaScanSectionHint => '遞迴與最大深度';
 
   @override
   String get mediaScanRecursive => '刮削時搜尋子目錄';
@@ -7982,14 +7984,14 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mediaScanAction => '掃描入庫';
 
   @override
-  String get mediaScanCounting => '正在統計路徑…';
+  String get mediaScanCounting => '列出路徑…';
 
   @override
   String get mediaScanConfirmTitle => '確認刮削';
 
   @override
   String mediaScanConfirmBody(int count) {
-    return '約 $count 個路徑尚未入庫（CUE 按檔案計，不含分片）。開始刮削？';
+    return '將刮削 $count 項，開始？';
   }
 
   @override
@@ -8004,16 +8006,16 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get mediaLibrarySettings => '媒體庫設定';
+  String get mediaLibrarySettings => '音樂庫';
 
   @override
-  String get mediaLibrarySettingsHint => '音樂預設開啟、刮削深度、標籤更新';
+  String get mediaLibrarySettingsHint => '預設開啟、刮削、標籤';
 
   @override
-  String get musicDefaultOpen => '音樂預設開啟方式';
+  String get musicDefaultOpen => '預設開啟';
 
   @override
-  String get musicDefaultOpenHint => '網路庫點按音樂時的預設動作（快取或串流）。副檔名頁不再管理音樂預設開啟。';
+  String get musicDefaultOpenHint => '網路庫點按音樂時：快取或串流';
 
   @override
   String get musicDefaultCache => '快取後播放';
@@ -8022,19 +8024,19 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get musicDefaultStream => '串流播放';
 
   @override
-  String get musicDefaultInExtensionsHint => '音樂預設開啟已移至「設定 → 媒體庫」。';
+  String get musicDefaultInExtensionsHint => '已移至「設定 → 媒體庫 → 音樂庫」。';
 
   @override
   String get refreshTagsFromLocal => '從本機更新標籤';
 
   @override
-  String get refreshTagsFromLocalHint => '讀取已快取音訊的標籤與封面';
+  String get refreshTagsFromLocalHint => '讀取已快取音訊的標籤';
 
   @override
   String get refreshTagsFromCloud => '從雲端更新標籤';
 
   @override
-  String get refreshTagsFromCloudHint => '以任務佇列 Range 拉取標籤與封面';
+  String get refreshTagsFromCloudHint => '排隊從雲端拉取標籤';
 
   @override
   String get destroyTracksAction => '刪除所選曲目';
@@ -8043,21 +8045,23 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get taskKindMatchRemote => '全量匹配';
 
   @override
-  String get matchRemoteTitle => '全量匹配遠端';
+  String get matchRemoteTitle => '全量匹配';
 
   @override
-  String get matchRemoteHint => '探測媒體庫曲目在雲端是否仍存在；不存在則標紅點（有本機快取的跳過）。';
+  String get matchRemoteHint => '探測雲端是否仍存在，缺失標紅點';
 
   @override
   String get matchRemoteQueued => '已加入全量匹配任務';
 
   @override
-  String get destroyLibraryConfirm => '刪除整個媒體庫';
+  String get destroyLibraryConfirm => '刪除整個音樂庫';
 
   @override
   String get netScanMusic => '掃描音樂';
 
   @override
-  String get netScanMusicDesc =>
-      '依媒體庫刮削設定遍歷本資料夾，將未入庫的音樂/CUE 加入刮削任務（僅統計路徑，不下載）。';
+  String get netScanMusicDesc => '刮削本資料夾中的音樂與 CUE';
+
+  @override
+  String get mediaLibrarySection => '媒體庫';
 }

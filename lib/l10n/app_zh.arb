@@ -25,7 +25,7 @@
   "themeSeedHue": "色相",
   "themeSeedSaturation": "饱和度",
   "themeSeedValue": "明度",
-  "library": "媒体库",
+  "library": "音乐库",
   "playlists": "歌单",
   "networkLibrary": "网络库",
   "downloadQueue": "任务队列",
@@ -369,10 +369,10 @@
   "overwriteLibraryNote": "本地索引、标签与尚未同步的改动会被云端那份替换；已下载的音频、封面与缓存不会删除。",
   "overwriteLibraryAction": "覆写",
   "overwriteLibraryPhrase": "如果确认覆写请输入 YES",
-  "destroyLibraryTitle": "删除媒体库？",
-  "destroyLibraryBody": "会逐条删除本地媒体库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。",
+  "destroyLibraryTitle": "删除音乐库？",
+  "destroyLibraryBody": "会逐条删除本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。",
   "destroyLibraryNote": "删除记录会在下次同步时上传；云端重建无法恢复已删除内容。之后会关闭自动同步。",
-  "destroyLibraryAction": "删除媒体库",
+  "destroyLibraryAction": "删除音乐库",
   "destroyLibraryPhrase": "输入 YES 确认删除",
   "destroyLibraryDone": "已删除 {count} 首曲目；删除记录将在下次同步上传，定时同步已关闭",
   "readCloudLibraryFailed": "读取云端库失败：{error}",
@@ -1158,8 +1158,8 @@
   "playlistMaxDepth": "最大子目录深度",
   "playlistMaxDepthHint": "0 = 仅当前目录；1 = 当前目录再下一层（默认）。范围 0–20。",
   "playlistMaxDepthInput": "深度",
-  "mediaScanSection": "媒体库刮削",
-  "mediaScanSectionHint": "刮削任务用的递归与深度（执行器后续落地）。与视频/音乐播放列表设置完全独立。",
+  "mediaScanSection": "刮削",
+  "mediaScanSectionHint": "递归与最大深度",
   "mediaScanRecursive": "刮削时搜索子目录",
   "mediaScanRecursiveHint": "默认开。关闭则刮削只处理选中的当前层。",
   "mediaScanMaxDepth": "刮削最大深度",
@@ -1180,9 +1180,9 @@
   "actionStreamMusicOnce": "串流播放（仅本次）",
   "select": "多选",
   "mediaScanAction": "扫描入库",
-  "mediaScanCounting": "正在统计路径…",
+  "mediaScanCounting": "列出路径…",
   "mediaScanConfirmTitle": "确认刮削",
-  "mediaScanConfirmBody": "约 {count} 个路径尚未入库（CUE 按文件计，不含分片）。开始刮削？",
+  "mediaScanConfirmBody": "将刮削 {count} 项，开始？",
   "@mediaScanConfirmBody": {
     "description": "mediaScanConfirmBody",
     "placeholders": {
@@ -1202,23 +1202,23 @@
       }
     }
   },
-  "mediaLibrarySettings": "媒体库设置",
-  "mediaLibrarySettingsHint": "音乐默认打开、刮削深度、标签更新",
-  "musicDefaultOpen": "音乐默认打开方式",
-  "musicDefaultOpenHint": "网络库点按音乐时的默认动作（缓存或串流）。后缀页不再管理音乐默认打开。",
+  "mediaLibrarySettings": "音乐库",
+  "mediaLibrarySettingsHint": "默认打开、刮削、标签",
+  "musicDefaultOpen": "默认打开",
+  "musicDefaultOpenHint": "网络库点按音乐时：缓存或串流",
   "musicDefaultCache": "缓存后播放",
   "musicDefaultStream": "串流播放",
-  "musicDefaultInExtensionsHint": "音乐默认打开已移至「设置 → 媒体库」。",
+  "musicDefaultInExtensionsHint": "已移至「设置 → 媒体库 → 音乐库」。",
   "refreshTagsFromLocal": "从本地更新标签",
-  "refreshTagsFromLocalHint": "读取已缓存音频的标签与封面",
+  "refreshTagsFromLocalHint": "读取已缓存音频的标签",
   "refreshTagsFromCloud": "从云端更新标签",
-  "refreshTagsFromCloudHint": "以任务队列 Range 拉取标签与封面",
+  "refreshTagsFromCloudHint": "排队从云端拉取标签",
   "destroyTracksAction": "删除所选曲目",
   "taskKindMatchRemote": "全量匹配",
-  "matchRemoteTitle": "全量匹配远端",
-  "matchRemoteHint": "探测媒体库曲目在云端是否仍存在；不存在则标红点（有本地缓存的跳过）。",
+  "matchRemoteTitle": "全量匹配",
+  "matchRemoteHint": "探测云端是否仍存在，缺失标红点",
   "matchRemoteQueued": "已加入全量匹配任务",
-  "destroyLibraryConfirm": "删除整个媒体库",
+  "destroyLibraryConfirm": "删除整个音乐库",
   "@taskKindMatchRemote": {
     "description": "Task queue kind for optional full remote existence match"
   },
@@ -1235,8 +1235,12 @@
   "@netScanMusic": {
     "description": "netScanMusic"
   },
-  "netScanMusicDesc": "按媒体库刮削设置遍历本文件夹，将未入库的音乐/CUE 加入刮削任务（仅统计路径，不下载）。",
+  "netScanMusicDesc": "刮削本文件夹中的音乐与 CUE",
   "@netScanMusicDesc": {
     "description": "netScanMusicDesc"
+  },
+  "mediaLibrarySection": "媒体库",
+  "@mediaLibrarySection": {
+    "description": "Settings section title only (not drawer)"
   }
 }
