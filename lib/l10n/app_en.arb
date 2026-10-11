@@ -1159,7 +1159,7 @@
   "remoteMissingTitle": "File missing on cloud",
   "remoteMissingBody": "Still not found. Delete the library row, or redirect to a new remote path?",
   "remoteMissingRedirect": "Redirect",
-  "actionStreamMusicOnce": "Stream once",
+  "actionStreamMusicOnce": "Stream",
   "select": "Select",
   "mediaScanAction": "Scan into library",
   "mediaScanCounting": "Listing paths…",
@@ -1224,5 +1224,11 @@
   "mediaLibrarySection": "Media library",
   "@mediaLibrarySection": {
     "description": "Settings section title only (not drawer)"
-  }
+  },
+
+  "libMenuStream": "Stream",
+  "libMenuCache": "Cache",
+  "libMenuClear": "Clear",
+  "updateTagsFromCache": "From cache",
+  "updateTagsFromCloud": "From cloud"
 }

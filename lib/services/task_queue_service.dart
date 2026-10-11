@@ -25,6 +25,7 @@ import 'download_keepalive.dart';
 import 'download_notification_service.dart';
 import 'task_store.dart';
 import 'library_service.dart';
+import 'playlist_service.dart';
 import 'platform_export_service.dart';
 import 'webdav_service.dart';
 
@@ -55,6 +56,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     required WebDavService webDav,
     required CacheService cache,
     LibraryService? library,
+    PlaylistService? playlists,
     TaskStore? store,
     PlatformExportService? export,
     bool Function(String name)? isMusicFile,
@@ -65,6 +67,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }) : _webDav = webDav,
        _cache = cache,
        _library = library,
+       _playlists = playlists,
        _store = store ?? TaskStore(),
        _export = export ?? const PlatformExportService(),
        _notify = notifications ?? DownloadNotificationService(),
@@ -91,6 +94,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   final Set<String> _fgsTimeoutSuspendIds = <String>{};
   DateTime? _fgsCooldownUntil;
   LibraryService? _library;
+  PlaylistService? _playlists;
   final TaskStore _store;
   final PlatformExportService _export;
 
@@ -2476,6 +2480,11 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       sourceName: task.sourceName,
       remotePath: task.remotePath,
     );
+    await _playlists?.setRemoteMissingForPath(
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+      missing: false,
+    );
     task.unitsDone = 1;
     task.status = TaskStatus.completed;
     task.completedAt = DateTime.now();
@@ -2542,10 +2551,18 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             sourceName: tr.sourceName,
             remotePath: tr.remotePath,
           );
+          await _playlists?.setRemoteMissingForIdentities(
+            identityKeys: [tr.musicId],
+            missing: false,
+          );
         } else {
           await library.markRemoteMissing(
             sourceName: tr.sourceName,
             remotePath: tr.remotePath,
+          );
+          await _playlists?.setRemoteMissingForIdentities(
+            identityKeys: [tr.musicId],
+            missing: true,
           );
         }
       } catch (e) {

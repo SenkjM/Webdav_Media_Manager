@@ -14,6 +14,7 @@ import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_service.dart';
 import '../services/library_actions.dart';
+import '../services/task_queue_service.dart';
 import '../services/tag_service.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
@@ -326,25 +327,47 @@ class PlayerScreen extends StatelessWidget {
                   const Divider(height: 1),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final updated = await refreshOneLibraryTrackTags(
-                            ctx,
-                            lib,
-                          );
-                          if (!ctx.mounted) return;
-                          if (updated) {
-                            AppSnack.show(ctx, l10n.tagsUpdatedFromLocal);
-                            Navigator.of(ctx).pop();
-                          } else {
-                            AppSnack.show(ctx, l10n.tagsNeedDownloadFirst);
-                          }
-                        },
-                        icon: const Icon(Icons.sell_outlined),
-                        label: Text(l10n.updateThisTrackTags),
-                      ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final updated =
+                                  await refreshOneLibraryTrackTags(ctx, lib);
+                              if (!ctx.mounted) return;
+                              if (updated) {
+                                AppSnack.show(ctx, l10n.tagsUpdatedFromLocal);
+                                Navigator.of(ctx).pop();
+                              } else {
+                                AppSnack.show(ctx, l10n.tagsNeedDownloadFirst);
+                              }
+                            },
+                            child: Text(l10n.updateTagsFromCache),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              if (lib.isCueVirtual) {
+                                AppSnack.show(ctx, l10n.tagsNeedDownloadFirst);
+                                return;
+                              }
+                              await ctx
+                                  .read<TaskQueueService>()
+                                  .enqueueRetagCloud(
+                                    sourceName: lib.sourceName,
+                                    remotePath: lib.remotePath,
+                                    fileName: lib.fileName,
+                                  );
+                              if (!ctx.mounted) return;
+                              AppSnack.show(ctx, l10n.mediaScanQueued(1));
+                              Navigator.of(ctx).pop();
+                            },
+                            child: Text(l10n.updateTagsFromCloud),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

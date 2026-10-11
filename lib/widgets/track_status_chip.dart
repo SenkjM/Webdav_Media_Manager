@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/webdav_item.dart';
 import '../theme/app_theme.dart';
+import 'track_status_dot.dart';
 
 class TrackStatusChip extends StatelessWidget {
   const TrackStatusChip({super.key, required this.state, this.progress});
@@ -25,7 +26,7 @@ class TrackStatusChip extends StatelessWidget {
     final (label, color, icon) = switch (state) {
       TrackUiState.remote => ('', scheme.outline, Icons.circle_outlined),
       TrackUiState.streamable => ('', scheme.primary, Icons.stream),
-      TrackUiState.ready => ('', scheme.tertiary, Icons.check_circle_outline),
+      TrackUiState.ready => ('', cachedStatusDotColor(context), Icons.check_circle_outline),
       TrackUiState.remoteMissing => (
         l10n.trackStateRemoteMissing,
         AppColors.error,

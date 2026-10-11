@@ -1179,7 +1179,7 @@
   "remoteMissingTitle": "云端文件不存在",
   "remoteMissingBody": "再试仍找不到。删除库内条目，或重定向到新的远端路径？",
   "remoteMissingRedirect": "重定向",
-  "actionStreamMusicOnce": "串流播放（仅本次）",
+  "actionStreamMusicOnce": "流式播放",
   "select": "多选",
   "mediaScanAction": "扫描入库",
   "mediaScanCounting": "列出路径…",
@@ -1244,5 +1244,11 @@
   "mediaLibrarySection": "媒体库",
   "@mediaLibrarySection": {
     "description": "Settings section title only (not drawer)"
-  }
+  },
+
+  "libMenuStream": "流式播放",
+  "libMenuCache": "缓存",
+  "libMenuClear": "清理",
+  "updateTagsFromCache": "基于缓存",
+  "updateTagsFromCloud": "基于云端"
 }

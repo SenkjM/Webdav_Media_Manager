@@ -1156,7 +1156,7 @@
   "remoteMissingTitle": "雲端檔案不存在",
   "remoteMissingBody": "再試仍找不到。刪除庫內條目，或重新導向到新的遠端路徑？",
   "remoteMissingRedirect": "重新導向",
-  "actionStreamMusicOnce": "串流播放（僅本次）",
+  "actionStreamMusicOnce": "串流播放",
   "select": "多選",
   "mediaScanAction": "掃描入庫",
   "mediaScanCounting": "列出路徑…",
@@ -1213,5 +1213,11 @@
   "mediaLibrarySection": "媒體庫",
   "@mediaLibrarySection": {
     "description": "Settings section title only (not drawer)"
-  }
+  },
+
+  "libMenuStream": "串流播放",
+  "libMenuCache": "快取",
+  "libMenuClear": "清理",
+  "updateTagsFromCache": "基於快取",
+  "updateTagsFromCloud": "基於雲端"
 }

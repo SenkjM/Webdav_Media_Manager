@@ -46,6 +46,7 @@ TrackUiState libraryRowUiState({
   required LibraryTrack track,
   String? playingRemotePath,
   String? playingSourceName,
+  bool entryRemoteMissing = false,
 }) {
   var state = downloads.uiStateFor(
     track.sourceName,
@@ -54,7 +55,8 @@ TrackUiState libraryRowUiState({
     playingSourceName: playingSourceName,
     libraryRow: true,
   );
-  if (track.remoteMissing &&
+  final missing = track.remoteMissing || entryRemoteMissing;
+  if (missing &&
       state != TrackUiState.playing &&
       state != TrackUiState.downloading &&
       state != TrackUiState.queued) {

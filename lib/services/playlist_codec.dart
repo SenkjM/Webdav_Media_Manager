@@ -85,6 +85,7 @@ class PlaylistCodec {
     WmpPlaylistEntry.durationMs: entry.durationMs,
     WmpPlaylistEntry.cueTrackIndex: entry.cueTrackIndex,
     WmpPlaylistEntry.coverIndex: coverIndex,
+    if (entry.remoteMissing) WmpPlaylistEntry.remoteMissing: 1,
   };
 
   static PlaylistEntry recordToEntry(Map<int, Object?> record) {
@@ -105,6 +106,7 @@ class PlaylistCodec {
       title: str(WmpPlaylistEntry.title),
       durationMs: num_(WmpPlaylistEntry.durationMs),
       cueTrackIndex: num_(WmpPlaylistEntry.cueTrackIndex),
+      remoteMissing: num_(WmpPlaylistEntry.remoteMissing) == 1,
     );
   }
 

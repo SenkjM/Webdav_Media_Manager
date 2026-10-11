@@ -4133,7 +4133,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get remoteMissingRedirect => 'Redirect';
 
   @override
-  String get actionStreamMusicOnce => 'Stream once';
+  String get actionStreamMusicOnce => 'Stream';
 
   @override
   String get select => 'Select';
@@ -4224,4 +4224,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mediaLibrarySection => 'Media library';
+
+  @override
+  String get libMenuStream => 'Stream';
+
+  @override
+  String get libMenuCache => 'Cache';
+
+  @override
+  String get libMenuClear => 'Clear';
+
+  @override
+  String get updateTagsFromCache => 'From cache';
+
+  @override
+  String get updateTagsFromCloud => 'From cloud';
 }

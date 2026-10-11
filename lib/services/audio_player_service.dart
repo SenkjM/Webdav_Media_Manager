@@ -13,6 +13,7 @@ import '../utils/task_error.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
 import 'library_service.dart';
+import 'playlist_service.dart';
 import 'music_audio_handler.dart';
 import 'music_prefetch_service.dart';
 import 'notification_permission_service.dart';
@@ -35,6 +36,7 @@ class AudioPlayerService extends ChangeNotifier {
     required SettingsService settings,
     required LibraryService library,
     required AccountsService accounts,
+    PlaylistService? playlists,
     NotificationPermissionService? notificationPermission,
   }) : _taskQueue = taskQueue,
        _notifications = notificationPermission,
@@ -43,7 +45,8 @@ class AudioPlayerService extends ChangeNotifier {
        _cache = cache,
        _settings = settings,
        _library = library,
-       _accounts = accounts {
+       _accounts = accounts,
+       _playlists = playlists {
     _handler.resolvePlayable = resolvePlayable;
     _posSub = _handler.positionStream.listen((p) {
       _position = p;
@@ -73,6 +76,7 @@ class AudioPlayerService extends ChangeNotifier {
   final SettingsService _settings;
   final LibraryService _library;
   final AccountsService _accounts;
+  final PlaylistService? _playlists;
 
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration?>? _durSub;
@@ -278,12 +282,7 @@ class AudioPlayerService extends ChangeNotifier {
         startIndex: index,
         playable: playable,
       );
-      unawaited(
-        _library.clearRemoteMissing(
-          sourceName: track.sourceName,
-          remotePath: track.remotePath,
-        ),
-      );
+      unawaited(_clearRemoteMissingMirror(track));
       _startPrefetch(playlist, index, track.accountId);
     } catch (e) {
       _error = e.toString();
@@ -292,13 +291,7 @@ class AudioPlayerService extends ChangeNotifier {
       final hasLocal = track.localPath != null &&
           File(track.localPath!).existsSync();
       if (!hasLocal && classified.code == 'err.cloud.notFound') {
-        unawaited(
-          _library.markRemoteMissing(
-            sourceName: track.sourceName,
-            remotePath: track.remotePath,
-            hasLocalCache: false,
-          ),
-        );
+        unawaited(_markRemoteMissingMirror(track));
       }
       try {
         await _handler.stop();
@@ -502,6 +495,36 @@ class AudioPlayerService extends ChangeNotifier {
     final msg = await _handler.debugForceMediaNotification();
     notifyListeners();
     return msg;
+  }
+
+
+  Future<void> _clearRemoteMissingMirror(TrackInfo track) async {
+    await _library.clearRemoteMissing(
+      sourceName: track.sourceName,
+      remotePath: track.remotePath,
+    );
+    await _playlists?.setRemoteMissingForPath(
+      sourceName: track.sourceName,
+      remotePath: track.remotePath,
+      cueRemotePath: track.cueRemotePath,
+      cueTrackIndex: track.cueTrackIndex,
+      missing: false,
+    );
+  }
+
+  Future<void> _markRemoteMissingMirror(TrackInfo track) async {
+    await _library.markRemoteMissing(
+      sourceName: track.sourceName,
+      remotePath: track.remotePath,
+      hasLocalCache: false,
+    );
+    await _playlists?.setRemoteMissingForPath(
+      sourceName: track.sourceName,
+      remotePath: track.remotePath,
+      cueRemotePath: track.cueRemotePath,
+      cueTrackIndex: track.cueTrackIndex,
+      missing: true,
+    );
   }
 
   @override

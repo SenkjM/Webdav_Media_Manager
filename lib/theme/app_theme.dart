@@ -37,6 +37,11 @@ class AppColors {
   /// Track row: audio file already in local cache (light-theme friendly green).
   static const Color localReady = Color(0xFF2E7D32);
 
+  /// Cached-status dot: soft gold (not warning amber/orange tertiary).
+  /// Readable on light and dark surfaces under the default teal seed.
+  static const Color cachedStatus = Color(0xFFC6A96A);
+  static const Color cachedStatusBright = Color(0xFFD8C08A);
+
   /// Track row: library placeholder — not downloaded yet (soft gray).
   static const Color remotePlaceholder = Color(0xFFB0B0B8);
 

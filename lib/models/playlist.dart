@@ -14,6 +14,7 @@ class PlaylistEntry {
     this.title,
     this.durationMs,
     this.cueTrackIndex,
+    this.remoteMissing = false,
   });
 
   final String sourceName;
@@ -26,6 +27,9 @@ class PlaylistEntry {
 
   /// CUE 切片的曲目序号；参与身份计算。
   final int? cueTrackIndex;
+
+  /// Playlist-local mirror of cloud absence (independent of music library).
+  final bool remoteMissing;
 
   /// 条目身份键：显式 [musicId] 优先（所有新写入路径都会带上）。
   ///
@@ -49,6 +53,7 @@ class PlaylistEntry {
     if (title != null) 'title': title,
     if (durationMs != null) 'durationMs': durationMs,
     if (cueTrackIndex != null) 'cueTrackIndex': cueTrackIndex,
+    if (remoteMissing) 'remoteMissing': true,
   };
 
   factory PlaylistEntry.fromJson(Map<String, dynamic> json) => PlaylistEntry(
@@ -58,7 +63,28 @@ class PlaylistEntry {
     title: json['title'] as String?,
     durationMs: json['durationMs'] as int?,
     cueTrackIndex: json['cueTrackIndex'] as int?,
+    remoteMissing: json['remoteMissing'] == true || json['remoteMissing'] == 1,
   );
+
+  PlaylistEntry copyWith({
+    String? sourceName,
+    String? remotePath,
+    String? musicId,
+    String? title,
+    int? durationMs,
+    int? cueTrackIndex,
+    bool? remoteMissing,
+  }) {
+    return PlaylistEntry(
+      sourceName: sourceName ?? this.sourceName,
+      remotePath: remotePath ?? this.remotePath,
+      musicId: musicId ?? this.musicId,
+      title: title ?? this.title,
+      durationMs: durationMs ?? this.durationMs,
+      cueTrackIndex: cueTrackIndex ?? this.cueTrackIndex,
+      remoteMissing: remoteMissing ?? this.remoteMissing,
+    );
+  }
 
   @override
   bool operator ==(Object other) =>

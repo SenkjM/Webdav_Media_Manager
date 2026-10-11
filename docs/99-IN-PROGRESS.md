@@ -892,7 +892,8 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
   - `TaskKind.retagCloud` 执行器；设置「从云端更新标签」入队。
   - 顶栏「媒体库」；音乐设置进子页；音乐默认打开（缓存/串流）独立 pref；后缀页音乐不再改默认打开；库长按「串流（仅本次）」。
 - **全屏播放状态条**：`PlayerScreen` 按当前 `PlayableMedia.isLocal` 显示「缓存」/「流式」（三语 ARB）；MiniPlayer 不加。
-- **歌单对齐曲库状态（本轮）**：**已落地**。歌单行经 `musicId` → `LibraryTrack` 解析，与曲库共用 `libraryRowUiState` / 状态点（缓存 tertiary / 可串流 primary / remote_missing 红点 / 播放中图标；无「可串流」文字）。库中无此曲 → 「库中暂无」（非红点）。**未**改 `playlists.db` schema、**未**在 `PlaylistEntry` 镜像 `remoteMissing`（单源真相在 `tracks.remote_missing`）。起播失败写红点只更新曲库；点红点再试 → 删歌单条目或重定向（重定向同时 `retargetTrack` + `replaceTrack`）。
+- **歌单对齐曲库状态（本轮）**：**已落地并扩展**。歌单行经 `musicId` → `LibraryTrack` 解析，与曲库共用 `libraryRowUiState` / 状态点（缓存淡金 / 可串流 primary / remote_missing 红点 / 播放中图标）。库中无此曲 → 「库中暂无」。`PlaylistEntry.remoteMissing` 已镜像（entries_json / `.wdmp` ENTRIES tag 8）；起播失败与全量匹配同步写曲库 + 歌单。点红点再试 → 删歌单条目或重定向（`retargetTrack` + `replaceTrack`）。
+- **音乐库单文件更多（本轮）**：长按仍进多选；行尾 ⋮：流式播放 / 缓存 / 清理 / 基于缓存更新标签 / 基于云端更新标签 / 重定向 / 删除。播放页「更多信息」更新标签改成左右两个按钮（基于缓存 / 基于云端）。
 - **剩余缺口**：列表封面桶（无本地时 Range 写入 `covers/`）、刮削走 `ingestCueRemote`、网络库音乐默认不再受旧流式开关牵制。全量匹配写红点与重定向后 Range ingest 已有实现入口，按真机反馈再收。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。

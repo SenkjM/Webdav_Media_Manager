@@ -18,12 +18,12 @@ import '../services/playlist_service.dart';
 import '../services/stream_cover_reader.dart';
 import '../services/task_queue_service.dart';
 import '../services/webdav_service.dart';
-import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../utils/task_error.dart';
 import '../widgets/library_cover_art.dart';
 import '../widgets/meta_text.dart';
 import '../widgets/track_status_chip.dart';
+import '../widgets/track_status_dot.dart';
 import 'webdav_folder_picker_screen.dart';
 
 class PlaylistDetailScreen extends StatelessWidget {
@@ -217,11 +217,13 @@ class _PlaylistTrackTile extends StatelessWidget {
     final sourceBound = context.read<AccountsService>().isSourceBound(
       track.sourceName,
     );
+    final remoteMissing = entry.remoteMissing || track.remoteMissing;
     final state = libraryRowUiState(
       downloads: downloads,
       track: track,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,
+      entryRemoteMissing: entry.remoteMissing,
     );
     final showChip =
         state == TrackUiState.remoteMissing ||
@@ -279,34 +281,9 @@ class _PlaylistTrackTile extends StatelessWidget {
                 progress: isDownloading ? task?.progress : null,
               ),
             ),
-          Tooltip(
-            message: track.remoteMissing
-                ? AppLocalizations.of(context)!.trackStateRemoteMissing
-                : isLocal
-                    ? AppLocalizations.of(context)!.downloaded
-                    : AppLocalizations.of(context)!.trackStateStreamable,
-            child: Container(
-              width: 10,
-              height: 10,
-              margin: const EdgeInsets.only(right: 4),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: track.remoteMissing
-                    ? AppColors.error
-                    : isLocal
-                        ? Theme.of(context).colorScheme.tertiary
-                        : Theme.of(context).colorScheme.primary,
-                border: Border.all(
-                  color: (track.remoteMissing
-                          ? AppColors.error
-                          : isLocal
-                              ? Theme.of(context).colorScheme.tertiary
-                              : Theme.of(context).colorScheme.primary)
-                      .withValues(alpha: 0.4),
-                  width: 1,
-                ),
-              ),
-            ),
+          TrackStatusDot(
+            remoteMissing: remoteMissing,
+            isLocal: isLocal,
           ),
           IconButton(
             icon: const Icon(Icons.remove_circle_outline),
@@ -315,7 +292,7 @@ class _PlaylistTrackTile extends StatelessWidget {
         ],
       ),
       onTap: () {
-        if (track.remoteMissing && !isLocal) {
+        if (remoteMissing && !isLocal) {
           unawaited(_onRemoteMissingTap(context));
           return;
         }
@@ -409,6 +386,10 @@ class _PlaylistTrackTile extends StatelessWidget {
         sourceName: track.sourceName,
         remotePath: track.remotePath,
       );
+      await context.read<PlaylistService>().setRemoteMissingForIdentities(
+        identityKeys: [entry.identityKey, track.musicId],
+        missing: false,
+      );
       if (!context.mounted) return;
       await _onTap(context, isLocal: false);
     } catch (e) {
@@ -469,6 +450,7 @@ class _PlaylistTrackTile extends StatelessWidget {
             title: next.title ?? next.displayTitle,
             durationMs: next.durationMs,
             cueTrackIndex: next.cueTrackIndex,
+            remoteMissing: false,
           ),
         );
         try {

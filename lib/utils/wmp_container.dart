@@ -290,6 +290,9 @@ class WmpPlaylistEntry {
   /// could not be resolved against the library at all. The playlist keeps the
   /// entry either way — a missing cover is never a decode error.
   static const int coverIndex = 7;
+
+  /// Playlist-local remote-missing flag (0/1). Independent of the music library.
+  static const int remoteMissing = 8;
 }
 
 /// META tag ids used **only** by playlist (`PL`) files, on top of [WmpMeta].
@@ -920,6 +923,7 @@ const Set<int> kPlaylistEntryIntTags = {
   WmpPlaylistEntry.durationMs,
   WmpPlaylistEntry.cueTrackIndex,
   WmpPlaylistEntry.coverIndex,
+  WmpPlaylistEntry.remoteMissing,
 };
 
 /// Varint tags inside a `PD` pack's deletion section.

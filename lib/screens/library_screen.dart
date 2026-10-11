@@ -23,6 +23,9 @@ import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
 import '../widgets/selection_toolbar.dart';
 import '../widgets/track_status_chip.dart';
+import '../widgets/track_status_dot.dart';
+import '../widgets/app_bottom_sheet.dart';
+import '../services/playlist_service.dart';
 import 'home_shell.dart';
 import 'webdav_folder_picker_screen.dart';
 import '../services/webdav_service.dart';
@@ -1129,35 +1132,18 @@ class _TrackTile extends StatelessWidget {
                 progress: isDownloading ? task?.progress : null,
               ),
             ),
-          Tooltip(
-            message: track.remoteMissing
-                ? AppLocalizations.of(context)!.trackStateRemoteMissing
-                : isLocal
-                    ? AppLocalizations.of(context)!.downloaded
-                    : AppLocalizations.of(context)!.trackStateStreamable,
-            child: Container(
-              width: 10,
-              height: 10,
-              margin: const EdgeInsets.only(right: 4),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: track.remoteMissing
-                    ? AppColors.error
-                    : isLocal
-                        ? Theme.of(context).colorScheme.tertiary
-                        : Theme.of(context).colorScheme.primary,
-                border: Border.all(
-                  color: (track.remoteMissing
-                          ? AppColors.error
-                          : isLocal
-                              ? Theme.of(context).colorScheme.tertiary
-                              : Theme.of(context).colorScheme.primary)
-                      .withValues(alpha: 0.4),
-                  width: 1,
-                ),
+          TrackStatusDot(
+            remoteMissing: track.remoteMissing,
+            isLocal: isLocal,
+          ),
+          if (!selecting)
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              tooltip: AppLocalizations.of(context)!.moreActions,
+              onPressed: () => unawaited(
+                _showMoreMenu(context, isLocal: isLocal),
               ),
             ),
-          ),
         ],
       ),
       onTap: () {
@@ -1176,7 +1162,7 @@ class _TrackTile extends StatelessWidget {
           onToggleSelect?.call();
           return;
         }
-        unawaited(_onLongPressMenu(context, isLocal: isLocal));
+        onEnterSelect?.call();
       },
     );
   }
@@ -1300,6 +1286,10 @@ class _TrackTile extends StatelessWidget {
         sourceName: track.sourceName,
         remotePath: track.remotePath,
       );
+      await context.read<PlaylistService>().setRemoteMissingForIdentities(
+        identityKeys: [track.musicId],
+        missing: false,
+      );
       if (!context.mounted) return;
       await _onTap(context, isLocal: false);
     } catch (e) {
@@ -1336,77 +1326,176 @@ class _TrackTile extends StatelessWidget {
         return;
       }
       if (action == 'redirect') {
-        final picked = await pickWebDavFile(
-          context,
-          accountId: accountId,
-          musicOnly: true,
-        );
-        if (!context.mounted || picked == null) return;
-        final library = context.read<LibraryService>();
-        final next = await library.retargetTrack(
-          track: track,
-          newRemotePath: picked.path,
-          newFileName: picked.name,
-        );
-        // Re-ingest tags from the new remote (§17 redirect → ingest).
-        try {
-          final source = await context.read<WebDavService>().resolveStreamSource(
-            accountId: accountId,
-            remotePath: next.remotePath,
-            name: next.fileName,
-            kind: StreamKind.music,
-          );
-          if (source != null && source.uri.isNotEmpty) {
-            final tags = await StreamCoverReader().extractTags(source);
-            if (tags != null && context.mounted) {
-              await library.ingestFromTags(
-                sourceName: next.sourceName,
-                remotePath: next.remotePath,
-                fileName: next.fileName,
-                tags: tags,
-              );
-            }
-          }
-        } catch (_) {
-          // Redirect succeeded even if tag re-read fails.
-        }
+        await _redirectTrack(context);
       }
     }
   }
 
-  Future<void> _onLongPressMenu(
+  Future<void> _showMoreMenu(
     BuildContext context, {
     required bool isLocal,
   }) async {
     final l10n = AppLocalizations.of(context)!;
     final choice = await showModalBottomSheet<String>(
       context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.stream),
-              title: Text(l10n.actionStreamMusicOnce),
-              onTap: () => Navigator.pop(ctx, 'stream'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.checklist),
-              title: Text(l10n.select),
-              onTap: () => Navigator.pop(ctx, 'select'),
-            ),
-          ],
-        ),
-      ),
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      isScrollControlled: true,
+      shape: AppBottomSheet.shape,
+      builder: (ctx) {
+        return AppBottomSheet(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: Text(
+                  track.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              Divider(
+                height: 1,
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+              ListTile(
+                leading: const Icon(Icons.stream),
+                title: Text(l10n.libMenuStream),
+                onTap: () => Navigator.pop(ctx, 'stream'),
+              ),
+              if (!isLocal)
+                ListTile(
+                  leading: const Icon(Icons.download_for_offline_outlined),
+                  title: Text(l10n.libMenuCache),
+                  onTap: () => Navigator.pop(ctx, 'cache'),
+                ),
+              if (isLocal)
+                ListTile(
+                  leading: const Icon(Icons.cleaning_services_outlined),
+                  title: Text(l10n.libMenuClear),
+                  onTap: () => Navigator.pop(ctx, 'clear'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.sd_storage_outlined),
+                title: Text(l10n.updateTagsFromCache),
+                onTap: () => Navigator.pop(ctx, 'tags_cache'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.cloud_download_outlined),
+                title: Text(l10n.updateTagsFromCloud),
+                onTap: () => Navigator.pop(ctx, 'tags_cloud'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.drive_file_rename_outline),
+                title: Text(l10n.remoteMissingRedirect),
+                onTap: () => Navigator.pop(ctx, 'redirect'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: AppColors.error),
+                title: Text(l10n.destroyAction),
+                onTap: () => Navigator.pop(ctx, 'delete'),
+              ),
+            ],
+          ),
+        );
+      },
     );
-    if (!context.mounted) return;
-    if (choice == 'select') {
-      onEnterSelect?.call();
+    if (!context.mounted || choice == null) return;
+    switch (choice) {
+      case 'stream':
+        await _onTap(context, isLocal: false, forceStream: true);
+        break;
+      case 'cache':
+        await enqueueLibraryTrackDownload(context, track);
+        break;
+      case 'clear':
+        await deleteTracksLocalCache(context, [track]);
+        break;
+      case 'tags_cache':
+        final updated = await refreshOneLibraryTrackTags(context, track);
+        if (!context.mounted) return;
+        AppSnack.show(
+          context,
+          updated
+              ? AppLocalizations.of(context)!.tagsUpdatedFromLocal
+              : AppLocalizations.of(context)!.tagsNeedDownloadFirst,
+        );
+        break;
+      case 'tags_cloud':
+        if (track.isCueVirtual) {
+          AppSnack.show(
+            context,
+            AppLocalizations.of(context)!.tagsNeedDownloadFirst,
+          );
+          return;
+        }
+        await context.read<TaskQueueService>().enqueueRetagCloud(
+          sourceName: track.sourceName,
+          remotePath: track.remotePath,
+          fileName: track.fileName,
+        );
+        if (context.mounted) {
+          AppSnack.show(
+            context,
+            AppLocalizations.of(context)!.mediaScanQueued(1),
+          );
+        }
+        break;
+      case 'redirect':
+        await _redirectTrack(context);
+        break;
+      case 'delete':
+        await destroyLibraryTracks(context, [track]);
+        break;
+    }
+  }
+
+  Future<void> _redirectTrack(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    final accounts = context.read<AccountsService>();
+    final accountId = accounts.idForSource(track.sourceName);
+    if (accountId == null) {
+      AppSnack.error(context, unboundSourceMessage(l10n, track.sourceName));
       return;
     }
-    if (choice == 'stream') {
-      await _onTap(context, isLocal: false, forceStream: true);
+    final picked = await pickWebDavFile(
+      context,
+      accountId: accountId,
+      musicOnly: true,
+    );
+    if (!context.mounted || picked == null) return;
+    final library = context.read<LibraryService>();
+    final playlists = context.read<PlaylistService>();
+    final next = await library.retargetTrack(
+      track: track,
+      newRemotePath: picked.path,
+      newFileName: picked.name,
+    );
+    await playlists.setRemoteMissingForIdentities(
+      identityKeys: [next.musicId, track.musicId],
+      missing: false,
+    );
+    try {
+      final source = await context.read<WebDavService>().resolveStreamSource(
+        accountId: accountId,
+        remotePath: next.remotePath,
+        name: next.fileName,
+        kind: StreamKind.music,
+      );
+      if (source != null && source.uri.isNotEmpty && context.mounted) {
+        final tags = await StreamCoverReader().extractTags(source);
+        if (tags != null && context.mounted) {
+          await library.ingestFromTags(
+            sourceName: next.sourceName,
+            remotePath: next.remotePath,
+            fileName: next.fileName,
+            tags: tags,
+          );
+        }
+      }
+    } catch (_) {
+      // Redirect succeeded even if tag re-read fails.
     }
   }
 

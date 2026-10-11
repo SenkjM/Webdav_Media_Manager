@@ -3950,7 +3950,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get remoteMissingRedirect => '重定向';
 
   @override
-  String get actionStreamMusicOnce => '串流播放（仅本次）';
+  String get actionStreamMusicOnce => '流式播放';
 
   @override
   String get select => '多选';
@@ -4039,6 +4039,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mediaLibrarySection => '媒体库';
+
+  @override
+  String get libMenuStream => '流式播放';
+
+  @override
+  String get libMenuCache => '缓存';
+
+  @override
+  String get libMenuClear => '清理';
+
+  @override
+  String get updateTagsFromCache => '基于缓存';
+
+  @override
+  String get updateTagsFromCloud => '基于云端';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7987,7 +8002,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get remoteMissingRedirect => '重新導向';
 
   @override
-  String get actionStreamMusicOnce => '串流播放（僅本次）';
+  String get actionStreamMusicOnce => '串流播放';
 
   @override
   String get select => '多選';
@@ -8076,4 +8091,19 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get mediaLibrarySection => '媒體庫';
+
+  @override
+  String get libMenuStream => '串流播放';
+
+  @override
+  String get libMenuCache => '快取';
+
+  @override
+  String get libMenuClear => '清理';
+
+  @override
+  String get updateTagsFromCache => '基於快取';
+
+  @override
+  String get updateTagsFromCloud => '基於雲端';
 }

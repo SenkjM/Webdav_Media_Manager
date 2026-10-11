@@ -6932,7 +6932,7 @@ abstract class AppLocalizations {
   /// No description provided for @actionStreamMusicOnce.
   ///
   /// In zh, this message translates to:
-  /// **'串流播放（仅本次）'**
+  /// **'流式播放'**
   String get actionStreamMusicOnce;
 
   /// No description provided for @select.
@@ -7102,6 +7102,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'媒体库'**
   String get mediaLibrarySection;
+
+  /// No description provided for @libMenuStream.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式播放'**
+  String get libMenuStream;
+
+  /// No description provided for @libMenuCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存'**
+  String get libMenuCache;
+
+  /// No description provided for @libMenuClear.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理'**
+  String get libMenuClear;
+
+  /// No description provided for @updateTagsFromCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'基于缓存'**
+  String get updateTagsFromCache;
+
+  /// No description provided for @updateTagsFromCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'基于云端'**
+  String get updateTagsFromCloud;
 }
 
 class _AppLocalizationsDelegate

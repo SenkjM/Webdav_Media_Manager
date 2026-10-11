@@ -83,6 +83,7 @@ class AppState extends ChangeNotifier {
       webDav: webDav,
       cache: cache,
       library: library,
+      playlists: playlists,
       settings: settings,
       // The network library classifies entries with the configured extension
       // sets, so the queue must use the same list (never a hard-coded one).
@@ -97,6 +98,7 @@ class AppState extends ChangeNotifier {
       settings: settings,
       library: library,
       accounts: accounts,
+      playlists: playlists,
       notificationPermission: notificationPermission,
     );
     videoPlayback = VideoPlaybackService(handler: audioHandler);
