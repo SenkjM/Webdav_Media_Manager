@@ -395,13 +395,23 @@ class AudioPlayerService extends ChangeNotifier {
     final sourceName = t?.sourceName ?? current?.sourceName;
     if (sourceName == null || sourceName.isEmpty) return;
     try {
-      await _library.ingestFromTags(
+      final row = await _library.ingestFromTags(
         sourceName: sourceName,
         remotePath: remotePath,
         fileName: fileName,
         tags: tags,
       );
-      if (t != null) _applyReadTags(t, tags);
+      if (t != null) {
+        _applyReadTags(t, tags);
+        final cover = row.coverPath;
+        if (cover != null && cover.isNotEmpty) {
+          t.coverPath = cover;
+          final item = _handler.mediaItem.valueOrNull;
+          if (item != null) {
+            _handler.mediaItem.add(item.copyWith(artUri: Uri.file(cover)));
+          }
+        }
+      }
       notifyListeners();
     } catch (_) {}
   }

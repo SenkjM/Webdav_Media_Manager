@@ -13,20 +13,19 @@ class TrackStatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Network-browser "never touched": no badge.
-    if (state == TrackUiState.remote) {
+    // ready / streamable: status dots on the row; no text chip.
+    if (state == TrackUiState.remote ||
+        state == TrackUiState.streamable ||
+        state == TrackUiState.ready) {
       return const SizedBox.shrink();
     }
 
     final l10n = AppLocalizations.of(context)!;
     final scheme = Theme.of(context).colorScheme;
-    // Cached / streamable / downloading use theme normal colors — not grey / warning red.
     final (label, color, icon) = switch (state) {
       TrackUiState.remote => ('', scheme.outline, Icons.circle_outlined),
-      TrackUiState.streamable => (
-        l10n.trackStateStreamable,
-        scheme.primary,
-        Icons.stream,
-      ),
+      TrackUiState.streamable => ('', scheme.primary, Icons.stream),
+      TrackUiState.ready => ('', scheme.tertiary, Icons.check_circle_outline),
       TrackUiState.remoteMissing => (
         l10n.trackStateRemoteMissing,
         AppColors.error,
@@ -42,13 +41,8 @@ class TrackStatusChip extends StatelessWidget {
         scheme.primary,
         Icons.downloading,
       ),
-      TrackUiState.ready => (
-        l10n.trackStateReady,
-        scheme.tertiary,
-        Icons.check_circle_outline,
-      ),
       TrackUiState.playing => (
-        l10n.trackStatePlaying,
+        '', // icon-only
         scheme.primary,
         Icons.equalizer,
       ),
@@ -58,6 +52,19 @@ class TrackStatusChip extends StatelessWidget {
         Icons.error_outline,
       ),
     };
+
+    // Playing: compact icon chip, no text.
+    if (state == TrackUiState.playing) {
+      return Chip(
+        label: Icon(icon, size: 16, color: color),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 2),
+        padding: EdgeInsets.zero,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        backgroundColor: color.withValues(alpha: 0.14),
+        side: BorderSide.none,
+      );
+    }
 
     return Chip(
       avatar: Icon(icon, size: 16, color: color),

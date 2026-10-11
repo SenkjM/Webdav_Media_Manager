@@ -1073,12 +1073,10 @@ class _TrackTile extends StatelessWidget {
       state = TrackUiState.remoteMissing;
     }
     final showChip =
-        state == TrackUiState.streamable ||
         state == TrackUiState.remoteMissing ||
         state == TrackUiState.queued ||
         state == TrackUiState.downloading ||
         state == TrackUiState.error ||
-        state == TrackUiState.ready ||
         state == TrackUiState.playing;
     final isDownloading = state == TrackUiState.downloading;
     return ListTile(
@@ -1116,9 +1114,7 @@ class _TrackTile extends StatelessWidget {
           if (!sourceBound) AppLocalizations.of(context)!.sourceUnbound,
           if (isDownloading && task!.progress > 0)
             AppLocalizations.of(context)!
-                .downloadingPercent((task.progress * 100).toStringAsFixed(0))
-          else if (!isLocal)
-            AppLocalizations.of(context)!.trackStateStreamable,
+                .downloadingPercent((task.progress * 100).toStringAsFixed(0)),
           track.displayArtistFor(AppLocalizations.of(context)!),
           if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
         ].join(' · '),

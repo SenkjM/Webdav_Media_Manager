@@ -280,17 +280,15 @@ LibraryTrack? pickCoverTrack(List<LibraryTrack> tracks, CacheService cache) {
   return tracks.isEmpty ? null : tracks.first;
 }
 
-/// Now-playing cover: NEVER uses the 100×100 thumb.
-///
-/// When the audio file is local, shows original embedded / full-res art only.
-/// While downloading (no local file), shows a placeholder — no thumb, no
-/// "waiting for cache" caption (that belongs on the bottom play bar).
+/// Now-playing cover: prefer full-res / embedded art; fall back to library
+/// or stream [coverPath] so streaming matches MiniPlayer after Range ingest.
 class PlayerCoverArt extends StatefulWidget {
   const PlayerCoverArt({
     super.key,
     required this.sourceName,
     required this.remotePath,
     this.localAudioPath,
+    this.coverPath,
     this.fileName,
     required this.size,
     this.borderRadius = 8,
@@ -302,6 +300,10 @@ class PlayerCoverArt extends StatefulWidget {
   /// Prefer effective audio remote path (not CUE virtual `#cue:N`).
   final String remotePath;
   final String? localAudioPath;
+
+  /// Library / stream thumb (or any known cover file). Used when full-res is
+  /// not ready yet so the full player matches MiniPlayer after Range ingest.
+  final String? coverPath;
   final String? fileName;
   final double size;
   final double borderRadius;
@@ -312,7 +314,7 @@ class PlayerCoverArt extends StatefulWidget {
 }
 
 class _PlayerCoverArtState extends State<PlayerCoverArt> {
-  String? _fullPath;
+  String? _displayPath;
   Uint8List? _bytes;
   bool _resolved = false;
   String? _identity;
@@ -328,9 +330,10 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.remotePath != widget.remotePath ||
-        oldWidget.localAudioPath != widget.localAudioPath) {
+        oldWidget.localAudioPath != widget.localAudioPath ||
+        oldWidget.coverPath != widget.coverPath) {
       _resolved = false;
-      _fullPath = null;
+      _displayPath = null;
       _bytes = null;
       _schedule();
     }
@@ -338,7 +341,8 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
 
   void _schedule() {
     final id =
-        '${widget.sourceName}\u0000${widget.remotePath}\u0000${widget.localAudioPath ?? ''}';
+        '${widget.sourceName}\u0000${widget.remotePath}\u0000'
+        '${widget.localAudioPath ?? ''}\u0000${widget.coverPath ?? ''}';
     if (_resolved && _identity == id) return;
     _identity = id;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -353,6 +357,21 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     final covers = library.covers;
     await covers.init();
 
+    // 1) Full-res bucket (also written by Range / stream ingest).
+    final fullPath = await covers.fullCoverPath(
+      widget.sourceName,
+      widget.remotePath,
+    );
+    if (fullPath != null) {
+      if (!mounted) return;
+      setState(() {
+        _displayPath = fullPath;
+        _bytes = null;
+        _resolved = true;
+      });
+      return;
+    }
+
     final localPath =
         widget.localAudioPath ??
         (cache.hasLocalFile(widget.remotePath, sourceName: widget.sourceName)
@@ -364,45 +383,35 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
                   .path
             : null);
 
-    if (localPath == null) {
-      // Not playable yet — placeholder only (never thumb).
-      if (!mounted) return;
-      setState(() {
-        _fullPath = null;
-        _bytes = null;
-        _resolved = true;
-      });
-      return;
+    // 2) Embedded art from local audio.
+    if (localPath != null) {
+      final tags = await TagService().readFromFile(localPath);
+      final bytes = tags.coverBytes;
+      if (bytes != null && bytes.isNotEmpty) {
+        unawaited(
+          covers.saveFull(
+            sourceName: widget.sourceName,
+            remotePath: widget.remotePath,
+            bytes: bytes,
+          ),
+        );
+        if (!mounted) return;
+        setState(() {
+          _displayPath = null;
+          _bytes = bytes;
+          _resolved = true;
+        });
+        return;
+      }
     }
 
-    final fullPath = await covers.fullCoverPath(
-      widget.sourceName,
-      widget.remotePath,
-    );
-    if (fullPath != null) {
+    // 3) Library / stream cover file (thumb or prefetch) — match MiniPlayer.
+    final known = widget.coverPath;
+    if (known != null && known.isNotEmpty) {
       if (!mounted) return;
       setState(() {
-        _fullPath = fullPath;
+        _displayPath = known;
         _bytes = null;
-        _resolved = true;
-      });
-      return;
-    }
-
-    final tags = await TagService().readFromFile(localPath);
-    final bytes = tags.coverBytes;
-    if (bytes != null && bytes.isNotEmpty) {
-      unawaited(
-        covers.saveFull(
-          sourceName: widget.sourceName,
-          remotePath: widget.remotePath,
-          bytes: bytes,
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        _fullPath = null;
-        _bytes = bytes;
         _resolved = true;
       });
       return;
@@ -410,7 +419,7 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
 
     if (!mounted) return;
     setState(() {
-      _fullPath = null;
+      _displayPath = null;
       _bytes = null;
       _resolved = true;
     });
@@ -418,9 +427,8 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
 
   @override
   Widget build(BuildContext context) {
-    // Hard rule: never pass a thumb path here.
     return CoverArt(
-      path: _fullPath,
+      path: _displayPath,
       bytes: _bytes,
       size: widget.size,
       borderRadius: widget.borderRadius,

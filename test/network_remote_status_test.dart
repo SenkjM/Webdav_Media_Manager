@@ -15,7 +15,7 @@ void main() {
     expect(find.text('排队'), findsNothing);
   });
 
-  testWidgets('streamable chip uses localized label', (tester) async {
+  testWidgets('streamable has no text chip (dots only)', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -27,8 +27,40 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.byType(Chip), findsNothing);
+    expect(find.text('可串流'), findsNothing);
+  });
+
+  testWidgets('ready has no text chip', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
+        home: const Scaffold(
+          body: TrackStatusChip(state: TrackUiState.ready),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(Chip), findsNothing);
+  });
+
+  testWidgets('playing chip is icon-only (no text label)', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        locale: const Locale('zh'),
+        home: const Scaffold(
+          body: TrackStatusChip(state: TrackUiState.playing),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(find.byType(Chip), findsOneWidget);
-    expect(find.text('可串流'), findsOneWidget);
+    expect(find.byIcon(Icons.equalizer), findsOneWidget);
+    expect(find.text('播放中'), findsNothing);
   });
 
   test('TrackUiState order keeps remote first; streamable present', () {

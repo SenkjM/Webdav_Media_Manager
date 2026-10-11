@@ -385,6 +385,7 @@ class PlayerScreen extends StatelessWidget {
         sourceName: track?.sourceName,
         audioRemotePath: track?.effectiveAudioRemotePath,
         localPath: track?.localPath,
+        coverPath: track?.coverPath ?? lib?.coverPath,
         child: SafeArea(
           child: Column(
             children: [
@@ -430,6 +431,7 @@ class PlayerScreen extends StatelessWidget {
                                   sourceName: track.sourceName,
                                   remotePath: track.effectiveAudioRemotePath,
                                   localAudioPath: track.localPath,
+                                  coverPath: track.coverPath ?? lib?.coverPath,
                                   fileName: track.fileName,
                                   size: artSize.clamp(180.0, 300.0),
                                   borderRadius: 8,
@@ -647,18 +649,20 @@ class PlayerScreen extends StatelessWidget {
   }
 }
 
-/// Backdrop that loads full/embedded art only — never the 100×100 thumb.
+/// Backdrop: full-res / embedded first, then library/stream [coverPath].
 class _PlayerBackdrop extends StatefulWidget {
   const _PlayerBackdrop({
     this.sourceName,
     this.audioRemotePath,
     this.localPath,
+    this.coverPath,
     required this.child,
   });
 
   final String? sourceName;
   final String? audioRemotePath;
   final String? localPath;
+  final String? coverPath;
   final Widget child;
 
   @override
@@ -680,7 +684,8 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.audioRemotePath != widget.audioRemotePath ||
-        oldWidget.localPath != widget.localPath) {
+        oldWidget.localPath != widget.localPath ||
+        oldWidget.coverPath != widget.coverPath) {
       unawaited(_load());
     }
   }
@@ -730,6 +735,16 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
         }
         return;
       }
+    }
+    final known = widget.coverPath;
+    if (known != null && known.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _fullPath = known;
+          _bytes = null;
+        });
+      }
+      return;
     }
     if (mounted) {
       setState(() {
