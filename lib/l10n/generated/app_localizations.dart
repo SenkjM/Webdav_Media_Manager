@@ -6874,6 +6874,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'默认 1。与播放列表深度 prefs 不共用。'**
   String get mediaScanMaxDepthHint;
+
+  /// Label above embedded lyrics on the music stream screen
+  ///
+  /// In zh, this message translates to:
+  /// **'内嵌歌词'**
+  String get lyricsSourceEmbedded;
 }
 
 class _AppLocalizationsDelegate

@@ -588,6 +588,38 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     mediaItem.add(current.copyWith(artUri: artUri));
   }
 
+  /// Update stream MediaItem title / artist / album / duration in place.
+  ///
+  /// Ignores the update when [remotePath] no longer matches the active stream
+  /// (a neighbor prefetch must not overwrite the current notification).
+  void setStreamTags({
+    required String remotePath,
+    String? title,
+    String? artist,
+    String? album,
+    Duration? duration,
+  }) {
+    if (_mode != AudioHandlerMode.video) return;
+    final source = _videoSource;
+    final current = mediaItem.value;
+    if (source == null || current == null) return;
+    if (source.remotePath != remotePath) return;
+    mediaItem.add(
+      current.copyWith(
+        title: (title != null && title.trim().isNotEmpty)
+            ? title.trim()
+            : current.title,
+        artist: (artist != null && artist.trim().isNotEmpty)
+            ? artist.trim()
+            : current.artist,
+        album: (album != null && album.trim().isNotEmpty)
+            ? album.trim()
+            : current.album,
+        duration: duration ?? current.duration,
+      ),
+    );
+  }
+
   /// Leave video mode.
   ///
   /// Restores the music session: if a music queue was paused when the video

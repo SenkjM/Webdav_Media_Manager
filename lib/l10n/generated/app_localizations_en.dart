@@ -4104,4 +4104,7 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get mediaScanMaxDepthHint =>
       'Default 1. Does not share prefs with playlist depth.';
+
+  @override
+  String get lyricsSourceEmbedded => 'Embedded lyrics';
 }

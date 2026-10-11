@@ -8,6 +8,7 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'prefetch_cache.dart';
 import 'stream_cover_reader.dart';
+import 'tag_service.dart';
 import 'stream_window.dart';
 import 'video_playback_service.dart';
 import 'webdav_service.dart';
@@ -35,6 +36,7 @@ class AudioStreamEngine {
     required this.sidecarEnabled,
     required this.sidecarNames,
     required this.onCover,
+    required this.onTags,
     required this.namesFor,
     required this.listNames,
     required this.libraryCover,
@@ -51,6 +53,7 @@ class AudioStreamEngine {
   final bool Function() sidecarEnabled;
   final String Function() sidecarNames;
   final void Function(String? path) onCover;
+  final void Function(String remotePath, ReadTags? tags) onTags;
   final List<String>? Function(String remotePath) namesFor;
   final Future<List<String>> Function(String remotePath) listNames;
   final String? Function(String remotePath) libraryCover;
@@ -71,6 +74,8 @@ class AudioStreamEngine {
   Future<void> _gate = Future<void>.value();
   int _depth = 0;
   final StreamCoverReader _covers = StreamCoverReader();
+  final TagService _tagService = TagService();
+  final Map<String, ReadTags> _tags = {};
 
   Future<Player> start(WebDavStreamSource source) async {
     accountId = source.accountId;
@@ -128,7 +133,10 @@ class AudioStreamEngine {
       playback.retarget(_sourceFor(item, source));
       playback.setStreamArtUri(null);
     });
-    if (isActive()) onCover(null);
+    if (isActive()) {
+      onCover(null);
+      onTags(item.path, _tags[item.path]);
+    }
     _ensureLoop();
     return player;
   }
@@ -430,9 +438,9 @@ class AudioStreamEngine {
     return _ensureCover(queue[index], show: true, gen: gen, token: token);
   }
 
-  /// Cache [item]'s cover. [show] is only for the track that is current when
-  /// this pass started; neighbors must not touch the player artwork.
-  /// Returns true when the pass was cancelled.
+  /// Cache [item]'s cover and tags. [show] is only for the track that is
+  /// current when this pass started; neighbors must not touch artwork or the
+  /// media session. Returns true when the pass was cancelled.
   Future<bool> _ensureCover(
     WebDavItem item, {
     required bool show,
@@ -440,32 +448,45 @@ class AudioStreamEngine {
     required CancelToken? token,
   }) async {
     try {
+      var haveCover = false;
       final library = libraryCover(item.path);
       if (library != null && File(library).existsSync()) {
         if (gen != _gen) return true;
         if (show) _show(library);
-        return false;
+        haveCover = true;
       }
-      final cached = await _cachedCoverFile(item.path);
-      if (gen != _gen || (token?.isCancelled ?? false)) return true;
-      if (cached != null) {
-        if (show) _show(cached.path);
-        return false;
-      }
-      final sidecarHit = await _cachedSidecar(item);
-      if (gen != _gen || (token?.isCancelled ?? false)) return true;
-      if (sidecarHit != null) {
-        if (show) _show(sidecarHit.path);
-        return false;
-      }
-      var source = _resolved[item.path];
-      if (source == null || source.uri.isEmpty) {
-        source = await _resolve(item);
-      }
-      if (gen != _gen || (token?.isCancelled ?? false)) return true;
-      if (source != null && source.uri.isNotEmpty) {
-        final bytes = await _covers.extract(source, cancel: token);
+      if (!haveCover) {
+        final cached = await _cachedCoverFile(item.path);
         if (gen != _gen || (token?.isCancelled ?? false)) return true;
+        if (cached != null) {
+          if (show) _show(cached.path);
+          haveCover = true;
+        }
+      }
+      if (!haveCover) {
+        final sidecarHit = await _cachedSidecar(item);
+        if (gen != _gen || (token?.isCancelled ?? false)) return true;
+        if (sidecarHit != null) {
+          if (show) _show(sidecarHit.path);
+          haveCover = true;
+        }
+      }
+
+      // Tags: memory → local prefetch file → Range extract (also yields cover).
+      if (!_tags.containsKey(item.path)) {
+        final cachedAudio = await _cached(item.path, item.name);
+        if (gen != _gen || (token?.isCancelled ?? false)) return true;
+        if (cachedAudio != null) {
+          await _cacheTagsFromFile(item.path, cachedAudio.path, show: show);
+          if (gen != _gen) return true;
+        }
+      } else if (show) {
+        _emitTags(item.path, _tags[item.path]);
+      }
+
+      if (!haveCover) {
+        final cachedTags = _tags[item.path];
+        final bytes = cachedTags?.coverBytes;
         if (bytes != null && bytes.isNotEmpty) {
           final ext = _imageExt(bytes);
           final file = await PrefetchCache.writeBytes(
@@ -477,9 +498,41 @@ class AudioStreamEngine {
           );
           if (gen != _gen) return true;
           if (show) _show(file.path);
-          return false;
+          haveCover = true;
         }
       }
+
+      if (!_tags.containsKey(item.path) || !haveCover) {
+        var source = _resolved[item.path];
+        if (source == null || source.uri.isEmpty) {
+          source = await _resolve(item);
+        }
+        if (gen != _gen || (token?.isCancelled ?? false)) return true;
+        if (source != null && source.uri.isNotEmpty) {
+          final tags = await _covers.extractTags(source, cancel: token);
+          if (gen != _gen || (token?.isCancelled ?? false)) return true;
+          if (tags != null) {
+            _tags[item.path] = tags;
+            if (show) _emitTags(item.path, tags);
+            final bytes = tags.coverBytes;
+            if (!haveCover && bytes != null && bytes.isNotEmpty) {
+              final ext = _imageExt(bytes);
+              final file = await PrefetchCache.writeBytes(
+                bucket: 'covers',
+                accountId: accountId,
+                remotePath: item.path,
+                name: 'cover.$ext',
+                bytes: bytes,
+              );
+              if (gen != _gen) return true;
+              if (show) _show(file.path);
+              haveCover = true;
+            }
+          }
+        }
+      }
+
+      if (haveCover) return false;
       if (!sidecarEnabled()) return false;
       final names = namesFor(item.path) ?? await listNames(item.path);
       if (gen != _gen || (token?.isCancelled ?? false)) return true;
@@ -516,11 +569,43 @@ class AudioStreamEngine {
     }
   }
 
+  Future<void> _cacheTagsFromFile(
+    String remotePath,
+    String localPath, {
+    required bool show,
+  }) async {
+    if (_tags.containsKey(remotePath)) {
+      if (show) _emitTags(remotePath, _tags[remotePath]);
+      return;
+    }
+    final tags = await _tagService.readFromFile(localPath);
+    _tags[remotePath] = tags;
+    if (show) _emitTags(remotePath, tags);
+  }
+
+  void _emitTags(String remotePath, ReadTags? tags) {
+    if (!isActive()) return;
+    onTags(remotePath, tags);
+    if (tags == null) return;
+    playback.setStreamTags(
+      remotePath: remotePath,
+      title: tags.title,
+      artist: tags.artist,
+      album: tags.album,
+      duration: (tags.durationMs != null && tags.durationMs! > 0)
+          ? Duration(milliseconds: tags.durationMs!)
+          : null,
+    );
+  }
+
   void _show(String path) {
     if (!isActive()) return;
     onCover(path);
     playback.setStreamArtUri(Uri.file(path));
   }
+
+  /// In-memory tags for [remotePath], if already fetched this session.
+  ReadTags? tagsFor(String remotePath) => _tags[remotePath];
 
   Future<T> _sync<T>(Future<T> Function() op) async {
     if (_depth > 0) return op();

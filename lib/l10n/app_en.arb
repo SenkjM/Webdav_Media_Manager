@@ -1146,5 +1146,6 @@
   "mediaScanRecursive": "Scan subdirectories when scraping",
   "mediaScanRecursiveHint": "Default on. When off, scrape only the selected folder.",
   "mediaScanMaxDepth": "Scrape max depth",
-  "mediaScanMaxDepthHint": "Default 1. Does not share prefs with playlist depth."
+  "mediaScanMaxDepthHint": "Default 1. Does not share prefs with playlist depth.",
+  "lyricsSourceEmbedded": "Embedded lyrics"
 }

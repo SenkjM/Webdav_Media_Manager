@@ -18,6 +18,8 @@ import '../services/audio_stream_engine.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../services/stream_window.dart';
+import '../services/tag_service.dart';
+import '../utils/stream_lyrics.dart';
 import '../services/video_playback_service.dart';
 import '../services/video_queue_controller.dart';
 import '../services/webdav_service.dart';
@@ -88,6 +90,8 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   AudioStreamEngine? _engine;
   SettingsService? _settings;
   String? _coverPath;
+  ReadTags? _tags;
+  final ScrollController _lyricsScroll = ScrollController();
 
   /// 播放列表面板的搜索框。控制器挂在 State 上，面板关掉也不丢已输入的字。
   final TextEditingController _playlistSearch = TextEditingController();
@@ -134,6 +138,14 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
       onCover: (path) {
         if (!mounted) return;
         setState(() => _coverPath = path);
+      },
+      onTags: (remotePath, tags) {
+        if (!mounted) return;
+        final current = _queue?.current?.path ??
+            _playback?.source?.remotePath ??
+            widget.source?.remotePath;
+        if (current != null && current != remotePath) return;
+        setState(() => _tags = tags);
       },
       namesFor: (path) => _queue?.namesFor(path),
       listNames: _listCoverNames,
@@ -227,6 +239,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
       _opening = true;
       _error = null;
       _coverPath = null;
+      _tags = null;
       _position = Duration.zero;
       _duration = Duration.zero;
       _buffered = Duration.zero;
@@ -252,6 +265,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
     _posSub = player.stream.position.listen((v) {
       if (!mounted || _dragging) return;
       setState(() => _position = v);
+      _scrollLyricsTo(v);
     });
     _durSub = player.stream.duration.listen((v) {
       if (!mounted) return;
@@ -338,6 +352,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
 
   @override
   void dispose() {
+    _lyricsScroll.dispose();
     _settings?.removeListener(_onStreamSettings);
     unawaited(_engine?.dispose() ?? Future<void>.value());
     _playlistSearch.dispose();
@@ -621,11 +636,16 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final queue = _queue;
-    final title =
+    final fileName =
         queue?.current?.name ??
         _playback?.source?.name ??
         widget.source?.name ??
         l10n.loading;
+    final title = () {
+      final t = _tags?.title?.trim();
+      if (t != null && t.isNotEmpty) return t;
+      return fileName;
+    }();
     final hasPrev = (queue?.index ?? 0) > 0;
     final hasNext = queue?.hasNext ?? false;
     return Scaffold(
@@ -639,7 +659,7 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         title: Text(
-          folderDisplayName(title, rootLabel: l10n.rootFolder),
+          folderDisplayName(fileName, rootLabel: l10n.rootFolder),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -652,18 +672,10 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
               children: [
                 _buildCover(),
                 const SizedBox(height: 24),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 24),
+                ..._buildTitleBlock(title, l10n),
+                const SizedBox(height: 16),
+                _buildLyrics(),
+                const SizedBox(height: 16),
                 _buildProgress(),
                 const SizedBox(height: 8),
                 _buildControls(hasPrev: hasPrev, hasNext: hasNext),
@@ -681,6 +693,123 @@ class _MusicStreamScreenState extends State<MusicStreamScreen> {
           ),
         ),
       ),
+    );
+  }
+
+
+  List<Widget> _buildTitleBlock(String fallbackTitle, AppLocalizations l10n) {
+    final scheme = Theme.of(context).colorScheme;
+    final tagTitle = _tags?.title?.trim();
+    final displayTitle =
+        (tagTitle != null && tagTitle.isNotEmpty) ? tagTitle : fallbackTitle;
+    final artist = _tags?.artist?.trim();
+    final album = _tags?.album?.trim();
+    return [
+      Text(
+        displayTitle,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              color: scheme.onSurface,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+      if (artist != null && artist.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text(
+          artist,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+      ],
+      if (album != null && album.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Text(
+          album,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+      ],
+    ];
+  }
+
+
+  void _scrollLyricsTo(Duration position) {
+    final raw = resolveLyrics(embedded: _tags?.lyrics);
+    if (raw == null || !_lyricsScroll.hasClients) return;
+    final timed = parseTimedLyrics(raw);
+    if (timed == null) return;
+    final idx = lyricIndexAt(timed, position);
+    if (idx < 0) return;
+    final target = (idx * 28.0) - 40;
+    final max = _lyricsScroll.position.maxScrollExtent;
+    _lyricsScroll.jumpTo(target.clamp(0.0, max));
+  }
+
+  Widget _buildLyrics() {
+    final raw = resolveLyrics(embedded: _tags?.lyrics);
+    if (raw == null) return const SizedBox.shrink();
+    final timed = parseTimedLyrics(raw);
+    final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context)!;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.lyricsSourceEmbedded,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 120,
+          child: timed == null
+              ? SingleChildScrollView(
+                  controller: _lyricsScroll,
+                  child: Text(
+                    raw,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: scheme.onSurface,
+                          height: 1.5,
+                        ),
+                  ),
+                )
+              : ListView.builder(
+                  controller: _lyricsScroll,
+                  itemCount: timed.length,
+                  itemExtent: 28,
+                  itemBuilder: (context, i) {
+                    final active = lyricIndexAt(timed, _position) == i;
+                    return Text(
+                      timed[i].text.isEmpty ? ' ' : timed[i].text,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: active
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                            fontWeight:
+                                active ? FontWeight.w600 : FontWeight.w400,
+                          ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 

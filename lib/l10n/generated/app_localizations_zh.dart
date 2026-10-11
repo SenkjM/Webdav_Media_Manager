@@ -3922,6 +3922,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mediaScanMaxDepthHint => '默认 1。与播放列表深度 prefs 不共用。';
+
+  @override
+  String get lyricsSourceEmbedded => '内嵌歌词';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7842,4 +7845,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get mediaScanMaxDepthHint => '預設 1。與播放清單深度 prefs 不共用。';
+
+  @override
+  String get lyricsSourceEmbedded => '內嵌歌詞';
 }
