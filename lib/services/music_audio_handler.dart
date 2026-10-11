@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 
+import '../models/playable_media.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../utils/l10n_host.dart';
@@ -222,7 +223,8 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   final _durationController = StreamController<Duration?>.broadcast();
 
   /// Optional resolver when skipping to a queue item that needs a local path.
-  Future<String?> Function(TrackInfo track)? resolveLocalPath;
+  /// Resolve local file or stream URL for a queue row. Required for skip.
+  Future<PlayableMedia?> Function(TrackInfo track)? resolvePlayable;
 
   final List<TrackInfo> _tracks = [];
   int _index = -1;
@@ -348,21 +350,20 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
 
   /// mpv trims to [start]..[end] natively (via an on_load hook) — no
   /// separate play-then-seek blip like a manual seek-after-open would cause.
-  Media _mediaFor(TrackInfo track, String localPath) {
-    return Media(localPath, start: track.clipStart, end: track.clipEnd);
+  Media _mediaFor(TrackInfo track, PlayableMedia playable) {
+    return playable.toMedia(start: track.clipStart, end: track.clipEnd);
   }
 
-  /// Replace queue and start playback at [startIndex] with a resolved local path.
+  /// Replace queue and start playback at [startIndex] with a resolved playable.
   Future<void> loadAndPlay({
     required List<TrackInfo> playlist,
     required int startIndex,
-    required String localPath,
+    required PlayableMedia playable,
   }) async {
     if (playlist.isEmpty) return;
     final idx = startIndex.clamp(0, playlist.length - 1);
     _gateEvents = true;
-    // Music and video share one MediaSession: taking the queue back over ends
-    // any video session first (the video player object itself is untouched).
+    // Music reclaiming the session ends video bookkeeping first.
     if (_mode == AudioHandlerMode.video) {
       _mode = AudioHandlerMode.music;
       _videoSource = null;
@@ -371,20 +372,18 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       ..clear()
       ..addAll(playlist);
     _index = idx;
-    _tracks[_index].localPath = localPath;
+    if (playable.isLocal) {
+      _tracks[_index].localPath = playable.localPath;
+    }
 
     await _ensureAudioSessionConfigured();
 
     final items = _tracks.map(mediaItemFor).toList();
-    // Real queue enables skipToNext/Previous for MediaSession callbacks.
     queue.add(items);
     final item = items[_index];
     mediaItem.add(item);
     _notifLog('mediaItem set title=${item.title} artist=${item.artist}');
 
-    // Publish non-idle BEFORE open(). A transient idle broadcast here would
-    // make native audio_service call AudioService.stop() and kill the
-    // MediaStyle notification.
     playbackState.add(
       playbackState.value.copyWith(
         controls: _controls(playing: false),
@@ -399,7 +398,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     );
 
     try {
-      await _player.open(_mediaFor(_tracks[_index], localPath), play: false);
+      await _player.open(_mediaFor(_tracks[_index], playable), play: false);
       final dur = _clipDuration(_player.state.duration);
       _durationController.add(dur);
       mediaItem.add(item.copyWith(duration: dur ?? item.duration));
@@ -689,22 +688,25 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     if (idx < 0 || idx >= _tracks.length) return;
     _gateEvents = true;
     _index = idx;
-    // Music and video share the session: taking the queue back over ends the
-    // video session bookkeeping (the video player object is left to its owner).
     if (_mode == AudioHandlerMode.video) {
       _mode = AudioHandlerMode.music;
       _videoSource = null;
     }
     final track = _tracks[_index];
-    String? local = track.localPath;
-    if (local == null || !File(local).existsSync()) {
-      final resolver = resolveLocalPath;
+    PlayableMedia? playable;
+    final existing = track.localPath;
+    if (existing != null && File(existing).existsSync()) {
+      playable = PlayableMedia.file(existing);
+    } else {
+      final resolver = resolvePlayable;
       if (resolver != null) {
-        local = await resolver(track);
-        track.localPath = local;
+        playable = await resolver(track);
+        if (playable != null && playable.isLocal) {
+          track.localPath = playable.localPath;
+        }
       }
     }
-    if (local == null || !File(local).existsSync()) {
+    if (playable == null) {
       _gateEvents = false;
       throw StateError(L10nHost.current.svcLocalFileUnavailable);
     }
@@ -722,7 +724,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       ),
     );
     try {
-      await _player.open(_mediaFor(track, local), play: false);
+      await _player.open(_mediaFor(track, playable), play: false);
       final dur = _clipDuration(_player.state.duration);
       _durationController.add(dur);
       mediaItem.add(item.copyWith(duration: dur ?? item.duration));
@@ -962,7 +964,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     await loadAndPlay(
       playlist: idx >= 0 ? _tracks : [track],
       startIndex: idx >= 0 ? idx : 0,
-      localPath: path,
+      playable: PlayableMedia.file(path),
     );
     // Give the platform a beat to post FGS notification.
     await Future<void>.delayed(const Duration(milliseconds: 350));

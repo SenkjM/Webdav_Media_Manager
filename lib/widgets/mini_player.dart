@@ -11,8 +11,7 @@ import '../screens/now_playing_queue_screen.dart';
 import '../services/audio_player_service.dart';
 import 'cover_art.dart';
 
-/// Global mini play bar. Only shown when a local track is current —
-/// never displays download / preparing progress.
+/// Global mini play bar for the unified music session (local or stream).
 class MiniPlayer extends StatelessWidget {
   const MiniPlayer({super.key});
 

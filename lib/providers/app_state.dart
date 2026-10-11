@@ -92,6 +92,11 @@ class AppState extends ChangeNotifier {
     player = AudioPlayerService(
       taskQueue: taskQueue,
       handler: audioHandler,
+      webDav: webDav,
+      cache: cache,
+      settings: settings,
+      library: library,
+      accounts: accounts,
       notificationPermission: notificationPermission,
     );
     videoPlayback = VideoPlaybackService(handler: audioHandler);

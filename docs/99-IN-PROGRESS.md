@@ -879,13 +879,14 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
   2. 音乐网络库播列表：`audio_scan_subdirs`（默认关）+ `audio_playlist_max_depth`
   3. 媒体库刮削：`media_scan_recursive`（默认**开**）+ `media_scan_max_depth`
   图片 `image_scan_subdirs` 保持独立、不复用。视频/音乐渐进扫描已接 WalkOptions；刮削执行器未做。
-- **入库与预载 / 播放收口起步（§17.12 第 4–5 步部分）**：已落地第一段。
-  - Range 标签：cherry-pick `ebe8424` → 本分支 `StreamCoverReader.extractTags` / 歌词可用。
-  - 入库：`LibraryService.ingestFromTags`（流式 / 预载读到的 `ReadTags` upsert `tracks`，封面进 `covers/`；**不**改 `lastDownloadedAt`；完整 `ingestDownloaded` 仍可覆盖）。DB schema **未**加 `tag_source` 列（用 `lastTagReadAt` + 是否有下载时间区分）。
-  - 预载：统一走 `AudioStreamEngine`；邻居标签经 `onIngestTags` **先入库再**继续封面/音频预载窗口。
-  - 播放：库内有本地文件 → `AudioPlayerService.playTrack`；无文件 → `MusicStreamScreen`（共享媒体会话；页头标明过渡，待并进底部控件）。
-  - 状态点：库行无缓存为 `TrackUiState.streamable`（主题 primary）；有缓存 `ready` 用 tertiary；红点持久化未做。
-- 后续：底部控件完全合一、红点 / 重定向、刮削执行器。
+- **入库与预载 / 播放合一（§17.12 第 4–5 步）**：**已落地**（无 MusicStreamScreen 旁路）。
+  - Range 标签：`StreamCoverReader.extractTags`（cherry-pick 自 stream-tags）。
+  - 入库：`LibraryService.ingestFromTags`；预载 `onIngestTags` 先入库再下邻居。
+  - **统一播放**：`AudioPlayerService.playTrack` → `PlayableMedia`（本地文件 **或** 流式 URL+headers）→ `MusicAudioHandler` 同一音乐队列 / 媒体会话 / MiniPlayer / PlayerScreen。
+  - 预载：`MusicPrefetchService`（挂在 AudioPlayerService；标签→封面→音频进 `prefetch_cache`）。已删 `MusicStreamScreen` 与 `AudioStreamEngine`。
+  - 队列：网络库按当前路径 siblings；媒体库按列表/歌单。视频仍走 `VideoPlaybackService`（video mode）；音乐起播会 `exitVideoMode`，流式音乐不再占用 video mode。
+  - 状态点：`streamable` / `ready` 主题色；红点未做。
+- 后续：红点 / 重定向、刮削执行器、设置「媒体库」改名等。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
 
@@ -977,7 +978,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 2. ~~任务队列外壳（改名、`kind`、列表 / 详情）~~ **已落地**
 3. ~~遍历 / 深度（网络库音乐列表、视频列表、刮削深度分设）~~ **已落地**（三套独立 prefs，见上）
 4. ~~入库与预载（Range 标签先入库再预载；sidecar 保留）~~ **第一段已落地**（见上）
-5. 播放合一（同一套底部控件；串流 / 缓存只差本地文件）— **起步**：库内未缓存可点播；MiniPlayer 仍主要跟本地队列
+5. ~~播放合一（同一套底部控件；串流 / 缓存只差本地文件）~~ **已落地**
 6. 红点 / 重定向（持久化、再试、删除 / 重定向选择器）
 7. 扫描与更新标签（多选并列、统计后刮削、从本地 / 从云端）
 

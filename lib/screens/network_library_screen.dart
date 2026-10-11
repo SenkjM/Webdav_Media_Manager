@@ -8,7 +8,6 @@ import '../models/account_capabilities.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/queue_task.dart';
 import '../models/file_actions.dart';
-import '../models/webdav_stream.dart';
 import '../models/file_type_config.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
@@ -35,7 +34,6 @@ import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
-import 'music_stream_screen.dart';
 import 'video_player_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 
@@ -436,7 +434,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       folderListing: _items,
     );
     // 界面先落地：源解析交给页内 loader（云盘要三跳网络，原来会卡住整条
-    // 跳转链）；「伪装成视频的音频」由视频页解析后路由去音乐页（99 §7.2.9）。
+    // 跳转链）；「伪装成视频的音频」由视频页解析后走统一 AudioPlayerService。
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => VideoPlayerScreen(
@@ -509,10 +507,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
   }
 
-  /// 音乐 → 远端流式播放。
-  ///
-  /// 不下载进曲库、不入队。封面在播放页用 Range 读内嵌图，或按设置找同目录
-  /// 图片；时长由播放器自己报。取舍见 docs/99 §1.2。
+  /// 音乐 → 统一播放（有缓存走文件，无缓存串流；同一 MiniPlayer）。
   Future<void> _streamMusic(WebDavItem item) async {
     if (!context.read<SettingsService>().audioStreamingEnabled) {
       AppSnack.error(
@@ -526,38 +521,35 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     await _openMusicStream(item, accountId: accountId);
   }
 
-  /// 打开音乐流式播放界面（音频与「被当成视频的音频」共用这一条路径）。
-  ///
-  /// 界面**先落地**：没带 [source] 时把解析交给页内 loader，跳转不再等
-  /// 网络——云盘账号的解析要走列表 + filemetas + HEAD，原来会把整条 UI
-  /// 链卡住（流式体验改造，见 99 §7.2.7）。prepare 只做媒体会话登记，
-  /// 不碰网络，交给页内 _open 处理。
+  /// 网络库音乐：按当前路径生成队列，走统一 [AudioPlayerService]（本地或串流）。
   Future<void> _openMusicStream(
     WebDavItem item, {
     required String accountId,
-    WebDavStreamSource? source,
   }) async {
-    final seed = VideoQueueSeed(
-      accountId: accountId,
-      folderPath: _path,
-      current: item,
-      siblings: _items.where((e) => e.category == FileCategory.music).toList(),
-    );
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => MusicStreamScreen(
-          source: source,
-          sourceLoader: source != null
-              ? null
-              : () => context.read<WebDavService>().resolveStreamSource(
-                  remotePath: item.path,
-                  name: item.name,
-                  accountId: accountId,
-                  kind: StreamKind.music,
-                ),
-          seed: seed,
+    final accounts = context.read<AccountsService>();
+    final account = accounts.accountById(accountId);
+    final sourceName = account?.name ?? '';
+    if (sourceName.isEmpty) return;
+    final siblings = _items.where((e) => e.category == FileCategory.music).toList();
+    if (siblings.isEmpty) siblings.add(item);
+    final playlist = [
+      for (final e in siblings)
+        TrackInfo(
+          sourceName: sourceName,
+          accountId: accountId,
+          remotePath: e.path,
+          fileName: e.name,
         ),
-      ),
+    ];
+    final track = TrackInfo(
+      sourceName: sourceName,
+      accountId: accountId,
+      remotePath: item.path,
+      fileName: item.name,
+    );
+    await context.read<AudioPlayerService>().playTrack(
+      track,
+      playlist: playlist,
     );
   }
 

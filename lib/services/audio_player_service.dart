@@ -4,31 +4,46 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 
+import '../models/playable_media.dart';
 import '../models/queue_task.dart';
 import '../models/webdav_item.dart';
+import '../models/webdav_stream.dart';
 import '../utils/l10n_host.dart';
-import 'task_queue_service.dart';
+import 'accounts_service.dart';
+import 'cache_service.dart';
+import 'library_service.dart';
 import 'music_audio_handler.dart';
+import 'music_prefetch_service.dart';
 import 'notification_permission_service.dart';
+import 'settings_service.dart';
+import 'tag_service.dart';
+import 'task_queue_service.dart';
+import 'webdav_service.dart';
 
-/// Local-cache player facade for [playTrack].
+/// Unified music player: local cache and stream share one queue, MiniPlayer,
+/// [PlayerScreen], and media notification.
 ///
-/// Uncached library / network streams still open via [MusicStreamScreen] +
-/// [AudioStreamEngine] (shared media session). Prefer routing new call sites
-/// through this service once stream mode is merged here; do not enqueue
-/// downloads as part of playback.
-///
-/// On Android/iOS, playback goes through [MusicAudioHandler] so the system
-/// MediaStyle notification / media session stays active with metadata.
+/// [playTrack] resolves each row to a [PlayableMedia] (file if present, else
+/// stream URL + headers). Prefetch + tag ingest run on the same service.
 class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
     required TaskQueueService taskQueue,
     required MusicAudioHandler handler,
+    required WebDavService webDav,
+    required CacheService cache,
+    required SettingsService settings,
+    required LibraryService library,
+    required AccountsService accounts,
     NotificationPermissionService? notificationPermission,
   }) : _taskQueue = taskQueue,
        _notifications = notificationPermission,
-       _handler = handler {
-    _handler.resolveLocalPath = _resolveLocalPath;
+       _handler = handler,
+       _webDav = webDav,
+       _cache = cache,
+       _settings = settings,
+       _library = library,
+       _accounts = accounts {
+    _handler.resolvePlayable = resolvePlayable;
     _posSub = _handler.positionStream.listen((p) {
       _position = p;
       notifyListeners();
@@ -42,14 +57,21 @@ class AudioPlayerService extends ChangeNotifier {
       _processingState = s.processingState;
       notifyListeners();
     });
-    _mediaSub = _handler.mediaItem.listen((_) {
+    _mediaSub = _handler.mediaItem.listen((item) {
+      _applyMediaItemTags(item);
       notifyListeners();
     });
+    _settings.addListener(_onSettings);
   }
 
   final TaskQueueService _taskQueue;
   final NotificationPermissionService? _notifications;
   final MusicAudioHandler _handler;
+  final WebDavService _webDav;
+  final CacheService _cache;
+  final SettingsService _settings;
+  final LibraryService _library;
+  final AccountsService _accounts;
 
   StreamSubscription<Duration>? _posSub;
   StreamSubscription<Duration?>? _durSub;
@@ -61,13 +83,13 @@ class AudioPlayerService extends ChangeNotifier {
   bool _playing = false;
   AudioProcessingState _processingState = AudioProcessingState.idle;
   String? _error;
+  MusicPrefetchService? _prefetch;
+  bool _notificationPrompted = false;
 
   MusicAudioHandler get handler => _handler;
 
   TrackInfo? get current => _handler.currentTrack;
   String? get currentRemotePath => current?.remotePath;
-
-  /// 网盘名 of the playing track (cache / identity side).
   String? get currentSourceName => current?.sourceName;
   List<TrackInfo> get queue => _handler.tracks;
   int get index => _handler.index;
@@ -77,24 +99,77 @@ class AudioPlayerService extends ChangeNotifier {
   String? get error => _error;
   AudioProcessingState get processingState => _processingState;
 
-  /// Resolve an already-cached local path. Never enqueues downloads.
-  Future<String?> _resolveLocalPath(TrackInfo track) async {
+  /// True when music owns the session (not video). MiniPlayer uses this.
+  bool get isMusicSession =>
+      !_handler.isVideoMode && current != null;
+
+  void _onSettings() => _prefetch?.nudge();
+
+  /// Resolve local cache, prefetch file, or stream URL for [track].
+  Future<PlayableMedia?> resolvePlayable(TrackInfo track) async {
     final existing = track.localPath;
-    if (existing != null && File(existing).existsSync()) return existing;
+    if (existing != null && File(existing).existsSync()) {
+      return PlayableMedia.file(existing);
+    }
     final audioRemote = track.effectiveAudioRemotePath;
+    final cached = await _cache.localPathIfCached(
+      audioRemote,
+      sourceName: track.sourceName,
+    );
+    if (cached != null) {
+      track.localPath = cached;
+      return PlayableMedia.file(cached);
+    }
     final task = _taskQueue.taskForRemote(track.sourceName, audioRemote);
     if (task != null &&
         task.status == TaskStatus.completed &&
         task.localPath != null &&
         File(task.localPath!).existsSync()) {
       track.localPath = task.localPath;
-      return task.localPath;
+      return PlayableMedia.file(task.localPath!);
     }
-    return null;
+    final prefetch = _prefetch;
+    if (prefetch != null) {
+      final path = await prefetch.cachedAudioPath(track);
+      if (path != null) {
+        track.localPath = path;
+        return PlayableMedia.file(path);
+      }
+    } else if (track.accountId.isNotEmpty) {
+      final path = await MusicPrefetchService(
+        webDav: _webDav,
+        tracks: () => const [],
+        currentIndex: () => -1,
+        backward: () => 0,
+        forward: () => 0,
+        sidecarEnabled: () => false,
+        sidecarNames: () => '',
+        libraryCover: (_) => null,
+        namesFor: (_) => null,
+        listNames: (_) async => const [],
+        isActive: () => false,
+      ).cachedAudioPath(track);
+      if (path != null) {
+        track.localPath = path;
+        return PlayableMedia.file(path);
+      }
+    }
+
+    final accountId = track.accountId.isNotEmpty
+        ? track.accountId
+        : (_accounts.idForSource(track.sourceName) ?? '');
+    if (accountId.isEmpty) return null;
+    final source = await _webDav.resolveStreamSource(
+      remotePath: audioRemote,
+      name: track.fileName,
+      accountId: accountId,
+      kind: StreamKind.music,
+    );
+    if (source == null || source.uri.isEmpty) return null;
+    return PlayableMedia.stream(uri: source.uri, headers: source.headers);
   }
 
-  /// Play a track that is already local. Non-local tracks are rejected here —
-  /// library UI opens [MusicStreamScreen] for uncached rows instead.
+  /// Play [track]; [playlist] becomes the unified queue (local and/or stream).
   Future<void> playTrack(TrackInfo track, {List<TrackInfo>? playlist}) async {
     _error = null;
     final list = <TrackInfo>[];
@@ -111,21 +186,57 @@ class AudioPlayerService extends ChangeNotifier {
       list.add(track);
       idx = list.length - 1;
     } else {
-      // Prefer caller-provided localPath / tags for the selected item.
       list[idx] = track;
     }
 
-    final local = await _resolveLocalPath(list[idx]);
-    if (local == null) {
+    for (var i = 0; i < list.length; i++) {
+      final t = list[i];
+      if (t.accountId.isEmpty) {
+        final id = _accounts.idForSource(t.sourceName) ?? '';
+        if (id.isNotEmpty) {
+          list[i] = _withAccountId(t, id);
+        }
+      }
+    }
+    if (list[idx].accountId.isEmpty) {
       _error = L10nHost.current.svcNoLocalCache;
       notifyListeners();
       return;
     }
-    list[idx].localPath = local;
 
     notifyListeners();
     await _ensureNotificationPermission();
     await _loadAndPlay(list, idx);
+  }
+
+  TrackInfo _withAccountId(TrackInfo t, String accountId) {
+    return TrackInfo(
+      sourceName: t.sourceName,
+      accountId: accountId,
+      remotePath: t.remotePath,
+      fileName: t.fileName,
+      localPath: t.localPath,
+      title: t.title,
+      artist: t.artist,
+      albumArtist: t.albumArtist,
+      album: t.album,
+      duration: t.duration,
+      trackNumber: t.trackNumber,
+      trackTotal: t.trackTotal,
+      discNumber: t.discNumber,
+      discTotal: t.discTotal,
+      year: t.year,
+      genre: t.genre,
+      bitrate: t.bitrate,
+      sampleRate: t.sampleRate,
+      coverPath: t.coverPath,
+      cueRemotePath: t.cueRemotePath,
+      cueTrackIndex: t.cueTrackIndex,
+      audioRemotePath: t.audioRemotePath,
+      clipStart: t.clipStart,
+      clipEnd: t.clipEnd,
+      cacheGroupId: t.cacheGroupId,
+    );
   }
 
   Future<void> _ensureNotificationPermission() async {
@@ -140,27 +251,30 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
-  bool _notificationPrompted = false;
-
   Future<void> _loadAndPlay(List<TrackInfo> playlist, int index) async {
     _error = null;
     notifyListeners();
     try {
-      // Video and music never play together: taking back the media session for
-      // music ends any active video stream first.
+      // Video and music never share the session: reclaim ends video mode.
+      // Do not resume a stale stream session afterward — loadAndPlay replaces
+      // the music queue entirely.
       if (_handler.isVideoMode) {
         await _handler.exitVideoMode();
       }
       final track = playlist[index];
-      final local = await _resolveLocalPath(track);
-      if (local == null) {
+      final playable = await resolvePlayable(track);
+      if (playable == null) {
         throw StateError(L10nHost.current.svcNoLocalCache);
+      }
+      if (playable.isLocal) {
+        track.localPath = playable.localPath;
       }
       await _handler.loadAndPlay(
         playlist: playlist,
         startIndex: index,
-        localPath: local,
+        playable: playable,
       );
+      _startPrefetch(playlist, index, track.accountId);
     } catch (e) {
       _error = e.toString();
       try {
@@ -171,18 +285,145 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  void _startPrefetch(List<TrackInfo> playlist, int index, String accountId) {
+    unawaited(_prefetch?.dispose());
+    _prefetch = MusicPrefetchService(
+      webDav: _webDav,
+      tracks: () => _handler.tracks,
+      currentIndex: () => _handler.index,
+      backward: () => _settings.audioStreamPrefetchBackward,
+      forward: () => _settings.audioStreamPrefetchForward,
+      sidecarEnabled: () => _settings.audioStreamSidecarCover,
+      sidecarNames: () => _settings.audioStreamSidecarNames,
+      libraryCover: (t) {
+        final cover = _library.find(t.sourceName, t.remotePath)?.coverPath;
+        if (cover == null || cover.isEmpty || !File(cover).existsSync()) {
+          return null;
+        }
+        return cover;
+      },
+      namesFor: (_) => null,
+      listNames: (remotePath) async {
+        final dir = remotePath.contains('/')
+            ? remotePath.substring(0, remotePath.lastIndexOf('/'))
+            : '/';
+        final folder = dir.isEmpty ? '/' : dir;
+        try {
+          final items = await _webDav.listDirectory(accountId, folder);
+          return [
+            for (final item in items)
+              if (!item.isDirectory) item.name,
+          ];
+        } catch (_) {
+          return const [];
+        }
+      },
+      isActive: () => !_handler.isVideoMode && current != null,
+      onCover: (path) {
+        final t = current;
+        if (t == null || path == null) return;
+        t.coverPath = path;
+        final item = _handler.mediaItem.valueOrNull;
+        if (item != null) {
+          _handler.mediaItem.add(item.copyWith(artUri: Uri.file(path)));
+        }
+        notifyListeners();
+      },
+      onTags: (remotePath, tags) {
+        if (tags == null) return;
+        final t = current;
+        if (t == null || t.effectiveAudioRemotePath != remotePath) return;
+        _applyReadTags(t, tags);
+        final item = _handler.mediaItem.valueOrNull;
+        if (item != null) {
+          _handler.mediaItem.add(
+            item.copyWith(
+              title: (tags.title != null && tags.title!.trim().isNotEmpty)
+                  ? tags.title
+                  : item.title,
+              artist: (tags.artist != null && tags.artist!.trim().isNotEmpty)
+                  ? tags.artist
+                  : item.artist,
+              album: (tags.album != null && tags.album!.trim().isNotEmpty)
+                  ? tags.album
+                  : item.album,
+              duration: (tags.durationMs != null && tags.durationMs! > 0)
+                  ? Duration(milliseconds: tags.durationMs!)
+                  : item.duration,
+            ),
+          );
+        }
+        notifyListeners();
+      },
+      onIngestTags: (remotePath, fileName, tags) {
+        unawaited(_ingest(remotePath, fileName, tags));
+      },
+    );
+    _prefetch!.start(accountId: accountId);
+  }
+
+  Future<void> _ingest(
+    String remotePath,
+    String fileName,
+    ReadTags tags,
+  ) async {
+    TrackInfo? t;
+    for (final x in _handler.tracks) {
+      if (x.effectiveAudioRemotePath == remotePath) {
+        t = x;
+        break;
+      }
+    }
+    final sourceName = t?.sourceName ?? current?.sourceName;
+    if (sourceName == null || sourceName.isEmpty) return;
+    try {
+      await _library.ingestFromTags(
+        sourceName: sourceName,
+        remotePath: remotePath,
+        fileName: fileName,
+        tags: tags,
+      );
+      if (t != null) _applyReadTags(t, tags);
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  void _applyReadTags(TrackInfo t, ReadTags tags) {
+    if (tags.title != null && tags.title!.trim().isNotEmpty) {
+      t.title = tags.title;
+    }
+    if (tags.artist != null && tags.artist!.trim().isNotEmpty) {
+      t.artist = tags.artist;
+    }
+    if (tags.albumArtist != null && tags.albumArtist!.trim().isNotEmpty) {
+      t.albumArtist = tags.albumArtist;
+    }
+    if (tags.album != null && tags.album!.trim().isNotEmpty) {
+      t.album = tags.album;
+    }
+    if (tags.durationMs != null && tags.durationMs! > 0) {
+      t.duration = Duration(milliseconds: tags.durationMs!);
+    }
+    if (tags.trackNumber != null) t.trackNumber = tags.trackNumber;
+    if (tags.trackTotal != null) t.trackTotal = tags.trackTotal;
+    if (tags.discNumber != null) t.discNumber = tags.discNumber;
+    if (tags.discTotal != null) t.discTotal = tags.discTotal;
+    if (tags.year != null) t.year = tags.year;
+    if (tags.genre != null) t.genre = tags.genre;
+    if (tags.bitrate != null) t.bitrate = tags.bitrate;
+    if (tags.sampleRate != null) t.sampleRate = tags.sampleRate;
+  }
+
+  void _applyMediaItemTags(MediaItem? item) {
+    // no-op placeholder — tags applied via prefetch callbacks
+  }
+
   Future<void> playPause() async {
     if (_handler.playing) {
       await _handler.pause();
     } else {
       if (current == null && _handler.tracks.isNotEmpty) {
         final idx = _handler.index < 0 ? 0 : _handler.index;
-        final local = await _resolveLocalPath(_handler.tracks[idx]);
-        if (local == null) {
-          _error = L10nHost.current.svcNoLocalCache;
-          notifyListeners();
-          return;
-        }
         await _ensureNotificationPermission();
         await _loadAndPlay(_handler.tracks, idx);
       } else {
@@ -194,10 +435,10 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> pause() => _handler.pause();
 
-  /// Pause music because video playback is taking over the media session.
+  /// Pause music because **video** is taking the media session.
   ///
-  /// Unlike [stop] this keeps the music queue, so the user can resume the same
-  /// track after leaving the video player. No-op when nothing is playing.
+  /// Keeps the music queue. Streaming music no longer uses video mode, so
+  /// leaving a video never accidentally resumes an orphan stream session.
   Future<void> pauseForVideo() async {
     if (!_handler.playing) return;
     await _handler.pause();
@@ -206,20 +447,25 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> seek(Duration position) => _handler.seek(position);
 
-  Future<void> skipNext() => _handler.skipToNext();
+  Future<void> skipNext() async {
+    await _handler.skipToNext();
+    _prefetch?.nudge();
+  }
 
-  Future<void> skipPrevious() => _handler.skipToPrevious();
+  Future<void> skipPrevious() async {
+    await _handler.skipToPrevious();
+    _prefetch?.nudge();
+  }
 
   Future<void> stop() async {
+    await _prefetch?.dispose();
+    _prefetch = null;
     await _handler.stop();
     notifyListeners();
   }
 
-  /// Settings debug: force MediaSession + play so a MediaStyle notification
-  /// must appear when the OS path is healthy.
   Future<String> debugForceMediaNotification() async {
     await _ensureNotificationPermission();
-    // Allow re-prompt path on next play if user denied then granted in settings.
     _notificationPrompted = false;
     await _ensureNotificationPermission();
     final msg = await _handler.debugForceMediaNotification();
@@ -229,12 +475,12 @@ class AudioPlayerService extends ChangeNotifier {
 
   @override
   void dispose() {
+    _settings.removeListener(_onSettings);
+    unawaited(_prefetch?.dispose());
     _posSub?.cancel();
     _durSub?.cancel();
     _stateSub?.cancel();
     _mediaSub?.cancel();
-    // Handler player lifetime is owned by AudioService on mobile; only dispose
-    // when this service created a standalone handler (tests / desktop).
     super.dispose();
   }
 }

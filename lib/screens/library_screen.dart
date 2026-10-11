@@ -22,11 +22,6 @@ import '../widgets/library_cover_art.dart';
 import '../widgets/selection_toolbar.dart';
 import '../widgets/track_status_chip.dart';
 import 'home_shell.dart';
-import 'music_stream_screen.dart';
-import 'video_player_screen.dart' show VideoQueueSeed;
-import '../models/file_type_config.dart';
-import '../models/webdav_stream.dart';
-import '../services/webdav_service.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -1183,89 +1178,47 @@ class _TrackTile extends StatelessWidget {
       );
       return;
     }
-    final accountId = accountsService.idForSource(track.sourceName);
-    if (accountId == null || accountId.isEmpty) {
-      AppSnack.error(
-        context,
-        unboundSourceMessage(AppLocalizations.of(context)!, track.sourceName),
-      );
-      return;
-    }
+    final accountId = accountsService.idForSource(track.sourceName) ?? '';
     final player = context.read<AudioPlayerService>();
     final cache = context.read<CacheService>();
-    final local = await cache.localPathIfCached(
-      track.effectiveAudioRemotePath,
-      sourceName: track.sourceName,
-    );
-    if (local != null) {
-      final localPlaylist = <TrackInfo>[];
-      for (final t in playlist) {
+    final playlistInfos = <TrackInfo>[];
+    for (final t in playlist) {
+      if (t.isCueVirtual && t != track) {
+        // CUE slices only join when their audio is local (clip needs file).
         final path = await cache.localPathIfCached(
           t.effectiveAudioRemotePath,
           sourceName: t.sourceName,
         );
         if (path == null) continue;
-        localPlaylist.add(
-          _toTrackInfo(t, path, accountsService.idForSource(t.sourceName) ?? ''),
-        );
-      }
-      final info = _toTrackInfo(track, local, accountId);
-      if (localPlaylist.isEmpty) localPlaylist.add(info);
-      if (!context.mounted) return;
-      await player.playTrack(info, playlist: localPlaylist);
-      return;
-    }
-
-    // No local file: stream via MusicStreamScreen (shared media session).
-    // Full AudioPlayerService merge lands later; this step unlocks library play.
-    if (!context.mounted) return;
-    final current = _toWebDavItem(track);
-    final siblings = [
-      for (final t in playlist)
-        if (!t.isCueVirtual) _toWebDavItem(t),
-    ];
-    if (siblings.isEmpty) siblings.add(current);
-    final folder = current.path.contains('/')
-        ? current.path.substring(0, current.path.lastIndexOf('/'))
-        : '/';
-    final folderPath = folder.isEmpty ? '/' : folder;
-    final source = await context.read<WebDavService>().resolveStreamSource(
-      accountId: accountId,
-      remotePath: current.path,
-      name: current.name,
-      kind: StreamKind.music,
-    );
-    if (!context.mounted) return;
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => MusicStreamScreen(
-          source: source,
-          sourceLoader: source != null
-              ? null
-              : () => context.read<WebDavService>().resolveStreamSource(
-                    accountId: accountId,
-                    remotePath: current.path,
-                    name: current.name,
-                    kind: StreamKind.music,
-                  ),
-          seed: VideoQueueSeed(
-            accountId: accountId,
-            folderPath: folderPath,
-            siblings: siblings,
-            current: current,
+        playlistInfos.add(
+          _toTrackInfo(
+            t,
+            path,
+            accountsService.idForSource(t.sourceName) ?? '',
           ),
+        );
+        continue;
+      }
+      final path = await cache.localPathIfCached(
+        t.effectiveAudioRemotePath,
+        sourceName: t.sourceName,
+      );
+      playlistInfos.add(
+        _toTrackInfo(
+          t,
+          path,
+          accountsService.idForSource(t.sourceName) ?? accountId,
         ),
-      ),
+      );
+    }
+    final local = await cache.localPathIfCached(
+      track.effectiveAudioRemotePath,
+      sourceName: track.sourceName,
     );
-  }
-
-  static WebDavItem _toWebDavItem(LibraryTrack track) {
-    return WebDavItem(
-      name: track.fileName,
-      path: track.effectiveAudioRemotePath,
-      isDirectory: false,
-      category: FileCategory.music,
-    );
+    final info = _toTrackInfo(track, local, accountId);
+    if (playlistInfos.isEmpty) playlistInfos.add(info);
+    if (!context.mounted) return;
+    await player.playTrack(info, playlist: playlistInfos);
   }
 
   static TrackInfo _toTrackInfo(
