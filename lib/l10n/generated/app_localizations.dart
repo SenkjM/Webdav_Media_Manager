@@ -2163,6 +2163,18 @@ abstract class AppLocalizations {
   /// **'更新此曲标签'**
   String get updateThisTrackTags;
 
+  /// No description provided for @playerSourceCached.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存'**
+  String get playerSourceCached;
+
+  /// No description provided for @playerSourceStreaming.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式'**
+  String get playerSourceStreaming;
+
   /// No description provided for @nowPlaying.
   ///
   /// In zh, this message translates to:

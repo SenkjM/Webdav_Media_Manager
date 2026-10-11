@@ -350,6 +350,8 @@
   "tagsUpdatedFromLocal": "已從本機檔案更新標籤",
   "tagsNeedDownloadFirst": "該曲目尚未快取，請先下載後再更新標籤",
   "updateThisTrackTags": "更新此曲標籤",
+  "playerSourceCached": "快取",
+  "playerSourceStreaming": "串流",
   "nowPlaying": "正在播放",
   "noTrackSelected": "未選擇曲目",
   "dlSavedToGallery": "已存入系統相簿",

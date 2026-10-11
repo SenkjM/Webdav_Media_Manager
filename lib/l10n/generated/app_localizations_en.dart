@@ -1182,6 +1182,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateThisTrackTags => 'Refresh tags for this track';
 
   @override
+  String get playerSourceCached => 'Cached';
+
+  @override
+  String get playerSourceStreaming => 'Streaming';
+
+  @override
   String get nowPlaying => 'Now playing';
 
   @override

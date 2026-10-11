@@ -226,6 +226,11 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
   /// Resolve local file or stream URL for a queue row. Required for skip.
   Future<PlayableMedia?> Function(TrackInfo track)? resolvePlayable;
 
+  /// Whether the open music source is a local file (cache) vs remote stream.
+  /// Null when nothing is loaded.
+  bool? _currentPlayableIsLocal;
+  bool? get currentPlayableIsLocal => _currentPlayableIsLocal;
+
   final List<TrackInfo> _tracks = [];
   int _index = -1;
 
@@ -372,6 +377,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       ..clear()
       ..addAll(playlist);
     _index = idx;
+    _currentPlayableIsLocal = playable.isLocal;
     if (playable.isLocal) {
       _tracks[_index].localPath = playable.localPath;
     }
@@ -710,6 +716,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       _gateEvents = false;
       throw StateError(L10nHost.current.svcLocalFileUnavailable);
     }
+    _currentPlayableIsLocal = playable.isLocal;
     final item = mediaItemFor(track);
     mediaItem.add(item);
     queue.add(_tracks.map(mediaItemFor).toList());
@@ -823,6 +830,7 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
       queue.add(const []);
       _index = -1;
       _tracks.clear();
+      _currentPlayableIsLocal = null;
       _durationController.add(null);
       playbackState.add(
         playbackState.value.copyWith(

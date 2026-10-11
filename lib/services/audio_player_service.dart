@@ -104,6 +104,9 @@ class AudioPlayerService extends ChangeNotifier {
   bool get isMusicSession =>
       !_handler.isVideoMode && current != null;
 
+  /// Whether the open source is a local file (cache) vs stream. Null if idle.
+  bool? get isPlayingLocal => _handler.currentPlayableIsLocal;
+
   void _onSettings() => _prefetch?.nudge();
 
   /// Resolve local cache, prefetch file, or stream URL for [track].

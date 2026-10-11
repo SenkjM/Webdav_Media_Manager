@@ -1148,6 +1148,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateThisTrackTags => '更新此曲标签';
 
   @override
+  String get playerSourceCached => '缓存';
+
+  @override
+  String get playerSourceStreaming => '流式';
+
+  @override
   String get nowPlaying => '正在播放';
 
   @override
@@ -5177,6 +5183,12 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get updateThisTrackTags => '更新此曲標籤';
+
+  @override
+  String get playerSourceCached => '快取';
+
+  @override
+  String get playerSourceStreaming => '串流';
 
   @override
   String get nowPlaying => '正在播放';

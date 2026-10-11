@@ -350,6 +350,8 @@
   "tagsUpdatedFromLocal": "已从本地文件更新标签",
   "tagsNeedDownloadFirst": "该曲目尚未缓存，请先下载后再更新标签",
   "updateThisTrackTags": "更新此曲标签",
+  "playerSourceCached": "缓存",
+  "playerSourceStreaming": "流式",
   "nowPlaying": "正在播放",
   "noTrackSelected": "未选择曲目",
   "dlSavedToGallery": "已存入系统相册",

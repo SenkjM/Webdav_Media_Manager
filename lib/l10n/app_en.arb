@@ -350,6 +350,8 @@
   "tagsUpdatedFromLocal": "Tags updated from the local file",
   "tagsNeedDownloadFirst": "This track is not cached yet. Download it before refreshing tags.",
   "updateThisTrackTags": "Refresh tags for this track",
+  "playerSourceCached": "Cached",
+  "playerSourceStreaming": "Streaming",
   "nowPlaying": "Now playing",
   "noTrackSelected": "No track selected",
   "dlSavedToGallery": "Saved to system gallery",
