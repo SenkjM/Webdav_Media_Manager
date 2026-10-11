@@ -950,7 +950,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return '暂无 · $name';
+    return '库中暂无 · $name';
   }
 
   @override
@@ -4987,7 +4987,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return '暫無 · $name';
+    return '庫中暫無 · $name';
   }
 
   @override

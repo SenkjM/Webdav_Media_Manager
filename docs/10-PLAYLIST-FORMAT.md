@@ -51,6 +51,20 @@
 
 这些一律显示为「库中暂无」，**不触发任何删除**。
 
+### 2.3 列表状态与曲库对齐（单源真相）
+
+歌单详情行的缓存 / 可串流 / 红点 / 播放中，一律通过条目 `musicId`（或缺省时的归一化身份）去解析 `LibraryTrack`，再走与音乐库同一套 `libraryRowUiState` 与状态点：
+
+| 态 | 表现 | 来源 |
+|----|------|------|
+| 有本地缓存 | tertiary 点 | `CacheService` 推导路径存在 |
+| 可串流 | primary 点（无文字 chip） | 库中有行且无本地缓存 |
+| 云端缺失 | 红点 + 可选 chip | `tracks.remote_missing`（曲库 v10） |
+| 播放中 | equalizer 图标 | 当前会话 |
+| 库中暂无 | `music_off` +「库中暂无 · 来源」 | **解析不到** `LibraryTrack`（非红点） |
+
+**不在** `PlaylistEntry` / `entries_json` / `.wdmp` `ENTRIES` 上镜像 `remoteMissing`：远端缺失只写曲库；库行销毁后条目自然变成「库中暂无」。`playlists.db` 仍为 version 1，无需 `onUpgrade`。点红点再试失败时：删的是**歌单条目**（平行语义），或重定向（曲库 `retargetTrack` + 歌单 `replaceTrack`）。
+
 ## 3. 历史格式：扩展 M3U8（已停写，不再读取）
 
 每个歌单一个文件，落在 `<远端路径>playlists/<安全名>_<id 前 8 位>.m3u8`。
@@ -184,7 +198,7 @@ static bool looksLikeContainer(Uint8List bytes) {               // :464
 | 段 id | 名称 | 内容 |
 |-------|------|------|
 | `META`(1) | 元信息 | 歌单 `id` / 名称 / `updatedAt` / 条目数 / `deviceId` / `createdAt`；复用现有 `WmpMeta` 标签 |
-| `ENTRIES`(9) | 条目表 | 每条：`musicId` + `sourceName` + `remotePath` + `title` + `durationMs` + （CUE 分片时）`cueTrackIndex` |
+| `ENTRIES`(9) | 条目表 | 每条：`musicId` + `sourceName` + `remotePath` + `title` + `durationMs` + （CUE 分片时）`cueTrackIndex`；**不含** `remoteMissing`（见 §2.3） |
 | `COVERS`(3) | 封面（可选） | 复用现有 COVERS 段与 `WmpCoverEntry` 布局 |
 
 **`ENTRIES` 是什么**：歌单**条目表**——一个歌单里「有哪些歌」的完整列表，一条记录一首歌。它在结构上对应曲库的 `TRACKS`(2)，但**字段集不同**：

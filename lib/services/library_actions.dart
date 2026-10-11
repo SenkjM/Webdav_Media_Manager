@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/library_track.dart';
+import '../models/webdav_item.dart';
 import '../models/playlist.dart';
 import '../providers/app_state.dart';
 import '../screens/playlists_screen.dart';
@@ -33,6 +34,74 @@ String unboundSourceMessage(AppLocalizations l10n, String sourceName) =>
 
 bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
   return cache.isLocalTrack(track);
+}
+
+/// List-row UI state shared by music library and playlist detail.
+///
+/// Overlays [LibraryTrack.remoteMissing] as a red-dot state unless the row is
+/// already playing / downloading / queued. Ready and streamable stay icon-dot
+/// only (no text chip).
+TrackUiState libraryRowUiState({
+  required TaskQueueService downloads,
+  required LibraryTrack track,
+  String? playingRemotePath,
+  String? playingSourceName,
+}) {
+  var state = downloads.uiStateFor(
+    track.sourceName,
+    track.effectiveAudioRemotePath,
+    playingRemotePath: playingRemotePath,
+    playingSourceName: playingSourceName,
+    libraryRow: true,
+  );
+  if (track.remoteMissing &&
+      state != TrackUiState.playing &&
+      state != TrackUiState.downloading &&
+      state != TrackUiState.queued) {
+    state = TrackUiState.remoteMissing;
+  }
+  return state;
+}
+
+/// Build a [TrackInfo] for [AudioPlayerService.playTrack] from a library row.
+TrackInfo libraryTrackToTrackInfo(
+  LibraryTrack track,
+  String? local,
+  String accountId,
+) {
+  return TrackInfo(
+    sourceName: track.sourceName,
+    accountId: accountId,
+    remotePath: track.remotePath,
+    fileName: track.fileName,
+    localPath: local,
+    title: track.title,
+    artist: track.artist,
+    albumArtist: track.albumArtist,
+    album: track.album,
+    duration: track.durationMs != null
+        ? Duration(milliseconds: track.durationMs!)
+        : null,
+    trackNumber: track.trackNumber,
+    trackTotal: track.trackTotal,
+    discNumber: track.discNumber,
+    discTotal: track.discTotal,
+    year: track.year,
+    genre: track.genre,
+    bitrate: track.bitrate,
+    sampleRate: track.sampleRate,
+    coverPath: track.coverPath,
+    cueRemotePath: track.cueRemotePath,
+    cueTrackIndex: track.cueTrackIndex,
+    audioRemotePath: track.audioRemotePath,
+    clipStart: track.clipStartMs != null
+        ? Duration(milliseconds: track.clipStartMs!)
+        : null,
+    clipEnd: track.clipEndMs != null
+        ? Duration(milliseconds: track.clipEndMs!)
+        : null,
+    cacheGroupId: track.cacheGroupId,
+  );
 }
 
 Future<bool> refreshOneLibraryTrackTags(

@@ -979,7 +979,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return 'Missing · $name';
+    return 'Not in library · $name';
   }
 
   @override

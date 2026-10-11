@@ -1059,19 +1059,12 @@ class _TrackTile extends StatelessWidget {
     final sourceBound = context.read<AccountsService>().isSourceBound(
       track.sourceName,
     );
-    var state = downloads.uiStateFor(
-      track.sourceName,
-      track.effectiveAudioRemotePath,
+    final state = libraryRowUiState(
+      downloads: downloads,
+      track: track,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,
-      libraryRow: true,
     );
-    if (track.remoteMissing &&
-        state != TrackUiState.playing &&
-        state != TrackUiState.downloading &&
-        state != TrackUiState.queued) {
-      state = TrackUiState.remoteMissing;
-    }
     final showChip =
         state == TrackUiState.remoteMissing ||
         state == TrackUiState.queued ||
@@ -1210,7 +1203,7 @@ class _TrackTile extends StatelessWidget {
         );
         if (path == null) continue;
         playlistInfos.add(
-          _toTrackInfo(
+          libraryTrackToTrackInfo(
             t,
             path,
             accountsService.idForSource(t.sourceName) ?? '',
@@ -1223,7 +1216,7 @@ class _TrackTile extends StatelessWidget {
         sourceName: t.sourceName,
       );
       playlistInfos.add(
-        _toTrackInfo(
+        libraryTrackToTrackInfo(
           t,
           path,
           accountsService.idForSource(t.sourceName) ?? accountId,
@@ -1235,7 +1228,7 @@ class _TrackTile extends StatelessWidget {
       sourceName: track.sourceName,
     );
     final effectiveLocal = forceStream ? null : local;
-    final info = _toTrackInfo(track, effectiveLocal, accountId);
+    final info = libraryTrackToTrackInfo(track, effectiveLocal, accountId);
     if (forceStream) {
       // One-shot stream: drop local paths so resolvePlayable uses URL.
       for (var i = 0; i < playlistInfos.length; i++) {
@@ -1417,43 +1410,4 @@ class _TrackTile extends StatelessWidget {
     }
   }
 
-  static TrackInfo _toTrackInfo(
-    LibraryTrack track,
-    String? local,
-    String accountId,
-  ) {
-    return TrackInfo(
-      sourceName: track.sourceName,
-      accountId: accountId,
-      remotePath: track.remotePath,
-      fileName: track.fileName,
-      localPath: local,
-      title: track.title,
-      artist: track.artist,
-      albumArtist: track.albumArtist,
-      album: track.album,
-      duration: track.durationMs != null
-          ? Duration(milliseconds: track.durationMs!)
-          : null,
-      trackNumber: track.trackNumber,
-      trackTotal: track.trackTotal,
-      discNumber: track.discNumber,
-      discTotal: track.discTotal,
-      year: track.year,
-      genre: track.genre,
-      bitrate: track.bitrate,
-      sampleRate: track.sampleRate,
-      coverPath: track.coverPath,
-      cueRemotePath: track.cueRemotePath,
-      cueTrackIndex: track.cueTrackIndex,
-      audioRemotePath: track.audioRemotePath,
-      clipStart: track.clipStartMs != null
-          ? Duration(milliseconds: track.clipStartMs!)
-          : null,
-      clipEnd: track.clipEndMs != null
-          ? Duration(milliseconds: track.clipEndMs!)
-          : null,
-      cacheGroupId: track.cacheGroupId,
-    );
-  }
 }

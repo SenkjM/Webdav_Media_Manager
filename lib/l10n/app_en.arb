@@ -293,7 +293,7 @@
   "playlistNotFound": "Playlist not found",
   "playlistAddFromLibrary": "Add from library",
   "playlistEmpty": "This playlist is empty. Add tracks from the library.",
-  "playlistMissingInLibrary": "Missing · {name}",
+  "playlistMissingInLibrary": "Not in library · {name}",
   "libraryEmpty": "The music library is empty",
   "notDownloaded": "Not downloaded",
   "downloaded": "Downloaded",

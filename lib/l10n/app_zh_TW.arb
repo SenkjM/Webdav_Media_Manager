@@ -293,7 +293,7 @@
   "playlistNotFound": "歌單不存在",
   "playlistAddFromLibrary": "從音樂庫加入",
   "playlistEmpty": "歌單為空，可從音樂庫加入。",
-  "playlistMissingInLibrary": "暫無 · {name}",
+  "playlistMissingInLibrary": "庫中暫無 · {name}",
   "libraryEmpty": "音樂庫中沒有曲目",
   "notDownloaded": "未下載",
   "downloaded": "已下載",

@@ -1824,7 +1824,7 @@ abstract class AppLocalizations {
   /// No description provided for @playlistMissingInLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'暂无 · {name}'**
+  /// **'库中暂无 · {name}'**
   String playlistMissingInLibrary(Object name);
 
   /// No description provided for @libraryEmpty.

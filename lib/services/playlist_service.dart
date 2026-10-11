@@ -206,6 +206,53 @@ class PlaylistService extends ChangeNotifier {
     });
   }
 
+  /// Replace [oldEntry] with [newEntry] in place (same list index).
+  ///
+  /// Used after remote-missing redirect: library row is retargeted, then the
+  /// playlist reference follows the new musicId / path. Records a deletion for
+  /// the old identity so sync peers drop the stale reference.
+  Future<void> replaceTrack(
+    String playlistId,
+    PlaylistEntry oldEntry,
+    PlaylistEntry newEntry,
+  ) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx < 0) return;
+    final pl = _playlists[idx];
+    final at = pl.entries.indexWhere((e) => e.identityKey == oldEntry.identityKey);
+    if (at < 0) return;
+    if (oldEntry.identityKey == newEntry.identityKey) {
+      pl.entries[at] = newEntry;
+      pl.updatedAt = DateTime.now().toUtc();
+      await _store.upsert(pl);
+      notifyListeners();
+      unawaitedSyncUpload(pl);
+      return;
+    }
+    // Avoid duplicate if new identity already exists elsewhere in the list.
+    final dup = pl.entries.indexWhere((e) => e.identityKey == newEntry.identityKey);
+    if (dup >= 0 && dup != at) {
+      pl.entries.removeAt(at);
+    } else {
+      pl.entries[at] = newEntry;
+    }
+    final now = DateTime.now().toUtc();
+    pl.updatedAt = now;
+    await _log.upsert([
+      PlaylistDeletion(
+        playlistId: playlistId,
+        entryIdentity: oldEntry.identityKey,
+        deletedAt: now,
+      ),
+    ]);
+    await _store.upsert(pl);
+    notifyListeners();
+    _publish(() async {
+      await _uploadPack(playlistId);
+      await uploadPlaylist(pl);
+    });
+  }
+
   /// Drop playlist entries whose identity is not in [validKeys]
   /// (`accountId\0remotePath` via [PlaylistEntry.identityKey]).
   /// Keeps playlist shells; empties entries that all became orphans.
