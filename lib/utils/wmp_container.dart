@@ -50,6 +50,12 @@ class WmpSections {
   /// single whole-playlist record. Not the library [tombs] section — playlist
   /// deletes must stay out of `deleted_tracks` and `LT` shards.
   static const int playlistDeletions = 10;
+
+  /// Backup archives only: passphrase check block (`AESGCMv1:` canary).
+  ///
+  /// Present when the archive was written with a non-empty passphrase. Readers
+  /// that do not know this id ignore it (unknown sections are skipped).
+  static const int passCheck = 11;
 }
 
 /// Per-section storage codec.

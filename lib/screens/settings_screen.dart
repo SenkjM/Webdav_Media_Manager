@@ -16,6 +16,7 @@ import 'accounts_screen.dart';
 import 'audio_stream_settings_screen.dart';
 import 'cache_settings_screen.dart';
 import 'download_settings_screen.dart';
+import 'encryption_settings_screen.dart';
 import 'file_extensions_screen.dart';
 import 'home_shell.dart';
 import 'image_settings_screen.dart';
@@ -293,6 +294,20 @@ class _SettingsScreenState extends State<SettingsScreen>
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => const DownloadSettingsScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.lock_outline),
+            title: Text(l10n.encryptionSettings),
+            subtitle: Text(l10n.encryptionSettingsSubtitle),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const EncryptionSettingsScreen(),
                 ),
               );
             },

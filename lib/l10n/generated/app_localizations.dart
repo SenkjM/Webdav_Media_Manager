@@ -1041,6 +1041,60 @@ abstract class AppLocalizations {
   /// **'断点续传的临时文件保留上限与清理'**
   String get downloadQueueSettingsSubtitle;
 
+  /// No description provided for @encryptionSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'加密设置'**
+  String get encryptionSettings;
+
+  /// No description provided for @encryptionSettingsSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'Crypt 顺序流与 secretbox 引擎'**
+  String get encryptionSettingsSubtitle;
+
+  /// No description provided for @encryptionCryptSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'Crypt 下载'**
+  String get encryptionCryptSection;
+
+  /// No description provided for @encryptionSecretboxSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'内容 secretbox 引擎'**
+  String get encryptionSecretboxSection;
+
+  /// No description provided for @cryptLibsodiumPrefer.
+  ///
+  /// In zh, this message translates to:
+  /// **'优先使用 libsodium'**
+  String get cryptLibsodiumPrefer;
+
+  /// No description provided for @cryptLibsodiumPreferSub.
+  ///
+  /// In zh, this message translates to:
+  /// **'只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。原生库按设备架构随应用打包，加载不了时自动走 Dart。'**
+  String get cryptLibsodiumPreferSub;
+
+  /// No description provided for @cryptLibsodiumUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前平台没有可用的 libsodium，或加载失败，已使用 Dart 实现'**
+  String get cryptLibsodiumUnavailable;
+
+  /// No description provided for @cryptLibsodiumStatusDart.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前引擎：纯 Dart'**
+  String get cryptLibsodiumStatusDart;
+
+  /// No description provided for @cryptLibsodiumStatusSodium.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前引擎：libsodium {version}'**
+  String cryptLibsodiumStatusSodium(String version);
+
   /// No description provided for @customHome.
   ///
   /// In zh, this message translates to:
@@ -1062,7 +1116,7 @@ abstract class AppLocalizations {
   /// No description provided for @rememberNetworkPathSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'下次进入网络库时恢复上次浏览的目录'**
+  /// **'同一运行期内再次打开网络库时恢复上次目录（不跨冷启动）'**
   String get rememberNetworkPathSubtitle;
 
   /// No description provided for @videoSettings.
@@ -1424,6 +1478,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'本项目采用 GNU Affero General Public License v3.0（AGPL-3.0）授权。\\n\\n你可以自由使用、修改与分发本软件，但若发布修改版，或通过网络提供基于本软件的服务，必须按 AGPL-3.0 公开对应完整源代码。完整文本见仓库 LICENSE 文件。'**
   String get aboutLicenseText;
+
+  /// No description provided for @aboutOpenSourceLicenses.
+  ///
+  /// In zh, this message translates to:
+  /// **'开源许可'**
+  String get aboutOpenSourceLicenses;
 
   /// No description provided for @fileExtSaved.
   ///
@@ -2318,6 +2378,72 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'将用备份覆盖本机账号凭证、音乐库与歌单，不可撤销。'**
   String get restoreConfirmBody;
+
+  /// No description provided for @restorePassphraseMismatchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'备份口令可能不正确'**
+  String get restorePassphraseMismatchTitle;
+
+  /// No description provided for @restorePassphraseMismatchBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入的口令未通过校验。若继续恢复，可能出现预料之外的问题（例如密码等密文字段被解成空）。可取消后改正口令，或强制按现有逻辑继续。'**
+  String get restorePassphraseMismatchBody;
+
+  /// No description provided for @restorePassphraseUnverifiableTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法预检备份口令'**
+  String get restorePassphraseUnverifiableTitle;
+
+  /// No description provided for @restorePassphraseUnverifiableBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这份旧备份没有校验块，也无法用已有密文字段试解。若口令不对，继续恢复可能出现预料之外的问题（例如空密文）。可取消，或强制按现有逻辑继续。'**
+  String get restorePassphraseUnverifiableBody;
+
+  /// No description provided for @restoreEnvelopeMismatchTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法解开整包备份'**
+  String get restoreEnvelopeMismatchTitle;
+
+  /// No description provided for @restoreEnvelopeMismatchBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'这份备份使用整包加密（WDMMEN01），当前口令无法解密。整包解不开就不能真正导入。可取消后改正口令，或继续再试一次；若仍失败将提示无法导入。'**
+  String get restoreEnvelopeMismatchBody;
+
+  /// No description provided for @restoreContinue.
+  ///
+  /// In zh, this message translates to:
+  /// **'继续'**
+  String get restoreContinue;
+
+  /// No description provided for @restoreEnvelopeDecryptFailedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法导入备份'**
+  String get restoreEnvelopeDecryptFailedTitle;
+
+  /// No description provided for @restoreEnvelopeDecryptFailedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'密钥不正确或备份密文损坏，整包无法解密，不能导入。'**
+  String get restoreEnvelopeDecryptFailedBody;
+
+  /// No description provided for @restoreForceContinue.
+  ///
+  /// In zh, this message translates to:
+  /// **'强制继续'**
+  String get restoreForceContinue;
+
+  /// No description provided for @restoreCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'已取消恢复'**
+  String get restoreCancelled;
 
   /// No description provided for @restore.
   ///

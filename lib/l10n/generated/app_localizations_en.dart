@@ -521,6 +521,38 @@ class AppLocalizationsEn extends AppLocalizations {
       'Resume-download temporary-file retention and cleanup';
 
   @override
+  String get encryptionSettings => 'Encryption';
+
+  @override
+  String get encryptionSettingsSubtitle =>
+      'Crypt sequential stream and secretbox engine';
+
+  @override
+  String get encryptionCryptSection => 'Crypt downloads';
+
+  @override
+  String get encryptionSecretboxSection => 'Content secretbox engine';
+
+  @override
+  String get cryptLibsodiumPrefer => 'Prefer libsodium';
+
+  @override
+  String get cryptLibsodiumPreferSub =>
+      'Affects rclone crypt content blocks only; filename codecs stay Dart. The native library ships for the device architecture; if it cannot be loaded, Dart is used.';
+
+  @override
+  String get cryptLibsodiumUnavailable =>
+      'libsodium is not available on this platform or failed to load; using Dart';
+
+  @override
+  String get cryptLibsodiumStatusDart => 'Active engine: pure Dart';
+
+  @override
+  String cryptLibsodiumStatusSodium(String version) {
+    return 'Active engine: libsodium $version';
+  }
+
+  @override
   String get customHome => 'Custom home';
 
   @override
@@ -531,7 +563,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get rememberNetworkPathSubtitle =>
-      'Restore the last browsed directory when opening the network library';
+      'Restore the last browsed directory within the same app run (not across cold starts)';
 
   @override
   String get videoSettings => 'Video playback settings';
@@ -733,6 +765,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get aboutLicenseText =>
       'This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).\\n\\nYou may use, modify, and distribute this software freely, but modified versions or network services based on it must publish the complete corresponding source under AGPL-3.0. See the LICENSE file in the repository for the full text.';
+
+  @override
+  String get aboutOpenSourceLicenses => 'Open-source licenses';
 
   @override
   String get fileExtSaved => 'Extension settings saved';
@@ -1272,6 +1307,44 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get restoreConfirmBody =>
       'The backup will overwrite local account credentials, library, and playlists. Irreversible.';
+
+  @override
+  String get restorePassphraseMismatchTitle => 'Backup passphrase may be wrong';
+
+  @override
+  String get restorePassphraseMismatchBody =>
+      'The passphrase did not pass verification. Continuing the restore may cause unexpected problems (for example password fields becoming empty ciphertext). Cancel to correct the passphrase, or force-continue with the existing restore logic.';
+
+  @override
+  String get restorePassphraseUnverifiableTitle =>
+      'Cannot pre-check backup passphrase';
+
+  @override
+  String get restorePassphraseUnverifiableBody =>
+      'This older backup has no check block, and no existing ciphertext field could be tried. If the passphrase is wrong, continuing may cause unexpected problems (for example empty ciphertext). Cancel, or force-continue with the existing restore logic.';
+
+  @override
+  String get restoreEnvelopeMismatchTitle => 'Cannot open encrypted backup';
+
+  @override
+  String get restoreEnvelopeMismatchBody =>
+      'This backup uses whole-package encryption (WDMMEN01), and the current passphrase cannot decrypt it. Without opening the package, nothing can be imported. Cancel to correct the passphrase, or continue to try once more; if it still fails, you will be told import is impossible.';
+
+  @override
+  String get restoreContinue => 'Continue';
+
+  @override
+  String get restoreEnvelopeDecryptFailedTitle => 'Cannot import backup';
+
+  @override
+  String get restoreEnvelopeDecryptFailedBody =>
+      'The passphrase is wrong or the ciphertext is damaged. The whole package cannot be decrypted, so nothing was imported.';
+
+  @override
+  String get restoreForceContinue => 'Force continue';
+
+  @override
+  String get restoreCancelled => 'Restore cancelled';
 
   @override
   String get restore => 'Restore';

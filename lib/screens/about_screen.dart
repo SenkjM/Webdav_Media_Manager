@@ -66,7 +66,20 @@ class _AboutScreenState extends State<AboutScreen> {
           ),
           const SizedBox(height: 8),
           Text(l10n.aboutLicenseText),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              icon: const Icon(Icons.description_outlined),
+              label: Text(l10n.aboutOpenSourceLicenses),
+              onPressed: () => showLicensePage(
+                context: context,
+                applicationName: 'Webdav Media Manager',
+                applicationVersion: _versionLabel,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Text(
             'https://github.com/SenkjM/Webdav_Media_Manager',
             style: Theme.of(context).textTheme.bodySmall,

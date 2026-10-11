@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import '../models/library_track.dart';
 import '../models/playlist.dart';
 import '../utils/backup_crypto.dart';
+import '../utils/backup_pass_check.dart';
 import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
 import '../utils/l10n_host.dart';
@@ -82,7 +83,7 @@ class BackupService extends ChangeNotifier {
   static const defaultRemoteDir = '/WebdavMediaManager/backup/';
   static const defaultFileName = 'webdav_media_backup.wdmm';
   static const format = 'webdav_media_manager_backup';
-  static const formatVersion = 5;
+  static const formatVersion = 6;
 
   bool busy = false;
   String? lastError;
@@ -236,6 +237,10 @@ class BackupService extends ChangeNotifier {
       });
     }
 
+    final passCheck = passphrase.isEmpty
+        ? null
+        : await BackupPassCheck.create(passphrase);
+
     final container = WmpContainer.encode(
       {
         WmpSections.meta: encodeRecords([
@@ -251,6 +256,7 @@ class BackupService extends ChangeNotifier {
               'passwordEncryption': passphrase.isEmpty
                   ? 'none'
                   : 'aes-256-gcm',
+              if (passCheck != null) 'hasPassCheck': true,
             }),
           },
         ]),
@@ -267,6 +273,8 @@ class BackupService extends ChangeNotifier {
               if (coverBlobs[i] != null)
                 (bytes: coverBlobs[i]!, kind: coverKinds[i]),
           ]),
+        if (passCheck != null)
+          WmpSections.passCheck: Uint8List.fromList(utf8.encode(passCheck)),
       },
       kind: WmpFileKind.backup,
       rawIds: {
@@ -289,10 +297,22 @@ class BackupService extends ChangeNotifier {
   /// edit it, and [restoreFromBytes] still accepts it.
   Future<Uint8List> buildJsonExport({required String passphrase}) async {
     final payload = await _buildPayload(passphrase: passphrase);
+    if (passphrase.isNotEmpty) {
+      payload['passCheck'] = await BackupPassCheck.create(passphrase);
+      payload['hasPassCheck'] = true;
+    }
     return Uint8List.fromList(
       utf8.encode(const JsonEncoder.withIndent('  ').convert(payload)),
     );
   }
+
+  /// Probe [data]'s passphrase without writing the database.
+  ///
+  /// Used by restore / local-import UI before the irreversible apply step.
+  static Future<BackupPassphraseProbe> probePassphrase({
+    required Uint8List data,
+    required String passphrase,
+  }) => BackupPassCheck.probe(data: data, passphrase: passphrase);
 
   /// Track records with a cover index per row (the container's COVERS section
   /// holds one entry per covered row, in row order).

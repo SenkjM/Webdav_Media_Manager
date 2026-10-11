@@ -75,6 +75,10 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    // Settings are already loaded in AppState.init before HomeShell mounts.
+    // Honor the user-configured home tab on cold start (was hard-coded to 0).
+    final home = context.read<SettingsService>().homeTab.clamp(0, 4);
+    _index = home;
     // 返回键分发的 tab 归属：各 tab 注册的处理器只在自己是活跃 tab 时参与，
     // 否则 IndexedStack 里后台 tab 的处理器会吃掉别的 tab 的返回键
     // （真机反馈：下载页按返回被网络库消费，退完目录栈才回设定主页）。

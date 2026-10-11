@@ -509,6 +509,37 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadQueueSettingsSubtitle => '断点续传的临时文件保留上限与清理';
 
   @override
+  String get encryptionSettings => '加密设置';
+
+  @override
+  String get encryptionSettingsSubtitle => 'Crypt 顺序流与 secretbox 引擎';
+
+  @override
+  String get encryptionCryptSection => 'Crypt 下载';
+
+  @override
+  String get encryptionSecretboxSection => '内容 secretbox 引擎';
+
+  @override
+  String get cryptLibsodiumPrefer => '优先使用 libsodium';
+
+  @override
+  String get cryptLibsodiumPreferSub =>
+      '只影响 rclone crypt 内容块解密/加密；文件名编码仍用 Dart。原生库按设备架构随应用打包，加载不了时自动走 Dart。';
+
+  @override
+  String get cryptLibsodiumUnavailable =>
+      '当前平台没有可用的 libsodium，或加载失败，已使用 Dart 实现';
+
+  @override
+  String get cryptLibsodiumStatusDart => '当前引擎：纯 Dart';
+
+  @override
+  String cryptLibsodiumStatusSodium(String version) {
+    return '当前引擎：libsodium $version';
+  }
+
+  @override
   String get customHome => '自定义主页';
 
   @override
@@ -518,7 +549,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get rememberNetworkPath => '网络库记住上次路径';
 
   @override
-  String get rememberNetworkPathSubtitle => '下次进入网络库时恢复上次浏览的目录';
+  String get rememberNetworkPathSubtitle => '同一运行期内再次打开网络库时恢复上次目录（不跨冷启动）';
 
   @override
   String get videoSettings => '视频播放设置';
@@ -709,6 +740,9 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get aboutLicenseText =>
       '本项目采用 GNU Affero General Public License v3.0（AGPL-3.0）授权。\\n\\n你可以自由使用、修改与分发本软件，但若发布修改版，或通过网络提供基于本软件的服务，必须按 AGPL-3.0 公开对应完整源代码。完整文本见仓库 LICENSE 文件。';
+
+  @override
+  String get aboutOpenSourceLicenses => '开源许可';
 
   @override
   String get fileExtSaved => '后缀配置已保存';
@@ -1231,6 +1265,42 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get restoreConfirmBody => '将用备份覆盖本机账号凭证、音乐库与歌单，不可撤销。';
+
+  @override
+  String get restorePassphraseMismatchTitle => '备份口令可能不正确';
+
+  @override
+  String get restorePassphraseMismatchBody =>
+      '输入的口令未通过校验。若继续恢复，可能出现预料之外的问题（例如密码等密文字段被解成空）。可取消后改正口令，或强制按现有逻辑继续。';
+
+  @override
+  String get restorePassphraseUnverifiableTitle => '无法预检备份口令';
+
+  @override
+  String get restorePassphraseUnverifiableBody =>
+      '这份旧备份没有校验块，也无法用已有密文字段试解。若口令不对，继续恢复可能出现预料之外的问题（例如空密文）。可取消，或强制按现有逻辑继续。';
+
+  @override
+  String get restoreEnvelopeMismatchTitle => '无法解开整包备份';
+
+  @override
+  String get restoreEnvelopeMismatchBody =>
+      '这份备份使用整包加密（WDMMEN01），当前口令无法解密。整包解不开就不能真正导入。可取消后改正口令，或继续再试一次；若仍失败将提示无法导入。';
+
+  @override
+  String get restoreContinue => '继续';
+
+  @override
+  String get restoreEnvelopeDecryptFailedTitle => '无法导入备份';
+
+  @override
+  String get restoreEnvelopeDecryptFailedBody => '密钥不正确或备份密文损坏，整包无法解密，不能导入。';
+
+  @override
+  String get restoreForceContinue => '强制继续';
+
+  @override
+  String get restoreCancelled => '已取消恢复';
 
   @override
   String get restore => '恢复';
@@ -4257,6 +4327,37 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get downloadQueueSettingsSubtitle => '續傳暫存檔保留上限與清理';
 
   @override
+  String get encryptionSettings => '加密設定';
+
+  @override
+  String get encryptionSettingsSubtitle => 'Crypt 順序流與 secretbox 引擎';
+
+  @override
+  String get encryptionCryptSection => 'Crypt 下載';
+
+  @override
+  String get encryptionSecretboxSection => '內容 secretbox 引擎';
+
+  @override
+  String get cryptLibsodiumPrefer => '優先使用 libsodium';
+
+  @override
+  String get cryptLibsodiumPreferSub =>
+      '只影響 rclone crypt 內容塊解密/加密；檔名編碼仍用 Dart。原生庫依裝置架構隨應用程式打包，無法載入時自動走 Dart。';
+
+  @override
+  String get cryptLibsodiumUnavailable =>
+      '目前平台沒有可用的 libsodium，或載入失敗，已使用 Dart 實作';
+
+  @override
+  String get cryptLibsodiumStatusDart => '目前引擎：純 Dart';
+
+  @override
+  String cryptLibsodiumStatusSodium(String version) {
+    return '目前引擎：libsodium $version';
+  }
+
+  @override
   String get customHome => '自訂首頁';
 
   @override
@@ -4266,7 +4367,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get rememberNetworkPath => '網路庫記住上次路徑';
 
   @override
-  String get rememberNetworkPathSubtitle => '下次進入網路庫時恢復上次瀏覽的目錄';
+  String get rememberNetworkPathSubtitle => '同一執行期間再次開啟網路庫時恢復上次目錄（不跨冷啟動）';
 
   @override
   String get videoSettings => '影片播放設定';
@@ -4457,6 +4558,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   @override
   String get aboutLicenseText =>
       '本專案採用 GNU Affero General Public License v3.0（AGPL-3.0）授權。\\n\\n你可以自由使用、修改與散布本軟體，但若發布修改版，或透過網路提供基於本軟體的服務，必須依 AGPL-3.0 公開對應完整原始碼。完整文字請見儲存庫 LICENSE 檔案。';
+
+  @override
+  String get aboutOpenSourceLicenses => '開源授權';
 
   @override
   String get fileExtSaved => '副檔名設定已儲存';
@@ -4979,6 +5083,42 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get restoreConfirmBody => '將用備份覆蓋本機帳號憑證、音樂庫與歌單，不可撤銷。';
+
+  @override
+  String get restorePassphraseMismatchTitle => '備份口令可能不正確';
+
+  @override
+  String get restorePassphraseMismatchBody =>
+      '輸入的口令未通過校驗。若繼續還原，可能出現預料之外的問題（例如密碼等密文字段被解成空）。可取消後改正口令，或強制按現有邏輯繼續。';
+
+  @override
+  String get restorePassphraseUnverifiableTitle => '無法預檢備份口令';
+
+  @override
+  String get restorePassphraseUnverifiableBody =>
+      '這份舊備份沒有校驗塊，也無法用既有密文字段試解。若口令不對，繼續還原可能出現預料之外的問題（例如空密文）。可取消，或強制按現有邏輯繼續。';
+
+  @override
+  String get restoreEnvelopeMismatchTitle => '無法解開整包備份';
+
+  @override
+  String get restoreEnvelopeMismatchBody =>
+      '這份備份使用整包加密（WDMMEN01），目前口令無法解密。整包解不開就不能真正匯入。可取消後改正口令，或繼續再試一次；若仍失敗將提示無法匯入。';
+
+  @override
+  String get restoreContinue => '繼續';
+
+  @override
+  String get restoreEnvelopeDecryptFailedTitle => '無法匯入備份';
+
+  @override
+  String get restoreEnvelopeDecryptFailedBody => '金鑰不正確或備份密文損毀，整包無法解密，不能匯入。';
+
+  @override
+  String get restoreForceContinue => '強制繼續';
+
+  @override
+  String get restoreCancelled => '已取消還原';
 
   @override
   String get restore => '恢復';

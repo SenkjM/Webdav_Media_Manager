@@ -113,16 +113,6 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
           ),
           const Divider(height: 24),
           SwitchListTile(
-            secondary: const Icon(Icons.stream_outlined),
-            title: Text(l10n.dlCryptSequential),
-            subtitle: Text(l10n.dlCryptSequentialSub),
-            value: settings.cryptSequentialDownloadEnabled,
-            onChanged: (value) => context
-                .read<SettingsService>()
-                .setCryptSequentialDownloadEnabled(value),
-          ),
-          const Divider(height: 24),
-          SwitchListTile(
             secondary: const Icon(Icons.hide_image_outlined),
             title: Text(l10n.downloadNomedia),
             subtitle: Text(l10n.downloadNomediaSubtitle),

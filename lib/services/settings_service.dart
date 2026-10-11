@@ -16,6 +16,8 @@ import '../models/sync_interval.dart';
 import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
 import '../utils/subtitle_sidecar.dart';
+import 'package:openlist_crypt/openlist_crypt.dart';
+
 import 'library_sync_store.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
@@ -42,6 +44,7 @@ class SettingsService extends ChangeNotifier {
   static const _kFileActionConfig = 'file_action_config_json';
   static const _kHomeTab = 'home_tab_index';
   static const _kNetworkRememberLastPath = 'network_remember_last_path';
+  /// Legacy prefs key; path is no longer persisted (scrubbed on [init]).
   static const _kNetworkLastPath = 'network_last_path';
   static const _kVideoLeftDoubleTap = 'video_left_double_tap';
   static const _kVideoRightDoubleTap = 'video_right_double_tap';
@@ -58,6 +61,13 @@ class SettingsService extends ChangeNotifier {
   static const _kDownloadPartMaxAgeHours = 'download_part_max_age_hours';
   static const _kDownloadPartMaxMb = 'download_part_max_mb';
   static const _kCryptSequentialDownload = 'crypt_sequential_download';
+  /// Prefer libsodium FFI for crypt content secretbox (falls back to Dart).
+  static const _kPreferLibsodiumSecretbox = 'prefer_libsodium_secretbox';
+  /// Compile-time default from `--dart-define=OPENLIST_CRYPT_LIBSODIUM=true`.
+  static const bool defaultPreferLibsodiumSecretbox = bool.fromEnvironment(
+    'OPENLIST_CRYPT_LIBSODIUM',
+    defaultValue: false,
+  );
   static const _kVideoSubtitlePosition = 'video_subtitle_position';
   static const _kVideoSubtitleOffset = 'video_subtitle_offset';
   static const _kVideoSubtitleFontSize = 'video_subtitle_font_size';
@@ -245,6 +255,7 @@ class SettingsService extends ChangeNotifier {
   int _downloadPartMaxAgeHours = defaultDownloadPartMaxAgeHours;
   int _downloadPartMaxMb = defaultDownloadPartMaxMb;
   bool _cryptSequentialDownload = false;
+  bool _preferLibsodiumSecretbox = defaultPreferLibsodiumSecretbox;
   double _videoLongPressRate = defaultVideoLongPressRate;
   double _videoLastRate = 1.0;
   bool _videoConfirmExit = false;
@@ -385,6 +396,21 @@ class SettingsService extends ChangeNotifier {
   int get downloadPartMaxAgeHours => _downloadPartMaxAgeHours;
   int get downloadPartMaxMb => _downloadPartMaxMb;
   bool get cryptSequentialDownloadEnabled => _cryptSequentialDownload;
+
+  /// User preference: try libsodium for crypt content secretbox.
+  /// Actual engine may still be Dart when the shared library cannot load
+  /// (no bundled library for this platform / ABI, or the load failed).
+  bool get preferLibsodiumSecretboxEnabled => _preferLibsodiumSecretbox;
+
+  /// Whether libsodium FFI is usable on this device.
+  ///
+  /// Attempts the load once ([tryLoadLibsodium] caches the result), then
+  /// reports [libsodiumSecretboxReady]. Not tied to any ABI: openlist_crypt's
+  /// build hook bundles the library for whichever ABI the APK targets.
+  bool get libsodiumSecretboxAvailable {
+    tryLoadLibsodium();
+    return libsodiumSecretboxReady;
+  }
 
   /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
   MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;
@@ -547,7 +573,12 @@ class SettingsService extends ChangeNotifier {
     _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
-    _networkLastPath = _prefs!.getString(_kNetworkLastPath) ?? '/';
+    // network_last_path is session-only (memory). Never restore from prefs /
+    // backup; scrub any leftover key from older installs.
+    _networkLastPath = '/';
+    if (_prefs!.containsKey(_kNetworkLastPath)) {
+      await _prefs!.remove(_kNetworkLastPath);
+    }
     _videoLeftDoubleTap = VideoGestureActionX.fromStorageKey(
       _prefs!.getString(_kVideoLeftDoubleTap),
     );
@@ -602,6 +633,10 @@ class SettingsService extends ChangeNotifier {
         );
     _cryptSequentialDownload =
         _prefs!.getBool(_kCryptSequentialDownload) ?? false;
+    _preferLibsodiumSecretbox =
+        _prefs!.getBool(_kPreferLibsodiumSecretbox) ??
+            defaultPreferLibsodiumSecretbox;
+    applySecretboxBackendPreference();
     _videoLongPressRate = _clampRate(
       _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
     );
@@ -865,13 +900,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Session-only browse cursor for the network library. Not written to
+  /// SharedPreferences or backup JSON — cold start always begins at `/`.
   Future<void> setNetworkLastPath(String path) async {
     var p = path.trim();
     if (p.isEmpty) p = '/';
     if (!p.startsWith('/')) p = '/$p';
     _networkLastPath = p;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kNetworkLastPath, p);
     // Avoid notifyListeners() spam on every folder navigation.
   }
 
@@ -1080,6 +1115,26 @@ class SettingsService extends ChangeNotifier {
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kCryptSequentialDownload, enabled);
     notifyListeners();
+  }
+
+  /// Persist prefer-libsodium and apply [preferLibsodiumSecretbox] /
+  /// [preferDartSecretbox] immediately.
+  Future<void> setPreferLibsodiumSecretboxEnabled(bool enabled) async {
+    _preferLibsodiumSecretbox = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kPreferLibsodiumSecretbox, enabled);
+    applySecretboxBackendPreference();
+    notifyListeners();
+  }
+
+  /// Apply the persisted preference to the openlist_crypt secretbox backend.
+  /// Safe to call at startup after prefs load and whenever the toggle changes.
+  void applySecretboxBackendPreference() {
+    if (_preferLibsodiumSecretbox) {
+      preferLibsodiumSecretbox();
+    } else {
+      preferDartSecretbox();
+    }
   }
 
   static int _clampBufferMb(int mb) {
@@ -1326,7 +1381,7 @@ class SettingsService extends ChangeNotifier {
     'video_tap_action': _videoTapAction.storageKey,
     'home_tab_index': _homeTab,
     'network_remember_last_path': _networkRememberLastPath,
-    'network_last_path': _networkLastPath,
+    // network_last_path intentionally omitted — session-only, not backup state.
     'video_left_double_tap': _videoLeftDoubleTap.storageKey,
     'video_right_double_tap': _videoRightDoubleTap.storageKey,
     'video_long_press': _videoLongPress.storageKey,
@@ -1450,9 +1505,7 @@ class SettingsService extends ChangeNotifier {
         json['network_remember_last_path'] as bool,
       );
     }
-    if (json['network_last_path'] is String) {
-      await setNetworkLastPath(json['network_last_path'] as String);
-    }
+    // Ignore legacy backup field network_last_path — path is session-only.
     if (json['video_left_double_tap'] != null) {
       await setVideoLeftDoubleTap(
         VideoGestureActionX.fromStorageKey(

@@ -1,9 +1,13 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
+import '../services/backup_service.dart';
+import '../utils/backup_pass_check.dart';
 import '../models/sync_interval.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
@@ -13,6 +17,7 @@ import '../services/library_sync_store.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
+import '../utils/l10n_host.dart';
 import '../widgets/destroy_progress_dialog.dart';
 import '../widgets/marquee_text.dart';
 
@@ -123,6 +128,10 @@ class _SyncScreenState extends State<SyncScreen> {
     try {
       await body();
     } catch (e) {
+      if (_isBackupDecryptFailureText(e.toString())) {
+        await _showEnvelopeDecryptFailedAck();
+        return;
+      }
       final l10n = AppLocalizations.of(context)!;
       AppSnack.showGlobal(
         l10n.operationFailed(SyncOutcome.describeError(e.toString(), l10n)),
@@ -134,7 +143,38 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   void _showOutcome(SyncOutcome outcome) {
+    if (!outcome.ok &&
+        _isBackupDecryptFailureText(outcome.error ?? outcome.message)) {
+      // Fire-and-forget ack dialog; caller may already be past the restore.
+      _showEnvelopeDecryptFailedAck();
+      return;
+    }
     AppSnack.showGlobal(outcome.message, error: !outcome.ok);
+  }
+
+  /// Whole-package GCM / empty-passphrase failures (not field-level mismatch).
+  static bool _isBackupDecryptFailureText(String raw) {
+    var text = raw;
+    for (final prefix in const [
+      'Bad state: ',
+      'FormatException: ',
+      'Exception: ',
+    ]) {
+      if (text.startsWith(prefix)) text = text.substring(prefix.length);
+    }
+    if (text.contains('err.backupEncryptedNeedPassphrase')) return true;
+    if (text.contains('SecretBoxAuthenticationError')) return true;
+    if (text.contains('wrong message authentication code')) return true;
+    try {
+      final l10n = L10nHost.current;
+      if (text.contains(l10n.backupCiphertextDamaged)) return true;
+      if (text.contains(l10n.backupTooShort)) return true;
+      // [backupNotEncrypted] embeds the magic; match the stable prefix.
+      final sample = l10n.backupNotEncrypted('WDMMEN01');
+      final cut = sample.indexOf('WDMMEN01');
+      if (cut > 0 && text.contains(sample.substring(0, cut))) return true;
+    } catch (_) {}
+    return false;
   }
 
   // --- Actions ----------------------------------------------------------
@@ -499,6 +539,99 @@ class _SyncScreenState extends State<SyncScreen> {
     }
   }
 
+
+  /// Ack-only dialog when whole-package decrypt still fails after continue.
+  Future<void> _showEnvelopeDecryptFailedAck() async {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        title: Text(l10n.restoreEnvelopeDecryptFailedTitle),
+        content: Text(l10n.restoreEnvelopeDecryptFailedBody),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.confirm),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Pre-check the backup passphrase **before** [_runSync] / [_guard].
+  ///
+  /// Returns `true` when restore may proceed (matched / not needed / user
+  /// chose continue or force-continue). Returns `false` when the user cancels.
+  ///
+  /// [BackupPassphraseProbe.envelopeMismatched] uses cancel / continue (whole
+  /// package still cannot import if decrypt fails again). Field-level
+  /// [BackupPassphraseProbe.mismatched] / [BackupPassphraseProbe.unverifiable]
+  /// keep cancel / force-continue.
+  Future<bool> _confirmPassphraseProbe(Uint8List bytes) async {
+    final probe = await BackupService.probePassphrase(
+      data: bytes,
+      passphrase: _pass,
+    );
+    if (probe == BackupPassphraseProbe.notNeeded ||
+        probe == BackupPassphraseProbe.matched) {
+      return true;
+    }
+    if (!mounted) return false;
+    final l10n = AppLocalizations.of(context)!;
+    final envelope = probe == BackupPassphraseProbe.envelopeMismatched;
+    final unverifiable = probe == BackupPassphraseProbe.unverifiable;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+        title: Text(
+          envelope
+              ? l10n.restoreEnvelopeMismatchTitle
+              : unverifiable
+                  ? l10n.restorePassphraseUnverifiableTitle
+                  : l10n.restorePassphraseMismatchTitle,
+        ),
+        content: Text(
+          envelope
+              ? l10n.restoreEnvelopeMismatchBody
+              : unverifiable
+                  ? l10n.restorePassphraseUnverifiableBody
+                  : l10n.restorePassphraseMismatchBody,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              envelope ? l10n.restoreContinue : l10n.restoreForceContinue,
+            ),
+          ),
+        ],
+      ),
+    );
+    return go == true;
+  }
+
+  /// Download/pick bytes → passphrase dialog (outside [_runSync]) → restore.
+  Future<void> _restoreAfterBytes(
+    Uint8List bytes, {
+    required Future<SyncOutcome> Function(Uint8List bytes) restore,
+  }) async {
+    final ok = await _confirmPassphraseProbe(bytes);
+    if (!ok) {
+      if (!mounted) return;
+      AppSnack.showGlobal(AppLocalizations.of(context)!.restoreCancelled);
+      return;
+    }
+    if (!mounted) return;
+    await _runSync(() => restore(bytes));
+  }
+
   Future<void> _restore() async {
     final sync = context.read<SyncService>();
     final app = context.read<AppState>();
@@ -521,16 +654,27 @@ class _SyncScreenState extends State<SyncScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
-    await _runSync(() async {
-      final outcome = await sync.restoreFrom(
-        passphrase: _pass,
-        fileName: _selectedBackupFile,
-      );
-      await app.registerAllAccounts();
-      await app.library.refresh();
-      await app.playlists.refresh();
-      return outcome;
+
+    Uint8List? bytes;
+    await _guard(() async {
+      await context.read<SettingsService>().setVaultPassphrase(_pass);
+      bytes = await sync.downloadBackup(fileName: _selectedBackupFile);
     });
+    if (bytes == null || !mounted) return;
+
+    await _restoreAfterBytes(
+      bytes!,
+      restore: (b) async {
+        final outcome = await sync.restoreFromBytes(
+          bytes: b,
+          passphrase: _pass,
+        );
+        await app.registerAllAccounts();
+        await app.library.refresh();
+        await app.playlists.refresh();
+        return outcome;
+      },
+    );
   }
 
   Future<void> _exportLocal({bool readableJson = false}) async {
@@ -576,18 +720,36 @@ class _SyncScreenState extends State<SyncScreen> {
     final path = picked.path!;
     final sync = context.read<SyncService>();
     final app = context.read<AppState>();
-    await _runSync(() async {
-      try {
-        final outcome = await sync.importLocalFile(
-          file: File(path),
-          passphrase: _pass,
-        );
-        await app.registerAllAccounts();
-        return outcome;
-      } finally {
-        await PlatformExportService.discardPickedFile(path);
-      }
-    });
+    late final Uint8List bytes;
+    try {
+      bytes = await File(path).readAsBytes();
+    } catch (e) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.showGlobal(
+        l10n.pickFileFailed(
+          PlatformExportService.describeError('$e', l10n),
+        ),
+        error: true,
+      );
+      await PlatformExportService.discardPickedFile(path);
+      return;
+    }
+    try {
+      await _restoreAfterBytes(
+        bytes,
+        restore: (b) async {
+          final outcome = await sync.importLocalArchive(
+            bytes: b,
+            passphrase: _pass,
+          );
+          await app.registerAllAccounts();
+          return outcome;
+        },
+      );
+    } finally {
+      await PlatformExportService.discardPickedFile(path);
+    }
   }
 
   Future<void> _importBase64() async {
@@ -598,14 +760,29 @@ class _SyncScreenState extends State<SyncScreen> {
     }
     final sync = context.read<SyncService>();
     final app = context.read<AppState>();
-    await _runSync(() async {
-      final outcome = await sync.importLocalBase64(
-        base64Text: text,
-        passphrase: _pass,
+    late final Uint8List bytes;
+    try {
+      bytes = Uint8List.fromList(base64Decode(text));
+    } catch (e) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      AppSnack.showGlobal(
+        l10n.operationFailed(SyncOutcome.describeError('$e', l10n)),
+        error: true,
       );
-      await app.registerAllAccounts();
-      return outcome;
-    });
+      return;
+    }
+    await _restoreAfterBytes(
+      bytes,
+      restore: (b) async {
+        final outcome = await sync.importLocalArchive(
+          bytes: b,
+          passphrase: _pass,
+        );
+        await app.registerAllAccounts();
+        return outcome;
+      },
+    );
   }
 
   // --- 远端路径（唯一目的地） ---------------------------------------------

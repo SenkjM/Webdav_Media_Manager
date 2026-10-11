@@ -292,17 +292,17 @@
 
 ### 4.5 待开发
 
-#### crypt（进行中：cipher 完成、下载/流式链路已通，剩 FFI 与收尾）
+#### crypt（cipher / 下载流式 / libsodium 设置已合入 main；账号级切换未定）
 
 - **格式**：逐字节对齐 rclone crypt（OpenList crypt 直接包 rclone 的 cipher，v1.75.1）。内容 = 魔数 "RCLONE\\0\\0"(8B) + 随机 nonce(24B) + 64KiB 明文分块 secretbox（XSalsa20-Poly1305，16B MAC，块 nonce = 文件 nonce + 块号 LE 加法）；KDF = scrypt(N=16384, r=8, p=1, 80B → dataKey32 / nameKey32 / nameTweak16)，空密码 = 全零密钥（格式一部分）；名字 = PKCS7(16) + EME(AES-256, nameTweak，≤128 块) + Base32（Hex 表小写去填充）/ Base64（URL 安全去填充，OpenList 默认）/ Base32768（与 rclone SafeEncoding 同表）三选一，off 模式 = 原名 + `.bin`（文件）/ 原名（目录），混淆 = rclone obfuscate 方案（含 `!` 双写、latin1 / ≥U+100 区段）。对齐细节与坑见 [11 §2/§3](11-CLOUD-DRIVER-PORTING.md)。
-- **实现**：`lib/services/cloud_drivers/crypt/cipher/`（salsa20 / secretbox / eme / name_codec / base32768 + base32768_table / rclone_cipher），pointycastle 组合，无新增原生依赖。互操作验证：本机编译 rclone v1.75.1 生成金标向量（名字 ×4、内容 ×2、混淆 ×1）+ NaCl 官方向量，`test/crypt_cipher_test.dart` 固化。
+- **实现**：密码学在独立包 [`openlist_crypt`](https://pub.dev/packages/openlist_crypt)（secretbox 可选 libsodium FFI，其余仍 Dart/pointycastle）；驱动层仅 `lib/services/cloud_drivers/crypt/`。互操作验证：rclone v1.75.1 金标向量 + NaCl 官方向量（包内测试；应用侧见 `crypt_*` 测试）。
 - **盐**：rclone `cipher.go` 内置 `defaultSalt`（16 字节 `A8 0D F4 3A 8F BD 03 08 A7 CA B8 3E 58 1F 86 B1`），salt 为空即用它；OpenList 把 salt 去掉 obfuscated 前缀后作 `password2` 交给 rclone，语义相同 → 我方「留空用内置默认盐」与两端一致。密码与盐一律按 UTF-8 字节进 scrypt（对应 Go 的 `[]byte(s)`）。
 - **字段（照 OpenList meta.go，默认值也照抄）**：filename_encryption（off/standard/obfuscate，默认 off）、directory_name_encryption（默认 false）、filename_encoding（base64/base32/base32768，默认 base64）、encrypted_suffix（默认 .bin，仅文件名加密=off 时生效）、password、salt；另加源账号引用与源目录（用户决定：源 = 已有账号 id，**WebDAV 也可作源**；crypt 浏览根 = 源账号远程路径 + 源目录，如源账号根 /456 + 源目录 /789 → 实际落 /456/789）。
 - **坏名字行为（照 OpenList driver.go 202-219）**：解密失败用原名原大小透传。本驱动只读取、不改动远端，透传既不写入也不做二次加密。
 - **范围（用户决定）**：只读链路（浏览 / 下载 / 流式解密 + 改名 / 删除 / 建目录名加密）；无内容上传（4.2.1）。
 - **架构**：`CryptSource` 抽象 + `CloudDriverEnv.resolveSource` 注入（`WebDavAccountSource` 落在 crypt 目录，由 AppState 注入工厂，避免反向依赖；源不存在 → 浏览时报错不炸注册）；能力随源映射并剥离 write 位（防上传权限泄漏进 UI）。**源适配层必须给 size**（单文件 PROPFIND，`webdav_service.statPath`）——漏掉会让 crypt 误判成整包，产出 0B 文件（真机反馈，已修，[11 §5](11-CLOUD-DRIVER-PORTING.md)）。
 - **已落地增量（真机反馈驱动，语义已收口进固定文档）**：表单控制器与校验显示（[11 §6](11-CLOUD-DRIVER-PORTING.md)）；应用内消息最顶层横幅（[07](07-NOTIFICATIONS.md)）；下载进度按 rclone 块结构 Range 分段、逐块解密（[04 §3](04-DOWNLOAD-QUEUE.md)）；本地流桥（127.0.0.1 HTTP 端点包 `openContentRange`，播放入口无分支，[11 §5](11-CLOUD-DRIVER-PORTING.md)）；账号类型名 `typeLabelFor`（[02 §10](02-NETWORK-LIBRARY.md)）；下载重试三层兜底（分类 / 退避 / 断点续传）与超时补齐、原地重试、单一计数来源（退避见 [04 §2](04-DOWNLOAD-QUEUE.md)；后台失败与重试计数的后续变更见本文件 §7）；大小判定四态 shape + Content-Range 纠偏（[11 §5](11-CLOUD-DRIVER-PORTING.md)）。测试：`crypt_cipher_test` / `crypt_driver_test` / `crypt_stream_bridge_test` / `crypt_webdav_source_test` / `crypt_size_race_test`。
-- **待办**：libsodium FFI 引擎 + 手动切换（两种实现同一格式可随时互切，落点设置或账号级待定）。当前 main 状态按已通过收口；浏览、下载和坏名字透传后续问题按用户反馈记录。
+- **已落地（合入 main）**：libsodium FFI 仅覆盖 **内容 secretbox**（EME/文件名仍纯 Dart）。依赖 pub.dev hosted [`openlist_crypt: ^0.1.0`](https://pub.dev/packages/openlist_crypt)（源码 [SenkjM/openlist_crypt](https://github.com/SenkjM/openlist_crypt)），不再内置 `packages/openlist_crypt`；libsodium **1.0.20** 由该包 native assets hook 按目标 ABI 只打包一份（Android `armeabi-v7a` / `arm64-v8a` / `x86_64`，Flutter 不构建 x86；16 KB 对齐），不走 `jniLibs`。默认仍走 Dart；开关 `preferLibsodiumSecretbox()` / `--dart-define=OPENLIST_CRYPT_LIBSODIUM=true`；加载顺序 `OPENLIST_CRYPT_LIBSODIUM_PATH` → 随包资产 → 平台默认名 → 纯 Dart。sandbox 只含 arm64 依赖 `android/gradle.properties` 的 `disable-abi-filtering=true` + flavor 级 `abiFilters`（见 [09](09-MISC.md)）。ISC 声明经 `lib/utils/third_party_licenses.dart` 进关于页。设置 → 网络库 →「加密设置」：Crypt 顺序流解密 +「优先使用 libsodium」（键 `prefer_libsodium_secretbox`，启动 `applySecretboxBackendPreference()`）；库加载失败时开关禁用并提示已走 Dart。**待办**：账号级切换落点仍未定；真机确认 FFI 加载与吞吐按用户反馈记录。
 
 ### 4.6 关键技术点（接入时要一起处理的）
 
@@ -327,7 +327,7 @@
 
 ### 4.8 剩余未定
 
-1. crypt 流桥形态（用户已定向，细节随实现定）：下载/缓存走内存流解密（已定）；流式播放内存流优先、media_kit 仅认 URL 时退本地 HTTP 桥（只服务 crypt，不碰原播放逻辑）；cipher 引擎切换（纯 Dart / libsodium FFI）的落点（设置全局 vs crypt 账号级）在引擎落地时定。
+1. crypt 流桥形态（用户已定向，细节随实现定）：下载/缓存走内存流解密（已定）；流式播放内存流优先、media_kit 仅认 URL 时退本地 HTTP 桥（只服务 crypt，不碰原播放逻辑）；cipher 引擎切换（纯 Dart / libsodium FFI）**已落设置全局**（加密设置子页）；账号级切换仍未定。
 2. 直链风控、refresh_token 粘贴式可行性：逐盘真机实测（见 4.6）。baidu 首轮真机验收就是第一手数据。
 3. 后续驱动（`aliyundrive_open` 等）落实表单时仍按 4.3.1 的模式先报字段清单给用户确认；教程文案统一链 OpenList 官方文档对应驱动页。
 
@@ -836,3 +836,33 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - `默认服务器` → `__wdmm_default_server__`：`accounts.name`、各表 `source_name`、下载任务、歌单条目 `sourceName`，以及恰好是这个名字或以 `cue\0默认服务器\0` / `默认服务器\0` 开头的 `cache_group_id` / `cache_groups`。不碰默认名 `服务器`。`music_id` 不重算哈希；缓存和封面文件按旧 stem 改名到新 stem，`cover_path` 同样改。
 
 不改：真实流派标签 `未分类`（空流派已经是 `__wdmm_uncategorized__`）、`未知艺术家` / `未知专辑`（空艺术家 / 空专辑的分组键已经是稳定键，界面用 `displayArtistFor` / `displayAlbumFor`）、`新文件夹`、`系统相册`、`下载目录`、字幕存储值 `默认`、原生 Kotlin。再跑一次找不到这些中文哨兵。下一版（最迟到 0.2.4）删掉整个函数。
+
+## 15. 启动默认主页 tab 与网络库路径仅内存
+
+**状态**：已合入 main（2026-10-12）。相关：[02](02-NETWORK-LIBRARY.md)、设置「主页和导航」。
+
+**用户原话**：
+1. `network_last_path`（上次访问网盘路径）不要持久化到数据库/prefs，只放内存。
+2. 即使设了 `home_tab_index: 2`，启动仍默认音乐库——要修好，启动时真正打开用户设定的默认主页 tab。
+
+**取舍**：
+- `HomeShell` 冷启动读 `SettingsService.homeTab` 作为 `_index`（原先写死 `0`）；返回键回主页逻辑本来就会读该值，只是首帧没用上。
+- `network_last_path`：进程内字段保留，供「记住上次路径」在**同一运行期**、网络库 State 被重建时恢复；`SharedPreferences` 与备份 JSON 不再读写该键；`init` 清掉旧安装残留；冷启动始终从 `/`。开关 `network_remember_last_path` 仍持久化，文案改为标明不跨冷启动。
+
+## 16. 备份恢复前口令校验块
+
+**状态**：已合入 main（2026-10-12）；语义见 [08 §5](08-SYNC-AND-BACKUP.md)。
+
+**用户原话**：
+1. 恢复（本机/云端）在真正写库前先校验备份口令；密码正确按现有逻辑恢复；密码错误/空但归档需要口令 → 弹确认（提示可能出现预料之外的问题/空密文等，可取消或强制按现有逻辑继续）；无加密备份跳过校验。新建归档带可验证校验块；旧归档无校验块时尽量用已有密文字段试解，否则明确「无法预检」。
+2. 备份文件整包加密（WDMMEN01）或密钥不对时，不要只弹错误 Snackbar；要弹窗，提供「继续」和「取消」。整包解不开就不能真正导入——与「字段级密文错误可强制写入空密码」不是一回事。
+
+**取舍**：
+- 预检 / 弹窗在 `_runSync` / `_guard` **之外**（下载或选文件拿到 bytes 后先弹窗，用户确认再 `_runSync` 执行 restore），避免弹窗被错误捕获收成 Snackbar。三个入口：网盘 `_restore`、本地 `_importLocal`、Base64 `_importBase64`。
+- `BackupPassphraseProbe.envelopeMismatched`：整包信封解密失败；UI「取消」/「继续」。继续后再失败 → 仅确认对话框，不走错误 Snackbar。`_guard` / `_showOutcome` 对备份解密类异常做同样兜底。
+- `mismatched` / `unverifiable`：保持字段级「强制继续」文案与语义。
+
+**落地**：
+- 格式：`formatVersion = 6`；`WmpSections.passCheck = 11`（`AESGCMv1:` canary）；JSON 导出顶层 `passCheck`。
+- 预检：`lib/utils/backup_pass_check.dart`；UI：`sync_screen`。
+- 测试：`test/backup_pass_check_test.dart`。
