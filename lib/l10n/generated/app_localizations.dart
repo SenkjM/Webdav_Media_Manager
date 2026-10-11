@@ -6938,7 +6938,7 @@ abstract class AppLocalizations {
   /// No description provided for @mediaScanCounting.
   ///
   /// In zh, this message translates to:
-  /// **'正在统计将刮削的曲目…'**
+  /// **'正在统计路径…'**
   String get mediaScanCounting;
 
   /// No description provided for @mediaScanConfirmTitle.
@@ -6950,7 +6950,7 @@ abstract class AppLocalizations {
   /// mediaScanConfirmBody
   ///
   /// In zh, this message translates to:
-  /// **'将处理 {count} 首（仅路径不在库中的）。开始？'**
+  /// **'约 {count} 个路径尚未入库（CUE 按文件计，不含分片）。开始刮削？'**
   String mediaScanConfirmBody(int count);
 
   /// No description provided for @mediaScanStart.
@@ -7072,6 +7072,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'删除整个媒体库'**
   String get destroyLibraryConfirm;
+
+  /// netScanMusic
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描音乐'**
+  String get netScanMusic;
+
+  /// netScanMusicDesc
+  ///
+  /// In zh, this message translates to:
+  /// **'按媒体库刮削设置遍历本文件夹，将未入库的音乐/CUE 加入刮削任务（仅统计路径，不下载）。'**
+  String get netScanMusicDesc;
 }
 
 class _AppLocalizationsDelegate

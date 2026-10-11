@@ -2276,6 +2276,11 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         (tr) =>
             tr.sourceName == task.sourceName && tr.cueRemotePath == cuePath,
       ),
+      audioCoveredByCue: (audioPath) => library.tracks.any(
+        (tr) =>
+            tr.sourceName == task.sourceName &&
+            tr.audioRemotePath == audioPath,
+      ),
       cancel: token,
     );
     task.unitsTotal = candidates.length;
@@ -2285,30 +2290,39 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     final covers = StreamCoverReader();
-    var done = 0;
+    // Two-pass: all CUE first (parse + ingest, mark covered audio), then music.
+    final cueItems = <WebDavItem>[];
+    final musicItems = <WebDavItem>[];
     for (final item in candidates) {
+      if (isCueFileName(item.name) || item.category == FileCategory.cue) {
+        cueItems.add(item);
+      } else {
+        musicItems.add(item);
+      }
+    }
+    final coveredByCue = <String>{};
+    var done = 0;
+    final total = candidates.length;
+
+    Future<bool> bumpOrCancel() async {
       if (token.isCancelled) {
         task.status = TaskStatus.cancelled;
         await _guardPersist(() => _store.upsert(task));
         notifyListeners();
-        return;
+        return true;
       }
+      return false;
+    }
+
+    for (final item in cueItems) {
+      if (await bumpOrCancel()) return;
       try {
-        if (isCueFileName(item.name) || item.category == FileCategory.cue) {
-          final already = library.tracks.any(
-            (tr) =>
-                tr.sourceName == task.sourceName &&
-                tr.cueRemotePath == item.path,
-          );
-          if (already) {
-            done++;
-            await reportUnitsProgress(
-              task.id,
-              done: done,
-              total: candidates.length,
-            );
-            continue;
-          }
+        final already = library.tracks.any(
+          (tr) =>
+              tr.sourceName == task.sourceName &&
+              tr.cueRemotePath == item.path,
+        );
+        if (!already) {
           final bytes = await _webDav.readAsBytes(accountId, item.path);
           final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
           if (sheet == null) {
@@ -2319,32 +2333,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             cueRemotePath: item.path,
             sheet: sheet,
           );
-        } else {
-          if (library.find(task.sourceName, item.path) != null) {
-            done++;
-            await reportUnitsProgress(
-              task.id,
-              done: done,
-              total: candidates.length,
-            );
-            continue;
-          }
-          final source = await _webDav.resolveStreamSource(
-            remotePath: item.path,
-            name: item.name,
-            accountId: accountId,
-            kind: StreamKind.music,
-          );
-          if (source == null || source.uri.isEmpty) {
-            throw StateError('err.cloud.notFound|${item.path}');
-          }
-          final tags = await covers.extractTags(source, cancel: token);
-          await library.ingestFromTags(
-            sourceName: task.sourceName,
-            remotePath: item.path,
-            fileName: item.name,
-            tags: tags ?? const ReadTags(),
-          );
+          coveredByCue.addAll(sheet.audioRemotePaths(item.path));
         }
       } catch (e) {
         if (token.isCancelled ||
@@ -2355,11 +2344,52 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           return;
         }
         task.errorMessage = TaskError.classify(e).persisted;
-        debugPrint('scan unit failed ${item.path}: $e');
+        debugPrint('scan cue failed ${item.path}: $e');
       }
       done++;
-      await reportUnitsProgress(task.id, done: done, total: candidates.length);
+      await reportUnitsProgress(task.id, done: done, total: total);
     }
+
+    for (final item in musicItems) {
+      if (await bumpOrCancel()) return;
+      try {
+        if (library.find(task.sourceName, item.path) != null ||
+            coveredByCue.contains(item.path)) {
+          done++;
+          await reportUnitsProgress(task.id, done: done, total: total);
+          continue;
+        }
+        final source = await _webDav.resolveStreamSource(
+          remotePath: item.path,
+          name: item.name,
+          accountId: accountId,
+          kind: StreamKind.music,
+        );
+        if (source == null || source.uri.isEmpty) {
+          throw StateError('err.cloud.notFound|${item.path}');
+        }
+        final tags = await covers.extractTags(source, cancel: token);
+        await library.ingestFromTags(
+          sourceName: task.sourceName,
+          remotePath: item.path,
+          fileName: item.name,
+          tags: tags ?? const ReadTags(),
+        );
+      } catch (e) {
+        if (token.isCancelled ||
+            (e is DioException && CancelToken.isCancel(e))) {
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+          notifyListeners();
+          return;
+        }
+        task.errorMessage = TaskError.classify(e).persisted;
+        debugPrint('scan music failed ${item.path}: $e');
+      }
+      done++;
+      await reportUnitsProgress(task.id, done: done, total: total);
+    }
+
     task.status = TaskStatus.completed;
     task.completedAt = DateTime.now();
     task.progress = 1;

@@ -1157,9 +1157,9 @@
   "actionStreamMusicOnce": "串流播放（僅本次）",
   "select": "多選",
   "mediaScanAction": "掃描入庫",
-  "mediaScanCounting": "正在統計將刮削的曲目…",
+  "mediaScanCounting": "正在統計路徑…",
   "mediaScanConfirmTitle": "確認刮削",
-  "mediaScanConfirmBody": "將處理 {count} 首（僅路徑不在庫中的）。開始？",
+  "mediaScanConfirmBody": "約 {count} 個路徑尚未入庫（CUE 按檔案計，不含分片）。開始刮削？",
   "mediaScanStart": "開始刮削",
   "mediaScanNothingNew": "沒有需要入庫的新路徑",
   "mediaScanQueued": "已加入 {count} 個刮削任務",
@@ -1191,5 +1191,21 @@
   },
   "@matchRemoteQueued": {
     "description": "matchRemoteQueued"
+  },
+  "netScanMusic": "掃描音樂",
+  "@netScanMusic": {
+    "description": "netScanMusic"
+  },
+  "netScanMusicDesc": "依媒體庫刮削設定遍歷本資料夾，將未入庫的音樂/CUE 加入刮削任務（僅統計路徑，不下載）。",
+  "@netScanMusicDesc": {
+    "description": "netScanMusicDesc"
+  },
+  "@mediaScanConfirmBody": {
+    "description": "Confirm scrape with path count",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

@@ -4137,14 +4137,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mediaScanAction => 'Scan into library';
 
   @override
-  String get mediaScanCounting => 'Counting tracks to scrape…';
+  String get mediaScanCounting => 'Counting paths…';
 
   @override
   String get mediaScanConfirmTitle => 'Confirm scrape';
 
   @override
   String mediaScanConfirmBody(int count) {
-    return 'Will process $count tracks (paths not already in the library). Start?';
+    return 'About $count paths not yet in the library (each CUE counts as one file, not slices). Start scrape?';
   }
 
   @override
@@ -4214,4 +4214,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get destroyLibraryConfirm => 'Destroy entire media library';
+
+  @override
+  String get netScanMusic => 'Scan music';
+
+  @override
+  String get netScanMusicDesc =>
+      'Walk this folder with media-library scrape settings and queue music/CUE paths not yet in the library (path count only; no download).';
 }

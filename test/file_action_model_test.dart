@@ -290,7 +290,8 @@ void main() {
       );
       expect(s.fileActions.cue, FileAction.readCue);
       expect(s.fileActions.other, FileAction.download);
-      expect(s.audioStreamingEnabled, isFalse);
+      // Streaming gate removed: always available; music default open is separate.
+      expect(s.audioStreamingEnabled, isTrue);
     });
 
     test('旧配置里的 experimental_music_streaming 迁到新开关', () async {
@@ -339,14 +340,14 @@ void main() {
       });
       final s = SettingsService();
       await s.init();
-      expect(s.audioStreamingEnabled, isFalse);
+      expect(s.audioStreamingEnabled, isTrue);
       expect(s.fileActions.music, FileAction.cacheMusic);
       expect(s.fileActions.image, FileAction.viewImage);
       await s.setAudioStreamingEnabled(true);
       expect(s.fileActions.music, FileAction.cacheMusic);
     });
 
-    test('已保存的流式开关不会被新安装默认盖掉', () async {
+    test('旧开关关也不再牵制：始终视为开', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'audio_streaming_enabled': false,
         'file_action_config_json':
@@ -354,11 +355,12 @@ void main() {
       });
       final s = SettingsService();
       await s.init();
-      expect(s.audioStreamingEnabled, isFalse);
+      expect(s.audioStreamingEnabled, isTrue);
       expect(s.fileActions.music, FileAction.download);
+      expect(s.fileActions.allowMusicStreaming, isTrue);
     });
 
-    test('关掉音乐流式时已选的流式退回缓存', () async {
+    test('setAudioStreamingEnabled(false) 不再关掉也不退回缓存', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{});
       final s = SettingsService();
       await s.init();
@@ -366,11 +368,9 @@ void main() {
       await s.setFileAction(FileCategory.music, FileAction.streamMusic);
       expect(s.fileActions.music, FileAction.streamMusic);
       await s.setAudioStreamingEnabled(false);
-      expect(s.fileActions.music, FileAction.cacheMusic);
-      final again = SettingsService();
-      await again.init();
-      expect(again.audioStreamingEnabled, isFalse);
-      expect(again.fileActions.music, FileAction.cacheMusic);
+      expect(s.audioStreamingEnabled, isTrue);
+      expect(s.fileActions.music, FileAction.streamMusic);
+      expect(s.fileActions.allowMusicStreaming, isTrue);
     });
   });
 

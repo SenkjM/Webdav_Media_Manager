@@ -841,6 +841,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     },
                   ),
                   ListTile(
+                    leading: const Icon(Icons.travel_explore_outlined),
+                    title: Text(l10n.netScanMusic),
+                    subtitle: Text(l10n.netScanMusicDesc),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      unawaited(_scanSelection([item], const []));
+                    },
+                  ),
+                  ListTile(
                     // 下载就是下载：图标跟工具栏、跟文件行一致，不因对象是
                     // 文件夹就换一个（用户明确要求）。
                     leading: const Icon(Icons.download),
@@ -1524,7 +1533,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // 有什么）就可用。下载是基本功能，选中任何东西都可用。
     final canCacheMusic =
         folders.isNotEmpty ||
-        files.any((e) => e.category == FileCategory.music);
+        files.any(
+          (e) =>
+              e.category == FileCategory.music ||
+              e.category == FileCategory.cue,
+        );
     final canDownload = items.isNotEmpty;
     return SelectionToolbar(
       children: [
@@ -1619,7 +1632,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
     final roots = <WebDavItem>[
       ...folders,
-      ...files.where((e) => e.category == FileCategory.music),
+      ...files.where(
+        (e) =>
+            e.category == FileCategory.music || e.category == FileCategory.cue,
+      ),
     ];
     if (roots.isEmpty) {
       AppSnack.show(context, l10n.netNoNewAudio);
@@ -1659,6 +1675,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           cueAlbumInLibrary: (cuePath) => library.tracks.any(
             (t) =>
                 t.sourceName == sourceName && t.cueRemotePath == cuePath,
+          ),
+          audioCoveredByCue: (audioPath) => library.tracks.any(
+            (t) =>
+                t.sourceName == sourceName && t.audioRemotePath == audioPath,
           ),
         );
         plan.add((root: root, count: candidates.length));

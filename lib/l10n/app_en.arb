@@ -1160,9 +1160,9 @@
   "actionStreamMusicOnce": "Stream once",
   "select": "Select",
   "mediaScanAction": "Scan into library",
-  "mediaScanCounting": "Counting tracks to scrape…",
+  "mediaScanCounting": "Counting paths…",
   "mediaScanConfirmTitle": "Confirm scrape",
-  "mediaScanConfirmBody": "Will process {count} tracks (paths not already in the library). Start?",
+  "mediaScanConfirmBody": "About {count} paths not yet in the library (each CUE counts as one file, not slices). Start scrape?",
   "@mediaScanConfirmBody": {
     "description": "mediaScanConfirmBody",
     "placeholders": {
@@ -1210,5 +1210,13 @@
   },
   "@matchRemoteQueued": {
     "description": "matchRemoteQueued"
+  },
+  "netScanMusic": "Scan music",
+  "@netScanMusic": {
+    "description": "netScanMusic"
+  },
+  "netScanMusicDesc": "Walk this folder with media-library scrape settings and queue music/CUE paths not yet in the library (path count only; no download).",
+  "@netScanMusicDesc": {
+    "description": "netScanMusicDesc"
   }
 }

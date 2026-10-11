@@ -3953,14 +3953,14 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaScanAction => '扫描入库';
 
   @override
-  String get mediaScanCounting => '正在统计将刮削的曲目…';
+  String get mediaScanCounting => '正在统计路径…';
 
   @override
   String get mediaScanConfirmTitle => '确认刮削';
 
   @override
   String mediaScanConfirmBody(int count) {
-    return '将处理 $count 首（仅路径不在库中的）。开始？';
+    return '约 $count 个路径尚未入库（CUE 按文件计，不含分片）。开始刮削？';
   }
 
   @override
@@ -4024,6 +4024,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get destroyLibraryConfirm => '删除整个媒体库';
+
+  @override
+  String get netScanMusic => '扫描音乐';
+
+  @override
+  String get netScanMusicDesc =>
+      '按媒体库刮削设置遍历本文件夹，将未入库的音乐/CUE 加入刮削任务（仅统计路径，不下载）。';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -7975,14 +7982,14 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mediaScanAction => '掃描入庫';
 
   @override
-  String get mediaScanCounting => '正在統計將刮削的曲目…';
+  String get mediaScanCounting => '正在統計路徑…';
 
   @override
   String get mediaScanConfirmTitle => '確認刮削';
 
   @override
   String mediaScanConfirmBody(int count) {
-    return '將處理 $count 首（僅路徑不在庫中的）。開始？';
+    return '約 $count 個路徑尚未入庫（CUE 按檔案計，不含分片）。開始刮削？';
   }
 
   @override
@@ -8046,4 +8053,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get destroyLibraryConfirm => '刪除整個媒體庫';
+
+  @override
+  String get netScanMusic => '掃描音樂';
+
+  @override
+  String get netScanMusicDesc =>
+      '依媒體庫刮削設定遍歷本資料夾，將未入庫的音樂/CUE 加入刮削任務（僅統計路徑，不下載）。';
 }

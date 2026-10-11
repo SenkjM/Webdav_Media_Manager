@@ -67,14 +67,6 @@ class _AudioStreamSettingsScreenState extends State<AudioStreamSettingsScreen> {
           const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            secondary: const Icon(Icons.music_note_outlined),
-            title: Text(l10n.streamMusic),
-            subtitle: Text(l10n.streamMusicHint),
-            value: settings.audioStreamingEnabled,
-            onChanged: (v) => settings.setAudioStreamingEnabled(v),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.image_outlined),
             title: Text(l10n.streamSidecarCover),
             subtitle: Text(l10n.streamSidecarCoverHint),

@@ -1180,9 +1180,9 @@
   "actionStreamMusicOnce": "串流播放（仅本次）",
   "select": "多选",
   "mediaScanAction": "扫描入库",
-  "mediaScanCounting": "正在统计将刮削的曲目…",
+  "mediaScanCounting": "正在统计路径…",
   "mediaScanConfirmTitle": "确认刮削",
-  "mediaScanConfirmBody": "将处理 {count} 首（仅路径不在库中的）。开始？",
+  "mediaScanConfirmBody": "约 {count} 个路径尚未入库（CUE 按文件计，不含分片）。开始刮削？",
   "@mediaScanConfirmBody": {
     "description": "mediaScanConfirmBody",
     "placeholders": {
@@ -1230,5 +1230,13 @@
   },
   "@matchRemoteQueued": {
     "description": "Snack after enqueueing match remote task"
+  },
+  "netScanMusic": "扫描音乐",
+  "@netScanMusic": {
+    "description": "netScanMusic"
+  },
+  "netScanMusicDesc": "按媒体库刮削设置遍历本文件夹，将未入库的音乐/CUE 加入刮削任务（仅统计路径，不下载）。",
+  "@netScanMusicDesc": {
+    "description": "netScanMusicDesc"
   }
 }

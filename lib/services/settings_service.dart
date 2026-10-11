@@ -428,8 +428,9 @@ class SettingsService extends ChangeNotifier {
   /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
   MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;
 
-  /// 音乐是否走流式传输。原来只有「文件后缀管理」页能改，现在归音频流式设置页。
-  bool get audioStreamingEnabled => _audioStreamingEnabled;
+  /// Always on: media-library music default open owns cache vs stream.
+  /// Legacy pref kept for backup compatibility but no longer gates UI.
+  bool get audioStreamingEnabled => true;
 
   /// Network-library music tap: stream when true, cache when false.
   bool get musicDefaultStream => _musicDefaultStream;
@@ -596,15 +597,16 @@ class SettingsService extends ChangeNotifier {
     _videoTapAction = VideoTapActionX.fromStorageKey(
       _prefs!.getString(_kVideoTapAction),
     );
-    _audioStreamingEnabled = _resolveAudioStreamingEnabled();
-
-    // Persist the new-install default so a later file-action write cannot
-    // make the next launch look like "config exists, switch missing → off".
-    if (!_prefs!.containsKey(_kAudioStreamingEnabled) &&
-        _audioStreamingEnabled) {
-      await _prefs!.setBool(_kAudioStreamingEnabled, true);
-    }
+    _audioStreamingEnabled = true;
+    await _prefs!.setBool(_kAudioStreamingEnabled, true);
     _fileActions = _readFileActions();
+    // Ensure suffix-page music actions always allow streamMusic.
+    if (!_fileActions.allowMusicStreaming) {
+      _fileActions = FileActionConfig(
+        actions: _fileActions.actions,
+        allowMusicStreaming: true,
+      );
+    }
     _musicDefaultStream =
         _prefs!.getBool(_kMusicDefaultStream) ?? false;
     if (!_prefs!.containsKey(_kMusicDefaultStream) &&
@@ -854,7 +856,7 @@ class SettingsService extends ChangeNotifier {
         if (json is Map<String, dynamic>) {
           final parsed = FileActionConfig.fromJson(
             json,
-            allowMusicStreaming: streaming,
+            allowMusicStreaming: true,
           );
           if (parsed != null) return parsed;
         }
@@ -867,12 +869,12 @@ class SettingsService extends ChangeNotifier {
         _prefs!.containsKey(_kVideoTapAction)) {
       return _legacyFileActions(streaming);
     }
-    return FileActionConfig(allowMusicStreaming: streaming);
+    return FileActionConfig(allowMusicStreaming: true);
   }
 
   FileActionConfig _legacyFileActions(bool streaming) {
     return FileActionConfig(
-      allowMusicStreaming: streaming,
+      allowMusicStreaming: true,
       actions: {
         // 旧音乐语义（download / play）都是「先缓存再播」，统一映射到缓存音乐。
         FileCategory.music: FileAction.cacheMusic,
@@ -999,22 +1001,14 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> setAudioStreamingEnabled(bool enabled) async {
-    _audioStreamingEnabled = enabled;
+    // Streaming is always available; ignore off requests from old backups.
+    _audioStreamingEnabled = true;
     _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kAudioStreamingEnabled, enabled);
-    // 关掉时把已选中的「流式传输（音乐）」退回缓存并写回。开着时不改用户
-    // 已经选过的动作。出厂单击是缓存，不是流式；打开开关也不能把 cache
-    // 改成 streamMusic。
+    await _prefs!.setBool(_kAudioStreamingEnabled, true);
     _fileActions = FileActionConfig(
       actions: _fileActions.actions,
-      allowMusicStreaming: enabled,
+      allowMusicStreaming: true,
     );
-    if (!enabled) {
-      await _prefs!.setString(
-        _kFileActionConfig,
-        jsonEncode(_fileActions.toJson()),
-      );
-    }
     notifyListeners();
   }
 
@@ -1566,19 +1560,16 @@ class SettingsService extends ChangeNotifier {
       );
     }
     if (json['file_action_config'] is Map) {
-      final allow = json['audio_streaming_enabled'] is bool
-          ? json['audio_streaming_enabled'] as bool
-          : _audioStreamingEnabled;
       final parsed = FileActionConfig.fromJson(
         Map<String, dynamic>.from(json['file_action_config'] as Map),
-        allowMusicStreaming: allow,
+        allowMusicStreaming: true,
       );
       if (parsed != null) await setFileActions(parsed);
     } else if (json['music_tap_action'] != null ||
         json['video_tap_action'] != null) {
       await setFileActions(
         FileActionConfig(
-          allowMusicStreaming: json['audio_streaming_enabled'] == true,
+          allowMusicStreaming: true,
           actions: {
             FileCategory.music: FileAction.cacheMusic,
             FileCategory.video:
