@@ -18,6 +18,7 @@ import '../services/task_queue_service.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
 import '../services/user_folder_service.dart';
+import '../services/manga_library_service.dart';
 import '../utils/rev_clock.dart';
 import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
@@ -41,6 +42,7 @@ class AppState extends ChangeNotifier {
     cache = CacheService(libraryDb: db);
     library = LibraryService(db: db);
     userFolders = UserFolderService(db: db);
+    mangaLibrary = MangaLibraryService(db: db);
     accounts = AccountsService(db: db);
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
@@ -114,6 +116,7 @@ class AppState extends ChangeNotifier {
   late final LibraryDatabase libraryDb;
   late final LibraryService library;
   late final UserFolderService userFolders;
+  late final MangaLibraryService mangaLibrary;
   late final AccountsService accounts;
   late final PlaylistService playlists;
   late final BackupService backup;
@@ -205,6 +208,8 @@ class AppState extends ChangeNotifier {
       await library.init();
       _initPhase = 'user-folders';
       await userFolders.init();
+      _initPhase = 'manga-library';
+      await mangaLibrary.init();
       _initPhase = 'accounts';
       await accounts.init();
       await registerAllAccounts();

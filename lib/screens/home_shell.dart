@@ -12,6 +12,7 @@ import 'about_screen.dart';
 import 'tasks_screen.dart';
 import 'library_folder_browser_screen.dart';
 import 'library_screen.dart';
+import 'manga_library_screen.dart';
 import 'network_library_screen.dart';
 import 'playlists_screen.dart';
 import 'settings_screen.dart';
@@ -22,8 +23,14 @@ const int kFoldersTabIndex = 0;
 /// Drawer index of the music library inside [HomeShell].
 const int kMusicLibraryTabIndex = 1;
 
+/// Drawer index of the playlists tab inside [HomeShell].
+const int kPlaylistsTabIndex = 2;
+
+/// Drawer index of the manga library inside [HomeShell].
+const int kMangaLibraryTabIndex = 3;
+
 /// Drawer index of the network library inside [HomeShell].
-const int kNetworkLibraryTabIndex = 3;
+const int kNetworkLibraryTabIndex = 4;
 
 /// Active shell tab. [IndexedStack] mounts every page at startup, so a page
 /// that must not talk to the network until it is shown has to read this
@@ -74,12 +81,13 @@ class _HomeShellState extends State<HomeShell> {
   final _foldersNav = GlobalKey<NavigatorState>();
   final _libraryNav = GlobalKey<NavigatorState>();
   final _playlistsNav = GlobalKey<NavigatorState>();
+  final _mangaNav = GlobalKey<NavigatorState>();
   final _networkNav = GlobalKey<NavigatorState>();
   final _downloadsNav = GlobalKey<NavigatorState>();
   int _index = 0;
 
-  static const _settingsIndex = 5;
-  static const _maxTabIndex = 5;
+  static const _settingsIndex = 6;
+  static const _maxTabIndex = 6;
 
   @override
   void initState() {
@@ -110,6 +118,10 @@ class _HomeShellState extends State<HomeShell> {
       ),
       _TabNavigator(navigatorKey: _libraryNav, root: const LibraryScreen()),
       _TabNavigator(navigatorKey: _playlistsNav, root: const PlaylistsScreen()),
+      _TabNavigator(
+        navigatorKey: _mangaNav,
+        root: const MangaLibraryScreen(),
+      ),
       _TabNavigator(
         navigatorKey: _networkNav,
         root: const NetworkLibraryScreen(),
@@ -241,22 +253,28 @@ class _HomeShellState extends State<HomeShell> {
                             onTap: () => _select(2),
                           ),
                           _DrawerItem(
-                            icon: Icons.cloud_outlined,
-                            label: l10n.networkLibrary,
+                            icon: Icons.menu_book_outlined,
+                            label: l10n.mangaLibrary,
                             selected: _index == 3,
                             onTap: () => _select(3),
                           ),
                           _DrawerItem(
-                            icon: Icons.sync_outlined,
-                            label: l10n.taskQueue,
+                            icon: Icons.cloud_outlined,
+                            label: l10n.networkLibrary,
                             selected: _index == 4,
                             onTap: () => _select(4),
                           ),
                           _DrawerItem(
-                            icon: Icons.settings_outlined,
-                            label: l10n.settings,
+                            icon: Icons.sync_outlined,
+                            label: l10n.taskQueue,
                             selected: _index == 5,
                             onTap: () => _select(5),
+                          ),
+                          _DrawerItem(
+                            icon: Icons.settings_outlined,
+                            label: l10n.settings,
+                            selected: _index == 6,
+                            onTap: () => _select(6),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -321,9 +339,10 @@ class _HomeShellState extends State<HomeShell> {
         0 => Icons.folder_outlined,
         1 => Icons.library_music,
         2 => Icons.queue_music,
-        3 => Icons.cloud_outlined,
-        4 => Icons.sync_outlined,
-        5 => Icons.settings_outlined,
+        3 => Icons.menu_book_outlined,
+        4 => Icons.cloud_outlined,
+        5 => Icons.sync_outlined,
+        6 => Icons.settings_outlined,
         _ => Icons.folder_outlined,
       };
 
@@ -332,8 +351,9 @@ class _HomeShellState extends State<HomeShell> {
       0 => _foldersNav,
       1 => _libraryNav,
       2 => _playlistsNav,
-      3 => _networkNav,
-      4 => _downloadsNav,
+      3 => _mangaNav,
+      4 => _networkNav,
+      5 => _downloadsNav,
       _ => null,
     };
   }

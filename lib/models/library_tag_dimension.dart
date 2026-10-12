@@ -53,8 +53,13 @@ abstract final class UserFolderRefKind {
   static const album = 'album';
   static const artist = 'artist';
   static const track = 'track';
+  /// Soft-ref kinds for manga library (99 §19); picker UX may come later.
+  static const manga = 'manga';
+  static const mangaSeries = 'mangaSeries';
 
   static const v1 = [album, artist, track];
+  static const mangaKinds = [manga, mangaSeries];
 
-  static bool isKnown(String kind) => v1.contains(kind);
+  static bool isKnown(String kind) =>
+      v1.contains(kind) || mangaKinds.contains(kind);
 }

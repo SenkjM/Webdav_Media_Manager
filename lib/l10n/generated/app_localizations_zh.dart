@@ -4270,6 +4270,134 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get librarySectionFolders => '文件夹';
+
+  @override
+  String get mangaLibrary => '漫画库';
+
+  @override
+  String get mangaTabSeries => '系列';
+
+  @override
+  String get mangaTabManga => '单本';
+
+  @override
+  String get mangaTabAuthor => '作者';
+
+  @override
+  String get mangaLibraryEmptyGuide => '从网络库扫描文件夹或漫画文件，即可在这里浏览。';
+
+  @override
+  String mangaSeriesCount(int count) {
+    return '$count 本';
+  }
+
+  @override
+  String mangaPageCount(int count) {
+    return '$count 页';
+  }
+
+  @override
+  String get mangaPagesNotReady => '还没有页列表。散图目录扫描后会出现；压缩包等格式会在后续版本补齐。';
+
+  @override
+  String get mangaAddComic => '加入漫画库';
+
+  @override
+  String get mangaConfirmTitle => '确认漫画信息';
+
+  @override
+  String get mangaFieldTitle => '标题';
+
+  @override
+  String get mangaFieldAuthor => '作者';
+
+  @override
+  String get mangaFieldSeries => '系列（可选）';
+
+  @override
+  String get mangaIngestDone => '已加入漫画库';
+
+  @override
+  String get mangaNoImagesInFolder => '这个文件夹里没有可识别的图片';
+
+  @override
+  String get mangaConfirmSave => '建立';
+
+  @override
+  String get mangaScanComics => '扫描漫画文件';
+
+  @override
+  String get mangaScanComicsDesc => '递归查找本目录及子目录中的漫画文件并批量加入（不下载）';
+
+  @override
+  String get mangaCreateMerged => '合并建立漫画';
+
+  @override
+  String get mangaCreateMergedDesc => '将本文件夹（含子目录）中的图片建立为一部漫画（不下载）';
+
+  @override
+  String get mangaCreatePerDir => '按目录批量建立';
+
+  @override
+  String get mangaCreatePerDirDesc => '每个含图目录各自建立一部漫画，标题为目录名（不下载）';
+
+  @override
+  String mangaBatchIngestDone(int count) {
+    return '已加入 $count 部漫画';
+  }
+
+  @override
+  String get mangaNoComicsInFolder => '这个文件夹里没有可识别的漫画文件';
+
+  @override
+  String get mangaBatchSetSeries => '批量修改系列';
+
+  @override
+  String get mangaBatchSetSeriesTitle => '指定系列';
+
+  @override
+  String get mangaBatchSetSeriesHint => '输入系列名；已有同名系列会直接使用';
+
+  @override
+  String mangaBatchSetSeriesDone(int count) {
+    return '已更新 $count 部漫画的系列';
+  }
+
+  @override
+  String get mangaSelectNone => '请先选择漫画';
+
+  @override
+  String get mangaClearSeries => '清除系列';
+
+  @override
+  String get mangaLibrarySettingsSection => '漫画库';
+
+  @override
+  String get mangaLibrarySettingsHint => '扫描漫画文件与散图建立各自独立，互不影响音乐刮削设置';
+
+  @override
+  String get mangaScanSubdirs => '扫描时搜索子目录';
+
+  @override
+  String get mangaScanSubdirsHint => '默认开。关闭则只扫描当前文件夹里的漫画文件';
+
+  @override
+  String get mangaScanMaxDepth => '扫描最大深度';
+
+  @override
+  String get mangaScanMaxDepthHint => '默认 5。与散图建立深度相互独立';
+
+  @override
+  String get mangaCreateSubdirs => '建立时搜索子目录';
+
+  @override
+  String get mangaCreateSubdirsHint => '默认开。关闭则合并/按目录建立都只看当前层图片';
+
+  @override
+  String get mangaCreateMaxDepth => '建立最大深度';
+
+  @override
+  String get mangaCreateMaxDepthHint => '默认 5。与扫描深度相互独立';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -8538,4 +8666,132 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get librarySectionFolders => '資料夾';
+
+  @override
+  String get mangaLibrary => '漫畫庫';
+
+  @override
+  String get mangaTabSeries => '系列';
+
+  @override
+  String get mangaTabManga => '單本';
+
+  @override
+  String get mangaTabAuthor => '作者';
+
+  @override
+  String get mangaLibraryEmptyGuide => '從網路庫掃描資料夾或漫畫檔案，即可在這裡瀏覽。';
+
+  @override
+  String mangaSeriesCount(int count) {
+    return '$count 本';
+  }
+
+  @override
+  String mangaPageCount(int count) {
+    return '$count 頁';
+  }
+
+  @override
+  String get mangaPagesNotReady => '還沒有頁面列表。散圖目錄掃描後會出現；壓縮包等格式會在後續版本補齊。';
+
+  @override
+  String get mangaAddComic => '加入漫畫庫';
+
+  @override
+  String get mangaConfirmTitle => '確認漫畫資訊';
+
+  @override
+  String get mangaFieldTitle => '標題';
+
+  @override
+  String get mangaFieldAuthor => '作者';
+
+  @override
+  String get mangaFieldSeries => '系列（選填）';
+
+  @override
+  String get mangaIngestDone => '已加入漫畫庫';
+
+  @override
+  String get mangaNoImagesInFolder => '這個資料夾裡沒有可辨識的圖片';
+
+  @override
+  String get mangaConfirmSave => '建立';
+
+  @override
+  String get mangaScanComics => '掃描漫畫檔案';
+
+  @override
+  String get mangaScanComicsDesc => '遞迴尋找本目錄及子目錄中的漫畫檔案並批次加入（不下載）';
+
+  @override
+  String get mangaCreateMerged => '合併建立漫畫';
+
+  @override
+  String get mangaCreateMergedDesc => '將本資料夾（含子目錄）中的圖片建立為一部漫畫（不下載）';
+
+  @override
+  String get mangaCreatePerDir => '依目錄批次建立';
+
+  @override
+  String get mangaCreatePerDirDesc => '每個含圖目錄各自建立一部漫畫，標題為目錄名（不下載）';
+
+  @override
+  String mangaBatchIngestDone(int count) {
+    return '已加入 $count 部漫畫';
+  }
+
+  @override
+  String get mangaNoComicsInFolder => '這個資料夾裡沒有可辨識的漫畫檔案';
+
+  @override
+  String get mangaBatchSetSeries => '批次修改系列';
+
+  @override
+  String get mangaBatchSetSeriesTitle => '指定系列';
+
+  @override
+  String get mangaBatchSetSeriesHint => '輸入系列名；已有同名系列會直接使用';
+
+  @override
+  String mangaBatchSetSeriesDone(int count) {
+    return '已更新 $count 部漫畫的系列';
+  }
+
+  @override
+  String get mangaSelectNone => '請先選擇漫畫';
+
+  @override
+  String get mangaClearSeries => '清除系列';
+
+  @override
+  String get mangaLibrarySettingsSection => '漫畫庫';
+
+  @override
+  String get mangaLibrarySettingsHint => '掃描漫畫檔案與散圖建立各自獨立，不影響音樂刮削設定';
+
+  @override
+  String get mangaScanSubdirs => '掃描時搜尋子目錄';
+
+  @override
+  String get mangaScanSubdirsHint => '預設開。關閉則只掃描目前資料夾裡的漫畫檔案';
+
+  @override
+  String get mangaScanMaxDepth => '掃描最大深度';
+
+  @override
+  String get mangaScanMaxDepthHint => '預設 5。與散圖建立深度相互獨立';
+
+  @override
+  String get mangaCreateSubdirs => '建立時搜尋子目錄';
+
+  @override
+  String get mangaCreateSubdirsHint => '預設開。關閉則合併／依目錄建立都只看目前層圖片';
+
+  @override
+  String get mangaCreateMaxDepth => '建立最大深度';
+
+  @override
+  String get mangaCreateMaxDepthHint => '預設 5。與掃描深度相互獨立';
 }

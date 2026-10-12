@@ -128,7 +128,9 @@
   "accountNameCleanupGroup": "Several accounts named “{name}”",
   "@accountNameCleanupGroup": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "accountNameCleanupActive": "Currently in use",
@@ -136,7 +138,9 @@
   "accountNameCleanupDeleteContent": "Deletes “{name}” and its local credentials. Library rows bound to this name become unbound until you add an account with the same name.",
   "@accountNameCleanupDeleteContent": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "accountNameCleanupDetailTitle": "Account details",
@@ -295,7 +299,9 @@
   "playlistAddQueueToExistingBody": "Add {count} tracks from the current queue to an existing playlist (duplicates are skipped).",
   "@playlistAddQueueToExistingBody": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "playlistNameLabel": "Playlist name",
@@ -1254,13 +1260,11 @@
   "@mediaLibrarySection": {
     "description": "Settings section title only (not drawer)"
   },
-
   "libMenuStream": "Stream",
   "libMenuCache": "Cache",
   "libMenuClear": "Clear",
   "updateTagsFromCache": "Update tags from cache",
   "updateTagsFromCloud": "Update tags from cloud",
-
   "musicCacheMaxCapacity": "Cache size limit",
   "musicCacheMaxCapacityHint": "When over the limit, least-recently used files are removed; the track being played is kept. 0 means no limit.",
   "musicCacheMaxMb": "Limit (MB)",
@@ -1268,7 +1272,9 @@
   "taskGroupCount": "{count} items",
   "@taskGroupCount": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "taskGroupMembers": "Task details",
@@ -1351,6 +1357,73 @@
   "folderSelectMore": "More",
   "taskGroupDeleteAll": "Delete all",
   "librarySectionMusic": "Music",
-  "librarySectionFolders": "Folders"
+  "librarySectionFolders": "Folders",
+  "mangaLibrary": "Manga library",
+  "mangaTabSeries": "Series",
+  "mangaTabManga": "Manga",
+  "mangaTabAuthor": "Author",
+  "mangaLibraryEmptyGuide": "Scan a folder or comic file from the network library to browse here.",
+  "mangaSeriesCount": "{count} manga",
+  "@mangaSeriesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mangaPageCount": "{count} pages",
+  "@mangaPageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mangaPagesNotReady": "No page list yet. Image folders get one after scanning; archives will follow later.",
+  "mangaAddComic": "Add to manga library",
+  "mangaConfirmTitle": "Confirm manga info",
+  "mangaFieldTitle": "Title",
+  "mangaFieldAuthor": "Author",
+  "mangaFieldSeries": "Series (optional)",
+  "mangaIngestDone": "Added to manga library",
+  "mangaNoImagesInFolder": "No recognizable images in this folder",
+  "mangaConfirmSave": "Create",
+  "mangaScanComics": "Scan comic files",
+  "mangaScanComicsDesc": "Recursively find comic files under this folder and add them (no download)",
+  "mangaCreateMerged": "Create one manga from images",
+  "mangaCreateMergedDesc": "Build one manga from images in this folder and subfolders (no download)",
+  "mangaCreatePerDir": "Create manga per folder",
+  "mangaCreatePerDirDesc": "Each image folder becomes its own manga; title is the folder name (no download)",
+  "mangaBatchIngestDone": "Added {count} manga",
+  "@mangaBatchIngestDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mangaNoComicsInFolder": "No recognizable comic files in this folder",
+  "mangaBatchSetSeries": "Set series for selected",
+  "mangaBatchSetSeriesTitle": "Assign series",
+  "mangaBatchSetSeriesHint": "Enter a series name; an existing match is reused",
+  "mangaBatchSetSeriesDone": "Updated series for {count} manga",
+  "@mangaBatchSetSeriesDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mangaSelectNone": "Select manga first",
+  "mangaClearSeries": "Clear series",
+  "mangaLibrarySettingsSection": "Manga library",
+  "mangaLibrarySettingsHint": "Comic-file scan and image create are separate from music scrape settings",
+  "mangaScanSubdirs": "Include subfolders when scanning comics",
+  "mangaScanSubdirsHint": "On by default. Off = only comic files in the selected folder",
+  "mangaScanMaxDepth": "Scan max depth",
+  "mangaScanMaxDepthHint": "Default 5. Independent from image-create depth",
+  "mangaCreateSubdirs": "Include subfolders when creating from images",
+  "mangaCreateSubdirsHint": "On by default. Off = merge / per-folder create only use this folder’s images",
+  "mangaCreateMaxDepth": "Create max depth",
+  "mangaCreateMaxDepthHint": "Default 5. Independent from comic-scan depth"
 }
-

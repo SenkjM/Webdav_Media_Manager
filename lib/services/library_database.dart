@@ -3,6 +3,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/library_track.dart';
+import '../models/manga.dart';
+import '../models/manga_page.dart';
+import '../models/manga_progress.dart';
+import '../models/manga_series.dart';
 import '../models/user_folder.dart';
 import '../models/user_folder_item.dart';
 import '../models/webdav_account.dart';
@@ -12,6 +16,8 @@ import '../utils/track_identity.dart';
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
+/// Schema v13: manga library tables (`manga_series` / `mangas` / `manga_pages` /
+/// `manga_progress`; 99 §19) — additive; music path unchanged.
 /// Schema v12: local user folder overlay (`user_folders` / `user_folder_items`;
 /// 99 §18) — does not change track identity tables.
 /// Schema v11: `accounts.name_key` + UNIQUE (normalized name; 99 §17.17).
@@ -36,7 +42,7 @@ class LibraryDatabase {
   bool accountNameUniquePending = false;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 12;
+  static const schemaVersion = 13;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -51,6 +57,7 @@ class LibraryDatabase {
       onUpgrade: (db, oldVersion, newVersion) async {
         // Pre-v11: wipe library index tables and rebuild (historical policy).
         // v11→v12: keep tracks; only add the user-folder overlay tables.
+        // v12→v13: keep tracks; only add manga library tables (99 §19).
         if (oldVersion < 11) {
           for (final table in [
             'cache',
@@ -63,6 +70,10 @@ class LibraryDatabase {
             'sync_state',
             'user_folder_items',
             'user_folders',
+            'manga_pages',
+            'manga_progress',
+            'mangas',
+            'manga_series',
           ]) {
             await db.execute('DROP TABLE IF EXISTS $table');
           }
@@ -72,12 +83,14 @@ class LibraryDatabase {
         // 逐列补齐新列；新库由 _createSchema 直接带全列。
         await _ensureAccountColumns(db);
         await _ensureUserFolderTables(db);
+        await _ensureMangaTables(db);
       },
     );
     // Always reconcile name_key / UNIQUE after open (also covers already-v11
     // installs that still had duplicate names when the index was deferred).
     await _ensureAccountColumns(_db!);
     await _ensureUserFolderTables(_db!);
+    await _ensureMangaTables(_db!);
     await _reconcileAccountNameUnique(_db!);
     return _db!;
   }
@@ -215,6 +228,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
 )
 ''');
     await _ensureUserFolderTables(db);
+    await _ensureMangaTables(db);
     await _createIndexes(db);
   }
 
@@ -248,6 +262,65 @@ CREATE TABLE IF NOT EXISTS user_folder_items (
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_user_folder_items_folder '
       'ON user_folder_items(folder_id)',
+    );
+  }
+
+
+  /// Manga library tables (99 §19). Idempotent; safe on every open.
+  Future<void> _ensureMangaTables(Database db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS manga_series (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  author TEXT,
+  sort_title TEXT,
+  created_at TEXT NOT NULL
+)
+''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS mangas (
+  id TEXT PRIMARY KEY,
+  source_name TEXT NOT NULL,
+  remote_path TEXT NOT NULL,
+  title TEXT NOT NULL,
+  author TEXT,
+  series_id TEXT,
+  volume TEXT,
+  chapter_number TEXT,
+  page_count INTEGER NOT NULL DEFAULT 0,
+  cover_relpath TEXT,
+  format TEXT NOT NULL DEFAULT 'unknown',
+  remote_missing INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  UNIQUE(source_name, remote_path),
+  FOREIGN KEY(series_id) REFERENCES manga_series(id) ON DELETE SET NULL
+)
+''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS manga_pages (
+  manga_id TEXT NOT NULL,
+  page_index INTEGER NOT NULL,
+  rel_path TEXT NOT NULL,
+  PRIMARY KEY(manga_id, page_index),
+  FOREIGN KEY(manga_id) REFERENCES mangas(id) ON DELETE CASCADE
+)
+''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS manga_progress (
+  manga_id TEXT PRIMARY KEY,
+  page_index INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(manga_id) REFERENCES mangas(id) ON DELETE CASCADE
+)
+''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_mangas_series ON mangas(series_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_mangas_author ON mangas(author)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_mangas_source ON mangas(source_name)',
     );
   }
 
@@ -1104,6 +1177,10 @@ CREATE TABLE IF NOT EXISTS user_folder_items (
     await db.delete('sync_state');
     await db.delete('user_folder_items');
     await db.delete('user_folders');
+    await db.delete('manga_pages');
+    await db.delete('manga_progress');
+    await db.delete('mangas');
+    await db.delete('manga_series');
   }
 
   /// Wipe the library **index** only: tracks, CUE tables, tombstones and the sync
@@ -1119,6 +1196,10 @@ CREATE TABLE IF NOT EXISTS user_folder_items (
     await db.delete('deleted_tracks');
     await db.delete('sync_state');
     await db.delete('user_folder_items');
+    await db.delete('manga_pages');
+    await db.delete('manga_progress');
+    await db.delete('mangas');
+    await db.delete('manga_series');
   }
 
   // --- Tombstones (deletions) ---
@@ -1305,6 +1386,162 @@ CREATE TABLE IF NOT EXISTS user_folder_items (
       where: 'folder_id = ? AND ref_kind = ? AND ref_key = ?',
       whereArgs: [folderId, refKind, refKey],
     );
+  }
+
+
+  // --- Manga library (99 §19) ---
+
+  Future<List<MangaSeries>> loadMangaSeries() async {
+    final db = await database;
+    final rows = await db.query(
+      'manga_series',
+      orderBy: 'sort_title COLLATE NOCASE ASC, title COLLATE NOCASE ASC',
+    );
+    return [for (final r in rows) MangaSeries.fromMap(r)];
+  }
+
+  Future<void> upsertMangaSeries(MangaSeries series) async {
+    final db = await database;
+    await db.insert(
+      'manga_series',
+      series.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteMangaSeries(String id) async {
+    final db = await database;
+    await db.update(
+      'mangas',
+      {'series_id': null},
+      where: 'series_id = ?',
+      whereArgs: [id],
+    );
+    await db.delete('manga_series', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<List<Manga>> loadMangas({String? seriesId, String? author}) async {
+    final db = await database;
+    final where = <String>[];
+    final args = <Object?>[];
+    if (seriesId != null) {
+      where.add('series_id = ?');
+      args.add(seriesId);
+    }
+    if (author != null) {
+      where.add('author = ?');
+      args.add(author);
+    }
+    final rows = await db.query(
+      'mangas',
+      where: where.isEmpty ? null : where.join(' AND '),
+      whereArgs: where.isEmpty ? null : args,
+      orderBy: 'title COLLATE NOCASE ASC',
+    );
+    return [for (final r in rows) Manga.fromMap(r)];
+  }
+
+  Future<Manga?> loadMangaById(String id) async {
+    final db = await database;
+    final rows = await db.query(
+      'mangas',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return Manga.fromMap(rows.first);
+  }
+
+  Future<Manga?> loadMangaByPath({
+    required String sourceName,
+    required String remotePath,
+  }) async {
+    final db = await database;
+    final rows = await db.query(
+      'mangas',
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, normalizeRemotePath(remotePath)],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return Manga.fromMap(rows.first);
+  }
+
+  Future<void> upsertManga(Manga manga) async {
+    final db = await database;
+    final map = Map<String, Object?>.from(manga.toMap());
+    map['remote_path'] = normalizeRemotePath(manga.remotePath);
+    await db.insert(
+      'mangas',
+      map,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteManga(String id) async {
+    final db = await database;
+    await db.delete('manga_pages', where: 'manga_id = ?', whereArgs: [id]);
+    await db.delete('manga_progress', where: 'manga_id = ?', whereArgs: [id]);
+    await db.delete('mangas', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<List<MangaPage>> loadMangaPages(String mangaId) async {
+    final db = await database;
+    final rows = await db.query(
+      'manga_pages',
+      where: 'manga_id = ?',
+      whereArgs: [mangaId],
+      orderBy: 'page_index ASC',
+    );
+    return [for (final r in rows) MangaPage.fromMap(r)];
+  }
+
+  Future<void> replaceMangaPages(String mangaId, List<MangaPage> pages) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'manga_pages',
+        where: 'manga_id = ?',
+        whereArgs: [mangaId],
+      );
+      for (final page in pages) {
+        await txn.insert('manga_pages', page.toMap());
+      }
+    });
+  }
+
+  Future<MangaProgress?> loadMangaProgress(String mangaId) async {
+    final db = await database;
+    final rows = await db.query(
+      'manga_progress',
+      where: 'manga_id = ?',
+      whereArgs: [mangaId],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return MangaProgress.fromMap(rows.first);
+  }
+
+  Future<void> upsertMangaProgress(MangaProgress progress) async {
+    final db = await database;
+    await db.insert(
+      'manga_progress',
+      progress.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<String>> loadMangaAuthors() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      "SELECT DISTINCT author FROM mangas "
+      "WHERE author IS NOT NULL AND TRIM(author) != '' "
+      'ORDER BY author COLLATE NOCASE ASC',
+    );
+    return [
+      for (final r in rows) (r['author'] as String?) ?? '',
+    ].where((a) => a.isNotEmpty).toList();
   }
 
   Future<void> close() async {

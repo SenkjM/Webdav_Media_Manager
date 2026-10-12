@@ -379,6 +379,98 @@ class _MediaLibrarySettingsScreenState
                 ),
               ),
             ),
+
+          const Divider(height: 32),
+          Text(
+            l10n.mangaLibrarySettingsSection,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.mangaLibrarySettingsHint,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.menu_book_outlined),
+            title: Text(l10n.mangaScanSubdirs),
+            subtitle: Text(l10n.mangaScanSubdirsHint),
+            value: settings.mangaScanSubdirs,
+            onChanged: (v) => unawaited(settings.setMangaScanSubdirs(v)),
+          ),
+          if (settings.mangaScanSubdirs)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.layers_outlined),
+              title: Text(l10n.mangaScanMaxDepth),
+              subtitle: Text(
+                '${l10n.mangaScanMaxDepthHint}\n'
+                '${settings.mangaScanMaxDepth} (0–${WalkOptions.maxDepthClamp})',
+              ),
+              trailing: SizedBox(
+                width: 72,
+                child: TextFormField(
+                  key: ValueKey(
+                    'manga-scan-depth-${settings.mangaScanMaxDepth}',
+                  ),
+                  initialValue: '${settings.mangaScanMaxDepth}',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onFieldSubmitted: (v) {
+                    final n = int.tryParse(v);
+                    if (n != null) {
+                      unawaited(settings.setMangaScanMaxDepth(n));
+                    }
+                  },
+                ),
+              ),
+            ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.create_new_folder_outlined),
+            title: Text(l10n.mangaCreateSubdirs),
+            subtitle: Text(l10n.mangaCreateSubdirsHint),
+            value: settings.mangaCreateSubdirs,
+            onChanged: (v) => unawaited(settings.setMangaCreateSubdirs(v)),
+          ),
+          if (settings.mangaCreateSubdirs)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.layers_outlined),
+              title: Text(l10n.mangaCreateMaxDepth),
+              subtitle: Text(
+                '${l10n.mangaCreateMaxDepthHint}\n'
+                '${settings.mangaCreateMaxDepth} (0–${WalkOptions.maxDepthClamp})',
+              ),
+              trailing: SizedBox(
+                width: 72,
+                child: TextFormField(
+                  key: ValueKey(
+                    'manga-create-depth-${settings.mangaCreateMaxDepth}',
+                  ),
+                  initialValue: '${settings.mangaCreateMaxDepth}',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onFieldSubmitted: (v) {
+                    final n = int.tryParse(v);
+                    if (n != null) {
+                      unawaited(settings.setMangaCreateMaxDepth(n));
+                    }
+                  },
+                ),
+              ),
+            ),
+
           const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,

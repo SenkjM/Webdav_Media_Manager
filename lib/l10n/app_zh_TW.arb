@@ -128,7 +128,9 @@
   "accountNameCleanupGroup": "名稱「{name}」有多筆",
   "@accountNameCleanupGroup": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "accountNameCleanupActive": "目前使用中",
@@ -136,7 +138,9 @@
   "accountNameCleanupDeleteContent": "將刪除「{name}」及其本機憑證。音樂庫裡綁定該名稱的項目會變成未綁定，直到你新增同名帳號。",
   "@accountNameCleanupDeleteContent": {
     "placeholders": {
-      "name": {"type": "String"}
+      "name": {
+        "type": "String"
+      }
     }
   },
   "accountNameCleanupDetailTitle": "帳號詳情",
@@ -295,7 +299,9 @@
   "playlistAddQueueToExistingBody": "把目前播放清單的 {count} 首加入已有歌單（已在歌單中的會跳過）。",
   "@playlistAddQueueToExistingBody": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "playlistNameLabel": "歌單名稱",
@@ -1243,13 +1249,11 @@
   "@mediaLibrarySection": {
     "description": "Settings section title only (not drawer)"
   },
-
   "libMenuStream": "串流播放",
   "libMenuCache": "快取",
   "libMenuClear": "清理",
   "updateTagsFromCache": "從快取更新標籤",
   "updateTagsFromCloud": "從雲端更新標籤",
-
   "musicCacheMaxCapacity": "快取容量上限",
   "musicCacheMaxCapacityHint": "超過後按最久未用清理；正在播放的不刪。0 表示不限制。",
   "musicCacheMaxMb": "上限（MB）",
@@ -1257,7 +1261,9 @@
   "taskGroupCount": "{count} 項",
   "@taskGroupCount": {
     "placeholders": {
-      "count": {"type": "int"}
+      "count": {
+        "type": "int"
+      }
     }
   },
   "taskGroupMembers": "任務明細",
@@ -1340,6 +1346,73 @@
   "folderSelectMore": "更多",
   "taskGroupDeleteAll": "全部刪除",
   "librarySectionMusic": "音樂",
-  "librarySectionFolders": "資料夾"
+  "librarySectionFolders": "資料夾",
+  "mangaLibrary": "漫畫庫",
+  "mangaTabSeries": "系列",
+  "mangaTabManga": "單本",
+  "mangaTabAuthor": "作者",
+  "mangaLibraryEmptyGuide": "從網路庫掃描資料夾或漫畫檔案，即可在這裡瀏覽。",
+  "mangaSeriesCount": "{count} 本",
+  "@mangaSeriesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mangaPageCount": "{count} 頁",
+  "@mangaPageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mangaPagesNotReady": "還沒有頁面列表。散圖目錄掃描後會出現；壓縮包等格式會在後續版本補齊。",
+  "mangaAddComic": "加入漫畫庫",
+  "mangaConfirmTitle": "確認漫畫資訊",
+  "mangaFieldTitle": "標題",
+  "mangaFieldAuthor": "作者",
+  "mangaFieldSeries": "系列（選填）",
+  "mangaIngestDone": "已加入漫畫庫",
+  "mangaNoImagesInFolder": "這個資料夾裡沒有可辨識的圖片",
+  "mangaConfirmSave": "建立",
+  "mangaScanComics": "掃描漫畫檔案",
+  "mangaScanComicsDesc": "遞迴尋找本目錄及子目錄中的漫畫檔案並批次加入（不下載）",
+  "mangaCreateMerged": "合併建立漫畫",
+  "mangaCreateMergedDesc": "將本資料夾（含子目錄）中的圖片建立為一部漫畫（不下載）",
+  "mangaCreatePerDir": "依目錄批次建立",
+  "mangaCreatePerDirDesc": "每個含圖目錄各自建立一部漫畫，標題為目錄名（不下載）",
+  "mangaBatchIngestDone": "已加入 {count} 部漫畫",
+  "@mangaBatchIngestDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mangaNoComicsInFolder": "這個資料夾裡沒有可辨識的漫畫檔案",
+  "mangaBatchSetSeries": "批次修改系列",
+  "mangaBatchSetSeriesTitle": "指定系列",
+  "mangaBatchSetSeriesHint": "輸入系列名；已有同名系列會直接使用",
+  "mangaBatchSetSeriesDone": "已更新 {count} 部漫畫的系列",
+  "@mangaBatchSetSeriesDone": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mangaSelectNone": "請先選擇漫畫",
+  "mangaClearSeries": "清除系列",
+  "mangaLibrarySettingsSection": "漫畫庫",
+  "mangaLibrarySettingsHint": "掃描漫畫檔案與散圖建立各自獨立，不影響音樂刮削設定",
+  "mangaScanSubdirs": "掃描時搜尋子目錄",
+  "mangaScanSubdirsHint": "預設開。關閉則只掃描目前資料夾裡的漫畫檔案",
+  "mangaScanMaxDepth": "掃描最大深度",
+  "mangaScanMaxDepthHint": "預設 5。與散圖建立深度相互獨立",
+  "mangaCreateSubdirs": "建立時搜尋子目錄",
+  "mangaCreateSubdirsHint": "預設開。關閉則合併／依目錄建立都只看目前層圖片",
+  "mangaCreateMaxDepth": "建立最大深度",
+  "mangaCreateMaxDepthHint": "預設 5。與掃描深度相互獨立"
 }
-

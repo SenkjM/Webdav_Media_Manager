@@ -1199,3 +1199,85 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 **仍跳过**：自定义封面选择器 UI、文件夹树备份同步、专辑复合键。
 
+
+## 19. 漫画库（第一刀垂直切片，进行中）
+
+**状态**：2026-10-12 基于 `main` tip `e0d7280` 开分支 `feat/manga-library`（worktree：`worktree/manga-library`）。用户偏好中文 UI。不推 `main`、不发版、不跑 Testbuild。
+
+**相关完整文档**：[01](01-DATA-MODEL.md)、[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)（对照音乐库交互）。开发期间上述文档只留一行占位指向本节。
+
+### 19.1 命名锁定（2026-10-12）
+
+可读单元概念上曾称 Book，但**任何全局 / 共享 / 跨模块**字段、表、类型、id、路径键、软引用 kind **必须用 `manga`，禁止 `book`**。电子书以后需要 `book`。本地注释可写「可读单元」；代码符号：`Manga`、`manga_id`、`mangas`、`MangaSeries`、`manga_series`、叶子 kind `manga` / `mangaSeries` 等。
+
+### 19.2 产品锁定
+
+1. **Manga** = 唯一管理 / 扫描 / 进度 / 软引用单元（一个可读容器：CBZ/CBR/PDF/EPUB，或一整目录图片当作一本）。
+2. **MangaSeries** 只链接 / 排序 Mangas（类似专辑分组）；进度按 Manga 的页索引；系列可展示汇总，不拥有进度行。
+3. **身份 / PK**：`(source_name, normalized_remote_path)` — **无内容哈希**。路径索引，远端可按网盘名重绑。有 ComicInfo.xml / 格式头则持久化元数据，否则文件名 / 文件夹派生，再冻结页列表。
+4. **分话发布**（一 CBZ/目录 = 一话）：仍是 Manga，带 `chapter_number`（卷常空）。
+5. **单行本 / 卷**：Manga 带 `volume`；仅当容器内已有章节子目录才嵌套，不发明拆分。
+6. **散图目录（用「建立 / 创建」措辞，不用「扫描」）**：列目录、筛图片、**不下载**建索引；默认封面 = 排序后第一张图；提交前确认表可改元数据。支持子目录，两种模式：
+   - **合并建立**：整棵树（或选定文件夹）内图片 → **一本** Manga；默认标题 = 根文件夹名。
+   - **按目录批量建立**：遍历结构；每个含图目录各自成为一本 Manga；**标题 = 该目录名**。
+7. **结构化容器（CBZ/CBR/PDF/EPUB，用「扫描」措辞）**：文件夹可**递归**扫描子目录中的漫画容器并**批量加入**；单文件「加入漫画库」。能 Range 读元数据则读；确认表。本刀档案容器可先落 Manga 行 + 空/占位页表。
+13. **漫画库 · 单本 Tab 多选**：除常规多选外，提供 **批量修改系列** — 多本 Manga 一并指到同一系列（可新建或选已有）。
+8. **页列表**：入库时冻结排序后的相对路径到 DB；阅读器按该序。
+9. **用户文件夹**：软引用稍后；本刀注册 `manga` / `mangaSeries` kind 常量即可。
+10. **延后**：全库哈希去重、自动打 CBZ、远端元数据刮削、KOOBONE、超出用户文件夹的自定义结构。
+11. **漫画库内 Tab**（对照音乐）：系列 / 单本 / 作者。
+12. **抽屉顺序（用户更正 2026-10-12）**：文件夹(0) → 音乐库(1) → 歌单(2) → **漫画库(3)** → 网络库(4) → 任务(5) → 设置(6)。`home_tab_index` 一次性迁移：prefs 旗标 `home_tab_v025_manga_inserted`；已有用户保存索引 **≥3** 则 +1（与文件夹插入同模式）。
+
+### 19.3 Schema（v13，加表不擦曲目）
+
+同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **12 → 13**。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
+
+| 表 | 要点 |
+|----|------|
+| `manga_series` | `id` TEXT PK uuid；`title`；`author` nullable；`sort_title`；`created_at` |
+| `mangas` | `id` TEXT PK（确定性 `mangaIdForRemote`）；`UNIQUE(source_name, remote_path)`；`series_id` nullable FK；`title` / `author` / `volume` / `chapter_number`；`page_count`；`cover_relpath`；`format`=`cbz\|cbr\|pdf\|epub\|images\|unknown`；`remote_path` / `source_name`；`remote_missing`；`updated_at` |
+| `manga_pages` | PK `(manga_id, page_index)`；`rel_path` |
+| `manga_progress` | PK `manga_id`；`page_index`；`updated_at` |
+
+索引：`series_id`、`author`、`source_name`。
+
+### 19.4 本刀交付
+
+- 模型 + DB ensure + `MangaLibraryService`（按系列 / 单本 / 作者列表、扫描 upsert、进度 get/set）
+- 网络库：文件夹「扫描漫画文件」（递归批量容器）+「合并建立漫画」+「按目录批量建立」；单文件「加入漫画库」
+- 漫画库屏：Segmented 系列/单本/作者；单本多选 + 批量修改系列；点进页列表 / 进度 stub
+- HomeShell 抽屉 + IndexedStack + home_tab 迁移
+- `UserFolderRefKind.manga` / `mangaSeries` 常量
+- ARB zh / zh_Hant / en；`flutter analyze` + 相关 test；推 `origin feat/manga-library`
+
+### 19.5 明确不做
+
+完整阅读器 chrome、漫画表云备份、文件夹选择器加漫 UI（kind 常量 OK）、打开即自动补齐、Testbuild workflow。
+
+### 19.6 开放问题
+
+- CBZ/CBR 不整包下载时如何可靠枚举页（Range 读 ZIP 中央目录？）
+- PDF/EPUB 页索引是否依赖本地解析器
+- 系列自动归并规则（手填 vs 文件夹名启发）
+- 漫画表是否进入备份 / 云端分片（本刀不做）
+
+### 19.7 设置默认（媒体库 → 漫画库）
+
+| 键 | 默认 | 用途 |
+|----|------|------|
+| `manga_scan_subdirs` | **开** | 扫描漫画文件时进子目录 |
+| `manga_scan_max_depth` | **5** | 扫描深度（与建立独立） |
+| `manga_create_subdirs` | **开** | 散图建立时进子目录 |
+| `manga_create_max_depth` | **5** | 建立深度（与扫描独立） |
+
+与音乐刮削 / 播放列表 walk prefs **完全分开**。网络库文件夹动作读 `mangaScanWalkOptions` / `mangaCreateWalkOptions`。
+
+### 19.8 文案对照（网络库文件夹）
+
+| 动作 | 中文倾向 | 说明 |
+|------|----------|------|
+| 递归找 CBZ 等 | **扫描**漫画文件 | 批量加入，不下载整包 |
+| 散图合并为一本 | **合并建立**漫画 | 不说「扫描」 |
+| 散图每目录一本 | **按目录批量建立** | 标题 = 目录名 |
+| 单容器文件 | **加入**漫画库 | 与文件夹扫描并列 |
+

@@ -4463,4 +4463,145 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get librarySectionFolders => 'Folders';
+
+  @override
+  String get mangaLibrary => 'Manga library';
+
+  @override
+  String get mangaTabSeries => 'Series';
+
+  @override
+  String get mangaTabManga => 'Manga';
+
+  @override
+  String get mangaTabAuthor => 'Author';
+
+  @override
+  String get mangaLibraryEmptyGuide =>
+      'Scan a folder or comic file from the network library to browse here.';
+
+  @override
+  String mangaSeriesCount(int count) {
+    return '$count manga';
+  }
+
+  @override
+  String mangaPageCount(int count) {
+    return '$count pages';
+  }
+
+  @override
+  String get mangaPagesNotReady =>
+      'No page list yet. Image folders get one after scanning; archives will follow later.';
+
+  @override
+  String get mangaAddComic => 'Add to manga library';
+
+  @override
+  String get mangaConfirmTitle => 'Confirm manga info';
+
+  @override
+  String get mangaFieldTitle => 'Title';
+
+  @override
+  String get mangaFieldAuthor => 'Author';
+
+  @override
+  String get mangaFieldSeries => 'Series (optional)';
+
+  @override
+  String get mangaIngestDone => 'Added to manga library';
+
+  @override
+  String get mangaNoImagesInFolder => 'No recognizable images in this folder';
+
+  @override
+  String get mangaConfirmSave => 'Create';
+
+  @override
+  String get mangaScanComics => 'Scan comic files';
+
+  @override
+  String get mangaScanComicsDesc =>
+      'Recursively find comic files under this folder and add them (no download)';
+
+  @override
+  String get mangaCreateMerged => 'Create one manga from images';
+
+  @override
+  String get mangaCreateMergedDesc =>
+      'Build one manga from images in this folder and subfolders (no download)';
+
+  @override
+  String get mangaCreatePerDir => 'Create manga per folder';
+
+  @override
+  String get mangaCreatePerDirDesc =>
+      'Each image folder becomes its own manga; title is the folder name (no download)';
+
+  @override
+  String mangaBatchIngestDone(int count) {
+    return 'Added $count manga';
+  }
+
+  @override
+  String get mangaNoComicsInFolder =>
+      'No recognizable comic files in this folder';
+
+  @override
+  String get mangaBatchSetSeries => 'Set series for selected';
+
+  @override
+  String get mangaBatchSetSeriesTitle => 'Assign series';
+
+  @override
+  String get mangaBatchSetSeriesHint =>
+      'Enter a series name; an existing match is reused';
+
+  @override
+  String mangaBatchSetSeriesDone(int count) {
+    return 'Updated series for $count manga';
+  }
+
+  @override
+  String get mangaSelectNone => 'Select manga first';
+
+  @override
+  String get mangaClearSeries => 'Clear series';
+
+  @override
+  String get mangaLibrarySettingsSection => 'Manga library';
+
+  @override
+  String get mangaLibrarySettingsHint =>
+      'Comic-file scan and image create are separate from music scrape settings';
+
+  @override
+  String get mangaScanSubdirs => 'Include subfolders when scanning comics';
+
+  @override
+  String get mangaScanSubdirsHint =>
+      'On by default. Off = only comic files in the selected folder';
+
+  @override
+  String get mangaScanMaxDepth => 'Scan max depth';
+
+  @override
+  String get mangaScanMaxDepthHint =>
+      'Default 5. Independent from image-create depth';
+
+  @override
+  String get mangaCreateSubdirs =>
+      'Include subfolders when creating from images';
+
+  @override
+  String get mangaCreateSubdirsHint =>
+      'On by default. Off = merge / per-folder create only use this folder’s images';
+
+  @override
+  String get mangaCreateMaxDepth => 'Create max depth';
+
+  @override
+  String get mangaCreateMaxDepthHint =>
+      'Default 5. Independent from comic-scan depth';
 }

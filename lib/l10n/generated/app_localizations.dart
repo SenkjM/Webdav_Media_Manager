@@ -7522,6 +7522,246 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'文件夹'**
   String get librarySectionFolders;
+
+  /// No description provided for @mangaLibrary.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画库'**
+  String get mangaLibrary;
+
+  /// No description provided for @mangaTabSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'系列'**
+  String get mangaTabSeries;
+
+  /// No description provided for @mangaTabManga.
+  ///
+  /// In zh, this message translates to:
+  /// **'单本'**
+  String get mangaTabManga;
+
+  /// No description provided for @mangaTabAuthor.
+  ///
+  /// In zh, this message translates to:
+  /// **'作者'**
+  String get mangaTabAuthor;
+
+  /// No description provided for @mangaLibraryEmptyGuide.
+  ///
+  /// In zh, this message translates to:
+  /// **'从网络库扫描文件夹或漫画文件，即可在这里浏览。'**
+  String get mangaLibraryEmptyGuide;
+
+  /// No description provided for @mangaSeriesCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 本'**
+  String mangaSeriesCount(int count);
+
+  /// No description provided for @mangaPageCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 页'**
+  String mangaPageCount(int count);
+
+  /// No description provided for @mangaPagesNotReady.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有页列表。散图目录扫描后会出现；压缩包等格式会在后续版本补齐。'**
+  String get mangaPagesNotReady;
+
+  /// No description provided for @mangaAddComic.
+  ///
+  /// In zh, this message translates to:
+  /// **'加入漫画库'**
+  String get mangaAddComic;
+
+  /// No description provided for @mangaConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认漫画信息'**
+  String get mangaConfirmTitle;
+
+  /// No description provided for @mangaFieldTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'标题'**
+  String get mangaFieldTitle;
+
+  /// No description provided for @mangaFieldAuthor.
+  ///
+  /// In zh, this message translates to:
+  /// **'作者'**
+  String get mangaFieldAuthor;
+
+  /// No description provided for @mangaFieldSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'系列（可选）'**
+  String get mangaFieldSeries;
+
+  /// No description provided for @mangaIngestDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入漫画库'**
+  String get mangaIngestDone;
+
+  /// No description provided for @mangaNoImagesInFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个文件夹里没有可识别的图片'**
+  String get mangaNoImagesInFolder;
+
+  /// No description provided for @mangaConfirmSave.
+  ///
+  /// In zh, this message translates to:
+  /// **'建立'**
+  String get mangaConfirmSave;
+
+  /// No description provided for @mangaScanComics.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描漫画文件'**
+  String get mangaScanComics;
+
+  /// No description provided for @mangaScanComicsDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'递归查找本目录及子目录中的漫画文件并批量加入（不下载）'**
+  String get mangaScanComicsDesc;
+
+  /// No description provided for @mangaCreateMerged.
+  ///
+  /// In zh, this message translates to:
+  /// **'合并建立漫画'**
+  String get mangaCreateMerged;
+
+  /// No description provided for @mangaCreateMergedDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'将本文件夹（含子目录）中的图片建立为一部漫画（不下载）'**
+  String get mangaCreateMergedDesc;
+
+  /// No description provided for @mangaCreatePerDir.
+  ///
+  /// In zh, this message translates to:
+  /// **'按目录批量建立'**
+  String get mangaCreatePerDir;
+
+  /// No description provided for @mangaCreatePerDirDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'每个含图目录各自建立一部漫画，标题为目录名（不下载）'**
+  String get mangaCreatePerDirDesc;
+
+  /// No description provided for @mangaBatchIngestDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入 {count} 部漫画'**
+  String mangaBatchIngestDone(int count);
+
+  /// No description provided for @mangaNoComicsInFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'这个文件夹里没有可识别的漫画文件'**
+  String get mangaNoComicsInFolder;
+
+  /// No description provided for @mangaBatchSetSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'批量修改系列'**
+  String get mangaBatchSetSeries;
+
+  /// No description provided for @mangaBatchSetSeriesTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'指定系列'**
+  String get mangaBatchSetSeriesTitle;
+
+  /// No description provided for @mangaBatchSetSeriesHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'输入系列名；已有同名系列会直接使用'**
+  String get mangaBatchSetSeriesHint;
+
+  /// No description provided for @mangaBatchSetSeriesDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已更新 {count} 部漫画的系列'**
+  String mangaBatchSetSeriesDone(int count);
+
+  /// No description provided for @mangaSelectNone.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先选择漫画'**
+  String get mangaSelectNone;
+
+  /// No description provided for @mangaClearSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除系列'**
+  String get mangaClearSeries;
+
+  /// No description provided for @mangaLibrarySettingsSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画库'**
+  String get mangaLibrarySettingsSection;
+
+  /// No description provided for @mangaLibrarySettingsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描漫画文件与散图建立各自独立，互不影响音乐刮削设置'**
+  String get mangaLibrarySettingsHint;
+
+  /// No description provided for @mangaScanSubdirs.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描时搜索子目录'**
+  String get mangaScanSubdirs;
+
+  /// No description provided for @mangaScanSubdirsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认开。关闭则只扫描当前文件夹里的漫画文件'**
+  String get mangaScanSubdirsHint;
+
+  /// No description provided for @mangaScanMaxDepth.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描最大深度'**
+  String get mangaScanMaxDepth;
+
+  /// No description provided for @mangaScanMaxDepthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认 5。与散图建立深度相互独立'**
+  String get mangaScanMaxDepthHint;
+
+  /// No description provided for @mangaCreateSubdirs.
+  ///
+  /// In zh, this message translates to:
+  /// **'建立时搜索子目录'**
+  String get mangaCreateSubdirs;
+
+  /// No description provided for @mangaCreateSubdirsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认开。关闭则合并/按目录建立都只看当前层图片'**
+  String get mangaCreateSubdirsHint;
+
+  /// No description provided for @mangaCreateMaxDepth.
+  ///
+  /// In zh, this message translates to:
+  /// **'建立最大深度'**
+  String get mangaCreateMaxDepth;
+
+  /// No description provided for @mangaCreateMaxDepthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认 5。与扫描深度相互独立'**
+  String get mangaCreateMaxDepthHint;
 }
 
 class _AppLocalizationsDelegate

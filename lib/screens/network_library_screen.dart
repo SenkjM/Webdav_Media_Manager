@@ -18,15 +18,19 @@ import '../services/audio_player_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
+import '../services/manga_library_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/app_snack.dart';
 import '../utils/task_error.dart';
 import '../utils/scan_candidates.dart';
+import '../utils/manga_file_types.dart';
+import '../utils/manga_scan_walk.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
 import '../utils/cue_sheet.dart';
 import '../widgets/app_bottom_sheet.dart';
+import '../widgets/manga_ingest_confirm_sheet.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/selection_toolbar.dart';
 import '../widgets/track_status_chip.dart';
@@ -854,6 +858,33 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     },
                   ),
                   ListTile(
+                    leading: const Icon(Icons.menu_book_outlined),
+                    title: Text(l10n.mangaScanComics),
+                    subtitle: Text(l10n.mangaScanComicsDesc),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      unawaited(_scanComicContainers(item));
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.create_new_folder_outlined),
+                    title: Text(l10n.mangaCreateMerged),
+                    subtitle: Text(l10n.mangaCreateMergedDesc),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      unawaited(_createMangaMerged(item));
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.folder_copy_outlined),
+                    title: Text(l10n.mangaCreatePerDir),
+                    subtitle: Text(l10n.mangaCreatePerDirDesc),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      unawaited(_createMangaPerDir(item));
+                    },
+                  ),
+                  ListTile(
                     // 下载就是下载：图标跟工具栏、跟文件行一致，不因对象是
                     // 文件夹就换一个（用户明确要求）。
                     leading: const Icon(Icons.download),
@@ -883,6 +914,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       onTap: () {
                         Navigator.pop(ctx);
                         _runAction(item, action);
+                      },
+                    ),
+                  if (isComicContainerFileName(item.name))
+                    ListTile(
+                      leading: const Icon(Icons.menu_book_outlined),
+                      title: Text(l10n.mangaAddComic),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        unawaited(_ingestComicFile(item));
                       },
                     ),
                   // 相册与下载目录是两条不同的落盘路径，视频两个都保留。
@@ -1603,6 +1643,175 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
   }
 
+
+
+  List<String> _mangaImageExts(SettingsService settings) => [
+        ...settings.fileTypes.imageExtensions,
+        ...kMangaImageExtensions,
+      ];
+
+  Future<void> _scanComicContainers(WebDavItem folder) async {
+    final accountId = _accountId;
+    if (accountId == null || !folder.isDirectory) return;
+    final accounts = context.read<AccountsService>();
+    final account = accounts.accountById(accountId);
+    final sourceName = account?.name;
+    if (sourceName == null || sourceName.isEmpty) return;
+    final l10n = AppLocalizations.of(context)!;
+    final webDav = context.read<WebDavService>();
+    final mangaLib = context.read<MangaLibraryService>();
+    try {
+      final settings = context.read<SettingsService>();
+      final hits = await listComicContainersRecursive(
+        webDav: webDav,
+        accountId: accountId,
+        rootPath: folder.path,
+        walk: settings.mangaScanWalkOptions,
+      );
+      if (hits.isEmpty) {
+        if (!mounted) return;
+        AppSnack.show(context, l10n.mangaNoComicsInFolder);
+        return;
+      }
+      var n = 0;
+      for (final hit in hits) {
+        final draft = MangaLibraryService.draftForComicFile(
+          sourceName: sourceName,
+          remotePath: hit.path,
+          fileName: hit.name,
+        );
+        await mangaLib.upsertFromDraft(draft);
+        n++;
+      }
+      if (!mounted) return;
+      AppSnack.show(context, l10n.mangaBatchIngestDone(n));
+    } catch (e) {
+      if (!mounted) return;
+      AppSnack.error(
+        context,
+        TaskQueueService.describeError(e.toString(), l10n),
+      );
+    }
+  }
+
+  Future<void> _createMangaMerged(WebDavItem folder) async {
+    final accountId = _accountId;
+    if (accountId == null || !folder.isDirectory) return;
+    final accounts = context.read<AccountsService>();
+    final account = accounts.accountById(accountId);
+    final sourceName = account?.name;
+    if (sourceName == null || sourceName.isEmpty) return;
+    final l10n = AppLocalizations.of(context)!;
+    final webDav = context.read<WebDavService>();
+    final settings = context.read<SettingsService>();
+    try {
+      final rels = await listMergedImageRelPaths(
+        webDav: webDav,
+        accountId: accountId,
+        rootPath: folder.path,
+        imageExtensions: _mangaImageExts(settings),
+        walk: settings.mangaCreateWalkOptions,
+      );
+      if (rels.isEmpty) {
+        if (!mounted) return;
+        AppSnack.show(context, l10n.mangaNoImagesInFolder);
+        return;
+      }
+      final draft = MangaLibraryService.draftForMergedImages(
+        sourceName: sourceName,
+        folderPath: folder.path,
+        folderName: folder.name,
+        pageRelPaths: rels,
+      );
+      if (!mounted) return;
+      final confirmed = await showMangaIngestConfirmSheet(context, draft: draft);
+      if (confirmed == null || !mounted) return;
+      await context.read<MangaLibraryService>().upsertFromDraft(confirmed);
+      if (!mounted) return;
+      AppSnack.show(context, l10n.mangaIngestDone);
+    } catch (e) {
+      if (!mounted) return;
+      AppSnack.error(
+        context,
+        TaskQueueService.describeError(e.toString(), l10n),
+      );
+    }
+  }
+
+  Future<void> _createMangaPerDir(WebDavItem folder) async {
+    final accountId = _accountId;
+    if (accountId == null || !folder.isDirectory) return;
+    final accounts = context.read<AccountsService>();
+    final account = accounts.accountById(accountId);
+    final sourceName = account?.name;
+    if (sourceName == null || sourceName.isEmpty) return;
+    final l10n = AppLocalizations.of(context)!;
+    final webDav = context.read<WebDavService>();
+    final settings = context.read<SettingsService>();
+    final mangaLib = context.read<MangaLibraryService>();
+    try {
+      final dirs = await listImageDirsRecursive(
+        webDav: webDav,
+        accountId: accountId,
+        rootPath: folder.path,
+        imageExtensions: _mangaImageExts(settings),
+        walk: settings.mangaCreateWalkOptions,
+      );
+      if (dirs.isEmpty) {
+        if (!mounted) return;
+        AppSnack.show(context, l10n.mangaNoImagesInFolder);
+        return;
+      }
+      var n = 0;
+      for (final hit in dirs) {
+        final draft = MangaLibraryService.draftForImageDir(
+          sourceName: sourceName,
+          folderPath: hit.folderPath,
+          folderName: hit.folderName,
+          imageNames: hit.imageNames,
+        );
+        await mangaLib.upsertFromDraft(draft);
+        n++;
+      }
+      if (!mounted) return;
+      AppSnack.show(context, l10n.mangaBatchIngestDone(n));
+    } catch (e) {
+      if (!mounted) return;
+      AppSnack.error(
+        context,
+        TaskQueueService.describeError(e.toString(), l10n),
+      );
+    }
+  }
+
+  Future<void> _ingestComicFile(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null || item.isDirectory) return;
+    if (!isComicContainerFileName(item.name)) return;
+    final accounts = context.read<AccountsService>();
+    final account = accounts.accountById(accountId);
+    final sourceName = account?.name;
+    if (sourceName == null || sourceName.isEmpty) return;
+    final l10n = AppLocalizations.of(context)!;
+    final draft = MangaLibraryService.draftForComicFile(
+      sourceName: sourceName,
+      remotePath: item.path,
+      fileName: item.name,
+    );
+    final confirmed = await showMangaIngestConfirmSheet(context, draft: draft);
+    if (confirmed == null || !mounted) return;
+    try {
+      await context.read<MangaLibraryService>().upsertFromDraft(confirmed);
+      if (!mounted) return;
+      AppSnack.show(context, l10n.mangaIngestDone);
+    } catch (e) {
+      if (!mounted) return;
+      AppSnack.error(
+        context,
+        TaskQueueService.describeError(e.toString(), l10n),
+      );
+    }
+  }
 
   /// 刮削：先统计再入队 TaskKind.scan（增量：路径已在库则跳过）。
   Future<void> _scanSelection(

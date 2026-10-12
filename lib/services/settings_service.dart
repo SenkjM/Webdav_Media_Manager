@@ -50,6 +50,7 @@ class SettingsService extends ChangeNotifier {
   static const _kFileActionConfig = 'file_action_config_json';
   static const _kHomeTab = 'home_tab_index';
   static const _kHomeTabFoldersV024 = 'home_tab_v024_folders_inserted';
+  static const _kHomeTabMangaV025 = 'home_tab_v025_manga_inserted';
   static const _kNetworkRememberLastPath = 'network_remember_last_path';
   /// Legacy prefs key; path is no longer persisted (scrubbed on [init]).
   static const _kNetworkLastPath = 'network_last_path';
@@ -108,6 +109,11 @@ class SettingsService extends ChangeNotifier {
   /// Media-library scrape (scan task). Independent from playlist prefs.
   static const _kMediaScanRecursive = 'media_scan_recursive';
   static const _kMediaScanMaxDepth = 'media_scan_max_depth';
+  /// Manga library walk (99 §19): scan (containers) vs create (images) are separate.
+  static const _kMangaScanSubdirs = 'manga_scan_subdirs';
+  static const _kMangaScanMaxDepth = 'manga_scan_max_depth';
+  static const _kMangaCreateSubdirs = 'manga_create_subdirs';
+  static const _kMangaCreateMaxDepth = 'manga_create_max_depth';
   /// Mutual library mode: false = 手动管理 (default); true = 自动补齐.
   static const _kMusicLibraryAutoBackfill = 'music_library_auto_backfill';
   /// When true, play-trigger only runs if track path is under a bound root.
@@ -272,6 +278,10 @@ class SettingsService extends ChangeNotifier {
   /// Scrape defaults: recursive ON, depth 1 (independent of playlist prefs).
   bool _mediaScanRecursive = true;
   int _mediaScanMaxDepth = 1;
+  bool _mangaScanSubdirs = true;
+  int _mangaScanMaxDepth = 5;
+  bool _mangaCreateSubdirs = true;
+  int _mangaCreateMaxDepth = 5;
   bool _musicLibraryAutoBackfill = false;
   bool _musicLibraryBackfillBindRoots = false;
   List<MusicLibraryBackfillRoot> _musicLibraryBackfillRoots = const [];
@@ -505,6 +515,18 @@ class SettingsService extends ChangeNotifier {
   /// 媒体库刮削最大深度（默认 1）。键 `media_scan_max_depth`。
   int get mediaScanMaxDepth => _mediaScanMaxDepth;
 
+  /// 漫画库：扫描容器时是否进子目录。默认开。键 `manga_scan_subdirs`。
+  bool get mangaScanSubdirs => _mangaScanSubdirs;
+
+  /// 漫画库：扫描容器最大深度。默认 5。键 `manga_scan_max_depth`。
+  int get mangaScanMaxDepth => _mangaScanMaxDepth;
+
+  /// 漫画库：散图建立时是否进子目录。默认开。键 `manga_create_subdirs`。
+  bool get mangaCreateSubdirs => _mangaCreateSubdirs;
+
+  /// 漫画库：散图建立最大深度。默认 5。键 `manga_create_max_depth`。
+  int get mangaCreateMaxDepth => _mangaCreateMaxDepth;
+
   /// 自动补齐模式。默认关 = 手动管理。键 `music_library_auto_backfill`。
   bool get musicLibraryAutoBackfill => _musicLibraryAutoBackfill;
 
@@ -684,11 +706,19 @@ class SettingsService extends ChangeNotifier {
       final raw = _prefs!.getInt(_kHomeTab);
       if (raw != null) {
         // Inserted folders at index 0; shift prior destinations up by one.
-        await _prefs!.setInt(_kHomeTab, (raw + 1).clamp(0, 5));
+        await _prefs!.setInt(_kHomeTab, (raw + 1).clamp(0, 6));
       }
       await _prefs!.setBool(_kHomeTabFoldersV024, true);
     }
-    _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 5);
+    if (!(_prefs!.getBool(_kHomeTabMangaV025) ?? false)) {
+      final raw = _prefs!.getInt(_kHomeTab);
+      if (raw != null && raw >= 3) {
+        // Inserted manga library at index 3; shift network/tasks/settings +1.
+        await _prefs!.setInt(_kHomeTab, (raw + 1).clamp(0, 6));
+      }
+      await _prefs!.setBool(_kHomeTabMangaV025, true);
+    }
+    _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 6);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
     // network_last_path is session-only (memory). Never restore from prefs /
@@ -733,6 +763,14 @@ class SettingsService extends ChangeNotifier {
     _mediaScanRecursive = _prefs!.getBool(_kMediaScanRecursive) ?? true;
     _mediaScanMaxDepth = WalkOptions.clampDepth(
       _prefs!.getInt(_kMediaScanMaxDepth) ?? WalkOptions.defaultMaxDepth,
+    );
+    _mangaScanSubdirs = _prefs!.getBool(_kMangaScanSubdirs) ?? true;
+    _mangaScanMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kMangaScanMaxDepth) ?? 5,
+    );
+    _mangaCreateSubdirs = _prefs!.getBool(_kMangaCreateSubdirs) ?? true;
+    _mangaCreateMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kMangaCreateMaxDepth) ?? 5,
     );
     _musicLibraryAutoBackfill =
         _prefs!.getBool(_kMusicLibraryAutoBackfill) ?? false;
@@ -1044,7 +1082,7 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> setHomeTab(int index) async {
-    _homeTab = index.clamp(0, 5);
+    _homeTab = index.clamp(0, 6);
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setInt(_kHomeTab, _homeTab);
     notifyListeners();
@@ -1192,6 +1230,34 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setMangaScanSubdirs(bool enabled) async {
+    _mangaScanSubdirs = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMangaScanSubdirs, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setMangaScanMaxDepth(int value) async {
+    _mangaScanMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kMangaScanMaxDepth, _mangaScanMaxDepth);
+    notifyListeners();
+  }
+
+  Future<void> setMangaCreateSubdirs(bool enabled) async {
+    _mangaCreateSubdirs = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMangaCreateSubdirs, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setMangaCreateMaxDepth(int value) async {
+    _mangaCreateMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kMangaCreateMaxDepth, _mangaCreateMaxDepth);
+    notifyListeners();
+  }
+
   Future<void> setMusicLibraryAutoBackfill(bool enabled) async {
     _musicLibraryAutoBackfill = enabled;
     _prefs ??= await SharedPreferences.getInstance();
@@ -1281,6 +1347,18 @@ class SettingsService extends ChangeNotifier {
   WalkOptions get mediaScanWalkOptions => WalkOptions(
     includeSubdirs: mediaScanRecursive,
     maxDepth: mediaScanMaxDepth,
+  );
+
+  /// Comic-container recursive scan (CBZ/…). Independent from image 建立.
+  WalkOptions get mangaScanWalkOptions => WalkOptions(
+    includeSubdirs: mangaScanSubdirs,
+    maxDepth: mangaScanMaxDepth,
+  );
+
+  /// Loose-image 建立 (merge / per-dir). Independent from container 扫描.
+  WalkOptions get mangaCreateWalkOptions => WalkOptions(
+    includeSubdirs: mangaCreateSubdirs,
+    maxDepth: mangaCreateMaxDepth,
   );
 
   Future<void> setImageSlideshowEnabled(bool enabled) async {
@@ -1677,6 +1755,10 @@ class SettingsService extends ChangeNotifier {
     'video_playlist_max_depth': _videoPlaylistMaxDepth,
     'media_scan_recursive': _mediaScanRecursive,
     'media_scan_max_depth': _mediaScanMaxDepth,
+    'manga_scan_subdirs': _mangaScanSubdirs,
+    'manga_scan_max_depth': _mangaScanMaxDepth,
+    'manga_create_subdirs': _mangaCreateSubdirs,
+    'manga_create_max_depth': _mangaCreateMaxDepth,
     'music_library_auto_backfill': _musicLibraryAutoBackfill,
     'music_library_backfill_bind_roots': _musicLibraryBackfillBindRoots,
     'music_library_backfill_roots': [
@@ -1876,6 +1958,18 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['media_scan_recursive'] is bool) {
       await setMediaScanRecursive(json['media_scan_recursive'] as bool);
+    }
+    if (json['manga_scan_subdirs'] is bool) {
+      await setMangaScanSubdirs(json['manga_scan_subdirs'] as bool);
+    }
+    if (json['manga_scan_max_depth'] is int) {
+      await setMangaScanMaxDepth(json['manga_scan_max_depth'] as int);
+    }
+    if (json['manga_create_subdirs'] is bool) {
+      await setMangaCreateSubdirs(json['manga_create_subdirs'] as bool);
+    }
+    if (json['manga_create_max_depth'] is int) {
+      await setMangaCreateMaxDepth(json['manga_create_max_depth'] as int);
     }
     if (json['media_scan_max_depth'] is num) {
       await setMediaScanMaxDepth((json['media_scan_max_depth'] as num).toInt());

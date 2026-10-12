@@ -17,6 +17,7 @@ import 'services/credential_vault_service.dart';
 import 'services/task_queue_service.dart';
 import 'services/library_service.dart';
 import 'services/user_folder_service.dart';
+import 'services/manga_library_service.dart';
 import 'services/music_audio_handler.dart';
 import 'services/backup_service.dart';
 import 'services/notification_permission_service.dart';
@@ -94,6 +95,9 @@ class WebDavMusicApp extends StatelessWidget {
         ChangeNotifierProvider<LibraryService>.value(value: appState.library),
         ChangeNotifierProvider<UserFolderService>.value(
           value: appState.userFolders,
+        ),
+        ChangeNotifierProvider<MangaLibraryService>.value(
+          value: appState.mangaLibrary,
         ),
         ChangeNotifierProvider<WebDavService>.value(value: appState.webDav),
         ChangeNotifierProvider<CloudDriveService>.value(
