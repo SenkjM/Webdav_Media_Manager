@@ -1250,11 +1250,19 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - `UserFolderRefKind.manga` / `mangaSeries` 常量
 - ARB zh / zh_Hant / en；`flutter analyze` + 相关 test；推 `origin feat/manga-library`
 
-### 19.5 明确不做
+### 19.5 阅读器（本刀升级）
 
-完整阅读器 chrome、漫画表云备份、文件夹选择器加漫 UI（kind 常量 OK）、打开即自动补齐、Testbuild workflow。
+- **复用** `ImageViewerScreen`（网络图与漫画同一套 chrome / 预取 / 下载）。
+- 中间点击 → **选项 BottomSheet**（适应方式、幻灯片、进更多设置）；左右点与横向滑动翻页。
+- 预取每侧 **1–20**（设置 `image_prefetch_count`）。
+- 散图：按冻结 `manga_pages` 远端路径下载；CBZ：下载 ZIP → 枚举图片 → 解压到预取缓存；PDF/EPUB/CBR 暂不支持应用内读。
+- 翻页写 `manga_progress`。
 
-### 19.6 开放问题
+### 19.6 明确不做
+
+完整阅读器 chrome（已改为共享查看器）、漫画表云备份、文件夹选择器加漫 UI（kind 常量 OK）、打开即自动补齐、Testbuild workflow。
+
+### 19.7 开放问题
 
 - CBZ/CBR 不整包下载时如何可靠枚举页（Range 读 ZIP 中央目录？）
 - PDF/EPUB 页索引是否依赖本地解析器

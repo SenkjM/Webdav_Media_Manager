@@ -24,7 +24,7 @@
 
 - **日期**：2026-10-12
 - **发言人**：executor → 下一位
-- **状态**：第一刀已推 `origin feat/manga-library` tip `e0ef49a`
+- **状态**：阅读器共用升级后的 ImageViewerScreen（中间选项表、预取 1–20、CBZ/散图）；分支 tip 随提交更新
 - **语义**：[99 §19](99-IN-PROGRESS.md)
 - **分支 / worktree**：`feat/manga-library` → `worktree/manga-library`（从 `main` `e0d7280`）
 - **抽屉顺序（用户更正）**：文件夹0 · 音乐库1 · 歌单2 · **漫画库3** · 网络库4 · 任务5 · 设置6；`home_tab_v025_manga_inserted` 对保存索引 ≥3 +1

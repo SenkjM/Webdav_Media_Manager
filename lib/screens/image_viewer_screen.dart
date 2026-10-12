@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import 'dart:async';
 import 'dart:io';
 
@@ -7,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
+import '../models/image_viewer_page.dart';
 import '../models/webdav_item.dart';
 import '../services/prefetch_cache.dart';
 import '../services/settings_service.dart';
@@ -14,37 +16,66 @@ import '../services/webdav_service.dart';
 import '../utils/image_album.dart';
 import 'image_settings_screen.dart';
 
-/// Fullscreen image viewer for the network library.
+/// Fullscreen image / manga page viewer.
 ///
-/// Files are downloaded with [WebDavService.downloadToFile] (WebDAV Basic +
-/// User-Agent, or the cloud driver's raw URL / `openContent` path) into the
-/// process prefetch cache and decoded with [Image.file]. Completed files stay
-/// until the next launch wipes that cache. Nothing here joins the media
-/// session, the download queue, or the music cache.
+/// Network library and manga library share this screen. Downloads use
+/// [WebDavService.downloadToFile] into [PrefetchCache]; CBZ pages may already
+/// have a local path. Center tap opens a controls sheet (not a page jump);
+/// left/right edges and horizontal swipe change pages.
 class ImageViewerScreen extends StatefulWidget {
-  const ImageViewerScreen({
+  /// Network-library folder album (keeps existing call sites).
+  factory ImageViewerScreen({
+    Key? key,
+    required String accountId,
+    required String folderPath,
+    required WebDavItem initial,
+    required List<WebDavItem> siblings,
+    ValueChanged<int>? onPageChanged,
+    String? title,
+  }) {
+    final album = imageAlbumFrom(siblings, ensure: initial);
+    final pages = [for (final e in album) ImageViewerPage.fromWebDav(e)];
+    final i = album.indexWhere((e) => e.path == initial.path);
+    return ImageViewerScreen.pages(
+      key: key,
+      accountId: accountId,
+      folderPath: folderPath,
+      pages: pages,
+      initialIndex: i < 0 ? 0 : i,
+      enableSubdirScan: true,
+      onPageChanged: onPageChanged,
+      title: title,
+    );
+  }
+
+  /// Generic page list (manga or any prepared album).
+  const ImageViewerScreen.pages({
     super.key,
     required this.accountId,
-    required this.folderPath,
-    required this.initial,
-    required this.siblings,
+    required this.pages,
+    this.initialIndex = 0,
+    this.folderPath = '/',
+    this.enableSubdirScan = false,
+    this.onPageChanged,
+    this.title,
   });
 
   final String accountId;
   final String folderPath;
-  final WebDavItem initial;
-
-  /// Already-listed entries from the current directory. Only images are kept.
-  final List<WebDavItem> siblings;
+  final List<ImageViewerPage> pages;
+  final int initialIndex;
+  final bool enableSubdirScan;
+  final ValueChanged<int>? onPageChanged;
+  final String? title;
 
   @override
   State<ImageViewerScreen> createState() => _ImageViewerScreenState();
 }
 
 class _ImageViewerScreenState extends State<ImageViewerScreen> {
-  late final List<WebDavItem> _seed;
-  List<WebDavItem> _album = const [];
-  int _index = 0;
+  late List<ImageViewerPage> _seed;
+  late List<ImageViewerPage> _album;
+  late int _index;
   bool _cacheReady = false;
   SettingsService? _settings;
   WebDavService? _webDav;
@@ -54,8 +85,9 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   String? _error;
   double? _progress;
   bool _scanning = false;
+  bool _controlsOpen = false;
 
-  final Map<String, String> _localByRemote = {};
+  final Map<String, String> _localById = {};
   final Map<String, CancelToken> _inflight = {};
 
   String _slideSig = '';
@@ -66,19 +98,19 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   @override
   void initState() {
     super.initState();
-    _seed = imageAlbumFrom(widget.siblings, ensure: widget.initial);
-    _album = List<WebDavItem>.of(_seed);
-    final i = _album.indexWhere((e) => e.path == widget.initial.path);
-    _index = i < 0 ? 0 : i;
+    _seed = List<ImageViewerPage>.of(widget.pages);
+    _album = List<ImageViewerPage>.of(_seed);
+    _index = widget.initialIndex.clamp(0, _album.isEmpty ? 0 : _album.length - 1);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(_prepareCache());
       _captureSettings(notify: false);
       _armSlideshow();
-      if (_settings?.imageScanSubdirs ?? false) {
+      if (widget.enableSubdirScan && (_settings?.imageScanSubdirs ?? false)) {
         unawaited(_scanSubdirs());
       }
+      widget.onPageChanged?.call(_index);
     });
   }
 
@@ -105,15 +137,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     }
     _inflight.clear();
     _settings?.removeListener(_onSettings);
-    // Prefetch bytes stay for this process. The next launch wipes them.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
-  WebDavItem? get _current =>
+  ImageViewerPage? get _current =>
       _album.isEmpty || _index < 0 || _index >= _album.length
-      ? null
-      : _album[_index];
+          ? null
+          : _album[_index];
 
   void _captureSettings({required bool notify}) {
     final s = _settings;
@@ -142,13 +173,13 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (fitChanged || prefetchChanged) setState(() {});
     if (prefetchChanged) _syncWindow();
     if (slideChanged) _armSlideshow();
-    if (!scanChanged) return;
+    if (!widget.enableSubdirScan || !scanChanged) return;
     if (s.imageScanSubdirs) {
       unawaited(_scanSubdirs());
     } else {
       _scanGen++;
       _scanning = false;
-      _applyAlbum(List<WebDavItem>.of(_seed));
+      _applyAlbum(List<ImageViewerPage>.of(_seed));
     }
   }
 
@@ -159,27 +190,42 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       return;
     }
     if (_disposed) return;
+    // Seed local paths from prepared pages (e.g. CBZ extracts).
+    for (final page in _album) {
+      final local = page.localPath;
+      if (local != null &&
+          local.isNotEmpty &&
+          File(local).existsSync() &&
+          File(local).lengthSync() > 0) {
+        _localById[page.id] = local;
+      }
+    }
     _cacheReady = true;
     _syncWindow();
+    if (mounted) setState(() {});
   }
 
-  void _applyAlbum(List<WebDavItem> next) {
-    final currentPath = _current?.path ?? widget.initial.path;
+  void _applyAlbum(List<ImageViewerPage> next) {
+    final currentId = _current?.id;
     setState(() {
       _album = next;
       if (_album.isEmpty) {
         _index = 0;
         return;
       }
-      final i = _album.indexWhere((e) => e.path == currentPath);
+      final i = currentId == null
+          ? 0
+          : _album.indexWhere((e) => e.id == currentId);
       _index = i < 0 ? 0 : i;
       _error = null;
     });
     _syncWindow();
     _armSlideshow();
+    widget.onPageChanged?.call(_index);
   }
 
   Future<void> _scanSubdirs() async {
+    if (!widget.enableSubdirScan) return;
     final gen = ++_scanGen;
     final webDav = _webDav;
     final settings = _settings;
@@ -212,7 +258,22 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     }
     if (_disposed || gen != _scanGen || !mounted) return;
     setState(() => _scanning = false);
-    _applyAlbum(imageAlbumFrom([..._seed, ...found], ensure: widget.initial));
+    final seedItems = [
+      for (final p in _seed)
+        if (p.remotePath != null)
+          WebDavItem(
+            name: p.name,
+            path: p.remotePath!,
+            isDirectory: false,
+          ),
+    ];
+    final ensure = seedItems.isEmpty
+        ? null
+        : seedItems[_index.clamp(0, seedItems.length - 1)];
+    final album = ensure == null
+        ? found
+        : imageAlbumFrom([...seedItems, ...found], ensure: ensure);
+    _applyAlbum([for (final e in album) ImageViewerPage.fromWebDav(e)]);
   }
 
   String _normDir(String path) {
@@ -235,10 +296,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     });
   }
 
-  /// [fromTimer] false is a finger tap: restart the interval, but never
-  /// clear the slideshow switch.
   void _step(int delta, {required bool fromTimer}) {
-    if (_album.isEmpty) return;
+    if (_album.isEmpty || _controlsOpen) return;
     var next = _index + delta;
     if (next < 0 || next >= _album.length) {
       final loop = fromTimer && (_settings?.imageSlideshowLoop ?? false);
@@ -258,6 +317,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     });
     _syncWindow();
     _armSlideshow();
+    widget.onPageChanged?.call(_index);
   }
 
   void _syncWindow() {
@@ -271,46 +331,62 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       final i = _index + d;
       if (i < 0 || i >= _album.length) continue;
       final item = _album[i];
-      keep.add(item.path);
-      unawaited(_download(item));
+      keep.add(item.id);
+      unawaited(_ensureLocal(item));
     }
-    for (final remote in _inflight.keys.toList()) {
-      if (keep.contains(remote)) continue;
-      _inflight.remove(remote)?.cancel('window');
+    for (final id in _inflight.keys.toList()) {
+      if (keep.contains(id)) continue;
+      _inflight.remove(id)?.cancel('window');
     }
-    // Completed files stay after they leave the window. Only this launch's
-    // startup wipe removes them.
   }
 
-  Future<void> _download(WebDavItem item) async {
+  Future<void> _ensureLocal(ImageViewerPage item) async {
     final webDav = _webDav;
-    if (webDav == null || !_cacheReady || _disposed) return;
-    final existing = _localByRemote[item.path];
+    if (!_cacheReady || _disposed) return;
+    final existing = _localById[item.id];
     if (existing != null &&
         File(existing).existsSync() &&
         File(existing).lengthSync() > 0) {
       return;
     }
-    if (_inflight.containsKey(item.path)) return;
+    final seeded = item.localPath;
+    if (seeded != null &&
+        seeded.isNotEmpty &&
+        File(seeded).existsSync() &&
+        File(seeded).lengthSync() > 0) {
+      _localById[item.id] = seeded;
+      if (mounted && !_disposed) {
+        setState(() {
+          if (_current?.id == item.id) {
+            _error = null;
+            _progress = null;
+          }
+        });
+        _precache(File(seeded));
+      }
+      return;
+    }
+    if (!item.hasRemote || webDav == null) return;
+    if (_inflight.containsKey(item.id)) return;
     final token = CancelToken();
-    _inflight[item.path] = token;
+    _inflight[item.id] = token;
     final dest = await PrefetchCache.file(
       bucket: 'images',
       accountId: widget.accountId,
-      remotePath: item.path,
+      remotePath: item.remotePath!,
       name: item.name,
     );
     if (PrefetchCache.isComplete(dest)) {
-      _localByRemote[item.path] = dest.path;
+      _localById[item.id] = dest.path;
       if (!mounted || _disposed) return;
       setState(() {
-        if (_current?.path == item.path) {
+        if (_current?.id == item.id) {
           _error = null;
           _progress = null;
         }
       });
       _precache(dest);
-      _inflight.remove(item.path);
+      _inflight.remove(item.id);
       return;
     }
     final part = File('${dest.path}.part');
@@ -318,12 +394,12 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       if (part.existsSync()) part.deleteSync();
       await webDav.downloadToFile(
         widget.accountId,
-        item.path,
+        item.remotePath!,
         part,
         cancelToken: token,
         onProgress: (received, total) {
           if (!mounted || _disposed || token.isCancelled) return;
-          if (_current?.path != item.path || total <= 0) return;
+          if (_current?.id != item.id || total <= 0) return;
           setState(() => _progress = received / total);
         },
       );
@@ -334,10 +410,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       if (!part.existsSync() || part.lengthSync() <= 0) return;
       if (dest.existsSync()) dest.deleteSync();
       await part.rename(dest.path);
-      _localByRemote[item.path] = dest.path;
+      _localById[item.id] = dest.path;
       if (!mounted) return;
       setState(() {
-        if (_current?.path == item.path) {
+        if (_current?.id == item.id) {
           _error = null;
           _progress = null;
         }
@@ -358,7 +434,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         } catch (_) {}
       }
       if (!mounted || _disposed) return;
-      if (_current?.path == item.path) {
+      if (_current?.id == item.id) {
         final text = e.toString();
         setState(() {
           _error = text.length > 180 ? text.substring(0, 180) : text;
@@ -366,8 +442,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         });
       }
     } finally {
-      if (identical(_inflight[item.path], token)) {
-        _inflight.remove(item.path);
+      if (identical(_inflight[item.id], token)) {
+        _inflight.remove(item.id);
       }
     }
   }
@@ -388,13 +464,89 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     }());
   }
 
-  Future<void> _openSettings() async {
-    // The settings page is a normal scaffold. Immersive mode would hide its
-    // status bar, so restore system UI while it is on top and go back after.
+  Future<void> _openControlsSheet() async {
+    if (_controlsOpen || !mounted) return;
+    _controlsOpen = true;
+    _slide?.cancel();
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.read<SettingsService>();
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  l10n.imageViewerControls,
+                  style: Theme.of(ctx).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.imageViewerCount(_index + 1, _album.length),
+                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
+                ),
+                const SizedBox(height: 12),
+                Text(l10n.imageFit),
+                const SizedBox(height: 8),
+                SegmentedButton<String>(
+                  segments: [
+                    ButtonSegment(
+                      value: SettingsService.imageFitContain,
+                      label: Text(l10n.imageFitContain),
+                    ),
+                    ButtonSegment(
+                      value: SettingsService.imageFitCover,
+                      label: Text(l10n.imageFitCover),
+                    ),
+                  ],
+                  selected: {settings.imageFit},
+                  onSelectionChanged: (s) {
+                    unawaited(settings.setImageFit(s.first));
+                  },
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l10n.imageSlideshow),
+                  value: settings.imageSlideshowEnabled,
+                  onChanged: (v) => unawaited(settings.setImageSlideshowEnabled(v)),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l10n.imageViewerMoreSettings),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    await _openFullSettings();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    _controlsOpen = false;
+    if (!mounted || _disposed) return;
+    _armSlideshow();
+    setState(() {});
+  }
+
+  Future<void> _openFullSettings() async {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     if (!mounted) return;
-    await Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const ImageSettingsScreen()));
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ImageSettingsScreen()),
+    );
     if (!mounted || _disposed) return;
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
@@ -410,7 +562,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final top = gesture.top > pad.top ? gesture.top : pad.top;
     final bottom = gesture.bottom > pad.bottom ? gesture.bottom : pad.bottom;
     final current = _current;
-    final local = current == null ? null : _localByRemote[current.path];
+    final local = current == null ? null : _localById[current.id];
     final file = local == null ? null : File(local);
     final dpr = mq.devicePixelRatio;
     final cacheW = (mq.size.width * dpr).round().clamp(1, 8192);
@@ -418,120 +570,134 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final fit = _fit == SettingsService.imageFitCover
         ? BoxFit.cover
         : BoxFit.contain;
+    final title = widget.title ?? current?.name ?? '';
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (current == null)
-            Center(
-              child: Text(
-                l10n.imageViewerEmpty,
-                style: const TextStyle(color: Colors.white70),
-              ),
-            )
-          else if (_error == null && file != null && file.existsSync())
-            Image.file(
-              file,
-              fit: fit,
-              width: double.infinity,
-              height: double.infinity,
-              cacheWidth: cacheW,
-              cacheHeight: cacheH,
-              gaplessPlayback: true,
-              errorBuilder: (_, error, _) {
-                final message = error.toString();
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted || _error != null) return;
-                  if (_current?.path != current.path) return;
-                  setState(() {
-                    _error = message.length > 180
-                        ? message.substring(0, 180)
-                        : message;
+      body: GestureDetector(
+        onHorizontalDragEnd: (details) {
+          final v = details.primaryVelocity ?? 0;
+          if (v <= -200) {
+            _step(1, fromTimer: false);
+          } else if (v >= 200) {
+            _step(-1, fromTimer: false);
+          }
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (current == null)
+              Center(
+                child: Text(
+                  l10n.imageViewerEmpty,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              )
+            else if (_error == null && file != null && file.existsSync())
+              Image.file(
+                file,
+                fit: fit,
+                width: double.infinity,
+                height: double.infinity,
+                cacheWidth: cacheW,
+                cacheHeight: cacheH,
+                gaplessPlayback: true,
+                errorBuilder: (_, error, _) {
+                  final message = error.toString();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted || _error != null) return;
+                    if (_current?.id != current.id) return;
+                    setState(() {
+                      _error = message.length > 180
+                          ? message.substring(0, 180)
+                          : message;
+                    });
                   });
-                });
-                return const SizedBox.expand();
-              },
-            )
-          else if (_error == null)
-            const Center(
-              child: CircularProgressIndicator(color: Colors.white70),
-            ),
-          Padding(
-            padding: EdgeInsets.fromLTRB(left, top, right, bottom),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _zone(
-                    l10n.imageViewerPrevious,
-                    () => _step(-1, fromTimer: false),
+                  return const SizedBox.expand();
+                },
+              )
+            else if (_error == null)
+              const Center(
+                child: CircularProgressIndicator(color: Colors.white70),
+              ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(left, top, right, bottom),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _zone(
+                      l10n.imageViewerPrevious,
+                      () => _step(-1, fromTimer: false),
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: _zone(l10n.imageViewerOpenSettings, _openSettings),
-                ),
-                Expanded(
-                  child: _zone(
-                    l10n.imageViewerNext,
-                    () => _step(1, fromTimer: false),
+                  Expanded(
+                    child: _zone(
+                      l10n.imageViewerControls,
+                      () => unawaited(_openControlsSheet()),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ),
-          if (_error != null && current != null)
-            Center(child: _failure(l10n, current)),
-          Positioned(
-            left: left + 4,
-            top: top + 4,
-            child: IconButton(
-              tooltip: l10n.close,
-              onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(Icons.close, color: Colors.white),
-            ),
-          ),
-          Positioned(
-            left: left + 56,
-            right: right + 8,
-            top: top + 12,
-            child: IgnorePointer(
-              child: Text(
-                current == null
-                    ? ''
-                    : '${current.name}  ${l10n.imageViewerCount(_index + 1, _album.length)}'
-                          '${_scanning ? '  ${l10n.imageScanningSubdirs}' : ''}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  Expanded(
+                    child: _zone(
+                      l10n.imageViewerNext,
+                      () => _step(1, fromTimer: false),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          if (_progress != null)
+            if (_error != null && current != null)
+              Center(child: _failure(l10n, current)),
             Positioned(
-              left: left,
-              right: right,
-              bottom: bottom,
-              child: LinearProgressIndicator(
-                value: _progress,
-                minHeight: 2,
-                color: Colors.white,
-                backgroundColor: Colors.white24,
+              left: left + 4,
+              top: top + 4,
+              child: IconButton(
+                tooltip: l10n.close,
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.close, color: Colors.white),
               ),
             ),
-          Positioned(
-            left: left + 16,
-            right: right + 16,
-            bottom: bottom + 12,
-            child: IgnorePointer(
-              child: Text(
-                l10n.imageViewerGestureHint,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white38, fontSize: 11),
+            Positioned(
+              left: left + 56,
+              right: right + 8,
+              top: top + 12,
+              child: IgnorePointer(
+                child: Text(
+                  current == null
+                      ? ''
+                      : '$title  ${l10n.imageViewerCount(_index + 1, _album.length)}'
+                            '${_scanning ? '  ${l10n.imageScanningSubdirs}' : ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
               ),
             ),
-          ),
-        ],
+            if (_progress != null)
+              Positioned(
+                left: left,
+                right: right,
+                bottom: bottom,
+                child: LinearProgressIndicator(
+                  value: _progress,
+                  minHeight: 2,
+                  color: Colors.white,
+                  backgroundColor: Colors.white24,
+                ),
+              ),
+            Positioned(
+              left: left + 16,
+              right: right + 16,
+              bottom: bottom + 12,
+              child: IgnorePointer(
+                child: Text(
+                  l10n.imageViewerGestureHint,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -548,7 +714,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     );
   }
 
-  Widget _failure(AppLocalizations l10n, WebDavItem item) {
+  Widget _failure(AppLocalizations l10n, ImageViewerPage item) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -563,7 +729,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
             const SizedBox(height: 12),
             FilledButton(
               onPressed: () {
-                final path = _localByRemote.remove(item.path);
+                final path = _localById.remove(item.id);
                 if (path != null) {
                   final cached = File(path);
                   if (cached.existsSync()) {
@@ -573,7 +739,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                   }
                 }
                 setState(() => _error = null);
-                unawaited(_download(item));
+                unawaited(_ensureLocal(item));
               },
               child: Text(l10n.imageViewerRetry),
             ),

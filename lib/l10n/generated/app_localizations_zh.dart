@@ -3647,7 +3647,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imagePrefetchCount => '预取数量';
 
   @override
-  String get imagePrefetchHint => '向前、向后各预取这么多张（1–5），不会一次载入整本相册。默认每侧 1 张。';
+  String get imagePrefetchHint => '向前、向后各预取这么多张（1–20），不会一次载入整本。默认每侧 1 张。';
 
   @override
   String get imageScanSubdirs => '搜索子目录';
@@ -3682,7 +3682,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imageViewerRetry => '重试';
 
   @override
-  String get imageViewerGestureHint => '轻点左侧上一张，右侧下一张，中间打开设置';
+  String get imageViewerGestureHint => '轻点左右翻页，中间打开选项；也可左右滑动';
 
   @override
   String imageViewerCount(Object index, Object total) {
@@ -4398,6 +4398,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mangaCreateMaxDepthHint => '默认 5。与扫描深度相互独立';
+
+  @override
+  String get imageViewerControls => '查看选项';
+
+  @override
+  String get imageViewerMoreSettings => '更多设置';
+
+  @override
+  String get mangaReaderUnsupported => '这种格式暂时不能在应用内阅读';
+
+  @override
+  String get mangaReaderPreparing => '正在准备页…';
+
+  @override
+  String get mangaReaderUnboundSource => '来源网盘未绑定，无法打开';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -8043,7 +8058,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get imagePrefetchCount => '預取數量';
 
   @override
-  String get imagePrefetchHint => '向前、向後各預取這麼多張（1–5），不會一次載入整本相簿。預設每側 1 張。';
+  String get imagePrefetchHint => '向前、向後各預取這麼多張（1–20），不會一次載入整本。預設每側 1 張。';
 
   @override
   String get imageScanSubdirs => '搜尋子目錄';
@@ -8078,7 +8093,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get imageViewerRetry => '重試';
 
   @override
-  String get imageViewerGestureHint => '輕點左側上一張，右側下一張，中間開啟設定';
+  String get imageViewerGestureHint => '輕點左右翻頁，中間開啟選項；也可左右滑動';
 
   @override
   String imageViewerCount(Object index, Object total) {
@@ -8794,4 +8809,19 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get mangaCreateMaxDepthHint => '預設 5。與掃描深度相互獨立';
+
+  @override
+  String get imageViewerControls => '檢視選項';
+
+  @override
+  String get imageViewerMoreSettings => '更多設定';
+
+  @override
+  String get mangaReaderUnsupported => '這種格式暫時不能在應用內閱讀';
+
+  @override
+  String get mangaReaderPreparing => '正在準備頁面…';
+
+  @override
+  String get mangaReaderUnboundSource => '來源網盤未綁定，無法開啟';
 }

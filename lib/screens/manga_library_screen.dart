@@ -1,15 +1,20 @@
+import 'dart:async';
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/manga.dart';
-import '../models/manga_page.dart';
 import '../models/manga_series.dart';
 import '../services/manga_library_service.dart';
+import '../services/manga_reader_prep.dart';
+import '../services/accounts_service.dart';
+import '../services/webdav_service.dart';
+import '../utils/app_snack.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/selection_toolbar.dart';
 import 'home_shell.dart';
+import 'image_viewer_screen.dart';
 
 /// Manga library: 系列 / 单本 / 作者 (99 §19).
 class MangaLibraryScreen extends StatefulWidget {
@@ -283,11 +288,7 @@ class _MangaListState extends State<_MangaList> {
                     _setSelection(_selection.toggle(manga.id));
                     return;
                   }
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => MangaReaderStubScreen(manga: manga),
-                    ),
-                  );
+                  unawaited(openMangaReader(context, manga));
                 },
                 onLongPress: () {
                   _setSelection(
@@ -427,11 +428,7 @@ class _SeriesDetailScreen extends StatelessWidget {
                   ),
                   title: Text(manga.title),
                   onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => MangaReaderStubScreen(manga: manga),
-                      ),
-                    );
+                    unawaited(openMangaReader(context, manga));
                   },
                 );
               },
@@ -463,11 +460,7 @@ class _AuthorDetailScreen extends StatelessWidget {
                   ),
                   title: Text(manga.title),
                   onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => MangaReaderStubScreen(manga: manga),
-                      ),
-                    );
+                    unawaited(openMangaReader(context, manga));
                   },
                 );
               },
@@ -476,90 +469,69 @@ class _AuthorDetailScreen extends StatelessWidget {
   }
 }
 
-/// Page-list + progress stub; full chrome deferred.
-class MangaReaderStubScreen extends StatefulWidget {
-  const MangaReaderStubScreen({super.key, required this.manga});
-  final Manga manga;
-
-  @override
-  State<MangaReaderStubScreen> createState() => _MangaReaderStubScreenState();
-}
-
-class _MangaReaderStubScreenState extends State<MangaReaderStubScreen> {
-  List<MangaPage> _pages = const [];
-  int _progress = 0;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
+Future<void> openMangaReader(BuildContext context, Manga manga) async {
+  final l10n = AppLocalizations.of(context)!;
+  final accounts = context.read<AccountsService>();
+  final accountId = accounts.idForSource(manga.sourceName);
+  if (accountId == null || accountId.isEmpty) {
+    AppSnack.show(context, l10n.mangaReaderUnboundSource);
+    return;
   }
+  final mangaLib = context.read<MangaLibraryService>();
+  final webDav = context.read<WebDavService>();
 
-  Future<void> _load() async {
-    final svc = context.read<MangaLibraryService>();
-    final pages = await svc.pagesFor(widget.manga.id);
-    final prog = await svc.progressFor(widget.manga.id);
-    if (!mounted) return;
-    setState(() {
-      _pages = pages;
-      _progress = prog?.pageIndex ?? 0;
-      _loading = false;
-    });
-  }
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        content: Row(
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(width: 16),
+            Expanded(child: Text(l10n.mangaReaderPreparing)),
+          ],
+        ),
+      ),
+    ),
+  );
 
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    return Scaffold(
-      appBar: AppBar(title: Text(widget.manga.title)),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _pages.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      l10n.mangaPagesNotReady,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                )
-              : ListView.builder(
-                  itemCount: _pages.length,
-                  itemBuilder: (context, i) {
-                    final page = _pages[i];
-                    final current = i == _progress;
-                    return ListTile(
-                      leading: Text(
-                        '${page.pageIndex + 1}',
-                        style: TextStyle(
-                          color: current
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontWeight:
-                              current ? FontWeight.w700 : FontWeight.w500,
-                        ),
-                      ),
-                      title: Text(
-                        page.relPath,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      selected: current,
-                      onTap: () async {
-                        await context
-                            .read<MangaLibraryService>()
-                            .setProgress(widget.manga.id, page.pageIndex);
-                        if (!mounted) return;
-                        setState(() => _progress = page.pageIndex);
-                      },
-                    );
-                  },
-                ),
+  try {
+    final prepared = await MangaReaderPrep.prepare(
+      manga: manga,
+      accountId: accountId,
+      webDav: webDav,
+      mangaLib: mangaLib,
     );
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // dialog
+    await Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => ImageViewerScreen.pages(
+          accountId: accountId,
+          pages: prepared.pages,
+          initialIndex: prepared.initialIndex,
+          title: prepared.manga.title,
+          onPageChanged: (i) {
+            unawaited(mangaLib.setProgress(prepared.manga.id, i));
+          },
+        ),
+      ),
+    );
+  } on MangaReaderPrepareException catch (e) {
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    final msg = switch (e.kind) {
+      MangaReaderPrepareError.unsupported => l10n.mangaReaderUnsupported,
+      MangaReaderPrepareError.empty => l10n.mangaPagesNotReady,
+      MangaReaderPrepareError.unbound => l10n.mangaReaderUnboundSource,
+      MangaReaderPrepareError.failed => e.detail ?? l10n.mangaReaderUnsupported,
+    };
+    AppSnack.show(context, msg);
+  } catch (e) {
+    if (!context.mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    AppSnack.error(context, e.toString());
   }
 }

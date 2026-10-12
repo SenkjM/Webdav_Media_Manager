@@ -76,6 +76,7 @@ dependencies:
   cryptography: ^2.9.0
   package_info_plus: ^10.2.1
   crypto: ^3.0.7
+  archive: ^4.3.0
   share_plus: ^13.3.0
   pointycastle: ^4.0.0
   # Sidecar subtitles are often GBK / GB18030 / Big5, not UTF-8.

@@ -223,4 +223,22 @@ void main() {
     await s.setMangaCreateSubdirs(false);
     expect(s.mangaCreateWalkOptions.includeSubdirs, isFalse);
   });
+
+  test('image prefetch clamps to 1–20', () async {
+    SharedPreferences.setMockInitialValues({
+      'home_tab_v024_folders_inserted': true,
+      'home_tab_v025_manga_inserted': true,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final s = SettingsService(prefs: prefs);
+    await s.init();
+    expect(SettingsService.maxImagePrefetchCount, 20);
+    await s.setImagePrefetchCount(20);
+    expect(s.imagePrefetchCount, 20);
+    await s.setImagePrefetchCount(99);
+    expect(s.imagePrefetchCount, 20);
+    await s.setImagePrefetchCount(0);
+    expect(s.imagePrefetchCount, 1);
+  });
 }
+

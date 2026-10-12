@@ -1082,7 +1082,7 @@
   "imageFitContain": "Contain",
   "imageFitCover": "Cover",
   "imagePrefetchCount": "Prefetch count",
-  "imagePrefetchHint": "How many images to prefetch on each side (previous and next), from 1 to 5. The whole album is not loaded at once. Default is 1 per side.",
+  "imagePrefetchHint": "Prefetch this many images before and after the current one (1–20). Default 1 each side.",
   "imageScanSubdirs": "Scan subdirectories",
   "imageScanSubdirsHint": "Off by default. When on, the album also includes images in subfolders. Scanning can be slow.",
   "actionViewImage": "View image",
@@ -1093,7 +1093,7 @@
   "imageViewerEmpty": "No images to view in this folder",
   "imageLoadFailed": "Could not load this image: {error}",
   "imageViewerRetry": "Retry",
-  "imageViewerGestureHint": "Tap left for previous, right for next, center for settings",
+  "imageViewerGestureHint": "Tap sides to turn pages, center for options; or swipe",
   "imageViewerCount": "{index} / {total}",
   "imageViewerPrevious": "Previous",
   "imageViewerNext": "Next",
@@ -1425,5 +1425,10 @@
   "mangaCreateSubdirs": "Include subfolders when creating from images",
   "mangaCreateSubdirsHint": "On by default. Off = merge / per-folder create only use this folder’s images",
   "mangaCreateMaxDepth": "Create max depth",
-  "mangaCreateMaxDepthHint": "Default 5. Independent from comic-scan depth"
+  "mangaCreateMaxDepthHint": "Default 5. Independent from comic-scan depth",
+  "imageViewerControls": "Viewer options",
+  "imageViewerMoreSettings": "More settings",
+  "mangaReaderUnsupported": "This format cannot be read in-app yet",
+  "mangaReaderPreparing": "Preparing pages…",
+  "mangaReaderUnboundSource": "Source drive is not bound"
 }

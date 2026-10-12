@@ -166,6 +166,38 @@ class MangaLibraryService extends ChangeNotifier {
   Future<List<MangaPage>> pagesFor(String mangaId) =>
       _db.loadMangaPages(mangaId);
 
+  /// Freeze page list and update page_count / cover without touching series.
+  Future<void> replacePages(
+    String mangaId, {
+    required List<MangaPage> pages,
+    String? coverRelpath,
+  }) async {
+    await _db.replaceMangaPages(mangaId, pages);
+    final existing = await _db.loadMangaById(mangaId);
+    if (existing != null) {
+      await _db.upsertManga(
+        Manga(
+          id: existing.id,
+          sourceName: existing.sourceName,
+          remotePath: existing.remotePath,
+          title: existing.title,
+          author: existing.author,
+          seriesId: existing.seriesId,
+          volume: existing.volume,
+          chapterNumber: existing.chapterNumber,
+          pageCount: pages.length,
+          coverRelpath: coverRelpath ??
+              existing.coverRelpath ??
+              (pages.isEmpty ? null : pages.first.relPath),
+          format: existing.format,
+          remoteMissing: existing.remoteMissing,
+          updatedAt: DateTime.now(),
+        ),
+      );
+    }
+    await reload();
+  }
+
   Future<MangaProgress?> progressFor(String mangaId) =>
       _db.loadMangaProgress(mangaId);
 

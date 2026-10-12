@@ -6362,7 +6362,7 @@ abstract class AppLocalizations {
   /// No description provided for @imagePrefetchHint.
   ///
   /// In zh, this message translates to:
-  /// **'向前、向后各预取这么多张（1–5），不会一次载入整本相册。默认每侧 1 张。'**
+  /// **'向前、向后各预取这么多张（1–20），不会一次载入整本。默认每侧 1 张。'**
   String get imagePrefetchHint;
 
   /// No description provided for @imageScanSubdirs.
@@ -6428,7 +6428,7 @@ abstract class AppLocalizations {
   /// No description provided for @imageViewerGestureHint.
   ///
   /// In zh, this message translates to:
-  /// **'轻点左侧上一张，右侧下一张，中间打开设置'**
+  /// **'轻点左右翻页，中间打开选项；也可左右滑动'**
   String get imageViewerGestureHint;
 
   /// No description provided for @imageViewerCount.
@@ -7762,6 +7762,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'默认 5。与扫描深度相互独立'**
   String get mangaCreateMaxDepthHint;
+
+  /// No description provided for @imageViewerControls.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看选项'**
+  String get imageViewerControls;
+
+  /// No description provided for @imageViewerMoreSettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多设置'**
+  String get imageViewerMoreSettings;
+
+  /// No description provided for @mangaReaderUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'这种格式暂时不能在应用内阅读'**
+  String get mangaReaderUnsupported;
+
+  /// No description provided for @mangaReaderPreparing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在准备页…'**
+  String get mangaReaderPreparing;
+
+  /// No description provided for @mangaReaderUnboundSource.
+  ///
+  /// In zh, this message translates to:
+  /// **'来源网盘未绑定，无法打开'**
+  String get mangaReaderUnboundSource;
 }
 
 class _AppLocalizationsDelegate

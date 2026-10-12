@@ -1082,7 +1082,7 @@
   "imageFitContain": "完整显示",
   "imageFitCover": "铺满",
   "imagePrefetchCount": "预取数量",
-  "imagePrefetchHint": "向前、向后各预取这么多张（1–5），不会一次载入整本相册。默认每侧 1 张。",
+  "imagePrefetchHint": "向前、向后各预取这么多张（1–20），不会一次载入整本。默认每侧 1 张。",
   "imageScanSubdirs": "搜索子目录",
   "imageScanSubdirsHint": "默认关闭。打开后相册会包含子目录中的图片，扫描可能较慢。",
   "actionViewImage": "查看图片",
@@ -1093,7 +1093,7 @@
   "imageViewerEmpty": "这个目录里没有可查看的图片",
   "imageLoadFailed": "无法加载这张图片：{error}",
   "imageViewerRetry": "重试",
-  "imageViewerGestureHint": "轻点左侧上一张，右侧下一张，中间打开设置",
+  "imageViewerGestureHint": "轻点左右翻页，中间打开选项；也可左右滑动",
   "imageViewerCount": "{index} / {total}",
   "imageViewerPrevious": "上一张",
   "imageViewerNext": "下一张",
@@ -1445,5 +1445,10 @@
   "mangaCreateSubdirs": "建立时搜索子目录",
   "mangaCreateSubdirsHint": "默认开。关闭则合并/按目录建立都只看当前层图片",
   "mangaCreateMaxDepth": "建立最大深度",
-  "mangaCreateMaxDepthHint": "默认 5。与扫描深度相互独立"
+  "mangaCreateMaxDepthHint": "默认 5。与扫描深度相互独立",
+  "imageViewerControls": "查看选项",
+  "imageViewerMoreSettings": "更多设置",
+  "mangaReaderUnsupported": "这种格式暂时不能在应用内阅读",
+  "mangaReaderPreparing": "正在准备页…",
+  "mangaReaderUnboundSource": "来源网盘未绑定，无法打开"
 }

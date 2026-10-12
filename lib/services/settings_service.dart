@@ -196,7 +196,7 @@ class SettingsService extends ChangeNotifier {
   static const String imageFitCover = 'cover';
   static const int defaultImagePrefetchCount = 1;
   static const int minImagePrefetchCount = 1;
-  static const int maxImagePrefetchCount = 5;
+  static const int maxImagePrefetchCount = 20;
 
   /// Long-press speed boost default (temporary 2× while the finger is down).
   static const double defaultVideoLongPressRate = 2.0;

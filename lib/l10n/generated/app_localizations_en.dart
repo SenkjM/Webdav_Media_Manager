@@ -3810,7 +3810,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get imagePrefetchHint =>
-      'How many images to prefetch on each side (previous and next), from 1 to 5. The whole album is not loaded at once. Default is 1 per side.';
+      'Prefetch this many images before and after the current one (1–20). Default 1 each side.';
 
   @override
   String get imageScanSubdirs => 'Scan subdirectories';
@@ -3847,7 +3847,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get imageViewerGestureHint =>
-      'Tap left for previous, right for next, center for settings';
+      'Tap sides to turn pages, center for options; or swipe';
 
   @override
   String imageViewerCount(Object index, Object total) {
@@ -4604,4 +4604,19 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get mangaCreateMaxDepthHint =>
       'Default 5. Independent from comic-scan depth';
+
+  @override
+  String get imageViewerControls => 'Viewer options';
+
+  @override
+  String get imageViewerMoreSettings => 'More settings';
+
+  @override
+  String get mangaReaderUnsupported => 'This format cannot be read in-app yet';
+
+  @override
+  String get mangaReaderPreparing => 'Preparing pages…';
+
+  @override
+  String get mangaReaderUnboundSource => 'Source drive is not bound';
 }

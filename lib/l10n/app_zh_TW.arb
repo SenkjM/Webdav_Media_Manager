@@ -1082,7 +1082,7 @@
   "imageFitContain": "完整顯示",
   "imageFitCover": "鋪滿",
   "imagePrefetchCount": "預取數量",
-  "imagePrefetchHint": "向前、向後各預取這麼多張（1–5），不會一次載入整本相簿。預設每側 1 張。",
+  "imagePrefetchHint": "向前、向後各預取這麼多張（1–20），不會一次載入整本。預設每側 1 張。",
   "imageScanSubdirs": "搜尋子目錄",
   "imageScanSubdirsHint": "預設關閉。開啟後相簿會包含子目錄中的圖片，掃描可能較慢。",
   "actionViewImage": "檢視圖片",
@@ -1093,7 +1093,7 @@
   "imageViewerEmpty": "這個目錄裡沒有可檢視的圖片",
   "imageLoadFailed": "無法載入這張圖片：{error}",
   "imageViewerRetry": "重試",
-  "imageViewerGestureHint": "輕點左側上一張，右側下一張，中間開啟設定",
+  "imageViewerGestureHint": "輕點左右翻頁，中間開啟選項；也可左右滑動",
   "imageViewerCount": "{index} / {total}",
   "imageViewerPrevious": "上一張",
   "imageViewerNext": "下一張",
@@ -1414,5 +1414,10 @@
   "mangaCreateSubdirs": "建立時搜尋子目錄",
   "mangaCreateSubdirsHint": "預設開。關閉則合併／依目錄建立都只看目前層圖片",
   "mangaCreateMaxDepth": "建立最大深度",
-  "mangaCreateMaxDepthHint": "預設 5。與掃描深度相互獨立"
+  "mangaCreateMaxDepthHint": "預設 5。與掃描深度相互獨立",
+  "imageViewerControls": "檢視選項",
+  "imageViewerMoreSettings": "更多設定",
+  "mangaReaderUnsupported": "這種格式暫時不能在應用內閱讀",
+  "mangaReaderPreparing": "正在準備頁面…",
+  "mangaReaderUnboundSource": "來源網盤未綁定，無法開啟"
 }
