@@ -13,7 +13,7 @@ import 'package:webdav_media_manager/services/user_folder_sync.dart';
 import 'package:webdav_media_manager/utils/manga_identity.dart';
 import 'package:webdav_media_manager/utils/wmp_container.dart';
 
-MangaSyncRow _row(String path, int rev, {List<String> pages = const []}) {
+MangaSyncRow _row(String path, int rev, {int pageCount = 0}) {
   final sid = mangaSeriesIdForTitle('系列');
   return MangaSyncRow(
     manga: Manga(
@@ -22,7 +22,7 @@ MangaSyncRow _row(String path, int rev, {List<String> pages = const []}) {
       remotePath: path,
       title: 'T$path',
       seriesId: sid,
-      pageCount: pages.length,
+      pageCount: pageCount,
       format: MangaFormat.unknown,
       updatedAt: DateTime.utc(2026, 1, 1),
       rev: rev,
@@ -32,34 +32,36 @@ MangaSyncRow _row(String path, int rev, {List<String> pages = const []}) {
       title: '系列',
       createdAt: DateTime.utc(2026, 1, 1),
     ),
-    pages: pages,
   );
 }
 
 void main() {
   group('manga shard codec', () {
-    test('round-trips rows, series, pages and per-row covers', () {
+    test('round-trips rows, series and per-row covers (no page order)', () {
       final cover = Uint8List.fromList([0xFF, 0xD8, 0xFF, 1, 2, 3]);
       final bytes = MangaShardCodec.encodeMangaShard(
         kind: WmpKind.seg,
         deviceId: 'dev',
         revFrom: 1,
         revTo: 2,
-        rows: [
-          _row('/a.cbz', 1, pages: ['001.jpg', '002.jpg']),
-          _row('/b', 2),
-        ],
+        rows: [_row('/a.cbz', 1, pageCount: 2), _row('/b', 2)],
         coverBlobs: [cover, null],
       );
       final d = MangaShardCodec.decode(bytes);
       expect(d.kind, WmpKind.seg);
       expect(d.rows, hasLength(2));
-      expect(d.rows[0].pages, ['001.jpg', '002.jpg']);
+      expect(d.rows[0].manga.pageCount, 2);
       expect(d.rows[0].manga.rev, 1);
       expect(d.rows[0].series?.title, '系列');
       expect(d.rows[0].manga.id, mangaIdForRemote('盘', '/a.cbz'));
       expect(d.coverFor(0), cover);
       expect(d.coverFor(1), isNull);
+    });
+
+    test('page order never enters a shard record (tag 18 retired)', () {
+      final rec = MangaShardCodec.rowToRecord(_row('/a.cbz', 1, pageCount: 3));
+      expect(rec.containsKey(18), isFalse);
+      expect(rec[WmpManga.pageCount], 3);
     });
 
     test('series id is deterministic across devices', () {

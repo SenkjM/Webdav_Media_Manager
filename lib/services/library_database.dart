@@ -1701,20 +1701,6 @@ CREATE TABLE IF NOT EXISTS local_meta (
     return db.delete('deleted_mangas', where: 'rev <= ?', whereArgs: [upTo]);
   }
 
-  /// Every page row of every manga, grouped by manga id (page order).
-  Future<Map<String, List<String>>> allMangaPagesById() async {
-    final db = await database;
-    final rows = await db.query(
-      'manga_pages',
-      orderBy: 'manga_id ASC, page_index ASC',
-    );
-    final out = <String, List<String>>{};
-    for (final r in rows) {
-      (out[r['manga_id'] as String] ??= []).add(r['rel_path'] as String);
-    }
-    return out;
-  }
-
   Future<List<MangaProgress>> allMangaProgress() async {
     final db = await database;
     final rows = await db.query('manga_progress');
@@ -1729,7 +1715,6 @@ CREATE TABLE IF NOT EXISTS local_meta (
     return {
       'series': await db.query('manga_series'),
       'mangas': await db.query('mangas'),
-      'pages': await db.query('manga_pages'),
       'progress': await db.query('manga_progress'),
       'tombstones': await db.query('deleted_mangas'),
     };
@@ -1764,7 +1749,6 @@ CREATE TABLE IF NOT EXISTS local_meta (
 
       await put('manga_series', rows('series'));
       await put('mangas', rows('mangas'));
-      await put('manga_pages', rows('pages'));
       await put('manga_progress', rows('progress'));
       await put('deleted_mangas', rows('tombstones'));
     });
@@ -1804,22 +1788,10 @@ CREATE TABLE IF NOT EXISTS local_meta (
     return [for (final r in rows) MangaPage.fromMap(r)];
   }
 
-  /// Freeze the page list. A local write ([bumpRev]) also bumps the manga's
-  /// rev so the new page order syncs; adopting a cloud row passes false.
-  Future<void> replaceMangaPages(
-    String mangaId,
-    List<MangaPage> pages, {
-    bool bumpRev = true,
-  }) async {
+  /// Freeze the page list. Page order is a **local cache** (not synced, not
+  /// in backups), so this never bumps the manga's rev.
+  Future<void> replaceMangaPages(String mangaId, List<MangaPage> pages) async {
     final db = await database;
-    if (bumpRev) {
-      await db.update(
-        'mangas',
-        {'rev': _nextMangaRev()},
-        where: 'id = ?',
-        whereArgs: [mangaId],
-      );
-    }
     await db.transaction((txn) async {
       await txn.delete(
         'manga_pages',

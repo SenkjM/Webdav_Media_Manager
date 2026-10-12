@@ -15,16 +15,14 @@ import 'library_sync_store.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
-/// One manga row as it travels in a cloud shard: the `mangas` row, its series
-/// (inline, so a pulled row can recreate it), and the frozen page order.
+/// One manga row as it travels in a cloud shard: the `mangas` row and its
+/// series (inline, so a pulled row can recreate it). Page order
+/// (`manga_pages`) is a local cache and never travels.
 class MangaSyncRow {
-  MangaSyncRow({required this.manga, this.series, this.pages = const []});
+  MangaSyncRow({required this.manga, this.series});
 
   final Manga manga;
   final MangaSeries? series;
-
-  /// `manga_pages.rel_path` in page order (empty until the pages are frozen).
-  final List<String> pages;
 
   int get rev => manga.rev;
 
@@ -90,7 +88,6 @@ class MangaShardCodec {
       WmpManga.remoteMissing: m.remoteMissing ? 1 : 0,
       WmpManga.pageTurn: m.pageTurn,
       WmpManga.updatedAt: m.updatedAt.toUtc().toIso8601String(),
-      if (row.pages.isNotEmpty) WmpManga.pages: jsonEncode(row.pages),
       WmpManga.coverIndex: coverIndex,
     };
   }
@@ -113,16 +110,6 @@ class MangaShardCodec {
     final updatedAt =
         DateTime.tryParse(str(WmpManga.updatedAt) ?? '')?.toLocal() ??
         DateTime.now();
-    final pages = <String>[];
-    final rawPages = str(WmpManga.pages);
-    if (rawPages != null) {
-      final decoded = jsonDecode(rawPages);
-      if (decoded is List) {
-        for (final e in decoded) {
-          if (e is String) pages.add(e);
-        }
-      }
-    }
     return MangaSyncRow(
       manga: Manga(
         id: mangaIdForRemote(sourceName, remotePath),
@@ -133,7 +120,7 @@ class MangaShardCodec {
         seriesId: seriesId,
         volume: str(WmpManga.volume),
         chapterNumber: str(WmpManga.chapterNumber),
-        pageCount: num_(WmpManga.pageCount) ?? pages.length,
+        pageCount: num_(WmpManga.pageCount) ?? 0,
         coverRelpath: str(WmpManga.coverRelpath),
         format: str(WmpManga.format) ?? MangaFormat.unknown,
         remoteMissing: (num_(WmpManga.remoteMissing) ?? 0) != 0,
@@ -150,7 +137,6 @@ class MangaShardCodec {
               sortTitle: str(WmpManga.seriesSortTitle),
               createdAt: updatedAt,
             ),
-      pages: pages,
     );
   }
 

@@ -181,16 +181,23 @@ class MangaLibraryService extends ChangeNotifier {
     await _db.replaceMangaPages(mangaId, pages);
     final existing = await _db.loadMangaById(mangaId);
     if (existing != null) {
-      await _db.upsertManga(
-        existing.copyWith(
-          pageCount: pages.length,
-          coverRelpath:
-              coverRelpath ??
-              existing.coverRelpath ??
-              (pages.isEmpty ? null : pages.first.relPath),
-          updatedAt: DateTime.now(),
-        ),
-      );
+      final cover =
+          coverRelpath ??
+          existing.coverRelpath ??
+          (pages.isEmpty ? null : pages.first.relPath);
+      // Page order itself is a local cache; only a change to the synced
+      // fields (page_count / cover) rewrites the row and bumps its rev, so a
+      // device rebuilding its cache for a pulled row does not re-upload it.
+      if (existing.pageCount != pages.length ||
+          existing.coverRelpath != cover) {
+        await _db.upsertManga(
+          existing.copyWith(
+            pageCount: pages.length,
+            coverRelpath: cover,
+            updatedAt: DateTime.now(),
+          ),
+        );
+      }
     }
     await reload();
   }
@@ -415,31 +422,26 @@ class MangaLibraryService extends ChangeNotifier {
     return null;
   }
 
-  /// Every local row with its series and frozen page order, as sync ships it.
+  /// Every local row with its series, as sync ships it (no page order).
   Future<List<MangaSyncRow>> syncRows() async {
     final mangas = await _db.loadMangas();
     final series = {for (final s in await _db.loadMangaSeries()) s.id: s};
-    final pages = await _db.allMangaPagesById();
     return [
       for (final m in mangas)
         MangaSyncRow(
           manga: m,
           series: m.seriesId == null ? null : series[m.seriesId],
-          pages: pages[m.id] ?? const [],
         ),
     ];
   }
 
-  /// Adopt rows pulled from the cloud verbatim (rev kept, pages replaced).
+  /// Adopt rows pulled from the cloud verbatim (rev kept). Local page order
+  /// is left alone; a missing one is rebuilt on first open / scrape.
   Future<void> adoptCloudRows(List<MangaSyncRow> rows) async {
     for (final r in rows) {
       final s = r.series;
       if (s != null) await _db.upsertMangaSeries(s);
       await _db.upsertManga(r.manga, keepRev: true);
-      await _db.replaceMangaPages(r.manga.id, [
-        for (var i = 0; i < r.pages.length; i++)
-          MangaPage(mangaId: r.manga.id, pageIndex: i, relPath: r.pages[i]),
-      ], bumpRev: false);
     }
     await reload();
   }

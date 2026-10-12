@@ -52,11 +52,7 @@ class _MemMangaDb extends LibraryDatabase {
   }
 
   @override
-  Future<void> replaceMangaPages(
-    String mangaId,
-    List<MangaPage> list, {
-    bool bumpRev = true,
-  }) async {
+  Future<void> replaceMangaPages(String mangaId, List<MangaPage> list) async {
     pages.removeWhere((p) => p.mangaId == mangaId);
     pages.addAll(list);
   }

@@ -44,7 +44,7 @@
 | 歌单 | **真同步**：整份 `WDMMPL01` 最后写入胜出；删除记在该歌单自己的 `WDMMPD01` 里。拉取不会把每份本地歌单无条件传回去。设置里可手动「清理删除记录」，没有定时提醒 |
 
 | 音乐库 | **增量**：`library.addListener` 防抖 20 s 后 `syncLibraryIncremental()`；手动「重建」`syncLibraryFull()` 才对齐删除。**重建会把云端库整体替换成本地快照**：旧基础分片、增量段与 `del-*` 墓碑文件全部删除，本地墓碑随即清零 |
-| 漫画库 | **与音乐库相同**：`index.json` + `lib-/seg-/del-*.wdmm`，rev + 墓碑；`mangaLibrary` 防抖 20 s 增量（始终带封面），手动重建（「嵌入封面」默认开）/ 整理 / 从云端覆写 / 删除漫画库。键 `网盘名 + remotePath`，高 rev 胜，墓碑 rev ≥ 行 rev 才隐藏。行内携带系列与页序 |
+| 漫画库 | **与音乐库相同**：`index.json` + `lib-/seg-/del-*.wdmm`，rev + 墓碑；`mangaLibrary` 防抖 20 s 增量（始终带封面），手动重建（「嵌入封面」默认开）/ 整理 / 从云端覆写 / 删除漫画库。键 `网盘名 + remotePath`，高 rev 胜，墓碑 rev ≥ 行 rev 才隐藏。行内携带系列；**页序（`manga_pages`）只是本地缓存，不同步**，别的设备首次打开 / 刮削时自行生成 |
 | 阅读进度 | 随漫画增量读写 `library/manga/progress.json`；每本独立，较新 `updatedAt` 胜 |
 | 用户文件夹 | **整份快照** `folders.json`，last-write-wins：只本机改 → 推；只云端变 → 拉并整份替换；都改 → 修改时间新者整份胜 |
 | 全部备份 | `backupTo(passphrase:)` 打成**一个**归档写到 `<远端路径>backup/` |
@@ -89,7 +89,7 @@
 
 ## 5. 全部备份归档（BackupService）
 
-- `formatVersion = 7`（v7 新增 JSON 段 `mangaLibrary = 13`：漫画 / 系列 / 页 / 进度；`userFolders = 14`：用户文件夹 + 条目；漫画封面不进归档）；一个 `WmpContainer`（kind `BK`）：META（含 format 标记）+ TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections（credentials / playlists / settings / cueAlbums）+ 可选 **口令校验块**（`WmpSections.passCheck = 11`）。
+- `formatVersion = 7`（v7 新增 JSON 段 `mangaLibrary = 13`：漫画 / 系列 / 进度 / 墓碑，不含页序（本地缓存，恢复后首次打开重建）；`userFolders = 14`：用户文件夹 + 条目；漫画封面不进归档）；一个 `WmpContainer`（kind `BK`）：META（含 format 标记）+ TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections（credentials / playlists / settings / cueAlbums）+ 可选 **口令校验块**（`WmpSections.passCheck = 11`）。
 - 内容 = 全部账号凭证（WebDAV 三件套 + 云盘驱动配置，取代早前「云盘账号不进备份」的决定，见 [99 §4.2.8](99-IN-PROGRESS.md)）+ 全部音乐库行（tracks + cue_slices + cue_albums）+ 全部歌单 + 封面缩略图 + 设置；**不含** `music_cache` 音频与下载队列。设置段随 `exportForBackup()` 带走图片查看偏好（幻灯片开关、间隔、循环、适应方式、预取数量、搜索子目录），不另开归档版本。
 - 加密：可选口令，魔数 `WDMMEN01` + PBKDF2 + AES-256-GCM（`backup_crypto.dart`）；归档内凭证按 `credentials.json` 的规则另行逐字段加密（WebDAV 密码 + 云盘配置的 obscure 字段）。恢复时同样静默过滤未注册的网盘类型。
 - **口令校验块（v6）**：新建带口令的归档在容器内写入 `passCheck` 段（`AESGCMv1:` 密封固定明文 `WDMM-BACKUP-PASS-OK\u0001`，与凭证字段同一套 `CredentialVaultCrypto`）；可读 JSON 导出则写顶层 `passCheck`。无口令归档不写此段。

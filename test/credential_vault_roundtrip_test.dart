@@ -525,6 +525,8 @@ void main() {
         utf8.decode(container.readSection(WmpSections.mangaLibrary)!),
       );
       expect((manga['mangas'] as List).single['id'], 'm1');
+      // Page order is a local cache: never in the backup.
+      expect((manga as Map).containsKey('pages'), isFalse);
       final folders = jsonDecode(
         utf8.decode(container.readSection(WmpSections.userFolders)!),
       );
