@@ -605,10 +605,15 @@ class _MangaGridTile extends StatelessWidget {
 Future<void> _mangaMore(BuildContext context, Manga manga) async {
   final l10n = AppLocalizations.of(context)!;
   final cache = context.read<CacheService>();
-  final cached = cache.hasLocalMangaFile(
-    manga.remotePath,
-    sourceName: manga.sourceName,
-  );
+  // Loose-image mangas (class A) carry an explicit page list; they have no
+  // whole-file cache and nothing to scrape. Only class B (containers) get
+  // those two items.
+  final isContainer = manga.format != MangaFormat.images;
+  final cached = isContainer &&
+      cache.hasLocalMangaFile(
+        manga.remotePath,
+        sourceName: manga.sourceName,
+      );
   final action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
@@ -621,19 +626,23 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
             title: Text(l10n.mangaEditMetadata),
             onTap: () => Navigator.pop(ctx, 'edit'),
           ),
-          ListTile(
-            leading: const Icon(Icons.auto_fix_high_outlined),
-            title: Text(l10n.mangaScrapeAction),
-            onTap: () => Navigator.pop(ctx, 'scrape'),
-          ),
-          ListTile(
-            leading: Icon(
-              cached ? Icons.delete_outline : Icons.download_outlined,
+          if (isContainer) ...[
+            ListTile(
+              leading: const Icon(Icons.auto_fix_high_outlined),
+              title: Text(l10n.mangaScrapeAction),
+              onTap: () => Navigator.pop(ctx, 'scrape'),
             ),
-            title: Text(cached ? l10n.mangaClearCache : l10n.mangaCacheAction),
-            subtitle: cached ? Text(l10n.mangaCached) : null,
-            onTap: () => Navigator.pop(ctx, cached ? 'clear_cache' : 'cache'),
-          ),
+            ListTile(
+              leading: Icon(
+                cached ? Icons.delete_outline : Icons.download_outlined,
+              ),
+              title: Text(
+                cached ? l10n.mangaClearCache : l10n.mangaCacheAction,
+              ),
+              subtitle: cached ? Text(l10n.mangaCached) : null,
+              onTap: () => Navigator.pop(ctx, cached ? 'clear_cache' : 'cache'),
+            ),
+          ],
         ],
       ),
     ),

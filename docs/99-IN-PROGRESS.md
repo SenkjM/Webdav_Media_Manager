@@ -1230,7 +1230,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 ### 19.3 Schema（v13 加表 → v14 `page_turn`，不擦曲目）
 
-同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
+同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；后续本分支再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1911-漫画库云同步--进度同步--文件夹同步--云端路径重排本分支实现待真机验收) 的「schema 15」。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
 
 | 表 | 要点 |
 |----|------|
@@ -1323,12 +1323,15 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 **用户决定（2026-10-12）**：进度本地持久化并同步；路径改为 `<远端路径>library/music/`、`library/manga/`，留扩展位，**不兼容旧 `library/` 平铺布局**；漫画同步完全对照音乐（index.json + lib-/seg-/del-*.wdmm、rev + 墓碑、增量 / 重建 / 整理 / 覆写 / 删除、一键同步 + 防抖 + 定时；增量始终带封面，重建「嵌入封面」默认开）；全部备份含漫画表 + 进度 + 用户文件夹；用户文件夹整份快照同步，路径与合并规则由实现方定。
 
 - **manga_pages 是否覆盖 CBZ**：是。散图在入库时写；CBZ 在首次打开（Range 读 zip 目录或已下载 zip，`manga_reader_prep.dart`）或刮削任务（`replacePages`）时冻结页序。
-- **页序只作本地缓存（用户决定 2026-10-12 晚）**：`manga_pages` **不进**同步分片、**不进**全部备份 v7 漫画段，不做兼容（tag 18 退役不复用）。本地表与行为不变。别的设备拉到行 / 恢复备份后：CBZ 照旧首次打开或刮削时生成；散图在首次打开时按 `remotePath` 递归列目录、按 `mangaPageSortKey` 排序后冻结。写页序不再 bump rev；`replacePages` 只在 `page_count` / 封面变化时改行，所以重建缓存不会触发重传。
+- **页序按类分流（用户决定 2026-10-12 晚 → 10-13 定案）**：`manga_pages` 按漫画类别分两种待遇，见 [19.11 末尾的两类模型](#)。
+  - **A 类 散图（`format = images`）**：页表是数据（成员集合 + 顺序），**进**同步分片（`WmpManga.pages = 18`，JSON 数组，`MangaSyncRow` 只对 images 填充；CBZ 等容器行永远不带）、**进**全部备份 v7 漫画段 `pages` 段。本地编辑页表 bump `mangas.rev`；从云端拉取时**替换本地页表且不 bump**（避免回环重传）；`replacePages` 只在页数 / 封面变化时改行。恢复备份后散图页表直接可用。
+  - **B 类 容器（CBZ / CBR / PDF / EPUB）**：页序由文件推出，**只作本地缓存**——不进同步分片、不进全部备份，不做兼容。别的设备拉到行 / 恢复备份后照旧首次打开（`manga_reader_prep.dart`）或刮削时生成。写页序**永不 bump rev**；`replacePages` 只在页数 / 封面变化时改行，所以重建缓存不会触发重传。
+  - `0e77127` 里「散图缺页序时打开即递归列目录重建」的实现已删除——散图的页表是建立时筛选出的成员集合（扩展名、深度、子目录开关、按目录模式只取本层），列目录无法复现，且按目录模式下父目录会吞掉子书。现在散图缺页表时直接报空页错误，让用户回网络库重建该本。
 - **远端布局**：`library/music/`（原音乐库内容，不迁移旧路径）、`library/manga/`（`index.json` format `wmp_manga_library_index` + 分片 + `progress.json`）、`library/folders/folders.json`。
 - **漫画行合并**：键 `网盘名 + 规范化 remotePath`，高 rev 胜（与到达顺序无关）；墓碑只在 `tomb.rev >= row.rev` 时隐藏；本地写入清掉本地墓碑。系列内联在行里，系列 id 改为确定性 `sha1('mangaSeries\0'+title)`，避免跨设备分裂。
 - **进度合并**：每个 manga_id 独立，较新 `updatedAt` 胜；相等不动。增量同步时一并读写 `progress.json`。
 - **文件夹合并**：整份快照 LWW。本机自上次同步后改过 → 推；只有云端 `updatedAt` 变了 → 拉（整份替换本地）；两边都改 → 本机修改时间与云端 `updatedAt` 比，新者整份胜，另一方修改丢弃不合并。本机修改时间在 `local_meta.folders_changed_at`，上次同步与所见云端时间按目的地存在 `local_meta`。
-- **备份**：`formatVersion 7`，新增段 `mangaLibrary = 13`（漫画 / 系列 / 进度 / 墓碑 JSON，**无页序**）、`userFolders = 14`。恢复时本地页序缓存清空，按上条重新生成。
+- **备份**：`formatVersion 7`，新增段 `mangaLibrary = 13`（漫画 / 系列 / **散图页行** / 进度 / 墓碑 JSON，容器页序不入归档）、`userFolders = 14`。恢复时散图页表直接可用，容器本地页序缓存清空，按上条重新生成。
 - **schema 15**：`mangas.rev`、`deleted_mangas`、`local_meta`。音乐「覆写」不再清漫画 / 文件夹；同步游标按前缀 `library:` / `manga:` 分开清。
 - **顺带修复**：同步页碎片提示「（约 true）」——gen-l10n 无 @ 元数据时占位参数按字母序生成（`count, hint, size`），调用方按模板顺序传了；`stepMangaIncremental` 同理按 `adopted, progress, tombs, uploaded` 传。图片预取测试按上限 20 改为 9→9、25→20。
 - **暂缓**：漫画封面不进全部备份归档；没有漫画的空系列不写墓碑；未真机验收。
