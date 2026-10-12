@@ -291,6 +291,13 @@
   "playlistQueueDefaultName": "Playlist {month}/{day}",
   "playlistCreateFromQueue": "Create from current queue",
   "playlistCreateFromQueueBody": "Copy {count} tracks from the current queue into a new playlist.",
+  "playlistAddQueueToExisting": "Add to existing playlist",
+  "playlistAddQueueToExistingBody": "Add {count} tracks from the current queue to an existing playlist (duplicates are skipped).",
+  "@playlistAddQueueToExistingBody": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "playlistNameLabel": "Playlist name",
   "create": "Create",
   "playlistCreated": "Created playlist \"{name}\"",

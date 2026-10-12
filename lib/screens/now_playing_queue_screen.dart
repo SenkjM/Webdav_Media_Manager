@@ -1,38 +1,71 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../l10n/generated/app_localizations.dart';
+import '../models/playlist.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/app_snack.dart';
 import '../widgets/cover_art.dart';
-import '../l10n/generated/app_localizations.dart';
+import 'playlists_screen.dart';
 
 /// Ephemeral now-playing queue viewer. Does NOT auto-sync to saved playlists.
 class NowPlayingQueueScreen extends StatelessWidget {
   const NowPlayingQueueScreen({super.key});
+
+  Future<void> _addToExistingPlaylist(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    final player = context.read<AudioPlayerService>();
+    final queue = player.queue;
+    if (queue.isEmpty) {
+      AppSnack.show(context, l10n.playlistQueueEmpty);
+      return;
+    }
+    final entries = [
+      for (final t in queue)
+        PlaylistEntry(
+          sourceName: t.sourceName,
+          remotePath: t.remotePath,
+          musicId: t.musicId,
+          title: t.displayTitle,
+          durationMs: t.duration?.inMilliseconds,
+          cueTrackIndex: t.cueTrackIndex,
+        ),
+    ];
+    await showAddManyToPlaylistDialog(context, entries);
+  }
 
   @override
   Widget build(BuildContext context) {
     final player = context.watch<AudioPlayerService>();
     final queue = player.queue;
     final currentIndex = player.index;
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(
           queue.isEmpty
-              ? AppLocalizations.of(context)!.nowPlayingQueueTitle
-              : AppLocalizations.of(context)!
-                    .nowPlayingQueueCount(queue.length),
+              ? l10n.nowPlayingQueueTitle
+              : l10n.nowPlayingQueueCount(queue.length),
         ),
+        actions: [
+          if (queue.isNotEmpty)
+            IconButton(
+              tooltip: l10n.playlistAddQueueToExisting,
+              icon: const Icon(Icons.playlist_add),
+              onPressed: () => _addToExistingPlaylist(context),
+            ),
+        ],
       ),
       body: queue.isEmpty
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  AppLocalizations.of(context)!.nowPlayingQueueEmpty,
+                  l10n.nowPlayingQueueEmpty,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -67,7 +100,7 @@ class NowPlayingQueueScreen extends StatelessWidget {
                   ),
                   subtitle: Text(
                     [
-                      t.displayArtistFor(AppLocalizations.of(context)!),
+                      t.displayArtistFor(l10n),
                       if (t.displayAlbum.isNotEmpty) t.displayAlbum,
                     ].join(' · '),
                     maxLines: 1,

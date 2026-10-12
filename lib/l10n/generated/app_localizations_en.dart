@@ -933,6 +933,14 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get playlistAddQueueToExisting => 'Add to existing playlist';
+
+  @override
+  String playlistAddQueueToExistingBody(int count) {
+    return 'Add $count tracks from the current queue to an existing playlist (duplicates are skipped).';
+  }
+
+  @override
   String get playlistNameLabel => 'Playlist name';
 
   @override
