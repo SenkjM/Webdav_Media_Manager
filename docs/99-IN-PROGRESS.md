@@ -1233,7 +1233,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 ### 19.3 Schema（v13 加表 → v14 `page_turn` → v16 系列降为标签）
 
-同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；后续本分支再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1911-漫画库云同步--进度同步--文件夹同步--云端路径重排) 的「schema 15」；**v16 把 `manga_series` 表折进 `mangas.series` 标签**。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
+同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；v15 再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1911-漫画库云同步--进度同步--文件夹同步--云端路径重排) 的「schema 15」；**v16 把 `manga_series` 表折进 `mangas.series` 标签**。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
 
 | 表 | 要点 |
 |----|------|
