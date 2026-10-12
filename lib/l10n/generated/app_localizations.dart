@@ -1749,6 +1749,18 @@ abstract class AppLocalizations {
   /// **'复制当前队列 {count} 首到新歌单。'**
   String playlistCreateFromQueueBody(Object count);
 
+  /// No description provided for @playlistAddQueueToExisting.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加到已有歌单'**
+  String get playlistAddQueueToExisting;
+
+  /// No description provided for @playlistAddQueueToExistingBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'把当前播放列表的 {count} 首加入已有歌单（已在歌单中的会跳过）。'**
+  String playlistAddQueueToExistingBody(int count);
+
   /// No description provided for @playlistNameLabel.
   ///
   /// In zh, this message translates to:

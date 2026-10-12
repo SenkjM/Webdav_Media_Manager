@@ -97,6 +97,29 @@ class PlaylistsScreen extends StatelessWidget {
     );
   }
 
+  Future<void> _addQueueToExisting(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    final player = context.read<AudioPlayerService>();
+    final queue = player.queue;
+    if (queue.isEmpty) {
+      AppSnack.show(context, l10n.playlistQueueEmpty);
+      return;
+    }
+    final entries = queue
+        .map(
+          (t) => PlaylistEntry(
+            sourceName: t.sourceName,
+            remotePath: t.remotePath,
+            musicId: t.musicId,
+            title: t.displayTitle,
+            durationMs: t.duration?.inMilliseconds,
+            cueTrackIndex: t.cueTrackIndex,
+          ),
+        )
+        .toList();
+    await showAddManyToPlaylistDialog(context, entries);
+  }
+
   Future<void> _create(BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
     final controller = TextEditingController();
@@ -160,6 +183,11 @@ class PlaylistsScreen extends StatelessWidget {
             tooltip: l10n.playlistCreateFromQueue,
             icon: const Icon(Icons.playlist_add_check),
             onPressed: () => _createFromQueue(context),
+          ),
+          IconButton(
+            tooltip: l10n.playlistAddQueueToExisting,
+            icon: const Icon(Icons.playlist_add),
+            onPressed: () => _addQueueToExisting(context),
           ),
           IconButton(
             tooltip: l10n.playlistNew,
@@ -284,6 +312,13 @@ class PlaylistsScreen extends StatelessWidget {
             onPressed: () => _createFromQueue(context),
             icon: const Icon(Icons.playlist_add_check),
             label: Text(l10n.playlistCreateFromQueue),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'queue_to_existing',
+            onPressed: () => _addQueueToExisting(context),
+            icon: const Icon(Icons.playlist_add),
+            label: Text(l10n.playlistAddQueueToExisting),
           ),
           const SizedBox(height: 12),
           FloatingActionButton.extended(

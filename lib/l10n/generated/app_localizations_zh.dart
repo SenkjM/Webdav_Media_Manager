@@ -905,6 +905,14 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get playlistAddQueueToExisting => '添加到已有歌单';
+
+  @override
+  String playlistAddQueueToExistingBody(int count) {
+    return '把当前播放列表的 $count 首加入已有歌单（已在歌单中的会跳过）。';
+  }
+
+  @override
   String get playlistNameLabel => '歌单名称';
 
   @override
@@ -5071,6 +5079,14 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   @override
   String playlistCreateFromQueueBody(Object count) {
     return '複製目前佇列 $count 首到新歌單。';
+  }
+
+  @override
+  String get playlistAddQueueToExisting => '加入已有歌單';
+
+  @override
+  String playlistAddQueueToExistingBody(int count) {
+    return '把目前播放清單的 $count 首加入已有歌單（已在歌單中的會跳過）。';
   }
 
   @override

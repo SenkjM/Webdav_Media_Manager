@@ -291,6 +291,13 @@
   "playlistQueueDefaultName": "播放清單 {month}/{day}",
   "playlistCreateFromQueue": "從目前播放清單建立",
   "playlistCreateFromQueueBody": "複製目前佇列 {count} 首到新歌單。",
+  "playlistAddQueueToExisting": "加入已有歌單",
+  "playlistAddQueueToExistingBody": "把目前播放清單的 {count} 首加入已有歌單（已在歌單中的會跳過）。",
+  "@playlistAddQueueToExistingBody": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
   "playlistNameLabel": "歌單名稱",
   "create": "建立",
   "playlistCreated": "已建立歌單「{name}」",
