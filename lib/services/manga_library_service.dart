@@ -178,16 +178,21 @@ class MangaLibraryService extends ChangeNotifier {
     required List<MangaPage> pages,
     String? coverRelpath,
   }) async {
-    await _db.replaceMangaPages(mangaId, pages);
     final existing = await _db.loadMangaById(mangaId);
+    // Loose-image pages are membership (synced → bump rev); CBZ / container
+    // page order is a local cache and never bumps.
+    await _db.replaceMangaPages(
+      mangaId,
+      pages,
+      bumpRev: existing?.format == MangaFormat.images,
+    );
     if (existing != null) {
       final cover =
           coverRelpath ??
           existing.coverRelpath ??
           (pages.isEmpty ? null : pages.first.relPath);
-      // Page order itself is a local cache; only a change to the synced
-      // fields (page_count / cover) rewrites the row and bumps its rev, so a
-      // device rebuilding its cache for a pulled row does not re-upload it.
+      // Only a change to page_count / cover rewrites the row, so a device
+      // rebuilding its CBZ page cache for a pulled row does not re-upload it.
       if (existing.pageCount != pages.length ||
           existing.coverRelpath != cover) {
         await _db.upsertManga(
@@ -422,26 +427,36 @@ class MangaLibraryService extends ChangeNotifier {
     return null;
   }
 
-  /// Every local row with its series, as sync ships it (no page order).
+  /// Every local row with its series, as sync ships it. Loose-image rows
+  /// carry their page list (membership); CBZ rows never do.
   Future<List<MangaSyncRow>> syncRows() async {
     final mangas = await _db.loadMangas();
     final series = {for (final s in await _db.loadMangaSeries()) s.id: s};
+    final pages = await _db.imageMangaPagesById();
     return [
       for (final m in mangas)
         MangaSyncRow(
           manga: m,
           series: m.seriesId == null ? null : series[m.seriesId],
+          pages: pages[m.id] ?? const [],
         ),
     ];
   }
 
-  /// Adopt rows pulled from the cloud verbatim (rev kept). Local page order
-  /// is left alone; a missing one is rebuilt on first open / scrape.
+  /// Adopt rows pulled from the cloud verbatim (rev kept, no bump). A
+  /// loose-image row replaces its local page list (membership); a CBZ row
+  /// leaves local page order alone (rebuilt on first open / scrape).
   Future<void> adoptCloudRows(List<MangaSyncRow> rows) async {
     for (final r in rows) {
       final s = r.series;
       if (s != null) await _db.upsertMangaSeries(s);
       await _db.upsertManga(r.manga, keepRev: true);
+      if (r.manga.format == MangaFormat.images) {
+        await _db.replaceMangaPages(r.manga.id, [
+          for (var i = 0; i < r.pages.length; i++)
+            MangaPage(mangaId: r.manga.id, pageIndex: i, relPath: r.pages[i]),
+        ]);
+      }
     }
     await reload();
   }

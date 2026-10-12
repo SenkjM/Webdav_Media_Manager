@@ -105,7 +105,10 @@ class _FakeLibraryDatabase extends LibraryDatabase {
   @override
   Future<Map<String, dynamic>> exportMangaSnapshot() async => {
     'mangas': [
-      {'id': 'm1'},
+      {'id': 'm1', 'format': 'images'},
+    ],
+    'pages': [
+      {'manga_id': 'm1', 'page_index': 0, 'rel_path': 'a/001.jpg'},
     ],
   };
 
@@ -525,8 +528,8 @@ void main() {
         utf8.decode(container.readSection(WmpSections.mangaLibrary)!),
       );
       expect((manga['mangas'] as List).single['id'], 'm1');
-      // Page order is a local cache: never in the backup.
-      expect((manga as Map).containsKey('pages'), isFalse);
+      // Loose-image page lists (membership) ride in the backup.
+      expect((manga['pages'] as List).single['rel_path'], 'a/001.jpg');
       final folders = jsonDecode(
         utf8.decode(container.readSection(WmpSections.userFolders)!),
       );

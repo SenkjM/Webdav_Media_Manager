@@ -13,7 +13,13 @@ import 'package:webdav_media_manager/services/user_folder_sync.dart';
 import 'package:webdav_media_manager/utils/manga_identity.dart';
 import 'package:webdav_media_manager/utils/wmp_container.dart';
 
-MangaSyncRow _row(String path, int rev, {int pageCount = 0}) {
+MangaSyncRow _row(
+  String path,
+  int rev, {
+  int pageCount = 0,
+  String format = MangaFormat.unknown,
+  List<String> pages = const [],
+}) {
   final sid = mangaSeriesIdForTitle('系列');
   return MangaSyncRow(
     manga: Manga(
@@ -23,7 +29,7 @@ MangaSyncRow _row(String path, int rev, {int pageCount = 0}) {
       title: 'T$path',
       seriesId: sid,
       pageCount: pageCount,
-      format: MangaFormat.unknown,
+      format: format,
       updatedAt: DateTime.utc(2026, 1, 1),
       rev: rev,
     ),
@@ -32,6 +38,7 @@ MangaSyncRow _row(String path, int rev, {int pageCount = 0}) {
       title: '系列',
       createdAt: DateTime.utc(2026, 1, 1),
     ),
+    pages: pages,
   );
 }
 
@@ -58,9 +65,37 @@ void main() {
       expect(d.coverFor(1), isNull);
     });
 
-    test('page order never enters a shard record (tag 18 retired)', () {
-      final rec = MangaShardCodec.rowToRecord(_row('/a.cbz', 1, pageCount: 3));
-      expect(rec.containsKey(18), isFalse);
+    test('loose-image rows carry their page list (membership)', () {
+      final row = _row(
+        '/imgs',
+        3,
+        format: MangaFormat.images,
+        pages: ['ch1/001.jpg', 'ch2/001.png'],
+      );
+      final bytes = MangaShardCodec.encodeMangaShard(
+        kind: WmpKind.seg,
+        deviceId: 'dev',
+        revFrom: 3,
+        revTo: 3,
+        rows: [row],
+      );
+      final back = MangaShardCodec.decode(bytes).rows.single;
+      expect(back.manga.format, MangaFormat.images);
+      expect(back.pages, ['ch1/001.jpg', 'ch2/001.png']);
+      expect(MangaShardCodec.rowToRecord(row)[WmpManga.pages], isA<String>());
+    });
+
+    test('CBZ rows never carry page order (local cache)', () {
+      final row = _row(
+        '/a.cbz',
+        1,
+        pageCount: 3,
+        format: MangaFormat.cbz,
+        pages: ['001.jpg', '002.jpg', '003.jpg'],
+      );
+      expect(row.pages, isEmpty);
+      final rec = MangaShardCodec.rowToRecord(row);
+      expect(rec.containsKey(WmpManga.pages), isFalse);
       expect(rec[WmpManga.pageCount], 3);
     });
 

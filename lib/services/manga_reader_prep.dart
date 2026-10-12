@@ -10,7 +10,6 @@ import '../models/manga.dart';
 import '../models/manga_page.dart';
 import '../utils/cbz_range_zip.dart';
 import '../utils/manga_file_types.dart';
-import '../utils/manga_scan_walk.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'manga_library_service.dart';
@@ -60,12 +59,7 @@ class MangaReaderPrep {
   }) async {
     switch (manga.format) {
       case MangaFormat.images:
-        return _prepareImages(
-          manga: manga,
-          mangaLib: mangaLib,
-          accountId: accountId,
-          webDav: webDav,
-        );
+        return _prepareImages(manga: manga, mangaLib: mangaLib);
       case MangaFormat.cbz:
         return _prepareCbz(
           manga: manga,
@@ -86,28 +80,8 @@ class MangaReaderPrep {
   static Future<MangaReaderPrepareResult> _prepareImages({
     required Manga manga,
     required MangaLibraryService mangaLib,
-    required String accountId,
-    required WebDavService webDav,
   }) async {
-    var pages = await mangaLib.pagesFor(manga.id);
-    if (pages.isEmpty) {
-      // Page order is a local cache (not synced / not in backups): a row
-      // pulled from the cloud or restored re-lists its folder on first open.
-      final rels = await listMergedImageRelPaths(
-        webDav: webDav,
-        accountId: accountId,
-        rootPath: manga.remotePath,
-        imageExtensions: kMangaImageExtensions,
-      );
-      rels.sort((a, b) => mangaPageSortKey(a).compareTo(mangaPageSortKey(b)));
-      if (rels.isNotEmpty) {
-        pages = [
-          for (var i = 0; i < rels.length; i++)
-            MangaPage(mangaId: manga.id, pageIndex: i, relPath: rels[i]),
-        ];
-        await mangaLib.replacePages(manga.id, pages: pages);
-      }
-    }
+    final pages = await mangaLib.pagesFor(manga.id);
     if (pages.isEmpty) {
       throw MangaReaderPrepareException(MangaReaderPrepareError.empty);
     }
