@@ -10,13 +10,20 @@ import '../utils/back_handler_registry.dart';
 import '../widgets/mini_player.dart';
 import 'about_screen.dart';
 import 'tasks_screen.dart';
+import 'library_folder_browser_screen.dart';
 import 'library_screen.dart';
 import 'network_library_screen.dart';
 import 'playlists_screen.dart';
 import 'settings_screen.dart';
 
+/// Drawer index of the folders tab inside [HomeShell].
+const int kFoldersTabIndex = 0;
+
+/// Drawer index of the music library inside [HomeShell].
+const int kMusicLibraryTabIndex = 1;
+
 /// Drawer index of the network library inside [HomeShell].
-const int kNetworkLibraryTabIndex = 2;
+const int kNetworkLibraryTabIndex = 3;
 
 /// Active shell tab. [IndexedStack] mounts every page at startup, so a page
 /// that must not talk to the network until it is shown has to read this
@@ -64,20 +71,22 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _foldersNav = GlobalKey<NavigatorState>();
   final _libraryNav = GlobalKey<NavigatorState>();
   final _playlistsNav = GlobalKey<NavigatorState>();
   final _networkNav = GlobalKey<NavigatorState>();
   final _downloadsNav = GlobalKey<NavigatorState>();
   int _index = 0;
 
-  static const _settingsIndex = 4;
+  static const _settingsIndex = 5;
+  static const _maxTabIndex = 5;
 
   @override
   void initState() {
     super.initState();
     // Settings are already loaded in AppState.init before HomeShell mounts.
     // Honor the user-configured home tab on cold start (was hard-coded to 0).
-    final home = context.read<SettingsService>().homeTab.clamp(0, 4);
+    final home = context.read<SettingsService>().homeTab.clamp(0, _maxTabIndex);
     _index = home;
     // 返回键分发的 tab 归属：各 tab 注册的处理器只在自己是活跃 tab 时参与，
     // 否则 IndexedStack 里后台 tab 的处理器会吃掉别的 tab 的返回键
@@ -95,6 +104,10 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final pages = [
+      _TabNavigator(
+        navigatorKey: _foldersNav,
+        root: const LibraryFolderBrowserScreen(),
+      ),
       _TabNavigator(navigatorKey: _libraryNav, root: const LibraryScreen()),
       _TabNavigator(navigatorKey: _playlistsNav, root: const PlaylistsScreen()),
       _TabNavigator(
@@ -210,34 +223,40 @@ class _HomeShellState extends State<HomeShell> {
                           ),
                           const SizedBox(height: 8),
                           _DrawerItem(
-                            icon: Icons.library_music,
-                            label: l10n.library,
+                            icon: Icons.folder_outlined,
+                            label: l10n.librarySectionFolders,
                             selected: _index == 0,
                             onTap: () => _select(0),
                           ),
                           _DrawerItem(
-                            icon: Icons.queue_music,
-                            label: l10n.playlists,
+                            icon: Icons.library_music,
+                            label: l10n.library,
                             selected: _index == 1,
                             onTap: () => _select(1),
                           ),
                           _DrawerItem(
-                            icon: Icons.cloud_outlined,
-                            label: l10n.networkLibrary,
+                            icon: Icons.queue_music,
+                            label: l10n.playlists,
                             selected: _index == 2,
                             onTap: () => _select(2),
                           ),
                           _DrawerItem(
-                            icon: Icons.download_outlined,
-                            label: l10n.taskQueue,
+                            icon: Icons.cloud_outlined,
+                            label: l10n.networkLibrary,
                             selected: _index == 3,
                             onTap: () => _select(3),
                           ),
                           _DrawerItem(
-                            icon: Icons.settings_outlined,
-                            label: l10n.settings,
+                            icon: Icons.sync_outlined,
+                            label: l10n.taskQueue,
                             selected: _index == 4,
                             onTap: () => _select(4),
+                          ),
+                          _DrawerItem(
+                            icon: Icons.settings_outlined,
+                            label: l10n.settings,
+                            selected: _index == 5,
+                            onTap: () => _select(5),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -299,20 +318,22 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   IconData get _drawerIcon => switch (_index) {
-        0 => Icons.library_music,
-        1 => Icons.queue_music,
-        2 => Icons.cloud_outlined,
-        3 => Icons.download_outlined,
-        4 => Icons.settings_outlined,
-        _ => Icons.library_music,
+        0 => Icons.folder_outlined,
+        1 => Icons.library_music,
+        2 => Icons.queue_music,
+        3 => Icons.cloud_outlined,
+        4 => Icons.sync_outlined,
+        5 => Icons.settings_outlined,
+        _ => Icons.folder_outlined,
       };
 
   GlobalKey<NavigatorState>? get _activeNavKey {
     return switch (_index) {
-      0 => _libraryNav,
-      1 => _playlistsNav,
-      2 => _networkNav,
-      3 => _downloadsNav,
+      0 => _foldersNav,
+      1 => _libraryNav,
+      2 => _playlistsNav,
+      3 => _networkNav,
+      4 => _downloadsNav,
       _ => null,
     };
   }

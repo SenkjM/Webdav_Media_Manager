@@ -142,11 +142,12 @@ class _SettingsScreenState extends State<SettingsScreen>
               borderRadius: BorderRadius.circular(10),
               value: settings.homeTab,
               items: [
-                DropdownMenuItem(value: 0, child: Text(l10n.library)),
-                DropdownMenuItem(value: 1, child: Text(l10n.playlists)),
-                DropdownMenuItem(value: 2, child: Text(l10n.networkLibrary)),
-                DropdownMenuItem(value: 3, child: Text(l10n.taskQueue)),
-                DropdownMenuItem(value: 4, child: Text(l10n.settings)),
+                DropdownMenuItem(value: 0, child: Text(l10n.librarySectionFolders)),
+                DropdownMenuItem(value: 1, child: Text(l10n.library)),
+                DropdownMenuItem(value: 2, child: Text(l10n.playlists)),
+                DropdownMenuItem(value: 3, child: Text(l10n.networkLibrary)),
+                DropdownMenuItem(value: 4, child: Text(l10n.taskQueue)),
+                DropdownMenuItem(value: 5, child: Text(l10n.settings)),
               ],
               onChanged: (v) {
                 if (v != null) context.read<SettingsService>().setHomeTab(v);

@@ -96,7 +96,7 @@
   "streamPrefetchForward": "向後預載",
   "streamPrefetchHint": "向前／向後各幾首。串流播放時寫入臨時預載；快取播放時按同一視窗背景快取。0 表示該方向不預載。",
   "downloadPending": "等待中",
-  "downloadActive": "下載中",
+  "downloadActive": "同步中",
   "downloadCompleted": "已完成",
   "downloadFailed": "失敗",
   "downloadCancelled": "已取消",
@@ -115,7 +115,7 @@
   "retry": "重試",
   "clearQueueConfirm": "清除佇列？",
   "clearQueueDetails": "將移除 {count} 筆佇列記錄{runningText}；已下載的檔案會保留。",
-  "runningDownloads": "，並取消 {count} 個進行中的下載",
+  "runningDownloads": "，並取消 {count} 個進行中的同步",
   "clearAll": "全部清除",
   "accountAddServer": "新增伺服器",
   "accountEditServer": "編輯伺服器",
@@ -651,15 +651,15 @@
   "locationSystemGallery": "系統相簿",
   "locationDownloads": "下載目錄",
   "locationDownloadsSubdir": "下載目錄/{dir}",
-  "dlChannelProgressName": "下載進度",
+  "dlChannelProgressName": "同步進度",
   "dlChannelProgressDesc": "任務佇列進行中的進度",
-  "dlChannelDoneName": "下載完成",
-  "dlChannelDoneDesc": "全部下載完成後的結果彙總",
+  "dlChannelDoneName": "同步完成",
+  "dlChannelDoneDesc": "全部同步完成後的結果彙總",
   "dlDoneCancelledCount": "取消 {count}",
   "dlDoneFailedCount": "失敗 {count}",
   "dlDoneOkCount": "成功 {count}",
   "dlDoneSep": " · ",
-  "dlDoneTitle": "下載完成：{parts}",
+  "dlDoneTitle": "同步完成：{parts}",
   "dlErrCueMalformed": "無法解析的 CUE：需要標準 FILE + TRACK/INDEX",
   "dlErrOffline": "網路不可用",
   "dlErrQueueCleared": "佇列已清空",
@@ -705,11 +705,11 @@
   "netFile": "檔案",
   "netConfirmDeleteTitle": "確認刪除",
   "netConfirmDeleteMsg": "確定刪除「{name}」？此操作不可復原。",
-  "ntfAllDone": "全部下載完成",
+  "ntfAllDone": "全部同步完成",
   "ntfDoneCount": "已完成 {done} / {total}",
   "ntfDoneCountPercent": "總進度 {percent}% · 已完成 {done} / {total}",
-  "ntfDoneWithFailures": "下載結束（有失敗）",
-  "ntfDownloadingTitle": "正在下載（第 {index} / {total} 個）",
+  "ntfDoneWithFailures": "同步結束（有失敗）",
+  "ntfDownloadingTitle": "正在同步（第 {index} / {total} 個）",
   "ntfImportanceOff": "已關閉",
   "ntfImportanceMin": "最低",
   "ntfImportanceLow": "低",
@@ -731,9 +731,9 @@
   "ntfSelfTestBlocked": "系統已關閉本應用程式的通知",
   "ntfSelfTestBody": "測試通知 · 50% · 已完成 0 / 1",
   "ntfSelfTestSummary": "成功：1 個（測試）",
-  "libQueuedCount": "已加入 {count} 項下載",
+  "libQueuedCount": "已加入 {count} 項同步",
   "libQueuedUnavailable": "{count} 項來源不可用",
-  "libQueuedAdded": "已加入下載",
+  "libQueuedAdded": "已加入同步",
   "cueGroupDeleteTitle": "刪除整個 CUE 快取組？",
   "cueGroupDeleteTitleMulti": "刪除多個 CUE 快取組？",
   "cueGroupDeleteBodyIntro": "將刪除整組：",
@@ -1048,7 +1048,7 @@
   "hintsSubtitle": "螢幕底部提示同時只顯示一則，點「知道了」立即關閉。",
   "hintDuration": "提示顯示時長",
   "downloadNotifications": "任務佇列系統通知",
-  "downloadNotificationsHint": "下載進度與完成結果顯示在通知列",
+  "downloadNotificationsHint": "同步進度與完成結果顯示在通知列",
   "sendTestNotification": "傳送測試通知",
   "sendTestNotificationHint": "立即傳送一則進度與一則完成通知，用於排查系統是否攔截",
   "testNotificationSent": "測試通知已傳送（進度 + 完成各一則）",
@@ -1278,6 +1278,68 @@
   "libraryBackfillAddRoot": "新增根路徑",
   "libraryBackfillNeedAccount": "請先新增網盤帳號",
   "libraryBackfillPickAccount": "選擇網盤帳號",
-  "libraryBackfillPickFolder": "選擇根資料夾"
-
+  "libraryBackfillPickFolder": "選擇根資料夾",
+  "tabFolders": "資料夾",
+  "myFolders": "我的資料夾",
+  "newFolderDefaultName": "新資料夾",
+  "folderEmptyHint": "此資料夾為空。可新建子資料夾，或加入專輯、藝人、曲目。",
+  "folderAddAlbums": "加入專輯",
+  "folderAddArtists": "加入藝人",
+  "folderAddTracks": "加入曲目",
+  "folderItemsAdded": "已加入 {count} 項",
+  "@folderItemsAdded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderRefMissing": "曲庫中暫無對應內容",
+  "folderDeleteConfirm": "刪除資料夾「{name}」及其全部內容？",
+  "@folderDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "folderPickerExcluded": "不能選擇此位置",
+  "folderViewMode": "檢視",
+  "folderViewList": "列表",
+  "folderViewGridColumns": "{count} 欄",
+  "@folderViewGridColumns": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderAddMenu": "加入",
+  "folderTrackNumber": "{number}",
+  "@folderTrackNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTrackNumberUnknown": "",
+  "folderDiscNumber": "{number}",
+  "@folderDiscNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTypeAlbum": "專輯",
+  "folderTypeArtist": "歌手",
+  "folderTypeGenre": "流派",
+  "folderTypeTrack": "曲目",
+  "folderDeleteSelected": "刪除所選",
+  "folderSelectMore": "更多",
+  "taskGroupDeleteAll": "全部刪除",
+  "librarySectionMusic": "音樂",
+  "librarySectionFolders": "資料夾"
 }
+

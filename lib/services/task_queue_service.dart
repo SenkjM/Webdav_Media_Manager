@@ -1663,7 +1663,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  /// One line for a finished batch, e.g. 「下载完成：成功 3 首」.
+  /// One line for a finished batch, e.g. 「同步完成：成功 3 首」.
   static String _completionMessage({
     required int completed,
     required int failed,

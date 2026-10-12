@@ -21,6 +21,7 @@ import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
+import '../utils/library_group_cover.dart';
 import '../widgets/selection_toolbar.dart';
 import '../widgets/track_status_chip.dart';
 import '../widgets/track_status_dot.dart';
@@ -31,6 +32,7 @@ import 'webdav_folder_picker_screen.dart';
 import '../services/webdav_service.dart';
 import '../models/webdav_stream.dart';
 import '../utils/task_error.dart';
+import '../utils/track_subtitle_lines.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -54,6 +56,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     final library = context.watch<LibraryService>();
     final settings = context.watch<SettingsService>();
+    final l10n = AppLocalizations.of(context)!;
     return DefaultTabController(
       length: 4,
       child: Scaffold(
@@ -65,7 +68,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   controller: _searchCtrl,
                   autofocus: true,
                   decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.searchPlaceholder,
+                    hintText: l10n.searchPlaceholder,
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
@@ -78,12 +81,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                   onChanged: (v) => setState(() => _query = v),
                 )
-              : Text(AppLocalizations.of(context)!.library),
+              : Text(l10n.library),
           actions: [
             IconButton(
-              tooltip: _searchOpen
-                  ? AppLocalizations.of(context)!.closeSearch
-                  : AppLocalizations.of(context)!.searchAction,
+              tooltip: _searchOpen ? l10n.closeSearch : l10n.searchAction,
               icon: Icon(_searchOpen ? Icons.close : Icons.search),
               onPressed: () {
                 setState(() {
@@ -96,7 +97,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
               },
             ),
             PopupMenuButton<LibrarySortMode>(
-              tooltip: AppLocalizations.of(context)!.sortTooltip,
+              tooltip: l10n.sortTooltip,
               initialValue: settings.librarySort,
               onSelected: (mode) =>
                   context.read<SettingsService>().setLibrarySort(mode),
@@ -113,7 +114,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           size: 18,
                         ),
                         const SizedBox(width: 8),
-                        Text(mode.label(AppLocalizations.of(context)!)),
+                        Text(mode.label(l10n)),
                       ],
                     ),
                   ),
@@ -124,38 +125,51 @@ class _LibraryScreenState extends State<LibraryScreen> {
           bottom: TabBar(
             isScrollable: true,
             tabs: [
-              Tab(text: AppLocalizations.of(context)!.tabAlbums),
-              Tab(text: AppLocalizations.of(context)!.tabArtists),
-              Tab(text: AppLocalizations.of(context)!.tabTitles),
-              Tab(text: AppLocalizations.of(context)!.tabGenres),
+              Tab(text: l10n.tabAlbums),
+              Tab(text: l10n.tabArtists),
+              Tab(text: l10n.tabTitles),
+              Tab(text: l10n.tabGenres),
             ],
           ),
         ),
-        body: library.count == 0
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    AppLocalizations.of(context)!.libraryEmptyGuide,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              )
-            : TabBarView(
-                children: [
-                  _AlbumTab(library: library, query: _query),
-                  _ArtistTab(library: library, query: _query),
-                  _TitleTab(
+        body: TabBarView(
+          children: [
+            library.count == 0
+                ? _LibraryEmpty()
+                : _AlbumTab(library: library, query: _query),
+            library.count == 0
+                ? _LibraryEmpty()
+                : _ArtistTab(library: library, query: _query),
+            library.count == 0
+                ? _LibraryEmpty()
+                : _TitleTab(
                     library: library,
                     sort: settings.librarySort,
                     query: _query,
                   ),
-                  _TagsTab(library: library, query: _query),
-                ],
-              ),
+            library.count == 0
+                ? _LibraryEmpty()
+                : _TagsTab(library: library, query: _query),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LibraryEmpty extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          AppLocalizations.of(context)!.libraryEmptyGuide,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
       ),
     );
   }
@@ -217,6 +231,7 @@ class _ArtistTab extends StatelessWidget {
       subtitleOf: (tracks) =>
           AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
       detailSort: LibrarySortMode.byName,
+      dimensionId: 'artist',
     );
   }
 }
@@ -255,6 +270,7 @@ class _AlbumTab extends StatelessWidget {
       subtitleOf: (tracks) =>
           '${AppLocalizations.of(context)!.playlistTrackCount(tracks.length)} · ${tracks.first.displayArtistFor(AppLocalizations.of(context)!)}',
       detailSort: LibrarySortMode.byAlbumTrack,
+      dimensionId: 'album',
     );
   }
 }
@@ -295,6 +311,7 @@ class _TagsTab extends StatelessWidget {
       );
     }
     final tags = groups.keys.toList();
+    final cache = context.watch<CacheService>();
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: tags.length,
@@ -303,15 +320,16 @@ class _TagsTab extends StatelessWidget {
         final displayTag = isUncategorizedGenre(tag) ? l10n.uncategorized : tag;
         final tracks = groups[tag]!;
         return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-            child: Icon(
-              isUncategorizedGenre(tag)
-                  ? Icons.label_off_outlined
-                  : Icons.label_outline,
-              color: AppColors.accent,
-              size: 20,
-            ),
+          leading: buildLibraryGroupCover(
+            dimensionId: 'genre',
+            groupKey: tag,
+            groupTracks: tracks,
+            cache: cache,
+            size: 48,
+            borderRadius: 6,
+            placeholderIcon: isUncategorizedGenre(tag)
+                ? Icons.label_off_outlined
+                : Icons.label_outline,
           ),
           title: Text(
             displayTag,
@@ -358,6 +376,7 @@ class _SelectableGroupGrid extends StatefulWidget {
     required this.placeholderIcon,
     required this.subtitleOf,
     required this.detailSort,
+    this.dimensionId,
   });
 
   final List<String> keys;
@@ -366,6 +385,8 @@ class _SelectableGroupGrid extends StatefulWidget {
   final IconData placeholderIcon;
   final String Function(List<LibraryTrack>) subtitleOf;
   final LibrarySortMode detailSort;
+  /// Tag dimension id for [LibraryGroupCoverOverrides] (e.g. album / artist).
+  final String? dimensionId;
 
   @override
   State<_SelectableGroupGrid> createState() => _SelectableGroupGridState();
@@ -506,6 +527,13 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                 AppLocalizations.of(context)!,
                 key,
               );
+              final dimId = widget.dimensionId;
+              final overridePath = dimId == null
+                  ? null
+                  : LibraryGroupCoverOverrides.resolver?.call(
+                      dimensionId: dimId,
+                      groupKey: key,
+                    );
               return _CoverTile(
                 coverTrack: coverTrack,
                 title: title,
@@ -513,6 +541,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                 placeholderIcon: widget.placeholderIcon,
                 selected: _selecting && selected,
                 selecting: _selecting,
+                coverOverridePath: overridePath,
                 onTap: () {
                   if (_selecting) {
                     setState(() => _selection = _selection.toggle(key));
@@ -680,6 +709,7 @@ class _CoverTile extends StatelessWidget {
     this.placeholderIcon,
     this.selected = false,
     this.selecting = false,
+    this.coverOverridePath,
   });
 
   final LibraryTrack? coverTrack;
@@ -690,6 +720,8 @@ class _CoverTile extends StatelessWidget {
   final IconData? placeholderIcon;
   final bool selected;
   final bool selecting;
+  /// Custom cover path from [LibraryGroupCoverOverrides]; null = album-cover fallback.
+  final String? coverOverridePath;
 
   @override
   Widget build(BuildContext context) {
@@ -713,7 +745,17 @@ class _CoverTile extends StatelessWidget {
                     final side = constraints.biggest.shortestSide;
                     final t = coverTrack;
                     Widget art;
-                    if (t == null) {
+                    final override = coverOverridePath;
+                    if (override != null && override.isNotEmpty) {
+                      art = Center(
+                        child: CoverArt(
+                          path: override,
+                          size: side,
+                          borderRadius: 6,
+                          icon: placeholderIcon,
+                        ),
+                      );
+                    } else if (t == null) {
                       art = Center(
                         child: CoverArt(
                           size: side,
@@ -1046,9 +1088,6 @@ class _TrackTile extends StatelessWidget {
     final cache = context.watch<CacheService>();
     final downloads = context.watch<TaskQueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
-    final trackLabel = track.trackNumber != null
-        ? '${track.trackNumber}. '
-        : '';
     // A library row can be re-queued after its cache was deleted, so surface the
     // queue state here too (network library already does).
     final task = downloads.taskForRemote(
@@ -1058,9 +1097,6 @@ class _TrackTile extends StatelessWidget {
     // `read` (not `watch`): AudioPlayerService notifies on every position tick,
     // so watching it here would rebuild the whole list several times a second.
     final audio = context.read<AudioPlayerService>();
-    final sourceBound = context.read<AccountsService>().isSourceBound(
-      track.sourceName,
-    );
     final state = libraryRowUiState(
       downloads: downloads,
       track: track,
@@ -1074,7 +1110,11 @@ class _TrackTile extends StatelessWidget {
         state == TrackUiState.error ||
         state == TrackUiState.playing;
     final isDownloading = state == TrackUiState.downloading;
+    final l10n = AppLocalizations.of(context)!;
+    final subs = TrackSubtitleLines.of(track, l10n);
     return ListTile(
+      dense: true,
+      isThreeLine: subs.line2 != null,
       selected: selected,
       selectedTileColor: AppColors.accent.withValues(alpha: 0.12),
       leading: selecting
@@ -1091,7 +1131,7 @@ class _TrackTile extends StatelessWidget {
               enqueueIfMissing: false,
             ),
       title: Text(
-        '$trackLabel${track.displayTitle}',
+        track.displayTitle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -1102,23 +1142,13 @@ class _TrackTile extends StatelessWidget {
           fontSize: 14,
         ),
       ),
-      subtitle: Text(
-        [
-          if (track.isCueVirtual)
-            AppLocalizations.of(context)!.cueMultiSliceLabel,
-          if (!sourceBound) AppLocalizations.of(context)!.sourceUnbound,
-          if (isDownloading && task!.progress > 0)
-            AppLocalizations.of(context)!
-                .downloadingPercent((task.progress * 100).toStringAsFixed(0)),
-          track.displayArtistFor(AppLocalizations.of(context)!),
-          if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
-        ].join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.outline,
-          fontSize: 12,
-        ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MetaText(subs.line1),
+          if (subs.line2 != null) MetaText(subs.line2!),
+        ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

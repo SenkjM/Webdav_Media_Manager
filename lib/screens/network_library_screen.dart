@@ -463,7 +463,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 音乐 → 应用音频缓存，完成后 ingest 进音乐库。
   ///
   /// 成功时**刻意不出提示**：`enqueue` 对未缓存的文件要等整段下载结束才
-  /// 返回，这时弹「已加入下载」会出现在下载完成的那一刻。行上的状态标签
+  /// 返回，这时弹「已加入同步」会出现在下载完成的那一刻。行上的状态标签
   /// 与下载队列已经在显示进度，只有失败才说话。
   Future<void> _cacheMusic(WebDavItem item) async {
     final accountId = _accountId;
@@ -823,10 +823,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   subtitle: Text(
                     item.isDirectory
                         ? l10n.netFolder
-                        : l10n.netItemSubtitle(
-                            defaultAction.label(l10n),
-                            item.category.label(l10n),
-                          ),
+                        : item.category.label(l10n),
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.outline,
                     ),
@@ -871,7 +868,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ListTile(
                     leading: Icon(_actionIcon(defaultAction)),
                     title: Text(defaultAction.label(l10n)),
-                    subtitle: Text(l10n.netDefaultActionFromSettings),
                     onTap: () {
                       Navigator.pop(ctx);
                       _runDefaultAction(item);
@@ -881,15 +877,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     ListTile(
                       leading: Icon(_actionIcon(action)),
                       title: Text(action.label(l10n)),
-                      subtitle: switch (action) {
-                        FileAction.streamMusic => Text(
-                          l10n.netExperimentalNoDownload,
-                        ),
-                        FileAction.downloadToGallery => Text(
-                          l10n.netDownloadToGalleryPictures,
-                        ),
-                        _ => null,
-                      },
+                      subtitle: action == FileAction.downloadToGallery
+                          ? Text(l10n.netDownloadToGalleryPictures)
+                          : null,
                       onTap: () {
                         Navigator.pop(ctx);
                         _runAction(item, action);
@@ -1438,14 +1428,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ),
                 title: Text(item.name),
                 subtitle: MetaText(
-                  [
-                    item.size != null
-                        ? _fmtSize(item.size!)
-                        : AppLocalizations.of(context)!.netAudio,
-                    // 没有下载按钮：整行就是下载动作。状态词留下。
-                    if (state == TrackUiState.remote)
-                      AppLocalizations.of(context)!.netTapDownload,
-                  ].join(' · '),
+                  item.size != null
+                      ? _fmtSize(item.size!)
+                      : AppLocalizations.of(context)!.netAudio,
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,

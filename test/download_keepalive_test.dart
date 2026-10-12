@@ -41,7 +41,7 @@ class _FakeBridge implements DownloadKeepAliveBridge {
 
 Future<void> _start(_FakeBridge bridge, DownloadKeepAlive keepAlive) {
   return keepAlive.ensureRunning(
-    title: '正在下载',
+    title: '正在同步',
     notificationId: 2001,
     channelId: 'com.senkjm.media_manager.downloads.v1',
     isForeground: () => true,
@@ -79,7 +79,7 @@ void main() {
     final bridge = _FakeBridge();
     final keepAlive = DownloadKeepAlive(bridge: bridge);
     await keepAlive.ensureRunning(
-      title: '正在下载',
+      title: '正在同步',
       notificationId: 2001,
       channelId: 'c',
       isForeground: () => false,

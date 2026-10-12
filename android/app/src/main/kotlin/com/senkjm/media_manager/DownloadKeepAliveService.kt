@@ -137,13 +137,13 @@ class DownloadKeepAliveService : Service() {
         if (nm.getNotificationChannel(channelId) != null) return
         val channel = NotificationChannel(
             channelId,
-            "下载进度",
+            "同步进度",
             NotificationManager.IMPORTANCE_LOW,
         )
         channel.setSound(null, null)
         channel.enableVibration(false)
         channel.setShowBadge(false)
-        channel.description = "下载进度"
+        channel.description = "同步进度"
         nm.createNotificationChannel(channel)
     }
 
@@ -216,7 +216,7 @@ class DownloadKeepAliveService : Service() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_NOTIFICATION_ID = "notificationId"
         const val EXTRA_CHANNEL_ID = "channelId"
-        const val DEFAULT_TITLE = "正在下载"
+        const val DEFAULT_TITLE = "正在同步"
         const val DEFAULT_NOTIFICATION_ID = 2001
         const val DEFAULT_CHANNEL_ID = "com.senkjm.media_manager.downloads.v1"
 

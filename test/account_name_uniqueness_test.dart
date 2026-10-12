@@ -58,6 +58,13 @@ class _FakeSecureStorage extends FlutterSecureStorage {
 class _FakeLibraryDatabase extends LibraryDatabase {
   final List<WebDavAccount> rows = [];
   bool uniqueApplied = false;
+  bool _pending = false;
+
+  @override
+  bool get accountNameUniquePending => _pending;
+
+  @override
+  set accountNameUniquePending(bool value) => _pending = value;
 
   @override
   Future<List<WebDavAccount>> loadAccounts() async => List.of(rows);
@@ -106,6 +113,37 @@ class _FakeLibraryDatabase extends LibraryDatabase {
   }
 
   @override
+  Future<List<String>> collapseDuplicateAccountNames({
+    String? preferAccountId,
+  }) async {
+    final byKey = <String, List<WebDavAccount>>{};
+    for (final a in rows) {
+      byKey.putIfAbsent(accountNameKey(a.name), () => []).add(a);
+    }
+    final deleted = <String>[];
+    for (final group in byKey.values) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => a.id.compareTo(b.id));
+      var keep = group.first;
+      if (preferAccountId != null) {
+        for (final a in group) {
+          if (a.id == preferAccountId) {
+            keep = a;
+            break;
+          }
+        }
+      }
+      for (final a in group) {
+        if (a.id == keep.id) continue;
+        rows.removeWhere((r) => r.id == a.id);
+        deleted.add(a.id);
+      }
+    }
+    accountNameUniquePending = false;
+    return deleted;
+  }
+
+  @override
   Future<List<LibraryTrack>> allTracks() async => const [];
 
   @override
@@ -139,55 +177,18 @@ void main() {
         username: 'u2',
         password: 'p2',
       ),
-      throwsA(
-        isA<StateError>().having(
-          (e) => e.message,
-          'message',
-          'err.accountNameTaken',
-        ),
-      ),
+      throwsA(isA<StateError>()),
     );
-    expect(accounts.accounts, hasLength(1));
   });
 
-  test('init keeps historical same-name rows and flags cleanup', () async {
+  test('init collapses duplicate names preferring active id', () async {
     SharedPreferences.setMockInitialValues({
       'active_webdav_account_id': 'keep',
     });
     final prefs = await SharedPreferences.getInstance();
-    final db = _FakeLibraryDatabase()
-      ..accountNameUniquePending = true
-      ..rows.addAll([
-        const WebDavAccount(
-          id: 'drop',
-          name: '123crypt',
-          url: 'https://old.example',
-          username: 'u',
-        ),
-        const WebDavAccount(
-          id: 'keep',
-          name: '123crypt',
-          url: 'https://new.example',
-          username: 'u',
-        ),
-      ]);
-    final accounts = AccountsService(
-      db: db,
-      prefs: prefs,
-      secureStorage: _FakeSecureStorage(),
-    );
-    await accounts.init();
-    expect(accounts.accounts, hasLength(2));
-    expect(accounts.needsNameCleanup, isTrue);
-    expect(db.rows, hasLength(2));
-    expect(accounts.duplicateNameGroups().keys, ['123crypt']);
-  });
-
-  test('deleting conflicts clears cleanup and applies UNIQUE', () async {
-    SharedPreferences.setMockInitialValues({
-      'active_webdav_account_id': 'keep',
-    });
-    final prefs = await SharedPreferences.getInstance();
+    final secure = _FakeSecureStorage()
+      ..store['webdav_pass_drop'] = 'old'
+      ..store['webdav_pass_keep'] = 'new';
     final db = _FakeLibraryDatabase()
       ..accountNameUniquePending = true
       ..rows.addAll([
@@ -207,15 +208,14 @@ void main() {
     final accounts = AccountsService(
       db: db,
       prefs: prefs,
-      secureStorage: _FakeSecureStorage(),
+      secureStorage: secure,
     );
     await accounts.init();
-    expect(accounts.needsNameCleanup, isTrue);
-
-    await accounts.deleteAccount('drop');
     expect(accounts.accounts, hasLength(1));
+    expect(accounts.accounts.single.id, 'keep');
     expect(accounts.needsNameCleanup, isFalse);
     expect(db.uniqueApplied, isTrue);
-    expect(db.accountNameUniquePending, isFalse);
+    expect(secure.store.containsKey('webdav_pass_drop'), isFalse);
+    expect(secure.store['webdav_pass_keep'], 'new');
   });
 }

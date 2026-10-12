@@ -96,7 +96,7 @@
   "streamPrefetchForward": "向后预载",
   "streamPrefetchHint": "向前／向后各几首。串流播放时写入临时预载；缓存播放时按同一窗口后台缓存。0 表示该方向不预载。",
   "downloadPending": "等待中",
-  "downloadActive": "下载中",
+  "downloadActive": "同步中",
   "downloadCompleted": "已完成",
   "downloadFailed": "失败",
   "downloadCancelled": "已取消",
@@ -115,7 +115,7 @@
   "retry": "重试",
   "clearQueueConfirm": "清除队列？",
   "clearQueueDetails": "将移除 {count} 条队列记录{runningText}；已下载的文件保留。",
-  "runningDownloads": "，并取消 {count} 个进行中的下载",
+  "runningDownloads": "，并取消 {count} 个进行中的同步",
   "clearAll": "清除全部",
   "accountAddServer": "添加服务器",
   "accountEditServer": "编辑服务器",
@@ -651,15 +651,15 @@
   "locationSystemGallery": "系统相册",
   "locationDownloads": "下载目录",
   "locationDownloadsSubdir": "下载目录/{dir}",
-  "dlChannelProgressName": "下载进度",
+  "dlChannelProgressName": "同步进度",
   "dlChannelProgressDesc": "任务队列进行中的进度",
-  "dlChannelDoneName": "下载完成",
-  "dlChannelDoneDesc": "全部下载完成后的结果汇总",
+  "dlChannelDoneName": "同步完成",
+  "dlChannelDoneDesc": "全部同步完成后的结果汇总",
   "dlDoneCancelledCount": "取消 {count}",
   "dlDoneFailedCount": "失败 {count}",
   "dlDoneOkCount": "成功 {count}",
   "dlDoneSep": " · ",
-  "dlDoneTitle": "下载完成：{parts}",
+  "dlDoneTitle": "同步完成：{parts}",
   "dlErrCueMalformed": "无法解析的 CUE：需要标准 FILE + TRACK/INDEX",
   "dlErrOffline": "网络不可用",
   "dlErrQueueCleared": "队列已清空",
@@ -705,11 +705,11 @@
   "netFile": "文件",
   "netConfirmDeleteTitle": "确认删除",
   "netConfirmDeleteMsg": "确定删除「{name}」？此操作不可撤销。",
-  "ntfAllDone": "全部下载完成",
+  "ntfAllDone": "全部同步完成",
   "ntfDoneCount": "已完成 {done} / {total}",
   "ntfDoneCountPercent": "总进度 {percent}% · 已完成 {done} / {total}",
-  "ntfDoneWithFailures": "下载结束（有失败）",
-  "ntfDownloadingTitle": "正在下载（第 {index} / {total} 个）",
+  "ntfDoneWithFailures": "同步结束（有失败）",
+  "ntfDownloadingTitle": "正在同步（第 {index} / {total} 个）",
   "ntfImportanceOff": "已关闭",
   "ntfImportanceMin": "最低",
   "ntfImportanceLow": "低",
@@ -731,9 +731,9 @@
   "ntfSelfTestBlocked": "系统已关闭本应用的通知",
   "ntfSelfTestBody": "测试通知 · 50% · 已完成 0 / 1",
   "ntfSelfTestSummary": "成功：1 个（测试）",
-  "libQueuedCount": "已加入 {count} 项下载",
+  "libQueuedCount": "已加入 {count} 项同步",
   "libQueuedUnavailable": "{count} 项来源不可用",
-  "libQueuedAdded": "已加入下载",
+  "libQueuedAdded": "已加入同步",
   "cueGroupDeleteTitle": "删除整个 CUE 缓存组？",
   "cueGroupDeleteTitleMulti": "删除多个 CUE 缓存组？",
   "cueGroupDeleteBodyIntro": "将删除整组：",
@@ -1048,7 +1048,7 @@
   "hintsSubtitle": "屏幕底部提示同时只显示一条，点「知道了」立即关闭。",
   "hintDuration": "提示显示时长",
   "downloadNotifications": "任务队列系统通知",
-  "downloadNotificationsHint": "下载进度与完成结果显示在通知栏",
+  "downloadNotificationsHint": "同步进度与完成结果显示在通知栏",
   "sendTestNotification": "发送测试通知",
   "sendTestNotificationHint": "立即发一条进度与一条完成通知，用来排查系统是否拦截",
   "testNotificationSent": "测试通知已发送（进度 + 完成各一条）",
@@ -1309,6 +1309,68 @@
   "libraryBackfillAddRoot": "添加根路径",
   "libraryBackfillNeedAccount": "请先添加网盘账号",
   "libraryBackfillPickAccount": "选择网盘账号",
-  "libraryBackfillPickFolder": "选择根文件夹"
-
+  "libraryBackfillPickFolder": "选择根文件夹",
+  "tabFolders": "文件夹",
+  "myFolders": "我的文件夹",
+  "newFolderDefaultName": "新文件夹",
+  "folderEmptyHint": "此文件夹为空。可新建子文件夹，或添加专辑、艺人、曲目。",
+  "folderAddAlbums": "添加专辑",
+  "folderAddArtists": "添加艺人",
+  "folderAddTracks": "添加曲目",
+  "folderItemsAdded": "已添加 {count} 项",
+  "@folderItemsAdded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderRefMissing": "库中暂无对应内容",
+  "folderDeleteConfirm": "删除文件夹「{name}」及其全部内容？",
+  "@folderDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "folderPickerExcluded": "不能选择此位置",
+  "folderViewMode": "视图",
+  "folderViewList": "列表",
+  "folderViewGridColumns": "{count} 列",
+  "@folderViewGridColumns": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderAddMenu": "添加",
+  "folderTrackNumber": "{number}",
+  "@folderTrackNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTrackNumberUnknown": "",
+  "folderDiscNumber": "{number}",
+  "@folderDiscNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTypeAlbum": "专辑",
+  "folderTypeArtist": "歌手",
+  "folderTypeGenre": "流派",
+  "folderTypeTrack": "曲目",
+  "folderDeleteSelected": "删除所选",
+  "folderSelectMore": "更多",
+  "taskGroupDeleteAll": "全部删除",
+  "librarySectionMusic": "音乐",
+  "librarySectionFolders": "文件夹"
 }
+

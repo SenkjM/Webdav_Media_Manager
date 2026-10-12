@@ -69,7 +69,7 @@ class _FakeRows extends StatelessWidget {
         ListTile(
           leading: const Icon(Icons.audiotrack),
           title: const Text('track.flac'),
-          subtitle: MetaText('4.2 MB · ${l10n.netTapDownload}'),
+          subtitle: MetaText('4.2 MB'),
         ),
         ListTile(
           leading: const Icon(Icons.queue_music),

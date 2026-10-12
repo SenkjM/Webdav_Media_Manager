@@ -305,7 +305,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadPending => '等待中';
 
   @override
-  String get downloadActive => '下载中';
+  String get downloadActive => '同步中';
 
   @override
   String get downloadCompleted => '已完成';
@@ -369,7 +369,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String runningDownloads(Object count) {
-    return '，并取消 $count 个进行中的下载';
+    return '，并取消 $count 个进行中的同步';
   }
 
   @override
@@ -2111,16 +2111,16 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get dlChannelProgressName => '下载进度';
+  String get dlChannelProgressName => '同步进度';
 
   @override
   String get dlChannelProgressDesc => '任务队列进行中的进度';
 
   @override
-  String get dlChannelDoneName => '下载完成';
+  String get dlChannelDoneName => '同步完成';
 
   @override
-  String get dlChannelDoneDesc => '全部下载完成后的结果汇总';
+  String get dlChannelDoneDesc => '全部同步完成后的结果汇总';
 
   @override
   String dlDoneCancelledCount(Object count) {
@@ -2142,7 +2142,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String dlDoneTitle(Object parts) {
-    return '下载完成：$parts';
+    return '同步完成：$parts';
   }
 
   @override
@@ -2313,7 +2313,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get ntfAllDone => '全部下载完成';
+  String get ntfAllDone => '全部同步完成';
 
   @override
   String ntfDoneCount(Object done, Object total) {
@@ -2326,11 +2326,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get ntfDoneWithFailures => '下载结束（有失败）';
+  String get ntfDoneWithFailures => '同步结束（有失败）';
 
   @override
   String ntfDownloadingTitle(Object index, Object total) {
-    return '正在下载（第 $index / $total 个）';
+    return '正在同步（第 $index / $total 个）';
   }
 
   @override
@@ -2406,7 +2406,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String libQueuedCount(Object count) {
-    return '已加入 $count 项下载';
+    return '已加入 $count 项同步';
   }
 
   @override
@@ -2415,7 +2415,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get libQueuedAdded => '已加入下载';
+  String get libQueuedAdded => '已加入同步';
 
   @override
   String get cueGroupDeleteTitle => '删除整个 CUE 缓存组？';
@@ -3557,7 +3557,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadNotifications => '任务队列系统通知';
 
   @override
-  String get downloadNotificationsHint => '下载进度与完成结果显示在通知栏';
+  String get downloadNotificationsHint => '同步进度与完成结果显示在通知栏';
 
   @override
   String get sendTestNotification => '发送测试通知';
@@ -4179,6 +4179,97 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get libraryBackfillPickFolder => '选择根文件夹';
+
+  @override
+  String get tabFolders => '文件夹';
+
+  @override
+  String get myFolders => '我的文件夹';
+
+  @override
+  String get newFolderDefaultName => '新文件夹';
+
+  @override
+  String get folderEmptyHint => '此文件夹为空。可新建子文件夹，或添加专辑、艺人、曲目。';
+
+  @override
+  String get folderAddAlbums => '添加专辑';
+
+  @override
+  String get folderAddArtists => '添加艺人';
+
+  @override
+  String get folderAddTracks => '添加曲目';
+
+  @override
+  String folderItemsAdded(int count) {
+    return '已添加 $count 项';
+  }
+
+  @override
+  String get folderRefMissing => '库中暂无对应内容';
+
+  @override
+  String folderDeleteConfirm(String name) {
+    return '删除文件夹「$name」及其全部内容？';
+  }
+
+  @override
+  String get folderPickerExcluded => '不能选择此位置';
+
+  @override
+  String get folderViewMode => '视图';
+
+  @override
+  String get folderViewList => '列表';
+
+  @override
+  String folderViewGridColumns(int count) {
+    return '$count 列';
+  }
+
+  @override
+  String get folderAddMenu => '添加';
+
+  @override
+  String folderTrackNumber(int number) {
+    return '$number';
+  }
+
+  @override
+  String get folderTrackNumberUnknown => '';
+
+  @override
+  String folderDiscNumber(int number) {
+    return '$number';
+  }
+
+  @override
+  String get folderTypeAlbum => '专辑';
+
+  @override
+  String get folderTypeArtist => '歌手';
+
+  @override
+  String get folderTypeGenre => '流派';
+
+  @override
+  String get folderTypeTrack => '曲目';
+
+  @override
+  String get folderDeleteSelected => '删除所选';
+
+  @override
+  String get folderSelectMore => '更多';
+
+  @override
+  String get taskGroupDeleteAll => '全部删除';
+
+  @override
+  String get librarySectionMusic => '音乐';
+
+  @override
+  String get librarySectionFolders => '文件夹';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -4481,7 +4572,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get downloadPending => '等待中';
 
   @override
-  String get downloadActive => '下載中';
+  String get downloadActive => '同步中';
 
   @override
   String get downloadCompleted => '已完成';
@@ -4545,7 +4636,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String runningDownloads(Object count) {
-    return '，並取消 $count 個進行中的下載';
+    return '，並取消 $count 個進行中的同步';
   }
 
   @override
@@ -6288,16 +6379,16 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get dlChannelProgressName => '下載進度';
+  String get dlChannelProgressName => '同步進度';
 
   @override
   String get dlChannelProgressDesc => '任務佇列進行中的進度';
 
   @override
-  String get dlChannelDoneName => '下載完成';
+  String get dlChannelDoneName => '同步完成';
 
   @override
-  String get dlChannelDoneDesc => '全部下載完成後的結果彙總';
+  String get dlChannelDoneDesc => '全部同步完成後的結果彙總';
 
   @override
   String dlDoneCancelledCount(Object count) {
@@ -6319,7 +6410,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String dlDoneTitle(Object parts) {
-    return '下載完成：$parts';
+    return '同步完成：$parts';
   }
 
   @override
@@ -6490,7 +6581,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get ntfAllDone => '全部下載完成';
+  String get ntfAllDone => '全部同步完成';
 
   @override
   String ntfDoneCount(Object done, Object total) {
@@ -6503,11 +6594,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get ntfDoneWithFailures => '下載結束（有失敗）';
+  String get ntfDoneWithFailures => '同步結束（有失敗）';
 
   @override
   String ntfDownloadingTitle(Object index, Object total) {
-    return '正在下載（第 $index / $total 個）';
+    return '正在同步（第 $index / $total 個）';
   }
 
   @override
@@ -6583,7 +6674,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String libQueuedCount(Object count) {
-    return '已加入 $count 項下載';
+    return '已加入 $count 項同步';
   }
 
   @override
@@ -6592,7 +6683,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get libQueuedAdded => '已加入下載';
+  String get libQueuedAdded => '已加入同步';
 
   @override
   String get cueGroupDeleteTitle => '刪除整個 CUE 快取組？';
@@ -7734,7 +7825,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get downloadNotifications => '任務佇列系統通知';
 
   @override
-  String get downloadNotificationsHint => '下載進度與完成結果顯示在通知列';
+  String get downloadNotificationsHint => '同步進度與完成結果顯示在通知列';
 
   @override
   String get sendTestNotification => '傳送測試通知';
@@ -8356,4 +8447,95 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get libraryBackfillPickFolder => '選擇根資料夾';
+
+  @override
+  String get tabFolders => '資料夾';
+
+  @override
+  String get myFolders => '我的資料夾';
+
+  @override
+  String get newFolderDefaultName => '新資料夾';
+
+  @override
+  String get folderEmptyHint => '此資料夾為空。可新建子資料夾，或加入專輯、藝人、曲目。';
+
+  @override
+  String get folderAddAlbums => '加入專輯';
+
+  @override
+  String get folderAddArtists => '加入藝人';
+
+  @override
+  String get folderAddTracks => '加入曲目';
+
+  @override
+  String folderItemsAdded(int count) {
+    return '已加入 $count 項';
+  }
+
+  @override
+  String get folderRefMissing => '曲庫中暫無對應內容';
+
+  @override
+  String folderDeleteConfirm(String name) {
+    return '刪除資料夾「$name」及其全部內容？';
+  }
+
+  @override
+  String get folderPickerExcluded => '不能選擇此位置';
+
+  @override
+  String get folderViewMode => '檢視';
+
+  @override
+  String get folderViewList => '列表';
+
+  @override
+  String folderViewGridColumns(int count) {
+    return '$count 欄';
+  }
+
+  @override
+  String get folderAddMenu => '加入';
+
+  @override
+  String folderTrackNumber(int number) {
+    return '$number';
+  }
+
+  @override
+  String get folderTrackNumberUnknown => '';
+
+  @override
+  String folderDiscNumber(int number) {
+    return '$number';
+  }
+
+  @override
+  String get folderTypeAlbum => '專輯';
+
+  @override
+  String get folderTypeArtist => '歌手';
+
+  @override
+  String get folderTypeGenre => '流派';
+
+  @override
+  String get folderTypeTrack => '曲目';
+
+  @override
+  String get folderDeleteSelected => '刪除所選';
+
+  @override
+  String get folderSelectMore => '更多';
+
+  @override
+  String get taskGroupDeleteAll => '全部刪除';
+
+  @override
+  String get librarySectionMusic => '音樂';
+
+  @override
+  String get librarySectionFolders => '資料夾';
 }

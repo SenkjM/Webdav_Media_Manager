@@ -678,7 +678,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadActive.
   ///
   /// In zh, this message translates to:
-  /// **'下载中'**
+  /// **'同步中'**
   String get downloadActive;
 
   /// No description provided for @downloadCompleted.
@@ -792,7 +792,7 @@ abstract class AppLocalizations {
   /// No description provided for @runningDownloads.
   ///
   /// In zh, this message translates to:
-  /// **'，并取消 {count} 个进行中的下载'**
+  /// **'，并取消 {count} 个进行中的同步'**
   String runningDownloads(Object count);
 
   /// No description provided for @clearAll.
@@ -3801,7 +3801,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlChannelProgressName.
   ///
   /// In zh, this message translates to:
-  /// **'下载进度'**
+  /// **'同步进度'**
   String get dlChannelProgressName;
 
   /// No description provided for @dlChannelProgressDesc.
@@ -3813,13 +3813,13 @@ abstract class AppLocalizations {
   /// No description provided for @dlChannelDoneName.
   ///
   /// In zh, this message translates to:
-  /// **'下载完成'**
+  /// **'同步完成'**
   String get dlChannelDoneName;
 
   /// No description provided for @dlChannelDoneDesc.
   ///
   /// In zh, this message translates to:
-  /// **'全部下载完成后的结果汇总'**
+  /// **'全部同步完成后的结果汇总'**
   String get dlChannelDoneDesc;
 
   /// No description provided for @dlDoneCancelledCount.
@@ -3849,7 +3849,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlDoneTitle.
   ///
   /// In zh, this message translates to:
-  /// **'下载完成：{parts}'**
+  /// **'同步完成：{parts}'**
   String dlDoneTitle(Object parts);
 
   /// No description provided for @dlErrCueMalformed.
@@ -4125,7 +4125,7 @@ abstract class AppLocalizations {
   /// No description provided for @ntfAllDone.
   ///
   /// In zh, this message translates to:
-  /// **'全部下载完成'**
+  /// **'全部同步完成'**
   String get ntfAllDone;
 
   /// No description provided for @ntfDoneCount.
@@ -4143,13 +4143,13 @@ abstract class AppLocalizations {
   /// No description provided for @ntfDoneWithFailures.
   ///
   /// In zh, this message translates to:
-  /// **'下载结束（有失败）'**
+  /// **'同步结束（有失败）'**
   String get ntfDoneWithFailures;
 
   /// No description provided for @ntfDownloadingTitle.
   ///
   /// In zh, this message translates to:
-  /// **'正在下载（第 {index} / {total} 个）'**
+  /// **'正在同步（第 {index} / {total} 个）'**
   String ntfDownloadingTitle(Object index, Object total);
 
   /// No description provided for @ntfImportanceOff.
@@ -4281,7 +4281,7 @@ abstract class AppLocalizations {
   /// No description provided for @libQueuedCount.
   ///
   /// In zh, this message translates to:
-  /// **'已加入 {count} 项下载'**
+  /// **'已加入 {count} 项同步'**
   String libQueuedCount(Object count);
 
   /// No description provided for @libQueuedUnavailable.
@@ -4293,7 +4293,7 @@ abstract class AppLocalizations {
   /// No description provided for @libQueuedAdded.
   ///
   /// In zh, this message translates to:
-  /// **'已加入下载'**
+  /// **'已加入同步'**
   String get libQueuedAdded;
 
   /// No description provided for @cueGroupDeleteTitle.
@@ -6194,7 +6194,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadNotificationsHint.
   ///
   /// In zh, this message translates to:
-  /// **'下载进度与完成结果显示在通知栏'**
+  /// **'同步进度与完成结果显示在通知栏'**
   String get downloadNotificationsHint;
 
   /// No description provided for @sendTestNotification.
@@ -7360,6 +7360,168 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'选择根文件夹'**
   String get libraryBackfillPickFolder;
+
+  /// No description provided for @tabFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹'**
+  String get tabFolders;
+
+  /// No description provided for @myFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的文件夹'**
+  String get myFolders;
+
+  /// No description provided for @newFolderDefaultName.
+  ///
+  /// In zh, this message translates to:
+  /// **'新文件夹'**
+  String get newFolderDefaultName;
+
+  /// No description provided for @folderEmptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'此文件夹为空。可新建子文件夹，或添加专辑、艺人、曲目。'**
+  String get folderEmptyHint;
+
+  /// No description provided for @folderAddAlbums.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加专辑'**
+  String get folderAddAlbums;
+
+  /// No description provided for @folderAddArtists.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加艺人'**
+  String get folderAddArtists;
+
+  /// No description provided for @folderAddTracks.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加曲目'**
+  String get folderAddTracks;
+
+  /// No description provided for @folderItemsAdded.
+  ///
+  /// In zh, this message translates to:
+  /// **'已添加 {count} 项'**
+  String folderItemsAdded(int count);
+
+  /// No description provided for @folderRefMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'库中暂无对应内容'**
+  String get folderRefMissing;
+
+  /// No description provided for @folderDeleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除文件夹「{name}」及其全部内容？'**
+  String folderDeleteConfirm(String name);
+
+  /// No description provided for @folderPickerExcluded.
+  ///
+  /// In zh, this message translates to:
+  /// **'不能选择此位置'**
+  String get folderPickerExcluded;
+
+  /// No description provided for @folderViewMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'视图'**
+  String get folderViewMode;
+
+  /// No description provided for @folderViewList.
+  ///
+  /// In zh, this message translates to:
+  /// **'列表'**
+  String get folderViewList;
+
+  /// No description provided for @folderViewGridColumns.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 列'**
+  String folderViewGridColumns(int count);
+
+  /// No description provided for @folderAddMenu.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加'**
+  String get folderAddMenu;
+
+  /// No description provided for @folderTrackNumber.
+  ///
+  /// In zh, this message translates to:
+  /// **'{number}'**
+  String folderTrackNumber(int number);
+
+  /// No description provided for @folderTrackNumberUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **''**
+  String get folderTrackNumberUnknown;
+
+  /// No description provided for @folderDiscNumber.
+  ///
+  /// In zh, this message translates to:
+  /// **'{number}'**
+  String folderDiscNumber(int number);
+
+  /// No description provided for @folderTypeAlbum.
+  ///
+  /// In zh, this message translates to:
+  /// **'专辑'**
+  String get folderTypeAlbum;
+
+  /// No description provided for @folderTypeArtist.
+  ///
+  /// In zh, this message translates to:
+  /// **'歌手'**
+  String get folderTypeArtist;
+
+  /// No description provided for @folderTypeGenre.
+  ///
+  /// In zh, this message translates to:
+  /// **'流派'**
+  String get folderTypeGenre;
+
+  /// No description provided for @folderTypeTrack.
+  ///
+  /// In zh, this message translates to:
+  /// **'曲目'**
+  String get folderTypeTrack;
+
+  /// No description provided for @folderDeleteSelected.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除所选'**
+  String get folderDeleteSelected;
+
+  /// No description provided for @folderSelectMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多'**
+  String get folderSelectMore;
+
+  /// No description provided for @taskGroupDeleteAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部删除'**
+  String get taskGroupDeleteAll;
+
+  /// No description provided for @librarySectionMusic.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐'**
+  String get librarySectionMusic;
+
+  /// No description provided for @librarySectionFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹'**
+  String get librarySectionFolders;
 }
 
 class _AppLocalizationsDelegate

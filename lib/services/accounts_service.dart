@@ -44,15 +44,13 @@ class AccountsService extends ChangeNotifier {
   /// Serializes [init] so concurrent clear/await/addAll cannot multiply rows.
   Future<void>? _initInFlight;
 
-  /// Historical same-name rows: startup stays on cleanup UI until resolved.
-  bool _needsNameCleanup = false;
+  /// Always false after 0.2.4: duplicates are collapsed at open (99 §18.4).
+  bool get needsNameCleanup => false;
 
   UnmodifiableListView<WebDavAccount> get accounts =>
       UnmodifiableListView(_accounts);
   bool get loaded => _loaded;
 
-  /// True when duplicate normalized names still exist; gates HomeShell.
-  bool get needsNameCleanup => _needsNameCleanup;
   String? get activeAccountId => _activeAccountId;
 
   WebDavAccount? get activeAccount {
@@ -164,8 +162,7 @@ class AccountsService extends ChangeNotifier {
         _activeAccountId = _accounts.first.id;
         await _prefs!.setString(_kActiveAccount, _activeAccountId!);
       }
-      _needsNameCleanup = _duplicateNameKeys().isNotEmpty ||
-          _db.accountNameUniquePending;
+      await _collapseDuplicatesIfNeeded();
       _loaded = true;
       notifyListeners();
       gate.complete();
@@ -259,7 +256,7 @@ class AccountsService extends ChangeNotifier {
     };
   }
 
-  /// Conflicting accounts grouped by normalized name (for cleanup UI).
+  /// Conflicting accounts grouped by normalized name (diagnostics).
   Map<String, List<WebDavAccount>> duplicateNameGroups() {
     final dups = _duplicateNameKeys();
     final groups = <String, List<WebDavAccount>>{};
@@ -271,14 +268,36 @@ class AccountsService extends ChangeNotifier {
     return groups;
   }
 
-  Future<void> _refreshNameCleanupState() async {
-    final stillDup = _duplicateNameKeys().isNotEmpty;
-    if (stillDup) {
-      _needsNameCleanup = true;
+  /// Collapse same-name rows only when UNIQUE is not yet enforceable.
+  Future<void> _collapseDuplicatesIfNeeded() async {
+    if (_duplicateNameKeys().isEmpty && !_db.accountNameUniquePending) {
+      await _db.applyAccountNameUnique();
       return;
     }
-    final applied = await _db.applyAccountNameUnique();
-    _needsNameCleanup = !applied || _db.accountNameUniquePending;
+    final deleted = await _db.collapseDuplicateAccountNames(
+      preferAccountId: _activeAccountId,
+    );
+    for (final id in deleted) {
+      await _secure.delete(key: '$_kPassPrefix$id');
+      await _secure.delete(key: '$_kDriverCfgPrefix$id');
+      _accounts.removeWhere((a) => a.id == id);
+    }
+    // Reload from DB so memory matches keep-one result.
+    final rows = await _db.loadAccounts();
+    _accounts
+      ..clear()
+      ..addAll(rows);
+    if (_activeAccountId != null &&
+        !_accounts.any((a) => a.id == _activeAccountId)) {
+      _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
+      _prefs ??= await SharedPreferences.getInstance();
+      if (_activeAccountId == null) {
+        await _prefs!.remove(_kActiveAccount);
+      } else {
+        await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+      }
+    }
+    await _db.applyAccountNameUnique();
   }
 
   Future<WebDavAccount> addAccount({
@@ -366,9 +385,7 @@ class AccountsService extends ChangeNotifier {
         await _prefs!.setString(_kActiveAccount, _activeAccountId!);
       }
     }
-    if (_needsNameCleanup) {
-      await _refreshNameCleanupState();
-    }
+    await _collapseDuplicatesIfNeeded();
     notifyListeners();
   }
 
@@ -563,7 +580,7 @@ class AccountsService extends ChangeNotifier {
     _accounts
       ..clear()
       ..addAll(restoredRows);
-    await _refreshNameCleanupState();
+    await _collapseDuplicatesIfNeeded();
     final active = json['activeAccountId'] as String?;
     if (active != null && _accounts.any((a) => a.id == active)) {
       _activeAccountId = active;
