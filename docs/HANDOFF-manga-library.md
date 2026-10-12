@@ -32,7 +32,7 @@
 | `0e77127` | 页序改为仅本地缓存（同步与备份都不带）+ 散图缺页序时**打开即递归列目录重建** | **错误，不要发布**：散图的页表是建立时筛选出的成员集合（扩展名、深度、子目录开关、按目录模式只取本层），列目录无法复现；按目录模式下父目录会吞掉子书 |
 
 - **Testbuild #25**（https://github.com/SenkjM/Webdav_Media_Manager/actions/runs/38256652621）跑在 `0e77127` 上，受上述错误影响，不能作为验收包。
-- **stash `option4-wip`**（`git stash list` 可见，**不要 drop**）：未提交、**未验证**（analyze/test 被中断）。内容：
+- **远端分支 `wip/manga-option4`**（提交 `08e9d97`「wip: 散图页列表同步（未验证）」，基于本分支含交接文档的 `b0b07f6`；原 stash 已删除）：**未验证**（analyze/test 被中断）。内容：
   - tag 18 复用：仅 `format == images` 的行在分片里携带页表；`MangaSyncRow` 对非 images 强制空页表。
   - 拉取：images 行替换本地页表且不 bump rev；CBZ 行不动本地页序。
   - `replaceMangaPages(..., {bumpRev = false})`；`MangaLibraryService.replacePages` 仅 images 时 bump；页数/封面未变则不改行。
@@ -58,7 +58,7 @@
 
 ## 5. 下一步
 
-1. **步骤 1（确认后做）**：`git stash apply stash^{/option4-wip}`（保留 stash）→ 跑完 analyze/test 补齐 → 菜单按类分流（缓存/刮削）→ 改 docs/08 与 99 §19.11 为两类模型 → `fix:` 提交 → 推分支 → 用户要求时再 Testbuild。
+1. **步骤 1（确认后做）**：把 `origin/wip/manga-option4` 合入或 cherry-pick 到 `feat/manga-library` → 跑完 analyze/test 补齐 → 菜单按类分流（缓存/刮削）→ 改 docs/08 与 99 §19.11 为两类模型 → `fix:` 提交 → 推分支 → 用户要求时再 Testbuild。
 2. **步骤 2（独立功能，以后）**：跨目录拼书建立器（同一账号内选多目录/多图，存绝对路径 + 锚点，处理锚点冲突）。
 
 ## 6. 暂缓 / 待办
