@@ -11,7 +11,6 @@ import '../services/settings_service.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
-import 'audio_stream_settings_screen.dart';
 import 'cache_settings_screen.dart';
 import 'download_settings_screen.dart';
 import 'encryption_settings_screen.dart';
@@ -306,20 +305,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const VideoSettingsScreen()),
-              );
-            },
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.graphic_eq),
-            title: Text(l10n.audioStreamingTitle),
-            subtitle: Text(l10n.audioStreamingSubtitle),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const AudioStreamSettingsScreen(),
-                ),
               );
             },
           ),

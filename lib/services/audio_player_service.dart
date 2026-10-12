@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/foundation.dart';
 
+import '../models/play_open_mode.dart';
 import '../models/playable_media.dart';
 import '../models/queue_task.dart';
 import '../models/webdav_item.dart';
@@ -16,6 +17,7 @@ import 'library_service.dart';
 import 'playlist_service.dart';
 import 'music_audio_handler.dart';
 import 'music_prefetch_service.dart';
+import 'stream_window.dart';
 import 'notification_permission_service.dart';
 import 'settings_service.dart';
 import 'tag_service.dart';
@@ -90,6 +92,7 @@ class AudioPlayerService extends ChangeNotifier {
   String? _error;
   MusicPrefetchService? _prefetch;
   bool _notificationPrompted = false;
+  PlayOpenMode _playOpenMode = PlayOpenMode.cache;
 
   MusicAudioHandler get handler => _handler;
 
@@ -108,18 +111,44 @@ class AudioPlayerService extends ChangeNotifier {
   bool get isMusicSession =>
       !_handler.isVideoMode && current != null;
 
-  /// Whether the open source is a local file (cache) vs stream. Null if idle.
-  bool? get isPlayingLocal => _handler.currentPlayableIsLocal;
+  /// Status bar: only music_cache counts as 缓存; prefetch_cache alone = 串流.
+  bool? get isPlayingLocal {
+    if (current == null) return null;
+    final path = current?.localPath;
+    if (path != null && path.isNotEmpty && _cache.isMusicCachePath(path)) {
+      return true;
+    }
+    // Stream URL, or a prefetch_cache file used for streaming.
+    final flag = _handler.currentPlayableIsLocal;
+    if (flag == null) return null;
+    return false;
+  }
+
+  PlayOpenMode get playOpenMode => _playOpenMode;
 
   void _onSettings() => _prefetch?.nudge();
 
-  /// Resolve local cache, prefetch file, or stream URL for [track].
-  Future<PlayableMedia?> resolvePlayable(TrackInfo track) async {
+  /// Resolve playable for [track] under [_playOpenMode] (or [mode] override).
+  ///
+  /// Cache mode: music_cache only; missing → enqueue and wait. Never
+  /// silent-streams.
+  /// Stream mode: music_cache if present; else prefetch file or stream URL.
+  Future<PlayableMedia?> resolvePlayable(
+    TrackInfo track, {
+    PlayOpenMode? mode,
+  }) async {
+    final openMode = mode ?? _playOpenMode;
+    final audioRemote = track.effectiveAudioRemotePath;
+
+    // Prefer explicit localPath only when it is music_cache (or any file in
+    // stream mode — prefetch temp files are allowed for playback).
     final existing = track.localPath;
     if (existing != null && File(existing).existsSync()) {
-      return PlayableMedia.file(existing);
+      if (openMode == PlayOpenMode.stream || _cache.isMusicCachePath(existing)) {
+        return PlayableMedia.file(existing);
+      }
     }
-    final audioRemote = track.effectiveAudioRemotePath;
+
     final cached = await _cache.localPathIfCached(
       audioRemote,
       sourceName: track.sourceName,
@@ -128,14 +157,32 @@ class AudioPlayerService extends ChangeNotifier {
       track.localPath = cached;
       return PlayableMedia.file(cached);
     }
+
     final task = _taskQueue.taskForRemote(track.sourceName, audioRemote);
     if (task != null &&
         task.status == TaskStatus.completed &&
         task.localPath != null &&
-        File(task.localPath!).existsSync()) {
+        File(task.localPath!).existsSync() &&
+        _cache.isMusicCachePath(task.localPath!)) {
       track.localPath = task.localPath;
       return PlayableMedia.file(task.localPath!);
     }
+
+    if (openMode == PlayOpenMode.cache) {
+      // Enqueue into music_cache and wait — never silent-stream.
+      final path = await _taskQueue.ensureCachedAndWait(
+        track.sourceName,
+        audioRemote,
+        fileName: track.fileName,
+      );
+      if (path != null) {
+        track.localPath = path;
+        return PlayableMedia.file(path);
+      }
+      return null;
+    }
+
+    // Stream mode: temporary prefetch_cache OK.
     final prefetch = _prefetch;
     if (prefetch != null) {
       final path = await prefetch.cachedAudioPath(track);
@@ -178,8 +225,22 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   /// Play [track]; [playlist] becomes the unified queue (local and/or stream).
-  Future<void> playTrack(TrackInfo track, {List<TrackInfo>? playlist}) async {
+  ///
+  /// [mode] overrides the default from settings. [forceStream] is a one-shot
+  /// stream open that does not change the saved default.
+  Future<void> playTrack(
+    TrackInfo track, {
+    List<TrackInfo>? playlist,
+    PlayOpenMode? mode,
+    bool forceStream = false,
+  }) async {
     _error = null;
+    _playOpenMode = forceStream
+        ? PlayOpenMode.stream
+        : (mode ??
+            (_settings.musicDefaultStream
+                ? PlayOpenMode.stream
+                : PlayOpenMode.cache));
     final list = <TrackInfo>[];
     if (playlist != null && playlist.isNotEmpty) {
       list.addAll(playlist);
@@ -283,13 +344,20 @@ class AudioPlayerService extends ChangeNotifier {
         playable: playable,
       );
       unawaited(_clearRemoteMissingMirror(track));
-      _startPrefetch(playlist, index, track.accountId);
+      if (_playOpenMode == PlayOpenMode.stream) {
+        _startPrefetch(playlist, index, track.accountId);
+      } else {
+        unawaited(_prefetch?.dispose());
+        _prefetch = null;
+        unawaited(_warmCacheNeighbors(playlist, index));
+      }
     } catch (e) {
       _error = e.toString();
       final classified = TaskError.classify(e);
       final track = playlist[index];
       final hasLocal = track.localPath != null &&
-          File(track.localPath!).existsSync();
+          File(track.localPath!).existsSync() &&
+          _cache.isMusicCachePath(track.localPath!);
       if (!hasLocal && classified.code == 'err.cloud.notFound') {
         unawaited(_markRemoteMissingMirror(track));
       }
@@ -298,6 +366,34 @@ class AudioPlayerService extends ChangeNotifier {
       } catch (_) {}
     } finally {
       notifyListeners();
+    }
+  }
+
+  /// Cache-mode neighbor warm: same forward/back window as stream prefetch,
+  /// but enqueue into music_cache via the task queue (no prefetch_cache).
+  Future<void> _warmCacheNeighbors(List<TrackInfo> playlist, int index) async {
+    final indexes = prefetchNeighborIndexes(
+      current: index,
+      length: playlist.length,
+      backward: _settings.audioStreamPrefetchBackward,
+      forward: _settings.audioStreamPrefetchForward,
+    );
+    for (final i in indexes) {
+      final t = playlist[i];
+      if (t.accountId.isEmpty && t.sourceName.isEmpty) continue;
+      if (_cache.hasLocalFile(
+        t.effectiveAudioRemotePath,
+        sourceName: t.sourceName,
+      )) {
+        continue;
+      }
+      try {
+        await _taskQueue.ensureQueued(
+          t.sourceName,
+          t.effectiveAudioRemotePath,
+          fileName: t.fileName,
+        );
+      } catch (_) {}
     }
   }
 
@@ -473,12 +569,20 @@ class AudioPlayerService extends ChangeNotifier {
 
   Future<void> skipNext() async {
     await _handler.skipToNext();
-    _prefetch?.nudge();
+    if (_playOpenMode == PlayOpenMode.stream) {
+      _prefetch?.nudge();
+    } else {
+      unawaited(_warmCacheNeighbors(_handler.tracks, _handler.index));
+    }
   }
 
   Future<void> skipPrevious() async {
     await _handler.skipToPrevious();
-    _prefetch?.nudge();
+    if (_playOpenMode == PlayOpenMode.stream) {
+      _prefetch?.nudge();
+    } else {
+      unawaited(_warmCacheNeighbors(_handler.tracks, _handler.index));
+    }
   }
 
   Future<void> stop() async {

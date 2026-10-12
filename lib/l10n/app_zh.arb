@@ -81,7 +81,7 @@
   "confirmDeleteServer": "确定删除「{name}」？其曲目会变成「未绑定网盘」，加回同名即可恢复。",
   "audioStreamingTitle": "音频流式",
   "streamPlayback": "流式播放",
-  "streamPlaybackHint": "音乐不下载到本地，直接从网盘边听边传。",
+  "streamPlaybackHint": "串流时用临时预载；有本地缓存则优先播缓存。",
   "streamMusic": "流式传输音乐",
   "streamMusicHint": "打开后音乐的文件动作里可以选「流式传输（音乐）」。关掉时该动作会被退回默认。",
   "scanList": "列表扫描",
@@ -94,7 +94,7 @@
   "streamSidecarNamesHint": "用逗号或空格分隔。歌曲文件名（不含扩展名）总会再试一次。只认 jpg、jpeg、png、webp。同名只是扩展名不同时优先 jpg。斜杠会被去掉，不会进子目录。",
   "streamPrefetchBackward": "向前预载",
   "streamPrefetchForward": "向后预载",
-  "streamPrefetchHint": "一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。",
+  "streamPrefetchHint": "向前／向后各几首。串流播放时写入临时预载；缓存播放时按同一窗口后台缓存。0 表示该方向不预载。",
   "downloadPending": "等待中",
   "downloadActive": "下载中",
   "downloadCompleted": "已完成",
@@ -965,7 +965,7 @@
   "videoDefaultRateCurrent": "当前 {rate}×（范围 {min}×–{max}×）",
   "videoSubtitleSizeCurrent": "当前 {size} sp（范围 {min}–{max} sp）",
   "accountsSubtitle": "管理多服务器账号",
-  "audioStreamingSubtitle": "流式传输开关 / 搜索子目录",
+  "audioStreamingSubtitle": "预载窗口、同目录封面、搜索子目录",
   "fileTypesManage": "文件后缀管理",
   "fileTypesManageSubtitle": "音乐 / 视频 / 图片 / CUE 后缀与默认操作",
   "coverThumbSize": "封面缩略图尺寸",
@@ -1205,10 +1205,10 @@
     }
   },
   "mediaLibrarySettings": "音乐库",
-  "mediaLibrarySettingsHint": "默认打开、刮削、标签",
+  "mediaLibrarySettingsHint": "默认打开、预载、刮削、标签",
   "musicDefaultOpen": "默认打开",
-  "musicDefaultOpenHint": "网络库点按音乐时：缓存或串流",
-  "musicDefaultCache": "缓存后播放",
+  "musicDefaultOpenHint": "网络库、媒体库、歌单点按音乐时：缓存播放或串流播放",
+  "musicDefaultCache": "缓存播放",
   "musicDefaultStream": "串流播放",
   "musicDefaultInExtensionsHint": "已移至「设置 → 媒体库 → 音乐库」。",
   "refreshTagsFromLocal": "从本地更新标签",
@@ -1250,5 +1250,22 @@
   "libMenuCache": "缓存",
   "libMenuClear": "清理",
   "updateTagsFromCache": "基于缓存",
-  "updateTagsFromCloud": "基于云端"
+  "updateTagsFromCloud": "基于云端",
+
+  "musicCacheMaxCapacity": "缓存容量上限",
+  "musicCacheMaxCapacityHint": "超过后按最久未用清理；正在播放的不删。0 表示不限制。",
+  "musicCacheMaxMb": "上限（MB）",
+  "musicCacheUnlimited": "不限制",
+  "taskGroupCount": "{count} 项",
+  "@taskGroupCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "taskGroupMembers": "任务明细",
+  "prefetchSection": "预载与封面",
+  "prefetchSectionHint": "串流写入临时预载；缓存播放按同一窗口后台缓存。",
+  "audioPlaylistSection": "网络库连播列表",
+  "waitingForCache": "正在缓存…"
+
 }

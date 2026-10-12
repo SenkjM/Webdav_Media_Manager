@@ -399,8 +399,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<int> runCacheCleanup() {
-    return cache.cleanupKnown(
+  Future<int> runCacheCleanup() async {
+    final removed = await cache.cleanupKnown(
       retention: settings.retention,
       customDuration: settings.customRetentionDuration,
       identityToLocal: taskQueue.completedIdentityToLocal,
@@ -413,6 +413,8 @@ class AppState extends ChangeNotifier {
           : null,
       downloadingIdentityKeys: taskQueue.downloadingIdentityKeys,
     );
+    await runCacheCapacityEviction();
+    return removed;
   }
 
   Future<int> manualClearCache() async {
@@ -440,6 +442,35 @@ class AppState extends ChangeNotifier {
   Future<void> setRetention(CacheRetention r) async {
     await settings.setRetention(r);
     unawaited(runCacheCleanup());
+  }
+
+  Future<void> setMusicCacheMaxMb(int mb) async {
+    await settings.setMusicCacheMaxMb(mb);
+    unawaited(runCacheCapacityEviction());
+  }
+
+  Future<int> runCacheCapacityEviction() {
+    final maxBytes = settings.musicCacheMaxBytes;
+    if (maxBytes <= 0) return Future.value(0);
+    final protected = <String>{};
+    for (final task in taskQueue.tasks) {
+      if (task.status == TaskStatus.active ||
+          task.status == TaskStatus.pending) {
+        final f = cache.fileForRemote(
+          task.remotePath,
+          sourceName: task.sourceName,
+        );
+        protected.add(f.path);
+        protected.add('${f.path}.part');
+      }
+    }
+    return cache.evictToMaxBytes(
+      maxBytes: maxBytes,
+      playingLocalPath: player.current?.localPath,
+      playingRemotePath: player.currentRemotePath,
+      playingSourceName: player.currentSourceName,
+      protectedLocalPaths: protected,
+    );
   }
 
   Future<void> setCustomRetentionDuration(Duration d) async {

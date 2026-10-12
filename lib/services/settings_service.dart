@@ -31,6 +31,7 @@ class SettingsService extends ChangeNotifier {
        _secure = secureStorage ?? const FlutterSecureStorage();
 
   static const _kRetention = 'cache_retention';
+  static const _kMusicCacheMaxMb = 'music_cache_max_mb';
   static const _kAppLocale = 'app_locale';
   static const _kThemeMode = 'theme_mode';
   static const _kThemeSeed = 'theme_seed_argb';
@@ -222,6 +223,8 @@ class SettingsService extends ChangeNotifier {
   SharedPreferences? _prefs;
   final FlutterSecureStorage _secure;
   CacheRetention _retention = CacheRetention.oneWeek;
+  /// 0 = unlimited. Capacity cap for music_cache in megabytes.
+  int _musicCacheMaxMb = 0;
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
   bool _playlistSyncEnabled = true;
@@ -359,6 +362,12 @@ class SettingsService extends ChangeNotifier {
   }
 
   CacheRetention get retention => _retention;
+
+  /// Max music_cache size in MB; 0 means unlimited.
+  int get musicCacheMaxMb => _musicCacheMaxMb;
+
+  int get musicCacheMaxBytes =>
+      _musicCacheMaxMb <= 0 ? 0 : _musicCacheMaxMb * 1024 * 1024;
   Duration get customRetentionDuration =>
       Duration(hours: _customRetentionHours);
   int get customRetentionHours => _customRetentionHours;
@@ -579,6 +588,7 @@ class SettingsService extends ChangeNotifier {
     _themeSeedArgb =
         (_prefs!.getInt(_kThemeSeed) ?? defaultThemeSeedArgb) | 0xFF000000;
     _retention = CacheRetentionX.fromStorageKey(_prefs!.getString(_kRetention));
+    _musicCacheMaxMb = (_prefs!.getInt(_kMusicCacheMaxMb) ?? 0).clamp(0, 1024 * 1024);
     final storedHours = _prefs!.getInt(_kCustomRetentionHours);
     _customRetentionHours = _clampCustomHours(
       storedHours ?? defaultCustomRetentionHours,
@@ -774,6 +784,12 @@ class SettingsService extends ChangeNotifier {
       if (json is Map<String, dynamic>) return FileTypeConfig.fromJson(json);
     } catch (_) {}
     return FileTypeConfig();
+  }
+
+  Future<void> setMusicCacheMaxMb(int mb) async {
+    _musicCacheMaxMb = mb.clamp(0, 1024 * 1024);
+    notifyListeners();
+    await _prefs!.setInt(_kMusicCacheMaxMb, _musicCacheMaxMb);
   }
 
   Future<void> setRetention(CacheRetention retention) async {
@@ -1531,6 +1547,9 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> importFromBackup(Map<String, dynamic> json) async {
     _prefs ??= await SharedPreferences.getInstance();
+    if (json['music_cache_max_mb'] is num) {
+      await setMusicCacheMaxMb((json['music_cache_max_mb'] as num).toInt());
+    }
     if (json['cache_retention'] != null) {
       await setRetention(
         CacheRetentionX.fromStorageKey(json['cache_retention'] as String?),

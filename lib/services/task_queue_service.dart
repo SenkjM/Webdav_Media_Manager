@@ -727,6 +727,56 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
+
+  /// Queue into music_cache if needed, then wait until the file exists or the
+  /// cache task fails / is cancelled. Returns the local path, or null on failure.
+  Future<String?> ensureCachedAndWait(
+    String sourceName,
+    String remotePath, {
+    String? fileName,
+    Duration timeout = const Duration(minutes: 30),
+  }) async {
+    if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
+      return _cache.fileForRemote(remotePath, sourceName: sourceName).path;
+    }
+    await ensureQueued(sourceName, remotePath, fileName: fileName);
+    if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
+      return _cache.fileForRemote(remotePath, sourceName: sourceName).path;
+    }
+
+    final completer = Completer<String?>();
+    void finish(String? path) {
+      if (!completer.isCompleted) completer.complete(path);
+    }
+
+    void listener() {
+      if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
+        finish(_cache.fileForRemote(remotePath, sourceName: sourceName).path);
+        return;
+      }
+      final task = taskForRemoteAndTarget(
+        sourceName,
+        remotePath,
+        DownloadTarget.cache,
+      );
+      if (task == null) return;
+      if (task.status == TaskStatus.failed ||
+          task.status == TaskStatus.cancelled) {
+        finish(null);
+      }
+    }
+
+    addListener(listener);
+    final timer = Timer(timeout, () => finish(null));
+    listener();
+    try {
+      return await completer.future;
+    } finally {
+      removeListener(listener);
+      timer.cancel();
+    }
+  }
+
   /// Enqueue a file that should land in a **public** collection rather than the
   /// audio cache: the system gallery for videos, the Downloads folder for files
   /// whose extension is in none of the configured lists.

@@ -8,6 +8,7 @@ import '../models/account_capabilities.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/queue_task.dart';
 import '../models/file_actions.dart';
+import '../models/play_open_mode.dart';
 import '../models/file_type_config.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
@@ -366,11 +367,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
   /// 按设置的动作处理一个文件。
   ///
-  /// 三个入口（整行点按、多选工具栏、更多菜单）都走这里，所以「点按音乐
-  /// 会缓存」和「菜单里的缓存音乐」永远是同一段代码。动作与条目类型不匹配
-  /// 时**直接说明原因**，不去猜用户想干什么——静默换成另一个动作会让设置
-  /// 看起来没生效。
+  /// 音乐默认打开走 [PlayOpenMode]（缓存播放 / 串流播放），会真正起播；
+  /// 菜单里的「缓存」仍只入队。其它类别仍走 [FileAction]。
   Future<void> _runDefaultAction(WebDavItem item) async {
+    if (!item.isDirectory && item.category == FileCategory.music) {
+      final mode = context.read<SettingsService>().musicDefaultStream
+          ? PlayOpenMode.stream
+          : PlayOpenMode.cache;
+      await _playMusic(item, mode: mode);
+      return;
+    }
     final decision = judgeAction(
       action: _defaultActionFor(item),
       category: item.category,
@@ -512,23 +518,24 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
   }
 
-  /// 音乐 → 统一播放（有缓存走文件，无缓存串流；同一 MiniPlayer）。
+  /// 菜单「串流」：仅本次串流播放。
   Future<void> _streamMusic(WebDavItem item) async {
-    final accountId = _accountId;
-    if (accountId == null) return;
-    await _openMusicStream(item, accountId: accountId);
+    await _playMusic(item, mode: PlayOpenMode.stream);
   }
 
-  /// 网络库音乐：按当前路径生成队列，走统一 [AudioPlayerService]（本地或串流）。
-  Future<void> _openMusicStream(
+  /// 网络库音乐：按当前路径生成队列，按 [mode] 起播。
+  Future<void> _playMusic(
     WebDavItem item, {
-    required String accountId,
+    required PlayOpenMode mode,
   }) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
     final accounts = context.read<AccountsService>();
     final account = accounts.accountById(accountId);
     final sourceName = account?.name ?? '';
     if (sourceName.isEmpty) return;
-    final siblings = _items.where((e) => e.category == FileCategory.music).toList();
+    final siblings =
+        _items.where((e) => e.category == FileCategory.music).toList();
     if (siblings.isEmpty) siblings.add(item);
     final playlist = [
       for (final e in siblings)
@@ -548,6 +555,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     await context.read<AudioPlayerService>().playTrack(
       track,
       playlist: playlist,
+      mode: mode,
     );
   }
 

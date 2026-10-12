@@ -81,7 +81,7 @@
   "confirmDeleteServer": "確定刪除「{name}」？其曲目會變成「未綁定網路磁碟」，加回同名即可恢復。",
   "audioStreamingTitle": "音訊串流",
   "streamPlayback": "串流播放",
-  "streamPlaybackHint": "音樂不下載到本機，直接從網路磁碟邊聽邊傳。",
+  "streamPlaybackHint": "串流時用臨時預載；有本機快取則優先播快取。",
   "streamMusic": "串流傳輸音樂",
   "streamMusicHint": "開啟後音樂的檔案動作可選「串流傳輸（音樂）」。關閉時該動作會退回預設。",
   "scanList": "清單掃描",
@@ -94,7 +94,7 @@
   "streamSidecarNamesHint": "用逗號或空格分隔。歌曲檔名（不含副檔名）總會再試一次。只認 jpg、jpeg、png、webp。同名只是副檔名不同時優先 jpg。斜線會被去掉，不會進子目錄。",
   "streamPrefetchBackward": "向前預載",
   "streamPrefetchForward": "向後預載",
-  "streamPrefetchHint": "一次只預載一首：先向前（上一首方向），再向後。已經在播放清單裡、或快取檔案已經完整的，不會再取。0 表示該方向不預載。滑出視窗不刪，下次啟動才清空。",
+  "streamPrefetchHint": "向前／向後各幾首。串流播放時寫入臨時預載；快取播放時按同一視窗背景快取。0 表示該方向不預載。",
   "downloadPending": "等待中",
   "downloadActive": "下載中",
   "downloadCompleted": "已完成",
@@ -965,7 +965,7 @@
   "videoDefaultRateCurrent": "目前 {rate}×（範圍 {min}×–{max}×）",
   "videoSubtitleSizeCurrent": "目前 {size} sp（範圍 {min}–{max} sp）",
   "accountsSubtitle": "管理多伺服器帳號",
-  "audioStreamingSubtitle": "串流傳輸開關 / 搜尋子目錄",
+  "audioStreamingSubtitle": "預載視窗、同目錄封面、搜尋子目錄",
   "fileTypesManage": "檔案副檔名管理",
   "fileTypesManageSubtitle": "音樂 / 影片 / 圖片 / CUE 副檔名與預設動作",
   "coverThumbSize": "封面縮圖尺寸",
@@ -1166,10 +1166,10 @@
   "mediaScanNothingNew": "沒有需要入庫的新路徑",
   "mediaScanQueued": "已加入 {count} 個刮削任務",
   "mediaLibrarySettings": "音樂庫",
-  "mediaLibrarySettingsHint": "預設開啟、刮削、標籤",
+  "mediaLibrarySettingsHint": "預設開啟、預載、刮削、標籤",
   "musicDefaultOpen": "預設開啟",
-  "musicDefaultOpenHint": "網路庫點按音樂時：快取或串流",
-  "musicDefaultCache": "快取後播放",
+  "musicDefaultOpenHint": "網路庫、媒體庫、歌單點按音樂時：快取播放或串流播放",
+  "musicDefaultCache": "快取播放",
   "musicDefaultStream": "串流播放",
   "musicDefaultInExtensionsHint": "已移至「設定 → 媒體庫 → 音樂庫」。",
   "refreshTagsFromLocal": "從本機更新標籤",
@@ -1219,5 +1219,22 @@
   "libMenuCache": "快取",
   "libMenuClear": "清理",
   "updateTagsFromCache": "基於快取",
-  "updateTagsFromCloud": "基於雲端"
+  "updateTagsFromCloud": "基於雲端",
+
+  "musicCacheMaxCapacity": "快取容量上限",
+  "musicCacheMaxCapacityHint": "超過後按最久未用清理；正在播放的不刪。0 表示不限制。",
+  "musicCacheMaxMb": "上限（MB）",
+  "musicCacheUnlimited": "不限制",
+  "taskGroupCount": "{count} 項",
+  "@taskGroupCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "taskGroupMembers": "任務明細",
+  "prefetchSection": "預載與封面",
+  "prefetchSectionHint": "串流寫入臨時預載；快取播放按同一視窗背景快取。",
+  "audioPlaylistSection": "網路庫連播清單",
+  "waitingForCache": "正在快取…"
+
 }

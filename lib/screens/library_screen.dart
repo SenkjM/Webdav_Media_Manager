@@ -1249,7 +1249,11 @@ class _TrackTile extends StatelessWidget {
     }
     if (playlistInfos.isEmpty) playlistInfos.add(info);
     if (!context.mounted) return;
-    await player.playTrack(info, playlist: playlistInfos);
+    await player.playTrack(
+      info,
+      playlist: playlistInfos,
+      forceStream: forceStream,
+    );
     if (player.error != null && context.mounted) {
       final err = TaskError.classify(StateError(player.error!));
       AppSnack.error(

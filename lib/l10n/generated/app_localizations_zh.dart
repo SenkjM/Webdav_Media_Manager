@@ -257,7 +257,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get streamPlayback => '流式播放';
 
   @override
-  String get streamPlaybackHint => '音乐不下载到本地，直接从网盘边听边传。';
+  String get streamPlaybackHint => '串流时用临时预载；有本地缓存则优先播缓存。';
 
   @override
   String get streamMusic => '流式传输音乐';
@@ -299,7 +299,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get streamPrefetchHint =>
-      '一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。';
+      '向前／向后各几首。串流播放时写入临时预载；缓存播放时按同一窗口后台缓存。0 表示该方向不预载。';
 
   @override
   String get downloadPending => '等待中';
@@ -3337,7 +3337,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsSubtitle => '管理多服务器账号';
 
   @override
-  String get audioStreamingSubtitle => '流式传输开关 / 搜索子目录';
+  String get audioStreamingSubtitle => '预载窗口、同目录封面、搜索子目录';
 
   @override
   String get fileTypesManage => '文件后缀管理';
@@ -3984,16 +3984,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mediaLibrarySettings => '音乐库';
 
   @override
-  String get mediaLibrarySettingsHint => '默认打开、刮削、标签';
+  String get mediaLibrarySettingsHint => '默认打开、预载、刮削、标签';
 
   @override
   String get musicDefaultOpen => '默认打开';
 
   @override
-  String get musicDefaultOpenHint => '网络库点按音乐时：缓存或串流';
+  String get musicDefaultOpenHint => '网络库、媒体库、歌单点按音乐时：缓存播放或串流播放';
 
   @override
-  String get musicDefaultCache => '缓存后播放';
+  String get musicDefaultCache => '缓存播放';
 
   @override
   String get musicDefaultStream => '串流播放';
@@ -4054,6 +4054,38 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get updateTagsFromCloud => '基于云端';
+
+  @override
+  String get musicCacheMaxCapacity => '缓存容量上限';
+
+  @override
+  String get musicCacheMaxCapacityHint => '超过后按最久未用清理；正在播放的不删。0 表示不限制。';
+
+  @override
+  String get musicCacheMaxMb => '上限（MB）';
+
+  @override
+  String get musicCacheUnlimited => '不限制';
+
+  @override
+  String taskGroupCount(int count) {
+    return '$count 项';
+  }
+
+  @override
+  String get taskGroupMembers => '任务明细';
+
+  @override
+  String get prefetchSection => '预载与封面';
+
+  @override
+  String get prefetchSectionHint => '串流写入临时预载；缓存播放按同一窗口后台缓存。';
+
+  @override
+  String get audioPlaylistSection => '网络库连播列表';
+
+  @override
+  String get waitingForCache => '正在缓存…';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -4308,7 +4340,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get streamPlayback => '串流播放';
 
   @override
-  String get streamPlaybackHint => '音樂不下載到本機，直接從網路磁碟邊聽邊傳。';
+  String get streamPlaybackHint => '串流時用臨時預載；有本機快取則優先播快取。';
 
   @override
   String get streamMusic => '串流傳輸音樂';
@@ -4350,7 +4382,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get streamPrefetchHint =>
-      '一次只預載一首：先向前（上一首方向），再向後。已經在播放清單裡、或快取檔案已經完整的，不會再取。0 表示該方向不預載。滑出視窗不刪，下次啟動才清空。';
+      '向前／向後各幾首。串流播放時寫入臨時預載；快取播放時按同一視窗背景快取。0 表示該方向不預載。';
 
   @override
   String get downloadPending => '等待中';
@@ -7389,7 +7421,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get accountsSubtitle => '管理多伺服器帳號';
 
   @override
-  String get audioStreamingSubtitle => '串流傳輸開關 / 搜尋子目錄';
+  String get audioStreamingSubtitle => '預載視窗、同目錄封面、搜尋子目錄';
 
   @override
   String get fileTypesManage => '檔案副檔名管理';
@@ -8036,16 +8068,16 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mediaLibrarySettings => '音樂庫';
 
   @override
-  String get mediaLibrarySettingsHint => '預設開啟、刮削、標籤';
+  String get mediaLibrarySettingsHint => '預設開啟、預載、刮削、標籤';
 
   @override
   String get musicDefaultOpen => '預設開啟';
 
   @override
-  String get musicDefaultOpenHint => '網路庫點按音樂時：快取或串流';
+  String get musicDefaultOpenHint => '網路庫、媒體庫、歌單點按音樂時：快取播放或串流播放';
 
   @override
-  String get musicDefaultCache => '快取後播放';
+  String get musicDefaultCache => '快取播放';
 
   @override
   String get musicDefaultStream => '串流播放';
@@ -8106,4 +8138,36 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get updateTagsFromCloud => '基於雲端';
+
+  @override
+  String get musicCacheMaxCapacity => '快取容量上限';
+
+  @override
+  String get musicCacheMaxCapacityHint => '超過後按最久未用清理；正在播放的不刪。0 表示不限制。';
+
+  @override
+  String get musicCacheMaxMb => '上限（MB）';
+
+  @override
+  String get musicCacheUnlimited => '不限制';
+
+  @override
+  String taskGroupCount(int count) {
+    return '$count 項';
+  }
+
+  @override
+  String get taskGroupMembers => '任務明細';
+
+  @override
+  String get prefetchSection => '預載與封面';
+
+  @override
+  String get prefetchSectionHint => '串流寫入臨時預載；快取播放按同一視窗背景快取。';
+
+  @override
+  String get audioPlaylistSection => '網路庫連播清單';
+
+  @override
+  String get waitingForCache => '正在快取…';
 }

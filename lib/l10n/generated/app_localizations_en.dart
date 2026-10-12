@@ -260,7 +260,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get streamPlaybackHint =>
-      'Music is played directly from the network drive without downloading locally.';
+      'Stream uses temporary prefetch; local cache is preferred when present.';
 
   @override
   String get streamMusic => 'Stream music';
@@ -305,7 +305,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get streamPrefetchHint =>
-      'One file at a time: backward (previous tracks) first, then forward. A track already in the player list, or already a complete cache file, is not fetched again. 0 disables that direction. Files that leave the window stay until the next launch.';
+      'How many tracks before/after. Stream play uses a temporary prefetch; cache play uses the same window for background caching. 0 disables that direction.';
 
   @override
   String get downloadPending => 'Waiting';
@@ -3474,7 +3474,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsSubtitle => 'Manage multiple server accounts';
 
   @override
-  String get audioStreamingSubtitle => 'Streaming toggle / subdirectory scan';
+  String get audioStreamingSubtitle =>
+      'Prefetch window, sidecar covers, subdirectory scan';
 
   @override
   String get fileTypesManage => 'File extension management';
@@ -4167,19 +4168,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mediaLibrarySettings => 'Music library';
 
   @override
-  String get mediaLibrarySettingsHint => 'Default open, scrape, tags';
+  String get mediaLibrarySettingsHint => 'Default open, prefetch, scrape, tags';
 
   @override
   String get musicDefaultOpen => 'Default open';
 
   @override
-  String get musicDefaultOpenHint => 'Network library tap: cache or stream';
+  String get musicDefaultOpenHint =>
+      'Network library, media library, and playlists: cache play or stream play';
 
   @override
-  String get musicDefaultCache => 'Cache then play';
+  String get musicDefaultCache => 'Cache play';
 
   @override
-  String get musicDefaultStream => 'Stream';
+  String get musicDefaultStream => 'Stream play';
 
   @override
   String get musicDefaultInExtensionsHint =>
@@ -4239,4 +4241,38 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get updateTagsFromCloud => 'From cloud';
+
+  @override
+  String get musicCacheMaxCapacity => 'Cache size limit';
+
+  @override
+  String get musicCacheMaxCapacityHint =>
+      'When over the limit, least-recently used files are removed; the track being played is kept. 0 means no limit.';
+
+  @override
+  String get musicCacheMaxMb => 'Limit (MB)';
+
+  @override
+  String get musicCacheUnlimited => 'Unlimited';
+
+  @override
+  String taskGroupCount(int count) {
+    return '$count items';
+  }
+
+  @override
+  String get taskGroupMembers => 'Task details';
+
+  @override
+  String get prefetchSection => 'Prefetch and covers';
+
+  @override
+  String get prefetchSectionHint =>
+      'Stream play writes temporary prefetch; cache play uses the same window for background caching.';
+
+  @override
+  String get audioPlaylistSection => 'Network library play queue';
+
+  @override
+  String get waitingForCache => 'Caching…';
 }

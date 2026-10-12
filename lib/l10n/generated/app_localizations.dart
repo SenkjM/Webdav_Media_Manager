@@ -588,7 +588,7 @@ abstract class AppLocalizations {
   /// No description provided for @streamPlaybackHint.
   ///
   /// In zh, this message translates to:
-  /// **'音乐不下载到本地，直接从网盘边听边传。'**
+  /// **'串流时用临时预载；有本地缓存则优先播缓存。'**
   String get streamPlaybackHint;
 
   /// No description provided for @streamMusic.
@@ -666,7 +666,7 @@ abstract class AppLocalizations {
   /// No description provided for @streamPrefetchHint.
   ///
   /// In zh, this message translates to:
-  /// **'一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。'**
+  /// **'向前／向后各几首。串流播放时写入临时预载；缓存播放时按同一窗口后台缓存。0 表示该方向不预载。'**
   String get streamPrefetchHint;
 
   /// No description provided for @downloadPending.
@@ -5786,7 +5786,7 @@ abstract class AppLocalizations {
   /// No description provided for @audioStreamingSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'流式传输开关 / 搜索子目录'**
+  /// **'预载窗口、同目录封面、搜索子目录'**
   String get audioStreamingSubtitle;
 
   /// No description provided for @fileTypesManage.
@@ -6992,7 +6992,7 @@ abstract class AppLocalizations {
   /// No description provided for @mediaLibrarySettingsHint.
   ///
   /// In zh, this message translates to:
-  /// **'默认打开、刮削、标签'**
+  /// **'默认打开、预载、刮削、标签'**
   String get mediaLibrarySettingsHint;
 
   /// No description provided for @musicDefaultOpen.
@@ -7004,13 +7004,13 @@ abstract class AppLocalizations {
   /// No description provided for @musicDefaultOpenHint.
   ///
   /// In zh, this message translates to:
-  /// **'网络库点按音乐时：缓存或串流'**
+  /// **'网络库、媒体库、歌单点按音乐时：缓存播放或串流播放'**
   String get musicDefaultOpenHint;
 
   /// No description provided for @musicDefaultCache.
   ///
   /// In zh, this message translates to:
-  /// **'缓存后播放'**
+  /// **'缓存播放'**
   String get musicDefaultCache;
 
   /// No description provided for @musicDefaultStream.
@@ -7132,6 +7132,66 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'基于云端'**
   String get updateTagsFromCloud;
+
+  /// No description provided for @musicCacheMaxCapacity.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存容量上限'**
+  String get musicCacheMaxCapacity;
+
+  /// No description provided for @musicCacheMaxCapacityHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'超过后按最久未用清理；正在播放的不删。0 表示不限制。'**
+  String get musicCacheMaxCapacityHint;
+
+  /// No description provided for @musicCacheMaxMb.
+  ///
+  /// In zh, this message translates to:
+  /// **'上限（MB）'**
+  String get musicCacheMaxMb;
+
+  /// No description provided for @musicCacheUnlimited.
+  ///
+  /// In zh, this message translates to:
+  /// **'不限制'**
+  String get musicCacheUnlimited;
+
+  /// No description provided for @taskGroupCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 项'**
+  String taskGroupCount(int count);
+
+  /// No description provided for @taskGroupMembers.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务明细'**
+  String get taskGroupMembers;
+
+  /// No description provided for @prefetchSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'预载与封面'**
+  String get prefetchSection;
+
+  /// No description provided for @prefetchSectionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'串流写入临时预载；缓存播放按同一窗口后台缓存。'**
+  String get prefetchSectionHint;
+
+  /// No description provided for @audioPlaylistSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络库连播列表'**
+  String get audioPlaylistSection;
+
+  /// No description provided for @waitingForCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在缓存…'**
+  String get waitingForCache;
 }
 
 class _AppLocalizationsDelegate

@@ -96,13 +96,13 @@ void main() {
       expect(TaskQueueService.orderPending([]), isEmpty);
     });
 
-    test('skips non-download kinds (shell has no executor yet)', () {
+    test('includes download and scan kinds (executors wired)', () {
       final download = QueueTask(
         id: 'd',
         sourceName: 'a',
         remotePath: '/d.mp3',
         fileName: 'd.mp3',
-        createdAt: DateTime(2026, 1, 1),
+        createdAt: DateTime(2026, 1, 2),
         status: TaskStatus.pending,
         kind: TaskKind.download,
       );
@@ -118,7 +118,7 @@ void main() {
         unitsTotal: 10,
       );
       final ordered = TaskQueueService.orderPending([scan, download]);
-      expect(ordered.map((t) => t.id).toList(), ['d']);
+      expect(ordered.map((t) => t.id).toList(), ['s', 'd']);
     });
   });
 }

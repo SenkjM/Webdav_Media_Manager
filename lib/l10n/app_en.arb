@@ -81,7 +81,7 @@
   "confirmDeleteServer": "Delete “{name}”? Its tracks will become unbound; adding the same name restores them.",
   "audioStreamingTitle": "Audio streaming",
   "streamPlayback": "Stream playback",
-  "streamPlaybackHint": "Music is played directly from the network drive without downloading locally.",
+  "streamPlaybackHint": "Stream uses temporary prefetch; local cache is preferred when present.",
   "streamMusic": "Stream music",
   "streamMusicHint": "When enabled, music files can use the Stream music action. When disabled, that action falls back to the default.",
   "scanList": "Queue scanning",
@@ -94,7 +94,7 @@
   "streamSidecarNamesHint": "Separate names with commas or spaces. The audio file name without its extension is always tried as well. Only jpg, jpeg, png, and webp are considered. When several files share a name and differ only by extension, jpg is preferred. Slashes are removed, so names cannot select a subdirectory.",
   "streamPrefetchBackward": "Prefetch behind",
   "streamPrefetchForward": "Prefetch ahead",
-  "streamPrefetchHint": "One file at a time: backward (previous tracks) first, then forward. A track already in the player list, or already a complete cache file, is not fetched again. 0 disables that direction. Files that leave the window stay until the next launch.",
+  "streamPrefetchHint": "How many tracks before/after. Stream play uses a temporary prefetch; cache play uses the same window for background caching. 0 disables that direction.",
   "downloadPending": "Waiting",
   "downloadActive": "Downloading",
   "downloadCompleted": "Completed",
@@ -965,7 +965,7 @@
   "videoDefaultRateCurrent": "Current {rate}× (range {min}×–{max}×)",
   "videoSubtitleSizeCurrent": "Current {size} sp (range {min}–{max} sp)",
   "accountsSubtitle": "Manage multiple server accounts",
-  "audioStreamingSubtitle": "Streaming toggle / subdirectory scan",
+  "audioStreamingSubtitle": "Prefetch window, sidecar covers, subdirectory scan",
   "fileTypesManage": "File extension management",
   "fileTypesManageSubtitle": "Music / video / image / CUE extensions and default actions",
   "coverThumbSize": "Cover thumbnail size",
@@ -1185,11 +1185,11 @@
     }
   },
   "mediaLibrarySettings": "Music library",
-  "mediaLibrarySettingsHint": "Default open, scrape, tags",
+  "mediaLibrarySettingsHint": "Default open, prefetch, scrape, tags",
   "musicDefaultOpen": "Default open",
-  "musicDefaultOpenHint": "Network library tap: cache or stream",
-  "musicDefaultCache": "Cache then play",
-  "musicDefaultStream": "Stream",
+  "musicDefaultOpenHint": "Network library, media library, and playlists: cache play or stream play",
+  "musicDefaultCache": "Cache play",
+  "musicDefaultStream": "Stream play",
   "musicDefaultInExtensionsHint": "Moved to Settings → Media library → Music library.",
   "refreshTagsFromLocal": "Update tags from local",
   "refreshTagsFromLocalHint": "Read tags from cached audio",
@@ -1230,5 +1230,22 @@
   "libMenuCache": "Cache",
   "libMenuClear": "Clear",
   "updateTagsFromCache": "From cache",
-  "updateTagsFromCloud": "From cloud"
+  "updateTagsFromCloud": "From cloud",
+
+  "musicCacheMaxCapacity": "Cache size limit",
+  "musicCacheMaxCapacityHint": "When over the limit, least-recently used files are removed; the track being played is kept. 0 means no limit.",
+  "musicCacheMaxMb": "Limit (MB)",
+  "musicCacheUnlimited": "Unlimited",
+  "taskGroupCount": "{count} items",
+  "@taskGroupCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "taskGroupMembers": "Task details",
+  "prefetchSection": "Prefetch and covers",
+  "prefetchSectionHint": "Stream play writes temporary prefetch; cache play uses the same window for background caching.",
+  "audioPlaylistSection": "Network library play queue",
+  "waitingForCache": "Caching…"
+
 }

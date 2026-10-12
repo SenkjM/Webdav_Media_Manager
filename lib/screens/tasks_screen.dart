@@ -16,19 +16,19 @@ import 'home_shell.dart';
 class TasksScreen extends StatelessWidget {
   const TasksScreen({super.key});
 
-  /// Collapse CUE cache-group members into one queue row.
+  /// Collapse CUE groups, then merge time-contiguous same-kind rows
+  /// (split by [DownloadTarget] when kind is download). Display-only.
   static List<_QueueRow> _rowsFor(
     List<QueueTask> tasksNewestFirst,
     TaskQueueService queue,
   ) {
     final seenGroups = <String>{};
-    final rows = <_QueueRow>[];
+    final cueOrSingle = <_QueueRow>[];
     for (final t in tasksNewestFirst) {
       final gid = t.cacheGroupId;
       if (gid != null && gid.startsWith('cue')) {
         if (seenGroups.contains(gid)) continue;
         seenGroups.add(gid);
-        // Prefer live generation so cancelled leftovers never inflate the row.
         var members = tasksNewestFirst
             .where(
               (x) =>
@@ -42,7 +42,6 @@ class TasksScreen extends StatelessWidget {
               .where((x) => x.cacheGroupId == gid)
               .toList();
         }
-        // Dedupe by remotePath (keep newest).
         final byPath = <String, QueueTask>{};
         for (final m in members) {
           final prev = byPath[m.remotePath];
@@ -50,12 +49,60 @@ class TasksScreen extends StatelessWidget {
             byPath[m.remotePath] = m;
           }
         }
-        rows.add(_QueueRow.cueGroup(gid, byPath.values.toList(), queue));
+        cueOrSingle.add(_QueueRow.cueGroup(gid, byPath.values.toList(), queue));
       } else {
-        rows.add(_QueueRow.single(t));
+        cueOrSingle.add(_QueueRow.single(t));
       }
     }
-    return rows;
+    return _mergeContiguousKind(cueOrSingle);
+  }
+
+  /// Merge adjacent non-CUE rows that share kind (+ download target).
+  static List<_QueueRow> _mergeContiguousKind(List<_QueueRow> input) {
+    if (input.isEmpty) return input;
+    final out = <_QueueRow>[];
+    var bucket = <QueueTask>[];
+    TaskKind? kind;
+    DownloadTarget? target;
+
+    void flush() {
+      if (bucket.isEmpty) return;
+      if (bucket.length == 1) {
+        out.add(_QueueRow.single(bucket.first));
+      } else {
+        out.add(_QueueRow.kindGroup(bucket));
+      }
+      bucket = [];
+      kind = null;
+      target = null;
+    }
+
+    for (final row in input) {
+      if (row.isCueGroup) {
+        flush();
+        out.add(row);
+        continue;
+      }
+      final t = row.members.first;
+      final sameKind = kind == t.kind;
+      final sameTarget = t.kind != TaskKind.download || target == t.target;
+      if (bucket.isEmpty) {
+        bucket.add(t);
+        kind = t.kind;
+        target = t.target;
+        continue;
+      }
+      if (sameKind && sameTarget) {
+        bucket.add(t);
+      } else {
+        flush();
+        bucket.add(t);
+        kind = t.kind;
+        target = t.target;
+      }
+    }
+    flush();
+    return out;
   }
 
   /// Clear every queue entry. Always asks first: unlike clearing completed rows,
@@ -187,6 +234,9 @@ class TasksScreen extends StatelessWidget {
                     songCount: row.songCount,
                   );
                 }
+                if (row.isKindGroup) {
+                  return _KindGroupTile(members: row.members);
+                }
                 return _TaskTile(task: row.members.first);
               },
             ),
@@ -198,11 +248,14 @@ class _QueueRow {
   _QueueRow._(
     this.members, {
     required this.isCueGroup,
+    this.isKindGroup = false,
     this.groupId,
     this.songCount,
   });
   factory _QueueRow.single(QueueTask t) =>
       _QueueRow._([t], isCueGroup: false);
+  factory _QueueRow.kindGroup(List<QueueTask> members) =>
+      _QueueRow._(members, isCueGroup: false, isKindGroup: true);
   factory _QueueRow.cueGroup(
     String id,
     List<QueueTask> members,
@@ -216,6 +269,7 @@ class _QueueRow {
 
   final List<QueueTask> members;
   final bool isCueGroup;
+  final bool isKindGroup;
   final String? groupId;
   final int? songCount;
 }
@@ -591,6 +645,200 @@ Future<void> _showTaskErrorDetail(BuildContext context, String raw) async {
         ),
       ],
     ),
+  );
+}
+
+
+class _KindGroupTile extends StatelessWidget {
+  const _KindGroupTile({required this.members});
+
+  final List<QueueTask> members;
+
+  @override
+  Widget build(BuildContext context) {
+    final queue = context.read<TaskQueueService>();
+    final l10n = AppLocalizations.of(context)!;
+    final head = members.first;
+    final failed = members.any((t) => t.status == TaskStatus.failed);
+    final active = members.any((t) => t.status == TaskStatus.active);
+    final pending = members.any((t) => t.status == TaskStatus.pending);
+    final allDone = members.isNotEmpty &&
+        members.every((t) => t.status == TaskStatus.completed);
+    final (label, color) = failed
+        ? (l10n.downloadFailed, AppColors.error)
+        : active
+        ? (l10n.downloadActive, AppColors.accent)
+        : pending
+        ? (l10n.downloadPending, Theme.of(context).colorScheme.outline)
+        : allDone
+        ? (l10n.downloadCompleted, const Color(0xFF66BB6A))
+        : (l10n.inProgress, Theme.of(context).colorScheme.outline);
+    final progress = members.isEmpty
+        ? 0.0
+        : members.map((t) => t.displayProgress).reduce((a, b) => a + b) /
+              members.length;
+    final title = head.kind == TaskKind.download
+        ? (head.target.label(l10n))
+        : head.kind.label(l10n);
+
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      child: InkWell(
+        onTap: () => _showKindGroupMembers(context, members),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    head.kind == TaskKind.scan
+                        ? Icons.travel_explore_outlined
+                        : Icons.playlist_add_check,
+                    color: AppColors.accent,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$title · ${l10n.taskGroupCount(members.length)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      label,
+                      style: TextStyle(color: color, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+              if (active || pending) ...[
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: active ? progress.clamp(0.0, 1.0) : null,
+                    minHeight: 4,
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHigh,
+                    color: AppColors.accent,
+                  ),
+                ),
+                if (active) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '${(progress * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ],
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  if (pending || active)
+                    TextButton(
+                      onPressed: () {
+                        for (final task in members) {
+                          if (task.status == TaskStatus.pending ||
+                              task.status == TaskStatus.active) {
+                            queue.cancel(task.id);
+                          }
+                        }
+                      },
+                      child: Text(l10n.cancel),
+                    ),
+                  if (failed)
+                    TextButton(
+                      onPressed: () {
+                        for (final task in members) {
+                          if (task.status == TaskStatus.failed ||
+                              task.status == TaskStatus.cancelled) {
+                            queue.retry(task.id);
+                          }
+                        }
+                      },
+                      child: Text(l10n.retry),
+                    ),
+                  TextButton(
+                    onPressed: () => _showKindGroupMembers(context, members),
+                    child: Text(l10n.taskGroupMembers),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Future<void> _showKindGroupMembers(
+  BuildContext context,
+  List<QueueTask> members,
+) async {
+  final l10n = AppLocalizations.of(context)!;
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+    builder: (ctx) {
+      return DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.55,
+        minChildSize: 0.35,
+        maxChildSize: 0.9,
+        builder: (context, controller) {
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.taskGroupMembers,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    Text(l10n.taskGroupCount(members.length)),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  controller: controller,
+                  itemCount: members.length,
+                  itemBuilder: (context, i) => _TaskTile(task: members[i]),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    },
   );
 }
 
