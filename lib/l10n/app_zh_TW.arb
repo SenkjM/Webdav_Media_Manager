@@ -1303,5 +1303,25 @@
       }
     }
   },
-  "folderPickerExcluded": "不能選擇此位置"
+  "folderPickerExcluded": "不能選擇此位置",
+  "folderViewMode": "檢視",
+  "folderViewList": "列表",
+  "folderViewGridColumns": "{count} 欄",
+  "@folderViewGridColumns": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderAddMenu": "加入",
+  "folderTrackNumber": "音軌 {number}",
+  "@folderTrackNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTrackNumberUnknown": "音軌 —"
 }

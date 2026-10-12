@@ -11,6 +11,7 @@ import '../models/app_theme_mode.dart';
 import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
+import '../models/folder_view_mode.dart';
 import '../models/music_library_backfill_root.dart';
 import '../models/music_stream.dart';
 import '../models/snack_duration.dart';
@@ -39,6 +40,7 @@ class SettingsService extends ChangeNotifier {
   static const int defaultThemeSeedArgb = 0xFF2EC4B6;
   static const _kCustomRetentionHours = 'cache_custom_retention_hours';
   static const _kLibrarySort = 'library_sort_mode';
+  static const _kFolderViewMode = 'folder_view_mode';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
   static const _kCoverThumbSize = 'cover_thumb_size';
   static const _kFileTypeConfig = 'file_type_config_json';
@@ -234,6 +236,7 @@ class SettingsService extends ChangeNotifier {
   int _musicCacheMaxMb = 0;
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
+  FolderViewMode _folderViewMode = FolderViewMode.list;
   bool _playlistSyncEnabled = true;
   int _coverThumbSize = coverThumbSize;
   FileTypeConfig _fileTypes = FileTypeConfig();
@@ -382,6 +385,8 @@ class SettingsService extends ChangeNotifier {
       Duration(hours: _customRetentionHours);
   int get customRetentionHours => _customRetentionHours;
   LibrarySortMode get librarySort => _librarySort;
+
+  FolderViewMode get folderViewMode => _folderViewMode;
 
   /// WebDAV root shared by 凭证 / 歌单 / 音乐库 / 备份 (设置 → 同步与备份 →
   /// 远端路径). Every other cloud path is derived from it.
@@ -616,6 +621,9 @@ class SettingsService extends ChangeNotifier {
     _librarySort = LibrarySortModeX.fromStorageKey(
       _prefs!.getString(_kLibrarySort),
     );
+    _folderViewMode = FolderViewModeX.fromStorageKey(
+      _prefs!.getString(_kFolderViewMode),
+    );
     _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
     _coverThumbSize = clampCoverThumbSize(
       _prefs!.getInt(_kCoverThumbSize) ?? coverThumbSize,
@@ -842,6 +850,13 @@ class SettingsService extends ChangeNotifier {
     _librarySort = mode;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setString(_kLibrarySort, mode.storageKey);
+    notifyListeners();
+  }
+
+  Future<void> setFolderViewMode(FolderViewMode mode) async {
+    _folderViewMode = mode;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kFolderViewMode, mode.storageKey);
     notifyListeners();
   }
 
@@ -1586,6 +1601,7 @@ class SettingsService extends ChangeNotifier {
     'cache_retention': _retention.storageKey,
     'cache_custom_retention_hours': _customRetentionHours,
     'library_sort_mode': _librarySort.storageKey,
+    'folder_view_mode': _folderViewMode.storageKey,
     'playlist_sync_enabled': _playlistSyncEnabled,
     'cover_thumb_size': _coverThumbSize,
     'file_type_config': _fileTypes.toJson(),
@@ -1668,6 +1684,11 @@ class SettingsService extends ChangeNotifier {
     if (json['library_sort_mode'] != null) {
       await setLibrarySort(
         LibrarySortModeX.fromStorageKey(json['library_sort_mode'] as String?),
+      );
+    }
+    if (json['folder_view_mode'] is String) {
+      await setFolderViewMode(
+        FolderViewModeX.fromStorageKey(json['folder_view_mode'] as String?),
       );
     }
     if (json['playlist_sync_enabled'] is bool) {

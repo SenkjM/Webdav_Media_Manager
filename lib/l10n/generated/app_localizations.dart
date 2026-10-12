@@ -7426,6 +7426,42 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'不能选择此位置'**
   String get folderPickerExcluded;
+
+  /// No description provided for @folderViewMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'视图'**
+  String get folderViewMode;
+
+  /// No description provided for @folderViewList.
+  ///
+  /// In zh, this message translates to:
+  /// **'列表'**
+  String get folderViewList;
+
+  /// No description provided for @folderViewGridColumns.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 列'**
+  String folderViewGridColumns(int count);
+
+  /// No description provided for @folderAddMenu.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加'**
+  String get folderAddMenu;
+
+  /// No description provided for @folderTrackNumber.
+  ///
+  /// In zh, this message translates to:
+  /// **'音轨 {number}'**
+  String folderTrackNumber(int number);
+
+  /// No description provided for @folderTrackNumberUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'音轨 —'**
+  String get folderTrackNumberUnknown;
 }
 
 class _AppLocalizationsDelegate

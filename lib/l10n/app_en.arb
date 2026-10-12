@@ -1314,5 +1314,25 @@
       }
     }
   },
-  "folderPickerExcluded": "This location cannot be selected"
+  "folderPickerExcluded": "This location cannot be selected",
+  "folderViewMode": "View",
+  "folderViewList": "List",
+  "folderViewGridColumns": "{count} columns",
+  "@folderViewGridColumns": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderAddMenu": "Add",
+  "folderTrackNumber": "Track {number}",
+  "@folderTrackNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTrackNumberUnknown": "Track —"
 }

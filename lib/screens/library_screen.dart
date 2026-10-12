@@ -21,6 +21,7 @@ import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
+import '../utils/library_group_cover.dart';
 import '../widgets/selection_toolbar.dart';
 import '../widgets/track_status_chip.dart';
 import '../widgets/track_status_dot.dart';
@@ -233,6 +234,7 @@ class _ArtistTab extends StatelessWidget {
       subtitleOf: (tracks) =>
           AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
       detailSort: LibrarySortMode.byName,
+      dimensionId: 'artist',
     );
   }
 }
@@ -271,6 +273,7 @@ class _AlbumTab extends StatelessWidget {
       subtitleOf: (tracks) =>
           '${AppLocalizations.of(context)!.playlistTrackCount(tracks.length)} · ${tracks.first.displayArtistFor(AppLocalizations.of(context)!)}',
       detailSort: LibrarySortMode.byAlbumTrack,
+      dimensionId: 'album',
     );
   }
 }
@@ -311,6 +314,7 @@ class _TagsTab extends StatelessWidget {
       );
     }
     final tags = groups.keys.toList();
+    final cache = context.watch<CacheService>();
     return ListView.builder(
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: tags.length,
@@ -319,15 +323,16 @@ class _TagsTab extends StatelessWidget {
         final displayTag = isUncategorizedGenre(tag) ? l10n.uncategorized : tag;
         final tracks = groups[tag]!;
         return ListTile(
-          leading: CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-            child: Icon(
-              isUncategorizedGenre(tag)
-                  ? Icons.label_off_outlined
-                  : Icons.label_outline,
-              color: AppColors.accent,
-              size: 20,
-            ),
+          leading: buildLibraryGroupCover(
+            dimensionId: 'genre',
+            groupKey: tag,
+            groupTracks: tracks,
+            cache: cache,
+            size: 48,
+            borderRadius: 6,
+            placeholderIcon: isUncategorizedGenre(tag)
+                ? Icons.label_off_outlined
+                : Icons.label_outline,
           ),
           title: Text(
             displayTag,
@@ -374,6 +379,7 @@ class _SelectableGroupGrid extends StatefulWidget {
     required this.placeholderIcon,
     required this.subtitleOf,
     required this.detailSort,
+    this.dimensionId,
   });
 
   final List<String> keys;
@@ -382,6 +388,8 @@ class _SelectableGroupGrid extends StatefulWidget {
   final IconData placeholderIcon;
   final String Function(List<LibraryTrack>) subtitleOf;
   final LibrarySortMode detailSort;
+  /// Tag dimension id for [LibraryGroupCoverOverrides] (e.g. album / artist).
+  final String? dimensionId;
 
   @override
   State<_SelectableGroupGrid> createState() => _SelectableGroupGridState();
@@ -522,6 +530,13 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                 AppLocalizations.of(context)!,
                 key,
               );
+              final dimId = widget.dimensionId;
+              final overridePath = dimId == null
+                  ? null
+                  : LibraryGroupCoverOverrides.resolver?.call(
+                      dimensionId: dimId,
+                      groupKey: key,
+                    );
               return _CoverTile(
                 coverTrack: coverTrack,
                 title: title,
@@ -529,6 +544,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                 placeholderIcon: widget.placeholderIcon,
                 selected: _selecting && selected,
                 selecting: _selecting,
+                coverOverridePath: overridePath,
                 onTap: () {
                   if (_selecting) {
                     setState(() => _selection = _selection.toggle(key));
@@ -696,6 +712,7 @@ class _CoverTile extends StatelessWidget {
     this.placeholderIcon,
     this.selected = false,
     this.selecting = false,
+    this.coverOverridePath,
   });
 
   final LibraryTrack? coverTrack;
@@ -706,6 +723,8 @@ class _CoverTile extends StatelessWidget {
   final IconData? placeholderIcon;
   final bool selected;
   final bool selecting;
+  /// Custom cover path from [LibraryGroupCoverOverrides]; null = album-cover fallback.
+  final String? coverOverridePath;
 
   @override
   Widget build(BuildContext context) {
@@ -729,7 +748,17 @@ class _CoverTile extends StatelessWidget {
                     final side = constraints.biggest.shortestSide;
                     final t = coverTrack;
                     Widget art;
-                    if (t == null) {
+                    final override = coverOverridePath;
+                    if (override != null && override.isNotEmpty) {
+                      art = Center(
+                        child: CoverArt(
+                          path: override,
+                          size: side,
+                          borderRadius: 6,
+                          icon: placeholderIcon,
+                        ),
+                      );
+                    } else if (t == null) {
                       art = Center(
                         child: CoverArt(
                           size: side,

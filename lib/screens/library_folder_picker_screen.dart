@@ -3,7 +3,6 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../services/user_folder_service.dart';
-import '../widgets/meta_text.dart';
 
 /// Destination picker for user folders. Defaults to virtual root 「我的文件夹」.
 ///
@@ -157,12 +156,34 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: MetaText(path),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .surfaceContainerHighest
+                      .withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DefaultTextStyle.merge(
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                      child: Text(path),
+                    ),
+                  ),
+                ),
+              ),
             ),
-            const Divider(height: 1),
             Expanded(
               child: children.isEmpty
                   ? Center(

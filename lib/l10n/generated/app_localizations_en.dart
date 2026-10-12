@@ -4409,4 +4409,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get folderPickerExcluded => 'This location cannot be selected';
+
+  @override
+  String get folderViewMode => 'View';
+
+  @override
+  String get folderViewList => 'List';
+
+  @override
+  String folderViewGridColumns(int count) {
+    return '$count columns';
+  }
+
+  @override
+  String get folderAddMenu => 'Add';
+
+  @override
+  String folderTrackNumber(int number) {
+    return 'Track $number';
+  }
+
+  @override
+  String get folderTrackNumberUnknown => 'Track —';
 }

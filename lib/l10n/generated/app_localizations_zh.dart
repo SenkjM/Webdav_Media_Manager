@@ -4216,6 +4216,28 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get folderPickerExcluded => '不能选择此位置';
+
+  @override
+  String get folderViewMode => '视图';
+
+  @override
+  String get folderViewList => '列表';
+
+  @override
+  String folderViewGridColumns(int count) {
+    return '$count 列';
+  }
+
+  @override
+  String get folderAddMenu => '添加';
+
+  @override
+  String folderTrackNumber(int number) {
+    return '音轨 $number';
+  }
+
+  @override
+  String get folderTrackNumberUnknown => '音轨 —';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -8430,4 +8452,26 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get folderPickerExcluded => '不能選擇此位置';
+
+  @override
+  String get folderViewMode => '檢視';
+
+  @override
+  String get folderViewList => '列表';
+
+  @override
+  String folderViewGridColumns(int count) {
+    return '$count 欄';
+  }
+
+  @override
+  String get folderAddMenu => '加入';
+
+  @override
+  String folderTrackNumber(int number) {
+    return '音軌 $number';
+  }
+
+  @override
+  String get folderTrackNumberUnknown => '音軌 —';
 }

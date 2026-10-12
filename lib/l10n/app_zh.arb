@@ -1334,5 +1334,25 @@
       }
     }
   },
-  "folderPickerExcluded": "不能选择此位置"
+  "folderPickerExcluded": "不能选择此位置",
+  "folderViewMode": "视图",
+  "folderViewList": "列表",
+  "folderViewGridColumns": "{count} 列",
+  "@folderViewGridColumns": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderAddMenu": "添加",
+  "folderTrackNumber": "音轨 {number}",
+  "@folderTrackNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTrackNumberUnknown": "音轨 —"
 }
