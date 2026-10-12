@@ -4295,21 +4295,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryModeAutoHint =>
-      'Allow incremental scrape from bound roots; depth uses scrape settings below. Copy still happens only when you ask.';
+      'On play, shallow-scrape the current track folder for missing library rows; optional bound-root filter. Download still follows play mode only.';
 
   @override
-  String get libraryBackfillOnOpen => 'Check when opening music library';
+  String get libraryBackfillOnPlay => 'Check when playing';
 
   @override
-  String get libraryBackfillOnOpenHint =>
-      'When you open the music library, enqueue incremental scrapes for bound roots.';
+  String get libraryBackfillOnPlayHint =>
+      'When a track starts, list only its parent folder one level and enqueue scrape for paths missing from the library. No download here.';
+
+  @override
+  String get libraryBackfillBindRoots => 'Bound paths';
+
+  @override
+  String get libraryBackfillBindRootsHint =>
+      'Off: always scrape the playing track’s parent folder. On: scrape only if the track remote path matches a bound root prefix below.';
 
   @override
   String get libraryBackfillRoots => 'Bound network roots';
 
   @override
   String get libraryBackfillRootsHint =>
-      'Auto backfill only scans these roots; Network library “Scan music” stays available anytime.';
+      'With Bound paths on, play-triggered scrape runs only for these root prefixes; Network library “Scan music” stays available anytime.';
 
   @override
   String get libraryBackfillAddRoot => 'Add root path';

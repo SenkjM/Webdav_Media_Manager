@@ -20,18 +20,20 @@ void main() {
     expect(a.identityKey, b.identityKey);
   });
 
-  test('auto backfill prefs default off and persist', () async {
+  test('auto backfill prefs default and persist (on-play + bind)', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final fresh = SettingsService(prefs: prefs);
     await fresh.init();
 
     expect(fresh.musicLibraryAutoBackfill, isFalse);
-    expect(fresh.musicLibraryBackfillOnOpen, isTrue);
+    expect(fresh.musicLibraryBackfillOnPlay, isTrue);
+    expect(fresh.musicLibraryBackfillBindRoots, isFalse);
     expect(fresh.musicLibraryBackfillRoots, isEmpty);
 
     await fresh.setMusicLibraryAutoBackfill(true);
-    await fresh.setMusicLibraryBackfillOnOpen(false);
+    await fresh.setMusicLibraryBackfillOnPlay(false);
+    await fresh.setMusicLibraryBackfillBindRoots(true);
     await fresh.addMusicLibraryBackfillRoot(
       const MusicLibraryBackfillRoot(accountId: 'acc1', path: '/Music'),
     );
@@ -40,35 +42,129 @@ void main() {
     );
 
     expect(fresh.musicLibraryAutoBackfill, isTrue);
-    expect(fresh.musicLibraryBackfillOnOpen, isFalse);
+    expect(fresh.musicLibraryBackfillOnPlay, isFalse);
+    expect(fresh.musicLibraryBackfillBindRoots, isTrue);
     expect(fresh.musicLibraryBackfillRoots, hasLength(1));
     expect(fresh.musicLibraryBackfillRoots.single.path, '/Music');
 
     final restored = SettingsService(prefs: prefs);
     await restored.init();
     expect(restored.musicLibraryAutoBackfill, isTrue);
-    expect(restored.musicLibraryBackfillOnOpen, isFalse);
+    expect(restored.musicLibraryBackfillOnPlay, isFalse);
+    expect(restored.musicLibraryBackfillBindRoots, isTrue);
     expect(restored.musicLibraryBackfillRoots.single.accountId, 'acc1');
     expect(restored.musicLibraryBackfillRoots.single.path, '/Music');
   });
 
-  test('shouldAutoBackfillOnLibraryOpen gates on mode, on-open, roots', () async {
+  test('legacy music_library_backfill_on_open key still loads as on-play', () async {
+    SharedPreferences.setMockInitialValues({
+      'music_library_backfill_on_open': false,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final s = SettingsService(prefs: prefs);
+    await s.init();
+    expect(s.musicLibraryBackfillOnPlay, isFalse);
+  });
+
+  test('shouldPlayTriggerBackfill gates on mode and on-play', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final s = SettingsService(prefs: prefs);
     await s.init();
 
-    expect(shouldAutoBackfillOnLibraryOpen(s), isFalse);
+    expect(shouldPlayTriggerBackfill(s), isFalse);
 
     await s.setMusicLibraryAutoBackfill(true);
-    expect(shouldAutoBackfillOnLibraryOpen(s), isFalse);
+    expect(shouldPlayTriggerBackfill(s), isTrue);
+
+    await s.setMusicLibraryBackfillOnPlay(false);
+    expect(shouldPlayTriggerBackfill(s), isFalse);
+  });
+
+  test('shouldBackfillForPlayingTrack respects bind filter', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final s = SettingsService(prefs: prefs);
+    await s.init();
+    await s.setMusicLibraryAutoBackfill(true);
+
+    // Bind off → always allow.
+    expect(
+      shouldBackfillForPlayingTrack(
+        settings: s,
+        accountId: 'acc1',
+        remotePath: '/Other/a.mp3',
+      ),
+      isTrue,
+    );
+
+    await s.setMusicLibraryBackfillBindRoots(true);
+    expect(
+      shouldBackfillForPlayingTrack(
+        settings: s,
+        accountId: 'acc1',
+        remotePath: '/Music/a.mp3',
+      ),
+      isFalse,
+    );
 
     await s.addMusicLibraryBackfillRoot(
-      const MusicLibraryBackfillRoot(accountId: 'a', path: '/'),
+      const MusicLibraryBackfillRoot(accountId: 'acc1', path: '/Music'),
     );
-    expect(shouldAutoBackfillOnLibraryOpen(s), isTrue);
+    expect(
+      shouldBackfillForPlayingTrack(
+        settings: s,
+        accountId: 'acc1',
+        remotePath: '/Music/Album/a.mp3',
+      ),
+      isTrue,
+    );
+    expect(
+      shouldBackfillForPlayingTrack(
+        settings: s,
+        accountId: 'acc1',
+        remotePath: '/Other/a.mp3',
+      ),
+      isFalse,
+    );
+    expect(
+      shouldBackfillForPlayingTrack(
+        settings: s,
+        accountId: 'acc2',
+        remotePath: '/Music/a.mp3',
+      ),
+      isFalse,
+    );
+  });
 
-    await s.setMusicLibraryBackfillOnOpen(false);
-    expect(shouldAutoBackfillOnLibraryOpen(s), isFalse);
+  test('remotePathMatchesBoundRoot prefix rules', () {
+    const roots = [
+      MusicLibraryBackfillRoot(accountId: 'a', path: '/Music'),
+      MusicLibraryBackfillRoot(accountId: 'b', path: '/'),
+    ];
+    expect(
+      remotePathMatchesBoundRoot(
+        accountId: 'a',
+        remotePath: '/Music/x.mp3',
+        roots: roots,
+      ),
+      isTrue,
+    );
+    expect(
+      remotePathMatchesBoundRoot(
+        accountId: 'a',
+        remotePath: '/MusicExtra/x.mp3',
+        roots: roots,
+      ),
+      isFalse,
+    );
+    expect(
+      remotePathMatchesBoundRoot(
+        accountId: 'b',
+        remotePath: '/anything/x.mp3',
+        roots: roots,
+      ),
+      isTrue,
+    );
   });
 }

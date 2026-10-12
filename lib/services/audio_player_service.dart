@@ -13,6 +13,7 @@ import '../utils/l10n_host.dart';
 import '../utils/task_error.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
+import 'library_backfill.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';
 import 'music_audio_handler.dart';
@@ -344,6 +345,7 @@ class AudioPlayerService extends ChangeNotifier {
         playable: playable,
       );
       unawaited(_clearRemoteMissingMirror(track));
+      unawaited(_maybePlayTriggeredBackfill(track));
       if (_playOpenMode == PlayOpenMode.stream) {
         _startPrefetch(playlist, index, track.accountId);
       } else {
@@ -601,6 +603,28 @@ class AudioPlayerService extends ChangeNotifier {
     return msg;
   }
 
+
+  /// Auto-backfill: shallow list parent of playing track; scrape missing only.
+  Future<void> _maybePlayTriggeredBackfill(TrackInfo track) async {
+    final accountId = track.accountId.trim();
+    final remotePath = track.remotePath.trim();
+    final sourceName = track.sourceName.trim();
+    if (accountId.isEmpty || remotePath.isEmpty || sourceName.isEmpty) return;
+    try {
+      await enqueuePlayTriggeredShallowScrape(
+        settings: _settings,
+        accounts: _accounts,
+        library: _library,
+        webDav: _webDav,
+        queue: _taskQueue,
+        accountId: accountId,
+        sourceName: sourceName,
+        remotePath: remotePath,
+      );
+    } catch (_) {
+      // Best-effort; play must not fail because scrape failed.
+    }
+  }
 
   Future<void> _clearRemoteMissingMirror(TrackInfo track) async {
     await _library.clearRemoteMissing(

@@ -4103,19 +4103,28 @@ class AppLocalizationsZh extends AppLocalizations {
   String get libraryModeAuto => '自动补齐';
 
   @override
-  String get libraryModeAutoHint => '允许按绑定根路径增量刮削；深度沿用下方刮削设置。复制仍只在你操作时进行。';
+  String get libraryModeAutoHint => '起播时浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。';
 
   @override
-  String get libraryBackfillOnOpen => '打开音乐库时检查';
+  String get libraryBackfillOnPlay => '播放时检查';
 
   @override
-  String get libraryBackfillOnOpenHint => '进入音乐库页时，对绑定根做增量刮削并加入任务队列。';
+  String get libraryBackfillOnPlayHint =>
+      '开始播放时，只列出当前曲父目录一层，把库中缺失的路径加入刮削任务。不在此下载。';
+
+  @override
+  String get libraryBackfillBindRoots => '绑定路径';
+
+  @override
+  String get libraryBackfillBindRootsHint =>
+      '关闭：始终刮削正在播放曲目的父目录。开启：仅当曲目远端路径命中下方绑定根前缀时才刮削。';
 
   @override
   String get libraryBackfillRoots => '绑定的网络根路径';
 
   @override
-  String get libraryBackfillRootsHint => '自动补齐只扫描这些根；网络库里的「扫描音乐」仍可随时手动使用。';
+  String get libraryBackfillRootsHint =>
+      '开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。';
 
   @override
   String get libraryBackfillAddRoot => '添加根路径';
@@ -8229,19 +8238,28 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get libraryModeAuto => '自動補齊';
 
   @override
-  String get libraryModeAutoHint => '允許依綁定根路徑增量刮削；深度沿用下方刮削設定。複製仍只在你操作時進行。';
+  String get libraryModeAutoHint => '起播時淺層刮削目前曲所在目錄並入庫缺失項；可選依綁定根過濾。下載仍只走播放模式。';
 
   @override
-  String get libraryBackfillOnOpen => '開啟音樂庫時檢查';
+  String get libraryBackfillOnPlay => '播放時檢查';
 
   @override
-  String get libraryBackfillOnOpenHint => '進入音樂庫頁時，對綁定根做增量刮削並加入任務佇列。';
+  String get libraryBackfillOnPlayHint =>
+      '開始播放時，只列出目前曲父目錄一層，把庫中缺失的路徑加入刮削任務。不在此下載。';
+
+  @override
+  String get libraryBackfillBindRoots => '綁定路徑';
+
+  @override
+  String get libraryBackfillBindRootsHint =>
+      '關閉：始終刮削正在播放曲目的父目錄。開啟：僅當曲目遠端路徑命中下方綁定根前綴時才刮削。';
 
   @override
   String get libraryBackfillRoots => '綁定的網路根路徑';
 
   @override
-  String get libraryBackfillRootsHint => '自動補齊只掃描這些根；網路磁碟裡的「掃描音樂」仍可隨時手動使用。';
+  String get libraryBackfillRootsHint =>
+      '開啟「綁定路徑」後，僅這些根的前綴命中才會觸發播放時刮削；網路磁碟「掃描音樂」仍可手動使用。';
 
   @override
   String get libraryBackfillAddRoot => '新增根路徑';

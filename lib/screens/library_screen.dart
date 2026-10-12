@@ -11,7 +11,6 @@ import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/library_actions.dart';
-import '../services/library_backfill.dart';
 import '../services/library_service.dart';
 import '../services/stream_cover_reader.dart';
 import '../services/settings_service.dart';
@@ -44,9 +43,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
   final _searchCtrl = TextEditingController();
   String _query = '';
   bool _searchOpen = false;
-  /// Last shell tab we saw; used to fire auto-backfill when entering library (0).
-  int? _lastShellTab;
-  var _backfillInFlight = false;
 
   @override
   void dispose() {
@@ -54,36 +50,10 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.dispose();
   }
 
-  void _maybeAutoBackfill(BuildContext context) {
-    final shellTab = HomeTabScope.maybeIndexOf(context);
-    final enteredLibrary = shellTab == 0 && _lastShellTab != 0;
-    _lastShellTab = shellTab;
-    if (!enteredLibrary) return;
-    final settings = context.read<SettingsService>();
-    if (!shouldAutoBackfillOnLibraryOpen(settings)) return;
-    if (_backfillInFlight) return;
-    _backfillInFlight = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      try {
-        if (!mounted) return;
-        await enqueueAutoBackfillScans(
-          settings: context.read<SettingsService>(),
-          accounts: context.read<AccountsService>(),
-          webDav: context.read<WebDavService>(),
-          queue: context.read<TaskQueueService>(),
-        );
-      } finally {
-        _backfillInFlight = false;
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryService>();
     final settings = context.watch<SettingsService>();
-    _maybeAutoBackfill(context);
-
     return DefaultTabController(
       length: 4,
       child: Scaffold(

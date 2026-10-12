@@ -94,58 +94,69 @@ class _MediaLibrarySettingsScreenState
           if (auto) ...[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              secondary: const Icon(Icons.folder_open_outlined),
-              title: Text(l10n.libraryBackfillOnOpen),
-              subtitle: Text(l10n.libraryBackfillOnOpenHint),
-              value: settings.musicLibraryBackfillOnOpen,
+              secondary: const Icon(Icons.play_circle_outline),
+              title: Text(l10n.libraryBackfillOnPlay),
+              subtitle: Text(l10n.libraryBackfillOnPlayHint),
+              value: settings.musicLibraryBackfillOnPlay,
               onChanged: (v) =>
-                  unawaited(settings.setMusicLibraryBackfillOnOpen(v)),
+                  unawaited(settings.setMusicLibraryBackfillOnPlay(v)),
             ),
-            const SizedBox(height: 8),
-            Text(
-              l10n.libraryBackfillRoots,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: scheme.primary,
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.link),
+              title: Text(l10n.libraryBackfillBindRoots),
+              subtitle: Text(l10n.libraryBackfillBindRootsHint),
+              value: settings.musicLibraryBackfillBindRoots,
+              onChanged: (v) =>
+                  unawaited(settings.setMusicLibraryBackfillBindRoots(v)),
+            ),
+            if (settings.musicLibraryBackfillBindRoots) ...[
+              const SizedBox(height: 8),
+              Text(
+                l10n.libraryBackfillRoots,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: scheme.primary,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              l10n.libraryBackfillRootsHint,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
+              const SizedBox(height: 4),
+              Text(
+                l10n.libraryBackfillRootsHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
-            ),
-            for (final root in settings.musicLibraryBackfillRoots)
+              for (final root in settings.musicLibraryBackfillRoots)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.link),
+                  title: Text(
+                    backfillRootLabel(
+                      root: root,
+                      accounts: accounts,
+                      localizeAccountName: (n) =>
+                          localizedAccountName(l10n, n),
+                    ),
+                  ),
+                  trailing: IconButton(
+                    tooltip: l10n.delete,
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => unawaited(
+                      settings.removeMusicLibraryBackfillRoot(root),
+                    ),
+                  ),
+                ),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.link),
-                title: Text(
-                  backfillRootLabel(
-                    root: root,
-                    accounts: accounts,
-                    localizeAccountName: (n) =>
-                        localizedAccountName(l10n, n),
-                  ),
-                ),
-                trailing: IconButton(
-                  tooltip: l10n.delete,
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => unawaited(
-                    settings.removeMusicLibraryBackfillRoot(root),
-                  ),
-                ),
+                leading: const Icon(Icons.add_link),
+                title: Text(l10n.libraryBackfillAddRoot),
+                onTap: accounts.hasAccounts
+                    ? () => unawaited(_addBackfillRoot(context))
+                    : null,
+                subtitle: accounts.hasAccounts
+                    ? null
+                    : Text(l10n.libraryBackfillNeedAccount),
               ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.add_link),
-              title: Text(l10n.libraryBackfillAddRoot),
-              onTap: accounts.hasAccounts
-                  ? () => unawaited(_addBackfillRoot(context))
-                  : null,
-              subtitle: accounts.hasAccounts
-                  ? null
-                  : Text(l10n.libraryBackfillNeedAccount),
-            ),
+            ],
           ],
           const Divider(height: 32),
           Text(

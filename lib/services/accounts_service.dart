@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
@@ -40,6 +41,8 @@ class AccountsService extends ChangeNotifier {
   final List<WebDavAccount> _accounts = [];
   String? _activeAccountId;
   bool _loaded = false;
+  /// Serializes [init] so concurrent clear/await/addAll cannot multiply rows.
+  Future<void>? _initInFlight;
 
   UnmodifiableListView<WebDavAccount> get accounts =>
       UnmodifiableListView(_accounts);
@@ -107,23 +110,67 @@ class AccountsService extends ChangeNotifier {
 
   bool get hasAccounts => _accounts.isNotEmpty;
 
+  /// Normalized name key used for uniqueness (case-insensitive).
+  static String nameKey(String name) =>
+      normalizeSourceName(name).toLowerCase();
+
+  String _resolvedName(String name, String url) {
+    final trimmed = name.trim();
+    return trimmed.isEmpty ? url.trim() : trimmed;
+  }
+
+  /// Name is the logical identity; refuse a second account with the same name.
+  void _assertNameAvailable(String name, {String? exceptId}) {
+    final clash = accountNamed(name, exceptId: exceptId);
+    if (clash != null) {
+      throw StateError('err.accountNameTaken');
+    }
+  }
+
   Future<void> init() async {
-    _prefs ??= await SharedPreferences.getInstance();
-    await _migrateLegacyIfNeeded();
-    _accounts
-      ..clear()
-      ..addAll(await _db.loadAccounts());
-    _activeAccountId = _prefs!.getString(_kActiveAccount);
-    if (_activeAccountId != null &&
-        !_accounts.any((a) => a.id == _activeAccountId)) {
-      _activeAccountId = null;
+    while (_initInFlight != null) {
+      try {
+        await _initInFlight;
+      } catch (_) {
+        // Prior attempt failed; this caller still reloads.
+      }
     }
-    if (_activeAccountId == null && _accounts.isNotEmpty) {
-      _activeAccountId = _accounts.first.id;
-      await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+    final gate = Completer<void>();
+    _initInFlight = gate.future;
+    try {
+      _prefs ??= await SharedPreferences.getInstance();
+      await _migrateLegacyIfNeeded();
+      final rows = await _db.loadAccounts();
+      // Replace in one step after await so overlapping inits cannot append.
+      final deduped = <WebDavAccount>[];
+      final seen = <String>{};
+      for (final a in rows) {
+        if (seen.add(a.id)) deduped.add(a);
+      }
+      _accounts
+        ..clear()
+        ..addAll(deduped);
+      _activeAccountId = _prefs!.getString(_kActiveAccount);
+      if (_activeAccountId != null &&
+          !_accounts.any((a) => a.id == _activeAccountId)) {
+        _activeAccountId = null;
+      }
+      if (_activeAccountId == null && _accounts.isNotEmpty) {
+        _activeAccountId = _accounts.first.id;
+        await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+      }
+      await _collapseDuplicateNames();
+      _loaded = true;
+      notifyListeners();
+      gate.complete();
+    } catch (e, st) {
+      gate.completeError(e, st);
+      rethrow;
+    } finally {
+      if (identical(_initInFlight, gate.future)) {
+        _initInFlight = null;
+      }
     }
-    _loaded = true;
-    notifyListeners();
   }
 
   Future<void> _migrateLegacyIfNeeded() async {
@@ -192,6 +239,44 @@ class AccountsService extends ChangeNotifier {
     return null;
   }
 
+  /// Keep one row per name (prefer active). Deletes extras from DB + secure.
+  /// Existing installs may already have same-name rows from soft-allow / vault.
+  Future<void> _collapseDuplicateNames() async {
+    final keepByName = <String, WebDavAccount>{};
+    final removeIds = <String>[];
+    for (final a in List<WebDavAccount>.from(_accounts)) {
+      final key = nameKey(a.name);
+      if (key.isEmpty) continue;
+      final kept = keepByName[key];
+      if (kept == null) {
+        keepByName[key] = a;
+        continue;
+      }
+      if (a.id == _activeAccountId) {
+        removeIds.add(kept.id);
+        keepByName[key] = a;
+      } else {
+        removeIds.add(a.id);
+      }
+    }
+    for (final id in removeIds) {
+      await _db.deleteAccount(id);
+      await _secure.delete(key: '$_kPassPrefix$id');
+      await _secure.delete(key: '$_kDriverCfgPrefix$id');
+      _accounts.removeWhere((a) => a.id == id);
+    }
+    if (removeIds.isNotEmpty &&
+        _activeAccountId != null &&
+        !_accounts.any((a) => a.id == _activeAccountId)) {
+      _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
+      if (_activeAccountId == null) {
+        await _prefs!.remove(_kActiveAccount);
+      } else {
+        await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+      }
+    }
+  }
+
   Future<WebDavAccount> addAccount({
     required String name,
     required String url,
@@ -201,9 +286,11 @@ class AccountsService extends ChangeNotifier {
     String remotePath = '/',
     int? capabilities,
   }) async {
+    final resolvedName = _resolvedName(name, url);
+    _assertNameAvailable(resolvedName);
     final account = WebDavAccount(
       id: _uuid.v4(),
-      name: name.trim().isEmpty ? url.trim() : name.trim(),
+      name: resolvedName,
       url: url.trim().replaceAll(RegExp(r'/+$'), ''),
       username: username,
       providerType: providerType,
@@ -241,8 +328,10 @@ class AccountsService extends ChangeNotifier {
   }) async {
     final idx = _accounts.indexWhere((a) => a.id == id);
     if (idx < 0) return;
+    final resolvedName = _resolvedName(name, url);
+    _assertNameAvailable(resolvedName, exceptId: id);
     final updated = _accounts[idx].copyWith(
-      name: name.trim().isEmpty ? url.trim() : name.trim(),
+      name: resolvedName,
       url: url.trim().replaceAll(RegExp(r'/+$'), ''),
       username: username,
       providerType: providerType,
@@ -328,9 +417,19 @@ class AccountsService extends ChangeNotifier {
       }
     }
 
+    final resolvedName = _resolvedName(name, url);
+    // Name is logical identity: drop any other row that already owns this name.
+    final clash = accountNamed(resolvedName, exceptId: id);
+    if (clash != null) {
+      await _db.deleteAccount(clash.id);
+      await _secure.delete(key: '$_kPassPrefix${clash.id}');
+      await _secure.delete(key: '$_kDriverCfgPrefix${clash.id}');
+      _accounts.removeWhere((a) => a.id == clash.id);
+    }
+
     final account = WebDavAccount(
       id: id,
-      name: name,
+      name: resolvedName,
       url: url,
       username: username,
     );
@@ -374,6 +473,7 @@ class AccountsService extends ChangeNotifier {
     // Replace accounts table by upserting backup set and deleting missing.
     final existing = await _db.loadAccounts();
     final keepIds = <String>{};
+    final seenNames = <String>{};
     for (final raw in list) {
       final m = Map<String, dynamic>.from(raw as Map);
       final providerType = m['providerType'] as String? ?? 'webdav';
@@ -389,6 +489,11 @@ class AccountsService extends ChangeNotifier {
         providerType: providerType,
         remotePath: m['remote_path'] as String? ?? '/',
       );
+      final nKey = nameKey(account.name);
+      if (nKey.isNotEmpty && !seenNames.add(nKey)) {
+        // Same logical identity already restored from this archive.
+        continue;
+      }
       keepIds.add(account.id);
       await _db.upsertAccount(account);
 
@@ -447,9 +552,11 @@ class AccountsService extends ChangeNotifier {
         await _secure.delete(key: '$_kDriverCfgPrefix${a.id}');
       }
     }
+    final restoredRows = await _db.loadAccounts();
     _accounts
       ..clear()
-      ..addAll(await _db.loadAccounts());
+      ..addAll(restoredRows);
+    await _collapseDuplicateNames();
     final active = json['activeAccountId'] as String?;
     if (active != null && _accounts.any((a) => a.id == active)) {
       _activeAccountId = active;

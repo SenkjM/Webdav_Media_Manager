@@ -903,11 +903,11 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
   - `music_cache` 容量上限 + 既有按时间清理；跳过正在播放；清缓存后经 `CacheService` 刷新。
   - 音频流式设置并入媒体库设置；预载文案区分串流临时预载 vs 缓存播放后台缓存。
   - 任务队列：展示层按时间连续同 kind（下载再按 `DownloadTarget`）合并；保留 CUE 组合并；聚合进度 / 取消组 / BottomSheet 看成员。
-- **曲库管理模式（本轮）**：设置 → 媒体库 → 音乐库。互斥两项：
-  1. **手动管理**（默认，`music_library_auto_backfill=false`）：库只因用户显式操作变化；**不**在打开音乐库时自动刮削。
-  2. **自动补齐**（`true`）：可从绑定的网络根路径（`music_library_backfill_roots`）按现有刮削深度增量入队；打开音乐库时是否检查由 `music_library_backfill_on_open`（默认开）控制。复制仍只在用户操作时发生。
-  - 网络库手动「扫描音乐」/ 多选「扫描入库」**两种模式都可**（用户发起）；仅后台 / 打开时自动入队受自动补齐门控。
-  - 更新标签文案改为「从缓存更新标签」/「从云端更新标签」（三语）；空库引导改为可扫描入库或下载，不再只提下载。
+- **曲库管理模式（本轮，已按播放触发重锁）**：设置 → 媒体库 → 音乐库。互斥两项：
+  1. **手动管理**（默认，`music_library_auto_backfill=false`）：库只因用户显式操作变化；**不**自动刮削。
+  2. **自动补齐**（`true`）：**起播**时浅层刮削（见 §17.17）；**已移除**「打开音乐库时检查」入队。
+  - 网络库手动「扫描音乐」/ 多选「扫描入库」**两种模式都可**；自动入队仅自动补齐 + 播放触发。
+  - 更新标签文案「从缓存更新标签」/「从云端更新标签」；空库引导可扫描或下载。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
 
@@ -1032,12 +1032,18 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 9. 状态条：仅 `music_cache` = 缓存；仅 `prefetch_cache` = 串流。
 10. 入口统一：`network_library` / `library_screen` / `playlist_detail_screen` 都尊重 `musicDefaultStream` / `PlayOpenMode`。
 
-### 17.17 曲库管理模式（本轮落地）
+### 17.17 曲库管理模式 → 播放触发浅层刮削（已重锁）
 
-**用户原话（2026-10-12）**：两种互斥模式——手动管理（默认）与自动补齐；自动时展示绑定根与「打开音乐库时检查」；手动时隐藏自动触发；显式文件夹扫描两边都可；自动入队仅自动补齐；更新标签文案勿与播放混淆；空库文案勿只提下载。
+**用户原话（2026-10-12，后改）**：只刮削；下载跟播放模式；前缀匹配；去掉打开音乐库时自动入队；改为起播时浅层列父目录；绑定路径开关；修账号选择器重复。
 
-**取舍**：
-- Pref：`music_library_auto_backfill`（bool，默认 false）、`music_library_backfill_on_open`（bool，默认 true）、`music_library_backfill_roots`（JSON 根列表：`accountId` + `path`）。
-- 自动补齐入队：`LibraryScreen` 在壳 tab 进入索引 0 时调用 `enqueueAutoBackfillScans`；同根已有 pending/active 刮削则跳过；刮削深度复用 `media_scan_*`。
-- 不自动复制 / 下载；只刮削入库。
-- 更新标签 ARB：`updateTagsFromCache` / `updateTagsFromCloud` 明确「更新标签」；空库 `libraryEmptyGuide` 同时提示扫描与下载。
+**取舍（锁定）**：
+1. **去掉** `shouldAutoBackfillOnLibraryOpen` / 打开音乐库 tab 自动入队。
+2. **起播触发**（`AudioPlayerService` 成功 `loadAndPlay` 后）：已知 `accountId` + `sourceName` + `remotePath` 时，只 `listDirectory` **当前曲父目录一层**（`WalkOptions(includeSubdirs: false)`）；与本地库该 source 的远端路径 diff；仅缺失路径 `enqueueScan`（刮削语义，**不下载**；下载只走缓存播放等播放模式）。
+3. Pref：
+   - `music_library_auto_backfill`（默认 false）= 自动补齐总开关。
+   - `music_library_backfill_on_open`（**键名保留**，语义改为 on-play，默认 true）→ API `musicLibraryBackfillOnPlay`。
+   - `music_library_backfill_bind_roots`（默认 false）：关 = 不做绑定过滤，起播总是浅列父目录；开 = 先用绑定根对当前曲 `remotePath` 做前缀匹配，不命中则整次跳过，命中再扫父目录一层。
+   - `music_library_backfill_roots`：绑定根 UI 仅在绑定开关开时显示。
+4. **账号同名**：名称是逻辑主键。手动创建去掉「仍然使用」；`addAccount`/`updateAccount` 拒绝重名；凭证同步按 id/名/url 合并；备份按名去重；启动时折叠已有同名行。选择器**不**自行去重。
+5. 显式网络库扫描两种模式都可；自动入队仅自动补齐门控。
+6. 更新标签 / 空库文案保持「更新标签」与可扫描入库。

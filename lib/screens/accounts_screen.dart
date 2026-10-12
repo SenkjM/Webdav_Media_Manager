@@ -779,11 +779,10 @@ class AccountsScreen extends StatelessWidget {
     }
   }
 
-  /// Warn when another disk already uses [name].
+  /// Block when another disk already uses [name].
   ///
-  /// Two mounts can legitimately share a URL and username (different passwords
-  /// map to different trees), so the *name* is the only discriminator we have —
-  /// which makes duplicates genuinely dangerous rather than cosmetic.
+  /// Name is the logical identity (library binding). Soft-allow「仍然使用」
+  /// used to create same-name twins; that path is closed.
   Future<bool> _confirmDuplicateName(
     BuildContext context,
     AccountsService accounts,
@@ -793,25 +792,21 @@ class AccountsScreen extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final clash = accounts.accountNamed(name, exceptId: exceptId);
     if (clash == null) return true;
-    final ok = await showDialog<bool>(
+    await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
         title: Text(l10n.accountDuplicateTitle),
         content: Text(l10n.accountDuplicateContent(clash.name, clash.url)),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.accountChangeName),
-          ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.accountKeepName),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.accountChangeName),
           ),
         ],
       ),
     );
-    return ok == true;
+    return false;
   }
 
   /// Warn that editing the name (or username) changes what the rows point at.

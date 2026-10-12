@@ -7226,20 +7226,32 @@ abstract class AppLocalizations {
   /// No description provided for @libraryModeAutoHint.
   ///
   /// In zh, this message translates to:
-  /// **'允许按绑定根路径增量刮削；深度沿用下方刮削设置。复制仍只在你操作时进行。'**
+  /// **'起播时浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。'**
   String get libraryModeAutoHint;
 
-  /// No description provided for @libraryBackfillOnOpen.
+  /// No description provided for @libraryBackfillOnPlay.
   ///
   /// In zh, this message translates to:
-  /// **'打开音乐库时检查'**
-  String get libraryBackfillOnOpen;
+  /// **'播放时检查'**
+  String get libraryBackfillOnPlay;
 
-  /// No description provided for @libraryBackfillOnOpenHint.
+  /// No description provided for @libraryBackfillOnPlayHint.
   ///
   /// In zh, this message translates to:
-  /// **'进入音乐库页时，对绑定根做增量刮削并加入任务队列。'**
-  String get libraryBackfillOnOpenHint;
+  /// **'开始播放时，只列出当前曲父目录一层，把库中缺失的路径加入刮削任务。不在此下载。'**
+  String get libraryBackfillOnPlayHint;
+
+  /// No description provided for @libraryBackfillBindRoots.
+  ///
+  /// In zh, this message translates to:
+  /// **'绑定路径'**
+  String get libraryBackfillBindRoots;
+
+  /// No description provided for @libraryBackfillBindRootsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭：始终刮削正在播放曲目的父目录。开启：仅当曲目远端路径命中下方绑定根前缀时才刮削。'**
+  String get libraryBackfillBindRootsHint;
 
   /// No description provided for @libraryBackfillRoots.
   ///
@@ -7250,7 +7262,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryBackfillRootsHint.
   ///
   /// In zh, this message translates to:
-  /// **'自动补齐只扫描这些根；网络库里的「扫描音乐」仍可随时手动使用。'**
+  /// **'开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。'**
   String get libraryBackfillRootsHint;
 
   /// No description provided for @libraryBackfillAddRoot.
