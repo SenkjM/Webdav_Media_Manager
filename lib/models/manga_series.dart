@@ -1,37 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-/// Soft grouping of [Manga] rows (album-like). Progress stays per-Manga.
+import '../utils/manga_identity.dart';
+
+/// A series as the **frontend sees it**: a label shared by the [Manga] rows
+/// that carry it — the manga counterpart of an album.
+///
+/// There is no series table and no series row to create or leave behind. The
+/// only stored fact is `mangas.series` (the tag); everything here is derived
+/// from the books, so a series always has at least one book and its title can
+/// never disagree with what the books say.
+///
+/// [id] is the deterministic `sha1('mangaSeries' + title)` that folder soft
+/// refs (`mangaSeries`) use, so a ref survives as long as the title does.
 class MangaSeries {
-  const MangaSeries({
-    required this.id,
-    required this.title,
-    this.author,
-    this.sortTitle,
-    required this.createdAt,
-  });
+  const MangaSeries({required this.title});
 
-  final String id;
   final String title;
-  final String? author;
-  final String? sortTitle;
-  final DateTime createdAt;
 
-  Map<String, Object?> toMap() => {
-        'id': id,
-        'title': title,
-        'author': author,
-        'sort_title': sortTitle ?? title,
-        'created_at': createdAt.toUtc().toIso8601String(),
-      };
+  String get id => mangaSeriesIdForTitle(title);
 
-  static MangaSeries fromMap(Map<String, Object?> map) {
-    return MangaSeries(
-      id: map['id'] as String? ?? '',
-      title: map['title'] as String? ?? '',
-      author: map['author'] as String?,
-      sortTitle: map['sort_title'] as String?,
-      createdAt:
-          DateTime.tryParse(map['created_at'] as String? ?? '')?.toLocal() ??
-              DateTime.now(),
-    );
-  }
+  @override
+  bool operator ==(Object other) =>
+      other is MangaSeries && other.title == title;
+
+  @override
+  int get hashCode => title.hashCode;
+
+  @override
+  String toString() => 'MangaSeries($title)';
 }

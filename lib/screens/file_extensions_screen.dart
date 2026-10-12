@@ -26,6 +26,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
   late final TextEditingController _videoController;
   late final TextEditingController _imageController;
   late final TextEditingController _cueController;
+  late final TextEditingController _comicController;
 
   @override
   void initState() {
@@ -34,6 +35,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     _videoController = TextEditingController();
     _imageController = TextEditingController();
     _cueController = TextEditingController();
+    _comicController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncFromSettings());
   }
 
@@ -51,6 +53,9 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     _cueController.text = FileTypeConfig.displayList(
       settings.fileTypes.cueExtensions,
     );
+    _comicController.text = FileTypeConfig.displayList(
+      settings.fileTypes.comicExtensions,
+    );
   }
 
   @override
@@ -59,6 +64,7 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     _videoController.dispose();
     _imageController.dispose();
     _cueController.dispose();
+    _comicController.dispose();
     super.dispose();
   }
 
@@ -77,12 +83,16 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
     final cue = category == FileCategory.cue
         ? FileTypeConfig.parseInput(_cueController.text)
         : current.cueExtensions;
+    final comic = category == FileCategory.comic
+        ? FileTypeConfig.parseInput(_comicController.text)
+        : current.comicExtensions;
     await settings.setFileTypes(
       FileTypeConfig(
         musicExtensions: music,
         videoExtensions: video,
         imageExtensions: image,
         cueExtensions: cue,
+        comicExtensions: comic,
       ),
     );
     // Re-point the download queue's classifier: it must never keep using the
@@ -106,6 +116,9 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
         break;
       case FileCategory.cue:
         _cueController.text = FileTypeConfig.displayList(def.cueExtensions);
+        break;
+      case FileCategory.comic:
+        _comicController.text = FileTypeConfig.displayList(def.comicExtensions);
         break;
       case FileCategory.other:
         break;
@@ -175,6 +188,15 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
             onApply: () => _apply(FileCategory.cue),
             onRestore: () => _restoreDefault(FileCategory.cue),
             actionDropdown: _buildActionDropdown(settings, FileCategory.cue),
+          ),
+          const SizedBox(height: 16),
+          _buildSection(
+            title: l10n.fileCatComic,
+            subtitle: l10n.fileExtDefaultAction(actions.comic.label(l10n)),
+            controller: _comicController,
+            onApply: () => _apply(FileCategory.comic),
+            onRestore: () => _restoreDefault(FileCategory.comic),
+            actionDropdown: _buildActionDropdown(settings, FileCategory.comic),
           ),
           const SizedBox(height: 16),
           _buildSection(

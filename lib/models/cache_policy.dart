@@ -20,6 +20,25 @@ extension CacheRetentionX on CacheRetention {
   }
 }
 
+/// Which media cache an entry belongs to.
+///
+/// The two caches are managed **independently**: each has its own retention
+/// window, its own size cap and its own "clear everything" action, and each has
+/// its own settings page. [CacheIndexDb] stores the kind alongside the access
+/// time so a cleanup pass only ever touches its own cache.
+enum CacheKind { music, manga }
+
+extension CacheKindX on CacheKind {
+  String get storageKey => name;
+
+  static CacheKind fromStorageKey(String? key) {
+    return CacheKind.values.firstWhere(
+      (e) => e.name == key,
+      orElse: () => CacheKind.music,
+    );
+  }
+}
+
 /// Pure policy used by [CacheService] and unit tests.
 class CacheExpiryPolicy {
   const CacheExpiryPolicy({required this.retention, this.customDuration});

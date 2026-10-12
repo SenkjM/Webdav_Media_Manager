@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
+import '../models/user_folder.dart';
 import '../services/user_folder_service.dart';
 
 /// Destination picker for user folders. Defaults to virtual root 「我的文件夹」.
@@ -29,7 +30,38 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
   /// Stack of folder ids; null sentinel at bottom = virtual root.
   final List<String?> _stack = [null];
 
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
   String? get _currentId => _stack.last;
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Move the breadcrumb stack to [folderId] so the picker lands on it.
+  void _jumpTo(String folderId) {
+    final folders = context.read<UserFolderService>();
+    final chain = <String>[];
+    var id = folderId;
+    final guard = <String>{};
+    while (id.isNotEmpty && guard.add(id)) {
+      final f = folders.folderById(id);
+      if (f == null) break;
+      chain.add(f.id);
+      id = f.parentId ?? '';
+    }
+    _searchCtrl.clear();
+    setState(() {
+      _query = '';
+      _stack
+        ..clear()
+        ..add(null)
+        ..addAll(chain.reversed);
+    });
+  }
 
   @override
   void initState() {
@@ -110,6 +142,16 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
     final folders = context.watch<UserFolderService>();
     final children = folders.childrenOf(_currentId);
     final path = folders.pathDisplay(_currentId);
+    final q = _query.trim().toLowerCase();
+    final matches = <UserFolder>[];
+    if (q.isNotEmpty) {
+      for (final f in folders.folders) {
+        if (f.name.toLowerCase().contains(q)) matches.add(f);
+      }
+      matches.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+    }
     final excludedHere = _isExcluded(_currentId);
     // Virtual root cannot hold items — confirm only when inside a real folder,
     // or allow confirming root and let caller create. Product: leaf holds items;
@@ -184,8 +226,51 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              child: TextField(
+                controller: _searchCtrl,
+                decoration: InputDecoration(
+                  hintText: l10n.folderSearchHint,
+                  prefixIcon: const Icon(Icons.search, size: 20),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: l10n.cancel,
+                          icon: const Icon(Icons.clear, size: 18),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
             Expanded(
-              child: children.isEmpty
+              child: q.isNotEmpty
+                  ? (matches.isEmpty
+                        ? Center(child: Text(l10n.libraryEmpty))
+                        : ListView.builder(
+                            itemCount: matches.length,
+                            itemBuilder: (context, i) {
+                              final f = matches[i];
+                              final blocked = _isExcluded(f.id);
+                              return ListTile(
+                                leading: const Icon(Icons.folder_outlined),
+                                title: Text(f.name),
+                                subtitle: Text(folders.pathDisplay(f.id)),
+                                trailing: const Icon(Icons.chevron_right),
+                                enabled: !blocked,
+                                onTap: blocked
+                                    ? null
+                                    : () => _jumpTo(f.id),
+                              );
+                            },
+                          ))
+                  : children.isEmpty
                   ? Center(
                       child: Text(
                         excludedHere

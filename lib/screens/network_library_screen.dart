@@ -414,6 +414,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         await _openImage(item);
       case FileAction.downloadToGallery:
         await _downloadToGallery(item);
+      case FileAction.addToMangaLibrary:
+        await _ingestComicFile(item);
     }
   }
 
@@ -914,15 +916,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                         _runAction(item, action);
                       },
                     ),
-                  if (isComicContainerFileName(item.name))
-                    ListTile(
-                      leading: const Icon(Icons.menu_book_outlined),
-                      title: Text(l10n.mangaAddComic),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        unawaited(_ingestComicFile(item));
-                      },
-                    ),
                   // 相册与下载目录是两条不同的落盘路径，视频两个都保留。
                   if (item.isVideo)
                     ListTile(
@@ -990,6 +983,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     FileAction.streamMusic => Icons.stream,
     FileAction.viewImage => Icons.image_outlined,
     FileAction.downloadToGallery => Icons.photo_library_outlined,
+    FileAction.addToMangaLibrary => Icons.menu_book_outlined,
   };
 
   /// 复制 / 移动选中的条目到另一个远端文件夹。
@@ -1568,6 +1562,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
               e.category == FileCategory.music ||
               e.category == FileCategory.cue,
         );
+    // 加入漫画库：与「缓存音乐」同构的一条线。选中里只要有漫画单文件、
+    // 或有文件夹（文件夹由后端递归扫出其中的漫画）就可用。
+    final canAddToManga = folders.isNotEmpty || files.any((e) => e.isComic);
     final canDownload = items.isNotEmpty;
     return SelectionToolbar(
       children: [
@@ -1617,6 +1614,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           icon: const Icon(Icons.manage_search_outlined),
         ),
         IconButton(
+          tooltip: AppLocalizations.of(context)!.mangaAddComic,
+          onPressed: canAddToManga
+              ? () => unawaited(_ingestComicSelection(folders, files))
+              : null,
+          icon: const Icon(Icons.menu_book_outlined),
+        ),
+        IconButton(
           tooltip: AppLocalizations.of(context)!.download,
           onPressed: canDownload
               ? () => _downloadSelection(folders, files)
@@ -1663,12 +1667,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         accountId: accountId,
         rootPath: folder.path,
         walk: settings.mangaScanWalkOptions,
+        comicExtensions: settings.fileTypes.comicExtensions,
       );
       if (hits.isEmpty) {
         if (!mounted) return;
         AppSnack.show(context, l10n.mangaNoComicsInFolder);
         return;
       }
+      final queue = context.read<TaskQueueService>();
       var n = 0;
       for (final hit in hits) {
         final draft = MangaLibraryService.draftForComicFile(
@@ -1676,7 +1682,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           remotePath: hit.path,
           fileName: hit.name,
         );
-        await mangaLib.upsertFromDraft(draft);
+        final created = await mangaLib.upsertFromDraft(draft);
+        // Scrape inline, the way the music scan reads tags, so the new row
+        // already shows its real name and cover instead of a placeholder.
+        // Range reads only, so the archive itself is never downloaded.
+        await queue.scrapeMangaNow(sourceName: sourceName, mangaId: created.id);
         n++;
       }
       if (!mounted) return;
@@ -1783,10 +1793,77 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
   }
 
+  /// 多选「加入漫画库」：文件夹递归扫出漫画单文件，单文件用自己的一份草稿，
+  /// 合起来一次性建立并刮削，只报一次结果。
+  ///
+  /// 音乐那条线把「缓存」与「扫描」分成两个按钮，是因为音乐必须先把文件拉到
+  /// 本地才有标签可读；漫画的建立只读文件名（[MangaLibraryService
+  /// .draftForComicFile]），元数据与封面交给随后的 Range 刮削，所以一个按钮
+  /// 就够，也就没有再拆一个「扫描漫画」。
+  Future<void> _ingestComicSelection(
+    List<WebDavItem> folders,
+    List<WebDavItem> files,
+  ) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final accounts = context.read<AccountsService>();
+    final sourceName = accounts.accountById(accountId)?.name;
+    if (sourceName == null || sourceName.isEmpty) return;
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.read<SettingsService>();
+    final webDav = context.read<WebDavService>();
+    final mangaLib = context.read<MangaLibraryService>();
+    final queue = context.read<TaskQueueService>();
+    try {
+      final targets = <({String path, String name})>[
+        for (final f in files)
+          if (f.isComic) (path: f.path, name: f.name),
+      ];
+      for (final folder in folders) {
+        final hits = await listComicContainersRecursive(
+          webDav: webDav,
+          accountId: accountId,
+          rootPath: folder.path,
+          comicExtensions: settings.fileTypes.comicExtensions,
+          walk: settings.mangaScanWalkOptions,
+        );
+        targets.addAll([for (final h in hits) (path: h.path, name: h.name)]);
+      }
+      if (targets.isEmpty) {
+        if (!mounted) return;
+        AppSnack.show(context, l10n.mangaNoComicsInFolder);
+        return;
+      }
+      // 选中的文件夹里可能已经含了同时被选中的单文件，按路径去重。
+      final seen = <String>{};
+      var n = 0;
+      for (final t in targets) {
+        if (!seen.add(t.path)) continue;
+        final draft = MangaLibraryService.draftForComicFile(
+          sourceName: sourceName,
+          remotePath: t.path,
+          fileName: t.name,
+        );
+        final created = await mangaLib.upsertFromDraft(draft);
+        // 与单文件入口、文件夹扫描一致：建立完立刻刮一次。
+        await queue.scrapeMangaNow(sourceName: sourceName, mangaId: created.id);
+        n++;
+      }
+      if (!mounted) return;
+      AppSnack.show(context, l10n.mangaBatchIngestDone(n));
+    } catch (e) {
+      if (!mounted) return;
+      AppSnack.error(
+        context,
+        TaskQueueService.describeError(e.toString(), l10n),
+      );
+    }
+  }
+
   Future<void> _ingestComicFile(WebDavItem item) async {
     final accountId = _accountId;
     if (accountId == null || item.isDirectory) return;
-    if (!isComicContainerFileName(item.name)) return;
+    if (!item.isComic) return;
     final accounts = context.read<AccountsService>();
     final account = accounts.accountById(accountId);
     final sourceName = account?.name;
@@ -1800,7 +1877,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final confirmed = await showMangaIngestConfirmSheet(context, draft: draft);
     if (confirmed == null || !mounted) return;
     try {
-      await context.read<MangaLibraryService>().upsertFromDraft(confirmed);
+      final queue = context.read<TaskQueueService>();
+      final created = await context.read<MangaLibraryService>().upsertFromDraft(
+        confirmed,
+      );
+      // Same as the batch scan: pull ComicInfo + the cover right away.
+      await queue.scrapeMangaNow(sourceName: sourceName, mangaId: created.id);
       if (!mounted) return;
       AppSnack.show(context, l10n.mangaIngestDone);
     } catch (e) {

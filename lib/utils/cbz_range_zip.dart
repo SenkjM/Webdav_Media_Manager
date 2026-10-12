@@ -40,10 +40,18 @@ class CbzZipEntry {
 }
 
 /// HTTP Range ZIP: EOCD → central directory → per-entry local header + payload.
+///
+/// The same walk runs against a local archive when [file] is given, so a
+/// cached CBZ is read page by page instead of being loaded whole.
 class CbzRangeZip {
-  CbzRangeZip({required this.source, Dio? dio}) : _dio = dio ?? Dio();
+  CbzRangeZip({this.source, this.file, Dio? dio})
+    : assert(source != null || file != null, 'needs a source or a file'),
+      _dio = dio ?? Dio();
 
-  final WebDavStreamSource source;
+  final WebDavStreamSource? source;
+
+  /// Local archive to stream from. Takes precedence over [source].
+  final File? file;
   final Dio _dio;
 
   int? _totalSize;
@@ -68,8 +76,13 @@ class CbzRangeZip {
 
   /// Load central directory. Throws [CbzRangeUnsupportedException] if not 206.
   Future<void> open({CancelToken? cancel}) async {
-    // Probe size + Range support with a tiny tail read.
-    await _rangeBytes(0, 0, cancel: cancel, allowEmpty: true);
+    final local = file;
+    if (local != null) {
+      _totalSize = await local.length();
+    } else {
+      // Probe size + Range support with a tiny read.
+      await _rangeBytes(0, 0, cancel: cancel, allowEmpty: true);
+    }
     // Prefer Content-Range total from a real tail fetch.
     final tailWant = 65536;
     // If total unknown, try last 64KiB via suffix range first.
@@ -163,13 +176,27 @@ class CbzRangeZip {
     bool allowEmpty = false,
   }) async {
     if (end < start && !allowEmpty) return null;
+    final local = file;
+    if (local != null) {
+      final length = await local.length();
+      final from = start.clamp(0, length);
+      final to = (end + 1).clamp(0, length);
+      if (to <= from) return allowEmpty ? Uint8List(0) : null;
+      final raf = await local.open();
+      try {
+        await raf.setPosition(from);
+        return await raf.read(to - from);
+      } finally {
+        await raf.close();
+      }
+    }
     try {
       final res = await _dio.get<List<int>>(
-        source.uri,
+        source!.uri,
         cancelToken: cancel,
         options: Options(
           responseType: ResponseType.bytes,
-          headers: {...source.headers, 'Range': 'bytes=$start-$end'},
+          headers: {...source!.headers, 'Range': 'bytes=$start-$end'},
           validateStatus: (c) => c == 206 || c == 200,
         ),
       );
@@ -196,13 +223,22 @@ class CbzRangeZip {
   }
 
   Future<Uint8List?> _rangeSuffix(int length, {CancelToken? cancel}) async {
+    if (file != null) {
+      final total = await file!.length();
+      if (total <= 0) return null;
+      return _rangeBytes(
+        (total - length).clamp(0, total - 1),
+        total - 1,
+        cancel: cancel,
+      );
+    }
     try {
       final res = await _dio.get<List<int>>(
-        source.uri,
+        source!.uri,
         cancelToken: cancel,
         options: Options(
           responseType: ResponseType.bytes,
-          headers: {...source.headers, 'Range': 'bytes=-$length'},
+          headers: {...source!.headers, 'Range': 'bytes=-$length'},
           validateStatus: (c) => c == 206 || c == 200,
         ),
       );

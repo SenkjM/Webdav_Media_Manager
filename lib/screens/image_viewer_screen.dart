@@ -108,7 +108,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     super.initState();
     _seed = List<ImageViewerPage>.of(widget.pages);
     _album = List<ImageViewerPage>.of(_seed);
-    _index = widget.initialIndex.clamp(0, _album.isEmpty ? 0 : _album.length - 1);
+    _index = widget.initialIndex.clamp(
+      0,
+      _album.isEmpty ? 0 : _album.length - 1,
+    );
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -152,8 +155,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
   ImageViewerPage? get _current =>
       _album.isEmpty || _index < 0 || _index >= _album.length
-          ? null
-          : _album[_index];
+      ? null
+      : _album[_index];
 
   Future<void> _loadMangaPageTurn() async {
     final id = widget.mangaId;
@@ -170,9 +173,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     } catch (_) {}
   }
 
-  String get _effectivePageTurn => PageTurnDirection.normalize(
-        _mangaPageTurn ?? _globalPageTurn,
-      );
+  String get _effectivePageTurn =>
+      PageTurnDirection.normalize(_mangaPageTurn ?? _globalPageTurn);
 
   void _captureSettings({required bool notify}) {
     final s = _settings;
@@ -292,11 +294,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final seedItems = [
       for (final p in _seed)
         if (p.remotePath != null)
-          WebDavItem(
-            name: p.name,
-            path: p.remotePath!,
-            isDirectory: false,
-          ),
+          WebDavItem(name: p.name, path: p.remotePath!, isDirectory: false),
     ];
     final ensure = seedItems.isEmpty
         ? null
@@ -538,8 +536,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                       Text(
                         l10n.imageViewerCount(_index + 1, _album.length),
                         style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                            ),
+                          color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                        ),
                       ),
                       const SizedBox(height: 12),
                       Text(l10n.imageFit),
@@ -637,6 +635,16 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                           await _openFullSettings();
                         },
                       ),
+                      const Divider(height: 1),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.close),
+                        title: Text(l10n.imageViewerClose),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          Navigator.of(context).maybePop();
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -655,9 +663,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   Future<void> _openFullSettings() async {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     if (!mounted) return;
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const ImageSettingsScreen()),
-    );
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const ImageSettingsScreen()));
     if (!mounted || _disposed) return;
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
@@ -681,8 +688,6 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final fit = _fit == SettingsService.imageFitCover
         ? BoxFit.cover
         : BoxFit.contain;
-    final title = widget.title ?? current?.name ?? '';
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: GestureDetector(
@@ -759,31 +764,6 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
             ),
             if (_error != null && current != null)
               Center(child: _failure(l10n, current)),
-            Positioned(
-              left: left + 4,
-              top: top + 4,
-              child: IconButton(
-                tooltip: l10n.close,
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: const Icon(Icons.close, color: Colors.white),
-              ),
-            ),
-            Positioned(
-              left: left + 56,
-              right: right + 8,
-              top: top + 12,
-              child: IgnorePointer(
-                child: Text(
-                  current == null
-                      ? ''
-                      : '$title  ${l10n.imageViewerCount(_index + 1, _album.length)}'
-                            '${_scanning ? '  ${l10n.imageScanningSubdirs}' : ''}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ),
-            ),
             if (_progress != null)
               Positioned(
                 left: left,
@@ -796,15 +776,22 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                   backgroundColor: Colors.white24,
                 ),
               ),
+            // Immersive chrome: the only persistent overlay is the page
+            // number, centred at the bottom.
             Positioned(
               left: left + 16,
               right: right + 16,
               bottom: bottom + 12,
               child: IgnorePointer(
                 child: Text(
-                  l10n.imageViewerGestureHint,
+                  current == null
+                      ? ''
+                      : '${l10n.imageViewerCount(_index + 1, _album.length)}'
+                            '${_scanning ? '  ${l10n.imageScanningSubdirs}' : ''}',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
                 ),
               ),
             ),

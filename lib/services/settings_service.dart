@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/directory_walk.dart';
 import '../models/cache_policy.dart';
+import '../models/manga_read_mode.dart';
 import '../models/app_locale.dart';
 import '../models/app_theme_mode.dart';
 import '../models/file_actions.dart';
@@ -47,6 +48,10 @@ class SettingsService extends ChangeNotifier {
   static const _kMangaViewModes = 'manga_view_modes_json';
   static const _kMusicViewModes = 'music_view_modes_json';
   static const _kMangaCacheMaxMb = 'manga_cache_max_mb';
+  static const _kMangaRetention = 'manga_cache_retention';
+  static const _kMangaCustomRetentionHours =
+      'manga_cache_custom_retention_hours';
+  static const _kMangaReadMode = 'manga_read_mode';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
   static const _kCoverThumbSize = 'cover_thumb_size';
   static const _kFileTypeConfig = 'file_type_config_json';
@@ -165,6 +170,7 @@ class SettingsService extends ChangeNotifier {
   /// [syncRemoteRoot]. They are derived, never configured separately.
   static const String credentialsFileName = 'credentials.json';
   static const String playlistsSubdir = 'playlists';
+
   /// Cloud media-library root. Every library kind lives in its own child
   /// directory (`library/music/`, `library/manga/`, `library/folders/`), so a
   /// future kind only adds one more child.
@@ -272,6 +278,12 @@ class SettingsService extends ChangeNotifier {
   final Map<String, FolderViewMode> _mangaViewModes = {};
   final Map<String, FolderViewMode> _musicViewModes = {};
   int _mangaCacheMaxMb = 0;
+
+  /// Manga cache expiry window. Deliberately separate from the music one:
+  /// each library owns its cache settings.
+  CacheRetention _mangaRetention = CacheRetention.oneWeek;
+  int _mangaCustomRetentionHours = defaultCustomRetentionHours;
+  MangaReadMode _mangaReadMode = MangaReadMode.stream;
   bool _playlistSyncEnabled = true;
   int _coverThumbSize = coverThumbSize;
   FileTypeConfig _fileTypes = FileTypeConfig();
@@ -306,9 +318,9 @@ class SettingsService extends ChangeNotifier {
   bool _mediaScanRecursive = true;
   int _mediaScanMaxDepth = 1;
   bool _mangaScanSubdirs = true;
-  int _mangaScanMaxDepth = 5;
+  int _mangaScanMaxDepth = 1;
   bool _mangaCreateSubdirs = true;
-  int _mangaCreateMaxDepth = 5;
+  int _mangaCreateMaxDepth = 1;
   bool _musicLibraryAutoBackfill = false;
   bool _musicLibraryBackfillBindRoots = false;
   List<MusicLibraryBackfillRoot> _musicLibraryBackfillRoots = const [];
@@ -447,6 +459,32 @@ class SettingsService extends ChangeNotifier {
   /// Max manga_cache size in MB; 0 = unlimited.
   int get mangaCacheMaxMb => _mangaCacheMaxMb;
 
+  int get mangaCacheMaxBytes =>
+      _mangaCacheMaxMb <= 0 ? 0 : _mangaCacheMaxMb * 1024 * 1024;
+
+  /// Expiry window applied to the music cache.
+  CacheExpiryPolicy get musicCacheExpiryPolicy => CacheExpiryPolicy(
+    retention: _retention,
+    customDuration: customRetentionDuration,
+  );
+
+  /// Expiry window applied to the manga cache —独立于音乐缓存。
+  CacheRetention get mangaRetention => _mangaRetention;
+
+  int get mangaCustomRetentionHours => _mangaCustomRetentionHours;
+
+  Duration get mangaCustomRetentionDuration =>
+      Duration(hours: _mangaCustomRetentionHours);
+
+  CacheExpiryPolicy get mangaCacheExpiryPolicy => CacheExpiryPolicy(
+    retention: _mangaRetention,
+    customDuration: mangaCustomRetentionDuration,
+  );
+
+  /// Default way of opening a comic container: stream it, or cache the
+  /// whole archive first. The reader falls back to a prompt either way.
+  MangaReadMode get mangaReadMode => _mangaReadMode;
+
   /// WebDAV root shared by 凭证 / 歌单 / 音乐库 / 备份 (设置 → 同步与备份 →
   /// 远端路径). Every other cloud path is derived from it.
   String get syncRemoteRoot => _syncRemoteRoot;
@@ -462,8 +500,7 @@ class SettingsService extends ChangeNotifier {
   String get libraryRootRemotePath => _syncSubdir(librarySubdir);
 
   /// `<远端路径>library/music/` — music index.json plus the binary shards.
-  String get libraryRemotePath =>
-      '$libraryRootRemotePath$musicLibrarySubdir/';
+  String get libraryRemotePath => '$libraryRootRemotePath$musicLibrarySubdir/';
 
   /// `<远端路径>library/manga/` — manga index.json, shards and progress.json.
   String get mangaLibraryRemotePath =>
@@ -568,13 +605,13 @@ class SettingsService extends ChangeNotifier {
   /// 漫画库：扫描容器时是否进子目录。默认开。键 `manga_scan_subdirs`。
   bool get mangaScanSubdirs => _mangaScanSubdirs;
 
-  /// 漫画库：扫描容器最大深度。默认 5。键 `manga_scan_max_depth`。
+  /// 漫画库：扫描容器最大深度。默认 1。键 `manga_scan_max_depth`。
   int get mangaScanMaxDepth => _mangaScanMaxDepth;
 
   /// 漫画库：散图建立时是否进子目录。默认开。键 `manga_create_subdirs`。
   bool get mangaCreateSubdirs => _mangaCreateSubdirs;
 
-  /// 漫画库：散图建立最大深度。默认 5。键 `manga_create_max_depth`。
+  /// 漫画库：散图建立最大深度。默认 1。键 `manga_create_max_depth`。
   int get mangaCreateMaxDepth => _mangaCreateMaxDepth;
 
   /// 自动补齐模式。默认关 = 手动管理。键 `music_library_auto_backfill`。
@@ -768,6 +805,16 @@ class SettingsService extends ChangeNotifier {
       0,
       1024 * 1024,
     );
+    _mangaRetention = CacheRetentionX.fromStorageKey(
+      _prefs!.getString(_kMangaRetention),
+    );
+    _mangaCustomRetentionHours = _clampCustomHours(
+      _prefs!.getInt(_kMangaCustomRetentionHours) ??
+          defaultCustomRetentionHours,
+    );
+    _mangaReadMode = MangaReadModeX.fromStorageKey(
+      _prefs!.getString(_kMangaReadMode),
+    );
     _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
     _coverThumbSize = clampCoverThumbSize(
       _prefs!.getInt(_kCoverThumbSize) ?? coverThumbSize,
@@ -858,11 +905,11 @@ class SettingsService extends ChangeNotifier {
     );
     _mangaScanSubdirs = _prefs!.getBool(_kMangaScanSubdirs) ?? true;
     _mangaScanMaxDepth = WalkOptions.clampDepth(
-      _prefs!.getInt(_kMangaScanMaxDepth) ?? 5,
+      _prefs!.getInt(_kMangaScanMaxDepth) ?? 1,
     );
     _mangaCreateSubdirs = _prefs!.getBool(_kMangaCreateSubdirs) ?? true;
     _mangaCreateMaxDepth = WalkOptions.clampDepth(
-      _prefs!.getInt(_kMangaCreateMaxDepth) ?? 5,
+      _prefs!.getInt(_kMangaCreateMaxDepth) ?? 1,
     );
     _musicLibraryAutoBackfill =
         _prefs!.getBool(_kMusicLibraryAutoBackfill) ?? false;
@@ -1070,6 +1117,35 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setMangaRetention(CacheRetention retention) async {
+    _mangaRetention = retention;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kMangaRetention, retention.storageKey);
+    notifyListeners();
+  }
+
+  Future<void> setMangaReadMode(MangaReadMode mode) async {
+    if (_mangaReadMode == mode) return;
+    _mangaReadMode = mode;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kMangaReadMode, mode.storageKey);
+    notifyListeners();
+  }
+
+  /// Persist the manga custom retention window (used by [CacheRetention.custom]).
+  Future<void> setMangaCustomRetentionDuration(Duration duration) async {
+    _mangaCustomRetentionHours = _clampCustomHours(duration.inHours);
+    if (duration > Duration.zero && _mangaCustomRetentionHours < 1) {
+      _mangaCustomRetentionHours = 1;
+    }
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(
+      _kMangaCustomRetentionHours,
+      _mangaCustomRetentionHours,
+    );
+    notifyListeners();
+  }
+
   Future<void> setPlaylistSyncEnabled(bool enabled) async {
     _playlistSyncEnabled = enabled;
     _prefs ??= await SharedPreferences.getInstance();
@@ -1151,6 +1227,7 @@ class SettingsService extends ChangeNotifier {
             : FileAction.stream,
         FileCategory.cue: FileAction.readCue,
         FileCategory.image: FileAction.viewImage,
+        FileCategory.comic: FileAction.addToMangaLibrary,
         FileCategory.other: FileAction.download,
       },
     );
@@ -2000,6 +2077,7 @@ class SettingsService extends ChangeNotifier {
                 : FileAction.stream,
             FileCategory.cue: FileAction.readCue,
             FileCategory.image: FileAction.viewImage,
+            FileCategory.comic: FileAction.addToMangaLibrary,
             FileCategory.other: FileAction.download,
           },
         ),

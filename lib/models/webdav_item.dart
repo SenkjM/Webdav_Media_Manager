@@ -26,6 +26,7 @@ class WebDavItem {
   bool get isVideo => !isDirectory && category == FileCategory.video;
   bool get isCue => !isDirectory && category == FileCategory.cue;
   bool get isImage => !isDirectory && category == FileCategory.image;
+  bool get isComic => !isDirectory && category == FileCategory.comic;
 }
 
 class TrackInfo {
@@ -136,8 +137,10 @@ class TrackInfo {
 
 enum TrackUiState {
   remote,
+
   /// In library (or known playable) but no local audio cache yet.
   streamable,
+
   /// Confirmed missing on the remote (persisted red-dot).
   remoteMissing,
   queued,

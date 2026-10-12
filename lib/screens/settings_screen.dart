@@ -11,12 +11,12 @@ import '../services/settings_service.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
-import 'cache_settings_screen.dart';
 import 'download_settings_screen.dart';
 import 'encryption_settings_screen.dart';
 import 'file_extensions_screen.dart';
 import 'home_shell.dart';
 import 'image_settings_screen.dart';
+import 'manga_library_settings_screen.dart';
 import 'media_library_settings_screen.dart';
 import 'share_settings_screen.dart';
 import 'sync_screen.dart';
@@ -245,13 +245,15 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.sd_storage_outlined),
-            title: Text(l10n.cacheCleanup),
-            subtitle: Text(l10n.cacheCleanupHint),
+            leading: const Icon(Icons.menu_book_outlined),
+            title: Text(l10n.mangaLibrarySettingsSection),
+            subtitle: Text(l10n.mangaLibrarySettingsHint),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CacheSettingsScreen()),
+                MaterialPageRoute(
+                  builder: (_) => const MangaLibrarySettingsScreen(),
+                ),
               );
             },
           ),

@@ -423,8 +423,8 @@ class _LibraryFolderBrowserScreenState
     PopupMenuItem(value: 'album', child: Text(l10n.folderAddAlbums)),
     PopupMenuItem(value: 'artist', child: Text(l10n.folderAddArtists)),
     PopupMenuItem(value: 'track', child: Text(l10n.folderAddTracks)),
-    PopupMenuItem(value: 'manga', child: Text(l10n.folderAddManga)),
     PopupMenuItem(value: 'mangaSeries', child: Text(l10n.folderAddMangaSeries)),
+    PopupMenuItem(value: 'manga', child: Text(l10n.folderAddManga)),
   ];
 
   Widget _pathChrome({

@@ -12,6 +12,7 @@ import '../utils/audio_extensions.dart';
 import '../utils/cache_group_codec.dart';
 import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
+import 'cache_index_db.dart';
 import 'library_database.dart';
 
 /// Local file cache for downloaded music. Playback always uses these files.
@@ -22,20 +23,31 @@ import 'library_database.dart';
 /// isLocal is a lazy `File.exists` on the derived path — no table, no
 /// startup reconciliation, nothing to go stale.
 class CacheService extends ChangeNotifier {
-  CacheService({SharedPreferences? prefs, LibraryDatabase? libraryDb})
-    : _prefs = prefs,
-      _libraryDb = libraryDb;
+  CacheService({
+    SharedPreferences? prefs,
+    LibraryDatabase? libraryDb,
+    CacheIndexDb? indexDb,
+  }) : _prefs = prefs,
+       _libraryDb = libraryDb,
+       _index = indexDb;
 
   // Legacy prefs key prefixes moved to [cache_group_codec.dart]; only used here
   // for the one-time migration in [_migrateLegacyPrefs].
 
   SharedPreferences? _prefs;
   LibraryDatabase? _libraryDb;
+  CacheIndexDb? _index;
   Directory? _cacheDir;
   Directory? _mangaCacheDir;
 
   void attachLibraryDb(LibraryDatabase db) {
     _libraryDb = db;
+  }
+
+  /// Attach the access-time index. Optional on purpose: every path below
+  /// keeps working without it, falling back to file mtime.
+  void attachIndexDb(CacheIndexDb index) {
+    _index = index;
   }
 
   Future<void> init() async {
@@ -140,6 +152,7 @@ class CacheService extends ChangeNotifier {
       } catch (_) {}
     }
     if (removed > 0) notifyListeners();
+    await _index?.forgetKind(CacheKind.manga);
     return removed;
   }
 
@@ -161,46 +174,66 @@ class CacheService extends ChangeNotifier {
         await part.delete();
       } catch (_) {}
     }
-    if (removed) notifyListeners();
+    if (removed) {
+      await _index?.forget(f.path);
+      notifyListeners();
+    }
     return removed;
   }
 
-  Future<int> evictMangaToMaxBytes({required int maxBytes}) async {
-    if (maxBytes <= 0) return 0;
-    if (_mangaCacheDir == null || !await _mangaCacheDir!.exists()) return 0;
-    final entries = <({File file, int size, DateTime accessed})>[];
-    var total = 0;
-    await for (final entity in _mangaCacheDir!.list(recursive: true)) {
-      if (entity is! File) continue;
-      if (entity.path.endsWith('.part')) continue;
-      // Keep covers/ longer — only evict archive payloads at top level.
-      final rel = p.relative(entity.path, from: mangaCacheDir.path);
-      if (rel.startsWith('covers${p.separator}') || rel.startsWith('covers/')) {
-        continue;
-      }
-      try {
-        final size = await entity.length();
-        total += size;
-        entries.add((
-          file: entity,
-          size: size,
-          accessed: (await entity.stat()).modified,
-        ));
-      } catch (_) {}
-    }
-    if (total <= maxBytes) return 0;
-    entries.sort((a, b) => a.accessed.compareTo(b.accessed));
+  /// Deletes every cached artifact belonging to one manga: the whole-file
+  /// archive, its cover thumbnail and the page images prefetched for the
+  /// reader. Used by the library clear-cache action, which must not touch the
+  /// library rows themselves.
+  Future<int> clearMangaArtifacts({
+    required String mangaId,
+    required String sourceName,
+    required String remotePath,
+  }) async {
     var removed = 0;
-    for (final e in entries) {
-      if (total <= maxBytes) break;
+    if (await deleteLocalMangaFile(
+      sourceName: sourceName,
+      remotePath: remotePath,
+    )) {
+      removed++;
+    }
+    if (_mangaCacheDir != null) {
+      final cover = mangaCoverFile(mangaId);
+      for (final path in <String>[cover.path, '${cover.path}.part']) {
+        final f = File(path);
+        if (!await f.exists()) continue;
+        try {
+          await f.delete();
+          removed++;
+          await _index?.forget(path);
+        } catch (_) {}
+      }
+    }
+    final pages = await mangaPageDir(mangaId);
+    if (await pages.exists()) {
       try {
-        await e.file.delete();
-        total -= e.size;
-        removed++;
+        await for (final entity in pages.list()) {
+          if (entity is File) removed++;
+        }
+        await pages.delete(recursive: true);
       } catch (_) {}
     }
     if (removed > 0) notifyListeners();
     return removed;
+  }
+
+  /// Prefetched page images the reader keeps under the app cache directory.
+  /// Mirrors MangaReaderPrep._mangaPageDir so a manual cache clear can drop
+  /// them without reaching into that service.
+  Future<Directory> mangaPageDir(String mangaId) async {
+    final cache = await getApplicationCacheDirectory();
+    return Directory(
+      p.join(cache.path, 'prefetch_cache', 'manga_pages', mangaId),
+    );
+  }
+
+  Future<int> evictMangaToMaxBytes({required int maxBytes}) {
+    return evictCacheToMaxBytes(kind: CacheKind.manga, maxBytes: maxBytes);
   }
 
   File fileForRemote(String remotePath, {required String sourceName}) {
@@ -319,7 +352,10 @@ class CacheService extends ChangeNotifier {
       sourceName: sourceName,
       remotePath: remotePath,
     );
-    if (removed) notifyListeners();
+    if (removed) {
+      await _index?.forget(f.path);
+      notifyListeners();
+    }
     return removed;
   }
 
@@ -346,10 +382,194 @@ class CacheService extends ChangeNotifier {
       sourceName: sourceName,
       remotePath: remotePath,
     );
+    await _indexTouchRead(
+      fileForRemote(remotePath, sourceName: sourceName).path,
+      CacheKind.music,
+    );
   }
 
   Future<DateTime?> lastAccessed(String sourceName, String remotePath) async {
+    if (_cacheDir != null) {
+      final indexed = await _indexAt(
+        fileForRemote(remotePath, sourceName: sourceName).path,
+      );
+      if (indexed != null) return indexed;
+    }
     return _libraryDb?.cacheAccessedAt(sourceName, remotePath);
+  }
+
+  // --- access-time index ---------------------------------------------------
+
+  Future<void> _indexTouch(File f, CacheKind kind) async {
+    final idx = _index;
+    if (idx == null) return;
+    try {
+      if (!await f.exists()) return;
+      await idx.touch(f.path, kind: kind, size: await f.length());
+    } catch (_) {}
+  }
+
+  Future<void> _indexTouchRead(String path, CacheKind kind) async {
+    await _index?.touchRead(path, kind: kind);
+  }
+
+  Future<DateTime?> _indexAt(String path) async {
+    final idx = _index;
+    if (idx == null) return null;
+    try {
+      return await idx.accessedAt(path);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Last access for [f]: the index when it knows the file, else its mtime —
+  /// which is precisely the pre-index behaviour.
+  Future<DateTime> _accessTime(File f) async {
+    final indexed = await _indexAt(f.path);
+    if (indexed != null) return indexed;
+    try {
+      return (await f.stat()).modified;
+    } catch (_) {
+      return DateTime.fromMillisecondsSinceEpoch(0);
+    }
+  }
+
+  /// Record that a cached manga archive was read (reader / cache-hit path).
+  Future<void> touchMangaFile(
+    String remotePath, {
+    required String sourceName,
+  }) async {
+    await _indexTouchRead(
+      mangaFileForRemote(remotePath, sourceName: sourceName).path,
+      CacheKind.manga,
+    );
+  }
+
+  /// Record that a manga cover thumb was read.
+  Future<void> touchMangaCover(String mangaId) async {
+    await _indexTouchRead(mangaCoverFile(mangaId).path, CacheKind.manga);
+  }
+
+  /// Record a freshly written manga archive together with its size.
+  Future<void> registerMangaFileWritten(
+    String remotePath, {
+    required String sourceName,
+  }) async {
+    await _indexTouch(
+      mangaFileForRemote(remotePath, sourceName: sourceName),
+      CacheKind.manga,
+    );
+    notifyListeners();
+  }
+
+  /// Record a freshly written manga cover thumb.
+  Future<void> registerMangaCoverWritten(String mangaId) async {
+    await _indexTouch(mangaCoverFile(mangaId), CacheKind.manga);
+  }
+
+  // --- unified cleanup -----------------------------------------------------
+
+  bool _isMangaCoverPath(String path) {
+    final dir = _mangaCacheDir;
+    if (dir == null) return false;
+    return p.split(p.relative(path, from: dir.path)).first == 'covers';
+  }
+
+  /// Files a cleanup pass may consider for [kind].
+  ///
+  /// Cover thumbs are excluded on purpose: they are tiny, and they are the
+  /// one cache entry the UI cannot regenerate by itself (it only reads them).
+  /// So neither expiry nor the size cap removes them; [clearAllMangaCache] —
+  /// the explicit button — still does.
+  Future<List<({File file, int size, DateTime accessed})>> _cacheCandidates(
+    CacheKind kind,
+  ) async {
+    final dir = kind == CacheKind.music ? _cacheDir : _mangaCacheDir;
+    if (dir == null || !await dir.exists()) return const [];
+    final out = <({File file, int size, DateTime accessed})>[];
+    await for (final entity in dir.list(recursive: kind == CacheKind.manga)) {
+      if (entity is! File) continue;
+      if (entity.path.endsWith('.part')) continue;
+      if (kind == CacheKind.manga && _isMangaCoverPath(entity.path)) continue;
+      try {
+        out.add((
+          file: entity,
+          size: await entity.length(),
+          accessed: await _accessTime(entity),
+        ));
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  /// Delete entries of [kind] last accessed longer ago than [policy] allows.
+  Future<int> cleanupExpired({
+    required CacheKind kind,
+    required CacheExpiryPolicy policy,
+    Set<String> protectedPaths = const {},
+    DateTime? now,
+  }) async {
+    final clock = now ?? DateTime.now();
+    var removed = 0;
+    for (final e in await _cacheCandidates(kind)) {
+      if (protectedPaths.contains(e.file.path)) continue;
+      final expired = policy.shouldDelete(
+        lastAccessed: e.accessed,
+        now: clock,
+        isCurrentlyPlaying: false,
+        isDownloading: false,
+      );
+      if (!expired) continue;
+      try {
+        await e.file.delete();
+        await _index?.forget(e.file.path);
+        removed++;
+      } catch (_) {}
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
+
+  /// Evict least-recently-used entries of [kind] until the evictable total is
+  /// at or below [maxBytes]. `maxBytes <= 0` means unlimited.
+  Future<int> evictCacheToMaxBytes({
+    required CacheKind kind,
+    required int maxBytes,
+    Set<String> protectedPaths = const {},
+  }) async {
+    if (maxBytes <= 0) return 0;
+    final candidates = (await _cacheCandidates(kind))
+        .where((e) => !protectedPaths.contains(e.file.path))
+        .toList();
+    var total = 0;
+    for (final e in candidates) {
+      total += e.size;
+    }
+    if (total <= maxBytes) return 0;
+    candidates.sort((a, b) => a.accessed.compareTo(b.accessed));
+    var removed = 0;
+    for (final e in candidates) {
+      if (total <= maxBytes) break;
+      try {
+        await e.file.delete();
+        await _index?.forget(e.file.path);
+        total -= e.size;
+        removed++;
+      } catch (_) {}
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
+
+  /// Drop index rows for [kind] whose file is gone (lazy sweep).
+  Future<void> pruneIndex(CacheKind kind) async {
+    final idx = _index;
+    if (idx == null) return;
+    try {
+      final known = await idx.entries(kind);
+      await idx.pruneMissing(known.keys);
+    } catch (_) {}
   }
 
   Future<void> registerCompleted(
@@ -360,6 +580,7 @@ class CacheService extends ChangeNotifier {
     String? musicId,
   }) async {
     await touch(sourceName, remotePath);
+    await _indexTouch(File(localPath), CacheKind.music);
     if (cacheGroupId != null && cacheGroupId.isNotEmpty) {
       await bindCacheGroup(
         sourceName: sourceName,
@@ -396,6 +617,7 @@ class CacheService extends ChangeNotifier {
       } catch (_) {}
     }
     if (removed > 0) notifyListeners();
+    await _index?.forgetKind(CacheKind.music);
     return removed;
   }
 
@@ -470,7 +692,7 @@ class CacheService extends ChangeNotifier {
   }
 
   /// Drop least-recently-used music_cache files until total size <= [maxBytes].
-  /// Skips [protectedLocalPaths] and the currently playing file. Returns count removed.
+  /// Skips [protectedLocalPaths] and the currently playing file.
   Future<int> evictToMaxBytes({
     required int maxBytes,
     String? playingLocalPath,
@@ -479,7 +701,6 @@ class CacheService extends ChangeNotifier {
     Set<String> protectedLocalPaths = const {},
   }) async {
     if (maxBytes <= 0) return 0;
-    if (_cacheDir == null || !await _cacheDir!.exists()) return 0;
     final protected = <String>{...protectedLocalPaths};
     if (playingLocalPath != null) protected.add(playingLocalPath);
     if (playingRemotePath != null && playingSourceName != null) {
@@ -487,41 +708,21 @@ class CacheService extends ChangeNotifier {
       protected.add(f.path);
       protected.add('${f.path}.part');
     }
+    return evictCacheToMaxBytes(
+      kind: CacheKind.music,
+      maxBytes: maxBytes,
+      protectedPaths: protected,
+    );
+  }
 
-    final entries = <({File file, int size, DateTime accessed})>[];
+  /// Total size of one cache directory (covers included) in bytes.
+  Future<int> cacheSizeFor(CacheKind kind) async {
+    final dir = kind == CacheKind.music ? _cacheDir : _mangaCacheDir;
+    if (dir == null || !await dir.exists()) return 0;
     var total = 0;
-    await for (final entity in _cacheDir!.list()) {
-      if (entity is! File) continue;
-      if (entity.path.endsWith('.part')) continue;
-      if (protected.contains(entity.path)) continue;
-      try {
-        final size = await entity.length();
-        total += size;
-        // mtime approximates LRU when cache_access is missing.
-        // Best-effort: access time from DB is keyed by identity; fall back to mtime.
-        final accessed = (await entity.stat()).modified;
-        entries.add((file: entity, size: size, accessed: accessed));
-      } catch (_) {}
+    await for (final entity in dir.list(recursive: true)) {
+      if (entity is File) total += await entity.length();
     }
-    if (total <= maxBytes) return 0;
-
-    entries.sort((a, b) => a.accessed.compareTo(b.accessed));
-    var removed = 0;
-    for (final e in entries) {
-      if (total <= maxBytes) break;
-      try {
-        await e.file.delete();
-        total -= e.size;
-        removed++;
-        final part = File('${e.file.path}.part');
-        if (await part.exists()) {
-          try {
-            await part.delete();
-          } catch (_) {}
-        }
-      } catch (_) {}
-    }
-    if (removed > 0) notifyListeners();
-    return removed;
+    return total;
   }
 }

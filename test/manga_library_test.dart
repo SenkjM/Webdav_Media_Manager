@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_media_manager/models/manga.dart';
 import 'package:webdav_media_manager/models/page_turn_direction.dart';
 import 'package:webdav_media_manager/models/manga_page.dart';
-import 'package:webdav_media_manager/models/manga_series.dart';
 import 'package:webdav_media_manager/services/library_database.dart';
 import 'package:webdav_media_manager/services/manga_library_service.dart';
 import 'package:webdav_media_manager/services/manga_sync_store.dart';
@@ -13,8 +12,10 @@ import 'package:webdav_media_manager/utils/manga_file_types.dart';
 import 'package:webdav_media_manager/utils/manga_identity.dart';
 import 'package:webdav_media_manager/utils/track_identity.dart';
 
+/// In-memory stand-in for [LibraryDatabase]. A series has no rows of its own
+/// any more, so there is nothing here to store for one: the service derives
+/// series from the `mangas.series` tag.
 class _MemMangaDb extends LibraryDatabase {
-  final series = <MangaSeries>[];
   final mangas = <Manga>[];
   final pages = <MangaPage>[];
   final progress = <String, int>{};
@@ -40,21 +41,12 @@ class _MemMangaDb extends LibraryDatabase {
   }
 
   @override
-  Future<List<MangaSeries>> loadMangaSeries() async => List.of(series);
-
-  @override
-  Future<void> upsertMangaSeries(MangaSeries s) async {
-    series.removeWhere((e) => e.id == s.id);
-    series.add(s);
-  }
-
-  @override
-  Future<List<Manga>> loadMangas({String? seriesId, String? author}) async {
+  Future<List<Manga>> loadMangas({String? series, String? author}) async {
     var list = List.of(mangas);
-    if (seriesId != null) {
+    if (series != null) {
       list = [
         for (final m in list)
-          if (m.seriesId == seriesId) m,
+          if (m.series == series) m,
       ];
     }
     if (author != null) {
@@ -165,6 +157,7 @@ void main() {
     expect(manga.coverRelpath, '01.jpg');
     expect(svc.series.length, 1);
     expect(svc.series.first.title, 'Demo Series');
+    expect(manga.series, 'Demo Series');
 
     final pages = await svc.pagesFor(manga.id);
     expect(pages.map((p) => p.relPath).toList(), [
@@ -242,7 +235,9 @@ void main() {
     );
     expect(n, 2);
     expect(svc.series.single.title, 'Shared');
-    expect(svc.mangas.every((m) => m.seriesId == svc.series.single.id), isTrue);
+    expect(svc.mangas.every((m) => m.series == 'Shared'), isTrue);
+    // The id is derived from the title, so it is the same on every device.
+    expect(svc.series.single.id, mangaSeriesIdForTitle('Shared'));
   });
 
   test('manga walk prefs default and clamp', () async {
@@ -255,8 +250,9 @@ void main() {
     await s.init();
     expect(s.mangaScanSubdirs, isTrue);
     expect(s.mangaCreateSubdirs, isTrue);
-    expect(s.mangaScanMaxDepth, 5);
-    expect(s.mangaCreateMaxDepth, 5);
+    // 默认深度 1：漫画目录天然扁平，扫太深会把整棵盘扫进来。
+    expect(s.mangaScanMaxDepth, 1);
+    expect(s.mangaCreateMaxDepth, 1);
     await s.setMangaScanMaxDepth(99);
     expect(s.mangaScanMaxDepth, lessThanOrEqualTo(20));
     await s.setMangaCreateSubdirs(false);

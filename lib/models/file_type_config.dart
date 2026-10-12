@@ -1,7 +1,8 @@
 import '../utils/audio_extensions.dart';
+import '../utils/manga_file_types.dart';
 
 /// Broad classification of a WebDAV file based on its extension.
-enum FileCategory { music, video, cue, image, other }
+enum FileCategory { music, video, cue, image, comic, other }
 
 /// Extension sets the network library uses to classify files.
 ///
@@ -13,10 +14,12 @@ class FileTypeConfig {
     List<String>? videoExtensions,
     List<String>? cueExtensions,
     List<String>? imageExtensions,
+    List<String>? comicExtensions,
   }) : musicExtensions = _normalize(musicExtensions ?? defaultMusicExtensions),
        videoExtensions = _normalize(videoExtensions ?? defaultVideoExtensions),
        cueExtensions = _normalize(cueExtensions ?? defaultCueExtensions),
-       imageExtensions = _normalize(imageExtensions ?? defaultImageExtensions);
+       imageExtensions = _normalize(imageExtensions ?? defaultImageExtensions),
+       comicExtensions = _normalize(comicExtensions ?? defaultComicExtensions);
 
   static const List<String> defaultMusicExtensions = [
     'mp3',
@@ -55,17 +58,25 @@ class FileTypeConfig {
     'gif',
   ];
 
+  /// 漫画单文件（CBZ / CBR / PDF / EPUB）。判在图片之后，所以把 `png` 之类
+  /// 写进漫画列表也不会从图片类别里抢走文件。
+  static const List<String> defaultComicExtensions = kDefaultComicExtensions;
+
   /// Lowercase extensions WITHOUT a leading dot (e.g. `mp4`).
   final List<String> musicExtensions;
   final List<String> videoExtensions;
   final List<String> cueExtensions;
   final List<String> imageExtensions;
+  final List<String> comicExtensions;
 
   FileCategory categoryFor(String name) {
     if (isAudioFileNameWith(name, musicExtensions)) return FileCategory.music;
     if (isVideoFileNameWith(name, videoExtensions)) return FileCategory.video;
     if (isCueFileNameWith(name, cueExtensions)) return FileCategory.cue;
     if (isImageFileNameWith(name, imageExtensions)) return FileCategory.image;
+    if (isComicContainerFileName(name, extensions: comicExtensions)) {
+      return FileCategory.comic;
+    }
     return FileCategory.other;
   }
 
@@ -103,6 +114,7 @@ class FileTypeConfig {
     'video': videoExtensions,
     'cue': cueExtensions,
     'image': imageExtensions,
+    'comic': comicExtensions,
   };
 
   factory FileTypeConfig.fromJson(Map<String, dynamic>? json) {
@@ -115,6 +127,9 @@ class FileTypeConfig {
       // still means the user cleared image extensions.
       imageExtensions: json.containsKey('image')
           ? _asStringList(json['image'])
+          : null,
+      comicExtensions: json.containsKey('comic')
+          ? _asStringList(json['comic'])
           : null,
     );
   }

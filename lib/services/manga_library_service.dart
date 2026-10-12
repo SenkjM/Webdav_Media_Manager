@@ -46,13 +46,27 @@ class MangaLibraryService extends ChangeNotifier {
   final LibraryDatabase _db;
 
   final List<Manga> _mangas = [];
-  final List<MangaSeries> _series = [];
   final List<String> _authors = [];
   bool _loaded = false;
 
   bool get isLoaded => _loaded;
   List<Manga> get mangas => List.unmodifiable(_mangas);
-  List<MangaSeries> get series => List.unmodifiable(_series);
+
+  /// Series in display order, **derived from the books that carry them**.
+  ///
+  /// Nothing is stored per series, so a title always has at least one book and
+  /// deleting the last book removes the series with it — the album rule.
+  List<MangaSeries> get series {
+    final titles = <String>{};
+    for (final m in _mangas) {
+      final t = seriesTitleOf(m);
+      if (t != null) titles.add(t);
+    }
+    final sorted = titles.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return List.unmodifiable([for (final t in sorted) MangaSeries(title: t)]);
+  }
+
   List<String> get authors => List.unmodifiable(_authors);
   int get count => _mangas.length;
 
@@ -61,9 +75,6 @@ class MangaLibraryService extends ChangeNotifier {
   }
 
   Future<void> reload() async {
-    _series
-      ..clear()
-      ..addAll(await _db.loadMangaSeries());
     _mangas
       ..clear()
       ..addAll(await _db.loadMangas());
@@ -74,9 +85,31 @@ class MangaLibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The stored series tag of [m], or null when unset / the 未指定 sentinel.
+  String? seriesTitleOf(Manga m) {
+    final t = normalizeMangaSeriesTag(m.series);
+    if (t == null || t == unspecifiedSeriesLabel) return null;
+    return t;
+  }
+
+  /// Deterministic id of [m]'s series (`sha1` of the tag); null when unset.
+  ///
+  /// `mangaSeries` folder soft refs address a series through this id, which is
+  /// why the id survives as long as the title does.
+  String? seriesIdOf(Manga m) {
+    final t = seriesTitleOf(m);
+    return t == null ? null : mangaSeriesIdForTitle(t);
+  }
+
+  /// The derived series [m] belongs to, or null.
+  MangaSeries? seriesOf(Manga m) {
+    final t = seriesTitleOf(m);
+    return t == null ? null : MangaSeries(title: t);
+  }
+
   List<Manga> mangasForSeries(String seriesId) => [
     for (final m in _mangas)
-      if (m.seriesId == seriesId) m,
+      if (seriesIdOf(m) == seriesId) m,
   ];
 
   List<Manga> mangasForAuthor(String author) => [
@@ -96,39 +129,11 @@ class MangaLibraryService extends ChangeNotifier {
     ];
   }
 
-  Future<MangaSeries> ensureSeries({
-    required String title,
-    String? author,
-  }) async {
-    final trimmed = title.trim();
-    for (final s in _series) {
-      if (s.title == trimmed) return s;
-    }
-    final series = MangaSeries(
-      id: mangaSeriesIdForTitle(trimmed),
-      title: trimmed,
-      author: author,
-      sortTitle: trimmed,
-      createdAt: DateTime.now(),
-    );
-    await _db.upsertMangaSeries(series);
-    _series.add(series);
-    notifyListeners();
-    return series;
-  }
-
   /// Commit a confirmed ingest draft (image-dir or container).
   Future<Manga> upsertFromDraft(MangaIngestDraft draft) async {
     final remotePath = normalizeRemotePath(draft.remotePath);
     final id = mangaIdForRemote(draft.sourceName, remotePath);
-    String? seriesId;
-    final seriesTitle = draft.seriesTitle?.trim();
-    if (seriesTitle != null && seriesTitle.isNotEmpty) {
-      seriesId = (await ensureSeries(
-        title: seriesTitle,
-        author: draft.author,
-      )).id;
-    }
+    final series = normalizeMangaSeriesTag(draft.seriesTitle);
     final pages = <MangaPage>[];
     for (var i = 0; i < draft.pageRelPaths.length; i++) {
       pages.add(
@@ -149,7 +154,7 @@ class MangaLibraryService extends ChangeNotifier {
       author: draft.author?.trim().isEmpty == true
           ? null
           : draft.author?.trim(),
-      seriesId: seriesId,
+      series: series,
       volume: draft.volume?.trim().isEmpty == true
           ? null
           : draft.volume?.trim(),
@@ -235,25 +240,25 @@ class MangaLibraryService extends ChangeNotifier {
     await reload();
   }
 
-  /// Assign [mangaIds] to one series (create by title if needed). Empty title clears.
+  /// Assign [mangaIds] to one series by tag. Empty title clears it.
+  ///
+  /// Assigning a title that already exists simply joins that series — there is
+  /// no separate series object that could end up with two spellings.
   Future<int> assignSeriesToMangas({
     required List<String> mangaIds,
     required String seriesTitle,
   }) async {
     if (mangaIds.isEmpty) return 0;
-    final trimmed = seriesTitle.trim();
-    String? seriesId;
-    if (trimmed.isNotEmpty && trimmed != unspecifiedSeriesLabel) {
-      seriesId = (await ensureSeries(title: trimmed)).id;
-    }
+    final tag = normalizeMangaSeriesTag(seriesTitle);
+    final next = tag == unspecifiedSeriesLabel ? null : tag;
     var n = 0;
     for (final id in mangaIds) {
       final existing = await _db.loadMangaById(id);
       if (existing == null) continue;
       await _db.upsertManga(
         existing.copyWith(
-          seriesId: seriesId,
-          clearSeriesId: seriesId == null,
+          series: next,
+          clearSeries: next == null,
           updatedAt: DateTime.now(),
         ),
       );
@@ -266,16 +271,7 @@ class MangaLibraryService extends ChangeNotifier {
   /// Display label for unset series (UI sentinel; empty series name = 未指定).
   static const unspecifiedSeriesLabel = '未指定';
 
-  bool isUnspecifiedSeries(Manga m) {
-    if (m.seriesId == null || m.seriesId!.isEmpty) return true;
-    for (final s in _series) {
-      if (s.id == m.seriesId) {
-        final title = s.title.trim();
-        return title.isEmpty || title == unspecifiedSeriesLabel;
-      }
-    }
-    return true;
-  }
+  bool isUnspecifiedSeries(Manga m) => seriesTitleOf(m) == null;
 
   /// Mangas with no series / empty / 「未指定」 series name.
   List<Manga> mangasUnspecifiedSeries() => [
@@ -291,7 +287,7 @@ class MangaLibraryService extends ChangeNotifier {
 
   MangaSeries? seriesById(String? id) {
     if (id == null || id.isEmpty) return null;
-    for (final s in _series) {
+    for (final s in series) {
       if (s.id == id) return s;
     }
     return null;
@@ -307,15 +303,15 @@ class MangaLibraryService extends ChangeNotifier {
   }) async {
     final existing = await _db.loadMangaById(mangaId);
     if (existing == null) return;
-    String? seriesId = existing.seriesId;
+    var nextSeries = existing.series;
     var clearSeries = false;
     if (updateSeries) {
-      final trimmed = seriesTitle?.trim() ?? '';
-      if (trimmed.isEmpty || trimmed == unspecifiedSeriesLabel) {
-        seriesId = null;
+      final tag = normalizeMangaSeriesTag(seriesTitle);
+      if (tag == null || tag == unspecifiedSeriesLabel) {
+        nextSeries = null;
         clearSeries = true;
       } else {
-        seriesId = (await ensureSeries(title: trimmed, author: author)).id;
+        nextSeries = tag;
       }
     }
     final clearAuthor = author != null && author.trim().isEmpty;
@@ -329,55 +325,38 @@ class MangaLibraryService extends ChangeNotifier {
             : (title ?? existing.title),
         author: nextAuthor,
         clearAuthor: clearAuthor,
-        seriesId: seriesId,
-        clearSeriesId: clearSeries,
+        series: nextSeries,
+        clearSeries: clearSeries,
         updatedAt: DateTime.now(),
       ),
     );
     await reload();
   }
 
-  /// Rename series title / author. Empty title → treat as 未指定 (unbind mangas).
-  Future<void> updateSeriesMetadata(
-    String seriesId, {
-    String? title,
-    String? author,
-  }) async {
-    MangaSeries? existing;
-    for (final s in _series) {
-      if (s.id == seriesId) {
-        existing = s;
-        break;
-      }
+  /// Rename a series by rewriting the tag on every book that carries it.
+  ///
+  /// A series has no row of its own, so a rename is just a re-tag; renaming
+  /// onto an existing title merges the two, and an empty title unbinds the
+  /// books (the series then stops existing).
+  Future<void> updateSeriesMetadata(String seriesId, {String? title}) async {
+    final members = mangasForSeries(seriesId);
+    if (members.isEmpty) return;
+    final tag = normalizeMangaSeriesTag(title);
+    final next = tag == unspecifiedSeriesLabel ? null : tag;
+    if (next == seriesTitleOf(members.first)) return;
+    for (final m in members) {
+      await _db.upsertManga(
+        m.copyWith(
+          series: next,
+          clearSeries: next == null,
+          updatedAt: DateTime.now(),
+        ),
+      );
     }
-    if (existing == null) return;
-    final trimmed = title?.trim();
-    if (trimmed != null &&
-        (trimmed.isEmpty || trimmed == unspecifiedSeriesLabel)) {
-      // Unbind all mangas in this series and drop the row.
-      for (final m in mangasForSeries(seriesId)) {
-        await _db.upsertManga(
-          m.copyWith(clearSeriesId: true, updatedAt: DateTime.now()),
-        );
-      }
-      // No dedicated deleteSeries API — leave orphan series; reload filters empty.
-      await reload();
-      return;
-    }
-    final next = MangaSeries(
-      id: existing.id,
-      title: trimmed ?? existing.title,
-      author: author == null
-          ? existing.author
-          : (author.trim().isEmpty ? null : author.trim()),
-      sortTitle: trimmed ?? existing.sortTitle,
-      createdAt: existing.createdAt,
-    );
-    await _db.upsertMangaSeries(next);
     await reload();
   }
 
-  /// Rename author across all mangas (and series rows with that author).
+  /// Rename author across all mangas that carry it.
   Future<int> renameAuthor({required String from, required String to}) async {
     final src = from.trim();
     final dst = to.trim();
@@ -394,18 +373,6 @@ class MangaLibraryService extends ChangeNotifier {
         ),
       );
       n++;
-    }
-    for (final s in List.of(_series)) {
-      if ((s.author ?? '').trim() != src) continue;
-      await _db.upsertMangaSeries(
-        MangaSeries(
-          id: s.id,
-          title: s.title,
-          author: nextAuthor,
-          sortTitle: s.sortTitle,
-          createdAt: s.createdAt,
-        ),
-      );
     }
     await reload();
     return n;
@@ -427,19 +394,15 @@ class MangaLibraryService extends ChangeNotifier {
     return null;
   }
 
-  /// Every local row with its series, as sync ships it. Loose-image rows
-  /// carry their page list (membership); CBZ rows never do.
+  /// Every local row as sync ships it. The series tag rides on the row itself,
+  /// so nothing extra has to be looked up. Loose-image rows carry their page
+  /// list (membership); CBZ rows never do.
   Future<List<MangaSyncRow>> syncRows() async {
     final mangas = await _db.loadMangas();
-    final series = {for (final s in await _db.loadMangaSeries()) s.id: s};
     final pages = await _db.imageMangaPagesById();
     return [
       for (final m in mangas)
-        MangaSyncRow(
-          manga: m,
-          series: m.seriesId == null ? null : series[m.seriesId],
-          pages: pages[m.id] ?? const [],
-        ),
+        MangaSyncRow(manga: m, pages: pages[m.id] ?? const []),
     ];
   }
 
@@ -448,8 +411,6 @@ class MangaLibraryService extends ChangeNotifier {
   /// leaves local page order alone (rebuilt on first open / scrape).
   Future<void> adoptCloudRows(List<MangaSyncRow> rows) async {
     for (final r in rows) {
-      final s = r.series;
-      if (s != null) await _db.upsertMangaSeries(s);
       await _db.upsertManga(r.manga, keepRev: true);
       if (r.manga.format == MangaFormat.images) {
         await _db.replaceMangaPages(r.manga.id, [

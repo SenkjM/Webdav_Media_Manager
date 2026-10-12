@@ -37,9 +37,13 @@ import 'webdav_service.dart';
 ///    optionally encrypted with `AESGCMv1:`)
 /// 2. `library.json` — music library rows + CUE albums/slices
 /// 3. `playlists.json` — playlists
-/// 4. manga library — series / mangas / pages / reading progress / tombstones
+/// 4. manga library — mangas / pages / reading progress / tombstones; the
+///    series a book belongs to is the row's own `series` tag, so there is no
+///    series table to snapshot
 /// 5. user folders — folders + their soft refs (music / manga / series …)
-/// plus the cover thumbnails the music rows reference.
+/// plus the cover thumbnails the music rows reference, and the manga
+/// thumbnails (section `MANGA_COVERS`), which are the same idea: bytes in
+/// their own section, an index on the row, the path derived from the id.
 ///
 /// Never includes cached audio files or the download queue. On restore the
 /// cached state is derived from disk, so the player never believes a file
@@ -245,6 +249,15 @@ class BackupService extends ChangeNotifier {
         ? null
         : await BackupPassCheck.create(passphrase);
 
+    // Manga thumbnails travel like track covers: bytes in their own section,
+    // an index on the row. The path is derived from the manga id, so nothing
+    // about this device's cache leaks into the archive.
+    final mangaSnapshot = await _libraryDb.exportMangaSnapshot();
+    final mangaCoverBlobs = await collectMangaCovers(
+      snapshot: mangaSnapshot,
+      cache: _cache,
+    );
+
     final container = WmpContainer.encode(
       {
         WmpSections.meta: encodeRecords([
@@ -257,9 +270,7 @@ class BackupService extends ChangeNotifier {
               'format': format,
               'formatVersion': formatVersion,
               'activeAccountId': _accounts.activeAccountId,
-              'passwordEncryption': passphrase.isEmpty
-                  ? 'none'
-                  : 'aes-256-gcm',
+              'passwordEncryption': passphrase.isEmpty ? 'none' : 'aes-256-gcm',
               if (passCheck != null) 'hasPassCheck': true,
             }),
           },
@@ -271,12 +282,15 @@ class BackupService extends ChangeNotifier {
           WmpSections.playlists: encodeRecords(playlistRecords),
         WmpSections.settings: _jsonBytes(_settings.exportForBackup()),
         WmpSections.cueAlbums: _jsonBytes(cueAlbums),
-        WmpSections.mangaLibrary: _jsonBytes(
-          await _libraryDb.exportMangaSnapshot(),
-        ),
+        WmpSections.mangaLibrary: _jsonBytes(mangaSnapshot),
         WmpSections.userFolders: _jsonBytes(
           await _libraryDb.exportUserFoldersSnapshot(),
         ),
+        if (mangaCoverBlobs.isNotEmpty)
+          WmpSections.mangaCovers: buildCoverSection([
+            for (final blob in mangaCoverBlobs)
+              (bytes: blob, kind: WmpImageKind.detect(blob)),
+          ]),
         if (coverBlobs.any((b) => b != null))
           WmpSections.covers: buildCoverSection([
             for (var i = 0; i < coverBlobs.length; i++)
@@ -289,6 +303,7 @@ class BackupService extends ChangeNotifier {
       kind: WmpFileKind.backup,
       rawIds: {
         WmpSections.covers,
+        WmpSections.mangaCovers,
         WmpSections.credentials,
         WmpSections.playlists,
       },
@@ -300,6 +315,58 @@ class BackupService extends ChangeNotifier {
   /// UTF-8 JSON section payload (used for the sections that stay JSON).
   static Uint8List _jsonBytes(Object? value) =>
       Uint8List.fromList(utf8.encode(jsonEncode(value)));
+
+  /// Read every manga thumbnail this device has and stamp its index onto the
+  /// snapshot's rows (in place). Returns the blobs in index order.
+  ///
+  /// A row whose thumbnail is missing here loses any `cover_index` it had, so
+  /// an archive never points at a blob it does not carry.
+  ///
+  /// Static and cache-explicit so the pairing with [restoreMangaThumbnails] can
+  /// be exercised without a database or a service graph.
+  @visibleForTesting
+  static Future<List<Uint8List>> collectMangaCovers({
+    required Map<String, dynamic> snapshot,
+    required CacheService? cache,
+  }) async {
+    final rows = snapshot['mangas'];
+    if (rows is! List) return const [];
+    final blobs = <Uint8List>[];
+    final cleaned = <Map<String, dynamic>>[];
+    for (final raw in rows) {
+      if (raw is! Map) continue;
+      final row = Map<String, dynamic>.from(raw);
+      final id = row['id'];
+      final blob = id is String ? await _readMangaCover(cache, id) : null;
+      if (blob == null) {
+        row.remove('cover_index');
+      } else {
+        row['cover_index'] = blobs.length;
+        blobs.add(blob);
+      }
+      cleaned.add(row);
+    }
+    snapshot['mangas'] = cleaned;
+    return blobs;
+  }
+
+  /// This device's thumbnail for [mangaId]. The name is derived from the id
+  /// (`manga_cache/covers/<id prefix>.jpg`), which is why the archive needs no
+  /// path. Null when the cache is unavailable or the book has no thumbnail.
+  static Future<Uint8List?> _readMangaCover(
+    CacheService? cache,
+    String mangaId,
+  ) async {
+    if (cache == null) return null;
+    try {
+      final file = cache.mangaCoverFile(mangaId);
+      if (!await file.exists()) return null;
+      final bytes = await file.readAsBytes();
+      return bytes.isEmpty ? null : bytes;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// Readable JSON export (no cover bytes) for troubleshooting / hand editing.
   ///
@@ -598,6 +665,15 @@ class BackupService extends ChangeNotifier {
       playlists.add(PlaylistCodec.decode(blob).playlist);
     }
 
+    // Manga thumbnails: written straight to this device's id-derived cache
+    // path, so the row itself needs nothing back. `cover_index` is consumed
+    // here — a restored row must not index a section it no longer carries.
+    final mangaLibrary = await restoreMangaThumbnails(
+      snapshot: jsonSection(WmpSections.mangaLibrary),
+      coversSection: container.readSection(WmpSections.mangaCovers),
+      cache: _cache,
+    );
+
     return {
       'format': header['format'] ?? format,
       'formatVersion': header['formatVersion'] ?? formatVersion,
@@ -612,7 +688,7 @@ class BackupService extends ChangeNotifier {
       },
       'playlists': playlists,
       'settings': jsonSection(WmpSections.settings),
-      'mangaLibrary': jsonSection(WmpSections.mangaLibrary),
+      'mangaLibrary': mangaLibrary,
       'userFolders': jsonSection(WmpSections.userFolders),
     };
   }
@@ -635,6 +711,59 @@ class BackupService extends ChangeNotifier {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Write a restored manga thumbnail back to its derived cache path. A
+  /// failure costs a thumbnail, never the library row.
+  static Future<void> _writeMangaCover(
+    CacheService? cache,
+    String mangaId,
+    Uint8List blob,
+  ) async {
+    if (cache == null) return;
+    try {
+      final file = cache.mangaCoverFile(mangaId);
+      final dir = file.parent;
+      if (!await dir.exists()) await dir.create(recursive: true);
+      await file.writeAsBytes(blob, flush: true);
+    } catch (_) {}
+  }
+
+  /// The inverse of [collectMangaCovers]: write the archive's manga thumbnails
+  /// into this device's cache and strip the `cover_index` the archive used
+  /// internally.
+  ///
+  /// Separate from [_decodeContainer] because this half needs no database — the
+  /// path comes from the row id alone. An out-of-range index or a row without an
+  /// id costs that one thumbnail; nothing else in the archive is affected.
+  @visibleForTesting
+  static Future<Map<String, dynamic>> restoreMangaThumbnails({
+    required Map<String, dynamic> snapshot,
+    required Uint8List? coversSection,
+    required CacheService? cache,
+  }) async {
+    final rows = snapshot['mangas'];
+    if (rows is! List) return snapshot;
+    final covers = coversSection == null
+        ? const <WmpCoverEntry>[]
+        : parseCoverSection(coversSection);
+    final kept = <Map<String, dynamic>>[];
+    for (final raw in rows) {
+      if (raw is! Map) continue;
+      final row = Map<String, dynamic>.from(raw);
+      final idx = row.remove('cover_index');
+      final id = row['id'];
+      if (id is String &&
+          idx is int &&
+          idx >= 0 &&
+          idx < covers.length &&
+          coversSection != null) {
+        await _writeMangaCover(cache, id, covers[idx].bytesIn(coversSection));
+      }
+      kept.add(row);
+    }
+    snapshot['mangas'] = kept;
+    return snapshot;
   }
 
   /// Apply a decoded payload. Returns the names of accounts whose password

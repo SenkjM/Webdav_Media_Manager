@@ -1587,6 +1587,12 @@ abstract class AppLocalizations {
   /// **'CUE 文件'**
   String get fileCatCue;
 
+  /// No description provided for @fileCatComic.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画文件'**
+  String get fileCatComic;
+
   /// No description provided for @fileCatOther.
   ///
   /// In zh, this message translates to:
@@ -3146,6 +3152,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'CUE 文件'**
   String get catCueFile;
+
+  /// No description provided for @catComicFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画文件'**
+  String get catComicFile;
 
   /// No description provided for @catOtherFile.
   ///
@@ -6380,7 +6392,7 @@ abstract class AppLocalizations {
   /// No description provided for @imagePageTurnFollowGlobal.
   ///
   /// In zh, this message translates to:
-  /// **'跟随全局'**
+  /// **'全局'**
   String get imagePageTurnFollowGlobal;
 
   /// No description provided for @imagePageTurnLtr.
@@ -7430,19 +7442,19 @@ abstract class AppLocalizations {
   /// No description provided for @folderAddAlbums.
   ///
   /// In zh, this message translates to:
-  /// **'添加专辑'**
+  /// **'音乐/专辑'**
   String get folderAddAlbums;
 
   /// No description provided for @folderAddArtists.
   ///
   /// In zh, this message translates to:
-  /// **'添加艺人'**
+  /// **'音乐/艺人'**
   String get folderAddArtists;
 
   /// No description provided for @folderAddTracks.
   ///
   /// In zh, this message translates to:
-  /// **'添加曲目'**
+  /// **'音乐/曲目'**
   String get folderAddTracks;
 
   /// No description provided for @folderItemsAdded.
@@ -7778,7 +7790,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaScanMaxDepthHint.
   ///
   /// In zh, this message translates to:
-  /// **'默认 5。与散图建立深度相互独立'**
+  /// **'默认 1。与散图建立深度相互独立'**
   String get mangaScanMaxDepthHint;
 
   /// No description provided for @mangaCreateSubdirs.
@@ -7802,7 +7814,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaCreateMaxDepthHint.
   ///
   /// In zh, this message translates to:
-  /// **'默认 5。与扫描深度相互独立'**
+  /// **'默认 1。与扫描深度相互独立'**
   String get mangaCreateMaxDepthHint;
 
   /// No description provided for @imageViewerControls.
@@ -7952,13 +7964,13 @@ abstract class AppLocalizations {
   /// No description provided for @folderAddManga.
   ///
   /// In zh, this message translates to:
-  /// **'添加漫画'**
+  /// **'漫画/单本'**
   String get folderAddManga;
 
   /// No description provided for @folderAddMangaSeries.
   ///
   /// In zh, this message translates to:
-  /// **'添加系列'**
+  /// **'漫画/系列'**
   String get folderAddMangaSeries;
 
   /// No description provided for @folderTypeManga.
@@ -8193,6 +8205,108 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'文件夹'**
   String get derivedPathFolders;
+
+  /// No description provided for @cacheRetentionSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'过期清理'**
+  String get cacheRetentionSection;
+
+  /// No description provided for @cacheRetentionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'按最后访问时间计算。正在播放、下载或阅读的不会被删除。'**
+  String get cacheRetentionHint;
+
+  /// No description provided for @cacheSizeCapSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'容量上限'**
+  String get cacheSizeCapSection;
+
+  /// No description provided for @cacheSizeCapHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'超过上限时先删最久未访问的缓存。0 表示不限制。'**
+  String get cacheSizeCapHint;
+
+  /// No description provided for @cacheClearAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部清理'**
+  String get cacheClearAll;
+
+  /// No description provided for @cacheClearAllConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将删除本地缓存文件；库中的元数据、标签与封面保留。'**
+  String get cacheClearAllConfirm;
+
+  /// No description provided for @cacheClearedFiles.
+  ///
+  /// In zh, this message translates to:
+  /// **'已清理 {count} 个缓存文件'**
+  String cacheClearedFiles(Object count);
+
+  /// No description provided for @folderSearchHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索文件夹'**
+  String get folderSearchHint;
+
+  /// No description provided for @mangaDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除所选漫画？'**
+  String get mangaDeleteTitle;
+
+  /// No description provided for @mangaDeleteBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'将删除 {count} 部漫画的库记录、缓存与封面，不可恢复。'**
+  String mangaDeleteBody(Object count);
+
+  /// No description provided for @mangaBatchDeleteDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除 {count} 部漫画'**
+  String mangaBatchDeleteDone(Object count);
+
+  /// No description provided for @mangaReadModeSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'阅读方式'**
+  String get mangaReadModeSection;
+
+  /// No description provided for @mangaReadModeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开漫画时的默认方式。流式读取边看边取，不占本地空间；整包缓存先下载整本，适合不支持分段读取的网盘。流式失败时会提示并提供切换。'**
+  String get mangaReadModeHint;
+
+  /// No description provided for @mangaReadModeStream.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式读取'**
+  String get mangaReadModeStream;
+
+  /// No description provided for @mangaReadModeCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'整包缓存'**
+  String get mangaReadModeCache;
+
+  /// No description provided for @mangaRangeUnsupportedRemember.
+  ///
+  /// In zh, this message translates to:
+  /// **'以后都用整包缓存'**
+  String get mangaRangeUnsupportedRemember;
+
+  /// No description provided for @imageViewerClose.
+  ///
+  /// In zh, this message translates to:
+  /// **'退出浏览'**
+  String get imageViewerClose;
 }
 
 class _AppLocalizationsDelegate

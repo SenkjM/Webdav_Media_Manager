@@ -14,7 +14,7 @@ void main() {
   final types = FileTypeConfig();
 
   group('按后缀判类型', () {
-    test('音乐 / 视频 / cue / 图片 / 普通', () {
+    test('音乐 / 视频 / cue / 图片 / 漫画 / 普通', () {
       expect(types.categoryFor('song.flac'), FileCategory.music);
       expect(types.categoryFor('movie.mkv'), FileCategory.video);
       expect(types.categoryFor('album.cue'), FileCategory.cue);
@@ -23,7 +23,35 @@ void main() {
       expect(types.categoryFor('a.png'), FileCategory.image);
       expect(types.categoryFor('a.webp'), FileCategory.image);
       expect(types.categoryFor('a.gif'), FileCategory.image);
-      expect(types.categoryFor('readme.pdf'), FileCategory.other);
+      // 漫画单文件是出厂后缀，pdf/epub 也算（见 kDefaultComicExtensions）。
+      expect(types.categoryFor('vol01.cbz'), FileCategory.comic);
+      expect(types.categoryFor('vol01.CBR'), FileCategory.comic);
+      expect(types.categoryFor('readme.pdf'), FileCategory.comic);
+      expect(types.categoryFor('book.epub'), FileCategory.comic);
+      expect(types.categoryFor('readme.txt'), FileCategory.other);
+    });
+
+    test('漫画后缀不抢图片：图片判在前面', () {
+      // 把 png 也写进漫画列表，它仍然先被判成图片。
+      final both = FileTypeConfig(
+        comicExtensions: const ['cbz', 'png'],
+        imageExtensions: const ['png'],
+      );
+      expect(both.categoryFor('a.png'), FileCategory.image);
+      expect(both.categoryFor('a.cbz'), FileCategory.comic);
+    });
+
+    test('漫画后缀可以清空：清空后 cbz 退回普通文件', () {
+      final cleared = FileTypeConfig(comicExtensions: const []);
+      expect(cleared.categoryFor('a.cbz'), FileCategory.other);
+      expect(cleared.categoryFor('a.mp3'), FileCategory.music);
+      // 旧配置没有 comic 键时用出厂默认，不清空。
+      expect(
+        FileTypeConfig.fromJson(const {
+          'music': ['mp3'],
+        }).categoryFor('a.cbz'),
+        FileCategory.comic,
+      );
     });
 
     test('旧配置没有 image 键时用默认图片后缀，不冲掉音乐', () {
@@ -150,13 +178,22 @@ void main() {
       expect(FileAction.stream.downloadTarget, isNull);
       expect(FileAction.streamMusic.downloadTarget, isNull);
       expect(FileAction.viewImage.downloadTarget, isNull);
-      expect(FileAction.downloadToGallery.downloadTarget, DownloadTarget.gallery);
       expect(
-        FileActionCatalog.isAllowed(FileCategory.image, FileAction.downloadToGallery),
+        FileAction.downloadToGallery.downloadTarget,
+        DownloadTarget.gallery,
+      );
+      expect(
+        FileActionCatalog.isAllowed(
+          FileCategory.image,
+          FileAction.downloadToGallery,
+        ),
         isTrue,
       );
       expect(
-        FileActionCatalog.isAllowed(FileCategory.video, FileAction.downloadToGallery),
+        FileActionCatalog.isAllowed(
+          FileCategory.video,
+          FileAction.downloadToGallery,
+        ),
         isFalse,
       );
       expect(
@@ -350,8 +387,7 @@ void main() {
     test('旧开关关也不再牵制：始终视为开', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'audio_streaming_enabled': false,
-        'file_action_config_json':
-            '{"music":"download","video":"stream","cue":"read_cue","other":"download"}',
+        'file_action_config_json': '{"music":"download","video":"stream","cue":"read_cue","other":"download"}',
       });
       final s = SettingsService();
       await s.init();

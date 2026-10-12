@@ -67,6 +67,15 @@ class WmpSections {
 
   /// Backup archives only: user-folder snapshot JSON (folders + items).
   static const int userFolders = 14;
+
+  /// Backup archives only: manga cover blobs — same contiguous layout as
+  /// [covers], one entry per manga row that has a thumbnail on this device.
+  ///
+  /// A manga cover path is **derived from the map id**
+  /// (`CacheService.mangaCoverFile`), so the archive stores no path: a restored
+  /// row needs only its own id back. The snapshot's manga rows carry the index
+  /// in a `cover_index` key.
+  static const int mangaCovers = 15;
 }
 
 /// Per-section storage codec.
@@ -273,10 +282,14 @@ class WmpManga {
   static const int rev = 3;
   static const int title = 4;
   static const int author = 5;
-  static const int seriesId = 6;
+
+  /// Retired ids — the series is a tag on the row now, not a row of its own.
+  /// 6 (`series_id`), 8 (`series_author`) and 9 (`series_sort_title`) stopped
+  /// being written when the `manga_series` table was folded into `mangas.series`
+  /// (`library_database.dart`, schema v16). Readers ignore them; ids are not
+  /// reused. A shard written before that still carries the title in 7, which is
+  /// all the row needs, so old and new shards decode identically.
   static const int seriesTitle = 7;
-  static const int seriesAuthor = 8;
-  static const int seriesSortTitle = 9;
   static const int volume = 10;
   static const int chapterNumber = 11;
   static const int pageCount = 12;

@@ -1228,18 +1228,19 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 11. **漫画库内 Tab**（对照音乐）：系列 / 单本 / 作者。
 12. **抽屉顺序（用户更正 2026-10-12）**：文件夹(0) → 音乐库(1) → 歌单(2) → **漫画库(3)** → 网络库(4) → 任务(5) → 设置(6)。`home_tab_index` 一次性迁移：prefs 旗标 `home_tab_v025_manga_inserted`；已有用户保存索引 **≥3** 则 +1（与文件夹插入同模式）。
 
-### 19.3 Schema（v13 加表 → v14 `page_turn`，不擦曲目）
+### 19.3 Schema（v13 加表 → v14 `page_turn` → v16 系列降为标签）
 
-同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；后续本分支再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1911-漫画库云同步--进度同步--文件夹同步--云端路径重排本分支实现待真机验收) 的「schema 15」。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
+同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；后续本分支再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1911-漫画库云同步--进度同步--文件夹同步--云端路径重排本分支实现待真机验收) 的「schema 15」；**v16 把 `manga_series` 表折进 `mangas.series` 标签**。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
 
 | 表 | 要点 |
 |----|------|
-| `manga_series` | `id` TEXT PK uuid；`title`；`author` nullable；`sort_title`；`created_at` |
-| `mangas` | `id` TEXT PK（确定性 `mangaIdForRemote`）；`UNIQUE(source_name, remote_path)`；`series_id` nullable FK；`title` / `author` / `volume` / `chapter_number`；`page_count`；`cover_relpath`；`format`=`cbz\|cbr\|pdf\|epub\|images\|unknown`；`remote_path` / `source_name`；`remote_missing`；`page_turn` nullable（v14；`ltr`/`rtl`；null=跟随全局）；`updated_at` |
+| `mangas` | `id` TEXT PK（确定性 `mangaIdForRemote`）；`UNIQUE(source_name, remote_path)`；`series` TEXT nullable（v16；**不是外键**，就是行上的标签，空 = 未指定）；`title` / `author` / `volume` / `chapter_number`；`page_count`；`cover_relpath`；`format`=`cbz\|cbr\|pdf\|epub\|images\|unknown`；`remote_path` / `source_name`；`remote_missing`；`page_turn` nullable（v14；`ltr`/`rtl`；null=跟随全局）；`updated_at` |
 | `manga_pages` | PK `(manga_id, page_index)`；`rel_path` |
 | `manga_progress` | PK `manga_id`；`page_index`；`updated_at` |
 
-索引：`series_id`、`author`、`source_name`。
+索引：`series`、`author`、`source_name`。
+
+**系列不是实体（v16，用户 2026-10-13 决定）**：`manga_series` 表已删除，模型侧 `MangaSeries` 退化为**派生视图**（只剩 `title`，`id = mangaSeriesIdForTitle(title) = sha1('mangaSeries\0' + trim(title))`）。系列列表 / 本数 / 封面全部由行分组派生，所以**空系列在结构上不可能存在**，也就没有「系列作者」这种可独立编辑的字段——改名 = 给成员行重新打标签（等于合并），清空 = 解绑。这与音乐库的 `tracks.album` 完全同构（`LibraryTrack.album` 也是一列，空值用哨兵 `kUnknownAlbum`，显示时才换成本地化词；列表与封面分别由 `library_screen.dart` 的 `groups.keys` 与 `library_group_cover.dart` 的 `pickCoverTrack` 派生）。迁移在 `_ensureMangaSeriesTag`：先 `ALTER TABLE mangas ADD COLUMN series TEXT`，再把 `manga_series.title` 按旧 `series_id` 回填进行，最后 `DROP TABLE manga_series`。
 
 ### 19.4 本刀交付
 
@@ -1249,6 +1250,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - HomeShell 抽屉 + IndexedStack + home_tab 迁移
 - `UserFolderRefKind.manga` / `mangaSeries` 常量
 - ARB zh / zh_Hant / en；`flutter analyze` + 相关 test；推 `origin feat/manga-library`
+- 漫画单文件在网络库里成为一等文件类别（`FileCategory.comic` + `FileAction.addToMangaLibrary`），见 [19.12](#1912-漫画单文件成为一等文件类别2026-10-13本分支)
 
 ### 19.5 阅读器（本刀升级）
 
@@ -1278,9 +1280,12 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 | 键 | 默认 | 用途 |
 |----|------|------|
 | `manga_scan_subdirs` | **开** | 扫描漫画文件时进子目录 |
-| `manga_scan_max_depth` | **5** | 扫描深度（与建立独立） |
+| `manga_scan_max_depth` | **1** | 扫描深度（与建立独立）。2026-10-13 起默认 1：漫画目录天然扁平，扫太深会把整棵盘扫进来 |
 | `manga_create_subdirs` | **开** | 散图建立时进子目录 |
-| `manga_create_max_depth` | **5** | 建立深度（与扫描独立） |
+| `manga_create_max_depth` | **1** | 建立深度（与扫描独立），同上 |
+| `manga_read_mode` | **流式** | 打开漫画时的默认读取方式（流式 / 先整包缓存）。流式失败时对话框可当场改成缓存并记住 |
+| `manga_cache_retention` | **一周** | 漫画缓存的过期清理时长（与音乐的 `retention` 分开） |
+| `manga_cache_custom_retention_hours` | **720** | 上面选「自定义」时的小时数 |
 
 与音乐刮削 / 播放列表 walk prefs **完全分开**。网络库文件夹动作读 `mangaScanWalkOptions` / `mangaCreateWalkOptions`。
 
@@ -1300,11 +1305,11 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 1. **封面**：漫画库列表（系列 / 单本 / 作者）显示封面。
 2. **视图模式**：列表 / 网格 2–5 列（同文件夹）；**按**漫画子 Tab（系列 / 单本 / 作者）分别持久化；默认 **列表**。
 3. **音乐库**：同样可配置视图模式，**按**音乐子 Tab 分别保存；默认列表。
-4. **单本 Tab**：分区「未指定系列」（`series_id` 为空 **或** 系列名为空 / 「未指定」）。
+4. **单本 Tab**：分区「未指定系列」（`series` 为空 **或** 系列名等于哨兵「未指定」；v16 前的 `series_id` 为空与此等价）。
 5. **CBZ 流式**：HTTP Range 读 ZIP 中央目录 + 按页抽取；若源不支持 Range → **拒绝流式**并提示整包缓存。
 6. **CBZ 刮削**：后台任务类别（与音乐刮削分开），ComicInfo / 元数据 + 封面抽取；队列形态对齐音乐刮削。
-7. **元数据编辑**：漫画标题 / 系列 / 作者；系列名 / 作者（批量绑定）；作者重命名**级联**所有漫画；空系列名 = 未指定。
-8. **本地缓存**：独立 `manga_cache/` 路径，但**共用**缓存管理 UI / 设置；设置偏好 + 更多菜单手动缓存（对齐音乐）。
+7. **元数据编辑**：漫画标题 / 系列 / 作者；系列整体改名（批量重新打标签，等于合并到新名）；作者重命名**级联**所有漫画；空系列名 = 未指定。**v16 起没有「系列作者」这一项**——系列只剩名字。
+8. **本地缓存**：独立 `manga_cache/` 路径。2026-10-13 起**各自一套缓存设置**（见 [19.13](#1913-按库分开的缓存设置与缓存索引2026-10-13本分支)）：漫画库设置页里有自己的缓存占用 / 过期清理 / 容量上限 / 全部清理，不再与音乐挤在同一页；设置偏好 + 更多菜单手动缓存（对齐音乐）。
 9. **用户文件夹**：软引用 `manga` + `mangaSeries`；除删除外支持 **移动** + **复制**（引用复制）；选择器根在用户文件夹；自身 / 子孙灰显。
 10. CBR / PDF / EPUB 保持 stub。
 
@@ -1328,10 +1333,34 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
   - **B 类 容器（CBZ / CBR / PDF / EPUB）**：页序由文件推出，**只作本地缓存**——不进同步分片、不进全部备份，不做兼容。别的设备拉到行 / 恢复备份后照旧首次打开（`manga_reader_prep.dart`）或刮削时生成。写页序**永不 bump rev**；`replacePages` 只在页数 / 封面变化时改行，所以重建缓存不会触发重传。
   - `0e77127` 里「散图缺页序时打开即递归列目录重建」的实现已删除——散图的页表是建立时筛选出的成员集合（扩展名、深度、子目录开关、按目录模式只取本层），列目录无法复现，且按目录模式下父目录会吞掉子书。现在散图缺页表时直接报空页错误，让用户回网络库重建该本。
 - **远端布局**：`library/music/`（原音乐库内容，不迁移旧路径）、`library/manga/`（`index.json` format `wmp_manga_library_index` + 分片 + `progress.json`）、`library/folders/folders.json`。
-- **漫画行合并**：键 `网盘名 + 规范化 remotePath`，高 rev 胜（与到达顺序无关）；墓碑只在 `tomb.rev >= row.rev` 时隐藏；本地写入清掉本地墓碑。系列内联在行里，系列 id 改为确定性 `sha1('mangaSeries\0'+title)`，避免跨设备分裂。
+- **漫画行合并**：键 `网盘名 + 规范化 remotePath`，高 rev 胜（与到达顺序无关）；墓碑只在 `tomb.rev >= row.rev` 时隐藏；本地写入清掉本地墓碑。系列就是行上的 `mangas.series` 标签（v16 起），线上仍写 `WmpManga.seriesTitle`（tag 7），系列 id 由标题确定性推出 `sha1('mangaSeries\0'+title)`，避免跨设备分裂；tag 6 / 8 / 9（`seriesId` / `seriesAuthor` / `seriesSortTitle`）已退役，读端忽略、写端不再产出。
 - **进度合并**：每个 manga_id 独立，较新 `updatedAt` 胜；相等不动。增量同步时一并读写 `progress.json`。
 - **文件夹合并**：整份快照 LWW。本机自上次同步后改过 → 推；只有云端 `updatedAt` 变了 → 拉（整份替换本地）；两边都改 → 本机修改时间与云端 `updatedAt` 比，新者整份胜，另一方修改丢弃不合并。本机修改时间在 `local_meta.folders_changed_at`，上次同步与所见云端时间按目的地存在 `local_meta`。
-- **备份**：`formatVersion 7`，新增段 `mangaLibrary = 13`（漫画 / 系列 / **散图页行** / 进度 / 墓碑 JSON，容器页序不入归档）、`userFolders = 14`。恢复时散图页表直接可用，容器本地页序缓存清空，按上条重新生成。
+- **备份**：`formatVersion 7`，新增段 `mangaLibrary = 13`（漫画 / **散图页行** / 进度 / 墓碑 JSON，容器页序不入归档）、`userFolders = 14`、`mangaCovers = 15`（**漫画封面缩略图字节**，与音乐 `COVERS = 3` 同一套连续布局，每本一份；归档里不存路径——本地路径由漫画 id 派生，所以行上只带一个 `cover_index`，恢复时写回 `manga_cache/covers/` 并抹掉下标）。恢复时散图页表直接可用，容器本地页序缓存清空，按上条重新生成。
 - **schema 15**：`mangas.rev`、`deleted_mangas`、`local_meta`。音乐「覆写」不再清漫画 / 文件夹；同步游标按前缀 `library:` / `manga:` 分开清。
+- **schema 16（2026-10-13）**：`manga_series` 表折进 `mangas.series` 标签（见 [19.3](#193-schemav13-加表--v14-page_turn--v16-系列降为标签)）。迁移回填旧系列名再删表；`LibraryDatabase` 不再有 `loadMangaSeries` / `upsertMangaSeries` / `deleteMangaSeries`，`loadMangas` 按 `series` 过滤。快照导出不再带顶层 `series` 列表（系列由行派生），但导入**仍认**旧快照里的 `series` 列表——靠它把老的 `series_id` 还原成名字，所以 v15 及更早的归档仍能还原分组。
 - **顺带修复**：同步页碎片提示「（约 true）」——gen-l10n 无 @ 元数据时占位参数按字母序生成（`count, hint, size`），调用方按模板顺序传了；`stepMangaIncremental` 同理按 `adopted, progress, tombs, uploaded` 传。图片预取测试按上限 20 改为 9→9、25→20。
-- **暂缓**：漫画封面不进全部备份归档；没有漫画的空系列不写墓碑；未真机验收。
+- **暂缓**：未真机验收；README 功能行未补漫画库。
+
+### 19.12 漫画单文件成为一等文件类别（2026-10-13，本分支）
+
+用户要求「对于 cbz 之类的漫画单文件，后缀设置里加上」与「参考音乐实现网络库的行为」。
+
+- **`FileCategory.comic`**：`FileTypeConfig` 新增 `comicExtensions`（默认 `kDefaultComicExtensions` = cbz / cbr / pdf / epub，存储键 `comic`，与 `music` / `video` / `cue` / `image` 并列）。判定排在**图片之后**，所以把 `png` 写进漫画列表也不会从图片类别里抢走文件。旧配置没有 `comic` 键时补默认；显式清空则一个后缀都不认（`isComicContainerFileName` 收到空列表返回 false，不回退默认）。
+- **`FileAction.addToMangaLibrary`**（存储键 `add_to_manga_library`，`downloadTarget` 为 null）：漫画单文件的出厂默认动作，与音乐的「缓存音乐」同构；`FileActionCatalog.comic = [addToMangaLibrary, download]`。
+- **网络库**：整行点按 = 加入漫画库（确认表 → `draftForComicFile` → `upsertFromDraft` → `scrapeMangaNow`）；「更多」菜单第一条就是它，原来那条 `if (isComicContainerFileName(item.name))` 的专用项已删除（重复项）；多选工具栏新增「加入漫画库」按钮（`Icons.menu_book_outlined`），选中的单文件直接建立、选中的文件夹用 `listComicContainersRecursive` 递归扫出，按路径去重后一起建立并刮削，只报一次结果。
+- **后缀设置页**：新增「漫画文件」一节，与音乐 / 视频 / 图片 / CUE 同构（文本框 + 应用 + 恢复默认 + 默认动作下拉框）。
+- **设置备份**：`comic` 键随 `fileTypes` 进 `WmpSections.settings`（见 [08 §5](08-SYNC-AND-BACKUP.md)）；旧归档没有该键，导入时补默认。
+- **迁移兼容**：两处旧设置迁移（`SettingsService._legacyFileActions` 与旧的 `music_tap_action` 路径）都补了 `FileCategory.comic`，否则 `FileActionConfig` 按类别构造会漏这一类。
+- **测试**：`test/file_action_model_test.dart` 补了漫画后缀 / 「漫画不抢图片」/ 「清空漫画后缀」三组断言；原「`readme.pdf` → 普通文件」的断言随之改为 `readme.txt`。
+
+### 19.13 按库分开的缓存设置与缓存索引（2026-10-13，本分支）
+
+用户要求「缓存设置合并进各自的库设置子页」「用独立的缓存管理」「用独立缓存数据库记录文件访问时间」。
+
+- **缓存索引库** `lib/services/cache_index_db.dart`：独立 sqlite 文件 `cache_index.db`，表 `cache_entries(path PRIMARY KEY, kind, size, accessed_at)`，`schemaVersion = 1`。`CacheKind { music, manga }`（`lib/models/cache_policy.dart`）。读写全部 try/catch 静默——索引只是**加速器**，丢了退回 mtime，不能因此让缓存操作失败。
+- **`CacheService`**：新增 `attachIndexDb`、`touchMangaFile` / `touchMangaCover` / `registerMangaFileWritten` / `registerMangaCoverWritten`、`cleanupExpired({kind, policy})`、`evictCacheToMaxBytes({kind, maxBytes})`、`pruneIndex(kind)`、`cacheSizeFor(kind)`。访问时间优先读索引，回退 `cache_access` 表的音乐条目、再回退 mtime。
+- **漫画封面不参与过期与上限淘汰**：`_cacheCandidates(CacheKind.manga)` 跳过 `covers/` 与 `.part`。缩略图极小、且 UI 只读不生成（见 [19 封面唯一生成点](#)），删掉就要等下次刮削才有；只有显式的「全部清理」会连它一起删。
+- **设置**：新增 `manga_cache_retention` / `manga_cache_custom_retention_hours`（音乐继续用全局 `retention` / `custom_retention_hours`），并加 `musicCacheExpiryPolicy` / `mangaCacheExpiryPolicy`。
+- **界面**：`lib/widgets/library_cache_settings.dart` 的 `LibraryCacheSettings(kind:)` 是唯一的缓存区块（占用 / 过期时长 / 容量上限 / 全部清理，按 kind 分发到不同的 AppState 方法）。`cache_settings_screen.dart` **已删除**；设置 →「媒体库」现在是「音乐库」「漫画库」两个平级入口，各自页内带自己的缓存区块（`lib/screens/manga_library_settings_screen.dart` 是新页）。
+- **漫画库设置页顺序**：扫描 / 建立的子目录开关与深度 → 打开方式（`manga_read_mode`）→ 缓存区块。

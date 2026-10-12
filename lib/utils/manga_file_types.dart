@@ -3,12 +3,7 @@ import '../models/manga.dart';
 import 'audio_extensions.dart';
 
 /// Default comic-container extensions (no leading dot).
-const List<String> kDefaultComicExtensions = [
-  'cbz',
-  'cbr',
-  'pdf',
-  'epub',
-];
+const List<String> kDefaultComicExtensions = ['cbz', 'cbr', 'pdf', 'epub'];
 
 /// Extra image suffixes accepted for loose image-dir scans (beyond FileTypeConfig).
 const List<String> kMangaImageExtensions = [
@@ -21,9 +16,11 @@ const List<String> kMangaImageExtensions = [
   'avif',
 ];
 
-bool isComicContainerFileName(String name) {
-  final ext = extensionOf(name);
-  return kDefaultComicExtensions.contains(ext);
+/// [extensions] 为空表示「没有配置漫画后缀」，此时一律不认，而不是回退默认。
+bool isComicContainerFileName(String name, {List<String>? extensions}) {
+  final exts = extensions ?? kDefaultComicExtensions;
+  if (exts.isEmpty) return false;
+  return exts.contains(extensionOf(name));
 }
 
 bool isMangaImageFileName(String name, {List<String>? imageExtensions}) {

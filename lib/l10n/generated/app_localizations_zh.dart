@@ -802,6 +802,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get fileCatCue => 'CUE 文件';
 
   @override
+  String get fileCatComic => '漫画文件';
+
+  @override
   String get fileCatOther => '普通文件';
 
   @override
@@ -1698,6 +1701,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get catCueFile => 'CUE 文件';
+
+  @override
+  String get catComicFile => '漫画文件';
 
   @override
   String get catOtherFile => '普通文件';
@@ -3656,7 +3662,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imagePageTurnManga => '当前漫画';
 
   @override
-  String get imagePageTurnFollowGlobal => '跟随全局';
+  String get imagePageTurnFollowGlobal => '全局';
 
   @override
   String get imagePageTurnLtr => '左→右';
@@ -4214,13 +4220,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get folderEmptyHint => '此文件夹为空。可新建子文件夹，或添加专辑、艺人、曲目。';
 
   @override
-  String get folderAddAlbums => '添加专辑';
+  String get folderAddAlbums => '音乐/专辑';
 
   @override
-  String get folderAddArtists => '添加艺人';
+  String get folderAddArtists => '音乐/艺人';
 
   @override
-  String get folderAddTracks => '添加曲目';
+  String get folderAddTracks => '音乐/曲目';
 
   @override
   String folderItemsAdded(int count) {
@@ -4406,7 +4412,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaScanMaxDepth => '扫描最大深度';
 
   @override
-  String get mangaScanMaxDepthHint => '默认 5。与散图建立深度相互独立';
+  String get mangaScanMaxDepthHint => '默认 1。与散图建立深度相互独立';
 
   @override
   String get mangaCreateSubdirs => '建立时搜索子目录';
@@ -4418,7 +4424,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaCreateMaxDepth => '建立最大深度';
 
   @override
-  String get mangaCreateMaxDepthHint => '默认 5。与扫描深度相互独立';
+  String get mangaCreateMaxDepthHint => '默认 1。与扫描深度相互独立';
 
   @override
   String get imageViewerControls => '查看选项';
@@ -4493,10 +4499,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get folderCopyDone => '已复制';
 
   @override
-  String get folderAddManga => '添加漫画';
+  String get folderAddManga => '漫画/单本';
 
   @override
-  String get folderAddMangaSeries => '添加系列';
+  String get folderAddMangaSeries => '漫画/系列';
 
   @override
   String get folderTypeManga => '漫画';
@@ -4630,6 +4636,64 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get derivedPathFolders => '文件夹';
+
+  @override
+  String get cacheRetentionSection => '过期清理';
+
+  @override
+  String get cacheRetentionHint => '按最后访问时间计算。正在播放、下载或阅读的不会被删除。';
+
+  @override
+  String get cacheSizeCapSection => '容量上限';
+
+  @override
+  String get cacheSizeCapHint => '超过上限时先删最久未访问的缓存。0 表示不限制。';
+
+  @override
+  String get cacheClearAll => '全部清理';
+
+  @override
+  String get cacheClearAllConfirm => '将删除本地缓存文件；库中的元数据、标签与封面保留。';
+
+  @override
+  String cacheClearedFiles(Object count) {
+    return '已清理 $count 个缓存文件';
+  }
+
+  @override
+  String get folderSearchHint => '搜索文件夹';
+
+  @override
+  String get mangaDeleteTitle => '删除所选漫画？';
+
+  @override
+  String mangaDeleteBody(Object count) {
+    return '将删除 $count 部漫画的库记录、缓存与封面，不可恢复。';
+  }
+
+  @override
+  String mangaBatchDeleteDone(Object count) {
+    return '已删除 $count 部漫画';
+  }
+
+  @override
+  String get mangaReadModeSection => '阅读方式';
+
+  @override
+  String get mangaReadModeHint =>
+      '打开漫画时的默认方式。流式读取边看边取，不占本地空间；整包缓存先下载整本，适合不支持分段读取的网盘。流式失败时会提示并提供切换。';
+
+  @override
+  String get mangaReadModeStream => '流式读取';
+
+  @override
+  String get mangaReadModeCache => '整包缓存';
+
+  @override
+  String get mangaRangeUnsupportedRemember => '以后都用整包缓存';
+
+  @override
+  String get imageViewerClose => '退出浏览';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -5428,6 +5492,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get fileCatCue => 'CUE 檔案';
+
+  @override
+  String get fileCatComic => '漫畫檔案';
 
   @override
   String get fileCatOther => '一般檔案';
@@ -6326,6 +6393,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get catCueFile => 'CUE 檔案';
+
+  @override
+  String get catComicFile => '漫畫檔案';
 
   @override
   String get catOtherFile => '一般檔案';
@@ -8284,7 +8354,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get imagePageTurnManga => '目前漫畫';
 
   @override
-  String get imagePageTurnFollowGlobal => '跟隨全域';
+  String get imagePageTurnFollowGlobal => '全域';
 
   @override
   String get imagePageTurnLtr => '左→右';
@@ -8842,13 +8912,13 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get folderEmptyHint => '此資料夾為空。可新建子資料夾，或加入專輯、藝人、曲目。';
 
   @override
-  String get folderAddAlbums => '加入專輯';
+  String get folderAddAlbums => '音樂/專輯';
 
   @override
-  String get folderAddArtists => '加入藝人';
+  String get folderAddArtists => '音樂/藝人';
 
   @override
-  String get folderAddTracks => '加入曲目';
+  String get folderAddTracks => '音樂/曲目';
 
   @override
   String folderItemsAdded(int count) {
@@ -9034,7 +9104,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaScanMaxDepth => '掃描最大深度';
 
   @override
-  String get mangaScanMaxDepthHint => '預設 5。與散圖建立深度相互獨立';
+  String get mangaScanMaxDepthHint => '預設 1。與散圖建立深度相互獨立';
 
   @override
   String get mangaCreateSubdirs => '建立時搜尋子目錄';
@@ -9046,7 +9116,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaCreateMaxDepth => '建立最大深度';
 
   @override
-  String get mangaCreateMaxDepthHint => '預設 5。與掃描深度相互獨立';
+  String get mangaCreateMaxDepthHint => '預設 1。與掃描深度相互獨立';
 
   @override
   String get imageViewerControls => '檢視選項';
@@ -9121,10 +9191,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get folderCopyDone => '已複製';
 
   @override
-  String get folderAddManga => '新增漫畫';
+  String get folderAddManga => '漫畫/單本';
 
   @override
-  String get folderAddMangaSeries => '新增系列';
+  String get folderAddMangaSeries => '漫畫/系列';
 
   @override
   String get folderTypeManga => '漫畫';
@@ -9258,4 +9328,62 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get derivedPathFolders => '資料夾';
+
+  @override
+  String get cacheRetentionSection => '過期清理';
+
+  @override
+  String get cacheRetentionHint => '依最後存取時間計算。正在播放、下載或閱讀的不會被刪除。';
+
+  @override
+  String get cacheSizeCapSection => '容量上限';
+
+  @override
+  String get cacheSizeCapHint => '超過上限時先刪最久未存取的快取。0 表示不限制。';
+
+  @override
+  String get cacheClearAll => '全部清理';
+
+  @override
+  String get cacheClearAllConfirm => '將刪除本機快取檔案；庫中的中繼資料、標籤與封面保留。';
+
+  @override
+  String cacheClearedFiles(Object count) {
+    return '已清理 $count 個快取檔案';
+  }
+
+  @override
+  String get folderSearchHint => '搜尋資料夾';
+
+  @override
+  String get mangaDeleteTitle => '刪除所選漫畫？';
+
+  @override
+  String mangaDeleteBody(Object count) {
+    return '將刪除 $count 部漫畫的庫記錄、快取與封面，無法復原。';
+  }
+
+  @override
+  String mangaBatchDeleteDone(Object count) {
+    return '已刪除 $count 部漫畫';
+  }
+
+  @override
+  String get mangaReadModeSection => '閱讀方式';
+
+  @override
+  String get mangaReadModeHint =>
+      '打開漫畫時的預設方式。串流讀取邊看邊取，不佔本機空間；整包快取先下載整本，適合不支援分段讀取的網盤。串流失敗時會提示並提供切換。';
+
+  @override
+  String get mangaReadModeStream => '串流讀取';
+
+  @override
+  String get mangaReadModeCache => '整包快取';
+
+  @override
+  String get mangaRangeUnsupportedRemember => '以後都用整包快取';
+
+  @override
+  String get imageViewerClose => '離開瀏覽';
 }

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/folder_view_mode.dart';
 import '../models/manga.dart';
+import '../models/manga_read_mode.dart';
 import '../models/manga_series.dart';
 import '../services/accounts_service.dart';
 import '../services/cache_service.dart';
@@ -15,6 +16,7 @@ import '../services/manga_reader_prep.dart';
 import '../services/settings_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/webdav_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/manga_cover_art.dart';
@@ -248,6 +250,54 @@ class _MangaListState extends State<_MangaList> {
         .showSnackBar(SnackBar(content: Text(l10n.mangaBatchSetSeriesDone(n))));
   }
 
+  List<Manga> _selectedMangas(MangaLibraryService svc) => [
+    for (final m in _filtered(svc))
+      if (_selection.selected.contains(m.id)) m,
+  ];
+
+  /// Drops the cached archive, cover and prefetched pages of every selected
+  /// manga. The library rows stay, so this is the cache-only counterpart of
+  /// [_batchDelete].
+  Future<void> _batchClearCache() async {
+    final l10n = AppLocalizations.of(context)!;
+    final svc = context.read<MangaLibraryService>();
+    final cache = context.read<CacheService>();
+    final targets = _selectedMangas(svc);
+    if (targets.isEmpty) return;
+    var removed = 0;
+    for (final m in targets) {
+      removed += await cache.clearMangaArtifacts(
+        mangaId: m.id,
+        sourceName: m.sourceName,
+        remotePath: m.remotePath,
+      );
+    }
+    if (!mounted) return;
+    _setSelection(_selection.exit());
+    AppSnack.show(context, l10n.cacheClearedFiles(removed));
+  }
+
+  /// Deletes the selected rows along with their cached files.
+  Future<void> _batchDelete() async {
+    final l10n = AppLocalizations.of(context)!;
+    final svc = context.read<MangaLibraryService>();
+    final cache = context.read<CacheService>();
+    final targets = _selectedMangas(svc);
+    if (targets.isEmpty) return;
+    if (!await _confirmMangaDelete(context, targets.length)) return;
+    for (final m in targets) {
+      await cache.clearMangaArtifacts(
+        mangaId: m.id,
+        sourceName: m.sourceName,
+        remotePath: m.remotePath,
+      );
+      await svc.deleteManga(m.id);
+    }
+    if (!mounted) return;
+    _setSelection(_selection.exit());
+    AppSnack.show(context, l10n.mangaBatchDeleteDone(targets.length));
+  }
+
   @override
   Widget build(BuildContext context) {
     final svc = context.watch<MangaLibraryService>();
@@ -298,6 +348,16 @@ class _MangaListState extends State<_MangaList> {
                 tooltip: l10n.mangaBatchSetSeries,
                 onPressed: _batchSetSeries,
                 icon: const Icon(Icons.collections_bookmark_outlined),
+              ),
+              IconButton(
+                tooltip: l10n.mangaClearCache,
+                onPressed: _batchClearCache,
+                icon: const Icon(Icons.cleaning_services_outlined),
+              ),
+              IconButton(
+                tooltip: l10n.destroyAction,
+                onPressed: _batchDelete,
+                icon: const Icon(Icons.delete_outline, color: AppColors.error),
               ),
               IconButton(
                 tooltip: l10n.cancel,
@@ -432,11 +492,9 @@ class _MangaListTile extends StatelessWidget {
 
 Widget? _mangaSubtitle(BuildContext context, Manga manga) {
   final l10n = AppLocalizations.of(context)!;
-  final svc = context.read<MangaLibraryService>();
-  final series = svc.seriesById(manga.seriesId);
   final meta = <String>[
     if (manga.displayAuthor.isNotEmpty) manga.displayAuthor,
-    if (series != null && series.title.trim().isNotEmpty) series.title,
+    ?manga.series,
     if (manga.pageCount > 0) l10n.mangaPageCount(manga.pageCount),
     manga.format,
   ];
@@ -609,11 +667,9 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
   // whole-file cache and nothing to scrape. Only class B (containers) get
   // those two items.
   final isContainer = manga.format != MangaFormat.images;
-  final cached = isContainer &&
-      cache.hasLocalMangaFile(
-        manga.remotePath,
-        sourceName: manga.sourceName,
-      );
+  final cached =
+      isContainer &&
+      cache.hasLocalMangaFile(manga.remotePath, sourceName: manga.sourceName);
   final action = await showModalBottomSheet<String>(
     context: context,
     showDragHandle: true,
@@ -643,6 +699,15 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
               onTap: () => Navigator.pop(ctx, cached ? 'clear_cache' : 'cache'),
             ),
           ],
+          const Divider(height: 1),
+          ListTile(
+            leading: Icon(Icons.delete_outline, color: AppColors.error),
+            title: Text(
+              l10n.destroyAction,
+              style: TextStyle(color: AppColors.error),
+            ),
+            onTap: () => Navigator.pop(ctx, 'delete'),
+          ),
         ],
       ),
     ),
@@ -663,16 +728,59 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
       if (context.mounted) {
         AppSnack.show(context, l10n.mangaClearCache);
       }
+    case 'delete':
+      await _deleteManga(context, manga);
   }
+}
+
+/// Shared confirmation for the single-item and batch delete paths. Returns
+/// false when the user backs out.
+Future<bool> _confirmMangaDelete(BuildContext context, int count) async {
+  final l10n = AppLocalizations.of(context)!;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l10n.mangaDeleteTitle),
+      content: Text(l10n.mangaDeleteBody(count)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(
+            l10n.destroyAction,
+            style: TextStyle(color: AppColors.error),
+          ),
+        ),
+      ],
+    ),
+  );
+  return ok ?? false;
+}
+
+/// Removes one manga from the library together with everything cached for it.
+Future<void> _deleteManga(BuildContext context, Manga manga) async {
+  final l10n = AppLocalizations.of(context)!;
+  final svc = context.read<MangaLibraryService>();
+  final cache = context.read<CacheService>();
+  if (!await _confirmMangaDelete(context, 1)) return;
+  await cache.clearMangaArtifacts(
+    mangaId: manga.id,
+    sourceName: manga.sourceName,
+    remotePath: manga.remotePath,
+  );
+  await svc.deleteManga(manga.id);
+  if (context.mounted) AppSnack.show(context, l10n.mangaBatchDeleteDone(1));
 }
 
 Future<void> _editMangaMetadata(BuildContext context, Manga manga) async {
   final l10n = AppLocalizations.of(context)!;
   final svc = context.read<MangaLibraryService>();
-  final series = svc.seriesById(manga.seriesId);
   final titleCtrl = TextEditingController(text: manga.title);
   final authorCtrl = TextEditingController(text: manga.author ?? '');
-  final seriesCtrl = TextEditingController(text: series?.title ?? '');
+  final seriesCtrl = TextEditingController(text: manga.series ?? '');
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -843,11 +951,12 @@ class _SeriesList extends StatelessWidget {
   }
 }
 
+/// Rename a series: it is the tag on its books, so this re-tags every member.
+/// Renaming onto an existing title merges the two; clearing it unbinds them.
 Future<void> _editSeries(BuildContext context, MangaSeries series) async {
   final l10n = AppLocalizations.of(context)!;
   final svc = context.read<MangaLibraryService>();
   final titleCtrl = TextEditingController(text: series.title);
-  final authorCtrl = TextEditingController(text: series.author ?? '');
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -858,10 +967,6 @@ Future<void> _editSeries(BuildContext context, MangaSeries series) async {
           TextField(
             controller: titleCtrl,
             decoration: InputDecoration(labelText: l10n.mangaFieldSeries),
-          ),
-          TextField(
-            controller: authorCtrl,
-            decoration: InputDecoration(labelText: l10n.mangaFieldAuthor),
           ),
         ],
       ),
@@ -878,11 +983,7 @@ Future<void> _editSeries(BuildContext context, MangaSeries series) async {
     ),
   );
   if (ok != true || !context.mounted) return;
-  await svc.updateSeriesMetadata(
-    series.id,
-    title: titleCtrl.text,
-    author: authorCtrl.text,
-  );
+  await svc.updateSeriesMetadata(series.id, title: titleCtrl.text);
 }
 
 class _AuthorList extends StatelessWidget {
@@ -1112,7 +1213,9 @@ class _AuthorDetailScreen extends StatelessWidget {
 Future<void> openMangaReader(
   BuildContext context,
   Manga manga, {
-  bool forceFullCache = false,
+
+  /// Overrides [SettingsService.mangaReadMode] for this one open.
+  bool? forceFullCache,
 }) async {
   final l10n = AppLocalizations.of(context)!;
   final accounts = context.read<AccountsService>();
@@ -1124,6 +1227,12 @@ Future<void> openMangaReader(
   final mangaLib = context.read<MangaLibraryService>();
   final webDav = context.read<WebDavService>();
   final cache = context.read<CacheService>();
+  final settings = context.read<SettingsService>();
+  // Stream unless the user asked for the whole file up front. The Range
+  // probe still runs first, so an unsupported driver is reported instead
+  // of silently turning into a download.
+  final cacheFirst =
+      forceFullCache ?? (settings.mangaReadMode == MangaReadMode.cache);
 
   showDialog<void>(
     context: context,
@@ -1149,7 +1258,7 @@ Future<void> openMangaReader(
       webDav: webDav,
       mangaLib: mangaLib,
       cache: cache,
-      forceFullCache: forceFullCache,
+      forceFullCache: cacheFirst,
     );
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop(); // dialog
@@ -1171,6 +1280,8 @@ Future<void> openMangaReader(
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
     if (e.kind == MangaReaderPrepareError.rangeUnsupported) {
+      // Streaming failed: say so, and offer to make caching the default so
+      // the next open does not stall on the same probe again.
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -1182,13 +1293,19 @@ Future<void> openMangaReader(
               child: Text(l10n.cancel),
             ),
             TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.mangaRangeUnsupportedRemember),
+            ),
+            TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               child: Text(l10n.mangaRangeUnsupportedCache),
             ),
           ],
         ),
       );
-      if (go == true && context.mounted) {
+      if (go == null) return;
+      if (!go) await settings.setMangaReadMode(MangaReadMode.cache);
+      if (context.mounted) {
         await openMangaReader(context, manga, forceFullCache: true);
       }
       return;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -9,7 +8,6 @@ import '../models/image_viewer_page.dart';
 import '../models/manga.dart';
 import '../models/manga_page.dart';
 import '../utils/cbz_range_zip.dart';
-import '../utils/manga_file_types.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'manga_library_service.dart';
@@ -156,66 +154,10 @@ class MangaReaderPrep {
       }
       final zip = CbzRangeZip(source: source);
       await zip.open();
-      final imageEntries = zip.imageEntries;
-      if (imageEntries.isEmpty) {
-        throw MangaReaderPrepareException(MangaReaderPrepareError.empty);
-      }
-
-      var dbPages = await mangaLib.pagesFor(manga.id);
-      if (dbPages.isEmpty) {
-        dbPages = [
-          for (var i = 0; i < imageEntries.length; i++)
-            MangaPage(
-              mangaId: manga.id,
-              pageIndex: i,
-              relPath: imageEntries[i].name,
-            ),
-        ];
-        await mangaLib.replacePages(
-          manga.id,
-          pages: dbPages,
-          coverRelpath: dbPages.first.relPath,
-        );
-      }
-
-      final outDir = await _mangaPageDir(manga.id);
-      final viewerPages = <ImageViewerPage>[];
-      for (var i = 0; i < imageEntries.length; i++) {
-        final entry = imageEntries[i];
-        final base = p.basename(entry.name);
-        final dest = File(
-          p.join(outDir.path, '${i.toString().padLeft(5, '0')}_$base'),
-        );
-        if (!dest.existsSync() || dest.lengthSync() <= 0) {
-          final raw = await zip.extractEntry(entry);
-          if (raw.isEmpty) {
-            throw MangaReaderPrepareException(
-              MangaReaderPrepareError.failed,
-              'empty page ${entry.name}',
-            );
-          }
-          await dest.parent.create(recursive: true);
-          await dest.writeAsBytes(raw, flush: true);
-        }
-        viewerPages.add(
-          ImageViewerPage(
-            id: '${manga.id}:$i',
-            name: base,
-            localPath: dest.path,
-          ),
-        );
-      }
-
-      final prog = await mangaLib.progressFor(manga.id);
-      final initial = (prog?.pageIndex ?? 0).clamp(0, viewerPages.length - 1);
-      final latest = mangaLib.mangas.cast<Manga?>().firstWhere(
-        (m) => m?.id == manga.id,
-        orElse: () => manga,
-      )!;
-      return MangaReaderPrepareResult(
-        pages: viewerPages,
-        initialIndex: initial,
-        manga: latest,
+      return await _prepareCbzWithZip(
+        manga: manga,
+        mangaLib: mangaLib,
+        zip: zip,
       );
     } on CbzRangeUnsupportedException catch (e) {
       throw MangaReaderPrepareException(
@@ -225,21 +167,15 @@ class MangaReaderPrep {
     }
   }
 
-  static Future<MangaReaderPrepareResult> _prepareCbzFromLocalFile({
+  /// Shared body of both CBZ paths: walk the image entries, make sure the DB
+  /// page list exists, then materialise each page under the reader cache.
+  /// [zip] may be backed by HTTP Range or by a local archive.
+  static Future<MangaReaderPrepareResult> _prepareCbzWithZip({
     required Manga manga,
-    required File archiveFile,
     required MangaLibraryService mangaLib,
+    required CbzRangeZip zip,
   }) async {
-    final bytes = await archiveFile.readAsBytes();
-    final decoded = ZipDecoder().decodeBytes(bytes, verify: false);
-    final imageEntries =
-        <ArchiveFile>[
-          for (final f in decoded)
-            if (!f.isDirectory && isMangaImageFileName(p.basename(f.name))) f,
-        ]..sort(
-          (a, b) =>
-              mangaPageSortKey(a.name).compareTo(mangaPageSortKey(b.name)),
-        );
+    final imageEntries = zip.imageEntries;
     if (imageEntries.isEmpty) {
       throw MangaReaderPrepareException(MangaReaderPrepareError.empty);
     }
@@ -271,8 +207,8 @@ class MangaReaderPrep {
         p.join(outDir.path, '${i.toString().padLeft(5, '0')}_$base'),
       );
       if (!dest.existsSync() || dest.lengthSync() <= 0) {
-        final raw = entry.readBytes();
-        if (raw == null || raw.isEmpty) {
+        final raw = await zip.extractEntry(entry);
+        if (raw.isEmpty) {
           throw MangaReaderPrepareException(
             MangaReaderPrepareError.failed,
             'empty page $rel',
@@ -297,6 +233,19 @@ class MangaReaderPrep {
       initialIndex: initial,
       manga: latest,
     );
+  }
+
+  /// Same walk as the Range path, but reading straight out of the local
+  /// archive: only the EOCD, the central directory and the page payloads are
+  /// touched, so a large CBZ no longer costs its own size in memory.
+  static Future<MangaReaderPrepareResult> _prepareCbzFromLocalFile({
+    required Manga manga,
+    required File archiveFile,
+    required MangaLibraryService mangaLib,
+  }) async {
+    final zip = CbzRangeZip(file: archiveFile);
+    await zip.open();
+    return _prepareCbzWithZip(manga: manga, mangaLib: mangaLib, zip: zip);
   }
 
   static Future<File> _downloadFullCbz({

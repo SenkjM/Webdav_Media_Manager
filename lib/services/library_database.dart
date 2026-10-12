@@ -6,7 +6,6 @@ import '../models/library_track.dart';
 import '../models/manga.dart';
 import '../models/manga_page.dart';
 import '../models/manga_progress.dart';
-import '../models/manga_series.dart';
 import '../models/user_folder.dart';
 import '../models/user_folder_item.dart';
 import '../models/webdav_account.dart';
@@ -16,6 +15,8 @@ import '../utils/track_identity.dart';
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
+/// Schema v16: the `manga_series` table is folded into a `mangas.series` tag
+/// (the album model — a series is derived from books, never stored on its own).
 /// Schema v15: mangas.rev + `deleted_mangas` tombstones (manga cloud sync) and
 /// `local_meta` (small key/value bookkeeping, e.g. user-folder snapshot sync).
 /// Schema v14: mangas.page_turn (nullable per-manga page-turn override).
@@ -45,7 +46,10 @@ class LibraryDatabase {
   bool accountNameUniquePending = false;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 15;
+  ///
+  /// v15→v16: a manga series stopped being a table and became the
+  /// `mangas.series` tag (the album model). See [_ensureMangaSeriesTag].
+  static const schemaVersion = 16;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -270,18 +274,8 @@ CREATE TABLE IF NOT EXISTS user_folder_items (
     );
   }
 
-
   /// Manga library tables (99 §19). Idempotent; safe on every open.
   Future<void> _ensureMangaTables(Database db) async {
-    await db.execute('''
-CREATE TABLE IF NOT EXISTS manga_series (
-  id TEXT PRIMARY KEY,
-  title TEXT NOT NULL,
-  author TEXT,
-  sort_title TEXT,
-  created_at TEXT NOT NULL
-)
-''');
     await db.execute('''
 CREATE TABLE IF NOT EXISTS mangas (
   id TEXT PRIMARY KEY,
@@ -289,7 +283,7 @@ CREATE TABLE IF NOT EXISTS mangas (
   remote_path TEXT NOT NULL,
   title TEXT NOT NULL,
   author TEXT,
-  series_id TEXT,
+  series TEXT,
   volume TEXT,
   chapter_number TEXT,
   page_count INTEGER NOT NULL DEFAULT 0,
@@ -298,8 +292,7 @@ CREATE TABLE IF NOT EXISTS mangas (
   remote_missing INTEGER NOT NULL DEFAULT 0,
   page_turn TEXT,
   updated_at TEXT NOT NULL,
-  UNIQUE(source_name, remote_path),
-  FOREIGN KEY(series_id) REFERENCES manga_series(id) ON DELETE SET NULL
+  UNIQUE(source_name, remote_path)
 )
 ''');
     await db.execute('''
@@ -336,9 +329,8 @@ CREATE TABLE IF NOT EXISTS local_meta (
   value TEXT NOT NULL
 )
 ''');
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_mangas_series ON mangas(series_id)',
-    );
+    // `idx_mangas_series` is created by [_ensureMangaSeriesTag] instead: on an
+    // upgraded database the `series` column only appears during that step.
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_mangas_author ON mangas(author)',
     );
@@ -365,6 +357,53 @@ CREATE TABLE IF NOT EXISTS local_meta (
         'ALTER TABLE mangas ADD COLUMN rev INTEGER NOT NULL DEFAULT 0',
       );
     }
+    await _ensureMangaSeriesTag(db, cols);
+  }
+
+  /// v15→v16: fold the `manga_series` table into the `mangas.series` tag.
+  ///
+  /// A series became the album-style label of a book, so the only surviving
+  /// fact is the string on the row. An existing library keeps its grouping:
+  /// every `series_id` is resolved to its old title and written into the new
+  /// column before the table is dropped.
+  ///
+  /// SQLite cannot drop the legacy `series_id` column on the builds Android
+  /// ships, so an upgraded database keeps it physically. Nothing reads or
+  /// writes it any more, and a fresh database never creates it.
+  Future<void> _ensureMangaSeriesTag(Database db, Set<String> cols) async {
+    if (!cols.contains('series')) {
+      await db.execute('ALTER TABLE mangas ADD COLUMN series TEXT');
+    }
+    final legacy = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='manga_series'",
+    );
+    if (legacy.isNotEmpty) {
+      if (cols.contains('series_id')) {
+        await db.execute('''
+UPDATE mangas SET series = (
+  SELECT s.title FROM manga_series s WHERE s.id = mangas.series_id
+)
+WHERE series_id IS NOT NULL
+  AND (series IS NULL OR TRIM(series) = '')
+''');
+      }
+      await db.execute('DROP TABLE IF EXISTS manga_series');
+    }
+    // The v15 index pointed at the retired column; rebuild it on the tag.
+    final old = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='index' "
+      "AND name='idx_mangas_series'",
+    );
+    if (old.isNotEmpty) {
+      final info = await db.rawQuery('PRAGMA index_info(idx_mangas_series)');
+      final col = info.isEmpty ? null : info.first['name'] as String?;
+      if (col != 'series') {
+        await db.execute('DROP INDEX IF EXISTS idx_mangas_series');
+      }
+    }
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_mangas_series ON mangas(series)',
+    );
   }
 
   Future<void> _createIndexes(Database db) async {
@@ -432,7 +471,10 @@ CREATE TABLE IF NOT EXISTS local_meta (
   }
 
   Future<void> _backfillAccountNameKeys(Database db) async {
-    final rows = await db.query('accounts', columns: ['id', 'name', 'name_key']);
+    final rows = await db.query(
+      'accounts',
+      columns: ['id', 'name', 'name_key'],
+    );
     for (final row in rows) {
       final id = row['id'] as String? ?? '';
       final name = row['name'] as String? ?? '';
@@ -457,16 +499,17 @@ CREATE TABLE IF NOT EXISTS local_meta (
       "GROUP BY name_key "
       "HAVING COUNT(*) > 1",
     );
-    return [
-      for (final r in rows) (r['name_key'] as String?) ?? '',
-    ].where((k) => k.isNotEmpty).toList();
+    return [for (final r in rows) (r['name_key'] as String?) ?? '']
+        .where((k) => k.isNotEmpty)
+        .toList();
   }
 
   Future<bool> _hasAccountNameKeyUnique(Database db) async {
     final master = await db.rawQuery(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'",
     );
-    final createSql = ((master.isEmpty ? null : master.first['sql']) as String?)
+    final createSql =
+        ((master.isEmpty ? null : master.first['sql']) as String?)
             ?.toUpperCase() ??
         '';
     if (createSql.contains('NAME_KEY') && createSql.contains('UNIQUE')) {
@@ -533,8 +576,10 @@ CREATE TABLE IF NOT EXISTS local_meta (
   }) async {
     final db = await database;
     await _backfillAccountNameKeys(db);
-    final deleted =
-        await _collapseDuplicateAccountNames(db, preferAccountId: preferAccountId);
+    final deleted = await _collapseDuplicateAccountNames(
+      db,
+      preferAccountId: preferAccountId,
+    );
     await _reconcileAccountNameUnique(db);
     return deleted;
   }
@@ -1223,7 +1268,6 @@ CREATE TABLE IF NOT EXISTS local_meta (
     await db.delete('manga_pages');
     await db.delete('manga_progress');
     await db.delete('mangas');
-    await db.delete('manga_series');
     await db.delete('deleted_mangas');
     await db.delete('local_meta');
   }
@@ -1242,7 +1286,7 @@ CREATE TABLE IF NOT EXISTS local_meta (
     await clearSyncState(prefix: musicCursorPrefix);
   }
 
-  /// Wipe the **manga** index only: series, mangas, pages, manga tombstones and
+  /// Wipe the **manga** index only: mangas, pages, manga tombstones and
   /// the manga sync cursor. Reading progress and `manga_cache/` stay, so the
   /// rows pulled back resume where they were and keep their local files.
   ///
@@ -1251,7 +1295,6 @@ CREATE TABLE IF NOT EXISTS local_meta (
     final db = await database;
     await db.delete('manga_pages');
     await db.delete('mangas');
-    await db.delete('manga_series');
     await db.delete('deleted_mangas');
     await clearSyncState(prefix: mangaCursorPrefix);
   }
@@ -1403,7 +1446,6 @@ CREATE TABLE IF NOT EXISTS local_meta (
   Future<void> _touchFolders() =>
       saveMeta(foldersChangedAtKey, '${DateTime.now().millisecondsSinceEpoch}');
 
-
   // --- User folders (local overlay, 99 §18) ---
 
   Future<List<UserFolder>> loadUserFolders() async {
@@ -1515,45 +1557,19 @@ CREATE TABLE IF NOT EXISTS local_meta (
     });
   }
 
-
   // --- Manga library (99 §19) ---
 
-  Future<List<MangaSeries>> loadMangaSeries() async {
-    final db = await database;
-    final rows = await db.query(
-      'manga_series',
-      orderBy: 'sort_title COLLATE NOCASE ASC, title COLLATE NOCASE ASC',
-    );
-    return [for (final r in rows) MangaSeries.fromMap(r)];
-  }
+  // A series owns no rows: it is the `mangas.series` tag, so the list is
+  // derived from the books (`MangaLibraryService.series`) and there is nothing
+  // to load, upsert or delete here.
 
-  Future<void> upsertMangaSeries(MangaSeries series) async {
-    final db = await database;
-    await db.insert(
-      'manga_series',
-      series.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
-  }
-
-  Future<void> deleteMangaSeries(String id) async {
-    final db = await database;
-    await db.update(
-      'mangas',
-      {'series_id': null},
-      where: 'series_id = ?',
-      whereArgs: [id],
-    );
-    await db.delete('manga_series', where: 'id = ?', whereArgs: [id]);
-  }
-
-  Future<List<Manga>> loadMangas({String? seriesId, String? author}) async {
+  Future<List<Manga>> loadMangas({String? series, String? author}) async {
     final db = await database;
     final where = <String>[];
     final args = <Object?>[];
-    if (seriesId != null) {
-      where.add('series_id = ?');
-      args.add(seriesId);
+    if (series != null) {
+      where.add('series = ?');
+      args.add(series);
     }
     if (author != null) {
       where.add('author = ?');
@@ -1731,11 +1747,17 @@ CREATE TABLE IF NOT EXISTS local_meta (
   // --- Snapshots (backup archive + folder sync) ---
 
   /// Whole manga library as JSON-friendly maps (backup archive section).
+  ///
+  /// Series travel inline on each row (`mangas.series`), so the archive no
+  /// longer carries a separate `series` list. Rows are re-mapped through
+  /// [Manga] so an upgraded database never leaks its dead `series_id` column
+  /// into a snapshot.
   Future<Map<String, dynamic>> exportMangaSnapshot() async {
     final db = await database;
     return {
-      'series': await db.query('manga_series'),
-      'mangas': await db.query('mangas'),
+      'mangas': [
+        for (final r in await db.query('mangas')) Manga.fromMap(r).toMap(),
+      ],
       // Loose-image page lists only; CBZ page order is a local cache.
       'pages': await _imageMangaPageRows(),
       'progress': await db.query('manga_progress'),
@@ -1744,18 +1766,27 @@ CREATE TABLE IF NOT EXISTS local_meta (
   }
 
   /// Replace the manga tables with a snapshot from [exportMangaSnapshot].
+  ///
+  /// Archives written before v16 carried a `series` table plus a
+  /// `mangas.series_id` column. Those are still understood: the id is resolved
+  /// to its old title and written into the tag, so a restore keeps the
+  /// grouping. Anything the id cannot be resolved for stays unset.
   Future<void> importMangaSnapshot(Map<String, dynamic> snap) async {
     final db = await database;
     List<Map<String, Object?>> rows(String key) => [
       for (final r in (snap[key] as List<dynamic>? ?? const []))
         if (r is Map) Map<String, Object?>.from(r),
     ];
+    final legacyTitles = <String, String>{
+      for (final r in rows('series'))
+        if ((r['id'] as String?)?.isNotEmpty ?? false)
+          r['id'] as String: (r['title'] as String?) ?? '',
+    };
     await db.transaction((txn) async {
       for (final t in [
         'manga_pages',
         'manga_progress',
         'mangas',
-        'manga_series',
         'deleted_mangas',
       ]) {
         await txn.delete(t);
@@ -1770,8 +1801,13 @@ CREATE TABLE IF NOT EXISTS local_meta (
         }
       }
 
-      await put('manga_series', rows('series'));
-      await put('mangas', rows('mangas'));
+      await put('mangas', [
+        for (final r in rows('mangas'))
+          Manga.fromMap({
+            ...r,
+            if (r['series'] == null) 'series': legacyTitles[r['series_id']],
+          }).toMap(),
+      ]);
       await put('manga_pages', rows('pages'));
       await put('manga_progress', rows('progress'));
       await put('deleted_mangas', rows('tombstones'));
@@ -1869,9 +1905,9 @@ CREATE TABLE IF NOT EXISTS local_meta (
       "WHERE author IS NOT NULL AND TRIM(author) != '' "
       'ORDER BY author COLLATE NOCASE ASC',
     );
-    return [
-      for (final r in rows) (r['author'] as String?) ?? '',
-    ].where((a) => a.isNotEmpty).toList();
+    return [for (final r in rows) (r['author'] as String?) ?? '']
+        .where((a) => a.isNotEmpty)
+        .toList();
   }
 
   Future<void> close() async {

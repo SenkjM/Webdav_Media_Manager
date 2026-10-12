@@ -29,6 +29,8 @@ migrate_working_dir/
 .dart_tool/
 .flutter-plugins-dependencies
 .pub-cache/
+# Redirected into the workspace by sandboxed sessions (see $DSH_HOME/AGENTS.md)
+.gradle-home/
 .pub/
 /build/
 /android/build/

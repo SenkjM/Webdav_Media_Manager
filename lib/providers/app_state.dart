@@ -12,6 +12,7 @@ import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/backup_service.dart';
+import '../services/cache_index_db.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
 import '../services/task_queue_service.dart';
@@ -39,7 +40,8 @@ class AppState extends ChangeNotifier {
     notificationPermission = NotificationPermissionService();
     final db = LibraryDatabase();
     libraryDb = db;
-    cache = CacheService(libraryDb: db);
+    cacheIndex = CacheIndexDb();
+    cache = CacheService(libraryDb: db, indexDb: cacheIndex);
     library = LibraryService(db: db);
     userFolders = UserFolderService(db: db);
     mangaLibrary = MangaLibraryService(db: db);
@@ -117,6 +119,9 @@ class AppState extends ChangeNotifier {
   late final WebDavService webDav;
   late final CloudDriveService cloudDrive;
   late final CacheService cache;
+
+  /// Access-time index shared by [cache]; owns `cache_index.db`.
+  late final CacheIndexDb cacheIndex;
   late final LibraryDatabase libraryDb;
   late final LibraryService library;
   late final UserFolderService userFolders;
@@ -467,8 +472,14 @@ class AppState extends ChangeNotifier {
           : null,
       downloadingIdentityKeys: taskQueue.downloadingIdentityKeys,
     );
+    // Second pass by expiry alone: files whose identity is no longer in the
+    // completed-task map still have to age out.
+    final orphans = await cache.cleanupExpired(
+      kind: CacheKind.music,
+      policy: settings.musicCacheExpiryPolicy,
+    );
     await runCacheCapacityEviction();
-    return removed;
+    return removed + orphans;
   }
 
   Future<int> manualClearCache() async {
@@ -489,6 +500,7 @@ class AppState extends ChangeNotifier {
     // Drop stale completed entries so CUE clips re-download cleanly and
     // clip trimming still applies from library DB metadata.
     await taskQueue.invalidateMissingCompleted();
+    await cache.pruneIndex(CacheKind.music);
     return removed;
   }
 
@@ -532,6 +544,50 @@ class AppState extends ChangeNotifier {
       await settings.setRetention(CacheRetention.custom);
     }
     unawaited(runCacheCleanup());
+  }
+
+  // --- manga cache: same three knobs, its own settings ----------------------
+
+  Future<int> runMangaCacheCleanup() async {
+    final removed = await cache.cleanupExpired(
+      kind: CacheKind.manga,
+      policy: settings.mangaCacheExpiryPolicy,
+    );
+    await runMangaCacheCapacityEviction();
+    return removed;
+  }
+
+  Future<int> runMangaCacheCapacityEviction() {
+    final maxBytes = settings.mangaCacheMaxBytes;
+    if (maxBytes <= 0) return Future.value(0);
+    return cache.evictCacheToMaxBytes(
+      kind: CacheKind.manga,
+      maxBytes: maxBytes,
+    );
+  }
+
+  Future<int> manualClearMangaCache() async {
+    final removed = await cache.clearAllMangaCache();
+    await cache.pruneIndex(CacheKind.manga);
+    return removed;
+  }
+
+  Future<void> setMangaRetention(CacheRetention r) async {
+    await settings.setMangaRetention(r);
+    unawaited(runMangaCacheCleanup());
+  }
+
+  Future<void> setMangaCustomRetentionDuration(Duration d) async {
+    await settings.setMangaCustomRetentionDuration(d);
+    if (settings.mangaRetention != CacheRetention.custom) {
+      await settings.setMangaRetention(CacheRetention.custom);
+    }
+    unawaited(runMangaCacheCleanup());
+  }
+
+  Future<void> setMangaCacheMaxMb(int mb) async {
+    await settings.setMangaCacheMaxMb(mb);
+    unawaited(runMangaCacheCapacityEviction());
   }
 
   void _syncCoverThumbSize() {

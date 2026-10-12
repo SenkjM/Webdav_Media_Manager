@@ -828,6 +828,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get fileCatCue => 'CUE files';
 
   @override
+  String get fileCatComic => 'Comic files';
+
+  @override
   String get fileCatOther => 'Other files';
 
   @override
@@ -1759,6 +1762,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get catCueFile => 'CUE file';
+
+  @override
+  String get catComicFile => 'comic file';
 
   @override
   String get catOtherFile => 'regular file';
@@ -3819,7 +3825,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imagePageTurnManga => 'This manga';
 
   @override
-  String get imagePageTurnFollowGlobal => 'Follow global';
+  String get imagePageTurnFollowGlobal => 'Global';
 
   @override
   String get imagePageTurnLtr => 'Left → right';
@@ -4408,13 +4414,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'This folder is empty. Create a subfolder, or add albums, artists, or tracks.';
 
   @override
-  String get folderAddAlbums => 'Add albums';
+  String get folderAddAlbums => 'Music / Albums';
 
   @override
-  String get folderAddArtists => 'Add artists';
+  String get folderAddArtists => 'Music / Artists';
 
   @override
-  String get folderAddTracks => 'Add tracks';
+  String get folderAddTracks => 'Music / Tracks';
 
   @override
   String folderItemsAdded(int count) {
@@ -4610,7 +4616,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mangaScanMaxDepthHint =>
-      'Default 5. Independent from image-create depth';
+      'Default 1. Independent from image-create depth';
 
   @override
   String get mangaCreateSubdirs =>
@@ -4625,7 +4631,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mangaCreateMaxDepthHint =>
-      'Default 5. Independent from comic-scan depth';
+      'Default 1. Independent from comic-scan depth';
 
   @override
   String get imageViewerControls => 'Viewer options';
@@ -4702,10 +4708,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get folderCopyDone => 'Copied';
 
   @override
-  String get folderAddManga => 'Add manga';
+  String get folderAddManga => 'Manga / Books';
 
   @override
-  String get folderAddMangaSeries => 'Add series';
+  String get folderAddMangaSeries => 'Manga / Series';
 
   @override
   String get folderTypeManga => 'Manga';
@@ -4844,4 +4850,65 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get derivedPathFolders => 'Folders';
+
+  @override
+  String get cacheRetentionSection => 'Expiry cleanup';
+
+  @override
+  String get cacheRetentionHint =>
+      'Based on last access time. Files being played, downloaded or read are never removed.';
+
+  @override
+  String get cacheSizeCapSection => 'Size limit';
+
+  @override
+  String get cacheSizeCapHint =>
+      'Oldest-accessed files are deleted first. 0 = unlimited.';
+
+  @override
+  String get cacheClearAll => 'Clear all';
+
+  @override
+  String get cacheClearAllConfirm =>
+      'Deletes local cache files; library metadata, tags and covers are kept.';
+
+  @override
+  String cacheClearedFiles(Object count) {
+    return 'Cleared $count cached file(s)';
+  }
+
+  @override
+  String get folderSearchHint => 'Search folders';
+
+  @override
+  String get mangaDeleteTitle => 'Delete selected comics?';
+
+  @override
+  String mangaDeleteBody(Object count) {
+    return 'Deletes the library record, cache and cover of $count comics. This cannot be undone.';
+  }
+
+  @override
+  String mangaBatchDeleteDone(Object count) {
+    return 'Deleted $count manga';
+  }
+
+  @override
+  String get mangaReadModeSection => 'Reading mode';
+
+  @override
+  String get mangaReadModeHint =>
+      'How a comic is opened by default. Streaming fetches pages as you read and keeps nothing locally; caching downloads the whole file first, for drives that cannot answer Range requests. A failed stream always prompts you.';
+
+  @override
+  String get mangaReadModeStream => 'Stream';
+
+  @override
+  String get mangaReadModeCache => 'Cache full file';
+
+  @override
+  String get mangaRangeUnsupportedRemember => 'Always cache from now on';
+
+  @override
+  String get imageViewerClose => 'Exit viewer';
 }

@@ -6,7 +6,6 @@ import 'dart:typed_data';
 
 import '../models/manga.dart';
 import '../models/manga_progress.dart';
-import '../models/manga_series.dart';
 import '../utils/manga_identity.dart';
 import '../utils/track_identity.dart';
 import '../utils/wmp_container.dart';
@@ -15,19 +14,15 @@ import 'library_sync_store.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
-/// One manga row as it travels in a cloud shard: the `mangas` row, its series
-/// (inline, so a pulled row can recreate it) and — for loose-image mangas only
-/// — the page list, which is the book's membership as chosen at build time.
+/// One manga row as it travels in a cloud shard: the `mangas` row — whose
+/// `series` tag travels inline with it — plus, for loose-image mangas only, the
+/// page list, which is the book's membership as chosen at build time.
 /// CBZ / container page order is a local cache and never travels.
 class MangaSyncRow {
-  MangaSyncRow({
-    required this.manga,
-    this.series,
-    List<String> pages = const [],
-  }) : pages = manga.format == MangaFormat.images ? pages : const [];
+  MangaSyncRow({required this.manga, List<String> pages = const []})
+    : pages = manga.format == MangaFormat.images ? pages : const [];
 
   final Manga manga;
-  final MangaSeries? series;
 
   /// `manga_pages.rel_path` in page order; always empty unless `images`.
   final List<String> pages;
@@ -77,17 +72,14 @@ class MangaShardCodec {
 
   static Map<int, Object?> rowToRecord(MangaSyncRow row, {int? coverIndex}) {
     final m = row.manga;
-    final s = row.series;
     return {
       WmpManga.sourceName: m.sourceName,
       WmpManga.remotePath: normalizeRemotePath(m.remotePath),
       WmpManga.rev: m.rev,
       WmpManga.title: m.title,
       WmpManga.author: m.author,
-      WmpManga.seriesId: m.seriesId,
-      WmpManga.seriesTitle: s?.title,
-      WmpManga.seriesAuthor: s?.author,
-      WmpManga.seriesSortTitle: s?.sortTitle,
+      // The series is a tag on the row: one string, nothing to keep in step.
+      WmpManga.seriesTitle: m.series,
       WmpManga.volume: m.volume,
       WmpManga.chapterNumber: m.chapterNumber,
       WmpManga.pageCount: m.pageCount,
@@ -114,8 +106,6 @@ class MangaShardCodec {
 
     final sourceName = str(WmpManga.sourceName) ?? '';
     final remotePath = normalizeRemotePath(str(WmpManga.remotePath) ?? '/');
-    final seriesId = str(WmpManga.seriesId);
-    final seriesTitle = str(WmpManga.seriesTitle);
     final updatedAt =
         DateTime.tryParse(str(WmpManga.updatedAt) ?? '')?.toLocal() ??
         DateTime.now();
@@ -136,7 +126,7 @@ class MangaShardCodec {
         remotePath: remotePath,
         title: str(WmpManga.title) ?? remotePath.split('/').last,
         author: str(WmpManga.author),
-        seriesId: seriesId,
+        series: normalizeMangaSeriesTag(str(WmpManga.seriesTitle)),
         volume: str(WmpManga.volume),
         chapterNumber: str(WmpManga.chapterNumber),
         pageCount: num_(WmpManga.pageCount) ?? pages.length,
@@ -147,15 +137,6 @@ class MangaShardCodec {
         updatedAt: updatedAt,
         rev: num_(WmpManga.rev) ?? 0,
       ),
-      series: (seriesId == null || seriesTitle == null)
-          ? null
-          : MangaSeries(
-              id: seriesId,
-              title: seriesTitle,
-              author: str(WmpManga.seriesAuthor),
-              sortTitle: str(WmpManga.seriesSortTitle),
-              createdAt: updatedAt,
-            ),
       pages: pages,
     );
   }

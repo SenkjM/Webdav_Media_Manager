@@ -30,6 +30,14 @@ enum FileAction {
   /// 图片：下载到系统相册（MediaStore Images / Pictures）。
   /// 与「下载」分开；不写 `.nomedia`，也不受下载目录排除扫描开关影响。
   downloadToGallery,
+
+  /// 漫画单文件（CBZ / CBR / PDF / EPUB）：就地读取内嵌元数据与首页，
+  /// 作为一本漫画登记进漫画库。
+  ///
+  /// 不落盘、不进下载队列——真正的页读取由阅读器按需流式完成（docs/99 §19），
+  /// 这里只负责「建立」。默认动作与音乐的「缓存音乐」同构：一键把远端文件
+  /// 变成库里的条目。
+  addToMangaLibrary,
 }
 
 extension FileActionX on FileAction {
@@ -41,6 +49,7 @@ extension FileActionX on FileAction {
     FileAction.streamMusic => 'stream_music',
     FileAction.viewImage => 'view_image',
     FileAction.downloadToGallery => 'download_to_gallery',
+    FileAction.addToMangaLibrary => 'add_to_manga_library',
   };
 
   String label(AppLocalizations l10n) => switch (this) {
@@ -51,6 +60,7 @@ extension FileActionX on FileAction {
     FileAction.streamMusic => l10n.actionStreamMusic,
     FileAction.viewImage => l10n.actionViewImage,
     FileAction.downloadToGallery => l10n.netDownloadToGallery,
+    FileAction.addToMangaLibrary => l10n.mangaAddComic,
   };
 
   /// 短标签，给多选工具栏这类空间紧张的地方用。
@@ -62,6 +72,7 @@ extension FileActionX on FileAction {
     FileAction.streamMusic => l10n.actionShortStreamMusic,
     FileAction.viewImage => l10n.actionShortViewImage,
     FileAction.downloadToGallery => l10n.actionShortGallery,
+    FileAction.addToMangaLibrary => l10n.mangaAddComic,
   };
 
   /// 该动作落盘到哪里。流式播放不落盘，返回 null。
@@ -70,7 +81,10 @@ extension FileActionX on FileAction {
     FileAction.download => DownloadTarget.downloads,
     FileAction.readCue => DownloadTarget.cache,
     FileAction.downloadToGallery => DownloadTarget.gallery,
-    FileAction.stream || FileAction.streamMusic || FileAction.viewImage => null,
+    FileAction.stream ||
+    FileAction.streamMusic ||
+    FileAction.viewImage ||
+    FileAction.addToMangaLibrary => null,
   };
 
   static FileAction fromStorageKey(String? key, FileAction fallback) =>
@@ -105,6 +119,11 @@ class FileActionCatalog {
 
   static const List<FileAction> other = [FileAction.download];
 
+  static const List<FileAction> comic = [
+    FileAction.addToMangaLibrary,
+    FileAction.download,
+  ];
+
   /// [FileCategory] → 允许的动作列表。
   static List<FileAction> forCategory(FileCategory category) =>
       switch (category) {
@@ -112,6 +131,7 @@ class FileActionCatalog {
         FileCategory.video => video,
         FileCategory.cue => cue,
         FileCategory.image => image,
+        FileCategory.comic => comic,
         FileCategory.other => other,
       };
 
@@ -133,6 +153,7 @@ class FileActionCatalog {
     FileCategory.cue => FileAction.readCue,
     FileCategory.video => FileAction.stream,
     FileCategory.image => FileAction.viewImage,
+    FileCategory.comic => FileAction.addToMangaLibrary,
     FileCategory.other => FileAction.download,
   };
 }
@@ -165,6 +186,7 @@ class FileActionConfig {
   FileAction get video => actions[FileCategory.video]!;
   FileAction get cue => actions[FileCategory.cue]!;
   FileAction get image => actions[FileCategory.image]!;
+  FileAction get comic => actions[FileCategory.comic]!;
   FileAction get other => actions[FileCategory.other]!;
 
   FileAction forCategory(FileCategory category) => actions[category]!;
@@ -198,6 +220,7 @@ class FileActionConfig {
     'video': video.storageKey,
     'cue': cue.storageKey,
     'image': image.storageKey,
+    'comic': comic.storageKey,
     'other': other.storageKey,
   };
 
@@ -225,6 +248,10 @@ class FileActionConfig {
         FileCategory.image: FileActionX.fromStorageKey(
           json['image'] as String?,
           FileActionCatalog.defaultFor(FileCategory.image),
+        ),
+        FileCategory.comic: FileActionX.fromStorageKey(
+          json['comic'] as String?,
+          FileActionCatalog.defaultFor(FileCategory.comic),
         ),
         FileCategory.other: FileActionX.fromStorageKey(
           json['other'] as String?,
@@ -338,6 +365,7 @@ extension FileCategoryLabelX on FileCategory {
     FileCategory.video => l10n.catVideoFile,
     FileCategory.cue => l10n.catCueFile,
     FileCategory.image => l10n.catImageFile,
+    FileCategory.comic => l10n.catComicFile,
     FileCategory.other => l10n.catOtherFile,
   };
 }

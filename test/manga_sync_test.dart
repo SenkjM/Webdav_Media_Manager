@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/models/manga.dart';
 import 'package:webdav_media_manager/models/manga_progress.dart';
-import 'package:webdav_media_manager/models/manga_series.dart';
 import 'package:webdav_media_manager/services/backup_service.dart';
 import 'package:webdav_media_manager/services/library_sync_store.dart';
 import 'package:webdav_media_manager/services/manga_sync_store.dart';
@@ -19,24 +18,19 @@ MangaSyncRow _row(
   int pageCount = 0,
   String format = MangaFormat.unknown,
   List<String> pages = const [],
+  String? series = '系列',
 }) {
-  final sid = mangaSeriesIdForTitle('系列');
   return MangaSyncRow(
     manga: Manga(
       id: mangaIdForRemote('盘', path),
       sourceName: '盘',
       remotePath: path,
       title: 'T$path',
-      seriesId: sid,
+      series: series,
       pageCount: pageCount,
       format: format,
       updatedAt: DateTime.utc(2026, 1, 1),
       rev: rev,
-    ),
-    series: MangaSeries(
-      id: sid,
-      title: '系列',
-      createdAt: DateTime.utc(2026, 1, 1),
     ),
     pages: pages,
   );
@@ -44,7 +38,7 @@ MangaSyncRow _row(
 
 void main() {
   group('manga shard codec', () {
-    test('round-trips rows, series and per-row covers (no page order)', () {
+    test('round-trips rows, series tag and per-row covers (no page order)', () {
       final cover = Uint8List.fromList([0xFF, 0xD8, 0xFF, 1, 2, 3]);
       final bytes = MangaShardCodec.encodeMangaShard(
         kind: WmpKind.seg,
@@ -59,7 +53,7 @@ void main() {
       expect(d.rows, hasLength(2));
       expect(d.rows[0].manga.pageCount, 2);
       expect(d.rows[0].manga.rev, 1);
-      expect(d.rows[0].series?.title, '系列');
+      expect(d.rows[0].manga.series, '系列');
       expect(d.rows[0].manga.id, mangaIdForRemote('盘', '/a.cbz'));
       expect(d.coverFor(0), cover);
       expect(d.coverFor(1), isNull);

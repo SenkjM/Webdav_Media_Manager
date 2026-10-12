@@ -25,7 +25,7 @@
 
 > **占位（开发中）**：v12 增加本地用户文件夹叠加表 `user_folders` / `user_folder_items`，不改曲目身份表；语义见 [99 §18](99-IN-PROGRESS.md)。
 >
-> **占位（开发中）**：v13 增加漫画库表 `manga_series` / `mangas` / `manga_pages` / `manga_progress`（加表不擦曲目）；语义见 [99 §19](99-IN-PROGRESS.md)。
+> **占位（开发中）**：v13 增加漫画库表 `mangas` / `manga_pages` / `manga_progress`（加表不擦曲目）；语义见 [99 §19](99-IN-PROGRESS.md)。v16 把系列从独立的 `manga_series` 表降为 `mangas.series` 标签列——与音乐库的 `tracks.album` 同构，系列由行派生，见 [99 §19.3](99-IN-PROGRESS.md)。
 
 
 | 表 | 含义 |

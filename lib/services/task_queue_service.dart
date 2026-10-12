@@ -2639,6 +2639,83 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  /// Scrape one manga immediately instead of queueing a [TaskKind.mangaScrape].
+  ///
+  /// The library scan uses this so a freshly added CBZ already carries the
+  /// title, author, series and cover lifted out of its `ComicInfo.xml` — the
+  /// manga counterpart of the tag read [_runScan] performs inline for music.
+  /// Everything is read over HTTP Range, so the archive itself is never
+  /// downloaded. Failures are swallowed: the row is already saved, and the
+  /// manual "刮削" action stays available as a retry.
+  Future<bool> scrapeMangaNow({
+    required String sourceName,
+    required String mangaId,
+    CancelToken? cancel,
+  }) async {
+    final mangaLib = _mangaLibrary;
+    if (mangaLib == null) return false;
+    final accountId = _accountIdFor(sourceName);
+    if (accountId == null) return false;
+    Manga? manga;
+    for (final m in mangaLib.mangas) {
+      if (m.id == mangaId) {
+        manga = m;
+        break;
+      }
+    }
+    if (manga == null || manga.format == MangaFormat.images) return false;
+    final target = manga;
+    try {
+      final source = await _webDav.resolveStreamSource(
+        accountId: accountId,
+        remotePath: target.remotePath,
+        name: p.basename(target.remotePath),
+      );
+      if (source == null) return false;
+      final zip = CbzRangeZip(source: source);
+      await zip.open(cancel: cancel);
+      final images = zip.imageEntries;
+      if (images.isEmpty) return false;
+
+      final infoEntry = zip.findComicInfo();
+      if (infoEntry != null) {
+        final meta = ComicInfoMeta.parse(await zip.extractEntry(infoEntry));
+        if (meta != null) {
+          await mangaLib.updateMangaMetadata(
+            target.id,
+            title: meta.title,
+            author: meta.writer,
+            seriesTitle: meta.series,
+            updateSeries: meta.series != null,
+          );
+        }
+      }
+
+      final coverBytes = await zip.extractEntry(images.first);
+      if (coverBytes.isNotEmpty) {
+        final coverFile = _cache.mangaCoverFile(target.id);
+        await coverFile.parent.create(recursive: true);
+        await coverFile.writeAsBytes(coverBytes, flush: true);
+        await _cache.registerMangaCoverWritten(target.id);
+      }
+      await mangaLib.replacePages(
+        target.id,
+        pages: [
+          for (var i = 0; i < images.length; i++)
+            MangaPage(
+              mangaId: target.id,
+              pageIndex: i,
+              relPath: images[i].name,
+            ),
+        ],
+        coverRelpath: images.first.name,
+      );
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _runRetagCloud(QueueTask task, CancelToken token) async {
     final accountId = _accountIdFor(task.sourceName);
     if (accountId == null) {

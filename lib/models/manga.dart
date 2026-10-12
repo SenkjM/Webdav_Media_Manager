@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /// One readable manga unit (container or image directory). See docs/99 §19.
+///
+/// A series is **not** an entity of its own: [series] is a plain tag on the
+/// row, exactly like `album` on a track. The series list, its covers and its
+/// book count are all derived from the books that carry the tag, so an empty
+/// series cannot exist.
 class Manga {
   const Manga({
     required this.id,
@@ -7,7 +12,7 @@ class Manga {
     required this.remotePath,
     required this.title,
     this.author,
-    this.seriesId,
+    this.series,
     this.volume,
     this.chapterNumber,
     this.pageCount = 0,
@@ -24,7 +29,10 @@ class Manga {
   final String remotePath;
   final String title;
   final String? author;
-  final String? seriesId;
+
+  /// Series tag (trimmed, never empty — unset is `null`). The book's series is
+  /// this string; the album-like grouping is derived from it.
+  final String? series;
   final String? volume;
   final String? chapterNumber;
   final int pageCount;
@@ -50,7 +58,7 @@ class Manga {
     'remote_path': remotePath,
     'title': title,
     'author': author,
-    'series_id': seriesId,
+    'series': series,
     'volume': volume,
     'chapter_number': chapterNumber,
     'page_count': pageCount,
@@ -70,7 +78,7 @@ class Manga {
       remotePath: map['remote_path'] as String? ?? '',
       title: map['title'] as String? ?? '',
       author: map['author'] as String?,
-      seriesId: map['series_id'] as String?,
+      series: normalizeMangaSeriesTag(map['series'] as String?),
       volume: map['volume'] as String?,
       chapterNumber: map['chapter_number'] as String?,
       pageCount: (map['page_count'] as int?) ?? 0,
@@ -89,8 +97,8 @@ class Manga {
     String? title,
     String? author,
     bool clearAuthor = false,
-    String? seriesId,
-    bool clearSeriesId = false,
+    String? series,
+    bool clearSeries = false,
     String? volume,
     String? chapterNumber,
     int? pageCount,
@@ -108,7 +116,9 @@ class Manga {
       remotePath: remotePath,
       title: title ?? this.title,
       author: clearAuthor ? null : (author ?? this.author),
-      seriesId: clearSeriesId ? null : (seriesId ?? this.seriesId),
+      series: clearSeries
+          ? null
+          : normalizeMangaSeriesTag(series ?? this.series),
       volume: volume ?? this.volume,
       chapterNumber: chapterNumber ?? this.chapterNumber,
       pageCount: pageCount ?? this.pageCount,
@@ -130,4 +140,13 @@ abstract final class MangaFormat {
   static const epub = 'epub';
   static const images = 'images';
   static const unknown = 'unknown';
+}
+
+/// Canonical form of the series tag: trimmed, blank collapses to `null`.
+///
+/// Callers that also want to treat a display sentinel as "unset" (the service
+/// does, for 「未指定」) apply that on top of this.
+String? normalizeMangaSeriesTag(String? raw) {
+  final trimmed = raw?.trim();
+  return (trimmed == null || trimmed.isEmpty) ? null : trimmed;
 }

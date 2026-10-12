@@ -89,8 +89,8 @@
 
 ## 5. 全部备份归档（BackupService）
 
-- `formatVersion = 7`（v7 新增 JSON 段 `mangaLibrary = 13`：漫画 / 系列 / **散图页行** / 进度 / 墓碑，容器页序不进归档（本地缓存，恢复后首次打开重建）；`userFolders = 14`：用户文件夹 + 条目；漫画封面不进归档）；一个 `WmpContainer`（kind `BK`）：META（含 format 标记）+ TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ JSON side sections（credentials / playlists / settings / cueAlbums）+ 可选 **口令校验块**（`WmpSections.passCheck = 11`）。
-- 内容 = 全部账号凭证（WebDAV 三件套 + 云盘驱动配置，取代早前「云盘账号不进备份」的决定，见 [99 §4.2.8](99-IN-PROGRESS.md)）+ 全部音乐库行（tracks + cue_slices + cue_albums）+ 全部歌单 + 封面缩略图 + 设置；**不含** `music_cache` 音频与下载队列。设置段随 `exportForBackup()` 带走图片查看偏好（幻灯片开关、间隔、循环、适应方式、预取数量、搜索子目录），不另开归档版本。
+- `formatVersion = 7`（v7 新增 JSON 段 `mangaLibrary = 13`：漫画 / 系列 / **散图页行** / 进度 / 墓碑，容器页序不进归档（本地缓存，恢复后首次打开重建）；`userFolders = 14`：用户文件夹 + 条目；`mangaCovers = 15`：**漫画封面缩略图**，与 COVERS 同一套连续布局，每本一份、**存字节不存路径**——本地路径由漫画 id 派生（`CacheService.mangaCoverFile` → `manga_cache/covers/<id 前 16 字符>.jpg`），所以归档里的行只带一个 `cover_index`；本机没有缩略图的行不带下标，恢复时下标被抹掉、字节写回派生路径）；一个 `WmpContainer`（kind `BK`）：META（含 format 标记）+ TRACKS（含 CUE 分片行）+ 原始 COVERS（每行一份）+ 原始 MANGA_COVERS + JSON side sections（credentials / playlists / settings / cueAlbums）+ 可选 **口令校验块**（`WmpSections.passCheck = 11`）。
+- 内容 = 全部账号凭证（WebDAV 三件套 + 云盘驱动配置，取代早前「云盘账号不进备份」的决定，见 [99 §4.2.8](99-IN-PROGRESS.md)）+ 全部音乐库行（tracks + cue_slices + cue_albums）+ 全部歌单 + 封面缩略图（音乐 `COVERS` + 漫画 `MANGA_COVERS`）+ 设置；**不含** `music_cache` 音频与下载队列。设置段随 `exportForBackup()` 带走图片查看偏好（幻灯片开关、间隔、循环、适应方式、预取数量、搜索子目录），不另开归档版本。
 - 加密：可选口令，魔数 `WDMMEN01` + PBKDF2 + AES-256-GCM（`backup_crypto.dart`）；归档内凭证按 `credentials.json` 的规则另行逐字段加密（WebDAV 密码 + 云盘配置的 obscure 字段）。恢复时同样静默过滤未注册的网盘类型。
 - **口令校验块（v6）**：新建带口令的归档在容器内写入 `passCheck` 段（`AESGCMv1:` 密封固定明文 `WDMM-BACKUP-PASS-OK\u0001`，与凭证字段同一套 `CredentialVaultCrypto`）；可读 JSON 导出则写顶层 `passCheck`。无口令归档不写此段。
 - **恢复前预检**（本机导入 / 云端恢复 / Base64，拿到 bytes 后、进入 `_runSync` 写库之前）：`BackupPassCheck.probe`
@@ -99,7 +99,8 @@
   - **整包信封**（`WDMMEN01`）口令空或 GCM 解不开 → `envelopeMismatched`：弹窗说明密钥不对、整包解不开；按钮「取消」/「继续」。点继续仍按现有 `restoreFromBytes` 再试；若仍解密失败 → **仅确认**对话框说明无法导入，**不**走错误 Snackbar。`_guard` / `_showOutcome` 对 `backupCiphertextDamaged`、`err.backupEncryptedNeedPassphrase`、`SecretBoxAuthenticationError` 等同样兜底成该对话框；
   - **可读归档**口令错误或空但校验块 / 样例密文需要口令 → `mismatched`：弹确认（可能数据库异常 / 空密文），取消或**强制继续**（强制后走原 `restoreFromBytes`，密文字段可被解成空）；
   - 旧归档无校验块且找不到可试解密文、但 META/`passwordEncryption` 声称加密 → `unverifiable`「无法预检」，同样给取消 / 强制继续。
-- **恢复策略**：v9 起已缓存由推导路径决定，恢复后磁盘上真有文件才算（`markAllUncached()` 为 no-op）→ 「库以为有文件但播不了」不可能发生；封面写回后再把各行的 `cover_path` 重写为本地路径。
+- **恢复策略**：v9 起已缓存由推导路径决定，恢复后磁盘上真有文件才算（`markAllUncached()` 为 no-op）→ 「库以为有文件但播不了」不可能发生；封面写回后再把各行的 `cover_path` 重写为本地路径。漫画封面不需要这一步：它的路径本来就由 id 派生，恢复时直接写回 `manga_cache/covers/`，行上不留任何路径。
+- **可读 JSON 导出不带封面字节**（`buildJsonExport`）：它走的是 JSON 出口，漫画封面只在容器归档里。反过来，`restoreFromBytes` 也接受这类 JSON——没有 `MANGA_COVERS` 段时只把行上的 `cover_index` 抹掉，一个文件也不写。
 - 备份的写入与列出都只认 `<远端路径>backup/`，没有按站点分目录。
 
 ## 6. 云端库整理（audit）

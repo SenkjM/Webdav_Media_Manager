@@ -23,11 +23,15 @@ class MangaImageDirHit {
   final List<String> imageNames;
 }
 
-/// Recursive: collect CBZ/CBR/PDF/EPUB under [rootPath] (no download).
+/// Recursive: collect comic containers under [rootPath] (no download).
+///
+/// [comicExtensions] 从设置来（见 [FileTypeConfig.comicExtensions]）；不传则用
+/// 出厂默认。空列表表示「一个后缀都不认」。
 Future<List<MangaComicHit>> listComicContainersRecursive({
   required WebDavService webDav,
   required String accountId,
   required String rootPath,
+  List<String>? comicExtensions,
   WalkOptions walk = const WalkOptions(
     includeSubdirs: true,
     maxDepth: 20,
@@ -46,7 +50,7 @@ Future<List<MangaComicHit>> listComicContainersRecursive({
         childDirs.add(item.path);
         continue;
       }
-      if (isComicContainerFileName(item.name)) {
+      if (isComicContainerFileName(item.name, extensions: comicExtensions)) {
         hits.add(MangaComicHit(path: item.path, name: item.name));
       }
     }
@@ -87,9 +91,7 @@ Future<List<MangaImageDirHit>> listImageDirsRecursive({
       }
     }
     if (images.isNotEmpty) {
-      images.sort(
-        (a, b) => mangaPageSortKey(a).compareTo(mangaPageSortKey(b)),
-      );
+      images.sort((a, b) => mangaPageSortKey(a).compareTo(mangaPageSortKey(b)));
       final norm = normalizeRemotePath(dir);
       byDir[norm] = images;
       names[norm] = _folderName(norm);
