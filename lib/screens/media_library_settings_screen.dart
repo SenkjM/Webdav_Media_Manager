@@ -94,15 +94,6 @@ class _MediaLibrarySettingsScreenState
           if (auto) ...[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              secondary: const Icon(Icons.play_circle_outline),
-              title: Text(l10n.libraryBackfillOnPlay),
-              subtitle: Text(l10n.libraryBackfillOnPlayHint),
-              value: settings.musicLibraryBackfillOnPlay,
-              onChanged: (v) =>
-                  unawaited(settings.setMusicLibraryBackfillOnPlay(v)),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
               secondary: const Icon(Icons.link),
               title: Text(l10n.libraryBackfillBindRoots),
               subtitle: Text(l10n.libraryBackfillBindRootsHint),

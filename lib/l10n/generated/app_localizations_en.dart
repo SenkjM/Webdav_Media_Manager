@@ -424,6 +424,21 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get accountNameCleanupDetailTitle => 'Account details';
+
+  @override
+  String get accountNameCleanupId => 'ID';
+
+  @override
+  String get accountNameCleanupShowPassword => 'Show password';
+
+  @override
+  String get accountNameCleanupHidePassword => 'Hide password';
+
+  @override
+  String get accountNameCleanupNoPassword => '(no password saved)';
+
+  @override
   String get accountType => 'Type';
 
   @override
@@ -4321,14 +4336,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryModeAutoHint =>
-      'On play, shallow-scrape the current track folder for missing library rows; optional bound-root filter. Download still follows play mode only.';
-
-  @override
-  String get libraryBackfillOnPlay => 'Check when playing';
-
-  @override
-  String get libraryBackfillOnPlayHint =>
-      'When a track starts, list only its parent folder one level and enqueue scrape for paths missing from the library. No download here.';
+      'On play, always shallow-scrape the current track folder for missing library rows; optional bound-root filter. Download still follows play mode only.';
 
   @override
   String get libraryBackfillBindRoots => 'Bound paths';

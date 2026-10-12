@@ -139,6 +139,11 @@
       "name": {"type": "String"}
     }
   },
+  "accountNameCleanupDetailTitle": "账号详情",
+  "accountNameCleanupId": "编号",
+  "accountNameCleanupShowPassword": "显示密码",
+  "accountNameCleanupHidePassword": "隐藏密码",
+  "accountNameCleanupNoPassword": "（未保存密码）",
   "accountType": "类型",
   "accountRemotePath": "远程路径",
   "accountRemotePathHint": "浏览根，默认 /（空置也是 /）",
@@ -1289,9 +1294,7 @@
   "libraryModeManual": "手动管理",
   "libraryModeManualHint": "默认。库只因你的操作变化，不会在打开时自动刮削。",
   "libraryModeAuto": "自动补齐",
-  "libraryModeAutoHint": "起播时浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。",
-  "libraryBackfillOnPlay": "播放时检查",
-  "libraryBackfillOnPlayHint": "开始播放时，只列出当前曲父目录一层，把库中缺失的路径加入刮削任务。不在此下载。",
+  "libraryModeAutoHint": "起播时自动浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。",
   "libraryBackfillBindRoots": "绑定路径",
   "libraryBackfillBindRootsHint": "关闭：始终刮削正在播放曲目的父目录。开启：仅当曲目远端路径命中下方绑定根前缀时才刮削。",
   "libraryBackfillRoots": "绑定的网络根路径",

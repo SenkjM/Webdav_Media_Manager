@@ -139,6 +139,11 @@
       "name": {"type": "String"}
     }
   },
+  "accountNameCleanupDetailTitle": "帳號詳情",
+  "accountNameCleanupId": "編號",
+  "accountNameCleanupShowPassword": "顯示密碼",
+  "accountNameCleanupHidePassword": "隱藏密碼",
+  "accountNameCleanupNoPassword": "（未儲存密碼）",
   "accountType": "類型",
   "accountRemotePath": "遠端路徑",
   "accountRemotePathHint": "瀏覽根目錄，預設 /（留空也是 /）",
@@ -1258,9 +1263,7 @@
   "libraryModeManual": "手動管理",
   "libraryModeManualHint": "預設。庫只因你的操作變化，不會在開啟時自動刮削。",
   "libraryModeAuto": "自動補齊",
-  "libraryModeAutoHint": "起播時淺層刮削目前曲所在目錄並入庫缺失項；可選依綁定根過濾。下載仍只走播放模式。",
-  "libraryBackfillOnPlay": "播放時檢查",
-  "libraryBackfillOnPlayHint": "開始播放時，只列出目前曲父目錄一層，把庫中缺失的路徑加入刮削任務。不在此下載。",
+  "libraryModeAutoHint": "起播時自動淺層刮削目前曲所在目錄並入庫缺失項；可選依綁定根過濾。下載仍只走播放模式。",
   "libraryBackfillBindRoots": "綁定路徑",
   "libraryBackfillBindRootsHint": "關閉：始終刮削正在播放曲目的父目錄。開啟：僅當曲目遠端路徑命中下方綁定根前綴時才刮削。",
   "libraryBackfillRoots": "綁定的網路根路徑",

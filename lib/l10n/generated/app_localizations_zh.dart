@@ -416,6 +416,21 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get accountNameCleanupDetailTitle => '账号详情';
+
+  @override
+  String get accountNameCleanupId => '编号';
+
+  @override
+  String get accountNameCleanupShowPassword => '显示密码';
+
+  @override
+  String get accountNameCleanupHidePassword => '隐藏密码';
+
+  @override
+  String get accountNameCleanupNoPassword => '（未保存密码）';
+
+  @override
   String get accountType => '类型';
 
   @override
@@ -4128,14 +4143,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get libraryModeAuto => '自动补齐';
 
   @override
-  String get libraryModeAutoHint => '起播时浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。';
-
-  @override
-  String get libraryBackfillOnPlay => '播放时检查';
-
-  @override
-  String get libraryBackfillOnPlayHint =>
-      '开始播放时，只列出当前曲父目录一层，把库中缺失的路径加入刮削任务。不在此下载。';
+  String get libraryModeAutoHint =>
+      '起播时自动浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。';
 
   @override
   String get libraryBackfillBindRoots => '绑定路径';
@@ -4573,6 +4582,21 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String accountNameCleanupDeleteContent(String name) {
     return '將刪除「$name」及其本機憑證。音樂庫裡綁定該名稱的項目會變成未綁定，直到你新增同名帳號。';
   }
+
+  @override
+  String get accountNameCleanupDetailTitle => '帳號詳情';
+
+  @override
+  String get accountNameCleanupId => '編號';
+
+  @override
+  String get accountNameCleanupShowPassword => '顯示密碼';
+
+  @override
+  String get accountNameCleanupHidePassword => '隱藏密碼';
+
+  @override
+  String get accountNameCleanupNoPassword => '（未儲存密碼）';
 
   @override
   String get accountType => '類型';
@@ -8288,14 +8312,8 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get libraryModeAuto => '自動補齊';
 
   @override
-  String get libraryModeAutoHint => '起播時淺層刮削目前曲所在目錄並入庫缺失項；可選依綁定根過濾。下載仍只走播放模式。';
-
-  @override
-  String get libraryBackfillOnPlay => '播放時檢查';
-
-  @override
-  String get libraryBackfillOnPlayHint =>
-      '開始播放時，只列出目前曲父目錄一層，把庫中缺失的路徑加入刮削任務。不在此下載。';
+  String get libraryModeAutoHint =>
+      '起播時自動淺層刮削目前曲所在目錄並入庫缺失項；可選依綁定根過濾。下載仍只走播放模式。';
 
   @override
   String get libraryBackfillBindRoots => '綁定路徑';

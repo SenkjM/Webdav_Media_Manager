@@ -106,9 +106,6 @@ class SettingsService extends ChangeNotifier {
   static const _kMediaScanMaxDepth = 'media_scan_max_depth';
   /// Mutual library mode: false = 手动管理 (default); true = 自动补齐.
   static const _kMusicLibraryAutoBackfill = 'music_library_auto_backfill';
-  /// When auto-backfill: shallow scrape parent dir on play start.
-  /// Prefs key kept as `music_library_backfill_on_open` for upgrade compat.
-  static const _kMusicLibraryBackfillOnPlay = 'music_library_backfill_on_open';
   /// When true, play-trigger only runs if track path is under a bound root.
   static const _kMusicLibraryBackfillBindRoots = 'music_library_backfill_bind_roots';
   /// JSON list of [MusicLibraryBackfillRoot] for auto scrape roots.
@@ -270,7 +267,6 @@ class SettingsService extends ChangeNotifier {
   bool _mediaScanRecursive = true;
   int _mediaScanMaxDepth = 1;
   bool _musicLibraryAutoBackfill = false;
-  bool _musicLibraryBackfillOnPlay = true;
   bool _musicLibraryBackfillBindRoots = false;
   List<MusicLibraryBackfillRoot> _musicLibraryBackfillRoots = const [];
   bool _imageSlideshowEnabled = defaultImageSlideshow;
@@ -497,10 +493,6 @@ class SettingsService extends ChangeNotifier {
   /// 自动补齐模式。默认关 = 手动管理。键 `music_library_auto_backfill`。
   bool get musicLibraryAutoBackfill => _musicLibraryAutoBackfill;
 
-  /// 起播时浅层刮削当前曲父目录。仅自动补齐时生效。默认开。
-  /// Prefs 键仍为 `music_library_backfill_on_open`（兼容旧安装）。
-  bool get musicLibraryBackfillOnPlay => _musicLibraryBackfillOnPlay;
-
   /// 绑定路径开关：开则仅当前曲远端路径前缀命中绑定根时才刮削。默认关。
   bool get musicLibraryBackfillBindRoots => _musicLibraryBackfillBindRoots;
 
@@ -699,8 +691,8 @@ class SettingsService extends ChangeNotifier {
     );
     _musicLibraryAutoBackfill =
         _prefs!.getBool(_kMusicLibraryAutoBackfill) ?? false;
-    _musicLibraryBackfillOnPlay =
-        _prefs!.getBool(_kMusicLibraryBackfillOnPlay) ?? true;
+    // Legacy `music_library_backfill_on_open` ignored: play scrape is always
+    // on while auto-backfill is enabled.
     _musicLibraryBackfillBindRoots =
         _prefs!.getBool(_kMusicLibraryBackfillBindRoots) ?? false;
     _musicLibraryBackfillRoots = _readMusicLibraryBackfillRoots();
@@ -1143,13 +1135,6 @@ class SettingsService extends ChangeNotifier {
     _musicLibraryAutoBackfill = enabled;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kMusicLibraryAutoBackfill, enabled);
-    notifyListeners();
-  }
-
-  Future<void> setMusicLibraryBackfillOnPlay(bool enabled) async {
-    _musicLibraryBackfillOnPlay = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kMusicLibraryBackfillOnPlay, enabled);
     notifyListeners();
   }
 
@@ -1628,7 +1613,6 @@ class SettingsService extends ChangeNotifier {
     'media_scan_recursive': _mediaScanRecursive,
     'media_scan_max_depth': _mediaScanMaxDepth,
     'music_library_auto_backfill': _musicLibraryAutoBackfill,
-    'music_library_backfill_on_open': _musicLibraryBackfillOnPlay,
     'music_library_backfill_bind_roots': _musicLibraryBackfillBindRoots,
     'music_library_backfill_roots': [
       for (final r in _musicLibraryBackfillRoots) r.toJson(),
@@ -1821,16 +1805,7 @@ class SettingsService extends ChangeNotifier {
         json['music_library_auto_backfill'] as bool,
       );
     }
-    if (json['music_library_backfill_on_open'] is bool) {
-      await setMusicLibraryBackfillOnPlay(
-        json['music_library_backfill_on_open'] as bool,
-      );
-    }
-    if (json['music_library_backfill_on_play'] is bool) {
-      await setMusicLibraryBackfillOnPlay(
-        json['music_library_backfill_on_play'] as bool,
-      );
-    }
+    // Legacy on-play / on-open keys ignored (always play-scrape in auto mode).
     if (json['music_library_backfill_bind_roots'] is bool) {
       await setMusicLibraryBackfillBindRoots(
         json['music_library_backfill_bind_roots'] as bool,

@@ -20,19 +20,17 @@ void main() {
     expect(a.identityKey, b.identityKey);
   });
 
-  test('auto backfill prefs default and persist (on-play + bind)', () async {
+  test('auto backfill prefs default and persist (bind roots)', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final fresh = SettingsService(prefs: prefs);
     await fresh.init();
 
     expect(fresh.musicLibraryAutoBackfill, isFalse);
-    expect(fresh.musicLibraryBackfillOnPlay, isTrue);
     expect(fresh.musicLibraryBackfillBindRoots, isFalse);
     expect(fresh.musicLibraryBackfillRoots, isEmpty);
 
     await fresh.setMusicLibraryAutoBackfill(true);
-    await fresh.setMusicLibraryBackfillOnPlay(false);
     await fresh.setMusicLibraryBackfillBindRoots(true);
     await fresh.addMusicLibraryBackfillRoot(
       const MusicLibraryBackfillRoot(accountId: 'acc1', path: '/Music'),
@@ -42,7 +40,6 @@ void main() {
     );
 
     expect(fresh.musicLibraryAutoBackfill, isTrue);
-    expect(fresh.musicLibraryBackfillOnPlay, isFalse);
     expect(fresh.musicLibraryBackfillBindRoots, isTrue);
     expect(fresh.musicLibraryBackfillRoots, hasLength(1));
     expect(fresh.musicLibraryBackfillRoots.single.path, '/Music');
@@ -50,23 +47,25 @@ void main() {
     final restored = SettingsService(prefs: prefs);
     await restored.init();
     expect(restored.musicLibraryAutoBackfill, isTrue);
-    expect(restored.musicLibraryBackfillOnPlay, isFalse);
     expect(restored.musicLibraryBackfillBindRoots, isTrue);
     expect(restored.musicLibraryBackfillRoots.single.accountId, 'acc1');
     expect(restored.musicLibraryBackfillRoots.single.path, '/Music');
   });
 
-  test('legacy music_library_backfill_on_open key still loads as on-play', () async {
+  test('legacy music_library_backfill_on_open key is ignored', () async {
     SharedPreferences.setMockInitialValues({
       'music_library_backfill_on_open': false,
+      'music_library_auto_backfill': true,
     });
     final prefs = await SharedPreferences.getInstance();
     final s = SettingsService(prefs: prefs);
     await s.init();
-    expect(s.musicLibraryBackfillOnPlay, isFalse);
+    // Auto on → play trigger always allowed; legacy on-open false is ignored.
+    expect(s.musicLibraryAutoBackfill, isTrue);
+    expect(shouldPlayTriggerBackfill(s), isTrue);
   });
 
-  test('shouldPlayTriggerBackfill gates on mode and on-play', () async {
+  test('shouldPlayTriggerBackfill follows auto mode only', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final s = SettingsService(prefs: prefs);
@@ -77,7 +76,7 @@ void main() {
     await s.setMusicLibraryAutoBackfill(true);
     expect(shouldPlayTriggerBackfill(s), isTrue);
 
-    await s.setMusicLibraryBackfillOnPlay(false);
+    await s.setMusicLibraryAutoBackfill(false);
     expect(shouldPlayTriggerBackfill(s), isFalse);
   });
 

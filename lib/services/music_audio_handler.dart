@@ -415,6 +415,36 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  /// Soft-replace the in-memory queue without stopping or seeking playback.
+  ///
+  /// [newIndex] must still point at the track currently playing. Used when
+  /// auto-backfill adds same-folder siblings after scrape ingest.
+  void replaceQueueKeepingPlayback({
+    required List<TrackInfo> tracks,
+    required int newIndex,
+  }) {
+    if (tracks.isEmpty) return;
+    final idx = newIndex.clamp(0, tracks.length - 1);
+    _tracks
+      ..clear()
+      ..addAll(tracks);
+    _index = idx;
+    final items = _tracks.map(mediaItemFor).toList();
+    queue.add(items);
+    final prev = mediaItem.valueOrNull;
+    final item = items[_index];
+    mediaItem.add(
+      item.copyWith(duration: prev?.duration ?? item.duration),
+    );
+    if (!_gateEvents) {
+      playbackState.add(
+        playbackState.value.copyWith(
+          queueIndex: _index,
+        ),
+      );
+    }
+  }
+
   /// Always expose skip + play/pause + stop so PlaybackState actions stay rich
   /// for Android 13+ system media buttons (not only notification addAction).
   List<MediaControl> _controls({required bool playing}) {

@@ -10,9 +10,11 @@ import '../models/queue_task.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../utils/l10n_host.dart';
+import '../utils/remote_path.dart';
 import '../utils/task_error.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
+import 'library_actions.dart';
 import 'library_backfill.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';
@@ -69,6 +71,7 @@ class AudioPlayerService extends ChangeNotifier {
       notifyListeners();
     });
     _settings.addListener(_onSettings);
+    _taskQueue.addListener(_onTaskQueueChanged);
   }
 
   final TaskQueueService _taskQueue;
@@ -94,6 +97,9 @@ class AudioPlayerService extends ChangeNotifier {
   MusicPrefetchService? _prefetch;
   bool _notificationPrompted = false;
   PlayOpenMode _playOpenMode = PlayOpenMode.cache;
+
+  /// Pending play-triggered scrape → queue sync (null = none).
+  _PendingPlayBackfillSync? _pendingPlayBackfillSync;
 
   MusicAudioHandler get handler => _handler;
 
@@ -605,13 +611,16 @@ class AudioPlayerService extends ChangeNotifier {
 
 
   /// Auto-backfill: shallow list parent of playing track; scrape missing only.
+  ///
+  /// When a scrape is enqueued, registers a pending queue-sync that runs only
+  /// after that task successfully ingests (see [_onTaskQueueChanged]).
   Future<void> _maybePlayTriggeredBackfill(TrackInfo track) async {
     final accountId = track.accountId.trim();
     final remotePath = track.remotePath.trim();
     final sourceName = track.sourceName.trim();
     if (accountId.isEmpty || remotePath.isEmpty || sourceName.isEmpty) return;
     try {
-      await enqueuePlayTriggeredShallowScrape(
+      final task = await enqueuePlayTriggeredShallowScrape(
         settings: _settings,
         accounts: _accounts,
         library: _library,
@@ -621,9 +630,115 @@ class AudioPlayerService extends ChangeNotifier {
         sourceName: sourceName,
         remotePath: remotePath,
       );
+      if (task == null) {
+        // Nothing missing / gated / already scanning — do not touch queue.
+        return;
+      }
+      final parent = remoteParent(remotePath) ?? '/';
+      _pendingPlayBackfillSync = _PendingPlayBackfillSync(
+        taskId: task.id,
+        sourceName: sourceName,
+        parentPath: parent,
+        accountId: accountId,
+      );
     } catch (_) {
       // Best-effort; play must not fail because scrape failed.
     }
+  }
+
+  void _onTaskQueueChanged() {
+    final pending = _pendingPlayBackfillSync;
+    if (pending == null) return;
+    QueueTask? task;
+    for (final t in _taskQueue.tasks) {
+      if (t.id == pending.taskId) {
+        task = t;
+        break;
+      }
+    }
+    if (task == null) return;
+    if (task.status == TaskStatus.failed ||
+        task.status == TaskStatus.cancelled) {
+      _pendingPlayBackfillSync = null;
+      return;
+    }
+    if (task.status != TaskStatus.completed) return;
+    _pendingPlayBackfillSync = null;
+    _syncQueueAfterPlayBackfill(pending);
+  }
+
+  /// After play-triggered scrape ingest: add new same-parent library rows to
+  /// the in-memory now-playing queue without interrupting playback.
+  void _syncQueueAfterPlayBackfill(_PendingPlayBackfillSync pending) {
+    final current = _handler.currentTrack;
+    if (current == null) return;
+    final curSource = current.sourceName.trim();
+    final curParent = remoteParent(current.remotePath.trim()) ?? '/';
+    // User switched folder/queue before completion → abandon.
+    if (curSource != pending.sourceName || curParent != pending.parentPath) {
+      return;
+    }
+
+    final accountId = pending.accountId.isNotEmpty
+        ? pending.accountId
+        : (_accounts.idForSource(pending.sourceName) ?? '');
+    final siblings = <TrackInfo>[];
+    for (final row in _library.tracksForSource(pending.sourceName)) {
+      final parent = remoteParent(row.remotePath) ?? '/';
+      if (parent != pending.parentPath) continue;
+      // Leave localPath null here; resolvePlayable fills it on next play.
+      siblings.add(libraryTrackToTrackInfo(row, null, accountId));
+    }
+    if (siblings.isEmpty) return;
+    siblings.sort((a, b) => a.remotePath.compareTo(b.remotePath));
+
+    final queue = List<TrackInfo>.from(_handler.tracks);
+    if (queue.isEmpty) return;
+    final existing = <String>{
+      for (final t in queue)
+        if (t.sourceName == pending.sourceName) t.remotePath,
+    };
+    final toAdd = [
+      for (final t in siblings)
+        if (!existing.contains(t.remotePath)) t,
+    ];
+    if (toAdd.isEmpty) return;
+
+    // Insert after the last same-parent item (or after current if none).
+    var insertAt = -1;
+    final curIdx = _handler.index;
+    for (var i = 0; i < queue.length; i++) {
+      final t = queue[i];
+      if (t.sourceName != pending.sourceName) continue;
+      final p = remoteParent(t.remotePath) ?? '/';
+      if (p == pending.parentPath) insertAt = i + 1;
+    }
+    if (insertAt < 0) {
+      insertAt = (curIdx + 1).clamp(0, queue.length);
+    }
+
+    // Keep remote/library order among newly added tracks.
+    queue.insertAll(insertAt, toAdd);
+    var newIndex = curIdx;
+    if (insertAt <= curIdx) {
+      newIndex = curIdx + toAdd.length;
+    }
+    // Never change which track is current.
+    final still = queue[newIndex];
+    if (still.sourceName != current.sourceName ||
+        still.remotePath != current.remotePath) {
+      // Safety: find current by identity.
+      final found = queue.indexWhere(
+        (t) =>
+            t.sourceName == current.sourceName &&
+            t.remotePath == current.remotePath,
+      );
+      if (found < 0) return;
+      newIndex = found;
+    }
+
+    _handler.replaceQueueKeepingPlayback(tracks: queue, newIndex: newIndex);
+    notifyListeners();
   }
 
   Future<void> _clearRemoteMissingMirror(TrackInfo track) async {
@@ -658,6 +773,8 @@ class AudioPlayerService extends ChangeNotifier {
   @override
   void dispose() {
     _settings.removeListener(_onSettings);
+    _taskQueue.removeListener(_onTaskQueueChanged);
+    _pendingPlayBackfillSync = null;
     unawaited(_prefetch?.dispose());
     _posSub?.cancel();
     _durSub?.cancel();
@@ -665,4 +782,20 @@ class AudioPlayerService extends ChangeNotifier {
     _mediaSub?.cancel();
     super.dispose();
   }
+}
+
+/// Intent to merge same-parent library rows into the now-playing queue after a
+/// play-triggered scrape completes successfully.
+class _PendingPlayBackfillSync {
+  const _PendingPlayBackfillSync({
+    required this.taskId,
+    required this.sourceName,
+    required this.parentPath,
+    required this.accountId,
+  });
+
+  final String taskId;
+  final String sourceName;
+  final String parentPath;
+  final String accountId;
 }

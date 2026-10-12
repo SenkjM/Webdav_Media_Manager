@@ -873,6 +873,36 @@ abstract class AppLocalizations {
   /// **'将删除「{name}」及其本地凭证。曲库里绑定该名称的条目会变为未绑定，直到你添加同名账号。'**
   String accountNameCleanupDeleteContent(String name);
 
+  /// No description provided for @accountNameCleanupDetailTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号详情'**
+  String get accountNameCleanupDetailTitle;
+
+  /// No description provided for @accountNameCleanupId.
+  ///
+  /// In zh, this message translates to:
+  /// **'编号'**
+  String get accountNameCleanupId;
+
+  /// No description provided for @accountNameCleanupShowPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示密码'**
+  String get accountNameCleanupShowPassword;
+
+  /// No description provided for @accountNameCleanupHidePassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐藏密码'**
+  String get accountNameCleanupHidePassword;
+
+  /// No description provided for @accountNameCleanupNoPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'（未保存密码）'**
+  String get accountNameCleanupNoPassword;
+
   /// No description provided for @accountType.
   ///
   /// In zh, this message translates to:
@@ -7268,20 +7298,8 @@ abstract class AppLocalizations {
   /// No description provided for @libraryModeAutoHint.
   ///
   /// In zh, this message translates to:
-  /// **'起播时浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。'**
+  /// **'起播时自动浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。'**
   String get libraryModeAutoHint;
-
-  /// No description provided for @libraryBackfillOnPlay.
-  ///
-  /// In zh, this message translates to:
-  /// **'播放时检查'**
-  String get libraryBackfillOnPlay;
-
-  /// No description provided for @libraryBackfillOnPlayHint.
-  ///
-  /// In zh, this message translates to:
-  /// **'开始播放时，只列出当前曲父目录一层，把库中缺失的路径加入刮削任务。不在此下载。'**
-  String get libraryBackfillOnPlayHint;
 
   /// No description provided for @libraryBackfillBindRoots.
   ///

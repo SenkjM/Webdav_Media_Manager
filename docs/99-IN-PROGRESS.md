@@ -835,7 +835,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - 歌单名 `未命名` → `__wdmm_unnamed_playlist__`（`playlists.name` 与 `entries_json` 里的 `sourceName` / `accountId`）。不碰 `新歌单`。改过的行抬高 `updated_at`，同步才能推稳定键。不在启动时去拉远端 `.wdmp`。
 - `默认服务器` → `__wdmm_default_server__`：`accounts.name`、各表 `source_name`、下载任务、歌单条目 `sourceName`，以及恰好是这个名字或以 `cue\0默认服务器\0` / `默认服务器\0` 开头的 `cache_group_id` / `cache_groups`。不碰默认名 `服务器`。`music_id` 不重算哈希；缓存和封面文件按旧 stem 改名到新 stem，`cover_path` 同样改。
 
-不改：真实流派标签 `未分类`（空流派已经是 `__wdmm_uncategorized__`）、`未知艺术家` / `未知专辑`（空艺术家 / 空专辑的分组键已经是稳定键，界面用 `displayArtistFor` / `displayAlbumFor`）、`新文件夹`、`系统相册`、`下载目录`、字幕存储值 `默认`、原生 Kotlin。再跑一次找不到这些中文哨兵。下一版（最迟到 0.2.4）删掉整个函数。
+不改：真实流派标签 `未分类`（空流派已经是 `__wdmm_uncategorized__`）、`未知艺术家` / `未知专辑`（空艺术家 / 空专辑的分组键已经是稳定键，界面用 `displayArtistFor` / `displayAlbumFor`）、`新文件夹`、`系统相册`、`下载目录`、字幕存储值 `默认`、原生 Kotlin。再跑一次找不到这些中文哨兵。下一版（最迟到 0.2.4）删掉整个函数——预发布成功后与临时同名清理门闸一并移除（见 §17.17 末「0.2.4 计划」）。
 
 ## 15. 启动默认主页 tab 与网络库路径仅内存
 
@@ -905,7 +905,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
   - 任务队列：展示层按时间连续同 kind（下载再按 `DownloadTarget`）合并；保留 CUE 组合并；聚合进度 / 取消组 / BottomSheet 看成员。
 - **曲库管理模式（本轮，已按播放触发重锁）**：设置 → 媒体库 → 音乐库。互斥两项：
   1. **手动管理**（默认，`music_library_auto_backfill=false`）：库只因用户显式操作变化；**不**自动刮削。
-  2. **自动补齐**（`true`）：**起播**时浅层刮削（见 §17.17）；**已移除**「打开音乐库时检查」入队。
+  2. **自动补齐**（`true`）：**起播**时浅层刮削为默认行为（见 §17.17）；**已移除**「打开音乐库时检查」入队与「播放时检查」开关。
   - 网络库手动「扫描音乐」/ 多选「扫描入库」**两种模式都可**；自动入队仅自动补齐 + 播放触发。
   - 更新标签文案「从缓存更新标签」/「从云端更新标签」；空库引导可扫描或下载。
 
@@ -1034,16 +1034,21 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 ### 17.17 曲库管理模式 → 播放触发浅层刮削（已重锁）
 
-**用户原话（2026-10-12，后改）**：只刮削；下载跟播放模式；前缀匹配；去掉打开音乐库时自动入队；改为起播时浅层列父目录；绑定路径开关；修账号选择器重复。
+**用户原话（2026-10-12，后改）**：只刮削；下载跟播放模式；前缀匹配；去掉打开音乐库时自动入队；改为起播时浅层列父目录；绑定路径开关；修账号选择器重复。再改：播放时检查应为自动补齐默认、去掉开关；清理同名账号可进详情看完整凭证；刮削成功入库后可把同目录新曲同步进当前播放列表（见下）。
 
 **取舍（锁定）**：
 1. **去掉** `shouldAutoBackfillOnLibraryOpen` / 打开音乐库 tab 自动入队。
-2. **起播触发**（`AudioPlayerService` 成功 `loadAndPlay` 后）：已知 `accountId` + `sourceName` + `remotePath` 时，只 `listDirectory` **当前曲父目录一层**（`WalkOptions(includeSubdirs: false)`）；与本地库该 source 的远端路径 diff；仅缺失路径 `enqueueScan`（刮削语义，**不下载**；下载只走缓存播放等播放模式）。
+2. **起播触发**（`AudioPlayerService` 成功 `loadAndPlay` 后）：已知 `accountId` + `sourceName` + `remotePath` 时，只 `listDirectory` **当前曲父目录一层**（`WalkOptions(includeSubdirs: false)`）；与本地库该 source 的远端路径 diff；仅缺失路径 `enqueueScan`（刮削语义，**不下载**；下载只走缓存播放等播放模式）。自动补齐开启时**始终**允许起播浅层刮削——**已移除**「播放时检查」开关 / `musicLibraryBackfillOnPlay` API；旧 prefs 键 `music_library_backfill_on_open` 读入时忽略。
 3. Pref：
-   - `music_library_auto_backfill`（默认 false）= 自动补齐总开关。
-   - `music_library_backfill_on_open`（**键名保留**，语义改为 on-play，默认 true）→ API `musicLibraryBackfillOnPlay`。
+   - `music_library_auto_backfill`（默认 false）= 自动补齐总开关（开则默认起播浅层刮削）。
    - `music_library_backfill_bind_roots`（默认 false）：关 = 不做绑定过滤，起播总是浅列父目录；开 = 先用绑定根对当前曲 `remotePath` 做前缀匹配，不命中则整次跳过，命中再扫父目录一层。
    - `music_library_backfill_roots`：绑定根 UI 仅在绑定开关开时显示。
-4. **账号同名（DB 兜底）**：名称是逻辑主键（`normalizeSourceName` + 大小写不敏感 = `accountNameKey`）。应用层 `addAccount`/`updateAccount` 拒绝重名（友好错误）；`library_database` schema **v11** 对 `accounts.name_key` 加 **UNIQUE** 作硬底。历史同名：启动检测后展示**临时清理 UI**，用户**手动删除**冲突账号；名称唯一后才创建 UNIQUE 索引（或已存在则跳过）。**不**在启动时自动折叠/合并同名行；选择器**不**自行去重。备份恢复仍按名去重；同名接管（按 id 恢复）可删掉占用该名的另一行。
+4. **账号同名（DB 兜底）**：名称是逻辑主键（`normalizeSourceName` + 大小写不敏感 = `accountNameKey`）。应用层 `addAccount`/`updateAccount` 拒绝重名（友好错误）；`library_database` schema **v11** 对 `accounts.name_key` 加 **UNIQUE** 作硬底。历史同名：启动检测后展示**临时清理 UI**，冲突行可点进**详情页**查看完整凭证（名称 / id / URL / 用户名 / 密码可见切换 / 远程路径 / 类型）以便区分，再手动删除；名称唯一后才创建 UNIQUE 索引（或已存在则跳过）。**不**在启动时自动折叠/合并同名行；选择器**不**自行去重。备份恢复仍按名去重；同名接管（按 id 恢复）可删掉占用该名的另一行。
 5. 显式网络库扫描两种模式都可；自动入队仅自动补齐门控。
 6. 更新标签 / 空库文案保持「更新标签」与可扫描入库。
+7. **起播刮削后同步当前播放列表**（内存 now-playing，非已存歌单文档）：
+   - 仅当本次起播浅层刮削**发现缺失并入队**刮削任务时登记意图；列出无缺失则不碰队列。
+   - **等该刮削任务成功入库后再改队列**；失败 / 取消则放弃；若完成前用户已切到其他目录 / 队列（当前曲 source+父目录与登记不一致）也放弃，不做迟到静默改写。
+   - 范围：只改内存播放队列；只追加**同一 source + 同一父目录**的新入库曲，按远端路径序插入该段；**不删**已有项、不重排其他目录、不中断当前曲 / 不 seek、不停止播放、不清空队列、不自动下载。
+
+**0.2.4 计划（预发布成功后）**：删除历史 DB 兼容——`migrateLegacySentinelsOnce` 与临时同名清理门闸（`AccountNameCleanupScreen` / `needsNameCleanup`）；升级时若仍有同名 `name_key`，保留每组一条（优先当前使用账号，否则最小 id）并删其余账号行与安全存储密码，再施加 UNIQUE。正式版 0.2.4 起旧库不再走兼容路径。

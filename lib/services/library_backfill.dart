@@ -11,9 +11,11 @@ import 'task_queue_service.dart';
 import 'webdav_service.dart';
 
 /// True when auto-backfill may run a play-triggered shallow scrape.
+///
+/// Play-time shallow scrape is always on while auto mode is enabled (no
+/// separate on-play preference).
 bool shouldPlayTriggerBackfill(SettingsService settings) {
-  if (!settings.musicLibraryAutoBackfill) return false;
-  return settings.musicLibraryBackfillOnPlay;
+  return settings.musicLibraryAutoBackfill;
 }
 
 /// Whether [remotePath] is under a bound root for [accountId].
@@ -81,8 +83,11 @@ bool hasActiveScanForRoot({
 /// Play-start: list **one level** of the track's parent dir; enqueue scrape for
 /// paths missing from the local library. Scrape only — no download/copy.
 ///
-/// Returns how many scan tasks were queued (0 or 1).
-Future<int> enqueuePlayTriggeredShallowScrape({
+/// Enqueues a scrape when missing siblings exist.
+///
+/// Returns the queued [QueueTask], or null when gated / nothing missing /
+/// already scanning.
+Future<QueueTask?> enqueuePlayTriggeredShallowScrape({
   required SettingsService settings,
   required AccountsService accounts,
   required LibraryService library,
@@ -97,17 +102,17 @@ Future<int> enqueuePlayTriggeredShallowScrape({
     accountId: accountId,
     remotePath: remotePath,
   )) {
-    return 0;
+    return null;
   }
   final parent = remoteParent(remotePath) ?? '/';
   final src = sourceName.trim();
-  if (src.isEmpty || accountId.isEmpty) return 0;
+  if (src.isEmpty || accountId.isEmpty) return null;
   if (hasActiveScanForRoot(
     queue: queue,
     sourceName: src,
     remotePath: parent,
   )) {
-    return 0;
+    return null;
   }
 
   bool isMusic(String name) =>
@@ -130,9 +135,9 @@ Future<int> enqueuePlayTriggeredShallowScrape({
       isCue: isCue,
     );
   } catch (_) {
-    return 0;
+    return null;
   }
-  if (listed.isEmpty) return 0;
+  if (listed.isEmpty) return null;
 
   final existing = <String>{
     for (final t in library.tracksForSource(src)) t.remotePath,
@@ -141,19 +146,18 @@ Future<int> enqueuePlayTriggeredShallowScrape({
     for (final e in listed)
       if (!existing.contains(e.path)) e,
   ];
-  if (missing.isEmpty) return 0;
+  if (missing.isEmpty) return null;
 
   final fileName = parent == '/'
       ? '/'
       : parent.split('/').where((s) => s.isNotEmpty).last;
-  await queue.enqueueScan(
+  return queue.enqueueScan(
     sourceName: src,
     remotePath: parent,
     fileName: fileName,
     unitsTotal: missing.length,
     paths: missing,
   );
-  return 1;
 }
 
 /// Display label for a bound root row (account name + path).

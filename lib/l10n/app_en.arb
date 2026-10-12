@@ -139,6 +139,11 @@
       "name": {"type": "String"}
     }
   },
+  "accountNameCleanupDetailTitle": "Account details",
+  "accountNameCleanupId": "ID",
+  "accountNameCleanupShowPassword": "Show password",
+  "accountNameCleanupHidePassword": "Hide password",
+  "accountNameCleanupNoPassword": "(no password saved)",
   "accountType": "Type",
   "accountRemotePath": "Remote path",
   "accountRemotePathHint": "Browse root, default / (empty also means /)",
@@ -1269,9 +1274,7 @@
   "libraryModeManual": "Manual",
   "libraryModeManualHint": "Default. The library changes only from your actions; no auto scrape on open.",
   "libraryModeAuto": "Auto backfill",
-  "libraryModeAutoHint": "On play, shallow-scrape the current track folder for missing library rows; optional bound-root filter. Download still follows play mode only.",
-  "libraryBackfillOnPlay": "Check when playing",
-  "libraryBackfillOnPlayHint": "When a track starts, list only its parent folder one level and enqueue scrape for paths missing from the library. No download here.",
+  "libraryModeAutoHint": "On play, always shallow-scrape the current track folder for missing library rows; optional bound-root filter. Download still follows play mode only.",
   "libraryBackfillBindRoots": "Bound paths",
   "libraryBackfillBindRootsHint": "Off: always scrape the playing track’s parent folder. On: scrape only if the track remote path matches a bound root prefix below.",
   "libraryBackfillRoots": "Bound network roots",
