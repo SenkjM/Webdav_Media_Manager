@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../utils/directory_walk.dart';
 import '../models/cache_policy.dart';
 import '../models/app_locale.dart';
 import '../models/app_theme_mode.dart';
 import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
+import '../models/music_library_backfill_root.dart';
 import '../models/music_stream.dart';
 import '../models/snack_duration.dart';
 import '../models/sync_interval.dart';
@@ -30,6 +32,7 @@ class SettingsService extends ChangeNotifier {
        _secure = secureStorage ?? const FlutterSecureStorage();
 
   static const _kRetention = 'cache_retention';
+  static const _kMusicCacheMaxMb = 'music_cache_max_mb';
   static const _kAppLocale = 'app_locale';
   static const _kThemeMode = 'theme_mode';
   static const _kThemeSeed = 'theme_seed_argb';
@@ -88,13 +91,25 @@ class SettingsService extends ChangeNotifier {
   static const _kDownloadKeepAlive = 'download_keep_alive';
   static const _kDownloadNomedia = 'download_nomedia';
   static const _kMusicStreamPlayMode = 'music_stream_play_mode';
+  static const _kMusicDefaultStream = 'music_default_stream';
   static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
   static const _kAudioScanSubdirs = 'audio_scan_subdirs';
+  static const _kAudioPlaylistMaxDepth = 'audio_playlist_max_depth';
   static const _kAudioStreamSidecarCover = 'audio_stream_sidecar_cover';
   static const _kAudioStreamSidecarNames = 'audio_stream_sidecar_names';
   static const _kAudioStreamPrefetchBackward = 'audio_stream_prefetch_backward';
   static const _kAudioStreamPrefetchForward = 'audio_stream_prefetch_forward';
   static const _kVideoScanSubdirs = 'video_scan_subdirs';
+  static const _kVideoPlaylistMaxDepth = 'video_playlist_max_depth';
+  /// Media-library scrape (scan task). Independent from playlist prefs.
+  static const _kMediaScanRecursive = 'media_scan_recursive';
+  static const _kMediaScanMaxDepth = 'media_scan_max_depth';
+  /// Mutual library mode: false = 手动管理 (default); true = 自动补齐.
+  static const _kMusicLibraryAutoBackfill = 'music_library_auto_backfill';
+  /// When true, play-trigger only runs if track path is under a bound root.
+  static const _kMusicLibraryBackfillBindRoots = 'music_library_backfill_bind_roots';
+  /// JSON list of [MusicLibraryBackfillRoot] for auto scrape roots.
+  static const _kMusicLibraryBackfillRoots = 'music_library_backfill_roots';
   static const _kImageSlideshow = 'image_slideshow_enabled';
   static const _kImageSlideshowSeconds = 'image_slideshow_interval_seconds';
   static const _kImageSlideshowLoop = 'image_slideshow_loop';
@@ -215,6 +230,8 @@ class SettingsService extends ChangeNotifier {
   SharedPreferences? _prefs;
   final FlutterSecureStorage _secure;
   CacheRetention _retention = CacheRetention.oneWeek;
+  /// 0 = unlimited. Capacity cap for music_cache in megabytes.
+  int _musicCacheMaxMb = 0;
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
   bool _playlistSyncEnabled = true;
@@ -237,12 +254,21 @@ class SettingsService extends ChangeNotifier {
   bool _videoBackgroundPlayback = true;
   MusicStreamPlayMode _musicStreamPlayMode = MusicStreamPlayMode.sequential;
   bool _audioStreamingEnabled = false;
+  bool _musicDefaultStream = false;
   bool _audioScanSubdirs = false;
+  int _audioPlaylistMaxDepth = 1;
   bool _audioStreamSidecarCover = false;
   String _audioStreamSidecarNames = defaultSidecarNames;
   int _audioStreamPrefetchBackward = defaultStreamPrefetch;
   int _audioStreamPrefetchForward = defaultStreamPrefetch;
   bool _videoScanSubdirs = false;
+  int _videoPlaylistMaxDepth = 1;
+  /// Scrape defaults: recursive ON, depth 1 (independent of playlist prefs).
+  bool _mediaScanRecursive = true;
+  int _mediaScanMaxDepth = 1;
+  bool _musicLibraryAutoBackfill = false;
+  bool _musicLibraryBackfillBindRoots = false;
+  List<MusicLibraryBackfillRoot> _musicLibraryBackfillRoots = const [];
   bool _imageSlideshowEnabled = defaultImageSlideshow;
   int _imageSlideshowIntervalSeconds = defaultImageSlideshowSeconds;
   bool _imageSlideshowLoop = defaultImageSlideshowLoop;
@@ -346,6 +372,12 @@ class SettingsService extends ChangeNotifier {
   }
 
   CacheRetention get retention => _retention;
+
+  /// Max music_cache size in MB; 0 means unlimited.
+  int get musicCacheMaxMb => _musicCacheMaxMb;
+
+  int get musicCacheMaxBytes =>
+      _musicCacheMaxMb <= 0 ? 0 : _musicCacheMaxMb * 1024 * 1024;
   Duration get customRetentionDuration =>
       Duration(hours: _customRetentionHours);
   int get customRetentionHours => _customRetentionHours;
@@ -415,11 +447,23 @@ class SettingsService extends ChangeNotifier {
   /// 流式音乐页的播放模式（单曲循环 / 顺序 / 列表循环）。
   MusicStreamPlayMode get musicStreamPlayMode => _musicStreamPlayMode;
 
-  /// 音乐是否走流式传输。原来只有「文件后缀管理」页能改，现在归音频流式设置页。
-  bool get audioStreamingEnabled => _audioStreamingEnabled;
+  /// Always on: media-library music default open owns cache vs stream.
+  /// Legacy pref kept for backup compatibility but no longer gates UI.
+  bool get audioStreamingEnabled => true;
 
-  /// 流式扫描是否递归子目录。音频与视频各一份，默认都关。
+  /// Network-library music tap: stream when true, cache when false.
+  bool get musicDefaultStream => _musicDefaultStream;
+
+  FileAction get musicDefaultOpenAction => _musicDefaultStream
+      ? FileAction.streamMusic
+      : FileAction.cacheMusic;
+
+  /// 音乐从网络库打开时的播放列表是否含子目录。默认关。键 `audio_scan_subdirs`。
+  /// 与视频播列表、媒体库刮削 prefs **完全独立**。
   bool get audioScanSubdirs => _audioScanSubdirs;
+
+  /// 音乐网络库播放列表最大子目录深度（默认 1）。键 `audio_playlist_max_depth`。
+  int get audioPlaylistMaxDepth => _audioPlaylistMaxDepth;
 
   /// Same-directory images when an audio stream has no embedded picture.
   /// Default off.
@@ -434,7 +478,27 @@ class SettingsService extends ChangeNotifier {
   /// Tracks after the current one (forward). Default 1.
   int get audioStreamPrefetchForward => _audioStreamPrefetchForward;
 
+  /// 视频连播 / 播放列表是否含子目录。默认关。键 `video_scan_subdirs`。
   bool get videoScanSubdirs => _videoScanSubdirs;
+
+  /// 视频播放列表最大子目录深度（默认 1）。键 `video_playlist_max_depth`。
+  int get videoPlaylistMaxDepth => _videoPlaylistMaxDepth;
+
+  /// 媒体库刮削是否递归子目录。默认**开**。键 `media_scan_recursive`。
+  bool get mediaScanRecursive => _mediaScanRecursive;
+
+  /// 媒体库刮削最大深度（默认 1）。键 `media_scan_max_depth`。
+  int get mediaScanMaxDepth => _mediaScanMaxDepth;
+
+  /// 自动补齐模式。默认关 = 手动管理。键 `music_library_auto_backfill`。
+  bool get musicLibraryAutoBackfill => _musicLibraryAutoBackfill;
+
+  /// 绑定路径开关：开则仅当前曲远端路径前缀命中绑定根时才刮削。默认关。
+  bool get musicLibraryBackfillBindRoots => _musicLibraryBackfillBindRoots;
+
+  /// 自动补齐绑定的网络根路径（仅绑定开关打开时参与过滤）。
+  List<MusicLibraryBackfillRoot> get musicLibraryBackfillRoots =>
+      List.unmodifiable(_musicLibraryBackfillRoots);
 
   /// 图片查看。幻灯片默认关。预取数量是左右各 N 张，不是整本相册。
   bool get imageSlideshowEnabled => _imageSlideshowEnabled;
@@ -544,6 +608,7 @@ class SettingsService extends ChangeNotifier {
     _themeSeedArgb =
         (_prefs!.getInt(_kThemeSeed) ?? defaultThemeSeedArgb) | 0xFF000000;
     _retention = CacheRetentionX.fromStorageKey(_prefs!.getString(_kRetention));
+    _musicCacheMaxMb = (_prefs!.getInt(_kMusicCacheMaxMb) ?? 0).clamp(0, 1024 * 1024);
     final storedHours = _prefs!.getInt(_kCustomRetentionHours);
     _customRetentionHours = _clampCustomHours(
       storedHours ?? defaultCustomRetentionHours,
@@ -562,14 +627,22 @@ class SettingsService extends ChangeNotifier {
     _videoTapAction = VideoTapActionX.fromStorageKey(
       _prefs!.getString(_kVideoTapAction),
     );
-    _audioStreamingEnabled = _resolveAudioStreamingEnabled();
-    // Persist the new-install default so a later file-action write cannot
-    // make the next launch look like "config exists, switch missing → off".
-    if (!_prefs!.containsKey(_kAudioStreamingEnabled) &&
-        _audioStreamingEnabled) {
-      await _prefs!.setBool(_kAudioStreamingEnabled, true);
-    }
+    _audioStreamingEnabled = true;
+    await _prefs!.setBool(_kAudioStreamingEnabled, true);
     _fileActions = _readFileActions();
+    // Ensure suffix-page music actions always allow streamMusic.
+    if (!_fileActions.allowMusicStreaming) {
+      _fileActions = FileActionConfig(
+        actions: _fileActions.actions,
+        allowMusicStreaming: true,
+      );
+    }
+    _musicDefaultStream =
+        _prefs!.getBool(_kMusicDefaultStream) ?? false;
+    if (!_prefs!.containsKey(_kMusicDefaultStream) &&
+        _fileActions.music == FileAction.streamMusic) {
+      _musicDefaultStream = true;
+    }
     _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
@@ -595,6 +668,9 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getString(_kMusicStreamPlayMode),
     );
     _audioScanSubdirs = _prefs!.getBool(_kAudioScanSubdirs) ?? false;
+    _audioPlaylistMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kAudioPlaylistMaxDepth) ?? WalkOptions.defaultMaxDepth,
+    );
     _audioStreamSidecarCover =
         _prefs!.getBool(_kAudioStreamSidecarCover) ?? false;
     _audioStreamSidecarNames =
@@ -606,6 +682,20 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getInt(_kAudioStreamPrefetchForward) ?? defaultStreamPrefetch,
     );
     _videoScanSubdirs = _prefs!.getBool(_kVideoScanSubdirs) ?? false;
+    _videoPlaylistMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kVideoPlaylistMaxDepth) ?? WalkOptions.defaultMaxDepth,
+    );
+    _mediaScanRecursive = _prefs!.getBool(_kMediaScanRecursive) ?? true;
+    _mediaScanMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kMediaScanMaxDepth) ?? WalkOptions.defaultMaxDepth,
+    );
+    _musicLibraryAutoBackfill =
+        _prefs!.getBool(_kMusicLibraryAutoBackfill) ?? false;
+    // Legacy `music_library_backfill_on_open` ignored: play scrape is always
+    // on while auto-backfill is enabled.
+    _musicLibraryBackfillBindRoots =
+        _prefs!.getBool(_kMusicLibraryBackfillBindRoots) ?? false;
+    _musicLibraryBackfillRoots = _readMusicLibraryBackfillRoots();
     _imageSlideshowEnabled =
         _prefs!.getBool(_kImageSlideshow) ?? defaultImageSlideshow;
     _imageSlideshowIntervalSeconds = _clampImageSlideshowSeconds(
@@ -723,6 +813,12 @@ class SettingsService extends ChangeNotifier {
     return FileTypeConfig();
   }
 
+  Future<void> setMusicCacheMaxMb(int mb) async {
+    _musicCacheMaxMb = mb.clamp(0, 1024 * 1024);
+    notifyListeners();
+    await _prefs!.setInt(_kMusicCacheMaxMb, _musicCacheMaxMb);
+  }
+
   Future<void> setRetention(CacheRetention retention) async {
     _retention = retention;
     _prefs ??= await SharedPreferences.getInstance();
@@ -803,7 +899,7 @@ class SettingsService extends ChangeNotifier {
         if (json is Map<String, dynamic>) {
           final parsed = FileActionConfig.fromJson(
             json,
-            allowMusicStreaming: streaming,
+            allowMusicStreaming: true,
           );
           if (parsed != null) return parsed;
         }
@@ -816,12 +912,12 @@ class SettingsService extends ChangeNotifier {
         _prefs!.containsKey(_kVideoTapAction)) {
       return _legacyFileActions(streaming);
     }
-    return FileActionConfig(allowMusicStreaming: streaming);
+    return FileActionConfig(allowMusicStreaming: true);
   }
 
   FileActionConfig _legacyFileActions(bool streaming) {
     return FileActionConfig(
-      allowMusicStreaming: streaming,
+      allowMusicStreaming: true,
       actions: {
         // 旧音乐语义（download / play）都是「先缓存再播」，统一映射到缓存音乐。
         FileCategory.music: FileAction.cacheMusic,
@@ -940,23 +1036,22 @@ class SettingsService extends ChangeNotifier {
 
   /// 音乐流式传输开关。旧配置键 `experimental_music_streaming`（存在
   /// `file_action_config_json` 里）保留为**兼容读**，见 [_readFileActions]。
-  Future<void> setAudioStreamingEnabled(bool enabled) async {
-    _audioStreamingEnabled = enabled;
+  Future<void> setMusicDefaultStream(bool stream) async {
+    _musicDefaultStream = stream;
     _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kAudioStreamingEnabled, enabled);
-    // 关掉时把已选中的「流式传输（音乐）」退回缓存并写回。开着时不改用户
-    // 已经选过的动作。出厂单击是缓存，不是流式；打开开关也不能把 cache
-    // 改成 streamMusic。
+    await _prefs!.setBool(_kMusicDefaultStream, stream);
+    notifyListeners();
+  }
+
+  Future<void> setAudioStreamingEnabled(bool enabled) async {
+    // Streaming is always available; ignore off requests from old backups.
+    _audioStreamingEnabled = true;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kAudioStreamingEnabled, true);
     _fileActions = FileActionConfig(
       actions: _fileActions.actions,
-      allowMusicStreaming: enabled,
+      allowMusicStreaming: true,
     );
-    if (!enabled) {
-      await _prefs!.setString(
-        _kFileActionConfig,
-        jsonEncode(_fileActions.toJson()),
-      );
-    }
     notifyListeners();
   }
 
@@ -964,6 +1059,13 @@ class SettingsService extends ChangeNotifier {
     _audioScanSubdirs = enabled;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kAudioScanSubdirs, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setAudioPlaylistMaxDepth(int value) async {
+    _audioPlaylistMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kAudioPlaylistMaxDepth, _audioPlaylistMaxDepth);
     notifyListeners();
   }
 
@@ -1007,6 +1109,118 @@ class SettingsService extends ChangeNotifier {
     await _prefs!.setBool(_kVideoScanSubdirs, enabled);
     notifyListeners();
   }
+
+  Future<void> setVideoPlaylistMaxDepth(int value) async {
+    _videoPlaylistMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kVideoPlaylistMaxDepth, _videoPlaylistMaxDepth);
+    notifyListeners();
+  }
+
+  Future<void> setMediaScanRecursive(bool enabled) async {
+    _mediaScanRecursive = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMediaScanRecursive, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setMediaScanMaxDepth(int value) async {
+    _mediaScanMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kMediaScanMaxDepth, _mediaScanMaxDepth);
+    notifyListeners();
+  }
+
+  Future<void> setMusicLibraryAutoBackfill(bool enabled) async {
+    _musicLibraryAutoBackfill = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMusicLibraryAutoBackfill, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setMusicLibraryBackfillBindRoots(bool enabled) async {
+    _musicLibraryBackfillBindRoots = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMusicLibraryBackfillBindRoots, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setMusicLibraryBackfillRoots(
+    List<MusicLibraryBackfillRoot> roots,
+  ) async {
+    final deduped = <String, MusicLibraryBackfillRoot>{};
+    for (final r in roots) {
+      if (r.accountId.isEmpty) continue;
+      // Re-parse so path normalization matches [MusicLibraryBackfillRoot.fromJson].
+      final normalized = MusicLibraryBackfillRoot.fromJson(r.toJson());
+      if (normalized.accountId.isEmpty) continue;
+      deduped[normalized.identityKey] = normalized;
+    }
+    _musicLibraryBackfillRoots = deduped.values.toList(growable: false);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(
+      _kMusicLibraryBackfillRoots,
+      jsonEncode([for (final r in _musicLibraryBackfillRoots) r.toJson()]),
+    );
+    notifyListeners();
+  }
+
+  Future<void> addMusicLibraryBackfillRoot(MusicLibraryBackfillRoot root) async {
+    await setMusicLibraryBackfillRoots([
+      ..._musicLibraryBackfillRoots,
+      root,
+    ]);
+  }
+
+  Future<void> removeMusicLibraryBackfillRoot(
+    MusicLibraryBackfillRoot root,
+  ) async {
+    await setMusicLibraryBackfillRoots([
+      for (final r in _musicLibraryBackfillRoots)
+        if (r != root) r,
+    ]);
+  }
+
+  List<MusicLibraryBackfillRoot> _readMusicLibraryBackfillRoots() {
+    final raw = _prefs!.getString(_kMusicLibraryBackfillRoots);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final out = <MusicLibraryBackfillRoot>[];
+      final seen = <String>{};
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        final root = MusicLibraryBackfillRoot.fromJson(
+          Map<String, dynamic>.from(item),
+        );
+        if (root.accountId.isEmpty) continue;
+        if (!seen.add(root.identityKey)) continue;
+        out.add(root);
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Walk options for video playlist / 连播 (prefs: video_scan_subdirs + video_playlist_max_depth).
+  WalkOptions get videoPlaylistWalkOptions => WalkOptions(
+    includeSubdirs: videoScanSubdirs,
+    maxDepth: videoPlaylistMaxDepth,
+  );
+
+  /// Walk options for music opened from the network library.
+  WalkOptions get audioPlaylistWalkOptions => WalkOptions(
+    includeSubdirs: audioScanSubdirs,
+    maxDepth: audioPlaylistMaxDepth,
+  );
+
+  /// Walk options for media-library scrape tasks (executor lands later).
+  WalkOptions get mediaScanWalkOptions => WalkOptions(
+    includeSubdirs: mediaScanRecursive,
+    maxDepth: mediaScanMaxDepth,
+  );
 
   Future<void> setImageSlideshowEnabled(bool enabled) async {
     _imageSlideshowEnabled = enabled;
@@ -1389,11 +1603,20 @@ class SettingsService extends ChangeNotifier {
     'music_stream_play_mode': _musicStreamPlayMode.storageKey,
     'audio_streaming_enabled': _audioStreamingEnabled,
     'audio_scan_subdirs': _audioScanSubdirs,
+    'audio_playlist_max_depth': _audioPlaylistMaxDepth,
     'audio_stream_sidecar_cover': _audioStreamSidecarCover,
     'audio_stream_sidecar_names': _audioStreamSidecarNames,
     'audio_stream_prefetch_backward': _audioStreamPrefetchBackward,
     'audio_stream_prefetch_forward': _audioStreamPrefetchForward,
     'video_scan_subdirs': _videoScanSubdirs,
+    'video_playlist_max_depth': _videoPlaylistMaxDepth,
+    'media_scan_recursive': _mediaScanRecursive,
+    'media_scan_max_depth': _mediaScanMaxDepth,
+    'music_library_auto_backfill': _musicLibraryAutoBackfill,
+    'music_library_backfill_bind_roots': _musicLibraryBackfillBindRoots,
+    'music_library_backfill_roots': [
+      for (final r in _musicLibraryBackfillRoots) r.toJson(),
+    ],
     'image_slideshow_enabled': _imageSlideshowEnabled,
     'image_slideshow_interval_seconds': _imageSlideshowIntervalSeconds,
     'image_slideshow_loop': _imageSlideshowLoop,
@@ -1429,6 +1652,9 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> importFromBackup(Map<String, dynamic> json) async {
     _prefs ??= await SharedPreferences.getInstance();
+    if (json['music_cache_max_mb'] is num) {
+      await setMusicCacheMaxMb((json['music_cache_max_mb'] as num).toInt());
+    }
     if (json['cache_retention'] != null) {
       await setRetention(
         CacheRetentionX.fromStorageKey(json['cache_retention'] as String?),
@@ -1458,19 +1684,16 @@ class SettingsService extends ChangeNotifier {
       );
     }
     if (json['file_action_config'] is Map) {
-      final allow = json['audio_streaming_enabled'] is bool
-          ? json['audio_streaming_enabled'] as bool
-          : _audioStreamingEnabled;
       final parsed = FileActionConfig.fromJson(
         Map<String, dynamic>.from(json['file_action_config'] as Map),
-        allowMusicStreaming: allow,
+        allowMusicStreaming: true,
       );
       if (parsed != null) await setFileActions(parsed);
     } else if (json['music_tap_action'] != null ||
         json['video_tap_action'] != null) {
       await setFileActions(
         FileActionConfig(
-          allowMusicStreaming: json['audio_streaming_enabled'] == true,
+          allowMusicStreaming: true,
           actions: {
             FileCategory.music: FileAction.cacheMusic,
             FileCategory.video:
@@ -1538,6 +1761,11 @@ class SettingsService extends ChangeNotifier {
     if (json['audio_scan_subdirs'] is bool) {
       await setAudioScanSubdirs(json['audio_scan_subdirs'] as bool);
     }
+    if (json['audio_playlist_max_depth'] is num) {
+      await setAudioPlaylistMaxDepth(
+        (json['audio_playlist_max_depth'] as num).toInt(),
+      );
+    }
     if (json['audio_stream_sidecar_cover'] is bool) {
       await setAudioStreamSidecarCover(
         json['audio_stream_sidecar_cover'] as bool,
@@ -1560,6 +1788,38 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['video_scan_subdirs'] is bool) {
       await setVideoScanSubdirs(json['video_scan_subdirs'] as bool);
+    }
+    if (json['video_playlist_max_depth'] is num) {
+      await setVideoPlaylistMaxDepth(
+        (json['video_playlist_max_depth'] as num).toInt(),
+      );
+    }
+    if (json['media_scan_recursive'] is bool) {
+      await setMediaScanRecursive(json['media_scan_recursive'] as bool);
+    }
+    if (json['media_scan_max_depth'] is num) {
+      await setMediaScanMaxDepth((json['media_scan_max_depth'] as num).toInt());
+    }
+    if (json['music_library_auto_backfill'] is bool) {
+      await setMusicLibraryAutoBackfill(
+        json['music_library_auto_backfill'] as bool,
+      );
+    }
+    // Legacy on-play / on-open keys ignored (always play-scrape in auto mode).
+    if (json['music_library_backfill_bind_roots'] is bool) {
+      await setMusicLibraryBackfillBindRoots(
+        json['music_library_backfill_bind_roots'] as bool,
+      );
+    }
+    if (json['music_library_backfill_roots'] is List) {
+      final roots = <MusicLibraryBackfillRoot>[];
+      for (final item in json['music_library_backfill_roots'] as List) {
+        if (item is! Map) continue;
+        roots.add(
+          MusicLibraryBackfillRoot.fromJson(Map<String, dynamic>.from(item)),
+        );
+      }
+      await setMusicLibraryBackfillRoots(roots);
     }
     if (json['image_slideshow_enabled'] is bool) {
       await setImageSlideshowEnabled(json['image_slideshow_enabled'] as bool);

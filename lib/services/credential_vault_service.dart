@@ -434,10 +434,16 @@ class CredentialVaultService extends ChangeNotifier {
         restored++;
       }
 
-      final existing = _accounts.accounts.cast<WebDavAccount?>().firstWhere(
-        (a) => a?.id == entry.id || a?.url == entry.url,
-        orElse: () => null,
-      );
+      // Name is the logical identity; also accept id / url hits so re-pull
+      // updates the same mount instead of creating a same-name twin.
+      final existing = _accounts.accountById(entry.id) ??
+          (entry.name.trim().isEmpty
+              ? null
+              : _accounts.accountNamed(entry.name)) ??
+          _accounts.accounts.cast<WebDavAccount?>().firstWhere(
+            (a) => a?.url == entry.url && entry.url.trim().isNotEmpty,
+            orElse: () => null,
+          );
       if (existing == null) {
         await _accounts.addAccount(
           name: entry.name,
@@ -447,9 +453,14 @@ class CredentialVaultService extends ChangeNotifier {
         );
         imported++;
       } else {
+        final nextName =
+            entry.name.isEmpty ? existing.name : entry.name;
+        // If vault wants a name already used by a *different* row, keep local
+        // name so uniqueness holds.
+        final nameClash = _accounts.accountNamed(nextName, exceptId: existing.id);
         await _accounts.updateAccount(
           id: existing.id,
-          name: entry.name.isEmpty ? existing.name : entry.name,
+          name: nameClash == null ? nextName : existing.name,
           url: entry.url,
           username: entry.username,
           // Never overwrite a working local password with an empty recovery.
@@ -511,10 +522,10 @@ class CredentialVaultService extends ChangeNotifier {
       );
     }
 
-    final existing = _accounts.accounts.cast<WebDavAccount?>().firstWhere(
-      (a) => a?.id == entry.id,
-      orElse: () => null,
-    );
+    final existing = _accounts.accountById(entry.id) ??
+        (entry.name.trim().isEmpty
+            ? null
+            : _accounts.accountNamed(entry.name));
     if (existing == null) {
       final account = await _accounts.addAccount(
         name: entry.name,
@@ -527,9 +538,11 @@ class CredentialVaultService extends ChangeNotifier {
       await _accounts.saveDriverConfig(account.id, merged);
       return (imported: true, restoredSecrets: restoredSecrets);
     }
+    final nextName = entry.name.isEmpty ? existing.name : entry.name;
+    final nameClash = _accounts.accountNamed(nextName, exceptId: existing.id);
     await _accounts.updateAccount(
       id: existing.id,
-      name: entry.name.isEmpty ? existing.name : entry.name,
+      name: nameClash == null ? nextName : existing.name,
       url: existing.url,
       username: existing.username,
       remotePath: entry.remotePath,

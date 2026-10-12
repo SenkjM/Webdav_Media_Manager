@@ -1,19 +1,30 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/library_track.dart';
 import '../l10n/generated/app_localizations.dart';
+import '../models/library_track.dart';
 import '../models/playlist.dart';
 import '../models/playlist_sentinels.dart';
 import '../models/webdav_item.dart';
+import '../models/webdav_stream.dart';
+import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/playlist_service.dart';
-import '../theme/app_theme.dart';
-import '../widgets/meta_text.dart';
+import '../services/stream_cover_reader.dart';
+import '../services/task_queue_service.dart';
+import '../services/webdav_service.dart';
+import '../utils/app_snack.dart';
+import '../utils/task_error.dart';
 import '../widgets/library_cover_art.dart';
+import '../widgets/meta_text.dart';
+import '../widgets/track_status_chip.dart';
+import '../widgets/track_status_dot.dart';
+import 'webdav_folder_picker_screen.dart';
 
 class PlaylistDetailScreen extends StatelessWidget {
   const PlaylistDetailScreen({super.key, required this.playlistId});
@@ -33,19 +44,16 @@ class PlaylistDetailScreen extends StatelessWidget {
       );
     }
 
-    final tracks = <LibraryTrack>[];
-    final missing = <PlaylistEntry>[];
+    // Keep entry order. Resolve by musicId (single source of truth for
+    // remote_missing / cache / streamable); missing → 「库中暂无」, not a red dot.
+    final resolved = <LibraryTrack?>[];
+    final playableTracks = <LibraryTrack>[];
     for (final e in pl.entries) {
-      // Resolve by authoritative identity first (musicId); fall back to
-      // sourceName+remotePath for entries whose hash no longer matches.
       final t =
           library.findByMusicId(e.identityKey) ??
           library.find(e.sourceName, e.remotePath);
-      if (t != null) {
-        tracks.add(t);
-      } else {
-        missing.add(e);
-      }
+      resolved.add(t);
+      if (t != null) playableTracks.add(t);
     }
 
     return Scaffold(
@@ -74,36 +82,33 @@ class PlaylistDetailScreen extends StatelessWidget {
                 ),
               ),
             )
-          : ListView(
-              children: [
-                for (var i = 0; i < tracks.length; i++)
-                  _PlaylistTrackTile(
-                    track: tracks[i],
-                    playlistTracks: tracks,
-                    onRemove: () => service.removeTrack(
-                      pl.id,
-                      PlaylistEntry(
-                        sourceName: tracks[i].sourceName,
-                        remotePath: tracks[i].remotePath,
-                        musicId: tracks[i].musicId,
-                        cueTrackIndex: tracks[i].cueTrackIndex,
-                      ),
+          : ListView.builder(
+              itemCount: pl.entries.length,
+              itemBuilder: (context, i) {
+                final entry = pl.entries[i];
+                final track = resolved[i];
+                if (track == null) {
+                  return _MissingPlaylistTile(
+                    entry: entry,
+                    onRemove: () => service.removeTrack(pl.id, entry),
+                  );
+                }
+                return _PlaylistTrackTile(
+                  playlistId: pl.id,
+                  entry: entry,
+                  track: track,
+                  playlistTracks: playableTracks,
+                  onRemove: () => service.removeTrack(
+                    pl.id,
+                    PlaylistEntry(
+                      sourceName: track.sourceName,
+                      remotePath: track.remotePath,
+                      musicId: track.musicId,
+                      cueTrackIndex: track.cueTrackIndex,
                     ),
                   ),
-                for (final e in missing)
-                  ListTile(
-                    leading: const Icon(Icons.music_off_outlined),
-                    title: Text(e.title ?? e.remotePath.split('/').last),
-                    subtitle: MetaText(
-                      AppLocalizations.of(context)!
-                          .playlistMissingInLibrary(e.sourceName),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.remove_circle_outline),
-                      onPressed: () => service.removeTrack(pl.id, e),
-                    ),
-                  ),
-              ],
+                );
+              },
             ),
     );
   }
@@ -156,13 +161,44 @@ class PlaylistDetailScreen extends StatelessWidget {
   }
 }
 
+/// Entry whose musicId is not in the library — parallel to library, not a
+/// remote-missing red dot.
+class _MissingPlaylistTile extends StatelessWidget {
+  const _MissingPlaylistTile({required this.entry, required this.onRemove});
+
+  final PlaylistEntry entry;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return ListTile(
+      leading: Icon(
+        Icons.music_off_outlined,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      title: Text(entry.title ?? entry.remotePath.split('/').last),
+      subtitle: MetaText(l10n.playlistMissingInLibrary(entry.sourceName)),
+      trailing: IconButton(
+        icon: const Icon(Icons.remove_circle_outline),
+        onPressed: onRemove,
+      ),
+      onLongPress: onRemove,
+    );
+  }
+}
+
 class _PlaylistTrackTile extends StatelessWidget {
   const _PlaylistTrackTile({
+    required this.playlistId,
+    required this.entry,
     required this.track,
     required this.playlistTracks,
     required this.onRemove,
   });
 
+  final String playlistId;
+  final PlaylistEntry entry;
   final LibraryTrack track;
   final List<LibraryTrack> playlistTracks;
   final VoidCallback onRemove;
@@ -170,7 +206,33 @@ class _PlaylistTrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
+    final downloads = context.watch<TaskQueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
+    final task = downloads.taskForRemote(
+      track.sourceName,
+      track.effectiveAudioRemotePath,
+    );
+    // read: avoid rebuild every position tick (same as library list).
+    final audio = context.read<AudioPlayerService>();
+    final sourceBound = context.read<AccountsService>().isSourceBound(
+      track.sourceName,
+    );
+    final remoteMissing = entry.remoteMissing || track.remoteMissing;
+    final state = libraryRowUiState(
+      downloads: downloads,
+      track: track,
+      playingRemotePath: audio.currentRemotePath,
+      playingSourceName: audio.currentSourceName,
+      entryRemoteMissing: entry.remoteMissing,
+    );
+    final showChip =
+        state == TrackUiState.remoteMissing ||
+        state == TrackUiState.queued ||
+        state == TrackUiState.downloading ||
+        state == TrackUiState.error ||
+        state == TrackUiState.playing;
+    final isDownloading = state == TrackUiState.downloading;
+
     return ListTile(
       leading: LibraryCoverArt.forTrack(
         track: track,
@@ -180,39 +242,48 @@ class _PlaylistTrackTile extends StatelessWidget {
       ),
       title: Text(
         track.displayTitle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: isLocal
               ? Theme.of(context).colorScheme.onSurface
               : Theme.of(context).colorScheme.onSurfaceVariant,
+          fontWeight: FontWeight.w500,
+          fontSize: 14,
         ),
       ),
       subtitle: Text(
         [
           if (track.isCueVirtual)
             AppLocalizations.of(context)!.cueMultiSliceLabel,
-          if (!isLocal) AppLocalizations.of(context)!.notDownloaded,
+          if (!sourceBound) AppLocalizations.of(context)!.sourceUnbound,
+          if (isDownloading && task != null && task.progress > 0)
+            AppLocalizations.of(context)!
+                .downloadingPercent((task.progress * 100).toStringAsFixed(0)),
           track.displayArtistFor(AppLocalizations.of(context)!),
           if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
         ].join(' · '),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.outline,
+          fontSize: 12,
+        ),
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Tooltip(
-            message: isLocal
-                ? AppLocalizations.of(context)!.downloaded
-                : AppLocalizations.of(context)!.tapToDownload,
-            child: Container(
-              width: 10,
-              height: 10,
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isLocal
-                    ? AppColors.localReady
-                    : AppColors.remotePlaceholder,
+          if (showChip)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: TrackStatusChip(
+                state: state,
+                progress: isDownloading ? task?.progress : null,
               ),
             ),
+          TrackStatusDot(
+            remoteMissing: remoteMissing,
+            isLocal: isLocal,
           ),
           IconButton(
             icon: const Icon(Icons.remove_circle_outline),
@@ -220,84 +291,190 @@ class _PlaylistTrackTile extends StatelessWidget {
           ),
         ],
       ),
-      onTap: () => _onTap(context, isLocal: isLocal),
+      onTap: () {
+        if (remoteMissing && !isLocal) {
+          unawaited(_onRemoteMissingTap(context));
+          return;
+        }
+        unawaited(_onTap(context, isLocal: isLocal));
+      },
       onLongPress: onRemove,
     );
   }
 
   Future<void> _onTap(BuildContext context, {required bool isLocal}) async {
-    if (!isLocal) {
-      await enqueueLibraryTrackDownload(context, track);
+    final accountsService = context.read<AccountsService>();
+    if (!accountsService.isSourceBound(track.sourceName)) {
+      AppSnack.error(
+        context,
+        unboundSourceMessage(AppLocalizations.of(context)!, track.sourceName),
+      );
       return;
     }
+    final accountId = accountsService.idForSource(track.sourceName) ?? '';
     final player = context.read<AudioPlayerService>();
     final cache = context.read<CacheService>();
-    final local = await cache.localPathIfCached(
-      track.effectiveAudioRemotePath,
-      sourceName: track.sourceName,
-    );
-    if (local == null) {
-      if (context.mounted) await enqueueLibraryTrackDownload(context, track);
-      return;
-    }
-    final list = <TrackInfo>[];
+    final playlistInfos = <TrackInfo>[];
     for (final t in playlistTracks) {
+      if (t.isCueVirtual && t != track) {
+        final path = await cache.localPathIfCached(
+          t.effectiveAudioRemotePath,
+          sourceName: t.sourceName,
+        );
+        if (path == null) continue;
+        playlistInfos.add(
+          libraryTrackToTrackInfo(
+            t,
+            path,
+            accountsService.idForSource(t.sourceName) ?? '',
+          ),
+        );
+        continue;
+      }
       final path = await cache.localPathIfCached(
         t.effectiveAudioRemotePath,
         sourceName: t.sourceName,
       );
-      if (path == null) continue;
-      list.add(
-        TrackInfo(
-          sourceName: t.sourceName,
-          remotePath: t.remotePath,
-          fileName: t.fileName,
-          localPath: path,
-          title: t.title,
-          artist: t.artist,
-          album: t.album,
-          duration: t.durationMs != null
-              ? Duration(milliseconds: t.durationMs!)
-              : null,
-          coverPath: t.coverPath,
-          cueRemotePath: t.cueRemotePath,
-          cueTrackIndex: t.cueTrackIndex,
-          audioRemotePath: t.audioRemotePath,
-          clipStart: t.clipStartMs != null
-              ? Duration(milliseconds: t.clipStartMs!)
-              : null,
-          clipEnd: t.clipEndMs != null
-              ? Duration(milliseconds: t.clipEndMs!)
-              : null,
-          cacheGroupId: t.cacheGroupId,
+      playlistInfos.add(
+        libraryTrackToTrackInfo(
+          t,
+          path,
+          accountsService.idForSource(t.sourceName) ?? accountId,
         ),
       );
     }
-    final info = TrackInfo(
+    final local = await cache.localPathIfCached(
+      track.effectiveAudioRemotePath,
       sourceName: track.sourceName,
-      remotePath: track.remotePath,
-      fileName: track.fileName,
-      localPath: local,
-      title: track.title,
-      artist: track.artist,
-      album: track.album,
-      duration: track.durationMs != null
-          ? Duration(milliseconds: track.durationMs!)
-          : null,
-      coverPath: track.coverPath,
-      cueRemotePath: track.cueRemotePath,
-      cueTrackIndex: track.cueTrackIndex,
-      audioRemotePath: track.audioRemotePath,
-      clipStart: track.clipStartMs != null
-          ? Duration(milliseconds: track.clipStartMs!)
-          : null,
-      clipEnd: track.clipEndMs != null
-          ? Duration(milliseconds: track.clipEndMs!)
-          : null,
-      cacheGroupId: track.cacheGroupId,
     );
-    if (list.isEmpty) list.add(info);
+    final info = libraryTrackToTrackInfo(track, local, accountId);
+    if (playlistInfos.isEmpty) playlistInfos.add(info);
     if (!context.mounted) return;
-    await player.playTrack(info, playlist: list);
+    await player.playTrack(info, playlist: playlistInfos);
+    if (player.error != null && context.mounted) {
+      final err = TaskError.classify(StateError(player.error!));
+      AppSnack.error(
+        context,
+        err.code == 'err.cloud.notFound'
+            ? AppLocalizations.of(context)!.trackStateRemoteMissing
+            : player.error!,
+      );
+    }
+  }
+
+  Future<void> _onRemoteMissingTap(BuildContext context) async {
+    final l10n = AppLocalizations.of(context)!;
+    final accounts = context.read<AccountsService>();
+    final accountId = accounts.idForSource(track.sourceName);
+    if (accountId == null) {
+      AppSnack.error(context, unboundSourceMessage(l10n, track.sourceName));
+      return;
+    }
+    AppSnack.show(context, l10n.remoteMissingRetrying);
+    try {
+      final source = await context.read<WebDavService>().resolveStreamSource(
+        accountId: accountId,
+        remotePath: track.effectiveAudioRemotePath,
+        name: track.fileName,
+        kind: StreamKind.music,
+      );
+      if (!context.mounted) return;
+      if (source == null || source.uri.isEmpty) {
+        throw StateError('err.cloud.notFound|missing');
+      }
+      await context.read<LibraryService>().clearRemoteMissing(
+        sourceName: track.sourceName,
+        remotePath: track.remotePath,
+      );
+      await context.read<PlaylistService>().setRemoteMissingForIdentities(
+        identityKeys: [entry.identityKey, track.musicId],
+        missing: false,
+      );
+      if (!context.mounted) return;
+      await _onTap(context, isLocal: false);
+    } catch (e) {
+      if (!context.mounted) return;
+      final code = TaskError.classify(e).code;
+      if (code != 'err.cloud.notFound') {
+        AppSnack.error(context, TaskError.classify(e).detail);
+        return;
+      }
+      final action = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.remoteMissingTitle),
+          content: Text(l10n.remoteMissingBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'cancel'),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'delete'),
+              child: Text(l10n.delete),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'redirect'),
+              child: Text(l10n.remoteMissingRedirect),
+            ),
+          ],
+        ),
+      );
+      if (!context.mounted || action == null || action == 'cancel') return;
+      if (action == 'delete') {
+        // Playlist parallel: remove the entry, do not destroy the library row.
+        onRemove();
+        return;
+      }
+      if (action == 'redirect') {
+        final picked = await pickWebDavFile(
+          context,
+          accountId: accountId,
+          musicOnly: true,
+        );
+        if (!context.mounted || picked == null) return;
+        final library = context.read<LibraryService>();
+        final playlists = context.read<PlaylistService>();
+        final next = await library.retargetTrack(
+          track: track,
+          newRemotePath: picked.path,
+          newFileName: picked.name,
+        );
+        await playlists.replaceTrack(
+          playlistId,
+          entry,
+          PlaylistEntry(
+            sourceName: next.sourceName,
+            remotePath: next.remotePath,
+            musicId: next.musicId,
+            title: next.title ?? next.displayTitle,
+            durationMs: next.durationMs,
+            cueTrackIndex: next.cueTrackIndex,
+            remoteMissing: false,
+          ),
+        );
+        try {
+          final source = await context.read<WebDavService>().resolveStreamSource(
+            accountId: accountId,
+            remotePath: next.remotePath,
+            name: next.fileName,
+            kind: StreamKind.music,
+          );
+          if (source != null && source.uri.isNotEmpty && context.mounted) {
+            final tags = await StreamCoverReader().extractTags(source);
+            if (tags != null && context.mounted) {
+              await library.ingestFromTags(
+                sourceName: next.sourceName,
+                remotePath: next.remotePath,
+                fileName: next.fileName,
+                tags: tags,
+              );
+            }
+          }
+        } catch (_) {
+          // Redirect succeeded even if tag re-read fails.
+        }
+      }
+    }
   }
 }

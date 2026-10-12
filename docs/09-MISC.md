@@ -22,7 +22,7 @@
 | 播放 / 媒体会话 / CUE 裁切 / 起播 | `music_audio_handler.dart`、`audio_player_service.dart`（[05](05-AUDIO-PLAYBACK.md)） |
 | 视频控件 / 手势 / 倍速 / 队列 | `video_player_screen.dart`、`video_queue_controller.dart`、`video_playback_service.dart`（[06](06-VIDEO-PLAYBACK.md)） |
 | 视频字幕（同目录外挂 / 内嵌文本 / 当集导入） | `utils/subtitle_sidecar.dart`、`utils/subtitle_encoding.dart`、`services/video_subtitle_binder.dart`、`widgets/video_subtitle_sheet.dart`、`screens/subtitle_remote_picker_screen.dart`（[06 §8](06-VIDEO-PLAYBACK.md)） |
-| 下载队列 / 入队 / ingest / 相册目标 | `download_queue_service.dart`、`library_service.dart`、`models/download_task.dart`（[04](04-DOWNLOAD-QUEUE.md)） |
+| 任务队列 / 入队 / ingest / 相册目标 | `task_queue_service.dart`、`library_service.dart`、`models/queue_task.dart`（[04](04-DOWNLOAD-QUEUE.md)、[99 §17](99-IN-PROGRESS.md)） |
 | 网络库浏览 / 多选 / 行操作 | `network_library_screen.dart`、`library_actions.dart`（[02](02-NETWORK-LIBRARY.md)） |
 | 音乐库 / 销毁 / 多选删除 | `library_screen.dart`、`library_actions.dart`（[03](03-MUSIC-LIBRARY.md)） |
 | 缓存路径 / 过期清理 / 已缓存判定 | `cache_service.dart`（[01](01-DATA-MODEL.md)） |
@@ -179,6 +179,8 @@ flutter test                   # 或全量
 ```
 
 ## 6. 已知未修 / 待定
+
+> **占位（开发中）**：媒体库 / 任务队列 / 播放合一重大改动进行中（设置顶栏「媒体库」、错误模型、任务 kind、播放合一等）；语义与落地顺序见 [99 §17](99-IN-PROGRESS.md)。
 
 | 项 | 状态 |
 |----|------|

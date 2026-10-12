@@ -28,7 +28,7 @@
   "library": "音乐库",
   "playlists": "歌单",
   "networkLibrary": "网络库",
-  "downloadQueue": "下载队列",
+  "downloadQueue": "任务队列",
   "aboutAgpl": "关于 / AGPL",
   "exitApp": "退出应用",
   "cancel": "取消",
@@ -81,20 +81,20 @@
   "confirmDeleteServer": "确定删除「{name}」？其曲目会变成「未绑定网盘」，加回同名即可恢复。",
   "audioStreamingTitle": "音频流式",
   "streamPlayback": "流式播放",
-  "streamPlaybackHint": "音乐不下载到本地，直接从网盘边听边传。",
+  "streamPlaybackHint": "串流时用临时预载；有本地缓存则优先播缓存。",
   "streamMusic": "流式传输音乐",
   "streamMusicHint": "打开后音乐的文件动作里可以选「流式传输（音乐）」。关掉时该动作会被退回默认。",
   "scanList": "列表扫描",
   "scanListHint": "决定流式播放的「上一首 / 下一首」列表里都有什么。",
   "scanSubdirectories": "搜索子目录",
-  "scanSubdirectoriesHint": "打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。",
+  "scanSubdirectoriesHint": "打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。",
   "streamSidecarCover": "同目录封面",
   "streamSidecarCoverHint": "按文件名在同一目录找封面图。默认关闭。找不到时仍显示占位图。",
   "streamSidecarNames": "封面文件名",
   "streamSidecarNamesHint": "用逗号或空格分隔。歌曲文件名（不含扩展名）总会再试一次。只认 jpg、jpeg、png、webp。同名只是扩展名不同时优先 jpg。斜杠会被去掉，不会进子目录。",
   "streamPrefetchBackward": "向前预载",
   "streamPrefetchForward": "向后预载",
-  "streamPrefetchHint": "一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。",
+  "streamPrefetchHint": "向前／向后各几首。串流播放时写入临时预载；缓存播放时按同一窗口后台缓存。0 表示该方向不预载。",
   "downloadPending": "等待中",
   "downloadActive": "下载中",
   "downloadCompleted": "已完成",
@@ -105,8 +105,8 @@
   "cancelAll": "全部取消",
   "clearCompleted": "清除已完成",
   "more": "更多",
-  "noDownloadTasks": "暂无下载任务",
-  "queueCleared": "下载队列已清空",
+  "noDownloadTasks": "暂无任务",
+  "queueCleared": "任务队列已清空",
   "clearAllQueue": "清除所有队列",
   "cueAlbum": "CUE",
   "songCount": "{count} 首",
@@ -122,6 +122,28 @@
   "accountName": "名称",
   "accountNameHint": "曲库按此名称绑定，必须唯一；改名等同换盘",
   "accountNameTaken": "该名称已被占用，建议换一个",
+  "accountNameCleanupTitle": "清理同名账号",
+  "accountNameCleanupHeading": "存在同名账号",
+  "accountNameCleanupBody": "请删除多余的同名账号，只保留每个名称对应的一个。清理完成后即可继续使用。",
+  "accountNameCleanupGroup": "名称「{name}」有多条",
+  "@accountNameCleanupGroup": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "accountNameCleanupActive": "当前使用中",
+  "accountNameCleanupDeleteTitle": "删除此账号？",
+  "accountNameCleanupDeleteContent": "将删除「{name}」及其本地凭证。曲库里绑定该名称的条目会变为未绑定，直到你添加同名账号。",
+  "@accountNameCleanupDeleteContent": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "accountNameCleanupDetailTitle": "账号详情",
+  "accountNameCleanupId": "编号",
+  "accountNameCleanupShowPassword": "显示密码",
+  "accountNameCleanupHidePassword": "隐藏密码",
+  "accountNameCleanupNoPassword": "（未保存密码）",
   "accountType": "类型",
   "accountRemotePath": "远程路径",
   "accountRemotePathHint": "浏览根，默认 /（空置也是 /）",
@@ -155,7 +177,7 @@
   "accountBindingHint": "曲目按「名称 + 路径」绑定；改名等同于换盘。",
   "manageAccounts": "管理多服务器账号",
   "manageAccountsSubtitle": "添加 / 编辑 / 删除 WebDAV 服务器",
-  "downloadQueueSettings": "下载队列",
+  "downloadQueueSettings": "任务队列",
   "downloadQueueSettingsSubtitle": "断点续传的临时文件保留上限与清理",
   "encryptionSettings": "加密设置",
   "encryptionSettingsSubtitle": "Crypt 顺序流与 secretbox 引擎",
@@ -200,7 +222,7 @@
   "copyTo": "复制到",
   "moveTo": "移动到",
   "downloadAction": "下载",
-  "fileQueuedOrSaved": "该文件已在下载队列或已下载",
+  "fileQueuedOrSaved": "该文件已在任务队列或已下载",
   "fileQueuedOrSavedShort": "该文件已在队列或已保存",
   "accountRequired": "请先添加 WebDAV 服务器",
   "syncTitle": "同步与备份",
@@ -293,7 +315,7 @@
   "playlistNotFound": "歌单不存在",
   "playlistAddFromLibrary": "从音乐库添加",
   "playlistEmpty": "歌单为空，可从音乐库添加。",
-  "playlistMissingInLibrary": "暂无 · {name}",
+  "playlistMissingInLibrary": "库中暂无 · {name}",
   "libraryEmpty": "音乐库中没有曲目",
   "notDownloaded": "未下载",
   "downloaded": "已下载",
@@ -350,6 +372,8 @@
   "tagsUpdatedFromLocal": "已从本地文件更新标签",
   "tagsNeedDownloadFirst": "该曲目尚未缓存，请先下载后再更新标签",
   "updateThisTrackTags": "更新此曲标签",
+  "playerSourceCached": "缓存",
+  "playerSourceStreaming": "流式",
   "nowPlaying": "正在播放",
   "noTrackSelected": "未选择曲目",
   "dlSavedToGallery": "已存入系统相册",
@@ -369,12 +393,12 @@
   "overwriteLibraryNote": "本地索引、标签与尚未同步的改动会被云端那份替换；已下载的音频、封面与缓存不会删除。",
   "overwriteLibraryAction": "覆写",
   "overwriteLibraryPhrase": "如果确认覆写请输入 YES",
-  "destroyLibraryTitle": "销毁音乐库",
-  "destroyLibraryBody": "会逐条销毁本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。",
-  "destroyLibraryNote": "删除记录会在下次同步时上传到云端，云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。",
-  "destroyLibraryAction": "销毁",
-  "destroyLibraryPhrase": "如果确认销毁请输入 YES",
-  "destroyLibraryDone": "已销毁 {count} 首；下次同步上传删除记录，定时同步已关闭",
+  "destroyLibraryTitle": "删除音乐库？",
+  "destroyLibraryBody": "会逐条删除本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。",
+  "destroyLibraryNote": "删除记录会在下次同步时上传；云端重建无法恢复已删除内容。之后会关闭自动同步。",
+  "destroyLibraryAction": "删除音乐库",
+  "destroyLibraryPhrase": "输入 YES 确认删除",
+  "destroyLibraryDone": "已删除 {count} 首曲目；删除记录将在下次同步上传，定时同步已关闭",
   "readCloudLibraryFailed": "读取云端库失败：{error}",
   "tidyCloudLibraryTitle": "整理云端音乐库",
   "missingFragments": "有分片缺失，只能重建。",
@@ -472,13 +496,13 @@
   "webdavErrorPerm": "权限错误",
   "webdavErrorGeneric": "操作失败",
   "dialogOk": "确定",
-  "destroyInProgress": "正在销毁",
+  "destroyInProgress": "删除中…",
   "processedOfTotal": "已处理 {processed} / {total} 首",
   "@processedOfTotal": {
     "processed": {},
     "total": {}
   },
-  "destroyStopHint": "「终止」或直接返回都会停在当前这首之后；已经销毁的不会恢复。",
+  "destroyStopHint": "停止或返回会在当前曲目结束后生效；已删除的曲目不会恢复。",
   "actionStop": "终止",
   "tagRefreshInProgress": "正在更新标签",
   "tagRefreshStopHint": "只读取本地缓存；终止后保留已更新的曲目。",
@@ -621,7 +645,7 @@
   "locationDownloads": "下载目录",
   "locationDownloadsSubdir": "下载目录/{dir}",
   "dlChannelProgressName": "下载进度",
-  "dlChannelProgressDesc": "下载队列进行中的进度",
+  "dlChannelProgressDesc": "任务队列进行中的进度",
   "dlChannelDoneName": "下载完成",
   "dlChannelDoneDesc": "全部下载完成后的结果汇总",
   "dlDoneCancelledCount": "取消 {count}",
@@ -632,7 +656,7 @@
   "dlErrCueMalformed": "无法解析的 CUE：需要标准 FILE + TRACK/INDEX",
   "dlErrOffline": "网络不可用",
   "dlErrQueueCleared": "队列已清空",
-  "dlErrQueueSchemaDrift": "下载队列数据库结构过旧（{raw}）。请重启应用以升级数据库。",
+  "dlErrQueueSchemaDrift": "任务队列数据库结构过旧（{raw}）。请重启应用以升级数据库。",
   "dlErrSourceUnbound": "来源网盘未绑定（{source}）",
   "dlErrWritePublicFailed": "写入公共目录失败",
   "dlNetworkInterruptedRetry": "网络中断，正在重试 ({attempts}/{max})",
@@ -663,7 +687,7 @@
   "netSelectedCount": "已选 {n} 项",
   "netCachingMusic": "正在缓存音乐…",
   "netNoNewAudio": "这里没有新的音频",
-  "netEnqueueing": "正在加入下载队列…",
+  "netEnqueueing": "正在加入任务队列…",
   "netNothingDownloadable": "所选内容里没有可下载的文件",
   "netEnqueuedCount": "已加入 {n} 项",
   "netEnqueueFailedFolders": "失败 {n} 个文件夹",
@@ -714,11 +738,11 @@
   "cacheDeleteBodyOne": "将删除「{name}」的音频缓存，标签与封面保留。",
   "cacheDeleteBodyMany": "将删除 {count} 个缓存文件，标签与封面保留。",
   "cacheDeletedCount": "已删除 {count} 个本地音频缓存",
-  "destroyTracksTitle": "销毁所选曲目？",
+  "destroyTracksTitle": "删除所选曲目？",
   "destroyTracksBody": "将删除 {count} 首曲目（缓存、库记录、元数据与封面），不可恢复。",
   "destroyTracksCueNote": "（CUE 分片整组删除）",
-  "destroyAction": "销毁",
-  "destroyedTracksCount": "已销毁 {count} 首曲目",
+  "destroyAction": "删除",
+  "destroyedTracksCount": "已删除 {count} 首曲目",
   "shareCueUnsupported": "CUE 音轨不支持分享",
   "shareCueUnsupportedAndNotLocal": "CUE 音轨不支持分享；其余曲目尚未下载到本地",
   "shareNotLocalOne": "该曲目尚未下载到本地，无法分享",
@@ -749,13 +773,13 @@
   "updateCancelled": "已终止",
   "updateDone": "更新完成",
   "updateSummary": "{a}：更新 {b} 首，跳过 {c} 首，失败 {d} 首",
-  "deleteCacheKeepMeta": "删除缓存（保留元数据与封面）",
+  "deleteCacheKeepMeta": "清理缓存（保留标签）",
   "updateTags": "更新标签",
   "downloadUncachedTracks": "下载未缓存曲目",
   "libraryTracksEmpty": "暂无曲目",
   "sourceUnbound": "来源网盘未绑定",
   "downloadingPercent": "下载中 {p}%",
-  "libraryEmptyGuide": "暂无曲目：先在「网络库」下载音乐。",
+  "libraryEmptyGuide": "暂无曲目：可在网络库扫描入库，或下载后进入曲库。",
   "tagTitle": "标题",
   "tagArtist": "艺术家",
   "tagAlbumArtist": "专辑艺术家",
@@ -940,7 +964,7 @@
   "videoStreamingHint": "视频直接流式播放，不下载到本地。",
   "videoHardwareDecoding": "硬件解码",
   "videoHardwareDecodingHint": "关闭后改用软件解码，个别设备更稳定",
-  "videoScanSubdirsHint": "播放列表是否包含子目录里的视频",
+  "videoScanSubdirsHint": "打开后，视频播放列表包含子目录（深度见下方）；关闭则只列当前层。与音乐播列表、刮削设置独立。",
   "videoBufferSize": "缓冲大小",
   "videoBufferInput": "缓冲 (MB)",
   "videoGestures": "手势",
@@ -963,7 +987,7 @@
   "videoDefaultRateCurrent": "当前 {rate}×（范围 {min}×–{max}×）",
   "videoSubtitleSizeCurrent": "当前 {size} sp（范围 {min}–{max} sp）",
   "accountsSubtitle": "管理多服务器账号",
-  "audioStreamingSubtitle": "流式传输开关 / 搜索子目录",
+  "audioStreamingSubtitle": "预载窗口、同目录封面、搜索子目录",
   "fileTypesManage": "文件后缀管理",
   "fileTypesManageSubtitle": "音乐 / 视频 / 图片 / CUE 后缀与默认操作",
   "coverThumbSize": "封面缩略图尺寸",
@@ -979,7 +1003,7 @@
   "days": "天",
   "hours": "小时",
   "autoCleanupDisabled": "已关闭自动清理，可用下方按钮手动清空。",
-  "clearAudioCache": "手动清空音频缓存",
+  "clearAudioCache": "清理音频缓存",
   "shareRenameHint": "分享时按标签重命名文件名。",
   "shareRenameTitle": "分享时按标签重命名",
   "shareRenameSubtitle": "默认开启；分享单个文件时仍可再修改文件名",
@@ -1016,7 +1040,7 @@
   "hintsAndNotifications": "提示与通知",
   "hintsSubtitle": "屏幕底部提示同时只显示一条，点「知道了」立即关闭。",
   "hintDuration": "提示显示时长",
-  "downloadNotifications": "下载队列系统通知",
+  "downloadNotifications": "任务队列系统通知",
   "downloadNotificationsHint": "下载进度与完成结果显示在通知栏",
   "sendTestNotification": "发送测试通知",
   "sendTestNotificationHint": "立即发一条进度与一条完成通知，用来排查系统是否拦截",
@@ -1114,5 +1138,170 @@
   "videoGestureBasicHint": "单击显示/隐藏控件，双击中间播放/暂停。",
   "videoHoldReleaseHint": "按住加速，松手恢复。",
   "subtitleDefault": "默认",
-  "subtitleEmbedded": "[内嵌] {language}"
+  "subtitleEmbedded": "[内嵌] {language}",
+  "taskErrNetDns": "网络错误：DNS",
+  "taskErrNetTimeout": "网络错误：超时",
+  "taskErrNetUnreachable": "网络错误：不可达",
+  "taskErrNetConnection": "网络错误：连接失败",
+  "taskErrCloudUnauthorized": "云端未授权",
+  "taskErrCloudForbidden": "云端权限不足",
+  "taskErrCloudNotFound": "云端文件不存在",
+  "taskErrCloudServer": "云端服务器错误",
+  "taskErrCloudHttp": "云端请求失败",
+  "taskErrUnknown": "其它错误",
+  "taskErrRetryExhausted": "重试已尽 · {reason}",
+  "@taskErrRetryExhausted": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "taskErrSourceUnbound": "来源网盘未绑定",
+  "taskErrQueueSchemaDrift": "队列数据库需升级",
+  "taskErrDetailTitle": "错误详情",
+  "taskErrViewDetail": "详情",
+  "taskErrLongPressHint": "长按查看完整错误",
+  "taskQueue": "任务队列",
+  "noTaskQueueItems": "暂无任务",
+  "taskKindDownload": "下载",
+  "taskKindScan": "刮削",
+  "taskKindRetagCloud": "更新标签（云端）",
+  "taskKindRetagLocal": "更新标签（本地）",
+  "taskProgressUnits": "{done} / {total}",
+  "@taskProgressUnits": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "playlistMaxDepth": "最大子目录深度",
+  "playlistMaxDepthHint": "0 = 仅当前目录；1 = 当前目录再下一层（默认）。范围 0–20。",
+  "playlistMaxDepthInput": "深度",
+  "mediaScanSection": "刮削",
+  "mediaScanSectionHint": "递归与最大深度",
+  "mediaScanRecursive": "刮削时搜索子目录",
+  "mediaScanRecursiveHint": "默认开。关闭则刮削只处理选中的当前层。",
+  "mediaScanMaxDepth": "刮削最大深度",
+  "mediaScanMaxDepthHint": "默认 1。与播放列表深度相互独立。",
+  "lyricsSourceEmbedded": "内嵌歌词",
+  "@lyricsSourceEmbedded": {
+    "description": "Label above embedded lyrics on the music stream screen"
+  },
+  "trackStateStreamable": "可串流",
+  "@trackStateStreamable": {
+    "description": "Library row with no local cache but streamable"
+  },
+  "trackStateRemoteMissing": "云端不存在",
+  "remoteMissingRetrying": "正在重试远端…",
+  "remoteMissingTitle": "云端文件不存在",
+  "remoteMissingBody": "再试仍找不到。删除库内条目，或重定向到新的远端路径？",
+  "remoteMissingRedirect": "重定向",
+  "actionStreamMusicOnce": "流式播放",
+  "select": "多选",
+  "mediaScanAction": "扫描入库",
+  "mediaScanCounting": "列出路径…",
+  "mediaScanConfirmTitle": "确认刮削",
+  "mediaScanConfirmBody": "将刮削 {count} 项，开始？",
+  "@mediaScanConfirmBody": {
+    "description": "mediaScanConfirmBody",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaScanStart": "开始刮削",
+  "mediaScanNothingNew": "没有需要入库的新路径",
+  "mediaScanQueued": "已加入 {count} 个刮削任务",
+  "@mediaScanQueued": {
+    "description": "mediaScanQueued",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaLibrarySettings": "音乐库",
+  "mediaLibrarySettingsHint": "默认打开、预载、刮削、标签",
+  "musicDefaultOpen": "默认打开",
+  "musicDefaultOpenHint": "网络库、媒体库、歌单点按音乐时：缓存播放或串流播放",
+  "musicDefaultCache": "缓存播放",
+  "musicDefaultStream": "串流播放",
+  "musicDefaultInExtensionsHint": "已移至「设置 → 媒体库 → 音乐库」。",
+  "refreshTagsFromLocal": "从本地更新标签",
+  "refreshTagsFromLocalHint": "读取已缓存音频的标签",
+  "refreshTagsFromCloud": "从云端更新标签",
+  "refreshTagsFromCloudHint": "排队从云端拉取标签",
+  "destroyTracksAction": "删除所选曲目",
+  "taskKindMatchRemote": "全量匹配",
+  "matchRemoteTitle": "全量匹配",
+  "matchRemoteHint": "探测云端是否仍存在，缺失标红点",
+  "matchRemoteQueued": "已加入全量匹配任务",
+  "destroyLibraryConfirm": "删除整个音乐库",
+  "@taskKindMatchRemote": {
+    "description": "Task queue kind for optional full remote existence match"
+  },
+  "@matchRemoteTitle": {
+    "description": "Settings entry title for full remote match"
+  },
+  "@matchRemoteHint": {
+    "description": "Settings subtitle for full remote match"
+  },
+  "@matchRemoteQueued": {
+    "description": "Snack after enqueueing match remote task"
+  },
+  "netScanMusic": "扫描音乐",
+  "@netScanMusic": {
+    "description": "netScanMusic"
+  },
+  "netScanMusicDesc": "刮削本文件夹中的音乐与 CUE",
+  "@netScanMusicDesc": {
+    "description": "netScanMusicDesc"
+  },
+  "mediaLibrarySection": "媒体库",
+  "@mediaLibrarySection": {
+    "description": "Settings section title only (not drawer)"
+  },
+
+  "libMenuStream": "流式播放",
+  "libMenuCache": "缓存",
+  "libMenuClear": "清理",
+  "updateTagsFromCache": "从缓存更新标签",
+  "updateTagsFromCloud": "从云端更新标签",
+
+  "musicCacheMaxCapacity": "缓存容量上限",
+  "musicCacheMaxCapacityHint": "超过后按最久未用清理；正在播放的不删。0 表示不限制。",
+  "musicCacheMaxMb": "上限（MB）",
+  "musicCacheUnlimited": "不限制",
+  "taskGroupCount": "{count} 项",
+  "@taskGroupCount": {
+    "placeholders": {
+      "count": {"type": "int"}
+    }
+  },
+  "taskGroupMembers": "任务明细",
+  "prefetchSection": "预载与封面",
+  "prefetchSectionHint": "串流写入临时预载；缓存播放按同一窗口后台缓存。",
+  "audioPlaylistSection": "网络库连播列表",
+  "waitingForCache": "正在缓存…",
+  "libraryManageMode": "曲库管理",
+  "libraryManageModeHint": "手动管理时仅由你主动操作改库；自动补齐可从已绑定的网络根路径增量刮削。",
+  "libraryModeManual": "手动管理",
+  "libraryModeManualHint": "默认。库只因你的操作变化，不会在打开时自动刮削。",
+  "libraryModeAuto": "自动补齐",
+  "libraryModeAutoHint": "起播时自动浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。",
+  "libraryBackfillBindRoots": "绑定路径",
+  "libraryBackfillBindRootsHint": "关闭：始终刮削正在播放曲目的父目录。开启：仅当曲目远端路径命中下方绑定根前缀时才刮削。",
+  "libraryBackfillRoots": "绑定的网络根路径",
+  "libraryBackfillRootsHint": "开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。",
+  "libraryBackfillAddRoot": "添加根路径",
+  "libraryBackfillNeedAccount": "请先添加网盘账号",
+  "libraryBackfillPickAccount": "选择网盘账号",
+  "libraryBackfillPickFolder": "选择根文件夹"
+
 }

@@ -96,7 +96,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get networkLibrary => 'Network library';
 
   @override
-  String get downloadQueue => 'Download queue';
+  String get downloadQueue => 'Task queue';
 
   @override
   String get aboutAgpl => 'About / AGPL';
@@ -260,7 +260,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get streamPlaybackHint =>
-      'Music is played directly from the network drive without downloading locally.';
+      'Stream uses temporary prefetch; local cache is preferred when present.';
 
   @override
   String get streamMusic => 'Stream music';
@@ -281,7 +281,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get scanSubdirectoriesHint =>
-      'On: include audio in this directory and all subdirectories. Off: list only this directory.';
+      'When on, playlists opened from the network library include subfolders (see depth below); when off, only the current folder. Independent from video playlist and scrape settings.';
 
   @override
   String get streamSidecarCover => 'Same-directory cover';
@@ -305,7 +305,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get streamPrefetchHint =>
-      'One file at a time: backward (previous tracks) first, then forward. A track already in the player list, or already a complete cache file, is not fetched again. 0 disables that direction. Files that leave the window stay until the next launch.';
+      'How many tracks before/after. Stream play uses a temporary prefetch; cache play uses the same window for background caching. 0 disables that direction.';
 
   @override
   String get downloadPending => 'Waiting';
@@ -338,10 +338,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get more => 'More';
 
   @override
-  String get noDownloadTasks => 'No download tasks';
+  String get noDownloadTasks => 'No tasks';
 
   @override
-  String get queueCleared => 'Download queue cleared';
+  String get queueCleared => 'Task queue cleared';
 
   @override
   String get clearAllQueue => 'Clear all queue entries';
@@ -396,6 +396,47 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get accountNameTaken => 'This name is already in use. Choose another.';
+
+  @override
+  String get accountNameCleanupTitle => 'Resolve duplicate names';
+
+  @override
+  String get accountNameCleanupHeading => 'Duplicate account names';
+
+  @override
+  String get accountNameCleanupBody =>
+      'Delete the extra accounts that share a name so each name has only one account. You can continue after that.';
+
+  @override
+  String accountNameCleanupGroup(String name) {
+    return 'Several accounts named “$name”';
+  }
+
+  @override
+  String get accountNameCleanupActive => 'Currently in use';
+
+  @override
+  String get accountNameCleanupDeleteTitle => 'Delete this account?';
+
+  @override
+  String accountNameCleanupDeleteContent(String name) {
+    return 'Deletes “$name” and its local credentials. Library rows bound to this name become unbound until you add an account with the same name.';
+  }
+
+  @override
+  String get accountNameCleanupDetailTitle => 'Account details';
+
+  @override
+  String get accountNameCleanupId => 'ID';
+
+  @override
+  String get accountNameCleanupShowPassword => 'Show password';
+
+  @override
+  String get accountNameCleanupHidePassword => 'Hide password';
+
+  @override
+  String get accountNameCleanupNoPassword => '(no password saved)';
 
   @override
   String get accountType => 'Type';
@@ -514,7 +555,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get manageAccountsSubtitle => 'Add / edit / delete WebDAV servers';
 
   @override
-  String get downloadQueueSettings => 'Download queue';
+  String get downloadQueueSettings => 'Task queue';
 
   @override
   String get downloadQueueSettingsSubtitle =>
@@ -639,7 +680,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get downloadAction => 'Download';
 
   @override
-  String get fileQueuedOrSaved => 'This file is already queued or downloaded';
+  String get fileQueuedOrSaved =>
+      'This file is already in the task queue or downloaded';
 
   @override
   String get fileQueuedOrSavedShort => 'This file is already queued or saved';
@@ -978,7 +1020,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return 'Missing · $name';
+    return 'Not in library · $name';
   }
 
   @override
@@ -1181,6 +1223,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get updateThisTrackTags => 'Refresh tags for this track';
 
   @override
+  String get playerSourceCached => 'Cached';
+
+  @override
+  String get playerSourceStreaming => 'Streaming';
+
+  @override
   String get nowPlaying => 'Now playing';
 
   @override
@@ -1245,7 +1293,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get overwriteLibraryPhrase => 'Type YES to confirm overwriting';
 
   @override
-  String get destroyLibraryTitle => 'Destroy library';
+  String get destroyLibraryTitle => 'Destroy music library?';
 
   @override
   String get destroyLibraryBody =>
@@ -1256,7 +1304,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Deletion records upload on the next sync; a cloud rebuild cannot restore destroyed content. Auto-sync is turned off afterwards.';
 
   @override
-  String get destroyLibraryAction => 'Destroy';
+  String get destroyLibraryAction => 'Destroy music library';
 
   @override
   String get destroyLibraryPhrase => 'Type YES to confirm destroying';
@@ -2139,7 +2187,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dlChannelProgressName => 'Download progress';
 
   @override
-  String get dlChannelProgressDesc => 'Progress of the active download queue';
+  String get dlChannelProgressDesc => 'Progress of the active task queue';
 
   @override
   String get dlChannelDoneName => 'Downloads complete';
@@ -2182,7 +2230,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String dlErrQueueSchemaDrift(Object raw) {
-    return 'Download queue database schema is too old ($raw). Restart the app to upgrade it.';
+    return 'Task queue database schema is too old ($raw). Restart the app to upgrade it.';
   }
 
   @override
@@ -2304,7 +2352,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get netNoNewAudio => 'No new audio here';
 
   @override
-  String get netEnqueueing => 'Adding to download queue…';
+  String get netEnqueueing => 'Adding to task queue…';
 
   @override
   String get netNothingDownloadable =>
@@ -2500,7 +2548,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String destroyTracksBody(Object count) {
-    return 'This will delete $count tracks (cache, library records, metadata, and covers). This cannot be undone.';
+    return 'This will destroy $count tracks (cache, library records, metadata, and covers). This cannot be undone.';
   }
 
   @override
@@ -2624,7 +2672,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get deleteCacheKeepMeta => 'Delete cache (keep metadata & covers)';
+  String get deleteCacheKeepMeta => 'Clear cache (keep tags)';
 
   @override
   String get updateTags => 'Update tags';
@@ -2645,7 +2693,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryEmptyGuide =>
-      'No tracks yet: download music from the Network library first.';
+      'No tracks yet: scan music in the Network library, or download to add tracks.';
 
   @override
   String get tagTitle => 'Title';
@@ -3386,7 +3434,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get videoScanSubdirsHint =>
-      'Include videos from subdirectories in the playlist';
+      'When on, the video playlist includes subfolders (see depth below); when off, only the current folder. Independent from music playlist and scrape settings.';
 
   @override
   String get videoBufferSize => 'Buffer size';
@@ -3467,7 +3515,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountsSubtitle => 'Manage multiple server accounts';
 
   @override
-  String get audioStreamingSubtitle => 'Streaming toggle / subdirectory scan';
+  String get audioStreamingSubtitle =>
+      'Prefetch window, sidecar covers, subdirectory scan';
 
   @override
   String get fileTypesManage => 'File extension management';
@@ -3519,7 +3568,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Automatic cleanup is off; use the button below to clear manually.';
 
   @override
-  String get clearAudioCache => 'Clear audio cache manually';
+  String get clearAudioCache => 'Clear audio cache';
 
   @override
   String get shareRenameHint => 'Rename shared filenames using tags.';
@@ -3653,7 +3702,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get hintDuration => 'Hint duration';
 
   @override
-  String get downloadNotifications => 'Download queue notifications';
+  String get downloadNotifications => 'Task queue system notifications';
 
   @override
   String get downloadNotificationsHint =>
@@ -3999,4 +4048,319 @@ class AppLocalizationsEn extends AppLocalizations {
   String subtitleEmbedded(Object language) {
     return '[Embedded] $language';
   }
+
+  @override
+  String get taskErrNetDns => 'Network error: DNS';
+
+  @override
+  String get taskErrNetTimeout => 'Network error: timeout';
+
+  @override
+  String get taskErrNetUnreachable => 'Network error: unreachable';
+
+  @override
+  String get taskErrNetConnection => 'Network error: connection failed';
+
+  @override
+  String get taskErrCloudUnauthorized => 'Cloud unauthorized';
+
+  @override
+  String get taskErrCloudForbidden => 'Cloud permission denied';
+
+  @override
+  String get taskErrCloudNotFound => 'Cloud file not found';
+
+  @override
+  String get taskErrCloudServer => 'Cloud server error';
+
+  @override
+  String get taskErrCloudHttp => 'Cloud request failed';
+
+  @override
+  String get taskErrUnknown => 'Other error';
+
+  @override
+  String taskErrRetryExhausted(String reason) {
+    return 'Retries exhausted · $reason';
+  }
+
+  @override
+  String get taskErrSourceUnbound => 'Source drive unbound';
+
+  @override
+  String get taskErrQueueSchemaDrift => 'Queue database needs upgrade';
+
+  @override
+  String get taskErrDetailTitle => 'Error details';
+
+  @override
+  String get taskErrViewDetail => 'Details';
+
+  @override
+  String get taskErrLongPressHint => 'Long-press for full error';
+
+  @override
+  String get taskQueue => 'Task queue';
+
+  @override
+  String get noTaskQueueItems => 'No tasks';
+
+  @override
+  String get taskKindDownload => 'Download';
+
+  @override
+  String get taskKindScan => 'Scan';
+
+  @override
+  String get taskKindRetagCloud => 'Retag (cloud)';
+
+  @override
+  String get taskKindRetagLocal => 'Retag (local)';
+
+  @override
+  String taskProgressUnits(int done, int total) {
+    return '$done / $total';
+  }
+
+  @override
+  String get playlistMaxDepth => 'Max subdirectory depth';
+
+  @override
+  String get playlistMaxDepthHint =>
+      '0 = current folder only; 1 = one level below (default). Range 0–20.';
+
+  @override
+  String get playlistMaxDepthInput => 'Depth';
+
+  @override
+  String get mediaScanSection => 'Scrape';
+
+  @override
+  String get mediaScanSectionHint => 'Recursion and max depth';
+
+  @override
+  String get mediaScanRecursive => 'Scan subdirectories when scraping';
+
+  @override
+  String get mediaScanRecursiveHint =>
+      'Default on. When off, scrape only the selected folder.';
+
+  @override
+  String get mediaScanMaxDepth => 'Scrape max depth';
+
+  @override
+  String get mediaScanMaxDepthHint =>
+      'Default 1. Independent from playlist depth.';
+
+  @override
+  String get lyricsSourceEmbedded => 'Embedded lyrics';
+
+  @override
+  String get trackStateStreamable => 'Streamable';
+
+  @override
+  String get trackStateRemoteMissing => 'Missing on cloud';
+
+  @override
+  String get remoteMissingRetrying => 'Retrying remote…';
+
+  @override
+  String get remoteMissingTitle => 'File missing on cloud';
+
+  @override
+  String get remoteMissingBody =>
+      'Still not found. Delete the library row, or redirect to a new remote path?';
+
+  @override
+  String get remoteMissingRedirect => 'Redirect';
+
+  @override
+  String get actionStreamMusicOnce => 'Stream';
+
+  @override
+  String get select => 'Select';
+
+  @override
+  String get mediaScanAction => 'Scan into library';
+
+  @override
+  String get mediaScanCounting => 'Listing paths…';
+
+  @override
+  String get mediaScanConfirmTitle => 'Confirm scrape';
+
+  @override
+  String mediaScanConfirmBody(int count) {
+    return 'Scrape $count items?';
+  }
+
+  @override
+  String get mediaScanStart => 'Start scrape';
+
+  @override
+  String get mediaScanNothingNew => 'No new paths to ingest';
+
+  @override
+  String mediaScanQueued(int count) {
+    return 'Queued $count scrape tasks';
+  }
+
+  @override
+  String get mediaLibrarySettings => 'Music library';
+
+  @override
+  String get mediaLibrarySettingsHint => 'Default open, prefetch, scrape, tags';
+
+  @override
+  String get musicDefaultOpen => 'Default open';
+
+  @override
+  String get musicDefaultOpenHint =>
+      'Network library, media library, and playlists: cache play or stream play';
+
+  @override
+  String get musicDefaultCache => 'Cache play';
+
+  @override
+  String get musicDefaultStream => 'Stream play';
+
+  @override
+  String get musicDefaultInExtensionsHint =>
+      'Moved to Settings → Media library → Music library.';
+
+  @override
+  String get refreshTagsFromLocal => 'Update tags from local';
+
+  @override
+  String get refreshTagsFromLocalHint => 'Read tags from cached audio';
+
+  @override
+  String get refreshTagsFromCloud => 'Update tags from cloud';
+
+  @override
+  String get refreshTagsFromCloudHint => 'Queue cloud tag fetches';
+
+  @override
+  String get destroyTracksAction => 'Destroy selected tracks';
+
+  @override
+  String get taskKindMatchRemote => 'Match remote';
+
+  @override
+  String get matchRemoteTitle => 'Match remote';
+
+  @override
+  String get matchRemoteHint =>
+      'Probe cloud existence; mark missing with a red dot';
+
+  @override
+  String get matchRemoteQueued => 'Match-remote task queued';
+
+  @override
+  String get destroyLibraryConfirm => 'Destroy entire music library';
+
+  @override
+  String get netScanMusic => 'Scan music';
+
+  @override
+  String get netScanMusicDesc => 'Scrape music and CUE in this folder';
+
+  @override
+  String get mediaLibrarySection => 'Media library';
+
+  @override
+  String get libMenuStream => 'Stream';
+
+  @override
+  String get libMenuCache => 'Cache';
+
+  @override
+  String get libMenuClear => 'Clear';
+
+  @override
+  String get updateTagsFromCache => 'Update tags from cache';
+
+  @override
+  String get updateTagsFromCloud => 'Update tags from cloud';
+
+  @override
+  String get musicCacheMaxCapacity => 'Cache size limit';
+
+  @override
+  String get musicCacheMaxCapacityHint =>
+      'When over the limit, least-recently used files are removed; the track being played is kept. 0 means no limit.';
+
+  @override
+  String get musicCacheMaxMb => 'Limit (MB)';
+
+  @override
+  String get musicCacheUnlimited => 'Unlimited';
+
+  @override
+  String taskGroupCount(int count) {
+    return '$count items';
+  }
+
+  @override
+  String get taskGroupMembers => 'Task details';
+
+  @override
+  String get prefetchSection => 'Prefetch and covers';
+
+  @override
+  String get prefetchSectionHint =>
+      'Stream play writes temporary prefetch; cache play uses the same window for background caching.';
+
+  @override
+  String get audioPlaylistSection => 'Network library play queue';
+
+  @override
+  String get waitingForCache => 'Caching…';
+
+  @override
+  String get libraryManageMode => 'Library management';
+
+  @override
+  String get libraryManageModeHint =>
+      'Manual mode changes the library only when you act; auto backfill can scrape bound network roots incrementally.';
+
+  @override
+  String get libraryModeManual => 'Manual';
+
+  @override
+  String get libraryModeManualHint =>
+      'Default. The library changes only from your actions; no auto scrape on open.';
+
+  @override
+  String get libraryModeAuto => 'Auto backfill';
+
+  @override
+  String get libraryModeAutoHint =>
+      'On play, always shallow-scrape the current track folder for missing library rows; optional bound-root filter. Download still follows play mode only.';
+
+  @override
+  String get libraryBackfillBindRoots => 'Bound paths';
+
+  @override
+  String get libraryBackfillBindRootsHint =>
+      'Off: always scrape the playing track’s parent folder. On: scrape only if the track remote path matches a bound root prefix below.';
+
+  @override
+  String get libraryBackfillRoots => 'Bound network roots';
+
+  @override
+  String get libraryBackfillRootsHint =>
+      'With Bound paths on, play-triggered scrape runs only for these root prefixes; Network library “Scan music” stays available anytime.';
+
+  @override
+  String get libraryBackfillAddRoot => 'Add root path';
+
+  @override
+  String get libraryBackfillNeedAccount => 'Add a cloud account first';
+
+  @override
+  String get libraryBackfillPickAccount => 'Choose account';
+
+  @override
+  String get libraryBackfillPickFolder => 'Choose root folder';
 }

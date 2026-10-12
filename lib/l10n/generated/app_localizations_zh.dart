@@ -94,7 +94,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get networkLibrary => '网络库';
 
   @override
-  String get downloadQueue => '下载队列';
+  String get downloadQueue => '任务队列';
 
   @override
   String get aboutAgpl => '关于 / AGPL';
@@ -257,7 +257,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get streamPlayback => '流式播放';
 
   @override
-  String get streamPlaybackHint => '音乐不下载到本地，直接从网盘边听边传。';
+  String get streamPlaybackHint => '串流时用临时预载；有本地缓存则优先播缓存。';
 
   @override
   String get streamMusic => '流式传输音乐';
@@ -275,7 +275,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get scanSubdirectories => '搜索子目录';
 
   @override
-  String get scanSubdirectoriesHint => '打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。';
+  String get scanSubdirectoriesHint =>
+      '打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。';
 
   @override
   String get streamSidecarCover => '同目录封面';
@@ -298,7 +299,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get streamPrefetchHint =>
-      '一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。';
+      '向前／向后各几首。串流播放时写入临时预载；缓存播放时按同一窗口后台缓存。0 表示该方向不预载。';
 
   @override
   String get downloadPending => '等待中';
@@ -331,10 +332,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get more => '更多';
 
   @override
-  String get noDownloadTasks => '暂无下载任务';
+  String get noDownloadTasks => '暂无任务';
 
   @override
-  String get queueCleared => '下载队列已清空';
+  String get queueCleared => '任务队列已清空';
 
   @override
   String get clearAllQueue => '清除所有队列';
@@ -388,6 +389,46 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get accountNameTaken => '该名称已被占用，建议换一个';
+
+  @override
+  String get accountNameCleanupTitle => '清理同名账号';
+
+  @override
+  String get accountNameCleanupHeading => '存在同名账号';
+
+  @override
+  String get accountNameCleanupBody => '请删除多余的同名账号，只保留每个名称对应的一个。清理完成后即可继续使用。';
+
+  @override
+  String accountNameCleanupGroup(String name) {
+    return '名称「$name」有多条';
+  }
+
+  @override
+  String get accountNameCleanupActive => '当前使用中';
+
+  @override
+  String get accountNameCleanupDeleteTitle => '删除此账号？';
+
+  @override
+  String accountNameCleanupDeleteContent(String name) {
+    return '将删除「$name」及其本地凭证。曲库里绑定该名称的条目会变为未绑定，直到你添加同名账号。';
+  }
+
+  @override
+  String get accountNameCleanupDetailTitle => '账号详情';
+
+  @override
+  String get accountNameCleanupId => '编号';
+
+  @override
+  String get accountNameCleanupShowPassword => '显示密码';
+
+  @override
+  String get accountNameCleanupHidePassword => '隐藏密码';
+
+  @override
+  String get accountNameCleanupNoPassword => '（未保存密码）';
 
   @override
   String get accountType => '类型';
@@ -503,7 +544,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get manageAccountsSubtitle => '添加 / 编辑 / 删除 WebDAV 服务器';
 
   @override
-  String get downloadQueueSettings => '下载队列';
+  String get downloadQueueSettings => '任务队列';
 
   @override
   String get downloadQueueSettingsSubtitle => '断点续传的临时文件保留上限与清理';
@@ -621,7 +662,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadAction => '下载';
 
   @override
-  String get fileQueuedOrSaved => '该文件已在下载队列或已下载';
+  String get fileQueuedOrSaved => '该文件已在任务队列或已下载';
 
   @override
   String get fileQueuedOrSavedShort => '该文件已在队列或已保存';
@@ -949,7 +990,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return '暂无 · $name';
+    return '库中暂无 · $name';
   }
 
   @override
@@ -1147,6 +1188,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get updateThisTrackTags => '更新此曲标签';
 
   @override
+  String get playerSourceCached => '缓存';
+
+  @override
+  String get playerSourceStreaming => '流式';
+
+  @override
   String get nowPlaying => '正在播放';
 
   @override
@@ -1207,24 +1254,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get overwriteLibraryPhrase => '如果确认覆写请输入 YES';
 
   @override
-  String get destroyLibraryTitle => '销毁音乐库';
+  String get destroyLibraryTitle => '删除音乐库？';
 
   @override
-  String get destroyLibraryBody => '会逐条销毁本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。';
+  String get destroyLibraryBody => '会逐条删除本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。';
 
   @override
-  String get destroyLibraryNote =>
-      '删除记录会在下次同步时上传到云端，云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。';
+  String get destroyLibraryNote => '删除记录会在下次同步时上传；云端重建无法恢复已删除内容。之后会关闭自动同步。';
 
   @override
-  String get destroyLibraryAction => '销毁';
+  String get destroyLibraryAction => '删除音乐库';
 
   @override
-  String get destroyLibraryPhrase => '如果确认销毁请输入 YES';
+  String get destroyLibraryPhrase => '输入 YES 确认删除';
 
   @override
   String destroyLibraryDone(Object count) {
-    return '已销毁 $count 首；下次同步上传删除记录，定时同步已关闭';
+    return '已删除 $count 首曲目；删除记录将在下次同步上传，定时同步已关闭';
   }
 
   @override
@@ -1558,7 +1604,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dialogOk => '确定';
 
   @override
-  String get destroyInProgress => '正在销毁';
+  String get destroyInProgress => '删除中…';
 
   @override
   String processedOfTotal(Object processed, Object total) {
@@ -1566,7 +1612,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get destroyStopHint => '「终止」或直接返回都会停在当前这首之后；已经销毁的不会恢复。';
+  String get destroyStopHint => '停止或返回会在当前曲目结束后生效；已删除的曲目不会恢复。';
 
   @override
   String get actionStop => '终止';
@@ -2060,7 +2106,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dlChannelProgressName => '下载进度';
 
   @override
-  String get dlChannelProgressDesc => '下载队列进行中的进度';
+  String get dlChannelProgressDesc => '任务队列进行中的进度';
 
   @override
   String get dlChannelDoneName => '下载完成';
@@ -2102,7 +2148,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String dlErrQueueSchemaDrift(Object raw) {
-    return '下载队列数据库结构过旧（$raw）。请重启应用以升级数据库。';
+    return '任务队列数据库结构过旧（$raw）。请重启应用以升级数据库。';
   }
 
   @override
@@ -2220,7 +2266,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get netNoNewAudio => '这里没有新的音频';
 
   @override
-  String get netEnqueueing => '正在加入下载队列…';
+  String get netEnqueueing => '正在加入任务队列…';
 
   @override
   String get netNothingDownloadable => '所选内容里没有可下载的文件';
@@ -2409,7 +2455,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get destroyTracksTitle => '销毁所选曲目？';
+  String get destroyTracksTitle => '删除所选曲目？';
 
   @override
   String destroyTracksBody(Object count) {
@@ -2420,11 +2466,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get destroyTracksCueNote => '（CUE 分片整组删除）';
 
   @override
-  String get destroyAction => '销毁';
+  String get destroyAction => '删除';
 
   @override
   String destroyedTracksCount(Object count) {
-    return '已销毁 $count 首曲目';
+    return '已删除 $count 首曲目';
   }
 
   @override
@@ -2532,7 +2578,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get deleteCacheKeepMeta => '删除缓存（保留元数据与封面）';
+  String get deleteCacheKeepMeta => '清理缓存（保留标签）';
 
   @override
   String get updateTags => '更新标签';
@@ -2552,7 +2598,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get libraryEmptyGuide => '暂无曲目：先在「网络库」下载音乐。';
+  String get libraryEmptyGuide => '暂无曲目：可在网络库扫描入库，或下载后进入曲库。';
 
   @override
   String get tagTitle => '标题';
@@ -3253,7 +3299,8 @@ class AppLocalizationsZh extends AppLocalizations {
   String get videoHardwareDecodingHint => '关闭后改用软件解码，个别设备更稳定';
 
   @override
-  String get videoScanSubdirsHint => '播放列表是否包含子目录里的视频';
+  String get videoScanSubdirsHint =>
+      '打开后，视频播放列表包含子目录（深度见下方）；关闭则只列当前层。与音乐播列表、刮削设置独立。';
 
   @override
   String get videoBufferSize => '缓冲大小';
@@ -3330,7 +3377,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountsSubtitle => '管理多服务器账号';
 
   @override
-  String get audioStreamingSubtitle => '流式传输开关 / 搜索子目录';
+  String get audioStreamingSubtitle => '预载窗口、同目录封面、搜索子目录';
 
   @override
   String get fileTypesManage => '文件后缀管理';
@@ -3378,7 +3425,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get autoCleanupDisabled => '已关闭自动清理，可用下方按钮手动清空。';
 
   @override
-  String get clearAudioCache => '手动清空音频缓存';
+  String get clearAudioCache => '清理音频缓存';
 
   @override
   String get shareRenameHint => '分享时按标签重命名文件名。';
@@ -3499,7 +3546,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get hintDuration => '提示显示时长';
 
   @override
-  String get downloadNotifications => '下载队列系统通知';
+  String get downloadNotifications => '任务队列系统通知';
 
   @override
   String get downloadNotificationsHint => '下载进度与完成结果显示在通知栏';
@@ -3820,6 +3867,310 @@ class AppLocalizationsZh extends AppLocalizations {
   String subtitleEmbedded(Object language) {
     return '[内嵌] $language';
   }
+
+  @override
+  String get taskErrNetDns => '网络错误：DNS';
+
+  @override
+  String get taskErrNetTimeout => '网络错误：超时';
+
+  @override
+  String get taskErrNetUnreachable => '网络错误：不可达';
+
+  @override
+  String get taskErrNetConnection => '网络错误：连接失败';
+
+  @override
+  String get taskErrCloudUnauthorized => '云端未授权';
+
+  @override
+  String get taskErrCloudForbidden => '云端权限不足';
+
+  @override
+  String get taskErrCloudNotFound => '云端文件不存在';
+
+  @override
+  String get taskErrCloudServer => '云端服务器错误';
+
+  @override
+  String get taskErrCloudHttp => '云端请求失败';
+
+  @override
+  String get taskErrUnknown => '其它错误';
+
+  @override
+  String taskErrRetryExhausted(String reason) {
+    return '重试已尽 · $reason';
+  }
+
+  @override
+  String get taskErrSourceUnbound => '来源网盘未绑定';
+
+  @override
+  String get taskErrQueueSchemaDrift => '队列数据库需升级';
+
+  @override
+  String get taskErrDetailTitle => '错误详情';
+
+  @override
+  String get taskErrViewDetail => '详情';
+
+  @override
+  String get taskErrLongPressHint => '长按查看完整错误';
+
+  @override
+  String get taskQueue => '任务队列';
+
+  @override
+  String get noTaskQueueItems => '暂无任务';
+
+  @override
+  String get taskKindDownload => '下载';
+
+  @override
+  String get taskKindScan => '刮削';
+
+  @override
+  String get taskKindRetagCloud => '更新标签（云端）';
+
+  @override
+  String get taskKindRetagLocal => '更新标签（本地）';
+
+  @override
+  String taskProgressUnits(int done, int total) {
+    return '$done / $total';
+  }
+
+  @override
+  String get playlistMaxDepth => '最大子目录深度';
+
+  @override
+  String get playlistMaxDepthHint => '0 = 仅当前目录；1 = 当前目录再下一层（默认）。范围 0–20。';
+
+  @override
+  String get playlistMaxDepthInput => '深度';
+
+  @override
+  String get mediaScanSection => '刮削';
+
+  @override
+  String get mediaScanSectionHint => '递归与最大深度';
+
+  @override
+  String get mediaScanRecursive => '刮削时搜索子目录';
+
+  @override
+  String get mediaScanRecursiveHint => '默认开。关闭则刮削只处理选中的当前层。';
+
+  @override
+  String get mediaScanMaxDepth => '刮削最大深度';
+
+  @override
+  String get mediaScanMaxDepthHint => '默认 1。与播放列表深度相互独立。';
+
+  @override
+  String get lyricsSourceEmbedded => '内嵌歌词';
+
+  @override
+  String get trackStateStreamable => '可串流';
+
+  @override
+  String get trackStateRemoteMissing => '云端不存在';
+
+  @override
+  String get remoteMissingRetrying => '正在重试远端…';
+
+  @override
+  String get remoteMissingTitle => '云端文件不存在';
+
+  @override
+  String get remoteMissingBody => '再试仍找不到。删除库内条目，或重定向到新的远端路径？';
+
+  @override
+  String get remoteMissingRedirect => '重定向';
+
+  @override
+  String get actionStreamMusicOnce => '流式播放';
+
+  @override
+  String get select => '多选';
+
+  @override
+  String get mediaScanAction => '扫描入库';
+
+  @override
+  String get mediaScanCounting => '列出路径…';
+
+  @override
+  String get mediaScanConfirmTitle => '确认刮削';
+
+  @override
+  String mediaScanConfirmBody(int count) {
+    return '将刮削 $count 项，开始？';
+  }
+
+  @override
+  String get mediaScanStart => '开始刮削';
+
+  @override
+  String get mediaScanNothingNew => '没有需要入库的新路径';
+
+  @override
+  String mediaScanQueued(int count) {
+    return '已加入 $count 个刮削任务';
+  }
+
+  @override
+  String get mediaLibrarySettings => '音乐库';
+
+  @override
+  String get mediaLibrarySettingsHint => '默认打开、预载、刮削、标签';
+
+  @override
+  String get musicDefaultOpen => '默认打开';
+
+  @override
+  String get musicDefaultOpenHint => '网络库、媒体库、歌单点按音乐时：缓存播放或串流播放';
+
+  @override
+  String get musicDefaultCache => '缓存播放';
+
+  @override
+  String get musicDefaultStream => '串流播放';
+
+  @override
+  String get musicDefaultInExtensionsHint => '已移至「设置 → 媒体库 → 音乐库」。';
+
+  @override
+  String get refreshTagsFromLocal => '从本地更新标签';
+
+  @override
+  String get refreshTagsFromLocalHint => '读取已缓存音频的标签';
+
+  @override
+  String get refreshTagsFromCloud => '从云端更新标签';
+
+  @override
+  String get refreshTagsFromCloudHint => '排队从云端拉取标签';
+
+  @override
+  String get destroyTracksAction => '删除所选曲目';
+
+  @override
+  String get taskKindMatchRemote => '全量匹配';
+
+  @override
+  String get matchRemoteTitle => '全量匹配';
+
+  @override
+  String get matchRemoteHint => '探测云端是否仍存在，缺失标红点';
+
+  @override
+  String get matchRemoteQueued => '已加入全量匹配任务';
+
+  @override
+  String get destroyLibraryConfirm => '删除整个音乐库';
+
+  @override
+  String get netScanMusic => '扫描音乐';
+
+  @override
+  String get netScanMusicDesc => '刮削本文件夹中的音乐与 CUE';
+
+  @override
+  String get mediaLibrarySection => '媒体库';
+
+  @override
+  String get libMenuStream => '流式播放';
+
+  @override
+  String get libMenuCache => '缓存';
+
+  @override
+  String get libMenuClear => '清理';
+
+  @override
+  String get updateTagsFromCache => '从缓存更新标签';
+
+  @override
+  String get updateTagsFromCloud => '从云端更新标签';
+
+  @override
+  String get musicCacheMaxCapacity => '缓存容量上限';
+
+  @override
+  String get musicCacheMaxCapacityHint => '超过后按最久未用清理；正在播放的不删。0 表示不限制。';
+
+  @override
+  String get musicCacheMaxMb => '上限（MB）';
+
+  @override
+  String get musicCacheUnlimited => '不限制';
+
+  @override
+  String taskGroupCount(int count) {
+    return '$count 项';
+  }
+
+  @override
+  String get taskGroupMembers => '任务明细';
+
+  @override
+  String get prefetchSection => '预载与封面';
+
+  @override
+  String get prefetchSectionHint => '串流写入临时预载；缓存播放按同一窗口后台缓存。';
+
+  @override
+  String get audioPlaylistSection => '网络库连播列表';
+
+  @override
+  String get waitingForCache => '正在缓存…';
+
+  @override
+  String get libraryManageMode => '曲库管理';
+
+  @override
+  String get libraryManageModeHint => '手动管理时仅由你主动操作改库；自动补齐可从已绑定的网络根路径增量刮削。';
+
+  @override
+  String get libraryModeManual => '手动管理';
+
+  @override
+  String get libraryModeManualHint => '默认。库只因你的操作变化，不会在打开时自动刮削。';
+
+  @override
+  String get libraryModeAuto => '自动补齐';
+
+  @override
+  String get libraryModeAutoHint =>
+      '起播时自动浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。';
+
+  @override
+  String get libraryBackfillBindRoots => '绑定路径';
+
+  @override
+  String get libraryBackfillBindRootsHint =>
+      '关闭：始终刮削正在播放曲目的父目录。开启：仅当曲目远端路径命中下方绑定根前缀时才刮削。';
+
+  @override
+  String get libraryBackfillRoots => '绑定的网络根路径';
+
+  @override
+  String get libraryBackfillRootsHint =>
+      '开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。';
+
+  @override
+  String get libraryBackfillAddRoot => '添加根路径';
+
+  @override
+  String get libraryBackfillNeedAccount => '请先添加网盘账号';
+
+  @override
+  String get libraryBackfillPickAccount => '选择网盘账号';
+
+  @override
+  String get libraryBackfillPickFolder => '选择根文件夹';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -3911,7 +4262,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get networkLibrary => '網路庫';
 
   @override
-  String get downloadQueue => '下載佇列';
+  String get downloadQueue => '任務佇列';
 
   @override
   String get aboutAgpl => '關於 / AGPL';
@@ -4074,7 +4425,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get streamPlayback => '串流播放';
 
   @override
-  String get streamPlaybackHint => '音樂不下載到本機，直接從網路磁碟邊聽邊傳。';
+  String get streamPlaybackHint => '串流時用臨時預載；有本機快取則優先播快取。';
 
   @override
   String get streamMusic => '串流傳輸音樂';
@@ -4092,7 +4443,8 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get scanSubdirectories => '搜尋子目錄';
 
   @override
-  String get scanSubdirectoriesHint => '開啟：目前目錄及所有子目錄的音訊都加入清單。關閉：只列出目前這一層。';
+  String get scanSubdirectoriesHint =>
+      '開啟後，從網路庫開啟音樂時的播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與影片播清單、刮削設定獨立。';
 
   @override
   String get streamSidecarCover => '同目錄封面';
@@ -4115,7 +4467,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get streamPrefetchHint =>
-      '一次只預載一首：先向前（上一首方向），再向後。已經在播放清單裡、或快取檔案已經完整的，不會再取。0 表示該方向不預載。滑出視窗不刪，下次啟動才清空。';
+      '向前／向後各幾首。串流播放時寫入臨時預載；快取播放時按同一視窗背景快取。0 表示該方向不預載。';
 
   @override
   String get downloadPending => '等待中';
@@ -4148,10 +4500,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get more => '更多';
 
   @override
-  String get noDownloadTasks => '目前沒有下載工作';
+  String get noDownloadTasks => '暫無任務';
 
   @override
-  String get queueCleared => '下載佇列已清空';
+  String get queueCleared => '任務佇列已清空';
 
   @override
   String get clearAllQueue => '清除所有佇列';
@@ -4205,6 +4557,46 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get accountNameTaken => '此名稱已被使用，建議換一個';
+
+  @override
+  String get accountNameCleanupTitle => '清理同名帳號';
+
+  @override
+  String get accountNameCleanupHeading => '存在同名帳號';
+
+  @override
+  String get accountNameCleanupBody => '請刪除多餘的同名帳號，只保留每個名稱對應的一個。清理完成後即可繼續使用。';
+
+  @override
+  String accountNameCleanupGroup(String name) {
+    return '名稱「$name」有多筆';
+  }
+
+  @override
+  String get accountNameCleanupActive => '目前使用中';
+
+  @override
+  String get accountNameCleanupDeleteTitle => '刪除此帳號？';
+
+  @override
+  String accountNameCleanupDeleteContent(String name) {
+    return '將刪除「$name」及其本機憑證。音樂庫裡綁定該名稱的項目會變成未綁定，直到你新增同名帳號。';
+  }
+
+  @override
+  String get accountNameCleanupDetailTitle => '帳號詳情';
+
+  @override
+  String get accountNameCleanupId => '編號';
+
+  @override
+  String get accountNameCleanupShowPassword => '顯示密碼';
+
+  @override
+  String get accountNameCleanupHidePassword => '隱藏密碼';
+
+  @override
+  String get accountNameCleanupNoPassword => '（未儲存密碼）';
 
   @override
   String get accountType => '類型';
@@ -4321,7 +4713,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get manageAccountsSubtitle => '新增／編輯／刪除 WebDAV 伺服器';
 
   @override
-  String get downloadQueueSettings => '下載佇列';
+  String get downloadQueueSettings => '任務佇列';
 
   @override
   String get downloadQueueSettingsSubtitle => '續傳暫存檔保留上限與清理';
@@ -4439,7 +4831,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get downloadAction => '下載';
 
   @override
-  String get fileQueuedOrSaved => '檔案已在下載佇列或已下載';
+  String get fileQueuedOrSaved => '該檔案已在任務佇列或已下載';
 
   @override
   String get fileQueuedOrSavedShort => '檔案已在佇列或已儲存';
@@ -4767,7 +5159,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String playlistMissingInLibrary(Object name) {
-    return '暫無 · $name';
+    return '庫中暫無 · $name';
   }
 
   @override
@@ -4965,6 +5357,12 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get updateThisTrackTags => '更新此曲標籤';
 
   @override
+  String get playerSourceCached => '快取';
+
+  @override
+  String get playerSourceStreaming => '串流';
+
+  @override
   String get nowPlaying => '正在播放';
 
   @override
@@ -5025,24 +5423,23 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get overwriteLibraryPhrase => '如果確認覆寫請輸入 YES';
 
   @override
-  String get destroyLibraryTitle => '銷毀音樂庫';
+  String get destroyLibraryTitle => '刪除音樂庫？';
 
   @override
-  String get destroyLibraryBody => '會逐條銷毀本機音樂庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。';
+  String get destroyLibraryBody => '會逐條刪除本機音樂庫：每一首的快取音訊、封面與庫記錄都會被刪除，並各留一條墓碑。';
 
   @override
-  String get destroyLibraryNote =>
-      '刪除記錄會在下次同步時上傳到雲端，雲端重建也恢復不了這次銷毀的內容。此操作後會關閉自動同步。';
+  String get destroyLibraryNote => '刪除記錄會在下次同步時上傳；雲端重建無法復原已刪除內容。之後會關閉自動同步。';
 
   @override
-  String get destroyLibraryAction => '銷毀';
+  String get destroyLibraryAction => '刪除音樂庫';
 
   @override
-  String get destroyLibraryPhrase => '如果確認銷毀請輸入 YES';
+  String get destroyLibraryPhrase => '輸入 YES 確認刪除';
 
   @override
   String destroyLibraryDone(Object count) {
-    return '已銷毀 $count 首；下次同步上傳刪除記錄，定時同步已關閉';
+    return '已刪除 $count 首曲目；刪除記錄將在下次同步上傳，排程同步已關閉';
   }
 
   @override
@@ -5376,7 +5773,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get dialogOk => '確定';
 
   @override
-  String get destroyInProgress => '正在銷毀';
+  String get destroyInProgress => '刪除中…';
 
   @override
   String processedOfTotal(Object processed, Object total) {
@@ -5384,7 +5781,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get destroyStopHint => '「終止」或直接返回都會停在當前這首之後；已經銷毀的不會恢復。';
+  String get destroyStopHint => '停止或返回會在目前曲目結束後生效；已刪除的曲目不會復原。';
 
   @override
   String get actionStop => '終止';
@@ -5878,7 +6275,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get dlChannelProgressName => '下載進度';
 
   @override
-  String get dlChannelProgressDesc => '下載佇列進行中的進度';
+  String get dlChannelProgressDesc => '任務佇列進行中的進度';
 
   @override
   String get dlChannelDoneName => '下載完成';
@@ -5920,7 +6317,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String dlErrQueueSchemaDrift(Object raw) {
-    return '下載佇列資料庫結構過舊（$raw）。請重新啟動應用程式以升級資料庫。';
+    return '任務佇列資料庫結構過舊（$raw）。請重新啟動應用程式以升級資料庫。';
   }
 
   @override
@@ -6038,7 +6435,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get netNoNewAudio => '這裡沒有新的音訊';
 
   @override
-  String get netEnqueueing => '正在加入下載佇列…';
+  String get netEnqueueing => '正在加入任務佇列…';
 
   @override
   String get netNothingDownloadable => '所選內容裡沒有可下載的檔案';
@@ -6227,7 +6624,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get destroyTracksTitle => '銷毀所選曲目？';
+  String get destroyTracksTitle => '刪除所選曲目？';
 
   @override
   String destroyTracksBody(Object count) {
@@ -6238,11 +6635,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get destroyTracksCueNote => '（CUE 分片整組刪除）';
 
   @override
-  String get destroyAction => '銷毀';
+  String get destroyAction => '刪除';
 
   @override
   String destroyedTracksCount(Object count) {
-    return '已銷毀 $count 首曲目';
+    return '已刪除 $count 首曲目';
   }
 
   @override
@@ -6350,7 +6747,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get deleteCacheKeepMeta => '刪除快取（保留詮釋資料與封面）';
+  String get deleteCacheKeepMeta => '清理快取（保留標籤）';
 
   @override
   String get updateTags => '更新標籤';
@@ -6370,7 +6767,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get libraryEmptyGuide => '暫無曲目：先在「網路磁碟」下載音樂。';
+  String get libraryEmptyGuide => '暫無曲目：可在網路磁碟掃描入庫，或下載後進入曲庫。';
 
   @override
   String get tagTitle => '標題';
@@ -7071,7 +7468,8 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get videoHardwareDecodingHint => '關閉後改用軟體解碼，部分裝置更穩定';
 
   @override
-  String get videoScanSubdirsHint => '播放清單是否包含子目錄中的影片';
+  String get videoScanSubdirsHint =>
+      '開啟後，影片播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與音樂播清單、刮削設定獨立。';
 
   @override
   String get videoBufferSize => '緩衝大小';
@@ -7148,7 +7546,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get accountsSubtitle => '管理多伺服器帳號';
 
   @override
-  String get audioStreamingSubtitle => '串流傳輸開關 / 搜尋子目錄';
+  String get audioStreamingSubtitle => '預載視窗、同目錄封面、搜尋子目錄';
 
   @override
   String get fileTypesManage => '檔案副檔名管理';
@@ -7196,7 +7594,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get autoCleanupDisabled => '已關閉自動清理，可使用下方按鈕手動清空。';
 
   @override
-  String get clearAudioCache => '手動清空音訊快取';
+  String get clearAudioCache => '清理音訊快取';
 
   @override
   String get shareRenameHint => '分享時按標籤重新命名檔案名稱。';
@@ -7317,7 +7715,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get hintDuration => '提示顯示時長';
 
   @override
-  String get downloadNotifications => '下載佇列系統通知';
+  String get downloadNotifications => '任務佇列系統通知';
 
   @override
   String get downloadNotificationsHint => '下載進度與完成結果顯示在通知列';
@@ -7638,4 +8036,308 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String subtitleEmbedded(Object language) {
     return '[內嵌] $language';
   }
+
+  @override
+  String get taskErrNetDns => '網路錯誤：DNS';
+
+  @override
+  String get taskErrNetTimeout => '網路錯誤：逾時';
+
+  @override
+  String get taskErrNetUnreachable => '網路錯誤：不可達';
+
+  @override
+  String get taskErrNetConnection => '網路錯誤：連線失敗';
+
+  @override
+  String get taskErrCloudUnauthorized => '雲端未授權';
+
+  @override
+  String get taskErrCloudForbidden => '雲端權限不足';
+
+  @override
+  String get taskErrCloudNotFound => '雲端檔案不存在';
+
+  @override
+  String get taskErrCloudServer => '雲端伺服器錯誤';
+
+  @override
+  String get taskErrCloudHttp => '雲端請求失敗';
+
+  @override
+  String get taskErrUnknown => '其它錯誤';
+
+  @override
+  String taskErrRetryExhausted(String reason) {
+    return '重試已盡 · $reason';
+  }
+
+  @override
+  String get taskErrSourceUnbound => '來源網路磁碟未綁定';
+
+  @override
+  String get taskErrQueueSchemaDrift => '佇列資料庫需升級';
+
+  @override
+  String get taskErrDetailTitle => '錯誤詳情';
+
+  @override
+  String get taskErrViewDetail => '詳情';
+
+  @override
+  String get taskErrLongPressHint => '長按查看完整錯誤';
+
+  @override
+  String get taskQueue => '任務佇列';
+
+  @override
+  String get noTaskQueueItems => '暫無任務';
+
+  @override
+  String get taskKindDownload => '下載';
+
+  @override
+  String get taskKindScan => '刮削';
+
+  @override
+  String get taskKindRetagCloud => '更新標籤（雲端）';
+
+  @override
+  String get taskKindRetagLocal => '更新標籤（本地）';
+
+  @override
+  String taskProgressUnits(int done, int total) {
+    return '$done / $total';
+  }
+
+  @override
+  String get playlistMaxDepth => '最大子目錄深度';
+
+  @override
+  String get playlistMaxDepthHint => '0 = 僅目前目錄；1 = 目前目錄再下一層（預設）。範圍 0–20。';
+
+  @override
+  String get playlistMaxDepthInput => '深度';
+
+  @override
+  String get mediaScanSection => '刮削';
+
+  @override
+  String get mediaScanSectionHint => '遞迴與最大深度';
+
+  @override
+  String get mediaScanRecursive => '刮削時搜尋子目錄';
+
+  @override
+  String get mediaScanRecursiveHint => '預設開。關閉則刮削只處理選取的目前這一層。';
+
+  @override
+  String get mediaScanMaxDepth => '刮削最大深度';
+
+  @override
+  String get mediaScanMaxDepthHint => '預設 1。與播放清單深度相互獨立。';
+
+  @override
+  String get lyricsSourceEmbedded => '內嵌歌詞';
+
+  @override
+  String get trackStateStreamable => '可串流';
+
+  @override
+  String get trackStateRemoteMissing => '雲端不存在';
+
+  @override
+  String get remoteMissingRetrying => '正在重試遠端…';
+
+  @override
+  String get remoteMissingTitle => '雲端檔案不存在';
+
+  @override
+  String get remoteMissingBody => '再試仍找不到。刪除庫內條目，或重新導向到新的遠端路徑？';
+
+  @override
+  String get remoteMissingRedirect => '重新導向';
+
+  @override
+  String get actionStreamMusicOnce => '串流播放';
+
+  @override
+  String get select => '多選';
+
+  @override
+  String get mediaScanAction => '掃描入庫';
+
+  @override
+  String get mediaScanCounting => '列出路徑…';
+
+  @override
+  String get mediaScanConfirmTitle => '確認刮削';
+
+  @override
+  String mediaScanConfirmBody(int count) {
+    return '將刮削 $count 項，開始？';
+  }
+
+  @override
+  String get mediaScanStart => '開始刮削';
+
+  @override
+  String get mediaScanNothingNew => '沒有需要入庫的新路徑';
+
+  @override
+  String mediaScanQueued(int count) {
+    return '已加入 $count 個刮削任務';
+  }
+
+  @override
+  String get mediaLibrarySettings => '音樂庫';
+
+  @override
+  String get mediaLibrarySettingsHint => '預設開啟、預載、刮削、標籤';
+
+  @override
+  String get musicDefaultOpen => '預設開啟';
+
+  @override
+  String get musicDefaultOpenHint => '網路庫、媒體庫、歌單點按音樂時：快取播放或串流播放';
+
+  @override
+  String get musicDefaultCache => '快取播放';
+
+  @override
+  String get musicDefaultStream => '串流播放';
+
+  @override
+  String get musicDefaultInExtensionsHint => '已移至「設定 → 媒體庫 → 音樂庫」。';
+
+  @override
+  String get refreshTagsFromLocal => '從本機更新標籤';
+
+  @override
+  String get refreshTagsFromLocalHint => '讀取已快取音訊的標籤';
+
+  @override
+  String get refreshTagsFromCloud => '從雲端更新標籤';
+
+  @override
+  String get refreshTagsFromCloudHint => '排隊從雲端拉取標籤';
+
+  @override
+  String get destroyTracksAction => '刪除所選曲目';
+
+  @override
+  String get taskKindMatchRemote => '全量匹配';
+
+  @override
+  String get matchRemoteTitle => '全量匹配';
+
+  @override
+  String get matchRemoteHint => '探測雲端是否仍存在，缺失標紅點';
+
+  @override
+  String get matchRemoteQueued => '已加入全量匹配任務';
+
+  @override
+  String get destroyLibraryConfirm => '刪除整個音樂庫';
+
+  @override
+  String get netScanMusic => '掃描音樂';
+
+  @override
+  String get netScanMusicDesc => '刮削本資料夾中的音樂與 CUE';
+
+  @override
+  String get mediaLibrarySection => '媒體庫';
+
+  @override
+  String get libMenuStream => '串流播放';
+
+  @override
+  String get libMenuCache => '快取';
+
+  @override
+  String get libMenuClear => '清理';
+
+  @override
+  String get updateTagsFromCache => '從快取更新標籤';
+
+  @override
+  String get updateTagsFromCloud => '從雲端更新標籤';
+
+  @override
+  String get musicCacheMaxCapacity => '快取容量上限';
+
+  @override
+  String get musicCacheMaxCapacityHint => '超過後按最久未用清理；正在播放的不刪。0 表示不限制。';
+
+  @override
+  String get musicCacheMaxMb => '上限（MB）';
+
+  @override
+  String get musicCacheUnlimited => '不限制';
+
+  @override
+  String taskGroupCount(int count) {
+    return '$count 項';
+  }
+
+  @override
+  String get taskGroupMembers => '任務明細';
+
+  @override
+  String get prefetchSection => '預載與封面';
+
+  @override
+  String get prefetchSectionHint => '串流寫入臨時預載；快取播放按同一視窗背景快取。';
+
+  @override
+  String get audioPlaylistSection => '網路庫連播清單';
+
+  @override
+  String get waitingForCache => '正在快取…';
+
+  @override
+  String get libraryManageMode => '曲庫管理';
+
+  @override
+  String get libraryManageModeHint => '手動管理時僅由你主動操作改庫；自動補齊可從已綁定的網路根路徑增量刮削。';
+
+  @override
+  String get libraryModeManual => '手動管理';
+
+  @override
+  String get libraryModeManualHint => '預設。庫只因你的操作變化，不會在開啟時自動刮削。';
+
+  @override
+  String get libraryModeAuto => '自動補齊';
+
+  @override
+  String get libraryModeAutoHint =>
+      '起播時自動淺層刮削目前曲所在目錄並入庫缺失項；可選依綁定根過濾。下載仍只走播放模式。';
+
+  @override
+  String get libraryBackfillBindRoots => '綁定路徑';
+
+  @override
+  String get libraryBackfillBindRootsHint =>
+      '關閉：始終刮削正在播放曲目的父目錄。開啟：僅當曲目遠端路徑命中下方綁定根前綴時才刮削。';
+
+  @override
+  String get libraryBackfillRoots => '綁定的網路根路徑';
+
+  @override
+  String get libraryBackfillRootsHint =>
+      '開啟「綁定路徑」後，僅這些根的前綴命中才會觸發播放時刮削；網路磁碟「掃描音樂」仍可手動使用。';
+
+  @override
+  String get libraryBackfillAddRoot => '新增根路徑';
+
+  @override
+  String get libraryBackfillNeedAccount => '請先新增網盤帳號';
+
+  @override
+  String get libraryBackfillPickAccount => '選擇網盤帳號';
+
+  @override
+  String get libraryBackfillPickFolder => '選擇根資料夾';
 }

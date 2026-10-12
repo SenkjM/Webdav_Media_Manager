@@ -3,6 +3,8 @@
 > 编号 05 · 总索引：[00-INDEX.md](00-INDEX.md)  
 > 代码：`lib/services/music_audio_handler.dart`、`audio_player_service.dart`、`lib/screens/player_screen.dart`
 
+> **占位（开发中）**：串流与缓存将合一为同一套底部播放控件（只差本地是否有音频）；预载、Range 标签入库顺序见 [99 §17](99-IN-PROGRESS.md)。
+
 ## 1. 铁律：音频只播本地文件
 
 - `AudioPlayerService.playTrack` 解析本地路径失败就报「本地无缓存，请先下载」，**不会**在播放路径上入队下载。
@@ -61,6 +63,9 @@
 - 实现：`lib/widgets/mini_player.dart` 的 `_MiniProgressBar`（只有触摸条被加高，视觉仍是 2.5 px 细线）。
 
 ## 9. 音乐流式播放页
+
+> 流式文字标签 / 内嵌歌词（开发中）：见 [99 §14](99-IN-PROGRESS.md)。
+
 
 `lib/screens/music_stream_screen.dart`。它和视频播放页共用同一条远端流管线与同一个媒体会话，但界面完全不同——因为「正在听的歌」和「正在看的片」要求不一样：
 

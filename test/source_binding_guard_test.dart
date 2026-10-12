@@ -13,7 +13,7 @@ void main() {
     test(
       'the download queue never hands a source name to the WebDAV layer',
       () {
-        final source = File('lib/services/download_queue_service.dart')
+        final source = File('lib/services/task_queue_service.dart')
             .readAsStringSync();
         // e.g. `_webDav.downloadToFile(task.sourceName, …)` / `_webDav.readAsBytes(sourceName, …)`
         final offenders = RegExp(
@@ -40,7 +40,7 @@ void main() {
     });
 
     test('every _webDav call in the queue resolves an account first', () {
-      final source = File('lib/services/download_queue_service.dart')
+      final source = File('lib/services/task_queue_service.dart')
           .readAsStringSync();
       // Each call site is checked by its first argument name being `accountId`.
       final calls = RegExp(r'_webDav\.\w+\(\s*\n?\s*([A-Za-z_][A-Za-z0-9_]*)')

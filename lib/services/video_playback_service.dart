@@ -126,6 +126,22 @@ class VideoPlaybackService extends ChangeNotifier {
     _handler.setStreamArtUri(artUri);
   }
 
+  void setStreamTags({
+    required String remotePath,
+    String? title,
+    String? artist,
+    String? album,
+    Duration? duration,
+  }) {
+    _handler.setStreamTags(
+      remotePath: remotePath,
+      title: title,
+      artist: artist,
+      album: album,
+      duration: duration,
+    );
+  }
+
   /// Apply the user's speed choice and remember it for the next video.
   Future<void> setRate(double rate) async {
     final p = player;

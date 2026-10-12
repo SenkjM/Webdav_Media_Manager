@@ -11,8 +11,10 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
 import '../models/video_settings.dart';
+import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
+import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
@@ -25,7 +27,6 @@ import '../utils/video_pip.dart';
 import '../widgets/app_bottom_sheet.dart';
 import '../widgets/video_subtitle_sheet.dart';
 import '../utils/app_snack.dart';
-import 'music_stream_screen.dart';
 import 'subtitle_remote_picker_screen.dart';
 
 /// Everything the player needs to build a play queue for one video.
@@ -173,12 +174,39 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         // 复用同一个队列 seed，不再起一个没有画面的解码器。
         if (source.kind == StreamKind.music) {
           if (!mounted) return;
-          await Navigator.of(context, rootNavigator: true).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) =>
-                  MusicStreamScreen(source: source, seed: widget.seed),
-            ),
+          final accounts = context.read<AccountsService>();
+          final account = accounts.accountById(source.accountId);
+          final sourceName = account?.name ?? '';
+          final seed = widget.seed;
+          final siblings = seed?.siblings
+                  .where((e) => e.category == FileCategory.music)
+                  .toList() ??
+              [WebDavItem(
+                name: source.name,
+                path: source.remotePath,
+                isDirectory: false,
+                category: FileCategory.music,
+              )];
+          final playlist = [
+            for (final e in siblings)
+              TrackInfo(
+                sourceName: sourceName,
+                accountId: source.accountId,
+                remotePath: e.path,
+                fileName: e.name,
+              ),
+          ];
+          final track = TrackInfo(
+            sourceName: sourceName,
+            accountId: source.accountId,
+            remotePath: source.remotePath,
+            fileName: source.name,
           );
+          await context.read<AudioPlayerService>().playTrack(
+            track,
+            playlist: playlist.isEmpty ? [track] : playlist,
+          );
+          if (mounted) Navigator.of(context).pop();
           return;
         }
       }
@@ -241,7 +269,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       initialRemotePath: seed.current.path,
       fileTypes: context.read<SettingsService>().fileTypes,
       autoAdvance: true,
-      deepScan: context.read<SettingsService>().videoScanSubdirs,
+      walkOptions: context.read<SettingsService>().videoPlaylistWalkOptions,
     );
     queue.addListener(_onQueueChanged);
     _queue = queue;

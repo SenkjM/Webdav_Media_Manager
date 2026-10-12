@@ -34,6 +34,7 @@ description: 在改 SenkjM/Webdav_Media_Manager 时使用：分支、提交、�
 - 生成方法的占位符参数顺序是名字母序，不是句子里出现的顺序。例如 `videoSubtitleSizeCurrent(max, min, size)`（`lib/l10n/generated/app_localizations_zh.dart`）。调用时按生成签名传，不要按中文语序排。
 - 语言菜单里的语言名是自称，写在 `AppLocalePreference.nativeName`：简体中文、繁體中文、English。不进 ARB。「跟随系统」仍用 `l10n.languageSystem`。
 - 直接写在 Dart / Kotlin 里的中文不会随语言变，三种界面都仍是这句中文。新的用户可见句子放进三份 ARB。不要为了某一个 locale 去改这句字面量。`debugPrint`、探测串、以及有意留下的原生回退文案保持中文。
+- **硬规则（用户可见文案）**：ARB / UI 文案只写操作语义（用户要点什么、会发生什么）。**禁止**写代码落地细节：实现路径、内部类型名、prefs / 执行器等内部名、执行顺序备注、给开发者看的说明。实现说明写 [99](../99-IN-PROGRESS.md) 或代码注释，不要塞进界面。
 - 下拉和弹出菜单圆角是 10。`DropdownButton` / `DropdownButtonFormField` 要自己传 `borderRadius: BorderRadius.circular(10)`；不传时 Flutter 用直角。`AppTheme` 的 `popupMenuTheme` 也是 10（`lib/theme/app_theme.dart`）。不要换成 `DropdownMenu`。
 
 ## 数据库哨兵

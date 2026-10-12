@@ -31,6 +31,9 @@ String normalizeSourceName(String name) {
   return name.trim().replaceAll(RegExp(r'\s+'), ' ');
 }
 
+/// Case-folded disk name for uniqueness (app checks + DB UNIQUE).
+String accountNameKey(String name) => normalizeSourceName(name).toLowerCase();
+
 /// Stable offline music_id for a normal (non-CUE-slice) track.
 /// `hash(网盘名 + normalized remotePath)` — NOT a content hash of audio bytes.
 String musicIdForRemote(String sourceName, String remotePath) {

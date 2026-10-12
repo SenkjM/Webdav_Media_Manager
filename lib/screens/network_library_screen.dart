@@ -6,9 +6,9 @@ import 'package:provider/provider.dart';
 
 import '../models/account_capabilities.dart';
 import '../l10n/generated/app_localizations.dart';
-import '../models/download_task.dart';
+import '../models/queue_task.dart';
 import '../models/file_actions.dart';
-import '../models/webdav_stream.dart';
+import '../models/play_open_mode.dart';
 import '../models/file_type_config.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
@@ -16,10 +16,12 @@ import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cloud_drive_service.dart';
-import '../services/download_queue_service.dart';
+import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/app_snack.dart';
+import '../utils/task_error.dart';
+import '../utils/scan_candidates.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
@@ -35,7 +37,6 @@ import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
-import 'music_stream_screen.dart';
 import 'video_player_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 
@@ -358,16 +359,24 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 这个条目在这份设置下的默认动作。
   FileAction _defaultActionFor(WebDavItem item) {
     final settings = context.read<SettingsService>();
+    if (item.category == FileCategory.music) {
+      return settings.musicDefaultOpenAction;
+    }
     return settings.fileActions.forCategory(item.category);
   }
 
   /// 按设置的动作处理一个文件。
   ///
-  /// 三个入口（整行点按、多选工具栏、更多菜单）都走这里，所以「点按音乐
-  /// 会缓存」和「菜单里的缓存音乐」永远是同一段代码。动作与条目类型不匹配
-  /// 时**直接说明原因**，不去猜用户想干什么——静默换成另一个动作会让设置
-  /// 看起来没生效。
+  /// 音乐默认打开走 [PlayOpenMode]（缓存播放 / 串流播放），会真正起播；
+  /// 菜单里的「缓存」仍只入队。其它类别仍走 [FileAction]。
   Future<void> _runDefaultAction(WebDavItem item) async {
+    if (!item.isDirectory && item.category == FileCategory.music) {
+      final mode = context.read<SettingsService>().musicDefaultStream
+          ? PlayOpenMode.stream
+          : PlayOpenMode.cache;
+      await _playMusic(item, mode: mode);
+      return;
+    }
     final decision = judgeAction(
       action: _defaultActionFor(item),
       category: item.category,
@@ -436,7 +445,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       folderListing: _items,
     );
     // 界面先落地：源解析交给页内 loader（云盘要三跳网络，原来会卡住整条
-    // 跳转链）；「伪装成视频的音频」由视频页解析后路由去音乐页（99 §7.2.9）。
+    // 跳转链）；「伪装成视频的音频」由视频页解析后走统一 AudioPlayerService。
     await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => VideoPlayerScreen(
@@ -460,7 +469,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
+    final downloads = context.read<TaskQueueService>();
     try {
       await downloads.ensureQueued(sourceName, item.path, fileName: item.name);
     } catch (e) {
@@ -469,7 +478,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netEnqueueFailed(
-          DownloadQueueService.describeError(
+          TaskQueueService.describeError(
             downloads.lastError ?? e.toString(),
             l10n,
           ),
@@ -483,7 +492,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
+    final downloads = context.read<TaskQueueService>();
     try {
       final queued = await downloads.enqueueToDownloads(
         sourceName,
@@ -500,7 +509,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netEnqueueFailed(
-          DownloadQueueService.describeError(
+          TaskQueueService.describeError(
             downloads.lastError ?? e.toString(),
             l10n,
           ),
@@ -509,55 +518,44 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     }
   }
 
-  /// 音乐 → 远端流式播放。
-  ///
-  /// 不下载进曲库、不入队。封面在播放页用 Range 读内嵌图，或按设置找同目录
-  /// 图片；时长由播放器自己报。取舍见 docs/99 §1.2。
+  /// 菜单「串流」：仅本次串流播放。
   Future<void> _streamMusic(WebDavItem item) async {
-    if (!context.read<SettingsService>().audioStreamingEnabled) {
-      AppSnack.error(
-        context,
-        AppLocalizations.of(context)!.netStreamingExperimental,
-      );
-      return;
-    }
-    final accountId = _accountId;
-    if (accountId == null) return;
-    await _openMusicStream(item, accountId: accountId);
+    await _playMusic(item, mode: PlayOpenMode.stream);
   }
 
-  /// 打开音乐流式播放界面（音频与「被当成视频的音频」共用这一条路径）。
-  ///
-  /// 界面**先落地**：没带 [source] 时把解析交给页内 loader，跳转不再等
-  /// 网络——云盘账号的解析要走列表 + filemetas + HEAD，原来会把整条 UI
-  /// 链卡住（流式体验改造，见 99 §7.2.7）。prepare 只做媒体会话登记，
-  /// 不碰网络，交给页内 _open 处理。
-  Future<void> _openMusicStream(
+  /// 网络库音乐：按当前路径生成队列，按 [mode] 起播。
+  Future<void> _playMusic(
     WebDavItem item, {
-    required String accountId,
-    WebDavStreamSource? source,
+    required PlayOpenMode mode,
   }) async {
-    final seed = VideoQueueSeed(
-      accountId: accountId,
-      folderPath: _path,
-      current: item,
-      siblings: _items.where((e) => e.category == FileCategory.music).toList(),
-    );
-    await Navigator.of(context, rootNavigator: true).push(
-      MaterialPageRoute(
-        builder: (_) => MusicStreamScreen(
-          source: source,
-          sourceLoader: source != null
-              ? null
-              : () => context.read<WebDavService>().resolveStreamSource(
-                  remotePath: item.path,
-                  name: item.name,
-                  accountId: accountId,
-                  kind: StreamKind.music,
-                ),
-          seed: seed,
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final accounts = context.read<AccountsService>();
+    final account = accounts.accountById(accountId);
+    final sourceName = account?.name ?? '';
+    if (sourceName.isEmpty) return;
+    final siblings =
+        _items.where((e) => e.category == FileCategory.music).toList();
+    if (siblings.isEmpty) siblings.add(item);
+    final playlist = [
+      for (final e in siblings)
+        TrackInfo(
+          sourceName: sourceName,
+          accountId: accountId,
+          remotePath: e.path,
+          fileName: e.name,
         ),
-      ),
+    ];
+    final track = TrackInfo(
+      sourceName: sourceName,
+      accountId: accountId,
+      remotePath: item.path,
+      fileName: item.name,
+    );
+    await context.read<AudioPlayerService>().playTrack(
+      track,
+      playlist: playlist,
+      mode: mode,
     );
   }
 
@@ -603,7 +601,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.show(
         context,
         l10n.netCueReadFailed(
-          DownloadQueueService.describeError(e.toString(), l10n),
+          TaskQueueService.describeError(e.toString(), l10n),
         ),
       );
     }
@@ -766,7 +764,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
     try {
-      await context.read<DownloadQueueService>().enqueueCueGroup(
+      await context.read<TaskQueueService>().enqueueCueGroup(
         sourceName: sourceName,
         cueRemotePath: item.path,
         cueFileName: item.name,
@@ -778,7 +776,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netCueDownloadFailed(
-          DownloadQueueService.describeError(e.toString(), l10n),
+          TaskQueueService.describeError(e.toString(), l10n),
         ),
       );
     }
@@ -798,9 +796,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final defaultAction = settings.fileActions.forCategory(item.category);
     final otherActions = FileActionCatalog.forCategory(item.category)
         .where((a) => a != defaultAction)
-        .where(
-          (a) => a != FileAction.streamMusic || settings.audioStreamingEnabled,
-        )
         .toList();
 
     await showModalBottomSheet<void>(
@@ -850,6 +845,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     onTap: () {
                       Navigator.pop(ctx);
                       _enqueueFolder(item);
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.travel_explore_outlined),
+                    title: Text(l10n.netScanMusic),
+                    subtitle: Text(l10n.netScanMusicDesc),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      unawaited(_scanSelection([item], const []));
                     },
                   ),
                   ListTile(
@@ -980,7 +984,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
+    final downloads = context.read<TaskQueueService>();
     try {
       final queued = await downloads.enqueueGallery(
         sourceName,
@@ -1000,7 +1004,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netEnqueueFailed(
-          DownloadQueueService.describeError(
+          TaskQueueService.describeError(
             downloads.lastError ?? e.toString(),
             l10n,
           ),
@@ -1110,7 +1114,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final accounts = context.watch<AccountsService>();
-    final downloads = context.watch<DownloadQueueService>();
+    final downloads = context.watch<TaskQueueService>();
     final player = context.watch<AudioPlayerService>();
     final active = accounts.activeAccount;
 
@@ -1157,7 +1161,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
   Widget _buildScaffold(
     AccountsService accounts,
-    DownloadQueueService downloads,
+    TaskQueueService downloads,
     AudioPlayerService player,
     WebDavAccount? active,
   ) {
@@ -1240,7 +1244,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   }
 
   Widget _buildBody(
-    DownloadQueueService downloads,
+    TaskQueueService downloads,
     AudioPlayerService player,
     WebDavAccount? active,
   ) {
@@ -1336,7 +1340,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 final saved =
                     task != null &&
                     task.isGallery &&
-                    task.status == DownloadStatus.completed;
+                    task.status == TaskStatus.completed;
                 return ListTile(
                   leading: _selectionLeading(
                     item,
@@ -1450,7 +1454,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     if (state != TrackUiState.remote)
                       TrackStatusChip(
                         state: state,
-                        progress: task?.status == DownloadStatus.active
+                        progress: task?.status == TaskStatus.active
                             ? task?.progress
                             : null,
                       ),
@@ -1536,7 +1540,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // 有什么）就可用。下载是基本功能，选中任何东西都可用。
     final canCacheMusic =
         folders.isNotEmpty ||
-        files.any((e) => e.category == FileCategory.music);
+        files.any(
+          (e) =>
+              e.category == FileCategory.music ||
+              e.category == FileCategory.cue,
+        );
     final canDownload = items.isNotEmpty;
     return SelectionToolbar(
       children: [
@@ -1579,6 +1587,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           icon: const Icon(Icons.library_music_outlined),
         ),
         IconButton(
+          tooltip: AppLocalizations.of(context)!.mediaScanAction,
+          onPressed: canCacheMusic
+              ? () => unawaited(_scanSelection(folders, files))
+              : null,
+          icon: const Icon(Icons.manage_search_outlined),
+        ),
+        IconButton(
           tooltip: AppLocalizations.of(context)!.download,
           onPressed: canDownload
               ? () => _downloadSelection(folders, files)
@@ -1601,6 +1616,106 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         ),
       ],
     );
+  }
+
+
+  /// 刮削：先统计再入队 TaskKind.scan（增量：路径已在库则跳过）。
+  Future<void> _scanSelection(
+    List<WebDavItem> folders,
+    List<WebDavItem> files,
+  ) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final accounts = context.read<AccountsService>();
+    final account = accounts.accountById(accountId);
+    final sourceName = account?.name;
+    if (sourceName == null || sourceName.isEmpty) return;
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.read<SettingsService>();
+    final webDav = context.read<WebDavService>();
+    final walk = settings.mediaScanWalkOptions;
+    final queue = context.read<TaskQueueService>();
+
+    final roots = <WebDavItem>[
+      ...folders,
+      ...files.where(
+        (e) =>
+            e.category == FileCategory.music || e.category == FileCategory.cue,
+      ),
+    ];
+    if (roots.isEmpty) {
+      AppSnack.show(context, l10n.netNoNewAudio);
+      return;
+    }
+
+    // One lightweight walk → path list (no library / CUE parse / modal blocker).
+    bool isMusic(String name) =>
+        settings.fileTypes.categoryFor(name) == FileCategory.music;
+    bool isCue(String name) =>
+        settings.fileTypes.categoryFor(name) == FileCategory.cue;
+    final plan = <({WebDavItem root, List<ScanPathEntry> paths})>[];
+    var total = 0;
+    try {
+      for (final root in roots) {
+        final paths = await listScanPaths(
+          webDav: webDav,
+          accountId: accountId,
+          rootPath: root.path,
+          rootIsFile: !root.isDirectory,
+          walk: walk,
+          isMusic: isMusic,
+          isCue: isCue,
+        );
+        plan.add((root: root, paths: paths));
+        total += paths.length;
+      }
+    } catch (e) {
+      if (context.mounted) {
+        AppSnack.error(context, TaskError.classify(e).detail);
+      }
+      return;
+    }
+    if (!context.mounted) return;
+    if (total == 0) {
+      AppSnack.show(context, l10n.mediaScanNothingNew);
+      return;
+    }
+
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.mediaScanConfirmTitle),
+        content: Text(l10n.mediaScanConfirmBody(total)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.mediaScanStart),
+          ),
+        ],
+      ),
+    );
+    if (go != true || !context.mounted) return;
+
+    var queued = 0;
+    for (final row in plan) {
+      if (row.paths.isEmpty) continue;
+      await queue.enqueueScan(
+        sourceName: sourceName,
+        remotePath: row.root.path,
+        fileName: row.root.name,
+        unitsTotal: row.paths.length,
+        paths: row.paths,
+      );
+      queued++;
+    }
+    if (context.mounted) {
+      AppSnack.show(context, l10n.mediaScanQueued(queued));
+      _exitSelect();
+    }
   }
 
   /// 缓存音乐：把选中内容里的音频收进缓存，随后 ingest 进音乐库。
@@ -1635,7 +1750,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 两条线共用的排队流程。
   ///
   /// 界面只管把「选中的文件夹」和「选中的文件」一起交出去：扫描、去重、
-  /// 入队全在服务层（[DownloadQueueService.enqueueSelection]）。界面这边再分
+  /// 入队全在服务层（[TaskQueueService.enqueueSelection]）。界面这边再分
   /// 「文件夹那条路 / 文件那条路」，一旦同时选中文件夹和里面的文件，同一个
   /// 路径就会从两个入口各排一次。
   Future<void> _queueSelection(
@@ -1648,7 +1763,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null || (folders.isEmpty && files.isEmpty)) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<DownloadQueueService>();
+    final downloads = context.read<TaskQueueService>();
     AppSnack.show(context, busyText);
     try {
       final r = await downloads.enqueueSelection(

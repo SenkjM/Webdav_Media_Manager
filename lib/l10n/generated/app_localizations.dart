@@ -270,7 +270,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadQueue.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列'**
+  /// **'任务队列'**
   String get downloadQueue;
 
   /// No description provided for @aboutAgpl.
@@ -588,7 +588,7 @@ abstract class AppLocalizations {
   /// No description provided for @streamPlaybackHint.
   ///
   /// In zh, this message translates to:
-  /// **'音乐不下载到本地，直接从网盘边听边传。'**
+  /// **'串流时用临时预载；有本地缓存则优先播缓存。'**
   String get streamPlaybackHint;
 
   /// No description provided for @streamMusic.
@@ -624,7 +624,7 @@ abstract class AppLocalizations {
   /// No description provided for @scanSubdirectoriesHint.
   ///
   /// In zh, this message translates to:
-  /// **'打开：当前目录及其所有子目录里的音频都进列表。关闭：只列当前这一层。'**
+  /// **'打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。'**
   String get scanSubdirectoriesHint;
 
   /// No description provided for @streamSidecarCover.
@@ -666,7 +666,7 @@ abstract class AppLocalizations {
   /// No description provided for @streamPrefetchHint.
   ///
   /// In zh, this message translates to:
-  /// **'一次只预载一首：先向前（上一首方向），再向后。已经在播放列表里、或缓存文件已经完整的，不会再取。0 表示该方向不预载。滑出窗口不删，下次启动才清空。'**
+  /// **'向前／向后各几首。串流播放时写入临时预载；缓存播放时按同一窗口后台缓存。0 表示该方向不预载。'**
   String get streamPrefetchHint;
 
   /// No description provided for @downloadPending.
@@ -732,13 +732,13 @@ abstract class AppLocalizations {
   /// No description provided for @noDownloadTasks.
   ///
   /// In zh, this message translates to:
-  /// **'暂无下载任务'**
+  /// **'暂无任务'**
   String get noDownloadTasks;
 
   /// No description provided for @queueCleared.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列已清空'**
+  /// **'任务队列已清空'**
   String get queueCleared;
 
   /// No description provided for @clearAllQueue.
@@ -830,6 +830,78 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'该名称已被占用，建议换一个'**
   String get accountNameTaken;
+
+  /// No description provided for @accountNameCleanupTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理同名账号'**
+  String get accountNameCleanupTitle;
+
+  /// No description provided for @accountNameCleanupHeading.
+  ///
+  /// In zh, this message translates to:
+  /// **'存在同名账号'**
+  String get accountNameCleanupHeading;
+
+  /// No description provided for @accountNameCleanupBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'请删除多余的同名账号，只保留每个名称对应的一个。清理完成后即可继续使用。'**
+  String get accountNameCleanupBody;
+
+  /// No description provided for @accountNameCleanupGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称「{name}」有多条'**
+  String accountNameCleanupGroup(String name);
+
+  /// No description provided for @accountNameCleanupActive.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前使用中'**
+  String get accountNameCleanupActive;
+
+  /// No description provided for @accountNameCleanupDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除此账号？'**
+  String get accountNameCleanupDeleteTitle;
+
+  /// No description provided for @accountNameCleanupDeleteContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'将删除「{name}」及其本地凭证。曲库里绑定该名称的条目会变为未绑定，直到你添加同名账号。'**
+  String accountNameCleanupDeleteContent(String name);
+
+  /// No description provided for @accountNameCleanupDetailTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'账号详情'**
+  String get accountNameCleanupDetailTitle;
+
+  /// No description provided for @accountNameCleanupId.
+  ///
+  /// In zh, this message translates to:
+  /// **'编号'**
+  String get accountNameCleanupId;
+
+  /// No description provided for @accountNameCleanupShowPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'显示密码'**
+  String get accountNameCleanupShowPassword;
+
+  /// No description provided for @accountNameCleanupHidePassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'隐藏密码'**
+  String get accountNameCleanupHidePassword;
+
+  /// No description provided for @accountNameCleanupNoPassword.
+  ///
+  /// In zh, this message translates to:
+  /// **'（未保存密码）'**
+  String get accountNameCleanupNoPassword;
 
   /// No description provided for @accountType.
   ///
@@ -1032,7 +1104,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadQueueSettings.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列'**
+  /// **'任务队列'**
   String get downloadQueueSettings;
 
   /// No description provided for @downloadQueueSettingsSubtitle.
@@ -1260,7 +1332,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileQueuedOrSaved.
   ///
   /// In zh, this message translates to:
-  /// **'该文件已在下载队列或已下载'**
+  /// **'该文件已在任务队列或已下载'**
   String get fileQueuedOrSaved;
 
   /// No description provided for @fileQueuedOrSavedShort.
@@ -1824,7 +1896,7 @@ abstract class AppLocalizations {
   /// No description provided for @playlistMissingInLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'暂无 · {name}'**
+  /// **'库中暂无 · {name}'**
   String playlistMissingInLibrary(Object name);
 
   /// No description provided for @libraryEmpty.
@@ -2163,6 +2235,18 @@ abstract class AppLocalizations {
   /// **'更新此曲标签'**
   String get updateThisTrackTags;
 
+  /// No description provided for @playerSourceCached.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存'**
+  String get playerSourceCached;
+
+  /// No description provided for @playerSourceStreaming.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式'**
+  String get playerSourceStreaming;
+
   /// No description provided for @nowPlaying.
   ///
   /// In zh, this message translates to:
@@ -2280,37 +2364,37 @@ abstract class AppLocalizations {
   /// No description provided for @destroyLibraryTitle.
   ///
   /// In zh, this message translates to:
-  /// **'销毁音乐库'**
+  /// **'删除音乐库？'**
   String get destroyLibraryTitle;
 
   /// No description provided for @destroyLibraryBody.
   ///
   /// In zh, this message translates to:
-  /// **'会逐条销毁本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。'**
+  /// **'会逐条删除本地音乐库：每一首的缓存音频、封面与库记录都会被删除，并各留一条墓碑。'**
   String get destroyLibraryBody;
 
   /// No description provided for @destroyLibraryNote.
   ///
   /// In zh, this message translates to:
-  /// **'删除记录会在下次同步时上传到云端，云端重建也恢复不了这次销毁的内容。此操作后会关闭自动同步。'**
+  /// **'删除记录会在下次同步时上传；云端重建无法恢复已删除内容。之后会关闭自动同步。'**
   String get destroyLibraryNote;
 
   /// No description provided for @destroyLibraryAction.
   ///
   /// In zh, this message translates to:
-  /// **'销毁'**
+  /// **'删除音乐库'**
   String get destroyLibraryAction;
 
   /// No description provided for @destroyLibraryPhrase.
   ///
   /// In zh, this message translates to:
-  /// **'如果确认销毁请输入 YES'**
+  /// **'输入 YES 确认删除'**
   String get destroyLibraryPhrase;
 
   /// No description provided for @destroyLibraryDone.
   ///
   /// In zh, this message translates to:
-  /// **'已销毁 {count} 首；下次同步上传删除记录，定时同步已关闭'**
+  /// **'已删除 {count} 首曲目；删除记录将在下次同步上传，定时同步已关闭'**
   String destroyLibraryDone(Object count);
 
   /// No description provided for @readCloudLibraryFailed.
@@ -2898,7 +2982,7 @@ abstract class AppLocalizations {
   /// No description provided for @destroyInProgress.
   ///
   /// In zh, this message translates to:
-  /// **'正在销毁'**
+  /// **'删除中…'**
   String get destroyInProgress;
 
   /// No description provided for @processedOfTotal.
@@ -2910,7 +2994,7 @@ abstract class AppLocalizations {
   /// No description provided for @destroyStopHint.
   ///
   /// In zh, this message translates to:
-  /// **'「终止」或直接返回都会停在当前这首之后；已经销毁的不会恢复。'**
+  /// **'停止或返回会在当前曲目结束后生效；已删除的曲目不会恢复。'**
   String get destroyStopHint;
 
   /// No description provided for @actionStop.
@@ -3711,7 +3795,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlChannelProgressDesc.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列进行中的进度'**
+  /// **'任务队列进行中的进度'**
   String get dlChannelProgressDesc;
 
   /// No description provided for @dlChannelDoneName.
@@ -3777,7 +3861,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlErrQueueSchemaDrift.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列数据库结构过旧（{raw}）。请重启应用以升级数据库。'**
+  /// **'任务队列数据库结构过旧（{raw}）。请重启应用以升级数据库。'**
   String dlErrQueueSchemaDrift(Object raw);
 
   /// No description provided for @dlErrSourceUnbound.
@@ -3963,7 +4047,7 @@ abstract class AppLocalizations {
   /// No description provided for @netEnqueueing.
   ///
   /// In zh, this message translates to:
-  /// **'正在加入下载队列…'**
+  /// **'正在加入任务队列…'**
   String get netEnqueueing;
 
   /// No description provided for @netNothingDownloadable.
@@ -4269,7 +4353,7 @@ abstract class AppLocalizations {
   /// No description provided for @destroyTracksTitle.
   ///
   /// In zh, this message translates to:
-  /// **'销毁所选曲目？'**
+  /// **'删除所选曲目？'**
   String get destroyTracksTitle;
 
   /// No description provided for @destroyTracksBody.
@@ -4287,13 +4371,13 @@ abstract class AppLocalizations {
   /// No description provided for @destroyAction.
   ///
   /// In zh, this message translates to:
-  /// **'销毁'**
+  /// **'删除'**
   String get destroyAction;
 
   /// No description provided for @destroyedTracksCount.
   ///
   /// In zh, this message translates to:
-  /// **'已销毁 {count} 首曲目'**
+  /// **'已删除 {count} 首曲目'**
   String destroyedTracksCount(Object count);
 
   /// No description provided for @shareCueUnsupported.
@@ -4479,7 +4563,7 @@ abstract class AppLocalizations {
   /// No description provided for @deleteCacheKeepMeta.
   ///
   /// In zh, this message translates to:
-  /// **'删除缓存（保留元数据与封面）'**
+  /// **'清理缓存（保留标签）'**
   String get deleteCacheKeepMeta;
 
   /// No description provided for @updateTags.
@@ -4515,7 +4599,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryEmptyGuide.
   ///
   /// In zh, this message translates to:
-  /// **'暂无曲目：先在「网络库」下载音乐。'**
+  /// **'暂无曲目：可在网络库扫描入库，或下载后进入曲库。'**
   String get libraryEmptyGuide;
 
   /// No description provided for @tagTitle.
@@ -5636,7 +5720,7 @@ abstract class AppLocalizations {
   /// No description provided for @videoScanSubdirsHint.
   ///
   /// In zh, this message translates to:
-  /// **'播放列表是否包含子目录里的视频'**
+  /// **'打开后，视频播放列表包含子目录（深度见下方）；关闭则只列当前层。与音乐播列表、刮削设置独立。'**
   String get videoScanSubdirsHint;
 
   /// No description provided for @videoBufferSize.
@@ -5774,7 +5858,7 @@ abstract class AppLocalizations {
   /// No description provided for @audioStreamingSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'流式传输开关 / 搜索子目录'**
+  /// **'预载窗口、同目录封面、搜索子目录'**
   String get audioStreamingSubtitle;
 
   /// No description provided for @fileTypesManage.
@@ -5870,7 +5954,7 @@ abstract class AppLocalizations {
   /// No description provided for @clearAudioCache.
   ///
   /// In zh, this message translates to:
-  /// **'手动清空音频缓存'**
+  /// **'清理音频缓存'**
   String get clearAudioCache;
 
   /// No description provided for @shareRenameHint.
@@ -6092,7 +6176,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadNotifications.
   ///
   /// In zh, this message translates to:
-  /// **'下载队列系统通知'**
+  /// **'任务队列系统通知'**
   String get downloadNotifications;
 
   /// No description provided for @downloadNotificationsHint.
@@ -6682,6 +6766,588 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'[内嵌] {language}'**
   String subtitleEmbedded(Object language);
+
+  /// No description provided for @taskErrNetDns.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络错误：DNS'**
+  String get taskErrNetDns;
+
+  /// No description provided for @taskErrNetTimeout.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络错误：超时'**
+  String get taskErrNetTimeout;
+
+  /// No description provided for @taskErrNetUnreachable.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络错误：不可达'**
+  String get taskErrNetUnreachable;
+
+  /// No description provided for @taskErrNetConnection.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络错误：连接失败'**
+  String get taskErrNetConnection;
+
+  /// No description provided for @taskErrCloudUnauthorized.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端未授权'**
+  String get taskErrCloudUnauthorized;
+
+  /// No description provided for @taskErrCloudForbidden.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端权限不足'**
+  String get taskErrCloudForbidden;
+
+  /// No description provided for @taskErrCloudNotFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端文件不存在'**
+  String get taskErrCloudNotFound;
+
+  /// No description provided for @taskErrCloudServer.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端服务器错误'**
+  String get taskErrCloudServer;
+
+  /// No description provided for @taskErrCloudHttp.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端请求失败'**
+  String get taskErrCloudHttp;
+
+  /// No description provided for @taskErrUnknown.
+  ///
+  /// In zh, this message translates to:
+  /// **'其它错误'**
+  String get taskErrUnknown;
+
+  /// No description provided for @taskErrRetryExhausted.
+  ///
+  /// In zh, this message translates to:
+  /// **'重试已尽 · {reason}'**
+  String taskErrRetryExhausted(String reason);
+
+  /// No description provided for @taskErrSourceUnbound.
+  ///
+  /// In zh, this message translates to:
+  /// **'来源网盘未绑定'**
+  String get taskErrSourceUnbound;
+
+  /// No description provided for @taskErrQueueSchemaDrift.
+  ///
+  /// In zh, this message translates to:
+  /// **'队列数据库需升级'**
+  String get taskErrQueueSchemaDrift;
+
+  /// No description provided for @taskErrDetailTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'错误详情'**
+  String get taskErrDetailTitle;
+
+  /// No description provided for @taskErrViewDetail.
+  ///
+  /// In zh, this message translates to:
+  /// **'详情'**
+  String get taskErrViewDetail;
+
+  /// No description provided for @taskErrLongPressHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按查看完整错误'**
+  String get taskErrLongPressHint;
+
+  /// No description provided for @taskQueue.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务队列'**
+  String get taskQueue;
+
+  /// No description provided for @noTaskQueueItems.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无任务'**
+  String get noTaskQueueItems;
+
+  /// No description provided for @taskKindDownload.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载'**
+  String get taskKindDownload;
+
+  /// No description provided for @taskKindScan.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削'**
+  String get taskKindScan;
+
+  /// No description provided for @taskKindRetagCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新标签（云端）'**
+  String get taskKindRetagCloud;
+
+  /// No description provided for @taskKindRetagLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新标签（本地）'**
+  String get taskKindRetagLocal;
+
+  /// No description provided for @taskProgressUnits.
+  ///
+  /// In zh, this message translates to:
+  /// **'{done} / {total}'**
+  String taskProgressUnits(int done, int total);
+
+  /// No description provided for @playlistMaxDepth.
+  ///
+  /// In zh, this message translates to:
+  /// **'最大子目录深度'**
+  String get playlistMaxDepth;
+
+  /// No description provided for @playlistMaxDepthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'0 = 仅当前目录；1 = 当前目录再下一层（默认）。范围 0–20。'**
+  String get playlistMaxDepthHint;
+
+  /// No description provided for @playlistMaxDepthInput.
+  ///
+  /// In zh, this message translates to:
+  /// **'深度'**
+  String get playlistMaxDepthInput;
+
+  /// No description provided for @mediaScanSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削'**
+  String get mediaScanSection;
+
+  /// No description provided for @mediaScanSectionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'递归与最大深度'**
+  String get mediaScanSectionHint;
+
+  /// No description provided for @mediaScanRecursive.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削时搜索子目录'**
+  String get mediaScanRecursive;
+
+  /// No description provided for @mediaScanRecursiveHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认开。关闭则刮削只处理选中的当前层。'**
+  String get mediaScanRecursiveHint;
+
+  /// No description provided for @mediaScanMaxDepth.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削最大深度'**
+  String get mediaScanMaxDepth;
+
+  /// No description provided for @mediaScanMaxDepthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认 1。与播放列表深度相互独立。'**
+  String get mediaScanMaxDepthHint;
+
+  /// Label above embedded lyrics on the music stream screen
+  ///
+  /// In zh, this message translates to:
+  /// **'内嵌歌词'**
+  String get lyricsSourceEmbedded;
+
+  /// Library row with no local cache but streamable
+  ///
+  /// In zh, this message translates to:
+  /// **'可串流'**
+  String get trackStateStreamable;
+
+  /// No description provided for @trackStateRemoteMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端不存在'**
+  String get trackStateRemoteMissing;
+
+  /// No description provided for @remoteMissingRetrying.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在重试远端…'**
+  String get remoteMissingRetrying;
+
+  /// No description provided for @remoteMissingTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'云端文件不存在'**
+  String get remoteMissingTitle;
+
+  /// No description provided for @remoteMissingBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'再试仍找不到。删除库内条目，或重定向到新的远端路径？'**
+  String get remoteMissingBody;
+
+  /// No description provided for @remoteMissingRedirect.
+  ///
+  /// In zh, this message translates to:
+  /// **'重定向'**
+  String get remoteMissingRedirect;
+
+  /// No description provided for @actionStreamMusicOnce.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式播放'**
+  String get actionStreamMusicOnce;
+
+  /// No description provided for @select.
+  ///
+  /// In zh, this message translates to:
+  /// **'多选'**
+  String get select;
+
+  /// No description provided for @mediaScanAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描入库'**
+  String get mediaScanAction;
+
+  /// No description provided for @mediaScanCounting.
+  ///
+  /// In zh, this message translates to:
+  /// **'列出路径…'**
+  String get mediaScanCounting;
+
+  /// No description provided for @mediaScanConfirmTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'确认刮削'**
+  String get mediaScanConfirmTitle;
+
+  /// mediaScanConfirmBody
+  ///
+  /// In zh, this message translates to:
+  /// **'将刮削 {count} 项，开始？'**
+  String mediaScanConfirmBody(int count);
+
+  /// No description provided for @mediaScanStart.
+  ///
+  /// In zh, this message translates to:
+  /// **'开始刮削'**
+  String get mediaScanStart;
+
+  /// No description provided for @mediaScanNothingNew.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有需要入库的新路径'**
+  String get mediaScanNothingNew;
+
+  /// mediaScanQueued
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入 {count} 个刮削任务'**
+  String mediaScanQueued(int count);
+
+  /// No description provided for @mediaLibrarySettings.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐库'**
+  String get mediaLibrarySettings;
+
+  /// No description provided for @mediaLibrarySettingsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认打开、预载、刮削、标签'**
+  String get mediaLibrarySettingsHint;
+
+  /// No description provided for @musicDefaultOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认打开'**
+  String get musicDefaultOpen;
+
+  /// No description provided for @musicDefaultOpenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络库、媒体库、歌单点按音乐时：缓存播放或串流播放'**
+  String get musicDefaultOpenHint;
+
+  /// No description provided for @musicDefaultCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存播放'**
+  String get musicDefaultCache;
+
+  /// No description provided for @musicDefaultStream.
+  ///
+  /// In zh, this message translates to:
+  /// **'串流播放'**
+  String get musicDefaultStream;
+
+  /// No description provided for @musicDefaultInExtensionsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'已移至「设置 → 媒体库 → 音乐库」。'**
+  String get musicDefaultInExtensionsHint;
+
+  /// No description provided for @refreshTagsFromLocal.
+  ///
+  /// In zh, this message translates to:
+  /// **'从本地更新标签'**
+  String get refreshTagsFromLocal;
+
+  /// No description provided for @refreshTagsFromLocalHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'读取已缓存音频的标签'**
+  String get refreshTagsFromLocalHint;
+
+  /// No description provided for @refreshTagsFromCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'从云端更新标签'**
+  String get refreshTagsFromCloud;
+
+  /// No description provided for @refreshTagsFromCloudHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'排队从云端拉取标签'**
+  String get refreshTagsFromCloudHint;
+
+  /// No description provided for @destroyTracksAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除所选曲目'**
+  String get destroyTracksAction;
+
+  /// Task queue kind for optional full remote existence match
+  ///
+  /// In zh, this message translates to:
+  /// **'全量匹配'**
+  String get taskKindMatchRemote;
+
+  /// Settings entry title for full remote match
+  ///
+  /// In zh, this message translates to:
+  /// **'全量匹配'**
+  String get matchRemoteTitle;
+
+  /// Settings subtitle for full remote match
+  ///
+  /// In zh, this message translates to:
+  /// **'探测云端是否仍存在，缺失标红点'**
+  String get matchRemoteHint;
+
+  /// Snack after enqueueing match remote task
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入全量匹配任务'**
+  String get matchRemoteQueued;
+
+  /// No description provided for @destroyLibraryConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除整个音乐库'**
+  String get destroyLibraryConfirm;
+
+  /// netScanMusic
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描音乐'**
+  String get netScanMusic;
+
+  /// netScanMusicDesc
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削本文件夹中的音乐与 CUE'**
+  String get netScanMusicDesc;
+
+  /// Settings section title only (not drawer)
+  ///
+  /// In zh, this message translates to:
+  /// **'媒体库'**
+  String get mediaLibrarySection;
+
+  /// No description provided for @libMenuStream.
+  ///
+  /// In zh, this message translates to:
+  /// **'流式播放'**
+  String get libMenuStream;
+
+  /// No description provided for @libMenuCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存'**
+  String get libMenuCache;
+
+  /// No description provided for @libMenuClear.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理'**
+  String get libMenuClear;
+
+  /// No description provided for @updateTagsFromCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'从缓存更新标签'**
+  String get updateTagsFromCache;
+
+  /// No description provided for @updateTagsFromCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'从云端更新标签'**
+  String get updateTagsFromCloud;
+
+  /// No description provided for @musicCacheMaxCapacity.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存容量上限'**
+  String get musicCacheMaxCapacity;
+
+  /// No description provided for @musicCacheMaxCapacityHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'超过后按最久未用清理；正在播放的不删。0 表示不限制。'**
+  String get musicCacheMaxCapacityHint;
+
+  /// No description provided for @musicCacheMaxMb.
+  ///
+  /// In zh, this message translates to:
+  /// **'上限（MB）'**
+  String get musicCacheMaxMb;
+
+  /// No description provided for @musicCacheUnlimited.
+  ///
+  /// In zh, this message translates to:
+  /// **'不限制'**
+  String get musicCacheUnlimited;
+
+  /// No description provided for @taskGroupCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'{count} 项'**
+  String taskGroupCount(int count);
+
+  /// No description provided for @taskGroupMembers.
+  ///
+  /// In zh, this message translates to:
+  /// **'任务明细'**
+  String get taskGroupMembers;
+
+  /// No description provided for @prefetchSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'预载与封面'**
+  String get prefetchSection;
+
+  /// No description provided for @prefetchSectionHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'串流写入临时预载；缓存播放按同一窗口后台缓存。'**
+  String get prefetchSectionHint;
+
+  /// No description provided for @audioPlaylistSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'网络库连播列表'**
+  String get audioPlaylistSection;
+
+  /// No description provided for @waitingForCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在缓存…'**
+  String get waitingForCache;
+
+  /// No description provided for @libraryManageMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'曲库管理'**
+  String get libraryManageMode;
+
+  /// No description provided for @libraryManageModeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动管理时仅由你主动操作改库；自动补齐可从已绑定的网络根路径增量刮削。'**
+  String get libraryManageModeHint;
+
+  /// No description provided for @libraryModeManual.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动管理'**
+  String get libraryModeManual;
+
+  /// No description provided for @libraryModeManualHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认。库只因你的操作变化，不会在打开时自动刮削。'**
+  String get libraryModeManualHint;
+
+  /// No description provided for @libraryModeAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动补齐'**
+  String get libraryModeAuto;
+
+  /// No description provided for @libraryModeAutoHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'起播时自动浅层刮削当前曲所在目录并入库缺失项；可选按绑定根过滤。下载仍只走播放模式。'**
+  String get libraryModeAutoHint;
+
+  /// No description provided for @libraryBackfillBindRoots.
+  ///
+  /// In zh, this message translates to:
+  /// **'绑定路径'**
+  String get libraryBackfillBindRoots;
+
+  /// No description provided for @libraryBackfillBindRootsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'关闭：始终刮削正在播放曲目的父目录。开启：仅当曲目远端路径命中下方绑定根前缀时才刮削。'**
+  String get libraryBackfillBindRootsHint;
+
+  /// No description provided for @libraryBackfillRoots.
+  ///
+  /// In zh, this message translates to:
+  /// **'绑定的网络根路径'**
+  String get libraryBackfillRoots;
+
+  /// No description provided for @libraryBackfillRootsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。'**
+  String get libraryBackfillRootsHint;
+
+  /// No description provided for @libraryBackfillAddRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加根路径'**
+  String get libraryBackfillAddRoot;
+
+  /// No description provided for @libraryBackfillNeedAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先添加网盘账号'**
+  String get libraryBackfillNeedAccount;
+
+  /// No description provided for @libraryBackfillPickAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择网盘账号'**
+  String get libraryBackfillPickAccount;
+
+  /// No description provided for @libraryBackfillPickFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择根文件夹'**
+  String get libraryBackfillPickFolder;
 }
 
 class _AppLocalizationsDelegate

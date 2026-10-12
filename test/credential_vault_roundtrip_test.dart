@@ -91,6 +91,12 @@ class _FakeLibraryDatabase extends LibraryDatabase {
   }
 
   @override
+  Future<bool> applyAccountNameUnique() async {
+    accountNameUniquePending = false;
+    return true;
+  }
+
+  @override
   Future<List<LibraryTrack>> allTracks() async => const [];
 
   @override

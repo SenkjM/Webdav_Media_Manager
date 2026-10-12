@@ -6,20 +6,18 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
 import '../models/snack_duration.dart';
-import '../services/library_actions.dart';
-import '../services/library_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
-import 'audio_stream_settings_screen.dart';
 import 'cache_settings_screen.dart';
 import 'download_settings_screen.dart';
 import 'encryption_settings_screen.dart';
 import 'file_extensions_screen.dart';
 import 'home_shell.dart';
 import 'image_settings_screen.dart';
+import 'media_library_settings_screen.dart';
 import 'share_settings_screen.dart';
 import 'sync_screen.dart';
 import 'thumbnail_settings_screen.dart';
@@ -54,27 +52,6 @@ class _SettingsScreenState extends State<SettingsScreen>
     if (state == AppLifecycleState.resumed) {
       context.read<NotificationPermissionService>().refresh();
     }
-  }
-
-  Future<void> _refreshLibraryTags(BuildContext context) async {
-    final library = context.read<LibraryService>();
-    if (library.tracks.isEmpty) {
-      AppSnack.show(context, AppLocalizations.of(context)!.libraryEmpty);
-      return;
-    }
-    AppSnack.show(context, AppLocalizations.of(context)!.tagRefreshStarted);
-    final result = await refreshLibraryTrackTags(
-      context,
-      library.tracks.toList(),
-      showProgressDialog: false,
-    );
-    if (!context.mounted) return;
-    AppSnack.show(
-      context,
-      AppLocalizations.of(context)!
-          .tagRefreshCompleted(result.updated, result.skipped, result.failed),
-      error: result.failed > 0 && result.updated == 0,
-    );
   }
 
   Future<void> _onNotificationTap(
@@ -168,7 +145,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 DropdownMenuItem(value: 0, child: Text(l10n.library)),
                 DropdownMenuItem(value: 1, child: Text(l10n.playlists)),
                 DropdownMenuItem(value: 2, child: Text(l10n.networkLibrary)),
-                DropdownMenuItem(value: 3, child: Text(l10n.downloadQueue)),
+                DropdownMenuItem(value: 3, child: Text(l10n.taskQueue)),
                 DropdownMenuItem(value: 4, child: Text(l10n.settings)),
               ],
               onChanged: (v) {
@@ -248,14 +225,21 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
             ),
           const Divider(height: 40),
-          _sectionTitle(context, l10n.library),
+          _sectionTitle(context, l10n.mediaLibrarySection),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.sell_outlined),
-            title: Text(l10n.refreshLibraryTags),
-            subtitle: Text(l10n.refreshLibraryTagsSubtitle),
-            onTap: () => unawaited(_refreshLibraryTags(context)),
+            leading: const Icon(Icons.library_music_outlined),
+            title: Text(l10n.mediaLibrarySettings),
+            subtitle: Text(l10n.mediaLibrarySettingsHint),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const MediaLibrarySettingsScreen(),
+                ),
+              );
+            },
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -321,20 +305,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const VideoSettingsScreen()),
-              );
-            },
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.graphic_eq),
-            title: Text(l10n.audioStreamingTitle),
-            subtitle: Text(l10n.audioStreamingSubtitle),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const AudioStreamSettingsScreen(),
-                ),
               );
             },
           ),

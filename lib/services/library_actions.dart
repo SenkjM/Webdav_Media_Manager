@@ -13,6 +13,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/library_track.dart';
+import '../models/webdav_item.dart';
 import '../models/playlist.dart';
 import '../providers/app_state.dart';
 import '../screens/playlists_screen.dart';
@@ -22,7 +23,7 @@ import '../utils/track_identity.dart';
 import '../widgets/destroy_progress_dialog.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
-import 'download_queue_service.dart';
+import 'task_queue_service.dart';
 import 'platform_export_service.dart';
 import 'settings_service.dart';
 import 'share_rename_service.dart';
@@ -35,11 +36,81 @@ bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
   return cache.isLocalTrack(track);
 }
 
+/// List-row UI state shared by music library and playlist detail.
+///
+/// Overlays [LibraryTrack.remoteMissing] as a red-dot state unless the row is
+/// already playing / downloading / queued. Ready and streamable stay icon-dot
+/// only (no text chip).
+TrackUiState libraryRowUiState({
+  required TaskQueueService downloads,
+  required LibraryTrack track,
+  String? playingRemotePath,
+  String? playingSourceName,
+  bool entryRemoteMissing = false,
+}) {
+  var state = downloads.uiStateFor(
+    track.sourceName,
+    track.effectiveAudioRemotePath,
+    playingRemotePath: playingRemotePath,
+    playingSourceName: playingSourceName,
+    libraryRow: true,
+  );
+  final missing = track.remoteMissing || entryRemoteMissing;
+  if (missing &&
+      state != TrackUiState.playing &&
+      state != TrackUiState.downloading &&
+      state != TrackUiState.queued) {
+    state = TrackUiState.remoteMissing;
+  }
+  return state;
+}
+
+/// Build a [TrackInfo] for [AudioPlayerService.playTrack] from a library row.
+TrackInfo libraryTrackToTrackInfo(
+  LibraryTrack track,
+  String? local,
+  String accountId,
+) {
+  return TrackInfo(
+    sourceName: track.sourceName,
+    accountId: accountId,
+    remotePath: track.remotePath,
+    fileName: track.fileName,
+    localPath: local,
+    title: track.title,
+    artist: track.artist,
+    albumArtist: track.albumArtist,
+    album: track.album,
+    duration: track.durationMs != null
+        ? Duration(milliseconds: track.durationMs!)
+        : null,
+    trackNumber: track.trackNumber,
+    trackTotal: track.trackTotal,
+    discNumber: track.discNumber,
+    discTotal: track.discTotal,
+    year: track.year,
+    genre: track.genre,
+    bitrate: track.bitrate,
+    sampleRate: track.sampleRate,
+    coverPath: track.coverPath,
+    cueRemotePath: track.cueRemotePath,
+    cueTrackIndex: track.cueTrackIndex,
+    audioRemotePath: track.audioRemotePath,
+    clipStart: track.clipStartMs != null
+        ? Duration(milliseconds: track.clipStartMs!)
+        : null,
+    clipEnd: track.clipEndMs != null
+        ? Duration(milliseconds: track.clipEndMs!)
+        : null,
+    cacheGroupId: track.cacheGroupId,
+  );
+}
+
 Future<bool> refreshOneLibraryTrackTags(
   BuildContext context,
   LibraryTrack track,
 ) async =>
-    context.read<DownloadQueueService>().refreshTrackTagsFromCache(track);
+    context.read<TaskQueueService>().refreshTrackTagsFromCache(track);
 
 Future<({int updated, int skipped, int failed, bool cancelled})>
 refreshLibraryTrackTags(
@@ -55,7 +126,7 @@ refreshLibraryTrackTags(
     unique.putIfAbsent(key, () => track);
   }
   final items = unique.values.toList();
-  final downloads = context.read<DownloadQueueService>();
+  final downloads = context.read<TaskQueueService>();
   var updated = 0;
   var skipped = 0;
   var failed = 0;
@@ -112,7 +183,7 @@ Future<int> downloadUncachedLibraryTracks(
 ) async {
   final cache = context.read<CacheService>();
   final accounts = context.read<AccountsService>();
-  final downloads = context.read<DownloadQueueService>();
+  final downloads = context.read<TaskQueueService>();
   final seen = <String>{};
   var queued = 0;
   var unavailable = 0;
@@ -172,7 +243,7 @@ Future<void> enqueueLibraryTrackDownload(
     }
     return;
   }
-  final downloads = context.read<DownloadQueueService>();
+  final downloads = context.read<TaskQueueService>();
   if (track.isCueVirtual && track.cueRemotePath != null) {
     unawaited(
       downloads.enqueueCueGroup(

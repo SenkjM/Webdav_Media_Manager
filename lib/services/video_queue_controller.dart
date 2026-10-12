@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
+import '../utils/directory_walk.dart';
 import 'stream_window.dart';
 import 'webdav_service.dart';
 
@@ -32,7 +33,7 @@ class VideoQueueController extends ChangeNotifier {
     FileTypeConfig? fileTypes,
     this.category = FileCategory.video,
     this.autoAdvance = true,
-    this.deepScan = true,
+    this.walkOptions = const WalkOptions(),
   }) : _webDav = webDav,
        _fileTypes = fileTypes ?? FileTypeConfig() {
     _merge(seed);
@@ -54,9 +55,9 @@ class VideoQueueController extends ChangeNotifier {
   /// 没有任何读取方，保留是为了不改变既有构造调用。
   final bool autoAdvance;
 
-  /// 后台扫描是否进入子目录。默认开（等于旧行为）；关掉时只列 [rootPath]
-  /// 这一层。值来自设置（音频与视频各一份）。
-  final bool deepScan;
+  /// Progressive walk limits (includeSubdirs + maxDepth + maxEntries).
+  /// Video and audio playlist callers pass **separate** WalkOptions from prefs.
+  final WalkOptions walkOptions;
 
   final List<WebDavItem> _tracks = [];
   final Set<String> _knownPaths = {};
@@ -141,15 +142,15 @@ class VideoQueueController extends ChangeNotifier {
     _scanning = false;
   }
 
-  /// Depth-first walk of [rootPath]; merges on every directory listing so the
-  /// queue grows while the user is already watching.
+  /// Progressive walk of [rootPath] via [DirectoryWalker]; merges on every
+  /// directory listing so the queue grows while the user is already watching.
   Future<void> _scan() async {
-    final pending = <String>[rootPath];
+    final walker = DirectoryWalker(rootPath: rootPath, options: walkOptions);
     var failed = 0;
     try {
-      while (pending.isNotEmpty) {
-        if (_cancelled) return;
-        final dir = pending.removeAt(0);
+      while (!_cancelled) {
+        final dir = walker.nextDirectory();
+        if (dir == null) break;
         try {
           final items = await _webDav.listDirectory(
             accountId,
@@ -158,10 +159,10 @@ class VideoQueueController extends ChangeNotifier {
           );
           noteListing(dir, items);
           final media = items.where((e) => e.category == category).toList();
-          if (deepScan) {
-            final dirs = items.where((e) => e.isDirectory).map((e) => e.path);
-            pending.addAll(dirs);
-          }
+          walker.acceptChildren(
+            dir,
+            items.where((e) => e.isDirectory).map((e) => e.path),
+          );
           if (media.isNotEmpty) _merge(media);
         } catch (e) {
           failed++;

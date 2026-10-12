@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 import '../models/playlist.dart';
 import '../models/playlist_deletion.dart';
 import '../utils/cover_image.dart';
+import '../utils/track_identity.dart';
 import '../utils/wmp_container.dart';
 import 'cover_service.dart';
 import 'playlist_codec.dart';
@@ -206,7 +207,110 @@ class PlaylistService extends ChangeNotifier {
     });
   }
 
-  /// Drop playlist entries whose identity is not in [validKeys]
+  /// Replace [oldEntry] with [newEntry] in place (same list index).
+  ///
+  /// Used after remote-missing redirect: library row is retargeted, then the
+  /// playlist reference follows the new musicId / path. Records a deletion for
+  /// the old identity so sync peers drop the stale reference.
+  Future<void> replaceTrack(
+    String playlistId,
+    PlaylistEntry oldEntry,
+    PlaylistEntry newEntry,
+  ) async {
+    final idx = _playlists.indexWhere((p) => p.id == playlistId);
+    if (idx < 0) return;
+    final pl = _playlists[idx];
+    final at = pl.entries.indexWhere((e) => e.identityKey == oldEntry.identityKey);
+    if (at < 0) return;
+    if (oldEntry.identityKey == newEntry.identityKey) {
+      pl.entries[at] = newEntry;
+      pl.updatedAt = DateTime.now().toUtc();
+      await _store.upsert(pl);
+      notifyListeners();
+      unawaitedSyncUpload(pl);
+      return;
+    }
+    // Avoid duplicate if new identity already exists elsewhere in the list.
+    final dup = pl.entries.indexWhere((e) => e.identityKey == newEntry.identityKey);
+    if (dup >= 0 && dup != at) {
+      pl.entries.removeAt(at);
+    } else {
+      pl.entries[at] = newEntry;
+    }
+    final now = DateTime.now().toUtc();
+    pl.updatedAt = now;
+    await _log.upsert([
+      PlaylistDeletion(
+        playlistId: playlistId,
+        entryIdentity: oldEntry.identityKey,
+        deletedAt: now,
+      ),
+    ]);
+    await _store.upsert(pl);
+    notifyListeners();
+    _publish(() async {
+      await _uploadPack(playlistId);
+      await uploadPlaylist(pl);
+    });
+  }
+
+  /// Mirror cloud-absence onto playlist entries (independent of music library).
+  ///
+  /// Matches by [identityKeys] (musicId). No-op when nothing changes. Persists
+  /// and notifies; sync upload is best-effort like other entry edits.
+  Future<void> setRemoteMissingForIdentities({
+    required Iterable<String> identityKeys,
+    required bool missing,
+  }) async {
+    final keys = identityKeys.where((k) => k.isNotEmpty).toSet();
+    if (keys.isEmpty) return;
+    final touched = <Playlist>[];
+    for (final pl in _playlists) {
+      var changed = false;
+      for (var i = 0; i < pl.entries.length; i++) {
+        final e = pl.entries[i];
+        if (!keys.contains(e.identityKey) || e.remoteMissing == missing) {
+          continue;
+        }
+        pl.entries[i] = e.copyWith(remoteMissing: missing);
+        changed = true;
+      }
+      if (changed) {
+        pl.updatedAt = DateTime.now().toUtc();
+        touched.add(pl);
+      }
+    }
+    if (touched.isEmpty) return;
+    for (final pl in touched) {
+      await _store.upsert(pl);
+    }
+    notifyListeners();
+    for (final pl in touched) {
+      unawaitedSyncUpload(pl);
+    }
+  }
+
+  /// Convenience: resolve musicId from source + path (+ optional CUE index).
+  Future<void> setRemoteMissingForPath({
+    required String sourceName,
+    required String remotePath,
+    int? cueTrackIndex,
+    String? cueRemotePath,
+    required bool missing,
+  }) {
+    final id = musicIdForLibraryRow(
+      sourceName: sourceName,
+      remotePath: remotePath,
+      cueRemotePath: cueRemotePath,
+      cueTrackIndex: cueTrackIndex,
+    );
+    return setRemoteMissingForIdentities(
+      identityKeys: [id],
+      missing: missing,
+    );
+  }
+
+    /// Drop playlist entries whose identity is not in [validKeys]
   /// (`accountId\0remotePath` via [PlaylistEntry.identityKey]).
   /// Keeps playlist shells; empties entries that all became orphans.
   Future<int> removeEntriesNotIn(Set<String> validKeys) async {

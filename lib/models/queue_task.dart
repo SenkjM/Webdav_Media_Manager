@@ -6,33 +6,65 @@ String? _asString(Object? value) => value?.toString();
 DateTime? _asDate(Object? value) =>
     value is DateTime ? value : DateTime.tryParse(value?.toString() ?? '');
 
-/// Download queue task statuses.
-enum DownloadStatus { pending, active, completed, failed, cancelled }
+/// What the queue entry does. Download is the only executor wired today;
+/// scan / retag kinds are reserved for later steps.
+enum TaskKind {
+  download,
+  scan,
+  retagCloud,
+  retagLocal,
+  /// Optional full-library remote existence probe (writes remote_missing).
+  matchRemote,
+}
 
-extension DownloadStatusX on DownloadStatus {
+extension TaskKindX on TaskKind {
+  String get storageKey => switch (this) {
+    TaskKind.download => 'download',
+    TaskKind.scan => 'scan',
+    TaskKind.retagCloud => 'retag_cloud',
+    TaskKind.retagLocal => 'retag_local',
+    TaskKind.matchRemote => 'match_remote',
+  };
+
   String label(AppLocalizations l10n) => switch (this) {
-    DownloadStatus.pending => l10n.downloadPending,
-    DownloadStatus.active => l10n.downloadActive,
-    DownloadStatus.completed => l10n.downloadCompleted,
-    DownloadStatus.failed => l10n.downloadFailed,
-    DownloadStatus.cancelled => l10n.downloadCancelled,
+    TaskKind.download => l10n.taskKindDownload,
+    TaskKind.scan => l10n.taskKindScan,
+    TaskKind.retagCloud => l10n.taskKindRetagCloud,
+    TaskKind.retagLocal => l10n.taskKindRetagLocal,
+    TaskKind.matchRemote => l10n.taskKindMatchRemote,
+  };
+
+  static TaskKind fromStorageKey(String? key) => switch (key) {
+    'scan' => TaskKind.scan,
+    'retag_cloud' => TaskKind.retagCloud,
+    'retag_local' => TaskKind.retagLocal,
+    'match_remote' => TaskKind.matchRemote,
+    _ => TaskKind.download,
   };
 }
 
-/// Where a downloaded file is written.
+/// Queue entry lifecycle.
+enum TaskStatus { pending, active, completed, failed, cancelled }
+
+extension TaskStatusX on TaskStatus {
+  String label(AppLocalizations l10n) => switch (this) {
+    TaskStatus.pending => l10n.downloadPending,
+    TaskStatus.active => l10n.downloadActive,
+    TaskStatus.completed => l10n.downloadCompleted,
+    TaskStatus.failed => l10n.downloadFailed,
+    TaskStatus.cancelled => l10n.downloadCancelled,
+  };
+}
+
+/// Where a **download** kind writes its file.
 enum DownloadTarget {
-  /// App-internal audio cache (`music_cache/`). Required for music playback —
-  /// music is never streamed, so its only usable destination is the cache.
+  /// App-internal audio cache (`music_cache/`).
   cache,
 
   /// System gallery / media library via MediaStore (Android `Movies/…`).
-  /// Video downloads go here instead of the app-private cache.
   gallery,
 
   /// Public Downloads folder via MediaStore (`Download/…`).
-  ///
-  /// Used for files whose extension is not in the configured music/video/CUE
-  /// lists: they are still downloadable, they just have no playback path.
   downloads,
 }
 
@@ -48,6 +80,7 @@ extension DownloadTargetX on DownloadTarget {
     DownloadTarget.gallery => l10n.targetGallery,
     DownloadTarget.downloads => l10n.targetDownloads,
   };
+
   static DownloadTarget fromStorageKey(String? key) => switch (key) {
     'gallery' => DownloadTarget.gallery,
     'downloads' => DownloadTarget.downloads,
@@ -55,21 +88,34 @@ extension DownloadTargetX on DownloadTarget {
   };
 }
 
-/// A single download queue item persisted across restarts.
-class DownloadTask {
-  DownloadTask({
+/// How [QueueTask.progress] / UI should interpret counters.
+enum TaskProgressMode {
+  /// [bytesReceived] / [bytesTotal] (downloads).
+  bytes,
+
+  /// [unitsDone] / [unitsTotal] (scan / retag item counts).
+  units,
+}
+
+/// A single task-queue item persisted across restarts.
+class QueueTask {
+  QueueTask({
     required this.id,
     required this.sourceName,
     required this.remotePath,
     required this.fileName,
     required this.createdAt,
-    this.status = DownloadStatus.pending,
+    this.kind = TaskKind.download,
+    this.status = TaskStatus.pending,
     this.localPath,
     this.errorMessage,
     this.progress = 0.0,
+    this.progressMode = TaskProgressMode.bytes,
     this.completedAt,
     this.bytesTotal,
     this.bytesReceived = 0,
+    this.unitsTotal,
+    this.unitsDone = 0,
     this.cacheGroupId,
     this.target = DownloadTarget.cache,
     this.attempts = 0,
@@ -81,47 +127,71 @@ class DownloadTask {
 
   final String id;
 
-  /// 网盘名 —— the binding point. The local WebDAV account (URL/username/
-  /// password) is resolved from this name when the transfer actually runs, so a
-  /// renamed or re-added disk can never leave a stale pointer in the queue.
+  /// Disk name — binding point for account resolution at run time.
   final String sourceName;
   final String remotePath;
+
+  /// Display title (file name for download; path / label for scan).
   final String fileName;
   final DateTime createdAt;
-  DownloadStatus status;
+  TaskKind kind;
+  TaskStatus status;
   String? localPath;
   String? errorMessage;
+
+  /// Unified 0–1 progress for bars. Prefer [displayProgress] when reading.
   double progress;
+  TaskProgressMode progressMode;
   DateTime? completedAt;
   int? bytesTotal;
   int bytesReceived;
+
+  /// Count progress (scan / retag). Null [unitsTotal] = unknown denominator.
+  int? unitsTotal;
+  int unitsDone;
   String? cacheGroupId;
 
-  /// Destination the file was (or will be) written to.
+  /// Destination for [TaskKind.download] only.
   DownloadTarget target;
   CloudDownloadMode? downloadMode;
   int? remoteSize;
   DateTime? remoteModified;
 
-  /// 自动重试已经用掉几次（见 download_queue_service 的退避策略）。
-  /// 手动点「重试」会清零。
   int attempts;
-
-  /// 下一次允许尝试的时间；null = 立即可跑。无网时不消耗 [attempts]，
-  /// 只把这个时间推远，等网络事件把队列唤醒。
   DateTime? nextRetryAt;
 
-  /// True when the file went to a **public** collection (system gallery or the
-  /// Downloads folder) rather than the app-private audio cache.
   bool get isPublic => target != DownloadTarget.cache;
-
-  /// True when the file went to the system gallery specifically.
   bool get isGallery => target == DownloadTarget.gallery;
 
   bool get isTerminal =>
-      status == DownloadStatus.completed ||
-      status == DownloadStatus.failed ||
-      status == DownloadStatus.cancelled;
+      status == TaskStatus.completed ||
+      status == TaskStatus.failed ||
+      status == TaskStatus.cancelled;
+
+  bool get isDownload => kind == TaskKind.download;
+
+  /// 0–1 for UI; falls back to [progress] when totals are unknown.
+  double get displayProgress {
+    switch (progressMode) {
+      case TaskProgressMode.units:
+        final total = unitsTotal;
+        if (total != null && total > 0) {
+          return (unitsDone / total).clamp(0.0, 1.0);
+        }
+        return progress.clamp(0.0, 1.0);
+      case TaskProgressMode.bytes:
+        final total = bytesTotal;
+        if (total != null && total > 0) {
+          return (bytesReceived / total).clamp(0.0, 1.0);
+        }
+        return progress.clamp(0.0, 1.0);
+    }
+  }
+
+  /// Sync [progress] from the active counter mode.
+  void syncProgressFromCounters() {
+    progress = displayProgress;
+  }
 
   Map<String, dynamic> toMap() => {
     'id': id,
@@ -129,13 +199,17 @@ class DownloadTask {
     'remote_path': remotePath,
     'file_name': fileName,
     'created_at': createdAt.toIso8601String(),
+    'kind': kind.storageKey,
     'status': status.name,
     'local_path': localPath,
     'error_message': errorMessage,
     'progress': progress,
+    'progress_mode': progressMode.name,
     'completed_at': completedAt?.toIso8601String(),
     'bytes_total': bytesTotal,
     'bytes_received': bytesReceived,
+    'units_total': unitsTotal,
+    'units_done': unitsDone,
     'cache_group_id': cacheGroupId,
     'target': target.storageKey,
     'download_mode': downloadMode?.name,
@@ -145,7 +219,7 @@ class DownloadTask {
     'next_retry_at': nextRetryAt?.toIso8601String(),
   };
 
-  factory DownloadTask.fromMap(Map<String, dynamic> map) => DownloadTask(
+  factory QueueTask.fromMap(Map<String, dynamic> map) => QueueTask(
     id: _asString(map['id']) ?? '',
     sourceName:
         _asString(map['source_name']) ??
@@ -154,18 +228,25 @@ class DownloadTask {
     remotePath: _asString(map['remote_path']) ?? '',
     fileName: _asString(map['file_name']) ?? '',
     createdAt: _asDate(map['created_at']) ?? DateTime.now(),
-    status: DownloadStatus.values.firstWhere(
+    kind: TaskKindX.fromStorageKey(_asString(map['kind'])),
+    status: TaskStatus.values.firstWhere(
       (e) => e.name == _asString(map['status']),
-      orElse: () => DownloadStatus.pending,
+      orElse: () => TaskStatus.pending,
     ),
     localPath: _asString(map['local_path']),
     errorMessage: _asString(map['error_message']),
     progress: (map['progress'] as num?)?.toDouble() ?? 0.0,
+    progressMode: TaskProgressMode.values.firstWhere(
+      (e) => e.name == _asString(map['progress_mode']),
+      orElse: () => TaskProgressMode.bytes,
+    ),
     completedAt: map['completed_at'] != null
         ? _asDate(map['completed_at'])
         : null,
     bytesTotal: map['bytes_total'] as int?,
     bytesReceived: (map['bytes_received'] as int?) ?? 0,
+    unitsTotal: map['units_total'] as int?,
+    unitsDone: (map['units_done'] as int?) ?? 0,
     cacheGroupId: _asString(map['cache_group_id']),
     target: DownloadTargetX.fromStorageKey(_asString(map['target'])),
     downloadMode: CloudDownloadMode.values.firstWhere(
@@ -182,38 +263,48 @@ class DownloadTask {
         : null,
   );
 
-  DownloadTask copyWith({
-    DownloadStatus? status,
+  QueueTask copyWith({
+    TaskKind? kind,
+    TaskStatus? status,
     String? localPath,
     String? errorMessage,
     double? progress,
+    TaskProgressMode? progressMode,
     DateTime? completedAt,
     int? bytesTotal,
     int? bytesReceived,
+    int? unitsTotal,
+    int? unitsDone,
     String? cacheGroupId,
     DownloadTarget? target,
     CloudDownloadMode? downloadMode,
     int? remoteSize,
     DateTime? remoteModified,
   }) {
-    return DownloadTask(
+    return QueueTask(
       id: id,
       sourceName: sourceName,
       remotePath: remotePath,
       fileName: fileName,
       createdAt: createdAt,
+      kind: kind ?? this.kind,
       status: status ?? this.status,
       localPath: localPath ?? this.localPath,
       errorMessage: errorMessage ?? this.errorMessage,
       progress: progress ?? this.progress,
+      progressMode: progressMode ?? this.progressMode,
       completedAt: completedAt ?? this.completedAt,
       bytesTotal: bytesTotal ?? this.bytesTotal,
       bytesReceived: bytesReceived ?? this.bytesReceived,
+      unitsTotal: unitsTotal ?? this.unitsTotal,
+      unitsDone: unitsDone ?? this.unitsDone,
       cacheGroupId: cacheGroupId ?? this.cacheGroupId,
       target: target ?? this.target,
       downloadMode: downloadMode ?? this.downloadMode,
       remoteSize: remoteSize ?? this.remoteSize,
       remoteModified: remoteModified ?? this.remoteModified,
+      attempts: attempts,
+      nextRetryAt: nextRetryAt,
     );
   }
 }

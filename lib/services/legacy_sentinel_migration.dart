@@ -77,12 +77,12 @@ Future<void> migrateLegacySentinelsOnce({
 
   await downloadDb.transaction((txn) async {
     await txn.update(
-      'download_tasks',
+      'queue_tasks',
       {'source_name': kDefaultServerName},
       where: 'source_name = ?',
       whereArgs: const [_legacyDefaultServer],
     );
-    await _rewriteCacheGroupColumn(txn, 'download_tasks', 'id');
+    await _rewriteCacheGroupColumn(txn, 'queue_tasks', 'id');
   });
 
   await _rewritePlaylists(playlistDb);
@@ -120,7 +120,7 @@ Future<Set<String>> _pathsBoundToLegacyServer(
   );
   await take(
     downloadDb,
-    'SELECT remote_path FROM download_tasks WHERE source_name = ?',
+    'SELECT remote_path FROM queue_tasks WHERE source_name = ?',
   );
   return paths;
 }

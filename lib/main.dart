@@ -9,12 +9,13 @@ import 'providers/app_state.dart';
 import 'models/app_locale.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'screens/home_shell.dart';
+import 'widgets/account_name_cleanup_screen.dart';
 import 'widgets/database_recovery_screen.dart';
 import 'services/accounts_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/cache_service.dart';
 import 'services/credential_vault_service.dart';
-import 'services/download_queue_service.dart';
+import 'services/task_queue_service.dart';
 import 'services/library_service.dart';
 import 'services/music_audio_handler.dart';
 import 'services/backup_service.dart';
@@ -96,8 +97,8 @@ class WebDavMusicApp extends StatelessWidget {
           value: appState.cloudDrive,
         ),
         ChangeNotifierProvider<CacheService>.value(value: appState.cache),
-        ChangeNotifierProvider<DownloadQueueService>.value(
-          value: appState.downloads,
+        ChangeNotifierProvider<TaskQueueService>.value(
+          value: appState.taskQueue,
         ),
         ChangeNotifierProvider<NotificationPermissionService>.value(
           value: appState.notificationPermission,
@@ -127,7 +128,14 @@ class WebDavMusicApp extends StatelessWidget {
                   error: appState.initError!,
                   beforeClear: appState.closeDatabases,
                 )
-              : const HomeShell(),
+              : Consumer<AccountsService>(
+                  builder: (context, accounts, _) {
+                    if (accounts.needsNameCleanup) {
+                      return const AccountNameCleanupScreen();
+                    }
+                    return const HomeShell();
+                  },
+                ),
         ),
       ),
     );

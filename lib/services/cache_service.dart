@@ -344,4 +344,69 @@ class CacheService extends ChangeNotifier {
     if (removed > 0) notifyListeners();
     return removed;
   }
+
+  /// True when [path] lives under the music_cache directory (not prefetch_cache).
+  bool isMusicCachePath(String path) {
+    final dir = _cacheDir;
+    if (dir == null) return false;
+    final root = p.normalize(dir.path);
+    final normalized = p.normalize(path);
+    return normalized == root || p.isWithin(root, normalized);
+  }
+
+  /// Drop least-recently-used music_cache files until total size <= [maxBytes].
+  /// Skips [protectedLocalPaths] and the currently playing file. Returns count removed.
+  Future<int> evictToMaxBytes({
+    required int maxBytes,
+    String? playingLocalPath,
+    String? playingRemotePath,
+    String? playingSourceName,
+    Set<String> protectedLocalPaths = const {},
+  }) async {
+    if (maxBytes <= 0) return 0;
+    if (_cacheDir == null || !await _cacheDir!.exists()) return 0;
+    final protected = <String>{...protectedLocalPaths};
+    if (playingLocalPath != null) protected.add(playingLocalPath);
+    if (playingRemotePath != null && playingSourceName != null) {
+      final f = fileForRemote(playingRemotePath, sourceName: playingSourceName);
+      protected.add(f.path);
+      protected.add('${f.path}.part');
+    }
+
+    final entries = <({File file, int size, DateTime accessed})>[];
+    var total = 0;
+    await for (final entity in _cacheDir!.list()) {
+      if (entity is! File) continue;
+      if (entity.path.endsWith('.part')) continue;
+      if (protected.contains(entity.path)) continue;
+      try {
+        final size = await entity.length();
+        total += size;
+        // mtime approximates LRU when cache_access is missing.
+        // Best-effort: access time from DB is keyed by identity; fall back to mtime.
+        final accessed = (await entity.stat()).modified;
+        entries.add((file: entity, size: size, accessed: accessed));
+      } catch (_) {}
+    }
+    if (total <= maxBytes) return 0;
+
+    entries.sort((a, b) => a.accessed.compareTo(b.accessed));
+    var removed = 0;
+    for (final e in entries) {
+      if (total <= maxBytes) break;
+      try {
+        await e.file.delete();
+        total -= e.size;
+        removed++;
+        final part = File('${e.file.path}.part');
+        if (await part.exists()) {
+          try {
+            await part.delete();
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
 }

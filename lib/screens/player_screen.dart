@@ -14,6 +14,7 @@ import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_service.dart';
 import '../services/library_actions.dart';
+import '../services/task_queue_service.dart';
 import '../services/tag_service.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
@@ -326,25 +327,47 @@ class PlayerScreen extends StatelessWidget {
                   const Divider(height: 1),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final updated = await refreshOneLibraryTrackTags(
-                            ctx,
-                            lib,
-                          );
-                          if (!ctx.mounted) return;
-                          if (updated) {
-                            AppSnack.show(ctx, l10n.tagsUpdatedFromLocal);
-                            Navigator.of(ctx).pop();
-                          } else {
-                            AppSnack.show(ctx, l10n.tagsNeedDownloadFirst);
-                          }
-                        },
-                        icon: const Icon(Icons.sell_outlined),
-                        label: Text(l10n.updateThisTrackTags),
-                      ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final updated =
+                                  await refreshOneLibraryTrackTags(ctx, lib);
+                              if (!ctx.mounted) return;
+                              if (updated) {
+                                AppSnack.show(ctx, l10n.tagsUpdatedFromLocal);
+                                Navigator.of(ctx).pop();
+                              } else {
+                                AppSnack.show(ctx, l10n.tagsNeedDownloadFirst);
+                              }
+                            },
+                            child: Text(l10n.updateTagsFromCache),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              if (lib.isCueVirtual) {
+                                AppSnack.show(ctx, l10n.tagsNeedDownloadFirst);
+                                return;
+                              }
+                              await ctx
+                                  .read<TaskQueueService>()
+                                  .enqueueRetagCloud(
+                                    sourceName: lib.sourceName,
+                                    remotePath: lib.remotePath,
+                                    fileName: lib.fileName,
+                                  );
+                              if (!ctx.mounted) return;
+                              AppSnack.show(ctx, l10n.mediaScanQueued(1));
+                              Navigator.of(ctx).pop();
+                            },
+                            child: Text(l10n.updateTagsFromCloud),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
@@ -385,6 +408,7 @@ class PlayerScreen extends StatelessWidget {
         sourceName: track?.sourceName,
         audioRemotePath: track?.effectiveAudioRemotePath,
         localPath: track?.localPath,
+        coverPath: track?.coverPath ?? lib?.coverPath,
         child: SafeArea(
           child: Column(
             children: [
@@ -430,6 +454,7 @@ class PlayerScreen extends StatelessWidget {
                                   sourceName: track.sourceName,
                                   remotePath: track.effectiveAudioRemotePath,
                                   localAudioPath: track.localPath,
+                                  coverPath: track.coverPath ?? lib?.coverPath,
                                   fileName: track.fileName,
                                   size: artSize.clamp(180.0, 300.0),
                                   borderRadius: 8,
@@ -480,6 +505,39 @@ class PlayerScreen extends StatelessWidget {
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
+                              if (track != null &&
+                                  player.isPlayingLocal != null) ...[
+                                const SizedBox(height: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer
+                                        .withValues(alpha: 0.55),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    player.isPlayingLocal!
+                                        ? AppLocalizations.of(context)!
+                                              .playerSourceCached
+                                        : AppLocalizations.of(context)!
+                                              .playerSourceStreaming,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelMedium
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onPrimaryContainer,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                  ),
+                                ),
+                              ],
                               if (chips.isNotEmpty) ...[
                                 const SizedBox(height: 14),
                                 Wrap(
@@ -647,18 +705,20 @@ class PlayerScreen extends StatelessWidget {
   }
 }
 
-/// Backdrop that loads full/embedded art only — never the 100×100 thumb.
+/// Backdrop: full-res / embedded first, then library/stream [coverPath].
 class _PlayerBackdrop extends StatefulWidget {
   const _PlayerBackdrop({
     this.sourceName,
     this.audioRemotePath,
     this.localPath,
+    this.coverPath,
     required this.child,
   });
 
   final String? sourceName;
   final String? audioRemotePath;
   final String? localPath;
+  final String? coverPath;
   final Widget child;
 
   @override
@@ -680,7 +740,8 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.audioRemotePath != widget.audioRemotePath ||
-        oldWidget.localPath != widget.localPath) {
+        oldWidget.localPath != widget.localPath ||
+        oldWidget.coverPath != widget.coverPath) {
       unawaited(_load());
     }
   }
@@ -730,6 +791,16 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
         }
         return;
       }
+    }
+    final known = widget.coverPath;
+    if (known != null && known.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          _fullPath = known;
+          _bytes = null;
+        });
+      }
+      return;
     }
     if (mounted) {
       setState(() {

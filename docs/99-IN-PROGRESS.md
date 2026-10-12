@@ -835,7 +835,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - 歌单名 `未命名` → `__wdmm_unnamed_playlist__`（`playlists.name` 与 `entries_json` 里的 `sourceName` / `accountId`）。不碰 `新歌单`。改过的行抬高 `updated_at`，同步才能推稳定键。不在启动时去拉远端 `.wdmp`。
 - `默认服务器` → `__wdmm_default_server__`：`accounts.name`、各表 `source_name`、下载任务、歌单条目 `sourceName`，以及恰好是这个名字或以 `cue\0默认服务器\0` / `默认服务器\0` 开头的 `cache_group_id` / `cache_groups`。不碰默认名 `服务器`。`music_id` 不重算哈希；缓存和封面文件按旧 stem 改名到新 stem，`cover_path` 同样改。
 
-不改：真实流派标签 `未分类`（空流派已经是 `__wdmm_uncategorized__`）、`未知艺术家` / `未知专辑`（空艺术家 / 空专辑的分组键已经是稳定键，界面用 `displayArtistFor` / `displayAlbumFor`）、`新文件夹`、`系统相册`、`下载目录`、字幕存储值 `默认`、原生 Kotlin。再跑一次找不到这些中文哨兵。下一版（最迟到 0.2.4）删掉整个函数。
+不改：真实流派标签 `未分类`（空流派已经是 `__wdmm_uncategorized__`）、`未知艺术家` / `未知专辑`（空艺术家 / 空专辑的分组键已经是稳定键，界面用 `displayArtistFor` / `displayAlbumFor`）、`新文件夹`、`系统相册`、`下载目录`、字幕存储值 `默认`、原生 Kotlin。再跑一次找不到这些中文哨兵。下一版（最迟到 0.2.4）删掉整个函数——预发布成功后与临时同名清理门闸一并移除（见 §17.17 末「0.2.4 计划」）。
 
 ## 15. 启动默认主页 tab 与网络库路径仅内存
 
@@ -866,3 +866,189 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - 格式：`formatVersion = 6`；`WmpSections.passCheck = 11`（`AESGCMv1:` canary）；JSON 导出顶层 `passCheck`。
 - 预检：`lib/utils/backup_pass_check.dart`；UI：`sync_screen`。
 - 测试：`test/backup_pass_check_test.dart`。
+
+## 17. 媒体库 / 任务队列 / 播放合一（重大改动，进行中）
+
+**状态**：2026-10-12 基于 `origin/main` tip `8c2b6c5` 开分支 `feat/media-library-unify`。不要历史包袱：可删过时测试、可改 DB schema、功能级重构优于叠补丁。
+
+**落地进度**：
+- **错误模型（§17.12 第 1 步）**：已落地。见 `lib/utils/task_error.dart`、`TaskQueueService.describeError` / `describeErrorDetail`、`tasks_screen`。
+- **任务队列外壳（§17.12 第 2 步）**：已落地。用户文案「任务队列」；`QueueTask.kind`；双进度；`TaskQueueService` / `TasksScreen`；非 download kind 可入队展示但不调度。扫描执行器未做。
+- **遍历 / 深度（§17.12 第 3 步）**：已落地共用 `WalkOptions` / `DirectoryWalker`（防环 + maxEntries 默认 500）。**三套 prefs 完全独立**（默认 maxDepth=1）：
+  1. 视频播列表：`video_scan_subdirs`（默认关）+ `video_playlist_max_depth`
+  2. 音乐网络库播列表：`audio_scan_subdirs`（默认关）+ `audio_playlist_max_depth`
+  3. 媒体库刮削：`media_scan_recursive`（默认**开**）+ `media_scan_max_depth`
+  图片 `image_scan_subdirs` 保持独立、不复用。视频/音乐渐进扫描已接 WalkOptions；刮削执行器未做。
+- **入库与预载 / 播放合一（§17.12 第 4–5 步）**：**已落地**（无 MusicStreamScreen 旁路）。
+  - Range 标签：`StreamCoverReader.extractTags`（cherry-pick 自 stream-tags）。
+  - 入库：`LibraryService.ingestFromTags`；预载 `onIngestTags` 先入库再下邻居。
+  - **统一播放**：`AudioPlayerService.playTrack` → `PlayableMedia`（本地文件 **或** 流式 URL+headers）→ `MusicAudioHandler` 同一音乐队列 / 媒体会话 / MiniPlayer / PlayerScreen。
+  - 预载：`MusicPrefetchService`（挂在 AudioPlayerService；标签→封面→音频进 `prefetch_cache`）。已删 `MusicStreamScreen` 与 `AudioStreamEngine`。
+  - 队列：网络库按当前路径 siblings；媒体库按列表/歌单。视频仍走 `VideoPlaybackService`（video mode）；音乐起播会 `exitVideoMode`，流式音乐不再占用 video mode。
+  - 状态点：`streamable` / `ready` 主题色；红点未做。
+- **红点 / 刮削 / 设置（§17.12 第 6–7 步）**：**已落地**。
+  - Schema v10：`tracks` / `cue_slices`.`remote_missing`；起播 404 写红点（有本地缓存跳过）；点红点再试 → 删除/重定向。
+  - `TaskKind.scan` 执行器 + 网络库多选「扫描入库」（先统计再入队，units 进度，增量只比路径）。
+  - `TaskKind.retagCloud` 执行器；设置「从云端更新标签」入队。
+  - 顶栏「媒体库」；音乐设置进子页；音乐默认打开（缓存/串流）独立 pref；后缀页音乐不再改默认打开；库长按「串流（仅本次）」。
+- **全屏播放状态条**：`PlayerScreen` 按当前 `PlayableMedia.isLocal` 显示「缓存」/「流式」（三语 ARB）；MiniPlayer 不加。
+- **歌单对齐曲库状态（本轮）**：**已落地并扩展**。歌单行经 `musicId` → `LibraryTrack` 解析，与曲库共用 `libraryRowUiState` / 状态点（缓存淡金 / 可串流 primary / remote_missing 红点 / 播放中图标）。库中无此曲 → 「库中暂无」。`PlaylistEntry.remoteMissing` 已镜像（entries_json / `.wdmp` ENTRIES tag 8）；起播失败与全量匹配同步写曲库 + 歌单。点红点再试 → 删歌单条目或重定向（`retargetTrack` + `replaceTrack`）。
+- **音乐库单文件更多（本轮）**：长按仍进多选；行尾 ⋮：流式播放 / 缓存 / 清理 / 从缓存更新标签 / 从云端更新标签 / 重定向 / 删除。播放页「更多信息」更新标签改成左右两个按钮（从缓存更新标签 / 从云端更新标签）。
+- **剩余缺口**：列表封面桶（无本地时 Range 写入 `covers/`）、刮削走 `ingestCueRemote`。全量匹配写红点与重定向后 Range ingest 已有实现入口，按真机反馈再收。
+- **播放打开模式锁定（本轮）**：默认文案「缓存播放 / 串流播放」；`PlayOpenMode` 贯通网络库 / 媒体库 / 歌单。
+  - **缓存播放**：仅 `music_cache`；缺文件则 `ensureQueued` 并等待后再播（不静默串流）；邻居按预载窗口经任务队列入 `music_cache`。
+  - **串流播放**：有 `music_cache` 用本地；否则只串流；不入队 `music_cache`、不后台暖邻居进缓存；临时 `prefetch_cache` 仍可用于邻居。
+  - 状态条：只有 `music_cache` 算「缓存」；仅有 `prefetch_cache` 显示「串流」。
+  - 「从缓存更新标签 / 从云端更新标签」仅用于更新标签，不作播放模式名。
+  - `music_cache` 容量上限 + 既有按时间清理；跳过正在播放；清缓存后经 `CacheService` 刷新。
+  - 音频流式设置并入媒体库设置；预载文案区分串流临时预载 vs 缓存播放后台缓存。
+  - 任务队列：展示层按时间连续同 kind（下载再按 `DownloadTarget`）合并；保留 CUE 组合并；聚合进度 / 取消组 / BottomSheet 看成员。
+- **曲库管理模式（本轮，已按播放触发重锁）**：设置 → 媒体库 → 音乐库。互斥两项：
+  1. **手动管理**（默认，`music_library_auto_backfill=false`）：库只因用户显式操作变化；**不**自动刮削。
+  2. **自动补齐**（`true`）：**起播**时浅层刮削为默认行为（见 §17.17）；**已移除**「打开音乐库时检查」入队与「播放时检查」开关。
+  - 网络库手动「扫描音乐」/ 多选「扫描入库」**两种模式都可**；自动入队仅自动补齐 + 播放触发。
+  - 更新标签文案「从缓存更新标签」/「从云端更新标签」；空库引导可扫描或下载。
+
+**相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
+
+### 17.1 目标（原话级）
+
+- **串流与缓存只差本地是否有音频文件**：有本地音频 = 缓存播放；没有 = 串流。同一套底部播放控件，不再分「本地播放页」与「流式页」两套体验。
+- **媒体库是曲目真相**：库内行（标签、封面、路径、缓存状态、云端存在性等）是唯一真相源；网络库是浏览器，不替代曲目身份。
+
+### 17.2 后缀管理与设置
+
+- **后缀管理**：只把**音乐**的默认打开方式从后缀页摘出；其它类别（视频 / CUE / 图片 / 普通文件）暂不动。
+- **音乐默认缓存 / 串流**放在「媒体库 → 音乐」设置里配置，不再混在通用后缀默认动作表里。
+- **设置顶栏**：「音乐库」改名为「媒体库」；音乐相关设置进子页，不再把整块音乐设置堆在设置首页。
+
+### 17.3 播放列表来源
+
+| 入口 | 列表怎么生成 | 深度 |
+|------|--------------|------|
+| 网络库（音乐串流 / 连播） | 按当前路径生成 | **子目录 / 最大深度单独设置**，与刮削深度**分开** |
+| 媒体库（原音乐库） | 按库 / 筛选 / 歌单生成 | 不走路径扫描深度 |
+| 视频播放列表 | 同样要有**最大子目录深度**（默认 1） | 与刮削设置、与音乐网络库深度均区分 |
+
+### 17.4 单曲行为
+
+- 单击 / 默认打开：跟**媒体库默认**（缓存或串流，见 §17.2）。
+- **音乐库可长按等手动选串流**（新功能）：只对这一次生效，**不改默认**。
+
+### 17.5 预载、标签入库、文件夹封面
+
+- **预载保留**：从库打开、从网络库打开都能用（同一套预载语义，窗口等配置仍可沿用现有音频流式设置，落地时再对齐入口）。
+- **顺序**：先用 Range 读标签并入库，再预载音频 / 封面邻居。
+- **文件夹封面 sidecar** 保留（同目录 cover / folder 等匹配规则不删）。
+
+### 17.6 封面缓存桶
+
+- 给**列表浏览、且尚无本地音频缓存**的曲目，持久化一份封面缓存桶，避免列表频繁拉远端封面。
+- **播放时**仍用标签内嵌图 / 库内封面路径；列表桶与播放封面来源可分开，不要为列表去反复 Range 整文件。
+
+### 17.7 状态点（列表指示）
+
+- **有缓存 / 可串流 / 下载中**：用主题**正常色**区分，**不用**灰 / 警示色。
+- **红点 = 已确认云端不存在**（持久化到库）。
+
+### 17.8 云端不存在（红点）语义
+
+- **不主动全盘扫**远端是否还在。
+- 写红点的时机：
+  1. **串流失败**且判定为远端缺失；或
+  2. 设置里**可选的全量匹配**任务跑完后确认不存在。
+- 用户**点红点**：先再试远端；仍失败 → 弹**删除 / 重定向**（选择器交互像网络库复制 / 移动那套）。
+- **有本地缓存**时：跳过远端存在性检查，直到用户清缓存后再有机会发现缺失并写红点。
+
+### 17.9 刮削（扫描入库）
+
+- 多选工具里：**刮削与缓存音乐并列**（可多选文件夹 / 文件触发）。
+- **默认递归深度 1**（只当前层 + 一层子目录语义按落地时与现有扫描对齐，以「深度 1」为默认值）。
+- **默认增量**：只比路径（有路径变化才处理），不做默认真全量重刮。
+- 流程：**先统计再刮削**（先给出将处理数量 / 范围，再开跑）。
+- **更新标签**入口改为两路：「从本地」「从云端」。云端一路是**任务**（进任务队列），且**含封面**拉取 / 更新。
+
+### 17.10 任务队列
+
+- 「下载队列」**改名**为任务队列（界面与导航文案）。
+- 任务 `kind` 含至少：`download` / `scan` / `retag` 等（可扩展）。
+- 列表行只显示**短错误文案**；点「详情」或长按错误行看**全文**（已落地，见上「落地进度」）。
+
+### 17.11 目录遍历深度（三套独立 prefs）
+
+| 用途 | includeSubdirs 键 | 默认 | maxDepth 键 | 默认 |
+|------|-------------------|------|-------------|------|
+| 视频连播 / 视频播放列表 | `video_scan_subdirs` | **关** | `video_playlist_max_depth` | **1** |
+| 音乐从网络库打开的播放列表 | `audio_scan_subdirs` | **关** | `audio_playlist_max_depth` | **1** |
+| 媒体库刮削 | `media_scan_recursive` | **开** | `media_scan_max_depth` | **1** |
+
+- 共用逻辑：`WalkOptions` / `DirectoryWalker`（visited 防环；`maxEntries` 保险丝默认 **500**）。
+- 图片查看 `image_scan_subdirs` **保持独立**，不要拿来复用。
+- 深度语义：`0` = 仅当前目录；`1` = 当前 + 下一层；clamp 0–20。
+
+### 17.12 实现原则与建议落地顺序
+
+**原则**：
+
+- 可删过时测试；可改 DB schema；**功能级重构优于叠补丁**。
+- 基于最新 `main`，不要为照顾旧分支语义而保留双轨。
+
+**建议落地顺序**（写进本节，后续实现按此切步）：
+
+1. ~~错误模型（短码 + 详情全文）~~ **已落地**
+2. ~~任务队列外壳（改名、`kind`、列表 / 详情）~~ **已落地**
+3. ~~遍历 / 深度（网络库音乐列表、视频列表、刮削深度分设）~~ **已落地**（三套独立 prefs，见上）
+4. ~~入库与预载（Range 标签先入库再预载；sidecar 保留）~~ **第一段已落地**（见上）
+5. ~~播放合一（同一套底部控件；串流 / 缓存只差本地文件）~~ **已落地**
+6. ~~红点 / 重定向~~ **已落地**
+7. ~~扫描与更新标签~~ **已落地**
+
+### 17.13 stream-tags（Range 读标签）依赖说明
+
+- 提交 `ebe8424`（`feat: read stream tags, cover and lyrics over HTTP Range`）在分支 `feat/stream-tags`，**尚未合入 `main`**。
+- **本分支已 cherry-pick** 该能力（见落地进度）；`main` 仍无。勿在合入 main 前假装全树已有。
+
+### 17.14 未决
+
+无。
+
+### 17.15 分支与范围
+
+- 分支：`feat/media-library-unify`（worktree：`worktree/media-library-unify`）。
+- 不推 `main`、不发版。按 §17.12 顺序逐步落地业务代码。
+
+### 17.16 播放打开模式与任务合并（已锁定并落地）
+
+**用户锁定规则**（2026-10-12）：
+
+1. 默认名：**缓存播放** / **串流播放**（不用「缓存后播放」）。设置说明覆盖网络库、媒体库、歌单。
+2. 「从缓存更新标签 / 从云端更新标签」只用于更新标签（勿与播放模式混淆）。
+3. 缓存播放：有本地文件只播文件；缺则自动入队 `music_cache` 并等待再播；邻居经任务队列、同一预载窗口暖缓存。
+4. 串流播放：有本地用本地；无则只串流；不入队 / 不暖 `music_cache`；临时 `prefetch_cache` 可用。
+5. 缓存有无不以 DB 为准，用 `CacheService` 的 `File.exists`；下载 / 删除 / 清理时 notify。
+6. `music_cache` 容量上限 + 按时间清理；跳过正在播放；设置 UI；清理后刷新。
+7. 音频流式设置并入媒体库设置分类；文案只写操作；预载窗口：串流→临时预载，缓存播放→同窗口后台缓存。
+8. TasksScreen 展示层时间连续同 kind 合并；保留 CUE 组合并；不改 `QueueTask` 存储；聚合进度、取消组、BottomSheet；同 kind 不同 `DownloadTarget` 拆开。
+9. 状态条：仅 `music_cache` = 缓存；仅 `prefetch_cache` = 串流。
+10. 入口统一：`network_library` / `library_screen` / `playlist_detail_screen` 都尊重 `musicDefaultStream` / `PlayOpenMode`。
+
+### 17.17 曲库管理模式 → 播放触发浅层刮削（已重锁）
+
+**用户原话（2026-10-12，后改）**：只刮削；下载跟播放模式；前缀匹配；去掉打开音乐库时自动入队；改为起播时浅层列父目录；绑定路径开关；修账号选择器重复。再改：播放时检查应为自动补齐默认、去掉开关；清理同名账号可进详情看完整凭证；刮削成功入库后可把同目录新曲同步进当前播放列表（见下）。
+
+**取舍（锁定）**：
+1. **去掉** `shouldAutoBackfillOnLibraryOpen` / 打开音乐库 tab 自动入队。
+2. **起播触发**（`AudioPlayerService` 成功 `loadAndPlay` 后）：已知 `accountId` + `sourceName` + `remotePath` 时，只 `listDirectory` **当前曲父目录一层**（`WalkOptions(includeSubdirs: false)`）；与本地库该 source 的远端路径 diff；仅缺失路径 `enqueueScan`（刮削语义，**不下载**；下载只走缓存播放等播放模式）。自动补齐开启时**始终**允许起播浅层刮削——**已移除**「播放时检查」开关 / `musicLibraryBackfillOnPlay` API；旧 prefs 键 `music_library_backfill_on_open` 读入时忽略。
+3. Pref：
+   - `music_library_auto_backfill`（默认 false）= 自动补齐总开关（开则默认起播浅层刮削）。
+   - `music_library_backfill_bind_roots`（默认 false）：关 = 不做绑定过滤，起播总是浅列父目录；开 = 先用绑定根对当前曲 `remotePath` 做前缀匹配，不命中则整次跳过，命中再扫父目录一层。
+   - `music_library_backfill_roots`：绑定根 UI 仅在绑定开关开时显示。
+4. **账号同名（DB 兜底）**：名称是逻辑主键（`normalizeSourceName` + 大小写不敏感 = `accountNameKey`）。应用层 `addAccount`/`updateAccount` 拒绝重名（友好错误）；`library_database` schema **v11** 对 `accounts.name_key` 加 **UNIQUE** 作硬底。历史同名：启动检测后展示**临时清理 UI**，冲突行可点进**详情页**查看完整凭证（名称 / id / URL / 用户名 / 密码可见切换 / 远程路径 / 类型）以便区分，再手动删除；名称唯一后才创建 UNIQUE 索引（或已存在则跳过）。**不**在启动时自动折叠/合并同名行；选择器**不**自行去重。备份恢复仍按名去重；同名接管（按 id 恢复）可删掉占用该名的另一行。
+5. 显式网络库扫描两种模式都可；自动入队仅自动补齐门控。
+6. 更新标签 / 空库文案保持「更新标签」与可扫描入库。
+7. **起播刮削后同步当前播放列表**（内存 now-playing，非已存歌单文档）：
+   - 仅当本次起播浅层刮削**发现缺失并入队**刮削任务时登记意图；列出无缺失则不碰队列。
+   - **等该刮削任务成功入库后再改队列**；失败 / 取消则放弃；若完成前用户已切到其他目录 / 队列（当前曲 source+父目录与登记不一致）也放弃，不做迟到静默改写。
+   - 范围：只改内存播放队列；只追加**同一 source + 同一父目录**的新入库曲，按远端路径序插入该段；**不删**已有项、不重排其他目录、不中断当前曲 / 不 seek、不停止播放、不清空队列、不自动下载。
+
+**0.2.4 计划（预发布成功后）**：删除历史 DB 兼容——`migrateLegacySentinelsOnce` 与临时同名清理门闸（`AccountNameCleanupScreen` / `needsNameCleanup`）；升级时若仍有同名 `name_key`，保留每组一条（优先当前使用账号，否则最小 id）并删其余账号行与安全存储密码，再施加 UNIQUE。正式版 0.2.4 起旧库不再走兼容路径。

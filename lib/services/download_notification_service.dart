@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../models/download_task.dart';
+import '../models/queue_task.dart';
 import '../utils/l10n_host.dart';
 
 /// Android notification channels for the download queue.
@@ -308,7 +308,7 @@ class DownloadNotificationService {
   }
 
   /// Progress line for a single task (used when only one is running).
-  String describe(DownloadTask task) =>
+  String describe(QueueTask task) =>
       '${task.fileName} · ${(task.progress * 100).toStringAsFixed(0)}%';
 
   /// Drop the retired queue notification and the completion one, but leave

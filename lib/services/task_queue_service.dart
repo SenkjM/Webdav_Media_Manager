@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
 
@@ -7,7 +8,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
-import '../models/download_task.dart';
+import '../models/file_type_config.dart';
+import '../models/queue_task.dart';
 import '../models/library_track.dart';
 import '../models/webdav_item.dart';
 import '../l10n/generated/app_localizations.dart';
@@ -15,13 +17,15 @@ import '../utils/audio_extensions.dart';
 import '../utils/app_snack.dart';
 import '../utils/cue_sheet.dart';
 import '../utils/l10n_host.dart';
+import '../utils/task_error.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'cloud_driver.dart';
 import 'download_keepalive.dart';
 import 'download_notification_service.dart';
-import 'download_store.dart';
+import 'task_store.dart';
 import 'library_service.dart';
+import 'playlist_service.dart';
 import 'platform_export_service.dart';
 import 'webdav_service.dart';
 
@@ -30,24 +34,30 @@ import 'dart:math';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'settings_service.dart';
+import 'stream_cover_reader.dart';
+import 'tag_service.dart';
+import '../models/webdav_stream.dart';
+import '../utils/directory_walk.dart';
+import '../utils/scan_candidates.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:flutter/widgets.dart';
 
-/// Background async download queue. Does not block UI/navigation.
+/// Background async task queue. Does not block UI/navigation.
 /// Ordering: FIFO by [createdAt]. Only one active download at a time.
 ///
 /// Two destinations (see [DownloadTarget]):
 /// * music → app-internal audio cache (the only place playback reads from)
 /// * video → the **system gallery** via MediaStore, so downloads show up in
 ///   the device's video app rather than an app-private folder
-class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
-  DownloadQueueService({
+class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
+  TaskQueueService({
     required WebDavService webDav,
     required CacheService cache,
     LibraryService? library,
-    DownloadStore? store,
+    PlaylistService? playlists,
+    TaskStore? store,
     PlatformExportService? export,
     bool Function(String name)? isMusicFile,
     DownloadNotificationService? notifications,
@@ -57,7 +67,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }) : _webDav = webDav,
        _cache = cache,
        _library = library,
-       _store = store ?? DownloadStore(),
+       _playlists = playlists,
+       _store = store ?? TaskStore(),
        _export = export ?? const PlatformExportService(),
        _notify = notifications ?? DownloadNotificationService(),
        _isMusicFile = isMusicFile ?? isAudioFileName,
@@ -83,7 +94,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   final Set<String> _fgsTimeoutSuspendIds = <String>{};
   DateTime? _fgsCooldownUntil;
   LibraryService? _library;
-  final DownloadStore _store;
+  PlaylistService? _playlists;
+  final TaskStore _store;
   final PlatformExportService _export;
 
   /// Resolves a task's binding point (网盘名) to a local WebDAV account.
@@ -137,9 +149,9 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   final _uuid = const Uuid();
 
-  final List<DownloadTask> _tasks = [];
+  final List<QueueTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
-  final Map<String, Completer<DownloadTask>> _waiters = {};
+  final Map<String, Completer<QueueTask>> _waiters = {};
 
   /// CUE cacheGroupId → sheet.tracks.length (for queue UI; not file count).
   final Map<String, int> _cueSongCounts = {};
@@ -240,86 +252,14 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   String? _lastError;
   String? get lastError => _lastError;
 
-  String _describeError(Object e) {
-    var raw = e.toString();
-    for (final prefix in const [
-      'Bad state: ',
-      'WmpFormatException: ',
-      'Unsupported operation: ',
-      'Invalid argument(s): ',
-    ]) {
-      if (raw.startsWith(prefix)) raw = raw.substring(prefix.length);
-    }
-    // sqflite's "no column named X" is the classic schema-drift symptom.
-    if (raw.contains('has no column named')) {
-      return 'err.dlQueueSchemaDrift|$raw';
-    }
-    return raw;
-  }
+  String _describeError(Object e) => TaskError.classify(e).persisted;
 
-  /// Map persisted stable error codes (and their `Bad state:` /
-  /// `WmpFormatException:` wrappers) to localized text; unknown values pass
-  /// through unchanged so pre-i18n rows keep their raw text.
-  static String describeError(String raw, AppLocalizations l10n) {
-    var text = raw;
-    for (final prefix in const [
-      'Bad state: ',
-      'WmpFormatException: ',
-      'Unsupported operation: ',
-      'Invalid argument(s): ',
-    ]) {
-      if (text.startsWith(prefix)) text = text.substring(prefix.length);
-    }
-    final bar = text.indexOf('|');
-    final code = bar > 0 ? text.substring(0, bar) : text;
-    final detail = bar > 0 ? text.substring(bar + 1) : '';
-    switch (code) {
-      case 'err.cancelled':
-        return l10n.downloadCancelled;
-      case 'err.queueCleared':
-        return l10n.dlErrQueueCleared;
-      case 'err.cueMalformed':
-        return l10n.dlErrCueMalformed;
-      case 'err.writePublicFailed':
-        return l10n.dlErrWritePublicFailed;
-      case 'err.dlOffline':
-        return l10n.dlErrOffline;
-      case 'err.sourceUnbound':
-        return l10n.dlErrSourceUnbound(detail);
-      case 'err.dlQueueSchemaDrift':
-        return l10n.dlErrQueueSchemaDrift(detail);
-      case 'err.dlOfflineRetryWait':
-        final wait = detail.split('|');
-        if (wait.length >= 3) {
-          return l10n.dlOfflineRetryWait(wait[0], wait[1], wait[2]);
-        }
-        return text;
-      case 'err.dlNetworkInterruptedRetry':
-        final retryParts = detail.split('|');
-        if (retryParts.length >= 2) {
-          return l10n.dlNetworkInterruptedRetry(retryParts[0], retryParts[1]);
-        }
-        return text;
-      case 'err.dlRetryExhausted':
-        final bar2 = detail.indexOf('|');
-        if (bar2 > 0) {
-          return l10n.dlRetryExhausted(
-            detail.substring(0, bar2),
-            describeError(detail.substring(bar2 + 1), l10n),
-          );
-        }
-        return text;
-      case 'err.shardKindMismatch':
-        final shardParts = detail.split('|');
-        if (shardParts.length >= 2) {
-          return l10n.errShardKindMismatch(shardParts[0], shardParts[1]);
-        }
-        return text;
-      case 'err.notWdmmFile':
-        return l10n.errNotWdmmFile;
-    }
-    return text;
-  }
+  /// List / snackbar: short localized label. Full exception → [describeErrorDetail].
+  static String describeError(String raw, AppLocalizations l10n) =>
+      TaskError.shortLabel(raw, l10n);
+
+  /// Full original detail for the error dialog (unwraps retry wrappers).
+  static String describeErrorDetail(String raw) => TaskError.detailText(raw);
 
   Future<void> _guardPersist(Future<void> Function() body) async {
     try {
@@ -327,7 +267,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       _lastError = null;
     } catch (e) {
       _lastError = _describeError(e);
-      debugPrint('DownloadQueueService persist failed: $e');
+      debugPrint('TaskQueueService persist failed: $e');
       notifyListeners();
       rethrow;
     }
@@ -337,7 +277,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     _library = library;
   }
 
-  UnmodifiableListView<DownloadTask> get tasks => UnmodifiableListView(_tasks);
+  UnmodifiableListView<QueueTask> get tasks => UnmodifiableListView(_tasks);
 
   /// After the audio cache is cleared, drop the completed tasks whose file is
   /// gone so the next tap enqueues a fresh download.
@@ -350,12 +290,12 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   ///
   /// Tasks whose file lives outside the audio cache are skipped: gallery /
   /// Downloads entries keep a `content://` URI (or an absolute path) in
-  /// [DownloadTask.localPath], so `File(...).existsSync()` is always false for
+  /// [QueueTask.localPath], so `File(...).existsSync()` is always false for
   /// them and the cache clear never invalidates them.
   Future<int> invalidateMissingCompleted() async {
     var n = 0;
-    for (final t in List<DownloadTask>.from(_tasks)) {
-      if (t.status != DownloadStatus.completed) continue;
+    for (final t in List<QueueTask>.from(_tasks)) {
+      if (t.status != TaskStatus.completed) continue;
       if (t.isPublic) continue;
       final path = t.localPath;
       if (path != null && File(path).existsSync()) continue;
@@ -367,11 +307,11 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return n;
   }
 
-  List<DownloadTask> get pendingTasks =>
-      _tasks.where((t) => t.status == DownloadStatus.pending).toList();
+  List<QueueTask> get pendingTasks =>
+      _tasks.where((t) => t.status == TaskStatus.pending).toList();
 
-  List<DownloadTask> get activeTasks =>
-      _tasks.where((t) => t.status == DownloadStatus.active).toList();
+  List<QueueTask> get activeTasks =>
+      _tasks.where((t) => t.status == TaskStatus.active).toList();
 
   bool get isBusy => activeTasks.isNotEmpty || pendingTasks.isNotEmpty;
 
@@ -379,13 +319,13 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (_initialized) return;
     final loaded = await _store.loadAll();
     for (final t in loaded) {
-      if (t.status == DownloadStatus.active) {
-        t.status = DownloadStatus.pending;
+      if (t.status == TaskStatus.active) {
+        t.status = TaskStatus.pending;
         t.progress = 0;
         await _store.upsert(t);
       }
       _tasks.add(t);
-      if (t.status != DownloadStatus.completed) _sessionIds.add(t.id);
+      if (t.status != TaskStatus.completed) _sessionIds.add(t.id);
     }
     _initialized = true;
     // Timer 在后台会被挂起；回到前台补一次唤醒，别等下一次退避到期。
@@ -399,7 +339,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_pump());
   }
 
-  DownloadTask? taskForRemote(String sourceName, String remotePath) {
+  QueueTask? taskForRemote(String sourceName, String remotePath) {
     try {
       return _tasks.lastWhere(
         (t) => t.sourceName == sourceName && t.remotePath == remotePath,
@@ -412,7 +352,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 同一个远端路径可能同时挂在两条线上（缓存 + 系统下载目录），所以去重按
   /// **(来源, 路径, 目标)** 三段比：只比路径的话，先点缓存再点下载时第二条会
   /// 被静默吞掉，看起来就像按钮没反应。
-  DownloadTask? taskForRemoteAndTarget(
+  QueueTask? taskForRemoteAndTarget(
     String sourceName,
     String remotePath,
     DownloadTarget target,
@@ -433,8 +373,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   double? downloadProgressFor(String sourceName, String remotePath) {
     final direct = taskForRemote(sourceName, remotePath);
     if (direct != null &&
-        (direct.status == DownloadStatus.active ||
-            direct.status == DownloadStatus.pending)) {
+        (direct.status == TaskStatus.active ||
+            direct.status == TaskStatus.pending)) {
       return direct.progress.clamp(0.0, 1.0);
     }
     // CUE virtual / audio member: use group average of non-terminal-cancelled tasks.
@@ -461,12 +401,12 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Active generation only — ignores cancelled/failed leftovers from prior clears.
-  List<DownloadTask> _liveCueMembers(String groupId) {
-    final byPath = <String, DownloadTask>{};
+  List<QueueTask> _liveCueMembers(String groupId) {
+    final byPath = <String, QueueTask>{};
     for (final t in _tasks) {
       if (t.cacheGroupId != groupId) continue;
-      if (t.status == DownloadStatus.cancelled ||
-          t.status == DownloadStatus.failed) {
+      if (t.status == TaskStatus.cancelled ||
+          t.status == TaskStatus.failed) {
         continue;
       }
       final prev = byPath[t.remotePath];
@@ -488,6 +428,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     String remotePath, {
     String? playingRemotePath,
     String? playingSourceName,
+    bool libraryRow = false,
   }) {
     final cached = _cache.fileForRemote(remotePath, sourceName: sourceName);
     final task = taskForRemote(sourceName, remotePath);
@@ -496,14 +437,14 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (task != null) {
       switch (task.status) {
-        case DownloadStatus.pending:
+        case TaskStatus.pending:
           return TrackUiState.queued;
-        case DownloadStatus.active:
+        case TaskStatus.active:
           return TrackUiState.downloading;
-        case DownloadStatus.failed:
-        case DownloadStatus.cancelled:
+        case TaskStatus.failed:
+        case TaskStatus.cancelled:
           return TrackUiState.error;
-        case DownloadStatus.completed:
+        case TaskStatus.completed:
           // Public downloads land in the system gallery / Downloads folder
           // rather than the audio cache, so a completed task alone means
           // "downloaded".
@@ -514,28 +455,143 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (cached.existsSync()) {
       return TrackUiState.ready;
     }
-    if (task?.status == DownloadStatus.completed &&
+    if (task?.status == TaskStatus.completed &&
         task?.localPath != null &&
         File(task!.localPath!).existsSync()) {
       return TrackUiState.ready;
     }
-    // Not downloaded and never explicitly enqueued — show no status chip.
+    // Library rows without a cache file are still playable via stream.
+    if (libraryRow) return TrackUiState.streamable;
+    // Network browser: not downloaded and never enqueued — no status chip.
     return TrackUiState.remote;
   }
 
+
+  /// Enqueue a media-library scrape for one root (file or folder).
+  ///
+  /// When [paths] is provided (from the UI lightweight walk), it is stored as a
+  /// sidecar JSON and used by [_runScan] so execution does not re-list.
+  Future<QueueTask> enqueueScan({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+    int? unitsTotal,
+    List<ScanPathEntry>? paths,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: fileName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.scan,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: unitsTotal ?? paths?.length,
+      unitsDone: 0,
+    );
+    if (paths != null && paths.isNotEmpty) {
+      final payload = await _scanPayloadFile(task.id);
+      await payload.writeAsString(
+        jsonEncode([for (final e in paths) e.toJson()]),
+        flush: true,
+      );
+      task.localPath = payload.path;
+    }
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
+  Future<File> _scanPayloadFile(String taskId) async {
+    final root = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(root.path, 'scan_payloads'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return File(p.join(dir.path, '$taskId.json'));
+  }
+
+  Future<List<ScanPathEntry>?> _readScanPayload(QueueTask task) async {
+    final path = task.localPath;
+    if (path == null || path.isEmpty || !path.endsWith('.json')) return null;
+    final f = File(path);
+    if (!await f.exists()) return null;
+    try {
+      final raw = jsonDecode(await f.readAsString());
+      if (raw is! List) return null;
+      return [
+        for (final e in raw)
+          if (e is Map)
+            ScanPathEntry.fromJson(Map<String, dynamic>.from(e)),
+      ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Cloud retag (+ cover) for one library row.
+  Future<QueueTask> enqueueRetagCloud({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: fileName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.retagCloud,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: 1,
+      unitsDone: 0,
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
+  /// Probe every library row for this source (or all sources) and write red dots.
+  Future<QueueTask> enqueueMatchRemote({
+    required String sourceName,
+    int? unitsTotal,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: '/',
+      fileName: 'match_remote',
+      createdAt: DateTime.now(),
+      kind: TaskKind.matchRemote,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: unitsTotal,
+      unitsDone: 0,
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
   /// Enqueue download. If already completed/cached, returns existing task.
-  Future<DownloadTask> enqueue(
+  Future<QueueTask> enqueue(
     String sourceName,
     String remotePath, {
     String? fileName,
     bool playWhenReady = false,
     String? cacheGroupId,
   }) async {
-    final existingCompleted = _tasks.cast<DownloadTask?>().firstWhere(
+    final existingCompleted = _tasks.cast<QueueTask?>().firstWhere(
       (t) =>
           t!.sourceName == sourceName &&
           t.remotePath == remotePath &&
-          t.status == DownloadStatus.completed &&
+          t.status == TaskStatus.completed &&
           t.localPath != null &&
           File(t.localPath!).existsSync(),
       orElse: () => null,
@@ -556,13 +612,13 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       sourceName: sourceName,
     );
     if (cachedPath != null) {
-      final done = DownloadTask(
+      final done = QueueTask(
         id: _uuid.v4(),
         sourceName: sourceName,
         remotePath: remotePath,
         fileName: fileName ?? remotePath.split('/').last,
         createdAt: DateTime.now(),
-        status: DownloadStatus.completed,
+        status: TaskStatus.completed,
         localPath: cachedPath,
         progress: 1.0,
         completedAt: DateTime.now(),
@@ -578,19 +634,19 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       return done;
     }
 
-    final inFlight = _tasks.cast<DownloadTask?>().firstWhere(
+    final inFlight = _tasks.cast<QueueTask?>().firstWhere(
       (t) =>
           t!.sourceName == sourceName &&
           t.remotePath == remotePath &&
-          (t.status == DownloadStatus.pending ||
-              t.status == DownloadStatus.active),
+          (t.status == TaskStatus.pending ||
+              t.status == TaskStatus.active),
       orElse: () => null,
     );
     if (inFlight != null) {
       return _waitFor(inFlight.id);
     }
 
-    final task = DownloadTask(
+    final task = QueueTask(
       id: _uuid.v4(),
       sourceName: sourceName,
       remotePath: remotePath,
@@ -634,18 +690,18 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final existing = taskForRemoteAndTarget(sourceName, remotePath, target);
     if (existing != null) {
       switch (existing.status) {
-        case DownloadStatus.pending:
-        case DownloadStatus.active:
+        case TaskStatus.pending:
+        case TaskStatus.active:
           return false;
-        case DownloadStatus.completed:
+        case TaskStatus.completed:
           if (existing.localPath != null &&
               File(existing.localPath!).existsSync()) {
             return false;
           }
           break;
-        case DownloadStatus.failed:
-        case DownloadStatus.cancelled:
-          existing.status = DownloadStatus.pending;
+        case TaskStatus.failed:
+        case TaskStatus.cancelled:
+          existing.status = TaskStatus.pending;
           existing.errorMessage = null;
           existing.progress = 0;
           existing.bytesReceived = 0;
@@ -656,7 +712,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
 
-    final task = DownloadTask(
+    final task = QueueTask(
       id: _uuid.v4(),
       sourceName: sourceName,
       remotePath: remotePath,
@@ -669,6 +725,56 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     unawaited(_pump());
     return true;
+  }
+
+
+  /// Queue into music_cache if needed, then wait until the file exists or the
+  /// cache task fails / is cancelled. Returns the local path, or null on failure.
+  Future<String?> ensureCachedAndWait(
+    String sourceName,
+    String remotePath, {
+    String? fileName,
+    Duration timeout = const Duration(minutes: 30),
+  }) async {
+    if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
+      return _cache.fileForRemote(remotePath, sourceName: sourceName).path;
+    }
+    await ensureQueued(sourceName, remotePath, fileName: fileName);
+    if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
+      return _cache.fileForRemote(remotePath, sourceName: sourceName).path;
+    }
+
+    final completer = Completer<String?>();
+    void finish(String? path) {
+      if (!completer.isCompleted) completer.complete(path);
+    }
+
+    void listener() {
+      if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
+        finish(_cache.fileForRemote(remotePath, sourceName: sourceName).path);
+        return;
+      }
+      final task = taskForRemoteAndTarget(
+        sourceName,
+        remotePath,
+        DownloadTarget.cache,
+      );
+      if (task == null) return;
+      if (task.status == TaskStatus.failed ||
+          task.status == TaskStatus.cancelled) {
+        finish(null);
+      }
+    }
+
+    addListener(listener);
+    final timer = Timer(timeout, () => finish(null));
+    listener();
+    try {
+      return await completer.future;
+    } finally {
+      removeListener(listener);
+      timer.cancel();
+    }
   }
 
   /// Enqueue a file that should land in a **public** collection rather than the
@@ -688,13 +794,13 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final existing = taskForRemoteAndTarget(sourceName, remotePath, target);
     if (existing != null) {
       switch (existing.status) {
-        case DownloadStatus.pending:
-        case DownloadStatus.active:
-        case DownloadStatus.completed:
+        case TaskStatus.pending:
+        case TaskStatus.active:
+        case TaskStatus.completed:
           return false;
-        case DownloadStatus.failed:
-        case DownloadStatus.cancelled:
-          existing.status = DownloadStatus.pending;
+        case TaskStatus.failed:
+        case TaskStatus.cancelled:
+          existing.status = TaskStatus.pending;
           existing.errorMessage = null;
           existing.progress = 0;
           existing.bytesReceived = 0;
@@ -707,7 +813,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
           return true;
       }
     }
-    final task = DownloadTask(
+    final task = QueueTask(
       id: _uuid.v4(),
       sourceName: sourceName,
       remotePath: remotePath,
@@ -765,7 +871,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Latest queue task for a remote path (any status), if any.
-  DownloadTask? taskFor(String sourceName, String remotePath) =>
+  QueueTask? taskFor(String sourceName, String remotePath) =>
       taskForRemote(sourceName, remotePath);
 
   /// Batch [ensureQueued] for many tracks without awaiting each download.
@@ -917,8 +1023,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         .where(
           (t) =>
               t.cacheGroupId == groupId &&
-              (t.status == DownloadStatus.cancelled ||
-                  t.status == DownloadStatus.failed ||
+              (t.status == TaskStatus.cancelled ||
+                  t.status == TaskStatus.failed ||
                   !keepPaths.contains(t.remotePath)),
         )
         .toList();
@@ -936,11 +1042,11 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     String? fileName,
     String? cacheGroupId,
   }) async {
-    final existingCompleted = _tasks.cast<DownloadTask?>().firstWhere(
+    final existingCompleted = _tasks.cast<QueueTask?>().firstWhere(
       (t) =>
           t!.sourceName == sourceName &&
           t.remotePath == remotePath &&
-          t.status == DownloadStatus.completed &&
+          t.status == TaskStatus.completed &&
           t.localPath != null &&
           File(t.localPath!).existsSync(),
       orElse: () => null,
@@ -963,11 +1069,11 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
     if (cachedPath != null) {
       // Already on disk — record completed task in the cue group (no re-download).
-      final already = _tasks.cast<DownloadTask?>().firstWhere(
+      final already = _tasks.cast<QueueTask?>().firstWhere(
         (t) =>
             t!.sourceName == sourceName &&
             t.remotePath == remotePath &&
-            t.status == DownloadStatus.completed,
+            t.status == TaskStatus.completed,
         orElse: () => null,
       );
       if (already != null) {
@@ -984,16 +1090,16 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
       // Reuse a cancelled/failed row for the same path instead of duplicating.
-      final reusable = _tasks.cast<DownloadTask?>().firstWhere(
+      final reusable = _tasks.cast<QueueTask?>().firstWhere(
         (t) =>
             t!.sourceName == sourceName &&
             t.remotePath == remotePath &&
-            (t.status == DownloadStatus.cancelled ||
-                t.status == DownloadStatus.failed),
+            (t.status == TaskStatus.cancelled ||
+                t.status == TaskStatus.failed),
         orElse: () => null,
       );
       if (reusable != null) {
-        reusable.status = DownloadStatus.completed;
+        reusable.status = TaskStatus.completed;
         reusable.localPath = cachedPath;
         reusable.progress = 1.0;
         reusable.completedAt = DateTime.now();
@@ -1006,13 +1112,13 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
         return;
       }
-      final done = DownloadTask(
+      final done = QueueTask(
         id: _uuid.v4(),
         sourceName: sourceName,
         remotePath: remotePath,
         fileName: fileName ?? remotePath.split('/').last,
         createdAt: DateTime.now(),
-        status: DownloadStatus.completed,
+        status: TaskStatus.completed,
         localPath: cachedPath,
         progress: 1.0,
         completedAt: DateTime.now(),
@@ -1027,12 +1133,12 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    final inFlight = _tasks.cast<DownloadTask?>().firstWhere(
+    final inFlight = _tasks.cast<QueueTask?>().firstWhere(
       (t) =>
           t!.sourceName == sourceName &&
           t.remotePath == remotePath &&
-          (t.status == DownloadStatus.pending ||
-              t.status == DownloadStatus.active),
+          (t.status == TaskStatus.pending ||
+              t.status == TaskStatus.active),
       orElse: () => null,
     );
     if (inFlight != null) {
@@ -1045,16 +1151,16 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // Reuse cancelled/failed task for this path (avoids +1 member each clear).
-    final reusable = _tasks.cast<DownloadTask?>().firstWhere(
+    final reusable = _tasks.cast<QueueTask?>().firstWhere(
       (t) =>
           t!.sourceName == sourceName &&
           t.remotePath == remotePath &&
-          (t.status == DownloadStatus.cancelled ||
-              t.status == DownloadStatus.failed),
+          (t.status == TaskStatus.cancelled ||
+              t.status == TaskStatus.failed),
       orElse: () => null,
     );
     if (reusable != null) {
-      reusable.status = DownloadStatus.pending;
+      reusable.status = TaskStatus.pending;
       reusable.errorMessage = null;
       reusable.progress = 0;
       reusable.bytesReceived = 0;
@@ -1067,7 +1173,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
-    final task = DownloadTask(
+    final task = QueueTask(
       id: _uuid.v4(),
       sourceName: sourceName,
       remotePath: remotePath,
@@ -1082,13 +1188,13 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_pump());
   }
 
-  Future<void> _maybeIngestCueGroup(DownloadTask task) async {
+  Future<void> _maybeIngestCueGroup(QueueTask task) async {
     final groupId = task.cacheGroupId;
     if (groupId == null || _library == null) return;
     // Only the live generation — ignore cancelled leftovers from cache clears.
     final members = _liveCueMembers(groupId);
     if (members.isEmpty) return;
-    final cueTask = members.cast<DownloadTask?>().firstWhere(
+    final cueTask = members.cast<QueueTask?>().firstWhere(
       (t) => t!.remotePath.toLowerCase().endsWith('.cue'),
       orElse: () => null,
     );
@@ -1118,19 +1224,19 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       ...sheet.audioRemotePaths(cueTask.remotePath),
     };
     String norm(String path) => normalizeRemotePath(path);
-    final membersByNorm = <String, DownloadTask>{
+    final membersByNorm = <String, QueueTask>{
       for (final m in members) norm(m.remotePath): m,
     };
     // Every required path must have a live completed member with file on disk.
     for (final path in required) {
       final m =
           membersByNorm[norm(path)] ??
-          members.cast<DownloadTask?>().firstWhere(
+          members.cast<QueueTask?>().firstWhere(
             (t) => t!.remotePath == path,
             orElse: () => null,
           );
       if (m == null ||
-          m.status != DownloadStatus.completed ||
+          m.status != TaskStatus.completed ||
           m.localPath == null ||
           !File(m.localPath!).existsSync()) {
         return;
@@ -1222,7 +1328,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
-  Future<void> _ingest(DownloadTask task) async {
+  Future<void> _ingest(QueueTask task) async {
     final lib = _library;
     final local = task.localPath;
     if (lib == null || local == null) return;
@@ -1257,15 +1363,15 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {}
   }
 
-  Future<DownloadTask> _waitFor(String id) {
+  Future<QueueTask> _waitFor(String id) {
     final existing = _waiters[id];
     if (existing != null) return existing.future;
-    final c = Completer<DownloadTask>();
+    final c = Completer<QueueTask>();
     _waiters[id] = c;
     final task = _tasks.firstWhere((t) => t.id == id);
     if (task.isTerminal) {
       _waiters.remove(id);
-      if (task.status == DownloadStatus.completed) {
+      if (task.status == TaskStatus.completed) {
         c.complete(task);
       } else {
         c.completeError(StateError(task.errorMessage ?? task.status.name));
@@ -1274,10 +1380,10 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return c.future;
   }
 
-  void _completeWaiter(DownloadTask task) {
+  void _completeWaiter(QueueTask task) {
     final c = _waiters.remove(task.id);
     if (c == null || c.isCompleted) return;
-    if (task.status == DownloadStatus.completed) {
+    if (task.status == TaskStatus.completed) {
       c.complete(task);
     } else {
       c.completeError(StateError(task.errorMessage ?? task.status.name));
@@ -1288,12 +1394,12 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final idx = _tasks.indexWhere((t) => t.id == id);
     if (idx < 0) return;
     final task = _tasks[idx];
-    if (task.status == DownloadStatus.active) {
+    if (task.status == TaskStatus.active) {
       _cancelTokens[id]?.cancel('cancelled');
     }
-    if (task.status == DownloadStatus.pending ||
-        task.status == DownloadStatus.active) {
-      task.status = DownloadStatus.cancelled;
+    if (task.status == TaskStatus.pending ||
+        task.status == TaskStatus.active) {
+      task.status = TaskStatus.cancelled;
       task.errorMessage = 'err.cancelled';
       await _store.upsert(task);
       _completeWaiter(task);
@@ -1306,11 +1412,11 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final idx = _tasks.indexWhere((t) => t.id == id);
     if (idx < 0) return;
     final old = _tasks[idx];
-    if (old.status != DownloadStatus.failed &&
-        old.status != DownloadStatus.cancelled) {
+    if (old.status != TaskStatus.failed &&
+        old.status != TaskStatus.cancelled) {
       return;
     }
-    old.status = DownloadStatus.pending;
+    old.status = TaskStatus.pending;
     old.errorMessage = null;
     old.progress = 0;
     old.bytesReceived = 0;
@@ -1326,7 +1432,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// Wake pending tasks immediately, including those waiting for retry backoff.
   Future<void> downloadWaiting() async {
     for (final task in _tasks) {
-      if (task.status == DownloadStatus.pending) {
+      if (task.status == TaskStatus.pending) {
         task.nextRetryAt = null;
         await _store.upsert(task);
       }
@@ -1340,19 +1446,19 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// Resume every non-completed task, resetting failed/cancelled rows.
   Future<void> downloadAll() async {
     for (final task in _tasks) {
-      if (task.status == DownloadStatus.failed ||
-          task.status == DownloadStatus.cancelled) {
-        task.status = DownloadStatus.pending;
+      if (task.status == TaskStatus.failed ||
+          task.status == TaskStatus.cancelled) {
+        task.status = TaskStatus.pending;
         task.errorMessage = null;
         task.progress = 0;
         task.bytesReceived = 0;
         task.nextRetryAt = null;
         task.attempts = 0;
         _sessionIds.add(task.id);
-      } else if (task.status == DownloadStatus.pending) {
+      } else if (task.status == TaskStatus.pending) {
         task.nextRetryAt = null;
       }
-      if (task.status != DownloadStatus.completed) await _store.upsert(task);
+      if (task.status != TaskStatus.completed) await _store.upsert(task);
     }
     _wake?.complete();
     _wake = null;
@@ -1361,9 +1467,9 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> cancelAll() async {
-    for (final task in List<DownloadTask>.from(_tasks)) {
-      if (task.status == DownloadStatus.pending ||
-          task.status == DownloadStatus.active) {
+    for (final task in List<QueueTask>.from(_tasks)) {
+      if (task.status == TaskStatus.pending ||
+          task.status == TaskStatus.active) {
         await cancel(task.id);
       }
     }
@@ -1371,7 +1477,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> clearCompleted() async {
     final done = _tasks
-        .where((t) => t.status == DownloadStatus.completed)
+        .where((t) => t.status == TaskStatus.completed)
         .toList();
     for (final t in done) {
       _tasks.remove(t);
@@ -1396,15 +1502,15 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> clearAll() async {
     // Cancel in-flight transfers first so no worker keeps writing into a task we
     // are about to drop.
-    for (final t in List<DownloadTask>.from(_tasks)) {
-      if (t.status == DownloadStatus.active) {
+    for (final t in List<QueueTask>.from(_tasks)) {
+      if (t.status == TaskStatus.active) {
         _cancelTokens[t.id]?.cancel('cleared');
       }
     }
     // Release anyone awaiting a task that will never complete.
-    for (final t in List<DownloadTask>.from(_tasks)) {
+    for (final t in List<QueueTask>.from(_tasks)) {
       if (!t.isTerminal) {
-        t.status = DownloadStatus.cancelled;
+        t.status = TaskStatus.cancelled;
         t.errorMessage = 'err.queueCleared';
       }
       final waiter = _waiters.remove(t.id);
@@ -1412,7 +1518,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         waiter.completeError(StateError('err.queueCleared'));
       }
     }
-    for (final t in List<DownloadTask>.from(_tasks)) {
+    for (final t in List<QueueTask>.from(_tasks)) {
       await _store.delete(t.id);
     }
     _tasks.clear();
@@ -1433,7 +1539,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     await _notify.cancel();
   }
 
-  static List<DownloadTask> orderPending(List<DownloadTask> tasks) {
+  static List<QueueTask> orderPending(List<QueueTask> tasks) {
     final now = DateTime.now();
     // 正在等退避 / 等网络的任务不算「可以跑」——否则 _pump 的 while(true)
     // 会空转，而且一个等待中的任务会把整条队列堵在后面。
@@ -1441,12 +1547,34 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         tasks
             .where(
               (t) =>
-                  t.status == DownloadStatus.pending &&
+                  t.status == TaskStatus.pending &&
+                  (t.kind == TaskKind.download ||
+                      t.kind == TaskKind.scan ||
+                      t.kind == TaskKind.retagCloud ||
+                      t.kind == TaskKind.matchRemote) &&
                   (t.nextRetryAt == null || !t.nextRetryAt!.isAfter(now)),
             )
             .toList()
           ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return pending;
+  }
+
+  /// Update count progress for scan / retag (and sync [QueueTask.progress]).
+  Future<void> reportUnitsProgress(
+    String id, {
+    required int done,
+    int? total,
+  }) async {
+    final i = _tasks.indexWhere((t) => t.id == id);
+    if (i < 0) return;
+    final task = _tasks[i];
+    task.progressMode = TaskProgressMode.units;
+    task.unitsDone = done;
+    if (total != null) task.unitsTotal = total;
+    task.syncProgressFromCounters();
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    _publishProgress();
   }
 
   /// Push the current queue state into the system notification.
@@ -1455,7 +1583,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// service throttles internally so this is cheap enough to call often.
   void _publishProgress() {
     if (!notificationsEnabled && !_keepAlive.holdsOrStarting) return;
-    DownloadTask? current;
+    QueueTask? current;
     var running = 0;
     var pendingCount = 0;
     var completed = 0;
@@ -1464,16 +1592,16 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     for (final t in _tasks) {
       if (!_sessionIds.contains(t.id)) continue;
       switch (t.status) {
-        case DownloadStatus.active:
+        case TaskStatus.active:
           running++;
           current ??= t;
-        case DownloadStatus.pending:
+        case TaskStatus.pending:
           pendingCount++;
-        case DownloadStatus.completed:
+        case TaskStatus.completed:
           completed++;
-        case DownloadStatus.failed:
+        case TaskStatus.failed:
           failed++;
-        case DownloadStatus.cancelled:
+        case TaskStatus.cancelled:
           cancelled++;
       }
     }
@@ -1629,12 +1757,12 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 文案码不变（`err.dlNetworkInterruptedRetry` / `err.dlOfflineRetryWait` /
   /// `err.dlRetryExhausted`）。次数上限见 [autoRetryCap]：前台 5，后台 offline 3。
   Future<void> _handleFailure(
-    DownloadTask task,
+    QueueTask task,
     Object error, {
     bool cancelled = false,
   }) async {
     if (_takeFgsTimeoutSuspend(task)) {
-      task.status = DownloadStatus.pending;
+      task.status = TaskStatus.pending;
       task.nextRetryAt =
           _fgsCooldownUntil ??
           DateTime.now().add(DownloadKeepAlive.timeoutCooldown);
@@ -1644,7 +1772,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       _scheduleRetryWake();
       return;
     }
-    final userCancelled = cancelled || task.status == DownloadStatus.cancelled;
+    final userCancelled = cancelled || task.status == TaskStatus.cancelled;
     if (!userCancelled) {
       unawaited(_recordFailureDiagnostics(error));
     }
@@ -1652,7 +1780,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final inBackground = _isBackground;
     final cap = autoRetryCap(inBackground: inBackground, offline: offline);
     if (userCancelled) {
-      task.status = DownloadStatus.cancelled;
+      task.status = TaskStatus.cancelled;
       task.errorMessage = 'err.cancelled';
       task.nextRetryAt = null;
     } else if (shouldAutoRetry(
@@ -1667,34 +1795,35 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       task.nextRetryAt = DateTime.now().add(
         retryDelayFor(task.attempts, offline: offline),
       );
-      task.status = DownloadStatus.pending;
+      task.status = TaskStatus.pending;
       task.errorMessage = offline
           ? 'err.dlOfflineRetryWait|${task.attempts}|$cap|'
                 '${offlineRetryDelay.inSeconds}'
           : 'err.dlNetworkInterruptedRetry|${task.attempts}|$cap';
     } else {
-      task.status = DownloadStatus.failed;
+      task.status = TaskStatus.failed;
       task.nextRetryAt = null;
-      final why = offline ? 'err.dlOffline' : _describeError(error);
+      // Persist a stable short code + full detail (DNS/timeout/403…), not a Dio dump alone.
+      final why = _describeError(error);
       task.errorMessage = task.attempts >= cap
           ? 'err.dlRetryExhausted|$cap|$why'
           : why;
     }
     await _guardPersist(() => _store.upsert(task));
-    if (task.status != DownloadStatus.pending) _completeWaiter(task);
+    if (task.status != TaskStatus.pending) _completeWaiter(task);
     notifyListeners();
     _publishProgress();
-    if (task.status == DownloadStatus.pending) _scheduleRetryWake();
+    if (task.status == TaskStatus.pending) _scheduleRetryWake();
   }
 
   bool get _isBackground => DownloadKeepAlive.lifecycleIsBackground();
 
   bool get _queueHasWork => _tasks.any(
     (t) =>
-        t.status == DownloadStatus.pending || t.status == DownloadStatus.active,
+        t.status == TaskStatus.pending || t.status == TaskStatus.active,
   );
 
-  bool _takeFgsTimeoutSuspend(DownloadTask task) =>
+  bool _takeFgsTimeoutSuspend(QueueTask task) =>
       _fgsTimeoutSuspendIds.remove(task.id);
 
   void _onKeepAliveTimeout() {
@@ -1708,10 +1837,10 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     _fgsCooldownUntil = until;
     _keepAlive.suppressStartUntil(until);
     for (final task in _tasks) {
-      if (task.status == DownloadStatus.active) {
+      if (task.status == TaskStatus.active) {
         _fgsTimeoutSuspendIds.add(task.id);
         _cancelTokens[task.id]?.cancel('fgs-timeout');
-      } else if (task.status == DownloadStatus.pending) {
+      } else if (task.status == TaskStatus.pending) {
         final when = task.nextRetryAt;
         if (when == null || when.isBefore(until)) {
           task.nextRetryAt = until;
@@ -1824,8 +1953,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final now = DateTime.now();
     final alive = <String>{
       for (final t in _tasks)
-        if (t.status == DownloadStatus.pending ||
-            t.status == DownloadStatus.active)
+        if (t.status == TaskStatus.pending ||
+            t.status == TaskStatus.active)
           t.id,
     };
     final files = <File>[];
@@ -1845,7 +1974,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         Directory(p.join((await getTemporaryDirectory()).path, 'public_dl')),
       );
     } catch (e) {
-      debugPrint('DownloadQueueService 扫描半截文件失败: $e');
+      debugPrint('TaskQueueService 扫描半截文件失败: $e');
     }
     if (files.isEmpty) return 0;
     final stat = <File, FileStat>{};
@@ -1868,7 +1997,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       } catch (_) {}
     }
     if (removed > 0) {
-      debugPrint('DownloadQueueService 清理半截文件：$removed 个');
+      debugPrint('TaskQueueService 清理半截文件：$removed 个');
     }
     return removed;
   }
@@ -1877,7 +2006,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   void _scheduleRetryWake() {
     final waiting = _tasks
         .where(
-          (t) => t.status == DownloadStatus.pending && t.nextRetryAt != null,
+          (t) => t.status == TaskStatus.pending && t.nextRetryAt != null,
         )
         .toList();
     if (waiting.isEmpty) return;
@@ -1912,7 +2041,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 跑一次任务；连 `_runOne` 自己都没接住的异常也交给统一失败处理。
   ///
   /// 顺带记录这一跑是不是网络事件唤醒的（事件连赔要冷却，见 `_handleFailure`）。
-  Future<void> _attempt(DownloadTask task) async {
+  Future<void> _attempt(QueueTask task) async {
     try {
       await _ensureKeepAliveBounded();
       await _runOne(task);
@@ -1922,7 +2051,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       // whole queue forever — and the failure has to be **persisted**, or the
       // row stays `active` in the database while memory says failed.
       _lastError = _describeError(e);
-      debugPrint('DownloadQueueService _runOne failed: $e');
+      debugPrint('TaskQueueService _runOne failed: $e');
       // 这里也走统一失败处理：认不出来的错误默认按可重试兜底，
       // 而不是把任务直接判死（99 §7.5 之后的下载可靠性要求）。
       await _handleFailure(task, e);
@@ -1930,7 +2059,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// 等这次退避到期；网络事件（`_wake`）会提前叫醒。
-  Future<void> _waitForRetry(DownloadTask task) async {
+  Future<void> _waitForRetry(QueueTask task) async {
     final when = task.nextRetryAt;
     if (when == null) return;
     final delay = when.difference(DateTime.now());
@@ -1964,7 +2093,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
         // 原地重试：任务自己约了下一次尝试，就别把它放回队尾去「等待」——
         // 它继续占着当前这个位置（进度不重置、后面的任务不插队），
         // 列表里也一直显示成这一条在重试。
-        while (task.status == DownloadStatus.pending &&
+        while (task.status == TaskStatus.pending &&
             task.nextRetryAt != null) {
           await _waitForRetry(task);
           task.nextRetryAt = null;
@@ -1990,21 +2119,40 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _runOne(DownloadTask task) async {
-    if (task.status != DownloadStatus.pending) return;
-    task.status = DownloadStatus.active;
+  Future<void> _runOne(QueueTask task) async {
+    if (task.status != TaskStatus.pending) return;
+    task.status = TaskStatus.active;
     task.progress = 0;
+    task.progressMode = task.kind == TaskKind.download
+        ? TaskProgressMode.bytes
+        : TaskProgressMode.units;
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
 
     final token = CancelToken();
     _cancelTokens[task.id] = token;
-    if (task.target == DownloadTarget.cache) {
-      await _runCacheDownload(task, token);
-    } else {
-      await _runPublicDownload(task, token);
+    try {
+      switch (task.kind) {
+        case TaskKind.download:
+          if (task.target == DownloadTarget.cache) {
+            await _runCacheDownload(task, token);
+          } else {
+            await _runPublicDownload(task, token);
+          }
+        case TaskKind.scan:
+          await _runScan(task, token);
+        case TaskKind.retagCloud:
+          await _runRetagCloud(task, token);
+        case TaskKind.matchRemote:
+          await _runMatchRemote(task, token);
+        case TaskKind.retagLocal:
+          // Local retag stays interactive (settings); not scheduled here.
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+      }
+    } finally {
+      _cancelTokens.remove(task.id);
     }
-    _cancelTokens.remove(task.id);
     // Status changed (one file finished, the next is about to start): refresh the
     // aggregate notification so pending/running counts stay honest.
     _publishProgress();
@@ -2013,7 +2161,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// Public collection download (system gallery for video, Downloads folder for
   /// files with unrecognised extensions). Never touches the audio cache or the
   /// music library: the file belongs to the user, not to the app.
-  Future<void> _runPublicDownload(DownloadTask task, CancelToken token) async {
+  Future<void> _runPublicDownload(QueueTask task, CancelToken token) async {
     final accountId = _accountIdFor(task.sourceName);
     if (accountId == null) {
       throw StateError('err.sourceUnbound|${task.sourceName}');
@@ -2052,7 +2200,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
           }
         },
       );
-      if (task.status == DownloadStatus.cancelled) return;
+      if (task.status == TaskStatus.cancelled) return;
       final result = task.target == DownloadTarget.gallery
           ? await _export.saveToGallery(
               sourcePath: tmp.path,
@@ -2069,7 +2217,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       }
       task.localPath = result.uri ?? result.path;
       _fgsTimeoutSuspendIds.remove(task.id);
-      task.status = DownloadStatus.completed;
+      task.status = TaskStatus.completed;
       task.progress = 1.0;
       task.completedAt = DateTime.now();
       task.errorMessage = null;
@@ -2082,12 +2230,12 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       await _handleFailure(
         task,
         e,
-        cancelled: task.status == DownloadStatus.cancelled || token.isCancelled,
+        cancelled: task.status == TaskStatus.cancelled || token.isCancelled,
       );
     } finally {
       // 失败时**保留** .part 供下次续传；清理交给 cleanupStaleParts 与设置在管。
-      if (task.status == DownloadStatus.completed ||
-          task.status == DownloadStatus.cancelled) {
+      if (task.status == TaskStatus.completed ||
+          task.status == TaskStatus.cancelled) {
         if (await tmp.exists()) {
           try {
             await tmp.delete();
@@ -2097,7 +2245,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _runCacheDownload(DownloadTask task, CancelToken token) async {
+  Future<void> _runCacheDownload(QueueTask task, CancelToken token) async {
     final accountId = _accountIdFor(task.sourceName);
     if (accountId == null) {
       throw StateError('err.sourceUnbound|${task.sourceName}');
@@ -2136,12 +2284,12 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
           }
         },
       );
-      if (task.status == DownloadStatus.cancelled) return;
+      if (task.status == TaskStatus.cancelled) return;
       if (await dest.exists()) await dest.delete();
       await tmp.rename(dest.path);
       task.localPath = dest.path;
       _fgsTimeoutSuspendIds.remove(task.id);
-      task.status = DownloadStatus.completed;
+      task.status = TaskStatus.completed;
       task.progress = 1.0;
       task.completedAt = DateTime.now();
       task.errorMessage = null;
@@ -2161,7 +2309,7 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     } catch (e) {
       final cancelled =
-          task.status == DownloadStatus.cancelled || token.isCancelled;
+          task.status == TaskStatus.cancelled || token.isCancelled;
       if (cancelled && await tmp.exists()) {
         try {
           await tmp.delete();
@@ -2174,8 +2322,8 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   Set<String> get downloadingIdentityKeys => _tasks
       .where(
         (t) =>
-            t.status == DownloadStatus.active ||
-            t.status == DownloadStatus.pending,
+            t.status == TaskStatus.active ||
+            t.status == TaskStatus.pending,
       )
       .map((t) => trackIdentityKey(t.sourceName, t.remotePath))
       .toSet();
@@ -2183,10 +2331,337 @@ class DownloadQueueService extends ChangeNotifier with WidgetsBindingObserver {
   Map<String, String> get completedIdentityToLocal {
     final map = <String, String>{};
     for (final t in _tasks) {
-      if (t.status == DownloadStatus.completed && t.localPath != null) {
+      if (t.status == TaskStatus.completed && t.localPath != null) {
         map[trackIdentityKey(t.sourceName, t.remotePath)] = t.localPath!;
       }
     }
     return map;
   }
+
+  Future<void> _runScan(QueueTask task, CancelToken token) async {
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+    final library = _library;
+    if (library == null) {
+      throw StateError('err.unknown|library unavailable');
+    }
+    final walk = _settings?.mediaScanWalkOptions ?? const WalkOptions();
+    final lower = task.fileName.toLowerCase();
+    final rootIsFile = !task.remotePath.endsWith('/') &&
+        (_isMusicFile(task.fileName) ||
+            _isMusicFile(task.remotePath) ||
+            lower.endsWith('.cue') ||
+            isCueFileName(task.fileName));
+    List<WebDavItem> candidates;
+    final prelisted = await _readScanPayload(task);
+    if (prelisted != null && prelisted.isNotEmpty) {
+      candidates = [for (final e in prelisted) e.toItem()];
+    } else {
+      candidates = await collectScanCandidates(
+        webDav: _webDav,
+        accountId: accountId,
+        sourceName: task.sourceName,
+        rootPath: task.remotePath,
+        rootIsFile: rootIsFile,
+        walk: walk,
+        isMusic: _isMusicFile,
+        isCue: isCueFileName,
+        alreadyInLibrary: (path) => library.find(task.sourceName, path) != null,
+        cueAlbumInLibrary: (cuePath) => library.tracks.any(
+          (tr) =>
+              tr.sourceName == task.sourceName && tr.cueRemotePath == cuePath,
+        ),
+        audioCoveredByCue: (audioPath) => library.tracks.any(
+          (tr) =>
+              tr.sourceName == task.sourceName &&
+              tr.audioRemotePath == audioPath,
+        ),
+        cancel: token,
+      );
+    }
+    task.unitsTotal = candidates.length;
+    task.unitsDone = 0;
+    task.syncProgressFromCounters();
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    final covers = StreamCoverReader();
+    // Two-pass: all CUE first (parse + ingest, mark covered audio), then music.
+    final cueItems = <WebDavItem>[];
+    final musicItems = <WebDavItem>[];
+    for (final item in candidates) {
+      if (isCueFileName(item.name) || item.category == FileCategory.cue) {
+        cueItems.add(item);
+      } else {
+        musicItems.add(item);
+      }
+    }
+    final coveredByCue = <String>{};
+    var done = 0;
+    final total = candidates.length;
+
+    Future<bool> bumpOrCancel() async {
+      if (token.isCancelled) {
+        task.status = TaskStatus.cancelled;
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return true;
+      }
+      return false;
+    }
+
+    for (final item in cueItems) {
+      if (await bumpOrCancel()) return;
+      try {
+        final already = library.tracks.any(
+          (tr) =>
+              tr.sourceName == task.sourceName &&
+              tr.cueRemotePath == item.path,
+        );
+        if (!already) {
+          final bytes = await _webDav.readAsBytes(accountId, item.path);
+          final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
+          if (sheet == null) {
+            throw StateError('err.cueMalformed|${item.path}');
+          }
+          await library.ingestCueRemote(
+            sourceName: task.sourceName,
+            cueRemotePath: item.path,
+            sheet: sheet,
+          );
+          coveredByCue.addAll(sheet.audioRemotePaths(item.path));
+        }
+      } catch (e) {
+        if (token.isCancelled ||
+            (e is DioException && CancelToken.isCancel(e))) {
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+          notifyListeners();
+          return;
+        }
+        task.errorMessage = TaskError.classify(e).persisted;
+        debugPrint('scan cue failed ${item.path}: $e');
+      }
+      done++;
+      await reportUnitsProgress(task.id, done: done, total: total);
+    }
+
+    for (final item in musicItems) {
+      if (await bumpOrCancel()) return;
+      try {
+        if (library.find(task.sourceName, item.path) != null ||
+            coveredByCue.contains(item.path)) {
+          done++;
+          await reportUnitsProgress(task.id, done: done, total: total);
+          continue;
+        }
+        final source = await _webDav.resolveStreamSource(
+          remotePath: item.path,
+          name: item.name,
+          accountId: accountId,
+          kind: StreamKind.music,
+        );
+        if (source == null || source.uri.isEmpty) {
+          throw StateError('err.cloud.notFound|${item.path}');
+        }
+        final tags = await covers.extractTags(source, cancel: token);
+        await library.ingestFromTags(
+          sourceName: task.sourceName,
+          remotePath: item.path,
+          fileName: item.name,
+          tags: tags ?? const ReadTags(),
+        );
+      } catch (e) {
+        if (token.isCancelled ||
+            (e is DioException && CancelToken.isCancel(e))) {
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+          notifyListeners();
+          return;
+        }
+        task.errorMessage = TaskError.classify(e).persisted;
+        debugPrint('scan music failed ${item.path}: $e');
+      }
+      done++;
+      await reportUnitsProgress(task.id, done: done, total: total);
+    }
+
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    task.progress = 1;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+  Future<void> _runRetagCloud(QueueTask task, CancelToken token) async {
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+    final library = _library;
+    if (library == null) {
+      throw StateError('err.unknown|library unavailable');
+    }
+    task.unitsTotal = 1;
+    task.unitsDone = 0;
+    await reportUnitsProgress(task.id, done: 0, total: 1);
+    final source = await _webDav.resolveStreamSource(
+      remotePath: task.remotePath,
+      name: task.fileName,
+      accountId: accountId,
+      kind: StreamKind.music,
+    );
+    if (source == null || source.uri.isEmpty) {
+      throw StateError('err.cloud.notFound|${task.remotePath}');
+    }
+    final tags = await StreamCoverReader().extractTags(source, cancel: token);
+    if (tags == null) {
+      throw StateError('err.unknown|no tags');
+    }
+    await library.ingestFromTags(
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+      fileName: task.fileName,
+      tags: tags,
+    );
+    await library.clearRemoteMissing(
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+    );
+    await _playlists?.setRemoteMissingForPath(
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+      missing: false,
+    );
+    task.unitsDone = 1;
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    task.progress = 1;
+    await reportUnitsProgress(task.id, done: 1, total: 1);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+
+  Future<void> _runMatchRemote(QueueTask task, CancelToken token) async {
+    final library = _library;
+    if (library == null) {
+      throw StateError('err.unknown|library unavailable');
+    }
+    final cache = _cache;
+    final targets = <LibraryTrack>[];
+    for (final tr in library.tracks) {
+      if (task.sourceName.isNotEmpty &&
+          task.sourceName != '*' &&
+          tr.sourceName != task.sourceName) {
+        continue;
+      }
+      final probePath = tr.isCueVirtual
+          ? (tr.audioRemotePath ?? tr.remotePath)
+          : tr.remotePath;
+      if (cache.hasLocalFile(probePath, sourceName: tr.sourceName)) {
+        continue;
+      }
+      targets.add(tr);
+    }
+    task.unitsTotal = targets.length;
+    task.unitsDone = 0;
+    task.syncProgressFromCounters();
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    var done = 0;
+    for (final tr in targets) {
+      if (token.isCancelled) {
+        task.status = TaskStatus.cancelled;
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return;
+      }
+      final accountId = _accountIdFor(tr.sourceName);
+      if (accountId == null) {
+        done++;
+        await reportUnitsProgress(task.id, done: done, total: targets.length);
+        continue;
+      }
+      final probePath = tr.isCueVirtual
+          ? (tr.audioRemotePath ?? tr.remotePath)
+          : tr.remotePath;
+      final probeName = probePath.split('/').where((s) => s.isNotEmpty).last;
+      try {
+        final exists = await _remoteExists(
+          accountId: accountId,
+          remotePath: probePath,
+          name: probeName.isEmpty ? tr.fileName : probeName,
+        );
+        if (exists) {
+          await library.clearRemoteMissing(
+            sourceName: tr.sourceName,
+            remotePath: tr.remotePath,
+          );
+          await _playlists?.setRemoteMissingForIdentities(
+            identityKeys: [tr.musicId],
+            missing: false,
+          );
+        } else {
+          await library.markRemoteMissing(
+            sourceName: tr.sourceName,
+            remotePath: tr.remotePath,
+          );
+          await _playlists?.setRemoteMissingForIdentities(
+            identityKeys: [tr.musicId],
+            missing: true,
+          );
+        }
+      } catch (e) {
+        if (token.isCancelled ||
+            (e is DioException && CancelToken.isCancel(e))) {
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+          notifyListeners();
+          return;
+        }
+        debugPrint('matchRemote unit failed ${tr.remotePath}: $e');
+        task.errorMessage = TaskError.classify(e).persisted;
+      }
+      done++;
+      await reportUnitsProgress(task.id, done: done, total: targets.length);
+    }
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    task.progress = 1;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+  Future<bool> _remoteExists({
+    required String accountId,
+    required String remotePath,
+    required String name,
+  }) async {
+    try {
+      final item = await _webDav.statPath(accountId, remotePath);
+      if (item != null) return true;
+    } catch (_) {
+      // Fall through to stream resolve (cloud / crypt).
+    }
+    try {
+      final source = await _webDav.resolveStreamSource(
+        remotePath: remotePath,
+        name: name,
+        accountId: accountId,
+        kind: StreamKind.music,
+      );
+      return source != null && source.uri.isNotEmpty;
+    } catch (e) {
+      final code = TaskError.classify(e).code;
+      if (code == 'err.cloud.notFound') {
+        return false;
+      }
+      rethrow;
+    }
+  }
+
 }

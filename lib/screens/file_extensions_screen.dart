@@ -135,11 +135,19 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
           const SizedBox(height: 16),
           _buildSection(
             title: l10n.fileCatMusic,
-            subtitle: l10n.fileExtDefaultAction(actions.music.label(l10n)),
+            subtitle: l10n.musicDefaultInExtensionsHint,
             controller: _musicController,
             onApply: () => _apply(FileCategory.music),
             onRestore: () => _restoreDefault(FileCategory.music),
-            actionDropdown: _buildActionDropdown(settings, FileCategory.music),
+            actionDropdown: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                AppLocalizations.of(context)!.musicDefaultInExtensionsHint,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           _buildSection(

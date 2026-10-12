@@ -335,6 +335,156 @@ class LibraryService extends ChangeNotifier {
     return track;
   }
 
+  /// Persist confirmed cloud absence (list red-dot). Skip when [hasLocalCache].
+  Future<void> markRemoteMissing({
+    required String sourceName,
+    required String remotePath,
+    bool hasLocalCache = false,
+  }) async {
+    if (hasLocalCache) return;
+    final existing = find(sourceName, remotePath);
+    if (existing == null) return;
+    if (existing.remoteMissing) return;
+    existing.remoteMissing = true;
+    existing.rev = _nextRev();
+    await _db.upsertTrack(existing);
+    notifyListeners();
+  }
+
+  Future<void> clearRemoteMissing({
+    required String sourceName,
+    required String remotePath,
+  }) async {
+    final existing = find(sourceName, remotePath);
+    if (existing == null || !existing.remoteMissing) return;
+    existing.remoteMissing = false;
+    existing.rev = _nextRev();
+    await _db.upsertTrack(existing);
+    notifyListeners();
+  }
+
+  /// Point a library row at a new remote path (redirect after missing).
+
+  Future<void> updateCoverPath({
+    required String sourceName,
+    required String remotePath,
+    required String coverPath,
+  }) async {
+    final existing = find(sourceName, remotePath);
+    if (existing == null) return;
+    existing.coverPath = coverPath;
+    existing.rev = _nextRev();
+    await _db.upsertTrack(existing);
+    notifyListeners();
+  }
+
+  Future<LibraryTrack> retargetTrack({
+    required LibraryTrack track,
+    required String newRemotePath,
+    String? newFileName,
+  }) async {
+    final name = newFileName ?? newRemotePath.split('/').where((s) => s.isNotEmpty).last;
+    await _db.deleteTrack(track.sourceName, track.remotePath);
+    _tracks.removeWhere(
+      (t) => t.sourceName == track.sourceName && t.remotePath == track.remotePath,
+    );
+    final next = LibraryTrack(
+      sourceName: track.sourceName,
+      remotePath: newRemotePath,
+      fileName: name.isEmpty ? track.fileName : name,
+      title: track.title,
+      artist: track.artist,
+      albumArtist: track.albumArtist,
+      album: track.album,
+      durationMs: track.durationMs,
+      trackNumber: track.trackNumber,
+      trackTotal: track.trackTotal,
+      discNumber: track.discNumber,
+      discTotal: track.discTotal,
+      year: track.year,
+      genre: track.genre,
+      bitrate: track.bitrate,
+      sampleRate: track.sampleRate,
+      coverPath: track.coverPath,
+      cacheGroupId: track.cacheGroupId,
+      rev: _nextRev(),
+      lastDownloadedAt: track.lastDownloadedAt,
+      lastTagReadAt: track.lastTagReadAt,
+      remoteMissing: false,
+    );
+    await _db.upsertTrack(next);
+    _tracks.add(next);
+    notifyListeners();
+    return next;
+  }
+
+    /// Upsert tags (and optional cover) without requiring a local audio file.
+  ///
+  /// Used after HTTP Range / stream tag reads. Does **not** bump
+  /// [LibraryTrack.lastDownloadedAt] — a later [ingestDownloaded] still
+  /// overwrites tags and records the download time.
+  Future<LibraryTrack> ingestFromTags({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+    required ReadTags tags,
+  }) async {
+    final now = DateTime.now();
+    final existing = await _db.getTrack(sourceName, remotePath);
+    String? coverPath = existing?.coverPath;
+    if (tags.coverBytes != null && tags.coverBytes!.isNotEmpty) {
+      coverPath = await _covers.saveThumb(
+        sourceName: sourceName,
+        remotePath: remotePath,
+        bytes: tags.coverBytes!,
+      );
+      await _covers.saveFull(
+        sourceName: sourceName,
+        remotePath: remotePath,
+        bytes: tags.coverBytes!,
+      );
+    } else if (coverPath != null && !File(coverPath).existsSync()) {
+      coverPath = null;
+    }
+
+    final track = LibraryTrack(
+      musicId: existing?.musicId,
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: fileName,
+      title: tags.title ?? existing?.title,
+      artist: tags.artist ?? existing?.artist,
+      albumArtist: tags.albumArtist ?? existing?.albumArtist,
+      album: tags.album ?? existing?.album,
+      durationMs: tags.durationMs ?? existing?.durationMs,
+      trackNumber: tags.trackNumber ?? existing?.trackNumber,
+      trackTotal: tags.trackTotal ?? existing?.trackTotal,
+      discNumber: tags.discNumber ?? existing?.discNumber,
+      discTotal: tags.discTotal ?? existing?.discTotal,
+      year: tags.year ?? existing?.year,
+      genre: tags.genre ?? existing?.genre,
+      bitrate: tags.bitrate ?? existing?.bitrate,
+      sampleRate: tags.sampleRate ?? existing?.sampleRate,
+      coverPath: coverPath,
+      cacheGroupId: existing?.cacheGroupId,
+      rev: _nextRev(),
+      lastDownloadedAt: existing?.lastDownloadedAt ??
+          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+      lastTagReadAt: now,
+    );
+    await _db.upsertTrack(track);
+    final idx = _tracks.indexWhere(
+      (t) => t.sourceName == sourceName && t.remotePath == remotePath,
+    );
+    if (idx >= 0) {
+      _tracks[idx] = track;
+    } else {
+      _tracks.add(track);
+    }
+    notifyListeners();
+    return track;
+  }
+
   /// Re-read tags from an already cached, non-CUE audio file and replace its
   /// library metadata. CUE slices must be refreshed as a whole album.
   Future<LibraryTrack> refreshTrackTagsFromFile({
@@ -351,6 +501,93 @@ class LibraryService extends ChangeNotifier {
       localPath: localPath,
       updateDownloadTime: false,
     );
+  }
+
+  /// Scrape/Range path: build CUE slices from a parsed sheet **without**
+  /// requiring local audio files. Clip ends stay open until a later cache ingest.
+  Future<List<LibraryTrack>> ingestCueRemote({
+    required String sourceName,
+    required String cueRemotePath,
+    required CueSheet sheet,
+  }) async {
+    final already = _tracks.any(
+      (tr) => tr.sourceName == sourceName && tr.cueRemotePath == cueRemotePath,
+    );
+    if (already) return const [];
+    final now = DateTime.now();
+    final audioRemotes = sheet.audioRemotePaths(cueRemotePath);
+    final ranges = cueClipRanges(sheet.tracks);
+    final groupId = cueCacheGroupId(sourceName, cueRemotePath);
+    final created = <LibraryTrack>[];
+    for (var i = 0; i < sheet.tracks.length; i++) {
+      final ct = sheet.tracks[i];
+      final range = ranges[i];
+      final base = p.basename(ct.fileName.replaceAll('\\', '/'));
+      final resolved = audioRemotes.firstWhere(
+        (r) => p.basename(r) == base,
+        orElse: () =>
+            audioRemotes.isNotEmpty ? audioRemotes.first : ct.fileName,
+      );
+      final merged = mergeCueOverFileTags(
+        sheet: sheet,
+        cueTrack: ct,
+        fileTitle: null,
+        fileArtist: null,
+        fileAlbumArtist: null,
+        fileAlbum: null,
+        fileYear: null,
+        fileGenre: null,
+      );
+      final virtualPath = cueVirtualRemotePath(resolved, ct.number);
+      final audioMid = musicIdForRemote(sourceName, resolved);
+      final sliceMid = musicIdForCueSlice(sourceName, cueRemotePath, ct.number);
+      created.add(
+        LibraryTrack(
+          musicId: sliceMid,
+          sourceName: sourceName,
+          remotePath: virtualPath,
+          fileName: merged.title ?? ct.title ?? '${ct.number}',
+          title: merged.title,
+          artist: merged.artist,
+          albumArtist: merged.albumArtist,
+          album: merged.album,
+          durationMs: null,
+          trackNumber: merged.trackNumber,
+          trackTotal: sheet.tracks.length,
+          year: merged.year,
+          genre: merged.genre,
+          cueId: cueIdFor(sourceName, cueRemotePath),
+          cueRemotePath: cueRemotePath,
+          cueTrackIndex: ct.number,
+          audioMusicId: audioMid,
+          audioRemotePath: resolved,
+          clipStartMs: range.start.inMilliseconds,
+          clipEndMs: range.end?.inMilliseconds,
+          cacheGroupId: groupId,
+          lastDownloadedAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
+          lastTagReadAt: now,
+          rev: _nextRev(),
+          remoteMissing: false,
+        ),
+      );
+    }
+    if (created.isEmpty) return const [];
+    await _db.replaceCueAlbumTracks(
+      sourceName: sourceName,
+      cueRemotePath: cueRemotePath,
+      audioRemotePaths: audioRemotes,
+      tracks: created,
+    );
+    _tracks.removeWhere(
+      (t) =>
+          t.sourceName == sourceName &&
+          (t.cueRemotePath == cueRemotePath ||
+              audioRemotes.contains(t.remotePath) ||
+              audioRemotes.contains(t.audioRemotePath)),
+    );
+    _tracks.addAll(created);
+    notifyListeners();
+    return created;
   }
 
   Future<List<LibraryTrack>> ingestCueAlbum({

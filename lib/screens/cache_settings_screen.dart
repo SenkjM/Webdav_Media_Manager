@@ -21,6 +21,7 @@ class CacheSettingsScreen extends StatefulWidget {
 class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
   late final TextEditingController _customDaysController;
   late final TextEditingController _customHoursController;
+  late final TextEditingController _maxMbController;
   int? _cacheBytes;
   bool _cacheSizeLoading = false;
 
@@ -29,8 +30,10 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
     super.initState();
     _customDaysController = TextEditingController();
     _customHoursController = TextEditingController();
+    _maxMbController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncCustomFieldsFromSettings();
+      _syncMaxMbFromSettings();
       _refreshCacheSize();
     });
   }
@@ -39,6 +42,7 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
   void dispose() {
     _customDaysController.dispose();
     _customHoursController.dispose();
+    _maxMbController.dispose();
     super.dispose();
   }
 
@@ -47,6 +51,18 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
     final total = settings.customRetentionHours;
     _customDaysController.text = '${total ~/ 24}';
     _customHoursController.text = '${total % 24}';
+  }
+
+  void _syncMaxMbFromSettings() {
+    final settings = context.read<SettingsService>();
+    _maxMbController.text = '${settings.musicCacheMaxMb}';
+  }
+
+  Future<void> _applyMaxMb() async {
+    final raw = int.tryParse(_maxMbController.text.trim()) ?? 0;
+    await context.read<AppState>().setMusicCacheMaxMb(raw);
+    if (!mounted) return;
+    _syncMaxMbFromSettings();
   }
 
   Future<void> _refreshCacheSize() async {
@@ -205,9 +221,51 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
             ),
           ],
           const SizedBox(height: 16),
+          Text(
+            l10n.musicCacheMaxCapacity,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.musicCacheMaxCapacityHint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SizedBox(
+                width: 120,
+                child: TextField(
+                  controller: _maxMbController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: l10n.musicCacheMaxMb,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onEditingComplete: _applyMaxMb,
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.tonal(
+                onPressed: _applyMaxMb,
+                child: Text(l10n.apply),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            settings.musicCacheMaxMb <= 0
+                ? l10n.musicCacheUnlimited
+                : '${settings.musicCacheMaxMb} MB',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: _clearCache,
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(Icons.cleaning_services_outlined),
             label: Text(l10n.clearAudioCache),
           ),
         ],
