@@ -893,16 +893,21 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
   - 顶栏「媒体库」；音乐设置进子页；音乐默认打开（缓存/串流）独立 pref；后缀页音乐不再改默认打开；库长按「串流（仅本次）」。
 - **全屏播放状态条**：`PlayerScreen` 按当前 `PlayableMedia.isLocal` 显示「缓存」/「流式」（三语 ARB）；MiniPlayer 不加。
 - **歌单对齐曲库状态（本轮）**：**已落地并扩展**。歌单行经 `musicId` → `LibraryTrack` 解析，与曲库共用 `libraryRowUiState` / 状态点（缓存淡金 / 可串流 primary / remote_missing 红点 / 播放中图标）。库中无此曲 → 「库中暂无」。`PlaylistEntry.remoteMissing` 已镜像（entries_json / `.wdmp` ENTRIES tag 8）；起播失败与全量匹配同步写曲库 + 歌单。点红点再试 → 删歌单条目或重定向（`retargetTrack` + `replaceTrack`）。
-- **音乐库单文件更多（本轮）**：长按仍进多选；行尾 ⋮：流式播放 / 缓存 / 清理 / 基于缓存更新标签 / 基于云端更新标签 / 重定向 / 删除。播放页「更多信息」更新标签改成左右两个按钮（基于缓存 / 基于云端）。
+- **音乐库单文件更多（本轮）**：长按仍进多选；行尾 ⋮：流式播放 / 缓存 / 清理 / 从缓存更新标签 / 从云端更新标签 / 重定向 / 删除。播放页「更多信息」更新标签改成左右两个按钮（从缓存更新标签 / 从云端更新标签）。
 - **剩余缺口**：列表封面桶（无本地时 Range 写入 `covers/`）、刮削走 `ingestCueRemote`。全量匹配写红点与重定向后 Range ingest 已有实现入口，按真机反馈再收。
 - **播放打开模式锁定（本轮）**：默认文案「缓存播放 / 串流播放」；`PlayOpenMode` 贯通网络库 / 媒体库 / 歌单。
   - **缓存播放**：仅 `music_cache`；缺文件则 `ensureQueued` 并等待后再播（不静默串流）；邻居按预载窗口经任务队列入 `music_cache`。
   - **串流播放**：有 `music_cache` 用本地；否则只串流；不入队 `music_cache`、不后台暖邻居进缓存；临时 `prefetch_cache` 仍可用于邻居。
   - 状态条：只有 `music_cache` 算「缓存」；仅有 `prefetch_cache` 显示「串流」。
-  - 「基于缓存 / 基于云端」仅用于更新标签，不作播放模式名。
+  - 「从缓存更新标签 / 从云端更新标签」仅用于更新标签，不作播放模式名。
   - `music_cache` 容量上限 + 既有按时间清理；跳过正在播放；清缓存后经 `CacheService` 刷新。
   - 音频流式设置并入媒体库设置；预载文案区分串流临时预载 vs 缓存播放后台缓存。
   - 任务队列：展示层按时间连续同 kind（下载再按 `DownloadTarget`）合并；保留 CUE 组合并；聚合进度 / 取消组 / BottomSheet 看成员。
+- **曲库管理模式（本轮）**：设置 → 媒体库 → 音乐库。互斥两项：
+  1. **手动管理**（默认，`music_library_auto_backfill=false`）：库只因用户显式操作变化；**不**在打开音乐库时自动刮削。
+  2. **自动补齐**（`true`）：可从绑定的网络根路径（`music_library_backfill_roots`）按现有刮削深度增量入队；打开音乐库时是否检查由 `music_library_backfill_on_open`（默认开）控制。复制仍只在用户操作时发生。
+  - 网络库手动「扫描音乐」/ 多选「扫描入库」**两种模式都可**（用户发起）；仅后台 / 打开时自动入队受自动补齐门控。
+  - 更新标签文案改为「从缓存更新标签」/「从云端更新标签」（三语）；空库引导改为可扫描入库或下载，不再只提下载。
 
 **相关完整文档**：[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[04](04-DOWNLOAD-QUEUE.md)、[05](05-AUDIO-PLAYBACK.md)、[06](06-VIDEO-PLAYBACK.md)、[09](09-MISC.md)。开发期间上述文档只留一行占位指向本节。
 
@@ -1017,7 +1022,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 **用户锁定规则**（2026-10-12）：
 
 1. 默认名：**缓存播放** / **串流播放**（不用「缓存后播放」）。设置说明覆盖网络库、媒体库、歌单。
-2. 「基于缓存 / 基于云端」只用于更新标签。
+2. 「从缓存更新标签 / 从云端更新标签」只用于更新标签（勿与播放模式混淆）。
 3. 缓存播放：有本地文件只播文件；缺则自动入队 `music_cache` 并等待再播；邻居经任务队列、同一预载窗口暖缓存。
 4. 串流播放：有本地用本地；无则只串流；不入队 / 不暖 `music_cache`；临时 `prefetch_cache` 可用。
 5. 缓存有无不以 DB 为准，用 `CacheService` 的 `File.exists`；下载 / 删除 / 清理时 notify。
@@ -1026,3 +1031,13 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 8. TasksScreen 展示层时间连续同 kind 合并；保留 CUE 组合并；不改 `QueueTask` 存储；聚合进度、取消组、BottomSheet；同 kind 不同 `DownloadTarget` 拆开。
 9. 状态条：仅 `music_cache` = 缓存；仅 `prefetch_cache` = 串流。
 10. 入口统一：`network_library` / `library_screen` / `playlist_detail_screen` 都尊重 `musicDefaultStream` / `PlayOpenMode`。
+
+### 17.17 曲库管理模式（本轮落地）
+
+**用户原话（2026-10-12）**：两种互斥模式——手动管理（默认）与自动补齐；自动时展示绑定根与「打开音乐库时检查」；手动时隐藏自动触发；显式文件夹扫描两边都可；自动入队仅自动补齐；更新标签文案勿与播放混淆；空库文案勿只提下载。
+
+**取舍**：
+- Pref：`music_library_auto_backfill`（bool，默认 false）、`music_library_backfill_on_open`（bool，默认 true）、`music_library_backfill_roots`（JSON 根列表：`accountId` + `path`）。
+- 自动补齐入队：`LibraryScreen` 在壳 tab 进入索引 0 时调用 `enqueueAutoBackfillScans`；同根已有 pending/active 刮削则跳过；刮削深度复用 `media_scan_*`。
+- 不自动复制 / 下载；只刮削入库。
+- 更新标签 ARB：`updateTagsFromCache` / `updateTagsFromCloud` 明确「更新标签」；空库 `libraryEmptyGuide` 同时提示扫描与下载。

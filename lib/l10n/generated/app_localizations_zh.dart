@@ -2558,7 +2558,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get libraryEmptyGuide => '暂无曲目：先在「网络库」下载音乐。';
+  String get libraryEmptyGuide => '暂无曲目：可在网络库扫描入库，或下载后进入曲库。';
 
   @override
   String get tagTitle => '标题';
@@ -4050,10 +4050,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get libMenuClear => '清理';
 
   @override
-  String get updateTagsFromCache => '基于缓存';
+  String get updateTagsFromCache => '从缓存更新标签';
 
   @override
-  String get updateTagsFromCloud => '基于云端';
+  String get updateTagsFromCloud => '从云端更新标签';
 
   @override
   String get musicCacheMaxCapacity => '缓存容量上限';
@@ -4086,6 +4086,48 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get waitingForCache => '正在缓存…';
+
+  @override
+  String get libraryManageMode => '曲库管理';
+
+  @override
+  String get libraryManageModeHint => '手动管理时仅由你主动操作改库；自动补齐可从已绑定的网络根路径增量刮削。';
+
+  @override
+  String get libraryModeManual => '手动管理';
+
+  @override
+  String get libraryModeManualHint => '默认。库只因你的操作变化，不会在打开时自动刮削。';
+
+  @override
+  String get libraryModeAuto => '自动补齐';
+
+  @override
+  String get libraryModeAutoHint => '允许按绑定根路径增量刮削；深度沿用下方刮削设置。复制仍只在你操作时进行。';
+
+  @override
+  String get libraryBackfillOnOpen => '打开音乐库时检查';
+
+  @override
+  String get libraryBackfillOnOpenHint => '进入音乐库页时，对绑定根做增量刮削并加入任务队列。';
+
+  @override
+  String get libraryBackfillRoots => '绑定的网络根路径';
+
+  @override
+  String get libraryBackfillRootsHint => '自动补齐只扫描这些根；网络库里的「扫描音乐」仍可随时手动使用。';
+
+  @override
+  String get libraryBackfillAddRoot => '添加根路径';
+
+  @override
+  String get libraryBackfillNeedAccount => '请先添加网盘账号';
+
+  @override
+  String get libraryBackfillPickAccount => '选择网盘账号';
+
+  @override
+  String get libraryBackfillPickFolder => '选择根文件夹';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -6642,7 +6684,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get libraryEmptyGuide => '暫無曲目：先在「網路磁碟」下載音樂。';
+  String get libraryEmptyGuide => '暫無曲目：可在網路磁碟掃描入庫，或下載後進入曲庫。';
 
   @override
   String get tagTitle => '標題';
@@ -8134,10 +8176,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get libMenuClear => '清理';
 
   @override
-  String get updateTagsFromCache => '基於快取';
+  String get updateTagsFromCache => '從快取更新標籤';
 
   @override
-  String get updateTagsFromCloud => '基於雲端';
+  String get updateTagsFromCloud => '從雲端更新標籤';
 
   @override
   String get musicCacheMaxCapacity => '快取容量上限';
@@ -8170,4 +8212,46 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get waitingForCache => '正在快取…';
+
+  @override
+  String get libraryManageMode => '曲庫管理';
+
+  @override
+  String get libraryManageModeHint => '手動管理時僅由你主動操作改庫；自動補齊可從已綁定的網路根路徑增量刮削。';
+
+  @override
+  String get libraryModeManual => '手動管理';
+
+  @override
+  String get libraryModeManualHint => '預設。庫只因你的操作變化，不會在開啟時自動刮削。';
+
+  @override
+  String get libraryModeAuto => '自動補齊';
+
+  @override
+  String get libraryModeAutoHint => '允許依綁定根路徑增量刮削；深度沿用下方刮削設定。複製仍只在你操作時進行。';
+
+  @override
+  String get libraryBackfillOnOpen => '開啟音樂庫時檢查';
+
+  @override
+  String get libraryBackfillOnOpenHint => '進入音樂庫頁時，對綁定根做增量刮削並加入任務佇列。';
+
+  @override
+  String get libraryBackfillRoots => '綁定的網路根路徑';
+
+  @override
+  String get libraryBackfillRootsHint => '自動補齊只掃描這些根；網路磁碟裡的「掃描音樂」仍可隨時手動使用。';
+
+  @override
+  String get libraryBackfillAddRoot => '新增根路徑';
+
+  @override
+  String get libraryBackfillNeedAccount => '請先新增網盤帳號';
+
+  @override
+  String get libraryBackfillPickAccount => '選擇網盤帳號';
+
+  @override
+  String get libraryBackfillPickFolder => '選擇根資料夾';
 }

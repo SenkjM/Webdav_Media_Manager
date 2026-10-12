@@ -2652,7 +2652,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryEmptyGuide =>
-      'No tracks yet: download music from the Network library first.';
+      'No tracks yet: scan music in the Network library, or download to add tracks.';
 
   @override
   String get tagTitle => 'Title';
@@ -4237,10 +4237,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get libMenuClear => 'Clear';
 
   @override
-  String get updateTagsFromCache => 'From cache';
+  String get updateTagsFromCache => 'Update tags from cache';
 
   @override
-  String get updateTagsFromCloud => 'From cloud';
+  String get updateTagsFromCloud => 'Update tags from cloud';
 
   @override
   String get musicCacheMaxCapacity => 'Cache size limit';
@@ -4275,4 +4275,51 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get waitingForCache => 'Caching…';
+
+  @override
+  String get libraryManageMode => 'Library management';
+
+  @override
+  String get libraryManageModeHint =>
+      'Manual mode changes the library only when you act; auto backfill can scrape bound network roots incrementally.';
+
+  @override
+  String get libraryModeManual => 'Manual';
+
+  @override
+  String get libraryModeManualHint =>
+      'Default. The library changes only from your actions; no auto scrape on open.';
+
+  @override
+  String get libraryModeAuto => 'Auto backfill';
+
+  @override
+  String get libraryModeAutoHint =>
+      'Allow incremental scrape from bound roots; depth uses scrape settings below. Copy still happens only when you ask.';
+
+  @override
+  String get libraryBackfillOnOpen => 'Check when opening music library';
+
+  @override
+  String get libraryBackfillOnOpenHint =>
+      'When you open the music library, enqueue incremental scrapes for bound roots.';
+
+  @override
+  String get libraryBackfillRoots => 'Bound network roots';
+
+  @override
+  String get libraryBackfillRootsHint =>
+      'Auto backfill only scans these roots; Network library “Scan music” stays available anytime.';
+
+  @override
+  String get libraryBackfillAddRoot => 'Add root path';
+
+  @override
+  String get libraryBackfillNeedAccount => 'Add a cloud account first';
+
+  @override
+  String get libraryBackfillPickAccount => 'Choose account';
+
+  @override
+  String get libraryBackfillPickFolder => 'Choose root folder';
 }

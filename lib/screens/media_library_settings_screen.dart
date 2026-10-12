@@ -4,14 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
+import '../models/account_sentinels.dart';
+import '../models/music_library_backfill_root.dart';
+import '../services/accounts_service.dart';
 import '../services/library_actions.dart';
+import '../services/library_backfill.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../services/task_queue_service.dart';
 import '../utils/app_snack.dart';
 import '../utils/directory_walk.dart';
+import 'webdav_folder_picker_screen.dart';
 
-/// 媒体库子页：默认打开、预载、刮削深度、标签更新。
+/// 媒体库子页：曲库模式、默认打开、预载、刮削深度、标签更新。
 class MediaLibrarySettingsScreen extends StatefulWidget {
   const MediaLibrarySettingsScreen({super.key});
 
@@ -46,13 +51,103 @@ class _MediaLibrarySettingsScreenState
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
+    final accounts = context.watch<AccountsService>();
     final l10n = AppLocalizations.of(context)!;
     final scheme = Theme.of(context).colorScheme;
+    final auto = settings.musicLibraryAutoBackfill;
     return Scaffold(
       appBar: AppBar(title: Text(l10n.mediaLibrarySettings)),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Text(
+            l10n.libraryManageMode,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: scheme.primary,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.libraryManageModeHint,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(l10n.libraryModeManual),
+            subtitle: Text(l10n.libraryModeManualHint),
+            leading: Icon(
+              auto ? Icons.radio_button_off : Icons.radio_button_checked,
+            ),
+            onTap: () => unawaited(settings.setMusicLibraryAutoBackfill(false)),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(l10n.libraryModeAuto),
+            subtitle: Text(l10n.libraryModeAutoHint),
+            leading: Icon(
+              auto ? Icons.radio_button_checked : Icons.radio_button_off,
+            ),
+            onTap: () => unawaited(settings.setMusicLibraryAutoBackfill(true)),
+          ),
+          if (auto) ...[
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.folder_open_outlined),
+              title: Text(l10n.libraryBackfillOnOpen),
+              subtitle: Text(l10n.libraryBackfillOnOpenHint),
+              value: settings.musicLibraryBackfillOnOpen,
+              onChanged: (v) =>
+                  unawaited(settings.setMusicLibraryBackfillOnOpen(v)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.libraryBackfillRoots,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.libraryBackfillRootsHint,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            for (final root in settings.musicLibraryBackfillRoots)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.link),
+                title: Text(
+                  backfillRootLabel(
+                    root: root,
+                    accounts: accounts,
+                    localizeAccountName: (n) =>
+                        localizedAccountName(l10n, n),
+                  ),
+                ),
+                trailing: IconButton(
+                  tooltip: l10n.delete,
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => unawaited(
+                    settings.removeMusicLibraryBackfillRoot(root),
+                  ),
+                ),
+              ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.add_link),
+              title: Text(l10n.libraryBackfillAddRoot),
+              onTap: accounts.hasAccounts
+                  ? () => unawaited(_addBackfillRoot(context))
+                  : null,
+              subtitle: accounts.hasAccounts
+                  ? null
+                  : Text(l10n.libraryBackfillNeedAccount),
+            ),
+          ],
+          const Divider(height: 32),
           Text(
             l10n.musicDefaultOpen,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -307,6 +402,43 @@ class _MediaLibrarySettingsScreenState
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _addBackfillRoot(BuildContext context) async {
+    final accounts = context.read<AccountsService>();
+    final settings = context.read<SettingsService>();
+    final l10n = AppLocalizations.of(context)!;
+    final list = accounts.accounts.toList(growable: false);
+    if (list.isEmpty) return;
+
+    final accountId = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: Text(l10n.libraryBackfillPickAccount),
+        children: [
+          for (final a in list)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, a.id),
+              child: Text(localizedAccountName(l10n, a.name)),
+            ),
+        ],
+      ),
+    );
+    if (accountId == null || !context.mounted) return;
+
+    final path = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => WebDavFolderPickerScreen(
+          accountId: accountId,
+          purpose: l10n.libraryBackfillPickFolder,
+        ),
+      ),
+    );
+    if (path == null || !context.mounted) return;
+
+    await settings.addMusicLibraryBackfillRoot(
+      MusicLibraryBackfillRoot(accountId: accountId, path: path),
     );
   }
 

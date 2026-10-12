@@ -757,7 +757,7 @@
   "libraryTracksEmpty": "暂无曲目",
   "sourceUnbound": "来源网盘未绑定",
   "downloadingPercent": "下载中 {p}%",
-  "libraryEmptyGuide": "暂无曲目：先在「网络库」下载音乐。",
+  "libraryEmptyGuide": "暂无曲目：可在网络库扫描入库，或下载后进入曲库。",
   "tagTitle": "标题",
   "tagArtist": "艺术家",
   "tagAlbumArtist": "专辑艺术家",
@@ -1249,8 +1249,8 @@
   "libMenuStream": "流式播放",
   "libMenuCache": "缓存",
   "libMenuClear": "清理",
-  "updateTagsFromCache": "基于缓存",
-  "updateTagsFromCloud": "基于云端",
+  "updateTagsFromCache": "从缓存更新标签",
+  "updateTagsFromCloud": "从云端更新标签",
 
   "musicCacheMaxCapacity": "缓存容量上限",
   "musicCacheMaxCapacityHint": "超过后按最久未用清理；正在播放的不删。0 表示不限制。",
@@ -1266,6 +1266,20 @@
   "prefetchSection": "预载与封面",
   "prefetchSectionHint": "串流写入临时预载；缓存播放按同一窗口后台缓存。",
   "audioPlaylistSection": "网络库连播列表",
-  "waitingForCache": "正在缓存…"
+  "waitingForCache": "正在缓存…",
+  "libraryManageMode": "曲库管理",
+  "libraryManageModeHint": "手动管理时仅由你主动操作改库；自动补齐可从已绑定的网络根路径增量刮削。",
+  "libraryModeManual": "手动管理",
+  "libraryModeManualHint": "默认。库只因你的操作变化，不会在打开时自动刮削。",
+  "libraryModeAuto": "自动补齐",
+  "libraryModeAutoHint": "允许按绑定根路径增量刮削；深度沿用下方刮削设置。复制仍只在你操作时进行。",
+  "libraryBackfillOnOpen": "打开音乐库时检查",
+  "libraryBackfillOnOpenHint": "进入音乐库页时，对绑定根做增量刮削并加入任务队列。",
+  "libraryBackfillRoots": "绑定的网络根路径",
+  "libraryBackfillRootsHint": "自动补齐只扫描这些根；网络库里的「扫描音乐」仍可随时手动使用。",
+  "libraryBackfillAddRoot": "添加根路径",
+  "libraryBackfillNeedAccount": "请先添加网盘账号",
+  "libraryBackfillPickAccount": "选择网盘账号",
+  "libraryBackfillPickFolder": "选择根文件夹"
 
 }

@@ -4527,7 +4527,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryEmptyGuide.
   ///
   /// In zh, this message translates to:
-  /// **'暂无曲目：先在「网络库」下载音乐。'**
+  /// **'暂无曲目：可在网络库扫描入库，或下载后进入曲库。'**
   String get libraryEmptyGuide;
 
   /// No description provided for @tagTitle.
@@ -7124,13 +7124,13 @@ abstract class AppLocalizations {
   /// No description provided for @updateTagsFromCache.
   ///
   /// In zh, this message translates to:
-  /// **'基于缓存'**
+  /// **'从缓存更新标签'**
   String get updateTagsFromCache;
 
   /// No description provided for @updateTagsFromCloud.
   ///
   /// In zh, this message translates to:
-  /// **'基于云端'**
+  /// **'从云端更新标签'**
   String get updateTagsFromCloud;
 
   /// No description provided for @musicCacheMaxCapacity.
@@ -7192,6 +7192,90 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'正在缓存…'**
   String get waitingForCache;
+
+  /// No description provided for @libraryManageMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'曲库管理'**
+  String get libraryManageMode;
+
+  /// No description provided for @libraryManageModeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动管理时仅由你主动操作改库；自动补齐可从已绑定的网络根路径增量刮削。'**
+  String get libraryManageModeHint;
+
+  /// No description provided for @libraryModeManual.
+  ///
+  /// In zh, this message translates to:
+  /// **'手动管理'**
+  String get libraryModeManual;
+
+  /// No description provided for @libraryModeManualHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认。库只因你的操作变化，不会在打开时自动刮削。'**
+  String get libraryModeManualHint;
+
+  /// No description provided for @libraryModeAuto.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动补齐'**
+  String get libraryModeAuto;
+
+  /// No description provided for @libraryModeAutoHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'允许按绑定根路径增量刮削；深度沿用下方刮削设置。复制仍只在你操作时进行。'**
+  String get libraryModeAutoHint;
+
+  /// No description provided for @libraryBackfillOnOpen.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开音乐库时检查'**
+  String get libraryBackfillOnOpen;
+
+  /// No description provided for @libraryBackfillOnOpenHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'进入音乐库页时，对绑定根做增量刮削并加入任务队列。'**
+  String get libraryBackfillOnOpenHint;
+
+  /// No description provided for @libraryBackfillRoots.
+  ///
+  /// In zh, this message translates to:
+  /// **'绑定的网络根路径'**
+  String get libraryBackfillRoots;
+
+  /// No description provided for @libraryBackfillRootsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'自动补齐只扫描这些根；网络库里的「扫描音乐」仍可随时手动使用。'**
+  String get libraryBackfillRootsHint;
+
+  /// No description provided for @libraryBackfillAddRoot.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加根路径'**
+  String get libraryBackfillAddRoot;
+
+  /// No description provided for @libraryBackfillNeedAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先添加网盘账号'**
+  String get libraryBackfillNeedAccount;
+
+  /// No description provided for @libraryBackfillPickAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择网盘账号'**
+  String get libraryBackfillPickAccount;
+
+  /// No description provided for @libraryBackfillPickFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择根文件夹'**
+  String get libraryBackfillPickFolder;
 }
 
 class _AppLocalizationsDelegate

@@ -757,7 +757,7 @@
   "libraryTracksEmpty": "No tracks yet",
   "sourceUnbound": "Source drive not linked",
   "downloadingPercent": "Downloading {p}%",
-  "libraryEmptyGuide": "No tracks yet: download music from the Network library first.",
+  "libraryEmptyGuide": "No tracks yet: scan music in the Network library, or download to add tracks.",
   "tagTitle": "Title",
   "tagArtist": "Artist",
   "tagAlbumArtist": "Album artist",
@@ -1229,8 +1229,8 @@
   "libMenuStream": "Stream",
   "libMenuCache": "Cache",
   "libMenuClear": "Clear",
-  "updateTagsFromCache": "From cache",
-  "updateTagsFromCloud": "From cloud",
+  "updateTagsFromCache": "Update tags from cache",
+  "updateTagsFromCloud": "Update tags from cloud",
 
   "musicCacheMaxCapacity": "Cache size limit",
   "musicCacheMaxCapacityHint": "When over the limit, least-recently used files are removed; the track being played is kept. 0 means no limit.",
@@ -1246,6 +1246,20 @@
   "prefetchSection": "Prefetch and covers",
   "prefetchSectionHint": "Stream play writes temporary prefetch; cache play uses the same window for background caching.",
   "audioPlaylistSection": "Network library play queue",
-  "waitingForCache": "Caching…"
+  "waitingForCache": "Caching…",
+  "libraryManageMode": "Library management",
+  "libraryManageModeHint": "Manual mode changes the library only when you act; auto backfill can scrape bound network roots incrementally.",
+  "libraryModeManual": "Manual",
+  "libraryModeManualHint": "Default. The library changes only from your actions; no auto scrape on open.",
+  "libraryModeAuto": "Auto backfill",
+  "libraryModeAutoHint": "Allow incremental scrape from bound roots; depth uses scrape settings below. Copy still happens only when you ask.",
+  "libraryBackfillOnOpen": "Check when opening music library",
+  "libraryBackfillOnOpenHint": "When you open the music library, enqueue incremental scrapes for bound roots.",
+  "libraryBackfillRoots": "Bound network roots",
+  "libraryBackfillRootsHint": "Auto backfill only scans these roots; Network library “Scan music” stays available anytime.",
+  "libraryBackfillAddRoot": "Add root path",
+  "libraryBackfillNeedAccount": "Add a cloud account first",
+  "libraryBackfillPickAccount": "Choose account",
+  "libraryBackfillPickFolder": "Choose root folder"
 
 }

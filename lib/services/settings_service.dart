@@ -11,6 +11,7 @@ import '../models/app_theme_mode.dart';
 import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
 import '../models/library_track.dart';
+import '../models/music_library_backfill_root.dart';
 import '../models/music_stream.dart';
 import '../models/snack_duration.dart';
 import '../models/sync_interval.dart';
@@ -103,6 +104,12 @@ class SettingsService extends ChangeNotifier {
   /// Media-library scrape (scan task). Independent from playlist prefs.
   static const _kMediaScanRecursive = 'media_scan_recursive';
   static const _kMediaScanMaxDepth = 'media_scan_max_depth';
+  /// Mutual library mode: false = 手动管理 (default); true = 自动补齐.
+  static const _kMusicLibraryAutoBackfill = 'music_library_auto_backfill';
+  /// When auto-backfill: enqueue incremental scrape on opening the music library tab.
+  static const _kMusicLibraryBackfillOnOpen = 'music_library_backfill_on_open';
+  /// JSON list of [MusicLibraryBackfillRoot] for auto scrape roots.
+  static const _kMusicLibraryBackfillRoots = 'music_library_backfill_roots';
   static const _kImageSlideshow = 'image_slideshow_enabled';
   static const _kImageSlideshowSeconds = 'image_slideshow_interval_seconds';
   static const _kImageSlideshowLoop = 'image_slideshow_loop';
@@ -259,6 +266,9 @@ class SettingsService extends ChangeNotifier {
   /// Scrape defaults: recursive ON, depth 1 (independent of playlist prefs).
   bool _mediaScanRecursive = true;
   int _mediaScanMaxDepth = 1;
+  bool _musicLibraryAutoBackfill = false;
+  bool _musicLibraryBackfillOnOpen = true;
+  List<MusicLibraryBackfillRoot> _musicLibraryBackfillRoots = const [];
   bool _imageSlideshowEnabled = defaultImageSlideshow;
   int _imageSlideshowIntervalSeconds = defaultImageSlideshowSeconds;
   bool _imageSlideshowLoop = defaultImageSlideshowLoop;
@@ -480,6 +490,16 @@ class SettingsService extends ChangeNotifier {
   /// 媒体库刮削最大深度（默认 1）。键 `media_scan_max_depth`。
   int get mediaScanMaxDepth => _mediaScanMaxDepth;
 
+  /// 自动补齐模式。默认关 = 手动管理。键 `music_library_auto_backfill`。
+  bool get musicLibraryAutoBackfill => _musicLibraryAutoBackfill;
+
+  /// 打开音乐库时检查绑定根并增量刮削。仅自动补齐时生效。默认开。
+  bool get musicLibraryBackfillOnOpen => _musicLibraryBackfillOnOpen;
+
+  /// 自动补齐绑定的网络根路径。
+  List<MusicLibraryBackfillRoot> get musicLibraryBackfillRoots =>
+      List.unmodifiable(_musicLibraryBackfillRoots);
+
   /// 图片查看。幻灯片默认关。预取数量是左右各 N 张，不是整本相册。
   bool get imageSlideshowEnabled => _imageSlideshowEnabled;
   int get imageSlideshowIntervalSeconds => _imageSlideshowIntervalSeconds;
@@ -669,6 +689,11 @@ class SettingsService extends ChangeNotifier {
     _mediaScanMaxDepth = WalkOptions.clampDepth(
       _prefs!.getInt(_kMediaScanMaxDepth) ?? WalkOptions.defaultMaxDepth,
     );
+    _musicLibraryAutoBackfill =
+        _prefs!.getBool(_kMusicLibraryAutoBackfill) ?? false;
+    _musicLibraryBackfillOnOpen =
+        _prefs!.getBool(_kMusicLibraryBackfillOnOpen) ?? true;
+    _musicLibraryBackfillRoots = _readMusicLibraryBackfillRoots();
     _imageSlideshowEnabled =
         _prefs!.getBool(_kImageSlideshow) ?? defaultImageSlideshow;
     _imageSlideshowIntervalSeconds = _clampImageSlideshowSeconds(
@@ -1104,6 +1129,79 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setMusicLibraryAutoBackfill(bool enabled) async {
+    _musicLibraryAutoBackfill = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMusicLibraryAutoBackfill, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setMusicLibraryBackfillOnOpen(bool enabled) async {
+    _musicLibraryBackfillOnOpen = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kMusicLibraryBackfillOnOpen, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setMusicLibraryBackfillRoots(
+    List<MusicLibraryBackfillRoot> roots,
+  ) async {
+    final deduped = <String, MusicLibraryBackfillRoot>{};
+    for (final r in roots) {
+      if (r.accountId.isEmpty) continue;
+      // Re-parse so path normalization matches [MusicLibraryBackfillRoot.fromJson].
+      final normalized = MusicLibraryBackfillRoot.fromJson(r.toJson());
+      if (normalized.accountId.isEmpty) continue;
+      deduped[normalized.identityKey] = normalized;
+    }
+    _musicLibraryBackfillRoots = deduped.values.toList(growable: false);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(
+      _kMusicLibraryBackfillRoots,
+      jsonEncode([for (final r in _musicLibraryBackfillRoots) r.toJson()]),
+    );
+    notifyListeners();
+  }
+
+  Future<void> addMusicLibraryBackfillRoot(MusicLibraryBackfillRoot root) async {
+    await setMusicLibraryBackfillRoots([
+      ..._musicLibraryBackfillRoots,
+      root,
+    ]);
+  }
+
+  Future<void> removeMusicLibraryBackfillRoot(
+    MusicLibraryBackfillRoot root,
+  ) async {
+    await setMusicLibraryBackfillRoots([
+      for (final r in _musicLibraryBackfillRoots)
+        if (r != root) r,
+    ]);
+  }
+
+  List<MusicLibraryBackfillRoot> _readMusicLibraryBackfillRoots() {
+    final raw = _prefs!.getString(_kMusicLibraryBackfillRoots);
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final out = <MusicLibraryBackfillRoot>[];
+      final seen = <String>{};
+      for (final item in decoded) {
+        if (item is! Map) continue;
+        final root = MusicLibraryBackfillRoot.fromJson(
+          Map<String, dynamic>.from(item),
+        );
+        if (root.accountId.isEmpty) continue;
+        if (!seen.add(root.identityKey)) continue;
+        out.add(root);
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Walk options for video playlist / 连播 (prefs: video_scan_subdirs + video_playlist_max_depth).
   WalkOptions get videoPlaylistWalkOptions => WalkOptions(
     includeSubdirs: videoScanSubdirs,
@@ -1512,6 +1610,11 @@ class SettingsService extends ChangeNotifier {
     'video_playlist_max_depth': _videoPlaylistMaxDepth,
     'media_scan_recursive': _mediaScanRecursive,
     'media_scan_max_depth': _mediaScanMaxDepth,
+    'music_library_auto_backfill': _musicLibraryAutoBackfill,
+    'music_library_backfill_on_open': _musicLibraryBackfillOnOpen,
+    'music_library_backfill_roots': [
+      for (final r in _musicLibraryBackfillRoots) r.toJson(),
+    ],
     'image_slideshow_enabled': _imageSlideshowEnabled,
     'image_slideshow_interval_seconds': _imageSlideshowIntervalSeconds,
     'image_slideshow_loop': _imageSlideshowLoop,
@@ -1694,6 +1797,26 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['media_scan_max_depth'] is num) {
       await setMediaScanMaxDepth((json['media_scan_max_depth'] as num).toInt());
+    }
+    if (json['music_library_auto_backfill'] is bool) {
+      await setMusicLibraryAutoBackfill(
+        json['music_library_auto_backfill'] as bool,
+      );
+    }
+    if (json['music_library_backfill_on_open'] is bool) {
+      await setMusicLibraryBackfillOnOpen(
+        json['music_library_backfill_on_open'] as bool,
+      );
+    }
+    if (json['music_library_backfill_roots'] is List) {
+      final roots = <MusicLibraryBackfillRoot>[];
+      for (final item in json['music_library_backfill_roots'] as List) {
+        if (item is! Map) continue;
+        roots.add(
+          MusicLibraryBackfillRoot.fromJson(Map<String, dynamic>.from(item)),
+        );
+      }
+      await setMusicLibraryBackfillRoots(roots);
     }
     if (json['image_slideshow_enabled'] is bool) {
       await setImageSlideshowEnabled(json['image_slideshow_enabled'] as bool);

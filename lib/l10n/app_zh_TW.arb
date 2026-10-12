@@ -757,7 +757,7 @@
   "libraryTracksEmpty": "暫無曲目",
   "sourceUnbound": "來源網路磁碟未綁定",
   "downloadingPercent": "下載中 {p}%",
-  "libraryEmptyGuide": "暫無曲目：先在「網路磁碟」下載音樂。",
+  "libraryEmptyGuide": "暫無曲目：可在網路磁碟掃描入庫，或下載後進入曲庫。",
   "tagTitle": "標題",
   "tagArtist": "藝術家",
   "tagAlbumArtist": "專輯藝術家",
@@ -1218,8 +1218,8 @@
   "libMenuStream": "串流播放",
   "libMenuCache": "快取",
   "libMenuClear": "清理",
-  "updateTagsFromCache": "基於快取",
-  "updateTagsFromCloud": "基於雲端",
+  "updateTagsFromCache": "從快取更新標籤",
+  "updateTagsFromCloud": "從雲端更新標籤",
 
   "musicCacheMaxCapacity": "快取容量上限",
   "musicCacheMaxCapacityHint": "超過後按最久未用清理；正在播放的不刪。0 表示不限制。",
@@ -1235,6 +1235,20 @@
   "prefetchSection": "預載與封面",
   "prefetchSectionHint": "串流寫入臨時預載；快取播放按同一視窗背景快取。",
   "audioPlaylistSection": "網路庫連播清單",
-  "waitingForCache": "正在快取…"
+  "waitingForCache": "正在快取…",
+  "libraryManageMode": "曲庫管理",
+  "libraryManageModeHint": "手動管理時僅由你主動操作改庫；自動補齊可從已綁定的網路根路徑增量刮削。",
+  "libraryModeManual": "手動管理",
+  "libraryModeManualHint": "預設。庫只因你的操作變化，不會在開啟時自動刮削。",
+  "libraryModeAuto": "自動補齊",
+  "libraryModeAutoHint": "允許依綁定根路徑增量刮削；深度沿用下方刮削設定。複製仍只在你操作時進行。",
+  "libraryBackfillOnOpen": "開啟音樂庫時檢查",
+  "libraryBackfillOnOpenHint": "進入音樂庫頁時，對綁定根做增量刮削並加入任務佇列。",
+  "libraryBackfillRoots": "綁定的網路根路徑",
+  "libraryBackfillRootsHint": "自動補齊只掃描這些根；網路磁碟裡的「掃描音樂」仍可隨時手動使用。",
+  "libraryBackfillAddRoot": "新增根路徑",
+  "libraryBackfillNeedAccount": "請先新增網盤帳號",
+  "libraryBackfillPickAccount": "選擇網盤帳號",
+  "libraryBackfillPickFolder": "選擇根資料夾"
 
 }
