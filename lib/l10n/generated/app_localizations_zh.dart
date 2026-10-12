@@ -3644,6 +3644,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imageFitCover => '铺满';
 
   @override
+  String get imagePageTurn => '翻页方向';
+
+  @override
+  String get imagePageTurnHint => '哪一侧边缘翻到下一页。图片查看器使用；没有单独覆盖的漫画也用此默认。';
+
+  @override
+  String get imagePageTurnGlobal => '全局翻页';
+
+  @override
+  String get imagePageTurnManga => '当前漫画';
+
+  @override
+  String get imagePageTurnFollowGlobal => '跟随全局';
+
+  @override
+  String get imagePageTurnLtr => '左→右';
+
+  @override
+  String get imagePageTurnRtl => '右→左';
+
+  @override
   String get imagePrefetchCount => '预取数量';
 
   @override
@@ -8053,6 +8074,27 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get imageFitCover => '鋪滿';
+
+  @override
+  String get imagePageTurn => '翻頁方向';
+
+  @override
+  String get imagePageTurnHint => '哪一側邊緣翻到下一頁。圖片檢視器使用；沒有單獨覆蓋的漫畫也用此預設。';
+
+  @override
+  String get imagePageTurnGlobal => '全域翻頁';
+
+  @override
+  String get imagePageTurnManga => '目前漫畫';
+
+  @override
+  String get imagePageTurnFollowGlobal => '跟隨全域';
+
+  @override
+  String get imagePageTurnLtr => '左→右';
+
+  @override
+  String get imagePageTurnRtl => '右→左';
 
   @override
   String get imagePrefetchCount => '預取數量';

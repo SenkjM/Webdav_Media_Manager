@@ -6353,6 +6353,48 @@ abstract class AppLocalizations {
   /// **'铺满'**
   String get imageFitCover;
 
+  /// No description provided for @imagePageTurn.
+  ///
+  /// In zh, this message translates to:
+  /// **'翻页方向'**
+  String get imagePageTurn;
+
+  /// No description provided for @imagePageTurnHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'哪一侧边缘翻到下一页。图片查看器使用；没有单独覆盖的漫画也用此默认。'**
+  String get imagePageTurnHint;
+
+  /// No description provided for @imagePageTurnGlobal.
+  ///
+  /// In zh, this message translates to:
+  /// **'全局翻页'**
+  String get imagePageTurnGlobal;
+
+  /// No description provided for @imagePageTurnManga.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前漫画'**
+  String get imagePageTurnManga;
+
+  /// No description provided for @imagePageTurnFollowGlobal.
+  ///
+  /// In zh, this message translates to:
+  /// **'跟随全局'**
+  String get imagePageTurnFollowGlobal;
+
+  /// No description provided for @imagePageTurnLtr.
+  ///
+  /// In zh, this message translates to:
+  /// **'左→右'**
+  String get imagePageTurnLtr;
+
+  /// No description provided for @imagePageTurnRtl.
+  ///
+  /// In zh, this message translates to:
+  /// **'右→左'**
+  String get imagePageTurnRtl;
+
   /// No description provided for @imagePrefetchCount.
   ///
   /// In zh, this message translates to:

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:webdav_media_manager/models/manga.dart';
+import 'package:webdav_media_manager/models/page_turn_direction.dart';
 import 'package:webdav_media_manager/models/manga_page.dart';
 import 'package:webdav_media_manager/models/manga_series.dart';
 import 'package:webdav_media_manager/services/library_database.dart';
@@ -240,5 +241,55 @@ void main() {
     await s.setImagePrefetchCount(0);
     expect(s.imagePrefetchCount, 1);
   });
-}
 
+  test('Manga pageTurn map round-trip and clear', () {
+    final m = Manga(
+      id: 'm1',
+      sourceName: 's',
+      remotePath: '/a.cbz',
+      title: 'T',
+      pageCount: 1,
+      format: MangaFormat.cbz,
+      pageTurn: PageTurnDirection.rtl,
+      updatedAt: DateTime.utc(2026, 1, 1),
+    );
+    expect(Manga.fromMap(m.toMap()).pageTurn, PageTurnDirection.rtl);
+    expect(m.copyWith(clearPageTurn: true).pageTurn, isNull);
+  });
+
+  test('setPageTurn persists per-manga and does not require global', () async {
+    final db = _MemMangaDb();
+    final svc = MangaLibraryService(db: db);
+    await svc.init();
+    final draft = MangaLibraryService.draftForComicFile(
+      sourceName: 'nas',
+      remotePath: '/comics/rtl.cbz',
+      fileName: 'rtl.cbz',
+    );
+    final manga = await svc.upsertFromDraft(draft);
+    expect(db.mangas.single.pageTurn, isNull);
+
+    await svc.setPageTurn(manga.id, PageTurnDirection.rtl);
+    expect(db.mangas.single.pageTurn, PageTurnDirection.rtl);
+
+    await svc.setPageTurn(manga.id, null);
+    expect(db.mangas.single.pageTurn, isNull);
+  });
+
+  test('SettingsService image_page_turn persists', () async {
+    SharedPreferences.setMockInitialValues({
+      'home_tab_v024_folders_inserted': true,
+      'home_tab_v025_manga_inserted': true,
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final s = SettingsService(prefs: prefs);
+    await s.init();
+    expect(s.imagePageTurn, PageTurnDirection.ltr);
+    await s.setImagePageTurn(PageTurnDirection.rtl);
+    expect(s.imagePageTurn, PageTurnDirection.rtl);
+    final again = SettingsService(prefs: prefs);
+    await again.init();
+    expect(again.imagePageTurn, PageTurnDirection.rtl);
+  });
+
+}

@@ -14,6 +14,7 @@ class Manga {
     this.coverRelpath,
     this.format = MangaFormat.unknown,
     this.remoteMissing = false,
+    this.pageTurn,
     required this.updatedAt,
   });
 
@@ -29,6 +30,10 @@ class Manga {
   final String? coverRelpath;
   final String format;
   final bool remoteMissing;
+
+  /// Per-manga page-turn override (`ltr` / `rtl`); null = follow global.
+  final String? pageTurn;
+
   final DateTime updatedAt;
 
   String get displayAuthor =>
@@ -47,10 +52,12 @@ class Manga {
         'cover_relpath': coverRelpath,
         'format': format,
         'remote_missing': remoteMissing ? 1 : 0,
+        'page_turn': pageTurn,
         'updated_at': updatedAt.toUtc().toIso8601String(),
       };
 
   static Manga fromMap(Map<String, Object?> map) {
+    final rawTurn = map['page_turn'] as String?;
     return Manga(
       id: map['id'] as String? ?? '',
       sourceName: map['source_name'] as String? ?? '',
@@ -64,9 +71,43 @@ class Manga {
       coverRelpath: map['cover_relpath'] as String?,
       format: map['format'] as String? ?? MangaFormat.unknown,
       remoteMissing: ((map['remote_missing'] as int?) ?? 0) != 0,
+      pageTurn: (rawTurn == null || rawTurn.trim().isEmpty) ? null : rawTurn,
       updatedAt:
           DateTime.tryParse(map['updated_at'] as String? ?? '')?.toLocal() ??
               DateTime.now(),
+    );
+  }
+
+  Manga copyWith({
+    String? title,
+    String? author,
+    String? seriesId,
+    bool clearSeriesId = false,
+    String? volume,
+    String? chapterNumber,
+    int? pageCount,
+    String? coverRelpath,
+    String? format,
+    bool? remoteMissing,
+    String? pageTurn,
+    bool clearPageTurn = false,
+    DateTime? updatedAt,
+  }) {
+    return Manga(
+      id: id,
+      sourceName: sourceName,
+      remotePath: remotePath,
+      title: title ?? this.title,
+      author: author ?? this.author,
+      seriesId: clearSeriesId ? null : (seriesId ?? this.seriesId),
+      volume: volume ?? this.volume,
+      chapterNumber: chapterNumber ?? this.chapterNumber,
+      pageCount: pageCount ?? this.pageCount,
+      coverRelpath: coverRelpath ?? this.coverRelpath,
+      format: format ?? this.format,
+      remoteMissing: remoteMissing ?? this.remoteMissing,
+      pageTurn: clearPageTurn ? null : (pageTurn ?? this.pageTurn),
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }

@@ -3806,6 +3806,28 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imageFitCover => 'Cover';
 
   @override
+  String get imagePageTurn => 'Page turn';
+
+  @override
+  String get imagePageTurnHint =>
+      'Which edge advances to the next page. Used by the image viewer and as the default for manga without a per-manga override.';
+
+  @override
+  String get imagePageTurnGlobal => 'Global page turn';
+
+  @override
+  String get imagePageTurnManga => 'This manga';
+
+  @override
+  String get imagePageTurnFollowGlobal => 'Follow global';
+
+  @override
+  String get imagePageTurnLtr => 'Left → right';
+
+  @override
+  String get imagePageTurnRtl => 'Right → left';
+
+  @override
   String get imagePrefetchCount => 'Prefetch count';
 
   @override

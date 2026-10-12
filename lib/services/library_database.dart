@@ -16,6 +16,7 @@ import '../utils/track_identity.dart';
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
+/// Schema v14: mangas.page_turn (nullable per-manga page-turn override).
 /// Schema v13: manga library tables (`manga_series` / `mangas` / `manga_pages` /
 /// `manga_progress`; 99 §19) — additive; music path unchanged.
 /// Schema v12: local user folder overlay (`user_folders` / `user_folder_items`;
@@ -42,7 +43,7 @@ class LibraryDatabase {
   bool accountNameUniquePending = false;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 13;
+  static const schemaVersion = 14;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -291,6 +292,7 @@ CREATE TABLE IF NOT EXISTS mangas (
   cover_relpath TEXT,
   format TEXT NOT NULL DEFAULT 'unknown',
   remote_missing INTEGER NOT NULL DEFAULT 0,
+  page_turn TEXT,
   updated_at TEXT NOT NULL,
   UNIQUE(source_name, remote_path),
   FOREIGN KEY(series_id) REFERENCES manga_series(id) ON DELETE SET NULL
@@ -322,6 +324,21 @@ CREATE TABLE IF NOT EXISTS manga_progress (
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_mangas_source ON mangas(source_name)',
     );
+    await _ensureMangaColumns(db);
+  }
+
+  /// Additive manga columns (v14+). Idempotent PRAGMA check.
+  Future<void> _ensureMangaColumns(Database db) async {
+    final table = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='mangas'",
+    );
+    if (table.isEmpty) return;
+    final cols = (await db.rawQuery('PRAGMA table_info(mangas)'))
+        .map((row) => row['name'] as String)
+        .toSet();
+    if (!cols.contains('page_turn')) {
+      await db.execute('ALTER TABLE mangas ADD COLUMN page_turn TEXT');
+    }
   }
 
   Future<void> _createIndexes(Database db) async {

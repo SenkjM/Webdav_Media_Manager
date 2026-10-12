@@ -22,6 +22,7 @@ import '../utils/subtitle_sidecar.dart';
 import 'package:openlist_crypt/openlist_crypt.dart';
 
 import 'library_sync_store.dart';
+import '../models/page_turn_direction.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
 /// WebDAV credentials live in AccountsService / flutter_secure_storage.
@@ -124,6 +125,7 @@ class SettingsService extends ChangeNotifier {
   static const _kImageSlideshowSeconds = 'image_slideshow_interval_seconds';
   static const _kImageSlideshowLoop = 'image_slideshow_loop';
   static const _kImageFit = 'image_fit';
+  static const _kImagePageTurn = 'image_page_turn';
   static const _kImagePrefetch = 'image_prefetch_count';
   static const _kImageScanSubdirs = 'image_scan_subdirs';
 
@@ -289,6 +291,7 @@ class SettingsService extends ChangeNotifier {
   int _imageSlideshowIntervalSeconds = defaultImageSlideshowSeconds;
   bool _imageSlideshowLoop = defaultImageSlideshowLoop;
   String _imageFit = imageFitContain;
+  String _imagePageTurn = PageTurnDirection.ltr;
   int _imagePrefetchCount = defaultImagePrefetchCount;
   bool _imageScanSubdirs = false;
   bool _videoPipEnabled = false;
@@ -542,6 +545,9 @@ class SettingsService extends ChangeNotifier {
   int get imageSlideshowIntervalSeconds => _imageSlideshowIntervalSeconds;
   bool get imageSlideshowLoop => _imageSlideshowLoop;
   String get imageFit => _imageFit;
+
+  /// Global page-turn (`ltr` / `rtl`). Default LTR.
+  String get imagePageTurn => _imagePageTurn;
   int get imagePrefetchCount => _imagePrefetchCount;
 
   /// 图片相册是否扫描子目录。默认关。键 `image_scan_subdirs`。
@@ -787,6 +793,9 @@ class SettingsService extends ChangeNotifier {
     _imageSlideshowLoop =
         _prefs!.getBool(_kImageSlideshowLoop) ?? defaultImageSlideshowLoop;
     _imageFit = _normalizeImageFit(_prefs!.getString(_kImageFit));
+    _imagePageTurn = PageTurnDirection.normalize(
+      _prefs!.getString(_kImagePageTurn),
+    );
     _imagePrefetchCount = _clampImagePrefetch(
       _prefs!.getInt(_kImagePrefetch) ?? defaultImagePrefetchCount,
     );
@@ -1392,6 +1401,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setImagePageTurn(String direction) async {
+    _imagePageTurn = PageTurnDirection.normalize(direction);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(_kImagePageTurn, _imagePageTurn);
+    notifyListeners();
+  }
+
   Future<void> setImagePrefetchCount(int count) async {
     _imagePrefetchCount = _clampImagePrefetch(count);
     _prefs ??= await SharedPreferences.getInstance();
@@ -1768,6 +1784,7 @@ class SettingsService extends ChangeNotifier {
     'image_slideshow_interval_seconds': _imageSlideshowIntervalSeconds,
     'image_slideshow_loop': _imageSlideshowLoop,
     'image_fit': _imageFit,
+    'image_page_turn': _imagePageTurn,
     'image_prefetch_count': _imagePrefetchCount,
     'image_scan_subdirs': _imageScanSubdirs,
     'video_pip_enabled': _videoPipEnabled,
@@ -2008,6 +2025,9 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['image_fit'] is String) {
       await setImageFit(json['image_fit'] as String);
+    }
+    if (json['image_page_turn'] is String) {
+      await setImagePageTurn(json['image_page_turn'] as String);
     }
     if (json['image_prefetch_count'] is num) {
       await setImagePrefetchCount(

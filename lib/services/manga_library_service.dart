@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/manga.dart';
+import '../models/page_turn_direction.dart';
 import '../models/manga_page.dart';
 import '../models/manga_progress.dart';
 import '../models/manga_series.dart';
@@ -139,6 +140,7 @@ class MangaLibraryService extends ChangeNotifier {
     }
     final cover = draft.coverRelpath ??
         (draft.pageRelPaths.isEmpty ? null : draft.pageRelPaths.first);
+    final existing = await _db.loadMangaById(id);
     final manga = Manga(
       id: id,
       sourceName: draft.sourceName,
@@ -155,6 +157,8 @@ class MangaLibraryService extends ChangeNotifier {
       pageCount: pages.length,
       coverRelpath: cover,
       format: draft.format,
+      pageTurn: existing?.pageTurn,
+      remoteMissing: existing?.remoteMissing ?? false,
       updatedAt: DateTime.now(),
     );
     await _db.upsertManga(manga);
@@ -176,21 +180,11 @@ class MangaLibraryService extends ChangeNotifier {
     final existing = await _db.loadMangaById(mangaId);
     if (existing != null) {
       await _db.upsertManga(
-        Manga(
-          id: existing.id,
-          sourceName: existing.sourceName,
-          remotePath: existing.remotePath,
-          title: existing.title,
-          author: existing.author,
-          seriesId: existing.seriesId,
-          volume: existing.volume,
-          chapterNumber: existing.chapterNumber,
+        existing.copyWith(
           pageCount: pages.length,
           coverRelpath: coverRelpath ??
               existing.coverRelpath ??
               (pages.isEmpty ? null : pages.first.relPath),
-          format: existing.format,
-          remoteMissing: existing.remoteMissing,
           updatedAt: DateTime.now(),
         ),
       );
@@ -212,6 +206,20 @@ class MangaLibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Set per-manga page-turn (`ltr` / `rtl`) or clear (null = follow global).
+  Future<void> setPageTurn(String mangaId, String? direction) async {
+    final existing = await _db.loadMangaById(mangaId);
+    if (existing == null) return;
+    final next = direction == null || direction.trim().isEmpty
+        ? existing.copyWith(clearPageTurn: true, updatedAt: DateTime.now())
+        : existing.copyWith(
+            pageTurn: PageTurnDirection.normalize(direction),
+            updatedAt: DateTime.now(),
+          );
+    await _db.upsertManga(next);
+    await reload();
+  }
+
 
   /// Assign [mangaIds] to one series (create by title if needed). Empty title clears.
   Future<int> assignSeriesToMangas({
@@ -229,19 +237,9 @@ class MangaLibraryService extends ChangeNotifier {
       final existing = await _db.loadMangaById(id);
       if (existing == null) continue;
       await _db.upsertManga(
-        Manga(
-          id: existing.id,
-          sourceName: existing.sourceName,
-          remotePath: existing.remotePath,
-          title: existing.title,
-          author: existing.author,
+        existing.copyWith(
           seriesId: seriesId,
-          volume: existing.volume,
-          chapterNumber: existing.chapterNumber,
-          pageCount: existing.pageCount,
-          coverRelpath: existing.coverRelpath,
-          format: existing.format,
-          remoteMissing: existing.remoteMissing,
+          clearSeriesId: seriesId == null,
           updatedAt: DateTime.now(),
         ),
       );

@@ -9,9 +9,11 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/image_viewer_page.dart';
+import '../models/page_turn_direction.dart';
 import '../models/webdav_item.dart';
 import '../services/prefetch_cache.dart';
 import '../services/settings_service.dart';
+import '../services/manga_library_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/image_album.dart';
 import 'image_settings_screen.dart';
@@ -58,6 +60,7 @@ class ImageViewerScreen extends StatefulWidget {
     this.enableSubdirScan = false,
     this.onPageChanged,
     this.title,
+    this.mangaId,
   });
 
   final String accountId;
@@ -67,6 +70,9 @@ class ImageViewerScreen extends StatefulWidget {
   final bool enableSubdirScan;
   final ValueChanged<int>? onPageChanged;
   final String? title;
+
+  /// When set, viewer is manga mode: BottomSheet shows per-manga page-turn.
+  final String? mangaId;
 
   @override
   State<ImageViewerScreen> createState() => _ImageViewerScreenState();
@@ -92,6 +98,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
 
   String _slideSig = '';
   String _fit = SettingsService.imageFitContain;
+  String _globalPageTurn = PageTurnDirection.ltr;
+  String? _mangaPageTurn; // null = follow global
   int _prefetch = SettingsService.defaultImagePrefetchCount;
   bool _scan = false;
 
@@ -106,6 +114,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       if (!mounted) return;
       unawaited(_prepareCache());
       _captureSettings(notify: false);
+      unawaited(_loadMangaPageTurn());
       _armSlideshow();
       if (widget.enableSubdirScan && (_settings?.imageScanSubdirs ?? false)) {
         unawaited(_scanSubdirs());
@@ -146,12 +155,32 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
           ? null
           : _album[_index];
 
+  Future<void> _loadMangaPageTurn() async {
+    final id = widget.mangaId;
+    if (id == null || id.isEmpty || !mounted) return;
+    try {
+      final mangaLib = context.read<MangaLibraryService>();
+      for (final e in mangaLib.mangas) {
+        if (e.id == id) {
+          if (!mounted) return;
+          setState(() => _mangaPageTurn = e.pageTurn);
+          return;
+        }
+      }
+    } catch (_) {}
+  }
+
+  String get _effectivePageTurn => PageTurnDirection.normalize(
+        _mangaPageTurn ?? _globalPageTurn,
+      );
+
   void _captureSettings({required bool notify}) {
     final s = _settings;
     if (s == null) return;
     _slideSig =
         '${s.imageSlideshowEnabled}:${s.imageSlideshowIntervalSeconds}:${s.imageSlideshowLoop}';
     _fit = s.imageFit;
+    _globalPageTurn = s.imagePageTurn;
     _prefetch = s.imagePrefetchCount;
     _scan = s.imageScanSubdirs;
     if (notify && mounted) setState(() {});
@@ -164,13 +193,15 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         '${s.imageSlideshowEnabled}:${s.imageSlideshowIntervalSeconds}:${s.imageSlideshowLoop}';
     final slideChanged = slideSig != _slideSig;
     final fitChanged = s.imageFit != _fit;
+    final turnChanged = s.imagePageTurn != _globalPageTurn;
     final prefetchChanged = s.imagePrefetchCount != _prefetch;
     final scanChanged = s.imageScanSubdirs != _scan;
     _slideSig = slideSig;
     _fit = s.imageFit;
+    _globalPageTurn = s.imagePageTurn;
     _prefetch = s.imagePrefetchCount;
     _scan = s.imageScanSubdirs;
-    if (fitChanged || prefetchChanged) setState(() {});
+    if (fitChanged || prefetchChanged || turnChanged) setState(() {});
     if (prefetchChanged) _syncWindow();
     if (slideChanged) _armSlideshow();
     if (!widget.enableSubdirScan || !scanChanged) return;
@@ -294,6 +325,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       if (!mounted || _disposed) return;
       _step(1, fromTimer: true);
     });
+  }
+
+  void _turnFromEdge(int edgeDelta, {required bool fromTimer}) {
+    final delta = PageTurnDirection.indexDeltaForEdge(
+      edgeDelta,
+      _effectivePageTurn,
+    );
+    _step(delta, fromTimer: fromTimer);
   }
 
   void _step(int delta, {required bool fromTimer}) {
@@ -470,6 +509,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     _slide?.cancel();
     final l10n = AppLocalizations.of(context)!;
     final settings = context.read<SettingsService>();
+    final mangaId = widget.mangaId;
+    final mangaLib = mangaId == null || mangaId.isEmpty
+        ? null
+        : context.read<MangaLibraryService>();
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
@@ -477,61 +520,129 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  l10n.imageViewerControls,
-                  style: Theme.of(ctx).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  l10n.imageViewerCount(_index + 1, _album.length),
-                  style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        l10n.imageViewerControls,
+                        style: Theme.of(ctx).textTheme.titleMedium,
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.imageViewerCount(_index + 1, _album.length),
+                        style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(l10n.imageFit),
+                      const SizedBox(height: 8),
+                      SegmentedButton<String>(
+                        segments: [
+                          ButtonSegment(
+                            value: SettingsService.imageFitContain,
+                            label: Text(l10n.imageFitContain),
+                          ),
+                          ButtonSegment(
+                            value: SettingsService.imageFitCover,
+                            label: Text(l10n.imageFitCover),
+                          ),
+                        ],
+                        selected: {_fit},
+                        onSelectionChanged: (s) {
+                          unawaited(settings.setImageFit(s.first));
+                          setState(() => _fit = s.first);
+                          setSheet(() {});
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Text(l10n.imagePageTurnGlobal),
+                      const SizedBox(height: 8),
+                      SegmentedButton<String>(
+                        segments: [
+                          ButtonSegment(
+                            value: PageTurnDirection.ltr,
+                            label: Text(l10n.imagePageTurnLtr),
+                          ),
+                          ButtonSegment(
+                            value: PageTurnDirection.rtl,
+                            label: Text(l10n.imagePageTurnRtl),
+                          ),
+                        ],
+                        selected: {_globalPageTurn},
+                        onSelectionChanged: (s) {
+                          final v = s.first;
+                          unawaited(settings.setImagePageTurn(v));
+                          setState(() => _globalPageTurn = v);
+                          setSheet(() {});
+                        },
+                      ),
+                      if (mangaId != null && mangaId.isNotEmpty) ...[
+                        const SizedBox(height: 12),
+                        Text(l10n.imagePageTurnManga),
+                        const SizedBox(height: 8),
+                        SegmentedButton<String>(
+                          segments: [
+                            ButtonSegment(
+                              value: 'follow',
+                              label: Text(l10n.imagePageTurnFollowGlobal),
+                            ),
+                            ButtonSegment(
+                              value: PageTurnDirection.ltr,
+                              label: Text(l10n.imagePageTurnLtr),
+                            ),
+                            ButtonSegment(
+                              value: PageTurnDirection.rtl,
+                              label: Text(l10n.imagePageTurnRtl),
+                            ),
+                          ],
+                          selected: {
+                            _mangaPageTurn == null || _mangaPageTurn!.isEmpty
+                                ? 'follow'
+                                : PageTurnDirection.normalize(_mangaPageTurn),
+                          },
+                          onSelectionChanged: (s) {
+                            final v = s.first;
+                            final next = v == 'follow' ? null : v;
+                            setState(() => _mangaPageTurn = next);
+                            setSheet(() {});
+                            if (mangaLib != null) {
+                              unawaited(mangaLib.setPageTurn(mangaId, next));
+                            }
+                          },
+                        ),
+                      ],
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(l10n.imageSlideshow),
+                        value: settings.imageSlideshowEnabled,
+                        onChanged: (v) {
+                          unawaited(settings.setImageSlideshowEnabled(v));
+                          setSheet(() {});
+                        },
+                      ),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(l10n.imageViewerMoreSettings),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () async {
+                          Navigator.pop(ctx);
+                          await _openFullSettings();
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 12),
-                Text(l10n.imageFit),
-                const SizedBox(height: 8),
-                SegmentedButton<String>(
-                  segments: [
-                    ButtonSegment(
-                      value: SettingsService.imageFitContain,
-                      label: Text(l10n.imageFitContain),
-                    ),
-                    ButtonSegment(
-                      value: SettingsService.imageFitCover,
-                      label: Text(l10n.imageFitCover),
-                    ),
-                  ],
-                  selected: {settings.imageFit},
-                  onSelectionChanged: (s) {
-                    unawaited(settings.setImageFit(s.first));
-                  },
-                ),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(l10n.imageSlideshow),
-                  value: settings.imageSlideshowEnabled,
-                  onChanged: (v) => unawaited(settings.setImageSlideshowEnabled(v)),
-                ),
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(l10n.imageViewerMoreSettings),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    await _openFullSettings();
-                  },
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         );
       },
     );
@@ -577,10 +688,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       body: GestureDetector(
         onHorizontalDragEnd: (details) {
           final v = details.primaryVelocity ?? 0;
+          // Swipe left (negative velocity) = right-edge intent (+1).
           if (v <= -200) {
-            _step(1, fromTimer: false);
+            _turnFromEdge(1, fromTimer: false);
           } else if (v >= 200) {
-            _step(-1, fromTimer: false);
+            _turnFromEdge(-1, fromTimer: false);
           }
         },
         child: Stack(
@@ -627,7 +739,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                   Expanded(
                     child: _zone(
                       l10n.imageViewerPrevious,
-                      () => _step(-1, fromTimer: false),
+                      () => _turnFromEdge(-1, fromTimer: false),
                     ),
                   ),
                   Expanded(
@@ -639,7 +751,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                   Expanded(
                     child: _zone(
                       l10n.imageViewerNext,
-                      () => _step(1, fromTimer: false),
+                      () => _turnFromEdge(1, fromTimer: false),
                     ),
                   ),
                 ],

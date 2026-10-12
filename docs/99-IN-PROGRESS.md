@@ -1228,14 +1228,14 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 11. **漫画库内 Tab**（对照音乐）：系列 / 单本 / 作者。
 12. **抽屉顺序（用户更正 2026-10-12）**：文件夹(0) → 音乐库(1) → 歌单(2) → **漫画库(3)** → 网络库(4) → 任务(5) → 设置(6)。`home_tab_index` 一次性迁移：prefs 旗标 `home_tab_v025_manga_inserted`；已有用户保存索引 **≥3** 则 +1（与文件夹插入同模式）。
 
-### 19.3 Schema（v13，加表不擦曲目）
+### 19.3 Schema（v13 加表 → v14 `page_turn`，不擦曲目）
 
-同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **12 → 13**。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
+同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
 
 | 表 | 要点 |
 |----|------|
 | `manga_series` | `id` TEXT PK uuid；`title`；`author` nullable；`sort_title`；`created_at` |
-| `mangas` | `id` TEXT PK（确定性 `mangaIdForRemote`）；`UNIQUE(source_name, remote_path)`；`series_id` nullable FK；`title` / `author` / `volume` / `chapter_number`；`page_count`；`cover_relpath`；`format`=`cbz\|cbr\|pdf\|epub\|images\|unknown`；`remote_path` / `source_name`；`remote_missing`；`updated_at` |
+| `mangas` | `id` TEXT PK（确定性 `mangaIdForRemote`）；`UNIQUE(source_name, remote_path)`；`series_id` nullable FK；`title` / `author` / `volume` / `chapter_number`；`page_count`；`cover_relpath`；`format`=`cbz\|cbr\|pdf\|epub\|images\|unknown`；`remote_path` / `source_name`；`remote_missing`；`page_turn` nullable（v14；`ltr`/`rtl`；null=跟随全局）；`updated_at` |
 | `manga_pages` | PK `(manga_id, page_index)`；`rel_path` |
 | `manga_progress` | PK `manga_id`；`page_index`；`updated_at` |
 
@@ -1253,10 +1253,14 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 ### 19.5 阅读器（本刀升级）
 
 - **复用** `ImageViewerScreen`（网络图与漫画同一套 chrome / 预取 / 下载）。
-- 中间点击 → **选项 BottomSheet**（适应方式、幻灯片、进更多设置）；左右点与横向滑动翻页。
+- 中间点击 → **选项 BottomSheet**（适应方式、**翻页方向**、幻灯片、进更多设置）；左右点与横向滑动翻页。
 - 预取每侧 **1–20**（设置 `image_prefetch_count`）。
 - 散图：按冻结 `manga_pages` 远端路径下载；CBZ：下载 ZIP → 枚举图片 → 解压到预取缓存；PDF/EPUB/CBR 暂不支持应用内读。
 - 翻页写 `manga_progress`。
+- **翻页方向**（LTR / RTL）：
+  - 全局：`SharedPreferences` 键 `image_page_turn`（设置 → 图片查看；非漫画查看器 BottomSheet 仅全局）。
+  - 每本：`mangas.page_turn`（nullable；null = 跟随全局）。漫画阅读器 BottomSheet 有「全局」+「当前漫画」（跟随全局 / LTR / RTL）。
+  - 改动立即生效；改当前漫画不改写全局。
 
 ### 19.6 明确不做
 

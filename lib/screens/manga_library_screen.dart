@@ -513,6 +513,7 @@ Future<void> openMangaReader(BuildContext context, Manga manga) async {
           pages: prepared.pages,
           initialIndex: prepared.initialIndex,
           title: prepared.manga.title,
+          mangaId: prepared.manga.id,
           onPageChanged: (i) {
             unawaited(mangaLib.setProgress(prepared.manga.id, i));
           },

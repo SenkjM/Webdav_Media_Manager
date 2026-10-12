@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
+import '../models/page_turn_direction.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 
@@ -84,6 +85,39 @@ class ImageSettingsScreen extends StatelessWidget {
             onSelectionChanged: (next) {
               if (next.isEmpty) return;
               settings.setImageFit(next.first);
+            },
+          ),
+          const Divider(height: 32),
+          Text(
+            l10n.imagePageTurn,
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: AppColors.accent),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            l10n.imagePageTurnHint,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            segments: [
+              ButtonSegment(
+                value: PageTurnDirection.ltr,
+                label: Text(l10n.imagePageTurnLtr),
+                icon: const Icon(Icons.format_textdirection_l_to_r),
+              ),
+              ButtonSegment(
+                value: PageTurnDirection.rtl,
+                label: Text(l10n.imagePageTurnRtl),
+                icon: const Icon(Icons.format_textdirection_r_to_l),
+              ),
+            ],
+            selected: {settings.imagePageTurn},
+            onSelectionChanged: (next) {
+              if (next.isEmpty) return;
+              settings.setImagePageTurn(next.first);
             },
           ),
           const Divider(height: 32),
