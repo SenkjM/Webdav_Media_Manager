@@ -42,15 +42,34 @@ void main() {
     test('every _webDav call in the queue resolves an account first', () {
       final source = File('lib/services/task_queue_service.dart')
           .readAsStringSync();
-      // Each call site is checked by its first argument name being `accountId`.
-      final calls = RegExp(r'_webDav\.\w+\(\s*\n?\s*([A-Za-z_][A-Za-z0-9_]*)')
-          .allMatches(source)
-          .map((m) => m.group(1)!)
-          .toSet();
+      // Each call must pass an account id: either positional first arg
+      // (`_webDav.foo(accountId, …)`) or a named accountId:/destAccountId:
+      // somewhere in the arg list (named order may put remotePath first).
+      final callRe = RegExp(
+        r'_webDav\.\w+\(([^;]*?)\)',
+        multiLine: true,
+        dotAll: true,
+      );
+      final offenders = <String>[];
+      for (final m in callRe.allMatches(source)) {
+        final args = m.group(1)!;
+        final trimmed = args.trimLeft();
+        final positionalOk = RegExp(
+          r'^(?:accountId|destAccountId)\b',
+        ).hasMatch(trimmed);
+        final namedOk = RegExp(
+          r'(?:^|[,(]\s*)(?:accountId|destAccountId)\s*:',
+        ).hasMatch(args);
+        if (!positionalOk && !namedOk) {
+          offenders.add(m.group(0)!.replaceAll(RegExp(r'\s+'), ' '));
+        }
+      }
       expect(
-        calls,
-        everyElement(anyOf(equals('accountId'), equals('destAccountId'))),
-        reason: '下载队列里传给 WebDAV 的必须是账号 id，实际出现：$calls',
+        offenders,
+        isEmpty,
+        reason:
+            '下载队列里传给 WebDAV 的必须带 accountId/destAccountId'
+            '（位置参数首位或命名参数均可），违规：$offenders',
       );
     });
 
