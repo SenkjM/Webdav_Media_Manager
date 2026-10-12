@@ -18,8 +18,8 @@ void main() {
     add('readme.txt', 'nope');
 
     final encoded = ZipEncoder().encode(archive);
-    expect(encoded, isNotNull);
-    final decoded = ZipDecoder().decodeBytes(encoded!);
+    expect(encoded, isNotEmpty);
+    final decoded = ZipDecoder().decodeBytes(encoded);
     final images = [
       for (final f in decoded)
         if (!f.isDirectory && isMangaImageFileName(f.name)) f.name,
