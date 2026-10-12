@@ -823,10 +823,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   subtitle: Text(
                     item.isDirectory
                         ? l10n.netFolder
-                        : l10n.netItemSubtitle(
-                            defaultAction.label(l10n),
-                            item.category.label(l10n),
-                          ),
+                        : item.category.label(l10n),
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.outline,
                     ),
@@ -871,7 +868,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   ListTile(
                     leading: Icon(_actionIcon(defaultAction)),
                     title: Text(defaultAction.label(l10n)),
-                    subtitle: Text(l10n.netDefaultActionFromSettings),
                     onTap: () {
                       Navigator.pop(ctx);
                       _runDefaultAction(item);
@@ -881,15 +877,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     ListTile(
                       leading: Icon(_actionIcon(action)),
                       title: Text(action.label(l10n)),
-                      subtitle: switch (action) {
-                        FileAction.streamMusic => Text(
-                          l10n.netExperimentalNoDownload,
-                        ),
-                        FileAction.downloadToGallery => Text(
-                          l10n.netDownloadToGalleryPictures,
-                        ),
-                        _ => null,
-                      },
+                      subtitle: action == FileAction.downloadToGallery
+                          ? Text(l10n.netDownloadToGalleryPictures)
+                          : null,
                       onTap: () {
                         Navigator.pop(ctx);
                         _runAction(item, action);
@@ -1438,14 +1428,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 ),
                 title: Text(item.name),
                 subtitle: MetaText(
-                  [
-                    item.size != null
-                        ? _fmtSize(item.size!)
-                        : AppLocalizations.of(context)!.netAudio,
-                    // 没有下载按钮：整行就是下载动作。状态词留下。
-                    if (state == TrackUiState.remote)
-                      AppLocalizations.of(context)!.netTapDownload,
-                  ].join(' · '),
+                  item.size != null
+                      ? _fmtSize(item.size!)
+                      : AppLocalizations.of(context)!.netAudio,
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,

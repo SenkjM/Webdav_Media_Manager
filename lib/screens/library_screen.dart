@@ -33,6 +33,7 @@ import 'webdav_folder_picker_screen.dart';
 import '../services/webdav_service.dart';
 import '../models/webdav_stream.dart';
 import '../utils/task_error.dart';
+import '../utils/track_subtitle_lines.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -41,10 +42,13 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
+enum _LibrarySection { music, folders }
+
 class _LibraryScreenState extends State<LibraryScreen> {
   final _searchCtrl = TextEditingController();
   String _query = '';
   bool _searchOpen = false;
+  _LibrarySection _section = _LibrarySection.music;
 
   @override
   void dispose() {
@@ -56,18 +60,20 @@ class _LibraryScreenState extends State<LibraryScreen> {
   Widget build(BuildContext context) {
     final library = context.watch<LibraryService>();
     final settings = context.watch<SettingsService>();
+    final l10n = AppLocalizations.of(context)!;
+    final isFolders = _section == _LibrarySection.folders;
     return DefaultTabController(
-      length: 5,
+      length: 4,
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
           leading: const DrawerMenuButton(),
-          title: _searchOpen
+          title: _searchOpen && !isFolders
               ? TextField(
                   controller: _searchCtrl,
                   autofocus: true,
                   decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.searchPlaceholder,
+                    hintText: l10n.searchPlaceholder,
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
@@ -80,63 +86,100 @@ class _LibraryScreenState extends State<LibraryScreen> {
                   ),
                   onChanged: (v) => setState(() => _query = v),
                 )
-              : Text(AppLocalizations.of(context)!.library),
+              : Text(l10n.library),
           actions: [
-            IconButton(
-              tooltip: _searchOpen
-                  ? AppLocalizations.of(context)!.closeSearch
-                  : AppLocalizations.of(context)!.searchAction,
-              icon: Icon(_searchOpen ? Icons.close : Icons.search),
-              onPressed: () {
-                setState(() {
-                  _searchOpen = !_searchOpen;
-                  if (!_searchOpen) {
-                    _searchCtrl.clear();
-                    _query = '';
-                  }
-                });
-              },
-            ),
-            PopupMenuButton<LibrarySortMode>(
-              tooltip: AppLocalizations.of(context)!.sortTooltip,
-              initialValue: settings.librarySort,
-              onSelected: (mode) =>
-                  context.read<SettingsService>().setLibrarySort(mode),
-              itemBuilder: (context) => [
-                for (final mode in LibrarySortMode.values)
-                  PopupMenuItem(
-                    value: mode,
-                    child: Row(
-                      children: [
-                        Icon(
-                          settings.librarySort == mode
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_off,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(mode.label(AppLocalizations.of(context)!)),
-                      ],
+            if (!isFolders)
+              IconButton(
+                tooltip: _searchOpen ? l10n.closeSearch : l10n.searchAction,
+                icon: Icon(_searchOpen ? Icons.close : Icons.search),
+                onPressed: () {
+                  setState(() {
+                    _searchOpen = !_searchOpen;
+                    if (!_searchOpen) {
+                      _searchCtrl.clear();
+                      _query = '';
+                    }
+                  });
+                },
+              ),
+            if (!isFolders)
+              PopupMenuButton<LibrarySortMode>(
+                tooltip: l10n.sortTooltip,
+                initialValue: settings.librarySort,
+                onSelected: (mode) =>
+                    context.read<SettingsService>().setLibrarySort(mode),
+                itemBuilder: (context) => [
+                  for (final mode in LibrarySortMode.values)
+                    PopupMenuItem(
+                      value: mode,
+                      child: Row(
+                        children: [
+                          Icon(
+                            settings.librarySort == mode
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(mode.label(l10n)),
+                        ],
+                      ),
                     ),
+                ],
+                icon: const Icon(Icons.sort),
+              ),
+          ],
+          bottom: PreferredSize(
+            preferredSize: Size.fromHeight(isFolders ? 48 : 96),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                  child: SegmentedButton<_LibrarySection>(
+                    segments: [
+                      ButtonSegment(
+                        value: _LibrarySection.music,
+                        label: Text(l10n.librarySectionMusic),
+                        icon: const Icon(Icons.library_music_outlined, size: 18),
+                      ),
+                      ButtonSegment(
+                        value: _LibrarySection.folders,
+                        label: Text(l10n.librarySectionFolders),
+                        icon: const Icon(Icons.folder_outlined, size: 18),
+                      ),
+                    ],
+                    selected: {_section},
+                    onSelectionChanged: (s) {
+                      setState(() {
+                        _section = s.first;
+                        if (_section == _LibrarySection.folders) {
+                          _searchOpen = false;
+                          _searchCtrl.clear();
+                          _query = '';
+                        }
+                      });
+                    },
+                  ),
+                ),
+                if (!isFolders)
+                  TabBar(
+                    isScrollable: true,
+                    tabs: [
+                      Tab(text: l10n.tabAlbums),
+                      Tab(text: l10n.tabArtists),
+                      Tab(text: l10n.tabTitles),
+                      Tab(text: l10n.tabGenres),
+                    ],
                   ),
               ],
-              icon: const Icon(Icons.sort),
             ),
-          ],
-          bottom: TabBar(
-            isScrollable: true,
-            tabs: [
-              Tab(text: AppLocalizations.of(context)!.tabFolders),
-              Tab(text: AppLocalizations.of(context)!.tabAlbums),
-              Tab(text: AppLocalizations.of(context)!.tabArtists),
-              Tab(text: AppLocalizations.of(context)!.tabTitles),
-              Tab(text: AppLocalizations.of(context)!.tabGenres),
-            ],
           ),
         ),
-        body: TabBarView(
+        body: isFolders
+            ? const LibraryFolderBrowserScreen(embedded: true)
+            : TabBarView(
                 children: [
-                  const LibraryFolderBrowserScreen(embedded: true),
                   library.count == 0
                       ? _LibraryEmpty()
                       : _AlbumTab(library: library, query: _query),
@@ -1091,9 +1134,6 @@ class _TrackTile extends StatelessWidget {
     final cache = context.watch<CacheService>();
     final downloads = context.watch<TaskQueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
-    final trackLabel = track.trackNumber != null
-        ? '${track.trackNumber}. '
-        : '';
     // A library row can be re-queued after its cache was deleted, so surface the
     // queue state here too (network library already does).
     final task = downloads.taskForRemote(
@@ -1103,9 +1143,6 @@ class _TrackTile extends StatelessWidget {
     // `read` (not `watch`): AudioPlayerService notifies on every position tick,
     // so watching it here would rebuild the whole list several times a second.
     final audio = context.read<AudioPlayerService>();
-    final sourceBound = context.read<AccountsService>().isSourceBound(
-      track.sourceName,
-    );
     final state = libraryRowUiState(
       downloads: downloads,
       track: track,
@@ -1119,7 +1156,11 @@ class _TrackTile extends StatelessWidget {
         state == TrackUiState.error ||
         state == TrackUiState.playing;
     final isDownloading = state == TrackUiState.downloading;
+    final l10n = AppLocalizations.of(context)!;
+    final subs = TrackSubtitleLines.of(track, l10n);
     return ListTile(
+      dense: true,
+      isThreeLine: subs.line2 != null,
       selected: selected,
       selectedTileColor: AppColors.accent.withValues(alpha: 0.12),
       leading: selecting
@@ -1136,7 +1177,7 @@ class _TrackTile extends StatelessWidget {
               enqueueIfMissing: false,
             ),
       title: Text(
-        '$trackLabel${track.displayTitle}',
+        track.displayTitle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
@@ -1147,23 +1188,13 @@ class _TrackTile extends StatelessWidget {
           fontSize: 14,
         ),
       ),
-      subtitle: Text(
-        [
-          if (track.isCueVirtual)
-            AppLocalizations.of(context)!.cueMultiSliceLabel,
-          if (!sourceBound) AppLocalizations.of(context)!.sourceUnbound,
-          if (isDownloading && task!.progress > 0)
-            AppLocalizations.of(context)!
-                .downloadingPercent((task.progress * 100).toStringAsFixed(0)),
-          track.displayArtistFor(AppLocalizations.of(context)!),
-          if (isLocal) track.displayAlbumFor(AppLocalizations.of(context)!),
-        ].join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.outline,
-          fontSize: 12,
-        ),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          MetaText(subs.line1),
+          if (subs.line2 != null) MetaText(subs.line2!),
+        ],
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,

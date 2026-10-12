@@ -7462,6 +7462,66 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'音轨 —'**
   String get folderTrackNumberUnknown;
+
+  /// No description provided for @folderDiscNumber.
+  ///
+  /// In zh, this message translates to:
+  /// **'碟 {number}'**
+  String folderDiscNumber(int number);
+
+  /// No description provided for @folderTypeAlbum.
+  ///
+  /// In zh, this message translates to:
+  /// **'专辑'**
+  String get folderTypeAlbum;
+
+  /// No description provided for @folderTypeArtist.
+  ///
+  /// In zh, this message translates to:
+  /// **'歌手'**
+  String get folderTypeArtist;
+
+  /// No description provided for @folderTypeGenre.
+  ///
+  /// In zh, this message translates to:
+  /// **'流派'**
+  String get folderTypeGenre;
+
+  /// No description provided for @folderTypeTrack.
+  ///
+  /// In zh, this message translates to:
+  /// **'曲目'**
+  String get folderTypeTrack;
+
+  /// No description provided for @folderDeleteSelected.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除所选'**
+  String get folderDeleteSelected;
+
+  /// No description provided for @folderSelectMore.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多'**
+  String get folderSelectMore;
+
+  /// No description provided for @taskGroupDeleteAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部删除'**
+  String get taskGroupDeleteAll;
+
+  /// No description provided for @librarySectionMusic.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐'**
+  String get librarySectionMusic;
+
+  /// No description provided for @librarySectionFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹'**
+  String get librarySectionFolders;
 }
 
 class _AppLocalizationsDelegate

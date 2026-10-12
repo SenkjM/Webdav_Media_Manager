@@ -1334,5 +1334,23 @@
       }
     }
   },
-  "folderTrackNumberUnknown": "Track —"
+  "folderTrackNumberUnknown": "Track —",
+  "folderDiscNumber": "Disc {number}",
+  "@folderDiscNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTypeAlbum": "Album",
+  "folderTypeArtist": "Artist",
+  "folderTypeGenre": "Genre",
+  "folderTypeTrack": "Track",
+  "folderDeleteSelected": "Delete selected",
+  "folderSelectMore": "More",
+  "taskGroupDeleteAll": "Delete all",
+  "librarySectionMusic": "Music",
+  "librarySectionFolders": "Folders"
 }
+

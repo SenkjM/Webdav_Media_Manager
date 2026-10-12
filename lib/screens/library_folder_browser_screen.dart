@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -16,9 +18,12 @@ import '../services/library_service.dart';
 import '../services/settings_service.dart';
 import '../services/user_folder_service.dart';
 import '../utils/library_group_cover.dart';
+import '../utils/selection_controller.dart';
+import '../utils/track_subtitle_lines.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
 import '../widgets/meta_text.dart';
+import '../widgets/selection_toolbar.dart';
 import 'library_folder_picker_screen.dart';
 import 'library_tag_picker_screen.dart';
 
@@ -36,8 +41,31 @@ class LibraryFolderBrowserScreen extends StatefulWidget {
 class _LibraryFolderBrowserScreenState
     extends State<LibraryFolderBrowserScreen> {
   final List<String?> _stack = [null];
+  SelectionController _selection = const SelectionController();
 
   String? get _currentId => _stack.last;
+  bool get _selecting => _selection.active;
+
+  String _folderKey(UserFolder f) => 'f:${f.id}';
+  String _itemKey(UserFolderItem i) =>
+      'i:${i.folderId}|${i.refKind}|${i.refKey}';
+
+  List<String> _allKeys(
+    List<UserFolder> children,
+    List<UserFolderItem> items,
+  ) =>
+      [
+        for (final f in children) _folderKey(f),
+        for (final i in items) _itemKey(i),
+      ];
+
+  String _typeLabel(AppLocalizations l10n, String refKind) => switch (refKind) {
+        UserFolderRefKind.album => l10n.folderTypeAlbum,
+        UserFolderRefKind.artist => l10n.folderTypeArtist,
+        UserFolderRefKind.track => l10n.folderTypeTrack,
+        'genre' => l10n.folderTypeGenre,
+        _ => refKind,
+      };
 
   Future<String?> _askName({
     required String title,
@@ -106,6 +134,53 @@ class _LibraryFolderBrowserScreenState
     if (ok == true && mounted) {
       await context.read<UserFolderService>().deleteFolder(f.id);
     }
+  }
+
+  Future<void> _deleteSelected(
+    List<UserFolder> children,
+    List<UserFolderItem> items,
+  ) async {
+    final l10n = AppLocalizations.of(context)!;
+    final folders = [
+      for (final f in children)
+        if (_selection.contains(_folderKey(f))) f,
+    ];
+    final refs = [
+      for (final i in items)
+        if (_selection.contains(_itemKey(i))) i,
+    ];
+    if (folders.isEmpty && refs.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.delete),
+        content: Text(l10n.folderDeleteSelected),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final svc = context.read<UserFolderService>();
+    for (final f in folders) {
+      await svc.deleteFolder(f.id);
+    }
+    for (final i in refs) {
+      await svc.removeRef(
+        folderId: i.folderId,
+        refKind: i.refKind,
+        refKey: i.refKey,
+      );
+    }
+    if (!mounted) return;
+    setState(() => _selection = _selection.exit());
   }
 
   Future<void> _addRefs(String refKind, String title) async {
@@ -225,6 +300,7 @@ class _LibraryFolderBrowserScreenState
     required String path,
     required FolderViewMode viewMode,
     required AppLocalizations l10n,
+    required String? folderId,
   }) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
@@ -268,8 +344,9 @@ class _LibraryFolderBrowserScreenState
               size: 20,
             ),
             padding: EdgeInsets.zero,
-            onSelected: (mode) =>
-                context.read<SettingsService>().setFolderViewMode(mode),
+            onSelected: (mode) => context
+                .read<SettingsService>()
+                .setFolderViewMode(mode, folderId: folderId),
             itemBuilder: (context) => [
               for (final mode in FolderViewMode.values)
                 PopupMenuItem(
@@ -289,13 +366,14 @@ class _LibraryFolderBrowserScreenState
                 ),
             ],
           ),
-          PopupMenuButton<String>(
-            tooltip: l10n.folderAddMenu,
-            icon: const Icon(Icons.add, size: 22),
-            padding: EdgeInsets.zero,
-            onSelected: _onAddMenu,
-            itemBuilder: (context) => _addMenuItems(l10n),
-          ),
+          if (!_selecting)
+            PopupMenuButton<String>(
+              tooltip: l10n.folderAddMenu,
+              icon: const Icon(Icons.add, size: 22),
+              padding: EdgeInsets.zero,
+              onSelected: _onAddMenu,
+              itemBuilder: (context) => _addMenuItems(l10n),
+            ),
         ],
       ),
     );
@@ -309,15 +387,27 @@ class _LibraryFolderBrowserScreenState
     final library = context.watch<LibraryService>();
     final cache = context.watch<CacheService>();
     final children = folders.childrenOf(_currentId);
-    final items =
-        _currentId == null ? const <UserFolderItem>[] : folders.itemsIn(_currentId!);
+    final items = _currentId == null
+        ? const <UserFolderItem>[]
+        : folders.itemsIn(_currentId!);
     final path = folders.pathDisplay(_currentId);
-    final viewMode = settings.folderViewMode;
+    final viewMode = settings.folderViewModeFor(_currentId);
+    final keys = _allKeys(children, items);
+    final synced = _selection.sync(total: keys.length, validKeys: keys);
+    if (synced.count != _selection.count || synced.total != _selection.total) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _selection = synced);
+      });
+    }
 
     return PopScope(
-      canPop: !widget.embedded || _stack.length <= 1,
+      canPop: (!_selecting) && (!widget.embedded || _stack.length <= 1),
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
+        if (_selecting) {
+          setState(() => _selection = _selection.exit());
+          return;
+        }
         if (_stack.length > 1) setState(() => _stack.removeLast());
       },
       child: Scaffold(
@@ -326,7 +416,59 @@ class _LibraryFolderBrowserScreenState
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _pathChrome(path: path, viewMode: viewMode, l10n: l10n),
+            if (_selecting)
+              SelectionToolbar(
+                children: [
+                  if (_selection.showsDeselect)
+                    IconButton(
+                      tooltip: l10n.cancelSelection,
+                      icon: const Icon(Icons.deselect),
+                      onPressed: () => setState(
+                        () => _selection = _selection.toggleSelectAll(keys),
+                      ),
+                    )
+                  else
+                    IconButton(
+                      tooltip: l10n.selectAll,
+                      icon: const Icon(Icons.select_all),
+                      onPressed: keys.isEmpty
+                          ? null
+                          : () => setState(
+                                () => _selection =
+                                    _selection.toggleSelectAll(keys),
+                              ),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      '${_selection.count}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: l10n.moreActions,
+                    enabled: _selection.count > 0,
+                    onSelected: (v) {
+                      if (v == 'delete') {
+                        unawaited(_deleteSelected(children, items));
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text(l10n.folderDeleteSelected),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            else
+              _pathChrome(
+                path: path,
+                viewMode: viewMode,
+                l10n: l10n,
+                folderId: _currentId,
+              ),
             Expanded(
               child: children.isEmpty && items.isEmpty
                   ? Center(
@@ -350,12 +492,38 @@ class _LibraryFolderBrowserScreenState
                           items: items,
                           library: library,
                           cache: cache,
-                          onOpenFolder: (f) =>
-                              setState(() => _stack.add(f.id)),
+                          selecting: _selecting,
+                          selection: _selection,
+                          folderKeyOf: _folderKey,
+                          itemKeyOf: _itemKey,
+                          typeLabelOf: _typeLabel,
+                          onEnterSelect: (key) => setState(() {
+                            _selection = _selection
+                                .enter(key, selectOnly: keys)
+                                .sync(total: keys.length, validKeys: keys);
+                          }),
+                          onOpenFolder: (f) {
+                            if (_selecting) {
+                              setState(
+                                () => _selection =
+                                    _selection.toggle(_folderKey(f)),
+                              );
+                              return;
+                            }
+                            setState(() => _stack.add(f.id));
+                          },
                           onRenameFolder: (f) => _renameFolder(f.id, f.name),
                           onDeleteFolder: _deleteFolder,
-                          onOpenItem: (item) =>
-                              _openGroup(item.refKind, item.refKey),
+                          onOpenItem: (item) {
+                            if (_selecting) {
+                              setState(
+                                () => _selection =
+                                    _selection.toggle(_itemKey(item)),
+                              );
+                              return;
+                            }
+                            _openGroup(item.refKind, item.refKey);
+                          },
                           onRemoveItem: (item) async {
                             await context.read<UserFolderService>().removeRef(
                                   folderId: item.folderId,
@@ -369,9 +537,32 @@ class _LibraryFolderBrowserScreenState
                             for (final f in children)
                               _FolderListTile(
                                 folder: f,
-                                onOpen: () =>
-                                    setState(() => _stack.add(f.id)),
-                                onRename: () => _renameFolder(f.id, f.name),
+                                selecting: _selecting,
+                                selected:
+                                    _selection.contains(_folderKey(f)),
+                                onOpen: () {
+                                  if (_selecting) {
+                                    setState(
+                                      () => _selection =
+                                          _selection.toggle(_folderKey(f)),
+                                    );
+                                    return;
+                                  }
+                                  setState(() => _stack.add(f.id));
+                                },
+                                onLongPress: () => setState(() {
+                                  _selection = _selection
+                                      .enter(
+                                        _folderKey(f),
+                                        selectOnly: keys,
+                                      )
+                                      .sync(
+                                        total: keys.length,
+                                        validKeys: keys,
+                                      );
+                                }),
+                                onRename: () =>
+                                    _renameFolder(f.id, f.name),
                                 onDelete: () => _deleteFolder(f),
                               ),
                             for (final item in items)
@@ -380,8 +571,32 @@ class _LibraryFolderBrowserScreenState
                                 refKey: item.refKey,
                                 library: library,
                                 cache: cache,
-                                onOpen: () =>
-                                    _openGroup(item.refKind, item.refKey),
+                                typeLabel:
+                                    _typeLabel(l10n, item.refKind),
+                                selecting: _selecting,
+                                selected:
+                                    _selection.contains(_itemKey(item)),
+                                onOpen: () {
+                                  if (_selecting) {
+                                    setState(
+                                      () => _selection = _selection
+                                          .toggle(_itemKey(item)),
+                                    );
+                                    return;
+                                  }
+                                  _openGroup(item.refKind, item.refKey);
+                                },
+                                onLongPress: () => setState(() {
+                                  _selection = _selection
+                                      .enter(
+                                        _itemKey(item),
+                                        selectOnly: keys,
+                                      )
+                                      .sync(
+                                        total: keys.length,
+                                        validKeys: keys,
+                                      );
+                                }),
                                 onRemove: () async {
                                   await context
                                       .read<UserFolderService>()
@@ -408,35 +623,53 @@ class _FolderListTile extends StatelessWidget {
     required this.onOpen,
     required this.onRename,
     required this.onDelete,
+    this.onLongPress,
+    this.selecting = false,
+    this.selected = false,
   });
 
   final UserFolder folder;
   final VoidCallback onOpen;
   final VoidCallback onRename;
   final VoidCallback onDelete;
+  final VoidCallback? onLongPress;
+  final bool selecting;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final scheme = Theme.of(context).colorScheme;
     return ListTile(
-      leading: CoverArt(
-        size: 48,
-        borderRadius: 6,
-        icon: Icons.folder_outlined,
-      ),
+      selected: selected,
+      selectedTileColor: scheme.primary.withValues(alpha: 0.12),
+      leading: selecting
+          ? Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              color: selected ? scheme.primary : scheme.outline,
+            )
+          : CoverArt(
+              size: 48,
+              borderRadius: 6,
+              icon: Icons.folder_outlined,
+            ),
       title: Text(folder.name),
-      trailing: PopupMenuButton<String>(
-        tooltip: l10n.moreActions,
-        onSelected: (v) {
-          if (v == 'rename') onRename();
-          if (v == 'delete') onDelete();
-        },
-        itemBuilder: (context) => [
-          PopupMenuItem(value: 'rename', child: Text(l10n.rename)),
-          PopupMenuItem(value: 'delete', child: Text(l10n.delete)),
-        ],
-      ),
+      // Folder nodes: no type chip on the right.
+      trailing: selecting
+          ? null
+          : PopupMenuButton<String>(
+              tooltip: l10n.moreActions,
+              onSelected: (v) {
+                if (v == 'rename') onRename();
+                if (v == 'delete') onDelete();
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(value: 'rename', child: Text(l10n.rename)),
+                PopupMenuItem(value: 'delete', child: Text(l10n.delete)),
+              ],
+            ),
       onTap: onOpen,
+      onLongPress: onLongPress,
     );
   }
 }
@@ -447,26 +680,41 @@ class _FolderItemTile extends StatelessWidget {
     required this.refKey,
     required this.library,
     required this.cache,
+    required this.typeLabel,
     required this.onOpen,
     required this.onRemove,
+    this.onLongPress,
+    this.selecting = false,
+    this.selected = false,
   });
 
   final String refKind;
   final String refKey;
   final LibraryService library;
   final CacheService cache;
+  final String typeLabel;
   final VoidCallback onOpen;
   final VoidCallback onRemove;
+  final VoidCallback? onLongPress;
+  final bool selecting;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final resolved = _resolveItem(l10n);
+    final scheme = Theme.of(context).colorScheme;
     return ListTile(
-      // Keep density close to a single-subtitle tile: two MetaText lines share
-      // the subtitle slot without extra outer padding.
+      dense: true,
       isThreeLine: resolved.subtitleLine2 != null,
-      leading: resolved.cover,
+      selected: selected,
+      selectedTileColor: scheme.primary.withValues(alpha: 0.12),
+      leading: selecting
+          ? Icon(
+              selected ? Icons.check_circle : Icons.circle_outlined,
+              color: selected ? scheme.primary : scheme.outline,
+            )
+          : resolved.cover,
       title: Text(
         resolved.title,
         maxLines: 1,
@@ -485,12 +733,37 @@ class _FolderItemTile extends StatelessWidget {
                 MetaText(resolved.subtitleLine2!),
               ],
             ),
-      trailing: IconButton(
-        icon: const Icon(Icons.remove_circle_outline),
-        tooltip: l10n.delete,
-        onPressed: onRemove,
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              typeLabel,
+              style: TextStyle(
+                color: scheme.onSurfaceVariant,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          if (!selecting)
+            PopupMenuButton<String>(
+              tooltip: l10n.moreActions,
+              onSelected: (v) {
+                if (v == 'remove') onRemove();
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(value: 'remove', child: Text(l10n.delete)),
+              ],
+            ),
+        ],
       ),
       onTap: onOpen,
+      onLongPress: onLongPress,
     );
   }
 
@@ -533,14 +806,11 @@ class _FolderItemTile extends StatelessWidget {
             cover: CoverArt(size: 48, icon: Icons.music_note),
           );
         }
-        final album = found.displayAlbumFor(l10n);
-        final trackNo = found.trackNumber != null
-            ? l10n.folderTrackNumber(found.trackNumber!)
-            : l10n.folderTrackNumberUnknown;
+        final subs = TrackSubtitleLines.of(found, l10n);
         return _ResolvedFolderItem(
           title: found.displayTitle,
-          subtitleLine1: album,
-          subtitleLine2: trackNo,
+          subtitleLine1: subs.line1,
+          subtitleLine2: subs.line2,
           cover: LibraryCoverArt.forTrack(
             track: found,
             size: 48,
@@ -549,15 +819,13 @@ class _FolderItemTile extends StatelessWidget {
           ),
         );
       default:
-        // Future dimensions (genre, …): album-cover fallback + custom override hook.
-        final tracks = <LibraryTrack>[];
         return _ResolvedFolderItem(
           title: localizedLibraryGroupName(l10n, refKey),
           subtitleLine1: null,
           cover: buildLibraryGroupCover(
             dimensionId: refKind,
             groupKey: refKey,
-            groupTracks: tracks,
+            groupTracks: const [],
             cache: cache,
             size: 48,
             placeholderIcon: Icons.label_outline,
@@ -588,6 +856,12 @@ class _FolderGridBody extends StatelessWidget {
     required this.items,
     required this.library,
     required this.cache,
+    required this.selecting,
+    required this.selection,
+    required this.folderKeyOf,
+    required this.itemKeyOf,
+    required this.typeLabelOf,
+    required this.onEnterSelect,
     required this.onOpenFolder,
     required this.onRenameFolder,
     required this.onDeleteFolder,
@@ -600,6 +874,12 @@ class _FolderGridBody extends StatelessWidget {
   final List<UserFolderItem> items;
   final LibraryService library;
   final CacheService cache;
+  final bool selecting;
+  final SelectionController selection;
+  final String Function(UserFolder) folderKeyOf;
+  final String Function(UserFolderItem) itemKeyOf;
+  final String Function(AppLocalizations, String) typeLabelOf;
+  final void Function(String key) onEnterSelect;
   final void Function(UserFolder) onOpenFolder;
   final void Function(UserFolder) onRenameFolder;
   final void Function(UserFolder) onDeleteFolder;
@@ -608,6 +888,7 @@ class _FolderGridBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final entries = <_GridEntry>[
       for (final f in children) _GridEntry.folder(f),
       for (final i in items) _GridEntry.item(i),
@@ -625,36 +906,51 @@ class _FolderGridBody extends StatelessWidget {
       itemBuilder: (context, i) {
         final e = entries[i];
         if (e.folder != null) {
+          final f = e.folder!;
+          final key = folderKeyOf(f);
           return _FolderGridCell(
-            title: e.folder!.name,
+            title: f.name,
             columns: columns,
+            selected: selecting && selection.contains(key),
+            selecting: selecting,
             coverBuilder: (size) => CoverArt(
               size: size,
               borderRadius: 6,
               icon: Icons.folder_outlined,
             ),
-            onTap: () => onOpenFolder(e.folder!),
-            menuItems: [
-              (value: 'rename', label: AppLocalizations.of(context)!.rename),
-              (value: 'delete', label: AppLocalizations.of(context)!.delete),
-            ],
+            onTap: () => onOpenFolder(f),
+            onLongPress: () => onEnterSelect(key),
+            typeLabel: null,
+            menuItems: selecting
+                ? const []
+                : [
+                    (value: 'rename', label: l10n.rename),
+                    (value: 'delete', label: l10n.delete),
+                  ],
             onMenu: (v) {
-              if (v == 'rename') onRenameFolder(e.folder!);
-              if (v == 'delete') onDeleteFolder(e.folder!);
+              if (v == 'rename') onRenameFolder(f);
+              if (v == 'delete') onDeleteFolder(f);
             },
           );
         }
         final item = e.item!;
+        final key = itemKeyOf(item);
         final resolved = _resolveGridItem(context, item);
         return _FolderGridCell(
           title: resolved.title,
           subtitle: resolved.subtitle,
           columns: columns,
+          selected: selecting && selection.contains(key),
+          selecting: selecting,
           coverBuilder: resolved.coverBuilder,
           onTap: () => onOpenItem(item),
-          menuItems: [
-            (value: 'remove', label: AppLocalizations.of(context)!.delete),
-          ],
+          onLongPress: () => onEnterSelect(key),
+          typeLabel: typeLabelOf(l10n, item.refKind),
+          menuItems: selecting
+              ? const []
+              : [
+                  (value: 'remove', label: l10n.delete),
+                ],
           onMenu: (v) {
             if (v == 'remove') onRemoveItem(item);
           },
@@ -664,10 +960,7 @@ class _FolderGridBody extends StatelessWidget {
   }
 
   ({String title, String? subtitle, Widget Function(double size) coverBuilder})
-      _resolveGridItem(
-    BuildContext context,
-    UserFolderItem item,
-  ) {
+      _resolveGridItem(BuildContext context, UserFolderItem item) {
     final l10n = AppLocalizations.of(context)!;
     switch (item.refKind) {
       case UserFolderRefKind.album:
@@ -704,15 +997,18 @@ class _FolderGridBody extends StatelessWidget {
           return (
             title: item.refKey,
             subtitle: l10n.folderRefMissing,
-            coverBuilder: (size) => CoverArt(size: size, icon: Icons.music_note),
+            coverBuilder: (size) =>
+                CoverArt(size: size, icon: Icons.music_note),
           );
         }
-        final track = found;
+        final subs = TrackSubtitleLines.of(found, l10n);
         return (
-          title: track.displayTitle,
-          subtitle: track.displayAlbumFor(l10n),
+          title: found.displayTitle,
+          subtitle: subs.line2 == null
+              ? subs.line1
+              : '${subs.line1}\n${subs.line2}',
           coverBuilder: (size) => LibraryCoverArt.forTrack(
-            track: track,
+            track: found!,
             size: size,
             borderRadius: 6,
             enqueueIfMissing: false,
@@ -751,26 +1047,37 @@ class _FolderGridCell extends StatelessWidget {
     required this.menuItems,
     required this.onMenu,
     this.subtitle,
+    this.typeLabel,
+    this.onLongPress,
+    this.selecting = false,
+    this.selected = false,
   });
 
   final String title;
   final String? subtitle;
+  final String? typeLabel;
   final int columns;
   final Widget Function(double size) coverBuilder;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final List<({String value, String label})> menuItems;
   final void Function(String) onMenu;
+  final bool selecting;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final scheme = Theme.of(context).colorScheme;
     return Material(
-      color: scheme.surfaceContainer,
+      color: selected
+          ? scheme.primary.withValues(alpha: 0.12)
+          : scheme.surfaceContainer,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: EdgeInsets.all(columns >= 4 ? 6 : 8),
           child: Column(
@@ -780,42 +1087,78 @@ class _FolderGridCell extends StatelessWidget {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final side = constraints.biggest.shortestSide;
-                    // Scale 「更多」 with cell size so dense grids stay clean.
                     final moreSize =
                         (side * 0.22).clamp(14.0, columns >= 4 ? 22.0 : 28.0);
                     return Stack(
                       clipBehavior: Clip.none,
                       children: [
                         Center(child: coverBuilder(side)),
-                        Positioned(
-                          top: -2,
-                          right: -2,
-                          child: Material(
-                            color: scheme.surface.withValues(alpha: 0.72),
-                            shape: const CircleBorder(),
-                            child: SizedBox(
-                              width: moreSize,
-                              height: moreSize,
-                              child: PopupMenuButton<String>(
-                                tooltip: l10n.moreActions,
-                                padding: EdgeInsets.zero,
-                                iconSize: moreSize * 0.65,
-                                icon: Icon(
-                                  Icons.more_vert,
-                                  size: moreSize * 0.65,
+                        if (selecting)
+                          Positioned(
+                            top: -2,
+                            left: -2,
+                            child: Icon(
+                              selected
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              size: moreSize,
+                              color:
+                                  selected ? scheme.primary : scheme.outline,
+                            ),
+                          ),
+                        if (!selecting && menuItems.isNotEmpty)
+                          Positioned(
+                            top: -2,
+                            right: -2,
+                            child: Material(
+                              color: scheme.surface.withValues(alpha: 0.72),
+                              shape: const CircleBorder(),
+                              child: SizedBox(
+                                width: moreSize,
+                                height: moreSize,
+                                child: PopupMenuButton<String>(
+                                  tooltip: l10n.moreActions,
+                                  padding: EdgeInsets.zero,
+                                  iconSize: moreSize * 0.65,
+                                  icon: Icon(
+                                    Icons.more_vert,
+                                    size: moreSize * 0.65,
+                                  ),
+                                  onSelected: onMenu,
+                                  itemBuilder: (context) => [
+                                    for (final m in menuItems)
+                                      PopupMenuItem(
+                                        value: m.value,
+                                        child: Text(m.label),
+                                      ),
+                                  ],
                                 ),
-                                onSelected: onMenu,
-                                itemBuilder: (context) => [
-                                  for (final m in menuItems)
-                                    PopupMenuItem(
-                                      value: m.value,
-                                      child: Text(m.label),
-                                    ),
-                                ],
                               ),
                             ),
                           ),
-                        ),
+                        if (typeLabel != null)
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 5,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color:
+                                    scheme.surface.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                typeLabel!,
+                                style: TextStyle(
+                                  color: scheme.onSurfaceVariant,
+                                  fontSize: columns >= 4 ? 9 : 10,
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     );
                   },
@@ -834,7 +1177,7 @@ class _FolderGridCell extends StatelessWidget {
               ),
               if (subtitle != null) ...[
                 const SizedBox(height: 1),
-                MetaText(subtitle!),
+                MetaText(subtitle!, maxLines: 2),
               ],
             ],
           ),
@@ -859,12 +1202,10 @@ class _FolderTrackListPage extends StatelessWidget {
         itemCount: tracks.length,
         itemBuilder: (context, i) {
           final t = tracks[i];
-          final album = t.displayAlbumFor(l10n);
-          final trackNo = t.trackNumber != null
-              ? l10n.folderTrackNumber(t.trackNumber!)
-              : l10n.folderTrackNumberUnknown;
+          final subs = TrackSubtitleLines.of(t, l10n);
           return ListTile(
-            isThreeLine: true,
+            dense: true,
+            isThreeLine: subs.line2 != null,
             leading: LibraryCoverArt.forTrack(
               track: t,
               size: 48,
@@ -880,8 +1221,8 @@ class _FolderTrackListPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                MetaText(album),
-                MetaText(trackNo),
+                MetaText(subs.line1),
+                if (subs.line2 != null) MetaText(subs.line2!),
               ],
             ),
             onTap: () async {

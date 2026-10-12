@@ -1323,5 +1323,23 @@
       }
     }
   },
-  "folderTrackNumberUnknown": "音軌 —"
+  "folderTrackNumberUnknown": "音軌 —",
+  "folderDiscNumber": "碟 {number}",
+  "@folderDiscNumber": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "folderTypeAlbum": "專輯",
+  "folderTypeArtist": "歌手",
+  "folderTypeGenre": "流派",
+  "folderTypeTrack": "曲目",
+  "folderDeleteSelected": "刪除所選",
+  "folderSelectMore": "更多",
+  "taskGroupDeleteAll": "全部刪除",
+  "librarySectionMusic": "音樂",
+  "librarySectionFolders": "資料夾"
 }
+

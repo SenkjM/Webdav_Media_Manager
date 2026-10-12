@@ -4431,4 +4431,36 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get folderTrackNumberUnknown => 'Track —';
+
+  @override
+  String folderDiscNumber(int number) {
+    return 'Disc $number';
+  }
+
+  @override
+  String get folderTypeAlbum => 'Album';
+
+  @override
+  String get folderTypeArtist => 'Artist';
+
+  @override
+  String get folderTypeGenre => 'Genre';
+
+  @override
+  String get folderTypeTrack => 'Track';
+
+  @override
+  String get folderDeleteSelected => 'Delete selected';
+
+  @override
+  String get folderSelectMore => 'More';
+
+  @override
+  String get taskGroupDeleteAll => 'Delete all';
+
+  @override
+  String get librarySectionMusic => 'Music';
+
+  @override
+  String get librarySectionFolders => 'Folders';
 }

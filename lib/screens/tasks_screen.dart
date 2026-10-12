@@ -685,7 +685,7 @@ class _KindGroupTile extends StatelessWidget {
       color: Theme.of(context).colorScheme.surfaceContainer,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: InkWell(
-        onTap: () => _showKindGroupMembers(context, members),
+        onTap: () => _showKindGroupMembers(context, members.map((t) => t.id).toSet()),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -781,7 +781,18 @@ class _KindGroupTile extends StatelessWidget {
                       child: Text(l10n.retry),
                     ),
                   TextButton(
-                    onPressed: () => _showKindGroupMembers(context, members),
+                    onPressed: () async {
+                      for (final task in members) {
+                        await queue.remove(task.id);
+                      }
+                    },
+                    child: Text(l10n.taskGroupDeleteAll),
+                  ),
+                  TextButton(
+                    onPressed: () => _showKindGroupMembers(
+                      context,
+                      members.map((t) => t.id).toSet(),
+                    ),
                     child: Text(l10n.taskGroupMembers),
                   ),
                 ],
@@ -796,7 +807,7 @@ class _KindGroupTile extends StatelessWidget {
 
 Future<void> _showKindGroupMembers(
   BuildContext context,
-  List<QueueTask> members,
+  Set<String> memberIds,
 ) async {
   final l10n = AppLocalizations.of(context)!;
   await showModalBottomSheet<void>(
@@ -810,31 +821,60 @@ Future<void> _showKindGroupMembers(
         minChildSize: 0.35,
         maxChildSize: 0.9,
         builder: (context, controller) {
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        l10n.taskGroupMembers,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+          return Consumer<TaskQueueService>(
+            builder: (context, queue, _) {
+              final live = [
+                for (final t in queue.tasks)
+                  if (memberIds.contains(t.id)) t,
+              ];
+              live.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+              if (live.isEmpty) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (ctx.mounted && Navigator.of(ctx).canPop()) {
+                    Navigator.of(ctx).pop();
+                  }
+                });
+              }
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            l10n.taskGroupMembers,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: live.isEmpty
+                              ? null
+                              : () async {
+                                  for (final t in List<QueueTask>.from(live)) {
+                                    await queue.remove(t.id);
+                                  }
+                                },
+                          child: Text(l10n.taskGroupDeleteAll),
+                        ),
+                        Text(l10n.taskGroupCount(live.length)),
+                      ],
                     ),
-                    Text(l10n.taskGroupCount(members.length)),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: ListView.builder(
-                  controller: controller,
-                  itemCount: members.length,
-                  itemBuilder: (context, i) => _TaskTile(task: members[i]),
-                ),
-              ),
-            ],
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: live.isEmpty
+                        ? Center(child: Text(l10n.noTaskQueueItems))
+                        : ListView.builder(
+                            controller: controller,
+                            itemCount: live.length,
+                            itemBuilder: (context, i) =>
+                                _TaskTile(task: live[i]),
+                          ),
+                  ),
+                ],
+              );
+            },
           );
         },
       );

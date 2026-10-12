@@ -40,7 +40,8 @@ class SettingsService extends ChangeNotifier {
   static const int defaultThemeSeedArgb = 0xFF2EC4B6;
   static const _kCustomRetentionHours = 'cache_custom_retention_hours';
   static const _kLibrarySort = 'library_sort_mode';
-  static const _kFolderViewMode = 'folder_view_mode';
+  static const _kFolderViewMode = 'folder_view_mode'; // legacy global
+  static const _kFolderViewModes = 'folder_view_modes_json';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
   static const _kCoverThumbSize = 'cover_thumb_size';
   static const _kFileTypeConfig = 'file_type_config_json';
@@ -236,7 +237,8 @@ class SettingsService extends ChangeNotifier {
   int _musicCacheMaxMb = 0;
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
-  FolderViewMode _folderViewMode = FolderViewMode.list;
+  /// Per-folder browse density. Key ``root`` for virtual root; else folder id.
+  final Map<String, FolderViewMode> _folderViewModes = {};
   bool _playlistSyncEnabled = true;
   int _coverThumbSize = coverThumbSize;
   FileTypeConfig _fileTypes = FileTypeConfig();
@@ -386,7 +388,14 @@ class SettingsService extends ChangeNotifier {
   int get customRetentionHours => _customRetentionHours;
   LibrarySortMode get librarySort => _librarySort;
 
-  FolderViewMode get folderViewMode => _folderViewMode;
+  /// View mode for [folderId]; null/`root` = virtual 「我的文件夹」 root.
+  FolderViewMode folderViewModeFor(String? folderId) {
+    final key = folderId ?? 'root';
+    return _folderViewModes[key] ?? FolderViewMode.list;
+  }
+
+  @Deprecated('Use folderViewModeFor')
+  FolderViewMode get folderViewMode => folderViewModeFor(null);
 
   /// WebDAV root shared by 凭证 / 歌单 / 音乐库 / 备份 (设置 → 同步与备份 →
   /// 远端路径). Every other cloud path is derived from it.
@@ -621,9 +630,28 @@ class SettingsService extends ChangeNotifier {
     _librarySort = LibrarySortModeX.fromStorageKey(
       _prefs!.getString(_kLibrarySort),
     );
-    _folderViewMode = FolderViewModeX.fromStorageKey(
-      _prefs!.getString(_kFolderViewMode),
-    );
+    _folderViewModes.clear();
+    final modesJson = _prefs!.getString(_kFolderViewModes);
+    if (modesJson != null && modesJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(modesJson);
+        if (decoded is Map) {
+          for (final e in decoded.entries) {
+            final k = e.key?.toString();
+            if (k == null || k.isEmpty) continue;
+            _folderViewModes[k] =
+                FolderViewModeX.fromStorageKey(e.value?.toString());
+          }
+        }
+      } catch (_) {}
+    }
+    // Migrate legacy global key into root once.
+    if (!_folderViewModes.containsKey('root')) {
+      final legacy = _prefs!.getString(_kFolderViewMode);
+      if (legacy != null) {
+        _folderViewModes['root'] = FolderViewModeX.fromStorageKey(legacy);
+      }
+    }
     _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
     _coverThumbSize = clampCoverThumbSize(
       _prefs!.getInt(_kCoverThumbSize) ?? coverThumbSize,
@@ -853,10 +881,19 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setFolderViewMode(FolderViewMode mode) async {
-    _folderViewMode = mode;
+  Future<void> setFolderViewMode(
+    FolderViewMode mode, {
+    String? folderId,
+  }) async {
+    final key = folderId ?? 'root';
+    _folderViewModes[key] = mode;
     _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kFolderViewMode, mode.storageKey);
+    await _prefs!.setString(
+      _kFolderViewModes,
+      jsonEncode({
+        for (final e in _folderViewModes.entries) e.key: e.value.storageKey,
+      }),
+    );
     notifyListeners();
   }
 
@@ -1601,7 +1638,10 @@ class SettingsService extends ChangeNotifier {
     'cache_retention': _retention.storageKey,
     'cache_custom_retention_hours': _customRetentionHours,
     'library_sort_mode': _librarySort.storageKey,
-    'folder_view_mode': _folderViewMode.storageKey,
+    'folder_view_mode': folderViewModeFor(null).storageKey,
+    'folder_view_modes': {
+      for (final e in _folderViewModes.entries) e.key: e.value.storageKey,
+    },
     'playlist_sync_enabled': _playlistSyncEnabled,
     'cover_thumb_size': _coverThumbSize,
     'file_type_config': _fileTypes.toJson(),
@@ -1686,7 +1726,17 @@ class SettingsService extends ChangeNotifier {
         LibrarySortModeX.fromStorageKey(json['library_sort_mode'] as String?),
       );
     }
-    if (json['folder_view_mode'] is String) {
+    if (json['folder_view_modes'] is Map) {
+      final map = json['folder_view_modes'] as Map;
+      for (final e in map.entries) {
+        final k = e.key?.toString();
+        if (k == null || k.isEmpty) continue;
+        await setFolderViewMode(
+          FolderViewModeX.fromStorageKey(e.value?.toString()),
+          folderId: k == 'root' ? null : k,
+        );
+      }
+    } else if (json['folder_view_mode'] is String) {
       await setFolderViewMode(
         FolderViewModeX.fromStorageKey(json['folder_view_mode'] as String?),
       );

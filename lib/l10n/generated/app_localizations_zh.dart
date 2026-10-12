@@ -4238,6 +4238,38 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get folderTrackNumberUnknown => '音轨 —';
+
+  @override
+  String folderDiscNumber(int number) {
+    return '碟 $number';
+  }
+
+  @override
+  String get folderTypeAlbum => '专辑';
+
+  @override
+  String get folderTypeArtist => '歌手';
+
+  @override
+  String get folderTypeGenre => '流派';
+
+  @override
+  String get folderTypeTrack => '曲目';
+
+  @override
+  String get folderDeleteSelected => '删除所选';
+
+  @override
+  String get folderSelectMore => '更多';
+
+  @override
+  String get taskGroupDeleteAll => '全部删除';
+
+  @override
+  String get librarySectionMusic => '音乐';
+
+  @override
+  String get librarySectionFolders => '文件夹';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -8474,4 +8506,36 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get folderTrackNumberUnknown => '音軌 —';
+
+  @override
+  String folderDiscNumber(int number) {
+    return '碟 $number';
+  }
+
+  @override
+  String get folderTypeAlbum => '專輯';
+
+  @override
+  String get folderTypeArtist => '歌手';
+
+  @override
+  String get folderTypeGenre => '流派';
+
+  @override
+  String get folderTypeTrack => '曲目';
+
+  @override
+  String get folderDeleteSelected => '刪除所選';
+
+  @override
+  String get folderSelectMore => '更多';
+
+  @override
+  String get taskGroupDeleteAll => '全部刪除';
+
+  @override
+  String get librarySectionMusic => '音樂';
+
+  @override
+  String get librarySectionFolders => '資料夾';
 }
