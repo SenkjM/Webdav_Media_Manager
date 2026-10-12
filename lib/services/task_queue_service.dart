@@ -94,7 +94,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   final Set<String> _fgsTimeoutSuspendIds = <String>{};
   DateTime? _fgsCooldownUntil;
   LibraryService? _library;
-  PlaylistService? _playlists;
+  final PlaylistService? _playlists;
   final TaskStore _store;
   final PlatformExportService _export;
 
