@@ -17,6 +17,7 @@ import '../services/manga_library_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/image_album.dart';
 import 'image_settings_screen.dart';
+import '../utils/directory_walk.dart';
 
 /// Fullscreen image / manga page viewer.
 ///
@@ -265,14 +266,16 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     if (webDav == null || settings == null) return;
     setState(() => _scanning = true);
     final types = settings.fileTypes;
-    final pending = <String>[_normDir(widget.folderPath)];
-    final seenDirs = <String>{};
+    final walker = DirectoryWalker(
+      rootPath: widget.folderPath,
+      options: settings.imageScanWalkOptions,
+    );
     final found = <WebDavItem>[];
-    while (pending.isNotEmpty) {
+    while (true) {
       if (_disposed || gen != _scanGen) return;
       if (!(_settings?.imageScanSubdirs ?? false)) return;
-      final dir = pending.removeAt(0);
-      if (!seenDirs.add(dir)) continue;
+      final dir = walker.nextDirectory();
+      if (dir == null) break;
       List<WebDavItem> items;
       try {
         items = await webDav.listDirectory(
@@ -285,9 +288,10 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       }
       if (_disposed || gen != _scanGen) return;
       found.addAll(items.where((e) => e.isImage));
-      for (final child in items) {
-        if (child.isDirectory) pending.add(_normDir(child.path));
-      }
+      walker.acceptChildren(dir, [
+        for (final child in items)
+          if (child.isDirectory) child.path,
+      ]);
     }
     if (_disposed || gen != _scanGen || !mounted) return;
     setState(() => _scanning = false);
@@ -303,13 +307,6 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         ? found
         : imageAlbumFrom([...seedItems, ...found], ensure: ensure);
     _applyAlbum([for (final e in album) ImageViewerPage.fromWebDav(e)]);
-  }
-
-  String _normDir(String path) {
-    if (path.length > 1 && path.endsWith('/')) {
-      return path.substring(0, path.length - 1);
-    }
-    return path.isEmpty ? '/' : path;
   }
 
   void _armSlideshow() {
@@ -400,6 +397,44 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
           }
         });
         _precache(File(seeded));
+      }
+      return;
+    }
+    // CBZ pages have no URL of their own: the page loader pulls the entry out
+    // of the archive, and only for the pages inside the prefetch window.
+    final lazyLoader = item.localLoader;
+    final lazyPath = item.localPath;
+    if (lazyLoader != null && lazyPath != null && lazyPath.isNotEmpty) {
+      if (_inflight.containsKey(item.id)) return;
+      final token = CancelToken();
+      _inflight[item.id] = token;
+      final file = File(lazyPath);
+      try {
+        await lazyLoader(file);
+        if (_disposed || token.isCancelled) return;
+        if (!file.existsSync() || file.lengthSync() <= 0) return;
+        _localById[item.id] = file.path;
+        if (!mounted) return;
+        setState(() {
+          if (_current?.id == item.id) {
+            _error = null;
+            _progress = null;
+          }
+        });
+        _precache(file);
+      } catch (e) {
+        if (!mounted || _disposed) return;
+        if (_current?.id == item.id) {
+          final text = e.toString();
+          setState(() {
+            _error = text.length > 180 ? text.substring(0, 180) : text;
+            _progress = null;
+          });
+        }
+      } finally {
+        if (identical(_inflight[item.id], token)) {
+          _inflight.remove(item.id);
+        }
       }
       return;
     }

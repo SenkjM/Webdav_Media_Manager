@@ -834,6 +834,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get fileCatOther => 'Other files';
 
   @override
+  String get comicDefaultInExtensionsHint =>
+      'Tap behaviour is managed in the manga library settings';
+
+  @override
+  String get mangaTapBehaviorHint =>
+      'Tapping a comic file adds it to the manga library; use multi-select or “More” to download';
+
+  @override
   String fileExtDefaultAction(Object action) {
     return 'Tap action: $action';
   }
@@ -3844,6 +3852,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imageScanSubdirs => 'Scan subdirectories';
 
   @override
+  String get imageScanMaxDepth => 'Scan depth';
+
+  @override
+  String get imageScanMaxDepthHint =>
+      'Default 1. 0 means images in the current folder only.';
+
+  @override
   String get imageScanSubdirsHint =>
       'Off by default. When on, the album also includes images in subfolders. Scanning can be slow.';
 
@@ -4245,7 +4260,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mediaLibrarySettings => 'Music library';
 
   @override
-  String get mediaLibrarySettingsHint => 'Default open, prefetch, scrape, tags';
+  String get mediaLibrarySettingsHint => 'Default open, prefetch, cache, tags';
 
   @override
   String get musicDefaultOpen => 'Default open';
@@ -4466,16 +4481,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get folderTypeAlbum => 'Album';
+  String get folderTypeAlbum => 'Music / Albums';
 
   @override
-  String get folderTypeArtist => 'Artist';
+  String get folderTypeArtist => 'Music / Artists';
 
   @override
   String get folderTypeGenre => 'Genre';
 
   @override
-  String get folderTypeTrack => 'Track';
+  String get folderTypeTrack => 'Music / Tracks';
 
   @override
   String get folderDeleteSelected => 'Delete selected';
@@ -4511,6 +4526,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String mangaSeriesCount(int count) {
     return '$count manga';
+  }
+
+  @override
+  String mangaReadProgress(Object current, Object total) {
+    return '$current/$total';
   }
 
   @override
@@ -4601,8 +4621,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mangaLibrarySettingsSection => 'Manga library';
 
   @override
-  String get mangaLibrarySettingsHint =>
-      'Comic-file scan and image create are separate from music scrape settings';
+  String get mangaLibrarySettingsHint => 'Scan, create and reading options';
 
   @override
   String get mangaScanSubdirs => 'Include subfolders when scanning comics';
@@ -4615,8 +4634,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mangaScanMaxDepth => 'Scan max depth';
 
   @override
-  String get mangaScanMaxDepthHint =>
-      'Default 1. Independent from image-create depth';
+  String get mangaScanMaxDepthHint => 'Default 1';
 
   @override
   String get mangaCreateSubdirs =>
@@ -4630,8 +4648,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mangaCreateMaxDepth => 'Create max depth';
 
   @override
-  String get mangaCreateMaxDepthHint =>
-      'Default 1. Independent from comic-scan depth';
+  String get mangaCreateMaxDepthHint => 'Default 1';
 
   @override
   String get imageViewerControls => 'Viewer options';
@@ -4690,7 +4707,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get taskKindMangaScrape => 'Manga scrape';
 
   @override
+  String get taskKindMangaCache => 'Manga cache';
+
+  @override
   String get mangaScrapeQueued => 'Manga scrape queued';
+
+  @override
+  String get mangaCacheQueued => 'Manga cache queued';
 
   @override
   String get mangaScrapeAction => 'Scrape metadata';
@@ -4714,10 +4737,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get folderAddMangaSeries => 'Manga / Series';
 
   @override
-  String get folderTypeManga => 'Manga';
+  String get folderTypeManga => 'Manga / Books';
 
   @override
-  String get folderTypeMangaSeries => 'Series';
+  String get folderTypeMangaSeries => 'Manga / Series';
 
   @override
   String get mangaCacheSection => 'Manga cache';
@@ -4855,22 +4878,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cacheRetentionSection => 'Expiry cleanup';
 
   @override
-  String get cacheRetentionHint =>
-      'Based on last access time. Files being played, downloaded or read are never removed.';
+  String get cacheRetentionHint => 'Cleaned automatically by last access time';
 
   @override
   String get cacheSizeCapSection => 'Size limit';
 
   @override
   String get cacheSizeCapHint =>
-      'Oldest-accessed files are deleted first. 0 = unlimited.';
+      'Oldest-accessed files go first; 0 = unlimited';
 
   @override
   String get cacheClearAll => 'Clear all';
 
   @override
   String get cacheClearAllConfirm =>
-      'Deletes local cache files; library metadata, tags and covers are kept.';
+      'Local cache only; library metadata and covers are kept';
 
   @override
   String cacheClearedFiles(Object count) {
@@ -4885,7 +4907,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String mangaDeleteBody(Object count) {
-    return 'Deletes the library record, cache and cover of $count comics. This cannot be undone.';
+    return 'Deletes $count comics with their cache and covers. This cannot be undone.';
   }
 
   @override
@@ -4898,7 +4920,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mangaReadModeHint =>
-      'How a comic is opened by default. Streaming fetches pages as you read and keeps nothing locally; caching downloads the whole file first, for drives that cannot answer Range requests. A failed stream always prompts you.';
+      'Streaming fetches pages as you read; caching downloads the whole file first';
 
   @override
   String get mangaReadModeStream => 'Stream';

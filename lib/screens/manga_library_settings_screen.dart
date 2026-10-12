@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/cache_policy.dart';
+import '../models/file_actions.dart';
 import '../models/manga_read_mode.dart';
 import '../providers/app_state.dart';
 import '../utils/directory_walk.dart';
@@ -136,6 +137,25 @@ class MangaLibrarySettingsScreen extends StatelessWidget {
             onSelectionChanged: (sel) =>
                 unawaited(settings.setMangaReadMode(sel.first)),
           ),
+          const Divider(height: 32),
+          Text(
+            l10n.fileExtTapBehavior,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: scheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(l10n.mangaTapBehaviorHint, style: hintStyle),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.touch_app_outlined),
+            title: Text(settings.fileActions.comic.label(l10n)),
+            subtitle: Text(
+              l10n.fileExtDefaultAction(settings.fileActions.comic.label(l10n)),
+            ),
+          ),
+          const Divider(height: 32),
           const LibraryCacheSettings(kind: CacheKind.manga),
         ],
       ),

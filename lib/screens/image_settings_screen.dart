@@ -5,6 +5,7 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/page_turn_direction.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/directory_walk.dart';
 
 /// 图片查看设置。查看器中间选项表、设置里「网络库」下的「图片查看」
 /// 都进这一页，读写的是同一组 [SettingsService] 偏好，没有第二套模型。
@@ -97,8 +98,8 @@ class ImageSettingsScreen extends StatelessWidget {
           Text(
             l10n.imagePageTurnHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 8),
           SegmentedButton<String>(
@@ -152,6 +153,34 @@ class ImageSettingsScreen extends StatelessWidget {
             value: settings.imageScanSubdirs,
             onChanged: settings.setImageScanSubdirs,
           ),
+          if (settings.imageScanSubdirs)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.layers_outlined),
+              title: Text(l10n.imageScanMaxDepth),
+              subtitle: Text(
+                '${l10n.imageScanMaxDepthHint}\n'
+                '${settings.imageScanMaxDepth} (0–${WalkOptions.maxDepthClamp})',
+              ),
+              trailing: SizedBox(
+                width: 72,
+                child: TextFormField(
+                  key: ValueKey(
+                    'image-scan-depth-${settings.imageScanMaxDepth}',
+                  ),
+                  initialValue: '${settings.imageScanMaxDepth}',
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onFieldSubmitted: (v) {
+                    final n = int.tryParse(v);
+                    if (n != null) settings.setImageScanMaxDepth(n);
+                  },
+                ),
+              ),
+            ),
         ],
       ),
     );

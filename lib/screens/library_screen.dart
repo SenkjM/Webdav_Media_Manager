@@ -582,10 +582,11 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                         }
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => _TrackListPage(
+                            builder: (_) => TrackListPage(
                               title: title,
                               tracks: tracks,
                               defaultSort: widget.detailSort,
+                              viewKey: 'musicDetail:${widget.dimensionId}',
                             ),
                           ),
                         );
@@ -653,10 +654,11 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                         }
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => _TrackListPage(
+                            builder: (_) => TrackListPage(
                               title: title,
                               tracks: tracks,
                               defaultSort: widget.detailSort,
+                              viewKey: 'musicDetail:${widget.dimensionId}',
                             ),
                           ),
                         );
@@ -931,10 +933,15 @@ class _SelectableTrackList extends StatefulWidget {
     this.emptyHint,
     this.startInSelection = false,
     this.onSelectingChanged,
+    this.viewMode = FolderViewMode.list,
   });
 
   final List<LibraryTrack> tracks;
   final String? emptyHint;
+
+  /// Grid reuses this list's own selection state, so flipping the view never
+  /// drops a selection.
+  final FolderViewMode viewMode;
   final bool startInSelection;
 
   /// 多选开 / 关时通知父级。子界面靠它在自己的 `PopScope` 里决定返回键
@@ -1082,46 +1089,77 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
             },
           ),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            itemCount: widget.tracks.length,
-            itemBuilder: (context, i) {
-              final track = widget.tracks[i];
-              return _TrackTile(
-                track: track,
-                playlist: widget.tracks,
-                selecting: _selecting,
-                selected: _selected.contains(_id(track)),
-                onToggleSelect: () =>
-                    _setSelection(_selection.toggle(_id(track))),
-                onEnterSelect: () => _setSelection(
-                  _selection.enter(_id(track), selectOnly: _allIds),
+          child: widget.viewMode.isGrid
+              ? GridView.builder(
+                  padding: const EdgeInsets.all(8),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: widget.viewMode.crossAxisCount!,
+                    crossAxisSpacing: 8,
+                    mainAxisSpacing: 8,
+                    childAspectRatio: 0.72,
+                  ),
+                  itemCount: widget.tracks.length,
+                  itemBuilder: (context, i) {
+                    final track = widget.tracks[i];
+                    return _TrackGridTile(
+                      track: track,
+                      playlist: widget.tracks,
+                      selecting: _selecting,
+                      selected: _selected.contains(_id(track)),
+                      onToggleSelect: () =>
+                          _setSelection(_selection.toggle(_id(track))),
+                      onEnterSelect: () => _setSelection(
+                        _selection.enter(_id(track), selectOnly: _allIds),
+                      ),
+                    );
+                  },
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  itemCount: widget.tracks.length,
+                  itemBuilder: (context, i) {
+                    final track = widget.tracks[i];
+                    return _TrackTile(
+                      track: track,
+                      playlist: widget.tracks,
+                      selecting: _selecting,
+                      selected: _selected.contains(_id(track)),
+                      onToggleSelect: () =>
+                          _setSelection(_selection.toggle(_id(track))),
+                      onEnterSelect: () => _setSelection(
+                        _selection.enter(_id(track), selectOnly: _allIds),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
-          ),
         ),
       ],
     );
   }
 }
 
-class _TrackListPage extends StatefulWidget {
-  const _TrackListPage({
+class TrackListPage extends StatefulWidget {
+  const TrackListPage({
+    super.key,
     required this.title,
     required this.tracks,
     required this.defaultSort,
+    this.viewKey = 'trackList',
   });
   final String title;
   final List<LibraryTrack> tracks;
   final LibrarySortMode defaultSort;
   final bool startInSelection = false;
 
+  /// View-mode slot. One key per page family, so the folder leaf and the music
+  /// library's own drill-downs remember the same choice.
+  final String viewKey;
+
   @override
-  State<_TrackListPage> createState() => _TrackListPageState();
+  State<TrackListPage> createState() => _TrackListPageState();
 }
 
-class _TrackListPageState extends State<_TrackListPage> {
+class _TrackListPageState extends State<TrackListPage> {
   late LibrarySortMode _sort = widget.defaultSort;
   final _listKey = GlobalKey<_SelectableTrackListState>();
 
@@ -1131,12 +1169,29 @@ class _TrackListPageState extends State<_TrackListPage> {
   @override
   Widget build(BuildContext context) {
     final library = context.read<LibraryService>();
+    final settings = context.watch<SettingsService>();
+    final l10n = AppLocalizations.of(context)!;
+    final viewMode = settings.musicViewModeFor(widget.viewKey);
     final tracks = library.sortedCopy(widget.tracks, sort: _sort);
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: Text(widget.title),
         actions: [
+          PopupMenuButton<FolderViewMode>(
+            tooltip: l10n.folderViewMode,
+            initialValue: viewMode,
+            onSelected: (mode) =>
+                unawaited(settings.setMusicViewMode(widget.viewKey, mode)),
+            itemBuilder: (context) => [
+              for (final mode in FolderViewMode.values)
+                PopupMenuItem(
+                  value: mode,
+                  child: Text(mode.label(AppLocalizations.of(context)!)),
+                ),
+            ],
+            icon: Icon(viewMode.isGrid ? Icons.grid_view : Icons.view_list),
+          ),
           PopupMenuButton<LibrarySortMode>(
             tooltip: AppLocalizations.of(context)!.sortTooltip,
             initialValue: _sort,
@@ -1163,6 +1218,7 @@ class _TrackListPageState extends State<_TrackListPage> {
         child: _SelectableTrackList(
           key: _listKey,
           tracks: tracks,
+          viewMode: viewMode,
           startInSelection: widget.startInSelection,
           onSelectingChanged: (selecting) {
             if (!mounted || selecting == _selecting) return;
@@ -1273,8 +1329,9 @@ class _TrackTile extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.more_vert),
               tooltip: AppLocalizations.of(context)!.moreActions,
-              onPressed: () =>
-                  unawaited(_showMoreMenu(context, isLocal: isLocal)),
+              onPressed: () => unawaited(
+                trackShowMoreMenu(context, track, playlist, isLocal: isLocal),
+              ),
             ),
         ],
       ),
@@ -1284,10 +1341,10 @@ class _TrackTile extends StatelessWidget {
           return;
         }
         if (track.remoteMissing && !isLocal) {
-          unawaited(_onRemoteMissingTap(context));
+          unawaited(trackOnRemoteMissingTap(context, track, playlist));
           return;
         }
-        _onTap(context, isLocal: isLocal);
+        trackOnTap(context, track, playlist, isLocal: isLocal);
       },
       onLongPress: () {
         if (selecting) {
@@ -1299,8 +1356,11 @@ class _TrackTile extends StatelessWidget {
     );
   }
 
-  Future<void> _onTap(
-    BuildContext context, {
+  /// Shared with [_TrackGridTile] so both views run the same code path.
+  static Future<void> trackOnTap(
+    BuildContext context,
+    LibraryTrack track,
+    List<LibraryTrack> playlist, {
     required bool isLocal,
     bool forceStream = false,
   }) async {
@@ -1401,7 +1461,11 @@ class _TrackTile extends StatelessWidget {
     }
   }
 
-  Future<void> _onRemoteMissingTap(BuildContext context) async {
+  static Future<void> trackOnRemoteMissingTap(
+    BuildContext context,
+    LibraryTrack track,
+    List<LibraryTrack> playlist,
+  ) async {
     final l10n = AppLocalizations.of(context)!;
     final accounts = context.read<AccountsService>();
     final accountId = accounts.idForSource(track.sourceName);
@@ -1430,7 +1494,7 @@ class _TrackTile extends StatelessWidget {
         missing: false,
       );
       if (!context.mounted) return;
-      await _onTap(context, isLocal: false);
+      await trackOnTap(context, track, playlist, isLocal: false);
     } catch (e) {
       if (!context.mounted) return;
       final code = TaskError.classify(e).code;
@@ -1465,13 +1529,15 @@ class _TrackTile extends StatelessWidget {
         return;
       }
       if (action == 'redirect') {
-        await _redirectTrack(context);
+        await _redirectTrack(context, track);
       }
     }
   }
 
-  Future<void> _showMoreMenu(
-    BuildContext context, {
+  static Future<void> trackShowMoreMenu(
+    BuildContext context,
+    LibraryTrack track,
+    List<LibraryTrack> playlist, {
     required bool isLocal,
   }) async {
     final l10n = AppLocalizations.of(context)!;
@@ -1546,7 +1612,13 @@ class _TrackTile extends StatelessWidget {
     if (!context.mounted || choice == null) return;
     switch (choice) {
       case 'stream':
-        await _onTap(context, isLocal: false, forceStream: true);
+        await trackOnTap(
+          context,
+          track,
+          playlist,
+          isLocal: false,
+          forceStream: true,
+        );
         break;
       case 'cache':
         await enqueueLibraryTrackDownload(context, track);
@@ -1585,7 +1657,7 @@ class _TrackTile extends StatelessWidget {
         }
         break;
       case 'redirect':
-        await _redirectTrack(context);
+        await _redirectTrack(context, track);
         break;
       case 'delete':
         await destroyLibraryTracks(context, [track]);
@@ -1593,7 +1665,10 @@ class _TrackTile extends StatelessWidget {
     }
   }
 
-  Future<void> _redirectTrack(BuildContext context) async {
+  static Future<void> _redirectTrack(
+    BuildContext context,
+    LibraryTrack track,
+  ) async {
     final l10n = AppLocalizations.of(context)!;
     final accounts = context.read<AccountsService>();
     final accountId = accounts.idForSource(track.sourceName);
@@ -1639,5 +1714,147 @@ class _TrackTile extends StatelessWidget {
     } catch (_) {
       // Redirect succeeded even if tag re-read fails.
     }
+  }
+}
+
+/// Grid cell counterpart of [_TrackTile]. Same tap / long-press / selection
+/// semantics, same actions — only the layout differs.
+class _TrackGridTile extends StatelessWidget {
+  const _TrackGridTile({
+    required this.track,
+    required this.playlist,
+    this.selecting = false,
+    this.selected = false,
+    this.onToggleSelect,
+    this.onEnterSelect,
+  });
+
+  final LibraryTrack track;
+  final List<LibraryTrack> playlist;
+  final bool selecting;
+  final bool selected;
+  final VoidCallback? onToggleSelect;
+  final VoidCallback? onEnterSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final cache = context.watch<CacheService>();
+    final downloads = context.watch<TaskQueueService>();
+    final isLocal = libraryTrackIsLocal(cache, track);
+    final task = downloads.taskForRemote(
+      track.sourceName,
+      track.effectiveAudioRemotePath,
+    );
+    // `read` (not `watch`): AudioPlayerService ticks on every position update.
+    final audio = context.read<AudioPlayerService>();
+    final state = libraryRowUiState(
+      downloads: downloads,
+      track: track,
+      playingRemotePath: audio.currentRemotePath,
+      playingSourceName: audio.currentSourceName,
+    );
+    final isDownloading = state == TrackUiState.downloading;
+    final l10n = AppLocalizations.of(context)!;
+    return Material(
+      color: selected
+          ? AppColors.accent.withValues(alpha: 0.14)
+          : Theme.of(context).colorScheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () {
+          if (selecting) {
+            onToggleSelect?.call();
+            return;
+          }
+          if (track.remoteMissing && !isLocal) {
+            unawaited(
+              _TrackTile.trackOnRemoteMissingTap(context, track, playlist),
+            );
+            return;
+          }
+          unawaited(
+            _TrackTile.trackOnTap(context, track, playlist, isLocal: isLocal),
+          );
+        },
+        onLongPress: () {
+          if (selecting) {
+            onToggleSelect?.call();
+            return;
+          }
+          onEnterSelect?.call();
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final side = constraints.biggest.shortestSide;
+                    final art = Center(
+                      child: LibraryCoverArt.forTrack(
+                        track: track,
+                        size: side,
+                        borderRadius: 6,
+                        enqueueIfMissing: false,
+                      ),
+                    );
+                    if (!selecting && !isDownloading) return art;
+                    return Stack(
+                      children: [
+                        art,
+                        if (selecting)
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: Icon(
+                              selected
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                              color: selected
+                                  ? AppColors.accent
+                                  : Theme.of(context).colorScheme.outline,
+                            ),
+                          ),
+                        if (isDownloading)
+                          Positioned(
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(3),
+                              child: LinearProgressIndicator(
+                                minHeight: 3,
+                                value: task?.progress,
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                track.displayTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isLocal
+                      ? Theme.of(context).colorScheme.onSurface
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 2),
+              MetaText(TrackSubtitleLines.of(track, l10n).line1),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

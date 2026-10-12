@@ -1599,6 +1599,18 @@ abstract class AppLocalizations {
   /// **'普通文件'**
   String get fileCatOther;
 
+  /// No description provided for @comicDefaultInExtensionsHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'单击行为在漫画库设置里管理'**
+  String get comicDefaultInExtensionsHint;
+
+  /// No description provided for @mangaTapBehaviorHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点按漫画单文件即加入漫画库；下载请用多选或「更多」'**
+  String get mangaTapBehaviorHint;
+
   /// No description provided for @fileExtDefaultAction.
   ///
   /// In zh, this message translates to:
@@ -6425,6 +6437,18 @@ abstract class AppLocalizations {
   /// **'搜索子目录'**
   String get imageScanSubdirs;
 
+  /// No description provided for @imageScanMaxDepth.
+  ///
+  /// In zh, this message translates to:
+  /// **'扫描深度'**
+  String get imageScanMaxDepth;
+
+  /// No description provided for @imageScanMaxDepthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认 1。0 表示只在当前目录找图片。'**
+  String get imageScanMaxDepthHint;
+
   /// No description provided for @imageScanSubdirsHint.
   ///
   /// In zh, this message translates to:
@@ -7130,7 +7154,7 @@ abstract class AppLocalizations {
   /// No description provided for @mediaLibrarySettingsHint.
   ///
   /// In zh, this message translates to:
-  /// **'默认打开、预载、刮削、标签'**
+  /// **'默认打开、预载、缓存、标签'**
   String get mediaLibrarySettingsHint;
 
   /// No description provided for @musicDefaultOpen.
@@ -7526,13 +7550,13 @@ abstract class AppLocalizations {
   /// No description provided for @folderTypeAlbum.
   ///
   /// In zh, this message translates to:
-  /// **'专辑'**
+  /// **'音乐/专辑'**
   String get folderTypeAlbum;
 
   /// No description provided for @folderTypeArtist.
   ///
   /// In zh, this message translates to:
-  /// **'歌手'**
+  /// **'音乐/艺人'**
   String get folderTypeArtist;
 
   /// No description provided for @folderTypeGenre.
@@ -7544,7 +7568,7 @@ abstract class AppLocalizations {
   /// No description provided for @folderTypeTrack.
   ///
   /// In zh, this message translates to:
-  /// **'曲目'**
+  /// **'音乐/曲目'**
   String get folderTypeTrack;
 
   /// No description provided for @folderDeleteSelected.
@@ -7612,6 +7636,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'{count} 本'**
   String mangaSeriesCount(int count);
+
+  /// No description provided for @mangaReadProgress.
+  ///
+  /// In zh, this message translates to:
+  /// **'{current}/{total}'**
+  String mangaReadProgress(Object current, Object total);
 
   /// No description provided for @mangaPageCount.
   ///
@@ -7766,7 +7796,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaLibrarySettingsHint.
   ///
   /// In zh, this message translates to:
-  /// **'扫描漫画文件与散图建立各自独立，互不影响音乐刮削设置'**
+  /// **'扫描、建立与阅读设置'**
   String get mangaLibrarySettingsHint;
 
   /// No description provided for @mangaScanSubdirs.
@@ -7790,7 +7820,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaScanMaxDepthHint.
   ///
   /// In zh, this message translates to:
-  /// **'默认 1。与散图建立深度相互独立'**
+  /// **'默认 1'**
   String get mangaScanMaxDepthHint;
 
   /// No description provided for @mangaCreateSubdirs.
@@ -7814,7 +7844,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaCreateMaxDepthHint.
   ///
   /// In zh, this message translates to:
-  /// **'默认 1。与扫描深度相互独立'**
+  /// **'默认 1'**
   String get mangaCreateMaxDepthHint;
 
   /// No description provided for @imageViewerControls.
@@ -7925,11 +7955,23 @@ abstract class AppLocalizations {
   /// **'漫画刮削'**
   String get taskKindMangaScrape;
 
+  /// No description provided for @taskKindMangaCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画缓存'**
+  String get taskKindMangaCache;
+
   /// No description provided for @mangaScrapeQueued.
   ///
   /// In zh, this message translates to:
   /// **'已加入漫画刮削任务'**
   String get mangaScrapeQueued;
+
+  /// No description provided for @mangaCacheQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入漫画缓存任务'**
+  String get mangaCacheQueued;
 
   /// No description provided for @mangaScrapeAction.
   ///
@@ -7976,13 +8018,13 @@ abstract class AppLocalizations {
   /// No description provided for @folderTypeManga.
   ///
   /// In zh, this message translates to:
-  /// **'漫画'**
+  /// **'漫画/单本'**
   String get folderTypeManga;
 
   /// No description provided for @folderTypeMangaSeries.
   ///
   /// In zh, this message translates to:
-  /// **'系列'**
+  /// **'漫画/系列'**
   String get folderTypeMangaSeries;
 
   /// No description provided for @mangaCacheSection.
@@ -8215,7 +8257,7 @@ abstract class AppLocalizations {
   /// No description provided for @cacheRetentionHint.
   ///
   /// In zh, this message translates to:
-  /// **'按最后访问时间计算。正在播放、下载或阅读的不会被删除。'**
+  /// **'按最后访问时间自动清理'**
   String get cacheRetentionHint;
 
   /// No description provided for @cacheSizeCapSection.
@@ -8227,7 +8269,7 @@ abstract class AppLocalizations {
   /// No description provided for @cacheSizeCapHint.
   ///
   /// In zh, this message translates to:
-  /// **'超过上限时先删最久未访问的缓存。0 表示不限制。'**
+  /// **'超出后先删最久未访问的；0 表示不限制'**
   String get cacheSizeCapHint;
 
   /// No description provided for @cacheClearAll.
@@ -8239,7 +8281,7 @@ abstract class AppLocalizations {
   /// No description provided for @cacheClearAllConfirm.
   ///
   /// In zh, this message translates to:
-  /// **'将删除本地缓存文件；库中的元数据、标签与封面保留。'**
+  /// **'只删除本地缓存，库中的元数据与封面保留'**
   String get cacheClearAllConfirm;
 
   /// No description provided for @cacheClearedFiles.
@@ -8263,7 +8305,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaDeleteBody.
   ///
   /// In zh, this message translates to:
-  /// **'将删除 {count} 部漫画的库记录、缓存与封面，不可恢复。'**
+  /// **'将删除 {count} 部漫画及其缓存与封面，不可恢复'**
   String mangaDeleteBody(Object count);
 
   /// No description provided for @mangaBatchDeleteDone.
@@ -8281,7 +8323,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaReadModeHint.
   ///
   /// In zh, this message translates to:
-  /// **'打开漫画时的默认方式。流式读取边看边取，不占本地空间；整包缓存先下载整本，适合不支持分段读取的网盘。流式失败时会提示并提供切换。'**
+  /// **'流式读取边看边取；整包缓存先下载整本'**
   String get mangaReadModeHint;
 
   /// No description provided for @mangaReadModeStream.

@@ -19,6 +19,9 @@ enum TaskKind {
 
   /// CBZ / container metadata + cover scrape (separate from music [scan]).
   mangaScrape,
+
+  /// Download one whole manga archive into the manga cache.
+  mangaCache,
 }
 
 extension TaskKindX on TaskKind {
@@ -29,6 +32,7 @@ extension TaskKindX on TaskKind {
     TaskKind.retagLocal => 'retag_local',
     TaskKind.matchRemote => 'match_remote',
     TaskKind.mangaScrape => 'manga_scrape',
+    TaskKind.mangaCache => 'manga_cache',
   };
 
   String label(AppLocalizations l10n) => switch (this) {
@@ -38,6 +42,7 @@ extension TaskKindX on TaskKind {
     TaskKind.retagLocal => l10n.taskKindRetagLocal,
     TaskKind.matchRemote => l10n.taskKindMatchRemote,
     TaskKind.mangaScrape => l10n.taskKindMangaScrape,
+    TaskKind.mangaCache => l10n.taskKindMangaCache,
   };
 
   static TaskKind fromStorageKey(String? key) => switch (key) {
@@ -46,6 +51,7 @@ extension TaskKindX on TaskKind {
     'retag_local' => TaskKind.retagLocal,
     'match_remote' => TaskKind.matchRemote,
     'manga_scrape' => TaskKind.mangaScrape,
+    'manga_cache' => TaskKind.mangaCache,
     _ => TaskKind.download,
   };
 }

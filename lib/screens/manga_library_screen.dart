@@ -178,76 +178,9 @@ class _MangaListState extends State<_MangaList> {
       setState(() => _selection = next);
 
   Future<void> _batchSetSeries() async {
-    final l10n = AppLocalizations.of(context)!;
-    if (_selection.count == 0) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.mangaSelectNone)));
-      return;
-    }
     final svc = context.read<MangaLibraryService>();
-    final controller = TextEditingController();
-    final result = await showDialog<String?>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l10n.mangaBatchSetSeriesTitle),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.mangaBatchSetSeriesHint,
-              style: TextStyle(
-                color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: InputDecoration(labelText: l10n.mangaFieldSeries),
-            ),
-            if (svc.series.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final s in svc.series)
-                    ActionChip(
-                      label: Text(s.title),
-                      onPressed: () => Navigator.pop(ctx, s.title),
-                    ),
-                ],
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, ''),
-            child: Text(l10n.mangaClearSeries),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: Text(l10n.mangaConfirmSave),
-          ),
-        ],
-      ),
-    );
-    if (result == null || !mounted) return;
-    final n = await svc.assignSeriesToMangas(
-      mangaIds: _selection.selected.toList(),
-      seriesTitle: result,
-    );
-    if (!mounted) return;
-    _setSelection(_selection.exit());
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(l10n.mangaBatchSetSeriesDone(n))));
+    final done = await _assignSeriesToMangas(context, _selectedMangas(svc));
+    if (done && mounted) _setSelection(_selection.exit());
   }
 
   List<Manga> _selectedMangas(MangaLibraryService svc) => [
@@ -255,47 +188,21 @@ class _MangaListState extends State<_MangaList> {
       if (_selection.selected.contains(m.id)) m,
   ];
 
-  /// Drops the cached archive, cover and prefetched pages of every selected
-  /// manga. The library rows stay, so this is the cache-only counterpart of
-  /// [_batchDelete].
   Future<void> _batchClearCache() async {
-    final l10n = AppLocalizations.of(context)!;
     final svc = context.read<MangaLibraryService>();
-    final cache = context.read<CacheService>();
     final targets = _selectedMangas(svc);
     if (targets.isEmpty) return;
-    var removed = 0;
-    for (final m in targets) {
-      removed += await cache.clearMangaArtifacts(
-        mangaId: m.id,
-        sourceName: m.sourceName,
-        remotePath: m.remotePath,
-      );
-    }
+    await _clearMangaCacheFor(context, targets);
     if (!mounted) return;
     _setSelection(_selection.exit());
-    AppSnack.show(context, l10n.cacheClearedFiles(removed));
   }
 
-  /// Deletes the selected rows along with their cached files.
   Future<void> _batchDelete() async {
-    final l10n = AppLocalizations.of(context)!;
     final svc = context.read<MangaLibraryService>();
-    final cache = context.read<CacheService>();
     final targets = _selectedMangas(svc);
     if (targets.isEmpty) return;
-    if (!await _confirmMangaDelete(context, targets.length)) return;
-    for (final m in targets) {
-      await cache.clearMangaArtifacts(
-        mangaId: m.id,
-        sourceName: m.sourceName,
-        remotePath: m.remotePath,
-      );
-      await svc.deleteManga(m.id);
-    }
-    if (!mounted) return;
-    _setSelection(_selection.exit());
-    AppSnack.show(context, l10n.mangaBatchDeleteDone(targets.length));
+    final done = await _deleteMangasFor(context, targets);
+    if (done && mounted) _setSelection(_selection.exit());
   }
 
   @override
@@ -321,50 +228,14 @@ class _MangaListState extends State<_MangaList> {
     return Column(
       children: [
         if (_selection.active)
-          SelectionToolbar(
-            children: [
-              if (_selection.showsDeselect)
-                IconButton(
-                  tooltip: l10n.cancelSelection,
-                  onPressed: () =>
-                      _setSelection(_selection.toggleSelectAll(keys)),
-                  icon: const Icon(Icons.deselect),
-                )
-              else
-                IconButton(
-                  tooltip: l10n.selectAll,
-                  onPressed: () =>
-                      _setSelection(_selection.toggleSelectAll(keys)),
-                  icon: const Icon(Icons.select_all),
-                ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text(
-                  '${_selection.count}',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-              IconButton(
-                tooltip: l10n.mangaBatchSetSeries,
-                onPressed: _batchSetSeries,
-                icon: const Icon(Icons.collections_bookmark_outlined),
-              ),
-              IconButton(
-                tooltip: l10n.mangaClearCache,
-                onPressed: _batchClearCache,
-                icon: const Icon(Icons.cleaning_services_outlined),
-              ),
-              IconButton(
-                tooltip: l10n.destroyAction,
-                onPressed: _batchDelete,
-                icon: const Icon(Icons.delete_outline, color: AppColors.error),
-              ),
-              IconButton(
-                tooltip: l10n.cancel,
-                onPressed: () => _setSelection(_selection.exit()),
-                icon: const Icon(Icons.close),
-              ),
-            ],
+          _mangaSelectionToolbar(
+            context,
+            selection: _selection,
+            keys: keys,
+            onChange: _setSelection,
+            onAssignSeries: _batchSetSeries,
+            onClearCache: _batchClearCache,
+            onDelete: _batchDelete,
           ),
         Expanded(
           child: widget.viewMode.isGrid
@@ -492,10 +363,14 @@ class _MangaListTile extends StatelessWidget {
 
 Widget? _mangaSubtitle(BuildContext context, Manga manga) {
   final l10n = AppLocalizations.of(context)!;
+  final progress = context.watch<MangaLibraryService>().progressOf(manga.id);
   final meta = <String>[
     if (manga.displayAuthor.isNotEmpty) manga.displayAuthor,
     ?manga.series,
-    if (manga.pageCount > 0) l10n.mangaPageCount(manga.pageCount),
+    if (manga.pageCount > 0)
+      progress == null
+          ? l10n.mangaPageCount(manga.pageCount)
+          : l10n.mangaReadProgress(progress.pageIndex + 1, manga.pageCount),
     manga.format,
   ];
   if (meta.isEmpty) return null;
@@ -518,6 +393,7 @@ class _MangaGridBody extends StatelessWidget {
     required this.onEnter,
     required this.onOpen,
     required this.onMore,
+    this.showSectionHeaders = true,
   });
 
   final int columns;
@@ -529,19 +405,24 @@ class _MangaGridBody extends StatelessWidget {
   final void Function(Manga) onOpen;
   final void Function(Manga) onMore;
 
+  /// Drill-down pages hold one flat list, so the group titles are dropped
+  /// there: "未指定系列" above a series' own books is meaningless.
+  final bool showSectionHeaders;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     return CustomScrollView(
       slivers: [
         if (unspecified.isNotEmpty) ...[
-          SliverToBoxAdapter(
-            child: _SectionHeader(l10n.mangaUnspecifiedSeries),
-          ),
+          if (showSectionHeaders)
+            SliverToBoxAdapter(
+              child: _SectionHeader(l10n.mangaUnspecifiedSeries),
+            ),
           _mangaGridSliver(unspecified),
         ],
         if (withSeries.isNotEmpty) ...[
-          if (unspecified.isNotEmpty)
+          if (showSectionHeaders && unspecified.isNotEmpty)
             SliverToBoxAdapter(child: _SectionHeader(l10n.mangaTabSeries)),
           _mangaGridSliver(withSeries),
         ],
@@ -601,6 +482,7 @@ class _MangaGridTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final progress = context.watch<MangaLibraryService>().progressOf(manga.id);
     return Material(
       color: selected
           ? Theme.of(context).colorScheme.primaryContainer
@@ -636,6 +518,23 @@ class _MangaGridTile extends StatelessWidget {
                         iconSize: 18,
                         onPressed: onMore,
                         icon: const Icon(Icons.more_vert),
+                      ),
+                    ),
+                  if (progress != null && manga.pageCount > 0)
+                    Positioned(
+                      left: 6,
+                      right: 6,
+                      bottom: 6,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: (progress.pageIndex / manga.pageCount).clamp(
+                            0.0,
+                            1.0,
+                          ),
+                          minHeight: 3,
+                          backgroundColor: Colors.black26,
+                        ),
                       ),
                     ),
                 ],
@@ -719,7 +618,7 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
     case 'scrape':
       await _enqueueMangaScrape(context, manga);
     case 'cache':
-      await openMangaReader(context, manga, forceFullCache: true);
+      await _enqueueMangaCache(context, manga);
     case 'clear_cache':
       await cache.deleteLocalMangaFile(
         sourceName: manga.sourceName,
@@ -843,6 +742,199 @@ Future<void> _enqueueMangaScrape(BuildContext context, Manga manga) async {
   if (context.mounted) {
     AppSnack.show(context, l10n.mangaScrapeQueued);
   }
+}
+
+/// Queue a whole-archive download; a large CBZ must not block the reader.
+Future<void> _enqueueMangaCache(BuildContext context, Manga manga) async {
+  final l10n = AppLocalizations.of(context)!;
+  final accounts = context.read<AccountsService>();
+  final accountId = accounts.idForSource(manga.sourceName);
+  if (accountId == null || accountId.isEmpty) {
+    AppSnack.show(context, l10n.mangaReaderUnboundSource);
+    return;
+  }
+  final queue = context.read<TaskQueueService>();
+  await queue.enqueueMangaCache(
+    accountId: accountId,
+    sourceName: manga.sourceName,
+    remotePath: manga.remotePath,
+    displayName: manga.title,
+    mangaId: manga.id,
+  );
+  if (context.mounted) {
+    AppSnack.show(context, l10n.mangaCacheQueued);
+  }
+}
+
+/// Ask for a series name and apply it to [targets].
+///
+/// Returns true once the assignment ran, so callers know whether to leave
+/// selection mode.
+Future<bool> _assignSeriesToMangas(
+  BuildContext context,
+  List<Manga> targets,
+) async {
+  final l10n = AppLocalizations.of(context)!;
+  if (targets.isEmpty) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.mangaSelectNone)));
+    return false;
+  }
+  final svc = context.read<MangaLibraryService>();
+  final controller = TextEditingController();
+  final result = await showDialog<String?>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l10n.mangaBatchSetSeriesTitle),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.mangaBatchSetSeriesHint,
+            style: TextStyle(
+              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: InputDecoration(labelText: l10n.mangaFieldSeries),
+          ),
+          if (svc.series.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final s in svc.series)
+                  ActionChip(
+                    label: Text(s.title),
+                    onPressed: () => Navigator.pop(ctx, s.title),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, ''),
+          child: Text(l10n.mangaClearSeries),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, controller.text),
+          child: Text(l10n.mangaConfirmSave),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  if (result == null || !context.mounted) return false;
+  final n = await svc.assignSeriesToMangas(
+    mangaIds: [for (final m in targets) m.id],
+    seriesTitle: result,
+  );
+  if (!context.mounted) return false;
+  ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(l10n.mangaBatchSetSeriesDone(n))));
+  return true;
+}
+
+/// Drops the cached archive, cover and prefetched pages of [targets].
+Future<void> _clearMangaCacheFor(
+  BuildContext context,
+  List<Manga> targets,
+) async {
+  final l10n = AppLocalizations.of(context)!;
+  final cache = context.read<CacheService>();
+  var removed = 0;
+  for (final m in targets) {
+    removed += await cache.clearMangaArtifacts(
+      mangaId: m.id,
+      sourceName: m.sourceName,
+      remotePath: m.remotePath,
+    );
+  }
+  if (!context.mounted) return;
+  AppSnack.show(context, l10n.cacheClearedFiles(removed));
+}
+
+/// Confirms, then deletes [targets] along with their cached files.
+Future<bool> _deleteMangasFor(BuildContext context, List<Manga> targets) async {
+  final l10n = AppLocalizations.of(context)!;
+  final svc = context.read<MangaLibraryService>();
+  final cache = context.read<CacheService>();
+  if (!await _confirmMangaDelete(context, targets.length)) return false;
+  for (final m in targets) {
+    await cache.clearMangaArtifacts(
+      mangaId: m.id,
+      sourceName: m.sourceName,
+      remotePath: m.remotePath,
+    );
+    await svc.deleteManga(m.id);
+  }
+  if (!context.mounted) return false;
+  AppSnack.show(context, l10n.mangaBatchDeleteDone(targets.length));
+  return true;
+}
+
+/// Selection toolbar shared by the library list and the series / author
+/// drill-downs, so every table offers the same batch actions.
+Widget _mangaSelectionToolbar(
+  BuildContext context, {
+  required SelectionController selection,
+  required List<String> keys,
+  required ValueChanged<SelectionController> onChange,
+  required VoidCallback onAssignSeries,
+  required VoidCallback onClearCache,
+  required VoidCallback onDelete,
+}) {
+  final l10n = AppLocalizations.of(context)!;
+  return SelectionToolbar(
+    children: [
+      IconButton(
+        tooltip: selection.showsDeselect
+            ? l10n.cancelSelection
+            : l10n.selectAll,
+        onPressed: () => onChange(selection.toggleSelectAll(keys)),
+        icon: Icon(selection.showsDeselect ? Icons.deselect : Icons.select_all),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(
+          '${selection.count}',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+      ),
+      IconButton(
+        tooltip: l10n.mangaBatchSetSeries,
+        onPressed: onAssignSeries,
+        icon: const Icon(Icons.collections_bookmark_outlined),
+      ),
+      IconButton(
+        tooltip: l10n.mangaClearCache,
+        onPressed: onClearCache,
+        icon: const Icon(Icons.cleaning_services_outlined),
+      ),
+      IconButton(
+        tooltip: l10n.destroyAction,
+        onPressed: onDelete,
+        icon: const Icon(Icons.delete_outline, color: AppColors.error),
+      ),
+      IconButton(
+        tooltip: l10n.cancel,
+        onPressed: () => onChange(selection.exit()),
+        icon: const Icon(Icons.close),
+      ),
+    ],
+  );
 }
 
 class _SeriesList extends StatelessWidget {
@@ -1134,6 +1226,171 @@ Future<void> _renameAuthor(BuildContext context, String author) async {
   await svc.renameAuthor(from: author, to: ctrl.text);
 }
 
+/// Series / author drill-down: the library's own rows, multi-select and
+/// view mode, scoped to one group.
+/// A flat list of books with the library's grid/list toggle and selection bar.
+///
+/// Series and author drill-downs and the folder browser's series leaf all use
+/// this, so a series looks the same wherever it is opened from. [onEdit] is
+/// null where there is nothing to rename (a folder just references a series).
+class MangaDetailScreen extends StatefulWidget {
+  const MangaDetailScreen({
+    super.key,
+    required this.title,
+    required this.viewKey,
+    required this.list,
+    this.editTooltip,
+    this.onEdit,
+  });
+
+  final String title;
+
+  /// Persisted view-mode slot, so each drill-down remembers its own choice.
+  final String viewKey;
+  final List<Manga> list;
+  final String? editTooltip;
+  final VoidCallback? onEdit;
+
+  @override
+  State<MangaDetailScreen> createState() => _MangaDetailScreenState();
+}
+
+class _MangaDetailScreenState extends State<MangaDetailScreen> {
+  SelectionController _selection = const SelectionController();
+
+  void _setSelection(SelectionController next) =>
+      setState(() => _selection = next);
+
+  List<Manga> get _targets => [
+    for (final m in widget.list)
+      if (_selection.selected.contains(m.id)) m,
+  ];
+
+  Future<void> _assignSeries() async {
+    final done = await _assignSeriesToMangas(context, _targets);
+    if (done && mounted) _setSelection(_selection.exit());
+  }
+
+  Future<void> _clearCache() async {
+    final targets = _targets;
+    if (targets.isEmpty) return;
+    await _clearMangaCacheFor(context, targets);
+    if (!mounted) return;
+    _setSelection(_selection.exit());
+  }
+
+  Future<void> _delete() async {
+    final targets = _targets;
+    if (targets.isEmpty) return;
+    final done = await _deleteMangasFor(context, targets);
+    if (done && mounted) _setSelection(_selection.exit());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.watch<SettingsService>();
+    final viewMode = settings.mangaViewModeFor(widget.viewKey);
+    final list = widget.list;
+    final keys = [for (final m in list) m.id];
+    _selection = _selection.sync(total: keys.length, validKeys: keys);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          PopupMenuButton<FolderViewMode>(
+            tooltip: l10n.mangaViewMode,
+            icon: Icon(viewMode.isGrid ? Icons.grid_view : Icons.view_list),
+            onSelected: (mode) =>
+                settings.setMangaViewMode(widget.viewKey, mode),
+            itemBuilder: (context) => [
+              for (final mode in FolderViewMode.values)
+                PopupMenuItem(
+                  value: mode,
+                  child: Row(
+                    children: [
+                      Icon(
+                        viewMode == mode
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_off,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(mode.label(l10n)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          if (widget.onEdit != null)
+            IconButton(
+              tooltip: widget.editTooltip,
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: widget.onEdit,
+            ),
+        ],
+      ),
+      body: list.isEmpty
+          ? Center(child: Text(l10n.libraryNoMatch))
+          : Column(
+              children: [
+                if (_selection.active)
+                  _mangaSelectionToolbar(
+                    context,
+                    selection: _selection,
+                    keys: keys,
+                    onChange: _setSelection,
+                    onAssignSeries: _assignSeries,
+                    onClearCache: _clearCache,
+                    onDelete: _delete,
+                  ),
+                Expanded(
+                  child: viewMode.isGrid
+                      ? _MangaGridBody(
+                          columns: viewMode.crossAxisCount!,
+                          unspecified: list,
+                          withSeries: const [],
+                          showSectionHeaders: false,
+                          selection: _selection,
+                          onToggle: (id) =>
+                              _setSelection(_selection.toggle(id)),
+                          onEnter: (id) => _setSelection(
+                            _selection
+                                .enter(id, selectOnly: keys)
+                                .sync(total: keys.length, validKeys: keys),
+                          ),
+                          onOpen: (m) => unawaited(openMangaReader(context, m)),
+                          onMore: (m) => _mangaMore(context, m),
+                        )
+                      : ListView(
+                          children: [
+                            for (final manga in list)
+                              _MangaListTile(
+                                manga: manga,
+                                selection: _selection,
+                                onToggle: () =>
+                                    _setSelection(_selection.toggle(manga.id)),
+                                onEnter: () => _setSelection(
+                                  _selection
+                                      .enter(manga.id, selectOnly: keys)
+                                      .sync(
+                                        total: keys.length,
+                                        validKeys: keys,
+                                      ),
+                                ),
+                                onOpen: () =>
+                                    unawaited(openMangaReader(context, manga)),
+                                onMore: () => _mangaMore(context, manga),
+                              ),
+                          ],
+                        ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
 class _SeriesDetailScreen extends StatelessWidget {
   const _SeriesDetailScreen({required this.series});
   final MangaSeries series;
@@ -1141,33 +1398,13 @@ class _SeriesDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final svc = context.watch<MangaLibraryService>();
-    final list = svc.mangasForSeries(series.id);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(series.title),
-        actions: [
-          IconButton(
-            tooltip: AppLocalizations.of(context)!.mangaEditSeries,
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _editSeries(context, series),
-          ),
-        ],
-      ),
-      body: list.isEmpty
-          ? Center(child: Text(AppLocalizations.of(context)!.libraryNoMatch))
-          : ListView.builder(
-              itemCount: list.length,
-              itemBuilder: (context, i) {
-                final manga = list[i];
-                return ListTile(
-                  leading: MangaCoverArt(manga: manga, size: 48),
-                  title: Text(manga.title),
-                  onTap: () {
-                    unawaited(openMangaReader(context, manga));
-                  },
-                );
-              },
-            ),
+    final l10n = AppLocalizations.of(context)!;
+    return MangaDetailScreen(
+      title: series.title,
+      viewKey: 'seriesDetail',
+      list: svc.mangasForSeries(series.id),
+      editTooltip: l10n.mangaEditSeries,
+      onEdit: () => _editSeries(context, series),
     );
   }
 }
@@ -1179,33 +1416,13 @@ class _AuthorDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final svc = context.watch<MangaLibraryService>();
-    final list = svc.mangasForAuthor(author);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(author),
-        actions: [
-          IconButton(
-            tooltip: AppLocalizations.of(context)!.mangaRenameAuthor,
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _renameAuthor(context, author),
-          ),
-        ],
-      ),
-      body: list.isEmpty
-          ? Center(child: Text(AppLocalizations.of(context)!.libraryNoMatch))
-          : ListView.builder(
-              itemCount: list.length,
-              itemBuilder: (context, i) {
-                final manga = list[i];
-                return ListTile(
-                  leading: MangaCoverArt(manga: manga, size: 48),
-                  title: Text(manga.title),
-                  onTap: () {
-                    unawaited(openMangaReader(context, manga));
-                  },
-                );
-              },
-            ),
+    final l10n = AppLocalizations.of(context)!;
+    return MangaDetailScreen(
+      title: author,
+      viewKey: 'authorDetail',
+      list: svc.mangasForAuthor(author),
+      editTooltip: l10n.mangaRenameAuthor,
+      onEdit: () => _renameAuthor(context, author),
     );
   }
 }

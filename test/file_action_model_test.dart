@@ -23,12 +23,20 @@ void main() {
       expect(types.categoryFor('a.png'), FileCategory.image);
       expect(types.categoryFor('a.webp'), FileCategory.image);
       expect(types.categoryFor('a.gif'), FileCategory.image);
-      // 漫画单文件是出厂后缀，pdf/epub 也算（见 kDefaultComicExtensions）。
+      // 出厂只放 cbz：cbr/pdf/epub 阅读器解不了，默认不收。
+      // 见 kDefaultComicExtensions；用户仍可在设置里自己加回来。
       expect(types.categoryFor('vol01.cbz'), FileCategory.comic);
-      expect(types.categoryFor('vol01.CBR'), FileCategory.comic);
-      expect(types.categoryFor('readme.pdf'), FileCategory.comic);
-      expect(types.categoryFor('book.epub'), FileCategory.comic);
+      expect(types.categoryFor('vol01.CBZ'), FileCategory.comic);
+      expect(types.categoryFor('vol01.cbr'), FileCategory.other);
+      expect(types.categoryFor('readme.pdf'), FileCategory.other);
+      expect(types.categoryFor('book.epub'), FileCategory.other);
       expect(types.categoryFor('readme.txt'), FileCategory.other);
+      // 加回去之后仍然认得。
+      final extended = FileTypeConfig(
+        comicExtensions: const ['cbz', 'cbr', 'pdf', 'epub'],
+      );
+      expect(extended.categoryFor('vol01.cbr'), FileCategory.comic);
+      expect(extended.categoryFor('readme.pdf'), FileCategory.comic);
     });
 
     test('漫画后缀不抢图片：图片判在前面', () {

@@ -592,6 +592,38 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return task;
   }
 
+  /// Download one whole manga archive into the manga cache.
+  ///
+  /// Streaming reads only the pages it needs; this is the fallback for
+  /// servers that refuse Range requests. Queued so a large archive never
+  /// blocks the reader.
+  Future<QueueTask> enqueueMangaCache({
+    required String accountId,
+    required String sourceName,
+    required String remotePath,
+    required String displayName,
+    required String mangaId,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: displayName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.mangaCache,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: 1,
+      unitsDone: 0,
+      localPath: 'manga:$mangaId',
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
   /// Probe every library row for this source (or all sources) and write red dots.
   Future<QueueTask> enqueueMatchRemote({
     required String sourceName,
@@ -2178,6 +2210,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           await _runMatchRemote(task, token);
         case TaskKind.mangaScrape:
           await _runMangaScrape(task, token);
+        case TaskKind.mangaCache:
+          await _runMangaCache(task, token);
         case TaskKind.retagLocal:
           // Local retag stays interactive (settings); not scheduled here.
           task.status = TaskStatus.cancelled;
@@ -2639,23 +2673,19 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
-  /// Scrape one manga immediately instead of queueing a [TaskKind.mangaScrape].
-  ///
-  /// The library scan uses this so a freshly added CBZ already carries the
-  /// title, author, series and cover lifted out of its `ComicInfo.xml` — the
-  /// manga counterpart of the tag read [_runScan] performs inline for music.
-  /// Everything is read over HTTP Range, so the archive itself is never
-  /// downloaded. Failures are swallowed: the row is already saved, and the
-  /// manual "刮削" action stays available as a retry.
-  Future<bool> scrapeMangaNow({
-    required String sourceName,
-    required String mangaId,
-    CancelToken? cancel,
-  }) async {
+  /// Download one manga archive into `manga_cache` so a later open needs no
+  /// network. Range reads are untouched: this only fills the fallback copy.
+  Future<void> _runMangaCache(QueueTask task, CancelToken token) async {
     final mangaLib = _mangaLibrary;
-    if (mangaLib == null) return false;
-    final accountId = _accountIdFor(sourceName);
-    if (accountId == null) return false;
+    if (mangaLib == null) {
+      throw StateError('err.mangaLibraryNotReady');
+    }
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+    final marker = task.localPath ?? '';
+    final mangaId = marker.startsWith('manga:') ? marker.substring(6) : '';
     Manga? manga;
     for (final m in mangaLib.mangas) {
       if (m.id == mangaId) {
@@ -2663,57 +2693,56 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         break;
       }
     }
-    if (manga == null || manga.format == MangaFormat.images) return false;
-    final target = manga;
-    try {
-      final source = await _webDav.resolveStreamSource(
-        accountId: accountId,
-        remotePath: target.remotePath,
-        name: p.basename(target.remotePath),
-      );
-      if (source == null) return false;
-      final zip = CbzRangeZip(source: source);
-      await zip.open(cancel: cancel);
-      final images = zip.imageEntries;
-      if (images.isEmpty) return false;
-
-      final infoEntry = zip.findComicInfo();
-      if (infoEntry != null) {
-        final meta = ComicInfoMeta.parse(await zip.extractEntry(infoEntry));
-        if (meta != null) {
-          await mangaLib.updateMangaMetadata(
-            target.id,
-            title: meta.title,
-            author: meta.writer,
-            seriesTitle: meta.series,
-            updateSeries: meta.series != null,
-          );
-        }
-      }
-
-      final coverBytes = await zip.extractEntry(images.first);
-      if (coverBytes.isNotEmpty) {
-        final coverFile = _cache.mangaCoverFile(target.id);
-        await coverFile.parent.create(recursive: true);
-        await coverFile.writeAsBytes(coverBytes, flush: true);
-        await _cache.registerMangaCoverWritten(target.id);
-      }
-      await mangaLib.replacePages(
-        target.id,
-        pages: [
-          for (var i = 0; i < images.length; i++)
-            MangaPage(
-              mangaId: target.id,
-              pageIndex: i,
-              relPath: images[i].name,
-            ),
-        ],
-        coverRelpath: images.first.name,
-      );
-      return true;
-    } catch (_) {
-      return false;
+    if (manga == null) {
+      throw StateError('err.mangaMissing|$mangaId');
     }
+    final target = manga;
+    task.unitsTotal = 1;
+    task.unitsDone = 0;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    if (target.format != MangaFormat.cbz) {
+      task.unitsDone = 1;
+      task.progress = 1;
+      task.status = TaskStatus.completed;
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+      return;
+    }
+
+    final dest = _cache.mangaFileForRemote(
+      target.remotePath,
+      sourceName: target.sourceName,
+    );
+    if (!dest.existsSync() || dest.lengthSync() == 0) {
+      final part = File('${dest.path}.part');
+      if (part.existsSync()) part.deleteSync();
+      await dest.parent.create(recursive: true);
+      await retryItem(
+        () => _webDav.downloadToFile(
+          accountId,
+          target.remotePath,
+          part,
+          cancelToken: token,
+        ),
+        isCancel: (e) => token.isCancelled,
+      );
+      if (!part.existsSync() || part.lengthSync() == 0) {
+        throw StateError('err.cloud.notFound|${target.remotePath}');
+      }
+      if (dest.existsSync()) dest.deleteSync();
+      await part.rename(dest.path);
+    }
+    await _cache.registerMangaFileWritten(
+      target.remotePath,
+      sourceName: target.sourceName,
+    );
+    task.unitsDone = 1;
+    task.progress = 1;
+    task.status = TaskStatus.completed;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
   }
 
   Future<void> _runRetagCloud(QueueTask task, CancelToken token) async {

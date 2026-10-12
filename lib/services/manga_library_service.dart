@@ -47,6 +47,7 @@ class MangaLibraryService extends ChangeNotifier {
 
   final List<Manga> _mangas = [];
   final List<String> _authors = [];
+  final Map<String, MangaProgress> _progress = {};
   bool _loaded = false;
 
   bool get isLoaded => _loaded;
@@ -81,6 +82,9 @@ class MangaLibraryService extends ChangeNotifier {
     _authors
       ..clear()
       ..addAll(await _db.loadMangaAuthors());
+    _progress
+      ..clear()
+      ..addAll({for (final p in await _db.allMangaProgress()) p.mangaId: p});
     _loaded = true;
     notifyListeners();
   }
@@ -212,17 +216,37 @@ class MangaLibraryService extends ChangeNotifier {
     await reload();
   }
 
+  /// The library row with [id], or null when it is not imported.
+  ///
+  /// The network library asks this before it offers to import a file: an entry
+  /// that is already in the library must open, never be imported twice.
+  Manga? mangaById(String id) {
+    for (final m in _mangas) {
+      if (m.id == id) return m;
+    }
+    return null;
+  }
+
+  /// Reading progress by manga id, kept alongside the library rows.
+  ///
+  /// The list and the grid paint a marker per book, so this must not query the
+  /// database once per row.
+  Map<String, MangaProgress> get progressByManga => Map.unmodifiable(_progress);
+
+  /// Cached reading progress of [mangaId], or null when never opened.
+  MangaProgress? progressOf(String mangaId) => _progress[mangaId];
+
   Future<MangaProgress?> progressFor(String mangaId) =>
       _db.loadMangaProgress(mangaId);
 
   Future<void> setProgress(String mangaId, int pageIndex) async {
-    await _db.upsertMangaProgress(
-      MangaProgress(
-        mangaId: mangaId,
-        pageIndex: pageIndex,
-        updatedAt: DateTime.now(),
-      ),
+    final progress = MangaProgress(
+      mangaId: mangaId,
+      pageIndex: pageIndex,
+      updatedAt: DateTime.now(),
     );
+    await _db.upsertMangaProgress(progress);
+    _progress[mangaId] = progress;
     notifyListeners();
   }
 

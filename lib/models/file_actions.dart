@@ -201,9 +201,16 @@ class FileActionConfig {
   /// 构造期虽然已经把它退回默认值，但下拉框若还列着这一项，用户选完
   /// 会被静静退回，看不出为什么没生效。
   List<FileAction> choicesFor(FileCategory category) {
-    final base = FileActionCatalog.forCategory(category);
-    if (category != FileCategory.music || allowMusicStreaming) return base;
-    return base.where((a) => a != FileAction.streamMusic).toList();
+    var base = FileActionCatalog.forCategory(category);
+    if (category == FileCategory.music && !allowMusicStreaming) {
+      base = base.where((a) => a != FileAction.streamMusic).toList();
+    }
+    if (category == FileCategory.comic) {
+      // 漫画的单击固定是「加入漫画库」：下载只走多选或「更多」菜单，
+      // 和音乐一样不在设置页暴露成可选项。
+      base = base.where((a) => a != FileAction.download).toList();
+    }
+    return base;
   }
 
   FileActionConfig copyWith({Map<FileCategory, FileAction>? actions}) =>

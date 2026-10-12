@@ -127,14 +127,9 @@ class CacheService extends ChangeNotifier {
     return File(p.join(mangaCacheDir.path, 'covers', '$stem.jpg'));
   }
 
-  Future<int> mangaCacheSizeBytes() async {
-    if (_mangaCacheDir == null || !await _mangaCacheDir!.exists()) return 0;
-    var total = 0;
-    await for (final entity in _mangaCacheDir!.list(recursive: true)) {
-      if (entity is File) total += await entity.length();
-    }
-    return total;
-  }
+  /// Everything the manga library keeps on disk: the whole-file archives and
+  /// cover thumbs under `manga_cache/`, plus the reader's page images.
+  Future<int> mangaCacheSizeBytes() => cacheSizeFor(CacheKind.manga);
 
   /// Combined music + manga cache size for the shared settings UI.
   Future<int> totalMediaCacheSizeBytes() async {
@@ -142,12 +137,18 @@ class CacheService extends ChangeNotifier {
   }
 
   Future<int> clearAllMangaCache() async {
-    if (_mangaCacheDir == null || !await _mangaCacheDir!.exists()) return 0;
+    final doomed = <File>[];
+    for (final root in await _cacheRoots(CacheKind.manga)) {
+      if (!await root.dir.exists()) continue;
+      await for (final entity in root.dir.list(recursive: root.recursive)) {
+        if (entity is File) doomed.add(entity);
+      }
+    }
     var removed = 0;
-    await for (final entity in _mangaCacheDir!.list(recursive: true)) {
-      if (entity is! File) continue;
+    for (final file in doomed) {
       try {
-        await entity.delete();
+        await file.delete();
+        await _index?.forget(file.path);
         removed++;
       } catch (_) {}
     }
@@ -476,6 +477,34 @@ class CacheService extends ChangeNotifier {
     return p.split(p.relative(path, from: dir.path)).first == 'covers';
   }
 
+  /// Every directory that belongs to the cache of [kind].
+  ///
+  /// Music is one flat directory. The manga library has two roots: archives
+  /// and cover thumbs under `manga_cache/`, and the page images the reader
+  /// materialises under `prefetch_cache/manga_pages/`. Both are manga cache —
+  /// counting only the first would hide the largest part of the footprint.
+  Future<List<({Directory dir, bool recursive})>> _cacheRoots(
+    CacheKind kind,
+  ) async {
+    final out = <({Directory dir, bool recursive})>[];
+    if (kind == CacheKind.music) {
+      final dir = _cacheDir;
+      if (dir != null) out.add((dir: dir, recursive: false));
+      return out;
+    }
+    final dir = _mangaCacheDir;
+    if (dir != null) out.add((dir: dir, recursive: true));
+    out.add((dir: await _mangaPageRoot(), recursive: true));
+    return out;
+  }
+
+  /// `<appCache>/prefetch_cache/manga_pages`; mirrors
+  /// `MangaReaderPrep._mangaPageDir`.
+  Future<Directory> _mangaPageRoot() async {
+    final cache = await getApplicationCacheDirectory();
+    return Directory(p.join(cache.path, 'prefetch_cache', 'manga_pages'));
+  }
+
   /// Files a cleanup pass may consider for [kind].
   ///
   /// Cover thumbs are excluded on purpose: they are tiny, and they are the
@@ -485,20 +514,23 @@ class CacheService extends ChangeNotifier {
   Future<List<({File file, int size, DateTime accessed})>> _cacheCandidates(
     CacheKind kind,
   ) async {
-    final dir = kind == CacheKind.music ? _cacheDir : _mangaCacheDir;
-    if (dir == null || !await dir.exists()) return const [];
     final out = <({File file, int size, DateTime accessed})>[];
-    await for (final entity in dir.list(recursive: kind == CacheKind.manga)) {
-      if (entity is! File) continue;
-      if (entity.path.endsWith('.part')) continue;
-      if (kind == CacheKind.manga && _isMangaCoverPath(entity.path)) continue;
-      try {
-        out.add((
-          file: entity,
-          size: await entity.length(),
-          accessed: await _accessTime(entity),
-        ));
-      } catch (_) {}
+    for (final root in await _cacheRoots(kind)) {
+      if (!await root.dir.exists()) continue;
+      await for (final entity in root.dir.list(recursive: root.recursive)) {
+        if (entity is! File) continue;
+        if (entity.path.endsWith('.part')) continue;
+        if (kind == CacheKind.manga && _isMangaCoverPath(entity.path)) {
+          continue;
+        }
+        try {
+          out.add((
+            file: entity,
+            size: await entity.length(),
+            accessed: await _accessTime(entity),
+          ));
+        } catch (_) {}
+      }
     }
     return out;
   }
@@ -715,13 +747,14 @@ class CacheService extends ChangeNotifier {
     );
   }
 
-  /// Total size of one cache directory (covers included) in bytes.
+  /// Total size of one cache in bytes (covers and reader pages included).
   Future<int> cacheSizeFor(CacheKind kind) async {
-    final dir = kind == CacheKind.music ? _cacheDir : _mangaCacheDir;
-    if (dir == null || !await dir.exists()) return 0;
     var total = 0;
-    await for (final entity in dir.list(recursive: true)) {
-      if (entity is File) total += await entity.length();
+    for (final root in await _cacheRoots(kind)) {
+      if (!await root.dir.exists()) continue;
+      await for (final entity in root.dir.list(recursive: true)) {
+        if (entity is File) total += await entity.length();
+      }
     }
     return total;
   }

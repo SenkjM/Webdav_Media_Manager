@@ -192,11 +192,19 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
           const SizedBox(height: 16),
           _buildSection(
             title: l10n.fileCatComic,
-            subtitle: l10n.fileExtDefaultAction(actions.comic.label(l10n)),
+            subtitle: l10n.comicDefaultInExtensionsHint,
             controller: _comicController,
             onApply: () => _apply(FileCategory.comic),
             onRestore: () => _restoreDefault(FileCategory.comic),
-            actionDropdown: _buildActionDropdown(settings, FileCategory.comic),
+            actionDropdown: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                l10n.fileExtDefaultAction(actions.comic.label(l10n)),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 16),
           _buildSection(

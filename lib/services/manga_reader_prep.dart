@@ -167,8 +167,11 @@ class MangaReaderPrep {
     }
   }
 
-  /// Shared body of both CBZ paths: walk the image entries, make sure the DB
-  /// page list exists, then materialise each page under the reader cache.
+  /// Shared body of both CBZ paths. Only the EOCD and the central directory are
+  /// read up front; the page payloads come out lazily, one prefetch window at a
+  /// time, through the [ImageViewerPage.localLoader] each page carries. The page
+  /// the reader is about to show is fetched eagerly so the first frame is not
+  /// blank — a 180-page CBZ used to cost the whole archive before showing it.
   /// [zip] may be backed by HTTP Range or by a local archive.
   static Future<MangaReaderPrepareResult> _prepareCbzWithZip({
     required Manga manga,
@@ -180,50 +183,61 @@ class MangaReaderPrep {
       throw MangaReaderPrepareException(MangaReaderPrepareError.empty);
     }
 
-    var dbPages = await mangaLib.pagesFor(manga.id);
+    final total = imageEntries.length;
+
+    // Resolve the reading position *before* touching a single page: the page
+    // the reader opens on is the only one worth blocking for.
+    final prog = await mangaLib.progressFor(manga.id);
+    final initial = (prog?.pageIndex ?? 0).clamp(0, total - 1);
+
+    final dbPages = await mangaLib.pagesFor(manga.id);
     if (dbPages.isEmpty) {
-      dbPages = [
-        for (var i = 0; i < imageEntries.length; i++)
-          MangaPage(
-            mangaId: manga.id,
-            pageIndex: i,
-            relPath: imageEntries[i].name.replaceAll('\\', '/'),
-          ),
-      ];
       await mangaLib.replacePages(
         manga.id,
-        pages: dbPages,
-        coverRelpath: dbPages.first.relPath,
+        pages: [
+          for (var i = 0; i < total; i++)
+            MangaPage(
+              mangaId: manga.id,
+              pageIndex: i,
+              relPath: imageEntries[i].name.replaceAll('\\', '/'),
+            ),
+        ],
+        coverRelpath: imageEntries.first.name.replaceAll('\\', '/'),
       );
     }
 
     final outDir = await _mangaPageDir(manga.id);
     final viewerPages = <ImageViewerPage>[];
-    for (var i = 0; i < imageEntries.length; i++) {
+    for (var i = 0; i < total; i++) {
       final entry = imageEntries[i];
       final rel = entry.name.replaceAll('\\', '/');
       final base = p.basename(rel);
       final dest = File(
         p.join(outDir.path, '${i.toString().padLeft(5, '0')}_$base'),
       );
-      if (!dest.existsSync() || dest.lengthSync() <= 0) {
-        final raw = await zip.extractEntry(entry);
-        if (raw.isEmpty) {
-          throw MangaReaderPrepareException(
-            MangaReaderPrepareError.failed,
-            'empty page $rel',
-          );
-        }
-        await dest.parent.create(recursive: true);
-        await dest.writeAsBytes(raw, flush: true);
-      }
       viewerPages.add(
-        ImageViewerPage(id: '${manga.id}:$i', name: base, localPath: dest.path),
+        ImageViewerPage(
+          id: '${manga.id}:$i',
+          name: base,
+          localPath: dest.path,
+          localLoader: (target) => _extractEntryTo(zip, entry, target),
+        ),
       );
     }
 
-    final prog = await mangaLib.progressFor(manga.id);
-    final initial = (prog?.pageIndex ?? 0).clamp(0, viewerPages.length - 1);
+    // Only the page the reader opens on is fetched here. Everything else waits
+    // for the viewer's prefetch window to call each page's localLoader.
+    try {
+      await _extractEntryTo(
+        zip,
+        imageEntries[initial],
+        File(viewerPages[initial].localPath!),
+      );
+    } on MangaReaderPrepareException {
+      rethrow;
+    } catch (_) {
+      // Transient failure: the viewer retries this page through localLoader.
+    }
     final latest = mangaLib.mangas.cast<Manga?>().firstWhere(
       (m) => m?.id == manga.id,
       orElse: () => manga,
@@ -233,6 +247,26 @@ class MangaReaderPrep {
       initialIndex: initial,
       manga: latest,
     );
+  }
+
+  /// Materialises one archive entry at [dest], skipping the round trip when it
+  /// is already there. Both the eager seed above and the viewer's lazy
+  /// [ImagePageLoader] go through here.
+  static Future<void> _extractEntryTo(
+    CbzRangeZip zip,
+    CbzZipEntry entry,
+    File dest,
+  ) async {
+    if (dest.existsSync() && dest.lengthSync() > 0) return;
+    final raw = await zip.extractEntry(entry);
+    if (raw.isEmpty) {
+      throw MangaReaderPrepareException(
+        MangaReaderPrepareError.failed,
+        'empty page ${entry.name}',
+      );
+    }
+    await dest.parent.create(recursive: true);
+    await dest.writeAsBytes(raw, flush: true);
   }
 
   /// Same walk as the Range path, but reading straight out of the local

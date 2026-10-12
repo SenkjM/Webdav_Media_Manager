@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_media_manager/models/manga.dart';
 import 'package:webdav_media_manager/models/page_turn_direction.dart';
 import 'package:webdav_media_manager/models/manga_page.dart';
+import 'package:webdav_media_manager/models/manga_progress.dart';
 import 'package:webdav_media_manager/services/library_database.dart';
 import 'package:webdav_media_manager/services/manga_library_service.dart';
 import 'package:webdav_media_manager/services/manga_sync_store.dart';
@@ -86,6 +87,32 @@ class _MemMangaDb extends LibraryDatabase {
     for (final p in pages)
       if (p.mangaId == mangaId) p,
   ]..sort((a, b) => a.pageIndex.compareTo(b.pageIndex));
+
+  @override
+  Future<MangaProgress?> loadMangaProgress(String mangaId) async {
+    final page = progress[mangaId];
+    if (page == null) return null;
+    return MangaProgress(
+      mangaId: mangaId,
+      pageIndex: page,
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<void> upsertMangaProgress(MangaProgress p) async {
+    progress[p.mangaId] = p.pageIndex;
+  }
+
+  @override
+  Future<List<MangaProgress>> allMangaProgress() async => [
+    for (final e in progress.entries)
+      MangaProgress(
+        mangaId: e.key,
+        pageIndex: e.value,
+        updatedAt: DateTime.now(),
+      ),
+  ];
 
   @override
   Future<List<String>> loadMangaAuthors() async {
@@ -204,7 +231,12 @@ void main() {
 
   test('ref kind constants use manga not book', () {
     expect(isComicContainerFileName('a.cbz'), isTrue);
-    expect(isComicContainerFileName('a.pdf'), isTrue);
+    // 出厂只认 cbz；pdf/cbr/epub 要靠调用方传后缀表。
+    expect(isComicContainerFileName('a.pdf'), isFalse);
+    expect(
+      isComicContainerFileName('a.pdf', extensions: const ['pdf']),
+      isTrue,
+    );
     expect(isMangaImageFileName('x.png'), isTrue);
     expect(mangaFormatForFileName('x.CBZ'), MangaFormat.cbz);
   });

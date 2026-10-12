@@ -8,6 +8,7 @@ import '../models/folder_view_mode.dart';
 import '../models/library_sentinels.dart';
 import '../models/library_tag_dimension.dart';
 import '../models/library_track.dart';
+import '../models/manga.dart';
 import '../models/user_folder.dart';
 import '../models/user_folder_item.dart';
 import '../services/accounts_service.dart';
@@ -16,7 +17,7 @@ import '../services/cache_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/manga_library_service.dart';
-import 'manga_library_screen.dart' show openMangaReader;
+import 'manga_library_screen.dart' show MangaDetailScreen, openMangaReader;
 import '../services/settings_service.dart';
 import '../services/user_folder_service.dart';
 import '../utils/library_group_cover.dart';
@@ -30,6 +31,7 @@ import '../widgets/selection_toolbar.dart';
 import 'home_shell.dart';
 import '../utils/back_handler_registry.dart';
 import 'library_folder_picker_screen.dart';
+import 'library_screen.dart' show TrackListPage;
 import 'library_tag_picker_screen.dart';
 
 /// Network-library-style browser for the local user folder tree (99 §18).
@@ -272,7 +274,16 @@ class _LibraryFolderBrowserScreenState
                 .showSnackBar(SnackBar(content: Text(l10n.folderRefMissing)));
             return;
           }
-          await openMangaReader(context, list.first);
+          // 和音乐专辑一样：先展开系列里的书，不要直接跳进第一本。
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => _FolderMangaListPage(
+                title: s.title,
+                mangas: list,
+                viewKey: 'folderLeaf:$refKind',
+              ),
+            ),
+          );
           return;
         }
       }
@@ -307,6 +318,7 @@ class _LibraryFolderBrowserScreenState
         builder: (_) => _FolderTrackListPage(
           title: dim.displayName(l10n, refKey),
           tracks: tracks,
+          viewKey: 'folderLeaf:$refKind',
         ),
       ),
     );
@@ -1431,60 +1443,55 @@ class _FolderGridCell extends StatelessWidget {
   }
 }
 
+/// Album-style listing for a folder entry that points at a manga series.
+///
+/// Opening a series shows its books first; jumping straight into the first
+/// one would hide the rest of the series behind a swipe.
+class _FolderMangaListPage extends StatelessWidget {
+  const _FolderMangaListPage({
+    required this.title,
+    required this.mangas,
+    required this.viewKey,
+  });
+
+  final String title;
+  final List<Manga> mangas;
+
+  /// Own view-mode slot: a folder leaf remembers its own density instead of
+  /// borrowing the series tab's.
+  final String viewKey;
+
+  @override
+  Widget build(BuildContext context) {
+    // The series tab's own page, so a series looks and behaves the same
+    // wherever it is opened from. Nothing to rename: a folder only references
+    // the series, it does not own it.
+    return MangaDetailScreen(title: title, viewKey: viewKey, list: mangas);
+  }
+}
+
 class _FolderTrackListPage extends StatelessWidget {
-  const _FolderTrackListPage({required this.title, required this.tracks});
+  const _FolderTrackListPage({
+    required this.title,
+    required this.tracks,
+    required this.viewKey,
+  });
 
   final String title;
   final List<LibraryTrack> tracks;
 
+  /// Own view-mode slot, keyed by reference kind.
+  final String viewKey;
+
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: ListView.builder(
-        itemCount: tracks.length,
-        itemBuilder: (context, i) {
-          final t = tracks[i];
-          final subs = TrackSubtitleLines.of(t, l10n);
-          return ListTile(
-            dense: true,
-            isThreeLine: subs.line2 != null,
-            leading: LibraryCoverArt.forTrack(
-              track: t,
-              size: 48,
-              borderRadius: 4,
-              enqueueIfMissing: false,
-            ),
-            title: Text(
-              t.displayTitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                MetaText(subs.line1),
-                if (subs.line2 != null) MetaText(subs.line2!),
-              ],
-            ),
-            onTap: () async {
-              final player = context.read<AudioPlayerService>();
-              final accounts = context.read<AccountsService>();
-              final infos = [
-                for (final x in tracks)
-                  libraryTrackToTrackInfo(
-                    x,
-                    null,
-                    accounts.idForSource(x.sourceName) ?? '',
-                  ),
-              ];
-              await player.playTrack(infos[i], playlist: infos);
-            },
-          );
-        },
-      ),
+    // The music library's own track drill-down, so the same folder entry and
+    // the same tab show the same rows.
+    return TrackListPage(
+      title: title,
+      tracks: tracks,
+      defaultSort: LibrarySortMode.byName,
+      viewKey: viewKey,
     );
   }
 }

@@ -146,6 +146,7 @@ class SettingsService extends ChangeNotifier {
   static const _kImagePageTurn = 'image_page_turn';
   static const _kImagePrefetch = 'image_prefetch_count';
   static const _kImageScanSubdirs = 'image_scan_subdirs';
+  static const _kImageScanMaxDepth = 'image_scan_max_depth';
 
   /// **One** destination 网盘 for 凭证 / 歌单 / 音乐库 / 备份.
   static const _kSyncAccountId = 'sync_account_id';
@@ -331,6 +332,7 @@ class SettingsService extends ChangeNotifier {
   String _imagePageTurn = PageTurnDirection.ltr;
   int _imagePrefetchCount = defaultImagePrefetchCount;
   bool _imageScanSubdirs = false;
+  int _imageScanMaxDepth = WalkOptions.defaultMaxDepth;
   bool _videoPipEnabled = false;
   bool _videoHardwareDecoding = true;
   int _videoBufferSizeMb = defaultVideoBufferMb;
@@ -637,6 +639,9 @@ class SettingsService extends ChangeNotifier {
   /// 图片相册是否扫描子目录。默认关。键 `image_scan_subdirs`。
   bool get imageScanSubdirs => _imageScanSubdirs;
 
+  /// 图片相册扫描子目录的最大深度。默认 1。键 `image_scan_max_depth`。
+  int get imageScanMaxDepth => _imageScanMaxDepth;
+
   /// Temporary playback rate applied while the video screen is long-pressed.
   double get videoLongPressRate => _videoLongPressRate;
 
@@ -933,6 +938,9 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getInt(_kImagePrefetch) ?? defaultImagePrefetchCount,
     );
     _imageScanSubdirs = _prefs!.getBool(_kImageScanSubdirs) ?? false;
+    _imageScanMaxDepth = WalkOptions.clampDepth(
+      _prefs!.getInt(_kImageScanMaxDepth) ?? WalkOptions.defaultMaxDepth,
+    );
     _videoHardwareDecoding = _prefs!.getBool(_kVideoHardwareDecoding) ?? true;
     _videoBufferSizeMb = _clampBufferMb(
       _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
@@ -1563,6 +1571,12 @@ class SettingsService extends ChangeNotifier {
     maxDepth: mangaCreateMaxDepth,
   );
 
+  /// 图片查看的子目录扫描。独立于漫画扫描。
+  WalkOptions get imageScanWalkOptions => WalkOptions(
+    includeSubdirs: imageScanSubdirs,
+    maxDepth: imageScanMaxDepth,
+  );
+
   Future<void> setImageSlideshowEnabled(bool enabled) async {
     _imageSlideshowEnabled = enabled;
     _prefs ??= await SharedPreferences.getInstance();
@@ -1612,6 +1626,13 @@ class SettingsService extends ChangeNotifier {
     _imageScanSubdirs = enabled;
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setBool(_kImageScanSubdirs, enabled);
+    notifyListeners();
+  }
+
+  Future<void> setImageScanMaxDepth(int value) async {
+    _imageScanMaxDepth = WalkOptions.clampDepth(value);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kImageScanMaxDepth, _imageScanMaxDepth);
     notifyListeners();
   }
 
@@ -1980,6 +2001,7 @@ class SettingsService extends ChangeNotifier {
     'image_page_turn': _imagePageTurn,
     'image_prefetch_count': _imagePrefetchCount,
     'image_scan_subdirs': _imageScanSubdirs,
+    'image_scan_max_depth': _imageScanMaxDepth,
     'video_pip_enabled': _videoPipEnabled,
     'video_hardware_decoding': _videoHardwareDecoding,
     'video_buffer_size_mb': _videoBufferSizeMb,
@@ -2230,6 +2252,9 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['image_scan_subdirs'] is bool) {
       await setImageScanSubdirs(json['image_scan_subdirs'] as bool);
+    }
+    if (json['image_scan_max_depth'] is num) {
+      await setImageScanMaxDepth((json['image_scan_max_depth'] as num).toInt());
     }
     if (json['video_background_playback'] is bool) {
       await setVideoBackgroundPlayback(

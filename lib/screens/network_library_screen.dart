@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 
 import '../models/account_capabilities.dart';
 import '../l10n/generated/app_localizations.dart';
+import '../models/manga.dart';
+import '../models/manga_read_mode.dart';
 import '../models/queue_task.dart';
 import '../models/file_actions.dart';
 import '../models/play_open_mode.dart';
@@ -16,6 +18,7 @@ import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cloud_drive_service.dart';
+import '../services/cache_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/manga_library_service.dart';
@@ -25,6 +28,8 @@ import '../utils/task_error.dart';
 import '../utils/scan_candidates.dart';
 import '../utils/manga_file_types.dart';
 import '../utils/manga_scan_walk.dart';
+import '../utils/manga_identity.dart';
+import '../utils/track_identity.dart';
 import '../utils/audio_extensions.dart';
 import '../utils/back_handler_registry.dart';
 import '../utils/selection_controller.dart';
@@ -41,6 +46,7 @@ import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
+import 'manga_library_screen.dart' show openMangaReader;
 import 'video_player_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 
@@ -1683,10 +1689,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           fileName: hit.name,
         );
         final created = await mangaLib.upsertFromDraft(draft);
-        // Scrape inline, the way the music scan reads tags, so the new row
-        // already shows its real name and cover instead of a placeholder.
-        // Range reads only, so the archive itself is never downloaded.
-        await queue.scrapeMangaNow(sourceName: sourceName, mangaId: created.id);
+        // Queue the scrape rather than running it inline: the row appears
+        // immediately and the queue shows the progress. Range reads only, so
+        // the archive itself is never downloaded.
+        await queue.enqueueMangaScrape(
+          accountId: accountId,
+          sourceName: sourceName,
+          remotePath: hit.path,
+          displayName: hit.name,
+          mangaId: created.id,
+        );
         n++;
       }
       if (!mounted) return;
@@ -1845,8 +1857,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           fileName: t.name,
         );
         final created = await mangaLib.upsertFromDraft(draft);
-        // 与单文件入口、文件夹扫描一致：建立完立刻刮一次。
-        await queue.scrapeMangaNow(sourceName: sourceName, mangaId: created.id);
+        // 与单文件入口、文件夹扫描一致：建立完入队刮削。
+        await queue.enqueueMangaScrape(
+          accountId: accountId,
+          sourceName: sourceName,
+          remotePath: t.path,
+          displayName: t.name,
+          mangaId: created.id,
+        );
         n++;
       }
       if (!mounted) return;
@@ -1869,6 +1887,19 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final sourceName = account?.name;
     if (sourceName == null || sourceName.isEmpty) return;
     final l10n = AppLocalizations.of(context)!;
+    final mangaLib = context.read<MangaLibraryService>();
+
+    // Already imported: this tap is an open, not a second import. Going through
+    // the sheet again would queue another scrape for a row that is already
+    // there.
+    final existing = mangaLib.mangaById(
+      mangaIdForRemote(sourceName, normalizeRemotePath(item.path)),
+    );
+    if (existing != null) {
+      await _openImportedManga(existing);
+      return;
+    }
+
     final draft = MangaLibraryService.draftForComicFile(
       sourceName: sourceName,
       remotePath: item.path,
@@ -1878,11 +1909,18 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (confirmed == null || !mounted) return;
     try {
       final queue = context.read<TaskQueueService>();
-      final created = await context.read<MangaLibraryService>().upsertFromDraft(
-        confirmed,
+      final created = await mangaLib.upsertFromDraft(confirmed);
+      // Same as the batch scan: queue the ComicInfo + cover scrape.
+      await queue.enqueueMangaScrape(
+        accountId: accountId,
+        sourceName: sourceName,
+        remotePath: item.path,
+        displayName: item.name,
+        mangaId: created.id,
       );
-      // Same as the batch scan: pull ComicInfo + the cover right away.
-      await queue.scrapeMangaNow(sourceName: sourceName, mangaId: created.id);
+      // The read mode says how this book will be opened, so start the archive
+      // download now rather than making the first open wait for all of it.
+      await _queueMangaCacheIfNeeded(created, accountId: accountId);
       if (!mounted) return;
       AppSnack.show(context, l10n.mangaIngestDone);
     } catch (e) {
@@ -1892,6 +1930,47 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         TaskQueueService.describeError(e.toString(), l10n),
       );
     }
+  }
+
+  /// Opens an already imported book the way the read mode asks for.
+  ///
+  /// Whole-archive mode queues the download — the reader would otherwise sit on
+  /// a progress bar until the file lands; every other mode streams on demand.
+  Future<void> _openImportedManga(Manga manga) async {
+    if (await _queueMangaCacheIfNeeded(manga, accountId: _accountId)) return;
+    if (!mounted) return;
+    await openMangaReader(context, manga);
+  }
+
+  /// Queues the whole-archive download when the read mode wants one and the
+  /// archive is not on disk yet. Returns whether a task was queued.
+  Future<bool> _queueMangaCacheIfNeeded(
+    Manga manga, {
+    required String? accountId,
+  }) async {
+    if (accountId == null || !mounted) return false;
+    if (manga.format == MangaFormat.images) return false;
+    if (context.read<SettingsService>().mangaReadMode != MangaReadMode.cache) {
+      return false;
+    }
+    final cache = context.read<CacheService>();
+    if (cache.hasLocalMangaFile(
+      manga.remotePath,
+      sourceName: manga.sourceName,
+    )) {
+      return false;
+    }
+    await context.read<TaskQueueService>().enqueueMangaCache(
+      accountId: accountId,
+      sourceName: manga.sourceName,
+      remotePath: manga.remotePath,
+      displayName: manga.title,
+      mangaId: manga.id,
+    );
+    if (mounted) {
+      AppSnack.show(context, AppLocalizations.of(context)!.mangaCacheQueued);
+    }
+    return true;
   }
 
   /// 刮削：先统计再入队 TaskKind.scan（增量：路径已在库则跳过）。

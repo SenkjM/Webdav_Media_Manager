@@ -3,7 +3,11 @@ import '../models/manga.dart';
 import 'audio_extensions.dart';
 
 /// Default comic-container extensions (no leading dot).
-const List<String> kDefaultComicExtensions = ['cbz', 'cbr', 'pdf', 'epub'];
+///
+/// Only `cbz` is readable: [MangaReaderPrep] resolves `cbr` / `pdf` / `epub`
+/// to [MangaReaderPrepareError.unsupported], so they are not offered by
+/// default. The user may still add them; the reader will refuse politely.
+const List<String> kDefaultComicExtensions = ['cbz'];
 
 /// Extra image suffixes accepted for loose image-dir scans (beyond FileTypeConfig).
 const List<String> kMangaImageExtensions = [

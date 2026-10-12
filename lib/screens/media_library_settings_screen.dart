@@ -64,34 +64,38 @@ class _MediaLibrarySettingsScreenState
         children: [
           Text(
             l10n.libraryManageMode,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: scheme.primary,
-            ),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: scheme.primary),
           ),
           const SizedBox(height: 4),
           Text(
             l10n.libraryManageModeHint,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(l10n.libraryModeManual),
-            subtitle: Text(l10n.libraryModeManualHint),
-            leading: Icon(
-              auto ? Icons.radio_button_off : Icons.radio_button_checked,
-            ),
-            onTap: () => unawaited(settings.setMusicLibraryAutoBackfill(false)),
+          const SizedBox(height: 12),
+          SegmentedButton<bool>(
+            segments: [
+              ButtonSegment(
+                value: false,
+                icon: const Icon(Icons.touch_app_outlined),
+                label: Text(l10n.libraryModeManual),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: const Icon(Icons.autorenew),
+                label: Text(l10n.libraryModeAuto),
+              ),
+            ],
+            selected: {auto},
+            onSelectionChanged: (sel) =>
+                unawaited(settings.setMusicLibraryAutoBackfill(sel.first)),
           ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(l10n.libraryModeAuto),
-            subtitle: Text(l10n.libraryModeAutoHint),
-            leading: Icon(
-              auto ? Icons.radio_button_checked : Icons.radio_button_off,
-            ),
-            onTap: () => unawaited(settings.setMusicLibraryAutoBackfill(true)),
+          const SizedBox(height: 4),
+          Text(
+            auto ? l10n.libraryModeAutoHint : l10n.libraryModeManualHint,
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           if (auto) ...[
             SwitchListTile(
@@ -107,16 +111,14 @@ class _MediaLibrarySettingsScreenState
               const SizedBox(height: 8),
               Text(
                 l10n.libraryBackfillRoots,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: scheme.primary,
-                ),
+                style: Theme.of(context).textTheme.titleSmall
+                    ?.copyWith(color: scheme.primary),
               ),
               const SizedBox(height: 4),
               Text(
                 l10n.libraryBackfillRootsHint,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
               for (final root in settings.musicLibraryBackfillRoots)
                 ListTile(
@@ -126,8 +128,7 @@ class _MediaLibrarySettingsScreenState
                     backfillRootLabel(
                       root: root,
                       accounts: accounts,
-                      localizeAccountName: (n) =>
-                          localizedAccountName(l10n, n),
+                      localizeAccountName: (n) => localizedAccountName(l10n, n),
                     ),
                   ),
                   trailing: IconButton(
@@ -154,50 +155,44 @@ class _MediaLibrarySettingsScreenState
           const Divider(height: 32),
           Text(
             l10n.musicDefaultOpen,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: scheme.primary,
-            ),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: scheme.primary),
           ),
           const SizedBox(height: 4),
           Text(
             l10n.musicDefaultOpenHint,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(l10n.musicDefaultCache),
-            leading: Icon(
-              settings.musicDefaultStream
-                  ? Icons.radio_button_off
-                  : Icons.radio_button_checked,
-            ),
-            onTap: () => unawaited(settings.setMusicDefaultStream(false)),
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(l10n.musicDefaultStream),
-            leading: Icon(
-              settings.musicDefaultStream
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_off,
-            ),
-            onTap: () => unawaited(settings.setMusicDefaultStream(true)),
+          const SizedBox(height: 12),
+          SegmentedButton<bool>(
+            segments: [
+              ButtonSegment(
+                value: false,
+                icon: const Icon(Icons.download_outlined),
+                label: Text(l10n.musicDefaultCache),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: const Icon(Icons.cloud_outlined),
+                label: Text(l10n.musicDefaultStream),
+              ),
+            ],
+            selected: {settings.musicDefaultStream},
+            onSelectionChanged: (sel) =>
+                unawaited(settings.setMusicDefaultStream(sel.first)),
           ),
           const Divider(height: 32),
           Text(
             l10n.prefetchSection,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: scheme.primary,
-            ),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: scheme.primary),
           ),
           const SizedBox(height: 4),
           Text(
             l10n.prefetchSectionHint,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -220,9 +215,8 @@ class _MediaLibrarySettingsScreenState
           const SizedBox(height: 8),
           Text(
             l10n.streamPrefetchHint,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -233,13 +227,13 @@ class _MediaLibrarySettingsScreenState
           Slider(
             min: SettingsService.minStreamPrefetch.toDouble(),
             max: SettingsService.maxStreamPrefetch.toDouble(),
-            divisions: SettingsService.maxStreamPrefetch -
+            divisions:
+                SettingsService.maxStreamPrefetch -
                 SettingsService.minStreamPrefetch,
             value: settings.audioStreamPrefetchBackward.toDouble(),
             label: '${settings.audioStreamPrefetchBackward}',
-            onChanged: (v) => unawaited(
-              settings.setAudioStreamPrefetchBackward(v.round()),
-            ),
+            onChanged: (v) =>
+                unawaited(settings.setAudioStreamPrefetchBackward(v.round())),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -250,27 +244,25 @@ class _MediaLibrarySettingsScreenState
           Slider(
             min: SettingsService.minStreamPrefetch.toDouble(),
             max: SettingsService.maxStreamPrefetch.toDouble(),
-            divisions: SettingsService.maxStreamPrefetch -
+            divisions:
+                SettingsService.maxStreamPrefetch -
                 SettingsService.minStreamPrefetch,
             value: settings.audioStreamPrefetchForward.toDouble(),
             label: '${settings.audioStreamPrefetchForward}',
-            onChanged: (v) => unawaited(
-              settings.setAudioStreamPrefetchForward(v.round()),
-            ),
+            onChanged: (v) =>
+                unawaited(settings.setAudioStreamPrefetchForward(v.round())),
           ),
           const Divider(height: 32),
           Text(
             l10n.audioPlaylistSection,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: scheme.primary,
-            ),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: scheme.primary),
           ),
           const SizedBox(height: 4),
           Text(
             l10n.scanListHint,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -324,24 +316,21 @@ class _MediaLibrarySettingsScreenState
             const SizedBox(height: 4),
             Text(
               '0–${WalkOptions.maxDepthClamp}',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
+              style: Theme.of(context).textTheme.bodySmall
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],
           const Divider(height: 32),
           Text(
             l10n.mediaScanSection,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: scheme.primary,
-            ),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: scheme.primary),
           ),
           const SizedBox(height: 4),
           Text(
             l10n.mediaScanSectionHint,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -463,11 +452,8 @@ class _MediaLibrarySettingsScreenState
     if (!context.mounted) return;
     AppSnack.show(
       context,
-      AppLocalizations.of(context)!.tagRefreshCompleted(
-        result.updated,
-        result.skipped,
-        result.failed,
-      ),
+      AppLocalizations.of(context)!
+          .tagRefreshCompleted(result.updated, result.skipped, result.failed),
       error: result.failed > 0 && result.updated == 0,
     );
   }

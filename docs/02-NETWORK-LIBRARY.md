@@ -25,22 +25,22 @@
 | 视频 | 流式传输 | 下载 |
 | CUE | cue 读取 | 下载 |
 | 图片 | 查看图片 | 下载到系统相册、下载 |
-| 漫画单文件 | 加入漫画库 | 下载 |
+| 漫画单文件 | 加入漫画库 | —（下载只在多选或「⋮」里） |
 | 普通文件 | 下载 | — |
 
 - 「下载」= 落系统下载目录（`DownloadTarget.downloads`），**不是**缓存；音频缓存只由「缓存音乐」产生。
-- 任何文件都可以用「下载」；缓存音乐只对音乐合法，视频那个流式传输只对视频合法，查看图片只对图片合法，「加入漫画库」只对漫画单文件合法（存储键 `add_to_manga_library`，`downloadTarget` 为 null——它不入下载队列）。「下载到系统相册」只对图片合法（存储键 `download_to_gallery`，落盘 `DownloadTarget.gallery`）。视频的相册入口仍是「⋮」里单独的一项，不进这张表的默认动作。
+- 任何文件都可以用「下载」；缓存音乐只对音乐合法，视频那个流式传输只对视频合法，查看图片只对图片合法，「加入漫画库」只对漫画单文件合法（存储键 `add_to_manga_library`，`downloadTarget` 为 null——它不入下载队列）。漫画的单击动作就这一项：**下载不作为漫画的单击动作**（`FileActionConfig.choicesFor` 会把 `download` 从漫画的可选列表里滤掉），要下载只能在多选里或行尾「⋮」里选。「下载到系统相册」只对图片合法（存储键 `download_to_gallery`，落盘 `DownloadTarget.gallery`）。视频的相册入口仍是「⋮」里单独的一项，不进这张表的默认动作。
 - 音乐的出厂单击是缓存音乐，不是流式。新安装的流式开关默认开（偏好键不存在时），但不会把单击改成流式；已经保存过单击动作或开关的安装保持原选择。关掉开关时，已选的流式退回缓存音乐，不退回「当前出厂默认」这条路径本身（避免默认以后再被改成流式时关开关退回它自己）。旧的 music / video 单击键迁移仍是缓存音乐，且不会被改成流式；那些安装没有单独存过流式开关时，开关保持关。
 - 判定只有一份实现：`FileActionCatalog.isAllowed` / `judgeAction`。动作与类型不匹配时**直接说明原因**，不静默换成别的动作。
 - 三个入口共用同一份判定：整行点按、多选工具栏、右侧「更多」菜单。更多菜单的第一条永远是当前默认动作，并标注「设置里的默认动作」。
-- 设置界面见 `file_extensions_screen.dart`：每个类别一个下拉框，选项就是上表的允许列表。
+- 设置界面见 `file_extensions_screen.dart`：每个类别一个下拉框，选项就是上表的允许列表。漫画那一行没有下拉框，只显示当前动作——它固定是「加入漫画库」，且与漫画库设置页里的「点按行为」是**同一个值**，改哪边都一样。
 
 ### 图片查看
 
 点按图片执行 `FileAction.viewImage`（存储键 `view_image`），打开全屏查看器 `image_viewer_screen.dart`。不复用 `stream` / `streamMusic` / `cacheMusic`，`downloadTarget` 为 null：不进下载队列，不进 `music_cache`、`covers/` 或系统下载目录。
 
 - **后缀**：类别 `FileCategory.image`，默认 jpg / jpeg / png / webp / gif（与相册导出里图片那一半一致）。旧配置没有 `image` 键时补这组默认后缀，不改已有音乐 / 视频列表。HEIC 不在默认后缀里。
-- **相册**：默认只含当前目录里的图片，按文件名大小写不敏感排序（`imageAlbumFrom`）。不伪造一条替身条目。「搜索子目录」在图片查看设置里，默认关闭（偏好键 `image_scan_subdirs`）。
+- **相册**：默认只含当前目录里的图片，按文件名大小写不敏感排序（`imageAlbumFrom`）。不伪造一条替身条目。「搜索子目录」在图片查看设置里，默认关闭（偏好键 `image_scan_subdirs`）；打开后还有「扫描深度」，默认 1（偏好键 `image_scan_max_depth`，0 = 只在当前目录找图）。
 - **手势**：左点上一张，右点下一张，中点打开**同一**图片设置页。点击区让出 `systemGestureInsets` / `padding`，避免系统返回手势和导航条吃掉点击。退出恢复系统 UI。不加入媒体会话，不启动 `DownloadKeepAliveService`。手动翻页只重置幻灯片间隔，不关掉幻灯片开关。不共用视频页的手势（视频是点按显隐控件、双击 seek）。
 - **设置**：设置页「网络库」下的「图片查看」（视频设置页 AppBar 仍用「视频播放设置」）。独立设置页，不塞进 `VideoSettingsScreen`。幻灯片默认关，间隔 3 秒（可调 1–30），循环默认开，适应方式默认 `contain`（另有 `cover`），预取数量默认 1。预取是**左右各 N 张**（上一张和下一张都算），不是一共 N 张邻居，也不是整本相册；N 限制在 1–5。这些字段在 `exportForBackup()` 里，随设置进备份（见 [08 §5](08-SYNC-AND-BACKUP.md)）。
 - **取图**：不用 `Image.network`。下载走现有 `downloadToFile`（WebDAV 的 Basic + User-Agent，云盘的 rawUrl + rawHeaders；没有直链时该方法内部已经走 `openContent`，crypt 走同一条），只落在临时目录 `image_viewer/<会话>/`。不用 `readAsBytes`。用 `Image.file`，按屏幕尺寸设 `cacheWidth` / `cacheHeight`。只预取配置的邻居。退出时删掉临时文件。
@@ -49,13 +49,15 @@
 
 ### 漫画单文件
 
-点按漫画单文件（CBZ / CBR / PDF / EPUB）执行 `FileAction.addToMangaLibrary`（存储键 `add_to_manga_library`），把它作为一本漫画登记进漫画库。与「缓存音乐」同构——一键把远端文件变成库里的条目——但**不落盘、不进下载队列**：整包缓存是阅读时按需发生的事（见 [99 §19](99-IN-PROGRESS.md)）。
+点按漫画单文件执行 `FileAction.addToMangaLibrary`（存储键 `add_to_manga_library`），把它作为一本漫画登记进漫画库，随后**按漫画库设置里的阅读方式打开**：流式就边看边取，先整包缓存就把缓存排进任务队列（不占着界面）。与「缓存音乐」同构——一键把远端文件变成库里的条目（见 [99 §19](99-IN-PROGRESS.md)）。
 
-- **后缀**：类别 `FileCategory.comic`，默认 cbz / cbr / pdf / epub（`kDefaultComicExtensions`），在「文件后缀」设置页里可改，与音乐 / 视频 / 图片各自一个框。旧配置没有 `comic` 键时补这组默认后缀；显式清空则一个后缀都不认。
+- **已经登记过的再点就是打开**：先按 `mangaIdForRemote` 查库，命中就直接进阅读器（或按阅读方式排缓存），**不再弹确认表、不再入队刮削、不再提示**；`mangaScrape` / `mangaCache` 两条任务也因此不会重复堆叠。
+
+- **后缀**：类别 `FileCategory.comic`，默认**只有 `cbz`**（`kDefaultComicExtensions`）。阅读器只解得了 ZIP，`cbr` / `pdf` / `epub` 会在 `MangaReaderPrep` 里报 `MangaReaderPrepareError.unsupported`，所以不放进默认值；自己加进去仍可登记进库（只是打不开）。在「文件后缀」设置页里可改，与音乐 / 视频 / 图片各自一个框。旧配置没有 `comic` 键时补这组默认后缀；显式清空则一个后缀都不认。
 - **判定顺序**：漫画排在图片**之后**，所以把 `png` 之类写进漫画列表也不会从图片类别里抢走文件。
 - **不要再单挂一条漫画入口**：它已经是该类别的默认动作，更多菜单的第一条就是它。之前那条 `if (isComicContainerFileName(item.name))` 的专用项已随本类别加入而删除。
-- **建立即刮削**：`MangaLibraryService.draftForComicFile` 只读文件名（`title` 取 stem），内嵌的 ComicInfo 与首页封面由随后的 `TaskQueueService.scrapeMangaNow` 用 HTTP Range 读取补齐。所以新建立的行马上就有真名字和封面，不会停在占位图标上。
-- **多选**：工具栏的「加入漫画库」与音乐的「缓存音乐」同构——选中的漫画单文件直接建立，选中的文件夹递归扫出其中的漫画单文件（`listComicContainersRecursive`，按设置里的后缀与扫描深度），按路径去重后一次性建立并刮削，只报一次结果。
+- **建立即刮削（入队，不是静默）**：`MangaLibraryService.draftForComicFile` 只读文件名（`title` 取 stem），内嵌的 ComicInfo 与首页封面由随后入队的 `TaskKind.mangaScrape` 任务用 HTTP Range 读取补齐。刮削**必须走任务队列**，这样进度、失败与取消都在任务页里看得见；早期那种就地 `await scrapeMangaNow` 的静默做法已删除。
+- **多选**：工具栏的「加入漫画库」与音乐的「缓存音乐」同构——选中的漫画单文件直接建立，选中的文件夹递归扫出其中的漫画单文件（`listComicContainersRecursive`，按设置里的后缀与扫描深度），按路径去重后一次性建立并刮削，只报一次结果。已经在库里的不会被重复刮削。
 - **文件夹菜单**：文件夹仍保留三条漫画入口（扫描漫画单文件 / 合并图片目录为一本 / 每个子目录一本）。后两条与 `FileCategory.comic` 无关：它们处理的是散图目录。
 
 ## 3. 行操作
@@ -63,6 +65,7 @@
 | 操作 | 语义 |
 |------|------|
 | 点按文件行 | 执行该类别在设置里的默认动作（见 §2） |
+| 点按漫画单文件 | 默认动作是「加入漫画库」：第一次登记并排队刮削，之后的每一次都按当前阅读方式打开（见 §2「漫画单文件」） |
 | 点按已缓存音乐行 | 默认动作是缓存音乐时命中缓存即直接就绪，不会重下 |
 | 点按文件夹 | 进入目录 |
 | 点按 `.cue` | 默认动作是 cue 读取时进 CUE 预览流程，确认后整组下载（见 [03](03-MUSIC-LIBRARY.md)） |
@@ -146,6 +149,7 @@
 - `network_library_screen.dart`：目录列表、多选、动作分发（`_runAction`）、CUE 入口、图片查看入口。
 - `lib/screens/image_viewer_screen.dart`、`image_settings_screen.dart`、`lib/utils/image_album.dart`：全屏查看、图片设置、相册排序。
 - `lib/models/file_actions.dart`：动作模型、允许列表、判定与设置解析。
+- `tool/dav_cbz_probe.dart`：CBZ 流式的现场诊断脚本（`dart run tool/dav_cbz_probe.dart --url … --user … --pass … --path '…' [--all-pages]`）：先打四种 Range 形态再开包，报告页数、到首帧耗时与 ComicInfo。
 - `lib/screens/webdav_folder_picker_screen.dart`：目录选择器与复制 / 移动流程。
 - `lib/utils/selection_controller.dart`：多选的唯一状态源（计数对比全选）。
 - `lib/services/library_actions.dart`：音乐库侧的动作（下载 / 分享 / 删除缓存）。
