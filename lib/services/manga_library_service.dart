@@ -75,13 +75,15 @@ class MangaLibraryService extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<Manga> mangasForSeries(String seriesId) =>
-      [for (final m in _mangas) if (m.seriesId == seriesId) m];
+  List<Manga> mangasForSeries(String seriesId) => [
+    for (final m in _mangas)
+      if (m.seriesId == seriesId) m,
+  ];
 
   List<Manga> mangasForAuthor(String author) => [
-        for (final m in _mangas)
-          if ((m.author ?? '').trim() == author) m,
-      ];
+    for (final m in _mangas)
+      if ((m.author ?? '').trim() == author) m,
+  ];
 
   List<Manga> search(String query) {
     final q = query.trim().toLowerCase();
@@ -131,14 +133,11 @@ class MangaLibraryService extends ChangeNotifier {
     final pages = <MangaPage>[];
     for (var i = 0; i < draft.pageRelPaths.length; i++) {
       pages.add(
-        MangaPage(
-          mangaId: id,
-          pageIndex: i,
-          relPath: draft.pageRelPaths[i],
-        ),
+        MangaPage(mangaId: id, pageIndex: i, relPath: draft.pageRelPaths[i]),
       );
     }
-    final cover = draft.coverRelpath ??
+    final cover =
+        draft.coverRelpath ??
         (draft.pageRelPaths.isEmpty ? null : draft.pageRelPaths.first);
     final existing = await _db.loadMangaById(id);
     final manga = Manga(
@@ -148,9 +147,13 @@ class MangaLibraryService extends ChangeNotifier {
       title: draft.title.trim().isEmpty
           ? remotePath.split('/').where((s) => s.isNotEmpty).last
           : draft.title.trim(),
-      author: draft.author?.trim().isEmpty == true ? null : draft.author?.trim(),
+      author: draft.author?.trim().isEmpty == true
+          ? null
+          : draft.author?.trim(),
       seriesId: seriesId,
-      volume: draft.volume?.trim().isEmpty == true ? null : draft.volume?.trim(),
+      volume: draft.volume?.trim().isEmpty == true
+          ? null
+          : draft.volume?.trim(),
       chapterNumber: draft.chapterNumber?.trim().isEmpty == true
           ? null
           : draft.chapterNumber?.trim(),
@@ -182,7 +185,8 @@ class MangaLibraryService extends ChangeNotifier {
       await _db.upsertManga(
         existing.copyWith(
           pageCount: pages.length,
-          coverRelpath: coverRelpath ??
+          coverRelpath:
+              coverRelpath ??
               existing.coverRelpath ??
               (pages.isEmpty ? null : pages.first.relPath),
           updatedAt: DateTime.now(),
@@ -220,7 +224,6 @@ class MangaLibraryService extends ChangeNotifier {
     await reload();
   }
 
-
   /// Assign [mangaIds] to one series (create by title if needed). Empty title clears.
   Future<int> assignSeriesToMangas({
     required List<String> mangaIds,
@@ -229,7 +232,7 @@ class MangaLibraryService extends ChangeNotifier {
     if (mangaIds.isEmpty) return 0;
     final trimmed = seriesTitle.trim();
     String? seriesId;
-    if (trimmed.isNotEmpty) {
+    if (trimmed.isNotEmpty && trimmed != unspecifiedSeriesLabel) {
       seriesId = (await ensureSeries(title: trimmed)).id;
     }
     var n = 0;
@@ -244,6 +247,154 @@ class MangaLibraryService extends ChangeNotifier {
         ),
       );
       n++;
+    }
+    await reload();
+    return n;
+  }
+
+  /// Display label for unset series (UI sentinel; empty series name = 未指定).
+  static const unspecifiedSeriesLabel = '未指定';
+
+  bool isUnspecifiedSeries(Manga m) {
+    if (m.seriesId == null || m.seriesId!.isEmpty) return true;
+    for (final s in _series) {
+      if (s.id == m.seriesId) {
+        final title = s.title.trim();
+        return title.isEmpty || title == unspecifiedSeriesLabel;
+      }
+    }
+    return true;
+  }
+
+  /// Mangas with no series / empty / 「未指定」 series name.
+  List<Manga> mangasUnspecifiedSeries() => [
+    for (final m in _mangas)
+      if (isUnspecifiedSeries(m)) m,
+  ];
+
+  /// Mangas that belong to a real named series.
+  List<Manga> mangasWithSeries() => [
+    for (final m in _mangas)
+      if (!isUnspecifiedSeries(m)) m,
+  ];
+
+  MangaSeries? seriesById(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final s in _series) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
+  /// Edit manga title / author / series. Empty series title clears (未指定).
+  Future<void> updateMangaMetadata(
+    String mangaId, {
+    String? title,
+    String? author,
+    String? seriesTitle,
+    bool updateSeries = false,
+  }) async {
+    final existing = await _db.loadMangaById(mangaId);
+    if (existing == null) return;
+    String? seriesId = existing.seriesId;
+    var clearSeries = false;
+    if (updateSeries) {
+      final trimmed = seriesTitle?.trim() ?? '';
+      if (trimmed.isEmpty || trimmed == unspecifiedSeriesLabel) {
+        seriesId = null;
+        clearSeries = true;
+      } else {
+        seriesId = (await ensureSeries(title: trimmed, author: author)).id;
+      }
+    }
+    final clearAuthor = author != null && author.trim().isEmpty;
+    final nextAuthor = author == null
+        ? null
+        : (clearAuthor ? null : author.trim());
+    await _db.upsertManga(
+      existing.copyWith(
+        title: title?.trim().isEmpty == true
+            ? existing.title
+            : (title ?? existing.title),
+        author: nextAuthor,
+        clearAuthor: clearAuthor,
+        seriesId: seriesId,
+        clearSeriesId: clearSeries,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await reload();
+  }
+
+  /// Rename series title / author. Empty title → treat as 未指定 (unbind mangas).
+  Future<void> updateSeriesMetadata(
+    String seriesId, {
+    String? title,
+    String? author,
+  }) async {
+    MangaSeries? existing;
+    for (final s in _series) {
+      if (s.id == seriesId) {
+        existing = s;
+        break;
+      }
+    }
+    if (existing == null) return;
+    final trimmed = title?.trim();
+    if (trimmed != null &&
+        (trimmed.isEmpty || trimmed == unspecifiedSeriesLabel)) {
+      // Unbind all mangas in this series and drop the row.
+      for (final m in mangasForSeries(seriesId)) {
+        await _db.upsertManga(
+          m.copyWith(clearSeriesId: true, updatedAt: DateTime.now()),
+        );
+      }
+      // No dedicated deleteSeries API — leave orphan series; reload filters empty.
+      await reload();
+      return;
+    }
+    final next = MangaSeries(
+      id: existing.id,
+      title: trimmed ?? existing.title,
+      author: author == null
+          ? existing.author
+          : (author.trim().isEmpty ? null : author.trim()),
+      sortTitle: trimmed ?? existing.sortTitle,
+      createdAt: existing.createdAt,
+    );
+    await _db.upsertMangaSeries(next);
+    await reload();
+  }
+
+  /// Rename author across all mangas (and series rows with that author).
+  Future<int> renameAuthor({required String from, required String to}) async {
+    final src = from.trim();
+    final dst = to.trim();
+    if (src.isEmpty) return 0;
+    final nextAuthor = dst.isEmpty ? null : dst;
+    var n = 0;
+    for (final m in List.of(_mangas)) {
+      if ((m.author ?? '').trim() != src) continue;
+      await _db.upsertManga(
+        m.copyWith(
+          author: nextAuthor,
+          clearAuthor: nextAuthor == null,
+          updatedAt: DateTime.now(),
+        ),
+      );
+      n++;
+    }
+    for (final s in List.of(_series)) {
+      if ((s.author ?? '').trim() != src) continue;
+      await _db.upsertMangaSeries(
+        MangaSeries(
+          id: s.id,
+          title: s.title,
+          author: nextAuthor,
+          sortTitle: s.sortTitle,
+          createdAt: s.createdAt,
+        ),
+      );
     }
     await reload();
     return n;

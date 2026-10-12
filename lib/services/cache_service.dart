@@ -32,6 +32,7 @@ class CacheService extends ChangeNotifier {
   SharedPreferences? _prefs;
   LibraryDatabase? _libraryDb;
   Directory? _cacheDir;
+  Directory? _mangaCacheDir;
 
   void attachLibraryDb(LibraryDatabase db) {
     _libraryDb = db;
@@ -43,6 +44,10 @@ class CacheService extends ChangeNotifier {
     _cacheDir = Directory(p.join(root.path, 'music_cache'));
     if (!await _cacheDir!.exists()) {
       await _cacheDir!.create(recursive: true);
+    }
+    _mangaCacheDir = Directory(p.join(root.path, 'manga_cache'));
+    if (!await _mangaCacheDir!.exists()) {
+      await _mangaCacheDir!.create(recursive: true);
     }
     await _migrateLegacyPrefs();
   }
@@ -86,6 +91,116 @@ class CacheService extends ChangeNotifier {
     final d = _cacheDir;
     if (d == null) throw StateError(L10nHost.current.svcCacheNotInitialized);
     return d;
+  }
+
+  Directory get mangaCacheDir {
+    final d = _mangaCacheDir;
+    if (d == null) throw StateError(L10nHost.current.svcCacheNotInitialized);
+    return d;
+  }
+
+  /// Local CBZ / page archive under manga_cache (identity-derived name).
+  File mangaFileForRemote(String remotePath, {required String sourceName}) {
+    final name = cacheFileNameForRemote(remotePath, sourceName: sourceName);
+    return File(p.join(mangaCacheDir.path, name));
+  }
+
+  bool hasLocalMangaFile(String remotePath, {required String sourceName}) {
+    return mangaFileForRemote(remotePath, sourceName: sourceName).existsSync();
+  }
+
+  /// Cover thumb for a manga id under manga_cache/covers/.
+  File mangaCoverFile(String mangaId) {
+    final stem = mangaId.length >= 16 ? mangaId.substring(0, 16) : mangaId;
+    return File(p.join(mangaCacheDir.path, 'covers', '$stem.jpg'));
+  }
+
+  Future<int> mangaCacheSizeBytes() async {
+    if (_mangaCacheDir == null || !await _mangaCacheDir!.exists()) return 0;
+    var total = 0;
+    await for (final entity in _mangaCacheDir!.list(recursive: true)) {
+      if (entity is File) total += await entity.length();
+    }
+    return total;
+  }
+
+  /// Combined music + manga cache size for the shared settings UI.
+  Future<int> totalMediaCacheSizeBytes() async {
+    return (await cacheSizeBytes()) + (await mangaCacheSizeBytes());
+  }
+
+  Future<int> clearAllMangaCache() async {
+    if (_mangaCacheDir == null || !await _mangaCacheDir!.exists()) return 0;
+    var removed = 0;
+    await for (final entity in _mangaCacheDir!.list(recursive: true)) {
+      if (entity is! File) continue;
+      try {
+        await entity.delete();
+        removed++;
+      } catch (_) {}
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
+
+  Future<bool> deleteLocalMangaFile({
+    required String sourceName,
+    required String remotePath,
+  }) async {
+    final f = mangaFileForRemote(remotePath, sourceName: sourceName);
+    var removed = false;
+    if (await f.exists()) {
+      try {
+        await f.delete();
+        removed = true;
+      } catch (_) {}
+    }
+    final part = File('${f.path}.part');
+    if (await part.exists()) {
+      try {
+        await part.delete();
+      } catch (_) {}
+    }
+    if (removed) notifyListeners();
+    return removed;
+  }
+
+  Future<int> evictMangaToMaxBytes({required int maxBytes}) async {
+    if (maxBytes <= 0) return 0;
+    if (_mangaCacheDir == null || !await _mangaCacheDir!.exists()) return 0;
+    final entries = <({File file, int size, DateTime accessed})>[];
+    var total = 0;
+    await for (final entity in _mangaCacheDir!.list(recursive: true)) {
+      if (entity is! File) continue;
+      if (entity.path.endsWith('.part')) continue;
+      // Keep covers/ longer — only evict archive payloads at top level.
+      final rel = p.relative(entity.path, from: mangaCacheDir.path);
+      if (rel.startsWith('covers${p.separator}') || rel.startsWith('covers/')) {
+        continue;
+      }
+      try {
+        final size = await entity.length();
+        total += size;
+        entries.add((
+          file: entity,
+          size: size,
+          accessed: (await entity.stat()).modified,
+        ));
+      } catch (_) {}
+    }
+    if (total <= maxBytes) return 0;
+    entries.sort((a, b) => a.accessed.compareTo(b.accessed));
+    var removed = 0;
+    for (final e in entries) {
+      if (total <= maxBytes) break;
+      try {
+        await e.file.delete();
+        total -= e.size;
+        removed++;
+      } catch (_) {}
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
   }
 
   File fileForRemote(String remotePath, {required String sourceName}) {

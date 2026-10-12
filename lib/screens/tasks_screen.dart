@@ -116,8 +116,7 @@ class TasksScreen extends StatelessWidget {
     final running = tasks
         .where(
           (t) =>
-              t.status == TaskStatus.active ||
-              t.status == TaskStatus.pending,
+              t.status == TaskStatus.active || t.status == TaskStatus.pending,
         )
         .length;
     final ok = await showDialog<bool>(
@@ -252,8 +251,7 @@ class _QueueRow {
     this.groupId,
     this.songCount,
   });
-  factory _QueueRow.single(QueueTask t) =>
-      _QueueRow._([t], isCueGroup: false);
+  factory _QueueRow.single(QueueTask t) => _QueueRow._([t], isCueGroup: false);
   factory _QueueRow.kindGroup(List<QueueTask> members) =>
       _QueueRow._(members, isCueGroup: false, isKindGroup: true);
   factory _QueueRow.cueGroup(
@@ -309,6 +307,7 @@ class _CueGroupTile extends StatelessWidget {
       }
     }
     final failed = members.any((t) => t.status == TaskStatus.failed);
+    final partial = members.any((t) => t.status == TaskStatus.partial);
     final active = members.any((t) => t.status == TaskStatus.active);
     final pending = members.any((t) => t.status == TaskStatus.pending);
     final allDone =
@@ -317,6 +316,8 @@ class _CueGroupTile extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final (label, color) = failed
         ? (l10n.downloadFailed, AppColors.error)
+        : partial
+        ? (l10n.taskPartialFailed, Colors.orange)
         : active
         ? (l10n.downloadActive, AppColors.accent)
         : pending
@@ -413,11 +414,12 @@ class _CueGroupTile extends StatelessWidget {
                     },
                     child: Text(l10n.cancel),
                   ),
-                if (failed)
+                if (failed || partial)
                   TextButton(
                     onPressed: () {
                       for (final t in members) {
                         if (t.status == TaskStatus.failed ||
+                            t.status == TaskStatus.partial ||
                             t.status == TaskStatus.cancelled) {
                           queue.retry(t.id);
                         }
@@ -462,6 +464,7 @@ class _TaskTile extends StatelessWidget {
       TaskStatus.active => AppColors.accent,
       TaskStatus.completed => const Color(0xFF66BB6A),
       TaskStatus.failed => AppColors.error,
+      TaskStatus.partial => Colors.orange,
       TaskStatus.cancelled => Theme.of(context).colorScheme.outline,
     };
     final savedToGallery =
@@ -571,10 +574,8 @@ class _TaskTile extends StatelessWidget {
                 (task.status == TaskStatus.failed || retryWaiting)) ...[
               const SizedBox(height: 4),
               GestureDetector(
-                onLongPress: () => _showTaskErrorDetail(
-                  context,
-                  task.errorMessage!,
-                ),
+                onLongPress: () =>
+                    _showTaskErrorDetail(context, task.errorMessage!),
                 child: Text(
                   TaskQueueService.describeError(task.errorMessage!, l10n),
                   style: TextStyle(
@@ -594,10 +595,8 @@ class _TaskTile extends StatelessWidget {
                 if (task.errorMessage != null &&
                     (task.status == TaskStatus.failed || retryWaiting))
                   TextButton(
-                    onPressed: () => _showTaskErrorDetail(
-                      context,
-                      task.errorMessage!,
-                    ),
+                    onPressed: () =>
+                        _showTaskErrorDetail(context, task.errorMessage!),
                     child: Text(l10n.taskErrViewDetail),
                   ),
                 if (task.status == TaskStatus.pending ||
@@ -607,6 +606,7 @@ class _TaskTile extends StatelessWidget {
                     child: Text(l10n.cancel),
                   ),
                 if (task.status == TaskStatus.failed ||
+                    task.status == TaskStatus.partial ||
                     task.status == TaskStatus.cancelled)
                   TextButton(
                     onPressed: () => queue.retry(task.id),
@@ -635,9 +635,7 @@ Future<void> _showTaskErrorDetail(BuildContext context, String raw) async {
     builder: (ctx) => AlertDialog(
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
       title: Text(l10n.taskErrDetailTitle),
-      content: SingleChildScrollView(
-        child: SelectableText(body),
-      ),
+      content: SingleChildScrollView(child: SelectableText(body)),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(ctx),
@@ -647,7 +645,6 @@ Future<void> _showTaskErrorDetail(BuildContext context, String raw) async {
     ),
   );
 }
-
 
 class _KindGroupTile extends StatelessWidget {
   const _KindGroupTile({required this.members});
@@ -660,12 +657,16 @@ class _KindGroupTile extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final head = members.first;
     final failed = members.any((t) => t.status == TaskStatus.failed);
+    final partial = members.any((t) => t.status == TaskStatus.partial);
     final active = members.any((t) => t.status == TaskStatus.active);
     final pending = members.any((t) => t.status == TaskStatus.pending);
-    final allDone = members.isNotEmpty &&
+    final allDone =
+        members.isNotEmpty &&
         members.every((t) => t.status == TaskStatus.completed);
     final (label, color) = failed
         ? (l10n.downloadFailed, AppColors.error)
+        : partial
+        ? (l10n.taskPartialFailed, Colors.orange)
         : active
         ? (l10n.downloadActive, AppColors.accent)
         : pending
@@ -685,7 +686,8 @@ class _KindGroupTile extends StatelessWidget {
       color: Theme.of(context).colorScheme.surfaceContainer,
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       child: InkWell(
-        onTap: () => _showKindGroupMembers(context, members.map((t) => t.id).toSet()),
+        onTap: () =>
+            _showKindGroupMembers(context, members.map((t) => t.id).toSet()),
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: Column(
@@ -768,11 +770,12 @@ class _KindGroupTile extends StatelessWidget {
                       },
                       child: Text(l10n.cancel),
                     ),
-                  if (failed)
+                  if (failed || partial)
                     TextButton(
                       onPressed: () {
                         for (final task in members) {
                           if (task.status == TaskStatus.failed ||
+                              task.status == TaskStatus.partial ||
                               task.status == TaskStatus.cancelled) {
                             queue.retry(task.id);
                           }

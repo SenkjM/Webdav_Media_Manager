@@ -5,6 +5,7 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/library_tag_dimension.dart';
 import '../models/library_track.dart';
 import '../services/library_service.dart';
+import '../services/manga_library_service.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/meta_text.dart';
 import '../widgets/selection_toolbar.dart';
@@ -42,7 +43,8 @@ class _LibraryTagPickerScreenState extends State<LibraryTagPickerScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final library = context.watch<LibraryService>();
-    final entries = _entries(library, l10n);
+    final mangaLib = context.watch<MangaLibraryService>();
+    final entries = _entries(library, mangaLib, l10n);
     final q = _query.trim().toLowerCase();
     final filtered = q.isEmpty
         ? entries
@@ -84,9 +86,9 @@ class _LibraryTagPickerScreenState extends State<LibraryTagPickerScreen> {
             onPressed: _selection.selected.isEmpty
                 ? null
                 : () => Navigator.pop(
-                      context,
-                      _selection.selected.toList(growable: false),
-                    ),
+                    context,
+                    _selection.selected.toList(growable: false),
+                  ),
             child: Text(
               '${l10n.confirm}'
               '${_selection.selected.isEmpty ? '' : ' (${_selection.count})'}',
@@ -102,8 +104,8 @@ class _LibraryTagPickerScreenState extends State<LibraryTagPickerScreen> {
                 onPressed: keys.isEmpty
                     ? null
                     : () => setState(
-                          () => _selection = _selection.toggleSelectAll(keys),
-                        ),
+                        () => _selection = _selection.toggleSelectAll(keys),
+                      ),
                 icon: Icon(
                   _selection.isAllSelected ? Icons.close : Icons.select_all,
                 ),
@@ -123,9 +125,7 @@ class _LibraryTagPickerScreenState extends State<LibraryTagPickerScreen> {
                       final selected = _selection.contains(e.key);
                       return ListTile(
                         leading: Icon(
-                          selected
-                              ? Icons.check_circle
-                              : Icons.circle_outlined,
+                          selected ? Icons.check_circle : Icons.circle_outlined,
                           color: selected
                               ? Theme.of(context).colorScheme.primary
                               : null,
@@ -155,7 +155,41 @@ class _LibraryTagPickerScreenState extends State<LibraryTagPickerScreen> {
     );
   }
 
-  List<_PickerEntry> _entries(LibraryService library, AppLocalizations l10n) {
+  List<_PickerEntry> _entries(
+    LibraryService library,
+    MangaLibraryService mangaLib,
+    AppLocalizations l10n,
+  ) {
+    if (widget.refKind == UserFolderRefKind.manga) {
+      final list = [
+        for (final m in mangaLib.mangas)
+          _PickerEntry(
+            key: m.id,
+            title: m.title,
+            subtitle: m.displayAuthor.isEmpty ? m.format : m.displayAuthor,
+          ),
+      ];
+      list.sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
+      return list;
+    }
+    if (widget.refKind == UserFolderRefKind.mangaSeries) {
+      final list = [
+        for (final s in mangaLib.series)
+          _PickerEntry(
+            key: s.id,
+            title: s.title,
+            subtitle: l10n.mangaSeriesCount(
+              mangaLib.mangasForSeries(s.id).length,
+            ),
+          ),
+      ];
+      list.sort(
+        (a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()),
+      );
+      return list;
+    }
     if (widget.refKind == UserFolderRefKind.track) {
       final list = [
         for (final t in library.tracks)
@@ -191,11 +225,7 @@ class _LibraryTagPickerScreenState extends State<LibraryTagPickerScreen> {
 }
 
 class _PickerEntry {
-  const _PickerEntry({
-    required this.key,
-    required this.title,
-    this.subtitle,
-  });
+  const _PickerEntry({required this.key, required this.title, this.subtitle});
   final String key;
   final String title;
   final String? subtitle;

@@ -1,9 +1,11 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/library_sentinels.dart';
+import '../models/folder_view_mode.dart';
 import '../models/library_track.dart';
 import '../services/accounts_service.dart';
 import '../models/webdav_item.dart';
@@ -96,6 +98,37 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 });
               },
             ),
+            Builder(
+              builder: (ctx) {
+                final tab = DefaultTabController.of(ctx).index;
+                const keys = ['albums', 'artists', 'titles', 'genres'];
+                final key = keys[tab.clamp(0, 3)];
+                final mode = settings.musicViewModeFor(key);
+                return PopupMenuButton<FolderViewMode>(
+                  tooltip: l10n.musicViewMode,
+                  icon: Icon(mode.isGrid ? Icons.grid_view : Icons.view_list),
+                  onSelected: (m) => settings.setMusicViewMode(key, m),
+                  itemBuilder: (context) => [
+                    for (final m in FolderViewMode.values)
+                      PopupMenuItem(
+                        value: m,
+                        child: Row(
+                          children: [
+                            Icon(
+                              mode == m
+                                  ? Icons.radio_button_checked
+                                  : Icons.radio_button_off,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(m.label(l10n)),
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
             PopupMenuButton<LibrarySortMode>(
               tooltip: l10n.sortTooltip,
               initialValue: settings.librarySort,
@@ -136,20 +169,33 @@ class _LibraryScreenState extends State<LibraryScreen> {
           children: [
             library.count == 0
                 ? _LibraryEmpty()
-                : _AlbumTab(library: library, query: _query),
+                : _AlbumTab(
+                    library: library,
+                    query: _query,
+                    viewMode: settings.musicViewModeFor('albums'),
+                  ),
             library.count == 0
                 ? _LibraryEmpty()
-                : _ArtistTab(library: library, query: _query),
+                : _ArtistTab(
+                    library: library,
+                    query: _query,
+                    viewMode: settings.musicViewModeFor('artists'),
+                  ),
             library.count == 0
                 ? _LibraryEmpty()
                 : _TitleTab(
                     library: library,
                     sort: settings.librarySort,
                     query: _query,
+                    viewMode: settings.musicViewModeFor('titles'),
                   ),
             library.count == 0
                 ? _LibraryEmpty()
-                : _TagsTab(library: library, query: _query),
+                : _TagsTab(
+                    library: library,
+                    query: _query,
+                    viewMode: settings.musicViewModeFor('genres'),
+                  ),
           ],
         ),
       ),
@@ -180,10 +226,12 @@ class _TitleTab extends StatelessWidget {
     required this.library,
     required this.sort,
     required this.query,
+    required this.viewMode,
   });
   final LibraryService library;
   final LibrarySortMode sort;
   final String query;
+  final FolderViewMode viewMode;
 
   @override
   Widget build(BuildContext context) {
@@ -198,9 +246,14 @@ class _TitleTab extends StatelessWidget {
 }
 
 class _ArtistTab extends StatelessWidget {
-  const _ArtistTab({required this.library, required this.query});
+  const _ArtistTab({
+    required this.library,
+    required this.query,
+    required this.viewMode,
+  });
   final LibraryService library;
   final String query;
+  final FolderViewMode viewMode;
 
   @override
   Widget build(BuildContext context) {
@@ -211,7 +264,10 @@ class _ArtistTab extends StatelessWidget {
     if (q.isNotEmpty) {
       groups = Map.fromEntries(
         groups.entries.where((e) {
-          if (localizedLibraryGroupName(l10n, e.key).toLowerCase().contains(q)) {
+          if (localizedLibraryGroupName(
+            l10n,
+            e.key,
+          ).toLowerCase().contains(q)) {
             return true;
           }
           return e.value.any(
@@ -227,6 +283,7 @@ class _ArtistTab extends StatelessWidget {
       keys: artists,
       groups: groups,
       cache: cache,
+      viewMode: viewMode,
       placeholderIcon: Icons.person_outline,
       subtitleOf: (tracks) =>
           AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
@@ -237,9 +294,14 @@ class _ArtistTab extends StatelessWidget {
 }
 
 class _AlbumTab extends StatelessWidget {
-  const _AlbumTab({required this.library, required this.query});
+  const _AlbumTab({
+    required this.library,
+    required this.query,
+    required this.viewMode,
+  });
   final LibraryService library;
   final String query;
+  final FolderViewMode viewMode;
 
   @override
   Widget build(BuildContext context) {
@@ -250,7 +312,10 @@ class _AlbumTab extends StatelessWidget {
     if (q.isNotEmpty) {
       groups = Map.fromEntries(
         groups.entries.where((e) {
-          if (localizedLibraryGroupName(l10n, e.key).toLowerCase().contains(q)) {
+          if (localizedLibraryGroupName(
+            l10n,
+            e.key,
+          ).toLowerCase().contains(q)) {
             return true;
           }
           return e.value.any(
@@ -266,6 +331,7 @@ class _AlbumTab extends StatelessWidget {
       keys: albums,
       groups: groups,
       cache: cache,
+      viewMode: viewMode,
       placeholderIcon: Icons.album,
       subtitleOf: (tracks) =>
           '${AppLocalizations.of(context)!.playlistTrackCount(tracks.length)} · ${tracks.first.displayArtistFor(AppLocalizations.of(context)!)}',
@@ -276,9 +342,14 @@ class _AlbumTab extends StatelessWidget {
 }
 
 class _TagsTab extends StatelessWidget {
-  const _TagsTab({required this.library, required this.query});
+  const _TagsTab({
+    required this.library,
+    required this.query,
+    required this.viewMode,
+  });
   final LibraryService library;
   final String query;
+  final FolderViewMode viewMode;
 
   @override
   Widget build(BuildContext context) {
@@ -312,58 +383,16 @@ class _TagsTab extends StatelessWidget {
     }
     final tags = groups.keys.toList();
     final cache = context.watch<CacheService>();
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: tags.length,
-      itemBuilder: (context, i) {
-        final tag = tags[i];
-        final displayTag = isUncategorizedGenre(tag) ? l10n.uncategorized : tag;
-        final tracks = groups[tag]!;
-        return ListTile(
-          leading: buildLibraryGroupCover(
-            dimensionId: 'genre',
-            groupKey: tag,
-            groupTracks: tracks,
-            cache: cache,
-            size: 48,
-            borderRadius: 6,
-            placeholderIcon: isUncategorizedGenre(tag)
-                ? Icons.label_off_outlined
-                : Icons.label_outline,
-          ),
-          title: Text(
-            displayTag,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          subtitle: MetaText(
-            AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
-          ),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => _TrackListPage(
-                  title: displayTag,
-                  tracks: tracks,
-                  defaultSort: LibrarySortMode.byName,
-                ),
-              ),
-            );
-          },
-          onLongPress: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => _TrackListPage(
-                  title: displayTag,
-                  tracks: tracks,
-                  defaultSort: LibrarySortMode.byName,
-                  startInSelection: true,
-                ),
-              ),
-            );
-          },
-        );
-      },
+    return _SelectableGroupGrid(
+      keys: tags,
+      groups: groups,
+      cache: cache,
+      viewMode: viewMode,
+      placeholderIcon: Icons.label_outline,
+      subtitleOf: (tracks) =>
+          AppLocalizations.of(context)!.playlistTrackCount(tracks.length),
+      detailSort: LibrarySortMode.byName,
+      dimensionId: 'genre',
     );
   }
 }
@@ -373,6 +402,7 @@ class _SelectableGroupGrid extends StatefulWidget {
     required this.keys,
     required this.groups,
     required this.cache,
+    required this.viewMode,
     required this.placeholderIcon,
     required this.subtitleOf,
     required this.detailSort,
@@ -382,9 +412,11 @@ class _SelectableGroupGrid extends StatefulWidget {
   final List<String> keys;
   final Map<String, List<LibraryTrack>> groups;
   final CacheService cache;
+  final FolderViewMode viewMode;
   final IconData placeholderIcon;
   final String Function(List<LibraryTrack>) subtitleOf;
   final LibrarySortMode detailSort;
+
   /// Tag dimension id for [LibraryGroupCoverOverrides] (e.g. album / artist).
   final String? dimensionId;
 
@@ -509,65 +541,137 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
             },
           ),
         Expanded(
-          child: GridView.builder(
-            padding: const EdgeInsets.all(12),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 0.85,
-            ),
-            itemCount: widget.keys.length,
-            itemBuilder: (context, i) {
-              final key = widget.keys[i];
-              final tracks = widget.groups[key]!;
-              final coverTrack = pickCoverTrack(tracks, widget.cache);
-              final selected = _selected.contains(key);
-              final title = localizedLibraryGroupName(
-                AppLocalizations.of(context)!,
-                key,
-              );
-              final dimId = widget.dimensionId;
-              final overridePath = dimId == null
-                  ? null
-                  : LibraryGroupCoverOverrides.resolver?.call(
-                      dimensionId: dimId,
-                      groupKey: key,
-                    );
-              return _CoverTile(
-                coverTrack: coverTrack,
-                title: title,
-                subtitle: widget.subtitleOf(tracks),
-                placeholderIcon: widget.placeholderIcon,
-                selected: _selecting && selected,
-                selecting: _selecting,
-                coverOverridePath: overridePath,
-                onTap: () {
-                  if (_selecting) {
-                    setState(() => _selection = _selection.toggle(key));
-                    return;
-                  }
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => _TrackListPage(
-                        title: title,
-                        tracks: tracks,
-                        defaultSort: widget.detailSort,
-                      ),
-                    ),
-                  );
-                },
-                onLongPress: () {
-                  setState(
-                    () => _selection = _selection.enter(
+          child: widget.viewMode.isGrid
+              ? GridView.builder(
+                  padding: const EdgeInsets.all(12),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: widget.viewMode.crossAxisCount!,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 0.85,
+                  ),
+                  itemCount: widget.keys.length,
+                  itemBuilder: (context, i) {
+                    final key = widget.keys[i];
+                    final tracks = widget.groups[key]!;
+                    final coverTrack = pickCoverTrack(tracks, widget.cache);
+                    final selected = _selected.contains(key);
+                    final title = localizedLibraryGroupName(
+                      AppLocalizations.of(context)!,
                       key,
-                      selectOnly: widget.keys,
-                    ),
-                  );
-                },
-              );
-            },
-          ),
+                    );
+                    final dimId = widget.dimensionId;
+                    final overridePath = dimId == null
+                        ? null
+                        : LibraryGroupCoverOverrides.resolver?.call(
+                            dimensionId: dimId,
+                            groupKey: key,
+                          );
+                    return _CoverTile(
+                      coverTrack: coverTrack,
+                      title: title,
+                      subtitle: widget.subtitleOf(tracks),
+                      placeholderIcon: widget.placeholderIcon,
+                      selected: _selecting && selected,
+                      selecting: _selecting,
+                      coverOverridePath: overridePath,
+                      onTap: () {
+                        if (_selecting) {
+                          setState(() => _selection = _selection.toggle(key));
+                          return;
+                        }
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _TrackListPage(
+                              title: title,
+                              tracks: tracks,
+                              defaultSort: widget.detailSort,
+                            ),
+                          ),
+                        );
+                      },
+                      onLongPress: () {
+                        setState(
+                          () => _selection = _selection.enter(
+                            key,
+                            selectOnly: widget.keys,
+                          ),
+                        );
+                      },
+                    );
+                  },
+                )
+              : ListView.builder(
+                  itemCount: widget.keys.length,
+                  itemBuilder: (context, i) {
+                    final key = widget.keys[i];
+                    final tracks = widget.groups[key]!;
+                    final coverTrack = pickCoverTrack(tracks, widget.cache);
+                    final selected = _selected.contains(key);
+                    final title = localizedLibraryGroupName(
+                      AppLocalizations.of(context)!,
+                      key,
+                    );
+                    final dimId = widget.dimensionId;
+                    final overridePath = dimId == null
+                        ? null
+                        : LibraryGroupCoverOverrides.resolver?.call(
+                            dimensionId: dimId,
+                            groupKey: key,
+                          );
+                    return ListTile(
+                      selected: _selecting && selected,
+                      leading: _selecting
+                          ? Icon(
+                              selected
+                                  ? Icons.check_circle
+                                  : Icons.circle_outlined,
+                            )
+                          : (overridePath != null
+                                ? CoverArt(
+                                    size: 48,
+                                    path: overridePath,
+                                    icon: widget.placeholderIcon,
+                                  )
+                                : (coverTrack == null
+                                      ? CoverArt(
+                                          size: 48,
+                                          icon: widget.placeholderIcon,
+                                        )
+                                      : LibraryCoverArt.forTrack(
+                                          track: coverTrack,
+                                          size: 48,
+                                          borderRadius: 4,
+                                          enqueueIfMissing: false,
+                                        ))),
+                      title: Text(title),
+                      subtitle: MetaText(widget.subtitleOf(tracks)),
+                      onTap: () {
+                        if (_selecting) {
+                          setState(() => _selection = _selection.toggle(key));
+                          return;
+                        }
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => _TrackListPage(
+                              title: title,
+                              tracks: tracks,
+                              defaultSort: widget.detailSort,
+                            ),
+                          ),
+                        );
+                      },
+                      onLongPress: () {
+                        setState(
+                          () => _selection = _selection.enter(
+                            key,
+                            selectOnly: widget.keys,
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
         ),
       ],
     );
@@ -650,7 +754,10 @@ class _SelectionBar extends StatelessWidget {
           IconButton(
             tooltip: AppLocalizations.of(context)!.deleteCacheKeepMeta,
             onPressed: count == 0 ? null : onDelete,
-            icon: const Icon(Icons.cleaning_services_outlined, color: AppColors.error),
+            icon: const Icon(
+              Icons.cleaning_services_outlined,
+              color: AppColors.error,
+            ),
           ),
         PopupMenuButton<String>(
           tooltip: AppLocalizations.of(context)!.moreActions,
@@ -720,6 +827,7 @@ class _CoverTile extends StatelessWidget {
   final IconData? placeholderIcon;
   final bool selected;
   final bool selecting;
+
   /// Custom cover path from [LibraryGroupCoverOverrides]; null = album-cover fallback.
   final String? coverOverridePath;
 
@@ -1003,12 +1111,11 @@ class _TrackListPage extends StatefulWidget {
     required this.title,
     required this.tracks,
     required this.defaultSort,
-    this.startInSelection = false,
   });
   final String title;
   final List<LibraryTrack> tracks;
   final LibrarySortMode defaultSort;
-  final bool startInSelection;
+  final bool startInSelection = false;
 
   @override
   State<_TrackListPage> createState() => _TrackListPageState();
@@ -1161,17 +1268,13 @@ class _TrackTile extends StatelessWidget {
                 progress: isDownloading ? task?.progress : null,
               ),
             ),
-          TrackStatusDot(
-            remoteMissing: track.remoteMissing,
-            isLocal: isLocal,
-          ),
+          TrackStatusDot(remoteMissing: track.remoteMissing, isLocal: isLocal),
           if (!selecting)
             IconButton(
               icon: const Icon(Icons.more_vert),
               tooltip: AppLocalizations.of(context)!.moreActions,
-              onPressed: () => unawaited(
-                _showMoreMenu(context, isLocal: isLocal),
-              ),
+              onPressed: () =>
+                  unawaited(_showMoreMenu(context, isLocal: isLocal)),
             ),
         ],
       ),
@@ -1196,7 +1299,11 @@ class _TrackTile extends StatelessWidget {
     );
   }
 
-  Future<void> _onTap(BuildContext context, {required bool isLocal, bool forceStream = false}) async {
+  Future<void> _onTap(
+    BuildContext context, {
+    required bool isLocal,
+    bool forceStream = false,
+  }) async {
     final accountsService = context.read<AccountsService>();
     if (!accountsService.isSourceBound(track.sourceName)) {
       AppSnack.error(
@@ -1293,7 +1400,6 @@ class _TrackTile extends StatelessWidget {
       );
     }
   }
-
 
   Future<void> _onRemoteMissingTap(BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
@@ -1425,7 +1531,10 @@ class _TrackTile extends StatelessWidget {
                 onTap: () => Navigator.pop(ctx, 'redirect'),
               ),
               ListTile(
-                leading: const Icon(Icons.delete_outline, color: AppColors.error),
+                leading: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.error,
+                ),
                 title: Text(l10n.destroyAction),
                 onTap: () => Navigator.pop(ctx, 'delete'),
               ),
@@ -1531,5 +1640,4 @@ class _TrackTile extends StatelessWidget {
       // Redirect succeeded even if tag re-read fails.
     }
   }
-
 }

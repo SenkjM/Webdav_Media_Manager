@@ -15,6 +15,8 @@ import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
+import '../services/manga_library_service.dart';
+import 'manga_library_screen.dart' show openMangaReader;
 import '../services/settings_service.dart';
 import '../services/user_folder_service.dart';
 import '../utils/library_group_cover.dart';
@@ -22,6 +24,7 @@ import '../utils/selection_controller.dart';
 import '../utils/track_subtitle_lines.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
+import '../widgets/manga_cover_art.dart';
 import '../widgets/meta_text.dart';
 import '../widgets/selection_toolbar.dart';
 import 'home_shell.dart';
@@ -79,19 +82,20 @@ class _LibraryFolderBrowserScreenState
   List<String> _allKeys(
     List<UserFolder> children,
     List<UserFolderItem> items,
-  ) =>
-      [
-        for (final f in children) _folderKey(f),
-        for (final i in items) _itemKey(i),
-      ];
+  ) => [
+    for (final f in children) _folderKey(f),
+    for (final i in items) _itemKey(i),
+  ];
 
   String _typeLabel(AppLocalizations l10n, String refKind) => switch (refKind) {
-        UserFolderRefKind.album => l10n.folderTypeAlbum,
-        UserFolderRefKind.artist => l10n.folderTypeArtist,
-        UserFolderRefKind.track => l10n.folderTypeTrack,
-        'genre' => l10n.folderTypeGenre,
-        _ => refKind,
-      };
+    UserFolderRefKind.album => l10n.folderTypeAlbum,
+    UserFolderRefKind.artist => l10n.folderTypeArtist,
+    UserFolderRefKind.track => l10n.folderTypeTrack,
+    UserFolderRefKind.manga => l10n.folderTypeManga,
+    UserFolderRefKind.mangaSeries => l10n.folderTypeMangaSeries,
+    'genre' => l10n.folderTypeGenre,
+    _ => refKind,
+  };
 
   Future<String?> _askName({
     required String title,
@@ -126,9 +130,9 @@ class _LibraryFolderBrowserScreenState
     );
     if (name == null || !mounted) return;
     await context.read<UserFolderService>().createFolder(
-          parentId: _currentId,
-          name: name.isEmpty ? l10n.newFolderDefaultName : name,
-        );
+      parentId: _currentId,
+      name: name.isEmpty ? l10n.newFolderDefaultName : name,
+    );
   }
 
   Future<void> _renameFolder(String id, String current) async {
@@ -221,21 +225,19 @@ class _LibraryFolderBrowserScreenState
     }
     final keys = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
-        builder: (_) =>
-            LibraryTagPickerScreen(refKind: refKind, title: title),
+        builder: (_) => LibraryTagPickerScreen(refKind: refKind, title: title),
       ),
     );
     if (keys == null || keys.isEmpty || !mounted) return;
     final n = await context.read<UserFolderService>().addRefs(
-          folderId: folderId,
-          refKind: refKind,
-          refKeys: keys,
-        );
+      folderId: folderId,
+      refKind: refKind,
+      refKeys: keys,
+    );
     if (!mounted) return;
     final l10n = AppLocalizations.of(context)!;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(l10n.folderItemsAdded(n))),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(l10n.folderItemsAdded(n))));
   }
 
   LibraryTrack? _trackById(LibraryService library, String musicId) {
@@ -248,12 +250,41 @@ class _LibraryFolderBrowserScreenState
   Future<void> _openGroup(String refKind, String refKey) async {
     final library = context.read<LibraryService>();
     final l10n = AppLocalizations.of(context)!;
+    if (refKind == UserFolderRefKind.manga) {
+      final mangaLib = context.read<MangaLibraryService>();
+      for (final m in mangaLib.mangas) {
+        if (m.id == refKey) {
+          await openMangaReader(context, m);
+          return;
+        }
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.folderRefMissing)));
+      return;
+    }
+    if (refKind == UserFolderRefKind.mangaSeries) {
+      final mangaLib = context.read<MangaLibraryService>();
+      for (final s in mangaLib.series) {
+        if (s.id == refKey) {
+          final list = mangaLib.mangasForSeries(s.id);
+          if (list.isEmpty) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(l10n.folderRefMissing)));
+            return;
+          }
+          await openMangaReader(context, list.first);
+          return;
+        }
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.folderRefMissing)));
+      return;
+    }
     if (refKind == UserFolderRefKind.track) {
       final t = _trackById(library, refKey);
       if (t == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.folderRefMissing)),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l10n.folderRefMissing)));
         return;
       }
       await _play(tracks: [t], start: t);
@@ -266,9 +297,8 @@ class _LibraryFolderBrowserScreenState
         if (dim.groupKey(t) == refKey) t,
     ];
     if (tracks.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.folderRefMissing)),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.folderRefMissing)));
       return;
     }
     if (!mounted) return;
@@ -301,6 +331,72 @@ class _LibraryFolderBrowserScreenState
     await player.playTrack(infos[idx], playlist: infos);
   }
 
+  Future<String?> _pickFolderDest({
+    required String purpose,
+    String? excludedFolderId,
+  }) {
+    return Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => LibraryFolderPickerScreen(
+          purpose: purpose,
+          excludedFolderId: excludedFolderId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _moveFolder(UserFolder folder) async {
+    final l10n = AppLocalizations.of(context)!;
+    final dest = await _pickFolderDest(
+      purpose: l10n.folderMove,
+      excludedFolderId: folder.id,
+    );
+    if (dest == null || !mounted) return;
+    final ok = await context.read<UserFolderService>().moveFolder(
+      folder.id,
+      newParentId: dest.isEmpty ? null : dest,
+    );
+    if (!mounted) return;
+    if (ok) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(l10n.folderMoveDone)));
+    }
+  }
+
+  Future<void> _moveOrCopyItem(
+    UserFolderItem item, {
+    required bool copy,
+  }) async {
+    final l10n = AppLocalizations.of(context)!;
+    final dest = await _pickFolderDest(
+      purpose: copy ? l10n.folderCopy : l10n.folderMove,
+    );
+    if (dest == null || dest.isEmpty || !mounted) return;
+    final svc = context.read<UserFolderService>();
+    final ok = copy
+        ? await svc.copyRef(
+            toFolderId: dest,
+            refKind: item.refKind,
+            refKey: item.refKey,
+          )
+        : await svc.moveRef(
+            fromFolderId: item.folderId,
+            toFolderId: dest,
+            refKind: item.refKind,
+            refKey: item.refKey,
+          );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? (copy ? l10n.folderCopyDone : l10n.folderMoveDone)
+              : l10n.folderRefMissing,
+        ),
+      ),
+    );
+  }
+
   Future<void> _onAddMenu(String v) async {
     final l10n = AppLocalizations.of(context)!;
     switch (v) {
@@ -312,15 +408,24 @@ class _LibraryFolderBrowserScreenState
         await _addRefs(UserFolderRefKind.artist, l10n.folderAddArtists);
       case 'track':
         await _addRefs(UserFolderRefKind.track, l10n.folderAddTracks);
+      case 'manga':
+        await _addRefs(UserFolderRefKind.manga, l10n.folderAddManga);
+      case 'mangaSeries':
+        await _addRefs(
+          UserFolderRefKind.mangaSeries,
+          l10n.folderAddMangaSeries,
+        );
     }
   }
 
   List<PopupMenuEntry<String>> _addMenuItems(AppLocalizations l10n) => [
-        PopupMenuItem(value: 'mkdir', child: Text(l10n.newFolder)),
-        PopupMenuItem(value: 'album', child: Text(l10n.folderAddAlbums)),
-        PopupMenuItem(value: 'artist', child: Text(l10n.folderAddArtists)),
-        PopupMenuItem(value: 'track', child: Text(l10n.folderAddTracks)),
-      ];
+    PopupMenuItem(value: 'mkdir', child: Text(l10n.newFolder)),
+    PopupMenuItem(value: 'album', child: Text(l10n.folderAddAlbums)),
+    PopupMenuItem(value: 'artist', child: Text(l10n.folderAddArtists)),
+    PopupMenuItem(value: 'track', child: Text(l10n.folderAddTracks)),
+    PopupMenuItem(value: 'manga', child: Text(l10n.folderAddManga)),
+    PopupMenuItem(value: 'mangaSeries', child: Text(l10n.folderAddMangaSeries)),
+  ];
 
   Widget _pathChrome({
     required String path,
@@ -340,15 +445,17 @@ class _LibraryFolderBrowserScreenState
                 borderRadius: BorderRadius.circular(18),
               ),
               child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: DefaultTextStyle.merge(
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          fontSize: 12,
-                        ),
+                      color: scheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
                     child: Text(path),
                   ),
                 ),
@@ -463,9 +570,9 @@ class _LibraryFolderBrowserScreenState
                       onPressed: keys.isEmpty
                           ? null
                           : () => setState(
-                                () => _selection =
-                                    _selection.toggleSelectAll(keys),
-                              ),
+                              () =>
+                                  _selection = _selection.toggleSelectAll(keys),
+                            ),
                     ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -515,129 +622,118 @@ class _LibraryFolderBrowserScreenState
                       ),
                     )
                   : viewMode.isGrid
-                      ? _FolderGridBody(
-                          columns: viewMode.crossAxisCount!,
-                          children: children,
-                          items: items,
-                          library: library,
-                          cache: cache,
-                          selecting: _selecting,
-                          selection: _selection,
-                          folderKeyOf: _folderKey,
-                          itemKeyOf: _itemKey,
-                          typeLabelOf: _typeLabel,
-                          onEnterSelect: (key) => setState(() {
-                            _selection = _selection
-                                .enter(key, selectOnly: keys)
-                                .sync(total: keys.length, validKeys: keys);
-                          }),
-                          onOpenFolder: (f) {
-                            if (_selecting) {
-                              setState(
-                                () => _selection =
-                                    _selection.toggle(_folderKey(f)),
-                              );
-                              return;
-                            }
-                            setState(() => _stack.add(f.id));
-                          },
-                          onRenameFolder: (f) => _renameFolder(f.id, f.name),
-                          onDeleteFolder: _deleteFolder,
-                          onOpenItem: (item) {
-                            if (_selecting) {
-                              setState(
-                                () => _selection =
-                                    _selection.toggle(_itemKey(item)),
-                              );
-                              return;
-                            }
-                            _openGroup(item.refKind, item.refKey);
-                          },
-                          onRemoveItem: (item) async {
-                            await context.read<UserFolderService>().removeRef(
-                                  folderId: item.folderId,
-                                  refKind: item.refKind,
-                                  refKey: item.refKey,
+                  ? _FolderGridBody(
+                      columns: viewMode.crossAxisCount!,
+                      children: children,
+                      items: items,
+                      library: library,
+                      cache: cache,
+                      selecting: _selecting,
+                      selection: _selection,
+                      folderKeyOf: _folderKey,
+                      itemKeyOf: _itemKey,
+                      typeLabelOf: _typeLabel,
+                      onEnterSelect: (key) => setState(() {
+                        _selection = _selection
+                            .enter(key, selectOnly: keys)
+                            .sync(total: keys.length, validKeys: keys);
+                      }),
+                      onOpenFolder: (f) {
+                        if (_selecting) {
+                          setState(
+                            () => _selection = _selection.toggle(_folderKey(f)),
+                          );
+                          return;
+                        }
+                        setState(() => _stack.add(f.id));
+                      },
+                      onRenameFolder: (f) => _renameFolder(f.id, f.name),
+                      onMoveFolder: _moveFolder,
+                      onDeleteFolder: _deleteFolder,
+                      onOpenItem: (item) {
+                        if (_selecting) {
+                          setState(
+                            () =>
+                                _selection = _selection.toggle(_itemKey(item)),
+                          );
+                          return;
+                        }
+                        _openGroup(item.refKind, item.refKey);
+                      },
+                      onRemoveItem: (item) async {
+                        await context.read<UserFolderService>().removeRef(
+                          folderId: item.folderId,
+                          refKind: item.refKind,
+                          refKey: item.refKey,
+                        );
+                      },
+                      onMoveItem: (item) => _moveOrCopyItem(item, copy: false),
+                      onCopyItem: (item) => _moveOrCopyItem(item, copy: true),
+                    )
+                  : ListView(
+                      children: [
+                        for (final f in children)
+                          _FolderListTile(
+                            folder: f,
+                            selecting: _selecting,
+                            selected: _selection.contains(_folderKey(f)),
+                            onOpen: () {
+                              if (_selecting) {
+                                setState(
+                                  () => _selection = _selection.toggle(
+                                    _folderKey(f),
+                                  ),
                                 );
-                          },
-                        )
-                      : ListView(
-                          children: [
-                            for (final f in children)
-                              _FolderListTile(
-                                folder: f,
-                                selecting: _selecting,
-                                selected:
-                                    _selection.contains(_folderKey(f)),
-                                onOpen: () {
-                                  if (_selecting) {
-                                    setState(
-                                      () => _selection =
-                                          _selection.toggle(_folderKey(f)),
-                                    );
-                                    return;
-                                  }
-                                  setState(() => _stack.add(f.id));
-                                },
-                                onLongPress: () => setState(() {
-                                  _selection = _selection
-                                      .enter(
-                                        _folderKey(f),
-                                        selectOnly: keys,
-                                      )
-                                      .sync(
-                                        total: keys.length,
-                                        validKeys: keys,
-                                      );
-                                }),
-                                onRename: () =>
-                                    _renameFolder(f.id, f.name),
-                                onDelete: () => _deleteFolder(f),
-                              ),
-                            for (final item in items)
-                              _FolderItemTile(
+                                return;
+                              }
+                              setState(() => _stack.add(f.id));
+                            },
+                            onLongPress: () => setState(() {
+                              _selection = _selection
+                                  .enter(_folderKey(f), selectOnly: keys)
+                                  .sync(total: keys.length, validKeys: keys);
+                            }),
+                            onRename: () => _renameFolder(f.id, f.name),
+                            onMove: () => _moveFolder(f),
+                            onDelete: () => _deleteFolder(f),
+                          ),
+                        for (final item in items)
+                          _FolderItemTile(
+                            refKind: item.refKind,
+                            refKey: item.refKey,
+                            library: library,
+                            cache: cache,
+                            typeLabel: _typeLabel(l10n, item.refKind),
+                            selecting: _selecting,
+                            selected: _selection.contains(_itemKey(item)),
+                            onOpen: () {
+                              if (_selecting) {
+                                setState(
+                                  () => _selection = _selection.toggle(
+                                    _itemKey(item),
+                                  ),
+                                );
+                                return;
+                              }
+                              _openGroup(item.refKind, item.refKey);
+                            },
+                            onLongPress: () => setState(() {
+                              _selection = _selection
+                                  .enter(_itemKey(item), selectOnly: keys)
+                                  .sync(total: keys.length, validKeys: keys);
+                            }),
+                            onRemove: () async {
+                              await context.read<UserFolderService>().removeRef(
+                                folderId: item.folderId,
                                 refKind: item.refKind,
                                 refKey: item.refKey,
-                                library: library,
-                                cache: cache,
-                                typeLabel:
-                                    _typeLabel(l10n, item.refKind),
-                                selecting: _selecting,
-                                selected:
-                                    _selection.contains(_itemKey(item)),
-                                onOpen: () {
-                                  if (_selecting) {
-                                    setState(
-                                      () => _selection = _selection
-                                          .toggle(_itemKey(item)),
-                                    );
-                                    return;
-                                  }
-                                  _openGroup(item.refKind, item.refKey);
-                                },
-                                onLongPress: () => setState(() {
-                                  _selection = _selection
-                                      .enter(
-                                        _itemKey(item),
-                                        selectOnly: keys,
-                                      )
-                                      .sync(
-                                        total: keys.length,
-                                        validKeys: keys,
-                                      );
-                                }),
-                                onRemove: () async {
-                                  await context
-                                      .read<UserFolderService>()
-                                      .removeRef(
-                                        folderId: item.folderId,
-                                        refKind: item.refKind,
-                                        refKey: item.refKey,
-                                      );
-                                },
-                              ),
-                          ],
-                        ),
+                              );
+                            },
+                            onMove: () => _moveOrCopyItem(item, copy: false),
+                            onCopy: () => _moveOrCopyItem(item, copy: true),
+                          ),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -651,6 +747,7 @@ class _FolderListTile extends StatelessWidget {
     required this.folder,
     required this.onOpen,
     required this.onRename,
+    required this.onMove,
     required this.onDelete,
     this.onLongPress,
     this.selecting = false,
@@ -660,6 +757,7 @@ class _FolderListTile extends StatelessWidget {
   final UserFolder folder;
   final VoidCallback onOpen;
   final VoidCallback onRename;
+  final VoidCallback onMove;
   final VoidCallback onDelete;
   final VoidCallback? onLongPress;
   final bool selecting;
@@ -677,11 +775,7 @@ class _FolderListTile extends StatelessWidget {
               selected ? Icons.check_circle : Icons.circle_outlined,
               color: selected ? scheme.primary : scheme.outline,
             )
-          : CoverArt(
-              size: 48,
-              borderRadius: 6,
-              icon: Icons.folder_outlined,
-            ),
+          : CoverArt(size: 48, borderRadius: 6, icon: Icons.folder_outlined),
       title: Text(folder.name),
       // Folder nodes: no type chip on the right.
       trailing: selecting
@@ -690,10 +784,12 @@ class _FolderListTile extends StatelessWidget {
               tooltip: l10n.moreActions,
               onSelected: (v) {
                 if (v == 'rename') onRename();
+                if (v == 'move') onMove();
                 if (v == 'delete') onDelete();
               },
               itemBuilder: (context) => [
                 PopupMenuItem(value: 'rename', child: Text(l10n.rename)),
+                PopupMenuItem(value: 'move', child: Text(l10n.folderMove)),
                 PopupMenuItem(value: 'delete', child: Text(l10n.delete)),
               ],
             ),
@@ -712,6 +808,8 @@ class _FolderItemTile extends StatelessWidget {
     required this.typeLabel,
     required this.onOpen,
     required this.onRemove,
+    required this.onMove,
+    required this.onCopy,
     this.onLongPress,
     this.selecting = false,
     this.selected = false,
@@ -724,6 +822,8 @@ class _FolderItemTile extends StatelessWidget {
   final String typeLabel;
   final VoidCallback onOpen;
   final VoidCallback onRemove;
+  final VoidCallback onMove;
+  final VoidCallback onCopy;
   final VoidCallback? onLongPress;
   final bool selecting;
   final bool selected;
@@ -731,7 +831,7 @@ class _FolderItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
-    final resolved = _resolveItem(l10n);
+    final resolved = _resolveItem(context, l10n);
     final scheme = Theme.of(context).colorScheme;
     return ListTile(
       dense: true,
@@ -744,15 +844,11 @@ class _FolderItemTile extends StatelessWidget {
               color: selected ? scheme.primary : scheme.outline,
             )
           : resolved.cover,
-      title: Text(
-        resolved.title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: Text(resolved.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       subtitle: resolved.subtitleLine2 == null
           ? (resolved.subtitleLine1 == null
-              ? null
-              : MetaText(resolved.subtitleLine1!))
+                ? null
+                : MetaText(resolved.subtitleLine1!))
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -773,19 +869,20 @@ class _FolderItemTile extends StatelessWidget {
             ),
             child: Text(
               typeLabel,
-              style: TextStyle(
-                color: scheme.onSurfaceVariant,
-                fontSize: 11,
-              ),
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 11),
             ),
           ),
           if (!selecting)
             PopupMenuButton<String>(
               tooltip: l10n.moreActions,
               onSelected: (v) {
+                if (v == 'move') onMove();
+                if (v == 'copy') onCopy();
                 if (v == 'remove') onRemove();
               },
               itemBuilder: (context) => [
+                PopupMenuItem(value: 'move', child: Text(l10n.folderMove)),
+                PopupMenuItem(value: 'copy', child: Text(l10n.folderCopy)),
                 PopupMenuItem(value: 'remove', child: Text(l10n.delete)),
               ],
             ),
@@ -796,7 +893,10 @@ class _FolderItemTile extends StatelessWidget {
     );
   }
 
-  _ResolvedFolderItem _resolveItem(AppLocalizations l10n) {
+  _ResolvedFolderItem _resolveItem(
+    BuildContext context,
+    AppLocalizations l10n,
+  ) {
     switch (refKind) {
       case UserFolderRefKind.album:
       case UserFolderRefKind.artist:
@@ -847,6 +947,59 @@ class _FolderItemTile extends StatelessWidget {
             enqueueIfMissing: false,
           ),
         );
+      case UserFolderRefKind.manga:
+        {
+          final mangaLib = Provider.of<MangaLibraryService>(
+            context,
+            listen: false,
+          );
+          for (final m in mangaLib.mangas) {
+            if (m.id == refKey) {
+              return _ResolvedFolderItem(
+                title: m.title,
+                subtitleLine1: m.displayAuthor.isEmpty
+                    ? m.format
+                    : m.displayAuthor,
+                cover: MangaCoverArt(manga: m, size: 48),
+              );
+            }
+          }
+          return _ResolvedFolderItem(
+            title: refKey,
+            subtitleLine1: l10n.folderRefMissing,
+            cover: CoverArt(size: 48, icon: Icons.menu_book_outlined),
+          );
+        }
+      case UserFolderRefKind.mangaSeries:
+        {
+          final mangaLib = Provider.of<MangaLibraryService>(
+            context,
+            listen: false,
+          );
+          for (final s in mangaLib.series) {
+            if (s.id == refKey) {
+              final list = mangaLib.mangasForSeries(s.id);
+              return _ResolvedFolderItem(
+                title: s.title,
+                subtitleLine1: l10n.mangaSeriesCount(list.length),
+                cover: list.isEmpty
+                    ? CoverArt(
+                        size: 48,
+                        icon: Icons.collections_bookmark_outlined,
+                      )
+                    : MangaCoverArt(manga: list.first, size: 48),
+              );
+            }
+          }
+          return _ResolvedFolderItem(
+            title: refKey,
+            subtitleLine1: l10n.folderRefMissing,
+            cover: CoverArt(
+              size: 48,
+              icon: Icons.collections_bookmark_outlined,
+            ),
+          );
+        }
       default:
         return _ResolvedFolderItem(
           title: localizedLibraryGroupName(l10n, refKey),
@@ -893,9 +1046,12 @@ class _FolderGridBody extends StatelessWidget {
     required this.onEnterSelect,
     required this.onOpenFolder,
     required this.onRenameFolder,
+    required this.onMoveFolder,
     required this.onDeleteFolder,
     required this.onOpenItem,
     required this.onRemoveItem,
+    required this.onMoveItem,
+    required this.onCopyItem,
   });
 
   final int columns;
@@ -911,9 +1067,12 @@ class _FolderGridBody extends StatelessWidget {
   final void Function(String key) onEnterSelect;
   final void Function(UserFolder) onOpenFolder;
   final void Function(UserFolder) onRenameFolder;
+  final void Function(UserFolder) onMoveFolder;
   final void Function(UserFolder) onDeleteFolder;
   final void Function(UserFolderItem) onOpenItem;
   final void Function(UserFolderItem) onRemoveItem;
+  final void Function(UserFolderItem) onMoveItem;
+  final void Function(UserFolderItem) onCopyItem;
 
   @override
   Widget build(BuildContext context) {
@@ -954,10 +1113,12 @@ class _FolderGridBody extends StatelessWidget {
                 ? const []
                 : [
                     (value: 'rename', label: l10n.rename),
+                    (value: 'move', label: l10n.folderMove),
                     (value: 'delete', label: l10n.delete),
                   ],
             onMenu: (v) {
               if (v == 'rename') onRenameFolder(f);
+              if (v == 'move') onMoveFolder(f);
               if (v == 'delete') onDeleteFolder(f);
             },
           );
@@ -978,9 +1139,13 @@ class _FolderGridBody extends StatelessWidget {
           menuItems: selecting
               ? const []
               : [
+                  (value: 'move', label: l10n.folderMove),
+                  (value: 'copy', label: l10n.folderCopy),
                   (value: 'remove', label: l10n.delete),
                 ],
           onMenu: (v) {
+            if (v == 'move') onMoveItem(item);
+            if (v == 'copy') onCopyItem(item);
             if (v == 'remove') onRemoveItem(item);
           },
         );
@@ -989,7 +1154,7 @@ class _FolderGridBody extends StatelessWidget {
   }
 
   ({String title, String? subtitle, Widget Function(double size) coverBuilder})
-      _resolveGridItem(BuildContext context, UserFolderItem item) {
+  _resolveGridItem(BuildContext context, UserFolderItem item) {
     final l10n = AppLocalizations.of(context)!;
     switch (item.refKind) {
       case UserFolderRefKind.album:
@@ -1043,6 +1208,56 @@ class _FolderGridBody extends StatelessWidget {
             enqueueIfMissing: false,
           ),
         );
+      case UserFolderRefKind.manga:
+        {
+          final mangaLib = Provider.of<MangaLibraryService>(
+            context,
+            listen: false,
+          );
+          for (final m in mangaLib.mangas) {
+            if (m.id == item.refKey) {
+              return (
+                title: m.title,
+                subtitle: m.displayAuthor.isEmpty ? m.format : m.displayAuthor,
+                coverBuilder: (size) => MangaCoverArt(manga: m, size: size),
+              );
+            }
+          }
+          return (
+            title: item.refKey,
+            subtitle: l10n.folderRefMissing,
+            coverBuilder: (size) =>
+                CoverArt(size: size, icon: Icons.menu_book_outlined),
+          );
+        }
+      case UserFolderRefKind.mangaSeries:
+        {
+          final mangaLib = Provider.of<MangaLibraryService>(
+            context,
+            listen: false,
+          );
+          for (final s in mangaLib.series) {
+            if (s.id == item.refKey) {
+              final list = mangaLib.mangasForSeries(s.id);
+              return (
+                title: s.title,
+                subtitle: l10n.mangaSeriesCount(list.length),
+                coverBuilder: (size) => list.isEmpty
+                    ? CoverArt(
+                        size: size,
+                        icon: Icons.collections_bookmark_outlined,
+                      )
+                    : MangaCoverArt(manga: list.first, size: size),
+              );
+            }
+          }
+          return (
+            title: item.refKey,
+            subtitle: l10n.folderRefMissing,
+            coverBuilder: (size) =>
+                CoverArt(size: size, icon: Icons.collections_bookmark_outlined),
+          );
+        }
       default:
         return (
           title: localizedLibraryGroupName(l10n, item.refKey),
@@ -1116,8 +1331,10 @@ class _FolderGridCell extends StatelessWidget {
                 child: LayoutBuilder(
                   builder: (context, constraints) {
                     final side = constraints.biggest.shortestSide;
-                    final moreSize =
-                        (side * 0.22).clamp(14.0, columns >= 4 ? 22.0 : 28.0);
+                    final moreSize = (side * 0.22).clamp(
+                      14.0,
+                      columns >= 4 ? 22.0 : 28.0,
+                    );
                     return Stack(
                       clipBehavior: Clip.none,
                       children: [
@@ -1131,8 +1348,7 @@ class _FolderGridCell extends StatelessWidget {
                                   ? Icons.check_circle
                                   : Icons.circle_outlined,
                               size: moreSize,
-                              color:
-                                  selected ? scheme.primary : scheme.outline,
+                              color: selected ? scheme.primary : scheme.outline,
                             ),
                           ),
                         if (!selecting && menuItems.isNotEmpty)
@@ -1175,8 +1391,7 @@ class _FolderGridCell extends StatelessWidget {
                                 vertical: 1,
                               ),
                               decoration: BoxDecoration(
-                                color:
-                                    scheme.surface.withValues(alpha: 0.85),
+                                color: scheme.surface.withValues(alpha: 0.85),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(

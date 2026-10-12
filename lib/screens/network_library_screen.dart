@@ -528,18 +528,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   }
 
   /// 网络库音乐：按当前路径生成队列，按 [mode] 起播。
-  Future<void> _playMusic(
-    WebDavItem item, {
-    required PlayOpenMode mode,
-  }) async {
+  Future<void> _playMusic(WebDavItem item, {required PlayOpenMode mode}) async {
     final accountId = _accountId;
     if (accountId == null) return;
     final accounts = context.read<AccountsService>();
     final account = accounts.accountById(accountId);
     final sourceName = account?.name ?? '';
     if (sourceName.isEmpty) return;
-    final siblings =
-        _items.where((e) => e.category == FileCategory.music).toList();
+    final siblings = _items
+        .where((e) => e.category == FileCategory.music)
+        .toList();
     if (siblings.isEmpty) siblings.add(item);
     final playlist = [
       for (final e in siblings)
@@ -1643,12 +1641,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     );
   }
 
-
-
   List<String> _mangaImageExts(SettingsService settings) => [
-        ...settings.fileTypes.imageExtensions,
-        ...kMangaImageExtensions,
-      ];
+    ...settings.fileTypes.imageExtensions,
+    ...kMangaImageExtensions,
+  ];
 
   Future<void> _scanComicContainers(WebDavItem folder) async {
     final accountId = _accountId;
@@ -1724,7 +1720,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         pageRelPaths: rels,
       );
       if (!mounted) return;
-      final confirmed = await showMangaIngestConfirmSheet(context, draft: draft);
+      final confirmed = await showMangaIngestConfirmSheet(
+        context,
+        draft: draft,
+      );
       if (confirmed == null || !mounted) return;
       await context.read<MangaLibraryService>().upsertFromDraft(confirmed);
       if (!mounted) return;

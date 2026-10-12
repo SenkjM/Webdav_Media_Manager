@@ -181,7 +181,9 @@ class AppState extends ChangeNotifier {
       AppSnack.attach(settings);
       if (settings.downloadNomediaEnabled) {
         // 只在开关为开且目录里还没有时补文件。已经有不算失败，关着不删。
-        unawaited(const PlatformExportService().setDownloadsNomedia(enabled: true));
+        unawaited(
+          const PlatformExportService().setDownloadsNomedia(enabled: true),
+        );
       }
       _syncCoverThumbSize();
       _syncDownloadFileTypes();
@@ -221,6 +223,7 @@ class AppState extends ChangeNotifier {
       _initPhase = 'playlists';
       await playlists.init();
       taskQueue.attachLibrary(library);
+      taskQueue.attachMangaLibrary(mangaLibrary);
       // Incremental library sync: whenever a download (or a restore) changes
       // the local library, push just the new rows to the cloud index.
       library.addListener(_onLibraryChanged);
@@ -421,8 +424,7 @@ class AppState extends ChangeNotifier {
   Future<int> manualClearCache() async {
     final protected = <String>{};
     for (final t in taskQueue.tasks) {
-      if (t.status == TaskStatus.active ||
-          t.status == TaskStatus.pending) {
+      if (t.status == TaskStatus.active || t.status == TaskStatus.pending) {
         final f = cache.fileForRemote(t.remotePath, sourceName: t.sourceName);
         protected.add(f.path);
         protected.add('${f.path}.part');

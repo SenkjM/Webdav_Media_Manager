@@ -25,6 +25,11 @@ import 'download_keepalive.dart';
 import 'download_notification_service.dart';
 import 'task_store.dart';
 import 'library_service.dart';
+import '../utils/batch_outcome.dart';
+import '../models/manga_page.dart';
+import '../models/manga.dart';
+import 'manga_library_service.dart';
+import '../utils/cbz_range_zip.dart';
 import 'playlist_service.dart';
 import 'platform_export_service.dart';
 import 'webdav_service.dart';
@@ -94,6 +99,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   final Set<String> _fgsTimeoutSuspendIds = <String>{};
   DateTime? _fgsCooldownUntil;
   LibraryService? _library;
+  MangaLibraryService? _mangaLibrary;
   final PlaylistService? _playlists;
   final TaskStore _store;
   final PlatformExportService _export;
@@ -277,6 +283,10 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     _library = library;
   }
 
+  void attachMangaLibrary(MangaLibraryService mangaLibrary) {
+    _mangaLibrary = mangaLibrary;
+  }
+
   UnmodifiableListView<QueueTask> get tasks => UnmodifiableListView(_tasks);
 
   /// After the audio cache is cleared, drop the completed tasks whose file is
@@ -405,8 +415,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final byPath = <String, QueueTask>{};
     for (final t in _tasks) {
       if (t.cacheGroupId != groupId) continue;
-      if (t.status == TaskStatus.cancelled ||
-          t.status == TaskStatus.failed) {
+      if (t.status == TaskStatus.cancelled || t.status == TaskStatus.failed) {
         continue;
       }
       final prev = byPath[t.remotePath];
@@ -442,6 +451,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         case TaskStatus.active:
           return TrackUiState.downloading;
         case TaskStatus.failed:
+        case TaskStatus.partial:
         case TaskStatus.cancelled:
           return TrackUiState.error;
         case TaskStatus.completed:
@@ -465,7 +475,6 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     // Network browser: not downloaded and never enqueued — no status chip.
     return TrackUiState.remote;
   }
-
 
   /// Enqueue a media-library scrape for one root (file or folder).
   ///
@@ -522,8 +531,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       if (raw is! List) return null;
       return [
         for (final e in raw)
-          if (e is Map)
-            ScanPathEntry.fromJson(Map<String, dynamic>.from(e)),
+          if (e is Map) ScanPathEntry.fromJson(Map<String, dynamic>.from(e)),
       ];
     } catch (_) {
       return null;
@@ -546,6 +554,35 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       progressMode: TaskProgressMode.units,
       unitsTotal: 1,
       unitsDone: 0,
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
+  /// CBZ metadata + cover scrape (separate from music [enqueueScan]).
+  Future<QueueTask> enqueueMangaScrape({
+    required String accountId,
+    required String sourceName,
+    required String remotePath,
+    required String displayName,
+    required String mangaId,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: displayName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.mangaScrape,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: 2,
+      unitsDone: 0,
+      // Stash mangaId in cacheGroupId-compatible field if available; else localPath marker.
+      localPath: 'manga:$mangaId',
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
@@ -638,8 +675,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       (t) =>
           t!.sourceName == sourceName &&
           t.remotePath == remotePath &&
-          (t.status == TaskStatus.pending ||
-              t.status == TaskStatus.active),
+          (t.status == TaskStatus.pending || t.status == TaskStatus.active),
       orElse: () => null,
     );
     if (inFlight != null) {
@@ -700,6 +736,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           }
           break;
         case TaskStatus.failed:
+        case TaskStatus.partial:
         case TaskStatus.cancelled:
           existing.status = TaskStatus.pending;
           existing.errorMessage = null;
@@ -726,7 +763,6 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_pump());
     return true;
   }
-
 
   /// Queue into music_cache if needed, then wait until the file exists or the
   /// cache task fails / is cancelled. Returns the local path, or null on failure.
@@ -799,6 +835,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         case TaskStatus.completed:
           return false;
         case TaskStatus.failed:
+        case TaskStatus.partial:
         case TaskStatus.cancelled:
           existing.status = TaskStatus.pending;
           existing.errorMessage = null;
@@ -1094,8 +1131,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         (t) =>
             t!.sourceName == sourceName &&
             t.remotePath == remotePath &&
-            (t.status == TaskStatus.cancelled ||
-                t.status == TaskStatus.failed),
+            (t.status == TaskStatus.cancelled || t.status == TaskStatus.failed),
         orElse: () => null,
       );
       if (reusable != null) {
@@ -1137,8 +1173,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       (t) =>
           t!.sourceName == sourceName &&
           t.remotePath == remotePath &&
-          (t.status == TaskStatus.pending ||
-              t.status == TaskStatus.active),
+          (t.status == TaskStatus.pending || t.status == TaskStatus.active),
       orElse: () => null,
     );
     if (inFlight != null) {
@@ -1155,8 +1190,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       (t) =>
           t!.sourceName == sourceName &&
           t.remotePath == remotePath &&
-          (t.status == TaskStatus.cancelled ||
-              t.status == TaskStatus.failed),
+          (t.status == TaskStatus.cancelled || t.status == TaskStatus.failed),
       orElse: () => null,
     );
     if (reusable != null) {
@@ -1397,8 +1431,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (task.status == TaskStatus.active) {
       _cancelTokens[id]?.cancel('cancelled');
     }
-    if (task.status == TaskStatus.pending ||
-        task.status == TaskStatus.active) {
+    if (task.status == TaskStatus.pending || task.status == TaskStatus.active) {
       task.status = TaskStatus.cancelled;
       task.errorMessage = 'err.cancelled';
       await _store.upsert(task);
@@ -1412,7 +1445,10 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final idx = _tasks.indexWhere((t) => t.id == id);
     if (idx < 0) return;
     final old = _tasks[idx];
+    // partial: incremental scan skips already-ingested paths, so re-running
+    // the task only re-tries the files that failed.
     if (old.status != TaskStatus.failed &&
+        old.status != TaskStatus.partial &&
         old.status != TaskStatus.cancelled) {
       return;
     }
@@ -1476,9 +1512,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> clearCompleted() async {
-    final done = _tasks
-        .where((t) => t.status == TaskStatus.completed)
-        .toList();
+    final done = _tasks.where((t) => t.status == TaskStatus.completed).toList();
     for (final t in done) {
       _tasks.remove(t);
       await _store.delete(t.id);
@@ -1551,7 +1585,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
                   (t.kind == TaskKind.download ||
                       t.kind == TaskKind.scan ||
                       t.kind == TaskKind.retagCloud ||
-                      t.kind == TaskKind.matchRemote) &&
+                      t.kind == TaskKind.matchRemote ||
+                      t.kind == TaskKind.mangaScrape) &&
                   (t.nextRetryAt == null || !t.nextRetryAt!.isAfter(now)),
             )
             .toList()
@@ -1600,6 +1635,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         case TaskStatus.completed:
           completed++;
         case TaskStatus.failed:
+        case TaskStatus.partial:
           failed++;
         case TaskStatus.cancelled:
           cancelled++;
@@ -1819,8 +1855,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   bool get _isBackground => DownloadKeepAlive.lifecycleIsBackground();
 
   bool get _queueHasWork => _tasks.any(
-    (t) =>
-        t.status == TaskStatus.pending || t.status == TaskStatus.active,
+    (t) => t.status == TaskStatus.pending || t.status == TaskStatus.active,
   );
 
   bool _takeFgsTimeoutSuspend(QueueTask task) =>
@@ -1953,8 +1988,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final now = DateTime.now();
     final alive = <String>{
       for (final t in _tasks)
-        if (t.status == TaskStatus.pending ||
-            t.status == TaskStatus.active)
+        if (t.status == TaskStatus.pending || t.status == TaskStatus.active)
           t.id,
     };
     final files = <File>[];
@@ -2005,9 +2039,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 退避到期自己回来——网络事件是加速器，不是唯一唤醒源。
   void _scheduleRetryWake() {
     final waiting = _tasks
-        .where(
-          (t) => t.status == TaskStatus.pending && t.nextRetryAt != null,
-        )
+        .where((t) => t.status == TaskStatus.pending && t.nextRetryAt != null)
         .toList();
     if (waiting.isEmpty) return;
     waiting.sort((a, b) => a.nextRetryAt!.compareTo(b.nextRetryAt!));
@@ -2093,8 +2125,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         // 原地重试：任务自己约了下一次尝试，就别把它放回队尾去「等待」——
         // 它继续占着当前这个位置（进度不重置、后面的任务不插队），
         // 列表里也一直显示成这一条在重试。
-        while (task.status == TaskStatus.pending &&
-            task.nextRetryAt != null) {
+        while (task.status == TaskStatus.pending && task.nextRetryAt != null) {
           await _waitForRetry(task);
           task.nextRetryAt = null;
           await _attempt(task);
@@ -2145,6 +2176,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           await _runRetagCloud(task, token);
         case TaskKind.matchRemote:
           await _runMatchRemote(task, token);
+        case TaskKind.mangaScrape:
+          await _runMangaScrape(task, token);
         case TaskKind.retagLocal:
           // Local retag stays interactive (settings); not scheduled here.
           task.status = TaskStatus.cancelled;
@@ -2321,9 +2354,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   Set<String> get downloadingIdentityKeys => _tasks
       .where(
-        (t) =>
-            t.status == TaskStatus.active ||
-            t.status == TaskStatus.pending,
+        (t) => t.status == TaskStatus.active || t.status == TaskStatus.pending,
       )
       .map((t) => trackIdentityKey(t.sourceName, t.remotePath))
       .toSet();
@@ -2349,7 +2380,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     final walk = _settings?.mediaScanWalkOptions ?? const WalkOptions();
     final lower = task.fileName.toLowerCase();
-    final rootIsFile = !task.remotePath.endsWith('/') &&
+    final rootIsFile =
+        !task.remotePath.endsWith('/') &&
         (_isMusicFile(task.fileName) ||
             _isMusicFile(task.remotePath) ||
             lower.endsWith('.cue') ||
@@ -2412,27 +2444,32 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       return false;
     }
 
+    var failedCount = 0;
+    bool isCancelErr(Object e) =>
+        token.isCancelled || (e is DioException && CancelToken.isCancel(e));
     for (final item in cueItems) {
       if (await bumpOrCancel()) return;
       try {
-        final already = library.tracks.any(
-          (tr) =>
-              tr.sourceName == task.sourceName &&
-              tr.cueRemotePath == item.path,
-        );
-        if (!already) {
-          final bytes = await _webDav.readAsBytes(accountId, item.path);
-          final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
-          if (sheet == null) {
-            throw StateError('err.cueMalformed|${item.path}');
-          }
-          await library.ingestCueRemote(
-            sourceName: task.sourceName,
-            cueRemotePath: item.path,
-            sheet: sheet,
+        await retryItem(isCancel: isCancelErr, () async {
+          final already = library.tracks.any(
+            (tr) =>
+                tr.sourceName == task.sourceName &&
+                tr.cueRemotePath == item.path,
           );
-          coveredByCue.addAll(sheet.audioRemotePaths(item.path));
-        }
+          if (!already) {
+            final bytes = await _webDav.readAsBytes(accountId, item.path);
+            final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
+            if (sheet == null) {
+              throw StateError('err.cueMalformed|${item.path}');
+            }
+            await library.ingestCueRemote(
+              sourceName: task.sourceName,
+              cueRemotePath: item.path,
+              sheet: sheet,
+            );
+            coveredByCue.addAll(sheet.audioRemotePaths(item.path));
+          }
+        });
       } catch (e) {
         if (token.isCancelled ||
             (e is DioException && CancelToken.isCancel(e))) {
@@ -2441,6 +2478,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           notifyListeners();
           return;
         }
+        failedCount++;
         task.errorMessage = TaskError.classify(e).persisted;
         debugPrint('scan cue failed ${item.path}: $e');
       }
@@ -2457,22 +2495,24 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           await reportUnitsProgress(task.id, done: done, total: total);
           continue;
         }
-        final source = await _webDav.resolveStreamSource(
-          remotePath: item.path,
-          name: item.name,
-          accountId: accountId,
-          kind: StreamKind.music,
-        );
-        if (source == null || source.uri.isEmpty) {
-          throw StateError('err.cloud.notFound|${item.path}');
-        }
-        final tags = await covers.extractTags(source, cancel: token);
-        await library.ingestFromTags(
-          sourceName: task.sourceName,
-          remotePath: item.path,
-          fileName: item.name,
-          tags: tags ?? const ReadTags(),
-        );
+        await retryItem(isCancel: isCancelErr, () async {
+          final source = await _webDav.resolveStreamSource(
+            remotePath: item.path,
+            name: item.name,
+            accountId: accountId,
+            kind: StreamKind.music,
+          );
+          if (source == null || source.uri.isEmpty) {
+            throw StateError('err.cloud.notFound|${item.path}');
+          }
+          final tags = await covers.extractTags(source, cancel: token);
+          await library.ingestFromTags(
+            sourceName: task.sourceName,
+            remotePath: item.path,
+            fileName: item.name,
+            tags: tags ?? const ReadTags(),
+          );
+        });
       } catch (e) {
         if (token.isCancelled ||
             (e is DioException && CancelToken.isCancel(e))) {
@@ -2481,6 +2521,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           notifyListeners();
           return;
         }
+        failedCount++;
         task.errorMessage = TaskError.classify(e).persisted;
         debugPrint('scan music failed ${item.path}: $e');
       }
@@ -2488,9 +2529,112 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       await reportUnitsProgress(task.id, done: done, total: total);
     }
 
-    task.status = TaskStatus.completed;
+    task.status = batchOutcome(ok: total - failedCount, failed: failedCount);
+    if (task.status == TaskStatus.completed) task.errorMessage = null;
     task.completedAt = DateTime.now();
     task.progress = 1;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+  /// Range-read CBZ ComicInfo + first-page cover into manga_cache/covers.
+  Future<void> _runMangaScrape(QueueTask task, CancelToken token) async {
+    final mangaLib = _mangaLibrary;
+    if (mangaLib == null) {
+      throw StateError('err.mangaLibraryNotReady');
+    }
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+    final marker = task.localPath ?? '';
+    final mangaId = marker.startsWith('manga:') ? marker.substring(6) : '';
+    Manga? manga;
+    for (final m in mangaLib.mangas) {
+      if (m.id == mangaId) {
+        manga = m;
+        break;
+      }
+    }
+    if (manga == null) {
+      throw StateError('err.mangaMissing|$mangaId');
+    }
+    if (manga.format != MangaFormat.cbz) {
+      task.unitsDone = 1;
+      task.unitsTotal = 1;
+      task.progress = 1;
+      task.status = TaskStatus.completed;
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+      return;
+    }
+    final source = await _webDav.resolveStreamSource(
+      accountId: accountId,
+      remotePath: task.remotePath,
+      name: task.fileName,
+    );
+    if (source == null) {
+      throw StateError('err.streamSourceMissing');
+    }
+    final zip = CbzRangeZip(source: source);
+    try {
+      await retryItem(
+        () => zip.open(cancel: token),
+        isCancel: (e) =>
+            e is CbzRangeUnsupportedException ||
+            token.isCancelled ||
+            (e is DioException && CancelToken.isCancel(e)),
+      );
+    } on CbzRangeUnsupportedException {
+      throw StateError('err.rangeUnsupported');
+    }
+    task.unitsDone = 1;
+    task.unitsTotal = 2;
+    task.progress = 0.5;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    final infoEntry = zip.findComicInfo();
+    if (infoEntry != null) {
+      final xml = await retryItem(
+        () => zip.extractEntry(infoEntry, cancel: token),
+      );
+      final meta = ComicInfoMeta.parse(xml);
+      if (meta != null) {
+        await mangaLib.updateMangaMetadata(
+          manga.id,
+          title: meta.title,
+          author: meta.writer,
+          seriesTitle: meta.series,
+          updateSeries: meta.series != null,
+        );
+      }
+    }
+
+    final images = zip.imageEntries;
+    if (images.isNotEmpty) {
+      final coverBytes = await retryItem(
+        () => zip.extractEntry(images.first, cancel: token),
+      );
+      if (coverBytes.isNotEmpty) {
+        final coverFile = _cache.mangaCoverFile(manga.id);
+        await coverFile.parent.create(recursive: true);
+        await coverFile.writeAsBytes(coverBytes, flush: true);
+      }
+      final pages = [
+        for (var i = 0; i < images.length; i++)
+          MangaPage(mangaId: manga.id, pageIndex: i, relPath: images[i].name),
+      ];
+      await mangaLib.replacePages(
+        manga.id,
+        pages: pages,
+        coverRelpath: images.first.name,
+      );
+    }
+
+    task.unitsDone = 2;
+    task.progress = 1;
+    task.status = TaskStatus.completed;
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
   }
@@ -2543,7 +2687,6 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
   }
-
 
   Future<void> _runMatchRemote(QueueTask task, CancelToken token) async {
     final library = _library;
@@ -2663,5 +2806,4 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       rethrow;
     }
   }
-
 }

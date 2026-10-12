@@ -4641,4 +4641,97 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mangaReaderUnboundSource => 'Source drive is not bound';
+
+  @override
+  String get mangaUnspecifiedSeries => 'Unspecified series';
+
+  @override
+  String get mangaEditMetadata => 'Edit metadata';
+
+  @override
+  String get mangaEditSeries => 'Edit series';
+
+  @override
+  String get mangaRenameAuthor => 'Rename author';
+
+  @override
+  String get mangaRenameAuthorHint =>
+      'Updates every manga with this author name';
+
+  @override
+  String get mangaCacheAction => 'Cache full file';
+
+  @override
+  String get mangaClearCache => 'Clear cache';
+
+  @override
+  String get mangaCached => 'Cached';
+
+  @override
+  String get mangaRangeUnsupportedTitle => 'Cannot stream';
+
+  @override
+  String get mangaRangeUnsupportedBody =>
+      'This server does not support ranged reads. Cache the full file locally first.';
+
+  @override
+  String get mangaRangeUnsupportedCache => 'Cache full file and read';
+
+  @override
+  String get mangaViewMode => 'View';
+
+  @override
+  String get taskKindMangaScrape => 'Manga scrape';
+
+  @override
+  String get mangaScrapeQueued => 'Manga scrape queued';
+
+  @override
+  String get mangaScrapeAction => 'Scrape metadata';
+
+  @override
+  String get folderMove => 'Move to…';
+
+  @override
+  String get folderCopy => 'Copy to…';
+
+  @override
+  String get folderMoveDone => 'Moved';
+
+  @override
+  String get folderCopyDone => 'Copied';
+
+  @override
+  String get folderAddManga => 'Add manga';
+
+  @override
+  String get folderAddMangaSeries => 'Add series';
+
+  @override
+  String get folderTypeManga => 'Manga';
+
+  @override
+  String get folderTypeMangaSeries => 'Series';
+
+  @override
+  String get mangaCacheSection => 'Manga cache';
+
+  @override
+  String get mangaCacheMaxMb => 'Manga cache limit (MB, 0=unlimited)';
+
+  @override
+  String get mangaCacheSizeLabel => 'Manga cache size';
+
+  @override
+  String get clearMangaCache => 'Clear manga cache';
+
+  @override
+  String get clearMangaCacheConfirm =>
+      'Deletes archives and covers under manga_cache. Library metadata is kept.';
+
+  @override
+  String get musicViewMode => 'View';
+
+  @override
+  String get taskPartialFailed => 'Partially failed';
 }

@@ -13,8 +13,12 @@ enum TaskKind {
   scan,
   retagCloud,
   retagLocal,
+
   /// Optional full-library remote existence probe (writes remote_missing).
   matchRemote,
+
+  /// CBZ / container metadata + cover scrape (separate from music [scan]).
+  mangaScrape,
 }
 
 extension TaskKindX on TaskKind {
@@ -24,6 +28,7 @@ extension TaskKindX on TaskKind {
     TaskKind.retagCloud => 'retag_cloud',
     TaskKind.retagLocal => 'retag_local',
     TaskKind.matchRemote => 'match_remote',
+    TaskKind.mangaScrape => 'manga_scrape',
   };
 
   String label(AppLocalizations l10n) => switch (this) {
@@ -32,6 +37,7 @@ extension TaskKindX on TaskKind {
     TaskKind.retagCloud => l10n.taskKindRetagCloud,
     TaskKind.retagLocal => l10n.taskKindRetagLocal,
     TaskKind.matchRemote => l10n.taskKindMatchRemote,
+    TaskKind.mangaScrape => l10n.taskKindMangaScrape,
   };
 
   static TaskKind fromStorageKey(String? key) => switch (key) {
@@ -39,12 +45,14 @@ extension TaskKindX on TaskKind {
     'retag_cloud' => TaskKind.retagCloud,
     'retag_local' => TaskKind.retagLocal,
     'match_remote' => TaskKind.matchRemote,
+    'manga_scrape' => TaskKind.mangaScrape,
     _ => TaskKind.download,
   };
 }
 
 /// Queue entry lifecycle.
-enum TaskStatus { pending, active, completed, failed, cancelled }
+/// [partial]: batch finished, some items failed after internal retries.
+enum TaskStatus { pending, active, completed, failed, cancelled, partial }
 
 extension TaskStatusX on TaskStatus {
   String label(AppLocalizations l10n) => switch (this) {
@@ -53,6 +61,7 @@ extension TaskStatusX on TaskStatus {
     TaskStatus.completed => l10n.downloadCompleted,
     TaskStatus.failed => l10n.downloadFailed,
     TaskStatus.cancelled => l10n.downloadCancelled,
+    TaskStatus.partial => l10n.taskPartialFailed,
   };
 }
 
@@ -166,6 +175,7 @@ class QueueTask {
   bool get isTerminal =>
       status == TaskStatus.completed ||
       status == TaskStatus.failed ||
+      status == TaskStatus.partial ||
       status == TaskStatus.cancelled;
 
   bool get isDownload => kind == TaskKind.download;

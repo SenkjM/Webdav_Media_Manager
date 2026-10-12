@@ -190,10 +190,79 @@ class UserFolderService extends ChangeNotifier {
     );
     _items.removeWhere(
       (i) =>
-          i.folderId == folderId &&
-          i.refKind == refKind &&
-          i.refKey == refKey,
+          i.folderId == folderId && i.refKind == refKind && i.refKey == refKey,
     );
     notifyListeners();
+  }
+
+  /// Descendants of [folderId] including itself.
+  Set<String> descendantIds(String folderId) {
+    final dropIds = <String>{folderId};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final f in _folders) {
+        if (f.parentId != null &&
+            dropIds.contains(f.parentId) &&
+            dropIds.add(f.id)) {
+          grew = true;
+        }
+      }
+    }
+    return dropIds;
+  }
+
+  /// Move folder under [newParentId] (null = virtual root). Refuses self/descendant.
+  Future<bool> moveFolder(String folderId, {String? newParentId}) async {
+    if (folderId.isEmpty) return false;
+    if (newParentId != null && descendantIds(folderId).contains(newParentId)) {
+      return false;
+    }
+    final f = folderById(folderId);
+    if (f == null) return false;
+    if (f.parentId == newParentId) return true;
+    final siblings = childrenOf(newParentId);
+    final updated = f.copyWith(
+      parentId: newParentId,
+      clearParent: newParentId == null,
+      sortOrder: siblings.isEmpty ? 0 : siblings.last.sortOrder + 1,
+    );
+    await _db.upsertUserFolder(updated);
+    final idx = _folders.indexWhere((x) => x.id == folderId);
+    if (idx >= 0) _folders[idx] = updated;
+    notifyListeners();
+    return true;
+  }
+
+  /// Move soft-ref to another folder (delete+add).
+  Future<bool> moveRef({
+    required String fromFolderId,
+    required String toFolderId,
+    required String refKind,
+    required String refKey,
+  }) async {
+    if (fromFolderId == toFolderId) return true;
+    if (folderById(toFolderId) == null) return false;
+    await removeRef(folderId: fromFolderId, refKind: refKind, refKey: refKey);
+    final n = await addRefs(
+      folderId: toFolderId,
+      refKind: refKind,
+      refKeys: [refKey],
+    );
+    return n > 0;
+  }
+
+  /// Copy soft-ref (reference copy) into [toFolderId].
+  Future<bool> copyRef({
+    required String toFolderId,
+    required String refKind,
+    required String refKey,
+  }) async {
+    final n = await addRefs(
+      folderId: toFolderId,
+      refKind: refKind,
+      refKeys: [refKey],
+    );
+    return n > 0;
   }
 }

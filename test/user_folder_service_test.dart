@@ -16,7 +16,10 @@ class _MemDb extends LibraryDatabase {
   @override
   Future<List<UserFolderItem>> loadUserFolderItems({String? folderId}) async {
     if (folderId == null) return List.of(items);
-    return [for (final i in items) if (i.folderId == folderId) i];
+    return [
+      for (final i in items)
+        if (i.folderId == folderId) i,
+    ];
   }
 
   @override
@@ -60,9 +63,7 @@ class _MemDb extends LibraryDatabase {
   }) async {
     items.removeWhere(
       (i) =>
-          i.folderId == folderId &&
-          i.refKind == refKind &&
-          i.refKey == refKey,
+          i.folderId == folderId && i.refKind == refKind && i.refKey == refKey,
     );
   }
 }

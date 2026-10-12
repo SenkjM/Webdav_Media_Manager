@@ -40,21 +40,21 @@ class Manga {
       (author == null || author!.trim().isEmpty) ? '' : author!.trim();
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'source_name': sourceName,
-        'remote_path': remotePath,
-        'title': title,
-        'author': author,
-        'series_id': seriesId,
-        'volume': volume,
-        'chapter_number': chapterNumber,
-        'page_count': pageCount,
-        'cover_relpath': coverRelpath,
-        'format': format,
-        'remote_missing': remoteMissing ? 1 : 0,
-        'page_turn': pageTurn,
-        'updated_at': updatedAt.toUtc().toIso8601String(),
-      };
+    'id': id,
+    'source_name': sourceName,
+    'remote_path': remotePath,
+    'title': title,
+    'author': author,
+    'series_id': seriesId,
+    'volume': volume,
+    'chapter_number': chapterNumber,
+    'page_count': pageCount,
+    'cover_relpath': coverRelpath,
+    'format': format,
+    'remote_missing': remoteMissing ? 1 : 0,
+    'page_turn': pageTurn,
+    'updated_at': updatedAt.toUtc().toIso8601String(),
+  };
 
   static Manga fromMap(Map<String, Object?> map) {
     final rawTurn = map['page_turn'] as String?;
@@ -74,13 +74,14 @@ class Manga {
       pageTurn: (rawTurn == null || rawTurn.trim().isEmpty) ? null : rawTurn,
       updatedAt:
           DateTime.tryParse(map['updated_at'] as String? ?? '')?.toLocal() ??
-              DateTime.now(),
+          DateTime.now(),
     );
   }
 
   Manga copyWith({
     String? title,
     String? author,
+    bool clearAuthor = false,
     String? seriesId,
     bool clearSeriesId = false,
     String? volume,
@@ -98,7 +99,7 @@ class Manga {
       sourceName: sourceName,
       remotePath: remotePath,
       title: title ?? this.title,
-      author: author ?? this.author,
+      author: clearAuthor ? null : (author ?? this.author),
       seriesId: clearSeriesId ? null : (seriesId ?? this.seriesId),
       volume: volume ?? this.volume,
       chapterNumber: chapterNumber ?? this.chapterNumber,

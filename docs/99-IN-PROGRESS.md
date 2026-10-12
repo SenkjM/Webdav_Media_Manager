@@ -1202,7 +1202,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 ## 19. 漫画库（第一刀垂直切片，进行中）
 
-**状态**：2026-10-12 基于 `main` tip `e0d7280` 开分支 `feat/manga-library`（worktree：`worktree/manga-library`）。用户偏好中文 UI。不推 `main`、不发版、不跑 Testbuild。
+**状态**：2026-10-12 基于 `main` tip `e0d7280` 开分支 `feat/manga-library`（worktree：`worktree/manga-library`）。用户偏好中文 UI。不推 `main`、不发版；本轮用户点名推送分支并跑 Testbuild。
 
 **相关完整文档**：[01](01-DATA-MODEL.md)、[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)（对照音乐库交互）。开发期间上述文档只留一行占位指向本节。
 
@@ -1293,3 +1293,27 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 | 散图每目录一本 | **按目录批量建立** | 标题 = 目录名 |
 | 单容器文件 | **加入**漫画库 | 与文件夹扫描并列 |
 
+### 19.9 锁定缺口（2026-10-12，本轮必须落地）
+
+命名：全局字段一律 `manga`，禁止 `book`。
+
+1. **封面**：漫画库列表（系列 / 单本 / 作者）显示封面。
+2. **视图模式**：列表 / 网格 2–5 列（同文件夹）；**按**漫画子 Tab（系列 / 单本 / 作者）分别持久化；默认 **列表**。
+3. **音乐库**：同样可配置视图模式，**按**音乐子 Tab 分别保存；默认列表。
+4. **单本 Tab**：分区「未指定系列」（`series_id` 为空 **或** 系列名为空 / 「未指定」）。
+5. **CBZ 流式**：HTTP Range 读 ZIP 中央目录 + 按页抽取；若源不支持 Range → **拒绝流式**并提示整包缓存。
+6. **CBZ 刮削**：后台任务类别（与音乐刮削分开），ComicInfo / 元数据 + 封面抽取；队列形态对齐音乐刮削。
+7. **元数据编辑**：漫画标题 / 系列 / 作者；系列名 / 作者（批量绑定）；作者重命名**级联**所有漫画；空系列名 = 未指定。
+8. **本地缓存**：独立 `manga_cache/` 路径，但**共用**缓存管理 UI / 设置；设置偏好 + 更多菜单手动缓存（对齐音乐）。
+9. **用户文件夹**：软引用 `manga` + `mangaSeries`；除删除外支持 **移动** + **复制**（引用复制）；选择器根在用户文件夹；自身 / 子孙灰显。
+10. CBR / PDF / EPUB 保持 stub。
+
+prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_view_modes_json`（键 `albums` / `artists` / `titles` / `genres`）；复用 `FolderViewMode`。漫画缓存上限键 `manga_cache_max_mb`（0=不限），清理策略与音乐共用保留期设置。
+
+任务：`TaskKind.mangaScrape`（storage `manga_scrape`）——与 `scan`（音乐）分列。
+
+
+### 19.10 批量任务部分失败（锁定）
+- 扫描（音乐刮削/标签更新）与漫画刮削：每个文件内部自动重试至多 3 次（`lib/utils/batch_outcome.dart` `retryItem`；取消不重试；Range 不支持不重试）。
+- 仍失败的文件记录 errorMessage，批次继续。终态：全成功 → completed；部分失败 → 新 `TaskStatus.partial`（「部分失败」，橙色）；全失败 → failed。
+- 手动重试沿用现有 `TaskQueueService.retry`（已放行 partial）；扫描为增量，重跑只会补失败项。合并任务卡片/单任务卡片的重试按钮与通知汇总均已计入 partial。

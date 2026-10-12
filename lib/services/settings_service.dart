@@ -19,6 +19,7 @@ import '../models/sync_interval.dart';
 import '../models/video_settings.dart';
 import '../utils/cover_image.dart';
 import '../utils/subtitle_sidecar.dart';
+
 import 'package:openlist_crypt/openlist_crypt.dart';
 
 import 'library_sync_store.dart';
@@ -43,6 +44,9 @@ class SettingsService extends ChangeNotifier {
   static const _kLibrarySort = 'library_sort_mode';
   static const _kFolderViewMode = 'folder_view_mode'; // legacy global
   static const _kFolderViewModes = 'folder_view_modes_json';
+  static const _kMangaViewModes = 'manga_view_modes_json';
+  static const _kMusicViewModes = 'music_view_modes_json';
+  static const _kMangaCacheMaxMb = 'manga_cache_max_mb';
   static const _kPlaylistSyncEnabled = 'playlist_sync_enabled';
   static const _kCoverThumbSize = 'cover_thumb_size';
   static const _kFileTypeConfig = 'file_type_config_json';
@@ -53,6 +57,7 @@ class SettingsService extends ChangeNotifier {
   static const _kHomeTabFoldersV024 = 'home_tab_v024_folders_inserted';
   static const _kHomeTabMangaV025 = 'home_tab_v025_manga_inserted';
   static const _kNetworkRememberLastPath = 'network_remember_last_path';
+
   /// Legacy prefs key; path is no longer persisted (scrubbed on [init]).
   static const _kNetworkLastPath = 'network_last_path';
   static const _kVideoLeftDoubleTap = 'video_left_double_tap';
@@ -70,8 +75,10 @@ class SettingsService extends ChangeNotifier {
   static const _kDownloadPartMaxAgeHours = 'download_part_max_age_hours';
   static const _kDownloadPartMaxMb = 'download_part_max_mb';
   static const _kCryptSequentialDownload = 'crypt_sequential_download';
+
   /// Prefer libsodium FFI for crypt content secretbox (falls back to Dart).
   static const _kPreferLibsodiumSecretbox = 'prefer_libsodium_secretbox';
+
   /// Compile-time default from `--dart-define=OPENLIST_CRYPT_LIBSODIUM=true`.
   static const bool defaultPreferLibsodiumSecretbox = bool.fromEnvironment(
     'OPENLIST_CRYPT_LIBSODIUM',
@@ -107,18 +114,24 @@ class SettingsService extends ChangeNotifier {
   static const _kAudioStreamPrefetchForward = 'audio_stream_prefetch_forward';
   static const _kVideoScanSubdirs = 'video_scan_subdirs';
   static const _kVideoPlaylistMaxDepth = 'video_playlist_max_depth';
+
   /// Media-library scrape (scan task). Independent from playlist prefs.
   static const _kMediaScanRecursive = 'media_scan_recursive';
   static const _kMediaScanMaxDepth = 'media_scan_max_depth';
+
   /// Manga library walk (99 §19): scan (containers) vs create (images) are separate.
   static const _kMangaScanSubdirs = 'manga_scan_subdirs';
   static const _kMangaScanMaxDepth = 'manga_scan_max_depth';
   static const _kMangaCreateSubdirs = 'manga_create_subdirs';
   static const _kMangaCreateMaxDepth = 'manga_create_max_depth';
+
   /// Mutual library mode: false = 手动管理 (default); true = 自动补齐.
   static const _kMusicLibraryAutoBackfill = 'music_library_auto_backfill';
+
   /// When true, play-trigger only runs if track path is under a bound root.
-  static const _kMusicLibraryBackfillBindRoots = 'music_library_backfill_bind_roots';
+  static const _kMusicLibraryBackfillBindRoots =
+      'music_library_backfill_bind_roots';
+
   /// JSON list of [MusicLibraryBackfillRoot] for auto scrape roots.
   static const _kMusicLibraryBackfillRoots = 'music_library_backfill_roots';
   static const _kImageSlideshow = 'image_slideshow_enabled';
@@ -242,12 +255,17 @@ class SettingsService extends ChangeNotifier {
   SharedPreferences? _prefs;
   final FlutterSecureStorage _secure;
   CacheRetention _retention = CacheRetention.oneWeek;
+
   /// 0 = unlimited. Capacity cap for music_cache in megabytes.
   int _musicCacheMaxMb = 0;
   int _customRetentionHours = defaultCustomRetentionHours;
   LibrarySortMode _librarySort = LibrarySortMode.byName;
+
   /// Per-folder browse density. Key ``root`` for virtual root; else folder id.
   final Map<String, FolderViewMode> _folderViewModes = {};
+  final Map<String, FolderViewMode> _mangaViewModes = {};
+  final Map<String, FolderViewMode> _musicViewModes = {};
+  int _mangaCacheMaxMb = 0;
   bool _playlistSyncEnabled = true;
   int _coverThumbSize = coverThumbSize;
   FileTypeConfig _fileTypes = FileTypeConfig();
@@ -277,6 +295,7 @@ class SettingsService extends ChangeNotifier {
   int _audioStreamPrefetchForward = defaultStreamPrefetch;
   bool _videoScanSubdirs = false;
   int _videoPlaylistMaxDepth = 1;
+
   /// Scrape defaults: recursive ON, depth 1 (independent of playlist prefs).
   bool _mediaScanRecursive = true;
   int _mediaScanMaxDepth = 1;
@@ -411,6 +430,17 @@ class SettingsService extends ChangeNotifier {
   @Deprecated('Use folderViewModeFor')
   FolderViewMode get folderViewMode => folderViewModeFor(null);
 
+  /// Manga library sub-tab view: `series` / `manga` / `author`. Default list.
+  FolderViewMode mangaViewModeFor(String tabKey) =>
+      _mangaViewModes[tabKey] ?? FolderViewMode.list;
+
+  /// Music library sub-tab view: `albums` / `artists` / `titles` / `genres`.
+  FolderViewMode musicViewModeFor(String tabKey) =>
+      _musicViewModes[tabKey] ?? FolderViewMode.list;
+
+  /// Max manga_cache size in MB; 0 = unlimited.
+  int get mangaCacheMaxMb => _mangaCacheMaxMb;
+
   /// WebDAV root shared by 凭证 / 歌单 / 音乐库 / 备份 (设置 → 同步与备份 →
   /// 远端路径). Every other cloud path is derived from it.
   String get syncRemoteRoot => _syncRemoteRoot;
@@ -482,9 +512,8 @@ class SettingsService extends ChangeNotifier {
   /// Network-library music tap: stream when true, cache when false.
   bool get musicDefaultStream => _musicDefaultStream;
 
-  FileAction get musicDefaultOpenAction => _musicDefaultStream
-      ? FileAction.streamMusic
-      : FileAction.cacheMusic;
+  FileAction get musicDefaultOpenAction =>
+      _musicDefaultStream ? FileAction.streamMusic : FileAction.cacheMusic;
 
   /// 音乐从网络库打开时的播放列表是否含子目录。默认关。键 `audio_scan_subdirs`。
   /// 与视频播列表、媒体库刮削 prefs **完全独立**。
@@ -651,7 +680,10 @@ class SettingsService extends ChangeNotifier {
     _themeSeedArgb =
         (_prefs!.getInt(_kThemeSeed) ?? defaultThemeSeedArgb) | 0xFF000000;
     _retention = CacheRetentionX.fromStorageKey(_prefs!.getString(_kRetention));
-    _musicCacheMaxMb = (_prefs!.getInt(_kMusicCacheMaxMb) ?? 0).clamp(0, 1024 * 1024);
+    _musicCacheMaxMb = (_prefs!.getInt(_kMusicCacheMaxMb) ?? 0).clamp(
+      0,
+      1024 * 1024,
+    );
     final storedHours = _prefs!.getInt(_kCustomRetentionHours);
     _customRetentionHours = _clampCustomHours(
       storedHours ?? defaultCustomRetentionHours,
@@ -668,8 +700,9 @@ class SettingsService extends ChangeNotifier {
           for (final e in decoded.entries) {
             final k = e.key?.toString();
             if (k == null || k.isEmpty) continue;
-            _folderViewModes[k] =
-                FolderViewModeX.fromStorageKey(e.value?.toString());
+            _folderViewModes[k] = FolderViewModeX.fromStorageKey(
+              e.value?.toString(),
+            );
           }
         }
       } catch (_) {}
@@ -681,6 +714,42 @@ class SettingsService extends ChangeNotifier {
         _folderViewModes['root'] = FolderViewModeX.fromStorageKey(legacy);
       }
     }
+    _mangaViewModes.clear();
+    final mangaModesJson = _prefs!.getString(_kMangaViewModes);
+    if (mangaModesJson != null && mangaModesJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(mangaModesJson);
+        if (decoded is Map) {
+          for (final e in decoded.entries) {
+            final k = e.key?.toString();
+            if (k == null || k.isEmpty) continue;
+            _mangaViewModes[k] = FolderViewModeX.fromStorageKey(
+              e.value?.toString(),
+            );
+          }
+        }
+      } catch (_) {}
+    }
+    _musicViewModes.clear();
+    final musicModesJson = _prefs!.getString(_kMusicViewModes);
+    if (musicModesJson != null && musicModesJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(musicModesJson);
+        if (decoded is Map) {
+          for (final e in decoded.entries) {
+            final k = e.key?.toString();
+            if (k == null || k.isEmpty) continue;
+            _musicViewModes[k] = FolderViewModeX.fromStorageKey(
+              e.value?.toString(),
+            );
+          }
+        }
+      } catch (_) {}
+    }
+    _mangaCacheMaxMb = (_prefs!.getInt(_kMangaCacheMaxMb) ?? 0).clamp(
+      0,
+      1024 * 1024,
+    );
     _playlistSyncEnabled = _prefs!.getBool(_kPlaylistSyncEnabled) ?? true;
     _coverThumbSize = clampCoverThumbSize(
       _prefs!.getInt(_kCoverThumbSize) ?? coverThumbSize,
@@ -702,8 +771,7 @@ class SettingsService extends ChangeNotifier {
         allowMusicStreaming: true,
       );
     }
-    _musicDefaultStream =
-        _prefs!.getBool(_kMusicDefaultStream) ?? false;
+    _musicDefaultStream = _prefs!.getBool(_kMusicDefaultStream) ?? false;
     if (!_prefs!.containsKey(_kMusicDefaultStream) &&
         _fileActions.music == FileAction.streamMusic) {
       _musicDefaultStream = true;
@@ -817,7 +885,7 @@ class SettingsService extends ChangeNotifier {
         _prefs!.getBool(_kCryptSequentialDownload) ?? false;
     _preferLibsodiumSecretbox =
         _prefs!.getBool(_kPreferLibsodiumSecretbox) ??
-            defaultPreferLibsodiumSecretbox;
+        defaultPreferLibsodiumSecretbox;
     applySecretboxBackendPreference();
     _videoLongPressRate = _clampRate(
       _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
@@ -950,6 +1018,37 @@ class SettingsService extends ChangeNotifier {
         for (final e in _folderViewModes.entries) e.key: e.value.storageKey,
       }),
     );
+    notifyListeners();
+  }
+
+  Future<void> setMangaViewMode(String tabKey, FolderViewMode mode) async {
+    _mangaViewModes[tabKey] = mode;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(
+      _kMangaViewModes,
+      jsonEncode({
+        for (final e in _mangaViewModes.entries) e.key: e.value.storageKey,
+      }),
+    );
+    notifyListeners();
+  }
+
+  Future<void> setMusicViewMode(String tabKey, FolderViewMode mode) async {
+    _musicViewModes[tabKey] = mode;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setString(
+      _kMusicViewModes,
+      jsonEncode({
+        for (final e in _musicViewModes.entries) e.key: e.value.storageKey,
+      }),
+    );
+    notifyListeners();
+  }
+
+  Future<void> setMangaCacheMaxMb(int mb) async {
+    _mangaCacheMaxMb = mb < 0 ? 0 : mb;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kMangaCacheMaxMb, _mangaCacheMaxMb);
     notifyListeners();
   }
 
@@ -1301,11 +1400,10 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> addMusicLibraryBackfillRoot(MusicLibraryBackfillRoot root) async {
-    await setMusicLibraryBackfillRoots([
-      ..._musicLibraryBackfillRoots,
-      root,
-    ]);
+  Future<void> addMusicLibraryBackfillRoot(
+    MusicLibraryBackfillRoot root,
+  ) async {
+    await setMusicLibraryBackfillRoots([..._musicLibraryBackfillRoots, root]);
   }
 
   Future<void> removeMusicLibraryBackfillRoot(

@@ -8,10 +8,11 @@ import 'package:path_provider/path_provider.dart';
 import '../models/image_viewer_page.dart';
 import '../models/manga.dart';
 import '../models/manga_page.dart';
+import '../utils/cbz_range_zip.dart';
 import '../utils/manga_file_types.dart';
 import '../utils/track_identity.dart';
+import 'cache_service.dart';
 import 'manga_library_service.dart';
-import 'prefetch_cache.dart';
 import 'webdav_service.dart';
 
 class MangaReaderPrepareResult {
@@ -26,7 +27,15 @@ class MangaReaderPrepareResult {
   final Manga manga;
 }
 
-enum MangaReaderPrepareError { unbound, unsupported, empty, failed }
+enum MangaReaderPrepareError {
+  unbound,
+  unsupported,
+  empty,
+  failed,
+
+  /// Remote ignored Range — UI should offer full-cache then retry.
+  rangeUnsupported,
+}
 
 class MangaReaderPrepareException implements Exception {
   MangaReaderPrepareException(this.kind, [this.detail]);
@@ -34,7 +43,7 @@ class MangaReaderPrepareException implements Exception {
   final String? detail;
 }
 
-/// Build viewer pages for a manga: image-dir remotes or CBZ extract.
+/// Build viewer pages for a manga: image-dir remotes or CBZ (Range or cache).
 class MangaReaderPrep {
   MangaReaderPrep._();
 
@@ -43,6 +52,10 @@ class MangaReaderPrep {
     required String accountId,
     required WebDavService webDav,
     required MangaLibraryService mangaLib,
+    CacheService? cache,
+
+    /// When true, download whole CBZ into manga_cache (after Range refused).
+    bool forceFullCache = false,
   }) async {
     switch (manga.format) {
       case MangaFormat.images:
@@ -53,6 +66,8 @@ class MangaReaderPrep {
           accountId: accountId,
           webDav: webDav,
           mangaLib: mangaLib,
+          cache: cache,
+          forceFullCache: forceFullCache,
         );
       case MangaFormat.cbr:
       case MangaFormat.pdf:
@@ -96,20 +111,135 @@ class MangaReaderPrep {
     required String accountId,
     required WebDavService webDav,
     required MangaLibraryService mangaLib,
+    CacheService? cache,
+    required bool forceFullCache,
   }) async {
-    final archiveFile = await _ensureCbzLocal(
-      manga: manga,
-      accountId: accountId,
-      webDav: webDav,
+    // Prefer full local cache when present.
+    final cached = cache?.mangaFileForRemote(
+      manga.remotePath,
+      sourceName: manga.sourceName,
     );
+    if (cached != null && cached.existsSync() && cached.lengthSync() > 0) {
+      return _prepareCbzFromLocalFile(
+        manga: manga,
+        archiveFile: cached,
+        mangaLib: mangaLib,
+      );
+    }
+
+    if (forceFullCache) {
+      if (cache == null) {
+        throw MangaReaderPrepareException(MangaReaderPrepareError.failed);
+      }
+      final archiveFile = await _downloadFullCbz(
+        manga: manga,
+        accountId: accountId,
+        webDav: webDav,
+        cache: cache,
+      );
+      return _prepareCbzFromLocalFile(
+        manga: manga,
+        archiveFile: archiveFile,
+        mangaLib: mangaLib,
+      );
+    }
+
+    // Stream via HTTP Range.
+    try {
+      final source = await webDav.resolveStreamSource(
+        accountId: accountId,
+        remotePath: manga.remotePath,
+        name: p.basename(manga.remotePath),
+      );
+      if (source == null) {
+        throw MangaReaderPrepareException(MangaReaderPrepareError.failed);
+      }
+      final zip = CbzRangeZip(source: source);
+      await zip.open();
+      final imageEntries = zip.imageEntries;
+      if (imageEntries.isEmpty) {
+        throw MangaReaderPrepareException(MangaReaderPrepareError.empty);
+      }
+
+      var dbPages = await mangaLib.pagesFor(manga.id);
+      if (dbPages.isEmpty) {
+        dbPages = [
+          for (var i = 0; i < imageEntries.length; i++)
+            MangaPage(
+              mangaId: manga.id,
+              pageIndex: i,
+              relPath: imageEntries[i].name,
+            ),
+        ];
+        await mangaLib.replacePages(
+          manga.id,
+          pages: dbPages,
+          coverRelpath: dbPages.first.relPath,
+        );
+      }
+
+      final outDir = await _mangaPageDir(manga.id);
+      final viewerPages = <ImageViewerPage>[];
+      for (var i = 0; i < imageEntries.length; i++) {
+        final entry = imageEntries[i];
+        final base = p.basename(entry.name);
+        final dest = File(
+          p.join(outDir.path, '${i.toString().padLeft(5, '0')}_$base'),
+        );
+        if (!dest.existsSync() || dest.lengthSync() <= 0) {
+          final raw = await zip.extractEntry(entry);
+          if (raw.isEmpty) {
+            throw MangaReaderPrepareException(
+              MangaReaderPrepareError.failed,
+              'empty page ${entry.name}',
+            );
+          }
+          await dest.parent.create(recursive: true);
+          await dest.writeAsBytes(raw, flush: true);
+        }
+        viewerPages.add(
+          ImageViewerPage(
+            id: '${manga.id}:$i',
+            name: base,
+            localPath: dest.path,
+          ),
+        );
+      }
+
+      final prog = await mangaLib.progressFor(manga.id);
+      final initial = (prog?.pageIndex ?? 0).clamp(0, viewerPages.length - 1);
+      final latest = mangaLib.mangas.cast<Manga?>().firstWhere(
+        (m) => m?.id == manga.id,
+        orElse: () => manga,
+      )!;
+      return MangaReaderPrepareResult(
+        pages: viewerPages,
+        initialIndex: initial,
+        manga: latest,
+      );
+    } on CbzRangeUnsupportedException catch (e) {
+      throw MangaReaderPrepareException(
+        MangaReaderPrepareError.rangeUnsupported,
+        e.detail,
+      );
+    }
+  }
+
+  static Future<MangaReaderPrepareResult> _prepareCbzFromLocalFile({
+    required Manga manga,
+    required File archiveFile,
+    required MangaLibraryService mangaLib,
+  }) async {
     final bytes = await archiveFile.readAsBytes();
     final decoded = ZipDecoder().decodeBytes(bytes, verify: false);
-    final imageEntries = <ArchiveFile>[
-      for (final f in decoded)
-        if (!f.isDirectory && isMangaImageFileName(p.basename(f.name))) f,
-    ]..sort(
-        (a, b) => mangaPageSortKey(a.name).compareTo(mangaPageSortKey(b.name)),
-      );
+    final imageEntries =
+        <ArchiveFile>[
+          for (final f in decoded)
+            if (!f.isDirectory && isMangaImageFileName(p.basename(f.name))) f,
+        ]..sort(
+          (a, b) =>
+              mangaPageSortKey(a.name).compareTo(mangaPageSortKey(b.name)),
+        );
     if (imageEntries.isEmpty) {
       throw MangaReaderPrepareException(MangaReaderPrepareError.empty);
     }
@@ -131,7 +261,7 @@ class MangaReaderPrep {
       );
     }
 
-    final outDir = await _mangaExtractDir(manga.id);
+    final outDir = await _mangaPageDir(manga.id);
     final viewerPages = <ImageViewerPage>[];
     for (var i = 0; i < imageEntries.length; i++) {
       final entry = imageEntries[i];
@@ -152,20 +282,16 @@ class MangaReaderPrep {
         await dest.writeAsBytes(raw, flush: true);
       }
       viewerPages.add(
-        ImageViewerPage(
-          id: '${manga.id}:$i',
-          name: base,
-          localPath: dest.path,
-        ),
+        ImageViewerPage(id: '${manga.id}:$i', name: base, localPath: dest.path),
       );
     }
 
     final prog = await mangaLib.progressFor(manga.id);
     final initial = (prog?.pageIndex ?? 0).clamp(0, viewerPages.length - 1);
     final latest = mangaLib.mangas.cast<Manga?>().firstWhere(
-          (m) => m?.id == manga.id,
-          orElse: () => manga,
-        )!;
+      (m) => m?.id == manga.id,
+      orElse: () => manga,
+    )!;
     return MangaReaderPrepareResult(
       pages: viewerPages,
       initialIndex: initial,
@@ -173,21 +299,20 @@ class MangaReaderPrep {
     );
   }
 
-  static Future<File> _ensureCbzLocal({
+  static Future<File> _downloadFullCbz({
     required Manga manga,
     required String accountId,
     required WebDavService webDav,
+    required CacheService cache,
   }) async {
-    await PrefetchCache.root();
-    final dest = await PrefetchCache.file(
-      bucket: 'manga_archives',
-      accountId: accountId,
-      remotePath: manga.remotePath,
-      name: p.basename(manga.remotePath),
+    final dest = cache.mangaFileForRemote(
+      manga.remotePath,
+      sourceName: manga.sourceName,
     );
-    if (PrefetchCache.isComplete(dest)) return dest;
+    if (dest.existsSync() && dest.lengthSync() > 0) return dest;
     final part = File('${dest.path}.part');
     if (part.existsSync()) part.deleteSync();
+    await dest.parent.create(recursive: true);
     await webDav.downloadToFile(accountId, manga.remotePath, part);
     if (!part.existsSync() || part.lengthSync() <= 0) {
       throw MangaReaderPrepareException(MangaReaderPrepareError.failed);
@@ -197,7 +322,7 @@ class MangaReaderPrep {
     return dest;
   }
 
-  static Future<Directory> _mangaExtractDir(String mangaId) async {
+  static Future<Directory> _mangaPageDir(String mangaId) async {
     final cache = await getApplicationCacheDirectory();
     final dir = Directory(
       p.join(cache.path, 'prefetch_cache', 'manga_pages', mangaId),

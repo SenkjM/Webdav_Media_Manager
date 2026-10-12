@@ -23,7 +23,9 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
   late final TextEditingController _customHoursController;
   late final TextEditingController _maxMbController;
   int? _cacheBytes;
+  int? _mangaCacheBytes;
   bool _cacheSizeLoading = false;
+  late final TextEditingController _mangaMaxMbController;
 
   @override
   void initState() {
@@ -31,9 +33,11 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
     _customDaysController = TextEditingController();
     _customHoursController = TextEditingController();
     _maxMbController = TextEditingController();
+    _mangaMaxMbController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncCustomFieldsFromSettings();
       _syncMaxMbFromSettings();
+      _syncMangaMaxMbFromSettings();
       _refreshCacheSize();
     });
   }
@@ -43,6 +47,7 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
     _customDaysController.dispose();
     _customHoursController.dispose();
     _maxMbController.dispose();
+    _mangaMaxMbController.dispose();
     super.dispose();
   }
 
@@ -58,6 +63,24 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
     _maxMbController.text = '${settings.musicCacheMaxMb}';
   }
 
+  void _syncMangaMaxMbFromSettings() {
+    final settings = context.read<SettingsService>();
+    _mangaMaxMbController.text = '${settings.mangaCacheMaxMb}';
+  }
+
+  Future<void> _applyMangaMaxMb() async {
+    final raw = int.tryParse(_mangaMaxMbController.text.trim()) ?? 0;
+    await context.read<SettingsService>().setMangaCacheMaxMb(raw);
+    if (!mounted) return;
+    _syncMangaMaxMbFromSettings();
+    final maxMb = context.read<SettingsService>().mangaCacheMaxMb;
+    if (maxMb > 0) {
+      await context.read<AppState>().cache.evictMangaToMaxBytes(
+        maxBytes: maxMb * 1024 * 1024,
+      );
+    }
+  }
+
   Future<void> _applyMaxMb() async {
     final raw = int.tryParse(_maxMbController.text.trim()) ?? 0;
     await context.read<AppState>().setMusicCacheMaxMb(raw);
@@ -68,10 +91,13 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
   Future<void> _refreshCacheSize() async {
     setState(() => _cacheSizeLoading = true);
     try {
-      final bytes = await context.read<AppState>().cache.cacheSizeBytes();
+      final cache = context.read<AppState>().cache;
+      final bytes = await cache.cacheSizeBytes();
+      final mangaBytes = await cache.mangaCacheSizeBytes();
       if (!mounted) return;
       setState(() {
         _cacheBytes = bytes;
+        _mangaCacheBytes = mangaBytes;
         _cacheSizeLoading = false;
       });
     } catch (_) {
@@ -223,9 +249,8 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
           const SizedBox(height: 16),
           Text(
             l10n.musicCacheMaxCapacity,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: Theme.of(context).colorScheme.primary),
           ),
           const SizedBox(height: 4),
           Text(
@@ -262,11 +287,85 @@ class _CacheSettingsScreenState extends State<CacheSettingsScreen> {
                 : '${settings.musicCacheMaxMb} MB',
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          const SizedBox(height: 24),
+          Text(
+            l10n.mangaCacheSection,
+            style: Theme.of(context).textTheme.titleMedium
+                ?.copyWith(color: Theme.of(context).colorScheme.primary),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainer,
+            child: ListTile(
+              leading: const Icon(Icons.menu_book_outlined),
+              title: Text(l10n.mangaCacheSizeLabel),
+              subtitle: Text(
+                _cacheSizeLoading
+                    ? l10n.calculating
+                    : (_mangaCacheBytes == null
+                          ? l10n.unknown
+                          : formatByteSize(_mangaCacheBytes!)),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SizedBox(
+                width: 120,
+                child: TextField(
+                  controller: _mangaMaxMbController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    labelText: l10n.mangaCacheMaxMb,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onEditingComplete: _applyMangaMaxMb,
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton.tonal(
+                onPressed: _applyMangaMaxMb,
+                child: Text(l10n.apply),
+              ),
+            ],
+          ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
             onPressed: _clearCache,
             icon: const Icon(Icons.cleaning_services_outlined),
             label: Text(l10n.clearAudioCache),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: Text(l10n.clearMangaCache),
+                  content: Text(l10n.clearMangaCacheConfirm),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: Text(l10n.cancel),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: Text(l10n.confirm),
+                    ),
+                  ],
+                ),
+              );
+              if (ok != true || !mounted) return;
+              await context.read<AppState>().cache.clearAllMangaCache();
+              if (!mounted) return;
+              await _refreshCacheSize();
+              if (!mounted) return;
+              AppSnack.show(context, l10n.clearMangaCache);
+            },
+            icon: const Icon(Icons.menu_book_outlined),
+            label: Text(l10n.clearMangaCache),
           ),
         ],
       ),

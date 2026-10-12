@@ -4434,6 +4434,96 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mangaReaderUnboundSource => '来源网盘未绑定，无法打开';
+
+  @override
+  String get mangaUnspecifiedSeries => '未指定系列';
+
+  @override
+  String get mangaEditMetadata => '编辑元数据';
+
+  @override
+  String get mangaEditSeries => '编辑系列';
+
+  @override
+  String get mangaRenameAuthor => '重命名作者';
+
+  @override
+  String get mangaRenameAuthorHint => '将修改所有使用该作者名的漫画';
+
+  @override
+  String get mangaCacheAction => '缓存整包';
+
+  @override
+  String get mangaClearCache => '清除缓存';
+
+  @override
+  String get mangaCached => '已缓存';
+
+  @override
+  String get mangaRangeUnsupportedTitle => '无法流式阅读';
+
+  @override
+  String get mangaRangeUnsupportedBody => '此网盘不支持分段读取。需要先整包缓存到本地后再阅读。';
+
+  @override
+  String get mangaRangeUnsupportedCache => '整包缓存并阅读';
+
+  @override
+  String get mangaViewMode => '视图';
+
+  @override
+  String get taskKindMangaScrape => '漫画刮削';
+
+  @override
+  String get mangaScrapeQueued => '已加入漫画刮削任务';
+
+  @override
+  String get mangaScrapeAction => '刮削元数据';
+
+  @override
+  String get folderMove => '移动到…';
+
+  @override
+  String get folderCopy => '复制到…';
+
+  @override
+  String get folderMoveDone => '已移动';
+
+  @override
+  String get folderCopyDone => '已复制';
+
+  @override
+  String get folderAddManga => '添加漫画';
+
+  @override
+  String get folderAddMangaSeries => '添加系列';
+
+  @override
+  String get folderTypeManga => '漫画';
+
+  @override
+  String get folderTypeMangaSeries => '系列';
+
+  @override
+  String get mangaCacheSection => '漫画缓存';
+
+  @override
+  String get mangaCacheMaxMb => '漫画缓存上限（MB，0=不限）';
+
+  @override
+  String get mangaCacheSizeLabel => '漫画缓存占用';
+
+  @override
+  String get clearMangaCache => '清除漫画缓存';
+
+  @override
+  String get clearMangaCacheConfirm => '将删除 manga_cache 中的整包与封面缓存，不影响漫画库元数据。';
+
+  @override
+  String get musicViewMode => '视图';
+
+  @override
+  String get taskPartialFailed => '部分失败';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -8866,4 +8956,94 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get mangaReaderUnboundSource => '來源網盤未綁定，無法開啟';
+
+  @override
+  String get mangaUnspecifiedSeries => '未指定系列';
+
+  @override
+  String get mangaEditMetadata => '編輯中繼資料';
+
+  @override
+  String get mangaEditSeries => '編輯系列';
+
+  @override
+  String get mangaRenameAuthor => '重新命名作者';
+
+  @override
+  String get mangaRenameAuthorHint => '將修改所有使用該作者名稱的漫畫';
+
+  @override
+  String get mangaCacheAction => '快取整包';
+
+  @override
+  String get mangaClearCache => '清除快取';
+
+  @override
+  String get mangaCached => '已快取';
+
+  @override
+  String get mangaRangeUnsupportedTitle => '無法串流閱讀';
+
+  @override
+  String get mangaRangeUnsupportedBody => '此網盤不支援分段讀取。需要先整包快取到本機後再閱讀。';
+
+  @override
+  String get mangaRangeUnsupportedCache => '整包快取並閱讀';
+
+  @override
+  String get mangaViewMode => '檢視';
+
+  @override
+  String get taskKindMangaScrape => '漫畫刮削';
+
+  @override
+  String get mangaScrapeQueued => '已加入漫畫刮削任務';
+
+  @override
+  String get mangaScrapeAction => '刮削中繼資料';
+
+  @override
+  String get folderMove => '移動到…';
+
+  @override
+  String get folderCopy => '複製到…';
+
+  @override
+  String get folderMoveDone => '已移動';
+
+  @override
+  String get folderCopyDone => '已複製';
+
+  @override
+  String get folderAddManga => '新增漫畫';
+
+  @override
+  String get folderAddMangaSeries => '新增系列';
+
+  @override
+  String get folderTypeManga => '漫畫';
+
+  @override
+  String get folderTypeMangaSeries => '系列';
+
+  @override
+  String get mangaCacheSection => '漫畫快取';
+
+  @override
+  String get mangaCacheMaxMb => '漫畫快取上限（MB，0=不限）';
+
+  @override
+  String get mangaCacheSizeLabel => '漫畫快取占用';
+
+  @override
+  String get clearMangaCache => '清除漫畫快取';
+
+  @override
+  String get clearMangaCacheConfirm => '將刪除 manga_cache 中的整包與封面快取，不影響漫畫庫中繼資料。';
+
+  @override
+  String get musicViewMode => '檢視';
+
+  @override
+  String get taskPartialFailed => '部分失敗';
 }

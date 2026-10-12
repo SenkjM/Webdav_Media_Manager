@@ -7834,6 +7834,186 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'来源网盘未绑定，无法打开'**
   String get mangaReaderUnboundSource;
+
+  /// No description provided for @mangaUnspecifiedSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'未指定系列'**
+  String get mangaUnspecifiedSeries;
+
+  /// No description provided for @mangaEditMetadata.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑元数据'**
+  String get mangaEditMetadata;
+
+  /// No description provided for @mangaEditSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'编辑系列'**
+  String get mangaEditSeries;
+
+  /// No description provided for @mangaRenameAuthor.
+  ///
+  /// In zh, this message translates to:
+  /// **'重命名作者'**
+  String get mangaRenameAuthor;
+
+  /// No description provided for @mangaRenameAuthorHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'将修改所有使用该作者名的漫画'**
+  String get mangaRenameAuthorHint;
+
+  /// No description provided for @mangaCacheAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存整包'**
+  String get mangaCacheAction;
+
+  /// No description provided for @mangaClearCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除缓存'**
+  String get mangaClearCache;
+
+  /// No description provided for @mangaCached.
+  ///
+  /// In zh, this message translates to:
+  /// **'已缓存'**
+  String get mangaCached;
+
+  /// No description provided for @mangaRangeUnsupportedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法流式阅读'**
+  String get mangaRangeUnsupportedTitle;
+
+  /// No description provided for @mangaRangeUnsupportedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'此网盘不支持分段读取。需要先整包缓存到本地后再阅读。'**
+  String get mangaRangeUnsupportedBody;
+
+  /// No description provided for @mangaRangeUnsupportedCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'整包缓存并阅读'**
+  String get mangaRangeUnsupportedCache;
+
+  /// No description provided for @mangaViewMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'视图'**
+  String get mangaViewMode;
+
+  /// No description provided for @taskKindMangaScrape.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画刮削'**
+  String get taskKindMangaScrape;
+
+  /// No description provided for @mangaScrapeQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入漫画刮削任务'**
+  String get mangaScrapeQueued;
+
+  /// No description provided for @mangaScrapeAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'刮削元数据'**
+  String get mangaScrapeAction;
+
+  /// No description provided for @folderMove.
+  ///
+  /// In zh, this message translates to:
+  /// **'移动到…'**
+  String get folderMove;
+
+  /// No description provided for @folderCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制到…'**
+  String get folderCopy;
+
+  /// No description provided for @folderMoveDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已移动'**
+  String get folderMoveDone;
+
+  /// No description provided for @folderCopyDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已复制'**
+  String get folderCopyDone;
+
+  /// No description provided for @folderAddManga.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加漫画'**
+  String get folderAddManga;
+
+  /// No description provided for @folderAddMangaSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加系列'**
+  String get folderAddMangaSeries;
+
+  /// No description provided for @folderTypeManga.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画'**
+  String get folderTypeManga;
+
+  /// No description provided for @folderTypeMangaSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'系列'**
+  String get folderTypeMangaSeries;
+
+  /// No description provided for @mangaCacheSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画缓存'**
+  String get mangaCacheSection;
+
+  /// No description provided for @mangaCacheMaxMb.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画缓存上限（MB，0=不限）'**
+  String get mangaCacheMaxMb;
+
+  /// No description provided for @mangaCacheSizeLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画缓存占用'**
+  String get mangaCacheSizeLabel;
+
+  /// No description provided for @clearMangaCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'清除漫画缓存'**
+  String get clearMangaCache;
+
+  /// No description provided for @clearMangaCacheConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'将删除 manga_cache 中的整包与封面缓存，不影响漫画库元数据。'**
+  String get clearMangaCacheConfirm;
+
+  /// No description provided for @musicViewMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'视图'**
+  String get musicViewMode;
+
+  /// No description provided for @taskPartialFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'部分失败'**
+  String get taskPartialFailed;
 }
 
 class _AppLocalizationsDelegate
