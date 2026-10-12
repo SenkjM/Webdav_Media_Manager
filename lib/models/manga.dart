@@ -16,6 +16,7 @@ class Manga {
     this.remoteMissing = false,
     this.pageTurn,
     required this.updatedAt,
+    this.rev = 0,
   });
 
   final String id;
@@ -36,6 +37,10 @@ class Manga {
 
   final DateTime updatedAt;
 
+  /// Sync version (same [RevClock] scale as music rows). Assigned by the
+  /// database on every local write; kept verbatim when adopting a cloud row.
+  final int rev;
+
   String get displayAuthor =>
       (author == null || author!.trim().isEmpty) ? '' : author!.trim();
 
@@ -54,6 +59,7 @@ class Manga {
     'remote_missing': remoteMissing ? 1 : 0,
     'page_turn': pageTurn,
     'updated_at': updatedAt.toUtc().toIso8601String(),
+    'rev': rev,
   };
 
   static Manga fromMap(Map<String, Object?> map) {
@@ -75,6 +81,7 @@ class Manga {
       updatedAt:
           DateTime.tryParse(map['updated_at'] as String? ?? '')?.toLocal() ??
           DateTime.now(),
+      rev: (map['rev'] as int?) ?? 0,
     );
   }
 
@@ -93,6 +100,7 @@ class Manga {
     String? pageTurn,
     bool clearPageTurn = false,
     DateTime? updatedAt,
+    int? rev,
   }) {
     return Manga(
       id: id,
@@ -109,6 +117,7 @@ class Manga {
       remoteMissing: remoteMissing ?? this.remoteMissing,
       pageTurn: clearPageTurn ? null : (pageTurn ?? this.pageTurn),
       updatedAt: updatedAt ?? this.updatedAt,
+      rev: rev ?? this.rev,
     );
   }
 }

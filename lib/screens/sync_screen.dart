@@ -262,7 +262,15 @@ class _SyncScreenState extends State<SyncScreen> {
     final app = context.read<AppState>();
     final chosen = await showDialog<({int perShard, bool withCovers})>(
       context: context,
-      builder: (ctx) => _RebuildLibraryDialog(sync: sync),
+      builder: (ctx) => _RebuildLibraryDialog(
+        title: AppLocalizations.of(ctx)!.rebuildCloudLibraryTitle,
+        perShardLabel: AppLocalizations.of(ctx)!.tracksPerShard,
+        coversDesc: AppLocalizations.of(ctx)!.embedCoversInShardsDesc,
+        estimate: (perShard, withCovers) => sync.estimateLibraryRebuild(
+          tracksPerShard: perShard,
+          withCovers: withCovers,
+        ),
+      ),
     );
     if (chosen == null || !mounted) return;
     // Not gated on [mounted] any more: the rebuild keeps running (and now keeps
@@ -274,6 +282,77 @@ class _SyncScreenState extends State<SyncScreen> {
       );
       await app.library.refresh();
       return o;
+    });
+  }
+
+  /// Rebuild the cloud manga library (same dialog; covers default on).
+  Future<void> _rebuildManga() async {
+    final sync = context.read<SyncService>();
+    final chosen = await showDialog<({int perShard, bool withCovers})>(
+      context: context,
+      builder: (ctx) => _RebuildLibraryDialog(
+        title: AppLocalizations.of(ctx)!.rebuildCloudMangaTitle,
+        perShardLabel: AppLocalizations.of(ctx)!.mangasPerShard,
+        coversDesc: AppLocalizations.of(ctx)!.embedCoversInMangaShardsDesc,
+        estimate: (perShard, withCovers) => sync.estimateMangaRebuild(
+          perShard: perShard,
+          withCovers: withCovers,
+        ),
+      ),
+    );
+    if (chosen == null || !mounted) return;
+    await _runSync(
+      () => sync.syncMangaFull(
+        perShard: chosen.perShard,
+        withCovers: chosen.withCovers,
+      ),
+    );
+  }
+
+  /// 「从云端覆写漫画库」.
+  Future<void> _overwriteMangaFromCloud() async {
+    final app = context.read<AppState>();
+    final l10n = AppLocalizations.of(context)!;
+    final ok = await _confirmDestructive(
+      title: l10n.overwriteMangaTitle,
+      body: l10n.overwriteMangaBody,
+      note: l10n.overwriteMangaNote,
+      action: l10n.overwriteLibraryAction,
+      phrase: l10n.overwriteLibraryPhrase,
+    );
+    if (ok != true || !mounted) return;
+    await _guard(() async {
+      final outcome = await app.overwriteMangaFromCloud();
+      if (!mounted) return;
+      AppSnack.showGlobal(outcome.message, error: !outcome.ok);
+    });
+  }
+
+  /// 「删除漫画库」: per-manga destroy with progress + cancel.
+  Future<void> _destroyManga() async {
+    final app = context.read<AppState>();
+    final l10n = AppLocalizations.of(context)!;
+    final ok = await _confirmDestructive(
+      title: l10n.destroyMangaTitle,
+      body: l10n.destroyMangaBody,
+      note: l10n.destroyLibraryNote,
+      action: l10n.destroyMangaAction,
+      phrase: l10n.destroyLibraryPhrase,
+    );
+    if (ok != true || !mounted) return;
+    await _guard(() async {
+      final destroyed = await showDestroyProgress(
+        context,
+        total: app.mangaLibrary.count,
+        run: (onProgress, isCancelled) => app.destroyMangaLibrary(
+          onProgress: onProgress,
+          isCancelled: isCancelled,
+        ),
+      );
+      if (!mounted) return;
+      AppSnack.showGlobal(
+        AppLocalizations.of(context)!.destroyMangaDone(destroyed),
+      );
     });
   }
 
@@ -394,12 +473,38 @@ class _SyncScreenState extends State<SyncScreen> {
     );
   }
 
-  /// Audit the cloud library (orphans / missing parts) and offer to clean up.
-  Future<void> _tidy() async {
+  /// Audit the cloud music library (orphans / missing parts).
+  Future<void> _tidy() {
     final sync = context.read<SyncService>();
-    LibraryAudit audit;
+    return _tidyWith(
+      title: AppLocalizations.of(context)!.tidyCloudLibraryTitle,
+      audit: sync.auditLibrary,
+      deleteOrphans: sync.tidyLibraryOrphans,
+      rebuild: _rebuild,
+    );
+  }
+
+  /// Audit the cloud manga library.
+  Future<void> _tidyManga() {
+    final sync = context.read<SyncService>();
+    return _tidyWith(
+      title: AppLocalizations.of(context)!.tidyCloudMangaTitle,
+      audit: sync.auditMangaLibrary,
+      deleteOrphans: sync.tidyMangaOrphans,
+      rebuild: _rebuildManga,
+    );
+  }
+
+  Future<void> _tidyWith({
+    required String title,
+    required Future<LibraryAudit> Function() audit,
+    required Future<int> Function(LibraryAudit) deleteOrphans,
+    required Future<void> Function() rebuild,
+  }) async {
+    final auditResult = audit;
+    LibraryAudit audit_;
     try {
-      audit = await sync.auditLibrary();
+      audit_ = await auditResult();
     } catch (e) {
       AppSnack.showGlobal(
         AppLocalizations.of(context)!.readCloudLibraryFailed(e.toString()),
@@ -412,36 +517,36 @@ class _SyncScreenState extends State<SyncScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-        title: Text(AppLocalizations.of(ctx)!.tidyCloudLibraryTitle),
+        title: Text(title),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(audit.summary),
+              Text(audit_.summary),
               const SizedBox(height: 8),
-              if (audit.missing.isNotEmpty) ...[
+              if (audit_.missing.isNotEmpty) ...[
                 Text(
                   AppLocalizations.of(ctx)!.missingFragments,
                   style: const TextStyle(color: AppColors.error, fontSize: 12),
                 ),
                 const SizedBox(height: 4),
-                for (final name in audit.missing.take(8))
+                for (final name in audit_.missing.take(8))
                   Text(
                     AppLocalizations.of(ctx)!.missingFragmentName(name),
                     style: const TextStyle(fontSize: 12),
                   ),
               ],
-              if (audit.orphans.isNotEmpty) ...[
+              if (audit_.orphans.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
                   AppLocalizations.of(ctx)!.orphanFiles,
                   style: const TextStyle(fontSize: 12),
                 ),
-                for (final name in audit.orphans.take(8))
+                for (final name in audit_.orphans.take(8))
                   Text('• $name', style: const TextStyle(fontSize: 12)),
               ],
-              if (audit.healthy)
+              if (audit_.healthy)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
@@ -457,12 +562,12 @@ class _SyncScreenState extends State<SyncScreen> {
             onPressed: () => Navigator.pop(ctx),
             child: Text(AppLocalizations.of(ctx)!.close),
           ),
-          if (audit.orphans.isNotEmpty)
+          if (audit_.orphans.isNotEmpty)
             TextButton(
               onPressed: () => Navigator.pop(ctx, 'orphans'),
               child: Text(AppLocalizations.of(ctx)!.deleteOrphans),
             ),
-          if (audit.missing.isNotEmpty)
+          if (audit_.missing.isNotEmpty)
             FilledButton(
               onPressed: () => Navigator.pop(ctx, 'rebuild'),
               child: Text(AppLocalizations.of(ctx)!.rebuildFromLocal),
@@ -473,11 +578,11 @@ class _SyncScreenState extends State<SyncScreen> {
     if (!mounted || action == null) return;
     if (action == 'orphans') {
       await _guard(() async {
-        final n = await sync.tidyLibraryOrphans(audit);
+        final n = await deleteOrphans(audit_);
         AppSnack.showGlobal(AppLocalizations.of(context)!.orphansDeleted(n));
       });
     } else if (action == 'rebuild') {
-      await _rebuild();
+      await rebuild();
     }
   }
 
@@ -489,13 +594,18 @@ class _SyncScreenState extends State<SyncScreen> {
       if (!credentials.ok) return credentials;
       final playlists = await sync.syncPlaylistsNow();
       final library = await sync.syncLibraryIncremental();
+      final manga = await sync.syncMangaIncremental();
+      final folders = await sync.syncUserFolders();
       final merged = SyncOutcome(direction: 'sync')
-        ..ok = playlists.ok && library.ok
-        ..error = playlists.error ?? library.error;
+        ..ok = playlists.ok && library.ok && manga.ok && folders.ok
+        ..error =
+            playlists.error ?? library.error ?? manga.error ?? folders.error;
       for (final s in [
         ...credentials.steps,
         ...playlists.steps,
         ...library.steps,
+        ...manga.steps,
+        ...folders.steps,
       ]) {
         merged.step(s);
       }
@@ -503,6 +613,8 @@ class _SyncScreenState extends State<SyncScreen> {
         ...credentials.warnings,
         ...playlists.warnings,
         ...library.warnings,
+        ...manga.warnings,
+        ...folders.warnings,
       ]) {
         merged.warn(w);
       }
@@ -812,6 +924,8 @@ class _SyncScreenState extends State<SyncScreen> {
       (l10n.derivedPathCredentials, settings.credentialsRemotePath),
       (l10n.derivedPathPlaylists, settings.playlistRemotePath),
       (l10n.derivedPathLibrary, settings.libraryRemotePath),
+      (l10n.derivedPathManga, settings.mangaLibraryRemotePath),
+      (l10n.derivedPathFolders, settings.foldersRemotePath),
       (l10n.derivedPathBackups, settings.backupRemotePath),
     ];
     return Column(
@@ -1092,11 +1206,15 @@ class _SyncScreenState extends State<SyncScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
+                // Generated signature is (count, hint, size): placeholders
+                // come out in alphabetical order, not in template order.
                 l10n.cloudFragmentsLine(
                   sync.cloudFragmentCount,
-                  _fmtBytes(sync.cloudFragmentBytes),
                   sync.cloudFragmentCount >=
-                      settings.libraryRebuildHintFragments,
+                          settings.libraryRebuildHintFragments
+                      ? l10n.cloudFragmentsHint
+                      : '',
+                  _fmtBytes(sync.cloudFragmentBytes),
                 ),
                 style: TextStyle(
                   fontSize: 12,
@@ -1234,6 +1352,118 @@ class _SyncScreenState extends State<SyncScreen> {
               icon: const Icon(Icons.delete_forever_outlined),
               label: Text(l10n.destroyLibraryTitle),
             ),
+          ),
+          const Divider(height: 32),
+
+          _sectionTitle(l10n.mangaSyncSection),
+          Text(
+            l10n.mangaSyncSectionDesc(settings.mangaLibraryRemotePath),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
+          ),
+          if (sync.mangaCloudFragmentCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                l10n.cloudFragmentsLine(
+                  sync.mangaCloudFragmentCount,
+                  sync.mangaCloudFragmentCount >=
+                          settings.libraryRebuildHintFragments
+                      ? l10n.cloudFragmentsHint
+                      : '',
+                  _fmtBytes(sync.mangaCloudFragmentBytes),
+                ),
+                style: TextStyle(
+                  fontSize: 12,
+                  color:
+                      sync.mangaCloudFragmentCount >=
+                          settings.libraryRebuildHintFragments
+                      ? AppColors.accent
+                      : Theme.of(context).colorScheme.outline,
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _compactButton(
+                  icon: Icons.sync,
+                  label: l10n.syncAction,
+                  onPressed: _running || accounts.accounts.isEmpty
+                      ? null
+                      : () => _runSync(sync.syncMangaIncremental),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _compactButton(
+                  icon: Icons.auto_awesome_motion,
+                  label: l10n.rebuildAction,
+                  onPressed: _running || accounts.accounts.isEmpty
+                      ? null
+                      : _rebuildManga,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _compactButton(
+                  icon: Icons.cleaning_services_outlined,
+                  label: l10n.tidyAction,
+                  onPressed: _running || accounts.accounts.isEmpty
+                      ? null
+                      : _tidyManga,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _running || accounts.accounts.isEmpty
+                  ? null
+                  : _overwriteMangaFromCloud,
+              icon: const Icon(Icons.cloud_download_outlined),
+              label: Text(l10n.overwriteMangaTitle),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: _running ? null : _destroyManga,
+              icon: const Icon(Icons.delete_forever_outlined),
+              label: Text(l10n.destroyMangaAction),
+            ),
+          ),
+          const Divider(height: 32),
+
+          _sectionTitle(l10n.foldersSyncSection),
+          Text(
+            l10n.foldersSyncSectionDesc(settings.foldersRemotePath),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _running || accounts.accounts.isEmpty
+                ? null
+                : () => _runSync(sync.syncUserFolders),
+            icon: const Icon(Icons.folder_copy_outlined),
+            label: Text(l10n.syncFoldersNow),
           ),
           const Divider(height: 32),
 
@@ -1397,9 +1627,18 @@ class _SyncScreenState extends State<SyncScreen> {
 /// Rebuild dialog: pick tracks per shard (with a live size estimate) and whether
 /// to embed covers, then confirm — rebuilding materialises every deletion.
 class _RebuildLibraryDialog extends StatefulWidget {
-  const _RebuildLibraryDialog({required this.sync});
+  const _RebuildLibraryDialog({
+    required this.title,
+    required this.perShardLabel,
+    required this.coversDesc,
+    required this.estimate,
+  });
 
-  final SyncService sync;
+  final String title;
+  final String perShardLabel;
+  final String coversDesc;
+  final Future<RebuildEstimate> Function(int perShard, bool withCovers)
+  estimate;
 
   @override
   State<_RebuildLibraryDialog> createState() => _RebuildLibraryDialogState();
@@ -1422,10 +1661,7 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
   Future<void> _refresh() async {
     setState(() => _loading = true);
     try {
-      final est = await widget.sync.estimateLibraryRebuild(
-        tracksPerShard: _perShard,
-        withCovers: _withCovers,
-      );
+      final est = await widget.estimate(_perShard, _withCovers);
       if (!mounted) return;
       setState(() {
         _estimate = est;
@@ -1442,7 +1678,7 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
     final est = _estimate;
     return AlertDialog(
       backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-      title: Text(AppLocalizations.of(context)!.rebuildCloudLibraryTitle),
+      title: Text(widget.title),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1450,7 +1686,7 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
           children: [
             Text(AppLocalizations.of(context)!.rebuildCloudLibraryDesc),
             const SizedBox(height: 12),
-            Text(AppLocalizations.of(context)!.tracksPerShard),
+            Text(widget.perShardLabel),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -1470,9 +1706,7 @@ class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: Text(AppLocalizations.of(context)!.embedCoversInShards),
-              subtitle: Text(
-                AppLocalizations.of(context)!.embedCoversInShardsDesc,
-              ),
+              subtitle: Text(widget.coversDesc),
               value: _withCovers,
               onChanged: (v) {
                 setState(() => _withCovers = v);

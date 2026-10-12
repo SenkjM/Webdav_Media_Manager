@@ -56,6 +56,17 @@ class WmpSections {
   /// Present when the archive was written with a non-empty passphrase. Readers
   /// that do not know this id ignore it (unknown sections are skipped).
   static const int passCheck = 11;
+
+  /// Manga library shards (`library/manga/`): one [WmpManga] record per row,
+  /// used instead of [tracks]. Tombstones keep using [tombs].
+  static const int mangas = 12;
+
+  /// Backup archives only: manga library snapshot JSON (series, mangas, pages,
+  /// progress, tombstones).
+  static const int mangaLibrary = 13;
+
+  /// Backup archives only: user-folder snapshot JSON (folders + items).
+  static const int userFolders = 14;
 }
 
 /// Per-section storage codec.
@@ -253,6 +264,35 @@ class WmpTrack {
 }
 
 /// Tombstone record tag ids.
+/// MANGAS section tag ids (manga library shards).
+class WmpManga {
+  WmpManga._();
+
+  static const int sourceName = 1;
+  static const int remotePath = 2;
+  static const int rev = 3;
+  static const int title = 4;
+  static const int author = 5;
+  static const int seriesId = 6;
+  static const int seriesTitle = 7;
+  static const int seriesAuthor = 8;
+  static const int seriesSortTitle = 9;
+  static const int volume = 10;
+  static const int chapterNumber = 11;
+  static const int pageCount = 12;
+  static const int coverRelpath = 13;
+  static const int format = 14;
+  static const int remoteMissing = 15;
+  static const int pageTurn = 16;
+  static const int updatedAt = 17;
+
+  /// JSON array of page rel paths, in page order (frozen `manga_pages`).
+  static const int pages = 18;
+
+  /// Index into the shard's COVERS section (this row's own cover).
+  static const int coverIndex = 19;
+}
+
 class WmpTomb {
   WmpTomb._();
 
@@ -913,6 +953,14 @@ const Set<int> kTrackIntTags = {
   WmpTrack.clipStartMs,
   WmpTrack.clipEndMs,
   WmpTrack.coverIndex,
+};
+
+/// Varint tags inside the MANGAS section.
+const Set<int> kMangaIntTags = {
+  WmpManga.rev,
+  WmpManga.pageCount,
+  WmpManga.remoteMissing,
+  WmpManga.coverIndex,
 };
 
 /// Varint tags inside the TOMBS section.

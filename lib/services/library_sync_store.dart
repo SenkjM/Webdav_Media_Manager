@@ -85,6 +85,7 @@ class LibraryManifest {
     List<IndexPart>? segments,
     List<IndexPart>? tombstones,
     this.updatedAt,
+    this.format = LibrarySyncStore.format,
   }) : shards = shards ?? [],
        segments = segments ?? [],
        tombstones = tombstones ?? [];
@@ -97,6 +98,10 @@ class LibraryManifest {
   final List<IndexPart> tombstones;
   DateTime? updatedAt;
 
+  /// Manifest format marker (`wmp_library_index` for music; manga uses its own
+  /// marker so the two directories can never be confused).
+  final String format;
+
   /// Append-only parts since the last rebuild — what the UI counts to suggest a
   /// rebuild.
   int get fragmentCount => segments.length + tombstones.length;
@@ -108,7 +113,7 @@ class LibraryManifest {
   bool get isEmpty => shards.isEmpty && segments.isEmpty && tombstones.isEmpty;
 
   Map<String, dynamic> toJson() => {
-    'format': LibrarySyncStore.format,
+    'format': format,
     'formatVersion': LibrarySyncStore.formatVersion,
     'base': {
       'upTo': baseUpTo,
@@ -119,7 +124,10 @@ class LibraryManifest {
     'updatedAt': (updatedAt ?? DateTime.now().toUtc()).toIso8601String(),
   };
 
-  factory LibraryManifest.fromJson(Map<String, dynamic> json) {
+  factory LibraryManifest.fromJson(
+    Map<String, dynamic> json, {
+    String format = LibrarySyncStore.format,
+  }) {
     final base = Map<String, dynamic>.from(
       (json['base'] as Map?) ?? const <String, dynamic>{},
     );
@@ -138,6 +146,7 @@ class LibraryManifest {
           if (s is Map) IndexPart.fromJson(Map<String, dynamic>.from(s)),
       ],
       updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? ''),
+      format: format,
     );
   }
 }
@@ -288,6 +297,8 @@ LibraryAudit auditLibraryParts({
   );
 }
 
+bool isLibraryPartName(String name) => _isLibraryPartName(name);
+
 bool _isLibraryPartName(String name) =>
     name.startsWith(LibrarySyncStore.shardPrefix) ||
     name.startsWith(LibrarySyncStore.segmentPrefix) ||
@@ -330,7 +341,7 @@ class CloudLibrary {
 /// Binary, append-only storage for the cloud music library.
 ///
 /// ```
-/// <sync root>/library/
+/// <sync root>/library/music/
 ///   index.json          manifest: base shards + delta parts + tombstone parts
 ///   lib-<ts>-<rand>.wdmm base shard (a slice of the complete live library)
 ///   seg-<from>-<rand>.wdmm  delta: rows added/updated since the base
@@ -366,7 +377,7 @@ class LibrarySyncStore {
   /// Default tracks per base shard.
   static const defaultTracksPerShard = 500;
 
-  /// Absolute path of the cloud library directory (远端路径 → `library/`).
+  /// Absolute path of the cloud music directory (远端路径 → `library/music/`).
   String dirPath() {
     final root = _settings.libraryRemotePath;
     return root.endsWith('/') ? root.substring(0, root.length - 1) : root;
@@ -817,6 +828,9 @@ class LibrarySyncStore {
   static String _rand() =>
       Random().nextInt(0xFFFFFF).toRadixString(16).padLeft(6, '0');
 
+  static bool isMissingError(String lowercasedMessage) =>
+      _isMissing(lowercasedMessage);
+
   static bool _isMissing(String lowercasedMessage) =>
       lowercasedMessage.contains('404') ||
       lowercasedMessage.contains('not found') ||
@@ -837,10 +851,18 @@ int libraryTrackCountForEstimate({
   return (perTrack * total).round();
 }
 
-/// Path helper kept out of the service for reuse in tests.
-String libraryDirFor(String syncRoot) {
+/// Path helpers kept out of the services for reuse in tests.
+String libraryDirFor(String syncRoot) => _libraryKindDir(syncRoot, 'music');
+
+String mangaLibraryDirFor(String syncRoot) =>
+    _libraryKindDir(syncRoot, 'manga');
+
+String foldersLibraryDirFor(String syncRoot) =>
+    _libraryKindDir(syncRoot, 'folders');
+
+String _libraryKindDir(String syncRoot, String kind) {
   final trimmed = syncRoot.endsWith('/')
       ? syncRoot.substring(0, syncRoot.length - 1)
       : syncRoot;
-  return p.url.normalize('$trimmed/library');
+  return p.url.normalize('$trimmed/library/$kind');
 }

@@ -1317,3 +1317,17 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - 扫描（音乐刮削/标签更新）与漫画刮削：每个文件内部自动重试至多 3 次（`lib/utils/batch_outcome.dart` `retryItem`；取消不重试；Range 不支持不重试）。
 - 仍失败的文件记录 errorMessage，批次继续。终态：全成功 → completed；部分失败 → 新 `TaskStatus.partial`（「部分失败」，橙色）；全失败 → failed。
 - 手动重试沿用现有 `TaskQueueService.retry`（已放行 partial）；扫描为增量，重跑只会补失败项。合并任务卡片/单任务卡片的重试按钮与通知汇总均已计入 partial。
+
+### 19.11 漫画库云同步 / 进度同步 / 文件夹同步 / 云端路径重排（本分支实现，待真机验收）
+
+**用户决定（2026-10-12）**：进度本地持久化并同步；路径改为 `<远端路径>library/music/`、`library/manga/`，留扩展位，**不兼容旧 `library/` 平铺布局**；漫画同步完全对照音乐（index.json + lib-/seg-/del-*.wdmm、rev + 墓碑、增量 / 重建 / 整理 / 覆写 / 删除、一键同步 + 防抖 + 定时；增量始终带封面，重建「嵌入封面」默认开）；全部备份含漫画表 + 进度 + 用户文件夹；用户文件夹整份快照同步，路径与合并规则由实现方定。
+
+- **manga_pages 是否覆盖 CBZ**：是。散图在入库时写；CBZ 在首次打开（Range 读 zip 目录或已下载 zip，`manga_reader_prep.dart`）或刮削任务（`replacePages`）时冻结页序。所以同步行携带页序（JSON 字符串列表，容器整体压缩，200 页约 10–20 KB 原始）。
+- **远端布局**：`library/music/`（原音乐库内容，不迁移旧路径）、`library/manga/`（`index.json` format `wmp_manga_library_index` + 分片 + `progress.json`）、`library/folders/folders.json`。
+- **漫画行合并**：键 `网盘名 + 规范化 remotePath`，高 rev 胜（与到达顺序无关）；墓碑只在 `tomb.rev >= row.rev` 时隐藏；本地写入清掉本地墓碑。系列内联在行里，系列 id 改为确定性 `sha1('mangaSeries\0'+title)`，避免跨设备分裂。
+- **进度合并**：每个 manga_id 独立，较新 `updatedAt` 胜；相等不动。增量同步时一并读写 `progress.json`。
+- **文件夹合并**：整份快照 LWW。本机自上次同步后改过 → 推；只有云端 `updatedAt` 变了 → 拉（整份替换本地）；两边都改 → 本机修改时间与云端 `updatedAt` 比，新者整份胜，另一方修改丢弃不合并。本机修改时间在 `local_meta.folders_changed_at`，上次同步与所见云端时间按目的地存在 `local_meta`。
+- **备份**：`formatVersion 7`，新增段 `mangaLibrary = 13`（漫画 / 系列 / 页 / 进度 JSON）、`userFolders = 14`。
+- **schema 15**：`mangas.rev`、`deleted_mangas`、`local_meta`。音乐「覆写」不再清漫画 / 文件夹；同步游标按前缀 `library:` / `manga:` 分开清。
+- **顺带修复**：同步页碎片提示「（约 true）」——gen-l10n 无 @ 元数据时占位参数按字母序生成（`count, hint, size`），调用方按模板顺序传了；`stepMangaIncremental` 同理按 `adopted, progress, tombs, uploaded` 传。图片预取测试按上限 20 改为 9→9、25→20。
+- **暂缓**：漫画封面不进全部备份归档；没有漫画的空系列不写墓碑；未真机验收。

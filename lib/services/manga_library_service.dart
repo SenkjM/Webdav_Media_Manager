@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import 'package:flutter/foundation.dart';
-import 'package:uuid/uuid.dart';
 
 import '../models/manga.dart';
 import '../models/page_turn_direction.dart';
@@ -11,6 +10,7 @@ import '../utils/manga_file_types.dart';
 import '../utils/manga_identity.dart';
 import '../utils/track_identity.dart';
 import 'library_database.dart';
+import 'manga_sync_store.dart';
 
 /// Draft metadata shown in the confirm sheet before commit.
 class MangaIngestDraft {
@@ -44,7 +44,6 @@ class MangaLibraryService extends ChangeNotifier {
   MangaLibraryService({required LibraryDatabase db}) : _db = db;
 
   final LibraryDatabase _db;
-  final _uuid = const Uuid();
 
   final List<Manga> _mangas = [];
   final List<MangaSeries> _series = [];
@@ -106,7 +105,7 @@ class MangaLibraryService extends ChangeNotifier {
       if (s.title == trimmed) return s;
     }
     final series = MangaSeries(
-      id: _uuid.v4(),
+      id: mangaSeriesIdForTitle(trimmed),
       title: trimmed,
       author: author,
       sortTitle: trimmed,
@@ -400,9 +399,59 @@ class MangaLibraryService extends ChangeNotifier {
     return n;
   }
 
+  /// Delete one manga. Leaves a tombstone so the deletion reaches the cloud.
   Future<void> deleteManga(String id) async {
     await _db.deleteManga(id);
     await reload();
+  }
+
+  // --- Cloud sync helpers (docs/08) ---
+
+  Manga? find(String sourceName, String remotePath) {
+    final path = normalizeRemotePath(remotePath);
+    for (final m in _mangas) {
+      if (m.sourceName == sourceName && m.remotePath == path) return m;
+    }
+    return null;
+  }
+
+  /// Every local row with its series and frozen page order, as sync ships it.
+  Future<List<MangaSyncRow>> syncRows() async {
+    final mangas = await _db.loadMangas();
+    final series = {for (final s in await _db.loadMangaSeries()) s.id: s};
+    final pages = await _db.allMangaPagesById();
+    return [
+      for (final m in mangas)
+        MangaSyncRow(
+          manga: m,
+          series: m.seriesId == null ? null : series[m.seriesId],
+          pages: pages[m.id] ?? const [],
+        ),
+    ];
+  }
+
+  /// Adopt rows pulled from the cloud verbatim (rev kept, pages replaced).
+  Future<void> adoptCloudRows(List<MangaSyncRow> rows) async {
+    for (final r in rows) {
+      final s = r.series;
+      if (s != null) await _db.upsertMangaSeries(s);
+      await _db.upsertManga(r.manga, keepRev: true);
+      await _db.replaceMangaPages(r.manga.id, [
+        for (var i = 0; i < r.pages.length; i++)
+          MangaPage(mangaId: r.manga.id, pageIndex: i, relPath: r.pages[i]),
+      ], bumpRev: false);
+    }
+    await reload();
+  }
+
+  Future<List<MangaProgress>> allProgress() => _db.allMangaProgress();
+
+  /// Write cloud-newer progress rows (no rev, no tombstone involved).
+  Future<void> applyProgress(List<MangaProgress> rows) async {
+    for (final p in rows) {
+      await _db.upsertMangaProgress(p);
+    }
+    if (rows.isNotEmpty) notifyListeners();
   }
 
   /// Build a draft for a loose image directory (list only; no download).

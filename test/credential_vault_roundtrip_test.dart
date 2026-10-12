@@ -101,6 +101,20 @@ class _FakeLibraryDatabase extends LibraryDatabase {
 
   @override
   Future<List<Map<String, dynamic>>> allCueAlbums() async => const [];
+
+  @override
+  Future<Map<String, dynamic>> exportMangaSnapshot() async => {
+    'mangas': [
+      {'id': 'm1'},
+    ],
+  };
+
+  @override
+  Future<Map<String, dynamic>> exportUserFoldersSnapshot() async => {
+    'folders': [
+      {'id': 'f1'},
+    ],
+  };
 }
 
 /// Records bytes written / hands them back: the vault round-trip never
@@ -506,6 +520,15 @@ void main() {
       expect(container.kind, WmpFileKind.backup);
 
       final section = container.readSection(WmpSections.credentials)!;
+      // v7: manga library + user folders ride in the full backup.
+      final manga = jsonDecode(
+        utf8.decode(container.readSection(WmpSections.mangaLibrary)!),
+      );
+      expect((manga['mangas'] as List).single['id'], 'm1');
+      final folders = jsonDecode(
+        utf8.decode(container.readSection(WmpSections.userFolders)!),
+      );
+      expect((folders['folders'] as List).single['id'], 'f1');
       // 段里就是一份完整的 CV 文档，不是 JSON。
       expect(WmpContainer.looksLikeContainer(section), isTrue);
       expect(WmpContainer.kindOf(section), WmpFileKind.vault);

@@ -725,7 +725,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pathExample =>
-      'For example, enter /player; the music library will be under /player/library/';
+      'For example, enter /player; the music library will be under /player/library/music/';
 
   @override
   String get apply => 'Apply';
@@ -1362,7 +1362,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get restoreConfirmBody =>
-      'The backup will overwrite local account credentials, library, and playlists. Irreversible.';
+      'The backup will overwrite local account credentials, music, manga, folders, and playlists. Irreversible.';
 
   @override
   String get restorePassphraseMismatchTitle => 'Backup passphrase may be wrong';
@@ -1470,7 +1470,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get pathExampleLong =>
-      'e.g. /player puts the library at /player/library/';
+      'e.g. /player puts the music library at /player/library/music/';
 
   @override
   String get credentialsSection => 'Credentials';
@@ -1567,7 +1567,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String allBackupsSectionDesc(Object path) {
-    return 'Writes credentials + library + playlists into one archive at $path.';
+    return 'Writes credentials + music + manga + folders + playlists into one archive at $path.';
   }
 
   @override
@@ -1916,7 +1916,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get progressPackingBackup =>
-      'Packing credentials / library / playlists…';
+      'Packing credentials / music / manga / folders / playlists…';
 
   @override
   String get progressDownloadingRestore => 'Downloading and restoring…';
@@ -4734,4 +4734,114 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get taskPartialFailed => 'Partially failed';
+
+  @override
+  String get progressReadingCloudMangaIndex => 'Reading the cloud manga index…';
+
+  @override
+  String progressAdoptingCloudMangas(Object count) {
+    return 'Adopting $count cloud manga…';
+  }
+
+  @override
+  String progressAppendingMangaSegments(Object count) {
+    return 'Appending $count manga to a cloud delta shard…';
+  }
+
+  @override
+  String get progressSyncingMangaProgress => 'Syncing reading progress…';
+
+  @override
+  String get progressUploadingFullMangaShards => 'Uploading full manga shards…';
+
+  @override
+  String stepMangaIncremental(
+    Object adopted,
+    Object progress,
+    Object tombs,
+    Object uploaded,
+  ) {
+    return 'Manga: uploaded $uploaded, adopted $adopted, deleted $tombs, progress changes $progress';
+  }
+
+  @override
+  String stepMangaRebuildDone(Object count, Object shards) {
+    return 'Manga rebuild done: $shards shards ($count local manga)';
+  }
+
+  @override
+  String get progressSyncingFolders => 'Syncing folders…';
+
+  @override
+  String get stepFoldersUnchanged => 'Folders: no changes';
+
+  @override
+  String get stepFoldersPulled => 'Folders: cloud copy adopted';
+
+  @override
+  String get stepFoldersPushed => 'Folders: local copy uploaded';
+
+  @override
+  String get mangaSyncSection => 'Manga library';
+
+  @override
+  String mangaSyncSectionDesc(Object path) {
+    return 'Manga library and reading progress live under $path; only changes upload, deletions land on rebuild.';
+  }
+
+  @override
+  String get overwriteMangaTitle => 'Overwrite manga library from cloud';
+
+  @override
+  String get overwriteMangaBody =>
+      'Downloads the cloud manga library and overwrites the local one.';
+
+  @override
+  String get overwriteMangaNote =>
+      'Local manga index and unsynced changes are replaced; reading progress, cached manga and covers are kept.';
+
+  @override
+  String get destroyMangaTitle => 'Delete the manga library?';
+
+  @override
+  String get destroyMangaBody =>
+      'Deletes the local manga library one by one: cache, cover and record of each, leaving a deletion record.';
+
+  @override
+  String get destroyMangaAction => 'Delete manga library';
+
+  @override
+  String destroyMangaDone(Object count) {
+    return 'Deleted $count manga; deletion records upload on next sync, scheduled sync off';
+  }
+
+  @override
+  String get rebuildCloudMangaTitle => 'Rebuild cloud manga library';
+
+  @override
+  String get mangasPerShard => 'Manga per shard';
+
+  @override
+  String get embedCoversInMangaShardsDesc =>
+      'Each manga stores its own copy; off means the rebuilt cloud has no covers';
+
+  @override
+  String get tidyCloudMangaTitle => 'Tidy cloud manga library';
+
+  @override
+  String get foldersSyncSection => 'Folders';
+
+  @override
+  String foldersSyncSectionDesc(Object path) {
+    return 'Folders are saved whole at $path; if both sides changed, the newer one wins as a whole.';
+  }
+
+  @override
+  String get syncFoldersNow => 'Sync folders now';
+
+  @override
+  String get derivedPathManga => 'Manga library';
+
+  @override
+  String get derivedPathFolders => 'Folders';
 }

@@ -40,7 +40,7 @@ class _MemMangaDb extends LibraryDatabase {
   }
 
   @override
-  Future<void> upsertManga(Manga manga) async {
+  Future<Manga> upsertManga(Manga manga, {bool keepRev = false}) async {
     mangas.removeWhere(
       (m) =>
           m.id == manga.id ||
@@ -48,10 +48,15 @@ class _MemMangaDb extends LibraryDatabase {
               m.remotePath == manga.remotePath),
     );
     mangas.add(manga);
+    return manga;
   }
 
   @override
-  Future<void> replaceMangaPages(String mangaId, List<MangaPage> list) async {
+  Future<void> replaceMangaPages(
+    String mangaId,
+    List<MangaPage> list, {
+    bool bumpRev = true,
+  }) async {
     pages.removeWhere((p) => p.mangaId == mangaId);
     pages.addAll(list);
   }

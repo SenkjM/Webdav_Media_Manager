@@ -81,6 +81,10 @@ class AppState extends ChangeNotifier {
       library: library,
       playlists: playlists,
       backup: backup,
+      manga: mangaLibrary,
+      folders: userFolders,
+      db: db,
+      cache: cache,
     );
     taskQueue = TaskQueueService(
       webDav: webDav,
@@ -199,13 +203,14 @@ class AppState extends ChangeNotifier {
       // 0.2.4: legacy sentinel migration removed (99 §18.4).
       // The rev clock is the single version source sync compares; it starts from
       // the persisted high-water mark and reports every advance back.
-      library.attachRevClock(
-        RevClock(
-          nowMs: () => DateTime.now().millisecondsSinceEpoch,
-          initial: settings.lastRev,
-          onAdvance: settings.setLastRev,
-        ),
+      // Music and manga rows share one clock, so their revs stay on one scale.
+      final revClock = RevClock(
+        nowMs: () => DateTime.now().millisecondsSinceEpoch,
+        initial: settings.lastRev,
+        onAdvance: settings.setLastRev,
       );
+      library.attachRevClock(revClock);
+      libraryDb.mangaRevSource = revClock.next;
       _initPhase = 'library';
       await library.init();
       _initPhase = 'user-folders';
@@ -227,6 +232,9 @@ class AppState extends ChangeNotifier {
       // Incremental library sync: whenever a download (or a restore) changes
       // the local library, push just the new rows to the cloud index.
       library.addListener(_onLibraryChanged);
+      // Same 20 s debounce for manga rows / reading progress and user folders.
+      mangaLibrary.addListener(_onMangaChanged);
+      userFolders.addListener(_onFoldersChanged);
       // Changing 定时同步 in Settings must take effect immediately, not on the
       // next launch.
       settings.addListener(_onSettingsChanged);
@@ -309,6 +317,8 @@ class AppState extends ChangeNotifier {
 
   Timer? _periodicSync;
   Timer? _libraryPushDebounce;
+  Timer? _mangaPushDebounce;
+  Timer? _foldersPushDebounce;
 
   /// True while a library maintenance action (从云端覆写 / 销毁) owns the library
   /// tables. Automatic writers are shut off for its duration rather than raced
@@ -322,6 +332,10 @@ class AppState extends ChangeNotifier {
     _libraryMaintenance = true;
     _libraryPushDebounce?.cancel();
     _libraryPushDebounce = null;
+    _mangaPushDebounce?.cancel();
+    _mangaPushDebounce = null;
+    _foldersPushDebounce?.cancel();
+    _foldersPushDebounce = null;
     try {
       return await body();
     } finally {
@@ -337,6 +351,40 @@ class AppState extends ChangeNotifier {
       const Duration(seconds: 20),
       () => unawaited(pushLibraryIncrement()),
     );
+  }
+
+  void _onMangaChanged() {
+    if (!ready || !sync.hasUsableAccount || _libraryMaintenance) return;
+    _mangaPushDebounce?.cancel();
+    _mangaPushDebounce = Timer(
+      const Duration(seconds: 20),
+      () => unawaited(pushMangaIncrement()),
+    );
+  }
+
+  void _onFoldersChanged() {
+    if (!ready || !sync.hasUsableAccount || _libraryMaintenance) return;
+    _foldersPushDebounce?.cancel();
+    _foldersPushDebounce = Timer(
+      const Duration(seconds: 20),
+      () => unawaited(pushFoldersSync()),
+    );
+  }
+
+  /// Background manga push (rows + tombstones + reading progress).
+  Future<void> pushMangaIncrement() async {
+    if (!ready || !sync.hasUsableAccount || _libraryMaintenance) return;
+    try {
+      await sync.syncMangaIncremental();
+    } catch (_) {}
+  }
+
+  /// Background user-folder snapshot sync.
+  Future<void> pushFoldersSync() async {
+    if (!ready || !sync.hasUsableAccount || _libraryMaintenance) return;
+    try {
+      await sync.syncUserFolders();
+    } catch (_) {}
   }
 
   SyncInterval _appliedSyncInterval = SyncIntervalX.fallback;
@@ -387,6 +435,8 @@ class AppState extends ChangeNotifier {
     try {
       await sync.autoScan();
       await pushLibraryIncrement();
+      await pushMangaIncrement();
+      await pushFoldersSync();
     } catch (_) {
       // Background best-effort — the sync screen surfaces real errors.
     }
@@ -626,6 +676,47 @@ class AppState extends ChangeNotifier {
       final outcome = await sync.syncLibraryIncremental();
       await library.refresh();
       return outcome;
+    });
+  }
+
+  /// 「从云端覆写漫画库」: drop the local manga index and pull the cloud copy.
+  /// Reading progress and `manga_cache/` stay (progress then merges as usual).
+  Future<SyncOutcome> overwriteMangaFromCloud() {
+    return _quietLibraryWrites(() async {
+      await libraryDb.clearMangaIndex();
+      await mangaLibrary.reload();
+      final outcome = await sync.syncMangaIncremental();
+      await mangaLibrary.reload();
+      return outcome;
+    });
+  }
+
+  /// 「删除漫画库」: one manga at a time — cached archive, cover, then the row
+  /// (which leaves a tombstone). Turns 定时同步 off at the end, like music.
+  Future<int> destroyMangaLibrary({
+    void Function(int processed, int total)? onProgress,
+    bool Function()? isCancelled,
+  }) {
+    return _quietLibraryWrites(() async {
+      final list = List.of(mangaLibrary.mangas);
+      var processed = 0;
+      for (final m in list) {
+        if (isCancelled?.call() ?? false) break;
+        for (final f in [
+          cache.mangaFileForRemote(m.remotePath, sourceName: m.sourceName),
+          cache.mangaCoverFile(m.id),
+        ]) {
+          try {
+            if (await f.exists()) await f.delete();
+          } catch (_) {}
+        }
+        await libraryDb.deleteManga(m.id);
+        processed++;
+        onProgress?.call(processed, list.length);
+      }
+      await mangaLibrary.reload();
+      await settings.setSyncInterval(SyncInterval.off);
+      return processed;
     });
   }
 

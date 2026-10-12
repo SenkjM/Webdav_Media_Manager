@@ -14,6 +14,12 @@ import 'backup_service.dart';
 import 'credential_vault_service.dart';
 import 'library_service.dart';
 import 'library_sync_store.dart';
+import 'cache_service.dart';
+import 'library_database.dart';
+import 'manga_library_service.dart';
+import 'manga_sync_store.dart';
+import 'user_folder_service.dart';
+import 'user_folder_sync.dart';
 import 'playlist_service.dart';
 import 'platform_export_service.dart';
 import 'settings_service.dart';
@@ -136,7 +142,15 @@ class SyncService extends ChangeNotifier {
     required PlaylistService playlists,
     required BackupService backup,
     PlatformExportService? export,
-  }) : _accounts = accounts,
+    MangaLibraryService? manga,
+    UserFolderService? folders,
+    LibraryDatabase? db,
+    CacheService? cache,
+  }) : _manga = manga,
+       _folders = folders,
+       _db = db,
+       _cache = cache,
+       _accounts = accounts,
        _settings = settings,
        _webDav = webDav,
        _vault = vault,
@@ -153,6 +167,10 @@ class SyncService extends ChangeNotifier {
   final PlaylistService _playlists;
   final BackupService _backup;
   final PlatformExportService _export;
+  final MangaLibraryService? _manga;
+  final UserFolderService? _folders;
+  final LibraryDatabase? _db;
+  final CacheService? _cache;
 
   static const localExportSubdir = 'WebdavMediaManager';
   static const localExportPrefix = 'wdmm-export';
@@ -401,7 +419,7 @@ class SyncService extends ChangeNotifier {
 
       // Cursor: parts we already consumed are not downloaded again, and `lastSeq`
       // is the rev up to which the cloud already knows this device's rows.
-      final cursorKey = 'library:$dest';
+      final cursorKey = '${LibraryDatabase.musicCursorPrefix}$dest';
       final cursor = await _library.loadSyncCursor(cursorKey);
       if (manifest.baseUpTo > cursor.baseUpTo) {
         // A rebuild replaced the base: every part name changed, so read afresh.
@@ -692,6 +710,340 @@ class SyncService extends ChangeNotifier {
     covers: _library.covers,
     settings: _settings,
   );
+  // --- Manga library (incremental / rebuild), mirrors music --------------
+
+  /// Manga fragments on the cloud (for the 建议重建 hint).
+  int mangaCloudFragmentCount = 0;
+  int mangaCloudFragmentBytes = 0;
+
+  bool get hasMangaSync => _manga != null && _db != null && _cache != null;
+
+  MangaSyncStore _mangaStore() => MangaSyncStore(
+    webDav: _webDav,
+    settings: _settings,
+    coverFile: _cache!.mangaCoverFile,
+  );
+
+  /// Incremental manga sync: adopt cloud rows, publish local tombstones and
+  /// changed rows (covers included, like music), then merge reading progress.
+  Future<SyncOutcome> syncMangaIncremental() async {
+    final outcome = SyncOutcome(direction: 'sync');
+    if (!hasMangaSync) return outcome;
+    await _run(outcome, () async {
+      final dest = await syncDestination();
+      if (dest == null) throw StateError('err.noWebdavAccount');
+      final manga = _manga!;
+      final db = _db!;
+      final store = _mangaStore();
+      _progress(L10nHost.current.progressReadingCloudMangaIndex, 0.3);
+      final manifest = await store.readManifest(dest);
+      mangaCloudFragmentCount = manifest.fragmentCount;
+      mangaCloudFragmentBytes = manifest.fragmentBytes;
+      final cursorKey = '${LibraryDatabase.mangaCursorPrefix}$dest';
+      final cursor = await _library.loadSyncCursor(cursorKey);
+      if (manifest.baseUpTo > cursor.baseUpTo) {
+        await store.readCloud(dest, manifest);
+      } else {
+        await store.readCloud(
+          dest,
+          manifest,
+          skipFiles: cursor.parts.keys.toSet(),
+        );
+      }
+      final cloudRows = store.lastCloud.rows;
+      final cloudTombstoned = store.lastCloud.tombstonedKeys;
+      final remoteByKey = {for (final r in cloudRows) r.key: r};
+
+      final local = await manga.syncRows();
+      final localByKey = {for (final r in local) r.key: r};
+      final toUpload = <MangaSyncRow>[];
+      for (final r in local) {
+        final remote = remoteByKey[r.key];
+        if (remote != null) {
+          if (r.rev > remote.rev) toUpload.add(r);
+          continue;
+        }
+        if (r.rev > cursor.lastSeq &&
+            !(cursor.parts.isNotEmpty && r.rev <= cursor.baseUpTo)) {
+          toUpload.add(r);
+        }
+      }
+      final toAdopt = <MangaSyncRow>[
+        for (final r in cloudRows)
+          if (!cloudTombstoned.contains(r.key) &&
+              (localByKey[r.key] == null || r.rev > localByKey[r.key]!.rev))
+            r,
+      ];
+      if (toAdopt.isNotEmpty) {
+        _progress(
+          L10nHost.current.progressAdoptingCloudMangas(toAdopt.length),
+          0.5,
+        );
+        await manga.adoptCloudRows(toAdopt);
+        for (final r in toAdopt) {
+          _library.observeRev(r.rev);
+        }
+      }
+
+      final pending = await db.unpushedMangaTombstones();
+      final resurrected = <int>{};
+      for (final row in pending) {
+        final live = localByKey[mangaSyncKey(
+          row['source_name'] as String? ?? '',
+          row['remote_path'] as String? ?? '',
+        )];
+        final rev = (row['rev'] as num?)?.toInt() ?? 0;
+        if (live != null && live.rev > rev) resurrected.add(rev);
+      }
+      final toPublish = [
+        for (final row in pending)
+          if (!resurrected.contains((row['rev'] as num?)?.toInt() ?? 0)) row,
+      ];
+      for (final row in pending) {
+        if (resurrected.contains((row['rev'] as num?)?.toInt() ?? 0)) {
+          await db.clearMangaTombstone(
+            row['source_name'] as String? ?? '',
+            row['remote_path'] as String? ?? '',
+          );
+        }
+      }
+      if (toPublish.isNotEmpty) {
+        _progress(
+          L10nHost.current.progressUploadingTombstones(toPublish.length),
+          0.65,
+        );
+        final m = await store.appendTombstones(
+          dest: dest,
+          tombstones: toPublish,
+        );
+        await db.markMangaTombstonesPushed({
+          for (final row in toPublish) (row['rev'] as num?)?.toInt() ?? 0,
+        });
+        mangaCloudFragmentCount = m.fragmentCount;
+        mangaCloudFragmentBytes = m.fragmentBytes;
+      }
+      if (toUpload.isNotEmpty) {
+        _progress(
+          L10nHost.current.progressAppendingMangaSegments(toUpload.length),
+          0.8,
+        );
+        final m = await store.appendDelta(dest: dest, changed: toUpload);
+        mangaCloudFragmentCount = m.fragmentCount;
+        mangaCloudFragmentBytes = m.fragmentBytes;
+      }
+      await _saveCursorFor(
+        cursorKey: cursorKey,
+        manifest: await store.readManifest(dest),
+        cursor: cursor,
+        readParts: store.lastReadParts,
+        highestLocalRev: [
+          ...toUpload,
+          ...toAdopt,
+        ].fold<int>(cursor.lastSeq, (a, r) => r.rev > a ? r.rev : a),
+      );
+
+      _progress(L10nHost.current.progressSyncingMangaProgress, 0.92);
+      final progress = await _syncMangaProgress(dest, store);
+      outcome.step(
+        // gen-l10n orders placeholders alphabetically:
+        // adopted, progress, tombs, uploaded.
+        L10nHost.current.stepMangaIncremental(
+          toAdopt.length,
+          progress,
+          toPublish.length,
+          toUpload.length,
+        ),
+      );
+    });
+    return outcome;
+  }
+
+  /// Merge reading progress with `progress.json`. Returns entries changed on
+  /// either side.
+  Future<int> _syncMangaProgress(String dest, MangaSyncStore store) async {
+    final manga = _manga!;
+    final merge = mergeMangaProgress(
+      local: await manga.allProgress(),
+      cloud: await store.readProgress(dest),
+    );
+    await manga.applyProgress(merge.toApplyLocally);
+    if (merge.cloudNeedsUpdate) {
+      await store.writeProgress(dest, merge.merged.values);
+    }
+    return merge.toApplyLocally.length + (merge.cloudNeedsUpdate ? 1 : 0);
+  }
+
+  /// Rebuild the cloud manga library from this device (materialises deletes).
+  Future<SyncOutcome> syncMangaFull({
+    int perShard = MangaSyncStore.defaultMangasPerShard,
+    bool withCovers = true,
+  }) async {
+    final outcome = SyncOutcome(direction: 'push');
+    if (!hasMangaSync) return outcome;
+    await _run(outcome, () async {
+      final dest = await syncDestination();
+      if (dest == null) throw StateError('err.noWebdavAccount');
+      final manga = _manga!;
+      final db = _db!;
+      final store = _mangaStore();
+      _progress(L10nHost.current.progressReadingCloudMangaIndex, 0.2);
+      final cloud = await store.readCloud(dest, await store.readManifest(dest));
+      final local = {for (final r in await manga.syncRows()) r.key: r};
+      final adopt = [
+        for (final r in cloud.rows)
+          if (!cloud.tombstonedKeys.contains(r.key) &&
+              (local[r.key] == null || r.rev > local[r.key]!.rev))
+            r,
+      ];
+      if (adopt.isNotEmpty) {
+        await manga.adoptCloudRows(adopt);
+        for (final r in adopt) {
+          _library.observeRev(r.rev);
+        }
+      }
+      _progress(L10nHost.current.progressUploadingFullMangaShards, 0.6);
+      final written = await store.rebuild(
+        dest: dest,
+        rows: await manga.syncRows(),
+        perShard: perShard,
+        withCovers: withCovers,
+      );
+      mangaCloudFragmentCount = written.fragmentCount;
+      mangaCloudFragmentBytes = written.fragmentBytes;
+      // Every tombstone is materialised by the new base.
+      for (final row in await db.allMangaTombstones()) {
+        await db.clearMangaTombstone(
+          row['source_name'] as String? ?? '',
+          row['remote_path'] as String? ?? '',
+        );
+      }
+      await db.clearSyncState(prefix: LibraryDatabase.mangaCursorPrefix);
+      await _syncMangaProgress(dest, store);
+      outcome.step(
+        L10nHost.current.stepMangaRebuildDone(
+          manga.count,
+          written.shards.length,
+        ),
+      );
+    });
+    return outcome;
+  }
+
+  Future<LibraryAudit> auditMangaLibrary() async {
+    final dest = await syncDestination();
+    if (dest == null) throw StateError('err.noWebdavAccount');
+    return _mangaStore().audit(dest);
+  }
+
+  Future<int> tidyMangaOrphans(LibraryAudit audit) async {
+    final dest = await syncDestination();
+    if (dest == null) throw StateError('err.noWebdavAccount');
+    return _mangaStore().deleteOrphans(dest, audit);
+  }
+
+  Future<RebuildEstimate> estimateMangaRebuild({
+    int perShard = MangaSyncStore.defaultMangasPerShard,
+    bool withCovers = true,
+  }) async {
+    return _mangaStore().estimate(
+      rows: await _manga!.syncRows(),
+      perShard: perShard,
+      withCovers: withCovers,
+    );
+  }
+
+  // --- User folders (whole-snapshot sync) -------------------------------
+
+  static const _foldersLastSyncKey = 'folders_last_sync_at:';
+  static const _foldersCloudSeenKey = 'folders_cloud_seen:';
+
+  /// Sync the user-folder overlay with `library/folders/folders.json`
+  /// (rules: [planFolderSync]).
+  Future<SyncOutcome> syncUserFolders() async {
+    final outcome = SyncOutcome(direction: 'sync');
+    final folders = _folders;
+    final db = _db;
+    if (folders == null || db == null) return outcome;
+    await _run(outcome, () async {
+      final dest = await syncDestination();
+      if (dest == null) throw StateError('err.noWebdavAccount');
+      _progress(L10nHost.current.progressSyncingFolders, 0.5);
+      final dir = _settings.foldersRemotePath;
+      final path = '$dir$userFoldersFileName';
+      UserFoldersDoc? cloud;
+      try {
+        cloud = decodeUserFoldersDoc(await _webDav.readAsBytes(dest, path));
+      } catch (e) {
+        if (!LibrarySyncStore.isMissingError(e.toString().toLowerCase())) {
+          rethrow;
+        }
+      }
+      final snapshot = await db.exportUserFoldersSnapshot();
+      final localEmpty =
+          (snapshot['folders'] as List).isEmpty &&
+          (snapshot['items'] as List).isEmpty;
+      final action = planFolderSync(
+        localChangedAtMs:
+            int.tryParse(
+              await db.loadMeta(LibraryDatabase.foldersChangedAtKey) ?? '',
+            ) ??
+            0,
+        lastSyncAtMs:
+            int.tryParse(await db.loadMeta('$_foldersLastSyncKey$dest') ?? '') ??
+            0,
+        cloudUpdatedAt: cloud?.updatedAt,
+        lastSeenCloudUpdatedAt: await db.loadMeta('$_foldersCloudSeenKey$dest'),
+        localEmpty: localEmpty,
+      );
+      var seen = cloud?.updatedAt;
+      switch (action) {
+        case FolderSyncAction.none:
+          outcome.step(L10nHost.current.stepFoldersUnchanged);
+        case FolderSyncAction.pull:
+          await db.importUserFoldersSnapshot(cloud!.snapshot);
+          await folders.reload();
+          outcome.step(L10nHost.current.stepFoldersPulled);
+        case FolderSyncAction.push:
+          final stamp = DateTime.now().toUtc().toIso8601String();
+          await _webDav.ensureDirectory(dest, dir);
+          await _webDav.writeBytes(
+            dest,
+            path,
+            encodeUserFoldersDoc(
+              snapshot: snapshot,
+              updatedAt: stamp,
+              deviceId: _settings.deviceId,
+            ),
+          );
+          seen = stamp;
+          outcome.step(L10nHost.current.stepFoldersPushed);
+      }
+      if (action != FolderSyncAction.none) {
+        await db.saveMeta(
+          '$_foldersLastSyncKey$dest',
+          '${DateTime.now().millisecondsSinceEpoch}',
+        );
+        if (seen != null) await db.saveMeta('$_foldersCloudSeenKey$dest', seen);
+      }
+    });
+    return outcome;
+  }
+
+  /// Shared cursor bookkeeping (music + manga use the same rules).
+  Future<void> _saveCursorFor({
+    required String cursorKey,
+    required LibraryManifest manifest,
+    required ({int lastSeq, int baseUpTo, Map<String, int> parts}) cursor,
+    required Set<String> readParts,
+    required int highestLocalRev,
+  }) => _saveLibraryCursor(
+    cursorKey: cursorKey,
+    manifest: manifest,
+    cursor: cursor,
+    readParts: readParts,
+    highestLocalRev: highestLocalRev,
+  );
+
   // --- Whole-app backup -------------------------------------------------
 
   /// Back up **everything** (credentials + library + playlists) into
@@ -762,6 +1114,8 @@ class SyncService extends ChangeNotifier {
       await _accounts.init();
       await _library.refresh();
       await _playlists.refresh();
+      await _manga?.reload();
+      await _folders?.reload();
     });
     return outcome;
   }
@@ -779,6 +1133,8 @@ class SyncService extends ChangeNotifier {
       await _accounts.init();
       await _library.refresh();
       await _playlists.refresh();
+      await _manga?.reload();
+      await _folders?.reload();
     });
     return outcome;
   }
@@ -851,6 +1207,8 @@ class SyncService extends ChangeNotifier {
       await _accounts.init();
       await _library.refresh();
       await _playlists.refresh();
+      await _manga?.reload();
+      await _folders?.reload();
       _progress(L10nHost.current.progressDone, 1);
     });
     return outcome;

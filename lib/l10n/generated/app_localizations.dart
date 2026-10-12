@@ -1410,7 +1410,7 @@ abstract class AppLocalizations {
   /// No description provided for @pathExample.
   ///
   /// In zh, this message translates to:
-  /// **'例如填 /player，音乐库就在 /player/library/'**
+  /// **'例如填 /player，音乐库就在 /player/library/music/'**
   String get pathExample;
 
   /// No description provided for @apply.
@@ -2472,7 +2472,7 @@ abstract class AppLocalizations {
   /// No description provided for @restoreConfirmBody.
   ///
   /// In zh, this message translates to:
-  /// **'将用备份覆盖本机账号凭证、音乐库与歌单，不可撤销。'**
+  /// **'将用备份覆盖本机账号凭证、音乐库、漫画库、文件夹与歌单，不可撤销。'**
   String get restoreConfirmBody;
 
   /// No description provided for @restorePassphraseMismatchTitle.
@@ -2652,7 +2652,7 @@ abstract class AppLocalizations {
   /// No description provided for @pathExampleLong.
   ///
   /// In zh, this message translates to:
-  /// **'例如填 /player，音乐库就在 /player/library/'**
+  /// **'例如填 /player，音乐库就在 /player/library/music/'**
   String get pathExampleLong;
 
   /// No description provided for @credentialsSection.
@@ -2808,7 +2808,7 @@ abstract class AppLocalizations {
   /// No description provided for @allBackupsSectionDesc.
   ///
   /// In zh, this message translates to:
-  /// **'把凭证 + 音乐库 + 歌单写成一个归档到 {path}。'**
+  /// **'把凭证 + 音乐库 + 漫画库 + 文件夹 + 歌单写成一个归档到 {path}。'**
   String allBackupsSectionDesc(Object path);
 
   /// No description provided for @startBackup.
@@ -3420,7 +3420,7 @@ abstract class AppLocalizations {
   /// No description provided for @progressPackingBackup.
   ///
   /// In zh, this message translates to:
-  /// **'打包凭证 / 音乐库 / 歌单…'**
+  /// **'打包凭证 / 音乐库 / 漫画库 / 文件夹 / 歌单…'**
   String get progressPackingBackup;
 
   /// No description provided for @progressDownloadingRestore.
@@ -8014,6 +8014,185 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'部分失败'**
   String get taskPartialFailed;
+
+  /// No description provided for @progressReadingCloudMangaIndex.
+  ///
+  /// In zh, this message translates to:
+  /// **'读取云端漫画库清单…'**
+  String get progressReadingCloudMangaIndex;
+
+  /// No description provided for @progressAdoptingCloudMangas.
+  ///
+  /// In zh, this message translates to:
+  /// **'采纳云端 {count} 部漫画…'**
+  String progressAdoptingCloudMangas(Object count);
+
+  /// No description provided for @progressAppendingMangaSegments.
+  ///
+  /// In zh, this message translates to:
+  /// **'追加 {count} 部漫画到云端增量分片…'**
+  String progressAppendingMangaSegments(Object count);
+
+  /// No description provided for @progressSyncingMangaProgress.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步阅读进度…'**
+  String get progressSyncingMangaProgress;
+
+  /// No description provided for @progressUploadingFullMangaShards.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传完整漫画库分片…'**
+  String get progressUploadingFullMangaShards;
+
+  /// No description provided for @stepMangaIncremental.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画库：上传 {uploaded} 部，采纳 {adopted} 部，删除 {tombs} 条，进度变更 {progress} 处'**
+  String stepMangaIncremental(
+    Object adopted,
+    Object progress,
+    Object tombs,
+    Object uploaded,
+  );
+
+  /// No description provided for @stepMangaRebuildDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画库重建完成：{shards} 个分片（本机 {count} 部）'**
+  String stepMangaRebuildDone(Object count, Object shards);
+
+  /// No description provided for @progressSyncingFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步文件夹…'**
+  String get progressSyncingFolders;
+
+  /// No description provided for @stepFoldersUnchanged.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹：无变化'**
+  String get stepFoldersUnchanged;
+
+  /// No description provided for @stepFoldersPulled.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹：已采用云端版本'**
+  String get stepFoldersPulled;
+
+  /// No description provided for @stepFoldersPushed.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹：已上传本机版本'**
+  String get stepFoldersPushed;
+
+  /// No description provided for @mangaSyncSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画库'**
+  String get mangaSyncSection;
+
+  /// No description provided for @mangaSyncSectionDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'{path} 下保存漫画库与阅读进度；只传变化，删除在重建时落实。'**
+  String mangaSyncSectionDesc(Object path);
+
+  /// No description provided for @overwriteMangaTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'从云端覆写漫画库'**
+  String get overwriteMangaTitle;
+
+  /// No description provided for @overwriteMangaBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'会从云端下载漫画库并覆写本地。'**
+  String get overwriteMangaBody;
+
+  /// No description provided for @overwriteMangaNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'本地漫画索引与尚未同步的改动会被云端那份替换；阅读进度、已缓存的漫画与封面不会删除。'**
+  String get overwriteMangaNote;
+
+  /// No description provided for @destroyMangaTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除漫画库？'**
+  String get destroyMangaTitle;
+
+  /// No description provided for @destroyMangaBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'会逐部删除本地漫画库：每部的缓存、封面与库记录都会被删除，并各留一条删除记录。'**
+  String get destroyMangaBody;
+
+  /// No description provided for @destroyMangaAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除漫画库'**
+  String get destroyMangaAction;
+
+  /// No description provided for @destroyMangaDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除 {count} 部漫画；删除记录将在下次同步上传，定时同步已关闭'**
+  String destroyMangaDone(Object count);
+
+  /// No description provided for @rebuildCloudMangaTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'重建云端漫画库'**
+  String get rebuildCloudMangaTitle;
+
+  /// No description provided for @mangasPerShard.
+  ///
+  /// In zh, this message translates to:
+  /// **'每个分片包含漫画数'**
+  String get mangasPerShard;
+
+  /// No description provided for @embedCoversInMangaShardsDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'每部漫画独立存一份；关闭则重建后的云端不含封面'**
+  String get embedCoversInMangaShardsDesc;
+
+  /// No description provided for @tidyCloudMangaTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'整理云端漫画库'**
+  String get tidyCloudMangaTitle;
+
+  /// No description provided for @foldersSyncSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹'**
+  String get foldersSyncSection;
+
+  /// No description provided for @foldersSyncSectionDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹整份保存在 {path}；两边都改过时，较新的一方整体胜出。'**
+  String foldersSyncSectionDesc(Object path);
+
+  /// No description provided for @syncFoldersNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即同步文件夹'**
+  String get syncFoldersNow;
+
+  /// No description provided for @derivedPathManga.
+  ///
+  /// In zh, this message translates to:
+  /// **'漫画库'**
+  String get derivedPathManga;
+
+  /// No description provided for @derivedPathFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹'**
+  String get derivedPathFolders;
 }
 
 class _AppLocalizationsDelegate

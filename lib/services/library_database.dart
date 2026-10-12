@@ -16,6 +16,8 @@ import '../utils/track_identity.dart';
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
+/// Schema v15: mangas.rev + `deleted_mangas` tombstones (manga cloud sync) and
+/// `local_meta` (small key/value bookkeeping, e.g. user-folder snapshot sync).
 /// Schema v14: mangas.page_turn (nullable per-manga page-turn override).
 /// Schema v13: manga library tables (`manga_series` / `mangas` / `manga_pages` /
 /// `manga_progress`; 99 §19) — additive; music path unchanged.
@@ -43,7 +45,7 @@ class LibraryDatabase {
   bool accountNameUniquePending = false;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 14;
+  static const schemaVersion = 15;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -75,6 +77,8 @@ class LibraryDatabase {
             'manga_progress',
             'mangas',
             'manga_series',
+            'deleted_mangas',
+            'local_meta',
           ]) {
             await db.execute('DROP TABLE IF EXISTS $table');
           }
@@ -315,6 +319,23 @@ CREATE TABLE IF NOT EXISTS manga_progress (
   FOREIGN KEY(manga_id) REFERENCES mangas(id) ON DELETE CASCADE
 )
 ''');
+    // Manga deletions (cloud sync), same shape and rules as `deleted_tracks`.
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS deleted_mangas (
+  source_name TEXT NOT NULL,
+  remote_path TEXT NOT NULL,
+  rev INTEGER NOT NULL,
+  deleted_at TEXT NOT NULL,
+  pushed INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (source_name, remote_path)
+)
+''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS local_meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+)
+''');
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_mangas_series ON mangas(series_id)',
     );
@@ -338,6 +359,11 @@ CREATE TABLE IF NOT EXISTS manga_progress (
         .toSet();
     if (!cols.contains('page_turn')) {
       await db.execute('ALTER TABLE mangas ADD COLUMN page_turn TEXT');
+    }
+    if (!cols.contains('rev')) {
+      await db.execute(
+        'ALTER TABLE mangas ADD COLUMN rev INTEGER NOT NULL DEFAULT 0',
+      );
     }
   }
 
@@ -1198,6 +1224,8 @@ CREATE TABLE IF NOT EXISTS manga_progress (
     await db.delete('manga_progress');
     await db.delete('mangas');
     await db.delete('manga_series');
+    await db.delete('deleted_mangas');
+    await db.delete('local_meta');
   }
 
   /// Wipe the library **index** only: tracks, CUE tables, tombstones and the sync
@@ -1211,13 +1239,26 @@ CREATE TABLE IF NOT EXISTS manga_progress (
     await db.delete('cue_albums');
     await db.delete('tracks');
     await db.delete('deleted_tracks');
-    await db.delete('sync_state');
-    await db.delete('user_folder_items');
+    await clearSyncState(prefix: musicCursorPrefix);
+  }
+
+  /// Wipe the **manga** index only: series, mangas, pages, manga tombstones and
+  /// the manga sync cursor. Reading progress and `manga_cache/` stay, so the
+  /// rows pulled back resume where they were and keep their local files.
+  ///
+  /// Used by「从云端覆写漫画库」.
+  Future<void> clearMangaIndex() async {
+    final db = await database;
     await db.delete('manga_pages');
-    await db.delete('manga_progress');
     await db.delete('mangas');
     await db.delete('manga_series');
+    await db.delete('deleted_mangas');
+    await clearSyncState(prefix: mangaCursorPrefix);
   }
+
+  /// `sync_state.remote_key` prefixes, one per synced library kind.
+  static const musicCursorPrefix = 'library:';
+  static const mangaCursorPrefix = 'manga:';
 
   // --- Tombstones (deletions) ---
 
@@ -1321,10 +1362,46 @@ CREATE TABLE IF NOT EXISTS manga_progress (
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> clearSyncState() async {
+  /// Drop sync cursors; with [prefix] only that library kind's cursors.
+  Future<void> clearSyncState({String? prefix}) async {
     final db = await database;
-    await db.delete('sync_state');
+    if (prefix == null) {
+      await db.delete('sync_state');
+      return;
+    }
+    await db.delete(
+      'sync_state',
+      where: 'remote_key LIKE ?',
+      whereArgs: ['$prefix%'],
+    );
   }
+
+  // --- Local meta (small key/value bookkeeping) ---
+
+  Future<String?> loadMeta(String key) async {
+    final db = await database;
+    final rows = await db.query(
+      'local_meta',
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['value'] as String?;
+  }
+
+  Future<void> saveMeta(String key, String value) async {
+    final db = await database;
+    await db.insert('local_meta', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Key of the last local user-folder change (ms since epoch, as text).
+  static const foldersChangedAtKey = 'folders_changed_at';
+
+  Future<void> _touchFolders() =>
+      saveMeta(foldersChangedAtKey, '${DateTime.now().millisecondsSinceEpoch}');
 
 
   // --- User folders (local overlay, 99 §18) ---
@@ -1361,6 +1438,7 @@ CREATE TABLE IF NOT EXISTS manga_progress (
       folder.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    await _touchFolders();
   }
 
   Future<void> deleteUserFolder(String id) async {
@@ -1381,6 +1459,7 @@ CREATE TABLE IF NOT EXISTS manga_progress (
       whereArgs: [id],
     );
     await db.delete('user_folders', where: 'id = ?', whereArgs: [id]);
+    await _touchFolders();
   }
 
   Future<void> upsertUserFolderItem(UserFolderItem item) async {
@@ -1390,6 +1469,7 @@ CREATE TABLE IF NOT EXISTS manga_progress (
       item.toMap(),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    await _touchFolders();
   }
 
   Future<void> deleteUserFolderItem({
@@ -1403,6 +1483,36 @@ CREATE TABLE IF NOT EXISTS manga_progress (
       where: 'folder_id = ? AND ref_kind = ? AND ref_key = ?',
       whereArgs: [folderId, refKind, refKey],
     );
+    await _touchFolders();
+  }
+
+  /// Replace every folder + item with [folders] / [items] in one transaction.
+  ///
+  /// Used by the cloud folder pull and by backup restore. Does **not** touch
+  /// [foldersChangedAtKey]: adopting a snapshot is not a local edit.
+  Future<void> replaceUserFolders(
+    List<UserFolder> folders,
+    List<UserFolderItem> items,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('user_folder_items');
+      await txn.delete('user_folders');
+      for (final f in folders) {
+        await txn.insert(
+          'user_folders',
+          f.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      for (final i in items) {
+        await txn.insert(
+          'user_folder_items',
+          i.toMap(),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+    });
   }
 
 
@@ -1485,22 +1595,202 @@ CREATE TABLE IF NOT EXISTS manga_progress (
     return Manga.fromMap(rows.first);
   }
 
-  Future<void> upsertManga(Manga manga) async {
+  /// Source of new manga revs (the app's shared [RevClock]); falls back to the
+  /// wall clock in tests that never attach one.
+  int Function()? mangaRevSource;
+
+  int _nextMangaRev() =>
+      mangaRevSource?.call() ?? DateTime.now().millisecondsSinceEpoch;
+
+  /// Write one manga row.
+  ///
+  /// A local write ([keepRev] false) stamps a fresh rev and clears any
+  /// tombstone for the same path (re-adding after a delete resurrects it).
+  /// Adopting a cloud row passes [keepRev] so its rev is stored verbatim.
+  Future<Manga> upsertManga(Manga manga, {bool keepRev = false}) async {
     final db = await database;
-    final map = Map<String, Object?>.from(manga.toMap());
-    map['remote_path'] = normalizeRemotePath(manga.remotePath);
+    final row = keepRev ? manga : manga.copyWith(rev: _nextMangaRev());
+    final map = Map<String, Object?>.from(row.toMap());
+    map['remote_path'] = normalizeRemotePath(row.remotePath);
     await db.insert(
       'mangas',
       map,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+    if (!keepRev) {
+      await db.delete(
+        'deleted_mangas',
+        where: 'source_name = ? AND remote_path = ?',
+        whereArgs: [row.sourceName, map['remote_path']],
+      );
+    }
+    return row;
   }
 
-  Future<void> deleteManga(String id) async {
+  /// Delete one manga (pages + progress + row) and, unless [tombstone] is
+  /// false, leave a tombstone so the deletion syncs.
+  Future<void> deleteManga(String id, {bool tombstone = true}) async {
     final db = await database;
+    if (tombstone) {
+      final row = await loadMangaById(id);
+      if (row != null) {
+        await upsertMangaTombstone(
+          sourceName: row.sourceName,
+          remotePath: row.remotePath,
+          rev: _nextMangaRev(),
+        );
+      }
+    }
     await db.delete('manga_pages', where: 'manga_id = ?', whereArgs: [id]);
     await db.delete('manga_progress', where: 'manga_id = ?', whereArgs: [id]);
     await db.delete('mangas', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --- Manga tombstones (cloud sync) ---
+
+  Future<void> upsertMangaTombstone({
+    required String sourceName,
+    required String remotePath,
+    required int rev,
+    DateTime? deletedAt,
+  }) async {
+    final db = await database;
+    await db.insert('deleted_mangas', {
+      'source_name': sourceName,
+      'remote_path': normalizeRemotePath(remotePath),
+      'rev': rev,
+      'deleted_at': (deletedAt ?? DateTime.now()).toUtc().toIso8601String(),
+      'pushed': 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> clearMangaTombstone(String sourceName, String remotePath) async {
+    final db = await database;
+    await db.delete(
+      'deleted_mangas',
+      where: 'source_name = ? AND remote_path = ?',
+      whereArgs: [sourceName, normalizeRemotePath(remotePath)],
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> allMangaTombstones() async {
+    final db = await database;
+    return db.query('deleted_mangas', orderBy: 'rev ASC');
+  }
+
+  Future<List<Map<String, dynamic>>> unpushedMangaTombstones() async {
+    final db = await database;
+    return db.query('deleted_mangas', where: 'pushed = 0', orderBy: 'rev ASC');
+  }
+
+  Future<void> markMangaTombstonesPushed(Iterable<int> revs) async {
+    if (revs.isEmpty) return;
+    final db = await database;
+    for (final rev in revs) {
+      await db.update(
+        'deleted_mangas',
+        {'pushed': 1},
+        where: 'rev = ?',
+        whereArgs: [rev],
+      );
+    }
+  }
+
+  Future<int> purgeMangaTombstonesUpTo(int upTo) async {
+    final db = await database;
+    return db.delete('deleted_mangas', where: 'rev <= ?', whereArgs: [upTo]);
+  }
+
+  /// Every page row of every manga, grouped by manga id (page order).
+  Future<Map<String, List<String>>> allMangaPagesById() async {
+    final db = await database;
+    final rows = await db.query(
+      'manga_pages',
+      orderBy: 'manga_id ASC, page_index ASC',
+    );
+    final out = <String, List<String>>{};
+    for (final r in rows) {
+      (out[r['manga_id'] as String] ??= []).add(r['rel_path'] as String);
+    }
+    return out;
+  }
+
+  Future<List<MangaProgress>> allMangaProgress() async {
+    final db = await database;
+    final rows = await db.query('manga_progress');
+    return [for (final r in rows) MangaProgress.fromMap(r)];
+  }
+
+  // --- Snapshots (backup archive + folder sync) ---
+
+  /// Whole manga library as JSON-friendly maps (backup archive section).
+  Future<Map<String, dynamic>> exportMangaSnapshot() async {
+    final db = await database;
+    return {
+      'series': await db.query('manga_series'),
+      'mangas': await db.query('mangas'),
+      'pages': await db.query('manga_pages'),
+      'progress': await db.query('manga_progress'),
+      'tombstones': await db.query('deleted_mangas'),
+    };
+  }
+
+  /// Replace the manga tables with a snapshot from [exportMangaSnapshot].
+  Future<void> importMangaSnapshot(Map<String, dynamic> snap) async {
+    final db = await database;
+    List<Map<String, Object?>> rows(String key) => [
+      for (final r in (snap[key] as List<dynamic>? ?? const []))
+        if (r is Map) Map<String, Object?>.from(r),
+    ];
+    await db.transaction((txn) async {
+      for (final t in [
+        'manga_pages',
+        'manga_progress',
+        'mangas',
+        'manga_series',
+        'deleted_mangas',
+      ]) {
+        await txn.delete(t);
+      }
+      Future<void> put(String table, List<Map<String, Object?>> list) async {
+        for (final r in list) {
+          await txn.insert(
+            table,
+            r,
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        }
+      }
+
+      await put('manga_series', rows('series'));
+      await put('mangas', rows('mangas'));
+      await put('manga_pages', rows('pages'));
+      await put('manga_progress', rows('progress'));
+      await put('deleted_mangas', rows('tombstones'));
+    });
+  }
+
+  /// Whole user-folder overlay as JSON-friendly maps.
+  Future<Map<String, dynamic>> exportUserFoldersSnapshot() async {
+    final folders = await loadUserFolders();
+    final items = await loadUserFolderItems();
+    return {
+      'folders': [for (final f in folders) f.toMap()],
+      'items': [for (final i in items) i.toMap()],
+    };
+  }
+
+  Future<void> importUserFoldersSnapshot(Map<String, dynamic> snap) async {
+    await replaceUserFolders(
+      [
+        for (final r in (snap['folders'] as List<dynamic>? ?? const []))
+          if (r is Map) UserFolder.fromMap(Map<String, Object?>.from(r)),
+      ],
+      [
+        for (final r in (snap['items'] as List<dynamic>? ?? const []))
+          if (r is Map) UserFolderItem.fromMap(Map<String, Object?>.from(r)),
+      ],
+    );
   }
 
   Future<List<MangaPage>> loadMangaPages(String mangaId) async {
@@ -1514,8 +1804,22 @@ CREATE TABLE IF NOT EXISTS manga_progress (
     return [for (final r in rows) MangaPage.fromMap(r)];
   }
 
-  Future<void> replaceMangaPages(String mangaId, List<MangaPage> pages) async {
+  /// Freeze the page list. A local write ([bumpRev]) also bumps the manga's
+  /// rev so the new page order syncs; adopting a cloud row passes false.
+  Future<void> replaceMangaPages(
+    String mangaId,
+    List<MangaPage> pages, {
+    bool bumpRev = true,
+  }) async {
     final db = await database;
+    if (bumpRev) {
+      await db.update(
+        'mangas',
+        {'rev': _nextMangaRev()},
+        where: 'id = ?',
+        whereArgs: [mangaId],
+      );
+    }
     await db.transaction((txn) async {
       await txn.delete(
         'manga_pages',

@@ -165,7 +165,13 @@ class SettingsService extends ChangeNotifier {
   /// [syncRemoteRoot]. They are derived, never configured separately.
   static const String credentialsFileName = 'credentials.json';
   static const String playlistsSubdir = 'playlists';
+  /// Cloud media-library root. Every library kind lives in its own child
+  /// directory (`library/music/`, `library/manga/`, `library/folders/`), so a
+  /// future kind only adds one more child.
   static const String librarySubdir = 'library';
+  static const String musicLibrarySubdir = 'music';
+  static const String mangaLibrarySubdir = 'manga';
+  static const String foldersLibrarySubdir = 'folders';
   static const String backupSubdir = 'backup';
 
   /// Video streaming buffer clamp [8 MB, 512 MB]; default 64 MB.
@@ -452,8 +458,20 @@ class SettingsService extends ChangeNotifier {
   /// `<远端路径>playlists/` — the M3U8 playlist mirror.
   String get playlistRemotePath => _syncSubdir(playlistsSubdir);
 
-  /// `<远端路径>library/` — index.json plus the binary shards.
-  String get libraryRemotePath => _syncSubdir(librarySubdir);
+  /// `<远端路径>library/` — parent of every cloud library kind.
+  String get libraryRootRemotePath => _syncSubdir(librarySubdir);
+
+  /// `<远端路径>library/music/` — music index.json plus the binary shards.
+  String get libraryRemotePath =>
+      '$libraryRootRemotePath$musicLibrarySubdir/';
+
+  /// `<远端路径>library/manga/` — manga index.json, shards and progress.json.
+  String get mangaLibraryRemotePath =>
+      '$libraryRootRemotePath$mangaLibrarySubdir/';
+
+  /// `<远端路径>library/folders/` — user-folder snapshot (folders.json).
+  String get foldersRemotePath =>
+      '$libraryRootRemotePath$foldersLibrarySubdir/';
 
   /// `<远端路径>backup/` — 全部备份 archives.
   String get backupRemotePath => _syncSubdir(backupSubdir);

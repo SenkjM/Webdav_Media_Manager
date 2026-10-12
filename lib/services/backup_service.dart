@@ -37,7 +37,9 @@ import 'webdav_service.dart';
 ///    optionally encrypted with `AESGCMv1:`)
 /// 2. `library.json` — music library rows + CUE albums/slices
 /// 3. `playlists.json` — playlists
-/// plus the cover thumbnails those rows reference.
+/// 4. manga library — series / mangas / pages / reading progress / tombstones
+/// 5. user folders — folders + their soft refs (music / manga / series …)
+/// plus the cover thumbnails the music rows reference.
 ///
 /// Never includes cached audio files or the download queue. On restore the
 /// cached state is derived from disk, so the player never believes a file
@@ -83,7 +85,7 @@ class BackupService extends ChangeNotifier {
   static const defaultRemoteDir = '/WebdavMediaManager/backup/';
   static const defaultFileName = 'webdav_media_backup.wdmm';
   static const format = 'webdav_media_manager_backup';
-  static const formatVersion = 6;
+  static const formatVersion = 7;
 
   bool busy = false;
   String? lastError;
@@ -177,6 +179,8 @@ class BackupService extends ChangeNotifier {
       // 3. Playlists
       'playlists': _playlists.exportJson(),
       'settings': _settings.exportForBackup(),
+      'mangaLibrary': await _libraryDb.exportMangaSnapshot(),
+      'userFolders': await _libraryDb.exportUserFoldersSnapshot(),
     };
   }
 
@@ -267,6 +271,12 @@ class BackupService extends ChangeNotifier {
           WmpSections.playlists: encodeRecords(playlistRecords),
         WmpSections.settings: _jsonBytes(_settings.exportForBackup()),
         WmpSections.cueAlbums: _jsonBytes(cueAlbums),
+        WmpSections.mangaLibrary: _jsonBytes(
+          await _libraryDb.exportMangaSnapshot(),
+        ),
+        WmpSections.userFolders: _jsonBytes(
+          await _libraryDb.exportUserFoldersSnapshot(),
+        ),
         if (coverBlobs.any((b) => b != null))
           WmpSections.covers: buildCoverSection([
             for (var i = 0; i < coverBlobs.length; i++)
@@ -602,6 +612,8 @@ class BackupService extends ChangeNotifier {
       },
       'playlists': playlists,
       'settings': jsonSection(WmpSections.settings),
+      'mangaLibrary': jsonSection(WmpSections.mangaLibrary),
+      'userFolders': jsonSection(WmpSections.userFolders),
     };
   }
 
@@ -684,6 +696,19 @@ class BackupService extends ChangeNotifier {
       if (_cache != null) {
         await _cache.markAllUncached();
       }
+    }
+
+    // 3. Manga library + user folders (clearAllLibraryData above wiped them;
+    //    an archive without these sections leaves them empty).
+    final manga = payload['mangaLibrary'];
+    if (manga is Map && manga.isNotEmpty) {
+      await _libraryDb.importMangaSnapshot(Map<String, dynamic>.from(manga));
+    }
+    final folders = payload['userFolders'];
+    if (folders is Map && folders.isNotEmpty) {
+      await _libraryDb.importUserFoldersSnapshot(
+        Map<String, dynamic>.from(folders),
+      );
     }
 
     // 4. Playlists.

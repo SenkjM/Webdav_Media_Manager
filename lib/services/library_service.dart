@@ -62,7 +62,8 @@ class LibraryService extends ChangeNotifier {
     parts: jsonEncode(parts),
   );
 
-  Future<void> clearSyncCursor() => _db.clearSyncState();
+  Future<void> clearSyncCursor() =>
+      _db.clearSyncState(prefix: LibraryDatabase.musicCursorPrefix);
 
   /// Adopt an externally observed rev (a row pulled from the cloud) so the next
   /// local write cannot go backwards relative to it.

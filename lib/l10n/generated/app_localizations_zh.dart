@@ -703,7 +703,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get path => '② 路径';
 
   @override
-  String get pathExample => '例如填 /player，音乐库就在 /player/library/';
+  String get pathExample => '例如填 /player，音乐库就在 /player/library/music/';
 
   @override
   String get apply => '应用';
@@ -1318,7 +1318,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get restoreConfirmTitle => '确认恢复';
 
   @override
-  String get restoreConfirmBody => '将用备份覆盖本机账号凭证、音乐库与歌单，不可撤销。';
+  String get restoreConfirmBody => '将用备份覆盖本机账号凭证、音乐库、漫画库、文件夹与歌单，不可撤销。';
 
   @override
   String get restorePassphraseMismatchTitle => '备份口令可能不正确';
@@ -1421,7 +1421,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pathStep => '② 路径';
 
   @override
-  String get pathExampleLong => '例如填 /player，音乐库就在 /player/library/';
+  String get pathExampleLong => '例如填 /player，音乐库就在 /player/library/music/';
 
   @override
   String get credentialsSection => '账号凭证';
@@ -1516,7 +1516,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String allBackupsSectionDesc(Object path) {
-    return '把凭证 + 音乐库 + 歌单写成一个归档到 $path。';
+    return '把凭证 + 音乐库 + 漫画库 + 文件夹 + 歌单写成一个归档到 $path。';
   }
 
   @override
@@ -1851,7 +1851,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get progressUploadingFullShards => '上传完整曲库分片…';
 
   @override
-  String get progressPackingBackup => '打包凭证 / 音乐库 / 歌单…';
+  String get progressPackingBackup => '打包凭证 / 音乐库 / 漫画库 / 文件夹 / 歌单…';
 
   @override
   String get progressDownloadingRestore => '下载并恢复…';
@@ -4524,6 +4524,112 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get taskPartialFailed => '部分失败';
+
+  @override
+  String get progressReadingCloudMangaIndex => '读取云端漫画库清单…';
+
+  @override
+  String progressAdoptingCloudMangas(Object count) {
+    return '采纳云端 $count 部漫画…';
+  }
+
+  @override
+  String progressAppendingMangaSegments(Object count) {
+    return '追加 $count 部漫画到云端增量分片…';
+  }
+
+  @override
+  String get progressSyncingMangaProgress => '同步阅读进度…';
+
+  @override
+  String get progressUploadingFullMangaShards => '上传完整漫画库分片…';
+
+  @override
+  String stepMangaIncremental(
+    Object adopted,
+    Object progress,
+    Object tombs,
+    Object uploaded,
+  ) {
+    return '漫画库：上传 $uploaded 部，采纳 $adopted 部，删除 $tombs 条，进度变更 $progress 处';
+  }
+
+  @override
+  String stepMangaRebuildDone(Object count, Object shards) {
+    return '漫画库重建完成：$shards 个分片（本机 $count 部）';
+  }
+
+  @override
+  String get progressSyncingFolders => '同步文件夹…';
+
+  @override
+  String get stepFoldersUnchanged => '文件夹：无变化';
+
+  @override
+  String get stepFoldersPulled => '文件夹：已采用云端版本';
+
+  @override
+  String get stepFoldersPushed => '文件夹：已上传本机版本';
+
+  @override
+  String get mangaSyncSection => '漫画库';
+
+  @override
+  String mangaSyncSectionDesc(Object path) {
+    return '$path 下保存漫画库与阅读进度；只传变化，删除在重建时落实。';
+  }
+
+  @override
+  String get overwriteMangaTitle => '从云端覆写漫画库';
+
+  @override
+  String get overwriteMangaBody => '会从云端下载漫画库并覆写本地。';
+
+  @override
+  String get overwriteMangaNote => '本地漫画索引与尚未同步的改动会被云端那份替换；阅读进度、已缓存的漫画与封面不会删除。';
+
+  @override
+  String get destroyMangaTitle => '删除漫画库？';
+
+  @override
+  String get destroyMangaBody => '会逐部删除本地漫画库：每部的缓存、封面与库记录都会被删除，并各留一条删除记录。';
+
+  @override
+  String get destroyMangaAction => '删除漫画库';
+
+  @override
+  String destroyMangaDone(Object count) {
+    return '已删除 $count 部漫画；删除记录将在下次同步上传，定时同步已关闭';
+  }
+
+  @override
+  String get rebuildCloudMangaTitle => '重建云端漫画库';
+
+  @override
+  String get mangasPerShard => '每个分片包含漫画数';
+
+  @override
+  String get embedCoversInMangaShardsDesc => '每部漫画独立存一份；关闭则重建后的云端不含封面';
+
+  @override
+  String get tidyCloudMangaTitle => '整理云端漫画库';
+
+  @override
+  String get foldersSyncSection => '文件夹';
+
+  @override
+  String foldersSyncSectionDesc(Object path) {
+    return '文件夹整份保存在 $path；两边都改过时，较新的一方整体胜出。';
+  }
+
+  @override
+  String get syncFoldersNow => '立即同步文件夹';
+
+  @override
+  String get derivedPathManga => '漫画库';
+
+  @override
+  String get derivedPathFolders => '文件夹';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -5225,7 +5331,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get path => '② 路徑';
 
   @override
-  String get pathExample => '例如填寫 /player，音樂庫就在 /player/library/';
+  String get pathExample => '例如填寫 /player，音樂庫就在 /player/library/music/';
 
   @override
   String get apply => '套用';
@@ -5840,7 +5946,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get restoreConfirmTitle => '確認恢復';
 
   @override
-  String get restoreConfirmBody => '將用備份覆蓋本機帳號憑證、音樂庫與歌單，不可撤銷。';
+  String get restoreConfirmBody => '將用備份覆蓋本機帳號憑證、音樂庫、漫畫庫、資料夾與歌單，不可撤銷。';
 
   @override
   String get restorePassphraseMismatchTitle => '備份口令可能不正確';
@@ -5943,7 +6049,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get pathStep => '② 路徑';
 
   @override
-  String get pathExampleLong => '例如填 /player，音樂庫就在 /player/library/';
+  String get pathExampleLong => '例如填 /player，音樂庫就在 /player/library/music/';
 
   @override
   String get credentialsSection => '帳號憑證';
@@ -6038,7 +6144,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String allBackupsSectionDesc(Object path) {
-    return '把憑證 + 音樂庫 + 歌單寫成一個封存到 $path。';
+    return '把憑證 + 音樂庫 + 漫畫庫 + 資料夾 + 歌單寫成一個封存到 $path。';
   }
 
   @override
@@ -6373,7 +6479,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get progressUploadingFullShards => '上傳完整曲庫分片…';
 
   @override
-  String get progressPackingBackup => '打包憑證 / 音樂庫 / 歌單…';
+  String get progressPackingBackup => '打包憑證 / 音樂庫 / 漫畫庫 / 資料夾 / 歌單…';
 
   @override
   String get progressDownloadingRestore => '下載並還原…';
@@ -9046,4 +9152,110 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get taskPartialFailed => '部分失敗';
+
+  @override
+  String get progressReadingCloudMangaIndex => '讀取雲端漫畫庫清單…';
+
+  @override
+  String progressAdoptingCloudMangas(Object count) {
+    return '採納雲端 $count 部漫畫…';
+  }
+
+  @override
+  String progressAppendingMangaSegments(Object count) {
+    return '追加 $count 部漫畫到雲端增量分片…';
+  }
+
+  @override
+  String get progressSyncingMangaProgress => '同步閱讀進度…';
+
+  @override
+  String get progressUploadingFullMangaShards => '上傳完整漫畫庫分片…';
+
+  @override
+  String stepMangaIncremental(
+    Object adopted,
+    Object progress,
+    Object tombs,
+    Object uploaded,
+  ) {
+    return '漫畫庫：上傳 $uploaded 部，採納 $adopted 部，刪除 $tombs 條，進度變更 $progress 處';
+  }
+
+  @override
+  String stepMangaRebuildDone(Object count, Object shards) {
+    return '漫畫庫重建完成：$shards 個分片（本機 $count 部）';
+  }
+
+  @override
+  String get progressSyncingFolders => '同步資料夾…';
+
+  @override
+  String get stepFoldersUnchanged => '資料夾：無變化';
+
+  @override
+  String get stepFoldersPulled => '資料夾：已採用雲端版本';
+
+  @override
+  String get stepFoldersPushed => '資料夾：已上傳本機版本';
+
+  @override
+  String get mangaSyncSection => '漫畫庫';
+
+  @override
+  String mangaSyncSectionDesc(Object path) {
+    return '$path 下保存漫畫庫與閱讀進度；只傳變化，刪除在重建時落實。';
+  }
+
+  @override
+  String get overwriteMangaTitle => '從雲端覆寫漫畫庫';
+
+  @override
+  String get overwriteMangaBody => '會從雲端下載漫畫庫並覆寫本機。';
+
+  @override
+  String get overwriteMangaNote => '本機漫畫索引與尚未同步的改動會被雲端那份替換；閱讀進度、已快取的漫畫與封面不會刪除。';
+
+  @override
+  String get destroyMangaTitle => '刪除漫畫庫？';
+
+  @override
+  String get destroyMangaBody => '會逐部刪除本機漫畫庫：每部的快取、封面與庫記錄都會被刪除，並各留一條刪除記錄。';
+
+  @override
+  String get destroyMangaAction => '刪除漫畫庫';
+
+  @override
+  String destroyMangaDone(Object count) {
+    return '已刪除 $count 部漫畫；刪除記錄將在下次同步上傳，排程同步已關閉';
+  }
+
+  @override
+  String get rebuildCloudMangaTitle => '重建雲端漫畫庫';
+
+  @override
+  String get mangasPerShard => '每個分片包含漫畫數';
+
+  @override
+  String get embedCoversInMangaShardsDesc => '每部漫畫獨立存一份；關閉則重建後的雲端不含封面';
+
+  @override
+  String get tidyCloudMangaTitle => '整理雲端漫畫庫';
+
+  @override
+  String get foldersSyncSection => '資料夾';
+
+  @override
+  String foldersSyncSectionDesc(Object path) {
+    return '資料夾整份保存在 $path；兩邊都改過時，較新的一方整體勝出。';
+  }
+
+  @override
+  String get syncFoldersNow => '立即同步資料夾';
+
+  @override
+  String get derivedPathManga => '漫畫庫';
+
+  @override
+  String get derivedPathFolders => '資料夾';
 }
