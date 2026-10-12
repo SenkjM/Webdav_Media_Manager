@@ -1701,6 +1701,27 @@ CREATE TABLE IF NOT EXISTS local_meta (
     return db.delete('deleted_mangas', where: 'rev <= ?', whereArgs: [upTo]);
   }
 
+  /// Page rows of loose-image mangas only (`format = images`), grouped by
+  /// manga id in page order — the part of `manga_pages` that syncs / backs up.
+  Future<Map<String, List<String>>> imageMangaPagesById() async {
+    final rows = await _imageMangaPageRows();
+    final out = <String, List<String>>{};
+    for (final r in rows) {
+      (out[r['manga_id'] as String] ??= []).add(r['rel_path'] as String);
+    }
+    return out;
+  }
+
+  Future<List<Map<String, Object?>>> _imageMangaPageRows() async {
+    final db = await database;
+    return db.rawQuery(
+      'SELECT p.manga_id, p.page_index, p.rel_path FROM manga_pages p '
+      'JOIN mangas m ON m.id = p.manga_id WHERE m.format = ? '
+      'ORDER BY p.manga_id ASC, p.page_index ASC',
+      [MangaFormat.images],
+    );
+  }
+
   Future<List<MangaProgress>> allMangaProgress() async {
     final db = await database;
     final rows = await db.query('manga_progress');
@@ -1715,6 +1736,8 @@ CREATE TABLE IF NOT EXISTS local_meta (
     return {
       'series': await db.query('manga_series'),
       'mangas': await db.query('mangas'),
+      // Loose-image page lists only; CBZ page order is a local cache.
+      'pages': await _imageMangaPageRows(),
       'progress': await db.query('manga_progress'),
       'tombstones': await db.query('deleted_mangas'),
     };
@@ -1749,6 +1772,7 @@ CREATE TABLE IF NOT EXISTS local_meta (
 
       await put('manga_series', rows('series'));
       await put('mangas', rows('mangas'));
+      await put('manga_pages', rows('pages'));
       await put('manga_progress', rows('progress'));
       await put('deleted_mangas', rows('tombstones'));
     });
@@ -1788,10 +1812,23 @@ CREATE TABLE IF NOT EXISTS local_meta (
     return [for (final r in rows) MangaPage.fromMap(r)];
   }
 
-  /// Freeze the page list. Page order is a **local cache** (not synced, not
-  /// in backups), so this never bumps the manga's rev.
-  Future<void> replaceMangaPages(String mangaId, List<MangaPage> pages) async {
+  /// Freeze the page list. [bumpRev] is true only for a local edit of a
+  /// loose-image manga (its pages are synced membership). CBZ page order is a
+  /// local cache and adopting a cloud row must not bump, so both pass false.
+  Future<void> replaceMangaPages(
+    String mangaId,
+    List<MangaPage> pages, {
+    bool bumpRev = false,
+  }) async {
     final db = await database;
+    if (bumpRev) {
+      await db.update(
+        'mangas',
+        {'rev': _nextMangaRev()},
+        where: 'id = ?',
+        whereArgs: [mangaId],
+      );
+    }
     await db.transaction((txn) async {
       await txn.delete(
         'manga_pages',

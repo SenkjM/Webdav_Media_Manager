@@ -286,7 +286,10 @@ class WmpManga {
   static const int pageTurn = 16;
   static const int updatedAt = 17;
 
-  // 18: retired (page order is a local cache, not synced). Do not reuse.
+  /// JSON array of page rel paths in page order — **loose-image mangas only**
+  /// (`format == images`: the page list *is* the book's membership). CBZ and
+  /// other containers never carry it (their order is derivable, local cache).
+  static const int pages = 18;
 
   /// Index into the shard's COVERS section (this row's own cover).
   static const int coverIndex = 19;

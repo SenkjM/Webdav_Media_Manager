@@ -7,6 +7,7 @@ import 'package:webdav_media_manager/models/manga_page.dart';
 import 'package:webdav_media_manager/models/manga_series.dart';
 import 'package:webdav_media_manager/services/library_database.dart';
 import 'package:webdav_media_manager/services/manga_library_service.dart';
+import 'package:webdav_media_manager/services/manga_sync_store.dart';
 import 'package:webdav_media_manager/services/settings_service.dart';
 import 'package:webdav_media_manager/utils/manga_file_types.dart';
 import 'package:webdav_media_manager/utils/manga_identity.dart';
@@ -17,6 +18,26 @@ class _MemMangaDb extends LibraryDatabase {
   final mangas = <Manga>[];
   final pages = <MangaPage>[];
   final progress = <String, int>{};
+
+  /// Last `bumpRev` passed per manga id to [replaceMangaPages].
+  final pageBumps = <String, bool>{};
+
+  @override
+  Future<Map<String, List<String>>> imageMangaPagesById() async {
+    final images = {
+      for (final m in mangas)
+        if (m.format == MangaFormat.images) m.id,
+    };
+    final out = <String, List<String>>{};
+    for (final p in [
+      ...pages,
+    ]..sort((a, b) => a.pageIndex.compareTo(b.pageIndex))) {
+      if (images.contains(p.mangaId)) {
+        (out[p.mangaId] ??= []).add(p.relPath);
+      }
+    }
+    return out;
+  }
 
   @override
   Future<List<MangaSeries>> loadMangaSeries() async => List.of(series);
@@ -31,10 +52,16 @@ class _MemMangaDb extends LibraryDatabase {
   Future<List<Manga>> loadMangas({String? seriesId, String? author}) async {
     var list = List.of(mangas);
     if (seriesId != null) {
-      list = [for (final m in list) if (m.seriesId == seriesId) m];
+      list = [
+        for (final m in list)
+          if (m.seriesId == seriesId) m,
+      ];
     }
     if (author != null) {
-      list = [for (final m in list) if (m.author == author) m];
+      list = [
+        for (final m in list)
+          if (m.author == author) m,
+      ];
     }
     return list;
   }
@@ -52,15 +79,21 @@ class _MemMangaDb extends LibraryDatabase {
   }
 
   @override
-  Future<void> replaceMangaPages(String mangaId, List<MangaPage> list) async {
+  Future<void> replaceMangaPages(
+    String mangaId,
+    List<MangaPage> list, {
+    bool bumpRev = false,
+  }) async {
+    pageBumps[mangaId] = bumpRev;
     pages.removeWhere((p) => p.mangaId == mangaId);
     pages.addAll(list);
   }
 
   @override
-  Future<List<MangaPage>> loadMangaPages(String mangaId) async =>
-      [for (final p in pages) if (p.mangaId == mangaId) p]
-        ..sort((a, b) => a.pageIndex.compareTo(b.pageIndex));
+  Future<List<MangaPage>> loadMangaPages(String mangaId) async => [
+    for (final p in pages)
+      if (p.mangaId == mangaId) p,
+  ]..sort((a, b) => a.pageIndex.compareTo(b.pageIndex));
 
   @override
   Future<List<String>> loadMangaAuthors() async {
@@ -134,7 +167,11 @@ void main() {
     expect(svc.series.first.title, 'Demo Series');
 
     final pages = await svc.pagesFor(manga.id);
-    expect(pages.map((p) => p.relPath).toList(), ['01.jpg', '02.jpg', '03.jpg']);
+    expect(pages.map((p) => p.relPath).toList(), [
+      '01.jpg',
+      '02.jpg',
+      '03.jpg',
+    ]);
     expect(pages.map((p) => p.pageIndex).toList(), [0, 1, 2]);
 
     // Re-ingest same path replaces, does not duplicate.
@@ -293,4 +330,63 @@ void main() {
     expect(again.imagePageTurn, PageTurnDirection.rtl);
   });
 
+  group('page lists in sync: images = membership, CBZ = local cache', () {
+    Manga m(String path, String format) => Manga(
+      id: mangaIdForRemote('nas', path),
+      sourceName: 'nas',
+      remotePath: path,
+      title: path,
+      format: format,
+      updatedAt: DateTime.utc(2026, 1, 1),
+      rev: 7,
+    );
+    MangaPage pg(String id, int i, String rel) =>
+        MangaPage(mangaId: id, pageIndex: i, relPath: rel);
+
+    test('syncRows ships pages for images rows only', () async {
+      final db = _MemMangaDb();
+      final img = m('/imgs', MangaFormat.images);
+      final cbz = m('/a.cbz', MangaFormat.cbz);
+      db.mangas.addAll([img, cbz]);
+      db.pages.addAll([pg(img.id, 0, 'x/1.jpg'), pg(cbz.id, 0, '1.jpg')]);
+      final svc = MangaLibraryService(db: db);
+      await svc.init();
+      final rows = {for (final r in await svc.syncRows()) r.manga.id: r};
+      expect(rows[img.id]!.pages, ['x/1.jpg']);
+      expect(rows[cbz.id]!.pages, isEmpty);
+    });
+
+    test('pull replaces images pages without bump; CBZ keeps local', () async {
+      final db = _MemMangaDb();
+      final img = m('/imgs', MangaFormat.images);
+      final cbz = m('/a.cbz', MangaFormat.cbz);
+      db.pages.addAll([pg(img.id, 0, 'old.jpg'), pg(cbz.id, 0, 'local.jpg')]);
+      final svc = MangaLibraryService(db: db);
+      await svc.init();
+      await svc.adoptCloudRows([
+        MangaSyncRow(manga: img, pages: ['a/1.jpg', 'b/1.jpg']),
+        MangaSyncRow(manga: cbz, pages: ['ignored.jpg']),
+      ]);
+      expect((await svc.pagesFor(img.id)).map((p) => p.relPath), [
+        'a/1.jpg',
+        'b/1.jpg',
+      ]);
+      expect(db.pageBumps[img.id], isFalse);
+      expect((await svc.pagesFor(cbz.id)).single.relPath, 'local.jpg');
+      expect(db.pageBumps.containsKey(cbz.id), isFalse);
+    });
+
+    test('local page save bumps rev for images, never for CBZ', () async {
+      final db = _MemMangaDb();
+      final img = m('/imgs', MangaFormat.images);
+      final cbz = m('/a.cbz', MangaFormat.cbz);
+      db.mangas.addAll([img, cbz]);
+      final svc = MangaLibraryService(db: db);
+      await svc.init();
+      await svc.replacePages(img.id, pages: [pg(img.id, 0, '1.jpg')]);
+      await svc.replacePages(cbz.id, pages: [pg(cbz.id, 0, '1.jpg')]);
+      expect(db.pageBumps[img.id], isTrue);
+      expect(db.pageBumps[cbz.id], isFalse);
+    });
+  });
 }
