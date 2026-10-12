@@ -9,6 +9,7 @@ import 'providers/app_state.dart';
 import 'models/app_locale.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'screens/home_shell.dart';
+import 'widgets/account_name_cleanup_screen.dart';
 import 'widgets/database_recovery_screen.dart';
 import 'services/accounts_service.dart';
 import 'services/audio_player_service.dart';
@@ -127,7 +128,14 @@ class WebDavMusicApp extends StatelessWidget {
                   error: appState.initError!,
                   beforeClear: appState.closeDatabases,
                 )
-              : const HomeShell(),
+              : Consumer<AccountsService>(
+                  builder: (context, accounts, _) {
+                    if (accounts.needsNameCleanup) {
+                      return const AccountNameCleanupScreen();
+                    }
+                    return const HomeShell();
+                  },
+                ),
         ),
       ),
     );

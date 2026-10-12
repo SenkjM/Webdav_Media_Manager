@@ -10,6 +10,7 @@ import '../utils/track_identity.dart';
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
+/// Schema v11: `accounts.name_key` + UNIQUE (normalized name; 99 §17.17).
 /// Schema v10 adds `remote_missing` on tracks/cue_slices.
 /// Schema v9:
 /// - `accounts` — site (stable sourceName; display name separate)
@@ -26,8 +27,12 @@ import '../utils/track_identity.dart';
 class LibraryDatabase {
   Database? _db;
 
+  /// True when historical same-name rows block the name_key UNIQUE index.
+  /// Cleared after the user deletes conflicts and [applyAccountNameUnique] runs.
+  bool accountNameUniquePending = false;
+
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 10;
+  static const schemaVersion = 11;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -61,6 +66,10 @@ class LibraryDatabase {
         await _ensureAccountColumns(db);
       },
     );
+    // Always reconcile name_key / UNIQUE after open (also covers already-v11
+    // installs that still had duplicate names when the index was deferred).
+    await _ensureAccountColumns(_db!);
+    await _reconcileAccountNameUnique(_db!);
     return _db!;
   }
 
@@ -69,11 +78,13 @@ class LibraryDatabase {
 CREATE TABLE IF NOT EXISTS accounts (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  name_key TEXT NOT NULL,
   url TEXT NOT NULL,
   username TEXT NOT NULL,
   provider_type TEXT NOT NULL DEFAULT 'webdav',
   remote_path TEXT NOT NULL DEFAULT '/',
-  capabilities INTEGER NOT NULL DEFAULT 127
+  capabilities INTEGER NOT NULL DEFAULT 127,
+  UNIQUE(name_key)
 )
 ''');
     await db.execute('''
@@ -223,6 +234,13 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
   /// accounts 表按需补列（PRAGMA 检查，幂等）。默认值与 [AccountCaps.all] 对齐。
   Future<void> _ensureAccountColumns(Database db) async {
+    final table = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='accounts'",
+    );
+    if (table.isEmpty) {
+      // Fresh open before onCreate finished, or wiped — nothing to patch.
+      return;
+    }
     final cols = (await db.rawQuery('PRAGMA table_info(accounts)'))
         .map((row) => row['name'] as String)
         .toSet();
@@ -241,11 +259,115 @@ CREATE TABLE IF NOT EXISTS sync_state (
         'ALTER TABLE accounts ADD COLUMN capabilities INTEGER NOT NULL DEFAULT 127',
       );
     }
+    if (!cols.contains('name_key')) {
+      await db.execute(
+        "ALTER TABLE accounts ADD COLUMN name_key TEXT NOT NULL DEFAULT ''",
+      );
+    }
     // 旧默认 63（六位掩码）→ 当前全量 127：能力勾选 UI 上线前不存在自定义值，
     // 全量替换安全（99 §7.2.3 的 mkdir 拆位）。
     await db.execute(
       'UPDATE accounts SET capabilities = 127 WHERE capabilities = 63',
     );
+    await _backfillAccountNameKeys(db);
+  }
+
+  Future<void> _backfillAccountNameKeys(Database db) async {
+    final rows = await db.query('accounts', columns: ['id', 'name', 'name_key']);
+    for (final row in rows) {
+      final id = row['id'] as String? ?? '';
+      final name = row['name'] as String? ?? '';
+      final key = accountNameKey(name);
+      if (id.isEmpty) continue;
+      if ((row['name_key'] as String? ?? '') == key) continue;
+      await db.update(
+        'accounts',
+        {'name_key': key},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    }
+  }
+
+  /// Duplicate [name_key] values still present in `accounts` (normalized).
+  Future<List<String>> duplicateAccountNameKeys() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      "SELECT name_key FROM accounts "
+      "WHERE name_key != '' "
+      "GROUP BY name_key "
+      "HAVING COUNT(*) > 1",
+    );
+    return [
+      for (final r in rows) (r['name_key'] as String?) ?? '',
+    ].where((k) => k.isNotEmpty).toList();
+  }
+
+  Future<bool> _hasAccountNameKeyUnique(Database db) async {
+    final master = await db.rawQuery(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'",
+    );
+    final createSql = ((master.isEmpty ? null : master.first['sql']) as String?)
+            ?.toUpperCase() ??
+        '';
+    if (createSql.contains('NAME_KEY') && createSql.contains('UNIQUE')) {
+      return true;
+    }
+    final indexes = await db.rawQuery("PRAGMA index_list('accounts')");
+    for (final idx in indexes) {
+      if (idx['unique'] != 1) continue;
+      final name = idx['name'] as String?;
+      if (name == null) continue;
+      final info = await db.rawQuery('PRAGMA index_info("$name")');
+      if (info.length == 1 && info.first['name'] == 'name_key') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Future<void> _reconcileAccountNameUnique(Database db) async {
+    if (await _hasAccountNameKeyUnique(db)) {
+      accountNameUniquePending = false;
+      return;
+    }
+    final applied = await _tryCreateAccountNameUniqueIndex(db);
+    accountNameUniquePending = !applied;
+  }
+
+  /// Returns true when the UNIQUE index is in place (or already was).
+  Future<bool> _tryCreateAccountNameUniqueIndex(Database db) async {
+    final dups = await db.rawQuery(
+      "SELECT name_key FROM accounts "
+      "WHERE name_key != '' "
+      "GROUP BY name_key "
+      "HAVING COUNT(*) > 1",
+    );
+    if (dups.isNotEmpty) return false;
+    try {
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_name_key '
+        'ON accounts(name_key)',
+      );
+      return true;
+    } catch (_) {
+      // Race or residual conflict — leave pending for cleanup UI.
+      return false;
+    }
+  }
+
+  /// After the user removes name conflicts, install the UNIQUE hard floor.
+  /// Returns true when uniqueness is enforced.
+  Future<bool> applyAccountNameUnique() async {
+    final db = await database;
+    await _backfillAccountNameKeys(db);
+    if (await _hasAccountNameKeyUnique(db)) {
+      accountNameUniquePending = false;
+      return true;
+    }
+    final applied = await _tryCreateAccountNameUniqueIndex(db);
+    accountNameUniquePending = !applied;
+    return applied;
   }
 
   // --- Accounts ---
@@ -258,11 +380,27 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
   Future<void> upsertAccount(WebDavAccount account) async {
     final db = await database;
-    await db.insert(
+    final map = Map<String, Object?>.from(account.toMap())
+      ..['name_key'] = accountNameKey(account.name);
+    // Never ConflictAlgorithm.replace: UNIQUE(name_key) would delete the other
+    // account row on a name clash. Upsert by id only; name clashes abort.
+    final existing = await db.query(
       'accounts',
-      account.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
+      columns: ['id'],
+      where: 'id = ?',
+      whereArgs: [account.id],
+      limit: 1,
     );
+    if (existing.isEmpty) {
+      await db.insert('accounts', map);
+    } else {
+      await db.update(
+        'accounts',
+        map,
+        where: 'id = ?',
+        whereArgs: [account.id],
+      );
+    }
   }
 
   Future<void> deleteAccount(String id) async {

@@ -44,9 +44,15 @@ class AccountsService extends ChangeNotifier {
   /// Serializes [init] so concurrent clear/await/addAll cannot multiply rows.
   Future<void>? _initInFlight;
 
+  /// Historical same-name rows: startup stays on cleanup UI until resolved.
+  bool _needsNameCleanup = false;
+
   UnmodifiableListView<WebDavAccount> get accounts =>
       UnmodifiableListView(_accounts);
   bool get loaded => _loaded;
+
+  /// True when duplicate normalized names still exist; gates HomeShell.
+  bool get needsNameCleanup => _needsNameCleanup;
   String? get activeAccountId => _activeAccountId;
 
   WebDavAccount? get activeAccount {
@@ -111,8 +117,7 @@ class AccountsService extends ChangeNotifier {
   bool get hasAccounts => _accounts.isNotEmpty;
 
   /// Normalized name key used for uniqueness (case-insensitive).
-  static String nameKey(String name) =>
-      normalizeSourceName(name).toLowerCase();
+  static String nameKey(String name) => accountNameKey(name);
 
   String _resolvedName(String name, String url) {
     final trimmed = name.trim();
@@ -159,7 +164,8 @@ class AccountsService extends ChangeNotifier {
         _activeAccountId = _accounts.first.id;
         await _prefs!.setString(_kActiveAccount, _activeAccountId!);
       }
-      await _collapseDuplicateNames();
+      _needsNameCleanup = _duplicateNameKeys().isNotEmpty ||
+          _db.accountNameUniquePending;
       _loaded = true;
       notifyListeners();
       gate.complete();
@@ -239,42 +245,40 @@ class AccountsService extends ChangeNotifier {
     return null;
   }
 
-  /// Keep one row per name (prefer active). Deletes extras from DB + secure.
-  /// Existing installs may already have same-name rows from soft-allow / vault.
-  Future<void> _collapseDuplicateNames() async {
-    final keepByName = <String, WebDavAccount>{};
-    final removeIds = <String>[];
-    for (final a in List<WebDavAccount>.from(_accounts)) {
+  /// Normalized name keys that appear more than once in memory.
+  Set<String> _duplicateNameKeys() {
+    final counts = <String, int>{};
+    for (final a in _accounts) {
       final key = nameKey(a.name);
       if (key.isEmpty) continue;
-      final kept = keepByName[key];
-      if (kept == null) {
-        keepByName[key] = a;
-        continue;
-      }
-      if (a.id == _activeAccountId) {
-        removeIds.add(kept.id);
-        keepByName[key] = a;
-      } else {
-        removeIds.add(a.id);
-      }
+      counts[key] = (counts[key] ?? 0) + 1;
     }
-    for (final id in removeIds) {
-      await _db.deleteAccount(id);
-      await _secure.delete(key: '$_kPassPrefix$id');
-      await _secure.delete(key: '$_kDriverCfgPrefix$id');
-      _accounts.removeWhere((a) => a.id == id);
+    return {
+      for (final e in counts.entries)
+        if (e.value > 1) e.key,
+    };
+  }
+
+  /// Conflicting accounts grouped by normalized name (for cleanup UI).
+  Map<String, List<WebDavAccount>> duplicateNameGroups() {
+    final dups = _duplicateNameKeys();
+    final groups = <String, List<WebDavAccount>>{};
+    for (final a in _accounts) {
+      final key = nameKey(a.name);
+      if (!dups.contains(key)) continue;
+      groups.putIfAbsent(key, () => []).add(a);
     }
-    if (removeIds.isNotEmpty &&
-        _activeAccountId != null &&
-        !_accounts.any((a) => a.id == _activeAccountId)) {
-      _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
-      if (_activeAccountId == null) {
-        await _prefs!.remove(_kActiveAccount);
-      } else {
-        await _prefs!.setString(_kActiveAccount, _activeAccountId!);
-      }
+    return groups;
+  }
+
+  Future<void> _refreshNameCleanupState() async {
+    final stillDup = _duplicateNameKeys().isNotEmpty;
+    if (stillDup) {
+      _needsNameCleanup = true;
+      return;
     }
+    final applied = await _db.applyAccountNameUnique();
+    _needsNameCleanup = !applied || _db.accountNameUniquePending;
   }
 
   Future<WebDavAccount> addAccount({
@@ -361,6 +365,9 @@ class AccountsService extends ChangeNotifier {
       } else {
         await _prefs!.setString(_kActiveAccount, _activeAccountId!);
       }
+    }
+    if (_needsNameCleanup) {
+      await _refreshNameCleanupState();
     }
     notifyListeners();
   }
@@ -556,7 +563,7 @@ class AccountsService extends ChangeNotifier {
     _accounts
       ..clear()
       ..addAll(restoredRows);
-    await _collapseDuplicateNames();
+    await _refreshNameCleanupState();
     final active = json['activeAccountId'] as String?;
     if (active != null && _accounts.any((a) => a.id == active)) {
       _activeAccountId = active;

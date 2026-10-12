@@ -831,6 +831,48 @@ abstract class AppLocalizations {
   /// **'该名称已被占用，建议换一个'**
   String get accountNameTaken;
 
+  /// No description provided for @accountNameCleanupTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理同名账号'**
+  String get accountNameCleanupTitle;
+
+  /// No description provided for @accountNameCleanupHeading.
+  ///
+  /// In zh, this message translates to:
+  /// **'存在同名账号'**
+  String get accountNameCleanupHeading;
+
+  /// No description provided for @accountNameCleanupBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'请删除多余的同名账号，只保留每个名称对应的一个。清理完成后即可继续使用。'**
+  String get accountNameCleanupBody;
+
+  /// No description provided for @accountNameCleanupGroup.
+  ///
+  /// In zh, this message translates to:
+  /// **'名称「{name}」有多条'**
+  String accountNameCleanupGroup(String name);
+
+  /// No description provided for @accountNameCleanupActive.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前使用中'**
+  String get accountNameCleanupActive;
+
+  /// No description provided for @accountNameCleanupDeleteTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除此账号？'**
+  String get accountNameCleanupDeleteTitle;
+
+  /// No description provided for @accountNameCleanupDeleteContent.
+  ///
+  /// In zh, this message translates to:
+  /// **'将删除「{name}」及其本地凭证。曲库里绑定该名称的条目会变为未绑定，直到你添加同名账号。'**
+  String accountNameCleanupDeleteContent(String name);
+
   /// No description provided for @accountType.
   ///
   /// In zh, this message translates to:

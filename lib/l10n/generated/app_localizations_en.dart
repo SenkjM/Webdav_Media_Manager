@@ -398,6 +398,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get accountNameTaken => 'This name is already in use. Choose another.';
 
   @override
+  String get accountNameCleanupTitle => 'Resolve duplicate names';
+
+  @override
+  String get accountNameCleanupHeading => 'Duplicate account names';
+
+  @override
+  String get accountNameCleanupBody =>
+      'Delete the extra accounts that share a name so each name has only one account. You can continue after that.';
+
+  @override
+  String accountNameCleanupGroup(String name) {
+    return 'Several accounts named “$name”';
+  }
+
+  @override
+  String get accountNameCleanupActive => 'Currently in use';
+
+  @override
+  String get accountNameCleanupDeleteTitle => 'Delete this account?';
+
+  @override
+  String accountNameCleanupDeleteContent(String name) {
+    return 'Deletes “$name” and its local credentials. Library rows bound to this name become unbound until you add an account with the same name.';
+  }
+
+  @override
   String get accountType => 'Type';
 
   @override

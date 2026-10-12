@@ -122,6 +122,23 @@
   "accountName": "名稱",
   "accountNameHint": "音樂庫按此名稱綁定，必須唯一；改名等同換磁碟",
   "accountNameTaken": "此名稱已被使用，建議換一個",
+  "accountNameCleanupTitle": "清理同名帳號",
+  "accountNameCleanupHeading": "存在同名帳號",
+  "accountNameCleanupBody": "請刪除多餘的同名帳號，只保留每個名稱對應的一個。清理完成後即可繼續使用。",
+  "accountNameCleanupGroup": "名稱「{name}」有多筆",
+  "@accountNameCleanupGroup": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "accountNameCleanupActive": "目前使用中",
+  "accountNameCleanupDeleteTitle": "刪除此帳號？",
+  "accountNameCleanupDeleteContent": "將刪除「{name}」及其本機憑證。音樂庫裡綁定該名稱的項目會變成未綁定，直到你新增同名帳號。",
+  "@accountNameCleanupDeleteContent": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
   "accountType": "類型",
   "accountRemotePath": "遠端路徑",
   "accountRemotePathHint": "瀏覽根目錄，預設 /（留空也是 /）",

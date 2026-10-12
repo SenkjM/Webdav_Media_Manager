@@ -122,6 +122,23 @@
   "accountName": "名称",
   "accountNameHint": "曲库按此名称绑定，必须唯一；改名等同换盘",
   "accountNameTaken": "该名称已被占用，建议换一个",
+  "accountNameCleanupTitle": "清理同名账号",
+  "accountNameCleanupHeading": "存在同名账号",
+  "accountNameCleanupBody": "请删除多余的同名账号，只保留每个名称对应的一个。清理完成后即可继续使用。",
+  "accountNameCleanupGroup": "名称「{name}」有多条",
+  "@accountNameCleanupGroup": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "accountNameCleanupActive": "当前使用中",
+  "accountNameCleanupDeleteTitle": "删除此账号？",
+  "accountNameCleanupDeleteContent": "将删除「{name}」及其本地凭证。曲库里绑定该名称的条目会变为未绑定，直到你添加同名账号。",
+  "@accountNameCleanupDeleteContent": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
   "accountType": "类型",
   "accountRemotePath": "远程路径",
   "accountRemotePathHint": "浏览根，默认 /（空置也是 /）",

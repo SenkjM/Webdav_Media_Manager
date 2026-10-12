@@ -122,6 +122,23 @@
   "accountName": "Name",
   "accountNameHint": "The library binds by this name; it must be unique. Renaming is equivalent to changing the drive.",
   "accountNameTaken": "This name is already in use. Choose another.",
+  "accountNameCleanupTitle": "Resolve duplicate names",
+  "accountNameCleanupHeading": "Duplicate account names",
+  "accountNameCleanupBody": "Delete the extra accounts that share a name so each name has only one account. You can continue after that.",
+  "accountNameCleanupGroup": "Several accounts named “{name}”",
+  "@accountNameCleanupGroup": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "accountNameCleanupActive": "Currently in use",
+  "accountNameCleanupDeleteTitle": "Delete this account?",
+  "accountNameCleanupDeleteContent": "Deletes “{name}” and its local credentials. Library rows bound to this name become unbound until you add an account with the same name.",
+  "@accountNameCleanupDeleteContent": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
   "accountType": "Type",
   "accountRemotePath": "Remote path",
   "accountRemotePathHint": "Browse root, default / (empty also means /)",

@@ -1044,6 +1044,6 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
    - `music_library_backfill_on_open`（**键名保留**，语义改为 on-play，默认 true）→ API `musicLibraryBackfillOnPlay`。
    - `music_library_backfill_bind_roots`（默认 false）：关 = 不做绑定过滤，起播总是浅列父目录；开 = 先用绑定根对当前曲 `remotePath` 做前缀匹配，不命中则整次跳过，命中再扫父目录一层。
    - `music_library_backfill_roots`：绑定根 UI 仅在绑定开关开时显示。
-4. **账号同名**：名称是逻辑主键。手动创建去掉「仍然使用」；`addAccount`/`updateAccount` 拒绝重名；凭证同步按 id/名/url 合并；备份按名去重；启动时折叠已有同名行。选择器**不**自行去重。
+4. **账号同名（DB 兜底）**：名称是逻辑主键（`normalizeSourceName` + 大小写不敏感 = `accountNameKey`）。应用层 `addAccount`/`updateAccount` 拒绝重名（友好错误）；`library_database` schema **v11** 对 `accounts.name_key` 加 **UNIQUE** 作硬底。历史同名：启动检测后展示**临时清理 UI**，用户**手动删除**冲突账号；名称唯一后才创建 UNIQUE 索引（或已存在则跳过）。**不**在启动时自动折叠/合并同名行；选择器**不**自行去重。备份恢复仍按名去重；同名接管（按 id 恢复）可删掉占用该名的另一行。
 5. 显式网络库扫描两种模式都可；自动入队仅自动补齐门控。
 6. 更新标签 / 空库文案保持「更新标签」与可扫描入库。

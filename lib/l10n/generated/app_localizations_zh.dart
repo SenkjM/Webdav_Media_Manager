@@ -391,6 +391,31 @@ class AppLocalizationsZh extends AppLocalizations {
   String get accountNameTaken => '该名称已被占用，建议换一个';
 
   @override
+  String get accountNameCleanupTitle => '清理同名账号';
+
+  @override
+  String get accountNameCleanupHeading => '存在同名账号';
+
+  @override
+  String get accountNameCleanupBody => '请删除多余的同名账号，只保留每个名称对应的一个。清理完成后即可继续使用。';
+
+  @override
+  String accountNameCleanupGroup(String name) {
+    return '名称「$name」有多条';
+  }
+
+  @override
+  String get accountNameCleanupActive => '当前使用中';
+
+  @override
+  String get accountNameCleanupDeleteTitle => '删除此账号？';
+
+  @override
+  String accountNameCleanupDeleteContent(String name) {
+    return '将删除「$name」及其本地凭证。曲库里绑定该名称的条目会变为未绑定，直到你添加同名账号。';
+  }
+
+  @override
   String get accountType => '类型';
 
   @override
@@ -4523,6 +4548,31 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get accountNameTaken => '此名稱已被使用，建議換一個';
+
+  @override
+  String get accountNameCleanupTitle => '清理同名帳號';
+
+  @override
+  String get accountNameCleanupHeading => '存在同名帳號';
+
+  @override
+  String get accountNameCleanupBody => '請刪除多餘的同名帳號，只保留每個名稱對應的一個。清理完成後即可繼續使用。';
+
+  @override
+  String accountNameCleanupGroup(String name) {
+    return '名稱「$name」有多筆';
+  }
+
+  @override
+  String get accountNameCleanupActive => '目前使用中';
+
+  @override
+  String get accountNameCleanupDeleteTitle => '刪除此帳號？';
+
+  @override
+  String accountNameCleanupDeleteContent(String name) {
+    return '將刪除「$name」及其本機憑證。音樂庫裡綁定該名稱的項目會變成未綁定，直到你新增同名帳號。';
+  }
 
   @override
   String get accountType => '類型';
