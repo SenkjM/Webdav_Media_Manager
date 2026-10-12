@@ -26,7 +26,7 @@ const String kDownloadDoneChannelId =
 ///
 /// * [currentId] — the file being transferred, with its own percentage **and**
 ///   the batch position/counts in one line;
-/// * [summaryId] — 「全部下载完成」, posted once when the queue drains.
+/// * [summaryId] — 「全部同步完成」, posted once when the queue drains.
 ///
 /// There is deliberately no separate queue-level notification: it carried no
 /// information the current-file line does not, and the two of them stole each
@@ -43,7 +43,7 @@ class DownloadNotificationService {
   /// Retired queue-level notification; cancelled so no stale bar lingers.
   static const int legacyQueueId = 2002;
 
-  /// 「全部下载完成」 — posted after the queue drains.
+  /// 「全部同步完成」 — posted after the queue drains.
   static const int summaryId = 2003;
 
   /// Throttle: progress updates at most this often.
@@ -276,7 +276,7 @@ class DownloadNotificationService {
     }
   }
 
-  /// 「全部下载完成（成功：x 个 失败：y 个）」 — a *new* notification, not a mutation
+  /// 「全部同步完成（成功：x 个 失败：y 个）」 — a *new* notification, not a mutation
   /// of the progress one, and it stays until dismissed or replaced by a later
   /// batch's summary.
   Future<void> showSummary({

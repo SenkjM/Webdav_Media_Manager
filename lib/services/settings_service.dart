@@ -49,6 +49,7 @@ class SettingsService extends ChangeNotifier {
   static const _kVideoTapAction = 'video_tap_action';
   static const _kFileActionConfig = 'file_action_config_json';
   static const _kHomeTab = 'home_tab_index';
+  static const _kHomeTabFoldersV024 = 'home_tab_v024_folders_inserted';
   static const _kNetworkRememberLastPath = 'network_remember_last_path';
   /// Legacy prefs key; path is no longer persisted (scrubbed on [init]).
   static const _kNetworkLastPath = 'network_last_path';
@@ -679,7 +680,15 @@ class SettingsService extends ChangeNotifier {
         _fileActions.music == FileAction.streamMusic) {
       _musicDefaultStream = true;
     }
-    _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 4);
+    if (!(_prefs!.getBool(_kHomeTabFoldersV024) ?? false)) {
+      final raw = _prefs!.getInt(_kHomeTab);
+      if (raw != null) {
+        // Inserted folders at index 0; shift prior destinations up by one.
+        await _prefs!.setInt(_kHomeTab, (raw + 1).clamp(0, 5));
+      }
+      await _prefs!.setBool(_kHomeTabFoldersV024, true);
+    }
+    _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 5);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
     // network_last_path is session-only (memory). Never restore from prefs /
@@ -1035,7 +1044,7 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> setHomeTab(int index) async {
-    _homeTab = index.clamp(0, 4);
+    _homeTab = index.clamp(0, 5);
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setInt(_kHomeTab, _homeTab);
     notifyListeners();

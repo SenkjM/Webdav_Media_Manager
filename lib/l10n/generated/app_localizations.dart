@@ -678,7 +678,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadActive.
   ///
   /// In zh, this message translates to:
-  /// **'下载中'**
+  /// **'同步中'**
   String get downloadActive;
 
   /// No description provided for @downloadCompleted.
@@ -792,7 +792,7 @@ abstract class AppLocalizations {
   /// No description provided for @runningDownloads.
   ///
   /// In zh, this message translates to:
-  /// **'，并取消 {count} 个进行中的下载'**
+  /// **'，并取消 {count} 个进行中的同步'**
   String runningDownloads(Object count);
 
   /// No description provided for @clearAll.
@@ -3801,7 +3801,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlChannelProgressName.
   ///
   /// In zh, this message translates to:
-  /// **'下载进度'**
+  /// **'同步进度'**
   String get dlChannelProgressName;
 
   /// No description provided for @dlChannelProgressDesc.
@@ -3813,13 +3813,13 @@ abstract class AppLocalizations {
   /// No description provided for @dlChannelDoneName.
   ///
   /// In zh, this message translates to:
-  /// **'下载完成'**
+  /// **'同步完成'**
   String get dlChannelDoneName;
 
   /// No description provided for @dlChannelDoneDesc.
   ///
   /// In zh, this message translates to:
-  /// **'全部下载完成后的结果汇总'**
+  /// **'全部同步完成后的结果汇总'**
   String get dlChannelDoneDesc;
 
   /// No description provided for @dlDoneCancelledCount.
@@ -3849,7 +3849,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlDoneTitle.
   ///
   /// In zh, this message translates to:
-  /// **'下载完成：{parts}'**
+  /// **'同步完成：{parts}'**
   String dlDoneTitle(Object parts);
 
   /// No description provided for @dlErrCueMalformed.
@@ -4125,7 +4125,7 @@ abstract class AppLocalizations {
   /// No description provided for @ntfAllDone.
   ///
   /// In zh, this message translates to:
-  /// **'全部下载完成'**
+  /// **'全部同步完成'**
   String get ntfAllDone;
 
   /// No description provided for @ntfDoneCount.
@@ -4143,13 +4143,13 @@ abstract class AppLocalizations {
   /// No description provided for @ntfDoneWithFailures.
   ///
   /// In zh, this message translates to:
-  /// **'下载结束（有失败）'**
+  /// **'同步结束（有失败）'**
   String get ntfDoneWithFailures;
 
   /// No description provided for @ntfDownloadingTitle.
   ///
   /// In zh, this message translates to:
-  /// **'正在下载（第 {index} / {total} 个）'**
+  /// **'正在同步（第 {index} / {total} 个）'**
   String ntfDownloadingTitle(Object index, Object total);
 
   /// No description provided for @ntfImportanceOff.
@@ -4281,7 +4281,7 @@ abstract class AppLocalizations {
   /// No description provided for @libQueuedCount.
   ///
   /// In zh, this message translates to:
-  /// **'已加入 {count} 项下载'**
+  /// **'已加入 {count} 项同步'**
   String libQueuedCount(Object count);
 
   /// No description provided for @libQueuedUnavailable.
@@ -4293,7 +4293,7 @@ abstract class AppLocalizations {
   /// No description provided for @libQueuedAdded.
   ///
   /// In zh, this message translates to:
-  /// **'已加入下载'**
+  /// **'已加入同步'**
   String get libQueuedAdded;
 
   /// No description provided for @cueGroupDeleteTitle.
@@ -6194,7 +6194,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadNotificationsHint.
   ///
   /// In zh, this message translates to:
-  /// **'下载进度与完成结果显示在通知栏'**
+  /// **'同步进度与完成结果显示在通知栏'**
   String get downloadNotificationsHint;
 
   /// No description provided for @sendTestNotification.
@@ -7454,19 +7454,19 @@ abstract class AppLocalizations {
   /// No description provided for @folderTrackNumber.
   ///
   /// In zh, this message translates to:
-  /// **'音轨 {number}'**
+  /// **'{number}'**
   String folderTrackNumber(int number);
 
   /// No description provided for @folderTrackNumberUnknown.
   ///
   /// In zh, this message translates to:
-  /// **'音轨 —'**
+  /// **''**
   String get folderTrackNumberUnknown;
 
   /// No description provided for @folderDiscNumber.
   ///
   /// In zh, this message translates to:
-  /// **'碟 {number}'**
+  /// **'{number}'**
   String folderDiscNumber(int number);
 
   /// No description provided for @folderTypeAlbum.

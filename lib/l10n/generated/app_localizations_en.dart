@@ -311,7 +311,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get downloadPending => 'Waiting';
 
   @override
-  String get downloadActive => 'Downloading';
+  String get downloadActive => 'Syncing';
 
   @override
   String get downloadCompleted => 'Completed';
@@ -375,7 +375,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String runningDownloads(Object count) {
-    return ' and cancels $count active downloads';
+    return ' and cancels $count active syncs';
   }
 
   @override
@@ -2192,16 +2192,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get dlChannelProgressName => 'Download progress';
+  String get dlChannelProgressName => 'Sync progress';
 
   @override
   String get dlChannelProgressDesc => 'Progress of the active task queue';
 
   @override
-  String get dlChannelDoneName => 'Downloads complete';
+  String get dlChannelDoneName => 'Sync complete';
 
   @override
-  String get dlChannelDoneDesc => 'Summary once all downloads finish';
+  String get dlChannelDoneDesc => 'Summary once all syncs finish';
 
   @override
   String dlDoneCancelledCount(Object count) {
@@ -2223,7 +2223,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String dlDoneTitle(Object parts) {
-    return 'Downloads complete: $parts';
+    return 'Sync complete: $parts';
   }
 
   @override
@@ -2400,7 +2400,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get ntfAllDone => 'All downloads complete';
+  String get ntfAllDone => 'All syncs complete';
 
   @override
   String ntfDoneCount(Object done, Object total) {
@@ -2413,11 +2413,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get ntfDoneWithFailures => 'Downloads finished (with failures)';
+  String get ntfDoneWithFailures => 'Sync finished (with failures)';
 
   @override
   String ntfDownloadingTitle(Object index, Object total) {
-    return 'Downloading (item $index / $total)';
+    return 'Syncing (item $index / $total)';
   }
 
   @override
@@ -2495,7 +2495,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String libQueuedCount(Object count) {
-    return 'Added $count downloads';
+    return 'Added $count syncs';
   }
 
   @override
@@ -2504,7 +2504,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get libQueuedAdded => 'Added to downloads';
+  String get libQueuedAdded => 'Added to sync';
 
   @override
   String get cueGroupDeleteTitle => 'Delete the entire CUE cache group?';
@@ -3714,7 +3714,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get downloadNotificationsHint =>
-      'Download progress and results appear in notifications';
+      'Sync progress and results appear in notifications';
 
   @override
   String get sendTestNotification => 'Send test notification';
@@ -4426,15 +4426,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String folderTrackNumber(int number) {
-    return 'Track $number';
+    return '$number';
   }
 
   @override
-  String get folderTrackNumberUnknown => 'Track —';
+  String get folderTrackNumberUnknown => '';
 
   @override
   String folderDiscNumber(int number) {
-    return 'Disc $number';
+    return '$number';
   }
 
   @override

@@ -463,7 +463,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   /// 音乐 → 应用音频缓存，完成后 ingest 进音乐库。
   ///
   /// 成功时**刻意不出提示**：`enqueue` 对未缓存的文件要等整段下载结束才
-  /// 返回，这时弹「已加入下载」会出现在下载完成的那一刻。行上的状态标签
+  /// 返回，这时弹「已加入同步」会出现在下载完成的那一刻。行上的状态标签
   /// 与下载队列已经在显示进度，只有失败才说话。
   Future<void> _cacheMusic(WebDavItem item) async {
     final accountId = _accountId;

@@ -24,6 +24,8 @@ import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
 import '../widgets/meta_text.dart';
 import '../widgets/selection_toolbar.dart';
+import 'home_shell.dart';
+import '../utils/back_handler_registry.dart';
 import 'library_folder_picker_screen.dart';
 import 'library_tag_picker_screen.dart';
 
@@ -45,6 +47,30 @@ class _LibraryFolderBrowserScreenState
 
   String? get _currentId => _stack.last;
   bool get _selecting => _selection.active;
+
+  @override
+  void initState() {
+    super.initState();
+    BackHandlerRegistry.register(_handleSystemBack, tab: kFoldersTabIndex);
+  }
+
+  @override
+  void dispose() {
+    BackHandlerRegistry.unregister(_handleSystemBack);
+    super.dispose();
+  }
+
+  bool _handleSystemBack() {
+    if (_selecting) {
+      setState(() => _selection = _selection.exit());
+      return true;
+    }
+    if (_stack.length > 1) {
+      setState(() => _stack.removeLast());
+      return true;
+    }
+    return false;
+  }
 
   String _folderKey(UserFolder f) => 'f:${f.id}';
   String _itemKey(UserFolderItem i) =>
@@ -401,18 +427,21 @@ class _LibraryFolderBrowserScreenState
     }
 
     return PopScope(
-      canPop: (!_selecting) && (!widget.embedded || _stack.length <= 1),
+      // Nested under HomeShell PopScope; directory / multi-select back goes
+      // through [BackHandlerRegistry] (same as network library).
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
-        if (_selecting) {
-          setState(() => _selection = _selection.exit());
-          return;
-        }
-        if (_stack.length > 1) setState(() => _stack.removeLast());
+        _handleSystemBack();
       },
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
-        appBar: widget.embedded ? null : AppBar(title: Text(l10n.myFolders)),
+        appBar: widget.embedded
+            ? null
+            : AppBar(
+                leading: const DrawerMenuButton(),
+                title: Text(l10n.librarySectionFolders),
+              ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

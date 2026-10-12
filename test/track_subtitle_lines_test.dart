@@ -27,15 +27,26 @@ void main() {
         lastTagReadAt: DateTime.utc(2026),
       );
 
-  test('line1 joins album disc track; line2 prefers artist', () {
+  test('line1 joins album and raw disc/track numbers only', () {
     final s = TrackSubtitleLines.of(
       track(artist: 'A', album: 'Alb', disc: 2, trackNo: 5),
       l10n,
     );
-    expect(s.line1, contains('Alb'));
-    expect(s.line1, contains('2'));
-    expect(s.line1, contains('5'));
+    expect(s.line1, 'Alb · 2 · 5');
+    expect(s.line1.contains('音轨'), isFalse);
+    expect(s.line1.contains('碟'), isFalse);
     expect(s.line2, 'A');
+  });
+
+  test('omits missing disc/track; no placeholder words', () {
+    expect(
+      TrackSubtitleLines.of(track(album: 'Alb'), l10n).line1,
+      'Alb',
+    );
+    expect(
+      TrackSubtitleLines.of(track(album: 'Alb', trackNo: 3), l10n).line1,
+      'Alb · 3',
+    );
   });
 
   test('line2 falls back to albumArtist then omits', () {

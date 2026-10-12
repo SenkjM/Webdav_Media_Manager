@@ -28,7 +28,6 @@ import '../widgets/track_status_dot.dart';
 import '../widgets/app_bottom_sheet.dart';
 import '../services/playlist_service.dart';
 import 'home_shell.dart';
-import 'library_folder_browser_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 import '../services/webdav_service.dart';
 import '../models/webdav_stream.dart';
@@ -42,13 +41,10 @@ class LibraryScreen extends StatefulWidget {
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-enum _LibrarySection { music, folders }
-
 class _LibraryScreenState extends State<LibraryScreen> {
   final _searchCtrl = TextEditingController();
   String _query = '';
   bool _searchOpen = false;
-  _LibrarySection _section = _LibrarySection.music;
 
   @override
   void dispose() {
@@ -61,14 +57,13 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final library = context.watch<LibraryService>();
     final settings = context.watch<SettingsService>();
     final l10n = AppLocalizations.of(context)!;
-    final isFolders = _section == _LibrarySection.folders;
     return DefaultTabController(
       length: 4,
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
           leading: const DrawerMenuButton(),
-          title: _searchOpen && !isFolders
+          title: _searchOpen
               ? TextField(
                   controller: _searchCtrl,
                   autofocus: true,
@@ -88,116 +83,75 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 )
               : Text(l10n.library),
           actions: [
-            if (!isFolders)
-              IconButton(
-                tooltip: _searchOpen ? l10n.closeSearch : l10n.searchAction,
-                icon: Icon(_searchOpen ? Icons.close : Icons.search),
-                onPressed: () {
-                  setState(() {
-                    _searchOpen = !_searchOpen;
-                    if (!_searchOpen) {
-                      _searchCtrl.clear();
-                      _query = '';
-                    }
-                  });
-                },
-              ),
-            if (!isFolders)
-              PopupMenuButton<LibrarySortMode>(
-                tooltip: l10n.sortTooltip,
-                initialValue: settings.librarySort,
-                onSelected: (mode) =>
-                    context.read<SettingsService>().setLibrarySort(mode),
-                itemBuilder: (context) => [
-                  for (final mode in LibrarySortMode.values)
-                    PopupMenuItem(
-                      value: mode,
-                      child: Row(
-                        children: [
-                          Icon(
-                            settings.librarySort == mode
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_off,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(mode.label(l10n)),
-                        ],
-                      ),
+            IconButton(
+              tooltip: _searchOpen ? l10n.closeSearch : l10n.searchAction,
+              icon: Icon(_searchOpen ? Icons.close : Icons.search),
+              onPressed: () {
+                setState(() {
+                  _searchOpen = !_searchOpen;
+                  if (!_searchOpen) {
+                    _searchCtrl.clear();
+                    _query = '';
+                  }
+                });
+              },
+            ),
+            PopupMenuButton<LibrarySortMode>(
+              tooltip: l10n.sortTooltip,
+              initialValue: settings.librarySort,
+              onSelected: (mode) =>
+                  context.read<SettingsService>().setLibrarySort(mode),
+              itemBuilder: (context) => [
+                for (final mode in LibrarySortMode.values)
+                  PopupMenuItem(
+                    value: mode,
+                    child: Row(
+                      children: [
+                        Icon(
+                          settings.librarySort == mode
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(mode.label(l10n)),
+                      ],
                     ),
-                ],
-                icon: const Icon(Icons.sort),
-              ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: Size.fromHeight(isFolders ? 48 : 96),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  child: SegmentedButton<_LibrarySection>(
-                    segments: [
-                      ButtonSegment(
-                        value: _LibrarySection.music,
-                        label: Text(l10n.librarySectionMusic),
-                        icon: const Icon(Icons.library_music_outlined, size: 18),
-                      ),
-                      ButtonSegment(
-                        value: _LibrarySection.folders,
-                        label: Text(l10n.librarySectionFolders),
-                        icon: const Icon(Icons.folder_outlined, size: 18),
-                      ),
-                    ],
-                    selected: {_section},
-                    onSelectionChanged: (s) {
-                      setState(() {
-                        _section = s.first;
-                        if (_section == _LibrarySection.folders) {
-                          _searchOpen = false;
-                          _searchCtrl.clear();
-                          _query = '';
-                        }
-                      });
-                    },
-                  ),
-                ),
-                if (!isFolders)
-                  TabBar(
-                    isScrollable: true,
-                    tabs: [
-                      Tab(text: l10n.tabAlbums),
-                      Tab(text: l10n.tabArtists),
-                      Tab(text: l10n.tabTitles),
-                      Tab(text: l10n.tabGenres),
-                    ],
                   ),
               ],
+              icon: const Icon(Icons.sort),
             ),
+          ],
+          bottom: TabBar(
+            isScrollable: true,
+            tabs: [
+              Tab(text: l10n.tabAlbums),
+              Tab(text: l10n.tabArtists),
+              Tab(text: l10n.tabTitles),
+              Tab(text: l10n.tabGenres),
+            ],
           ),
         ),
-        body: isFolders
-            ? const LibraryFolderBrowserScreen(embedded: true)
-            : TabBarView(
-                children: [
-                  library.count == 0
-                      ? _LibraryEmpty()
-                      : _AlbumTab(library: library, query: _query),
-                  library.count == 0
-                      ? _LibraryEmpty()
-                      : _ArtistTab(library: library, query: _query),
-                  library.count == 0
-                      ? _LibraryEmpty()
-                      : _TitleTab(
-                          library: library,
-                          sort: settings.librarySort,
-                          query: _query,
-                        ),
-                  library.count == 0
-                      ? _LibraryEmpty()
-                      : _TagsTab(library: library, query: _query),
-                ],
-              ),
+        body: TabBarView(
+          children: [
+            library.count == 0
+                ? _LibraryEmpty()
+                : _AlbumTab(library: library, query: _query),
+            library.count == 0
+                ? _LibraryEmpty()
+                : _ArtistTab(library: library, query: _query),
+            library.count == 0
+                ? _LibraryEmpty()
+                : _TitleTab(
+                    library: library,
+                    sort: settings.librarySort,
+                    query: _query,
+                  ),
+            library.count == 0
+                ? _LibraryEmpty()
+                : _TagsTab(library: library, query: _query),
+          ],
+        ),
       ),
     );
   }
