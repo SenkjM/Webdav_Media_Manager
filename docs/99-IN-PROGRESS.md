@@ -1061,4 +1061,91 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 用户反馈：仅显示歌名过于抽象。计划改为**文件夹路径风格**行（展示路径层级 / 所在目录信息，便于区分同名曲），具体字段与布局待定后实现。**本轮只记文档，不改选曲器 UI。**
 
-**0.2.4 计划（预发布成功后）**：删除历史 DB 兼容——`migrateLegacySentinelsOnce` 与临时同名清理门闸（`AccountNameCleanupScreen` / `needsNameCleanup`）；升级时若仍有同名 `name_key`，保留每组一条（优先当前使用账号，否则最小 id）并删其余账号行与安全存储密码，再施加 UNIQUE。正式版 0.2.4 起旧库不再走兼容路径。
+**0.2.4 计划**：见 [§18](#18-用户文件夹树与-024-历史兼容清理进行中)（本分支 `feat/v024-library-folders` 执行）。
+
+## 18. 用户文件夹树与 0.2.4 历史兼容清理（进行中）
+
+**状态**：2026-10-12 基于 `origin/main` tip `7756275` 开分支 `feat/v024-library-folders`（worktree：`worktree/v024-library-folders`）。用户偏好中文 UI。不推 `main`、不发版。
+
+**相关完整文档**：[01](01-DATA-MODEL.md)、[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)、[05](05-AUDIO-PLAYBACK.md)。开发期间上述文档只留一行占位指向本节。
+
+### 18.1 产品锁定：本地用户文件夹树（叠加层）
+
+**用户原话级**：
+
+1. **本地-only** 用户文件夹树，用来组织曲库内容；**不要**改扁平曲库元数据表作为曲目身份源——文件夹是**独立叠加层**。
+2. 允许多层嵌套；**叶子**挂引用（本轮：专辑 / 艺人 / 曲目）；更细粒度以后只在文档登记。
+3. 选择器默认落在「**我的文件夹**」；路径风格展示（例：`我的文件夹 / 摇滚 / 2020`）。
+4. 往文件夹里加内容：参照**网络库**浏览 / 多选交互。
+5. 同分支做 0.2.4 历史 DB 兼容删除（见 §18.4）。
+6. 预载旁注：预载只管**正在进行的网络拉取**；已刮削 + 已缓存不得被串流邻居窗口过滤伤害（见 §18.5）。
+
+**取舍（锁定）**：
+
+| 项 | 决定 |
+|----|------|
+| 存储 | `music_library.db` 新表 `user_folders` / `user_folder_items`；**不动** `tracks` / `cue_*` 身份列 |
+| 虚拟根 | 「我的文件夹」**不是**库行；`parent_id IS NULL` = 挂在虚拟根下 |
+| 叶子引用 kind（v1） | `album` / `artist` / `track` |
+| 引用键 | 专辑 = `LibraryTrack.displayAlbum`；艺人 = `displayArtist`；曲目 = `music_id`（与现有分组一致） |
+| 新建文件夹默认名 | 存储哨兵可沿用界面「新文件夹」文案键；不写进 tracks |
+| 销毁曲库 | `clearAllLibraryData` 清文件夹树 + 引用；`clearLibraryIndex` **只清引用**（树壳保留） |
+| 同步 / 备份 | **本轮不做**远端镜像；纯本机 |
+
+### 18.2 选择器与可扩展维度（v1）
+
+**v1 只做**三种「添加」选择器，且**一律带搜索**：
+
+| 选择器 | 数据源 | 行展示 |
+|--------|--------|--------|
+| 添加专辑 | 扁平专辑列表（`groupedByAlbum` 的 key） | 专辑名 + 曲数 / 艺人摘要 |
+| 添加艺人 | 扁平艺人列表（`groupedByArtist`） | 艺人名 + 曲数 |
+| 添加曲目 | 扁平曲目列表 | 标题 + 艺人 / 专辑（路径风格摘要可后续接 §17.19） |
+
+交互参照网络库：列表浏览、搜索过滤、多选、确认写入当前叶子文件夹。文件夹目的地选择器（移动 / 新建后放入）默认路径 = 「我的文件夹」，路径条可横向滚动。
+
+**抽象（本轮落地）**：`LibraryTagDimension`（或同名）描述「扁平标签维度」——`id` / 如何从 `LibraryTrack` 取分组键 / 如何解析显示名 / 如何列出候选项。v1 注册 `album` / `artist`；`track` 是按曲目而非按标签分组，走同一选择器外壳但数据源是曲目列表。
+
+**可插拔、本轮不实现的维度**（只文档）：`genre`、`year`、远端父路径、`composer` / `lyricist`、`albumArtist`。以后按同一 `LibraryTagDimension` 注册即可，不必再做第三套选择器。
+
+### 18.3 UI 落点
+
+- 媒体库 Tab 增加「**文件夹**」（中文）；进入后是网络库式目录浏览（进子夹、上一级、路径条）。
+- 叶子文件夹 AppBar / ⋮：新建子文件夹、添加专辑、添加艺人、添加曲目、重命名、删除。
+- 非叶子：只显示子文件夹；叶子同时显示子文件夹（若有）与引用行。
+- 点专辑 / 艺人引用 → 展开为该组曲目（复用现有详情列表模式）；点曲目 → 按媒体库默认打开方式播放。
+
+### 18.4 同分支：0.2.4 删除历史 DB 兼容
+
+按先前 0.2.4 约定：
+
+1. **删除** `migrateLegacySentinelsOnce` / `lib/services/legacy_sentinel_migration.dart` 及 `AppState.init` 调用；0.2.4 起旧中文哨兵库不再兼容迁移。
+2. **账号同名临时门闸**：正常新装 CREATE TABLE 已带 `UNIQUE(name_key)`；无冲突升级也会装上 UNIQUE 索引。因此**撤掉**启动态 `AccountNameCleanupScreen` / `needsNameCleanup` 门闸。
+3. **仅当**仍存在同名 `name_key`、UNIQUE 装不上时，才做一次非静默的必要收敛：每组保留一条（优先当前活跃账号，否则最小 `id`），删其余账号行 + secure 密码 / 驱动配置，再施加 UNIQUE。**无冲突则不合并。**
+4. 删掉 `account_name_cleanup_screen.dart`；测试改为覆盖「有冲突时 keep-one + UNIQUE」。
+
+### 18.5 预载旁注（串流邻居窗口）
+
+**语义**：`MusicPrefetchService` / `prefetchNeighborIndexes` **只**决定还要不要向网络拉封面 / 音频；**不得**影响：
+
+- 已在 `music_cache` 的可播判定（`resolvePlayable` 仍先查缓存）；
+- 已入库的标签 / 封面行；
+- 播放队列里窗口外曲目的存在。
+
+若代码路径已满足，本轮加注释 + 99 记实；若发现窗口过滤误伤已缓存解析，再小修。
+
+### 18.6 实现顺序
+
+1. 本文件收口计划（本条）。
+2. schema v12 叠加表 + `UserFolderService` + `LibraryTagDimension`。
+3. 文件夹浏览 / 目的地选择器 / 三种带搜索添加选择器 UI。
+4. 媒体库 Tab 接入；ARB 中/繁/英。
+5. §18.4 兼容删除 + 账号 keep-one。
+6. §18.5 文档 / 必要注释。
+7. `flutter analyze` + 相关 `flutter test`；推送功能分支（非 main）。
+
+### 18.7 未决 / 开放问题
+
+- 备份 / 云端是否将来纳入用户文件夹树（本轮明确不做）。
+- 专辑键目前与 `groupedByAlbum` 一样仅用专辑名，同名异艺人会并组——与现专辑 Tab 一致；若以后要 `(albumArtist, album)` 复合键，叠加层可迁，不改 tracks 表。
+- §17.19 选曲器路径风格行展示仍未做；曲目添加选择器本轮用标题 + 艺人 / 专辑摘要。

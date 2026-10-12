@@ -4371,4 +4371,42 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryBackfillPickFolder => 'Choose root folder';
+
+  @override
+  String get tabFolders => 'Folders';
+
+  @override
+  String get myFolders => 'My folders';
+
+  @override
+  String get newFolderDefaultName => 'New folder';
+
+  @override
+  String get folderEmptyHint =>
+      'This folder is empty. Create a subfolder, or add albums, artists, or tracks.';
+
+  @override
+  String get folderAddAlbums => 'Add albums';
+
+  @override
+  String get folderAddArtists => 'Add artists';
+
+  @override
+  String get folderAddTracks => 'Add tracks';
+
+  @override
+  String folderItemsAdded(int count) {
+    return 'Added $count items';
+  }
+
+  @override
+  String get folderRefMissing => 'Not in the library';
+
+  @override
+  String folderDeleteConfirm(String name) {
+    return 'Delete folder \"$name\" and everything inside?';
+  }
+
+  @override
+  String get folderPickerExcluded => 'This location cannot be selected';
 }

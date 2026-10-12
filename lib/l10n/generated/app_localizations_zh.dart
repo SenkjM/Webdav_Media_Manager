@@ -4179,6 +4179,43 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get libraryBackfillPickFolder => '选择根文件夹';
+
+  @override
+  String get tabFolders => '文件夹';
+
+  @override
+  String get myFolders => '我的文件夹';
+
+  @override
+  String get newFolderDefaultName => '新文件夹';
+
+  @override
+  String get folderEmptyHint => '此文件夹为空。可新建子文件夹，或添加专辑、艺人、曲目。';
+
+  @override
+  String get folderAddAlbums => '添加专辑';
+
+  @override
+  String get folderAddArtists => '添加艺人';
+
+  @override
+  String get folderAddTracks => '添加曲目';
+
+  @override
+  String folderItemsAdded(int count) {
+    return '已添加 $count 项';
+  }
+
+  @override
+  String get folderRefMissing => '库中暂无对应内容';
+
+  @override
+  String folderDeleteConfirm(String name) {
+    return '删除文件夹「$name」及其全部内容？';
+  }
+
+  @override
+  String get folderPickerExcluded => '不能选择此位置';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -8356,4 +8393,41 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get libraryBackfillPickFolder => '選擇根資料夾';
+
+  @override
+  String get tabFolders => '資料夾';
+
+  @override
+  String get myFolders => '我的資料夾';
+
+  @override
+  String get newFolderDefaultName => '新資料夾';
+
+  @override
+  String get folderEmptyHint => '此資料夾為空。可新建子資料夾，或加入專輯、藝人、曲目。';
+
+  @override
+  String get folderAddAlbums => '加入專輯';
+
+  @override
+  String get folderAddArtists => '加入藝人';
+
+  @override
+  String get folderAddTracks => '加入曲目';
+
+  @override
+  String folderItemsAdded(int count) {
+    return '已加入 $count 項';
+  }
+
+  @override
+  String get folderRefMissing => '曲庫中暫無對應內容';
+
+  @override
+  String folderDeleteConfirm(String name) {
+    return '刪除資料夾「$name」及其全部內容？';
+  }
+
+  @override
+  String get folderPickerExcluded => '不能選擇此位置';
 }

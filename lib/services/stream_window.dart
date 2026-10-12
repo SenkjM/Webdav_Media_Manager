@@ -103,6 +103,10 @@ String? matchSidecarCover(
 /// The current index is not included. Ends do not wrap. This is the cover
 /// order and the audio order. Whether an audio file is already cached is
 /// not an input: a cached neighbor still needs a cover.
+///
+/// Prefetch only schedules **live network** fetches. Already scraped library
+/// rows and `music_cache` files are resolved independently of this window
+/// (see [MusicPrefetchService] and `AudioPlayerService.resolvePlayable`).
 List<int> prefetchNeighborIndexes({
   required int current,
   required int length,

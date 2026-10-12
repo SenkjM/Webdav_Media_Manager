@@ -7360,6 +7360,72 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'选择根文件夹'**
   String get libraryBackfillPickFolder;
+
+  /// No description provided for @tabFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件夹'**
+  String get tabFolders;
+
+  /// No description provided for @myFolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'我的文件夹'**
+  String get myFolders;
+
+  /// No description provided for @newFolderDefaultName.
+  ///
+  /// In zh, this message translates to:
+  /// **'新文件夹'**
+  String get newFolderDefaultName;
+
+  /// No description provided for @folderEmptyHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'此文件夹为空。可新建子文件夹，或添加专辑、艺人、曲目。'**
+  String get folderEmptyHint;
+
+  /// No description provided for @folderAddAlbums.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加专辑'**
+  String get folderAddAlbums;
+
+  /// No description provided for @folderAddArtists.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加艺人'**
+  String get folderAddArtists;
+
+  /// No description provided for @folderAddTracks.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加曲目'**
+  String get folderAddTracks;
+
+  /// No description provided for @folderItemsAdded.
+  ///
+  /// In zh, this message translates to:
+  /// **'已添加 {count} 项'**
+  String folderItemsAdded(int count);
+
+  /// No description provided for @folderRefMissing.
+  ///
+  /// In zh, this message translates to:
+  /// **'库中暂无对应内容'**
+  String get folderRefMissing;
+
+  /// No description provided for @folderDeleteConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'删除文件夹「{name}」及其全部内容？'**
+  String folderDeleteConfirm(String name);
+
+  /// No description provided for @folderPickerExcluded.
+  ///
+  /// In zh, this message translates to:
+  /// **'不能选择此位置'**
+  String get folderPickerExcluded;
 }
 
 class _AppLocalizationsDelegate

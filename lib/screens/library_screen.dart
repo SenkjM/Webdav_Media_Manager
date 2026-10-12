@@ -27,6 +27,7 @@ import '../widgets/track_status_dot.dart';
 import '../widgets/app_bottom_sheet.dart';
 import '../services/playlist_service.dart';
 import 'home_shell.dart';
+import 'library_folder_browser_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 import '../services/webdav_service.dart';
 import '../models/webdav_stream.dart';
@@ -55,7 +56,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
     final library = context.watch<LibraryService>();
     final settings = context.watch<SettingsService>();
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         backgroundColor: Theme.of(context).colorScheme.surface,
         appBar: AppBar(
@@ -124,6 +125,7 @@ class _LibraryScreenState extends State<LibraryScreen> {
           bottom: TabBar(
             isScrollable: true,
             tabs: [
+              Tab(text: AppLocalizations.of(context)!.tabFolders),
               Tab(text: AppLocalizations.of(context)!.tabAlbums),
               Tab(text: AppLocalizations.of(context)!.tabArtists),
               Tab(text: AppLocalizations.of(context)!.tabTitles),
@@ -131,31 +133,45 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ],
           ),
         ),
-        body: library.count == 0
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text(
-                    AppLocalizations.of(context)!.libraryEmptyGuide,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              )
-            : TabBarView(
+        body: TabBarView(
                 children: [
-                  _AlbumTab(library: library, query: _query),
-                  _ArtistTab(library: library, query: _query),
-                  _TitleTab(
-                    library: library,
-                    sort: settings.librarySort,
-                    query: _query,
-                  ),
-                  _TagsTab(library: library, query: _query),
+                  const LibraryFolderBrowserScreen(embedded: true),
+                  library.count == 0
+                      ? _LibraryEmpty()
+                      : _AlbumTab(library: library, query: _query),
+                  library.count == 0
+                      ? _LibraryEmpty()
+                      : _ArtistTab(library: library, query: _query),
+                  library.count == 0
+                      ? _LibraryEmpty()
+                      : _TitleTab(
+                          library: library,
+                          sort: settings.librarySort,
+                          query: _query,
+                        ),
+                  library.count == 0
+                      ? _LibraryEmpty()
+                      : _TagsTab(library: library, query: _query),
                 ],
               ),
+      ),
+    );
+  }
+}
+
+class _LibraryEmpty extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text(
+          AppLocalizations.of(context)!.libraryEmptyGuide,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
       ),
     );
   }

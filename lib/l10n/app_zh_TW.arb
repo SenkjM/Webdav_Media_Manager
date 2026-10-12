@@ -1278,6 +1278,30 @@
   "libraryBackfillAddRoot": "新增根路徑",
   "libraryBackfillNeedAccount": "請先新增網盤帳號",
   "libraryBackfillPickAccount": "選擇網盤帳號",
-  "libraryBackfillPickFolder": "選擇根資料夾"
-
+  "libraryBackfillPickFolder": "選擇根資料夾",
+  "tabFolders": "資料夾",
+  "myFolders": "我的資料夾",
+  "newFolderDefaultName": "新資料夾",
+  "folderEmptyHint": "此資料夾為空。可新建子資料夾，或加入專輯、藝人、曲目。",
+  "folderAddAlbums": "加入專輯",
+  "folderAddArtists": "加入藝人",
+  "folderAddTracks": "加入曲目",
+  "folderItemsAdded": "已加入 {count} 項",
+  "@folderItemsAdded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderRefMissing": "曲庫中暫無對應內容",
+  "folderDeleteConfirm": "刪除資料夾「{name}」及其全部內容？",
+  "@folderDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "folderPickerExcluded": "不能選擇此位置"
 }

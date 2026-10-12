@@ -1309,6 +1309,30 @@
   "libraryBackfillAddRoot": "添加根路径",
   "libraryBackfillNeedAccount": "请先添加网盘账号",
   "libraryBackfillPickAccount": "选择网盘账号",
-  "libraryBackfillPickFolder": "选择根文件夹"
-
+  "libraryBackfillPickFolder": "选择根文件夹",
+  "tabFolders": "文件夹",
+  "myFolders": "我的文件夹",
+  "newFolderDefaultName": "新文件夹",
+  "folderEmptyHint": "此文件夹为空。可新建子文件夹，或添加专辑、艺人、曲目。",
+  "folderAddAlbums": "添加专辑",
+  "folderAddArtists": "添加艺人",
+  "folderAddTracks": "添加曲目",
+  "folderItemsAdded": "已添加 {count} 项",
+  "@folderItemsAdded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderRefMissing": "库中暂无对应内容",
+  "folderDeleteConfirm": "删除文件夹「{name}」及其全部内容？",
+  "@folderDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "folderPickerExcluded": "不能选择此位置"
 }

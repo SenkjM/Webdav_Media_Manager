@@ -16,6 +16,10 @@ import 'webdav_service.dart';
 /// Does **not** own a player. Neighbors land in [PrefetchCache]; the next
 /// [AudioPlayerService] resolve prefers those files. Tag sets go through
 /// [onIngestTags] before audio download continues.
+///
+/// Neighbor-window filtering only gates **new network** cover/audio pulls.
+/// It must not remove, skip, or invalidate already-scraped library tags or
+/// files already present in `music_cache` (playback resolve checks cache first).
 class MusicPrefetchService {
   MusicPrefetchService({
     required this.webDav,

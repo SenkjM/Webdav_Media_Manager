@@ -1289,6 +1289,30 @@
   "libraryBackfillAddRoot": "Add root path",
   "libraryBackfillNeedAccount": "Add a cloud account first",
   "libraryBackfillPickAccount": "Choose account",
-  "libraryBackfillPickFolder": "Choose root folder"
-
+  "libraryBackfillPickFolder": "Choose root folder",
+  "tabFolders": "Folders",
+  "myFolders": "My folders",
+  "newFolderDefaultName": "New folder",
+  "folderEmptyHint": "This folder is empty. Create a subfolder, or add albums, artists, or tracks.",
+  "folderAddAlbums": "Add albums",
+  "folderAddArtists": "Add artists",
+  "folderAddTracks": "Add tracks",
+  "folderItemsAdded": "Added {count} items",
+  "@folderItemsAdded": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "folderRefMissing": "Not in the library",
+  "folderDeleteConfirm": "Delete folder \"{name}\" and everything inside?",
+  "@folderDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "folderPickerExcluded": "This location cannot be selected"
 }

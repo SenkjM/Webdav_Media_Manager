@@ -21,7 +21,10 @@
 
 **曲目身份 = 网盘名 + remote_path**。曲库行、云端清单里**不含** URL / 用户名 / 密码，只有 `source_name`；`网盘名 → url / 用户名 / 密码` 只由本机 `accounts` 表解析（`AccountsService.accountForSource` / `idForSource` / `nameForAccount`）。所以把网盘改名会让旧行变成「来源网盘未绑定」（见 [03](03-MUSIC-LIBRARY.md)），改回来即恢复。
 
-## 2. 本地数据库 `music_library.db`（schema v9）
+## 2. 本地数据库 `music_library.db`（schema v12）
+
+> **占位（开发中）**：v12 增加本地用户文件夹叠加表 `user_folders` / `user_folder_items`，不改曲目身份表；语义见 [99 §18](99-IN-PROGRESS.md)。
+
 
 | 表 | 含义 |
 |----|------|

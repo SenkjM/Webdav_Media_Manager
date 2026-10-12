@@ -3,6 +3,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/library_track.dart';
+import '../models/user_folder.dart';
+import '../models/user_folder_item.dart';
 import '../models/webdav_account.dart';
 import '../utils/cache_group_codec.dart';
 import '../utils/track_identity.dart';
@@ -10,6 +12,8 @@ import '../utils/track_identity.dart';
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
 /// Separate from audio file cache — survives cache cleanup.
 ///
+/// Schema v12: local user folder overlay (`user_folders` / `user_folder_items`;
+/// 99 §18) — does not change track identity tables.
 /// Schema v11: `accounts.name_key` + UNIQUE (normalized name; 99 §17.17).
 /// Schema v10 adds `remote_missing` on tracks/cue_slices.
 /// Schema v9:
@@ -32,7 +36,7 @@ class LibraryDatabase {
   bool accountNameUniquePending = false;
 
   /// Current schema. Wipe/rebuild on upgrade (migration cost ignored).
-  static const schemaVersion = 11;
+  static const schemaVersion = 12;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -45,30 +49,35 @@ class LibraryDatabase {
         await _createSchema(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
-        // Wipe the **library** tables and rebuild — no migration branches by
-        // design. Accounts are deliberately kept: they carry the disk names that
-        // every library row is bound to, and they are not part of this schema.
-        for (final table in [
-          'cache',
-          'cache_access',
-          'cache_groups',
-          'cue_slices',
-          'cue_albums',
-          'tracks',
-          'deleted_tracks',
-          'sync_state',
-        ]) {
-          await db.execute('DROP TABLE IF EXISTS $table');
+        // Pre-v11: wipe library index tables and rebuild (historical policy).
+        // v11→v12: keep tracks; only add the user-folder overlay tables.
+        if (oldVersion < 11) {
+          for (final table in [
+            'cache',
+            'cache_access',
+            'cache_groups',
+            'cue_slices',
+            'cue_albums',
+            'tracks',
+            'deleted_tracks',
+            'sync_state',
+            'user_folder_items',
+            'user_folders',
+          ]) {
+            await db.execute('DROP TABLE IF EXISTS $table');
+          }
+          await _createSchema(db);
         }
-        await _createSchema(db);
         // 云盘 provider（99 §7 阶段 0）：accounts 老表不重建（保留库名绑定），
         // 逐列补齐新列；新库由 _createSchema 直接带全列。
         await _ensureAccountColumns(db);
+        await _ensureUserFolderTables(db);
       },
     );
     // Always reconcile name_key / UNIQUE after open (also covers already-v11
     // installs that still had duplicate names when the index was deferred).
     await _ensureAccountColumns(_db!);
+    await _ensureUserFolderTables(_db!);
     await _reconcileAccountNameUnique(_db!);
     return _db!;
   }
@@ -205,7 +214,41 @@ CREATE TABLE IF NOT EXISTS sync_state (
   updated_at TEXT NOT NULL
 )
 ''');
+    await _ensureUserFolderTables(db);
     await _createIndexes(db);
+  }
+
+  /// Local-only folder overlay (99 §18). Idempotent; safe on every open.
+  Future<void> _ensureUserFolderTables(Database db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS user_folders (
+  id TEXT PRIMARY KEY,
+  parent_id TEXT,
+  name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(parent_id) REFERENCES user_folders(id) ON DELETE CASCADE
+)
+''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS user_folder_items (
+  folder_id TEXT NOT NULL,
+  ref_kind TEXT NOT NULL,
+  ref_key TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  added_at TEXT NOT NULL,
+  PRIMARY KEY(folder_id, ref_kind, ref_key),
+  FOREIGN KEY(folder_id) REFERENCES user_folders(id) ON DELETE CASCADE
+)
+''');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_user_folders_parent '
+      'ON user_folders(parent_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_user_folder_items_folder '
+      'ON user_folder_items(folder_id)',
+    );
   }
 
   Future<void> _createIndexes(Database db) async {
@@ -331,8 +374,53 @@ CREATE TABLE IF NOT EXISTS sync_state (
       accountNameUniquePending = false;
       return;
     }
+    // 0.2.4: only collapse duplicates when UNIQUE cannot be installed.
+    await _collapseDuplicateAccountNames(db);
     final applied = await _tryCreateAccountNameUniqueIndex(db);
     accountNameUniquePending = !applied;
+  }
+
+  /// Keep one row per [name_key] (prefer [preferAccountId], else smallest id).
+  /// Returns deleted account ids (caller clears secure storage).
+  Future<List<String>> _collapseDuplicateAccountNames(
+    Database db, {
+    String? preferAccountId,
+  }) async {
+    final rows = await db.query('accounts', columns: ['id', 'name_key']);
+    final byKey = <String, List<String>>{};
+    for (final row in rows) {
+      final key = (row['name_key'] as String?) ?? '';
+      final id = (row['id'] as String?) ?? '';
+      if (key.isEmpty || id.isEmpty) continue;
+      byKey.putIfAbsent(key, () => []).add(id);
+    }
+    final deleted = <String>[];
+    for (final ids in byKey.values) {
+      if (ids.length < 2) continue;
+      ids.sort();
+      String keep = ids.first;
+      if (preferAccountId != null && ids.contains(preferAccountId)) {
+        keep = preferAccountId;
+      }
+      for (final id in ids) {
+        if (id == keep) continue;
+        await db.delete('accounts', where: 'id = ?', whereArgs: [id]);
+        deleted.add(id);
+      }
+    }
+    return deleted;
+  }
+
+  /// Public entry used by AccountsService after load (clears secure for drops).
+  Future<List<String>> collapseDuplicateAccountNames({
+    String? preferAccountId,
+  }) async {
+    final db = await database;
+    await _backfillAccountNameKeys(db);
+    final deleted =
+        await _collapseDuplicateAccountNames(db, preferAccountId: preferAccountId);
+    await _reconcileAccountNameUnique(db);
+    return deleted;
   }
 
   /// Returns true when the UNIQUE index is in place (or already was).
@@ -1014,6 +1102,8 @@ CREATE TABLE IF NOT EXISTS sync_state (
     await db.delete('tracks');
     await db.delete('deleted_tracks');
     await db.delete('sync_state');
+    await db.delete('user_folder_items');
+    await db.delete('user_folders');
   }
 
   /// Wipe the library **index** only: tracks, CUE tables, tombstones and the sync
@@ -1028,6 +1118,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
     await db.delete('tracks');
     await db.delete('deleted_tracks');
     await db.delete('sync_state');
+    await db.delete('user_folder_items');
   }
 
   // --- Tombstones (deletions) ---
@@ -1135,6 +1226,85 @@ CREATE TABLE IF NOT EXISTS sync_state (
   Future<void> clearSyncState() async {
     final db = await database;
     await db.delete('sync_state');
+  }
+
+
+  // --- User folders (local overlay, 99 §18) ---
+
+  Future<List<UserFolder>> loadUserFolders() async {
+    final db = await database;
+    final rows = await db.query(
+      'user_folders',
+      orderBy: 'sort_order ASC, name COLLATE NOCASE ASC',
+    );
+    return [for (final r in rows) UserFolder.fromMap(r)];
+  }
+
+  Future<List<UserFolderItem>> loadUserFolderItems({String? folderId}) async {
+    final db = await database;
+    final rows = folderId == null
+        ? await db.query(
+            'user_folder_items',
+            orderBy: 'sort_order ASC, added_at ASC',
+          )
+        : await db.query(
+            'user_folder_items',
+            where: 'folder_id = ?',
+            whereArgs: [folderId],
+            orderBy: 'sort_order ASC, added_at ASC',
+          );
+    return [for (final r in rows) UserFolderItem.fromMap(r)];
+  }
+
+  Future<void> upsertUserFolder(UserFolder folder) async {
+    final db = await database;
+    await db.insert(
+      'user_folders',
+      folder.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteUserFolder(String id) async {
+    final db = await database;
+    // Children first (FK CASCADE may be off if PRAGMA foreign_keys=0).
+    final kids = await db.query(
+      'user_folders',
+      columns: ['id'],
+      where: 'parent_id = ?',
+      whereArgs: [id],
+    );
+    for (final kid in kids) {
+      await deleteUserFolder(kid['id'] as String);
+    }
+    await db.delete(
+      'user_folder_items',
+      where: 'folder_id = ?',
+      whereArgs: [id],
+    );
+    await db.delete('user_folders', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> upsertUserFolderItem(UserFolderItem item) async {
+    final db = await database;
+    await db.insert(
+      'user_folder_items',
+      item.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> deleteUserFolderItem({
+    required String folderId,
+    required String refKind,
+    required String refKey,
+  }) async {
+    final db = await database;
+    await db.delete(
+      'user_folder_items',
+      where: 'folder_id = ? AND ref_kind = ? AND ref_key = ?',
+      whereArgs: [folderId, refKind, refKey],
+    );
   }
 
   Future<void> close() async {

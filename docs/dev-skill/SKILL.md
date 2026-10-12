@@ -48,9 +48,9 @@ description: 在改 SenkjM/Webdav_Media_Manager 时使用：分支、提交、�
 
 显示走映射（例如 `localizedAccountName`），存储值保持键。
 
-一次性重写在 `lib/services/legacy_sentinel_migration.dart` 的 `migrateLegacySentinelsOnce`。文件头写明这是给正式版 0.2.2 的兼容，**0.2.4 必须删掉整个路径**；0.2.4 之后旧库不再兼容。源码没有按版本号开关。当前 `main`（标签 `v0.2.3`）每次启动仍会跑。99 里「只在 0.2.2 运行」与源码不符，以文件头和 `AppState.init` 为准。
+**0.2.4 起已删除** `migrateLegacySentinelsOnce` / `legacy_sentinel_migration.dart`（见 [99 §18.4](../99-IN-PROGRESS.md)）。旧中文哨兵库不再做启动迁移。账号同名临时清理门闸亦已撤掉：开库时若仍有同名 `name_key`，才 keep-one 后施加 UNIQUE。
 
-启动顺序（`lib/providers/app_state.dart` 的 `init`）：先打开曲库、歌单、下载三个库，让 `onCreate` / `onUpgrade` 跑完，再做哨兵重写。重写不能对着还没建出来的表。歌单库 `lib/services/playlist_store.dart` 现在是 version 1，只有 `onCreate`，没有 `onUpgrade`。下载库的 `onUpgrade` 会丢掉并重建 `download_tasks`（队列可以丢，见 `lib/services/download_store.dart`）。
+启动顺序（`lib/providers/app_state.dart` 的 `init`）：先打开曲库、歌单、下载三个库，让 `onCreate` / `onUpgrade` 跑完，再加载曲库 / 用户文件夹 / 账号。歌单库 `lib/services/playlist_store.dart` 现在是 version 1，只有 `onCreate`，没有 `onUpgrade`。下载库的 `onUpgrade` 会丢掉并重建 `download_tasks`（队列可以丢，见 `lib/services/download_store.dart`）。
 
 不要查询 `tracks.cache_group_id`。`tracks` 建表就没有这一列（`lib/services/library_database.dart`）。普通曲目的组成员在 `cache_groups`。`cue_albums`、`cue_slices`、`download_tasks` 才有 `cache_group_id`。迁移注释写了这一点。
 

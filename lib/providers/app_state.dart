@@ -15,9 +15,9 @@ import '../services/backup_service.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
 import '../services/task_queue_service.dart';
-import '../services/legacy_sentinel_migration.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
+import '../services/user_folder_service.dart';
 import '../utils/rev_clock.dart';
 import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
@@ -40,6 +40,7 @@ class AppState extends ChangeNotifier {
     libraryDb = db;
     cache = CacheService(libraryDb: db);
     library = LibraryService(db: db);
+    userFolders = UserFolderService(db: db);
     accounts = AccountsService(db: db);
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
@@ -112,6 +113,7 @@ class AppState extends ChangeNotifier {
   late final CacheService cache;
   late final LibraryDatabase libraryDb;
   late final LibraryService library;
+  late final UserFolderService userFolders;
   late final AccountsService accounts;
   late final PlaylistService playlists;
   late final BackupService backup;
@@ -184,20 +186,12 @@ class AppState extends ChangeNotifier {
       // column compat). The 0.2.2 sentinel only rewrites rows and must not
       // run against tables the open has not created yet.
       _initPhase = 'databases';
-      final openedLibrary = await libraryDb.database;
-      final openedPlaylists = await playlists.openDatabase();
-      final openedDownloads = await taskQueue.openDatabase();
+      await libraryDb.database;
+      await playlists.openDatabase();
+      await taskQueue.openDatabase();
       _initPhase = 'cache';
       await cache.init();
-      _initPhase = 'legacy-sentinels';
-      await migrateLegacySentinelsOnce(
-        libraryDb: openedLibrary,
-        playlistDb: openedPlaylists,
-        downloadDb: openedDownloads,
-        cacheDir: cache.cacheDir,
-        coversDir: await library.covers.coversDir,
-        coversFullDir: await library.covers.coversFullDir,
-      );
+      // 0.2.4: legacy sentinel migration removed (99 §18.4).
       // The rev clock is the single version source sync compares; it starts from
       // the persisted high-water mark and reports every advance back.
       library.attachRevClock(
@@ -209,6 +203,8 @@ class AppState extends ChangeNotifier {
       );
       _initPhase = 'library';
       await library.init();
+      _initPhase = 'user-folders';
+      await userFolders.init();
       _initPhase = 'accounts';
       await accounts.init();
       await registerAllAccounts();
