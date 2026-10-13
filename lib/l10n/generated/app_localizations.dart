@@ -1518,7 +1518,7 @@ abstract class AppLocalizations {
   /// No description provided for @aboutDescription.
   ///
   /// In zh, this message translates to:
-  /// **'浏览网盘目录，下载到本地缓存后播放。'**
+  /// **'一个云端多媒体查看与管理工具。'**
   String get aboutDescription;
 
   /// No description provided for @aboutCredits.
@@ -1530,13 +1530,13 @@ abstract class AppLocalizations {
   /// No description provided for @aboutImplementation.
   ///
   /// In zh, this message translates to:
-  /// **'实现：Grok Bot'**
+  /// **'实现：Grok Bot、DeepSeek Harness'**
   String get aboutImplementation;
 
   /// No description provided for @aboutConcept.
   ///
   /// In zh, this message translates to:
-  /// **'创意与需求框架：SenkjM'**
+  /// **'项目规划与需求：SenkjM'**
   String get aboutConcept;
 
   /// No description provided for @aboutLicense.
@@ -8547,6 +8547,90 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'更新失败：{error}'**
   String updateFailed(Object error);
+
+  /// No description provided for @aboutUpdateCheck.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查更新'**
+  String get aboutUpdateCheck;
+
+  /// No description provided for @aboutUpdateChecking.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在检查更新'**
+  String get aboutUpdateChecking;
+
+  /// No description provided for @aboutUpdateCheckingBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取 GitHub 正式版信息。'**
+  String get aboutUpdateCheckingBody;
+
+  /// No description provided for @aboutUpdateDownloadedTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新已下载'**
+  String get aboutUpdateDownloadedTitle;
+
+  /// No description provided for @aboutUpdateDownloadedBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'安装包已校验完成，可以交给系统安装器安装。'**
+  String get aboutUpdateDownloadedBody;
+
+  /// No description provided for @aboutUpdateInstall.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即安装'**
+  String get aboutUpdateInstall;
+
+  /// No description provided for @aboutUpdateErrorTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新失败'**
+  String get aboutUpdateErrorTitle;
+
+  /// No description provided for @aboutCopyError.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制完整错误'**
+  String get aboutCopyError;
+
+  /// No description provided for @aboutErrorCopied.
+  ///
+  /// In zh, this message translates to:
+  /// **'完整错误已复制'**
+  String get aboutErrorCopied;
+
+  /// No description provided for @aboutCreditsHarness.
+  ///
+  /// In zh, this message translates to:
+  /// **'DeepSeek Harness：协作开发与工程辅助。'**
+  String get aboutCreditsHarness;
+
+  /// No description provided for @aboutCreditsOpenList.
+  ///
+  /// In zh, this message translates to:
+  /// **'OpenList Teams：提供网盘兼容思路。'**
+  String get aboutCreditsOpenList;
+
+  /// No description provided for @aboutCreditsRclone.
+  ///
+  /// In zh, this message translates to:
+  /// **'rclone crypt：加密文件格式与实现思路。'**
+  String get aboutCreditsRclone;
+
+  /// No description provided for @aboutCreditsPackages.
+  ///
+  /// In zh, this message translates to:
+  /// **'其他第三方包及其许可证列在下方。'**
+  String get aboutCreditsPackages;
+
+  /// No description provided for @aboutAllLicenses.
+  ///
+  /// In zh, this message translates to:
+  /// **'查看全部第三方包和许可证'**
+  String get aboutAllLicenses;
 }
 
 class _AppLocalizationsDelegate

@@ -31,6 +31,7 @@ void main() {
       name: 'v1.0.0',
       notes: '',
       assets: [arm, arm64, x64],
+      buildCode: 100000000,
     );
     expect(release.pickApk(const ['arm64-v8a']), same(arm64));
     expect(release.pickApk(const ['armeabi-v7a']), same(arm));

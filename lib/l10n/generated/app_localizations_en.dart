@@ -790,16 +790,17 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutDescription =>
-      'Browse network drive folders, download files to the local cache, and play them.';
+      'A cloud multimedia viewing and management tool.';
 
   @override
   String get aboutCredits => 'Credits';
 
   @override
-  String get aboutImplementation => 'Implementation: Grok Bot';
+  String get aboutImplementation =>
+      'Implementation: Grok Bot, DeepSeek Harness';
 
   @override
-  String get aboutConcept => 'Concept and requirements: SenkjM';
+  String get aboutConcept => 'Project direction and requirements: SenkjM';
 
   @override
   String get aboutLicense => 'License';
@@ -5056,4 +5057,52 @@ class AppLocalizationsEn extends AppLocalizations {
   String updateFailed(Object error) {
     return 'Update failed: $error';
   }
+
+  @override
+  String get aboutUpdateCheck => 'Check for updates';
+
+  @override
+  String get aboutUpdateChecking => 'Checking for updates';
+
+  @override
+  String get aboutUpdateCheckingBody =>
+      'Reading the latest stable release from GitHub.';
+
+  @override
+  String get aboutUpdateDownloadedTitle => 'Update downloaded';
+
+  @override
+  String get aboutUpdateDownloadedBody =>
+      'The APK was verified and is ready for the system installer.';
+
+  @override
+  String get aboutUpdateInstall => 'Install now';
+
+  @override
+  String get aboutUpdateErrorTitle => 'Update failed';
+
+  @override
+  String get aboutCopyError => 'Copy full error';
+
+  @override
+  String get aboutErrorCopied => 'Full error copied';
+
+  @override
+  String get aboutCreditsHarness =>
+      'DeepSeek Harness: collaborative development and engineering assistance.';
+
+  @override
+  String get aboutCreditsOpenList =>
+      'OpenList Teams: cloud-drive compatibility direction.';
+
+  @override
+  String get aboutCreditsRclone =>
+      'rclone crypt: encrypted-file format and implementation direction.';
+
+  @override
+  String get aboutCreditsPackages =>
+      'Other third-party packages and their licenses are listed below.';
+
+  @override
+  String get aboutAllLicenses => 'View all third-party packages and licenses';
 }

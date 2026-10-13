@@ -16,13 +16,13 @@ class AppUpdateService {
       _channel = channel ?? const MethodChannel(_channelName);
 
   static const _channelName = 'com.senkjm.media_manager/app';
-  static const _latestReleaseUrl =
-      'https://api.github.com/repos/SenkjM/Webdav_Media_Manager/releases/latest';
+  static const _releasesUrl =
+      'https://api.github.com/repos/SenkjM/Webdav_Media_Manager/releases?per_page=30';
 
   final Dio _dio;
   final MethodChannel _channel;
 
-  Future<UpdateCheckResult> check() async {
+  Future<UpdateCheckResult> check({CancelToken? cancelToken}) async {
     if (kIsWeb || !Platform.isAndroid) return const UpdateCheckUnsupported();
     final package = await PackageInfo.fromPlatform();
     final native = await _installInfo();
@@ -30,7 +30,7 @@ class AppUpdateService {
       return const UpdateCheckUnsupported();
     }
     final response = await _dio.get<String>(
-      _latestReleaseUrl,
+      _releasesUrl,
       options: Options(
         responseType: ResponseType.plain,
         headers: const {
@@ -38,17 +38,29 @@ class AppUpdateService {
           'X-GitHub-Api-Version': '2022-11-28',
         },
       ),
+      cancelToken: cancelToken,
     );
     final raw = response.data;
     if (raw == null || raw.isEmpty) throw StateError('Empty release response');
-    final release = UpdateRelease.fromJson(
-      jsonDecode(raw) as Map<String, dynamic>,
-    );
-    final asset = release.pickApk(native.abis);
-    if (asset == null) return UpdateCheckNoCompatibleApk(release);
+    final releases = [
+      for (final item in jsonDecode(raw) as List<dynamic>)
+        UpdateRelease.fromJson(item as Map<String, dynamic>),
+    ];
+    final compatible = <(UpdateRelease release, UpdateAsset asset)>[
+      for (final release in releases)
+        if (release.pickApk(native.abis) case final asset?) (release, asset),
+    ]..sort((a, b) => b.$1.buildCode.compareTo(a.$1.buildCode));
+    if (compatible.isEmpty) {
+      return UpdateCheckNoCompatibleApk(releases.first);
+    }
+    final latest = compatible.first;
     final current = AppVersion.parse(package.version);
-    return release.version.compareTo(current) > 0
-        ? UpdateCheckAvailable(release, asset)
+    final currentCode = int.tryParse(package.buildNumber);
+    final isNewer = currentCode == null
+        ? latest.$1.version.compareTo(current) > 0
+        : latest.$1.buildCode > currentCode;
+    return isNewer
+        ? UpdateCheckAvailable(latest.$1, latest.$2)
         : UpdateCheckUpToDate(current);
   }
 
@@ -138,20 +150,28 @@ class UpdateRelease {
     required this.name,
     required this.notes,
     required this.assets,
+    required this.buildCode,
   });
-  factory UpdateRelease.fromJson(Map<String, dynamic> json) => UpdateRelease(
-    version: AppVersion.parse(json['tag_name'] as String? ?? ''),
-    name: json['name'] as String? ?? json['tag_name'] as String? ?? '',
-    notes: json['body'] as String? ?? '',
-    assets: [
-      for (final value in json['assets'] as List<dynamic>? ?? const [])
-        UpdateAsset.fromJson(value as Map<String, dynamic>),
-    ],
-  );
+  factory UpdateRelease.fromJson(Map<String, dynamic> json) {
+    final tag = json['tag_name'] as String? ?? '';
+    final version = AppVersion.parse(tag);
+    final encodedCode = RegExp(r'-(\d+)$').firstMatch(tag)?.group(1);
+    return UpdateRelease(
+      version: version,
+      name: json['name'] as String? ?? tag,
+      notes: json['body'] as String? ?? '',
+      assets: [
+        for (final value in json['assets'] as List<dynamic>? ?? const [])
+          UpdateAsset.fromJson(value as Map<String, dynamic>),
+      ],
+      buildCode: int.tryParse(encodedCode ?? '') ?? version.releaseBuildCode,
+    );
+  }
   final AppVersion version;
   final String name;
   final String notes;
   final List<UpdateAsset> assets;
+  final int buildCode;
   UpdateAsset? pickApk(List<String> abis) {
     final apkAssets = assets.where(
       (e) => e.name.toLowerCase().endsWith('.apk'),
@@ -205,6 +225,8 @@ class AppVersion implements Comparable<AppVersion> {
   final int major;
   final int minor;
   final int patch;
+  int get releaseBuildCode =>
+      major * 100000000 + minor * 1000000 + patch * 10000;
   @override
   int compareTo(AppVersion other) {
     final majorResult = major.compareTo(other.major);

@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
 import '../models/snack_duration.dart';
-import '../services/app_update_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/theme_settings_section.dart';
@@ -33,9 +32,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
-  final _updates = AppUpdateService();
-  bool _checkingUpdate = false;
-  double? _updateProgress;
   @override
   void initState() {
     super.initState();
@@ -111,101 +107,6 @@ class _SettingsScreenState extends State<SettingsScreen>
           ? l10n.notificationDiagnosticAllowed(channel, status)
           : l10n.notificationDiagnosticDenied(channel, status),
     );
-  }
-
-  Future<void> _checkForUpdate() async {
-    if (_checkingUpdate) return;
-    setState(() => _checkingUpdate = true);
-    final l10n = AppLocalizations.of(context)!;
-    try {
-      final result = await _updates.check();
-      if (!mounted) return;
-      switch (result) {
-        case UpdateCheckAvailable(:final release, :final asset):
-          final start = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: Text(
-                l10n.updateAvailableTitle(release.version.toString()),
-              ),
-              content: Text(
-                '${l10n.updateAvailableBody}\n\n${release.notes.trim()}',
-                maxLines: 12,
-                overflow: TextOverflow.ellipsis,
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(l10n.cancel),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  child: Text(l10n.updateDownloadInstall),
-                ),
-              ],
-            ),
-          );
-          if (start != true || !mounted) return;
-          setState(() => _updateProgress = 0);
-          try {
-            final apk = await _updates.download(
-              asset,
-              onProgress: (value) {
-                if (mounted) setState(() => _updateProgress = value);
-              },
-            );
-            if (!mounted) return;
-            final install = await _updates.install(apk);
-            if (!mounted) return;
-            switch (install) {
-              case UpdateInstallResult.started:
-                AppSnack.show(context, l10n.updateInstallerStarted);
-              case UpdateInstallResult.permissionRequired:
-                final open = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    content: Text(l10n.updateInstallPermission),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: Text(l10n.cancel),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text(l10n.updateOpenPermission),
-                      ),
-                    ],
-                  ),
-                );
-                if (open == true) {
-                  await _updates.openInstallPermissionSettings();
-                }
-              case UpdateInstallResult.failed:
-              case UpdateInstallResult.unsupported:
-                AppSnack.error(
-                  context,
-                  l10n.updateFailed('installer unavailable'),
-                );
-            }
-          } catch (e) {
-            if (mounted) {
-              AppSnack.error(context, l10n.updateFailed(e.toString()));
-            }
-          } finally {
-            if (mounted) setState(() => _updateProgress = null);
-          }
-        case UpdateCheckUpToDate(:final version):
-          AppSnack.show(context, l10n.updateUpToDate(version.toString()));
-        case UpdateCheckNoCompatibleApk():
-          AppSnack.error(context, l10n.updateNoCompatibleApk);
-        case UpdateCheckUnsupported():
-          AppSnack.show(context, l10n.updateUnsupported);
-      }
-    } catch (e) {
-      if (mounted) AppSnack.error(context, l10n.updateFailed(e.toString()));
-    } finally {
-      if (mounted) setState(() => _checkingUpdate = false);
-    }
   }
 
   Widget _sectionTitle(BuildContext context, String text) {
@@ -519,29 +420,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                   .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
             },
           ),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.settingsAppSection),
-          const SizedBox(height: 8),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.system_update_outlined),
-            title: Text(l10n.settingsUpdate),
-            subtitle: Text(
-              _updateProgress == null
-                  ? l10n.settingsUpdateSubtitle
-                  : l10n.updateDownloading((_updateProgress! * 100).round()),
-            ),
-            trailing: _checkingUpdate || _updateProgress != null
-                ? const SizedBox.square(
-                    dimension: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.chevron_right),
-            onTap: _checkingUpdate || _updateProgress != null
-                ? null
-                : _checkForUpdate,
-          ),
-          const Divider(height: 40),
+
           Text(
             l10n.settingsPlaybackFooter,
             style: Theme.of(context).textTheme.bodySmall,

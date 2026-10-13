@@ -764,16 +764,16 @@ class AppLocalizationsZh extends AppLocalizations {
       'CI 预发布写入 versionName（含短 hash）与递增 versionCode，可覆盖安装。';
 
   @override
-  String get aboutDescription => '浏览网盘目录，下载到本地缓存后播放。';
+  String get aboutDescription => '一个云端多媒体查看与管理工具。';
 
   @override
   String get aboutCredits => '作者与致谢';
 
   @override
-  String get aboutImplementation => '实现：Grok Bot';
+  String get aboutImplementation => '实现：Grok Bot、DeepSeek Harness';
 
   @override
-  String get aboutConcept => '创意与需求框架：SenkjM';
+  String get aboutConcept => '项目规划与需求：SenkjM';
 
   @override
   String get aboutLicense => '许可证';
@@ -4828,6 +4828,48 @@ class AppLocalizationsZh extends AppLocalizations {
   String updateFailed(Object error) {
     return '更新失败：$error';
   }
+
+  @override
+  String get aboutUpdateCheck => '检查更新';
+
+  @override
+  String get aboutUpdateChecking => '正在检查更新';
+
+  @override
+  String get aboutUpdateCheckingBody => '正在读取 GitHub 正式版信息。';
+
+  @override
+  String get aboutUpdateDownloadedTitle => '更新已下载';
+
+  @override
+  String get aboutUpdateDownloadedBody => '安装包已校验完成，可以交给系统安装器安装。';
+
+  @override
+  String get aboutUpdateInstall => '立即安装';
+
+  @override
+  String get aboutUpdateErrorTitle => '更新失败';
+
+  @override
+  String get aboutCopyError => '复制完整错误';
+
+  @override
+  String get aboutErrorCopied => '完整错误已复制';
+
+  @override
+  String get aboutCreditsHarness => 'DeepSeek Harness：协作开发与工程辅助。';
+
+  @override
+  String get aboutCreditsOpenList => 'OpenList Teams：提供网盘兼容思路。';
+
+  @override
+  String get aboutCreditsRclone => 'rclone crypt：加密文件格式与实现思路。';
+
+  @override
+  String get aboutCreditsPackages => '其他第三方包及其许可证列在下方。';
+
+  @override
+  String get aboutAllLicenses => '查看全部第三方包和许可证';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -5590,16 +5632,16 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
       'CI 預發布會寫入 versionName（含短 hash）與遞增 versionCode，可覆蓋安裝。';
 
   @override
-  String get aboutDescription => '瀏覽網路磁碟目錄，下載到本機快取後播放。';
+  String get aboutDescription => '一個雲端多媒體檢視與管理工具。';
 
   @override
   String get aboutCredits => '作者與致謝';
 
   @override
-  String get aboutImplementation => '實作：Grok Bot';
+  String get aboutImplementation => '實作：Grok Bot、DeepSeek Harness';
 
   @override
-  String get aboutConcept => '創意與需求框架：SenkjM';
+  String get aboutConcept => '專案規劃與需求：SenkjM';
 
   @override
   String get aboutLicense => '授權條款';
@@ -9654,4 +9696,46 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String updateFailed(Object error) {
     return '更新失敗：$error';
   }
+
+  @override
+  String get aboutUpdateCheck => '檢查更新';
+
+  @override
+  String get aboutUpdateChecking => '正在檢查更新';
+
+  @override
+  String get aboutUpdateCheckingBody => '正在讀取 GitHub 正式版資訊。';
+
+  @override
+  String get aboutUpdateDownloadedTitle => '更新已下載';
+
+  @override
+  String get aboutUpdateDownloadedBody => '安裝檔已驗證完成，可以交給系統安裝程式安裝。';
+
+  @override
+  String get aboutUpdateInstall => '立即安裝';
+
+  @override
+  String get aboutUpdateErrorTitle => '更新失敗';
+
+  @override
+  String get aboutCopyError => '複製完整錯誤';
+
+  @override
+  String get aboutErrorCopied => '完整錯誤已複製';
+
+  @override
+  String get aboutCreditsHarness => 'DeepSeek Harness：協作開發與工程輔助。';
+
+  @override
+  String get aboutCreditsOpenList => 'OpenList Teams：提供網路磁碟相容思路。';
+
+  @override
+  String get aboutCreditsRclone => 'rclone crypt：加密檔案格式與實作思路。';
+
+  @override
+  String get aboutCreditsPackages => '其他第三方套件及其授權條款列在下方。';
+
+  @override
+  String get aboutAllLicenses => '檢視全部第三方套件和授權條款';
 }
