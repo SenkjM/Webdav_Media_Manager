@@ -25,6 +25,7 @@ import 'package:openlist_crypt/openlist_crypt.dart';
 
 import 'library_sync_store.dart';
 import '../models/page_turn_direction.dart';
+import '../models/manga_build.dart';
 
 /// App preferences (cache retention, library sort, backup/playlist paths).
 /// WebDAV credentials live in AccountsService / flutter_secure_storage.
@@ -1569,6 +1570,9 @@ class SettingsService extends ChangeNotifier {
   WalkOptions get mangaCreateWalkOptions => WalkOptions(
     includeSubdirs: mangaCreateSubdirs,
     maxDepth: mangaCreateMaxDepth,
+    // Passed through to the build payload: the worker must not fall back to a
+    // smaller fuse than the walk helpers use.
+    maxEntries: kMangaBuildMaxEntries,
   );
 
   /// 图片查看的子目录扫描。独立于漫画扫描。

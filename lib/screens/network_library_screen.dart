@@ -1747,6 +1747,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           seriesTitle: confirmed.seriesTitle,
           includeSubdirs: settings.mangaCreateSubdirs,
           maxDepth: settings.mangaCreateMaxDepth,
+          maxEntries: settings.mangaCreateWalkOptions.maxEntries,
           imageExtensions: _mangaImageExts(settings),
         ),
       );
@@ -1803,6 +1804,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           title: folder.name,
           includeSubdirs: settings.mangaCreateSubdirs,
           maxDepth: settings.mangaCreateMaxDepth,
+          maxEntries: settings.mangaCreateWalkOptions.maxEntries,
           imageExtensions: _mangaImageExts(settings),
         ),
       );

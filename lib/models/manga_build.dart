@@ -1,3 +1,10 @@
+/// Directory-listing fuse for loose-image builds.
+///
+/// The walk helpers in `lib/utils/manga_scan_walk.dart` default to 2000. The
+/// worker used to rebuild its [WalkOptions] without this field, so the walk
+/// silently fell back to 500 and cut big folders short.
+const int kMangaBuildMaxEntries = 2000;
+
 /// How a loose-image folder is turned into books.
 ///
 /// [merged] makes the folder itself one book (every image below it, sorted);
@@ -32,6 +39,7 @@ class MangaBuildPayload {
     this.seriesTitle,
     this.includeSubdirs = true,
     this.maxDepth = 1,
+    this.maxEntries = kMangaBuildMaxEntries,
     this.imageExtensions = const [],
   });
 
@@ -45,6 +53,11 @@ class MangaBuildPayload {
   final String? seriesTitle;
   final bool includeSubdirs;
   final int maxDepth;
+
+  /// Directory-listing fuse of the walk. Carried explicitly because the
+  /// worker's own [WalkOptions] would otherwise fall back to 500 and silently
+  /// clamp the walk helpers' 2000.
+  final int maxEntries;
   final List<String> imageExtensions;
 
   Map<String, dynamic> toJson() => {
@@ -58,6 +71,7 @@ class MangaBuildPayload {
     if (seriesTitle != null) 'seriesTitle': seriesTitle,
     'includeSubdirs': includeSubdirs,
     'maxDepth': maxDepth,
+    'maxEntries': maxEntries,
     'imageExtensions': imageExtensions,
   };
 
@@ -80,6 +94,7 @@ class MangaBuildPayload {
       seriesTitle: m['seriesTitle'] as String?,
       includeSubdirs: (m['includeSubdirs'] as bool?) ?? true,
       maxDepth: (m['maxDepth'] as num?)?.toInt() ?? 1,
+      maxEntries: (m['maxEntries'] as num?)?.toInt() ?? kMangaBuildMaxEntries,
       imageExtensions: exts is List
           ? [
               for (final e in exts)

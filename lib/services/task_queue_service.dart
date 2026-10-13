@@ -2959,6 +2959,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     final walk = WalkOptions(
       includeSubdirs: payload.includeSubdirs,
       maxDepth: payload.maxDepth,
+      maxEntries: payload.maxEntries,
     );
 
     Future<void> finish() async {
