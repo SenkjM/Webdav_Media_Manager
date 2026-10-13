@@ -540,6 +540,16 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Drops a consumed payload sidecar. These are one-shot hand-offs and nothing
+  /// else sweeps them, so a fan-out batch would otherwise leave one file per
+  /// track behind. A retry simply walks the root again.
+  Future<void> _deleteScanPayload(String taskId) async {
+    try {
+      final file = await _scanPayloadFile(taskId);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
+  }
+
   /// Enqueue a loose-image build for one folder.
   ///
   /// The folder is listed by [_runMangaBuild], never by the caller, so the UI
@@ -584,6 +594,14 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Counterpart of [_deleteScanPayload] for the build sidecar.
+  Future<void> _deleteMangaBuildPayload(String taskId) async {
+    try {
+      final file = await _mangaBuildPayloadFile(taskId);
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
   }
 
   /// Cloud retag (+ cover) for one library row.
@@ -2483,6 +2501,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             isCueFileName(task.fileName));
     List<WebDavItem> candidates;
     final prelisted = await _readScanPayload(task);
+    if (prelisted != null) await _deleteScanPayload(task.id);
     if (prelisted != null && prelisted.isNotEmpty) {
       candidates = [for (final e in prelisted) e.toItem()];
     } else {
@@ -2910,6 +2929,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// The worker owns the recursive listing so the UI never waits on it.
   Future<void> _runMangaBuild(QueueTask task, CancelToken token) async {
     final payload = await _readMangaBuildPayload(task);
+    if (payload != null) await _deleteMangaBuildPayload(task.id);
     final mangaLib = _mangaLibrary;
     if (payload == null) {
       throw StateError('err.unknown|manga build payload missing');
