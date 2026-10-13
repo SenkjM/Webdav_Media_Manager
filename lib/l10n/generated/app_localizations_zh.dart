@@ -37,7 +37,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get download => '下载';
 
   @override
-  String get homeAndNavigation => '媒体库主页和导航';
+  String get homeAndNavigation => '主页与浏览';
 
   @override
   String get videoPlayback => '视频播放';
@@ -553,7 +553,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get encryptionSettings => '加密设置';
 
   @override
-  String get encryptionSettingsSubtitle => 'Crypt 顺序流与 secretbox 引擎';
+  String get encryptionSettingsSubtitle => '设置 Crypt 下载和 secretbox 引擎';
 
   @override
   String get encryptionCryptSection => 'Crypt 下载';
@@ -584,13 +584,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get customHome => '自定义主页';
 
   @override
-  String get customHomeSubtitle => '从其他界面返回时回到此主页';
+  String get customHomeSubtitle => '在根页面按返回时回到这里';
 
   @override
   String get rememberNetworkPath => '网络库记住上次路径';
 
   @override
-  String get rememberNetworkPathSubtitle => '同一运行期内再次打开网络库时恢复上次目录（不跨冷启动）';
+  String get rememberNetworkPathSubtitle => '本次运行中记住上次浏览目录；重启后从根目录开始';
 
   @override
   String get videoSettings => '视频播放设置';
@@ -4775,6 +4775,59 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mangaRescanHint => '选择来源文件夹，页表会重新收集；进度与元数据保留。';
+
+  @override
+  String get settingsAppSection => '应用与更新';
+
+  @override
+  String get settingsUpdate => '检查应用更新';
+
+  @override
+  String get settingsUpdateSubtitle => '仅在你点按时检查 GitHub 正式版，不会自动联网';
+
+  @override
+  String get updateChecking => '正在检查更新…';
+
+  @override
+  String updateUpToDate(Object version) {
+    return '当前已是最新版本（$version）';
+  }
+
+  @override
+  String updateAvailableTitle(Object version) {
+    return '发现新版本 $version';
+  }
+
+  @override
+  String get updateAvailableBody => '将下载适配本机架构的安装包，校验 SHA-256 后交给系统安装器。';
+
+  @override
+  String get updateDownloadInstall => '下载并安装';
+
+  @override
+  String updateDownloading(Object percent) {
+    return '正在下载更新：$percent%';
+  }
+
+  @override
+  String get updateInstallPermission => '请允许此应用安装未知来源应用，然后返回重试安装。';
+
+  @override
+  String get updateOpenPermission => '打开安装权限';
+
+  @override
+  String get updateInstallerStarted => '已打开系统安装器，请确认安装。';
+
+  @override
+  String get updateNoCompatibleApk => '此版本没有适用于当前设备架构的安装包。';
+
+  @override
+  String get updateUnsupported => '仅正式版 Android 应用支持应用内更新。';
+
+  @override
+  String updateFailed(Object error) {
+    return '更新失败：$error';
+  }
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -5326,7 +5379,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get encryptionSettings => '加密設定';
 
   @override
-  String get encryptionSettingsSubtitle => 'Crypt 順序流與 secretbox 引擎';
+  String get encryptionSettingsSubtitle => '設定 Crypt 下載和 secretbox 引擎';
 
   @override
   String get encryptionCryptSection => 'Crypt 下載';
@@ -9548,4 +9601,57 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get mangaRescanHint => '選擇來源資料夾，頁表會重新收集；進度與中繼資料保留。';
+
+  @override
+  String get settingsAppSection => '應用程式與更新';
+
+  @override
+  String get settingsUpdate => '檢查應用程式更新';
+
+  @override
+  String get settingsUpdateSubtitle => '只在你點按時檢查 GitHub 正式版，不會自動連線';
+
+  @override
+  String get updateChecking => '正在檢查更新…';
+
+  @override
+  String updateUpToDate(Object version) {
+    return '目前已是最新版本（$version）';
+  }
+
+  @override
+  String updateAvailableTitle(Object version) {
+    return '發現新版本 $version';
+  }
+
+  @override
+  String get updateAvailableBody => '將下載符合本機架構的安裝檔，驗證 SHA-256 後交給系統安裝程式。';
+
+  @override
+  String get updateDownloadInstall => '下載並安裝';
+
+  @override
+  String updateDownloading(Object percent) {
+    return '正在下載更新：$percent%';
+  }
+
+  @override
+  String get updateInstallPermission => '請允許此應用程式安裝未知來源應用程式，然後返回重試安裝。';
+
+  @override
+  String get updateOpenPermission => '開啟安裝權限';
+
+  @override
+  String get updateInstallerStarted => '已開啟系統安裝程式，請確認安裝。';
+
+  @override
+  String get updateNoCompatibleApk => '此版本沒有適用於目前裝置架構的安裝檔。';
+
+  @override
+  String get updateUnsupported => '只有正式版 Android 應用程式支援應用程式內更新。';
+
+  @override
+  String updateFailed(Object error) {
+    return '更新失敗：$error';
+  }
 }

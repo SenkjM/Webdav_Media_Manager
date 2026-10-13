@@ -559,14 +559,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get downloadQueueSettingsSubtitle =>
-      'Resume-download temporary-file retention and cleanup';
+      'Set retention and cleanup for resumable-download temporary files';
 
   @override
   String get encryptionSettings => 'Encryption';
 
   @override
   String get encryptionSettingsSubtitle =>
-      'Crypt sequential stream and secretbox engine';
+      'Configure Crypt downloads and the secretbox engine';
 
   @override
   String get encryptionCryptSection => 'Crypt downloads';
@@ -3924,17 +3924,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imageScanningSubdirs => 'Scanning subdirectories…';
 
   @override
-  String get settingsMisc => 'Miscellaneous';
+  String get settingsMisc => 'Appearance and interaction';
 
   @override
   String get settingsThumbnails => 'Thumbnails';
 
   @override
   String get settingsThumbnailsSubtitle =>
-      'Cover thumbnail size; only newly written images change';
+      'Set thumbnail size for newly generated covers; existing images stay unchanged';
 
   @override
-  String get settingsShareSubtitle => 'Rename shared files from tags';
+  String get settingsShareSubtitle =>
+      'Set the naming rule used when sharing files';
 
   @override
   String get downloadNomedia => 'Exclude from media scan';
@@ -4044,7 +4045,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsPlaybackFooter =>
-      'Music is downloaded before local playback. Video streams directly and continues through the folder.';
+      'Music downloads before playback; video streams directly. App updates contact the network only when you check manually.';
 
   @override
   String get shareRenamePlaceholderList =>
@@ -4274,7 +4275,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mediaLibrarySettings => 'Music library';
 
   @override
-  String get mediaLibrarySettingsHint => 'Default open, prefetch, cache, tags';
+  String get mediaLibrarySettingsHint =>
+      'Configure how music opens, prefetches, caches, and reads tags';
 
   @override
   String get musicDefaultOpen => 'Default open';
@@ -4638,7 +4640,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mangaLibrarySettingsSection => 'Manga library';
 
   @override
-  String get mangaLibrarySettingsHint => 'Scan, create and reading options';
+  String get mangaLibrarySettingsHint =>
+      'Configure scanning, book creation, cache, and reading';
 
   @override
   String get mangaScanSubdirs => 'Include subfolders when scanning comics';
@@ -4994,4 +4997,63 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get mangaRescanHint =>
       'Pick the source folder; the page list is rebuilt and progress and metadata stay.';
+
+  @override
+  String get settingsAppSection => 'App and updates';
+
+  @override
+  String get settingsUpdate => 'Check for app updates';
+
+  @override
+  String get settingsUpdateSubtitle =>
+      'Checks GitHub stable releases only when you tap it; never automatically';
+
+  @override
+  String get updateChecking => 'Checking for updates…';
+
+  @override
+  String updateUpToDate(Object version) {
+    return 'You are up to date ($version)';
+  }
+
+  @override
+  String updateAvailableTitle(Object version) {
+    return 'Version $version is available';
+  }
+
+  @override
+  String get updateAvailableBody =>
+      'The matching APK will be downloaded, SHA-256 verified, then handed to the system installer.';
+
+  @override
+  String get updateDownloadInstall => 'Download and install';
+
+  @override
+  String updateDownloading(Object percent) {
+    return 'Downloading update: $percent%';
+  }
+
+  @override
+  String get updateInstallPermission =>
+      'Allow this app to install unknown apps, then return and retry installation.';
+
+  @override
+  String get updateOpenPermission => 'Open install permission';
+
+  @override
+  String get updateInstallerStarted =>
+      'The system installer is open. Confirm installation there.';
+
+  @override
+  String get updateNoCompatibleApk =>
+      'This release has no APK for this device architecture.';
+
+  @override
+  String get updateUnsupported =>
+      'In-app updates are available only in the production Android app.';
+
+  @override
+  String updateFailed(Object error) {
+    return 'Update failed: $error';
+  }
 }

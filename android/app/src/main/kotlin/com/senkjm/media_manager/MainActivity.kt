@@ -15,6 +15,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.ryanheise.audioservice.AudioServiceFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -115,6 +116,17 @@ class MainActivity : AudioServiceFragmentActivity() {
                 "pickFile" -> {
                     val args = call.arguments as? Map<*, *>
                     pickFile(args?.get("mimeType") as? String, result)
+                }
+                "updateInstallInfo" -> result.success(
+                    mapOf("packageName" to packageName, "abis" to Build.SUPPORTED_ABIS.toList()),
+                )
+                "installApk" -> {
+                    val args = call.arguments as? Map<*, *>
+                    result.success(installApk(args?.get("path") as? String))
+                }
+                "openInstallPermissionSettings" -> {
+                    openInstallPermissionSettings()
+                    result.success(null)
                 }
                 else -> result.notImplemented()
             }
@@ -742,6 +754,38 @@ class MainActivity : AudioServiceFragmentActivity() {
             "manufacturer" to Build.MANUFACTURER,
             "model" to Build.MODEL,
             "servicePresentHint" to posted,
+        )
+    }
+
+    /** Opens the system package installer for a verified APK in cache/updates. */
+    private fun installApk(path: String?): Map<String, String> {
+        val apk = File(path ?: "")
+        if (!apk.isFile || !apk.name.endsWith(".apk", ignoreCase = true)) {
+            return mapOf("state" to "failed")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+            return mapOf("state" to "permission_required")
+        }
+        return try {
+            val uri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", apk)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            mapOf("state" to "started")
+        } catch (_: Exception) {
+            mapOf("state" to "failed")
+        }
+    }
+
+    private fun openInstallPermissionSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        startActivity(
+            Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                data = Uri.parse("package:$packageName")
+            },
         )
     }
 

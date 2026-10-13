@@ -156,7 +156,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeAndNavigation.
   ///
   /// In zh, this message translates to:
-  /// **'媒体库主页和导航'**
+  /// **'主页与浏览'**
   String get homeAndNavigation;
 
   /// No description provided for @videoPlayback.
@@ -1122,7 +1122,7 @@ abstract class AppLocalizations {
   /// No description provided for @encryptionSettingsSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'Crypt 顺序流与 secretbox 引擎'**
+  /// **'设置 Crypt 下载和 secretbox 引擎'**
   String get encryptionSettingsSubtitle;
 
   /// No description provided for @encryptionCryptSection.
@@ -1176,7 +1176,7 @@ abstract class AppLocalizations {
   /// No description provided for @customHomeSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'从其他界面返回时回到此主页'**
+  /// **'在根页面按返回时回到这里'**
   String get customHomeSubtitle;
 
   /// No description provided for @rememberNetworkPath.
@@ -1188,7 +1188,7 @@ abstract class AppLocalizations {
   /// No description provided for @rememberNetworkPathSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'同一运行期内再次打开网络库时恢复上次目录（不跨冷启动）'**
+  /// **'本次运行中记住上次浏览目录；重启后从根目录开始'**
   String get rememberNetworkPathSubtitle;
 
   /// No description provided for @videoSettings.
@@ -8457,6 +8457,96 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'选择来源文件夹，页表会重新收集；进度与元数据保留。'**
   String get mangaRescanHint;
+
+  /// No description provided for @settingsAppSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'应用与更新'**
+  String get settingsAppSection;
+
+  /// No description provided for @settingsUpdate.
+  ///
+  /// In zh, this message translates to:
+  /// **'检查应用更新'**
+  String get settingsUpdate;
+
+  /// No description provided for @settingsUpdateSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅在你点按时检查 GitHub 正式版，不会自动联网'**
+  String get settingsUpdateSubtitle;
+
+  /// No description provided for @updateChecking.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在检查更新…'**
+  String get updateChecking;
+
+  /// No description provided for @updateUpToDate.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前已是最新版本（{version}）'**
+  String updateUpToDate(Object version);
+
+  /// No description provided for @updateAvailableTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'发现新版本 {version}'**
+  String updateAvailableTitle(Object version);
+
+  /// No description provided for @updateAvailableBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'将下载适配本机架构的安装包，校验 SHA-256 后交给系统安装器。'**
+  String get updateAvailableBody;
+
+  /// No description provided for @updateDownloadInstall.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载并安装'**
+  String get updateDownloadInstall;
+
+  /// No description provided for @updateDownloading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在下载更新：{percent}%'**
+  String updateDownloading(Object percent);
+
+  /// No description provided for @updateInstallPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'请允许此应用安装未知来源应用，然后返回重试安装。'**
+  String get updateInstallPermission;
+
+  /// No description provided for @updateOpenPermission.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开安装权限'**
+  String get updateOpenPermission;
+
+  /// No description provided for @updateInstallerStarted.
+  ///
+  /// In zh, this message translates to:
+  /// **'已打开系统安装器，请确认安装。'**
+  String get updateInstallerStarted;
+
+  /// No description provided for @updateNoCompatibleApk.
+  ///
+  /// In zh, this message translates to:
+  /// **'此版本没有适用于当前设备架构的安装包。'**
+  String get updateNoCompatibleApk;
+
+  /// No description provided for @updateUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅正式版 Android 应用支持应用内更新。'**
+  String get updateUnsupported;
+
+  /// No description provided for @updateFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新失败：{error}'**
+  String updateFailed(Object error);
 }
 
 class _AppLocalizationsDelegate
