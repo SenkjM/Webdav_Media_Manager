@@ -271,3 +271,24 @@ jobs:
             --title "${version_name}" \
             --notes-file "$notes" \
             --latest
+
+      - name: Sync release data to Cloudflare Worker
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SYNC_TOKEN:-}" ]; then
+            echo "::warning::缺少 secret SYNC_TOKEN，跳过同步。"
+            exit 0
+          fi
+          # 拉取最新 releases（含刚才创建的），生成 sync payload
+          gh api repos/$REPO/releases?per_page=30 \
+            > dist/releases.json
+          jq '{ releases: . }' dist/releases.json > dist/sync-payload.json
+          curl -sf -X POST https://update.senkjm.top/_sync \
+            -H "x-sync-token: $SYNC_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary "@dist/sync-payload.json" || \
+            echo "::warning::同步失败，但 release 已创建，不阻断。"

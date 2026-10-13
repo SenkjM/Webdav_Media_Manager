@@ -30,11 +30,11 @@ class AppUpdateService {
   /// GitHub `type` value: `stable` excludes prereleases and drafts;
   /// `prerelease` restricts to prereleases only. Keeping `per_page=1` makes
   /// the response one release object instead of a full page.
+  static const _updateBaseUrl = 'https://update.senkjm.top';
+
   static String releasesUrl(UpdateChannel channel) => switch (channel) {
-    UpdateChannel.stable =>
-      'https://api.github.com/repos/SenkjM/Webdav_Media_Manager/releases?per_page=1&type=stable',
-    UpdateChannel.preview =>
-      'https://api.github.com/repos/SenkjM/Webdav_Media_Manager/releases?per_page=1&type=prerelease',
+    UpdateChannel.stable => '$_updateBaseUrl/release?channel=stable',
+    UpdateChannel.preview => '$_updateBaseUrl/release?channel=preview',
   };
 
   final Dio _dio;
