@@ -306,6 +306,12 @@ class WmpManga {
 
   /// Index into the shard's COVERS section (this row's own cover).
   static const int coverIndex = 19;
+
+  /// The row's own id. Container books can recompute it from source + path,
+  /// but loose-image books also fold their build mode into it, and the shard
+  /// carries no mode of its own. Written for every row; readers that lack the
+  /// tag (older shards) fall back to recomputing.
+  static const int mangaId = 20;
 }
 
 class WmpTomb {

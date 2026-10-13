@@ -90,6 +90,7 @@ class MangaShardCodec {
       WmpManga.updatedAt: m.updatedAt.toUtc().toIso8601String(),
       if (row.pages.isNotEmpty) WmpManga.pages: jsonEncode(row.pages),
       WmpManga.coverIndex: coverIndex,
+      WmpManga.mangaId: m.id,
     };
   }
 
@@ -121,7 +122,7 @@ class MangaShardCodec {
     }
     return MangaSyncRow(
       manga: Manga(
-        id: mangaIdForRemote(sourceName, remotePath),
+        id: str(WmpManga.mangaId) ?? mangaIdForRemote(sourceName, remotePath),
         sourceName: sourceName,
         remotePath: remotePath,
         title: str(WmpManga.title) ?? remotePath.split('/').last,
