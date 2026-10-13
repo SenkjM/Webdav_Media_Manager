@@ -488,6 +488,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     required String fileName,
     int? unitsTotal,
     List<ScanPathEntry>? paths,
+    bool isEnumerator = false,
   }) async {
     final task = QueueTask(
       id: _uuid.v4(),
@@ -499,6 +500,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       progressMode: TaskProgressMode.units,
       unitsTotal: unitsTotal ?? paths?.length,
       unitsDone: 0,
+      isEnumerator: isEnumerator,
     );
     if (paths != null && paths.isNotEmpty) {
       final payload = await _scanPayloadFile(task.id);
@@ -1723,13 +1725,28 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   void _publishProgress() {
     if (!notificationsEnabled && !_keepAlive.holdsOrStarting) return;
     QueueTask? current;
+    QueueTask? enumeratingCurrent;
     var running = 0;
     var pendingCount = 0;
     var completed = 0;
     var failed = 0;
     var cancelled = 0;
+    var enumerating = 0;
     for (final t in _tasks) {
       if (!_sessionIds.contains(t.id)) continue;
+      // An enumerator only discovers work; the unit tasks it fans out carry the
+      // payload. Counting it as an item would credit one completed unit per
+      // root scanned, and leaving it in the tallies would make the total jump
+      // the moment its children appear. It collapses into a single slot.
+      if (t.isEnumerator) {
+        if (t.status == TaskStatus.active) {
+          enumerating++;
+          enumeratingCurrent ??= t;
+        } else if (t.status == TaskStatus.pending) {
+          enumerating++;
+        }
+        continue;
+      }
       switch (t.status) {
         case TaskStatus.active:
           running++;
@@ -1745,7 +1762,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           cancelled++;
       }
     }
-    if (running == 0 && pendingCount == 0) {
+    if (running == 0 && pendingCount == 0 && enumerating == 0) {
       // Queue drained. With the keep-alive FGS up, the order is fixed:
       // stop Dart updates of 2001, stopForeground(REMOVE), stopSelf, then 2003.
       // Toggle off keeps today's clear-then-summary path.
@@ -1790,15 +1807,17 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (!notificationsEnabled || _notify.progressUpdatesPaused) return;
     final done = completed + failed + cancelled;
+    final shown = current ?? enumeratingCurrent;
     unawaited(
       _notify.showProgress(
         index: done + 1,
         // Counted from the live entries rather than `_sessionIds.length`: a task
         // the user deleted from the queue mid-batch must not inflate the total.
-        total: done + running + pendingCount,
+        // A running enumerator is worth exactly one slot of its own.
+        total: done + running + pendingCount + (enumerating > 0 ? 1 : 0),
         done: done,
-        currentName: current?.fileName,
-        fileProgress: current?.progress ?? 0,
+        currentName: shown?.fileName,
+        fileProgress: shown?.progress ?? 0,
       ),
     );
   }

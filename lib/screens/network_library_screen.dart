@@ -2039,6 +2039,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         sourceName: sourceName,
         remotePath: root.path,
         fileName: root.name,
+        // A folder root only discovers tracks; a selected audio file is its own
+        // unit and stays counted.
+        isEnumerator: root.isDirectory,
       );
       queued++;
     }

@@ -138,6 +138,7 @@ class QueueTask {
     this.unitsTotal,
     this.unitsDone = 0,
     this.cacheGroupId,
+    this.isEnumerator = false,
     this.target = DownloadTarget.cache,
     this.attempts = 0,
     this.nextRetryAt,
@@ -171,6 +172,12 @@ class QueueTask {
   int? unitsTotal;
   int unitsDone;
   String? cacheGroupId;
+
+  /// True when this entry only *discovers* work: it walks its own [remotePath]
+  /// and fans the result out into one unit task per item. It is kept out of the
+  /// batch counters so a finished root does not report as a completed item, and
+  /// so the notification total does not jump when its children appear.
+  final bool isEnumerator;
 
   /// Destination for [TaskKind.download] only.
   DownloadTarget target;
@@ -233,6 +240,7 @@ class QueueTask {
     'units_total': unitsTotal,
     'units_done': unitsDone,
     'cache_group_id': cacheGroupId,
+    'is_enumerator': isEnumerator,
     'target': target.storageKey,
     'download_mode': downloadMode?.name,
     'remote_size': remoteSize,
@@ -270,6 +278,7 @@ class QueueTask {
     unitsTotal: map['units_total'] as int?,
     unitsDone: (map['units_done'] as int?) ?? 0,
     cacheGroupId: _asString(map['cache_group_id']),
+    isEnumerator: map['is_enumerator'] == true,
     target: DownloadTargetX.fromStorageKey(_asString(map['target'])),
     downloadMode: CloudDownloadMode.values.firstWhere(
       (e) => e.name == _asString(map['download_mode']),
@@ -321,6 +330,7 @@ class QueueTask {
       unitsTotal: unitsTotal ?? this.unitsTotal,
       unitsDone: unitsDone ?? this.unitsDone,
       cacheGroupId: cacheGroupId ?? this.cacheGroupId,
+      isEnumerator: isEnumerator,
       target: target ?? this.target,
       downloadMode: downloadMode ?? this.downloadMode,
       remoteSize: remoteSize ?? this.remoteSize,
