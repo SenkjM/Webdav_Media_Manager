@@ -34,12 +34,12 @@ class UserFolder {
   }
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'parent_id': parentId,
-        'name': name,
-        'sort_order': sortOrder,
-        'created_at': createdAt.toUtc().toIso8601String(),
-      };
+    'id': id,
+    'parent_id': parentId,
+    'name': name,
+    'sort_order': sortOrder,
+    'created_at': createdAt.toUtc().toIso8601String(),
+  };
 
   static UserFolder fromMap(Map<String, Object?> map) {
     return UserFolder(
@@ -47,7 +47,8 @@ class UserFolder {
       parentId: map['parent_id'] as String?,
       name: map['name'] as String? ?? '',
       sortOrder: (map['sort_order'] as int?) ?? 0,
-      createdAt: DateTime.tryParse(map['created_at'] as String? ?? '')?.toLocal() ??
+      createdAt:
+          DateTime.tryParse(map['created_at'] as String? ?? '')?.toLocal() ??
           DateTime.now(),
     );
   }
@@ -55,3 +56,10 @@ class UserFolder {
 
 /// Virtual root label key for path display (not a DB row).
 const kMyFoldersRootName = '我的文件夹';
+
+/// Stored home of a leaf ref that hangs off the virtual root.
+///
+/// 「我的文件夹」 has no `user_folders` row, so a ref parked there still needs a
+/// concrete `folder_id`. Folder ids are UUID v4 ([UserFolderService.createFolder]),
+/// so a fixed token can never collide with a real one.
+const kUserFolderRootId = 'root';

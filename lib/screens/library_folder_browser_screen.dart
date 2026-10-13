@@ -215,16 +215,13 @@ class _LibraryFolderBrowserScreenState
     setState(() => _selection = _selection.exit());
   }
 
+  /// Adds refs to the folder currently being browsed.
+  ///
+  /// At the virtual root [_currentId] is null and the ref hangs off the root
+  /// (stored as [kUserFolderRootId]) — no destination picker, the root is a
+  /// legal home.
   Future<void> _addRefs(String refKind, String title) async {
-    var folderId = _currentId;
-    if (folderId == null) {
-      folderId = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          builder: (_) => LibraryFolderPickerScreen(purpose: title),
-        ),
-      );
-      if (folderId == null || !mounted) return;
-    }
+    final folderId = _currentId ?? kUserFolderRootId;
     final keys = await Navigator.of(context).push<List<String>>(
       MaterialPageRoute(
         builder: (_) => LibraryTagPickerScreen(refKind: refKind, title: title),
@@ -345,33 +342,75 @@ class _LibraryFolderBrowserScreenState
 
   Future<String?> _pickFolderDest({
     required String purpose,
-    String? excludedFolderId,
+    Set<String> excludedFolderIds = const {},
+    bool allowRoot = false,
   }) {
     return Navigator.of(context).push<String>(
       MaterialPageRoute(
         builder: (_) => LibraryFolderPickerScreen(
           purpose: purpose,
-          excludedFolderId: excludedFolderId,
+          excludedFolderIds: excludedFolderIds,
+          allowRoot: allowRoot,
         ),
       ),
     );
   }
 
-  Future<void> _moveFolder(UserFolder folder) async {
+  /// Moves or copies a whole folder subtree.
+  ///
+  /// The picker already hides the excluded subtree, so a refusal here only
+  /// means the destination ended up inside the source.
+  Future<void> _moveOrCopyFolder(
+    UserFolder folder, {
+    required bool copy,
+  }) async {
     final l10n = AppLocalizations.of(context)!;
     final dest = await _pickFolderDest(
-      purpose: l10n.folderMove,
-      excludedFolderId: folder.id,
+      purpose: copy ? l10n.folderCopy : l10n.folderMove,
+      excludedFolderIds: {folder.id},
+      allowRoot: true,
     );
     if (dest == null || !mounted) return;
-    final ok = await context.read<UserFolderService>().moveFolder(
-      folder.id,
-      newParentId: dest.isEmpty ? null : dest,
-    );
+    final svc = context.read<UserFolderService>();
+    // Folders spell the virtual root as null; refs store [kUserFolderRootId].
+    final target = dest == kUserFolderRootId ? null : dest;
+    final ok = copy
+        ? await svc.copyFolder(
+                folder.id,
+                newParentId: target,
+                name: _copyFolderName(svc, target, folder.name, l10n),
+              ) !=
+              null
+        : await svc.moveFolder(folder.id, newParentId: target);
     if (!mounted) return;
-    if (ok) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.folderMoveDone)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          ok
+              ? (copy ? l10n.folderCopyDone : l10n.folderMoveDone)
+              : l10n.folderRefMissing,
+        ),
+      ),
+    );
+  }
+
+  /// `名称` when free, else `名称 (副本)`, `名称 (副本 2)`…
+  ///
+  /// Sibling names are all the browser shows, so a blind duplicate would be
+  /// indistinguishable from the original.
+  String _copyFolderName(
+    UserFolderService svc,
+    String? parentId,
+    String base,
+    AppLocalizations l10n,
+  ) {
+    final taken = {for (final f in svc.childrenOf(parentId)) f.name};
+    if (!taken.contains(base)) return base;
+    final first = '$base (${l10n.folderCopySuffix})';
+    if (!taken.contains(first)) return first;
+    for (var i = 2; ; i++) {
+      final candidate = '$base (${l10n.folderCopySuffix} $i)';
+      if (!taken.contains(candidate)) return candidate;
     }
   }
 
@@ -382,8 +421,9 @@ class _LibraryFolderBrowserScreenState
     final l10n = AppLocalizations.of(context)!;
     final dest = await _pickFolderDest(
       purpose: copy ? l10n.folderCopy : l10n.folderMove,
+      allowRoot: true,
     );
-    if (dest == null || dest.isEmpty || !mounted) return;
+    if (dest == null || !mounted) return;
     final svc = context.read<UserFolderService>();
     final ok = copy
         ? await svc.copyRef(
@@ -405,6 +445,73 @@ class _LibraryFolderBrowserScreenState
               ? (copy ? l10n.folderCopyDone : l10n.folderMoveDone)
               : l10n.folderRefMissing,
         ),
+      ),
+    );
+  }
+
+  /// Moves or copies everything currently selected.
+  ///
+  /// Folders travel with their whole subtree, refs as independent copies.
+  /// The picker blocks every selected subtree up front, so the loops below
+  /// cannot land a folder inside itself.
+  Future<void> _moveOrCopySelection({
+    required bool copy,
+    required List<UserFolder> children,
+    required List<UserFolderItem> items,
+  }) async {
+    final l10n = AppLocalizations.of(context)!;
+    final svc = context.read<UserFolderService>();
+    final pickedFolders = [
+      for (final f in children)
+        if (_selection.contains(_folderKey(f))) f,
+    ];
+    final pickedItems = [
+      for (final i in items)
+        if (_selection.contains(_itemKey(i))) i,
+    ];
+    final count = pickedFolders.length + pickedItems.length;
+    if (count == 0) return;
+    // The root is a legal home for a ref too, so nothing is out of reach.
+    final dest = await _pickFolderDest(
+      purpose: copy ? l10n.folderCopy : l10n.folderMove,
+      excludedFolderIds: {for (final f in pickedFolders) f.id},
+      allowRoot: true,
+    );
+    if (dest == null || !mounted) return;
+    // Folders spell the virtual root as null; refs store [kUserFolderRootId].
+    final target = dest == kUserFolderRootId ? null : dest;
+    for (final f in pickedFolders) {
+      if (copy) {
+        await svc.copyFolder(
+          f.id,
+          newParentId: target,
+          name: _copyFolderName(svc, target, f.name, l10n),
+        );
+      } else {
+        await svc.moveFolder(f.id, newParentId: target);
+      }
+    }
+    for (final item in pickedItems) {
+      if (copy) {
+        await svc.copyRef(
+          toFolderId: target ?? kUserFolderRootId,
+          refKind: item.refKind,
+          refKey: item.refKey,
+        );
+      } else {
+        await svc.moveRef(
+          fromFolderId: item.folderId,
+          toFolderId: target ?? kUserFolderRootId,
+          refKind: item.refKind,
+          refKey: item.refKey,
+        );
+      }
+    }
+    if (!mounted) return;
+    setState(() => _selection = _selection.exit());
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(copy ? l10n.copiedItems(count) : l10n.movedItems(count)),
       ),
     );
   }
@@ -532,9 +639,7 @@ class _LibraryFolderBrowserScreenState
     final library = context.watch<LibraryService>();
     final cache = context.watch<CacheService>();
     final children = folders.childrenOf(_currentId);
-    final items = _currentId == null
-        ? const <UserFolderItem>[]
-        : folders.itemsIn(_currentId!);
+    final items = folders.itemsIn(_currentId ?? kUserFolderRootId);
     final path = folders.pathDisplay(_currentId);
     final viewMode = settings.folderViewModeFor(_currentId);
     final keys = _allKeys(children, items);
@@ -592,6 +697,32 @@ class _LibraryFolderBrowserScreenState
                       '${_selection.count}',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
+                  ),
+                  IconButton(
+                    tooltip: l10n.folderMove,
+                    onPressed: _selection.count == 0
+                        ? null
+                        : () => unawaited(
+                            _moveOrCopySelection(
+                              copy: false,
+                              children: children,
+                              items: items,
+                            ),
+                          ),
+                    icon: const Icon(Icons.drive_file_move_outlined),
+                  ),
+                  IconButton(
+                    tooltip: l10n.folderCopy,
+                    onPressed: _selection.count == 0
+                        ? null
+                        : () => unawaited(
+                            _moveOrCopySelection(
+                              copy: true,
+                              children: children,
+                              items: items,
+                            ),
+                          ),
+                    icon: const Icon(Icons.copy_all_outlined),
                   ),
                   PopupMenuButton<String>(
                     tooltip: l10n.moreActions,
@@ -660,7 +791,8 @@ class _LibraryFolderBrowserScreenState
                         setState(() => _stack.add(f.id));
                       },
                       onRenameFolder: (f) => _renameFolder(f.id, f.name),
-                      onMoveFolder: _moveFolder,
+                      onMoveFolder: (f) => _moveOrCopyFolder(f, copy: false),
+                      onCopyFolder: (f) => _moveOrCopyFolder(f, copy: true),
                       onDeleteFolder: _deleteFolder,
                       onOpenItem: (item) {
                         if (_selecting) {
@@ -706,7 +838,8 @@ class _LibraryFolderBrowserScreenState
                                   .sync(total: keys.length, validKeys: keys);
                             }),
                             onRename: () => _renameFolder(f.id, f.name),
-                            onMove: () => _moveFolder(f),
+                            onMove: () => _moveOrCopyFolder(f, copy: false),
+                            onCopy: () => _moveOrCopyFolder(f, copy: true),
                             onDelete: () => _deleteFolder(f),
                           ),
                         for (final item in items)
@@ -760,6 +893,7 @@ class _FolderListTile extends StatelessWidget {
     required this.onOpen,
     required this.onRename,
     required this.onMove,
+    required this.onCopy,
     required this.onDelete,
     this.onLongPress,
     this.selecting = false,
@@ -770,6 +904,7 @@ class _FolderListTile extends StatelessWidget {
   final VoidCallback onOpen;
   final VoidCallback onRename;
   final VoidCallback onMove;
+  final VoidCallback onCopy;
   final VoidCallback onDelete;
   final VoidCallback? onLongPress;
   final bool selecting;
@@ -797,11 +932,13 @@ class _FolderListTile extends StatelessWidget {
               onSelected: (v) {
                 if (v == 'rename') onRename();
                 if (v == 'move') onMove();
+                if (v == 'copy') onCopy();
                 if (v == 'delete') onDelete();
               },
               itemBuilder: (context) => [
                 PopupMenuItem(value: 'rename', child: Text(l10n.rename)),
                 PopupMenuItem(value: 'move', child: Text(l10n.folderMove)),
+                PopupMenuItem(value: 'copy', child: Text(l10n.folderCopy)),
                 PopupMenuItem(value: 'delete', child: Text(l10n.delete)),
               ],
             ),
@@ -1059,6 +1196,7 @@ class _FolderGridBody extends StatelessWidget {
     required this.onOpenFolder,
     required this.onRenameFolder,
     required this.onMoveFolder,
+    required this.onCopyFolder,
     required this.onDeleteFolder,
     required this.onOpenItem,
     required this.onRemoveItem,
@@ -1080,6 +1218,7 @@ class _FolderGridBody extends StatelessWidget {
   final void Function(UserFolder) onOpenFolder;
   final void Function(UserFolder) onRenameFolder;
   final void Function(UserFolder) onMoveFolder;
+  final void Function(UserFolder) onCopyFolder;
   final void Function(UserFolder) onDeleteFolder;
   final void Function(UserFolderItem) onOpenItem;
   final void Function(UserFolderItem) onRemoveItem;
@@ -1126,11 +1265,13 @@ class _FolderGridBody extends StatelessWidget {
                 : [
                     (value: 'rename', label: l10n.rename),
                     (value: 'move', label: l10n.folderMove),
+                    (value: 'copy', label: l10n.folderCopy),
                     (value: 'delete', label: l10n.delete),
                   ],
             onMenu: (v) {
               if (v == 'rename') onRenameFolder(f);
               if (v == 'move') onMoveFolder(f);
+              if (v == 'copy') onCopyFolder(f);
               if (v == 'delete') onDeleteFolder(f);
             },
           );

@@ -17,6 +17,10 @@ import '../utils/track_identity.dart';
 ///
 /// Schema v16: the `manga_series` table is folded into a `mangas.series` tag
 /// (the album model — a series is derived from books, never stored on its own).
+/// Schema v17: the user-folder tables were rebuilt without their `FOREIGN KEY`
+/// clauses. `user_folder_items.folder_id` is `root` ([kUserFolderRootId]) for the
+/// virtual root 「我的文件夹」, which has no `user_folders` row.
+/// See [_dropLegacyUserFolderForeignKeys].
 /// Schema v15: mangas.rev + `deleted_mangas` tombstones (manga cloud sync) and
 /// `local_meta` (small key/value bookkeeping, e.g. user-folder snapshot sync).
 /// Schema v14: mangas.page_turn (nullable per-manga page-turn override).
@@ -49,7 +53,10 @@ class LibraryDatabase {
   ///
   /// v15→v16: a manga series stopped being a table and became the
   /// `mangas.series` tag (the album model). See [_ensureMangaSeriesTag].
-  static const schemaVersion = 16;
+  /// v16→v17: user-folder tables lost their (never-enforced) FK clauses so
+  /// the DDL stops contradicting the root sentinel `folder_id = 'root'`.
+  /// See [_dropLegacyUserFolderForeignKeys].
+  static const schemaVersion = 17;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -243,14 +250,14 @@ CREATE TABLE IF NOT EXISTS sync_state (
 
   /// Local-only folder overlay (99 §18). Idempotent; safe on every open.
   Future<void> _ensureUserFolderTables(Database db) async {
+    await _dropLegacyUserFolderForeignKeys(db);
     await db.execute('''
 CREATE TABLE IF NOT EXISTS user_folders (
   id TEXT PRIMARY KEY,
   parent_id TEXT,
   name TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  FOREIGN KEY(parent_id) REFERENCES user_folders(id) ON DELETE CASCADE
+  created_at TEXT NOT NULL
 )
 ''');
     await db.execute('''
@@ -260,8 +267,7 @@ CREATE TABLE IF NOT EXISTS user_folder_items (
   ref_key TEXT NOT NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
   added_at TEXT NOT NULL,
-  PRIMARY KEY(folder_id, ref_kind, ref_key),
-  FOREIGN KEY(folder_id) REFERENCES user_folders(id) ON DELETE CASCADE
+  PRIMARY KEY(folder_id, ref_kind, ref_key)
 )
 ''');
     await db.execute(
@@ -272,6 +278,66 @@ CREATE TABLE IF NOT EXISTS user_folder_items (
       'CREATE INDEX IF NOT EXISTS idx_user_folder_items_folder '
       'ON user_folder_items(folder_id)',
     );
+  }
+
+  /// v17: rebuild the user-folder tables without their `FOREIGN KEY` clauses.
+  ///
+  /// The clauses were never enforced — `PRAGMA foreign_keys` is off repo-wide
+  /// (see [deleteUserFolder]'s manual child-first walk) — yet they described an
+  /// invariant the product does not keep: a leaf ref may hang off the virtual
+  /// root, which has no `user_folders` row, so `folder_id` is `'root'` there.
+  /// Rebuilding is the only way to drop a constraint in SQLite.
+  ///
+  /// Idempotent: once rebuilt, `PRAGMA foreign_key_list` returns nothing and
+  /// this is a no-op. Items go first — while `user_folder_items` still carries
+  /// an FK at `user_folders`, renaming the latter would rewrite the former.
+  Future<void> _dropLegacyUserFolderForeignKeys(Database db) async {
+    final itemFks = await db.rawQuery(
+      'PRAGMA foreign_key_list(user_folder_items)',
+    );
+    if (itemFks.isNotEmpty) {
+      await db.execute('''
+CREATE TABLE IF NOT EXISTS user_folder_items_v17 (
+  folder_id TEXT NOT NULL,
+  ref_kind TEXT NOT NULL,
+  ref_key TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  added_at TEXT NOT NULL,
+  PRIMARY KEY(folder_id, ref_kind, ref_key)
+)
+''');
+      await db.execute('''
+INSERT OR REPLACE INTO user_folder_items_v17
+  (folder_id, ref_kind, ref_key, sort_order, added_at)
+SELECT folder_id, ref_kind, ref_key, sort_order, added_at
+  FROM user_folder_items
+''');
+      await db.execute('DROP TABLE user_folder_items');
+      await db.execute(
+        'ALTER TABLE user_folder_items_v17 RENAME TO user_folder_items',
+      );
+    }
+    final folderFks = await db.rawQuery(
+      'PRAGMA foreign_key_list(user_folders)',
+    );
+    if (folderFks.isNotEmpty) {
+      await db.execute('''
+CREATE TABLE IF NOT EXISTS user_folders_v17 (
+  id TEXT PRIMARY KEY,
+  parent_id TEXT,
+  name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+)
+''');
+      await db.execute('''
+INSERT OR REPLACE INTO user_folders_v17
+  (id, parent_id, name, sort_order, created_at)
+SELECT id, parent_id, name, sort_order, created_at FROM user_folders
+''');
+      await db.execute('DROP TABLE user_folders');
+      await db.execute('ALTER TABLE user_folders_v17 RENAME TO user_folders');
+    }
   }
 
   /// Manga library tables (99 §19). Idempotent; safe on every open.

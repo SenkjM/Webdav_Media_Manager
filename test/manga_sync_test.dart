@@ -264,10 +264,22 @@ void main() {
       final doc = decodeUserFoldersDoc(bytes)!;
       expect(doc.updatedAt, t);
       expect((doc.snapshot['folders'] as List).single['name'], '收藏');
+      expect(doc.formatVersion, userFoldersFormatVersion);
       expect(
         decodeUserFoldersDoc(Uint8List.fromList(utf8.encode('{}'))),
         isNull,
       );
+    });
+
+    test('a file without formatVersion reads as v1', () {
+      final legacy = Uint8List.fromList(
+        utf8.encode(
+          '{"format":"$userFoldersFormat","updatedAt":"$t","folders":[],"items":[]}',
+        ),
+      );
+      final doc = decodeUserFoldersDoc(legacy)!;
+      expect(doc.formatVersion, 1);
+      expect(doc.updatedAt, t);
     });
   });
 

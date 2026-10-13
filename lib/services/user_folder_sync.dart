@@ -43,26 +43,43 @@ FolderSyncAction planFolderSync({
 const String userFoldersFormat = 'wmp_user_folders';
 const String userFoldersFileName = 'folders.json';
 
+/// 1: folders + items. 2: `user_folder_items.folder_id` may be `root`
+/// ([kUserFolderRootId]), meaning a ref that hangs off the virtual root
+/// 「我的文件夹」 (no `user_folders` row).
+///
+/// Readers ignore it — [decodeUserFoldersDoc] only checks [userFoldersFormat] —
+/// so a v1 client still round-trips v2 rows. It exists so a newer writer can
+/// tell that the cloud copy came from a client it should not overwrite.
+const int userFoldersFormatVersion = 2;
+
 /// Decoded `folders.json`.
 class UserFoldersDoc {
-  const UserFoldersDoc({required this.updatedAt, required this.snapshot});
+  const UserFoldersDoc({
+    required this.updatedAt,
+    required this.snapshot,
+    this.formatVersion = 1,
+  });
 
   /// ISO-8601 UTC stamp written by the device that pushed it.
   final String updatedAt;
 
   /// `{folders: [...], items: [...]}` rows, as [LibraryDatabase] exports them.
   final Map<String, dynamic> snapshot;
+
+  /// Writer's [userFoldersFormatVersion]; 1 for files predating the field.
+  final int formatVersion;
 }
 
 Uint8List encodeUserFoldersDoc({
   required Map<String, dynamic> snapshot,
   required String updatedAt,
   required String deviceId,
+  int formatVersion = userFoldersFormatVersion,
 }) => Uint8List.fromList(
   utf8.encode(
     const JsonEncoder.withIndent('  ').convert({
       'format': userFoldersFormat,
-      'formatVersion': 1,
+      'formatVersion': formatVersion,
       'deviceId': deviceId,
       'updatedAt': updatedAt,
       'folders': snapshot['folders'] ?? const [],
@@ -76,6 +93,7 @@ UserFoldersDoc? decodeUserFoldersDoc(Uint8List bytes) {
   if (decoded is! Map || decoded['format'] != userFoldersFormat) return null;
   return UserFoldersDoc(
     updatedAt: decoded['updatedAt'] as String? ?? '',
+    formatVersion: (decoded['formatVersion'] as num?)?.toInt() ?? 1,
     snapshot: {
       'folders': decoded['folders'] as List<dynamic>? ?? const [],
       'items': decoded['items'] as List<dynamic>? ?? const [],

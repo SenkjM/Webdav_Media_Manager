@@ -9,6 +9,9 @@ import 'library_database.dart';
 /// Local-only user folder tree overlay (99 §18).
 ///
 /// Does not own track identity — membership is soft refs into library groups.
+///
+/// A ref whose [UserFolderItem.folderId] is [kUserFolderRootId] hangs off the
+/// virtual root 「我的文件夹」, which has no `user_folders` row.
 class UserFolderService extends ChangeNotifier {
   UserFolderService({required LibraryDatabase db}) : _db = db;
 
@@ -73,10 +76,10 @@ class UserFolderService extends ChangeNotifier {
   }
 
   /// Path segments from virtual root to [folderId] (names only).
-  /// Empty [folderId] / unknown → just the virtual root.
+  /// [kUserFolderRootId] / unknown → just the virtual root.
   List<String> pathNames(String? folderId) {
     final names = <String>[kMyFoldersRootName];
-    if (folderId == null || folderId.isEmpty) return names;
+    if (folderId == null || folderId == kUserFolderRootId) return names;
     final chain = <UserFolder>[];
     var id = folderId;
     final guard = <String>{};
@@ -152,7 +155,10 @@ class UserFolderService extends ChangeNotifier {
     required Iterable<String> refKeys,
   }) async {
     if (!UserFolderRefKind.isKnown(refKind)) return 0;
-    if (folderById(folderId) == null) return 0;
+    // The virtual root is a legal home for a ref.
+    if (folderId != kUserFolderRootId && folderById(folderId) == null) {
+      return 0;
+    }
     var added = 0;
     final existing = {
       for (final i in _items)
@@ -234,6 +240,50 @@ class UserFolderService extends ChangeNotifier {
     return true;
   }
 
+  /// Copy [folderId] and its whole subtree under [newParentId].
+  ///
+  /// Returns the id of the new root folder, or null when the copy is
+  /// refused (unknown source, or a target inside the source subtree — the
+  /// twin would have to be created inside the folder it is copying).
+  ///
+  /// [name] overrides the twin root only; descendants keep their own names.
+  /// Refs travel as reference copies, so the two trees stay independent.
+  Future<String?> copyFolder(
+    String folderId, {
+    String? newParentId,
+    String? name,
+  }) async {
+    if (folderId.isEmpty) return null;
+    if (newParentId != null && descendantIds(folderId).contains(newParentId)) {
+      return null;
+    }
+    final source = folderById(folderId);
+    if (source == null) return null;
+
+    final wanted = name?.trim() ?? '';
+    String? newRootId;
+    // Breadth-first, so a twin's parent always exists before the twin.
+    final pending = <(UserFolder, String?, String)>[
+      (source, newParentId, wanted.isEmpty ? source.name : wanted),
+    ];
+    for (var head = 0; head < pending.length; head++) {
+      final (folder, parentId, folderName) = pending[head];
+      final twin = await createFolder(parentId: parentId, name: folderName);
+      newRootId ??= twin.id;
+      for (final item in itemsIn(folder.id)) {
+        await addRefs(
+          folderId: twin.id,
+          refKind: item.refKind,
+          refKeys: [item.refKey],
+        );
+      }
+      for (final child in childrenOf(folder.id)) {
+        pending.add((child, twin.id, child.name));
+      }
+    }
+    return newRootId;
+  }
+
   /// Move soft-ref to another folder (delete+add).
   Future<bool> moveRef({
     required String fromFolderId,
@@ -242,7 +292,9 @@ class UserFolderService extends ChangeNotifier {
     required String refKey,
   }) async {
     if (fromFolderId == toFolderId) return true;
-    if (folderById(toFolderId) == null) return false;
+    if (toFolderId != kUserFolderRootId && folderById(toFolderId) == null) {
+      return false;
+    }
     await removeRef(folderId: fromFolderId, refKind: refKind, refKey: refKey);
     final n = await addRefs(
       folderId: toFolderId,

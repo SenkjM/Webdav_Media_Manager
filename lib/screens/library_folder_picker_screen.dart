@@ -7,19 +7,26 @@ import '../services/user_folder_service.dart';
 
 /// Destination picker for user folders. Defaults to virtual root 「我的文件夹」.
 ///
-/// Returns the selected folder id, or `''` for the virtual root (callers that
-/// need a real folder should create under root first). Cancel → null.
+/// Returns the selected folder id, or [kUserFolderRootId] for the virtual root.
+/// Cancel → null. The root is confirmable only when the caller opts in with
+/// [allowRoot]; callers that store refs pass true.
 class LibraryFolderPickerScreen extends StatefulWidget {
   const LibraryFolderPickerScreen({
     super.key,
     required this.purpose,
     this.initialFolderId,
-    this.excludedFolderId,
+    this.excludedFolderIds = const {},
+    this.allowRoot = false,
   });
 
   final String purpose;
   final String? initialFolderId;
-  final String? excludedFolderId;
+
+  /// Unpickable folders: each one together with its whole subtree.
+  final Set<String> excludedFolderIds;
+
+  /// Whether the virtual root is a legal answer (`''`).
+  final bool allowRoot;
 
   @override
   State<LibraryFolderPickerScreen> createState() =>
@@ -91,14 +98,13 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
   }
 
   bool _isExcluded(String? id) {
-    final ex = widget.excludedFolderId;
-    if (ex == null || id == null) return false;
-    if (id == ex) return true;
+    final ex = widget.excludedFolderIds;
+    if (ex.isEmpty || id == null) return false;
     final folders = context.read<UserFolderService>();
     var cur = folders.folderById(id);
     final guard = <String>{};
     while (cur != null && guard.add(cur.id)) {
-      if (cur.id == ex) return true;
+      if (ex.contains(cur.id)) return true;
       cur = cur.parentId == null ? null : folders.folderById(cur.parentId!);
     }
     return false;
@@ -130,9 +136,9 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
     );
     if (name == null || !mounted) return;
     final folder = await context.read<UserFolderService>().createFolder(
-          parentId: _currentId,
-          name: name.isEmpty ? l10n.newFolderDefaultName : name,
-        );
+      parentId: _currentId,
+      name: name.isEmpty ? l10n.newFolderDefaultName : name,
+    );
     setState(() => _stack.add(folder.id));
   }
 
@@ -156,7 +162,8 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
     // Virtual root cannot hold items — confirm only when inside a real folder,
     // or allow confirming root and let caller create. Product: leaf holds items;
     // picker may confirm any real folder (including empty).
-    final canConfirm = _currentId != null && !excludedHere;
+    final canConfirm =
+        (_currentId != null || widget.allowRoot) && !excludedHere;
 
     return PopScope(
       canPop: _stack.length <= 1,
@@ -189,7 +196,9 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
             ),
             TextButton(
               onPressed: canConfirm
-                  ? () => Navigator.of(context).pop(_currentId)
+                  ? () =>
+                        Navigator.of(context)
+                            .pop(_currentId ?? kUserFolderRootId)
                   : null,
               child: Text(l10n.confirm),
             ),
@@ -202,24 +211,22 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
               padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest
                       .withValues(alpha: 0.55),
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DefaultTextStyle.merge(
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                            fontSize: 12,
-                          ),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
                       child: Text(path),
                     ),
                   ),
@@ -264,9 +271,7 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
                                 subtitle: Text(folders.pathDisplay(f.id)),
                                 trailing: const Icon(Icons.chevron_right),
                                 enabled: !blocked,
-                                onTap: blocked
-                                    ? null
-                                    : () => _jumpTo(f.id),
+                                onTap: blocked ? null : () => _jumpTo(f.id),
                               );
                             },
                           ))
@@ -288,10 +293,8 @@ class _LibraryFolderPickerScreenState extends State<LibraryFolderPickerScreen> {
                           leading: Icon(
                             Icons.folder_outlined,
                             color: blocked
-                                ? Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.38)
+                                ? Theme.of(context).colorScheme.onSurface
+                                      .withValues(alpha: 0.38)
                                 : null,
                           ),
                           title: Text(f.name),

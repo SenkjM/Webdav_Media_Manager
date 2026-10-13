@@ -111,6 +111,84 @@ void main() {
     expect(svc.itemsIn(folder.id), hasLength(4));
   });
 
+  test('refs can hang off the virtual root', () async {
+    final db = _MemDb();
+    final svc = UserFolderService(db: db);
+    await svc.init();
+    expect(
+      await svc.addRefs(
+        folderId: kUserFolderRootId,
+        refKind: UserFolderRefKind.album,
+        refKeys: ['A'],
+      ),
+      1,
+    );
+    expect(svc.itemsIn(kUserFolderRootId), hasLength(1));
+    expect(svc.itemsIn(kUserFolderRootId).single.folderId, kUserFolderRootId);
+  });
+
+  test('a ref can move to the virtual root and back', () async {
+    final db = _MemDb();
+    final svc = UserFolderService(db: db);
+    await svc.init();
+    final folder = await svc.createFolder(name: '收藏');
+    await svc.addRefs(
+      folderId: folder.id,
+      refKind: UserFolderRefKind.album,
+      refKeys: ['A'],
+    );
+    expect(
+      await svc.moveRef(
+        fromFolderId: folder.id,
+        toFolderId: kUserFolderRootId,
+        refKind: UserFolderRefKind.album,
+        refKey: 'A',
+      ),
+      isTrue,
+    );
+    expect(svc.itemsIn(kUserFolderRootId), hasLength(1));
+    expect(svc.itemsIn(folder.id), isEmpty);
+    expect(
+      await svc.moveRef(
+        fromFolderId: kUserFolderRootId,
+        toFolderId: folder.id,
+        refKind: UserFolderRefKind.album,
+        refKey: 'A',
+      ),
+      isTrue,
+    );
+    expect(svc.itemsIn(folder.id), hasLength(1));
+  });
+
+  test('refs still refuse an unknown folder id', () async {
+    final db = _MemDb();
+    final svc = UserFolderService(db: db);
+    await svc.init();
+    expect(
+      await svc.addRefs(
+        folderId: 'nope',
+        refKind: UserFolderRefKind.album,
+        refKeys: ['A'],
+      ),
+      0,
+    );
+    final folder = await svc.createFolder(name: '收藏');
+    await svc.addRefs(
+      folderId: folder.id,
+      refKind: UserFolderRefKind.album,
+      refKeys: ['A'],
+    );
+    expect(
+      await svc.moveRef(
+        fromFolderId: folder.id,
+        toFolderId: 'nope',
+        refKind: UserFolderRefKind.album,
+        refKey: 'A',
+      ),
+      isFalse,
+    );
+  });
+
   test('LibraryTagDimension v1 registers album and artist only', () {
     expect(LibraryTagDimension.v1TagDimensions.map((d) => d.id).toList(), [
       UserFolderRefKind.album,
