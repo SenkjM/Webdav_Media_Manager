@@ -117,7 +117,7 @@ class PlaylistsScreen extends StatelessWidget {
           ),
         )
         .toList();
-    await showAddManyToPlaylistDialog(context, entries);
+    await showAddManyToPlaylistDialog(context, entries, navigateOnAdd: true);
   }
 
   Future<void> _create(BuildContext context) async {
@@ -334,10 +334,14 @@ class PlaylistsScreen extends StatelessWidget {
 }
 
 /// Dialog to pick a playlist (or create) and add [entry].
+///
+/// When [navigateOnAdd] is true, navigates into the selected playlist after
+/// adding (e.g. when called from the playlist list screen).
 Future<void> showAddToPlaylistDialog(
   BuildContext context,
-  PlaylistEntry entry,
-) async {
+  PlaylistEntry entry, {
+  bool navigateOnAdd = false,
+}) async {
   final service = context.read<PlaylistService>();
   final l10n = AppLocalizations.of(context)!;
   final choice = await showModalBottomSheet<String>(
@@ -374,6 +378,7 @@ Future<void> showAddToPlaylistDialog(
     },
   );
   if (choice == null || !context.mounted) return;
+  String playlistId;
   if (choice == '__new__') {
     final c = TextEditingController();
     final name = await showDialog<String>(
@@ -395,19 +400,33 @@ Future<void> showAddToPlaylistDialog(
     );
     if (name == null || !context.mounted) return;
     final pl = await service.create(name: name);
-    await service.addTrack(pl.id, entry);
+    playlistId = pl.id;
+    await service.addTrack(playlistId, entry);
   } else {
-    await service.addTrack(choice, entry);
+    playlistId = choice;
+    await service.addTrack(playlistId, entry);
   }
   if (!context.mounted) return;
-  AppSnack.show(context, l10n.playlistAdded);
+  if (navigateOnAdd) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlaylistDetailScreen(playlistId: playlistId),
+      ),
+    );
+  } else {
+    AppSnack.show(context, l10n.playlistAdded);
+  }
 }
 
 /// Add multiple entries to one playlist (or create).
+///
+/// When [navigateOnAdd] is true, navigates into the selected playlist after
+/// adding (e.g. when called from the playlist list screen).
 Future<void> showAddManyToPlaylistDialog(
   BuildContext context,
-  List<PlaylistEntry> entries,
-) async {
+  List<PlaylistEntry> entries, {
+  bool navigateOnAdd = false,
+}) async {
   if (entries.isEmpty) return;
   final service = context.read<PlaylistService>();
   final l10n = AppLocalizations.of(context)!;
@@ -473,5 +492,13 @@ Future<void> showAddManyToPlaylistDialog(
     await service.addTrack(playlistId, e);
   }
   if (!context.mounted) return;
-  AppSnack.show(context, l10n.playlistAddedMany(entries.length));
+  if (navigateOnAdd) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlaylistDetailScreen(playlistId: playlistId),
+      ),
+    );
+  } else {
+    AppSnack.show(context, l10n.playlistAddedMany(entries.length));
+  }
 }
