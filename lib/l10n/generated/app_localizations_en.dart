@@ -323,7 +323,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get downloadCancelled => 'Cancelled';
 
   @override
-  String get downloadAll => 'Download all';
+  String get downloadAll => 'Retry failed and cancelled';
 
   @override
   String get wakeWaiting => 'Wake waiting tasks';

@@ -1665,22 +1665,22 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_pump());
   }
 
-  /// Resume every non-completed task, resetting failed/cancelled rows.
+  /// Requeue failed and cancelled tasks. Pending rows keep their backoff;
+  /// skipping that wait is [downloadWaiting], which has no toolbar entry.
   Future<void> downloadAll() async {
     for (final task in _tasks) {
-      if (task.status == TaskStatus.failed ||
-          task.status == TaskStatus.cancelled) {
-        task.status = TaskStatus.pending;
-        task.errorMessage = null;
-        task.progress = 0;
-        task.bytesReceived = 0;
-        task.nextRetryAt = null;
-        task.attempts = 0;
-        _sessionIds.add(task.id);
-      } else if (task.status == TaskStatus.pending) {
-        task.nextRetryAt = null;
+      if (task.status != TaskStatus.failed &&
+          task.status != TaskStatus.cancelled) {
+        continue;
       }
-      if (task.status != TaskStatus.completed) await _store.upsert(task);
+      task.status = TaskStatus.pending;
+      task.errorMessage = null;
+      task.progress = 0;
+      task.bytesReceived = 0;
+      task.nextRetryAt = null;
+      task.attempts = 0;
+      _sessionIds.add(task.id);
+      await _store.upsert(task);
     }
     _wake?.complete();
     _wake = null;

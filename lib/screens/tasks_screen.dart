@@ -164,42 +164,42 @@ class TasksScreen extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: l10n.downloadAll,
-            onPressed: tasks.any((t) => t.status != TaskStatus.completed)
+            onPressed: tasks.any(
+              (t) =>
+                  t.status == TaskStatus.failed ||
+                  t.status == TaskStatus.cancelled,
+            )
                 ? () => queue.downloadAll()
                 : null,
-            icon: const Icon(Icons.download_for_offline_outlined),
+            icon: const Icon(Icons.refresh),
           ),
           IconButton(
-            tooltip: l10n.wakeWaiting,
-            onPressed: tasks.any((t) => t.status == TaskStatus.pending)
-                ? () => queue.downloadWaiting()
-                : null,
-            icon: const Icon(Icons.playlist_play),
-          ),
-          IconButton(
-            tooltip: l10n.cancelAll,
-            onPressed:
-                tasks.any(
-                  (t) =>
-                      t.status == TaskStatus.active ||
-                      t.status == TaskStatus.pending,
-                )
-                ? () => queue.cancelAll()
-                : null,
-            icon: const Icon(Icons.stop_circle_outlined),
-          ),
-          TextButton(
+            tooltip: l10n.clearCompleted,
             onPressed: tasks.any((t) => t.status == TaskStatus.completed)
                 ? () => queue.clearCompleted()
                 : null,
-            child: Text(l10n.clearCompleted),
+            icon: const Icon(Icons.playlist_remove_outlined),
           ),
           PopupMenuButton<String>(
             tooltip: l10n.more,
             onSelected: (v) {
-              if (v == 'clear_all') _confirmClearAll(context, queue, tasks);
+              switch (v) {
+                case 'cancel_all':
+                  queue.cancelAll();
+                case 'clear_all':
+                  _confirmClearAll(context, queue, tasks);
+              }
             },
             itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'cancel_all',
+                enabled: tasks.any(
+                  (t) =>
+                      t.status == TaskStatus.active ||
+                      t.status == TaskStatus.pending,
+                ),
+                child: Text(l10n.cancelAll),
+              ),
               PopupMenuItem(
                 value: 'clear_all',
                 enabled: tasks.isNotEmpty,

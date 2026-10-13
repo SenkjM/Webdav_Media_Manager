@@ -100,7 +100,7 @@
   "downloadCompleted": "Completed",
   "downloadFailed": "Failed",
   "downloadCancelled": "Cancelled",
-  "downloadAll": "Download all",
+  "downloadAll": "Retry failed and cancelled",
   "wakeWaiting": "Wake waiting tasks",
   "cancelAll": "Cancel all",
   "clearCompleted": "Clear completed",

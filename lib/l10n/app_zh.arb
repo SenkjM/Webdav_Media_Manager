@@ -100,7 +100,7 @@
   "downloadCompleted": "已完成",
   "downloadFailed": "失败",
   "downloadCancelled": "已取消",
-  "downloadAll": "全部下载",
+  "downloadAll": "重试失败与已取消",
   "wakeWaiting": "唤醒等待中任务",
   "cancelAll": "全部取消",
   "clearCompleted": "清除已完成",

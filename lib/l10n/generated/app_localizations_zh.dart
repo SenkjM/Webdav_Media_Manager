@@ -317,7 +317,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadCancelled => '已取消';
 
   @override
-  String get downloadAll => '全部下载';
+  String get downloadAll => '重试失败与已取消';
 
   @override
   String get wakeWaiting => '唤醒等待中任务';
@@ -5089,7 +5089,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get downloadCancelled => '已取消';
 
   @override
-  String get downloadAll => '全部下載';
+  String get downloadAll => '重試失敗與已取消';
 
   @override
   String get wakeWaiting => '喚醒等待中的工作';

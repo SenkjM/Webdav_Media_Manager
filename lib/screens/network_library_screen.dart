@@ -590,7 +590,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     // Show loading while fetching/parsing — do NOT enqueue downloads yet.
-    showDialog<void>(
+    final loadingDialog = showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
@@ -609,6 +609,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // close loading
+      // Do not stack the preview sheet on a dialog still in its pop animation.
+      await loadingDialog;
+      if (!mounted) return;
       if (sheet == null) {
         AppSnack.show(context, AppLocalizations.of(context)!.dlErrCueMalformed);
         return;
@@ -617,6 +620,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
+      await loadingDialog;
+      if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
       AppSnack.show(
         context,

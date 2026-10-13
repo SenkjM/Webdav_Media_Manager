@@ -1666,7 +1666,7 @@ Future<void> openMangaReader(
   final cacheFirst =
       forceFullCache ?? (settings.mangaReadMode == MangaReadMode.cache);
 
-  showDialog<void>(
+  final preparingDialog = showDialog<void>(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => PopScope(
@@ -1693,8 +1693,13 @@ Future<void> openMangaReader(
       forceFullCache: cacheFirst,
     );
     if (!context.mounted) return;
-    Navigator.of(context, rootNavigator: true).pop(); // dialog
-    await Navigator.of(context, rootNavigator: true).push(
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    rootNav.pop(); // dialog
+    // Wait for the dialog route to leave the stack before opening the reader.
+    // Otherwise it can remain invisibly beneath the reader and consume a back.
+    await preparingDialog;
+    if (!context.mounted) return;
+    await rootNav.push(
       MaterialPageRoute(
         builder: (_) => ImageViewerScreen.pages(
           accountId: accountId,
@@ -1711,6 +1716,8 @@ Future<void> openMangaReader(
   } on MangaReaderPrepareException catch (e) {
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
+    await preparingDialog;
+    if (!context.mounted) return;
     if (e.kind == MangaReaderPrepareError.rangeUnsupported) {
       // Streaming failed: say so, and offer to make caching the default so
       // the next open does not stall on the same probe again.
@@ -1754,6 +1761,8 @@ Future<void> openMangaReader(
   } catch (e) {
     if (!context.mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
+    await preparingDialog;
+    if (!context.mounted) return;
     AppSnack.error(context, e.toString());
   }
 }

@@ -702,7 +702,7 @@ abstract class AppLocalizations {
   /// No description provided for @downloadAll.
   ///
   /// In zh, this message translates to:
-  /// **'全部下载'**
+  /// **'重试失败与已取消'**
   String get downloadAll;
 
   /// No description provided for @wakeWaiting.

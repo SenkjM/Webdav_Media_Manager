@@ -138,19 +138,23 @@ class _HomeShellState extends State<HomeShell> {
           canPop: false,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
-            // A tab root that navigates internally (network library directory
-            // stack, multi-select) gets first refusal.
-            if (BackHandlerRegistry.tryHandleBack()) return;
-            final nav = _activeNavKey?.currentState;
-            if (nav != null && nav.canPop()) {
-              nav.pop();
-              return;
-            }
+            // A route already visible above the shell always wins. Dialogs use
+            // the root navigator by default, while sheets and popup menus use
+            // the active tab navigator. Do not let a tab's virtual back stack
+            // consume a return intended to dismiss either one.
             final rootNav = Navigator.of(context, rootNavigator: true);
             if (rootNav.canPop()) {
               rootNav.pop();
               return;
             }
+            final nav = _activeNavKey?.currentState;
+            if (nav != null && nav.canPop()) {
+              nav.pop();
+              return;
+            }
+            // No real foreground route: a tab root that navigates internally
+            // (network-library directory stack, multi-select) gets next refusal.
+            if (BackHandlerRegistry.tryHandleBack()) return;
             // Not on the configured home tab → return to it instead of exiting.
             final home = context.read<SettingsService>().homeTab;
             if (_index != home) {
