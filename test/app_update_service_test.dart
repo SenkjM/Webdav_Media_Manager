@@ -57,7 +57,7 @@ void main() {
     expect(AppUpdateService.githubUrl(UpdateChannel.preview), contains('per_page=1'));
     expect(
       AppUpdateService.githubUrl(UpdateChannel.stable),
-      contains('SenkjM/Webav_Media_Manager/releases'),
+      contains('SenkjM/Webdav_Media_Manager/releases'),
     );
   });
 
