@@ -1591,6 +1591,8 @@
     "updateNoCompatibleApk": "此版本没有适用于当前设备架构的安装包。",
     "updateUnsupported": "仅正式版 Android 应用支持应用内更新。",
     "updateFailed": "更新失败：{error}",
+    "aboutUpdateChannelStable": "正式版",
+    "aboutUpdateChannelPreview": "预览版",
     "aboutUpdateCheck": "检查更新",
     "aboutUpdateChecking": "正在检查更新",
     "aboutUpdateCheckingBody": "正在读取 GitHub 正式版信息。",

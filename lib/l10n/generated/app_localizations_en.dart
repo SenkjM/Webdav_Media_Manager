@@ -5059,6 +5059,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get aboutUpdateChannelStable => 'Stable';
+
+  @override
+  String get aboutUpdateChannelPreview => 'Preview';
+
+  @override
   String get aboutUpdateCheck => 'Check for updates';
 
   @override

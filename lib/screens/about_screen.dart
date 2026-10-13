@@ -80,7 +80,7 @@ class _AboutScreenState extends State<AboutScreen> {
             barrierDismissible: false,
             builder: (ctx) => AlertDialog(
               title: Text(
-                l10n.updateAvailableTitle(release.version.toString()),
+                '${l10n.updateAvailableTitle(release.version.toString())} (${release.isPrerelease ? l10n.aboutUpdateChannelPreview : l10n.aboutUpdateChannelStable})',
               ),
               content: SingleChildScrollView(
                 child: Text(

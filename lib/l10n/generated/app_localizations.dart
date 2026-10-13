@@ -8548,6 +8548,18 @@ abstract class AppLocalizations {
   /// **'更新失败：{error}'**
   String updateFailed(Object error);
 
+  /// No description provided for @aboutUpdateChannelStable.
+  ///
+  /// In zh, this message translates to:
+  /// **'正式版'**
+  String get aboutUpdateChannelStable;
+
+  /// No description provided for @aboutUpdateChannelPreview.
+  ///
+  /// In zh, this message translates to:
+  /// **'预览版'**
+  String get aboutUpdateChannelPreview;
+
   /// No description provided for @aboutUpdateCheck.
   ///
   /// In zh, this message translates to:

@@ -1571,6 +1571,8 @@
     "updateNoCompatibleApk": "This release has no APK for this device architecture.",
     "updateUnsupported": "In-app updates are available only in the production Android app.",
     "updateFailed": "Update failed: {error}",
+    "aboutUpdateChannelStable": "Stable",
+    "aboutUpdateChannelPreview": "Preview",
     "aboutUpdateCheck": "Check for updates",
     "aboutUpdateChecking": "Checking for updates",
     "aboutUpdateCheckingBody": "Reading the latest stable release from GitHub.",

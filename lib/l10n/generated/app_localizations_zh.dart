@@ -4830,6 +4830,12 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get aboutUpdateChannelStable => '正式版';
+
+  @override
+  String get aboutUpdateChannelPreview => '预览版';
+
+  @override
   String get aboutUpdateCheck => '检查更新';
 
   @override
@@ -9696,6 +9702,12 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String updateFailed(Object error) {
     return '更新失敗：$error';
   }
+
+  @override
+  String get aboutUpdateChannelStable => '正式版';
+
+  @override
+  String get aboutUpdateChannelPreview => '預覽版';
 
   @override
   String get aboutUpdateCheck => '檢查更新';

@@ -10,6 +10,23 @@ void main() {
     expect(AppVersion.parse('0.2.4').compareTo(AppVersion.parse('v0.2.4')), 0);
   });
 
+  test(
+    'skips unparsable release tags such as the legacy rolling prerelease',
+    () {
+      expect(
+        UpdateRelease.tryParse({'tag_name': 'prerelease', 'assets': []}),
+        isNull,
+      );
+      final ok = UpdateRelease.tryParse({
+        'tag_name': 'v0.2.5-2050001',
+        'prerelease': true,
+        'assets': [],
+      })!;
+      expect(ok.isPrerelease, isTrue);
+      expect(ok.buildCode, 2050001);
+    },
+  );
+
   test('prefers an exact ABI APK then the universal arm APK', () {
     const arm = UpdateAsset(
       name: 'app-arm.apk',
@@ -32,6 +49,7 @@ void main() {
       notes: '',
       assets: [arm, arm64, x64],
       buildCode: 100000000,
+      isPrerelease: false,
     );
     expect(release.pickApk(const ['arm64-v8a']), same(arm64));
     expect(release.pickApk(const ['armeabi-v7a']), same(arm));

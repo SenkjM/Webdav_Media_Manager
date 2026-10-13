@@ -42,10 +42,16 @@ class AppUpdateService {
     );
     final raw = response.data;
     if (raw == null || raw.isEmpty) throw StateError('Empty release response');
-    final releases = [
-      for (final item in jsonDecode(raw) as List<dynamic>)
-        UpdateRelease.fromJson(item as Map<String, dynamic>),
-    ];
+    // Skip releases that cannot be parsed (e.g. the legacy rolling tag
+    // named "prerelease", drafts, or tags that are not vX.Y.Z[-code]); one bad
+    // entry must not break the whole check.
+    final releases = <UpdateRelease>[];
+    for (final item in jsonDecode(raw) as List<dynamic>) {
+      if (item is! Map<String, dynamic> || item['draft'] == true) continue;
+      final release = UpdateRelease.tryParse(item);
+      if (release != null) releases.add(release);
+    }
+    if (releases.isEmpty) throw StateError('No parsable release found');
     final compatible = <(UpdateRelease release, UpdateAsset asset)>[
       for (final release in releases)
         if (release.pickApk(native.abis) case final asset?) (release, asset),
@@ -151,7 +157,16 @@ class UpdateRelease {
     required this.notes,
     required this.assets,
     required this.buildCode,
+    required this.isPrerelease,
   });
+  static UpdateRelease? tryParse(Map<String, dynamic> json) {
+    try {
+      return UpdateRelease.fromJson(json);
+    } on FormatException {
+      return null;
+    }
+  }
+
   factory UpdateRelease.fromJson(Map<String, dynamic> json) {
     final tag = json['tag_name'] as String? ?? '';
     final version = AppVersion.parse(tag);
@@ -165,6 +180,7 @@ class UpdateRelease {
           UpdateAsset.fromJson(value as Map<String, dynamic>),
       ],
       buildCode: int.tryParse(encodedCode ?? '') ?? version.releaseBuildCode,
+      isPrerelease: json['prerelease'] == true,
     );
   }
   final AppVersion version;
@@ -172,6 +188,7 @@ class UpdateRelease {
   final String notes;
   final List<UpdateAsset> assets;
   final int buildCode;
+  final bool isPrerelease;
   UpdateAsset? pickApk(List<String> abis) {
     final apkAssets = assets.where(
       (e) => e.name.toLowerCase().endsWith('.apk'),

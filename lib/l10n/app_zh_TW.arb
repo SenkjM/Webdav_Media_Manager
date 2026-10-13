@@ -1560,6 +1560,8 @@
     "updateNoCompatibleApk": "此版本沒有適用於目前裝置架構的安裝檔。",
     "updateUnsupported": "只有正式版 Android 應用程式支援應用程式內更新。",
     "updateFailed": "更新失敗：{error}",
+    "aboutUpdateChannelStable": "正式版",
+    "aboutUpdateChannelPreview": "預覽版",
     "aboutUpdateCheck": "檢查更新",
     "aboutUpdateChecking": "正在檢查更新",
     "aboutUpdateCheckingBody": "正在讀取 GitHub 正式版資訊。",
