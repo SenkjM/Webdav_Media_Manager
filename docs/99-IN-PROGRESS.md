@@ -1418,3 +1418,12 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - **重新扫描此本（丙的核心）**：散图书的行尾「⋮」新增一项，走 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目录后入队一个带 `targetMangaId` 的 merged 建立任务；`_runMangaBuild` 见到目标 id 就改走 `MangaLibraryService.rescanLoose`——**就地替换页表**（bump rev）并更新 `remote_path` / `page_count` / `cover_relpath`，id、阅读进度与手工元数据全部保留。没有目标 id 时照旧新建（分配新 uuid）。
 - **重复建立的现状**：容器入口（`_scanComicContainers` / `_ingestComicSelection`）仍无条件入队一次刮削；`_ingestComicFile` 先查库，命中直接打开（见 [19.16](#1916-网络库漫画单文件加入之后就是打开2026-10-13)）。散图的两个建立入口（合并 / 每目录）都从网络库出发，见 [19.15](#1915-扫描刮削与整包缓存改入任务队列2026-10-13)。
 - **测试**：`test/manga_library_test.dart` 的 `_MemMangaDb` 去重规则改成「按 id 去重；`(源, 路径)` 只在两行都不是散图时去重」，与 v18 同形；补了「同一目录两次建立得到两本」「`rescanLoose` 保留元数据」的断言。
+
+### 19.21 上传与散图物化（2026-10-13）
+
+用户规范：「上传暂时只考虑 WebDAV（云盘不管）；用任务列表管理；物化 CBZ 拆成两个任务（先打包再上传）；网络库『新建文件夹』改成加号，展开为『新建文件夹』+『上传』；用安卓系统文件选择器（SAF）而不是申请全部文件权限」。
+
+- **上传**：`TaskKind.upload`（storage `upload`）+ `enqueueUpload({sourceName, remotePath, displayName, localPath})`（`progressMode: bytes`）+ `_runUpload`。传输层是 `WebDavService.writeFromFile`（`lib/services/webdav_service.dart`）：从磁盘流式读、逐块报进度、吃 `CancelToken`，所以几百 MB 的包不会先进内存；`CloudDriveService.writeFromFile` 直接抛 `err.cloudWriteDisabled`——云盘没有上传原语。**成功后删本地副本，失败保留**，重试才有东西可发。
+- **入口**：网络库右上角原来那个新建文件夹的 `IconButton` 换成 `PopupMenuButton`（`Icons.add`），两项——「新建文件夹」（`_canCreateFolder`）与「上传」（`_canUpload`：`providerType == 'webdav'` 且账号带 `AccountCaps.write`）。`_uploadFile()` 调 `PlatformExportService().pickFile()`；SAF 返回的 `PickedFile.path` 是**应用缓存里的副本**，天然就是「传完即删」的临时件。manifest 里没有 `MANAGE_EXTERNAL_STORAGE`，走 SAF 是唯一不申请全盘权限的路。
+- **散图物化（打包）**：`TaskKind.mangaPack`（storage `manga_pack`）+ `enqueueMangaPack({sourceName, mangaId, remotePath, displayName})` + `_runMangaPack`。**刻意拆成两条任务**：打包与上传各占行、各有各的进度。打包把页逐张下到同一个临时文件、再用 `ZipFileEncoder.addFile` 流进归档（峰值磁盘一页、峰值内存一个缓冲），条目名带 5 位序号前缀 `00001_原名`，同时保证页序与「两个源目录里有同名文件」时的唯一性；成功后自动 `enqueueUpload`，归档本身由上传任务负责删。
+- **入口**：散图书的行尾「⋮」新增「物化为 CBZ」——先 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目标目录，再填文件名（默认取书名，`\ / : * ? " < > |` 替换成 `_`）。**这里刻意不用 `TextEditingController`**：对话框 pop 之后路由还在播退场动画，随手 `dispose()` 会在 `_dependents.isEmpty` 上炸（与批量改系列名那次同一个坑），所以改用 `TextFormField(initialValue:)` + 局部变量。
