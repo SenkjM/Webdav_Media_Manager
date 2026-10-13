@@ -28,6 +28,7 @@ import 'library_service.dart';
 import '../utils/batch_outcome.dart';
 import '../models/manga_page.dart';
 import '../models/manga.dart';
+import '../models/manga_build.dart';
 import 'manga_library_service.dart';
 import '../utils/cbz_range_zip.dart';
 import 'playlist_service.dart';
@@ -43,6 +44,7 @@ import 'stream_cover_reader.dart';
 import 'tag_service.dart';
 import '../models/webdav_stream.dart';
 import '../utils/directory_walk.dart';
+import '../utils/manga_scan_walk.dart';
 import '../utils/scan_candidates.dart';
 
 import 'package:flutter/foundation.dart';
@@ -533,6 +535,52 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         for (final e in raw)
           if (e is Map) ScanPathEntry.fromJson(Map<String, dynamic>.from(e)),
       ];
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Enqueue a loose-image build for one folder.
+  ///
+  /// The folder is listed by [_runMangaBuild], never by the caller, so the UI
+  /// can enqueue and return without a recursive walk.
+  Future<QueueTask> enqueueMangaBuild(MangaBuildPayload payload) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: payload.sourceName,
+      remotePath: payload.remotePath,
+      fileName: payload.folderName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.mangaBuild,
+      progressMode: TaskProgressMode.units,
+      unitsTotal: null,
+      unitsDone: 0,
+    );
+    final file = await _mangaBuildPayloadFile(task.id);
+    await file.writeAsString(jsonEncode(payload.toJson()), flush: true);
+    task.localPath = file.path;
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
+  Future<File> _mangaBuildPayloadFile(String taskId) async {
+    final root = await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(root.path, 'manga_build_payloads'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return File(p.join(dir.path, '$taskId.json'));
+  }
+
+  Future<MangaBuildPayload?> _readMangaBuildPayload(QueueTask task) async {
+    final path = task.localPath;
+    if (path == null || path.isEmpty) return null;
+    final f = File(path);
+    if (!await f.exists()) return null;
+    try {
+      return MangaBuildPayload.fromJson(jsonDecode(await f.readAsString()));
     } catch (_) {
       return null;
     }
@@ -1614,11 +1662,17 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             .where(
               (t) =>
                   t.status == TaskStatus.pending &&
+                  // Every kind _pump can actually run. A kind missing from
+                  // this list is enqueued, listed as pending and never picked
+                  // up — TaskKind.mangaCache shipped exactly that way.
+                  // (retagLocal is absent on purpose: nothing enqueues it.)
                   (t.kind == TaskKind.download ||
                       t.kind == TaskKind.scan ||
                       t.kind == TaskKind.retagCloud ||
                       t.kind == TaskKind.matchRemote ||
-                      t.kind == TaskKind.mangaScrape) &&
+                      t.kind == TaskKind.mangaScrape ||
+                      t.kind == TaskKind.mangaCache ||
+                      t.kind == TaskKind.mangaBuild) &&
                   (t.nextRetryAt == null || !t.nextRetryAt!.isAfter(now)),
             )
             .toList()
@@ -1776,6 +1830,11 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       );
     } finally {
       _orderedDrainActive = false;
+      // A batch that drained *while* this one was still finishing hit the
+      // `_orderedDrainActive` guard and was skipped whole (no clearProgress,
+      // no summary). Re-evaluate only when such a batch really exists, so a
+      // failed release cannot loop back into another drain.
+      if (_sessionIds.isNotEmpty) _publishProgress();
     }
   }
 
@@ -2212,6 +2271,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           await _runMangaScrape(task, token);
         case TaskKind.mangaCache:
           await _runMangaCache(task, token);
+        case TaskKind.mangaBuild:
+          await _runMangaBuild(task, token);
         case TaskKind.retagLocal:
           // Local retag stays interactive (settings); not scheduled here.
           task.status = TaskStatus.cancelled;
@@ -2447,6 +2508,54 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         cancel: token,
       );
     }
+
+    // No sidecar payload + a folder root: the caller did not pre-list, so this
+    // task acts as an enumerator. Walk once here and fan the work out into one
+    // unit task per file — the queue shows per-track rows instead of a single
+    // opaque group, and the sheet that started it returned immediately.
+    if ((prelisted == null || prelisted.isEmpty) && !rootIsFile) {
+      task.unitsTotal = candidates.length;
+      task.unitsDone = 0;
+      task.syncProgressFromCounters();
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+      var spawned = 0;
+      for (final item in candidates) {
+        if (token.isCancelled) {
+          task.status = TaskStatus.cancelled;
+          await _guardPersist(() => _store.upsert(task));
+          notifyListeners();
+          return;
+        }
+        await enqueueScan(
+          sourceName: task.sourceName,
+          remotePath: item.path,
+          fileName: item.name,
+          unitsTotal: 1,
+          paths: [
+            ScanPathEntry(
+              path: item.path,
+              name: item.name,
+              isCue:
+                  isCueFileName(item.name) || item.category == FileCategory.cue,
+            ),
+          ],
+        );
+        spawned++;
+        await reportUnitsProgress(
+          task.id,
+          done: spawned,
+          total: candidates.length,
+        );
+      }
+      task.status = TaskStatus.completed;
+      task.completedAt = DateTime.now();
+      task.progress = 1;
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+      return;
+    }
+
     task.unitsTotal = candidates.length;
     task.unitsDone = 0;
     task.syncProgressFromCounters();
@@ -2792,6 +2901,112 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     await reportUnitsProgress(task.id, done: 1, total: 1);
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+  }
+
+  /// Build loose-image books for one folder.
+  ///
+  /// [MangaBuildMode.merged] writes one book holding every image under the
+  /// folder; [MangaBuildMode.perDir] writes one book per image directory.
+  /// The worker owns the recursive listing so the UI never waits on it.
+  Future<void> _runMangaBuild(QueueTask task, CancelToken token) async {
+    final payload = await _readMangaBuildPayload(task);
+    final mangaLib = _mangaLibrary;
+    if (payload == null) {
+      throw StateError('err.unknown|manga build payload missing');
+    }
+    if (mangaLib == null) {
+      throw StateError('err.unknown|manga library unavailable');
+    }
+    final walk = WalkOptions(
+      includeSubdirs: payload.includeSubdirs,
+      maxDepth: payload.maxDepth,
+    );
+
+    Future<void> finish() async {
+      task.status = TaskStatus.completed;
+      task.completedAt = DateTime.now();
+      task.progress = 1;
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+    }
+
+    if (payload.mode == MangaBuildMode.merged) {
+      task.unitsTotal = 1;
+      task.unitsDone = 0;
+      task.syncProgressFromCounters();
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+      final rels = await listMergedImageRelPaths(
+        webDav: _webDav,
+        accountId: payload.accountId,
+        rootPath: payload.remotePath,
+        imageExtensions: payload.imageExtensions,
+        walk: walk,
+      );
+      if (rels.isEmpty) {
+        task.status = TaskStatus.failed;
+        task.errorMessage = 'err.unknown|no images under ${payload.remotePath}';
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return;
+      }
+      final draft = MangaLibraryService.draftForMergedImages(
+        sourceName: payload.sourceName,
+        folderPath: payload.remotePath,
+        folderName: payload.folderName,
+        pageRelPaths: rels,
+      );
+      draft
+        ..title = payload.title
+        ..author = payload.author
+        ..seriesTitle = payload.seriesTitle;
+      await mangaLib.upsertFromDraft(draft);
+      await reportUnitsProgress(task.id, done: 1, total: 1);
+      await finish();
+      return;
+    }
+
+    final dirs = await listImageDirsRecursive(
+      webDav: _webDav,
+      accountId: payload.accountId,
+      rootPath: payload.remotePath,
+      imageExtensions: payload.imageExtensions,
+      walk: walk,
+    );
+    // Every directory is upserted, not just the unknown ones: re-running on a
+    // folder that grew new images is how a book picks them up.
+    task.unitsTotal = dirs.length;
+    task.unitsDone = 0;
+    task.syncProgressFromCounters();
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    if (dirs.isEmpty) {
+      task.status = TaskStatus.failed;
+      task.errorMessage = 'err.unknown|no images under ${payload.remotePath}';
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+      return;
+    }
+    var done = 0;
+    for (final hit in dirs) {
+      if (token.isCancelled) {
+        task.status = TaskStatus.cancelled;
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return;
+      }
+      await mangaLib.upsertFromDraft(
+        MangaLibraryService.draftForImageDir(
+          sourceName: payload.sourceName,
+          folderPath: hit.folderPath,
+          folderName: hit.folderName,
+          imageNames: hit.imageNames,
+        ),
+      );
+      done++;
+      await reportUnitsProgress(task.id, done: done, total: dirs.length);
+    }
+    await finish();
   }
 
   Future<void> _runMatchRemote(QueueTask task, CancelToken token) async {

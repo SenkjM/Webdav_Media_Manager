@@ -33,7 +33,7 @@ class MangaLibraryScreen extends StatefulWidget {
 }
 
 class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
-  int _segment = 1; // default 单本
+  int _segment = 0; // default 系列
   final _searchCtrl = TextEditingController();
   String _query = '';
   bool _searchOpen = false;
@@ -766,6 +766,120 @@ Future<void> _enqueueMangaCache(BuildContext context, Manga manga) async {
   }
 }
 
+/// Series-name prompt that owns its own [TextEditingController].
+///
+/// The controller must outlive the route: `showDialog` resolves as soon as
+/// the route pops, while the dialog is still animating out. Disposing the
+/// controller at that moment makes the [TextField] touch a disposed
+/// [ChangeNotifier] during teardown, which aborts the element unmount
+/// halfway and trips `InheritedElement`'s `_dependents.isEmpty` assertion.
+class _SeriesNameDialog extends StatefulWidget {
+  const _SeriesNameDialog({
+    required this.title,
+    required this.hint,
+    required this.fieldLabel,
+    required this.clearLabel,
+    required this.cancelLabel,
+    required this.confirmLabel,
+    required this.pickLabel,
+    required this.suggestions,
+  });
+
+  final String title;
+  final String hint;
+  final String fieldLabel;
+  final String clearLabel;
+  final String cancelLabel;
+  final String confirmLabel;
+  final String pickLabel;
+  final List<String> suggestions;
+
+  @override
+  State<_SeriesNameDialog> createState() => _SeriesNameDialogState();
+}
+
+class _SeriesNameDialogState extends State<_SeriesNameDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  /// Mirrors the picker so the box keeps showing what was chosen.
+  String? _selected;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.hint,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            decoration: InputDecoration(labelText: widget.fieldLabel),
+          ),
+          if (widget.suggestions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _selected,
+              isExpanded: true,
+              decoration: InputDecoration(labelText: widget.pickLabel),
+              items: [
+                for (final title in widget.suggestions)
+                  DropdownMenuItem(
+                    value: title,
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: (title) {
+                if (title == null) return;
+                setState(() {
+                  _selected = title;
+                  _controller.text = title;
+                  _controller.selection = TextSelection.collapsed(
+                    offset: title.length,
+                  );
+                });
+              },
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, ''),
+          child: Text(widget.clearLabel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(widget.cancelLabel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, _controller.text),
+          child: Text(widget.confirmLabel),
+        ),
+      ],
+    );
+  }
+}
+
 /// Ask for a series name and apply it to [targets].
 ///
 /// Returns true once the assignment ran, so callers know whether to leave
@@ -781,61 +895,19 @@ Future<bool> _assignSeriesToMangas(
     return false;
   }
   final svc = context.read<MangaLibraryService>();
-  final controller = TextEditingController();
   final result = await showDialog<String?>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(l10n.mangaBatchSetSeriesTitle),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            l10n.mangaBatchSetSeriesHint,
-            style: TextStyle(
-              color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: controller,
-            autofocus: true,
-            decoration: InputDecoration(labelText: l10n.mangaFieldSeries),
-          ),
-          if (svc.series.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final s in svc.series)
-                  ActionChip(
-                    label: Text(s.title),
-                    onPressed: () => Navigator.pop(ctx, s.title),
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, ''),
-          child: Text(l10n.mangaClearSeries),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: Text(l10n.cancel),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(ctx, controller.text),
-          child: Text(l10n.mangaConfirmSave),
-        ),
-      ],
+    builder: (_) => _SeriesNameDialog(
+      title: l10n.mangaBatchSetSeriesTitle,
+      hint: l10n.mangaBatchSetSeriesHint,
+      fieldLabel: l10n.mangaFieldSeries,
+      clearLabel: l10n.mangaClearSeries,
+      cancelLabel: l10n.cancel,
+      confirmLabel: l10n.mangaConfirmSave,
+      pickLabel: l10n.mangaPickSeries,
+      suggestions: [for (final s in svc.series) s.title],
     ),
   );
-  controller.dispose();
   if (result == null || !context.mounted) return false;
   final n = await svc.assignSeriesToMangas(
     mangaIds: [for (final m in targets) m.id],

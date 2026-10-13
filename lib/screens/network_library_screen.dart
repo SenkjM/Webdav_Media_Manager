@@ -8,6 +8,7 @@ import '../models/account_capabilities.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/manga.dart';
 import '../models/manga_read_mode.dart';
+import '../models/manga_build.dart';
 import '../models/queue_task.dart';
 import '../models/file_actions.dart';
 import '../models/play_open_mode.dart';
@@ -24,8 +25,6 @@ import '../services/settings_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/app_snack.dart';
-import '../utils/task_error.dart';
-import '../utils/scan_candidates.dart';
 import '../utils/manga_file_types.dart';
 import '../utils/manga_scan_walk.dart';
 import '../utils/manga_identity.dart';
@@ -1720,26 +1719,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final sourceName = account?.name;
     if (sourceName == null || sourceName.isEmpty) return;
     final l10n = AppLocalizations.of(context)!;
-    final webDav = context.read<WebDavService>();
     final settings = context.read<SettingsService>();
     try {
-      final rels = await listMergedImageRelPaths(
-        webDav: webDav,
-        accountId: accountId,
-        rootPath: folder.path,
-        imageExtensions: _mangaImageExts(settings),
-        walk: settings.mangaCreateWalkOptions,
-      );
-      if (rels.isEmpty) {
-        if (!mounted) return;
-        AppSnack.show(context, l10n.mangaNoImagesInFolder);
-        return;
-      }
+      // Metadata first, listing later: the sheet opens without touching the
+      // server and the recursive walk happens inside the queue task.
       final draft = MangaLibraryService.draftForMergedImages(
         sourceName: sourceName,
         folderPath: folder.path,
         folderName: folder.name,
-        pageRelPaths: rels,
+        pageRelPaths: const [],
       );
       if (!mounted) return;
       final confirmed = await showMangaIngestConfirmSheet(
@@ -1747,9 +1735,23 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         draft: draft,
       );
       if (confirmed == null || !mounted) return;
-      await context.read<MangaLibraryService>().upsertFromDraft(confirmed);
+      await context.read<TaskQueueService>().enqueueMangaBuild(
+        MangaBuildPayload(
+          mode: MangaBuildMode.merged,
+          accountId: accountId,
+          sourceName: sourceName,
+          remotePath: folder.path,
+          folderName: folder.name,
+          title: confirmed.title,
+          author: confirmed.author,
+          seriesTitle: confirmed.seriesTitle,
+          includeSubdirs: settings.mangaCreateSubdirs,
+          maxDepth: settings.mangaCreateMaxDepth,
+          imageExtensions: _mangaImageExts(settings),
+        ),
+      );
       if (!mounted) return;
-      AppSnack.show(context, l10n.mangaIngestDone);
+      AppSnack.show(context, l10n.mangaBuildQueued);
     } catch (e) {
       if (!mounted) return;
       AppSnack.error(
@@ -1767,35 +1769,45 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final sourceName = account?.name;
     if (sourceName == null || sourceName.isEmpty) return;
     final l10n = AppLocalizations.of(context)!;
-    final webDav = context.read<WebDavService>();
     final settings = context.read<SettingsService>();
-    final mangaLib = context.read<MangaLibraryService>();
     try {
-      final dirs = await listImageDirsRecursive(
-        webDav: webDav,
-        accountId: accountId,
-        rootPath: folder.path,
-        imageExtensions: _mangaImageExts(settings),
-        walk: settings.mangaCreateWalkOptions,
+      // The count is unknown until the worker walks, so this confirm is
+      // static: it only guards against a mistaken tap on a huge folder.
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.mangaBuildPerDirTitle),
+          content: Text(
+            l10n.mangaBuildPerDirBody(settings.mangaCreateMaxDepth),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.mangaConfirmSave),
+            ),
+          ],
+        ),
       );
-      if (dirs.isEmpty) {
-        if (!mounted) return;
-        AppSnack.show(context, l10n.mangaNoImagesInFolder);
-        return;
-      }
-      var n = 0;
-      for (final hit in dirs) {
-        final draft = MangaLibraryService.draftForImageDir(
+      if (go != true || !mounted) return;
+      await context.read<TaskQueueService>().enqueueMangaBuild(
+        MangaBuildPayload(
+          mode: MangaBuildMode.perDir,
+          accountId: accountId,
           sourceName: sourceName,
-          folderPath: hit.folderPath,
-          folderName: hit.folderName,
-          imageNames: hit.imageNames,
-        );
-        await mangaLib.upsertFromDraft(draft);
-        n++;
-      }
+          remotePath: folder.path,
+          folderName: folder.name,
+          title: folder.name,
+          includeSubdirs: settings.mangaCreateSubdirs,
+          maxDepth: settings.mangaCreateMaxDepth,
+          imageExtensions: _mangaImageExts(settings),
+        ),
+      );
       if (!mounted) return;
-      AppSnack.show(context, l10n.mangaBatchIngestDone(n));
+      AppSnack.show(context, l10n.mangaBuildQueued);
     } catch (e) {
       if (!mounted) return;
       AppSnack.error(
@@ -1985,9 +1997,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final sourceName = account?.name;
     if (sourceName == null || sourceName.isEmpty) return;
     final l10n = AppLocalizations.of(context)!;
-    final settings = context.read<SettingsService>();
-    final webDav = context.read<WebDavService>();
-    final walk = settings.mediaScanWalkOptions;
     final queue = context.read<TaskQueueService>();
 
     final roots = <WebDavItem>[
@@ -2002,44 +2011,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       return;
     }
 
-    // One lightweight walk → path list (no library / CUE parse / modal blocker).
-    bool isMusic(String name) =>
-        settings.fileTypes.categoryFor(name) == FileCategory.music;
-    bool isCue(String name) =>
-        settings.fileTypes.categoryFor(name) == FileCategory.cue;
-    final plan = <({WebDavItem root, List<ScanPathEntry> paths})>[];
-    var total = 0;
-    try {
-      for (final root in roots) {
-        final paths = await listScanPaths(
-          webDav: webDav,
-          accountId: accountId,
-          rootPath: root.path,
-          rootIsFile: !root.isDirectory,
-          walk: walk,
-          isMusic: isMusic,
-          isCue: isCue,
-        );
-        plan.add((root: root, paths: paths));
-        total += paths.length;
-      }
-    } catch (e) {
-      if (context.mounted) {
-        AppSnack.error(context, TaskError.classify(e).detail);
-      }
-      return;
-    }
-    if (!context.mounted) return;
-    if (total == 0) {
-      AppSnack.show(context, l10n.mediaScanNothingNew);
-      return;
-    }
-
+    // No walk here. The worker lists each root and fans the result out into one
+    // unit task per track, so this sheet closes immediately and the queue shows
+    // per-track rows instead of a single opaque group.
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(l10n.mediaScanConfirmTitle),
-        content: Text(l10n.mediaScanConfirmBody(total)),
+        content: Text(l10n.mediaScanConfirmBodyFolder),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -2055,14 +2034,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (go != true || !context.mounted) return;
 
     var queued = 0;
-    for (final row in plan) {
-      if (row.paths.isEmpty) continue;
+    for (final root in roots) {
       await queue.enqueueScan(
         sourceName: sourceName,
-        remotePath: row.root.path,
-        fileName: row.root.name,
-        unitsTotal: row.paths.length,
-        paths: row.paths,
+        remotePath: root.path,
+        fileName: root.name,
       );
       queued++;
     }

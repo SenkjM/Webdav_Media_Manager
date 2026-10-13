@@ -22,6 +22,9 @@ enum TaskKind {
 
   /// Download one whole manga archive into the manga cache.
   mangaCache,
+
+  /// Build loose-image books from a folder (merged, or one per directory).
+  mangaBuild,
 }
 
 extension TaskKindX on TaskKind {
@@ -33,6 +36,7 @@ extension TaskKindX on TaskKind {
     TaskKind.matchRemote => 'match_remote',
     TaskKind.mangaScrape => 'manga_scrape',
     TaskKind.mangaCache => 'manga_cache',
+    TaskKind.mangaBuild => 'manga_build',
   };
 
   String label(AppLocalizations l10n) => switch (this) {
@@ -43,6 +47,7 @@ extension TaskKindX on TaskKind {
     TaskKind.matchRemote => l10n.taskKindMatchRemote,
     TaskKind.mangaScrape => l10n.taskKindMangaScrape,
     TaskKind.mangaCache => l10n.taskKindMangaCache,
+    TaskKind.mangaBuild => l10n.taskKindMangaBuild,
   };
 
   static TaskKind fromStorageKey(String? key) => switch (key) {
@@ -52,6 +57,7 @@ extension TaskKindX on TaskKind {
     'match_remote' => TaskKind.matchRemote,
     'manga_scrape' => TaskKind.mangaScrape,
     'manga_cache' => TaskKind.mangaCache,
+    'manga_build' => TaskKind.mangaBuild,
     _ => TaskKind.download,
   };
 }
