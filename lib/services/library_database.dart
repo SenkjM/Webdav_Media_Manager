@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -66,6 +67,7 @@ CREATE TABLE IF NOT EXISTS mangas (
   format TEXT NOT NULL DEFAULT 'unknown',
   remote_missing INTEGER NOT NULL DEFAULT 0,
   page_turn TEXT,
+  rev INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 )
 ''';
@@ -104,10 +106,14 @@ class LibraryDatabase {
   /// See [_upgradeMangaV18].
   static const schemaVersion = 18;
 
+  /// On-disk name; [LocalDatabaseRecoveryService] reads it from here so a
+  /// rename cannot leave the recovery export behind.
+  static const fileName = 'music_library.db';
+
   Future<Database> get database async {
     if (_db != null) return _db!;
     final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'music_library.db');
+    final path = p.join(dir.path, fileName);
     _db = await openDatabase(
       path,
       version: schemaVersion,
@@ -388,7 +394,20 @@ SELECT id, parent_id, name, sort_order, created_at FROM user_folders
 
   /// Manga library tables (99 §19). Idempotent; safe on every open.
   Future<void> _ensureMangaTables(Database db) async {
-    await _upgradeMangaV18(db);
+    try {
+      await _upgradeMangaV18(db);
+    } catch (e, st) {
+      // 漫画库还在测试阶段，v18 又是身份模型的破坏性变更。迁移兜不住时
+      // 宁可把漫画表整个重建成空的，也不能让 `music_library.db` 打不开、
+      // 把用户挡在「数据库初始化失败」的恢复界面上——音乐库、歌单、用户
+      // 文件夹都不受影响。
+      debugPrint('[LibraryDatabase] v18 manga migration failed: $e\n$st');
+      await db.execute('DROP TABLE IF EXISTS mangas_v17');
+      await db.execute('DROP TABLE IF EXISTS mangas');
+      await db.execute('DROP TABLE IF EXISTS deleted_mangas');
+      await db.execute('DROP TABLE IF EXISTS manga_pages');
+      await db.execute('DROP TABLE IF EXISTS manga_progress');
+    }
     await db.execute(_mangasDdl);
     await db.execute('''
 CREATE TABLE IF NOT EXISTS manga_pages (
@@ -443,19 +462,51 @@ CREATE TABLE IF NOT EXISTS local_meta (
   /// book are left alone on purpose: the folders UI shows them as unavailable
   /// and the user deletes them.
   Future<void> _upgradeMangaV18(Database db) async {
+    final leftover = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='mangas_v17'",
+    );
     final mangas = await db.rawQuery(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='mangas'",
     );
-    if (mangas.isEmpty) return; // fresh database: the new DDL already applies
-    final sql = (mangas.first['sql'] as String?) ?? '';
-    if (sql.contains('UNIQUE(source_name, remote_path)')) {
-      await db.execute('ALTER TABLE mangas RENAME TO mangas_v17');
+    if (mangas.isEmpty && leftover.isEmpty) {
+      return; // fresh database: the new DDL already applies
+    }
+    final sql = mangas.isEmpty ? '' : ((mangas.first['sql'] as String?) ?? '');
+    // 上一次迁到一半（`mangas_v17` 还留在库里）也要能接着跑完：ALTER 与
+    // CREATE 都成功了、只有拷贝失败时，库里就是「新表空着 + 旧表还在」，
+    // 这种库会在恢复界面上卡死。
+    final resuming = leftover.isNotEmpty;
+    final rebuilding =
+        !resuming && sql.contains('UNIQUE(source_name, remote_path)');
+    if (resuming || rebuilding) {
+      if (rebuilding) {
+        await db.execute('ALTER TABLE mangas RENAME TO mangas_v17');
+      }
       await db.execute(_mangasDdl);
       // 旧散图行的身份派生自目录（mangaIdForRemote(源, 路径)），页 rel 路径也
       // 相对书根；v18 起这两样都变了，旧行无法无损升级，直接丢弃——用户在
       // 漫画库里对本重新「重新扫描此本」就能拿回一本新的散图书。
       await db.execute("DELETE FROM mangas_v17 WHERE format = 'images'");
-      await db.execute('INSERT INTO mangas SELECT * FROM mangas_v17');
+      // 旧表可能比新 DDL **多**列（`rev` 是 v15、`page_turn` 是 v14 用
+      // `ALTER TABLE ADD COLUMN` 补的，不在建表语句里；`series_id` 在升级库里
+      // 还物理留着），也可能**少**列（从未跑过补列的老库），所以按两边的列
+      // 交集显式写列名。`SELECT *` 会直接报
+      // 「table mangas has 14 columns but 15 values were supplied」。
+      final oldCols = <String>{
+        for (final r in await db.rawQuery('PRAGMA table_info(mangas_v17)'))
+          r['name'] as String,
+      };
+      final newCols = [
+        for (final r in await db.rawQuery('PRAGMA table_info(mangas)'))
+          r['name'] as String,
+      ];
+      final shared = [
+        for (final c in newCols)
+          if (oldCols.contains(c)) c,
+      ].join(', ');
+      await db.execute(
+        'INSERT OR REPLACE INTO mangas ($shared) SELECT $shared FROM mangas_v17',
+      );
       await db.execute('DROP TABLE mangas_v17');
       await db.delete(
         'manga_pages',
