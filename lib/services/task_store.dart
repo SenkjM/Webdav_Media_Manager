@@ -19,7 +19,10 @@ class TaskStore {
   /// There is deliberately **no** migration code: an older on-disk schema is
   /// dropped and recreated (see [onUpgrade]). The queue is a transient list —
   /// losing it costs a re-enqueue, not data.
-  static const schemaVersion = 8;
+  ///
+  /// v9: added `is_enumerator`, which [QueueTask] had been writing all along —
+  /// without the column every insert threw and nothing was ever persisted.
+  static const schemaVersion = 9;
 
   /// On-disk name; see [LocalDatabaseRecoveryService].
   static const fileName = 'task_queue.db';
@@ -43,8 +46,14 @@ class TaskStore {
     return _db!;
   }
 
-  Future<void> _createSchema(Database db) async {
-    await db.execute('''
+  /// The `queue_tasks` DDL.
+  ///
+  /// Public on purpose: `test/task_store_schema_test.dart` diffs it against
+  /// `QueueTask.toMap()`. The map keys *are* the column names, so a field with
+  /// no column here throws `no column named <field>` on **every** insert while
+  /// `flutter analyze` stays green — that is exactly how `is_enumerator`
+  /// shipped broken and the queue silently stopped persisting.
+  static const createTableSql = '''
 CREATE TABLE queue_tasks (
   id TEXT PRIMARY KEY,
   remote_path TEXT NOT NULL,
@@ -62,6 +71,7 @@ CREATE TABLE queue_tasks (
   units_total INTEGER,
   units_done INTEGER NOT NULL DEFAULT 0,
   cache_group_id TEXT,
+  is_enumerator INTEGER NOT NULL DEFAULT 0,
   source_name TEXT NOT NULL DEFAULT '',
   target TEXT NOT NULL DEFAULT 'cache',
   download_mode TEXT,
@@ -70,7 +80,10 @@ CREATE TABLE queue_tasks (
   attempts INTEGER NOT NULL DEFAULT 0,
   next_retry_at TEXT
 )
-''');
+''';
+
+  Future<void> _createSchema(Database db) async {
+    await db.execute(createTableSql);
     await _createIndexes(db);
   }
 

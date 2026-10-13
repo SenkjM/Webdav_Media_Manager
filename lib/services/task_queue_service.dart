@@ -514,9 +514,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     _tasks.add(task);
     _sessionIds.add(task.id);
-    await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // Schedule before persisting. A failed write must not leave a row that is
+    // listed as pending but never picked up — the task still runs, and the
+    // caller still learns about the write failure (the guard rethrows).
     unawaited(_pump());
+    await _guardPersist(() => _store.upsert(task));
     return task;
   }
 
@@ -575,9 +578,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     task.localPath = file.path;
     _tasks.add(task);
     _sessionIds.add(task.id);
-    await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // Schedule before persisting. A failed write must not leave a row that is
+    // listed as pending but never picked up — the task still runs, and the
+    // caller still learns about the write failure (the guard rethrows).
     unawaited(_pump());
+    await _guardPersist(() => _store.upsert(task));
     return task;
   }
 
@@ -627,9 +633,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
-    await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // Schedule before persisting. A failed write must not leave a row that is
+    // listed as pending but never picked up — the task still runs, and the
+    // caller still learns about the write failure (the guard rethrows).
     unawaited(_pump());
+    await _guardPersist(() => _store.upsert(task));
     return task;
   }
 
@@ -656,9 +665,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
-    await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // Schedule before persisting. A failed write must not leave a row that is
+    // listed as pending but never picked up — the task still runs, and the
+    // caller still learns about the write failure (the guard rethrows).
     unawaited(_pump());
+    await _guardPersist(() => _store.upsert(task));
     return task;
   }
 
@@ -688,9 +700,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
-    await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // Schedule before persisting. A failed write must not leave a row that is
+    // listed as pending but never picked up — the task still runs, and the
+    // caller still learns about the write failure (the guard rethrows).
     unawaited(_pump());
+    await _guardPersist(() => _store.upsert(task));
     return task;
   }
 
@@ -717,9 +732,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
-    await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // Schedule before persisting. A failed write must not leave a row that is
+    // listed as pending but never picked up — the task still runs, and the
+    // caller still learns about the write failure (the guard rethrows).
     unawaited(_pump());
+    await _guardPersist(() => _store.upsert(task));
     return task;
   }
 
@@ -748,9 +766,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
-    await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // Schedule before persisting. A failed write must not leave a row that is
+    // listed as pending but never picked up — the task still runs, and the
+    // caller still learns about the write failure (the guard rethrows).
     unawaited(_pump());
+    await _guardPersist(() => _store.upsert(task));
     return task;
   }
 
@@ -772,9 +793,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
-    await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // Schedule before persisting. A failed write must not leave a row that is
+    // listed as pending but never picked up — the task still runs, and the
+    // caller still learns about the write failure (the guard rethrows).
     unawaited(_pump());
+    await _guardPersist(() => _store.upsert(task));
     return task;
   }
 
@@ -2278,7 +2302,15 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       debugPrint('TaskQueueService _runOne failed: $e');
       // 这里也走统一失败处理：认不出来的错误默认按可重试兜底，
       // 而不是把任务直接判死（99 §7.5 之后的下载可靠性要求）。
-      await _handleFailure(task, e);
+      try {
+        await _handleFailure(task, e);
+      } catch (inner) {
+        // _handleFailure persists the failure; if *that* write fails too the
+        // exception must not escape, or one unwritable row takes the whole
+        // _pump loop down with it.
+        _lastError = _describeError(inner);
+        debugPrint('TaskQueueService _handleFailure failed: $inner');
+      }
     }
   }
 
