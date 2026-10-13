@@ -13,6 +13,9 @@ import 'library_database.dart';
 import 'manga_sync_store.dart';
 
 /// Draft metadata shown in the confirm sheet before commit.
+///
+/// [pageRelPaths] are **relative to the source root** for loose images (see
+/// [MangaPage.relPath]) and archive entry names for containers.
 class MangaIngestDraft {
   MangaIngestDraft({
     required this.sourceName,
@@ -25,6 +28,7 @@ class MangaIngestDraft {
     required this.format,
     required this.pageRelPaths,
     this.coverRelpath,
+    this.id,
   });
 
   final String sourceName;
@@ -37,6 +41,10 @@ class MangaIngestDraft {
   final String format;
   final List<String> pageRelPaths;
   String? coverRelpath;
+
+  /// Set when the caller already owns the row (a re-scan, or a test). Null lets
+  /// [MangaLibraryService.upsertFromDraft] mint one.
+  final String? id;
 }
 
 /// Thin manga library façade (99 §19): list / upsert from scan / progress.
@@ -134,9 +142,22 @@ class MangaLibraryService extends ChangeNotifier {
   }
 
   /// Commit a confirmed ingest draft (image-dir or container).
+  ///
+  /// Identity rule (丙): a **loose-image** book is a user-owned asset, so it
+  /// gets a fresh surrogate id — the folder it came from is a one-off input,
+  /// never its identity. Building twice from one folder therefore yields two
+  /// books instead of silently replacing the first; re-scanning a book the user
+  /// already owns goes through [rescanLoose] with that book's id.
+  ///
+  /// Containers keep the path-derived id: a materialised file *is* its path,
+  /// exactly like a music track.
   Future<Manga> upsertFromDraft(MangaIngestDraft draft) async {
     final remotePath = normalizeRemotePath(draft.remotePath);
-    final id = mangaIdForRemote(draft.sourceName, remotePath);
+    final id =
+        draft.id ??
+        (draft.format == MangaFormat.images
+            ? newMangaId()
+            : mangaIdForRemote(draft.sourceName, remotePath));
     final series = normalizeMangaSeriesTag(draft.seriesTitle);
     final pages = <MangaPage>[];
     for (var i = 0; i < draft.pageRelPaths.length; i++) {
@@ -424,9 +445,18 @@ class MangaLibraryService extends ChangeNotifier {
   Future<List<MangaSyncRow>> syncRows() async {
     final mangas = await _db.loadMangas();
     final pages = await _db.imageMangaPagesById();
+    // Rows written before the surrogate-id model (schema v18) are skipped:
+    // their id is path-derived and their page paths are folder-relative, so a
+    // peer that pulled them could not resolve a single page.
     return [
       for (final m in mangas)
-        MangaSyncRow(manga: m, pages: pages[m.id] ?? const []),
+        if (!isLegacyLooseManga(
+          id: m.id,
+          sourceName: m.sourceName,
+          remotePath: m.remotePath,
+          format: m.format,
+        ))
+          MangaSyncRow(manga: m, pages: pages[m.id] ?? const []),
     ];
   }
 
@@ -435,6 +465,18 @@ class MangaLibraryService extends ChangeNotifier {
   /// leaves local page order alone (rebuilt on first open / scrape).
   Future<void> adoptCloudRows(List<MangaSyncRow> rows) async {
     for (final r in rows) {
+      // A loose-image row written before the surrogate-id model carries
+      // the path-derived id and folder-relative pages: it cannot resolve
+      // here, so it is dropped rather than imported as a book with no
+      // readable pages.
+      if (isLegacyLooseManga(
+        id: r.manga.id,
+        sourceName: r.manga.sourceName,
+        remotePath: r.manga.remotePath,
+        format: r.manga.format,
+      )) {
+        continue;
+      }
       await _db.upsertManga(r.manga, keepRev: true);
       if (r.manga.format == MangaFormat.images) {
         await _db.replaceMangaPages(r.manga.id, [
@@ -457,12 +499,16 @@ class MangaLibraryService extends ChangeNotifier {
   }
 
   /// Build a draft for a loose image directory (list only; no download).
+  ///
+  /// [imageNames] are bare names inside [folderPath]; the draft resolves them
+  /// against the source root so the page list survives the folder moving.
   static MangaIngestDraft draftForImageDir({
     required String sourceName,
     required String folderPath,
     required String folderName,
     required List<String> imageNames,
   }) {
+    final root = _sourceRoot(folderPath);
     final sorted = [...imageNames]
       ..sort((a, b) => mangaPageSortKey(a).compareTo(mangaPageSortKey(b)));
     return MangaIngestDraft(
@@ -470,18 +516,21 @@ class MangaLibraryService extends ChangeNotifier {
       remotePath: normalizeRemotePath(folderPath),
       title: folderName,
       format: MangaFormat.images,
-      pageRelPaths: sorted,
-      coverRelpath: sorted.isEmpty ? null : sorted.first,
+      pageRelPaths: [for (final n in sorted) _underSourceRoot(root, n)],
+      coverRelpath: sorted.isEmpty
+          ? null
+          : _underSourceRoot(root, sorted.first),
     );
   }
 
-  /// Merge-mode draft: [pageRelPaths] already relative to [folderPath].
+  /// Merge-mode draft: [pageRelPaths] are relative to [folderPath].
   static MangaIngestDraft draftForMergedImages({
     required String sourceName,
     required String folderPath,
     required String folderName,
     required List<String> pageRelPaths,
   }) {
+    final root = _sourceRoot(folderPath);
     final sorted = [...pageRelPaths]
       ..sort((a, b) => mangaPageSortKey(a).compareTo(mangaPageSortKey(b)));
     return MangaIngestDraft(
@@ -489,9 +538,59 @@ class MangaLibraryService extends ChangeNotifier {
       remotePath: normalizeRemotePath(folderPath),
       title: folderName,
       format: MangaFormat.images,
-      pageRelPaths: sorted,
-      coverRelpath: sorted.isEmpty ? null : sorted.first,
+      pageRelPaths: [for (final n in sorted) _underSourceRoot(root, n)],
+      coverRelpath: sorted.isEmpty
+          ? null
+          : _underSourceRoot(root, sorted.first),
     );
+  }
+
+  /// `/a/b/` for the folder `/a/b`; `''` for the source root `/`.
+  static String _sourceRoot(String folderPath) {
+    final folder = normalizeRemotePath(folderPath);
+    if (folder == '/') return '';
+    return folder.endsWith('/') ? folder : '$folder/';
+  }
+
+  /// Join an entry name (or a path relative to the build folder) onto the
+  /// source root. Already-absolute entries are kept as they are.
+  static String _underSourceRoot(String root, String entry) {
+    final name = entry.replaceAll('\\', '/');
+    if (name.startsWith('/')) return normalizeRemotePath(name);
+    return normalizeRemotePath('$root$name');
+  }
+
+  /// Re-scan a loose-image book the user already owns (the 丙 rule).
+  ///
+  /// The book keeps its id, its reading progress and its hand-edited metadata;
+  /// only the page list, the cover, the page count and the remembered source
+  /// folder are replaced. Nothing is created, so the 「同一本书」 question never
+  /// arises — the caller already holds the id.
+  Future<void> rescanLoose(
+    String mangaId, {
+    required MangaIngestDraft draft,
+  }) async {
+    final existing = await _db.loadMangaById(mangaId);
+    if (existing == null) return;
+    final folder = normalizeRemotePath(draft.remotePath);
+    final pages = <MangaPage>[
+      for (var i = 0; i < draft.pageRelPaths.length; i++)
+        MangaPage(
+          mangaId: mangaId,
+          pageIndex: i,
+          relPath: draft.pageRelPaths[i],
+        ),
+    ];
+    await _db.replaceMangaPages(mangaId, pages, bumpRev: true);
+    await _db.upsertManga(
+      existing.copyWith(
+        remotePath: folder,
+        pageCount: pages.length,
+        coverRelpath: pages.isEmpty ? null : pages.first.relPath,
+        updatedAt: DateTime.now(),
+      ),
+    );
+    await reload();
   }
 
   /// Build a draft for a comic container file (pages may be empty this slice).

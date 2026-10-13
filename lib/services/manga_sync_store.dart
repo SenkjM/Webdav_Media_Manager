@@ -29,7 +29,14 @@ class MangaSyncRow {
 
   int get rev => manga.rev;
 
-  String get key => mangaSyncKey(manga.sourceName, manga.remotePath);
+  /// The key this row travels under. Containers keep 网盘名 + path (unchanged
+  /// since the first shard); loose-image books use their surrogate id.
+  String get key => mangaSyncKeyForManga(
+    id: manga.id,
+    format: manga.format,
+    sourceName: manga.sourceName,
+    remotePath: manga.remotePath,
+  );
 }
 
 /// Identity of a manga row in sync: `网盘名 + normalized remotePath`.
@@ -262,10 +269,12 @@ CloudMangaLibrary mergeMangaCloudParts({
   final tombstoned = <String>{};
   for (final rows in tombstoneParts) {
     for (final row in rows) {
-      final key = mangaSyncKey(
-        row['source_name'] as String? ?? '',
-        row['remote_path'] as String? ?? '',
-      );
+      final key =
+          (row['sync_key'] as String?) ??
+          mangaSyncKey(
+            row['source_name'] as String? ?? '',
+            row['remote_path'] as String? ?? '',
+          );
       tombstoned.add(key);
       final live = byKey[key];
       if (live != null && (row['rev'] as int? ?? 0) >= live.rev) {
@@ -601,6 +610,7 @@ class MangaSyncStore {
           deletedAt:
               DateTime.tryParse(row['deleted_at'] as String? ?? '') ??
               DateTime.now(),
+          syncKey: row['sync_key'] as String?,
         ),
     ];
     final revs = [for (final e in entries) e.rev];

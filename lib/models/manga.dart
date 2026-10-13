@@ -94,6 +94,7 @@ class Manga {
   }
 
   Manga copyWith({
+    String? remotePath,
     String? title,
     String? author,
     bool clearAuthor = false,
@@ -113,7 +114,7 @@ class Manga {
     return Manga(
       id: id,
       sourceName: sourceName,
-      remotePath: remotePath,
+      remotePath: remotePath ?? this.remotePath,
       title: title ?? this.title,
       author: clearAuthor ? null : (author ?? this.author),
       series: clearSeries

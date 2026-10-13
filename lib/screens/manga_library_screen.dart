@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/folder_view_mode.dart';
 import '../models/manga.dart';
+import '../models/manga_build.dart';
 import '../models/manga_read_mode.dart';
 import '../models/manga_series.dart';
 import '../services/accounts_service.dart';
@@ -18,11 +19,13 @@ import '../services/task_queue_service.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
+import '../utils/manga_file_types.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/manga_cover_art.dart';
 import '../widgets/selection_toolbar.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
+import 'webdav_folder_picker_screen.dart';
 
 /// Manga library: 系列 / 单本 / 作者 (99 §19).
 class MangaLibraryScreen extends StatefulWidget {
@@ -598,6 +601,13 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
               onTap: () => Navigator.pop(ctx, cached ? 'clear_cache' : 'cache'),
             ),
           ],
+          if (!isContainer)
+            ListTile(
+              leading: const Icon(Icons.refresh),
+              title: Text(l10n.mangaRescanAction),
+              subtitle: Text(l10n.mangaRescanHint),
+              onTap: () => Navigator.pop(ctx, 'rescan'),
+            ),
           const Divider(height: 1),
           ListTile(
             leading: Icon(Icons.delete_outline, color: AppColors.error),
@@ -627,9 +637,60 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
       if (context.mounted) {
         AppSnack.show(context, l10n.mangaClearCache);
       }
+    case 'rescan':
+      await _rescanLooseManga(context, manga);
     case 'delete':
       await _deleteManga(context, manga);
   }
+}
+
+/// Re-scan a loose-image book in place (the 丙 rule).
+///
+/// The folder is only a one-off input: the user points at it, the worker lists
+/// it, and the book's page list is replaced. Its id, reading progress and
+/// hand-edited metadata stay — nothing is created, so no 「这是不是同一本书」
+/// question ever arises. Containers never take this path: a materialised file
+/// *is* its path, so there 「刮削元数据」 is the equivalent.
+Future<void> _rescanLooseManga(BuildContext context, Manga manga) async {
+  final l10n = AppLocalizations.of(context)!;
+  final accountId = context.read<AccountsService>().idForSource(
+    manga.sourceName,
+  );
+  if (accountId == null) {
+    AppSnack.show(context, l10n.mangaReaderUnboundSource);
+    return;
+  }
+  final settings = context.read<SettingsService>();
+  final picked = await Navigator.of(context).push<String>(
+    MaterialPageRoute(
+      builder: (_) => WebDavFolderPickerScreen(
+        accountId: accountId,
+        purpose: l10n.mangaRescanAction,
+        initialPath: manga.remotePath,
+      ),
+    ),
+  );
+  if (!context.mounted || picked == null) return;
+  final segments = picked.split('/').where((s) => s.isNotEmpty).toList();
+  await context.read<TaskQueueService>().enqueueMangaBuild(
+    MangaBuildPayload(
+      mode: MangaBuildMode.merged,
+      accountId: accountId,
+      sourceName: manga.sourceName,
+      remotePath: picked,
+      folderName: segments.isEmpty ? picked : segments.last,
+      title: manga.title,
+      includeSubdirs: settings.mangaCreateSubdirs,
+      maxDepth: settings.mangaCreateMaxDepth,
+      maxEntries: settings.mangaCreateWalkOptions.maxEntries,
+      imageExtensions: [
+        ...settings.fileTypes.imageExtensions,
+        ...kMangaImageExtensions,
+      ],
+      targetMangaId: manga.id,
+    ),
+  );
+  if (context.mounted) AppSnack.show(context, l10n.mangaBuildQueued);
 }
 
 /// Shared confirmation for the single-item and batch delete paths. Returns

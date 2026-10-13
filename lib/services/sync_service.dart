@@ -788,10 +788,12 @@ class SyncService extends ChangeNotifier {
       final pending = await db.unpushedMangaTombstones();
       final resurrected = <int>{};
       for (final row in pending) {
-        final live = localByKey[mangaSyncKey(
-          row['source_name'] as String? ?? '',
-          row['remote_path'] as String? ?? '',
-        )];
+        final live =
+            localByKey[(row['sync_key'] as String?) ??
+                mangaSyncKey(
+                  row['source_name'] as String? ?? '',
+                  row['remote_path'] as String? ?? '',
+                )];
         final rev = (row['rev'] as num?)?.toInt() ?? 0;
         if (live != null && live.rev > rev) resurrected.add(rev);
       }
@@ -802,8 +804,11 @@ class SyncService extends ChangeNotifier {
       for (final row in pending) {
         if (resurrected.contains((row['rev'] as num?)?.toInt() ?? 0)) {
           await db.clearMangaTombstone(
-            row['source_name'] as String? ?? '',
-            row['remote_path'] as String? ?? '',
+            (row['sync_key'] as String?) ??
+                mangaSyncKey(
+                  row['source_name'] as String? ?? '',
+                  row['remote_path'] as String? ?? '',
+                ),
           );
         }
       }
@@ -913,8 +918,11 @@ class SyncService extends ChangeNotifier {
       // Every tombstone is materialised by the new base.
       for (final row in await db.allMangaTombstones()) {
         await db.clearMangaTombstone(
-          row['source_name'] as String? ?? '',
-          row['remote_path'] as String? ?? '',
+          (row['sync_key'] as String?) ??
+              mangaSyncKey(
+                row['source_name'] as String? ?? '',
+                row['remote_path'] as String? ?? '',
+              ),
         );
       }
       await db.clearSyncState(prefix: LibraryDatabase.mangaCursorPrefix);
@@ -989,7 +997,9 @@ class SyncService extends ChangeNotifier {
             ) ??
             0,
         lastSyncAtMs:
-            int.tryParse(await db.loadMeta('$_foldersLastSyncKey$dest') ?? '') ??
+            int.tryParse(
+              await db.loadMeta('$_foldersLastSyncKey$dest') ?? '',
+            ) ??
             0,
         cloudUpdatedAt: cloud?.updatedAt,
         lastSeenCloudUpdatedAt: await db.loadMeta('$_foldersCloudSeenKey$dest'),

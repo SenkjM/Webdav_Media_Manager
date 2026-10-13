@@ -41,6 +41,7 @@ class MangaBuildPayload {
     this.maxDepth = 1,
     this.maxEntries = kMangaBuildMaxEntries,
     this.imageExtensions = const [],
+    this.targetMangaId,
   });
 
   final MangaBuildMode mode;
@@ -60,6 +61,11 @@ class MangaBuildPayload {
   final int maxEntries;
   final List<String> imageExtensions;
 
+  /// Set when the job re-scans a book the user already owns (the 丙 rule: the
+  /// target id is explicit, so its progress and hand-edited metadata survive).
+  /// Null means 「build a new book」 — a fresh surrogate id is minted.
+  final String? targetMangaId;
+
   Map<String, dynamic> toJson() => {
     'mode': mode.storageKey,
     'accountId': accountId,
@@ -73,6 +79,7 @@ class MangaBuildPayload {
     'maxDepth': maxDepth,
     'maxEntries': maxEntries,
     'imageExtensions': imageExtensions,
+    if (targetMangaId != null) 'targetMangaId': targetMangaId,
   };
 
   static MangaBuildPayload? fromJson(Object? raw) {
@@ -101,6 +108,7 @@ class MangaBuildPayload {
                 if (e is String) e,
             ]
           : const [],
+      targetMangaId: m['targetMangaId'] as String?,
     );
   }
 }

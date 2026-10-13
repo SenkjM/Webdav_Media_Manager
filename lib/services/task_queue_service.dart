@@ -3000,7 +3000,14 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         ..title = payload.title
         ..author = payload.author
         ..seriesTitle = payload.seriesTitle;
-      await mangaLib.upsertFromDraft(draft);
+      final target = payload.targetMangaId;
+      if (target != null) {
+        // 丙: a re-scan addresses one book the user already owns, so its
+        // id, progress and hand-edited metadata survive.
+        await mangaLib.rescanLoose(target, draft: draft);
+      } else {
+        await mangaLib.upsertFromDraft(draft);
+      }
       await reportUnitsProgress(task.id, done: 1, total: 1);
       await finish();
       return;
@@ -3027,6 +3034,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
+    final target = payload.targetMangaId;
     var done = 0;
     for (final hit in dirs) {
       if (token.isCancelled) {
@@ -3035,14 +3043,20 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         notifyListeners();
         return;
       }
-      await mangaLib.upsertFromDraft(
-        MangaLibraryService.draftForImageDir(
-          sourceName: payload.sourceName,
-          folderPath: hit.folderPath,
-          folderName: hit.folderName,
-          imageNames: hit.imageNames,
-        ),
+      final draft = MangaLibraryService.draftForImageDir(
+        sourceName: payload.sourceName,
+        folderPath: hit.folderPath,
+        folderName: hit.folderName,
+        imageNames: hit.imageNames,
       );
+      // A re-scan names exactly one book, so the target applies only when
+      // the walk found a single directory; with several there is nothing
+      // to disambiguate which book the user meant.
+      if (target != null && dirs.length == 1) {
+        await mangaLib.rescanLoose(target, draft: draft);
+      } else {
+        await mangaLib.upsertFromDraft(draft);
+      }
       done++;
       await reportUnitsProgress(task.id, done: done, total: dirs.length);
     }

@@ -628,7 +628,13 @@ class LibrarySyncStore {
     if (tombstones.isEmpty) return readManifest(destAccountId);
     final entries =
         <
-          ({String sourceName, String remotePath, int rev, DateTime deletedAt})
+          ({
+            String sourceName,
+            String remotePath,
+            int rev,
+            DateTime deletedAt,
+            String? syncKey,
+          })
         >[];
     for (final row in tombstones) {
       entries.add((
@@ -638,6 +644,9 @@ class LibrarySyncStore {
         deletedAt:
             DateTime.tryParse(row['deleted_at'] as String? ?? '') ??
             DateTime.now(),
+        // Music tombstones carry no sync key; readers fall back to
+        // 网盘名 + path.
+        syncKey: null,
       ));
     }
     final revs = [for (final e in entries) e.rev];

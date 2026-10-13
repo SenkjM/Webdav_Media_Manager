@@ -61,10 +61,15 @@ class _MemMangaDb extends LibraryDatabase {
 
   @override
   Future<Manga> upsertManga(Manga manga, {bool keepRev = false}) async {
+    // Schema v18: only containers are unique per (网盘名, path) — the fake
+    // mirrors `idx_mangas_container_key`. Loose-image books are surrogate-keyed
+    // and may share a folder.
     mangas.removeWhere(
       (m) =>
           m.id == manga.id ||
-          (m.sourceName == manga.sourceName &&
+          (manga.format != MangaFormat.images &&
+              m.format != MangaFormat.images &&
+              m.sourceName == manga.sourceName &&
               m.remotePath == manga.remotePath),
     );
     mangas.add(manga);
@@ -163,7 +168,7 @@ void main() {
     expect(names, ['1.png', '2.png', '10.png']);
   });
 
-  test('upsertFromDraft freezes page order and identity uniqueness', () async {
+  test('upsertFromDraft mints a surrogate id and freezes page order', () async {
     final db = _MemMangaDb();
     final svc = MangaLibraryService(db: db);
     await svc.init();
@@ -178,27 +183,46 @@ void main() {
     draft.seriesTitle = 'Demo Series';
 
     final manga = await svc.upsertFromDraft(draft);
-    expect(manga.id, mangaIdForRemote('nas', '/comics/OneShot'));
+    // 丙: the folder is a one-off input, so the id is a fresh surrogate and
+    // never the path hash.
+    expect(manga.id, isNot(mangaIdForRemote('nas', '/comics/OneShot')));
+    expect(manga.id, isNotEmpty);
     expect(manga.format, MangaFormat.images);
     expect(manga.pageCount, 3);
-    expect(manga.coverRelpath, '01.jpg');
+    // Page paths are relative to the source root: the list *is* the book.
+    expect(manga.coverRelpath, '/comics/OneShot/01.jpg');
     expect(svc.series.length, 1);
     expect(svc.series.first.title, 'Demo Series');
     expect(manga.series, 'Demo Series');
 
     final pages = await svc.pagesFor(manga.id);
     expect(pages.map((p) => p.relPath).toList(), [
-      '01.jpg',
-      '02.jpg',
-      '03.jpg',
+      '/comics/OneShot/01.jpg',
+      '/comics/OneShot/02.jpg',
+      '/comics/OneShot/03.jpg',
     ]);
     expect(pages.map((p) => p.pageIndex).toList(), [0, 1, 2]);
 
-    // Re-ingest same path replaces, does not duplicate.
-    draft.title = 'OneShot Renamed';
-    await svc.upsertFromDraft(draft);
-    expect(svc.mangas.length, 1);
-    expect(svc.mangas.first.title, 'OneShot Renamed');
+    // Building again from the same folder makes a *second* book instead of
+    // silently replacing the first.
+    final again = await svc.upsertFromDraft(draft);
+    expect(again.id, isNot(manga.id));
+    expect(svc.mangas.length, 2);
+
+    // Re-scanning a book the user owns updates it in place, so its id and its
+    // hand-edited metadata survive.
+    final rescan = MangaLibraryService.draftForImageDir(
+      sourceName: 'nas',
+      folderPath: '/comics/OneShot',
+      folderName: 'OneShot',
+      imageNames: ['01.jpg', '02.jpg', '03.jpg', '04.jpg'],
+    );
+    await svc.rescanLoose(manga.id, draft: rescan);
+    final kept = svc.mangaById(manga.id)!;
+    expect(kept.pageCount, 4);
+    expect(kept.series, 'Demo Series');
+    expect(kept.coverRelpath, '/comics/OneShot/01.jpg');
+    expect(svc.mangas.length, 2);
   });
 
   test('home_tab_v025 shifts indices >= 3 by one', () async {
@@ -360,7 +384,12 @@ void main() {
 
   group('page lists in sync: images = membership, CBZ = local cache', () {
     Manga m(String path, String format) => Manga(
-      id: mangaIdForRemote('nas', path),
+      // Loose-image books are surrogate-keyed; only containers are
+      // path-derived. A path-derived *images* row is a pre-v18 leftover, which
+      // sync and restore deliberately drop.
+      id: format == MangaFormat.images
+          ? 'uuid-${path.replaceAll('/', '_')}'
+          : mangaIdForRemote('nas', path),
       sourceName: 'nas',
       remotePath: path,
       title: path,

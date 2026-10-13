@@ -172,6 +172,7 @@ void main() {
             remotePath: '/music/gone.flac',
             rev: 105,
             deletedAt: DateTime.utc(2026, 3, 1),
+            syncKey: null,
           ),
         ],
       );

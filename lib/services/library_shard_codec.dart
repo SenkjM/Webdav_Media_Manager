@@ -159,11 +159,15 @@ class LibraryShardCodec {
     required String remotePath,
     required int rev,
     required DateTime deletedAt,
+    String? syncKey,
   }) => {
     WmpTomb.sourceName: sourceName,
     WmpTomb.remotePath: remotePath,
     WmpTomb.rev: rev,
     WmpTomb.deletedAt: deletedAt.toUtc().toIso8601String(),
+    // Manga tombstones carry the key their row lives under; music ones do
+    // not, and readers fall back to 网盘名 + path.
+    WmpTomb.syncKey: ?syncKey,
   };
 
   /// Encode a shard.
@@ -220,7 +224,13 @@ class LibraryShardCodec {
     required int revFrom,
     required int revTo,
     required List<
-      ({String sourceName, String remotePath, int rev, DateTime deletedAt})
+      ({
+        String sourceName,
+        String remotePath,
+        int rev,
+        DateTime deletedAt,
+        String? syncKey,
+      })
     >
     tombstones,
   }) {
@@ -231,6 +241,7 @@ class LibraryShardCodec {
           remotePath: t.remotePath,
           rev: t.rev,
           deletedAt: t.deletedAt,
+          syncKey: t.syncKey,
         ),
     ];
     return _encode(
@@ -292,6 +303,7 @@ class LibraryShardCodec {
               'remote_path': r[WmpTomb.remotePath] as String? ?? '',
               'rev': r[WmpTomb.rev] as int? ?? 0,
               'deleted_at': r[WmpTomb.deletedAt] as String? ?? '',
+              'sync_key': r[WmpTomb.syncKey] as String?,
             },
         ],
         covers: covers,

@@ -307,10 +307,10 @@ class WmpManga {
   /// Index into the shard's COVERS section (this row's own cover).
   static const int coverIndex = 19;
 
-  /// The row's own id. Container books can recompute it from source + path,
-  /// but loose-image books also fold their build mode into it, and the shard
-  /// carries no mode of its own. Written for every row; readers that lack the
-  /// tag (older shards) fall back to recomputing.
+  /// The row's own id. A container book can recompute it from source + path
+  /// ([mangaIdForRemote]); a loose-image book's id is a surrogate uuid, so
+  /// nothing can recover it from the row itself. Written for every row;
+  /// readers that lack the tag (older shards) fall back to recomputing.
   static const int mangaId = 20;
 }
 
@@ -321,6 +321,12 @@ class WmpTomb {
   static const int remotePath = 2;
   static const int rev = 3;
   static const int deletedAt = 4;
+
+  /// The key the deleted row lived under in the manga shard
+  /// ([mangaSyncKeyForManga]): a loose-image book's own id, a container's
+  /// 网盘名 + path key. Music tombstones never write it, and readers fall
+  /// back to 网盘名 + path when it is absent.
+  static const int syncKey = 5;
 }
 
 /// Playlist-entry record tag ids (ENTRIES section of a `PL` file).

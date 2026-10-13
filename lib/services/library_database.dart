@@ -10,6 +10,7 @@ import '../models/user_folder.dart';
 import '../models/user_folder_item.dart';
 import '../models/webdav_account.dart';
 import '../utils/cache_group_codec.dart';
+import '../utils/manga_identity.dart';
 import '../utils/track_identity.dart';
 
 /// SQLite persistence for multi-WebDAV accounts and the local music library.
@@ -17,6 +18,12 @@ import '../utils/track_identity.dart';
 ///
 /// Schema v16: the `manga_series` table is folded into a `mangas.series` tag
 /// (the album model — a series is derived from books, never stored on its own).
+/// Schema v18: manga identity splits in two. Containers keep the path-derived
+/// id (a materialised file *is* its path, the music rule); loose-image books
+/// get surrogate ids and carry their pages relative to the **source root**, so
+/// the same folder can hold two books and no page list depends on where the
+/// book was built from. `deleted_mangas` is re-keyed by `sync_key`.
+/// See [_upgradeMangaV18].
 /// Schema v17: the user-folder tables were rebuilt without their `FOREIGN KEY`
 /// clauses. `user_folder_items.folder_id` is `root` ([kUserFolderRootId]) for the
 /// virtual root 「我的文件夹」, which has no `user_folders` row.
@@ -42,6 +49,41 @@ import '../utils/track_identity.dart';
 /// not be derived from (source_name, remote_path) — local_path was always the
 /// deterministic cache file name, etag / size_bytes had no readers. isLocal is
 /// now a lazy File.exists on the derived path (CacheService).
+/// `mangas` DDL, schema v18. Shared by the create path and [_upgradeMangaV18]
+/// so the two can never drift.
+const String _mangasDdl = '''
+CREATE TABLE IF NOT EXISTS mangas (
+  id TEXT PRIMARY KEY,
+  source_name TEXT NOT NULL,
+  remote_path TEXT NOT NULL,
+  title TEXT NOT NULL,
+  author TEXT,
+  series TEXT,
+  volume TEXT,
+  chapter_number TEXT,
+  page_count INTEGER NOT NULL DEFAULT 0,
+  cover_relpath TEXT,
+  format TEXT NOT NULL DEFAULT 'unknown',
+  remote_missing INTEGER NOT NULL DEFAULT 0,
+  page_turn TEXT,
+  updated_at TEXT NOT NULL
+)
+''';
+
+/// `deleted_mangas` DDL, schema v18: keyed by manga id, with the sync key the
+/// shard publishes (a loose-image book's own id, a container's 网盘名 + path).
+const String _deletedMangasDdl = '''
+CREATE TABLE IF NOT EXISTS deleted_mangas (
+  manga_id TEXT PRIMARY KEY,
+  source_name TEXT NOT NULL,
+  remote_path TEXT NOT NULL,
+  sync_key TEXT NOT NULL,
+  rev INTEGER NOT NULL,
+  deleted_at TEXT NOT NULL,
+  pushed INTEGER NOT NULL DEFAULT 0
+)
+''';
+
 class LibraryDatabase {
   Database? _db;
 
@@ -56,7 +98,11 @@ class LibraryDatabase {
   /// v16→v17: user-folder tables lost their (never-enforced) FK clauses so
   /// the DDL stops contradicting the root sentinel `folder_id = 'root'`.
   /// See [_dropLegacyUserFolderForeignKeys].
-  static const schemaVersion = 17;
+  /// v17→v18: `mangas` loses its table-level UNIQUE (containers keep a partial
+  /// unique index), loose-image rows written under the old path-derived id are
+  /// dropped, and `deleted_mangas` is re-keyed by manga id + sync key.
+  /// See [_upgradeMangaV18].
+  static const schemaVersion = 18;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -342,25 +388,8 @@ SELECT id, parent_id, name, sort_order, created_at FROM user_folders
 
   /// Manga library tables (99 §19). Idempotent; safe on every open.
   Future<void> _ensureMangaTables(Database db) async {
-    await db.execute('''
-CREATE TABLE IF NOT EXISTS mangas (
-  id TEXT PRIMARY KEY,
-  source_name TEXT NOT NULL,
-  remote_path TEXT NOT NULL,
-  title TEXT NOT NULL,
-  author TEXT,
-  series TEXT,
-  volume TEXT,
-  chapter_number TEXT,
-  page_count INTEGER NOT NULL DEFAULT 0,
-  cover_relpath TEXT,
-  format TEXT NOT NULL DEFAULT 'unknown',
-  remote_missing INTEGER NOT NULL DEFAULT 0,
-  page_turn TEXT,
-  updated_at TEXT NOT NULL,
-  UNIQUE(source_name, remote_path)
-)
-''');
+    await _upgradeMangaV18(db);
+    await db.execute(_mangasDdl);
     await db.execute('''
 CREATE TABLE IF NOT EXISTS manga_pages (
   manga_id TEXT NOT NULL,
@@ -379,16 +408,7 @@ CREATE TABLE IF NOT EXISTS manga_progress (
 )
 ''');
     // Manga deletions (cloud sync), same shape and rules as `deleted_tracks`.
-    await db.execute('''
-CREATE TABLE IF NOT EXISTS deleted_mangas (
-  source_name TEXT NOT NULL,
-  remote_path TEXT NOT NULL,
-  rev INTEGER NOT NULL,
-  deleted_at TEXT NOT NULL,
-  pushed INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (source_name, remote_path)
-)
-''');
+    await db.execute(_deletedMangasDdl);
     await db.execute('''
 CREATE TABLE IF NOT EXISTS local_meta (
   key TEXT PRIMARY KEY,
@@ -403,7 +423,89 @@ CREATE TABLE IF NOT EXISTS local_meta (
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_mangas_source ON mangas(source_name)',
     );
+    // Containers keep 「one file, one book」 enforced; loose-image books
+    // have surrogate ids and may share a folder freely.
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_mangas_container_key '
+      "ON mangas(source_name, remote_path) WHERE format <> 'images'",
+    );
     await _ensureMangaColumns(db);
+  }
+
+  /// v17→v18 migration. Idempotent: it keys off the old DDL text, so it runs
+  /// once per database and is a no-op afterwards.
+  ///
+  /// The rebuild drops every loose-image row written before the surrogate-id
+  /// model — its page paths are relative to the book folder, which v18 no
+  /// longer understands, so importing one would yield a book whose pages never
+  /// resolve. Containers are copied over untouched; orphan pages / progress of
+  /// the dropped rows go with them. Folder references that pointed at a dropped
+  /// book are left alone on purpose: the folders UI shows them as unavailable
+  /// and the user deletes them.
+  Future<void> _upgradeMangaV18(Database db) async {
+    final mangas = await db.rawQuery(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='mangas'",
+    );
+    if (mangas.isEmpty) return; // fresh database: the new DDL already applies
+    final sql = (mangas.first['sql'] as String?) ?? '';
+    if (sql.contains('UNIQUE(source_name, remote_path)')) {
+      await db.execute('ALTER TABLE mangas RENAME TO mangas_v17');
+      await db.execute(_mangasDdl);
+      // 旧散图行的身份派生自目录（mangaIdForRemote(源, 路径)），页 rel 路径也
+      // 相对书根；v18 起这两样都变了，旧行无法无损升级，直接丢弃——用户在
+      // 漫画库里对本重新「重新扫描此本」就能拿回一本新的散图书。
+      await db.execute("DELETE FROM mangas_v17 WHERE format = 'images'");
+      await db.execute('INSERT INTO mangas SELECT * FROM mangas_v17');
+      await db.execute('DROP TABLE mangas_v17');
+      await db.delete(
+        'manga_pages',
+        where: 'manga_id NOT IN (SELECT id FROM mangas)',
+      );
+      await db.delete(
+        'manga_progress',
+        where: 'manga_id NOT IN (SELECT id FROM mangas)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mangas_author ON mangas(author)',
+      );
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_mangas_source ON mangas(source_name)',
+      );
+      await db.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_mangas_container_key '
+        "ON mangas(source_name, remote_path) WHERE format <> 'images'",
+      );
+    }
+    final tombstones = await db.rawQuery(
+      "SELECT sql FROM sqlite_master WHERE type='table' "
+      "AND name='deleted_mangas'",
+    );
+    if (tombstones.isEmpty) return;
+    final tombSql = (tombstones.first['sql'] as String?) ?? '';
+    if (!tombSql.contains('sync_key')) {
+      final old = await db.query('deleted_mangas');
+      await db.execute('DROP TABLE deleted_mangas');
+      await db.execute(_deletedMangasDdl);
+      for (final r in old) {
+        final source = (r['source_name'] as String?) ?? '';
+        final path = normalizeRemotePath((r['remote_path'] as String?) ?? '');
+        // Old tombstones were keyed by 网盘名 + path, i.e. by container.
+        await db.insert('deleted_mangas', {
+          'manga_id': mangaIdForRemote(source, path),
+          'source_name': source,
+          'remote_path': path,
+          'sync_key': mangaSyncKeyForManga(
+            id: mangaIdForRemote(source, path),
+            format: MangaFormat.cbz,
+            sourceName: source,
+            remotePath: path,
+          ),
+          'rev': r['rev'],
+          'deleted_at': r['deleted_at'],
+          'pushed': r['pushed'] ?? 0,
+        }, conflictAlgorithm: ConflictAlgorithm.replace);
+      }
+    }
   }
 
   /// Additive manga columns (v14+). Idempotent PRAGMA check.
@@ -1700,10 +1802,19 @@ WHERE series_id IS NOT NULL
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
     if (!keepRev) {
+      // The tombstone key is the one the shard carries: a loose-image
+      // book's own id, a container's 网盘名 + path key.
       await db.delete(
         'deleted_mangas',
-        where: 'source_name = ? AND remote_path = ?',
-        whereArgs: [row.sourceName, map['remote_path']],
+        where: 'sync_key = ?',
+        whereArgs: [
+          mangaSyncKeyForManga(
+            id: row.id,
+            format: row.format,
+            sourceName: row.sourceName,
+            remotePath: row.remotePath,
+          ),
+        ],
       );
     }
     return row;
@@ -1717,6 +1828,8 @@ WHERE series_id IS NOT NULL
       final row = await loadMangaById(id);
       if (row != null) {
         await upsertMangaTombstone(
+          id: row.id,
+          format: row.format,
           sourceName: row.sourceName,
           remotePath: row.remotePath,
           rev: _nextMangaRev(),
@@ -1731,27 +1844,39 @@ WHERE series_id IS NOT NULL
   // --- Manga tombstones (cloud sync) ---
 
   Future<void> upsertMangaTombstone({
+    required String id,
+    required String format,
     required String sourceName,
     required String remotePath,
     required int rev,
     DateTime? deletedAt,
   }) async {
     final db = await database;
+    final path = normalizeRemotePath(remotePath);
     await db.insert('deleted_mangas', {
+      'manga_id': id,
       'source_name': sourceName,
-      'remote_path': normalizeRemotePath(remotePath),
+      'remote_path': path,
+      'sync_key': mangaSyncKeyForManga(
+        id: id,
+        format: format,
+        sourceName: sourceName,
+        remotePath: path,
+      ),
       'rev': rev,
       'deleted_at': (deletedAt ?? DateTime.now()).toUtc().toIso8601String(),
       'pushed': 0,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  Future<void> clearMangaTombstone(String sourceName, String remotePath) async {
+  /// [syncKey] is the key the shard published this deletion under
+  /// ([mangaSyncKeyForManga]).
+  Future<void> clearMangaTombstone(String syncKey) async {
     final db = await database;
     await db.delete(
       'deleted_mangas',
-      where: 'source_name = ? AND remote_path = ?',
-      whereArgs: [sourceName, normalizeRemotePath(remotePath)],
+      where: 'sync_key = ?',
+      whereArgs: [syncKey],
     );
   }
 
