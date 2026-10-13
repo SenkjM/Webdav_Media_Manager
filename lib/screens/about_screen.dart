@@ -22,6 +22,7 @@ class _AboutScreenState extends State<AboutScreen> {
   final _updates = AppUpdateService();
   String _versionLabel = '…';
   bool _downloadInFlight = false;
+  UpdateChannel _channel = UpdateChannel.stable;
 
   @override
   void initState() {
@@ -67,7 +68,10 @@ class _AboutScreenState extends State<AboutScreen> {
       ),
     );
     try {
-      final result = await _updates.check(cancelToken: cancel);
+      final result = await _updates.check(
+        cancelToken: cancel,
+        channel: _channel,
+      );
       if (!mounted) return;
       if (dialogOpen) {
         dialogOpen = false;
@@ -240,15 +244,39 @@ class _AboutScreenState extends State<AboutScreen> {
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: _downloadInFlight ? null : _checkForUpdate,
-            icon: _downloadInFlight
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.system_update_outlined),
-            label: Text(l10n.aboutUpdateCheck),
+          Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<UpdateChannel>(
+                  segments: const [
+                    ButtonSegment(
+                      value: UpdateChannel.stable,
+                      label: Text('正式版'),
+                    ),
+                    ButtonSegment(
+                      value: UpdateChannel.preview,
+                      label: Text('预览版'),
+                    ),
+                  ],
+                  selected: {_channel},
+                  onSelectionChanged: (value) =>
+                      setState(() => _channel = value.first),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _downloadInFlight ? null : _checkForUpdate,
+                  icon: _downloadInFlight
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.system_update_outlined),
+                  label: Text(l10n.aboutUpdateCheck),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
           Text(l10n.aboutDescription),

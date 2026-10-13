@@ -27,6 +27,40 @@ void main() {
     },
   );
 
+  test('stable tag yields release buildCode; preview suffix overrides it', () {
+    // workflow tag v0.2.2 -> code 0*1e8 + 2*1e6 + 2*1e4 + 0 = 2020000
+    final stable = UpdateRelease.tryParse({
+      'tag_name': 'v0.2.2',
+      'prerelease': false,
+      'assets': [],
+    })!;
+    expect(stable.buildCode, 2020000);
+    expect(stable.isPrerelease, isFalse);
+
+    // workflow tag v0.2.2-2020004 -> code 2020004
+    final preview = UpdateRelease.tryParse({
+      'tag_name': 'v0.2.2-2020004',
+      'prerelease': true,
+      'assets': [],
+    })!;
+    expect(preview.buildCode, 2020004);
+    expect(preview.isPrerelease, isTrue);
+
+    // Same version, but preview buildCode > stable buildCode.
+    expect(preview.buildCode, greaterThan(stable.buildCode));
+  });
+
+  test('releasesUrl routes each channel to the right GitHub type filter', () {
+    expect(AppUpdateService.releasesUrl(UpdateChannel.stable), contains('type=stable'));
+    expect(AppUpdateService.releasesUrl(UpdateChannel.stable), contains('per_page=1'));
+    expect(AppUpdateService.releasesUrl(UpdateChannel.preview), contains('type=prerelease'));
+    expect(AppUpdateService.releasesUrl(UpdateChannel.preview), contains('per_page=1'));
+    expect(
+      AppUpdateService.releasesUrl(UpdateChannel.stable),
+      contains('SenkjM/Webdav_Media_Manager/releases'),
+    );
+  });
+
   test('prefers an exact ABI APK then the universal arm APK', () {
     const arm = UpdateAsset(
       name: 'app-arm.apk',

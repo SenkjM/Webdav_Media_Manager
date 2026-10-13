@@ -8,21 +8,42 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Checks public production releases. It is deliberately manual: nothing calls
+/// Checks public GitHub releases. It is deliberately manual: nothing calls
 /// [check] except the Settings action.
+///
+/// Two channels are supported:
+///
+/// * [UpdateChannel.stable] — the latest non-prerelease release. This is the
+///   default and matches the workflow tag shape `vX.Y.Z` (no suffix).
+/// * [UpdateChannel.preview] — the newest prerelease. Matches the workflow tag
+///   shape `vX.Y.Z-<versionCode>`, e.g. `v0.2.2-2020004`.
+///
+/// Both channels hit GitHub's `type=` filter on `/releases?per_page=1`, so a
+/// single response covers one release and no client-side sorting is needed.
 class AppUpdateService {
   AppUpdateService({Dio? dio, MethodChannel? channel})
     : _dio = dio ?? Dio(),
       _channel = channel ?? const MethodChannel(_channelName);
 
   static const _channelName = 'com.senkjm.media_manager/app';
-  static const _releasesUrl =
-      'https://api.github.com/repos/SenkjM/Webdav_Media_Manager/releases?per_page=30';
+
+  /// GitHub `type` value: `stable` excludes prereleases and drafts;
+  /// `prerelease` restricts to prereleases only. Keeping `per_page=1` makes
+  /// the response one release object instead of a full page.
+  static String releasesUrl(UpdateChannel channel) => switch (channel) {
+    UpdateChannel.stable =>
+      'https://api.github.com/repos/SenkjM/Webdav_Media_Manager/releases?per_page=1&type=stable',
+    UpdateChannel.preview =>
+      'https://api.github.com/repos/SenkjM/Webdav_Media_Manager/releases?per_page=1&type=prerelease',
+  };
 
   final Dio _dio;
   final MethodChannel _channel;
 
-  Future<UpdateCheckResult> check({CancelToken? cancelToken}) async {
+  Future<UpdateCheckResult> check({
+    CancelToken? cancelToken,
+    UpdateChannel channel = UpdateChannel.stable,
+  }) async {
     if (kIsWeb || !Platform.isAndroid) return const UpdateCheckUnsupported();
     final package = await PackageInfo.fromPlatform();
     final native = await _installInfo();
@@ -30,7 +51,7 @@ class AppUpdateService {
       return const UpdateCheckUnsupported();
     }
     final response = await _dio.get<String>(
-      _releasesUrl,
+      releasesUrl(channel),
       options: Options(
         responseType: ResponseType.plain,
         headers: const {
@@ -42,31 +63,28 @@ class AppUpdateService {
     );
     final raw = response.data;
     if (raw == null || raw.isEmpty) throw StateError('Empty release response');
-    // Skip releases that cannot be parsed (e.g. the legacy rolling tag
-    // named "prerelease", drafts, or tags that are not vX.Y.Z[-code]); one bad
-    // entry must not break the whole check.
-    final releases = <UpdateRelease>[];
-    for (final item in jsonDecode(raw) as List<dynamic>) {
-      if (item is! Map<String, dynamic> || item['draft'] == true) continue;
-      final release = UpdateRelease.tryParse(item);
-      if (release != null) releases.add(release);
+    final decoded = jsonDecode(raw);
+    if (decoded is! List || decoded.isEmpty) {
+      // `type=stable` on a repo with only prereleases returns `[]`.
+      throw StateError('No ${channel.name} release found');
     }
-    if (releases.isEmpty) throw StateError('No parsable release found');
-    final compatible = <(UpdateRelease release, UpdateAsset asset)>[
-      for (final release in releases)
-        if (release.pickApk(native.abis) case final asset?) (release, asset),
-    ]..sort((a, b) => b.$1.buildCode.compareTo(a.$1.buildCode));
-    if (compatible.isEmpty) {
-      return UpdateCheckNoCompatibleApk(releases.first);
-    }
-    final latest = compatible.first;
+    // The GitHub filter can still return a release whose tag the client cannot
+    // parse (e.g. a legacy rolling tag named "prerelease" that some repos keep
+    // around). Fail loudly instead of falling back silently.
+    final first = decoded.first;
+    final release = first is Map<String, dynamic>
+        ? UpdateRelease.tryParse(first)
+        : null;
+    if (release == null) throw StateError('Unparsable ${channel.name} release');
+    final asset = release.pickApk(native.abis);
+    if (asset == null) return UpdateCheckNoCompatibleApk(release);
     final current = AppVersion.parse(package.version);
     final currentCode = int.tryParse(package.buildNumber);
     final isNewer = currentCode == null
-        ? latest.$1.version.compareTo(current) > 0
-        : latest.$1.buildCode > currentCode;
+        ? release.version.compareTo(current) > 0
+        : release.buildCode > currentCode;
     return isNewer
-        ? UpdateCheckAvailable(latest.$1, latest.$2)
+        ? UpdateCheckAvailable(release, asset)
         : UpdateCheckUpToDate(current);
   }
 
@@ -254,6 +272,15 @@ class AppVersion implements Comparable<AppVersion> {
 
   @override
   String toString() => '$major.$minor.$patch';
+}
+
+/// Which GitHub release channel to check. Maps 1:1 to GitHub's `/releases`
+/// `type=` parameter so the server does the filtering.
+enum UpdateChannel {
+  /// Non-prerelease, non-draft. Matches workflow tag `vX.Y.Z`.
+  stable,
+  /// Prereleases only. Matches workflow tag `vX.Y.Z-<versionCode>`.
+  preview,
 }
 
 enum UpdateInstallResult {
