@@ -1672,6 +1672,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get recoveryClearContent => '建议先导出数据库。清除后请重新打开应用，网盘账号和本地索引需要重新配置。';
 
   @override
+  String recoveryClearPartial(int removed, String names) {
+    return '已删除 $removed 个文件；$names 仍被占用，未能删除。';
+  }
+
+  @override
   String recoveryClearedCount(Object count) {
     return '已清除 $count 个数据库文件，请重新打开应用';
   }
@@ -6414,6 +6419,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get recoveryClearContent => '建議先匯出資料庫。清除後請重新開啟應用，網盤帳號和本機索引需要重新設定。';
+
+  @override
+  String recoveryClearPartial(int removed, String names) {
+    return '已刪除 $removed 個檔案；$names 仍被佔用，未能刪除。';
+  }
 
   @override
   String recoveryClearedCount(Object count) {

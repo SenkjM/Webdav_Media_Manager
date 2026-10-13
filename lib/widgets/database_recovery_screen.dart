@@ -54,11 +54,14 @@ class _RecoveryScreenState extends State<RecoveryScreen> {
     if (yes != true || !mounted) return;
     setState(() => busy = true);
     await widget.beforeClear?.call();
-    final count = await recovery.clearAll();
+    final result = await recovery.clearAll();
     if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
     setState(() {
       busy = false;
-      message = AppLocalizations.of(context)!.recoveryClearedCount(count);
+      message = result.failed.isEmpty
+          ? l10n.recoveryClearedCount(result.removed)
+          : l10n.recoveryClearPartial(result.removed, result.failed.join(', '));
     });
     await Future<void>.delayed(const Duration(milliseconds: 250));
     await SystemNavigator.pop();

@@ -538,6 +538,13 @@
   },
   "recoveryClearTitle": "清除本地数据库？",
   "recoveryClearContent": "建议先导出数据库。清除后请重新打开应用，网盘账号和本地索引需要重新配置。",
+  "recoveryClearPartial": "已删除 {removed} 个文件；{names} 仍被占用，未能删除。",
+  "@recoveryClearPartial": {
+    "placeholders": {
+      "removed": { "type": "int" },
+      "names": { "type": "String" }
+    }
+  },
   "recoveryClearedCount": "已清除 {count} 个数据库文件，请重新打开应用",
   "@recoveryClearedCount": {
     "count": {}

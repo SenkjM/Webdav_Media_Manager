@@ -538,6 +538,13 @@
   },
   "recoveryClearTitle": "Clear local databases?",
   "recoveryClearContent": "Export first. After clearing, reopen the app and reconfigure cloud accounts and the local index.",
+  "recoveryClearPartial": "Deleted {removed} file(s); {names} are still in use and could not be removed.",
+  "@recoveryClearPartial": {
+    "placeholders": {
+      "removed": { "type": "int" },
+      "names": { "type": "String" }
+    }
+  },
   "recoveryClearedCount": "Cleared {count} database files; please reopen the app",
   "@recoveryClearedCount": {
     "count": {}

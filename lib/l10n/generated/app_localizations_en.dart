@@ -1733,6 +1733,11 @@ class AppLocalizationsEn extends AppLocalizations {
       'Export first. After clearing, reopen the app and reconfigure cloud accounts and the local index.';
 
   @override
+  String recoveryClearPartial(int removed, String names) {
+    return 'Deleted $removed file(s); $names are still in use and could not be removed.';
+  }
+
+  @override
   String recoveryClearedCount(Object count) {
     return 'Cleared $count database files; please reopen the app';
   }

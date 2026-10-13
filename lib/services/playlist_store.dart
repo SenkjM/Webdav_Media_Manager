@@ -11,10 +11,13 @@ import '../models/playlist.dart';
 class PlaylistStore {
   Database? _db;
 
+  /// On-disk name; see [LocalDatabaseRecoveryService].
+  static const fileName = 'playlists.db';
+
   Future<Database> get database async {
     if (_db != null) return _db!;
     final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'playlists.db');
+    final path = p.join(dir.path, fileName);
     _db = await openDatabase(
       path,
       version: 1,
@@ -115,7 +118,7 @@ CREATE TABLE playlists (
   /// Absolute path of the DB file (for backup).
   Future<String> databasePath() async {
     final dir = await getApplicationDocumentsDirectory();
-    return p.join(dir.path, 'playlists.db');
+    return p.join(dir.path, fileName);
   }
 
   Future<void> close() async {

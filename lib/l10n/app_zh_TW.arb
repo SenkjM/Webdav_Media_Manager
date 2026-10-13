@@ -538,6 +538,13 @@
   },
   "recoveryClearTitle": "清除本機資料庫？",
   "recoveryClearContent": "建議先匯出資料庫。清除後請重新開啟應用，網盤帳號和本機索引需要重新設定。",
+  "recoveryClearPartial": "已刪除 {removed} 個檔案；{names} 仍被佔用，未能刪除。",
+  "@recoveryClearPartial": {
+    "placeholders": {
+      "removed": { "type": "int" },
+      "names": { "type": "String" }
+    }
+  },
   "recoveryClearedCount": "已清除 {count} 個資料庫檔案，請重新開啟應用",
   "@recoveryClearedCount": {
     "count": {}

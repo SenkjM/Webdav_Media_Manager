@@ -3099,6 +3099,12 @@ abstract class AppLocalizations {
   /// **'建议先导出数据库。清除后请重新打开应用，网盘账号和本地索引需要重新配置。'**
   String get recoveryClearContent;
 
+  /// No description provided for @recoveryClearPartial.
+  ///
+  /// In zh, this message translates to:
+  /// **'已删除 {removed} 个文件；{names} 仍被占用，未能删除。'**
+  String recoveryClearPartial(int removed, String names);
+
   /// No description provided for @recoveryClearedCount.
   ///
   /// In zh, this message translates to:

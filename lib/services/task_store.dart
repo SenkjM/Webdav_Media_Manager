@@ -21,10 +21,13 @@ class TaskStore {
   /// losing it costs a re-enqueue, not data.
   static const schemaVersion = 8;
 
+  /// On-disk name; see [LocalDatabaseRecoveryService].
+  static const fileName = 'task_queue.db';
+
   Future<Database> get database async {
     if (_db != null) return _db!;
     final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, 'task_queue.db');
+    final path = p.join(dir.path, fileName);
     _db = await openDatabase(
       path,
       version: schemaVersion,
