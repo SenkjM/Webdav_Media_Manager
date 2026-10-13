@@ -7,7 +7,6 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/library_track.dart';
 import '../models/playlist.dart';
 import '../models/playlist_sentinels.dart';
-import '../models/library_tag_dimension.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/accounts_service.dart';
@@ -25,7 +24,6 @@ import '../widgets/library_cover_art.dart';
 import '../widgets/meta_text.dart';
 import '../widgets/track_status_chip.dart';
 import '../widgets/track_status_dot.dart';
-import 'library_tag_picker_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 
 class PlaylistDetailScreen extends StatelessWidget {
@@ -118,32 +116,48 @@ class PlaylistDetailScreen extends StatelessWidget {
   Future<void> _pickFromLibrary(BuildContext context, Playlist pl) async {
     final l10n = AppLocalizations.of(context)!;
     final library = context.read<LibraryService>();
-    // Reuse the same multi-select track picker used by folder content editing.
-    final picked = await Navigator.of(context).push<List<String>>(
-      MaterialPageRoute(
-        builder: (_) => LibraryTagPickerScreen(
-          refKind: UserFolderRefKind.track,
-          title: l10n.playlistAddFromLibrary,
+    final all = library.tracks.toList();
+    final selected = await showDialog<LibraryTrack>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.playlistAddFromLibrary),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: all.isEmpty
+              ? Center(child: Text(l10n.libraryEmpty))
+              : ListView.builder(
+                  itemCount: all.length,
+                  itemBuilder: (_, i) {
+                    final t = all[i];
+                    return ListTile(
+                      title: Text(t.displayTitle),
+                      subtitle: Text(t.displayArtistFor(l10n)),
+                      onTap: () => Navigator.pop(ctx, t),
+                    );
+                  },
+                ),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancel),
+          ),
+        ],
       ),
     );
-    if (picked == null || picked.isEmpty || !context.mounted) return;
-    final service = context.read<PlaylistService>();
-    for (final musicId in picked) {
-      final t = library.findByMusicId(musicId);
-      if (t == null) continue;
-      await service.addTrack(
-        pl.id,
-        PlaylistEntry(
-          sourceName: t.sourceName,
-          remotePath: t.remotePath,
-          musicId: t.musicId,
-          title: t.displayTitle,
-          durationMs: t.durationMs,
-          cueTrackIndex: t.cueTrackIndex,
-        ),
-      );
-    }
+    if (selected == null || !context.mounted) return;
+    await context.read<PlaylistService>().addTrack(
+      pl.id,
+      PlaylistEntry(
+        sourceName: selected.sourceName,
+        remotePath: selected.remotePath,
+        musicId: selected.musicId,
+        title: selected.displayTitle,
+        durationMs: selected.durationMs,
+        cueTrackIndex: selected.cueTrackIndex,
+      ),
+    );
   }
 }
 
