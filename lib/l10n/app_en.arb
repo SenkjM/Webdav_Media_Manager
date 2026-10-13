@@ -1538,5 +1538,7 @@
   "mangaReadModeStream": "Stream",
   "mangaReadModeCache": "Cache full file",
   "mangaRangeUnsupportedRemember": "Always cache from now on",
-  "imageViewerClose": "Exit viewer"
+  "imageViewerClose": "Exit viewer",
+    "mangaRescanAction": "Re-scan this book",
+    "mangaRescanHint": "Pick the source folder; the page list is rebuilt and progress and metadata stay."
 }

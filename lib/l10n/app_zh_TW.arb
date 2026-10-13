@@ -1527,5 +1527,7 @@
   "mangaReadModeStream": "串流讀取",
   "mangaReadModeCache": "整包快取",
   "mangaRangeUnsupportedRemember": "以後都用整包快取",
-  "imageViewerClose": "離開瀏覽"
+  "imageViewerClose": "離開瀏覽",
+    "mangaRescanAction": "重新掃描此本",
+    "mangaRescanHint": "選擇來源資料夾，頁表會重新收集；進度與中繼資料保留。"
 }

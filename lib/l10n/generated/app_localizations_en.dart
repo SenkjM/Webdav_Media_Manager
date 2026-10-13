@@ -4957,4 +4957,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get imageViewerClose => 'Exit viewer';
+
+  @override
+  String get mangaRescanAction => 'Re-scan this book';
+
+  @override
+  String get mangaRescanHint =>
+      'Pick the source folder; the page list is rebuilt and progress and metadata stay.';
 }

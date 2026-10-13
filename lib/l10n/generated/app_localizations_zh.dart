@@ -4740,6 +4740,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get imageViewerClose => '退出浏览';
+
+  @override
+  String get mangaRescanAction => '重新扫描此本';
+
+  @override
+  String get mangaRescanHint => '选择来源文件夹，页表会重新收集；进度与元数据保留。';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -9478,4 +9484,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get imageViewerClose => '離開瀏覽';
+
+  @override
+  String get mangaRescanAction => '重新掃描此本';
+
+  @override
+  String get mangaRescanHint => '選擇來源資料夾，頁表會重新收集；進度與中繼資料保留。';
 }

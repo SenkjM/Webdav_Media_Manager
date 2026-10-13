@@ -1558,5 +1558,7 @@
   "mangaReadModeStream": "流式读取",
   "mangaReadModeCache": "整包缓存",
   "mangaRangeUnsupportedRemember": "以后都用整包缓存",
-  "imageViewerClose": "退出浏览"
+  "imageViewerClose": "退出浏览",
+    "mangaRescanAction": "重新扫描此本",
+    "mangaRescanHint": "选择来源文件夹，页表会重新收集；进度与元数据保留。"
 }

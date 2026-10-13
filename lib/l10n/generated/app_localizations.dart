@@ -8391,6 +8391,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'退出浏览'**
   String get imageViewerClose;
+
+  /// No description provided for @mangaRescanAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新扫描此本'**
+  String get mangaRescanAction;
+
+  /// No description provided for @mangaRescanHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择来源文件夹，页表会重新收集；进度与元数据保留。'**
+  String get mangaRescanHint;
 }
 
 class _AppLocalizationsDelegate
