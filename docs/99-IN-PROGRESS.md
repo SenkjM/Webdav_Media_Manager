@@ -1231,17 +1231,18 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 11. **漫画库内 Tab**（对照音乐）：系列 / 单本 / 作者。
 12. **抽屉顺序（用户更正 2026-10-12）**：文件夹(0) → 音乐库(1) → 歌单(2) → **漫画库(3)** → 网络库(4) → 任务(5) → 设置(6)。`home_tab_index` 一次性迁移：prefs 旗标 `home_tab_v025_manga_inserted`；已有用户保存索引 **≥3** 则 +1（与文件夹插入同模式）。
 
-### 19.3 Schema（v13 加表 → v14 `page_turn` → v16 系列降为标签）
+### 19.3 Schema（v13 加表 → v14 `page_turn` → v16 系列降为标签 → v17 用户文件夹去外键 → v18 散图代理键）
 
-同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；v15 再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1912-漫画库云同步--进度同步--文件夹同步--云端路径重排) 的「schema 15」；**v16 把 `manga_series` 表折进 `mangas.series` 标签**。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
+同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；v15 再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1912-漫画库云同步--进度同步--文件夹同步--云端路径重排) 的「schema 15」；**v16 把 `manga_series` 表折进 `mangas.series` 标签**；v17 去掉 `user_folders` / `user_folder_items` 上的外键（虚拟根 `'root'` 要能挂软引用）；**v18 把漫画行的身份一分为二**——容器书仍是派生的 `mangaIdForRemote(源, 路径)`，散图（`format = 'images'`）改用代理键 uuid，详见 [19.20](#1920-散图代理键与-schema-v18散图身份2026-10-13)。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
 
 | 表 | 要点 |
 |----|------|
-| `mangas` | `id` TEXT PK（确定性 `mangaIdForRemote`）；`UNIQUE(source_name, remote_path)`；`series` TEXT nullable（v16；**不是外键**，就是行上的标签，空 = 未指定）；`title` / `author` / `volume` / `chapter_number`；`page_count`；`cover_relpath`；`format`=`cbz\|cbr\|pdf\|epub\|images\|unknown`；`remote_path` / `source_name`；`remote_missing`；`page_turn` nullable（v14；`ltr`/`rtl`；null=跟随全局）；`updated_at` |
-| `manga_pages` | PK `(manga_id, page_index)`；`rel_path` |
+| `mangas` | `id` TEXT PK（**容器**由 `mangaIdForRemote(源, 路径)` 推出；**散图**是代理键 uuid——v18）；容器唯一性由部分唯一索引 `idx_mangas_container_key`（`source_name, remote_path`，`WHERE format <> 'images'`）保证（v18 起取代表级 `UNIQUE`）；`series` TEXT nullable（v16；**不是外键**，就是行上的标签，空 = 未指定）；`title` / `author` / `volume` / `chapter_number`；`page_count`；`cover_relpath`；`format`=`cbz\|cbr\|pdf\|epub\|images\|unknown`；`remote_path` / `source_name`；`remote_missing`；`page_turn` nullable（v14；`ltr`/`rtl`；null=跟随全局）；`updated_at` |
+| `manga_pages` | PK `(manga_id, page_index)`；`rel_path`（容器 = 包内条目名；散图 = **相对网盘根**的完整路径，v18 起） |
 | `manga_progress` | PK `manga_id`；`page_index`；`updated_at` |
+| `deleted_mangas` | PK `manga_id`（v18 起；此前是 `(source_name, remote_path)`）；`source_name` / `remote_path` / `sync_key` / `rev` / `deleted_at` / `pushed` |
 
-索引：`series`、`author`、`source_name`。
+索引：`series`、`author`、`source_name`，以及部分唯一索引 `idx_mangas_container_key`（v18）。
 
 **系列不是实体（v16，用户 2026-10-13 决定）**：`manga_series` 表已删除，模型侧 `MangaSeries` 退化为**派生视图**（只剩 `title`，`id = mangaSeriesIdForTitle(title) = sha1('mangaSeries\0' + trim(title))`）。系列列表 / 本数 / 封面全部由行分组派生，所以**空系列在结构上不可能存在**，也就没有「系列作者」这种可独立编辑的字段——改名 = 给成员行重新打标签（等于合并），清空 = 解绑。这与音乐库的 `tracks.album` 完全同构（`LibraryTrack.album` 也是一列，空值用哨兵 `kUnknownAlbum`，显示时才换成本地化词；列表与封面分别由 `library_screen.dart` 的 `groups.keys` 与 `library_group_cover.dart` 的 `pickCoverTrack` 派生）。迁移在 `_ensureMangaSeriesTag`：先 `ALTER TABLE mangas ADD COLUMN series TEXT`，再把 `manga_series.title` 按旧 `series_id` 回填进行，最后 `DROP TABLE manga_series`。
 
@@ -1330,11 +1331,11 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 
 - **manga_pages 是否覆盖 CBZ**：是。散图在入库时写；CBZ 在首次打开（Range 读 zip 目录或已下载 zip，`manga_reader_prep.dart`）或刮削任务（`replacePages`）时冻结页序。
 - **页序按类分流（用户决定 2026-10-12 晚 → 10-13 定案）**：`manga_pages` 按漫画类别分两种待遇。
-  - **A 类 散图（`format = images`）**：页表是数据（成员集合 + 顺序），**进**同步分片（`WmpManga.pages = 18`，JSON 数组，`MangaSyncRow` 只对 images 填充；CBZ 等容器行永远不带）、**进**全部备份 v7 漫画段 `pages` 段。本地编辑页表 bump `mangas.rev`；从云端拉取时**替换本地页表且不 bump**（避免回环重传）；`replacePages` 只在页数 / 封面变化时改行。恢复备份后散图页表直接可用。
+  - **A 类 散图（`format = images`）**：页表是数据（成员集合 + 顺序），**进**同步分片（`WmpManga.pages = 18`，JSON 数组，`MangaSyncRow` 只对 images 填充；CBZ 等容器行永远不带）、**进**全部备份 v7 漫画段 `pages` 段。本地编辑页表 bump `mangas.rev`；从云端拉取时**替换本地页表且不 bump**（避免回环重传）；`replacePages` 只在页数 / 封面变化时改行。恢复备份后散图页表直接可用。**v18 起散图是代理键**：`id` 是 uuid（`newMangaId()`，不从任何属性推导），页 `rel_path` 是相对网盘根的完整路径，书与目录彻底解耦——同一目录可以并存多本（merged 与 perDir 的成员集合本就不同，因此不再需要 `build_mode` 列），目录改名 / 移动也不影响身份。旧散图行在升级时被丢弃，见 [19.20](#1920-散图代理键与-schema-v18散图身份2026-10-13)。
   - **B 类 容器（CBZ / CBR / PDF / EPUB）**：页序由文件推出，**只作本地缓存**——不进同步分片、不进全部备份，不做兼容。别的设备拉到行 / 恢复备份后照旧首次打开（`manga_reader_prep.dart`）或刮削时生成。写页序**永不 bump rev**；`replacePages` 只在页数 / 封面变化时改行，所以重建缓存不会触发重传。
   - `0e77127` 里「散图缺页序时打开即递归列目录重建」的实现已删除——散图的页表是建立时筛选出的成员集合（扩展名、深度、子目录开关、按目录模式只取本层），列目录无法复现，且按目录模式下父目录会吞掉子书。现在散图缺页表时直接报空页错误，让用户回网络库重建该本。
 - **远端布局**：`library/music/`（原音乐库内容，不迁移旧路径）、`library/manga/`（`index.json` format `wmp_manga_library_index` + 分片 + `progress.json`）、`library/folders/folders.json`。
-- **漫画行合并**：键 `网盘名 + 规范化 remotePath`，高 rev 胜（与到达顺序无关）；墓碑只在 `tomb.rev >= row.rev` 时隐藏；本地写入清掉本地墓碑。系列就是行上的 `mangas.series` 标签（v16 起），线上仍写 `WmpManga.seriesTitle`（tag 7），系列 id 由标题确定性推出 `sha1('mangaSeries\0'+title)`，避免跨设备分裂；tag 6 / 8 / 9（`seriesId` / `seriesAuthor` / `seriesSortTitle`）已退役，读端忽略、写端不再产出。
+- **漫画行合并**：容器书键 `网盘名 + 规范化 remotePath`，散图书键是**自身 uuid**（分片里 `WmpManga.mangaId` = tag 20）；高 rev 胜（与到达顺序无关）；墓碑只在 `tomb.rev >= row.rev` 时隐藏；本地写入清掉本地墓碑。系列就是行上的 `mangas.series` 标签（v16 起），线上仍写 `WmpManga.seriesTitle`（tag 7），系列 id 由标题确定性推出 `sha1('mangaSeries\0'+title)`，避免跨设备分裂；tag 6 / 8 / 9（`seriesId` / `seriesAuthor` / `seriesSortTitle`）已退役，读端忽略、写端不再产出。
 - **进度合并**：每个 manga_id 独立，较新 `updatedAt` 胜；相等不动。增量同步时一并读写 `progress.json`。
 - **文件夹合并**：整份快照 LWW。本机自上次同步后改过 → 推；只有云端 `updatedAt` 变了 → 拉（整份替换本地）；两边都改 → 本机修改时间与云端 `updatedAt` 比，新者整份胜，另一方修改丢弃不合并。本机修改时间在 `local_meta.folders_changed_at`，上次同步与所见云端时间按目的地存在 `local_meta`。
 - **备份**：`formatVersion 7`，新增段 `mangaLibrary = 13`（漫画 / **散图页行** / 进度 / 墓碑 JSON，容器页序不入归档）、`userFolders = 14`、`mangaCovers = 15`（**漫画封面缩略图字节**，与音乐 `COVERS = 3` 同一套连续布局，每本一份；归档里不存路径——本地路径由漫画 id 派生，所以行上只带一个 `cover_index`，恢复时写回 `manga_cache/covers/` 并抹掉下标）。恢复时散图页表直接可用，容器本地页序缓存清空，按上条重新生成。
@@ -1405,3 +1406,15 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - **图片扫描深度**：新增偏好 `image_scan_max_depth`（默认 1，`WalkOptions.defaultMaxDepth`）与 `SettingsService.imageScanWalkOptions`；图片查看设置页在「搜索子目录」打开时显示深度输入；`image_viewer_screen.dart` 的手写 BFS 换成 `DirectoryWalker`，环路保护与条目上限一起拿到。
 - **CBZ 首屏（惰性抽页）**：`_prepareCbzWithZip` 原来**无条件从第 0 页抽完整本**才返回，从第 150 页打开也要等 40 秒。现在先读 `progressFor` 定位起始页，只抽那一页，其余页挂 `ImagePageLoader` 闭包；`ImageViewerPage.localLoader` 与 `image_viewer_screen.dart` 的 `_ensureLocal` 惰性分支把它接进查看器本来就有的 ±N 预取窗口。实测 181 页 / 36.4 MB 的 CBZ：到首屏 **1.0 秒**（原来 48.9 秒）。
 - **现场诊断脚本** `tool/dav_cbz_probe.dart`：`dart run tool/dav_cbz_probe.dart --url … --user … --pass … --path '…' [--all-pages]`，先打四种 Range 形态（`0-0` / `0-` / `-65536` / 中间段），再用 `CbzRangeZip` 开包，报告页数、`totalSize`、到首帧耗时与 ComicInfo。2026-10-13 对 123pan WebDAV 实测四种形态全 206：**慢的是阅读器，不是服务器**。
+
+### 19.20 散图代理键与 schema v18（散图身份，2026-10-13）
+
+用户决定：「彻底抛弃漫画散页的目录绑定原则」「散图不需要保存什么源、路径、模式，唯一可信就是页列表」。方案代号**丙**——**书是用户资产，页列表是内容，目录只是一次性的输入来源**。
+
+- **身份**：`lib/utils/manga_identity.dart` 新增 `newMangaId()`（uuid v4）与 `mangaSyncKeyForManga({id, format, sourceName, remotePath})`（散图取自身 id，容器回落到 `trackIdentityKey(源, 规范化路径)`），以及认出旧行的 `isLegacyLooseManga(...)`。容器书的身份**一个字都没变**（仍 `mangaIdForRemote`）——它「物化之后基本确定」，与音乐单曲同构，也省掉旧设备 / 旧分片的兼容问题。
+- **页路径**：散图的 `MangaPage.relPath` 由「相对书根」改成**相对网盘根**的完整路径，由 `MangaIngestDraft.draftForImageDir` / `draftForMergedImages` 通过 `_sourceRoot` / `_underSourceRoot` 生成。页表因此自带定位信息，`mangas.remote_path` 从身份降级为「上次是从哪个目录建的」这一条线索。`MangaReaderPrep._prepareImages` 本来就按「以 `/` 开头当绝对路径」解析，阅读器一行没改。
+- **schema v18**（`_upgradeMangaV18`）：`mangas` 重建去掉表级 `UNIQUE(source_name, remote_path)`，改为**部分唯一索引** `idx_mangas_container_key ... WHERE format <> 'images'`（容器唯一性与 v17 完全等价，散图不再受限，同一目录的两本散图可以共存）；`deleted_mangas` 重建为 `manga_id` 主键 + `sync_key` 列，旧行按「此前墓碑都是容器的」逐条重键；升级时**直接丢弃 `format = 'images'` 的旧行**，并清掉随之孤立的 `manga_pages` / `manga_progress`。不写数据搬运、不兼容旧散图数据。
+- **墓碑**：`WmpTomb.syncKey = 5`；`manga_sync_store` / `sync_service` / `library_sync_store` 三处合并键统一成 `row['sync_key'] ?? 回落 trackIdentityKey`。指向已删散图书的用户文件夹软引用**不清理**——`UserFolderService` 遇到不匹配的 id 只是取不到内容，不报错，留给用户手动删。
+- **重新扫描此本（丙的核心）**：散图书的行尾「⋮」新增一项，走 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目录后入队一个带 `targetMangaId` 的 merged 建立任务；`_runMangaBuild` 见到目标 id 就改走 `MangaLibraryService.rescanLoose`——**就地替换页表**（bump rev）并更新 `remote_path` / `page_count` / `cover_relpath`，id、阅读进度与手工元数据全部保留。没有目标 id 时照旧新建（分配新 uuid）。
+- **重复建立的现状**：容器入口（`_scanComicContainers` / `_ingestComicSelection`）仍无条件入队一次刮削；`_ingestComicFile` 先查库，命中直接打开（见 [19.16](#1916-网络库漫画单文件加入之后就是打开2026-10-13)）。散图的两个建立入口（合并 / 每目录）都从网络库出发，见 [19.15](#1915-扫描刮削与整包缓存改入任务队列2026-10-13)。
+- **测试**：`test/manga_library_test.dart` 的 `_MemMangaDb` 去重规则改成「按 id 去重；`(源, 路径)` 只在两行都不是散图时去重」，与 v18 同形；补了「同一目录两次建立得到两本」「`rescanLoose` 保留元数据」的断言。
