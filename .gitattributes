@@ -1,0 +1,42 @@
+# 换行策略
+#
+# 仓库里一律存 LF；工作区换行由平台决定（Windows 上 core.autocrlf=true 时
+# checkout 仍是 CRLF）——和本仓库加入本文件之前的行为一致，因此不会产生
+# 大规模的重新归一化 diff。
+#
+# 以前这条规则只靠每台机器各自的 core.autocrlf 维持，克隆到一台没设过的
+# 机器上就会漂移；写在这里之后，同一份提交在任何机器上落盘都一样。
+* text=auto
+
+# 要在 Linux / macOS 上执行的脚本：任何平台都必须落成 LF
+*.sh  text eol=lf
+
+# Windows 专用脚本：保持 CRLF
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制：禁止任何换行转换与文本 diff
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.webp    binary
+*.ico     binary
+*.ttf     binary
+*.otf     binary
+*.woff    binary
+*.woff2   binary
+*.jar     binary
+*.keystore binary
+*.jks     binary
+*.zip     binary
+*.so      binary
+*.dylib   binary
+*.dll     binary
+
+# 锁文件与生成物：合并冲突时不要试图逐行合并
+pubspec.lock  -merge
+
+# 本文件自身豁免换行转换。必须写在最后：同一个文件里，后匹配的行覆盖前面的。
+.gitattributes -text
