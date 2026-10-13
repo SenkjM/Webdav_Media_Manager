@@ -1103,6 +1103,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get newFolder => 'New folder';
 
   @override
+  String get addAction => 'Add';
+
+  @override
+  String get uploadAction => 'Upload';
+
+  @override
+  String get uploadQueued => 'Upload queued';
+
+  @override
   String get close => 'Close';
 
   @override
@@ -4725,6 +4734,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get taskKindMangaBuild => 'Build manga';
+
+  @override
+  String get taskKindUpload => 'Upload';
+
+  @override
+  String get taskKindMangaPack => 'Pack CBZ';
+
+  @override
+  String get mangaPackAction => 'Materialize as CBZ';
+
+  @override
+  String get mangaPackQueued => 'Pack queued';
+
+  @override
+  String get mangaPackHint =>
+      'Download every page into a CBZ, then upload it to the chosen folder';
 
   @override
   String get mangaBuildQueued => 'Build queued';

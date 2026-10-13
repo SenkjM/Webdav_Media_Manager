@@ -2037,6 +2037,24 @@ abstract class AppLocalizations {
   /// **'新建文件夹'**
   String get newFolder;
 
+  /// No description provided for @addAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加'**
+  String get addAction;
+
+  /// No description provided for @uploadAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传'**
+  String get uploadAction;
+
+  /// No description provided for @uploadQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入上传任务'**
+  String get uploadQueued;
+
   /// No description provided for @close.
   ///
   /// In zh, this message translates to:
@@ -7990,6 +8008,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'建立漫画'**
   String get taskKindMangaBuild;
+
+  /// No description provided for @taskKindUpload.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传'**
+  String get taskKindUpload;
+
+  /// No description provided for @taskKindMangaPack.
+  ///
+  /// In zh, this message translates to:
+  /// **'打包 CBZ'**
+  String get taskKindMangaPack;
+
+  /// No description provided for @mangaPackAction.
+  ///
+  /// In zh, this message translates to:
+  /// **'物化为 CBZ'**
+  String get mangaPackAction;
+
+  /// No description provided for @mangaPackQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入打包任务'**
+  String get mangaPackQueued;
+
+  /// No description provided for @mangaPackHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'逐页下载并打包成一个 CBZ，然后上传到所选目录'**
+  String get mangaPackHint;
 
   /// No description provided for @mangaBuildQueued.
   ///

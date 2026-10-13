@@ -1069,6 +1069,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get newFolder => '新建文件夹';
 
   @override
+  String get addAction => '添加';
+
+  @override
+  String get uploadAction => '上传';
+
+  @override
+  String get uploadQueued => '已加入上传任务';
+
+  @override
   String get close => '关闭';
 
   @override
@@ -4518,6 +4527,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get taskKindMangaBuild => '建立漫画';
 
   @override
+  String get taskKindUpload => '上传';
+
+  @override
+  String get taskKindMangaPack => '打包 CBZ';
+
+  @override
+  String get mangaPackAction => '物化为 CBZ';
+
+  @override
+  String get mangaPackQueued => '已加入打包任务';
+
+  @override
+  String get mangaPackHint => '逐页下载并打包成一个 CBZ，然后上传到所选目录';
+
+  @override
   String get mangaBuildQueued => '已加入建立任务';
 
   @override
@@ -5816,6 +5840,15 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get newFolder => '新增資料夾';
+
+  @override
+  String get addAction => '新增';
+
+  @override
+  String get uploadAction => '上傳';
+
+  @override
+  String get uploadQueued => '已加入上傳任務';
 
   @override
   String get close => '關閉';
@@ -9265,6 +9298,21 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get taskKindMangaBuild => '建立漫畫';
+
+  @override
+  String get taskKindUpload => '上傳';
+
+  @override
+  String get taskKindMangaPack => '打包 CBZ';
+
+  @override
+  String get mangaPackAction => '物化為 CBZ';
+
+  @override
+  String get mangaPackQueued => '已加入打包任務';
+
+  @override
+  String get mangaPackHint => '逐頁下載並打包成一個 CBZ，然後上傳到所選目錄';
 
   @override
   String get mangaBuildQueued => '已加入建立任務';
