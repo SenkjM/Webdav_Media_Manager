@@ -785,6 +785,11 @@ class MainActivity : AudioServiceFragmentActivity() {
                     DownloadKeepAliveService.stopIfRunning()
                     result.success(true)
                 }
+                "isRunning" -> {
+                    // Cheap liveness probe: no PowerManager/ActivityManager
+                    // work, so Dart can afford it before every start decision.
+                    result.success(mapOf("running" to DownloadKeepAliveService.running))
+                }
                 "diagnostics" -> {
                     result.success(DownloadKeepAliveService.diagnostics(applicationContext))
                 }

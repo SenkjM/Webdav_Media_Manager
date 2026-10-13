@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Method channel shared with `DownloadKeepAliveService`.
 const String kDownloadKeepAliveChannel =
@@ -24,6 +25,41 @@ class KeepAliveStartResult {
   );
 }
 
+/// Persists the post-timeout start cooldown so it survives a process restart.
+///
+/// Android 12+ rejects a background `startForegroundService` for `dataSync`;
+/// forgetting the window makes the service flap on the first task after a
+/// restart, so the store is injected (and faked in tests).
+abstract class DownloadKeepAliveSuppressionStore {
+  Future<DateTime?> read();
+
+  Future<void> write(DateTime? until);
+}
+
+/// Default store: one `SharedPreferences` entry.
+class PrefsDownloadKeepAliveSuppressionStore
+    implements DownloadKeepAliveSuppressionStore {
+  static const String key = 'download_keepalive_suppress_until';
+
+  @override
+  Future<DateTime?> read() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getInt(key);
+    if (raw == null) return null;
+    return DateTime.fromMillisecondsSinceEpoch(raw);
+  }
+
+  @override
+  Future<void> write(DateTime? until) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (until == null) {
+      await prefs.remove(key);
+    } else {
+      await prefs.setInt(key, until.millisecondsSinceEpoch);
+    }
+  }
+}
+
 /// Native side of the download dataSync foreground service.
 ///
 /// The service posts one minimal notification and does not own progress
@@ -39,9 +75,16 @@ abstract class DownloadKeepAliveBridge {
 
   Future<Map<String, Object?>> diagnostics();
 
+  /// Cheap liveness probe for the native foreground service.
+  ///
+  /// A cached [DownloadKeepAlivePhase] goes stale whenever the service is torn
+  /// down behind our back, so every start decision checks this first.
+  Future<bool> isRunning();
+
   void bind({
     required void Function() onTimeout,
     required void Function(String error) onStartFailed,
+    required void Function() onStopped,
   });
 }
 
@@ -49,13 +92,20 @@ abstract class DownloadKeepAliveBridge {
 /// queue has work. Callers start it only from the foreground; [release] is
 /// the ordered stop (stopForeground REMOVE, then stopSelf).
 class DownloadKeepAlive {
-  DownloadKeepAlive({DownloadKeepAliveBridge? bridge}) : _injected = bridge;
+  DownloadKeepAlive({
+    DownloadKeepAliveBridge? bridge,
+    DownloadKeepAliveSuppressionStore? suppression,
+  }) : _injected = bridge,
+       _suppression = suppression ?? PrefsDownloadKeepAliveSuppressionStore() {
+    unawaited(_restoreSuppression());
+  }
 
   /// After Android 15+ `onTimeout`, don't immediately start the FGS again.
   /// This is not a quota reset — it only avoids a tight restart loop.
   static const Duration timeoutCooldown = Duration(minutes: 30);
 
   final DownloadKeepAliveBridge? _injected;
+  final DownloadKeepAliveSuppressionStore _suppression;
   DownloadKeepAliveBridge? _resolved;
 
   DownloadKeepAlivePhase phase = DownloadKeepAlivePhase.idle;
@@ -63,8 +113,12 @@ class DownloadKeepAlive {
   DateTime? _suppressUntil;
   Future<void>? _tail;
 
-  /// Fired after the native service has already stopped itself.
+  /// Fired after the native service stopped itself on the dataSync quota.
   void Function()? onTimeout;
+
+  /// Fired whenever the native service goes away for any other reason, so the
+  /// queue can re-decide whether it still needs an FGS.
+  void Function()? onStopped;
 
   bool get isRunning => phase == DownloadKeepAlivePhase.running;
 
@@ -76,7 +130,31 @@ class DownloadKeepAlive {
 
   void suppressStartUntil(DateTime until) {
     final current = _suppressUntil;
-    if (current == null || until.isAfter(current)) _suppressUntil = until;
+    if (current != null && !until.isAfter(current)) return;
+    _suppressUntil = until;
+    unawaited(_persistSuppression(until));
+  }
+
+  Future<void> _restoreSuppression() async {
+    try {
+      final until = await _suppression.read();
+      if (until == null) return;
+      if (DateTime.now().isBefore(until)) {
+        suppressStartUntil(until);
+      } else {
+        await _suppression.write(null);
+      }
+    } catch (e) {
+      debugPrint('DownloadKeepAlive restore suppression failed: $e');
+    }
+  }
+
+  Future<void> _persistSuppression(DateTime until) async {
+    try {
+      await _suppression.write(until);
+    } catch (e) {
+      debugPrint('DownloadKeepAlive persist suppression failed: $e');
+    }
   }
 
   bool get _suppressed {
@@ -88,7 +166,11 @@ class DownloadKeepAlive {
     final existing = _resolved;
     if (existing != null) return existing;
     final created = _injected ?? MethodChannelDownloadKeepAliveBridge();
-    created.bind(onTimeout: _handleTimeout, onStartFailed: _handleStartFailed);
+    created.bind(
+      onTimeout: _handleTimeout,
+      onStartFailed: _handleStartFailed,
+      onStopped: _handleStopped,
+    );
     _resolved = created;
     return created;
   }
@@ -152,9 +234,13 @@ class DownloadKeepAlive {
     required String channelId,
     bool Function()? isForeground,
   }) async {
-    if (phase == DownloadKeepAlivePhase.running ||
-        phase == DownloadKeepAlivePhase.starting) {
-      return;
+    if (phase == DownloadKeepAlivePhase.starting) return;
+    if (phase == DownloadKeepAlivePhase.running) {
+      // Never trust the cached phase alone: the service can be reclaimed
+      // without us noticing, and a stale `running` turns every later
+      // ensureRunning() into a no-op — downloads then run unprotected.
+      if (await _client.isRunning()) return;
+      phase = DownloadKeepAlivePhase.idle;
     }
     if (_suppressed) return;
     final foreground = isForeground?.call() ?? !lifecycleIsBackground();
@@ -166,11 +252,15 @@ class DownloadKeepAlive {
         notificationId: notificationId,
         channelId: channelId,
       );
-      if (phase != DownloadKeepAlivePhase.starting) return;
       if (result.ok) {
+        // A concurrent native onTimeout may have written `idle` while this
+        // call was in flight; the start result is still the truth about the
+        // service that is now up.
         phase = DownloadKeepAlivePhase.running;
         lastStartError = null;
-      } else {
+      } else if (phase == DownloadKeepAlivePhase.starting) {
+        // A start reported as failed can still land after the FGS came up, in
+        // which case a timeout already owns the phase — don't overwrite it.
         phase = DownloadKeepAlivePhase.failedToStart;
         lastStartError = result.error;
         debugPrint('DownloadKeepAlive start failed: ${result.error}');
@@ -185,11 +275,14 @@ class DownloadKeepAlive {
   }
 
   Future<void> _release() async {
-    if (phase == DownloadKeepAlivePhase.idle ||
-        phase == DownloadKeepAlivePhase.failedToStart) {
+    if (phase == DownloadKeepAlivePhase.idle) {
       phase = DownloadKeepAlivePhase.idle;
       return;
     }
+    // `failedToStart` still asks the native side to stop: a start can be
+    // reported as failed *after* the FGS came up, and leaving that one running
+    // keeps a notification (and the dataSync quota) alive with nothing behind
+    // it.
     phase = DownloadKeepAlivePhase.stopping;
     try {
       await _client.stop();
@@ -210,6 +303,18 @@ class DownloadKeepAlive {
     onTimeout?.call();
   }
 
+  /// Native side is gone. Only clear a phase that still claims liveness: a
+  /// `stopping` phase belongs to an in-flight [release] and must not be
+  /// clobbered, or `_release`'s `finally` would skip the idle reset.
+  void _handleStopped() {
+    if (phase == DownloadKeepAlivePhase.running ||
+        phase == DownloadKeepAlivePhase.starting) {
+      phase = DownloadKeepAlivePhase.idle;
+    }
+    debugPrint('DownloadKeepAlive onStopped; phase=${phase.name}');
+    onStopped?.call();
+  }
+
   void _handleStartFailed(String error) {
     lastStartError = error;
     if (phase == DownloadKeepAlivePhase.starting ||
@@ -224,7 +329,14 @@ class DownloadKeepAlive {
     final gate = Completer<void>();
     _tail = gate.future;
     final result = previous.catchError((Object _) {}).then((_) => action());
-    result.whenComplete(gate.complete);
+    // whenComplete re-throws into the future it returns; leaving that one
+    // unlistened turned a failed start into an unhandled async error. Swallow
+    // the error on a derived future so the gate stays independent.
+    unawaited(
+      result
+          .then<void>((_) {}, onError: (Object _) {})
+          .whenComplete(gate.complete),
+    );
     return result;
   }
 }
@@ -236,6 +348,7 @@ class MethodChannelDownloadKeepAliveBridge implements DownloadKeepAliveBridge {
   final MethodChannel _channel;
   void Function()? _onTimeout;
   void Function(String error)? _onStartFailed;
+  void Function()? _onStopped;
   bool _handlerInstalled = false;
 
   void _installHandler() {
@@ -249,6 +362,8 @@ class MethodChannelDownloadKeepAliveBridge implements DownloadKeepAliveBridge {
           final args = call.arguments;
           final error = args is Map ? '${args['error']}' : '$args';
           _onStartFailed?.call(error);
+        case 'onStopped':
+          _onStopped?.call();
         default:
           break;
       }
@@ -259,10 +374,29 @@ class MethodChannelDownloadKeepAliveBridge implements DownloadKeepAliveBridge {
   void bind({
     required void Function() onTimeout,
     required void Function(String error) onStartFailed,
+    required void Function() onStopped,
   }) {
     _onTimeout = onTimeout;
     _onStartFailed = onStartFailed;
+    _onStopped = onStopped;
     _installHandler();
+  }
+
+  @override
+  Future<bool> isRunning() async {
+    if (kIsWeb || !Platform.isAndroid) return false;
+    try {
+      final raw = await _channel.invokeMethod<dynamic>('isRunning');
+      if (raw is Map) return raw['running'] == true;
+    } on MissingPluginException {
+      // No native side (hot reload / tests): assume the cached phase is right
+      // rather than restarting the service on every call.
+      return true;
+    } on PlatformException catch (e) {
+      debugPrint('DownloadKeepAlive isRunning: $e');
+      return true;
+    }
+    return true;
   }
 
   @override

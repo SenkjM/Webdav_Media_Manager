@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -128,7 +129,20 @@ class DownloadKeepAliveService : Service() {
         running = false
         releaseWakeLock()
         if (instance === this) instance = null
+        // The service can go away without a stop request from Dart (system
+        // reclaim, an OEM killer, a stray stopSelf). Dart caches its phase, so
+        // without this callback ensureRunning() would keep reading "running"
+        // and never start a new FGS for the rest of the session.
+        notifyStopped()
         super.onDestroy()
+    }
+
+    private fun notifyStopped() {
+        try {
+            flutterChannel?.invokeMethod("onStopped", null)
+        } catch (_: Exception) {
+            // Engine is gone; a fresh one rebuilds the phase from diagnostics.
+        }
     }
 
     private fun ensureChannel(channelId: String) {
@@ -147,6 +161,23 @@ class DownloadKeepAliveService : Service() {
         nm.createNotificationChannel(channel)
     }
 
+    /**
+     * Tapping the ongoing FGS notification should do something — it cannot be
+     * swiped away, so a dead tap reads as "stuck".
+     */
+    private fun openAppIntent(): PendingIntent {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                PendingIntent.FLAG_IMMUTABLE
+            } else {
+                0
+            }
+        return PendingIntent.getActivity(this, 0, intent, flags)
+    }
+
     private fun minimalNotification(channelId: String, title: String): Notification {
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, channelId)
@@ -157,6 +188,7 @@ class DownloadKeepAliveService : Service() {
         builder
             .setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle(title)
+            .setContentIntent(openAppIntent())
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_PROGRESS)
@@ -183,9 +215,11 @@ class DownloadKeepAliveService : Service() {
         try {
             lock.acquire(WAKELOCK_TIMEOUT_MS)
         } catch (_: RuntimeException) {
-            return
+            // A rejected acquire must not break the renewal chain: returning
+            // from here let the wake lock expire silently 10 minutes later.
+        } finally {
+            handler.postDelayed(renewWakeLock, WAKELOCK_RENEW_MS)
         }
-        handler.postDelayed(renewWakeLock, WAKELOCK_RENEW_MS)
     }
 
     private fun releaseWakeLock() {
