@@ -4403,6 +4403,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaBatchSetSeriesHint => '输入系列名；已有同名系列会直接使用';
 
   @override
+  String get mangaPickSeries => '选择已有系列';
+
+  @override
   String mangaBatchSetSeriesDone(int count) {
     return '已更新 $count 部漫画的系列';
   }
@@ -4507,6 +4510,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaCacheQueued => '已加入漫画缓存任务';
 
   @override
+  String get taskKindMangaBuild => '建立漫画';
+
+  @override
+  String get mangaBuildQueued => '已加入建立任务';
+
+  @override
+  String get mangaBuildPerDirTitle => '每目录一本';
+
+  @override
+  String mangaBuildPerDirBody(int depth) {
+    return '将为该目录下每个含图片的子目录建立一本漫画（最多 $depth 层）。执行期间可以继续使用其它页面。';
+  }
+
+  @override
+  String get mediaScanConfirmBodyFolder =>
+      '将对选中的位置递归扫描并刮削其中的曲目。执行期间可以继续使用其它页面。';
+
+  @override
   String get mangaScrapeAction => '刮削元数据';
 
   @override
@@ -4520,6 +4541,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get folderCopyDone => '已复制';
+
+  @override
+  String get folderCopySuffix => '副本';
 
   @override
   String get folderAddManga => '漫画/单本';
@@ -9117,6 +9141,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaBatchSetSeriesHint => '輸入系列名；已有同名系列會直接使用';
 
   @override
+  String get mangaPickSeries => '選擇既有系列';
+
+  @override
   String mangaBatchSetSeriesDone(int count) {
     return '已更新 $count 部漫畫的系列';
   }
@@ -9221,6 +9248,24 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaCacheQueued => '已加入漫畫快取任務';
 
   @override
+  String get taskKindMangaBuild => '建立漫畫';
+
+  @override
+  String get mangaBuildQueued => '已加入建立任務';
+
+  @override
+  String get mangaBuildPerDirTitle => '每目錄一本';
+
+  @override
+  String mangaBuildPerDirBody(int depth) {
+    return '將為該目錄下每個含圖片的子目錄建立一本漫畫（最多 $depth 層）。執行期間可以繼續使用其它頁面。';
+  }
+
+  @override
+  String get mediaScanConfirmBodyFolder =>
+      '將對選取的位置遞迴掃描並刮削其中的曲目。執行期間可以繼續使用其它頁面。';
+
+  @override
   String get mangaScrapeAction => '刮削中繼資料';
 
   @override
@@ -9234,6 +9279,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get folderCopyDone => '已複製';
+
+  @override
+  String get folderCopySuffix => '副本';
 
   @override
   String get folderAddManga => '漫畫/單本';

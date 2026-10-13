@@ -4607,6 +4607,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'Enter a series name; an existing match is reused';
 
   @override
+  String get mangaPickSeries => 'Pick an existing series';
+
+  @override
   String mangaBatchSetSeriesDone(int count) {
     return 'Updated series for $count manga';
   }
@@ -4716,6 +4719,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mangaCacheQueued => 'Manga cache queued';
 
   @override
+  String get taskKindMangaBuild => 'Build manga';
+
+  @override
+  String get mangaBuildQueued => 'Build queued';
+
+  @override
+  String get mangaBuildPerDirTitle => 'One book per folder';
+
+  @override
+  String mangaBuildPerDirBody(int depth) {
+    return 'Each image folder under this path becomes one book (up to $depth level(s)). You can keep using the app while it runs.';
+  }
+
+  @override
+  String get mediaScanConfirmBodyFolder =>
+      'Each selected location is listed in the background and its tracks are scraped. You can keep using the app while it runs.';
+
+  @override
   String get mangaScrapeAction => 'Scrape metadata';
 
   @override
@@ -4729,6 +4750,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get folderCopyDone => 'Copied';
+
+  @override
+  String get folderCopySuffix => 'copy';
 
   @override
   String get folderAddManga => 'Manga / Books';

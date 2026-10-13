@@ -1440,6 +1440,7 @@
   "mangaBatchSetSeries": "批量修改系列",
   "mangaBatchSetSeriesTitle": "指定系列",
   "mangaBatchSetSeriesHint": "输入系列名；已有同名系列会直接使用",
+  "mangaPickSeries": "选择已有系列",
   "mangaBatchSetSeriesDone": "已更新 {count} 部漫画的系列",
   "@mangaBatchSetSeriesDone": {
     "placeholders": {
@@ -1481,11 +1482,25 @@
   "taskKindMangaCache": "漫画缓存",
   "mangaScrapeQueued": "已加入漫画刮削任务",
   "mangaCacheQueued": "已加入漫画缓存任务",
+  "taskKindMangaBuild": "建立漫画",
+  "mangaBuildQueued": "已加入建立任务",
+  "mangaBuildPerDirTitle": "每目录一本",
+  "mangaBuildPerDirBody": "将为该目录下每个含图片的子目录建立一本漫画（最多 {depth} 层）。执行期间可以继续使用其它页面。",
+  "@mangaBuildPerDirBody": {
+    "description": "mangaBuildPerDirBody",
+    "placeholders": {
+      "depth": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaScanConfirmBodyFolder": "将对选中的位置递归扫描并刮削其中的曲目。执行期间可以继续使用其它页面。",
   "mangaScrapeAction": "刮削元数据",
   "folderMove": "移动到…",
   "folderCopy": "复制到…",
   "folderMoveDone": "已移动",
   "folderCopyDone": "已复制",
+  "folderCopySuffix": "副本",
   "folderAddManga": "漫画/单本",
   "folderAddMangaSeries": "漫画/系列",
   "folderTypeManga": "漫画/单本",

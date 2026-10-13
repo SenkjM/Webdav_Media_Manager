@@ -7769,6 +7769,12 @@ abstract class AppLocalizations {
   /// **'输入系列名；已有同名系列会直接使用'**
   String get mangaBatchSetSeriesHint;
 
+  /// No description provided for @mangaPickSeries.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择已有系列'**
+  String get mangaPickSeries;
+
   /// No description provided for @mangaBatchSetSeriesDone.
   ///
   /// In zh, this message translates to:
@@ -7973,6 +7979,36 @@ abstract class AppLocalizations {
   /// **'已加入漫画缓存任务'**
   String get mangaCacheQueued;
 
+  /// No description provided for @taskKindMangaBuild.
+  ///
+  /// In zh, this message translates to:
+  /// **'建立漫画'**
+  String get taskKindMangaBuild;
+
+  /// No description provided for @mangaBuildQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入建立任务'**
+  String get mangaBuildQueued;
+
+  /// No description provided for @mangaBuildPerDirTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'每目录一本'**
+  String get mangaBuildPerDirTitle;
+
+  /// mangaBuildPerDirBody
+  ///
+  /// In zh, this message translates to:
+  /// **'将为该目录下每个含图片的子目录建立一本漫画（最多 {depth} 层）。执行期间可以继续使用其它页面。'**
+  String mangaBuildPerDirBody(int depth);
+
+  /// No description provided for @mediaScanConfirmBodyFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'将对选中的位置递归扫描并刮削其中的曲目。执行期间可以继续使用其它页面。'**
+  String get mediaScanConfirmBodyFolder;
+
   /// No description provided for @mangaScrapeAction.
   ///
   /// In zh, this message translates to:
@@ -8002,6 +8038,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'已复制'**
   String get folderCopyDone;
+
+  /// No description provided for @folderCopySuffix.
+  ///
+  /// In zh, this message translates to:
+  /// **'副本'**
+  String get folderCopySuffix;
 
   /// No description provided for @folderAddManga.
   ///

@@ -1420,6 +1420,7 @@
   "mangaBatchSetSeries": "Set series for selected",
   "mangaBatchSetSeriesTitle": "Assign series",
   "mangaBatchSetSeriesHint": "Enter a series name; an existing match is reused",
+  "mangaPickSeries": "Pick an existing series",
   "mangaBatchSetSeriesDone": "Updated series for {count} manga",
   "@mangaBatchSetSeriesDone": {
     "placeholders": {
@@ -1461,11 +1462,25 @@
   "taskKindMangaCache": "Manga cache",
   "mangaScrapeQueued": "Manga scrape queued",
   "mangaCacheQueued": "Manga cache queued",
+  "taskKindMangaBuild": "Build manga",
+  "mangaBuildQueued": "Build queued",
+  "mangaBuildPerDirTitle": "One book per folder",
+  "mangaBuildPerDirBody": "Each image folder under this path becomes one book (up to {depth} level(s)). You can keep using the app while it runs.",
+  "@mangaBuildPerDirBody": {
+    "description": "mangaBuildPerDirBody",
+    "placeholders": {
+      "depth": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaScanConfirmBodyFolder": "Each selected location is listed in the background and its tracks are scraped. You can keep using the app while it runs.",
   "mangaScrapeAction": "Scrape metadata",
   "folderMove": "Move to…",
   "folderCopy": "Copy to…",
   "folderMoveDone": "Moved",
   "folderCopyDone": "Copied",
+  "folderCopySuffix": "copy",
   "folderAddManga": "Manga / Books",
   "folderAddMangaSeries": "Manga / Series",
   "folderTypeManga": "Manga / Books",
