@@ -51,7 +51,7 @@ v9 删除了 `cache` annex 表：它的每一列都没有承载不可推导的�
 - **加表加列走幂等 ensure，不做版本化 migration**：`onUpgrade` 只在 `oldVersion < 11` 时 DROP 重建；11 及以后一律跑 `_ensureAccountColumns` / `_ensureUserFolderTables` / `_ensureMangaTables` 这些幂等补丁（先 `PRAGMA table_info` 判断，再 `ALTER TABLE ADD COLUMN`），开库后还会再跑一遍。改 schema 只 bump `LibraryDatabase.schemaVersion`。真正搬过数据的只有两处：**v7→v8 的 prefs 迁移**（`cache_group_members_*` 的成员表能从值里还原（`cache_group_codec.dart`），迁完删旧键；`cache_access_*` 的键是 `hashCode`、不可逆，直接删除，过期清理回落到文件 mtime），以及 **v16 的系列降级**（`_ensureMangaSeriesTag`：`ALTER TABLE mangas ADD COLUMN series` → 按旧 `series_id` 从 `manga_series` 回填 → `DROP TABLE manga_series` → 把 `idx_mangas_series` 重建到新列，幂等）。
 - 「CUE 整专辑一组」的**每行归属**仍由 `cue_albums.cache_group_id` / `cue_slices.cache_group_id` / `download_tasks.cache_group_id` 承担；`cache_groups` 只存**成员清单**（组 → 哪些文件），删除组 = 删成员文件 + 删这一行（`CacheService.deleteCacheGroup`）。
 - `cache_groups` / `cache_access` 是运行态缓存数据：随 `clearAllLibraryData()` 一起清、随 `clearLibraryIndex()` 一起留；**不进**备份与云端分片。
-- 其它库：`download_queue.db`（下载任务）、`playlists.db`（本地歌单）、`cache_index.db`（缓存索引：文件路径 → 类型 / 大小 / 最后访问时间；只是加速器，丢了退回文件 mtime，见 [99 §19.13](99-IN-PROGRESS.md)）。封面缩略图在应用文档目录 `covers/`，音频在缓存目录。
+- 其它库：`download_queue.db`（下载任务）、`playlists.db`（本地歌单）、`cache_index.db`（缓存索引：文件路径 → 类型 / 大小 / 最后访问时间；只是加速器，丢了退回文件 mtime，见 [99 §19.14](99-IN-PROGRESS.md)）。封面缩略图在应用文档目录 `covers/`，音频在缓存目录。
 - **启动兜底恢复**：初始化抛异常时进入恢复界面（`DatabaseRecoveryScreen`）——先**导出**全部本地库（`music_library.db` / `download_queue.db` / `playlists.db` 连同 `-wal` / `-shm`）到下载目录 `WebdavMediaManager/recovery`，再由用户确认后关闭库连接并删除 `.db` / `-wal` / `-shm` 重进。删除前必须先关连接：进程持着 SQLite 句柄时删除是无效的。启动失败同时记录**阶段名 + 完整 stack trace**（`AppState.initPhase` / logcat），用于定位具体库。
 
 ## 3. 什么算「已缓存」

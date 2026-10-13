@@ -1205,7 +1205,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 ## 19. 漫画库（已完成，2026-10-13 并入 main）
 
-**状态**：2026-10-12 基于 `main` tip `e0d7280` 开分支 `feat/manga-library` 开发，2026-10-13 `flutter analyze` 与全量 `flutter test` 通过后快进并入 `main`。用户偏好中文 UI。
+**状态**：2026-10-12 基于 `main` tip `e0d7280` 开分支 `feat/manga-library` 开发，2026-10-13 `flutter analyze` 与全量 `flutter test` 通过后快进并入 `main`；2026-10-13 真机验收通过（用户确认）。用户偏好中文 UI。
 
 **相关完整文档**：[01](01-DATA-MODEL.md)、[02](02-NETWORK-LIBRARY.md)、[03](03-MUSIC-LIBRARY.md)（对照音乐库交互）。
 
@@ -1223,7 +1223,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 6. **散图目录（用「建立 / 创建」措辞，不用「扫描」）**：列目录、筛图片、**不下载**建索引；默认封面 = 排序后第一张图；提交前确认表可改元数据。支持子目录，两种模式：
    - **合并建立**：整棵树（或选定文件夹）内图片 → **一本** Manga；默认标题 = 根文件夹名。
    - **按目录批量建立**：遍历结构；每个含图目录各自成为一本 Manga；**标题 = 该目录名**。
-7. **结构化容器（CBZ/CBR/PDF/EPUB，用「扫描」措辞）**：文件夹可**递归**扫描子目录中的漫画容器并**批量加入**；单文件「加入漫画库」。建立时先落 Manga 行（只读文件名），随后入队的刮削任务用 Range 读 ComicInfo 与首页封面补齐元数据与页表（见 [19.14](#1914-扫描刮削与整包缓存改入任务队列2026-10-13)）。
+7. **结构化容器（CBZ/CBR/PDF/EPUB，用「扫描」措辞）**：文件夹可**递归**扫描子目录中的漫画容器并**批量加入**；单文件「加入漫画库」。建立时先落 Manga 行（只读文件名），随后入队的刮削任务用 Range 读 ComicInfo 与首页封面补齐元数据与页表（见 [19.14](#1915-扫描刮削与整包缓存改入任务队列2026-10-13)）。
 13. **漫画库 · 单本 Tab 多选**：除常规多选外，提供 **批量修改系列** — 多本 Manga 一并指到同一系列（可新建或选已有）。
 8. **页列表**：入库时冻结排序后的相对路径到 DB；阅读器按该序。
 9. **用户文件夹**：软引用稍后；本刀注册 `manga` / `mangaSeries` kind 常量即可。
@@ -1233,7 +1233,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 ### 19.3 Schema（v13 加表 → v14 `page_turn` → v16 系列降为标签）
 
-同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；v15 再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1911-漫画库云同步--进度同步--文件夹同步--云端路径重排) 的「schema 15」；**v16 把 `manga_series` 表折进 `mangas.series` 标签**。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
+同库 `music_library.db`（多媒体库共用；不另拆库）。`LibraryDatabase.schemaVersion` **13 → 14**（v13 加漫画表；v14 `mangas.page_turn`）；v15 再加 `mangas.rev` / `deleted_mangas` / `local_meta`，见 [19.11](#1912-漫画库云同步--进度同步--文件夹同步--云端路径重排) 的「schema 15」；**v16 把 `manga_series` 表折进 `mangas.series` 标签**。升级路径：`_ensureMangaTables` 幂等（风格对齐 `_ensureUserFolderTables`）；**不** DROP tracks。
 
 | 表 | 要点 |
 |----|------|
@@ -1253,14 +1253,14 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - HomeShell 抽屉 + IndexedStack + home_tab 迁移
 - `UserFolderRefKind.manga` / `mangaSeries` 常量
 - ARB zh / zh_Hant / en；`flutter analyze` + `flutter test` 全绿
-- 漫画单文件在网络库里成为一等文件类别（`FileCategory.comic` + `FileAction.addToMangaLibrary`），见 [19.12](#1912-漫画单文件成为一等文件类别2026-10-13)
+- 漫画单文件在网络库里成为一等文件类别（`FileCategory.comic` + `FileAction.addToMangaLibrary`），见 [19.12](#1913-漫画单文件成为一等文件类别2026-10-13)
 
 ### 19.5 阅读器（本刀升级）
 
 - **复用** `ImageViewerScreen`（网络图与漫画同一套 chrome / 预取 / 下载）。
 - 中间点击 → **选项 BottomSheet**（适应方式、**翻页方向**、幻灯片、进更多设置）；左右点与横向滑动翻页。
 - 预取每侧 **1–20**（设置 `image_prefetch_count`）。
-- 散图：按冻结 `manga_pages` 远端路径下载；CBZ：HTTP Range 读 ZIP 中央目录后**按页惰性抽取**（先抽阅读记录那一页，其余页随查看器的预取窗口按需落地）；CBR / PDF / EPUB 不支持应用内读（见 [19.18](#1918-图片扫描深度与-cbz-首屏2026-10-13)）。
+- 散图：按冻结 `manga_pages` 远端路径下载；CBZ：HTTP Range 读 ZIP 中央目录后**按页惰性抽取**（先抽阅读记录那一页，其余页随查看器的预取窗口按需落地）；CBR / PDF / EPUB 不支持应用内读（见 [19.18](#1919-图片扫描深度与-cbz-首屏2026-10-13)）。
 - 翻页写 `manga_progress`。
 - **翻页方向**（LTR / RTL）：
   - 全局：`SharedPreferences` 键 `image_page_turn`（设置 → 图片查看；非漫画查看器 BottomSheet 仅全局）。
@@ -1273,10 +1273,10 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 ### 19.7 开放问题
 
-- CBR / PDF / EPUB 的页索引是否要接本地解析器（本刀只做 CBZ 与散图，见 [19.9](#199-锁定缺口2026-10-12本轮必须落地) 第 10 条）
+- CBR / PDF / EPUB 的页索引是否要接本地解析器（本刀只做 CBZ 与散图，见 [19.9](#1910-锁定缺口2026-10-12本轮必须落地) 第 10 条）
 - 系列自动归并规则（手填 vs 文件夹名启发）
 
-### 19.7 设置默认（媒体库 → 漫画库）
+### 19.8 设置默认（媒体库 → 漫画库）
 
 | 键 | 默认 | 用途 |
 |----|------|------|
@@ -1290,7 +1290,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 与音乐刮削 / 播放列表 walk prefs **完全分开**。网络库文件夹动作读 `mangaScanWalkOptions` / `mangaCreateWalkOptions`。
 
-### 19.8 文案对照（网络库文件夹）
+### 19.9 文案对照（网络库文件夹）
 
 | 动作 | 中文倾向 | 说明 |
 |------|----------|------|
@@ -1299,7 +1299,7 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 | 散图每目录一本 | **按目录批量建立** | 标题 = 目录名 |
 | 单容器文件 | **加入**漫画库 | 与文件夹扫描并列 |
 
-### 19.9 锁定缺口（2026-10-12，本轮必须落地）
+### 19.10 锁定缺口（2026-10-12，本轮必须落地）
 
 命名：全局字段一律 `manga`，禁止 `book`。
 
@@ -1310,21 +1310,21 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 5. **CBZ 流式**：HTTP Range 读 ZIP 中央目录 + 按页抽取；若源不支持 Range → **拒绝流式**并提示整包缓存。
 6. **CBZ 刮削**：后台任务类别（与音乐刮削分开），ComicInfo / 元数据 + 封面抽取；队列形态对齐音乐刮削。
 7. **元数据编辑**：漫画标题 / 系列 / 作者；系列整体改名（批量重新打标签，等于合并到新名）；作者重命名**级联**所有漫画；空系列名 = 未指定。**v16 起没有「系列作者」这一项**——系列只剩名字。
-8. **本地缓存**：独立 `manga_cache/` 路径。2026-10-13 起**各自一套缓存设置**（见 [19.13](#1913-按库分开的缓存设置与缓存索引2026-10-13)）：漫画库设置页里有自己的缓存占用 / 过期清理 / 容量上限 / 全部清理，不再与音乐挤在同一页；设置偏好 + 更多菜单手动缓存（对齐音乐）。
+8. **本地缓存**：独立 `manga_cache/` 路径。2026-10-13 起**各自一套缓存设置**（见 [19.13](#1914-按库分开的缓存设置与缓存索引2026-10-13)）：漫画库设置页里有自己的缓存占用 / 过期清理 / 容量上限 / 全部清理，不再与音乐挤在同一页；设置偏好 + 更多菜单手动缓存（对齐音乐）。
 9. **用户文件夹**：软引用 `manga` + `mangaSeries`；除删除外支持 **移动** + **复制**（引用复制）；选择器根在用户文件夹；自身 / 子孙灰显。
 10. CBR / PDF / EPUB 保持 stub。
 
-prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_view_modes_json`（键 `albums` / `artists` / `titles` / `genres`）；复用 `FolderViewMode`。漫画缓存上限键 `manga_cache_max_mb`（0=不限），保留期见 [19.13](#1913-按库分开的缓存设置与缓存索引2026-10-13)；视图键除三个 Tab 外，详情页与文件夹叶子页另有各一套（见 [19.17](#1917-文件夹叶子引用页复用媒体库子页2026-10-13)）。
+prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_view_modes_json`（键 `albums` / `artists` / `titles` / `genres`）；复用 `FolderViewMode`。漫画缓存上限键 `manga_cache_max_mb`（0=不限），保留期见 [19.13](#1914-按库分开的缓存设置与缓存索引2026-10-13)；视图键除三个 Tab 外，详情页与文件夹叶子页另有各一套（见 [19.17](#1918-文件夹叶子引用页复用媒体库子页2026-10-13)）。
 
 任务：`TaskKind.mangaScrape`（storage `manga_scrape`）——与 `scan`（音乐）分列。
 
 
-### 19.10 批量任务部分失败（锁定）
+### 19.11 批量任务部分失败（锁定）
 - 扫描（音乐刮削/标签更新）与漫画刮削：每个文件内部自动重试至多 3 次（`lib/utils/batch_outcome.dart` `retryItem`；取消不重试；Range 不支持不重试）。
 - 仍失败的文件记录 errorMessage，批次继续。终态：全成功 → completed；部分失败 → 新 `TaskStatus.partial`（「部分失败」，橙色）；全失败 → failed。
 - 手动重试沿用现有 `TaskQueueService.retry`（已放行 partial）；扫描为增量，重跑只会补失败项。合并任务卡片/单任务卡片的重试按钮与通知汇总均已计入 partial。
 
-### 19.11 漫画库云同步 / 进度同步 / 文件夹同步 / 云端路径重排
+### 19.12 漫画库云同步 / 进度同步 / 文件夹同步 / 云端路径重排
 
 **用户决定（2026-10-12）**：进度本地持久化并同步；路径改为 `<远端路径>library/music/`、`library/manga/`，留扩展位，**不兼容旧 `library/` 平铺布局**；漫画同步完全对照音乐（index.json + lib-/seg-/del-*.wdmm、rev + 墓碑、增量 / 重建 / 整理 / 覆写 / 删除、一键同步 + 防抖 + 定时；增量始终带封面，重建「嵌入封面」默认开）；全部备份含漫画表 + 进度 + 用户文件夹；用户文件夹整份快照同步，路径与合并规则由实现方定。
 
@@ -1342,7 +1342,7 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - **schema 16（2026-10-13）**：`manga_series` 表折进 `mangas.series` 标签（见 [19.3](#193-schemav13-加表--v14-page_turn--v16-系列降为标签)）。迁移回填旧系列名再删表；`LibraryDatabase` 不再有 `loadMangaSeries` / `upsertMangaSeries` / `deleteMangaSeries`，`loadMangas` 按 `series` 过滤。快照导出不再带顶层 `series` 列表（系列由行派生），但导入**仍认**旧快照里的 `series` 列表——靠它把老的 `series_id` 还原成名字，所以 v15 及更早的归档仍能还原分组。
 - **顺带修复**：同步页碎片提示「（约 true）」——gen-l10n 无 @ 元数据时占位参数按字母序生成（`count, hint, size`），调用方按模板顺序传了；`stepMangaIncremental` 同理按 `adopted, progress, tombs, uploaded` 传。图片预取测试按上限 20 改为 9→9、25→20。
 
-### 19.12 漫画单文件成为一等文件类别（2026-10-13）
+### 19.13 漫画单文件成为一等文件类别（2026-10-13）
 
 用户要求「对于 cbz 之类的漫画单文件，后缀设置里加上」与「参考音乐实现网络库的行为」。
 
@@ -1354,7 +1354,7 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - **迁移兼容**：两处旧设置迁移（`SettingsService._legacyFileActions` 与旧的 `music_tap_action` 路径）都补了 `FileCategory.comic`，否则 `FileActionConfig` 按类别构造会漏这一类。
 - **测试**：`test/file_action_model_test.dart` 补了漫画后缀 / 「漫画不抢图片」/ 「清空漫画后缀」三组断言；原「`readme.pdf` → 普通文件」的断言随之改为 `readme.txt`。
 
-### 19.13 按库分开的缓存设置与缓存索引（2026-10-13）
+### 19.14 按库分开的缓存设置与缓存索引（2026-10-13）
 
 用户要求「缓存设置合并进各自的库设置子页」「用独立的缓存管理」「用独立缓存数据库记录文件访问时间」。
 
@@ -1365,7 +1365,7 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - **界面**：`lib/widgets/library_cache_settings.dart` 的 `LibraryCacheSettings(kind:)` 是唯一的缓存区块（占用 / 过期时长 / 容量上限 / 全部清理，按 kind 分发到不同的 AppState 方法）。`cache_settings_screen.dart` **已删除**；设置 →「媒体库」现在是「音乐库」「漫画库」两个平级入口，各自页内带自己的缓存区块（`lib/screens/manga_library_settings_screen.dart` 是新页）。
 - **漫画库设置页顺序**：扫描 / 建立的子目录开关与深度 → 打开方式（`manga_read_mode`）→ 缓存区块。
 
-### 19.14 扫描刮削与整包缓存改入任务队列（2026-10-13）
+### 19.15 扫描刮削与整包缓存改入任务队列（2026-10-13）
 
 用户要求「漫画扫描刮削没有进入任务队列，只是在后台静默完成，不符合预期」「漫画缓存应该也和音乐缓存一样，先进任务队列而不是占着前端」。
 
@@ -1373,7 +1373,7 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - **整包缓存入队**：新增 `TaskKind.mangaCache`（storage `manga_cache`），配 `enqueueMangaCache(...)` 与 `_runMangaCache`。漫画「更多」里的「缓存整包」不再借用阅读器（原来是 `openMangaReader(forceFullCache: true)`，会占着界面下载），改为入队并提示「已加入漫画缓存任务」。
 - 两条任务共用 `localPath = manga:<id>` 的约定。
 
-### 19.15 网络库漫画单文件：加入之后就是打开（2026-10-13）
+### 19.16 网络库漫画单文件：加入之后就是打开（2026-10-13）
 
 用户要求「加入了之后再点击应该是走默认的串流打开，如果加入的时候默认是整包缓存，那就把缓存也加到任务队列里面完成」「对一个漫画重复加入……应该不加入队列也不提示而是直接打开才对」。
 
@@ -1381,16 +1381,16 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - 未命中才走建立流程；建立完成后按当前阅读方式收尾：`mangaReadMode == cache` 且本地还没有整包时排一条 `mangaCache` 任务（`_queueMangaCacheIfNeeded`），否则直接 `openMangaReader`。
 - 只有 `MangaFormat.images`（散图）跳过缓存入队——它没有整包可下。
 
-### 19.16 阅读进度显示（2026-10-13）
+### 19.17 阅读进度显示（2026-10-13）
 
 用户要求「文件夹和漫画库都要显示阅读进度，网格视图采用小进度条，列表视图采用 x/y 标签」。
 
 - `MangaLibraryService` 新增内存进度表（`reload()` 里一次性 `allMangaProgress()`）、`mangaById`、`progressByManga`、`progressOf(mangaId)`；`setProgress` 同步更新。
 - 列表视图：读到过时副标题显示 `mangaReadProgress`（`{current}/{total}`），没读过显示 `mangaPageCount`。
 - 网格视图：封面右下角一条 3px `LinearProgressIndicator`，未读不画。
-- 文件夹叶子页复用媒体库的展示组件，进度一起带过去（见 [19.17](#1917-文件夹叶子引用页复用媒体库子页2026-10-13)）。
+- 文件夹叶子页复用媒体库的展示组件，进度一起带过去（见 [19.17](#1918-文件夹叶子引用页复用媒体库子页2026-10-13)）。
 
-### 19.17 文件夹叶子引用页复用媒体库子页（2026-10-13）
+### 19.18 文件夹叶子引用页复用媒体库子页（2026-10-13）
 
 用户要求「文件夹的叶子引用页面也要有视图选择和与对应媒体库里相同的显示，如果可以的话可以直接引用对应的媒体库子页而不是另写」。
 
@@ -1398,7 +1398,7 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - 视图模式复用同一套 `mangaViewModeFor` / `musicViewModeFor`，但**用各自的键**，所以文件夹的视图选择不会串到媒体库的 Tab 上：漫画库 Tab 是 `series` / `manga` / `author`，漫画详情页是 `seriesDetail` / `authorDetail`，音乐库 Tab 是 `albums` / `artists` / `titles` / `genres`，音乐详情页是 `musicDetail:<维度>`，两边的叶子页各是 `folderLeaf:<kind>`（如 `folderLeaf:mangaSeries`、`folderLeaf:album`）。
 - 音乐曲目本来只有列表，为此补了网格分支（`_TrackGridTile`），`TrackListPage` 现在也能切网格。
 
-### 19.18 图片扫描深度与 CBZ 首屏（2026-10-13）
+### 19.19 图片扫描深度与 CBZ 首屏（2026-10-13）
 
 用户要求「图片查看也有扫描子目录，把深度设置也给加上，默认为 1」，随后要求「流式传输不该是从第一页开始加载」。
 
