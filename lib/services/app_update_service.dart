@@ -27,14 +27,21 @@ class AppUpdateService {
 
   static const _channelName = 'com.senkjm.media_manager/app';
 
-  /// GitHub `type` value: `stable` excludes prereleases and drafts;
-  /// `prerelease` restricts to prereleases only. Keeping `per_page=1` makes
-  /// the response one release object instead of a full page.
+  /// Cloudflare Worker proxy URL. Primary path — avoids GitHub API rate limits.
   static const _updateBaseUrl = 'https://update.senkjm.top';
 
-  static String releasesUrl(UpdateChannel channel) => switch (channel) {
+  /// GitHub API direct URL. Fallback when Worker is unavailable.
+  static const _githubReleasesUrl =
+      'https://api.github.com/repos/SenkjM/Webdav_Media_Manager/releases';
+
+  static String workerUrl(UpdateChannel channel) => switch (channel) {
     UpdateChannel.stable => '$_updateBaseUrl/release?channel=stable',
     UpdateChannel.preview => '$_updateBaseUrl/release?channel=preview',
+  };
+
+  static String githubUrl(UpdateChannel channel) => switch (channel) {
+    UpdateChannel.stable => '$_githubReleasesUrl?per_page=1&type=stable',
+    UpdateChannel.preview => '$_githubReleasesUrl?per_page=1&type=prerelease',
   };
 
   final Dio _dio;
@@ -50,27 +57,16 @@ class AppUpdateService {
     if (native.packageName != 'com.senkjm.media_manager') {
       return const UpdateCheckUnsupported();
     }
-    final response = await _dio.get<String>(
-      releasesUrl(channel),
-      options: Options(
-        responseType: ResponseType.plain,
-        headers: const {
-          'Accept': 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-        },
-      ),
-      cancelToken: cancelToken,
-    );
-    final raw = response.data;
+
+    // 主路径：GitHub API 直连
+    // Fallback：Cloudflare Worker（GitHub API 配额限流或不可用时）
+    final raw = await _fetchWithFallback(channel, cancelToken);
     if (raw == null || raw.isEmpty) throw StateError('Empty release response');
+
     final decoded = jsonDecode(raw);
     if (decoded is! List || decoded.isEmpty) {
-      // `type=stable` on a repo with only prereleases returns `[]`.
       throw StateError('No ${channel.name} release found');
     }
-    // The GitHub filter can still return a release whose tag the client cannot
-    // parse (e.g. a legacy rolling tag named "prerelease" that some repos keep
-    // around). Fail loudly instead of falling back silently.
     final first = decoded.first;
     final release = first is Map<String, dynamic>
         ? UpdateRelease.tryParse(first)
@@ -86,6 +82,33 @@ class AppUpdateService {
     return isNewer
         ? UpdateCheckAvailable(release, asset)
         : UpdateCheckUpToDate(current);
+  }
+
+  /// 先从 GitHub API 拉，失败时回退到 Cloudflare Worker。
+  Future<String?> _fetchWithFallback(
+    UpdateChannel channel,
+    CancelToken? cancelToken,
+  ) async {
+    final dioHeaders = const {
+      'Accept': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    };
+    try {
+      final response = await _dio.get<String>(
+        githubUrl(channel),
+        options: Options(responseType: ResponseType.plain, headers: dioHeaders),
+        cancelToken: cancelToken,
+      );
+      return response.data;
+    } on DioException catch (_) {
+      // GitHub API 不可用或配额限流，回退到 Worker
+      final fallback = await _dio.get<String>(
+        workerUrl(channel),
+        options: Options(responseType: ResponseType.plain, headers: dioHeaders),
+        cancelToken: cancelToken,
+      );
+      return fallback.data;
+    }
   }
 
   Future<File> download(

@@ -50,14 +50,23 @@ void main() {
     expect(preview.buildCode, greaterThan(stable.buildCode));
   });
 
-  test('releasesUrl routes each channel to the right GitHub type filter', () {
-    expect(AppUpdateService.releasesUrl(UpdateChannel.stable), contains('type=stable'));
-    expect(AppUpdateService.releasesUrl(UpdateChannel.stable), contains('per_page=1'));
-    expect(AppUpdateService.releasesUrl(UpdateChannel.preview), contains('type=prerelease'));
-    expect(AppUpdateService.releasesUrl(UpdateChannel.preview), contains('per_page=1'));
+  test('githubUrl routes each channel to the right GitHub type filter', () {
+    expect(AppUpdateService.githubUrl(UpdateChannel.stable), contains('type=stable'));
+    expect(AppUpdateService.githubUrl(UpdateChannel.stable), contains('per_page=1'));
+    expect(AppUpdateService.githubUrl(UpdateChannel.preview), contains('type=prerelease'));
+    expect(AppUpdateService.githubUrl(UpdateChannel.preview), contains('per_page=1'));
     expect(
-      AppUpdateService.releasesUrl(UpdateChannel.stable),
-      contains('SenkjM/Webdav_Media_Manager/releases'),
+      AppUpdateService.githubUrl(UpdateChannel.stable),
+      contains('SenkjM/Webav_Media_Manager/releases'),
+    );
+  });
+
+  test('workerUrl routes each channel to the right Worker path', () {
+    expect(AppUpdateService.workerUrl(UpdateChannel.stable), contains('channel=stable'));
+    expect(AppUpdateService.workerUrl(UpdateChannel.preview), contains('channel=preview'));
+    expect(
+      AppUpdateService.workerUrl(UpdateChannel.stable),
+      contains('update.senkjm.top'),
     );
   });
 
