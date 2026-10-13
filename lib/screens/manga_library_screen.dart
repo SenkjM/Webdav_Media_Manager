@@ -601,13 +601,20 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
               onTap: () => Navigator.pop(ctx, cached ? 'clear_cache' : 'cache'),
             ),
           ],
-          if (!isContainer)
+          if (!isContainer) ...[
             ListTile(
               leading: const Icon(Icons.refresh),
               title: Text(l10n.mangaRescanAction),
               subtitle: Text(l10n.mangaRescanHint),
               onTap: () => Navigator.pop(ctx, 'rescan'),
             ),
+            ListTile(
+              leading: const Icon(Icons.inventory_2_outlined),
+              title: Text(l10n.mangaPackAction),
+              subtitle: Text(l10n.mangaPackHint),
+              onTap: () => Navigator.pop(ctx, 'pack'),
+            ),
+          ],
           const Divider(height: 1),
           ListTile(
             leading: Icon(Icons.delete_outline, color: AppColors.error),
@@ -629,6 +636,8 @@ Future<void> _mangaMore(BuildContext context, Manga manga) async {
       await _enqueueMangaScrape(context, manga);
     case 'cache':
       await _enqueueMangaCache(context, manga);
+    case 'pack':
+      await _materializeManga(context, manga);
     case 'clear_cache':
       await cache.deleteLocalMangaFile(
         sourceName: manga.sourceName,
@@ -693,6 +702,77 @@ Future<void> _rescanLooseManga(BuildContext context, Manga manga) async {
   if (context.mounted) AppSnack.show(context, l10n.mangaBuildQueued);
 }
 
+/// Turns the book's title into a file name that survives a round trip through
+/// the remote path builder (the separators below are illegal on WebDAV).
+String _archiveFileName(String title) {
+  final cleaned = title.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+  final base = cleaned.isEmpty ? 'manga' : cleaned;
+  return base.toLowerCase().endsWith('.cbz') ? base : '$base.cbz';
+}
+
+/// Materialises a loose-image book into a CBZ, then queues its upload.
+///
+/// The user picks the destination folder and the file name; from there the
+/// task list owns both halves (packing, then uploading) so neither runs behind
+/// a spinner in this screen.
+Future<void> _materializeManga(BuildContext context, Manga manga) async {
+  final l10n = AppLocalizations.of(context)!;
+  final accountId = context.read<AccountsService>().idForSource(
+    manga.sourceName,
+  );
+  if (accountId == null) {
+    AppSnack.show(context, l10n.mangaReaderUnboundSource);
+    return;
+  }
+  final picked = await Navigator.of(context).push<String>(
+    MaterialPageRoute(
+      builder: (_) => WebDavFolderPickerScreen(
+        accountId: accountId,
+        purpose: l10n.mangaPackAction,
+        initialPath: manga.remotePath,
+      ),
+    ),
+  );
+  if (!context.mounted || picked == null) return;
+  // No TextEditingController on purpose: the dialog is popped and the route
+  // keeps animating, so anything disposed on return would still be mounted.
+  var typed = _archiveFileName(manga.title);
+  final confirmed = await showDialog<String>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: Text(l10n.mangaPackAction),
+      content: TextFormField(
+        initialValue: typed,
+        autofocus: true,
+        decoration: InputDecoration(labelText: l10n.nameLabel),
+        onChanged: (v) => typed = v,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text(l10n.cancel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx, typed),
+          child: Text(l10n.confirm),
+        ),
+      ],
+    ),
+  );
+  if (!context.mounted) return;
+  final name = confirmed?.trim() ?? '';
+  if (name.isEmpty) return;
+  final fileName = name.toLowerCase().endsWith('.cbz') ? name : '$name.cbz';
+  final parent = picked.endsWith('/') ? picked : '$picked/';
+  await context.read<TaskQueueService>().enqueueMangaPack(
+    sourceName: manga.sourceName,
+    mangaId: manga.id,
+    remotePath: '$parent$fileName',
+    displayName: fileName,
+  );
+  if (context.mounted) AppSnack.show(context, l10n.mangaPackQueued);
+}
+
 /// Shared confirmation for the single-item and batch delete paths. Returns
 /// false when the user backs out.
 Future<bool> _confirmMangaDelete(BuildContext context, int count) async {
@@ -752,10 +832,12 @@ Future<void> _editMangaMetadata(BuildContext context, Manga manga) async {
             controller: titleCtrl,
             decoration: InputDecoration(labelText: l10n.mangaFieldTitle),
           ),
+          const SizedBox(height: 12),
           TextField(
             controller: authorCtrl,
             decoration: InputDecoration(labelText: l10n.mangaFieldAuthor),
           ),
+          const SizedBox(height: 12),
           TextField(
             controller: seriesCtrl,
             decoration: InputDecoration(labelText: l10n.mangaFieldSeries),

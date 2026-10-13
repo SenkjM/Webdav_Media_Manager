@@ -23,6 +23,7 @@ import '../services/cache_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/manga_library_service.dart';
+import '../services/platform_export_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/app_snack.dart';
 import '../utils/manga_file_types.dart';
@@ -342,6 +343,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final id = _accountId;
     if (id == null) return false;
     return context.read<CloudDriveService>().can(id, AccountCaps.mkdir);
+  }
+
+  /// 上传只对本地 WebDAV 账号开放：云盘驱动（`CloudDriver`）里根本没有上传原语，
+  /// 用能力位遮罩会漏出一个必然失败的按钮（99 §7.5）。
+  bool get _canUpload {
+    final id = _accountId;
+    if (id == null) return false;
+    final account = context.read<AccountsService>().accountById(id);
+    if (account == null || account.providerType != 'webdav') return false;
+    return context.read<CloudDriveService>().can(id, AccountCaps.write);
   }
 
   /// Library binding name for a local WebDAV account id.
@@ -1074,6 +1085,47 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     });
   }
 
+  /// 用系统文件选择器取一个本地文件，按流式上传排进任务队列。
+  ///
+  /// Android 的 SAF 不给原始路径，平台侧会把它**拷进应用缓存**再由我们读取；
+  /// 那份副本随任务走，上传成功即删（见 `_runUpload`），失败留着供重试。
+  Future<void> _uploadFile() async {
+    final l10n = AppLocalizations.of(context)!;
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final picked = await const PlatformExportService().pickFile();
+    if (!mounted) return;
+    if (picked.cancelled) return;
+    if (!picked.ok) {
+      AppSnack.error(
+        context,
+        PlatformExportService.describeError(
+          picked.error ?? 'pickerErr.failed',
+          l10n,
+        ),
+      );
+      return;
+    }
+    final localPath = picked.path;
+    final fileName = picked.fileName;
+    if (localPath == null ||
+        localPath.isEmpty ||
+        fileName == null ||
+        fileName.isEmpty) {
+      AppSnack.error(context, l10n.pickerErrBadResponse);
+      return;
+    }
+    final parent = _path.endsWith('/') ? _path : '$_path/';
+    await context.read<TaskQueueService>().enqueueUpload(
+      sourceName: _nameFor(accountId),
+      remotePath: '$parent$fileName',
+      displayName: fileName,
+      localPath: localPath,
+    );
+    if (!mounted) return;
+    AppSnack.show(context, l10n.uploadQueued);
+  }
+
   Future<void> _renameItem(WebDavItem item) async {
     final controller = TextEditingController(text: item.name);
     final name = await showDialog<String>(
@@ -1207,11 +1259,42 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         actions: [
           // 新建文件夹按「创建文件夹」能力遮罩（99 §7.2.3 / §7.2.6）：无能力
           // 直接隐藏而非置灰；驱动层的语义错误是第二道防线。
-          if (accounts.hasAccounts && _canCreateFolder)
-            IconButton(
-              icon: const Icon(Icons.create_new_folder_outlined),
-              tooltip: l10n.newFolder,
-              onPressed: _createFolder,
+          // 新建文件夹与上传都归到加号下：两者都是「往当前目录添东西」，
+          // 分开摆两个图标既占位又容易点错。各自按能力遮罩（99 §7.2.3 /
+          // §7.2.6）：没能力的项直接不出现，驱动层的语义错误是第二道防线。
+          if (accounts.hasAccounts && (_canCreateFolder || _canUpload))
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.add),
+              tooltip: l10n.addAction,
+              onSelected: (value) {
+                if (value == 'folder') {
+                  unawaited(_createFolder());
+                } else if (value == 'upload') {
+                  unawaited(_uploadFile());
+                }
+              },
+              itemBuilder: (ctx) => [
+                if (_canCreateFolder)
+                  PopupMenuItem(
+                    value: 'folder',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.create_new_folder_outlined),
+                      title: Text(l10n.newFolder),
+                    ),
+                  ),
+                if (_canUpload)
+                  PopupMenuItem(
+                    value: 'upload',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.upload_file_outlined),
+                      title: Text(l10n.uploadAction),
+                    ),
+                  ),
+              ],
             ),
           IconButton(
             icon: const Icon(Icons.dns_outlined),

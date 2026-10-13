@@ -383,6 +383,38 @@ class WebDavService extends ChangeNotifier {
     await client.write(remotePath, data);
   }
 
+  /// Stream a local file to [remotePath] on a specific account.
+  ///
+  /// [writeBytes] holds the whole payload in memory; this one streams from disk
+  /// and forwards byte progress, so a large archive can be uploaded straight
+  /// from a temp file. Cloud-drive accounts have no upload primitive at all
+  /// (99 §7.2.1) and fail with `err.cloudWriteDisabled`.
+  Future<void> writeFromFile(
+    String accountId,
+    String remotePath,
+    String localPath, {
+    void Function(int count, int total)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final cloud = _cloudOf(accountId);
+    if (cloud != null) {
+      return cloud.writeFromFile(
+        accountId,
+        remotePath,
+        localPath,
+        onProgress: onProgress,
+        cancelToken: cancelToken,
+      );
+    }
+    final client = _requireClient(accountId);
+    await client.writeFromFile(
+      localPath,
+      remotePath,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
+  }
+
   /// Ensure directory exists (mkdirAll) on a specific account.
   Future<void> ensureDirectory(String accountId, String path) async {
     final cloud = _cloudOf(accountId);

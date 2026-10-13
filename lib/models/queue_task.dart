@@ -23,8 +23,17 @@ enum TaskKind {
   /// Download one whole manga archive into the manga cache.
   mangaCache,
 
+  /// Stream one local file up to its account. The only write-side kind: it
+  /// covers a SAF import copy and a packed archive alike. Cloud-drive accounts
+  /// have no upload primitive and fail fast.
+  upload,
+
   /// Build loose-image books from a folder (merged, or one per directory).
   mangaBuild,
+
+  /// Pack one loose-image manga into a CBZ on disk and hand it to an [upload]
+  /// task. Two rows by design: the user sees packing and uploading separately.
+  mangaPack,
 }
 
 extension TaskKindX on TaskKind {
@@ -36,7 +45,9 @@ extension TaskKindX on TaskKind {
     TaskKind.matchRemote => 'match_remote',
     TaskKind.mangaScrape => 'manga_scrape',
     TaskKind.mangaCache => 'manga_cache',
+    TaskKind.upload => 'upload',
     TaskKind.mangaBuild => 'manga_build',
+    TaskKind.mangaPack => 'manga_pack',
   };
 
   String label(AppLocalizations l10n) => switch (this) {
@@ -47,7 +58,9 @@ extension TaskKindX on TaskKind {
     TaskKind.matchRemote => l10n.taskKindMatchRemote,
     TaskKind.mangaScrape => l10n.taskKindMangaScrape,
     TaskKind.mangaCache => l10n.taskKindMangaCache,
+    TaskKind.upload => l10n.taskKindUpload,
     TaskKind.mangaBuild => l10n.taskKindMangaBuild,
+    TaskKind.mangaPack => l10n.taskKindMangaPack,
   };
 
   static TaskKind fromStorageKey(String? key) => switch (key) {
@@ -57,7 +70,9 @@ extension TaskKindX on TaskKind {
     'match_remote' => TaskKind.matchRemote,
     'manga_scrape' => TaskKind.mangaScrape,
     'manga_cache' => TaskKind.mangaCache,
+    'upload' => TaskKind.upload,
     'manga_build' => TaskKind.mangaBuild,
+    'manga_pack' => TaskKind.mangaPack,
     _ => TaskKind.download,
   };
 }

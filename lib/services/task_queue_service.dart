@@ -47,6 +47,8 @@ import '../utils/directory_walk.dart';
 import '../utils/manga_scan_walk.dart';
 import '../utils/scan_candidates.dart';
 
+import 'package:archive/archive_io.dart';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:flutter/widgets.dart';
@@ -683,6 +685,66 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       unitsTotal: 1,
       unitsDone: 0,
       localPath: 'manga:$mangaId',
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
+  /// Pack one loose-image manga into a CBZ and queue its upload.
+  ///
+  /// [remotePath] is the finished archive's full remote path; [displayName] its
+  /// file name. Packing and uploading are separate rows so each shows its own
+  /// progress — this one counts pages.
+  Future<QueueTask> enqueueMangaPack({
+    required String sourceName,
+    required String mangaId,
+    required String remotePath,
+    required String displayName,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: displayName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.mangaPack,
+      progressMode: TaskProgressMode.units,
+      localPath: 'manga:$mangaId',
+    );
+    _tasks.add(task);
+    _sessionIds.add(task.id);
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+    unawaited(_pump());
+    return task;
+  }
+
+  /// Upload one local file to [remotePath] on [sourceName]'s account.
+  ///
+  /// The bytes stream from disk ([WebDavService.writeFromFile]), so the payload
+  /// never sits in memory — a packed CBZ can be hundreds of MB. The local copy
+  /// exists only for this upload (a SAF import copy, or a packed archive): it is
+  /// deleted once the bytes land and kept when they do not, so a retry still has
+  /// something to send.
+  Future<QueueTask> enqueueUpload({
+    required String sourceName,
+    required String remotePath,
+    required String displayName,
+    required String localPath,
+  }) async {
+    final task = QueueTask(
+      id: _uuid.v4(),
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: displayName,
+      createdAt: DateTime.now(),
+      kind: TaskKind.upload,
+      progressMode: TaskProgressMode.bytes,
+      localPath: localPath,
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
@@ -1692,7 +1754,9 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
                       t.kind == TaskKind.matchRemote ||
                       t.kind == TaskKind.mangaScrape ||
                       t.kind == TaskKind.mangaCache ||
-                      t.kind == TaskKind.mangaBuild) &&
+                      t.kind == TaskKind.mangaBuild ||
+                      t.kind == TaskKind.upload ||
+                      t.kind == TaskKind.mangaPack) &&
                   (t.nextRetryAt == null || !t.nextRetryAt!.isAfter(now)),
             )
             .toList()
@@ -2310,6 +2374,10 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           await _runMangaCache(task, token);
         case TaskKind.mangaBuild:
           await _runMangaBuild(task, token);
+        case TaskKind.upload:
+          await _runUpload(task, token);
+        case TaskKind.mangaPack:
+          await _runMangaPack(task, token);
         case TaskKind.retagLocal:
           // Local retag stays interactive (settings); not scheduled here.
           task.status = TaskStatus.cancelled;
@@ -2888,6 +2956,166 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     task.unitsDone = 1;
     task.progress = 1;
     task.status = TaskStatus.completed;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+  /// Pack one loose-image manga into a CBZ, then queue that file for upload.
+  ///
+  /// Pages are pulled one at a time into a single temp file and streamed
+  /// straight into the archive, so peak disk is one page and peak memory is a
+  /// buffer — a 300-page volume never lands in RAM. Entry names carry a
+  /// zero-padded index so page order and uniqueness survive two source
+  /// directories that share a file name.
+  Future<void> _runMangaPack(QueueTask task, CancelToken token) async {
+    final localPath = task.localPath;
+    if (localPath == null || !localPath.startsWith('manga:')) {
+      throw StateError('err.unknown|no manga id');
+    }
+    final mangaId = localPath.substring('manga:'.length);
+    final mangaLib = _mangaLibrary;
+    if (mangaLib == null) {
+      throw StateError('err.mangaLibraryNotReady|');
+    }
+    final manga = mangaLib.mangaById(mangaId);
+    if (manga == null) {
+      throw StateError('err.mangaMissing|$mangaId');
+    }
+    final pages = await mangaLib.pagesFor(mangaId);
+    if (pages.isEmpty) {
+      throw StateError('err.unknown|no pages to pack');
+    }
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+
+    task.progressMode = TaskProgressMode.units;
+    task.unitsTotal = pages.length;
+    task.unitsDone = 0;
+    task.progress = 0;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    final dir = Directory(
+      p.join((await getTemporaryDirectory()).path, 'manga_pack'),
+    );
+    await dir.create(recursive: true);
+    final archive = File(p.join(dir.path, '${task.id}.cbz'));
+    final pageTmp = File(p.join(dir.path, '${task.id}.page'));
+    final encoder = ZipFileEncoder();
+    encoder.create(archive.path, level: ZipFileEncoder.gzip);
+    var packed = 0;
+    var ok = false;
+    try {
+      for (var i = 0; i < pages.length; i++) {
+        if (token.isCancelled) break;
+        final page = pages[i];
+        await _webDav.downloadToFile(
+          accountId,
+          page.relPath,
+          pageTmp,
+          cancelToken: token,
+        );
+        final base = p.basename(page.relPath.replaceAll('\\', '/'));
+        await encoder.addFile(
+          pageTmp,
+          '${(i + 1).toString().padLeft(5, '0')}_$base',
+        );
+        packed++;
+        task.unitsDone = packed;
+        task.progress = packed / pages.length;
+        notifyListeners();
+      }
+      ok = packed == pages.length && await archive.exists();
+    } finally {
+      await encoder.close();
+      if (await pageTmp.exists()) {
+        try {
+          await pageTmp.delete();
+        } catch (_) {
+          // A stale page temp is not worth failing the pack over.
+        }
+      }
+      if (!ok && await archive.exists()) {
+        try {
+          await archive.delete();
+        } catch (_) {
+          // Same: the retry rewrites it anyway.
+        }
+      }
+    }
+
+    // Hand the archive over; the upload task deletes it once the bytes land.
+    await enqueueUpload(
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+      displayName: task.fileName,
+      localPath: archive.path,
+    );
+    task.unitsDone = pages.length;
+    task.progress = 1;
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+  /// Stream one local file up to its account.
+  ///
+  /// Byte counters come straight from the transport, so the row shows real
+  /// upload progress. Cloud-drive accounts have no upload primitive at all and
+  /// fail immediately with `err.cloudWriteDisabled`.
+  Future<void> _runUpload(QueueTask task, CancelToken token) async {
+    final localPath = task.localPath;
+    if (localPath == null || localPath.isEmpty) {
+      throw StateError('err.unknown|no local file');
+    }
+    final file = File(localPath);
+    if (!file.existsSync() || file.lengthSync() == 0) {
+      throw StateError('err.cloud.notFound|$localPath');
+    }
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+    final total = file.lengthSync();
+    task.progressMode = TaskProgressMode.bytes;
+    task.bytesTotal = total;
+    task.bytesReceived = 0;
+    task.progress = 0;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    await retryItem(
+      () => _webDav.writeFromFile(
+        accountId,
+        task.remotePath,
+        localPath,
+        onProgress: (count, t) {
+          task.bytesReceived = count;
+          task.bytesTotal = t > 0 ? t : total;
+          task.progress = task.bytesTotal! > 0
+              ? (count / task.bytesTotal!).clamp(0.0, 1.0)
+              : 0.0;
+          notifyListeners();
+        },
+        cancelToken: token,
+      ),
+      isCancel: (e) => token.isCancelled,
+    );
+
+    task.bytesReceived = total;
+    task.bytesTotal = total;
+    task.progress = 1;
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    // Success only: a failed attempt must keep the payload for its retry.
+    try {
+      await file.delete();
+    } catch (_) {
+      // A leftover temp file is not worth failing a landed upload over.
+    }
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
   }

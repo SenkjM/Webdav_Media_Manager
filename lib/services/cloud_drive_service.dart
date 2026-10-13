@@ -417,6 +417,18 @@ class CloudDriveService extends ChangeNotifier {
     throw UnsupportedError(_writeDisabled);
   }
 
+  /// 同 [writeBytes]：云盘驱动接口（`CloudDriver`）里根本没有上传原语，
+  /// 这里如实抛错，不是留了个空壳（99 §7.2.1）。
+  Future<void> writeFromFile(
+    String accountId,
+    String remotePath,
+    String localPath, {
+    void Function(int count, int total)? onProgress,
+    CancelToken? cancelToken,
+  }) {
+    throw UnsupportedError(_writeDisabled);
+  }
+
   /// 同上：建目录归「写入」，云盘账号一律禁用（99 §7.2.3 的枚举语义）。
   Future<void> ensureDirectory(String accountId, String path) {
     throw UnsupportedError(_writeDisabled);
