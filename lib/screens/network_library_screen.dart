@@ -1090,7 +1090,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     });
   }
 
-  /// 用系统文件选择器取一个本地文件，按流式上传排进任务队列。
+  /// 用系统文件选择器取本地文件（可多选），按流式上传排进任务队列。
   ///
   /// Android 的 SAF 不给原始路径，平台侧会把它**拷进应用缓存**再由我们读取；
   /// 那份副本随任务走，上传成功即删（见 `_runUpload`），失败留着供重试。
@@ -1098,7 +1098,64 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final l10n = AppLocalizations.of(context)!;
     final accountId = _accountId;
     if (accountId == null) return;
-    final picked = await const PlatformExportService().pickFile();
+    final picked = await const PlatformExportService().pickFiles();
+    if (!mounted) return;
+    if (picked.isEmpty) return; // 用户取消
+    final failed = picked.where((f) => !f.ok).toList();
+    final okFiles = picked.where((f) => f.ok).toList();
+    if (okFiles.isEmpty && failed.isNotEmpty) {
+      AppSnack.error(
+        context,
+        PlatformExportService.describeError(
+          failed.first.error ?? 'pickerErr.failed',
+          l10n,
+        ),
+      );
+      return;
+    }
+    final parent = _path.endsWith('/') ? _path : '$_path/';
+    final queue = context.read<TaskQueueService>();
+    final sourceName = _nameFor(accountId);
+    var queued = 0;
+    for (final file in okFiles) {
+      final localPath = file.path;
+      final fileName = file.fileName;
+      if (localPath == null ||
+          localPath.isEmpty ||
+          fileName == null ||
+          fileName.isEmpty) {
+        continue;
+      }
+      await queue.enqueueUpload(
+        sourceName: sourceName,
+        remotePath: '$parent$fileName',
+        displayName: fileName,
+        localPath: localPath,
+      );
+      queued++;
+    }
+    if (!mounted) return;
+    if (queued == 0) {
+      AppSnack.error(context, l10n.pickerErrBadResponse);
+      return;
+    }
+    AppSnack.show(
+      context,
+      queued == 1 ? l10n.uploadQueued : l10n.uploadQueuedFiles(queued),
+    );
+  }
+
+  /// 用系统文件夹选择器（SAF document tree）取一个本地文件夹，把其中的
+  /// 每个文件按「一文件一任务」排进上传队列，共享同一个 `cacheGroupId`。
+  ///
+  /// 数量统计与进度估算都建立在队列上：总数 = 清单长度，整体进度 =
+  /// 已完成任务数 / 总数；单个文件失败只影响自己的任务，副本留着供重试。
+  Future<void> _uploadFolder() async {
+    final l10n = AppLocalizations.of(context)!;
+    final accountId = _accountId;
+    if (accountId == null) return;
+    AppSnack.show(context, l10n.uploadFolderPreparing);
+    final picked = await const PlatformExportService().pickFolder();
     if (!mounted) return;
     if (picked.cancelled) return;
     if (!picked.ok) {
@@ -1111,24 +1168,44 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       );
       return;
     }
-    final localPath = picked.path;
-    final fileName = picked.fileName;
-    if (localPath == null ||
-        localPath.isEmpty ||
-        fileName == null ||
-        fileName.isEmpty) {
-      AppSnack.error(context, l10n.pickerErrBadResponse);
+    if (picked.files.isEmpty) {
+      AppSnack.show(context, l10n.uploadFolderEmpty);
       return;
     }
     final parent = _path.endsWith('/') ? _path : '$_path/';
-    await context.read<TaskQueueService>().enqueueUpload(
-      sourceName: _nameFor(accountId),
-      remotePath: '$parent$fileName',
-      displayName: fileName,
-      localPath: localPath,
-    );
+    final queue = context.read<TaskQueueService>();
+    final sourceName = _nameFor(accountId);
+    final groupId = 'folder-${DateTime.now().microsecondsSinceEpoch}';
+    var queued = 0;
+    for (final file in picked.files) {
+      final localPath = file.path;
+      final relative = file.relativePath;
+      final fileName = file.fileName;
+      if (localPath == null ||
+          localPath.isEmpty ||
+          relative == null ||
+          relative.isEmpty ||
+          fileName == null ||
+          fileName.isEmpty) {
+        continue;
+      }
+      // 相对路径自带所选根文件夹名（如 `photos/2024/cat.jpg`），整棵目录
+      // 在远端当前目录下原样落盘。
+      await queue.enqueueUpload(
+        sourceName: sourceName,
+        remotePath: '$parent$relative',
+        displayName: relative,
+        localPath: localPath,
+        cacheGroupId: groupId,
+      );
+      queued++;
+    }
     if (!mounted) return;
-    AppSnack.show(context, l10n.uploadQueued);
+    if (queued == 0) {
+      AppSnack.error(context, l10n.pickerErrBadResponse);
+      return;
+    }
+    AppSnack.show(context, l10n.uploadQueuedFiles(queued));
   }
 
   Future<void> _renameItem(WebDavItem item) async {
@@ -1276,6 +1353,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   unawaited(_createFolder());
                 } else if (value == 'upload') {
                   unawaited(_uploadFile());
+                } else if (value == 'uploadFolder') {
+                  unawaited(_uploadFolder());
                 }
               },
               itemBuilder: (ctx) => [
@@ -1296,7 +1375,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(Icons.upload_file_outlined),
-                      title: Text(l10n.uploadAction),
+                      title: Text(l10n.uploadFiles),
+                    ),
+                  ),
+                if (_canUpload)
+                  PopupMenuItem(
+                    value: 'uploadFolder',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.drive_folder_upload_outlined),
+                      title: Text(l10n.uploadFolder),
                     ),
                   ),
               ],

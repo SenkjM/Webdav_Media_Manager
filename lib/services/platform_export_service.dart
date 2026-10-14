@@ -79,6 +79,7 @@ class PickedFile {
     this.path,
     this.fileName,
     this.size,
+    this.relativePath,
     this.error,
   });
 
@@ -88,9 +89,49 @@ class PickedFile {
   final String? path;
   final String? fileName;
   final int? size;
+
+  /// Folder-upload only: the file's path below the picked root, including the
+  /// root folder name (e.g. `photos/2024/cat.jpg`). Null for plain picks.
+  final String? relativePath;
   final String? error;
 
   bool get cancelled => ok && path == null;
+
+  static PickedFile fromMap(Map<dynamic, dynamic> raw) {
+    final map = raw.map((k, v) => MapEntry(k.toString(), v));
+    return PickedFile(
+      ok: map['ok'] == true,
+      path: map['path']?.toString(),
+      fileName: map['fileName']?.toString(),
+      size: (map['size'] as num?)?.toInt(),
+      relativePath: map['relativePath']?.toString(),
+      error: map['error']?.toString(),
+    );
+  }
+}
+
+/// Result of the system folder picker (SAF document tree).
+class PickedFolder {
+  const PickedFolder({
+    required this.ok,
+    this.folderName,
+    this.files = const [],
+    this.error,
+    this.cancelled = false,
+  });
+
+  final bool ok;
+
+  /// Display name of the picked root folder.
+  final String? folderName;
+
+  /// Every file under the root, already copied into the app cache. Each
+  /// entry carries [PickedFile.relativePath] below (and including) the root.
+  final List<PickedFile> files;
+  final String? error;
+
+  /// User backed out of the picker without choosing anything.
+  final bool cancelled;
 }
 
 /// Outcome of toggling `.nomedia` in `Download/WebdavMediaManager`.
@@ -293,43 +334,100 @@ class PlatformExportService {
     }.contains(ext);
   }
 
-  /// Open the system document picker and copy the chosen file into the app
-  /// cache, returning a readable path. Returns a cancelled result when the user
-  /// backs out; unsupported platforms return a failure with a message.
-  Future<PickedFile> pickFile({String? mimeType}) async {
+  /// Open the system document picker and copy the chosen file(s) into the app
+  /// cache, returning readable paths. The native picker allows multi-select;
+  /// a single pick simply yields a one-element list. Returns an empty list
+  /// when the user backs out; failures throw no exception but surface through
+  /// the legacy [pickFile] single-result shape below.
+  Future<List<PickedFile>> pickFiles({String? mimeType}) async {
     if (!supported) {
-      return const PickedFile(
-        ok: false,
-        error: 'pickerErr.unsupportedPlatform',
-      );
+      return const [
+        PickedFile(ok: false, error: 'pickerErr.unsupportedPlatform'),
+      ];
     }
     try {
       final raw = await _kAppChannel.invokeMethod<dynamic>('pickFile', {
         'mimeType': mimeType,
       });
-      if (raw == null) return const PickedFile(ok: true);
+      if (raw == null) return const [];
       if (raw is! Map) {
-        return const PickedFile(ok: false, error: 'pickerErr.badResponse');
+        return const [PickedFile(ok: false, error: 'pickerErr.badResponse')];
       }
       final map = raw.map((k, v) => MapEntry(k.toString(), v));
       if (map['ok'] != true) {
-        return PickedFile(
+        return [
+          PickedFile(
+            ok: false,
+            error: map['error']?.toString() ?? 'pickerErr.failed',
+          ),
+        ];
+      }
+      final files = (map['files'] as List?) ?? const [];
+      return files
+          .whereType<Map>()
+          .map(PickedFile.fromMap)
+          .toList(growable: false);
+    } on MissingPluginException {
+      return const [
+        PickedFile(ok: false, error: 'pickerErr.channelUnavailable'),
+      ];
+    } on PlatformException catch (e) {
+      return [PickedFile(ok: false, error: e.message ?? e.code)];
+    } catch (e) {
+      return [PickedFile(ok: false, error: '$e')];
+    }
+  }
+
+  /// Open the system document picker and copy the chosen file into the app
+  /// cache, returning a readable path. Returns a cancelled result when the user
+  /// backs out; unsupported platforms return a failure with a message.
+  Future<PickedFile> pickFile({String? mimeType}) async {
+    final files = await pickFiles(mimeType: mimeType);
+    if (files.isEmpty) return const PickedFile(ok: true);
+    return files.first;
+  }
+
+  /// Open the system folder picker (SAF document tree) and copy every file
+  /// under the chosen directory into the app cache. Each entry keeps its
+  /// path below the root in [PickedFile.relativePath].
+  Future<PickedFolder> pickFolder() async {
+    if (!supported) {
+      return const PickedFolder(
+        ok: false,
+        error: 'pickerErr.unsupportedPlatform',
+      );
+    }
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('pickFolder');
+      if (raw == null) return const PickedFolder(ok: true, cancelled: true);
+      if (raw is! Map) {
+        return const PickedFolder(ok: false, error: 'pickerErr.badResponse');
+      }
+      final map = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (map['ok'] != true) {
+        return PickedFolder(
           ok: false,
           error: map['error']?.toString() ?? 'pickerErr.failed',
         );
       }
-      return PickedFile(
+      final files = ((map['files'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(PickedFile.fromMap)
+          .toList(growable: false);
+      return PickedFolder(
         ok: true,
-        path: map['path']?.toString(),
-        fileName: map['fileName']?.toString(),
-        size: (map['size'] as num?)?.toInt(),
+        folderName: map['folderName']?.toString(),
+        files: files,
       );
     } on MissingPluginException {
-      return const PickedFile(ok: false, error: 'pickerErr.channelUnavailable');
+      return const PickedFolder(
+        ok: false,
+        error: 'pickerErr.channelUnavailable',
+      );
     } on PlatformException catch (e) {
-      return PickedFile(ok: false, error: e.message ?? e.code);
+      return PickedFolder(ok: false, error: e.message ?? e.code);
     } catch (e) {
-      return PickedFile(ok: false, error: '$e');
+      return PickedFolder(ok: false, error: '$e');
     }
   }
 

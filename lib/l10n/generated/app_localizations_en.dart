@@ -1110,6 +1110,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get uploadAction => 'Upload';
 
   @override
+  String get uploadFiles => 'Upload files';
+
+  @override
+  String get uploadFolder => 'Upload folder';
+
+  @override
+  String get uploadFolderEmpty => 'The selected folder has no files';
+
+  @override
+  String uploadQueuedFiles(int count) {
+    return '$count upload tasks queued';
+  }
+
+  @override
+  String get uploadFolderPreparing => 'Reading the selected folder…';
+
+  @override
   String get uploadQueued => 'Upload queued';
 
   @override

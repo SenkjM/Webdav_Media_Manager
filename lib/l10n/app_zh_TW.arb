@@ -352,6 +352,14 @@
   "newFolder": "新增資料夾",
   "addAction": "新增",
   "uploadAction": "上傳",
+  "uploadFiles": "上傳檔案",
+  "uploadFolder": "上傳資料夾",
+  "uploadFolderEmpty": "所選資料夾裡沒有檔案",
+  "uploadQueuedFiles": "已加入 {count} 個上傳任務",
+  "@uploadQueuedFiles": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "uploadFolderPreparing": "正在讀取所選資料夾…",
   "uploadQueued": "已加入上傳任務",
   "close": "關閉",
   "parentFolder": "上一層",

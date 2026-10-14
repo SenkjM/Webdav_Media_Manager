@@ -1075,6 +1075,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get uploadAction => '上传';
 
   @override
+  String get uploadFiles => '上传文件';
+
+  @override
+  String get uploadFolder => '上传文件夹';
+
+  @override
+  String get uploadFolderEmpty => '所选文件夹里没有文件';
+
+  @override
+  String uploadQueuedFiles(int count) {
+    return '已加入 $count 个上传任务';
+  }
+
+  @override
+  String get uploadFolderPreparing => '正在读取所选文件夹…';
+
+  @override
   String get uploadQueued => '已加入上传任务';
 
   @override
@@ -5994,6 +6011,23 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get uploadAction => '上傳';
+
+  @override
+  String get uploadFiles => '上傳檔案';
+
+  @override
+  String get uploadFolder => '上傳資料夾';
+
+  @override
+  String get uploadFolderEmpty => '所選資料夾裡沒有檔案';
+
+  @override
+  String uploadQueuedFiles(int count) {
+    return '已加入 $count 個上傳任務';
+  }
+
+  @override
+  String get uploadFolderPreparing => '正在讀取所選資料夾…';
 
   @override
   String get uploadQueued => '已加入上傳任務';

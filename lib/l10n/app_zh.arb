@@ -352,6 +352,14 @@
   "newFolder": "新建文件夹",
   "addAction": "添加",
   "uploadAction": "上传",
+  "uploadFiles": "上传文件",
+  "uploadFolder": "上传文件夹",
+  "uploadFolderEmpty": "所选文件夹里没有文件",
+  "uploadQueuedFiles": "已加入 {count} 个上传任务",
+  "@uploadQueuedFiles": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "uploadFolderPreparing": "正在读取所选文件夹…",
   "uploadQueued": "已加入上传任务",
   "close": "关闭",
   "parentFolder": "上一级",

@@ -2049,6 +2049,36 @@ abstract class AppLocalizations {
   /// **'上传'**
   String get uploadAction;
 
+  /// No description provided for @uploadFiles.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传文件'**
+  String get uploadFiles;
+
+  /// No description provided for @uploadFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'上传文件夹'**
+  String get uploadFolder;
+
+  /// No description provided for @uploadFolderEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'所选文件夹里没有文件'**
+  String get uploadFolderEmpty;
+
+  /// No description provided for @uploadQueuedFiles.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入 {count} 个上传任务'**
+  String uploadQueuedFiles(int count);
+
+  /// No description provided for @uploadFolderPreparing.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取所选文件夹…'**
+  String get uploadFolderPreparing;
+
   /// No description provided for @uploadQueued.
   ///
   /// In zh, this message translates to:

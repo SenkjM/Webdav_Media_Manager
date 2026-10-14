@@ -159,6 +159,8 @@ kotlin {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // SAF document-tree traversal for folder upload (no storage permission).
+    implementation("androidx.documentfile:documentfile:1.0.1")
 }
 
 flutter {

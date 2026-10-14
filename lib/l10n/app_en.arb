@@ -352,6 +352,14 @@
   "newFolder": "New folder",
   "addAction": "Add",
   "uploadAction": "Upload",
+  "uploadFiles": "Upload files",
+  "uploadFolder": "Upload folder",
+  "uploadFolderEmpty": "The selected folder has no files",
+  "uploadQueuedFiles": "{count} upload tasks queued",
+  "@uploadQueuedFiles": {
+    "placeholders": { "count": { "type": "int" } }
+  },
+  "uploadFolderPreparing": "Reading the selected folder…",
   "uploadQueued": "Upload queued",
   "close": "Close",
   "parentFolder": "Parent folder",

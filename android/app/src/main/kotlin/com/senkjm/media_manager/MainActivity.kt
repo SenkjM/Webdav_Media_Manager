@@ -16,12 +16,14 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.documentfile.provider.DocumentFile
 import com.ryanheise.audioservice.AudioServiceFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import kotlin.concurrent.thread
 
 /**
  * Hosts a small MethodChannel so Flutter can:
@@ -117,6 +119,7 @@ class MainActivity : AudioServiceFragmentActivity() {
                     val args = call.arguments as? Map<*, *>
                     pickFile(args?.get("mimeType") as? String, result)
                 }
+                "pickFolder" -> pickFolder(result)
                 "updateInstallInfo" -> result.success(
                     mapOf("packageName" to packageName, "abis" to Build.SUPPORTED_ABIS.toList()),
                 )
@@ -152,6 +155,9 @@ class MainActivity : AudioServiceFragmentActivity() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = mimeType?.takeIf { it.isNotBlank() } ?: "*/*"
+            // Multi-select stays inside SAF: the same system picker grants
+            // per-URI read access, still no storage permission involved.
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 putExtra(
                     Intent.EXTRA_MIME_TYPES,
@@ -167,10 +173,31 @@ class MainActivity : AudioServiceFragmentActivity() {
         }
     }
 
+    /**
+     * Opens the system folder picker (SAF document tree) and copies every file
+     * under the chosen directory into the app cache, preserving the relative
+     * path below that directory. No storage permission is involved: SAF grants
+     * read access to the tree the user picked.
+     */
+    private fun pickFolder(result: MethodChannel.Result) {
+        if (pendingPick != null) {
+            result.error("busy", "已有文件选择正在进行", null)
+            return
+        }
+        pendingPick = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        try {
+            startActivityForResult(intent, REQUEST_PICK_FOLDER)
+        } catch (e: Exception) {
+            pendingPick = null
+            result.error("unavailable", e.message ?: "无法打开文件夹选择器", null)
+        }
+    }
+
     @Deprecated("Flutter embedding still routes SAF results through onActivityResult")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != REQUEST_PICK_FILE) return
+        if (requestCode != REQUEST_PICK_FILE && requestCode != REQUEST_PICK_FOLDER) return
         val result = pendingPick ?: return
         pendingPick = null
         if (resultCode != Activity.RESULT_OK) {
@@ -182,30 +209,99 @@ class MainActivity : AudioServiceFragmentActivity() {
             result.success(null)
             return
         }
-        result.success(
-            runCatching { copyPickedFile(uri) }.getOrElse { e ->
+        if (requestCode == REQUEST_PICK_FOLDER) {
+            // Copying a whole tree can take a while on big folders; run it off
+            // the main thread so the UI (and every other channel) stays live,
+            // then deliver the result back on the main thread.
+            thread(name = "saf-folder-import") {
+                val payload = runCatching { copyPickedFolder(uri) }.getOrElse { e ->
+                    mapOf("ok" to false, "error" to (e.message ?: e.toString()))
+                }
+                runOnUiThread { result.success(payload) }
+            }
+            return
+        }
+        thread(name = "saf-file-import") {
+            val payload = runCatching {
+                val uris = mutableListOf<Uri>()
+                data.clipData?.let { clip ->
+                    for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+                }
+                if (uris.isEmpty()) uris.add(uri)
+                val files = uris.distinct().map { copyPickedFile(it) }
+                mapOf("ok" to true, "files" to files)
+            }.getOrElse { e ->
                 mapOf("ok" to false, "error" to (e.message ?: e.toString()))
-            },
-        )
+            }
+            runOnUiThread { result.success(payload) }
+        }
     }
 
-    private fun copyPickedFile(uri: Uri): Map<String, Any?> {
+    private fun copyPickedFile(uri: Uri, relativePath: String? = null): Map<String, Any?> {
         val name = displayNameFor(uri)
         val dir = File(cacheDir, "imports")
         if (!dir.exists() && !dir.mkdirs()) {
             throw IllegalStateException("无法创建导入缓存目录")
         }
-        val target = File(dir, name)
+        val target = uniqueImportTarget(dir, name)
         contentResolver.openInputStream(uri).use { input ->
             if (input == null) throw IllegalStateException("无法读取所选文件")
             FileOutputStream(target).use { out -> input.copyTo(out) }
         }
-        return mapOf(
+        val map = mutableMapOf<String, Any?>(
             "ok" to true,
             "path" to target.absolutePath,
             "fileName" to name,
             "size" to target.length(),
         )
+        if (relativePath != null) map["relativePath"] = relativePath
+        return map
+    }
+
+    /** Same-named picks in one batch must not overwrite each other's cache copy. */
+    private fun uniqueImportTarget(dir: File, name: String): File {
+        var target = File(dir, name)
+        if (!target.exists()) return target
+        val dot = name.lastIndexOf('.')
+        val stem = if (dot > 0) name.substring(0, dot) else name
+        val ext = if (dot > 0) name.substring(dot) else ""
+        var i = 2
+        while (target.exists()) {
+            target = File(dir, "$stem-$i$ext")
+            i++
+        }
+        return target
+    }
+
+    /** Recursively copy every file under the picked tree into `cacheDir/imports`. */
+    private fun copyPickedFolder(treeUri: Uri): Map<String, Any?> {
+        val root = DocumentFile.fromTreeUri(this, treeUri)
+            ?: throw IllegalStateException("无法读取所选文件夹")
+        val folderName = sanitizeName(root.name?.takeIf { it.isNotBlank() } ?: "folder")
+        val files = mutableListOf<Map<String, Any?>>()
+        copyTree(root, folderName, files)
+        return mapOf(
+            "ok" to true,
+            "folderName" to folderName,
+            "files" to files,
+        )
+    }
+
+    private fun copyTree(
+        dir: DocumentFile,
+        prefix: String,
+        out: MutableList<Map<String, Any?>>,
+    ) {
+        for (child in dir.listFiles()) {
+            if (child.isDirectory) {
+                val name = sanitizeName(
+                    child.name?.takeIf { it.isNotBlank() } ?: "folder",
+                )
+                copyTree(child, "$prefix/$name", out)
+            } else if (child.isFile) {
+                out.add(copyPickedFile(child.uri, "$prefix/${displayNameFor(child.uri)}"))
+            }
+        }
     }
 
     private fun displayNameFor(uri: Uri): String {
@@ -862,6 +958,7 @@ class MainActivity : AudioServiceFragmentActivity() {
         /** Must match AudioService.NOTIFICATION_ID */
         private const val AUDIO_SERVICE_NOTIFICATION_ID = 1124
         private const val REQUEST_PICK_FILE = 4711
+        private const val REQUEST_PICK_FOLDER = 4712
 
         private val LEGACY_VIDEO_EXTS = setOf(
             "mp4", "mkv", "avi", "mov", "webm", "flv", "ts",
