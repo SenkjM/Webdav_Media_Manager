@@ -376,9 +376,11 @@
 
 用户语义本该成立、但当前代码不满足（或暂时搁置）的冲突。每条写明用户原话、现状、指向的固定文档小节与代码位置；修复后按 [00 §1](00-INDEX.md) 的收口规则把语义搬进对应正文，本节删除该条。
 
-### 5.0 歌单格式换二进制容器 + 主键统一 + 解绑曲库（文档已落地，代码未开工）
+### 5.0 歌单格式换二进制容器 + 主键统一 + 解绑曲库（格式层已落地，解绑未动）
 
-**状态**：文档已落地（[10](10-PLAYLIST-FORMAT.md) 已建；本节记录原始语义），**代码未动**。
+**状态**：
+- **格式层已落地**：`PlaylistCodec` / `WDMMPL01`（`playlist_codec.dart`）、`CredentialVaultCodec` / `WDMMCV01`（`credential_vault_codec.dart`）、备份归档内嵌 PL/CV 段（`backup_service.dart`）全部完成；`credential_vault_roundtrip_test` 13 passed。
+- **解绑曲库未动**：`PlaylistService.removeEntriesNotIn` 误删逻辑、`PlaylistEntry.musicId` 主键、CUE 分片 `cueTrackIndex` 字段均**代码未动**。下列「现状」和「应有语义」描述的就是这部分。
 
 **用户原话与决定**：
 
