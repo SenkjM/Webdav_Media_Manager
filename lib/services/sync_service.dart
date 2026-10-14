@@ -24,7 +24,7 @@ import 'user_folder_sync.dart';
 import 'playlist_service.dart';
 import 'platform_export_service.dart';
 import '../models/account_capabilities.dart';
-import 'cloud_drive_service.dart';
+
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
@@ -140,7 +140,6 @@ class SyncService extends ChangeNotifier {
     required AccountsService accounts,
     required SettingsService settings,
     required WebDavService webDav,
-    required CloudDriveService cloudDrive,
     required CredentialVaultService vault,
     required LibraryService library,
     required PlaylistService playlists,
@@ -157,7 +156,6 @@ class SyncService extends ChangeNotifier {
        _accounts = accounts,
        _settings = settings,
        _webDav = webDav,
-       _cloudDrive = cloudDrive,
        _vault = vault,
        _library = library,
        _playlists = playlists,
@@ -167,7 +165,6 @@ class SyncService extends ChangeNotifier {
   final AccountsService _accounts;
   final SettingsService _settings;
   final WebDavService _webDav;
-  final CloudDriveService _cloudDrive;
   final CredentialVaultService _vault;
   final LibraryService _library;
   final PlaylistService _playlists;
@@ -229,17 +226,17 @@ class SyncService extends ChangeNotifier {
   List<WebDavAccount> get accounts => _accounts.accounts;
 
   WebDavAccount? get targetAccount {
-    // 同步目标需要写能力；查 CloudDriveService.can(id, AccountCaps.write)。
+    // 同步目标需要写能力；查 WebDavService.can(id, AccountCaps.write)。
     final connectedId = _webDav.accountId;
     if (connectedId != null) {
       for (final a in _accounts.accounts) {
         if (a.id == connectedId) {
-          return _cloudDrive.can(a.id, AccountCaps.write) ? a : null;
+          return _webDav.can(a.id, AccountCaps.write) ? a : null;
         }
       }
     }
     final active = _accounts.activeAccount;
-    return active != null && _cloudDrive.can(active.id, AccountCaps.write)
+    return active != null && _webDav.can(active.id, AccountCaps.write)
         ? active
         : null;
   }

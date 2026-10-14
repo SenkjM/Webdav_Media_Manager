@@ -18,13 +18,12 @@ import '../models/webdav_item.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
-import '../services/cloud_drive_service.dart';
+import '../services/webdav_service.dart';
 import '../services/cache_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/platform_export_service.dart';
-import '../services/webdav_service.dart';
 import '../utils/app_snack.dart';
 import '../utils/manga_file_types.dart';
 import '../utils/manga_scan_walk.dart';
@@ -342,14 +341,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   bool get _canCreateFolder {
     final id = _accountId;
     if (id == null) return false;
-    return context.read<CloudDriveService>().can(id, AccountCaps.mkdir);
+    return context.read<WebDavService>().can(id, AccountCaps.mkdir);
   }
 
   /// 当前浏览账号是否具备「上传」能力（按钮遮罩，查 AccountCaps.write）。
   bool get _canUpload {
     final id = _accountId;
     if (id == null) return false;
-    return context.read<CloudDriveService>().can(id, AccountCaps.write);
+    return context.read<WebDavService>().can(id, AccountCaps.write);
   }
 
   /// Library binding name for a local WebDAV account id.

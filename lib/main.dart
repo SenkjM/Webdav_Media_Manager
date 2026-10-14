@@ -27,7 +27,7 @@ import 'services/playlist_service.dart';
 import 'services/settings_service.dart';
 import 'services/sync_service.dart';
 import 'services/video_playback_service.dart';
-import 'services/cloud_drive_service.dart';
+
 import 'services/webdav_service.dart';
 import 'theme/app_theme.dart';
 import 'utils/app_snack.dart';
@@ -100,9 +100,6 @@ class WebDavMusicApp extends StatelessWidget {
           value: appState.mangaLibrary,
         ),
         ChangeNotifierProvider<WebDavService>.value(value: appState.webDav),
-        ChangeNotifierProvider<CloudDriveService>.value(
-          value: appState.cloudDrive,
-        ),
         ChangeNotifierProvider<CacheService>.value(value: appState.cache),
         ChangeNotifierProvider<TaskQueueService>.value(
           value: appState.taskQueue,

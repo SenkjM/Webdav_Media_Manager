@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:webdav_client/webdav_client.dart' as webdav;
 
 import '../models/file_type_config.dart';
+import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/cloud_drive_service.dart';
@@ -50,6 +51,41 @@ class WebDavService extends ChangeNotifier {
 
   /// Whether [accountId] has a registered client.
   bool hasAccount(String accountId) => _conns.containsKey(accountId);
+
+  /// Query capabilities bitmask for [accountId].
+  ///
+  /// Delegates to [CloudDriveService] for unified capability management.
+  /// Returns 0 for unknown accounts.
+  int capabilitiesFor(String accountId) {
+    return _cloudDrive?.capabilitiesFor(accountId) ?? 0;
+  }
+
+  /// Check whether [accountId] has the specified [cap] capability.
+  ///
+  /// Delegates to [CloudDriveService] for unified capability checking.
+  bool can(String accountId, int cap) {
+    return _cloudDrive?.can(accountId, cap) ?? false;
+  }
+
+  /// Return the display label for an account's driver type.
+  ///
+  /// Delegates to [CloudDriveService] for unified type labeling.
+  String typeLabelFor(WebDavAccount account) {
+    return _cloudDrive?.typeLabelFor(account) ?? account.providerType;
+  }
+
+  /// Verify configuration for a new account before registration.
+  ///
+  /// Delegates to [CloudDriveService] for unified driver verification.
+  Future<void> verifyNewAccount(
+    WebDavAccount account,
+    Map<String, dynamic> config,
+  ) async {
+    if (_cloudDrive == null) {
+      throw CloudDriverException('CloudDriveService not initialized');
+    }
+    await _cloudDrive.verifyNewAccount(account, config);
+  }
 
   _WebDavConn? _connFor(String? accountId) {
     if (accountId == null) return null;

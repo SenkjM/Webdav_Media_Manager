@@ -12,13 +12,12 @@ import '../models/manga_read_mode.dart';
 import '../models/manga_series.dart';
 import '../models/webdav_account.dart';
 import '../services/accounts_service.dart';
-import '../services/cloud_drive_service.dart';
+import '../services/webdav_service.dart';
 import '../services/cache_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/manga_reader_prep.dart';
 import '../services/settings_service.dart';
 import '../services/task_queue_service.dart';
-import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../utils/manga_file_types.dart';
@@ -716,11 +715,11 @@ String _archiveFileName(String title) {
 
 List<WebDavAccount> _uploadCapableAccounts(
   AccountsService accounts,
-  CloudDriveService cloud,
+  WebDavService webDav,
 ) {
   return [
     for (final a in accounts.accounts)
-      if (accountCanUpload(a.id, cloud))
+      if (accountCanUpload(a.id, webDav))
         a,
   ];
 }
@@ -759,18 +758,18 @@ Future<String?> _pickUploadAccount(
 Future<void> _materializeManga(BuildContext context, Manga manga) async {
   final l10n = AppLocalizations.of(context)!;
   final accounts = context.read<AccountsService>();
-  final cloud = context.read<CloudDriveService>();
+  final webDav = context.read<WebDavService>();
   final source = accounts.accountForSource(manga.sourceName);
   if (source == null) {
     AppSnack.show(context, l10n.mangaReaderUnboundSource);
     return;
   }
-  final uploadAccounts = _uploadCapableAccounts(accounts, cloud);
+  final uploadAccounts = _uploadCapableAccounts(accounts, webDav);
   if (uploadAccounts.isEmpty) {
     AppSnack.show(context, l10n.mangaPackNoUploadAccount);
     return;
   }
-  final sourceCanUpload = accountCanUpload(source.id, cloud);
+  final sourceCanUpload = accountCanUpload(source.id, webDav);
   var destAccountId = source.id;
   var initialPath = manga.remotePath;
   if (!sourceCanUpload) {

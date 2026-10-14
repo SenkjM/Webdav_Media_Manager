@@ -5,7 +5,6 @@ import '../models/account_capabilities.dart';
 import '../models/file_type_config.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
-import '../services/cloud_drive_service.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/marquee_text.dart';
@@ -211,7 +210,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
                   : null,
             ),
             // 新建文件夹按「创建文件夹」能力遮罩（99 §7.2.6）：无能力直接隐藏。
-            if (context.read<CloudDriveService>().can(
+            if (context.read<WebDavService>().can(
               _accountId,
               AccountCaps.mkdir,
             ))

@@ -15,8 +15,8 @@ import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
 import '../services/library_sync_store.dart';
 import '../models/account_capabilities.dart';
-import '../services/cloud_drive_service.dart';
 import '../services/sync_service.dart';
+import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../utils/l10n_host.dart';
@@ -962,7 +962,7 @@ class _SyncScreenState extends State<SyncScreen> {
     final app = context.read<AppState>();
     // The 网盘 shown in the 远端路径 dropdown: the pinned one, else the active
     // account. A stale id (account deleted) is not allowed to assert.
-    final cloudDrive = context.read<CloudDriveService>();
+    final cloudDrive = context.read<WebDavService>();
     var rootAccountId = settings.syncAccountId;
     if (rootAccountId == null ||
         !accounts.accounts.any(

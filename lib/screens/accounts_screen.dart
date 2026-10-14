@@ -10,10 +10,10 @@ import '../models/webdav_account.dart';
 import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/cloud_drive_service.dart';
+import '../services/webdav_service.dart';
 import '../services/cloud_driver_errors.dart';
 import '../services/cloud_driver.dart';
 import '../services/cloud_drivers/driver_registry.dart';
-import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/webdav_error_dialog.dart';
@@ -35,7 +35,7 @@ class AccountsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accounts = context.watch<AccountsService>();
-    final cloudDrive = context.watch<CloudDriveService>();
+    final cloudDrive = context.watch<WebDavService>();
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
@@ -208,7 +208,7 @@ class AccountsScreen extends StatelessWidget {
     );
     final accounts = context.read<AccountsService>();
     final l10n = AppLocalizations.of(context)!;
-    final cloudDrive = context.read<CloudDriveService>();
+    final cloudDrive = context.read<WebDavService>();
     var providerType = existing?.providerType ?? 'webdav';
     final existingCfg = existing == null
         ? const <String, dynamic>{}
