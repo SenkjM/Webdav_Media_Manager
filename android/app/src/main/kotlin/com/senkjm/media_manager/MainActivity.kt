@@ -128,6 +128,10 @@ class MainActivity : AudioServiceFragmentActivity() {
                     openInstallPermissionSettings()
                     result.success(null)
                 }
+                "openUrl" -> {
+                    val args = call.arguments as? Map<*, *>
+                    result.success(openExternalUrl(args?.get("url") as? String))
+                }
                 else -> result.notImplemented()
             }
         }
@@ -758,6 +762,17 @@ class MainActivity : AudioServiceFragmentActivity() {
     }
 
     /** Opens the system package installer for a verified APK in cache/updates. */
+    private fun openExternalUrl(raw: String?): Boolean {
+        val url = raw?.trim().orEmpty()
+        if (url.isEmpty()) return false
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching {
+            startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
     private fun installApk(path: String?): Map<String, String> {
         val apk = File(path ?: "")
         if (!apk.isFile || !apk.name.endsWith(".apk", ignoreCase = true)) {

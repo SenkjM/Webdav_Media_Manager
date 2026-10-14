@@ -21,16 +21,30 @@ class AboutScreen extends StatefulWidget {
 class _AboutScreenState extends State<AboutScreen> {
   final _updates = AppUpdateService();
   String _versionLabel = '…';
+  String _versionName = '';
+  String _buildNumber = '';
+  AppInstallFlavor _flavor = AppInstallFlavor.prod;
   bool _downloadInFlight = false;
   UpdateChannel _channel = UpdateChannel.stable;
+
+  bool get _canCheckUpdates => _flavor == AppInstallFlavor.prod;
 
   @override
   void initState() {
     super.initState();
     PackageInfo.fromPlatform().then((info) {
-      if (mounted) {
-        setState(() => _versionLabel = '${info.version}+${info.buildNumber}');
-      }
+      if (!mounted) return;
+      final flavor = flavorFromPackageName(info.packageName);
+      setState(() {
+        _flavor = flavor;
+        _versionName = info.version;
+        _buildNumber = info.buildNumber;
+        _versionLabel = switch (flavor) {
+          AppInstallFlavor.dev => 'dev',
+          AppInstallFlavor.sandbox => 'sandbox',
+          AppInstallFlavor.prod => '${info.version}+${info.buildNumber}',
+        };
+      });
     });
   }
 
@@ -50,7 +64,13 @@ class _AboutScreenState extends State<AboutScreen> {
               children: [
                 const CircularProgressIndicator(),
                 const SizedBox(width: 16),
-                Expanded(child: Text(l10n.aboutUpdateCheckingBody)),
+                Expanded(
+                  child: Text(
+                    _channel == UpdateChannel.preview
+                        ? l10n.aboutUpdateCheckingBodyPreview
+                        : l10n.aboutUpdateCheckingBody,
+                  ),
+                ),
               ],
             ),
             actions: [
@@ -112,6 +132,10 @@ class _AboutScreenState extends State<AboutScreen> {
           await _showError(l10n.updateNoCompatibleApk);
         case UpdateCheckUnsupported():
           await _showError(l10n.updateUnsupported);
+        case UpdateCheckChannelMismatch():
+          await _showError(l10n.aboutUpdateChannelMismatch);
+        case UpdateCheckGithubFallback(:final latestName, :final releasesUrl):
+          await _showGithubFallback(latestName, releasesUrl);
       }
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) return;
@@ -195,6 +219,32 @@ class _AboutScreenState extends State<AboutScreen> {
     }
   }
 
+  Future<void> _showGithubFallback(String latestName, String releasesUrl) async {
+    if (!mounted) return;
+    final l10n = AppLocalizations.of(context)!;
+    final name = latestName.trim().isEmpty ? releasesUrl : latestName.trim();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.aboutUpdateFallbackTitle),
+        content: Text(l10n.aboutUpdateFallbackBody(name)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () async {
+              await _updates.openUrl(releasesUrl);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: Text(l10n.aboutUpdateOpenReleases),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showError(String error) async {
     if (!mounted) return;
     final l10n = AppLocalizations.of(context)!;
@@ -221,6 +271,25 @@ class _AboutScreenState extends State<AboutScreen> {
     );
   }
 
+  Widget _editionCapsule(BuildContext context, AppLocalizations l10n) {
+    final edition = editionFromVersion(
+      versionName: _versionName,
+      buildNumber: _buildNumber,
+    );
+    final label = edition == InstalledEdition.preview
+        ? l10n.aboutUpdateChannelPreview
+        : l10n.aboutUpdateChannelStable;
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(label, style: Theme.of(context).textTheme.labelLarge),
+    );
+  }
+
   Widget _heading(BuildContext context, String text) =>
       Text(text, style: Theme.of(context).textTheme.titleMedium);
 
@@ -238,41 +307,49 @@ class _AboutScreenState extends State<AboutScreen> {
             style: Theme.of(context).textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),
-          Text(
-            l10n.aboutVersion(_versionLabel),
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(color: AppColors.accent),
-          ),
-          const SizedBox(height: 8),
-          SegmentedButton<UpdateChannel>(
-            segments: [
-              ButtonSegment(
-                value: UpdateChannel.stable,
-                label: Text(l10n.aboutUpdateChannelStable),
-              ),
-              ButtonSegment(
-                value: UpdateChannel.preview,
-                label: Text(l10n.aboutUpdateChannelPreview),
-              ),
-            ],
-            selected: {_channel},
-            onSelectionChanged: (value) =>
-                setState(() => _channel = value.first),
-          ),
-          const SizedBox(height: 12),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FilledButton.icon(
-              onPressed: _downloadInFlight ? null : _checkForUpdate,
-              icon: _downloadInFlight
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.system_update_outlined),
-              label: Text(l10n.aboutUpdateCheck),
+          if (_canCheckUpdates) ...[
+            Center(child: _editionCapsule(context, l10n)),
+            const SizedBox(height: 8),
+          ],
+          Center(
+            child: Text(
+              l10n.aboutVersion(_versionLabel),
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(color: AppColors.accent),
             ),
           ),
+          if (_canCheckUpdates) ...[
+            const SizedBox(height: 8),
+            SegmentedButton<UpdateChannel>(
+              segments: [
+                ButtonSegment(
+                  value: UpdateChannel.stable,
+                  label: Text(l10n.aboutUpdateChannelStable),
+                ),
+                ButtonSegment(
+                  value: UpdateChannel.preview,
+                  label: Text(l10n.aboutUpdateChannelPreview),
+                ),
+              ],
+              selected: {_channel},
+              onSelectionChanged: (value) =>
+                  setState(() => _channel = value.first),
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: FilledButton.icon(
+                onPressed: _downloadInFlight ? null : _checkForUpdate,
+                icon: _downloadInFlight
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.system_update_outlined),
+                label: Text(l10n.aboutUpdateCheck),
+              ),
+            ),
+          ],
           const SizedBox(height: 20),
           Text(l10n.aboutDescription),
           const SizedBox(height: 28),
@@ -304,9 +381,14 @@ class _AboutScreenState extends State<AboutScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          SelectableText(
-            'https://github.com/SenkjM/Webdav_Media_Manager',
-            style: Theme.of(context).textTheme.bodySmall,
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              onPressed: () => _updates.openUrl(
+                'https://github.com/SenkjM/Webdav_Media_Manager',
+              ),
+              child: const Text('https://github.com/SenkjM/Webdav_Media_Manager'),
+            ),
           ),
         ],
       ),

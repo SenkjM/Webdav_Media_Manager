@@ -50,14 +50,72 @@ void main() {
     expect(preview.buildCode, greaterThan(stable.buildCode));
   });
 
-  test('githubUrl routes each channel to the right GitHub type filter', () {
-    expect(AppUpdateService.githubUrl(UpdateChannel.stable), contains('type=stable'));
-    expect(AppUpdateService.githubUrl(UpdateChannel.stable), contains('per_page=1'));
-    expect(AppUpdateService.githubUrl(UpdateChannel.preview), contains('type=prerelease'));
-    expect(AppUpdateService.githubUrl(UpdateChannel.preview), contains('per_page=1'));
+  test('github fallback fetches only the newest release, with no type filter', () {
+    final url = AppUpdateService.githubLatestUrl();
+    expect(url, contains('per_page=1'));
+    expect(url, isNot(contains('type=')));
+    expect(url, contains('SenkjM/Webdav_Media_Manager/releases'));
     expect(
-      AppUpdateService.githubUrl(UpdateChannel.stable),
-      contains('SenkjM/Webdav_Media_Manager/releases'),
+      AppUpdateService.releasesPageUrl,
+      'https://github.com/SenkjM/Webdav_Media_Manager/releases',
+    );
+  });
+
+  test('preview 2050004 is not up to date against preview 2050005', () {
+    final remote = UpdateRelease.tryParse({
+      'tag_name': 'v0.2.5-2050005',
+      'prerelease': true,
+      'assets': [],
+    })!;
+    expect(
+      compareUpdate(
+        channel: UpdateChannel.preview,
+        localVersionName: 'v0.2.5-2050004',
+        localBuildNumber: '2050004',
+        remote: remote,
+      ),
+      UpdateVerdict.newer,
+    );
+  });
+
+  test('a stable release must not count as up to date for a preview check', () {
+    final stable = UpdateRelease.tryParse({
+      'tag_name': 'v0.2.5',
+      'prerelease': false,
+      'assets': [],
+    })!;
+    expect(stable.buildCode, 2050000);
+    expect(
+      compareUpdate(
+        channel: UpdateChannel.preview,
+        localVersionName: 'v0.2.5-2050004',
+        localBuildNumber: '2050004',
+        remote: stable,
+      ),
+      UpdateVerdict.channelMismatch,
+    );
+  });
+
+  test('edition follows the version code, not the channel button', () {
+    expect(
+      editionFromVersion(
+        versionName: 'v0.2.5-2050004',
+        buildNumber: '2050004',
+      ),
+      InstalledEdition.preview,
+    );
+    expect(
+      editionFromVersion(versionName: 'v0.2.5', buildNumber: '2050000'),
+      InstalledEdition.stable,
+    );
+    expect(flavorFromPackageName('com.senkjm.media_manager'), AppInstallFlavor.prod);
+    expect(
+      flavorFromPackageName('com.senkjm.media_manager.dev'),
+      AppInstallFlavor.dev,
+    );
+    expect(
+      flavorFromPackageName('com.senkjm.media_manager.test'),
+      AppInstallFlavor.sandbox,
     );
   });
 

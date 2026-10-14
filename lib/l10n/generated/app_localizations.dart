@@ -8587,8 +8587,38 @@ abstract class AppLocalizations {
   /// No description provided for @aboutUpdateCheckingBody.
   ///
   /// In zh, this message translates to:
-  /// **'正在读取 GitHub 正式版信息。'**
+  /// **'正在读取正式版信息。'**
   String get aboutUpdateCheckingBody;
+
+  /// No description provided for @aboutUpdateCheckingBodyPreview.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取预览版信息。'**
+  String get aboutUpdateCheckingBodyPreview;
+
+  /// No description provided for @aboutUpdateFallbackTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新服务不可用'**
+  String get aboutUpdateFallbackTitle;
+
+  /// No description provided for @aboutUpdateFallbackBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'已改为读取 GitHub 最新发布（{name}）。这不是按频道筛选的结果。'**
+  String aboutUpdateFallbackBody(Object name);
+
+  /// No description provided for @aboutUpdateOpenReleases.
+  ///
+  /// In zh, this message translates to:
+  /// **'打开发布页'**
+  String get aboutUpdateOpenReleases;
+
+  /// No description provided for @aboutUpdateChannelMismatch.
+  ///
+  /// In zh, this message translates to:
+  /// **'返回的发布与所选频道不一致，不能当成已是最新。'**
+  String get aboutUpdateChannelMismatch;
 
   /// No description provided for @aboutUpdateDownloadedTitle.
   ///

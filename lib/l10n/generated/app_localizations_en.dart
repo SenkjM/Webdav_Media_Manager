@@ -5077,8 +5077,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get aboutUpdateChecking => 'Checking for updates';
 
   @override
-  String get aboutUpdateCheckingBody =>
-      'Reading the latest stable release from GitHub.';
+  String get aboutUpdateCheckingBody => 'Reading the stable release.';
+
+  @override
+  String get aboutUpdateCheckingBodyPreview => 'Reading the preview release.';
+
+  @override
+  String get aboutUpdateFallbackTitle => 'Update service unavailable';
+
+  @override
+  String aboutUpdateFallbackBody(Object name) {
+    return 'Showing the newest GitHub release ($name). This is not filtered by channel.';
+  }
+
+  @override
+  String get aboutUpdateOpenReleases => 'Open releases';
+
+  @override
+  String get aboutUpdateChannelMismatch =>
+      'The release does not match the selected channel, so it is not treated as up to date.';
 
   @override
   String get aboutUpdateDownloadedTitle => 'Update downloaded';

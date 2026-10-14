@@ -4848,7 +4848,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get aboutUpdateChecking => '正在检查更新';
 
   @override
-  String get aboutUpdateCheckingBody => '正在读取 GitHub 正式版信息。';
+  String get aboutUpdateCheckingBody => '正在读取正式版信息。';
+
+  @override
+  String get aboutUpdateCheckingBodyPreview => '正在读取预览版信息。';
+
+  @override
+  String get aboutUpdateFallbackTitle => '更新服务不可用';
+
+  @override
+  String aboutUpdateFallbackBody(Object name) {
+    return '已改为读取 GitHub 最新发布（$name）。这不是按频道筛选的结果。';
+  }
+
+  @override
+  String get aboutUpdateOpenReleases => '打开发布页';
+
+  @override
+  String get aboutUpdateChannelMismatch => '返回的发布与所选频道不一致，不能当成已是最新。';
 
   @override
   String get aboutUpdateDownloadedTitle => '更新已下载';
@@ -9728,7 +9745,24 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get aboutUpdateChecking => '正在檢查更新';
 
   @override
-  String get aboutUpdateCheckingBody => '正在讀取 GitHub 正式版資訊。';
+  String get aboutUpdateCheckingBody => '正在讀取正式版資訊。';
+
+  @override
+  String get aboutUpdateCheckingBodyPreview => '正在讀取預覽版資訊。';
+
+  @override
+  String get aboutUpdateFallbackTitle => '更新服務不可用';
+
+  @override
+  String aboutUpdateFallbackBody(Object name) {
+    return '已改為讀取 GitHub 最新發布（$name）。這不是按頻道篩選的結果。';
+  }
+
+  @override
+  String get aboutUpdateOpenReleases => '打開發布頁';
+
+  @override
+  String get aboutUpdateChannelMismatch => '返回的發布與所選頻道不一致，不能當成已是最新。';
 
   @override
   String get aboutUpdateDownloadedTitle => '更新已下載';
