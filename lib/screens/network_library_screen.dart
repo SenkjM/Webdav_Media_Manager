@@ -345,13 +345,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     return context.read<CloudDriveService>().can(id, AccountCaps.mkdir);
   }
 
-  /// 上传只对本地 WebDAV 账号开放：云盘驱动（`CloudDriver`）里根本没有上传原语，
-  /// 用能力位遮罩会漏出一个必然失败的按钮（99 §7.5）。
+  /// 当前浏览账号是否具备「上传」能力（按钮遮罩，查 AccountCaps.write）。
   bool get _canUpload {
     final id = _accountId;
     if (id == null) return false;
-    final account = context.read<AccountsService>().accountById(id);
-    if (account == null || account.providerType != 'webdav') return false;
     return context.read<CloudDriveService>().can(id, AccountCaps.write);
   }
 

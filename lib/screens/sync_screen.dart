@@ -14,6 +14,8 @@ import '../services/accounts_service.dart';
 import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
 import '../services/library_sync_store.dart';
+import '../models/account_capabilities.dart';
+import '../services/cloud_drive_service.dart';
 import '../services/sync_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
@@ -960,16 +962,19 @@ class _SyncScreenState extends State<SyncScreen> {
     final app = context.read<AppState>();
     // The 网盘 shown in the 远端路径 dropdown: the pinned one, else the active
     // account. A stale id (account deleted) is not allowed to assert.
+    final cloudDrive = context.read<CloudDriveService>();
     var rootAccountId = settings.syncAccountId;
     if (rootAccountId == null ||
         !accounts.accounts.any(
-          (a) => a.id == rootAccountId && a.providerType == 'webdav',
+          (a) => a.id == rootAccountId &&
+              cloudDrive.can(a.id, AccountCaps.write),
         )) {
-      // 兜底也只认 WebDAV 类型：活跃账号是云盘时没有同步目标。
+      // 兜底查写能力：无写能力的账号不作为同步目标。
       final active = accounts.activeAccount;
-      rootAccountId = active != null && active.providerType == 'webdav'
-          ? active.id
-          : null;
+      rootAccountId =
+          active != null && cloudDrive.can(active.id, AccountCaps.write)
+              ? active.id
+              : null;
     }
 
     return Scaffold(
@@ -1053,7 +1058,7 @@ class _SyncScreenState extends State<SyncScreen> {
                 // 云盘账号没有写路径（上传已砍），同步目标只列 WebDAV 类型
                 //（99 §7.2.8）。
                 for (final a in accounts.accounts)
-                  if (a.providerType == 'webdav')
+                  if (cloudDrive.can(a.id, AccountCaps.write))
                     DropdownMenuItem(
                       value: a.id,
                       child: MarqueeText(webDavAccountLabel(a, l10n)),

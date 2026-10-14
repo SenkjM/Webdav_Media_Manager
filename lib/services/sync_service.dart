@@ -23,6 +23,8 @@ import 'user_folder_service.dart';
 import 'user_folder_sync.dart';
 import 'playlist_service.dart';
 import 'platform_export_service.dart';
+import '../models/account_capabilities.dart';
+import 'cloud_drive_service.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
@@ -138,6 +140,7 @@ class SyncService extends ChangeNotifier {
     required AccountsService accounts,
     required SettingsService settings,
     required WebDavService webDav,
+    required CloudDriveService cloudDrive,
     required CredentialVaultService vault,
     required LibraryService library,
     required PlaylistService playlists,
@@ -154,6 +157,7 @@ class SyncService extends ChangeNotifier {
        _accounts = accounts,
        _settings = settings,
        _webDav = webDav,
+       _cloudDrive = cloudDrive,
        _vault = vault,
        _library = library,
        _playlists = playlists,
@@ -163,6 +167,7 @@ class SyncService extends ChangeNotifier {
   final AccountsService _accounts;
   final SettingsService _settings;
   final WebDavService _webDav;
+  final CloudDriveService _cloudDrive;
   final CredentialVaultService _vault;
   final LibraryService _library;
   final PlaylistService _playlists;
@@ -224,18 +229,19 @@ class SyncService extends ChangeNotifier {
   List<WebDavAccount> get accounts => _accounts.accounts;
 
   WebDavAccount? get targetAccount {
-    // 云盘账号没有写路径（上传已砍，99 §7.2.1 / §7.2.8），同步目标只认
-    // WebDAV 类型；活跃账号是云盘时视为无同步目标。
+    // 同步目标需要写能力；查 CloudDriveService.can(id, AccountCaps.write)。
     final connectedId = _webDav.accountId;
     if (connectedId != null) {
       for (final a in _accounts.accounts) {
         if (a.id == connectedId) {
-          return a.providerType == 'webdav' ? a : null;
+          return _cloudDrive.can(a.id, AccountCaps.write) ? a : null;
         }
       }
     }
     final active = _accounts.activeAccount;
-    return active != null && active.providerType == 'webdav' ? active : null;
+    return active != null && _cloudDrive.can(active.id, AccountCaps.write)
+        ? active
+        : null;
   }
 
   String get syncRoot => _settings.syncRemoteRoot;

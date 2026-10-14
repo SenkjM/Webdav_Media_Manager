@@ -720,10 +720,7 @@ List<WebDavAccount> _uploadCapableAccounts(
 ) {
   return [
     for (final a in accounts.accounts)
-      if (accountCanUpload(
-        providerType: a.providerType,
-        capabilities: cloud.capabilitiesFor(a.id),
-      ))
+      if (accountCanUpload(a.id, cloud))
         a,
   ];
 }
@@ -773,10 +770,7 @@ Future<void> _materializeManga(BuildContext context, Manga manga) async {
     AppSnack.show(context, l10n.mangaPackNoUploadAccount);
     return;
   }
-  final sourceCanUpload = accountCanUpload(
-    providerType: source.providerType,
-    capabilities: cloud.capabilitiesFor(source.id),
-  );
+  final sourceCanUpload = accountCanUpload(source.id, cloud);
   var destAccountId = source.id;
   var initialPath = manga.remotePath;
   if (!sourceCanUpload) {

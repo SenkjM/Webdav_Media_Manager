@@ -79,6 +79,7 @@ class AppState extends ChangeNotifier {
       accounts: accounts,
       settings: settings,
       webDav: webDav,
+      cloudDrive: cloudDrive,
       vault: credentials,
       library: library,
       playlists: playlists,
