@@ -16,6 +16,7 @@ import 'library_service.dart';
 import 'library_sync_store.dart';
 import 'cache_service.dart';
 import 'library_database.dart';
+import 'manga_cover_writer.dart';
 import 'manga_library_service.dart';
 import 'manga_sync_store.dart';
 import 'user_folder_service.dart';
@@ -780,6 +781,22 @@ class SyncService extends ChangeNotifier {
           0.5,
         );
         await manga.adoptCloudRows(toAdopt);
+        final cache = _cache;
+        if (cache != null) {
+          for (final row in toAdopt) {
+            final blob = store.lastCoverBlobs[row.manga.id];
+            if (blob == null || blob.isEmpty) continue;
+            try {
+              await replaceMangaCoverBytes(
+                cache: cache,
+                mangaId: row.manga.id,
+                bytes: blob,
+              );
+            } catch (e) {
+              debugPrint('manga cover replace failed');
+            }
+          }
+        }
         for (final r in toAdopt) {
           _library.observeRev(r.rev);
         }

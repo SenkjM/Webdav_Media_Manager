@@ -13,9 +13,13 @@ import '../models/page_turn_direction.dart';
 import '../models/webdav_item.dart';
 import '../services/prefetch_cache.dart';
 import '../services/settings_service.dart';
+import '../services/cache_service.dart';
+import '../services/manga_cover_writer.dart';
 import '../services/manga_library_service.dart';
 import '../services/webdav_service.dart';
+import '../utils/app_snack.dart';
 import '../utils/image_album.dart';
+import '../widgets/manga_set_cover_dialog.dart';
 import 'image_settings_screen.dart';
 import '../utils/directory_walk.dart';
 
@@ -93,6 +97,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   double? _progress;
   bool _scanning = false;
   bool _controlsOpen = false;
+  bool _coverJob = false;
 
   final Map<String, String> _localById = {};
   final Map<String, CancelToken> _inflight = {};
@@ -651,6 +656,19 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                             }
                           },
                         ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.photo_outlined),
+                          title: Text(l10n.mangaSetPageAsCover),
+                          onTap: () async {
+                            final yes = await _askSetCover(ctx);
+                            if (yes != true || !mounted) return;
+                            _coverJob = true;
+                            _slide?.cancel();
+                            if (ctx.mounted) Navigator.pop(ctx);
+                            await _applySetCover();
+                          },
+                        ),
                       ],
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
@@ -691,8 +709,170 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     );
     _controlsOpen = false;
     if (!mounted || _disposed) return;
-    _armSlideshow();
+    if (!_coverJob) _armSlideshow();
     setState(() {});
+  }
+
+
+  Future<bool?> _askSetCover(BuildContext ctx) {
+    final l10n = AppLocalizations.of(ctx)!;
+    return showDialog<bool>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dialogCtx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: Text(l10n.mangaSetPageAsCoverTitle),
+          content: Text(l10n.mangaSetPageAsCoverBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx, false),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogCtx, true),
+              child: Text(l10n.mangaSetPageAsCoverConfirm),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int? _pageIndexFromId(String id, String mangaId) {
+    final prefix = '$mangaId:';
+    if (!id.startsWith(prefix)) return null;
+    return int.tryParse(id.substring(prefix.length));
+  }
+
+  Future<String?> _coverRelFor(String mangaId, ImageViewerPage page) async {
+    final fromId = _pageIndexFromId(page.id, mangaId);
+    final index = fromId ?? _index;
+    try {
+      final pages = await context.read<MangaLibraryService>().pagesFor(mangaId);
+      if (index >= 0 && index < pages.length && pages[index].relPath.isNotEmpty) {
+        return pages[index].relPath;
+      }
+    } catch (_) {}
+    final remote = page.remotePath;
+    if (remote != null && remote.isNotEmpty) return remote;
+    return null;
+  }
+
+  Future<List<int>?> _bytesForCover(ImageViewerPage page, CancelToken cancel) async {
+    final cached = _localById[page.id];
+    if (cached != null && File(cached).existsSync() && File(cached).lengthSync() > 0) {
+      return File(cached).readAsBytes();
+    }
+    final seeded = page.localPath;
+    if (seeded != null && seeded.isNotEmpty && File(seeded).existsSync() && File(seeded).lengthSync() > 0) {
+      return File(seeded).readAsBytes();
+    }
+    if (cancel.isCancelled) return null;
+    final loader = page.localLoader;
+    final lazyPath = page.localPath;
+    if (loader != null && lazyPath != null && lazyPath.isNotEmpty) {
+      final file = File(lazyPath);
+      await loader(file);
+      if (cancel.isCancelled) return null;
+      if (file.existsSync() && file.lengthSync() > 0) return file.readAsBytes();
+      return null;
+    }
+    final remote = page.remotePath;
+    final webDav = _webDav;
+    if (remote == null || remote.isEmpty || webDav == null) return null;
+    final dest = await PrefetchCache.file(
+      bucket: 'images',
+      accountId: widget.accountId,
+      remotePath: remote,
+      name: page.name,
+    );
+    if (PrefetchCache.isComplete(dest)) return dest.readAsBytes();
+    final part = File('${dest.path}.part');
+    try {
+      if (part.existsSync()) part.deleteSync();
+      await webDav.downloadToFile(
+        widget.accountId,
+        remote,
+        part,
+        cancelToken: cancel,
+      );
+      if (cancel.isCancelled) {
+        if (part.existsSync()) part.deleteSync();
+        return null;
+      }
+      if (!part.existsSync() || part.lengthSync() <= 0) return null;
+      if (dest.existsSync()) dest.deleteSync();
+      await part.rename(dest.path);
+      _localById[page.id] = dest.path;
+      return await dest.readAsBytes();
+    } on DioException catch (e) {
+      if (part.existsSync()) {
+        try {
+          part.deleteSync();
+        } catch (_) {}
+      }
+      if (CancelToken.isCancel(e) || cancel.isCancelled) return null;
+      rethrow;
+    }
+  }
+
+  Future<void> _applySetCover() async {
+    final mangaId = widget.mangaId;
+    final page = _current;
+    final l10n = AppLocalizations.of(context)!;
+    if (mangaId == null || mangaId.isEmpty || page == null) {
+      _coverJob = false;
+      if (mounted && !_disposed) _armSlideshow();
+      return;
+    }
+    final outcome = await showDialog<MangaCoverSetOutcome>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogCtx) => MangaSetCoverDialog(
+        title: l10n.mangaSetPageAsCoverWorking,
+        body: l10n.mangaSetPageAsCoverWorkingBody,
+        cancelLabel: l10n.cancel,
+        work: (cancel) => _writeCurrentCover(mangaId, page, cancel),
+      ),
+    );
+    _coverJob = false;
+    if (!mounted || _disposed) return;
+    _armSlideshow();
+    switch (outcome) {
+      case MangaCoverSetOutcome.done:
+        AppSnack.show(context, l10n.mangaSetPageAsCoverDone);
+      case MangaCoverSetOutcome.failed:
+        AppSnack.show(context, l10n.mangaSetPageAsCoverFailed, error: true);
+      case MangaCoverSetOutcome.cancelled:
+      case null:
+        break;
+    }
+  }
+
+  Future<MangaCoverSetOutcome> _writeCurrentCover(
+    String mangaId,
+    ImageViewerPage page,
+    CancelToken cancel,
+  ) async {
+    final rel = await _coverRelFor(mangaId, page);
+    if (cancel.isCancelled) return MangaCoverSetOutcome.cancelled;
+    if (rel == null || rel.isEmpty) return MangaCoverSetOutcome.failed;
+    final bytes = await _bytesForCover(page, cancel);
+    if (cancel.isCancelled) return MangaCoverSetOutcome.cancelled;
+    if (bytes == null || bytes.isEmpty) return MangaCoverSetOutcome.failed;
+    if (!mounted) return MangaCoverSetOutcome.cancelled;
+    final wrote = await writeMangaCoverThumb(
+      cache: context.read<CacheService>(),
+      mangaId: mangaId,
+      bytes: Uint8List.fromList(bytes),
+      thumbSize: _settings?.coverThumbSizePx,
+    );
+    if (cancel.isCancelled) return MangaCoverSetOutcome.cancelled;
+    if (!wrote) return MangaCoverSetOutcome.failed;
+    final ok = await context.read<MangaLibraryService>().setCoverRelpath(mangaId, rel);
+    if (cancel.isCancelled) return MangaCoverSetOutcome.cancelled;
+    return ok ? MangaCoverSetOutcome.done : MangaCoverSetOutcome.failed;
   }
 
   Future<void> _openFullSettings() async {

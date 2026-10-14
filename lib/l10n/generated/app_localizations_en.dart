@@ -4678,6 +4678,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imageViewerMoreSettings => 'More settings';
 
   @override
+  String get mangaSetPageAsCover => 'Set current page as cover';
+
+  @override
+  String get mangaSetPageAsCoverTitle => 'Set as cover?';
+
+  @override
+  String get mangaSetPageAsCoverBody =>
+      'The current page becomes this manga\'s cover and replaces the existing one.';
+
+  @override
+  String get mangaSetPageAsCoverConfirm => 'Set as cover';
+
+  @override
+  String get mangaSetPageAsCoverWorking => 'Setting cover';
+
+  @override
+  String get mangaSetPageAsCoverWorkingBody =>
+      'Reading the current page and building the cover. You can cancel.';
+
+  @override
+  String get mangaSetPageAsCoverDone => 'Current page is now the cover';
+
+  @override
+  String get mangaSetPageAsCoverFailed => 'Couldn\'t set the cover';
+
+  @override
   String get mangaReaderUnsupported => 'This format cannot be read in-app yet';
 
   @override

@@ -4467,6 +4467,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imageViewerMoreSettings => '更多设置';
 
   @override
+  String get mangaSetPageAsCover => '设当前页为封面';
+
+  @override
+  String get mangaSetPageAsCoverTitle => '设为封面？';
+
+  @override
+  String get mangaSetPageAsCoverBody => '将把当前页设为这本漫画的封面，并替换已有封面。';
+
+  @override
+  String get mangaSetPageAsCoverConfirm => '设为封面';
+
+  @override
+  String get mangaSetPageAsCoverWorking => '正在设置封面';
+
+  @override
+  String get mangaSetPageAsCoverWorkingBody => '正在读取当前页并生成封面。可以取消。';
+
+  @override
+  String get mangaSetPageAsCoverDone => '已把当前页设为封面';
+
+  @override
+  String get mangaSetPageAsCoverFailed => '封面设置失败';
+
+  @override
   String get mangaReaderUnsupported => '这种格式暂时不能在应用内阅读';
 
   @override
@@ -9362,6 +9386,30 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get imageViewerMoreSettings => '更多設定';
+
+  @override
+  String get mangaSetPageAsCover => '將目前頁設為封面';
+
+  @override
+  String get mangaSetPageAsCoverTitle => '設為封面？';
+
+  @override
+  String get mangaSetPageAsCoverBody => '將把目前頁設為這本漫畫的封面，並取代已有封面。';
+
+  @override
+  String get mangaSetPageAsCoverConfirm => '設為封面';
+
+  @override
+  String get mangaSetPageAsCoverWorking => '正在設定封面';
+
+  @override
+  String get mangaSetPageAsCoverWorkingBody => '正在讀取目前頁並產生封面。可以取消。';
+
+  @override
+  String get mangaSetPageAsCoverDone => '已將目前頁設為封面';
+
+  @override
+  String get mangaSetPageAsCoverFailed => '封面設定失敗';
 
   @override
   String get mangaReaderUnsupported => '這種格式暫時不能在應用內閱讀';

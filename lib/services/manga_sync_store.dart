@@ -428,6 +428,13 @@ class MangaSyncStore {
   final SettingsService _settings;
   final File Function(String mangaId) _coverFile;
 
+  /// Cover bytes from the last [readCloud], keyed by manga id.
+  ///
+  /// Later parts overwrite earlier ones for the same id. Adopting a higher-rev
+  /// row uses this map to replace a local thumb. [readCloud] itself only fills
+  /// a missing file, so an older shard cannot clobber a newer local cover.
+  final Map<String, Uint8List> lastCoverBlobs = {};
+
   static const format = 'wmp_manga_library_index';
   static const progressName = 'progress.json';
   static const defaultMangasPerShard = 500;
@@ -487,6 +494,7 @@ class MangaSyncStore {
     Set<String> skipFiles = const {},
   }) async {
     lastReadParts.clear();
+    lastCoverBlobs.clear();
     final dataParts = <List<MangaSyncRow>>[];
     final tombParts = <List<Map<String, dynamic>>>[];
     for (final part in [
@@ -502,6 +510,7 @@ class MangaSyncStore {
         for (var i = 0; i < decoded.rows.length; i++) {
           final blob = decoded.coverFor(i);
           if (blob != null && blob.isNotEmpty) {
+            lastCoverBlobs[decoded.rows[i].manga.id] = blob;
             await _storeCover(decoded.rows[i].manga.id, blob);
           }
         }

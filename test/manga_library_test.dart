@@ -225,6 +225,25 @@ void main() {
     expect(svc.mangas.length, 2);
   });
 
+  test('setCoverRelpath replaces the cover and keeps the book', () async {
+    final db = _MemMangaDb();
+    final svc = MangaLibraryService(db: db);
+    await svc.init();
+    final draft = MangaLibraryService.draftForImageDir(
+      sourceName: 'nas',
+      folderPath: '/comics/OneShot',
+      folderName: 'OneShot',
+      imageNames: ['01.jpg', '02.jpg'],
+    );
+    final manga = await svc.upsertFromDraft(draft);
+    final ok = await svc.setCoverRelpath(manga.id, '/comics/OneShot/02.jpg');
+    expect(ok, isTrue);
+    expect(svc.mangaById(manga.id)!.coverRelpath, '/comics/OneShot/02.jpg');
+    expect(svc.mangaById(manga.id)!.id, manga.id);
+    expect(await svc.setCoverRelpath('missing', '/x'), isFalse);
+    expect(await svc.setCoverRelpath(manga.id, '  '), isFalse);
+  });
+
   test('home_tab_v025 shifts indices >= 3 by one', () async {
     SharedPreferences.setMockInitialValues({
       'home_tab_index': 3, // was network library before manga insert

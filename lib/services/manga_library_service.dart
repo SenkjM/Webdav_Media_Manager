@@ -285,6 +285,23 @@ class MangaLibraryService extends ChangeNotifier {
     await reload();
   }
 
+  /// Point the cover at [relPath] and bump rev so the new thumb can sync.
+  ///
+  /// The caller writes the thumb file. An unchanged path still bumps: the
+  /// bytes may have been regenerated, and a same-path edit must still publish.
+  /// Returns false when the book is missing or [relPath] is blank.
+  Future<bool> setCoverRelpath(String mangaId, String relPath) async {
+    final existing = await _db.loadMangaById(mangaId);
+    if (existing == null) return false;
+    final next = relPath.trim();
+    if (next.isEmpty) return false;
+    await _db.upsertManga(
+      existing.copyWith(coverRelpath: next, updatedAt: DateTime.now()),
+    );
+    await reload();
+    return true;
+  }
+
   /// Assign [mangaIds] to one series by tag. Empty title clears it.
   ///
   /// Assigning a title that already exists simply joins that series — there is

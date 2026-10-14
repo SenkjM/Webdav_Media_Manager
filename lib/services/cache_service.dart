@@ -464,9 +464,10 @@ class CacheService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Record a freshly written manga cover thumb.
+  /// Record a freshly written manga cover thumb and repaint listeners.
   Future<void> registerMangaCoverWritten(String mangaId) async {
     await _indexTouch(mangaCoverFile(mangaId), CacheKind.manga);
+    notifyListeners();
   }
 
   // --- unified cleanup -----------------------------------------------------

@@ -7889,6 +7889,54 @@ abstract class AppLocalizations {
   /// **'更多设置'**
   String get imageViewerMoreSettings;
 
+  /// No description provided for @mangaSetPageAsCover.
+  ///
+  /// In zh, this message translates to:
+  /// **'设当前页为封面'**
+  String get mangaSetPageAsCover;
+
+  /// No description provided for @mangaSetPageAsCoverTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'设为封面？'**
+  String get mangaSetPageAsCoverTitle;
+
+  /// No description provided for @mangaSetPageAsCoverBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'将把当前页设为这本漫画的封面，并替换已有封面。'**
+  String get mangaSetPageAsCoverBody;
+
+  /// No description provided for @mangaSetPageAsCoverConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'设为封面'**
+  String get mangaSetPageAsCoverConfirm;
+
+  /// No description provided for @mangaSetPageAsCoverWorking.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在设置封面'**
+  String get mangaSetPageAsCoverWorking;
+
+  /// No description provided for @mangaSetPageAsCoverWorkingBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在读取当前页并生成封面。可以取消。'**
+  String get mangaSetPageAsCoverWorkingBody;
+
+  /// No description provided for @mangaSetPageAsCoverDone.
+  ///
+  /// In zh, this message translates to:
+  /// **'已把当前页设为封面'**
+  String get mangaSetPageAsCoverDone;
+
+  /// No description provided for @mangaSetPageAsCoverFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'封面设置失败'**
+  String get mangaSetPageAsCoverFailed;
+
   /// No description provided for @mangaReaderUnsupported.
   ///
   /// In zh, this message translates to:

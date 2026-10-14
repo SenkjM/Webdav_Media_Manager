@@ -29,6 +29,7 @@ import '../utils/batch_outcome.dart';
 import '../models/manga_page.dart';
 import '../models/manga.dart';
 import '../models/manga_build.dart';
+import 'manga_cover_writer.dart';
 import 'manga_library_service.dart';
 import '../utils/cbz_range_zip.dart';
 import '../utils/manga_pack_followup.dart';
@@ -3300,6 +3301,58 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// [MangaBuildMode.merged] writes one book holding every image under the
   /// folder; [MangaBuildMode.perDir] writes one book per image directory.
   /// The worker owns the recursive listing so the UI never waits on it.
+  /// Download the loose book's first page and write the cover thumb.
+  ///
+  /// A cover failure does not fail the build: the page list is the book, and
+  /// failing here would make a retry mint a second surrogate id. Returns true
+  /// when the task token was cancelled so the caller can stop.
+  Future<bool> _writeLooseCover({
+    required String accountId,
+    required String mangaId,
+    required String? remotePath,
+    required CancelToken token,
+  }) async {
+    final path = remotePath;
+    if (path == null || path.isEmpty) return token.isCancelled;
+    if (token.isCancelled) return true;
+    final tmpRoot = await getTemporaryDirectory();
+    final tmp = File(p.join(tmpRoot.path, 'manga_cover_$mangaId.part'));
+    try {
+      if (tmp.existsSync()) tmp.deleteSync();
+      await _webDav.downloadToFile(
+        accountId,
+        path,
+        tmp,
+        cancelToken: token,
+      );
+      if (token.isCancelled) return true;
+      if (!tmp.existsSync() || tmp.lengthSync() == 0) return false;
+      final bytes = await tmp.readAsBytes();
+      final wrote = await writeMangaCoverThumb(
+        cache: _cache,
+        mangaId: mangaId,
+        bytes: bytes,
+        thumbSize: _settings?.coverThumbSizePx,
+      );
+      if (!wrote) {
+        debugPrint('loose manga cover undecodable');
+      }
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e) || token.isCancelled) return true;
+      debugPrint('loose manga cover failed');
+    } catch (e) {
+      if (token.isCancelled) return true;
+      debugPrint('loose manga cover failed');
+    } finally {
+      if (tmp.existsSync()) {
+        try {
+          tmp.deleteSync();
+        } catch (_) {}
+      }
+    }
+    return token.isCancelled;
+  }
+
   Future<void> _runMangaBuild(QueueTask task, CancelToken token) async {
     final payload = await _readMangaBuildPayload(task);
     if (payload != null) await _deleteMangaBuildPayload(task.id);
@@ -3355,12 +3408,25 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         ..author = payload.author
         ..seriesTitle = payload.seriesTitle;
       final target = payload.targetMangaId;
+      final String savedId;
       if (target != null) {
         // 丙: a re-scan addresses one book the user already owns, so its
         // id, progress and hand-edited metadata survive.
         await mangaLib.rescanLoose(target, draft: draft);
+        savedId = target;
       } else {
-        await mangaLib.upsertFromDraft(draft);
+        savedId = (await mangaLib.upsertFromDraft(draft)).id;
+      }
+      if (await _writeLooseCover(
+        accountId: payload.accountId,
+        mangaId: savedId,
+        remotePath: draft.coverRelpath,
+        token: token,
+      )) {
+        task.status = TaskStatus.cancelled;
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return;
       }
       await reportUnitsProgress(task.id, done: 1, total: 1);
       await finish();
@@ -3406,10 +3472,23 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       // A re-scan names exactly one book, so the target applies only when
       // the walk found a single directory; with several there is nothing
       // to disambiguate which book the user meant.
+      final String savedId;
       if (target != null && dirs.length == 1) {
         await mangaLib.rescanLoose(target, draft: draft);
+        savedId = target;
       } else {
-        await mangaLib.upsertFromDraft(draft);
+        savedId = (await mangaLib.upsertFromDraft(draft)).id;
+      }
+      if (await _writeLooseCover(
+        accountId: payload.accountId,
+        mangaId: savedId,
+        remotePath: draft.coverRelpath,
+        token: token,
+      )) {
+        task.status = TaskStatus.cancelled;
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return;
       }
       done++;
       await reportUnitsProgress(task.id, done: done, total: dirs.length);
