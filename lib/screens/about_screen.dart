@@ -25,6 +25,8 @@ class _AboutScreenState extends State<AboutScreen> {
   String _buildNumber = '';
   AppInstallFlavor _flavor = AppInstallFlavor.prod;
   bool _downloadInFlight = false;
+  bool _packageReady = false;
+  bool _channelTouched = false;
   UpdateChannel _channel = UpdateChannel.stable;
 
   bool get _canCheckUpdates => _flavor == AppInstallFlavor.prod;
@@ -35,10 +37,18 @@ class _AboutScreenState extends State<AboutScreen> {
     PackageInfo.fromPlatform().then((info) {
       if (!mounted) return;
       final flavor = flavorFromPackageName(info.packageName);
+      final edition = editionFromVersion(
+        versionName: info.version,
+        buildNumber: info.buildNumber,
+      );
       setState(() {
         _flavor = flavor;
+        _packageReady = true;
         _versionName = info.version;
         _buildNumber = info.buildNumber;
+        if (!_channelTouched) {
+          _channel = channelForInstalledEdition(edition);
+        }
         _versionLabel = switch (flavor) {
           AppInstallFlavor.dev => 'dev',
           AppInstallFlavor.sandbox => 'sandbox',
@@ -332,14 +342,20 @@ class _AboutScreenState extends State<AboutScreen> {
                 ),
               ],
               selected: {_channel},
-              onSelectionChanged: (value) =>
-                  setState(() => _channel = value.first),
+              onSelectionChanged: (value) {
+                setState(() {
+                  _channelTouched = true;
+                  _channel = value.first;
+                });
+              },
             ),
             const SizedBox(height: 12),
             Align(
               alignment: AlignmentDirectional.centerStart,
               child: FilledButton.icon(
-                onPressed: _downloadInFlight ? null : _checkForUpdate,
+                onPressed: !_packageReady || _downloadInFlight
+                    ? null
+                    : _checkForUpdate,
                 icon: _downloadInFlight
                     ? const SizedBox.square(
                         dimension: 18,

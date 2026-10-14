@@ -311,6 +311,13 @@ InstalledEdition editionFromVersion({
   return InstalledEdition.stable;
 }
 
+/// Check channel selected before the user touches the segmented button.
+UpdateChannel channelForInstalledEdition(InstalledEdition edition) =>
+    switch (edition) {
+      InstalledEdition.preview => UpdateChannel.preview,
+      InstalledEdition.stable => UpdateChannel.stable,
+    };
+
 enum AppInstallFlavor { prod, dev, sandbox }
 
 AppInstallFlavor flavorFromPackageName(String packageName) {

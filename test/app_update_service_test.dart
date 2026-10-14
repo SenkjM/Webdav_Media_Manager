@@ -96,6 +96,17 @@ void main() {
     );
   });
 
+  test('default check channel follows the installed edition', () {
+    expect(
+      channelForInstalledEdition(InstalledEdition.preview),
+      UpdateChannel.preview,
+    );
+    expect(
+      channelForInstalledEdition(InstalledEdition.stable),
+      UpdateChannel.stable,
+    );
+  });
+
   test('edition follows the version code, not the channel button', () {
     expect(
       editionFromVersion(
