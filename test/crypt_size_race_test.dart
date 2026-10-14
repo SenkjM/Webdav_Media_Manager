@@ -115,6 +115,7 @@ class _FakeSource implements CloudSource {
     Stream<List<int>> content,
     int length, {
     void Function(int count)? onProgress,
+    dynamic cancelToken,
   }) async {
     throw UnsupportedError('err.sourceNotWritable');
   }

@@ -219,7 +219,7 @@
 
 ### 4.2 已定型的取舍
 
-1. **上传砍掉**：`CloudDriver` 接口无 put；云盘账号上 `writeBytes` / `ensureDirectory` 与 backup / sync / playlist 的云端写路径一律禁用（显式报语义，不做静默失败）。**例外**：`createFolder` 走独立「创建文件夹」位（见 7.2.3 / 7.3.2），baidu 支持。WebDAV 账号行为不变。
+1. ~~**上传砍掉**~~（**2026-10-15 推翻**）：`CloudDriver` 接口已补 `uploadStream` / `ensureDirectory` 两个写原语，默认抛 `err.uploadStreamUnsupported` / `err.ensureDirectoryUnsupported`；**crypt 驱动已实现**，能力完全继承源（源可写 → crypt 可写）；其余 15 个云盘驱动维持默认抛错。兼容层 `CloudDriveService` 三个写方法全部转调驱动原语，删掉了 `if (driver is CryptDriver)` 特判与 `_writeDisabled` 常量。所有入口一律查 `can(accountId, AccountCaps.write)`，不再按 `providerType` 硬挡。`createFolder` 走独立「创建文件夹」位（见 7.2.3 / 7.3.2），baidu 支持。WebDAV 账号行为不变。
 2. **`WebDavService` 对外 API 与行为不变**（14 个文件直接 import 它，全部零改动）。唯一接入缝：`_connFor` / `_resolve`（`webdav_service.dart:44-54`）之后按账号类型转调 `CloudDriveService` 同名方法。绕不开的配套：`WebDavAccount.providerType`（本文件 §4）；云盘凭证走 AccountsService + credential vault 独立通道，`configure()` 的 url/user/pass 形状不动。
 3. **能力遮罩**：账号类型 → 能力集合，枚举定型为**列出 / 读取 / 写入 / 创建文件夹 / 移动 / 复制 / 删除**（列出默认拥有、不在用户界面显示；「创建文件夹」按用户决定从「写入」拆出独立位，上传与写同步仍归「写入」）。云盘类型由驱动静态给定；**WebDAV 账号的能力由用户在表单里配置**（默认全量）。网络库行操作与多选工具栏按钮**先查遮罩再启用**；新建文件夹按钮按「创建文件夹」位遮罩（网络库 AppBar 与目录选择器两处，已实现）；WebDAV 表单的能力勾选区已实现（读取 / 写入 / 创建文件夹 / 移动 / 复制 / 删除）。**静态表登记原则（用户决定）**：`AccountCaps.staticCaps` 只登记已落地驱动（当前仅 `baidu_netdisk`），未落地盘先记 7.3.2 的核查表，落地时照表抄。
   - **与 OpenList 的对比（本轮查证）**：它的每驱动能力标志只有传输侧（`NoUpload` / `OnlyProxy` / `NoLinkURL` / `PreferProxy`，`internal/driver/config.go`），**写操作没有能力位、不做按钮遮罩**——只读驱动（openlist_share 等）在操作时返回 `errs.NotImplement` 由前端弹错；WebDAV 层按用户权限位（WEBDAV_READ / WEBDAV_MANAGE）拦截。WDMM 按本项目「禁用即隐藏」的决策在按钮层遮罩，比 OpenList 更进一步，属于有意差异。
@@ -227,7 +227,7 @@
 5. **读取能力的绑定**（用户原话「缓存音乐、下载文件、浏览、播放、流式传输功能绑定到账号类型的读取能力」）：这五类功能都要求账号具备「读取」。
 6. **禁用即隐藏**：能力被遮罩时，单文件「更多」菜单的对应条目与多选工具栏的对应按钮**隐藏而非置灰**；「更多」按钮本身只要还有可用条目就保留。
 7. **账号表单定型**：第一行名称、第二行类型（默认 WebDAV），选类型后动态出该盘自身字段。WebDAV 在服务器 URL 之下新增「远程路径」（默认 `/`，空置视为 `/`），**云盘账号同样有远程路径**；保存时 URL 结尾 `/` 隐式清除（`configure()` 已有同样的 trim，表单层保持同一规则）。云盘字段默认照 worker `Addition` 原样保留以便对接，逐盘细节落实时询问用户。
-8. **云端写目标唯一选择点**（已按用户决定简化落地）：`sync_screen.dart`「① 选择网盘」下拉（落 `settings.syncAccountId`；凭证 / 歌单 / 音乐库 / 备份共用这条远端路径）与 `SyncService.targetAccount`（含活跃账号兜底）**只认 WebDAV 类型**——云盘没有写路径（7.2.1），用户原话「同步和备份也无法实现，只遍历 webdav 类型即可」。
+8. **云端写目标唯一选择点**（2026-10-15 更新）：`sync_screen.dart`「① 选择网盘」下拉与 `SyncService.targetAccount`（含活跃账号兜底）**一律查 `CloudDriveService.can(id, AccountCaps.write)`**——只要账号有写能力就列入（含 crypt 包住可写 WebDAV 源的账号）；无写能力的账号不作为同步目标。早前「只认 WebDAV 类型」的硬编码已删除。
    - **账号凭证进备份 / 同步（用户决定，2026-07 追加，推翻本条早前的排除段）**：用户原话「同步与备份功能中的WebDav凭证改为账号凭证……除了原有的webdav备份字段，还应该备份其他类型的网盘凭证」「从云端恢复时静默过滤不支持的网盘类型」「加密凭证配置也同步到所有在配置界面默认为密码的数据」。落地：`credentials.json` 升 formatVersion 2（WebDAV 条目 + 云盘条目 `providerType` + `driverConfig`）；云盘配置里 spec 表单 `obscure` 字段（`CloudDriverSpec.secretFieldKeys`）逐字段 AESGCMv1 加密，其余明文；恢复端 `cloudDriverSpec(typeId)` 查不到的类型**静默跳过**（不报错、不建空壳账号）；备份归档的账号遍历同步放开（`BackupService.buildPayload`）。早前「云盘凭据不进备份（档案里没有 secure storage 的驱动配置，恢复不了）」的前提已消失——驱动配置现在随档案 / 凭证库走。细节收口进 [08 §2 / §5](08-SYNC-AND-BACKUP.md)。
 
 9. **流式体验：界面先落地**（用户决定，已实现）：音乐与视频两条流式入口的跳转都**不等源解析**——网络库把解析交给页内 loader（云盘解析要列表 + filemetas + HEAD 三跳，原来会卡住整条跳转链），解析失败在页内错误态表达；「伪装成视频的音频」由视频页解析后 `pushReplacement` 去音乐页（复用同一队列 seed）。音乐页缓冲可视化（不改其它 UI 元素）：删除「已缓冲」文字，已缓冲区间 = 播放进度条**二级轨道**（实心）；源解析 / 起播前的老式等待缓冲 = 二级轨道铺满**左右渐变**（自定义轨道形状）。**账号表单保存流**（用户决定，已实现）：点保存不关弹窗，保存按钮变圈等待，校验（名称 / 重名 / 身份确认 / refresh_token / 云盘真连验证）在弹窗内完成；失败报错留在表单，云盘添加成功提示「成功添加（名称）」后随表单关闭。
@@ -332,171 +332,6 @@
 3. 后续驱动（`aliyundrive_open` 等）落实表单时仍按 4.3.1 的模式先报字段清单给用户确认；教程文案统一链 OpenList 官方文档对应驱动页。
 
 ### 4.9 全量驱动清单与驱动接入评估（OpenList 源码逐盘核查）
-
-**数据基线**：worker 版 77 个驱动目录 + Go 版 88 个（`localdev/OpenList-Worker/src/backend/drivers/` 与 `localdev/OpenList/drivers/`），逐盘提取了 Addition 字段、方法实现、代理能力表（`internal/driver/proxy.ts` 是唯一真相）与 crypto 依赖。**能力面的两版一致性已核**：worker 的 mkdir / 写方法与 Go 的可选接口一致（4.3.2）。
-
-#### 批次方案（P0 已在做，P1 起每批独立交付、独立验收）
-
-| 批次 | 驱动 | 判定依据 |
-|------|------|----------|
-| **P0 已落地 / 进行中** | `baidu_netdisk`（已实现待验收）、`crypt`（cipher 完成） | 见 4.3.1 / 4.5 |
-| **P1 粘贴凭证直连盘** | **`123_open`、`aliyundrive_open`、`115open`、`terabox`（✅ 本轮已接入，见 4.3.4）**；`quark_open`、`139`、`quark`(cookie) 下沉（判定见 [13 §2.2](13-DRIVER-BATCH-PLAN.md)：MustProxy 要流桥 / 5 种账号形态） | refresh_token / cookie 粘贴式登录、直链 + 必需头、写操作全、无重加密；依赖 `pkg/crypto` 或 `crypto-js` 的地方都有 Dart 对应（AES/RSA/MD5，pointycastle 覆盖） |
-| **P2 只读家族**（能力遮罩=只读，浏览器式登录或分享链接） | `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`github_releases`、`lenovonas_share`、`autoindex`、`url_tree`、`quark_uc_tv`、`emby`、`google_photo` | 五项写方法全部显式抛「不支持」；接入成本 = `CloudSource` 适配 + 能力遮罩；先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制（4.4） |
-| **P3 OAuth 回调盘** | `onedrive`、`onedrive_app`、`google_drive`、`dropbox`、`yandex_disk`、`pikpak`、`febbox`、`halalcloud_open`、`thunder` | 需要 OAuth client_id/secret + 回调或设备码流程，本地刷新与百度同构（`localRefresh` 开关模式直接复用）；体积不小但模式统一，可模板化批量铺 |
-| **P4 协议 / 存储类** | `webdav`、`sftp`、`smb`、`ftp`、`alist_v3`、`openlist`、`cloudreve_v3`、`cloudreve_v4`、`seafile`、`kodbox`、`mega`、`proton_drive` | 与已有 WebDAV 能力重叠或需要额外协议栈（smb/ftp/sftp 要原生依赖，mega/proton 有自家加密）；`webdav` 驱动可作为「WebDAV 账号统一到云盘账号模型」的迁移出口，优先级单独评估 |
-| **P5 对象存储 / 自建** | `s3`（+Doge）、`uss`、`azure_blob`、`bunny_storage`、`cloudflare_imgbed`、`ipfs_api` | 签名上传/下载为主，无浏览器登录问题；对媒体库场景价值取决于用户是否有这类存储 |
-| **不接入**（用户已砍或无意义） | 上传 6 字段相关、`alias`/`strm`/`virtual`/`chunk`（worker 组合层，语义由本地已有功能承担）、`local`（Go 本地盘）、`template`/`base`（基础设施）、`123_link`（直链专用）、`aliyundrive`（旧版已被 open 取代）、`doubao_new`/`doubao_share`/`thunder_browser`/`thunderx`/`ilanzou`/`123pan`(账号密码版) 等 Go 特有变体 | 用户决定：「C 中保留 crypt 列入待开发，其他的砍掉不进入文档」；变体驱动等后续同源驱动按当前 main 状态和新增反馈重新评估，不再把真机验收作为已完成批次的阻塞条件 |
-
-#### 逐盘关键参数（P1/P3 全量，接入时按 4.3.1 模式先报字段清单）
-
-| 驱动 | 登录 | Addition 必填 | 关键依赖 / 坑 |
-|------|------|--------------|---------------|
-| `aliyundrive_open` | refresh_token 粘贴 | `drive_type` `refresh_token` | 13 字段；token 401 时要用 refresh_token 换新（驱动内自动） |
-| `115open` | refresh_token 粘贴 | 无（token 即凭证） | 7 字段；OSS 直传（`ossPutObject`）我们不用 |
-| `123_open` | refresh_token 粘贴 | 无 | 10 字段；`api_url_address` 在线续期与百度同构 |
-| `quark_open` | refresh_token + app_id + sign_key | 三项全必填 | 签名算法在 util；MustProxy（proxy 表：强制代理，无直链）→ 必须接流桥 |
-| `terabox` | cookie 粘贴 | `cookie` | 依赖 `pkg/crypto`（js sha1/aes 变体）；直链带 UA 校验 |
-| `139` | authorization 粘贴 | 无（可选 14 项） | **带字符集标记，真机先验编码**（4.3）；ProxyRangeOption |
-| `onedrive` | OAuth | region 等 | 16 字段，`use_online_api`+`api_url_address` 在线续期（百度同构）；region 决定 API host |
-| `onedrive_app` | OAuth(client+tenant) | client_id/secret | 12 字段；`getDirectUploadInfo` 不接入 |
-| `google_drive` | OAuth | client_id/secret/refresh | MustProxy（无公开直链）→ 必须接流桥；API key 可选 |
-| `dropbox` | OAuth | refresh_token | 10 字段；下载是 POST 流，不是 GET 直链（流桥要处理） |
-| `yandex_disk` | OAuth | refresh_token | 标准 REST；MustProxy=false 有直链 |
-| `pikpak` | OAuth(用户名密码换 token) | 无必填 | 12 字段；`pkg/crypto` 依赖 |
-| `thunder` | OAuth 设备码 | 无必填 | 11 字段；`crypto-js` 依赖 |
-| `febbox` / `halalcloud_open` | client_id+secret | 两项 | 模式与 P3 同 |
-
-> 登录方式注记：cookie 类（`quark` `139` `terabox` `weiyun` 等）过期要用户手动重贴，表单要放「打开网页复制」的教程链接（教程统一链 OpenList 官方文档对应驱动页，4.8）；OAuth 类的本地刷新直接复用百度「在本地处理令牌刷新」开关 + `disabledWhenSwitch` 联动极性（4.3.1）。
-
-#### 接入模板（批量铺开时的固定工序）
-
-1. 照 worker `types.ts` Addition 字段定 spec 表单（默认值照抄 Go `meta.go`），先报字段清单给用户确认（4.8）；
-2. 逐方法对接 `driver.ts`（list/get/mkdir/rename/move/copy/remove；**当前只读批次不实现 put**，4.2.1；未来恢复上传时必须按 [4.10](#410-方案-b云盘上传恢复计划未开工) 的 U3–U7 批次与能力门槛单独加入）。
-3. 能力位照 4.3.2 的静态表登记；MustProxy 驱动同步接流桥（通用 `cloud_drivers/stream_bridge.dart` 是范例）；
-4. crypto 依赖对照：`pkg/crypto`/`crypto-js` 用到的原语（MD5/SHA1/AES/RSA）在 pointycastle 都有对应实现，逐个过测试向量；
-5. 直链必需头进 `rawHeaders` 贯穿下载与流式（[11 §5](11-CLOUD-DRIVER-PORTING.md)）；
-6. 一盘一测试文件：列表 / 直链头 / 錯误原文透传；cookie 类加「过期报错原文」用例。
-
-**评估结论**：批量接入的主要成本不在单个驱动的 API 对接，而在**登录形态**（粘贴 vs OAuth 回调）与**直链形态**（302 vs MustProxy+流桥）。这两维各收敛一套模板后，P1–P3 的 20+ 个驱动可以流水线化铺开；建议每批 2–4 个驱动、测试通过并按 main 状态收口后再进下一批。
-## 4.10 方案 B：云盘上传恢复计划（未开工）
-
-**状态**：未开工，仅作为后续实现参考；当前代码仍保持 [4.2.1](#42-已定型的取舍) 的语义：云盘账号上传与云端写同步禁用。本节不代表上传已经支持，也不改变当前版本的能力遮罩。
-
-**方案结论**：采用「调用方提供本地文件 / 可重读流，驱动自己完成真实上传」的方案。OpenList Go 的通用边界是 `Put(ctx, dstDir, model.FileStreamer, UpdateProgress)`（参照 `localdev/OpenList/internal/driver/driver.go`）；Worker 的 `put` 虽然使用 `Buffer`，也是由驱动持有上传协议。不要把百度、115、123、夸克、TeraBox 等盘的上传状态机上移到 `CloudDriveService`。
-
-### 4.10.1 目标与非目标
-
-- **目标**：在不破坏现有 `WebDavService` 对外 API 的前提下，为具备真实 `Put` 实现的云盘逐盘恢复写能力；小文件同步继续可走 `writeBytes`，大文件上传增加文件 / 流入口。
-- **目标**：上传协议、鉴权、哈希、分片、秒传、完成轮询、错误翻译全部留在具体驱动；兼容层只负责路由、能力查询、输入适配、取消与进度传递。
-- **目标**：复用 `AccountCaps.write`。它在本项目中的定义就是「上传 + 云端写同步」，不另造 upload 位；`mkdir` 继续使用独立位。
-- **非目标**：不把 OpenList Worker 的 WebDAV/XML 层引入 App；不为了上传恢复顺手接入用户已砍掉的 crack 下载 API；不让只读 / 分享 / 索引驱动出现伪写能力；不默认开放所有 OpenList Go 驱动。
-- **当前产品边界**：先恢复驱动层能力与小文件写路径，再单独决定网络库「上传本地文件」UI、上传队列、云盘同步目标是否开放。
-
-### 4.10.2 推荐接口边界
-
-#### A. 输入源：文件优先，内存流兼容
-
-建议新增通用 `CloudUploadSource`（名称待实现时确定），至少表达以下信息：
-
-- `name`：远端文件名；
-- `size`：已知文件大小，绝大多数 OpenList Put 都需要；
-- `mimeType`：可选；
-- `openRead()`：可重复打开的顺序流；
-- `openRange(start, end)` 或等价的可重读能力：给百度 / 115 / 123 / 夸克等哈希校验、分片重试使用；
-- `materialize()`：对不可重读的内存流落临时文件，避免驱动各自实现不同的缓存策略。
-
-输入优先级：
-
-1. **本地 `File` / 文件路径**：大媒体文件的首选，支持随机访问和重复读取，不把整文件放进 Dart 堆；
-2. **`Stream<List<int>>` + size**：适合调用方已有流的场景，但必须在进入需要哈希或重试的驱动前确认可重读；
-3. **`Uint8List`**：只作为 `writeBytes` 小文件适配，凭证、M3U8、曲库分片、备份小档案可用；不作为大文件上传的唯一接口。
-
-OpenList Go 的 `FileStreamer` 会在需要时缓存到临时文件（例如百度快速上传 / 123 的哈希计算），Dart 侧应统一由通用输入适配层完成同样的事情，而不是让每个驱动各写一份内存转文件逻辑。
-
-#### B. 驱动接口：驱动负责真实上传
-
-示意边界（名称和返回值可在实现阶段调整）：
-
-```dart
-Future<CloudFileItem?> put(
-  String dstPath,
-  CloudUploadSource source, {
-  void Function(int sent, int total)? onProgress,
-  CancelToken? cancelToken,
-});
-```
-
-- `CloudDriveService` 只做 `accountId → driver`、远程根路径拼接、能力检查、输入适配和异常边界；不出现 `if (type == 'baidu_netdisk')` 一类协议分支。
-- `WebDavService.writeBytes` 继续是统一调用入口；云盘侧有 `write` 能力时转到 `CloudDriveService.putBytes`，无能力时保留明确的 `UnsupportedError`。
-- 具体驱动内部可调用通用的 HTTP / 分片 / 哈希 helper，但 helper 不能认识具体盘名或账号配置。
-- 需要返回远端对象的驱动实现 `PutResult` 语义时，返回 `CloudFileItem`；只需确认成功的驱动可以返回 `void`，由兼容层统一按成功 / 异常处理。
-
-#### C. 通用上传设施（先于驱动落地）
-
-建议放在 `lib/services/cloud_drivers/` 的通用文件中，不放进 `CloudDriveService` 的类型路由：
-
-- 可取消的流式 HTTP PUT / POST，统一接 `Dio CancelToken`；
-- `onSendProgress` 到统一进度回调的适配；
-- `Content-Length`、`Content-Range`、multipart 表单和文件流的构造；
-- 按分片读取本地文件，避免整文件内存占用；
-- 分片失败重试、429 / 5xx 退避、上传会话过期后的重新初始化；
-- MD5 / SHA-1 / SHA-256 的流式哈希和指定区间哈希；项目已有 `crypto`、`cryptography`、`pointycastle`，先复用，不新增原生依赖；
-- 内存流不可重读时统一落临时文件，完成或取消后清理；
-- 不把「所有分片并发」作为默认策略。OpenList Go 明确要求限制并发，否则会因待上传 chunk 缓冲造成内存增长；首版以串行 / 小窗口为主。
-
-### 4.10.3 按 OpenList Go Put 形态的实现分类
-
-| 分类 | 典型驱动 | OpenList Go 形态 | 方案 B 难度 | WDMM 落地策略 |
-|---|---|---|---|---|
-| **G0：只读 / 无 Put** | `*_share`、`openlist_share`、`github_releases`、`autoindex`、`emby`、`google_photo`、`quark_uc_tv` | Put 桩、缺失或语义上没有写路径 | 不适用 | 保持只读能力，不能因为接口新增 put 就默认开放 write |
-| **G1：简单单请求上传** | WebDAV、`alist_v3`、`openlist`、`yandex_disk` | 先获取目标 URL 或直接调用远端 `/api/fs/put`，流式 PUT/POST | 低 | 作为通用上传设施和输入源的验证批次；WebDAV 复用已有客户端 |
-| **G2：预签名 / 分片 URL** | `aliyundrive_open`、`onedrive`、`onedrive_app`、`google_drive`、`dropbox` | 建立上传会话，获得 URL，按分片 PUT/POST，完成会话 | 中 | 驱动负责会话与回执，通用层只负责字节搬运、进度、取消、重试 |
-| **G3：哈希秒传 + 分片状态机** | `baidu_netdisk`、`terabox`、`123_open`、`quark_open`、`quark_uc` | 预计算 MD5/SHA-1，秒传尝试；失败后 precreate / uploadid / 分片 / complete | 中高 | 必须使用可重读文件源；先按 Go 语义实现，再用 Worker 做请求形状交叉核对 |
-| **G4：哈希 + 二次校验 + OSS / 自有签名** | `115open`、`pikpak`、部分国内盘 | 首 hash、指定区间 hash、获取临时凭证、OSS 或签名上传、回调确认 | 高 | 将签名和二次校验留在驱动；真机验证风控、过期凭证和大文件 |
-| **G5：包装 / 加密上传** | `crypt`、`chunk` 等 | 先转换内容或文件名，再委托内层 Put | 高 | 基础源具备 write 后再做；crypt 只按源能力动态暴露 write，不能无条件继承 |
-| **G6：协议 / 自有加密栈** | `sftp`、`smb`、`ftp`、`mega`、`proton_drive` | 非 HTTP 或包含自有加密 / 会话协议 | 高 / 很高 | 不作为本轮上传恢复目标，单独评估依赖、后台执行和安全性 |
-| **G7：对象存储** | `s3`、`uss`、`azure_blob`、`bunny_storage`、`ipfs_api` | SDK、签名 PUT、multipart 或 API add | 中高 | 作为独立 P5；先确定是否有真实用户场景，不因“协议简单”提前铺开 |
-
-### 4.10.4 具体驱动清单与难度
-
-#### 第一阶段：地基与低风险验证
-
-| 驱动 / 模块 | 难度 | 依据与材料 | 先做什么 |
-|---|---:|---|---|
-| 通用 `CloudUploadSource` | 中 | `CloudDriver`、`CloudDriveService`、OpenList `FileStreamer` | 先实现 File / Uint8List / 可重读 Stream 三种适配；补取消、size、临时文件清理测试 |
-| 通用 HTTP / multipart / chunk helper | 中 | OpenList `driver.Put` 注释中的取消、进度、限速要求 | 不绑定盘名；先做单请求、分片读取、哈希、重试；限制并发 |
-| WebDAV 写路径 | 低 | `webdav_service.dart:355-376` 已有 `writeBytes`；现有 WebDAV client | 用现有 WebDAV 行为验证新输入源和进度，不先改变云盘能力表 |
-| `alist_v3` / `openlist` | 低 | Go `drivers/alist_v3/driver.go`、`drivers/openlist/driver.go`：`PUT /api/fs/put` + `File-Path` | 如果未来接入，作为 HTTP 流式上传模板；当前仍受 4.9 范围约束 |
-
-#### 第二阶段：首批云盘上传
-
-| 驱动 | 难度 | OpenList Go 关键步骤 | 必须准备的材料 | 验收重点 |
-|---|---:|---|---|---|
-| `aliyundrive_open` | 中低 | create file → part info → get upload URL → 分片 PUT → complete | `drivers/aliyundrive_open/upload.go`、`types.go`、现有 Dart driver；有效 refresh token；至少一个可写测试盘 | 小文件、大文件、断点 / 取消、token 过期、分片失败重试、重复文件 |
-| `baidu_netdisk` | 中高 | rapid upload → precreate → slice MD5 → superfile2 → create；空文件拒绝 | Worker `driver.ts` 上传段、Go `driver.go` / `util.go`；MD5 向量；百度测试账号；upload API 字段是否重新暴露需单独确认 | 秒传命中、秒传失败后真实上传、uploadid 过期、动态域名、空文件、目录与文件名 |
-| `terabox` | 中高 | locateupload → precreate → 分片 superfile2 → create；Cookie + UA | Worker `driver.ts` 上传段、Go `driver.go`；已有 `genSign` 测试；可用 Cookie 和地区可用账号 | Cookie 过期、地区错误、分片 MD5、不完整上传清理、重试 |
-| `115open` | 高 | UploadInit：全 SHA1 / 首 128K / sign_check → upload token → OSS PUT / callback | Worker `driver.ts` `ossPutObject`；Go `upload.go`；OSS V1 签名材料；可写 refresh token | 秒传、二次校验区间、签名头、空文件、大文件流式、凭证过期、上传失败后远端残留 |
-| `123_open` | 中高 | SHA1 秒传 → create → MD5 etag → 分片上传 → complete 轮询 | Go `drivers/123_open/driver.go` 上传段；Worker 仅作请求格式参考；refresh token | 秒传、分片、complete 轮询、20103 等未知响应、超时取消、上传后重新 list |
-
-> 这五个驱动不能按“Worker 是否有 put”简单筛选：`123_open` 的 Worker Put 是因 stateless 环境限制而砍掉，Go 版才是本地 App 应采用的语义；`115open` 的 Worker 单 Buffer OSS 形态也不能直接照搬为大文件实现。
-
-#### 第三阶段：包装与复杂协议
-
-| 驱动 / 模块 | 难度 | 结论 |
-|---|---:|---|
-| `crypt` | 高 | Go 版是 EncryptData → 重新构造密文对象 → 内层 `op.Put`。WDMM 要补可写 `CloudSource`、内容加密输出、密文大小 / 文件名映射和源能力传递；必须保证源无 write 时 crypt 仍只读 |
-| `quark_open` | 高 | Go 版需要 MD5/SHA1、预上传、分片 URL、etag / commit；Worker 桩不能作为上传依据；MustProxy 只影响读取，不阻止上传 |
-| `quark` / `quark_uc` | 高 | 与 `quark_open` 类似，额外有 Cookie / 账号形态差异；等待 quark_open 的通用分片和签名材料收敛后再做 |
-| `139` | 很高 | Go 版按 PersonalNew、Group、Family、旧流上传等多形态分支；Worker 只有空壳；先完成字符集与账号形态核验再排期 |
-| `netease_music` | 高 | Go 版 `putSongStream` 要缓存完整文件、检查存在、分配 token、上传、发布信息；Worker 没有可用的上传实现参照；技术可行但不纳入第一轮 |
-
-#### 第四阶段：OAuth、协议和对象存储
-
-- **P3 OAuth**：`onedrive` / `onedrive_app` / `google_drive` / `dropbox` / `yandex_disk` / `pikpak` / `thunder` 等，上传协议本身多为标准会话或预签名 URL，难度中；真正的前置是 OAuth 回调、刷新和移动端后台生命周期。建议先完成一个 OneDrive 小文件 + 大文件会话模板，再批量展开。
-- **P4 协议类**：WebDAV 可低成本复用；`sftp` / `smb` / `ftp` 需要独立协议栈；`mega` / `proton_drive` 包含自有加密与会话，单独立项，不和 HTTP 上传混做。
-- **P5 对象存储**：`s3` / `uss` / `azure_blob` / `bunny_storage` / `ipfs_api`。需要准备签名、multipart、临时凭证和大文件测试材料；只有确认真实用户需求后再做。
-
-### 4.10.5 分阶段实施计划
 
 | 阶段 | 内容 | 完成判据 |
 |---|---|---|
@@ -913,91 +748,6 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 
 ### 17.1 目标（原话级）
 
-- **串流与缓存只差本地是否有音频文件**：有本地音频 = 缓存播放；没有 = 串流。同一套底部播放控件，不再分「本地播放页」与「流式页」两套体验。
-- **媒体库是曲目真相**：库内行（标签、封面、路径、缓存状态、云端存在性等）是唯一真相源；网络库是浏览器，不替代曲目身份。
-
-### 17.2 后缀管理与设置
-
-- **后缀管理**：只把**音乐**的默认打开方式从后缀页摘出；其它类别（视频 / CUE / 图片 / 普通文件）暂不动。
-- **音乐默认缓存 / 串流**放在「媒体库 → 音乐」设置里配置，不再混在通用后缀默认动作表里。
-- **设置顶栏**：「音乐库」改名为「媒体库」；音乐相关设置进子页，不再把整块音乐设置堆在设置首页。
-
-### 17.3 播放列表来源
-
-| 入口 | 列表怎么生成 | 深度 |
-|------|--------------|------|
-| 网络库（音乐串流 / 连播） | 按当前路径生成 | **子目录 / 最大深度单独设置**，与刮削深度**分开** |
-| 媒体库（原音乐库） | 按库 / 筛选 / 歌单生成 | 不走路径扫描深度 |
-| 视频播放列表 | 同样要有**最大子目录深度**（默认 1） | 与刮削设置、与音乐网络库深度均区分 |
-
-### 17.4 单曲行为
-
-- 单击 / 默认打开：跟**媒体库默认**（缓存或串流，见 §17.2）。
-- **音乐库可长按等手动选串流**（新功能）：只对这一次生效，**不改默认**。
-
-### 17.5 预载、标签入库、文件夹封面
-
-- **预载保留**：从库打开、从网络库打开都能用（同一套预载语义，窗口等配置仍可沿用现有音频流式设置，落地时再对齐入口）。
-- **顺序**：先用 Range 读标签并入库，再预载音频 / 封面邻居。
-- **文件夹封面 sidecar** 保留（同目录 cover / folder 等匹配规则不删）。
-
-### 17.6 封面缓存桶
-
-- 给**列表浏览、且尚无本地音频缓存**的曲目，持久化一份封面缓存桶，避免列表频繁拉远端封面。
-- **播放时**仍用标签内嵌图 / 库内封面路径；列表桶与播放封面来源可分开，不要为列表去反复 Range 整文件。
-
-### 17.7 状态点（列表指示）
-
-- **有缓存 / 可串流 / 下载中**：用主题**正常色**区分，**不用**灰 / 警示色。
-- **红点 = 已确认云端不存在**（持久化到库）。
-
-### 17.8 云端不存在（红点）语义
-
-- **不主动全盘扫**远端是否还在。
-- 写红点的时机：
-  1. **串流失败**且判定为远端缺失；或
-  2. 设置里**可选的全量匹配**任务跑完后确认不存在。
-- 用户**点红点**：先再试远端；仍失败 → 弹**删除 / 重定向**（选择器交互像网络库复制 / 移动那套）。
-- **有本地缓存**时：跳过远端存在性检查，直到用户清缓存后再有机会发现缺失并写红点。
-
-### 17.9 刮削（扫描入库）
-
-- 多选工具里：**刮削与缓存音乐并列**（可多选文件夹 / 文件触发）。
-- **默认递归深度 1**（只当前层 + 一层子目录语义按落地时与现有扫描对齐，以「深度 1」为默认值）。
-- **默认增量**：只比路径（有路径变化才处理），不做默认真全量重刮。
-- 流程：**先统计再刮削**（先给出将处理数量 / 范围，再开跑）。
-- **更新标签**入口改为两路：「从本地」「从云端」。云端一路是**任务**（进任务队列），且**含封面**拉取 / 更新。
-
-### 17.10 任务队列
-
-- 「下载队列」**改名**为任务队列（界面与导航文案）。
-- 任务 `kind` 含至少：`download` / `scan` / `retag` 等（可扩展）。
-- 列表行只显示**短错误文案**；点「详情」或长按错误行看**全文**（已落地，见上「落地进度」）。
-
-### 17.11 目录遍历深度（每套各自独立的 prefs）
-
-| 用途 | includeSubdirs 键 | 默认 | maxDepth 键 | 默认 |
-|------|-------------------|------|-------------|------|
-| 视频连播 / 视频播放列表 | `video_scan_subdirs` | **关** | `video_playlist_max_depth` | **1** |
-| 音乐从网络库打开的播放列表 | `audio_scan_subdirs` | **关** | `audio_playlist_max_depth` | **1** |
-| 媒体库刮削 | `media_scan_recursive` | **开** | `media_scan_max_depth` | **1** |
-| 图片查看 · 搜索子目录 | `image_scan_subdirs` | **关** | `image_scan_max_depth` | **1** |
-| 漫画 · 容器扫描 | `manga_scan_subdirs` | **开** | `manga_scan_max_depth` | **1** |
-| 漫画 · 散图建立 | `manga_create_subdirs` | **开** | `manga_create_max_depth` | **1** |
-
-- 共用逻辑：`WalkOptions` / `DirectoryWalker`（visited 防环；`maxEntries` 保险丝默认 **500**）。
-- 六套互不影响：`SettingsService` 各给一个 `*WalkOptions` getter（`mediaScanWalkOptions` / `imageScanWalkOptions` / `mangaScanWalkOptions` / `mangaCreateWalkOptions`）。
-- 深度语义：`0` = 仅当前目录；`1` = 当前 + 下一层；clamp 0–20。
-
-### 17.12 实现原则与建议落地顺序
-
-**原则**：
-
-- 可删过时测试；可改 DB schema；**功能级重构优于叠补丁**。
-- 基于最新 `main`，不要为照顾旧分支语义而保留双轨。
-
-**建议落地顺序**（写进本节，后续实现按此切步）：
-
 1. ~~错误模型（短码 + 详情全文）~~ **已落地**
 2. ~~任务队列外壳（改名、`kind`、列表 / 详情）~~ **已落地**
 3. ~~遍历 / 深度（网络库音乐列表、视频列表、刮削深度分设）~~ **已落地**（三套独立 prefs，见上）
@@ -1399,31 +1149,60 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - 视图模式复用同一套 `mangaViewModeFor` / `musicViewModeFor`，但**用各自的键**，所以文件夹的视图选择不会串到媒体库的 Tab 上：漫画库 Tab 是 `series` / `manga` / `author`，漫画详情页是 `seriesDetail` / `authorDetail`，音乐库 Tab 是 `albums` / `artists` / `titles` / `genres`，音乐详情页是 `musicDetail:<维度>`，两边的叶子页各是 `folderLeaf:<kind>`（如 `folderLeaf:mangaSeries`、`folderLeaf:album`）。
 - 音乐曲目本来只有列表，为此补了网格分支（`_TrackGridTile`），`TrackListPage` 现在也能切网格。
 
+
+### 19.19 图片扫描深度与 CBZ 首屏（2026-10-13）
 ### 19.19 图片扫描深度与 CBZ 首屏（2026-10-13）
 
+
+用户要求「图片查看也有扫描子目录，把深度设置也给加上，默认为 1」，随后要求「流式传输不该是从第一页开始加载」。
 用户要求「图片查看也有扫描子目录，把深度设置也给加上，默认为 1」，随后要求「流式传输不该是从第一页开始加载」。
 
+
+- **图片扫描深度**：新增偏好 `image_scan_max_depth`（默认 1，`WalkOptions.defaultMaxDepth`）与 `SettingsService.imageScanWalkOptions`；图片查看设置页在「搜索子目录」打开时显示深度输入；`image_viewer_screen.dart` 的手写 BFS 换成 `DirectoryWalker`，环路保护与条目上限一起拿到。
 - **图片扫描深度**：新增偏好 `image_scan_max_depth`（默认 1，`WalkOptions.defaultMaxDepth`）与 `SettingsService.imageScanWalkOptions`；图片查看设置页在「搜索子目录」打开时显示深度输入；`image_viewer_screen.dart` 的手写 BFS 换成 `DirectoryWalker`，环路保护与条目上限一起拿到。
 - **CBZ 首屏（惰性抽页）**：`_prepareCbzWithZip` 原来**无条件从第 0 页抽完整本**才返回，从第 150 页打开也要等 40 秒。现在先读 `progressFor` 定位起始页，只抽那一页，其余页挂 `ImagePageLoader` 闭包；`ImageViewerPage.localLoader` 与 `image_viewer_screen.dart` 的 `_ensureLocal` 惰性分支把它接进查看器本来就有的 ±N 预取窗口。实测 181 页 / 36.4 MB 的 CBZ：到首屏 **1.0 秒**（原来 48.9 秒）。
+- **CBZ 首屏（惰性抽页）**：`_prepareCbzWithZip` 原来**无条件从第 0 页抽完整本**才返回，从第 150 页打开也要等 40 秒。现在先读 `progressFor` 定位起始页，只抽那一页，其余页挂 `ImagePageLoader` 闭包；`ImageViewerPage.localLoader` 与 `image_viewer_screen.dart` 的 `_ensureLocal` 惰性分支把它接进查看器本来就有的 ±N 预取窗口。实测 181 页 / 36.4 MB 的 CBZ：到首屏 **1.0 秒**（原来 48.9 秒）。
+- **现场诊断脚本** `tool/dav_cbz_probe.dart`：`dart run tool/dav_cbz_probe.dart --url … --user … --pass … --path '…' [--all-pages]`，先打四种 Range 形态（`0-0` / `0-` / `-65536` / 中间段），再用 `CbzRangeZip` 开包，报告页数、`totalSize`、到首帧耗时与 ComicInfo。2026-10-13 对 123pan WebDAV 实测四种形态全 206：**慢的是阅读器，不是服务器**。
 - **现场诊断脚本** `tool/dav_cbz_probe.dart`：`dart run tool/dav_cbz_probe.dart --url … --user … --pass … --path '…' [--all-pages]`，先打四种 Range 形态（`0-0` / `0-` / `-65536` / 中间段），再用 `CbzRangeZip` 开包，报告页数、`totalSize`、到首帧耗时与 ComicInfo。2026-10-13 对 123pan WebDAV 实测四种形态全 206：**慢的是阅读器，不是服务器**。
 
+
+### 19.20 散图代理键与 schema v18（散图身份，2026-10-13）
 ### 19.20 散图代理键与 schema v18（散图身份，2026-10-13）
 
+
+用户决定：「彻底抛弃漫画散页的目录绑定原则」「散图不需要保存什么源、路径、模式，唯一可信就是页列表」。方案代号**丙**——**书是用户资产，页列表是内容，目录只是一次性的输入来源**。
 用户决定：「彻底抛弃漫画散页的目录绑定原则」「散图不需要保存什么源、路径、模式，唯一可信就是页列表」。方案代号**丙**——**书是用户资产，页列表是内容，目录只是一次性的输入来源**。
 
+
+- **身份**：`lib/utils/manga_identity.dart` 新增 `newMangaId()`（uuid v4）与 `mangaSyncKeyForManga({id, format, sourceName, remotePath})`（散图取自身 id，容器回落到 `trackIdentityKey(源, 规范化路径)`），以及认出旧行的 `isLegacyLooseManga(...)`。容器书的身份**一个字都没变**（仍 `mangaIdForRemote`）——它「物化之后基本确定」，与音乐单曲同构，也省掉旧设备 / 旧分片的兼容问题。
 - **身份**：`lib/utils/manga_identity.dart` 新增 `newMangaId()`（uuid v4）与 `mangaSyncKeyForManga({id, format, sourceName, remotePath})`（散图取自身 id，容器回落到 `trackIdentityKey(源, 规范化路径)`），以及认出旧行的 `isLegacyLooseManga(...)`。容器书的身份**一个字都没变**（仍 `mangaIdForRemote`）——它「物化之后基本确定」，与音乐单曲同构，也省掉旧设备 / 旧分片的兼容问题。
 - **页路径**：散图的 `MangaPage.relPath` 由「相对书根」改成**相对网盘根**的完整路径，由 `MangaIngestDraft.draftForImageDir` / `draftForMergedImages` 通过 `_sourceRoot` / `_underSourceRoot` 生成。页表因此自带定位信息，`mangas.remote_path` 从身份降级为「上次是从哪个目录建的」这一条线索。`MangaReaderPrep._prepareImages` 本来就按「以 `/` 开头当绝对路径」解析，阅读器一行没改。
+- **页路径**：散图的 `MangaPage.relPath` 由「相对书根」改成**相对网盘根**的完整路径，由 `MangaIngestDraft.draftForImageDir` / `draftForMergedImages` 通过 `_sourceRoot` / `_underSourceRoot` 生成。页表因此自带定位信息，`mangas.remote_path` 从身份降级为「上次是从哪个目录建的」这一条线索。`MangaReaderPrep._prepareImages` 本来就按「以 `/` 开头当绝对路径」解析，阅读器一行没改。
+- **schema v18**（`_upgradeMangaV18`）：`mangas` 重建去掉表级 `UNIQUE(source_name, remote_path)`，改为**部分唯一索引** `idx_mangas_container_key ... WHERE format <> 'images'`（容器唯一性与 v17 完全等价，散图不再受限，同一目录的两本散图可以共存）；`deleted_mangas` 重建为 `manga_id` 主键 + `sync_key` 列，旧行按「此前墓碑都是容器的」逐条重键；升级时**直接丢弃 `format = 'images'` 的旧行**，并清掉随之孤立的 `manga_pages` / `manga_progress`。不写数据搬运、不兼容旧散图数据。
 - **schema v18**（`_upgradeMangaV18`）：`mangas` 重建去掉表级 `UNIQUE(source_name, remote_path)`，改为**部分唯一索引** `idx_mangas_container_key ... WHERE format <> 'images'`（容器唯一性与 v17 完全等价，散图不再受限，同一目录的两本散图可以共存）；`deleted_mangas` 重建为 `manga_id` 主键 + `sync_key` 列，旧行按「此前墓碑都是容器的」逐条重键；升级时**直接丢弃 `format = 'images'` 的旧行**，并清掉随之孤立的 `manga_pages` / `manga_progress`。不写数据搬运、不兼容旧散图数据。
 - **墓碑**：`WmpTomb.syncKey = 5`；`manga_sync_store` / `sync_service` / `library_sync_store` 三处合并键统一成 `row['sync_key'] ?? 回落 trackIdentityKey`。指向已删散图书的用户文件夹软引用**不清理**——`UserFolderService` 遇到不匹配的 id 只是取不到内容，不报错，留给用户手动删。
+- **墓碑**：`WmpTomb.syncKey = 5`；`manga_sync_store` / `sync_service` / `library_sync_store` 三处合并键统一成 `row['sync_key'] ?? 回落 trackIdentityKey`。指向已删散图书的用户文件夹软引用**不清理**——`UserFolderService` 遇到不匹配的 id 只是取不到内容，不报错，留给用户手动删。
+- **重新扫描此本（丙的核心）**：散图书的行尾「⋮」新增一项，走 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目录后入队一个带 `targetMangaId` 的 merged 建立任务；`_runMangaBuild` 见到目标 id 就改走 `MangaLibraryService.rescanLoose`——**就地替换页表**（bump rev）并更新 `remote_path` / `page_count` / `cover_relpath`，id、阅读进度与手工元数据全部保留。没有目标 id 时照旧新建（分配新 uuid）。
 - **重新扫描此本（丙的核心）**：散图书的行尾「⋮」新增一项，走 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目录后入队一个带 `targetMangaId` 的 merged 建立任务；`_runMangaBuild` 见到目标 id 就改走 `MangaLibraryService.rescanLoose`——**就地替换页表**（bump rev）并更新 `remote_path` / `page_count` / `cover_relpath`，id、阅读进度与手工元数据全部保留。没有目标 id 时照旧新建（分配新 uuid）。
 - **重复建立的现状**：容器入口（`_scanComicContainers` / `_ingestComicSelection`）仍无条件入队一次刮削；`_ingestComicFile` 先查库，命中直接打开（见 [19.16](#1916-网络库漫画单文件加入之后就是打开2026-10-13)）。散图的两个建立入口（合并 / 每目录）都从网络库出发，见 [19.15](#1915-扫描刮削与整包缓存改入任务队列2026-10-13)。
+- **重复建立的现状**：容器入口（`_scanComicContainers` / `_ingestComicSelection`）仍无条件入队一次刮削；`_ingestComicFile` 先查库，命中直接打开（见 [19.16](#1916-网络库漫画单文件加入之后就是打开2026-10-13)）。散图的两个建立入口（合并 / 每目录）都从网络库出发，见 [19.15](#1915-扫描刮削与整包缓存改入任务队列2026-10-13)。
+- **测试**：`test/manga_library_test.dart` 的 `_MemMangaDb` 去重规则改成「按 id 去重；`(源, 路径)` 只在两行都不是散图时去重」，与 v18 同形；补了「同一目录两次建立得到两本」「`rescanLoose` 保留元数据」的断言。
 - **测试**：`test/manga_library_test.dart` 的 `_MemMangaDb` 去重规则改成「按 id 去重；`(源, 路径)` 只在两行都不是散图时去重」，与 v18 同形；补了「同一目录两次建立得到两本」「`rescanLoose` 保留元数据」的断言。
 
+
+### 19.21 上传与散图物化（2026-10-13）
 ### 19.21 上传与散图物化（2026-10-13）
 
+
+用户规范：「上传暂时只考虑 WebDAV（云盘不管）；用任务列表管理；物化 CBZ 拆成两个任务（先打包再上传）；网络库『新建文件夹』改成加号，展开为『新建文件夹』+『上传』；用安卓系统文件选择器（SAF）而不是申请全部文件权限」。
 用户规范：「上传暂时只考虑 WebDAV（云盘不管）；用任务列表管理；物化 CBZ 拆成两个任务（先打包再上传）；网络库『新建文件夹』改成加号，展开为『新建文件夹』+『上传』；用安卓系统文件选择器（SAF）而不是申请全部文件权限」。
 
+
+- **上传**：`TaskKind.upload`（storage `upload`）+ `enqueueUpload({sourceName, remotePath, displayName, localPath})`（`progressMode: bytes`）+ `_runUpload`。传输层是 `WebDavService.writeFromFile`（`lib/services/webdav_service.dart`）：从磁盘流式读、逐块报进度、吃 `CancelToken`，所以几百 MB 的包不会先进内存；`CloudDriveService.writeFromFile` 直接抛 `err.cloudWriteDisabled`——云盘没有上传原语。**成功后删本地副本，失败保留**，重试才有东西可发。
 - **上传**：`TaskKind.upload`（storage `upload`）+ `enqueueUpload({sourceName, remotePath, displayName, localPath})`（`progressMode: bytes`）+ `_runUpload`。传输层是 `WebDavService.writeFromFile`（`lib/services/webdav_service.dart`）：从磁盘流式读、逐块报进度、吃 `CancelToken`，所以几百 MB 的包不会先进内存；`CloudDriveService.writeFromFile` 直接抛 `err.cloudWriteDisabled`——云盘没有上传原语。**成功后删本地副本，失败保留**，重试才有东西可发。
 - **入口**：网络库右上角原来那个新建文件夹的 `IconButton` 换成 `PopupMenuButton`（`Icons.add`），两项——「新建文件夹」（`_canCreateFolder`）与「上传」（`_canUpload`：`providerType == 'webdav'` 且账号带 `AccountCaps.write`）。`_uploadFile()` 调 `PlatformExportService().pickFile()`；SAF 返回的 `PickedFile.path` 是**应用缓存里的副本**，天然就是「传完即删」的临时件。manifest 里没有 `MANAGE_EXTERNAL_STORAGE`，走 SAF 是唯一不申请全盘权限的路。
+- **入口**：网络库右上角原来那个新建文件夹的 `IconButton` 换成 `PopupMenuButton`（`Icons.add`），两项——「新建文件夹」（`_canCreateFolder`）与「上传」（`_canUpload`：`providerType == 'webdav'` 且账号带 `AccountCaps.write`）。`_uploadFile()` 调 `PlatformExportService().pickFile()`；SAF 返回的 `PickedFile.path` 是**应用缓存里的副本**，天然就是「传完即删」的临时件。manifest 里没有 `MANAGE_EXTERNAL_STORAGE`，走 SAF 是唯一不申请全盘权限的路。
 - **散图物化（打包）**：`TaskKind.mangaPack`（storage `manga_pack`）+ `enqueueMangaPack({sourceName, mangaId, remotePath, displayName})` + `_runMangaPack`。**刻意拆成两条任务**：打包与上传各占行、各有各的进度。打包把页逐张下到同一个临时文件、再用 `ZipFileEncoder.addFile` 流进归档（峰值磁盘一页、峰值内存一个缓冲），条目名带 5 位序号前缀 `00001_原名`，同时保证页序与「两个源目录里有同名文件」时的唯一性；成功后自动 `enqueueUpload`，归档本身由上传任务负责删。
+- **散图物化（打包）**：`TaskKind.mangaPack`（storage `manga_pack`）+ `enqueueMangaPack({sourceName, mangaId, remotePath, displayName})` + `_runMangaPack`。**刻意拆成两条任务**：打包与上传各占行、各有各的进度。打包把页逐张下到同一个临时文件、再用 `ZipFileEncoder.addFile` 流进归档（峰值磁盘一页、峰值内存一个缓冲），条目名带 5 位序号前缀 `00001_原名`，同时保证页序与「两个源目录里有同名文件」时的唯一性；成功后自动 `enqueueUpload`，归档本身由上传任务负责删。
+- **入口**：散图书的行尾「⋮」新增「物化为 CBZ」——先 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目标目录，再填文件名（默认取书名，`\ / : * ? " < > |` 替换成 `_`）。**这里刻意不用 `TextEditingController`**：对话框 pop 之后路由还在播退场动画，随手 `dispose()` 会在 `_dependents.isEmpty` 上炸（与批量改系列名那次同一个坑），所以改用 `TextFormField(initialValue:)` + 局部变量。
 - **入口**：散图书的行尾「⋮」新增「物化为 CBZ」——先 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目标目录，再填文件名（默认取书名，`\ / : * ? " < > |` 替换成 `_`）。**这里刻意不用 `TextEditingController`**：对话框 pop 之后路由还在播退场动画，随手 `dispose()` 会在 `_dependents.isEmpty` 上炸（与批量改系列名那次同一个坑），所以改用 `TextFormField(initialValue:)` + 局部变量。

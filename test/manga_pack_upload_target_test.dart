@@ -1,40 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_media_manager/models/account_capabilities.dart';
 import 'package:webdav_media_manager/utils/manga_pack_followup.dart';
-import 'package:webdav_media_manager/utils/upload_backend.dart';
 
 void main() {
-  group('accountCanUpload', () {
-    test('WebDAV with write can upload', () {
-      expect(
-        accountCanUpload(
-          providerType: 'webdav',
-          capabilities: AccountCaps.all,
-        ),
-        isTrue,
-      );
-    });
-
-    test('WebDAV without write cannot upload', () {
-      expect(
-        accountCanUpload(
-          providerType: 'webdav',
-          capabilities: AccountCaps.list | AccountCaps.read,
-        ),
-        isFalse,
-      );
-    });
-
-    test('a cloud drive cannot upload even if a write bit is set', () {
-      expect(
-        accountCanUpload(
-          providerType: 'aliyundrive_open',
-          capabilities: AccountCaps.all,
-        ),
-        isFalse,
-      );
-    });
-  });
+  // accountCanUpload 已重构为 cloudDrive.can(accountId, AccountCaps.write) 的薄封装。
+  // 能力判定逻辑由 CloudDriveService.can 本身覆盖，不在此重复测试（2026-10-15）。
 
   group('pack follow-up markers', () {
     test('round-trips the upload target, including odd source names', () {

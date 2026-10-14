@@ -131,6 +131,7 @@ class FakeCloudSource implements CloudSource {
     Stream<List<int>> content,
     int length, {
     void Function(int count)? onProgress,
+    dynamic cancelToken,
   }) async {
     final bb = BytesBuilder(copy: false);
     await for (final chunk in content) {
@@ -145,9 +146,9 @@ class FakeCloudSource implements CloudSource {
 
 CryptDriver buildDriver(FakeCloudSource source) {
   // 源条目按 crypt 语义预置：/789 下有 photos/（目录）与 song.flac。
-  source.addPlainDir('/src456/789');
-  source.addPlainDir('/src456/789/photos');
-  source.addPlainFile('/src456/789/song.flac', 'hello crypt 你好');
+  source.addPlainDir('/789');
+  source.addPlainDir('/789/photos');
+  source.addPlainFile('/789/song.flac', 'hello crypt 你好');
   final env = CloudDriverEnv(
     resolveSource: (_) => null,
     resolveSourceByName: (name) => name == '源A' ? source : null,
@@ -269,7 +270,7 @@ void main() {
     await driver.mkdir('/新专辑');
     expect(source.mkdirCalls, hasLength(1));
     final inner = source.mkdirCalls.single;
-    expect(inner.startsWith('/src456/789/'), isTrue);
+    expect(inner.startsWith('/789/'), isTrue);
     final created = inner.split('/').last;
     expect(cipher.decryptDirName(created), '新专辑');
   });
@@ -291,7 +292,7 @@ void main() {
     expect(cipher.decryptFileName(call.$2.split('/').last), 'renamed.flac');
   });
 
-  test('uploadContent streams plaintext through encryption to the source', () async {
+  test('uploadStream streams plaintext through encryption to the source', () async {
     final cipher = RcloneCipher(
       password: 'testpass',
       salt: 'testsalt',
@@ -312,7 +313,7 @@ void main() {
       Uint8List.sublistView(plain, kBlockDataSize),
     ];
     final progress = <int>[];
-    await driver.uploadContent(
+    await driver.uploadStream(
       '/newdir/track.bin',
       Stream<List<int>>.fromIterable(chunks),
       plain.length,
@@ -322,7 +323,7 @@ void main() {
     // 路径映射：目录逐段 encryptDirName，末段 encryptFileName。
     expect(source.writes, hasLength(1));
     final inner = source.writes.keys.single;
-    expect(inner.startsWith('/src456/789/'), isTrue);
+    expect(inner.startsWith('/789/'), isTrue);
     final segs = inner.split('/');
     expect(cipher.decryptDirName(segs[segs.length - 2]), 'newdir');
     expect(cipher.decryptFileName(segs.last), 'track.bin');
@@ -332,9 +333,9 @@ void main() {
     expect(cipherBytes.length, RcloneCipher.encryptedSize(plain.length));
     expect(cipher.decrypt(cipherBytes), plain);
 
-    // 进度单调递增且终值 = 密文长度。
+    // 进度单调递增且终值 = 明文长度（进度已归一化为明文口径）。
     expect(progress, isNotEmpty);
-    expect(progress.last, cipherBytes.length);
+    expect(progress.last, plain.length);
     for (var i = 1; i < progress.length; i++) {
       expect(progress[i] >= progress[i - 1], isTrue);
     }
