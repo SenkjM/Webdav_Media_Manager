@@ -10,24 +10,24 @@ import 'package:webdav_media_manager/widgets/meta_text.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('theme mode storage keys round-trip and unknown stays light', () {
+  test('theme mode storage keys round-trip and unknown follows system', () {
     for (final mode in AppThemeMode.values) {
       expect(AppThemeModeX.fromStorageKey(mode.storageKey), mode);
     }
-    expect(AppThemeModeX.fromStorageKey(null), AppThemeMode.light);
-    expect(AppThemeModeX.fromStorageKey('nope'), AppThemeMode.light);
+    expect(AppThemeModeX.fromStorageKey(null), AppThemeMode.system);
+    expect(AppThemeModeX.fromStorageKey('nope'), AppThemeMode.system);
     expect(AppThemeMode.light.themeMode, ThemeMode.light);
     expect(AppThemeMode.dark.themeMode, ThemeMode.dark);
     expect(AppThemeMode.system.themeMode, ThemeMode.system);
   });
 
-  test('settings persist theme mode and default to light', () async {
+  test('settings persist theme mode and default to system', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final fresh = SettingsService(prefs: prefs);
     await fresh.init();
-    expect(fresh.appThemeMode, AppThemeMode.light);
-    expect(fresh.themeMode, ThemeMode.light);
+    expect(fresh.appThemeMode, AppThemeMode.system);
+    expect(fresh.themeMode, ThemeMode.system);
 
     await fresh.setAppThemeMode(AppThemeMode.dark);
     final restored = SettingsService(prefs: prefs);

@@ -204,12 +204,12 @@ class MainActivity : AudioServiceFragmentActivity() {
             result.success(null)
             return
         }
-        val uri = data?.data
-        if (uri == null) {
-            result.success(null)
-            return
-        }
         if (requestCode == REQUEST_PICK_FOLDER) {
+            val uri = data?.data
+            if (uri == null) {
+                result.success(null)
+                return
+            }
             // Copying a whole tree can take a while on big folders; run it off
             // the main thread so the UI (and every other channel) stays live,
             // then deliver the result back on the main thread.
@@ -221,13 +221,21 @@ class MainActivity : AudioServiceFragmentActivity() {
             }
             return
         }
+        // With EXTRA_ALLOW_MULTIPLE some pickers report every selection only via
+        // clipData and leave data.data null — even for a single pick. Collect
+        // clipData first and fall back to data.data, so single-select callers
+        // (backup import, subtitle pick, …) are not misread as a cancel.
         thread(name = "saf-file-import") {
             val payload = runCatching {
                 val uris = mutableListOf<Uri>()
-                data.clipData?.let { clip ->
+                data?.clipData?.let { clip ->
                     for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
                 }
-                if (uris.isEmpty()) uris.add(uri)
+                data?.data?.let { uris.add(it) }
+                if (uris.isEmpty()) {
+                    runOnUiThread { result.success(null) }
+                    return@thread
+                }
                 val files = uris.distinct().map { copyPickedFile(it) }
                 mapOf("ok" to true, "files" to files)
             }.getOrElse { e ->

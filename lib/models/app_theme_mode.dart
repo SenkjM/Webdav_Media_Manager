@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-/// Light / dark / follow system. Missing or unknown storage stays light so
-/// existing installs keep the previous hardcoded [ThemeMode.light].
+/// Light / dark / follow system. Missing storage defaults to follow system;
+/// an explicit stored choice is always honored as-is.
 enum AppThemeMode { system, light, dark }
 
 extension AppThemeModeX on AppThemeMode {
@@ -18,8 +18,9 @@ extension AppThemeModeX on AppThemeMode {
   };
 
   static AppThemeMode fromStorageKey(String? value) => switch (value) {
-    'system' => AppThemeMode.system,
+    'light' => AppThemeMode.light,
     'dark' => AppThemeMode.dark,
-    _ => AppThemeMode.light,
+    // Missing or unknown storage follows the system by default.
+    _ => AppThemeMode.system,
   };
 }

@@ -388,7 +388,7 @@ class SettingsService extends ChangeNotifier {
   /// null means「跟随当前选中的网盘」.
   String? _syncAccountId;
   AppLocalePreference _appLocale = AppLocalePreference.system;
-  AppThemeMode _appThemeMode = AppThemeMode.light;
+  AppThemeMode _appThemeMode = AppThemeMode.system;
   int _themeSeedArgb = defaultThemeSeedArgb;
   bool _loaded = false;
 
