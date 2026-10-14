@@ -121,6 +121,26 @@ class FakeCloudSource implements CloudSource {
     if (v == null) throw const CloudDriverException('not found');
     entries['$dstDir/$newName'.replaceFirst('//', '/')] = v;
   }
+
+  /// 上传记录：写入路径 → 收到的密文字节。供 crypt 上传测试断言。
+  final Map<String, Uint8List> writes = {};
+
+  @override
+  Future<void> writeFile(
+    String path,
+    Stream<List<int>> content,
+    int length, {
+    void Function(int count)? onProgress,
+  }) async {
+    final bb = BytesBuilder(copy: false);
+    await for (final chunk in content) {
+      bb.add(chunk);
+      onProgress?.call(bb.length);
+    }
+    writes[path] = bb.toBytes();
+    entries[path] = (false, bb.length);
+    contents[path] = bb.toBytes();
+  }
 }
 
 CryptDriver buildDriver(FakeCloudSource source) {
@@ -190,25 +210,39 @@ void main() {
     await expectLater(driver.list('/'), throwsA(isA<CloudDriverException>()));
   });
 
-  test('runtime capabilities inherit source but never write', () async {
+  test('runtime capabilities fully inherit source, including write', () async {
     final source = FakeCloudSource(
       RcloneCipher(
         password: 'testpass',
         salt: 'testsalt',
         mode: NameEncryptionMode.standard,
       ),
-      capabilities: AccountCaps.all, // 源有 write（WebDAV 配置）
+      capabilities: AccountCaps.all, // 源有 write → crypt 继承 write
     );
     final driver = buildDriver(source);
     await driver.init();
     final caps = driver.runtimeCapabilities!;
-    expect(
-      AccountCaps.has(caps, AccountCaps.write),
-      isFalse,
-      reason: '上传权限传递隔离（99 §7.5）',
-    );
+    // 能力完全继承：与源类型名无关，只透传能力位（用户决定，取代 99 §7.5
+    // 的「上传权限传递隔离」）。
+    expect(AccountCaps.has(caps, AccountCaps.write), isTrue);
     expect(AccountCaps.has(caps, AccountCaps.read), isTrue);
     expect(AccountCaps.has(caps, AccountCaps.mkdir), isTrue);
+  });
+
+  test('runtime capabilities drop write when source cannot write', () async {
+    final source = FakeCloudSource(
+      RcloneCipher(
+        password: 'testpass',
+        salt: 'testsalt',
+        mode: NameEncryptionMode.standard,
+      ),
+      capabilities: AccountCaps.all & ~AccountCaps.write, // 源不可写
+    );
+    final driver = buildDriver(source);
+    await driver.init();
+    final caps = driver.runtimeCapabilities!;
+    expect(AccountCaps.has(caps, AccountCaps.write), isFalse);
+    expect(AccountCaps.has(caps, AccountCaps.read), isTrue);
   });
 
   test('runtime capabilities null when source missing', () {
@@ -255,6 +289,55 @@ void main() {
     final call = source.renameCalls.single;
     expect(cipher.decryptFileName(call.$1.split('/').last), 'song.flac');
     expect(cipher.decryptFileName(call.$2.split('/').last), 'renamed.flac');
+  });
+
+  test('uploadContent streams plaintext through encryption to the source', () async {
+    final cipher = RcloneCipher(
+      password: 'testpass',
+      salt: 'testsalt',
+      mode: NameEncryptionMode.standard,
+      dirNameEncrypt: true,
+    );
+    final source = FakeCloudSource(cipher);
+    final driver = buildDriver(source);
+    await driver.init();
+
+    // 跨块边界的明文（> 64KiB），任意切块喂入。
+    final plain = Uint8List.fromList(
+      List<int>.generate(kBlockDataSize + 1234, (i) => (i * 31 + 7) & 0xFF),
+    );
+    final chunks = <List<int>>[
+      Uint8List.sublistView(plain, 0, 100),
+      Uint8List.sublistView(plain, 100, kBlockDataSize),
+      Uint8List.sublistView(plain, kBlockDataSize),
+    ];
+    final progress = <int>[];
+    await driver.uploadContent(
+      '/newdir/track.bin',
+      Stream<List<int>>.fromIterable(chunks),
+      plain.length,
+      onProgress: progress.add,
+    );
+
+    // 路径映射：目录逐段 encryptDirName，末段 encryptFileName。
+    expect(source.writes, hasLength(1));
+    final inner = source.writes.keys.single;
+    expect(inner.startsWith('/src456/789/'), isTrue);
+    final segs = inner.split('/');
+    expect(cipher.decryptDirName(segs[segs.length - 2]), 'newdir');
+    expect(cipher.decryptFileName(segs.last), 'track.bin');
+
+    // 密文长度 = 预算值；解密回环 = 原明文。
+    final cipherBytes = source.writes[inner]!;
+    expect(cipherBytes.length, RcloneCipher.encryptedSize(plain.length));
+    expect(cipher.decrypt(cipherBytes), plain);
+
+    // 进度单调递增且终值 = 密文长度。
+    expect(progress, isNotEmpty);
+    expect(progress.last, cipherBytes.length);
+    for (var i = 1; i < progress.length; i++) {
+      expect(progress[i] >= progress[i - 1], isTrue);
+    }
   });
 
   test('spec declares required fields', () {

@@ -266,6 +266,21 @@ abstract class CloudSource {
   Future<void> remove(String path);
   Future<void> move(String srcPath, String dstDir, String newName);
   Future<void> copy(String srcPath, String dstDir, String newName);
+
+  /// 流式写入：把 [content] 落到 [path]，密文/明文由调用方决定。
+  ///
+  /// [length] 是内容总字节数（Content-Length）；[onProgress] 回传已写字节数。
+  /// 能力由 [capabilities] 的 write 位表达——没有该位的源不实现本方法，
+  /// 调用前必须先用 `AccountCaps.has(capabilities, AccountCaps.write)` 判断，
+  /// 而不是按源的类型名特判。默认抛 [UnsupportedError]：未实现的源即不可写。
+  Future<void> writeFile(
+    String path,
+    Stream<List<int>> content,
+    int length, {
+    void Function(int count)? onProgress,
+  }) {
+    throw UnsupportedError('err.sourceNotWritable');
+  }
 }
 
 /// 兼容层注入给驱动的运行环境。
@@ -411,4 +426,16 @@ class CloudAccountSource implements CloudSource {
   @override
   Future<void> copy(String srcPath, String dstDir, String newName) =>
       _driver.copy(_join(srcPath), _join(dstDir), newName);
+
+  // 云盘源不写：CloudDriver 接口无上传原语，源不可写 → crypt 也不继承 write。
+  // 未来某驱动补上传时在此转调，并给该驱动 spec.capabilities 加 write 位。
+  @override
+  Future<void> writeFile(
+    String path,
+    Stream<List<int>> content,
+    int length, {
+    void Function(int count)? onProgress,
+  }) {
+    throw UnsupportedError('err.sourceNotWritable');
+  }
 }

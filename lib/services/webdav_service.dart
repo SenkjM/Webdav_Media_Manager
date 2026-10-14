@@ -415,6 +415,31 @@ class WebDavService extends ChangeNotifier {
     );
   }
 
+  /// Stream an in-memory/channel-produced byte stream to [remotePath].
+  ///
+  /// [writeFromFile] sources its stream from a local file; this one takes an
+  /// arbitrary [Stream<List<int>>] — used by the crypt upload path, where the
+  /// ciphertext is produced on the fly and never touches disk. [length] is the
+  /// total byte count (Content-Length).
+  Future<void> writeStream(
+    String accountId,
+    String remotePath,
+    Stream<List<int>> data,
+    int length, {
+    void Function(int count, int total)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final client = _requireClient(accountId);
+    await client.c.wdWriteWithStream(
+      client,
+      remotePath,
+      data,
+      length,
+      onProgress: onProgress,
+      cancelToken: cancelToken,
+    );
+  }
+
   /// Ensure directory exists (mkdirAll) on a specific account.
   Future<void> ensureDirectory(String accountId, String path) async {
     final cloud = _cloudOf(accountId);

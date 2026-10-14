@@ -553,10 +553,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get encryptionSettings => '加密设置';
 
   @override
-  String get encryptionSettingsSubtitle => '设置 Crypt 下载和 secretbox 引擎';
+  String get encryptionSettingsSubtitle => '设置 Crypt 传输和 secretbox 引擎';
 
   @override
-  String get encryptionCryptSection => 'Crypt 下载';
+  String get encryptionCryptSection => 'Crypt 传输';
 
   @override
   String get encryptionSecretboxSection => '内容 secretbox 引擎';
@@ -860,7 +860,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dlCryptSequential => 'Crypt 顺序流';
 
   @override
-  String get dlCryptSequentialSub => '仅影响下载任务，在线播放和传统续传不变';
+  String get dlCryptSequentialSub => '只在上传和下载时生效；在线播放与传统续传不变';
 
   @override
   String get dlCleanNow => '立即清理';
@@ -5491,10 +5491,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get encryptionSettings => '加密設定';
 
   @override
-  String get encryptionSettingsSubtitle => '設定 Crypt 下載和 secretbox 引擎';
+  String get encryptionSettingsSubtitle => '設定 Crypt 傳輸和 secretbox 引擎';
 
   @override
-  String get encryptionCryptSection => 'Crypt 下載';
+  String get encryptionCryptSection => 'Crypt 傳輸';
 
   @override
   String get encryptionSecretboxSection => '內容 secretbox 引擎';
@@ -5798,7 +5798,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get dlCryptSequential => 'Crypt 順序流';
 
   @override
-  String get dlCryptSequentialSub => '僅影響下載任務，線上播放與傳統續傳不變';
+  String get dlCryptSequentialSub => '只在上傳和下載時生效；線上播放與傳統續傳不變';
 
   @override
   String get dlCleanNow => '立即清理';

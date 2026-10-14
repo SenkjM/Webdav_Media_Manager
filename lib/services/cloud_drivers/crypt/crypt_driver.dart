@@ -988,6 +988,67 @@ class CryptDriver extends CloudDriver {
     return int.tryParse(total);
   }
 
+  /// 流式加密上传：本地明文流 → 逐块 secretbox 加密 → 源的写入原语。
+  ///
+  /// 这是 [openDownloadContent] 的上传方向孪生件——下载侧是「一次密文 GET
+  /// → 逐块解密产出明文」，这里是「读本地明文流 → 逐块加密产出密文 → 一次
+  /// PUT」。加密用包侧的 [RcloneStreamEncrypter]（O(64KiB) 内存，任意大文件
+  /// 不整体驻留），路径用 [_mapToInner] 逐段 `encryptDirName`/`encryptFileName`
+  /// 映射到内层密文路径。
+  ///
+  /// 能力语义：调用方（任务队列 / UI）必须先用 [runtimeCapabilities] 的 write
+  /// 位判断——源可写 crypt 才可写，与源的类型名无关。本方法自身不查类型。
+  ///
+  /// 不可断点续传：rclone crypt 的文件 nonce 在 32B 头部，重传即新密文，
+  /// 失败重试 = 整文件重来（与任务队列的整文件重试模型一致）。
+  ///
+  /// [plainSize] 是明文字节数，用于预算密文 Content-Length；[onProgress]
+  /// 回传**已上传的密文字节数**（单调递增，可用于进度条）。
+  Future<void> uploadContent(
+    String path,
+    Stream<List<int>> plaintext,
+    int plainSize, {
+    void Function(int count)? onProgress,
+    CancelToken? cancelToken,
+  }) async {
+    final src = _requireSource();
+    final cipher = await _cipherFuture;
+    final innerPath = await _mapToInner(path, lastIsFile: true);
+
+    // 预算密文长度：32B 头 + 每块 16B MAC。Content-Length 必须给准，
+    // 否则 WebDAV PUT 无法定长。
+    final cipherLength = RcloneCipher.encryptedSize(plainSize);
+
+    final enc = RcloneStreamEncrypter(cipher);
+    final header = enc.header();
+
+    // 把「32B 头 + 流式密文块 + 尾块」拼成一条密文流喂给源。
+    Stream<List<int>> cipherStream() async* {
+      yield header;
+      await for (final chunk in plaintext) {
+        if (cancelToken?.isCancelled ?? false) {
+          throw DioException(
+            requestOptions: RequestOptions(path: innerPath),
+            type: DioExceptionType.cancel,
+          );
+        }
+        for (final block in enc.push(Uint8List.fromList(chunk))) {
+          yield block;
+        }
+      }
+      for (final tail in enc.close()) {
+        yield tail;
+      }
+    }
+
+    await src.writeFile(
+      innerPath,
+      cipherStream(),
+      cipherLength,
+      onProgress: onProgress,
+    );
+  }
+
   @override
   Future<void> dispose() async {
     _invalidateTargets();
@@ -997,9 +1058,10 @@ class CryptDriver extends CloudDriver {
   int? get runtimeCapabilities {
     try {
       final s = _requireSource();
-      // 上传权限传递隔离：源即使有 write（WebDAV 配置），crypt 也绝不继承——
-      // 内容上传不在 crypt 能力里（99 §7.5 用户决定）。
-      return (s.capabilities | AccountCaps.list) & ~AccountCaps.write;
+      // 能力完全继承：crypt 是源的加密包装层，源有什么能力 crypt 就有什么
+      // 能力（含 write），与源的类型名无关——只透传能力位。源可写 → crypt
+      // 借源的写入通道写密文（见 uploadContent）；源不可写 → crypt 自然不可写。
+      return s.capabilities | AccountCaps.list;
     } catch (_) {
       return null; // 源不存在：回落静态表（保守）。
     }
@@ -1034,7 +1096,9 @@ class CryptSpec extends CloudDriverSpec {
   @override
   bool get isWrapper => true;
 
-  // 静态保守值（运行时随源映射并剥 write，见 CryptDriver.runtimeCapabilities）。
+  // 静态保守值：源解析失败时的回落。运行时以源为准完全继承（含 write），
+  // 见 CryptDriver.runtimeCapabilities——静态表不给 write 是保守兜底，
+  // 真正的能力判定走 runtimeCapabilities。
   @override
   int get capabilities =>
       AccountCaps.list |

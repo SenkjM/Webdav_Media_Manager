@@ -108,6 +108,16 @@ class _FakeSource implements CloudSource {
 
   @override
   Future<void> copy(String srcPath, String dstDir, String newName) async {}
+
+  @override
+  Future<void> writeFile(
+    String path,
+    Stream<List<int>> content,
+    int length, {
+    void Function(int count)? onProgress,
+  }) async {
+    throw UnsupportedError('err.sourceNotWritable');
+  }
 }
 
 void main() {

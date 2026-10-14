@@ -96,4 +96,19 @@ class WebDavAccountSource implements CloudSource {
   @override
   Future<void> copy(String srcPath, String dstDir, String newName) => _webDav
       .copyPath(_account.id, _join(srcPath), cloudJoinPath([dstDir, newName]));
+
+  @override
+  Future<void> writeFile(
+    String path,
+    Stream<List<int>> content,
+    int length, {
+    void Function(int count)? onProgress,
+  }) =>
+      _webDav.writeStream(
+        _account.id,
+        _join(path),
+        content,
+        length,
+        onProgress: onProgress == null ? null : (c, _) => onProgress(c),
+      );
 }

@@ -13,6 +13,7 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
 import 'cloud_driver.dart';
+import 'cloud_drivers/crypt/crypt_driver.dart';
 import 'cloud_drivers/driver_registry.dart';
 import 'cloud_drivers/stream_bridge.dart';
 import 'resumable_download.dart';
@@ -417,15 +418,31 @@ class CloudDriveService extends ChangeNotifier {
     throw UnsupportedError(_writeDisabled);
   }
 
-  /// 同 [writeBytes]：云盘驱动接口（`CloudDriver`）里根本没有上传原语，
-  /// 这里如实抛错，不是留了个空壳（99 §7.2.1）。
+  /// 云盘写入口。crypt 是例外：它是源的加密包装层，借源的写入通道上传
+  /// 密文（能力由 runtimeCapabilities 完全继承源，与源类型名无关）。其余
+  /// 云盘驱动接口（`CloudDriver`）里根本没有上传原语，照旧如实抛错——
+  /// 这不是留了个空壳（99 §7.2.1）。
   Future<void> writeFromFile(
     String accountId,
     String remotePath,
     String localPath, {
     void Function(int count, int total)? onProgress,
     CancelToken? cancelToken,
-  }) {
+  }) async {
+    final driver = _drivers[accountId];
+    if (driver is CryptDriver) {
+      final file = File(localPath);
+      final plainSize = file.lengthSync();
+      final remote = _remote(accountId, remotePath);
+      await driver.uploadContent(
+        remote,
+        file.openRead(),
+        plainSize,
+        onProgress: onProgress == null ? null : (c) => onProgress(c, plainSize),
+        cancelToken: cancelToken,
+      );
+      return;
+    }
     throw UnsupportedError(_writeDisabled);
   }
 

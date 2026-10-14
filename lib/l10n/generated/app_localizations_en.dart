@@ -566,10 +566,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get encryptionSettingsSubtitle =>
-      'Configure Crypt downloads and the secretbox engine';
+      'Configure Crypt transfers and the secretbox engine';
 
   @override
-  String get encryptionCryptSection => 'Crypt downloads';
+  String get encryptionCryptSection => 'Crypt transfers';
 
   @override
   String get encryptionSecretboxSection => 'Content secretbox engine';
@@ -890,7 +890,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dlCryptSequentialSub =>
-      'Affects download tasks only; online playback and legacy resume are unchanged';
+      'Takes effect on uploads and downloads only; online playback and legacy resume are unchanged';
 
   @override
   String get dlCleanNow => 'Clean now';

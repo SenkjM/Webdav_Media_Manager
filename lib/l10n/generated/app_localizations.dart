@@ -1122,13 +1122,13 @@ abstract class AppLocalizations {
   /// No description provided for @encryptionSettingsSubtitle.
   ///
   /// In zh, this message translates to:
-  /// **'设置 Crypt 下载和 secretbox 引擎'**
+  /// **'设置 Crypt 传输和 secretbox 引擎'**
   String get encryptionSettingsSubtitle;
 
   /// No description provided for @encryptionCryptSection.
   ///
   /// In zh, this message translates to:
-  /// **'Crypt 下载'**
+  /// **'Crypt 传输'**
   String get encryptionCryptSection;
 
   /// No description provided for @encryptionSecretboxSection.
@@ -1692,7 +1692,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlCryptSequentialSub.
   ///
   /// In zh, this message translates to:
-  /// **'仅影响下载任务，在线播放和传统续传不变'**
+  /// **'只在上传和下载时生效；在线播放与传统续传不变'**
   String get dlCryptSequentialSub;
 
   /// No description provided for @dlCleanNow.
