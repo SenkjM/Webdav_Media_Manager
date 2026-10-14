@@ -138,9 +138,14 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          # force-version-code-ignoring-abi：关掉 Flutter 分包时给 versionCode
+          # 加 ABI 偏移（abi*1000）的行为。否则 arm64-v8a 的 versionCode 会比
+          # 下一个预发布 tag 里编码的 code 大 2000，应用内更新检查永远判定
+          # 「已是最新」。三个 ABI 包 versionCode 相同对 GitHub Release 侧载无影响。
           flutter build apk --release --flavor prod --split-per-abi \
             --build-name="${{ needs.check.outputs.version_name }}" \
-            --build-number="${{ needs.check.outputs.version_code }}"
+            --build-number="${{ needs.check.outputs.version_code }}" \
+            -P force-version-code-ignoring-abi=true
 
       - name: Collect split APKs
         run: |
