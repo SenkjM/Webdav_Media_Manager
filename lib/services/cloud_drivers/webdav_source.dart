@@ -1,3 +1,5 @@
+import 'package:dio/dio.dart';
+
 import '../../models/account_capabilities.dart';
 import '../../models/webdav_account.dart';
 import '../cloud_driver.dart';
@@ -103,6 +105,7 @@ class WebDavAccountSource implements CloudSource {
     Stream<List<int>> content,
     int length, {
     void Function(int count)? onProgress,
+    CancelToken? cancelToken,
   }) =>
       _webDav.writeStream(
         _account.id,
@@ -110,5 +113,6 @@ class WebDavAccountSource implements CloudSource {
         content,
         length,
         onProgress: onProgress == null ? null : (c, _) => onProgress(c),
+        cancelToken: cancelToken,
       );
 }

@@ -5,7 +5,7 @@ import 'package:dio/dio.dart';
 /// 语义对齐 OpenList worker 的 `StorageDriver`
 /// （localdev/OpenList-Worker/src/backend/internal/driver/base.ts）：
 /// [get] 返回直链 + 必需请求头，下载与流式都走「直链 + 头」。
-/// **没有 put / 上传**——上传已按 99 §7.2.1 砍掉。
+/// 上传能力由驱动 uploadStream 原语声明。
 enum CloudDownloadMode { cryptSequential, direct, cryptRange }
 
 abstract class CloudDriver {
@@ -64,6 +64,21 @@ abstract class CloudDriver {
 
   /// 复制到 [dstDir]，名字 [newName]。
   Future<void> copy(String srcPath, String dstDir, String newName);
+
+  /// 上传流：把 [stream] 写到 [path]（[size] 为字节数，进度与取消可选）。
+  /// 驱动按需实现；默认抛 [UnsupportedError]。
+  Future<void> uploadStream(
+    String path,
+    Stream<List<int>> stream,
+    int size, {
+    void Function(int sent)? onProgress,
+    CancelToken? cancelToken,
+  }) => throw UnsupportedError('err.uploadStreamUnsupported');
+
+  /// 幂等建目录：路径已存在时不报错。
+  /// 驱动按需实现；默认抛 [UnsupportedError]。
+  Future<void> ensureDirectory(String path) =>
+      throw UnsupportedError('err.ensureDirectoryUnsupported');
 }
 
 /// 目录条目（对齐 worker `FileItem` 的字段子集 + 直链）。
@@ -278,6 +293,7 @@ abstract class CloudSource {
     Stream<List<int>> content,
     int length, {
     void Function(int count)? onProgress,
+    CancelToken? cancelToken,
   }) {
     throw UnsupportedError('err.sourceNotWritable');
   }
@@ -435,6 +451,7 @@ class CloudAccountSource implements CloudSource {
     Stream<List<int>> content,
     int length, {
     void Function(int count)? onProgress,
+    CancelToken? cancelToken,
   }) {
     throw UnsupportedError('err.sourceNotWritable');
   }

@@ -165,15 +165,17 @@ class CryptDriver extends CloudDriver {
     return s;
   }
 
-  /// 外层明文路径 → 内层密文路径：源浏览根 + 源目录 + 逐段加密。
+  /// 外层明文路径 → 内层密文路径：源目录 + 逐段加密。
+  ///
+  /// 约定：传给源层的 path 相对源的 basePath（源层每个方法自己拼 basePath），
+  /// 因此这里**不**再拼 src.basePath，只拼 _sourceDir + 逐段加密名。
   Future<String> _mapToInner(
     String outerPath, {
     required bool lastIsFile,
   }) async {
-    final src = _requireSource();
     final cipher = await _cipherFuture;
     final segs = outerPath.split('/').where((s) => s.isNotEmpty).toList();
-    final parts = <String>[src.basePath];
+    final parts = <String>[];
     parts.addAll(_sourceDir.split('/'));
     for (var i = 0; i < segs.length; i++) {
       final last = i == segs.length - 1;
@@ -988,36 +990,31 @@ class CryptDriver extends CloudDriver {
     return int.tryParse(total);
   }
 
-  /// 流式加密上传：本地明文流 → 逐块 secretbox 加密 → 源的写入原语。
+  /// 流式加密上传（[CloudDriver.uploadStream] 实现）：明文流 → 逐块 secretbox 加密 → 源写入原语。
   ///
-  /// 这是 [openDownloadContent] 的上传方向孪生件——下载侧是「一次密文 GET
-  /// → 逐块解密产出明文」，这里是「读本地明文流 → 逐块加密产出密文 → 一次
-  /// PUT」。加密用包侧的 [RcloneStreamEncrypter]（O(64KiB) 内存，任意大文件
-  /// 不整体驻留），路径用 [_mapToInner] 逐段 `encryptDirName`/`encryptFileName`
-  /// 映射到内层密文路径。
+  /// 这是 [openDownloadContent] 的上传方向孪生件。加密用包侧的 [RcloneStreamEncrypter]
+  /// （O(64KiB) 内存，任意大文件不整体驻留），路径用 [_mapToInner] 逐段加密映射到密文路径。
   ///
-  /// 能力语义：调用方（任务队列 / UI）必须先用 [runtimeCapabilities] 的 write
-  /// 位判断——源可写 crypt 才可写，与源的类型名无关。本方法自身不查类型。
+  /// 能力语义：调用方必须先查 [runtimeCapabilities] write 位——源可写 crypt 才可写。
   ///
-  /// 不可断点续传：rclone crypt 的文件 nonce 在 32B 头部，重传即新密文，
-  /// 失败重试 = 整文件重来（与任务队列的整文件重试模型一致）。
+  /// 不可断点续传：rclone crypt nonce 在 32B 头部，重传即新密文，失败重试 = 整文件重来。
   ///
-  /// [plainSize] 是明文字节数，用于预算密文 Content-Length；[onProgress]
-  /// 回传**已上传的密文字节数**（单调递增，可用于进度条）。
-  Future<void> uploadContent(
+  /// [size] 是明文字节数，用于预算密文 Content-Length；[onProgress] 回传**明文口径**
+  /// 已上传字节数（double 计算防 3GiB 溢出）。
+  @override
+  Future<void> uploadStream(
     String path,
-    Stream<List<int>> plaintext,
-    int plainSize, {
-    void Function(int count)? onProgress,
+    Stream<List<int>> stream,
+    int size, {
+    void Function(int sent)? onProgress,
     CancelToken? cancelToken,
   }) async {
     final src = _requireSource();
     final cipher = await _cipherFuture;
     final innerPath = await _mapToInner(path, lastIsFile: true);
 
-    // 预算密文长度：32B 头 + 每块 16B MAC。Content-Length 必须给准，
-    // 否则 WebDAV PUT 无法定长。
-    final cipherLength = RcloneCipher.encryptedSize(plainSize);
+    // 预算密文长度：32B 头 + 每块 16B MAC。Content-Length 必须给准，否则 WebDAV PUT 无法定长。
+    final cipherLength = RcloneCipher.encryptedSize(size);
 
     final enc = RcloneStreamEncrypter(cipher);
     final header = enc.header();
@@ -1025,7 +1022,7 @@ class CryptDriver extends CloudDriver {
     // 把「32B 头 + 流式密文块 + 尾块」拼成一条密文流喂给源。
     Stream<List<int>> cipherStream() async* {
       yield header;
-      await for (final chunk in plaintext) {
+      await for (final chunk in stream) {
         if (cancelToken?.isCancelled ?? false) {
           throw DioException(
             requestOptions: RequestOptions(path: innerPath),
@@ -1045,8 +1042,54 @@ class CryptDriver extends CloudDriver {
       innerPath,
       cipherStream(),
       cipherLength,
-      onProgress: onProgress,
+      // 进度归一化：密文字节数 → 明文口径，double 计算防 3GiB 溢出
+      onProgress: onProgress == null
+          ? null
+          : (cipherSent) {
+              final plain = cipherLength == 0
+                  ? size
+                  : (cipherSent.toDouble() * size / cipherLength)
+                        .round()
+                        .clamp(0, size);
+              onProgress(plain);
+            },
+      cancelToken: cancelToken,
     );
+  }
+
+  /// 幂等建目录（[CloudDriver.ensureDirectory] 实现）：逐级加密路径名后调源层建目录；
+  /// 「已存在」错误（WebDAV 405/409）静默吞掉，其他错误继续上抛。
+  @override
+  Future<void> ensureDirectory(String path) async {
+    final src = _requireSource();
+    final cipher = await _cipherFuture;
+    final segs = path.split('/').where((s) => s.isNotEmpty).toList();
+
+    // 逐级累积加密名后建目录（每级需单独加密目录名）
+    final encSegs = <String>[];
+    for (final seg in segs) {
+      encSegs.add(cipher.encryptDirName(seg));
+      final parts = <String>[..._sourceDir.split('/'), ...encSegs];
+      final innerDir = cloudJoinPath(parts);
+      try {
+        await src.mkdir(innerDir);
+      } catch (e) {
+        if (_isAlreadyExists(e)) continue;
+        rethrow;
+      }
+    }
+  }
+
+  /// 判断异常是否代表「目录已存在」（WebDAV 405 Method Not Allowed / 409 Conflict）。
+  static bool _isAlreadyExists(Object e) {
+    if (e is DioException) {
+      final code = e.response?.statusCode;
+      if (code == 405 || code == 409) return true;
+    }
+    if (e is CloudDriverException) {
+      return e.message.contains('405') || e.message.contains('409');
+    }
+    return false;
   }
 
   @override
