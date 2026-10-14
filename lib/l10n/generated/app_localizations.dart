@@ -8036,8 +8036,20 @@ abstract class AppLocalizations {
   /// No description provided for @mangaPackHint.
   ///
   /// In zh, this message translates to:
-  /// **'逐页下载并打包成一个 CBZ，然后上传到所选目录'**
+  /// **'打包成 CBZ 并上传到所选账号；上传完成后再刮削，刮削成功后才删除原来的散页'**
   String get mangaPackHint;
+
+  /// No description provided for @mangaPackPickAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择上传账号'**
+  String get mangaPackPickAccount;
+
+  /// No description provided for @mangaPackNoUploadAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有可上传的账号'**
+  String get mangaPackNoUploadAccount;
 
   /// No description provided for @mangaBuildQueued.
   ///

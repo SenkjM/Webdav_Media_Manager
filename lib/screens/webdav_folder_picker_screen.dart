@@ -3,10 +3,12 @@ import 'package:provider/provider.dart';
 
 import '../models/account_capabilities.dart';
 import '../models/file_type_config.dart';
+import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/meta_text.dart';
 import '../utils/app_snack.dart';
 import '../utils/audio_extensions.dart';
@@ -26,6 +28,8 @@ class WebDavFolderPickerScreen extends StatefulWidget {
     required this.purpose,
     this.initialPath = '/',
     this.excludedPath,
+    this.accountChoices = const [],
+    this.onAccountChanged,
   });
 
   final String accountId;
@@ -37,6 +41,12 @@ class WebDavFolderPickerScreen extends StatefulWidget {
 
   /// 不允许选中的路径（移动文件夹时不能把它移进自己里面）。
   final String? excludedPath;
+
+  /// 可切换的上传账号。空列表表示钉死在 [accountId]（复制 / 移动 / 重扫）。
+  final List<WebDavAccount> accountChoices;
+
+  /// 用户改了账号时回调。路由仍只返回目录路径，新账号 id 由调用方从这里拿。
+  final ValueChanged<String>? onAccountChanged;
 
   @override
   State<WebDavFolderPickerScreen> createState() =>
@@ -50,14 +60,36 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
   List<WebDavItem> _items = const [];
   bool _loading = false;
   String? _error;
+  late String _accountId;
 
   String get _path => _stack.last;
+
+  bool get _canSwitchAccount {
+    if (widget.accountChoices.length < 2) return false;
+    return widget.accountChoices.any((a) => a.id == _accountId);
+  }
 
   @override
   void initState() {
     super.initState();
+    _accountId = widget.accountId;
     _stack.addAll(remoteAncestors(widget.initialPath));
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  /// 换账号后原路径作废：散页目录在另一个后端上不存在。
+  void _switchAccount(String? id) {
+    if (id == null || id == _accountId) return;
+    setState(() {
+      _accountId = id;
+      _stack
+        ..clear()
+        ..add('/');
+      _items = const [];
+      _error = null;
+    });
+    widget.onAccountChanged?.call(id);
+    _load();
   }
 
   /// 当前位置是否就是被排除的那个目录（移动文件夹时不能选它）。
@@ -77,7 +109,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
     });
     try {
       final items = await context.read<WebDavService>().listDirectory(
-        widget.accountId,
+        _accountId,
         _path,
       );
       if (!mounted) return;
@@ -137,7 +169,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
     final parent = _path.endsWith('/') ? _path : '$_path/';
     await runWebDavAction(context, () async {
       await context.read<WebDavService>().createFolder(
-        widget.accountId,
+        _accountId,
         '$parent$name',
       );
       await _load();
@@ -180,7 +212,7 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
             ),
             // 新建文件夹按「创建文件夹」能力遮罩（99 §7.2.6）：无能力直接隐藏。
             if (context.read<CloudDriveService>().can(
-              widget.accountId,
+              _accountId,
               AccountCaps.mkdir,
             ))
               IconButton(
@@ -192,6 +224,31 @@ class _WebDavFolderPickerScreenState extends State<WebDavFolderPickerScreen> {
         ),
         body: Column(
           children: [
+            if (_canSwitchAccount)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  // ignore: deprecated_member_use
+                  value: _accountId,
+                  decoration: InputDecoration(
+                    labelText: l10n.currentServer,
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    for (final a in widget.accountChoices)
+                      DropdownMenuItem(
+                        value: a.id,
+                        child: Text(
+                          webDavAccountLabel(a, l10n),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: _switchAccount,
+                ),
+              ),
             // 路径是次要信息：只留末级，颜色跟当前方案的 onSurfaceVariant。
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),

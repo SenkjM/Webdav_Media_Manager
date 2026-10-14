@@ -4539,7 +4539,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaPackQueued => '已加入打包任务';
 
   @override
-  String get mangaPackHint => '逐页下载并打包成一个 CBZ，然后上传到所选目录';
+  String get mangaPackHint => '打包成 CBZ 并上传到所选账号；上传完成后再刮削，刮削成功后才删除原来的散页';
+
+  @override
+  String get mangaPackPickAccount => '选择上传账号';
+
+  @override
+  String get mangaPackNoUploadAccount => '没有可上传的账号';
 
   @override
   String get mangaBuildQueued => '已加入建立任务';
@@ -9413,7 +9419,13 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaPackQueued => '已加入打包任務';
 
   @override
-  String get mangaPackHint => '逐頁下載並打包成一個 CBZ，然後上傳到所選目錄';
+  String get mangaPackHint => '打包成 CBZ 並上傳到所選帳號；上傳完成後再刮削，刮削成功後才刪除原來的散頁';
+
+  @override
+  String get mangaPackPickAccount => '選擇上傳帳號';
+
+  @override
+  String get mangaPackNoUploadAccount => '沒有可上傳的帳號';
 
   @override
   String get mangaBuildQueued => '已加入建立任務';

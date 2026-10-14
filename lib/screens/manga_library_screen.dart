@@ -10,7 +10,9 @@ import '../models/manga.dart';
 import '../models/manga_build.dart';
 import '../models/manga_read_mode.dart';
 import '../models/manga_series.dart';
+import '../models/webdav_account.dart';
 import '../services/accounts_service.dart';
+import '../services/cloud_drive_service.dart';
 import '../services/cache_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/manga_reader_prep.dart';
@@ -20,8 +22,10 @@ import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../utils/manga_file_types.dart';
+import '../utils/upload_backend.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/manga_cover_art.dart';
+import '../widgets/marquee_text.dart';
 import '../widgets/selection_toolbar.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
@@ -710,26 +714,85 @@ String _archiveFileName(String title) {
   return base.toLowerCase().endsWith('.cbz') ? base : '$base.cbz';
 }
 
+List<WebDavAccount> _uploadCapableAccounts(
+  AccountsService accounts,
+  CloudDriveService cloud,
+) {
+  return [
+    for (final a in accounts.accounts)
+      if (accountCanUpload(
+        providerType: a.providerType,
+        capabilities: cloud.capabilitiesFor(a.id),
+      ))
+        a,
+  ];
+}
+
+/// Source cannot upload, so the loose book's remote path is not a destination.
+Future<String?> _pickUploadAccount(
+  BuildContext context,
+  List<WebDavAccount> accounts,
+) {
+  final l10n = AppLocalizations.of(context)!;
+  return showDialog<String>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: Text(l10n.mangaPackPickAccount),
+      children: [
+        for (final a in accounts)
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, a.id),
+            child: Text(webDavAccountLabel(a, l10n)),
+          ),
+      ],
+    ),
+  );
+}
+
 /// Materialises a loose-image book into a CBZ, then queues its upload.
 ///
-/// The user picks the destination folder and the file name; from there the
-/// task list owns both halves (packing, then uploading) so neither runs behind
-/// a spinner in this screen.
+/// Pages are still read from the book's own account. The upload account is
+/// chosen separately. If that source can upload, the folder picker starts at
+/// the book's remote path and the user may switch account, which resets the
+/// path. If it cannot, the remote path is not offered: an upload-capable
+/// account is picked first, and the folder picker starts at `/`.
+///
+/// Scrape and deletion are not queued here. The task list scrapes only after
+/// the upload lands, and deletes the loose book only after that scrape.
 Future<void> _materializeManga(BuildContext context, Manga manga) async {
   final l10n = AppLocalizations.of(context)!;
-  final accountId = context.read<AccountsService>().idForSource(
-    manga.sourceName,
-  );
-  if (accountId == null) {
+  final accounts = context.read<AccountsService>();
+  final cloud = context.read<CloudDriveService>();
+  final source = accounts.accountForSource(manga.sourceName);
+  if (source == null) {
     AppSnack.show(context, l10n.mangaReaderUnboundSource);
     return;
+  }
+  final uploadAccounts = _uploadCapableAccounts(accounts, cloud);
+  if (uploadAccounts.isEmpty) {
+    AppSnack.show(context, l10n.mangaPackNoUploadAccount);
+    return;
+  }
+  final sourceCanUpload = accountCanUpload(
+    providerType: source.providerType,
+    capabilities: cloud.capabilitiesFor(source.id),
+  );
+  var destAccountId = source.id;
+  var initialPath = manga.remotePath;
+  if (!sourceCanUpload) {
+    final pickedAccount = await _pickUploadAccount(context, uploadAccounts);
+    if (!context.mounted || pickedAccount == null) return;
+    destAccountId = pickedAccount;
+    initialPath = '/';
   }
   final picked = await Navigator.of(context).push<String>(
     MaterialPageRoute(
       builder: (_) => WebDavFolderPickerScreen(
-        accountId: accountId,
+        accountId: destAccountId,
         purpose: l10n.mangaPackAction,
-        initialPath: manga.remotePath,
+        initialPath: initialPath,
+        accountChoices: uploadAccounts,
+        onAccountChanged: (id) => destAccountId = id,
       ),
     ),
   );
@@ -764,8 +827,14 @@ Future<void> _materializeManga(BuildContext context, Manga manga) async {
   if (name.isEmpty) return;
   final fileName = name.toLowerCase().endsWith('.cbz') ? name : '$name.cbz';
   final parent = picked.endsWith('/') ? picked : '$picked/';
+  final uploadSource = accounts.nameForAccount(destAccountId);
+  if (uploadSource == null || uploadSource.isEmpty) {
+    AppSnack.show(context, l10n.mangaReaderUnboundSource);
+    return;
+  }
   await context.read<TaskQueueService>().enqueueMangaPack(
     sourceName: manga.sourceName,
+    uploadSourceName: uploadSource,
     mangaId: manga.id,
     remotePath: '$parent$fileName',
     displayName: fileName,

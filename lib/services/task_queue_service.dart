@@ -31,6 +31,7 @@ import '../models/manga.dart';
 import '../models/manga_build.dart';
 import 'manga_library_service.dart';
 import '../utils/cbz_range_zip.dart';
+import '../utils/manga_pack_followup.dart';
 import 'playlist_service.dart';
 import 'platform_export_service.dart';
 import 'webdav_service.dart';
@@ -649,6 +650,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     required String remotePath,
     required String displayName,
     required String mangaId,
+    String? cacheGroupId,
   }) async {
     final task = QueueTask(
       id: _uuid.v4(),
@@ -662,6 +664,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       unitsDone: 0,
       // Stash mangaId in cacheGroupId-compatible field if available; else localPath marker.
       localPath: 'manga:$mangaId',
+      cacheGroupId: cacheGroupId,
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
@@ -719,7 +722,11 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     required String mangaId,
     required String remotePath,
     required String displayName,
+    String? uploadSourceName,
   }) async {
+    final dest = (uploadSourceName == null || uploadSourceName.trim().isEmpty)
+        ? sourceName
+        : uploadSourceName.trim();
     final task = QueueTask(
       id: _uuid.v4(),
       sourceName: sourceName,
@@ -729,6 +736,9 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       kind: TaskKind.mangaPack,
       progressMode: TaskProgressMode.units,
       localPath: 'manga:$mangaId',
+      cacheGroupId: packUploadMarker(
+        PackUploadTarget(uploadSourceName: dest, originMangaId: mangaId),
+      ),
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
@@ -753,6 +763,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     required String remotePath,
     required String displayName,
     required String localPath,
+    String? cacheGroupId,
   }) async {
     final task = QueueTask(
       id: _uuid.v4(),
@@ -763,6 +774,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       kind: TaskKind.upload,
       progressMode: TaskProgressMode.bytes,
       localPath: localPath,
+      cacheGroupId: cacheGroupId,
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
@@ -2913,11 +2925,35 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
 
+    // Only after the materialized book has actually been scraped.
+    await _deletePackOriginIfMarked(task, scrapedId: manga.id);
+
     task.unitsDone = 2;
     task.progress = 1;
     task.status = TaskStatus.completed;
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+  }
+
+  /// Deletes the loose book that was packed into [scrapedId], if this scrape
+  /// was queued by a materialize upload. Library row and cache only — the
+  /// remote folder is left alone. A missing or non-loose origin is a no-op.
+  Future<void> _deletePackOriginIfMarked(
+    QueueTask task, {
+    required String scrapedId,
+  }) async {
+    final originId = parsePackDeleteOriginMarker(task.cacheGroupId);
+    if (originId == null || originId == scrapedId) return;
+    final lib = _mangaLibrary;
+    if (lib == null) return;
+    final origin = lib.mangaById(originId);
+    if (origin == null || origin.format != MangaFormat.images) return;
+    await _cache.clearMangaArtifacts(
+      mangaId: origin.id,
+      sourceName: origin.sourceName,
+      remotePath: origin.remotePath,
+    );
+    await lib.deleteManga(origin.id);
   }
 
   /// Download one manga archive into `manga_cache` so a later open needs no
@@ -3079,11 +3115,14 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
 
     // Hand the archive over; the upload task deletes it once the bytes land.
+    // Scrape is not queued here: the CBZ has to exist remotely first.
+    final target = parsePackUploadMarker(task.cacheGroupId);
     await enqueueUpload(
-      sourceName: task.sourceName,
+      sourceName: target?.uploadSourceName ?? task.sourceName,
       remotePath: task.remotePath,
       displayName: task.fileName,
       localPath: archive.path,
+      cacheGroupId: packOriginMarker(target?.originMangaId ?? mangaId),
     );
     task.unitsDone = pages.length;
     task.progress = 1;
@@ -3137,6 +3176,11 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       isCancel: (e) => token.isCancelled,
     );
 
+    // Packed CBZ only: register the new book and queue its scrape. A throw
+    // here fails the upload so the local file is kept and a retry can redo it.
+    // The loose book is not deleted yet.
+    await _followUpPackedUpload(task);
+
     task.bytesReceived = total;
     task.bytesTotal = total;
     task.progress = 1;
@@ -3150,6 +3194,56 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+  }
+
+  /// After a packed CBZ has landed, create its library row and queue a scrape.
+  ///
+  /// Other uploads have no origin marker and return immediately. A scrape that
+  /// is already pending, running, or done for this path is not queued again.
+  Future<void> _followUpPackedUpload(QueueTask task) async {
+    final originId = parsePackOriginMarker(task.cacheGroupId);
+    if (originId == null) return;
+    final mangaLib = _mangaLibrary;
+    if (mangaLib == null) {
+      throw StateError('err.mangaLibraryNotReady|');
+    }
+    final origin = mangaLib.mangaById(originId);
+    final draft = MangaLibraryService.draftForComicFile(
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+      fileName: task.fileName,
+    );
+    if (origin != null) {
+      if (origin.title.trim().isNotEmpty) draft.title = origin.title;
+      draft.author = origin.author;
+      draft.seriesTitle = origin.series;
+      draft.volume = origin.volume;
+      draft.chapterNumber = origin.chapterNumber;
+    }
+    final created = await mangaLib.upsertFromDraft(draft);
+    final marker = packDeleteOriginMarker(originId);
+    final handedOff = _tasks.any(
+      (t) =>
+          t.kind == TaskKind.mangaScrape &&
+          t.cacheGroupId == marker &&
+          t.remotePath == task.remotePath &&
+          (t.status == TaskStatus.pending ||
+              t.status == TaskStatus.active ||
+              t.status == TaskStatus.completed),
+    );
+    if (handedOff) return;
+    final accountId = _accountIdFor(task.sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|${task.sourceName}');
+    }
+    await enqueueMangaScrape(
+      accountId: accountId,
+      sourceName: task.sourceName,
+      remotePath: task.remotePath,
+      displayName: task.fileName,
+      mangaId: created.id,
+      cacheGroupId: marker,
+    );
   }
 
   Future<void> _runRetagCloud(QueueTask task, CancelToken token) async {

@@ -4753,7 +4753,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get mangaPackHint =>
-      'Download every page into a CBZ, then upload it to the chosen folder';
+      'Pack a CBZ and upload it to the chosen account. Scrape only after the upload; the loose pages are deleted only after that scrape succeeds';
+
+  @override
+  String get mangaPackPickAccount => 'Choose an upload account';
+
+  @override
+  String get mangaPackNoUploadAccount => 'No account can upload';
 
   @override
   String get mangaBuildQueued => 'Build queued';

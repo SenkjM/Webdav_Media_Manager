@@ -244,39 +244,34 @@ class _AboutScreenState extends State<AboutScreen> {
                 ?.copyWith(color: AppColors.accent),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: SegmentedButton<UpdateChannel>(
-                  segments: const [
-                    ButtonSegment(
-                      value: UpdateChannel.stable,
-                      label: Text('正式版'),
-                    ),
-                    ButtonSegment(
-                      value: UpdateChannel.preview,
-                      label: Text('预览版'),
-                    ),
-                  ],
-                  selected: {_channel},
-                  onSelectionChanged: (value) =>
-                      setState(() => _channel = value.first),
-                ),
+          SegmentedButton<UpdateChannel>(
+            segments: [
+              ButtonSegment(
+                value: UpdateChannel.stable,
+                label: Text(l10n.aboutUpdateChannelStable),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: _downloadInFlight ? null : _checkForUpdate,
-                  icon: _downloadInFlight
-                      ? const SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.system_update_outlined),
-                  label: Text(l10n.aboutUpdateCheck),
-                ),
+              ButtonSegment(
+                value: UpdateChannel.preview,
+                label: Text(l10n.aboutUpdateChannelPreview),
               ),
             ],
+            selected: {_channel},
+            onSelectionChanged: (value) =>
+                setState(() => _channel = value.first),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: FilledButton.icon(
+              onPressed: _downloadInFlight ? null : _checkForUpdate,
+              icon: _downloadInFlight
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.system_update_outlined),
+              label: Text(l10n.aboutUpdateCheck),
+            ),
           ),
           const SizedBox(height: 20),
           Text(l10n.aboutDescription),
