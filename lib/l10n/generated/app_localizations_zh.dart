@@ -2717,10 +2717,16 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errCloudWriteDisabled => '云盘账号不支持上传与云端写同步';
 
   @override
+  String get errEnsureDirectoryUnsupported => '该驱动不支持建目录';
+
+  @override
   String get errContentRangeUnsupported => '该驱动不支持区间读取';
 
   @override
   String get errContentStreamUnsupported => '该驱动不支持内容流读取';
+
+  @override
+  String get errUploadStreamUnsupported => '该驱动不支持上传';
 
   @override
   String get errDriverNotReady => '云盘驱动尚未接入';
@@ -7655,10 +7661,16 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get errCloudWriteDisabled => '網盤帳號不支援上傳與雲端寫入同步';
 
   @override
+  String get errEnsureDirectoryUnsupported => '此驅動不支援建立目錄';
+
+  @override
   String get errContentRangeUnsupported => '此驅動不支援區間讀取';
 
   @override
   String get errContentStreamUnsupported => '此驅動不支援內容串流讀取';
+
+  @override
+  String get errUploadStreamUnsupported => '此驅動不支援上傳';
 
   @override
   String get errDriverNotReady => '網盤驅動尚未接入';

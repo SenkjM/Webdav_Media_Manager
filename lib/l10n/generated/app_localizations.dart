@@ -4806,6 +4806,12 @@ abstract class AppLocalizations {
   /// **'云盘账号不支持上传与云端写同步'**
   String get errCloudWriteDisabled;
 
+  /// No description provided for @errEnsureDirectoryUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'该驱动不支持建目录'**
+  String get errEnsureDirectoryUnsupported;
+
   /// No description provided for @errContentRangeUnsupported.
   ///
   /// In zh, this message translates to:
@@ -4817,6 +4823,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'该驱动不支持内容流读取'**
   String get errContentStreamUnsupported;
+
+  /// No description provided for @errUploadStreamUnsupported.
+  ///
+  /// In zh, this message translates to:
+  /// **'该驱动不支持上传'**
+  String get errUploadStreamUnsupported;
 
   /// No description provided for @errDriverNotReady.
   ///

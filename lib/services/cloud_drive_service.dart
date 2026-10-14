@@ -13,7 +13,6 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
 import 'cloud_driver.dart';
-import 'cloud_drivers/crypt/crypt_driver.dart';
 import 'cloud_drivers/driver_registry.dart';
 import 'cloud_drivers/stream_bridge.dart';
 import 'resumable_download.dart';
@@ -413,15 +412,21 @@ class CloudDriveService extends ChangeNotifier {
     return Uint8List.fromList(res.data ?? <int>[]);
   }
 
-  /// 云端写路径**永久禁用**（99 §7.2.1：上传砍掉）。这个错误是语义，不是未完成。
-  Future<void> writeBytes(String accountId, String remotePath, Uint8List data) {
-    throw UnsupportedError(_writeDisabled);
+  /// 云端字节写入：转调驱动 uploadStream 原语。调用前需确认账号有 AccountCaps.write。
+  Future<void> writeBytes(
+    String accountId,
+    String remotePath,
+    Uint8List data,
+  ) async {
+    final driver = _requireDriver(accountId);
+    await driver.uploadStream(
+      _remote(accountId, remotePath),
+      Stream.value(data),
+      data.length,
+    );
   }
 
-  /// 云盘写入口。crypt 是例外：它是源的加密包装层，借源的写入通道上传
-  /// 密文（能力由 runtimeCapabilities 完全继承源，与源类型名无关）。其余
-  /// 云盘驱动接口（`CloudDriver`）里根本没有上传原语，照旧如实抛错——
-  /// 这不是留了个空壳（99 §7.2.1）。
+  /// 文件上传：读本地文件转流，走驱动 uploadStream 原语。调用方需先查 AccountCaps.write。
   Future<void> writeFromFile(
     String accountId,
     String remotePath,
@@ -429,26 +434,23 @@ class CloudDriveService extends ChangeNotifier {
     void Function(int count, int total)? onProgress,
     CancelToken? cancelToken,
   }) async {
-    final driver = _drivers[accountId];
-    if (driver is CryptDriver) {
-      final file = File(localPath);
-      final plainSize = file.lengthSync();
-      final remote = _remote(accountId, remotePath);
-      await driver.uploadContent(
-        remote,
-        file.openRead(),
-        plainSize,
-        onProgress: onProgress == null ? null : (c) => onProgress(c, plainSize),
-        cancelToken: cancelToken,
-      );
-      return;
-    }
-    throw UnsupportedError(_writeDisabled);
+    final driver = _requireDriver(accountId);
+    final file = File(localPath);
+    final plainSize = file.lengthSync();
+    final remote = _remote(accountId, remotePath);
+    await driver.uploadStream(
+      remote,
+      file.openRead(),
+      plainSize,
+      onProgress: onProgress == null ? null : (c) => onProgress(c, plainSize),
+      cancelToken: cancelToken,
+    );
   }
 
-  /// 同上：建目录归「写入」，云盘账号一律禁用（99 §7.2.3 的枚举语义）。
-  Future<void> ensureDirectory(String accountId, String path) {
-    throw UnsupportedError(_writeDisabled);
+  /// 幂等建目录：转调驱动 ensureDirectory 原语。调用方需先查 AccountCaps.write 或 mkdir。
+  Future<void> ensureDirectory(String accountId, String path) async {
+    final driver = _requireDriver(accountId);
+    await driver.ensureDirectory(_remote(accountId, path));
   }
 
   /// 新建文件夹：mkdir 已从「写入」拆为独立能力位（99 §7.2.3 / §7.3.2）。
@@ -579,7 +581,6 @@ class CloudDriveService extends ChangeNotifier {
 
   // --- 内部 ---
 
-  static const String _writeDisabled = 'err.cloudWriteDisabled';
 
   String _notReady(String accountId) {
     final a = _accounts.accountById(accountId);

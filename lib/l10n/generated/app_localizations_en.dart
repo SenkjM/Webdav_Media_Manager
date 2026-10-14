@@ -2817,12 +2817,20 @@ class AppLocalizationsEn extends AppLocalizations {
       'Cloud accounts do not support upload or cloud write sync';
 
   @override
+  String get errEnsureDirectoryUnsupported =>
+      'This driver does not support directory creation';
+
+  @override
   String get errContentRangeUnsupported =>
       'This driver does not support range reads';
 
   @override
   String get errContentStreamUnsupported =>
       'This driver does not support content stream reading';
+
+  @override
+  String get errUploadStreamUnsupported =>
+      'This driver does not support upload';
 
   @override
   String get errDriverNotReady => 'Cloud driver is not available yet';

@@ -72,10 +72,14 @@ class CloudDriverErrors {
         return l10n.errCloudAccountMissing(detail);
       case 'err.cloudWriteDisabled':
         return l10n.errCloudWriteDisabled;
+      case 'err.ensureDirectoryUnsupported':
+        return l10n.errEnsureDirectoryUnsupported;
       case 'err.contentRangeUnsupported':
         return l10n.errContentRangeUnsupported;
       case 'err.contentStreamUnsupported':
         return l10n.errContentStreamUnsupported;
+      case 'err.uploadStreamUnsupported':
+        return l10n.errUploadStreamUnsupported;
       case 'err.cryptBadCipherLength':
         return l10n.errCryptBadCipherLength(detail);
       case 'err.cryptBlockDecryptFailed':
