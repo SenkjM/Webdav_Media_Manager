@@ -3667,7 +3667,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imageSlideshow => '幻灯片播放';
 
   @override
-  String get imageTapDeadZone => '点击死区';
+  String get imageTapDeadZone => '上下死区';
 
   @override
   String get imageTapDeadZoneHint => '屏幕上下边缘区域内的点击不触发翻页，左右无死区。';
@@ -8673,7 +8673,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get imageSlideshow => '幻燈片播放';
 
   @override
-  String get imageTapDeadZone => '點擊死區';
+  String get imageTapDeadZone => '上下死區';
 
   @override
   String get imageTapDeadZoneHint => '螢幕上下邊緣區域內的點擊不觸發翻頁，左右無死區。';

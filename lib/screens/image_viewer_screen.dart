@@ -740,10 +740,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                           final ts = Theme.of(ctx).textTheme.labelSmall;
                           return Container(
                             height: previewH,
-                            decoration: BoxDecoration(
-                              color: bg,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                            color: bg,
                             child: Stack(
                               children: [
                                 // Left dead strip
@@ -752,7 +749,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                                   child: Container(
                                     decoration: BoxDecoration(
                                       color: deadColor,
-                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+
                                     ),
                                   ),
                                 ),
@@ -762,29 +759,19 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                                   child: Container(
                                     decoration: BoxDecoration(
                                       color: deadColor,
-                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+
                                     ),
                                   ),
                                 ),
                                 // Top dead band
                                 Positioned(top: 0, left: horizPx, right: horizPx,
                                   height: topPx,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: deadColor,
-                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
-                                    ),
-                                  ),
+                                  child: Container(color: deadColor),
                                 ),
                                 // Bottom dead band
                                 Positioned(bottom: 0, left: horizPx, right: horizPx,
                                   height: topPx,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: deadColor,
-                                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
-                                    ),
-                                  ),
+                                  child: Container(color: deadColor),
                                 ),
                                 // Prev zone
                                 Positioned(

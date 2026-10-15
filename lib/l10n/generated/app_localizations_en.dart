@@ -3832,7 +3832,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imageSlideshow => 'Slideshow';
 
   @override
-  String get imageTapDeadZone => 'Tap Dead Zone';
+  String get imageTapDeadZone => 'Top/Bottom Dead Zone';
 
   @override
   String get imageTapDeadZoneHint =>

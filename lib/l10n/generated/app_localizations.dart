@@ -6398,7 +6398,7 @@ abstract class AppLocalizations {
   /// No description provided for @imageTapDeadZone.
   ///
   /// In zh, this message translates to:
-  /// **'点击死区'**
+  /// **'上下死区'**
   String get imageTapDeadZone;
 
   /// No description provided for @imageTapDeadZoneHint.

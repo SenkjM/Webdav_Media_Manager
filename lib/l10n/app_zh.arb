@@ -1105,7 +1105,7 @@
   "imageViewer": "图片查看",
   "imageViewerSubtitle": "幻灯片、适应方式、预取数量",
   "imageSlideshow": "幻灯片播放",
-  "imageTapDeadZone": "点击死区",
+  "imageTapDeadZone": "上下死区",
   "imageTapDeadZoneHint": "屏幕上下边缘区域内的点击不触发翻页，左右无死区。",
   "imageTapHorizDead": "左右死区",
   "imageTapHorizDeadHint": "屏幕左右边缘区域内的点击不触发翻页。",
