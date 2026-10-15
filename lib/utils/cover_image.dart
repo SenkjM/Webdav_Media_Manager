@@ -18,20 +18,22 @@ int clampCoverThumbSize(int size) {
   return size;
 }
 
-/// Decode [bytes], resize to square [size]×[size], encode JPEG.
+/// Decode [bytes], resize + center-crop to square [size]×[size], encode JPEG.
+///
+/// Uses [img.copyResizeCropSquare] so the image is scaled uniformly to the
+/// shorter side first, then center-cropped — never stretched.
 /// Returns null if decoding fails.
 Uint8List? resizeCoverToThumb(Uint8List bytes, {int size = coverThumbSize}) {
   final edge = clampCoverThumbSize(size);
   try {
     final decoded = img.decodeImage(bytes);
     if (decoded == null) return null;
-    final resized = img.copyResize(
+    final square = img.copyResizeCropSquare(
       decoded,
-      width: edge,
-      height: edge,
+      size: edge,
       interpolation: img.Interpolation.average,
     );
-    return Uint8List.fromList(img.encodeJpg(resized, quality: 85));
+    return Uint8List.fromList(img.encodeJpg(square, quality: 85));
   } catch (_) {
     return null;
   }
