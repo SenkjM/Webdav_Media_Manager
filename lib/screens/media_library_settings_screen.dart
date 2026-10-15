@@ -16,6 +16,7 @@ import '../utils/app_snack.dart';
 import '../models/cache_policy.dart';
 import '../utils/directory_walk.dart';
 import '../widgets/library_cache_settings.dart';
+import 'thumbnail_settings_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 
 /// 媒体库子页：曲库模式、默认打开、预载、刮削深度、标签更新。
@@ -394,6 +395,21 @@ class _MediaLibrarySettingsScreenState
             title: Text(l10n.matchRemoteTitle),
             subtitle: Text(l10n.matchRemoteHint),
             onTap: () => unawaited(_matchRemote(context)),
+          ),
+          const Divider(height: 32),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.photo_size_select_large_outlined),
+            title: Text(l10n.settingsThumbnails),
+            subtitle: Text(l10n.settingsThumbnailsSubtitle),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ThumbnailSettingsScreen(),
+                ),
+              );
+            },
           ),
         ],
       ),

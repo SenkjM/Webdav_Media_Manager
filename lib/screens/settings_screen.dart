@@ -20,7 +20,6 @@ import 'manga_library_settings_screen.dart';
 import 'media_library_settings_screen.dart';
 import 'share_settings_screen.dart';
 import 'sync_screen.dart';
-import 'thumbnail_settings_screen.dart';
 import 'video_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -176,20 +175,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const ShareSettingsScreen()),
-              );
-            },
-          ),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.photo_size_select_large_outlined),
-            title: Text(l10n.settingsThumbnails),
-            subtitle: Text(l10n.settingsThumbnailsSubtitle),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const ThumbnailSettingsScreen(),
-                ),
               );
             },
           ),

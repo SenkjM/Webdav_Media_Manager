@@ -3648,16 +3648,9 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           payload.remotePath.replaceAll(RegExp(r'/+$'), '');
       final uploadRemotePath =
           remoteBase.isEmpty ? '/$cbzName' : '$remoteBase/$cbzName';
-      await enqueueUpload(
-        sourceName: payload.sourceName,
-        remotePath: uploadRemotePath,
-        displayName: cbzName,
-        localPath: archive.path,
-      );
-
-      // 4. Register the CBZ in the manga library so it appears immediately.
-      // Use draftForComicFile (format=zip/cbz) so the remotePath matches the
-      // uploaded file, not a loose-image folder (which would create a ghost entry).
+      // Build a draft first to get a stable mangaId for the origin marker.
+      // _followUpPackedUpload will upsertFromDraft again after upload lands
+      // (idempotent) and then enqueues a scrape (including cover fetch).
       final draft = MangaLibraryService.draftForComicFile(
         sourceName: payload.sourceName,
         remotePath: uploadRemotePath,
@@ -3667,7 +3660,15 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         ..title = title
         ..author = payload.author
         ..seriesTitle = payload.seriesTitle;
-      await mangaLib.upsertFromDraft(draft);
+      final registered = await mangaLib.upsertFromDraft(draft);
+      await enqueueUpload(
+        sourceName: payload.sourceName,
+        remotePath: uploadRemotePath,
+        displayName: cbzName,
+        localPath: archive.path,
+        // packOriginMarker triggers scrape (+ cover fetch) after bytes land.
+        cacheGroupId: packOriginMarker(registered.id),
+      );
 
       done++;
       await reportUnitsProgress(task.id, done: done, total: byDir.length);
