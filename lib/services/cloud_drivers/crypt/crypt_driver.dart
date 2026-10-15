@@ -78,8 +78,6 @@ class CryptDriver extends CloudDriver {
   /// （真机反馈：报错显示一长串源 id，重加源也接不上）。
   late String _sourceAccountName;
   late String _sourceDir;
-  CloudSource? _source;
-
   // ── 密钥：isolate 派生 + 进程内复用 ──
 
   /// 进程内密钥材料缓存上限（条 = 一份 (密码, 盐)）。
@@ -148,9 +146,9 @@ class CryptDriver extends CloudDriver {
 
   /// 懒解析：源账号被删后再次访问会在这里报错（浏览界面可见），
   /// 不影响兼容层注册流程。
+  /// 能力透传：每次实时查源，不缓存——源账号能力变更（如 WebDAV
+  /// 读写权限调整）可立即反映到 [runtimeCapabilities]，无需重启。
   CloudSource _requireSource() {
-    final cached = _source;
-    if (cached != null) return cached;
     final sourceName = normalizeSourceName(_sourceAccountName);
     if (sourceName.isEmpty) {
       throw const CloudDriverException('err.cryptNoSourceName');
@@ -161,7 +159,6 @@ class CryptDriver extends CloudDriver {
     if (s == null) {
       throw CloudDriverException('err.cryptSourceMissing|$sourceName');
     }
-    _source = s;
     return s;
   }
 

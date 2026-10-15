@@ -306,7 +306,7 @@ class SettingsService extends ChangeNotifier {
   bool _videoBackgroundPlayback = true;
   MusicStreamPlayMode _musicStreamPlayMode = MusicStreamPlayMode.sequential;
   bool _audioStreamingEnabled = false;
-  bool _musicDefaultStream = false;
+  bool _musicDefaultStream = true;
   bool _audioScanSubdirs = false;
   int _audioPlaylistMaxDepth = 1;
   bool _audioStreamSidecarCover = false;
@@ -330,7 +330,7 @@ class SettingsService extends ChangeNotifier {
   int _imageSlideshowIntervalSeconds = defaultImageSlideshowSeconds;
   bool _imageSlideshowLoop = defaultImageSlideshowLoop;
   String _imageFit = imageFitContain;
-  String _imagePageTurn = PageTurnDirection.ltr;
+  String _imagePageTurn = PageTurnDirection.rtl;
   int _imagePrefetchCount = defaultImagePrefetchCount;
   bool _imageScanSubdirs = false;
   int _imageScanMaxDepth = WalkOptions.defaultMaxDepth;
@@ -339,7 +339,7 @@ class SettingsService extends ChangeNotifier {
   int _videoBufferSizeMb = defaultVideoBufferMb;
   int _downloadPartMaxAgeHours = defaultDownloadPartMaxAgeHours;
   int _downloadPartMaxMb = defaultDownloadPartMaxMb;
-  bool _cryptSequentialDownload = false;
+  bool _cryptSequentialDownload = true;
   bool _preferLibsodiumSecretbox = defaultPreferLibsodiumSecretbox;
   double _videoLongPressRate = defaultVideoLongPressRate;
   double _videoLastRate = 1.0;

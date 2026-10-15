@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
 /// Default square edge for new cover thumbs (overridable via Settings).
-const int coverThumbSize = 100;
+const int coverThumbSize = 300;
 
 /// Alternate preset offered in Settings.
 const int coverThumbSizeLarge = 300;

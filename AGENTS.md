@@ -26,3 +26,27 @@ pwsh -File tool\flutter-pub-get.ps1
 That script redirects `PUB_CACHE` to `.pub-cache/` in this workspace. It intentionally uses the official launcher because `pub get` is stateful. Do not set `PUB_HOSTED_URL`; this repository's tracked lockfile is pinned to `https://pub.dev`.
 
 Use a normal `flutter` command only when the user has explicitly provided full access or when a wrapper reports a missing cached prerequisite. Always report the exact wrapper and outcome used for verification.
+
+## Architecture: module reuse principles
+
+**Services are the single source of truth.** Before writing new logic, check whether an existing service already covers it:
+
+- Network I/O: `WebDavService` (WebDAV + cloud accounts) or `CloudDriveService` (driver routing). Do not construct `Dio`, `WebDavClient`, or `http.Client` instances outside these two services.
+- Download/upload queue: `DownloadQueueService` / `TaskQueueService`. Call `enqueueUpload` / `enqueueDownload`; the queue owns retry, progress notification, and cancellation.
+- Settings: `SettingsService`. Never persist preferences with raw `SharedPreferences` calls outside this service.
+- Account access: `AccountsService`. Never filter or iterate `WebDavAccount` lists in screens.
+- Capability checks: `WebDavService.can(accountId, cap)`. Never branch on `providerType` strings to gate UI.
+
+**All authenticated HTTP must go through the service layer.**
+
+- Use `WebDavService.downloadToFile`, `writeBytes`, `writeFromFile`, `resolveStreamSource`, etc. These handle token refresh, error mapping, retry, and `rawHeaders` injection.
+- Never call a raw `WebDavClient` or `Dio` instance from a screen or non-service file.
+- Cloud driver direct-link headers come from `resolveStreamSource` -> `WebDavStreamSource`. Do not reconstruct the URL or strip headers at the call site.
+
+**Error handling.**
+
+- Service methods translate `DioException` / `CloudDriverException` into user-readable strings. Screens must propagate or display errors through the established pattern (`AppSnack.show`, `_error` setState). A silent `catch (_) {}` is only acceptable for cleanup paths (temp file deletion, cover cache miss); annotate with a comment.
+
+**Adding a new cloud driver.**
+
+One new file (`lib/services/cloud_drivers/<name>_driver.dart`) + one line in `lib/services/driver_registry.dart`. The public layer (`WebDavService`, `CloudDriveService`) must not change. See `docs/12-DRIVER-PORTING-GUIDE.md`.

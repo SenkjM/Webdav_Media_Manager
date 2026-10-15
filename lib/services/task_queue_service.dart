@@ -3171,6 +3171,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
               ? (count / task.bytesTotal!).clamp(0.0, 1.0)
               : 0.0;
           notifyListeners();
+          _publishProgress();
         },
         cancelToken: token,
       ),
