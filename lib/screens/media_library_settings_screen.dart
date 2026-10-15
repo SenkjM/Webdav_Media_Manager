@@ -3,6 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/app_state.dart';
+import '../theme/app_theme.dart';
+import '../utils/cover_image.dart';
+
 import '../l10n/generated/app_localizations.dart';
 import '../models/account_sentinels.dart';
 import '../models/music_library_backfill_root.dart';
@@ -16,7 +20,6 @@ import '../utils/app_snack.dart';
 import '../models/cache_policy.dart';
 import '../utils/directory_walk.dart';
 import '../widgets/library_cache_settings.dart';
-import 'thumbnail_settings_screen.dart';
 import 'webdav_folder_picker_screen.dart';
 
 /// 媒体库子页：曲库模式、默认打开、预载、刮削深度、标签更新。
@@ -33,6 +36,22 @@ class _MediaLibrarySettingsScreenState
   final TextEditingController _names = TextEditingController();
   final TextEditingController _depth = TextEditingController();
   var _seeded = false;
+  late final TextEditingController _coverSizeController;
+  String? _coverUiMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _coverSizeController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final settings = context.read<SettingsService>();
+      final edge = settings.coverThumbSizePx;
+      if (edge != coverThumbSize && edge != coverThumbSizeLarge) {
+        _coverSizeController.text = '$edge';
+      }
+    });
+  }
 
   @override
   void didChangeDependencies() {
@@ -48,7 +67,29 @@ class _MediaLibrarySettingsScreenState
   void dispose() {
     _names.dispose();
     _depth.dispose();
+    _coverSizeController.dispose();
     super.dispose();
+  }
+
+  String _coverPresetKey(int edge) {
+    if (edge == coverThumbSize) return '100';
+    if (edge == coverThumbSizeLarge) return '300';
+    return 'custom';
+  }
+
+  String _coverMode(SettingsService settings) =>
+      _coverUiMode ?? _coverPresetKey(settings.coverThumbSizePx);
+
+  Future<void> _applyCustomCoverSize() async {
+    final parsed = int.tryParse(_coverSizeController.text.trim());
+    if (parsed == null) return;
+    await context.read<AppState>().setCoverThumbSize(parsed);
+    if (!mounted) return;
+    setState(() => _coverUiMode = 'custom');
+    final edge = context.read<SettingsService>().coverThumbSizePx;
+    if (edge != coverThumbSize && edge != coverThumbSizeLarge) {
+      _coverSizeController.text = '$edge';
+    }
   }
 
   @override
@@ -397,19 +438,76 @@ class _MediaLibrarySettingsScreenState
             onTap: () => unawaited(_matchRemote(context)),
           ),
           const Divider(height: 32),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.photo_size_select_large_outlined),
-            title: Text(l10n.settingsThumbnails),
-            subtitle: Text(l10n.settingsThumbnailsSubtitle),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const ThumbnailSettingsScreen(),
-                ),
-              );
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              l10n.coverThumbSize,
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(color: AppColors.accent),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            l10n.coverThumbHint,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [
+              const ButtonSegment(value: '100', label: Text('100×100')),
+              const ButtonSegment(value: '300', label: Text('300×300')),
+              ButtonSegment(value: 'custom', label: Text(l10n.cacheCustom)),
+            ],
+            selected: {_coverMode(settings)},
+            onSelectionChanged: (sel) async {
+              final v = sel.first;
+              if (v == '100') {
+                setState(() => _coverUiMode = null);
+                await context.read<AppState>().setCoverThumbSize(coverThumbSize);
+              } else if (v == '300') {
+                setState(() => _coverUiMode = null);
+                await context.read<AppState>().setCoverThumbSize(coverThumbSizeLarge);
+              } else {
+                setState(() {
+                  _coverUiMode = 'custom';
+                  if (_coverSizeController.text.trim().isEmpty) {
+                    _coverSizeController.text = '${settings.coverThumbSizePx}';
+                  }
+                });
+              }
             },
+          ),
+          if (_coverMode(settings) == 'custom') ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: _coverSizeController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: l10n.coverSize,
+                      border: const OutlineInputBorder(),
+                      helperText: '$minCoverThumbSize–$maxCoverThumbSize',
+                    ),
+                    onEditingComplete: _applyCustomCoverSize,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.tonal(
+                  onPressed: _applyCustomCoverSize,
+                  child: Text(l10n.apply),
+                ),
+              ],
+            ),
+          ],
+          const SizedBox(height: 4),
+          Text(
+            l10n.coverThumbSizeCurrent('${settings.coverThumbSizePx}'),
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       ),
