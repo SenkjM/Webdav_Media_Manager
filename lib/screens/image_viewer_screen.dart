@@ -1032,13 +1032,14 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final mq = MediaQuery.of(context);
     final gesture = mq.systemGestureInsets;
     final pad = mq.padding;
-    final sysLeft = gesture.left > pad.left ? gesture.left : pad.left;
-    final sysRight = gesture.right > pad.right ? gesture.right : pad.right;
+    // Left/right system gesture insets are intentionally ignored: the reader
+    // runs in immersive mode and the full horizontal width is tap-navigable.
+    // Only vertical insets (status bar / nav bar) are respected.
     final sysTop = gesture.top > pad.top ? gesture.top : pad.top;
     final sysBottom = gesture.bottom > pad.bottom ? gesture.bottom : pad.bottom;
     final horizDeadPx = mq.size.width * _tapHorizDead;
-    final left = sysLeft + horizDeadPx;
-    final right = sysRight + horizDeadPx;
+    final left = horizDeadPx;
+    final right = horizDeadPx;
     final deadPx = mq.size.height * _tapDeadZone;
     final top = sysTop + deadPx;
     final bottom = sysBottom + deadPx;
@@ -1101,7 +1102,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                 child: CircularProgressIndicator(color: Colors.white70),
               ),
             Padding(
-              padding: EdgeInsets.fromLTRB(sysLeft, top, sysRight, bottom),
+              padding: EdgeInsets.fromLTRB(left, top, right, bottom),
               child: Row(
                 children: [
                   // Left dead strip: absorbs horizDeadPx; no gesture handler
