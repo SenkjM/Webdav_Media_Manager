@@ -521,6 +521,8 @@ class PlatformExportService {
   static Future<String?> readUriToCache(String uri) async {
     try {
       final raw = await _kAppChannel.invokeMethod<dynamic>('readUriToCache', {'uri': uri});
+      // Kotlin returns either a bare String path or a Map {ok, path}.
+      if (raw is String) return raw.isEmpty ? null : raw;
       if (raw is! Map) return null;
       final map = raw.map((k, v) => MapEntry(k.toString(), v));
       if (map['ok'] != true) return null;

@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
@@ -3527,7 +3527,13 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// Build manga books from local device files (Android SAF content URIs).
   ///
   /// Groups [payload.localFileUris] by parent directory and creates one
-  /// loose-image book per directory (perDir semantics, same as cloud path).
+  /// CBZ per directory (perDir semantics).
+  ///
+  /// Strategy:
+  ///   1. JIT-materialise each file via readUriToCache.
+  ///   2. Pack into CBZ locally (no server download needed).
+  ///   3. Register in manga library for immediate browsing.
+  ///   4. Enqueue upload of the CBZ.
   Future<void> _runMangaBuildFromLocalUris(
     QueueTask task,
     MangaBuildPayload payload,
@@ -3563,6 +3569,11 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
 
+    final packDir = Directory(
+      p.join((await getTemporaryDirectory()).path, 'manga_pack'),
+    );
+    await packDir.create(recursive: true);
+
     var done = 0;
     for (final dirEntry in byDir.entries) {
       if (token.isCancelled) {
@@ -3579,7 +3590,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         ..sort((a, b) =>
             (a['relativePath'] ?? '').compareTo(b['relativePath'] ?? ''));
 
-      // Materialise images JIT via SAF.
+      // 1. JIT-materialise images from SAF URIs.
       final localPaths = <String>[];
       for (final f in files) {
         final uri = f['uri'];
@@ -3594,16 +3605,50 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         continue;
       }
 
-      // Build image name list from cached path basenames.
-      final imageNames = [
-        for (final lp in localPaths)
-          lp.replaceAll(r'\\', '/').split('/').last,
-      ];
+      // 2. Pack images into a CBZ locally.
+      final title = byDir.length == 1 ? payload.title : dirName;
+      final sanitized = _sanitizeCbzName(title);
+      final cbzName = '$sanitized.cbz';
+      final archive = File(p.join(packDir.path, '${task.id}_$done.cbz'));
+      final encoder = ZipFileEncoder();
+      encoder.create(archive.path, level: ZipFileEncoder.gzip);
+      var packOk = false;
+      try {
+        for (var i = 0; i < localPaths.length; i++) {
+          final lp = localPaths[i];
+          final base = p.basename(lp);
+          await encoder.addFile(
+            File(lp),
+            '${(i + 1).toString().padLeft(5, "0")}_$base',
+          );
+        }
+        packOk = true;
+      } catch (_) {
+        // packOk stays false; cleanup runs in finally.
+      } finally {
+        await encoder.close();
+        for (final lp in localPaths) {
+          try { await File(lp).delete(); } catch (_) {}
+        }
+        if (!packOk && await archive.exists()) {
+          try { await archive.delete(); } catch (_) {}
+        }
+      }
 
-      // Synthesise a remote folderPath so draftForImageDir can build page paths.
-      final dirBase = payload.remotePath.isEmpty
-          ? '/$dirName'
-          : '${payload.remotePath.replaceAll(RegExp(r"/+$"), "")}/$dirName';
+      if (!packOk) {
+        done++;
+        await reportUnitsProgress(task.id, done: done, total: byDir.length);
+        continue;
+      }
+
+      // 3. Register in library so the book is browsable immediately.
+      final imageNames = [
+        for (final lp in localPaths) p.basename(lp),
+      ];
+      final remoteBase =
+          payload.remotePath.replaceAll(RegExp(r'/+$'), '');
+      final dirBase =
+          remoteBase.isEmpty ? '/$dirName' : '$remoteBase/$dirName';
       final draft = MangaLibraryService.draftForImageDir(
         sourceName: payload.sourceName,
         folderPath: dirBase,
@@ -3611,32 +3656,19 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         imageNames: imageNames,
       );
       draft
-        ..title = byDir.length == 1 ? payload.title : dirName
+        ..title = title
         ..author = payload.author
         ..seriesTitle = payload.seriesTitle;
+      await mangaLib.upsertFromDraft(draft);
 
-      final savedId = (await mangaLib.upsertFromDraft(draft)).id;
-
-      // Enqueue pack + upload if a remote destination was provided.
-      if (payload.remotePath.isNotEmpty) {
-        final sanitized = _sanitizeCbzName(draft.title);
-        final cbzName = '$sanitized.cbz';
-        final remoteBase =
-            payload.remotePath.replaceAll(RegExp(r'/+$'), '');
-        final remoteCbz = '$remoteBase/$cbzName';
-        await enqueueMangaPack(
+      // 4. Enqueue upload of the packed CBZ.
+      if (remoteBase.isNotEmpty) {
+        await enqueueUpload(
           sourceName: payload.sourceName,
-          mangaId: savedId,
-          remotePath: remoteCbz,
+          remotePath: '$remoteBase/$cbzName',
           displayName: cbzName,
+          localPath: archive.path,
         );
-      }
-
-      // Clean up temp files.
-      for (final lp in localPaths) {
-        try {
-          await File(lp).delete();
-        } catch (_) {}
       }
 
       done++;
