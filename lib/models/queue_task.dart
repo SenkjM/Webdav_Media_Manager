@@ -264,7 +264,7 @@ class QueueTask {
     'units_total': unitsTotal,
     'units_done': unitsDone,
     'cache_group_id': cacheGroupId,
-    'is_enumerator': isEnumerator,
+    'is_enumerator': isEnumerator ? 1 : 0,
     'target': target.storageKey,
     'download_mode': downloadMode?.name,
     'remote_size': remoteSize,
@@ -303,7 +303,7 @@ class QueueTask {
     unitsTotal: map['units_total'] as int?,
     unitsDone: (map['units_done'] as int?) ?? 0,
     cacheGroupId: _asString(map['cache_group_id']),
-    isEnumerator: map['is_enumerator'] == true,
+    isEnumerator: map['is_enumerator'] == 1,
     target: DownloadTargetX.fromStorageKey(_asString(map['target'])),
     downloadMode: CloudDownloadMode.values.firstWhere(
       (e) => e.name == _asString(map['download_mode']),

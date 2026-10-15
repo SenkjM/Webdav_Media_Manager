@@ -3641,35 +3641,33 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         continue;
       }
 
-      // 3. Register in library so the book is browsable immediately.
-      final imageNames = [
-        for (final lp in localPaths) p.basename(lp),
-      ];
+      // 3. Enqueue upload of the packed CBZ.
+      // remotePath may be '/' (root): remoteBase will be empty, but the upload
+      // path '/<cbzName>' is still valid. Never skip the upload.
       final remoteBase =
           payload.remotePath.replaceAll(RegExp(r'/+$'), '');
-      final dirBase =
-          remoteBase.isEmpty ? '/$dirName' : '$remoteBase/$dirName';
-      final draft = MangaLibraryService.draftForImageDir(
+      final uploadRemotePath =
+          remoteBase.isEmpty ? '/$cbzName' : '$remoteBase/$cbzName';
+      await enqueueUpload(
         sourceName: payload.sourceName,
-        folderPath: dirBase,
-        folderName: dirName,
-        imageNames: imageNames,
+        remotePath: uploadRemotePath,
+        displayName: cbzName,
+        localPath: archive.path,
+      );
+
+      // 4. Register the CBZ in the manga library so it appears immediately.
+      // Use draftForComicFile (format=zip/cbz) so the remotePath matches the
+      // uploaded file, not a loose-image folder (which would create a ghost entry).
+      final draft = MangaLibraryService.draftForComicFile(
+        sourceName: payload.sourceName,
+        remotePath: uploadRemotePath,
+        fileName: cbzName,
       );
       draft
         ..title = title
         ..author = payload.author
         ..seriesTitle = payload.seriesTitle;
       await mangaLib.upsertFromDraft(draft);
-
-      // 4. Enqueue upload of the packed CBZ.
-      if (remoteBase.isNotEmpty) {
-        await enqueueUpload(
-          sourceName: payload.sourceName,
-          remotePath: '$remoteBase/$cbzName',
-          displayName: cbzName,
-          localPath: archive.path,
-        );
-      }
 
       done++;
       await reportUnitsProgress(task.id, done: done, total: byDir.length);
