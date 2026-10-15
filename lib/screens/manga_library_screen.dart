@@ -173,9 +173,19 @@ class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
     }
 
     // 先选本地文件夹（系统 SAF 文件夹选择器），再选云盘目标目录。
-    final tree = await PlatformExportService().listFolderTree();
+    late PickedFolderTree tree;
+    try {
+      tree = await PlatformExportService().listFolderTree();
+    } catch (e) {
+      if (mounted) AppSnack.show(context, e.toString());
+      return;
+    }
     if (!mounted) return;
-    if (!tree.ok || tree.files.isEmpty) return;
+    if (!tree.ok) {
+      if (mounted && tree.error != null) AppSnack.show(context, tree.error!);
+      return;
+    }
+    if (tree.files.isEmpty) return;
 
     final dest = await pickRemoteDestination(
       context,

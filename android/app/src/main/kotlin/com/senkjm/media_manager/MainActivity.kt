@@ -1,4 +1,4 @@
-package com.senkjm.media_manager
+﻿package com.senkjm.media_manager
 
 import android.app.Activity
 import android.app.NotificationManager
@@ -53,6 +53,7 @@ class MainActivity : AudioServiceFragmentActivity() {
 
     /** Pending SAF pick result; the platform allows only one dialog at a time. */
     private var pendingPick: MethodChannel.Result? = null
+    private var pendingListFolderTree: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -120,6 +121,22 @@ class MainActivity : AudioServiceFragmentActivity() {
                     pickFile(args?.get("mimeType") as? String, result)
                 }
                 "pickFolder" -> pickFolder(result)
+                "listFolderTree" -> listFolderTree(result)
+                "readUriToCache" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val uri = args?.get("uri") as? String
+                    if (uri == null) {
+                        result.error("INVALID_ARG", "uri required", null)
+                        return@setMethodCallHandler
+                    }
+                    thread(name = "saf-read-uri") {
+                        val path = runCatching { readUriToCache(uri) }.getOrElse { e ->
+                            runOnUiThread { result.error("SAF_ERROR", e.message ?: e.toString(), null) }
+                            null
+                        }
+                        if (path != null) runOnUiThread { result.success(path) }
+                    }
+                }
                 "updateInstallInfo" -> result.success(
                     mapOf("packageName" to packageName, "abis" to Build.SUPPORTED_ABIS.toList()),
                 )
@@ -194,9 +211,90 @@ class MainActivity : AudioServiceFragmentActivity() {
         }
     }
 
+    
+
+    /**
+     * Launches ACTION_OPEN_DOCUMENT_TREE and returns a flat list of all files
+     * under the chosen tree via [enumerateFolderTree]. Does not copy any data.
+     */
+    private fun listFolderTree(result: MethodChannel.Result) {
+        if (pendingListFolderTree != null) {
+            result.error("BUSY", "listFolderTree already pending", null)
+            return
+        }
+        pendingListFolderTree = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, REQUEST_LIST_FOLDER_TREE)
+    }
+
+    /**
+     * Enumerates all files under the SAF tree rooted at [treeUri].
+     */
+    private fun enumerateFolderTree(treeUri: android.net.Uri): Map<String, Any> {
+        val docFile = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, treeUri)
+        val files = mutableListOf<Map<String, Any?>>()
+        val folderName = docFile?.name ?: treeUri.lastPathSegment ?: "folder"
+        if (docFile != null) enumerateTree(docFile, "", files)
+        return mapOf("ok" to true, "folderName" to folderName, "files" to files)
+    }
+
+    private fun enumerateTree(
+        dir: androidx.documentfile.provider.DocumentFile,
+        prefix: String,
+        out: MutableList<Map<String, Any?>>,
+    ) {
+        for (child in dir.listFiles()) {
+            val name = child.name ?: continue
+            val rel = if (prefix.isEmpty()) name else "$prefix/$name"
+            if (child.isDirectory) {
+                enumerateTree(child, rel, out)
+            } else {
+                out.add(mapOf(
+                    "uri" to child.uri.toString(),
+                    "relativePath" to rel,
+                    "fileName" to name,
+                    "size" to child.length(),
+                ))
+            }
+        }
+    }
+
+    /**
+     * Copies a SAF content URI into the app cache directory and returns the
+     * resulting absolute file path.
+     */
+    private fun readUriToCache(uriString: String): String {
+        val uri = android.net.Uri.parse(uriString)
+        val fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "import_saf"
+        val dest = java.io.File(cacheDir, "saf_import_$fileName")
+        contentResolver.openInputStream(uri)?.use { input ->
+            dest.outputStream().use { output -> input.copyTo(output) }
+        } ?: error("Failed to open SAF URI: $uriString")
+        return dest.absolutePath
+    }
+
     @Deprecated("Flutter embedding still routes SAF results through onActivityResult")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_LIST_FOLDER_TREE) {
+            val r = pendingListFolderTree ?: return
+            pendingListFolderTree = null
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                r.success(mapOf("ok" to false, "cancelled" to (resultCode != Activity.RESULT_OK), "files" to emptyList<Any>()))
+                return
+            }
+            val treeUri = data.data!!
+            contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            thread(name = "saf-list-tree") {
+                val payload = runCatching { enumerateFolderTree(treeUri) }.getOrElse { e ->
+                    mapOf("ok" to false, "error" to (e.message ?: e.toString()), "files" to emptyList<Any>())
+                }
+                runOnUiThread { r.success(payload) }
+            }
+            return
+        }
         if (requestCode != REQUEST_PICK_FILE && requestCode != REQUEST_PICK_FOLDER) return
         val result = pendingPick ?: return
         pendingPick = null
@@ -967,6 +1065,7 @@ class MainActivity : AudioServiceFragmentActivity() {
         private const val AUDIO_SERVICE_NOTIFICATION_ID = 1124
         private const val REQUEST_PICK_FILE = 4711
         private const val REQUEST_PICK_FOLDER = 4712
+        private const val REQUEST_LIST_FOLDER_TREE = 4713
 
         private val LEGACY_VIDEO_EXTS = setOf(
             "mp4", "mkv", "avi", "mov", "webm", "flv", "ts",
