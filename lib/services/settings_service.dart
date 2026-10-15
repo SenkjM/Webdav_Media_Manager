@@ -147,6 +147,8 @@ class SettingsService extends ChangeNotifier {
   static const _kImageFit = 'image_fit';
   static const _kImagePageTurn = 'image_page_turn';
   static const _kImageTapDeadZone = 'image_tap_dead_zone';
+  static const _kImageTapHorizDead = 'image_tap_horiz_dead';
+  static const _kImageTapCenterSize = 'image_tap_center_size';
   static const _kImagePrefetch = 'image_prefetch_count';
   static const _kImageScanSubdirs = 'image_scan_subdirs';
   static const _kImageScanMaxDepth = 'image_scan_max_depth';
@@ -335,6 +337,8 @@ class SettingsService extends ChangeNotifier {
   String _imageFit = imageFitContain;
   String _imagePageTurn = PageTurnDirection.rtl;
   double _imageTapDeadZone = 0.15;
+  double _imageTapHorizDead = 0.0;
+  double _imageTapCenterSize = 0.33;
   int _imagePrefetchCount = defaultImagePrefetchCount;
   bool _imageScanSubdirs = false;
   int _imageScanMaxDepth = WalkOptions.defaultMaxDepth;
@@ -645,6 +649,8 @@ class SettingsService extends ChangeNotifier {
 
   /// Vertical dead-zone fraction (0.0–0.4). Taps in the top/bottom fraction are ignored.
   double get imageTapDeadZone => _imageTapDeadZone;
+  double get imageTapHorizDead => _imageTapHorizDead;
+  double get imageTapCenterSize => _imageTapCenterSize;
   int get imagePrefetchCount => _imagePrefetchCount;
 
   /// 图片相册是否扫描子目录。默认关。键 `image_scan_subdirs`。
@@ -947,6 +953,8 @@ class SettingsService extends ChangeNotifier {
       _prefs!.getString(_kImagePageTurn),
     );
     _imageTapDeadZone = (_prefs!.getDouble(_kImageTapDeadZone) ?? 0.15).clamp(0.0, 0.4);
+    _imageTapHorizDead = (_prefs!.getDouble(_kImageTapHorizDead) ?? 0.0).clamp(0.0, 0.3);
+    _imageTapCenterSize = (_prefs!.getDouble(_kImageTapCenterSize) ?? 0.33).clamp(0.1, 0.6);
     _imagePrefetchCount = _clampImagePrefetch(
       _prefs!.getInt(_kImagePrefetch) ?? defaultImagePrefetchCount,
     );
@@ -1646,6 +1654,20 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setImageTapHorizDead(double fraction) async {
+    _imageTapHorizDead = fraction.clamp(0.0, 0.3);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setDouble(_kImageTapHorizDead, _imageTapHorizDead);
+    notifyListeners();
+  }
+
+  Future<void> setImageTapCenterSize(double fraction) async {
+    _imageTapCenterSize = fraction.clamp(0.1, 0.6);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setDouble(_kImageTapCenterSize, _imageTapCenterSize);
+    notifyListeners();
+  }
+
   Future<void> setImagePrefetchCount(int count) async {
     _imagePrefetchCount = _clampImagePrefetch(count);
     _prefs ??= await SharedPreferences.getInstance();
@@ -2032,6 +2054,8 @@ class SettingsService extends ChangeNotifier {
     'image_fit': _imageFit,
     'image_page_turn': _imagePageTurn,
     'image_tap_dead_zone': _imageTapDeadZone,
+    'image_tap_horiz_dead': _imageTapHorizDead,
+    'image_tap_center_size': _imageTapCenterSize,
     'image_prefetch_count': _imagePrefetchCount,
     'image_scan_subdirs': _imageScanSubdirs,
     'image_scan_max_depth': _imageScanMaxDepth,
@@ -2283,6 +2307,12 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['image_tap_dead_zone'] is num) {
       await setImageTapDeadZone((json['image_tap_dead_zone'] as num).toDouble());
+    }
+    if (json['image_tap_horiz_dead'] is num) {
+      await setImageTapHorizDead((json['image_tap_horiz_dead'] as num).toDouble());
+    }
+    if (json['image_tap_center_size'] is num) {
+      await setImageTapCenterSize((json['image_tap_center_size'] as num).toDouble());
     }
     if (json['image_prefetch_count'] is num) {
       await setImagePrefetchCount(

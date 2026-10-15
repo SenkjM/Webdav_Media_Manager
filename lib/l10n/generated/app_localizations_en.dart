@@ -3839,6 +3839,20 @@ class AppLocalizationsEn extends AppLocalizations {
       'Taps in the top and bottom fraction of the screen are ignored. Left and right have no dead zone.';
 
   @override
+  String get imageTapHorizDead => 'Left/Right Dead Zone';
+
+  @override
+  String get imageTapHorizDeadHint =>
+      'Taps in the left and right edge strips are ignored.';
+
+  @override
+  String get imageTapCenterSize => 'Center Zone Width';
+
+  @override
+  String get imageTapCenterSizeHint =>
+      'Width of the center tap zone that opens settings.';
+
+  @override
   String get imageSlideshowHint =>
       'Advance automatically. Turning a page by hand restarts the timer and does not turn this off.';
 

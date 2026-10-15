@@ -6407,6 +6407,30 @@ abstract class AppLocalizations {
   /// **'屏幕上下边缘区域内的点击不触发翻页，左右无死区。'**
   String get imageTapDeadZoneHint;
 
+  /// No description provided for @imageTapHorizDead.
+  ///
+  /// In zh, this message translates to:
+  /// **'左右死区'**
+  String get imageTapHorizDead;
+
+  /// No description provided for @imageTapHorizDeadHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'屏幕左右边缘区域内的点击不触发翻页。'**
+  String get imageTapHorizDeadHint;
+
+  /// No description provided for @imageTapCenterSize.
+  ///
+  /// In zh, this message translates to:
+  /// **'中央区域宽度'**
+  String get imageTapCenterSize;
+
+  /// No description provided for @imageTapCenterSizeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击弹出设置面板的中间区域宽度。'**
+  String get imageTapCenterSizeHint;
+
   /// No description provided for @imageSlideshowHint.
   ///
   /// In zh, this message translates to:

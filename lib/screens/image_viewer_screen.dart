@@ -106,6 +106,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   String _fit = SettingsService.imageFitContain;
   String _globalPageTurn = PageTurnDirection.ltr;
   double _tapDeadZone = 0.15;
+  double _tapHorizDead = 0.0;
+  double _tapCenterSize = 0.33;
   String? _mangaPageTurn; // null = follow global
   int _prefetch = SettingsService.defaultImagePrefetchCount;
   bool _scan = false;
@@ -191,6 +193,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     _fit = s.imageFit;
     _globalPageTurn = s.imagePageTurn;
     _tapDeadZone = s.imageTapDeadZone;
+    _tapHorizDead = s.imageTapHorizDead;
+    _tapCenterSize = s.imageTapCenterSize;
     _prefetch = s.imagePrefetchCount;
     _scan = s.imageScanSubdirs;
     if (notify && mounted) setState(() {});
@@ -211,6 +215,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     _fit = s.imageFit;
     _globalPageTurn = s.imagePageTurn;
     _tapDeadZone = s.imageTapDeadZone;
+    _tapHorizDead = s.imageTapHorizDead;
+    _tapCenterSize = s.imageTapCenterSize;
     _prefetch = s.imagePrefetchCount;
     _scan = s.imageScanSubdirs;
     if (fitChanged || prefetchChanged || turnChanged || deadZoneChanged) setState(() {});
@@ -743,6 +749,138 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                           unawaited(settings.setImageTapDeadZone(v));
                         },
                       ),
+                      const SizedBox(height: 12),
+                      Text(l10n.imageTapHorizDead),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.imageTapHorizDeadHint,
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      // Visual preview: grey bar with coloured left/right strips
+                      LayoutBuilder(
+                        builder: (_, constraints) {
+                          final totalW = constraints.maxWidth;
+                          final stripW = totalW * _tapHorizDead;
+                          return SizedBox(
+                            height: 36,
+                            child: Stack(
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 0, bottom: 0, left: 0,
+                                  width: stripW,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
+                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(6)),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 0, bottom: 0, right: 0,
+                                  width: stripW,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
+                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(6)),
+                                    ),
+                                  ),
+                                ),
+                                Center(
+                                  child: Text(
+                                    '${(_tapHorizDead * 100).round()}%',
+                                    style: Theme.of(ctx).textTheme.bodySmall,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      Slider(
+                        value: _tapHorizDead,
+                        min: 0.0,
+                        max: 0.3,
+                        divisions: 6,
+                        label: '${(_tapHorizDead * 100).round()}%',
+                        onChanged: (v) {
+                          setState(() => _tapHorizDead = v);
+                          setSheet(() {});
+                          unawaited(settings.setImageTapHorizDead(v));
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Text(l10n.imageTapCenterSize),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.imageTapCenterSizeHint,
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      // Visual preview: center zone width indicator
+                      LayoutBuilder(
+                        builder: (_, constraints) {
+                          final totalW = constraints.maxWidth;
+                          final centerW = totalW * _tapCenterSize;
+                          final sideW = (totalW - centerW) / 2;
+                          return SizedBox(
+                            height: 36,
+                            child: Row(
+                              children: [
+                                SizedBox(
+                                  width: sideW,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(6)),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${(_tapCenterSize * 100).round()}%',
+                                        style: Theme.of(ctx).textTheme.bodySmall,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(
+                                  width: sideW,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(6)),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      Slider(
+                        value: _tapCenterSize,
+                        min: 0.1,
+                        max: 0.6,
+                        divisions: 10,
+                        label: '${(_tapCenterSize * 100).round()}%',
+                        onChanged: (v) {
+                          setState(() => _tapCenterSize = v);
+                          setSheet(() {});
+                          unawaited(settings.setImageTapCenterSize(v));
+                        },
+                      ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: Text(l10n.imageSlideshow),
@@ -963,10 +1101,13 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final mq = MediaQuery.of(context);
     final gesture = mq.systemGestureInsets;
     final pad = mq.padding;
-    final left = gesture.left > pad.left ? gesture.left : pad.left;
-    final right = gesture.right > pad.right ? gesture.right : pad.right;
+    final sysLeft = gesture.left > pad.left ? gesture.left : pad.left;
+    final sysRight = gesture.right > pad.right ? gesture.right : pad.right;
     final sysTop = gesture.top > pad.top ? gesture.top : pad.top;
     final sysBottom = gesture.bottom > pad.bottom ? gesture.bottom : pad.bottom;
+    final horizDeadPx = mq.size.width * _tapHorizDead;
+    final left = sysLeft + horizDeadPx;
+    final right = sysRight + horizDeadPx;
     final deadPx = mq.size.height * _tapDeadZone;
     final top = sysTop + deadPx;
     final bottom = sysBottom + deadPx;
@@ -1033,18 +1174,21 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
               child: Row(
                 children: [
                   Expanded(
+                    flex: (((1.0 - _tapCenterSize) / 2) * 100).round(),
                     child: _zone(
                       l10n.imageViewerPrevious,
                       () => _turnFromEdge(-1, fromTimer: false),
                     ),
                   ),
                   Expanded(
+                    flex: (_tapCenterSize * 100).round(),
                     child: _zone(
                       l10n.imageViewerControls,
                       () => unawaited(_openControlsSheet()),
                     ),
                   ),
                   Expanded(
+                    flex: (((1.0 - _tapCenterSize) / 2) * 100).round(),
                     child: _zone(
                       l10n.imageViewerNext,
                       () => _turnFromEdge(1, fromTimer: false),

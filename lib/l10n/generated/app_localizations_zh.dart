@@ -3673,6 +3673,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imageTapDeadZoneHint => '屏幕上下边缘区域内的点击不触发翻页，左右无死区。';
 
   @override
+  String get imageTapHorizDead => '左右死区';
+
+  @override
+  String get imageTapHorizDeadHint => '屏幕左右边缘区域内的点击不触发翻页。';
+
+  @override
+  String get imageTapCenterSize => '中央区域宽度';
+
+  @override
+  String get imageTapCenterSizeHint => '点击弹出设置面板的中间区域宽度。';
+
+  @override
   String get imageSlideshowHint => '按间隔自动切换到下一张。手动翻页会重新计时，不会关闭这个开关。';
 
   @override
@@ -8665,6 +8677,18 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get imageTapDeadZoneHint => '螢幕上下邊緣區域內的點擊不觸發翻頁，左右無死區。';
+
+  @override
+  String get imageTapHorizDead => '左右死區';
+
+  @override
+  String get imageTapHorizDeadHint => '螢幕左右邊緣區域內的點擊不觸發翻頁。';
+
+  @override
+  String get imageTapCenterSize => '中央區域寬度';
+
+  @override
+  String get imageTapCenterSizeHint => '點擊彈出設定面板的中間區域寬度。';
 
   @override
   String get imageSlideshowHint => '按間隔自動切到下一張。手動翻頁會重新計時，不會關閉這個開關。';
