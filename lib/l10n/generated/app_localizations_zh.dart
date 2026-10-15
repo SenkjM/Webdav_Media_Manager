@@ -3667,6 +3667,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get imageSlideshow => '幻灯片播放';
 
   @override
+  String get imageTapDeadZone => '点击死区';
+
+  @override
+  String get imageTapDeadZoneHint => '屏幕上下边缘区域内的点击不触发翻页，左右无死区。';
+
+  @override
   String get imageSlideshowHint => '按间隔自动切换到下一张。手动翻页会重新计时，不会关闭这个开关。';
 
   @override
@@ -8653,6 +8659,12 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get imageSlideshow => '幻燈片播放';
+
+  @override
+  String get imageTapDeadZone => '點擊死區';
+
+  @override
+  String get imageTapDeadZoneHint => '螢幕上下邊緣區域內的點擊不觸發翻頁，左右無死區。';
 
   @override
   String get imageSlideshowHint => '按間隔自動切到下一張。手動翻頁會重新計時，不會關閉這個開關。';

@@ -3832,6 +3832,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imageSlideshow => 'Slideshow';
 
   @override
+  String get imageTapDeadZone => 'Tap Dead Zone';
+
+  @override
+  String get imageTapDeadZoneHint =>
+      'Taps in the top and bottom fraction of the screen are ignored. Left and right have no dead zone.';
+
+  @override
   String get imageSlideshowHint =>
       'Advance automatically. Turning a page by hand restarts the timer and does not turn this off.';
 

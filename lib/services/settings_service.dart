@@ -146,6 +146,7 @@ class SettingsService extends ChangeNotifier {
   static const _kImageSlideshowLoop = 'image_slideshow_loop';
   static const _kImageFit = 'image_fit';
   static const _kImagePageTurn = 'image_page_turn';
+  static const _kImageTapDeadZone = 'image_tap_dead_zone';
   static const _kImagePrefetch = 'image_prefetch_count';
   static const _kImageScanSubdirs = 'image_scan_subdirs';
   static const _kImageScanMaxDepth = 'image_scan_max_depth';
@@ -333,6 +334,7 @@ class SettingsService extends ChangeNotifier {
   bool _imageSlideshowLoop = defaultImageSlideshowLoop;
   String _imageFit = imageFitContain;
   String _imagePageTurn = PageTurnDirection.rtl;
+  double _imageTapDeadZone = 0.15;
   int _imagePrefetchCount = defaultImagePrefetchCount;
   bool _imageScanSubdirs = false;
   int _imageScanMaxDepth = WalkOptions.defaultMaxDepth;
@@ -640,6 +642,9 @@ class SettingsService extends ChangeNotifier {
 
   /// Global page-turn (`ltr` / `rtl`). Default LTR.
   String get imagePageTurn => _imagePageTurn;
+
+  /// Vertical dead-zone fraction (0.0–0.4). Taps in the top/bottom fraction are ignored.
+  double get imageTapDeadZone => _imageTapDeadZone;
   int get imagePrefetchCount => _imagePrefetchCount;
 
   /// 图片相册是否扫描子目录。默认关。键 `image_scan_subdirs`。
@@ -941,6 +946,7 @@ class SettingsService extends ChangeNotifier {
     _imagePageTurn = PageTurnDirection.normalize(
       _prefs!.getString(_kImagePageTurn),
     );
+    _imageTapDeadZone = (_prefs!.getDouble(_kImageTapDeadZone) ?? 0.15).clamp(0.0, 0.4);
     _imagePrefetchCount = _clampImagePrefetch(
       _prefs!.getInt(_kImagePrefetch) ?? defaultImagePrefetchCount,
     );
@@ -1633,6 +1639,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setImageTapDeadZone(double fraction) async {
+    _imageTapDeadZone = fraction.clamp(0.0, 0.4);
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setDouble(_kImageTapDeadZone, _imageTapDeadZone);
+    notifyListeners();
+  }
+
   Future<void> setImagePrefetchCount(int count) async {
     _imagePrefetchCount = _clampImagePrefetch(count);
     _prefs ??= await SharedPreferences.getInstance();
@@ -2018,6 +2031,7 @@ class SettingsService extends ChangeNotifier {
     'image_slideshow_loop': _imageSlideshowLoop,
     'image_fit': _imageFit,
     'image_page_turn': _imagePageTurn,
+    'image_tap_dead_zone': _imageTapDeadZone,
     'image_prefetch_count': _imagePrefetchCount,
     'image_scan_subdirs': _imageScanSubdirs,
     'image_scan_max_depth': _imageScanMaxDepth,
@@ -2266,6 +2280,9 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['image_page_turn'] is String) {
       await setImagePageTurn(json['image_page_turn'] as String);
+    }
+    if (json['image_tap_dead_zone'] is num) {
+      await setImageTapDeadZone((json['image_tap_dead_zone'] as num).toDouble());
     }
     if (json['image_prefetch_count'] is num) {
       await setImagePrefetchCount(

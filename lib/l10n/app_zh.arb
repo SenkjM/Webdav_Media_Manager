@@ -357,7 +357,11 @@
   "uploadFolderEmpty": "所选文件夹里没有文件",
   "uploadQueuedFiles": "已加入 {count} 个上传任务",
   "@uploadQueuedFiles": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "uploadFolderPreparing": "正在读取所选文件夹…",
   "uploadQueued": "已加入上传任务",
@@ -552,8 +556,12 @@
   "recoveryClearPartial": "已删除 {removed} 个文件；{names} 仍被占用，未能删除。",
   "@recoveryClearPartial": {
     "placeholders": {
-      "removed": { "type": "int" },
-      "names": { "type": "String" }
+      "removed": {
+        "type": "int"
+      },
+      "names": {
+        "type": "String"
+      }
     }
   },
   "recoveryClearedCount": "已清除 {count} 个数据库文件，请重新打开应用",
@@ -1097,6 +1105,8 @@
   "imageViewer": "图片查看",
   "imageViewerSubtitle": "幻灯片、适应方式、预取数量",
   "imageSlideshow": "幻灯片播放",
+  "imageTapDeadZone": "点击死区",
+  "imageTapDeadZoneHint": "屏幕上下边缘区域内的点击不触发翻页，左右无死区。",
   "imageSlideshowHint": "按间隔自动切换到下一张。手动翻页会重新计时，不会关闭这个开关。",
   "imageSlideshowInterval": "间隔",
   "imageSlideshowSeconds": "{seconds} 秒",
@@ -1424,7 +1434,7 @@
       }
     }
   },
-"mangaReadProgress": "{current}/{total}",
+  "mangaReadProgress": "{current}/{total}",
   "mangaPageCount": "{count} 页",
   "@mangaPageCount": {
     "placeholders": {
@@ -1487,7 +1497,13 @@
   "mangaCoverThumbCustom": "自定义",
   "mangaCoverThumbKeepOriginal": "保持原图",
   "mangaCoverThumbSizeCurrent": "当前：${px} px",
-  "@mangaCoverThumbSizeCurrent": { "placeholders": { "px": { "type": "Object" } } },
+  "@mangaCoverThumbSizeCurrent": {
+    "placeholders": {
+      "px": {
+        "type": "Object"
+      }
+    }
+  },
   "imageViewerControls": "查看选项",
   "imageViewerMoreSettings": "更多设置",
   "mangaSetPageAsCover": "设当前页为封面",
@@ -1594,51 +1610,50 @@
   "mangaDeleteTitle": "删除所选漫画？",
   "mangaDeleteBody": "将删除 {count} 部漫画及其缓存与封面，不可恢复",
   "mangaBatchDeleteDone": "已删除 {count} 部漫画",
-
   "mangaReadModeSection": "阅读方式",
   "mangaReadModeHint": "流式读取边看边取；整包缓存先下载整本",
   "mangaReadModeStream": "流式读取",
   "mangaReadModeCache": "整包缓存",
   "mangaRangeUnsupportedRemember": "以后都用整包缓存",
   "imageViewerClose": "退出浏览",
-    "mangaRescanAction": "重新扫描此本",
-    "mangaRescanHint": "选择来源文件夹，页表会重新收集；进度与元数据保留。",
-    "settingsAppSection": "应用与更新",
-    "settingsUpdate": "检查应用更新",
-    "settingsUpdateSubtitle": "仅在你点按时检查 GitHub 正式版，不会自动联网",
-    "updateChecking": "正在检查更新…",
-    "updateUpToDate": "当前已是最新版本（{version}）",
-    "updateAvailableTitle": "发现新版本 {version}",
-    "updateAvailableBody": "将下载适配本机架构的安装包，校验 SHA-256 后交给系统安装器。",
-    "updateDownloadInstall": "下载并安装",
-    "updateDownloading": "正在下载更新：{percent}%",
-    "updateInstallPermission": "请允许此应用安装未知来源应用，然后返回重试安装。",
-    "updateOpenPermission": "打开安装权限",
-    "updateInstallerStarted": "已打开系统安装器，请确认安装。",
-    "updateNoCompatibleApk": "此版本没有适用于当前设备架构的安装包。",
-    "updateUnsupported": "仅正式版 Android 应用支持应用内更新。",
-    "updateFailed": "更新失败：{error}",
-    "aboutUpdateChannelStable": "正式版",
-    "aboutUpdateChannelPreview": "预览版",
-    "aboutUpdateCheck": "检查更新",
-    "aboutUpdateChecking": "正在检查更新",
-    "aboutUpdateCheckingBody": "正在读取正式版信息。",
+  "mangaRescanAction": "重新扫描此本",
+  "mangaRescanHint": "选择来源文件夹，页表会重新收集；进度与元数据保留。",
+  "settingsAppSection": "应用与更新",
+  "settingsUpdate": "检查应用更新",
+  "settingsUpdateSubtitle": "仅在你点按时检查 GitHub 正式版，不会自动联网",
+  "updateChecking": "正在检查更新…",
+  "updateUpToDate": "当前已是最新版本（{version}）",
+  "updateAvailableTitle": "发现新版本 {version}",
+  "updateAvailableBody": "将下载适配本机架构的安装包，校验 SHA-256 后交给系统安装器。",
+  "updateDownloadInstall": "下载并安装",
+  "updateDownloading": "正在下载更新：{percent}%",
+  "updateInstallPermission": "请允许此应用安装未知来源应用，然后返回重试安装。",
+  "updateOpenPermission": "打开安装权限",
+  "updateInstallerStarted": "已打开系统安装器，请确认安装。",
+  "updateNoCompatibleApk": "此版本没有适用于当前设备架构的安装包。",
+  "updateUnsupported": "仅正式版 Android 应用支持应用内更新。",
+  "updateFailed": "更新失败：{error}",
+  "aboutUpdateChannelStable": "正式版",
+  "aboutUpdateChannelPreview": "预览版",
+  "aboutUpdateCheck": "检查更新",
+  "aboutUpdateChecking": "正在检查更新",
+  "aboutUpdateCheckingBody": "正在读取正式版信息。",
   "aboutUpdateCheckingBodyPreview": "正在读取预览版信息。",
   "aboutUpdateFallbackTitle": "更新服务不可用",
   "aboutUpdateFallbackBody": "已改为读取 GitHub 最新发布（{name}）。这不是按频道筛选的结果。",
   "aboutUpdateOpenReleases": "打开发布页",
   "aboutUpdateChannelMismatch": "返回的发布与所选频道不一致，不能当成已是最新。",
-    "aboutUpdateDownloadedTitle": "更新已下载",
-    "aboutUpdateDownloadedBody": "安装包已校验完成，可以交给系统安装器安装。",
-    "aboutUpdateInstall": "立即安装",
-    "aboutUpdateErrorTitle": "更新失败",
-    "aboutCopyError": "复制完整错误",
-    "aboutErrorCopied": "完整错误已复制",
-    "aboutCreditsHarness": "DeepSeek Harness：协作开发与工程辅助。",
-    "aboutCreditsOpenList": "OpenList Teams：提供网盘兼容思路。",
-    "aboutCreditsRclone": "rclone crypt：加密文件格式与实现思路。",
-    "aboutCreditsPackages": "其他第三方包及其许可证列在下方。",
-    "aboutAllLicenses": "查看全部第三方包和许可证",
+  "aboutUpdateDownloadedTitle": "更新已下载",
+  "aboutUpdateDownloadedBody": "安装包已校验完成，可以交给系统安装器安装。",
+  "aboutUpdateInstall": "立即安装",
+  "aboutUpdateErrorTitle": "更新失败",
+  "aboutCopyError": "复制完整错误",
+  "aboutErrorCopied": "完整错误已复制",
+  "aboutCreditsHarness": "DeepSeek Harness：协作开发与工程辅助。",
+  "aboutCreditsOpenList": "OpenList Teams：提供网盘兼容思路。",
+  "aboutCreditsRclone": "rclone crypt：加密文件格式与实现思路。",
+  "aboutCreditsPackages": "其他第三方包及其许可证列在下方。",
+  "aboutAllLicenses": "查看全部第三方包和许可证",
   "mangaLocalCbzBuild": "从设备添加",
   "@mangaLocalCbzBuild": {},
   "mangaLocalCbzPickAccount": "选择上传账号",

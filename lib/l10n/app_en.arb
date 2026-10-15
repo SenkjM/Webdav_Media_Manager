@@ -357,7 +357,11 @@
   "uploadFolderEmpty": "The selected folder has no files",
   "uploadQueuedFiles": "{count} upload tasks queued",
   "@uploadQueuedFiles": {
-    "placeholders": { "count": { "type": "int" } }
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "uploadFolderPreparing": "Reading the selected folder…",
   "uploadQueued": "Upload queued",
@@ -552,8 +556,12 @@
   "recoveryClearPartial": "Deleted {removed} file(s); {names} are still in use and could not be removed.",
   "@recoveryClearPartial": {
     "placeholders": {
-      "removed": { "type": "int" },
-      "names": { "type": "String" }
+      "removed": {
+        "type": "int"
+      },
+      "names": {
+        "type": "String"
+      }
     }
   },
   "recoveryClearedCount": "Cleared {count} database files; please reopen the app",
@@ -1097,6 +1105,8 @@
   "imageViewer": "Image viewer",
   "imageViewerSubtitle": "Slideshow, fit, and prefetch",
   "imageSlideshow": "Slideshow",
+  "imageTapDeadZone": "Tap Dead Zone",
+  "imageTapDeadZoneHint": "Taps in the top and bottom fraction of the screen are ignored. Left and right have no dead zone.",
   "imageSlideshowHint": "Advance automatically. Turning a page by hand restarts the timer and does not turn this off.",
   "imageSlideshowInterval": "Interval",
   "imageSlideshowSeconds": "{seconds} s",
@@ -1404,7 +1414,7 @@
       }
     }
   },
-"mangaReadProgress": "{current}/{total}",
+  "mangaReadProgress": "{current}/{total}",
   "mangaPageCount": "{count} pages",
   "@mangaPageCount": {
     "placeholders": {
@@ -1467,7 +1477,13 @@
   "mangaCoverThumbCustom": "Custom",
   "mangaCoverThumbKeepOriginal": "Keep original",
   "mangaCoverThumbSizeCurrent": "Current: ${px} px",
-  "@mangaCoverThumbSizeCurrent": { "placeholders": { "px": { "type": "Object" } } },
+  "@mangaCoverThumbSizeCurrent": {
+    "placeholders": {
+      "px": {
+        "type": "Object"
+      }
+    }
+  },
   "imageViewerControls": "Viewer options",
   "imageViewerMoreSettings": "More settings",
   "mangaSetPageAsCover": "Set current page as cover",
@@ -1574,51 +1590,50 @@
   "mangaDeleteTitle": "Delete selected comics?",
   "mangaDeleteBody": "Deletes {count} comics with their cache and covers. This cannot be undone.",
   "mangaBatchDeleteDone": "Deleted {count} manga",
-
   "mangaReadModeSection": "Reading mode",
   "mangaReadModeHint": "Streaming fetches pages as you read; caching downloads the whole file first",
   "mangaReadModeStream": "Stream",
   "mangaReadModeCache": "Cache full file",
   "mangaRangeUnsupportedRemember": "Always cache from now on",
   "imageViewerClose": "Exit viewer",
-    "mangaRescanAction": "Re-scan this book",
-    "mangaRescanHint": "Pick the source folder; the page list is rebuilt and progress and metadata stay.",
-    "settingsAppSection": "App and updates",
-    "settingsUpdate": "Check for app updates",
-    "settingsUpdateSubtitle": "Checks GitHub stable releases only when you tap it; never automatically",
-    "updateChecking": "Checking for updates…",
-    "updateUpToDate": "You are up to date ({version})",
-    "updateAvailableTitle": "Version {version} is available",
-    "updateAvailableBody": "The matching APK will be downloaded, SHA-256 verified, then handed to the system installer.",
-    "updateDownloadInstall": "Download and install",
-    "updateDownloading": "Downloading update: {percent}%",
-    "updateInstallPermission": "Allow this app to install unknown apps, then return and retry installation.",
-    "updateOpenPermission": "Open install permission",
-    "updateInstallerStarted": "The system installer is open. Confirm installation there.",
-    "updateNoCompatibleApk": "This release has no APK for this device architecture.",
-    "updateUnsupported": "In-app updates are available only in the production Android app.",
-    "updateFailed": "Update failed: {error}",
-    "aboutUpdateChannelStable": "Stable",
-    "aboutUpdateChannelPreview": "Preview",
-    "aboutUpdateCheck": "Check for updates",
-    "aboutUpdateChecking": "Checking for updates",
-    "aboutUpdateCheckingBody": "Reading the stable release.",
+  "mangaRescanAction": "Re-scan this book",
+  "mangaRescanHint": "Pick the source folder; the page list is rebuilt and progress and metadata stay.",
+  "settingsAppSection": "App and updates",
+  "settingsUpdate": "Check for app updates",
+  "settingsUpdateSubtitle": "Checks GitHub stable releases only when you tap it; never automatically",
+  "updateChecking": "Checking for updates…",
+  "updateUpToDate": "You are up to date ({version})",
+  "updateAvailableTitle": "Version {version} is available",
+  "updateAvailableBody": "The matching APK will be downloaded, SHA-256 verified, then handed to the system installer.",
+  "updateDownloadInstall": "Download and install",
+  "updateDownloading": "Downloading update: {percent}%",
+  "updateInstallPermission": "Allow this app to install unknown apps, then return and retry installation.",
+  "updateOpenPermission": "Open install permission",
+  "updateInstallerStarted": "The system installer is open. Confirm installation there.",
+  "updateNoCompatibleApk": "This release has no APK for this device architecture.",
+  "updateUnsupported": "In-app updates are available only in the production Android app.",
+  "updateFailed": "Update failed: {error}",
+  "aboutUpdateChannelStable": "Stable",
+  "aboutUpdateChannelPreview": "Preview",
+  "aboutUpdateCheck": "Check for updates",
+  "aboutUpdateChecking": "Checking for updates",
+  "aboutUpdateCheckingBody": "Reading the stable release.",
   "aboutUpdateCheckingBodyPreview": "Reading the preview release.",
   "aboutUpdateFallbackTitle": "Update service unavailable",
   "aboutUpdateFallbackBody": "Showing the newest GitHub release ({name}). This is not filtered by channel.",
   "aboutUpdateOpenReleases": "Open releases",
   "aboutUpdateChannelMismatch": "The release does not match the selected channel, so it is not treated as up to date.",
-    "aboutUpdateDownloadedTitle": "Update downloaded",
-    "aboutUpdateDownloadedBody": "The APK was verified and is ready for the system installer.",
-    "aboutUpdateInstall": "Install now",
-    "aboutUpdateErrorTitle": "Update failed",
-    "aboutCopyError": "Copy full error",
-    "aboutErrorCopied": "Full error copied",
-    "aboutCreditsHarness": "DeepSeek Harness: collaborative development and engineering assistance.",
-    "aboutCreditsOpenList": "OpenList Teams: cloud-drive compatibility direction.",
-    "aboutCreditsRclone": "rclone crypt: encrypted-file format and implementation direction.",
-    "aboutCreditsPackages": "Other third-party packages and their licenses are listed below.",
-    "aboutAllLicenses": "View all third-party packages and licenses",
+  "aboutUpdateDownloadedTitle": "Update downloaded",
+  "aboutUpdateDownloadedBody": "The APK was verified and is ready for the system installer.",
+  "aboutUpdateInstall": "Install now",
+  "aboutUpdateErrorTitle": "Update failed",
+  "aboutCopyError": "Copy full error",
+  "aboutErrorCopied": "Full error copied",
+  "aboutCreditsHarness": "DeepSeek Harness: collaborative development and engineering assistance.",
+  "aboutCreditsOpenList": "OpenList Teams: cloud-drive compatibility direction.",
+  "aboutCreditsRclone": "rclone crypt: encrypted-file format and implementation direction.",
+  "aboutCreditsPackages": "Other third-party packages and their licenses are listed below.",
+  "aboutAllLicenses": "View all third-party packages and licenses",
   "mangaLocalCbzBuild": "Add from device",
   "@mangaLocalCbzBuild": {},
   "mangaLocalCbzPickAccount": "Select upload account",

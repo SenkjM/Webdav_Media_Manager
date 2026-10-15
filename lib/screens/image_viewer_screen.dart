@@ -105,6 +105,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   String _slideSig = '';
   String _fit = SettingsService.imageFitContain;
   String _globalPageTurn = PageTurnDirection.ltr;
+  double _tapDeadZone = 0.15;
   String? _mangaPageTurn; // null = follow global
   int _prefetch = SettingsService.defaultImagePrefetchCount;
   bool _scan = false;
@@ -189,6 +190,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
         '${s.imageSlideshowEnabled}:${s.imageSlideshowIntervalSeconds}:${s.imageSlideshowLoop}';
     _fit = s.imageFit;
     _globalPageTurn = s.imagePageTurn;
+    _tapDeadZone = s.imageTapDeadZone;
     _prefetch = s.imagePrefetchCount;
     _scan = s.imageScanSubdirs;
     if (notify && mounted) setState(() {});
@@ -202,14 +204,16 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final slideChanged = slideSig != _slideSig;
     final fitChanged = s.imageFit != _fit;
     final turnChanged = s.imagePageTurn != _globalPageTurn;
+    final deadZoneChanged = s.imageTapDeadZone != _tapDeadZone;
     final prefetchChanged = s.imagePrefetchCount != _prefetch;
     final scanChanged = s.imageScanSubdirs != _scan;
     _slideSig = slideSig;
     _fit = s.imageFit;
     _globalPageTurn = s.imagePageTurn;
+    _tapDeadZone = s.imageTapDeadZone;
     _prefetch = s.imagePrefetchCount;
     _scan = s.imageScanSubdirs;
-    if (fitChanged || prefetchChanged || turnChanged) setState(() {});
+    if (fitChanged || prefetchChanged || turnChanged || deadZoneChanged) setState(() {});
     if (prefetchChanged) _syncWindow();
     if (slideChanged) _armSlideshow();
     if (!widget.enableSubdirScan || !scanChanged) return;
@@ -670,6 +674,75 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                           },
                         ),
                       ],
+                      const SizedBox(height: 12),
+                      Text(l10n.imageTapDeadZone),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.imageTapDeadZoneHint,
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      LayoutBuilder(
+                        builder: (_, constraints) {
+                          final totalH = 56.0;
+                          final barH = totalH * _tapDeadZone;
+                          return SizedBox(
+                            height: totalH,
+                            child: Stack(
+                              children: [
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  height: barH,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
+                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  height: barH,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
+                                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(6)),
+                                    ),
+                                  ),
+                                ),
+                                Center(
+                                  child: Text(
+                                    '${(_tapDeadZone * 100).round()}%',
+                                    style: Theme.of(ctx).textTheme.bodySmall,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      Slider(
+                        value: _tapDeadZone,
+                        min: 0.0,
+                        max: 0.4,
+                        divisions: 8,
+                        label: '${(_tapDeadZone * 100).round()}%',
+                        onChanged: (v) {
+                          setState(() => _tapDeadZone = v);
+                          setSheet(() {});
+                          unawaited(settings.setImageTapDeadZone(v));
+                        },
+                      ),
                       SwitchListTile(
                         contentPadding: EdgeInsets.zero,
                         title: Text(l10n.imageSlideshow),
@@ -892,8 +965,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     final pad = mq.padding;
     final left = gesture.left > pad.left ? gesture.left : pad.left;
     final right = gesture.right > pad.right ? gesture.right : pad.right;
-    final top = gesture.top > pad.top ? gesture.top : pad.top;
-    final bottom = gesture.bottom > pad.bottom ? gesture.bottom : pad.bottom;
+    final sysTop = gesture.top > pad.top ? gesture.top : pad.top;
+    final sysBottom = gesture.bottom > pad.bottom ? gesture.bottom : pad.bottom;
+    final deadPx = mq.size.height * _tapDeadZone;
+    final top = sysTop + deadPx;
+    final bottom = sysBottom + deadPx;
     final current = _current;
     final local = current == null ? null : _localById[current.id];
     final file = local == null ? null : File(local);

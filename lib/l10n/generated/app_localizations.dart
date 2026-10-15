@@ -6395,6 +6395,18 @@ abstract class AppLocalizations {
   /// **'幻灯片播放'**
   String get imageSlideshow;
 
+  /// No description provided for @imageTapDeadZone.
+  ///
+  /// In zh, this message translates to:
+  /// **'点击死区'**
+  String get imageTapDeadZone;
+
+  /// No description provided for @imageTapDeadZoneHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'屏幕上下边缘区域内的点击不触发翻页，左右无死区。'**
+  String get imageTapDeadZoneHint;
+
   /// No description provided for @imageSlideshowHint.
   ///
   /// In zh, this message translates to:
