@@ -1208,3 +1208,13 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - **散图物化（打包）**：`TaskKind.mangaPack`（storage `manga_pack`）+ `enqueueMangaPack({sourceName, mangaId, remotePath, displayName})` + `_runMangaPack`。**刻意拆成两条任务**：打包与上传各占行、各有各的进度。打包把页逐张下到同一个临时文件、再用 `ZipFileEncoder.addFile` 流进归档（峰值磁盘一页、峰值内存一个缓冲），条目名带 5 位序号前缀 `00001_原名`，同时保证页序与「两个源目录里有同名文件」时的唯一性；成功后自动 `enqueueUpload`，归档本身由上传任务负责删。
 - **入口**：散图书的行尾「⋮」新增「物化为 CBZ」——先 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目标目录，再填文件名（默认取书名，`\ / : * ? " < > |` 替换成 `_`）。**这里刻意不用 `TextEditingController`**：对话框 pop 之后路由还在播退场动画，随手 `dispose()` 会在 `_dependents.isEmpty` 上炸（与批量改系列名那次同一个坑），所以改用 `TextFormField(initialValue:)` + 局部变量。
 - **入口**：散图书的行尾「⋮」新增「物化为 CBZ」——先 `WebDavFolderPickerScreen(initialPath: manga.remotePath)` 选目标目录，再填文件名（默认取书名，`\ / : * ? " < > |` 替换成 `_`）。**这里刻意不用 `TextEditingController`**：对话框 pop 之后路由还在播退场动画，随手 `dispose()` 会在 `_dependents.isEmpty` 上炸（与批量改系列名那次同一个坑），所以改用 `TextFormField(initialValue:)` + 局部变量。
+- **文件夹上传优化备选方案 B（待评估）**：现有 `_uploadFolder` 调 `pickFolder()` 会在原生线程把整个目录**全量复制**到缓存后才回调，大文件夹用户零响应。方案 B 是「枚举先行、物化惰性」：
+  - 原生新增 `listFolderTree`（只枚举 SAF URI + relativePath + size，不复制字节）和 `readUriToCache`（单文件按需复制到临时目录）两个 channel 方法，请求码 `REQUEST_LIST_FOLDER_TREE = 4713`。
+  - Dart 侧 `PlatformExportService` 暴露 `listFolderTree() -> PickedFolderTree` 和 `readUriToCache(uri) -> String?`；`QueueTask` 新增 `localUri` 字段（SAF URI），`enqueueUpload` 同步加 `localUri` 可选参数。
+  - `_runUpload` 检测到 `localUri` 时，在 worker 里调 `readUriToCache` 拿缓存路径再上传，成功后删临时文件；重试时缓存路径已写回 `task.localPath` 无需再次枚举。
+  - 好处：picker 界面即时消失，进度在任务列表可见；暂推迟，等文件夹上传量级达到实际瓶颈时再上。
+- **文件夹上传优化备选方案 B（待评估）**：现有 `_uploadFolder` 调 `pickFolder()` 会在原生线程把整个目录**全量复制**到缓存后才回调，大文件夹用户零响应。方案 B 是「枚举先行、物化惰性」：
+  - 原生新增 `listFolderTree`（只枚举 SAF URI + relativePath + size，不复制字节）和 `readUriToCache`（单文件按需复制到临时目录）两个 channel 方法，请求码 `REQUEST_LIST_FOLDER_TREE = 4713`。
+  - Dart 侧 `PlatformExportService` 暴露 `listFolderTree() -> PickedFolderTree` 和 `readUriToCache(uri) -> String?`；`QueueTask` 新增 `localUri` 字段（SAF URI），`enqueueUpload` 同步加 `localUri` 可选参数。
+  - `_runUpload` 检测到 `localUri` 时，在 worker 里调 `readUriToCache` 拿缓存路径再上传，成功后删临时文件；重试时缓存路径已写回 `task.localPath` 无需再次枚举。
+  - 好处：picker 界面即时消失，进度在任务列表可见；暂推迟，等文件夹上传量级达到实际瓶颈时再上。
