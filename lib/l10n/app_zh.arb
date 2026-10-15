@@ -1631,5 +1631,19 @@
     "aboutCreditsOpenList": "OpenList Teams：提供网盘兼容思路。",
     "aboutCreditsRclone": "rclone crypt：加密文件格式与实现思路。",
     "aboutCreditsPackages": "其他第三方包及其许可证列在下方。",
-    "aboutAllLicenses": "查看全部第三方包和许可证"
+    "aboutAllLicenses": "查看全部第三方包和许可证",
+  "mangaLocalCbzBuild": "从设备添加",
+  "@mangaLocalCbzBuild": {},
+  "mangaLocalCbzPickAccount": "选择上传账号",
+  "@mangaLocalCbzPickAccount": {},
+  "mangaLocalCbzQueued": "已加入任务，请在任务列表中查看进度",
+  "@mangaLocalCbzQueued": {},
+  "mangaLocalCbzPickFolder": "选择目标文件夹",
+  "@mangaLocalCbzPickFolder": {},
+  "mangaLocalCbzFolderHint": "选择上传到云盘的目录：",
+  "@mangaLocalCbzFolderHint": {},
+  "mangaLocalCbzBrowse": "浏览",
+  "@mangaLocalCbzBrowse": {},
+  "errNoWriteAccount": "没有可写入的账号",
+  "@errNoWriteAccount": {}
 }

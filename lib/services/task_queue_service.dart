@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'dart:collection';
 import 'dart:io';
@@ -763,9 +763,14 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     required String sourceName,
     required String remotePath,
     required String displayName,
-    required String localPath,
+    String? localPath,
+    String? localUri,
     String? cacheGroupId,
   }) async {
+    assert(
+      (localPath != null) != (localUri != null),
+      'enqueueUpload: supply exactly one of localPath or localUri',
+    );
     final task = QueueTask(
       id: _uuid.v4(),
       sourceName: sourceName,
@@ -775,6 +780,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       kind: TaskKind.upload,
       progressMode: TaskProgressMode.bytes,
       localPath: localPath,
+      localUri: localUri,
       cacheGroupId: cacheGroupId,
     );
     _tasks.add(task);
@@ -3139,6 +3145,16 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// upload progress. Cloud-drive accounts have no upload primitive at all and
   /// fail immediately with `err.cloudWriteDisabled`.
   Future<void> _runUpload(QueueTask task, CancelToken token) async {
+    // JIT SAF materialisation for Android content URIs.
+    String? jitCached;
+    if (task.localUri != null) {
+      jitCached =
+          await PlatformExportService.readUriToCache(task.localUri!);
+      if (jitCached == null) {
+        throw StateError('err.unknown|failed to materialise SAF URI');
+      }
+      task.localPath = jitCached;
+    }
     final localPath = task.localPath;
     if (localPath == null || localPath.isEmpty) {
       throw StateError('err.unknown|no local file');
@@ -3188,6 +3204,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     task.progress = 1;
     task.status = TaskStatus.completed;
     task.completedAt = DateTime.now();
+    // Clean up JIT-materialised SAF temp file.
+    if (jitCached != null) {
+      try {
+        await File(jitCached).delete();
+      } catch (_) {}
+    }
     // Success only: a failed attempt must keep the payload for its retry.
     try {
       await file.delete();
@@ -3364,6 +3386,10 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (mangaLib == null) {
       throw StateError('err.unknown|manga library unavailable');
     }
+    // Local SAF path: delegate to localFileUris worker.
+    if (payload.localFileUris != null) {
+      return _runMangaBuildFromLocalUris(task, payload, token);
+    }
     final walk = WalkOptions(
       includeSubdirs: payload.includeSubdirs,
       maxDepth: payload.maxDepth,
@@ -3496,6 +3522,136 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     await finish();
   }
+
+
+  /// Build manga books from local device files (Android SAF content URIs).
+  ///
+  /// Groups [payload.localFileUris] by parent directory and creates one
+  /// loose-image book per directory (perDir semantics, same as cloud path).
+  Future<void> _runMangaBuildFromLocalUris(
+    QueueTask task,
+    MangaBuildPayload payload,
+    CancelToken token,
+  ) async {
+    final mangaLib = _mangaLibrary;
+    if (mangaLib == null) {
+      throw StateError('err.unknown|manga library unavailable');
+    }
+
+    final entries = payload.localFileUris!;
+
+    // Group by parent directory component of relativePath.
+    final Map<String, List<Map<String, String>>> byDir = {};
+    for (final e in entries) {
+      final rel = e['relativePath'] ?? '';
+      final slash = rel.lastIndexOf('/');
+      final dir = slash >= 0 ? rel.substring(0, slash) : '';
+      (byDir[dir] ??= []).add(e);
+    }
+
+    task.unitsTotal = byDir.length;
+    task.unitsDone = 0;
+    task.syncProgressFromCounters();
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+
+    if (byDir.isEmpty) {
+      task.status = TaskStatus.failed;
+      task.errorMessage = 'err.unknown|no images in selected folder';
+      await _guardPersist(() => _store.upsert(task));
+      notifyListeners();
+      return;
+    }
+
+    var done = 0;
+    for (final dirEntry in byDir.entries) {
+      if (token.isCancelled) {
+        task.status = TaskStatus.cancelled;
+        await _guardPersist(() => _store.upsert(task));
+        notifyListeners();
+        return;
+      }
+
+      final dirName = dirEntry.key.isEmpty
+          ? payload.folderName
+          : dirEntry.key.split('/').last;
+      final files = List<Map<String, String>>.from(dirEntry.value)
+        ..sort((a, b) =>
+            (a['relativePath'] ?? '').compareTo(b['relativePath'] ?? ''));
+
+      // Materialise images JIT via SAF.
+      final localPaths = <String>[];
+      for (final f in files) {
+        final uri = f['uri'];
+        if (uri == null) continue;
+        final cached = await PlatformExportService.readUriToCache(uri);
+        if (cached != null) localPaths.add(cached);
+      }
+
+      if (localPaths.isEmpty) {
+        done++;
+        await reportUnitsProgress(task.id, done: done, total: byDir.length);
+        continue;
+      }
+
+      // Build image name list from cached path basenames.
+      final imageNames = [
+        for (final lp in localPaths)
+          lp.replaceAll(r'\\', '/').split('/').last,
+      ];
+
+      // Synthesise a remote folderPath so draftForImageDir can build page paths.
+      final dirBase = payload.remotePath.isEmpty
+          ? '/$dirName'
+          : '${payload.remotePath.replaceAll(RegExp(r"/+$"), "")}/$dirName';
+      final draft = MangaLibraryService.draftForImageDir(
+        sourceName: payload.sourceName,
+        folderPath: dirBase,
+        folderName: dirName,
+        imageNames: imageNames,
+      );
+      draft
+        ..title = byDir.length == 1 ? payload.title : dirName
+        ..author = payload.author
+        ..seriesTitle = payload.seriesTitle;
+
+      final savedId = (await mangaLib.upsertFromDraft(draft)).id;
+
+      // Enqueue pack + upload if a remote destination was provided.
+      if (payload.remotePath.isNotEmpty) {
+        final sanitized = _sanitizeCbzName(draft.title);
+        final cbzName = '$sanitized.cbz';
+        final remoteBase =
+            payload.remotePath.replaceAll(RegExp(r'/+$'), '');
+        final remoteCbz = '$remoteBase/$cbzName';
+        await enqueueMangaPack(
+          sourceName: payload.sourceName,
+          mangaId: savedId,
+          remotePath: remoteCbz,
+          displayName: cbzName,
+        );
+      }
+
+      // Clean up temp files.
+      for (final lp in localPaths) {
+        try {
+          await File(lp).delete();
+        } catch (_) {}
+      }
+
+      done++;
+      await reportUnitsProgress(task.id, done: done, total: byDir.length);
+    }
+
+    task.status = TaskStatus.completed;
+    task.completedAt = DateTime.now();
+    task.progress = 1;
+    await _guardPersist(() => _store.upsert(task));
+    notifyListeners();
+  }
+
+  static String _sanitizeCbzName(String name) =>
+      name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
 
   Future<void> _runMatchRemote(QueueTask task, CancelToken token) async {
     final library = _library;

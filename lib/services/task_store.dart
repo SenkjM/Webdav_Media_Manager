@@ -62,6 +62,7 @@ CREATE TABLE queue_tasks (
   kind TEXT NOT NULL DEFAULT 'download',
   status TEXT NOT NULL,
   local_path TEXT,
+  local_uri TEXT,
   error_message TEXT,
   progress REAL NOT NULL DEFAULT 0,
   progress_mode TEXT NOT NULL DEFAULT 'bytes',

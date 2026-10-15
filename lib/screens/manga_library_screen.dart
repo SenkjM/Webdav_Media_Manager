@@ -12,6 +12,7 @@ import '../models/manga_read_mode.dart';
 import '../models/manga_series.dart';
 import '../models/webdav_account.dart';
 import '../services/accounts_service.dart';
+import '../models/account_capabilities.dart';
 import '../services/webdav_service.dart';
 import '../services/cache_service.dart';
 import '../services/manga_library_service.dart';
@@ -29,6 +30,7 @@ import '../widgets/selection_toolbar.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
 import 'webdav_folder_picker_screen.dart';
+import '../services/platform_export_service.dart';
 
 /// Manga library: 系列 / 单本 / 作者 (99 §19).
 class MangaLibraryScreen extends StatefulWidget {
@@ -144,6 +146,160 @@ class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
               2 => _AuthorList(query: _query, viewMode: viewMode),
               _ => _MangaList(query: _query, viewMode: viewMode),
             },
+      floatingActionButton: _segment == 1
+          ? FloatingActionButton(
+              heroTag: 'manga_local_cbz_fab',
+              onPressed: _localCbzMaterialise,
+              tooltip: l10n.mangaLocalCbzBuild,
+              child: const Icon(Icons.add),
+            )
+          : null,
+    );
+  }
+
+  Future<void> _localCbzMaterialise() async {
+    final context = this.context;
+    final l10n = AppLocalizations.of(context)!;
+    final webDav = context.read<WebDavService>();
+    final accounts = context.read<AccountsService>().accounts;
+    final writeAccounts =
+        accounts.where((a) => webDav.can(a.id, AccountCaps.write)).toList();
+    if (writeAccounts.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.errNoWriteAccount)),
+        );
+      }
+      return;
+    }
+
+    final result = await showDialog<_LocalCbzTarget>(
+      context: context,
+      builder: (_) => _LocalCbzTargetDialog(writeAccounts: writeAccounts),
+    );
+    if (result == null || !mounted) return;
+
+    final tree = await PlatformExportService().listFolderTree();
+    if (!mounted) return;
+    if (!tree.ok || tree.files.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.mangaLocalCbzPickFolder)),
+      );
+      return;
+    }
+
+    final taskQueue = context.read<TaskQueueService>();
+    final entries = [
+      for (final f in tree.files)
+        {'uri': f.uri, 'relativePath': f.relativePath, 'fileName': f.fileName},
+    ];
+    await taskQueue.enqueueMangaBuild(MangaBuildPayload(
+      mode: MangaBuildMode.perDir,
+      accountId: result.accountId,
+      sourceName: result.sourceName,
+      remotePath: result.remotePath,
+      folderName: tree.folderName ?? l10n.mangaLocalCbzBuild,
+      title: tree.folderName ?? l10n.mangaLocalCbzBuild,
+      localFileUris: entries,
+    ));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.mangaLocalCbzQueued)),
+      );
+    }
+  }
+}
+
+class _LocalCbzTarget {
+  const _LocalCbzTarget({
+    required this.accountId,
+    required this.sourceName,
+    required this.remotePath,
+  });
+  final String accountId;
+  final String sourceName;
+  final String remotePath;
+}
+
+class _LocalCbzTargetDialog extends StatefulWidget {
+  const _LocalCbzTargetDialog({required this.writeAccounts});
+  final List<WebDavAccount> writeAccounts;
+  @override
+  State<_LocalCbzTargetDialog> createState() => _LocalCbzTargetDialogState();
+}
+
+class _LocalCbzTargetDialogState extends State<_LocalCbzTargetDialog> {
+  late WebDavAccount _selectedAccount;
+  String _remotePath = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedAccount = widget.writeAccounts.first;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    return AlertDialog(
+      title: Text(l10n.mangaLocalCbzBuild),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<WebDavAccount>(
+            initialValue: _selectedAccount,
+            items: [
+              for (final a in widget.writeAccounts)
+                DropdownMenuItem(value: a, child: Text(a.name)),
+            ],
+            onChanged: (v) => setState(() => _selectedAccount = v!),
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            decoration: InputDecoration(
+              labelText: l10n.mangaLocalCbzPickFolder,
+              hintText: l10n.mangaLocalCbzFolderHint,
+              suffixIcon: IconButton(
+                icon: const Icon(Icons.folder_open),
+                tooltip: l10n.mangaLocalCbzBrowse,
+                onPressed: () async {
+                  final picked = await Navigator.push<String>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => WebDavFolderPickerScreen(
+                        accountId: _selectedAccount.id,
+                        purpose: 'upload',
+                        initialPath: _remotePath.isEmpty ? '/' : _remotePath,
+                      ),
+                    ),
+                  );
+                  if (picked != null && mounted) {
+                    setState(() => _remotePath = picked);
+                  }
+                },
+              ),
+            ),
+            onChanged: (v) => _remotePath = v,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(
+            context,
+            _LocalCbzTarget(
+              accountId: _selectedAccount.id,
+              sourceName: _selectedAccount.name.trim(),
+              remotePath: _remotePath,
+            ),
+          ),
+          child: Text(l10n.mangaLocalCbzPickAccount),
+        ),
+      ],
     );
   }
 }

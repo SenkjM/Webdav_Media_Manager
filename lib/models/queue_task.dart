@@ -144,6 +144,7 @@ class QueueTask {
     this.kind = TaskKind.download,
     this.status = TaskStatus.pending,
     this.localPath,
+    this.localUri,
     this.errorMessage,
     this.progress = 0.0,
     this.progressMode = TaskProgressMode.bytes,
@@ -174,6 +175,13 @@ class QueueTask {
   TaskKind kind;
   TaskStatus status;
   String? localPath;
+
+  /// Android SAF content URI. When non-null, [_runUpload] calls
+  /// [PlatformExportService.readUriToCache] to materialise the file
+  /// just-in-time. Cleared after the resolved cache path is written
+  /// back to [localPath] for retries.
+  String? localUri;
+
   String? errorMessage;
 
   /// Unified 0–1 progress for bars. Prefer [displayProgress] when reading.
@@ -246,6 +254,7 @@ class QueueTask {
     'kind': kind.storageKey,
     'status': status.name,
     'local_path': localPath,
+    'local_uri': localUri,
     'error_message': errorMessage,
     'progress': progress,
     'progress_mode': progressMode.name,
@@ -279,6 +288,7 @@ class QueueTask {
       orElse: () => TaskStatus.pending,
     ),
     localPath: _asString(map['local_path']),
+    localUri: _asString(map['local_uri']),
     errorMessage: _asString(map['error_message']),
     progress: (map['progress'] as num?)?.toDouble() ?? 0.0,
     progressMode: TaskProgressMode.values.firstWhere(

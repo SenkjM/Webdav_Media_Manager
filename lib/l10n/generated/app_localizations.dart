@@ -8775,6 +8775,48 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'查看全部第三方包和许可证'**
   String get aboutAllLicenses;
+
+  /// No description provided for @mangaLocalCbzBuild.
+  ///
+  /// In zh, this message translates to:
+  /// **'从设备添加'**
+  String get mangaLocalCbzBuild;
+
+  /// No description provided for @mangaLocalCbzPickAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择上传账号'**
+  String get mangaLocalCbzPickAccount;
+
+  /// No description provided for @mangaLocalCbzQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入任务，请在任务列表中查看进度'**
+  String get mangaLocalCbzQueued;
+
+  /// No description provided for @mangaLocalCbzPickFolder.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择目标文件夹'**
+  String get mangaLocalCbzPickFolder;
+
+  /// No description provided for @mangaLocalCbzFolderHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'选择上传到云盘的目录：'**
+  String get mangaLocalCbzFolderHint;
+
+  /// No description provided for @mangaLocalCbzBrowse.
+  ///
+  /// In zh, this message translates to:
+  /// **'浏览'**
+  String get mangaLocalCbzBrowse;
+
+  /// No description provided for @errNoWriteAccount.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有可写入的账号'**
+  String get errNoWriteAccount;
 }
 
 class _AppLocalizationsDelegate

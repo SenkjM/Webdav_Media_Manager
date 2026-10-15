@@ -134,6 +134,59 @@ class PickedFolder {
   final bool cancelled;
 }
 
+/// One file entry returned by [PlatformExportService.listFolderTree].
+///
+/// [uri] is an Android SAF content URI. Pass it to
+/// [PlatformExportService.readUriToCache] when bytes are actually needed.
+/// [relativePath] includes the root folder name (e.g. `photos/2024/cat.jpg`).
+class FolderTreeEntry {
+  const FolderTreeEntry({
+    required this.uri,
+    required this.relativePath,
+    required this.fileName,
+    this.size,
+  });
+
+  /// Android SAF content URI string — not a file path.
+  final String uri;
+
+  /// Path below (and including) the picked root folder name.
+  final String relativePath;
+
+  final String fileName;
+
+  /// File size in bytes as reported by SAF; may be 0 for some providers.
+  final int? size;
+
+  static FolderTreeEntry fromMap(Map<dynamic, dynamic> raw) {
+    final map = raw.map((k, v) => MapEntry(k.toString(), v));
+    return FolderTreeEntry(
+      uri: map['uri']?.toString() ?? '',
+      relativePath: map['relativePath']?.toString() ?? '',
+      fileName: map['fileName']?.toString() ?? '',
+      size: (map['size'] as num?)?.toInt(),
+    );
+  }
+}
+
+/// Result of [PlatformExportService.listFolderTree].
+///
+/// Unlike [PickedFolder] no bytes have been copied: [files] are SAF URIs only.
+class PickedFolderTree {
+  const PickedFolderTree({
+    required this.ok,
+    this.folderName,
+    this.files = const [],
+    this.error,
+    this.cancelled = false,
+  });
+
+  final bool ok;
+  final String? folderName;
+  final List<FolderTreeEntry> files;
+  final String? error;
+  final bool cancelled;
+}
 /// Outcome of toggling `.nomedia` in `Download/WebdavMediaManager`.
 class DownloadsNomediaResult {
   const DownloadsNomediaResult({this.error, this.alreadyMatched = false});
@@ -428,6 +481,52 @@ class PlatformExportService {
       return PickedFolder(ok: false, error: e.message ?? e.code);
     } catch (e) {
       return PickedFolder(ok: false, error: '$e');
+    }
+  }
+
+  /// Open the system folder picker and return only the tree metadata — URIs,
+  /// relative paths, file names, sizes — without copying any bytes.
+  ///
+  /// Use [readUriToCache] to materialise individual files inside a worker.
+  Future<PickedFolderTree> listFolderTree() async {
+    if (!supported) {
+      return const PickedFolderTree(ok: false, error: 'pickerErr.unsupportedPlatform');
+    }
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('listFolderTree');
+      if (raw == null) return const PickedFolderTree(ok: true, cancelled: true);
+      if (raw is! Map) return const PickedFolderTree(ok: false, error: 'pickerErr.badResponse');
+      final map = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (map['ok'] != true) {
+        return PickedFolderTree(ok: false, error: map['error']?.toString() ?? 'pickerErr.failed');
+      }
+      final files = ((map['files'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(FolderTreeEntry.fromMap)
+          .toList(growable: false);
+      return PickedFolderTree(ok: true, folderName: map['folderName']?.toString(), files: files);
+    } on MissingPluginException {
+      return const PickedFolderTree(ok: false, error: 'pickerErr.channelUnavailable');
+    } on PlatformException catch (e) {
+      return PickedFolderTree(ok: false, error: e.message ?? e.code);
+    } catch (e) {
+      return PickedFolderTree(ok: false, error: '$e');
+    }
+  }
+
+  /// Copy one SAF content URI into the app cache and return its local path.
+  ///
+  /// Call from a worker thread to materialise a [FolderTreeEntry] on demand.
+  /// Returns null on failure.
+  static Future<String?> readUriToCache(String uri) async {
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('readUriToCache', {'uri': uri});
+      if (raw is! Map) return null;
+      final map = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (map['ok'] != true) return null;
+      return map['path']?.toString();
+    } catch (_) {
+      return null;
     }
   }
 

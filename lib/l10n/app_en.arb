@@ -1611,5 +1611,19 @@
     "aboutCreditsOpenList": "OpenList Teams: cloud-drive compatibility direction.",
     "aboutCreditsRclone": "rclone crypt: encrypted-file format and implementation direction.",
     "aboutCreditsPackages": "Other third-party packages and their licenses are listed below.",
-    "aboutAllLicenses": "View all third-party packages and licenses"
+    "aboutAllLicenses": "View all third-party packages and licenses",
+  "mangaLocalCbzBuild": "Add from device",
+  "@mangaLocalCbzBuild": {},
+  "mangaLocalCbzPickAccount": "Select upload account",
+  "@mangaLocalCbzPickAccount": {},
+  "mangaLocalCbzQueued": "Building — check the task list for progress",
+  "@mangaLocalCbzQueued": {},
+  "mangaLocalCbzPickFolder": "Select destination folder",
+  "@mangaLocalCbzPickFolder": {},
+  "mangaLocalCbzFolderHint": "Choose the cloud folder to upload to:",
+  "@mangaLocalCbzFolderHint": {},
+  "mangaLocalCbzBrowse": "Browse",
+  "@mangaLocalCbzBrowse": {},
+  "errNoWriteAccount": "No writable account found",
+  "@errNoWriteAccount": {}
 }

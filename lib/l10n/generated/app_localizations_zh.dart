@@ -4946,6 +4946,27 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get aboutAllLicenses => '查看全部第三方包和许可证';
+
+  @override
+  String get mangaLocalCbzBuild => '从设备添加';
+
+  @override
+  String get mangaLocalCbzPickAccount => '选择上传账号';
+
+  @override
+  String get mangaLocalCbzQueued => '已加入任务，请在任务列表中查看进度';
+
+  @override
+  String get mangaLocalCbzPickFolder => '选择目标文件夹';
+
+  @override
+  String get mangaLocalCbzFolderHint => '选择上传到云盘的目录：';
+
+  @override
+  String get mangaLocalCbzBrowse => '浏览';
+
+  @override
+  String get errNoWriteAccount => '没有可写入的账号';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -9890,4 +9911,25 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get aboutAllLicenses => '檢視全部第三方套件和授權條款';
+
+  @override
+  String get mangaLocalCbzBuild => '從裝置加入';
+
+  @override
+  String get mangaLocalCbzPickAccount => '選擇上傳帳號';
+
+  @override
+  String get mangaLocalCbzQueued => '已加入任務，請在任務清單查看進度';
+
+  @override
+  String get mangaLocalCbzPickFolder => '選擇目標資料夾';
+
+  @override
+  String get mangaLocalCbzFolderHint => '選擇上傳至雲端的目錄：';
+
+  @override
+  String get mangaLocalCbzBrowse => '瀏覽';
+
+  @override
+  String get errNoWriteAccount => '沒有可寫入的帳號';
 }

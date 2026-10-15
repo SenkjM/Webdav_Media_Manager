@@ -5185,4 +5185,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get aboutAllLicenses => 'View all third-party packages and licenses';
+
+  @override
+  String get mangaLocalCbzBuild => 'Add from device';
+
+  @override
+  String get mangaLocalCbzPickAccount => 'Select upload account';
+
+  @override
+  String get mangaLocalCbzQueued =>
+      'Building — check the task list for progress';
+
+  @override
+  String get mangaLocalCbzPickFolder => 'Select destination folder';
+
+  @override
+  String get mangaLocalCbzFolderHint => 'Choose the cloud folder to upload to:';
+
+  @override
+  String get mangaLocalCbzBrowse => 'Browse';
+
+  @override
+  String get errNoWriteAccount => 'No writable account found';
 }

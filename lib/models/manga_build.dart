@@ -42,6 +42,7 @@ class MangaBuildPayload {
     this.maxEntries = kMangaBuildMaxEntries,
     this.imageExtensions = const [],
     this.targetMangaId,
+    this.localFileUris,
   });
 
   final MangaBuildMode mode;
@@ -66,6 +67,11 @@ class MangaBuildPayload {
   /// Null means 「build a new book」 — a fresh surrogate id is minted.
   final String? targetMangaId;
 
+  /// Non-null when building from local device files (Android SAF URIs).
+  /// Each entry: `{uri, relativePath, fileName}`.
+  /// When set, [accountId]/[sourceName] identify the upload destination only.
+  final List<Map<String, String>>? localFileUris;
+
   Map<String, dynamic> toJson() => {
     'mode': mode.storageKey,
     'accountId': accountId,
@@ -80,6 +86,7 @@ class MangaBuildPayload {
     'maxEntries': maxEntries,
     'imageExtensions': imageExtensions,
     if (targetMangaId != null) 'targetMangaId': targetMangaId,
+    if (localFileUris != null) 'localFileUris': localFileUris,
   };
 
   static MangaBuildPayload? fromJson(Object? raw) {
@@ -109,6 +116,15 @@ class MangaBuildPayload {
             ]
           : const [],
       targetMangaId: m['targetMangaId'] as String?,
+      localFileUris: () {
+        final raw = m['localFileUris'];
+        if (raw is! List) return null;
+        return [
+          for (final e in raw)
+            if (e is Map)
+              {for (final kv in (e).entries) kv.key.toString(): kv.value.toString()},
+        ];
+      }(),
     );
   }
 }

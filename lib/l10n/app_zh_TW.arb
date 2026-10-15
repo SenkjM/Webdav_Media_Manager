@@ -1600,5 +1600,19 @@
     "aboutCreditsOpenList": "OpenList Teams：提供網路磁碟相容思路。",
     "aboutCreditsRclone": "rclone crypt：加密檔案格式與實作思路。",
     "aboutCreditsPackages": "其他第三方套件及其授權條款列在下方。",
-    "aboutAllLicenses": "檢視全部第三方套件和授權條款"
+    "aboutAllLicenses": "檢視全部第三方套件和授權條款",
+  "mangaLocalCbzBuild": "從裝置加入",
+  "@mangaLocalCbzBuild": {},
+  "mangaLocalCbzPickAccount": "選擇上傳帳號",
+  "@mangaLocalCbzPickAccount": {},
+  "mangaLocalCbzQueued": "已加入任務，請在任務清單查看進度",
+  "@mangaLocalCbzQueued": {},
+  "mangaLocalCbzPickFolder": "選擇目標資料夾",
+  "@mangaLocalCbzPickFolder": {},
+  "mangaLocalCbzFolderHint": "選擇上傳至雲端的目錄：",
+  "@mangaLocalCbzFolderHint": {},
+  "mangaLocalCbzBrowse": "瀏覽",
+  "@mangaLocalCbzBrowse": {},
+  "errNoWriteAccount": "沒有可寫入的帳號",
+  "@errNoWriteAccount": {}
 }
