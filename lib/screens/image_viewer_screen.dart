@@ -769,12 +769,22 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                                 // Top dead band
                                 Positioned(top: 0, left: horizPx, right: horizPx,
                                   height: topPx,
-                                  child: Container(color: deadColor),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: deadColor,
+                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                                    ),
+                                  ),
                                 ),
                                 // Bottom dead band
                                 Positioned(bottom: 0, left: horizPx, right: horizPx,
                                   height: topPx,
-                                  child: Container(color: deadColor),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: deadColor,
+                                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(8)),
+                                    ),
+                                  ),
                                 ),
                                 // Prev zone
                                 Positioned(
@@ -1097,9 +1107,11 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                 child: CircularProgressIndicator(color: Colors.white70),
               ),
             Padding(
-              padding: EdgeInsets.fromLTRB(left, top, right, bottom),
+              padding: EdgeInsets.fromLTRB(sysLeft, top, sysRight, bottom),
               child: Row(
                 children: [
+                  // Left dead strip: absorbs horizDeadPx; no gesture handler
+                  SizedBox(width: horizDeadPx),
                   Expanded(
                     flex: (((1.0 - _tapCenterSize) / 2) * 100).round(),
                     child: _zone(
@@ -1121,6 +1133,8 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                       () => _turnFromEdge(1, fromTimer: false),
                     ),
                   ),
+                  // Right dead strip
+                  SizedBox(width: horizDeadPx),
                 ],
               ),
             ),
