@@ -130,6 +130,7 @@ class SettingsService extends ChangeNotifier {
   static const _kMangaScanMaxDepth = 'manga_scan_max_depth';
   static const _kMangaCreateSubdirs = 'manga_create_subdirs';
   static const _kMangaCreateMaxDepth = 'manga_create_max_depth';
+  static const _kMangaCoverThumbSize = 'manga_cover_thumb_size';
 
   /// Mutual library mode: false = 手动管理 (default); true = 自动补齐.
   static const _kMusicLibraryAutoBackfill = 'music_library_auto_backfill';
@@ -323,6 +324,7 @@ class SettingsService extends ChangeNotifier {
   int _mangaScanMaxDepth = 1;
   bool _mangaCreateSubdirs = true;
   int _mangaCreateMaxDepth = 1;
+  int _mangaCoverThumbSize = 500;
   bool _musicLibraryAutoBackfill = false;
   bool _musicLibraryBackfillBindRoots = false;
   List<MusicLibraryBackfillRoot> _musicLibraryBackfillRoots = const [];
@@ -616,6 +618,9 @@ class SettingsService extends ChangeNotifier {
 
   /// 漫画库：散图建立最大深度。默认 1。键 `manga_create_max_depth`。
   int get mangaCreateMaxDepth => _mangaCreateMaxDepth;
+
+  /// 漫画封面缩略图边长。0 = 保持原图不缩放。默认 500。键 `manga_cover_thumb_size`。
+  int get mangaCoverThumbSizePx => _mangaCoverThumbSize;
 
   /// 自动补齐模式。默认关 = 手动管理。键 `music_library_auto_backfill`。
   bool get musicLibraryAutoBackfill => _musicLibraryAutoBackfill;
@@ -917,6 +922,7 @@ class SettingsService extends ChangeNotifier {
     _mangaCreateMaxDepth = WalkOptions.clampDepth(
       _prefs!.getInt(_kMangaCreateMaxDepth) ?? 1,
     );
+    _mangaCoverThumbSize = _prefs!.getInt(_kMangaCoverThumbSize) ?? 500;
     _musicLibraryAutoBackfill =
         _prefs!.getBool(_kMusicLibraryAutoBackfill) ?? false;
     // Legacy `music_library_backfill_on_open` ignored: play scrape is always
@@ -1470,6 +1476,14 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 0 = 保持原图不缩放；正整数 = 缩放到该边长的正方形（居中裁剪）。
+  Future<void> setMangaCoverThumbSize(int size) async {
+    _mangaCoverThumbSize = size < 0 ? 0 : size;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setInt(_kMangaCoverThumbSize, _mangaCoverThumbSize);
+    notifyListeners();
+  }
+
   Future<void> setMusicLibraryAutoBackfill(bool enabled) async {
     _musicLibraryAutoBackfill = enabled;
     _prefs ??= await SharedPreferences.getInstance();
@@ -1993,6 +2007,7 @@ class SettingsService extends ChangeNotifier {
     'manga_scan_max_depth': _mangaScanMaxDepth,
     'manga_create_subdirs': _mangaCreateSubdirs,
     'manga_create_max_depth': _mangaCreateMaxDepth,
+    'manga_cover_thumb_size': _mangaCoverThumbSize,
     'music_library_auto_backfill': _musicLibraryAutoBackfill,
     'music_library_backfill_bind_roots': _musicLibraryBackfillBindRoots,
     'music_library_backfill_roots': [
@@ -2207,6 +2222,9 @@ class SettingsService extends ChangeNotifier {
     }
     if (json['manga_create_max_depth'] is int) {
       await setMangaCreateMaxDepth(json['manga_create_max_depth'] as int);
+    }
+    if (json['manga_cover_thumb_size'] is int) {
+      await setMangaCoverThumbSize(json['manga_cover_thumb_size'] as int);
     }
     if (json['media_scan_max_depth'] is num) {
       await setMediaScanMaxDepth((json['media_scan_max_depth'] as num).toInt());

@@ -8,9 +8,11 @@ import 'cache_service.dart';
 
 /// Resize a page to the manga cover thumb and replace the local file.
 ///
-/// Returns false when [bytes] cannot be decoded. An existing thumb at the same
-/// path is overwritten, and its decoded [FileImage] is evicted so the grid
-/// does not keep the previous frame.
+/// [thumbSize] controls output:
+/// - null or positive → resize + center-crop to that edge (defaults to [coverThumbSize])
+/// - 0 ([mangaCoverThumbSizeKeepOriginal]) → store original bytes without resizing
+///
+/// Returns false when [bytes] are empty or (non-zero size) cannot be decoded.
 Future<bool> writeMangaCoverThumb({
   required CacheService cache,
   required String mangaId,
@@ -18,7 +20,12 @@ Future<bool> writeMangaCoverThumb({
   int? thumbSize,
 }) async {
   if (bytes.isEmpty) return false;
-  final thumb = resizeCoverToThumb(bytes, size: thumbSize ?? coverThumbSize);
+  final effectiveSize = thumbSize ?? coverThumbSize;
+  if (effectiveSize == mangaCoverThumbSizeKeepOriginal) {
+    // Keep original: store bytes as-is, skip resize.
+    return replaceMangaCoverBytes(cache: cache, mangaId: mangaId, bytes: bytes);
+  }
+  final thumb = resizeCoverToThumb(bytes, size: effectiveSize);
   if (thumb == null || thumb.isEmpty) return false;
   return replaceMangaCoverBytes(cache: cache, mangaId: mangaId, bytes: thumb);
 }

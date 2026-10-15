@@ -866,7 +866,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       cache: context.read<CacheService>(),
       mangaId: mangaId,
       bytes: Uint8List.fromList(bytes),
-      thumbSize: _settings?.coverThumbSizePx,
+      thumbSize: _settings?.mangaCoverThumbSizePx,
     );
     if (cancel.isCancelled) return MangaCoverSetOutcome.cancelled;
     if (!wrote) return MangaCoverSetOutcome.failed;

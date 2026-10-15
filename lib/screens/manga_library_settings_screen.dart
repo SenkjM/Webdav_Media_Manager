@@ -8,14 +8,60 @@ import '../models/cache_policy.dart';
 import '../models/file_actions.dart';
 import '../models/manga_read_mode.dart';
 import '../providers/app_state.dart';
+import '../utils/cover_image.dart';
 import '../utils/directory_walk.dart';
+import '../services/settings_service.dart';
 import '../widgets/library_cache_settings.dart';
 
 /// 漫画库设置子页：扫描 / 建立的子目录与深度，以及漫画缓存。
 ///
 /// 与「音乐库」子页同级，同挂在「媒体库」分区下。
-class MangaLibrarySettingsScreen extends StatelessWidget {
+class MangaLibrarySettingsScreen extends StatefulWidget {
   const MangaLibrarySettingsScreen({super.key});
+
+  @override
+  State<MangaLibrarySettingsScreen> createState() =>
+      _MangaLibrarySettingsScreenState();
+}
+
+class _MangaLibrarySettingsScreenState extends State<MangaLibrarySettingsScreen> {
+  late final TextEditingController _mangaCoverSizeController;
+  String? _mangaCoverUiMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _mangaCoverSizeController = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final settings = context.read<AppState>().settings;
+      final px = settings.mangaCoverThumbSizePx;
+      if (px != 500 && px != mangaCoverThumbSizeKeepOriginal) {
+        _mangaCoverSizeController.text = '$px';
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _mangaCoverSizeController.dispose();
+    super.dispose();
+  }
+
+  String _mangaCoverMode(SettingsService settings) {
+    if (_mangaCoverUiMode != null) return _mangaCoverUiMode!;
+    final px = settings.mangaCoverThumbSizePx;
+    if (px == 500) return '500';
+    if (px == mangaCoverThumbSizeKeepOriginal) return 'original';
+    return 'custom';
+  }
+
+  Future<void> _applyCustomMangaCoverSize() async {
+    final parsed = int.tryParse(_mangaCoverSizeController.text.trim());
+    if (parsed == null) return;
+    await context.read<AppState>().settings.setMangaCoverThumbSize(parsed);
+    if (!mounted) return;
+    setState(() => _mangaCoverUiMode = 'custom');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -155,6 +201,69 @@ class MangaLibrarySettingsScreen extends StatelessWidget {
               l10n.fileExtDefaultAction(settings.fileActions.comic.label(l10n)),
             ),
           ),
+          const Divider(height: 32),
+          Text(
+            l10n.mangaCoverThumbSizeSection,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: scheme.primary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(l10n.mangaCoverThumbSizeHint, style: hintStyle),
+          const SizedBox(height: 8),
+          SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(value: '500', label: Text(l10n.mangaCoverThumb500)),
+              ButtonSegment(value: 'original', label: Text(l10n.mangaCoverThumbKeepOriginal)),
+              ButtonSegment(value: 'custom', label: Text(l10n.mangaCoverThumbCustom)),
+            ],
+            selected: {_mangaCoverMode(settings)},
+            onSelectionChanged: (sel) async {
+              final v = sel.first;
+              setState(() => _mangaCoverUiMode = v);
+              if (v == '500') {
+                await settings.setMangaCoverThumbSize(500);
+              } else if (v == 'original') {
+                await settings.setMangaCoverThumbSize(mangaCoverThumbSizeKeepOriginal);
+              } else {
+                if (_mangaCoverSizeController.text.trim().isEmpty) {
+                  _mangaCoverSizeController.text = '${settings.mangaCoverThumbSizePx}';
+                }
+              }
+            },
+          ),
+          if (_mangaCoverMode(settings) == 'custom') ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: _mangaCoverSizeController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                      hintText: '32–1024',
+                    ),
+                    onSubmitted: (_) => _applyCustomMangaCoverSize(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                FilledButton.tonal(
+                  onPressed: _applyCustomMangaCoverSize,
+                  child: Text(l10n.apply),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.mangaCoverThumbSizeCurrent(settings.mangaCoverThumbSizePx),
+              style: hintStyle,
+            ),
+          ],
           const Divider(height: 32),
           const LibraryCacheSettings(kind: CacheKind.manga),
         ],

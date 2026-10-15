@@ -7919,6 +7919,42 @@ abstract class AppLocalizations {
   /// **'默认 1'**
   String get mangaCreateMaxDepthHint;
 
+  /// No description provided for @mangaCoverThumbSizeSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'封面缩略图尺寸'**
+  String get mangaCoverThumbSizeSection;
+
+  /// No description provided for @mangaCoverThumbSizeHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'保存封面时的采样尺寸。仅影响新封面；已有封面需重新生成。'**
+  String get mangaCoverThumbSizeHint;
+
+  /// No description provided for @mangaCoverThumb500.
+  ///
+  /// In zh, this message translates to:
+  /// **'500×500'**
+  String get mangaCoverThumb500;
+
+  /// No description provided for @mangaCoverThumbCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get mangaCoverThumbCustom;
+
+  /// No description provided for @mangaCoverThumbKeepOriginal.
+  ///
+  /// In zh, this message translates to:
+  /// **'保持原图'**
+  String get mangaCoverThumbKeepOriginal;
+
+  /// No description provided for @mangaCoverThumbSizeCurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前：\${px} px'**
+  String mangaCoverThumbSizeCurrent(Object px);
+
   /// No description provided for @imageViewerControls.
   ///
   /// In zh, this message translates to:

@@ -3355,7 +3355,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         cache: _cache,
         mangaId: mangaId,
         bytes: bytes,
-        thumbSize: _settings?.coverThumbSizePx,
+        thumbSize: _settings?.mangaCoverThumbSizePx,
       );
       if (!wrote) {
         debugPrint('loose manga cover undecodable');

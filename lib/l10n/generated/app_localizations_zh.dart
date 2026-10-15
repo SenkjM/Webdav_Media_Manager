@@ -4484,6 +4484,26 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaCreateMaxDepthHint => '默认 1';
 
   @override
+  String get mangaCoverThumbSizeSection => '封面缩略图尺寸';
+
+  @override
+  String get mangaCoverThumbSizeHint => '保存封面时的采样尺寸。仅影响新封面；已有封面需重新生成。';
+
+  @override
+  String get mangaCoverThumb500 => '500×500';
+
+  @override
+  String get mangaCoverThumbCustom => '自定义';
+
+  @override
+  String get mangaCoverThumbKeepOriginal => '保持原图';
+
+  @override
+  String mangaCoverThumbSizeCurrent(Object px) {
+    return '当前：\$$px px';
+  }
+
+  @override
   String get imageViewerControls => '查看选项';
 
   @override
@@ -9450,6 +9470,26 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get mangaCreateMaxDepthHint => '預設 1';
+
+  @override
+  String get mangaCoverThumbSizeSection => '封面縮圖尺寸';
+
+  @override
+  String get mangaCoverThumbSizeHint => '儲存封面時的取樣尺寸。僅影響新封面；現有封面需重新產生。';
+
+  @override
+  String get mangaCoverThumb500 => '500×500';
+
+  @override
+  String get mangaCoverThumbCustom => '自訂';
+
+  @override
+  String get mangaCoverThumbKeepOriginal => '保持原圖';
+
+  @override
+  String mangaCoverThumbSizeCurrent(Object px) {
+    return '目前：\$$px px';
+  }
 
   @override
   String get imageViewerControls => '檢視選項';

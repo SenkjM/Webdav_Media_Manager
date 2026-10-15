@@ -8,6 +8,9 @@ const int coverThumbSize = 300;
 /// Alternate preset offered in Settings.
 const int coverThumbSizeLarge = 300;
 
+/// Pass this as [size] to [resizeCoverToThumb] to skip resizing and store original bytes.
+const int mangaCoverThumbSizeKeepOriginal = 0;
+
 /// Clamp user-chosen square edge length for thumbs.
 const int minCoverThumbSize = 32;
 const int maxCoverThumbSize = 1024;

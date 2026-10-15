@@ -4697,6 +4697,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mangaCreateMaxDepthHint => 'Default 1';
 
   @override
+  String get mangaCoverThumbSizeSection => 'Cover thumbnail size';
+
+  @override
+  String get mangaCoverThumbSizeHint =>
+      'Size when saving a cover. New covers only; existing ones need regeneration.';
+
+  @override
+  String get mangaCoverThumb500 => '500×500';
+
+  @override
+  String get mangaCoverThumbCustom => 'Custom';
+
+  @override
+  String get mangaCoverThumbKeepOriginal => 'Keep original';
+
+  @override
+  String mangaCoverThumbSizeCurrent(Object px) {
+    return 'Current: \$$px px';
+  }
+
+  @override
   String get imageViewerControls => 'Viewer options';
 
   @override
