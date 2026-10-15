@@ -574,3 +574,35 @@ class _WebDavFilePickerScreenState extends State<_WebDavFilePickerScreen> {
     );
   }
 }
+
+
+/// 通用「选账号 + 选远端目录」入口（单屏）。
+///
+/// 在同一个 [WebDavFolderPickerScreen] 页面内完成账号切换与目录浏览。
+/// [accounts] 应已按能力过滤好（调用方用 [WebDavService.can] 筛选）。
+///
+/// 返回选定的账号 id 与目录路径；任一步取消返回 null。
+Future<({String accountId, String path})?> pickRemoteDestination(
+  BuildContext context, {
+  required List<WebDavAccount> accounts,
+  required String purpose,
+  String? initialAccountId,
+  String? initialPath,
+}) async {
+  if (accounts.isEmpty) return null;
+  final startId = initialAccountId ?? accounts.first.id;
+  String resolvedAccountId = startId;
+  final path = await Navigator.of(context).push<String>(
+    MaterialPageRoute(
+      builder: (_) => WebDavFolderPickerScreen(
+        accountId: startId,
+        purpose: purpose,
+        initialPath: initialPath ?? '/',
+        accountChoices: accounts,
+        onAccountChanged: (id) => resolvedAccountId = id,
+      ),
+    ),
+  );
+  if (path == null) return null;
+  return (accountId: resolvedAccountId, path: path);
+}

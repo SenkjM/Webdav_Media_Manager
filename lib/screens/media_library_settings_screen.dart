@@ -407,33 +407,15 @@ class _MediaLibrarySettingsScreenState
     final list = accounts.accounts.toList(growable: false);
     if (list.isEmpty) return;
 
-    final accountId = await showDialog<String>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: Text(l10n.libraryBackfillPickAccount),
-        children: [
-          for (final a in list)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(ctx, a.id),
-              child: Text(localizedAccountName(l10n, a.name)),
-            ),
-        ],
-      ),
+    final dest = await pickRemoteDestination(
+      context,
+      accounts: list,
+      purpose: l10n.libraryBackfillPickFolder,
     );
-    if (accountId == null || !context.mounted) return;
-
-    final path = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        builder: (_) => WebDavFolderPickerScreen(
-          accountId: accountId,
-          purpose: l10n.libraryBackfillPickFolder,
-        ),
-      ),
-    );
-    if (path == null || !context.mounted) return;
+    if (dest == null || !context.mounted) return;
 
     await settings.addMusicLibraryBackfillRoot(
-      MusicLibraryBackfillRoot(accountId: accountId, path: path),
+      MusicLibraryBackfillRoot(accountId: dest.accountId, path: dest.path),
     );
   }
 

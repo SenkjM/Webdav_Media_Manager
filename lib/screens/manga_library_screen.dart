@@ -25,7 +25,6 @@ import '../utils/manga_file_types.dart';
 import '../utils/upload_backend.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/manga_cover_art.dart';
-import '../widgets/marquee_text.dart';
 import '../widgets/selection_toolbar.dart';
 import 'home_shell.dart';
 import 'image_viewer_screen.dart';
@@ -173,20 +172,16 @@ class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
       return;
     }
 
-    final result = await showDialog<_LocalCbzTarget>(
-      context: context,
-      builder: (_) => _LocalCbzTargetDialog(writeAccounts: writeAccounts),
+    final dest = await pickRemoteDestination(
+      context,
+      accounts: writeAccounts,
+      purpose: l10n.mangaLocalCbzBuild,
     );
-    if (result == null || !mounted) return;
+    if (dest == null || !mounted) return;
 
     final tree = await PlatformExportService().listFolderTree();
     if (!mounted) return;
-    if (!tree.ok || tree.files.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.mangaLocalCbzPickFolder)),
-      );
-      return;
-    }
+    if (!tree.ok || tree.files.isEmpty) return;
 
     final taskQueue = context.read<TaskQueueService>();
     final entries = [
@@ -195,9 +190,13 @@ class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
     ];
     await taskQueue.enqueueMangaBuild(MangaBuildPayload(
       mode: MangaBuildMode.perDir,
-      accountId: result.accountId,
-      sourceName: result.sourceName,
-      remotePath: result.remotePath,
+      accountId: dest.accountId,
+      sourceName: writeAccounts
+          .firstWhere((a) => a.id == dest.accountId,
+              orElse: () => writeAccounts.first)
+          .name
+          .trim(),
+      remotePath: dest.path,
       folderName: tree.folderName ?? l10n.mangaLocalCbzBuild,
       title: tree.folderName ?? l10n.mangaLocalCbzBuild,
       localFileUris: entries,
@@ -210,99 +209,6 @@ class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
   }
 }
 
-class _LocalCbzTarget {
-  const _LocalCbzTarget({
-    required this.accountId,
-    required this.sourceName,
-    required this.remotePath,
-  });
-  final String accountId;
-  final String sourceName;
-  final String remotePath;
-}
-
-class _LocalCbzTargetDialog extends StatefulWidget {
-  const _LocalCbzTargetDialog({required this.writeAccounts});
-  final List<WebDavAccount> writeAccounts;
-  @override
-  State<_LocalCbzTargetDialog> createState() => _LocalCbzTargetDialogState();
-}
-
-class _LocalCbzTargetDialogState extends State<_LocalCbzTargetDialog> {
-  late WebDavAccount _selectedAccount;
-  String _remotePath = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedAccount = widget.writeAccounts.first;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
-    return AlertDialog(
-      title: Text(l10n.mangaLocalCbzBuild),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          DropdownButtonFormField<WebDavAccount>(
-            initialValue: _selectedAccount,
-            items: [
-              for (final a in widget.writeAccounts)
-                DropdownMenuItem(value: a, child: Text(a.name)),
-            ],
-            onChanged: (v) => setState(() => _selectedAccount = v!),
-          ),
-          const SizedBox(height: 8),
-          TextFormField(
-            decoration: InputDecoration(
-              labelText: l10n.mangaLocalCbzPickFolder,
-              hintText: l10n.mangaLocalCbzFolderHint,
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.folder_open),
-                tooltip: l10n.mangaLocalCbzBrowse,
-                onPressed: () async {
-                  final picked = await Navigator.push<String>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => WebDavFolderPickerScreen(
-                        accountId: _selectedAccount.id,
-                        purpose: 'upload',
-                        initialPath: _remotePath.isEmpty ? '/' : _remotePath,
-                      ),
-                    ),
-                  );
-                  if (picked != null && mounted) {
-                    setState(() => _remotePath = picked);
-                  }
-                },
-              ),
-            ),
-            onChanged: (v) => _remotePath = v,
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(MaterialLocalizations.of(context).cancelButtonLabel),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(
-            context,
-            _LocalCbzTarget(
-              accountId: _selectedAccount.id,
-              sourceName: _selectedAccount.name.trim(),
-              remotePath: _remotePath,
-            ),
-          ),
-          child: Text(l10n.mangaLocalCbzPickAccount),
-        ),
-      ],
-    );
-  }
-}
 
 class _MangaEmpty extends StatelessWidget {
   @override
@@ -881,36 +787,6 @@ List<WebDavAccount> _uploadCapableAccounts(
 }
 
 /// Source cannot upload, so the loose book's remote path is not a destination.
-Future<String?> _pickUploadAccount(
-  BuildContext context,
-  List<WebDavAccount> accounts,
-) {
-  final l10n = AppLocalizations.of(context)!;
-  return showDialog<String>(
-    context: context,
-    builder: (ctx) => SimpleDialog(
-      title: Text(l10n.mangaPackPickAccount),
-      children: [
-        for (final a in accounts)
-          SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, a.id),
-            child: Text(webDavAccountLabel(a, l10n)),
-          ),
-      ],
-    ),
-  );
-}
-
-/// Materialises a loose-image book into a CBZ, then queues its upload.
-///
-/// Pages are still read from the book's own account. The upload account is
-/// chosen separately. If that source can upload, the folder picker starts at
-/// the book's remote path and the user may switch account, which resets the
-/// path. If it cannot, the remote path is not offered: an upload-capable
-/// account is picked first, and the folder picker starts at `/`.
-///
-/// Scrape and deletion are not queued here. The task list scrapes only after
-/// the upload lands, and deletes the loose book only after that scrape.
 Future<void> _materializeManga(BuildContext context, Manga manga) async {
   final l10n = AppLocalizations.of(context)!;
   final accounts = context.read<AccountsService>();
@@ -926,26 +802,16 @@ Future<void> _materializeManga(BuildContext context, Manga manga) async {
     return;
   }
   final sourceCanUpload = accountCanUpload(source.id, webDav);
-  var destAccountId = source.id;
-  var initialPath = manga.remotePath;
-  if (!sourceCanUpload) {
-    final pickedAccount = await _pickUploadAccount(context, uploadAccounts);
-    if (!context.mounted || pickedAccount == null) return;
-    destAccountId = pickedAccount;
-    initialPath = '/';
-  }
-  final picked = await Navigator.of(context).push<String>(
-    MaterialPageRoute(
-      builder: (_) => WebDavFolderPickerScreen(
-        accountId: destAccountId,
-        purpose: l10n.mangaPackAction,
-        initialPath: initialPath,
-        accountChoices: uploadAccounts,
-        onAccountChanged: (id) => destAccountId = id,
-      ),
-    ),
+  final dest = await pickRemoteDestination(
+    context,
+    accounts: uploadAccounts,
+    purpose: l10n.mangaPackAction,
+    initialAccountId: sourceCanUpload ? source.id : null,
+    initialPath: sourceCanUpload ? manga.remotePath : '/',
   );
-  if (!context.mounted || picked == null) return;
+  if (!context.mounted || dest == null) return;
+  final destAccountId = dest.accountId;
+  final picked = dest.path;
   // No TextEditingController on purpose: the dialog is popped and the route
   // keeps animating, so anything disposed on return would still be mounted.
   var typed = _archiveFileName(manga.title);
