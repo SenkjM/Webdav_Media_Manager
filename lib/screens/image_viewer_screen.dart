@@ -790,10 +790,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                                 Positioned(
                                   top: topPx, bottom: topPx,
                                   left: horizPx, width: prevW,
-                                  child: Container(
-                                    color: prevColor,
-                                    child: Center(child: Text('◀', style: ts)),
-                                  ),
+                                  child: Container(color: prevColor),
                                 ),
                                 // Center zone
                                 Positioned(
@@ -808,10 +805,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                                 Positioned(
                                   top: topPx, bottom: topPx,
                                   right: horizPx, width: prevW,
-                                  child: Container(
-                                    color: prevColor,
-                                    child: Center(child: Text('▶', style: ts)),
-                                  ),
+                                  child: Container(color: prevColor),
                                 ),
                               ],
                             ),
