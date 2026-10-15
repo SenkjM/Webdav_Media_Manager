@@ -682,61 +682,6 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                       ],
                       const SizedBox(height: 12),
                       Text(l10n.imageTapDeadZone),
-                      const SizedBox(height: 4),
-                      Text(
-                        l10n.imageTapDeadZoneHint,
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
-                      LayoutBuilder(
-                        builder: (_, constraints) {
-                          final totalH = 56.0;
-                          final barH = totalH * _tapDeadZone;
-                          return SizedBox(
-                            height: totalH,
-                            child: Stack(
-                              children: [
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 0,
-                                  left: 0,
-                                  right: 0,
-                                  height: barH,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
-                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-                                    ),
-                                  ),
-                                ),
-                                Positioned(
-                                  bottom: 0,
-                                  left: 0,
-                                  right: 0,
-                                  height: barH,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
-                                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(6)),
-                                    ),
-                                  ),
-                                ),
-                                Center(
-                                  child: Text(
-                                    '${(_tapDeadZone * 100).round()}%',
-                                    style: Theme.of(ctx).textTheme.bodySmall,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
                       Slider(
                         value: _tapDeadZone,
                         min: 0.0,
@@ -749,60 +694,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                           unawaited(settings.setImageTapDeadZone(v));
                         },
                       ),
-                      const SizedBox(height: 12),
                       Text(l10n.imageTapHorizDead),
-                      const SizedBox(height: 4),
-                      Text(
-                        l10n.imageTapHorizDeadHint,
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
-                      // Visual preview: grey bar with coloured left/right strips
-                      LayoutBuilder(
-                        builder: (_, constraints) {
-                          final totalW = constraints.maxWidth;
-                          final stripW = totalW * _tapHorizDead;
-                          return SizedBox(
-                            height: 36,
-                            child: Stack(
-                              children: [
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 0, bottom: 0, left: 0,
-                                  width: stripW,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
-                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(6)),
-                                    ),
-                                  ),
-                                ),
-                                Positioned(
-                                  top: 0, bottom: 0, right: 0,
-                                  width: stripW,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
-                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(6)),
-                                    ),
-                                  ),
-                                ),
-                                Center(
-                                  child: Text(
-                                    '${(_tapHorizDead * 100).round()}%',
-                                    style: Theme.of(ctx).textTheme.bodySmall,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
                       Slider(
                         value: _tapHorizDead,
                         min: 0.0,
@@ -815,60 +707,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                           unawaited(settings.setImageTapHorizDead(v));
                         },
                       ),
-                      const SizedBox(height: 12),
                       Text(l10n.imageTapCenterSize),
-                      const SizedBox(height: 4),
-                      Text(
-                        l10n.imageTapCenterSizeHint,
-                        style: Theme.of(ctx).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
-                      // Visual preview: center zone width indicator
-                      LayoutBuilder(
-                        builder: (_, constraints) {
-                          final totalW = constraints.maxWidth;
-                          final centerW = totalW * _tapCenterSize;
-                          final sideW = (totalW - centerW) / 2;
-                          return SizedBox(
-                            height: 36,
-                            child: Row(
-                              children: [
-                                SizedBox(
-                                  width: sideW,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(6)),
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.35),
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        '${(_tapCenterSize * 100).round()}%',
-                                        style: Theme.of(ctx).textTheme.bodySmall,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                SizedBox(
-                                  width: sideW,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
-                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(6)),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
                       Slider(
                         value: _tapCenterSize,
                         min: 0.1,
@@ -879,6 +718,94 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
                           setState(() => _tapCenterSize = v);
                           setSheet(() {});
                           unawaited(settings.setImageTapCenterSize(v));
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      // Unified tap-zone preview: one box showing all three dead-zone settings
+                      LayoutBuilder(
+                        builder: (_, constraints) {
+                          final w = constraints.maxWidth;
+                          final previewH = 80.0;
+                          final horizPx = w * _tapHorizDead;
+                          final vertFrac = _tapDeadZone;
+                          final topPx = previewH * vertFrac;
+                          final centerFrac = _tapCenterSize;
+                          final sideFrac = (1.0 - centerFrac) / 2;
+                          final prevW = (w - horizPx * 2) * sideFrac;
+                          final centerW = (w - horizPx * 2) * centerFrac;
+                          final deadColor = Theme.of(ctx).colorScheme.primary.withValues(alpha: 0.30);
+                          final prevColor = Theme.of(ctx).colorScheme.secondary.withValues(alpha: 0.35);
+                          final centerColor = Theme.of(ctx).colorScheme.tertiary.withValues(alpha: 0.35);
+                          final bg = Theme.of(ctx).colorScheme.surfaceContainerHighest;
+                          final ts = Theme.of(ctx).textTheme.labelSmall;
+                          return Container(
+                            height: previewH,
+                            decoration: BoxDecoration(
+                              color: bg,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Stack(
+                              children: [
+                                // Left dead strip
+                                Positioned(top: 0, bottom: 0, left: 0,
+                                  width: horizPx,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: deadColor,
+                                      borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                                    ),
+                                  ),
+                                ),
+                                // Right dead strip
+                                Positioned(top: 0, bottom: 0, right: 0,
+                                  width: horizPx,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: deadColor,
+                                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                                    ),
+                                  ),
+                                ),
+                                // Top dead band
+                                Positioned(top: 0, left: horizPx, right: horizPx,
+                                  height: topPx,
+                                  child: Container(color: deadColor),
+                                ),
+                                // Bottom dead band
+                                Positioned(bottom: 0, left: horizPx, right: horizPx,
+                                  height: topPx,
+                                  child: Container(color: deadColor),
+                                ),
+                                // Prev zone
+                                Positioned(
+                                  top: topPx, bottom: topPx,
+                                  left: horizPx, width: prevW,
+                                  child: Container(
+                                    color: prevColor,
+                                    child: Center(child: Text('◀', style: ts)),
+                                  ),
+                                ),
+                                // Center zone
+                                Positioned(
+                                  top: topPx, bottom: topPx,
+                                  left: horizPx + prevW, width: centerW,
+                                  child: Container(
+                                    color: centerColor,
+                                    child: Center(child: Text('☰', style: ts)),
+                                  ),
+                                ),
+                                // Next zone
+                                Positioned(
+                                  top: topPx, bottom: topPx,
+                                  right: horizPx, width: prevW,
+                                  child: Container(
+                                    color: prevColor,
+                                    child: Center(child: Text('▶', style: ts)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
                         },
                       ),
                       SwitchListTile(
@@ -1242,7 +1169,16 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
       label: label,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onTap,
+        // Filter out synthetic tap events injected by OEM system overlays.
+        // These arrive with globalPosition near (0,0) — well outside the range
+        // of any real touch, which always lands at least a few dp from the
+        // screen origin.  Using globalPosition (not localPosition) is
+        // vendor-agnostic: it is unaffected by widget offset or transform.
+        onTapUp: (details) {
+          final g = details.globalPosition;
+          if (g.dx < 1.0 && g.dy < 1.0) return;
+          onTap();
+        },
         child: const SizedBox.expand(),
       ),
     );
