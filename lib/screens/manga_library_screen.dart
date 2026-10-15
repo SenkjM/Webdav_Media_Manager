@@ -184,11 +184,13 @@ class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
       builder: (ctx) => PopScope(
         canPop: false,
         child: AlertDialog(
+          contentPadding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
           content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const CircularProgressIndicator(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               Text(
                 l10n.mangaLocalCbzScanning,
                 textAlign: TextAlign.center,
