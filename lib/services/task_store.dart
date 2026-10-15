@@ -22,7 +22,9 @@ class TaskStore {
   ///
   /// v9: added `is_enumerator`, which [QueueTask] had been writing all along —
   /// without the column every insert threw and nothing was ever persisted.
-  static const schemaVersion = 9;
+  ///
+  /// v10: added `local_uri` for JIT SAF materialisation (local CBZ upload).
+  static const schemaVersion = 10;
 
   /// On-disk name; see [LocalDatabaseRecoveryService].
   static const fileName = 'task_queue.db';
