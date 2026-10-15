@@ -1644,6 +1644,8 @@
   "@mangaLocalCbzFolderHint": {},
   "mangaLocalCbzBrowse": "浏览",
   "@mangaLocalCbzBrowse": {},
+  "mangaLocalCbzScanning": "正在扫描文件夹…",
+  "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "没有可写入的账号",
   "@errNoWriteAccount": {}
 }

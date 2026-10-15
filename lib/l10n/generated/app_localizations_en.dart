@@ -5206,5 +5206,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mangaLocalCbzBrowse => 'Browse';
 
   @override
+  String get mangaLocalCbzScanning => 'Scanning folder…';
+
+  @override
   String get errNoWriteAccount => 'No writable account found';
 }

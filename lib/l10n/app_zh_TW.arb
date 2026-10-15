@@ -1613,6 +1613,8 @@
   "@mangaLocalCbzFolderHint": {},
   "mangaLocalCbzBrowse": "瀏覽",
   "@mangaLocalCbzBrowse": {},
+  "mangaLocalCbzScanning": "正在掃描資料夾…",
+  "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "沒有可寫入的帳號",
   "@errNoWriteAccount": {}
 }

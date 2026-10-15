@@ -173,18 +173,53 @@ class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
     }
 
     // 先选本地文件夹（系统 SAF 文件夹选择器），再选云盘目标目录。
+    // SAF 选择器关闭后到结果返回前（枚举文件树期间）展示可取消的加载 Dialog。
+    var cancelled = false;
     late PickedFolderTree tree;
+    final rootNav = Navigator.of(context, rootNavigator: true);
+
+    final scanDialog = showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(width: 16),
+              Expanded(child: Text(l10n.mangaLocalCbzScanning)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                cancelled = true;
+                Navigator.of(ctx).pop();
+              },
+              child: Text(l10n.cancel),
+            ),
+          ],
+        ),
+      ),
+    );
+
     try {
       tree = await PlatformExportService().listFolderTree();
     } catch (e) {
+      if (rootNav.canPop()) rootNav.pop();
+      await scanDialog;
       if (mounted) AppSnack.show(context, e.toString());
       return;
     }
-    if (!mounted) return;
+    if (rootNav.canPop()) rootNav.pop();
+    await scanDialog;
+    if (cancelled || !mounted) return;
     if (!tree.ok) {
-      if (mounted && tree.error != null) AppSnack.show(context, tree.error!);
+      if (tree.error != null) AppSnack.show(context, tree.error!);
       return;
     }
+    if (tree.cancelled) return;
     if (tree.files.isEmpty) return;
 
     final dest = await pickRemoteDestination(

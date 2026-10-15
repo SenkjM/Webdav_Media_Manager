@@ -8812,6 +8812,12 @@ abstract class AppLocalizations {
   /// **'浏览'**
   String get mangaLocalCbzBrowse;
 
+  /// No description provided for @mangaLocalCbzScanning.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在扫描文件夹…'**
+  String get mangaLocalCbzScanning;
+
   /// No description provided for @errNoWriteAccount.
   ///
   /// In zh, this message translates to:

@@ -1624,6 +1624,8 @@
   "@mangaLocalCbzFolderHint": {},
   "mangaLocalCbzBrowse": "Browse",
   "@mangaLocalCbzBrowse": {},
+  "mangaLocalCbzScanning": "Scanning folder…",
+  "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "No writable account found",
   "@errNoWriteAccount": {}
 }

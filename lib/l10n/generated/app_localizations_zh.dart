@@ -4966,6 +4966,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaLocalCbzBrowse => '浏览';
 
   @override
+  String get mangaLocalCbzScanning => '正在扫描文件夹…';
+
+  @override
   String get errNoWriteAccount => '没有可写入的账号';
 }
 
@@ -9929,6 +9932,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get mangaLocalCbzBrowse => '瀏覽';
+
+  @override
+  String get mangaLocalCbzScanning => '正在掃描資料夾…';
 
   @override
   String get errNoWriteAccount => '沒有可寫入的帳號';
