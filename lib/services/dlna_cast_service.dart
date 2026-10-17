@@ -22,6 +22,7 @@ class DlnaRenderer {
     required this.friendlyName,
     required this.location,
     required this.controlUrl,
+    required this.connMgrControlUrl,
     required this.host,
   });
 
@@ -36,6 +37,9 @@ class DlnaRenderer {
 
   /// AVTransport 服务的 SOAP 控制 URL（绝对 URL）。
   final String controlUrl;
+
+  /// ConnectionManager 服务的 SOAP 控制 URL（绝对 URL）。
+  final String connMgrControlUrl;
 
   /// 渲染器 IP 地址。
   final String host;
@@ -235,12 +239,14 @@ class DlnaCastService extends ChangeNotifier {
       final controlPath = _avTransportControlUrl(body, location);
       if (controlPath == null) return; // 不是 MediaRenderer
 
+      final connMgrPath = _connMgrControlUrl(body, location) ?? '';
       final usn = _xmlText(body, 'UDN') ?? location;
       final renderer = DlnaRenderer(
         usn: usn,
         friendlyName: friendlyName,
         location: location,
         controlUrl: controlPath,
+        connMgrControlUrl: connMgrPath,
         host: uri.host,
       );
 
@@ -340,17 +346,22 @@ class DlnaCastService extends ChangeNotifier {
     );
 
     final proxyUrl = proxyUri.toString();
-    final dlnaMime = _dlnaMimeFor(item.name);   // DIDL-Lite 用，统一 video/mp4
-    final proxyMime = _mimeFor(item.name);       // 代理 Content-Type，按真实格式
+    final mimeType = _mimeFor(item.name);
+
+    // 查询 DMR 支持的 SinkProtocolInfo，协商 protocolInfo
+    final sinkProtocols = await _getSinkProtocolInfo(
+      _renderer!.connMgrControlUrl,
+    );
+    final protocolInfo = _negotiateProtocolInfo(mimeType, sinkProtocols);
+    debugPrint('[DLNA] castItem: proxyUrl=$proxyUrl mimeType=$mimeType protocolInfo=$protocolInfo');
 
     // SetAVTransportURI
-    debugPrint('[DLNA] castItem: proxyUrl=$proxyUrl dlnaMime=$dlnaMime proxyMime=$proxyMime');
     await _soap(
       _renderer!.controlUrl,
       'SetAVTransportURI',
       '<InstanceID>0</InstanceID>'
       '<CurrentURI>${_xmlEscape(proxyUrl)}</CurrentURI>'
-      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, proxyUrl, dlnaMime))}</CurrentURIMetaData>',
+      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, proxyUrl, protocolInfo))}</CurrentURIMetaData>',
     );
 
     // Play
@@ -747,13 +758,6 @@ class DlnaCastService extends ChangeNotifier {
     return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
   }
 
-  /// DIDL-Lite protocolInfo 里的 MIME 类型。
-  ///
-  /// 统一声明 video/mp4 以获得最广泛的 DMR 兼容性。
-  /// Windows "投放到设备"、Kodi、小米电视等遇到 video/x-matroska 会直接
-  /// 返回 716 而不访问 URI；实际字节流仍按原始格式传输，大多数 DMR 能正常解码。
-  String _dlnaMimeFor(String name) => 'video/mp4';
-
   /// 代理层 HTTP Content-Type（按真实文件格式，供浏览器 / 调试工具识别）。
   String _mimeFor(String name) {
     switch (_ext(name)) {
@@ -776,7 +780,7 @@ class DlnaCastService extends ChangeNotifier {
     }
   }
 
-  String _didlLite(String title, String url, String mimeType) {
+  String _didlLite(String title, String url, String protocolInfo) {
     final escapedTitle = _xmlEscape(title);
     final escapedUrl = _xmlEscape(url);
     return '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
@@ -785,7 +789,7 @@ class DlnaCastService extends ChangeNotifier {
         '<item id="0" parentID="-1" restricted="1">'
         '<dc:title>$escapedTitle</dc:title>'
         '<upnp:class>object.item.videoItem</upnp:class>'
-        '<res protocolInfo="http-get:*:$mimeType:DLNA.ORG_OP=01">'
+        '<res protocolInfo="${_xmlEscape(protocolInfo)}">'
         '$escapedUrl'
         '</res>'
         '</item>'
@@ -824,6 +828,120 @@ class DlnaCastService extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// 从 description.xml 解析 ConnectionManager controlURL（返回绝对 URL）。
+  String? _connMgrControlUrl(String xml, String location) {
+    final serviceBlocks = RegExp(
+      r'<service>(.*?)</service>',
+      dotAll: true,
+    ).allMatches(xml);
+    for (final block in serviceBlocks) {
+      final content = block.group(1) ?? '';
+      if (content.contains('ConnectionManager')) {
+        final control = _xmlText(content, 'controlURL');
+        if (control == null) continue;
+        final base = Uri.parse(location);
+        if (control.startsWith('http')) return control;
+        return base.resolve(control).toString();
+      }
+    }
+    return null;
+  }
+
+  /// 发送 ConnectionManager SOAP 请求。
+  Future<String?> _soapConnMgr(
+    String controlUrl,
+    String action,
+    String bodyContent,
+  ) async {
+    final envelope =
+        '<?xml version="1.0"?>'
+        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
+        's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
+        '<s:Body>'
+        '<u:$action xmlns:u="urn:schemas-upnp-org:service:ConnectionManager:1">'
+        '$bodyContent'
+        '</u:$action>'
+        '</s:Body>'
+        '</s:Envelope>';
+
+    debugPrint('[DLNA] ConnMgr SOAP → $action @ $controlUrl');
+    final uri = Uri.parse(controlUrl);
+    final req = await _http.postUrl(uri);
+    req.headers.set('Content-Type', 'text/xml; charset="utf-8"');
+    req.headers.set(
+      'SOAPACTION',
+      '"urn:schemas-upnp-org:service:ConnectionManager:1#$action"',
+    );
+    final encoded = utf8.encode(envelope);
+    req.headers.contentLength = encoded.length;
+    req.add(encoded);
+    final resp = await req.close();
+    final body = await resp.transform(utf8.decoder).join();
+    if (resp.statusCode >= 300) {
+      debugPrint('[DLNA] ConnMgr SOAP $action failed: ${resp.statusCode}\n$body');
+      return null;
+    }
+    return body;
+  }
+
+  /// 查询 DMR 的 ConnectionManager.GetProtocolInfo，
+  /// 返回其支持的 sink protocolInfo 列表（逗号分隔拆开后的列表）。
+  /// 失败时返回空列表。
+  Future<List<String>> _getSinkProtocolInfo(String connMgrControlUrl) async {
+    if (connMgrControlUrl.isEmpty) return [];
+    try {
+      final body = await _soapConnMgr(
+        connMgrControlUrl,
+        'GetProtocolInfo',
+        '',
+      );
+      if (body == null) return [];
+      final sink = _xmlText(body, 'Sink') ?? '';
+      return sink.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    } catch (e) {
+      debugPrint('[DLNA] GetProtocolInfo failed: $e');
+      return [];
+    }
+  }
+
+  /// 从 [sinkProtocols] 中为 [mimeType] 协商最合适的 protocolInfo。
+  ///
+  /// 返回完整的四元组字符串，例如
+  /// `http-get:*:video/mp4:DLNA.ORG_PN=AVC_MP4_MP_HD_1080i_AAC`。
+  /// 协商失败时返回 `http-get:*:$mimeType:DLNA.ORG_OP=01`。
+  String _negotiateProtocolInfo(String mimeType, List<String> sinkProtocols) {
+    // 精确匹配 contentFormat（第三字段）
+    final exact = sinkProtocols.where((p) {
+      final parts = p.split(':');
+      return parts.length >= 3 && parts[2] == mimeType;
+    }).toList();
+    if (exact.isNotEmpty) {
+      debugPrint('[DLNA] protocolInfo exact match: ${exact.first}');
+      return exact.first;
+    }
+
+    // 主类型匹配（如 mimeType=video/x-matroska，匹配 video/*）
+    final mainType = mimeType.split('/').first;
+    final wildcard = sinkProtocols.where((p) {
+      final parts = p.split(':');
+      if (parts.length < 3) return false;
+      final cf = parts[2];
+      return cf == '$mainType/*' || cf == '*/*';
+    }).toList();
+    if (wildcard.isNotEmpty) {
+      // 用匹配的协议但替换 contentFormat 为实际 MIME
+      final base = wildcard.first.split(':');
+      final result = '${base[0]}:${base[1]}:$mimeType:${base.length > 3 ? base.sublist(3).join(':') : 'DLNA.ORG_OP=01'}';
+      debugPrint('[DLNA] protocolInfo wildcard match: $result');
+      return result;
+    }
+
+    // 协商失败：用基本格式
+    final fallback = 'http-get:*:$mimeType:DLNA.ORG_OP=01';
+    debugPrint('[DLNA] protocolInfo no match, using fallback: $fallback');
+    return fallback;
   }
 
   Duration _parseDuration(String hms) {
