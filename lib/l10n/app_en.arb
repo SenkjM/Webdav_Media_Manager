@@ -1662,5 +1662,21 @@
   "mangaLocalCbzScanning": "Scanning folder…",
   "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "No writable account found",
-  "@errNoWriteAccount": {}
+  "@errNoWriteAccount": {},
+  "dlnaCast": "Cast to TV",
+  "dlnaCastDesc": "Stream to a DLNA/UPnP renderer on your network",
+  "dlnaDeviceSearch": "Searching for devices…",
+  "dlnaNoDeviceFound": "No devices found",
+  "dlnaRetrySearch": "Search again",
+  "dlnaConnecting": "Connecting…",
+  "dlnaDisconnect": "Disconnect",
+  "dlnaCompatMode": "Compat mode",
+  "dlnaRemuxContainer": "Remux container",
+  "dlnaRemuxContainerDesc": "Rewrap to MP4 without re-encoding (fast)",
+  "dlnaTranscodeVideo": "Transcode video",
+  "dlnaTranscodeVideoDesc": "Convert video to H.264 (high CPU)",
+  "dlnaTranscodeAudio": "Transcode audio",
+  "dlnaTranscodeAudioDesc": "Convert audio to AAC",
+  "dlnaCastQueue": "Cast queue",
+  "dlnaRenderer": "Renderer"
 }

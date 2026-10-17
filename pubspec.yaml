@@ -82,6 +82,8 @@ dependencies:
   # Sidecar subtitles are often GBK / GB18030 / Big5, not UTF-8.
   charset: ^2.0.1
   enough_convert: ^1.6.0
+  # DLNA 投屏实时转码引擎（含 libx264 / AAC 编码器）。
+  ffmpeg_kit_flutter_min: 6.0.3
 
 dev_dependencies:
   flutter_test:

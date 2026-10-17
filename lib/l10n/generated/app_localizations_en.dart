@@ -5280,4 +5280,53 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errNoWriteAccount => 'No writable account found';
+
+  @override
+  String get dlnaCast => 'Cast to TV';
+
+  @override
+  String get dlnaCastDesc => 'Stream to a DLNA/UPnP renderer on your network';
+
+  @override
+  String get dlnaDeviceSearch => 'Searching for devices…';
+
+  @override
+  String get dlnaNoDeviceFound => 'No devices found';
+
+  @override
+  String get dlnaRetrySearch => 'Search again';
+
+  @override
+  String get dlnaConnecting => 'Connecting…';
+
+  @override
+  String get dlnaDisconnect => 'Disconnect';
+
+  @override
+  String get dlnaCompatMode => 'Compat mode';
+
+  @override
+  String get dlnaRemuxContainer => 'Remux container';
+
+  @override
+  String get dlnaRemuxContainerDesc =>
+      'Rewrap to MP4 without re-encoding (fast)';
+
+  @override
+  String get dlnaTranscodeVideo => 'Transcode video';
+
+  @override
+  String get dlnaTranscodeVideoDesc => 'Convert video to H.264 (high CPU)';
+
+  @override
+  String get dlnaTranscodeAudio => 'Transcode audio';
+
+  @override
+  String get dlnaTranscodeAudioDesc => 'Convert audio to AAC';
+
+  @override
+  String get dlnaCastQueue => 'Cast queue';
+
+  @override
+  String get dlnaRenderer => 'Renderer';
 }

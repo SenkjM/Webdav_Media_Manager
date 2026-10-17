@@ -10,6 +10,8 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
+import '../services/dlna_cast_service.dart';
+import '../widgets/dlna_device_sheet.dart';
 import '../models/video_settings.dart';
 import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
@@ -1273,6 +1275,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
                             tooltip: AppLocalizations.of(context)!.videoPip,
                             onTap: _enterPip,
                           ),
+                        _RoundIconButton(
+                          icon: Icons.cast,
+                          tooltip: AppLocalizations.of(context)!.dlnaCast,
+                          onTap: () => _startCast(context),
+                        ),
                       ],
                     ),
                   ],
@@ -1283,6 +1290,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
         ),
       ),
     );
+  }
+
+  Future<void> _startCast(BuildContext context) async {
+    final renderer = await DlnaDeviceSheet.show(context);
+    if (renderer == null || !mounted) return;
+
+    final cast = context.read<DlnaCastService>();
+    final seed = widget.seed;
+    if (seed == null && _resolved == null && widget.source == null) return;
+
+    await cast.startCast(
+      renderer: renderer,
+      seed: seed,
+      accountId: _queue?.accountId ?? _resolved?.accountId ?? widget.source?.accountId,
+    );
+
+    if (mounted) Navigator.of(context).pop();
   }
 
   /// `3 / 27 · 扫描中…` — shows the progressive scan making progress.

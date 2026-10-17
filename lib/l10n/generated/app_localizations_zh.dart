@@ -5035,6 +5035,54 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get errNoWriteAccount => '没有可写入的账号';
+
+  @override
+  String get dlnaCast => '投屏';
+
+  @override
+  String get dlnaCastDesc => '投屏到局域网 DLNA/UPnP 渲染器';
+
+  @override
+  String get dlnaDeviceSearch => '正在搜索设备…';
+
+  @override
+  String get dlnaNoDeviceFound => '未找到设备';
+
+  @override
+  String get dlnaRetrySearch => '重新搜索';
+
+  @override
+  String get dlnaConnecting => '正在连接…';
+
+  @override
+  String get dlnaDisconnect => '断开';
+
+  @override
+  String get dlnaCompatMode => '兼容模式';
+
+  @override
+  String get dlnaRemuxContainer => '重封装容器';
+
+  @override
+  String get dlnaRemuxContainerDesc => '重封装为 MP4（不重新编码，速度快）';
+
+  @override
+  String get dlnaTranscodeVideo => '视频转码';
+
+  @override
+  String get dlnaTranscodeVideoDesc => '将视频转码为 H.264（CPU 占用高）';
+
+  @override
+  String get dlnaTranscodeAudio => '音频转码';
+
+  @override
+  String get dlnaTranscodeAudioDesc => '将音频转码为 AAC';
+
+  @override
+  String get dlnaCastQueue => '投屏队列';
+
+  @override
+  String get dlnaRenderer => '渲染器';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10068,4 +10116,52 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get errNoWriteAccount => '沒有可寫入的帳號';
+
+  @override
+  String get dlnaCast => '投放';
+
+  @override
+  String get dlnaCastDesc => '投放到區域網路 DLNA/UPnP 渲染器';
+
+  @override
+  String get dlnaDeviceSearch => '正在搜尋裝置…';
+
+  @override
+  String get dlnaNoDeviceFound => '未找到裝置';
+
+  @override
+  String get dlnaRetrySearch => '重新搜尋';
+
+  @override
+  String get dlnaConnecting => '正在連線…';
+
+  @override
+  String get dlnaDisconnect => '中斷連線';
+
+  @override
+  String get dlnaCompatMode => '相容模式';
+
+  @override
+  String get dlnaRemuxContainer => '重新封裝容器';
+
+  @override
+  String get dlnaRemuxContainerDesc => '重新封裝為 MP4（不重新編碼，速度快）';
+
+  @override
+  String get dlnaTranscodeVideo => '視訊轉碼';
+
+  @override
+  String get dlnaTranscodeVideoDesc => '將視訊轉碼為 H.264（CPU 佔用高）';
+
+  @override
+  String get dlnaTranscodeAudio => '音訊轉碼';
+
+  @override
+  String get dlnaTranscodeAudioDesc => '將音訊轉碼為 AAC';
+
+  @override
+  String get dlnaCastQueue => '投放佇列';
+
+  @override
+  String get dlnaRenderer => '渲染器';
 }
