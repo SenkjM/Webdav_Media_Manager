@@ -340,16 +340,17 @@ class DlnaCastService extends ChangeNotifier {
     );
 
     final proxyUrl = proxyUri.toString();
-    final mimeType = _mimeFor(item.name);
+    final dlnaMime = _dlnaMimeFor(item.name);   // DIDL-Lite 用，统一 video/mp4
+    final proxyMime = _mimeFor(item.name);       // 代理 Content-Type，按真实格式
 
     // SetAVTransportURI
-    debugPrint('[DLNA] castItem: proxyUrl=$proxyUrl mimeType=$mimeType');
+    debugPrint('[DLNA] castItem: proxyUrl=$proxyUrl dlnaMime=$dlnaMime proxyMime=$proxyMime');
     await _soap(
       _renderer!.controlUrl,
       'SetAVTransportURI',
       '<InstanceID>0</InstanceID>'
       '<CurrentURI>${_xmlEscape(proxyUrl)}</CurrentURI>'
-      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, proxyUrl, mimeType))}</CurrentURIMetaData>',
+      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, proxyUrl, dlnaMime))}</CurrentURIMetaData>',
     );
 
     // Play
@@ -746,6 +747,14 @@ class DlnaCastService extends ChangeNotifier {
     return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
   }
 
+  /// DIDL-Lite protocolInfo 里的 MIME 类型。
+  ///
+  /// 统一声明 video/mp4 以获得最广泛的 DMR 兼容性。
+  /// Windows "投放到设备"、Kodi、小米电视等遇到 video/x-matroska 会直接
+  /// 返回 716 而不访问 URI；实际字节流仍按原始格式传输，大多数 DMR 能正常解码。
+  String _dlnaMimeFor(String name) => 'video/mp4';
+
+  /// 代理层 HTTP Content-Type（按真实文件格式，供浏览器 / 调试工具识别）。
   String _mimeFor(String name) {
     switch (_ext(name)) {
       case 'mp4':
@@ -763,7 +772,7 @@ class DlnaCastService extends ChangeNotifier {
       case 'm2ts':
         return 'video/mp2t';
       default:
-        return 'video/mp4'; // 转码输出总是 MP4
+        return 'video/mp4';
     }
   }
 
