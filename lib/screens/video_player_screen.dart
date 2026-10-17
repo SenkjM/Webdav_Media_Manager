@@ -1300,13 +1300,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final seed = widget.seed;
     if (seed == null && _resolved == null && widget.source == null) return;
 
+    // 先停止本地播放，再启动投屏，最后退出播放器
+    await _handleExit(stopPlayback: true);
+    if (!mounted) return;
+
     await cast.startCast(
       renderer: renderer,
       seed: seed,
       accountId: _queue?.accountId ?? _resolved?.accountId ?? widget.source?.accountId,
     );
-
-    if (mounted) Navigator.of(context).pop();
   }
 
   /// `3 / 27 · 扫描中…` — shows the progressive scan making progress.
