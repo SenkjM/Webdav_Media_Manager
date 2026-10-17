@@ -236,12 +236,13 @@ class _DlnaCastBarState extends State<DlnaCastBar>
     final screenWidth = MediaQuery.of(context).size.width;
 
     final isError = cast.state == DlnaCastState.error;
-    final isBuffering = cast.playbackState == DlnaPlaybackState.buffering;
+    final bubbleColor =
+        isError ? scheme.errorContainer : scheme.primaryContainer;
+    final iconColor =
+        isError ? scheme.onErrorContainer : scheme.onPrimaryContainer;
 
-    // 错误态：红色背景气泡，点击展开查看详情
-    // 正常态：仅图标 + 播放控制，无文件名
-    final bubbleColor = isError ? scheme.errorContainer : scheme.primaryContainer;
-    final iconColor = isError ? scheme.onErrorContainer : scheme.onPrimaryContainer;
+    // 进度 0..1（只读，不可拖动）
+    final progress = _progress(cast);
 
     return GestureDetector(
       onPanUpdate: _onBubblePanUpdate,
@@ -249,72 +250,57 @@ class _DlnaCastBarState extends State<DlnaCastBar>
       onTap: _toggleExpand,
       child: Material(
         color: bubbleColor,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(16),
         elevation: 8,
         shadowColor: Colors.black38,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 投屏 / 错误图标
-              Icon(
-                isError ? Icons.cast : Icons.cast_connected,
-                color: iconColor,
-                size: 20,
+              // ── 投屏图标（错误时加红点角标） ──────────────
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    isError ? Icons.cast : Icons.cast_connected,
+                    color: iconColor,
+                    size: 24,
+                  ),
+                  if (isError)
+                    Positioned(
+                      right: -3,
+                      top: -3,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: scheme.error,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: bubbleColor,
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
 
-              if (isError) ...[
-                // 错误态：图标右侧小红点提示，无文字
-                const SizedBox(width: 4),
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: scheme.error,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 4),
-              ] else ...[
-                const SizedBox(width: 6),
+              const SizedBox(height: 6),
 
-                // 正常态：播放/暂停 按钮（或 buffering 指示器）
-                SizedBox(
-                  width: 30,
-                  height: 30,
-                  child: isBuffering
-                      ? Padding(
-                          padding: const EdgeInsets.all(6),
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: iconColor,
-                          ),
-                        )
-                      : IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: Icon(
-                            cast.playbackState == DlnaPlaybackState.playing
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: iconColor,
-                            size: 20,
-                          ),
-                          onPressed: () => cast.playPause(),
-                        ),
-                ),
-                const SizedBox(width: 2),
-              ],
-
-              // 关闭按钮
+              // ── 只读细进度条 ──────────────────────────────
               SizedBox(
-                width: 26,
-                height: 26,
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  icon: Icon(Icons.close, color: iconColor, size: 16),
-                  onPressed: () => cast.stop(),
-                  tooltip: '停止投屏',
+                width: 28,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: isError ? 0 : progress,
+                    minHeight: 3,
+                    backgroundColor:
+                        iconColor.withValues(alpha: 0.25),
+                    color: isError ? scheme.error : iconColor,
+                  ),
                 ),
               ),
             ],
