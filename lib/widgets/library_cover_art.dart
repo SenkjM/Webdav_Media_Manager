@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -11,14 +12,15 @@ import '../services/library_service.dart';
 import '../services/webdav_service.dart';
 import '../services/stream_cover_reader.dart';
 import '../services/accounts_service.dart';
+import '../services/audio_player_service.dart';
 import '../models/webdav_stream.dart';
 import '../services/tag_service.dart';
-import '../utils/cover_image.dart';
 import 'cover_art.dart';
 
-/// Library cover that prefers full-resolution art when the audio file is local,
-/// otherwise shows the configured thumbnail only. Never auto-enqueues audio
-/// downloads from cover resolution (tap the row to enqueue explicitly).
+/// Library cover: resampled thumb by default. Local audio art is read from the
+/// audio file's tags (never persisted); the full player screen Range-reads the
+/// embedded cover for streaming tracks. Never auto-enqueues audio downloads
+/// from cover resolution (tap the row to enqueue explicitly).
 class LibraryCoverArt extends StatefulWidget {
   const LibraryCoverArt({
     super.key,
@@ -81,7 +83,7 @@ class LibraryCoverArt extends StatefulWidget {
 
 class _LibraryCoverArtState extends State<LibraryCoverArt> {
   String? _displayPath;
-  Uint8List? _fullBytes;
+  Uint8List? _bytes;
   bool _resolved = false;
   String? _identity;
 
@@ -99,7 +101,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
         oldWidget.thumbPath != widget.thumbPath ||
         oldWidget.coverRevision != widget.coverRevision) {
       _resolved = false;
-      _fullBytes = null;
+      _bytes = null;
       _displayPath = null;
       _scheduleResolve();
     }
@@ -146,63 +148,48 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
       }
       if (!mounted) return;
       setState(() {
-        _displayPath = resolveLibraryCoverPath(
-          audioIsLocal: false,
-          fullCoverPath: null,
-          thumbPath: widget.thumbPath,
-        );
-        _fullBytes = null;
+        _displayPath = thumb;
+        _bytes = null;
         _resolved = true;
       });
       return;
     }
 
-    // Local audio: prefer saved full cover, else extract from tags.
-    final fullPath = await covers.fullCoverPath(
-      widget.sourceName,
-      widget.remotePath,
-    );
-    if (fullPath != null) {
+    // Local audio: default to the resampled thumb. If it is missing (legacy row
+    // after the original-art cache cleanup), rebuild it from the audio tags so
+    // the cover survives audio-cache deletion without a separate full copy.
+    final thumb = widget.thumbPath;
+    if (thumb != null && thumb.isNotEmpty && File(thumb).existsSync()) {
       if (!mounted) return;
       setState(() {
-        _displayPath = resolveLibraryCoverPath(
-          audioIsLocal: true,
-          fullCoverPath: fullPath,
-          thumbPath: widget.thumbPath,
-        );
-        _fullBytes = null;
+        _displayPath = thumb;
+        _bytes = null;
         _resolved = true;
       });
       return;
     }
-
     final localPath = cache
         .fileForRemote(widget.remotePath, sourceName: widget.sourceName)
         .path;
     final tags = await TagService().readFromFile(localPath);
     final bytes = tags.coverBytes;
     if (bytes != null && bytes.isNotEmpty) {
-      unawaited(
-        covers.saveFull(
-          sourceName: widget.sourceName,
-          remotePath: widget.remotePath,
-          bytes: bytes,
-        ),
+      final saved = await covers.saveThumb(
+        sourceName: widget.sourceName,
+        remotePath: widget.libraryRemotePath ?? widget.remotePath,
+        bytes: bytes,
       );
-      // Also ensure thumb exists for offline placeholder.
-      if (widget.thumbPath == null) {
-        unawaited(
-          covers.saveThumb(
-            sourceName: widget.sourceName,
-            remotePath: widget.remotePath,
-            bytes: bytes,
-          ),
+      if (saved != null) {
+        await library.updateCoverPath(
+          sourceName: widget.sourceName,
+          remotePath: widget.libraryRemotePath ?? widget.remotePath,
+          coverPath: saved,
         );
       }
       if (!mounted) return;
       setState(() {
-        _fullBytes = bytes;
-        _displayPath = widget.thumbPath;
+        _displayPath = saved ?? thumb;
+        _bytes = saved == null ? bytes : null;
         _resolved = true;
       });
       return;
@@ -210,8 +197,8 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
 
     if (!mounted) return;
     setState(() {
-      _displayPath = widget.thumbPath;
-      _fullBytes = null;
+      _displayPath = thumb;
+      _bytes = null;
       _resolved = true;
     });
   }
@@ -263,7 +250,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
     final path = _displayPath ?? widget.thumbPath;
     return CoverArt(
       path: path,
-      bytes: _fullBytes,
+      bytes: _bytes,
       size: widget.size,
       borderRadius: widget.borderRadius,
       icon: widget.icon,
@@ -384,21 +371,6 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     final covers = library.covers;
     await covers.init();
 
-    // 1) Full-res bucket (also written by Range / stream ingest).
-    final fullPath = await covers.fullCoverPath(
-      widget.sourceName,
-      widget.remotePath,
-    );
-    if (fullPath != null) {
-      if (!mounted) return;
-      setState(() {
-        _displayPath = fullPath;
-        _bytes = null;
-        _resolved = true;
-      });
-      return;
-    }
-
     final localPath =
         widget.localAudioPath ??
         (cache.hasLocalFile(widget.remotePath, sourceName: widget.sourceName)
@@ -410,18 +382,12 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
                   .path
             : null);
 
-    // 2) Embedded art from local audio.
+    // Local audio: read the original art from the file's tags on demand. It is
+    // not persisted separately; only the resampled thumb lives in covers/.
     if (localPath != null) {
       final tags = await TagService().readFromFile(localPath);
       final bytes = tags.coverBytes;
       if (bytes != null && bytes.isNotEmpty) {
-        unawaited(
-          covers.saveFull(
-            sourceName: widget.sourceName,
-            remotePath: widget.remotePath,
-            bytes: bytes,
-          ),
-        );
         if (!mounted) return;
         setState(() {
           _displayPath = null;
@@ -430,25 +396,48 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
         });
         return;
       }
-    }
-
-    // 3) Library / stream cover file (thumb or prefetch) — match MiniPlayer.
-    final known = widget.coverPath;
-    if (known != null && known.isNotEmpty) {
+      // Local audio without embedded art: keep the resampled thumb. No Range
+      // request needed, the bytes are already on disk.
       if (!mounted) return;
       setState(() {
-        _displayPath = known;
+        _displayPath = widget.coverPath;
         _bytes = null;
         _resolved = true;
       });
       return;
     }
 
+    // Streaming: show the resampled thumb first, then Range-read the embedded
+    // original (memory only; one request at a time through AudioPlayerService,
+    // sharing the music network window).
     if (!mounted) return;
     setState(() {
-      _displayPath = null;
+      _displayPath = widget.coverPath;
       _bytes = null;
       _resolved = true;
+    });
+    unawaited(_loadRangeCover());
+  }
+
+  Future<void> _loadRangeCover() async {
+    final remotePath = widget.remotePath;
+    final revision = widget.coverRevision;
+    final player = context.read<AudioPlayerService>();
+    final bytes = await player.networkCoverBytes(
+      sourceName: widget.sourceName,
+      remotePath: remotePath,
+      fileName: widget.fileName ?? remotePath.split('/').last,
+    );
+    if (!mounted ||
+        bytes == null ||
+        bytes.isEmpty ||
+        widget.remotePath != remotePath ||
+        widget.coverRevision != revision) {
+      return;
+    }
+    setState(() {
+      _displayPath = null;
+      _bytes = bytes;
     });
   }
 

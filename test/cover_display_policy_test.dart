@@ -3,77 +3,12 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
-import 'package:webdav_media_manager/utils/cover_image.dart';
 import 'package:webdav_media_manager/widgets/cover_art.dart';
 import 'package:webdav_media_manager/services/tag_service.dart';
 import 'package:webdav_media_manager/l10n/generated/app_localizations.dart';
 
 void main() {
-  group('resolveLibraryCoverPath', () {
-    test('local + full path → full art', () {
-      expect(
-        resolveLibraryCoverPath(
-          audioIsLocal: true,
-          fullCoverPath: '/docs/covers_full/a.png',
-          thumbPath: '/docs/covers/a.jpg',
-        ),
-        '/docs/covers_full/a.png',
-      );
-    });
-
-    test('missing local → thumb only', () {
-      expect(
-        resolveLibraryCoverPath(
-          audioIsLocal: false,
-          fullCoverPath: '/docs/covers_full/a.png',
-          thumbPath: '/docs/covers/a.jpg',
-        ),
-        '/docs/covers/a.jpg',
-      );
-    });
-
-    test('local without full path → null (caller uses tag bytes)', () {
-      expect(
-        resolveLibraryCoverPath(
-          audioIsLocal: true,
-          fullCoverPath: null,
-          thumbPath: '/docs/covers/a.jpg',
-        ),
-        isNull,
-      );
-    });
-  });
-
-  group('shouldEnqueueMissingAudio', () {
-    test('enqueue when missing and not queued', () {
-      expect(
-        shouldEnqueueMissingAudio(
-          audioIsLocal: false,
-          alreadyQueuedOrDownloading: false,
-        ),
-        isTrue,
-      );
-    });
-
-    test('do not enqueue when local or already queued', () {
-      expect(
-        shouldEnqueueMissingAudio(
-          audioIsLocal: true,
-          alreadyQueuedOrDownloading: false,
-        ),
-        isFalse,
-      );
-      expect(
-        shouldEnqueueMissingAudio(
-          audioIsLocal: false,
-          alreadyQueuedOrDownloading: true,
-        ),
-        isFalse,
-      );
-    });
-  });
-
-  group('CoverArt local full vs thumb', () {
+  group('CoverArt bytes vs placeholder', () {
     testWidgets('shows Image.memory for full bytes (local full art)', (
       tester,
     ) async {
@@ -127,19 +62,6 @@ void main() {
       expect(map[l10n.tagGenre], 'Rock');
       expect(map[l10n.tagBitrate], '320 kbps');
       expect(map[l10n.tagSampleRate], '44100 Hz');
-    });
-  });
-
-  group('player cover hard rule', () {
-    test('local without full path must not resolve to thumb', () {
-      expect(
-        resolveLibraryCoverPath(
-          audioIsLocal: true,
-          fullCoverPath: null,
-          thumbPath: '/docs/covers/thumb.jpg',
-        ),
-        isNull,
-      );
     });
   });
 }

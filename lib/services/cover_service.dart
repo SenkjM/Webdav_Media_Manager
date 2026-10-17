@@ -8,14 +8,17 @@ import 'package:path_provider/path_provider.dart';
 import '../utils/cover_image.dart';
 import '../utils/track_identity.dart';
 
-/// Stores square album art thumbs under `covers/` and optional full-resolution
-/// originals under `covers_full/` for faster display when the audio file is local.
-/// Thumb edge length defaults to [coverThumbSize]; override via [thumbSize]
-/// (Settings) for newly written thumbs. Existing files keep their old size until
-/// re-ingest or library destroy + re-download.
+/// Stores square album-art thumbs under `covers/`.
+///
+/// The original embedded art is **not** cached anymore: when the audio file is
+/// local it is read from that file's tags on demand. Thumbs stay on disk so a
+/// track keeps its cover after the audio cache is cleaned up (and they are what
+/// list/notification surfaces use). Thumb edge defaults to [coverThumbSize];
+/// override via [thumbSize] for newly written thumbs. Existing files keep their
+/// old size until re-ingest.
 class CoverService {
   Directory? _coversDir;
-  Directory? _coversFullDir;
+  bool _legacyFullPurged = false;
 
   /// Square edge (px) used by [saveThumb] when no explicit size is passed.
   int thumbSize = coverThumbSize;
@@ -28,16 +31,6 @@ class CoverService {
       await _coversDir!.create(recursive: true);
     }
     return _coversDir!;
-  }
-
-  Future<Directory> get coversFullDir async {
-    if (_coversFullDir != null) return _coversFullDir!;
-    final root = await getApplicationDocumentsDirectory();
-    _coversFullDir = Directory(p.join(root.path, 'covers_full'));
-    if (!await _coversFullDir!.exists()) {
-      await _coversFullDir!.create(recursive: true);
-    }
-    return _coversFullDir!;
   }
 
   String coverFileName(String sourceName, String remotePath) {
@@ -70,111 +63,37 @@ class CoverService {
     return file.path;
   }
 
-  static String _extensionForBytes(Uint8List bytes) {
-    if (bytes.length >= 3 &&
-        bytes[0] == 0xFF &&
-        bytes[1] == 0xD8 &&
-        bytes[2] == 0xFF) {
-      return 'jpg';
-    }
-    if (bytes.length >= 8 &&
-        bytes[0] == 0x89 &&
-        bytes[1] == 0x50 &&
-        bytes[2] == 0x4E &&
-        bytes[3] == 0x47) {
-      return 'png';
-    }
-    if (bytes.length >= 12 &&
-        bytes[0] == 0x52 &&
-        bytes[1] == 0x49 &&
-        bytes[2] == 0x46 &&
-        bytes[3] == 0x46 &&
-        bytes[8] == 0x57 &&
-        bytes[9] == 0x45 &&
-        bytes[10] == 0x42 &&
-        bytes[11] == 0x50) {
-      return 'webp';
-    }
-    return 'jpg';
-  }
-
-  /// Persist original cover bytes under covers_full/ (not resized).
-  Future<String?> saveFull({
-    required String sourceName,
-    required String remotePath,
-    required Uint8List bytes,
-  }) async {
-    if (bytes.isEmpty) return null;
-    final dir = await coversFullDir;
-    final stem = identityHashStem(sourceName, remotePath);
-    final ext = _extensionForBytes(bytes);
-    // Remove prior variants so only one full cover remains.
-    await for (final entity in dir.list()) {
-      if (entity is File) {
-        final name = p.basename(entity.path);
-        if (name.startsWith('$stem.')) {
-          try {
-            await entity.delete();
-          } catch (_) {}
-        }
-      }
-    }
-    final file = File(p.join(dir.path, '$stem.$ext'));
-    await file.writeAsBytes(bytes, flush: true);
-    try {
-      await FileImage(file).evict();
-    } catch (_) {}
-    return file.path;
-  }
-
-  /// Sync lookup of a previously saved full-res cover (null if missing / not ready).
-  String? fullCoverPathSync(String sourceName, String remotePath) {
-    final dir = _coversFullDir;
-    if (dir == null) return null;
-    final stem = identityHashStem(sourceName, remotePath);
-    for (final ext in const ['jpg', 'jpeg', 'png', 'webp']) {
-      final f = File(p.join(dir.path, '$stem.$ext'));
-      if (f.existsSync()) return f.path;
-    }
-    return null;
-  }
-
-  Future<String?> fullCoverPath(String sourceName, String remotePath) async {
-    final dir = await coversFullDir;
-    final stem = identityHashStem(sourceName, remotePath);
-    for (final ext in const ['jpg', 'jpeg', 'png', 'webp']) {
-      final f = File(p.join(dir.path, '$stem.$ext'));
-      if (await f.exists()) return f.path;
-    }
-    return null;
-  }
-
   Future<void> deleteThumb(String sourceName, String remotePath) async {
     final file = await coverFile(sourceName, remotePath);
     if (await file.exists()) {
+      try {
+        await FileImage(file).evict();
+      } catch (_) {}
       try {
         await file.delete();
       } catch (_) {}
     }
   }
 
-  Future<void> deleteFull(String sourceName, String remotePath) async {
-    final dir = await coversFullDir;
-    final stem = identityHashStem(sourceName, remotePath);
-    await for (final entity in dir.list()) {
-      if (entity is File && p.basename(entity.path).startsWith('$stem.')) {
-        try {
-          await entity.delete();
-        } catch (_) {}
-      }
-    }
+  /// Remove the legacy `covers_full/` directory (original-art cache).
+  ///
+  /// Originals are no longer maintained: local audio art is read from the
+  /// audio file's tags when needed, remote rows only keep a thumb. Runs once per
+  /// process from [init]; best-effort.
+  Future<void> purgeFullCovers() async {
+    if (_legacyFullPurged) return;
+    _legacyFullPurged = true;
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(root.path, 'covers_full'));
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (_) {}
   }
 
-  /// Wipe all compressed thumbs and full-res covers (library destroy).
+  /// Wipe all compressed thumbs (library destroy) and any legacy full covers.
   Future<void> deleteAllCovers() async {
-    for (final getter in [coversDir, coversFullDir]) {
-      final dir = await getter;
-      if (!await dir.exists()) continue;
+    final dir = await coversDir;
+    if (await dir.exists()) {
       await for (final entity in dir.list(recursive: false)) {
         if (entity is File) {
           try {
@@ -183,11 +102,16 @@ class CoverService {
         }
       }
     }
+    try {
+      final root = await getApplicationDocumentsDirectory();
+      final full = Directory(p.join(root.path, 'covers_full'));
+      if (await full.exists()) await full.delete(recursive: true);
+    } catch (_) {}
   }
 
-  /// Ensure covers_full dir is created so [fullCoverPathSync] can work after init.
+  /// Ensure the covers dir exists and drop the legacy original-art cache.
   Future<void> init() async {
     await coversDir;
-    await coversFullDir;
+    await purgeFullCovers();
   }
 }

@@ -283,12 +283,6 @@ class LibraryService extends ChangeNotifier {
         remotePath: remotePath,
         bytes: read.coverBytes!,
       );
-      // Best-effort full-res cache for library UI when file is local.
-      await _covers.saveFull(
-        sourceName: sourceName,
-        remotePath: remotePath,
-        bytes: read.coverBytes!,
-      );
     } else {
       // Keep previous thumb if re-download has no art.
       coverPath = existing?.coverPath;
@@ -435,11 +429,6 @@ class LibraryService extends ChangeNotifier {
     String? coverPath = existing?.coverPath;
     if (tags.coverBytes != null && tags.coverBytes!.isNotEmpty) {
       coverPath = await _covers.saveThumb(
-        sourceName: sourceName,
-        remotePath: remotePath,
-        bytes: tags.coverBytes!,
-      );
-      await _covers.saveFull(
         sourceName: sourceName,
         remotePath: remotePath,
         bytes: tags.coverBytes!,
@@ -663,11 +652,6 @@ class LibraryService extends ChangeNotifier {
         coverPath = await _covers.saveThumb(
           sourceName: sourceName,
           remotePath: virtualPath,
-          bytes: bytes,
-        );
-        await _covers.saveFull(
-          sourceName: sourceName,
-          remotePath: resolved,
           bytes: bytes,
         );
       }
@@ -899,7 +883,6 @@ class LibraryService extends ChangeNotifier {
     // removal (and cannot pull the song back).
     await recordTombstone(track.sourceName, track.remotePath);
     await _covers.deleteThumb(track.sourceName, track.remotePath);
-    await _covers.deleteFull(track.sourceName, track.remotePath);
     if (track.isCueVirtual && track.cueRemotePath != null) {
       // 逐条：只删这一片。整组一次性清空的话，兄弟片就再也拿不到墓碑，
       // 它们会在下一次从云端拉取时被旧 base 带回来。

@@ -30,6 +30,7 @@ import 'prefetch_cache.dart';
 import 'stream_window.dart';
 import 'notification_permission_service.dart';
 import 'settings_service.dart';
+import 'stream_cover_reader.dart';
 import 'task_queue_service.dart';
 import 'webdav_service.dart';
 
@@ -265,6 +266,64 @@ class AudioPlayerService extends ChangeNotifier {
     );
     if (source == null || source.uri.isEmpty) return null;
     return PlayableMedia.stream(uri: source.uri, headers: source.headers);
+  }
+
+  /// In-memory Range covers for the player screen (never persisted).
+  ///
+  /// One request runs at a time (`_coverTail`), matching the single network
+  /// window the music cache/prefetch already uses. Entries are cheap bytes and
+  /// stay only for this process; the durable cover is the resampled thumb.
+  final StreamCoverReader _rangeCoverReader = StreamCoverReader();
+  final Map<String, Uint8List?> _rangeCoverCache = {};
+  final Map<String, Future<Uint8List?>> _rangeCoverInflight = {};
+  Future<void> _coverTail = Future<void>.value();
+
+  /// Range-read the embedded cover for the player screen. Local audio should be
+  /// read from its file tags by the caller; this is the remote path.
+  Future<Uint8List?> networkCoverBytes({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+  }) {
+    final key = '$sourceName\u0000$remotePath';
+    if (_rangeCoverCache.containsKey(key)) {
+      return Future.value(_rangeCoverCache[key]);
+    }
+    final running = _rangeCoverInflight[key];
+    if (running != null) return running;
+    final future = _enqueueCover(() async {
+      try {
+        final accountId = _accounts.idForSource(sourceName) ?? '';
+        if (accountId.isEmpty) return null;
+        final source = await _webDav.resolveStreamSource(
+          remotePath: remotePath,
+          name: fileName,
+          accountId: accountId,
+          kind: StreamKind.music,
+        );
+        if (source == null || source.uri.isEmpty) return null;
+        final tags = await _rangeCoverReader.extractTags(source);
+        final bytes = tags?.coverBytes;
+        if (bytes == null || bytes.isEmpty) return null;
+        _rangeCoverCache[key] = bytes;
+        if (_rangeCoverCache.length > 8) {
+          _rangeCoverCache.remove(_rangeCoverCache.keys.first);
+        }
+        return bytes;
+      } catch (_) {
+        return null;
+      }
+    });
+    _rangeCoverInflight[key] = future;
+    future.whenComplete(() => _rangeCoverInflight.remove(key));
+    return future;
+  }
+
+  Future<Uint8List?> _enqueueCover(Future<Uint8List?> Function() job) {
+    final previous = _coverTail;
+    final gate = Completer<void>();
+    _coverTail = gate.future;
+    return previous.then((_) => job()).whenComplete(gate.complete);
   }
 
   /// Complete audio lookahead file for [track], if the system-managed
