@@ -7,6 +7,7 @@ import '../services/audio_player_service.dart';
 import '../services/settings_service.dart';
 import '../utils/android_background.dart';
 import '../utils/back_handler_registry.dart';
+import '../widgets/dlna_cast_bar.dart';
 import '../widgets/mini_player.dart';
 import 'about_screen.dart';
 import 'tasks_screen.dart';
@@ -324,13 +325,18 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ),
             ),
-            body: Column(
+            body: Stack(
               children: [
-                Expanded(
-                  child: IndexedStack(index: _index, children: pages),
+                Column(
+                  children: [
+                    Expanded(
+                      child: IndexedStack(index: _index, children: pages),
+                    ),
+                    // Global mini bar on all main tabs except Settings.
+                    if (_index != _settingsIndex) const MiniPlayer(),
+                  ],
                 ),
-                // Global mini bar on all main tabs except Settings.
-                if (_index != _settingsIndex) const MiniPlayer(),
+                const DlnaCastBar(),
               ],
             ),
           ),

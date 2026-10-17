@@ -1651,5 +1651,21 @@
   "mangaLocalCbzScanning": "正在掃描資料夾…",
   "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "沒有可寫入的帳號",
-  "@errNoWriteAccount": {}
+  "@errNoWriteAccount": {},
+  "dlnaCast": "投放",
+  "dlnaCastDesc": "投放到區域網路 DLNA/UPnP 渲染器",
+  "dlnaDeviceSearch": "正在搜尋裝置…",
+  "dlnaNoDeviceFound": "未找到裝置",
+  "dlnaRetrySearch": "重新搜尋",
+  "dlnaConnecting": "正在連線…",
+  "dlnaDisconnect": "中斷連線",
+  "dlnaCompatMode": "相容模式",
+  "dlnaRemuxContainer": "重新封裝容器",
+  "dlnaRemuxContainerDesc": "重新封裝為 MP4（不重新編碼，速度快）",
+  "dlnaTranscodeVideo": "視訊轉碼",
+  "dlnaTranscodeVideoDesc": "將視訊轉碼為 H.264（CPU 佔用高）",
+  "dlnaTranscodeAudio": "音訊轉碼",
+  "dlnaTranscodeAudioDesc": "將音訊轉碼為 AAC",
+  "dlnaCastQueue": "投放佇列",
+  "dlnaRenderer": "渲染器"
 }

@@ -8949,6 +8949,102 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'没有可写入的账号'**
   String get errNoWriteAccount;
+
+  /// No description provided for @dlnaCast.
+  ///
+  /// In zh, this message translates to:
+  /// **'投屏'**
+  String get dlnaCast;
+
+  /// No description provided for @dlnaCastDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'投屏到局域网 DLNA/UPnP 渲染器'**
+  String get dlnaCastDesc;
+
+  /// No description provided for @dlnaDeviceSearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在搜索设备…'**
+  String get dlnaDeviceSearch;
+
+  /// No description provided for @dlnaNoDeviceFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'未找到设备'**
+  String get dlnaNoDeviceFound;
+
+  /// No description provided for @dlnaRetrySearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新搜索'**
+  String get dlnaRetrySearch;
+
+  /// No description provided for @dlnaConnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在连接…'**
+  String get dlnaConnecting;
+
+  /// No description provided for @dlnaDisconnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'断开'**
+  String get dlnaDisconnect;
+
+  /// No description provided for @dlnaCompatMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'兼容模式'**
+  String get dlnaCompatMode;
+
+  /// No description provided for @dlnaRemuxContainer.
+  ///
+  /// In zh, this message translates to:
+  /// **'重封装容器'**
+  String get dlnaRemuxContainer;
+
+  /// No description provided for @dlnaRemuxContainerDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'重封装为 MP4（不重新编码，速度快）'**
+  String get dlnaRemuxContainerDesc;
+
+  /// No description provided for @dlnaTranscodeVideo.
+  ///
+  /// In zh, this message translates to:
+  /// **'视频转码'**
+  String get dlnaTranscodeVideo;
+
+  /// No description provided for @dlnaTranscodeVideoDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'将视频转码为 H.264（CPU 占用高）'**
+  String get dlnaTranscodeVideoDesc;
+
+  /// No description provided for @dlnaTranscodeAudio.
+  ///
+  /// In zh, this message translates to:
+  /// **'音频转码'**
+  String get dlnaTranscodeAudio;
+
+  /// No description provided for @dlnaTranscodeAudioDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'将音频转码为 AAC'**
+  String get dlnaTranscodeAudioDesc;
+
+  /// No description provided for @dlnaCastQueue.
+  ///
+  /// In zh, this message translates to:
+  /// **'投屏队列'**
+  String get dlnaCastQueue;
+
+  /// No description provided for @dlnaRenderer.
+  ///
+  /// In zh, this message translates to:
+  /// **'渲染器'**
+  String get dlnaRenderer;
 }
 
 class _AppLocalizationsDelegate

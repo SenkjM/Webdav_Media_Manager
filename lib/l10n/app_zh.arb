@@ -1682,5 +1682,21 @@
   "mangaLocalCbzScanning": "正在扫描文件夹…",
   "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "没有可写入的账号",
-  "@errNoWriteAccount": {}
+  "@errNoWriteAccount": {},
+  "dlnaCast": "投屏",
+  "dlnaCastDesc": "投屏到局域网 DLNA/UPnP 渲染器",
+  "dlnaDeviceSearch": "正在搜索设备…",
+  "dlnaNoDeviceFound": "未找到设备",
+  "dlnaRetrySearch": "重新搜索",
+  "dlnaConnecting": "正在连接…",
+  "dlnaDisconnect": "断开",
+  "dlnaCompatMode": "兼容模式",
+  "dlnaRemuxContainer": "重封装容器",
+  "dlnaRemuxContainerDesc": "重封装为 MP4（不重新编码，速度快）",
+  "dlnaTranscodeVideo": "视频转码",
+  "dlnaTranscodeVideoDesc": "将视频转码为 H.264（CPU 占用高）",
+  "dlnaTranscodeAudio": "音频转码",
+  "dlnaTranscodeAudioDesc": "将音频转码为 AAC",
+  "dlnaCastQueue": "投屏队列",
+  "dlnaRenderer": "渲染器"
 }

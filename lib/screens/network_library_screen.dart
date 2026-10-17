@@ -25,9 +25,11 @@ import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/platform_export_service.dart';
+import '../services/dlna_cast_service.dart';
 import '../utils/app_snack.dart';
 import '../utils/remote_path.dart';
 import '../utils/manga_file_types.dart';
+import '../widgets/dlna_device_sheet.dart';
 import '../utils/manga_scan_walk.dart';
 import '../utils/manga_identity.dart';
 import '../utils/track_identity.dart';
@@ -1035,7 +1037,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       },
                     ),
                   // 相册与下载目录是两条不同的落盘路径，视频两个都保留。
-                  if (item.isVideo)
+                  if (item.isVideo) ...[
+                    ListTile(
+                      leading: const Icon(Icons.cast),
+                      title: Text(l10n.dlnaCast),
+                      subtitle: Text(l10n.dlnaCastDesc),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _startDlnaCast(item);
+                      },
+                    ),
                     ListTile(
                       leading: const Icon(Icons.photo_library_outlined),
                       title: Text(l10n.netDownloadToGallery),
@@ -1045,6 +1056,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                         _downloadToGallery(item);
                       },
                     ),
+                  ],
                 ],
                 Divider(
                   height: 1,
@@ -1151,6 +1163,21 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _startDlnaCast(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+
+    final renderer = await DlnaDeviceSheet.show(context);
+    if (renderer == null || !mounted) return;
+
+    final cast = context.read<DlnaCastService>();
+    await cast.startCast(
+      renderer: renderer,
+      singleItem: item,
+      accountId: accountId,
+    );
   }
 
   Future<void> _createFolder() async {

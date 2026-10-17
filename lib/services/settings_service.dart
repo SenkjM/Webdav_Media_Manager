@@ -121,6 +121,11 @@ class SettingsService extends ChangeNotifier {
   static const _kVideoScanSubdirs = 'video_scan_subdirs';
   static const _kVideoPlaylistMaxDepth = 'video_playlist_max_depth';
 
+  /// DLNA/UPnP transcode preferences.
+  static const _kDlnaRemuxContainer = 'dlna_remux_container';
+  static const _kDlnaTranscodeVideo = 'dlna_transcode_video';
+  static const _kDlnaTranscodeAudio = 'dlna_transcode_audio';
+
   /// Media-library scrape (scan task). Independent from playlist prefs.
   static const _kMediaScanRecursive = 'media_scan_recursive';
   static const _kMediaScanMaxDepth = 'media_scan_max_depth';
@@ -610,6 +615,29 @@ class SettingsService extends ChangeNotifier {
 
   /// 视频播放列表最大子目录深度（默认 1）。键 `video_playlist_max_depth`。
   int get videoPlaylistMaxDepth => _videoPlaylistMaxDepth;
+
+  // --- DLNA / UPnP transcode preferences ---
+
+  /// 重封装容器（MP4，无需重新编码）。默认关。
+  bool get dlnaRemuxContainer => _prefs?.getBool(_kDlnaRemuxContainer) ?? false;
+  set dlnaRemuxContainer(bool v) {
+    _prefs?.setBool(_kDlnaRemuxContainer, v);
+    notifyListeners();
+  }
+
+  /// 视频转码为 H.264。默认关。
+  bool get dlnaTranscodeVideo => _prefs?.getBool(_kDlnaTranscodeVideo) ?? false;
+  set dlnaTranscodeVideo(bool v) {
+    _prefs?.setBool(_kDlnaTranscodeVideo, v);
+    notifyListeners();
+  }
+
+  /// 音频转码为 AAC。默认关。
+  bool get dlnaTranscodeAudio => _prefs?.getBool(_kDlnaTranscodeAudio) ?? false;
+  set dlnaTranscodeAudio(bool v) {
+    _prefs?.setBool(_kDlnaTranscodeAudio, v);
+    notifyListeners();
+  }
 
   /// 媒体库刮削是否递归子目录。默认**开**。键 `media_scan_recursive`。
   bool get mediaScanRecursive => _mediaScanRecursive;
