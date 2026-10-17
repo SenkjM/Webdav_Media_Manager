@@ -165,7 +165,12 @@ class AudioPlayerService extends ChangeNotifier {
 
   PlayOpenMode get playOpenMode => _playOpenMode;
 
-  void _onSettings() => _prefetch?.nudge();
+  void _onSettings() {
+    _prefetch?.nudge();
+    // Turning 自动补齐 on mid-queue should start filling missing rows without
+    // requiring another play action.
+    if (_autoScrapeQueue) _scheduleMissingScrapes();
+  }
 
   /// Resolve playable for [track] under [_playOpenMode] (or [mode] override).
   ///
@@ -595,8 +600,19 @@ class AudioPlayerService extends ChangeNotifier {
     unawaited(_pumpMissingScrapes());
   }
 
+  /// Missing queue rows are scraped automatically for the network-library
+  /// auto-scrape feature, and for library queues only while 自动补齐 is on —
+  /// manual mode keeps the library manual (explicit scans still work).
+  bool get _autoScrapeQueue {
+    if (_settings.musicLibraryAutoBackfill) return true;
+    final kind = _queueSource?.kind;
+    return kind == PlaybackQueueSourceKind.networkFolder ||
+        kind == PlaybackQueueSourceKind.cueAlbum;
+  }
+
   Future<void> _pumpMissingScrapes() async {
     if (_scrapePumping) return;
+    if (!_autoScrapeQueue) return;
     _scrapePumping = true;
     try {
       while (true) {
