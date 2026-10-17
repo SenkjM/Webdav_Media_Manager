@@ -140,6 +140,10 @@ class DlnaCastService extends ChangeNotifier {
   DlnaTranscodeSettings get transcodeSettings => _transcodeSettings;
   DlnaCompatibilityHint? get compatibilityHint => _compatHint;
 
+  /// 系统 FFmpeg 是否可用（null = 尚未检测，false = 不可用，true = 可用）。
+  bool? _ffmpegAvailable;
+  bool get ffmpegAvailable => _ffmpegAvailable ?? false;
+
   // --- 内部 ---
   RawDatagramSocket? _ssdpSocket;
   Timer? _discoveryTimeout;
@@ -274,6 +278,8 @@ class DlnaCastService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // 检测系统 FFmpeg 可用性（仅首次）
+      _ffmpegAvailable ??= await _checkFfmpeg();
       // 建立局域网代理流桥
       _localIp ??= await _getLocalIp();
       _bridge = LocalStreamBridge(
@@ -363,7 +369,7 @@ class DlnaCastService extends ChangeNotifier {
     int start,
     int end,
   ) {
-    if (_transcodeSettings.anyEnabled) {
+    if (_transcodeSettings.anyEnabled && _ffmpegAvailable == true) {
       // 转码模式：忽略 Range（流式输出不支持随机访问），返回 ffmpeg stdout
       return _transcodeStream(source);
     }
@@ -624,6 +630,17 @@ class DlnaCastService extends ChangeNotifier {
     _duration = null;
     _playbackState = DlnaPlaybackState.stopped;
     _compatHint = null;
+  }
+
+  /// 检测系统 ffmpeg 是否可用（运行 ffmpeg -version）。
+  /// 结果缓存在 [_ffmpegAvailable]，不重复检测。
+  Future<bool> _checkFfmpeg() async {
+    try {
+      final result = await Process.run('ffmpeg', ['-version']);
+      return result.exitCode == 0;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<String> _getLocalIp() async {
