@@ -76,6 +76,14 @@ void main() {
       expect(decoded!.width, coverThumbSizeLarge);
       expect(decoded.height, coverThumbSizeLarge);
     });
+
+    test('presets stay distinct and contain the default', () {
+      expect(coverThumbPresets.toSet().length, coverThumbPresets.length);
+      expect(coverThumbPresets, contains(coverThumbSize));
+      expect(coverThumbPresetKey(coverThumbSize), '$coverThumbSize');
+      expect(coverThumbPresetKey(coverThumbSizeLarge), '$coverThumbSizeLarge');
+      expect(coverThumbPresetKey(123), 'custom');
+    });
   });
 
   group('library survives cache delete (policy)', () {

@@ -1218,3 +1218,22 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
   - Dart 侧 `PlatformExportService` 暴露 `listFolderTree() -> PickedFolderTree` 和 `readUriToCache(uri) -> String?`；`QueueTask` 新增 `localUri` 字段（SAF URI），`enqueueUpload` 同步加 `localUri` 可选参数。
   - `_runUpload` 检测到 `localUri` 时，在 worker 里调 `readUriToCache` 拿缓存路径再上传，成功后删临时文件；重试时缓存路径已写回 `task.localPath` 无需再次枚举。
   - 好处：picker 界面即时消失，进度在任务列表可见；暂推迟，等文件夹上传量级达到实际瓶颈时再上。
+## 20. 播放队列持久化、元数据 enrich 与流式 CUE（feat/persistent-music-queue）
+
+**用户锁定规则**：
+1. 网络库音乐列表按「搜索子目录 + 最大深度」建初始名单；当前目录保持列举序、子目录按 walk 序。
+2. 播放队列是**引用曲库的公共队列**：条目只存身份，元数据从曲库解析；未入库条目自动入队 `scan`，完成后自动 enrich（标题/封面/时长/通知栏）。
+3. 队列持久化到本机（`PlaybackQueueStore`，JSON），**不进备份/同步**；冷启动恢复但不自动播放；提供清空按钮（二次确认），清空后下次播放按来源重建。
+4. 加入队列默认「插播」：插入到当前曲之前并立即播放，旧当前曲保留在批次之后；另提供 FIFO 追加；允许重复。队列页支持上移/下移/删除与手动添加（复用音乐库选择器，含流派）。
+5. 用户文件夹可整文件夹播放为队列（**只取直接引用，不含子文件夹**）；条目顺序按树 + `sort_order`；用户文件夹条目支持上移/下移，新增流派引用（复用选择器）。
+6. 预载窗口设置保留，但只做**音频 lookahead**；元数据预载删除（不再 Range 读标签/封面、不再 ingest）。同目录 sidecar 封面移入 `_runScan` 入库。
+7. CUE：缓存模式先缓存 backing audio 再裁切；流式模式直接 `Media(uri, start:, end:)`，失败/不可 seek 时自动回退「缓存后再播」。网络库 CUE 预览增加「播放」。
+8. 自动补齐：网络库文件夹队列按队列根 + `audioPlaylistWalkOptions` 增量扫描（复用已列目录）；曲库/歌单/用户文件夹队列回退当前曲父目录。用户点播的 cache 下载通过任务 `priority` 插队。
+
+**已知问题（先记录，后续再补）**：
+- 流派引用键保留原始大小写：`Rock` / `rock` 会被当作两个引用（库页流派 Tab 仍大小写不敏感合并）。
+- 流式 CUE 依赖服务器 Range/seek 能力；不可 seek 时首次起播会转为整首缓存，体感比本地慢。
+- 恢复的队列只保身份与游标；远端已删/账号被删的条目会保留并显示为不可播，不自动清理。
+- 用户文件夹只播当前层；子文件夹需各自播放。
+- 持久化队列未做条数上限；超大用户文件夹/流派展开时条目可能很多。
+- 队列 reconcile 新增的同来源同父目录条目按路径序插回原段落，不追加队尾（与手动 FIFO 追加不同）。
