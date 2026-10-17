@@ -303,6 +303,7 @@ class PlayerCoverArt extends StatefulWidget {
     this.borderRadius = 8,
     this.icon,
     this.coverRevision = 0,
+    this.rangeOnlyWhenMissing = false,
   });
 
   final String sourceName;
@@ -321,6 +322,10 @@ class PlayerCoverArt extends StatefulWidget {
 
   /// Bumped when the library row / queue metadata changed (cover re-ingest).
   final int coverRevision;
+
+  /// MiniPlayer only needs a fallback: when a thumb exists, skip the Range
+  /// request. The full player always fetches the original.
+  final bool rangeOnlyWhenMissing;
 
   @override
   State<PlayerCoverArt> createState() => _PlayerCoverArtState();
@@ -416,6 +421,10 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
       _bytes = null;
       _resolved = true;
     });
+    if (widget.rangeOnlyWhenMissing &&
+        (widget.coverPath?.isNotEmpty ?? false)) {
+      return;
+    }
     unawaited(_loadRangeCover());
   }
 

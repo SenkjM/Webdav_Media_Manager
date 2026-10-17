@@ -2767,21 +2767,64 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       if (await bumpOrCancel()) return;
       try {
         await retryItem(isCancel: isCancelErr, () async {
-          final already = library.tracks.any(
-            (tr) =>
-                tr.sourceName == task.sourceName &&
-                tr.cueRemotePath == item.path,
-          );
-          if (!already) {
+          final existing = library.tracks
+              .where(
+                (tr) =>
+                    tr.sourceName == task.sourceName &&
+                    tr.cueRemotePath == item.path,
+              )
+              .toList();
+          final already = existing.isNotEmpty;
+          // A scraped CUE album may already have rows but no thumb (rows
+          // ingested before scrape built thumbs, or the thumb file was
+          // removed). Re-read the cue/cover in that case so MiniPlayer/list
+          // covers can recover without deleting and re-adding the album.
+          final needsCover =
+              already &&
+              existing.any(
+                (r) =>
+                    r.coverPath == null ||
+                    r.coverPath!.isEmpty ||
+                    !File(r.coverPath!).existsSync(),
+              );
+          if (!already || needsCover) {
             final bytes = await _webDav.readAsBytes(accountId, item.path);
             final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
             if (sheet == null) {
               throw StateError('err.cueMalformed|${item.path}');
             }
+            // Scrape must also produce the resampled thumb: read the embedded
+            // cover from the first backing audio via Range. MiniPlayer and the
+            // library rows only persist a thumb, so without this a scraped CUE
+            // album had metadata but no cover in lists.
+            Uint8List? cueCover;
+            for (final audio in sheet.audioRemotePaths(item.path)) {
+              try {
+                final audioSource = await _webDav.resolveStreamSource(
+                  accountId: accountId,
+                  remotePath: audio,
+                  name: p.basename(audio),
+                  kind: StreamKind.music,
+                );
+                if (audioSource == null || audioSource.uri.isEmpty) continue;
+                final tags = await covers.extractTags(
+                  audioSource,
+                  cancel: token,
+                );
+                final bytes = tags?.coverBytes;
+                if (bytes != null && bytes.isNotEmpty) {
+                  cueCover = bytes;
+                  break;
+                }
+              } catch (_) {
+                // Cover is best-effort; continue with the next audio file.
+              }
+            }
             await library.ingestCueRemote(
               sourceName: task.sourceName,
               cueRemotePath: item.path,
               sheet: sheet,
+              coverBytes: cueCover,
             );
             coveredByCue.addAll(sheet.audioRemotePaths(item.path));
           }

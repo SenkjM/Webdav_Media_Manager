@@ -51,6 +51,7 @@
 - 解码必须走 `decodeCueText(bytes)`（`lib/utils/cue_sheet.dart`）：处理 UTF-8 BOM、UTF-16 LE/BE，严格 UTF-8 失败时 `allowMalformed`（兼容 GBK）。用 `readAsString` 读非 UTF-8 CUE 会抛错，表现为「下载成功但虚拟曲目永不入库」——这是历史回归，不要再踩。
 - 展示：多分片行标「多歌曲合并分片」，虚拟路径标记 `#cue:<trackIndex>`。
 - 播放时按 clip 裁切，见 [05 §4](05-AUDIO-PLAYBACK.md)。
+- **刮削也要建缩略图**：扫描/自动刮削 `.cue` 时，除了入库切片，还会从第一首 backing audio 用 Range 读内嵌封面并写入每个虚拟分片的 `covers/` 缩略图；已入库但缺缩略图的旧 CUE 专辑，在下一次扫描/重扫时会补齐（MiniPlayer 同时有 Range 兜底，见 [05](05-AUDIO-PLAYBACK.md)）。
 - **分享**：CUE 虚拟曲目不支持分享（提示「CUE 音轨不支持分享」）；不要恢复 ffmpeg 裁切导出的老方案。
 - **删除**：按 cache group 整组删除；清空音频后 clip 元数据保留，便于重新下载后续播。
 

@@ -1233,6 +1233,8 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 
 10. 原图封面不再落盘：`covers_full/` 废弃并在启动时清理；仅持久化 `covers/` 重采样缩略图（清缓存后封面不丢）。播放页大图：有本地音频时读本地标签，否则用 Range 现抓当前曲内嵌封面（只放内存、不落盘）。**预载窗口 ±N 保留，窗口内顺序为先封面后音频**：邻居封面 Range 预取到播放器内存 LRU（不落盘、不 ingest），随后流式音频进 prefetch_cache / 缓存模式邻居入队 music_cache；封面优先级高于音频。列表/通知始终用缩略图。远程刮削与本地缓存刮削都只写缩略图。
 
+11. CUE 刮削补封面：扫描/自动刮削 `.cue` 时用 Range 从 backing audio 读内嵌封面，给每个虚拟分片写 `covers/` 缩略图；已入库但缺图的旧 CUE 专辑在下一次扫描时补写。MiniPlayer 改为与播放页共用 `PlayerCoverArt`（本地标签优先、流式 Range 兜底），不再只读 `coverPath`，因此刮削刚落地/缺缩略图时也能显示封面。
+
 **已知问题（先记录，后续再补）**：
 - 流派引用键保留原始大小写：`Rock` / `rock` 会被当作两个引用（库页流派 Tab 仍大小写不敏感合并）。
 - 流式 CUE 依赖服务器 Range/seek 能力；不可 seek 时首次起播会转为整首缓存，体感比本地慢。

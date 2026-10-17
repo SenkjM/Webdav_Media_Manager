@@ -499,11 +499,23 @@ class LibraryService extends ChangeNotifier {
     required String sourceName,
     required String cueRemotePath,
     required CueSheet sheet,
+    Uint8List? coverBytes,
   }) async {
-    final already = _tracks.any(
-      (tr) => tr.sourceName == sourceName && tr.cueRemotePath == cueRemotePath,
-    );
-    if (already) return const [];
+    final existing = _tracks
+        .where(
+          (tr) =>
+              tr.sourceName == sourceName && tr.cueRemotePath == cueRemotePath,
+        )
+        .toList();
+    if (existing.isNotEmpty) {
+      // Re-scrape of an already ingested CUE album: rows exist, but they may
+      // predate the "scrape also builds a thumb" rule (or the thumb file may be
+      // gone). Fill/refresh covers without touching the clip rows.
+      if (coverBytes != null && coverBytes.isNotEmpty) {
+        await _refreshCueSliceCovers(existing, coverBytes);
+      }
+      return const [];
+    }
     final now = DateTime.now();
     final audioRemotes = sheet.audioRemotePaths(cueRemotePath);
     final ranges = cueClipRanges(sheet.tracks);
@@ -529,6 +541,14 @@ class LibraryService extends ChangeNotifier {
         fileGenre: null,
       );
       final virtualPath = cueVirtualRemotePath(resolved, ct.number);
+      String? coverPath;
+      if (coverBytes != null && coverBytes.isNotEmpty) {
+        coverPath = await _covers.saveThumb(
+          sourceName: sourceName,
+          remotePath: virtualPath,
+          bytes: coverBytes,
+        );
+      }
       final audioMid = musicIdForRemote(sourceName, resolved);
       final sliceMid = musicIdForCueSlice(sourceName, cueRemotePath, ct.number);
       created.add(
@@ -558,6 +578,7 @@ class LibraryService extends ChangeNotifier {
           lastTagReadAt: now,
           rev: _nextRev(),
           remoteMissing: false,
+          coverPath: coverPath,
         ),
       );
     }
@@ -578,6 +599,27 @@ class LibraryService extends ChangeNotifier {
     _tracks.addAll(created);
     notifyListeners();
     return created;
+  }
+
+  /// Backfill/refresh the persistent thumbs of an already ingested CUE album.
+  Future<void> _refreshCueSliceCovers(
+    List<LibraryTrack> slices,
+    Uint8List bytes,
+  ) async {
+    var changed = false;
+    for (final row in slices) {
+      final path = await _covers.saveThumb(
+        sourceName: row.sourceName,
+        remotePath: row.remotePath,
+        bytes: bytes,
+      );
+      if (path == null) continue;
+      row.coverPath = path;
+      row.rev = _nextRev();
+      await _db.upsertCueSlice(row);
+      changed = true;
+    }
+    if (changed) notifyListeners();
   }
 
   Future<List<LibraryTrack>> ingestCueAlbum({
