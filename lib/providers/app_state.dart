@@ -246,6 +246,10 @@ class AppState extends ChangeNotifier {
       _initPhase = 'taskQueue';
       taskQueue.keepAliveEnabled = settings.downloadKeepAliveEnabled;
       await taskQueue.init();
+      // Restore the persisted now-playing queue after accounts + library are
+      // loaded (entries bind accounts by source name, metadata comes from the
+      // library). Restoring never starts audio.
+      await player.restoreQueue();
       // Download notifications: create the channel and honour the setting.
       taskQueue.notificationsEnabled = settings.downloadNotificationsEnabled;
       taskQueue.notificationService.enabled =

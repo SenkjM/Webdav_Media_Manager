@@ -415,6 +415,30 @@ class MusicAudioHandler extends BaseAudioHandler with SeekHandler {
     }
   }
 
+  /// Restore a queue without opening/playing anything (cold-start restore).
+  ///
+  /// Publishes the queue/media item so the MiniPlayer and notification have the
+  /// same entries the persisted playback queue holds. Playback starts only when
+  /// the user taps play.
+  void setQueue({required List<TrackInfo> tracks, required int index}) {
+    _tracks
+      ..clear()
+      ..addAll(tracks);
+    _index = tracks.isEmpty ? -1 : index.clamp(0, tracks.length - 1);
+    queue.add(_tracks.map(mediaItemFor).toList());
+    final current = currentTrack;
+    mediaItem.add(current == null ? null : mediaItemFor(current));
+    playbackState.add(
+      playbackState.value.copyWith(
+        processingState: AudioProcessingState.idle,
+        playing: false,
+        controls: _controls(playing: false),
+        updatePosition: Duration.zero,
+        queueIndex: _index >= 0 ? _index : null,
+      ),
+    );
+  }
+
   /// Soft-replace the in-memory queue without stopping or seeking playback.
   ///
   /// [newIndex] must still point at the track currently playing. Used when
