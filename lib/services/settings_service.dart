@@ -280,7 +280,7 @@ class SettingsService extends ChangeNotifier {
   /// 0 = unlimited. Capacity cap for music_cache in megabytes.
   int _musicCacheMaxMb = 0;
   int _customRetentionHours = defaultCustomRetentionHours;
-  LibrarySortMode _librarySort = LibrarySortMode.byName;
+  LibrarySortMode _librarySort = LibrarySortMode.byAlbumTrack;
 
   /// Per-folder browse density. Key ``root`` for virtual root; else folder id.
   final Map<String, FolderViewMode> _folderViewModes = {};

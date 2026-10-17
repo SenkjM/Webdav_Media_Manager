@@ -129,31 +129,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 );
               },
             ),
-            PopupMenuButton<LibrarySortMode>(
-              tooltip: l10n.sortTooltip,
-              initialValue: settings.librarySort,
-              onSelected: (mode) =>
-                  context.read<SettingsService>().setLibrarySort(mode),
-              itemBuilder: (context) => [
-                for (final mode in LibrarySortMode.values)
-                  PopupMenuItem(
-                    value: mode,
-                    child: Row(
-                      children: [
-                        Icon(
-                          settings.librarySort == mode
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_off,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(mode.label(l10n)),
-                      ],
-                    ),
-                  ),
-              ],
-              icon: const Icon(Icons.sort),
-            ),
           ],
           bottom: TabBar(
             isScrollable: true,
@@ -185,7 +160,6 @@ class _LibraryScreenState extends State<LibraryScreen> {
                 ? _LibraryEmpty()
                 : _TitleTab(
                     library: library,
-                    sort: settings.librarySort,
                     query: _query,
                     viewMode: settings.musicViewModeFor('titles'),
                   ),
@@ -224,20 +198,18 @@ class _LibraryEmpty extends StatelessWidget {
 class _TitleTab extends StatelessWidget {
   const _TitleTab({
     required this.library,
-    required this.sort,
     required this.query,
     required this.viewMode,
   });
   final LibraryService library;
-  final LibrarySortMode sort;
   final String query;
   final FolderViewMode viewMode;
 
   @override
   Widget build(BuildContext context) {
     final tracks = query.trim().isEmpty
-        ? library.byTitle(sort: sort)
-        : library.search(query, sort: sort);
+        ? library.byTitle()
+        : library.search(query);
     return _SelectableTrackList(
       tracks: tracks,
       emptyHint: AppLocalizations.of(context)!.libraryNoMatch,
@@ -586,6 +558,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                               title: title,
                               tracks: tracks,
                               defaultSort: widget.detailSort,
+                              albumSort: widget.dimensionId == 'album',
                               viewKey: 'musicDetail:${widget.dimensionId}',
                             ),
                           ),
@@ -658,6 +631,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                               title: title,
                               tracks: tracks,
                               defaultSort: widget.detailSort,
+                              albumSort: widget.dimensionId == 'album',
                               viewKey: 'musicDetail:${widget.dimensionId}',
                             ),
                           ),
@@ -1144,11 +1118,18 @@ class TrackListPage extends StatefulWidget {
     required this.title,
     required this.tracks,
     required this.defaultSort,
+    this.albumSort = false,
     this.viewKey = 'trackList',
   });
   final String title;
   final List<LibraryTrack> tracks;
+
+  /// Sort used by non-album lists (fixed; no sort menu).
   final LibrarySortMode defaultSort;
+
+  /// Album detail pages are the only place where 曲序 / 按命名 is meaningful:
+  /// they read and write the global setting. Other lists have no sort menu.
+  final bool albumSort;
   final bool startInSelection = false;
 
   /// View-mode slot. One key per page family, so the folder leaf and the music
@@ -1160,7 +1141,9 @@ class TrackListPage extends StatefulWidget {
 }
 
 class _TrackListPageState extends State<TrackListPage> {
-  late LibrarySortMode _sort = widget.defaultSort;
+  /// Immediate UI value after tapping the menu; the persisted value lives in
+  /// [SettingsService.librarySort].
+  LibrarySortMode? _sortOverride;
   final _listKey = GlobalKey<_SelectableTrackListState>();
 
   /// 列表里是否正在多选。多选时 `canPop` 转 false，返回键改成「退出多选」。
@@ -1172,7 +1155,10 @@ class _TrackListPageState extends State<TrackListPage> {
     final settings = context.watch<SettingsService>();
     final l10n = AppLocalizations.of(context)!;
     final viewMode = settings.musicViewModeFor(widget.viewKey);
-    final tracks = library.sortedCopy(widget.tracks, sort: _sort);
+    final sort = widget.albumSort
+        ? (_sortOverride ?? settings.librarySort)
+        : widget.defaultSort;
+    final tracks = library.sortedCopy(widget.tracks, sort: sort);
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
@@ -1192,19 +1178,25 @@ class _TrackListPageState extends State<TrackListPage> {
             ],
             icon: Icon(viewMode.isGrid ? Icons.grid_view : Icons.view_list),
           ),
-          PopupMenuButton<LibrarySortMode>(
-            tooltip: AppLocalizations.of(context)!.sortTooltip,
-            initialValue: _sort,
-            onSelected: (mode) => setState(() => _sort = mode),
-            itemBuilder: (context) => [
-              for (final mode in LibrarySortMode.values)
-                PopupMenuItem(
-                  value: mode,
-                  child: Text(mode.label(AppLocalizations.of(context)!)),
-                ),
-            ],
-            icon: const Icon(Icons.sort),
-          ),
+          if (widget.albumSort)
+            PopupMenuButton<LibrarySortMode>(
+              tooltip: AppLocalizations.of(context)!.sortTooltip,
+              initialValue: sort,
+              onSelected: (mode) {
+                // 曲序 only makes sense inside an album; the choice is global
+                // (one persisted value) but only album lists read it.
+                unawaited(settings.setLibrarySort(mode));
+                setState(() => _sortOverride = mode);
+              },
+              itemBuilder: (context) => [
+                for (final mode in LibrarySortMode.values)
+                  PopupMenuItem(
+                    value: mode,
+                    child: Text(mode.label(AppLocalizations.of(context)!)),
+                  ),
+              ],
+              icon: const Icon(Icons.sort),
+            ),
         ],
       ),
       body: PopScope(
