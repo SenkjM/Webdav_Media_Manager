@@ -352,6 +352,19 @@ class DlnaCastService extends ChangeNotifier {
     final sinkProtocols = await _getSinkProtocolInfo(
       _renderer!.connMgrControlUrl,
     );
+
+    // 检测 DMR 是否支持视频
+    final supportsVideo = sinkProtocols.any((p) {
+      final parts = p.split(':');
+      return parts.length >= 3 && parts[2].startsWith('video/');
+    });
+    if (!supportsVideo) {
+      throw Exception(
+        '${_renderer!.friendlyName} 不支持视频播放'
+        '（SinkProtocolInfo 无 video/* 条目）',
+      );
+    }
+
     final protocolInfo = _negotiateProtocolInfo(mimeType, sinkProtocols);
     debugPrint('[DLNA] castItem: proxyUrl=$proxyUrl mimeType=$mimeType protocolInfo=$protocolInfo');
 
@@ -804,8 +817,10 @@ class DlnaCastService extends ChangeNotifier {
       .replaceAll("'", '&apos;');
 
   /// 从 XML 字符串中提取第一个匹配标签的文本内容。
+  /// 支持带属性的开标签，如 `<Sink xmlns:dt="..." dt:dt="string">content</Sink>`。
   String? _xmlText(String xml, String tag) {
-    final m = RegExp('<$tag>([^<]*)</$tag>').firstMatch(xml);
+    // 匹配 <tag> 或 <tag ...attrs...>，然后捕获内容直到 </tag>
+    final m = RegExp('<$tag(?:\\s[^>]*)?>([^<]*)</$tag>').firstMatch(xml);
     return m?.group(1)?.trim();
   }
 
@@ -898,7 +913,9 @@ class DlnaCastService extends ChangeNotifier {
         '',
       );
       if (body == null) return [];
+      debugPrint('[DLNA] GetProtocolInfo response: $body');
       final sink = _xmlText(body, 'Sink') ?? '';
+      debugPrint('[DLNA] SinkProtocolInfo raw: "$sink"');
       return sink.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
     } catch (e) {
       debugPrint('[DLNA] GetProtocolInfo failed: $e');
