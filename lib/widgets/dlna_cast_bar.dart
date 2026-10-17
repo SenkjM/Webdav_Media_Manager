@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/dlna_cast_service.dart';
+import '../utils/app_snack.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  常量
@@ -236,95 +238,86 @@ class _DlnaCastBarState extends State<DlnaCastBar>
     final isError = cast.state == DlnaCastState.error;
     final isBuffering = cast.playbackState == DlnaPlaybackState.buffering;
 
+    // 错误态：红色背景气泡，点击展开查看详情
+    // 正常态：仅图标 + 播放控制，无文件名
+    final bubbleColor = isError ? scheme.errorContainer : scheme.primaryContainer;
+    final iconColor = isError ? scheme.onErrorContainer : scheme.onPrimaryContainer;
+
     return GestureDetector(
       onPanUpdate: _onBubblePanUpdate,
       onPanEnd: (d) => _onBubblePanEnd(d, screenWidth),
-      onTap: isError ? null : _toggleExpand,
+      onTap: _toggleExpand,
       child: Material(
-        color: scheme.primaryContainer,
+        color: bubbleColor,
         borderRadius: BorderRadius.circular(24),
         elevation: 8,
         shadowColor: Colors.black38,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: _kBubbleMaxWidth),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 设备图标
-                Icon(
-                  isError ? Icons.error_outline : Icons.cast_connected,
-                  color: isError
-                      ? scheme.error
-                      : scheme.onPrimaryContainer,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 投屏 / 错误图标
+              Icon(
+                isError ? Icons.cast : Icons.cast_connected,
+                color: iconColor,
+                size: 20,
+              ),
 
-                // 文件名 / 错误信息
-                Flexible(
-                  child: Text(
-                    isError
-                        ? (cast.error ?? '投屏出错')
-                        : (cast.currentItem?.name ?? '投屏中…'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: isError
-                          ? scheme.error
-                          : scheme.onPrimaryContainer,
-                      fontWeight: FontWeight.w500,
-                    ),
+              if (isError) ...[
+                // 错误态：图标右侧小红点提示，无文字
+                const SizedBox(width: 4),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: scheme.error,
+                    shape: BoxShape.circle,
                   ),
                 ),
+                const SizedBox(width: 4),
+              ] else ...[
+                const SizedBox(width: 6),
 
-                if (!isError) ...[
-                  const SizedBox(width: 4),
-
-                  // 播放/暂停 按钮（或 buffering 指示器）
-                  SizedBox(
-                    width: 32,
-                    height: 32,
-                    child: isBuffering
-                        ? Padding(
-                            padding: const EdgeInsets.all(6),
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: scheme.onPrimaryContainer,
-                            ),
-                          )
-                        : IconButton(
-                            padding: EdgeInsets.zero,
-                            icon: Icon(
-                              cast.playbackState == DlnaPlaybackState.playing
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              color: scheme.onPrimaryContainer,
-                              size: 22,
-                            ),
-                            onPressed: () => cast.playPause(),
-                          ),
-                  ),
-                ],
-
-                // 关闭 / 停止投屏按钮
+                // 正常态：播放/暂停 按钮（或 buffering 指示器）
                 SizedBox(
-                  width: 28,
-                  height: 28,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: Icon(
-                      Icons.close,
-                      color: scheme.onPrimaryContainer,
-                      size: 18,
-                    ),
-                    onPressed: () => cast.stop(),
-                    tooltip: '停止投屏',
-                  ),
+                  width: 30,
+                  height: 30,
+                  child: isBuffering
+                      ? Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: iconColor,
+                          ),
+                        )
+                      : IconButton(
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            cast.playbackState == DlnaPlaybackState.playing
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            color: iconColor,
+                            size: 20,
+                          ),
+                          onPressed: () => cast.playPause(),
+                        ),
                 ),
+                const SizedBox(width: 2),
               ],
-            ),
+
+              // 关闭按钮
+              SizedBox(
+                width: 26,
+                height: 26,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  icon: Icon(Icons.close, color: iconColor, size: 16),
+                  onPressed: () => cast.stop(),
+                  tooltip: '停止投屏',
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -417,28 +410,8 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                 const SizedBox(height: 10),
 
                 if (isError)
-                  // ── 错误状态 ─────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: scheme.error,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            cast.error ?? '投屏出错',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(color: scheme.error),
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
+                  // ── 错误状态：可复制的详细错误 ──────────────────
+                  _ErrorDetail(error: cast.error ?? '投屏出错')
                 else ...[
                   // ── 进度条行 ────────────────────────────────────
                   Row(
@@ -581,7 +554,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                       // 队列数量（若有队列）
                       if (cast.queue != null) ...[
                         TextButton.icon(
-                          onPressed: null, // 队列入口由外部页面实现
+                          onPressed: () => _DlnaQueueSheet.show(context, cast),
                           icon: Icon(
                             Icons.queue_music,
                             size: 16,
@@ -878,6 +851,154 @@ class _TranscodeSwitchRow extends StatelessWidget {
             value: value,
             onChanged: onChanged,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  错误详情（可一键复制）
+// ─────────────────────────────────────────────────────────────
+
+class _ErrorDetail extends StatelessWidget {
+  const _ErrorDetail({required this.error});
+
+  final String error;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: scheme.errorContainer.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: scheme.error.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.error_outline, color: scheme.error, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SelectableText(
+                error,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onErrorContainer,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            IconButton(
+              iconSize: 16,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              icon: Icon(Icons.copy, color: scheme.error, size: 14),
+              tooltip: '复制错误信息',
+              onPressed: () {
+                // Flutter 3.x Clipboard
+                // ignore: deprecated_member_use
+                Clipboard.setData(ClipboardData(text: error));
+                AppSnack.show(context, '已复制到剪贴板');
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  队列底部面板
+// ─────────────────────────────────────────────────────────────
+
+class _DlnaQueueSheet extends StatelessWidget {
+  const _DlnaQueueSheet._();
+
+  static void show(BuildContext context, DlnaCastService cast) {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (_) => ChangeNotifierProvider.value(
+        value: cast,
+        child: const _DlnaQueueSheet._(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cast = context.watch<DlnaCastService>();
+    final scheme = Theme.of(context).colorScheme;
+    final queue = cast.queue;
+
+    if (queue == null) {
+      return const SizedBox.shrink();
+    }
+
+    final tracks = queue.tracks;
+    final currentIndex = queue.index;
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 标题栏
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: Row(
+              children: [
+                Icon(Icons.queue_music, color: scheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  '投屏队列 · ${tracks.length} 首',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          // 列表
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: tracks.length,
+              itemBuilder: (context, i) {
+                final item = tracks[i];
+                final isCurrent = i == currentIndex;
+                return ListTile(
+                  leading: Icon(
+                    isCurrent ? Icons.play_arrow_rounded : Icons.video_file,
+                    color: isCurrent ? scheme.primary : scheme.onSurfaceVariant,
+                    size: 20,
+                  ),
+                  title: Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isCurrent ? scheme.primary : null,
+                      fontWeight: isCurrent ? FontWeight.w600 : null,
+                    ),
+                  ),
+                  onTap: () {
+                    cast.playTrack(i);
+                    Navigator.of(context).pop();
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),

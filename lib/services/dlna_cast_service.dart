@@ -534,6 +534,15 @@ class DlnaCastService extends ChangeNotifier {
     await _castItem(prev, q.accountId);
   }
 
+  /// 跳转到队列中指定下标的文件。
+  Future<void> playTrack(int index) async {
+    final q = _queue;
+    if (q == null || index < 0 || index >= q.length) return;
+    final item = q.tracks[index];
+    q.selectRemotePath(item.path);
+    await _castItem(item, q.accountId);
+  }
+
   /// 更新本次会话的转码设置（立即生效，下次代理请求时使用新设置）。
   Future<void> setTranscodeSettings(DlnaTranscodeSettings settings) async {
     _transcodeSettings = settings;
