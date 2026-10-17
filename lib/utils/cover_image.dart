@@ -6,7 +6,17 @@ import 'package:image/image.dart' as img;
 const int coverThumbSize = 300;
 
 /// Alternate preset offered in Settings.
-const int coverThumbSizeLarge = 300;
+const int coverThumbSizeLarge = 600;
+
+/// Presets offered as the pill (SegmentedButton) in Settings.
+///
+/// The default [coverThumbSize] must be a member; labels are generated from
+/// these values so they can never drift apart again.
+const List<int> coverThumbPresets = [coverThumbSize, coverThumbSizeLarge];
+
+/// Settings pill key for [edge] (`'300'`, `'600'`) or `'custom'`.
+String coverThumbPresetKey(int edge) =>
+    coverThumbPresets.contains(edge) ? '$edge' : 'custom';
 
 /// Pass this as [size] to [resizeCoverToThumb] to skip resizing and store original bytes.
 const int mangaCoverThumbSizeKeepOriginal = 0;

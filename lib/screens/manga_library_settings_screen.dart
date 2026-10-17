@@ -264,7 +264,6 @@ class _MangaLibrarySettingsScreenState extends State<MangaLibrarySettingsScreen>
               style: hintStyle,
             ),
           ],
-          const Divider(height: 32),
           const LibraryCacheSettings(kind: CacheKind.manga),
         ],
       ),

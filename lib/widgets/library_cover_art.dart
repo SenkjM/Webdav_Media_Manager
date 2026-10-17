@@ -17,7 +17,7 @@ import '../utils/cover_image.dart';
 import 'cover_art.dart';
 
 /// Library cover that prefers full-resolution art when the audio file is local,
-/// otherwise shows the 100×100 thumb only. Never auto-enqueues audio
+/// otherwise shows the configured thumbnail only. Never auto-enqueues audio
 /// downloads from cover resolution (tap the row to enqueue explicitly).
 class LibraryCoverArt extends StatefulWidget {
   const LibraryCoverArt({
