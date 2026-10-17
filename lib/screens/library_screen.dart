@@ -1377,22 +1377,9 @@ class _TrackTile extends StatelessWidget {
     final cache = context.read<CacheService>();
     final playlistInfos = <TrackInfo>[];
     for (final t in playlist) {
-      if (t.isCueVirtual && t != track) {
-        // CUE slices only join when their audio is local (clip needs file).
-        final path = await cache.localPathIfCached(
-          t.effectiveAudioRemotePath,
-          sourceName: t.sourceName,
-        );
-        if (path == null) continue;
-        playlistInfos.add(
-          libraryTrackToTrackInfo(
-            t,
-            path,
-            accountsService.idForSource(t.sourceName) ?? '',
-          ),
-        );
-        continue;
-      }
+      // CUE slices join even without a local file: the unified player clips the
+      // backing audio stream with start/end and falls back to cache-then-play
+      // when the remote stream cannot seek.
       final path = await cache.localPathIfCached(
         t.effectiveAudioRemotePath,
         sourceName: t.sourceName,
