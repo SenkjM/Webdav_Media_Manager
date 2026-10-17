@@ -306,7 +306,8 @@ class DlnaCastService extends ChangeNotifier {
 
       // 开始投屏第一个文件
       await _castItem(initial, effAccountId);
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[DLNA] startCast/castItem error: $e\n$stack');
       _state = DlnaCastState.error;
       _error = e.toString();
       notifyListeners();
@@ -341,6 +342,7 @@ class DlnaCastService extends ChangeNotifier {
     final mimeType = _mimeFor(item.name);
 
     // SetAVTransportURI
+    debugPrint('[DLNA] castItem: proxyUrl=$proxyUrl mimeType=$mimeType');
     await _soap(
       _renderer!.controlUrl,
       'SetAVTransportURI',
@@ -596,21 +598,45 @@ class DlnaCastService extends ChangeNotifier {
         '</s:Body>'
         '</s:Envelope>';
 
+    debugPrint('[DLNA] SOAP → $action @ $controlUrl');
+
     final uri = Uri.parse(controlUrl);
-    final req = await _http.postUrl(uri);
-    req.headers.set('Content-Type', 'text/xml; charset="utf-8"');
-    req.headers.set(
-      'SOAPACTION',
-      '"urn:schemas-upnp-org:service:AVTransport:1#$action"',
-    );
-    req.headers.contentLength = utf8.encode(envelope).length;
-    req.write(envelope);
-    final resp = await req.close();
-    final body = await resp.transform(utf8.decoder).join();
-    if (resp.statusCode >= 300) {
-      throw Exception('SOAP $action failed: ${resp.statusCode}\n$body');
+    try {
+      final req = await _http.postUrl(uri);
+      req.headers.set('Content-Type', 'text/xml; charset="utf-8"');
+      req.headers.set(
+        'SOAPACTION',
+        '"urn:schemas-upnp-org:service:AVTransport:1#$action"',
+      );
+      final encoded = utf8.encode(envelope);
+      req.headers.contentLength = encoded.length;
+      req.add(encoded);
+      final resp = await req.close();
+      final body = await resp.transform(utf8.decoder).join();
+      if (resp.statusCode >= 300) {
+        // 完整日志：状态码 + 响应 body（含 UPnP 错误码）+ 发送的 envelope
+        debugPrint(
+          '[DLNA] SOAP $action FAILED\n'
+          '  controlUrl: $controlUrl\n'
+          '  status: ${resp.statusCode}\n'
+          '  response: $body\n'
+          '  envelope: $envelope',
+        );
+        throw Exception(
+          'SOAP $action 失败 (HTTP ${resp.statusCode})\n'
+          'controlUrl: $controlUrl\n'
+          'response: $body',
+        );
+      }
+      debugPrint('[DLNA] SOAP ← $action OK (${resp.statusCode})');
+      return body;
+    } on SocketException catch (e) {
+      debugPrint('[DLNA] SOAP $action 网络错误: $e\n  controlUrl: $controlUrl');
+      rethrow;
+    } catch (e) {
+      debugPrint('[DLNA] SOAP $action 异常: $e\n  controlUrl: $controlUrl');
+      rethrow;
     }
-    return body;
   }
 
   // ──────────────────────────────────────────────────────────────────────────

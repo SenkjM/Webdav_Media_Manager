@@ -615,18 +615,18 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                         icon: Icon(
                           Icons.tune,
                           size: 16,
-                          color: cast.transcodeSettings.anyEnabled
+                          color: cast.transcodeSettings.remuxContainer
                               ? scheme.primary
                               : scheme.onSurfaceVariant,
                         ),
                         label: Text(
                           '兼容模式',
                           style: TextStyle(
-                            color: cast.transcodeSettings.anyEnabled
+                            color: cast.transcodeSettings.remuxContainer
                                 ? scheme.primary
                                 : scheme.onSurfaceVariant,
                             fontSize: 13,
-                            fontWeight: cast.transcodeSettings.anyEnabled
+                            fontWeight: cast.transcodeSettings.remuxContainer
                                 ? FontWeight.w600
                                 : FontWeight.normal,
                           ),
@@ -827,33 +827,7 @@ class _TranscodePanel extends StatelessWidget {
             ),
           ),
 
-          // 视频转码
-          _TranscodeSwitchRow(
-            label: '视频转码 (→H.264)',
-            hint: '将视频流转码为 H.264，兼容性更好',
-            value: settings.transcodeVideo,
-            onChanged: (v) => castService.setTranscodeSettings(
-              DlnaTranscodeSettings(
-                remuxContainer: settings.remuxContainer,
-                transcodeVideo: v,
-                transcodeAudio: settings.transcodeAudio,
-              ),
-            ),
-          ),
 
-          // 音频转码
-          _TranscodeSwitchRow(
-            label: '音频转码 (→AAC)',
-            hint: '将音频流转码为 AAC',
-            value: settings.transcodeAudio,
-            onChanged: (v) => castService.setTranscodeSettings(
-              DlnaTranscodeSettings(
-                remuxContainer: settings.remuxContainer,
-                transcodeVideo: settings.transcodeVideo,
-                transcodeAudio: v,
-              ),
-            ),
-          ),
         ],
       ),
     );
