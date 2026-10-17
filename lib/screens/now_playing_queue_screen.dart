@@ -103,7 +103,6 @@ class NowPlayingQueueScreen extends StatelessWidget {
               SwitchListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 title: Text(l10n.queueAddToEnd),
-                subtitle: Text(l10n.queueAddPlayNow),
                 value: append,
                 onChanged: (v) => setSheetState(() => append = v),
               ),
@@ -226,12 +225,11 @@ class NowPlayingQueueScreen extends StatelessWidget {
               : l10n.nowPlayingQueueCount(queue.length),
         ),
         actions: [
-          if (queue.isNotEmpty)
-            IconButton(
-              tooltip: l10n.queueAdd,
-              icon: const Icon(Icons.add),
-              onPressed: () => unawaited(_openAddSheet(context)),
-            ),
+          IconButton(
+            tooltip: l10n.queueAdd,
+            icon: const Icon(Icons.add),
+            onPressed: () => unawaited(_openAddSheet(context)),
+          ),
           if (queue.isNotEmpty)
             IconButton(
               tooltip: l10n.playlistAddQueueToExisting,
