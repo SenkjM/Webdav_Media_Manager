@@ -1043,6 +1043,9 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// Cache-mode neighbor warm: same forward/back window as stream prefetch,
   /// but enqueue into music_cache via the task queue (no prefetch_cache).
+  ///
+  /// Neighbour covers are Range-read **first** (higher priority than audio) into
+  /// the player's memory cache, matching the stream-prefetch order.
   Future<void> _warmCacheNeighbors(List<TrackInfo> playlist, int index) async {
     final indexes = prefetchNeighborIndexes(
       current: index,
@@ -1050,6 +1053,13 @@ class AudioPlayerService extends ChangeNotifier {
       backward: _settings.audioStreamPrefetchBackward,
       forward: _settings.audioStreamPrefetchForward,
     );
+    for (final i in indexes) {
+      final t = playlist[i];
+      if (t.localPath != null && File(t.localPath!).existsSync()) continue;
+      try {
+        await _loadRangeCoverFor(t);
+      } catch (_) {}
+    }
     for (final i in indexes) {
       final t = playlist[i];
       if (t.accountId.isEmpty && t.sourceName.isEmpty) continue;
@@ -1069,6 +1079,16 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
+  bool _hasRangeCover(TrackInfo track) => _rangeCoverCache.containsKey(
+    '${track.sourceName}\u0000${track.effectiveAudioRemotePath}',
+  );
+
+  Future<Uint8List?> _loadRangeCoverFor(TrackInfo track) => networkCoverBytes(
+    sourceName: track.sourceName,
+    remotePath: track.effectiveAudioRemotePath,
+    fileName: track.fileName,
+  );
+
   void _startPrefetch(List<TrackInfo> playlist, int index, String accountId) {
     unawaited(_prefetch?.dispose());
     _prefetch = MusicPrefetchService(
@@ -1077,6 +1097,8 @@ class AudioPlayerService extends ChangeNotifier {
       currentIndex: () => _handler.index,
       backward: () => _settings.audioStreamPrefetchBackward,
       forward: () => _settings.audioStreamPrefetchForward,
+      coverFor: _loadRangeCoverFor,
+      coverReady: _hasRangeCover,
     );
     _prefetch!.start(accountId: accountId);
   }
