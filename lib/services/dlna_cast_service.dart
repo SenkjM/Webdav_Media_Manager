@@ -681,28 +681,31 @@ class DlnaCastService extends ChangeNotifier {
       includeLinkLocal: false,
     );
 
-    // 收集所有私有 IPv4
     final privateIps = <String>[];
     final targetParts = targetIp.split('.');
+    // 取前三段作为 /24 前缀，e.g. "192.168.0"
+    final prefix = targetParts.length == 4
+        ? targetParts.take(3).join('.')
+        : null;
 
     for (final iface in interfaces) {
       for (final addr in iface.addresses) {
         final a = addr.address;
+        debugPrint('[DLNA] iface=${iface.name} addr=$a');
         if (!_isPrivateIp(a)) continue;
         privateIps.add(a);
         // 优先：与 DMR 同 /24 子网
-        if (targetParts.length == 3) {
-          final prefix = targetParts.take(3).join('.');
-          if (a.startsWith('$prefix.')) {
-            return a;
-          }
+        if (prefix != null && a.startsWith('$prefix.')) {
+          debugPrint('[DLNA] selected local IP (same /24): $a');
+          return a;
         }
       }
     }
 
     // Fallback：任意私有 IP
-    if (privateIps.isNotEmpty) return privateIps.first;
-    return '127.0.0.1';
+    final result = privateIps.isNotEmpty ? privateIps.first : '127.0.0.1';
+    debugPrint('[DLNA] selected local IP (fallback): $result');
+    return result;
   }
 
   bool _isPrivateIp(String ip) {

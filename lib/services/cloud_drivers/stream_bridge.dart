@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../cloud_driver.dart';
 
 /// MustProxy 驱动的本地流桥（99 §7.5）。
@@ -125,23 +127,37 @@ class LocalStreamBridge {
         await response.close();
         return;
       }
+      debugPrint(
+        '[Bridge] ${request.method} ${request.uri.path}'
+        ' Range=${request.headers.value(HttpHeaders.rangeHeader) ?? '-'}'
+        ' size=${entry.size}',
+      );
       response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
       response.headers.contentType = ContentType.parse(entry.contentType);
+
+      final knownSize = entry.size > 0;
+
       if (request.method == 'HEAD') {
         response.statusCode = HttpStatus.ok;
-        response.headers.contentLength = entry.size;
+        // 仅在已知大小时设置 Content-Length；未知时不设，
+        // 避免 DMR 把 Content-Length: 0 误判为空资源（UPnP 716）。
+        if (knownSize) response.headers.contentLength = entry.size;
         await response.close();
         return;
       }
+
       final range = _parseRange(
         request.headers.value(HttpHeaders.rangeHeader),
         entry.size,
       );
       if (range == null) {
+        // 无 Range 请求，或 size 未知 — 流式输出全部内容，不预设 end。
         response.statusCode = HttpStatus.ok;
-        response.headers.contentLength = entry.size;
+        if (knownSize) response.headers.contentLength = entry.size;
+        // size 未知时 end 传 -1，由 ranges 回调自行决定读到哪里。
+        final endByte = knownSize ? entry.size - 1 : -1;
         await response.addStream(
-          entry.ranges(entry.remotePath, 0, entry.size - 1),
+          entry.ranges(entry.remotePath, 0, endByte),
         );
       } else {
         response.statusCode = HttpStatus.partialContent;
