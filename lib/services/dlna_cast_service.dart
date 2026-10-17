@@ -280,8 +280,9 @@ class DlnaCastService extends ChangeNotifier {
     try {
       // 检测系统 FFmpeg 可用性（仅首次）
       _ffmpegAvailable ??= await _checkFfmpeg();
-      // 建立局域网代理流桥
-      _localIp ??= await _getLocalIp();
+      // 选择与 DMR 同子网的本机 IP，确保 DMR 可路由到代理地址
+      _localIp = await _getLocalIpFor(renderer.host);
+      debugPrint('[DLNA] localIp=$_localIp rendererHost=${renderer.host}');
       _bridge = LocalStreamBridge(
         bindAddress: InternetAddress.anyIPv4,
         externalHost: _localIp,
@@ -669,22 +670,45 @@ class DlnaCastService extends ChangeNotifier {
     }
   }
 
-  Future<String> _getLocalIp() async {
+  /// 选择与 [targetIp]（DMR IP）同子网的本机 IPv4 地址。
+  ///
+  /// 优先返回与 targetIp 前 3 段（/24）相同的网卡 IP；
+  /// 找不到同子网地址时 fallback 到第一个私有 IP；
+  /// 再找不到返回 loopback。
+  Future<String> _getLocalIpFor(String targetIp) async {
     final interfaces = await NetworkInterface.list(
       type: InternetAddressType.IPv4,
       includeLinkLocal: false,
     );
+
+    // 收集所有私有 IPv4
+    final privateIps = <String>[];
+    final targetParts = targetIp.split('.');
+
     for (final iface in interfaces) {
       for (final addr in iface.addresses) {
         final a = addr.address;
-        if (a.startsWith('192.168.') ||
-            a.startsWith('10.') ||
-            (a.startsWith('172.') && _is172Private(a))) {
-          return a;
+        if (!_isPrivateIp(a)) continue;
+        privateIps.add(a);
+        // 优先：与 DMR 同 /24 子网
+        if (targetParts.length == 3) {
+          final prefix = targetParts.take(3).join('.');
+          if (a.startsWith('$prefix.')) {
+            return a;
+          }
         }
       }
     }
+
+    // Fallback：任意私有 IP
+    if (privateIps.isNotEmpty) return privateIps.first;
     return '127.0.0.1';
+  }
+
+  bool _isPrivateIp(String ip) {
+    return ip.startsWith('192.168.') ||
+        ip.startsWith('10.') ||
+        (ip.startsWith('172.') && _is172Private(ip));
   }
 
   bool _is172Private(String ip) {
