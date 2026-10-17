@@ -1174,6 +1174,31 @@ class AppLocalizationsEn extends AppLocalizations {
       'No play queue yet.\nStart playing from the library or network library to fill this.';
 
   @override
+  String get queueAdd => 'Add';
+
+  @override
+  String get queueAddPlayNow => 'Play now (insert)';
+
+  @override
+  String get queueAddToEnd => 'Add to end';
+
+  @override
+  String get playbackQueueClearConfirm => 'Clear the now-playing queue?';
+
+  @override
+  String get playbackQueueClearBody =>
+      'Clears the current play queue. Playlists, user folders, and caches are kept.';
+
+  @override
+  String get playbackQueueCleared => 'Play queue cleared';
+
+  @override
+  String get moveUp => 'Move up';
+
+  @override
+  String get moveDown => 'Move down';
+
+  @override
   String playerChipAlbumArtist(Object artist) {
     return 'Album artist · $artist';
   }
@@ -4499,6 +4524,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get folderAddTracks => 'Music / Tracks';
+
+  @override
+  String get folderAddGenres => 'Music / Genres';
 
   @override
   String folderItemsAdded(int count) {

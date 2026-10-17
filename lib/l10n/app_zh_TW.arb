@@ -376,6 +376,14 @@
   "nowPlayingQueueTitle": "目前播放清單",
   "nowPlayingQueueCount": "目前播放清單（{count}）",
   "nowPlayingQueueEmpty": "目前沒有播放佇列。\n從音樂庫或網路庫開始播放後會出現在此。",
+  "queueAdd": "新增",
+  "queueAddPlayNow": "立即播放（插播）",
+  "queueAddToEnd": "加入至末尾",
+  "playbackQueueClearConfirm": "清除目前播放清單？",
+  "playbackQueueClearBody": "將清除目前播放佇列；不會刪除歌單、使用者資料夾或快取。",
+  "playbackQueueCleared": "播放清單已清除",
+  "moveUp": "上移",
+  "moveDown": "下移",
   "playerChipAlbumArtist": "專輯藝人 · {artist}",
   "playerChipTrackNumber": "曲目 {n}/{total}",
   "playerChipTrackNoTotal": "曲目 {n}",
@@ -1339,6 +1347,7 @@
   "folderAddAlbums": "音樂/專輯",
   "folderAddArtists": "音樂/藝人",
   "folderAddTracks": "音樂/曲目",
+  "folderAddGenres": "音樂/流派",
   "folderItemsAdded": "已加入 {count} 項",
   "@folderItemsAdded": {
     "placeholders": {

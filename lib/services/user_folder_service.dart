@@ -201,6 +201,51 @@ class UserFolderService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Move one ref up/down inside its folder (delta -1/+1).
+  ///
+  /// `sort_order` is rewritten for the whole folder so the visual order is the
+  /// stored order (same rule the tree already uses for folders).
+  Future<bool> moveRefWithinFolder({
+    required String folderId,
+    required String refKind,
+    required String refKey,
+    required int delta,
+  }) async {
+    final list = itemsIn(folderId);
+    final index = list.indexWhere(
+      (i) => i.refKind == refKind && i.refKey == refKey,
+    );
+    if (index < 0) return false;
+    final target = index + delta;
+    if (target < 0 || target >= list.length) return false;
+    final next = List<UserFolderItem>.from(list);
+    final moved = next.removeAt(index);
+    next.insert(target, moved);
+    var changed = false;
+    for (var i = 0; i < next.length; i++) {
+      final item = next[i];
+      if (item.sortOrder == i) continue;
+      final updated = UserFolderItem(
+        folderId: item.folderId,
+        refKind: item.refKind,
+        refKey: item.refKey,
+        sortOrder: i,
+        addedAt: item.addedAt,
+      );
+      await _db.upsertUserFolderItem(updated);
+      final idx = _items.indexWhere(
+        (x) =>
+            x.folderId == item.folderId &&
+            x.refKind == item.refKind &&
+            x.refKey == item.refKey,
+      );
+      if (idx >= 0) _items[idx] = updated;
+      changed = true;
+    }
+    if (changed) notifyListeners();
+    return changed;
+  }
+
   /// Descendants of [folderId] including itself.
   Set<String> descendantIds(String folderId) {
     final dropIds = <String>{folderId};

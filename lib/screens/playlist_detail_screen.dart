@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/library_track.dart';
 import '../models/playlist.dart';
+import '../models/playback_queue_source.dart';
 import '../models/playlist_sentinels.dart';
 import '../models/library_tag_dimension.dart';
 import '../models/webdav_item.dart';
@@ -335,21 +336,8 @@ class _PlaylistTrackTile extends StatelessWidget {
     final cache = context.read<CacheService>();
     final playlistInfos = <TrackInfo>[];
     for (final t in playlistTracks) {
-      if (t.isCueVirtual && t != track) {
-        final path = await cache.localPathIfCached(
-          t.effectiveAudioRemotePath,
-          sourceName: t.sourceName,
-        );
-        if (path == null) continue;
-        playlistInfos.add(
-          libraryTrackToTrackInfo(
-            t,
-            path,
-            accountsService.idForSource(t.sourceName) ?? '',
-          ),
-        );
-        continue;
-      }
+      // CUE slices join even without a local file (stream clip + cache
+      // fallback), same as the music library queue.
       final path = await cache.localPathIfCached(
         t.effectiveAudioRemotePath,
         sourceName: t.sourceName,
@@ -369,7 +357,11 @@ class _PlaylistTrackTile extends StatelessWidget {
     final info = libraryTrackToTrackInfo(track, local, accountId);
     if (playlistInfos.isEmpty) playlistInfos.add(info);
     if (!context.mounted) return;
-    await player.playTrack(info, playlist: playlistInfos);
+    await player.playTrack(
+      info,
+      playlist: playlistInfos,
+      source: PlaybackQueueSource.savedPlaylist(playlistId),
+    );
     if (player.error != null && context.mounted) {
       final err = TaskError.classify(StateError(player.error!));
       AppSnack.error(

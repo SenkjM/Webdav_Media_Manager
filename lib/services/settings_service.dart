@@ -135,6 +135,9 @@ class SettingsService extends ChangeNotifier {
   /// Mutual library mode: false = 手动管理 (default); true = 自动补齐.
   static const _kMusicLibraryAutoBackfill = 'music_library_auto_backfill';
 
+  /// Queue "add" default: false = 插播 (play now), true = append to tail.
+  static const _kQueueAddToEnd = 'queue_add_to_end';
+
   /// When true, play-trigger only runs if track path is under a bound root.
   static const _kMusicLibraryBackfillBindRoots =
       'music_library_backfill_bind_roots';
@@ -277,7 +280,7 @@ class SettingsService extends ChangeNotifier {
   /// 0 = unlimited. Capacity cap for music_cache in megabytes.
   int _musicCacheMaxMb = 0;
   int _customRetentionHours = defaultCustomRetentionHours;
-  LibrarySortMode _librarySort = LibrarySortMode.byName;
+  LibrarySortMode _librarySort = LibrarySortMode.byAlbumTrack;
 
   /// Per-folder browse density. Key ``root`` for virtual root; else folder id.
   final Map<String, FolderViewMode> _folderViewModes = {};
@@ -329,6 +332,7 @@ class SettingsService extends ChangeNotifier {
   int _mangaCreateMaxDepth = 1;
   int _mangaCoverThumbSize = 500;
   bool _musicLibraryAutoBackfill = false;
+  bool _queueAddToEnd = false;
   bool _musicLibraryBackfillBindRoots = false;
   List<MusicLibraryBackfillRoot> _musicLibraryBackfillRoots = const [];
   bool _imageSlideshowEnabled = defaultImageSlideshow;
@@ -630,6 +634,9 @@ class SettingsService extends ChangeNotifier {
 
   /// 自动补齐模式。默认关 = 手动管理。键 `music_library_auto_backfill`。
   bool get musicLibraryAutoBackfill => _musicLibraryAutoBackfill;
+
+  /// 队列页「添加」的默认位置：false = 插播（默认），true = 追加到末尾。
+  bool get queueAddToEnd => _queueAddToEnd;
 
   /// 绑定路径开关：开则仅当前曲远端路径前缀命中绑定根时才刮削。默认关。
   bool get musicLibraryBackfillBindRoots => _musicLibraryBackfillBindRoots;
@@ -936,6 +943,7 @@ class SettingsService extends ChangeNotifier {
     _mangaCoverThumbSize = _prefs!.getInt(_kMangaCoverThumbSize) ?? 500;
     _musicLibraryAutoBackfill =
         _prefs!.getBool(_kMusicLibraryAutoBackfill) ?? false;
+    _queueAddToEnd = _prefs!.getBool(_kQueueAddToEnd) ?? false;
     // Legacy `music_library_backfill_on_open` ignored: play scrape is always
     // on while auto-backfill is enabled.
     _musicLibraryBackfillBindRoots =
@@ -1505,6 +1513,13 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setQueueAddToEnd(bool enabled) async {
+    _queueAddToEnd = enabled;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kQueueAddToEnd, enabled);
+    notifyListeners();
+  }
+
   Future<void> setMusicLibraryBackfillBindRoots(bool enabled) async {
     _musicLibraryBackfillBindRoots = enabled;
     _prefs ??= await SharedPreferences.getInstance();
@@ -2044,6 +2059,7 @@ class SettingsService extends ChangeNotifier {
     'manga_create_max_depth': _mangaCreateMaxDepth,
     'manga_cover_thumb_size': _mangaCoverThumbSize,
     'music_library_auto_backfill': _musicLibraryAutoBackfill,
+    'queue_add_to_end': _queueAddToEnd,
     'music_library_backfill_bind_roots': _musicLibraryBackfillBindRoots,
     'music_library_backfill_roots': [
       for (final r in _musicLibraryBackfillRoots) r.toJson(),
@@ -2271,6 +2287,9 @@ class SettingsService extends ChangeNotifier {
       await setMusicLibraryAutoBackfill(
         json['music_library_auto_backfill'] as bool,
       );
+    }
+    if (json['queue_add_to_end'] is bool) {
+      await setQueueAddToEnd(json['queue_add_to_end'] as bool);
     }
     // Legacy on-play / on-open keys ignored (always play-scrape in auto mode).
     if (json['music_library_backfill_bind_roots'] is bool) {

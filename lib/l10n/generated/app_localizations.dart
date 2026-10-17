@@ -2151,6 +2151,54 @@ abstract class AppLocalizations {
   /// **'当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。'**
   String get nowPlayingQueueEmpty;
 
+  /// No description provided for @queueAdd.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加'**
+  String get queueAdd;
+
+  /// No description provided for @queueAddPlayNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即播放（插播）'**
+  String get queueAddPlayNow;
+
+  /// No description provided for @queueAddToEnd.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加到末尾'**
+  String get queueAddToEnd;
+
+  /// No description provided for @playbackQueueClearConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空当前播放列表？'**
+  String get playbackQueueClearConfirm;
+
+  /// No description provided for @playbackQueueClearBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'将清空当前播放队列；不会删除歌单、用户文件夹或缓存。'**
+  String get playbackQueueClearBody;
+
+  /// No description provided for @playbackQueueCleared.
+  ///
+  /// In zh, this message translates to:
+  /// **'播放列表已清空'**
+  String get playbackQueueCleared;
+
+  /// No description provided for @moveUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'上移'**
+  String get moveUp;
+
+  /// No description provided for @moveDown.
+  ///
+  /// In zh, this message translates to:
+  /// **'下移'**
+  String get moveDown;
+
   /// No description provided for @playerChipAlbumArtist.
   ///
   /// In zh, this message translates to:
@@ -7582,6 +7630,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'音乐/曲目'**
   String get folderAddTracks;
+
+  /// No description provided for @folderAddGenres.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐/流派'**
+  String get folderAddGenres;
 
   /// No description provided for @folderItemsAdded.
   ///

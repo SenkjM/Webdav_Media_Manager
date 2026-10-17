@@ -1138,6 +1138,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nowPlayingQueueEmpty => '当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。';
 
   @override
+  String get queueAdd => '添加';
+
+  @override
+  String get queueAddPlayNow => '立即播放（插播）';
+
+  @override
+  String get queueAddToEnd => '添加到末尾';
+
+  @override
+  String get playbackQueueClearConfirm => '清空当前播放列表？';
+
+  @override
+  String get playbackQueueClearBody => '将清空当前播放队列；不会删除歌单、用户文件夹或缓存。';
+
+  @override
+  String get playbackQueueCleared => '播放列表已清空';
+
+  @override
+  String get moveUp => '上移';
+
+  @override
+  String get moveDown => '下移';
+
+  @override
   String playerChipAlbumArtist(Object artist) {
     return '专辑艺人 · $artist';
   }
@@ -4296,6 +4320,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get folderAddTracks => '音乐/曲目';
 
   @override
+  String get folderAddGenres => '音乐/流派';
+
+  @override
   String folderItemsAdded(int count) {
     return '已添加 $count 项';
   }
@@ -6142,6 +6169,30 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get nowPlayingQueueEmpty => '目前沒有播放佇列。\n從音樂庫或網路庫開始播放後會出現在此。';
+
+  @override
+  String get queueAdd => '新增';
+
+  @override
+  String get queueAddPlayNow => '立即播放（插播）';
+
+  @override
+  String get queueAddToEnd => '加入至末尾';
+
+  @override
+  String get playbackQueueClearConfirm => '清除目前播放清單？';
+
+  @override
+  String get playbackQueueClearBody => '將清除目前播放佇列；不會刪除歌單、使用者資料夾或快取。';
+
+  @override
+  String get playbackQueueCleared => '播放清單已清除';
+
+  @override
+  String get moveUp => '上移';
+
+  @override
+  String get moveDown => '下移';
 
   @override
   String playerChipAlbumArtist(Object artist) {
@@ -9300,6 +9351,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get folderAddTracks => '音樂/曲目';
+
+  @override
+  String get folderAddGenres => '音樂/流派';
 
   @override
   String folderItemsAdded(int count) {

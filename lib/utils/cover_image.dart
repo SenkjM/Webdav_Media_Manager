@@ -6,7 +6,17 @@ import 'package:image/image.dart' as img;
 const int coverThumbSize = 300;
 
 /// Alternate preset offered in Settings.
-const int coverThumbSizeLarge = 300;
+const int coverThumbSizeLarge = 600;
+
+/// Presets offered as the pill (SegmentedButton) in Settings.
+///
+/// The default [coverThumbSize] must be a member; labels are generated from
+/// these values so they can never drift apart again.
+const List<int> coverThumbPresets = [coverThumbSize, coverThumbSizeLarge];
+
+/// Settings pill key for [edge] (`'300'`, `'600'`) or `'custom'`.
+String coverThumbPresetKey(int edge) =>
+    coverThumbPresets.contains(edge) ? '$edge' : 'custom';
 
 /// Pass this as [size] to [resizeCoverToThumb] to skip resizing and store original bytes.
 const int mangaCoverThumbSizeKeepOriginal = 0;
@@ -46,32 +56,3 @@ Uint8List? resizeCoverToThumb(Uint8List bytes, {int size = coverThumbSize}) {
 bool isCoverThumbSize(int width, int height, {int expected = coverThumbSize}) =>
     width == expected && height == expected;
 
-/// Prefer full-resolution cover when the audio file is on disk; else thumb.
-///
-/// When [audioIsLocal] is true but [fullCoverPath] is missing, returns null so
-/// the caller can load original bytes from tags (Image.memory) instead of the
-/// compressed thumb. When not local, returns [thumbPath] as the offline placeholder.
-String? resolveLibraryCoverPath({
-  required bool audioIsLocal,
-  String? fullCoverPath,
-  String? thumbPath,
-}) {
-  if (audioIsLocal) {
-    if (fullCoverPath != null && fullCoverPath.isNotEmpty) {
-      return fullCoverPath;
-    }
-    return null;
-  }
-  if (thumbPath != null && thumbPath.isNotEmpty) return thumbPath;
-  return null;
-}
-
-/// Missing local audio should trigger download unless already queued/active.
-bool shouldEnqueueMissingAudio({
-  required bool audioIsLocal,
-  required bool alreadyQueuedOrDownloading,
-}) {
-  if (audioIsLocal) return false;
-  if (alreadyQueuedOrDownloading) return false;
-  return true;
-}

@@ -161,6 +161,7 @@ class QueueTask {
     this.downloadMode,
     this.remoteSize,
     this.remoteModified,
+    this.priority = 0,
   });
 
   final String id;
@@ -210,6 +211,11 @@ class QueueTask {
 
   int attempts;
   DateTime? nextRetryAt;
+
+  /// In-memory scheduling priority (higher runs first). Not persisted: a
+  /// restarted queue falls back to creation order, which is fine because the
+  /// only reason to prioritise is "the user is waiting right now".
+  int priority;
 
   bool get isPublic => target != DownloadTarget.cache;
   bool get isGallery => target == DownloadTarget.gallery;

@@ -47,7 +47,7 @@ class _MediaLibrarySettingsScreenState
       if (!mounted) return;
       final settings = context.read<SettingsService>();
       final edge = settings.coverThumbSizePx;
-      if (edge != coverThumbSize && edge != coverThumbSizeLarge) {
+      if (!coverThumbPresets.contains(edge)) {
         _coverSizeController.text = '$edge';
       }
     });
@@ -71,23 +71,18 @@ class _MediaLibrarySettingsScreenState
     super.dispose();
   }
 
-  String _coverPresetKey(int edge) {
-    if (edge == coverThumbSize) return '100';
-    if (edge == coverThumbSizeLarge) return '300';
-    return 'custom';
-  }
-
   String _coverMode(SettingsService settings) =>
-      _coverUiMode ?? _coverPresetKey(settings.coverThumbSizePx);
+      _coverUiMode ?? coverThumbPresetKey(settings.coverThumbSizePx);
 
   Future<void> _applyCustomCoverSize() async {
     final parsed = int.tryParse(_coverSizeController.text.trim());
     if (parsed == null) return;
     await context.read<AppState>().setCoverThumbSize(parsed);
     if (!mounted) return;
-    setState(() => _coverUiMode = 'custom');
+    // Let the clamped value decide whether this is now a preset or custom.
+    setState(() => _coverUiMode = null);
     final edge = context.read<SettingsService>().coverThumbSizePx;
-    if (edge != coverThumbSize && edge != coverThumbSizeLarge) {
+    if (!coverThumbPresets.contains(edge)) {
       _coverSizeController.text = '$edge';
     }
   }
@@ -455,19 +450,17 @@ class _MediaLibrarySettingsScreenState
           SegmentedButton<String>(
             showSelectedIcon: false,
             segments: [
-              const ButtonSegment(value: '100', label: Text('100×100')),
-              const ButtonSegment(value: '300', label: Text('300×300')),
+              for (final px in coverThumbPresets)
+                ButtonSegment(value: '$px', label: Text('$px×$px')),
               ButtonSegment(value: 'custom', label: Text(l10n.cacheCustom)),
             ],
             selected: {_coverMode(settings)},
             onSelectionChanged: (sel) async {
               final v = sel.first;
-              if (v == '100') {
+              final preset = int.tryParse(v);
+              if (preset != null) {
                 setState(() => _coverUiMode = null);
-                await context.read<AppState>().setCoverThumbSize(coverThumbSize);
-              } else if (v == '300') {
-                setState(() => _coverUiMode = null);
-                await context.read<AppState>().setCoverThumbSize(coverThumbSizeLarge);
+                await context.read<AppState>().setCoverThumbSize(preset);
               } else {
                 setState(() {
                   _coverUiMode = 'custom';

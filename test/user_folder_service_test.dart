@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:webdav_media_manager/models/library_sentinels.dart';
 import 'package:webdav_media_manager/models/library_tag_dimension.dart';
+import 'package:webdav_media_manager/models/library_track.dart';
 import 'package:webdav_media_manager/models/user_folder.dart';
 import 'package:webdav_media_manager/models/user_folder_item.dart';
 import 'package:webdav_media_manager/services/library_database.dart';
@@ -189,11 +191,26 @@ void main() {
     );
   });
 
-  test('LibraryTagDimension v1 registers album and artist only', () {
+  test('LibraryTagDimension v1 registers album, artist and genre', () {
     expect(LibraryTagDimension.v1TagDimensions.map((d) => d.id).toList(), [
       UserFolderRefKind.album,
       UserFolderRefKind.artist,
+      UserFolderRefKind.genre,
     ]);
-    expect(LibraryTagDimension.byId('genre'), isNull);
+    final genre = LibraryTagDimension.byId('genre');
+    expect(genre, isNotNull);
+    final track = LibraryTrack(
+      sourceName: 'src',
+      remotePath: '/ Music/a.mp3',
+      fileName: 'a.mp3',
+      genre: 'Rock',
+    );
+    expect(genre!.groupKey(track), 'Rock');
+    final untagged = LibraryTrack(
+      sourceName: 'src',
+      remotePath: '/Music/b.mp3',
+      fileName: 'b.mp3',
+    );
+    expect(genre.groupKey(untagged), kUncategorizedGenre);
   });
 }

@@ -459,6 +459,7 @@ class PlayerScreen extends StatelessWidget {
                                   size: artSize.clamp(180.0, 300.0),
                                   borderRadius: 8,
                                   icon: Icons.album,
+                                  coverRevision: player.queueRevision,
                                 )
                               else
                                 CoverArt(
@@ -761,28 +762,11 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
     final library = context.read<LibraryService>();
     final covers = library.covers;
     await covers.init();
-    final full = await covers.fullCoverPath(sourceName, remote);
-    if (full != null) {
-      if (mounted) {
-        setState(() {
-          _fullPath = full;
-          _bytes = null;
-        });
-      }
-      return;
-    }
     final local = widget.localPath;
     if (local != null && File(local).existsSync()) {
       final tags = await library.tags.readFromFile(local);
       final bytes = tags.coverBytes;
       if (bytes != null && bytes.isNotEmpty) {
-        unawaited(
-          covers.saveFull(
-            sourceName: sourceName,
-            remotePath: remote,
-            bytes: bytes,
-          ),
-        );
         if (mounted) {
           setState(() {
             _fullPath = null;
@@ -791,23 +775,44 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
         }
         return;
       }
-    }
-    final known = widget.coverPath;
-    if (known != null && known.isNotEmpty) {
+      // Local without embedded art: use the resampled library thumb.
       if (mounted) {
         setState(() {
-          _fullPath = known;
+          _fullPath = widget.coverPath;
           _bytes = null;
         });
       }
       return;
     }
+
+    // Streaming: show the thumb first, then Range-read the embedded cover
+    // (memory only, one request at a time through the audio service).
     if (mounted) {
       setState(() {
-        _fullPath = null;
+        _fullPath = widget.coverPath;
         _bytes = null;
       });
     }
+    unawaited(_loadRangeCover(sourceName, remote));
+  }
+
+  Future<void> _loadRangeCover(String sourceName, String remote) async {
+    final player = context.read<AudioPlayerService>();
+    final bytes = await player.networkCoverBytes(
+      sourceName: sourceName,
+      remotePath: remote,
+      fileName: remote.split('/').last,
+    );
+    if (!mounted ||
+        bytes == null ||
+        bytes.isEmpty ||
+        widget.audioRemotePath != remote) {
+      return;
+    }
+    setState(() {
+      _fullPath = null;
+      _bytes = bytes;
+    });
   }
 
   @override

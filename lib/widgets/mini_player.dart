@@ -9,7 +9,7 @@ import 'package:provider/provider.dart';
 import '../screens/player_screen.dart';
 import '../screens/now_playing_queue_screen.dart';
 import '../services/audio_player_service.dart';
-import 'cover_art.dart';
+import 'library_cover_art.dart';
 
 /// Global mini play bar for the unified music session (local or stream).
 class MiniPlayer extends StatelessWidget {
@@ -67,12 +67,19 @@ class MiniPlayer extends StatelessWidget {
                 ),
                 child: Row(
                   children: [
-                    CoverArt(
-                      // Mini bar may use thumb; full player never does.
-                      path: track.coverPath,
+                    PlayerCoverArt(
+                      // Same cover pipeline as the full player: local tags when
+                      // cached, Range fallback while streaming (memory only).
+                      sourceName: track.sourceName,
+                      remotePath: track.effectiveAudioRemotePath,
+                      localAudioPath: track.localPath,
+                      coverPath: track.coverPath,
+                      fileName: track.fileName,
                       size: 44,
                       borderRadius: 4,
                       icon: Icons.music_note,
+                      coverRevision: player.queueRevision,
+                      rangeOnlyWhenMissing: true,
                     ),
                     const SizedBox(width: 12),
                     Expanded(

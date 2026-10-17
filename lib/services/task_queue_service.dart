@@ -47,7 +47,9 @@ import 'tag_service.dart';
 import '../models/webdav_stream.dart';
 import '../utils/directory_walk.dart';
 import '../utils/manga_scan_walk.dart';
+import '../utils/remote_path.dart';
 import '../utils/scan_candidates.dart';
+import 'stream_window.dart';
 
 import 'package:archive/archive_io.dart';
 
@@ -493,6 +495,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     int? unitsTotal,
     List<ScanPathEntry>? paths,
     bool isEnumerator = false,
+    int priority = 0,
   }) async {
     final task = QueueTask(
       id: _uuid.v4(),
@@ -505,6 +508,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       unitsTotal: unitsTotal ?? paths?.length,
       unitsDone: 0,
       isEnumerator: isEnumerator,
+      priority: priority,
     );
     if (paths != null && paths.isNotEmpty) {
       final payload = await _scanPayloadFile(task.id);
@@ -918,6 +922,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     String? fileName,
     // 默认缓存：这是「缓存音乐」那条线的入口。
     DownloadTarget target = DownloadTarget.cache,
+    int priority = 0,
   }) async {
     if (isCueVirtualRemotePath(remotePath)) {
       return false;
@@ -960,6 +965,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       remotePath: remotePath,
       fileName: fileName ?? remotePath.split('/').last,
       createdAt: DateTime.now(),
+      priority: priority,
     );
     _tasks.add(task);
     _sessionIds.add(task.id);
@@ -976,11 +982,17 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     String remotePath, {
     String? fileName,
     Duration timeout = const Duration(minutes: 30),
+    int priority = 0,
   }) async {
     if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
       return _cache.fileForRemote(remotePath, sourceName: sourceName).path;
     }
-    await ensureQueued(sourceName, remotePath, fileName: fileName);
+    await ensureQueued(
+      sourceName,
+      remotePath,
+      fileName: fileName,
+      priority: priority,
+    );
     if (_cache.hasLocalFile(remotePath, sourceName: sourceName)) {
       return _cache.fileForRemote(remotePath, sourceName: sourceName).path;
     }
@@ -1803,7 +1815,11 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
                   (t.nextRetryAt == null || !t.nextRetryAt!.isAfter(now)),
             )
             .toList()
-          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+          ..sort((a, b) {
+            final byPriority = b.priority.compareTo(a.priority);
+            if (byPriority != 0) return byPriority;
+            return a.createdAt.compareTo(b.createdAt);
+          });
     return pending;
   }
 
@@ -2751,21 +2767,64 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       if (await bumpOrCancel()) return;
       try {
         await retryItem(isCancel: isCancelErr, () async {
-          final already = library.tracks.any(
-            (tr) =>
-                tr.sourceName == task.sourceName &&
-                tr.cueRemotePath == item.path,
-          );
-          if (!already) {
+          final existing = library.tracks
+              .where(
+                (tr) =>
+                    tr.sourceName == task.sourceName &&
+                    tr.cueRemotePath == item.path,
+              )
+              .toList();
+          final already = existing.isNotEmpty;
+          // A scraped CUE album may already have rows but no thumb (rows
+          // ingested before scrape built thumbs, or the thumb file was
+          // removed). Re-read the cue/cover in that case so MiniPlayer/list
+          // covers can recover without deleting and re-adding the album.
+          final needsCover =
+              already &&
+              existing.any(
+                (r) =>
+                    r.coverPath == null ||
+                    r.coverPath!.isEmpty ||
+                    !File(r.coverPath!).existsSync(),
+              );
+          if (!already || needsCover) {
             final bytes = await _webDav.readAsBytes(accountId, item.path);
             final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
             if (sheet == null) {
               throw StateError('err.cueMalformed|${item.path}');
             }
+            // Scrape must also produce the resampled thumb: read the embedded
+            // cover from the first backing audio via Range. MiniPlayer and the
+            // library rows only persist a thumb, so without this a scraped CUE
+            // album had metadata but no cover in lists.
+            Uint8List? cueCover;
+            for (final audio in sheet.audioRemotePaths(item.path)) {
+              try {
+                final audioSource = await _webDav.resolveStreamSource(
+                  accountId: accountId,
+                  remotePath: audio,
+                  name: p.basename(audio),
+                  kind: StreamKind.music,
+                );
+                if (audioSource == null || audioSource.uri.isEmpty) continue;
+                final tags = await covers.extractTags(
+                  audioSource,
+                  cancel: token,
+                );
+                final bytes = tags?.coverBytes;
+                if (bytes != null && bytes.isNotEmpty) {
+                  cueCover = bytes;
+                  break;
+                }
+              } catch (_) {
+                // Cover is best-effort; continue with the next audio file.
+              }
+            }
             await library.ingestCueRemote(
               sourceName: task.sourceName,
               cueRemotePath: item.path,
               sheet: sheet,
+              coverBytes: cueCover,
             );
             coveredByCue.addAll(sheet.audioRemotePaths(item.path));
           }
@@ -2786,6 +2845,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       await reportUnitsProgress(task.id, done: done, total: total);
     }
 
+    final coverNamesByDir = <String, List<String>>{};
     for (final item in musicItems) {
       if (await bumpOrCancel()) return;
       try {
@@ -2806,11 +2866,67 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             throw StateError('err.cloud.notFound|${item.path}');
           }
           final tags = await covers.extractTags(source, cancel: token);
+          var effective = tags ?? const ReadTags();
+          // Sidecar cover lives here now that the streaming prefetch no longer
+          // touches metadata: same-directory image when the tags have none.
+          final settings = _settings;
+          if (settings != null &&
+              settings.audioStreamSidecarCover &&
+              (effective.coverBytes == null ||
+                  effective.coverBytes!.isEmpty)) {
+            final dir = remoteParent(item.path) ?? '/';
+            var names = coverNamesByDir[dir];
+            if (names == null) {
+              try {
+                final items = await _webDav.listDirectory(accountId, dir);
+                names = [
+                  for (final e in items)
+                    if (!e.isDirectory) e.name,
+                ];
+              } catch (_) {
+                names = const [];
+              }
+              coverNamesByDir[dir] = names;
+            }
+            final match = matchSidecarCover(
+              names,
+              item.name,
+              settings.audioStreamSidecarNames,
+            );
+            if (match != null) {
+              final remote = dir == '/' ? '/$match' : '$dir/$match';
+              try {
+                final bytes = await _webDav.readAsBytes(accountId, remote);
+                if (bytes.isNotEmpty) {
+                  effective = ReadTags(
+                    title: effective.title,
+                    artist: effective.artist,
+                    albumArtist: effective.albumArtist,
+                    album: effective.album,
+                    durationMs: effective.durationMs,
+                    trackNumber: effective.trackNumber,
+                    trackTotal: effective.trackTotal,
+                    discNumber: effective.discNumber,
+                    discTotal: effective.discTotal,
+                    year: effective.year,
+                    genre: effective.genre,
+                    bitrate: effective.bitrate,
+                    sampleRate: effective.sampleRate,
+                    language: effective.language,
+                    lyrics: effective.lyrics,
+                    coverBytes: bytes,
+                  );
+                }
+              } catch (_) {
+                // A missing/broken sidecar only costs the cover.
+              }
+            }
+          }
           await library.ingestFromTags(
             sourceName: task.sourceName,
             remotePath: item.path,
             fileName: item.name,
-            tags: tags ?? const ReadTags(),
+            tags: effective,
           );
         });
       } catch (e) {

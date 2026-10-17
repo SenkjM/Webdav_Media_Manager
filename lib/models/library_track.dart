@@ -317,7 +317,10 @@ int? _asInt(Object? value) {
   return int.tryParse(value.toString());
 }
 
-/// How to order tracks in the local library title list / album detail.
+/// How to order tracks inside an album detail page.
+///
+/// 曲序 (disc + track) is only meaningful inside an album; other library lists
+/// use fixed ordering and expose no sort control.
 enum LibrarySortMode {
   /// Title / display name (case-insensitive).
   byName,
@@ -339,11 +342,12 @@ extension LibrarySortModeX on LibrarySortMode {
 
   static LibrarySortMode fromStorageKey(String? key) {
     switch (key) {
-      case 'album_track':
-        return LibrarySortMode.byAlbumTrack;
       case 'name':
-      default:
         return LibrarySortMode.byName;
+      case 'album_track':
+      default:
+        // Album detail is the only consumer; track order is the useful default.
+        return LibrarySortMode.byAlbumTrack;
     }
   }
 }
