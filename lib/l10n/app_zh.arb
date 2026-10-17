@@ -376,6 +376,14 @@
   "nowPlayingQueueTitle": "当前播放列表",
   "nowPlayingQueueCount": "当前播放列表（{count}）",
   "nowPlayingQueueEmpty": "当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。",
+  "queueAdd": "添加",
+  "queueAddPlayNow": "立即播放（插播）",
+  "queueAddToEnd": "添加到末尾",
+  "playbackQueueClearConfirm": "清空当前播放列表？",
+  "playbackQueueClearBody": "将清空当前播放队列；不会删除歌单、用户文件夹或缓存。",
+  "playbackQueueCleared": "播放列表已清空",
+  "moveUp": "上移",
+  "moveDown": "下移",
   "playerChipAlbumArtist": "专辑艺人 · {artist}",
   "playerChipTrackNumber": "曲目 {n}/{total}",
   "playerChipTrackNoTotal": "曲目 {n}",
@@ -1370,6 +1378,7 @@
   "folderAddAlbums": "音乐/专辑",
   "folderAddArtists": "音乐/艺人",
   "folderAddTracks": "音乐/曲目",
+  "folderAddGenres": "音乐/流派",
   "folderItemsAdded": "已添加 {count} 项",
   "@folderItemsAdded": {
     "placeholders": {
