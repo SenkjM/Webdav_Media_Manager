@@ -596,6 +596,7 @@ class _LibraryFolderBrowserScreenState
       playlist.first,
       playlist: playlist,
       source: PlaybackQueueSource.userFolder(folderId),
+      replaceQueue: true,
     );
   }
 

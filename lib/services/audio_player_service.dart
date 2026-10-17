@@ -291,6 +291,7 @@ class AudioPlayerService extends ChangeNotifier {
     PlayOpenMode? mode,
     bool forceStream = false,
     PlaybackQueueSource? source,
+    bool replaceQueue = false,
   }) async {
     _error = null;
     _playOpenMode = forceStream
@@ -299,6 +300,38 @@ class AudioPlayerService extends ChangeNotifier {
             (_settings.musicDefaultStream
                 ? PlayOpenMode.stream
                 : PlayOpenMode.cache));
+
+    // Tapping a new song while a queue exists prepends it instead of wiping the
+    // queue. Context loads (whole folder / CUE album) opt into replacing.
+    if (!replaceQueue && _handler.tracks.isNotEmpty) {
+      final existing = _handler.tracks.indexWhere(
+        (t) => t.musicId == track.musicId && t.sourceName == track.sourceName,
+      );
+      if (existing >= 0) {
+        await playQueueIndex(existing);
+        return;
+      }
+      var entry = track;
+      if (entry.accountId.isEmpty) {
+        final id = _accounts.idForSource(entry.sourceName) ?? '';
+        if (id.isNotEmpty) entry = _withAccountId(entry, id);
+      }
+      if (entry.accountId.isEmpty) {
+        _error = L10nHost.current.svcNoLocalCache;
+        notifyListeners();
+        return;
+      }
+      _queueSource ??= source ?? PlaybackQueueSource.libraryQueue();
+      _queueWalkToken++;
+      _applyLibraryMetadata([entry]);
+      final next = <TrackInfo>[entry, ..._handler.tracks];
+      notifyListeners();
+      await _ensureNotificationPermission();
+      await _loadAndPlay(next, 0);
+      _afterQueueStarted();
+      return;
+    }
+
     final list = <TrackInfo>[];
     if (playlist != null && playlist.isNotEmpty) {
       list.addAll(playlist);
@@ -1005,6 +1038,26 @@ class AudioPlayerService extends ChangeNotifier {
       _prefetch?.nudge();
     } else {
       unawaited(_warmCacheNeighbors(_handler.tracks, _handler.index));
+    }
+  }
+
+  /// Jump to a queue row (tap in the queue panel). Resolves the source lazily so
+  /// a restored queue can start from any entry.
+  Future<void> playQueueIndex(int index) async {
+    if (index < 0 || index >= _handler.tracks.length) return;
+    _error = null;
+    try {
+      await _handler.skipToQueueItem(index);
+      if (_playOpenMode == PlayOpenMode.stream) {
+        _prefetch?.nudge();
+      } else {
+        unawaited(_warmCacheNeighbors(_handler.tracks, _handler.index));
+      }
+      _persistQueueSoon();
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
     }
   }
 

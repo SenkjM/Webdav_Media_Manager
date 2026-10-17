@@ -578,12 +578,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       includeSubdirs: settings.audioScanSubdirs,
       maxDepth: settings.audioPlaylistMaxDepth,
     );
+    final hadQueue = player.queue.isNotEmpty;
     await player.playTrack(
       track,
       playlist: playlist,
       mode: mode,
       source: source,
     );
+    // Only the queue-building play loads the folder context; later taps while a
+    // queue exists are prepended as a single song (user rule), so no walk.
+    if (hadQueue) return;
     // Playback already started from the current directory listing; extend into
     // the configured subdirectory window in the background (never awaited).
     unawaited(
@@ -874,6 +878,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         folderPath: remoteParent(item.path) ?? '/',
         cueRemotePath: item.path,
       ),
+      replaceQueue: true,
     );
   }
 

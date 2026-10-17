@@ -13,6 +13,7 @@ import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
+import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../widgets/cover_art.dart';
@@ -76,7 +77,8 @@ class NowPlayingQueueScreen extends StatelessWidget {
 
   Future<void> _openAddSheet(BuildContext context) async {
     final l10n = AppLocalizations.of(context)!;
-    var append = false;
+    final settings = context.read<SettingsService>();
+    var append = settings.queueAddToEnd;
     String? kind;
     await showModalBottomSheet<void>(
       context: context,
@@ -104,7 +106,10 @@ class NowPlayingQueueScreen extends StatelessWidget {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 title: Text(l10n.queueAddToEnd),
                 value: append,
-                onChanged: (v) => setSheetState(() => append = v),
+                onChanged: (v) {
+                  setSheetState(() => append = v);
+                  unawaited(settings.setQueueAddToEnd(v));
+                },
               ),
               for (final entry in [
                 (UserFolderRefKind.track, l10n.folderAddTracks),
@@ -265,6 +270,7 @@ class NowPlayingQueueScreen extends StatelessWidget {
                 return ListTile(
                   selected: playing,
                   selectedTileColor: AppColors.accent.withValues(alpha: 0.12),
+                  onTap: () => unawaited(player.playQueueIndex(i)),
                   leading: CoverArt(
                     path: t.coverPath,
                     size: 44,

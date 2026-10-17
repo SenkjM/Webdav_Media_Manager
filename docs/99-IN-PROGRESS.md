@@ -1229,6 +1229,7 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 6. 预载窗口设置保留，但只做**音频 lookahead**；元数据预载删除（不再 Range 读标签/封面、不再 ingest）。同目录 sidecar 封面移入 `_runScan` 入库。
 7. CUE：缓存模式先缓存 backing audio 再裁切；流式模式直接 `Media(uri, start:, end:)`，失败/不可 seek 时自动回退「缓存后再播」。网络库 CUE 预览增加「播放」。
 8. 自动补齐：网络库文件夹队列按队列根 + `audioPlaylistWalkOptions` 增量扫描（复用已列目录）；曲库/歌单/用户文件夹队列回退当前曲父目录。用户点播的 cache 下载通过任务 `priority` 插队。
+9. 队列页点击行 = 跳到该曲；外部点播一首歌：**已在当前队列 → 跳到已有条目**；**新歌 → 插到队列顶端（index 0）并立即播放**，旧队列保留。整文件夹 / CUE 专辑这类「上下文播放」仍替换队列。队列页「添加到末尾」开关持久化（`queue_add_to_end`），下次打开沿用。
 
 **已知问题（先记录，后续再补）**：
 - 流派引用键保留原始大小写：`Rock` / `rock` 会被当作两个引用（库页流派 Tab 仍大小写不敏感合并）。
