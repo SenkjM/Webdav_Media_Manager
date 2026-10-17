@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/painting.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -61,6 +62,11 @@ class CoverService {
     if (thumb == null) return null;
     final file = await coverFile(sourceName, remotePath);
     await file.writeAsBytes(thumb, flush: true);
+    // The path is stable per track, so Flutter's decoded-image cache would keep
+    // serving the old art after a re-scrape; evict it explicitly.
+    try {
+      await FileImage(file).evict();
+    } catch (_) {}
     return file.path;
   }
 
@@ -115,6 +121,9 @@ class CoverService {
     }
     final file = File(p.join(dir.path, '$stem.$ext'));
     await file.writeAsBytes(bytes, flush: true);
+    try {
+      await FileImage(file).evict();
+    } catch (_) {}
     return file.path;
   }
 

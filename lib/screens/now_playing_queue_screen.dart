@@ -276,6 +276,7 @@ class NowPlayingQueueScreen extends StatelessWidget {
                     size: 44,
                     borderRadius: 4,
                     icon: playing ? Icons.equalizer : Icons.music_note,
+                    revision: player.queueRevision,
                   ),
                   title: Text(
                     t.displayTitle,

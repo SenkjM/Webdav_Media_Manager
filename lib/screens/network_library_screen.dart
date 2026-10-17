@@ -878,7 +878,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         folderPath: remoteParent(item.path) ?? '/',
         cueRemotePath: item.path,
       ),
-      replaceQueue: true,
     );
   }
 

@@ -123,6 +123,16 @@ class AudioPlayerService extends ChangeNotifier {
   bool _queueRestored = false;
   Timer? _persistTimer;
   int _lastQueueIndex = -1;
+
+  /// Monotonic counter bumped whenever queue metadata (notably cover art) was
+  /// refreshed from the library. Widgets that cache decoded images include it
+  /// in their identity so an in-place cover rewrite becomes visible.
+  int _queueRevision = 0;
+  int get queueRevision => _queueRevision;
+
+  /// Last library row rev seen per queue entry, so a re-scrape that only
+  /// rewrites the cover file (same path) still counts as a change.
+  final Map<String, int> _rowRevs = {};
   bool _enrichScheduled = false;
   bool _enriching = false;
   bool _scrapePumping = false;
@@ -301,8 +311,10 @@ class AudioPlayerService extends ChangeNotifier {
                 ? PlayOpenMode.stream
                 : PlayOpenMode.cache));
 
-    // Tapping a new song while a queue exists prepends it instead of wiping the
-    // queue. Context loads (whole folder / CUE album) opt into replacing.
+    // Playing a song while a queue exists does not wipe the queue: the whole
+    // incoming playlist is inserted at the top (with the tapped song as the
+    // start index), and the existing queue stays below it. If the tapped song
+    // is already in the current queue we jump to that entry instead.
     if (!replaceQueue && _handler.tracks.isNotEmpty) {
       final existing = _handler.tracks.indexWhere(
         (t) => t.musicId == track.musicId && t.sourceName == track.sourceName,
@@ -311,23 +323,40 @@ class AudioPlayerService extends ChangeNotifier {
         await playQueueIndex(existing);
         return;
       }
-      var entry = track;
-      if (entry.accountId.isEmpty) {
-        final id = _accounts.idForSource(entry.sourceName) ?? '';
-        if (id.isNotEmpty) entry = _withAccountId(entry, id);
+      final list = <TrackInfo>[];
+      if (playlist != null && playlist.isNotEmpty) {
+        list.addAll(playlist);
+      } else {
+        list.add(track);
       }
-      if (entry.accountId.isEmpty) {
+      var idx = list.indexWhere(
+        (t) => t.musicId == track.musicId && t.sourceName == track.sourceName,
+      );
+      if (idx < 0) {
+        list.add(track);
+        idx = list.length - 1;
+      } else {
+        list[idx] = track;
+      }
+      for (var i = 0; i < list.length; i++) {
+        final t = list[i];
+        if (t.accountId.isEmpty) {
+          final id = _accounts.idForSource(t.sourceName) ?? '';
+          if (id.isNotEmpty) list[i] = _withAccountId(t, id);
+        }
+      }
+      if (list[idx].accountId.isEmpty) {
         _error = L10nHost.current.svcNoLocalCache;
         notifyListeners();
         return;
       }
       _queueSource ??= source ?? PlaybackQueueSource.libraryQueue();
       _queueWalkToken++;
-      _applyLibraryMetadata([entry]);
-      final next = <TrackInfo>[entry, ..._handler.tracks];
+      _applyLibraryMetadata(list);
+      final next = <TrackInfo>[...list, ..._handler.tracks];
       notifyListeners();
       await _ensureNotificationPermission();
-      await _loadAndPlay(next, 0);
+      await _loadAndPlay(next, idx);
       _afterQueueStarted();
       return;
     }
@@ -465,6 +494,14 @@ class AudioPlayerService extends ChangeNotifier {
       for (final t in tracks) {
         final row = _library.find(t.sourceName, t.remotePath);
         if (row == null) continue;
+        final revKey = t.musicId;
+        final rowRev = row.rev ?? 0;
+        final previousRev = _rowRevs[revKey];
+        if (previousRev != null && previousRev != rowRev) {
+          // Re-scrape may rewrite the same cover path; treat it as a change.
+          changed = true;
+        }
+        _rowRevs[revKey] = rowRev;
         final before = (
           t.title,
           t.artist,
@@ -485,6 +522,7 @@ class AudioPlayerService extends ChangeNotifier {
         if (before != after) changed = true;
       }
       if (changed) {
+        _queueRevision++;
         _handler.replaceQueueKeepingPlayback(
           tracks: tracks,
           newIndex: _handler.index,

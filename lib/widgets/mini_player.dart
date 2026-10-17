@@ -73,6 +73,7 @@ class MiniPlayer extends StatelessWidget {
                       size: 44,
                       borderRadius: 4,
                       icon: Icons.music_note,
+                      revision: player.queueRevision,
                     ),
                     const SizedBox(width: 12),
                     Expanded(

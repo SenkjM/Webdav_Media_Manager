@@ -31,6 +31,7 @@ class LibraryCoverArt extends StatefulWidget {
     this.borderRadius = 6,
     this.icon,
     this.enqueueIfMissing = false,
+    this.coverRevision = 0,
   });
 
   factory LibraryCoverArt.forTrack({
@@ -53,6 +54,9 @@ class LibraryCoverArt extends StatefulWidget {
       borderRadius: borderRadius,
       icon: icon,
       enqueueIfMissing: enqueueIfMissing && !track.isCueVirtual,
+      // rev/lastTagReadAt change on every tag/cover ingest, including re-scrapes
+      // that rewrite the same cover file in place.
+      coverRevision: track.rev ?? track.lastTagReadAt.millisecondsSinceEpoch,
     );
   }
 
@@ -66,6 +70,10 @@ class LibraryCoverArt extends StatefulWidget {
   final double borderRadius;
   final IconData? icon;
   final bool enqueueIfMissing;
+
+  /// Changes when the library row was re-ingested (new cover bytes may have
+  /// overwritten the same file path).
+  final int coverRevision;
 
   @override
   State<LibraryCoverArt> createState() => _LibraryCoverArtState();
@@ -88,7 +96,8 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.remotePath != widget.remotePath ||
-        oldWidget.thumbPath != widget.thumbPath) {
+        oldWidget.thumbPath != widget.thumbPath ||
+        oldWidget.coverRevision != widget.coverRevision) {
       _resolved = false;
       _fullBytes = null;
       _displayPath = null;
@@ -258,25 +267,38 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
       size: widget.size,
       borderRadius: widget.borderRadius,
       icon: widget.icon,
+      revision: widget.coverRevision,
     );
   }
 }
 
 /// Pick the best cover source among album/artist tracks for grid tiles.
+///
+/// Within each tier (local audio → any saved thumb) the most recently
+/// tag-read row wins, so re-scraping one track actually updates the group art
+/// instead of keeping an older sibling's cover.
 LibraryTrack? pickCoverTrack(List<LibraryTrack> tracks, CacheService cache) {
-  // Prefer a track that is local (full art available).
+  LibraryTrack? newestLocal;
+  LibraryTrack? newestThumb;
   for (final t in tracks) {
-    if (cache.hasLocalFile(t.remotePath, sourceName: t.sourceName)) {
-      return t;
+    final local = cache.hasLocalFile(t.remotePath, sourceName: t.sourceName);
+    if (local) {
+      if (newestLocal == null ||
+          t.lastTagReadAt.isAfter(newestLocal.lastTagReadAt)) {
+        newestLocal = t;
+      }
+      continue;
     }
-  }
-  // Else first with a thumb on disk.
-  for (final t in tracks) {
     final p = t.coverPath;
     if (p != null && p.isNotEmpty) {
-      return t;
+      if (newestThumb == null ||
+          t.lastTagReadAt.isAfter(newestThumb.lastTagReadAt)) {
+        newestThumb = t;
+      }
     }
   }
+  if (newestLocal != null) return newestLocal;
+  if (newestThumb != null) return newestThumb;
   return tracks.isEmpty ? null : tracks.first;
 }
 
@@ -293,6 +315,7 @@ class PlayerCoverArt extends StatefulWidget {
     required this.size,
     this.borderRadius = 8,
     this.icon,
+    this.coverRevision = 0,
   });
 
   final String sourceName;
@@ -308,6 +331,9 @@ class PlayerCoverArt extends StatefulWidget {
   final double size;
   final double borderRadius;
   final IconData? icon;
+
+  /// Bumped when the library row / queue metadata changed (cover re-ingest).
+  final int coverRevision;
 
   @override
   State<PlayerCoverArt> createState() => _PlayerCoverArtState();
@@ -331,7 +357,8 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.remotePath != widget.remotePath ||
         oldWidget.localAudioPath != widget.localAudioPath ||
-        oldWidget.coverPath != widget.coverPath) {
+        oldWidget.coverPath != widget.coverPath ||
+        oldWidget.coverRevision != widget.coverRevision) {
       _resolved = false;
       _displayPath = null;
       _bytes = null;
@@ -433,6 +460,7 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
       size: widget.size,
       borderRadius: widget.borderRadius,
       icon: widget.icon ?? Icons.album,
+      revision: widget.coverRevision,
     );
   }
 }

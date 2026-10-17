@@ -459,6 +459,7 @@ class PlayerScreen extends StatelessWidget {
                                   size: artSize.clamp(180.0, 300.0),
                                   borderRadius: 8,
                                   icon: Icons.album,
+                                  coverRevision: player.queueRevision,
                                 )
                               else
                                 CoverArt(
