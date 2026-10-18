@@ -1218,3 +1218,32 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
   - Dart 侧 `PlatformExportService` 暴露 `listFolderTree() -> PickedFolderTree` 和 `readUriToCache(uri) -> String?`；`QueueTask` 新增 `localUri` 字段（SAF URI），`enqueueUpload` 同步加 `localUri` 可选参数。
   - `_runUpload` 检测到 `localUri` 时，在 worker 里调 `readUriToCache` 拿缓存路径再上传，成功后删临时文件；重试时缓存路径已写回 `task.localPath` 无需再次枚举。
   - 好处：picker 界面即时消失，进度在任务列表可见；暂推迟，等文件夹上传量级达到实际瓶颈时再上。
+
+## 20. OpenList 媒体库客户端（布局阶段，进行中）
+
+**状态**：2026-10-18 基于 `main` tip 开分支 `feat/openlist-media`（worktree：`worktree/openlist-media`）。**本阶段只出布局建议文档，不实现 UI**（除非极小 scaffold）。
+
+**相关完整文档**：[98-OPENLIST-MEDIA-CLIENT.md](98-OPENLIST-MEDIA-CLIENT.md)（远期设计，暂不实现）、[OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md)（布局建议，本阶段产出）
+
+**上游参照**：`localdev/OpenList`（gitignore，分支 `dev-media`，媒体库 API beta）
+
+**用户决策**：
+1. 作为只读/浏览侧接入现有应用，**不替换**现有音乐库（本地 SQLite + WebDAV 缓存模式）。
+2. **抽屉标签固定「OpenList」**（英文，不本地化），插入位置：索引 5（网络库之后、任务队列之前）。
+3. **只接 OpenList 媒体 API**（`/api/fs/media/*` + 部分 `/api/admin/media/*`），不改网盘兼容层。
+4. **本阶段只出布局建议**，不写 `lib/` 实现代码（除非为了让分支有意义的极小 scaffold）。
+
+**已落地（本轮）**：
+- [OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md) 布局建议文档
+- 在 `99-IN-PROGRESS.md` 登记本条目（指向布局文档与 [98](98-OPENLIST-MEDIA-CLIENT.md)）
+- 在 `00-INDEX.md` 登记布局文档
+
+**未做**：
+- 极小 scaffold（抽屉入口 + 空白主屏，待用户决定是否立即实现）
+- Phase 1 UI 实现（浏览四类媒体）
+- 鉴权与账号绑定（等 OpenList 实例地址与凭证方式确认）
+
+**未决问题**：
+- OpenList 测试实例地址与凭证方式（token / user+pass）？
+- 音乐 Tab 是否做专辑/文件夹子视图（暂定平铺列表）？
+- 多库切换 UI 形态（下拉 / Tab 子级 / 设置页）？

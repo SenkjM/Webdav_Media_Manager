@@ -1,12 +1,12 @@
 # 98 · OpenList 媒体库客户端实现（远期，暂不实现）
 
-> **状态：远期项目，暂不实现。本文件只保留路径与设计，不排期、不开工。**
+> **状态：远期项目，暂不实现。本文件只保留路径与设计，不排期、不开工。布局提案已开工（见 [OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md)），实现仍未排期。**
 > 总索引：[00-INDEX.md](00-INDEX.md)
-> 关联：[01](01-DATA-MODEL.md)（身份约定）、[03](03-MUSIC-LIBRARY.md)（现有音乐库）、[08](08-SYNC-AND-BACKUP.md)（同步与备份）、[11](11-CLOUD-DRIVER-PORTING.md)（云盘驱动实现）、[99](99-IN-PROGRESS.md)（开发中文档）
+> 关联：[01](01-DATA-MODEL.md)（身份约定）、[03](03-MUSIC-LIBRARY.md)（现有音乐库）、[08](08-SYNC-AND-BACKUP.md)（同步与备份）、[11](11-CLOUD-DRIVER-PORTING.md)（云盘驱动实现）、[99](99-IN-PROGRESS.md)（开发中文档 §20）、[OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md)（UI 布局建议，本阶段产出）
 
 本文登记一条**远期路线**：把现有音乐库按 **OpenList 媒体库**的概念重构为通用媒体库。
 上游参照物是 `OpenListTeam/OpenList` 的 **`dev-media` 分支**（beta 预发布，仍在迭代）——
-不是 `main`。本地 `localdev/OpenList` 与 `localdev/OpenList-Worker` 都是 `main`，**不含**媒体库。
+不是 `main`。分析用克隆可放 `localdev/OpenList`（gitignore）并检出 `dev-media`；`OpenList-Worker` 仍是 `main`，不含媒体库。
 
 **本文写的是目标形态（设计），与源码冲突时以源码和测试为准。** 代码当前**没有任何**媒体库实现。
 
