@@ -1219,9 +1219,9 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
   - `_runUpload` 检测到 `localUri` 时，在 worker 里调 `readUriToCache` 拿缓存路径再上传，成功后删临时文件；重试时缓存路径已写回 `task.localPath` 无需再次枚举。
   - 好处：picker 界面即时消失，进度在任务列表可见；暂推迟，等文件夹上传量级达到实际瓶颈时再上。
 
-## 20. OpenList 媒体库客户端（布局阶段，进行中）
+## 20. OpenList 媒体库客户端（demo 脚手架已落地，进行中）
 
-**状态**：2026-10-18 基于 `main` tip 开分支 `feat/openlist-media`（worktree：`worktree/openlist-media`）。**本阶段只出布局建议文档，不实现 UI**（除非极小 scaffold）。
+**状态**：2026-10-18 基于 `main` tip 开分支 `feat/openlist-media`（worktree：`worktree/openlist-media`）。**本阶段已出布局建议文档 + 可运行的 demo 脚手架**（抽屉入口 + 连接管理 + 四 Tab 列表 + 基本鉴权）。
 
 **相关完整文档**：[98-OPENLIST-MEDIA-CLIENT.md](98-OPENLIST-MEDIA-CLIENT.md)（远期设计，暂不实现）、[OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md)（布局建议，本阶段产出，已按锁定更新）
 
@@ -1239,14 +1239,39 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - [OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md) 布局建议文档（已按锁定重写 §4 / §5 / §6，新增鉴权机制与集成建议 / 账号隔离边界表）
 - 在 `99-IN-PROGRESS.md` 登记本条目（指向布局文档与 [98](98-OPENLIST-MEDIA-CLIENT.md)）
 - 在 `00-INDEX.md` 登记布局文档
+- **Demo 脚手架实现**（2026-10-18）：
+  - 抽屉新增「OpenList」标签（索引 5，网络库之后 / 任务前），点击进入主屏（`lib/screens/openlist_media_screen.dart`）
+  - **独立连接存储**（`lib/models/openlist_connection.dart` + `lib/services/openlist_connection_store.dart`）：SQLite 表 `openlist_connections`（独立于 `accounts`），secrets 在 `flutter_secure_storage`（键前缀 `openlist_*`）
+  - **三种鉴权模式**：guest（无 token）、用户名+密码（调 `/api/auth/login` 或 `/api/auth/login/hash` 换 JWT，可选 hash 模式）、站点 Token（admin 权限）
+  - **连接管理 UI**（Tab 顶部下拉 + 底部添加按钮 → 表单对话框）：填写 Base URL、选择认证方式、输入用户名/密码或站点 Token、保存连接
+  - **四 Tab 媒体列表**（视频 / 音乐 / 图片 / 书籍）：调 `GET {base}/api/fs/media/list?media_type={video|music|image|book}` 解析响应（`{code, data: {content, total}}`）；失败显示错误（服务器不可达也 OK）；空列表显示「暂无条目」引导；成功显示网格 / 列表
+  - **HTTP 客户端**（`lib/services/openlist_media_client.dart`）：Dio 封装，支持 login（`/api/auth/login` 和 hash 模式）、list（`/api/fs/media/list`）、Authorization header 传原始 token（与 OpenList middleware 一致）
+  - **home_tab_index 迁移**（`lib/services/settings_service.dart`）：一次性迁移（任务=旧 5→新 6，设置=旧 6→新 7），旗标 `home_tab_v026_openlist_inserted`；上界扩容到 7
+  - **测试覆盖**（`test/openlist_connection_test.dart`）：12 个单元测试（连接序列化 toMap/fromMap、auth mode 存储键稳定性、copyWith、use_hash_login int 往返、MediaItem fromJson/toJson、displayName fallback、SHA256 hex helper、ApiException）
+  - **零侵入现有账号体系**：未修改 `accounts` 表 / `AccountsService` / `WebDavService` / 任务队列 / 刮削；在 `AppState` 新增 `openListConnections` 字段并独立初始化
+  - **中文 UI**（硬编码，可后续补 ARB）；AGPL-3.0 头；`flutter analyze` 干净；所有测试通过
 
 **未做**：
-- 极小 scaffold（抽屉入口 + 空白主屏，待用户决定是否立即实现）
-- Phase 1 UI 实现（浏览四类媒体）
-- 鉴权与账号绑定（等 OpenList 实例地址与凭证方式确认）
+- 专辑/艺术家/分类子视图（当前平铺列表）
+- 播放器集成（点击条目播放；跨应用不同播放器，见 [98](98-OPENLIST-MEDIA-CLIENT.md) §4.3）
+- 管理侧功能（刮削 / 扫描 / 设置；见 [98](98-OPENLIST-MEDIA-CLIENT.md) §4.4，需 `/api/admin/media/*` 权限）
+- JWT 自动刷新（当前 401 后需手动重新登录；OpenList 默认 48h 过期）
+- ARB 本地化（当前硬编码中文）
+- 连接编辑 / 删除（当前只能添加新连接）
 
-**未决问题（待 Phase 1 开工前确认）**：
-- OpenList 测试实例地址与测试账号凭证（用户名+密码，或站点 token）？
-- 凭证存储策略：是否缓存密码？JWT 过期重新登录的 UX？
-- 音乐 Tab 是否做专辑/文件夹子视图（暂定平铺列表，子视图可后续补）？
-- 多库切换 UI 形态（下拉/Tab 子级/设置页）？
+**试用步骤**：
+1. 启动 OpenList 实例（`localdev/OpenList` 分支 `dev-media`）：`./openlist server --base /path/to/media --dev`（默认 `http://localhost:5244`）
+2. 运行 App：`flutter run`（或从 IDE 启动）
+3. 打开抽屉 → 点击「OpenList」（索引 5，网络库之后）
+4. 点击「添加连接」：
+   - Base URL：`http://10.0.2.2:5244`（Android 模拟器）或 `http://localhost:5244`（桌面）或实际 IP
+   - 认证方式：选 **访客**（OpenList 默认允许 guest 浏览）或 **用户名 + 密码**（填写 OpenList 用户凭证，勾选「密码已预先 SHA256」若你已手动 hash）或 **站点 Token**（填 admin token）
+   - 保存
+5. 点击顶部下拉选择连接（若有多个）
+6. 在四 Tab（视频 / 音乐 / 图片 / 书籍）切换，查看列表（需要 OpenList 实例已扫描媒体库；若服务器不可达显示错误）
+
+**未决问题（Phase 2 前确认）**：
+- 播放器集成策略：复用现有 `AudioPlayerService` / `VideoPlaybackService` 还是新建 OpenList 专用播放器？
+- 刮削队列桥接：是否将 OpenList 元数据回填到本地 library.db，还是只从服务端动态获取？
+- 多库切换 UI 形态优化（当前下拉，可改为 Tab 子级或设置页管理）？
+

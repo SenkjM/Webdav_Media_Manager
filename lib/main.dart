@@ -21,6 +21,7 @@ import 'services/manga_library_service.dart';
 import 'services/music_audio_handler.dart';
 import 'services/backup_service.dart';
 import 'services/notification_permission_service.dart';
+import 'services/openlist_connection_store.dart';
 import 'services/platform_export_service.dart';
 import 'services/prefetch_cache.dart';
 import 'services/playlist_service.dart';
@@ -100,6 +101,10 @@ class WebDavMusicApp extends StatelessWidget {
           value: appState.mangaLibrary,
         ),
         ChangeNotifierProvider<WebDavService>.value(value: appState.webDav),
+        // OpenList 媒体库连接（99 §20）：独立于 accounts/WebDAV。
+        ChangeNotifierProvider<OpenListConnectionStore>.value(
+          value: appState.openListConnections,
+        ),
         ChangeNotifierProvider<CacheService>.value(value: appState.cache),
         ChangeNotifierProvider<TaskQueueService>.value(
           value: appState.taskQueue,
