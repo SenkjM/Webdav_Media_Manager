@@ -1,6 +1,6 @@
 # OpenList 媒体库客户端 UI 布局建议(计划,未实现)
 
-> **状态:计划阶段,本文档只写布局建议,不实现 UI 代码。**
+> **状态:布局已定 + demo 脚手架已在 `feat/openlist-media` 落地（连接 / 四 Tab 列表）；完整浏览与 admin 仍未做。见 [99 §20](99-IN-PROGRESS.md)。**
 > 相关文档:[98-OPENLIST-MEDIA-CLIENT.md](98-OPENLIST-MEDIA-CLIENT.md)(远期设计)、[99-IN-PROGRESS.md](99-IN-PROGRESS.md#20-openlist-媒体库客户端布局阶段进行中)
 
 ---
