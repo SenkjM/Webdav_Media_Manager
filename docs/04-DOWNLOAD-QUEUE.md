@@ -57,7 +57,7 @@
 3. 否则若已有 pending / active 的同名任务 → 等待它，不重复排。
 4. 否则新建 pending 任务并 `_pump`。
 
-相册与下载目录另走 `enqueueGallery` / `enqueueToDownloads`（`enqueuePublic`），**不入音频缓存**。视频相册进 `Movies/WebdavMediaManager`，图片「下载到系统相册」进 `Pictures/WebdavMediaManager`，两条都不写 `.nomedia`。`.nomedia` 只可能出现在「下载」用的 `Download/WebdavMediaManager`，而且要用户在下载设置里打开「排除媒体扫描」（默认关）。拨开关时先看这个目录：API 29+ 只认 `MediaStore.Downloads` 里显示名恰好是 `.nomedia` 的行（改过显示名不算），API 28 认磁盘上的该文件，API 27 及以下忽略。状态已经和开关一致（打开时已经有，或关闭时已经没有）则不写、不删，保存设置并提示这是外部操作已经完成；不一致才写入或删除。只有写入或删除失败才把开关拨回去并报错。
+相册与下载目录另走 `enqueueGallery` / `enqueueToDownloads`（`enqueuePublic`），**不入音频缓存**。视频相册进 `Movies/WebdavMediaManager`，图片「下载到系统相册」进 `Pictures/WebdavMediaManager`，两条都不写 `.nomedia`。`.nomedia` 只可能出现在「下载」用的 `Download/WebdavMediaManager`，而且要用户在下载设置里打开「排除媒体扫描」（默认关）。拨开关时先调平台方法、只有成功（或 already）才保存设置：API 29+ 先查 `MediaStore.Downloads` 里显示名恰好是 `.nomedia` 的行（改过显示名不算），查不到时回退查磁盘文件 `Environment.getExternalStoragePublicDirectory(DIRECTORY_DOWNLOADS)/WebdavMediaManager/.nomedia`（外部放置的也能读到），存在且可读才算 present；插入失败、或 MediaStore 改写了显示名时，Samsung 厂商返回专用错误「三星系统会改写 .nomedia 文件名，无法干净排除媒体扫描，已取消」，非 Samsung 返回通用错误；删除时若 MediaStore 无行但磁盘有文件，尝试 `File.delete()`，失败返回错误「无法删除外部放置的 .nomedia，请用文件管理器手动删除」。API 28 只查磁盘文件，API 27 及以下忽略。状态已经和开关一致（打开时已经有，或关闭时已经没有）则不写、不删，保存设置并提示这是外部操作已经完成；不一致才写入或删除。
 
 ## 4. 完成之后（ingest）
 

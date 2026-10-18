@@ -44,17 +44,16 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
 
   Future<void> _toggleNomedia(bool value) async {
     final settings = context.read<SettingsService>();
-    await settings.setDownloadNomediaEnabled(value);
     final result = await const PlatformExportService().setDownloadsNomedia(
       enabled: value,
     );
     if (!mounted) return;
     if (result.error != null) {
-      await settings.setDownloadNomediaEnabled(!value);
-      if (!mounted) return;
       AppSnack.error(context, result.error!);
       return;
     }
+    await settings.setDownloadNomediaEnabled(value);
+    if (!mounted) return;
     if (!result.alreadyMatched) return;
     final l10n = AppLocalizations.of(context)!;
     AppSnack.show(
