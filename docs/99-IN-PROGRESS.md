@@ -1223,18 +1223,20 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 
 **状态**：2026-10-18 基于 `main` tip 开分支 `feat/openlist-media`（worktree：`worktree/openlist-media`）。**本阶段只出布局建议文档，不实现 UI**（除非极小 scaffold）。
 
-**相关完整文档**：[98-OPENLIST-MEDIA-CLIENT.md](98-OPENLIST-MEDIA-CLIENT.md)（远期设计，暂不实现）、[OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md)（布局建议，本阶段产出）
+**相关完整文档**：[98-OPENLIST-MEDIA-CLIENT.md](98-OPENLIST-MEDIA-CLIENT.md)（远期设计，暂不实现）、[OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md)（布局建议，本阶段产出，已按锁定更新）
 
 **上游参照**：`localdev/OpenList`（gitignore，分支 `dev-media`，媒体库 API beta）
 
-**用户决策**：
+**用户决策（锁定）**：
 1. 作为只读/浏览侧接入现有应用，**不替换**现有音乐库（本地 SQLite + WebDAV 缓存模式）。
 2. **抽屉标签固定「OpenList」**（英文，不本地化），插入位置：索引 5（网络库之后、任务队列之前）。
-3. **只接 OpenList 媒体 API**（`/api/fs/media/*` + 部分 `/api/admin/media/*`），不改网盘兼容层。
-4. **本阶段只出布局建议**，不写 `lib/` 实现代码（除非为了让分支有意义的极小 scaffold）。
+3. **只接 OpenList 媒体 HTTP API**（`/api/fs/media/*` + 部分 `/api/admin/media/*`），不混入现有网盘兼容层。
+4. **独立账号管理**：OpenList 媒体库**不得**复用 / 扩展现有 `accounts` 表的 `provider_type='openlist'`，也不得走 `AccountsService` / 网盘账号选择器。那些账号有大量其它调用点（网络库、下载、同步、crypt 源……）。必须提案**专用** OpenList 连接/凭证存储（新表或独立 settings + secure storage），并在 **OpenList Tab 内**自带 picker UI。
+5. **功能隔离**：OpenList 媒体库**不得**共享本地虚拟文件 / 网络库 / WebDAV session 层到会产生冲突的程度。浏览与播放只走 OpenList **媒体 HTTP API**；不混入现有 fs walk / 刮削 / 任务队列，除非以后显式桥接并文档登记。
+6. **鉴权澄清**（根据源码）：媒体 API 与普通 OpenList 用户登录同一套 JWT/session（`/api/auth/login`）；无单独的 media token；`/api/fs/media/*` 走 `Auth(true)` 允许 guest（空 token），`/api/admin/media/*` 强制 admin；集成建议：存 JWT（用户名+密码换 `/api/auth/login/hash`，默认 48h 过期需重新登录）或站点 token（admin 权限，仅私有部署）；密码与 JWT 在 secure storage 的键约定见布局文档 §5.3。
 
 **已落地（本轮）**：
-- [OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md) 布局建议文档
+- [OPENLIST-MEDIA-LAYOUT.md](OPENLIST-MEDIA-LAYOUT.md) 布局建议文档（已按锁定重写 §4 / §5 / §6，新增鉴权机制与集成建议 / 账号隔离边界表）
 - 在 `99-IN-PROGRESS.md` 登记本条目（指向布局文档与 [98](98-OPENLIST-MEDIA-CLIENT.md)）
 - 在 `00-INDEX.md` 登记布局文档
 
@@ -1243,7 +1245,8 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - Phase 1 UI 实现（浏览四类媒体）
 - 鉴权与账号绑定（等 OpenList 实例地址与凭证方式确认）
 
-**未决问题**：
-- OpenList 测试实例地址与凭证方式（token / user+pass）？
-- 音乐 Tab 是否做专辑/文件夹子视图（暂定平铺列表）？
-- 多库切换 UI 形态（下拉 / Tab 子级 / 设置页）？
+**未决问题（待 Phase 1 开工前确认）**：
+- OpenList 测试实例地址与测试账号凭证（用户名+密码，或站点 token）？
+- 凭证存储策略：是否缓存密码？JWT 过期重新登录的 UX？
+- 音乐 Tab 是否做专辑/文件夹子视图（暂定平铺列表，子视图可后续补）？
+- 多库切换 UI 形态（下拉/Tab 子级/设置页）？

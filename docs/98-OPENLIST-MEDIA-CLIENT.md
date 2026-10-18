@@ -67,8 +67,7 @@ class MediaLibraryRouter {
 
 - **调用方只给 `libraryId`**，不给 URL、不给 token。
 - 抽象层按 `libraryId` 取出该库的**地址 + 凭证 + 操作对象**，附加到请求上。
-- 凭证存储复用现有账号体系（`accounts` 表 + secure storage；密文范围约定见
-  [11 §6.1](11-CLOUD-DRIVER-PORTING.md)），**令牌一律不进日志、不进提交**。
+- **凭证存储（布局锁定已推翻「复用 accounts」）**：OpenList 媒体远程库用**独立连接表** + secure storage（见 [OPENLIST-MEDIA-LAYOUT.md §5–§6](OPENLIST-MEDIA-LAYOUT.md)），**不得**扩展 `accounts.provider_type='openlist'`。本地库其它凭证仍可走现有账号体系（密文范围见 [11 §6.1](11-CLOUD-DRIVER-PORTING.md)）。**令牌一律不进日志、不进提交**。
 
 > 与 [11 §13.1](11-CLOUD-DRIVER-PORTING.md) 的关系：那条"兼容层不允许按类型分支"的纪律**同样适用**——
 > 抽象层只看 `capabilities`，不写 `if (backend is RemoteBackend)`。
