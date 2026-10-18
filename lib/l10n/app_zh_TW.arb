@@ -226,8 +226,6 @@
   "copyTo": "複製到",
   "moveTo": "移動到",
   "downloadAction": "下載",
-  "fileQueuedOrSaved": "該檔案已在任務佇列或已下載",
-  "fileQueuedOrSavedShort": "檔案已在佇列或已儲存",
   "accountRequired": "請先新增網路磁碟帳號",
   "syncTitle": "同步與備份",
   "syncIntro": "憑證、歌單與音樂庫共用一條遠端路徑：在下面選網路磁碟、填寫路徑即可。",
@@ -1642,5 +1640,61 @@
   "mangaLocalCbzScanning": "正在掃描資料夾…",
   "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "沒有可寫入的帳號",
-  "@errNoWriteAccount": {}
+  "@errNoWriteAccount": {},
+  "customDownloadDir": "自訂下載目錄",
+  "@customDownloadDir": {},
+  "customDownloadDirSubtitle": "下載的檔案儲存到你選擇的資料夾",
+  "@customDownloadDirSubtitle": {},
+  "customDownloadDirCurrent": "目前目錄：{name}",
+  "@customDownloadDirCurrent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "customDownloadDirDefault": "系統下載目錄",
+  "@customDownloadDirDefault": {},
+  "customDownloadDirRepick": "重新選擇目錄",
+  "@customDownloadDirRepick": {},
+  "customDownloadDirAndroid11Note": "Android 11 及以上不能直接選擇「下載」根目錄，請選擇或新建其中的子資料夾",
+  "@customDownloadDirAndroid11Note": {},
+  "customDownloadDirPickCancelled": "未選擇目錄，仍使用系統下載目錄",
+  "@customDownloadDirPickCancelled": {},
+  "customDownloadDirFallback": "自訂下載目錄已失效，已切回系統下載目錄",
+  "@customDownloadDirFallback": {},
+  "errCustomDirInvalid": "自訂下載目錄已失效，已切回系統下載目錄，可重試此任務",
+  "@errCustomDirInvalid": {},
+  "locationCustomDownloadDir": "{name}",
+  "@locationCustomDownloadDir": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "exportErrStoragePermissionDenied": "沒有儲存權限，無法寫入公共目錄",
+  "@exportErrStoragePermissionDenied": {},
+  "exportFellBackNotice": "自訂下載目錄已失效，已改存到系統下載目錄",
+  "@exportFellBackNotice": {},
+  "dupTaskTitle": "已有重複任務",
+  "@dupTaskTitle": {},
+  "dupTaskBody": "已有重複任務，是否重新進行？",
+  "@dupTaskBody": {},
+  "dupTaskBatchBody": "有 {count} 個重複任務，是否全部重新進行？",
+  "@dupTaskBatchBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dupTaskRestart": "重新進行",
+  "@dupTaskRestart": {},
+  "dupTaskRestartAll": "全部重新進行",
+  "@dupTaskRestartAll": {},
+  "dupTaskSkip": "跳過",
+  "@dupTaskSkip": {},
+  "dlSavedGeneric": "已下載",
+  "@dlSavedGeneric": {}
 }

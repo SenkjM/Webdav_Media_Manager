@@ -50,7 +50,9 @@ class ExportResult {
     this.uri,
     this.path,
     this.error,
+    this.errorKind,
     this.gallery = true,
+    this.fellBack = false,
   });
 
   final bool ok;
@@ -64,12 +66,50 @@ class ExportResult {
   final String? path;
   final String? error;
 
+  /// Error classification: "safInvalid" | "io" | "other"
+  /// Only safInvalid triggers global fallback to default download directory.
+  final String? errorKind;
+
   /// True when the file landed in the gallery (Movies / Pictures collection).
   /// Audio falls back to the Music collection and reports false.
   final bool gallery;
 
-  static ExportResult failure(String error) =>
-      ExportResult(ok: false, fileName: '', location: '', error: error);
+  /// True when this result is from a fallback to MediaStore after SAF safInvalid.
+  final bool fellBack;
+
+  bool get safInvalid => errorKind == 'safInvalid';
+
+  ExportResult copyWith({
+    bool? ok,
+    String? fileName,
+    String? location,
+    String? uri,
+    String? path,
+    String? error,
+    String? errorKind,
+    bool? gallery,
+    bool? fellBack,
+  }) =>
+      ExportResult(
+        ok: ok ?? this.ok,
+        fileName: fileName ?? this.fileName,
+        location: location ?? this.location,
+        uri: uri ?? this.uri,
+        path: path ?? this.path,
+        error: error ?? this.error,
+        errorKind: errorKind ?? this.errorKind,
+        gallery: gallery ?? this.gallery,
+        fellBack: fellBack ?? this.fellBack,
+      );
+
+  static ExportResult failure(String error, {String? errorKind}) =>
+      ExportResult(
+        ok: false,
+        fileName: '',
+        location: '',
+        error: error,
+        errorKind: errorKind,
+      );
 }
 
 /// Result of the system document picker.
@@ -189,7 +229,11 @@ class PickedFolderTree {
 }
 /// Outcome of toggling `.nomedia` in `Download/WebdavMediaManager`.
 class DownloadsNomediaResult {
-  const DownloadsNomediaResult({this.error, this.alreadyMatched = false});
+  const DownloadsNomediaResult({
+    this.error,
+    this.alreadyMatched = false,
+    this.safInvalid = false,
+  });
 
   /// User-visible failure. Null when the platform call succeeded or did nothing.
   final String? error;
@@ -197,6 +241,26 @@ class DownloadsNomediaResult {
   /// On-disk / MediaStore state already matched the request, so nothing was
   /// written or deleted. Not an error.
   final bool alreadyMatched;
+
+  /// SAF tree authorization is invalid (only for SAF targets).
+  final bool safInvalid;
+}
+
+/// Result of picking a custom download directory.
+class PickedDownloadTree {
+  const PickedDownloadTree({
+    required this.ok,
+    this.cancelled = false,
+    this.uri,
+    this.displayName,
+    this.error,
+  });
+
+  final bool ok;
+  final bool cancelled;
+  final String? uri;
+  final String? displayName;
+  final String? error;
 }
 
 /// MediaStore / Downloads exports and the SAF file picker, implemented natively
@@ -247,8 +311,10 @@ class PlatformExportService {
         return DownloadsNomediaResult(alreadyMatched: map['already'] == true);
       }
       final error = map['error']?.toString();
+      final errorKind = map['errorKind']?.toString();
       return DownloadsNomediaResult(
         error: (error == null || error.isEmpty) ? 'exportErr.failed' : error,
+        safInvalid: errorKind == 'safInvalid',
       );
     } on MissingPluginException {
       return const DownloadsNomediaResult(error: 'exportErr.channelUnavailable');
@@ -256,6 +322,218 @@ class PlatformExportService {
       return DownloadsNomediaResult(error: e.message ?? e.code);
     } catch (e) {
       return DownloadsNomediaResult(error: '$e');
+    }
+  }
+
+  /// Pick a custom download directory via SAF tree picker.
+  Future<PickedDownloadTree> pickDownloadTree({String? oldUri}) async {
+    if (!supported) {
+      return const PickedDownloadTree(
+        ok: false,
+        error: 'pickerErr.unsupportedPlatform',
+      );
+    }
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('pickDownloadTree', {
+        'oldUri': ?oldUri,
+      });
+      if (raw is! Map) {
+        return const PickedDownloadTree(ok: false, error: 'pickerErr.badResponse');
+      }
+      final map = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (map['cancelled'] == true) {
+        return const PickedDownloadTree(ok: false, cancelled: true);
+      }
+      if (map['ok'] != true) {
+        return PickedDownloadTree(
+          ok: false,
+          error: map['error']?.toString() ?? 'pickerErr.failed',
+        );
+      }
+      final newUri = map['uri']?.toString();
+      // Belt-and-suspenders: Kotlin also releases, but Dart can cover hosts
+      // that ignore oldUri in onActivityResult.
+      if (oldUri != null &&
+          oldUri.isNotEmpty &&
+          newUri != null &&
+          newUri != oldUri) {
+        await releaseDownloadTree(oldUri);
+      }
+      return PickedDownloadTree(
+        ok: true,
+        uri: newUri,
+        displayName: map['displayName']?.toString(),
+      );
+    } on MissingPluginException {
+      return const PickedDownloadTree(
+        ok: false,
+        error: 'pickerErr.channelUnavailable',
+      );
+    } on PlatformException catch (e) {
+      return PickedDownloadTree(ok: false, error: e.message ?? e.code);
+    } catch (e) {
+      return PickedDownloadTree(ok: false, error: '$e');
+    }
+  }
+
+  /// Release a custom download directory's persistent permission.
+  Future<bool> releaseDownloadTree(String uri) async {
+    if (!supported) return true;
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('releaseDownloadTree', {
+        'uri': uri,
+      });
+      return raw is Map && raw['ok'] == true;
+    } catch (_) {
+      return true; // Swallow errors
+    }
+  }
+
+  /// Check if a custom download tree URI is still usable.
+  Future<bool> checkDownloadTree(String uri) async {
+    if (!supported) return false;
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('checkDownloadTree', {
+        'uri': uri,
+      });
+      return raw is Map && raw['ok'] == true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Save a file to a SAF tree directory.
+  Future<ExportResult> saveToTree({
+    required String treeUri,
+    required String sourcePath,
+    required String fileName,
+    String? mimeType,
+  }) async {
+    if (!supported) {
+      return ExportResult.failure('exportErr.unsupportedPlatform');
+    }
+    final src = File(sourcePath);
+    if (!await src.exists()) {
+      return ExportResult.failure('exportErr.sourceMissing|$sourcePath', errorKind: 'io');
+    }
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('saveToTree', {
+        'uri': treeUri,
+        'path': sourcePath,
+        'fileName': fileName,
+        'mimeType': mimeType,
+      });
+      if (raw is! Map) {
+        return ExportResult.failure(
+          'exportErr.badNativeResponse|${raw.runtimeType}',
+          errorKind: 'other',
+        );
+      }
+      final map = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (map['ok'] != true) {
+        final errorKind = map['errorKind']?.toString() ?? 'other';
+        return ExportResult.failure(
+          map['error']?.toString() ?? 'exportErr.failed',
+          errorKind: errorKind,
+        );
+      }
+
+      // Extract displayName from location="custom" case
+      final rawLocation = map['location']?.toString() ?? 'custom';
+      final pathStr = map['path']?.toString();
+      final displayName = pathStr?.split('/').first ?? '';
+      final location = rawLocation == 'custom' ? 'custom|$displayName' : rawLocation;
+
+      return ExportResult(
+        ok: true,
+        fileName: map['fileName']?.toString() ?? fileName,
+        location: location,
+        uri: map['uri']?.toString(),
+        path: map['path']?.toString(),
+        gallery: false,
+      );
+    } on MissingPluginException {
+      return ExportResult.failure('exportErr.channelUnavailable', errorKind: 'other');
+    } on PlatformException catch (e) {
+      return ExportResult.failure(
+        'exportErr.failedWith|${e.message ?? e.code}',
+        errorKind: 'other',
+      );
+    } catch (e) {
+      return ExportResult.failure('exportErr.failedWith|$e', errorKind: 'other');
+    }
+  }
+
+  /// Set or remove .nomedia in a SAF tree directory.
+  Future<DownloadsNomediaResult> setTreeNomedia({
+    required String treeUri,
+    required bool enabled,
+  }) async {
+    if (!supported) return const DownloadsNomediaResult();
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('setTreeNomedia', {
+        'uri': treeUri,
+        'enabled': enabled,
+      });
+      if (raw is! Map) {
+        return const DownloadsNomediaResult(error: 'exportErr.badNativeResponse');
+      }
+      final map = raw.map((k, v) => MapEntry(k.toString(), v));
+      if (map['ok'] == true) {
+        return DownloadsNomediaResult(alreadyMatched: map['already'] == true);
+      }
+      final error = map['error']?.toString();
+      final errorKind = map['errorKind']?.toString();
+      return DownloadsNomediaResult(
+        error: (error == null || error.isEmpty) ? 'exportErr.failed' : error,
+        safInvalid: errorKind == 'safInvalid',
+      );
+    } on MissingPluginException {
+      return const DownloadsNomediaResult(error: 'exportErr.channelUnavailable');
+    } on PlatformException catch (e) {
+      return DownloadsNomediaResult(error: e.message ?? e.code);
+    } catch (e) {
+      return DownloadsNomediaResult(error: '$e');
+    }
+  }
+
+  /// Ensure legacy storage permission (API ≤ 28).
+  /// Returns true if granted or not needed (API 29+).
+  Future<bool> ensureLegacyStoragePermission() async {
+    if (!supported) return true;
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('ensureLegacyStoragePermission');
+      if (raw is Map) {
+        return raw['ok'] == true && raw['granted'] == true;
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// List all persisted tree grants (read or write).
+  Future<List<Map<String, dynamic>>> listPersistedTreeGrants() async {
+    if (!supported) return [];
+    try {
+      final raw = await _kAppChannel.invokeMethod<dynamic>('listPersistedTreeGrants');
+      if (raw is Map && raw['ok'] == true) {
+        final grants = raw['grants'] as List?;
+        return grants?.cast<Map>().map((g) => g.cast<String, dynamic>()).toList() ?? [];
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Release a read-only tree grant.
+  Future<void> releaseReadTree(String uri) async {
+    if (!supported) return;
+    try {
+      await _kAppChannel.invokeMethod<dynamic>('releaseReadTree', {'uri': uri});
+    } catch (_) {
+      // Swallow errors
     }
   }
 
@@ -297,6 +575,8 @@ class PlatformExportService {
         return l10n.exportErrFailed;
       case 'exportErr.channelUnavailable':
         return l10n.exportErrChannelUnavailable;
+      case 'exportErr.storagePermissionDenied':
+        return l10n.exportErrStoragePermissionDenied;
       case 'pickerErr.unsupportedPlatform':
         return l10n.pickerErrUnsupportedPlatform;
       case 'pickerErr.badResponse':
@@ -312,6 +592,11 @@ class PlatformExportService {
   /// Map a location value (stable code, known Chinese from native, or a
   /// passthrough path) to localized text.
   static String describeLocation(String raw, AppLocalizations l10n) {
+    // Handle custom directory with displayName: 'custom|<displayName>'
+    if (raw.startsWith('custom|')) {
+      final displayName = raw.substring('custom|'.length);
+      return l10n.locationCustomDownloadDir(displayName);
+    }
     switch (raw) {
       case 'loc.systemGallery':
       case '系统相册':
@@ -334,12 +619,18 @@ class PlatformExportService {
     required String extraValue,
   }) async {
     if (!supported) {
-      return ExportResult.failure('exportErr.unsupportedPlatform');
+      return ExportResult.failure('exportErr.unsupportedPlatform', errorKind: 'other');
     }
     final src = File(sourcePath);
     if (!await src.exists()) {
-      return ExportResult.failure('exportErr.sourceMissing|$sourcePath');
+      return ExportResult.failure('exportErr.sourceMissing|$sourcePath', errorKind: 'io');
     }
+
+    // Check legacy storage permission (API ≤ 28)
+    if (!await ensureLegacyStoragePermission()) {
+      return ExportResult.failure('exportErr.storagePermissionDenied', errorKind: 'other');
+    }
+
     try {
       final raw = await _kAppChannel.invokeMethod<dynamic>(method, {
         'path': sourcePath,
@@ -350,12 +641,15 @@ class PlatformExportService {
       if (raw is! Map) {
         return ExportResult.failure(
           'exportErr.badNativeResponse|${raw.runtimeType}',
+          errorKind: 'other',
         );
       }
       final map = raw.map((k, v) => MapEntry(k.toString(), v));
       if (map['ok'] != true) {
+        final errorKind = map['errorKind']?.toString() ?? 'other';
         return ExportResult.failure(
           map['error']?.toString() ?? 'exportErr.failed',
+          errorKind: errorKind,
         );
       }
       return ExportResult(
@@ -367,13 +661,14 @@ class PlatformExportService {
         gallery: (map['collection']?.toString() ?? 'gallery') == 'gallery',
       );
     } on MissingPluginException {
-      return ExportResult.failure('exportErr.channelUnavailable');
+      return ExportResult.failure('exportErr.channelUnavailable', errorKind: 'other');
     } on PlatformException catch (e) {
       return ExportResult.failure(
         'exportErr.failedWith|${e.message ?? e.code}',
+        errorKind: 'other',
       );
     } catch (e) {
-      return ExportResult.failure('exportErr.failedWith|$e');
+      return ExportResult.failure('exportErr.failedWith|$e', errorKind: 'other');
     }
   }
 

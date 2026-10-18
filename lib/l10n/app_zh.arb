@@ -226,8 +226,6 @@
   "copyTo": "复制到",
   "moveTo": "移动到",
   "downloadAction": "下载",
-  "fileQueuedOrSaved": "该文件已在任务队列或已下载",
-  "fileQueuedOrSavedShort": "该文件已在队列或已保存",
   "accountRequired": "请先添加 WebDAV 服务器",
   "syncTitle": "同步与备份",
   "syncIntro": "凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。",
@@ -1673,5 +1671,61 @@
   "mangaLocalCbzScanning": "正在扫描文件夹…",
   "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "没有可写入的账号",
-  "@errNoWriteAccount": {}
+  "@errNoWriteAccount": {},
+  "customDownloadDir": "自定义下载目录",
+  "@customDownloadDir": {},
+  "customDownloadDirSubtitle": "下载的文件保存到你选择的文件夹",
+  "@customDownloadDirSubtitle": {},
+  "customDownloadDirCurrent": "当前目录：{name}",
+  "@customDownloadDirCurrent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "customDownloadDirDefault": "系统下载目录",
+  "@customDownloadDirDefault": {},
+  "customDownloadDirRepick": "重新选择目录",
+  "@customDownloadDirRepick": {},
+  "customDownloadDirAndroid11Note": "Android 11 及以上不能直接选择「下载」根目录，请选择或新建其中的子文件夹",
+  "@customDownloadDirAndroid11Note": {},
+  "customDownloadDirPickCancelled": "未选择目录，仍使用系统下载目录",
+  "@customDownloadDirPickCancelled": {},
+  "customDownloadDirFallback": "自定义下载目录已失效，已切回系统下载目录",
+  "@customDownloadDirFallback": {},
+  "errCustomDirInvalid": "自定义下载目录已失效，已切回系统下载目录，可重试此任务",
+  "@errCustomDirInvalid": {},
+  "locationCustomDownloadDir": "{name}",
+  "@locationCustomDownloadDir": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "exportErrStoragePermissionDenied": "没有存储权限，无法写入公共目录",
+  "@exportErrStoragePermissionDenied": {},
+  "exportFellBackNotice": "自定义下载目录已失效，已改存到系统下载目录",
+  "@exportFellBackNotice": {},
+  "dupTaskTitle": "已有重复任务",
+  "@dupTaskTitle": {},
+  "dupTaskBody": "已有重复任务，是否重新进行？",
+  "@dupTaskBody": {},
+  "dupTaskBatchBody": "有 {count} 个重复任务，是否全部重新进行？",
+  "@dupTaskBatchBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dupTaskRestart": "重新进行",
+  "@dupTaskRestart": {},
+  "dupTaskRestartAll": "全部重新进行",
+  "@dupTaskRestartAll": {},
+  "dupTaskSkip": "跳过",
+  "@dupTaskSkip": {},
+  "dlSavedGeneric": "已下载",
+  "@dlSavedGeneric": {}
 }

@@ -109,9 +109,12 @@
 
 ## 7. 本地导入 / 导出
 
-- 「导出到系统下载目录」→ `Download/WebdavMediaManager/wdmm-export-<UTC>.wdmm`（可读 JSON 模式为 `.json`；`PlatformExportService.saveToDownloads`）。
+- 「导出到系统下载目录」→ `Download/WebdavMediaManager/wdmm-export-<UTC>.wdmm`（可读 JSON 模式为 `.json`；`PlatformExportService.saveToDownloads`）。下载目标切到自定义目录时，本地备份/恢复导出走 `DownloadDestinationService`（retryOnFallback），SAF 目录失效时自动回落到系统下载目录并提示。
 - 「从本地文件导入」→ 原生 SAF `ACTION_OPEN_DOCUMENT` 拷贝到应用缓存后读取（`pickFile`），也支持粘贴 Base64。
 - 导入端按魔数自动识别「容器 / 可读 JSON」。
+- **设置备份新增键**：`music_cache_max_mb`、`download_part_max_age_hours`、`download_part_max_mb`、`crypt_sequential_download`、`manga_cache_max_mb`、`manga_cache_retention`、`manga_cache_custom_retention_hours`、`music_default_stream`、`manga_read_mode`、`manga_view_modes`、`music_view_modes`、`theme_mode`、`theme_seed_argb`、`app_locale`、`download_nomedia`。
+- **不进备份（本机相关）**：`custom_download_dir` 三键（`use_custom_download_dir` / `custom_download_tree_uri` / `custom_download_display_name`）、`network_last_path`、`vault_passphrase`、`sync_device_id`、`sync_last_rev`、`sync_account_id`、迁移哨兵键（`home_tab_v024_folders_inserted` / `home_tab_v025_manga_inserted`）、`prefer_libsodium_secretbox`（取决于本机 ABI / 原生库）。
+- 导入 `download_nomedia` 后，`BackupService` 恢复设置之后调用 `DownloadDestinationService.alignNomedia()` 对齐磁盘状态。
 
 ## 8. 相关代码
 
