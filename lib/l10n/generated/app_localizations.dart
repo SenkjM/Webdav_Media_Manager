@@ -9003,6 +9003,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'已下载'**
   String get dlSavedGeneric;
+
+  /// No description provided for @driverNameCtFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'城通网盘'**
+  String get driverNameCtFile;
+
+  /// No description provided for @formHintCtFileSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）'**
+  String get formHintCtFileSession;
+
+  /// No description provided for @formLabelCloudType.
+  ///
+  /// In zh, this message translates to:
+  /// **'云盘类型'**
+  String get formLabelCloudType;
 }
 
 class _AppLocalizationsDelegate

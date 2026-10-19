@@ -1729,5 +1729,8 @@
   "dupTaskSkip": "跳过",
   "@dupTaskSkip": {},
   "dlSavedGeneric": "已下载",
-  "@dlSavedGeneric": {}
+  "@dlSavedGeneric": {},
+  "driverNameCtFile": "城通网盘",
+  "formHintCtFileSession": "必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）",
+  "formLabelCloudType": "云盘类型"
 }

@@ -1709,5 +1709,8 @@
   "dupTaskSkip": "Skip",
   "@dupTaskSkip": {},
   "dlSavedGeneric": "Downloaded",
-  "@dlSavedGeneric": {}
+  "@dlSavedGeneric": {},
+  "driverNameCtFile": "CtFile",
+  "formHintCtFileSession": "Required; generate from CtFile backend admin panel 开放接口登录密钥管理. See OpenList docs (ctfile driver page)",
+  "formLabelCloudType": "Cloud Type"
 }

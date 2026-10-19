@@ -1698,5 +1698,8 @@
   "dupTaskSkip": "跳過",
   "@dupTaskSkip": {},
   "dlSavedGeneric": "已下載",
-  "@dlSavedGeneric": {}
+  "@dlSavedGeneric": {},
+  "driverNameCtFile": "城通網盤",
+  "formHintCtFileSession": "必填；從城通網盤管理後台「開放介面登錄密鑰管理」生成。取得方法見 OpenList 官方文件（ctfile 驅動頁）",
+  "formLabelCloudType": "雲端類型"
 }

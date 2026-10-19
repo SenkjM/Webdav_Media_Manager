@@ -5070,6 +5070,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dlSavedGeneric => '已下载';
+
+  @override
+  String get driverNameCtFile => '城通网盘';
+
+  @override
+  String get formHintCtFileSession =>
+      '必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）';
+
+  @override
+  String get formLabelCloudType => '云盘类型';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10138,4 +10148,14 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get dlSavedGeneric => '已下載';
+
+  @override
+  String get driverNameCtFile => '城通網盤';
+
+  @override
+  String get formHintCtFileSession =>
+      '必填；從城通網盤管理後台「開放介面登錄密鑰管理」生成。取得方法見 OpenList 官方文件（ctfile 驅動頁）';
+
+  @override
+  String get formLabelCloudType => '雲端類型';
 }

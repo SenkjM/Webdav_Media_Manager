@@ -286,6 +286,27 @@
 - **实现中修复的驱动缺陷**（测试暴露，已随分支提交）：`123_open` path→id 缓存键与查表键不同形（缓存永远查不中）、续期地址空串不回落默认值；`aliyundrive_open` 在线续期候选地址未去重（custom 与 builtin 首项重复）。
 - **验收状态（用户确认）**：真机验收按通过处理——123_open 添加与浏览真机通过（打开目录曾报一次 invalid_grant，用户决定不排查、按验收通过收口），其余三盘按用户决定一并视为验收通过；通用清单见 [12 §9](12-DRIVER-PORTING-GUIDE.md)，逐盘重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
 
+### 4.3.5 城通网盘（ctfile）—— 首个非 WebDAV 上传驱动（进行中）
+
+**状态**：分支 `feat/ctfile-driver`，实现已完成、`flutter analyze` 干净 + `flutter test` 全过；真机未验（无密钥进 CI）。规格见 `/workspace/saf_work/ctfile-wdmm-spec.md`，Worker 参照 `/workspace/saf_work/ctfile_ref/`。
+
+**这是首个支持上传（write）的非 WebDAV 云盘**（§4.2.1 已推翻「上传砍掉」决定：`CloudDriver` 补了 `uploadStream` / `ensureDirectory`，crypt 透传源写能力；其余云盘维持默认抛错，ctfile 是第一个真实现 write 的直连盘）。
+
+实现语义与取舍：
+- **鉴权**：只用开放接口 Session（后台「开放接口登录密钥管理」），不做邮箱密码 / 短信登录（服务端 410）。表单 `session`（obscure 必填）+ `cloud_type` select（public 默认 / private）。`secretFieldKeys` 自动推导出 `session`；无令牌轮换 → `runtimeSecretKeys` 空。`spec.verify` 调 profile，401 转人话提示去后台重新生成密钥。
+- **能力位**：`list | read | write | mkdir | move | copy | delete`（AccountCaps 无独立 rename/remove 位，rename 归 move、remove 归 delete）。
+- **id 前缀双试策略**：Worker `callWithId` 的 raw vs stripped 照搬——`d`/`f` 前缀先试去掉前缀的，400/404 再试带前缀的（`_callWithId` 的 `prefer` 参数控制主备顺序）。批量操作 `_callWithIds` 先逗号 join，400/404/405 再回退数组。
+- **路径 → id 缓存**：段按名逐级解析，文件夹 key `d…` / 文件 `f…` / 根 `0`；写操作后整表 clear（照 Worker）。
+- **list**：`/public|private/folder/list` + `/file/list` 合并；分页用 `start` 偏移 + 同首键哨兵防死循环（上限 `kMaxListPages`）。
+- **get()**：解析路径（`expectDir:false` 同时找文件与目录）；f 前缀 = 文件 → 取 `fileMeta` 拿真实 `size` + `fetch_url` 拿 `rawUrl` + `rawHeaders` 至少带 UA；d 前缀 / 0 = 目录。直链可 302，非 MustProxy。
+- **uploadStream**：整包入内存算 `md5-${size}` checksum → `/file/upload` 带 name/size/checksum/folder_id；`exists>0` 秒传成功直接返回，否则取 `upload_url` multipart POST（`name` + `filesize` + `file`）。首版整包内存（已记限制；大文件分片策略留待真机反馈）。
+- **copy**：`ids` + 目标 `folder_id`（`/${ns}/file/copy`，与 move 同形）。副本是新 id、内容可用（已核实）。若 `newName` 与原名不同：复制后在目标目录列一次定位副本再 `modify_meta` 改名。
+- **mkdir 重名**：403 + `folder_id` 当成功（照 Worker）。
+- **429 / 5xx**：有限次退避重试（300ms × (retry+1)），禁止无退避忙等；**401** = Session 失效明确错误（不重试）。
+- **目录结构变更后清 path 缓存**：rename / move / remove / mkdir / upload 全部 `_pathCache.clear()`。
+
+未做 / 待真机：真机上传验收（小文件 / 秒传 / 大文件内存上限）、整包上传内存上限的实际阈值、WebDAV 同步是否绑城通（条款留给用户，驱动本身不禁止 write）。
+
 ### 4.4 只读家族（能力遮罩 = 只读）
 
 `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`、`url_tree`——浏览 / 下载 / 流式可用，写操作按遮罩隐藏（worker 驱动内五项写方法全部显式抛「不支持」，二次扫描证实）。批次已定：先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制，再批量铺其余。

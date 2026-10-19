@@ -5319,4 +5319,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dlSavedGeneric => 'Downloaded';
+
+  @override
+  String get driverNameCtFile => 'CtFile';
+
+  @override
+  String get formHintCtFileSession =>
+      'Required; generate from CtFile backend admin panel 开放接口登录密钥管理. See OpenList docs (ctfile driver page)';
+
+  @override
+  String get formLabelCloudType => 'Cloud Type';
 }
