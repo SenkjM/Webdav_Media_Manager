@@ -67,7 +67,7 @@
 
 相册与下载目录另走 `enqueueGallery` / `enqueueToDownloads`（`enqueuePublic`），**不入音频缓存**。视频相册进 `Movies/WebdavMediaManager`，图片「下载到系统相册」进 `Pictures/WebdavMediaManager`，两条都不写 `.nomedia`。
 
-`.nomedia` 双向对齐：启动、下载设置页打开、切换目标（pick / disable / fallback）、备份导入后、每次 downloads 提交前（SAF 模式 best-effort）都调 `alignNomedia`。开关切换时用 `alignNomedia(reportAlready:true)`，若已匹配则提示「外部操作已完成」，失败才拨回开关并报错。
+`.nomedia` 双向对齐：启动、下载设置页打开、切换目标（pick / disable / fallback）、备份导入后、每次 downloads 提交前（SAF 模式 best-effort）都调 `alignNomedia`。开关切换时用 `alignNomedia(reportAlready:true)`，若已匹配则提示「外部操作已完成」，失败才拨回开关并报错。API 29+ 先查 `MediaStore.Downloads` 里显示名恰好是 `.nomedia` 的行（改过显示名不算），查不到时回退查磁盘文件 `Environment.getExternalStoragePublicDirectory(DIRECTORY_DOWNLOADS)/WebdavMediaManager/.nomedia`（外部放置的也能读到），存在且可读才算 present；插入失败、或 MediaStore 改写了显示名时，Samsung 厂商返回专用错误「三星系统会改写 .nomedia 文件名，无法干净排除媒体扫描，已取消」，非 Samsung 返回通用错误；删除时若 MediaStore 无行但磁盘有文件，尝试 `File.delete()`，失败返回错误「无法删除外部放置的 .nomedia，请用文件管理器手动删除」。API 28 只查磁盘文件，API 27 及以下忽略。开关逻辑：先写入设置再调 `alignNomedia`（含 already），失败时拨回开关并报错。
 
 ## 4. 完成之后（ingest）
 

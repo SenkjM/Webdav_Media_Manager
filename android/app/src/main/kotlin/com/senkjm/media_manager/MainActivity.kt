@@ -919,12 +919,24 @@ class MainActivity : AudioServiceFragmentActivity() {
         }
     }
 
+    private fun isSamsungOneUI(): Boolean = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+
     /** API 28 file, or API 29+ MediaStore row with display name `.nomedia`. */
     private fun downloadsNomediaPresent(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            findNomediaUris(contentResolver).isNotEmpty()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (findNomediaUris(contentResolver).isNotEmpty()) {
+                return true
+            }
+            // Fallback: external file placed by user
+            return runCatching {
+                val file = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "WebdavMediaManager/.nomedia"
+                )
+                file.isFile && file.canRead()
+            }.getOrDefault(false)
         } else {
-            nomediaFileApi28().isFile
+            return nomediaFileApi28().isFile
         }
     }
 
@@ -989,6 +1001,12 @@ class MainActivity : AudioServiceFragmentActivity() {
         )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         if (stored != null && stored != ".nomedia") {
             runCatching { resolver.delete(uri, null, null) }
+            if (isSamsungOneUI()) {
+                return mapOf(
+                    "ok" to false,
+                    "error" to "三星系统会改写 .nomedia 文件名，无法干净排除媒体扫描，已取消",
+                )
+            }
             return mapOf(
                 "ok" to false,
                 "error" to "MediaStore 未保留显示名 .nomedia（实际为 $stored）",
@@ -1001,6 +1019,24 @@ class MainActivity : AudioServiceFragmentActivity() {
         val resolver = contentResolver
         val uris = findNomediaUris(resolver)
         if (uris.isEmpty()) {
+            // Check for externally placed file
+            val externalFile = runCatching {
+                File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "WebdavMediaManager/.nomedia"
+                )
+            }.getOrNull()
+            if (externalFile?.isFile == true) {
+                val deleted = runCatching { externalFile.delete() }.getOrDefault(false)
+                return if (deleted) {
+                    mapOf("ok" to true)
+                } else {
+                    mapOf(
+                        "ok" to false,
+                        "error" to "无法删除外部放置的 .nomedia，请用文件管理器手动删除",
+                    )
+                }
+            }
             return mapOf("ok" to true, "already" to true)
         }
         for (uri in uris) {
