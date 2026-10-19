@@ -198,6 +198,7 @@ class MainActivity : AudioServiceFragmentActivity() {
                                 args?.get("uri") as? String ?: "",
                                 args?.get("path") as? String ?: "",
                                 args?.get("fileName") as? String ?: "",
+                                this,
                             )
                         }.getOrElse { e ->
                             mapOf(

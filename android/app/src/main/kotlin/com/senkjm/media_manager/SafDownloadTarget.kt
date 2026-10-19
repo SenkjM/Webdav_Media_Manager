@@ -4,6 +4,7 @@ package com.senkjm.media_manager
 
 import android.app.Activity
 import android.content.ContentResolver
+import android.content.Context
 import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
@@ -152,6 +153,7 @@ object SafDownloadTarget {
         treeUri: String,
         sourcePath: String,
         fileName: String,
+        context: Context,
         // mimeType 忽略，固定用 octet-stream
     ): Map<String, Any> {
         val uri = try {
@@ -250,7 +252,7 @@ object SafDownloadTarget {
             }
 
             // 查询树的显示名
-            val displayName = getTreeDisplayName(resolver, uri) ?: "自定义目录"
+            val displayName = getTreeDisplayName(context, resolver, uri) ?: "自定义目录"
 
             return mapOf(
                 "ok" to true,
@@ -448,9 +450,9 @@ object SafDownloadTarget {
         return cleaned.ifEmpty { "file" }
     }
 
-    private fun getTreeDisplayName(resolver: ContentResolver, treeUri: Uri): String? {
+    private fun getTreeDisplayName(context: Context, resolver: ContentResolver, treeUri: Uri): String? {
         return try {
-            DocumentFile.fromTreeUri(null, treeUri)?.name
+            DocumentFile.fromTreeUri(context, treeUri)?.name
                 ?: queryTreeDisplayName(resolver, treeUri)
         } catch (_: Exception) {
             queryTreeDisplayName(resolver, treeUri)
