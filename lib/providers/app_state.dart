@@ -24,6 +24,7 @@ import '../services/manga_library_service.dart';
 import '../utils/rev_clock.dart';
 import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
+import '../services/emby_connection_store.dart';
 import '../services/platform_export_service.dart';
 import '../services/playlist_service.dart';
 import '../services/settings_service.dart';
@@ -49,6 +50,8 @@ class AppState extends ChangeNotifier {
     accounts = AccountsService(db: db);
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
+    // Emby 媒体库（99 §21 Emby 媒体库）：独立连接表 + secrets，不走 WebDAV / accounts。
+    embyConnections = EmbyConnectionStore();
     // 包装驱动（如 Crypt）的 WebDAV 源解析：装配层注入工厂（99 §7.5），
     // 兼容层不依赖 WebDavService。
     cloudDrive.attachWebDavSourceFactory((id) {
@@ -137,6 +140,10 @@ class AppState extends ChangeNotifier {
   late final UserFolderService userFolders;
   late final MangaLibraryService mangaLibrary;
   late final AccountsService accounts;
+
+  /// Emby 媒体库连接存储（99 §21 Emby 媒体库）；与 accounts/WebDAV 完全隔离。
+  late final EmbyConnectionStore embyConnections;
+
   late final PlaylistService playlists;
   late final BackupService backup;
   late final CredentialVaultService credentials;
@@ -183,6 +190,7 @@ class AppState extends ChangeNotifier {
     webDav.dispose();
     library.dispose();
     accounts.dispose();
+    embyConnections.dispose(); // 99 §21 Emby 媒体库
     playlists.dispose();
     backup.dispose();
     downloadDestination.dispose();
@@ -206,6 +214,9 @@ class AppState extends ChangeNotifier {
       await downloadDestination.alignNomedia();
       _syncCoverThumbSize();
       _syncDownloadFileTypes();
+      // Emby 连接表（99 §21 Emby 媒体库）：独立 DB，与 library.db 无关。
+      _initPhase = 'emby-connections';
+      await embyConnections.init();
       // Existing schema path first (onCreate / onUpgrade, including account
       // column compat). The 0.2.2 sentinel only rewrites rows and must not
       // run against tables the open has not created yet.

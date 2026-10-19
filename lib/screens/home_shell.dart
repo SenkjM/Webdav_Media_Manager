@@ -14,6 +14,7 @@ import 'library_folder_browser_screen.dart';
 import 'library_screen.dart';
 import 'manga_library_screen.dart';
 import 'network_library_screen.dart';
+import 'emby_media_screen.dart';
 import 'playlists_screen.dart';
 import 'settings_screen.dart';
 
@@ -31,6 +32,12 @@ const int kMangaLibraryTabIndex = 3;
 
 /// Drawer index of the network library inside [HomeShell].
 const int kNetworkLibraryTabIndex = 4;
+
+/// Drawer index of the Emby media client inside [HomeShell] (99 §21 Emby 媒体库).
+const int kEmbyTabIndex = 5;
+
+/// Drawer index of the task queue inside [HomeShell].
+const int kTasksTabIndex = 6;
 
 /// Active shell tab. [IndexedStack] mounts every page at startup, so a page
 /// that must not talk to the network until it is shown has to read this
@@ -83,11 +90,12 @@ class _HomeShellState extends State<HomeShell> {
   final _playlistsNav = GlobalKey<NavigatorState>();
   final _mangaNav = GlobalKey<NavigatorState>();
   final _networkNav = GlobalKey<NavigatorState>();
+  final _embyNav = GlobalKey<NavigatorState>();
   final _downloadsNav = GlobalKey<NavigatorState>();
   int _index = 0;
 
-  static const _settingsIndex = 6;
-  static const _maxTabIndex = 6;
+  static const _settingsIndex = 7;
+  static const _maxTabIndex = 7;
 
   @override
   void initState() {
@@ -125,6 +133,11 @@ class _HomeShellState extends State<HomeShell> {
       _TabNavigator(
         navigatorKey: _networkNav,
         root: const NetworkLibraryScreen(),
+      ),
+      // Tab 5: Emby 媒体库（99 §21 Emby 媒体库）。
+      _TabNavigator(
+        navigatorKey: _embyNav,
+        root: const EmbyMediaScreen(),
       ),
       _TabNavigator(navigatorKey: _downloadsNav, root: const TasksScreen()),
       const SettingsScreen(),
@@ -268,17 +281,24 @@ class _HomeShellState extends State<HomeShell> {
                             selected: _index == 4,
                             onTap: () => _select(4),
                           ),
+                          // Emby 媒体库（99 §21 Emby 媒体库；home_tab_v026_emby_inserted）
+                          _DrawerItem(
+                            icon: Icons.cloud_circle_outlined,
+                            label: 'Emby',
+                            selected: _index == kEmbyTabIndex,
+                            onTap: () => _select(kEmbyTabIndex),
+                          ),
                           _DrawerItem(
                             icon: Icons.sync_outlined,
                             label: l10n.taskQueue,
-                            selected: _index == 5,
-                            onTap: () => _select(5),
+                            selected: _index == kTasksTabIndex,
+                            onTap: () => _select(kTasksTabIndex),
                           ),
                           _DrawerItem(
                             icon: Icons.settings_outlined,
                             label: l10n.settings,
-                            selected: _index == 6,
-                            onTap: () => _select(6),
+                            selected: _index == _settingsIndex,
+                            onTap: () => _select(_settingsIndex),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -345,8 +365,9 @@ class _HomeShellState extends State<HomeShell> {
         2 => Icons.queue_music,
         3 => Icons.menu_book_outlined,
         4 => Icons.cloud_outlined,
-        5 => Icons.sync_outlined,
-        6 => Icons.settings_outlined,
+        5 => Icons.cloud_circle_outlined,
+        6 => Icons.sync_outlined,
+        7 => Icons.settings_outlined,
         _ => Icons.folder_outlined,
       };
 
@@ -357,7 +378,8 @@ class _HomeShellState extends State<HomeShell> {
       2 => _playlistsNav,
       3 => _mangaNav,
       4 => _networkNav,
-      5 => _downloadsNav,
+      5 => _embyNav,
+      6 => _downloadsNav,
       _ => null,
     };
   }

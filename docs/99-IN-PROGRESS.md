@@ -1267,3 +1267,51 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
 - 网络库：单文件与批量下载的重复任务对话框
 
 **实现细节**见本分支规格 `/workspace/saf_work/spec.md`。
+
+## 21. Emby 兼容媒体库客户端（demo 脚手架，进行中）
+
+**状态**：2026-10-18 基于 `main` tip 开分支 `feat/openlist-media`，2026-10-19 pivot 到 `feat/emby-media`（同一 worktree：`worktree/openlist-media`）。**已出布局建议文档 + 可运行的 demo 脚手架**（抽屉入口 + 连接管理 + Views/条目浏览 + 音乐子 Tab）。
+
+**Pivot 说明**：原方向对接 OpenList 自有媒体库 API（`/api/fs/media/*`），该 API 自成一套、非 Emby 兼容。新方向改为对接 **Emby / Jellyfin MediaBrowser REST API**（Jellyfin 说同一套 API，一个客户端覆盖两者）。
+
+**相关完整文档**：[98-EMBY-MEDIA-CLIENT.md](98-EMBY-MEDIA-CLIENT.md)（远期设计，暂不实现）、[EMBY-MEDIA-LAYOUT.md](EMBY-MEDIA-LAYOUT.md)（布局建议，本阶段产出）
+
+**用户决策（锁定）**：
+1. 作为只读/浏览侧接入现有应用，**不替换**现有音乐库（本地 SQLite + WebDAV 缓存模式）。
+2. **抽屉标签固定「Emby」**（英文，不本地化），插入位置：索引 5（网络库之后、任务队列之前）。
+3. **只接 Emby/Jellyfin MediaBrowser REST API**，不混入现有网盘兼容层。
+4. **独立账号管理**：不得复用 / 扩展 `accounts` 表；专用 `emby_connections.db` + secure storage，在 **Emby Tab 内**自带 picker UI。
+5. **功能隔离**：不共享本地虚拟文件 / 网络库 / WebDAV session 层到会产生冲突的程度。
+6. **令牌安全**：AccessToken / 密码 / API Key 一律不进日志、不进提交；stream/download URL 含 `api_key` 参数，也不记录日志。
+
+**已落地（本轮）**：
+- `git mv` 所有 openlist_* scaffold 文件为 emby_* 并重写内容
+- `lib/models/emby_connection.dart`（`EmbyConnection` + `EmbyAuthMode`：`password`/`apiKey`；字段：id/label/baseUrl/authMode/username/userId/deviceId/sortOrder）
+- `lib/services/emby_connection_store.dart`（`EmbyConnectionStore`：`emby_connections.db`，secrets：`emby_token_*`/`emby_password_*`/`emby_apikey_*`；`updateUserId`；FlutterSecureStorage 可注入）
+- `lib/services/emby_media_client.dart`（`EmbyMediaClient`：`EmbyItem`/`EmbyItemsPage`/`EmbyView`/`EmbyAuthResult`/`EmbyApiException`/`EmbyCapability`；`buildAuthorizationHeader`（纯函数）；`authenticate`/`_resolveToken`/`_withTokenRetry`（401 重登）；`getViews`/`getItems`/`getMusicAlbums`/`getAlbumTracks`/`getArtists`；`imageUrl`/`audioStreamUrl`/`videoStreamUrl`/`downloadUrl`（纯函数，URL 含 `api_key` 不记录日志））
+- `lib/screens/emby_media_screen.dart`（`EmbyMediaScreen`：Views 列表 → 条目浏览；音乐子 Tab 专辑/艺术家/歌曲；无限滚动分页；连接管理 UI；点击可播放条目显示底部弹窗 + "播放（未接入）" disabled；`EmbyConnectionStore` Provider）
+- Wiring：`lib/main.dart`、`lib/providers/app_state.dart`（`embyConnections`/`'emby-connections'`）、`lib/screens/home_shell.dart`（`kEmbyTabIndex`/`_embyNav`/抽屉标签「Emby」）、`lib/services/settings_service.dart`（`home_tab_v026_emby_inserted`）、`lib/screens/settings_screen.dart`（下拉「Emby」）
+- `test/emby_media_test.dart`（38 个单元测试：`EmbyConnection` toMap/fromMap/auth mode keys/copyWith/userId/equality；`EmbyItem` fromJson/empty payload/RunTimeTicks/subtitle/toJson；`EmbyItemsPage` hasMore/isEmpty；`buildAuthorizationHeader` with/without token；URL builders；`EmbyApiException`；`capabilitiesForCollectionType`；`resolveApiKeyUserId` 用户选取逻辑（6 组）；`_dioMessage` 不透传含 `api_key` 的 URL（2 组））
+- 文档：`docs/98-EMBY-MEDIA-CLIENT.md`、`docs/EMBY-MEDIA-LAYOUT.md`、`docs/00-INDEX.md`（更新 98/layout/99 行及路线图）
+- `flutter analyze` 干净（0 errors/warnings，仅 2 info 已 `// ignore`），`flutter test` 846 passed 1 skipped
+- 连接状态修复（2026-10-19 review fixes）：`_resolveSession` 解决 stale userId 为空问题；apiKey 模式 `_resolveApiKeyUserId`（GET /Users，按用户名匹配或选首个非禁用 admin）；编辑凭证后 `updateConnection` 清除 userId + token、重新登录/解析；`_dioMessage` 默认分支返回 `'网络错误（type）'` 不透传含 `api_key` 的 URL；屏幕 `_selected` 跟随 store 更新（userId 刷新、新增自动选中）
+
+**未做（TODO）**：
+- 播放器集成（接入现有 `AudioPlayerService` / `VideoPlaybackService`）
+- 播放进度上报（`POST /Sessions/Playing`）
+- 本地媒体库后端（`LocalMediaBackend`）、本地/远程同构切换
+- 图片缓存（升级为 `CachedNetworkImage`）
+- Jellyfin 兼容性核验（较新版 `/Users/{id}/Items` deprecated 路径）
+- ARB 本地化（当前硬编码中文）
+
+**试用步骤**：
+1. 启动 Emby 或 Jellyfin 实例（默认端口 8096）
+2. 运行 App：`flutter run`
+3. 打开抽屉 → 点击「Emby」（索引 5，网络库之后）
+4. 点击「添加连接」：Base URL `http://host:8096`，选择「用户名 + 密码」或「API Key」，填写凭证，保存（password 模式会立即登录并持久化 token + userId）
+5. Views 列表自动加载（需要 Emby/Jellyfin 实例已有媒体库）；点击 View 进入条目浏览
+
+**未决问题（Phase 1 开工前确认）**：
+- 播放器集成策略：复用现有播放栈还是新建 Emby 专用播放器？
+- 图片缓存：何时升级到 `CachedNetworkImage`？
+- Emby vs Jellyfin 分歧处理策略（`/Users/{id}/Items` deprecated 路径）？

@@ -149,8 +149,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                 DropdownMenuItem(value: 2, child: Text(l10n.playlists)),
                 DropdownMenuItem(value: 3, child: Text(l10n.mangaLibrary)),
                 DropdownMenuItem(value: 4, child: Text(l10n.networkLibrary)),
-                DropdownMenuItem(value: 5, child: Text(l10n.taskQueue)),
-                DropdownMenuItem(value: 6, child: Text(l10n.settings)),
+                // Emby 标签固定英文（99 §21 Emby 媒体库），插入索引 5。
+                const DropdownMenuItem(value: 5, child: Text('Emby')),
+                DropdownMenuItem(value: 6, child: Text(l10n.taskQueue)),
+                DropdownMenuItem(value: 7, child: Text(l10n.settings)),
               ],
               onChanged: (v) {
                 if (v != null) context.read<SettingsService>().setHomeTab(v);

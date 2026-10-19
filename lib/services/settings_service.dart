@@ -62,6 +62,9 @@ class SettingsService extends ChangeNotifier {
   static const _kHomeTab = 'home_tab_index';
   static const _kHomeTabFoldersV024 = 'home_tab_v024_folders_inserted';
   static const _kHomeTabMangaV025 = 'home_tab_v025_manga_inserted';
+
+  /// 一次性迁移旗标：Emby Tab 插入位置（index 5）后，任务=6，设置=7。
+  static const _kHomeTabEmbyV026 = 'home_tab_v026_emby_inserted';
   static const _kNetworkRememberLastPath = 'network_remember_last_path';
 
   /// Legacy prefs key; path is no longer persisted (scrubbed on [init]).
@@ -898,7 +901,15 @@ class SettingsService extends ChangeNotifier {
       }
       await _prefs!.setBool(_kHomeTabMangaV025, true);
     }
-    _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 6);
+    // 0.2.6: Emby 插入 index 5；原任务=5→6，设置=6→7。
+    if (!(_prefs!.getBool(_kHomeTabEmbyV026) ?? false)) {
+      final raw = _prefs!.getInt(_kHomeTab);
+      if (raw != null && raw >= 5) {
+        await _prefs!.setInt(_kHomeTab, (raw + 1).clamp(0, 7));
+      }
+      await _prefs!.setBool(_kHomeTabEmbyV026, true);
+    }
+    _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 7);
     _networkRememberLastPath =
         _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
     // network_last_path is session-only (memory). Never restore from prefs /
@@ -1343,7 +1354,7 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> setHomeTab(int index) async {
-    _homeTab = index.clamp(0, 6);
+    _homeTab = index.clamp(0, 7);
     _prefs ??= await SharedPreferences.getInstance();
     await _prefs!.setInt(_kHomeTab, _homeTab);
     notifyListeners();
