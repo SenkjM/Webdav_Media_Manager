@@ -158,3 +158,13 @@ flutter analyze lib  # Must pass with zero errors
 - Worker tests: `localdev/OpenList-Worker/src/backend/drivers/ctfile/util.test.ts`
 - WDMM porting guide: `docs/11-CLOUD-DRIVER-PORTING.md`
 - Spec: `/workspace/saf_work/ctfile-wdmm-spec.md`
+
+
+## List cache & request throttle (account form)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `list_cache_sec` | `60` | Cache `folder/list` + `file/list` per folder id; `0` disables |
+| `request_interval_ms` | `400` | Minimum gap between REST calls; `0` disables |
+
+Mutations clear both the path→id cache and list caches.

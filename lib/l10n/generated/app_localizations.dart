@@ -9039,6 +9039,42 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'剩 {amount}'**
   String tagBwRemaining(String amount);
+
+  /// No description provided for @formOptionCtFilePublic.
+  ///
+  /// In zh, this message translates to:
+  /// **'公有云'**
+  String get formOptionCtFilePublic;
+
+  /// No description provided for @formOptionCtFilePrivate.
+  ///
+  /// In zh, this message translates to:
+  /// **'私有云'**
+  String get formOptionCtFilePrivate;
+
+  /// No description provided for @formLabelCtFileListCacheSec.
+  ///
+  /// In zh, this message translates to:
+  /// **'目录缓存（秒）'**
+  String get formLabelCtFileListCacheSec;
+
+  /// No description provided for @formHintCtFileListCacheSec.
+  ///
+  /// In zh, this message translates to:
+  /// **'同一文件夹 list 结果缓存多久；默认 60，填 0 关闭'**
+  String get formHintCtFileListCacheSec;
+
+  /// No description provided for @formLabelCtFileRequestIntervalMs.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求间隔（毫秒）'**
+  String get formLabelCtFileRequestIntervalMs;
+
+  /// No description provided for @formHintCtFileRequestIntervalMs.
+  ///
+  /// In zh, this message translates to:
+  /// **'两次 API 调用之间的最小间隔；默认 400，填 0 不节流'**
+  String get formHintCtFileRequestIntervalMs;
 }
 
 class _AppLocalizationsDelegate

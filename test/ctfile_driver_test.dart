@@ -117,9 +117,15 @@ void main() {
     await server.close(force: true);
   });
 
-  CtFileAddition additionWith({String? session}) => CtFileAddition(
+  CtFileAddition additionWith({
+    String? session,
+    int listCacheSec = kDefaultListCacheSec,
+    int requestIntervalMs = 0,
+  }) => CtFileAddition(
     session: session ?? 's-test',
     baseUrl: 'http://127.0.0.1:${server.port}',
+    listCacheSec: listCacheSec,
+    requestIntervalMs: requestIntervalMs,
   );
 
   CtFileDriver driverWith(CtFileAddition addition) =>
@@ -144,9 +150,9 @@ void main() {
       expect(AccountCaps.has(caps, AccountCaps.delete), isTrue);
     });
 
-    test('form: session required obscure + cloud_type select', () {
+    test('form: session + cloud_type + cache/throttle defaults', () {
       const spec = CtFileSpec();
-      expect(spec.form.length, 2);
+      expect(spec.form.length, 4);
       final session = spec.form.first as CloudDriverField;
       expect(session.key, 'session');
       expect(session.required, isTrue);
@@ -154,6 +160,12 @@ void main() {
       final cloudType = spec.form[1] as CloudDriverSelectField;
       expect(cloudType.key, 'cloud_type');
       expect(cloudType.defaultValue, 'public');
+      final cache = spec.form[2] as CloudDriverField;
+      expect(cache.key, 'list_cache_sec');
+      expect(cache.defaultValue, '$kDefaultListCacheSec');
+      final gap = spec.form[3] as CloudDriverField;
+      expect(gap.key, 'request_interval_ms');
+      expect(gap.defaultValue, '$kDefaultRequestIntervalMs');
     });
 
     test('secretFieldKeys auto-derives from form obscure field', () {
@@ -269,6 +281,49 @@ void main() {
       expect(dir.isDir, isTrue);
       expect(file.isDir, isFalse);
       expect(file.size, 1024);
+    });
+
+    test('list cache avoids second folder/file list within TTL', () async {
+      var folderHits = 0;
+      var fileHits = 0;
+      apiResponse = (path, query, body) {
+        if (path == '/public/folder/list') {
+          folderHits++;
+          return ok({'results': [{'key': 'd1', 'name': 'dirA'}]});
+        }
+        if (path == '/public/file/list') {
+          fileHits++;
+          return ok({'results': [{'key': 'f2', 'name': 'a.mp3', 'size': 10}]});
+        }
+        return ok();
+      };
+      final d = driverWith(additionWith(listCacheSec: 60, requestIntervalMs: 0));
+      final first = await d.list('/');
+      final second = await d.list('/');
+      expect(first.length, 2);
+      expect(second.length, 2);
+      // First list() may hit file/list twice (page + empty terminator).
+      // Second list() must not add more hits when cache TTL is active.
+      expect(folderHits, 1, reason: 'second list should hit folder cache');
+      expect(fileHits, 2, reason: 'page + empty stop on first list only');
+    });
+
+    test('list cache disabled when list_cache_sec is 0', () async {
+      var folderHits = 0;
+      apiResponse = (path, query, body) {
+        if (path == '/public/folder/list') {
+          folderHits++;
+          return ok({'results': <dynamic>[]});
+        }
+        if (path == '/public/file/list') {
+          return ok({'results': <dynamic>[]});
+        }
+        return ok();
+      };
+      final d = driverWith(additionWith(listCacheSec: 0, requestIntervalMs: 0));
+      await d.list('/');
+      await d.list('/');
+      expect(folderHits, 2);
     });
 
     test('same d123 entry from both endpoints → exactly one item, isDir=true', () async {

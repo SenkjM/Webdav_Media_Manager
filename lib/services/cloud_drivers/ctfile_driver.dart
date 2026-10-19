@@ -12,6 +12,7 @@
 // - Upload: md5-size checksum → instant-upload check → multipart presigned URL.
 // - mkdir: 403+folder_id = success (folder exists).
 // - list: merged folder/list + file/list; auto-paging guarded.
+// - list cache + request throttle (account form, defaults 60s / 400ms).
 // - 429/5xx → retry with backoff; 401 → session expired.
 
 import 'dart:convert';
@@ -37,6 +38,12 @@ const kDefaultUserAgent =
     '(KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
 const kMaxListPages = 500;
 
+/// Default list cache TTL (seconds). 0 = disabled.
+const kDefaultListCacheSec = 60;
+
+/// Default minimum gap between API calls (milliseconds). 0 = no throttle.
+const kDefaultRequestIntervalMs = 400;
+
 /// Driver config (aligned with Worker CtFileAddition).
 class CtFileAddition {
   CtFileAddition({
@@ -46,6 +53,8 @@ class CtFileAddition {
     this.orderBy = 'name',
     this.orderDirection = 'asc',
     this.userAgent = kDefaultUserAgent,
+    this.listCacheSec = kDefaultListCacheSec,
+    this.requestIntervalMs = kDefaultRequestIntervalMs,
   });
 
   factory CtFileAddition.fromJson(Map<String, dynamic> json) => CtFileAddition(
@@ -55,6 +64,11 @@ class CtFileAddition {
     orderBy: json['order_by'] as String? ?? 'name',
     orderDirection: json['order_direction'] as String? ?? 'asc',
     userAgent: json['user_agent'] as String? ?? kDefaultUserAgent,
+    listCacheSec: _parseNonNegInt(json['list_cache_sec'], kDefaultListCacheSec),
+    requestIntervalMs: _parseNonNegInt(
+      json['request_interval_ms'],
+      kDefaultRequestIntervalMs,
+    ),
   );
 
   Map<String, dynamic> toJson() => {
@@ -64,6 +78,8 @@ class CtFileAddition {
     'order_by': orderBy,
     'order_direction': orderDirection,
     'user_agent': userAgent,
+    'list_cache_sec': listCacheSec,
+    'request_interval_ms': requestIntervalMs,
   };
 
   /// OpenAPI Session token (backend "开放接口登录密钥").
@@ -73,6 +89,19 @@ class CtFileAddition {
   String orderBy;
   String orderDirection;
   String userAgent;
+
+  /// Seconds to cache folder/file list results for a folder id. 0 disables.
+  int listCacheSec;
+
+  /// Minimum milliseconds between REST calls. 0 disables throttling.
+  int requestIntervalMs;
+}
+
+int _parseNonNegInt(Object? raw, int fallback) {
+  if (raw == null) return fallback;
+  final n = raw is num ? raw.toInt() : int.tryParse(raw.toString().trim());
+  if (n == null || n < 0) return fallback;
+  return n;
 }
 
 /// Folder entry from /folder/list.
@@ -162,6 +191,13 @@ DateTime? parseCtFileDate(Object? date) {
 
 String _stripIdPrefix(String id) => id.replaceFirst(RegExp(r'^([df])(?=\d)'), '');
 
+class _CtFileListCacheEntry<T> {
+  _CtFileListCacheEntry(this.items, this.expiresAt);
+  final List<T> items;
+  final DateTime expiresAt;
+  bool get isFresh => DateTime.now().isBefore(expiresAt);
+}
+
 class CtFileClient {
   CtFileClient(this.addition, {Dio? dio})
     : _dio = dio ?? Dio(BaseOptions(
@@ -181,6 +217,17 @@ class CtFileClient {
   String get _session => addition.session.trim();
 
   /// Profile check (init validation).
+  final Map<String, _CtFileListCacheEntry<CtFileFolder>> _folderListCache = {};
+  final Map<String, _CtFileListCacheEntry<CtFileFile>> _fileListCache = {};
+  Future<void>? _throttleGate;
+  DateTime? _lastRequestAt;
+
+  /// Drop cached folder/file listings (call after mutations).
+  void clearListCache() {
+    _folderListCache.clear();
+    _fileListCache.clear();
+  }
+
   Future<Map<String, dynamic>> profile() async {
     final resp = await _call('/user/info/profile', {});
     return resp.raw;
@@ -195,23 +242,45 @@ class CtFileClient {
 
   /// List folders under [folderId].
   Future<List<CtFileFolder>> listFolders(String folderId) async {
+    final id = folderId.isEmpty ? kCtFileRootId : folderId;
+    final ttl = addition.listCacheSec;
+    if (ttl > 0) {
+      final hit = _folderListCache[id];
+      if (hit != null && hit.isFresh) return hit.items;
+    }
     final resp = await _call(
       '/$_ns/folder/list',
-      {..._orderParams(), 'folder_id': folderId.isEmpty ? kCtFileRootId : folderId},
+      {..._orderParams(), 'folder_id': id},
     );
     final list = resp.results is List ? resp.results as List : <dynamic>[];
-    return [for (final e in list) if (e is Map) CtFileFolder.fromMap(e as Map<String, dynamic>)];
+    final items = [
+      for (final e in list)
+        if (e is Map) CtFileFolder.fromMap(e as Map<String, dynamic>),
+    ];
+    if (ttl > 0) {
+      _folderListCache[id] = _CtFileListCacheEntry(
+        items,
+        DateTime.now().add(Duration(seconds: ttl)),
+      );
+    }
+    return items;
   }
 
   /// List files under [folderId] with auto-pagination.
   Future<List<CtFileFile>> listFiles(String folderId) async {
+    final id = folderId.isEmpty ? kCtFileRootId : folderId;
+    final ttl = addition.listCacheSec;
+    if (ttl > 0) {
+      final hit = _fileListCache[id];
+      if (hit != null && hit.isFresh) return hit.items;
+    }
     final all = <CtFileFile>[];
     var start = 0;
     var prevFirstKey = '';
     for (var page = 0; page < kMaxListPages; page++) {
       final resp = await _call(
         '/$_ns/file/list',
-        {..._orderParams(), 'folder_id': folderId.isEmpty ? kCtFileRootId : folderId, 'start': '$start'},
+        {..._orderParams(), 'folder_id': id, 'start': '$start'},
       );
       final results = resp.results is List ? resp.results as List : <dynamic>[];
       if (results.isEmpty) break;
@@ -222,6 +291,12 @@ class CtFileClient {
         if (e is Map) all.add(CtFileFile.fromMap(e as Map<String, dynamic>));
       }
       start += results.length;
+    }
+    if (ttl > 0) {
+      _fileListCache[id] = _CtFileListCacheEntry(
+        all,
+        DateTime.now().add(Duration(seconds: ttl)),
+      );
     }
     return all;
   }
@@ -329,11 +404,32 @@ class CtFileClient {
     'order': addition.orderDirection,
   };
 
+  Future<void> _awaitThrottle() async {
+    final gapMs = addition.requestIntervalMs;
+    if (gapMs <= 0) return;
+    final prev = _throttleGate;
+    late final Future<void> mine;
+    mine = () async {
+      if (prev != null) await prev;
+      final last = _lastRequestAt;
+      if (last != null) {
+        final wait = gapMs - DateTime.now().difference(last).inMilliseconds;
+        if (wait > 0) {
+          await Future<void>.delayed(Duration(milliseconds: wait));
+        }
+      }
+      _lastRequestAt = DateTime.now();
+    }();
+    _throttleGate = mine;
+    await mine;
+  }
+
   Future<CtFileResp> _call(String path, Map<String, dynamic> body) async {
     final session = _session;
     if (session.isEmpty) {
       throw CloudDriverException('[CtFile] Session missing (no token)');
     }
+    await _awaitThrottle();
     final fullUrl = '$_baseUrl$path';
     Response<String>? response;
     CloudDriverException? lastErr;
@@ -514,6 +610,7 @@ class CtFileDriver extends CloudDriver {
     if (normalized.isEmpty) return;
     await _ensureDirectory(normalized);
     _pathCache.clear();
+    _client.clearListCache();
   }
 
   /// rename: [newPath] is the full target path. Cross-dir move is handled
@@ -549,6 +646,7 @@ class CtFileDriver extends CloudDriver {
       }
     }
     _pathCache.clear();
+    _client.clearListCache();
   }
 
   @override
@@ -557,6 +655,7 @@ class CtFileDriver extends CloudDriver {
     final id = await _pathToId(normalized, expectDir: false);
     await _client.remove([id]);
     _pathCache.clear();
+    _client.clearListCache();
   }
 
   @override
@@ -574,6 +673,7 @@ class CtFileDriver extends CloudDriver {
       }
     }
     _pathCache.clear();
+    _client.clearListCache();
   }
 
   /// copy: copies srcPath to dstDir; if newName differs from original name,
@@ -597,6 +697,7 @@ class CtFileDriver extends CloudDriver {
       }
     }
     _pathCache.clear();
+    _client.clearListCache();
   }
 
   @override
@@ -620,6 +721,7 @@ class CtFileDriver extends CloudDriver {
     await _client.upload(folderId: parentId, fileName: fileName, bytes: bytes);
     onProgress?.call(bytes.length);
     _pathCache.clear();
+    _client.clearListCache();
   }
 
   @override
@@ -630,6 +732,7 @@ class CtFileDriver extends CloudDriver {
   @override
   Future<void> dispose() async {
     _pathCache.clear();
+    _client.clearListCache();
   }
 
   /// 会员 + 带宽状态标签（账号列表展示）。两路独立 fail-soft：任一失败都返回
@@ -825,12 +928,24 @@ class CtFileSpec extends CloudDriverSpec {
     ),
     CloudDriverSelectField(
       key: 'cloud_type',
-      label: 'cloud_type',
+      label: L10nHost.current.formLabelCloudType,
       defaultValue: 'public',
-      options: const [
-        ('public', '公有云 (Public Cloud)'),
-        ('private', '私有云 (Private Cloud)'),
+      options: [
+        ('public', L10nHost.current.formOptionCtFilePublic),
+        ('private', L10nHost.current.formOptionCtFilePrivate),
       ],
+    ),
+    CloudDriverField(
+      key: 'list_cache_sec',
+      label: L10nHost.current.formLabelCtFileListCacheSec,
+      hint: L10nHost.current.formHintCtFileListCacheSec,
+      defaultValue: '$kDefaultListCacheSec',
+    ),
+    CloudDriverField(
+      key: 'request_interval_ms',
+      label: L10nHost.current.formLabelCtFileRequestIntervalMs,
+      hint: L10nHost.current.formHintCtFileRequestIntervalMs,
+      defaultValue: '$kDefaultRequestIntervalMs',
     ),
   ];
 }

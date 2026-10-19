@@ -1742,5 +1742,11 @@
         "type": "String"
       }
     }
-  }
+  },
+  "formOptionCtFilePublic": "公有云",
+  "formOptionCtFilePrivate": "私有云",
+  "formLabelCtFileListCacheSec": "目录缓存（秒）",
+  "formHintCtFileListCacheSec": "同一文件夹 list 结果缓存多久；默认 60，填 0 关闭",
+  "formLabelCtFileRequestIntervalMs": "请求间隔（毫秒）",
+  "formHintCtFileRequestIntervalMs": "两次 API 调用之间的最小间隔；默认 400，填 0 不节流"
 }

@@ -1722,5 +1722,11 @@
         "type": "String"
       }
     }
-  }
+  },
+  "formOptionCtFilePublic": "Public cloud",
+  "formOptionCtFilePrivate": "Private cloud",
+  "formLabelCtFileListCacheSec": "List cache (seconds)",
+  "formHintCtFileListCacheSec": "How long to cache folder listings; default 60, 0 disables",
+  "formLabelCtFileRequestIntervalMs": "Request interval (ms)",
+  "formHintCtFileRequestIntervalMs": "Minimum gap between API calls; default 400, 0 disables"
 }

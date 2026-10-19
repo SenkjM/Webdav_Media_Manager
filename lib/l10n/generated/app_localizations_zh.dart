@@ -5091,6 +5091,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String tagBwRemaining(String amount) {
     return '剩 $amount';
   }
+
+  @override
+  String get formOptionCtFilePublic => '公有云';
+
+  @override
+  String get formOptionCtFilePrivate => '私有云';
+
+  @override
+  String get formLabelCtFileListCacheSec => '目录缓存（秒）';
+
+  @override
+  String get formHintCtFileListCacheSec => '同一文件夹 list 结果缓存多久；默认 60，填 0 关闭';
+
+  @override
+  String get formLabelCtFileRequestIntervalMs => '请求间隔（毫秒）';
+
+  @override
+  String get formHintCtFileRequestIntervalMs =>
+      '两次 API 调用之间的最小间隔；默认 400，填 0 不节流';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10180,4 +10199,23 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String tagBwRemaining(String amount) {
     return '剩 $amount';
   }
+
+  @override
+  String get formOptionCtFilePublic => '公有雲';
+
+  @override
+  String get formOptionCtFilePrivate => '私有雲';
+
+  @override
+  String get formLabelCtFileListCacheSec => '目錄快取（秒）';
+
+  @override
+  String get formHintCtFileListCacheSec => '同一資料夾 list 結果快取多久；預設 60，填 0 關閉';
+
+  @override
+  String get formLabelCtFileRequestIntervalMs => '請求間隔（毫秒）';
+
+  @override
+  String get formHintCtFileRequestIntervalMs =>
+      '兩次 API 呼叫之間的最小間隔；預設 400，填 0 不節流';
 }

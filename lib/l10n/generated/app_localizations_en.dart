@@ -5340,4 +5340,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String tagBwRemaining(String amount) {
     return '$amount left';
   }
+
+  @override
+  String get formOptionCtFilePublic => 'Public cloud';
+
+  @override
+  String get formOptionCtFilePrivate => 'Private cloud';
+
+  @override
+  String get formLabelCtFileListCacheSec => 'List cache (seconds)';
+
+  @override
+  String get formHintCtFileListCacheSec =>
+      'How long to cache folder listings; default 60, 0 disables';
+
+  @override
+  String get formLabelCtFileRequestIntervalMs => 'Request interval (ms)';
+
+  @override
+  String get formHintCtFileRequestIntervalMs =>
+      'Minimum gap between API calls; default 400, 0 disables';
 }
