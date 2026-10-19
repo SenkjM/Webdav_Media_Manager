@@ -98,87 +98,69 @@ class _AccountsScreenState extends State<AccountsScreen> {
                           // WebDAV 显示地址；云盘 / crypt 显示类型名
                           // （crypt = 源类型 + Crypt，见 CloudDriveService.typeLabelFor）。
                           // 云盘账号额外展示状态标签小 Chip（会员 / 带宽）。
-                          subtitle: accountTags.isEmpty
-                              ? Text(
-                                  a.url.isNotEmpty
-                                      ? a.url
-                                      : cloudDrive.typeLabelFor(a),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                )
-                              : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      a.url.isNotEmpty
-                                          ? a.url
-                                          : cloudDrive.typeLabelFor(a),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Wrap(
-                                      spacing: 6,
-                                      runSpacing: 0,
-                                      children: [
-                                        for (final tag in accountTags)
-                                          Chip(
-                                            label: Text(
-                                              tag.label,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            materialTapTargetSize:
-                                                MaterialTapTargetSize
-                                                    .shrinkWrap,
-                                            visualDensity: VisualDensity.compact,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 4,
-                                              vertical: 0,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
+                          subtitle: Text(
+                            a.url.isNotEmpty
+                                ? a.url
+                                : cloudDrive.typeLabelFor(a),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (accountTags.isNotEmpty)
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.sizeOf(context).width * 0.38,
+                                  ),
+                                  child: Wrap(
+                                    spacing: 6,
+                                    runSpacing: 2,
+                                    alignment: WrapAlignment.end,
+                                    children: [
+                                      for (final tag in accountTags)
+                                        _AccountStatusChip(tag: tag),
+                                    ],
+                                  ),
                                 ),
-                          isThreeLine: accountTags.isNotEmpty,
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (v) async {
-                              switch (v) {
-                                case 'use':
-                                  await context.read<AppState>().switchAccount(
-                                    a.id,
-                                  );
-                                  break;
-                                case 'edit':
-                                  await _editAccount(context, existing: a);
-                                  break;
-                                case 'test':
-                                  await _test(context, a);
-                                  break;
-                                case 'delete':
-                                  await _delete(context, a);
-                                  break;
-                              }
-                            },
-                            itemBuilder: (_) => [
-                              PopupMenuItem(
-                                value: 'use',
-                                child: Text(l10n.setCurrent),
-                              ),
-                              PopupMenuItem(
-                                value: 'edit',
-                                child: Text(l10n.edit),
-                              ),
-                              PopupMenuItem(
-                                value: 'test',
-                                child: Text(l10n.testConnection),
-                              ),
-                              PopupMenuItem(
-                                value: 'delete',
-                                child: Text(l10n.delete),
+                              PopupMenuButton<String>(
+                                onSelected: (v) async {
+                                  switch (v) {
+                                    case 'use':
+                                      await context
+                                          .read<AppState>()
+                                          .switchAccount(a.id);
+                                      break;
+                                    case 'edit':
+                                      await _editAccount(context, existing: a);
+                                      break;
+                                    case 'test':
+                                      await _test(context, a);
+                                      break;
+                                    case 'delete':
+                                      await _delete(context, a);
+                                      break;
+                                  }
+                                },
+                                itemBuilder: (_) => [
+                                  PopupMenuItem(
+                                    value: 'use',
+                                    child: Text(l10n.setCurrent),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text(l10n.edit),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'test',
+                                    child: Text(l10n.testConnection),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text(l10n.delete),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -914,6 +896,44 @@ class _AccountsScreenState extends State<AccountsScreen> {
       ),
     );
     return ok == true;
+  }
+}
+
+
+/// Compact account status chip. VIP/member tags get a gold border.
+class _AccountStatusChip extends StatelessWidget {
+  const _AccountStatusChip({required this.tag});
+
+  final AccountStatusTag tag;
+
+  static const Color _gold = Color(0xFFC9A227);
+
+  bool get _isVip => tag.key == 'vip';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Chip(
+      label: Text(
+        tag.label,
+        style: TextStyle(
+          fontSize: 12,
+          color: _isVip ? _gold : scheme.onSurfaceVariant,
+          fontWeight: _isVip ? FontWeight.w600 : FontWeight.w400,
+        ),
+      ),
+      side: BorderSide(
+        color: _isVip ? _gold : scheme.outlineVariant,
+        width: _isVip ? 1.5 : 1,
+      ),
+      backgroundColor: _isVip
+          ? _gold.withValues(alpha: 0.08)
+          : scheme.surfaceContainerHighest,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+    );
   }
 }
 
