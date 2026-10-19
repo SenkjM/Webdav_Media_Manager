@@ -1729,5 +1729,24 @@
   "dupTaskSkip": "跳过",
   "@dupTaskSkip": {},
   "dlSavedGeneric": "已下载",
-  "@dlSavedGeneric": {}
+  "@dlSavedGeneric": {},
+  "driverNameCtFile": "城通网盘",
+  "formHintCtFileSession": "必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）",
+  "formLabelCloudType": "云盘类型",
+  "tagVip": "会员",
+  "tagSuperVip": "超级会员",
+  "tagBwRemaining": "剩 {amount}",
+  "@tagBwRemaining": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "formOptionCtFilePublic": "公有云",
+  "formOptionCtFilePrivate": "私有云",
+  "formLabelCtFileListCacheSec": "目录缓存（秒）",
+  "formHintCtFileListCacheSec": "同一文件夹 list 结果缓存多久；默认 60，填 0 关闭",
+  "formLabelCtFileRequestIntervalMs": "请求间隔（毫秒）",
+  "formHintCtFileRequestIntervalMs": "两次 API 调用之间的最小间隔；默认 400，填 0 不节流"
 }

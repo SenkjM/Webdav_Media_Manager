@@ -5070,6 +5070,46 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dlSavedGeneric => '已下载';
+
+  @override
+  String get driverNameCtFile => '城通网盘';
+
+  @override
+  String get formHintCtFileSession =>
+      '必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）';
+
+  @override
+  String get formLabelCloudType => '云盘类型';
+
+  @override
+  String get tagVip => '会员';
+
+  @override
+  String get tagSuperVip => '超级会员';
+
+  @override
+  String tagBwRemaining(String amount) {
+    return '剩 $amount';
+  }
+
+  @override
+  String get formOptionCtFilePublic => '公有云';
+
+  @override
+  String get formOptionCtFilePrivate => '私有云';
+
+  @override
+  String get formLabelCtFileListCacheSec => '目录缓存（秒）';
+
+  @override
+  String get formHintCtFileListCacheSec => '同一文件夹 list 结果缓存多久；默认 60，填 0 关闭';
+
+  @override
+  String get formLabelCtFileRequestIntervalMs => '请求间隔（毫秒）';
+
+  @override
+  String get formHintCtFileRequestIntervalMs =>
+      '两次 API 调用之间的最小间隔；默认 400，填 0 不节流';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10138,4 +10178,44 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get dlSavedGeneric => '已下載';
+
+  @override
+  String get driverNameCtFile => '城通網盤';
+
+  @override
+  String get formHintCtFileSession =>
+      '必填；從城通網盤管理後台「開放介面登錄密鑰管理」生成。取得方法見 OpenList 官方文件（ctfile 驅動頁）';
+
+  @override
+  String get formLabelCloudType => '雲端類型';
+
+  @override
+  String get tagVip => '會員';
+
+  @override
+  String get tagSuperVip => '超級會員';
+
+  @override
+  String tagBwRemaining(String amount) {
+    return '剩 $amount';
+  }
+
+  @override
+  String get formOptionCtFilePublic => '公有雲';
+
+  @override
+  String get formOptionCtFilePrivate => '私有雲';
+
+  @override
+  String get formLabelCtFileListCacheSec => '目錄快取（秒）';
+
+  @override
+  String get formHintCtFileListCacheSec => '同一資料夾 list 結果快取多久；預設 60，填 0 關閉';
+
+  @override
+  String get formLabelCtFileRequestIntervalMs => '請求間隔（毫秒）';
+
+  @override
+  String get formHintCtFileRequestIntervalMs =>
+      '兩次 API 呼叫之間的最小間隔；預設 400，填 0 不節流';
 }

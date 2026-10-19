@@ -5319,4 +5319,45 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dlSavedGeneric => 'Downloaded';
+
+  @override
+  String get driverNameCtFile => 'CtFile';
+
+  @override
+  String get formHintCtFileSession =>
+      'Required; generate from CtFile backend admin panel 开放接口登录密钥管理. See OpenList docs (ctfile driver page)';
+
+  @override
+  String get formLabelCloudType => 'Cloud Type';
+
+  @override
+  String get tagVip => 'Member';
+
+  @override
+  String get tagSuperVip => 'Super VIP';
+
+  @override
+  String tagBwRemaining(String amount) {
+    return '$amount left';
+  }
+
+  @override
+  String get formOptionCtFilePublic => 'Public cloud';
+
+  @override
+  String get formOptionCtFilePrivate => 'Private cloud';
+
+  @override
+  String get formLabelCtFileListCacheSec => 'List cache (seconds)';
+
+  @override
+  String get formHintCtFileListCacheSec =>
+      'How long to cache folder listings; default 60, 0 disables';
+
+  @override
+  String get formLabelCtFileRequestIntervalMs => 'Request interval (ms)';
+
+  @override
+  String get formHintCtFileRequestIntervalMs =>
+      'Minimum gap between API calls; default 400, 0 disables';
 }

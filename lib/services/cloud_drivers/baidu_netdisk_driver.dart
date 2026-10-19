@@ -529,6 +529,22 @@ class BaiduNetdiskDriver extends CloudDriver {
       return raw;
     }
   }
+
+  /// 百度 VIP 状态标签（账号列表展示）。fail-soft：失败返回空列表。
+  /// vip_type: 0=普通用户（不显示），1=普通会员，2=超级会员，其它>0=会员。
+  @override
+  Future<List<AccountStatusTag>> statusTags() async {
+    final l10n = L10nHost.current;
+    try {
+      await _client.login(); // 有缓存 access_token 时为 no-op
+      final vipType = await _client.uinfo();
+      if (vipType == 0) return const [];
+      final label = vipType == 2 ? l10n.tagSuperVip : l10n.tagVip;
+      return [AccountStatusTag(key: 'vip', label: label)];
+    } catch (_) {
+      return const [];
+    }
+  }
 }
 
 /// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造

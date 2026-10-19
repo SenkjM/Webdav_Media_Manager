@@ -186,6 +186,7 @@
 | aliyundrive_open | `aliyundrive_open` | list/read/mkdir/move/copy/delete | refresh_token + 在线续期轮询 / OAuth | 无（带签名 URL） | 6 个续期地址**去重**轮询；drive_id 按 drive_type 三级选盘 + `UserNotAllowedAccessDrive` 自愈 |
 | 115open | `115open` | list/read/mkdir/move/copy/delete | refresh_token | **OpenList UA**（防盗链校验） | fid+UA 直链缓存 30 分钟（免费盘 downurl 有配额，406）；`state=false && code∈{99,401xx}` 判鉴权失败；`folder/get_info` 一次性解析、失败回退逐层 |
 | terabox | `terabox` | list/read/mkdir/move/copy/delete | **cookie 粘贴**（过期重贴） | **UA** | 官方下载 API 直链 + UA；签名（sign1/sign3）纯 Dart 复现并有金标向量；`errno===9000` 地区不可用 |
+| ctfile | `ctfile` | list/read/write/mkdir/move/copy/delete | **OpenAPI Session 粘贴**（后台「开放接口登录密钥管理」，无令牌轮换） | **UA**（CDN 可不带 Cookie/Referer） | id 前缀双试（`d`/`f` stripped-first 或 raw，`callWithId prefer` 参数）；upload checksum = `md5-size`；`exists>0` 秒传；mkdir 403+folder_id 视为成功；copy = `/${ns}/file/copy` + 目标 folder_id（与 move 同形）；首个支持 write 的非 WebDAV 直连盘 |
 
 批次共性与值得记的坑：
 

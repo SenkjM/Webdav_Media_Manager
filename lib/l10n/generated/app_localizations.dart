@@ -9003,6 +9003,78 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'已下载'**
   String get dlSavedGeneric;
+
+  /// No description provided for @driverNameCtFile.
+  ///
+  /// In zh, this message translates to:
+  /// **'城通网盘'**
+  String get driverNameCtFile;
+
+  /// No description provided for @formHintCtFileSession.
+  ///
+  /// In zh, this message translates to:
+  /// **'必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）'**
+  String get formHintCtFileSession;
+
+  /// No description provided for @formLabelCloudType.
+  ///
+  /// In zh, this message translates to:
+  /// **'云盘类型'**
+  String get formLabelCloudType;
+
+  /// No description provided for @tagVip.
+  ///
+  /// In zh, this message translates to:
+  /// **'会员'**
+  String get tagVip;
+
+  /// No description provided for @tagSuperVip.
+  ///
+  /// In zh, this message translates to:
+  /// **'超级会员'**
+  String get tagSuperVip;
+
+  /// No description provided for @tagBwRemaining.
+  ///
+  /// In zh, this message translates to:
+  /// **'剩 {amount}'**
+  String tagBwRemaining(String amount);
+
+  /// No description provided for @formOptionCtFilePublic.
+  ///
+  /// In zh, this message translates to:
+  /// **'公有云'**
+  String get formOptionCtFilePublic;
+
+  /// No description provided for @formOptionCtFilePrivate.
+  ///
+  /// In zh, this message translates to:
+  /// **'私有云'**
+  String get formOptionCtFilePrivate;
+
+  /// No description provided for @formLabelCtFileListCacheSec.
+  ///
+  /// In zh, this message translates to:
+  /// **'目录缓存（秒）'**
+  String get formLabelCtFileListCacheSec;
+
+  /// No description provided for @formHintCtFileListCacheSec.
+  ///
+  /// In zh, this message translates to:
+  /// **'同一文件夹 list 结果缓存多久；默认 60，填 0 关闭'**
+  String get formHintCtFileListCacheSec;
+
+  /// No description provided for @formLabelCtFileRequestIntervalMs.
+  ///
+  /// In zh, this message translates to:
+  /// **'请求间隔（毫秒）'**
+  String get formLabelCtFileRequestIntervalMs;
+
+  /// No description provided for @formHintCtFileRequestIntervalMs.
+  ///
+  /// In zh, this message translates to:
+  /// **'两次 API 调用之间的最小间隔；默认 400，填 0 不节流'**
+  String get formHintCtFileRequestIntervalMs;
 }
 
 class _AppLocalizationsDelegate
