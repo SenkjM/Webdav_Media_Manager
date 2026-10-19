@@ -226,8 +226,6 @@
   "copyTo": "Copy to",
   "moveTo": "Move to",
   "downloadAction": "Download",
-  "fileQueuedOrSaved": "This file is already in the task queue or downloaded",
-  "fileQueuedOrSavedShort": "This file is already queued or saved",
   "accountRequired": "Add a WebDAV server first",
   "syncTitle": "Sync and backup",
   "syncIntro": "Credentials, playlists, and the music library share one remote path. Choose a server and enter the path below.",
@@ -1653,5 +1651,63 @@
   "mangaLocalCbzScanning": "Scanning folder…",
   "@mangaLocalCbzScanning": {},
   "errNoWriteAccount": "No writable account found",
-  "@errNoWriteAccount": {}
+  "@errNoWriteAccount": {},
+  "customDownloadDir": "Custom Download Directory",
+  "@customDownloadDir": {},
+  "customDownloadDirSubtitle": "Save downloaded files to your chosen folder",
+  "@customDownloadDirSubtitle": {},
+  "customDownloadDirCurrent": "Current directory: {name}",
+  "@customDownloadDirCurrent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "customDownloadDirDefault": "System Downloads",
+  "@customDownloadDirDefault": {},
+  "customDownloadDirRepick": "Choose Different Folder",
+  "@customDownloadDirRepick": {},
+  "customDownloadDirAndroid11Note": "Android 11+ cannot select the Download root directly. Please select or create a subfolder within it.",
+  "@customDownloadDirAndroid11Note": {},
+  "customDownloadDirSafNote": "Custom folders use Storage Access Framework (SAF) write access, which can bypass some OEM limits on the system Downloads folder.",
+  "@customDownloadDirSafNote": {},
+  "customDownloadDirPickCancelled": "No folder selected, still using system Downloads",
+  "@customDownloadDirPickCancelled": {},
+  "customDownloadDirFallback": "Custom download directory is no longer accessible, switched back to system Downloads",
+  "@customDownloadDirFallback": {},
+  "errCustomDirInvalid": "Custom download directory is no longer accessible, switched back to system Downloads. You can retry this task.",
+  "@errCustomDirInvalid": {},
+  "locationCustomDownloadDir": "{name}",
+  "@locationCustomDownloadDir": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "exportErrStoragePermissionDenied": "No storage permission, cannot write to public directory",
+  "@exportErrStoragePermissionDenied": {},
+  "exportFellBackNotice": "Custom download directory is no longer accessible, saved to system Downloads instead",
+  "@exportFellBackNotice": {},
+  "dupTaskTitle": "Duplicate Task Exists",
+  "@dupTaskTitle": {},
+  "dupTaskBody": "A duplicate task already exists. Restart it?",
+  "@dupTaskBody": {},
+  "dupTaskBatchBody": "{count} duplicate tasks found. Restart all?",
+  "@dupTaskBatchBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dupTaskRestart": "Restart",
+  "@dupTaskRestart": {},
+  "dupTaskRestartAll": "Restart All",
+  "@dupTaskRestartAll": {},
+  "dupTaskSkip": "Skip",
+  "@dupTaskSkip": {},
+  "dlSavedGeneric": "Downloaded",
+  "@dlSavedGeneric": {}
 }

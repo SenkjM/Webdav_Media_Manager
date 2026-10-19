@@ -1329,18 +1329,6 @@ abstract class AppLocalizations {
   /// **'下载'**
   String get downloadAction;
 
-  /// No description provided for @fileQueuedOrSaved.
-  ///
-  /// In zh, this message translates to:
-  /// **'该文件已在任务队列或已下载'**
-  String get fileQueuedOrSaved;
-
-  /// No description provided for @fileQueuedOrSavedShort.
-  ///
-  /// In zh, this message translates to:
-  /// **'该文件已在队列或已保存'**
-  String get fileQueuedOrSavedShort;
-
   /// No description provided for @accountRequired.
   ///
   /// In zh, this message translates to:
@@ -8895,6 +8883,126 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'没有可写入的账号'**
   String get errNoWriteAccount;
+
+  /// No description provided for @customDownloadDir.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义下载目录'**
+  String get customDownloadDir;
+
+  /// No description provided for @customDownloadDirSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'下载的文件保存到你选择的文件夹'**
+  String get customDownloadDirSubtitle;
+
+  /// No description provided for @customDownloadDirCurrent.
+  ///
+  /// In zh, this message translates to:
+  /// **'当前目录：{name}'**
+  String customDownloadDirCurrent(String name);
+
+  /// No description provided for @customDownloadDirDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'系统下载目录'**
+  String get customDownloadDirDefault;
+
+  /// No description provided for @customDownloadDirRepick.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新选择目录'**
+  String get customDownloadDirRepick;
+
+  /// No description provided for @customDownloadDirAndroid11Note.
+  ///
+  /// In zh, this message translates to:
+  /// **'Android 11 及以上不能直接选择「下载」根目录，请选择或新建其中的子文件夹'**
+  String get customDownloadDirAndroid11Note;
+
+  /// No description provided for @customDownloadDirSafNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义目录通过系统文件访问授权（SAF）写入，可绕过部分厂商对系统下载目录的限制'**
+  String get customDownloadDirSafNote;
+
+  /// No description provided for @customDownloadDirPickCancelled.
+  ///
+  /// In zh, this message translates to:
+  /// **'未选择目录，仍使用系统下载目录'**
+  String get customDownloadDirPickCancelled;
+
+  /// No description provided for @customDownloadDirFallback.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义下载目录已失效，已切回系统下载目录'**
+  String get customDownloadDirFallback;
+
+  /// No description provided for @errCustomDirInvalid.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义下载目录已失效，已切回系统下载目录，可重试此任务'**
+  String get errCustomDirInvalid;
+
+  /// No description provided for @locationCustomDownloadDir.
+  ///
+  /// In zh, this message translates to:
+  /// **'{name}'**
+  String locationCustomDownloadDir(String name);
+
+  /// No description provided for @exportErrStoragePermissionDenied.
+  ///
+  /// In zh, this message translates to:
+  /// **'没有存储权限，无法写入公共目录'**
+  String get exportErrStoragePermissionDenied;
+
+  /// No description provided for @exportFellBackNotice.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义下载目录已失效，已改存到系统下载目录'**
+  String get exportFellBackNotice;
+
+  /// No description provided for @dupTaskTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'已有重复任务'**
+  String get dupTaskTitle;
+
+  /// No description provided for @dupTaskBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'已有重复任务，是否重新进行？'**
+  String get dupTaskBody;
+
+  /// No description provided for @dupTaskBatchBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'有 {count} 个重复任务，是否全部重新进行？'**
+  String dupTaskBatchBody(int count);
+
+  /// No description provided for @dupTaskRestart.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新进行'**
+  String get dupTaskRestart;
+
+  /// No description provided for @dupTaskRestartAll.
+  ///
+  /// In zh, this message translates to:
+  /// **'全部重新进行'**
+  String get dupTaskRestartAll;
+
+  /// No description provided for @dupTaskSkip.
+  ///
+  /// In zh, this message translates to:
+  /// **'跳过'**
+  String get dupTaskSkip;
+
+  /// No description provided for @dlSavedGeneric.
+  ///
+  /// In zh, this message translates to:
+  /// **'已下载'**
+  String get dlSavedGeneric;
 }
 
 class _AppLocalizationsDelegate

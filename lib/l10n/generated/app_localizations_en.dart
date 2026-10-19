@@ -680,13 +680,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get downloadAction => 'Download';
 
   @override
-  String get fileQueuedOrSaved =>
-      'This file is already in the task queue or downloaded';
-
-  @override
-  String get fileQueuedOrSavedShort => 'This file is already queued or saved';
-
-  @override
   String get accountRequired => 'Add a WebDAV server first';
 
   @override
@@ -5252,4 +5245,78 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errNoWriteAccount => 'No writable account found';
+
+  @override
+  String get customDownloadDir => 'Custom Download Directory';
+
+  @override
+  String get customDownloadDirSubtitle =>
+      'Save downloaded files to your chosen folder';
+
+  @override
+  String customDownloadDirCurrent(String name) {
+    return 'Current directory: $name';
+  }
+
+  @override
+  String get customDownloadDirDefault => 'System Downloads';
+
+  @override
+  String get customDownloadDirRepick => 'Choose Different Folder';
+
+  @override
+  String get customDownloadDirAndroid11Note =>
+      'Android 11+ cannot select the Download root directly. Please select or create a subfolder within it.';
+
+  @override
+  String get customDownloadDirSafNote =>
+      'Custom folders use Storage Access Framework (SAF) write access, which can bypass some OEM limits on the system Downloads folder.';
+
+  @override
+  String get customDownloadDirPickCancelled =>
+      'No folder selected, still using system Downloads';
+
+  @override
+  String get customDownloadDirFallback =>
+      'Custom download directory is no longer accessible, switched back to system Downloads';
+
+  @override
+  String get errCustomDirInvalid =>
+      'Custom download directory is no longer accessible, switched back to system Downloads. You can retry this task.';
+
+  @override
+  String locationCustomDownloadDir(String name) {
+    return '$name';
+  }
+
+  @override
+  String get exportErrStoragePermissionDenied =>
+      'No storage permission, cannot write to public directory';
+
+  @override
+  String get exportFellBackNotice =>
+      'Custom download directory is no longer accessible, saved to system Downloads instead';
+
+  @override
+  String get dupTaskTitle => 'Duplicate Task Exists';
+
+  @override
+  String get dupTaskBody => 'A duplicate task already exists. Restart it?';
+
+  @override
+  String dupTaskBatchBody(int count) {
+    return '$count duplicate tasks found. Restart all?';
+  }
+
+  @override
+  String get dupTaskRestart => 'Restart';
+
+  @override
+  String get dupTaskRestartAll => 'Restart All';
+
+  @override
+  String get dupTaskSkip => 'Skip';
+
+  @override
+  String get dlSavedGeneric => 'Downloaded';
 }

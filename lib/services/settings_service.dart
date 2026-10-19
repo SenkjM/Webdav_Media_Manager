@@ -109,6 +109,9 @@ class SettingsService extends ChangeNotifier {
   static const _kDownloadNotifications = 'download_notifications';
   static const _kDownloadKeepAlive = 'download_keep_alive';
   static const _kDownloadNomedia = 'download_nomedia';
+  static const _kUseCustomDownloadDir = 'use_custom_download_dir';
+  static const _kCustomDownloadTreeUri = 'custom_download_tree_uri';
+  static const _kCustomDownloadDisplayName = 'custom_download_display_name';
   static const _kMusicStreamPlayMode = 'music_stream_play_mode';
   static const _kMusicDefaultStream = 'music_default_stream';
   static const _kAudioStreamingEnabled = 'audio_streaming_enabled';
@@ -391,6 +394,11 @@ class SettingsService extends ChangeNotifier {
 
   /// 公共下载目录是否写入 `.nomedia`。默认关，已有安装保持可被媒体库扫描。
   bool _downloadNomedia = false;
+
+  /// SAF 自定义下载目录（本机，不进备份）
+  bool _useCustomDownloadDir = false;
+  String? _customDownloadTreeUri;
+  String? _customDownloadDisplayName;
 
   /// The single 网盘 every sync feature (凭证 / 歌单 / 音乐库 / 备份) writes to;
   /// null means「跟随当前选中的网盘」.
@@ -741,6 +749,17 @@ class SettingsService extends ChangeNotifier {
   /// 下载目录排除媒体扫描。默认关。
   bool get downloadNomediaEnabled => _downloadNomedia;
 
+  /// SAF 自定义下载目录开关（本机，不进备份）
+  bool get useCustomDownloadDir => _useCustomDownloadDir;
+  String? get customDownloadTreeUri => _customDownloadTreeUri;
+  String? get customDownloadDisplayName => _customDownloadDisplayName;
+
+  /// 自定义目录是否实际生效（开关打开且 uri 非空）
+  bool get customDownloadDirActive =>
+      _useCustomDownloadDir &&
+      _customDownloadTreeUri != null &&
+      _customDownloadTreeUri!.isNotEmpty;
+
   /// 网盘 every sync feature writes to (null → the active account).
   String? get syncAccountId => _syncAccountId;
 
@@ -976,7 +995,7 @@ class SettingsService extends ChangeNotifier {
           1024 * 64,
         );
     _cryptSequentialDownload =
-        _prefs!.getBool(_kCryptSequentialDownload) ?? false;
+        _prefs!.getBool(_kCryptSequentialDownload) ?? true;
     _preferLibsodiumSecretbox =
         _prefs!.getBool(_kPreferLibsodiumSecretbox) ??
         defaultPreferLibsodiumSecretbox;
@@ -1037,6 +1056,16 @@ class SettingsService extends ChangeNotifier {
     _downloadNotifications = _prefs!.getBool(_kDownloadNotifications) ?? true;
     _downloadKeepAlive = _prefs!.getBool(_kDownloadKeepAlive) ?? true;
     _downloadNomedia = _prefs!.getBool(_kDownloadNomedia) ?? false;
+    // SAF 自定义下载目录（本机，不进备份）
+    _useCustomDownloadDir = _prefs!.getBool(_kUseCustomDownloadDir) ?? false;
+    _customDownloadTreeUri = _prefs!.getString(_kCustomDownloadTreeUri);
+    _customDownloadDisplayName = _prefs!.getString(_kCustomDownloadDisplayName);
+    // 启动时 flag 开但 uri 空 → 视为关闭并写回 false
+    if (_useCustomDownloadDir &&
+        (_customDownloadTreeUri == null || _customDownloadTreeUri!.isEmpty)) {
+      _useCustomDownloadDir = false;
+      await _prefs!.setBool(_kUseCustomDownloadDir, false);
+    }
     _syncAccountId = _readSyncAccountId();
     _loaded = true;
     notifyListeners();
@@ -1895,6 +1924,37 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 开启自定义下载目录并存储 uri 与显示名
+  Future<void> setCustomDownloadDir({
+    required String uri,
+    String? displayName,
+  }) async {
+    _useCustomDownloadDir = true;
+    _customDownloadTreeUri = uri;
+    _customDownloadDisplayName = displayName;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kUseCustomDownloadDir, true);
+    await _prefs!.setString(_kCustomDownloadTreeUri, uri);
+    if (displayName != null && displayName.isNotEmpty) {
+      await _prefs!.setString(_kCustomDownloadDisplayName, displayName);
+    } else {
+      await _prefs!.remove(_kCustomDownloadDisplayName);
+    }
+    notifyListeners();
+  }
+
+  /// 关闭自定义下载目录并清空 uri/名称
+  Future<void> clearCustomDownloadDir() async {
+    _useCustomDownloadDir = false;
+    _customDownloadTreeUri = null;
+    _customDownloadDisplayName = null;
+    _prefs ??= await SharedPreferences.getInstance();
+    await _prefs!.setBool(_kUseCustomDownloadDir, false);
+    await _prefs!.remove(_kCustomDownloadTreeUri);
+    await _prefs!.remove(_kCustomDownloadDisplayName);
+    notifyListeners();
+  }
+
   /// Persist the in-app message duration.
   Future<void> setSnackMode(SnackDuration mode) async {
     _snackMode = mode;
@@ -2006,11 +2066,22 @@ class SettingsService extends ChangeNotifier {
 
   Map<String, dynamic> exportForBackup() => {
     'cache_retention': _retention.storageKey,
+    'music_cache_max_mb': _musicCacheMaxMb,
     'cache_custom_retention_hours': _customRetentionHours,
     'library_sort_mode': _librarySort.storageKey,
     'folder_view_mode': folderViewModeFor(null).storageKey,
     'folder_view_modes': {
       for (final e in _folderViewModes.entries) e.key: e.value.storageKey,
+    },
+    'manga_cache_max_mb': _mangaCacheMaxMb,
+    'manga_cache_retention': _mangaRetention.storageKey,
+    'manga_cache_custom_retention_hours': _mangaCustomRetentionHours,
+    'manga_read_mode': _mangaReadMode.storageKey,
+    'manga_view_modes': {
+      for (final e in _mangaViewModes.entries) e.key: e.value.storageKey,
+    },
+    'music_view_modes': {
+      for (final e in _musicViewModes.entries) e.key: e.value.storageKey,
     },
     'playlist_sync_enabled': _playlistSyncEnabled,
     'cover_thumb_size': _coverThumbSize,
@@ -2027,6 +2098,7 @@ class SettingsService extends ChangeNotifier {
     'video_long_press': _videoLongPress.storageKey,
     'video_background_playback': _videoBackgroundPlayback,
     'music_stream_play_mode': _musicStreamPlayMode.storageKey,
+    'music_default_stream': _musicDefaultStream,
     'audio_streaming_enabled': _audioStreamingEnabled,
     'audio_scan_subdirs': _audioScanSubdirs,
     'audio_playlist_max_depth': _audioPlaylistMaxDepth,
@@ -2062,6 +2134,9 @@ class SettingsService extends ChangeNotifier {
     'video_pip_enabled': _videoPipEnabled,
     'video_hardware_decoding': _videoHardwareDecoding,
     'video_buffer_size_mb': _videoBufferSizeMb,
+    'download_part_max_age_hours': _downloadPartMaxAgeHours,
+    'download_part_max_mb': _downloadPartMaxMb,
+    'crypt_sequential_download': _cryptSequentialDownload,
     'video_long_press_rate': _videoLongPressRate,
     'video_last_rate': _videoLastRate,
     'video_confirm_exit': _videoConfirmExit,
@@ -2077,10 +2152,14 @@ class SettingsService extends ChangeNotifier {
     'sync_interval': _syncInterval.storageKey,
     'sync_remote_root': _syncRemoteRoot,
     'sync_encrypt_password': _syncEncryptPassword,
+    'theme_mode': _appThemeMode.storageKey,
+    'theme_seed_argb': _themeSeedArgb,
+    'app_locale': _appLocale.storageKey,
     'snack_duration': _snackMode.storageKey,
     'download_notifications': _downloadNotifications,
     'download_keep_alive': _downloadKeepAlive,
     'download_nomedia': _downloadNomedia,
+    // custom_download_* keys intentionally omitted — 本机，不进备份
   };
 
   Future<Map<String, dynamic>> exportForBackupAsync() async =>
@@ -2091,6 +2170,9 @@ class SettingsService extends ChangeNotifier {
     if (json['music_cache_max_mb'] is num) {
       await setMusicCacheMaxMb((json['music_cache_max_mb'] as num).toInt());
     }
+    if (json['manga_cache_max_mb'] is num) {
+      await setMangaCacheMaxMb((json['manga_cache_max_mb'] as num).toInt());
+    }
     if (json['cache_retention'] != null) {
       await setRetention(
         CacheRetentionX.fromStorageKey(json['cache_retention'] as String?),
@@ -2099,6 +2181,21 @@ class SettingsService extends ChangeNotifier {
     if (json['cache_custom_retention_hours'] is int) {
       await setCustomRetentionDuration(
         Duration(hours: json['cache_custom_retention_hours'] as int),
+      );
+    }
+    if (json['manga_cache_retention'] != null) {
+      await setMangaRetention(
+        CacheRetentionX.fromStorageKey(json['manga_cache_retention'] as String?),
+      );
+    }
+    if (json['manga_cache_custom_retention_hours'] is int) {
+      await setMangaCustomRetentionDuration(
+        Duration(hours: json['manga_cache_custom_retention_hours'] as int),
+      );
+    }
+    if (json['manga_read_mode'] != null) {
+      await setMangaReadMode(
+        MangaReadModeX.fromStorageKey(json['manga_read_mode'] as String?),
       );
     }
     if (json['library_sort_mode'] != null) {
@@ -2120,6 +2217,28 @@ class SettingsService extends ChangeNotifier {
       await setFolderViewMode(
         FolderViewModeX.fromStorageKey(json['folder_view_mode'] as String?),
       );
+    }
+    if (json['manga_view_modes'] is Map) {
+      final map = json['manga_view_modes'] as Map;
+      for (final e in map.entries) {
+        final k = e.key?.toString();
+        if (k == null || k.isEmpty) continue;
+        await setMangaViewMode(
+          k,
+          FolderViewModeX.fromStorageKey(e.value?.toString()),
+        );
+      }
+    }
+    if (json['music_view_modes'] is Map) {
+      final map = json['music_view_modes'] as Map;
+      for (final e in map.entries) {
+        final k = e.key?.toString();
+        if (k == null || k.isEmpty) continue;
+        await setMusicViewMode(
+          k,
+          FolderViewModeX.fromStorageKey(e.value?.toString()),
+        );
+      }
     }
     if (json['playlist_sync_enabled'] is bool) {
       await setPlaylistSyncEnabled(json['playlist_sync_enabled'] as bool);
@@ -2206,6 +2325,9 @@ class SettingsService extends ChangeNotifier {
           json['music_stream_play_mode'] as String?,
         ),
       );
+    }
+    if (json['music_default_stream'] is bool) {
+      await setMusicDefaultStream(json['music_default_stream'] as bool);
     }
     if (json['audio_streaming_enabled'] is bool) {
       await setAudioStreamingEnabled(json['audio_streaming_enabled'] as bool);
@@ -2339,6 +2461,17 @@ class SettingsService extends ChangeNotifier {
     if (json['video_buffer_size_mb'] is int) {
       await setVideoBufferSizeMb(json['video_buffer_size_mb'] as int);
     }
+    if (json['download_part_max_age_hours'] is int) {
+      await setDownloadPartMaxAgeHours(json['download_part_max_age_hours'] as int);
+    }
+    if (json['download_part_max_mb'] is int) {
+      await setDownloadPartMaxMb(json['download_part_max_mb'] as int);
+    }
+    if (json['crypt_sequential_download'] is bool) {
+      await setCryptSequentialDownloadEnabled(
+        json['crypt_sequential_download'] as bool,
+      );
+    }
     if (json['video_long_press_rate'] is num) {
       await setVideoLongPressRate(
         (json['video_long_press_rate'] as num).toDouble(),
@@ -2402,6 +2535,19 @@ class SettingsService extends ChangeNotifier {
     if (json['sync_encrypt_password'] is bool) {
       await setSyncEncryptPassword(json['sync_encrypt_password'] as bool);
     }
+    if (json['theme_mode'] is String) {
+      await setAppThemeMode(
+        AppThemeModeX.fromStorageKey(json['theme_mode'] as String?),
+      );
+    }
+    if (json['theme_seed_argb'] is int) {
+      await setThemeSeed(Color(json['theme_seed_argb'] as int));
+    }
+    if (json['app_locale'] is String) {
+      await setAppLocale(
+        AppLocalePreferenceX.fromStorageKey(json['app_locale'] as String?),
+      );
+    }
     if (json['download_notifications'] is bool) {
       await setDownloadNotificationsEnabled(
         json['download_notifications'] as bool,
@@ -2418,6 +2564,7 @@ class SettingsService extends ChangeNotifier {
         SnackDurationX.fromStorageKey(json['snack_duration'] as String?),
       );
     }
+    // 忽略备份中的 custom_download_* 键（即使存在也不导入）
   }
 
   static int _clampCustomHours(int hours) {
