@@ -186,6 +186,13 @@ class CtFileClient {
     return resp.raw;
   }
 
+  /// Bandwidth query (POST /user/info/bandwidth).
+  /// Returns keys: bandwidth_total / bandwidth_remaining / bandwidth_used / max_yun.
+  Future<Map<String, dynamic>> bandwidth() async {
+    final resp = await _call('/user/info/bandwidth', {});
+    return resp.raw;
+  }
+
   /// List folders under [folderId].
   Future<List<CtFileFolder>> listFolders(String folderId) async {
     final resp = await _call(
@@ -449,21 +456,31 @@ class CtFileDriver extends CloudDriver {
     final id = await _pathToId(normalized);
     final folders = await _client.listFolders(id);
     final files = await _client.listFiles(id);
-    return [
-      for (final f in folders)
-        CloudFileItem(
-          name: f.name,
-          isDir: true,
-          modified: parseCtFileDate(f.date),
-        ),
-      for (final f in files)
-        CloudFileItem(
-          name: f.name,
-          isDir: false,
-          size: f.size,
-          modified: parseCtFileDate(f.date),
-        ),
-    ];
+
+    // Merge folder/list + file/list, then decide isDir by key prefix
+    // (file/list also returns d…-prefixed directory entries with size=0, so we
+    // cannot trust which endpoint returned an item). Dedupe by key: same key
+    // keeps one entry; directories (key starts with 'd') win on conflict —
+    // processing folders first makes first-seen-win == prefer-dir.
+    final seen = <String, CloudFileItem>{};
+    void addEntry(String key, String name, int size, Object? date) {
+      if (seen.containsKey(key)) return; // first seen wins (folders processed first)
+      final isDir = key.startsWith('d');
+      seen[key] = CloudFileItem(
+        name: name,
+        isDir: isDir,
+        size: isDir ? 0 : size,
+        modified: parseCtFileDate(date),
+      );
+    }
+
+    for (final f in folders) {
+      addEntry(f.key, f.name, 0, f.date);
+    }
+    for (final f in files) {
+      addEntry(f.key, f.name, f.size, f.date);
+    }
+    return seen.values.toList();
   }
 
   /// get() returns real size + rawUrl (fetch_url) + rawHeaders with UA.
@@ -613,6 +630,60 @@ class CtFileDriver extends CloudDriver {
   @override
   Future<void> dispose() async {
     _pathCache.clear();
+  }
+
+  /// 会员 + 带宽状态标签（账号列表展示）。两路独立 fail-soft：任一失败都返回
+  /// 已拿到的部分，绝不阻塞账号列表。VIP 非 VIP 且无剩余带宽时不显示带宽标签。
+  @override
+  Future<List<AccountStatusTag>> statusTags() async {
+    final l10n = L10nHost.current;
+    final tags = <AccountStatusTag>[];
+
+    // 会员标签：优先 group_name，否则 is_vip 时用通用「会员」。
+    try {
+      final prof = await _client.profile();
+      final groupName = (prof['group_name'] as String? ?? '').trim();
+      // Worker types: is_vip may be number or boolean.
+      final rawVip = prof['is_vip'];
+      final isVip = rawVip == true ||
+          rawVip == 1 ||
+          (rawVip is num && rawVip.toInt() == 1);
+      if (groupName.isNotEmpty) {
+        tags.add(AccountStatusTag(key: 'vip', label: groupName));
+      } else if (isVip) {
+        tags.add(AccountStatusTag(key: 'vip', label: l10n.tagVip));
+      }
+    } catch (_) {
+      // fail-soft：profile 拿不到就不显示会员标签
+    }
+
+    // 带宽标签：remaining/total 全 0（非 VIP 常见）则不显示。
+    try {
+      final bw = await _client.bandwidth();
+      final remaining = (bw['bandwidth_remaining'] as num?)?.toInt() ?? 0;
+      final total = (bw['bandwidth_total'] as num?)?.toInt() ?? 0;
+      if (remaining > 0 || total > 0) {
+        tags.add(AccountStatusTag(
+          key: 'bw_remaining',
+          label: l10n.tagBwRemaining(_formatBandwidth(remaining)),
+        ));
+      }
+    } catch (_) {
+      // fail-soft：带宽拿不到就不显示带宽标签
+    }
+
+    return tags;
+  }
+
+  /// 带宽短格式：GiB 保留一位小数，否则用 MiB 整数。
+  static String _formatBandwidth(int bytes) {
+    const gib = 1 << 30; // 1024^3
+    const mib = 1 << 20; // 1024^2
+    const kib = 1 << 10;
+    if (bytes >= gib) return '${(bytes / gib).toStringAsFixed(1)} GiB';
+    if (bytes >= mib) return '${(bytes / mib).round()} MiB';
+    if (bytes >= kib) return '${(bytes / kib).round()} KiB';
+    return '$bytes B';
   }
 
   String _normalizePath(String path) {

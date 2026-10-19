@@ -5329,4 +5329,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get formLabelCloudType => 'Cloud Type';
+
+  @override
+  String get tagVip => 'Member';
+
+  @override
+  String get tagSuperVip => 'Super VIP';
+
+  @override
+  String tagBwRemaining(String amount) {
+    return '$amount left';
+  }
 }

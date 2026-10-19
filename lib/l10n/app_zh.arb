@@ -1732,5 +1732,15 @@
   "@dlSavedGeneric": {},
   "driverNameCtFile": "城通网盘",
   "formHintCtFileSession": "必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）",
-  "formLabelCloudType": "云盘类型"
+  "formLabelCloudType": "云盘类型",
+  "tagVip": "会员",
+  "tagSuperVip": "超级会员",
+  "tagBwRemaining": "剩 {amount}",
+  "@tagBwRemaining": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  }
 }

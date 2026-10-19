@@ -247,7 +247,7 @@ void main() {
   });
 
   group('list', () {
-    test('folder/list + file/list merged', () async {
+    test('folder/list + file/list merged, isDir from key prefix', () async {
       apiResponse = (path, query, body) {
         if (path == '/public/folder/list') {
           return ok({'results': [{'key': 'd1', 'name': 'dirA'}]});
@@ -263,10 +263,58 @@ void main() {
       };
       final d = driverWith(additionWith());
       final items = await d.list('/');
-      expect(items.map((i) => i.name).toList(), ['dirA', 'a.mp3']);
-      expect(items[0].isDir, isTrue);
-      expect(items[1].isDir, isFalse);
-      expect(items[1].size, 1024);
+      expect(items.map((i) => i.name).toSet(), {'dirA', 'a.mp3'});
+      final dir = items.firstWhere((i) => i.name == 'dirA');
+      final file = items.firstWhere((i) => i.name == 'a.mp3');
+      expect(dir.isDir, isTrue);
+      expect(file.isDir, isFalse);
+      expect(file.size, 1024);
+    });
+
+    test('same d123 entry from both endpoints → exactly one item, isDir=true', () async {
+      // Regression: file/list may return d-prefixed directory entries (size=0).
+      // list() must dedupe by key and trust key prefix for isDir, not endpoint.
+      apiResponse = (path, query, body) {
+        if (path == '/public/folder/list') {
+          return ok({'results': [{'key': 'd123', 'name': 'shared'}]});
+        }
+        if (path == '/public/file/list') {
+          final start = query['start'] ?? '0';
+          if (start == '0') {
+            // same key from file/list — this is the duplicate directory entry
+            return ok({'results': [{'key': 'd123', 'name': 'shared', 'size': 0}]});
+          }
+          return ok({'results': <dynamic>[]});
+        }
+        return ok();
+      };
+      final d = driverWith(additionWith());
+      final items = await d.list('/');
+      expect(items.length, 1, reason: 'duplicate key d123 must be deduped to one entry');
+      expect(items.single.name, 'shared');
+      expect(items.single.isDir, isTrue, reason: 'key.startsWith("d") → isDir');
+      expect(items.single.size, 0);
+    });
+
+    test('f-prefixed key from file/list → isDir=false regardless of endpoint', () async {
+      apiResponse = (path, query, body) {
+        if (path == '/public/folder/list') {
+          return ok({'results': <dynamic>[]});
+        }
+        if (path == '/public/file/list') {
+          final start = query['start'] ?? '0';
+          if (start == '0') {
+            return ok({'results': [{'key': 'f99', 'name': 'track.mp3', 'size': 512}]});
+          }
+          return ok({'results': <dynamic>[]});
+        }
+        return ok();
+      };
+      final d = driverWith(additionWith());
+      final items = await d.list('/');
+      expect(items.length, 1);
+      expect(items.single.isDir, isFalse);
+      expect(items.single.size, 512);
     });
   });
 

@@ -263,6 +263,19 @@ class CloudDriveService extends ChangeNotifier {
   /// 该账号的驱动；未接入返回 null。
   CloudDriver? driverFor(String accountId) => _drivers[accountId];
 
+  /// 账号状态标签（会员 / 带宽等小 Chip，账号列表展示）。
+  /// 驱动已实现 [CloudDriver.statusTags] 就转调；WebDAV 与未接入类型返回空。
+  /// 失败静默返回空，绝不阻塞账号列表。
+  Future<List<AccountStatusTag>> statusTagsFor(String accountId) async {
+    final driver = _drivers[accountId];
+    if (driver == null) return const [];
+    try {
+      return await driver.statusTags();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// 远程路径（浏览根）拼接：account.remotePath + path。
   /// 空根视为 `/`；两侧各留一个 `/`。
   static String joinRemotePath(WebDavAccount account, String path) {

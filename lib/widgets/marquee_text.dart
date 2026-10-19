@@ -4,12 +4,9 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/account_sentinels.dart';
 import '../models/webdav_account.dart';
 
-/// Display label: 名称（用户名）
+/// Display label: account name only (用于账号列表标题；曲库按名称绑定，不展示用户名）.
 String webDavAccountLabel(WebDavAccount account, AppLocalizations l10n) {
-  final name = localizedAccountName(l10n, account.name);
-  final user = account.username.trim();
-  if (user.isEmpty) return name;
-  return l10n.accountWithName(name, user);
+  return localizedAccountName(l10n, account.name);
 }
 
 /// Horizontally auto-scrolling text when overflow; otherwise static.

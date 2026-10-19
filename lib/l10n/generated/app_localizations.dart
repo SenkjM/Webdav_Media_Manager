@@ -9021,6 +9021,24 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'云盘类型'**
   String get formLabelCloudType;
+
+  /// No description provided for @tagVip.
+  ///
+  /// In zh, this message translates to:
+  /// **'会员'**
+  String get tagVip;
+
+  /// No description provided for @tagSuperVip.
+  ///
+  /// In zh, this message translates to:
+  /// **'超级会员'**
+  String get tagSuperVip;
+
+  /// No description provided for @tagBwRemaining.
+  ///
+  /// In zh, this message translates to:
+  /// **'剩 {amount}'**
+  String tagBwRemaining(String amount);
 }
 
 class _AppLocalizationsDelegate

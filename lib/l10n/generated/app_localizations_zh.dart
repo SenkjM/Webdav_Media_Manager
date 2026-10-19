@@ -5080,6 +5080,17 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get formLabelCloudType => '云盘类型';
+
+  @override
+  String get tagVip => '会员';
+
+  @override
+  String get tagSuperVip => '超级会员';
+
+  @override
+  String tagBwRemaining(String amount) {
+    return '剩 $amount';
+  }
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10158,4 +10169,15 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get formLabelCloudType => '雲端類型';
+
+  @override
+  String get tagVip => '會員';
+
+  @override
+  String get tagSuperVip => '超級會員';
+
+  @override
+  String tagBwRemaining(String amount) {
+    return '剩 $amount';
+  }
 }

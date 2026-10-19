@@ -29,8 +29,35 @@ bool _switchValue(
   Map<String, bool> values,
 ) => spec?.switchValue(key, values) ?? false;
 
-class AccountsScreen extends StatelessWidget {
+class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
+
+  @override
+  State<AccountsScreen> createState() => _AccountsScreenState();
+}
+
+class _AccountsScreenState extends State<AccountsScreen> {
+  /// accountId → 状态标签（会员 / 带宽等小 Chip）。账号页打开与下拉刷新时拉一次，
+  /// 失败静默（驱动已 fail-soft，这里再兜一层）。WebDAV 账号无标签。
+  final Map<String, List<AccountStatusTag>> _tags = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // 首帧后再拉，避免 build 途中触发 provider 读取 / 网络请求。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTags());
+  }
+
+  Future<void> _loadTags() async {
+    final accounts = context.read<AccountsService>();
+    final webdav = context.read<WebDavService>();
+    for (final a in accounts.accounts) {
+      if (!CloudDriveService.isCloudType(a.providerType)) continue;
+      final tags = await webdav.statusTagsFor(a.id);
+      if (!mounted) return;
+      setState(() => _tags[a.id] = tags);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,76 +78,121 @@ class AccountsScreen extends StatelessWidget {
           Expanded(
             child: accounts.accounts.isEmpty
                 ? Center(child: Text(l10n.noAccounts))
-                : ListView.builder(
-                    itemCount: accounts.accounts.length,
-                    itemBuilder: (context, i) {
-                      final a = accounts.accounts[i];
-                      final active = accounts.activeAccountId == a.id;
-                      return ListTile(
-                        leading: Icon(
-                          active ? Icons.cloud_done : Icons.cloud_outlined,
-                          color: active
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                        // 名称（用户名）：同一主机上多个挂载点一眼可分。
-                        title: Text(webDavAccountLabel(a, l10n)),
-                        // WebDAV 显示地址；云盘 / crypt 显示类型名
-                        // （crypt = 源类型 + Crypt，见 CloudDriveService.typeLabelFor）。
-                        subtitle: Text(
-                          a.url.isNotEmpty ? a.url : cloudDrive.typeLabelFor(a),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        isThreeLine: true,
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (v) async {
-                            switch (v) {
-                              case 'use':
-                                await context.read<AppState>().switchAccount(
-                                  a.id,
-                                );
-                                break;
-                              case 'edit':
-                                await _editAccount(context, existing: a);
-                                break;
-                              case 'test':
-                                await _test(context, a);
-                                break;
-                              case 'delete':
-                                await _delete(context, a);
-                                break;
-                            }
-                          },
-                          itemBuilder: (_) => [
-                            PopupMenuItem(
-                              value: 'use',
-                              child: Text(l10n.setCurrent),
-                            ),
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: Text(l10n.edit),
-                            ),
-                            PopupMenuItem(
-                              value: 'test',
-                              child: Text(l10n.testConnection),
-                            ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Text(l10n.delete),
-                            ),
-                          ],
-                        ),
-                        onTap: () =>
-                            context.read<AppState>().switchAccount(a.id),
-                      );
-                    },
+                : RefreshIndicator(
+                    onRefresh: _loadTags,
+                    child: ListView.builder(
+                      itemCount: accounts.accounts.length,
+                      itemBuilder: (context, i) {
+                        final a = accounts.accounts[i];
+                        final active = accounts.activeAccountId == a.id;
+                        final accountTags = _tags[a.id] ?? const [];
+                        return ListTile(
+                          leading: Icon(
+                            active ? Icons.cloud_done : Icons.cloud_outlined,
+                            color: active
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                          // 账号名称：曲库按此名称绑定，账号列表只显示名称。
+                          title: Text(webDavAccountLabel(a, l10n)),
+                          // WebDAV 显示地址；云盘 / crypt 显示类型名
+                          // （crypt = 源类型 + Crypt，见 CloudDriveService.typeLabelFor）。
+                          // 云盘账号额外展示状态标签小 Chip（会员 / 带宽）。
+                          subtitle: accountTags.isEmpty
+                              ? Text(
+                                  a.url.isNotEmpty
+                                      ? a.url
+                                      : cloudDrive.typeLabelFor(a),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      a.url.isNotEmpty
+                                          ? a.url
+                                          : cloudDrive.typeLabelFor(a),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 0,
+                                      children: [
+                                        for (final tag in accountTags)
+                                          Chip(
+                                            label: Text(
+                                              tag.label,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            materialTapTargetSize:
+                                                MaterialTapTargetSize
+                                                    .shrinkWrap,
+                                            visualDensity: VisualDensity.compact,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 4,
+                                              vertical: 0,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                          isThreeLine: accountTags.isNotEmpty,
+                          trailing: PopupMenuButton<String>(
+                            onSelected: (v) async {
+                              switch (v) {
+                                case 'use':
+                                  await context.read<AppState>().switchAccount(
+                                    a.id,
+                                  );
+                                  break;
+                                case 'edit':
+                                  await _editAccount(context, existing: a);
+                                  break;
+                                case 'test':
+                                  await _test(context, a);
+                                  break;
+                                case 'delete':
+                                  await _delete(context, a);
+                                  break;
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              PopupMenuItem(
+                                value: 'use',
+                                child: Text(l10n.setCurrent),
+                              ),
+                              PopupMenuItem(
+                                value: 'edit',
+                                child: Text(l10n.edit),
+                              ),
+                              PopupMenuItem(
+                                value: 'test',
+                                child: Text(l10n.testConnection),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text(l10n.delete),
+                              ),
+                            ],
+                          ),
+                          onTap: () =>
+                              context.read<AppState>().switchAccount(a.id),
+                        );
+                      },
+                    ),
                   ),
-          ),
-        ],
-      ),
-    );
-  }
+                ),
+              ],
+            ),
+          );
+        }
 
   Future<void> _test(BuildContext context, WebDavAccount a) async {
     final l10n = AppLocalizations.of(context)!;
