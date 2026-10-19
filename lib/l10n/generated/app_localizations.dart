@@ -8920,6 +8920,12 @@ abstract class AppLocalizations {
   /// **'Android 11 及以上不能直接选择「下载」根目录，请选择或新建其中的子文件夹'**
   String get customDownloadDirAndroid11Note;
 
+  /// No description provided for @customDownloadDirSafNote.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义目录通过系统文件访问授权（SAF）写入，可绕过部分厂商对系统下载目录的限制'**
+  String get customDownloadDirSafNote;
+
   /// No description provided for @customDownloadDirPickCancelled.
   ///
   /// In zh, this message translates to:

@@ -1690,6 +1690,8 @@
   "@customDownloadDirRepick": {},
   "customDownloadDirAndroid11Note": "Android 11 及以上不能直接选择「下载」根目录，请选择或新建其中的子文件夹",
   "@customDownloadDirAndroid11Note": {},
+  "customDownloadDirSafNote": "自定义目录通过系统文件访问授权（SAF）写入，可绕过部分厂商对系统下载目录的限制",
+  "@customDownloadDirSafNote": {},
   "customDownloadDirPickCancelled": "未选择目录，仍使用系统下载目录",
   "@customDownloadDirPickCancelled": {},
   "customDownloadDirFallback": "自定义下载目录已失效，已切回系统下载目录",

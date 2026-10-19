@@ -1005,7 +1005,7 @@ class MainActivity : AudioServiceFragmentActivity() {
             if (isSamsungOneUI()) {
                 return mapOf(
                     "ok" to false,
-                    "error" to "三星系统会改写 .nomedia 文件名，无法干净排除媒体扫描，已取消",
+                    "error" to "三星系统会改写 .nomedia，无法干净排除媒体扫描，已取消。可改用自定义下载目录",
                 )
             }
             return mapOf(

@@ -171,11 +171,23 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-            child: Text(
-              l10n.customDownloadDirAndroid11Note,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.customDownloadDirAndroid11Note,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.customDownloadDirSafNote,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
           const Divider(height: 24),

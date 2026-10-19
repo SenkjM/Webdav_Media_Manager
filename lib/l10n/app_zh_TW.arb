@@ -1659,6 +1659,8 @@
   "@customDownloadDirRepick": {},
   "customDownloadDirAndroid11Note": "Android 11 及以上不能直接選擇「下載」根目錄，請選擇或新建其中的子資料夾",
   "@customDownloadDirAndroid11Note": {},
+  "customDownloadDirSafNote": "自訂目錄透過系統檔案存取授權（SAF）寫入，可繞過部分廠商對系統下載目錄的限制",
+  "@customDownloadDirSafNote": {},
   "customDownloadDirPickCancelled": "未選擇目錄，仍使用系統下載目錄",
   "@customDownloadDirPickCancelled": {},
   "customDownloadDirFallback": "自訂下載目錄已失效，已切回系統下載目錄",

@@ -1670,6 +1670,8 @@
   "@customDownloadDirRepick": {},
   "customDownloadDirAndroid11Note": "Android 11+ cannot select the Download root directly. Please select or create a subfolder within it.",
   "@customDownloadDirAndroid11Note": {},
+  "customDownloadDirSafNote": "Custom folders use Storage Access Framework (SAF) write access, which can bypass some OEM limits on the system Downloads folder.",
+  "@customDownloadDirSafNote": {},
   "customDownloadDirPickCancelled": "No folder selected, still using system Downloads",
   "@customDownloadDirPickCancelled": {},
   "customDownloadDirFallback": "Custom download directory is no longer accessible, switched back to system Downloads",

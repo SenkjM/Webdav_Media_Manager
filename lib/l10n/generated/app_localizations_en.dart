@@ -5269,6 +5269,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Android 11+ cannot select the Download root directly. Please select or create a subfolder within it.';
 
   @override
+  String get customDownloadDirSafNote =>
+      'Custom folders use Storage Access Framework (SAF) write access, which can bypass some OEM limits on the system Downloads folder.';
+
+  @override
   String get customDownloadDirPickCancelled =>
       'No folder selected, still using system Downloads';
 

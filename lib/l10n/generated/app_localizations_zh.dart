@@ -5025,6 +5025,10 @@ class AppLocalizationsZh extends AppLocalizations {
       'Android 11 及以上不能直接选择「下载」根目录，请选择或新建其中的子文件夹';
 
   @override
+  String get customDownloadDirSafNote =>
+      '自定义目录通过系统文件访问授权（SAF）写入，可绕过部分厂商对系统下载目录的限制';
+
+  @override
   String get customDownloadDirPickCancelled => '未选择目录，仍使用系统下载目录';
 
   @override
@@ -10087,6 +10091,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   @override
   String get customDownloadDirAndroid11Note =>
       'Android 11 及以上不能直接選擇「下載」根目錄，請選擇或新建其中的子資料夾';
+
+  @override
+  String get customDownloadDirSafNote =>
+      '自訂目錄透過系統檔案存取授權（SAF）寫入，可繞過部分廠商對系統下載目錄的限制';
 
   @override
   String get customDownloadDirPickCancelled => '未選擇目錄，仍使用系統下載目錄';
