@@ -149,8 +149,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                 DropdownMenuItem(value: 2, child: Text(l10n.playlists)),
                 DropdownMenuItem(value: 3, child: Text(l10n.mangaLibrary)),
                 DropdownMenuItem(value: 4, child: Text(l10n.networkLibrary)),
-                // OpenList 标签固定英文（99 §20），插入索引 5。
-                const DropdownMenuItem(value: 5, child: Text('OpenList')),
+                // Emby 标签固定英文（99 §20 Emby 媒体库），插入索引 5。
+                const DropdownMenuItem(value: 5, child: Text('Emby')),
                 DropdownMenuItem(value: 6, child: Text(l10n.taskQueue)),
                 DropdownMenuItem(value: 7, child: Text(l10n.settings)),
               ],

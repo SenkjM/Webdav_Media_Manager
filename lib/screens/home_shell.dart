@@ -14,7 +14,7 @@ import 'library_folder_browser_screen.dart';
 import 'library_screen.dart';
 import 'manga_library_screen.dart';
 import 'network_library_screen.dart';
-import 'openlist_media_screen.dart';
+import 'emby_media_screen.dart';
 import 'playlists_screen.dart';
 import 'settings_screen.dart';
 
@@ -33,8 +33,8 @@ const int kMangaLibraryTabIndex = 3;
 /// Drawer index of the network library inside [HomeShell].
 const int kNetworkLibraryTabIndex = 4;
 
-/// Drawer index of the OpenList media client inside [HomeShell] (99 §20).
-const int kOpenListTabIndex = 5;
+/// Drawer index of the Emby media client inside [HomeShell] (99 §20 Emby 媒体库).
+const int kEmbyTabIndex = 5;
 
 /// Drawer index of the task queue inside [HomeShell].
 const int kTasksTabIndex = 6;
@@ -90,7 +90,7 @@ class _HomeShellState extends State<HomeShell> {
   final _playlistsNav = GlobalKey<NavigatorState>();
   final _mangaNav = GlobalKey<NavigatorState>();
   final _networkNav = GlobalKey<NavigatorState>();
-  final _openListNav = GlobalKey<NavigatorState>();
+  final _embyNav = GlobalKey<NavigatorState>();
   final _downloadsNav = GlobalKey<NavigatorState>();
   int _index = 0;
 
@@ -134,10 +134,10 @@ class _HomeShellState extends State<HomeShell> {
         navigatorKey: _networkNav,
         root: const NetworkLibraryScreen(),
       ),
-      // Tab 5: OpenList 媒体库（99 §20）。
+      // Tab 5: Emby 媒体库（99 §20 Emby 媒体库）。
       _TabNavigator(
-        navigatorKey: _openListNav,
-        root: const OpenListMediaScreen(),
+        navigatorKey: _embyNav,
+        root: const EmbyMediaScreen(),
       ),
       _TabNavigator(navigatorKey: _downloadsNav, root: const TasksScreen()),
       const SettingsScreen(),
@@ -281,12 +281,12 @@ class _HomeShellState extends State<HomeShell> {
                             selected: _index == 4,
                             onTap: () => _select(4),
                           ),
-                          // OpenList 媒体库（99 §20；home_tab_v026_openlist_inserted）
+                          // Emby 媒体库（99 §20 Emby 媒体库；home_tab_v026_emby_inserted）
                           _DrawerItem(
                             icon: Icons.cloud_circle_outlined,
-                            label: 'OpenList',
-                            selected: _index == kOpenListTabIndex,
-                            onTap: () => _select(kOpenListTabIndex),
+                            label: 'Emby',
+                            selected: _index == kEmbyTabIndex,
+                            onTap: () => _select(kEmbyTabIndex),
                           ),
                           _DrawerItem(
                             icon: Icons.sync_outlined,
@@ -378,7 +378,7 @@ class _HomeShellState extends State<HomeShell> {
       2 => _playlistsNav,
       3 => _mangaNav,
       4 => _networkNav,
-      5 => _openListNav,
+      5 => _embyNav,
       6 => _downloadsNav,
       _ => null,
     };
