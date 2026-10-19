@@ -522,7 +522,7 @@ class _TaskTile extends StatelessWidget {
                   _DestinationChip(
                     icon: Icons.folder_outlined,
                     label: savedToDownloads
-                        ? l10n.dlSavedToDownloads
+                        ? l10n.dlSavedGeneric
                         : l10n.dlTargetDownloads,
                     color: AppColors.accent,
                   ),

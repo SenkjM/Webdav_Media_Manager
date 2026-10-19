@@ -33,7 +33,7 @@ const int kMangaLibraryTabIndex = 3;
 /// Drawer index of the network library inside [HomeShell].
 const int kNetworkLibraryTabIndex = 4;
 
-/// Drawer index of the Emby media client inside [HomeShell] (99 §20 Emby 媒体库).
+/// Drawer index of the Emby media client inside [HomeShell] (99 §21 Emby 媒体库).
 const int kEmbyTabIndex = 5;
 
 /// Drawer index of the task queue inside [HomeShell].
@@ -134,7 +134,7 @@ class _HomeShellState extends State<HomeShell> {
         navigatorKey: _networkNav,
         root: const NetworkLibraryScreen(),
       ),
-      // Tab 5: Emby 媒体库（99 §20 Emby 媒体库）。
+      // Tab 5: Emby 媒体库（99 §21 Emby 媒体库）。
       _TabNavigator(
         navigatorKey: _embyNav,
         root: const EmbyMediaScreen(),
@@ -281,7 +281,7 @@ class _HomeShellState extends State<HomeShell> {
                             selected: _index == 4,
                             onTap: () => _select(4),
                           ),
-                          // Emby 媒体库（99 §20 Emby 媒体库；home_tab_v026_emby_inserted）
+                          // Emby 媒体库（99 §21 Emby 媒体库；home_tab_v026_emby_inserted）
                           _DrawerItem(
                             icon: Icons.cloud_circle_outlined,
                             label: 'Emby',

@@ -15,6 +15,7 @@ import '../services/backup_service.dart';
 import '../services/cache_index_db.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
+import '../services/download_destination_service.dart';
 import '../services/task_queue_service.dart';
 import '../services/library_database.dart';
 import '../services/library_service.dart';
@@ -49,7 +50,7 @@ class AppState extends ChangeNotifier {
     accounts = AccountsService(db: db);
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
-    // Emby 媒体库（99 §20 Emby 媒体库）：独立连接表 + secrets，不走 WebDAV / accounts。
+    // Emby 媒体库（99 §21 Emby 媒体库）：独立连接表 + secrets，不走 WebDAV / accounts。
     embyConnections = EmbyConnectionStore();
     // 包装驱动（如 Crypt）的 WebDAV 源解析：装配层注入工厂（99 §7.5），
     // 兼容层不依赖 WebDavService。
@@ -68,6 +69,12 @@ class AppState extends ChangeNotifier {
       settings: settings,
       webDav: webDav,
     );
+    // DownloadDestinationService 管理所有「下载目录」写入
+    final platformExport = PlatformExportService();
+    downloadDestination = DownloadDestinationService(
+      settings: settings,
+      export: platformExport,
+    );
     backup = BackupService(
       libraryDb: db,
       library: library,
@@ -77,6 +84,8 @@ class AppState extends ChangeNotifier {
       credentials: credentials,
       webDav: webDav,
       cache: cache,
+      // 备份导入后回调 alignNomedia
+      onSettingsImported: () => downloadDestination.alignNomedia(),
     );
     sync = SyncService(
       accounts: accounts,
@@ -97,6 +106,7 @@ class AppState extends ChangeNotifier {
       library: library,
       playlists: playlists,
       settings: settings,
+      destination: downloadDestination,
       // The network library classifies entries with the configured extension
       // sets, so the queue must use the same list (never a hard-coded one).
       isMusicFile: (name) =>
@@ -131,12 +141,13 @@ class AppState extends ChangeNotifier {
   late final MangaLibraryService mangaLibrary;
   late final AccountsService accounts;
 
-  /// Emby 媒体库连接存储（99 §20 Emby 媒体库）；与 accounts/WebDAV 完全隔离。
+  /// Emby 媒体库连接存储（99 §21 Emby 媒体库）；与 accounts/WebDAV 完全隔离。
   late final EmbyConnectionStore embyConnections;
 
   late final PlaylistService playlists;
   late final BackupService backup;
   late final CredentialVaultService credentials;
+  late final DownloadDestinationService downloadDestination;
   late final SyncService sync;
   late final TaskQueueService taskQueue;
   late final NotificationPermissionService notificationPermission;
@@ -179,9 +190,10 @@ class AppState extends ChangeNotifier {
     webDav.dispose();
     library.dispose();
     accounts.dispose();
-    embyConnections.dispose(); // 99 §20 Emby 媒体库
+    embyConnections.dispose(); // 99 §21 Emby 媒体库
     playlists.dispose();
     backup.dispose();
+    downloadDestination.dispose();
     _periodicSync?.cancel();
     _libraryPushDebounce?.cancel();
     library.removeListener(_onLibraryChanged);
@@ -196,15 +208,13 @@ class AppState extends ChangeNotifier {
       _initPhase = 'settings';
       await settings.init();
       AppSnack.attach(settings);
-      if (settings.downloadNomediaEnabled) {
-        // 只在开关为开且目录里还没有时补文件。已经有不算失败，关着不删。
-        unawaited(
-          const PlatformExportService().setDownloadsNomedia(enabled: true),
-        );
-      }
+      // SAF 自定义下载目录：启动时校验可用性
+      await downloadDestination.verifyOnOpen();
+      // .nomedia 双向对齐（规格 §8：启动时不再只补不删）
+      await downloadDestination.alignNomedia();
       _syncCoverThumbSize();
       _syncDownloadFileTypes();
-      // Emby 连接表（99 §20 Emby 媒体库）：独立 DB，与 library.db 无关。
+      // Emby 连接表（99 §21 Emby 媒体库）：独立 DB，与 library.db 无关。
       _initPhase = 'emby-connections';
       await embyConnections.init();
       // Existing schema path first (onCreate / onUpgrade, including account

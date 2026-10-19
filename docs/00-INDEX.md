@@ -43,7 +43,7 @@
 | 14 | [14-LOCALIZATION-AND-MEDIA-LIFECYCLE.md](14-LOCALIZATION-AND-MEDIA-LIFECYCLE.md) | 应用语言偏好、ARB 维护、服务层错误本地化与 Android media_kit native 生命周期约定 |
 | 98 | [98-EMBY-MEDIA-CLIENT.md](98-EMBY-MEDIA-CLIENT.md) | **Emby 兼容媒体库客户端（远期，暂不实现）**：按 Emby/Jellyfin MediaBrowser API 接入只读/浏览侧；本地库/多远程库同构、抽象层路由与鉴权；API 操作清单、身份模型（ServerId+UserId+ItemId）、风险与未决问题（token 吊销、Emby vs Jellyfin 分歧、转码、播放上报）。**布局提案 + demo 脚手架已开工**，见下条 |
 | — | [EMBY-MEDIA-LAYOUT.md](EMBY-MEDIA-LAYOUT.md) | **Emby 兼容媒体库客户端 UI 布局建议**（布局已定，demo 脚手架已落地）：只读/浏览侧接入现有应用（不替换现有音乐库），抽屉入口「Emby」（索引 5）、Views→条目浏览、音乐子 Tab（专辑/艺术家/歌曲）、API 映射表、鉴权与账号隔离、分阶段、未决问题 |
-| 99 | [99-IN-PROGRESS.md](99-IN-PROGRESS.md) | **开发中文档**（含 §20 Emby 兼容媒体库客户端）：正在开发的功能的原始语义、取舍与影响面；也是计划、待办和未决问题的唯一记录处 |
+| 99 | [99-IN-PROGRESS.md](99-IN-PROGRESS.md) | **开发中文档**（含 §21 Emby 兼容媒体库客户端）：正在开发的功能的原始语义、取舍与影响面；也是计划、待办和未决问题的唯一记录处 |
 
 ## 3. Agent 编码约束
 
@@ -84,4 +84,4 @@
 - **音乐输出后端**（低）：AudioTrack / AAudio 等可选输出后端；成本较高。
 - **无障碍与多语言**（低）：语义标签、字号适配、多语言。
 - **跨平台**（低）：iOS / 桌面端仅作远期评估，Android-first 不变。
-- **Emby 兼容媒体库客户端**（demo 脚手架已落地，完整播放未排期）：按 Emby/Jellyfin MediaBrowser API 接入只读/浏览侧（不替换现有音乐库）。抽屉标签「Emby」。布局见 [EMBY-MEDIA-LAYOUT.md](EMBY-MEDIA-LAYOUT.md)；目标架构见 [98](98-EMBY-MEDIA-CLIENT.md)；进度见 [99 §20](99-IN-PROGRESS.md)。
+- **Emby 兼容媒体库客户端**（demo 脚手架已落地，完整播放未排期）：按 Emby/Jellyfin MediaBrowser API 接入只读/浏览侧（不替换现有音乐库）。抽屉标签「Emby」。布局见 [EMBY-MEDIA-LAYOUT.md](EMBY-MEDIA-LAYOUT.md)；目标架构见 [98](98-EMBY-MEDIA-CLIENT.md)；进度见 [99 §21](99-IN-PROGRESS.md)。

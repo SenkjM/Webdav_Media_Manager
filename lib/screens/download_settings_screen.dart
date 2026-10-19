@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../services/download_destination_service.dart';
 import '../services/task_queue_service.dart';
-import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
 import '../utils/app_snack.dart';
 import '../l10n/generated/app_localizations.dart';
@@ -25,29 +25,22 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _ensureNomedia();
+      _verifyAndAlignNomedia();
     });
   }
 
-  /// 开关为开时，仅在下载目录里还没有 `.nomedia` 才补文件。
-  /// 关着什么都不删——删除只发生在用户关掉开关、且文件还在时。
-  /// 已经一致（外部放好或已经删掉）不算错误，这里也不再提示。
-  Future<void> _ensureNomedia() async {
-    final settings = context.read<SettingsService>();
-    if (!settings.downloadNomediaEnabled) return;
-    final result = await const PlatformExportService().setDownloadsNomedia(
-      enabled: true,
-    );
-    if (!mounted || result.error == null) return;
-    AppSnack.error(context, result.error!);
+  /// 设置页打开时：校验自定义目录可用性 + 双向对齐 .nomedia。
+  Future<void> _verifyAndAlignNomedia() async {
+    final destination = context.read<DownloadDestinationService>();
+    await destination.verifyOnOpen();
+    await destination.alignNomedia(reportAlready: true);
   }
 
   Future<void> _toggleNomedia(bool value) async {
     final settings = context.read<SettingsService>();
+    final destination = context.read<DownloadDestinationService>();
     await settings.setDownloadNomediaEnabled(value);
-    final result = await const PlatformExportService().setDownloadsNomedia(
-      enabled: value,
-    );
+    final result = await destination.alignNomedia(reportAlready: true);
     if (!mounted) return;
     if (result.error != null) {
       await settings.setDownloadNomediaEnabled(!value);
@@ -63,6 +56,26 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
           ? l10n.downloadNomediaAlreadyPresent
           : l10n.downloadNomediaAlreadyAbsent,
     );
+  }
+
+  Future<void> _toggleCustomDownloadDir(bool value) async {
+    final destination = context.read<DownloadDestinationService>();
+    if (value) {
+      // 开启：选择目录
+      final result = await destination.pickCustomDir();
+      if (!mounted) return;
+      if (result.cancelled == true) {
+        // 取消：保持关闭状态
+        AppSnack.show(context, AppLocalizations.of(context)!.customDownloadDirPickCancelled);
+      } else if (result.error != null) {
+        // 失败：提示错误
+        AppSnack.error(context, result.error!);
+      }
+      // 成功时 pickCustomDir 已经更新了设置，不需要额外操作
+    } else {
+      // 关闭：禁用自定义目录
+      await destination.disableCustomDir();
+    }
   }
 
   @override
@@ -118,6 +131,64 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             subtitle: Text(l10n.downloadNomediaSubtitle),
             value: settings.downloadNomediaEnabled,
             onChanged: (value) => _toggleNomedia(value),
+          ),
+          const Divider(height: 24),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Text(
+              l10n.customDownloadDir,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.folder_outlined),
+            title: Text(l10n.customDownloadDir),
+            subtitle: Text(l10n.customDownloadDirSubtitle),
+            value: settings.useCustomDownloadDir,
+            onChanged: (value) => _toggleCustomDownloadDir(value),
+          ),
+          if (settings.customDownloadDirActive)
+            ListTile(
+              leading: const SizedBox(width: 24),
+              title: Text(l10n.customDownloadDirCurrent(
+                settings.customDownloadDisplayName ?? l10n.customDownloadDirDefault,
+              )),
+              dense: true,
+            ),
+          if (settings.customDownloadDirActive)
+            ListTile(
+              leading: const SizedBox(width: 24),
+              title: Text(l10n.customDownloadDirRepick),
+              trailing: const Icon(Icons.folder_open_outlined),
+              onTap: () async {
+                final destination = context.read<DownloadDestinationService>();
+                final result = await destination.pickCustomDir();
+                if (!mounted) return;
+                if (result.error != null) {
+                  AppSnack.error(context, result.error!);
+                }
+              },
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.customDownloadDirAndroid11Note,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.customDownloadDirSafNote,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
           ),
           const Divider(height: 24),
           SwitchListTile(

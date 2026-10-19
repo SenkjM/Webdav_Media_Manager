@@ -8,6 +8,7 @@ import 'library_database.dart';
 import 'platform_export_service.dart';
 import 'playlist_store.dart';
 import 'task_store.dart';
+import 'download_destination_service.dart';
 
 /// Emergency recovery for schema conflicts before normal services are usable.
 ///
@@ -15,7 +16,9 @@ import 'task_store.dart';
 /// directory scan: a store that renames its database is picked up here for
 /// free, and [legacyFileNames] covers files older builds left behind.
 class LocalDatabaseRecoveryService {
-  const LocalDatabaseRecoveryService();
+  const LocalDatabaseRecoveryService({this.destination});
+
+  final DownloadDestinationService? destination;
 
   /// Names older builds used for stores that were renamed or dropped.
   ///
@@ -58,17 +61,28 @@ class LocalDatabaseRecoveryService {
   /// Export raw files, including SQLite journals needed for forensic recovery.
   Future<List<ExportResult>> exportAll() async {
     final files = await _files();
+    final dest = destination;
     final exporter = const PlatformExportService();
     final results = <ExportResult>[];
     for (final file in files) {
-      results.add(
-        await exporter.saveToDownloads(
+      final ExportResult result;
+      if (dest != null) {
+        result = await dest.save(
+          sourcePath: file.path,
+          fileName: 'wmp_recovery_${p.basename(file.path)}',
+          mimeType: 'application/octet-stream',
+          mediaStoreSubdir: 'WebdavMediaManager/recovery',
+          retryOnFallback: true,
+        );
+      } else {
+        result = await exporter.saveToDownloads(
           sourcePath: file.path,
           fileName: 'wmp_recovery_${p.basename(file.path)}',
           mimeType: 'application/octet-stream',
           subdir: 'WebdavMediaManager/recovery',
-        ),
-      );
+        );
+      }
+      results.add(result);
     }
     return results;
   }

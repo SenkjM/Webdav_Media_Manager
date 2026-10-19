@@ -1,7 +1,7 @@
 # Emby 兼容媒体库客户端 UI 布局建议
 
-> **状态：布局已定 + demo 脚手架已落地（`feat/emby-media`：连接管理 + Views 列表 + 条目浏览 + 音乐子 Tab）；完整播放与进度上报仍未做。见 [99 §20](99-IN-PROGRESS.md)。**
-> 相关文档：[98-EMBY-MEDIA-CLIENT.md](98-EMBY-MEDIA-CLIENT.md)（远期设计）、[99-IN-PROGRESS.md](99-IN-PROGRESS.md#20-emby-兼容媒体库客户端)
+> **状态：布局已定 + demo 脚手架已落地（`feat/emby-media`：连接管理 + Views 列表 + 条目浏览 + 音乐子 Tab）；完整播放与进度上报仍未做。见 [99 §21](99-IN-PROGRESS.md)。**
+> 相关文档：[98-EMBY-MEDIA-CLIENT.md](98-EMBY-MEDIA-CLIENT.md)（远期设计）、[99-IN-PROGRESS.md](99-IN-PROGRESS.md#21-emby-兼容媒体库客户端demo-脚手架进行中)
 
 ---
 

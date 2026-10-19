@@ -12,6 +12,7 @@ import 'aliyundrive_open_driver.dart';
 import 'terabox_driver.dart';
 import 'baidu_netdisk_driver.dart';
 import 'netease_music_driver.dart';
+import 'ctfile_driver.dart';
 import 'crypt/crypt_driver.dart';
 
 /// 已落地的驱动；顺序即账号表单类型下拉的显示顺序。
@@ -24,6 +25,7 @@ const List<CloudDriverSpec> kCloudDriverSpecs = <CloudDriverSpec>[
   AliyundriveOpenSpec(),
   TeraboxSpec(),
   NeteaseMusicSpec(),
+  CtFileSpec(),
   CryptSpec(),
 ];
 

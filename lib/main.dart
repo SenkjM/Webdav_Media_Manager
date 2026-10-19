@@ -14,6 +14,7 @@ import 'services/accounts_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/cache_service.dart';
 import 'services/credential_vault_service.dart';
+import 'services/download_destination_service.dart';
 import 'services/task_queue_service.dart';
 import 'services/library_service.dart';
 import 'services/user_folder_service.dart';
@@ -92,6 +93,9 @@ class WebDavMusicApp extends StatelessWidget {
         ChangeNotifierProvider<CredentialVaultService>.value(
           value: appState.credentials,
         ),
+        ChangeNotifierProvider<DownloadDestinationService>.value(
+          value: appState.downloadDestination,
+        ),
         ChangeNotifierProvider<SyncService>.value(value: appState.sync),
         ChangeNotifierProvider<LibraryService>.value(value: appState.library),
         ChangeNotifierProvider<UserFolderService>.value(
@@ -101,7 +105,7 @@ class WebDavMusicApp extends StatelessWidget {
           value: appState.mangaLibrary,
         ),
         ChangeNotifierProvider<WebDavService>.value(value: appState.webDav),
-        // Emby 媒体库连接（99 §20 Emby 媒体库）：独立于 accounts/WebDAV。
+        // Emby 媒体库连接（99 §21 Emby 媒体库）：独立于 accounts/WebDAV。
         ChangeNotifierProvider<EmbyConnectionStore>.value(
           value: appState.embyConnections,
         ),

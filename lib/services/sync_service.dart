@@ -27,6 +27,7 @@ import '../models/account_capabilities.dart';
 
 import 'settings_service.dart';
 import 'webdav_service.dart';
+import 'download_destination_service.dart';
 
 /// What a single operation touched.
 class SyncOutcome {
@@ -149,6 +150,7 @@ class SyncService extends ChangeNotifier {
     UserFolderService? folders,
     LibraryDatabase? db,
     CacheService? cache,
+    DownloadDestinationService? destination,
   }) : _manga = manga,
        _folders = folders,
        _db = db,
@@ -160,7 +162,8 @@ class SyncService extends ChangeNotifier {
        _library = library,
        _playlists = playlists,
        _backup = backup,
-       _export = export ?? const PlatformExportService();
+       _export = export ?? const PlatformExportService(),
+       _destination = destination;
 
   final AccountsService _accounts;
   final SettingsService _settings;
@@ -170,6 +173,7 @@ class SyncService extends ChangeNotifier {
   final PlaylistService _playlists;
   final BackupService _backup;
   final PlatformExportService _export;
+  final DownloadDestinationService? _destination;
   final MangaLibraryService? _manga;
   final UserFolderService? _folders;
   final LibraryDatabase? _db;
@@ -1196,20 +1200,38 @@ class SyncService extends ChangeNotifier {
               ? '$localExportPrefix-${utcStamp()}.json'
               : '$localExportPrefix-${utcStamp()}.wdmm');
       final tmp = await PlatformExportService.writeTempExportFile(name, bytes);
-      final result = await _export.saveToDownloads(
-        sourcePath: tmp.path,
-        fileName: name,
-        mimeType: readableJson
-            ? 'application/json'
-            : 'application/octet-stream',
-        subdir: localExportSubdir,
-      );
+      final destination = _destination;
+      final ExportResult result;
+      if (destination != null) {
+        result = await destination.save(
+          sourcePath: tmp.path,
+          fileName: name,
+          mimeType: readableJson
+              ? 'application/json'
+              : 'application/octet-stream',
+          mediaStoreSubdir: localExportSubdir,
+          retryOnFallback: true,
+        );
+      } else {
+        result = await _export.saveToDownloads(
+          sourcePath: tmp.path,
+          fileName: name,
+          mimeType: readableJson
+              ? 'application/json'
+              : 'application/octet-stream',
+          subdir: localExportSubdir,
+        );
+      }
       if (result.ok) {
         final l10n = L10nHost.current;
-        lastMessage = l10n.exportedTo(
-          result.fileName,
-          PlatformExportService.describeLocation(result.location, l10n),
+        var locationDesc = PlatformExportService.describeLocation(
+          result.location,
+          l10n,
         );
+        if (result.fellBack) {
+          locationDesc = '$locationDesc\n${l10n.exportFellBackNotice}';
+        }
+        lastMessage = l10n.exportedTo(result.fileName, locationDesc);
       } else {
         lastError = result.error;
       }

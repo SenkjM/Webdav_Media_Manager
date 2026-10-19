@@ -286,6 +286,27 @@
 - **实现中修复的驱动缺陷**（测试暴露，已随分支提交）：`123_open` path→id 缓存键与查表键不同形（缓存永远查不中）、续期地址空串不回落默认值；`aliyundrive_open` 在线续期候选地址未去重（custom 与 builtin 首项重复）。
 - **验收状态（用户确认）**：真机验收按通过处理——123_open 添加与浏览真机通过（打开目录曾报一次 invalid_grant，用户决定不排查、按验收通过收口），其余三盘按用户决定一并视为验收通过；通用清单见 [12 §9](12-DRIVER-PORTING-GUIDE.md)，逐盘重点见 [13 §6.1](13-DRIVER-BATCH-PLAN.md)。
 
+### 4.3.5 城通网盘（ctfile）—— 首个非 WebDAV 上传驱动（进行中）
+
+**状态**：分支 `feat/ctfile-driver`，实现已完成、`flutter analyze` 干净 + `flutter test` 全过；真机未验（无密钥进 CI）。规格见 `/workspace/saf_work/ctfile-wdmm-spec.md`，Worker 参照 `/workspace/saf_work/ctfile_ref/`。
+
+**这是首个支持上传（write）的非 WebDAV 云盘**（§4.2.1 已推翻「上传砍掉」决定：`CloudDriver` 补了 `uploadStream` / `ensureDirectory`，crypt 透传源写能力；其余云盘维持默认抛错，ctfile 是第一个真实现 write 的直连盘）。
+
+实现语义与取舍：
+- **鉴权**：只用开放接口 Session（后台「开放接口登录密钥管理」），不做邮箱密码 / 短信登录（服务端 410）。表单 `session`（obscure 必填）+ `cloud_type` select（public 默认 / private）。`secretFieldKeys` 自动推导出 `session`；无令牌轮换 → `runtimeSecretKeys` 空。`spec.verify` 调 profile，401 转人话提示去后台重新生成密钥。
+- **能力位**：`list | read | write | mkdir | move | copy | delete`（AccountCaps 无独立 rename/remove 位，rename 归 move、remove 归 delete）。
+- **id 前缀双试策略**：Worker `callWithId` 的 raw vs stripped 照搬——`d`/`f` 前缀先试去掉前缀的，400/404 再试带前缀的（`_callWithId` 的 `prefer` 参数控制主备顺序）。批量操作 `_callWithIds` 先逗号 join，400/404/405 再回退数组。
+- **路径 → id 缓存**：段按名逐级解析，文件夹 key `d…` / 文件 `f…` / 根 `0`；写操作后整表 clear（照 Worker）。
+- **list**：`/public|private/folder/list` + `/file/list` 合并；分页用 `start` 偏移 + 同首键哨兵防死循环（上限 `kMaxListPages`）。
+- **get()**：解析路径（`expectDir:false` 同时找文件与目录）；f 前缀 = 文件 → 取 `fileMeta` 拿真实 `size` + `fetch_url` 拿 `rawUrl` + `rawHeaders` 至少带 UA；d 前缀 / 0 = 目录。直链可 302，非 MustProxy。
+- **uploadStream**：整包入内存算 `md5-${size}` checksum → `/file/upload` 带 name/size/checksum/folder_id；`exists>0` 秒传成功直接返回，否则取 `upload_url` multipart POST（`name` + `filesize` + `file`）。首版整包内存（已记限制；大文件分片策略留待真机反馈）。
+- **copy**：`ids` + 目标 `folder_id`（`/${ns}/file/copy`，与 move 同形）。副本是新 id、内容可用（已核实）。若 `newName` 与原名不同：复制后在目标目录列一次定位副本再 `modify_meta` 改名。
+- **mkdir 重名**：403 + `folder_id` 当成功（照 Worker）。
+- **429 / 5xx**：有限次退避重试（300ms × (retry+1)），禁止无退避忙等；**401** = Session 失效明确错误（不重试）。
+- **目录结构变更后清 path 缓存**：rename / move / remove / mkdir / upload 全部 `_pathCache.clear()`。
+
+未做 / 待真机：真机上传验收（小文件 / 秒传 / 大文件内存上限）、整包上传内存上限的实际阈值、WebDAV 同步是否绑城通（条款留给用户，驱动本身不禁止 write）。
+
 ### 4.4 只读家族（能力遮罩 = 只读）
 
 `115_share`、`123_share`、`aliyundrive_share`、`openlist_share`、`pikpak_share`、`onedrive_sharelink`、`autoindex`、`github_releases`、`lenovonas_share`、`google_photo`、`quark_uc_tv`、`emby`、`url_tree`——浏览 / 下载 / 流式可用，写操作按遮罩隐藏（worker 驱动内五项写方法全部显式抛「不支持」，二次扫描证实）。批次已定：先接 `openlist_share` + `github_releases`（API 形状差异最大的两个）验证遮罩机制，再批量铺其余。
@@ -609,20 +630,23 @@ adb logcat | grep -Ei 'host lookup|DownloadQueue|KeepAlive'
 - 最上分区标题用既有键 `homeAndNavigation`，文案改为「媒体库主页和导航」。里面是自定义主页、记住网络库路径、分享（要填模板，进二级页）、缩略图（自定义边长要填，进二级页）。媒体通知仍是行，不是新功能；它上方补了与其它分区一致的 `Divider`。
 - 四个分区顺序：音乐库、网络库、杂项、备份与同步。缓存清理要填天数，进二级页；刷新标签只有一行，留在音乐库。网盘账号、下载、视频、音频流式、图片查看、后缀都在网络库，各自仍打开原来的页面。账号页标题改为「网盘账号管理」。
 - 语言和提示显示时长是两项简单选择，留在杂项。下载通知、后台保活、测试通知跟下载有关，挪进「网络库 → 下载」，默认值不变。
-- `.nomedia` 偏好键 `download_nomedia`，默认 false。打开才创建，关掉才删除；冷启动只在开关为开时补文件，不会因为开关关着就删。API 28 直接写公共文件且不扫描；API 29+ 走 `MediaStore.Downloads`，显示名 `.nomedia`；API 28 以下忽略。相册导出不写这个文件。
+- `.nomedia` 偏好键 `download_nomedia`，默认 false。打开才创建，关掉才删除。**旧语义**「冷启动只在开关为开时补文件，不会因为开关关着就删」已被 §20 的双向 `alignNomedia` 取代（见 [§20](#20-saf-自定义下载目录本分支实现)）。API 28 直接写公共文件且不扫描；API 29+ 走 `MediaStore.Downloads`，显示名 `.nomedia`；API 28 以下忽略。相册导出不写这个文件。
 - 图片动作存储键 `download_to_gallery`，只允许图片类别，出厂默认仍是查看图片。视频相册仍是「⋮」里的单独入口，不改单击默认。
 
 
-## 9. 预发布标签名与已有 .nomedia（本分支实现）
+## 9. 预发布标签名与已有 .nomedia（本分支实现，2026-10-19 更新）
 
 **状态**：本分支实现。语义已写入 [04](04-DOWNLOAD-QUEUE.md)、[09](09-MISC.md) 与 README。收口前不要删。
 
-**用户原话（2026-09-29）**：新的预发布标签只用 `${base}-${versionCode}`（例 `v0.2.2-2020004`），不改 Release 标题模板，不改已有标签和已有 Release 标题。同一提交重跑仍复用该标签及其 versionCode，按标签 metadata 的 sha / seq / version_code 查找，不靠标签名里的短 SHA。`.nomedia` 开关：先查 `Download/WebdavMediaManager`。打开时已经有真正的 `.nomedia`，或关闭时已经没有，则不写不删，保存设置并提示外部操作已完成（「下载目录里已经有 .nomedia，已按外部操作完成」 / 「下载目录里已经没有 .nomedia，已按外部操作完成」）。状态不一致才按原逻辑写入或删除；只有这一步失败才拨回开关并报错。API 29+ 只认显示名恰好为 `.nomedia` 的 MediaStore.Downloads 行；API 28 认磁盘文件；API 27 及以下忽略。相册路径不动。
+**用户原话（2026-09-29）**：新的预发布标签只用 `${base}-${versionCode}`（例 `v0.2.2-2020004`），不改 Release 标题模板，不改已有标签和已有 Release 标题。同一提交重跑仍复用该标签及其 versionCode，按标签 metadata 的 sha / seq / version_code 查找，不靠标签名里的短 SHA。`.nomedia` 开关：先调平台方法检测与应用，只有成功（含 already）才保存设置。打开时已经有真正的 `.nomedia`，或关闭时已经没有，则不写不删，保存设置并提示外部操作已完成。状态不一致才按原逻辑写入或删除。API 29+ 先查显示名恰好为 `.nomedia` 的 MediaStore.Downloads 行，查不到时回退查磁盘文件（外部放置的文件也能读到），存在且可读才算 present；插入后 MediaStore 改写了显示名时，Samsung 返回专用错误「三星系统会改写 .nomedia 文件名，无法干净排除媒体扫描，已取消」，非 Samsung 返回通用错误；删除时若 MediaStore 无行但磁盘有文件，尝试 `File.delete()`，失败返回「无法删除外部放置的 .nomedia，请用文件管理器手动删除」。API 28 认磁盘文件；API 27 及以下忽略。相册路径不动。
 
 **取舍**：
 
 - 新标签名在算出 seq / versionCode 之后才确定。旧标签 `v0.2.2-f046956`、`v0.2.2-ba29461`、`v0.2.2-0d5148a` 与浮动 `prerelease` 不改名、不移动。`version_name` 仍等于标签名，所以新版本的标题会变成 `Pre-release v0.2.2-<versionCode> (<versionCode>)`，模板那一行不改。
-- 开关的「已经一致」走原生返回的 `already`，不是错误。冷启动和进入下载设置时若开关为开，仍然只在缺失时补文件，不弹「外部操作」提示。
+- 开关的「已经一致」走原生返回的 `already`，不是错误。**旧语义**「冷启动和进入下载设置时若开关为开，仍然只在缺失时补文件」已被 §20 双向 `alignNomedia` 取代（见 [§20](#20-saf-自定义下载目录本分支实现)）。
+- Dart 侧 `_toggleNomedia` 改为：先保存设置，再调 `alignNomedia`；成功时继续，失败时回滚设置并显示错误。
+
+**2026-10-19 更新**：Samsung 机型在 MediaStore 插入后改写显示名的处理；API 29+ 查不到 MediaStore 行时回退查磁盘文件作为 present 判定；删除时若 MediaStore 无行但磁盘文件存在的特殊处理；Dart 侧「先保存设置、再对齐、失败回滚」的顺序（对应 §20 的 SAF 架构，toggle 通过 `DownloadDestinationService.alignNomedia` 而不是直接调 `PlatformExportService`）。
 
 ## 10. 日语衬线字体（本分支已按最小改法落地）
 
@@ -1218,9 +1242,33 @@ prefs：`manga_view_modes_json`（键 `series` / `manga` / `author`）；`music_
   - Dart 侧 `PlatformExportService` 暴露 `listFolderTree() -> PickedFolderTree` 和 `readUriToCache(uri) -> String?`；`QueueTask` 新增 `localUri` 字段（SAF URI），`enqueueUpload` 同步加 `localUri` 可选参数。
   - `_runUpload` 检测到 `localUri` 时，在 worker 里调 `readUriToCache` 拿缓存路径再上传，成功后删临时文件；重试时缓存路径已写回 `task.localPath` 无需再次枚举。
   - 好处：picker 界面即时消失，进度在任务列表可见；暂推迟，等文件夹上传量级达到实际瓶颈时再上。
+## 20. SAF 自定义下载目录（本分支实现）
 
+**状态**：已实现并待验收。
 
-## 20. Emby 兼容媒体库客户端（demo 脚手架，进行中）
+**用户原话**：允许用户选择自定义的 SAF 树目录作为下载目标，替代 MediaStore 的系统下载目录。
+
+**决定与取舍**：
+
+- **只读树授权泄漏修复**：漫画库 `listFolderTree` 得到的子文档 URI 存进上传任务 `localUri`，任务运行时（可能重启后）才用 `readUriToCache` 读——所以**不能**列举完立刻释放。方案：`_releaseUnusedReadTreeGrants()` 取只读（write=false）的树授权；排除 `settings.customDownloadTreeUri`；对每个 grant，若队列中**不存在**任何 status != completed 的任务其 localUri 属于该树，则 releaseReadTree。调用时机：队列 init 完成后一次；任何 localUri 非空的任务进入 completed 或被 remove / clearAll / clearCompleted 之后。
+- **错误分类**：SAF 写入失败分三类：`safInvalid`（权限丢失、根文档不可用、FLAG_DIR_SUPPORTS_CREATE 缺失）→ 全局回落到系统下载目录；`io`（ENOSPC 等 IOException）→ 不回落；`other`（其它异常）→ 不回落。**只有 safInvalid 会导致上层全局回落**。
+- **重复任务对话框**：单文件下载时，先查 `blockingPublicDuplicate`；有 → 对话框「已有重复任务，是否重新进行？」确认 → `requeuePublicFresh`（删旧行、删 .part、新建任务）。批量下载时，`enqueueSelection` 先扫描收集重复项；若 duplicates>0，对话框「有 N 个重复任务，是否全部重新进行？」确认 → `requeuePublicFreshMany`。
+- **.nomedia 双向对齐**：启动、下载设置页打开、切换目标（pick / disable / fallback）、备份导入后、每次 downloads 提交前（SAF 模式 best-effort）都调 `alignNomedia`。开关切换时用 `alignNomedia(reportAlready:true)`，若已匹配则提示，失败才拨回开关。替代 99 §8/§9 里「冷启动只补不删」的旧语义。
+
+**相关文档**：
+
+- [04-DOWNLOAD-QUEUE.md](04-DOWNLOAD-QUEUE.md)：提交时决定目标、SAF 写入、错误分类与回落、.nomedia 双向对齐、重复任务对话框
+- [08-SYNC-AND-BACKUP.md](08-SYNC-AND-BACKUP.md)：备份新增键与不备份键（含 custom_download_* 不备份）
+
+**UI**：
+
+- 设置 → 下载队列：自定义下载目录开关、当前目录名、重新选择按钮、Android 11 说明
+- 任务队列：downloads 完成标签用「已下载」；进行中用「目标：下载目录」（不提「系统」）
+- 网络库：单文件与批量下载的重复任务对话框
+
+**实现细节**见本分支规格 `/workspace/saf_work/spec.md`。
+
+## 21. Emby 兼容媒体库客户端（demo 脚手架，进行中）
 
 **状态**：2026-10-18 基于 `main` tip 开分支 `feat/openlist-media`，2026-10-19 pivot 到 `feat/emby-media`（同一 worktree：`worktree/openlist-media`）。**已出布局建议文档 + 可运行的 demo 脚手架**（抽屉入口 + 连接管理 + Views/条目浏览 + 音乐子 Tab）。
 

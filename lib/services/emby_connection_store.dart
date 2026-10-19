@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS emby_connections (
 )
 ''';
 
-/// 连接列表持久化 + secrets 管理（99 §20 Emby 媒体库）。
+/// 连接列表持久化 + secrets 管理（99 §21 Emby 媒体库）。
 ///
 /// 使用独立 SQLite 库 `emby_connections.db`，与现有 `library.db` /
 /// `accounts` 完全隔离；secrets 存入 `flutter_secure_storage`。

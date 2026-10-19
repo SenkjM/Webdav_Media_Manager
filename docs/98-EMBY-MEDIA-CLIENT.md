@@ -2,7 +2,7 @@
 
 > **状态：远期项目，暂不实现。本文件只保留路径与设计，不排期、不开工。布局提案 + demo 脚手架已落地（见 [EMBY-MEDIA-LAYOUT.md](EMBY-MEDIA-LAYOUT.md)），完整浏览与播放仍未排期。**
 > 总索引：[00-INDEX.md](00-INDEX.md)
-> 关联：[01](01-DATA-MODEL.md)（身份约定）、[03](03-MUSIC-LIBRARY.md)（现有音乐库）、[08](08-SYNC-AND-BACKUP.md)（同步与备份）、[11](11-CLOUD-DRIVER-PORTING.md)（云盘驱动实现）、[99](99-IN-PROGRESS.md)（开发中文档 §20 Emby 媒体库）、[EMBY-MEDIA-LAYOUT.md](EMBY-MEDIA-LAYOUT.md)（UI 布局建议）
+> 关联：[01](01-DATA-MODEL.md)（身份约定）、[03](03-MUSIC-LIBRARY.md)（现有音乐库）、[08](08-SYNC-AND-BACKUP.md)（同步与备份）、[11](11-CLOUD-DRIVER-PORTING.md)（云盘驱动实现）、[99](99-IN-PROGRESS.md)（开发中文档 §21 Emby 媒体库）、[EMBY-MEDIA-LAYOUT.md](EMBY-MEDIA-LAYOUT.md)（UI 布局建议）
 
 ---
 
