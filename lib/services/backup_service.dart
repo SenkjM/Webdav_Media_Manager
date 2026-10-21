@@ -63,6 +63,7 @@ class BackupService extends ChangeNotifier {
     required WebDavService webDav,
     CacheService? cache,
     CoverService? covers,
+    Future<void> Function()? onSettingsImported,
   }) : _libraryDb = libraryDb,
        _library = library,
        _accounts = accounts,
@@ -71,7 +72,8 @@ class BackupService extends ChangeNotifier {
        _credentials = credentials,
        _webDav = webDav,
        _cache = cache,
-       _covers = covers ?? library.covers;
+       _covers = covers ?? library.covers,
+       _onSettingsImported = onSettingsImported;
 
   final LibraryDatabase _libraryDb;
   final LibraryService _library;
@@ -85,6 +87,9 @@ class BackupService extends ChangeNotifier {
   final WebDavService _webDav;
   final CacheService? _cache;
   final CoverService _covers;
+
+  /// 备份导入后回调（用于 alignNomedia）
+  final Future<void> Function()? _onSettingsImported;
 
   static const defaultRemoteDir = '/WebdavMediaManager/backup/';
   static const defaultFileName = 'webdav_media_backup.wdmm';
@@ -855,6 +860,10 @@ class BackupService extends ChangeNotifier {
     final settings = payload['settings'];
     if (settings is Map) {
       await _settings.importFromBackup(Map<String, dynamic>.from(settings));
+      // 导入 settings 后回调 alignNomedia（规格 §7 末）
+      if (_onSettingsImported != null) {
+        await _onSettingsImported();
+      }
     }
 
     await _rewriteCoverPaths(docs.path);

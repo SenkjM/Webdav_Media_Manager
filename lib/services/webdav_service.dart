@@ -74,6 +74,13 @@ class WebDavService extends ChangeNotifier {
     return _cloudDrive?.typeLabelFor(account) ?? account.providerType;
   }
 
+  /// 账号状态标签（账号列表展示的小 Chip）。转调 [CloudDriveService]，
+  /// 非云盘账号 / 未接入类型返回空。失败静默，不阻塞账号列表。
+  Future<List<AccountStatusTag>> statusTagsFor(String accountId) {
+    return _cloudDrive?.statusTagsFor(accountId) ??
+        Future.value(const <AccountStatusTag>[]);
+  }
+
   /// Verify configuration for a new account before registration.
   ///
   /// Delegates to [CloudDriveService] for unified driver verification.

@@ -226,8 +226,6 @@
   "copyTo": "复制到",
   "moveTo": "移动到",
   "downloadAction": "下载",
-  "fileQueuedOrSaved": "该文件已在任务队列或已下载",
-  "fileQueuedOrSavedShort": "该文件已在队列或已保存",
   "accountRequired": "请先添加 WebDAV 服务器",
   "syncTitle": "同步与备份",
   "syncIntro": "凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。",
@@ -1698,5 +1696,84 @@
   "dlnaTranscodeAudio": "音频转码",
   "dlnaTranscodeAudioDesc": "将音频转码为 AAC",
   "dlnaCastQueue": "投屏队列",
-  "dlnaRenderer": "渲染器"
+  "dlnaRenderer": "渲染器",
+  "customDownloadDir": "自定义下载目录",
+  "@customDownloadDir": {},
+  "customDownloadDirSubtitle": "下载的文件保存到你选择的文件夹",
+  "@customDownloadDirSubtitle": {},
+  "customDownloadDirCurrent": "当前目录：{name}",
+  "@customDownloadDirCurrent": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "customDownloadDirDefault": "系统下载目录",
+  "@customDownloadDirDefault": {},
+  "customDownloadDirRepick": "重新选择目录",
+  "@customDownloadDirRepick": {},
+  "customDownloadDirAndroid11Note": "Android 11 及以上不能直接选择「下载」根目录，请选择或新建其中的子文件夹",
+  "@customDownloadDirAndroid11Note": {},
+  "customDownloadDirSafNote": "自定义目录通过系统文件访问授权（SAF）写入，可绕过部分厂商对系统下载目录的限制",
+  "@customDownloadDirSafNote": {},
+  "customDownloadDirPickCancelled": "未选择目录，仍使用系统下载目录",
+  "@customDownloadDirPickCancelled": {},
+  "customDownloadDirFallback": "自定义下载目录已失效，已切回系统下载目录",
+  "@customDownloadDirFallback": {},
+  "errCustomDirInvalid": "自定义下载目录已失效，已切回系统下载目录，可重试此任务",
+  "@errCustomDirInvalid": {},
+  "locationCustomDownloadDir": "{name}",
+  "@locationCustomDownloadDir": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "exportErrStoragePermissionDenied": "没有存储权限，无法写入公共目录",
+  "@exportErrStoragePermissionDenied": {},
+  "exportFellBackNotice": "自定义下载目录已失效，已改存到系统下载目录",
+  "@exportFellBackNotice": {},
+  "dupTaskTitle": "已有重复任务",
+  "@dupTaskTitle": {},
+  "dupTaskBody": "已有重复任务，是否重新进行？",
+  "@dupTaskBody": {},
+  "dupTaskBatchBody": "有 {count} 个重复任务，是否全部重新进行？",
+  "@dupTaskBatchBody": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "dupTaskRestart": "重新进行",
+  "@dupTaskRestart": {},
+  "dupTaskRestartAll": "全部重新进行",
+  "@dupTaskRestartAll": {},
+  "dupTaskSkip": "跳过",
+  "@dupTaskSkip": {},
+  "dlSavedGeneric": "已下载",
+  "@dlSavedGeneric": {},
+  "driverNameCtFile": "城通网盘",
+  "formHintCtFileSession": "必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）",
+  "formLabelCloudType": "云盘类型",
+  "tagVip": "会员",
+  "tagSuperVip": "超级会员",
+  "tagBwRemaining": "剩 {amount}",
+  "@tagBwRemaining": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "formOptionCtFilePublic": "公有云",
+  "formOptionCtFilePrivate": "私有云",
+  "formLabelCtFileListCacheSec": "目录缓存（秒）",
+  "formHintCtFileListCacheSec": "同一文件夹 list 结果缓存多久；默认 60，填 0 关闭",
+  "formLabelCtFileRequestIntervalMs": "请求间隔（毫秒）",
+  "formHintCtFileRequestIntervalMs": "两次 API 调用之间的最小间隔；默认 400，填 0 不节流",
+  "fileQueuedOrSaved": "该文件已在任务队列或已下载",
+  "fileQueuedOrSavedShort": "该文件已在队列或已保存"
 }

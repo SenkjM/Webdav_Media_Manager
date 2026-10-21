@@ -21,6 +21,7 @@ import '../utils/task_error.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
 import 'cloud_driver.dart';
+import 'download_destination_service.dart';
 import 'download_keepalive.dart';
 import 'download_notification_service.dart';
 import 'task_store.dart';
@@ -77,6 +78,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     String? Function(String sourceName)? accountIdForSource,
     SettingsService? settings,
     DownloadKeepAlive? keepAlive,
+    DownloadDestinationService? destination,
   }) : _webDav = webDav,
        _cache = cache,
        _library = library,
@@ -87,7 +89,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
        _isMusicFile = isMusicFile ?? isAudioFileName,
        _accountIdForSource = accountIdForSource ?? ((_) => null),
        _settings = settings,
-       _keepAlive = keepAlive ?? DownloadKeepAlive() {
+       _keepAlive = keepAlive ?? DownloadKeepAlive(),
+       _destination = destination {
     _keepAlive.onTimeout = _onKeepAliveTimeout;
   }
 
@@ -99,6 +102,9 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   /// 下载自己的 dataSync 前台服务。测试可注入；默认不碰通道直到真的要启动。
   final DownloadKeepAlive _keepAlive;
+
+  /// 下载目标服务（本轮只注入，不改 _runPublicDownload——那是第 3 块）
+  final DownloadDestinationService? _destination;
 
   /// 后台下载保活。默认开；关掉则不启 FGS、不改重试上限。
   bool keepAliveEnabled = true;
@@ -353,6 +359,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_pump());
     // 启动顺手收拾半截文件，不阻塞队列（.part 是续传的现场，不能无脑删）。
     unawaited(cleanupStaleParts());
+    // 释放不再使用的只读树授权（规格 §2.8）
+    unawaited(_releaseUnusedReadTreeGrants());
     notifyListeners();
     unawaited(_pump());
   }
@@ -1083,6 +1091,95 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return true;
   }
 
+  /// 查找同 (source, path, target) 且会阻止入队的重复任务。
+  ///
+  /// 返回 pending/active/completed 状态的任务；failed/partial/cancelled 不算重复。
+  QueueTask? blockingPublicDuplicate(
+    String sourceName,
+    String remotePath,
+    DownloadTarget target,
+  ) {
+    try {
+      return _tasks.lastWhere(
+        (t) =>
+            t.sourceName == sourceName &&
+            t.remotePath == remotePath &&
+            t.target == target &&
+            (t.status == TaskStatus.pending ||
+                t.status == TaskStatus.active ||
+                t.status == TaskStatus.completed),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 删除旧任务并重新入队（用于处理重复任务）。
+  ///
+  /// 找到 blocking 行：cancel（若 active）、从列表和 store 删除、删除 .part；
+  /// 然后正常 enqueuePublic。
+  Future<bool> requeuePublicFresh(
+    String sourceName,
+    String remotePath, {
+    String? fileName,
+    required DownloadTarget target,
+  }) async {
+    final existing = blockingPublicDuplicate(sourceName, remotePath, target);
+    if (existing != null) {
+      final id = existing.id;
+      // Cancel if active; mark cancelled so in-flight _handleFailure treats it
+      // as user cancel. Remove from memory before delete so a late upsert is
+      // dropped by the "not in queue" guard in _handleFailure.
+      if (existing.status == TaskStatus.active) {
+        _cancelTokens[id]?.cancel('requeue');
+      }
+      existing.status = TaskStatus.cancelled;
+      existing.errorMessage = 'err.cancelled';
+      _cancelTokens.remove(id);
+      _sessionIds.remove(id);
+      _tasks.remove(existing);
+      await _store.delete(id);
+      // Delete .part file if exists
+      final tmpRoot = await getTemporaryDirectory();
+      final tmpDir = Directory(p.join(tmpRoot.path, 'public_dl'));
+      final partFile = File(p.join(tmpDir.path, '$id.part'));
+      if (await partFile.exists()) {
+        try {
+          await partFile.delete();
+        } catch (_) {}
+      }
+    }
+    // Enqueue fresh
+    return enqueuePublic(
+      sourceName,
+      remotePath,
+      fileName: fileName,
+      target: target,
+    );
+  }
+
+  /// 批量 requeuePublicFresh。
+  ///
+  /// 返回成功重新入队的数量。
+  Future<int> requeuePublicFreshMany(
+    String sourceName,
+    Iterable<({String path, String name})> entries,
+    DownloadTarget target,
+  ) async {
+    var ok = 0;
+    for (final entry in entries) {
+      if (await requeuePublicFresh(
+        sourceName,
+        entry.path,
+        fileName: entry.name,
+        target: target,
+      )) {
+        ok++;
+      }
+    }
+    return ok;
+  }
+
   /// Video → system gallery.
   Future<bool> enqueueGallery(
     String sourceName,
@@ -1157,19 +1254,34 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 文件一律照下，不跳过任何类型）。
   ///
   /// 返回实际入队数、扫描失败的文件夹数、扫到的文件总数（`scanned == 0` 且
-  /// 没选文件，说明文件夹本来就是空的）与第一个错误。
-  Future<({int ok, int failed, int scanned, Object? firstError})>
+  /// 没选文件，说明文件夹本来就是空的）、重复任务数、重复项列表与第一个错误。
+  Future<({
+    int ok,
+    int failed,
+    int scanned,
+    int duplicates,
+    List<({String path, String name})> duplicateEntries,
+    Object? firstError,
+  })>
   enqueueSelection(
     String sourceName, {
     Iterable<String> folderPaths = const [],
     Iterable<WebDavItem> files = const [],
     required DownloadTarget target,
+    bool replaceDuplicates = false,
   }) async {
     final accountId = _accountIdFor(sourceName);
     if (accountId == null) {
       _lastError = 'err.sourceUnbound|$sourceName';
       notifyListeners();
-      return (ok: 0, failed: 1, scanned: 0, firstError: _lastError);
+      return (
+        ok: 0,
+        failed: 1,
+        scanned: 0,
+        duplicates: 0,
+        duplicateEntries: <({String path, String name})>[],
+        firstError: _lastError,
+      );
     }
     // 选中的文件先占位，扫出来的同路径不再重复入队。
     final pending = <String, String>{};
@@ -1194,26 +1306,57 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
     var ok = 0;
+    var duplicates = 0;
+    final duplicateEntries = <({String path, String name})>[];
+
     for (final entry in pending.entries) {
-      final queued = target == DownloadTarget.cache
-          ? await ensureQueued(
-              sourceName,
-              entry.key,
-              fileName: entry.value,
-              target: DownloadTarget.cache,
-            )
-          : await enqueuePublic(
+      if (target == DownloadTarget.cache) {
+        // cache 目标：保持原样，duplicates 始终 0
+        final queued = await ensureQueued(
+          sourceName,
+          entry.key,
+          fileName: entry.value,
+          target: DownloadTarget.cache,
+        );
+        if (queued) ok++;
+      } else {
+        // public 目标：检查重复
+        final blocking = blockingPublicDuplicate(sourceName, entry.key, target);
+        if (blocking != null) {
+          // 有重复任务
+          duplicates++;
+          duplicateEntries.add((path: entry.key, name: entry.value));
+          if (replaceDuplicates) {
+            // 替换模式：走 requeuePublicFresh
+            if (await requeuePublicFresh(
               sourceName,
               entry.key,
               fileName: entry.value,
               target: target,
-            );
-      if (queued) ok++;
+            )) {
+              ok++;
+            }
+          }
+          // 否则跳过，不计 ok
+        } else {
+          // 无重复：正常入队
+          if (await enqueuePublic(
+            sourceName,
+            entry.key,
+            fileName: entry.value,
+            target: target,
+          )) {
+            ok++;
+          }
+        }
+      }
     }
     return (
       ok: ok,
       failed: failed,
       scanned: pending.length,
+      duplicates: duplicates,
+      duplicateEntries: duplicateEntries,
       firstError: firstError,
     );
   }
@@ -1730,17 +1873,26 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> clearCompleted() async {
     final done = _tasks.where((t) => t.status == TaskStatus.completed).toList();
+    final hasLocalUri = done.any((t) => t.localUri != null && t.localUri!.isNotEmpty);
     for (final t in done) {
       _tasks.remove(t);
       await _store.delete(t.id);
+    }
+    if (hasLocalUri) {
+      unawaited(_releaseUnusedReadTreeGrants());
     }
     notifyListeners();
   }
 
   Future<void> remove(String id) async {
     await cancel(id);
+    final task = _tasks.firstWhere((t) => t.id == id, orElse: () => throw StateError('Task not found'));
+    final hasLocalUri = task.localUri != null && task.localUri!.isNotEmpty;
     _tasks.removeWhere((t) => t.id == id);
     await _store.delete(id);
+    if (hasLocalUri) {
+      unawaited(_releaseUnusedReadTreeGrants());
+    }
     notifyListeners();
   }
 
@@ -1769,6 +1921,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         waiter.completeError(StateError('err.queueCleared'));
       }
     }
+    final hasLocalUri = _tasks.any((t) => t.localUri != null && t.localUri!.isNotEmpty);
     for (final t in List<QueueTask>.from(_tasks)) {
       await _store.delete(t.id);
     }
@@ -1777,6 +1930,9 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     _orderedDrainActive = false;
     _lastError = null;
     unawaited(_stopKeepAliveThenCancelNotifications());
+    if (hasLocalUri) {
+      unawaited(_releaseUnusedReadTreeGrants());
+    }
     notifyListeners();
   }
 
@@ -2048,6 +2204,13 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     Object error, {
     bool cancelled = false,
   }) async {
+    // Task removed by requeuePublicFresh / clearAll / remove: do not resurrect.
+    if (!_tasks.any((t) => identical(t, task) || t.id == task.id)) {
+      try {
+        await _store.delete(task.id);
+      } catch (_) {}
+      return;
+    }
     if (_takeFgsTimeoutSuspend(task)) {
       task.status = TaskStatus.pending;
       task.nextRetryAt =
@@ -2287,6 +2450,76 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return removed;
   }
 
+  /// 释放不再使用的只读树授权（SAF tree grants for listFolderTree）。
+  ///
+  /// 规格 §2.8: listFolderTree 得到的子文档 uri 存进上传任务 localUri，
+  /// 任务运行时（可能重启后）才用 readUriToCache 读——所以**不能**列举完立刻释放。
+  /// 方案：取只读（write=false）的树授权；排除 settings.customDownloadTreeUri；
+  /// 对每个 grant，若队列中**不存在**任何 status != completed 的任务其 localUri
+  /// 属于该树（localUri 以 grant uri + "/document/" 开头，或解析出相同 tree 段），
+  /// 则 releaseReadTree。
+  ///
+  /// 调用时机：队列 init 完成后一次；任何 localUri 非空的任务进入 completed 或被
+  /// remove / clearAll / clearCompleted 之后。失败吞异常（debugPrint）。
+  Future<void> _releaseUnusedReadTreeGrants() async {
+    try {
+      final grants = await _export.listPersistedTreeGrants();
+      if (grants.isEmpty) return;
+
+      final customDownloadUri = _settings?.customDownloadTreeUri;
+      final readOnlyGrants = grants
+          .where((g) => g['write'] != true && (g['uri'] as String?)?.isNotEmpty == true)
+          .toList();
+
+      for (final grant in readOnlyGrants) {
+        final grantUri = grant['uri'] as String;
+
+        // 排除自定义下载目录
+        if (customDownloadUri != null &&
+            customDownloadUri.isNotEmpty &&
+            grantUri == customDownloadUri) {
+          continue;
+        }
+
+        // 检查队列中是否有未完成的任务使用此树授权
+        final hasActiveTask = _tasks.any((t) {
+          if (t.status == TaskStatus.completed) return false;
+          final uri = t.localUri;
+          if (uri == null || uri.isEmpty) return false;
+
+          // 检查 localUri 是否属于该树
+          // 方式 1: localUri 以 grant.uri + "/document/" 开头
+          if (uri.startsWith('$grantUri/document/')) return true;
+
+          // 方式 2: 解析出相同的 tree 段（content://<auth>/tree/<treeId>）
+          final grantTreeMatch = RegExp(r'content://[^/]+/tree/([^/]+)')
+              .firstMatch(grantUri);
+          final uriTreeMatch = RegExp(r'content://[^/]+/tree/([^/]+)')
+              .firstMatch(uri);
+          if (grantTreeMatch != null && uriTreeMatch != null) {
+            final grantTreeId = grantTreeMatch.group(1);
+            final uriTreeId = uriTreeMatch.group(1);
+            if (grantTreeId == uriTreeId) return true;
+          }
+
+          return false;
+        });
+
+        if (!hasActiveTask) {
+          // 没有任务使用此授权，释放它
+          try {
+            await _export.releaseReadTree(grantUri);
+            debugPrint('_releaseUnusedReadTreeGrants: 已释放只读树授权 $grantUri');
+          } catch (e) {
+            debugPrint('_releaseUnusedReadTreeGrants: 释放授权失败 $grantUri: $e');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('_releaseUnusedReadTreeGrants 失败: $e');
+    }
+  }
+
   /// 退避到期自己回来——网络事件是加速器，不是唯一唤醒源。
   void _scheduleRetryWake() {
     final waiting = _tasks
@@ -2488,7 +2721,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           task.remoteModified = modified;
         },
         useCryptSequentialDownload:
-            _settings?.cryptSequentialDownloadEnabled ?? false,
+            _settings?.cryptSequentialDownloadEnabled ?? true,
         onProgress: (received, total) {
           task.bytesReceived = received;
           task.bytesTotal = total > 0 ? total : null;
@@ -2501,19 +2734,41 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         },
       );
       if (task.status == TaskStatus.cancelled) return;
-      final result = task.target == DownloadTarget.gallery
-          ? await _export.saveToGallery(
-              sourcePath: tmp.path,
-              fileName: task.fileName,
-              mimeType: galleryMimeFor(task.fileName),
-            )
-          : await _export.saveToDownloads(
-              sourcePath: tmp.path,
-              fileName: task.fileName,
-              mimeType: galleryMimeFor(task.fileName),
-            );
+
+      // 提交到 gallery 或 downloads
+      final ExportResult result;
+      if (task.target == DownloadTarget.gallery) {
+        result = await _export.saveToGallery(
+          sourcePath: tmp.path,
+          fileName: task.fileName,
+          mimeType: galleryMimeFor(task.fileName),
+        );
+      } else {
+        // downloads 目标：优先使用 DownloadDestinationService
+        final destination = _destination;
+        if (destination != null) {
+          result = await destination.save(
+            sourcePath: tmp.path,
+            fileName: task.fileName,
+            mimeType: galleryMimeFor(task.fileName),
+            retryOnFallback: false,
+          );
+        } else {
+          // 兼容旧路径（测试等场景）
+          result = await _export.saveToDownloads(
+            sourcePath: tmp.path,
+            fileName: task.fileName,
+            mimeType: galleryMimeFor(task.fileName),
+          );
+        }
+      }
+
       if (!result.ok) {
-        throw StateError(result.error ?? 'err.writePublicFailed');
+        // safInvalid 或其他错误码：抛出 StateError，由 _handleFailure 统一处理
+        final errorMsg = result.safInvalid
+            ? 'err.customDirInvalid'
+            : (result.error ?? 'err.writePublicFailed');
+        throw StateError(errorMsg);
       }
       task.localPath = result.uri ?? result.path;
       _fgsTimeoutSuspendIds.remove(task.id);
@@ -2526,6 +2781,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       _completeWaiter(task);
       notifyListeners();
       _publishProgress();
+      // 释放不再使用的只读树授权（规格 §2.8）
+      unawaited(_releaseUnusedReadTreeGrants());
     } catch (e) {
       await _handleFailure(
         task,
@@ -2572,7 +2829,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           task.remoteModified = modified;
         },
         useCryptSequentialDownload:
-            _settings?.cryptSequentialDownloadEnabled ?? false,
+            _settings?.cryptSequentialDownloadEnabled ?? true,
         onProgress: (received, total) {
           task.bytesReceived = received;
           task.bytesTotal = total > 0 ? total : null;
@@ -3334,6 +3591,10 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     await _guardPersist(() => _store.upsert(task));
     notifyListeners();
+    // 释放不再使用的只读树授权（规格 §2.8）
+    if (task.localUri != null && task.localUri!.isNotEmpty) {
+      unawaited(_releaseUnusedReadTreeGrants());
+    }
   }
 
   /// After a packed CBZ has landed, create its library row and queue a scrape.
