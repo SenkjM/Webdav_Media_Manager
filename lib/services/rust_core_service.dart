@@ -2,6 +2,7 @@
 
 import 'dart:ffi' as ffi;
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
@@ -70,6 +71,34 @@ class RustCoreService {
   static _IntDart? _openApiIsRunning;
   static _IntDart? _openApiPort;
 
+  // ── Round 4 FFI binding types ──────────────────────────────────────────────
+
+  typedef _CryptoEncryptNative = ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>, ffi.Pointer<ffi.Uint8>, ffi.IntPtr);
+  typedef _CryptoEncryptDart = ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>, ffi.Pointer<ffi.Uint8>, int);
+
+  typedef _TwoStrToOneStrNative = ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+  typedef _TwoStrToOneStrDart = ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+  typedef _FourStrToOneStrNative = ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+  typedef _FourStrToOneStrDart = ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+  typedef _Uint32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Uint32);
+  typedef _Uint32ToStrDart = ffi.Pointer<Utf8> Function(int);
+
+  static _CryptoEncryptDart? _cryptoEncrypt;
+  static _TwoStrToOneStrDart? _cryptoDecrypt;
+  static _FourStrToOneStrDart? _syncTrigger;
+  static _Uint32ToStrDart? _dlnaDiscover;
+  static _TwoStrToOneStrDart? _dlnaCast;
+  static _VersionDart? _tokenGet; // no-arg → Utf8, same shape as version
+  static _VersionDart? _tokenRotate; // no-arg → Utf8
+
   static void _loadSymbols(ffi.DynamicLibrary lib) {
     _freeString = lib
         .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
@@ -97,6 +126,28 @@ class RustCoreService {
         .asFunction();
     _openApiPort = lib
         .lookup<ffi.NativeFunction<_IntNative>>('wdmm_openapi_port')
+        .asFunction();
+    // Round 4 exports
+    _cryptoEncrypt = lib
+        .lookup<ffi.NativeFunction<_CryptoEncryptNative>>('wdmm_crypto_encrypt')
+        .asFunction();
+    _cryptoDecrypt = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_crypto_decrypt')
+        .asFunction();
+    _syncTrigger = lib
+        .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_sync_trigger')
+        .asFunction();
+    _dlnaDiscover = lib
+        .lookup<ffi.NativeFunction<_Uint32ToStrNative>>('wdmm_dlna_discover_json')
+        .asFunction();
+    _dlnaCast = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_dlna_cast')
+        .asFunction();
+    _tokenGet = lib
+        .lookup<ffi.NativeFunction<_VersionNative>>('wdmm_token_get')
+        .asFunction();
+    _tokenRotate = lib
+        .lookup<ffi.NativeFunction<_VersionNative>>('wdmm_token_rotate')
         .asFunction();
   }
 
@@ -204,9 +255,144 @@ class RustCoreService {
       debugPrint('[RustCore] startup probe failed (non-fatal): $e');
     }
   }
+
+  // ── Round 4 — Crypto FFI probes ────────────────────────────────────────────
+  //
+  // Dart services are still the source of truth for encryption.  These are
+  // **parallel FFI probes**: they run alongside the Dart vault, so you can
+  // compare outputs before cutover.  Guarded by `kDebugMode` in the caller.
+
+  /// Encrypt [plaintext] bytes with [passphrase] via the Rust AES-256-GCM
+  /// vault.  Returns base64-encoded ciphertext, or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  ///
+  /// Dart `CredentialVaultService` remains source of truth until cutover.
+  static String? cryptoEncrypt(String passphrase, Uint8List plaintext) {
+    if (!_ensureSymbols() || _cryptoEncrypt == null) return null;
+    final passPtr = passphrase.toNativeUtf8();
+    final dataPtr = calloc<ffi.Uint8>(plaintext.length);
+    try {
+      for (var i = 0; i < plaintext.length; i++) {
+        dataPtr[i] = plaintext[i];
+      }
+      final result = _readAndFreeString(_cryptoEncrypt!(passPtr, dataPtr, plaintext.length));
+      return result;
+    } finally {
+      calloc.free(passPtr);
+      calloc.free(dataPtr);
+    }
+  }
+
+  /// Decrypt base64-encoded [ciphertext] with [passphrase] via the Rust vault.
+  /// Returns plaintext string, or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  ///
+  /// Dart `CredentialVaultService` remains source of truth until cutover.
+  static String? cryptoDecrypt(String passphrase, String ciphertextB64) {
+    if (!_ensureSymbols() || _cryptoDecrypt == null) return null;
+    final passPtr = passphrase.toNativeUtf8();
+    final dataPtr = ciphertextB64.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cryptoDecrypt!(passPtr, dataPtr));
+    } finally {
+      calloc.free(passPtr);
+      calloc.free(dataPtr);
+    }
+  }
+
+  // ── Round 4 — Sync FFI probe ───────────────────────────────────────────────
+
+  /// Trigger a Rust sync run (credentials + library + playlists).
+  ///
+  /// Returns a JSON summary string on success or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  ///
+  /// **Feature flag**: only call this if the feature flag
+  /// `kRustSyncEnabled` is true (not yet wired to UI; defaults to false).
+  /// Dart sync services remain source of truth until the feature flag is
+  /// flipped for release.
+  static String? syncTrigger({
+    required String webdavUrl,
+    required String username,
+    required String password,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncTrigger == null) return null;
+    final urlPtr = webdavUrl.toNativeUtf8();
+    final userPtr = username.toNativeUtf8();
+    final passPtr = password.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncTrigger!(urlPtr, userPtr, passPtr, dirPtr));
+    } finally {
+      calloc.free(urlPtr);
+      calloc.free(userPtr);
+      calloc.free(passPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  // ── Round 4 — DLNA FFI probes ─────────────────────────────────────────────
+
+  /// Discover DLNA renderers via SSDP.
+  ///
+  /// Returns a JSON array of renderer objects or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  ///
+  /// **Parallel probe**: Dart `DlnaCastService` remains source of truth;
+  /// compare outputs before cutover.
+  static String? dlnaDiscover({int timeoutMs = 2000}) {
+    if (!_ensureSymbols() || _dlnaDiscover == null) return null;
+    return _readAndFreeString(_dlnaDiscover!(timeoutMs));
+  }
+
+  /// Cast [mediaUrl] to the renderer at [rendererLocation] via AVTransport SOAP.
+  ///
+  /// Returns 'ok' on success or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  ///
+  /// **Parallel probe**: Dart `DlnaCastService` remains source of truth.
+  static String? dlnaCast(String rendererLocation, String mediaUrl) {
+    if (!_ensureSymbols() || _dlnaCast == null) return null;
+    final locPtr = rendererLocation.toNativeUtf8();
+    final urlPtr = mediaUrl.toNativeUtf8();
+    try {
+      return _readAndFreeString(_dlnaCast!(locPtr, urlPtr));
+    } finally {
+      calloc.free(locPtr);
+      calloc.free(urlPtr);
+    }
+  }
+
+  // ── Round 4 — Token FFI ───────────────────────────────────────────────────
+
+  /// Get the current OpenAPI bearer token.
+  ///
+  /// Returns the token string, or '' if the server is not running.
+  /// Returns null if the native library is not available.
+  /// Native UI may display this token per constraints §2.
+  static String? tokenGet() {
+    if (!_ensureSymbols() || _tokenGet == null) return null;
+    return _readAndFreeString(_tokenGet!());
+  }
+
+  /// Rotate the OpenAPI bearer token.  The old token is immediately
+  /// invalidated.  Returns the new token, or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  static String? tokenRotate() {
+    if (!_ensureSymbols() || _tokenRotate == null) return null;
+    return _readAndFreeString(_tokenRotate!());
+  }
 }
 
 // ignore: avoid_classes_with_only_static_members
 extension _Let<T> on T {
   R let<R>(R Function(T) fn) => fn(this);
 }
+
+// ── Feature flags (Round 4 — not yet wired to UI) ───────────────────────────
+
+/// When true, [RustCoreService.syncTrigger] is used alongside Dart sync.
+/// Flip to true in a settings screen once the Rust sync path is validated.
+// ignore: constant_identifier_names
+const bool kRustSyncEnabled = false;
