@@ -1132,6 +1132,30 @@ class AppLocalizationsZh extends AppLocalizations {
   String get nowPlayingQueueEmpty => '当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。';
 
   @override
+  String get queueAdd => '添加';
+
+  @override
+  String get queueAddPlayNow => '立即播放（插播）';
+
+  @override
+  String get queueAddToEnd => '添加到末尾';
+
+  @override
+  String get playbackQueueClearConfirm => '清空当前播放列表？';
+
+  @override
+  String get playbackQueueClearBody => '将清空当前播放队列；不会删除歌单、用户文件夹或缓存。';
+
+  @override
+  String get playbackQueueCleared => '播放列表已清空';
+
+  @override
+  String get moveUp => '上移';
+
+  @override
+  String get moveDown => '下移';
+
+  @override
   String playerChipAlbumArtist(Object artist) {
     return '专辑艺人 · $artist';
   }
@@ -4290,6 +4314,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get folderAddTracks => '音乐/曲目';
 
   @override
+  String get folderAddGenres => '音乐/流派';
+
+  @override
   String folderItemsAdded(int count) {
     return '已添加 $count 项';
   }
@@ -5004,6 +5031,54 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errNoWriteAccount => '没有可写入的账号';
 
   @override
+  String get dlnaCast => '投屏';
+
+  @override
+  String get dlnaCastDesc => '投屏到局域网 DLNA/UPnP 渲染器';
+
+  @override
+  String get dlnaDeviceSearch => '正在搜索设备…';
+
+  @override
+  String get dlnaNoDeviceFound => '未找到设备';
+
+  @override
+  String get dlnaRetrySearch => '重新搜索';
+
+  @override
+  String get dlnaConnecting => '正在连接…';
+
+  @override
+  String get dlnaDisconnect => '断开';
+
+  @override
+  String get dlnaCompatMode => '兼容模式';
+
+  @override
+  String get dlnaRemuxContainer => '重封装容器';
+
+  @override
+  String get dlnaRemuxContainerDesc => '重封装为 MP4（不重新编码，速度快）';
+
+  @override
+  String get dlnaTranscodeVideo => '视频转码';
+
+  @override
+  String get dlnaTranscodeVideoDesc => '将视频转码为 H.264（CPU 占用高）';
+
+  @override
+  String get dlnaTranscodeAudio => '音频转码';
+
+  @override
+  String get dlnaTranscodeAudioDesc => '将音频转码为 AAC';
+
+  @override
+  String get dlnaCastQueue => '投屏队列';
+
+  @override
+  String get dlnaRenderer => '渲染器';
+
+  @override
   String get customDownloadDir => '自定义下载目录';
 
   @override
@@ -5110,6 +5185,12 @@ class AppLocalizationsZh extends AppLocalizations {
   @override
   String get formHintCtFileRequestIntervalMs =>
       '两次 API 调用之间的最小间隔；默认 400，填 0 不节流';
+
+  @override
+  String get fileQueuedOrSaved => '该文件已在任务队列或已下载';
+
+  @override
+  String get fileQueuedOrSavedShort => '该文件已在队列或已保存';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -6238,6 +6319,30 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get nowPlayingQueueEmpty => '目前沒有播放佇列。\n從音樂庫或網路庫開始播放後會出現在此。';
+
+  @override
+  String get queueAdd => '新增';
+
+  @override
+  String get queueAddPlayNow => '立即播放（插播）';
+
+  @override
+  String get queueAddToEnd => '加入至末尾';
+
+  @override
+  String get playbackQueueClearConfirm => '清除目前播放清單？';
+
+  @override
+  String get playbackQueueClearBody => '將清除目前播放佇列；不會刪除歌單、使用者資料夾或快取。';
+
+  @override
+  String get playbackQueueCleared => '播放清單已清除';
+
+  @override
+  String get moveUp => '上移';
+
+  @override
+  String get moveDown => '下移';
 
   @override
   String playerChipAlbumArtist(Object artist) {
@@ -9398,6 +9503,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get folderAddTracks => '音樂/曲目';
 
   @override
+  String get folderAddGenres => '音樂/流派';
+
+  @override
   String folderItemsAdded(int count) {
     return '已加入 $count 項';
   }
@@ -10112,6 +10220,54 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get errNoWriteAccount => '沒有可寫入的帳號';
 
   @override
+  String get dlnaCast => '投放';
+
+  @override
+  String get dlnaCastDesc => '投放到區域網路 DLNA/UPnP 渲染器';
+
+  @override
+  String get dlnaDeviceSearch => '正在搜尋裝置…';
+
+  @override
+  String get dlnaNoDeviceFound => '未找到裝置';
+
+  @override
+  String get dlnaRetrySearch => '重新搜尋';
+
+  @override
+  String get dlnaConnecting => '正在連線…';
+
+  @override
+  String get dlnaDisconnect => '中斷連線';
+
+  @override
+  String get dlnaCompatMode => '相容模式';
+
+  @override
+  String get dlnaRemuxContainer => '重新封裝容器';
+
+  @override
+  String get dlnaRemuxContainerDesc => '重新封裝為 MP4（不重新編碼，速度快）';
+
+  @override
+  String get dlnaTranscodeVideo => '視訊轉碼';
+
+  @override
+  String get dlnaTranscodeVideoDesc => '將視訊轉碼為 H.264（CPU 佔用高）';
+
+  @override
+  String get dlnaTranscodeAudio => '音訊轉碼';
+
+  @override
+  String get dlnaTranscodeAudioDesc => '將音訊轉碼為 AAC';
+
+  @override
+  String get dlnaCastQueue => '投放佇列';
+
+  @override
+  String get dlnaRenderer => '渲染器';
+
+  @override
   String get customDownloadDir => '自訂下載目錄';
 
   @override
@@ -10218,4 +10374,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   @override
   String get formHintCtFileRequestIntervalMs =>
       '兩次 API 呼叫之間的最小間隔；預設 400，填 0 不節流';
+
+  @override
+  String get fileQueuedOrSaved => '該檔案已在任務佇列或已下載';
+
+  @override
+  String get fileQueuedOrSavedShort => '檔案已在佇列或已儲存';
 }

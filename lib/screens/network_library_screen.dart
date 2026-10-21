@@ -12,6 +12,7 @@ import '../models/manga_build.dart';
 import '../models/queue_task.dart';
 import '../models/file_actions.dart';
 import '../models/play_open_mode.dart';
+import '../models/playback_queue_source.dart';
 import '../models/file_type_config.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
@@ -24,8 +25,11 @@ import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/platform_export_service.dart';
+import '../services/dlna_cast_service.dart';
 import '../utils/app_snack.dart';
+import '../utils/remote_path.dart';
 import '../utils/manga_file_types.dart';
+import '../widgets/dlna_device_sheet.dart';
 import '../utils/manga_scan_walk.dart';
 import '../utils/manga_identity.dart';
 import '../utils/track_identity.dart';
@@ -620,10 +624,35 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       remotePath: item.path,
       fileName: item.name,
     );
-    await context.read<AudioPlayerService>().playTrack(
+    final settings = context.read<SettingsService>();
+    final player = context.read<AudioPlayerService>();
+    final source = PlaybackQueueSource.networkFolder(
+      accountId: accountId,
+      folderPath: _path,
+      includeSubdirs: settings.audioScanSubdirs,
+      maxDepth: settings.audioPlaylistMaxDepth,
+    );
+    final hadQueue = player.queue.isNotEmpty;
+    await player.playTrack(
       track,
       playlist: playlist,
       mode: mode,
+      source: source,
+    );
+    // Only the queue-building play loads the folder context; later taps while a
+    // queue exists are prepended as a single song (user rule), so no walk.
+    if (hadQueue) return;
+    // Playback already started from the current directory listing; extend into
+    // the configured subdirectory window in the background (never awaited).
+    unawaited(
+      player.extendNetworkFolderQueue(
+        accountId: accountId,
+        sourceName: sourceName,
+        rootPath: _path,
+        includeSubdirs: settings.audioScanSubdirs,
+        maxDepth: settings.audioPlaylistMaxDepth,
+        rootListing: _items,
+      ),
     );
   }
 
@@ -810,9 +839,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                           child: Text(AppLocalizations.of(ctx)!.close),
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 8),
                       Expanded(
                         child: FilledButton.icon(
+                          onPressed: () => Navigator.pop(ctx, 'play'),
+                          icon: const Icon(Icons.play_arrow),
+                          label: Text(AppLocalizations.of(ctx)!.play),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: FilledButton.tonalIcon(
                           onPressed: () => Navigator.pop(ctx, 'download'),
                           icon: const Icon(Icons.download),
                           label: Text(AppLocalizations.of(ctx)!.download),
@@ -828,8 +865,74 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       },
     );
 
+    if (action == 'play' && mounted) {
+      await _playCueGroup(item, sheet);
+      return;
+    }
     if (action != 'download' || !mounted) return;
     await _downloadCueGroup(item, sheet);
+  }
+
+  /// Stream a CUE album straight from the network library: one queue of virtual
+  /// slices sharing the backing audio URL. Missing rows are ingested by the
+  /// queue enrichment pump, then the queue metadata refreshes in place.
+  Future<void> _playCueGroup(WebDavItem item, CueSheet sheet) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final sourceName = _nameFor(accountId);
+    if (sourceName.isEmpty) return;
+    final audioRemotes = sheet.audioRemotePaths(item.path);
+    final ranges = cueClipRanges(sheet.tracks);
+    final entries = <TrackInfo>[];
+    for (var i = 0; i < sheet.tracks.length; i++) {
+      final ct = sheet.tracks[i];
+      final range = ranges[i];
+      final base = ct.fileName.replaceAll('\\', '/').split('/').last;
+      final resolved = audioRemotes.firstWhere(
+        (r) => r.split('/').last == base,
+        orElse: () =>
+            audioRemotes.isNotEmpty ? audioRemotes.first : ct.fileName,
+      );
+      final merged = mergeCueOverFileTags(sheet: sheet, cueTrack: ct);
+      final title = merged.title ?? 'Track ${ct.number}';
+      entries.add(
+        TrackInfo(
+          sourceName: sourceName,
+          accountId: accountId,
+          remotePath: cueVirtualRemotePath(resolved, ct.number),
+          fileName: title,
+          title: title,
+          artist: merged.artist,
+          albumArtist: merged.albumArtist,
+          album: merged.album,
+          duration: range.end == null ? null : range.end! - range.start,
+          trackNumber: merged.trackNumber,
+          trackTotal: sheet.tracks.length,
+          year: merged.year,
+          genre: merged.genre,
+          cueRemotePath: item.path,
+          cueTrackIndex: ct.number,
+          audioRemotePath: resolved,
+          clipStart: range.start,
+          clipEnd: range.end,
+        ),
+      );
+    }
+    if (entries.isEmpty) return;
+    final settings = context.read<SettingsService>();
+    final mode = settings.musicDefaultStream
+        ? PlayOpenMode.stream
+        : PlayOpenMode.cache;
+    await context.read<AudioPlayerService>().playTrack(
+      entries.first,
+      playlist: entries,
+      mode: mode,
+      source: PlaybackQueueSource.cueAlbum(
+        accountId: accountId,
+        folderPath: remoteParent(item.path) ?? '/',
+        cueRemotePath: item.path,
+      ),
+    );
   }
 
   Future<void> _downloadCueGroup(WebDavItem item, CueSheet sheet) async {
@@ -986,7 +1089,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       },
                     ),
                   // 相册与下载目录是两条不同的落盘路径，视频两个都保留。
-                  if (item.isVideo)
+                  if (item.isVideo) ...[
+                    ListTile(
+                      leading: const Icon(Icons.cast),
+                      title: Text(l10n.dlnaCast),
+                      subtitle: Text(l10n.dlnaCastDesc),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        await _startDlnaCast(item);
+                      },
+                    ),
                     ListTile(
                       leading: const Icon(Icons.photo_library_outlined),
                       title: Text(l10n.netDownloadToGallery),
@@ -996,6 +1108,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                         _downloadToGallery(item);
                       },
                     ),
+                  ],
                 ],
                 Divider(
                   height: 1,
@@ -1151,6 +1264,21 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _startDlnaCast(WebDavItem item) async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+
+    final renderer = await DlnaDeviceSheet.show(context);
+    if (renderer == null || !mounted) return;
+
+    final cast = context.read<DlnaCastService>();
+    await cast.startCast(
+      renderer: renderer,
+      singleItem: item,
+      accountId: accountId,
+    );
   }
 
   Future<void> _createFolder() async {

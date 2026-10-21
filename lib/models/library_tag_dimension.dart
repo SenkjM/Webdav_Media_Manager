@@ -35,8 +35,23 @@ class LibraryTagDimension {
     displayName: localizedLibraryGroupName,
   );
 
-  /// Tag-like dimensions available to folder “add …” pickers in v1.
-  static final List<LibraryTagDimension> v1TagDimensions = [album, artist];
+  /// Genres are grouped case-sensitively here so the stored ref key keeps the
+  /// user's original spelling (the genre tab still merges case-insensitively).
+  static final genre = LibraryTagDimension(
+    id: UserFolderRefKind.genre,
+    groupKey: (t) {
+      final g = t.genre?.trim();
+      return (g == null || g.isEmpty) ? kUncategorizedGenre : g;
+    },
+    displayName: localizedLibraryGroupName,
+  );
+
+  /// Tag-like dimensions available to folder “add …” pickers.
+  static final List<LibraryTagDimension> v1TagDimensions = [
+    album,
+    artist,
+    genre,
+  ];
 
   static LibraryTagDimension? byId(String id) {
     for (final d in v1TagDimensions) {
@@ -52,12 +67,13 @@ class LibraryTagDimension {
 abstract final class UserFolderRefKind {
   static const album = 'album';
   static const artist = 'artist';
+  static const genre = 'genre';
   static const track = 'track';
   /// Soft-ref kinds for manga library (99 §19); picker UX may come later.
   static const manga = 'manga';
   static const mangaSeries = 'mangaSeries';
 
-  static const v1 = [album, artist, track];
+  static const v1 = [album, artist, genre, track];
   static const mangaKinds = [manga, mangaSeries];
 
   static bool isKnown(String kind) =>

@@ -9,8 +9,10 @@ import '../models/library_sentinels.dart';
 import '../models/library_tag_dimension.dart';
 import '../models/library_track.dart';
 import '../models/manga.dart';
+import '../models/playback_queue_source.dart';
 import '../models/user_folder.dart';
 import '../models/user_folder_item.dart';
+import '../models/webdav_item.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
@@ -20,6 +22,7 @@ import '../services/manga_library_service.dart';
 import 'manga_library_screen.dart' show MangaDetailScreen, openMangaReader;
 import '../services/settings_service.dart';
 import '../services/user_folder_service.dart';
+import '../utils/app_snack.dart';
 import '../utils/library_group_cover.dart';
 import '../utils/selection_controller.dart';
 import '../utils/track_subtitle_lines.dart';
@@ -527,6 +530,8 @@ class _LibraryFolderBrowserScreenState
         await _addRefs(UserFolderRefKind.artist, l10n.folderAddArtists);
       case 'track':
         await _addRefs(UserFolderRefKind.track, l10n.folderAddTracks);
+      case 'genre':
+        await _addRefs(UserFolderRefKind.genre, l10n.folderAddGenres);
       case 'manga':
         await _addRefs(UserFolderRefKind.manga, l10n.folderAddManga);
       case 'mangaSeries':
@@ -541,10 +546,89 @@ class _LibraryFolderBrowserScreenState
     PopupMenuItem(value: 'mkdir', child: Text(l10n.newFolder)),
     PopupMenuItem(value: 'album', child: Text(l10n.folderAddAlbums)),
     PopupMenuItem(value: 'artist', child: Text(l10n.folderAddArtists)),
+    PopupMenuItem(value: 'genre', child: Text(l10n.folderAddGenres)),
     PopupMenuItem(value: 'track', child: Text(l10n.folderAddTracks)),
     PopupMenuItem(value: 'mangaSeries', child: Text(l10n.folderAddMangaSeries)),
     PopupMenuItem(value: 'manga', child: Text(l10n.folderAddManga)),
   ];
+
+  /// Play this user folder's direct references as one now-playing queue.
+  ///
+  /// Child folders are intentionally **not** included: each folder is its own
+  /// queue. Missing library rows are scraped by the queue enrichment pump and
+  /// refresh in place when the scrape completes.
+  Future<void> _playCurrentFolderQueue() async {
+    final l10n = AppLocalizations.of(context)!;
+    final folders = context.read<UserFolderService>();
+    final library = context.read<LibraryService>();
+    final cache = context.read<CacheService>();
+    final accounts = context.read<AccountsService>();
+    final player = context.read<AudioPlayerService>();
+    final folderId = _currentId ?? kUserFolderRootId;
+    final items = folders.itemsIn(folderId);
+    final tracks = <LibraryTrack>[];
+    final seen = <String>{};
+    for (final item in items) {
+      for (final t in _libraryTracksForRef(library, item)) {
+        if (seen.add('${t.sourceName}\u0000${t.remotePath}')) tracks.add(t);
+      }
+    }
+    if (tracks.isEmpty) {
+      AppSnack.show(context, l10n.libraryTracksEmpty);
+      return;
+    }
+    final playlist = <TrackInfo>[];
+    for (final t in tracks) {
+      final path = await cache.localPathIfCached(
+        t.effectiveAudioRemotePath,
+        sourceName: t.sourceName,
+      );
+      playlist.add(
+        libraryTrackToTrackInfo(
+          t,
+          path,
+          accounts.idForSource(t.sourceName) ?? '',
+        ),
+      );
+    }
+    if (!mounted) return;
+    await player.playTrack(
+      playlist.first,
+      playlist: playlist,
+      source: PlaybackQueueSource.userFolder(folderId),
+    );
+  }
+
+  List<LibraryTrack> _libraryTracksForRef(
+    LibraryService library,
+    UserFolderItem item,
+  ) {
+    if (item.refKind == UserFolderRefKind.track) {
+      final track = library.findByMusicId(item.refKey);
+      return track == null ? const [] : [track];
+    }
+    final dim = LibraryTagDimension.byId(item.refKind);
+    if (dim == null) return const [];
+    final tracks = [
+      for (final t in library.tracks)
+        if (dim.groupKey(t) == item.refKey) t,
+    ];
+    return library.sortedCopy(
+      tracks,
+      sort: item.refKind == UserFolderRefKind.album
+          ? LibrarySortMode.byAlbumTrack
+          : LibrarySortMode.byName,
+    );
+  }
+
+  Future<void> _moveRef(UserFolderItem item, int delta) async {
+    await context.read<UserFolderService>().moveRefWithinFolder(
+      folderId: item.folderId,
+      refKind: item.refKind,
+      refKey: item.refKey,
+      delta: delta,
+    );
+  }
 
   Widget _pathChrome({
     required String path,
@@ -589,6 +673,13 @@ class _LibraryFolderBrowserScreenState
                 ? null
                 : () => setState(() => _stack.removeLast()),
           ),
+          if (!_selecting)
+            IconButton(
+              tooltip: l10n.play,
+              icon: const Icon(Icons.play_arrow, size: 22),
+              visualDensity: VisualDensity.compact,
+              onPressed: () => unawaited(_playCurrentFolderQueue()),
+            ),
           PopupMenuButton<FolderViewMode>(
             tooltip: l10n.folderViewMode,
             icon: Icon(
@@ -813,6 +904,8 @@ class _LibraryFolderBrowserScreenState
                       },
                       onMoveItem: (item) => _moveOrCopyItem(item, copy: false),
                       onCopyItem: (item) => _moveOrCopyItem(item, copy: true),
+                      onMoveItemUp: (item) => unawaited(_moveRef(item, -1)),
+                      onMoveItemDown: (item) => unawaited(_moveRef(item, 1)),
                     )
                   : ListView(
                       children: [
@@ -876,6 +969,8 @@ class _LibraryFolderBrowserScreenState
                             },
                             onMove: () => _moveOrCopyItem(item, copy: false),
                             onCopy: () => _moveOrCopyItem(item, copy: true),
+                            onMoveUp: () => unawaited(_moveRef(item, -1)),
+                            onMoveDown: () => unawaited(_moveRef(item, 1)),
                           ),
                       ],
                     ),
@@ -959,6 +1054,8 @@ class _FolderItemTile extends StatelessWidget {
     required this.onRemove,
     required this.onMove,
     required this.onCopy,
+    this.onMoveUp,
+    this.onMoveDown,
     this.onLongPress,
     this.selecting = false,
     this.selected = false,
@@ -973,6 +1070,8 @@ class _FolderItemTile extends StatelessWidget {
   final VoidCallback onRemove;
   final VoidCallback onMove;
   final VoidCallback onCopy;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
   final VoidCallback? onLongPress;
   final bool selecting;
   final bool selected;
@@ -1025,11 +1124,23 @@ class _FolderItemTile extends StatelessWidget {
             PopupMenuButton<String>(
               tooltip: l10n.moreActions,
               onSelected: (v) {
+                if (v == 'up') onMoveUp?.call();
+                if (v == 'down') onMoveDown?.call();
                 if (v == 'move') onMove();
                 if (v == 'copy') onCopy();
                 if (v == 'remove') onRemove();
               },
               itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'up',
+                  enabled: onMoveUp != null,
+                  child: Text(l10n.moveUp),
+                ),
+                PopupMenuItem(
+                  value: 'down',
+                  enabled: onMoveDown != null,
+                  child: Text(l10n.moveDown),
+                ),
                 PopupMenuItem(value: 'move', child: Text(l10n.folderMove)),
                 PopupMenuItem(value: 'copy', child: Text(l10n.folderCopy)),
                 PopupMenuItem(value: 'remove', child: Text(l10n.delete)),
@@ -1049,14 +1160,17 @@ class _FolderItemTile extends StatelessWidget {
     switch (refKind) {
       case UserFolderRefKind.album:
       case UserFolderRefKind.artist:
+      case UserFolderRefKind.genre:
         final dim = LibraryTagDimension.byId(refKind)!;
         final tracks = [
           for (final t in library.tracks)
             if (dim.groupKey(t) == refKey) t,
         ];
-        final icon = refKind == UserFolderRefKind.album
-            ? Icons.album
-            : Icons.person_outline;
+        final icon = switch (refKind) {
+          UserFolderRefKind.album => Icons.album,
+          UserFolderRefKind.artist => Icons.person_outline,
+          _ => Icons.category_outlined,
+        };
         return _ResolvedFolderItem(
           title: dim.displayName(l10n, refKey),
           subtitleLine1: l10n.playlistTrackCount(tracks.length),
@@ -1202,6 +1316,8 @@ class _FolderGridBody extends StatelessWidget {
     required this.onRemoveItem,
     required this.onMoveItem,
     required this.onCopyItem,
+    this.onMoveItemUp,
+    this.onMoveItemDown,
   });
 
   final int columns;
@@ -1224,6 +1340,8 @@ class _FolderGridBody extends StatelessWidget {
   final void Function(UserFolderItem) onRemoveItem;
   final void Function(UserFolderItem) onMoveItem;
   final void Function(UserFolderItem) onCopyItem;
+  final void Function(UserFolderItem)? onMoveItemUp;
+  final void Function(UserFolderItem)? onMoveItemDown;
 
   @override
   Widget build(BuildContext context) {
@@ -1292,11 +1410,16 @@ class _FolderGridBody extends StatelessWidget {
           menuItems: selecting
               ? const []
               : [
+                  if (onMoveItemUp != null) (value: 'up', label: l10n.moveUp),
+                  if (onMoveItemDown != null)
+                    (value: 'down', label: l10n.moveDown),
                   (value: 'move', label: l10n.folderMove),
                   (value: 'copy', label: l10n.folderCopy),
                   (value: 'remove', label: l10n.delete),
                 ],
           onMenu: (v) {
+            if (v == 'up') onMoveItemUp?.call(item);
+            if (v == 'down') onMoveItemDown?.call(item);
             if (v == 'move') onMoveItem(item);
             if (v == 'copy') onCopyItem(item);
             if (v == 'remove') onRemoveItem(item);
@@ -1312,14 +1435,17 @@ class _FolderGridBody extends StatelessWidget {
     switch (item.refKind) {
       case UserFolderRefKind.album:
       case UserFolderRefKind.artist:
+      case UserFolderRefKind.genre:
         final dim = LibraryTagDimension.byId(item.refKind)!;
         final tracks = [
           for (final t in library.tracks)
             if (dim.groupKey(t) == item.refKey) t,
         ];
-        final icon = item.refKind == UserFolderRefKind.album
-            ? Icons.album
-            : Icons.person_outline;
+        final icon = switch (item.refKind) {
+          UserFolderRefKind.album => Icons.album,
+          UserFolderRefKind.artist => Icons.person_outline,
+          _ => Icons.category_outlined,
+        };
         return (
           title: dim.displayName(l10n, item.refKey),
           subtitle: l10n.playlistTrackCount(tracks.length),

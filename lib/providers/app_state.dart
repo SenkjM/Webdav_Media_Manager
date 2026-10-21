@@ -31,6 +31,7 @@ import '../services/sync_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/cloud_drivers/webdav_source.dart';
+import '../services/dlna_cast_service.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
@@ -121,12 +122,14 @@ class AppState extends ChangeNotifier {
       notificationPermission: notificationPermission,
     );
     videoPlayback = VideoPlaybackService(handler: audioHandler);
+    dlnaCast = DlnaCastService(webDav: webDav);
   }
 
   final MusicAudioHandler _audioHandler;
 
   late final SettingsService settings;
   late final WebDavService webDav;
+  late final DlnaCastService dlnaCast;
   late final CloudDriveService cloudDrive;
   late final CacheService cache;
 
@@ -176,6 +179,7 @@ class AppState extends ChangeNotifier {
   }
 
   void _disposeServices() {
+    dlnaCast.dispose();
     videoPlayback.dispose();
     player.dispose();
     taskQueue.dispose();
@@ -256,6 +260,10 @@ class AppState extends ChangeNotifier {
       _initPhase = 'taskQueue';
       taskQueue.keepAliveEnabled = settings.downloadKeepAliveEnabled;
       await taskQueue.init();
+      // Restore the persisted now-playing queue after accounts + library are
+      // loaded (entries bind accounts by source name, metadata comes from the
+      // library). Restoring never starts audio.
+      await player.restoreQueue();
       // Download notifications: create the channel and honour the setting.
       taskQueue.notificationsEnabled = settings.downloadNotificationsEnabled;
       taskQueue.notificationService.enabled =

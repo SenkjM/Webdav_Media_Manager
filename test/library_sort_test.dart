@@ -102,7 +102,12 @@ void main() {
         LibrarySortModeX.fromStorageKey('album_track'),
         LibrarySortMode.byAlbumTrack,
       );
-      expect(LibrarySortModeX.fromStorageKey(null), LibrarySortMode.byName);
+      expect(LibrarySortModeX.fromStorageKey('name'), LibrarySortMode.byName);
+      // Album detail is the only consumer; missing key defaults to track order.
+      expect(
+        LibrarySortModeX.fromStorageKey(null),
+        LibrarySortMode.byAlbumTrack,
+      );
     });
   });
 }

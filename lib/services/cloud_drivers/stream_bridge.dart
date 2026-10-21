@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../cloud_driver.dart';
 
 /// MustProxy 驱动的本地流桥（99 §7.5）。
 ///
 /// media_kit / ffmpeg 只认 URL 或本地路径，不认 Dart 的字节流，所以把
-/// [CloudDriver.openContentRange] 包成一个**只监听回环地址**的 HTTP 端点：
+/// [CloudDriver.openContentRange] 包成一个 HTTP 端点：
 /// 播放器发 Range 请求，桥转调驱动按（驱动的）块边界精确解密并回 206。
 ///
 /// 这是**通用设施**，不含任何驱动 / 密码学知识：字节流由调用方以
@@ -17,10 +19,22 @@ import '../cloud_driver.dart';
 /// * 同一路径复用同一 token，重复播放不会积累条目；
 /// * 空闲 [idleTimeout] 后自动关服务器（播放中会被请求不断刷新）；
 /// * 由兼容层持有（跨驱动重建存活），驱动实例被重建不会掐断正在播放的流。
+///
+/// 默认监听回环地址（仅本机可达）；传入 [bindAddress] 可改为局域网地址，
+/// 例如 DLNA 投屏时需要 [InternetAddress.anyIPv4]（DMR 设备在局域网上）。
+/// [externalHost] 指定对外暴露的 host（如局域网 IP），为 null 时使用
+/// [bindAddress] 的地址字符串。
 class LocalStreamBridge {
-  LocalStreamBridge({this.idleTimeout = const Duration(minutes: 10)});
+  LocalStreamBridge({
+    this.idleTimeout = const Duration(minutes: 10),
+    InternetAddress? bindAddress,
+    String? externalHost,
+  }) : _bindAddress = bindAddress ?? InternetAddress.loopbackIPv4,
+       _externalHost = externalHost;
 
   final Duration idleTimeout;
+  final InternetAddress _bindAddress;
+  final String? _externalHost;
 
   final Map<String, _BridgeEntry> _byKey = <String, _BridgeEntry>{};
   final Map<String, _BridgeEntry> _byToken = <String, _BridgeEntry>{};
@@ -60,7 +74,8 @@ class LocalStreamBridge {
       entry.ranges = ranges;
     }
     _touch();
-    return Uri.parse('http://127.0.0.1:${server.port}/s/${entry.token}');
+    final host = _externalHost ?? _bindAddress.address;
+    return Uri.parse('http://$host:${server.port}/s/${entry.token}');
   }
 
   /// 关闭服务器并丢弃全部 token（服务销毁时）。
@@ -77,7 +92,7 @@ class LocalStreamBridge {
   Future<HttpServer> _ensureServer() async {
     final existing = _server;
     if (existing != null) return existing;
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final server = await HttpServer.bind(_bindAddress, 0);
     server.listen(_handle, onError: (_) {});
     _server = server;
     _touch();
@@ -112,23 +127,37 @@ class LocalStreamBridge {
         await response.close();
         return;
       }
+      debugPrint(
+        '[Bridge] ${request.method} ${request.uri.path}'
+        ' Range=${request.headers.value(HttpHeaders.rangeHeader) ?? '-'}'
+        ' size=${entry.size}',
+      );
       response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
       response.headers.contentType = ContentType.parse(entry.contentType);
+
+      final knownSize = entry.size > 0;
+
       if (request.method == 'HEAD') {
         response.statusCode = HttpStatus.ok;
-        response.headers.contentLength = entry.size;
+        // 仅在已知大小时设置 Content-Length；未知时不设，
+        // 避免 DMR 把 Content-Length: 0 误判为空资源（UPnP 716）。
+        if (knownSize) response.headers.contentLength = entry.size;
         await response.close();
         return;
       }
+
       final range = _parseRange(
         request.headers.value(HttpHeaders.rangeHeader),
         entry.size,
       );
       if (range == null) {
+        // 无 Range 请求，或 size 未知 — 流式输出全部内容，不预设 end。
         response.statusCode = HttpStatus.ok;
-        response.headers.contentLength = entry.size;
+        if (knownSize) response.headers.contentLength = entry.size;
+        // size 未知时 end 传 -1，由 ranges 回调自行决定读到哪里。
+        final endByte = knownSize ? entry.size - 1 : -1;
         await response.addStream(
-          entry.ranges(entry.remotePath, 0, entry.size - 1),
+          entry.ranges(entry.remotePath, 0, endByte),
         );
       } else {
         response.statusCode = HttpStatus.partialContent;

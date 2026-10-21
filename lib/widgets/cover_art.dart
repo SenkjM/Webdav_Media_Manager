@@ -15,6 +15,7 @@ class CoverArt extends StatelessWidget {
     required this.size,
     this.borderRadius = 6,
     this.icon,
+    this.revision = 0,
   });
 
   final String? path;
@@ -22,6 +23,11 @@ class CoverArt extends StatelessWidget {
   final double size;
   final double borderRadius;
   final IconData? icon;
+
+  /// Bump when the file at [path] was rewritten in place (cover re-scrape).
+  /// The image cache is evicted by [CoverService]; this forces the provider to
+  /// resolve again instead of reusing the decoded old art.
+  final int revision;
 
   bool get _hasBytes => bytes != null && bytes!.isNotEmpty;
   bool get _hasFile =>
@@ -37,6 +43,7 @@ class CoverArt extends StatelessWidget {
         child: _hasBytes
             ? Image.memory(
                 bytes!,
+                key: ValueKey('cover-bytes-${bytes.hashCode}-$revision'),
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
@@ -54,6 +61,7 @@ class CoverArt extends StatelessWidget {
   Widget _fileImage() {
     return Image.file(
       File(path!),
+      key: ValueKey('cover-file-$path-$revision'),
       width: size,
       height: size,
       fit: BoxFit.cover,

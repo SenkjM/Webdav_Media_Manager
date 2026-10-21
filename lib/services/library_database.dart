@@ -1173,14 +1173,17 @@ WHERE series_id IS NOT NULL
           audioRemotePaths.length,
           '?',
         ).join(', ');
+        // `cue_slices` has no cue_remote_path column (that lives on
+        // cue_albums); the album rows were already removed by cue_id above.
+        // This pass only removes legacy standalone slices that still point at
+        // the backing audio paths.
         await txn.delete(
           'cue_slices',
           where:
-              'source_name = ? AND (cue_remote_path = ? OR '
-              'audio_remote_path IN ($placeholders) OR remote_path IN ($placeholders))',
+              'source_name = ? AND (audio_remote_path IN ($placeholders) '
+              'OR remote_path IN ($placeholders))',
           whereArgs: [
             sourceName,
-            cueRemotePath,
             ...audioRemotePaths,
             ...audioRemotePaths,
           ],

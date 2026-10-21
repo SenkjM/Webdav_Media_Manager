@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import '../models/playlist.dart';
@@ -6,16 +5,11 @@ import '../utils/cover_image.dart';
 import '../utils/track_identity.dart';
 import 'cover_service.dart';
 
-/// Cover source tier for playlist documents.
-enum PlaylistCoverTier {
-  /// Downscaled thumbnail from `covers/` — same tier the library shards carry.
-  thumb,
-
-  /// Original bytes from `covers_full/`, no resize.
-  full,
-}
-
 /// Playlist-side cover policy (docs/10 §4.2, COVERS section).
+///
+/// Playlist documents embed the same resampled thumbnail the library stores;
+/// original art is read from the local audio tags when needed and is never
+/// persisted as a second copy.
 ///
 /// **Deliberately separate from [CoverService.thumbSize]** even though the
 /// default value is routed from it: playlists may later want a different edge
@@ -30,9 +24,6 @@ class PlaylistCoverPolicy {
 
   /// Explicit override; null = route to [CoverService.thumbSize].
   int? edgeSize;
-
-  /// Which on-disk tier to read.
-  PlaylistCoverTier tier = PlaylistCoverTier.thumb;
 
   /// When false, playlist documents are written without a COVERS section —
   /// the escape hatch if a server or quota makes embedded art a bad idea.
@@ -51,9 +42,6 @@ class PlaylistCoverPolicy {
     required int fallbackEdgeSize,
   }) async {
     if (!embedCovers) return null;
-    if (tier == PlaylistCoverTier.full) {
-      return _readFull(entry);
-    }
     return _readThumb(entry, fallbackEdgeSize);
   }
 
@@ -77,22 +65,6 @@ class PlaylistCoverPolicy {
       final libraryEdge = covers.thumbSize;
       if (edge == libraryEdge) return bytes;
       return resizeToEdge(bytes, edge) ?? bytes;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<Uint8List?> _readFull(PlaylistEntry entry) async {
-    final covers = _covers;
-    if (covers == null) return null;
-    final remotePath =
-        parseCueVirtualRemotePath(entry.remotePath)?.audioRemotePath ??
-        entry.remotePath;
-    try {
-      final path = await covers.fullCoverPath(entry.sourceName, remotePath);
-      if (path == null) return null;
-      final bytes = await File(path).readAsBytes();
-      return bytes.isEmpty ? null : bytes;
     } catch (_) {
       return null;
     }

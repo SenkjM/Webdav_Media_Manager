@@ -2139,6 +2139,54 @@ abstract class AppLocalizations {
   /// **'当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。'**
   String get nowPlayingQueueEmpty;
 
+  /// No description provided for @queueAdd.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加'**
+  String get queueAdd;
+
+  /// No description provided for @queueAddPlayNow.
+  ///
+  /// In zh, this message translates to:
+  /// **'立即播放（插播）'**
+  String get queueAddPlayNow;
+
+  /// No description provided for @queueAddToEnd.
+  ///
+  /// In zh, this message translates to:
+  /// **'添加到末尾'**
+  String get queueAddToEnd;
+
+  /// No description provided for @playbackQueueClearConfirm.
+  ///
+  /// In zh, this message translates to:
+  /// **'清空当前播放列表？'**
+  String get playbackQueueClearConfirm;
+
+  /// No description provided for @playbackQueueClearBody.
+  ///
+  /// In zh, this message translates to:
+  /// **'将清空当前播放队列；不会删除歌单、用户文件夹或缓存。'**
+  String get playbackQueueClearBody;
+
+  /// No description provided for @playbackQueueCleared.
+  ///
+  /// In zh, this message translates to:
+  /// **'播放列表已清空'**
+  String get playbackQueueCleared;
+
+  /// No description provided for @moveUp.
+  ///
+  /// In zh, this message translates to:
+  /// **'上移'**
+  String get moveUp;
+
+  /// No description provided for @moveDown.
+  ///
+  /// In zh, this message translates to:
+  /// **'下移'**
+  String get moveDown;
+
   /// No description provided for @playerChipAlbumArtist.
   ///
   /// In zh, this message translates to:
@@ -7571,6 +7619,12 @@ abstract class AppLocalizations {
   /// **'音乐/曲目'**
   String get folderAddTracks;
 
+  /// No description provided for @folderAddGenres.
+  ///
+  /// In zh, this message translates to:
+  /// **'音乐/流派'**
+  String get folderAddGenres;
+
   /// No description provided for @folderItemsAdded.
   ///
   /// In zh, this message translates to:
@@ -8884,6 +8938,102 @@ abstract class AppLocalizations {
   /// **'没有可写入的账号'**
   String get errNoWriteAccount;
 
+  /// No description provided for @dlnaCast.
+  ///
+  /// In zh, this message translates to:
+  /// **'投屏'**
+  String get dlnaCast;
+
+  /// No description provided for @dlnaCastDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'投屏到局域网 DLNA/UPnP 渲染器'**
+  String get dlnaCastDesc;
+
+  /// No description provided for @dlnaDeviceSearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在搜索设备…'**
+  String get dlnaDeviceSearch;
+
+  /// No description provided for @dlnaNoDeviceFound.
+  ///
+  /// In zh, this message translates to:
+  /// **'未找到设备'**
+  String get dlnaNoDeviceFound;
+
+  /// No description provided for @dlnaRetrySearch.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新搜索'**
+  String get dlnaRetrySearch;
+
+  /// No description provided for @dlnaConnecting.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在连接…'**
+  String get dlnaConnecting;
+
+  /// No description provided for @dlnaDisconnect.
+  ///
+  /// In zh, this message translates to:
+  /// **'断开'**
+  String get dlnaDisconnect;
+
+  /// No description provided for @dlnaCompatMode.
+  ///
+  /// In zh, this message translates to:
+  /// **'兼容模式'**
+  String get dlnaCompatMode;
+
+  /// No description provided for @dlnaRemuxContainer.
+  ///
+  /// In zh, this message translates to:
+  /// **'重封装容器'**
+  String get dlnaRemuxContainer;
+
+  /// No description provided for @dlnaRemuxContainerDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'重封装为 MP4（不重新编码，速度快）'**
+  String get dlnaRemuxContainerDesc;
+
+  /// No description provided for @dlnaTranscodeVideo.
+  ///
+  /// In zh, this message translates to:
+  /// **'视频转码'**
+  String get dlnaTranscodeVideo;
+
+  /// No description provided for @dlnaTranscodeVideoDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'将视频转码为 H.264（CPU 占用高）'**
+  String get dlnaTranscodeVideoDesc;
+
+  /// No description provided for @dlnaTranscodeAudio.
+  ///
+  /// In zh, this message translates to:
+  /// **'音频转码'**
+  String get dlnaTranscodeAudio;
+
+  /// No description provided for @dlnaTranscodeAudioDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'将音频转码为 AAC'**
+  String get dlnaTranscodeAudioDesc;
+
+  /// No description provided for @dlnaCastQueue.
+  ///
+  /// In zh, this message translates to:
+  /// **'投屏队列'**
+  String get dlnaCastQueue;
+
+  /// No description provided for @dlnaRenderer.
+  ///
+  /// In zh, this message translates to:
+  /// **'渲染器'**
+  String get dlnaRenderer;
+
   /// No description provided for @customDownloadDir.
   ///
   /// In zh, this message translates to:
@@ -9075,6 +9225,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'两次 API 调用之间的最小间隔；默认 400，填 0 不节流'**
   String get formHintCtFileRequestIntervalMs;
+
+  /// No description provided for @fileQueuedOrSaved.
+  ///
+  /// In zh, this message translates to:
+  /// **'该文件已在任务队列或已下载'**
+  String get fileQueuedOrSaved;
+
+  /// No description provided for @fileQueuedOrSavedShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'该文件已在队列或已保存'**
+  String get fileQueuedOrSavedShort;
 }
 
 class _AppLocalizationsDelegate

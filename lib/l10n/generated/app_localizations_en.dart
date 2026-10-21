@@ -1167,6 +1167,31 @@ class AppLocalizationsEn extends AppLocalizations {
       'No play queue yet.\nStart playing from the library or network library to fill this.';
 
   @override
+  String get queueAdd => 'Add';
+
+  @override
+  String get queueAddPlayNow => 'Play now (insert)';
+
+  @override
+  String get queueAddToEnd => 'Add to end';
+
+  @override
+  String get playbackQueueClearConfirm => 'Clear the now-playing queue?';
+
+  @override
+  String get playbackQueueClearBody =>
+      'Clears the current play queue. Playlists, user folders, and caches are kept.';
+
+  @override
+  String get playbackQueueCleared => 'Play queue cleared';
+
+  @override
+  String get moveUp => 'Move up';
+
+  @override
+  String get moveDown => 'Move down';
+
+  @override
   String playerChipAlbumArtist(Object artist) {
     return 'Album artist · $artist';
   }
@@ -4494,6 +4519,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get folderAddTracks => 'Music / Tracks';
 
   @override
+  String get folderAddGenres => 'Music / Genres';
+
+  @override
   String folderItemsAdded(int count) {
     return 'Added $count items';
   }
@@ -5247,6 +5275,55 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errNoWriteAccount => 'No writable account found';
 
   @override
+  String get dlnaCast => 'Cast to TV';
+
+  @override
+  String get dlnaCastDesc => 'Stream to a DLNA/UPnP renderer on your network';
+
+  @override
+  String get dlnaDeviceSearch => 'Searching for devices…';
+
+  @override
+  String get dlnaNoDeviceFound => 'No devices found';
+
+  @override
+  String get dlnaRetrySearch => 'Search again';
+
+  @override
+  String get dlnaConnecting => 'Connecting…';
+
+  @override
+  String get dlnaDisconnect => 'Disconnect';
+
+  @override
+  String get dlnaCompatMode => 'Compat mode';
+
+  @override
+  String get dlnaRemuxContainer => 'Remux container';
+
+  @override
+  String get dlnaRemuxContainerDesc =>
+      'Rewrap to MP4 without re-encoding (fast)';
+
+  @override
+  String get dlnaTranscodeVideo => 'Transcode video';
+
+  @override
+  String get dlnaTranscodeVideoDesc => 'Convert video to H.264 (high CPU)';
+
+  @override
+  String get dlnaTranscodeAudio => 'Transcode audio';
+
+  @override
+  String get dlnaTranscodeAudioDesc => 'Convert audio to AAC';
+
+  @override
+  String get dlnaCastQueue => 'Cast queue';
+
+  @override
+  String get dlnaRenderer => 'Renderer';
+
+  @override
   String get customDownloadDir => 'Custom Download Directory';
 
   @override
@@ -5360,4 +5437,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get formHintCtFileRequestIntervalMs =>
       'Minimum gap between API calls; default 400, 0 disables';
+
+  @override
+  String get fileQueuedOrSaved =>
+      'This file is already in the task queue or downloaded';
+
+  @override
+  String get fileQueuedOrSavedShort => 'This file is already queued or saved';
 }

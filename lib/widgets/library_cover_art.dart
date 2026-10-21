@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -11,14 +12,15 @@ import '../services/library_service.dart';
 import '../services/webdav_service.dart';
 import '../services/stream_cover_reader.dart';
 import '../services/accounts_service.dart';
+import '../services/audio_player_service.dart';
 import '../models/webdav_stream.dart';
 import '../services/tag_service.dart';
-import '../utils/cover_image.dart';
 import 'cover_art.dart';
 
-/// Library cover that prefers full-resolution art when the audio file is local,
-/// otherwise shows the 100×100 thumb only. Never auto-enqueues audio
-/// downloads from cover resolution (tap the row to enqueue explicitly).
+/// Library cover: resampled thumb by default. Local audio art is read from the
+/// audio file's tags (never persisted); the full player screen Range-reads the
+/// embedded cover for streaming tracks. Never auto-enqueues audio downloads
+/// from cover resolution (tap the row to enqueue explicitly).
 class LibraryCoverArt extends StatefulWidget {
   const LibraryCoverArt({
     super.key,
@@ -31,6 +33,7 @@ class LibraryCoverArt extends StatefulWidget {
     this.borderRadius = 6,
     this.icon,
     this.enqueueIfMissing = false,
+    this.coverRevision = 0,
   });
 
   factory LibraryCoverArt.forTrack({
@@ -53,6 +56,9 @@ class LibraryCoverArt extends StatefulWidget {
       borderRadius: borderRadius,
       icon: icon,
       enqueueIfMissing: enqueueIfMissing && !track.isCueVirtual,
+      // rev/lastTagReadAt change on every tag/cover ingest, including re-scrapes
+      // that rewrite the same cover file in place.
+      coverRevision: track.rev ?? track.lastTagReadAt.millisecondsSinceEpoch,
     );
   }
 
@@ -67,13 +73,17 @@ class LibraryCoverArt extends StatefulWidget {
   final IconData? icon;
   final bool enqueueIfMissing;
 
+  /// Changes when the library row was re-ingested (new cover bytes may have
+  /// overwritten the same file path).
+  final int coverRevision;
+
   @override
   State<LibraryCoverArt> createState() => _LibraryCoverArtState();
 }
 
 class _LibraryCoverArtState extends State<LibraryCoverArt> {
   String? _displayPath;
-  Uint8List? _fullBytes;
+  Uint8List? _bytes;
   bool _resolved = false;
   String? _identity;
 
@@ -88,9 +98,10 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.remotePath != widget.remotePath ||
-        oldWidget.thumbPath != widget.thumbPath) {
+        oldWidget.thumbPath != widget.thumbPath ||
+        oldWidget.coverRevision != widget.coverRevision) {
       _resolved = false;
-      _fullBytes = null;
+      _bytes = null;
       _displayPath = null;
       _scheduleResolve();
     }
@@ -137,63 +148,48 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
       }
       if (!mounted) return;
       setState(() {
-        _displayPath = resolveLibraryCoverPath(
-          audioIsLocal: false,
-          fullCoverPath: null,
-          thumbPath: widget.thumbPath,
-        );
-        _fullBytes = null;
+        _displayPath = thumb;
+        _bytes = null;
         _resolved = true;
       });
       return;
     }
 
-    // Local audio: prefer saved full cover, else extract from tags.
-    final fullPath = await covers.fullCoverPath(
-      widget.sourceName,
-      widget.remotePath,
-    );
-    if (fullPath != null) {
+    // Local audio: default to the resampled thumb. If it is missing (legacy row
+    // after the original-art cache cleanup), rebuild it from the audio tags so
+    // the cover survives audio-cache deletion without a separate full copy.
+    final thumb = widget.thumbPath;
+    if (thumb != null && thumb.isNotEmpty && File(thumb).existsSync()) {
       if (!mounted) return;
       setState(() {
-        _displayPath = resolveLibraryCoverPath(
-          audioIsLocal: true,
-          fullCoverPath: fullPath,
-          thumbPath: widget.thumbPath,
-        );
-        _fullBytes = null;
+        _displayPath = thumb;
+        _bytes = null;
         _resolved = true;
       });
       return;
     }
-
     final localPath = cache
         .fileForRemote(widget.remotePath, sourceName: widget.sourceName)
         .path;
     final tags = await TagService().readFromFile(localPath);
     final bytes = tags.coverBytes;
     if (bytes != null && bytes.isNotEmpty) {
-      unawaited(
-        covers.saveFull(
-          sourceName: widget.sourceName,
-          remotePath: widget.remotePath,
-          bytes: bytes,
-        ),
+      final saved = await covers.saveThumb(
+        sourceName: widget.sourceName,
+        remotePath: widget.libraryRemotePath ?? widget.remotePath,
+        bytes: bytes,
       );
-      // Also ensure thumb exists for offline placeholder.
-      if (widget.thumbPath == null) {
-        unawaited(
-          covers.saveThumb(
-            sourceName: widget.sourceName,
-            remotePath: widget.remotePath,
-            bytes: bytes,
-          ),
+      if (saved != null) {
+        await library.updateCoverPath(
+          sourceName: widget.sourceName,
+          remotePath: widget.libraryRemotePath ?? widget.remotePath,
+          coverPath: saved,
         );
       }
       if (!mounted) return;
       setState(() {
-        _fullBytes = bytes;
-        _displayPath = widget.thumbPath;
+        _displayPath = saved ?? thumb;
+        _bytes = saved == null ? bytes : null;
         _resolved = true;
       });
       return;
@@ -201,8 +197,8 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
 
     if (!mounted) return;
     setState(() {
-      _displayPath = widget.thumbPath;
-      _fullBytes = null;
+      _displayPath = thumb;
+      _bytes = null;
       _resolved = true;
     });
   }
@@ -254,29 +250,42 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
     final path = _displayPath ?? widget.thumbPath;
     return CoverArt(
       path: path,
-      bytes: _fullBytes,
+      bytes: _bytes,
       size: widget.size,
       borderRadius: widget.borderRadius,
       icon: widget.icon,
+      revision: widget.coverRevision,
     );
   }
 }
 
 /// Pick the best cover source among album/artist tracks for grid tiles.
+///
+/// Within each tier (local audio → any saved thumb) the most recently
+/// tag-read row wins, so re-scraping one track actually updates the group art
+/// instead of keeping an older sibling's cover.
 LibraryTrack? pickCoverTrack(List<LibraryTrack> tracks, CacheService cache) {
-  // Prefer a track that is local (full art available).
+  LibraryTrack? newestLocal;
+  LibraryTrack? newestThumb;
   for (final t in tracks) {
-    if (cache.hasLocalFile(t.remotePath, sourceName: t.sourceName)) {
-      return t;
+    final local = cache.hasLocalFile(t.remotePath, sourceName: t.sourceName);
+    if (local) {
+      if (newestLocal == null ||
+          t.lastTagReadAt.isAfter(newestLocal.lastTagReadAt)) {
+        newestLocal = t;
+      }
+      continue;
     }
-  }
-  // Else first with a thumb on disk.
-  for (final t in tracks) {
     final p = t.coverPath;
     if (p != null && p.isNotEmpty) {
-      return t;
+      if (newestThumb == null ||
+          t.lastTagReadAt.isAfter(newestThumb.lastTagReadAt)) {
+        newestThumb = t;
+      }
     }
   }
+  if (newestLocal != null) return newestLocal;
+  if (newestThumb != null) return newestThumb;
   return tracks.isEmpty ? null : tracks.first;
 }
 
@@ -293,6 +302,8 @@ class PlayerCoverArt extends StatefulWidget {
     required this.size,
     this.borderRadius = 8,
     this.icon,
+    this.coverRevision = 0,
+    this.rangeOnlyWhenMissing = false,
   });
 
   final String sourceName;
@@ -308,6 +319,13 @@ class PlayerCoverArt extends StatefulWidget {
   final double size;
   final double borderRadius;
   final IconData? icon;
+
+  /// Bumped when the library row / queue metadata changed (cover re-ingest).
+  final int coverRevision;
+
+  /// MiniPlayer only needs a fallback: when a thumb exists, skip the Range
+  /// request. The full player always fetches the original.
+  final bool rangeOnlyWhenMissing;
 
   @override
   State<PlayerCoverArt> createState() => _PlayerCoverArtState();
@@ -331,7 +349,8 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     if (oldWidget.sourceName != widget.sourceName ||
         oldWidget.remotePath != widget.remotePath ||
         oldWidget.localAudioPath != widget.localAudioPath ||
-        oldWidget.coverPath != widget.coverPath) {
+        oldWidget.coverPath != widget.coverPath ||
+        oldWidget.coverRevision != widget.coverRevision) {
       _resolved = false;
       _displayPath = null;
       _bytes = null;
@@ -357,21 +376,6 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
     final covers = library.covers;
     await covers.init();
 
-    // 1) Full-res bucket (also written by Range / stream ingest).
-    final fullPath = await covers.fullCoverPath(
-      widget.sourceName,
-      widget.remotePath,
-    );
-    if (fullPath != null) {
-      if (!mounted) return;
-      setState(() {
-        _displayPath = fullPath;
-        _bytes = null;
-        _resolved = true;
-      });
-      return;
-    }
-
     final localPath =
         widget.localAudioPath ??
         (cache.hasLocalFile(widget.remotePath, sourceName: widget.sourceName)
@@ -383,18 +387,12 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
                   .path
             : null);
 
-    // 2) Embedded art from local audio.
+    // Local audio: read the original art from the file's tags on demand. It is
+    // not persisted separately; only the resampled thumb lives in covers/.
     if (localPath != null) {
       final tags = await TagService().readFromFile(localPath);
       final bytes = tags.coverBytes;
       if (bytes != null && bytes.isNotEmpty) {
-        unawaited(
-          covers.saveFull(
-            sourceName: widget.sourceName,
-            remotePath: widget.remotePath,
-            bytes: bytes,
-          ),
-        );
         if (!mounted) return;
         setState(() {
           _displayPath = null;
@@ -403,25 +401,52 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
         });
         return;
       }
-    }
-
-    // 3) Library / stream cover file (thumb or prefetch) — match MiniPlayer.
-    final known = widget.coverPath;
-    if (known != null && known.isNotEmpty) {
+      // Local audio without embedded art: keep the resampled thumb. No Range
+      // request needed, the bytes are already on disk.
       if (!mounted) return;
       setState(() {
-        _displayPath = known;
+        _displayPath = widget.coverPath;
         _bytes = null;
         _resolved = true;
       });
       return;
     }
 
+    // Streaming: show the resampled thumb first, then Range-read the embedded
+    // original (memory only; one request at a time through AudioPlayerService,
+    // sharing the music network window).
     if (!mounted) return;
     setState(() {
-      _displayPath = null;
+      _displayPath = widget.coverPath;
       _bytes = null;
       _resolved = true;
+    });
+    if (widget.rangeOnlyWhenMissing &&
+        (widget.coverPath?.isNotEmpty ?? false)) {
+      return;
+    }
+    unawaited(_loadRangeCover());
+  }
+
+  Future<void> _loadRangeCover() async {
+    final remotePath = widget.remotePath;
+    final revision = widget.coverRevision;
+    final player = context.read<AudioPlayerService>();
+    final bytes = await player.networkCoverBytes(
+      sourceName: widget.sourceName,
+      remotePath: remotePath,
+      fileName: widget.fileName ?? remotePath.split('/').last,
+    );
+    if (!mounted ||
+        bytes == null ||
+        bytes.isEmpty ||
+        widget.remotePath != remotePath ||
+        widget.coverRevision != revision) {
+      return;
+    }
+    setState(() {
+      _displayPath = null;
+      _bytes = bytes;
     });
   }
 
@@ -433,6 +458,7 @@ class _PlayerCoverArtState extends State<PlayerCoverArt> {
       size: widget.size,
       borderRadius: widget.borderRadius,
       icon: widget.icon ?? Icons.album,
+      revision: widget.coverRevision,
     );
   }
 }
