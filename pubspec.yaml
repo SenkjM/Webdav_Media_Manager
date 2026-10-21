@@ -82,6 +82,9 @@ dependencies:
   # Sidecar subtitles are often GBK / GB18030 / Big5, not UTF-8.
   charset: ^2.0.1
   enough_convert: ^1.6.0
+  # FFI bridge to WDMM-core Rust workspace (see docs/100-RUST-CORE-SPLIT.md)
+  flutter_rust_bridge: ^2.7.0
+  ffi: ^2.2.0
 
 dev_dependencies:
   flutter_test:
