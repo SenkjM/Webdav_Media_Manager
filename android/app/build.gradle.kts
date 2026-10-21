@@ -151,6 +151,31 @@ android {
     // release 的签名由各 flavor 决定（见 productFlavors 上方注释），这里不设。
 }
 
+// --- cargo-ndk build hook for WDMM Rust core (future) ---
+// When wired up, this block will invoke cargo-ndk to build wdmm-ffi
+// for all required ABIs and copy libwdmm_ffi.so into jniLibs/.
+// Example task:
+//
+// tasks.register<Exec>("buildRustCore") {
+//     workingDir = rootProject.file("../../WDMM-core")
+//     commandLine("cargo", "ndk",
+//         "-t", "armeabi-v7a",
+//         "-t", "arm64-v8a",
+//         "-t", "x86_64",
+//         "-o", project.file("src/main/jniLibs").absolutePath,
+//         "build", "--release", "-p", "wdmm-ffi"
+//     )
+// }
+//
+// tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLibFolders") }
+//     .configureEach { dependsOn("buildRustCore") }
+//
+// Requires:
+// - cargo-ndk installed: `cargo install cargo-ndk`
+// - NDK_HOME or ANDROID_NDK_ROOT set
+// - WDMM-core cloned at ../../WDMM-core relative to this file
+// ---
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
