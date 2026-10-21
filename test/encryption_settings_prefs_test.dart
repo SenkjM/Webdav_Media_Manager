@@ -48,12 +48,12 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     final fresh = SettingsService(prefs: prefs);
     await fresh.init();
-    expect(fresh.cryptSequentialDownloadEnabled, isFalse);
+    expect(fresh.cryptSequentialDownloadEnabled, isTrue);
 
-    await fresh.setCryptSequentialDownloadEnabled(true);
+    await fresh.setCryptSequentialDownloadEnabled(false);
     final restored = SettingsService(prefs: prefs);
     await restored.init();
-    expect(restored.cryptSequentialDownloadEnabled, isTrue);
-    expect(prefs.getBool('crypt_sequential_download'), isTrue);
+    expect(restored.cryptSequentialDownloadEnabled, isFalse);
+    expect(prefs.getBool('crypt_sequential_download'), isFalse);
   });
 }

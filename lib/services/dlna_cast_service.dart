@@ -154,8 +154,16 @@ class DlnaCastService extends ChangeNotifier {
   LocalStreamBridge? _bridge;
   String? _localIp;
   Timer? _pollTimer;
-  final HttpClient _http = HttpClient()
-    ..connectionTimeout = const Duration(seconds: 8);
+
+  /// 创建一个禁用连接复用的短生命周期 HttpClient。
+  ///
+  /// UPnP/DLNA 渲染器（如 SmartShare）通常不支持 HTTP keep-alive，
+  /// 每次响应后即关闭 TCP 连接。若复用旧连接则 Dart 报
+  /// "Connection closed before full header was received"。
+  /// 每次 SOAP 调用独立创建 + 销毁 HttpClient 可彻底规避此问题。
+  HttpClient _newHttpClient() => HttpClient()
+    ..connectionTimeout = const Duration(seconds: 8)
+    ..maxConnectionsPerHost = 1;
 
   // ──────────────────────────────────────────────────────────────────────────
   // SSDP 发现
@@ -228,9 +236,10 @@ class DlnaCastService extends ChangeNotifier {
   }
 
   Future<void> _fetchDescription(String location) async {
+    final client = _newHttpClient();
     try {
       final uri = Uri.parse(location);
-      final req = await _http.getUrl(uri);
+      final req = await client.getUrl(uri);
       final resp = await req.close();
       if (resp.statusCode != 200) return;
       final body = await resp.transform(utf8.decoder).join();
@@ -256,6 +265,8 @@ class DlnaCastService extends ChangeNotifier {
       }
     } catch (_) {
       // 单台设备解析失败不影响其他设备
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -636,8 +647,9 @@ class DlnaCastService extends ChangeNotifier {
     debugPrint('[DLNA] SOAP → $action @ $controlUrl');
 
     final uri = Uri.parse(controlUrl);
+    final client = _newHttpClient();
     try {
-      final req = await _http.postUrl(uri);
+      final req = await client.postUrl(uri);
       req.headers.set('Content-Type', 'text/xml; charset="utf-8"');
       req.headers.set(
         'SOAPACTION',
@@ -671,6 +683,8 @@ class DlnaCastService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[DLNA] SOAP $action 异常: $e\n  controlUrl: $controlUrl');
       rethrow;
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -892,22 +906,27 @@ class DlnaCastService extends ChangeNotifier {
 
     debugPrint('[DLNA] ConnMgr SOAP → $action @ $controlUrl');
     final uri = Uri.parse(controlUrl);
-    final req = await _http.postUrl(uri);
-    req.headers.set('Content-Type', 'text/xml; charset="utf-8"');
-    req.headers.set(
-      'SOAPACTION',
-      '"urn:schemas-upnp-org:service:ConnectionManager:1#$action"',
-    );
-    final encoded = utf8.encode(envelope);
-    req.headers.contentLength = encoded.length;
-    req.add(encoded);
-    final resp = await req.close();
-    final body = await resp.transform(utf8.decoder).join();
-    if (resp.statusCode >= 300) {
-      debugPrint('[DLNA] ConnMgr SOAP $action failed: ${resp.statusCode}\n$body');
-      return null;
+    final client = _newHttpClient();
+    try {
+      final req = await client.postUrl(uri);
+      req.headers.set('Content-Type', 'text/xml; charset="utf-8"');
+      req.headers.set(
+        'SOAPACTION',
+        '"urn:schemas-upnp-org:service:ConnectionManager:1#$action"',
+      );
+      final encoded = utf8.encode(envelope);
+      req.headers.contentLength = encoded.length;
+      req.add(encoded);
+      final resp = await req.close();
+      final body = await resp.transform(utf8.decoder).join();
+      if (resp.statusCode >= 300) {
+        debugPrint('[DLNA] ConnMgr SOAP $action failed: ${resp.statusCode}\n$body');
+        return null;
+      }
+      return body;
+    } finally {
+      client.close(force: true);
     }
-    return body;
   }
 
   /// 查询 DMR 的 ConnectionManager.GetProtocolInfo，
@@ -999,7 +1018,6 @@ class DlnaCastService extends ChangeNotifier {
   Future<void> dispose() async {
     stopDiscovery();
     await _cleanupSession();
-    _http.close(force: true);
     super.dispose();
   }
 }

@@ -29,8 +29,35 @@ bool _switchValue(
   Map<String, bool> values,
 ) => spec?.switchValue(key, values) ?? false;
 
-class AccountsScreen extends StatelessWidget {
+class AccountsScreen extends StatefulWidget {
   const AccountsScreen({super.key});
+
+  @override
+  State<AccountsScreen> createState() => _AccountsScreenState();
+}
+
+class _AccountsScreenState extends State<AccountsScreen> {
+  /// accountId → 状态标签（会员 / 带宽等小 Chip）。账号页打开与下拉刷新时拉一次，
+  /// 失败静默（驱动已 fail-soft，这里再兜一层）。WebDAV 账号无标签。
+  final Map<String, List<AccountStatusTag>> _tags = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // 首帧后再拉，避免 build 途中触发 provider 读取 / 网络请求。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadTags());
+  }
+
+  Future<void> _loadTags() async {
+    final accounts = context.read<AccountsService>();
+    final webdav = context.read<WebDavService>();
+    for (final a in accounts.accounts) {
+      if (!CloudDriveService.isCloudType(a.providerType)) continue;
+      final tags = await webdav.statusTagsFor(a.id);
+      if (!mounted) return;
+      setState(() => _tags[a.id] = tags);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,76 +78,103 @@ class AccountsScreen extends StatelessWidget {
           Expanded(
             child: accounts.accounts.isEmpty
                 ? Center(child: Text(l10n.noAccounts))
-                : ListView.builder(
-                    itemCount: accounts.accounts.length,
-                    itemBuilder: (context, i) {
-                      final a = accounts.accounts[i];
-                      final active = accounts.activeAccountId == a.id;
-                      return ListTile(
-                        leading: Icon(
-                          active ? Icons.cloud_done : Icons.cloud_outlined,
-                          color: active
-                              ? Theme.of(context).colorScheme.primary
-                              : null,
-                        ),
-                        // 名称（用户名）：同一主机上多个挂载点一眼可分。
-                        title: Text(webDavAccountLabel(a, l10n)),
-                        // WebDAV 显示地址；云盘 / crypt 显示类型名
-                        // （crypt = 源类型 + Crypt，见 CloudDriveService.typeLabelFor）。
-                        subtitle: Text(
-                          a.url.isNotEmpty ? a.url : cloudDrive.typeLabelFor(a),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        isThreeLine: true,
-                        trailing: PopupMenuButton<String>(
-                          onSelected: (v) async {
-                            switch (v) {
-                              case 'use':
-                                await context.read<AppState>().switchAccount(
-                                  a.id,
-                                );
-                                break;
-                              case 'edit':
-                                await _editAccount(context, existing: a);
-                                break;
-                              case 'test':
-                                await _test(context, a);
-                                break;
-                              case 'delete':
-                                await _delete(context, a);
-                                break;
-                            }
-                          },
-                          itemBuilder: (_) => [
-                            PopupMenuItem(
-                              value: 'use',
-                              child: Text(l10n.setCurrent),
-                            ),
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: Text(l10n.edit),
-                            ),
-                            PopupMenuItem(
-                              value: 'test',
-                              child: Text(l10n.testConnection),
-                            ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Text(l10n.delete),
-                            ),
-                          ],
-                        ),
-                        onTap: () =>
-                            context.read<AppState>().switchAccount(a.id),
-                      );
-                    },
+                : RefreshIndicator(
+                    onRefresh: _loadTags,
+                    child: ListView.builder(
+                      itemCount: accounts.accounts.length,
+                      itemBuilder: (context, i) {
+                        final a = accounts.accounts[i];
+                        final active = accounts.activeAccountId == a.id;
+                        final accountTags = _tags[a.id] ?? const [];
+                        return ListTile(
+                          leading: Icon(
+                            active ? Icons.cloud_done : Icons.cloud_outlined,
+                            color: active
+                                ? Theme.of(context).colorScheme.primary
+                                : null,
+                          ),
+                          // 账号名称：曲库按此名称绑定，账号列表只显示名称。
+                          title: Text(webDavAccountLabel(a, l10n)),
+                          // WebDAV 显示地址；云盘 / crypt 显示类型名
+                          // （crypt = 源类型 + Crypt，见 CloudDriveService.typeLabelFor）。
+                          // 云盘账号额外展示状态标签小 Chip（会员 / 带宽）。
+                          subtitle: Text(
+                            a.url.isNotEmpty
+                                ? a.url
+                                : cloudDrive.typeLabelFor(a),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (accountTags.isNotEmpty)
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.sizeOf(context).width * 0.38,
+                                  ),
+                                  child: Wrap(
+                                    spacing: 6,
+                                    runSpacing: 2,
+                                    alignment: WrapAlignment.end,
+                                    children: [
+                                      for (final tag in accountTags)
+                                        _AccountStatusChip(tag: tag),
+                                    ],
+                                  ),
+                                ),
+                              PopupMenuButton<String>(
+                                onSelected: (v) async {
+                                  switch (v) {
+                                    case 'use':
+                                      await context
+                                          .read<AppState>()
+                                          .switchAccount(a.id);
+                                      break;
+                                    case 'edit':
+                                      await _editAccount(context, existing: a);
+                                      break;
+                                    case 'test':
+                                      await _test(context, a);
+                                      break;
+                                    case 'delete':
+                                      await _delete(context, a);
+                                      break;
+                                  }
+                                },
+                                itemBuilder: (_) => [
+                                  PopupMenuItem(
+                                    value: 'use',
+                                    child: Text(l10n.setCurrent),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    child: Text(l10n.edit),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'test',
+                                    child: Text(l10n.testConnection),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'delete',
+                                    child: Text(l10n.delete),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          onTap: () =>
+                              context.read<AppState>().switchAccount(a.id),
+                        );
+                      },
+                    ),
                   ),
-          ),
-        ],
-      ),
-    );
-  }
+                ),
+              ],
+            ),
+          );
+        }
 
   Future<void> _test(BuildContext context, WebDavAccount a) async {
     final l10n = AppLocalizations.of(context)!;
@@ -842,6 +896,44 @@ class AccountsScreen extends StatelessWidget {
       ),
     );
     return ok == true;
+  }
+}
+
+
+/// Compact account status chip. VIP/member tags get a gold border.
+class _AccountStatusChip extends StatelessWidget {
+  const _AccountStatusChip({required this.tag});
+
+  final AccountStatusTag tag;
+
+  static const Color _gold = Color(0xFFC9A227);
+
+  bool get _isVip => tag.key == 'vip';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Chip(
+      label: Text(
+        tag.label,
+        style: TextStyle(
+          fontSize: 12,
+          color: _isVip ? _gold : scheme.onSurfaceVariant,
+          fontWeight: _isVip ? FontWeight.w600 : FontWeight.w400,
+        ),
+      ),
+      side: BorderSide(
+        color: _isVip ? _gold : scheme.outlineVariant,
+        width: _isVip ? 1.5 : 1,
+      ),
+      backgroundColor: _isVip
+          ? _gold.withValues(alpha: 0.08)
+          : scheme.surfaceContainerHighest,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+    );
   }
 }
 

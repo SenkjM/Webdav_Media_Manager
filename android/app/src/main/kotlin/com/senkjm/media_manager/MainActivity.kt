@@ -12,8 +12,10 @@ import android.media.session.MediaSessionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
@@ -54,6 +56,10 @@ class MainActivity : AudioServiceFragmentActivity() {
     /** Pending SAF pick result; the platform allows only one dialog at a time. */
     private var pendingPick: MethodChannel.Result? = null
     private var pendingListFolderTree: MethodChannel.Result? = null
+    private var pendingPickDownloadTree: MethodChannel.Result? = null
+    /** Old tree URI to release after a successful re-pick. */
+    private var pendingOldDownloadTreeUri: String? = null
+    private var pendingLegacyStoragePermission: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -88,7 +94,11 @@ class MainActivity : AudioServiceFragmentActivity() {
                                 args?.get("album") as? String,
                             )
                         }.getOrElse { e ->
-                            mapOf("ok" to false, "error" to (e.message ?: e.toString()))
+                            mapOf(
+                                "ok" to false,
+                                "error" to (e.message ?: e.toString()),
+                                "errorKind" to "io"
+                            )
                         },
                     )
                 }
@@ -103,7 +113,11 @@ class MainActivity : AudioServiceFragmentActivity() {
                                 args?.get("subdir") as? String,
                             )
                         }.getOrElse { e ->
-                            mapOf("ok" to false, "error" to (e.message ?: e.toString()))
+                            mapOf(
+                                "ok" to false,
+                                "error" to (e.message ?: e.toString()),
+                                "errorKind" to "io"
+                            )
                         },
                     )
                 }
@@ -151,6 +165,76 @@ class MainActivity : AudioServiceFragmentActivity() {
                 "openUrl" -> {
                     val args = call.arguments as? Map<*, *>
                     result.success(openExternalUrl(args?.get("url") as? String))
+                }
+                "pickDownloadTree" -> pickDownloadTree(call.arguments as? Map<*, *>, result)
+                "releaseDownloadTree" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val uri = args?.get("uri") as? String
+                    result.success(
+                        if (uri != null) {
+                            SafDownloadTarget.releaseDownloadTree(contentResolver, uri)
+                        } else {
+                            mapOf("ok" to false, "error" to "uri required")
+                        }
+                    )
+                }
+                "checkDownloadTree" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val uri = args?.get("uri") as? String
+                    result.success(
+                        if (uri != null) {
+                            SafDownloadTarget.checkDownloadTree(contentResolver, uri)
+                        } else {
+                            mapOf("ok" to false, "error" to "uri required", "errorKind" to "other")
+                        }
+                    )
+                }
+                "saveToTree" -> {
+                    val args = call.arguments as? Map<*, *>
+                    result.success(
+                        runCatching {
+                            SafDownloadTarget.saveToTree(
+                                contentResolver,
+                                args?.get("uri") as? String ?: "",
+                                args?.get("path") as? String ?: "",
+                                args?.get("fileName") as? String ?: "",
+                                this,
+                            )
+                        }.getOrElse { e ->
+                            mapOf(
+                                "ok" to false,
+                                "error" to (e.message ?: e.toString()),
+                                "errorKind" to "other"
+                            )
+                        }
+                    )
+                }
+                "setTreeNomedia" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val uri = args?.get("uri") as? String
+                    val enabled = args?.get("enabled") == true
+                    result.success(
+                        if (uri != null) {
+                            SafDownloadTarget.setTreeNomedia(contentResolver, uri, enabled)
+                        } else {
+                            mapOf("ok" to false, "error" to "uri required", "errorKind" to "other")
+                        }
+                    )
+                }
+                "ensureLegacyStoragePermission" -> ensureLegacyStoragePermission(result)
+                "listPersistedTreeGrants" -> {
+                    result.success(SafDownloadTarget.listPersistedTreeGrants(contentResolver))
+                }
+                "releaseReadTree" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val uri = args?.get("uri") as? String
+                    result.success(
+                        if (uri != null) {
+                            SafDownloadTarget.releaseReadTree(contentResolver, uri)
+                        } else {
+                            mapOf("ok" to false, "error" to "uri required")
+                        }
+                    )
                 }
                 else -> result.notImplemented()
             }
@@ -278,6 +362,69 @@ class MainActivity : AudioServiceFragmentActivity() {
     @Deprecated("Flutter embedding still routes SAF results through onActivityResult")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == REQUEST_PICK_DOWNLOAD_TREE) {
+            val r = pendingPickDownloadTree ?: return
+            pendingPickDownloadTree = null
+            val oldTree = pendingOldDownloadTreeUri
+            pendingOldDownloadTreeUri = null
+            if (resultCode != Activity.RESULT_OK || data?.data == null) {
+                r.success(mapOf("ok" to false, "cancelled" to true))
+                return
+            }
+            val treeUri = data.data!!
+
+            try {
+                contentResolver.takePersistableUriPermission(
+                    treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            } catch (e: Exception) {
+                r.success(mapOf(
+                    "ok" to false,
+                    "error" to "无法获取持久化权限：${e.message ?: e}",
+                    "errorKind" to "other"
+                ))
+                return
+            }
+            if (!oldTree.isNullOrBlank() && oldTree != treeUri.toString()) {
+                runCatching {
+                    SafDownloadTarget.releaseDownloadTree(contentResolver, oldTree)
+                }
+            }
+
+            // 获取显示名
+            val displayName = try {
+                DocumentFile.fromTreeUri(this, treeUri)?.name
+            } catch (e: Exception) {
+                null
+            } ?: try {
+                val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+                val rootDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId)
+                contentResolver.query(
+                    rootDocUri,
+                    arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                        if (nameIdx >= 0) cursor.getString(nameIdx) else null
+                    } else null
+                }
+            } catch (e: Exception) {
+                null
+            }
+
+            r.success(mapOf(
+                "ok" to true,
+                "uri" to treeUri.toString(),
+                "displayName" to (displayName ?: "自定义目录")
+            ))
+            return
+        }
+
         if (requestCode == REQUEST_LIST_FOLDER_TREE) {
             val r = pendingListFolderTree ?: return
             pendingListFolderTree = null
@@ -438,6 +585,98 @@ class MainActivity : AudioServiceFragmentActivity() {
         appChannel?.invokeMethod("pictureInPictureChanged", isInPictureInPictureMode)
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_LEGACY_STORAGE_PERMISSION) {
+            val r = pendingLegacyStoragePermission ?: return
+            pendingLegacyStoragePermission = null
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            r.success(mapOf("ok" to true, "granted" to granted))
+        }
+    }
+
+    /**
+     * 启动 ACTION_OPEN_DOCUMENT_TREE 选择自定义下载目录。
+     */
+    private fun pickDownloadTree(args: Map<*, *>?, result: MethodChannel.Result) {
+        if (pendingPickDownloadTree != null) {
+            result.error("BUSY", "pickDownloadTree already pending", null)
+            return
+        }
+        pendingPickDownloadTree = result
+        pendingOldDownloadTreeUri = (args?.get("oldUri") as? String)?.takeIf { it.isNotBlank() }
+
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+            )
+            // API 26+ 设置初始目录为 Download
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try {
+                    val downloadUri = DocumentsContract.buildDocumentUri(
+                        "com.android.externalstorage.documents",
+                        "primary:Download"
+                    )
+                    putExtra(DocumentsContract.EXTRA_INITIAL_URI, downloadUri)
+                } catch (e: Exception) {
+                    // 忽略，某些设备可能不支持
+                }
+            }
+        }
+
+        try {
+            startActivityForResult(intent, REQUEST_PICK_DOWNLOAD_TREE)
+        } catch (e: Exception) {
+            pendingPickDownloadTree = null
+            pendingOldDownloadTreeUri = null
+            result.success(mapOf(
+                "ok" to false,
+                "error" to (e.message ?: "无法打开文件夹选择器")
+            ))
+        }
+    }
+
+    /**
+     * 确保遗留存储权限（API ≤ 28）。
+     * API 29+ 直接返回 granted:true；API ≤ 28 检查或请求权限。
+     */
+    private fun ensureLegacyStoragePermission(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            result.success(mapOf("ok" to true, "granted" to true))
+            return
+        }
+
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (granted) {
+            result.success(mapOf("ok" to true, "granted" to true))
+            return
+        }
+
+        if (pendingLegacyStoragePermission != null) {
+            result.success(mapOf("ok" to false, "error" to "权限请求已在进行中"))
+            return
+        }
+
+        pendingLegacyStoragePermission = result
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE),
+            REQUEST_LEGACY_STORAGE_PERMISSION
+        )
+    }
+
     // ---------------------------------------------------------------------
     // MediaStore / Downloads export
     // ---------------------------------------------------------------------
@@ -518,10 +757,32 @@ class MainActivity : AudioServiceFragmentActivity() {
                 runCatching { resolver.delete(uri, null, null) }
                 throw e
             }
+
+            // 查询实际文件名（API 29+ MediaStore 可能自动改名）
+            var actualFileName = fileName
+            try {
+                resolver.query(
+                    uri,
+                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        if (nameIdx >= 0) {
+                            actualFileName = cursor.getString(nameIdx) ?: fileName
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // 查询失败，使用原 fileName
+            }
+
             return mapOf(
                 "ok" to true,
                 "uri" to uri.toString(),
-                "fileName" to fileName,
+                "fileName" to actualFileName,
                 "collection" to collection,
                 "location" to "系统相册",
             )
@@ -588,12 +849,34 @@ class MainActivity : AudioServiceFragmentActivity() {
                 runCatching { resolver.delete(uri, null, null) }
                 throw e
             }
+
+            // 查询实际文件名（API 29+ MediaStore 可能自动改名）
+            var actualFileName = fileName
+            try {
+                resolver.query(
+                    uri,
+                    arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                        if (nameIdx >= 0) {
+                            actualFileName = cursor.getString(nameIdx) ?: fileName
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // 查询失败，使用原 fileName
+            }
+
             return mapOf(
                 "ok" to true,
                 "uri" to uri.toString(),
-                "fileName" to fileName,
+                "fileName" to actualFileName,
                 "location" to "下载目录/$dir",
-                "path" to "$relative/$fileName",
+                "path" to "$relative/$actualFileName"
             )
         }
 
@@ -637,12 +920,24 @@ class MainActivity : AudioServiceFragmentActivity() {
         }
     }
 
+    private fun isSamsungOneUI(): Boolean = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+
     /** API 28 file, or API 29+ MediaStore row with display name `.nomedia`. */
     private fun downloadsNomediaPresent(): Boolean {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            findNomediaUris(contentResolver).isNotEmpty()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (findNomediaUris(contentResolver).isNotEmpty()) {
+                return true
+            }
+            // Fallback: external file placed by user
+            return runCatching {
+                val file = File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "WebdavMediaManager/.nomedia"
+                )
+                file.isFile && file.canRead()
+            }.getOrDefault(false)
         } else {
-            nomediaFileApi28().isFile
+            return nomediaFileApi28().isFile
         }
     }
 
@@ -707,6 +1002,12 @@ class MainActivity : AudioServiceFragmentActivity() {
         )?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
         if (stored != null && stored != ".nomedia") {
             runCatching { resolver.delete(uri, null, null) }
+            if (isSamsungOneUI()) {
+                return mapOf(
+                    "ok" to false,
+                    "error" to "三星系统会改写 .nomedia，无法干净排除媒体扫描，已取消。可改用自定义下载目录",
+                )
+            }
             return mapOf(
                 "ok" to false,
                 "error" to "MediaStore 未保留显示名 .nomedia（实际为 $stored）",
@@ -719,6 +1020,24 @@ class MainActivity : AudioServiceFragmentActivity() {
         val resolver = contentResolver
         val uris = findNomediaUris(resolver)
         if (uris.isEmpty()) {
+            // Check for externally placed file
+            val externalFile = runCatching {
+                File(
+                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                    "WebdavMediaManager/.nomedia"
+                )
+            }.getOrNull()
+            if (externalFile?.isFile == true) {
+                val deleted = runCatching { externalFile.delete() }.getOrDefault(false)
+                return if (deleted) {
+                    mapOf("ok" to true)
+                } else {
+                    mapOf(
+                        "ok" to false,
+                        "error" to "无法删除外部放置的 .nomedia，请用文件管理器手动删除",
+                    )
+                }
+            }
             return mapOf("ok" to true, "already" to true)
         }
         for (uri in uris) {
@@ -1066,6 +1385,8 @@ class MainActivity : AudioServiceFragmentActivity() {
         private const val REQUEST_PICK_FILE = 4711
         private const val REQUEST_PICK_FOLDER = 4712
         private const val REQUEST_LIST_FOLDER_TREE = 4713
+        private const val REQUEST_PICK_DOWNLOAD_TREE = 4714
+        private const val REQUEST_LEGACY_STORAGE_PERMISSION = 4715
 
         private val LEGACY_VIDEO_EXTS = setOf(
             "mp4", "mkv", "avi", "mov", "webm", "flv", "ts",

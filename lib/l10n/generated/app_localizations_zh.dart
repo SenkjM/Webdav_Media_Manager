@@ -662,12 +662,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get downloadAction => '下载';
 
   @override
-  String get fileQueuedOrSaved => '该文件已在任务队列或已下载';
-
-  @override
-  String get fileQueuedOrSavedShort => '该文件已在队列或已保存';
-
-  @override
   String get accountRequired => '请先添加 WebDAV 服务器';
 
   @override
@@ -5083,6 +5077,120 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dlnaRenderer => '渲染器';
+
+  @override
+  String get customDownloadDir => '自定义下载目录';
+
+  @override
+  String get customDownloadDirSubtitle => '下载的文件保存到你选择的文件夹';
+
+  @override
+  String customDownloadDirCurrent(String name) {
+    return '当前目录：$name';
+  }
+
+  @override
+  String get customDownloadDirDefault => '系统下载目录';
+
+  @override
+  String get customDownloadDirRepick => '重新选择目录';
+
+  @override
+  String get customDownloadDirAndroid11Note =>
+      'Android 11 及以上不能直接选择「下载」根目录，请选择或新建其中的子文件夹';
+
+  @override
+  String get customDownloadDirSafNote =>
+      '自定义目录通过系统文件访问授权（SAF）写入，可绕过部分厂商对系统下载目录的限制';
+
+  @override
+  String get customDownloadDirPickCancelled => '未选择目录，仍使用系统下载目录';
+
+  @override
+  String get customDownloadDirFallback => '自定义下载目录已失效，已切回系统下载目录';
+
+  @override
+  String get errCustomDirInvalid => '自定义下载目录已失效，已切回系统下载目录，可重试此任务';
+
+  @override
+  String locationCustomDownloadDir(String name) {
+    return '$name';
+  }
+
+  @override
+  String get exportErrStoragePermissionDenied => '没有存储权限，无法写入公共目录';
+
+  @override
+  String get exportFellBackNotice => '自定义下载目录已失效，已改存到系统下载目录';
+
+  @override
+  String get dupTaskTitle => '已有重复任务';
+
+  @override
+  String get dupTaskBody => '已有重复任务，是否重新进行？';
+
+  @override
+  String dupTaskBatchBody(int count) {
+    return '有 $count 个重复任务，是否全部重新进行？';
+  }
+
+  @override
+  String get dupTaskRestart => '重新进行';
+
+  @override
+  String get dupTaskRestartAll => '全部重新进行';
+
+  @override
+  String get dupTaskSkip => '跳过';
+
+  @override
+  String get dlSavedGeneric => '已下载';
+
+  @override
+  String get driverNameCtFile => '城通网盘';
+
+  @override
+  String get formHintCtFileSession =>
+      '必填；从城通网盘管理后台「开放接口登录密钥管理」生成。获取方法见 OpenList 官方文档（ctfile 驱动页）';
+
+  @override
+  String get formLabelCloudType => '云盘类型';
+
+  @override
+  String get tagVip => '会员';
+
+  @override
+  String get tagSuperVip => '超级会员';
+
+  @override
+  String tagBwRemaining(String amount) {
+    return '剩 $amount';
+  }
+
+  @override
+  String get formOptionCtFilePublic => '公有云';
+
+  @override
+  String get formOptionCtFilePrivate => '私有云';
+
+  @override
+  String get formLabelCtFileListCacheSec => '目录缓存（秒）';
+
+  @override
+  String get formHintCtFileListCacheSec => '同一文件夹 list 结果缓存多久；默认 60，填 0 关闭';
+
+  @override
+  String get formLabelCtFileRequestIntervalMs => '请求间隔（毫秒）';
+
+  @override
+  String get formHintCtFileRequestIntervalMs =>
+      '两次 API 调用之间的最小间隔；默认 400，填 0 不节流';
+
+  @override
+  String get fileQueuedOrSaved => '该文件已在任务队列或已下载';
+
+  @override
+  String get fileQueuedOrSavedShort => '该文件已在队列或已保存';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -5741,12 +5849,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get downloadAction => '下載';
-
-  @override
-  String get fileQueuedOrSaved => '該檔案已在任務佇列或已下載';
-
-  @override
-  String get fileQueuedOrSavedShort => '檔案已在佇列或已儲存';
 
   @override
   String get accountRequired => '請先新增網路磁碟帳號';
@@ -10164,4 +10266,118 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get dlnaRenderer => '渲染器';
+
+  @override
+  String get customDownloadDir => '自訂下載目錄';
+
+  @override
+  String get customDownloadDirSubtitle => '下載的檔案儲存到你選擇的資料夾';
+
+  @override
+  String customDownloadDirCurrent(String name) {
+    return '目前目錄：$name';
+  }
+
+  @override
+  String get customDownloadDirDefault => '系統下載目錄';
+
+  @override
+  String get customDownloadDirRepick => '重新選擇目錄';
+
+  @override
+  String get customDownloadDirAndroid11Note =>
+      'Android 11 及以上不能直接選擇「下載」根目錄，請選擇或新建其中的子資料夾';
+
+  @override
+  String get customDownloadDirSafNote =>
+      '自訂目錄透過系統檔案存取授權（SAF）寫入，可繞過部分廠商對系統下載目錄的限制';
+
+  @override
+  String get customDownloadDirPickCancelled => '未選擇目錄，仍使用系統下載目錄';
+
+  @override
+  String get customDownloadDirFallback => '自訂下載目錄已失效，已切回系統下載目錄';
+
+  @override
+  String get errCustomDirInvalid => '自訂下載目錄已失效，已切回系統下載目錄，可重試此任務';
+
+  @override
+  String locationCustomDownloadDir(String name) {
+    return '$name';
+  }
+
+  @override
+  String get exportErrStoragePermissionDenied => '沒有儲存權限，無法寫入公共目錄';
+
+  @override
+  String get exportFellBackNotice => '自訂下載目錄已失效，已改存到系統下載目錄';
+
+  @override
+  String get dupTaskTitle => '已有重複任務';
+
+  @override
+  String get dupTaskBody => '已有重複任務，是否重新進行？';
+
+  @override
+  String dupTaskBatchBody(int count) {
+    return '有 $count 個重複任務，是否全部重新進行？';
+  }
+
+  @override
+  String get dupTaskRestart => '重新進行';
+
+  @override
+  String get dupTaskRestartAll => '全部重新進行';
+
+  @override
+  String get dupTaskSkip => '跳過';
+
+  @override
+  String get dlSavedGeneric => '已下載';
+
+  @override
+  String get driverNameCtFile => '城通網盤';
+
+  @override
+  String get formHintCtFileSession =>
+      '必填；從城通網盤管理後台「開放介面登錄密鑰管理」生成。取得方法見 OpenList 官方文件（ctfile 驅動頁）';
+
+  @override
+  String get formLabelCloudType => '雲端類型';
+
+  @override
+  String get tagVip => '會員';
+
+  @override
+  String get tagSuperVip => '超級會員';
+
+  @override
+  String tagBwRemaining(String amount) {
+    return '剩 $amount';
+  }
+
+  @override
+  String get formOptionCtFilePublic => '公有雲';
+
+  @override
+  String get formOptionCtFilePrivate => '私有雲';
+
+  @override
+  String get formLabelCtFileListCacheSec => '目錄快取（秒）';
+
+  @override
+  String get formHintCtFileListCacheSec => '同一資料夾 list 結果快取多久；預設 60，填 0 關閉';
+
+  @override
+  String get formLabelCtFileRequestIntervalMs => '請求間隔（毫秒）';
+
+  @override
+  String get formHintCtFileRequestIntervalMs =>
+      '兩次 API 呼叫之間的最小間隔；預設 400，填 0 不節流';
+
+  @override
+  String get fileQueuedOrSaved => '該檔案已在任務佇列或已下載';
+
+  @override
+  String get fileQueuedOrSavedShort => '檔案已在佇列或已儲存';
 }

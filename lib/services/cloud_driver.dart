@@ -8,6 +8,16 @@ import 'package:dio/dio.dart';
 /// 上传能力由驱动 uploadStream 原语声明。
 enum CloudDownloadMode { cryptSequential, direct, cryptRange }
 
+/// Short status chip shown in the accounts list for an account.
+///
+/// [key] is stable for tests (e.g. 'vip', 'bw_remaining').
+/// [label] is already localized (via L10nHost) and ready for display.
+class AccountStatusTag {
+  const AccountStatusTag({required this.key, required this.label});
+  final String key;
+  final String label;
+}
+
 abstract class CloudDriver {
   Future<void> init();
 
@@ -20,6 +30,13 @@ abstract class CloudDriver {
   /// [CloudDriverSpec.displayName] 表达不了。返回 null = 用静态表。
   /// 兼容层只读这个字符串，不知道也不需要知道它是怎么拼出来的。
   String? get runtimeTypeLabel => null;
+
+  /// 账号列表里展示的短状态标签（会员 / 带宽等小 Chip）。
+  ///
+  /// 默认空——新增驱动不实现就是没有标签。实现时**必须 fail-soft**：
+  /// 抛出或网络失败一律在驱动内 catch 后返回空，绝不阻塞账号列表。
+  /// 标签文案用 [L10nHost.current] 本地化（与驱动现有 l10n 用法一致）。
+  Future<List<AccountStatusTag>> statusTags() async => const [];
 
   /// 释放驱动持有的资源（临时连接、缓存等）。
   ///

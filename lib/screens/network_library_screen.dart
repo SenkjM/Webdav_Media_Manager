@@ -515,16 +515,68 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
     final downloads = context.read<TaskQueueService>();
+
+    // 检查是否有重复任务
+    final blocking = downloads.blockingPublicDuplicate(
+      sourceName,
+      item.path,
+      DownloadTarget.downloads,
+    );
+
+    if (blocking != null) {
+      // 有重复任务，弹窗询问
+      final l10n = AppLocalizations.of(context)!;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.dupTaskTitle),
+          content: Text(l10n.dupTaskBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.dupTaskSkip),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.dupTaskRestart),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      // 确认：重新入队
+      try {
+        await downloads.requeuePublicFresh(
+          sourceName,
+          item.path,
+          fileName: item.name,
+          target: DownloadTarget.downloads,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        final l10n = AppLocalizations.of(context)!;
+        AppSnack.error(
+          context,
+          l10n.netEnqueueFailed(
+            TaskQueueService.describeError(
+              downloads.lastError ?? e.toString(),
+              l10n,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    // 无重复：正常入队
     try {
-      final queued = await downloads.enqueueToDownloads(
+      await downloads.enqueueToDownloads(
         sourceName,
         item.path,
         fileName: item.name,
       );
-      if (!mounted) return;
-      if (!queued) {
-        AppSnack.show(context, AppLocalizations.of(context)!.fileQueuedOrSaved);
-      }
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
@@ -1137,19 +1189,68 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
     final downloads = context.read<TaskQueueService>();
+
+    // 检查是否有重复任务
+    final blocking = downloads.blockingPublicDuplicate(
+      sourceName,
+      item.path,
+      DownloadTarget.gallery,
+    );
+
+    if (blocking != null) {
+      // 有重复任务，弹窗询问
+      final l10n = AppLocalizations.of(context)!;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(l10n.dupTaskTitle),
+          content: Text(l10n.dupTaskBody),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.dupTaskSkip),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.dupTaskRestart),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
+
+      // 确认：重新入队
+      try {
+        await downloads.requeuePublicFresh(
+          sourceName,
+          item.path,
+          fileName: item.name,
+          target: DownloadTarget.gallery,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        final l10n = AppLocalizations.of(context)!;
+        AppSnack.error(
+          context,
+          l10n.netEnqueueFailed(
+            TaskQueueService.describeError(
+              downloads.lastError ?? e.toString(),
+              l10n,
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    // 无重复：正常入队
     try {
-      final queued = await downloads.enqueueGallery(
+      await downloads.enqueueGallery(
         sourceName,
         item.path,
         fileName: item.name,
       );
-      if (!mounted) return;
-      if (!queued) {
-        AppSnack.show(
-          context,
-          AppLocalizations.of(context)!.fileQueuedOrSavedShort,
-        );
-      }
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
@@ -2402,11 +2503,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final downloads = context.read<TaskQueueService>();
     AppSnack.show(context, busyText);
     try {
+      // 第一次扫描：不替换重复，收集重复项
       final r = await downloads.enqueueSelection(
         sourceName,
         folderPaths: folders.map((e) => e.path),
         files: files,
         target: target,
+        replaceDuplicates: false,
       );
       if (!mounted) return;
       final firstError = r.firstError;
@@ -2415,6 +2518,40 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         await showWebDavErrorDialog(context, firstError);
         return;
       }
+
+      // 如果有重复任务，询问用户是否全部重新进行
+      if (target != DownloadTarget.cache && r.duplicates > 0) {
+        final l10n = AppLocalizations.of(context)!;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(l10n.dupTaskTitle),
+            content: Text(l10n.dupTaskBatchBody(r.duplicates)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(l10n.dupTaskSkip),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(l10n.dupTaskRestartAll),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmed == true && mounted) {
+          // 确认：重新入队重复项
+          await downloads.requeuePublicFreshMany(
+            sourceName,
+            r.duplicateEntries,
+            target,
+          );
+        }
+      }
+
+      // 显示结果
+      if (!mounted) return;
       final parts = <String>[];
       if (r.ok > 0) {
         parts.add(AppLocalizations.of(context)!.netEnqueuedCount(r.ok));

@@ -253,6 +253,8 @@ class TaskError {
         return l10n.taskErrUnknown;
       case 'err.notWdmmFile':
         return l10n.errNotWdmmFile;
+      case 'err.customDirInvalid':
+        return l10n.errCustomDirInvalid;
       default:
         // Other err.* (cloud drivers etc.): prefer a single short line.
         // CloudDriverErrors often embeds detail — trim to first sentence / 40 chars.

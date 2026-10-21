@@ -76,6 +76,12 @@ void main() {
       expect(spec.secretFieldKeys, ['cookie']);
     });
 
+    test('ctfile：仅 session（无令牌轮换 → runtimeSecretKeys 为空）', () {
+      final spec = cloudDriverSpec('ctfile')!;
+      expect(spec.runtimeSecretKeys, isEmpty);
+      expect(spec.secretFieldKeys, ['session']);
+    });
+
     test('加密范围只来自 spec 声明：凭证库/备份不需要为每个驱动登记', () {
       // 结构性保证：所有已注册驱动的加密范围都能从 spec 推导出来（非空
       // 集至少含一个键——若某天出现零键驱动，说明它没有凭证也没有令牌，
@@ -131,6 +137,11 @@ void main() {
         },
         // netease：2 键全表单；cookie 密文；无令牌轮换。
         'netease_music': {'cookie'},
+        // ctfile：2 键全表单；session 密文；无令牌轮换。
+        'ctfile': {
+          'session', // 密文
+          'cloud_type', // 非密文，表单声明
+        },
         // crypt：9 键 = 表单 8（含主绑定 source_account_id）+ 隐式
         // source_account_id_name（表单通用写入的源账号名快照，仅作 id
         // 解析失败后的兜底，非凭证，明文正确）；password/salt 密文。
