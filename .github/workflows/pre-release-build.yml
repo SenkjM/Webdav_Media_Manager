@@ -259,9 +259,11 @@ jobs:
           fi
            git push "https://github.com/${REPO}.git" "refs/tags/${tag}:refs/tags/${tag}"
           git fetch origin main --tags --force
-          script="$(mktemp)"
-          git show origin/main:.github/scripts/commit-list.sh > "$script"
-          changes="$(bash "$script" "$base_tag" "$sha")"
+          tmpdir="$(mktemp -d)"
+          git show origin/main:.github/scripts/docs-commit.sh > "$tmpdir/docs-commit.sh"
+          git show origin/main:.github/scripts/commit-list.sh > "$tmpdir/commit-list.sh"
+          changes="$(bash "$tmpdir/commit-list.sh" "$base_tag" "$sha")"
+          rm -rf "$tmpdir"
           notes="$(mktemp)"
           {
             printf '自动构建的 Pre-release（来自 **main** 分支，AGPL-3.0）。\n\n'
