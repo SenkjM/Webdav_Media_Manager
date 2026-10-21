@@ -27,6 +27,7 @@ import 'services/platform_export_service.dart';
 import 'services/prefetch_cache.dart';
 import 'services/playlist_service.dart';
 import 'services/settings_service.dart';
+import 'services/rust_core_service.dart';
 import 'services/sync_service.dart';
 import 'services/video_playback_service.dart';
 
@@ -38,6 +39,9 @@ import 'utils/third_party_licenses.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Probe Rust core version at debug startup — non-fatal, Dart services
+  // remain source of truth until round 4 DB cutover.
+  RustCoreService.debugLogVersion();
   // libsodium (ISC) ships as a native asset; Flutter does not collect it.
   registerThirdPartyLicenses();
   // Drop last run's prefetch bytes before any player opens a cached file.
