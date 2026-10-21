@@ -10,6 +10,10 @@ set -euo pipefail
 : "${RUN_URL:?}"
 : "${GITHUB_OUTPUT:?}"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=docs-commit.sh
+source "$SCRIPT_DIR/docs-commit.sh"
+
 is_legal() {
   printf '%s' "$1" | grep -Eq '^v(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)\.(0|[1-9][0-9]?)$'
 }
@@ -250,6 +254,9 @@ mode_prerelease() {
   # 不看标签名里的短 SHA。旧 prerelease 标签只作为迁移兼容来源，不拿来当新标签名。
   local max_seq=0 t msg t_base t_seq t_sha t_code obj
   local existing_tag="" existing_seq="" existing_code=""
+  # from_sha：本轮 docs-only 区间检查的起点（仅自动运行用）。
+  # 默认回落到正式版 sha；若有已发布的预发布，则取序号最高者指向的提交。
+  local from_sha="$release_sha" last_pub_seq=0
   while IFS= read -r t; do
     [ -z "$t" ] && continue
     msg="$(git tag -l --format='%(contents)' "$t" || true)"
@@ -261,6 +268,13 @@ mode_prerelease() {
     printf '%s' "$t_seq" | grep -Eq '^[0-9]+$' || continue
     if [ "$t_seq" -gt "$max_seq" ]; then
       max_seq="$t_seq"
+    fi
+    # 跟踪已发布预发布中序号最高的标签，供 docs-only 区间起点使用。
+    if [ "$EVENT_NAME" != "workflow_dispatch" ] && [ "$t_seq" -gt "$last_pub_seq" ]; then
+      if gh release view "$t" --repo "$REPO" >/dev/null 2>&1; then
+        last_pub_seq="$t_seq"
+        from_sha="$(git rev-parse "${t}^{}")"
+      fi
     fi
     [ "$t" = "prerelease" ] && continue
     [ "$t_sha" = "$head" ] || continue
@@ -284,6 +298,25 @@ mode_prerelease() {
     existing_seq="$t_seq"
     existing_code="$t_code"
   done < <(git tag -l "${base}-*"; git tag -l 'prerelease')
+
+  # docs-only skip：自动运行时，若自上一已发布预发布（或正式版）以来只有文档/CI 改动，跳过。
+  # workflow_dispatch 永不跳过（用户手动触发视为强制构建）。
+  # 区间为空（from_sha == head）时不发送跳过消息，留给既有逻辑处理。
+  if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+    local all_docs=true range_empty=true c_sha c_subj
+    while IFS=$'\t' read -r c_sha c_subj; do
+      range_empty=false
+      if ! is_docs_commit "$c_subj" "$c_sha"; then
+        all_docs=false
+        break
+      fi
+    done < <(git log --format='%H%x09%s' "${from_sha}..${head}")
+    if [ "$range_empty" = false ] && [ "$all_docs" = true ]; then
+      echo "相对上一预发布（或正式版）只有文档/CI 改动，跳过预发布。"
+      set_out proceed false
+      exit 0
+    fi
+  fi
 
   local seq code tag name
   if [ -n "$existing_tag" ]; then

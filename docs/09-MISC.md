@@ -53,7 +53,7 @@ CI 触发：正式版走 `.github/workflows/release-build.yml`，预发布走 `.
 | 任意分支 push | **不**触发构建 |
 | 推 `v*` 标签（release） | 检查标签合法且严格递增 → 编译 → 建 Release |
 | 手动 `workflow_dispatch`（release） | 给当前 `main` 打标签，再做同一套检查；所选引用不是 `main` 时拦下 |
-| 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：按标签 metadata 的 `sha` / `seq` / `version_code` 发现当前提交已有预发布则跳过，否则用新标签 `vX.Y.Z-<versionCode>` 发独立 Release，历史预发布保留 |
+| 每天定时（cron `0 16 * * *`，约北京时间 00:00）（pre-release） | 检视 `main`：按标签 metadata 的 `sha` / `seq` / `version_code` 发现当前提交已有预发布则跳过；若自上一已发布预发布（或正式版）以来只有文档/CI 改动同样跳过；否则用新标签 `vX.Y.Z-<versionCode>` 发独立 Release，历史预发布保留 |
 | 手动 `workflow_dispatch`（pre-release） | 同一提交复用已有标签并刷新该 Release；**所选引用不是 `main` 时跳过** |
 | 手动 `workflow_dispatch`（Testbuild） | 检出被触发的引用，只编译 `sandbox` 的 arm64-v8a APK 并上传 artifact；不发版 |
 
