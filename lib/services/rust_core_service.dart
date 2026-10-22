@@ -383,6 +383,202 @@ class RustCoreService {
     if (!_ensureSymbols() || _tokenRotate == null) return null;
     return _readAndFreeString(_tokenRotate!());
   }
+
+  // ── Round 6 — Library FFI bindings ────────────────────────────────────────
+  //
+  // These bindings talk to the Rust library DB (rusqlite) via the wdmm-ffi
+  // exports landed in Round 5.  The Dart sqflite DB is NOT deleted yet —
+  // this is the coexistence / dual-read probe phase.
+
+  typedef _OneStrToStrNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+  typedef _OneStrToStrDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+  typedef _NoArgToStrNative  = ffi.Pointer<Utf8> Function();
+  typedef _NoArgToStrDart    = ffi.Pointer<Utf8> Function();
+
+  static _OneStrToStrDart? _libraryInit;
+  static _OneStrToStrDart? _trackUpsert;
+  static _OneStrToStrDart? _trackGet;
+  static _NoArgToStrDart?  _trackList;
+  static _OneStrToStrDart? _trackSearch;
+  static _OneStrToStrDart? _trackDelete;
+  static _OneStrToStrDart? _libraryImport;
+
+  static void _loadLibrarySymbols(ffi.DynamicLibrary lib) {
+    _libraryInit = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_init')
+        .asFunction();
+    _trackUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_upsert')
+        .asFunction();
+    _trackGet = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_get')
+        .asFunction();
+    _trackList = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_track_list')
+        .asFunction();
+    _trackSearch = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_search')
+        .asFunction();
+    _trackDelete = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_delete')
+        .asFunction();
+    _libraryImport = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_import_from_sqflite')
+        .asFunction();
+  }
+
+  // ── Round 6 — Library public API ──────────────────────────────────────────
+
+  /// Initialise the Rust library DB at [dbPath].
+  ///
+  /// Must be called once at app startup before any other library FFI calls.
+  /// Idempotent — safe to call multiple times (subsequent calls are no-ops in
+  /// Rust since the DB is a global singleton).
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, or null if library
+  /// unavailable.
+  static String? libraryInit(String dbPath) {
+    if (!_ensureSymbols()) return null;
+    if (_libraryInit == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryInit == null) return null;
+    }
+    final pathPtr = dbPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_libraryInit!(pathPtr));
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Upsert a track into the Rust library DB.
+  ///
+  /// [json] must be a JSON object matching the LibraryTrack schema.
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  ///
+  /// **Dart sqflite DB is still the source of truth** — do not remove Dart
+  /// calls yet.  This is a parallel write for the dual-read probe phase.
+  static String? trackUpsert(String json) {
+    if (!_ensureSymbols()) return null;
+    if (_trackUpsert == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackUpsert == null) return null;
+    }
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Get a track by id from the Rust library DB.
+  ///
+  /// Returns the track as a JSON string, 'null' if not found, or
+  /// 'error:...' on failure.  Returns null if library unavailable.
+  static String? trackGet(String id) {
+    if (!_ensureSymbols()) return null;
+    if (_trackGet == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackGet == null) return null;
+    }
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List all tracks from the Rust library DB.
+  ///
+  /// Returns a JSON array string, or '[]' / 'error:...' on failure.
+  /// Returns null if library unavailable.
+  static String? trackList() {
+    if (!_ensureSymbols()) return null;
+    if (_trackList == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackList == null) return null;
+    }
+    return _readAndFreeString(_trackList!());
+  }
+
+  /// Search tracks by title/artist substring in the Rust library DB.
+  ///
+  /// Returns a JSON array string.  Returns null if library unavailable.
+  static String? trackSearch(String query) {
+    if (!_ensureSymbols()) return null;
+    if (_trackSearch == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackSearch == null) return null;
+    }
+    final ptr = query.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackSearch!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete a track by id from the Rust library DB.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  static String? trackDelete(String id) {
+    if (!_ensureSymbols()) return null;
+    if (_trackDelete == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackDelete == null) return null;
+    }
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Trigger a one-shot import from an old sqflite DB at [oldDbPath] into
+  /// the Rust library DB.  Idempotent — the Rust side sets a KV flag
+  /// `sqflite_imported = 1` after the first successful run and skips
+  /// subsequent calls.
+  ///
+  /// Call this from a first-run migration helper, NOT on every app start.
+  ///
+  /// Returns a JSON summary:
+  /// `{"already_done":false,"tracks":42,"playlists":3,"entries":120}`
+  /// or 'error:...' on failure.  Returns null if library unavailable.
+  static String? libraryImportFromSqflite(String oldDbPath) {
+    if (!_ensureSymbols()) return null;
+    if (_libraryImport == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryImport == null) return null;
+    }
+    final ptr = oldDbPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_libraryImport!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── private: lazy library symbol loader ───────────────────────────────────
+
+  static bool _librarySymbolsLoaded = false;
+
+  /// Load Round 6 library symbols lazily.  No-op if already loaded or if the
+  /// native library is unavailable.  Swallows errors so callers can check for
+  /// null function pointers instead of catching.
+  static void _loadLibrarySymbolsSafe() {
+    if (_librarySymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _loadLibrarySymbols(lib);
+      _librarySymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] library symbol lookup failed (non-fatal): $e');
+    }
+  }
 }
 
 // ignore: avoid_classes_with_only_static_members

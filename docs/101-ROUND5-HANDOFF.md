@@ -5,6 +5,11 @@
 > **full Android feature parity via Rust core + FFI**.
 >
 > Author: Claude Code (Grok Bot supervision) — 2026-10-22
+>
+> **Round 6 (2026-10-22):** sqflite import FFI, Dart library wrappers + dual-read probe,
+> CtFile mkdir/rename/remove, Baidu+123Pan list/get, SerialPump Dart coexistence stub,
+> Desktop NativeMethods extended. Still open: flip Dart DB to FFI, remaining drivers
+> (aliyundrive/open115/terabox/netease), full queue cutover, device OpenAPI polish, manga.
 
 ---
 
@@ -31,7 +36,7 @@ All `cargo check` + `cargo test` green before push (see REPORT).
 
 Goal: delete `music_library_database_impl.dart`; all library DB ops go through FFI.
 
-- [ ] **Write the one-shot import script.** On first run of the Rust core on a device that has an existing `music_library.db` (sqflite):
+- [x] **Write the one-shot import script.** On first run of the Rust core on a device that has an existing `music_library.db` (sqflite):
       1. Open the old sqflite file read-only.
       2. Read all rows from the old tables (tracks, playlists, playlist_entries, accounts, …).
       3. Map columns → v2 schema (fill new v2 columns with defaults/NULL where the old DB lacks them).
@@ -39,28 +44,28 @@ Goal: delete `music_library_database_impl.dart`; all library DB ops go through F
       5. Atomically rename/swap so a crash mid-import is not destructive (write to a temp DB, then `rename`).
       6. Set a KV flag `sqflite_imported = 1` so it never re-runs.
       Expose via FFI: `wdmm_library_import_from_sqflite(old_path) -> FfiString` (JSON summary: rows imported per table).
-- [ ] **Dual-read probe (optional, pre-flip).** Before deleting Dart DB code, run both sqflite and rusqlite side-by-side and **log counts** (`tracks_sqflite`, `tracks_rusqlite`) on app start. Acceptable per brief; surfaces row-count drift before the flip. Do **not** dual-write.
+- [x] **Dual-read probe (optional, pre-flip).** Before deleting Dart DB code, run both sqflite and rusqlite side-by-side and **log counts** (`tracks_sqflite`, `tracks_rusqlite`) on app start. Acceptable per brief; surfaces row-count drift before the flip. Do **not** dual-write.
 - [ ] **Flip Dart calls to FFI.** Replace `music_library_database_impl.dart` call sites with `RustCoreService` / `RustLibraryProbe` FFI calls (`wdmm_track_*`). Keep the Dart class as a thin shim that forwards to FFI during the transition if it eases the diff.
 - [ ] **Delete `music_library_database_impl.dart`** once the FFI path is green on a real device with an imported library.
 - [ ] **Verify**: library list, search, upsert, delete, playlist CRUD all work against rusqlite; counts match pre-import.
 
 ### B. Dart FFI wrappers for new library CRUD
 
-- [ ] Extend `RustCoreService` (or a new `RustLibraryProbe`) in Android with Dart wrappers for: `wdmm_library_init`, `wdmm_track_upsert`, `wdmm_track_get`, `wdmm_track_list`, `wdmm_track_search`, `wdmm_track_delete`.
-- [ ] JSON encode/decode on the Dart side (the FFI takes/returns JSON `FfiString`). Do **not** delete the Dart DB yet (coexistence / dual-read probe only).
-- [ ] Smoke test: insert a track via FFI, read it back, search it, delete it.
+- [x] Extend `RustCoreService` (or a new `RustLibraryProbe`) in Android with Dart wrappers for: `wdmm_library_init`, `wdmm_track_upsert`, `wdmm_track_get`, `wdmm_track_list`, `wdmm_track_search`, `wdmm_track_delete`.
+- [x] JSON encode/decode on the Dart side (the FFI takes/returns JSON `FfiString`). Do **not** delete the Dart DB yet (coexistence / dual-read probe only).
+- [x] Smoke test: insert a track via FFI, read it back, search it, delete it.
 
 ### C. Cloud drivers — port the six stubs
 
 Each against its official OpenAPI, user-supplied OAuth/credentials only, no embedded keys:
 
-- [ ] `baidu_netdisk` — Baidu NetDisk OpenAPI
+- [x] `baidu_netdisk` — Baidu NetDisk OpenAPI (list/get; write TODO)
 - [ ] `aliyundrive` — Aliyun Drive OpenAPI (OAuth; user-supplied app key)
 - [ ] `open115` — 115 OpenAPI
 - [ ] `terabox` — Terabox
 - [ ] `netease_music` — NetEase Cloud Music (excluded from public release per constraints §9)
-- [ ] `123_open` — 123 Pan OpenAPI
-- [ ] CtFile write ops: `mkdir` (`POST /{ns}/folder/create`), `rename` (same-dir → rename_file/rename_folder; cross-dir → move+rename), `remove` (`POST /{ns}/file/delete`).
+- [x] `123_open` — 123 Pan OpenAPI (list/get; write TODO)
+- [x] CtFile write ops: `mkdir` (`POST /{ns}/folder/create`), `rename` (same-dir → rename_file/rename_folder; cross-dir → move+rename), `remove` (`POST /{ns}/file/delete`).
 
 Pattern to follow: `webdav.rs` / `ctfile.rs` (throttle, retry, id-prefix dual strategy, no secrets). Add unit tests with mock HTTP (see `webdav.rs` mock-server tests).
 
@@ -68,7 +73,7 @@ Pattern to follow: `webdav.rs` / `ctfile.rs` (throttle, retry, id-prefix dual st
 
 ### D. Queue — wire `SerialPump` to the download path
 
-- [ ] Android download flow enqueues a `QueueTask` and lets `SerialPump` drive it (one at a time). Confirm UI progress events flow from `QueueEvent::Progress`.
+- [x] Android download flow enqueues a `QueueTask` (RustQueueBridge coexistence stub) and lets `SerialPump` drive it (one at a time). Confirm UI progress events flow from `QueueEvent::Progress`.
 - [ ] Confirm concurrency is 1 end-to-end (no parallel downloads) — matches Dart `_pump`.
 
 ### E. OpenAPI (optional toggle) — verify on device
