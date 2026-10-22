@@ -9,6 +9,7 @@ import '../models/app_locale.dart';
 import '../models/snack_duration.dart';
 import '../services/notification_permission_service.dart';
 import '../services/rust_core_service.dart';
+import '../services/rust_queue_bridge.dart';
 import '../services/settings_service.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
@@ -413,15 +414,114 @@ class _SettingsScreenState extends State<SettingsScreen>
             l10n.settingsPlaybackFooter,
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          // ── Developer: OpenAPI (debug only) ──────────────────────────────────
+          // ── Developer: OpenAPI + Rust Queue (debug only) ─────────────────────
           if (kDebugMode) ...[
             const Divider(height: 40),
             _sectionTitle(context, 'Developer / OpenAPI'),
             const SizedBox(height: 8),
             const OpenApiSettingsSection(),
+            const Divider(height: 24),
+            _sectionTitle(context, 'Developer / Rust Queue'),
+            const SizedBox(height: 8),
+            const _RustQueueSettingsSection(),
           ],
         ],
       ),
+    );
+  }
+}
+
+// ── Rust Queue settings section (debug only) ─────────────────────────────────
+
+/// Shows Rust queue status and a diagnostic poll button.
+///
+/// The [kRustQueueEnabled] const is intentionally left `false` — it gates the
+/// actual download routing.  This section only shows poll output so a developer
+/// can verify queue serialisation without rerouting live downloads.
+///
+/// ## One happy-path device smoke
+/// 1. Build with `cargo-ndk` + `flutter run`.
+/// 2. Enqueue one download from the network library.
+/// 3. Open Settings → Developer / Rust Queue → tap "Poll status".
+/// 4. Confirm the task appears with status "Pending" (Dart side handles it).
+/// 5. To test Rust routing: change `kRustQueueEnabled = true` in
+///    `rust_queue_bridge.dart`, rebuild, repeat step 2-3 and confirm
+///    `[RustQueueBridge] enqueue ok` in logcat.
+class _RustQueueSettingsSection extends StatefulWidget {
+  const _RustQueueSettingsSection();
+
+  @override
+  State<_RustQueueSettingsSection> createState() =>
+      _RustQueueSettingsSectionState();
+}
+
+class _RustQueueSettingsSectionState
+    extends State<_RustQueueSettingsSection> {
+  String _statusJson = '(not polled)';
+  int _pendingCount = 0;
+
+  void _poll() {
+    final json = RustQueueBridge.pollStatus();
+    final count = RustCoreService.queuePendingCount();
+    setState(() {
+      _statusJson = json.isEmpty ? '[]' : json;
+      _pendingCount = count;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.queue_outlined),
+          title: const Text('Rust queue enabled'),
+          subtitle: Text(
+            kRustQueueEnabled
+                ? 'ON — downloads routed through SerialPump'
+                : 'OFF (default) — Dart TaskQueueService is active.\n'
+                  'Set kRustQueueEnabled=true in rust_queue_bridge.dart '
+                  'and rebuild to enable Rust routing.',
+          ),
+          trailing: Switch(
+            value: kRustQueueEnabled,
+            // kRustQueueEnabled is a compile-time const; rebuild required.
+            // Switch is display-only; tapping it shows a hint.
+            onChanged: (_) => AppSnack.show(
+              context,
+              'Change kRustQueueEnabled in rust_queue_bridge.dart and rebuild.',
+            ),
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.refresh_outlined),
+          title: const Text('Poll Rust queue status'),
+          subtitle: Text('Pending tasks: $_pendingCount'),
+          trailing: TextButton(
+            onPressed: _poll,
+            child: const Text('Poll'),
+          ),
+        ),
+        if (_statusJson != '(not polled)')
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: SelectableText(
+              _statusJson,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(
+            'Serial invariant: SerialPump enforces concurrency = 1. '
+            'Never introduce a concurrency knob on either side.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
     );
   }
 }
