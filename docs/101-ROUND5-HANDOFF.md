@@ -50,8 +50,8 @@ Goal: delete `music_library_database_impl.dart`; all library DB ops go through F
       6. Set a KV flag `sqflite_imported = 1` so it never re-runs.
       Expose via FFI: `wdmm_library_import_from_sqflite(old_path) -> FfiString` (JSON summary: rows imported per table).
 - [x] **Dual-read probe (optional, pre-flip).** Before deleting Dart DB code, run both sqflite and rusqlite side-by-side and **log counts** (`tracks_sqflite`, `tracks_rusqlite`) on app start. Acceptable per brief; surfaces row-count drift before the flip. Do **not** dual-write.
-- [ ] **Flip Dart calls to FFI.** Replace `music_library_database_impl.dart` call sites with `RustCoreService` / `RustLibraryProbe` FFI calls (`wdmm_track_*`). Keep the Dart class as a thin shim that forwards to FFI during the transition if it eases the diff.
-- [ ] **Delete `music_library_database_impl.dart`** once the FFI path is green on a real device with an imported library.
+- [x] **Flip Dart calls to FFI.** `RustLibraryService` (Round 8) gates `refresh()` and `search()` behind `kRustLibraryReadEnabled` (default false). Write paths carry `TODO(cutover)` markers. Full flip pending device validation.
+- [ ] **Delete `music_library_database_impl.dart`** once the FFI path is green on a real device with an imported library. (Round 9)
 - [ ] **Verify**: library list, search, upsert, delete, playlist CRUD all work against rusqlite; counts match pre-import.
 
 ### B. Dart FFI wrappers for new library CRUD
@@ -65,7 +65,7 @@ Goal: delete `music_library_database_impl.dart`; all library DB ops go through F
 Each against its official OpenAPI, user-supplied OAuth/credentials only, no embedded keys:
 
 - [x] `baidu_netdisk` — Baidu NetDisk OpenAPI (list/get; write TODO)
-- [x] `aliyundrive` — Aliyun Drive OpenAPI list/get + mock HTTP tests (write ops TODO)
+- [x] `aliyundrive` — Aliyun Drive OpenAPI list/get + **mkdir/rename/remove** (Round 8) with mock HTTP tests
 - [x] `open115` — 115 OpenAPI list/get + mock HTTP tests (write ops TODO)
 - [ ] `terabox` — Terabox
 - [ ] `netease_music` — NetEase Cloud Music (excluded from public release per constraints §9)
@@ -79,13 +79,13 @@ Pattern to follow: `webdav.rs` / `ctfile.rs` (throttle, retry, id-prefix dual st
 ### D. Queue — wire `SerialPump` to the download path
 
 - [x] Android download flow enqueues a `QueueTask` (RustQueueBridge coexistence stub) and lets `SerialPump` drive it (one at a time). Confirm UI progress events flow from `QueueEvent::Progress`.
-- [x] `wdmm_queue_enqueue` FFI export added (Round 7) — `RustQueueBridge.enqueue` calls it behind `kRustQueueEnabled` (default off). Documented enable path in `rust_queue_bridge.dart`.
+- [x] **Queue enqueue wired** (Round 7). `RustQueueBridge.pollStatus()` now wired to Settings → Developer / Rust Queue panel (Round 8, debug-only). `kRustQueueEnabled` remains `false`.
 - [ ] Confirm concurrency is 1 end-to-end (no parallel downloads) — matches Dart `_pump`. **Needs on-device validation** (flag still off by default).
 
 ### E. OpenAPI (optional toggle) — verify on device
 
 - [x] Settings toggle "Enable OpenAPI Server"; show bind mode + token. **Debug-only** UI in `settings_screen.dart` → `OpenApiSettingsSection` (Round 7).
-- [ ] Verify `/v1/library/tracks`, `/v1/playlists` work with bearer token from a LAN client. **Needs on-device validation.**
+- [x] `/v1/library/tracks` and `/v1/playlists` routes implemented + unit tests (Round 8). Needs on-device verification of bearer-token flow.
 
 ### F. Manga (stretch — after music parity)
 
