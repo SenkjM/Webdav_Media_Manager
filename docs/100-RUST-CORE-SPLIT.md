@@ -1,6 +1,6 @@
 # 100 — Rust Core Split: WDMM-core Integration
 
-**Status**: **First bootstrap** — docs + minimal FFI stub; full migration is phased.
+**Status**: **Round 5** — serial queue, storage schema v2, library FFI/OpenAPI landed. DB cutover + Dart driver deletion remain (Round 6).
 
 ---
 
@@ -27,8 +27,8 @@ This Android Flutter repo (`Webdav_Media_Manager`) becomes:
 | `wdmm-core` | Pure data models; track identity (SHA-1); zero platform deps |
 | `wdmm-crypto` | AES-256-GCM credential vault (PBKDF2 600k iterations) |
 | `wdmm-drivers` | `CloudDriver` trait; **WebDAV working**; baidu/aliyundrive/ctfile/etc. stubbed |
-| `wdmm-storage` | rusqlite library DB (schema v1 skeleton; aligns WDMM library direction) |
-| `wdmm-queue` | Task-queue FIFO state machine + resumable download stubs |
+| `wdmm-storage` | rusqlite library DB (**schema v2**: tracks+albums+artists+playlists+manga-stubs; full CRUD + search) |
+| `wdmm-queue` | Task-queue FIFO state machine; **`SerialPump`** (single-worker, concurrency=1, mirrors Dart `_pump`) |
 | `wdmm-sync` | Incremental sync engine stubs |
 | `wdmm-dlna` | DLNA/UPnP SSDP discovery + AVTransport SOAP; **owns local proxy** |
 | `wdmm-platform` | Adapter traits (keychain, notification, FS, wakelock) + std default impl |
@@ -41,7 +41,7 @@ All crates: `publish = false` (see `WDMM-core/docs/CONSTRAINTS.md §5` — servi
 
 ## Migration Map (Phased)
 
-### Phase 1 (First Bootstrap — THIS ROUND)
+### Phase 1 (First Bootstrap — done)
 
 - ✅ WDMM-core workspace exists with all 10 crates.
 - ✅ `wdmm-ffi` exports `wdmm_version()` / `wdmm_hello()` / `wdmm_openapi_status()`.
@@ -50,25 +50,27 @@ All crates: `publish = false` (see `WDMM-core/docs/CONSTRAINTS.md §5` — servi
 - ✅ Minimal Dart FFI stub (call `wdmm_version()` and log it).
 - ⚠️ Existing Dart services **remain untouched** (coexistence path; no deletion this round).
 
-### Phase 2 (DB Migration — One-Shot)
+### Phase 2 (DB Migration — schema ready; device cutover pending Round 6)
 
-- Port `services/database/music_library_database_impl.dart` to `wdmm-storage` rusqlite.
-- **No long-term dual-write window**: cut DB in one step; one migration script copies from sqflite → rusqlite; Dart services afterward call FFI for all DB operations.
-- Requires: FFI functions for all library CRUD (insert_track / get_track / list / search / etc.).
+- ✅ `wdmm-storage` at **schema v2**: `tracks` (+ v2 columns: album_id/artist_id/duration_ms/genre/track_number/disc_number/year/mime_type), `albums`, `artists`, `playlists`, `playlist_entries`, `accounts`, `kv_store`, `manga_series`/`manga_chapters` (stubs).
+- ✅ Full CRUD: `upsert_track`, `get_track`, `list_tracks`, `search_tracks`, `delete_track`; artists/albums CRUD; playlist+entries CRUD.
+- ✅ FFI surface: `wdmm_library_init`, `wdmm_track_upsert/get/list/search/delete`.
+- ✅ OpenAPI: `/v1/library/tracks` (list, `?q=` search, get, upsert, delete) + `/v1/playlists` + `/v1/playlists/:id/entries`.
+- ⏳ **Remaining (Round 6)**: one-shot sqflite→rusqlite import script on device; flip Dart DB calls to FFI; delete `music_library_database_impl.dart` when green. Dual-read probe (log counts) OK before the flip.
 
-### Phase 3 (Cloud Drivers)
+### Phase 3 (Cloud Drivers — production subset done, ports pending)
 
-- Port WebDAV (already working in Rust).
-- Port baidu / aliyundrive / ctfile / terabox / 115 / netease (official API + user-applied OAuth keys; no repo-embedded secrets).
-- Delete Dart driver files once FFI wrappers tested.
+- ✅ WebDAV: list/get/mkdir/rename/remove/put_content/get_content + **`get_content_range`** (Range header).
+- ✅ CtFile: list + download_url (fetch_url) with id-prefix dual strategy, throttle, retry.
+- ✅ Stubs: baidu/aliyundrive/115/terabox/netease/123 have full `CloudDriver` surface + loud `TODO` errors.
+- ⏳ **Remaining (Round 6)**: port six stub drivers against official OpenAPIs (user-supplied OAuth, no embedded keys); CtFile write ops (mkdir/rename/remove); delete Dart drivers when FFI green.
 
-### Phase 4 (Queue + Sync + DLNA)
+### Phase 4 (Queue + Sync + DLNA — done)
 
-- Port download queue task-queue logic.
-- Port sync / backup encoding.
-- Port DLNA discovery + AVTransport + unified local proxy → **all local HTTP proxy logic moves to Rust**.
+- ✅ **`SerialPump`**: single-worker FIFO (concurrency = 1, matching Dart `_pump`). No concurrent download workers. Tests assert max 1 active task at any instant.
+- ✅ sync↔WebDAV codec; DLNA AVTransport + SSDP discovery.
 
-### Phase 5 (Cleanup)
+### Phase 5 (Cleanup — pending Round 6+)
 
 - Remove all Dart business logic files.
 - UI code + platform adapters remain.
@@ -193,14 +195,15 @@ FFI call: `wdmm_openapi_start(config)` / `wdmm_openapi_stop()`.
 
 ---
 
-## Known Gaps (First Bootstrap)
+## Known Gaps (Round 5 → Round 6)
 
-- FFI bindings not yet generated (manual step after Rust `cdylib` build).
-- No actual DB / driver / queue migration this round (interfaces stubbed).
-- Existing Dart services untouched (coexistence path).
-- DLNA / local proxy logic not yet moved.
+- DB cutover script (sqflite→rusqlite one-shot import) not yet run on device.
+- Six cloud drivers still stubbed (baidu/aliyundrive/115/terabox/netease/123); CtFile write ops TODO.
+- Dart services/drivers not yet deleted (coexistence phase).
+- Manga library is schema stubs only (no FFI/OpenAPI surface).
+- Android Dart wrappers (`RustLibraryProbe` / `RustCoreService`) for the new track CRUD exports not yet written.
 
-Full implementation continues in subsequent phased rounds per `saf_work/wdmm-split-impl-brief.md`.
+Full implementation continues in subsequent phased rounds per `saf_work/wdmm-split-round5-brief.md`.
 
 ---
 
