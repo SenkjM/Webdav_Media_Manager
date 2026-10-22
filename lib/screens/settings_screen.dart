@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,6 +8,7 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
 import '../models/snack_duration.dart';
 import '../services/notification_permission_service.dart';
+import '../services/rust_core_service.dart';
 import '../services/settings_service.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
@@ -18,6 +20,7 @@ import 'home_shell.dart';
 import 'image_settings_screen.dart';
 import 'manga_library_settings_screen.dart';
 import 'media_library_settings_screen.dart';
+import 'openapi_settings_section.dart';
 import 'share_settings_screen.dart';
 import 'sync_screen.dart';
 import 'video_settings_screen.dart';
@@ -410,6 +413,13 @@ class _SettingsScreenState extends State<SettingsScreen>
             l10n.settingsPlaybackFooter,
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          // ── Developer: OpenAPI (debug only) ──────────────────────────────────
+          if (kDebugMode) ...[
+            const Divider(height: 40),
+            _sectionTitle(context, 'Developer / OpenAPI'),
+            const SizedBox(height: 8),
+            const OpenApiSettingsSection(),
+          ],
         ],
       ),
     );

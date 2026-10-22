@@ -1,4 +1,4 @@
-# 101 — Round 5 Handoff & Round 6 Cutover Checklist
+# 101 — Round 5 Handoff & Round 6/7 Cutover Checklist
 
 > Status: Round 5 landed in `WDMM-core` (serial queue, storage schema v2, library
 > FFI/OpenAPI, drivers Range). This doc is the actionable checklist to reach
@@ -10,6 +10,11 @@
 > CtFile mkdir/rename/remove, Baidu+123Pan list/get, SerialPump Dart coexistence stub,
 > Desktop NativeMethods extended. Still open: flip Dart DB to FFI, remaining drivers
 > (aliyundrive/open115/terabox/netease), full queue cutover, device OpenAPI polish, manga.
+>
+> **Round 7 (2026-10-22):** Aliyun Drive + 115 OpenAPI drivers (list/get + mock HTTP
+> tests); `wdmm_queue_enqueue` FFI export + `RustQueueBridge.enqueue` wired; OpenAPI
+> settings UI (debug-only, bind/token/enable); `RustCoreService.queueEnqueue` public
+> method. Terabox/Netease remain stubs. See `docs/102-ROUND7-STATUS.md`.
 
 ---
 
@@ -60,8 +65,8 @@ Goal: delete `music_library_database_impl.dart`; all library DB ops go through F
 Each against its official OpenAPI, user-supplied OAuth/credentials only, no embedded keys:
 
 - [x] `baidu_netdisk` — Baidu NetDisk OpenAPI (list/get; write TODO)
-- [ ] `aliyundrive` — Aliyun Drive OpenAPI (OAuth; user-supplied app key)
-- [ ] `open115` — 115 OpenAPI
+- [x] `aliyundrive` — Aliyun Drive OpenAPI list/get + mock HTTP tests (write ops TODO)
+- [x] `open115` — 115 OpenAPI list/get + mock HTTP tests (write ops TODO)
 - [ ] `terabox` — Terabox
 - [ ] `netease_music` — NetEase Cloud Music (excluded from public release per constraints §9)
 - [x] `123_open` — 123 Pan OpenAPI (list/get; write TODO)
@@ -74,12 +79,13 @@ Pattern to follow: `webdav.rs` / `ctfile.rs` (throttle, retry, id-prefix dual st
 ### D. Queue — wire `SerialPump` to the download path
 
 - [x] Android download flow enqueues a `QueueTask` (RustQueueBridge coexistence stub) and lets `SerialPump` drive it (one at a time). Confirm UI progress events flow from `QueueEvent::Progress`.
-- [ ] Confirm concurrency is 1 end-to-end (no parallel downloads) — matches Dart `_pump`.
+- [x] `wdmm_queue_enqueue` FFI export added (Round 7) — `RustQueueBridge.enqueue` calls it behind `kRustQueueEnabled` (default off). Documented enable path in `rust_queue_bridge.dart`.
+- [ ] Confirm concurrency is 1 end-to-end (no parallel downloads) — matches Dart `_pump`. **Needs on-device validation** (flag still off by default).
 
 ### E. OpenAPI (optional toggle) — verify on device
 
-- [ ] Settings toggle "Enable OpenAPI Server"; show bind mode + token.
-- [ ] Verify `/v1/library/tracks`, `/v1/playlists` work with bearer token from a LAN client.
+- [x] Settings toggle "Enable OpenAPI Server"; show bind mode + token. **Debug-only** UI in `settings_screen.dart` → `OpenApiSettingsSection` (Round 7).
+- [ ] Verify `/v1/library/tracks`, `/v1/playlists` work with bearer token from a LAN client. **Needs on-device validation.**
 
 ### F. Manga (stretch — after music parity)
 

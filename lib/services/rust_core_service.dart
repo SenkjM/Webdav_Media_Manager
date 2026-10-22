@@ -579,6 +579,49 @@ class RustCoreService {
       debugPrint('[RustCore] library symbol lookup failed (non-fatal): $e');
     }
   }
+
+  // ── Round 7 — Queue enqueue FFI ───────────────────────────────────────────
+  //
+  // Wires to `wdmm_queue_enqueue` added in Round 7. Gated by
+  // [kRustQueueEnabled] in rust_queue_bridge.dart — default `false` so the
+  // Dart TaskQueueService remains the live download engine.
+
+  static _OneStrToStrDart? _queueEnqueue;
+  static bool _queueSymbolsLoaded = false;
+
+  static void _loadQueueSymbolsSafe() {
+    if (_queueSymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _queueEnqueue = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_queue_enqueue')
+          .asFunction();
+      _queueSymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] queue symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Enqueue a download task in the Rust SerialPump.
+  ///
+  /// [taskJson] must be a JSON object with at minimum `"id"` and `"kind"`.
+  /// Returns `'ok'` on success, `'error:…'` on failure, or `null` if the
+  /// native library is unavailable.
+  ///
+  /// This is the backing call for [RustQueueBridge.enqueue]. Do not call
+  /// directly — use [RustQueueBridge] which enforces the feature flag.
+  static String? queueEnqueue(String taskJson) {
+    if (!_ensureSymbols()) return null;
+    _loadQueueSymbolsSafe();
+    if (_queueEnqueue == null) return null;
+    final ptr = taskJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_queueEnqueue!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
 }
 
 // ignore: avoid_classes_with_only_static_members
