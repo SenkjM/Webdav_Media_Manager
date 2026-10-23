@@ -6,6 +6,60 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
+// ── FFI typedefs ─────────────────────────────────────────────────────────────
+
+typedef _VersionNative = ffi.Pointer<Utf8> Function();
+typedef _VersionDart = ffi.Pointer<Utf8> Function();
+
+typedef _FreeStringNative = ffi.Void Function(ffi.Pointer<Utf8>);
+typedef _FreeStringDart = void Function(ffi.Pointer<Utf8>);
+
+typedef _QueueStatusNative = ffi.Pointer<Utf8> Function();
+typedef _QueueStatusDart = ffi.Pointer<Utf8> Function();
+
+typedef _IntResultNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+typedef _IntResultDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+
+typedef _IntNative = ffi.Int32 Function();
+typedef _IntDart = int Function();
+
+typedef _OpenApiStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
+typedef _OpenApiStartDart = ffi.Pointer<Utf8> Function(int);
+
+typedef _CryptoEncryptNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<ffi.Uint8>, ffi.IntPtr);
+typedef _CryptoEncryptDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<ffi.Uint8>, int);
+
+typedef _TwoStrToOneStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _TwoStrToOneStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+typedef _FourStrToOneStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _FourStrToOneStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+typedef _Uint32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Uint32);
+typedef _Uint32ToStrDart = ffi.Pointer<Utf8> Function(int);
+
+typedef _OneStrToStrNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+typedef _OneStrToStrDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+typedef _NoArgToStrNative  = ffi.Pointer<Utf8> Function();
+typedef _NoArgToStrDart    = ffi.Pointer<Utf8> Function();
+
+typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
+typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(int);
+typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
+typedef _ProxyNoArgStrDart   = ffi.Pointer<Utf8> Function();
+typedef _ProxyPortNative  = ffi.Int32 Function();
+typedef _ProxyPortDart    = int Function();
+typedef _ProxyTwoStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _ProxyTwoStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
 /// Rust FFI bridge to WDMM-core via wdmm-ffi.
 ///
 /// Dart services remain **source of truth** until the full DB cutover in
@@ -43,24 +97,6 @@ class RustCoreService {
 
   // ── FFI bindings ─────────────────────────────────────────────────────────
 
-  typedef _VersionNative = ffi.Pointer<Utf8> Function();
-  typedef _VersionDart = ffi.Pointer<Utf8> Function();
-
-  typedef _FreeStringNative = ffi.Void Function(ffi.Pointer<Utf8>);
-  typedef _FreeStringDart = void Function(ffi.Pointer<Utf8>);
-
-  typedef _QueueStatusNative = ffi.Pointer<Utf8> Function();
-  typedef _QueueStatusDart = ffi.Pointer<Utf8> Function();
-
-  typedef _IntResultNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
-  typedef _IntResultDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
-
-  typedef _IntNative = ffi.Int32 Function();
-  typedef _IntDart = int Function();
-
-  typedef _OpenApiStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
-  typedef _OpenApiStartDart = ffi.Pointer<Utf8> Function(int);
-
   static _FreeStringDart? _freeString;
   static _VersionDart? _version;
   static _QueueStatusDart? _queueStatus;
@@ -72,24 +108,6 @@ class RustCoreService {
   static _IntDart? _openApiPort;
 
   // ── Round 4 FFI binding types ──────────────────────────────────────────────
-
-  typedef _CryptoEncryptNative = ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>, ffi.Pointer<ffi.Uint8>, ffi.IntPtr);
-  typedef _CryptoEncryptDart = ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>, ffi.Pointer<ffi.Uint8>, int);
-
-  typedef _TwoStrToOneStrNative = ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
-  typedef _TwoStrToOneStrDart = ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
-
-  typedef _FourStrToOneStrNative = ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
-  typedef _FourStrToOneStrDart = ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
-
-  typedef _Uint32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Uint32);
-  typedef _Uint32ToStrDart = ffi.Pointer<Utf8> Function(int);
 
   static _CryptoEncryptDart? _cryptoEncrypt;
   static _TwoStrToOneStrDart? _cryptoDecrypt;
@@ -390,11 +408,6 @@ class RustCoreService {
   // exports landed in Round 5.  The Dart sqflite DB is NOT deleted yet —
   // this is the coexistence / dual-read probe phase.
 
-  typedef _OneStrToStrNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
-  typedef _OneStrToStrDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
-  typedef _NoArgToStrNative  = ffi.Pointer<Utf8> Function();
-  typedef _NoArgToStrDart    = ffi.Pointer<Utf8> Function();
-
   static _OneStrToStrDart? _libraryInit;
   static _OneStrToStrDart? _trackUpsert;
   static _OneStrToStrDart? _trackGet;
@@ -627,17 +640,6 @@ class RustCoreService {
   // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
   // round. Gated by `kRustProxyEnabled` in rust_proxy_bridge.dart (default
   // false). Do NOT delete LocalStreamBridge yet.
-
-  typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
-  typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(int);
-  typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
-  typedef _ProxyNoArgStrDart   = ffi.Pointer<Utf8> Function();
-  typedef _ProxyPortNative  = ffi.Int32 Function();
-  typedef _ProxyPortDart    = int Function();
-  typedef _ProxyTwoStrNative = ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
-  typedef _ProxyTwoStrDart = ffi.Pointer<Utf8> Function(
-      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
   static _ProxyStartDart?   _proxyStart;
   static _ProxyNoArgStrDart? _proxyStop;
