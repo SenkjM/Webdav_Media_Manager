@@ -1,0 +1,3 @@
+[submodule "rust/wdmm-core"]
+	path = rust/wdmm-core
+	url = https://github.com/SenkjM/WDMM-core.git

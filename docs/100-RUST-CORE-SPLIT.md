@@ -98,7 +98,7 @@ dependencies:
 
 ### Directory Layout Convention
 
-**Option A** (submodule):
+**Option A** (submodule) — ✅ **ADOPTED (2026-10-23)**:
 
 ```
 Webdav_Media_Manager/
@@ -108,7 +108,16 @@ Webdav_Media_Manager/
 └── pubspec.yaml
 ```
 
-**Option B** (sibling path):
+Submodule pinned to `b7d798098c7a04c2cbff4fcb1ee3ca3bfc7ea691` (WDMM-core `main` tip, 2026-10-23).
+
+Initialise after clone:
+```bash
+git submodule update --init rust/wdmm-core
+```
+
+> **CI note**: No GitHub Actions workflow currently builds native/FFI code, so `submodules: recursive` is not yet required. When a Rust build job is added, set `submodules: true` (or `recursive`) on its `actions/checkout` step.
+
+**Option B** (sibling path) — superseded by Option A:
 
 ```
 /your/projects/
@@ -116,7 +125,7 @@ Webdav_Media_Manager/
 └── WDMM-core/
 ```
 
-Dart bindings generator points at `rust/wdmm-core/crates/wdmm-ffi/src/lib.rs` (or `../WDMM-core/...`).
+Dart bindings generator points at `rust/wdmm-core/crates/wdmm-ffi/src/lib.rs`.
 
 ### Generating Bindings
 

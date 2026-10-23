@@ -157,7 +157,9 @@ android {
 // Example task:
 //
 // tasks.register<Exec>("buildRustCore") {
-//     workingDir = rootProject.file("../../WDMM-core")
+//     // rust/wdmm-core is the git submodule (repo-root-relative).
+//     // rootProject points to the android/ dir, so go up one level.
+//     workingDir = rootProject.file("../rust/wdmm-core")
 //     commandLine("cargo", "ndk",
 //         "-t", "armeabi-v7a",
 //         "-t", "arm64-v8a",
@@ -173,7 +175,8 @@ android {
 // Requires:
 // - cargo-ndk installed: `cargo install cargo-ndk`
 // - NDK_HOME or ANDROID_NDK_ROOT set
-// - WDMM-core cloned at ../../WDMM-core relative to this file
+// - WDMM-core submodule initialised: `git submodule update --init rust/wdmm-core`
+//   (submodule path: rust/wdmm-core relative to repo root; see .gitmodules)
 // ---
 
 kotlin {
