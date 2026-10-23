@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,6 +9,7 @@ import '../models/queue_task.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../utils/cue_sheet.dart';
 import '../services/cloud_driver.dart';
+import '../services/rust_queue_bridge.dart';
 import '../services/task_queue_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
@@ -212,33 +215,43 @@ class TasksScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: rows.isEmpty
-          ? Center(
-              child: Text(
-                l10n.noTaskQueueItems,
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: rows.length,
-              itemBuilder: (context, i) {
-                final row = rows[i];
-                if (row.isCueGroup) {
-                  return _CueGroupTile(
-                    members: row.members,
-                    groupId: row.groupId!,
-                    songCount: row.songCount,
-                  );
-                }
-                if (row.isKindGroup) {
-                  return _KindGroupTile(members: row.members);
-                }
-                return _TaskTile(task: row.members.first);
-              },
-            ),
+      body: Column(
+        children: [
+          // When the Rust queue is enabled, show a live Rust-side status panel
+          // above the Dart task list so developers can verify both queues side
+          // by side without opening Settings.  The panel auto-polls every 3 s.
+          if (kRustQueueEnabled) const _RustQueuePanel(),
+          Expanded(
+            child: rows.isEmpty
+                ? Center(
+                    child: Text(
+                      l10n.noTaskQueueItems,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: rows.length,
+                    itemBuilder: (context, i) {
+                      final row = rows[i];
+                      if (row.isCueGroup) {
+                        return _CueGroupTile(
+                          members: row.members,
+                          groupId: row.groupId!,
+                          songCount: row.songCount,
+                        );
+                      }
+                      if (row.isKindGroup) {
+                        return _KindGroupTile(members: row.members);
+                      }
+                      return _TaskTile(task: row.members.first);
+                    },
+                  ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -913,6 +926,160 @@ class _DestinationChip extends StatelessWidget {
           Text(label, style: TextStyle(color: color, fontSize: 11)),
         ],
       ),
+    );
+  }
+}
+
+// ── Rust queue live panel ─────────────────────────────────────────────────────
+//
+// Shown at the top of TasksScreen when kRustQueueEnabled=true.  Polls the Rust
+// SerialPump every 3 seconds and displays a compact summary of its tasks.
+// This replaces the debug-only poll in Settings as the live UI path.
+//
+// Serial invariant: SerialPump enforces concurrency=1 — do not add a
+// concurrency knob on either side.
+
+class _RustQueuePanel extends StatefulWidget {
+  const _RustQueuePanel();
+
+  @override
+  State<_RustQueuePanel> createState() => _RustQueuePanelState();
+}
+
+class _RustQueuePanelState extends State<_RustQueuePanel> {
+  List<Map<String, dynamic>> _tasks = const [];
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _poll();
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _poll());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _poll() {
+    final raw = RustQueueBridge.pollStatus();
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        setState(() {
+          _tasks = decoded.whereType<Map<String, dynamic>>().toList();
+        });
+      }
+    } catch (_) {
+      setState(() => _tasks = const []);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (_tasks.isEmpty) {
+      return Container(
+        width: double.infinity,
+        color: theme.colorScheme.surfaceContainer,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.memory, size: 14, color: AppColors.accent),
+            const SizedBox(width: 8),
+            Text(
+              'Rust queue: idle',
+              style: theme.textTheme.bodySmall?.copyWith(color: AppColors.accent),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      color: theme.colorScheme.surfaceContainer,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.memory, size: 14, color: AppColors.accent),
+              const SizedBox(width: 6),
+              Text(
+                'Rust queue — ${_tasks.length} task(s)',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: AppColors.accent,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _poll,
+                child: Icon(Icons.refresh, size: 14,
+                    color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          for (final t in _tasks)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: _RustTaskRow(task: t),
+            ),
+          const SizedBox(height: 4),
+        ],
+      ),
+    );
+  }
+}
+
+class _RustTaskRow extends StatelessWidget {
+  const _RustTaskRow({required this.task});
+  final Map<String, dynamic> task;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fullId = task['id'] as String? ?? '';
+    final id = fullId.substring(0, fullId.length < 8 ? fullId.length : 8);
+    final status = task['status'] as String? ?? '?';
+    final progress = (task['progress'] as num?)?.toDouble() ?? 0.0;
+    final kind = task['kind'] as String? ?? '';
+    final remotePath = task['remote_path'] as String? ?? '';
+    final name = remotePath.isNotEmpty
+        ? (remotePath.split('/').where((s) => s.isNotEmpty).lastOrNull ??
+              remotePath)
+        : kind;
+    return Row(
+      children: [
+        SizedBox(
+          width: 120,
+          child: LinearProgressIndicator(
+            value: progress.clamp(0.0, 1.0),
+            backgroundColor: theme.colorScheme.outline.withValues(alpha: 0.2),
+            color: AppColors.accent,
+            minHeight: 3,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '[$id…] $status',
+          style: theme.textTheme.bodySmall?.copyWith(fontSize: 10),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            name,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 10,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
     );
   }
 }

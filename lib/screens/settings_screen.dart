@@ -9,6 +9,7 @@ import '../models/app_locale.dart';
 import '../models/snack_duration.dart';
 import '../services/notification_permission_service.dart';
 import '../services/rust_core_service.dart';
+import '../services/rust_proxy_bridge.dart';
 import '../services/rust_queue_bridge.dart';
 import '../services/settings_service.dart';
 import '../widgets/theme_settings_section.dart';
@@ -414,7 +415,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             l10n.settingsPlaybackFooter,
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          // ── Developer: OpenAPI + Rust Queue (debug only) ─────────────────────
+          // ── Developer: OpenAPI + Rust Queue + Rust Proxy (debug only) ──────
           if (kDebugMode) ...[
             const Divider(height: 40),
             _sectionTitle(context, 'Developer / OpenAPI'),
@@ -424,6 +425,10 @@ class _SettingsScreenState extends State<SettingsScreen>
             _sectionTitle(context, 'Developer / Rust Queue'),
             const SizedBox(height: 8),
             const _RustQueueSettingsSection(),
+            const Divider(height: 24),
+            _sectionTitle(context, 'Developer / Rust Proxy'),
+            const SizedBox(height: 8),
+            const _RustProxySettingsSection(),
           ],
         ],
       ),
@@ -518,6 +523,103 @@ class _RustQueueSettingsSectionState
           child: Text(
             'Serial invariant: SerialPump enforces concurrency = 1. '
             'Never introduce a concurrency knob on either side.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Rust Proxy settings section (debug only) ─────────────────────────────────
+
+/// Thin developer note for the Rust local HTTP proxy.
+///
+/// [kRustProxyEnabled] is intentionally left `false` — [LocalStreamBridge]
+/// remains the live proxy. This section only surfaces the Rust proxy state
+/// (port, start/stop) so a developer can validate the Rust singleton without
+/// rerouting the playback stack.
+///
+/// ## Happy-path device smoke
+/// 1. Set `kRustProxyEnabled = true` in `rust_proxy_bridge.dart`, rebuild.
+/// 2. Tap "Start proxy" — note the assigned port.
+/// 3. Register a cached media file via code or a debug entry.
+/// 4. Confirm the returned URL serves the file from a PC on the same network.
+/// 5. Tap "Stop proxy" — confirm port returns to -1.
+/// 6. Do NOT delete `LocalStreamBridge` until the Rust proxy is confirmed
+///    feature-equivalent on device.
+class _RustProxySettingsSection extends StatefulWidget {
+  const _RustProxySettingsSection();
+
+  @override
+  State<_RustProxySettingsSection> createState() =>
+      _RustProxySettingsSectionState();
+}
+
+class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
+  int _port = -1;
+
+  void _refresh() {
+    setState(() => _port = RustProxyBridge.port());
+  }
+
+  void _start() {
+    final p = RustProxyBridge.start();
+    setState(() => _port = p ?? -1);
+    if (p == null) {
+      AppSnack.show(context, 'Rust proxy start failed (see logs).');
+    }
+  }
+
+  void _stop() {
+    RustProxyBridge.stop();
+    setState(() => _port = -1);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.cast_connected_outlined),
+          title: const Text('Rust proxy enabled'),
+          subtitle: Text(
+            kRustProxyEnabled
+                ? 'ON — local files served via wdmm-proxy singleton'
+                : 'OFF (default) — LocalStreamBridge is active.\n'
+                  'Set kRustProxyEnabled=true in rust_proxy_bridge.dart '
+                  'and rebuild to enable the Rust proxy.',
+          ),
+          trailing: Switch(
+            value: kRustProxyEnabled,
+            // Compile-time const; display-only — tapping shows a hint.
+            onChanged: (_) => AppSnack.show(
+              context,
+              'Change kRustProxyEnabled in rust_proxy_bridge.dart and rebuild.',
+            ),
+          ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.settings_ethernet),
+          title: const Text('Rust proxy port'),
+          subtitle: Text(_port >= 0 ? '$_port' : '(not running)'),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(onPressed: kRustProxyEnabled ? _start : null, child: const Text('Start')),
+              TextButton(onPressed: kRustProxyEnabled ? _stop : null, child: const Text('Stop')),
+              TextButton(onPressed: _refresh, child: const Text('Poll')),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Text(
+            'LocalStreamBridge is NOT deleted yet. The Rust proxy is a '
+            'process-global singleton — never create a second instance.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ),

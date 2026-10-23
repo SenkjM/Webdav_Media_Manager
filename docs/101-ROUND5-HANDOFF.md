@@ -15,6 +15,12 @@
 > tests); `wdmm_queue_enqueue` FFI export + `RustQueueBridge.enqueue` wired; OpenAPI
 > settings UI (debug-only, bind/token/enable); `RustCoreService.queueEnqueue` public
 > method. Terabox/Netease remain stubs. See `docs/102-ROUND7-STATUS.md`.
+>
+> **Round 9 (2026-10-23):** Library write cutover path wired (`kRustLibraryWriteEnabled`,
+> default false, dual-write probe); open115 mkdir/rename/remove with mock tests; Rust
+> queue live panel in TasksScreen (gated by `kRustQueueEnabled`); proxy FFI Dart stubs
+> (`RustProxyBridge`, `kRustProxyEnabled`, default false) + Developer / Rust Proxy
+> settings note. Terabox stub; netease excluded. See `docs/104-ROUND9-STATUS.md`.
 
 ---
 
@@ -66,7 +72,7 @@ Each against its official OpenAPI, user-supplied OAuth/credentials only, no embe
 
 - [x] `baidu_netdisk` — Baidu NetDisk OpenAPI (list/get; write TODO)
 - [x] `aliyundrive` — Aliyun Drive OpenAPI list/get + **mkdir/rename/remove** (Round 8) with mock HTTP tests
-- [x] `open115` — 115 OpenAPI list/get + mock HTTP tests (write ops TODO)
+- [x] `open115` — 115 OpenAPI list/get + mock HTTP tests + **mkdir/rename/remove** (Round 9) with mock HTTP tests
 - [ ] `terabox` — Terabox
 - [ ] `netease_music` — NetEase Cloud Music (excluded from public release per constraints §9)
 - [x] `123_open` — 123 Pan OpenAPI (list/get; write TODO)
@@ -79,7 +85,7 @@ Pattern to follow: `webdav.rs` / `ctfile.rs` (throttle, retry, id-prefix dual st
 ### D. Queue — wire `SerialPump` to the download path
 
 - [x] Android download flow enqueues a `QueueTask` (RustQueueBridge coexistence stub) and lets `SerialPump` drive it (one at a time). Confirm UI progress events flow from `QueueEvent::Progress`.
-- [x] **Queue enqueue wired** (Round 7). `RustQueueBridge.pollStatus()` now wired to Settings → Developer / Rust Queue panel (Round 8, debug-only). `kRustQueueEnabled` remains `false`.
+- [x] **Queue enqueue wired** (Round 7). `RustQueueBridge.pollStatus()` wired to Settings → Developer / Rust Queue panel (Round 8, debug-only) **and** to TasksScreen live panel (Round 9, shown when `kRustQueueEnabled=true`). `kRustQueueEnabled` remains `false`.
 - [ ] Confirm concurrency is 1 end-to-end (no parallel downloads) — matches Dart `_pump`. **Needs on-device validation** (flag still off by default).
 
 ### E. OpenAPI (optional toggle) — verify on device

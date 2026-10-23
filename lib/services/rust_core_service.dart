@@ -622,6 +622,127 @@ class RustCoreService {
       calloc.free(ptr);
     }
   }
+  // ── Round 9 — Proxy FFI ───────────────────────────────────────────────────
+  //
+  // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
+  // round. Gated by `kRustProxyEnabled` in rust_proxy_bridge.dart (default
+  // false). Do NOT delete LocalStreamBridge yet.
+
+  typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
+  typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(int);
+  typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
+  typedef _ProxyNoArgStrDart   = ffi.Pointer<Utf8> Function();
+  typedef _ProxyPortNative  = ffi.Int32 Function();
+  typedef _ProxyPortDart    = int Function();
+  typedef _ProxyTwoStrNative = ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+  typedef _ProxyTwoStrDart = ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+  static _ProxyStartDart?   _proxyStart;
+  static _ProxyNoArgStrDart? _proxyStop;
+  static _ProxyPortDart?    _proxyPort;
+  static _ProxyTwoStrDart?  _proxyRegisterFile;
+  static _OneStrToStrDart?  _proxyUnregister;
+
+  static bool _proxySymbolsLoaded = false;
+
+  static void _loadProxySymbolsSafe() {
+    if (_proxySymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _proxyStart = lib
+          .lookup<ffi.NativeFunction<_ProxyStartNative>>('wdmm_proxy_start')
+          .asFunction();
+      _proxyStop = lib
+          .lookup<ffi.NativeFunction<_ProxyNoArgStrNative>>('wdmm_proxy_stop')
+          .asFunction();
+      _proxyPort = lib
+          .lookup<ffi.NativeFunction<_ProxyPortNative>>('wdmm_proxy_port')
+          .asFunction();
+      _proxyRegisterFile = lib
+          .lookup<ffi.NativeFunction<_ProxyTwoStrNative>>('wdmm_proxy_register_file')
+          .asFunction();
+      _proxyUnregister = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_proxy_unregister')
+          .asFunction();
+      _proxySymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] proxy symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Start the local HTTP proxy on `127.0.0.1` at [port] (0 = OS-assigned).
+  ///
+  /// Returns the bound port as a decimal string, or `'error:…'` on failure.
+  /// Idempotent — if already running, returns the existing port.
+  /// Returns null if the native library is unavailable.
+  ///
+  /// Do NOT call directly — use [RustProxyBridge] which enforces the flag.
+  static String? proxyStart({int port = 0}) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyStart == null) return null;
+    return _readAndFreeString(_proxyStart!(port));
+  }
+
+  /// Stop the local HTTP proxy. No-op if not running.
+  /// Returns null if the native library is unavailable.
+  static String? proxyStop() {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyStop == null) return null;
+    return _readAndFreeString(_proxyStop!());
+  }
+
+  /// Returns the bound proxy port, or -1 if not running.
+  static int proxyPort() {
+    if (!_ensureSymbols()) return -1;
+    _loadProxySymbolsSafe();
+    if (_proxyPort == null) return -1;
+    return _proxyPort!();
+  }
+
+  /// Register a local file with the proxy.
+  ///
+  /// [filePath] is the absolute path to the local file.
+  /// [name] is an optional display name used for Content-Type guessing
+  /// (e.g. `"movie.mp4"`); pass null to omit.
+  ///
+  /// Returns a JSON string:
+  /// `{"token":"…","path_template":"/s/…","port":N}` or `'error:…'`.
+  /// Build the URL as `http://127.0.0.1:{port}{path_template}`.
+  /// Returns null if the library is unavailable.
+  static String? proxyRegisterFile(String filePath, {String? name}) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyRegisterFile == null) return null;
+    final pathPtr = filePath.toNativeUtf8();
+    // Pass null pointer for optional name.
+    final namePtr = name != null ? name.toNativeUtf8() : ffi.nullptr.cast<Utf8>();
+    try {
+      return _readAndFreeString(_proxyRegisterFile!(pathPtr, namePtr));
+    } finally {
+      calloc.free(pathPtr);
+      if (name != null) calloc.free(namePtr);
+    }
+  }
+
+  /// Unregister a proxy token previously returned by [proxyRegisterFile].
+  ///
+  /// Returns `'ok'`, or null if the library is unavailable.
+  static String? proxyUnregister(String token) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyUnregister == null) return null;
+    final ptr = token.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyUnregister!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
 }
 
 // ignore: avoid_classes_with_only_static_members
