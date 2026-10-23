@@ -55,10 +55,12 @@ wdmm-queue:   9 tests   (unchanged)
 wdmm-storage: 8 tests   (unchanged)
 wdmm-sync:    4 tests   (unchanged)
 ─────────────────────────
-Total:        160 passed, 0 failed, 1 ignored
+Total:        150 passed, 0 failed, 1 ignored
 ```
 
-Round 8 baseline was 130; drivers 73→77 (+4 open115 write op tests).
+The Round 8 status doc (103) tallied 130 but omitted the `wdmm-proxy` crate's
+15 tests; including them the real b7d7980 baseline was 146. Round 9 adds 4
+open115 write-op tests (drivers 73→77) → 150.
 
 ---
 
@@ -168,4 +170,4 @@ Round 8 baseline was 130; drivers 73→77 (+4 open115 write op tests).
 | 3 | Queue: serial (concurrency=1), drives downloads | ⏳ Rust logic ✓, flag off, **TasksScreen live panel ready Round 9** |
 | 4 | Sync / DLNA / crypto vault: already landed Round 4 | ✅ (verify on device) |
 | 5 | OpenAPI: optional, token-authed, library + playlist routes live | ⏳ routes + tests ✓, on-device bearer flow pending |
-| 6 | `cargo test` green; Android `flutter test` + integration smoke green | ✅ Rust (160/0/1 ignored); Dart not run in CI here |
+| 6 | `cargo test` green; Android `flutter test` + integration smoke green | ✅ Rust (150/0/1 ignored); Dart not run in CI here |
