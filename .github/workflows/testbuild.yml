@@ -1,6 +1,8 @@
 name: Testbuild
 
 # 手动旁路编译：只出 sandbox flavor 的 arm64-v8a APK，上传 Actions artifact。
+# Rust FFI：从 rust/wdmm-core 子模块用 cargo-ndk 编出 libwdmm_ffi.so（arm64-v8a），
+#   注入 jniLibs 后再执行 flutter build。
 # 不打标签、不建 GitHub Release、不打 app bundle，也不跑预发布的定时任务。
 # 版本：versionName = 最新正式版标签 + "-" + 7 位短哈希（如 v0.2.3-055ee9c，
 #   sandbox flavor 再追加 versionNameSuffix "-test"）；
@@ -29,6 +31,7 @@ jobs:
           # 需要完整标签来找最新正式版。
           fetch-depth: 0
           fetch-tags: true
+          submodules: recursive
 
       - name: Setup Java 17
         uses: actions/setup-java@v6
@@ -65,6 +68,55 @@ jobs:
 
       - name: Install dependencies
         run: flutter pub get
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install cargo-ndk
+        # cargo-ndk translates cargo build targets to Android ABI names.
+        run: cargo install cargo-ndk
+
+      - name: Setup NDK for cargo-ndk
+        run: |
+          set -euo pipefail
+          # Resolve the NDK version that Flutter/AGP expect so we use a
+          # consistent toolchain without hard-coding a version that drifts.
+          FLUTTER_ROOT=$(flutter --version --machine 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('flutterRoot',''))" \
+            2>/dev/null || true)
+          NDK_VER=""
+          if [ -n "$FLUTTER_ROOT" ]; then
+            NDK_VER=$(grep -oP "(?<=ndkVersion = ')[0-9.]+" \
+              "${FLUTTER_ROOT}/packages/flutter_tools/lib/src/android/android_sdk.dart" \
+              2>/dev/null | head -1 || true)
+          fi
+          NDK_VER="${NDK_VER:-27.0.12077973}"
+          echo "Installing NDK ${NDK_VER}"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;${NDK_VER}"
+          NDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}/ndk/${NDK_VER}"
+          echo "ANDROID_NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
+          echo "NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
+
+      - name: Build wdmm-ffi for arm64-v8a
+        run: |
+          set -euo pipefail
+          cd rust/wdmm-core
+          cargo ndk -t arm64-v8a \
+            -o ../../android/app/src/main/jniLibs \
+            build --release -p wdmm-ffi
+          SO="../../android/app/src/main/jniLibs/arm64-v8a/libwdmm_ffi.so"
+          if [ ! -f "$SO" ]; then
+            echo "::error::libwdmm_ffi.so not found; cargo-ndk output path may differ."
+            exit 1
+          fi
+          echo "libwdmm_ffi.so ready at $SO"
 
       - name: Compute test version
         id: version

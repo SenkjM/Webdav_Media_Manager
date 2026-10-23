@@ -74,3 +74,6 @@ signing-secrets/
 
 # Local dependency overrides (e.g. openlist_crypt -> unpushed local checkout)
 pubspec_overrides.yaml
+
+# Rust FFI compiled output — built by CI (testbuild.yml) and cargo-ndk locally; never committed.
+android/app/src/main/jniLibs/**/*.so

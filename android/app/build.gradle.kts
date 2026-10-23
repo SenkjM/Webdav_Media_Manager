@@ -151,7 +151,7 @@ android {
     // release 的签名由各 flavor 决定（见 productFlavors 上方注释），这里不设。
 }
 
-// --- cargo-ndk build hook for WDMM Rust core (future) ---
+// --- cargo-ndk build hook for WDMM Rust core (Testbuild CI covers this; see .github/workflows/testbuild.yml) ---
 // When wired up, this block will invoke cargo-ndk to build wdmm-ffi
 // for all required ABIs and copy libwdmm_ffi.so into jniLibs/.
 // Example task:
