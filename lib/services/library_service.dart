@@ -169,16 +169,24 @@ class LibraryService extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    // Round 8: when kRustLibraryReadEnabled is true, serve list from Rust
-    // rusqlite via FFI.  Falls back to Dart sqflite on null (library
-    // unavailable or flag off).
-    // TODO(cutover): once parity is confirmed on device, remove the sqflite
-    // fallback and delete music_library_database_impl.dart.
-    final rustTracks = RustLibraryService.listAll();
-    final all = rustTracks ?? await _db.allTracks();
-    _tracks
-      ..clear()
-      ..addAll(all);
+    // Forced Rust path when [kRustLibraryReadEnabled] — no sqflite fallback
+    // (fallback hid missing libwdmm_ffi.so during device smoke).
+    if (kRustLibraryReadEnabled) {
+      final rustTracks = RustLibraryService.listAll();
+      if (rustTracks == null) {
+        throw StateError(
+          'Rust library read failed; Dart sqflite fallback removed',
+        );
+      }
+      _tracks
+        ..clear()
+        ..addAll(rustTracks);
+    } else {
+      final all = await _db.allTracks();
+      _tracks
+        ..clear()
+        ..addAll(all);
+    }
     _loaded = true;
     notifyListeners();
   }
@@ -779,17 +787,20 @@ class LibraryService extends ChangeNotifier {
 
   /// Case-insensitive search over title / artist / album / file name.
   ///
-  /// Round 8: when [kRustLibraryReadEnabled] is true, delegates to the Rust
-  /// rusqlite search path via [RustLibraryService.search].  Falls back to the
-  /// in-memory _tracks search when Rust is unavailable or the flag is off.
-  /// TODO(cutover): after device validation, remove the fallback path.
+  /// When [kRustLibraryReadEnabled] is true, search is Rust-only (throws if FFI fails).
+  /// When the flag is off, searches the in-memory list from the last [refresh].
   List<LibraryTrack> search(
     String query, {
     LibrarySortMode sort = LibrarySortMode.byName,
   }) {
-    // Try Rust path first (no-op when flag is off).
-    final rustResult = RustLibraryService.search(query);
-    if (rustResult != null) {
+    // Forced Rust search when flag on — no in-memory/sqflite fallback.
+    if (kRustLibraryReadEnabled) {
+      final rustResult = RustLibraryService.search(query);
+      if (rustResult == null) {
+        throw StateError(
+          'Rust library search failed; Dart fallback removed',
+        );
+      }
       rustResult.sort(
         sort == LibrarySortMode.byAlbumTrack
             ? compareTracksByAlbumOrder
@@ -798,7 +809,7 @@ class LibraryService extends ChangeNotifier {
       return rustResult;
     }
 
-    // Dart in-memory fallback (sqflite-backed via refresh()).
+    // Flag off: in-memory search over last refresh().
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return byTitle(sort: sort);
     final matched = _tracks.where((t) {

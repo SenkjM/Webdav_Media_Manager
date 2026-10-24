@@ -757,4 +757,4 @@ extension _Let<T> on T {
 /// When true, [RustCoreService.syncTrigger] is used alongside Dart sync.
 /// Flip to true in a settings screen once the Rust sync path is validated.
 // ignore: constant_identifier_names
-const bool kRustSyncEnabled = false;
+const bool kRustSyncEnabled = true;

@@ -42,7 +42,7 @@ class RustLibraryService {
   /// List all tracks from the Rust rusqlite DB.
   ///
   /// Returns `null` when [kRustLibraryReadEnabled] is `false` or when the
-  /// native library is unavailable — callers must fall back to Dart sqflite.
+  /// native library is unavailable — throws [StateError] (no Dart fallback).
   ///
   /// Never throws.
   static List<LibraryTrack>? listAll() {
@@ -50,7 +50,8 @@ class RustLibraryService {
     final json = RustCoreService.trackList();
     if (json == null || json.startsWith('error:')) {
       debugPrint('[RustLibraryService] listAll failed: $json');
-      return null;
+      // Do not return null for callers to soft-fall back to sqflite.
+      throw StateError('RustLibraryService.listAll failed: $json');
     }
     return _decodeArray(json);
   }
@@ -58,7 +59,7 @@ class RustLibraryService {
   /// Search tracks by title/artist substring.
   ///
   /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
-  /// is unavailable.  Returns an empty list on a genuine zero-hit search.
+  /// is unavailable (throws).  Returns an empty list on a genuine zero-hit search.
   ///
   /// Never throws.
   static List<LibraryTrack>? search(String query) {
@@ -67,7 +68,7 @@ class RustLibraryService {
     final json = RustCoreService.trackSearch(query.trim());
     if (json == null || json.startsWith('error:')) {
       debugPrint('[RustLibraryService] search("$query") failed: $json');
-      return null;
+      throw StateError('RustLibraryService.search failed: $json');
     }
     return _decodeArray(json);
   }
@@ -272,7 +273,7 @@ class RustLibraryService {
 ///
 /// Serial invariant: list / search / get are read-only — no concurrency risk.
 // ignore: constant_identifier_names
-const bool kRustLibraryReadEnabled = false;
+const bool kRustLibraryReadEnabled = true;
 
 /// Gate for the Rust library write path.
 ///
@@ -293,4 +294,4 @@ const bool kRustLibraryReadEnabled = false;
 ///
 /// Do **not** flip to `true` before [kRustLibraryReadEnabled] is confirmed.
 // ignore: constant_identifier_names
-const bool kRustLibraryWriteEnabled = false;
+const bool kRustLibraryWriteEnabled = true;

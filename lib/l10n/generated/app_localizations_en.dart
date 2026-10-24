@@ -5445,4 +5445,3 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get fileQueuedOrSavedShort => 'This file is already queued or saved';
 }
-}

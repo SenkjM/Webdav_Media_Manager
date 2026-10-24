@@ -118,4 +118,4 @@ class RustQueueBridge {
 /// Serial invariant: SerialPump enforces concurrency = 1 — never introduce a
 /// concurrency knob on either side.
 // ignore: constant_identifier_names
-const bool kRustQueueEnabled = false;
+const bool kRustQueueEnabled = true;

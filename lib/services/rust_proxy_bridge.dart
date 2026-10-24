@@ -124,4 +124,4 @@ class RustProxyBridge {
 /// Serial invariant: the proxy is a process-global singleton — never create
 /// more than one instance per process.
 // ignore: constant_identifier_names
-const bool kRustProxyEnabled = false;
+const bool kRustProxyEnabled = true;
