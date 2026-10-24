@@ -1279,6 +1279,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       singleItem: item,
       accountId: accountId,
     );
+    // Brief Snack only when the file isn't cached locally — keep UI thin.
+    if (!mounted) return;
+    if (cast.state == DlnaCastState.error &&
+        cast.errorCode == DlnaCastErrorCode.notCached) {
+      AppSnack.show(context, '请先下载该文件，再投屏。', error: true);
+    }
   }
 
   Future<void> _createFolder() async {

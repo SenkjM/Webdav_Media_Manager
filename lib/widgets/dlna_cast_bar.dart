@@ -397,7 +397,10 @@ class _DlnaCastBarState extends State<DlnaCastBar>
 
                 if (isError)
                   // ── 错误状态：可复制的详细错误 ──────────────────
-                  _ErrorDetail(error: cast.error ?? '投屏出错')
+                  _ErrorDetail(
+                    display: cast.castError?.userMessage ?? cast.error ?? '投屏出错',
+                    copyText: cast.castError?.fullText ?? cast.error ?? '投屏出错',
+                  )
                 else ...[
                   // ── 进度条行 ────────────────────────────────────
                   Row(
@@ -849,9 +852,13 @@ class _TranscodeSwitchRow extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────
 
 class _ErrorDetail extends StatelessWidget {
-  const _ErrorDetail({required this.error});
+  const _ErrorDetail({required this.display, required this.copyText});
 
-  final String error;
+  /// Short friendly message shown in the UI.
+  final String display;
+
+  /// Full text (user message + tech detail) placed on the clipboard.
+  final String copyText;
 
   @override
   Widget build(BuildContext context) {
@@ -872,7 +879,7 @@ class _ErrorDetail extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: SelectableText(
-                error,
+                display,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: scheme.onErrorContainer,
                 ),
@@ -884,11 +891,11 @@ class _ErrorDetail extends StatelessWidget {
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               icon: Icon(Icons.copy, color: scheme.error, size: 14),
-              tooltip: '复制错误信息',
+              tooltip: '复制全部（含技术详情）',
               onPressed: () {
                 // Flutter 3.x Clipboard
                 // ignore: deprecated_member_use
-                Clipboard.setData(ClipboardData(text: error));
+                Clipboard.setData(ClipboardData(text: copyText));
                 AppSnack.show(context, '已复制到剪贴板');
               },
             ),

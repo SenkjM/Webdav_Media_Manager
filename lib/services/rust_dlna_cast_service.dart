@@ -660,7 +660,15 @@ class RustDlnaCastService extends ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      _error = _friendlyError(e.toString());
+      final ce = e is DlnaCastError
+          ? e
+          : DlnaCastError(
+              code: DlnaCastErrorCode.soapFailed,
+              userMessage: '控制指令失败，请检查设备是否在线。',
+              techDetail: 'playPause SOAP: $e',
+            );
+      _castError = ce;
+      _error = ce.userMessage;
       notifyListeners();
     }
   }
@@ -782,6 +790,8 @@ class RustDlnaCastService extends ChangeNotifier {
     _currentItem = null;
     _position = Duration.zero;
     _duration = null;
+    _error = null;
+    _castError = null;
     _playbackState = DlnaPlaybackState.stopped;
     _compatHint = null;
   }
@@ -1032,22 +1042,6 @@ class RustDlnaCastService extends ChangeNotifier {
     final m = (d.inMinutes % 60).toString().padLeft(2, '0');
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
     return '$h:$m:$s';
-  }
-
-  String _friendlyError(String raw) {
-    if (raw.contains('not cached locally') || raw.contains('未缓存')) {
-      return raw.contains('blocked:') ? raw : '文件未缓存，请先下载再投屏。';
-    }
-    if (raw.contains('proxy unavailable') || raw.contains('HLS FFI unavailable')) {
-      return '投屏引擎不可用：Rust FFI 未加载。请在 Android 设备上运行。';
-    }
-    if (raw.contains('不支持视频播放')) return raw;
-    if (raw.contains('SOAP')) {
-      final statusMatch = RegExp(r'HTTP (\d+)').firstMatch(raw);
-      final code = statusMatch?.group(1) ?? '';
-      return '投屏控制失败${code.isNotEmpty ? "（HTTP $code）" : ""}，请检查设备是否在线。';
-    }
-    return raw;
   }
 
   @override

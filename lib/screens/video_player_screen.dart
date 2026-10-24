@@ -1309,6 +1309,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
       seed: seed,
       accountId: _queue?.accountId ?? _resolved?.accountId ?? widget.source?.accountId,
     );
+    // Brief Snack only when the file isn't cached locally — keep UI thin.
+    if (!mounted) return;
+    if (cast.state == DlnaCastState.error &&
+        cast.errorCode == DlnaCastErrorCode.notCached) {
+      AppSnack.show(context, '请先下载该文件，再投屏。', error: true);
+    }
   }
 
   /// `3 / 27 · 扫描中…` — shows the progressive scan making progress.
