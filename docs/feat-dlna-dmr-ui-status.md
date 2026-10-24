@@ -16,9 +16,13 @@ implementation (`dlna_cast_service.dart`, `dlna_queue_controller.dart`) is
 `RustDlnaCastService`. Per-device DMR prefs are persisted in
 `RustDmrPrefsService` keyed by SSDP USN (temporary Dart store — see below).
 
-`LocalStreamBridge` (`stream_bridge.dart`) is **kept**: `cloud_drive_service.dart`
-still uses it for the MustProxy (crypt) path, which is unrelated to DLNA. It will
-be deleted when MustProxy cuts over to Rust FFI (TODO proxy-cutover-R13).
+`LocalStreamBridge` (`stream_bridge.dart`) is **deleted** (R12.1).
+`cloud_drive_service.resolveStreamSource` now throws a clear
+`CloudDriverException` naming `wdmm_proxy_register_stream` when the driver
+cannot supply a direct URL (MustProxy/crypt path). MustProxy playback is broken
+until that FFI lands in wdmm-core.
+- Deleted: `lib/services/cloud_drivers/stream_bridge.dart`
+- Deleted: `test/crypt_stream_bridge_test.dart`
 
 ### What is blocked
 
@@ -104,9 +108,10 @@ fallback) is fully wired.
 
 ## Leftovers / follow-ups
 
-- **MustProxy LocalStreamBridge** — still used by `cloud_drive_service.dart`
-  for crypt/encoded stream serving. Delete after MustProxy cuts over to a
-  Rust credential/stream bridge (TODO proxy-cutover-R13).
+- **MustProxy LocalStreamBridge** — **deleted in R12.1**. MustProxy/crypt
+  playback in `cloud_drive_service.resolveStreamSource` now throws until
+  `wdmm_proxy_register_stream` (or equivalent Rust credential/range proxy FFI)
+  lands in wdmm-core. TODO(proxy-cutover): wire that FFI to restore MustProxy.
 - **DMR prefs → Rust DB** — once `wdmm_dmr_prefs_*` lands, replace the
   SharedPreferences body of `RustDmrPrefsService` with FFI wrappers and
   migrate existing keys on first open.
@@ -115,10 +120,11 @@ fallback) is fully wired.
   (TODO r12-dlna-transport-ffi) to fully retire the Dart SOAP layer.
 - **Cloud-stream cast** — `wdmm_proxy_register_stream` (remote WebDAV +
   crypto) not present at 4a37aa4. Until it lands, cast requires a locally
-  cached file.
+  cached file; MustProxy/crypt stream playback throws (R12.1).
 
 ---
 
 **Blocker Status:** RESOLVED for the UI/FFI wiring job. Cast e2e blocked
 only on cloud-stream + transport FFI (core follow-ups on
-`feat/proxy-hls-ffmpeg`).
+`feat/proxy-hls-ffmpeg`). MustProxy/crypt stream playback broken in R12.1
+pending `wdmm_proxy_register_stream`.

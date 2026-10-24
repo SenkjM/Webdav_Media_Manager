@@ -124,6 +124,60 @@ enum DlnaCastState { idle, discovering, casting, error }
 enum DlnaPlaybackState { playing, paused, buffering, stopped }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Typed cast error
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Structured error codes for [RustDlnaCastService] failures.
+///
+/// The cast bar displays [userMessage] to the user and includes [techDetail]
+/// in the "Copy all" dump so developers can diagnose without cluttering the UI.
+enum DlnaCastErrorCode {
+  /// File not in local cache — user must download it first.
+  /// Blocker: `wdmm_proxy_register_stream` absent at SHA 4a37aa4
+  /// (and absent in dirty WDMM-core-hls R12).
+  notCached,
+
+  /// Rust FFI library could not be loaded or the proxy did not start.
+  proxyUnavailable,
+
+  /// `wdmm_proxy_register_hls` returned an error or null.
+  hlsRegisterFailed,
+
+  /// The renderer's SinkProtocolInfo contains no `video/*` entry.
+  rendererNoVideo,
+
+  /// AVTransport SOAP call failed (HTTP error, network, or UPnP fault).
+  soapFailed,
+
+  /// Unexpected / unclassified failure.
+  unknown,
+}
+
+/// A typed cast error that carries a user-facing Chinese [userMessage] and
+/// a developer-facing [techDetail] for the "Copy all" action.
+class DlnaCastError implements Exception {
+  const DlnaCastError({
+    required this.code,
+    required this.userMessage,
+    required this.techDetail,
+  });
+
+  final DlnaCastErrorCode code;
+
+  /// Short, friendly Chinese message shown in the cast bar.
+  final String userMessage;
+
+  /// Technical detail included in "Copy all" but kept out of the main UI.
+  final String techDetail;
+
+  /// Full text for clipboard / log: user message + tech detail.
+  String get fullText => '$userMessage\n[技术详情] $techDetail';
+
+  @override
+  String toString() => fullText;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Inline queue (replaces deleted DlnaQueueController)
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -304,6 +358,7 @@ class RustDlnaCastService extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration? _duration;
   String? _error;
+  DlnaCastError? _castError;
   DlnaTranscodeSettings _transcodeSettings = const DlnaTranscodeSettings();
   DlnaCompatibilityHint? _compatHint;
   String? _activeHlsToken; // HLS session token to unregister on stop
@@ -317,6 +372,8 @@ class RustDlnaCastService extends ChangeNotifier {
   Duration get position => _position;
   Duration? get duration => _duration;
   String? get error => _error;
+  DlnaCastError? get castError => _castError;
+  DlnaCastErrorCode? get errorCode => _castError?.code;
   DlnaTranscodeSettings get transcodeSettings => _transcodeSettings;
   DlnaCompatibilityHint? get compatibilityHint => _compatHint;
 
@@ -460,7 +517,17 @@ class RustDlnaCastService extends ChangeNotifier {
     } catch (e, stack) {
       debugPrint('[DlnaCast] startCast error: $e\n$stack');
       _state = DlnaCastState.error;
-      _error = _friendlyError(e.toString());
+      if (e is DlnaCastError) {
+        _castError = e;
+        _error = e.userMessage;
+      } else {
+        _castError = DlnaCastError(
+          code: DlnaCastErrorCode.unknown,
+          userMessage: '投屏出错，请重试。',
+          techDetail: e.toString(),
+        );
+        _error = _castError!.userMessage;
+      }
       notifyListeners();
     }
   }
@@ -475,22 +542,33 @@ class RustDlnaCastService extends ChangeNotifier {
     // 1. Ensure Rust proxy is running.
     final proxyPortStr = RustCoreService.proxyStart(port: 0);
     if (proxyPortStr == null || proxyPortStr.startsWith('error:')) {
-      throw Exception(
-        'Rust proxy unavailable (${proxyPortStr ?? "library not loaded"}). '
-        'Cast e2e blocked — build wdmm-ffi for this device.',
+      throw DlnaCastError(
+        code: DlnaCastErrorCode.proxyUnavailable,
+        userMessage: '投屏引擎不可用，请在 Android 设备上运行（需要 wdmm-ffi）。',
+        techDetail: 'wdmm_proxy_start returned: ${proxyPortStr ?? "library not loaded"}',
       );
     }
     final proxyPort = int.tryParse(proxyPortStr) ?? 0;
-    if (proxyPort == 0) throw Exception('Rust proxy did not bind a port.');
+    if (proxyPort == 0) {
+      throw DlnaCastError(
+        code: DlnaCastErrorCode.proxyUnavailable,
+        userMessage: '投屏引擎启动失败：代理未绑定端口。',
+        techDetail: 'wdmm_proxy_start returned "$proxyPortStr" — port parse = 0',
+      );
+    }
 
     // 2. Locate local cache file.
+    // Cloud-stream cast (wdmm_proxy_register_stream) is NOT available at
+    // submodule SHA 4a37aa4, nor in dirty WDMM-core-hls R12. The file must be
+    // in the local cache. Inform the user clearly and name the blocker.
     final sourceName = _resolveSourceName(accountId);
     final localFile = _cache.fileForRemote(item.path, sourceName: sourceName);
     if (!localFile.existsSync()) {
-      throw Exception(
-        'File not cached locally: ${item.name}. '
-        'Download it first; cloud-stream cast via FFI not yet available '
-        '(blocked: wdmm_proxy_register_stream not in SHA 4a37aa4).',
+      throw DlnaCastError(
+        code: DlnaCastErrorCode.notCached,
+        userMessage: '文件尚未缓存，请先下载后再投屏。',
+        techDetail: '云端直投功能被阻塞（wdmm_proxy_register_stream 在 SHA 4a37aa4 中不存在），'
+            '文件：${item.name}',
       );
     }
 
@@ -500,9 +578,10 @@ class RustDlnaCastService extends ChangeNotifier {
       localFile.path, modeJson: modeJson,
     );
     if (regJson == null || regJson.startsWith('error:')) {
-      throw Exception(
-        'HLS proxy registration failed: ${regJson ?? "HLS FFI unavailable"}. '
-        'Ensure wdmm-ffi built from SHA 4a37aa4.',
+      throw DlnaCastError(
+        code: DlnaCastErrorCode.hlsRegisterFailed,
+        userMessage: 'HLS 代理注册失败，请确认 wdmm-ffi 已为此设备编译（SHA 4a37aa4）。',
+        techDetail: 'wdmm_proxy_register_hls returned: ${regJson ?? "null (HLS FFI unavailable)"}',
       );
     }
     final regData = jsonDecode(regJson) as Map<String, dynamic>;
@@ -523,23 +602,35 @@ class RustDlnaCastService extends ChangeNotifier {
           return parts.length >= 3 && parts[2].startsWith('video/');
         });
     if (!supportsVideo) {
-      throw Exception(
-        '${_renderer!.friendlyName} 不支持视频播放（SinkProtocolInfo 无 video/* 条目）。',
+      throw DlnaCastError(
+        code: DlnaCastErrorCode.rendererNoVideo,
+        userMessage: '${_renderer!.friendlyName} 不支持视频播放，请检查设备是否支持 DLNA 视频投屏。',
+        techDetail: 'GetProtocolInfo SinkProtocolInfo 无 video/* 条目',
       );
     }
     final mimeType = _mimeFor(item.name);
     final protocolInfo = _negotiateProtocolInfo(mimeType, sinkProtocols);
 
-    await _soap(
-      _renderer!.controlUrl, 'SetAVTransportURI',
-      '<InstanceID>0</InstanceID>'
-      '<CurrentURI>${_xmlEscape(hlsUrl)}</CurrentURI>'
-      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, hlsUrl, protocolInfo))}</CurrentURIMetaData>',
-    );
-    await _soap(
-      _renderer!.controlUrl, 'Play',
-      '<InstanceID>0</InstanceID><Speed>1</Speed>',
-    );
+    try {
+      await _soap(
+        _renderer!.controlUrl, 'SetAVTransportURI',
+        '<InstanceID>0</InstanceID>'
+        '<CurrentURI>${_xmlEscape(hlsUrl)}</CurrentURI>'
+        '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, hlsUrl, protocolInfo))}</CurrentURIMetaData>',
+      );
+      await _soap(
+        _renderer!.controlUrl, 'Play',
+        '<InstanceID>0</InstanceID><Speed>1</Speed>',
+      );
+    } on DlnaCastError {
+      rethrow;
+    } catch (e) {
+      throw DlnaCastError(
+        code: DlnaCastErrorCode.soapFailed,
+        userMessage: '投屏控制失败，请检查设备是否在线或重启后重试。',
+        techDetail: 'AVTransport SOAP failed: $e',
+      );
+    }
 
     _playbackState = DlnaPlaybackState.playing;
     notifyListeners();

@@ -14,7 +14,6 @@ import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
 import 'cloud_driver.dart';
 import 'cloud_drivers/driver_registry.dart';
-import 'cloud_drivers/stream_bridge.dart';
 import 'resumable_download.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
@@ -150,19 +149,8 @@ class CloudDriveService extends ChangeNotifier {
     return cloudDriverSpec(a.providerType)?.displayName ?? a.providerType;
   }
 
-  LocalStreamBridge? _bridgeInstance;
-
-  /// MustProxy 驱动的本地流桥（99 §7.5）：播放器拿到的是 127.0.0.1 的 URL。
-  /// 由本服务持有——驱动实例会被 [registerAccounts] 反复重建，桥不能跟着死。
-  LocalStreamBridge get _streamBridge =>
-      _bridgeInstance ??= LocalStreamBridge();
-
   @override
   void dispose() {
-    final bridge = _bridgeInstance;
-    _bridgeInstance = null;
-    // 关服务器是异步的；服务销毁时不必等它（force 关闭会立刻断连接）。
-    bridge?.dispose();
     for (final d in _drivers.values) {
       unawaited(d.dispose());
     }
@@ -557,29 +545,16 @@ class CloudDriveService extends ChangeNotifier {
     final item = await _fileWithLink(accountId, remotePath);
     final raw = item.rawUrl;
     if (raw == null) {
-      // MustProxy 驱动（拿不到直链，内容得由驱动自己解出来，99 §7.5）：
-      // media_kit 只认 URL，交给本地流桥按 Range 逐块取。大小未知时回不了
-      // Content-Length，明确拒绝。
+      // MustProxy/crypt 驱动（拿不到直链，内容由驱动解密，99 §7.5）。
+      // 大小未知时仍拒绝：整包/分块判定依赖密文总长。
       if (item.size <= 0) {
         throw CloudDriverException('err.streamSizeUnknown|$name');
       }
-      final bridged = await _streamBridge.expose(
-        accountId: accountId,
-        remotePath: remotePath,
-        size: item.size,
-        name: name,
-        // 每次请求都重新取当前驱动实例：驱动会被 registerAccounts 重建，
-        // 而播放中的 URL 不该因此失效。
-        ranges: (path, start, end) =>
-            _requireDriver(accountId).openContentRange(path, start, end),
-      );
-      return WebDavStreamSource(
-        uri: bridged.toString(),
-        headers: const {},
-        name: name,
-        remotePath: remotePath,
-        accountId: accountId,
-        kind: streamKind,
+      // TODO(proxy-cutover): wire wdmm_proxy_register_stream (+ credential/range callback) then restore MustProxy playback.
+      throw CloudDriverException(
+        'MustProxy/crypt local stream requires Rust FFI wdmm_proxy_register_stream '
+        '(or credential/range bridge); Dart LocalStreamBridge deleted (R12.1). '
+        'Blocked at core SHA 4a37aa4.',
       );
     }
     return WebDavStreamSource(

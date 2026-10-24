@@ -539,11 +539,11 @@ class _RustQueueSettingsSectionState
 /// surfaces the Rust proxy state (port, start/stop/register) for developer
 /// validation.
 ///
-/// ## Round 12 status
-/// - DLNA cast now uses `wdmm_proxy_register_hls` via [RustDlnaCastService].
-/// - [LocalStreamBridge] is retained for MustProxy (crypt) streaming only.
-///   TODO(proxy-cutover-R13): wire MustProxy credential bridge and delete
-///   LocalStreamBridge.
+/// ## Round 12.1 status
+/// - DLNA cast uses `wdmm_proxy_register_hls` via [RustDlnaCastService].
+/// - `LocalStreamBridge` (Dart HTTP proxy for MustProxy/crypt) **deleted** in R12.1.
+///   MustProxy playback broken until `wdmm_proxy_register_stream` lands in Core.
+///   TODO(proxy-cutover): wire wdmm_proxy_register_stream then restore MustProxy.
 class _RustProxySettingsSection extends StatefulWidget {
   const _RustProxySettingsSection();
 
@@ -585,7 +585,7 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
             kRustProxyEnabled
                 ? 'ON — local files served via wdmm-proxy singleton\n'
                   'DLNA cast uses wdmm_proxy_register_hls (R12). '
-                  'LocalStreamBridge kept for MustProxy only.'
+                  'LocalStreamBridge deleted (R12.1); MustProxy awaits wdmm_proxy_register_stream.'
                 : 'OFF — set kRustProxyEnabled=true in rust_proxy_bridge.dart '
                   'and rebuild to enable the Rust proxy.',
           ),
@@ -615,8 +615,8 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
         Padding(
           padding: const EdgeInsets.only(top: 4, bottom: 8),
           child: Text(
-            'Round 12: DLNA cast cut over to wdmm_proxy_register_hls. '
-            'LocalStreamBridge retained for MustProxy (crypt) only. '
+            'Round 12.1: LocalStreamBridge (Dart MustProxy HTTP bridge) deleted. '
+            'MustProxy/crypt playback broken until wdmm_proxy_register_stream lands. '
             'The Rust proxy is a process-global singleton — never create a second instance.',
             style: Theme.of(context).textTheme.bodySmall,
           ),

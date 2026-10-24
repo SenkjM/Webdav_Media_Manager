@@ -640,9 +640,9 @@ class RustCoreService {
   //
   // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
   // round. Round 11 adds HLS proxy exports (wdmm_proxy_register_hls et al).
-  // LocalStreamBridge is retained for MustProxy (crypt) in cloud_drive_service;
-  // the DLNA cast path was cut over to wdmm_proxy_register_hls in Round 12.
-  // TODO(proxy-cutover-R13): delete LocalStreamBridge once MustProxy cuts over.
+  // LocalStreamBridge (Dart HTTP proxy for MustProxy/crypt) was deleted in R12.1;
+  // MustProxy playback is broken until wdmm_proxy_register_stream lands.
+  // TODO(proxy-cutover): wire wdmm_proxy_register_stream in cloud_drive_service.
 
   static _ProxyStartDart?   _proxyStart;
   static _ProxyNoArgStrDart? _proxyStop;

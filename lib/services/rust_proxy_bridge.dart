@@ -15,16 +15,15 @@ import 'rust_core_service.dart';
 /// renderers, the system media player, and other HTTP clients can reach cached
 /// media without direct filesystem access.
 ///
-/// ## Round 12 cutover status
+/// ## Round 12.1 cutover status
 /// - [kRustProxyEnabled] is now `true` (device smoke passed in Round 10/11).
 /// - DLNA cast path cut over to Rust FFI in Round 12: `RustDlnaCastService`
-///   uses `wdmm_proxy_register_hls` (SHA 4a37aa4) and no longer needs
-///   [LocalStreamBridge].
-/// - [LocalStreamBridge] **kept for MustProxy only**: `cloud_drive_service.dart`
-///   still uses it for crypt/encoded stream serving. That path needs a Dart
-///   `ranges` callback the Rust proxy cannot supply without a credential bridge.
-///   TODO(proxy-cutover-R13): wire MustProxy credential bridge and delete
-///   LocalStreamBridge.
+///   uses `wdmm_proxy_register_hls` (SHA 4a37aa4).
+/// - `LocalStreamBridge` (Dart HTTP proxy for MustProxy/crypt) **deleted** in
+///   R12.1. MustProxy playback is broken until `wdmm_proxy_register_stream`
+///   (or equivalent Rust credential/range proxy FFI) lands in wdmm-core.
+///   TODO(proxy-cutover): wire wdmm_proxy_register_stream (+ credential/range
+///   callback) in cloud_drive_service.dart to restore MustProxy playback.
 /// - Settings → Developer / Rust Proxy panel drives start/stop/register for the
 ///   Rust proxy path (Settings section still present).
 ///
@@ -111,11 +110,13 @@ class RustProxyBridge {
 /// **Round 11: `true`** — device smoke passed; RustProxyBridge is the primary
 /// path for explicit file-serving (Settings → Developer / Rust Proxy panel).
 ///
-/// [LocalStreamBridge] is **not deleted** yet: it is still used for MustProxy
-/// (crypt/encoded streams) in `cloud_drive_service.dart`. The DLNA cast path
-/// was cut over to Rust FFI in Round 12 (`RustDlnaCastService` uses
-/// `wdmm_proxy_register_hls`). LocalStreamBridge remains only for MustProxy.
-/// TODO(proxy-cutover-R13): wire MustProxy credential bridge and delete LocalStreamBridge.
+/// `LocalStreamBridge` (the Dart HTTP proxy for MustProxy/crypt streams) was
+/// **deleted** in R12.1. MustProxy/crypt playback is broken until
+/// `wdmm_proxy_register_stream` (or an equivalent Rust credential/range proxy
+/// FFI) lands in wdmm-core; `cloud_drive_service.resolveStreamSource` throws
+/// a stable error naming that missing FFI. The DLNA cast path was cut over to
+/// Rust FFI in Round 12 (`RustDlnaCastService` uses `wdmm_proxy_register_hls`).
+/// TODO(proxy-cutover): wire wdmm_proxy_register_stream then restore MustProxy.
 ///
 /// Serial invariant: the proxy is a process-global singleton — never create
 /// more than one instance per process.
