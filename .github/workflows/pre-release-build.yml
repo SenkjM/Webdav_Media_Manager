@@ -1,5 +1,9 @@
 name: Pre-release Build
 
+# FFI note: this workflow does not compile wdmm-ffi. If libwdmm_ffi.so is
+# needed for release builds, follow the Core-artifact download pattern in
+# testbuild.yml ("Download libwdmm_ffi.so from Core CI").
+#
 # 预发布的检查、编译与发版，同一流程内串行：check → build → release。
 # 与 Release 同源 main：预发布也算 main 的提交，基准是上一个正式版标签。
 # 每次预发布使用独立标签 <版本名>（新标签如 v0.2.2-2020004，即 versionCode；已有短 SHA 标签不改名）和独立 Release，历史预发布全部保留。

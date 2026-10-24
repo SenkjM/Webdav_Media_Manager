@@ -1,8 +1,11 @@
 name: Testbuild
 
 # 手动旁路编译：只出 sandbox flavor 的 arm64-v8a APK，上传 Actions artifact。
-# Rust FFI：从 rust/wdmm-core 子模块用 cargo-ndk 编出 libwdmm_ffi.so（arm64-v8a），
-#   注入 jniLibs 后再执行 flutter build。
+# Rust FFI（默认路径）：从 SenkjM/WDMM-core 的 native-artifacts workflow 下载
+#   libwdmm_ffi.so（artifact: wdmm-ffi-android-arm64），按子模块 SHA 精确匹配。
+#   如需在本机重新编译 Core，将 build_core_locally 设为 true（需要 NDK + cargo-ndk）。
+# 消费链：先在 Core 仓库触发 native-artifacts (feat/proxy-hls-ffmpeg) → 再触发本 workflow。
+#   本 workflow 下载与子模块 SHA 完全吻合的产物；若找不到则报错，不会静默回退到错误版本。
 # 不打标签、不建 GitHub Release、不打 app bundle，也不跑预发布的定时任务。
 # 版本：versionName = 最新正式版标签 + "-" + 7 位短哈希（如 v0.2.3-055ee9c，
 #   sandbox flavor 再追加 versionNameSuffix "-test"）；
@@ -11,9 +14,16 @@ name: Testbuild
 # 签名：sandbox flavor 用固定测试 keystore（Secrets：ANDROID_SANDBOX_KEYSTORE_BASE64 /
 #   ANDROID_SANDBOX_KEYSTORE_PASSWORD / ANDROID_SANDBOX_KEY_ALIAS / ANDROID_SANDBOX_KEY_PASSWORD），
 #   与正式 / 预发布的 ANDROID_KEY* / ANDROID_KEYSTORE_* 分开；跨次可覆盖安装 .test 包。
+# 跨仓库 artifact 鉴权：优先使用 WDMM_CORE_READ_TOKEN（对 SenkjM/WDMM-core 具备
+#   actions:read 权限的 PAT）；如果两个仓库在同一用户/组织且 artifact 可见，GITHUB_TOKEN 亦可。
 
 on:
   workflow_dispatch:
+    inputs:
+      build_core_locally:
+        description: "Recompile wdmm-ffi locally via cargo-ndk (skip Core artifact download)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -23,6 +33,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-26.04
+    env:
+      # Cross-repo artifact download: WDMM_CORE_READ_TOKEN is a PAT with
+      # actions:read on SenkjM/WDMM-core. Falls back to GITHUB_TOKEN when
+      # both repos share visibility (same user/org).
+      GH_TOKEN: ${{ secrets.WDMM_CORE_READ_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -69,16 +84,76 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # ── Core artifact download (default path) ────────────────────────────
+      # Reads the submodule SHA pinned in this repo, then scans the last 20
+      # successful runs of native-artifacts on feat/proxy-hls-ffmpeg in
+      # SenkjM/WDMM-core. Downloads the first run whose COMMIT.txt matches
+      # exactly. Fails clearly if none found — do NOT fall back silently.
+      - name: Download libwdmm_ffi.so from Core CI
+        if: ${{ !inputs.build_core_locally }}
+        run: |
+          set -euo pipefail
+          CORE_SHA="$(git -C rust/wdmm-core rev-parse HEAD)"
+          echo "Core submodule SHA: $CORE_SHA"
+
+          SO_DEST="android/app/src/main/jniLibs/arm64-v8a/libwdmm_ffi.so"
+          mkdir -p "$(dirname "$SO_DEST")"
+
+          MATCHED_RUN=""
+          while IFS= read -r run_id; do
+            TMPDIR_ART="$(mktemp -d)"
+            if gh run download "$run_id" \
+                --repo SenkjM/WDMM-core \
+                -n wdmm-ffi-android-arm64 \
+                -D "$TMPDIR_ART" 2>/dev/null; then
+              COMMIT_FILE="$TMPDIR_ART/COMMIT.txt"
+              if [ -f "$COMMIT_FILE" ]; then
+                ART_SHA="$(tr -d '[:space:]' < "$COMMIT_FILE")"
+                if [ "$ART_SHA" = "$CORE_SHA" ]; then
+                  cp "$TMPDIR_ART/libwdmm_ffi.so" "$SO_DEST"
+                  MATCHED_RUN="$run_id"
+                  rm -rf "$TMPDIR_ART"
+                  break
+                fi
+              fi
+            fi
+            rm -rf "$TMPDIR_ART"
+          done < <(gh run list \
+            --repo SenkjM/WDMM-core \
+            --workflow native-artifacts.yml \
+            --branch feat/proxy-hls-ffmpeg \
+            --status success \
+            --limit 20 \
+            --json databaseId \
+            --jq '.[].databaseId')
+
+          if [ -z "$MATCHED_RUN" ]; then
+            echo "::error::No successful native-artifacts run found for Core SHA ${CORE_SHA}."
+            echo "::error::Dispatch SenkjM/WDMM-core → native-artifacts on feat/proxy-hls-ffmpeg at that commit first."
+            exit 1
+          fi
+          if [ ! -f "$SO_DEST" ]; then
+            echo "::error::libwdmm_ffi.so not found after download."
+            exit 1
+          fi
+          echo "libwdmm_ffi.so ready (run $MATCHED_RUN, Core SHA $CORE_SHA)"
+
+      # ── Local Core compile (emergency / override path) ───────────────────
+      # Gate these steps behind build_core_locally=true so the default CI path
+      # does not pay for Rust + NDK installation time.
       - name: Install Rust toolchain
+        if: ${{ inputs.build_core_locally }}
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
 
       - name: Install cargo-ndk
+        if: ${{ inputs.build_core_locally }}
         # cargo-ndk translates cargo build targets to Android ABI names.
         run: cargo install cargo-ndk
 
       - name: Setup NDK for cargo-ndk
+        if: ${{ inputs.build_core_locally }}
         run: |
           set -euo pipefail
           # Resolve the NDK version that Flutter/AGP expect so we use a
@@ -105,6 +180,7 @@ jobs:
           echo "NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
 
       - name: Build wdmm-ffi for arm64-v8a
+        if: ${{ inputs.build_core_locally }}
         run: |
           set -euo pipefail
           cd rust/wdmm-core
@@ -118,6 +194,7 @@ jobs:
           fi
           echo "libwdmm_ffi.so ready at $SO"
 
+      # ── Version + sign + build ────────────────────────────────────────────
       - name: Compute test version
         id: version
         env:
