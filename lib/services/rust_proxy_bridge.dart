@@ -15,15 +15,19 @@ import 'rust_core_service.dart';
 /// renderers, the system media player, and other HTTP clients can reach cached
 /// media without direct filesystem access.
 ///
-/// ## Round 12.1 cutover status
-/// - [kRustProxyEnabled] is now `true` (device smoke passed in Round 10/11).
+/// ## Round 12.1 cutover status (updated P0.5 — core e236ece)
+/// - [kRustProxyEnabled] is `true` (device smoke passed in Round 10/11).
 /// - DLNA cast path cut over to Rust FFI in Round 12: `RustDlnaCastService`
-///   uses `wdmm_proxy_register_hls` (SHA 4a37aa4).
+///   uses `wdmm_proxy_register_hls`.
 /// - `LocalStreamBridge` (Dart HTTP proxy for MustProxy/crypt) **deleted** in
-///   R12.1. MustProxy playback is broken until `wdmm_proxy_register_stream`
-///   (or equivalent Rust credential/range proxy FFI) lands in wdmm-core.
-///   TODO(proxy-cutover): wire wdmm_proxy_register_stream (+ credential/range
-///   callback) in cloud_drive_service.dart to restore MustProxy playback.
+///   R12.1. P0.5 restores MustProxy playback via `wdmm_proxy_register_stream`
+///   (core SHA e236ece): `cloud_drive_service.resolveStreamSource` now routes
+///   `ContentDeliveryKind.localStream` items through
+///   [RustProxyStreamBridge] (see `rust_proxy_stream_bridge.dart`).
+///   TODO(proxy-cutover): sync byte delivery is a leftover — the Rust callback
+///   is synchronous on a Tokio worker; `NativeCallable.listener` posts to the
+///   Dart isolate and returns before bytes are ready. A Rust-side reply/block
+///   primitive (or a native semaphore shim) is needed for working playback.
 /// - Settings → Developer / Rust Proxy panel drives start/stop/register for the
 ///   Rust proxy path (Settings section still present).
 ///
@@ -111,12 +115,13 @@ class RustProxyBridge {
 /// path for explicit file-serving (Settings → Developer / Rust Proxy panel).
 ///
 /// `LocalStreamBridge` (the Dart HTTP proxy for MustProxy/crypt streams) was
-/// **deleted** in R12.1. MustProxy/crypt playback is broken until
-/// `wdmm_proxy_register_stream` (or an equivalent Rust credential/range proxy
-/// FFI) lands in wdmm-core; `cloud_drive_service.resolveStreamSource` throws
-/// a stable error naming that missing FFI. The DLNA cast path was cut over to
-/// Rust FFI in Round 12 (`RustDlnaCastService` uses `wdmm_proxy_register_hls`).
-/// TODO(proxy-cutover): wire wdmm_proxy_register_stream then restore MustProxy.
+/// **deleted** in R12.1. P0.5 (core SHA e236ece) restores MustProxy/crypt
+/// playback via `wdmm_proxy_register_stream`; see `rust_proxy_stream_bridge.dart`
+/// and `cloud_drive_service.resolveStreamSource`. The sync byte-delivery path
+/// is a P0.5 leftover (NativeCallable.listener cannot fill *out_buf before the
+/// Rust Tokio worker reads it; a native blocking primitive is needed).
+/// The DLNA cast path was cut over to Rust FFI in Round 12
+/// (`RustDlnaCastService` uses `wdmm_proxy_register_hls`).
 ///
 /// Serial invariant: the proxy is a process-global singleton — never create
 /// more than one instance per process.

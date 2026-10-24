@@ -584,7 +584,7 @@ class CtFileDriver extends CloudDriver {
   Future<CloudFileItem> get(String path) async {
     final normalized = _normalizePath(path);
     if (normalized.isEmpty) {
-      return const CloudFileItem(name: '/', isDir: true);
+      return CloudFileItem(name: '/', isDir: true);
     }
     final name = _fileName(normalized);
     final id = await _pathToId(normalized, expectDir: false);

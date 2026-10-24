@@ -413,7 +413,7 @@ class BaiduNetdiskDriver extends CloudDriver {
   Future<CloudFileItem> get(String path) async {
     final bp = _baiduPath(path);
     if (bp == '/') {
-      return const CloudFileItem(name: '/', isDir: true);
+      return CloudFileItem(name: '/', isDir: true);
     }
     // 百度没有按路径查单文件的 API：列父目录找到目标（对齐 worker）。
     final parent = cloudDirname(bp);

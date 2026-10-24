@@ -15,6 +15,7 @@ import 'accounts_service.dart';
 import 'cloud_driver.dart';
 import 'cloud_drivers/driver_registry.dart';
 import 'resumable_download.dart';
+import 'rust_proxy_stream_bridge.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
 ///
@@ -531,6 +532,12 @@ class CloudDriveService extends ChangeNotifier {
   }
 
   /// 异步流式源：driver.get() → 直链 + 头；后缀判定与 WebDAV 版一致。
+  ///
+  /// P0.5：按 [ContentDeliveryKind] 分支：
+  ///   - [ContentDeliveryKind.networkDirect] — rawUrl 直链 + 可选头。
+  ///   - [ContentDeliveryKind.localFile] — 本机可读路径（file URI）。
+  ///   - [ContentDeliveryKind.localStream] (MustProxy) — 经
+  ///     `wdmm_proxy_register_stream` 代理回调到 driver.openContentRange。
   Future<WebDavStreamSource?> resolveStreamSource({
     required String remotePath,
     required String name,
@@ -543,28 +550,88 @@ class CloudDriveService extends ChangeNotifier {
             ? StreamKind.music
             : StreamKind.video);
     final item = await _fileWithLink(accountId, remotePath);
-    final raw = item.rawUrl;
-    if (raw == null) {
-      // MustProxy/crypt 驱动（拿不到直链，内容由驱动解密，99 §7.5）。
-      // 大小未知时仍拒绝：整包/分块判定依赖密文总长。
-      if (item.size <= 0) {
-        throw CloudDriverException('err.streamSizeUnknown|$name');
-      }
-      // TODO(proxy-cutover): wire wdmm_proxy_register_stream (+ credential/range callback) then restore MustProxy playback.
-      throw CloudDriverException(
-        'MustProxy/crypt local stream requires Rust FFI wdmm_proxy_register_stream '
-        '(or credential/range bridge); Dart LocalStreamBridge deleted (R12.1). '
-        'Blocked at core SHA 4a37aa4.',
-      );
+
+    // Determine delivery kind: prefer the explicit field, fall back to inferring
+    // from rawUrl (migration compat for drivers not yet setting .delivery).
+    final delivery = item.rawUrl != null
+        ? ContentDeliveryKind.networkDirect
+        : item.delivery;
+
+    switch (delivery) {
+      case ContentDeliveryKind.networkDirect:
+        final raw = item.rawUrl;
+        if (raw != null && raw.isNotEmpty) {
+          return WebDavStreamSource(
+            uri: raw,
+            headers: item.rawHeaders ?? const {},
+            name: name,
+            remotePath: remotePath,
+            accountId: accountId,
+            kind: streamKind,
+          );
+        }
+        // rawUrl set to empty string — fall through to localStream as MustProxy.
+        continue localStream;
+
+      case ContentDeliveryKind.localFile:
+        final path = item.localPath;
+        if (path != null && path.isNotEmpty) {
+          // media_kit supports file:// URIs and absolute paths on Android.
+          final uri = path.startsWith('/') ? 'file://$path' : path;
+          return WebDavStreamSource(
+            uri: uri,
+            headers: const {},
+            name: name,
+            remotePath: remotePath,
+            accountId: accountId,
+            kind: streamKind,
+          );
+        }
+        // localPath empty/null — fall through to localStream.
+        continue localStream;
+
+      localStream:
+      case ContentDeliveryKind.localStream:
+        // MustProxy: route through wdmm_proxy_register_stream.
+        // Size > 0 required for per-range dispatch; crypt always provides it.
+        if (item.size <= 0) {
+          throw CloudDriverException('err.streamSizeUnknown|$name');
+        }
+        final driver = _requireDriver(accountId);
+        // Range reader: delegates to driver.openContentRange (crypt decrypts).
+        Future<List<int>> rangeReader(int start, int end) async {
+          final chunks = <int>[];
+          await for (final chunk
+              in driver.openContentRange(remotePath, start, end)) {
+            chunks.addAll(chunk);
+          }
+          return chunks;
+        }
+
+        final source = await RustProxyStreamBridge.register(
+          size: item.size,
+          name: name,
+          rangeReader: rangeReader,
+          remotePath: remotePath,
+          accountId: accountId,
+          kind: streamKind,
+        );
+
+        if (source == null) {
+          // Proxy start or registration failed — check if symbols absent.
+          if (!RustProxyStreamBridge.streamSymbolsAvailable()) {
+            throw CloudDriverException(
+              'MustProxy/crypt local stream requires Rust FFI '
+              'wdmm_proxy_register_stream — symbols absent. '
+              'Ensure libwdmm_ffi.so is built from core SHA e236ece '
+              '(feat/proxy-hls-ffmpeg P0.5).',
+            );
+          }
+          throw CloudDriverException(
+              'err.streamProxyRegisterFailed|$name');
+        }
+        return source;
     }
-    return WebDavStreamSource(
-      uri: raw,
-      headers: item.rawHeaders ?? const {},
-      name: name,
-      remotePath: remotePath,
-      accountId: accountId,
-      kind: streamKind,
-    );
   }
 
   // --- 内部 ---

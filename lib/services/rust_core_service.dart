@@ -60,6 +60,83 @@ typedef _ProxyTwoStrNative = ffi.Pointer<Utf8> Function(
 typedef _ProxyTwoStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
+// ── P0.5 — Proxy stream (LocalStream / MustProxy) typedefs ───────────────────
+//
+// WdmmProxyRangeCallback is the C callback passed to wdmm_proxy_register_stream.
+// It is invoked synchronously from a Tokio worker thread; the Dart side must
+// use NativeCallable.listener to bridge async decrypt back to the callback.
+//
+// MUST be top-level (not inside the class) — Dart FFI requires NativeCallable
+// to reference a top-level typedef.  See commit 02ddbf8.
+
+/// Native callback signature for `wdmm_proxy_register_stream`.
+///
+/// Return `0` on success; any negative value on error.
+/// `*out_buf` MUST point to memory allocated via `wdmm_proxy_stream_alloc_buf`.
+typedef WdmmProxyRangeCallbackNative = ffi.Int32 Function(
+  ffi.Pointer<ffi.Void> userData,
+  ffi.Int64 start,
+  ffi.Int64 end,
+  ffi.Pointer<ffi.Pointer<ffi.Uint8>> outBuf,
+  ffi.Pointer<ffi.Size> outLen,
+);
+
+/// Dart-side equivalent of [WdmmProxyRangeCallbackNative] (for `.asFunction()`).
+typedef WdmmProxyRangeCallbackDart = int Function(
+  ffi.Pointer<ffi.Void> userData,
+  int start,
+  int end,
+  ffi.Pointer<ffi.Pointer<ffi.Uint8>> outBuf,
+  ffi.Pointer<ffi.Size> outLen,
+);
+
+/// Void-returning variant used with `NativeCallable.listener`.
+///
+/// `NativeCallable.listener` requires the Dart function to return `void`
+/// (fire-and-forget). The actual C ABI returns `Int32`, but Rust ignores the
+/// listener return value (only the blocking `isolateLocal` variant can fill
+/// `*out_buf`). Cast `nativeFunction` to `WdmmProxyRangeCallbackNative` before
+/// passing to `wdmm_proxy_register_stream`.
+typedef WdmmProxyRangeCallbackListenerNative = ffi.Void Function(
+  ffi.Pointer<ffi.Void> userData,
+  ffi.Int64 start,
+  ffi.Int64 end,
+  ffi.Pointer<ffi.Pointer<ffi.Uint8>> outBuf,
+  ffi.Pointer<ffi.Size> outLen,
+);
+
+typedef _ProxyRegisterStreamNative = ffi.Pointer<Utf8> Function(
+  ffi.Uint64 size,
+  ffi.Pointer<Utf8> name,
+  ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>> cb,
+  ffi.Pointer<ffi.Void> userData,
+);
+typedef _ProxyRegisterStreamDart = ffi.Pointer<Utf8> Function(
+  int size,
+  ffi.Pointer<Utf8> name,
+  ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>> cb,
+  ffi.Pointer<ffi.Void> userData,
+);
+
+typedef _ProxyRenewStreamCallbackNative = ffi.Pointer<Utf8> Function(
+  ffi.Pointer<Utf8> token,
+  ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>> cb,
+  ffi.Pointer<ffi.Void> userData,
+);
+typedef _ProxyRenewStreamCallbackDart = ffi.Pointer<Utf8> Function(
+  ffi.Pointer<Utf8> token,
+  ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>> cb,
+  ffi.Pointer<ffi.Void> userData,
+);
+
+typedef _ProxyStreamAllocBufNative = ffi.Pointer<ffi.Uint8> Function(ffi.Size len);
+typedef _ProxyStreamAllocBufDart   = ffi.Pointer<ffi.Uint8> Function(int len);
+
+typedef _ProxyStreamFreeBufNative = ffi.Void Function(
+    ffi.Pointer<ffi.Uint8> buf, ffi.Size len);
+typedef _ProxyStreamFreeBufDart = void Function(
+    ffi.Pointer<ffi.Uint8> buf, int len);
+
 /// Rust FFI bridge to WDMM-core via wdmm-ffi.
 ///
 /// Dart services remain **source of truth** until the full DB cutover in
@@ -234,7 +311,6 @@ class RustCoreService {
   /// Stop the OpenAPI server.
   static void stopOpenApi() {
     if (!_ensureSymbols()) return;
-    final ptr = _openApiStop as ffi.Pointer<Utf8> Function()?;
     // openapi_stop returns FfiString — free it
     final lib = _tryLib;
     if (lib == null) return;
@@ -641,8 +717,10 @@ class RustCoreService {
   // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
   // round. Round 11 adds HLS proxy exports (wdmm_proxy_register_hls et al).
   // LocalStreamBridge (Dart HTTP proxy for MustProxy/crypt) was deleted in R12.1;
-  // MustProxy playback is broken until wdmm_proxy_register_stream lands.
-  // TODO(proxy-cutover): wire wdmm_proxy_register_stream in cloud_drive_service.
+  // P0.5 (core SHA e236ece) restores MustProxy playback via register_stream;
+  // see rust_proxy_stream_bridge.dart and cloud_drive_service.resolveStreamSource.
+  // Sync byte-delivery is a P0.5 leftover (NativeCallable.listener cannot fill
+  // *out_buf synchronously — a Rust-side blocking primitive is needed).
 
   static _ProxyStartDart?   _proxyStart;
   static _ProxyNoArgStrDart? _proxyStop;
@@ -655,6 +733,15 @@ class RustCoreService {
   // proxy: two-str-to-str for register, one-str-to-str for unregister.
   static _ProxyTwoStrDart?  _proxyRegisterHls;
   static _OneStrToStrDart?  _proxyUnregisterHls;
+
+  // P0.5 (stream / LocalStream / MustProxy):
+  // wdmm_proxy_register_stream + alloc/free/renew land in e236ece.
+  // Lookup is non-fatal — older .so leaves these null and callers fall through
+  // to a clear CloudDriverException naming the missing symbol + expected SHA.
+  static _ProxyRegisterStreamDart?       _proxyRegisterStream;
+  static _ProxyRenewStreamCallbackDart?  _proxyRenewStreamCallback;
+  static _ProxyStreamAllocBufDart?       _proxyStreamAllocBuf;
+  static _ProxyStreamFreeBufDart?        _proxyStreamFreeBuf;
 
   static bool _proxySymbolsLoaded = false;
 
@@ -690,6 +777,29 @@ class RustCoreService {
             .asFunction();
       } catch (e) {
         debugPrint('[RustCore] proxy HLS symbol lookup failed (non-fatal): $e');
+      }
+      // P0.5 stream exports land in e236ece. Non-fatal inner try — older .so
+      // without these symbols leaves the fields null; the MustProxy path in
+      // cloud_drive_service will throw a diagnostic CloudDriverException.
+      try {
+        _proxyRegisterStream = lib
+            .lookup<ffi.NativeFunction<_ProxyRegisterStreamNative>>(
+                'wdmm_proxy_register_stream')
+            .asFunction();
+        _proxyRenewStreamCallback = lib
+            .lookup<ffi.NativeFunction<_ProxyRenewStreamCallbackNative>>(
+                'wdmm_proxy_renew_stream_callback')
+            .asFunction();
+        _proxyStreamAllocBuf = lib
+            .lookup<ffi.NativeFunction<_ProxyStreamAllocBufNative>>(
+                'wdmm_proxy_stream_alloc_buf')
+            .asFunction();
+        _proxyStreamFreeBuf = lib
+            .lookup<ffi.NativeFunction<_ProxyStreamFreeBufNative>>(
+                'wdmm_proxy_stream_free_buf')
+            .asFunction();
+      } catch (e) {
+        debugPrint('[RustCore] proxy stream symbol lookup failed (non-fatal): $e');
       }
       _proxySymbolsLoaded = true;
     } catch (e) {
@@ -819,6 +929,96 @@ class RustCoreService {
     } finally {
       calloc.free(ptr);
     }
+  }
+
+  // ── P0.5 — Proxy stream FFI (LocalStream / MustProxy) ──────────────────────
+  //
+  // Wires to `wdmm_proxy_register_stream` (+ alloc/free/renew) added in e236ece.
+  // Used by [RustProxyStreamBridge] to route crypt-wrapper / LocalStream items
+  // through the local HTTP proxy: the C Range callback is a NativeCallable that
+  // bridges back to the driver's `openContentRange`.
+  //
+  // The proxy must be started via [proxyStart] before any stream registration.
+
+  /// Register an in-process Range/byte stream with the proxy.
+  ///
+  /// [size] — known file size in bytes; `0` if unknown (stream until EOF).
+  /// [name] — optional; used only for Content-Type guessing (e.g. `"video.mp4"`).
+  /// [callback] — the native Range callback (built via `NativeCallable.listener`
+  ///   or `NativeCallable.isolateLocal`). Must remain callable for the
+  ///   registration lifetime.
+  /// [userData] — opaque pointer passed through to every callback invocation.
+  ///
+  /// Returns JSON:
+  /// ```json
+  /// {"token":"…","path_template":"/s/…","port":N}
+  /// ```
+  /// or `'error:…'` on failure. Caller composes the URL as
+  /// `http://127.0.0.1:{port}{path_template}`.
+  ///
+  /// Returns null if the native library is unavailable or the stream exports do
+  /// not exist in the current submodule build (expect core SHA e236ece).
+  static String? proxyRegisterStream({
+    required int size,
+    String? name,
+    required ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>> callback,
+    ffi.Pointer<ffi.Void>? userData,
+  }) {
+    final ud = userData ?? ffi.nullptr;
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyRegisterStream == null) return null;
+    final namePtr = name != null ? name.toNativeUtf8() : ffi.nullptr.cast<Utf8>();
+    try {
+      return _readAndFreeString(
+          _proxyRegisterStream!(size, namePtr, callback, ud));
+    } finally {
+      if (name != null) calloc.free(namePtr);
+    }
+  }
+
+  /// Replace the Range callback for an existing stream registration. Use after
+  /// credential refresh or decryption key rotation.
+  ///
+  /// Returns `'ok'`, or null if the native library / stream exports are
+  /// unavailable. No-op if [token] is unknown or refers to a file registration.
+  static String? proxyRenewStreamCallback({
+    required String token,
+    required ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>> callback,
+    ffi.Pointer<ffi.Void>? userData,
+  }) {
+    final ud = userData ?? ffi.nullptr;
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyRenewStreamCallback == null) return null;
+    final ptr = token.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyRenewStreamCallback!(ptr, callback, ud));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Allocate `len` bytes in Rust's heap for use as a callback output buffer.
+  /// The C callback MUST use this to allocate `*out_buf`; Rust reclaims the
+  /// memory after consuming it. Returns null if `len == 0` or unavailable.
+  static ffi.Pointer<ffi.Uint8> proxyStreamAllocBuf(int len) {
+    if (!_ensureSymbols()) return ffi.nullptr;
+    _loadProxySymbolsSafe();
+    final fn = _proxyStreamAllocBuf;
+    if (fn == null) return ffi.nullptr;
+    return fn(len);
+  }
+
+  /// Free a buffer previously returned by [proxyStreamAllocBuf]. Exported for
+  /// error paths. No-op if `buf` is null or `len == 0`. Returns null/unavailable
+  /// as a no-op (caller should have guarded on [proxyStreamAllocBuf]).
+  static void proxyStreamFreeBuf(ffi.Pointer<ffi.Uint8> buf, int len) {
+    if (!_ensureSymbols()) return;
+    _loadProxySymbolsSafe();
+    final fn = _proxyStreamFreeBuf;
+    if (fn == null) return;
+    fn(buf, len);
   }
 }
 

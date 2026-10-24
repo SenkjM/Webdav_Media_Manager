@@ -557,7 +557,7 @@ class TeraboxDriver extends CloudDriver {
   Future<CloudFileItem> get(String path) async {
     final clean = teraboxPath(path);
     if (clean == '/') {
-      return const CloudFileItem(name: '/', isDir: true);
+      return CloudFileItem(name: '/', isDir: true);
     }
 
     final parent = cloudDirname(clean);

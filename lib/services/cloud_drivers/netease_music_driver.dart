@@ -361,7 +361,7 @@ class NeteaseMusicDriver extends CloudDriver {
     if (name.isEmpty || path == '/' || path.isEmpty) {
       // 浏览根：云盘本身没有目录条目，返回一个目录占位（同 worker 的
       // 「name: root, is_dir: true」分支）。
-      return const CloudFileItem(name: '/', isDir: true);
+      return CloudFileItem(name: '/', isDir: true);
     }
     final song = await _findByName(name);
     if (song == null) {

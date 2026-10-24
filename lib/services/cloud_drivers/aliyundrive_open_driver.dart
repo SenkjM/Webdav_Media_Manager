@@ -774,7 +774,7 @@ class AliyundriveOpenDriver extends CloudDriver {
     final clean = _clean(path);
     if (clean.isEmpty) {
       // 浏览根：不透明 id，没有目录条目，返回一个目录占位。
-      return const CloudFileItem(name: '/', isDir: true);
+      return CloudFileItem(name: '/', isDir: true);
     }
 
     final fileId = await _resolveFileId(clean);

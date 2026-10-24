@@ -568,7 +568,7 @@ class Driver123Open extends CloudDriver {
     final rawName = cloudBasename(clean);
     if (clean.isEmpty) {
       // 浏览根：不透明 id，没有目录条目，返回一个目录占位。
-      return const CloudFileItem(name: '/', isDir: true);
+      return CloudFileItem(name: '/', isDir: true);
     }
 
     // 1. 先列父目录找条目（对齐 worker）。try 只罩「找条目」这一段：

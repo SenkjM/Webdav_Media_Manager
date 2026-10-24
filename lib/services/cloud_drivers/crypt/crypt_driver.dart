@@ -265,6 +265,9 @@ class CryptDriver extends CloudDriver {
 
   /// 内层条目 → 外层视角：解密名字（失败原名透传）、换算明文大小、
   /// 抹掉密文直链（MustProxy，内容走 [openContent]）。
+  ///
+  /// P0.5：标 [ContentDeliveryKind.localStream]——字节只能从驱动 Range 回调
+  /// 取得，无 URL / 无本机路径，播放/投屏必须经 `wdmm_proxy_register_stream`。
   CloudFileItem _reveal(CloudFileItem e, String? decryptedName) {
     var size = e.size;
     if (!e.isDir) {
@@ -280,6 +283,7 @@ class CryptDriver extends CloudDriver {
       size: size,
       modified: e.modified,
       rawUrl: null,
+      delivery: ContentDeliveryKind.localStream,
     );
   }
 
@@ -313,6 +317,7 @@ class CryptDriver extends CloudDriver {
       size: revealed.size,
       modified: revealed.modified,
       rawUrl: null,
+      delivery: ContentDeliveryKind.localStream,
     );
   }
 

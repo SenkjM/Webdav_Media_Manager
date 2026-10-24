@@ -98,27 +98,115 @@ abstract class CloudDriver {
       throw UnsupportedError('err.ensureDirectoryUnsupported');
 }
 
-/// 目录条目（对齐 worker `FileItem` 的字段子集 + 直链）。
+// ── ContentDeliveryKind ───────────────────────────────────────────────────────
+
+/// 字节来源类型（P0.5，对齐 Rust `ContentDeliveryKind`）。
+///
+/// 调用方（播放器、投屏、下载）据此决定要不要走 proxy：
+/// - [networkDirect] — 有直链 + 可选头，media_kit 直接 HTTP 播放（通常）。
+/// - [localStream] — 仅进程内 Range/字节流，无 URL / 无路径（如 crypt 解密）；
+///   必须走 `wdmm_proxy_register_stream` 代理后再交给播放器。
+/// - [localFile] — 本机可读路径；media_kit 直接文件播放，或 `register_file` /
+///   `register_hls` 用于投屏。
+///
+/// 新变体不要 silently 当直链——扩展时请在调用方 switch 里加分支。
+enum ContentDeliveryKind {
+  networkDirect,
+  localStream,
+  localFile;
+
+  /// 从现有字段推断（迁移用）。优先级：rawUrl → localPath → localStream。
+  static ContentDeliveryKind infer({String? rawUrl, String? localPath}) {
+    if (rawUrl != null && rawUrl.isNotEmpty) return ContentDeliveryKind.networkDirect;
+    if (localPath != null && localPath.isNotEmpty) return ContentDeliveryKind.localFile;
+    return ContentDeliveryKind.localStream;
+  }
+}
+
+// ── CloudFileItem ─────────────────────────────────────────────────────────────
+
+/// 目录条目（对齐 worker `FileItem` 的字段子集 + 直链 + 交付类型）。
 class CloudFileItem {
-  const CloudFileItem({
+  CloudFileItem({
     required this.name,
     required this.isDir,
     this.size = 0,
     this.modified,
     this.rawUrl,
     this.rawHeaders,
-  });
+    ContentDeliveryKind? delivery,
+    this.localPath,
+  }) : delivery = delivery ??
+           (rawUrl != null && rawUrl.isNotEmpty
+               ? ContentDeliveryKind.networkDirect
+               : localPath != null && localPath.isNotEmpty
+               ? ContentDeliveryKind.localFile
+               : ContentDeliveryKind.localStream);
+
+  /// 命名构造器：网络直链条目（多数驱动的 get() 结果）。
+  CloudFileItem.networkDirect({
+    required String name,
+    required bool isDir,
+    int size = 0,
+    DateTime? modified,
+    required String rawUrl,
+    Map<String, String>? rawHeaders,
+  }) : this(
+         name: name,
+         isDir: isDir,
+         size: size,
+         modified: modified,
+         rawUrl: rawUrl,
+         rawHeaders: rawHeaders,
+         delivery: ContentDeliveryKind.networkDirect,
+       );
+
+  /// 命名构造器：仅进程内流（crypt / MustProxy 驱动）。
+  CloudFileItem.localStream({
+    required String name,
+    required bool isDir,
+    int size = 0,
+    DateTime? modified,
+  }) : this(
+         name: name,
+         isDir: isDir,
+         size: size,
+         modified: modified,
+         delivery: ContentDeliveryKind.localStream,
+       );
+
+  /// 命名构造器：本机文件路径。
+  CloudFileItem.localFile({
+    required String name,
+    required bool isDir,
+    int size = 0,
+    DateTime? modified,
+    required String localPath,
+  }) : this(
+         name: name,
+         isDir: isDir,
+         size: size,
+         modified: modified,
+         localPath: localPath,
+         delivery: ContentDeliveryKind.localFile,
+       );
 
   final String name;
   final bool isDir;
   final int size;
   final DateTime? modified;
 
-  /// 直链；null 表示该驱动拿不到公开直链（MustProxy，99 §7.5 的本地流桥议题）。
+  /// 直链；null 表示该驱动拿不到公开直链（MustProxy / LocalStream 驱动）。
   final String? rawUrl;
 
-  /// 直链必需的请求头（Cookie / Referer / UA 等，worker 证实多个网盘都需要）。
+  /// 直链必需的请求头（Cookie / Referer / UA 等）。
   final Map<String, String>? rawHeaders;
+
+  /// 字节来源类型（P0.5）。以此为准，不再单独靠 rawUrl == null 判断 MustProxy。
+  final ContentDeliveryKind delivery;
+
+  /// 本机可读路径（仅 [ContentDeliveryKind.localFile] 时有值）。
+  final String? localPath;
 }
 
 class CloudDriverException implements Exception {
