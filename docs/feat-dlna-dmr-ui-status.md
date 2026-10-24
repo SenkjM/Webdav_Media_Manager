@@ -1,9 +1,9 @@
 # feat/dlna-dmr-ui Status Report
 
-**Date:** 2026-10-25 (updated R12.1)
+**Date:** 2026-10-25 (updated P0.5)
 **Branch:** `feat/dlna-dmr-ui`
 **Base:** `3b06939` (refactor/rust-core Round 11 tip)
-**Status:** R12.1 — non-HLS polish applied; HLS / cloud-stream / transport / prefs FFI remain Core-blocked
+**Status:** P0.5 — submodule `e236ece`; ContentDeliveryKind + `wdmm_proxy_register_stream` Dart FFI + MustProxy nesting wired. Sync byte-delivery gap remains (see Leftovers).
 
 ---
 
@@ -16,28 +16,29 @@ implementation (`dlna_cast_service.dart`, `dlna_queue_controller.dart`) is
 `RustDlnaCastService`. Per-device DMR prefs are persisted in
 `RustDmrPrefsService` keyed by SSDP USN (temporary Dart store — see below).
 
-`LocalStreamBridge` (`stream_bridge.dart`) is **deleted** (R12.1).
-`cloud_drive_service.resolveStreamSource` now throws a clear
-`CloudDriverException` naming `wdmm_proxy_register_stream` when the driver
-cannot supply a direct URL (MustProxy/crypt path). MustProxy playback is broken
-until that FFI lands in wdmm-core.
-- Deleted: `lib/services/cloud_drivers/stream_bridge.dart`
-- Deleted: `test/crypt_stream_bridge_test.dart`
+`LocalStreamBridge` (`stream_bridge.dart`) remains **deleted** (R12.1; not revived).
+P0.5 wires MustProxy via Rust proxy: `ContentDeliveryKind` on `CloudFileItem`,
+`RustCoreService.proxyRegisterStream*`, and `RustProxyStreamBridge` used from
+`resolveStreamSource` (LocalStream → register_stream → loopback URL; Range
+callback intends `openContentRange`). **Sync byte delivery is still a leftover**
+— Rust invokes the C callback on a Tokio worker and reads `*out_buf` immediately;
+`NativeCallable.listener` cannot fill the buffer in time. Registration + URL
+lifecycle work; actual Range bytes need a Rust reply/blocking primitive.
+- Deleted (still absent): `lib/services/cloud_drivers/stream_bridge.dart`
+- Deleted (still absent): `test/crypt_stream_bridge_test.dart`
+- New: `lib/services/rust_proxy_stream_bridge.dart`
 
 ### What is blocked
 
-Cast e2e is wired end-to-end for **locally cached files**. Two gaps remain
-where the FFI at SHA `4a37aa4` does not yet provide the export:
+Cast e2e is wired end-to-end for **locally cached files** via `register_hls`.
+Remaining gaps after P0.5 (`e236ece`):
 
-1. **Cloud-stream cast** — there is no `wdmm_proxy_register_stream`
-   (remote WebDAV + crypto decryption) at this SHA. The new service requires
-   the file to be in the local cache; it surfaces a friendly error otherwise.
-   The brief permits this: "mark cast e2e blocked only where probe/ffmpeg
-   still Unavailable."
-2. **DMR prefs FFI** — no `wdmm_dmr_prefs_*` exports at this SHA. The brief
-   permits a "minimal clearly-temporary store keyed for migration":
-   `RustDmrPrefsService` uses SharedPreferences keyed by USN, with backup
-   hooks, ready to migrate to the Rust DB once the FFI lands.
+1. **Cloud-stream cast** — `wdmm_proxy_register_stream` is exported and Dart-bound,
+   but `RustDlnaCastService` still only uses `register_hls` for cached local files.
+   Reuse of `RustProxyStreamBridge` for cast is gated on sync byte-delivery leftover.
+2. **MustProxy Range bytes** — registration works; sync C-callback → async Dart
+   decrypt needs a Rust-side reply/blocking FFI (documented leftover).
+3. **DMR prefs FFI** — still no `wdmm_dmr_prefs_*`; temporary SharedPreferences store.
 
 Everything else (SSDP discovery, AVTransport SOAP control, DIDL-Lite /
 protocolInfo negotiation, polling, queue, transcode settings, error→compat
@@ -47,12 +48,12 @@ fallback) is fully wired.
 
 ## SHAs
 
-- **Submodule:** `rust/wdmm-core` pinned at `4a37aa4`
-  (`feat/proxy-hls-ffmpeg`) — unchanged, not bumped in R12.1.
-- **New FFI exports used:** `wdmm_proxy_register_hls`, `wdmm_proxy_unregister_hls`
-  (added in 4a37aa4). `wdmm_proxy_start` / `_stop` / `_port` reused.
-- **Branch tip:** R12 = `d8f1c6d`; LocalStreamBridge deletion = `7331d87`
-  (prior commit on this branch); R12.1 commits on top of `7331d87`.
+- **Submodule:** `rust/wdmm-core` pinned at `e236ece`
+  (`feat/proxy-hls-ffmpeg` P0.5 — ContentDeliveryKind + `wdmm_proxy_register_stream`).
+- **New FFI exports used:** `wdmm_proxy_register_hls` / `_unregister_hls` (4a37aa4);
+  `wdmm_proxy_register_stream` / `_renew_stream_callback` / `_stream_alloc_buf` /
+  `_stream_free_buf` (e236ece). `wdmm_proxy_start` / `_stop` / `_port` reused.
+- **Branch tip:** P0.5 = `18addf2` (after `0366759` submodule bump).
 
 ## Deleted Dart paths
 
@@ -80,14 +81,14 @@ fallback) is fully wired.
 |---|---|---|---|
 | SSDP discovery | `wdmm_dlna_discover_json` (blocking) | async UDP M-SEARCH (used) | ✅ wired (Dart — non-blocking) |
 | Stream proxy | `wdmm_proxy_start` + `wdmm_proxy_register_hls` | — | ✅ wired (local file → HLS) |
-| Cloud-stream proxy | `wdmm_proxy_register_stream` | — | ❌ BLOCKED — no FFI at SHA 4a37aa4 |
+| Cloud-stream proxy | `wdmm_proxy_register_stream` (e236ece) | bound; cast not rewired | ⚠️ FFI+Dart ready; cast still HLS/local-cache only |
 | Cast start (SetAVTransportURI + Play) | `wdmm_dlna_cast` available | Dart SOAP (used) | ✅ wired (Dart — full DIDL-Lite) |
 | Transport control (pause/seek/stop) | none | Dart SOAP | ⚠️ Dart (no FFI equivalent; TODO r12-dlna-transport-ffi) |
 | Position/state polling | none | Dart SOAP timer | ⚠️ Dart (same TODO) |
 | DIDL-Lite / protocolInfo negotiation | none | Dart | ✅ wired (Dart) |
 | DMR prefs persistence | `wdmm_dmr_prefs_*` (none) | SharedPreferences keyed by USN; schema_version=1 (R12.1) | ⚠️ temporary Dart store (migration-ready) |
 | Backup integration | n/a | `RustDmrPrefsService.exportForBackup/importFromBackup` | ✅ wired |
-| MustProxy/crypt stream | `wdmm_proxy_register_stream` (absent) | `stream_bridge` deleted (`7331d87`) | ❌ BROKEN — throws until FFI lands |
+| MustProxy/crypt stream | `wdmm_proxy_register_stream` (e236ece) | `RustProxyStreamBridge` + ContentDeliveryKind | ⚠️ wired; Range sync-delivery leftover |
 
 ## Modified files
 
