@@ -197,9 +197,15 @@ class LibraryService extends ChangeNotifier {
   /// Upsert tracks from a sync/backup payload; only touches listed rows.
   Future<void> upsertTracks(Iterable<LibraryTrack> tracks) async {
     for (final track in tracks) {
-      await _db.upsertTrack(track);
-      // Parallel Rust write (no-op when kRustLibraryWriteEnabled=false).
-      RustLibraryService.upsertTrack(track);
+      if (kRustLibraryWriteEnabled) {
+        // Rust-only write: sqflite dual-path removed per Round 11 cutover.
+        final result = RustLibraryService.upsertTrack(track);
+        if (result != null && result.startsWith('error:')) {
+          throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
+        }
+      } else {
+        await _db.upsertTrack(track);
+      }
       final idx = _tracks.indexWhere(
         (t) =>
             t.musicId == track.musicId ||
@@ -220,10 +226,28 @@ class LibraryService extends ChangeNotifier {
     String sourceName,
     List<LibraryTrack> tracks,
   ) async {
-    await _db.deleteTracksForSource(sourceName);
+    if (kRustLibraryWriteEnabled) {
+      // Rust-only: delete each existing track by musicId (no bulk delete-by-source
+      // FFI yet — TODO(cutover): add wdmm_track_delete_by_source to wdmm-ffi).
+      for (final t in _tracks.where((t) => t.sourceName == sourceName)) {
+        final result = RustLibraryService.deleteTrack(t.musicId);
+        if (result != null && result.startsWith('error:')) {
+          throw StateError('Rust library delete failed; sqflite fallback removed: $result');
+        }
+      }
+    } else {
+      await _db.deleteTracksForSource(sourceName);
+    }
     _tracks.removeWhere((t) => t.sourceName == sourceName);
     for (final track in tracks) {
-      await _db.upsertTrack(track);
+      if (kRustLibraryWriteEnabled) {
+        final result = RustLibraryService.upsertTrack(track);
+        if (result != null && result.startsWith('error:')) {
+          throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
+        }
+      } else {
+        await _db.upsertTrack(track);
+      }
       _tracks.add(track);
     }
     notifyListeners();
@@ -292,8 +316,7 @@ class LibraryService extends ChangeNotifier {
   }) async {
     final now = DateTime.now();
     final existing = await _db.getTrack(sourceName, remotePath);
-    final read = await _tags.readFromFile(localPath);
-    String? coverPath;
+    final read = await _tags.readFromFile(localPath);    String? coverPath;
     if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
       coverPath = await _covers.saveThumb(
         sourceName: sourceName,
@@ -334,10 +357,15 @@ class LibraryService extends ChangeNotifier {
           : existing?.lastDownloadedAt ?? now,
       lastTagReadAt: now,
     );
-    await _db.upsertTrack(track);
-    // Parallel Rust write (no-op when kRustLibraryWriteEnabled=false).
-    // TODO(cutover): make this the primary path, then delete music_library_database_impl.dart.
-    RustLibraryService.upsertTrack(track);
+    if (kRustLibraryWriteEnabled) {
+      // Rust-only write: sqflite dual-path removed per Round 11 cutover.
+      final result = RustLibraryService.upsertTrack(track);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
+      }
+    } else {
+      await _db.upsertTrack(track);
+    }
     final idx = _tracks.indexWhere(
       (t) => t.sourceName == sourceName && t.remotePath == remotePath,
     );
@@ -362,9 +390,14 @@ class LibraryService extends ChangeNotifier {
     if (existing.remoteMissing) return;
     existing.remoteMissing = true;
     existing.rev = _nextRev();
-    await _db.upsertTrack(existing);
-    // Parallel Rust write (no-op when kRustLibraryWriteEnabled=false).
-    RustLibraryService.upsertTrack(existing);
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.upsertTrack(existing);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
+      }
+    } else {
+      await _db.upsertTrack(existing);
+    }
     notifyListeners();
   }
 
@@ -376,9 +409,14 @@ class LibraryService extends ChangeNotifier {
     if (existing == null || !existing.remoteMissing) return;
     existing.remoteMissing = false;
     existing.rev = _nextRev();
-    await _db.upsertTrack(existing);
-    // Parallel Rust write (no-op when kRustLibraryWriteEnabled=false).
-    RustLibraryService.upsertTrack(existing);
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.upsertTrack(existing);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
+      }
+    } else {
+      await _db.upsertTrack(existing);
+    }
     notifyListeners();
   }
 
@@ -393,9 +431,14 @@ class LibraryService extends ChangeNotifier {
     if (existing == null) return;
     existing.coverPath = coverPath;
     existing.rev = _nextRev();
-    await _db.upsertTrack(existing);
-    // Parallel Rust write (no-op when kRustLibraryWriteEnabled=false).
-    RustLibraryService.upsertTrack(existing);
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.upsertTrack(existing);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
+      }
+    } else {
+      await _db.upsertTrack(existing);
+    }
     notifyListeners();
   }
 
@@ -405,8 +448,15 @@ class LibraryService extends ChangeNotifier {
     String? newFileName,
   }) async {
     final name = newFileName ?? newRemotePath.split('/').where((s) => s.isNotEmpty).last;
-    await _db.deleteTrack(track.sourceName, track.remotePath);
-    // Parallel Rust delete (no-op when kRustLibraryWriteEnabled=false).
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.deleteTrack(track.musicId);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library delete failed; sqflite fallback removed: $result');
+      }
+    } else {
+      await _db.deleteTrack(track.sourceName, track.remotePath);
+    }
+    // Rust delete: Round 11 cutover.
     RustLibraryService.deleteTrack(track.musicId);
     _tracks.removeWhere(
       (t) => t.sourceName == track.sourceName && t.remotePath == track.remotePath,
@@ -435,15 +485,20 @@ class LibraryService extends ChangeNotifier {
       lastTagReadAt: track.lastTagReadAt,
       remoteMissing: false,
     );
-    await _db.upsertTrack(next);
-    // Parallel Rust upsert (no-op when kRustLibraryWriteEnabled=false).
-    RustLibraryService.upsertTrack(next);
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.upsertTrack(next);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
+      }
+    } else {
+      await _db.upsertTrack(next);
+    }
     _tracks.add(next);
     notifyListeners();
     return next;
   }
 
-    /// Upsert tags (and optional cover) without requiring a local audio file.
+  /// Upsert tags (and optional cover) without requiring a local audio file.
   ///
   /// Used after HTTP Range / stream tag reads. Does **not** bump
   /// [LibraryTrack.lastDownloadedAt] — a later [ingestDownloaded] still
@@ -492,9 +547,14 @@ class LibraryService extends ChangeNotifier {
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       lastTagReadAt: now,
     );
-    await _db.upsertTrack(track);
-    // Parallel Rust write (no-op when kRustLibraryWriteEnabled=false).
-    RustLibraryService.upsertTrack(track);
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.upsertTrack(track);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
+      }
+    } else {
+      await _db.upsertTrack(track);
+    }
     final idx = _tracks.indexWhere(
       (t) => t.sourceName == sourceName && t.remotePath == remotePath,
     );
@@ -942,6 +1002,8 @@ class LibraryService extends ChangeNotifier {
   /// (and full covers), and in-memory index. Does not touch WebDAV accounts.
   /// Caller should also delete local audio files and clean playlists.
   Future<void> destroyAll() async {
+    // TODO(cutover-R12): add wdmm_library_clear_all FFI; for now sqflite clears
+    // the track/CUE rows; Rust rows are already orphaned once read path is Rust.
     await _db.clearAllLibraryData();
     await _covers.deleteAllCovers();
     _tracks.clear();
@@ -957,6 +1019,8 @@ class LibraryService extends ChangeNotifier {
   /// state is derived from disk (v9), rows that have a file on disk come back as
   /// local instead of triggering a second full download.
   Future<void> prepareCloudOverwrite() async {
+    // TODO(cutover-R12): add wdmm_library_clear_index FFI; sqflite clears the
+    // index rows; a subsequent Rust read will re-populate from cloud sync.
     await _db.clearLibraryIndex();
     _tracks.clear();
     notifyListeners();
@@ -981,8 +1045,8 @@ class LibraryService extends ChangeNotifier {
       // 逐条：只删这一片。整组一次性清空的话，兄弟片就再也拿不到墓碑，
       // 它们会在下一次从云端拉取时被旧 base 带回来。
       final cuePath = track.cueRemotePath!;
-      // Parallel Rust delete (no-op when kRustLibraryWriteEnabled=false).
-      // CUE slices are skipped on the Rust side until a CUE schema lands.
+      // CUE slices stay on sqflite until a CUE schema lands in Rust (no FFI yet).
+      // TODO(cutover-R12): route CUE slice delete through Rust once schema lands.
       RustLibraryService.deleteTrack(track.musicId);
       await _db.deleteCueSlice(track.musicId);
       _tracks.removeWhere((t) => t.musicId == track.musicId);
@@ -995,9 +1059,15 @@ class LibraryService extends ChangeNotifier {
         await _db.deleteCueAlbum(track.sourceName, cuePath);
       }
     } else {
-      // Parallel Rust delete (no-op when kRustLibraryWriteEnabled=false).
-      RustLibraryService.deleteTrack(track.musicId);
-      await _db.deleteTrack(track.sourceName, track.remotePath);
+      if (kRustLibraryWriteEnabled) {
+        final result = RustLibraryService.deleteTrack(track.musicId);
+        if (result != null && result.startsWith('error:')) {
+          throw StateError('Rust library delete failed; sqflite fallback removed: $result');
+        }
+      } else {
+        RustLibraryService.deleteTrack(track.musicId);
+        await _db.deleteTrack(track.sourceName, track.remotePath);
+      }
       _tracks.removeWhere(
         (t) =>
             t.sourceName == track.sourceName &&
@@ -1018,10 +1088,17 @@ class LibraryService extends ChangeNotifier {
 
   Future<void> removeTrack(String sourceName, String remotePath) async {
     await recordTombstone(sourceName, remotePath);
-    // Parallel Rust delete (no-op when kRustLibraryWriteEnabled=false).
     // Resolve the musicId from the in-memory index before the row is gone.
-    RustLibraryService.deleteTrack(find(sourceName, remotePath)?.musicId);
-    await _db.deleteTrack(sourceName, remotePath);
+    final id = find(sourceName, remotePath)?.musicId;
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.deleteTrack(id);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library delete failed; sqflite fallback removed: $result');
+      }
+    } else {
+      RustLibraryService.deleteTrack(id);
+      await _db.deleteTrack(sourceName, remotePath);
+    }
     _tracks.removeWhere(
       (t) => t.sourceName == sourceName && t.remotePath == remotePath,
     );

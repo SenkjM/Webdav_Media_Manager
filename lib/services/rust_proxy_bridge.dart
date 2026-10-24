@@ -6,31 +6,28 @@ import 'package:flutter/foundation.dart';
 
 import 'rust_core_service.dart';
 
-/// Round 9 — Rust local HTTP proxy bridge.
+/// Round 11 — Rust local HTTP proxy bridge (kRustProxyEnabled = true).
 ///
-/// Thin wrappers for the `wdmm_proxy_*` FFI exports added in the proxy-extract
-/// round. Gated by [kRustProxyEnabled] (default `false`).
+/// Thin wrappers for the `wdmm_proxy_*` FFI exports. Gated by [kRustProxyEnabled].
 ///
 /// ## Purpose
 /// The Rust proxy (`wdmm-proxy`) serves local files over HTTP so that DLNA
 /// renderers, the system media player, and other HTTP clients can reach cached
 /// media without direct filesystem access.
 ///
-/// ## Coexistence contract (Round 9)
-/// - [LocalStreamBridge] remains the **live** proxy when [kRustProxyEnabled]
-///   is `false`. Do NOT delete it yet.
-/// - When [kRustProxyEnabled] is `true` (debug only), all proxy calls route
-///   through the Rust singleton. The Rust proxy auto-stops after inactivity
-///   (idle TTL inside `ProxyHandle`); the next [registerFile] call restarts it.
+/// ## Round 11 cutover status
+/// - [kRustProxyEnabled] is now `true` (device smoke passed in Round 10/11).
+/// - [LocalStreamBridge] **cannot be deleted yet**: `cloud_drive_service.dart`
+///   uses it for MustProxy (crypt) driver streaming, and `dlna_cast_service.dart`
+///   uses it for LAN cast. Both need a Dart `ranges` callback into the WebDAV/
+///   crypto layer that the Rust proxy cannot satisfy via FFI alone.
+///   TODO(proxy-cutover-R12): route MustProxy + DLNA cast through Rust FFI once
+///   a credential/stream-callback bridge is wired in the Rust proxy crate.
+/// - Settings → Developer / Rust Proxy panel drives start/stop/register for the
+///   Rust proxy path (Settings section still present).
 ///
-/// ## Happy-path device smoke
-/// 1. Change `kRustProxyEnabled = true` in this file and rebuild.
-/// 2. Open Settings → Developer / Rust Proxy.
-/// 3. Tap "Start proxy" — confirm the port is shown.
-/// 4. Call [registerFile] with an existing cached mp3 file path.
-/// 5. Confirm the returned URL serves the file via `curl` from a PC on the
-///    same network, or by playing it directly in the system browser.
-/// 6. Tap "Stop proxy" — confirm port returns to -1.
+/// ## Serial invariant
+/// The proxy is a process-global singleton — never create more than one instance.
 class RustProxyBridge {
   RustProxyBridge._();
 
@@ -109,17 +106,14 @@ class RustProxyBridge {
 
 /// Gate for the Rust local HTTP proxy.
 ///
-/// **Default: `false`** — [LocalStreamBridge] remains the live proxy engine.
+/// **Round 11: `true`** — device smoke passed; RustProxyBridge is the primary
+/// path for explicit file-serving (Settings → Developer / Rust Proxy panel).
 ///
-/// When `true`, all proxy calls in [RustProxyBridge] route through the Rust
-/// `wdmm-proxy` singleton via FFI. The proxy starts lazily on the first
-/// [RustProxyBridge.start] call and stops after inactivity.
-///
-/// ## Prerequisites
-/// - `kRustProxyEnabled` should only be `true` in debug builds until the Rust
-///   proxy has been validated on a real device.
-/// - Do NOT delete `LocalStreamBridge` until the Rust proxy is confirmed
-///   feature-equivalent on device.
+/// [LocalStreamBridge] is **not deleted** yet: it is still used for MustProxy
+/// (crypt/encoded streams) in `cloud_drive_service.dart` and for DLNA LAN cast
+/// in `dlna_cast_service.dart`. Both paths need a Dart `ranges` callback that
+/// the Rust proxy cannot supply over FFI without a credential bridge.
+/// TODO(proxy-cutover-R12): wire credential/stream bridge and delete LocalStreamBridge.
 ///
 /// Serial invariant: the proxy is a process-global singleton — never create
 /// more than one instance per process.
