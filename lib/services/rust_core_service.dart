@@ -63,22 +63,27 @@ typedef _ProxyTwoStrDart = ffi.Pointer<Utf8> Function(
 // ── P0.5 — Proxy stream (LocalStream / MustProxy) typedefs ───────────────────
 //
 // WdmmProxyRangeCallback is the C callback passed to wdmm_proxy_register_stream.
-// It is invoked synchronously from a Tokio worker thread; the Dart side must
-// use NativeCallable.listener to bridge async decrypt back to the callback.
+// It is invoked from a Tokio worker thread. Two fill paths:
+//   * sync  — fill *out_buf before returning 0 (native C callers)
+//   * async — return 0 with *out_buf null, then call wdmm_proxy_stream_set_result
+//             with the request_id received on the callback. Used by Dart
+//             NativeCallable.listener callers that schedule async decrypt.
 //
 // MUST be top-level (not inside the class) — Dart FFI requires NativeCallable
 // to reference a top-level typedef.  See commit 02ddbf8.
 
 /// Native callback signature for `wdmm_proxy_register_stream`.
 ///
-/// Return `0` on success; any negative value on error.
-/// `*out_buf` MUST point to memory allocated via `wdmm_proxy_stream_alloc_buf`.
+/// Return `0` on success (sync-fill or async intent); any negative value is an
+/// immediate error. `*out_buf` MUST point to memory allocated via
+/// `wdmm_proxy_stream_alloc_buf` on the sync path; leave null on the async path.
 typedef WdmmProxyRangeCallbackNative = ffi.Int32 Function(
   ffi.Pointer<ffi.Void> userData,
   ffi.Int64 start,
   ffi.Int64 end,
   ffi.Pointer<ffi.Pointer<ffi.Uint8>> outBuf,
   ffi.Pointer<ffi.Size> outLen,
+  ffi.Uint64 requestId, // NEW — async reply channel id
 );
 
 /// Dart-side equivalent of [WdmmProxyRangeCallbackNative] (for `.asFunction()`).
@@ -88,21 +93,23 @@ typedef WdmmProxyRangeCallbackDart = int Function(
   int end,
   ffi.Pointer<ffi.Pointer<ffi.Uint8>> outBuf,
   ffi.Pointer<ffi.Size> outLen,
+  int requestId, // NEW — async reply channel id
 );
 
 /// Void-returning variant used with `NativeCallable.listener`.
 ///
 /// `NativeCallable.listener` requires the Dart function to return `void`
-/// (fire-and-forget). The actual C ABI returns `Int32`, but Rust ignores the
-/// listener return value (only the blocking `isolateLocal` variant can fill
-/// `*out_buf`). Cast `nativeFunction` to `WdmmProxyRangeCallbackNative` before
-/// passing to `wdmm_proxy_register_stream`.
+/// (fire-and-forget). The actual C ABI returns `Int32`, but the listener path
+/// signals bytes back via `wdmm_proxy_stream_set_result` (using `requestId`),
+/// not via the return value. Cast `nativeFunction` to `WdmmProxyRangeCallbackNative`
+/// before passing to `wdmm_proxy_register_stream`.
 typedef WdmmProxyRangeCallbackListenerNative = ffi.Void Function(
   ffi.Pointer<ffi.Void> userData,
   ffi.Int64 start,
   ffi.Int64 end,
   ffi.Pointer<ffi.Pointer<ffi.Uint8>> outBuf,
   ffi.Pointer<ffi.Size> outLen,
+  ffi.Uint64 requestId, // NEW — async reply channel id
 );
 
 typedef _ProxyRegisterStreamNative = ffi.Pointer<Utf8> Function(
@@ -136,6 +143,12 @@ typedef _ProxyStreamFreeBufNative = ffi.Void Function(
     ffi.Pointer<ffi.Uint8> buf, ffi.Size len);
 typedef _ProxyStreamFreeBufDart = void Function(
     ffi.Pointer<ffi.Uint8> buf, int len);
+
+// wdmm_proxy_stream_set_result(request_id, buf, len, status) — lands in b08a5ef
+typedef _ProxyStreamSetResultNative = ffi.Void Function(
+    ffi.Uint64 requestId, ffi.Pointer<ffi.Uint8> buf, ffi.Size len, ffi.Int32 status);
+typedef _ProxyStreamSetResultDart = void Function(
+    int requestId, ffi.Pointer<ffi.Uint8> buf, int len, int status);
 
 /// Rust FFI bridge to WDMM-core via wdmm-ffi.
 ///
@@ -714,13 +727,12 @@ class RustCoreService {
   }
   // ── Round 9 — Proxy FFI ───────────────────────────────────────────────────
   //
-  // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
-  // round. Round 11 adds HLS proxy exports (wdmm_proxy_register_hls et al).
-  // LocalStreamBridge (Dart HTTP proxy for MustProxy/crypt) was deleted in R12.1;
-  // P0.5 (core SHA e236ece) restores MustProxy playback via register_stream;
-  // see rust_proxy_stream_bridge.dart and cloud_drive_service.resolveStreamSource.
-  // Sync byte-delivery is a P0.5 leftover (NativeCallable.listener cannot fill
-  // *out_buf synchronously — a Rust-side blocking primitive is needed).
+  // Thin Dart bindings for the wdmm_proxy_* exports. Round 11 adds HLS proxy
+  // exports (wdmm_proxy_register_hls et al). LocalStreamBridge was deleted in
+  // R12.1; P0.5 (core SHA e236ece) restored MustProxy via register_stream.
+  // Sync byte-delivery leftover resolved in core b08a5ef: NativeCallable.listener
+  // now calls wdmm_proxy_stream_set_result(request_id, buf, len, 0) from the
+  // async handler to unpark the waiting Tokio worker thread.
 
   static _ProxyStartDart?   _proxyStart;
   static _ProxyNoArgStrDart? _proxyStop;
@@ -734,14 +746,16 @@ class RustCoreService {
   static _ProxyTwoStrDart?  _proxyRegisterHls;
   static _OneStrToStrDart?  _proxyUnregisterHls;
 
-  // P0.5 (stream / LocalStream / MustProxy):
+  // P0.5+ (stream / LocalStream / MustProxy):
   // wdmm_proxy_register_stream + alloc/free/renew land in e236ece.
+  // wdmm_proxy_stream_set_result lands in the sync-reply commit (b08a5ef).
   // Lookup is non-fatal — older .so leaves these null and callers fall through
   // to a clear CloudDriverException naming the missing symbol + expected SHA.
   static _ProxyRegisterStreamDart?       _proxyRegisterStream;
   static _ProxyRenewStreamCallbackDart?  _proxyRenewStreamCallback;
   static _ProxyStreamAllocBufDart?       _proxyStreamAllocBuf;
   static _ProxyStreamFreeBufDart?        _proxyStreamFreeBuf;
+  static _ProxyStreamSetResultDart?      _proxyStreamSetResult;
 
   static bool _proxySymbolsLoaded = false;
 
@@ -778,8 +792,9 @@ class RustCoreService {
       } catch (e) {
         debugPrint('[RustCore] proxy HLS symbol lookup failed (non-fatal): $e');
       }
-      // P0.5 stream exports land in e236ece. Non-fatal inner try — older .so
-      // without these symbols leaves the fields null; the MustProxy path in
+      // P0.5 stream exports land in e236ece; wdmm_proxy_stream_set_result
+      // lands in the sync-reply commit (b08a5ef). Non-fatal inner try — older
+      // .so without these symbols leaves the fields null; the MustProxy path in
       // cloud_drive_service will throw a diagnostic CloudDriverException.
       try {
         _proxyRegisterStream = lib
@@ -797,6 +812,10 @@ class RustCoreService {
         _proxyStreamFreeBuf = lib
             .lookup<ffi.NativeFunction<_ProxyStreamFreeBufNative>>(
                 'wdmm_proxy_stream_free_buf')
+            .asFunction();
+        _proxyStreamSetResult = lib
+            .lookup<ffi.NativeFunction<_ProxyStreamSetResultNative>>(
+                'wdmm_proxy_stream_set_result')
             .asFunction();
       } catch (e) {
         debugPrint('[RustCore] proxy stream symbol lookup failed (non-fatal): $e');
@@ -931,12 +950,13 @@ class RustCoreService {
     }
   }
 
-  // ── P0.5 — Proxy stream FFI (LocalStream / MustProxy) ──────────────────────
+  // ── P0.5+ — Proxy stream FFI (LocalStream / MustProxy) ─────────────────────
   //
-  // Wires to `wdmm_proxy_register_stream` (+ alloc/free/renew) added in e236ece.
-  // Used by [RustProxyStreamBridge] to route crypt-wrapper / LocalStream items
-  // through the local HTTP proxy: the C Range callback is a NativeCallable that
-  // bridges back to the driver's `openContentRange`.
+  // Wires to wdmm_proxy_register_stream (+ alloc/free/renew) added in e236ece
+  // and wdmm_proxy_stream_set_result added in b08a5ef (sync-reply commit).
+  // Used by [RustProxyStreamBridge]: the NativeCallable.listener calls
+  // set_result(requestId, buf, len, 0) after async decrypt to unpark the
+  // Tokio worker thread — no more dropped bytes.
   //
   // The proxy must be started via [proxyStart] before any stream registration.
 
@@ -1019,6 +1039,33 @@ class RustCoreService {
     final fn = _proxyStreamFreeBuf;
     if (fn == null) return;
     fn(buf, len);
+  }
+
+  /// Deliver async Range bytes to a parked `invoke_c_callback` invocation.
+  ///
+  /// Called after the Dart listener has fetched and decrypted the bytes for
+  /// [requestId]. The proxy unparks the waiting Tokio worker thread.
+  ///
+  /// - [requestId] — the id received by the `WdmmProxyRangeCallback`.
+  /// - [buf] — buffer allocated via [proxyStreamAllocBuf], filled with bytes.
+  ///   Rust takes ownership on success ([status] == 0). Pass [ffi.nullptr] on
+  ///   the error path.
+  /// - [len] — byte count in [buf] (ignored when [status] < 0).
+  /// - [status] — `0` = success; negative = error (proxy surfaces IO error).
+  ///
+  /// Safe to call from any thread / any async context. No-op if [requestId] is
+  /// unknown (timed out or duplicate call — orphaned buffer is freed by Rust).
+  static void proxyStreamSetResult(
+    int requestId,
+    ffi.Pointer<ffi.Uint8> buf,
+    int len,
+    int status,
+  ) {
+    if (!_ensureSymbols()) return;
+    _loadProxySymbolsSafe();
+    final fn = _proxyStreamSetResult;
+    if (fn == null) return;
+    fn(requestId, buf, len, status);
   }
 }
 

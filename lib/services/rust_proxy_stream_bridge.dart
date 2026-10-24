@@ -10,87 +10,58 @@ import '../models/webdav_stream.dart';
 import 'rust_core_service.dart';
 import 'rust_proxy_bridge.dart';
 
-/// P0.5 — Registers a Dart Range reader with the Rust local HTTP proxy via
-/// `wdmm_proxy_register_stream`, returning a loopback [WebDavStreamSource].
+/// P0.5+ — Registers a Dart Range reader with the Rust local HTTP proxy via
+/// `wdmm_proxy_register_stream`, delivering real bytes via the async reply
+/// channel (`wdmm_proxy_stream_set_result`).
 ///
 /// Replaces the deleted Dart `LocalStreamBridge` (HttpServer) for the
 /// MustProxy / crypt-wrapper playback path. **Not** a Dart HttpServer — the
 /// proxy itself is the Rust `wdmm-proxy` singleton.
 ///
-/// ## C ABI contract (core e236ece)
+/// ## How it works (core b08a5ef)
 ///
-/// `wdmm_proxy_register_stream` stores a C function pointer + opaque
-/// `user_data`. On each HTTP Range request, Rust's request handler
-/// (`invoke_c_callback` in `wdmm-ffi/src/lib.rs`) calls the callback
-/// **synchronously on a Tokio worker thread** and immediately consumes
-/// `*out_buf` / `*out_len`:
+/// Each registration creates its own `NativeCallable.listener` whose closure
+/// captures the specific [rangeReader]. When the Rust proxy receives an HTTP
+/// Range request it fires the listener on the Dart event loop:
 ///
-/// ```c
-/// int32_t cb(user_data, start, end, &out_buf, &out_len)  // runs on Tokio worker
-/// // Rust reads out_buf the instant cb returns.
+/// ```
+/// Rust proxy (Tokio worker)
+///   → calls WdmmProxyRangeCallback(user_data, start, end, &out_buf, &out_len, request_id)
+///   → cb returns 0 + out_buf=null  (async intent)
+///   → parks the worker thread (up to 30 s)
+///
+/// Dart event loop (later)
+///   → listener fires: _dispatchAsync(rangeReader, start, end, requestId)
+///   → await rangeReader(start, end)
+///   → proxyStreamAllocBuf(len) + copy bytes
+///   → proxyStreamSetResult(requestId, buf, len, 0)   // unparks worker
+///   → on error: proxyStreamSetResult(requestId, nullptr, 0, -1)
 /// ```
 ///
-/// ## The sync-vs-async gap (documented leftover)
+/// The Tokio worker returns the bytes as an HTTP response chunk. No bytes are
+/// dropped.
 ///
-/// Dart content decryption (`CryptDriver.openContentRange`) is **async**
-/// (`Future`/`Stream`). Dart's `NativeCallable` has two modes:
+/// ## Concurrent streams
 ///
-/// - `.listener` — posts the call onto the Dart isolate's event loop and
-///   returns to native immediately (fire-and-forget). The Dart handler runs
-///   later, so `*out_buf` is still null when Rust reads it → IO error.
-/// - `.isolateLocal` — runs the Dart function synchronously on the calling
-///   thread, but only when that thread *is* the owning Dart isolate. A Tokio
-///   worker is not the Dart isolate, so invoking it there is undefined.
+/// Multiple concurrent registrations are supported. Each registration has its
+/// own `NativeCallable` closure, so `rangeReader` dispatch is unambiguous.
+/// The `request_id` parameter uniquely identifies each Range invocation across
+/// all registrations, so concurrent Range requests cannot interfere.
 ///
-/// Neither can satisfy "synchronous C callback on a foreign thread that needs
-/// async Dart work" without a native blocking primitive (semaphore / condvar)
-/// the C side waits on until the Dart isolate signals completion. The current
-/// Rust ABI does not export such a primitive, so a **fully-working** sync
-/// delivery path is a follow-up (see Leftovers below).
-///
-/// ## What this bridge delivers in P0.5
-///
-/// - Full FFI wiring: proxy start, symbol resolution, `wdmm_proxy_register_stream`
-///   registration, JSON `{token,path_template,port}` parse, loopback URL
-///   composition, and lifecycle (`unregister` / `unregisterAll`).
-/// - Registration is real: a `NativeCallable.listener` is created and passed
-///   to the Rust proxy; the token map is maintained; the loopback URL is
-///   returned to the player exactly like `registerFile`.
-/// - The range dispatch is structured via a [ReceivePort] so that, once a
-///   Rust-side reply/blocking primitive lands (or a native semaphore is
-///   added), only the dispatch body changes — the registration + URL path
-///   stays.
-///
-/// Until that primitive lands, byte delivery on a Range request will surface
-/// as a proxy IO error rather than a hang; the player falls back to its own
-/// error handling. This is the "minimal working bridge" the brief permits,
-/// with the async-sync gap recorded as a leftover.
-///
-/// ## Leftovers
-///
-/// - **Sync delivery** — needs either a Rust-side blocking/reply FFI (e.g.
-///   `wdmm_proxy_stream_set_result` + a semaphore the C callback waits on)
-///   or a small native (C) shim that blocks the Tokio worker until the Dart
-///   isolate signals. Until then the listener handler can't fill `*out_buf`
-///   before Rust consumes it.
-/// - **Renew callback** — `proxyRenewStreamCallback` is wired in
-///   `RustCoreService` but not yet called from here (crypt key rotation is
-///   still Dart-only); wire when Rust crypt lands.
-///
-/// Do **NOT** revive `LocalStreamBridge.dart` / `stream_bridge.dart`.
+/// ## Do NOT revive
+/// - `LocalStreamBridge.dart` / `stream_bridge.dart`
+/// - Any Dart HttpServer bridge
 class RustProxyStreamBridge {
   RustProxyStreamBridge._();
 
   /// token → active registration.
   static final Map<String, _StreamRegistration> _regs = {};
 
-  /// Indicates whether the register_stream FFI symbols are present in the
-  /// loaded `libwdmm_ffi.so`. Checked before registration so callers get a
-  /// diagnostic error instead of a silent null.
+  /// Returns true if the stream FFI symbols (register, alloc, set_result) are
+  /// all present in the loaded `libwdmm_ffi.so`.
   static bool streamSymbolsAvailable() {
-    // Probe via a 1-byte alloc. proxyStreamAllocBuf returns nullptr both when
-    // the symbols are absent (function pointer null) and when len == 0 — so
-    // probe with len == 1 and free immediately.
+    // Probe via a 1-byte alloc; proxyStreamAllocBuf returns nullptr when the
+    // symbol is absent or when len == 0.
     final buf = RustCoreService.proxyStreamAllocBuf(1);
     if (buf == ffi.nullptr) return false;
     RustCoreService.proxyStreamFreeBuf(buf, 1);
@@ -103,14 +74,10 @@ class RustProxyStreamBridge {
   /// [size] is the plaintext file size in bytes (0 if unknown).
   /// [name] is optional, used for Content-Type guessing (e.g. `"movie.mkv"`).
   /// [rangeReader] receives inclusive `(start, end)` byte offsets and returns
-  /// the requested plaintext bytes. It may call `CryptDriver.openContentRange`
-  /// internally.
+  /// the requested plaintext bytes. It may call `CryptDriver.openContentRange`.
   ///
   /// Returns null if the proxy cannot be started or `register_stream` returns
-  /// an error. Throws a [StateError] naming the missing FFI + expected core
-  /// SHA (e236ece) if the stream symbols are absent from the loaded .so.
-  ///
-  /// See the class doc for the sync-delivery limitation (P0.5 leftover).
+  /// an error. Throws a [StateError] if the stream FFI symbols are absent.
   static Future<WebDavStreamSource?> register({
     required int size,
     String? name,
@@ -126,23 +93,30 @@ class RustProxyStreamBridge {
       return null;
     }
 
-    // 2. Verify the register_stream FFI symbols are present.
+    // 2. Verify the stream FFI symbols are present.
     if (!streamSymbolsAvailable()) {
       throw StateError(
-        'wdmm_proxy_register_stream FFI symbols missing. '
-        'Ensure libwdmm_ffi.so is built from core SHA e236ece '
-        '(feat/proxy-hls-ffmpeg P0.5), not 4a37aa4.',
+        'wdmm_proxy_register_stream / wdmm_proxy_stream_set_result FFI '
+        'symbols missing. Ensure libwdmm_ffi.so is built from core b08a5ef '
+        '(sync-reply commit on feat/proxy-hls-ffmpeg).',
       );
     }
 
-    // 3. Build the NativeCallable. Use the void-returning listener typedef so
-    //    that NativeCallable.listener type-checks. We then cast the native
-    //    function pointer to the Int32-returning ABI before passing to
-    //    proxyRegisterStream (the Rust side reads the return value, but for
-    //    the listener path it always gets -1 / the trampoline default).
+    // 3. Build a per-registration NativeCallable whose closure captures
+    //    [rangeReader]. The listener callback returns to native immediately and
+    //    schedules the async work (rangeReader → set_result).
     final callable =
         ffi.NativeCallable<WdmmProxyRangeCallbackListenerNative>.listener(
-      _nativeRangeCallbackVoid,
+      (
+        ffi.Pointer<ffi.Void> userData,
+        int start,
+        int end,
+        ffi.Pointer<ffi.Pointer<ffi.Uint8>> outBuf,
+        ffi.Pointer<ffi.Size> outLen,
+        int requestId,
+      ) {
+        _dispatchAsync(rangeReader, start, end, requestId);
+      },
     );
     final callbackPtr = callable.nativeFunction
         .cast<ffi.NativeFunction<WdmmProxyRangeCallbackNative>>();
@@ -152,7 +126,7 @@ class RustProxyStreamBridge {
       size: size,
       name: name,
       callback: callbackPtr,
-      userData: ffi.nullptr, // we key registrations by token, not by user_data
+      userData: ffi.nullptr,
     );
 
     if (result == null || result.startsWith('error:')) {
@@ -167,7 +141,7 @@ class RustProxyStreamBridge {
       json = jsonDecode(result) as Map<String, dynamic>;
     } catch (e) {
       callable.close();
-      debugPrint('[RustProxyStreamBridge] register JSON decode error: $e / $result');
+      debugPrint('[RustProxyStreamBridge] JSON decode error: $e / $result');
       return null;
     }
 
@@ -176,12 +150,7 @@ class RustProxyStreamBridge {
     final port = json['port'] as int? ?? proxyPort;
     final uri = 'http://127.0.0.1:$port$pathTemplate';
 
-    // 6. Keep the registration alive + callable for the proxy lifetime.
-    _regs[token] = _StreamRegistration(
-      rangeReader: rangeReader,
-      callable: callable,
-      token: token,
-    );
+    _regs[token] = _StreamRegistration(callable: callable, token: token);
 
     debugPrint('[RustProxyStreamBridge] registered token=$token uri=$uri');
     return WebDavStreamSource(
@@ -193,6 +162,72 @@ class RustProxyStreamBridge {
       kind: kind,
     );
   }
+
+  // ── Range dispatch ─────────────────────────────────────────────────────────
+
+  /// Fire-and-forget: schedule the async range read + set_result reply.
+  static void _dispatchAsync(
+    Future<List<int>> Function(int, int) rangeReader,
+    int start,
+    int end,
+    int requestId,
+  ) {
+    _runRange(rangeReader, start, end, requestId).catchError((Object e) {
+      debugPrint('[RustProxyStreamBridge] _dispatchAsync error (req=$requestId): $e');
+    });
+  }
+
+  static Future<void> _runRange(
+    Future<List<int>> Function(int, int) rangeReader,
+    int start,
+    int end,
+    int requestId,
+  ) async {
+    try {
+      final bytes = await rangeReader(start, end);
+      if (bytes.isEmpty) {
+        debugPrint(
+          '[RustProxyStreamBridge] rangeReader returned empty for '
+          'req=$requestId [$start,$end] — signalling error',
+        );
+        RustCoreService.proxyStreamSetResult(
+            requestId, ffi.nullptr.cast(), 0, -1);
+        return;
+      }
+
+      // Allocate a Rust-heap buffer and copy bytes into it.
+      final buf = RustCoreService.proxyStreamAllocBuf(bytes.length);
+      if (buf == ffi.nullptr) {
+        debugPrint(
+          '[RustProxyStreamBridge] alloc_buf returned null for '
+          '${bytes.length}B req=$requestId',
+        );
+        RustCoreService.proxyStreamSetResult(
+            requestId, ffi.nullptr.cast(), 0, -1);
+        return;
+      }
+
+      // Zero-copy if bytes is already a Uint8List; one copy otherwise.
+      final u8 = bytes is Uint8List ? bytes : Uint8List.fromList(bytes);
+      buf.cast<ffi.Uint8>().asTypedList(bytes.length).setAll(0, u8);
+
+      RustCoreService.proxyStreamSetResult(requestId, buf, bytes.length, 0);
+      if (kDebugMode) {
+        debugPrint(
+          '[RustProxyStreamBridge] set_result ${bytes.length}B '
+          'req=$requestId [$start,$end]',
+        );
+      }
+    } catch (e, st) {
+      debugPrint(
+        '[RustProxyStreamBridge] rangeReader error req=$requestId: $e\n$st',
+      );
+      RustCoreService.proxyStreamSetResult(
+          requestId, ffi.nullptr.cast(), 0, -1);
+    }
+  }
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /// Unregister a single stream token and close its NativeCallable.
   static void unregister(String token) {
@@ -212,88 +247,12 @@ class RustProxyStreamBridge {
     _regs.clear();
     debugPrint('[RustProxyStreamBridge] unregistered all');
   }
-
-  // ── Native Range callback (dispatched by NativeCallable.listener) ─────────
-  //
-  // Runs on the Dart isolate event loop when the Rust proxy receives a Range
-  // request. We look up the active registration and run rangeReader.
-  //
-  // IMPORTANT (leftover): the Rust ABI reads *out_buf synchronously right after
-  // the C callback returns (see invoke_c_callback in wdmm-ffi/src/lib.rs).
-  // NativeCallable.listener returns to native immediately and schedules this
-  // Dart handler later, so *out_buf is still null when Rust consumes it.
-  //
-  // The handler below therefore cannot satisfy the current sync contract; it
-  // runs the rangeReader and discards the result. A working delivery path
-  // requires a Rust-side reply/blocking primitive (see class Doc / Leftovers).
-  //
-  // We use the global "most recent in-flight token" to locate the registration
-  // because user_data is nullptr (Dart object pointers must not cross FFI).
-  // Rust serialises Range calls per token, so there is at most one in-flight
-  // request per stream at a time.
-
-  static void _nativeRangeCallbackVoid(
-    ffi.Pointer<ffi.Void> userData,
-    int start,
-    int end,
-    ffi.Pointer<ffi.Pointer<ffi.Uint8>> outBuf,
-    ffi.Pointer<ffi.Size> outLen,
-  ) {
-    final reg = _currentInFlight;
-    if (reg == null) return;
-    // Fire async work — bytes cannot be delivered synchronously from a
-    // .listener handler (see class doc / P0.5 leftover).
-    _runRangeAsync(reg, start, end).catchError((Object e) {
-      debugPrint('[RustProxyStreamBridge] rangeReader error: $e');
-    });
-  }
-
-  static Future<void> _runRangeAsync(
-    _StreamRegistration reg,
-    int start,
-    int end,
-  ) async {
-    final bytes = await reg.rangeReader(start, end);
-    // We successfully fetched the bytes, but the C callback already returned
-    // (listener is async). A future Rust reply primitive would take this
-    // `bytes` and a token, allocate a Rust-heap buffer, and signal the
-    // blocked Tokio worker. For now we drop them — documented leftover.
-    if (kDebugMode) {
-      debugPrint(
-        '[RustProxyStreamBridge] fetched ${bytes.length}B for '
-        '[$start,$end] (dropped — sync delivery is a P0.5 leftover)',
-      );
-    }
-  }
-
-  /// The registration whose Range request is currently being served. Set when
-  /// a player opens a stream; cleared on unregister. Single-slot because Rust
-  /// serialises Range calls per token and the typical playback session has one
-  /// active stream at a time. (If multiple concurrent streams are needed later,
-  /// this becomes a token→slot map keyed by a user_data id passed from Rust.)
-  static _StreamRegistration? _currentInFlight;
-
-  /// Mark [token] as the in-flight registration for callback dispatch.
-  /// Called by the player layer when it begins playback of a proxy URL.
-  static void setInFlight(String token) {
-    _currentInFlight = _regs[token];
-  }
-
-  /// Clear the in-flight registration (e.g. on stop).
-  static void clearInFlight() {
-    _currentInFlight = null;
-  }
 }
 
-/// One active stream registration: the Dart range reader + its NativeCallable.
+/// One active stream registration: the per-registration NativeCallable + token.
 class _StreamRegistration {
-  _StreamRegistration({
-    required this.rangeReader,
-    required this.callable,
-    required this.token,
-  });
+  _StreamRegistration({required this.callable, required this.token});
 
-  final Future<List<int>> Function(int start, int end) rangeReader;
   final ffi.NativeCallable<WdmmProxyRangeCallbackListenerNative> callable;
   final String token;
 }

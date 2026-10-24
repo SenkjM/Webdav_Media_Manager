@@ -622,9 +622,9 @@ class CloudDriveService extends ChangeNotifier {
           if (!RustProxyStreamBridge.streamSymbolsAvailable()) {
             throw CloudDriverException(
               'MustProxy/crypt local stream requires Rust FFI '
-              'wdmm_proxy_register_stream — symbols absent. '
-              'Ensure libwdmm_ffi.so is built from core SHA e236ece '
-              '(feat/proxy-hls-ffmpeg P0.5).',
+              'wdmm_proxy_register_stream + wdmm_proxy_stream_set_result — '
+              'symbols absent. Ensure libwdmm_ffi.so is built from core SHA '
+              'b08a5ef (feat/proxy-hls-ffmpeg sync-reply commit).',
             );
           }
           throw CloudDriverException(
