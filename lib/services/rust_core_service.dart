@@ -357,8 +357,8 @@ class RustCoreService {
   /// Returns a JSON array of renderer objects or 'error:...' on failure.
   /// Returns null if the native library is not available.
   ///
-  /// **Parallel probe**: Dart `DlnaCastService` remains source of truth;
-  /// compare outputs before cutover.
+  /// NOTE: This call blocks for [timeoutMs] milliseconds on the calling thread.
+  /// Use [RustDlnaCastService] which runs non-blocking async Dart SSDP instead.
   static String? dlnaDiscover({int timeoutMs = 2000}) {
     if (!_ensureSymbols() || _dlnaDiscover == null) return null;
     return _readAndFreeString(_dlnaDiscover!(timeoutMs));
@@ -369,7 +369,8 @@ class RustCoreService {
   /// Returns 'ok' on success or 'error:...' on failure.
   /// Returns null if the native library is not available.
   ///
-  /// **Parallel probe**: Dart `DlnaCastService` remains source of truth.
+  /// NOTE: [RustDlnaCastService] uses Dart SOAP directly for full protocolInfo
+  /// negotiation + DIDL-Lite. This function is available for standalone probes.
   static String? dlnaCast(String rendererLocation, String mediaUrl) {
     if (!_ensureSymbols() || _dlnaCast == null) return null;
     final locPtr = rendererLocation.toNativeUtf8();
@@ -638,14 +639,22 @@ class RustCoreService {
   // ── Round 9 — Proxy FFI ───────────────────────────────────────────────────
   //
   // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
-  // round. Gated by `kRustProxyEnabled` in rust_proxy_bridge.dart (default
-  // false). Do NOT delete LocalStreamBridge yet.
+  // round. Round 11 adds HLS proxy exports (wdmm_proxy_register_hls et al).
+  // LocalStreamBridge is retained for MustProxy (crypt) in cloud_drive_service;
+  // the DLNA cast path was cut over to wdmm_proxy_register_hls in Round 12.
+  // TODO(proxy-cutover-R13): delete LocalStreamBridge once MustProxy cuts over.
 
   static _ProxyStartDart?   _proxyStart;
   static _ProxyNoArgStrDart? _proxyStop;
   static _ProxyPortDart?    _proxyPort;
   static _ProxyTwoStrDart?  _proxyRegisterFile;
   static _OneStrToStrDart?  _proxyUnregister;
+
+  // Round 11 (HLS): register/unregister an HLS session (local file → HLS with
+  // optional ffmpeg compat transcode). Same calling convention as the file
+  // proxy: two-str-to-str for register, one-str-to-str for unregister.
+  static _ProxyTwoStrDart?  _proxyRegisterHls;
+  static _OneStrToStrDart?  _proxyUnregisterHls;
 
   static bool _proxySymbolsLoaded = false;
 
@@ -669,6 +678,19 @@ class RustCoreService {
       _proxyUnregister = lib
           .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_proxy_unregister')
           .asFunction();
+      // HLS exports land in feat/proxy-hls-ffmpeg (SHA 4a37aa4). Lookup is
+      // non-fatal: older submodules without these symbols leave the fields null
+      // and the HLS cast path reports unavailable.
+      try {
+        _proxyRegisterHls = lib
+            .lookup<ffi.NativeFunction<_ProxyTwoStrNative>>('wdmm_proxy_register_hls')
+            .asFunction();
+        _proxyUnregisterHls = lib
+            .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_proxy_unregister_hls')
+            .asFunction();
+      } catch (e) {
+        debugPrint('[RustCore] proxy HLS symbol lookup failed (non-fatal): $e');
+      }
       _proxySymbolsLoaded = true;
     } catch (e) {
       debugPrint('[RustCore] proxy symbol lookup failed (non-fatal): $e');
@@ -741,6 +763,59 @@ class RustCoreService {
     final ptr = token.toNativeUtf8();
     try {
       return _readAndFreeString(_proxyUnregister!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Round 11 — HLS proxy FFI ──────────────────────────────────────────────
+  //
+  // Wires to `wdmm_proxy_register_hls` / `wdmm_proxy_unregister_hls` added in
+  // feat/proxy-hls-ffmpeg (SHA 4a37aa4). Used by [RustDlnaCastService] to
+  // serve a local/cached file over HLS so a DMR can pull it off the LAN.
+  //
+  // The proxy must be started via [proxyStart] before any HLS registration.
+
+  /// Register a local file as an HLS session.
+  ///
+  /// [filePath] is the absolute path to the local (cached) file.
+  /// [modeJson] is an optional JSON transcode mode object:
+  ///   - `null` / `'{"mode":"direct_copy"}'` — stream-copy, no re-encode.
+  ///   - `'{"mode":"compat","video_codec":"libx264","audio_codec":"aac"}'` —
+  ///     ffmpeg compat re-encode. Requires ffmpeg on the device.
+  ///
+  /// Returns JSON:
+  /// ```json
+  /// {"token":"…","playlist_template":"/h/…/index.m3u8","port":N}
+  /// ```
+  /// or `'error:…'` on failure. Returns null if the library is unavailable or
+  /// if the HLS exports do not exist in the current submodule build.
+  static String? proxyRegisterHls(String filePath, {String? modeJson}) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyRegisterHls == null) return null;
+    final pathPtr = filePath.toNativeUtf8();
+    final modePtr = modeJson != null
+        ? modeJson.toNativeUtf8()
+        : ffi.nullptr.cast<Utf8>();
+    try {
+      return _readAndFreeString(_proxyRegisterHls!(pathPtr, modePtr));
+    } finally {
+      calloc.free(pathPtr);
+      if (modeJson != null) calloc.free(modePtr);
+    }
+  }
+
+  /// Unregister an HLS session. The transcode job is killed and the segment
+  /// directory is removed. Returns `'ok'`.
+  /// Returns null if the library is unavailable or the HLS exports do not exist.
+  static String? proxyUnregisterHls(String token) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyUnregisterHls == null) return null;
+    final ptr = token.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyUnregisterHls!(ptr));
     } finally {
       calloc.free(ptr);
     }

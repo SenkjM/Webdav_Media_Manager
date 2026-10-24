@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../services/dlna_cast_service.dart';
+import '../services/rust_dlna_cast_service.dart';
 
 /// DLNA 设备选择 BottomSheet。
 ///
@@ -42,7 +42,7 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
     // 打开时立刻开始发现
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final castService = context.read<DlnaCastService>();
+      final castService = context.read<RustDlnaCastService>();
       castService.startDiscovery();
       _startTimeout();
     });
@@ -54,7 +54,7 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
     _timedOut = false;
     _timeoutTimer = Timer(const Duration(seconds: 4), () {
       if (!mounted) return;
-      final castService = context.read<DlnaCastService>();
+      final castService = context.read<RustDlnaCastService>();
       // 已发现到设备则不显示超时提示
       if (castService.discovered.isEmpty) {
         setState(() => _timedOut = true);
@@ -64,7 +64,7 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
 
   /// 重新搜索：重置超时状态并重新发起发现
   void _retry() {
-    final castService = context.read<DlnaCastService>();
+    final castService = context.read<RustDlnaCastService>();
     castService.stopDiscovery();
     castService.startDiscovery();
     setState(() => _timedOut = false);
@@ -73,14 +73,14 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
 
   /// 用户选择了一台渲染器
   void _selectRenderer(BuildContext ctx, DlnaRenderer renderer) {
-    final castService = context.read<DlnaCastService>();
+    final castService = context.read<RustDlnaCastService>();
     castService.stopDiscovery();
     Navigator.pop(ctx, renderer);
   }
 
   /// 关闭 Sheet
   void _close(BuildContext ctx) {
-    final castService = context.read<DlnaCastService>();
+    final castService = context.read<RustDlnaCastService>();
     castService.stopDiscovery();
     Navigator.pop(ctx);
   }
@@ -93,7 +93,7 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final castService = context.watch<DlnaCastService>();
+    final castService = context.watch<RustDlnaCastService>();
     final scheme = Theme.of(context).colorScheme;
     final discovered = castService.discovered;
     final isDiscovering = castService.state == DlnaCastState.discovering;

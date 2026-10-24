@@ -81,6 +81,20 @@ class BackupService extends ChangeNotifier {
   final SettingsService _settings;
   final PlaylistService _playlists;
 
+  // DMR prefs exporter/importer injected by AppState after init.
+  // Loose coupling: BackupService has no hard dep on RustDmrPrefsService.
+  Map<String, dynamic> Function()? _dmrPrefsExporter;
+  Future<void> Function(Map<String, dynamic>)? _dmrPrefsImporter;
+
+  /// Called from AppState.init() once dmrPrefs is initialised.
+  void attachDmrPrefs({
+    required Map<String, dynamic> Function() exporter,
+    required Future<void> Function(Map<String, dynamic>) importer,
+  }) {
+    _dmrPrefsExporter = exporter;
+    _dmrPrefsImporter = importer;
+  }
+
   /// Owns the vault encoding. The archive embeds the **same bytes** this
   /// service uploads to the sync root (docs/10 §4.3) — one encoding, two exits.
   final CredentialVaultService _credentials;
@@ -190,6 +204,10 @@ class BackupService extends ChangeNotifier {
       'settings': _settings.exportForBackup(),
       'mangaLibrary': await _libraryDb.exportMangaSnapshot(),
       'userFolders': await _libraryDb.exportUserFoldersSnapshot(),
+      // DMR device prefs (per-USN compat settings). Injected by AppState after
+      // init; null-safe so BackupService does not take a hard dep on the cast
+      // service.
+      if (_dmrPrefsExporter != null) 'dmr_prefs': _dmrPrefsExporter!(),
     };
   }
 
@@ -863,6 +881,17 @@ class BackupService extends ChangeNotifier {
       // 导入 settings 后回调 alignNomedia（规格 §7 末）
       if (_onSettingsImported != null) {
         await _onSettingsImported();
+      }
+    }
+
+    // 6. DMR device prefs (per-USN compat settings). Optional — older backups
+    //    that predate the cast UI do not have this section.
+    final dmrPrefs = payload['dmr_prefs'];
+    if (dmrPrefs is Map && _dmrPrefsImporter != null) {
+      try {
+        await _dmrPrefsImporter!(Map<String, dynamic>.from(dmrPrefs));
+      } catch (e) {
+        debugPrint('backup restore: DMR prefs import failed (non-fatal): $e');
       }
     }
 

@@ -10,7 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
-import '../services/dlna_cast_service.dart';
+import '../services/rust_dlna_cast_service.dart';
 import '../widgets/dlna_device_sheet.dart';
 import '../models/video_settings.dart';
 import '../models/file_type_config.dart';
@@ -1296,7 +1296,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final renderer = await DlnaDeviceSheet.show(context);
     if (renderer == null || !mounted) return;
 
-    final cast = context.read<DlnaCastService>();
+    final cast = context.read<RustDlnaCastService>();
     final seed = widget.seed;
     if (seed == null && _resolved == null && widget.source == null) return;
 

@@ -31,7 +31,8 @@ import '../services/sync_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/cloud_drivers/webdav_source.dart';
-import '../services/dlna_cast_service.dart';
+import '../services/rust_dlna_cast_service.dart';
+import '../services/rust_dmr_prefs_service.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
@@ -122,14 +123,21 @@ class AppState extends ChangeNotifier {
       notificationPermission: notificationPermission,
     );
     videoPlayback = VideoPlaybackService(handler: audioHandler);
-    dlnaCast = DlnaCastService(webDav: webDav);
+    dmrPrefs = RustDmrPrefsService();
+    dlnaCast = RustDlnaCastService(
+      webDav: webDav,
+      cache: cache,
+      accounts: accounts,
+      dmrPrefs: dmrPrefs,
+    );
   }
 
   final MusicAudioHandler _audioHandler;
 
   late final SettingsService settings;
   late final WebDavService webDav;
-  late final DlnaCastService dlnaCast;
+  late final RustDlnaCastService dlnaCast;
+  late final RustDmrPrefsService dmrPrefs;
   late final CloudDriveService cloudDrive;
   late final CacheService cache;
 
@@ -180,6 +188,7 @@ class AppState extends ChangeNotifier {
 
   void _disposeServices() {
     dlnaCast.dispose();
+    dmrPrefs.dispose();
     videoPlayback.dispose();
     player.dispose();
     taskQueue.dispose();
@@ -223,6 +232,12 @@ class AppState extends ChangeNotifier {
       // The rev clock is the single version source sync compares; it starts from
       // the persisted high-water mark and reports every advance back.
       // Music and manga rows share one clock, so their revs stay on one scale.
+      _initPhase = 'dmr-prefs';
+      await dmrPrefs.init();
+      backup.attachDmrPrefs(
+        exporter: dmrPrefs.exportForBackup,
+        importer: dmrPrefs.importFromBackup,
+      );
       final revClock = RevClock(
         nowMs: () => DateTime.now().millisecondsSinceEpoch,
         initial: settings.lastRev,

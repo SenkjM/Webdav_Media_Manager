@@ -14,7 +14,8 @@ import 'services/accounts_service.dart';
 import 'services/audio_player_service.dart';
 import 'services/cache_service.dart';
 import 'services/credential_vault_service.dart';
-import 'services/dlna_cast_service.dart';
+import 'services/rust_dlna_cast_service.dart';
+import 'services/rust_dmr_prefs_service.dart';
 import 'services/download_destination_service.dart';
 import 'services/task_queue_service.dart';
 import 'services/library_service.dart';
@@ -122,8 +123,11 @@ class WebDavMusicApp extends StatelessWidget {
         ChangeNotifierProvider<VideoPlaybackService>.value(
           value: appState.videoPlayback,
         ),
-        ChangeNotifierProvider<DlnaCastService>.value(
+        ChangeNotifierProvider<RustDlnaCastService>.value(
           value: appState.dlnaCast,
+        ),
+        ChangeNotifierProvider<RustDmrPrefsService>.value(
+          value: appState.dmrPrefs,
         ),
       ],
       child: Consumer<SettingsService>(

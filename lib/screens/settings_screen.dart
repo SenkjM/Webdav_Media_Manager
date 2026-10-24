@@ -535,19 +535,15 @@ class _RustQueueSettingsSectionState
 
 /// Thin developer note for the Rust local HTTP proxy.
 ///
-/// [kRustProxyEnabled] is intentionally left `false` — [LocalStreamBridge]
-/// remains the live proxy. This section only surfaces the Rust proxy state
-/// (port, start/stop) so a developer can validate the Rust singleton without
-/// rerouting the playback stack.
+/// [kRustProxyEnabled] is `true` (Round 11 cutover complete). This section
+/// surfaces the Rust proxy state (port, start/stop/register) for developer
+/// validation.
 ///
-/// ## Happy-path device smoke
-/// 1. Set `kRustProxyEnabled = true` in `rust_proxy_bridge.dart`, rebuild.
-/// 2. Tap "Start proxy" — note the assigned port.
-/// 3. Register a cached media file via code or a debug entry.
-/// 4. Confirm the returned URL serves the file from a PC on the same network.
-/// 5. Tap "Stop proxy" — confirm port returns to -1.
-/// 6. Do NOT delete `LocalStreamBridge` until the Rust proxy is confirmed
-///    feature-equivalent on device.
+/// ## Round 12 status
+/// - DLNA cast now uses `wdmm_proxy_register_hls` via [RustDlnaCastService].
+/// - [LocalStreamBridge] is retained for MustProxy (crypt) streaming only.
+///   TODO(proxy-cutover-R13): wire MustProxy credential bridge and delete
+///   LocalStreamBridge.
 class _RustProxySettingsSection extends StatefulWidget {
   const _RustProxySettingsSection();
 
@@ -587,9 +583,10 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
           title: const Text('Rust proxy enabled'),
           subtitle: Text(
             kRustProxyEnabled
-                ? 'ON — local files served via wdmm-proxy singleton'
-                : 'OFF (default) — LocalStreamBridge is active.\n'
-                  'Set kRustProxyEnabled=true in rust_proxy_bridge.dart '
+                ? 'ON — local files served via wdmm-proxy singleton\n'
+                  'DLNA cast uses wdmm_proxy_register_hls (R12). '
+                  'LocalStreamBridge kept for MustProxy only.'
+                : 'OFF — set kRustProxyEnabled=true in rust_proxy_bridge.dart '
                   'and rebuild to enable the Rust proxy.',
           ),
           trailing: Switch(
@@ -618,8 +615,9 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
         Padding(
           padding: const EdgeInsets.only(top: 4, bottom: 8),
           child: Text(
-            'LocalStreamBridge is NOT deleted yet. The Rust proxy is a '
-            'process-global singleton — never create a second instance.',
+            'Round 12: DLNA cast cut over to wdmm_proxy_register_hls. '
+            'LocalStreamBridge retained for MustProxy (crypt) only. '
+            'The Rust proxy is a process-global singleton — never create a second instance.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ),

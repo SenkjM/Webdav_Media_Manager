@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../services/dlna_cast_service.dart';
+import '../services/rust_dlna_cast_service.dart';
 import '../utils/app_snack.dart';
 
 // ─────────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
     setState(() => _seekOverride = (dx / width).clamp(0.0, 1.0));
   }
 
-  void _seekRelease(DlnaCastService cast) {
+  void _seekRelease(RustDlnaCastService cast) {
     final value = _seekOverride;
     if (value == null) return;
     final dur = cast.duration;
@@ -162,7 +162,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   /// 实时进度（服务值或拖动覆盖值）。
   /// 当服务已回报的进度足够接近 seek 目标时，提前清除 override，
   /// 避免 settle 超时期间进度条视觉停顿。
-  double _progress(DlnaCastService cast) {
+  double _progress(RustDlnaCastService cast) {
     final dur = cast.duration;
     final held = _seekOverride;
     if (held != null) {
@@ -200,7 +200,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   // ─────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final cast = context.watch<DlnaCastService>();
+    final cast = context.watch<RustDlnaCastService>();
 
     // idle 时不显示任何内容
     if (cast.state == DlnaCastState.idle) {
@@ -231,7 +231,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   // ─────────────────────────────────────────────────────────────
   //  收起态气泡
   // ─────────────────────────────────────────────────────────────
-  Widget _buildCollapsedBubble(BuildContext context, DlnaCastService cast) {
+  Widget _buildCollapsedBubble(BuildContext context, RustDlnaCastService cast) {
     final scheme = Theme.of(context).colorScheme;
     final screenWidth = MediaQuery.of(context).size.width;
 
@@ -313,7 +313,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   // ─────────────────────────────────────────────────────────────
   //  展开态底部卡片
   // ─────────────────────────────────────────────────────────────
-  Widget _buildExpandedBar(BuildContext context, DlnaCastService cast) {
+  Widget _buildExpandedBar(BuildContext context, RustDlnaCastService cast) {
     final scheme = Theme.of(context).colorScheme;
     final isError = cast.state == DlnaCastState.error;
     final isBuffering = cast.playbackState == DlnaPlaybackState.buffering;
@@ -742,7 +742,7 @@ class _ExpandedProgressBar extends StatelessWidget {
 class _TranscodePanel extends StatelessWidget {
   const _TranscodePanel({required this.castService});
 
-  final DlnaCastService castService;
+  final RustDlnaCastService castService;
 
   @override
   Widget build(BuildContext context) {
@@ -906,7 +906,7 @@ class _ErrorDetail extends StatelessWidget {
 class _DlnaQueueSheet extends StatelessWidget {
   const _DlnaQueueSheet._();
 
-  static void show(BuildContext context, DlnaCastService cast) {
+  static void show(BuildContext context, RustDlnaCastService cast) {
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => ChangeNotifierProvider.value(
@@ -918,7 +918,7 @@ class _DlnaQueueSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cast = context.watch<DlnaCastService>();
+    final cast = context.watch<RustDlnaCastService>();
     final scheme = Theme.of(context).colorScheme;
     final queue = cast.queue;
 

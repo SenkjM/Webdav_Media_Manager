@@ -25,7 +25,7 @@ import '../services/task_queue_service.dart';
 import '../services/settings_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/platform_export_service.dart';
-import '../services/dlna_cast_service.dart';
+import '../services/rust_dlna_cast_service.dart';
 import '../utils/app_snack.dart';
 import '../utils/remote_path.dart';
 import '../utils/manga_file_types.dart';
@@ -1273,7 +1273,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final renderer = await DlnaDeviceSheet.show(context);
     if (renderer == null || !mounted) return;
 
-    final cast = context.read<DlnaCastService>();
+    final cast = context.read<RustDlnaCastService>();
     await cast.startCast(
       renderer: renderer,
       singleItem: item,
