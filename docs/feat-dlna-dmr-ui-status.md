@@ -79,7 +79,7 @@ fallback) is fully wired.
 | Transport control (pause/seek/stop) | none | Dart SOAP | ⚠️ Dart (no FFI equivalent; TODO r12-dlna-transport-ffi) |
 | Position/state polling | none | Dart SOAP timer | ⚠️ Dart (same TODO) |
 | DIDL-Lite / protocolInfo negotiation | none | Dart | ✅ wired (Dart) |
-| DMR prefs persistence | `wdmm_dmr_prefs_*` (none) | SharedPreferences keyed by USN | ⚠️ temporary Dart store (migration-ready) |
+| DMR prefs persistence | `wdmm_dmr_prefs_*` (none) | SharedPreferences keyed by USN; schema_version=1 (R12.1b) | ⚠️ temporary Dart store (migration-ready) |
 | Backup integration | n/a | `RustDmrPrefsService.exportForBackup/importFromBackup` | ✅ wired |
 
 ## Modified files
@@ -88,7 +88,8 @@ fallback) is fully wired.
   `proxyUnregisterHls` bindings + lazy HLS symbol loader (non-fatal on older
   builds). Updated stale "Dart remains source of truth" comments.
 - `lib/services/rust_proxy_bridge.dart` — updated cutover-status comment
-  (DLNA cut over; LocalStreamBridge kept for MustProxy only).
+  (DLNA cut over; LocalStreamBridge **deleted** in R12.1 — MustProxy/crypt
+  path throws until `wdmm_proxy_register_stream` lands).
 - `lib/services/settings_service.dart` — removed the three DLNA transcode
   keys (`dlna_remux_container` / `_transcode_video` / `_transcode_audio`) and
   their getters/setters. Per-device prefs now live in `RustDmrPrefsService`.
@@ -105,6 +106,21 @@ fallback) is fully wired.
   `lib/screens/video_player_screen.dart`,
   `lib/screens/settings_screen.dart` — swapped to `RustDlnaCastService`;
   updated settings-screen proxy note.
+
+## R12.1b additions
+
+- **DMR prefs schema version** — `RustDmrPrefsService` now persists
+  `dmr_prefs_schema_version = 1` in SharedPreferences on first init.
+  `_migrateIfNeeded()` is a no-op for v1 but provides the hook for the
+  future v2 migration to Rust `wdmm_dmr_prefs_*`. Backup `exportForBackup`
+  remains flat `usn → prefs` for back-compat.
+- **Typed cast errors in UX** — `network_library_screen.dart` and
+  `video_player_screen.dart` now show a Snack when `cast.errorCode ==
+  DlnaCastErrorCode.notCached` after `startCast`. `playPause` error path in
+  `RustDlnaCastService` replaced the old `_friendlyError` string helper with
+  a typed `DlnaCastError`. `dlna_cast_bar.dart` `_ErrorDetail` widget now
+  takes separate `display` / `copyText` fields so the UI shows only the
+  friendly message while the clipboard gets the full tech detail.
 
 ## Leftovers / follow-ups
 

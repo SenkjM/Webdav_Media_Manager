@@ -68,18 +68,37 @@ class DmrDevicePrefs {
 
 /// Persists per-device DMR compatibility settings keyed by SSDP USN.
 ///
-/// ### Migration note (temporary Dart store)
-/// `wdmm_dmr_prefs_*` FFI exports are NOT present in the current wdmm-core
-/// submodule (SHA 4a37aa4, feat/proxy-hls-ffmpeg). This service uses
-/// SharedPreferences as a migration-keyed temporary store. Once the Rust FFI
-/// lands, replace this class body with thin FFI wrappers and migrate the
-/// SharedPrefs data into the Rust DB on first open.
+/// ### Schema version
+/// A schema version key (`dmr_prefs_schema_version`) is stored alongside the
+/// per-device entries. The current version is **1** (flat USN → JSON map,
+/// SharedPreferences only). On init, [_migrateIfNeeded] is called; v1→v1 is a
+/// no-op. When `wdmm_dmr_prefs_*` FFI lands, bump the version, import existing
+/// SharedPreferences data into the Rust DB on first open, then clear the
+/// SharedPreferences keys.
 ///
-/// Keys in SharedPreferences: `dmr_prefs.<USN>`
-/// Backup: `exportForBackup()` / `importFromBackup()` for inclusion in the
-/// WmpContainer backup archive.
+/// ### Target Rust JSON shape (for future migration)
+/// The Rust DB is expected to store one JSON object per USN:
+/// ```json
+/// {
+///   "display_name": "Living Room TV",   // optional
+///   "remux_container": false,
+///   "transcode_video": false,
+///   "transcode_audio": false
+/// }
+/// ```
+/// This matches [DmrDevicePrefs.toJson()]. The migration path is:
+///   `SharedPreferences dmr_prefs.<USN>` → `wdmm_dmr_prefs_upsert(usn, json)`.
+///
+/// TODO: replace this class body with thin FFI wrappers once `wdmm_dmr_prefs_*`
+/// exports land in wdmm-core (blocked: no such exports at SHA 4a37aa4).
+///
+/// ### Backup
+/// [exportForBackup()] / [importFromBackup()] for inclusion in the
+/// WmpContainer backup archive (section key: `'dmr_prefs'`).
 class RustDmrPrefsService extends ChangeNotifier {
   static const _kPrefix = 'dmr_prefs.';
+  static const _kSchemaVersionKey = 'dmr_prefs_schema_version';
+  static const _kCurrentSchemaVersion = 1;
 
   SharedPreferences? _prefs;
 
@@ -88,7 +107,27 @@ class RustDmrPrefsService extends ChangeNotifier {
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    await _migrateIfNeeded();
     _loadAll();
+  }
+
+  /// Runs schema migration if the stored version is behind the current version.
+  ///
+  /// v1 → v1: no-op (nothing to migrate yet).
+  ///
+  /// Future migration hook (v1 → v2 when Rust prefs FFI lands):
+  ///   1. Load all `dmr_prefs.<USN>` keys from SharedPreferences.
+  ///   2. Call `wdmm_dmr_prefs_upsert(usn, json)` for each.
+  ///   3. Remove SharedPreferences keys.
+  ///   4. Write `dmr_prefs_schema_version = 2`.
+  Future<void> _migrateIfNeeded() async {
+    final prefs = _prefs;
+    if (prefs == null) return;
+    final stored = prefs.getInt(_kSchemaVersionKey) ?? 0;
+    if (stored >= _kCurrentSchemaVersion) return;
+    // v0 → v1: stamp version, data layout unchanged.
+    await prefs.setInt(_kSchemaVersionKey, _kCurrentSchemaVersion);
+    debugPrint('[DmrPrefs] schema migrated $stored → $_kCurrentSchemaVersion (no-op)');
   }
 
   void _loadAll() {
