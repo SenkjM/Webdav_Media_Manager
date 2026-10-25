@@ -249,6 +249,58 @@ These enable full WebDAV backup workflows without Dart HTTP drivers when used wi
 
 ---
 
+## Account Sync (Android → Core DB)
+
+**Status (2026-10-25)**: Android `AccountsService` now mirrors every account into Core DB via FFI. Cloud driver instantiation checks Core DB first.
+
+### FFI Bindings
+
+`RustCoreService` exposes account CRUD:
+- `accountList()` → JSON array of accounts (or `"error:..."`)
+- `accountGet(String id)` → JSON object, `"null"` if absent, or `"error:..."`
+- `accountUpsert(String coreJson)` → `"ok"` or `"error:..."` — core JSON = `{id, provider_type, display_name, base_url, credentials}`
+- `accountDelete(String id)` → `"ok"` or `"error:..."`
+
+All return `String?` (null if FFI unavailable).
+
+### Credentials Structure
+
+| Provider Type | Credentials Map |
+|--------------|----------------|
+| `webdav` | `{username, password, remote_dir}` |
+| Cloud drivers | driver config (tokens/cookies from `AccountsService.loadDriverConfig`) |
+| `crypt` | driver config + nested `source: {provider_type, config}` if source account is resolved |
+
+For crypt drivers, if the config has `source_account_id_name` but not a nested `source` structure, `_syncAccountToCore` resolves the source account by name and embeds its credentials as `source: {provider_type, config}`.
+
+### Sync Triggers
+
+`AccountsService._syncAccountToCore(WebDavAccount)` is called after:
+1. `addAccount` — mirror new account immediately
+2. `updateAccount` — update Core DB after local sqflite save
+3. `saveDriverConfig` — reload account by id and sync (tokens/cookies changed)
+4. `deleteAccount` — calls `RustCoreService.accountDelete(id)`
+5. `init` — best-effort sync all accounts once at startup
+
+Fail-soft: errors are logged via `debugPrint` in debug mode but never block the local sqflite save.
+
+### Cloud Driver Integration
+
+`CloudDriveService.registerAccounts` ensures each account exists in Core DB before calling `_createDriver`:
+1. Call `RustCoreService.accountGet(a.id)` to check Core DB
+2. If null or `"error:..."`, call `AccountsService.syncAccountToCoreById(a.id)` (public wrapper)
+3. Proceed with driver instantiation
+
+Fail-soft: driver creation continues even if Core sync fails.
+
+### Rationale
+
+- Core DB is the source of truth for Rust drivers — WebDAV, cloud, and crypt drivers all read accounts from Core DB during driver instantiation
+- Android's sqflite `LibraryDatabase` is still the source of truth for tracks/playlists; account mirroring enables Core drivers to work without requiring Android to read from Core DB
+- Dual-write is acceptable: account CRUD is infrequent (user-initiated only), and the sync is fail-soft (never blocks UI)
+
+---
+
 ## References
 
 - **Rust Core Repo**: https://github.com/SenkjM/WDMM-core
