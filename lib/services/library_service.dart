@@ -672,6 +672,54 @@ class LibraryService extends ChangeNotifier {
       );
     }
     if (created.isEmpty) return const [];
+
+    // Dual-write: Rust first (when enabled), then sqflite
+    if (kRustLibraryWriteEnabled) {
+      // Delete-then-upsert mirrors replace semantics
+      final deleteResult = RustLibraryService.deleteCueAlbum(
+        sourceName,
+        cueRemotePath,
+      );
+      // Ignore "not found" errors — the album may not exist yet
+      if (deleteResult != null &&
+          deleteResult.startsWith('error:') &&
+          !deleteResult.contains('not found')) {
+        throw StateError('Rust CUE album delete failed during replace: $deleteResult');
+      }
+
+      // Build and upsert the album record
+      final albumJson = RustLibraryService.cueAlbumJson(
+        cueId: created.first.cueId!,
+        sourceName: sourceName,
+        cueRemotePath: cueRemotePath,
+        title: created.first.album,
+        performer: created.first.albumArtist ?? created.first.artist,
+        cacheGroupId: groupId,
+        createdAt: now,
+      );
+      if (albumJson != null) {
+        final albumResult = RustLibraryService.upsertCueAlbum(
+          jsonEncode(albumJson),
+        );
+        if (albumResult != null && albumResult.startsWith('error:')) {
+          throw StateError('Rust CUE album upsert failed: $albumResult');
+        }
+      }
+
+      // Upsert each slice
+      for (final track in created) {
+        final sliceJson = RustLibraryService.cueSliceJson(track);
+        if (sliceJson != null) {
+          final sliceResult = RustLibraryService.upsertCueSlice(
+            jsonEncode(sliceJson),
+          );
+          if (sliceResult != null && sliceResult.startsWith('error:')) {
+            throw StateError('Rust CUE slice upsert failed: $sliceResult');
+          }
+        }
+      }
+    }
+
     await _db.replaceCueAlbumTracks(
       sourceName: sourceName,
       cueRemotePath: cueRemotePath,
@@ -705,6 +753,20 @@ class LibraryService extends ChangeNotifier {
       if (path == null) continue;
       row.coverPath = path;
       row.rev = _nextRev();
+
+      // Dual-write: Rust first (when enabled), then sqflite
+      if (kRustLibraryWriteEnabled) {
+        final sliceJson = RustLibraryService.cueSliceJson(row);
+        if (sliceJson != null) {
+          final sliceResult = RustLibraryService.upsertCueSlice(
+            jsonEncode(sliceJson),
+          );
+          if (sliceResult != null && sliceResult.startsWith('error:')) {
+            throw StateError('Rust CUE slice upsert failed in cover refresh: $sliceResult');
+          }
+        }
+      }
+
       await _db.upsertCueSlice(row);
       changed = true;
     }
@@ -822,6 +884,54 @@ class LibraryService extends ChangeNotifier {
 
     // Read/build failures above leave the existing album untouched. Commit all
     // persisted rows together, then replace the in-memory projection at once.
+
+    // Dual-write: Rust first (when enabled), then sqflite
+    if (kRustLibraryWriteEnabled) {
+      // Delete-then-upsert mirrors replace semantics
+      final deleteResult = RustLibraryService.deleteCueAlbum(
+        sourceName,
+        cueRemotePath,
+      );
+      // Ignore "not found" errors — the album may not exist yet
+      if (deleteResult != null &&
+          deleteResult.startsWith('error:') &&
+          !deleteResult.contains('not found')) {
+        throw StateError('Rust CUE album delete failed during replace: $deleteResult');
+      }
+
+      // Build and upsert the album record
+      final albumJson = RustLibraryService.cueAlbumJson(
+        cueId: created.first.cueId!,
+        sourceName: sourceName,
+        cueRemotePath: cueRemotePath,
+        title: created.first.album,
+        performer: created.first.albumArtist ?? created.first.artist,
+        cacheGroupId: cacheGroupId,
+        createdAt: now,
+      );
+      if (albumJson != null) {
+        final albumResult = RustLibraryService.upsertCueAlbum(
+          jsonEncode(albumJson),
+        );
+        if (albumResult != null && albumResult.startsWith('error:')) {
+          throw StateError('Rust CUE album upsert failed: $albumResult');
+        }
+      }
+
+      // Upsert each slice
+      for (final track in created) {
+        final sliceJson = RustLibraryService.cueSliceJson(track);
+        if (sliceJson != null) {
+          final sliceResult = RustLibraryService.upsertCueSlice(
+            jsonEncode(sliceJson),
+          );
+          if (sliceResult != null && sliceResult.startsWith('error:')) {
+            throw StateError('Rust CUE slice upsert failed: $sliceResult');
+          }
+        }
+      }
+    }
+
     await _db.replaceCueAlbumTracks(
       sourceName: sourceName,
       cueRemotePath: cueRemotePath,

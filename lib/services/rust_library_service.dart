@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../models/library_track.dart';
+import '../utils/track_identity.dart';
 import 'rust_core_service.dart';
 
 /// Round 8/9 — Rust library service.
@@ -102,12 +103,24 @@ class RustLibraryService {
   /// the native library is unavailable.  Returns the result string from FFI
   /// (`'ok'` on success, `'error:…'` on failure), or `null` if disabled.
   ///
-  /// CUE slice tracks are skipped: their `musicId` field is used as the Rust
-  /// `id`, and the Rust schema does not yet have a CUE-slice model.
+  /// CUE slice tracks are routed to [upsertCueSlice] when [track.isCueVirtual]
+  /// is true.  Regular tracks use the track table.
   ///
   /// Never throws.
   static String? upsertTrack(LibraryTrack track) {
     if (!kRustLibraryWriteEnabled) return null;
+
+    // Route CUE virtuals to the CUE upsert path
+    if (track.isCueVirtual) {
+      final sliceJson = cueSliceJson(track);
+      if (sliceJson == null) {
+        debugPrint('[RustLibraryService] upsertTrack: CUE slice missing required fields');
+        return null;
+      }
+      return upsertCueSlice(jsonEncode(sliceJson));
+    }
+
+    // Regular track path
     final json = _trackToRustJson(track);
     if (json == null) return null;
     try {
@@ -310,6 +323,82 @@ class RustLibraryService {
       debugPrint('[RustLibraryService] upsertCueAlbum exception: $e');
       return null;
     }
+  }
+
+  // ── CUE helpers ─────────────────────────────────────────────────────────────
+
+  /// Build a Core-shaped CueAlbum JSON object from a CUE slice track.
+  ///
+  /// Returns `null` when required fields are missing.
+  static Map<String, dynamic>? cueAlbumJson({
+    required String cueId,
+    required String sourceName,
+    required String cueRemotePath,
+    String? title,
+    String? performer,
+    String? cacheGroupId,
+    required DateTime createdAt,
+  }) {
+    if (cueId.isEmpty || sourceName.isEmpty || cueRemotePath.isEmpty) {
+      return null;
+    }
+    return {
+      'cue_id': cueId,
+      'source_name': sourceName,
+      'cue_remote_path': cueRemotePath,
+      'title': title,
+      'performer': performer,
+      'cache_group_id': cacheGroupId,
+      'created_at': createdAt.toUtc().toIso8601String(),
+    };
+  }
+
+  /// Build a Core-shaped CueSlice JSON object from a LibraryTrack.
+  ///
+  /// Returns `null` when the track is not a CUE virtual or required fields are
+  /// missing.
+  static Map<String, dynamic>? cueSliceJson(LibraryTrack track) {
+    if (!track.isCueVirtual) return null;
+    if (track.cueId == null || track.cueId!.isEmpty) return null;
+    if (track.audioMusicId == null || track.audioMusicId!.isEmpty) {
+      // Derive audio_music_id like sqflite _upsertCueSlice does
+      if (track.audioRemotePath == null || track.audioRemotePath!.isEmpty) {
+        return null;
+      }
+    }
+    final audioMid = track.audioMusicId ??
+        musicIdForRemote(track.sourceName, track.audioRemotePath!);
+    return {
+      'music_id': track.musicId,
+      'cue_id': track.cueId,
+      'audio_music_id': audioMid,
+      'source_name': track.sourceName,
+      'remote_path': track.remotePath,
+      'file_name': track.fileName,
+      'track_index': track.cueTrackIndex ?? 0,
+      'title': track.title,
+      'artist': track.artist,
+      'album_artist': track.albumArtist,
+      'album': track.album,
+      'duration_ms': track.durationMs,
+      'track_number': track.trackNumber,
+      'track_total': track.trackTotal,
+      'disc_number': track.discNumber,
+      'disc_total': track.discTotal,
+      'year': track.year,
+      'genre': track.genre,
+      'bitrate': track.bitrate,
+      'sample_rate': track.sampleRate,
+      'cover_path': track.coverPath,
+      'audio_remote_path': track.audioRemotePath,
+      'clip_start_ms': track.clipStartMs,
+      'clip_end_ms': track.clipEndMs,
+      'cache_group_id': track.cacheGroupId,
+      'rev': track.rev ?? 0,
+      'last_downloaded_at': track.lastDownloadedAt.toUtc().toIso8601String(),
+      'last_tag_read_at': track.lastTagReadAt.toUtc().toIso8601String(),
+      'remote_missing': track.remoteMissing ? 1 : 0,
+    };
   }
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
