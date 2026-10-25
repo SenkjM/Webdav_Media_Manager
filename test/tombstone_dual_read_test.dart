@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/services/library_service.dart';
 
-/// Pure-Dart decode helper test: LibraryService._decodeDeletedTracks
+/// Pure-Dart decode helper test: LibraryService.decodeDeletedTracksForTest
 /// converts Rust JSON array → sqflite-compatible Map list. No FFI / device.
 void main() {
   test('_decodeDeletedTracks parses valid Rust JSON array', () {
@@ -24,7 +24,7 @@ void main() {
       },
     ]);
 
-    final result = LibraryService._decodeDeletedTracks(json);
+    final result = LibraryService.decodeDeletedTracksForTest(json);
     expect(result, isNotNull);
     expect(result!.length, 2);
 
@@ -45,19 +45,19 @@ void main() {
 
   test('_decodeDeletedTracks returns empty list for empty array', () {
     final json = jsonEncode([]);
-    final result = LibraryService._decodeDeletedTracks(json);
+    final result = LibraryService.decodeDeletedTracksForTest(json);
     expect(result, isNotNull);
     expect(result!.isEmpty, true);
   });
 
   test('_decodeDeletedTracks returns null for invalid JSON', () {
-    final result = LibraryService._decodeDeletedTracks('not json');
+    final result = LibraryService.decodeDeletedTracksForTest('not json');
     expect(result, isNull);
   });
 
   test('_decodeDeletedTracks returns null for non-array JSON', () {
     final json = jsonEncode({'key': 'value'});
-    final result = LibraryService._decodeDeletedTracks(json);
+    final result = LibraryService.decodeDeletedTracksForTest(json);
     expect(result, isNull);
   });
 
@@ -74,7 +74,7 @@ void main() {
       },
     ]);
 
-    final result = LibraryService._decodeDeletedTracks(json);
+    final result = LibraryService.decodeDeletedTracksForTest(json);
     expect(result, isNotNull);
     expect(result!.length, 2);
 
@@ -104,7 +104,7 @@ void main() {
       },
     ]);
 
-    final result = LibraryService._decodeDeletedTracks(json);
+    final result = LibraryService.decodeDeletedTracksForTest(json);
     expect(result, isNotNull);
     expect(result!.length, 1);
     expect(result[0]['rev'], isA<int>());

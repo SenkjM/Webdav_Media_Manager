@@ -130,7 +130,7 @@ class LibraryService extends ChangeNotifier {
       final rustResult = RustLibraryService.deletedTracksUnpushed();
       if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
         try {
-          final decoded = _decodeDeletedTracks(rustResult);
+          final decoded = decodeDeletedTracksForTest(rustResult);
           if (decoded != null) return decoded;
         } catch (_) {
           // Fallback to sqflite below
@@ -171,7 +171,7 @@ class LibraryService extends ChangeNotifier {
       final rustResult = RustLibraryService.deletedTracksList();
       if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
         try {
-          final decoded = _decodeDeletedTracks(rustResult);
+          final decoded = decodeDeletedTracksForTest(rustResult);
           if (decoded != null) return decoded;
         } catch (_) {
           // Fallback to sqflite below
@@ -1390,7 +1390,7 @@ class LibraryService extends ChangeNotifier {
   ///
   /// Returns null on decode failure. Exposed for testing without FFI.
   @visibleForTesting
-  static List<Map<String, dynamic>>? _decodeDeletedTracks(String json) {
+  static List<Map<String, dynamic>>? decodeDeletedTracksForTest(String json) {
     try {
       final raw = jsonDecode(json);
       if (raw is! List) return null;
