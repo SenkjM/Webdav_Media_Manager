@@ -492,7 +492,7 @@ abstract class AppLocalizations {
   /// No description provided for @unboundSource.
   ///
   /// In zh, this message translates to:
-  /// **'未绑定网盘「{sourceName}」'**
+  /// **'未绑定源「{sourceName}」'**
   String unboundSource(Object sourceName);
 
   /// No description provided for @uncategorized.
@@ -570,7 +570,7 @@ abstract class AppLocalizations {
   /// No description provided for @confirmDeleteServer.
   ///
   /// In zh, this message translates to:
-  /// **'确定删除「{name}」？其曲目会变成「未绑定网盘」，加回同名即可恢复。'**
+  /// **'确定删除「{name}」？其曲目会变成「未绑定源」，加回同名即可恢复。'**
   String confirmDeleteServer(Object name);
 
   /// No description provided for @audioStreamingTitle.
@@ -1038,7 +1038,7 @@ abstract class AppLocalizations {
   /// No description provided for @accountDuplicateContent.
   ///
   /// In zh, this message translates to:
-  /// **'已有同名网盘「{name}」：\n{url}\n\n同名会被当成同一来源。'**
+  /// **'已有同名源「{name}」：\n{url}\n\n同名会被当成同一来源。'**
   String accountDuplicateContent(Object name, Object url);
 
   /// No description provided for @accountChangeName.
@@ -1068,7 +1068,7 @@ abstract class AppLocalizations {
   /// No description provided for @accountRenameContent.
   ///
   /// In zh, this message translates to:
-  /// **'「{name}」的曲目将变为「未绑定网盘」，改回原名即可恢复。\n仅改地址时请保持名称不变。'**
+  /// **'「{name}」的曲目将变为「未绑定源」，改回原名即可恢复。\n仅改地址时请保持名称不变。'**
   String accountRenameContent(Object name);
 
   /// No description provided for @accountUsernameChangedContent.
@@ -1344,7 +1344,7 @@ abstract class AppLocalizations {
   /// No description provided for @syncIntro.
   ///
   /// In zh, this message translates to:
-  /// **'凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。'**
+  /// **'凭证、歌单与音乐库共用一条远端路径：在下面选源、填路径即可。'**
   String get syncIntro;
 
   /// No description provided for @syncAll.
@@ -1386,7 +1386,7 @@ abstract class AppLocalizations {
   /// No description provided for @selectServer.
   ///
   /// In zh, this message translates to:
-  /// **'① 选择网盘'**
+  /// **'① 选择源'**
   String get selectServer;
 
   /// No description provided for @path.
@@ -2712,7 +2712,7 @@ abstract class AppLocalizations {
   /// No description provided for @syncIntroLong.
   ///
   /// In zh, this message translates to:
-  /// **'凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。'**
+  /// **'凭证、歌单与音乐库共用一条远端路径：在下面选源、填路径即可。'**
   String get syncIntroLong;
 
   /// No description provided for @scheduledSyncOff.
@@ -2742,7 +2742,7 @@ abstract class AppLocalizations {
   /// No description provided for @selectCloudDrive.
   ///
   /// In zh, this message translates to:
-  /// **'① 选择网盘'**
+  /// **'① 选择源'**
   String get selectCloudDrive;
 
   /// No description provided for @pathStep.
@@ -3681,7 +3681,7 @@ abstract class AppLocalizations {
   /// No description provided for @vaultSummarySkipped.
   ///
   /// In zh, this message translates to:
-  /// **'；跳过 {count} 个不支持的网盘类型'**
+  /// **'；跳过 {count} 个不支持的源类型'**
   String vaultSummarySkipped(Object count);
 
   /// No description provided for @vaultSyncedEncrypted.
@@ -3711,13 +3711,13 @@ abstract class AppLocalizations {
   /// No description provided for @errVaultDestNotConfigured.
   ///
   /// In zh, this message translates to:
-  /// **'凭证同步目的地网盘未配置'**
+  /// **'凭证同步目的地源未配置'**
   String get errVaultDestNotConfigured;
 
   /// No description provided for @errBackupDestNotConfigured.
   ///
   /// In zh, this message translates to:
-  /// **'备份目的地网盘未配置'**
+  /// **'备份目的地源未配置'**
   String get errBackupDestNotConfigured;
 
   /// No description provided for @backupDoneLatest.
@@ -3993,7 +3993,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlErrSourceUnbound.
   ///
   /// In zh, this message translates to:
-  /// **'来源网盘未绑定（{source}）'**
+  /// **'来源未绑定（{source}）'**
   String dlErrSourceUnbound(Object source);
 
   /// No description provided for @dlErrWritePublicFailed.
@@ -4713,7 +4713,7 @@ abstract class AppLocalizations {
   /// No description provided for @sourceUnbound.
   ///
   /// In zh, this message translates to:
-  /// **'来源网盘未绑定'**
+  /// **'来源未绑定'**
   String get sourceUnbound;
 
   /// No description provided for @downloadingPercent.
@@ -7064,7 +7064,7 @@ abstract class AppLocalizations {
   /// No description provided for @taskErrSourceUnbound.
   ///
   /// In zh, this message translates to:
-  /// **'来源网盘未绑定'**
+  /// **'来源未绑定'**
   String get taskErrSourceUnbound;
 
   /// No description provided for @taskErrQueueSchemaDrift.
@@ -8108,7 +8108,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaReaderUnboundSource.
   ///
   /// In zh, this message translates to:
-  /// **'来源网盘未绑定，无法打开'**
+  /// **'来源未绑定，无法打开'**
   String get mangaReaderUnboundSource;
 
   /// No description provided for @mangaUnspecifiedSeries.

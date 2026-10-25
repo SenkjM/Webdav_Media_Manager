@@ -206,7 +206,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String unboundSource(Object sourceName) {
-    return '未绑定网盘「$sourceName」';
+    return '未绑定源「$sourceName」';
   }
 
   @override
@@ -247,7 +247,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String confirmDeleteServer(Object name) {
-    return '确定删除「$name」？其曲目会变成「未绑定网盘」，加回同名即可恢复。';
+    return '确定删除「$name」？其曲目会变成「未绑定源」，加回同名即可恢复。';
   }
 
   @override
@@ -508,7 +508,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String accountDuplicateContent(Object name, Object url) {
-    return '已有同名网盘「$name」：\n$url\n\n同名会被当成同一来源。';
+    return '已有同名源「$name」：\n$url\n\n同名会被当成同一来源。';
   }
 
   @override
@@ -525,7 +525,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String accountRenameContent(Object name) {
-    return '「$name」的曲目将变为「未绑定网盘」，改回原名即可恢复。\n仅改地址时请保持名称不变。';
+    return '「$name」的曲目将变为「未绑定源」，改回原名即可恢复。\n仅改地址时请保持名称不变。';
   }
 
   @override
@@ -668,7 +668,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncTitle => '同步与备份';
 
   @override
-  String get syncIntro => '凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。';
+  String get syncIntro => '凭证、歌单与音乐库共用一条远端路径：在下面选源、填路径即可。';
 
   @override
   String get syncAll => '全部同步';
@@ -691,7 +691,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get remotePathSubtitle => '凭证、音乐库、歌单与备份都放在这条路径下面';
 
   @override
-  String get selectServer => '① 选择网盘';
+  String get selectServer => '① 选择源';
 
   @override
   String get path => '② 路径';
@@ -1451,7 +1451,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncAndBackup => '备份与同步';
 
   @override
-  String get syncIntroLong => '凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。';
+  String get syncIntroLong => '凭证、歌单与音乐库共用一条远端路径：在下面选源、填路径即可。';
 
   @override
   String get scheduledSyncOff => '已关闭，仅手动同步';
@@ -1468,7 +1468,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get needWebdavServer => '请先添加 WebDAV 服务器。';
 
   @override
-  String get selectCloudDrive => '① 选择网盘';
+  String get selectCloudDrive => '① 选择源';
 
   @override
   String get pathStep => '② 路径';
@@ -2012,7 +2012,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String vaultSummarySkipped(Object count) {
-    return '；跳过 $count 个不支持的网盘类型';
+    return '；跳过 $count 个不支持的源类型';
   }
 
   @override
@@ -2032,10 +2032,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get errVaultDestNotConfigured => '凭证同步目的地网盘未配置';
+  String get errVaultDestNotConfigured => '凭证同步目的地源未配置';
 
   @override
-  String get errBackupDestNotConfigured => '备份目的地网盘未配置';
+  String get errBackupDestNotConfigured => '备份目的地源未配置';
 
   @override
   String backupDoneLatest(Object remote, Object size) {
@@ -2222,7 +2222,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String dlErrSourceUnbound(Object source) {
-    return '来源网盘未绑定（$source）';
+    return '来源未绑定（$source）';
   }
 
   @override
@@ -2659,7 +2659,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get libraryTracksEmpty => '暂无曲目';
 
   @override
-  String get sourceUnbound => '来源网盘未绑定';
+  String get sourceUnbound => '来源未绑定';
 
   @override
   String downloadingPercent(Object p) {
@@ -4024,7 +4024,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get taskErrSourceUnbound => '来源网盘未绑定';
+  String get taskErrSourceUnbound => '来源未绑定';
 
   @override
   String get taskErrQueueSchemaDrift => '队列数据库需升级';
@@ -4579,7 +4579,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaReaderPreparing => '正在准备页…';
 
   @override
-  String get mangaReaderUnboundSource => '来源网盘未绑定，无法打开';
+  String get mangaReaderUnboundSource => '来源未绑定，无法打开';
 
   @override
   String get mangaUnspecifiedSeries => '未指定系列';
@@ -5394,7 +5394,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String unboundSource(Object sourceName) {
-    return '未綁定網路磁碟「$sourceName」';
+    return '未綁定源「$sourceName」';
   }
 
   @override
@@ -5435,7 +5435,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String confirmDeleteServer(Object name) {
-    return '確定刪除「$name」？其曲目會變成「未綁定網路磁碟」，加回同名即可恢復。';
+    return '確定刪除「$name」？其曲目會變成「未綁定源」，加回同名即可恢復。';
   }
 
   @override
@@ -5713,7 +5713,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String accountRenameContent(Object name) {
-    return '「$name」的曲目將變為「未綁定網路磁碟」，改回原名即可恢復。\n僅修改位址時請保持名稱不變。';
+    return '「$name」的曲目將變為「未綁定源」，改回原名即可恢復。\n僅修改位址時請保持名稱不變。';
   }
 
   @override
@@ -5857,7 +5857,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get syncTitle => '同步與備份';
 
   @override
-  String get syncIntro => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選網路磁碟、填寫路徑即可。';
+  String get syncIntro => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選源、填寫路徑即可。';
 
   @override
   String get syncAll => '全部同步';
@@ -5880,7 +5880,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get remotePathSubtitle => '憑證、音樂庫、歌單與備份都放在這條路徑下方';
 
   @override
-  String get selectServer => '① 選擇網路磁碟';
+  String get selectServer => '① 選擇源';
 
   @override
   String get path => '② 路徑';
@@ -6640,7 +6640,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get syncAndBackup => '備份與同步';
 
   @override
-  String get syncIntroLong => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選網盤、填路徑即可。';
+  String get syncIntroLong => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選源、填路徑即可。';
 
   @override
   String get scheduledSyncOff => '已關閉，僅手動同步';
@@ -6657,7 +6657,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get needWebdavServer => '請先新增 WebDAV 伺服器。';
 
   @override
-  String get selectCloudDrive => '① 選擇網盤';
+  String get selectCloudDrive => '① 選擇源';
 
   @override
   String get pathStep => '② 路徑';
@@ -9768,7 +9768,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaReaderPreparing => '正在準備頁面…';
 
   @override
-  String get mangaReaderUnboundSource => '來源網盤未綁定，無法開啟';
+  String get mangaReaderUnboundSource => '來源未綁定，無法開啟';
 
   @override
   String get mangaUnspecifiedSeries => '未指定系列';

@@ -208,7 +208,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String unboundSource(Object sourceName) {
-    return 'Unbound network drive “$sourceName”';
+    return 'Unbound source “$sourceName”';
   }
 
   @override
@@ -687,7 +687,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncIntro =>
-      'Credentials, playlists, and the music library share one remote path. Choose a server and enter the path below.';
+      'Credentials, playlists, and the music library share one remote path. Pick a source and enter the path below.';
 
   @override
   String get syncAll => 'Sync all';
@@ -711,7 +711,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Credentials, music library, playlists, and backups are stored below this path';
 
   @override
-  String get selectServer => '1. Choose server';
+  String get selectServer => '1. Choose source';
 
   @override
   String get path => '2. Path';
@@ -1501,7 +1501,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncIntroLong =>
-      'Credentials, playlists, and the library share one remote path: pick a drive and fill in the path below.';
+      'Credentials, playlists, and the library share one remote path: pick a source and fill in the path below.';
 
   @override
   String get scheduledSyncOff => 'Off; manual sync only';
@@ -1519,7 +1519,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get needWebdavServer => 'Add a WebDAV server first.';
 
   @override
-  String get selectCloudDrive => '① Pick a drive';
+  String get selectCloudDrive => '① Pick a source';
 
   @override
   String get pathStep => '② Path';
@@ -2756,7 +2756,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get libraryTracksEmpty => 'No tracks yet';
 
   @override
-  String get sourceUnbound => 'Source drive not linked';
+  String get sourceUnbound => 'Source not linked';
 
   @override
   String downloadingPercent(Object p) {
