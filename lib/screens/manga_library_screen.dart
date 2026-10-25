@@ -483,7 +483,7 @@ class _MangaListTile extends StatelessWidget {
 
 Widget? _mangaSubtitle(BuildContext context, Manga manga) {
   final l10n = AppLocalizations.of(context)!;
-  final progress = context.watch<MangaLibraryService>().progressOf(manga.id);
+  final progress = context.watch<MangaLibraryService>().progressOf(manga);
   final meta = <String>[
     if (manga.displayAuthor.isNotEmpty) manga.displayAuthor,
     ?manga.series,
@@ -602,7 +602,7 @@ class _MangaGridTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final progress = context.watch<MangaLibraryService>().progressOf(manga.id);
+    final progress = context.watch<MangaLibraryService>().progressOf(manga);
     return Material(
       color: selected
           ? Theme.of(context).colorScheme.primaryContainer
