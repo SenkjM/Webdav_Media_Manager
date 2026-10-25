@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/app_state.dart';
 import '../services/dlna_cast_service.dart';
+import 'dlna_compat_sheet.dart';
+import 'dlna_device_info_sheet.dart';
 
 /// DLNA 设备选择 BottomSheet。
 ///
@@ -76,6 +79,29 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
     final castService = context.read<DlnaCastService>();
     castService.stopDiscovery();
     Navigator.pop(ctx, renderer);
+  }
+
+  /// 打开设备详细信息页。
+  Future<void> _showInfo(DlnaRenderer renderer) async {
+    final castService = context.read<DlnaCastService>();
+    final appState = context.read<AppState>();
+    // 异步加载协议信息
+    unawaited(castService.fetchProtocolInfo(renderer));
+    await DlnaDeviceInfoSheet.show(
+      context,
+      renderer,
+      dmrPrefs: appState.dmrPrefs,
+    );
+  }
+
+  /// 打开兼容性设置页。
+  Future<void> _showCompat(DlnaRenderer renderer) async {
+    final appState = context.read<AppState>();
+    await DlnaCompatSheet.show(
+      context,
+      renderer,
+      appState.dmrPrefs,
+    );
   }
 
   /// 关闭 Sheet
@@ -152,13 +178,19 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
               itemCount: discovered.length,
               itemBuilder: (ctx, i) {
                 final renderer = discovered[i];
+                final appState = context.read<AppState>();
+                final pref = appState.dmrPrefs[renderer.usn];
+                final displayName = pref?.overrideName?.isNotEmpty == true
+                    ? pref!.overrideName!
+                    : renderer.friendlyName;
+
                 return ListTile(
                   leading: Icon(
                     Icons.tv,
                     color: scheme.primary,
                   ),
                   title: Text(
-                    renderer.friendlyName,
+                    displayName,
                     style: Theme.of(ctx).textTheme.bodyLarge?.copyWith(
                       color: scheme.onSurface,
                       fontWeight: FontWeight.w500,
@@ -170,11 +202,31 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
-                  trailing: Icon(
-                    Icons.chevron_right,
-                    color: scheme.onSurfaceVariant,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 信息按钮
+                      IconButton(
+                        icon: Icon(
+                          Icons.info_outline,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        onPressed: () => _showInfo(renderer),
+                        tooltip: '设备信息',
+                      ),
+                      // 兼容性设置按钮
+                      IconButton(
+                        icon: Icon(
+                          Icons.tune,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        onPressed: () => _showCompat(renderer),
+                        tooltip: '兼容性设置',
+                      ),
+                    ],
                   ),
                   onTap: () => _selectRenderer(context, renderer),
+                  onLongPress: () => _showCompat(renderer),
                 );
               },
             )

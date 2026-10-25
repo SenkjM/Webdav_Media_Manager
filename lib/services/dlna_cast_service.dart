@@ -25,6 +25,10 @@ class DlnaRenderer {
     required this.controlUrl,
     required this.connMgrControlUrl,
     required this.host,
+    this.modelName,
+    this.manufacturer,
+    this.modelNumber,
+    this.sinkProtocolInfo,
   });
 
   /// 设备唯一标识（SSDP USN 字段）。
@@ -45,12 +49,48 @@ class DlnaRenderer {
   /// 渲染器 IP 地址。
   final String host;
 
+  /// 设备型号名称（来自 description.xml 的 modelName 元素）。
+  final String? modelName;
+
+  /// 制造商（来自 description.xml 的 manufacturer 元素）。
+  final String? manufacturer;
+
+  /// 型号编号（来自 description.xml 的 modelNumber 元素）。
+  final String? modelNumber;
+
+  /// 支持的协议信息（从 GetProtocolInfo 获取的 SinkProtocolInfo）。
+  final List<String>? sinkProtocolInfo;
+
   @override
   bool operator ==(Object other) =>
       other is DlnaRenderer && other.usn == usn;
 
   @override
   int get hashCode => usn.hashCode;
+
+  DlnaRenderer copyWith({
+    String? usn,
+    String? friendlyName,
+    String? location,
+    String? controlUrl,
+    String? connMgrControlUrl,
+    String? host,
+    String? modelName,
+    String? manufacturer,
+    String? modelNumber,
+    List<String>? sinkProtocolInfo,
+  }) => DlnaRenderer(
+    usn: usn ?? this.usn,
+    friendlyName: friendlyName ?? this.friendlyName,
+    location: location ?? this.location,
+    controlUrl: controlUrl ?? this.controlUrl,
+    connMgrControlUrl: connMgrControlUrl ?? this.connMgrControlUrl,
+    host: host ?? this.host,
+    modelName: modelName ?? this.modelName,
+    manufacturer: manufacturer ?? this.manufacturer,
+    modelNumber: modelNumber ?? this.modelNumber,
+    sinkProtocolInfo: sinkProtocolInfo ?? this.sinkProtocolInfo,
+  );
 }
 
 /// 兼容模式转码选项，默认全部关闭。
@@ -258,6 +298,10 @@ class DlnaCastService extends ChangeNotifier {
 
       final connMgrPath = _connMgrControlUrl(body, location) ?? '';
       final usn = _xmlText(body, 'UDN') ?? location;
+      final modelName = _xmlText(body, 'modelName');
+      final manufacturer = _xmlText(body, 'manufacturer');
+      final modelNumber = _xmlText(body, 'modelNumber');
+
       final renderer = DlnaRenderer(
         usn: usn,
         friendlyName: friendlyName,
@@ -265,6 +309,9 @@ class DlnaCastService extends ChangeNotifier {
         controlUrl: controlPath,
         connMgrControlUrl: connMgrPath,
         host: uri.host,
+        modelName: modelName,
+        manufacturer: manufacturer,
+        modelNumber: modelNumber,
       );
 
       if (!_discovered.any((r) => r.usn == renderer.usn)) {
@@ -281,6 +328,22 @@ class DlnaCastService extends ChangeNotifier {
   // ──────────────────────────────────────────────────────────────────────────
   // 投屏控制
   // ──────────────────────────────────────────────────────────────────────────
+
+  /// 异步获取渲染器的 SinkProtocolInfo 并更新 [_discovered] 列表。
+  ///
+  /// 用于信息详情页在用户查看设备详情时按需加载协议信息，不阻塞设备发现。
+  Future<void> fetchProtocolInfo(DlnaRenderer renderer) async {
+    try {
+      final protocols = await _getSinkProtocolInfo(renderer.connMgrControlUrl);
+      final index = _discovered.indexWhere((r) => r.usn == renderer.usn);
+      if (index != -1) {
+        _discovered[index] = renderer.copyWith(sinkProtocolInfo: protocols);
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('[DLNA] fetchProtocolInfo failed for ${renderer.friendlyName}: $e');
+    }
+  }
 
   /// 开始投屏到指定渲染器。
   ///
@@ -370,9 +433,22 @@ class DlnaCastService extends ChangeNotifier {
 
     final proxyUrl = uri.toString();
     final mimeType = _mimeFor(item.name);
+
+    // DMR 偏好设置：forceDirect 决定是否跳过 HLS 转码代理。
+    // forceDirect=true → 单文件直通（当前实现）
+    // forceDirect=false → HLS 转码代理（需要 Core FFI `wdmm_proxy_register_hls`）
     final prefs = _dmrPrefs[_renderer!.usn];
-    if (prefs?.forceDirect == false) {
-      throw StateError('HLS compatibility proxy is unavailable in this Android build');
+    final useDirect = prefs?.forceDirect ?? true; // 默认直通
+
+    if (!useDirect) {
+      // HLS 模式：需要 wdmm_proxy_register_hls FFI。
+      // 当前 Core submodule 已有 FFI（9d01e09），但 Android 尚未调用。
+      // 临时：抛出友好错误，引导用户启用单文件直通。
+      throw Exception(
+        'HLS 转码代理暂不可用。\n'
+        '请在「兼容性设置」中启用「单文件直通」，'
+        '或等待后续版本支持 HLS 转码。',
+      );
     }
 
     // 查询 DMR 支持的 SinkProtocolInfo，协商 protocolInfo
