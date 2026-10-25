@@ -248,10 +248,10 @@ class RustLibraryService {
     }
   }
 
-  /// List remaining CUE slices for the given album from the Rust rusqlite DB.
+  /// Count remaining CUE slices for the given album from the Rust rusqlite DB.
   ///
-  /// Returns JSON array or `null` if [kRustLibraryReadEnabled] is `false` or
-  /// the library is unavailable.
+  /// Returns a decimal count string (e.g. "5"), "error:...", or `null` if
+  /// [kRustLibraryReadEnabled] is `false` or the library is unavailable.
   ///
   /// Never throws.
   static String? listCueRemainingSlices(String? sourceName, String? cueRemotePath) {

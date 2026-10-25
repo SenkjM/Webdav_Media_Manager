@@ -1070,8 +1070,8 @@ class LibraryService extends ChangeNotifier {
         );
         if (slicesJson != null && !slicesJson.startsWith('error:')) {
           try {
-            final parsed = jsonDecode(slicesJson);
-            remaining = (parsed is List) ? parsed.length : 0;
+            // Core returns a decimal count string (e.g. "5"), not a JSON array
+            remaining = int.tryParse(slicesJson.trim()) ?? 0;
           } catch (_) {
             remaining = 0;
           }
