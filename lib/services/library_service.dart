@@ -124,8 +124,22 @@ class LibraryService extends ChangeNotifier {
   void observeRev(int rev) => _revClock?.observe(rev);
 
   /// Deletions made here that the cloud has not been told about yet.
-  Future<List<Map<String, dynamic>>> pendingTombstones() =>
-      _db.unpushedTombstones();
+  Future<List<Map<String, dynamic>>> pendingTombstones() async {
+    // Try Rust first if reads enabled
+    if (kRustLibraryReadEnabled) {
+      final rustResult = RustLibraryService.deletedTracksUnpushed();
+      if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
+        try {
+          final decoded = _decodeDeletedTracks(rustResult);
+          if (decoded != null) return decoded;
+        } catch (_) {
+          // Fallback to sqflite below
+        }
+      }
+    }
+    // Fallback to sqflite
+    return _db.unpushedTombstones();
+  }
 
   /// Mark the given tombstone revs as published.
   Future<void> markTombstonesPushed(Set<int> revs) async {
@@ -151,7 +165,22 @@ class LibraryService extends ChangeNotifier {
   }
 
   /// Every tombstone, pushed or not (重建后的残留检查要看全量).
-  Future<List<Map<String, dynamic>>> allTombstones() => _db.allTombstones();
+  Future<List<Map<String, dynamic>>> allTombstones() async {
+    // Try Rust first if reads enabled
+    if (kRustLibraryReadEnabled) {
+      final rustResult = RustLibraryService.deletedTracksList();
+      if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
+        try {
+          final decoded = _decodeDeletedTracks(rustResult);
+          if (decoded != null) return decoded;
+        } catch (_) {
+          // Fallback to sqflite below
+        }
+      }
+    }
+    // Fallback to sqflite
+    return _db.allTombstones();
+  }
 
   /// 清掉「行已经不在」的墓碑，返回清掉几条。
   ///
@@ -159,7 +188,7 @@ class LibraryService extends ChangeNotifier {
   /// **本地不该再留着任何墓碑**。这里只清那些确实没有对应活行的——还留着活行
   /// 的墓碑属于「行 rev 高于墓碑」的复活场景，要不要清得让用户看见。
   Future<int> clearDeadTombstones() async {
-    final rows = await _db.allTombstones();
+    final rows = await allTombstones();
     var cleared = 0;
     for (final row in rows) {
       final source = row['source_name'] as String? ?? '';
@@ -181,7 +210,7 @@ class LibraryService extends ChangeNotifier {
   /// Forget tombstones for rows that were re-downloaded (they are alive again).
   Future<void> clearTombstones(Set<int> revs) async {
     if (revs.isEmpty) return;
-    final rows = await _db.allTombstones();
+    final rows = await allTombstones();
     for (final row in rows) {
       final rev = (row['rev'] as num?)?.toInt() ?? 0;
       if (!revs.contains(rev)) continue;
@@ -1355,5 +1384,31 @@ class LibraryService extends ChangeNotifier {
   void dispose() {
     _db.close();
     super.dispose();
+  }
+
+  /// Decode Rust deleted_tracks JSON array to sqflite-compatible maps.
+  ///
+  /// Returns null on decode failure. Exposed for testing without FFI.
+  @visibleForTesting
+  static List<Map<String, dynamic>>? _decodeDeletedTracks(String json) {
+    try {
+      final raw = jsonDecode(json);
+      if (raw is! List) return null;
+      final out = <Map<String, dynamic>>[];
+      for (final item in raw) {
+        if (item is Map) {
+          final row = <String, dynamic>{};
+          row['source_name'] = item['source_name'] as String? ?? '';
+          row['remote_path'] = item['remote_path'] as String? ?? '';
+          row['rev'] = (item['rev'] as num?)?.toInt() ?? 0;
+          row['deleted_at'] = item['deleted_at'] as String? ?? '';
+          row['pushed'] = (item['pushed'] as num?)?.toInt() ?? 0;
+          out.add(row);
+        }
+      }
+      return out;
+    } catch (_) {
+      return null;
+    }
   }
 }
