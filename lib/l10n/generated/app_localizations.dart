@@ -264,7 +264,7 @@ abstract class AppLocalizations {
   /// No description provided for @networkLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'网络库'**
+  /// **'文件源'**
   String get networkLibrary;
 
   /// No description provided for @downloadQueue.
@@ -516,7 +516,7 @@ abstract class AppLocalizations {
   /// No description provided for @accountsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'网盘账号管理'**
+  /// **'源管理'**
   String get accountsTitle;
 
   /// No description provided for @noAccounts.
@@ -624,7 +624,7 @@ abstract class AppLocalizations {
   /// No description provided for @scanSubdirectoriesHint.
   ///
   /// In zh, this message translates to:
-  /// **'打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。'**
+  /// **'打开后，从文件源打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。'**
   String get scanSubdirectoriesHint;
 
   /// No description provided for @streamSidecarCover.
@@ -1182,7 +1182,7 @@ abstract class AppLocalizations {
   /// No description provided for @rememberNetworkPath.
   ///
   /// In zh, this message translates to:
-  /// **'网络库记住上次路径'**
+  /// **'文件源记住上次路径'**
   String get rememberNetworkPath;
 
   /// No description provided for @rememberNetworkPathSubtitle.
@@ -1554,7 +1554,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileExtIntro.
   ///
   /// In zh, this message translates to:
-  /// **'按后缀识别文件类型；多个后缀用空格或逗号分隔。返回网络库刷新后生效。下面每一类的「单击行为」就是网络库点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。'**
+  /// **'按后缀识别文件类型；多个后缀用空格或逗号分隔。返回文件源刷新后生效。下面每一类的「单击行为」就是文件源点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。'**
   String get fileExtIntro;
 
   /// No description provided for @fileCatMusic.
@@ -2136,7 +2136,7 @@ abstract class AppLocalizations {
   /// No description provided for @nowPlayingQueueEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。'**
+  /// **'当前没有播放队列。\n从音乐库或文件源开始播放后会出现在此。'**
   String get nowPlayingQueueEmpty;
 
   /// No description provided for @queueAdd.
@@ -2766,7 +2766,7 @@ abstract class AppLocalizations {
   /// No description provided for @credentialsSectionDesc.
   ///
   /// In zh, this message translates to:
-  /// **'云端 {path}：全部网盘账号；密码类字段加密，不支持类型的账号恢复时自动跳过。'**
+  /// **'云端 {path}：全部源；密码类字段加密，不支持类型的账号恢复时自动跳过。'**
   String credentialsSectionDesc(Object path);
 
   /// No description provided for @encryptPasswordField.
@@ -3180,7 +3180,7 @@ abstract class AppLocalizations {
   /// No description provided for @recoveryClearContent.
   ///
   /// In zh, this message translates to:
-  /// **'建议先导出数据库。清除后请重新打开应用，网盘账号和本地索引需要重新配置。'**
+  /// **'建议先导出数据库。清除后请重新打开应用，源和本地索引需要重新配置。'**
   String get recoveryClearContent;
 
   /// No description provided for @recoveryClearPartial.
@@ -4725,7 +4725,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryEmptyGuide.
   ///
   /// In zh, this message translates to:
-  /// **'暂无曲目：可在网络库扫描入库，或下载后进入曲库。'**
+  /// **'暂无曲目：可在文件源扫描入库，或下载后进入曲库。'**
   String get libraryEmptyGuide;
 
   /// No description provided for @tagTitle.
@@ -5523,7 +5523,7 @@ abstract class AppLocalizations {
   /// No description provided for @formHintSourceAccount.
   ///
   /// In zh, this message translates to:
-  /// **'选择现有 WebDAV 或网盘账号作为加密源'**
+  /// **'选择现有 WebDAV 或源作为加密源'**
   String get formHintSourceAccount;
 
   /// No description provided for @formLabelSourceDir.
@@ -7304,7 +7304,7 @@ abstract class AppLocalizations {
   /// No description provided for @musicDefaultOpenHint.
   ///
   /// In zh, this message translates to:
-  /// **'网络库、媒体库、歌单点按音乐时：缓存播放或串流播放'**
+  /// **'文件源、媒体库、歌单点按音乐时：缓存播放或串流播放'**
   String get musicDefaultOpenHint;
 
   /// No description provided for @musicDefaultCache.
@@ -7484,7 +7484,7 @@ abstract class AppLocalizations {
   /// No description provided for @audioPlaylistSection.
   ///
   /// In zh, this message translates to:
-  /// **'网络库连播列表'**
+  /// **'文件源连播列表'**
   String get audioPlaylistSection;
 
   /// No description provided for @waitingForCache.
@@ -7550,7 +7550,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryBackfillRootsHint.
   ///
   /// In zh, this message translates to:
-  /// **'开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。'**
+  /// **'开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；文件源「扫描音乐」仍可手动使用。'**
   String get libraryBackfillRootsHint;
 
   /// No description provided for @libraryBackfillAddRoot.
@@ -7562,13 +7562,13 @@ abstract class AppLocalizations {
   /// No description provided for @libraryBackfillNeedAccount.
   ///
   /// In zh, this message translates to:
-  /// **'请先添加网盘账号'**
+  /// **'请先添加源'**
   String get libraryBackfillNeedAccount;
 
   /// No description provided for @libraryBackfillPickAccount.
   ///
   /// In zh, this message translates to:
-  /// **'选择网盘账号'**
+  /// **'选择源'**
   String get libraryBackfillPickAccount;
 
   /// No description provided for @libraryBackfillPickFolder.
@@ -7772,7 +7772,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaLibraryEmptyGuide.
   ///
   /// In zh, this message translates to:
-  /// **'从网络库扫描文件夹或漫画文件，即可在这里浏览。'**
+  /// **'从文件源扫描文件夹或漫画文件，即可在这里浏览。'**
   String get mangaLibraryEmptyGuide;
 
   /// No description provided for @mangaSeriesCount.

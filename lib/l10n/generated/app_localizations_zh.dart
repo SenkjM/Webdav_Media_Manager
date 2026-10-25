@@ -91,7 +91,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playlists => '歌单';
 
   @override
-  String get networkLibrary => '网络库';
+  String get networkLibrary => '文件源';
 
   @override
   String get downloadQueue => '任务队列';
@@ -219,7 +219,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get defaultServer => '默认服务器';
 
   @override
-  String get accountsTitle => '网盘账号管理';
+  String get accountsTitle => '源管理';
 
   @override
   String get noAccounts => '尚未添加账号。点击右下角添加。';
@@ -276,7 +276,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get scanSubdirectoriesHint =>
-      '打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。';
+      '打开后，从文件源打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。';
 
   @override
   String get streamSidecarCover => '同目录封面';
@@ -587,7 +587,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get customHomeSubtitle => '在根页面按返回时回到这里';
 
   @override
-  String get rememberNetworkPath => '网络库记住上次路径';
+  String get rememberNetworkPath => '文件源记住上次路径';
 
   @override
   String get rememberNetworkPathSubtitle => '本次运行中记住上次浏览目录；重启后从根目录开始';
@@ -784,7 +784,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get fileExtIntro =>
-      '按后缀识别文件类型；多个后缀用空格或逗号分隔。返回网络库刷新后生效。下面每一类的「单击行为」就是网络库点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。';
+      '按后缀识别文件类型；多个后缀用空格或逗号分隔。返回文件源刷新后生效。下面每一类的「单击行为」就是文件源点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。';
 
   @override
   String get fileCatMusic => '音乐文件';
@@ -1129,7 +1129,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get nowPlayingQueueEmpty => '当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。';
+  String get nowPlayingQueueEmpty => '当前没有播放队列。\n从音乐库或文件源开始播放后会出现在此。';
 
   @override
   String get queueAdd => '添加';
@@ -1481,7 +1481,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String credentialsSectionDesc(Object path) {
-    return '云端 $path：全部网盘账号；密码类字段加密，不支持类型的账号恢复时自动跳过。';
+    return '云端 $path：全部源；密码类字段加密，不支持类型的账号恢复时自动跳过。';
   }
 
   @override
@@ -1713,7 +1713,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get recoveryClearTitle => '清除本地数据库？';
 
   @override
-  String get recoveryClearContent => '建议先导出数据库。清除后请重新打开应用，网盘账号和本地索引需要重新配置。';
+  String get recoveryClearContent => '建议先导出数据库。清除后请重新打开应用，源和本地索引需要重新配置。';
 
   @override
   String recoveryClearPartial(int removed, String names) {
@@ -2667,7 +2667,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get libraryEmptyGuide => '暂无曲目：可在网络库扫描入库，或下载后进入曲库。';
+  String get libraryEmptyGuide => '暂无曲目：可在文件源扫描入库，或下载后进入曲库。';
 
   @override
   String get tagTitle => '标题';
@@ -3177,7 +3177,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get formLabelSourceAccount => '源账号';
 
   @override
-  String get formHintSourceAccount => '选择现有 WebDAV 或网盘账号作为加密源';
+  String get formHintSourceAccount => '选择现有 WebDAV 或源作为加密源';
 
   @override
   String get formLabelSourceDir => '源目录';
@@ -4150,7 +4150,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get musicDefaultOpen => '默认打开';
 
   @override
-  String get musicDefaultOpenHint => '网络库、媒体库、歌单点按音乐时：缓存播放或串流播放';
+  String get musicDefaultOpenHint => '文件源、媒体库、歌单点按音乐时：缓存播放或串流播放';
 
   @override
   String get musicDefaultCache => '缓存播放';
@@ -4242,7 +4242,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get prefetchSectionHint => '串流写入临时预载；缓存播放按同一窗口后台缓存。';
 
   @override
-  String get audioPlaylistSection => '网络库连播列表';
+  String get audioPlaylistSection => '文件源连播列表';
 
   @override
   String get waitingForCache => '正在缓存…';
@@ -4278,16 +4278,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get libraryBackfillRootsHint =>
-      '开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。';
+      '开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；文件源「扫描音乐」仍可手动使用。';
 
   @override
   String get libraryBackfillAddRoot => '添加根路径';
 
   @override
-  String get libraryBackfillNeedAccount => '请先添加网盘账号';
+  String get libraryBackfillNeedAccount => '请先添加源';
 
   @override
-  String get libraryBackfillPickAccount => '选择网盘账号';
+  String get libraryBackfillPickAccount => '选择源';
 
   @override
   String get libraryBackfillPickFolder => '选择根文件夹';
@@ -4399,7 +4399,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaTabAuthor => '作者';
 
   @override
-  String get mangaLibraryEmptyGuide => '从网络库扫描文件夹或漫画文件，即可在这里浏览。';
+  String get mangaLibraryEmptyGuide => '从文件源扫描文件夹或漫画文件，即可在这里浏览。';
 
   @override
   String mangaSeriesCount(int count) {
@@ -5279,7 +5279,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get playlists => '歌單';
 
   @override
-  String get networkLibrary => '網路庫';
+  String get networkLibrary => '檔案源';
 
   @override
   String get downloadQueue => '任務佇列';
@@ -5407,7 +5407,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get defaultServer => '預設伺服器';
 
   @override
-  String get accountsTitle => '網盤帳號管理';
+  String get accountsTitle => '源管理';
 
   @override
   String get noAccounts => '尚未新增帳號。點擊右下角新增。';
@@ -5464,7 +5464,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get scanSubdirectoriesHint =>
-      '開啟後，從網路庫開啟音樂時的播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與影片播清單、刮削設定獨立。';
+      '開啟後，從檔案源開啟音樂時的播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與影片播清單、刮削設定獨立。';
 
   @override
   String get streamSidecarCover => '同目錄封面';
@@ -5776,10 +5776,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get customHomeSubtitle => '從其他介面返回時回到此首頁';
 
   @override
-  String get rememberNetworkPath => '網路庫記住上次路徑';
+  String get rememberNetworkPath => '檔案源記住上次路徑';
 
   @override
-  String get rememberNetworkPathSubtitle => '同一執行期間再次開啟網路庫時恢復上次目錄（不跨冷啟動）';
+  String get rememberNetworkPathSubtitle => '同一執行期間再次開啟檔案源時恢復上次目錄（不跨冷啟動）';
 
   @override
   String get videoSettings => '影片播放設定';
@@ -5973,7 +5973,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get fileExtIntro =>
-      '依副檔名辨識檔案類型；多個副檔名以空格或逗號分隔。返回網路庫重新整理後生效。下面每一類的「點按行為」就是網路庫點按該檔案時的動作，多選工具列與「更多」選單遵循同一套判定。';
+      '依副檔名辨識檔案類型；多個副檔名以空格或逗號分隔。返回檔案源重新整理後生效。下面每一類的「點按行為」就是檔案源點按該檔案時的動作，多選工具列與「更多」選單遵循同一套判定。';
 
   @override
   String get fileCatMusic => '音樂檔案';
@@ -6318,7 +6318,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get nowPlayingQueueEmpty => '目前沒有播放佇列。\n從音樂庫或網路庫開始播放後會出現在此。';
+  String get nowPlayingQueueEmpty => '目前沒有播放佇列。\n從音樂庫或檔案源開始播放後會出現在此。';
 
   @override
   String get queueAdd => '新增';
@@ -6670,7 +6670,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String credentialsSectionDesc(Object path) {
-    return '雲端 $path：全部網盤帳號；密碼類欄位加密，不支援類型的帳號恢復時自動跳過。';
+    return '雲端 $path：全部源；密碼類欄位加密，不支援類型的帳號恢復時自動跳過。';
   }
 
   @override
@@ -6902,7 +6902,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get recoveryClearTitle => '清除本機資料庫？';
 
   @override
-  String get recoveryClearContent => '建議先匯出資料庫。清除後請重新開啟應用，網盤帳號和本機索引需要重新設定。';
+  String get recoveryClearContent => '建議先匯出資料庫。清除後請重新開啟應用，源和本機索引需要重新設定。';
 
   @override
   String recoveryClearPartial(int removed, String names) {
@@ -7917,11 +7917,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String errCloudAccountMissing(Object a) {
-    return '網盤帳號不存在：$a';
+    return '源不存在：$a';
   }
 
   @override
-  String get errCloudWriteDisabled => '網盤帳號不支援上傳與雲端寫入同步';
+  String get errCloudWriteDisabled => '源不支援上傳與雲端寫入同步';
 
   @override
   String get errEnsureDirectoryUnsupported => '此驅動不支援建立目錄';
@@ -8366,7 +8366,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get formLabelSourceAccount => '來源帳號';
 
   @override
-  String get formHintSourceAccount => '選擇現有 WebDAV 或網盤帳號作為加密來源';
+  String get formHintSourceAccount => '選擇現有 WebDAV 或源作為加密來源';
 
   @override
   String get formLabelSourceDir => '來源目錄';
@@ -9339,7 +9339,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get musicDefaultOpen => '預設開啟';
 
   @override
-  String get musicDefaultOpenHint => '網路庫、媒體庫、歌單點按音樂時：快取播放或串流播放';
+  String get musicDefaultOpenHint => '檔案源、媒體庫、歌單點按音樂時：快取播放或串流播放';
 
   @override
   String get musicDefaultCache => '快取播放';
@@ -9431,7 +9431,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get prefetchSectionHint => '串流寫入臨時預載；快取播放按同一視窗背景快取。';
 
   @override
-  String get audioPlaylistSection => '網路庫連播清單';
+  String get audioPlaylistSection => '檔案源連播清單';
 
   @override
   String get waitingForCache => '正在快取…';
@@ -9473,10 +9473,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get libraryBackfillAddRoot => '新增根路徑';
 
   @override
-  String get libraryBackfillNeedAccount => '請先新增網盤帳號';
+  String get libraryBackfillNeedAccount => '請先新增源';
 
   @override
-  String get libraryBackfillPickAccount => '選擇網盤帳號';
+  String get libraryBackfillPickAccount => '選擇源';
 
   @override
   String get libraryBackfillPickFolder => '選擇根資料夾';
@@ -9588,7 +9588,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaTabAuthor => '作者';
 
   @override
-  String get mangaLibraryEmptyGuide => '從網路庫掃描資料夾或漫畫檔案，即可在這裡瀏覽。';
+  String get mangaLibraryEmptyGuide => '從檔案源掃描資料夾或漫畫檔案，即可在這裡瀏覽。';
 
   @override
   String mangaSeriesCount(int count) {

@@ -93,7 +93,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get playlists => 'Playlists';
 
   @override
-  String get networkLibrary => 'Network library';
+  String get networkLibrary => 'File source';
 
   @override
   String get downloadQueue => 'Task queue';
@@ -221,7 +221,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get defaultServer => 'Default server';
 
   @override
-  String get accountsTitle => 'Cloud account management';
+  String get accountsTitle => 'Source management';
 
   @override
   String get noAccounts => 'No accounts yet. Tap the add button to create one.';
@@ -2765,7 +2765,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryEmptyGuide =>
-      'No tracks yet: scan music in the Network library, or download to add tracks.';
+      'No tracks yet: scan music in the File source, or download to add tracks.';
 
   @override
   String get tagTitle => 'Title';
@@ -4348,7 +4348,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get musicDefaultOpenHint =>
-      'Network library, media library, and playlists: cache play or stream play';
+      'File source, media library, and playlists: cache play or stream play';
 
   @override
   String get musicDefaultCache => 'Cache play';
@@ -4444,7 +4444,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Stream play writes temporary prefetch; cache play uses the same window for background caching.';
 
   @override
-  String get audioPlaylistSection => 'Network library play queue';
+  String get audioPlaylistSection => 'File source play queue';
 
   @override
   String get waitingForCache => 'Caching…';
@@ -4482,7 +4482,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryBackfillRootsHint =>
-      'With Bound paths on, play-triggered scrape runs only for these root prefixes; Network library “Scan music” stays available anytime.';
+      'With Bound paths on, play-triggered scrape runs only for these root prefixes; File source “Scan music” stays available anytime.';
 
   @override
   String get libraryBackfillAddRoot => 'Add root path';
