@@ -738,6 +738,7 @@ class RustCoreService {
   static _OneStrToStrDart? _cueSliceUpsert;
   static _OneStrToStrDart? _cueAlbumUpsert;
   static _OneStrToStrDart? _libraryImport;
+  static _OneStrToStrDart? _libraryCompare;
 
   // ── Schema v6 — deleted_tracks + sync_state ───────────────────────────────
   static _OneStrToStrDart? _deletedTrackUpsert;
@@ -796,6 +797,9 @@ class RustCoreService {
         .asFunction();
     _libraryImport = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_import_from_sqflite')
+        .asFunction();
+    _libraryCompare = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_compare_with_sqflite')
         .asFunction();
 
     // Schema v6
@@ -1048,14 +1052,15 @@ class RustCoreService {
   }
 
   /// Trigger a one-shot import from an old sqflite DB at [oldDbPath] into
-  /// the Rust library DB.  Idempotent — the Rust side sets a KV flag
-  /// `sqflite_imported = 1` after the first successful run and skips
-  /// subsequent calls.
+  /// the Rust library DB.  Copies tracks, playlists, playlist_entries, and the
+  /// v6 surfaces (deleted_tracks tombstones + sync_state cursors).  Idempotent
+  /// via the KV flags `sqflite_imported` / `sqflite_imported_v6`; a device that
+  /// already ran the legacy import gets a v6 backfill of the two new surfaces.
   ///
   /// Call this from a first-run migration helper, NOT on every app start.
   ///
   /// Returns a JSON summary:
-  /// `{"already_done":false,"tracks":42,"playlists":3,"entries":120}`
+  /// `{"already_done":false,"tracks":42,"playlists":3,"entries":120,"deleted_tracks":5,"sync_state":2}`
   /// or 'error:...' on failure.  Returns null if library unavailable.
   static String? libraryImportFromSqflite(String oldDbPath) {
     if (!_ensureSymbols()) return null;
@@ -1066,6 +1071,26 @@ class RustCoreService {
     final ptr = oldDbPath.toNativeUtf8();
     try {
       return _readAndFreeString(_libraryImport!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Compare the Rust library DB against an old sqflite DB at [oldDbPath].
+  /// Neither DB is mutated.
+  ///
+  /// Returns a JSON CompareReport
+  /// `{"tracks":{...},"deleted_tracks":{...},"sync_state":{...},"ok":true}`
+  /// or 'error:...' on failure.  Returns null if library unavailable.
+  static String? libraryCompareWithSqflite(String oldDbPath) {
+    if (!_ensureSymbols()) return null;
+    if (_libraryCompare == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryCompare == null) return null;
+    }
+    final ptr = oldDbPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_libraryCompare!(ptr));
     } finally {
       calloc.free(ptr);
     }

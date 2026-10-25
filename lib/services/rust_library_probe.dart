@@ -103,6 +103,21 @@ class RustLibraryProbe {
       return null;
     }
   }
+
+  /// A debug-only comparison helper: compares the Rust library against the
+  /// legacy sqflite DB at [oldDbPath] and returns the JSON `CompareReport`
+  /// (tracks / deleted_tracks / sync_state diffs).  Neither DB is mutated.
+  ///
+  /// Returns the JSON report string from Rust, or null if the native lib is
+  /// unavailable.  Never throws.
+  static String? maybeCompareWithSqflite(String oldDbPath) {
+    try {
+      return RustCoreService.libraryCompareWithSqflite(oldDbPath);
+    } catch (e) {
+      debugPrint('[RustLibraryProbe] compare failed (non-fatal): $e');
+      return null;
+    }
+  }
 }
 
 // ── Feature flags (Round 6 — coexistence phase) ────────────────────────────
