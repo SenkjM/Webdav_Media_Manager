@@ -557,6 +557,35 @@ class BackupService extends ChangeNotifier {
 
       final Map<String, dynamic> payload;
       if (WmpContainer.looksLikeContainer(bytes)) {
+        // Peek section 2 (tracks) to detect Core JSON vs Android binary BK.
+        final container = WmpContainer.fromBytes(bytes);
+        final tracksRaw = container.readSection(WmpSections.tracks);
+
+        if (tracksRaw != null && _looksLikeJsonSection(tracksRaw)) {
+          // Core JSON backup → route through FFI restore.
+          // Write the **original** data (encrypted envelope if that's what
+          // caller passed) to temp, so Core decrypts itself.
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File(p.join(tempDir.path, 'restore_${DateTime.now().millisecondsSinceEpoch}.wdmm'));
+          try {
+            await tempFile.writeAsBytes(data, flush: true);
+            final result = RustCoreService.backupRestore(passphrase, tempFile.path);
+            if (result == null) {
+              throw StateError('Core FFI unavailable');
+            }
+            if (result.startsWith('error:')) {
+              throw StateError(result);
+            }
+            lastMessage = 'Restored via Core JSON backup';
+            return;
+          } finally {
+            try {
+              if (await tempFile.exists()) await tempFile.delete();
+            } catch (_) {}
+          }
+        }
+
+        // Android binary backup → existing decode path.
         payload = await _decodeContainer(bytes);
       } else {
         // Readable JSON export (no cover bytes) — accepted as an interchange
@@ -779,6 +808,17 @@ class BackupService extends ChangeNotifier {
     }
     snapshot['mangas'] = kept;
     return snapshot;
+  }
+
+  /// Check if [raw] bytes look like UTF-8 JSON (starts with `[` or `{`).
+  static bool _looksLikeJsonSection(Uint8List raw) {
+    if (raw.isEmpty) return false;
+    try {
+      final str = utf8.decode(raw, allowMalformed: false).trim();
+      return str.startsWith('[') || str.startsWith('{');
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Apply a decoded payload. Returns the names of accounts whose password
