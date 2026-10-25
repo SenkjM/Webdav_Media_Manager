@@ -1,7 +1,6 @@
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/playlist.dart';
@@ -64,7 +63,7 @@ class PlaylistService extends ChangeNotifier {
   PlaylistStore get store => _store;
 
   PlaylistDeletionLog get _log =>
-      _deletions ??= SqlitePlaylistDeletionLog(() => _store.database);
+      _deletions ??= MemoryPlaylistDeletionLog();
 
   /// Library-side thumb edge length, used when [coverPolicy] has no override.
   int get _libraryCoverEdge => _coverService?.thumbSize ?? coverThumbSize;
@@ -87,12 +86,11 @@ class PlaylistService extends ChangeNotifier {
     _syncAccountId = accountId;
   }
 
-  /// Opens the local playlist database. The 0.2.2 sentinel migration uses this
-  /// before [init] loads names into memory.
-  Future<Database> openDatabase() => _store.database;
+  /// No-op stub kept for call-site compatibility. The sqflite backing is gone;
+  /// no separate database open step is needed.
+  Future<void> openDatabase() async {}
 
   Future<void> init() async {
-    await _store.database;
     _playlists
       ..clear()
       ..addAll(await _store.loadAll());

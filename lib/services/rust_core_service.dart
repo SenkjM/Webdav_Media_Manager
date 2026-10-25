@@ -49,6 +49,14 @@ typedef _OneStrToStrDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
 typedef _NoArgToStrNative  = ffi.Pointer<Utf8> Function();
 typedef _NoArgToStrDart    = ffi.Pointer<Utf8> Function();
 
+typedef _ThreeStrToOneStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _ThreeStrToOneStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+typedef _Int32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Int32);
+typedef _Int32ToStrDart = ffi.Pointer<Utf8> Function(int);
+
 typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
 typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(int);
 typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
@@ -234,7 +242,6 @@ class RustCoreService {
   /// Stop the OpenAPI server.
   static void stopOpenApi() {
     if (!_ensureSymbols()) return;
-    final ptr = _openApiStop as ffi.Pointer<Utf8> Function()?;
     // openapi_stop returns FfiString — free it
     final lib = _tryLib;
     if (lib == null) return;
@@ -743,6 +750,395 @@ class RustCoreService {
       return _readAndFreeString(_proxyUnregister!(ptr));
     } finally {
       calloc.free(ptr);
+    }
+  }
+
+  // ── Wave B — KV / settings / user-folder / playlist FFI ───────────────────
+  //
+  // Round B cutover: these exports replace the sqflite user_folder tables, the
+  // sqflite playlist store, and the SharedPreferences keys for the network path
+  // + the well-known KV settings. Dart services call these directly — the old
+  // stores/prefs are no longer written.
+
+  static _OneStrToStrDart? _kvGet;
+  static _TwoStrToOneStrDart? _kvSet;
+  static _OneStrToStrDart? _kvDelete;
+  static _NoArgToStrDart? _settingsGetNetworkRememberLastPath;
+  static _Int32ToStrDart? _settingsSetNetworkRememberLastPath;
+  static _NoArgToStrDart? _settingsGetNetworkLastPath;
+  static _OneStrToStrDart? _settingsSetNetworkLastPath;
+  static _OneStrToStrDart? _userFolderListChildren;
+  static _OneStrToStrDart? _userFolderCreate;
+  static _TwoStrToOneStrDart? _userFolderRename;
+  static _TwoStrToOneStrDart? _userFolderMove;
+  static _OneStrToStrDart? _userFolderDelete;
+  static _OneStrToStrDart? _userFolderListItems;
+  static _OneStrToStrDart? _userFolderAddItem;
+  static _ThreeStrToOneStrDart? _userFolderRemoveItem;
+  static _TwoStrToOneStrDart? _userFolderSetItems;
+  static _NoArgToStrDart? _playlistList;
+  static _OneStrToStrDart? _playlistCreate;
+  static _OneStrToStrDart? _playlistDelete;
+  static _OneStrToStrDart? _playlistListEntries;
+  static _TwoStrToOneStrDart? _playlistSetEntries;
+
+  static bool _bSymbolsLoaded = false;
+
+  static void _loadBSymbolsSafe() {
+    if (_bSymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _kvGet = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_kv_get')
+          .asFunction();
+      _kvSet = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_kv_set')
+          .asFunction();
+      _kvDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_kv_delete')
+          .asFunction();
+      _settingsGetNetworkRememberLastPath = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_settings_get_network_remember_last_path')
+          .asFunction();
+      _settingsSetNetworkRememberLastPath = lib
+          .lookup<ffi.NativeFunction<_Int32ToStrNative>>(
+              'wdmm_settings_set_network_remember_last_path')
+          .asFunction();
+      _settingsGetNetworkLastPath = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_settings_get_network_last_path')
+          .asFunction();
+      _settingsSetNetworkLastPath = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_settings_set_network_last_path')
+          .asFunction();
+      _userFolderListChildren = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_list_children')
+          .asFunction();
+      _userFolderCreate = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_create')
+          .asFunction();
+      _userFolderRename = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_user_folder_rename')
+          .asFunction();
+      _userFolderMove = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_user_folder_move')
+          .asFunction();
+      _userFolderDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_delete')
+          .asFunction();
+      _userFolderListItems = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_list_items')
+          .asFunction();
+      _userFolderAddItem = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_add_item')
+          .asFunction();
+      _userFolderRemoveItem = lib
+          .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>(
+              'wdmm_user_folder_remove_item')
+          .asFunction();
+      _userFolderSetItems = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_user_folder_set_items')
+          .asFunction();
+      _playlistList = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_playlist_list')
+          .asFunction();
+      _playlistCreate = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_playlist_create')
+          .asFunction();
+      _playlistDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_playlist_delete')
+          .asFunction();
+      _playlistListEntries = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_playlist_list_entries')
+          .asFunction();
+      _playlistSetEntries = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_playlist_set_entries')
+          .asFunction();
+      _bSymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] Wave B symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Ensure Wave B symbols are loaded. Returns true if usable.
+  static bool _ensureBSymbols() {
+    if (!_ensureSymbols()) return false;
+    if (_bSymbolsLoaded) return true;
+    _loadBSymbolsSafe();
+    return _bSymbolsLoaded;
+  }
+
+  // ── KV store ─────────────────────────────────────────────────────────────
+
+  /// Get a KV value by [key]. Returns the value string, '' if the key is
+  /// absent, 'error:...' on failure, or null if the library is unavailable.
+  static String? kvGet(String key) {
+    if (!_ensureBSymbols() || _kvGet == null) return null;
+    final ptr = key.toNativeUtf8();
+    try {
+      return _readAndFreeString(_kvGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Set a KV [key] = [value]. Returns 'ok' or 'error:...', null if unavailable.
+  static String? kvSet(String key, String value) {
+    if (!_ensureBSymbols() || _kvSet == null) return null;
+    final k = key.toNativeUtf8();
+    final v = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(_kvSet!(k, v));
+    } finally {
+      calloc.free(k);
+      calloc.free(v);
+    }
+  }
+
+  /// Delete a KV [key]. Returns 'ok' or 'error:...', null if unavailable.
+  static String? kvDelete(String key) {
+    if (!_ensureBSymbols() || _kvDelete == null) return null;
+    final ptr = key.toNativeUtf8();
+    try {
+      return _readAndFreeString(_kvDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Network path settings ────────────────────────────────────────────────
+
+  /// Returns true if the network library should remember the last browse
+  /// path. Returns null if the library is unavailable.
+  static bool? settingsGetNetworkRememberLastPath() {
+    if (!_ensureBSymbols() || _settingsGetNetworkRememberLastPath == null) {
+      return null;
+    }
+    final s = _readAndFreeString(_settingsGetNetworkRememberLastPath!());
+    return s == 'true';
+  }
+
+  /// Enable/disable remembering the last network browse path.
+  /// Returns 'ok' or 'error:...', null if unavailable.
+  static String? settingsSetNetworkRememberLastPath(bool enabled) {
+    if (!_ensureBSymbols() || _settingsSetNetworkRememberLastPath == null) {
+      return null;
+    }
+    return _readAndFreeString(_settingsSetNetworkRememberLastPath!(enabled ? 1 : 0));
+  }
+
+  /// Get the session-only last network browse path.
+  /// Returns the path (or ''/'/'), null if unavailable.
+  static String? settingsGetNetworkLastPath() {
+    if (!_ensureBSymbols() || _settingsGetNetworkLastPath == null) return null;
+    return _readAndFreeString(_settingsGetNetworkLastPath!());
+  }
+
+  /// Set the session-only last network browse path.
+  /// Returns 'ok' or 'error:...', null if unavailable.
+  static String? settingsSetNetworkLastPath(String path) {
+    if (!_ensureBSymbols() || _settingsSetNetworkLastPath == null) return null;
+    final ptr = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_settingsSetNetworkLastPath!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── User folder store ────────────────────────────────────────────────────
+
+  /// List children of [parentId]. Pass `kUserFolderRootId` (or `''`/`null`
+  /// equivalent) for the virtual root 「我的文件夹」.
+  /// Returns a JSON array string, or null if unavailable.
+  static String? userFolderListChildren(String parentId) {
+    if (!_ensureBSymbols() || _userFolderListChildren == null) return null;
+    final ptr = parentId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderListChildren!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Create a user folder. [json] must match the folder schema
+  /// (`{id,name,parent_id,sort_order,created_at}`).
+  /// Returns 'ok' or 'error:...', null if unavailable.
+  static String? userFolderCreate(String json) {
+    if (!_ensureBSymbols() || _userFolderCreate == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderCreate!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Rename folder [id] to [name]. Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderRename(String id, String name) {
+    if (!_ensureBSymbols() || _userFolderRename == null) return null;
+    final i = id.toNativeUtf8();
+    final n = name.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderRename!(i, n));
+    } finally {
+      calloc.free(i);
+      calloc.free(n);
+    }
+  }
+
+  /// Move folder [id] under [newParentId]. Returns 'ok'/'error:...', null if
+  /// unavailable.
+  static String? userFolderMove(String id, String newParentId) {
+    if (!_ensureBSymbols() || _userFolderMove == null) return null;
+    final i = id.toNativeUtf8();
+    final p = newParentId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderMove!(i, p));
+    } finally {
+      calloc.free(i);
+      calloc.free(p);
+    }
+  }
+
+  /// Delete folder [id] (cascades to descendants/items).
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderDelete(String id) {
+    if (!_ensureBSymbols() || _userFolderDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List items in folder [folderId]. Returns a JSON array string, null if
+  /// unavailable.
+  static String? userFolderListItems(String folderId) {
+    if (!_ensureBSymbols() || _userFolderListItems == null) return null;
+    final ptr = folderId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderListItems!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Add an item to a folder. [json] matches the item schema
+  /// (`{folder_id,ref_kind,ref_key,sort_order,added_at}`).
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderAddItem(String json) {
+    if (!_ensureBSymbols() || _userFolderAddItem == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderAddItem!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Remove an item identified by (folder_id, ref_kind, ref_key).
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderRemoveItem(
+      String folderId, String refKind, String refKey) {
+    if (!_ensureBSymbols() || _userFolderRemoveItem == null) return null;
+    final f = folderId.toNativeUtf8();
+    final k = refKind.toNativeUtf8();
+    final r = refKey.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderRemoveItem!(f, k, r));
+    } finally {
+      calloc.free(f);
+      calloc.free(k);
+      calloc.free(r);
+    }
+  }
+
+  /// Replace the full ordered item set of folder [folderId].
+  /// [jsonArray] is a JSON array of item objects.
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderSetItems(String folderId, String jsonArray) {
+    if (!_ensureBSymbols() || _userFolderSetItems == null) return null;
+    final f = folderId.toNativeUtf8();
+    final a = jsonArray.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderSetItems!(f, a));
+    } finally {
+      calloc.free(f);
+      calloc.free(a);
+    }
+  }
+
+  // ── Playlist store ────────────────────────────────────────────────────────
+
+  /// List all playlists. Returns a JSON array string, null if unavailable.
+  static String? playlistList() {
+    if (!_ensureBSymbols() || _playlistList == null) return null;
+    return _readAndFreeString(_playlistList!());
+  }
+
+  /// Create a playlist. [json] matches the playlist schema
+  /// (`{id,name,created_at,updated_at}`).
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? playlistCreate(String json) {
+    if (!_ensureBSymbols() || _playlistCreate == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistCreate!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete playlist [id]. Returns 'ok'/'error:...', null if unavailable.
+  static String? playlistDelete(String id) {
+    if (!_ensureBSymbols() || _playlistDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List entries of playlist [id]. Returns a JSON array string, null if
+  /// unavailable.
+  static String? playlistListEntries(String id) {
+    if (!_ensureBSymbols() || _playlistListEntries == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistListEntries!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Replace the full ordered entry set of playlist [id].
+  /// [jsonArray] is a JSON array of entry objects.
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? playlistSetEntries(String id, String jsonArray) {
+    if (!_ensureBSymbols() || _playlistSetEntries == null) return null;
+    final i = id.toNativeUtf8();
+    final a = jsonArray.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistSetEntries!(i, a));
+    } finally {
+      calloc.free(i);
+      calloc.free(a);
     }
   }
 }
