@@ -1,9 +1,6 @@
 name: Release Build
 
-# FFI note: this workflow does not compile wdmm-ffi. If libwdmm_ffi.so is
-# needed for release builds, follow the Core-artifact download pattern in
-# testbuild.yml ("Download libwdmm_ffi.so from Core CI").
-#
+# FFI: Testbuild builds wdmm-ffi from the git submodule; this release workflow does not compile/download Core artifacts.
 # 正式版的检查、编译与发版，同一流程内串行：check → build → release。
 # 发版直接用同一次运行的产物，不再由 workflow_run 接续。编译步骤保持不变。
 
