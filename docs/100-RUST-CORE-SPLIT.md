@@ -58,12 +58,13 @@ All crates: `publish = false` (see `WDMM-core/docs/CONSTRAINTS.md §5` — servi
 - ✅ OpenAPI: `/v1/library/tracks` (list, `?q=` search, get, upsert, delete) + `/v1/playlists` + `/v1/playlists/:id/entries`.
 - ⏳ **Remaining (Round 6)**: one-shot sqflite→rusqlite import script on device; flip Dart DB calls to FFI; delete `music_library_database_impl.dart` when green. Dual-read probe (log counts) OK before the flip.
 
-### Phase 3 (Cloud Drivers — production subset done, ports pending)
+### Phase 3 (Cloud Drivers — **Phase 2.3 complete: FFI cutover landed**)
 
 - ✅ WebDAV: list/get/mkdir/rename/remove/put_content/get_content + **`get_content_range`** (Range header).
 - ✅ CtFile: list + download_url (fetch_url) with id-prefix dual strategy, throttle, retry.
-- ✅ Stubs: baidu/aliyundrive/115/terabox/netease/123 have full `CloudDriver` surface + loud `TODO` errors.
-- ⏳ **Remaining (Round 6)**: port six stub drivers against official OpenAPIs (user-supplied OAuth, no embedded keys); CtFile write ops (mkdir/rename/remove); delete Dart drivers when FFI green.
+- ✅ **All cloud drivers**: baidu/aliyundrive/115/terabox/netease/123/crypt — full `CloudDriver` impl in Core; FFI via `wdmm_account_list_dir` etc.; **Dart drivers retired** (Wave C).
+- ✅ **Phase 2.3 (Android FFI cutover)**: `CloudDriveService._createDriver` now returns `RustCloudDriver` for all cloud types; `spec.create()` Dart constructors no longer used.
+- ⏳ **Remaining (Phase 2.4)**: delete Dart driver files (`lib/services/cloud_drivers/*.dart`) after verification; remove `driver_registry.dart` once no references remain.
 
 ### Phase 4 (Queue + Sync + DLNA — done)
 
