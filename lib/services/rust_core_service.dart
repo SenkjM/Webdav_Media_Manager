@@ -203,6 +203,18 @@ class RustCoreService {
   static _StrStrToStrDart? _backupCreate;
   static _StrStrToStrDart? _backupRestore;
 
+  // ── Wave C driver/account FFI ──────────────────────────────────────────────
+  static _ThreeStrToOneStrDart? _driverList;
+  static _ThreeStrToOneStrDart? _driverMkdir;
+  static _FourStrToOneStrDart? _driverRename;
+  static _ThreeStrToOneStrDart? _driverRemove;
+  static _ThreeStrToOneStrDart? _driverGet;
+  static _TwoStrToOneStrDart? _accountListDir;
+  static _TwoStrToOneStrDart? _accountMkdir;
+  static _ThreeStrToOneStrDart? _accountRename;
+  static _TwoStrToOneStrDart? _accountRemove;
+  static _TwoStrToOneStrDart? _accountGetEntry;
+
   static void _loadSymbols(ffi.DynamicLibrary lib) {
     _freeString = lib
         .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
@@ -252,6 +264,37 @@ class RustCoreService {
         .asFunction();
     _tokenRotate = lib
         .lookup<ffi.NativeFunction<_VersionNative>>('wdmm_token_rotate')
+        .asFunction();
+    // Wave C driver/account FFI
+    _driverList = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_list')
+        .asFunction();
+    _driverMkdir = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_mkdir')
+        .asFunction();
+    _driverRename = lib
+        .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_driver_rename')
+        .asFunction();
+    _driverRemove = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_remove')
+        .asFunction();
+    _driverGet = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_get')
+        .asFunction();
+    _accountListDir = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_list_dir')
+        .asFunction();
+    _accountMkdir = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_mkdir')
+        .asFunction();
+    _accountRename = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_account_rename')
+        .asFunction();
+    _accountRemove = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_remove')
+        .asFunction();
+    _accountGetEntry = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_get_entry')
         .asFunction();
   }
 
@@ -1620,6 +1663,153 @@ class RustCoreService {
   static String? mangaListSeries() {
     if (!_ensureMangaSymbols() || _mangaListSeries == null) return null;
     return _readAndFreeString(_mangaListSeries!());
+  }
+
+  // ── Wave C driver/account API ────────────────────────────────────────────────
+
+  /// List entries at [path] using the driver for [providerType] with [configJson].
+  /// Returns JSON array of entries or `"error:…"`. Null if FFI unavailable.
+  static String? driverList(String providerType, String configJson, String path) {
+    if (!_ensureSymbols() || _driverList == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverList!(pType, pConf, pPath));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Create directory at [path]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? driverMkdir(String providerType, String configJson, String path) {
+    if (!_ensureSymbols() || _driverMkdir == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverMkdir!(pType, pConf, pPath));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Rename [oldPath] to [newPath]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? driverRename(String providerType, String configJson, String oldPath, String newPath) {
+    if (!_ensureSymbols() || _driverRename == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pOld = oldPath.toNativeUtf8();
+    final pNew = newPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverRename!(pType, pConf, pOld, pNew));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pOld);
+      calloc.free(pNew);
+    }
+  }
+
+  /// Remove entry at [path]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? driverRemove(String providerType, String configJson, String path) {
+    if (!_ensureSymbols() || _driverRemove == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverRemove!(pType, pConf, pPath));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Get metadata for entry at [path]. Returns JSON entry or `"error:…"`. Null if unavailable.
+  static String? driverGet(String providerType, String configJson, String path) {
+    if (!_ensureSymbols() || _driverGet == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverGet!(pType, pConf, pPath));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pPath);
+    }
+  }
+
+  /// List entries at [path] for [accountId]. Returns JSON array or `"error:…"`. Null if unavailable.
+  static String? accountListDir(String accountId, String path) {
+    if (!_ensureSymbols() || _accountListDir == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountListDir!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Create directory at [path] for [accountId]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? accountMkdir(String accountId, String path) {
+    if (!_ensureSymbols() || _accountMkdir == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountMkdir!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Rename [oldPath] to [newPath] for [accountId]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? accountRename(String accountId, String oldPath, String newPath) {
+    if (!_ensureSymbols() || _accountRename == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pOld = oldPath.toNativeUtf8();
+    final pNew = newPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountRename!(pAcc, pOld, pNew));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pOld);
+      calloc.free(pNew);
+    }
+  }
+
+  /// Remove entry at [path] for [accountId]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? accountRemove(String accountId, String path) {
+    if (!_ensureSymbols() || _accountRemove == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountRemove!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Get metadata for entry at [path] for [accountId]. Returns JSON entry or `"error:…"`. Null if unavailable.
+  static String? accountGetEntry(String accountId, String path) {
+    if (!_ensureSymbols() || _accountGetEntry == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountGetEntry!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
   }
 }
 
