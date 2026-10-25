@@ -16,6 +16,7 @@ import 'accounts_service.dart';
 import 'cloud_driver.dart';
 import 'cloud_drivers/driver_registry.dart';
 import 'resumable_download.dart';
+import 'rust_core_service.dart';
 import 'rust_proxy_stream_bridge.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
@@ -106,6 +107,12 @@ class CloudDriveService extends ChangeNotifier {
     var complete = true;
     for (final a in wanted) {
       try {
+        // Ensure account exists in Core before creating driver (fail-soft).
+        final coreAccount = RustCoreService.accountGet(a.id);
+        if (coreAccount == null || coreAccount.startsWith('error:')) {
+          // Account missing or Core query failed — attempt sync now.
+          await _accounts.syncAccountToCoreById(a.id);
+        }
         final old = _drivers[a.id];
         final driver = _createDriver(a, cfgs[a.id]);
         if (old != null && !identical(old, driver)) replaced.add(old);

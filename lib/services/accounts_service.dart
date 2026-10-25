@@ -377,6 +377,15 @@ class AccountsService extends ChangeNotifier {
     }
   }
 
+  /// Public wrapper for CloudDriveService to ensure an account is in Core DB
+  /// before driver instantiation. Fail-soft.
+  Future<void> syncAccountToCoreById(String accountId) async {
+    final account = accountById(accountId);
+    if (account != null) {
+      await _syncAccountToCore(account);
+    }
+  }
+
   Future<WebDavAccount> addAccount({
     required String name,
     required String url,
