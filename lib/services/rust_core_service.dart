@@ -62,6 +62,11 @@ typedef _ThreeStrToOneStrDart = ffi.Pointer<Utf8> Function(
 typedef _Int32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Int32);
 typedef _Int32ToStrDart = ffi.Pointer<Utf8> Function(int);
 
+typedef _FiveStrToOneStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _FiveStrToOneStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
 // Wave D — wdmm_manga_set_progress(manga_id, page_index: i64)
 typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Int64);
@@ -202,6 +207,9 @@ class RustCoreService {
   static _OneStrToStrDart? _dmrPrefsDelete;
   static _StrStrToStrDart? _backupCreate;
   static _StrStrToStrDart? _backupRestore;
+  static _FiveStrToOneStrDart? _backupUpload;
+  static _FourStrToOneStrDart? _backupList;
+  static _FiveStrToOneStrDart? _backupDownloadRestore;
 
   // ── Wave C driver/account FFI ──────────────────────────────────────────────
   static _ThreeStrToOneStrDart? _driverList;
@@ -535,6 +543,15 @@ class RustCoreService {
       _backupRestore ??= lib
           .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_backup_restore')
           .asFunction();
+      _backupUpload ??= lib
+          .lookup<ffi.NativeFunction<_FiveStrToOneStrNative>>('wdmm_backup_upload')
+          .asFunction();
+      _backupList ??= lib
+          .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_backup_list')
+          .asFunction();
+      _backupDownloadRestore ??= lib
+          .lookup<ffi.NativeFunction<_FiveStrToOneStrNative>>('wdmm_backup_download_restore')
+          .asFunction();
       return true;
     } catch (e) {
       debugPrint('[RustCore] DMR symbol lookup failed: $e');
@@ -567,6 +584,44 @@ class RustCoreService {
   static String? backupRestore(String passphrase, String path) =>
       _callTwoStrings(_backupRestore, passphrase, path);
 
+  /// Upload a backup to WebDAV.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, or null if the native
+  /// library is not available.
+  static String? backupUpload({
+    required String url,
+    required String user,
+    required String pass,
+    required String remoteDir,
+    required String passphrase,
+  }) =>
+      _callFiveStrings(_backupUpload, url, user, pass, remoteDir, passphrase);
+
+  /// List backups in a WebDAV directory.
+  ///
+  /// Returns a JSON array of backup metadata, or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  static String? backupList({
+    required String url,
+    required String user,
+    required String pass,
+    required String remoteDir,
+  }) =>
+      _callFourStrings(_backupList, url, user, pass, remoteDir);
+
+  /// Download a backup from WebDAV and restore it.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, or null if the native
+  /// library is not available.
+  static String? backupDownloadRestore({
+    required String url,
+    required String user,
+    required String pass,
+    required String remoteFile,
+    required String passphrase,
+  }) =>
+      _callFiveStrings(_backupDownloadRestore, url, user, pass, remoteFile, passphrase);
+
   static String? _callOneString(_OneStrToStrDart? fn, String value) {
     if (!_ensureDmrSymbols()) return null;
     final ptr = value.toNativeUtf8();
@@ -586,6 +641,40 @@ class RustCoreService {
     } finally {
       calloc.free(a);
       calloc.free(b);
+    }
+  }
+
+  static String? _callFourStrings(_FourStrToOneStrDart? fn, String s1, String s2, String s3, String s4) {
+    if (!_ensureDmrSymbols()) return null;
+    final a = s1.toNativeUtf8();
+    final b = s2.toNativeUtf8();
+    final c = s3.toNativeUtf8();
+    final d = s4.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn!(a, b, c, d));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+      calloc.free(c);
+      calloc.free(d);
+    }
+  }
+
+  static String? _callFiveStrings(_FiveStrToOneStrDart? fn, String s1, String s2, String s3, String s4, String s5) {
+    if (!_ensureDmrSymbols()) return null;
+    final a = s1.toNativeUtf8();
+    final b = s2.toNativeUtf8();
+    final c = s3.toNativeUtf8();
+    final d = s4.toNativeUtf8();
+    final e = s5.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn!(a, b, c, d, e));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+      calloc.free(c);
+      calloc.free(d);
+      calloc.free(e);
     }
   }
 
