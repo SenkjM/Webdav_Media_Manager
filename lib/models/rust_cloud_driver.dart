@@ -5,7 +5,7 @@ import '../services/rust_core_service.dart';
 import 'webdav_account.dart';
 
 /// CloudDriver implementation that calls wdmm-core FFI (Phase 2.3).
-class RustCloudDriver implements CloudDriver {
+class RustCloudDriver extends CloudDriver {
   RustCloudDriver(this.account);
 
   final WebDavAccount account;
