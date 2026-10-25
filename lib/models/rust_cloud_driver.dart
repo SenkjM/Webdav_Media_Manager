@@ -88,16 +88,29 @@ class RustCloudDriver implements CloudDriver {
   }
 
   CloudFileItem _parseEntry(Map<String, dynamic> e) {
+    // Core FFI emits snake_case (is_dir / raw_url / raw_headers).
+    final isDir = (e['is_dir'] ?? e['isDir']) as bool? ?? false;
+    final rawUrl = (e['raw_url'] ?? e['rawUrl']) as String?;
+    final rawHeadersRaw = e['raw_headers'] ?? e['rawHeaders'];
+    Map<String, String>? rawHeaders;
+    if (rawHeadersRaw is Map) {
+      rawHeaders = rawHeadersRaw.map((k, v) => MapEntry(k.toString(), v.toString()));
+    } else if (rawHeadersRaw is List) {
+      // Core get_entry may return [[k,v], ...]
+      rawHeaders = {
+        for (final pair in rawHeadersRaw)
+          if (pair is List && pair.length >= 2) pair[0].toString(): pair[1].toString(),
+      };
+    }
     return CloudFileItem(
       name: e['name'] as String,
-      isDir: e['isDir'] as bool,
+      isDir: isDir,
       size: (e['size'] as num?)?.toInt() ?? 0,
       modified: e['modified'] != null
           ? DateTime.tryParse(e['modified'] as String)
           : null,
-      rawUrl: e['rawUrl'] as String?,
-      rawHeaders: (e['rawHeaders'] as Map<String, dynamic>?)
-          ?.map((k, v) => MapEntry(k, v.toString())),
+      rawUrl: rawUrl,
+      rawHeaders: rawHeaders,
     );
   }
 }
@@ -107,11 +120,3 @@ CloudDriver createRustDriver(WebDavAccount account) {
   return RustCloudDriver(account);
 }
 
-/// Exception thrown by cloud driver operations.
-class CloudDriverException implements Exception {
-  CloudDriverException(this.message);
-  final String message;
-
-  @override
-  String toString() => 'CloudDriverException: $message';
-}
