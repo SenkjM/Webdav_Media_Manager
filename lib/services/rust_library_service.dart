@@ -325,6 +325,197 @@ class RustLibraryService {
     }
   }
 
+  // ── Schema v6 — deleted_tracks + sync_state write ops ──────────────────────
+
+  /// Upsert a deleted track tombstone.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or [json] is null/empty.
+  /// Never throws.
+  static String? deletedTrackUpsert(String? json) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (json == null || json.isEmpty) return null;
+    try {
+      final result = RustCoreService.deletedTrackUpsert(json);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deletedTrackUpsert failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deletedTrackUpsert exception: $e');
+      return null;
+    }
+  }
+
+  /// Clear a deleted track tombstone by source and remote path.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or parameters are
+  /// null/empty. Never throws.
+  static String? deletedTrackClear(String? sourceName, String? remotePath) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (sourceName == null || sourceName.isEmpty) return null;
+    if (remotePath == null || remotePath.isEmpty) return null;
+    try {
+      final result = RustCoreService.deletedTrackClear(sourceName, remotePath);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deletedTrackClear("$sourceName", "$remotePath") failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deletedTrackClear exception: $e');
+      return null;
+    }
+  }
+
+  /// List all deleted tracks from the Rust DB.
+  ///
+  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
+  /// is unavailable (throws). Never throws.
+  static String? deletedTracksList() {
+    if (!kRustLibraryReadEnabled) return null;
+    try {
+      final result = RustCoreService.deletedTracksList();
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deletedTracksList failed: $result');
+        throw StateError('RustLibraryService.deletedTracksList failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deletedTracksList exception: $e');
+      rethrow;
+    }
+  }
+
+  /// List unpushed deleted tracks (pushed=0).
+  ///
+  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
+  /// is unavailable (throws). Never throws.
+  static String? deletedTracksUnpushed() {
+    if (!kRustLibraryReadEnabled) return null;
+    try {
+      final result = RustCoreService.deletedTracksUnpushed();
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deletedTracksUnpushed failed: $result');
+        throw StateError('RustLibraryService.deletedTracksUnpushed failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deletedTracksUnpushed exception: $e');
+      rethrow;
+    }
+  }
+
+  /// Mark deleted tracks as pushed by revision numbers.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or [revsJson] is
+  /// null/empty. Never throws.
+  static String? deletedTracksMarkPushed(String? revsJson) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (revsJson == null || revsJson.isEmpty) return null;
+    try {
+      final result = RustCoreService.deletedTracksMarkPushed(revsJson);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deletedTracksMarkPushed failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deletedTracksMarkPushed exception: $e');
+      return null;
+    }
+  }
+
+  /// Purge pushed deleted tracks up to and including the given revision.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false`. Never throws.
+  static String? deletedTracksPurgeUpTo(int upTo) {
+    if (!kRustLibraryWriteEnabled) return null;
+    try {
+      final result = RustCoreService.deletedTracksPurgeUpTo(upTo);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deletedTracksPurgeUpTo($upTo) failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deletedTracksPurgeUpTo exception: $e');
+      return null;
+    }
+  }
+
+  /// Get tombstoned remote paths for a source.
+  ///
+  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
+  /// is unavailable (throws). Never throws.
+  static String? tombstonedRemotePaths(String? sourceName) {
+    if (!kRustLibraryReadEnabled) return null;
+    if (sourceName == null || sourceName.isEmpty) return null;
+    try {
+      final result = RustCoreService.tombstonedRemotePaths(sourceName);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] tombstonedRemotePaths("$sourceName") failed: $result');
+        throw StateError('RustLibraryService.tombstonedRemotePaths failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] tombstonedRemotePaths exception: $e');
+      rethrow;
+    }
+  }
+
+  /// Get sync state by remote key.
+  ///
+  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
+  /// is unavailable (throws). Never throws.
+  static String? syncStateGet(String? remoteKey) {
+    if (!kRustLibraryReadEnabled) return null;
+    if (remoteKey == null || remoteKey.isEmpty) return null;
+    try {
+      final result = RustCoreService.syncStateGet(remoteKey);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] syncStateGet("$remoteKey") failed: $result');
+        throw StateError('RustLibraryService.syncStateGet failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] syncStateGet exception: $e');
+      rethrow;
+    }
+  }
+
+  /// Save sync state from JSON.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or [json] is null/empty.
+  /// Never throws.
+  static String? syncStateSave(String? json) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (json == null || json.isEmpty) return null;
+    try {
+      final result = RustCoreService.syncStateSave(json);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] syncStateSave failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] syncStateSave exception: $e');
+      return null;
+    }
+  }
+
+  /// Clear sync state by optional prefix.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false`. Never throws.
+  static String? syncStateClear([String? prefix]) {
+    if (!kRustLibraryWriteEnabled) return null;
+    try {
+      final result = RustCoreService.syncStateClear(prefix);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] syncStateClear("$prefix") failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] syncStateClear exception: $e');
+      return null;
+    }
+  }
+
   // ── CUE helpers ─────────────────────────────────────────────────────────────
 
   /// Build a Core-shaped CueAlbum JSON object from a CUE slice track.

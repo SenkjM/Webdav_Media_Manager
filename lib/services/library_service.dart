@@ -31,6 +31,37 @@ class LibraryService extends ChangeNotifier {
   Future<({int lastSeq, int baseUpTo, Map<String, int> parts})> loadSyncCursor(
     String remoteKey,
   ) async {
+    // Try Rust first if reads enabled
+    if (kRustLibraryReadEnabled) {
+      final rustResult = RustLibraryService.syncStateGet(remoteKey);
+      if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
+        try {
+          final decoded = jsonDecode(rustResult);
+          if (decoded is Map) {
+            final partsStr = decoded['parts'] as String? ?? '{}';
+            final parts = <String, int>{};
+            try {
+              final partsDecoded = jsonDecode(partsStr);
+              if (partsDecoded is Map) {
+                partsDecoded.forEach((k, v) {
+                  if (k is String) parts[k] = (v as num?)?.toInt() ?? 0;
+                });
+              }
+            } catch (_) {
+              // A corrupt cursor only costs one full re-read.
+            }
+            return (
+              lastSeq: (decoded['last_seq'] as num?)?.toInt() ?? 0,
+              baseUpTo: (decoded['base_up_to'] as num?)?.toInt() ?? 0,
+              parts: parts,
+            );
+          }
+        } catch (_) {
+          // Fallback to sqflite below
+        }
+      }
+    }
+    // Fallback to sqflite
     final row = await _db.loadSyncState(remoteKey);
     if (row == null) return (lastSeq: 0, baseUpTo: 0, parts: <String, int>{});
     final parts = <String, int>{};
@@ -56,15 +87,37 @@ class LibraryService extends ChangeNotifier {
     required int lastSeq,
     required int baseUpTo,
     required Map<String, int> parts,
-  }) => _db.saveSyncState(
-    remoteKey: remoteKey,
-    lastSeq: lastSeq,
-    baseUpTo: baseUpTo,
-    parts: jsonEncode(parts),
-  );
+  }) async {
+    if (kRustLibraryWriteEnabled) {
+      final json = jsonEncode({
+        'remote_key': remoteKey,
+        'last_seq': lastSeq,
+        'base_up_to': baseUpTo,
+        'parts': jsonEncode(parts),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      final result = RustLibraryService.syncStateSave(json);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust sync_state save failed: $result');
+      }
+    }
+    return _db.saveSyncState(
+      remoteKey: remoteKey,
+      lastSeq: lastSeq,
+      baseUpTo: baseUpTo,
+      parts: jsonEncode(parts),
+    );
+  }
 
-  Future<void> clearSyncCursor() =>
-      _db.clearSyncState(prefix: LibraryDatabase.musicCursorPrefix);
+  Future<void> clearSyncCursor() async {
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.syncStateClear(LibraryDatabase.musicCursorPrefix);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust sync_state clear failed: $result');
+      }
+    }
+    return _db.clearSyncState(prefix: LibraryDatabase.musicCursorPrefix);
+  }
 
   /// Adopt an externally observed rev (a row pulled from the cloud) so the next
   /// local write cannot go backwards relative to it.
@@ -75,11 +128,27 @@ class LibraryService extends ChangeNotifier {
       _db.unpushedTombstones();
 
   /// Mark the given tombstone revs as published.
-  Future<void> markTombstonesPushed(Set<int> revs) =>
-      _db.markTombstonesPushed(revs);
+  Future<void> markTombstonesPushed(Set<int> revs) async {
+    if (kRustLibraryWriteEnabled && revs.isNotEmpty) {
+      final revsJson = jsonEncode(revs.toList());
+      final result = RustLibraryService.deletedTracksMarkPushed(revsJson);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust deleted_tracks mark_pushed failed: $result');
+      }
+    }
+    return _db.markTombstonesPushed(revs);
+  }
 
   /// Drop tombstones that a rebuild has materialised (`rev <= upTo`).
-  Future<int> purgeTombstonesUpTo(int upTo) => _db.purgeTombstonesUpTo(upTo);
+  Future<int> purgeTombstonesUpTo(int upTo) async {
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.deletedTracksPurgeUpTo(upTo);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust deleted_tracks purge failed: $result');
+      }
+    }
+    return _db.purgeTombstonesUpTo(upTo);
+  }
 
   /// Every tombstone, pushed or not (重建后的残留检查要看全量).
   Future<List<Map<String, dynamic>>> allTombstones() => _db.allTombstones();
@@ -97,6 +166,12 @@ class LibraryService extends ChangeNotifier {
       final path = row['remote_path'] as String? ?? '';
       if (source.isEmpty || path.isEmpty) continue;
       if (find(source, path) != null) continue;
+      if (kRustLibraryWriteEnabled) {
+        final result = RustLibraryService.deletedTrackClear(source, path);
+        if (result != null && result.startsWith('error:')) {
+          throw StateError('Rust deleted_track clear failed: $result');
+        }
+      }
       await _db.clearTombstone(source, path);
       cleared++;
     }
@@ -110,10 +185,15 @@ class LibraryService extends ChangeNotifier {
     for (final row in rows) {
       final rev = (row['rev'] as num?)?.toInt() ?? 0;
       if (!revs.contains(rev)) continue;
-      await _db.clearTombstone(
-        row['source_name'] as String? ?? '',
-        row['remote_path'] as String? ?? '',
-      );
+      final source = row['source_name'] as String? ?? '';
+      final path = row['remote_path'] as String? ?? '';
+      if (kRustLibraryWriteEnabled) {
+        final result = RustLibraryService.deletedTrackClear(source, path);
+        if (result != null && result.startsWith('error:')) {
+          throw StateError('Rust deleted_track clear failed: $result');
+        }
+      }
+      await _db.clearTombstone(source, path);
     }
   }
 
@@ -124,10 +204,25 @@ class LibraryService extends ChangeNotifier {
   /// Only *destruction* / removal writes one: dropping just the audio cache keeps
   /// the metadata and the song stays in the library.
   Future<void> recordTombstone(String sourceName, String remotePath) async {
+    final rev = _nextRev();
+    if (kRustLibraryWriteEnabled) {
+      // Dual-write: Rust first
+      final json = jsonEncode({
+        'source_name': sourceName,
+        'remote_path': remotePath,
+        'rev': rev,
+        'deleted_at': DateTime.now().toUtc().toIso8601String(),
+        'pushed': 0,
+      });
+      final result = RustLibraryService.deletedTrackUpsert(json);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust deleted_track upsert failed: $result');
+      }
+    }
     await _db.upsertTombstone(
       sourceName: sourceName,
       remotePath: remotePath,
-      rev: _nextRev(),
+      rev: rev,
     );
   }
 
