@@ -75,9 +75,21 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
   }
 
   /// 用户选择了一台渲染器
-  void _selectRenderer(BuildContext ctx, DlnaRenderer renderer) {
+  Future<void> _selectRenderer(BuildContext ctx, DlnaRenderer renderer) async {
     final castService = context.read<DlnaCastService>();
+    final appState = context.read<AppState>();
+
     castService.stopDiscovery();
+
+    // Gap 1: 首次投屏到此设备（无保存的偏好）→ 打开兼容性设置
+    final pref = appState.dmrPrefs[renderer.usn];
+    if (pref == null) {
+      // 打开兼容性设置页，让用户确认/调整后再返回
+      await DlnaCompatSheet.show(ctx, renderer, appState.dmrPrefs);
+      // 无论用户保存与否，都继续投屏（用户已查看过设置页）
+    }
+
+    if (!mounted) return;
     Navigator.pop(ctx, renderer);
   }
 

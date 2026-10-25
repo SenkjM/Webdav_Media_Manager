@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/app_state.dart';
 import '../services/dlna_cast_service.dart';
 import '../utils/app_snack.dart';
+import 'dlna_compat_sheet.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  常量
@@ -396,8 +398,11 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                 const SizedBox(height: 10),
 
                 if (isError)
-                  // ── 错误状态：可复制的详细错误 ──────────────────
-                  _ErrorDetail(error: cast.error ?? '投屏出错')
+                  // ── 错误状态：可复制的详细错误 + 兼容性设置跳转 ──
+                  _ErrorDetail(
+                    error: cast.error ?? '投屏出错',
+                    renderer: cast.renderer,
+                  )
                 else ...[
                   // ── 进度条行 ────────────────────────────────────
                   Row(
@@ -849,9 +854,10 @@ class _TranscodeSwitchRow extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────
 
 class _ErrorDetail extends StatelessWidget {
-  const _ErrorDetail({required this.error});
+  const _ErrorDetail({required this.error, this.renderer});
 
   final String error;
+  final DlnaRenderer? renderer;
 
   @override
   Widget build(BuildContext context) {
@@ -865,33 +871,59 @@ class _ErrorDetail extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: scheme.error.withValues(alpha: 0.3)),
         ),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.error_outline, color: scheme.error, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: SelectableText(
-                error,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: scheme.onErrorContainer,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.error_outline, color: scheme.error, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SelectableText(
+                    error,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onErrorContainer,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  iconSize: 16,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: Icon(Icons.copy, color: scheme.error, size: 14),
+                  tooltip: '复制错误信息',
+                  onPressed: () {
+                    // Flutter 3.x Clipboard
+                    // ignore: deprecated_member_use
+                    Clipboard.setData(ClipboardData(text: error));
+                    AppSnack.show(context, '已复制到剪贴板');
+                  },
+                ),
+              ],
+            ),
+            // Gap 2: 跳转到兼容性设置按钮
+            if (renderer != null) ...[
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: () async {
+                  final appState = context.read<AppState>();
+                  await DlnaCompatSheet.show(
+                    context,
+                    renderer!,
+                    appState.dmrPrefs,
+                  );
+                },
+                icon: Icon(Icons.tune, size: 16),
+                label: Text('兼容性设置'),
+                style: FilledButton.styleFrom(
+                  minimumSize: Size(double.infinity, 36),
+                  backgroundColor: scheme.error.withValues(alpha: 0.1),
+                  foregroundColor: scheme.error,
                 ),
               ),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              iconSize: 16,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              icon: Icon(Icons.copy, color: scheme.error, size: 14),
-              tooltip: '复制错误信息',
-              onPressed: () {
-                // Flutter 3.x Clipboard
-                // ignore: deprecated_member_use
-                Clipboard.setData(ClipboardData(text: error));
-                AppSnack.show(context, '已复制到剪贴板');
-              },
-            ),
+            ],
           ],
         ),
       ),
