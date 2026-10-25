@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/account_capabilities.dart';
 import '../models/file_type_config.dart';
+import '../models/rust_cloud_driver.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
@@ -174,13 +175,9 @@ class CloudDriveService extends ChangeNotifier {
     if (spec == null) {
       throw CloudDriverException('err.unknownDriverType|${a.providerType}');
     }
-    // 驱动的全部知识都在其 spec（99 §7.2.10）；兼容层只管查表、持久化
-    // 与运行环境注入（crypt 的源解析，99 §7.5）。
-    return spec.create(
-      cfg ?? const <String, dynamic>{},
-      onTokenUpdate: (patch) => _persistTokens(a.id, patch),
-      env: _buildEnv(),
-    );
+    // Phase 2.3: all cloud drivers now go through wdmm-core FFI via RustCloudDriver.
+    // Dart driver constructors (spec.create) are no longer used.
+    return RustCloudDriver(a);
   }
 
   /// WebDAV 源工厂（crypt 的 WebDAV 源需要）。由装配层注入——兼容层
