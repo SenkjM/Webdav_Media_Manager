@@ -7,8 +7,8 @@ import 'package:flutter/foundation.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../screens/video_player_screen.dart' show VideoQueueSeed;
-import 'cloud_drivers/stream_bridge.dart';
 import 'dlna_queue_controller.dart';
+import 'rust_proxy_stream_bridge.dart';
 import 'webdav_service.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -151,7 +151,9 @@ class DlnaCastService extends ChangeNotifier {
   // --- 内部 ---
   RawDatagramSocket? _ssdpSocket;
   Timer? _discoveryTimeout;
-  LocalStreamBridge? _bridge;
+  /// Token for the active Rust proxy stream registration. Cleared in
+  /// [_cleanupSession]. null when no cast session is active.
+  String? _currentStreamToken;
   String? _localIp;
   Timer? _pollTimer;
 
@@ -300,11 +302,7 @@ class DlnaCastService extends ChangeNotifier {
       // 选择与 DMR 同子网的本机 IP，确保 DMR 可路由到代理地址
       _localIp = await _getLocalIpFor(renderer.host);
       debugPrint('[DLNA] localIp=$_localIp rendererHost=${renderer.host}');
-      _bridge = LocalStreamBridge(
-        bindAddress: InternetAddress.anyIPv4,
-        externalHost: _localIp,
-        idleTimeout: const Duration(hours: 4),
-      );
+      // R12: stream bridge replaced by RustProxyStreamBridge; no Dart HttpServer.
 
       // 建立队列
       final effAccountId = accountId ?? seed!.accountId;
@@ -347,16 +345,24 @@ class DlnaCastService extends ChangeNotifier {
     );
     if (source == null) throw Exception('无法解析流源: ${item.name}');
 
-    // 生成代理 URL
-    final proxyUri = await _bridge!.expose(
-      accountId: accountId,
-      remotePath: item.path,
+    // 生成代理 URL（R12：经 Rust 代理；LAN cast 受 loopback-only 限制）
+    final (:uri, :token) = await RustProxyStreamBridge.expose(
       size: item.size ?? 0,
       name: item.name,
-      ranges: (path, start, end) => _proxyRange(source, start, end),
+      accountId: accountId,
+      remotePath: item.path,
+      readRange: (start, end) async {
+        final bytes = <int>[];
+        await for (final chunk in _proxyRange(source, start, end)) {
+          bytes.addAll(chunk);
+        }
+        return bytes;
+      },
+      lanHost: _localIp,
     );
+    _currentStreamToken = token;
 
-    final proxyUrl = proxyUri.toString();
+    final proxyUrl = uri.toString();
     final mimeType = _mimeFor(item.name);
 
     // 查询 DMR 支持的 SinkProtocolInfo，协商 protocolInfo
@@ -697,8 +703,10 @@ class DlnaCastService extends ChangeNotifier {
     _pollTimer = null;
     _queue?.dispose();
     _queue = null;
-    await _bridge?.dispose();
-    _bridge = null;
+    if (_currentStreamToken != null) {
+      RustProxyStreamBridge.unregister(_currentStreamToken!);
+      _currentStreamToken = null;
+    }
     _renderer = null;
     _currentItem = null;
     _position = Duration.zero;

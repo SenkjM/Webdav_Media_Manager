@@ -6,48 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openlist_crypt/openlist_crypt.dart';
 import 'package:webdav_media_manager/services/cloud_driver.dart';
 import 'package:webdav_media_manager/services/cloud_drivers/crypt/crypt_driver.dart';
-import 'package:webdav_media_manager/services/cloud_drivers/stream_bridge.dart';
 
 import 'crypt_driver_test.dart' show FakeCloudSource;
-
-/// 假驱动：区间读取直接切内存字节，用来单独验证桥的 HTTP 语义。
-class _SliceDriver extends CloudDriver {
-  _SliceDriver(this.bytes);
-
-  final Uint8List bytes;
-  final List<(int, int)> calls = [];
-
-  @override
-  Stream<List<int>> openContentRange(String path, int start, int end) async* {
-    calls.add((start, end));
-    yield Uint8List.sublistView(bytes, start, end + 1);
-  }
-
-  @override
-  Future<void> init() async {}
-
-  @override
-  Future<List<CloudFileItem>> list(String path) async =>
-      const <CloudFileItem>[];
-
-  @override
-  Future<CloudFileItem> get(String path) => throw UnimplementedError();
-
-  @override
-  Future<void> mkdir(String path) async {}
-
-  @override
-  Future<void> rename(String path, String newPath) async {}
-
-  @override
-  Future<void> remove(String path) async {}
-
-  @override
-  Future<void> move(String srcPath, String dstDir, String newName) async {}
-
-  @override
-  Future<void> copy(String srcPath, String dstDir, String newName) async {}
-}
 
 /// 密文源服务：像真实网盘直链那样支持 Range。
 class _RangeServer {
@@ -107,62 +67,11 @@ class _LinkSource extends FakeCloudSource {
   }
 }
 
-Future<Uint8List> collect(HttpClientResponse response) async {
-  final builder = BytesBuilder();
-  await for (final chunk in response) {
-    builder.add(chunk);
-  }
-  return builder.toBytes();
-}
-
 void main() {
-  test('桥：HEAD / 全量 / Range / 后缀 Range / 未知 token', () async {
-    final bytes = Uint8List.fromList(List<int>.generate(1000, (i) => i & 0xFF));
-    final driver = _SliceDriver(bytes);
-    final bridge = LocalStreamBridge();
-    final uri = await bridge.expose(
-      accountId: 'a1',
-      remotePath: '/f.bin',
-      size: bytes.length,
-      ranges: driver.openContentRange,
-    );
-    expect(uri.host, '127.0.0.1');
-    final client = HttpClient();
-
-    final head = await (await client.headUrl(uri)).close();
-    expect(head.statusCode, HttpStatus.ok);
-    expect(head.headers.contentLength, bytes.length);
-    await head.drain<void>();
-
-    final full = await (await client.getUrl(uri)).close();
-    expect(full.statusCode, HttpStatus.ok);
-    expect(await collect(full), bytes);
-
-    final rangeReq = await client.getUrl(uri);
-    rangeReq.headers.set(HttpHeaders.rangeHeader, 'bytes=10-19');
-    final part = await rangeReq.close();
-    expect(part.statusCode, HttpStatus.partialContent);
-    expect(
-      part.headers.value(HttpHeaders.contentRangeHeader),
-      'bytes 10-19/1000',
-    );
-    expect(await collect(part), bytes.sublist(10, 20));
-    expect(driver.calls.last, (10, 19));
-
-    final suffixReq = await client.getUrl(uri);
-    suffixReq.headers.set(HttpHeaders.rangeHeader, 'bytes=-5');
-    final suffix = await suffixReq.close();
-    expect(await collect(suffix), bytes.sublist(995));
-
-    final missing = await client
-        .getUrl(Uri.parse('http://127.0.0.1:${uri.port}/s/deadbeef'))
-        .then((r) => r.close());
-    expect(missing.statusCode, HttpStatus.notFound);
-    await missing.drain<void>();
-
-    client.close();
-    await bridge.dispose();
-  });
+  // R12: LocalStreamBridge deleted — the local HTTP-bridge semantics test that
+  // used it is removed (the bridge now lives in Rust via wdmm_proxy_register_stream
+  // + wdmm_proxy_stream_set_result, which requires libwdmm_ffi.so and cannot run
+  // in a pure Dart test). This file now only covers CryptDriver decryption.
 
   test('crypt：区间读取按块解密，数字与明文切片一致', () async {
     final cipher = RcloneCipher(
@@ -215,22 +124,6 @@ void main() {
     }
     expect(part.toBytes(), plain.sublist(65000, 132001));
 
-    // 桥端到端：播放器式 Range 请求拿到解密后的字节。
-    final bridge = LocalStreamBridge();
-    final uri = await bridge.expose(
-      accountId: 'a1',
-      remotePath: '/movie.mp4',
-      size: plain.length,
-      ranges: driver.openContentRange,
-    );
-    final client = HttpClient();
-    final request = await client.getUrl(uri);
-    request.headers.set(HttpHeaders.rangeHeader, 'bytes=65530-65600');
-    final response = await request.close();
-    expect(response.statusCode, HttpStatus.partialContent);
-    expect(await collect(response), plain.sublist(65530, 65601));
-    client.close();
-    await bridge.dispose();
     await server.stop();
   });
 }

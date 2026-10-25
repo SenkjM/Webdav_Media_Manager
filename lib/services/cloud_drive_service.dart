@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:io' hide BytesBuilder;
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:collection/collection.dart';
@@ -14,8 +14,8 @@ import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
 import 'cloud_driver.dart';
 import 'cloud_drivers/driver_registry.dart';
-import 'cloud_drivers/stream_bridge.dart';
 import 'resumable_download.dart';
+import 'rust_proxy_stream_bridge.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
 ///
@@ -150,19 +150,18 @@ class CloudDriveService extends ChangeNotifier {
     return cloudDriverSpec(a.providerType)?.displayName ?? a.providerType;
   }
 
-  LocalStreamBridge? _bridgeInstance;
-
-  /// MustProxy 驱动的本地流桥（99 §7.5）：播放器拿到的是 127.0.0.1 的 URL。
-  /// 由本服务持有——驱动实例会被 [registerAccounts] 反复重建，桥不能跟着死。
-  LocalStreamBridge get _streamBridge =>
-      _bridgeInstance ??= LocalStreamBridge();
+  /// Tokens for active Rust proxy stream registrations owned by this service.
+  /// Cleaned up in [dispose] — each token corresponds to a MustProxy playback
+  /// session routed through [RustProxyStreamBridge].
+  final List<String> _proxyStreamTokens = [];
 
   @override
   void dispose() {
-    final bridge = _bridgeInstance;
-    _bridgeInstance = null;
-    // 关服务器是异步的；服务销毁时不必等它（force 关闭会立刻断连接）。
-    bridge?.dispose();
+    // Unregister all active stream slots from the Rust proxy.
+    for (final t in _proxyStreamTokens) {
+      RustProxyStreamBridge.unregister(t);
+    }
+    _proxyStreamTokens.clear();
     for (final d in _drivers.values) {
       unawaited(d.dispose());
     }
@@ -558,23 +557,30 @@ class CloudDriveService extends ChangeNotifier {
     final raw = item.rawUrl;
     if (raw == null) {
       // MustProxy 驱动（拿不到直链，内容得由驱动自己解出来，99 §7.5）：
-      // media_kit 只认 URL，交给本地流桥按 Range 逐块取。大小未知时回不了
+      // media_kit 只认 URL，交给 Rust 代理按 Range 逐块取。大小未知时回不了
       // Content-Length，明确拒绝。
       if (item.size <= 0) {
         throw CloudDriverException('err.streamSizeUnknown|$name');
       }
-      final bridged = await _streamBridge.expose(
-        accountId: accountId,
-        remotePath: remotePath,
+      final (:uri, :token) = await RustProxyStreamBridge.expose(
         size: item.size,
         name: name,
+        accountId: accountId,
+        remotePath: remotePath,
         // 每次请求都重新取当前驱动实例：驱动会被 registerAccounts 重建，
         // 而播放中的 URL 不该因此失效。
-        ranges: (path, start, end) =>
-            _requireDriver(accountId).openContentRange(path, start, end),
+        readRange: (start, end) async {
+          final builder = BytesBuilder(copy: false);
+          await for (final chunk in _requireDriver(accountId)
+              .openContentRange(remotePath, start, end)) {
+            builder.add(chunk);
+          }
+          return builder.toBytes();
+        },
       );
+      _proxyStreamTokens.add(token);
       return WebDavStreamSource(
-        uri: bridged.toString(),
+        uri: uri.toString(),
         headers: const {},
         name: name,
         remotePath: remotePath,

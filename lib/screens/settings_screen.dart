@@ -535,19 +535,17 @@ class _RustQueueSettingsSectionState
 
 /// Thin developer note for the Rust local HTTP proxy.
 ///
-/// [kRustProxyEnabled] is intentionally left `false` — [LocalStreamBridge]
-/// remains the live proxy. This section only surfaces the Rust proxy state
-/// (port, start/stop) so a developer can validate the Rust singleton without
-/// rerouting the playback stack.
+/// [kRustProxyEnabled] is `true` (R12). MustProxy (crypt) streams and DLNA
+/// cast are now routed through [RustProxyStreamBridge] — [LocalStreamBridge]
+/// is deleted. This section surfaces proxy state (port, start/stop) for
+/// developer validation.
 ///
 /// ## Happy-path device smoke
-/// 1. Set `kRustProxyEnabled = true` in `rust_proxy_bridge.dart`, rebuild.
-/// 2. Tap "Start proxy" — note the assigned port.
+/// 1. App start triggers proxy auto-start on first MustProxy play or DLNA cast.
+/// 2. Open this panel — confirm the port is assigned (> 0).
 /// 3. Register a cached media file via code or a debug entry.
 /// 4. Confirm the returned URL serves the file from a PC on the same network.
 /// 5. Tap "Stop proxy" — confirm port returns to -1.
-/// 6. Do NOT delete `LocalStreamBridge` until the Rust proxy is confirmed
-///    feature-equivalent on device.
 class _RustProxySettingsSection extends StatefulWidget {
   const _RustProxySettingsSection();
 
@@ -587,9 +585,8 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
           title: const Text('Rust proxy enabled'),
           subtitle: Text(
             kRustProxyEnabled
-                ? 'ON — local files served via wdmm-proxy singleton'
-                : 'OFF (default) — LocalStreamBridge is active.\n'
-                  'Set kRustProxyEnabled=true in rust_proxy_bridge.dart '
+                ? 'ON — MustProxy + DLNA cast served via wdmm-proxy (R12)'
+                : 'OFF — set kRustProxyEnabled=true in rust_proxy_bridge.dart '
                   'and rebuild to enable the Rust proxy.',
           ),
           trailing: Switch(
@@ -618,7 +615,7 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
         Padding(
           padding: const EdgeInsets.only(top: 4, bottom: 8),
           child: Text(
-            'LocalStreamBridge is NOT deleted yet. The Rust proxy is a '
+            'R12: LocalStreamBridge deleted. The Rust proxy is a '
             'process-global singleton — never create a second instance.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
