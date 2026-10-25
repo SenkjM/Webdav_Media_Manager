@@ -25,6 +25,8 @@ import 'playlist_codec.dart';
 import 'library_database.dart';
 import 'library_service.dart';
 import 'playlist_service.dart';
+import 'rust_core_service.dart';
+import 'rust_dmr_prefs_service.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
@@ -64,6 +66,7 @@ class BackupService extends ChangeNotifier {
     CacheService? cache,
     CoverService? covers,
     Future<void> Function()? onSettingsImported,
+    RustDmrPrefsService? dmrPrefs,
   }) : _libraryDb = libraryDb,
        _library = library,
        _accounts = accounts,
@@ -73,6 +76,7 @@ class BackupService extends ChangeNotifier {
        _webDav = webDav,
        _cache = cache,
        _covers = covers ?? library.covers,
+       _dmrPrefs = dmrPrefs,
        _onSettingsImported = onSettingsImported;
 
   final LibraryDatabase _libraryDb;
@@ -87,6 +91,7 @@ class BackupService extends ChangeNotifier {
   final WebDavService _webDav;
   final CacheService? _cache;
   final CoverService _covers;
+  final RustDmrPrefsService? _dmrPrefs;
 
   /// 备份导入后回调（用于 alignNomedia）
   final Future<void> Function()? _onSettingsImported;
@@ -304,6 +309,10 @@ class BackupService extends ChangeNotifier {
           ]),
         if (passCheck != null)
           WmpSections.passCheck: Uint8List.fromList(utf8.encode(passCheck)),
+        if (_dmrPrefs != null)
+          WmpSections.dmrPrefs: _jsonBytes(
+            _dmrPrefs.values.map((p) => p.toJson()).toList(),
+          ),
       },
       kind: WmpFileKind.backup,
       rawIds: {
@@ -695,6 +704,7 @@ class BackupService extends ChangeNotifier {
       'settings': jsonSection(WmpSections.settings),
       'mangaLibrary': mangaLibrary,
       'userFolders': jsonSection(WmpSections.userFolders),
+      'dmrPrefs': jsonList(WmpSections.dmrPrefs),
     };
   }
 
@@ -863,6 +873,18 @@ class BackupService extends ChangeNotifier {
       // 导入 settings 后回调 alignNomedia（规格 §7 末）
       if (_onSettingsImported != null) {
         await _onSettingsImported();
+      }
+    }
+
+    // 6. DMR preferences.
+    final dmrPrefs = payload['dmrPrefs'];
+    if (dmrPrefs is List && dmrPrefs.isNotEmpty && _dmrPrefs != null) {
+      for (final raw in dmrPrefs) {
+        if (raw is! Map) continue;
+        try {
+          final pref = DmrPreference.fromJson(Map<String, dynamic>.from(raw));
+          await _dmrPrefs.save(pref);
+        } catch (_) {}
       }
     }
 

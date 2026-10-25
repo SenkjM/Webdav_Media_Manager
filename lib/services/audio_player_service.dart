@@ -733,20 +733,21 @@ class AudioPlayerService extends ChangeNotifier {
   /// Missing queue rows are scraped automatically for the network-library
   /// auto-scrape feature, and for library queues only while 自动补齐 is on —
   /// manual mode keeps the library manual (explicit scans still work).
-  bool get _autoScrapeQueue {
-    if (_settings.musicLibraryAutoBackfill) return true;
-    final kind = _queueSource?.kind;
-    return kind == PlaybackQueueSourceKind.networkFolder ||
-        kind == PlaybackQueueSourceKind.cueAlbum;
-  }
+  bool get _autoScrapeQueue => _queueSource?.isFolderRoot == true;
 
   Future<void> _pumpMissingScrapes() async {
     if (_scrapePumping) return;
     if (!_autoScrapeQueue) return;
+    final current = _handler.index >= 0 && _handler.index < _handler.tracks.length
+        ? _handler.tracks[_handler.index]
+        : null;
+    if (current == null) return;
+    final parent = remoteParent(current.remotePath);
+    if (parent == null) return;
     _scrapePumping = true;
     try {
       while (true) {
-        final entry = _nextUnscrapedEntry();
+        final entry = _nextUnscrapedEntry(parent);
         if (entry == null) break;
         final key = _scrapeKey(entry);
         if (!_scrapeAttempted.add(key)) continue;
@@ -778,7 +779,7 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
-  TrackInfo? _nextUnscrapedEntry() {
+  TrackInfo? _nextUnscrapedEntry(String parent) {
     final tracks = _handler.tracks;
     if (tracks.isEmpty) return null;
     final start = _handler.index >= 0 ? _handler.index : 0;
@@ -786,6 +787,7 @@ class AudioPlayerService extends ChangeNotifier {
       final t = tracks[(start + step) % tracks.length];
       final key = _scrapeKey(t);
       if (_scrapeAttempted.contains(key)) continue;
+      if (remoteParent(t.remotePath) != parent) continue;
       if (_library.find(t.sourceName, t.remotePath) != null) {
         // Already in the library: nothing to scrape, keep the cursor moving.
         _scrapeAttempted.add(key);
@@ -1202,13 +1204,18 @@ class AudioPlayerService extends ChangeNotifier {
   /// When a scrape is enqueued, registers a pending queue-sync that runs only
   /// after that task successfully ingests (see [_onTaskQueueChanged]).
   Future<void> _maybePlayTriggeredBackfill(TrackInfo track) async {
-    // Network-folder queues already enumerate the queue's own walk window;
-    // their missing rows are scraped by the queue enrichment pump. Discovery
-    // of *unknown* files still follows the audio playlist window.
-    if (_queueSource?.kind == PlaybackQueueSourceKind.networkFolder) return;
-    // CUE slices carry a virtual path; the queue enrichment pump scrapes the
-    // real `.cue` path instead.
-    if (track.isCueVirtual) return;
+    // The queue enrichment pump only handles missing rows in the current
+    // playing directory; discovery of unknown files is also directory-local.
+    final source = _queueSource;
+    if (source?.isFolderRoot != true) return;
+    final current = _handler.index >= 0 && _handler.index < _handler.tracks.length
+        ? _handler.tracks[_handler.index]
+        : null;
+    if (current == null ||
+        current.sourceName != track.sourceName ||
+        remoteParent(current.remotePath) != remoteParent(track.remotePath)) {
+      return;
+    }
     final accountId = track.accountId.trim();
     final remotePath = track.remotePath.trim();
     final sourceName = track.sourceName.trim();

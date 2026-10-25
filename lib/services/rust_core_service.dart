@@ -17,6 +17,11 @@ typedef _FreeStringDart = void Function(ffi.Pointer<Utf8>);
 typedef _QueueStatusNative = ffi.Pointer<Utf8> Function();
 typedef _QueueStatusDart = ffi.Pointer<Utf8> Function();
 
+typedef _StrStrToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _StrStrToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
 typedef _IntResultNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
 typedef _IntResultDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
 
@@ -190,6 +195,13 @@ class RustCoreService {
   static _TwoStrToOneStrDart? _dlnaCast;
   static _VersionDart? _tokenGet; // no-arg → Utf8, same shape as version
   static _VersionDart? _tokenRotate; // no-arg → Utf8
+  static _OneStrToStrDart? _dmrPrefsInit;
+  static _NoArgToStrDart? _dmrPrefsList;
+  static _OneStrToStrDart? _dmrPrefsGet;
+  static _OneStrToStrDart? _dmrPrefsUpsert;
+  static _OneStrToStrDart? _dmrPrefsDelete;
+  static _StrStrToStrDart? _backupCreate;
+  static _StrStrToStrDart? _backupRestore;
 
   static void _loadSymbols(ffi.DynamicLibrary lib) {
     _freeString = lib
@@ -452,6 +464,85 @@ class RustCoreService {
     } finally {
       calloc.free(locPtr);
       calloc.free(urlPtr);
+    }
+  }
+
+  static bool _ensureDmrSymbols() {
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _dmrPrefsInit ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_dmr_prefs_init')
+          .asFunction();
+      _dmrPrefsList ??= lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_dmr_prefs_list')
+          .asFunction();
+      _dmrPrefsGet ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_dmr_prefs_get')
+          .asFunction();
+      _dmrPrefsUpsert ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_dmr_prefs_upsert')
+          .asFunction();
+      _dmrPrefsDelete ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_dmr_prefs_delete')
+          .asFunction();
+      _backupCreate ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_backup_create')
+          .asFunction();
+      _backupRestore ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_backup_restore')
+          .asFunction();
+      return true;
+    } catch (e) {
+      debugPrint('[RustCore] DMR symbol lookup failed: $e');
+      return false;
+    }
+  }
+
+  static String? dmrPrefsInit(String path) {
+    if (!_ensureDmrSymbols()) return null;
+    final ptr = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_dmrPrefsInit!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? dmrPrefsList() {
+    if (!_ensureDmrSymbols()) return null;
+    return _readAndFreeString(_dmrPrefsList!());
+  }
+
+  static String? dmrPrefsGet(String usn) => _callOneString(_dmrPrefsGet, usn);
+  static String? dmrPrefsUpsert(String json) => _callOneString(_dmrPrefsUpsert, json);
+  static String? dmrPrefsDelete(String usn) => _callOneString(_dmrPrefsDelete, usn);
+
+  static String? backupCreate(String passphrase, String outputPath) =>
+      _callTwoStrings(_backupCreate, passphrase, outputPath);
+
+  static String? backupRestore(String passphrase, String path) =>
+      _callTwoStrings(_backupRestore, passphrase, path);
+
+  static String? _callOneString(_OneStrToStrDart? fn, String value) {
+    if (!_ensureDmrSymbols()) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? _callTwoStrings(_StrStrToStrDart? fn, String first, String second) {
+    if (!_ensureDmrSymbols()) return null;
+    final a = first.toNativeUtf8();
+    final b = second.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn!(a, b));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
     }
   }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../models/cache_policy.dart';
 import '../models/queue_task.dart';
@@ -32,6 +33,7 @@ import '../services/video_playback_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/cloud_drivers/webdav_source.dart';
 import '../services/dlna_cast_service.dart';
+import '../services/rust_dmr_prefs_service.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
@@ -84,6 +86,7 @@ class AppState extends ChangeNotifier {
       cache: cache,
       // 备份导入后回调 alignNomedia
       onSettingsImported: () => downloadDestination.alignNomedia(),
+      dmrPrefs: dmrPrefs,
     );
     sync = SyncService(
       accounts: accounts,
@@ -122,7 +125,8 @@ class AppState extends ChangeNotifier {
       notificationPermission: notificationPermission,
     );
     videoPlayback = VideoPlaybackService(handler: audioHandler);
-    dlnaCast = DlnaCastService(webDav: webDav);
+    dmrPrefs = RustDmrPrefsService();
+    dlnaCast = DlnaCastService(webDav: webDav, dmrPrefs: dmrPrefs);
   }
 
   final MusicAudioHandler _audioHandler;
@@ -130,6 +134,7 @@ class AppState extends ChangeNotifier {
   late final SettingsService settings;
   late final WebDavService webDav;
   late final DlnaCastService dlnaCast;
+  late final RustDmrPrefsService dmrPrefs;
   late final CloudDriveService cloudDrive;
   late final CacheService cache;
 
@@ -219,6 +224,9 @@ class AppState extends ChangeNotifier {
       await taskQueue.openDatabase();
       _initPhase = 'cache';
       await cache.init();
+      _initPhase = 'dmr-prefs';
+      final docs = await getApplicationDocumentsDirectory();
+      await dmrPrefs.init(docs.path);
       // 0.2.4: legacy sentinel migration removed (99 §18.4).
       // The rev clock is the single version source sync compares; it starts from
       // the persisted high-water mark and reports every advance back.

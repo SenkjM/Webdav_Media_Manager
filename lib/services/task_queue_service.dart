@@ -154,6 +154,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// when a task is actually enqueued for transfer and cleared once the queue
   /// drains.
   final Set<String> _sessionIds = <String>{};
+  final Set<String> _foregroundScanOnlyIds = <String>{};
 
   /// Whether a file name is music according to the user's configured
   /// extension sets (`SettingsService.fileTypes.musicExtensions`).
@@ -493,6 +494,16 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     return TrackUiState.remote;
   }
 
+  bool _isScrapeOnlyPendingSession() {
+    final session = _tasks.where((t) => _sessionIds.contains(t.id));
+    return session.every((t) => t.kind == TaskKind.scan || t.isEnumerator);
+  }
+
+  bool _isForegroundScanOnlySession() =>
+      _foregroundScanOnlyIds.isNotEmpty &&
+      _sessionIds.containsAll(_foregroundScanOnlyIds) &&
+      _isScrapeOnlyPendingSession();
+
   /// Enqueue a media-library scrape for one root (file or folder).
   ///
   /// When [paths] is provided (from the UI lightweight walk), it is stored as a
@@ -529,6 +540,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     _tasks.add(task);
     _sessionIds.add(task.id);
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+        _isScrapeOnlyPendingSession()) {
+      _foregroundScanOnlyIds.add(task.id);
+    } else {
+      _foregroundScanOnlyIds.clear();
+    }
     notifyListeners();
     // Schedule before persisting. A failed write must not leave a row that is
     // listed as pending but never picked up — the task still runs, and the
@@ -2050,8 +2067,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       // Toggle off keeps today's clear-then-summary path.
       if (_orderedDrainActive) return;
       if (_sessionIds.isEmpty && !_keepAlive.holdsOrStarting) return;
-      final postSummary =
-          notificationsEnabled && (completed + failed + cancelled > 0);
+      final foreground = WidgetsBinding.instance.lifecycleState ==
+          AppLifecycleState.resumed;
+      final foregroundScanOnly = foreground && _isForegroundScanOnlySession();
+      final postSummary = notificationsEnabled &&
+          !foreground &&
+          (completed + failed + cancelled > 0);
       _sessionIds.clear();
       if (_keepAlive.holdsOrStarting) {
         _orderedDrainActive = true;
@@ -2061,11 +2082,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             failed: failed,
             cancelled: cancelled,
             postSummary: postSummary,
+            foregroundScanOnly: foregroundScanOnly,
           ),
         );
       } else {
         unawaited(_notify.clearProgress());
-        if (postSummary) {
+        if (!foregroundScanOnly && postSummary) {
           unawaited(
             _notify.showSummary(
               completed: completed,
@@ -2073,8 +2095,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
               cancelled: cancelled,
             ),
           );
-          // The same batch, once, in-app — the queue has no BuildContext, so this
-          // goes through AppSnack's global slot.
+        }
+        if (foreground && (completed + failed + cancelled > 0)) {
           AppSnack.showGlobal(
             _completionMessage(
               completed: completed,
@@ -2088,6 +2110,10 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (!notificationsEnabled || _notify.progressUpdatesPaused) return;
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+        _isForegroundScanOnlySession()) {
+      return;
+    }
     final done = completed + failed + cancelled;
     final shown = current ?? enumeratingCurrent;
     unawaited(
@@ -2125,6 +2151,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     required int failed,
     required int cancelled,
     required bool postSummary,
+    required bool foregroundScanOnly,
   }) async {
     _notify.pauseProgressUpdates();
     try {
@@ -2133,7 +2160,21 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       _notify.resumeProgressUpdates();
     }
     try {
-      if (!postSummary) return;
+      if (!postSummary) {
+        if (!foregroundScanOnly &&
+            WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed &&
+            (completed + failed + cancelled > 0)) {
+          AppSnack.showGlobal(
+            _completionMessage(
+              completed: completed,
+              failed: failed,
+              cancelled: cancelled,
+            ),
+            error: failed > 0,
+          );
+        }
+        return;
+      }
       await _notify.showSummary(
         completed: completed,
         failed: failed,

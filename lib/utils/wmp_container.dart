@@ -76,6 +76,12 @@ class WmpSections {
   /// row needs only its own id back. The snapshot's manga rows carry the index
   /// in a `cover_index` key.
   static const int mangaCovers = 15;
+
+  /// Backup archives only: DMR device preference records (`DmrPrefRow` JSON
+  /// array), stored and queried via the Core FFI (`dmr_prefs.db`). Core produces
+  /// this section; unknown ids are silently ignored so older Android builds stay
+  /// compatible.
+  static const int dmrPrefs = 16;
 }
 
 /// Per-section storage codec.

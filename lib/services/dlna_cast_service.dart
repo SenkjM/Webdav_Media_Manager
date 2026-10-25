@@ -9,6 +9,7 @@ import '../models/webdav_stream.dart';
 import '../screens/video_player_screen.dart' show VideoQueueSeed;
 import 'dlna_queue_controller.dart';
 import 'rust_proxy_stream_bridge.dart';
+import 'rust_dmr_prefs_service.dart';
 import 'webdav_service.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -115,9 +116,14 @@ enum DlnaPlaybackState { playing, paused, buffering, stopped }
 /// 2. [startCast] 建立投屏会话
 /// 3. [stop] 结束会话 → state 回到 idle
 class DlnaCastService extends ChangeNotifier {
-  DlnaCastService({required WebDavService webDav}) : _webDav = webDav;
+  DlnaCastService({
+    required WebDavService webDav,
+    required RustDmrPrefsService dmrPrefs,
+  }) : _webDav = webDav,
+       _dmrPrefs = dmrPrefs;
 
   final WebDavService _webDav;
+  final RustDmrPrefsService _dmrPrefs;
 
   // --- 状态 ---
   DlnaCastState _state = DlnaCastState.idle;
@@ -364,6 +370,10 @@ class DlnaCastService extends ChangeNotifier {
 
     final proxyUrl = uri.toString();
     final mimeType = _mimeFor(item.name);
+    final prefs = _dmrPrefs[_renderer!.usn];
+    if (prefs?.forceDirect == false) {
+      throw StateError('HLS compatibility proxy is unavailable in this Android build');
+    }
 
     // 查询 DMR 支持的 SinkProtocolInfo，协商 protocolInfo
     final sinkProtocols = await _getSinkProtocolInfo(
@@ -560,8 +570,17 @@ class DlnaCastService extends ChangeNotifier {
     await _castItem(item, q.accountId);
   }
 
-  /// 更新本次会话的转码设置（立即生效，下次代理请求时使用新设置）。
   Future<void> setTranscodeSettings(DlnaTranscodeSettings settings) async {
+    final renderer = _renderer;
+    if (renderer != null) {
+      await _dmrPrefs.save(
+        DmrPreference(
+          usn: renderer.usn,
+          forceDirect: !settings.anyEnabled,
+          overrideName: _dmrPrefs[renderer.usn]?.overrideName,
+        ),
+      );
+    }
     _transcodeSettings = settings;
     notifyListeners();
   }
