@@ -217,26 +217,26 @@ Full implementation continues in subsequent phased rounds per `saf_work/wdmm-spl
 
 ---
 
-## Backup Interop (Android ↔ Core JSON)
+## Backup Interop (Android ↔ Core)
 
-**Status (2026-10-25)**: Android **restore** accepts both Android binary backups and Core JSON backups. Android **create** remains Dart/binary (sqflite is still SoT).
+**Status (2026-10-26)**: Restore is dual-path on **both** sides. Android **create** remains Dart/binary (sqflite is still SoT). See Core `docs/107-BACKUP-LIBRARY-SOT.md` and `docs/ANDROID-BINARY-BACKUP-COMPAT.md`.
 
 ### Encoding Differences
 
 | Producer | Section 2 (tracks) | Section 5 (credentials) | Envelope |
 |----------|-------------------|------------------------|----------|
-| Android `BackupService.buildArchiveBytes` | binary Wmp track records + covers | nested `WDMMCV01` vault bytes | WDMMEN01 optional |
+| Android `BackupService.buildArchiveBytes` | binary Wmp track records + covers (often deflated) | nested `WDMMCV01` vault bytes | WDMMEN01 optional |
 | Core `wdmm_sync::build_backup_bytes` | **UTF-8 JSON** track array | **UTF-8 JSON** accounts (`credentials_b64`) | WDMMEN01 optional |
-| Desktop | uses Core FFI only | Core JSON | Core |
+| Desktop | uses Core FFI only | Core JSON create; dual-read restore | Core |
 
-Both use the same magic `WDMMBK01` / section ids; only the **payload codecs** differ.
+Both use the same magic `WDMMBK01` / section ids; only the **payload codecs** differ. Core restore now **dual-reads** Android binary sections (codec 0/1 inflate, WDMMCV01 / Wmp tracks / WDMMPL01) as well as Core JSON.
 
 ### Current State
 
-- **Create**: Android stays on `BackupService.buildArchiveBytes` (Dart) while sqflite `LibraryDatabase` is the source of truth. Core `backup_create` would dump an empty/partial Rust DB.
-- **Restore**: Android `BackupService.restoreFromBytes` detects Core JSON backups by peeking section 2 raw bytes — if they look like UTF-8 JSON (trim starts with `[` or `{`), routes through `RustCoreService.backupRestore` FFI. Otherwise uses the existing Android binary `_decodeContainer` path.
-- **Desktop↔Core**: OK — Desktop uses Core FFI for both create and restore.
-- **Android→Core**: Binary archives produced by Android are **not readable by Desktop** until Core gains binary section readers (out of scope).
+- **Create**: Android stays on `BackupService.buildArchiveBytes` (Dart) while sqflite `LibraryDatabase` is the source of truth. Do **not** half-cut create to Core FFI yet.
+- **Restore (Android)**: `BackupService.restoreFromBytes` peeks section 2 — JSON → `RustCoreService.backupRestore`; else Android binary `_decodeContainer`.
+- **Restore (Core / Desktop)**: `restore_backup_bytes` dual-reads Android binary BK (credentials/tracks/playlists) and Core JSON. Desktop inherits via FFI after submodule bump.
+- **Round-trip that works without device**: Core JSON ↔ Desktop; Core JSON → Android restore; **Android binary BK → Core/Desktop restore** (unit-tested in `wdmm-sync`). Full device round-trip still needs library SoT migration + on-device check.
 
 ### FFI Bindings
 
@@ -245,7 +245,7 @@ Both use the same magic `WDMMBK01` / section ids; only the **payload codecs** di
 - `backupList(url, user, pass, remoteDir)` → JSON string — list available backups
 - `backupDownloadRestore(url, user, pass, remoteFile, passphrase)` — download + restore in one call
 
-These enable full WebDAV backup workflows without Dart HTTP drivers when used with Core JSON backups.
+These enable full WebDAV backup workflows without Dart HTTP drivers when used with Core JSON backups; Android-made binary archives are also restorable on Desktop through Core.
 
 ---
 
