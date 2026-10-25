@@ -227,13 +227,10 @@ class LibraryService extends ChangeNotifier {
     List<LibraryTrack> tracks,
   ) async {
     if (kRustLibraryWriteEnabled) {
-      // Rust-only: delete each existing track by musicId (no bulk delete-by-source
-      // FFI yet — TODO(cutover): add wdmm_track_delete_by_source to wdmm-ffi).
-      for (final t in _tracks.where((t) => t.sourceName == sourceName)) {
-        final result = RustLibraryService.deleteTrack(t.musicId);
-        if (result != null && result.startsWith('error:')) {
-          throw StateError('Rust library delete failed; sqflite fallback removed: $result');
-        }
+      // Rust: delete all tracks for this account in one call
+      final result = RustLibraryService.deleteTracksBySource(sourceName);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library delete-by-source failed; sqflite fallback removed: $result');
       }
     } else {
       await _db.deleteTracksForSource(sourceName);
@@ -1002,8 +999,13 @@ class LibraryService extends ChangeNotifier {
   /// (and full covers), and in-memory index. Does not touch WebDAV accounts.
   /// Caller should also delete local audio files and clean playlists.
   Future<void> destroyAll() async {
-    // TODO(cutover-R12): add wdmm_library_clear_all FFI; for now sqflite clears
-    // the track/CUE rows; Rust rows are already orphaned once read path is Rust.
+    // Dual-clear: Rust + sqflite until SoT cutover
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.clearLibraryAll();
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library clear-all failed: $result');
+      }
+    }
     await _db.clearAllLibraryData();
     await _covers.deleteAllCovers();
     _tracks.clear();
@@ -1019,8 +1021,13 @@ class LibraryService extends ChangeNotifier {
   /// state is derived from disk (v9), rows that have a file on disk come back as
   /// local instead of triggering a second full download.
   Future<void> prepareCloudOverwrite() async {
-    // TODO(cutover-R12): add wdmm_library_clear_index FFI; sqflite clears the
-    // index rows; a subsequent Rust read will re-populate from cloud sync.
+    // Dual-clear index: Rust + sqflite until SoT cutover
+    if (kRustLibraryWriteEnabled) {
+      final result = RustLibraryService.clearLibraryIndex();
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library clear-index failed: $result');
+      }
+    }
     await _db.clearLibraryIndex();
     _tracks.clear();
     notifyListeners();
@@ -1045,17 +1052,51 @@ class LibraryService extends ChangeNotifier {
       // 逐条：只删这一片。整组一次性清空的话，兄弟片就再也拿不到墓碑，
       // 它们会在下一次从云端拉取时被旧 base 带回来。
       final cuePath = track.cueRemotePath!;
-      // CUE slices stay on sqflite until a CUE schema lands in Rust (no FFI yet).
-      // TODO(cutover-R12): route CUE slice delete through Rust once schema lands.
-      RustLibraryService.deleteTrack(track.musicId);
+      // Dual-delete: Rust + sqflite until SoT cutover
+      if (kRustLibraryWriteEnabled) {
+        final result = RustLibraryService.deleteCueSlice(track.musicId);
+        if (result != null && result.startsWith('error:')) {
+          throw StateError('Rust CUE slice delete failed: $result');
+        }
+      }
       await _db.deleteCueSlice(track.musicId);
       _tracks.removeWhere((t) => t.musicId == track.musicId);
       // 整组最后一片走完，专辑行也就没有存在的理由了。
-      final remaining = await _db.remainingSlicesForCue(
-        track.sourceName,
-        cuePath,
-      );
+      int remaining;
+      if (kRustLibraryReadEnabled) {
+        final slicesJson = RustLibraryService.listCueRemainingSlices(
+          track.sourceName,
+          cuePath,
+        );
+        if (slicesJson != null && !slicesJson.startsWith('error:')) {
+          try {
+            final parsed = jsonDecode(slicesJson);
+            remaining = (parsed is List) ? parsed.length : 0;
+          } catch (_) {
+            remaining = 0;
+          }
+        } else {
+          remaining = await _db.remainingSlicesForCue(
+            track.sourceName,
+            cuePath,
+          );
+        }
+      } else {
+        remaining = await _db.remainingSlicesForCue(
+          track.sourceName,
+          cuePath,
+        );
+      }
       if (remaining == 0) {
+        if (kRustLibraryWriteEnabled) {
+          final result = RustLibraryService.deleteCueAlbum(
+            track.sourceName,
+            cuePath,
+          );
+          if (result != null && result.startsWith('error:')) {
+            throw StateError('Rust CUE album delete failed: $result');
+          }
+        }
         await _db.deleteCueAlbum(track.sourceName, cuePath);
       }
     } else {

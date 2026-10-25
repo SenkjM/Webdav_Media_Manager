@@ -143,6 +143,175 @@ class RustLibraryService {
     }
   }
 
+  /// Delete all tracks for [accountId] from the Rust rusqlite DB.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false`, [accountId] is null/
+  /// empty, or the library is unavailable.
+  ///
+  /// Never throws.
+  static String? deleteTracksBySource(String? accountId) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (accountId == null || accountId.isEmpty) return null;
+    try {
+      final result = RustCoreService.trackDeleteBySource(accountId);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deleteTracksBySource("$accountId") failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deleteTracksBySource exception: $e');
+      return null;
+    }
+  }
+
+  /// Clear the entire library (tracks, playlists, manga, CUE sheets).
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or the library is
+  /// unavailable.
+  ///
+  /// Never throws.
+  static String? clearLibraryAll() {
+    if (!kRustLibraryWriteEnabled) return null;
+    try {
+      final result = RustCoreService.libraryClearAll();
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] clearLibraryAll failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] clearLibraryAll exception: $e');
+      return null;
+    }
+  }
+
+  /// Clear the library index (tracks, CUE sheets, deleted_tracks) but preserve
+  /// playlists and manga.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or the library is
+  /// unavailable.
+  ///
+  /// Never throws.
+  static String? clearLibraryIndex() {
+    if (!kRustLibraryWriteEnabled) return null;
+    try {
+      final result = RustCoreService.libraryClearIndex();
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] clearLibraryIndex failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] clearLibraryIndex exception: $e');
+      return null;
+    }
+  }
+
+  /// Delete one CUE slice from the Rust rusqlite DB.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false`, [musicId] is null/
+  /// empty, or the library is unavailable.
+  ///
+  /// Never throws.
+  static String? deleteCueSlice(String? musicId) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (musicId == null || musicId.isEmpty) return null;
+    try {
+      final result = RustCoreService.cueSliceDelete(musicId);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deleteCueSlice("$musicId") failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deleteCueSlice exception: $e');
+      return null;
+    }
+  }
+
+  /// Delete an entire CUE album and its slices from the Rust rusqlite DB.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or parameters are
+  /// null/empty.
+  ///
+  /// Never throws.
+  static String? deleteCueAlbum(String? sourceName, String? cueRemotePath) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (sourceName == null || sourceName.isEmpty) return null;
+    if (cueRemotePath == null || cueRemotePath.isEmpty) return null;
+    try {
+      final result = RustCoreService.cueAlbumDelete(sourceName, cueRemotePath);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] deleteCueAlbum("$sourceName", "$cueRemotePath") failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] deleteCueAlbum exception: $e');
+      return null;
+    }
+  }
+
+  /// List remaining CUE slices for the given album from the Rust rusqlite DB.
+  ///
+  /// Returns JSON array or `null` if [kRustLibraryReadEnabled] is `false` or
+  /// the library is unavailable.
+  ///
+  /// Never throws.
+  static String? listCueRemainingSlices(String? sourceName, String? cueRemotePath) {
+    if (!kRustLibraryReadEnabled) return null;
+    if (sourceName == null || sourceName.isEmpty) return null;
+    if (cueRemotePath == null || cueRemotePath.isEmpty) return null;
+    try {
+      final result = RustCoreService.cueRemainingSlices(sourceName, cueRemotePath);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] listCueRemainingSlices("$sourceName", "$cueRemotePath") failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] listCueRemainingSlices exception: $e');
+      return null;
+    }
+  }
+
+  /// Upsert a CUE slice into the Rust rusqlite DB.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or [sliceJson] is
+  /// null/empty.
+  ///
+  /// Never throws.
+  static String? upsertCueSlice(String? sliceJson) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (sliceJson == null || sliceJson.isEmpty) return null;
+    try {
+      final result = RustCoreService.cueSliceUpsert(sliceJson);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] upsertCueSlice failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] upsertCueSlice exception: $e');
+      return null;
+    }
+  }
+
+  /// Upsert a CUE album into the Rust rusqlite DB.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is `false` or [albumJson] is
+  /// null/empty.
+  ///
+  /// Never throws.
+  static String? upsertCueAlbum(String? albumJson) {
+    if (!kRustLibraryWriteEnabled) return null;
+    if (albumJson == null || albumJson.isEmpty) return null;
+    try {
+      final result = RustCoreService.cueAlbumUpsert(albumJson);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] upsertCueAlbum failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] upsertCueAlbum exception: $e');
+      return null;
+    }
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   /// Decode a JSON array of track objects into LibraryTrack instances.

@@ -726,6 +726,14 @@ class RustCoreService {
   static _NoArgToStrDart?  _trackList;
   static _OneStrToStrDart? _trackSearch;
   static _OneStrToStrDart? _trackDelete;
+  static _OneStrToStrDart? _trackDeleteBySource;
+  static _NoArgToStrDart?  _libraryClearAll;
+  static _NoArgToStrDart?  _libraryClearIndex;
+  static _OneStrToStrDart? _cueSliceDelete;
+  static _TwoStrToOneStrDart? _cueAlbumDelete;
+  static _TwoStrToOneStrDart? _cueRemainingSlices;
+  static _OneStrToStrDart? _cueSliceUpsert;
+  static _OneStrToStrDart? _cueAlbumUpsert;
   static _OneStrToStrDart? _libraryImport;
 
   static void _loadLibrarySymbols(ffi.DynamicLibrary lib) {
@@ -746,6 +754,30 @@ class RustCoreService {
         .asFunction();
     _trackDelete = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_delete')
+        .asFunction();
+    _trackDeleteBySource = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_delete_by_source')
+        .asFunction();
+    _libraryClearAll = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_clear_all')
+        .asFunction();
+    _libraryClearIndex = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_clear_index')
+        .asFunction();
+    _cueSliceDelete = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_slice_delete')
+        .asFunction();
+    _cueAlbumDelete = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_cue_album_delete')
+        .asFunction();
+    _cueRemainingSlices = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_cue_remaining_slices')
+        .asFunction();
+    _cueSliceUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_slice_upsert')
+        .asFunction();
+    _cueAlbumUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_album_upsert')
         .asFunction();
     _libraryImport = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_import_from_sqflite')
@@ -857,6 +889,112 @@ class RustCoreService {
     final ptr = id.toNativeUtf8();
     try {
       return _readAndFreeString(_trackDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? trackDeleteBySource(String accountId) {
+    if (!_ensureSymbols()) return null;
+    if (_trackDeleteBySource == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackDeleteBySource == null) return null;
+    }
+    final ptr = accountId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackDeleteBySource!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? libraryClearAll() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryClearAll == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryClearAll == null) return null;
+    }
+    return _readAndFreeString(_libraryClearAll!());
+  }
+
+  static String? libraryClearIndex() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryClearIndex == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryClearIndex == null) return null;
+    }
+    return _readAndFreeString(_libraryClearIndex!());
+  }
+
+  static String? cueSliceDelete(String musicId) {
+    if (!_ensureSymbols()) return null;
+    if (_cueSliceDelete == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueSliceDelete == null) return null;
+    }
+    final ptr = musicId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueSliceDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? cueAlbumDelete(String sourceName, String cueRemotePath) {
+    if (!_ensureSymbols()) return null;
+    if (_cueAlbumDelete == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueAlbumDelete == null) return null;
+    }
+    final source = sourceName.toNativeUtf8();
+    final path = cueRemotePath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueAlbumDelete!(source, path));
+    } finally {
+      calloc.free(source);
+      calloc.free(path);
+    }
+  }
+
+  static String? cueRemainingSlices(String sourceName, String cueRemotePath) {
+    if (!_ensureSymbols()) return null;
+    if (_cueRemainingSlices == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueRemainingSlices == null) return null;
+    }
+    final source = sourceName.toNativeUtf8();
+    final path = cueRemotePath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueRemainingSlices!(source, path));
+    } finally {
+      calloc.free(source);
+      calloc.free(path);
+    }
+  }
+
+  static String? cueSliceUpsert(String sliceJson) {
+    if (!_ensureSymbols()) return null;
+    if (_cueSliceUpsert == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueSliceUpsert == null) return null;
+    }
+    final ptr = sliceJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueSliceUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? cueAlbumUpsert(String albumJson) {
+    if (!_ensureSymbols()) return null;
+    if (_cueAlbumUpsert == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueAlbumUpsert == null) return null;
+    }
+    final ptr = albumJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueAlbumUpsert!(ptr));
     } finally {
       calloc.free(ptr);
     }
