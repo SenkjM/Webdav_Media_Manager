@@ -57,6 +57,12 @@ typedef _ThreeStrToOneStrDart = ffi.Pointer<Utf8> Function(
 typedef _Int32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Int32);
 typedef _Int32ToStrDart = ffi.Pointer<Utf8> Function(int);
 
+// Wave D — wdmm_manga_set_progress(manga_id, page_index: i64)
+typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Int64);
+typedef _StrInt64ToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, int);
+
 typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
 typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(int);
 typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
@@ -1343,6 +1349,187 @@ class RustCoreService {
     _loadStreamSymbolsSafe();
     _proxyStreamSetResult?.call(requestId, buf, len, status);
   }
+
+  // ── Wave D — Manga FFI ───────────────────────────────────────────────────
+  //
+  // Binds wdmm_manga_* exports landed in Wave D (fdb05df).
+  // [MangaLibraryService] routes index CRUD and progress through these;
+  // sqflite is no longer written for manga once [kRustMangaEnabled] is true.
+
+  static _NoArgToStrDart?     _mangaList;
+  static _OneStrToStrDart?    _mangaGet;
+  static _OneStrToStrDart?    _mangaUpsert;
+  static _OneStrToStrDart?    _mangaDelete;
+  static _OneStrToStrDart?    _mangaListPages;
+  static _TwoStrToOneStrDart? _mangaSetPages;
+  static _OneStrToStrDart?    _mangaGetProgress;
+  static _StrInt64ToStrDart?  _mangaSetProgress;
+  static _NoArgToStrDart?     _mangaListProgress;
+  static _NoArgToStrDart?     _mangaListSeries;
+
+  static bool _mangaSymbolsLoaded = false;
+
+  static void _loadMangaSymbolsSafe() {
+    if (_mangaSymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _mangaList = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_manga_list')
+          .asFunction();
+      _mangaGet = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_manga_get')
+          .asFunction();
+      _mangaUpsert = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_manga_upsert')
+          .asFunction();
+      _mangaDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_manga_delete')
+          .asFunction();
+      _mangaListPages = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_manga_list_pages')
+          .asFunction();
+      _mangaSetPages = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_manga_set_pages')
+          .asFunction();
+      _mangaGetProgress = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_manga_get_progress')
+          .asFunction();
+      _mangaSetProgress = lib
+          .lookup<ffi.NativeFunction<_StrInt64ToStrNative>>(
+              'wdmm_manga_set_progress')
+          .asFunction();
+      _mangaListProgress = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_manga_list_progress')
+          .asFunction();
+      _mangaListSeries = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_manga_list_series')
+          .asFunction();
+      _mangaSymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] Wave D manga symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Ensure Wave D manga symbols are loaded. Returns true if usable.
+  static bool _ensureMangaSymbols() {
+    if (!_ensureSymbols()) return false;
+    if (_mangaSymbolsLoaded) return true;
+    _loadMangaSymbolsSafe();
+    return _mangaSymbolsLoaded;
+  }
+
+  // ── Manga public API ──────────────────────────────────────────────────────
+
+  /// List all manga rows as a JSON array string, or null if FFI unavailable.
+  static String? mangaList() {
+    if (!_ensureMangaSymbols() || _mangaList == null) return null;
+    return _readAndFreeString(_mangaList!());
+  }
+
+  /// Get one manga by [id]. Returns a JSON object, `"null"` if absent, or
+  /// `"error:…"` on failure. Returns null if FFI unavailable.
+  static String? mangaGet(String id) {
+    if (!_ensureMangaSymbols() || _mangaGet == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Upsert one manga. [json] is the manga serialised to a JSON object.
+  /// Returns `"ok"` or `"error:…"`, null if FFI unavailable.
+  static String? mangaUpsert(String json) {
+    if (!_ensureMangaSymbols() || _mangaUpsert == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete a manga by [id] (cascades to pages + progress; writes tombstone).
+  /// Returns `"ok"`, `"not_found"`, or `"error:…"`. Null if FFI unavailable.
+  static String? mangaDelete(String id) {
+    if (!_ensureMangaSymbols() || _mangaDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List pages for [mangaId] as a JSON array. Null if FFI unavailable.
+  static String? mangaListPages(String mangaId) {
+    if (!_ensureMangaSymbols() || _mangaListPages == null) return null;
+    final ptr = mangaId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaListPages!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Replace all pages for [mangaId]. [jsonArray] is a JSON array of
+  /// `{"manga_id","page_index","rel_path"}` objects.
+  /// Returns `"ok"` or `"error:…"`, null if FFI unavailable.
+  static String? mangaSetPages(String mangaId, String jsonArray) {
+    if (!_ensureMangaSymbols() || _mangaSetPages == null) return null;
+    final mid = mangaId.toNativeUtf8();
+    final arr = jsonArray.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaSetPages!(mid, arr));
+    } finally {
+      calloc.free(mid);
+      calloc.free(arr);
+    }
+  }
+
+  /// Get reading progress for [mangaId]. Returns a JSON object, `"null"`, or
+  /// `"error:…"`. Null if FFI unavailable.
+  static String? mangaGetProgress(String mangaId) {
+    if (!_ensureMangaSymbols() || _mangaGetProgress == null) return null;
+    final ptr = mangaId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaGetProgress!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Set reading progress for [mangaId] to [pageIndex] (0-based).
+  /// Returns `"ok"` or `"error:…"`, null if FFI unavailable.
+  static String? mangaSetProgress(String mangaId, int pageIndex) {
+    if (!_ensureMangaSymbols() || _mangaSetProgress == null) return null;
+    final ptr = mangaId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaSetProgress!(ptr, pageIndex));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List reading progress for all mangas as a JSON array. Null if unavailable.
+  static String? mangaListProgress() {
+    if (!_ensureMangaSymbols() || _mangaListProgress == null) return null;
+    return _readAndFreeString(_mangaListProgress!());
+  }
+
+  /// List distinct series tags as a JSON array of `{"id","title"}` objects.
+  /// Null if FFI unavailable.
+  static String? mangaListSeries() {
+    if (!_ensureMangaSymbols() || _mangaListSeries == null) return null;
+    return _readAndFreeString(_mangaListSeries!());
+  }
 }
 
 // ignore: avoid_classes_with_only_static_members
@@ -1356,3 +1543,10 @@ extension _Let<T> on T {
 /// Flip to true in a settings screen once the Rust sync path is validated.
 // ignore: constant_identifier_names
 const bool kRustSyncEnabled = true;
+
+/// When true, [MangaLibraryService] routes manga index CRUD and reading
+/// progress through the Rust FFI (wdmm_manga_* symbols, Wave D) instead of
+/// sqflite. [LibraryDatabase] remains the home of sync tombstones
+/// (`deleted_mangas`) which [SyncService] still reads directly.
+// ignore: constant_identifier_names
+const bool kRustMangaEnabled = true;

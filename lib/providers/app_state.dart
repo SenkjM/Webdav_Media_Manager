@@ -229,6 +229,7 @@ class AppState extends ChangeNotifier {
         onAdvance: settings.setLastRev,
       );
       library.attachRevClock(revClock);
+      mangaLibrary.attachRevClock(revClock);
       libraryDb.mangaRevSource = revClock.next;
       _initPhase = 'library';
       await library.init();

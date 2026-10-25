@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/manga.dart';
@@ -8,9 +10,11 @@ import '../models/manga_progress.dart';
 import '../models/manga_series.dart';
 import '../utils/manga_file_types.dart';
 import '../utils/manga_identity.dart';
+import '../utils/rev_clock.dart';
 import '../utils/track_identity.dart';
 import 'library_database.dart';
 import 'manga_sync_store.dart';
+import 'rust_core_service.dart';
 
 /// Draft metadata shown in the confirm sheet before commit.
 ///
@@ -48,10 +52,29 @@ class MangaIngestDraft {
 }
 
 /// Thin manga library façade (99 §19): list / upsert from scan / progress.
+///
+/// Wave D (fdb05df): manga index CRUD and reading progress route through the
+/// Rust FFI ([RustCoreService.mangaList] / [RustCoreService.mangaUpsert] etc.)
+/// instead of sqflite. [LibraryDatabase] is retained only for sync tombstone
+/// management (`deleted_mangas`) — [SyncService] reads tombstones directly
+/// from the sqflite handle it already holds.
 class MangaLibraryService extends ChangeNotifier {
   MangaLibraryService({required LibraryDatabase db}) : _db = db;
 
+  /// sqflite DB kept for sync tombstone operations only.
+  /// All manga index and progress I/O goes through [RustCoreService].
   final LibraryDatabase _db;
+
+  RevClock? _revClock;
+
+  /// Attach the shared rev clock (same instance as music) so manga revs stay
+  /// on the same strictly-increasing scale and are comparable across domains.
+  void attachRevClock(RevClock clock) => _revClock = clock;
+
+  int _nextRev() =>
+      _revClock?.next() ?? DateTime.now().millisecondsSinceEpoch;
+
+  // ── In-memory state ───────────────────────────────────────────────────────
 
   final List<Manga> _mangas = [];
   final List<String> _authors = [];
@@ -62,9 +85,6 @@ class MangaLibraryService extends ChangeNotifier {
   List<Manga> get mangas => List.unmodifiable(_mangas);
 
   /// Series in display order, **derived from the books that carry them**.
-  ///
-  /// Nothing is stored per series, so a title always has at least one book and
-  /// deleting the last book removes the series with it — the album rule.
   List<MangaSeries> get series {
     final titles = <String>{};
     for (final m in _mangas) {
@@ -79,6 +99,125 @@ class MangaLibraryService extends ChangeNotifier {
   List<String> get authors => List.unmodifiable(_authors);
   int get count => _mangas.length;
 
+  // ── FFI decoders ──────────────────────────────────────────────────────────
+
+  static List<Manga> _decodeMangaList(String? raw) {
+    if (raw == null || raw.startsWith('error:')) {
+      if (raw != null) debugPrint('[MangaLibrary] mangaList FFI: $raw');
+      return [];
+    }
+    try {
+      return [
+        for (final m in jsonDecode(raw) as List<dynamic>)
+          Manga.fromMap(Map<String, Object?>.from(m as Map)),
+      ];
+    } catch (e) {
+      debugPrint('[MangaLibrary] _decodeMangaList: $e');
+      return [];
+    }
+  }
+
+  static Manga? _decodeManga(String? raw) {
+    if (raw == null || raw == 'null') return null;
+    if (raw.startsWith('error:')) {
+      debugPrint('[MangaLibrary] mangaGet FFI: $raw');
+      return null;
+    }
+    try {
+      return Manga.fromMap(Map<String, Object?>.from(jsonDecode(raw) as Map));
+    } catch (e) {
+      debugPrint('[MangaLibrary] _decodeManga: $e');
+      return null;
+    }
+  }
+
+  static List<MangaPage> _decodePageList(String? raw) {
+    if (raw == null || raw.startsWith('error:')) {
+      if (raw != null) debugPrint('[MangaLibrary] mangaListPages FFI: $raw');
+      return [];
+    }
+    try {
+      return [
+        for (final p in jsonDecode(raw) as List<dynamic>)
+          MangaPage.fromMap(Map<String, Object?>.from(p as Map)),
+      ];
+    } catch (e) {
+      debugPrint('[MangaLibrary] _decodePageList: $e');
+      return [];
+    }
+  }
+
+  static MangaProgress? _decodeProgress(String? raw) {
+    if (raw == null || raw == 'null') return null;
+    if (raw.startsWith('error:')) {
+      debugPrint('[MangaLibrary] mangaGetProgress FFI: $raw');
+      return null;
+    }
+    try {
+      return MangaProgress.fromMap(
+          Map<String, Object?>.from(jsonDecode(raw) as Map));
+    } catch (e) {
+      debugPrint('[MangaLibrary] _decodeProgress: $e');
+      return null;
+    }
+  }
+
+  static List<MangaProgress> _decodeProgressList(String? raw) {
+    if (raw == null || raw.startsWith('error:')) {
+      if (raw != null) debugPrint('[MangaLibrary] mangaListProgress FFI: $raw');
+      return [];
+    }
+    try {
+      return [
+        for (final p in jsonDecode(raw) as List<dynamic>)
+          MangaProgress.fromMap(Map<String, Object?>.from(p as Map)),
+      ];
+    } catch (e) {
+      debugPrint('[MangaLibrary] _decodeProgressList: $e');
+      return [];
+    }
+  }
+
+  // ── FFI wrappers ──────────────────────────────────────────────────────────
+
+  Future<Manga?> _ffiGetManga(String id) async =>
+      _decodeManga(RustCoreService.mangaGet(id));
+
+  /// Upsert [manga] via FFI. When [keepRev] is false (default), assigns the
+  /// next rev from the shared clock and clears any sqflite tombstone for this
+  /// row's sync key — matching the semantics of [LibraryDatabase.upsertManga].
+  Future<Manga> _ffiUpsertManga(Manga manga, {bool keepRev = false}) async {
+    final stored = keepRev ? manga : manga.copyWith(rev: _nextRev());
+    final r = RustCoreService.mangaUpsert(jsonEncode(stored.toMap()));
+    if (r != null && r.startsWith('error:')) {
+      debugPrint('[MangaLibrary] mangaUpsert FFI: $r');
+    }
+    if (!keepRev) {
+      // A local write resurrects a deleted row — clear the tombstone so sync
+      // does not push a deletion that was superseded by this write.
+      await _db.clearMangaTombstone(mangaSyncKeyForManga(
+        id: stored.id,
+        format: stored.format,
+        sourceName: stored.sourceName,
+        remotePath: stored.remotePath,
+      ));
+    }
+    return stored;
+  }
+
+  /// Atomically replace all pages for [mangaId] via FFI.
+  void _ffiSetPages(String mangaId, List<MangaPage> pages) {
+    final r = RustCoreService.mangaSetPages(
+      mangaId,
+      jsonEncode([for (final p in pages) p.toMap()]),
+    );
+    if (r != null && r.startsWith('error:')) {
+      debugPrint('[MangaLibrary] mangaSetPages FFI: $r');
+    }
+  }
+
+  // ── Loading ────────────────────────────────────────────────────────────────
+
   Future<void> init() async {
     await reload();
   }
@@ -86,13 +225,24 @@ class MangaLibraryService extends ChangeNotifier {
   Future<void> reload() async {
     _mangas
       ..clear()
-      ..addAll(await _db.loadMangas());
+      ..addAll(_decodeMangaList(RustCoreService.mangaList()));
+    // Authors are derived in memory (the sqflite loadMangaAuthors query was a
+    // DISTINCT author scan — identical to scanning the in-memory list).
+    final authorSet = <String>{};
+    for (final m in _mangas) {
+      final a = (m.author ?? '').trim();
+      if (a.isNotEmpty) authorSet.add(a);
+    }
     _authors
       ..clear()
-      ..addAll(await _db.loadMangaAuthors());
+      ..addAll(authorSet.toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase())));
     _progress
       ..clear()
-      ..addAll({for (final p in await _db.allMangaProgress()) p.mangaId: p});
+      ..addAll({
+        for (final p in _decodeProgressList(RustCoreService.mangaListProgress()))
+          p.mangaId: p,
+      });
     _loaded = true;
     notifyListeners();
   }
@@ -105,9 +255,6 @@ class MangaLibraryService extends ChangeNotifier {
   }
 
   /// Deterministic id of [m]'s series (`sha1` of the tag); null when unset.
-  ///
-  /// `mangaSeries` folder soft refs address a series through this id, which is
-  /// why the id survives as long as the title does.
   String? seriesIdOf(Manga m) {
     final t = seriesTitleOf(m);
     return t == null ? null : mangaSeriesIdForTitle(t);
@@ -141,106 +288,32 @@ class MangaLibraryService extends ChangeNotifier {
     ];
   }
 
-  /// Commit a confirmed ingest draft (image-dir or container).
-  ///
-  /// Identity rule (丙): a **loose-image** book is a user-owned asset, so it
-  /// gets a fresh surrogate id — the folder it came from is a one-off input,
-  /// never its identity. Building twice from one folder therefore yields two
-  /// books instead of silently replacing the first; re-scanning a book the user
-  /// already owns goes through [rescanLoose] with that book's id.
-  ///
-  /// Containers keep the path-derived id: a materialised file *is* its path,
-  /// exactly like a music track.
-  Future<Manga> upsertFromDraft(MangaIngestDraft draft) async {
-    final remotePath = normalizeRemotePath(draft.remotePath);
-    final id =
-        draft.id ??
-        (draft.format == MangaFormat.images
-            ? newMangaId()
-            : mangaIdForRemote(draft.sourceName, remotePath));
-    final series = normalizeMangaSeriesTag(draft.seriesTitle);
-    final pages = <MangaPage>[];
-    for (var i = 0; i < draft.pageRelPaths.length; i++) {
-      pages.add(
-        MangaPage(mangaId: id, pageIndex: i, relPath: draft.pageRelPaths[i]),
-      );
+  // ── Simple helpers (series/author) ────────────────────────────────────────
+
+  /// Display label for unset series (UI sentinel; empty series name = 未指定).
+  static const unspecifiedSeriesLabel = '未指定';
+
+  bool isUnspecifiedSeries(Manga m) => seriesTitleOf(m) == null;
+
+  List<Manga> mangasUnspecifiedSeries() => [
+        for (final m in _mangas)
+          if (isUnspecifiedSeries(m)) m,
+      ];
+
+  List<Manga> mangasWithSeries() => [
+        for (final m in _mangas)
+          if (!isUnspecifiedSeries(m)) m,
+      ];
+
+  MangaSeries? seriesById(String? id) {
+    if (id == null || id.isEmpty) return null;
+    for (final s in series) {
+      if (s.id == id) return s;
     }
-    final cover =
-        draft.coverRelpath ??
-        (draft.pageRelPaths.isEmpty ? null : draft.pageRelPaths.first);
-    final existing = await _db.loadMangaById(id);
-    final manga = Manga(
-      id: id,
-      sourceName: draft.sourceName,
-      remotePath: remotePath,
-      title: draft.title.trim().isEmpty
-          ? remotePath.split('/').where((s) => s.isNotEmpty).last
-          : draft.title.trim(),
-      author: draft.author?.trim().isEmpty == true
-          ? null
-          : draft.author?.trim(),
-      series: series,
-      volume: draft.volume?.trim().isEmpty == true
-          ? null
-          : draft.volume?.trim(),
-      chapterNumber: draft.chapterNumber?.trim().isEmpty == true
-          ? null
-          : draft.chapterNumber?.trim(),
-      pageCount: pages.length,
-      coverRelpath: cover,
-      format: draft.format,
-      pageTurn: existing?.pageTurn,
-      remoteMissing: existing?.remoteMissing ?? false,
-      updatedAt: DateTime.now(),
-    );
-    await _db.upsertManga(manga);
-    await _db.replaceMangaPages(id, pages);
-    await reload();
-    return manga;
+    return null;
   }
 
-  Future<List<MangaPage>> pagesFor(String mangaId) =>
-      _db.loadMangaPages(mangaId);
-
-  /// Freeze page list and update page_count / cover without touching series.
-  Future<void> replacePages(
-    String mangaId, {
-    required List<MangaPage> pages,
-    String? coverRelpath,
-  }) async {
-    final existing = await _db.loadMangaById(mangaId);
-    // Loose-image pages are membership (synced → bump rev); CBZ / container
-    // page order is a local cache and never bumps.
-    await _db.replaceMangaPages(
-      mangaId,
-      pages,
-      bumpRev: existing?.format == MangaFormat.images,
-    );
-    if (existing != null) {
-      final cover =
-          coverRelpath ??
-          existing.coverRelpath ??
-          (pages.isEmpty ? null : pages.first.relPath);
-      // Only a change to page_count / cover rewrites the row, so a device
-      // rebuilding its CBZ page cache for a pulled row does not re-upload it.
-      if (existing.pageCount != pages.length ||
-          existing.coverRelpath != cover) {
-        await _db.upsertManga(
-          existing.copyWith(
-            pageCount: pages.length,
-            coverRelpath: cover,
-            updatedAt: DateTime.now(),
-          ),
-        );
-      }
-    }
-    await reload();
-  }
-
-  /// The library row with [id], or null when it is not imported.
-  ///
-  /// The network library asks this before it offers to import a file: an entry
-  /// that is already in the library must open, never be imported twice.
+  /// Single-row look-up from the in-memory cache.
   Manga? mangaById(String id) {
     for (final m in _mangas) {
       if (m.id == id) return m;
@@ -248,56 +321,140 @@ class MangaLibraryService extends ChangeNotifier {
     return null;
   }
 
-  /// Reading progress by manga id, kept alongside the library rows.
+  // ── Upsert / pages ────────────────────────────────────────────────────────
+
+  /// Persist a draft, replacing any existing row with the same id.
   ///
-  /// The list and the grid paint a marker per book, so this must not query the
-  /// database once per row.
-  Map<String, MangaProgress> get progressByManga => Map.unmodifiable(_progress);
+  /// Existing [pageTurn] and [remoteMissing] flags are preserved; everything
+  /// else comes from [draft]. Pages replace atomically via FFI.
+  Future<Manga> upsertFromDraft(MangaIngestDraft draft) async {
+    final remotePath = normalizeRemotePath(draft.remotePath);
+    final id = draft.id ??
+        (draft.format == MangaFormat.images
+            ? newMangaId()
+            : mangaIdForRemote(draft.sourceName, remotePath));
+    final series = normalizeMangaSeriesTag(draft.seriesTitle);
+    final pages = <MangaPage>[
+      for (var i = 0; i < draft.pageRelPaths.length; i++)
+        MangaPage(mangaId: id, pageIndex: i, relPath: draft.pageRelPaths[i]),
+    ];
+    final cover =
+        draft.coverRelpath ?? (pages.isEmpty ? null : pages.first.relPath);
+    final existing = await _ffiGetManga(id);
+    final manga = Manga(
+      id: id,
+      sourceName: draft.sourceName,
+      remotePath: remotePath,
+      title: draft.title.trim().isEmpty
+          ? remotePath.split('/').where((s) => s.isNotEmpty).last
+          : draft.title.trim(),
+      author: (draft.author ?? '').trim().isEmpty
+          ? null
+          : draft.author!.trim(),
+      series: series,
+      volume:
+          (draft.volume ?? '').trim().isEmpty ? null : draft.volume?.trim(),
+      chapterNumber: (draft.chapterNumber ?? '').trim().isEmpty
+          ? null
+          : draft.chapterNumber?.trim(),
+      pageCount: pages.length,
+      coverRelpath: cover,
+      format: draft.format,
+      remoteMissing: existing?.remoteMissing ?? false,
+      pageTurn: existing?.pageTurn,
+      updatedAt: DateTime.now(),
+    );
+    final stored = await _ffiUpsertManga(manga);
+    _ffiSetPages(id, pages);
+    await reload();
+    return stored;
+  }
 
-  /// Cached reading progress of [mangaId], or null when never opened.
-  MangaProgress? progressOf(String mangaId) => _progress[mangaId];
+  /// Load the page list for one manga from Rust.
+  Future<List<MangaPage>> pagesFor(String mangaId) async =>
+      _decodePageList(RustCoreService.mangaListPages(mangaId));
 
-  Future<MangaProgress?> progressFor(String mangaId) =>
-      _db.loadMangaProgress(mangaId);
+  /// Replace the page list for [mangaId]. Bumps rev when [format] is images
+  /// (loose-image membership is synced) or when page count / cover changed.
+  Future<void> replacePages(
+    String mangaId, {
+    required List<MangaPage> pages,
+    String? coverRelpath,
+  }) async {
+    final existing = await _ffiGetManga(mangaId);
+    if (existing != null) {
+      final cover = coverRelpath ??
+          existing.coverRelpath ??
+          (pages.isEmpty ? null : pages.first.relPath);
+      final bumpRev = existing.format == MangaFormat.images;
+      final countChanged = existing.pageCount != pages.length;
+      final coverChanged = existing.coverRelpath != cover;
+      if (bumpRev || countChanged || coverChanged) {
+        // _ffiUpsertManga(keepRev: false) mints a fresh rev and clears tombstone.
+        await _ffiUpsertManga(existing.copyWith(
+          pageCount: pages.length,
+          coverRelpath: cover,
+          updatedAt: DateTime.now(),
+        ));
+      }
+    }
+    _ffiSetPages(mangaId, pages);
+    await reload();
+  }
 
+  // ── Progress ──────────────────────────────────────────────────────────────
+
+  /// Cached progress for one manga (in-memory; refreshed by [reload]).
+  MangaProgress? progressByManga(String mangaId) => _progress[mangaId];
+
+  /// Cached progress for one manga, looked up by the row itself.
+  MangaProgress? progressOf(Manga m) => _progress[m.id];
+
+  /// Authoritative progress for one manga, read straight from Rust (not the
+  /// in-memory cache) — used when the caller needs the freshest value.
+  Future<MangaProgress?> progressFor(String mangaId) async =>
+      _decodeProgress(RustCoreService.mangaGetProgress(mangaId));
+
+  /// Set reading progress for [mangaId] to [pageIndex] (0-based).
   Future<void> setProgress(String mangaId, int pageIndex) async {
-    final progress = MangaProgress(
+    final r = RustCoreService.mangaSetProgress(mangaId, pageIndex);
+    if (r != null && r.startsWith('error:')) {
+      debugPrint('[MangaLibrary] setProgress FFI: $r');
+    }
+    _progress[mangaId] = MangaProgress(
       mangaId: mangaId,
       pageIndex: pageIndex,
       updatedAt: DateTime.now(),
     );
-    await _db.upsertMangaProgress(progress);
-    _progress[mangaId] = progress;
     notifyListeners();
   }
 
-  /// Set per-manga page-turn (`ltr` / `rtl`) or clear (null = follow global).
+  // ── Per-book metadata edits ───────────────────────────────────────────────
+
+  /// Set the page-turn direction for [mangaId]. Null / blank clears it.
   Future<void> setPageTurn(String mangaId, String? direction) async {
-    final existing = await _db.loadMangaById(mangaId);
+    final existing = await _ffiGetManga(mangaId);
     if (existing == null) return;
-    final next = direction == null || direction.trim().isEmpty
+    final next = (direction == null || direction.trim().isEmpty)
         ? existing.copyWith(clearPageTurn: true, updatedAt: DateTime.now())
         : existing.copyWith(
             pageTurn: PageTurnDirection.normalize(direction),
             updatedAt: DateTime.now(),
           );
-    await _db.upsertManga(next);
+    await _ffiUpsertManga(next);
     await reload();
   }
 
-  /// Point the cover at [relPath] and bump rev so the new thumb can sync.
-  ///
-  /// The caller writes the thumb file. An unchanged path still bumps: the
-  /// bytes may have been regenerated, and a same-path edit must still publish.
-  /// Returns false when the book is missing or [relPath] is blank.
+  /// Set the cover page rel-path for [mangaId]. An unchanged path still bumps
+  /// (the bytes may have been regenerated). Returns false when the book is
+  /// missing or [relPath] is blank.
   Future<bool> setCoverRelpath(String mangaId, String relPath) async {
-    final existing = await _db.loadMangaById(mangaId);
+    final existing = await _ffiGetManga(mangaId);
     if (existing == null) return false;
     final next = relPath.trim();
     if (next.isEmpty) return false;
-    await _db.upsertManga(
-      existing.copyWith(coverRelpath: next, updatedAt: DateTime.now()),
-    );
+    await _ffiUpsertManga(
+        existing.copyWith(coverRelpath: next, updatedAt: DateTime.now()));
     await reload();
     return true;
   }
@@ -315,9 +472,9 @@ class MangaLibraryService extends ChangeNotifier {
     final next = tag == unspecifiedSeriesLabel ? null : tag;
     var n = 0;
     for (final id in mangaIds) {
-      final existing = await _db.loadMangaById(id);
+      final existing = await _ffiGetManga(id);
       if (existing == null) continue;
-      await _db.upsertManga(
+      await _ffiUpsertManga(
         existing.copyWith(
           series: next,
           clearSeries: next == null,
@@ -330,31 +487,6 @@ class MangaLibraryService extends ChangeNotifier {
     return n;
   }
 
-  /// Display label for unset series (UI sentinel; empty series name = 未指定).
-  static const unspecifiedSeriesLabel = '未指定';
-
-  bool isUnspecifiedSeries(Manga m) => seriesTitleOf(m) == null;
-
-  /// Mangas with no series / empty / 「未指定」 series name.
-  List<Manga> mangasUnspecifiedSeries() => [
-    for (final m in _mangas)
-      if (isUnspecifiedSeries(m)) m,
-  ];
-
-  /// Mangas that belong to a real named series.
-  List<Manga> mangasWithSeries() => [
-    for (final m in _mangas)
-      if (!isUnspecifiedSeries(m)) m,
-  ];
-
-  MangaSeries? seriesById(String? id) {
-    if (id == null || id.isEmpty) return null;
-    for (final s in series) {
-      if (s.id == id) return s;
-    }
-    return null;
-  }
-
   /// Edit manga title / author / series. Empty series title clears (未指定).
   Future<void> updateMangaMetadata(
     String mangaId, {
@@ -363,7 +495,7 @@ class MangaLibraryService extends ChangeNotifier {
     String? seriesTitle,
     bool updateSeries = false,
   }) async {
-    final existing = await _db.loadMangaById(mangaId);
+    final existing = await _ffiGetManga(mangaId);
     if (existing == null) return;
     var nextSeries = existing.series;
     var clearSeries = false;
@@ -377,10 +509,8 @@ class MangaLibraryService extends ChangeNotifier {
       }
     }
     final clearAuthor = author != null && author.trim().isEmpty;
-    final nextAuthor = author == null
-        ? null
-        : (clearAuthor ? null : author.trim());
-    await _db.upsertManga(
+    final nextAuthor = author == null ? null : (clearAuthor ? null : author.trim());
+    await _ffiUpsertManga(
       existing.copyWith(
         title: title?.trim().isEmpty == true
             ? existing.title
@@ -396,10 +526,6 @@ class MangaLibraryService extends ChangeNotifier {
   }
 
   /// Rename a series by rewriting the tag on every book that carries it.
-  ///
-  /// A series has no row of its own, so a rename is just a re-tag; renaming
-  /// onto an existing title merges the two, and an empty title unbinds the
-  /// books (the series then stops existing).
   Future<void> updateSeriesMetadata(String seriesId, {String? title}) async {
     final members = mangasForSeries(seriesId);
     if (members.isEmpty) return;
@@ -407,7 +533,7 @@ class MangaLibraryService extends ChangeNotifier {
     final next = tag == unspecifiedSeriesLabel ? null : tag;
     if (next == seriesTitleOf(members.first)) return;
     for (final m in members) {
-      await _db.upsertManga(
+      await _ffiUpsertManga(
         m.copyWith(
           series: next,
           clearSeries: next == null,
@@ -427,7 +553,7 @@ class MangaLibraryService extends ChangeNotifier {
     var n = 0;
     for (final m in List.of(_mangas)) {
       if ((m.author ?? '').trim() != src) continue;
-      await _db.upsertManga(
+      await _ffiUpsertManga(
         m.copyWith(
           author: nextAuthor,
           clearAuthor: nextAuthor == null,
@@ -440,13 +566,29 @@ class MangaLibraryService extends ChangeNotifier {
     return n;
   }
 
-  /// Delete one manga. Leaves a tombstone so the deletion reaches the cloud.
+  /// Delete one manga. Leaves a sqflite tombstone so the deletion reaches the
+  /// cloud; Rust writes its own tombstone via FFI, but [SyncService] reads
+  /// tombstones from the sqflite `deleted_mangas` table.
   Future<void> deleteManga(String id) async {
-    await _db.deleteManga(id);
+    final existing = await _ffiGetManga(id);
+    final r = RustCoreService.mangaDelete(id);
+    if (r != null && r.startsWith('error:')) {
+      debugPrint('[MangaLibrary] mangaDelete FFI: $r');
+    }
+    // Write sqflite tombstone unless Rust reported the row was already gone.
+    if (existing != null && r != 'not_found') {
+      await _db.upsertMangaTombstone(
+        id: existing.id,
+        format: existing.format,
+        sourceName: existing.sourceName,
+        remotePath: existing.remotePath,
+        rev: _nextRev(),
+      );
+    }
     await reload();
   }
 
-  // --- Cloud sync helpers (docs/08) ---
+  // ── Cloud sync helpers ────────────────────────────────────────────────────
 
   Manga? find(String sourceName, String remotePath) {
     final path = normalizeRemotePath(remotePath);
@@ -456,15 +598,18 @@ class MangaLibraryService extends ChangeNotifier {
     return null;
   }
 
-  /// Every local row as sync ships it. The series tag rides on the row itself,
-  /// so nothing extra has to be looked up. Loose-image rows carry their page
-  /// list (membership); CBZ rows never do.
+  /// Every local row as sync ships it. Loose-image rows carry their page list
+  /// (membership); CBZ rows never do. Uses fresh data from Rust rather than
+  /// the in-memory cache so the snapshot is consistent even if reload() has
+  /// not been called yet.
   Future<List<MangaSyncRow>> syncRows() async {
-    final mangas = await _db.loadMangas();
-    final pages = await _db.imageMangaPagesById();
-    // Rows written before the surrogate-id model (schema v18) are skipped:
-    // their id is path-derived and their page paths are folder-relative, so a
-    // peer that pulled them could not resolve a single page.
+    final mangas = _decodeMangaList(RustCoreService.mangaList());
+    final pagesById = <String, List<String>>{};
+    for (final m in mangas) {
+      if (m.format != MangaFormat.images) continue;
+      final ps = _decodePageList(RustCoreService.mangaListPages(m.id));
+      if (ps.isNotEmpty) pagesById[m.id] = [for (final p in ps) p.relPath];
+    }
     return [
       for (final m in mangas)
         if (!isLegacyLooseManga(
@@ -473,19 +618,15 @@ class MangaLibraryService extends ChangeNotifier {
           remotePath: m.remotePath,
           format: m.format,
         ))
-          MangaSyncRow(manga: m, pages: pages[m.id] ?? const []),
+          MangaSyncRow(manga: m, pages: pagesById[m.id] ?? const []),
     ];
   }
 
-  /// Adopt rows pulled from the cloud verbatim (rev kept, no bump). A
-  /// loose-image row replaces its local page list (membership); a CBZ row
-  /// leaves local page order alone (rebuilt on first open / scrape).
+  /// Adopt rows pulled from the cloud verbatim (rev kept, tombstone NOT
+  /// cleared). Loose-image rows replace local page lists; CBZ rows leave
+  /// local page order alone (rebuilt on first open / scrape).
   Future<void> adoptCloudRows(List<MangaSyncRow> rows) async {
     for (final r in rows) {
-      // A loose-image row written before the surrogate-id model carries
-      // the path-derived id and folder-relative pages: it cannot resolve
-      // here, so it is dropped rather than imported as a book with no
-      // readable pages.
       if (isLegacyLooseManga(
         id: r.manga.id,
         sourceName: r.manga.sourceName,
@@ -494,26 +635,73 @@ class MangaLibraryService extends ChangeNotifier {
       )) {
         continue;
       }
-      await _db.upsertManga(r.manga, keepRev: true);
+      await _ffiUpsertManga(r.manga, keepRev: true);
       if (r.manga.format == MangaFormat.images) {
-        await _db.replaceMangaPages(r.manga.id, [
+        _ffiSetPages(r.manga.id, [
           for (var i = 0; i < r.pages.length; i++)
             MangaPage(mangaId: r.manga.id, pageIndex: i, relPath: r.pages[i]),
         ]);
       }
     }
-    await reload();
+    if (rows.isNotEmpty) await reload();
   }
 
-  Future<List<MangaProgress>> allProgress() => _db.allMangaProgress();
+  /// All progress rows, read fresh from Rust.
+  Future<List<MangaProgress>> allProgress() async =>
+      _decodeProgressList(RustCoreService.mangaListProgress());
 
   /// Write cloud-newer progress rows (no rev, no tombstone involved).
   Future<void> applyProgress(List<MangaProgress> rows) async {
     for (final p in rows) {
-      await _db.upsertMangaProgress(p);
+      final r = RustCoreService.mangaSetProgress(p.mangaId, p.pageIndex);
+      if (r != null && r.startsWith('error:')) {
+        debugPrint('[MangaLibrary] applyProgress FFI: $r');
+      }
     }
-    if (rows.isNotEmpty) notifyListeners();
+    if (rows.isNotEmpty) {
+      _progress
+        ..clear()
+        ..addAll({
+          for (final p in _decodeProgressList(RustCoreService.mangaListProgress()))
+            p.mangaId: p,
+        });
+      notifyListeners();
+    }
   }
+
+  // ── Re-scan ───────────────────────────────────────────────────────────────
+
+  /// Re-scan a loose-image book the user already owns.
+  ///
+  /// Keeps id, progress, and hand-edited metadata; replaces page list, cover,
+  /// page count, and source folder. Bumps rev so peers see membership changes.
+  Future<void> rescanLoose(
+    String mangaId, {
+    required MangaIngestDraft draft,
+  }) async {
+    final existing = await _ffiGetManga(mangaId);
+    if (existing == null) return;
+    final folder = normalizeRemotePath(draft.remotePath);
+    final pages = <MangaPage>[
+      for (var i = 0; i < draft.pageRelPaths.length; i++)
+        MangaPage(
+          mangaId: mangaId,
+          pageIndex: i,
+          relPath: draft.pageRelPaths[i],
+        ),
+    ];
+    // _ffiUpsertManga(keepRev: false) bumps rev + clears tombstone.
+    await _ffiUpsertManga(existing.copyWith(
+      remotePath: folder,
+      pageCount: pages.length,
+      coverRelpath: pages.isEmpty ? null : pages.first.relPath,
+      updatedAt: DateTime.now(),
+    ));
+    _ffiSetPages(mangaId, pages);
+    await reload();
+  }
+
+  // ── Static factory helpers ────────────────────────────────────────────────
 
   /// Build a draft for a loose image directory (list only; no download).
   ///
@@ -534,9 +722,8 @@ class MangaLibraryService extends ChangeNotifier {
       title: folderName,
       format: MangaFormat.images,
       pageRelPaths: [for (final n in sorted) _underSourceRoot(root, n)],
-      coverRelpath: sorted.isEmpty
-          ? null
-          : _underSourceRoot(root, sorted.first),
+      coverRelpath:
+          sorted.isEmpty ? null : _underSourceRoot(root, sorted.first),
     );
   }
 
@@ -556,9 +743,8 @@ class MangaLibraryService extends ChangeNotifier {
       title: folderName,
       format: MangaFormat.images,
       pageRelPaths: [for (final n in sorted) _underSourceRoot(root, n)],
-      coverRelpath: sorted.isEmpty
-          ? null
-          : _underSourceRoot(root, sorted.first),
+      coverRelpath:
+          sorted.isEmpty ? null : _underSourceRoot(root, sorted.first),
     );
   }
 
@@ -577,40 +763,7 @@ class MangaLibraryService extends ChangeNotifier {
     return normalizeRemotePath('$root$name');
   }
 
-  /// Re-scan a loose-image book the user already owns (the 丙 rule).
-  ///
-  /// The book keeps its id, its reading progress and its hand-edited metadata;
-  /// only the page list, the cover, the page count and the remembered source
-  /// folder are replaced. Nothing is created, so the 「同一本书」 question never
-  /// arises — the caller already holds the id.
-  Future<void> rescanLoose(
-    String mangaId, {
-    required MangaIngestDraft draft,
-  }) async {
-    final existing = await _db.loadMangaById(mangaId);
-    if (existing == null) return;
-    final folder = normalizeRemotePath(draft.remotePath);
-    final pages = <MangaPage>[
-      for (var i = 0; i < draft.pageRelPaths.length; i++)
-        MangaPage(
-          mangaId: mangaId,
-          pageIndex: i,
-          relPath: draft.pageRelPaths[i],
-        ),
-    ];
-    await _db.replaceMangaPages(mangaId, pages, bumpRev: true);
-    await _db.upsertManga(
-      existing.copyWith(
-        remotePath: folder,
-        pageCount: pages.length,
-        coverRelpath: pages.isEmpty ? null : pages.first.relPath,
-        updatedAt: DateTime.now(),
-      ),
-    );
-    await reload();
-  }
-
-  /// Build a draft for a comic container file (pages may be empty this slice).
+  /// Build a draft for a comic container file.
   static MangaIngestDraft draftForComicFile({
     required String sourceName,
     required String remotePath,
