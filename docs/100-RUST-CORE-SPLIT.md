@@ -217,6 +217,38 @@ Full implementation continues in subsequent phased rounds per `saf_work/wdmm-spl
 
 ---
 
+## Backup Interop (Android ↔ Core JSON)
+
+**Status (2026-10-25)**: Android **restore** accepts both Android binary backups and Core JSON backups. Android **create** remains Dart/binary (sqflite is still SoT).
+
+### Encoding Differences
+
+| Producer | Section 2 (tracks) | Section 5 (credentials) | Envelope |
+|----------|-------------------|------------------------|----------|
+| Android `BackupService.buildArchiveBytes` | binary Wmp track records + covers | nested `WDMMCV01` vault bytes | WDMMEN01 optional |
+| Core `wdmm_sync::build_backup_bytes` | **UTF-8 JSON** track array | **UTF-8 JSON** accounts (`credentials_b64`) | WDMMEN01 optional |
+| Desktop | uses Core FFI only | Core JSON | Core |
+
+Both use the same magic `WDMMBK01` / section ids; only the **payload codecs** differ.
+
+### Current State
+
+- **Create**: Android stays on `BackupService.buildArchiveBytes` (Dart) while sqflite `LibraryDatabase` is the source of truth. Core `backup_create` would dump an empty/partial Rust DB.
+- **Restore**: Android `BackupService.restoreFromBytes` detects Core JSON backups by peeking section 2 raw bytes — if they look like UTF-8 JSON (trim starts with `[` or `{`), routes through `RustCoreService.backupRestore` FFI. Otherwise uses the existing Android binary `_decodeContainer` path.
+- **Desktop↔Core**: OK — Desktop uses Core FFI for both create and restore.
+- **Android→Core**: Binary archives produced by Android are **not readable by Desktop** until Core gains binary section readers (out of scope).
+
+### FFI Bindings
+
+`RustCoreService` now exposes:
+- `backupUpload(url, user, pass, remoteDir, passphrase)` — upload via Core
+- `backupList(url, user, pass, remoteDir)` → JSON string — list available backups
+- `backupDownloadRestore(url, user, pass, remoteFile, passphrase)` — download + restore in one call
+
+These enable full WebDAV backup workflows without Dart HTTP drivers when used with Core JSON backups.
+
+---
+
 ## References
 
 - **Rust Core Repo**: https://github.com/SenkjM/WDMM-core
