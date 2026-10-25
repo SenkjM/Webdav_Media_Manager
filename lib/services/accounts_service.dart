@@ -15,6 +15,7 @@ import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'cloud_drivers/driver_registry.dart';
 import 'library_database.dart';
+import 'rust_core_service.dart';
 
 /// Multi-WebDAV account management. Passwords in secure storage.
 class AccountsService extends ChangeNotifier {
@@ -165,6 +166,10 @@ class AccountsService extends ChangeNotifier {
       await _collapseDuplicatesIfNeeded();
       _loaded = true;
       notifyListeners();
+      // Best-effort sync all accounts to Core once.
+      for (final a in _accounts) {
+        await _syncAccountToCore(a);
+      }
       gate.complete();
     } catch (e, st) {
       gate.completeError(e, st);
@@ -216,6 +221,11 @@ class AccountsService extends ChangeNotifier {
       key: '$_kDriverCfgPrefix$accountId',
       value: jsonEncode(config),
     );
+    // Reload account by id and sync to Core.
+    final account = accountById(accountId);
+    if (account != null) {
+      await _syncAccountToCore(account);
+    }
   }
 
   Future<Map<String, dynamic>?> loadDriverConfig(String accountId) async {
@@ -300,6 +310,73 @@ class AccountsService extends ChangeNotifier {
     await _db.applyAccountNameUnique();
   }
 
+  /// Mirror a Dart account into Core DB via FFI.
+  /// Called after addAccount/updateAccount/saveDriverConfig and during init.
+  /// Fail-soft: logs errors in debug mode but never blocks the local sqflite save.
+  Future<void> _syncAccountToCore(WebDavAccount a) async {
+    try {
+      // Load driver config (tokens/cookies) for cloud accounts.
+      final driverCfg = await loadDriverConfig(a.id);
+
+      // Build credentials JSON based on provider_type.
+      Map<String, dynamic> credentials;
+      if (a.providerType == 'webdav') {
+        // WebDAV: Core expects {username, password, remote_dir}.
+        final password = await passwordFor(a.id) ?? '';
+        credentials = {
+          'username': a.username,
+          'password': password,
+          'remote_dir': a.remotePath,
+        };
+      } else {
+        // Cloud driver: credentials = driver config (or {} if null).
+        credentials = driverCfg ?? {};
+
+        // If crypt and config has source account name but not nested source structure,
+        // resolve the source account + its config and nest it as Core expects.
+        if (a.providerType == 'crypt' && credentials.containsKey('source_account_id_name')) {
+          final sourceName = credentials['source_account_id_name'] as String?;
+          if (sourceName != null && !credentials.containsKey('source')) {
+            final sourceAccount = accountForSource(sourceName);
+            if (sourceAccount != null) {
+              final sourceCfg = await loadDriverConfig(sourceAccount.id);
+              final sourceCredentials = <String, dynamic>{};
+              if (sourceAccount.providerType == 'webdav') {
+                final sourcePw = await passwordFor(sourceAccount.id) ?? '';
+                sourceCredentials['username'] = sourceAccount.username;
+                sourceCredentials['password'] = sourcePw;
+                sourceCredentials['remote_dir'] = sourceAccount.remotePath;
+              } else {
+                sourceCredentials.addAll(sourceCfg ?? {});
+              }
+              credentials['source'] = {
+                'provider_type': sourceAccount.providerType,
+                'config': sourceCredentials,
+              };
+            }
+          }
+        }
+      }
+
+      // Call Core FFI upsert.
+      final coreJson = jsonEncode({
+        'id': a.id,
+        'provider_type': a.providerType,
+        'display_name': a.name,
+        'base_url': a.url,
+        'credentials': credentials,
+      });
+      final result = RustCoreService.accountUpsert(coreJson);
+      if (result != null && result.startsWith('error:') && kDebugMode) {
+        debugPrint('[AccountsService] Core upsert failed for ${a.id}: $result');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AccountsService] _syncAccountToCore failed for ${a.id}: $e');
+      }
+    }
+  }
+
   Future<WebDavAccount> addAccount({
     required String name,
     required String url,
@@ -335,6 +412,7 @@ class AccountsService extends ChangeNotifier {
       await _prefs!.setString(_kActiveAccount, account.id);
       _activeAccountId = account.id;
     }
+    await _syncAccountToCore(account);
     notifyListeners();
     return account;
   }
@@ -368,6 +446,7 @@ class AccountsService extends ChangeNotifier {
       await _secure.write(key: '$_kPassPrefix$id', value: password);
     }
     _accounts[idx] = updated;
+    await _syncAccountToCore(updated);
     notifyListeners();
   }
 
@@ -376,6 +455,11 @@ class AccountsService extends ChangeNotifier {
     await _secure.delete(key: '$_kPassPrefix$id');
     await _secure.delete(key: '$_kDriverCfgPrefix$id');
     _accounts.removeWhere((a) => a.id == id);
+    // Delete from Core DB.
+    final result = RustCoreService.accountDelete(id);
+    if (result != null && result.startsWith('error:') && kDebugMode) {
+      debugPrint('[AccountsService] Core delete failed for $id: $result');
+    }
     if (_activeAccountId == id) {
       _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
       _prefs ??= await SharedPreferences.getInstance();
