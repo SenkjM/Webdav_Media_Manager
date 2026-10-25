@@ -217,6 +217,10 @@ class RustCoreService {
   static _FourStrToOneStrDart? _driverRename;
   static _ThreeStrToOneStrDart? _driverRemove;
   static _ThreeStrToOneStrDart? _driverGet;
+  static _NoArgToStrDart? _accountList;
+  static _OneStrToStrDart? _accountGet;
+  static _OneStrToStrDart? _accountUpsert;
+  static _OneStrToStrDart? _accountDelete;
   static _TwoStrToOneStrDart? _accountListDir;
   static _TwoStrToOneStrDart? _accountMkdir;
   static _ThreeStrToOneStrDart? _accountRename;
@@ -288,6 +292,18 @@ class RustCoreService {
         .asFunction();
     _driverGet = lib
         .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_get')
+        .asFunction();
+    _accountList = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_account_list')
+        .asFunction();
+    _accountGet = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_get')
+        .asFunction();
+    _accountUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_upsert')
+        .asFunction();
+    _accountDelete = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_delete')
         .asFunction();
     _accountListDir = lib
         .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_list_dir')
@@ -1755,6 +1771,51 @@ class RustCoreService {
   }
 
   // ── Wave C driver/account API ────────────────────────────────────────────────
+
+  // ── Account CRUD ─────────────────────────────────────────────────────────────
+
+  /// List all accounts. Returns JSON array or `"error:…"`. Null if FFI unavailable.
+  static String? accountList() {
+    if (!_ensureSymbols() || _accountList == null) return null;
+    return _readAndFreeString(_accountList!());
+  }
+
+  /// Get account by [id]. Returns JSON object, `"null"` if absent, or `"error:…"`.
+  /// Null if FFI unavailable.
+  static String? accountGet(String id) {
+    if (!_ensureSymbols() || _accountGet == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Upsert account. [json] is the account JSON object.
+  /// Returns `"ok"` or `"error:…"`. Null if FFI unavailable.
+  static String? accountUpsert(String json) {
+    if (!_ensureSymbols() || _accountUpsert == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete account by [id]. Returns `"ok"` or `"error:…"`. Null if FFI unavailable.
+  static String? accountDelete(String id) {
+    if (!_ensureSymbols() || _accountDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Account file operations ──────────────────────────────────────────────────
 
   /// List entries at [path] using the driver for [providerType] with [configJson].
   /// Returns JSON array of entries or `"error:…"`. Null if FFI unavailable.
