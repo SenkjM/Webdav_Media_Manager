@@ -282,6 +282,88 @@ class RustLibraryService {
     }
   }
 
+  /// Get a track (or CUE slice) by source name and remote path.
+  ///
+  /// The FFI export tries `tracks` first; on miss it tries `cue_slices`.
+  /// Returns a [LibraryTrack] on hit, `null` on miss / error / flag off.
+  ///
+  /// CUE slice JSON (discriminant: has `music_id` + `cue_id`) is decoded via
+  /// [LibraryTrack.fromMap] which populates all CUE fields.  Track JSON is
+  /// decoded via [_rustJsonToTrack].
+  ///
+  /// Never throws.
+  static LibraryTrack? getBySourcePath(String sourceName, String remotePath) {
+    if (!kRustLibraryReadEnabled) return null;
+    final json = RustCoreService.trackGetBySourcePath(sourceName, remotePath);
+    if (json == null || json == 'null' || json.startsWith('error:')) {
+      if (json != null && json != 'null') {
+        debugPrint('[RustLibraryService] getBySourcePath("$sourceName", "$remotePath") error: $json');
+      }
+      return null;
+    }
+    try {
+      final map = jsonDecode(json) as Map<String, dynamic>;
+      // Discriminate: CueSlice has `music_id`+`cue_id`; LibraryTrack has `id`+`account_id`.
+      if (map.containsKey('music_id') && map.containsKey('cue_id')) {
+        return LibraryTrack.fromMap(map);
+      }
+      return _rustJsonToTrack(map);
+    } catch (e) {
+      debugPrint('[RustLibraryService] getBySourcePath decode error: $e');
+      return null;
+    }
+  }
+
+  /// Get the CUE album that owns the slice with [musicId].
+  ///
+  /// Returns the raw album map on hit, `null` on miss / error / flag off.
+  ///
+  /// Never throws.
+  static Map<String, dynamic>? cueAlbumForSlice(String musicId) {
+    if (!kRustLibraryReadEnabled) return null;
+    final json = RustCoreService.cueAlbumForSlice(musicId);
+    if (json == null || json == 'null' || json.startsWith('error:')) {
+      if (json != null && json != 'null') {
+        debugPrint('[RustLibraryService] cueAlbumForSlice("$musicId") error: $json');
+      }
+      return null;
+    }
+    try {
+      return jsonDecode(json) as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('[RustLibraryService] cueAlbumForSlice decode error: $e');
+      return null;
+    }
+  }
+
+  /// List all CUE slices for [cueId], ordered by track_index ASC.
+  ///
+  /// Returns a list of [LibraryTrack] on success (may be empty), `null` on
+  /// error or flag off.
+  ///
+  /// Never throws.
+  static List<LibraryTrack>? slicesForCue(String cueId) {
+    if (!kRustLibraryReadEnabled) return null;
+    final json = RustCoreService.cueSlicesForCue(cueId);
+    if (json == null || json.startsWith('error:')) {
+      if (json != null) {
+        debugPrint('[RustLibraryService] slicesForCue("$cueId") error: $json');
+      }
+      return null;
+    }
+    try {
+      final raw = jsonDecode(json);
+      if (raw is! List) return null;
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(LibraryTrack.fromMap)
+          .toList();
+    } catch (e) {
+      debugPrint('[RustLibraryService] slicesForCue decode error: $e');
+      return null;
+    }
+  }
+
   /// Upsert a CUE slice into the Rust rusqlite DB.
   ///
   /// No-op when [kRustLibraryWriteEnabled] is `false` or [sliceJson] is

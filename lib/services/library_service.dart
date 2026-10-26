@@ -395,6 +395,22 @@ class LibraryService extends ChangeNotifier {
   /// Bidirectional CUE: slice → cue album + audio music_id.
   Future<Map<String, dynamic>?> cueRelationForSlice(LibraryTrack track) async {
     if (!track.isCueVirtual) return null;
+    // Core-first: try Rust rusqlite; fall back to sqflite.
+    final coreAlbum = RustLibraryService.cueAlbumForSlice(track.musicId);
+    if (coreAlbum != null) {
+      final cueId = coreAlbum['cue_id'] as String;
+      final coreSlices = RustLibraryService.slicesForCue(cueId);
+      if (coreSlices != null) {
+        return {
+          'cueId': cueId,
+          'cueRemotePath': coreAlbum['cue_remote_path'],
+          'audioMusicId': track.audioMusicId ?? track.cacheMusicId,
+          'audioRemotePath': track.audioRemotePath,
+          'sliceMusicIds': coreSlices.map((s) => s.musicId).toList(),
+        };
+      }
+    }
+    // sqflite fallback
     final album = await _db.cueAlbumForSlice(track.musicId);
     if (album == null) return null;
     final cueId = album['cue_id'] as String;
@@ -410,6 +426,20 @@ class LibraryService extends ChangeNotifier {
 
   /// Bidirectional CUE: cue → original audio + slice music_ids.
   Future<Map<String, dynamic>?> cueRelationForCueId(String cueId) async {
+    // Core-first: try Rust rusqlite; fall back to sqflite on null/empty.
+    final coreSlices = RustLibraryService.slicesForCue(cueId);
+    if (coreSlices != null && coreSlices.isNotEmpty) {
+      final first = coreSlices.first;
+      return {
+        'cueId': cueId,
+        'cueRemotePath': first.cueRemotePath,
+        'audioMusicId': first.audioMusicId ?? first.cacheMusicId,
+        'audioRemotePath': first.audioRemotePath,
+        'sliceMusicIds': coreSlices.map((s) => s.musicId).toList(),
+        'slices': coreSlices,
+      };
+    }
+    // sqflite fallback
     final slices = await _db.slicesForCue(cueId);
     if (slices.isEmpty) return null;
     final first = slices.first;
@@ -436,7 +466,11 @@ class LibraryService extends ChangeNotifier {
     bool updateDownloadTime = true,
   }) async {
     final now = DateTime.now();
-    final existing = await _db.getTrack(sourceName, remotePath);
+    LibraryTrack? existing;
+    if (kRustLibraryReadEnabled) {
+      existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
+    }
+    existing ??= await _db.getTrack(sourceName, remotePath);
     final read = await _tags.readFromFile(localPath);    String? coverPath;
     if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
       coverPath = await _covers.saveThumb(
@@ -631,7 +665,11 @@ class LibraryService extends ChangeNotifier {
     required ReadTags tags,
   }) async {
     final now = DateTime.now();
-    final existing = await _db.getTrack(sourceName, remotePath);
+    LibraryTrack? existing;
+    if (kRustLibraryReadEnabled) {
+      existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
+    }
+    existing ??= await _db.getTrack(sourceName, remotePath);
     String? coverPath = existing?.coverPath;
     if (tags.coverBytes != null && tags.coverBytes!.isNotEmpty) {
       coverPath = await _covers.saveThumb(

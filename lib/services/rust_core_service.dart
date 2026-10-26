@@ -754,6 +754,11 @@ class RustCoreService {
   static _OneStrToStrDart? _libraryImport;
   static _OneStrToStrDart? _libraryCompare;
 
+  // ── Class B reads — getTrack by source+path + CUE album/slices reads ──────
+  static _TwoStrToOneStrDart? _trackGetBySourcePath;
+  static _OneStrToStrDart? _cueAlbumForSlice;
+  static _OneStrToStrDart? _cueSlicesForCue;
+
   // ── Schema v6 — deleted_tracks + sync_state ───────────────────────────────
   static _OneStrToStrDart? _deletedTrackUpsert;
   static _TwoStrToOneStrDart? _deletedTrackClear;
@@ -824,6 +829,17 @@ class RustCoreService {
         .asFunction();
     _libraryCompare = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_compare_with_sqflite')
+        .asFunction();
+
+    // Class B reads — track get by source+path + CUE album/slices
+    _trackGetBySourcePath = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_track_get_by_source_path')
+        .asFunction();
+    _cueAlbumForSlice = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_album_for_slice')
+        .asFunction();
+    _cueSlicesForCue = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_slices_for_cue')
         .asFunction();
 
     // Schema v6
@@ -1070,6 +1086,64 @@ class RustCoreService {
     } finally {
       calloc.free(source);
       calloc.free(path);
+    }
+  }
+
+  /// Get a track or CUE slice by source name and remote path.
+  ///
+  /// Returns `LibraryTrack` JSON (keys: `id`, `account_id`) if a track matches,
+  /// `CueSlice` JSON (keys: `music_id`, `cue_id`) if a CUE slice matches,
+  /// literal `"null"` if neither found, or `"error:..."` on failure.
+  /// Returns null if the library is unavailable.
+  static String? trackGetBySourcePath(String accountId, String remotePath) {
+    if (!_ensureSymbols()) return null;
+    if (_trackGetBySourcePath == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackGetBySourcePath == null) return null;
+    }
+    final acct = accountId.toNativeUtf8();
+    final path = remotePath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackGetBySourcePath!(acct, path));
+    } finally {
+      calloc.free(acct);
+      calloc.free(path);
+    }
+  }
+
+  /// Get the CUE album that owns the slice with [musicId].
+  ///
+  /// Returns `CueAlbum` JSON, `"null"` if not found, or `"error:..."`.
+  /// Returns null if the library is unavailable.
+  static String? cueAlbumForSlice(String musicId) {
+    if (!_ensureSymbols()) return null;
+    if (_cueAlbumForSlice == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueAlbumForSlice == null) return null;
+    }
+    final ptr = musicId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueAlbumForSlice!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List all CUE slices for [cueId], ordered by track_index ASC.
+  ///
+  /// Returns a JSON array (may be `[]`), or `"error:..."`.
+  /// Returns null if the library is unavailable.
+  static String? cueSlicesForCue(String cueId) {
+    if (!_ensureSymbols()) return null;
+    if (_cueSlicesForCue == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueSlicesForCue == null) return null;
+    }
+    final ptr = cueId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueSlicesForCue!(ptr));
+    } finally {
+      calloc.free(ptr);
     }
   }
 
