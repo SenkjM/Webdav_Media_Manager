@@ -1192,7 +1192,8 @@ class SyncService extends ChangeNotifier {
     try {
       final bytes = readableJson
           ? await _backup.buildJsonExport(passphrase: passphrase)
-          : await _backup.buildArchiveBytes(passphrase: passphrase);
+          // Phase D: binary export must use Core authority (not sqflite legacy).
+          : await _backup.createArchiveBytes(passphrase: passphrase);
       _progress(L10nHost.current.progressWritingDownloads, 0.8);
       final name =
           fileName ??

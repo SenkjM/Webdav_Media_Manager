@@ -217,7 +217,7 @@ class BackupService extends ChangeNotifier {
   /// Build backup archive bytes from sqflite library.
   ///
   /// **Legacy path (Phase D)**: Production `.wdmm` create now uses Core FFI
-  /// (see `_buildArchiveBytesViaCore`). This method remains for:
+  /// (see `createArchiveBytes`). This method remains for:
   /// - `buildJsonExport` (readable JSON troubleshooting export)
   /// - Tests that need direct sqflite-based archive construction
   ///
@@ -478,7 +478,7 @@ class BackupService extends ChangeNotifier {
       final name = fileName ?? backupFileNameNow();
 
       // Phase D: Full cutover to Core FFI for backup create when Rust lib loaded
-      final bytes = await _buildArchiveBytesViaCore(passphrase: passphrase);
+      final bytes = await createArchiveBytes(passphrase: passphrase);
 
       await _webDav.ensureDirectory(accountId, dir);
       final remote = '$dir$name';
@@ -497,9 +497,12 @@ class BackupService extends ChangeNotifier {
     }
   }
 
-  /// Create backup archive via Core FFI (Phase D cutover).
-  /// When Rust lib is loaded, use Core; else throw.
-  Future<Uint8List> _buildArchiveBytesViaCore({required String passphrase}) async {
+  /// Production `.wdmm` create via Core FFI (Phase D cutover).
+  ///
+  /// All production archive creators ([uploadBackup], [SyncService.exportToDownloads]
+  /// binary path) must use this — not [buildArchiveBytes] (sqflite legacy).
+  /// When Rust lib is loaded, use Core; else throw (no silent sqflite fallback).
+  Future<Uint8List> createArchiveBytes({required String passphrase}) async {
     final tempDir = await getTemporaryDirectory();
     final tempFile = File(p.join(
       tempDir.path,
