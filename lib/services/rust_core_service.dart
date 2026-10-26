@@ -480,10 +480,13 @@ class RustCoreService {
   /// Returns a JSON summary string on success or 'error:...' on failure.
   /// Returns null if the native library is not available.
   ///
-  /// **Feature flag**: only call this if the feature flag
-  /// `kRustSyncEnabled` is true (not yet wired to UI; defaults to false).
-  /// Dart sync services remain source of truth until the feature flag is
-  /// flipped for release.
+  /// **Feature flag**: call from [SyncService] only when
+  /// [kRustLibrarySyncEnabled] is true (default false until protocol parity
+  /// is proven). Desktop Settings already calls the same FFI unconditionally.
+  ///
+  /// Semantics: `run_sync_all` = credentials + **music library incremental**
+  /// (shard/tombstone under `{remote}/library/music/`) + playlists. There is
+  /// no dedicated library-only or sync_full FFI yet.
   static String? syncTrigger({
     required String webdavUrl,
     required String username,
@@ -2497,16 +2500,36 @@ extension _Let<T> on T {
   R let<R>(R Function(T) fn) => fn(this);
 }
 
-// ── Feature flags (Round 4 — not yet wired to UI) ───────────────────────────
+// ── Feature flags ───────────────────────────────────────────────────────────
 
-/// When true, [RustCoreService.syncTrigger] is used alongside Dart sync.
-/// Flip to true in a settings screen once the Rust sync path is validated.
+/// Legacy alias — prefer [kRustLibrarySyncEnabled]. Kept false so nothing
+/// silently dual-runs cloud writers (that would corrupt shard state).
 // ignore: constant_identifier_names
-const bool kRustSyncEnabled = true;
+const bool kRustSyncEnabled = false;
+
+/// Core-first gate for Android **music library cloud sync**.
+///
+/// **Default: `false`** — Dart [SyncService] + [LibrarySyncStore] remain the
+/// production protocol (Android still owns cloud sync). Flip to `true` only
+/// after incremental parity vs Core `LibrarySyncEngine` is proven on device.
+///
+/// When `true`, [SyncService.syncLibraryIncremental] calls
+/// [RustCoreService.syncTrigger] exclusively (no silent Dart fallback).
+/// [SyncService.syncLibraryFull] stays on Dart until a dedicated Core
+/// `sync_full` FFI exists (`wdmm_sync_trigger` only runs incremental).
+///
+/// Constraints when enabled:
+/// - Sync destination must be `providerType == 'webdav'` (FFI builds
+///   `WebDavDriver` from url/user/pass).
+/// - Library SoT must already be Core (`kRustLibraryRead/WriteEnabled`).
+// ignore: constant_identifier_names
+const bool kRustLibrarySyncEnabled = false;
 
 /// When true, [MangaLibraryService] routes manga index CRUD and reading
 /// progress through the Rust FFI (wdmm_manga_* symbols, Wave D) instead of
 /// sqflite. [LibraryDatabase] remains the home of sync tombstones
 /// (`deleted_mangas`) which [SyncService] still reads directly.
+/// Manga **cloud** shard engine is not in Core yet — SyncService manga
+/// paths stay on Dart [MangaSyncStore].
 // ignore: constant_identifier_names
 const bool kRustMangaEnabled = true;

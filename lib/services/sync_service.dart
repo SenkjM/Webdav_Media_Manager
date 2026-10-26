@@ -28,6 +28,7 @@ import '../models/account_capabilities.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 import 'download_destination_service.dart';
+import 'rust_core_service.dart';
 
 /// What a single operation touched.
 class SyncOutcome {
@@ -418,6 +419,13 @@ class SyncService extends ChangeNotifier {
     await _run(outcome, () async {
       final dest = await syncDestination();
       if (dest == null) throw StateError('err.noWebdavAccount');
+
+      // Core-first (flagged): exclusive path — no silent Dart fallback.
+      if (kRustLibrarySyncEnabled) {
+        await _syncLibraryViaCore(outcome, destAccountId: dest);
+        return;
+      }
+
       final store = await _libraryStore();
 
       _progress(L10nHost.current.progressReadingCloudIndex, 0.3);
@@ -583,6 +591,17 @@ class SyncService extends ChangeNotifier {
     await _run(outcome, () async {
       final dest = await syncDestination();
       if (dest == null) throw StateError('err.noWebdavAccount');
+
+      // `wdmm_sync_trigger` / `run_sync_all` only runs LibrarySyncEngine
+      // incremental — there is no Core sync_full FFI yet. Keep Dart rebuild
+      // even when [kRustLibrarySyncEnabled] is on (documented leftover; not a
+      // silent half-cut of incremental).
+      if (kRustLibrarySyncEnabled) {
+        outcome.warn(
+          'Core library sync_full FFI not exposed; full rebuild still uses Dart LibrarySyncStore',
+        );
+      }
+
       final store = await _libraryStore();
 
       _progress(L10nHost.current.progressReadingCloudIndex, 0.2);
@@ -710,6 +729,47 @@ class SyncService extends ChangeNotifier {
       baseUpTo: manifest.baseUpTo,
       parts: parts,
     );
+  }
+
+
+  /// Core music-library cloud sync via [RustCoreService.syncTrigger].
+  ///
+  /// Only used when [kRustLibrarySyncEnabled] is true. Requires a WebDAV
+  /// destination (FFI constructs `WebDavDriver`). Also runs Core credential +
+  /// playlist engines (same as Desktop Settings "Sync now").
+  Future<void> _syncLibraryViaCore(
+    SyncOutcome outcome, {
+    required String destAccountId,
+  }) async {
+    final account = _accounts.accountById(destAccountId);
+    if (account == null) {
+      throw StateError('err.noWebdavAccount');
+    }
+    if (account.providerType != 'webdav') {
+      throw StateError(
+        'Core library sync requires providerType=webdav '
+        '(got ${account.providerType}); disable kRustLibrarySyncEnabled '
+        'or choose a WebDAV sync destination',
+      );
+    }
+    final password = await _accounts.passwordFor(account.id) ?? '';
+    final remoteDir = _settings.syncRemoteRoot;
+    _progress(L10nHost.current.progressReadingCloudIndex, 0.4);
+    final result = RustCoreService.syncTrigger(
+      webdavUrl: account.url,
+      username: account.username,
+      password: password,
+      remoteDir: remoteDir,
+    );
+    if (result == null) {
+      throw StateError('Core FFI unavailable — cannot sync library via Core');
+    }
+    if (result.startsWith('error:')) {
+      throw StateError('Core library sync failed: $result');
+    }
+    // Core mutated rusqlite; refresh Dart LibraryService cache.
+    await _library.refresh();
+    outcome.step('Core syncTrigger ok: $result');
   }
 
   /// The binary store, bound to the configured library sync root.
