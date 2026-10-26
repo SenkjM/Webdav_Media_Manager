@@ -663,7 +663,14 @@ class SyncService extends ChangeNotifier {
     return outcome;
   }
 
-  Future<LibraryAudit> auditMangaLibrary() async {
+  // --- Whole-app backup -------------------------------------------------
+
+  /// Back up **everything** (credentials + library + playlists) into
+  /// `<远端路径>backup/` on the configured 网盘.
+  ///
+  /// Neither the server nor the directory is asked for here any more: the single
+  /// 远端路径 栏 owns both, so 备份 can never drift away from the rest.
+  Future<SyncOutcome> backupTo({required String passphrase}) async {
     final outcome = SyncOutcome(direction: 'backup');
     await _run(outcome, () async {
       final dest = await syncDestination();
