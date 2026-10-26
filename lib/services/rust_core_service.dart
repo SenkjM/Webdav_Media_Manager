@@ -208,6 +208,7 @@ class RustCoreService {
   static _OneStrToStrDart? _dmrPrefsGet;
   static _OneStrToStrDart? _dmrPrefsUpsert;
   static _OneStrToStrDart? _dmrPrefsDelete;
+  static _StrStrToStrDart? _coversConfigure;
   static _StrStrToStrDart? _backupCreate;
   static _StrStrToStrDart? _backupRestore;
   static _FiveStrToOneStrDart? _backupUpload;
@@ -574,6 +575,9 @@ class RustCoreService {
       _backupDownloadRestore ??= lib
           .lookup<ffi.NativeFunction<_FiveStrToOneStrNative>>('wdmm_backup_download_restore')
           .asFunction();
+      _coversConfigure ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_covers_configure')
+          .asFunction();
       return true;
     } catch (e) {
       debugPrint('[RustCore] DMR symbol lookup failed: $e');
@@ -643,6 +647,13 @@ class RustCoreService {
     required String passphrase,
   }) =>
       _callFiveStrings(_backupDownloadRestore, url, user, pass, remoteFile, passphrase);
+
+  /// Configure the cover image directories used during backup create/restore.
+  ///
+  /// Both paths must be non-empty UTF-8. Returns 'ok' on success or 'error:...'
+  /// on failure. Returns null if the native library is not available.
+  static String? coversConfigure(String musicCoversDir, String mangaCoversDir) =>
+      _callTwoStrings(_coversConfigure, musicCoversDir, mangaCoversDir);
 
   static String? _callOneString(_OneStrToStrDart? fn, String value) {
     if (!_ensureDmrSymbols()) return null;

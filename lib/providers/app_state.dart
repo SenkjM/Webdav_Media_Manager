@@ -227,6 +227,10 @@ class AppState extends ChangeNotifier {
       _initPhase = 'dmr-prefs';
       final docs = await getApplicationDocumentsDirectory();
       await dmrPrefs.init(docs.path);
+      // Configure Core cover roots once paths are known, so backup/restore operations
+      // see them. Call here (not just in BackupService create/restore) to cover
+      // upload/download paths that go through Core directly.
+      await backup._ensureCoversConfigured();
       // 0.2.4: legacy sentinel migration removed (99 §18.4).
       // The rev clock is the single version source sync compares; it starts from
       // the persisted high-water mark and reports every advance back.

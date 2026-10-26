@@ -105,6 +105,33 @@ class BackupService extends ChangeNotifier {
   String? lastError;
   String? lastMessage;
 
+  /// Configure Core cover roots before backup create/restore.
+  /// Creates manga covers dir if missing. Tolerates cache being null by
+  /// still resolving the path via getApplicationSupportDirectory.
+  Future<void> _ensureCoversConfigured() async {
+    try {
+      final musicDir = await _covers.coversDir; // creates docs/covers
+      // manga covers subdir may not exist until first write — create it
+      Directory mangaCovers;
+      if (_cache != null) {
+        mangaCovers = Directory(p.join(_cache!.mangaCacheDir.path, 'covers'));
+      } else {
+        // Cache not initialized yet — resolve path directly
+        final support = await getApplicationSupportDirectory();
+        mangaCovers = Directory(p.join(support.path, 'manga_cache', 'covers'));
+      }
+      if (!await mangaCovers.exists()) {
+        await mangaCovers.create(recursive: true);
+      }
+      final r = RustCoreService.coversConfigure(musicDir.path, mangaCovers.path);
+      if (r != null && r.startsWith('error:')) {
+        debugPrint('[Backup] coversConfigure failed: $r');
+      }
+    } catch (e) {
+      debugPrint('[Backup] _ensureCoversConfigured error: $e');
+    }
+  }
+
   // --- Build ------------------------------------------------------------
 
   /// Serialise everything into `{ credentials, library, playlists }` JSON.
@@ -503,6 +530,7 @@ class BackupService extends ChangeNotifier {
   /// binary path) must use this — not [buildArchiveBytes] (sqflite legacy).
   /// When Rust lib is loaded, use Core; else throw (no silent sqflite fallback).
   Future<Uint8List> createArchiveBytes({required String passphrase}) async {
+    await _ensureCoversConfigured();
     final tempDir = await getTemporaryDirectory();
     final tempFile = File(p.join(
       tempDir.path,
@@ -606,6 +634,7 @@ class BackupService extends ChangeNotifier {
           // Core JSON backup → route through FFI restore.
           // Write the **original** data (encrypted envelope if that's what
           // caller passed) to temp, so Core decrypts itself.
+          await _ensureCoversConfigured();
           final tempDir = await getTemporaryDirectory();
           final tempFile = File(p.join(tempDir.path, 'restore_${DateTime.now().millisecondsSinceEpoch}.wdmm'));
           try {
