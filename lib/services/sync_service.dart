@@ -409,256 +409,31 @@ class SyncService extends ChangeNotifier {
   int cloudFragmentCount = 0;
   int cloudFragmentBytes = 0;
 
-  /// Incremental library sync.
+  /// Incremental library sync — delegates to Core FFI (`run_sync_all`).
   ///
-  /// Only locally-changed rows travel (one small binary `seg-*.wdmm` per pass) and
-  /// only new tombstones are appended as `del-*.wdmm`. When nothing changed the
-  /// pass uploads **zero** bytes — not even the manifest.
+  /// Runs credentials + music library + manga + playlists via
+  /// [RustCoreService.syncTrigger]. Refreshes Dart caches on completion.
   Future<SyncOutcome> syncLibraryIncremental() async {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
-      final dest = await syncDestination();
-      if (dest == null) throw StateError('err.noWebdavAccount');
-
-      // Core-first (flagged): exclusive path — no silent Dart fallback.
-      if (kRustLibrarySyncEnabled) {
-        await _syncLibraryViaCore(outcome, destAccountId: dest);
-        return;
-      }
-
-      final store = await _libraryStore();
-
-      _progress(L10nHost.current.progressReadingCloudIndex, 0.3);
-      final manifest = await store.readManifest(dest);
-      cloudFragmentCount = manifest.fragmentCount;
-      cloudFragmentBytes = manifest.fragmentBytes;
-
-      // Cursor: parts we already consumed are not downloaded again, and `lastSeq`
-      // is the rev up to which the cloud already knows this device's rows.
-      final cursorKey = '${LibraryDatabase.musicCursorPrefix}$dest';
-      final cursor = await _library.loadSyncCursor(cursorKey);
-      if (manifest.baseUpTo > cursor.baseUpTo) {
-        // A rebuild replaced the base: every part name changed, so read afresh.
-        await store.readCloud(dest, manifest);
-      } else {
-        await store.readCloud(
-          dest,
-          manifest,
-          skipFiles: cursor.parts.keys.toSet(),
-        );
-      }
-      final cloudTracks = store.lastCloud.tracks;
-      final cloudTombstoned = store.lastCloud.tombstonedKeys;
-      final remoteByKey = {
-        for (final t in cloudTracks)
-          trackIdentityKey(t.sourceName, t.remotePath): t,
-      };
-
-      final local = _library.tracks;
-      final toAdopt = <LibraryTrack>[];
-      final toUpload = <LibraryTrack>[];
-      for (final t in local) {
-        final rev = t.rev ?? 0;
-        final r = remoteByKey[trackIdentityKey(t.sourceName, t.remotePath)];
-        if (r != null) {
-          if (rev > (r.rev ?? 0)) toUpload.add(t);
-          continue;
-        }
-        // Not among the freshly read parts: either the cloud already had it (we
-        // adopted it earlier, so its rev is <= our cursor) or it is new here.
-        if (rev > cursor.lastSeq &&
-            !(cursor.parts.isNotEmpty && rev <= cursor.baseUpTo)) {
-          toUpload.add(t);
-        }
-      }
-      for (final r in cloudTracks) {
-        if (cloudTombstoned.contains(
-          trackIdentityKey(r.sourceName, r.remotePath),
-        )) {
-          continue;
-        }
-        final l = _library.find(r.sourceName, r.remotePath);
-        if (l == null || (r.rev ?? 0) > (l.rev ?? 0)) toAdopt.add(r);
-      }
-
-      if (toAdopt.isNotEmpty) {
-        _progress(
-          L10nHost.current.progressAdoptingCloudTracks(toAdopt.length),
-          0.5,
-        );
-        await _library.upsertTracks(toAdopt);
-        for (final t in toAdopt) {
-          _library.observeRev(t.rev ?? 0);
-        }
-      }
-
-      // Deletions this device made and has not published yet.
-      final pendingTombs = await _library.pendingTombstones();
-      // A row that was re-downloaded after the deletion must not be published as
-      // deleted again.
-      final resurrected = <int>{};
-      for (final row in pendingTombs) {
-        final path = row['remote_path'] as String? ?? '';
-        final source = row['source_name'] as String? ?? '';
-        final live = _library.find(source, path);
-        if (live != null &&
-            (live.rev ?? 0) > ((row['rev'] as num?)?.toInt() ?? 0)) {
-          resurrected.add((row['rev'] as num?)?.toInt() ?? 0);
-        }
-      }
-      final toPublishTombs = [
-        for (final row in pendingTombs)
-          if (!resurrected.contains((row['rev'] as num?)?.toInt() ?? 0)) row,
-      ];
-      if (resurrected.isNotEmpty) {
-        await _library.clearTombstones(resurrected);
-      }
-
-      if (toUpload.isEmpty && toPublishTombs.isEmpty) {
-        // Nothing changed here: still record the parts we just consumed so the
-        // next pass can skip them, then upload nothing at all.
-        await _saveLibraryCursor(
-          cursorKey: cursorKey,
-          manifest: await store.readManifest(dest),
-          cursor: cursor,
-          readParts: store.lastReadParts,
-          highestLocalRev: toAdopt.fold<int>(
-            cursor.lastSeq,
-            (a, t) => (t.rev ?? 0) > a ? (t.rev ?? 0) : a,
-          ),
-        );
-        outcome.step(L10nHost.current.stepIncrementalNoChange);
-        return;
-      }
-
-      if (toPublishTombs.isNotEmpty) {
-        _progress(
-          L10nHost.current.progressUploadingTombstones(toPublishTombs.length),
-          0.7,
-        );
-        final m = await store.appendTombstones(
-          destAccountId: dest,
-          tombstones: toPublishTombs,
-        );
-        await _library.markTombstonesPushed({
-          for (final row in toPublishTombs) (row['rev'] as num?)?.toInt() ?? 0,
-        });
-        cloudFragmentCount = m.fragmentCount;
-        cloudFragmentBytes = m.fragmentBytes;
-      }
-      if (toUpload.isNotEmpty) {
-        _progress(
-          L10nHost.current.progressAppendingSegments(toUpload.length),
-          0.85,
-        );
-        final m = await store.appendDelta(
-          destAccountId: dest,
-          changed: toUpload,
-        );
-        cloudFragmentCount = m.fragmentCount;
-        cloudFragmentBytes = m.fragmentBytes;
-      }
-      await _saveLibraryCursor(
-        cursorKey: cursorKey,
-        manifest: await store.readManifest(dest),
-        cursor: cursor,
-        readParts: store.lastReadParts,
-        highestLocalRev: toUpload.fold<int>(
-          cursor.lastSeq,
-          (a, t) => (t.rev ?? 0) > a ? (t.rev ?? 0) : a,
-        ),
-      );
-      await _library.refresh();
-      outcome.step(
-        L10nHost.current.stepIncrementalUploaded(
-          toAdopt.length,
-          toPublishTombs.length,
-          toUpload.length,
-        ),
-      );
+      await _runCoreSync(outcome, full: false);
     });
     return outcome;
   }
 
-  /// Full library sync = rebuild: write the whole local library as fixed-size
-  /// binary base shards, fold away every old part and **materialise deletions**
-  /// (tombstoned rows are simply absent).
+  /// Full library sync (base-shard rebuild) — delegates to Core FFI (`run_sync_full`).
+  ///
+  /// Runs credentials + music library + manga + playlists via
+  /// [RustCoreService.syncFull]. Refreshes Dart caches on completion.
+  /// The [tracksPerShard] and [withCovers] parameters are accepted for
+  /// API compatibility but Core controls rebuild parameters internally.
   Future<SyncOutcome> syncLibraryFull({
     int tracksPerShard = LibrarySyncStore.defaultTracksPerShard,
     bool withCovers = true,
   }) async {
     final outcome = SyncOutcome(direction: 'push');
     await _run(outcome, () async {
-      final dest = await syncDestination();
-      if (dest == null) throw StateError('err.noWebdavAccount');
-
-      // `wdmm_sync_trigger` / `run_sync_all` only runs LibrarySyncEngine
-      // incremental — there is no Core sync_full FFI yet. Keep Dart rebuild
-      // even when [kRustLibrarySyncEnabled] is on (documented leftover; not a
-      // silent half-cut of incremental).
-      if (kRustLibrarySyncEnabled) {
-        outcome.warn(
-          'Core library sync_full FFI not exposed; full rebuild still uses Dart LibrarySyncStore',
-        );
-      }
-
-      final store = await _libraryStore();
-
-      _progress(L10nHost.current.progressReadingCloudIndex, 0.2);
-      final manifest = await store.readManifest(dest);
-      final cloud = await store.readCloud(dest, manifest);
-      // Adopt cloud rows this device is missing, but never resurrect a row this
-      // device deleted (that is exactly what the tombstone is for).
-      final adopt = <LibraryTrack>[];
-      for (final r in cloud.tracks) {
-        if (cloud.tombstonedKeys.contains(
-          trackIdentityKey(r.sourceName, r.remotePath),
-        )) {
-          continue;
-        }
-        final l = _library.find(r.sourceName, r.remotePath);
-        if (l == null || (r.rev ?? 0) > (l.rev ?? 0)) adopt.add(r);
-      }
-      if (adopt.isNotEmpty) {
-        await _library.upsertTracks(adopt);
-        for (final t in adopt) {
-          _library.observeRev(t.rev ?? 0);
-        }
-      }
-
-      _progress(L10nHost.current.progressUploadingFullShards, 0.6);
-      final written = await store.rebuild(
-        destAccountId: dest,
-        tracks: _library.tracks,
-        tracksPerShard: tracksPerShard,
-        withCovers: withCovers,
-      );
-      cloudFragmentCount = written.fragmentCount;
-      cloudFragmentBytes = written.fragmentBytes;
-      // Everything at or below the new base is materialised; those tombstones
-      // have done their job.
-      await _library.purgeTombstonesUpTo(written.baseUpTo);
-      // 硬约束：重建之后本地不该再有任何墓碑。行已经不在了的先静默清掉；
-      // 还清不掉的说明活行与墓碑同时存在，那是真异常，交给用户看见。
-      final clearedDead = await _library.clearDeadTombstones();
-      final leftoverTombs = await _library.allTombstones();
-      if (leftoverTombs.isNotEmpty) {
-        outcome.warn(
-          L10nHost.current.warnLeftoverTombstones(leftoverTombs.length),
-        );
-      } else if (clearedDead > 0) {
-        outcome.step(L10nHost.current.stepClearedDeadTombstones(clearedDead));
-      }
-      // Every part name changed; the cursor is meaningless now.
-      await _library.clearSyncCursor();
-      await _library.refresh();
-      outcome.step(
-        L10nHost.current.stepRebuildDone(
-          _library.tracks.length,
-          written.baseUpTo,
-          written.shards.length,
-        ),
-      );
+      await _runCoreSync(outcome, full: true);
     });
     return outcome;
   }
@@ -692,123 +467,49 @@ class SyncService extends ChangeNotifier {
     );
   }
 
-  /// Advance the per-remote cursor: every part we read (plus the ones this pass
-  /// published) is recorded, and `lastSeq` becomes the highest rev we now know.
-  Future<void> _saveLibraryCursor({
-    required String cursorKey,
-    required LibraryManifest manifest,
-    required ({int lastSeq, int baseUpTo, Map<String, int> parts}) cursor,
-    required Set<String> readParts,
-    required int highestLocalRev,
-  }) async {
-    final parts = <String, int>{...cursor.parts};
-    for (final name in readParts) {
-      parts[name] = manifest.segments
-          .where((s) => s.file == name)
-          .map((s) => s.to)
-          .followedBy(
-            manifest.tombstones.where((t) => t.file == name).map((t) => t.to),
-          )
-          .followedBy([0])
-          .first;
-    }
-    for (final s in [...manifest.segments, ...manifest.tombstones]) {
-      if (parts.containsKey(s.file)) continue;
-      // Parts published by this very pass are known to us by construction.
-      if (readParts.isEmpty && s.to <= highestLocalRev) continue;
-      if (s.to <= highestLocalRev) parts[s.file] = s.to;
-    }
-    var lastSeq = highestLocalRev;
-    for (final rev in parts.values) {
-      if (rev > lastSeq) lastSeq = rev;
-    }
-    if (manifest.baseUpTo > lastSeq) lastSeq = manifest.baseUpTo;
-    await _library.saveSyncCursor(
-      remoteKey: cursorKey,
-      lastSeq: lastSeq,
-      baseUpTo: manifest.baseUpTo,
-      parts: parts,
-    );
-  }
-
-
-  /// Core music-library cloud sync via [RustCoreService.syncTrigger].
+  /// Shared Core FFI sync helper — resolves account, calls either
+  /// [RustCoreService.syncTrigger] (incremental) or [RustCoreService.syncFull]
+  /// (base-shard rebuild), then refreshes all Dart caches.
   ///
-  /// Only used when [kRustLibrarySyncEnabled] is true. Requires a WebDAV
-  /// destination (FFI constructs `WebDavDriver`). Also runs Core credential +
-  /// playlist engines (same as Desktop Settings "Sync now").
-  Future<void> _syncLibraryViaCore(
-    SyncOutcome outcome, {
-    required String destAccountId,
-  }) async {
-    final account = _accounts.accountById(destAccountId);
-    if (account == null) {
-      throw StateError('err.noWebdavAccount');
-    }
+  /// Requires the configured sync destination to have `providerType == 'webdav'`
+  /// (Core builds `WebDavDriver` from url/user/pass).
+  Future<void> _runCoreSync(SyncOutcome outcome, {required bool full}) async {
+    final dest = await syncDestination();
+    if (dest == null) throw StateError('err.noWebdavAccount');
+    final account = _accounts.accountById(dest);
+    if (account == null) throw StateError('err.noWebdavAccount');
     if (account.providerType != 'webdav') {
       throw StateError(
-        'Core library sync requires providerType=webdav '
-        '(got ${account.providerType}); disable kRustLibrarySyncEnabled '
-        'or choose a WebDAV sync destination',
+        'Core sync requires providerType=webdav '
+        '(got ${account.providerType}); choose a WebDAV sync destination',
       );
     }
     final password = await _accounts.passwordFor(account.id) ?? '';
     final remoteDir = _settings.syncRemoteRoot;
     _progress(L10nHost.current.progressReadingCloudIndex, 0.4);
-    final result = RustCoreService.syncTrigger(
-      webdavUrl: account.url,
-      username: account.username,
-      password: password,
-      remoteDir: remoteDir,
-    );
+    final result = full
+        ? RustCoreService.syncFull(
+            webdavUrl: account.url,
+            username: account.username,
+            password: password,
+            remoteDir: remoteDir,
+          )
+        : RustCoreService.syncTrigger(
+            webdavUrl: account.url,
+            username: account.username,
+            password: password,
+            remoteDir: remoteDir,
+          );
     if (result == null) {
-      throw StateError('Core FFI unavailable — cannot sync library via Core');
+      throw StateError('Core FFI unavailable — cannot run Core sync');
     }
     if (result.startsWith('error:')) {
-      throw StateError('Core library sync failed: $result');
+      throw StateError('Core sync failed: $result');
     }
-    // Core mutated rusqlite; refresh Dart LibraryService cache.
+    // Core mutated rusqlite; refresh Dart caches.
     await _library.refresh();
-    outcome.step('Core syncTrigger ok: $result');
-  }
-
-  /// Core manga-library cloud sync via [RustCoreService.syncTrigger].
-  ///
-  /// Only used when [kRustMangaLibrarySyncEnabled] is true. Delegates to the
-  /// same [RustCoreService.syncTrigger] call as [_syncLibraryViaCore] —
-  /// `run_sync_all` wires both the music and manga shard engines.
-  /// Requires a WebDAV destination (FFI constructs `WebDavDriver`).
-  Future<void> _syncMangaViaCore(
-    SyncOutcome outcome, {
-    required String destAccountId,
-  }) async {
-    final account = _accounts.accountById(destAccountId);
-    if (account == null) {
-      throw StateError('err.noWebdavAccount');
-    }
-    if (account.providerType != 'webdav') {
-      throw StateError(
-        'Core manga sync requires providerType=webdav '
-        '(got ${account.providerType}); disable kRustMangaLibrarySyncEnabled '
-        'or choose a WebDAV sync destination',
-      );
-    }
-    final password = await _accounts.passwordFor(account.id) ?? '';
-    final remoteDir = _settings.syncRemoteRoot;
-    _progress(L10nHost.current.progressReadingCloudMangaIndex, 0.4);
-    final result = RustCoreService.syncTrigger(
-      webdavUrl: account.url,
-      username: account.username,
-      password: password,
-      remoteDir: remoteDir,
-    );
-    if (result == null) {
-      throw StateError('Core FFI unavailable — cannot sync manga library via Core');
-    }
-    if (result.startsWith('error:')) {
-      throw StateError('Core manga sync failed: $result');
-    }
-    outcome.step('Core syncTrigger ok (manga): $result');
+    await _manga?.reload();
+    outcome.step('Core ${full ? "syncFull" : "syncTrigger"} ok: $result');
   }
 
   /// The binary store, bound to the configured library sync root.
@@ -831,187 +532,23 @@ class SyncService extends ChangeNotifier {
     coverFile: _cache!.mangaCoverFile,
   );
 
-  /// Incremental manga sync: adopt cloud rows, publish local tombstones and
-  /// changed rows (covers included, like music), then merge reading progress.
+  /// Incremental manga sync via Core FFI ([RustCoreService.syncTrigger]).
+  /// Core is the sole sync authority: it adopts cloud rows, applies peer
+  /// tombstones, and publishes local deltas/tombstones for both the manga and
+  /// music shard engines in one `run_sync_all` call.
   Future<SyncOutcome> syncMangaIncremental() async {
     final outcome = SyncOutcome(direction: 'sync');
     if (!hasMangaSync) return outcome;
     await _run(outcome, () async {
-      final dest = await syncDestination();
-      if (dest == null) throw StateError('err.noWebdavAccount');
-
-      // Core-first (flagged): exclusive path — no silent Dart fallback.
-      if (kRustMangaLibrarySyncEnabled) {
-        await _syncMangaViaCore(outcome, destAccountId: dest);
-        // Core mutated rusqlite; refresh Dart manga cache. No obvious
-        // separate "reload manifest" beyond [MangaLibraryService.reload].
-        await _manga?.reload();
-        return;
-      }
-
-      final manga = _manga!;
-      final db = _db!;
-      final store = _mangaStore();
-      _progress(L10nHost.current.progressReadingCloudMangaIndex, 0.3);
-      final manifest = await store.readManifest(dest);
-      mangaCloudFragmentCount = manifest.fragmentCount;
-      mangaCloudFragmentBytes = manifest.fragmentBytes;
-      final cursorKey = '${LibraryDatabase.mangaCursorPrefix}$dest';
-      final cursor = await _library.loadSyncCursor(cursorKey);
-      if (manifest.baseUpTo > cursor.baseUpTo) {
-        await store.readCloud(dest, manifest);
-      } else {
-        await store.readCloud(
-          dest,
-          manifest,
-          skipFiles: cursor.parts.keys.toSet(),
-        );
-      }
-      final cloudRows = store.lastCloud.rows;
-      final cloudTombstoned = store.lastCloud.tombstonedKeys;
-      final remoteByKey = {for (final r in cloudRows) r.key: r};
-
-      final local = await manga.syncRows();
-      final localByKey = {for (final r in local) r.key: r};
-      final toUpload = <MangaSyncRow>[];
-      for (final r in local) {
-        final remote = remoteByKey[r.key];
-        if (remote != null) {
-          if (r.rev > remote.rev) toUpload.add(r);
-          continue;
-        }
-        if (r.rev > cursor.lastSeq &&
-            !(cursor.parts.isNotEmpty && r.rev <= cursor.baseUpTo)) {
-          toUpload.add(r);
-        }
-      }
-      final toAdopt = <MangaSyncRow>[
-        for (final r in cloudRows)
-          if (!cloudTombstoned.contains(r.key) &&
-              (localByKey[r.key] == null || r.rev > localByKey[r.key]!.rev))
-            r,
-      ];
-      if (toAdopt.isNotEmpty) {
-        _progress(
-          L10nHost.current.progressAdoptingCloudMangas(toAdopt.length),
-          0.5,
-        );
-        await manga.adoptCloudRows(toAdopt);
-        final cache = _cache;
-        if (cache != null) {
-          for (final row in toAdopt) {
-            final blob = store.lastCoverBlobs[row.manga.id];
-            if (blob == null || blob.isEmpty) continue;
-            try {
-              await replaceMangaCoverBytes(
-                cache: cache,
-                mangaId: row.manga.id,
-                bytes: blob,
-              );
-            } catch (e) {
-              debugPrint('manga cover replace failed');
-            }
-          }
-        }
-        for (final r in toAdopt) {
-          _library.observeRev(r.rev);
-        }
-      }
-
-      final pending = await db.unpushedMangaTombstones();
-      final resurrected = <int>{};
-      for (final row in pending) {
-        final live =
-            localByKey[(row['sync_key'] as String?) ??
-                mangaSyncKey(
-                  row['source_name'] as String? ?? '',
-                  row['remote_path'] as String? ?? '',
-                )];
-        final rev = (row['rev'] as num?)?.toInt() ?? 0;
-        if (live != null && live.rev > rev) resurrected.add(rev);
-      }
-      final toPublish = [
-        for (final row in pending)
-          if (!resurrected.contains((row['rev'] as num?)?.toInt() ?? 0)) row,
-      ];
-      for (final row in pending) {
-        if (resurrected.contains((row['rev'] as num?)?.toInt() ?? 0)) {
-          await db.clearMangaTombstone(
-            (row['sync_key'] as String?) ??
-                mangaSyncKey(
-                  row['source_name'] as String? ?? '',
-                  row['remote_path'] as String? ?? '',
-                ),
-          );
-        }
-      }
-      if (toPublish.isNotEmpty) {
-        _progress(
-          L10nHost.current.progressUploadingTombstones(toPublish.length),
-          0.65,
-        );
-        final m = await store.appendTombstones(
-          dest: dest,
-          tombstones: toPublish,
-        );
-        await db.markMangaTombstonesPushed({
-          for (final row in toPublish) (row['rev'] as num?)?.toInt() ?? 0,
-        });
-        mangaCloudFragmentCount = m.fragmentCount;
-        mangaCloudFragmentBytes = m.fragmentBytes;
-      }
-      if (toUpload.isNotEmpty) {
-        _progress(
-          L10nHost.current.progressAppendingMangaSegments(toUpload.length),
-          0.8,
-        );
-        final m = await store.appendDelta(dest: dest, changed: toUpload);
-        mangaCloudFragmentCount = m.fragmentCount;
-        mangaCloudFragmentBytes = m.fragmentBytes;
-      }
-      await _saveCursorFor(
-        cursorKey: cursorKey,
-        manifest: await store.readManifest(dest),
-        cursor: cursor,
-        readParts: store.lastReadParts,
-        highestLocalRev: [
-          ...toUpload,
-          ...toAdopt,
-        ].fold<int>(cursor.lastSeq, (a, r) => r.rev > a ? r.rev : a),
-      );
-
-      _progress(L10nHost.current.progressSyncingMangaProgress, 0.92);
-      final progress = await _syncMangaProgress(dest, store);
-      outcome.step(
-        // gen-l10n orders placeholders alphabetically:
-        // adopted, progress, tombs, uploaded.
-        L10nHost.current.stepMangaIncremental(
-          toAdopt.length,
-          progress,
-          toPublish.length,
-          toUpload.length,
-        ),
-      );
+      await _runCoreSync(outcome, full: false);
     });
     return outcome;
   }
 
-  /// Merge reading progress with `progress.json`. Returns entries changed on
-  /// either side.
-  Future<int> _syncMangaProgress(String dest, MangaSyncStore store) async {
-    final manga = _manga!;
-    final merge = mergeMangaProgress(
-      local: await manga.allProgress(),
-      cloud: await store.readProgress(dest),
-    );
-    await manga.applyProgress(merge.toApplyLocally);
-    if (merge.cloudNeedsUpdate) {
-      await store.writeProgress(dest, merge.merged.values);
-    }
-    return merge.toApplyLocally.length + (merge.cloudNeedsUpdate ? 1 : 0);
-  }
-
-  /// Rebuild the cloud manga library from this device (materialises deletes).
+  /// Rebuild the cloud manga library via Core FFI ([RustCoreService.syncFull]).
+  /// Core is the sole sync authority: materialises all local rows as the new
+  /// base, clears all tombstones and cursors. Both manga and music shard engines
+  /// rebuild in one `run_sync_full` call.
   Future<SyncOutcome> syncMangaFull({
     int perShard = MangaSyncStore.defaultMangasPerShard,
     bool withCovers = true,
@@ -1019,63 +556,7 @@ class SyncService extends ChangeNotifier {
     final outcome = SyncOutcome(direction: 'push');
     if (!hasMangaSync) return outcome;
     await _run(outcome, () async {
-      final dest = await syncDestination();
-      if (dest == null) throw StateError('err.noWebdavAccount');
-
-      // `wdmm_sync_trigger` / `run_sync_all` only runs MangaSyncEngine
-      // incremental — there is no Core sync_full FFI for manga yet. Keep Dart
-      // rebuild even when [kRustMangaLibrarySyncEnabled] is on (documented
-      // leftover; not a silent half-cut of incremental).
-      if (kRustMangaLibrarySyncEnabled) {
-        outcome.warn(
-          'Core manga sync_full FFI not exposed; full rebuild still uses Dart MangaSyncStore',
-        );
-      }
-      final manga = _manga!;
-      final db = _db!;
-      final store = _mangaStore();
-      _progress(L10nHost.current.progressReadingCloudMangaIndex, 0.2);
-      final cloud = await store.readCloud(dest, await store.readManifest(dest));
-      final local = {for (final r in await manga.syncRows()) r.key: r};
-      final adopt = [
-        for (final r in cloud.rows)
-          if (!cloud.tombstonedKeys.contains(r.key) &&
-              (local[r.key] == null || r.rev > local[r.key]!.rev))
-            r,
-      ];
-      if (adopt.isNotEmpty) {
-        await manga.adoptCloudRows(adopt);
-        for (final r in adopt) {
-          _library.observeRev(r.rev);
-        }
-      }
-      _progress(L10nHost.current.progressUploadingFullMangaShards, 0.6);
-      final written = await store.rebuild(
-        dest: dest,
-        rows: await manga.syncRows(),
-        perShard: perShard,
-        withCovers: withCovers,
-      );
-      mangaCloudFragmentCount = written.fragmentCount;
-      mangaCloudFragmentBytes = written.fragmentBytes;
-      // Every tombstone is materialised by the new base.
-      for (final row in await db.allMangaTombstones()) {
-        await db.clearMangaTombstone(
-          (row['sync_key'] as String?) ??
-              mangaSyncKey(
-                row['source_name'] as String? ?? '',
-                row['remote_path'] as String? ?? '',
-              ),
-        );
-      }
-      await db.clearSyncState(prefix: LibraryDatabase.mangaCursorPrefix);
-      await _syncMangaProgress(dest, store);
-      outcome.step(
-        L10nHost.current.stepMangaRebuildDone(
-          manga.count,
-          written.shards.length,
-        ),
-      );
+      await _runCoreSync(outcome, full: true);
     });
     return outcome;
   }
@@ -1182,29 +663,7 @@ class SyncService extends ChangeNotifier {
     return outcome;
   }
 
-  /// Shared cursor bookkeeping (music + manga use the same rules).
-  Future<void> _saveCursorFor({
-    required String cursorKey,
-    required LibraryManifest manifest,
-    required ({int lastSeq, int baseUpTo, Map<String, int> parts}) cursor,
-    required Set<String> readParts,
-    required int highestLocalRev,
-  }) => _saveLibraryCursor(
-    cursorKey: cursorKey,
-    manifest: manifest,
-    cursor: cursor,
-    readParts: readParts,
-    highestLocalRev: highestLocalRev,
-  );
-
-  // --- Whole-app backup -------------------------------------------------
-
-  /// Back up **everything** (credentials + library + playlists) into
-  /// `<远端路径>backup/` on the configured 网盘.
-  ///
-  /// Neither the server nor the directory is asked for here any more: the single
-  /// 远端路径 栏 owns both, so 备份 can never drift away from the rest.
-  Future<SyncOutcome> backupTo({required String passphrase}) async {
+  Future<LibraryAudit> auditMangaLibrary() async {
     final outcome = SyncOutcome(direction: 'backup');
     await _run(outcome, () async {
       final dest = await syncDestination();
