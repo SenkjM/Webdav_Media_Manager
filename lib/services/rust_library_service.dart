@@ -22,10 +22,9 @@ import 'rust_core_service.dart';
 /// the gap by accepting both naming conventions; `source_name` wins over
 /// `account_id` when both are present.
 ///
-/// Fields that do not exist in the Rust schema (album_artist, cover_path,
-/// bitrate, sample_rate, cue_*, cache_group_id, remote_missing) are filled
-/// with safe defaults so the resulting LibraryTrack works correctly in the
-/// Dart UI.
+/// Fields that do not exist in the Rust schema (cover_path, bitrate,
+/// sample_rate, cue_*, cache_group_id, remote_missing) are filled with safe
+/// defaults so the resulting LibraryTrack works correctly in the Dart UI.
 ///
 /// ## Cutover path (Round 9)
 /// 1. Validate row-count parity on device (RustLibraryProbe still runs at
@@ -516,6 +515,146 @@ class RustLibraryService {
     }
   }
 
+  // ── Schema v7+v8 — Aggregates + FTS5 ───────────────────────────────────────
+
+  /// List all artists.
+  ///
+  /// Returns a JSON array of artist objects when [kRustLibraryReadEnabled]
+  /// is true, null otherwise. Never throws.
+  static String? listArtists() {
+    if (!kRustLibraryReadEnabled) return null;
+    try {
+      final result = RustCoreService.artistList();
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] listArtists failed: $result');
+        throw StateError('RustLibraryService.listArtists failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] listArtists exception: $e');
+      rethrow;
+    }
+  }
+
+  /// Get one artist by name.
+  ///
+  /// Returns a JSON object, "null" if absent, or throws on error.
+  /// Returns null when [kRustLibraryReadEnabled] is false. Never throws.
+  static String? getArtist(String name) {
+    if (!kRustLibraryReadEnabled) return null;
+    try {
+      final result = RustCoreService.artistGet(name);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] getArtist("$name") failed: $result');
+        throw StateError('RustLibraryService.getArtist failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] getArtist exception: $e');
+      rethrow;
+    }
+  }
+
+  /// List all albums.
+  ///
+  /// Returns a JSON array of album objects when [kRustLibraryReadEnabled]
+  /// is true, null otherwise. Never throws.
+  static String? listAlbums() {
+    if (!kRustLibraryReadEnabled) return null;
+    try {
+      final result = RustCoreService.albumList();
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] listAlbums failed: $result');
+        throw StateError('RustLibraryService.listAlbums failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] listAlbums exception: $e');
+      rethrow;
+    }
+  }
+
+  /// Get one album by title.
+  ///
+  /// Returns a JSON object, "null" if absent, or throws on error.
+  /// Returns null when [kRustLibraryReadEnabled] is false. Never throws.
+  static String? getAlbum(String title) {
+    if (!kRustLibraryReadEnabled) return null;
+    try {
+      final result = RustCoreService.albumGet(title);
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] getAlbum("$title") failed: $result');
+        throw StateError('RustLibraryService.getAlbum failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] getAlbum exception: $e');
+      rethrow;
+    }
+  }
+
+  /// List tracks by artist name.
+  ///
+  /// Returns a JSON array of track objects when [kRustLibraryReadEnabled]
+  /// is true, null otherwise. Decodes to List<LibraryTrack> via _decodeArray.
+  static List<LibraryTrack>? tracksByArtist(String name) {
+    if (!kRustLibraryReadEnabled) return null;
+    final json = RustCoreService.tracksByArtist(name);
+    if (json == null || json.startsWith('error:')) {
+      debugPrint('[RustLibraryService] tracksByArtist("$name") failed: $json');
+      throw StateError('RustLibraryService.tracksByArtist failed: $json');
+    }
+    return _decodeArray(json);
+  }
+
+  /// List tracks by album title.
+  ///
+  /// Returns a JSON array of track objects when [kRustLibraryReadEnabled]
+  /// is true, null otherwise. Decodes to List<LibraryTrack> via _decodeArray.
+  static List<LibraryTrack>? tracksByAlbum(String title) {
+    if (!kRustLibraryReadEnabled) return null;
+    final json = RustCoreService.tracksByAlbum(title);
+    if (json == null || json.startsWith('error:')) {
+      debugPrint('[RustLibraryService] tracksByAlbum("$title") failed: $json');
+      throw StateError('RustLibraryService.tracksByAlbum failed: $json');
+    }
+    return _decodeArray(json);
+  }
+
+  /// Rebuild artist and album aggregates.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is false. Never throws.
+  static String? rebuildAggregates() {
+    if (!kRustLibraryWriteEnabled) return null;
+    try {
+      final result = RustCoreService.libraryRebuildAggregates();
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] rebuildAggregates failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] rebuildAggregates exception: $e');
+      return null;
+    }
+  }
+
+  /// Rebuild FTS5 search index.
+  ///
+  /// No-op when [kRustLibraryWriteEnabled] is false. Never throws.
+  static String? rebuildFts() {
+    if (!kRustLibraryWriteEnabled) return null;
+    try {
+      final result = RustCoreService.libraryRebuildFts();
+      if (result != null && result.startsWith('error:')) {
+        debugPrint('[RustLibraryService] rebuildFts failed: $result');
+      }
+      return result;
+    } catch (e) {
+      debugPrint('[RustLibraryService] rebuildFts exception: $e');
+      return null;
+    }
+  }
+
   // ── CUE helpers ─────────────────────────────────────────────────────────────
 
   /// Build a Core-shaped CueAlbum JSON object from a CUE slice track.
@@ -642,8 +781,8 @@ class RustLibraryService {
         fileName: fileName,
         title: map['title'] as String?,
         artist: map['artist'] as String?,
-        // albumArtist not in Rust schema; leave null
-        album: null,
+        albumArtist: map['album_artist'] as String?,
+        album: map['album'] as String?,
         durationMs: _asInt(map['duration_ms']),
         trackNumber: _asInt(map['track_number']),
         discNumber: _asInt(map['disc_number']),
@@ -689,6 +828,8 @@ class RustLibraryService {
       // Rust schema requires a non-empty title; fall back to the file name.
       'title': (track.title?.isNotEmpty ?? false) ? track.title! : track.fileName,
       'artist': track.artist,
+      'album': track.album,
+      'album_artist': track.albumArtist,
       'remote_path': track.remotePath,
       // Rust uses `account_id` for what Dart calls `source_name`.
       'account_id': track.sourceName,

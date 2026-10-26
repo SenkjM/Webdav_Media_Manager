@@ -752,6 +752,16 @@ class RustCoreService {
   static _OneStrToStrDart? _syncStateSave;
   static _OneStrToStrDart? _syncStateClear;
 
+  // ── Schema v7+v8 — aggregates + FTS5 ───────────────────────────────────────
+  static _NoArgToStrDart? _artistList;
+  static _OneStrToStrDart? _artistGet;
+  static _NoArgToStrDart? _albumList;
+  static _OneStrToStrDart? _albumGet;
+  static _OneStrToStrDart? _tracksByArtist;
+  static _OneStrToStrDart? _tracksByAlbum;
+  static _NoArgToStrDart? _libraryRebuildAggregates;
+  static _NoArgToStrDart? _libraryRebuildFts;
+
   static void _loadLibrarySymbols(ffi.DynamicLibrary lib) {
     _libraryInit = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_init')
@@ -832,6 +842,32 @@ class RustCoreService {
         .asFunction();
     _syncStateClear = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_state_clear')
+        .asFunction();
+
+    // Schema v7+v8 aggregates + FTS5
+    _artistList = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_artist_list')
+        .asFunction();
+    _artistGet = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_artist_get')
+        .asFunction();
+    _albumList = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_album_list')
+        .asFunction();
+    _albumGet = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_album_get')
+        .asFunction();
+    _tracksByArtist = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_tracks_by_artist')
+        .asFunction();
+    _tracksByAlbum = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_tracks_by_album')
+        .asFunction();
+    _libraryRebuildAggregates = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_rebuild_aggregates')
+        .asFunction();
+    _libraryRebuildFts = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_rebuild_fts')
         .asFunction();
   }
 
@@ -1255,6 +1291,128 @@ class RustCoreService {
     } finally {
       calloc.free(ptr);
     }
+  }
+
+  // ── Schema v7+v8 — Aggregates + FTS5 public API ────────────────────────────
+
+  /// List all artists (schema v7 aggregate).
+  ///
+  /// Returns JSON array of `{"name":"...","track_count":N}` objects,
+  /// or 'error:...' on failure, null if unavailable.
+  static String? artistList() {
+    if (!_ensureSymbols()) return null;
+    if (_artistList == null) {
+      _loadLibrarySymbolsSafe();
+      if (_artistList == null) return null;
+    }
+    return _readAndFreeString(_artistList!());
+  }
+
+  /// Get one artist by name (schema v7 aggregate).
+  ///
+  /// Returns JSON object `{"name":"...","track_count":N}`, "null" if absent,
+  /// or 'error:...' on failure, null if unavailable.
+  static String? artistGet(String name) {
+    if (!_ensureSymbols()) return null;
+    if (_artistGet == null) {
+      _loadLibrarySymbolsSafe();
+      if (_artistGet == null) return null;
+    }
+    final ptr = name.toNativeUtf8();
+    try {
+      return _readAndFreeString(_artistGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List all albums (schema v7 aggregate).
+  ///
+  /// Returns JSON array of `{"title":"...","album_artist":"...","track_count":N}` objects,
+  /// or 'error:...' on failure, null if unavailable.
+  static String? albumList() {
+    if (!_ensureSymbols()) return null;
+    if (_albumList == null) {
+      _loadLibrarySymbolsSafe();
+      if (_albumList == null) return null;
+    }
+    return _readAndFreeString(_albumList!());
+  }
+
+  /// Get one album by title (schema v7 aggregate).
+  ///
+  /// Returns JSON object `{"title":"...","album_artist":"...","track_count":N}`, "null" if absent,
+  /// or 'error:...' on failure, null if unavailable.
+  static String? albumGet(String title) {
+    if (!_ensureSymbols()) return null;
+    if (_albumGet == null) {
+      _loadLibrarySymbolsSafe();
+      if (_albumGet == null) return null;
+    }
+    final ptr = title.toNativeUtf8();
+    try {
+      return _readAndFreeString(_albumGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List tracks by artist name (schema v7 aggregate).
+  ///
+  /// Returns JSON array of track objects, or 'error:...' on failure, null if unavailable.
+  static String? tracksByArtist(String name) {
+    if (!_ensureSymbols()) return null;
+    if (_tracksByArtist == null) {
+      _loadLibrarySymbolsSafe();
+      if (_tracksByArtist == null) return null;
+    }
+    final ptr = name.toNativeUtf8();
+    try {
+      return _readAndFreeString(_tracksByArtist!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List tracks by album title (schema v7 aggregate).
+  ///
+  /// Returns JSON array of track objects, or 'error:...' on failure, null if unavailable.
+  static String? tracksByAlbum(String title) {
+    if (!_ensureSymbols()) return null;
+    if (_tracksByAlbum == null) {
+      _loadLibrarySymbolsSafe();
+      if (_tracksByAlbum == null) return null;
+    }
+    final ptr = title.toNativeUtf8();
+    try {
+      return _readAndFreeString(_tracksByAlbum!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Rebuild artist and album aggregates from the tracks table.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  static String? libraryRebuildAggregates() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryRebuildAggregates == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryRebuildAggregates == null) return null;
+    }
+    return _readAndFreeString(_libraryRebuildAggregates!());
+  }
+
+  /// Rebuild FTS5 search index from the tracks table (schema v8).
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  static String? libraryRebuildFts() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryRebuildFts == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryRebuildFts == null) return null;
+    }
+    return _readAndFreeString(_libraryRebuildFts!());
   }
 
   // ── private: lazy library symbol loader ───────────────────────────────────

@@ -114,6 +114,18 @@ class RustLibraryProbe {
     _emitCountLine('tracks', sqfliteTracks, rusqliteTracks);
     _emitCountLine('deleted_tracks', sqfliteDeleted, rusqliteDeleted);
     _emitCountLine('sync_state', sqfliteSync, rusqliteSync);
+
+    // ── Phase C: artist/album counts (log only) ────────────────────────────
+    // When dual-write is enabled, compare distinct artist/album counts from
+    // Core aggregates vs sqflite in-memory distinct lists. Log only; no fail.
+    final rustArtists = _arrayLength(RustCoreService.artistList());
+    final rustAlbums = _arrayLength(RustCoreService.albumList());
+    if (rustArtists != null || rustAlbums != null) {
+      debugPrint(
+        '[RustLibraryProbe] Core aggregates — artists: ${_fmt(rustArtists ?? -1)}, '
+        'albums: ${_fmt(rustAlbums ?? -1)} (compare vs sqflite distinctArtists/distinctAlbums when available)',
+      );
+    }
   }
 
   /// Await [cb] guarded so a throwing/failing callback can never break the
