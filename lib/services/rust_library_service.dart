@@ -305,7 +305,17 @@ class RustLibraryService {
       final map = jsonDecode(json) as Map<String, dynamic>;
       // Discriminate: CueSlice has `music_id`+`cue_id`; LibraryTrack has `id`+`account_id`.
       if (map.containsKey('music_id') && map.containsKey('cue_id')) {
-        return LibraryTrack.fromMap(map);
+        final track = LibraryTrack.fromMap(map);
+        // CueSlice JSON omits cue_remote_path; fill from parent album.
+        if (track.cueRemotePath == null || track.cueRemotePath!.isEmpty) {
+          final album = cueAlbumForSlice(track.musicId);
+          final cueRemote = album?['cue_remote_path'] as String?;
+          if (cueRemote != null && cueRemote.isNotEmpty) {
+            track.cueRemotePath = cueRemote;
+            track.cacheGroupId ??= album?['cache_group_id'] as String?;
+          }
+        }
+        return track;
       }
       return _rustJsonToTrack(map);
     } catch (e) {
@@ -354,10 +364,25 @@ class RustLibraryService {
     try {
       final raw = jsonDecode(json);
       if (raw is! List) return null;
-      return raw
+      final slices = raw
           .whereType<Map<String, dynamic>>()
           .map(LibraryTrack.fromMap)
           .toList();
+      // Core CueSlice JSON has no cue_remote_path (lives on cue_albums).
+      // Hydrate once from album so isCueVirtual / cueRelation match sqflite.
+      if (slices.isNotEmpty &&
+          (slices.first.cueRemotePath == null ||
+              slices.first.cueRemotePath!.isEmpty)) {
+        final album = cueAlbumForSlice(slices.first.musicId);
+        final cueRemote = album?['cue_remote_path'] as String?;
+        if (cueRemote != null && cueRemote.isNotEmpty) {
+          for (final s in slices) {
+            s.cueRemotePath ??= cueRemote;
+            s.cacheGroupId ??= album?['cache_group_id'] as String?;
+          }
+        }
+      }
+      return slices;
     } catch (e) {
       debugPrint('[RustLibraryService] slicesForCue decode error: $e');
       return null;
