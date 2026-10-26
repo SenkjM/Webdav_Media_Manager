@@ -214,6 +214,15 @@ class BackupService extends ChangeNotifier {
   /// containers, so deflating them again would burn CPU and shrink nothing
   /// (docs/10 §4.3). Nesting stops at this one level — an embedded container
   /// never embeds another.
+  /// Build backup archive bytes from sqflite library.
+  ///
+  /// **Legacy path (Phase D)**: Production `.wdmm` create now uses Core FFI
+  /// (see `_buildArchiveBytesViaCore`). This method remains for:
+  /// - `buildJsonExport` (readable JSON troubleshooting export)
+  /// - Tests that need direct sqflite-based archive construction
+  ///
+  /// Do NOT use this for production backup upload; use `uploadBackup` which
+  /// delegates to Core.
   Future<Uint8List> buildArchiveBytes({required String passphrase}) async {
     final allTracks = await _libraryDb.allTracks();
     // Non-CUE rows first, then CUE slices: the order the JSON payload used, so
@@ -467,7 +476,10 @@ class BackupService extends ChangeNotifier {
       }
       final dir = normalizeDir(remoteDir);
       final name = fileName ?? backupFileNameNow();
-      final bytes = await buildArchiveBytes(passphrase: passphrase);
+
+      // Phase D: Full cutover to Core FFI for backup create when Rust lib loaded
+      final bytes = await _buildArchiveBytesViaCore(passphrase: passphrase);
+
       await _webDav.ensureDirectory(accountId, dir);
       final remote = '$dir$name';
       await _webDav.writeBytes(accountId, remote, bytes);
@@ -482,6 +494,32 @@ class BackupService extends ChangeNotifier {
     } finally {
       busy = false;
       notifyListeners();
+    }
+  }
+
+  /// Create backup archive via Core FFI (Phase D cutover).
+  /// When Rust lib is loaded, use Core; else throw.
+  Future<Uint8List> _buildArchiveBytesViaCore({required String passphrase}) async {
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File(p.join(
+      tempDir.path,
+      'backup_create_${DateTime.now().millisecondsSinceEpoch}.wdmm',
+    ));
+    try {
+      final result = RustCoreService.backupCreate(passphrase, tempFile.path);
+      if (result == null) {
+        throw StateError('Core FFI unavailable — cannot create backup');
+      }
+      if (result.startsWith('error:')) {
+        throw StateError('Core backup create failed: $result');
+      }
+      // result = "ok:created:{sections}"
+      final bytes = await tempFile.readAsBytes();
+      return bytes;
+    } finally {
+      try {
+        if (await tempFile.exists()) await tempFile.delete();
+      } catch (_) {}
     }
   }
 
