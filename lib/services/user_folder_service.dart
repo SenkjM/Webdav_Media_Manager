@@ -6,7 +6,6 @@ import 'package:uuid/uuid.dart';
 import '../models/library_tag_dimension.dart';
 import '../models/user_folder.dart';
 import '../models/user_folder_item.dart';
-import 'library_database.dart';
 import 'rust_core_service.dart';
 
 /// Local-only user folder tree overlay (99 §18).
@@ -18,16 +17,9 @@ import 'rust_core_service.dart';
 ///
 /// **Wave B cutover**: persistence now lives in the Rust core via
 /// [RustCoreService] FFI. The sqflite user_folder tables are no longer
-/// written. [LibraryDatabase] is kept only as a read-only fallback for the
-/// first launch after upgrade (non-Android / library-not-loaded); once the
-/// FFI is available it is the sole store.
+/// written; the sqflite read fallback has been removed.
 class UserFolderService extends ChangeNotifier {
-  /// [db] is an optional read-only fallback used only when the Rust FFI is
-  /// unavailable (e.g. debug host on macOS/Linux). May be null on platforms
-  /// where the legacy DB does not exist.
-  UserFolderService({LibraryDatabase? db}) : _db = db;
-
-  final LibraryDatabase? _db;
+  UserFolderService();
   final _uuid = const Uuid();
 
   final List<UserFolder> _folders = [];
@@ -43,23 +35,14 @@ class UserFolderService extends ChangeNotifier {
   }
 
   Future<void> reload() async {
-    // Prefer the Rust core. If the FFI is unavailable, fall back to the
-    // legacy sqflite DB (read-only) so the UI still has data on dev hosts.
+    // Prefer the Rust core. On non-Android hosts where the FFI is not loaded,
+    // leave state empty and mark loaded so callers don't retry.
     if (RustCoreService.userFolderListChildren(kUserFolderRootId) != null) {
       _reloadFromFfi();
       return;
     }
-    if (_db != null) {
-      final db = _db;
-      _folders
-        ..clear()
-        ..addAll(await db.loadUserFolders());
-      _items
-        ..clear()
-        ..addAll(await db.loadUserFolderItems());
-      _loaded = true;
-      notifyListeners();
-    }
+    _loaded = true;
+    notifyListeners();
   }
 
   /// BFS-load the whole tree from the Rust core.

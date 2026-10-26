@@ -47,7 +47,7 @@ class AppState extends ChangeNotifier {
     cacheIndex = CacheIndexDb();
     cache = CacheService(libraryDb: db, indexDb: cacheIndex);
     library = LibraryService(db: db);
-    userFolders = UserFolderService(db: db);
+    userFolders = UserFolderService();
     mangaLibrary = MangaLibraryService(db: db);
     accounts = AccountsService(db: db);
     cloudDrive = CloudDriveService(accounts: accounts);
