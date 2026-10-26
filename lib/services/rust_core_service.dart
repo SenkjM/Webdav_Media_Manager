@@ -2615,11 +2615,6 @@ extension _Let<T> on T {
 
 // ── Feature flags ───────────────────────────────────────────────────────────
 
-/// Legacy alias — prefer [kRustLibrarySyncEnabled]. Kept false so nothing
-/// silently dual-runs cloud writers (that would corrupt shard state).
-// ignore: constant_identifier_names
-const bool kRustSyncEnabled = false;
-
 /// When true, [MangaLibraryService] routes manga index CRUD and reading
 /// progress through the Rust FFI (wdmm_manga_* symbols, Wave D) instead of
 /// sqflite. [LibraryDatabase] remains the home of sync tombstones
