@@ -772,6 +772,45 @@ class SyncService extends ChangeNotifier {
     outcome.step('Core syncTrigger ok: $result');
   }
 
+  /// Core manga-library cloud sync via [RustCoreService.syncTrigger].
+  ///
+  /// Only used when [kRustMangaLibrarySyncEnabled] is true. Delegates to the
+  /// same [RustCoreService.syncTrigger] call as [_syncLibraryViaCore] —
+  /// `run_sync_all` wires both the music and manga shard engines.
+  /// Requires a WebDAV destination (FFI constructs `WebDavDriver`).
+  Future<void> _syncMangaViaCore(
+    SyncOutcome outcome, {
+    required String destAccountId,
+  }) async {
+    final account = _accounts.accountById(destAccountId);
+    if (account == null) {
+      throw StateError('err.noWebdavAccount');
+    }
+    if (account.providerType != 'webdav') {
+      throw StateError(
+        'Core manga sync requires providerType=webdav '
+        '(got ${account.providerType}); disable kRustMangaLibrarySyncEnabled '
+        'or choose a WebDAV sync destination',
+      );
+    }
+    final password = await _accounts.passwordFor(account.id) ?? '';
+    final remoteDir = _settings.syncRemoteRoot;
+    _progress(L10nHost.current.progressReadingCloudMangaIndex, 0.4);
+    final result = RustCoreService.syncTrigger(
+      webdavUrl: account.url,
+      username: account.username,
+      password: password,
+      remoteDir: remoteDir,
+    );
+    if (result == null) {
+      throw StateError('Core FFI unavailable — cannot sync manga library via Core');
+    }
+    if (result.startsWith('error:')) {
+      throw StateError('Core manga sync failed: $result');
+    }
+    outcome.step('Core syncTrigger ok (manga): $result');
+  }
+
   /// The binary store, bound to the configured library sync root.
   Future<LibrarySyncStore> _libraryStore() async => LibrarySyncStore(
     webDav: _webDav,
@@ -800,6 +839,16 @@ class SyncService extends ChangeNotifier {
     await _run(outcome, () async {
       final dest = await syncDestination();
       if (dest == null) throw StateError('err.noWebdavAccount');
+
+      // Core-first (flagged): exclusive path — no silent Dart fallback.
+      if (kRustMangaLibrarySyncEnabled) {
+        await _syncMangaViaCore(outcome, destAccountId: dest);
+        // Core mutated rusqlite; refresh Dart manga cache. No obvious
+        // separate "reload manifest" beyond [MangaLibraryService.reload].
+        await _manga?.reload();
+        return;
+      }
+
       final manga = _manga!;
       final db = _db!;
       final store = _mangaStore();
@@ -972,6 +1021,16 @@ class SyncService extends ChangeNotifier {
     await _run(outcome, () async {
       final dest = await syncDestination();
       if (dest == null) throw StateError('err.noWebdavAccount');
+
+      // `wdmm_sync_trigger` / `run_sync_all` only runs MangaSyncEngine
+      // incremental — there is no Core sync_full FFI for manga yet. Keep Dart
+      // rebuild even when [kRustMangaLibrarySyncEnabled] is on (documented
+      // leftover; not a silent half-cut of incremental).
+      if (kRustMangaLibrarySyncEnabled) {
+        outcome.warn(
+          'Core manga sync_full FFI not exposed; full rebuild still uses Dart MangaSyncStore',
+        );
+      }
       final manga = _manga!;
       final db = _db!;
       final store = _mangaStore();

@@ -2525,11 +2525,32 @@ const bool kRustSyncEnabled = false;
 // ignore: constant_identifier_names
 const bool kRustLibrarySyncEnabled = false;
 
+/// Core-first gate for Android **manga library cloud sync** (incremental).
+///
+/// **Default: `false`** — Dart [SyncService] + [MangaSyncStore] remain the
+/// production protocol. Flip to `true` only after incremental parity vs Core
+/// `MangaSyncEngine` is proven on device.
+///
+/// When `true`, [SyncService.syncMangaIncremental] calls
+/// [RustCoreService.syncTrigger] exclusively (no silent Dart fallback).
+/// [SyncService.syncMangaFull] stays on Dart — there is no Core `sync_full`
+/// FFI for manga yet.
+///
+/// Constraints when enabled:
+/// - Sync destination must be `providerType == 'webdav'` (FFI builds
+///   `WebDavDriver` from url/user/pass).
+/// - Distinct from [kRustMangaEnabled] (local CRUD routing); both can be
+///   toggled independently.
+// ignore: constant_identifier_names
+const bool kRustMangaLibrarySyncEnabled = false;
+
 /// When true, [MangaLibraryService] routes manga index CRUD and reading
 /// progress through the Rust FFI (wdmm_manga_* symbols, Wave D) instead of
 /// sqflite. [LibraryDatabase] remains the home of sync tombstones
 /// (`deleted_mangas`) which [SyncService] still reads directly.
-/// Manga **cloud** shard engine is not in Core yet — SyncService manga
-/// paths stay on Dart [MangaSyncStore].
+/// Manga cloud shard engine is now in Core (`MangaSyncEngine`, wired via
+/// `run_sync_all`) — incremental cloud sync is gated by
+/// [kRustMangaLibrarySyncEnabled]; SyncService manga paths stay on Dart
+/// [MangaSyncStore] until that flag is enabled.
 // ignore: constant_identifier_names
 const bool kRustMangaEnabled = true;
