@@ -12,7 +12,7 @@ import '../utils/cue_sheet.dart';
 import '../utils/rev_clock.dart';
 import '../utils/track_identity.dart';
 import 'cover_service.dart';
-import 'library_database.dart';
+import 'library_sync_keys.dart';
 import 'rust_library_service.dart';
 import 'tag_service.dart';
 
@@ -82,7 +82,7 @@ class LibraryService extends ChangeNotifier {
   }
 
   Future<void> clearSyncCursor() async {
-    final result = RustLibraryService.syncStateClear(LibraryDatabase.musicCursorPrefix);
+    final result = RustLibraryService.syncStateClear(LibrarySyncKeys.musicCursorPrefix);
     if (result != null && result.startsWith('error:')) {
       throw StateError('Rust sync_state clear failed: $result');
     }
