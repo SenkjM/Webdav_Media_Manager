@@ -135,13 +135,8 @@ void main() {
       year: 2024,
     );
 
-    // Use the helper via cue_rust_json — but _trackToRustJson is private, so
-    // we route through upsert which encodes the same shape (confirmed by Core
-    // track upsert tests). Simulate by matching the expected keys directly:
-    final json = RustLibraryService.cueSliceJson(track);
-    // For a regular track (no cue), cueSliceJson returns null; but we can
-    // directly test the internal _trackToRustJson behavior through the Core
-    // schema match above (which includes album/album_artist as of schema v7).
+    // Regular (non-CUE) tracks have no slice JSON; cueSliceJson returns null.
+    expect(RustLibraryService.cueSliceJson(track), isNull);
 
     // Instead we do a minimal inline check of the private helper shape:
     // _trackToRustJson(track) would produce:

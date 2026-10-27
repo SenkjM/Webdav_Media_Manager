@@ -891,7 +891,7 @@ class RustLibraryService {
   /// are included when they carry a `musicId`.
   static Map<String, dynamic>? _trackToRustJson(LibraryTrack track) {
     final id = track.musicId;
-    if (id == null || id.isEmpty) return null;
+    if (id.isEmpty) return null;
     return {
       'id': id,
       // Rust schema requires a non-empty title; fall back to the file name.

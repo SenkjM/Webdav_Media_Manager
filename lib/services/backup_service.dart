@@ -906,7 +906,6 @@ class BackupService extends ChangeNotifier {
     Map<String, dynamic> payload,
     String passphrase,
   ) async {
-    final docs = await getApplicationDocumentsDirectory();
     final missing = <String>[];
 
     // 1. Credentials — a [DecodedVault] from a binary archive section, or the
