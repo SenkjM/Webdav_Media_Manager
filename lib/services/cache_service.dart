@@ -13,7 +13,6 @@ import '../utils/cache_group_codec.dart';
 import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'cache_index_db.dart';
-import 'library_database.dart';
 
 /// Local file cache for downloaded music. Playback always uses these files.
 /// Cleanup NEVER touches library DB tracks/cue tables or cover thumbs.
@@ -22,30 +21,24 @@ import 'library_database.dart';
 /// is **derived** from (source_name, remote_path) via [fileForRemote], so
 /// isLocal is a lazy `File.exists` on the derived path — no table, no
 /// startup reconciliation, nothing to go stale.
+///
+/// Cache group membership (CUE albums) lives in [CacheIndexDb] (`cache_index.db`)
+/// since schema v2. [CacheService] never writes groups to `music_library.db`.
 class CacheService extends ChangeNotifier {
-  CacheService({
-    SharedPreferences? prefs,
-    LibraryDatabase? libraryDb,
-    CacheIndexDb? indexDb,
-  }) : _prefs = prefs,
-       _libraryDb = libraryDb,
-       _index = indexDb;
+  CacheService({SharedPreferences? prefs, CacheIndexDb? indexDb})
+    : _prefs = prefs,
+      _index = indexDb;
 
   // Legacy prefs key prefixes moved to [cache_group_codec.dart]; only used here
   // for the one-time migration in [_migrateLegacyPrefs].
 
   SharedPreferences? _prefs;
-  LibraryDatabase? _libraryDb;
   CacheIndexDb? _index;
   Directory? _cacheDir;
   Directory? _mangaCacheDir;
 
-  void attachLibraryDb(LibraryDatabase db) {
-    _libraryDb = db;
-  }
-
-  /// Attach the access-time index. Optional on purpose: every path below
-  /// keeps working without it, falling back to file mtime.
+  /// Attach the access-time + group index. Required before any group or
+  /// touch/lastAccessed operation; [init] wires it from [AppState].
   void attachIndexDb(CacheIndexDb index) {
     _index = index;
   }
@@ -61,11 +54,19 @@ class CacheService extends ChangeNotifier {
     if (!await _mangaCacheDir!.exists()) {
       await _mangaCacheDir!.create(recursive: true);
     }
+    // Ensure index schema is open, then one-shot migrate cache_groups from
+    // music_library.db → cache_index.db. After this, groups are index-only.
+    final idx = _index;
+    if (idx != null) {
+      await idx.database; // triggers onCreate/onUpgrade if schema is stale
+      final docs = await getApplicationDocumentsDirectory();
+      await idx.migrateGroupsFromLibraryDb(p.join(docs.path, 'music_library.db'));
+    }
     await _migrateLegacyPrefs();
   }
 
   /// One-time move of the legacy prefs group membership into
-  /// `music_library.db` (`cache_groups`), then drop the old keys.
+  /// `cache_index.db` (`cache_groups`), then drop the old keys.
   ///
   /// The legacy `cache_group_*` keys are `String.hashCode`-suffixed: the
   /// member lists (stored in the value) are recoverable, but the per-path LRU
@@ -74,8 +75,8 @@ class CacheService extends ChangeNotifier {
   /// is recorded).
   Future<void> _migrateLegacyPrefs() async {
     final prefs = _prefs;
-    final db = _libraryDb;
-    if (prefs == null || db == null) return;
+    final idx = _index;
+    if (prefs == null || idx == null) return;
 
     final keys = prefs.getKeys();
     final entries = <String, String>{};
@@ -88,7 +89,7 @@ class CacheService extends ChangeNotifier {
 
     final groups = parseLegacyCacheGroups(entries);
     for (final g in groups) {
-      await db.bindCacheGroupMembers(groupId: g.groupId, identities: g.members);
+      await idx.bindCacheGroupMembers(groupId: g.groupId, identities: g.members);
     }
 
     for (final k in keys) {
@@ -309,18 +310,18 @@ class CacheService extends ChangeNotifier {
     required String groupId,
   }) async {
     if (groupId.isEmpty) return;
-    final db = _libraryDb;
-    if (db == null) return;
-    await db.bindCacheGroupMembers(
+    final idx = _index;
+    if (idx == null) throw StateError('CacheIndexDb not attached — call init() first');
+    await idx.bindCacheGroupMembers(
       groupId: groupId,
       identities: [trackIdentityKey(sourceName, remotePath)],
     );
   }
 
   Future<List<String>> groupMemberIdentities(String groupId) async {
-    final db = _libraryDb;
-    if (db == null) return const [];
-    return db.cacheGroupMembers(groupId);
+    final idx = _index;
+    if (idx == null) throw StateError('CacheIndexDb not attached — call init() first');
+    return idx.cacheGroupMembers(groupId);
   }
 
   Future<List<String>> groupMemberFileNames(String groupId) async {
@@ -349,10 +350,6 @@ class CacheService extends ChangeNotifier {
         await part.delete();
       } catch (_) {}
     }
-    await _libraryDb?.deleteCacheAccess(
-      sourceName: sourceName,
-      remotePath: remotePath,
-    );
     if (removed) {
       await _index?.forget(f.path);
       notifyListeners();
@@ -373,16 +370,14 @@ class CacheService extends ChangeNotifier {
         removed++;
       }
     }
-    await _libraryDb?.deleteCacheGroup(groupId);
+    final idx = _index;
+    if (idx == null) throw StateError('CacheIndexDb not attached — call init() first');
+    await idx.deleteCacheGroup(groupId);
     if (removed > 0) notifyListeners();
     return removed;
   }
 
   Future<void> touch(String sourceName, String remotePath) async {
-    await _libraryDb?.touchCacheAccess(
-      sourceName: sourceName,
-      remotePath: remotePath,
-    );
     await _indexTouchRead(
       fileForRemote(remotePath, sourceName: sourceName).path,
       CacheKind.music,
@@ -396,7 +391,12 @@ class CacheService extends ChangeNotifier {
       );
       if (indexed != null) return indexed;
     }
-    return _libraryDb?.cacheAccessedAt(sourceName, remotePath);
+    // Fall back to file mtime when the index has no record (pre-index files).
+    try {
+      final f = fileForRemote(remotePath, sourceName: sourceName);
+      if (await f.exists()) return (await f.stat()).modified;
+    } catch (_) {}
+    return null;
   }
 
   // --- access-time index ---------------------------------------------------
@@ -703,10 +703,6 @@ class CacheService extends ChangeNotifier {
       )) {
         try {
           await file.delete();
-          await _libraryDb?.deleteCacheAccess(
-            sourceName: sourceName,
-            remotePath: remote,
-          );
           removed++;
         } catch (_) {}
       }

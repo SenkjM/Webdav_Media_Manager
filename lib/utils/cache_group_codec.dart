@@ -3,7 +3,7 @@ import 'dart:convert';
 /// Codec for the runtime「CUE 整专辑一组」membership, plus the parser for the
 /// legacy prefs layout (99 §6.2 T1).
 ///
-/// Membership lives in `music_library.db` table `cache_groups`
+/// Membership lives in `cache_index.db` table `cache_groups`
 /// (`group_id` PK + JSON `members`). It used to live in SharedPreferences
 /// under two `String.hashCode`-suffixed keys, which can collide and cross
 /// groups. [parseLegacyCacheGroups] reads that old layout once so the values

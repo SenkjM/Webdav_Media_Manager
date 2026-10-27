@@ -254,6 +254,10 @@ CREATE TABLE IF NOT EXISTS cue_slices (
     // String.hashCode, so different groups can never collide); `members` is a
     // JSON array of `sourceName\u0000remotePath` identities. This used to live
     // in SharedPreferences and is migrated once in CacheService.init().
+    //
+    // NOTE: CacheService no longer reads or writes this table — the
+    // cache_groups SoT moved to CacheIndexDb (`cache_index.db`, schema v2).
+    // DDL and methods kept as dead writers this wave; DROP later with accounts.
     await db.execute('''
 CREATE TABLE IF NOT EXISTS cache_groups (
   group_id TEXT PRIMARY KEY,
@@ -263,6 +267,7 @@ CREATE TABLE IF NOT EXISTS cache_groups (
 ''');
     // Runtime LRU timestamps for cache expiry, keyed by real source + path
     // (the old prefs keys hashed the identity and could not be reversed).
+    // NOTE: also unused by CacheService since the cache_index SoT move.
     await db.execute('''
 CREATE TABLE IF NOT EXISTS cache_access (
   source_name TEXT NOT NULL,
