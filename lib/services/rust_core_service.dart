@@ -2256,6 +2256,7 @@ class RustCoreService {
   static _OneStrToStrDart?    _mangaUpsert;
   static _OneStrToStrDart?    _mangaDelete;
   static _OneStrToStrDart?    _deletedMangaClear;
+  static _NoArgToStrDart?     _mangaClearIndex;
   static _OneStrToStrDart?    _mangaListPages;
   static _TwoStrToOneStrDart? _mangaSetPages;
   static _OneStrToStrDart?    _mangaGetProgress;
@@ -2285,6 +2286,10 @@ class RustCoreService {
       _deletedMangaClear = lib
           .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
               'wdmm_deleted_manga_clear')
+          .asFunction();
+      _mangaClearIndex = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_manga_clear_index')
           .asFunction();
       _mangaListPages = lib
           .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
@@ -2377,6 +2382,18 @@ class RustCoreService {
       return _readAndFreeString(_deletedMangaClear!(ptr));
     } finally {
       calloc.free(ptr);
+    }
+  }
+
+  /// Wipe manga index (mangas / pages / deleted_mangas / manga sync cursors).
+  /// Keeps manga_progress. Returns `"ok"` or `"error:…"`. Null if FFI unavailable.
+  static String? mangaClearIndex() {
+    if (!_ensureMangaSymbols() || _mangaClearIndex == null) return null;
+    try {
+      return _readAndFreeString(_mangaClearIndex!());
+    } catch (e) {
+      debugPrint('[RustCore] mangaClearIndex exception: $e');
+      return null;
     }
   }
 

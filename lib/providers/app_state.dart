@@ -33,6 +33,7 @@ import '../services/video_playback_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/cloud_drivers/webdav_source.dart';
 import '../services/dlna_cast_service.dart';
+import '../services/rust_core_service.dart';
 import '../services/rust_dmr_prefs_service.dart';
 import '../services/webdav_service.dart';
 
@@ -48,7 +49,7 @@ class AppState extends ChangeNotifier {
     cache = CacheService(libraryDb: db, indexDb: cacheIndex);
     library = LibraryService(db: db);
     userFolders = UserFolderService();
-    mangaLibrary = MangaLibraryService(db: db);
+    mangaLibrary = MangaLibraryService();
     accounts = AccountsService(db: db);
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
@@ -770,7 +771,10 @@ class AppState extends ChangeNotifier {
   /// Reading progress and `manga_cache/` stay (progress then merges as usual).
   Future<SyncOutcome> overwriteMangaFromCloud() {
     return _quietLibraryWrites(() async {
-      await libraryDb.clearMangaIndex();
+      final clear = RustCoreService.mangaClearIndex();
+      if (clear != null && clear.startsWith('error:')) {
+        throw StateError('Core manga clear-index failed: $clear');
+      }
       await mangaLibrary.reload();
       final outcome = await sync.syncMangaIncremental();
       await mangaLibrary.reload();
@@ -797,7 +801,7 @@ class AppState extends ChangeNotifier {
             if (await f.exists()) await f.delete();
           } catch (_) {}
         }
-        await libraryDb.deleteManga(m.id);
+        await mangaLibrary.deleteManga(m.id);
         processed++;
         onProgress?.call(processed, list.length);
       }

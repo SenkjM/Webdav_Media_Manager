@@ -12,7 +12,6 @@ import '../utils/manga_file_types.dart';
 import '../utils/manga_identity.dart';
 import '../utils/rev_clock.dart';
 import '../utils/track_identity.dart';
-import 'library_database.dart';
 import 'manga_sync_store.dart';
 import 'rust_core_service.dart';
 
@@ -55,16 +54,12 @@ class MangaIngestDraft {
 ///
 /// Wave D (fdb05df): manga index CRUD and reading progress route through the
 /// Rust FFI ([RustCoreService.mangaList] / [RustCoreService.mangaUpsert] etc.)
-/// instead of sqflite. Class B unload (2026-10-27): all tombstone management
-/// (`deleted_mangas`) now goes through Core FFI via [RustCoreService.deletedMangaClear].
-/// [LibraryDatabase] field retained for shared infrastructure (accounts remain
-/// sqflite-primary).
+/// instead of sqflite. Class B unload (2026-10-27): tombstones (`deleted_mangas`)
+/// go through Core FFI ([RustCoreService.deletedMangaClear] / mangaDelete).
+/// No LibraryDatabase dependency — accounts remain sqflite-primary elsewhere
+/// (LibraryDatabase may still open on launch for accounts).
 class MangaLibraryService extends ChangeNotifier {
-  MangaLibraryService({required LibraryDatabase db}) : _db = db;
-
-  /// sqflite DB kept for shared infrastructure (accounts remain sqflite-primary).
-  /// All manga index, progress, and tombstone I/O goes through [RustCoreService].
-  final LibraryDatabase _db;
+  MangaLibraryService();
 
   RevClock? _revClock;
 

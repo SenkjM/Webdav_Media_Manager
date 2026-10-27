@@ -778,7 +778,7 @@ class LibraryService extends ChangeNotifier {
     }
     if (created.isEmpty) return const [];
 
-    // Dual-write: Rust first (when enabled), then sqflite
+    // Core-only CUE write (Class B sqflite dual-write unloaded)
     if (kRustLibraryWriteEnabled) {
       // Delete-then-upsert mirrors replace semantics
       final deleteResult = RustLibraryService.deleteCueAlbum(
@@ -853,7 +853,7 @@ class LibraryService extends ChangeNotifier {
       row.coverPath = path;
       row.rev = _nextRev();
 
-      // Dual-write: Rust first (when enabled), then sqflite
+      // Core-only CUE write (Class B sqflite dual-write unloaded)
       if (kRustLibraryWriteEnabled) {
         final sliceJson = RustLibraryService.cueSliceJson(row);
         if (sliceJson != null) {
@@ -983,7 +983,7 @@ class LibraryService extends ChangeNotifier {
     // Read/build failures above leave the existing album untouched. Commit all
     // persisted rows together, then replace the in-memory projection at once.
 
-    // Dual-write: Rust first (when enabled), then sqflite
+    // Core-only CUE write (Class B sqflite dual-write unloaded)
     if (kRustLibraryWriteEnabled) {
       // Delete-then-upsert mirrors replace semantics
       final deleteResult = RustLibraryService.deleteCueAlbum(
@@ -1256,15 +1256,13 @@ class LibraryService extends ChangeNotifier {
         track.sourceName,
         cuePath,
       );
-      int remaining = 0;
-      if (slicesJson != null && !slicesJson.startsWith('error:')) {
-        try {
-          // Core returns a decimal count string (e.g. "5"), not a JSON array
-          remaining = int.tryParse(slicesJson.trim()) ?? 0;
-        } catch (_) {
-          remaining = 0;
-        }
+      if (slicesJson == null || slicesJson.startsWith('error:')) {
+        throw StateError(
+          'Rust CUE remaining-slices read failed: ${slicesJson ?? "null"}',
+        );
       }
+      // Core returns a decimal count string (e.g. "5"), not a JSON array
+      final remaining = int.tryParse(slicesJson.trim()) ?? 0;
       if (remaining == 0) {
         final albumResult = RustLibraryService.deleteCueAlbum(
           track.sourceName,
