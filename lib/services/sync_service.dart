@@ -612,15 +612,12 @@ class SyncService extends ChangeNotifier {
         throw StateError('folders_changed_at kv unavailable (Core FFI missing)');
       }
       final action = planFolderSync(
-        localChangedAtMs: int.tryParse(rawChangedAt) ?? 0,
-        lastSyncAtMs:
-            int.tryParse(
-              RustCoreService.kvGet('$_foldersLastSyncKey$dest') ?? '',
-            ) ??
-            0,
+        localChangedAtMs: _kvMs(rawChangedAt),
+        lastSyncAtMs: _kvMs(RustCoreService.kvGet('$_foldersLastSyncKey$dest')),
         cloudUpdatedAt: cloud?.updatedAt,
-        lastSeenCloudUpdatedAt:
-            RustCoreService.kvGet('$_foldersCloudSeenKey$dest'),
+        lastSeenCloudUpdatedAt: _kvAbsentAsNull(
+          RustCoreService.kvGet('$_foldersCloudSeenKey$dest'),
+        ),
         localEmpty: localEmpty,
       );
       var seen = cloud?.updatedAt;
@@ -657,6 +654,22 @@ class SyncService extends ChangeNotifier {
       }
     });
     return outcome;
+  }
+
+
+  /// Core `kv_get` returns the literal `"null"` when a key is absent.
+  static int _kvMs(String? raw) {
+    if (raw == null || raw.isEmpty || raw == 'null' || raw.startsWith('error:')) {
+      return 0;
+    }
+    return int.tryParse(raw) ?? 0;
+  }
+
+  static String? _kvAbsentAsNull(String? raw) {
+    if (raw == null || raw.isEmpty || raw == 'null' || raw.startsWith('error:')) {
+      return null;
+    }
+    return raw;
   }
 
   // --- Whole-app backup -------------------------------------------------

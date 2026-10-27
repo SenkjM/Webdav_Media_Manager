@@ -824,9 +824,14 @@ class AppState extends ChangeNotifier {
   /// when Core FFI is unavailable (non-Android).
   static Future<void> _migrateKvFoldersMeta(LibraryDatabase db) async {
     final existing = RustCoreService.kvGet('folders_changed_at');
-    // null → Core FFI unavailable; non-empty non-error → already migrated.
+    // Dart null → Core FFI unavailable (skip). Literal "null"/empty/error →
+    // key absent or bad → migrate from sqflite. Any other value → already set.
     if (existing == null) return;
-    if (existing.isNotEmpty && !existing.startsWith('error:')) return;
+    final already =
+        existing.isNotEmpty &&
+        existing != 'null' &&
+        !existing.startsWith('error:');
+    if (already) return;
 
     // Migrate the three key families once.
     const keys = [
@@ -849,6 +854,15 @@ class AppState extends ChangeNotifier {
       for (final entry in allMeta.entries) {
         RustCoreService.kvSet(entry.key, entry.value);
       }
+    }
+    // Ensure the sentinel key exists so we do not re-scan sqflite every launch
+    // when the old DB had no folders meta either.
+    final after = RustCoreService.kvGet('folders_changed_at');
+    if (after == null ||
+        after.isEmpty ||
+        after == 'null' ||
+        after.startsWith('error:')) {
+      RustCoreService.kvSet('folders_changed_at', '0');
     }
   }
 }

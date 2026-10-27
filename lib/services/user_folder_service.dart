@@ -299,7 +299,8 @@ class UserFolderService extends ChangeNotifier {
           'sort_order': i,
         },
     ];
-    RustCoreService.userFolderSetItems(folderId, jsonEncode(arr));
+    final setRes = RustCoreService.userFolderSetItems(folderId, jsonEncode(arr));
+    if (setRes == null || setRes.startsWith('error:')) return false;
     // Mirror into in-memory state with new sort orders.
     _items.removeWhere((i) => i.folderId == folderId);
     for (var i = 0; i < next.length; i++) {
