@@ -369,19 +369,17 @@ class LibraryService extends ChangeNotifier {
   }) async {
     final now = DateTime.now();
     final existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
-    final read = await _tags.readFromFile(localPath);    String? coverPath;
+    final read = await _tags.readFromFile(localPath);
+    // Cover availability state. Present only when we actually saved a thumb;
+    // re-download without art preserves the existing state (do not demote).
+    int coverState = existing?.coverState ?? 0;
     if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
-      coverPath = await _covers.saveThumb(
+      final saved = await _covers.saveThumb(
         sourceName: sourceName,
         remotePath: remotePath,
         bytes: read.coverBytes!,
       );
-    } else {
-      // Keep previous thumb if re-download has no art.
-      coverPath = existing?.coverPath;
-      if (coverPath != null && !File(coverPath).existsSync()) {
-        coverPath = null;
-      }
+      if (saved != null) coverState = 2;
     }
 
     final track = LibraryTrack(
@@ -402,7 +400,7 @@ class LibraryService extends ChangeNotifier {
       genre: read.genre,
       bitrate: read.bitrate,
       sampleRate: read.sampleRate,
-      coverPath: coverPath,
+      coverState: coverState,
       cacheGroupId: existing?.cacheGroupId,
       rev: _nextRev(),
       lastDownloadedAt: updateDownloadTime
@@ -463,14 +461,19 @@ class LibraryService extends ChangeNotifier {
 
   /// Point a library row at a new remote path (redirect after missing).
 
-  Future<void> updateCoverPath({
+  /// Persist a new [CoverState] value for a track.
+  ///
+  /// Rev is bumped **only** when the value changes — rewriting the thumb bytes
+  /// at the same `present` state does not bump rev.
+  Future<void> setCoverState({
     required String sourceName,
     required String remotePath,
-    required String coverPath,
+    required int state,
   }) async {
     final existing = find(sourceName, remotePath);
     if (existing == null) return;
-    existing.coverPath = coverPath;
+    if (existing.coverState == state) return;
+    existing.coverState = state;
     existing.rev = _nextRev();
     final result = RustLibraryService.upsertTrack(existing);
     if (result != null && result.startsWith('error:')) {
@@ -509,7 +512,7 @@ class LibraryService extends ChangeNotifier {
       genre: track.genre,
       bitrate: track.bitrate,
       sampleRate: track.sampleRate,
-      coverPath: track.coverPath,
+      coverState: track.coverState,
       cacheGroupId: track.cacheGroupId,
       rev: _nextRev(),
       lastDownloadedAt: track.lastDownloadedAt,
@@ -538,15 +541,15 @@ class LibraryService extends ChangeNotifier {
   }) async {
     final now = DateTime.now();
     final existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
-    String? coverPath = existing?.coverPath;
+    // Cover availability state. Present only when we actually saved a thumb.
+    int coverState = existing?.coverState ?? 0;
     if (tags.coverBytes != null && tags.coverBytes!.isNotEmpty) {
-      coverPath = await _covers.saveThumb(
+      final saved = await _covers.saveThumb(
         sourceName: sourceName,
         remotePath: remotePath,
         bytes: tags.coverBytes!,
       );
-    } else if (coverPath != null && !File(coverPath).existsSync()) {
-      coverPath = null;
+      if (saved != null) coverState = 2;
     }
 
     final track = LibraryTrack(
@@ -567,7 +570,7 @@ class LibraryService extends ChangeNotifier {
       genre: tags.genre ?? existing?.genre,
       bitrate: tags.bitrate ?? existing?.bitrate,
       sampleRate: tags.sampleRate ?? existing?.sampleRate,
-      coverPath: coverPath,
+      coverState: coverState,
       cacheGroupId: existing?.cacheGroupId,
       rev: _nextRev(),
       lastDownloadedAt: existing?.lastDownloadedAt ??
@@ -656,13 +659,14 @@ class LibraryService extends ChangeNotifier {
         fileGenre: null,
       );
       final virtualPath = cueVirtualRemotePath(resolved, ct.number);
-      String? coverPath;
+      int coverState = 0;
       if (coverBytes != null && coverBytes.isNotEmpty) {
-        coverPath = await _covers.saveThumb(
+        final saved = await _covers.saveThumb(
           sourceName: sourceName,
           remotePath: virtualPath,
           bytes: coverBytes,
         );
+        if (saved != null) coverState = 2;
       }
       final audioMid = musicIdForRemote(sourceName, resolved);
       final sliceMid = musicIdForCueSlice(sourceName, cueRemotePath, ct.number);
@@ -693,7 +697,7 @@ class LibraryService extends ChangeNotifier {
           lastTagReadAt: now,
           rev: _nextRev(),
           remoteMissing: false,
-          coverPath: coverPath,
+          coverState: coverState,
         ),
       );
     }
@@ -769,7 +773,7 @@ class LibraryService extends ChangeNotifier {
         bytes: bytes,
       );
       if (path == null) continue;
-      row.coverPath = path;
+      row.coverState = 2;
       row.rev = _nextRev();
 
       // Core-only CUE write (Class B sqflite dual-write unloaded)
@@ -854,14 +858,15 @@ class LibraryService extends ChangeNotifier {
         final ms = fileTag.durationMs! - range.start.inMilliseconds;
         durationMs = ms >= 0 ? ms : null;
       }
-      String? coverPath;
+      var coverState = 0;
       final bytes = coverSource?.coverBytes ?? fileTag.coverBytes;
       if (bytes != null && bytes.isNotEmpty) {
-        coverPath = await _covers.saveThumb(
+        final saved = await _covers.saveThumb(
           sourceName: sourceName,
           remotePath: virtualPath,
           bytes: bytes,
         );
+        if (saved != null) coverState = 2;
       }
       final audioMid = musicIdForRemote(sourceName, resolved);
       final sliceMid = musicIdForCueSlice(sourceName, cueRemotePath, ct.number);
@@ -881,7 +886,7 @@ class LibraryService extends ChangeNotifier {
         genre: merged.genre,
         bitrate: fileTag.bitrate,
         sampleRate: fileTag.sampleRate,
-        coverPath: coverPath,
+        coverState: coverState,
         cueId: cueIdFor(sourceName, cueRemotePath),
         cueRemotePath: cueRemotePath,
         cueTrackIndex: ct.number,

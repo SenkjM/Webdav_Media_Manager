@@ -271,11 +271,11 @@ class BackupService extends ChangeNotifier {
     final coverKinds = <int>[];
     for (final t in tracks) {
       Uint8List? blob;
-      final path = t.coverPath;
-      if (path != null && path.isNotEmpty) {
+      // Use the deterministic thumb path — never a stored absolute path.
+      final file = await _covers.coverFile(t.sourceName, t.remotePath);
+      if (file.existsSync()) {
         try {
-          final file = File(path);
-          if (file.existsSync()) blob = await file.readAsBytes();
+          blob = await file.readAsBytes();
         } catch (_) {
           blob = null;
         }
@@ -750,15 +750,16 @@ class BackupService extends ChangeNotifier {
     for (final record in records) {
       final track = LibraryShardCodec.recordToTrack(record);
       final idx = record[WmpTrack.coverIndex];
-      String? coverPath;
+      int coverStateOverride = 0;
       if (idx is int && idx >= 0 && idx < covers.length) {
-        coverPath = await _writeLocalCover(
+        final written = await _writeLocalCover(
           sourceName: track.sourceName,
           remotePath: track.remotePath,
           blob: covers[idx].bytesIn(coversRaw!),
         );
+        if (written != null) coverStateOverride = 2;
       }
-      tracks.add({...track.toMap(), 'cover_path': coverPath});
+      tracks.add({...track.toMap(), 'cover_state': coverStateOverride});
     }
 
     // Credentials: this section is one whole `WDMMCV01` document (or absent).
@@ -1012,25 +1013,8 @@ class BackupService extends ChangeNotifier {
       }
     }
 
-    await _rewriteCoverPaths(docs.path);
     await _library.refresh();
     return missing;
-  }
-
-  Future<void> _rewriteCoverPaths(String docsPath) async {
-    final allTracks = RustLibraryService.listAll();
-    if (allTracks == null) return; // FFI unavailable — skip rewrite
-    final coversRoot = p.join(docsPath, 'covers');
-    for (final t in allTracks) {
-      final cover = t.coverPath;
-      if (cover == null || cover.isEmpty) continue;
-      final base = p.basename(cover);
-      final newPath = p.join(coversRoot, base);
-      if (cover == newPath) continue;
-      RustLibraryService.upsertTrack(
-        LibraryTrack.fromMap({...t.toMap(), 'cover_path': newPath}),
-      );
-    }
   }
 
   static String _fmtBytes(int bytes) {

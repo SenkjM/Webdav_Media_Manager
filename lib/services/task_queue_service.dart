@@ -25,6 +25,7 @@ import 'download_destination_service.dart';
 import 'download_keepalive.dart';
 import 'download_notification_service.dart';
 import 'task_store.dart';
+import '../models/cover_state.dart';
 import 'library_service.dart';
 import '../utils/batch_outcome.dart';
 import '../models/manga_page.dart';
@@ -3091,12 +3092,14 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           // covers can recover without deleting and re-adding the album.
           final needsCover =
               already &&
-              existing.any(
-                (r) =>
-                    r.coverPath == null ||
-                    r.coverPath!.isEmpty ||
-                    !File(r.coverPath!).existsSync(),
-              );
+              existing.any((r) {
+                if (r.coverStateEnum == CoverState.none) return false;
+                final thumb = _library!.covers.thumbPath(
+                  r.sourceName,
+                  r.effectiveAudioRemotePath,
+                );
+                return thumb == null || !File(thumb).existsSync();
+              });
           if (!already || needsCover) {
             final bytes = await _webDav.readAsBytes(accountId, item.path);
             final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
@@ -3354,7 +3357,6 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       await mangaLib.replacePages(
         manga.id,
         pages: pages,
-        coverRelpath: images.first.name,
       );
     }
 

@@ -128,6 +128,34 @@ class CacheService extends ChangeNotifier {
     return File(p.join(mangaCacheDir.path, 'covers', '$stem.jpg'));
   }
 
+  /// Thin ensure helper: write manga thumb bytes only if the deterministic file
+  /// is absent. Returns the file path on success, `null` if bytes are not
+  /// available or the write fails.
+  ///
+  /// Does **not** write to the database; callers update [CoverState] after
+  /// this returns a non-null path.
+  ///
+  /// [fetchBytes] is called at most once, only when the file is missing.
+  Future<String?> ensureMangaCoverFile({
+    required String mangaId,
+    required Future<Uint8List?> Function() fetchBytes,
+  }) async {
+    final file = mangaCoverFile(mangaId);
+    if (file.existsSync()) return file.path;
+    // Ensure the covers sub-directory exists.
+    if (!file.parent.existsSync()) {
+      await file.parent.create(recursive: true);
+    }
+    final bytes = await fetchBytes();
+    if (bytes == null || bytes.isEmpty) return null;
+    try {
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Everything the manga library keeps on disk: the whole-file archives and
   /// cover thumbs under `manga_cache/`, plus the reader's page images.
   Future<int> mangaCacheSizeBytes() => cacheSizeFor(CacheKind.manga);

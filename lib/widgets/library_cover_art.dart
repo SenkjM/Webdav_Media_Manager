@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/cover_service.dart';
+import '../models/cover_state.dart';
 import '../models/library_track.dart';
 import '../services/cache_service.dart';
 import '../services/task_queue_service.dart';
@@ -34,6 +36,7 @@ class LibraryCoverArt extends StatefulWidget {
     this.icon,
     this.enqueueIfMissing = false,
     this.coverRevision = 0,
+    this.coverState = 0,
   });
 
   factory LibraryCoverArt.forTrack({
@@ -50,7 +53,7 @@ class LibraryCoverArt extends StatefulWidget {
       // Virtual cue rows enqueue/check the real audio file, not #cue:N paths.
       remotePath: track.effectiveAudioRemotePath,
       libraryRemotePath: track.remotePath,
-      thumbPath: track.coverPath,
+      thumbPath: null,
       fileName: track.fileName,
       size: size,
       borderRadius: borderRadius,
@@ -59,6 +62,7 @@ class LibraryCoverArt extends StatefulWidget {
       // rev/lastTagReadAt change on every tag/cover ingest, including re-scrapes
       // that rewrite the same cover file in place.
       coverRevision: track.rev ?? track.lastTagReadAt.millisecondsSinceEpoch,
+      coverState: track.coverState,
     );
   }
 
@@ -76,6 +80,10 @@ class LibraryCoverArt extends StatefulWidget {
   /// Changes when the library row was re-ingested (new cover bytes may have
   /// overwritten the same file path).
   final int coverRevision;
+
+  /// Persisted [CoverState] value. Callers gate fill: [CoverState.none] skips
+  /// Range/tag fill; [CoverState.present]/[CoverState.unknown] may fill on miss.
+  final int coverState;
 
   @override
   State<LibraryCoverArt> createState() => _LibraryCoverArtState();
@@ -130,6 +138,14 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
       sourceName: widget.sourceName,
     );
 
+    // Compute the deterministic thumb path for this track's identity.
+    // widget.thumbPath is kept as an override hint but the canonical path
+    // always comes from the covers service (never a persisted absolute path).
+    final thumbPath = covers.thumbPath(widget.sourceName, widget.remotePath)
+        ?? widget.thumbPath;
+
+    final allowFill = CoverState.fromInt(widget.coverState) != CoverState.none;
+
     if (!local) {
       if (widget.enqueueIfMissing) {
         unawaited(
@@ -140,64 +156,66 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
           ),
         );
       }
-      // §17.6 list cover bucket: Range-fetch cover into covers/ without audio.
-      final thumb = widget.thumbPath;
-      final needBrowse = thumb == null || thumb.isEmpty;
+      // §17.6 list cover bucket: Range-fetch only when state allows fill.
+      final needBrowse = allowFill &&
+          (thumbPath == null ||
+              thumbPath.isEmpty ||
+              !File(thumbPath).existsSync());
       if (needBrowse) {
         unawaited(_fetchBrowseCover());
       }
       if (!mounted) return;
       setState(() {
-        _displayPath = thumb;
+        _displayPath = thumbPath;
         _bytes = null;
         _resolved = true;
       });
       return;
     }
 
-    // Local audio: default to the resampled thumb. If it is missing (legacy row
-    // after the original-art cache cleanup), rebuild it from the audio tags so
-    // the cover survives audio-cache deletion without a separate full copy.
-    final thumb = widget.thumbPath;
-    if (thumb != null && thumb.isNotEmpty && File(thumb).existsSync()) {
+    // Local audio: display deterministic thumb when present.
+    if (thumbPath != null && thumbPath.isNotEmpty && File(thumbPath).existsSync()) {
       if (!mounted) return;
       setState(() {
-        _displayPath = thumb;
+        _displayPath = thumbPath;
         _bytes = null;
         _resolved = true;
       });
       return;
     }
+
+    if (!allowFill) {
+      if (!mounted) return;
+      setState(() {
+        _displayPath = null;
+        _bytes = null;
+        _resolved = true;
+      });
+      return;
+    }
+
+    final coverKey = widget.libraryRemotePath ?? widget.remotePath;
     final localPath = cache
         .fileForRemote(widget.remotePath, sourceName: widget.sourceName)
         .path;
-    final tags = await TagService().readFromFile(localPath);
-    final bytes = tags.coverBytes;
-    if (bytes != null && bytes.isNotEmpty) {
-      final saved = await covers.saveThumb(
+    final saved = await covers.ensureMusicCoverFile(
+      sourceName: widget.sourceName,
+      remotePath: coverKey,
+      fetchBytes: () async {
+        final tags = await TagService().readFromFile(localPath);
+        return tags.coverBytes;
+      },
+    );
+    if (saved != null) {
+      await library.setCoverState(
         sourceName: widget.sourceName,
-        remotePath: widget.libraryRemotePath ?? widget.remotePath,
-        bytes: bytes,
+        remotePath: coverKey,
+        state: 2,
       );
-      if (saved != null) {
-        await library.updateCoverPath(
-          sourceName: widget.sourceName,
-          remotePath: widget.libraryRemotePath ?? widget.remotePath,
-          coverPath: saved,
-        );
-      }
-      if (!mounted) return;
-      setState(() {
-        _displayPath = saved ?? thumb;
-        _bytes = saved == null ? bytes : null;
-        _resolved = true;
-      });
-      return;
     }
-
     if (!mounted) return;
     setState(() {
-      _displayPath = thumb;
+      _displayPath = saved ?? thumbPath;
       _bytes = null;
       _resolved = true;
     });
@@ -207,6 +225,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
   /// Persist a list-browse thumb under covers/ via Range tags (no audio cache).
   Future<void> _fetchBrowseCover() async {
     if (!mounted) return;
+    if (CoverState.fromInt(widget.coverState) == CoverState.none) return;
     final library = context.read<LibraryService>();
     final accounts = context.read<AccountsService>();
     final webDav = context.read<WebDavService>();
@@ -230,10 +249,10 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
         bytes: bytes,
       );
       if (path == null) return;
-      await library.updateCoverPath(
+      await library.setCoverState(
         sourceName: widget.sourceName,
         remotePath: coverKey,
-        coverPath: path,
+        state: 2,
       );
       if (!mounted) return;
       setState(() {
@@ -264,9 +283,14 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
 /// Within each tier (local audio → any saved thumb) the most recently
 /// tag-read row wins, so re-scraping one track actually updates the group art
 /// instead of keeping an older sibling's cover.
-LibraryTrack? pickCoverTrack(List<LibraryTrack> tracks, CacheService cache) {
+LibraryTrack? pickCoverTrack(
+  List<LibraryTrack> tracks,
+  CacheService cache, {
+  CoverService? covers,
+}) {
   LibraryTrack? newestLocal;
-  LibraryTrack? newestThumb;
+  LibraryTrack? newestThumbFile;
+  LibraryTrack? newestNonNone;
   for (final t in tracks) {
     final local = cache.hasLocalFile(t.remotePath, sourceName: t.sourceName);
     if (local) {
@@ -276,16 +300,22 @@ LibraryTrack? pickCoverTrack(List<LibraryTrack> tracks, CacheService cache) {
       }
       continue;
     }
-    final p = t.coverPath;
-    if (p != null && p.isNotEmpty) {
-      if (newestThumb == null ||
-          t.lastTagReadAt.isAfter(newestThumb.lastTagReadAt)) {
-        newestThumb = t;
+    if (t.coverStateEnum == CoverState.none) continue;
+    if (newestNonNone == null ||
+        t.lastTagReadAt.isAfter(newestNonNone.lastTagReadAt)) {
+      newestNonNone = t;
+    }
+    final p = covers?.thumbPath(t.sourceName, t.effectiveAudioRemotePath);
+    if (p != null && p.isNotEmpty && File(p).existsSync()) {
+      if (newestThumbFile == null ||
+          t.lastTagReadAt.isAfter(newestThumbFile.lastTagReadAt)) {
+        newestThumbFile = t;
       }
     }
   }
   if (newestLocal != null) return newestLocal;
-  if (newestThumb != null) return newestThumb;
+  if (newestThumbFile != null) return newestThumbFile;
+  if (newestNonNone != null) return newestNonNone;
   return tracks.isEmpty ? null : tracks.first;
 }
 

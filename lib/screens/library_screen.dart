@@ -1412,7 +1412,7 @@ class _TrackTile extends StatelessWidget {
           genre: row.genre,
           bitrate: row.bitrate,
           sampleRate: row.sampleRate,
-          coverPath: row.coverPath,
+          coverPath: null,
           cueRemotePath: row.cueRemotePath,
           cueTrackIndex: row.cueTrackIndex,
           audioRemotePath: row.audioRemotePath,

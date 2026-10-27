@@ -46,7 +46,6 @@ void main() {
       );
       final back = LibraryShardCodec.recordToTrack(
         LibraryShardCodec.trackToRecord(track, coverIndex: 0),
-        coverPath: '/local/covers/x.jpg',
       );
 
       expect(back.sourceName, '123pan');
@@ -60,7 +59,7 @@ void main() {
       expect(back.trackNumber, 3);
       expect(back.year, 2024);
       expect(back.genre, 'J-Pop');
-      expect(back.coverPath, '/local/covers/x.jpg');
+      expect(back.coverState, 0);
       // Identity is derived from the disk name + path, never stored.
       expect(back.musicId, track.musicId);
     });
@@ -86,7 +85,7 @@ void main() {
       expect(back.title, isNull);
       expect(back.album, isNull);
       expect(back.cueRemotePath, isNull);
-      expect(back.coverPath, isNull);
+      expect(back.coverState, 0);
     });
   });
 

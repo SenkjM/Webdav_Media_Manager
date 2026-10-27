@@ -999,7 +999,7 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
     );
     if (cancel.isCancelled) return MangaCoverSetOutcome.cancelled;
     if (!wrote) return MangaCoverSetOutcome.failed;
-    final ok = await context.read<MangaLibraryService>().setCoverRelpath(mangaId, rel);
+    final ok = await context.read<MangaLibraryService>().setCoverState(mangaId, 2);
     if (cancel.isCancelled) return MangaCoverSetOutcome.cancelled;
     return ok ? MangaCoverSetOutcome.done : MangaCoverSetOutcome.failed;
   }

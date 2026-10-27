@@ -98,12 +98,10 @@ class LibraryShardCodec {
     };
   }
 
-  /// Rebuild a row. [coverPath] is resolved by the caller (it writes the blob
-  /// into the local cover cache and passes the resulting path).
-  static LibraryTrack recordToTrack(
-    Map<int, Object?> record, {
-    String? coverPath,
-  }) {
+  /// Rebuild a row from a binary record. Cover availability is initially set to
+  /// [CoverState.unknown] (0); callers that write a cover blob afterwards set
+  /// `cover_state` via [LibraryTrack.fromMap] with the updated value.
+  static LibraryTrack recordToTrack(Map<int, Object?> record) {
     String? str(int tag) {
       final v = record[tag];
       return v is String && v.isNotEmpty ? v : null;
@@ -135,7 +133,7 @@ class LibraryShardCodec {
       genre: str(WmpTrack.genre),
       bitrate: num_(WmpTrack.bitrate),
       sampleRate: num_(WmpTrack.sampleRate),
-      coverPath: coverPath,
+      coverState: 0,
       cueId: str(WmpTrack.cueId),
       cueRemotePath: cueRemotePath,
       cueTrackIndex: cueTrackIndex,

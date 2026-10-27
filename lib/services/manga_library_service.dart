@@ -338,8 +338,6 @@ class MangaLibraryService extends ChangeNotifier {
       for (var i = 0; i < draft.pageRelPaths.length; i++)
         MangaPage(mangaId: id, pageIndex: i, relPath: draft.pageRelPaths[i]),
     ];
-    final cover =
-        draft.coverRelpath ?? (pages.isEmpty ? null : pages.first.relPath);
     final existing = await _ffiGetManga(id);
     final manga = Manga(
       id: id,
@@ -358,7 +356,6 @@ class MangaLibraryService extends ChangeNotifier {
           ? null
           : draft.chapterNumber?.trim(),
       pageCount: pages.length,
-      coverRelpath: cover,
       format: draft.format,
       remoteMissing: existing?.remoteMissing ?? false,
       pageTurn: existing?.pageTurn,
@@ -379,21 +376,15 @@ class MangaLibraryService extends ChangeNotifier {
   Future<void> replacePages(
     String mangaId, {
     required List<MangaPage> pages,
-    String? coverRelpath,
   }) async {
     final existing = await _ffiGetManga(mangaId);
     if (existing != null) {
-      final cover = coverRelpath ??
-          existing.coverRelpath ??
-          (pages.isEmpty ? null : pages.first.relPath);
       final bumpRev = existing.format == MangaFormat.images;
       final countChanged = existing.pageCount != pages.length;
-      final coverChanged = existing.coverRelpath != cover;
-      if (bumpRev || countChanged || coverChanged) {
+      if (bumpRev || countChanged) {
         // _ffiUpsertManga(keepRev: false) mints a fresh rev and clears tombstone.
         await _ffiUpsertManga(existing.copyWith(
           pageCount: pages.length,
-          coverRelpath: cover,
           updatedAt: DateTime.now(),
         ));
       }
@@ -445,16 +436,16 @@ class MangaLibraryService extends ChangeNotifier {
     await reload();
   }
 
-  /// Set the cover page rel-path for [mangaId]. An unchanged path still bumps
-  /// (the bytes may have been regenerated). Returns false when the book is
-  /// missing or [relPath] is blank.
-  Future<bool> setCoverRelpath(String mangaId, String relPath) async {
+  /// Set the cover state for [mangaId] to [CoverState.present] after a cover
+  /// file has been written. Returns false when the book is missing.
+  Future<bool> setCoverState(String mangaId, int state) async {
     final existing = await _ffiGetManga(mangaId);
     if (existing == null) return false;
-    final next = relPath.trim();
-    if (next.isEmpty) return false;
-    await _ffiUpsertManga(
-        existing.copyWith(coverRelpath: next, updatedAt: DateTime.now()));
+    if (existing.coverState == state) return true;
+    await _ffiUpsertManga(existing.copyWith(
+      coverState: state,
+      updatedAt: DateTime.now(),
+    ));
     await reload();
     return true;
   }
@@ -845,7 +836,6 @@ class MangaLibraryService extends ChangeNotifier {
     await _ffiUpsertManga(existing.copyWith(
       remotePath: folder,
       pageCount: pages.length,
-      coverRelpath: pages.isEmpty ? null : pages.first.relPath,
       updatedAt: DateTime.now(),
     ));
     _ffiSetPages(mangaId, pages);

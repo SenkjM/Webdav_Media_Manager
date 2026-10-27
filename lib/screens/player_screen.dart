@@ -408,7 +408,7 @@ class PlayerScreen extends StatelessWidget {
         sourceName: track?.sourceName,
         audioRemotePath: track?.effectiveAudioRemotePath,
         localPath: track?.localPath,
-        coverPath: track?.coverPath ?? lib?.coverPath,
+        coverPath: track?.coverPath,
         child: SafeArea(
           child: Column(
             children: [
@@ -454,7 +454,7 @@ class PlayerScreen extends StatelessWidget {
                                   sourceName: track.sourceName,
                                   remotePath: track.effectiveAudioRemotePath,
                                   localAudioPath: track.localPath,
-                                  coverPath: track.coverPath ?? lib?.coverPath,
+                                  coverPath: track.coverPath,
                                   fileName: track.fileName,
                                   size: artSize.clamp(180.0, 300.0),
                                   borderRadius: 8,

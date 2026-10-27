@@ -195,15 +195,8 @@ class AudioPlayerService extends ChangeNotifier {
     final openMode = mode ?? _playOpenMode;
     final audioRemote = track.effectiveAudioRemotePath;
 
-    // Prefer explicit localPath only when it is music_cache (or any file in
-    // stream mode — prefetch temp files are allowed for playback).
-    final existing = track.localPath;
-    if (existing != null && File(existing).existsSync()) {
-      if (openMode == PlayOpenMode.stream || _cache.isMusicCachePath(existing)) {
-        return PlayableMedia.file(existing);
-      }
-    }
-
+    // Always resolve via CacheService at use time — never trust a stored
+    // track.localPath as playback authority.
     final cached = await _cache.localPathIfCached(
       audioRemote,
       sourceName: track.sourceName,
@@ -211,6 +204,16 @@ class AudioPlayerService extends ChangeNotifier {
     if (cached != null) {
       track.localPath = cached;
       return PlayableMedia.file(cached);
+    }
+
+    // Stream mode may still use an explicit prefetch/temp path on the track
+    // after CacheService miss (ephemeral, not library SoT).
+    final existing = track.localPath;
+    if (existing != null &&
+        File(existing).existsSync() &&
+        openMode == PlayOpenMode.stream &&
+        !_cache.isMusicCachePath(existing)) {
+      return PlayableMedia.file(existing);
     }
 
     final task = _taskQueue.taskForRemote(track.sourceName, audioRemote);
@@ -522,7 +525,8 @@ class AudioPlayerService extends ChangeNotifier {
     if (row.year != null) t.year = row.year;
     if (row.bitrate != null) t.bitrate = row.bitrate;
     if (row.sampleRate != null) t.sampleRate = row.sampleRate;
-    if (_present(row.coverPath)) t.coverPath = row.coverPath;
+    final thumb = _library.covers.thumbPath(row.sourceName, row.effectiveAudioRemotePath);
+    if (thumb != null) t.coverPath = thumb;
   }
 
   static bool _present(String? value) =>

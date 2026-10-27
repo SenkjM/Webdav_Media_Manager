@@ -788,7 +788,7 @@ class RustLibraryService {
       'genre': track.genre,
       'bitrate': track.bitrate,
       'sample_rate': track.sampleRate,
-      'cover_path': track.coverPath,
+      'cover_state': track.coverState,
       'audio_remote_path': track.audioRemotePath,
       'clip_start_ms': track.clipStartMs,
       'clip_end_ms': track.clipEndMs,
@@ -825,7 +825,7 @@ class RustLibraryService {
   ///
   /// The Rust schema uses `account_id` for what Dart calls `source_name`.
   /// `remote_path` and `title` are shared.  Missing Dart-only fields (CUE
-  /// columns, cover_path, bitrate, …) are filled with null / defaults.
+  /// columns, cover_state, bitrate, …) are filled with 0 / defaults.
   static LibraryTrack? _rustJsonToTrack(Map<String, dynamic> map) {
     try {
       // `source_name` takes precedence over `account_id` in case a row was
@@ -860,7 +860,7 @@ class RustLibraryService {
         // Fields with no Rust equivalent — safe defaults:
         bitrate: null,
         sampleRate: null,
-        coverPath: null,
+        coverState: 0,
         cueId: null,
         cueRemotePath: null,
         cueTrackIndex: null,

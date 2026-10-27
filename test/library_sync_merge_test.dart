@@ -18,12 +18,12 @@ List<LibraryTrack> mergeTracksForTest({
     if (l == null) {
       map[r.remotePath] = r;
     } else if (r.lastTagReadAt.isAfter(l.lastTagReadAt)) {
-      final cover = (r.coverPath != null && r.coverPath!.isNotEmpty)
-          ? r.coverPath
-          : l.coverPath;
+      // Sync without covers must not demote a local present/none solely
+      // because the remote row carries unknown (0).
+      final state = r.coverState == 0 ? l.coverState : r.coverState;
       map[r.remotePath] = LibraryTrack.fromMap({
         ...r.toMap(),
-        'cover_path': cover,
+        'cover_state': state,
       });
     }
   }
@@ -34,7 +34,7 @@ LibraryTrack track({
   required String path,
   required DateTime tagAt,
   String? title,
-  String? cover,
+  int coverState = 0,
   String sourceName = 'acc-a',
 }) {
   return LibraryTrack(
@@ -42,7 +42,7 @@ LibraryTrack track({
     remotePath: path,
     fileName: path.split('/').last,
     title: title,
-    coverPath: cover,
+    coverState: coverState,
     lastDownloadedAt: tagAt,
     lastTagReadAt: tagAt,
   );
@@ -87,12 +87,12 @@ void main() {
       expect(merged.single.sourceName, 'acc-a');
     });
 
-    test('keeps local cover when remote cover empty', () {
+    test('keeps local cover_state when remote unknown', () {
       final local = [
         track(
           path: '/a.mp3',
           tagAt: DateTime.utc(2026, 1, 1),
-          cover: '/docs/covers/x.jpg',
+          coverState: 2,
         ),
       ];
       final remote = [
@@ -100,7 +100,7 @@ void main() {
           path: '/a.mp3',
           tagAt: DateTime.utc(2026, 3, 1),
           title: 'R',
-          cover: null,
+          coverState: 0,
         ),
       ];
       final merged = mergeTracksForTest(
@@ -109,7 +109,7 @@ void main() {
         sourceName: 'acc-a',
       );
       expect(merged.single.title, 'R');
-      expect(merged.single.coverPath, '/docs/covers/x.jpg');
+      expect(merged.single.coverState, 2);
     });
   });
 }

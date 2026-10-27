@@ -1,9 +1,11 @@
 import '../l10n/generated/app_localizations.dart';
 import '../utils/track_identity.dart';
+import 'cover_state.dart';
 import 'library_sentinels.dart';
 
 /// Persisted library record. Identity is [musicId] (stable offline hash).
-/// Survives audio cache deletion; [coverPath] is a small local thumb only.
+/// Survives audio cache deletion; the local thumb path is derived from
+/// identity, so only [coverState] is persisted (see [CoverState]).
 /// CUE slices live in `cue_slices` but are presented as [LibraryTrack] too.
 class LibraryTrack {
   LibraryTrack({
@@ -24,7 +26,7 @@ class LibraryTrack {
     this.genre,
     this.bitrate,
     this.sampleRate,
-    this.coverPath,
+    this.coverState = 0,
     this.cueId,
     this.cueRemotePath,
     this.cueTrackIndex,
@@ -68,7 +70,14 @@ class LibraryTrack {
   String? genre;
   int? bitrate;
   int? sampleRate;
-  String? coverPath;
+
+  /// Cover availability state: 0=unknown, 1=none, 2=present (see [CoverState]).
+  /// The local thumb path is derived from identity via [CoverService]; never
+  /// persisted as a path column.
+  int coverState;
+
+  /// Convenience accessor.
+  CoverState get coverStateEnum => CoverState.fromInt(coverState);
 
   /// Cue album id when this row is a CUE slice.
   String? cueId;
@@ -170,7 +179,7 @@ class LibraryTrack {
     'genre': genre,
     'bitrate': bitrate,
     'sample_rate': sampleRate,
-    'cover_path': coverPath,
+    'cover_state': coverState,
     'cue_id': cueId,
     'cue_remote_path': cueRemotePath,
     'cue_track_index': cueTrackIndex,
@@ -204,7 +213,7 @@ class LibraryTrack {
     'genre': genre,
     'bitrate': bitrate,
     'sample_rate': sampleRate,
-    'cover_path': coverPath,
+    'cover_state': coverState,
     'last_downloaded_at': lastDownloadedAt.toIso8601String(),
     'last_tag_read_at': lastTagReadAt.toIso8601String(),
     'remote_missing': remoteMissing ? 1 : 0,
@@ -239,7 +248,7 @@ class LibraryTrack {
     'genre': genre,
     'bitrate': bitrate,
     'sample_rate': sampleRate,
-    'cover_path': coverPath,
+    'cover_state': coverState,
     'audio_remote_path': audioRemotePath,
     'clip_start_ms': clipStartMs,
     'clip_end_ms': clipEndMs,
@@ -280,7 +289,11 @@ class LibraryTrack {
       genre: _asString(map['genre']),
       bitrate: map['bitrate'] as int?,
       sampleRate: map['sample_rate'] as int?,
-      coverPath: _asString(map['cover_path']),
+      // cover_state: primary column (schema v10+).
+      // Legacy migration: non-empty cover_path → present(2), empty → unknown(0).
+      coverState:
+          _asInt(map['cover_state']) ??
+          ((_asString(map['cover_path'])?.isNotEmpty ?? false) ? 2 : 0),
       cueId: _asString(map['cue_id']),
       cueRemotePath: cueRemotePath,
       cueTrackIndex: cueTrackIndex,

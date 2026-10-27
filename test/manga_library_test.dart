@@ -49,7 +49,8 @@ void main() {
     expect(manga.format, MangaFormat.images);
     expect(manga.pageCount, 3);
     // Page paths are relative to the source root: the list *is* the book.
-    expect(manga.coverRelpath, '/comics/OneShot/01.jpg');
+    // Cover path is deterministic from id; only cover_state is persisted.
+    expect(manga.coverState, 0); // unknown until a cover file is saved
     expect(svc.series.length, 1);
     expect(svc.series.first.title, 'Demo Series');
     expect(manga.series, 'Demo Series');
@@ -80,11 +81,11 @@ void main() {
     final kept = svc.mangaById(manga.id)!;
     expect(kept.pageCount, 4);
     expect(kept.series, 'Demo Series');
-    expect(kept.coverRelpath, '/comics/OneShot/01.jpg');
+    expect(kept.coverState, 0);
     expect(svc.mangas.length, 2);
   });
 
-  test('setCoverRelpath replaces the cover and keeps the book', () async {
+  test('setCoverState updates cover availability and keeps the book', () async {
     final svc = MangaLibraryService();
     await svc.init();
     final draft = MangaLibraryService.draftForImageDir(
@@ -94,12 +95,13 @@ void main() {
       imageNames: ['01.jpg', '02.jpg'],
     );
     final manga = await svc.upsertFromDraft(draft);
-    final ok = await svc.setCoverRelpath(manga.id, '/comics/OneShot/02.jpg');
+    final ok = await svc.setCoverState(manga.id, 2);
     expect(ok, isTrue);
-    expect(svc.mangaById(manga.id)!.coverRelpath, '/comics/OneShot/02.jpg');
+    expect(svc.mangaById(manga.id)!.coverState, 2);
     expect(svc.mangaById(manga.id)!.id, manga.id);
-    expect(await svc.setCoverRelpath('missing', '/x'), isFalse);
-    expect(await svc.setCoverRelpath(manga.id, '  '), isFalse);
+    expect(await svc.setCoverState('missing', 2), isFalse);
+    // Same state is a no-op success.
+    expect(await svc.setCoverState(manga.id, 2), isTrue);
   });
 
   test('home_tab_v025 shifts indices >= 3 by one', () async {

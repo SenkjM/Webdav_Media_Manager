@@ -202,7 +202,6 @@ class MangaReaderPrep {
               relPath: imageEntries[i].name.replaceAll('\\', '/'),
             ),
         ],
-        coverRelpath: imageEntries.first.name.replaceAll('\\', '/'),
       );
     }
 

@@ -92,7 +92,7 @@ TrackInfo libraryTrackToTrackInfo(
     genre: track.genre,
     bitrate: track.bitrate,
     sampleRate: track.sampleRate,
-    coverPath: track.coverPath,
+    coverPath: null,
     cueRemotePath: track.cueRemotePath,
     cueTrackIndex: track.cueTrackIndex,
     audioRemotePath: track.audioRemotePath,

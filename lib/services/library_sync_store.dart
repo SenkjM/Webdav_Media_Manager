@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../models/cover_state.dart';
 import '../models/library_track.dart';
 import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
@@ -489,22 +490,32 @@ class LibrarySyncStore {
     final out = <LibraryTrack>[];
     for (var i = 0; i < decoded.tracks.length; i++) {
       final track = decoded.tracks[i];
-      String? coverPath = decoded.tracks[i].coverPath;
       final blob = fetchCovers ? decoded.coverFor(i) : null;
       if (blob != null && blob.isNotEmpty) {
-        coverPath = await _storeCover(track, blob);
-      } else if (coverPath == null) {
-        // The manifest carries no cover for this row: reuse whatever this device
-        // already cached rather than clearing it.
-        final local = await _covers.coverFile(
-          track.sourceName,
-          track.remotePath,
+        // Sync delivered cover bytes: write to the deterministic thumb path
+        // and mark present. The path itself is never persisted.
+        await _storeCover(track, blob);
+        out.add(
+          track.coverState == 2
+              ? track
+              : LibraryTrack.fromMap({...track.toMap(), 'cover_state': 2}),
         );
-        if (local.existsSync()) coverPath = local.path;
+      } else {
+        // No blob in this shard: do not delete the local thumb and do not
+        // downgrade an existing state. Preserve the wire state, but if the
+        // thumb is already on disk upgrade unknown→present without a fetch.
+        var next = track;
+        if (track.coverStateEnum == CoverState.unknown) {
+          final local = await _covers.coverFile(
+            track.sourceName,
+            track.remotePath,
+          );
+          if (local.existsSync()) {
+            next = LibraryTrack.fromMap({...track.toMap(), 'cover_state': 2});
+          }
+        }
+        out.add(next);
       }
-      out.add(
-        LibraryTrack.fromMap({...track.toMap(), 'cover_path': coverPath}),
-      );
     }
     return out;
   }
@@ -815,11 +826,11 @@ class LibrarySyncStore {
     final out = <Uint8List?>[];
     for (final t in tracks) {
       Uint8List? blob;
-      final path = t.coverPath;
-      if (path != null && path.isNotEmpty) {
+      // Use the deterministic thumb path — never a stored absolute path.
+      final local = await _covers.coverFile(t.sourceName, t.remotePath);
+      if (local.existsSync()) {
         try {
-          final file = File(path);
-          if (file.existsSync()) blob = await file.readAsBytes();
+          blob = await local.readAsBytes();
         } catch (_) {
           blob = null;
         }
