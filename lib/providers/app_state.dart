@@ -224,8 +224,12 @@ class AppState extends ChangeNotifier {
       _initPhase = 'cache';
       await cache.init();
       _initPhase = 'dmr-prefs';
+      debugPrint('[AppState] dmr-prefs phase: about to get documents directory');
       final docs = await getApplicationDocumentsDirectory();
+      debugPrint('[AppState] dmr-prefs phase: got docs path: ${docs.path}');
+      debugPrint('[AppState] dmr-prefs phase: calling dmrPrefs.init');
       await dmrPrefs.init(docs.path);
+      debugPrint('[AppState] dmr-prefs phase: dmrPrefs.init completed');
       // Configure Core cover roots once paths are known, so backup/restore operations
       // see them. Call here (not just in BackupService create/restore) to cover
       // upload/download paths that go through Core directly.
