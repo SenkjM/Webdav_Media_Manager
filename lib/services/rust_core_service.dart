@@ -2660,11 +2660,11 @@ extension _Let<T> on T {
 
 // ── Feature flags ───────────────────────────────────────────────────────────
 
-/// When true, [MangaLibraryService] routes manga index CRUD and reading
-/// progress through the Rust FFI (wdmm_manga_* symbols, Wave D) instead of
-/// sqflite. [LibraryDatabase] remains the home of sync tombstones
-/// (`deleted_mangas`) which [SyncService] still reads directly.
-/// Manga cloud shard engine is in Core (`MangaSyncEngine`, wired via
-/// `run_sync_all` / `run_sync_full` for incremental and full rebuild).
+/// When true, [MangaLibraryService] routes manga index CRUD, reading progress,
+/// and tombstones through the Rust FFI (wdmm_manga_* / wdmm_deleted_manga_clear).
+/// Class B unload (2026-10-27): SyncService no longer reads sqflite
+/// `deleted_mangas` — manga sync is Core-only (`MangaSyncEngine` via
+/// `wdmm_sync_trigger` / `wdmm_sync_full`).
+/// Accounts remain sqflite-primary; [LibraryDatabase] may still open for them.
 // ignore: constant_identifier_names
 const bool kRustMangaEnabled = true;
