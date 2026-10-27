@@ -425,7 +425,9 @@ class SyncService extends ChangeNotifier {
   ///
   /// Runs credentials + music library + manga + playlists via
   /// [RustCoreService.syncFull]. Refreshes Dart caches on completion.
-  /// The [tracksPerShard] and [withCovers] parameters are accepted for
+  /// [tracksPerShard] is accepted for API compatibility (Core picks shard size).
+  /// [withCovers] is passed to Core: when true, rebuilt `lib-*` base shards
+  /// embed `SEC_COVERS` (3); incremental segs never carry covers.
   Future<SyncOutcome> syncLibraryFull({
     int tracksPerShard = LibrarySyncStore.defaultTracksPerShard,
     bool withCovers = false,
