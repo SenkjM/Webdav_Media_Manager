@@ -31,55 +31,35 @@ class LibraryService extends ChangeNotifier {
   Future<({int lastSeq, int baseUpTo, Map<String, int> parts})> loadSyncCursor(
     String remoteKey,
   ) async {
-    // Try Rust first if reads enabled
-    if (kRustLibraryReadEnabled) {
-      final rustResult = RustLibraryService.syncStateGet(remoteKey);
-      if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
-        try {
-          final decoded = jsonDecode(rustResult);
-          if (decoded is Map) {
-            final partsStr = decoded['parts'] as String? ?? '{}';
-            final parts = <String, int>{};
-            try {
-              final partsDecoded = jsonDecode(partsStr);
-              if (partsDecoded is Map) {
-                partsDecoded.forEach((k, v) {
-                  if (k is String) parts[k] = (v as num?)?.toInt() ?? 0;
-                });
-              }
-            } catch (_) {
-              // A corrupt cursor only costs one full re-read.
+    final rustResult = RustLibraryService.syncStateGet(remoteKey);
+    if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
+      try {
+        final decoded = jsonDecode(rustResult);
+        if (decoded is Map) {
+          final partsStr = decoded['parts'] as String? ?? '{}';
+          final parts = <String, int>{};
+          try {
+            final partsDecoded = jsonDecode(partsStr);
+            if (partsDecoded is Map) {
+              partsDecoded.forEach((k, v) {
+                if (k is String) parts[k] = (v as num?)?.toInt() ?? 0;
+              });
             }
-            return (
-              lastSeq: (decoded['last_seq'] as num?)?.toInt() ?? 0,
-              baseUpTo: (decoded['base_up_to'] as num?)?.toInt() ?? 0,
-              parts: parts,
-            );
+          } catch (_) {
+            // A corrupt cursor only costs one full re-read.
           }
-        } catch (_) {
-          // Fallback to sqflite below
+          return (
+            lastSeq: (decoded['last_seq'] as num?)?.toInt() ?? 0,
+            baseUpTo: (decoded['base_up_to'] as num?)?.toInt() ?? 0,
+            parts: parts,
+          );
         }
+      } catch (_) {
+        // Parse failure — start fresh
       }
     }
-    // Fallback to sqflite
-    final row = await _db.loadSyncState(remoteKey);
-    if (row == null) return (lastSeq: 0, baseUpTo: 0, parts: <String, int>{});
-    final parts = <String, int>{};
-    try {
-      final decoded = jsonDecode(row['parts'] as String? ?? '{}');
-      if (decoded is Map) {
-        decoded.forEach((k, v) {
-          if (k is String) parts[k] = (v as num?)?.toInt() ?? 0;
-        });
-      }
-    } catch (_) {
-      // A corrupt cursor only costs one full re-read.
-    }
-    return (
-      lastSeq: (row['last_seq'] as num?)?.toInt() ?? 0,
-      baseUpTo: (row['base_up_to'] as num?)?.toInt() ?? 0,
-      parts: parts,
-    );
+    // No cursor or error — start from zero
+    return (lastSeq: 0, baseUpTo: 0, parts: <String, int>{});
   }
 
   Future<void> saveSyncCursor({
@@ -88,35 +68,24 @@ class LibraryService extends ChangeNotifier {
     required int baseUpTo,
     required Map<String, int> parts,
   }) async {
-    if (kRustLibraryWriteEnabled) {
-      final json = jsonEncode({
-        'remote_key': remoteKey,
-        'last_seq': lastSeq,
-        'base_up_to': baseUpTo,
-        'parts': jsonEncode(parts),
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      });
-      final result = RustLibraryService.syncStateSave(json);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust sync_state save failed: $result');
-      }
+    final json = jsonEncode({
+      'remote_key': remoteKey,
+      'last_seq': lastSeq,
+      'base_up_to': baseUpTo,
+      'parts': jsonEncode(parts),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
+    final result = RustLibraryService.syncStateSave(json);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust sync_state save failed: $result');
     }
-    return _db.saveSyncState(
-      remoteKey: remoteKey,
-      lastSeq: lastSeq,
-      baseUpTo: baseUpTo,
-      parts: jsonEncode(parts),
-    );
   }
 
   Future<void> clearSyncCursor() async {
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.syncStateClear(LibraryDatabase.musicCursorPrefix);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust sync_state clear failed: $result');
-      }
+    final result = RustLibraryService.syncStateClear(LibraryDatabase.musicCursorPrefix);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust sync_state clear failed: $result');
     }
-    return _db.clearSyncState(prefix: LibraryDatabase.musicCursorPrefix);
   }
 
   /// Adopt an externally observed rev (a row pulled from the cloud) so the next
@@ -125,61 +94,49 @@ class LibraryService extends ChangeNotifier {
 
   /// Deletions made here that the cloud has not been told about yet.
   Future<List<Map<String, dynamic>>> pendingTombstones() async {
-    // Try Rust first if reads enabled
-    if (kRustLibraryReadEnabled) {
-      final rustResult = RustLibraryService.deletedTracksUnpushed();
-      if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
-        try {
-          final decoded = decodeDeletedTracksForTest(rustResult);
-          if (decoded != null) return decoded;
-        } catch (_) {
-          // Fallback to sqflite below
-        }
+    final rustResult = RustLibraryService.deletedTracksUnpushed();
+    if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
+      try {
+        final decoded = decodeDeletedTracksForTest(rustResult);
+        if (decoded != null) return decoded;
+      } catch (_) {
+        // Parse failure — return empty
       }
     }
-    // Fallback to sqflite
-    return _db.unpushedTombstones();
+    return [];
   }
 
   /// Mark the given tombstone revs as published.
   Future<void> markTombstonesPushed(Set<int> revs) async {
-    if (kRustLibraryWriteEnabled && revs.isNotEmpty) {
-      final revsJson = jsonEncode(revs.toList());
-      final result = RustLibraryService.deletedTracksMarkPushed(revsJson);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust deleted_tracks mark_pushed failed: $result');
-      }
+    if (revs.isEmpty) return;
+    final revsJson = jsonEncode(revs.toList());
+    final result = RustLibraryService.deletedTracksMarkPushed(revsJson);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust deleted_tracks mark_pushed failed: $result');
     }
-    return _db.markTombstonesPushed(revs);
   }
 
   /// Drop tombstones that a rebuild has materialised (`rev <= upTo`).
   Future<int> purgeTombstonesUpTo(int upTo) async {
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.deletedTracksPurgeUpTo(upTo);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust deleted_tracks purge failed: $result');
-      }
+    final result = RustLibraryService.deletedTracksPurgeUpTo(upTo);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust deleted_tracks purge failed: $result');
     }
-    return _db.purgeTombstonesUpTo(upTo);
+    return 0; // Core tracks the count internally
   }
 
   /// Every tombstone, pushed or not (重建后的残留检查要看全量).
   Future<List<Map<String, dynamic>>> allTombstones() async {
-    // Try Rust first if reads enabled
-    if (kRustLibraryReadEnabled) {
-      final rustResult = RustLibraryService.deletedTracksList();
-      if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
-        try {
-          final decoded = decodeDeletedTracksForTest(rustResult);
-          if (decoded != null) return decoded;
-        } catch (_) {
-          // Fallback to sqflite below
-        }
+    final rustResult = RustLibraryService.deletedTracksList();
+    if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
+      try {
+        final decoded = decodeDeletedTracksForTest(rustResult);
+        if (decoded != null) return decoded;
+      } catch (_) {
+        // Parse failure — return empty
       }
     }
-    // Fallback to sqflite
-    return _db.allTombstones();
+    return [];
   }
 
   /// 清掉「行已经不在」的墓碑，返回清掉几条。
@@ -195,13 +152,10 @@ class LibraryService extends ChangeNotifier {
       final path = row['remote_path'] as String? ?? '';
       if (source.isEmpty || path.isEmpty) continue;
       if (find(source, path) != null) continue;
-      if (kRustLibraryWriteEnabled) {
-        final result = RustLibraryService.deletedTrackClear(source, path);
-        if (result != null && result.startsWith('error:')) {
-          throw StateError('Rust deleted_track clear failed: $result');
-        }
+      final result = RustLibraryService.deletedTrackClear(source, path);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust deleted_track clear failed: $result');
       }
-      await _db.clearTombstone(source, path);
       cleared++;
     }
     return cleared;
@@ -216,13 +170,10 @@ class LibraryService extends ChangeNotifier {
       if (!revs.contains(rev)) continue;
       final source = row['source_name'] as String? ?? '';
       final path = row['remote_path'] as String? ?? '';
-      if (kRustLibraryWriteEnabled) {
-        final result = RustLibraryService.deletedTrackClear(source, path);
-        if (result != null && result.startsWith('error:')) {
-          throw StateError('Rust deleted_track clear failed: $result');
-        }
+      final result = RustLibraryService.deletedTrackClear(source, path);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust deleted_track clear failed: $result');
       }
-      await _db.clearTombstone(source, path);
     }
   }
 
@@ -234,25 +185,17 @@ class LibraryService extends ChangeNotifier {
   /// the metadata and the song stays in the library.
   Future<void> recordTombstone(String sourceName, String remotePath) async {
     final rev = _nextRev();
-    if (kRustLibraryWriteEnabled) {
-      // Dual-write: Rust first
-      final json = jsonEncode({
-        'source_name': sourceName,
-        'remote_path': remotePath,
-        'rev': rev,
-        'deleted_at': DateTime.now().toUtc().toIso8601String(),
-        'pushed': 0,
-      });
-      final result = RustLibraryService.deletedTrackUpsert(json);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust deleted_track upsert failed: $result');
-      }
+    final json = jsonEncode({
+      'source_name': sourceName,
+      'remote_path': remotePath,
+      'rev': rev,
+      'deleted_at': DateTime.now().toUtc().toIso8601String(),
+      'pushed': 0,
+    });
+    final result = RustLibraryService.deletedTrackUpsert(json);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust deleted_track upsert failed: $result');
     }
-    await _db.upsertTombstone(
-      sourceName: sourceName,
-      remotePath: remotePath,
-      rev: rev,
-    );
   }
 
   LibraryService({LibraryDatabase? db, TagService? tags, CoverService? covers})
@@ -882,12 +825,6 @@ class LibraryService extends ChangeNotifier {
       }
     }
 
-    await _db.replaceCueAlbumTracks(
-      sourceName: sourceName,
-      cueRemotePath: cueRemotePath,
-      audioRemotePaths: audioRemotes,
-      tracks: created,
-    );
     _tracks.removeWhere(
       (t) =>
           t.sourceName == sourceName &&
@@ -929,7 +866,6 @@ class LibraryService extends ChangeNotifier {
         }
       }
 
-      await _db.upsertCueSlice(row);
       changed = true;
     }
     if (changed) notifyListeners();
@@ -1094,12 +1030,6 @@ class LibraryService extends ChangeNotifier {
       }
     }
 
-    await _db.replaceCueAlbumTracks(
-      sourceName: sourceName,
-      cueRemotePath: cueRemotePath,
-      audioRemotePaths: audioRemotes,
-      tracks: created,
-    );
     final removePaths = <String>{cueRemotePath, ...audioRemotes};
     _tracks.removeWhere(
       (t) =>
@@ -1271,14 +1201,10 @@ class LibraryService extends ChangeNotifier {
   /// (and full covers), and in-memory index. Does not touch WebDAV accounts.
   /// Caller should also delete local audio files and clean playlists.
   Future<void> destroyAll() async {
-    // Dual-clear: Rust + sqflite until SoT cutover
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.clearLibraryAll();
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library clear-all failed: $result');
-      }
+    final result = RustLibraryService.clearLibraryAll();
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library clear-all failed: $result');
     }
-    await _db.clearAllLibraryData();
     await _covers.deleteAllCovers();
     _tracks.clear();
     notifyListeners();
@@ -1293,14 +1219,10 @@ class LibraryService extends ChangeNotifier {
   /// state is derived from disk (v9), rows that have a file on disk come back as
   /// local instead of triggering a second full download.
   Future<void> prepareCloudOverwrite() async {
-    // Dual-clear index: Rust + sqflite until SoT cutover
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.clearLibraryIndex();
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library clear-index failed: $result');
-      }
+    final result = RustLibraryService.clearLibraryIndex();
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library clear-index failed: $result');
     }
-    await _db.clearLibraryIndex();
     _tracks.clear();
     notifyListeners();
   }
@@ -1324,62 +1246,38 @@ class LibraryService extends ChangeNotifier {
       // 逐条：只删这一片。整组一次性清空的话，兄弟片就再也拿不到墓碑，
       // 它们会在下一次从云端拉取时被旧 base 带回来。
       final cuePath = track.cueRemotePath!;
-      // Dual-delete: Rust + sqflite until SoT cutover
-      if (kRustLibraryWriteEnabled) {
-        final result = RustLibraryService.deleteCueSlice(track.musicId);
-        if (result != null && result.startsWith('error:')) {
-          throw StateError('Rust CUE slice delete failed: $result');
-        }
+      final result = RustLibraryService.deleteCueSlice(track.musicId);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust CUE slice delete failed: $result');
       }
-      await _db.deleteCueSlice(track.musicId);
       _tracks.removeWhere((t) => t.musicId == track.musicId);
       // 整组最后一片走完，专辑行也就没有存在的理由了。
-      int remaining;
-      if (kRustLibraryReadEnabled) {
-        final slicesJson = RustLibraryService.listCueRemainingSlices(
-          track.sourceName,
-          cuePath,
-        );
-        if (slicesJson != null && !slicesJson.startsWith('error:')) {
-          try {
-            // Core returns a decimal count string (e.g. "5"), not a JSON array
-            remaining = int.tryParse(slicesJson.trim()) ?? 0;
-          } catch (_) {
-            remaining = 0;
-          }
-        } else {
-          remaining = await _db.remainingSlicesForCue(
-            track.sourceName,
-            cuePath,
-          );
+      final slicesJson = RustLibraryService.listCueRemainingSlices(
+        track.sourceName,
+        cuePath,
+      );
+      int remaining = 0;
+      if (slicesJson != null && !slicesJson.startsWith('error:')) {
+        try {
+          // Core returns a decimal count string (e.g. "5"), not a JSON array
+          remaining = int.tryParse(slicesJson.trim()) ?? 0;
+        } catch (_) {
+          remaining = 0;
         }
-      } else {
-        remaining = await _db.remainingSlicesForCue(
-          track.sourceName,
-          cuePath,
-        );
       }
       if (remaining == 0) {
-        if (kRustLibraryWriteEnabled) {
-          final result = RustLibraryService.deleteCueAlbum(
-            track.sourceName,
-            cuePath,
-          );
-          if (result != null && result.startsWith('error:')) {
-            throw StateError('Rust CUE album delete failed: $result');
-          }
+        final albumResult = RustLibraryService.deleteCueAlbum(
+          track.sourceName,
+          cuePath,
+        );
+        if (albumResult != null && albumResult.startsWith('error:')) {
+          throw StateError('Rust CUE album delete failed: $albumResult');
         }
-        await _db.deleteCueAlbum(track.sourceName, cuePath);
       }
     } else {
-      if (kRustLibraryWriteEnabled) {
-        final result = RustLibraryService.deleteTrack(track.musicId);
-        if (result != null && result.startsWith('error:')) {
-          throw StateError('Rust library delete failed; sqflite fallback removed: $result');
-        }
-      } else {
-        RustLibraryService.deleteTrack(track.musicId);
-        await _db.deleteTrack(track.sourceName, track.remotePath);
+      final result = RustLibraryService.deleteTrack(track.musicId);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library delete failed; sqflite fallback removed: $result');
       }
       _tracks.removeWhere(
         (t) =>

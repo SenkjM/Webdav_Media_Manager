@@ -55,14 +55,15 @@ class MangaIngestDraft {
 ///
 /// Wave D (fdb05df): manga index CRUD and reading progress route through the
 /// Rust FFI ([RustCoreService.mangaList] / [RustCoreService.mangaUpsert] etc.)
-/// instead of sqflite. [LibraryDatabase] is retained only for sync tombstone
-/// management (`deleted_mangas`) — [SyncService] reads tombstones directly
-/// from the sqflite handle it already holds.
+/// instead of sqflite. Class B unload (2026-10-27): all tombstone management
+/// (`deleted_mangas`) now goes through Core FFI via [RustCoreService.deletedMangaClear].
+/// [LibraryDatabase] field retained for shared infrastructure (accounts remain
+/// sqflite-primary).
 class MangaLibraryService extends ChangeNotifier {
   MangaLibraryService({required LibraryDatabase db}) : _db = db;
 
-  /// sqflite DB kept for sync tombstone operations only.
-  /// All manga index and progress I/O goes through [RustCoreService].
+  /// sqflite DB kept for shared infrastructure (accounts remain sqflite-primary).
+  /// All manga index, progress, and tombstone I/O goes through [RustCoreService].
   final LibraryDatabase _db;
 
   RevClock? _revClock;
@@ -184,7 +185,7 @@ class MangaLibraryService extends ChangeNotifier {
       _decodeManga(RustCoreService.mangaGet(id));
 
   /// Upsert [manga] via FFI. When [keepRev] is false (default), assigns the
-  /// next rev from the shared clock and clears any sqflite tombstone for this
+  /// next rev from the shared clock and clears any Core tombstone for this
   /// row's sync key — matching the semantics of [LibraryDatabase.upsertManga].
   Future<Manga> _ffiUpsertManga(Manga manga, {bool keepRev = false}) async {
     final stored = keepRev ? manga : manga.copyWith(rev: _nextRev());
@@ -195,12 +196,16 @@ class MangaLibraryService extends ChangeNotifier {
     if (!keepRev) {
       // A local write resurrects a deleted row — clear the tombstone so sync
       // does not push a deletion that was superseded by this write.
-      await _db.clearMangaTombstone(mangaSyncKeyForManga(
+      final syncKey = mangaSyncKeyForManga(
         id: stored.id,
         format: stored.format,
         sourceName: stored.sourceName,
         remotePath: stored.remotePath,
-      ));
+      );
+      final clearResult = RustCoreService.deletedMangaClear(syncKey);
+      if (clearResult != null && clearResult.startsWith('error:')) {
+        debugPrint('[MangaLibrary] deletedMangaClear FFI: $clearResult');
+      }
     }
     return stored;
   }
@@ -566,24 +571,12 @@ class MangaLibraryService extends ChangeNotifier {
     return n;
   }
 
-  /// Delete one manga. Leaves a sqflite tombstone so the deletion reaches the
-  /// cloud; Rust writes its own tombstone via FFI, but [SyncService] reads
-  /// tombstones from the sqflite `deleted_mangas` table.
+  /// Delete one manga. Core writes the tombstone via FFI; tombstone now managed
+  /// entirely in Core (Class B unload complete).
   Future<void> deleteManga(String id) async {
-    final existing = await _ffiGetManga(id);
     final r = RustCoreService.mangaDelete(id);
     if (r != null && r.startsWith('error:')) {
       debugPrint('[MangaLibrary] mangaDelete FFI: $r');
-    }
-    // Write sqflite tombstone unless Rust reported the row was already gone.
-    if (existing != null && r != 'not_found') {
-      await _db.upsertMangaTombstone(
-        id: existing.id,
-        format: existing.format,
-        sourceName: existing.sourceName,
-        remotePath: existing.remotePath,
-        rev: _nextRev(),
-      );
     }
     await reload();
   }

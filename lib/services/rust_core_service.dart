@@ -2255,6 +2255,7 @@ class RustCoreService {
   static _OneStrToStrDart?    _mangaGet;
   static _OneStrToStrDart?    _mangaUpsert;
   static _OneStrToStrDart?    _mangaDelete;
+  static _OneStrToStrDart?    _deletedMangaClear;
   static _OneStrToStrDart?    _mangaListPages;
   static _TwoStrToOneStrDart? _mangaSetPages;
   static _OneStrToStrDart?    _mangaGetProgress;
@@ -2280,6 +2281,10 @@ class RustCoreService {
           .asFunction();
       _mangaDelete = lib
           .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_manga_delete')
+          .asFunction();
+      _deletedMangaClear = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_deleted_manga_clear')
           .asFunction();
       _mangaListPages = lib
           .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
@@ -2358,6 +2363,18 @@ class RustCoreService {
     final ptr = id.toNativeUtf8();
     try {
       return _readAndFreeString(_mangaDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Clear a single `deleted_mangas` tombstone by [syncKey].
+  /// Returns `"ok"` or `"error:…"`. Null if FFI unavailable.
+  static String? deletedMangaClear(String syncKey) {
+    if (!_ensureMangaSymbols() || _deletedMangaClear == null) return null;
+    final ptr = syncKey.toNativeUtf8();
+    try {
+      return _readAndFreeString(_deletedMangaClear!(ptr));
     } finally {
       calloc.free(ptr);
     }
