@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -37,7 +38,6 @@ import '../services/cloud_drivers/webdav_source.dart';
 import '../services/dlna_cast_service.dart';
 import '../services/rust_core_service.dart';
 import '../services/rust_dmr_prefs_service.dart';
-import '../services/rust_library_probe.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
@@ -857,13 +857,37 @@ class AppState extends ChangeNotifier {
         'aborting startup to protect data',
       );
     }
-    final logLine = RustLibraryProbe.formatImportSummary(result);
+    final logLine = _formatImportSummary(result);
     if (logLine != null) {
       debugPrint(logLine);
     } else {
       debugPrint('[AppState] sqflite import result: $result');
     }
     return path;
+  }
+
+  /// Format a one-line debug log for the sqflite→Core import JSON summary.
+  /// Returns null when [result] is not a decodable JSON object.
+  static String? _formatImportSummary(String? result) {
+    if (result == null || result.startsWith('error:')) return null;
+    try {
+      final parsed = jsonDecode(result);
+      if (parsed is! Map) return null;
+      final parts = <String>[];
+      for (final key in const [
+        'already_done',
+        'tracks',
+        'playlists',
+        'entries',
+        'deleted_tracks',
+        'sync_state',
+      ]) {
+        if (parsed.containsKey(key)) parts.add('$key: ${parsed[key]}');
+      }
+      return '[AppState] sqflite import — ${parts.join(', ')}';
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Best-effort delete of the legacy sqflite files once all migrates have

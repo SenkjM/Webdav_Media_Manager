@@ -769,11 +769,7 @@ class RustCoreService {
     return _readAndFreeString(_tokenRotate!());
   }
 
-  // ── Round 6 — Library FFI bindings ────────────────────────────────────────
-  //
-  // These bindings talk to the Rust library DB (rusqlite) via the wdmm-ffi
-  // exports landed in Round 5.  The Dart sqflite DB is NOT deleted yet —
-  // this is the coexistence / dual-read probe phase.
+  // ── Library FFI bindings ──────────────────────────────────────────────────
 
   static _OneStrToStrDart? _libraryInit;
   static _OneStrToStrDart? _trackUpsert;
@@ -790,7 +786,6 @@ class RustCoreService {
   static _OneStrToStrDart? _cueSliceUpsert;
   static _OneStrToStrDart? _cueAlbumUpsert;
   static _OneStrToStrDart? _libraryImport;
-  static _OneStrToStrDart? _libraryCompare;
 
   // ── Class B reads — getTrack by source+path + CUE album/slices reads ──────
   static _TwoStrToOneStrDart? _trackGetBySourcePath;
@@ -865,9 +860,6 @@ class RustCoreService {
     _libraryImport = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_import_from_sqflite')
         .asFunction();
-    _libraryCompare = lib
-        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_compare_with_sqflite')
-        .asFunction();
 
     // Class B reads — track get by source+path + CUE album/slices
     _trackGetBySourcePath = lib
@@ -939,7 +931,7 @@ class RustCoreService {
         .asFunction();
   }
 
-  // ── Round 6 — Library public API ──────────────────────────────────────────
+  // ── Library public API ────────────────────────────────────────────────────
 
   /// Initialise the Rust library DB at [dbPath].
   ///
@@ -967,9 +959,6 @@ class RustCoreService {
   ///
   /// [json] must be a JSON object matching the LibraryTrack schema.
   /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
-  ///
-  /// **Dart sqflite DB is still the source of truth** — do not remove Dart
-  /// calls yet.  This is a parallel write for the dual-read probe phase.
   static String? trackUpsert(String json) {
     if (!_ensureSymbols()) return null;
     if (_trackUpsert == null) {
@@ -1233,26 +1222,6 @@ class RustCoreService {
     final ptr = oldDbPath.toNativeUtf8();
     try {
       return _readAndFreeString(_libraryImport!(ptr));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  /// Compare the Rust library DB against an old sqflite DB at [oldDbPath].
-  /// Neither DB is mutated.
-  ///
-  /// Returns a JSON CompareReport
-  /// `{"tracks":{...},"deleted_tracks":{...},"sync_state":{...},"ok":true}`
-  /// or 'error:...' on failure.  Returns null if library unavailable.
-  static String? libraryCompareWithSqflite(String oldDbPath) {
-    if (!_ensureSymbols()) return null;
-    if (_libraryCompare == null) {
-      _loadLibrarySymbolsSafe();
-      if (_libraryCompare == null) return null;
-    }
-    final ptr = oldDbPath.toNativeUtf8();
-    try {
-      return _readAndFreeString(_libraryCompare!(ptr));
     } finally {
       calloc.free(ptr);
     }
@@ -1545,7 +1514,7 @@ class RustCoreService {
 
   static bool _librarySymbolsLoaded = false;
 
-  /// Load Round 6 library symbols lazily.  No-op if already loaded or if the
+  /// Load library symbols lazily.  No-op if already loaded or if the
   /// native library is unavailable.  Swallows errors so callers can check for
   /// null function pointers instead of catching.
   static void _loadLibrarySymbolsSafe() {
