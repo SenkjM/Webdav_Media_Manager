@@ -955,12 +955,12 @@ class BackupService extends ChangeNotifier {
         throw StateError(
             'backup restore: clearLibraryAll failed: $clearResult');
       }
-      for (final t in tracks) {
-        RustLibraryService.upsertTrack(t);
-      }
-      // Upsert CUE albums from the archive's cueAlbums section.
+      // CUE albums before slices: cue_slices FK references cue_albums.
       for (final raw in (lib['cueAlbums'] as List<dynamic>? ?? const [])) {
         RustLibraryService.upsertCueAlbum(jsonEncode(raw));
+      }
+      for (final t in tracks) {
+        RustLibraryService.upsertTrack(t);
       }
       // Cached state is derived from disk (v9): nothing to clear, kept for the
       // call-site contract.
