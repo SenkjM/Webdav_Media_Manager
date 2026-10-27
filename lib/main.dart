@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
@@ -59,7 +60,6 @@ Future<void> main() async {
     audioHandler = MusicAudioHandler();
   }
   final app = AppState(audioHandler: audioHandler);
-  await app.init();
   // Re-resolve the locale from persisted settings on every call so an
   // in-app language switch applies to services immediately.
   L10nHost.configure(() {
@@ -72,10 +72,25 @@ Future<void> main() async {
       return lookupAppLocalizations(const Locale('zh'));
     }
   });
-  if (!kIsWeb && Platform.isAndroid) {
-    await app.notificationPermission.request();
-  }
+  // Run init in the background so runApp() is reached immediately.
+  // A loading screen covers the app until init completes; the native splash
+  // transitions to Flutter within the ~50 ms of initMusicAudioService() above
+  // instead of blocking for the entire AppState.init() duration.
+  unawaited(app.init());
   runApp(WebDavMusicApp(appState: app));
+}
+
+/// Shown on the first frame while [AppState.init] runs in the background.
+/// Replaced by [HomeShell] (or [RecoveryScreen]) once [AppState.ready] flips.
+class _AppLoadingScreen extends StatelessWidget {
+  const _AppLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
 }
 
 class WebDavMusicApp extends StatelessWidget {
@@ -139,12 +154,16 @@ class WebDavMusicApp extends StatelessWidget {
           themeMode: settings.themeMode,
           theme: AppTheme.lightFrom(settings.themeSeed),
           darkTheme: AppTheme.darkFrom(settings.themeSeed),
-          home: appState.initError != null
-              ? RecoveryScreen(
-                  error: appState.initError!,
-                  beforeClear: appState.closeDatabases,
-                )
-              : const HomeShell(),
+          home: Consumer<AppState>(
+            builder: (context, state, _) => state.initError != null
+                ? RecoveryScreen(
+                    error: state.initError!,
+                    beforeClear: state.closeDatabases,
+                  )
+                : !state.ready
+                    ? const _AppLoadingScreen()
+                    : const HomeShell(),
+          ),
         ),
       ),
     );

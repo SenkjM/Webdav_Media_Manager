@@ -293,6 +293,11 @@ class AppState extends ChangeNotifier {
           settings.downloadNotificationsEnabled;
       unawaited(taskQueue.initNotifications());
       await notificationPermission.refresh();
+      // Request notification permission once the app is already on screen
+      // (init runs after runApp so the activity has a window).
+      if (!kIsWeb && Platform.isAndroid) {
+        unawaited(notificationPermission.request());
+      }
       unawaited(runCacheCleanup());
       // Startup scan: credentials + playlists both ways (best-effort, never
       // blocks the first frame).
