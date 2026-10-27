@@ -70,6 +70,12 @@ typedef _FiveStrToOneStrNative = ffi.Pointer<Utf8> Function(
 typedef _FiveStrToOneStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
+// wdmm_sync_full(url, user, pass, dir, with_covers: c_int) → FfiString
+typedef _FourStrOneIntToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Int32);
+typedef _FourStrOneIntToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int);
+
 // Wave D — wdmm_manga_set_progress(manga_id, page_index: i64)
 typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Int64);
@@ -199,7 +205,7 @@ class RustCoreService {
   static _CryptoEncryptDart? _cryptoEncrypt;
   static _TwoStrToOneStrDart? _cryptoDecrypt;
   static _FourStrToOneStrDart? _syncTrigger;
-  static _FourStrToOneStrDart? _syncFull;
+  static _FourStrOneIntToStrDart? _syncFull;
   static _Uint32ToStrDart? _dlnaDiscover;
   static _TwoStrToOneStrDart? _dlnaCast;
   static _VersionDart? _tokenGet; // no-arg → Utf8, same shape as version
@@ -271,7 +277,7 @@ class RustCoreService {
         .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_sync_trigger')
         .asFunction();
     _syncFull = lib
-        .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_sync_full')
+        .lookup<ffi.NativeFunction<_FourStrOneIntToStrNative>>('wdmm_sync_full')
         .asFunction();
     _dlnaDiscover = lib
         .lookup<ffi.NativeFunction<_Uint32ToStrNative>>('wdmm_dlna_discover_json')
@@ -514,6 +520,10 @@ class RustCoreService {
   /// Triggers `sync_full` on every engine — base-shard rebuild for music
   /// and manga. Use after a device reset or to compact a fragmented remote.
   ///
+  /// [withCovers]: when true, the rebuilt `lib-*` base shards embed
+  /// `SEC_COVERS` (3) cover blobs from the configured cover roots.
+  /// Default false — covers stay cover-free.
+  ///
   /// Returns a JSON summary string on success or 'error:...' on failure.
   /// Returns null if the native library is not available.
   static String? syncFull({
@@ -521,6 +531,7 @@ class RustCoreService {
     required String username,
     required String password,
     String remoteDir = '/wdmm_sync',
+    bool withCovers = false,
   }) {
     if (!_ensureSymbols() || _syncFull == null) return null;
     final urlPtr = webdavUrl.toNativeUtf8();
@@ -528,7 +539,7 @@ class RustCoreService {
     final passPtr = password.toNativeUtf8();
     final dirPtr = remoteDir.toNativeUtf8();
     try {
-      return _readAndFreeString(_syncFull!(urlPtr, userPtr, passPtr, dirPtr));
+      return _readAndFreeString(_syncFull!(urlPtr, userPtr, passPtr, dirPtr, withCovers ? 1 : 0));
     } finally {
       calloc.free(urlPtr);
       calloc.free(userPtr);

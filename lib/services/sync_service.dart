@@ -426,14 +426,13 @@ class SyncService extends ChangeNotifier {
   /// Runs credentials + music library + manga + playlists via
   /// [RustCoreService.syncFull]. Refreshes Dart caches on completion.
   /// The [tracksPerShard] and [withCovers] parameters are accepted for
-  /// API compatibility but Core controls rebuild parameters internally.
   Future<SyncOutcome> syncLibraryFull({
     int tracksPerShard = LibrarySyncStore.defaultTracksPerShard,
-    bool withCovers = true,
+    bool withCovers = false,
   }) async {
     final outcome = SyncOutcome(direction: 'push');
     await _run(outcome, () async {
-      await _runCoreSync(outcome, full: true);
+      await _runCoreSync(outcome, full: true, withCovers: withCovers);
     });
     return outcome;
   }
@@ -473,7 +472,7 @@ class SyncService extends ChangeNotifier {
   ///
   /// Requires the configured sync destination to have `providerType == 'webdav'`
   /// (Core builds `WebDavDriver` from url/user/pass).
-  Future<void> _runCoreSync(SyncOutcome outcome, {required bool full}) async {
+  Future<void> _runCoreSync(SyncOutcome outcome, {required bool full, bool withCovers = false}) async {
     final dest = await syncDestination();
     if (dest == null) throw StateError('err.noWebdavAccount');
     final account = _accounts.accountById(dest);
@@ -493,6 +492,7 @@ class SyncService extends ChangeNotifier {
             username: account.username,
             password: password,
             remoteDir: remoteDir,
+            withCovers: withCovers,
           )
         : RustCoreService.syncTrigger(
             webdavUrl: account.url,
@@ -551,12 +551,12 @@ class SyncService extends ChangeNotifier {
   /// rebuild in one `run_sync_full` call.
   Future<SyncOutcome> syncMangaFull({
     int perShard = MangaSyncStore.defaultMangasPerShard,
-    bool withCovers = true,
+    bool withCovers = false,
   }) async {
     final outcome = SyncOutcome(direction: 'push');
     if (!hasMangaSync) return outcome;
     await _run(outcome, () async {
-      await _runCoreSync(outcome, full: true);
+      await _runCoreSync(outcome, full: true, withCovers: withCovers);
     });
     return outcome;
   }
