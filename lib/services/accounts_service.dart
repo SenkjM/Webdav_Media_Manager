@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -14,27 +15,33 @@ import '../utils/credential_vault_crypto.dart';
 import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'cloud_drivers/driver_registry.dart';
-import 'library_database.dart';
+import 'library_database.dart'; // only for one-shot sqflite→Core migrate helper
 import 'rust_core_service.dart';
 
-/// Multi-WebDAV account management. Passwords in secure storage.
+/// Multi-WebDAV account management.
+///
+/// Core DB (wdmm-core via FFI) is the sole source of truth for account
+/// metadata. Passwords and driver configs stay in [FlutterSecureStorage] so
+/// Dart-side drivers can read them without an extra FFI round-trip.
+///
+/// First-launch upgrade path (one-shot, never repeated):
+///   Core empty → sqflite has rows  → upsert each to Core, then ignore sqflite.
+///   Core empty + sqflite empty     → check legacy flutter_secure single-server keys.
 class AccountsService extends ChangeNotifier {
   AccountsService({
-    required LibraryDatabase db,
     FlutterSecureStorage? secureStorage,
     SharedPreferences? prefs,
-  }) : _db = db,
-       _secure = secureStorage ?? const FlutterSecureStorage(),
-       _prefs = prefs;
+  })  : _secure = secureStorage ?? const FlutterSecureStorage(),
+        _prefs = prefs;
 
   static const _kActiveAccount = 'active_webdav_account_id';
   static const _kPassPrefix = 'webdav_pass_';
+  static const _kDriverCfgPrefix = 'cloud_driver_cfg_';
   // Legacy single-account keys (migrated once).
   static const _legacyUrl = 'webdav_url';
   static const _legacyUser = 'webdav_username';
   static const _legacyPass = 'webdav_password';
 
-  final LibraryDatabase _db;
   final FlutterSecureStorage _secure;
   SharedPreferences? _prefs;
   final _uuid = const Uuid();
@@ -51,7 +58,6 @@ class AccountsService extends ChangeNotifier {
   UnmodifiableListView<WebDavAccount> get accounts =>
       UnmodifiableListView(_accounts);
   bool get loaded => _loaded;
-
   String? get activeAccountId => _activeAccountId;
 
   WebDavAccount? get activeAccount {
@@ -64,11 +70,6 @@ class AccountsService extends ChangeNotifier {
   }
 
   /// Resolve a library row's binding point (the disk **name**) to a local account.
-  ///
-  /// The name is the only thing the cloud library and backups carry — URL,
-  /// username and password stay in this table. A name that has no local account
-  /// means the row is "unbound": it can be listed, but not played or downloaded
-  /// until the user adds/renames a disk to match.
   WebDavAccount? accountForSource(String sourceName) {
     final wanted = normalizeSourceName(sourceName);
     if (wanted.isEmpty) return null;
@@ -79,11 +80,9 @@ class AccountsService extends ChangeNotifier {
   }
 
   String? idForSource(String sourceName) => accountForSource(sourceName)?.id;
-
-  /// Whether a library row bound to [sourceName] can actually transfer bytes.
   bool isSourceBound(String sourceName) => accountForSource(sourceName) != null;
 
-  /// Reverse lookup: a WebDAV account id → the library binding name.
+  /// Reverse lookup: account id → library binding name.
   String? nameForAccount(String accountId) {
     for (final a in _accounts) {
       if (a.id == accountId) return a.name;
@@ -91,10 +90,8 @@ class AccountsService extends ChangeNotifier {
     return null;
   }
 
-  /// Disk names already taken (used to warn about the single binding point).
   List<String> get sourceNames => [for (final a in _accounts) a.name.trim()];
 
-  /// An account that already uses [name] (case-insensitive), if any.
   WebDavAccount? accountNamed(String name, {String? exceptId}) {
     final wanted = normalizeSourceName(name).toLowerCase();
     if (wanted.isEmpty) return null;
@@ -115,7 +112,6 @@ class AccountsService extends ChangeNotifier {
 
   bool get hasAccounts => _accounts.isNotEmpty;
 
-  /// Normalized name key used for uniqueness (case-insensitive).
   static String nameKey(String name) => accountNameKey(name);
 
   String _resolvedName(String name, String url) {
@@ -123,37 +119,53 @@ class AccountsService extends ChangeNotifier {
     return trimmed.isEmpty ? url.trim() : trimmed;
   }
 
-  /// Name is the logical identity; refuse a second account with the same name.
   void _assertNameAvailable(String name, {String? exceptId}) {
     final clash = accountNamed(name, exceptId: exceptId);
-    if (clash != null) {
-      throw StateError('err.accountNameTaken');
-    }
+    if (clash != null) throw StateError('err.accountNameTaken');
   }
+
+  // ---------------------------------------------------------------------------
+  // Init
+  // ---------------------------------------------------------------------------
 
   Future<void> init() async {
     while (_initInFlight != null) {
       try {
         await _initInFlight;
-      } catch (_) {
-        // Prior attempt failed; this caller still reloads.
-      }
+      } catch (_) {}
     }
     final gate = Completer<void>();
     _initInFlight = gate.future;
     try {
       _prefs ??= await SharedPreferences.getInstance();
-      await _migrateLegacyIfNeeded();
-      final rows = await _db.loadAccounts();
-      // Replace in one step after await so overlapping inits cannot append.
+
+      // 1. Load from Core.
+      var loaded = await _loadFromCore();
+
+      // 2. One-shot migrate: Core empty — try sqflite rows.
+      if (loaded.isEmpty) {
+        await _migrateFromSqfliteIfNeeded();
+        loaded = await _loadFromCore();
+      }
+
+      // 3. Still empty — try legacy flutter_secure single-server keys.
+      if (loaded.isEmpty) {
+        await _migrateLegacyIfNeeded();
+        loaded = await _loadFromCore();
+      }
+
+      // Replace in one step so overlapping inits cannot append.
       final deduped = <WebDavAccount>[];
       final seen = <String>{};
-      for (final a in rows) {
+      for (final a in loaded) {
         if (seen.add(a.id)) deduped.add(a);
       }
       _accounts
         ..clear()
         ..addAll(deduped);
+
+      await _collapseDuplicatesIfNeeded();
+
       _activeAccountId = _prefs!.getString(_kActiveAccount);
       if (_activeAccountId != null &&
           !_accounts.any((a) => a.id == _activeAccountId)) {
@@ -163,27 +175,128 @@ class AccountsService extends ChangeNotifier {
         _activeAccountId = _accounts.first.id;
         await _prefs!.setString(_kActiveAccount, _activeAccountId!);
       }
-      await _collapseDuplicatesIfNeeded();
+
       _loaded = true;
       notifyListeners();
-      // Best-effort sync all accounts to Core once.
-      for (final a in _accounts) {
-        await _syncAccountToCore(a);
-      }
       gate.complete();
     } catch (e, st) {
       gate.completeError(e, st);
       rethrow;
     } finally {
-      if (identical(_initInFlight, gate.future)) {
-        _initInFlight = null;
-      }
+      if (identical(_initInFlight, gate.future)) _initInFlight = null;
     }
   }
 
+  /// Load accounts from Core FFI, mirroring passwords/configs into secure
+  /// storage so Dart-side drivers keep working without per-call FFI hits.
+  /// Returns an empty list when FFI is unavailable, Core reports an error,
+  /// or no accounts exist — callers then run one-shot migrate helpers.
+  Future<List<WebDavAccount>> _loadFromCore() async {
+    final raw = RustCoreService.accountList();
+    // null / empty → Core has no accounts (or FFI not ready); migrate may run.
+    // Explicit Core error must fail hard — never treat as empty (would re-migrate).
+    if (raw != null && raw.startsWith('error:')) {
+      throw StateError(
+        '[AccountsService] Core accountList failed: $raw',
+      );
+    }
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final arr = jsonDecode(raw) as List<dynamic>;
+      final result = <WebDavAccount>[];
+      for (final item in arr) {
+        final m = item as Map<String, dynamic>;
+        final id = m['id'] as String? ?? '';
+        if (id.isEmpty) continue;
+        final providerType = m['provider_type'] as String? ?? 'webdav';
+        final name = m['display_name'] as String? ?? '';
+        final url = m['base_url'] as String? ?? '';
+
+        // credentials may be a nested map (upsert shape) or base64 blob.
+        final credentials = (m['credentials'] as Map<String, dynamic>?) ??
+            _decodeCredentialsB64(m['credentials_b64'] as String?) ??
+            <String, dynamic>{};
+
+        String username = '';
+        String remotePath = '/';
+        if (providerType == 'webdav') {
+          username = credentials['username'] as String? ?? '';
+          remotePath = WebDavAccount.normalizeRemotePath(
+            credentials['remote_dir'] as String? ?? '/',
+          );
+          final password = credentials['password'] as String? ?? '';
+          if (password.isNotEmpty) {
+            final stored = await _secure.read(key: '$_kPassPrefix$id');
+            if (stored == null || stored.isEmpty) {
+              await _secure.write(key: '$_kPassPrefix$id', value: password);
+            }
+          }
+        } else if (credentials.isNotEmpty) {
+          // Cloud driver: mirror flat driver config if missing (drop nested source).
+          final stored = await _secure.read(key: '$_kDriverCfgPrefix$id');
+          if (stored == null || stored.isEmpty) {
+            final flat = Map<String, dynamic>.from(credentials)..remove('source');
+            await _secure.write(
+              key: '$_kDriverCfgPrefix$id',
+              value: jsonEncode(flat),
+            );
+          }
+        }
+
+        result.add(WebDavAccount(
+          id: id,
+          name: name,
+          url: url,
+          username: username,
+          providerType: providerType,
+          remotePath: remotePath,
+        ));
+      }
+      return result;
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[AccountsService] _loadFromCore parse error: $e');
+      }
+      return [];
+    }
+  }
+
+  /// Decode a base64-encoded credentials JSON blob (Desktop/older Core shape).
+  static Map<String, dynamic>? _decodeCredentialsB64(String? b64) {
+    if (b64 == null || b64.isEmpty) return null;
+    try {
+      final bytes = base64Decode(b64);
+      final decoded = jsonDecode(utf8.decode(bytes));
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // One-shot migrations (run only when Core is empty)
+  // ---------------------------------------------------------------------------
+
+  /// Migrate sqflite accounts into Core; **fail hard** on any upsert error.
+  /// Uses a temporary [LibraryDatabase]; this service retains no db field.
+  /// After a successful migrate Core is never read via sqflite again.
+  ///
+  /// Android-only: sqflite accounts only exist on Android, and a real
+  /// [LibraryDatabase] cannot open on the host test runner. On non-Android
+  /// there is nothing to migrate from, so the call is a no-op.
+  Future<void> _migrateFromSqfliteIfNeeded() async {
+    if (!Platform.isAndroid) return;
+    final db = LibraryDatabase();
+    final rows = await db.loadAccounts();
+    if (rows.isEmpty) return;
+    for (final a in rows) {
+      await _upsertToCore(a); // throws on Core error → aborts migrate
+    }
+  }
+
+  /// Legacy: single-server keys from flutter_secure → upsert into Core.
+  /// Only reached when both Core and sqflite are empty.
   Future<void> _migrateLegacyIfNeeded() async {
-    final existing = await _db.loadAccounts();
-    if (existing.isNotEmpty) return;
     final url = await _secure.read(key: _legacyUrl) ?? '';
     if (url.trim().isEmpty) return;
     final user = await _secure.read(key: _legacyUser) ?? '';
@@ -195,8 +308,8 @@ class AccountsService extends ChangeNotifier {
       url: url.trim(),
       username: user,
     );
-    await _db.upsertAccount(account);
     await _secure.write(key: '$_kPassPrefix$id', value: pass);
+    await _upsertToCore(account); // throws on error
     await _secure.delete(key: _legacyUrl);
     await _secure.delete(key: _legacyUser);
     await _secure.delete(key: _legacyPass);
@@ -204,14 +317,12 @@ class AccountsService extends ChangeNotifier {
     await _prefs!.setString(_kActiveAccount, id);
   }
 
-  Future<String?> passwordFor(String accountId) async {
-    return _secure.read(key: '$_kPassPrefix$accountId');
-  }
+  // ---------------------------------------------------------------------------
+  // Passwords + driver configs
+  // ---------------------------------------------------------------------------
 
-  /// 云盘驱动的凭证与配置（99 §7.2.2）：JSON 存 secure storage，按账号隔离。
-  /// 内容例：refresh_token / client_id / client_secret / api_url_address /
-  /// local_refresh / access_token 缓存。
-  static const _kDriverCfgPrefix = 'cloud_driver_cfg_';
+  Future<String?> passwordFor(String accountId) =>
+      _secure.read(key: '$_kPassPrefix$accountId');
 
   Future<void> saveDriverConfig(
     String accountId,
@@ -221,11 +332,8 @@ class AccountsService extends ChangeNotifier {
       key: '$_kDriverCfgPrefix$accountId',
       value: jsonEncode(config),
     );
-    // Reload account by id and sync to Core.
     final account = accountById(accountId);
-    if (account != null) {
-      await _syncAccountToCore(account);
-    }
+    if (account != null) await _upsertToCore(account); // throws on error
   }
 
   Future<Map<String, dynamic>?> loadDriverConfig(String accountId) async {
@@ -239,8 +347,7 @@ class AccountsService extends ChangeNotifier {
     }
   }
 
-  /// 按**账号名**找驱动配置（凭证恢复兜底：账号被删后重添同名账号，
-  /// id 变了但名字没变——与 crypt 的 resolveSourceByName 同一先例）。
+  /// 按**账号名**找驱动配置（凭证恢复兜底）。
   Future<Map<String, dynamic>?> loadDriverConfigByName(String name) async {
     final wanted = name.trim().toLowerCase();
     if (wanted.isEmpty) return null;
@@ -252,51 +359,143 @@ class AccountsService extends ChangeNotifier {
     return null;
   }
 
-  /// Normalized name keys that appear more than once in memory.
+  // ---------------------------------------------------------------------------
+  // Core upsert — the single path that writes account metadata to Core.
+  // All CRUD operations flow through here; errors are never swallowed.
+  // ---------------------------------------------------------------------------
+
+  /// Ensure an in-memory account is present in Core DB. Used by
+  /// [CloudDriveService] before driver instantiation. Throws [StateError]
+  /// when the account is not in memory, FFI is unavailable, or Core errors.
+  Future<void> ensureAccountInCore(String accountId) async {
+    final account = accountById(accountId);
+    if (account == null) {
+      throw StateError(
+        '[AccountsService] ensureAccountInCore: account $accountId not in memory',
+      );
+    }
+    await _upsertToCore(account); // throws on Core error
+  }
+
+  /// Upsert [a] to Core DB. Throws [StateError] when FFI is unavailable or
+  /// Core returns an error string. Never logs-and-continues.
+  Future<void> _upsertToCore(WebDavAccount a) async {
+    final driverCfg = await loadDriverConfig(a.id);
+    Map<String, dynamic> credentials;
+    if (a.providerType == 'webdav') {
+      final password = await passwordFor(a.id) ?? '';
+      credentials = {
+        'username': a.username,
+        'password': password,
+        'remote_dir': a.remotePath,
+      };
+    } else {
+      credentials = driverCfg ?? {};
+      // Crypt: embed resolved source if name present but nested source absent.
+      if (a.providerType == 'crypt' &&
+          credentials.containsKey('source_account_id_name') &&
+          !credentials.containsKey('source')) {
+        final sourceName = credentials['source_account_id_name'] as String?;
+        if (sourceName != null) {
+          final src = accountForSource(sourceName);
+          if (src != null) {
+            final srcCfg = await loadDriverConfig(src.id);
+            final srcCreds = <String, dynamic>{};
+            if (src.providerType == 'webdav') {
+              srcCreds['username'] = src.username;
+              srcCreds['password'] = await passwordFor(src.id) ?? '';
+              srcCreds['remote_dir'] = src.remotePath;
+            } else {
+              srcCreds.addAll(srcCfg ?? {});
+            }
+            credentials['source'] = {
+              'provider_type': src.providerType,
+              'config': srcCreds,
+            };
+          }
+        }
+      }
+    }
+
+    final coreJson = jsonEncode({
+      'id': a.id,
+      'provider_type': a.providerType,
+      'display_name': a.name,
+      'base_url': a.url,
+      'credentials': credentials,
+    });
+    final result = RustCoreService.accountUpsert(coreJson);
+    if (result == null) {
+      throw StateError(
+        '[AccountsService] Core FFI unavailable (accountUpsert null) for ${a.id}',
+      );
+    }
+    if (result.startsWith('error:')) {
+      throw StateError(
+        '[AccountsService] Core accountUpsert failed for ${a.id}: $result',
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Duplicate-name collapse (in-memory + Core; no sqflite)
+  // ---------------------------------------------------------------------------
+
   Set<String> _duplicateNameKeys() {
     final counts = <String, int>{};
     for (final a in _accounts) {
-      final key = nameKey(a.name);
-      if (key.isEmpty) continue;
-      counts[key] = (counts[key] ?? 0) + 1;
+      final k = nameKey(a.name);
+      if (k.isEmpty) continue;
+      counts[k] = (counts[k] ?? 0) + 1;
     }
-    return {
-      for (final e in counts.entries)
-        if (e.value > 1) e.key,
-    };
+    return {for (final e in counts.entries) if (e.value > 1) e.key};
   }
 
-  /// Conflicting accounts grouped by normalized name (diagnostics).
   Map<String, List<WebDavAccount>> duplicateNameGroups() {
     final dups = _duplicateNameKeys();
     final groups = <String, List<WebDavAccount>>{};
     for (final a in _accounts) {
-      final key = nameKey(a.name);
-      if (!dups.contains(key)) continue;
-      groups.putIfAbsent(key, () => []).add(a);
+      final k = nameKey(a.name);
+      if (!dups.contains(k)) continue;
+      groups.putIfAbsent(k, () => []).add(a);
     }
     return groups;
   }
 
-  /// Collapse same-name rows only when UNIQUE is not yet enforceable.
+  /// Collapse same-name rows: keep one per group (prefer active id), delete
+  /// the rest from Core and secure storage.
   Future<void> _collapseDuplicatesIfNeeded() async {
-    if (_duplicateNameKeys().isEmpty && !_db.accountNameUniquePending) {
-      await _db.applyAccountNameUnique();
-      return;
+    if (_duplicateNameKeys().isEmpty) return;
+    final byKey = <String, List<WebDavAccount>>{};
+    for (final a in _accounts) {
+      byKey.putIfAbsent(nameKey(a.name), () => []).add(a);
     }
-    final deleted = await _db.collapseDuplicateAccountNames(
-      preferAccountId: _activeAccountId,
-    );
-    for (final id in deleted) {
+    final toDelete = <String>[];
+    for (final group in byKey.values) {
+      if (group.length < 2) continue;
+      group.sort((a, b) => a.id.compareTo(b.id));
+      var keep = group.first;
+      for (final a in group) {
+        if (a.id == _activeAccountId) {
+          keep = a;
+          break;
+        }
+      }
+      for (final a in group) {
+        if (a.id != keep.id) toDelete.add(a.id);
+      }
+    }
+    for (final id in toDelete) {
+      final result = RustCoreService.accountDelete(id);
+      if (result != null && result.startsWith('error:') && kDebugMode) {
+        debugPrint(
+          '[AccountsService] Core delete failed during collapse for $id: $result',
+        );
+      }
       await _secure.delete(key: '$_kPassPrefix$id');
       await _secure.delete(key: '$_kDriverCfgPrefix$id');
       _accounts.removeWhere((a) => a.id == id);
     }
-    // Reload from DB so memory matches keep-one result.
-    final rows = await _db.loadAccounts();
-    _accounts
-      ..clear()
-      ..addAll(rows);
     if (_activeAccountId != null &&
         !_accounts.any((a) => a.id == _activeAccountId)) {
       _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
@@ -307,84 +506,11 @@ class AccountsService extends ChangeNotifier {
         await _prefs!.setString(_kActiveAccount, _activeAccountId!);
       }
     }
-    await _db.applyAccountNameUnique();
   }
 
-  /// Mirror a Dart account into Core DB via FFI.
-  /// Called after addAccount/updateAccount/saveDriverConfig and during init.
-  /// Fail-soft: logs errors in debug mode but never blocks the local sqflite save.
-  Future<void> _syncAccountToCore(WebDavAccount a) async {
-    try {
-      // Load driver config (tokens/cookies) for cloud accounts.
-      final driverCfg = await loadDriverConfig(a.id);
-
-      // Build credentials JSON based on provider_type.
-      Map<String, dynamic> credentials;
-      if (a.providerType == 'webdav') {
-        // WebDAV: Core expects {username, password, remote_dir}.
-        final password = await passwordFor(a.id) ?? '';
-        credentials = {
-          'username': a.username,
-          'password': password,
-          'remote_dir': a.remotePath,
-        };
-      } else {
-        // Cloud driver: credentials = driver config (or {} if null).
-        credentials = driverCfg ?? {};
-
-        // If crypt and config has source account name but not nested source structure,
-        // resolve the source account + its config and nest it as Core expects.
-        if (a.providerType == 'crypt' && credentials.containsKey('source_account_id_name')) {
-          final sourceName = credentials['source_account_id_name'] as String?;
-          if (sourceName != null && !credentials.containsKey('source')) {
-            final sourceAccount = accountForSource(sourceName);
-            if (sourceAccount != null) {
-              final sourceCfg = await loadDriverConfig(sourceAccount.id);
-              final sourceCredentials = <String, dynamic>{};
-              if (sourceAccount.providerType == 'webdav') {
-                final sourcePw = await passwordFor(sourceAccount.id) ?? '';
-                sourceCredentials['username'] = sourceAccount.username;
-                sourceCredentials['password'] = sourcePw;
-                sourceCredentials['remote_dir'] = sourceAccount.remotePath;
-              } else {
-                sourceCredentials.addAll(sourceCfg ?? {});
-              }
-              credentials['source'] = {
-                'provider_type': sourceAccount.providerType,
-                'config': sourceCredentials,
-              };
-            }
-          }
-        }
-      }
-
-      // Call Core FFI upsert.
-      final coreJson = jsonEncode({
-        'id': a.id,
-        'provider_type': a.providerType,
-        'display_name': a.name,
-        'base_url': a.url,
-        'credentials': credentials,
-      });
-      final result = RustCoreService.accountUpsert(coreJson);
-      if (result != null && result.startsWith('error:') && kDebugMode) {
-        debugPrint('[AccountsService] Core upsert failed for ${a.id}: $result');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[AccountsService] _syncAccountToCore failed for ${a.id}: $e');
-      }
-    }
-  }
-
-  /// Public wrapper for CloudDriveService to ensure an account is in Core DB
-  /// before driver instantiation. Fail-soft.
-  Future<void> syncAccountToCoreById(String accountId) async {
-    final account = accountById(accountId);
-    if (account != null) {
-      await _syncAccountToCore(account);
-    }
-  }
+  // ---------------------------------------------------------------------------
+  // CRUD — Core only, fail hard
+  // ---------------------------------------------------------------------------
 
   Future<WebDavAccount> addAccount({
     required String name,
@@ -404,16 +530,13 @@ class AccountsService extends ChangeNotifier {
       username: username,
       providerType: providerType,
       remotePath: WebDavAccount.normalizeRemotePath(remotePath),
-      capabilities:
-          capabilities ??
+      capabilities: capabilities ??
           (providerType == 'webdav'
               ? AccountCaps.all
-              // 云盘静态位由驱动声明（99 §7.2.10）；读取时也以注册表为准。
-              : (cloudDriverSpec(providerType)?.capabilities ??
-                    AccountCaps.list)),
+              : (cloudDriverSpec(providerType)?.capabilities ?? AccountCaps.list)),
     );
-    await _db.upsertAccount(account);
     await _secure.write(key: '$_kPassPrefix${account.id}', value: password);
+    await _upsertToCore(account); // throws on error
     _accounts.add(account);
     _activeAccountId ??= account.id;
     _prefs ??= await SharedPreferences.getInstance();
@@ -421,7 +544,6 @@ class AccountsService extends ChangeNotifier {
       await _prefs!.setString(_kActiveAccount, account.id);
       _activeAccountId = account.id;
     }
-    await _syncAccountToCore(account);
     notifyListeners();
     return account;
   }
@@ -445,30 +567,34 @@ class AccountsService extends ChangeNotifier {
       url: url.trim().replaceAll(RegExp(r'/+$'), ''),
       username: username,
       providerType: providerType,
-      remotePath: remotePath == null
-          ? null
-          : WebDavAccount.normalizeRemotePath(remotePath),
+      remotePath:
+          remotePath == null ? null : WebDavAccount.normalizeRemotePath(remotePath),
       capabilities: capabilities,
     );
-    await _db.upsertAccount(updated);
     if (password != null) {
       await _secure.write(key: '$_kPassPrefix$id', value: password);
     }
+    await _upsertToCore(updated); // throws on error
     _accounts[idx] = updated;
-    await _syncAccountToCore(updated);
     notifyListeners();
   }
 
   Future<void> deleteAccount(String id) async {
-    await _db.deleteAccount(id);
+    // Core first — throws on error; do not remove from memory on FFI failure.
+    final result = RustCoreService.accountDelete(id);
+    if (result == null) {
+      throw StateError(
+        '[AccountsService] Core FFI unavailable (accountDelete null) for $id',
+      );
+    }
+    if (result.startsWith('error:')) {
+      throw StateError(
+        '[AccountsService] Core accountDelete failed for $id: $result',
+      );
+    }
     await _secure.delete(key: '$_kPassPrefix$id');
     await _secure.delete(key: '$_kDriverCfgPrefix$id');
     _accounts.removeWhere((a) => a.id == id);
-    // Delete from Core DB.
-    final result = RustCoreService.accountDelete(id);
-    if (result != null && result.startsWith('error:') && kDebugMode) {
-      debugPrint('[AccountsService] Core delete failed for $id: $result');
-    }
     if (_activeAccountId == id) {
       _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
       _prefs ??= await SharedPreferences.getInstance();
@@ -478,7 +604,6 @@ class AccountsService extends ChangeNotifier {
         await _prefs!.setString(_kActiveAccount, _activeAccountId!);
       }
     }
-    await _collapseDuplicatesIfNeeded();
     notifyListeners();
   }
 
@@ -490,13 +615,11 @@ class AccountsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------------------------------------------------------------------
+  // Backup restore — Core-only, no sqflite
+  // ---------------------------------------------------------------------------
+
   /// Restore **one** account from a per-site backup without touching other mounts.
-  /// Never copies credentials onto a different account id.
-  /// Recreates the mount if [account.id] is missing locally.
-  ///
-  /// Only the password may be encrypted (`AESGCMv1:`); when [passphrase] cannot
-  /// decrypt it the account is still restored with an **empty password** so the
-  /// user can fill it in, instead of failing the whole restore.
   Future<bool> mergeAccountFromBackup(
     Map<String, dynamic> accountJson, {
     String passphrase = '',
@@ -526,7 +649,6 @@ class AccountsService extends ChangeNotifier {
         passphrase: passphrase,
       );
       if (clear == null) {
-        // Missing unified decryption key → restore the mount, leave password blank.
         pass = '';
         passwordRecovered = false;
       } else {
@@ -535,10 +657,14 @@ class AccountsService extends ChangeNotifier {
     }
 
     final resolvedName = _resolvedName(name, url);
-    // Name is logical identity: drop any other row that already owns this name.
     final clash = accountNamed(resolvedName, exceptId: id);
     if (clash != null) {
-      await _db.deleteAccount(clash.id);
+      final delResult = RustCoreService.accountDelete(clash.id);
+      if (delResult != null && delResult.startsWith('error:')) {
+        throw StateError(
+          '[AccountsService] Core delete of clashing account failed: $delResult',
+        );
+      }
       await _secure.delete(key: '$_kPassPrefix${clash.id}');
       await _secure.delete(key: '$_kDriverCfgPrefix${clash.id}');
       _accounts.removeWhere((a) => a.id == clash.id);
@@ -550,8 +676,8 @@ class AccountsService extends ChangeNotifier {
       url: url,
       username: username,
     );
-    await _db.upsertAccount(account);
     await _secure.write(key: '$_kPassPrefix$id', value: pass);
+    await _upsertToCore(account); // throws on error
 
     final idx = _accounts.indexWhere((a) => a.id == id);
     if (idx >= 0) {
@@ -559,7 +685,6 @@ class AccountsService extends ChangeNotifier {
     } else {
       _accounts.add(account);
     }
-    // Prefer restored account as active when it was the backup target.
     _prefs ??= await SharedPreferences.getInstance();
     _activeAccountId = id;
     await _prefs!.setString(_kActiveAccount, id);
@@ -568,14 +693,9 @@ class AccountsService extends ChangeNotifier {
   }
 
   /// Restore accounts + passwords from backup JSON.
-  /// Expects `{ activeAccountId, accounts: [{id,name,url,username,password}, ...] }`.
   ///
-  /// Passwords may be `AESGCMv1:` blobs; entries that cannot be decrypted with
-  /// [passphrase] are restored with an empty password rather than aborting.
-  ///
-  /// 云盘账号（v2 备份）：驱动配置 JSON（含 cookie/refresh_token 等令牌）随
-  /// 档案走，密文字段逐字段解密；本机未注册的 providerType **静默跳过**
-  /// （不支持 = 不报错、不建账号）。返回无法解密密码的账号名列表。
+  /// 云盘账号（v2 备份）：驱动配置 JSON 随档案走，密文字段逐字段解密；
+  /// 本机未注册的 providerType **静默跳过**。返回无法解密密码的账号名列表。
   Future<List<String>> restoreFromBackup(
     Map<String, dynamic> json, {
     String passphrase = '',
@@ -583,18 +703,13 @@ class AccountsService extends ChangeNotifier {
     final list = json['accounts'] as List<dynamic>? ?? [];
     final missing = <String>[];
     _prefs ??= await SharedPreferences.getInstance();
-    // Clear existing passwords for current accounts.
-    for (final a in List<WebDavAccount>.from(_accounts)) {
-      await _secure.delete(key: '$_kPassPrefix${a.id}');
-    }
-    // Replace accounts table by upserting backup set and deleting missing.
-    final existing = await _db.loadAccounts();
+    final existingIds = {for (final a in _accounts) a.id};
     final keepIds = <String>{};
     final seenNames = <String>{};
+
     for (final raw in list) {
       final m = Map<String, dynamic>.from(raw as Map);
       final providerType = m['providerType'] as String? ?? 'webdav';
-      // 不支持的网盘类型：静默过滤，不报错也不留空壳账号。
       if (providerType != 'webdav' && cloudDriverSpec(providerType) == null) {
         continue;
       }
@@ -607,14 +722,9 @@ class AccountsService extends ChangeNotifier {
         remotePath: m['remote_path'] as String? ?? '/',
       );
       final nKey = nameKey(account.name);
-      if (nKey.isNotEmpty && !seenNames.add(nKey)) {
-        // Same logical identity already restored from this archive.
-        continue;
-      }
+      if (nKey.isNotEmpty && !seenNames.add(nKey)) continue;
       keepIds.add(account.id);
-      await _db.upsertAccount(account);
 
-      // 云盘条目：恢复驱动配置（密文字段逐字段尝试解密）。
       if (providerType != 'webdav') {
         final rawCfg = m['driverConfig'];
         final cfg = rawCfg is Map ? Map<String, dynamic>.from(rawCfg) : null;
@@ -643,37 +753,48 @@ class AccountsService extends ChangeNotifier {
           );
           if (!secretsRecovered) missing.add(account.name);
         }
-        continue;
+      } else {
+        await _secure.delete(key: '$_kPassPrefix${account.id}');
+        final rawPass = m['password'] as String? ?? '';
+        String pass = rawPass;
+        if (CredentialVaultCrypto.isEncrypted(rawPass)) {
+          final clear = await CredentialVaultCrypto.tryDecrypt(
+            encoded: rawPass,
+            passphrase: passphrase,
+          );
+          if (clear == null) {
+            pass = '';
+            missing.add(account.name);
+          } else {
+            pass = clear;
+          }
+        }
+        await _secure.write(key: '$_kPassPrefix${account.id}', value: pass);
       }
 
-      final rawPass = m['password'] as String? ?? '';
-      String pass = rawPass;
-      if (CredentialVaultCrypto.isEncrypted(rawPass)) {
-        final clear = await CredentialVaultCrypto.tryDecrypt(
-          encoded: rawPass,
-          passphrase: passphrase,
+      await _upsertToCore(account); // throws on error
+    }
+
+    // Delete accounts absent from the backup.
+    for (final id in existingIds) {
+      if (keepIds.contains(id)) continue;
+      final delResult = RustCoreService.accountDelete(id);
+      if (delResult != null && delResult.startsWith('error:')) {
+        throw StateError(
+          '[AccountsService] Core delete failed during restore for $id: $delResult',
         );
-        if (clear == null) {
-          pass = '';
-          missing.add(account.name);
-        } else {
-          pass = clear;
-        }
       }
-      await _secure.write(key: '$_kPassPrefix${account.id}', value: pass);
+      await _secure.delete(key: '$_kPassPrefix$id');
+      await _secure.delete(key: '$_kDriverCfgPrefix$id');
     }
-    for (final a in existing) {
-      if (!keepIds.contains(a.id)) {
-        await _db.deleteAccount(a.id);
-        await _secure.delete(key: '$_kPassPrefix${a.id}');
-        await _secure.delete(key: '$_kDriverCfgPrefix${a.id}');
-      }
-    }
-    final restoredRows = await _db.loadAccounts();
+
+    // Reload from Core so memory reflects the restored state exactly.
+    final reloaded = await _loadFromCore();
     _accounts
       ..clear()
-      ..addAll(restoredRows);
+      ..addAll(reloaded);
     await _collapseDuplicatesIfNeeded();
+
     final active = json['activeAccountId'] as String?;
     if (active != null && _accounts.any((a) => a.id == active)) {
       _activeAccountId = active;

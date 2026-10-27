@@ -50,7 +50,7 @@ class AppState extends ChangeNotifier {
     library = LibraryService(db: db);
     userFolders = UserFolderService();
     mangaLibrary = MangaLibraryService();
-    accounts = AccountsService(db: db);
+    accounts = AccountsService();
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
     // 包装驱动（如 Crypt）的 WebDAV 源解析：装配层注入工厂（99 §7.5），

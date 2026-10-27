@@ -107,11 +107,19 @@ class CloudDriveService extends ChangeNotifier {
     var complete = true;
     for (final a in wanted) {
       try {
-        // Ensure account exists in Core before creating driver (fail-soft).
+        // Core must have the account row before the driver can be instantiated.
+        // If missing, upsert from memory — fail hard if that also fails.
         final coreAccount = RustCoreService.accountGet(a.id);
-        if (coreAccount == null || coreAccount.startsWith('error:')) {
-          // Account missing or Core query failed — attempt sync now.
-          await _accounts.syncAccountToCoreById(a.id);
+        if (coreAccount == null || coreAccount == 'null' ||
+            coreAccount.startsWith('error:')) {
+          await _accounts.ensureAccountInCore(a.id); // throws on error
+          // Verify the row actually landed.
+          final check = RustCoreService.accountGet(a.id);
+          if (check == null || check == 'null' || check.startsWith('error:')) {
+            throw StateError(
+              '[cloud] Account ${a.id} still absent from Core after upsert',
+            );
+          }
         }
         final old = _drivers[a.id];
         final driver = _createDriver(a, cfgs[a.id]);
