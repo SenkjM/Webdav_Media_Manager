@@ -1029,7 +1029,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noMatchingTracks => '没有匹配的曲目';
 
   @override
-  String get streamUrlFailed => '无法建立流式地址，请检查账户配置';
+  String get streamUrlFailed => '无法建立流式地址，请检查源配置';
 
   @override
   String get loading => '加载中…';

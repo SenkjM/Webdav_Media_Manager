@@ -1775,7 +1775,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get recoveryClearContent =>
-      'Export first. After clearing, reopen the app and reconfigure cloud accounts and the local index.';
+      'Export first. After clearing, reopen the app and reconfigure sources and the local index.';
 
   @override
   String recoveryClearPartial(int removed, String names) {
@@ -2827,12 +2827,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String errCloudAccountMissing(Object a) {
-    return 'Cloud account does not exist: $a';
+    return 'Source does not exist: $a';
   }
 
   @override
   String get errCloudWriteDisabled =>
-      'Cloud accounts do not support upload or cloud write sync';
+      'Sources do not support upload or cloud write sync';
 
   @override
   String get errEnsureDirectoryUnsupported =>
@@ -4488,7 +4488,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get libraryBackfillAddRoot => 'Add root path';
 
   @override
-  String get libraryBackfillNeedAccount => 'Add a cloud account first';
+  String get libraryBackfillNeedAccount => 'Add a source first';
 
   @override
   String get libraryBackfillPickAccount => 'Choose account';

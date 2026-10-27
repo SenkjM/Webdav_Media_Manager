@@ -1968,7 +1968,7 @@ abstract class AppLocalizations {
   /// No description provided for @streamUrlFailed.
   ///
   /// In zh, this message translates to:
-  /// **'无法建立流式地址，请检查账户配置'**
+  /// **'无法建立流式地址，请检查源配置'**
   String get streamUrlFailed;
 
   /// No description provided for @loading.
