@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/cache_policy.dart';
@@ -35,6 +37,7 @@ import '../services/cloud_drivers/webdav_source.dart';
 import '../services/dlna_cast_service.dart';
 import '../services/rust_core_service.dart';
 import '../services/rust_dmr_prefs_service.dart';
+import '../services/rust_library_probe.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
@@ -238,6 +241,13 @@ class AppState extends ChangeNotifier {
       );
       library.attachRevClock(revClock);
       mangaLibrary.attachRevClock(revClock);
+      // One-shot sqflite→Core import (Android only). Must run before
+      // library.init() → refresh() consumes Core as truth, otherwise an
+      // unimported sqflite DB would read back as an empty library. Idempotent
+      // via Core KV `sqflite_imported` / `sqflite_imported_v6`; hard-fails on
+      // error when the file exists so we never silently lose data.
+      _initPhase = 'sqflite-import';
+      final sqfliteDbPath = await _importLibraryFromSqfliteIfNeeded();
       _initPhase = 'library';
       await library.init();
       _initPhase = 'user-folders';
@@ -248,6 +258,10 @@ class AppState extends ChangeNotifier {
       _initPhase = 'accounts';
       await accounts.init();
       await registerAllAccounts();
+      // Retire the legacy sqflite file once all migrates have completed on
+      // this same launch (library import + folders-kv migrate + cache groups
+      // migrate + accounts migrate). Best-effort; errors are logged, not fatal.
+      await _retireMusicLibraryDbIfMigrated(sqfliteDbPath);
       // The queue persists 网盘名, never an account id: it has to resolve one to
       // the other **after** the account list is loaded, or every transfer would
       // be judged "来源网盘未绑定".
@@ -810,6 +824,80 @@ class AppState extends ChangeNotifier {
   void dispose() {
     unawaited(shutdown());
     super.dispose();
+  }
+
+  /// On Android: if [LibraryDatabase.fileName] exists under Documents, run a
+  /// one-shot sqflite→Core library import.
+  ///
+  /// The import is idempotent — Core KV `sqflite_imported` / `sqflite_imported_v6`
+  /// guard it, so calling it every launch is cheap once the file is imported.
+  ///
+  /// Returns the absolute path to the db file when an import was attempted
+  /// (whether already_done or freshly imported), or null when the file is
+  /// absent / non-Android.
+  ///
+  /// Hard-fails with [StateError] when the file exists on Android but the
+  /// import returns an error or null — same tone as other SoT cuts (e.g.
+  /// [RustLibraryService.listAll], manga clear-index).
+  static Future<String?> _importLibraryFromSqfliteIfNeeded() async {
+    if (!Platform.isAndroid) return null;
+    final dir = await getApplicationDocumentsDirectory();
+    final path = p.join(dir.path, LibraryDatabase.fileName);
+    if (!File(path).existsSync()) return null;
+
+    final result = RustCoreService.libraryImportFromSqflite(path);
+    if (result == null || result.startsWith('error:')) {
+      throw StateError(
+        'sqflite→Core library import failed ($result); '
+        'aborting startup to protect data',
+      );
+    }
+    final logLine = RustLibraryProbe.formatImportSummary(result);
+    if (logLine != null) {
+      debugPrint(logLine);
+    } else {
+      debugPrint('[AppState] sqflite import result: $result');
+    }
+    return path;
+  }
+
+  /// Best-effort delete of the legacy sqflite files once all migrates have
+  /// succeeded on this launch.
+  ///
+  /// Only runs when [dbPath] is non-null (file existed at startup and the
+  /// library import succeeded) and the `folders_changed_at` KV sentinel is
+  /// set (confirming the folders-kv migrate ran this launch).
+  /// [cache.init()] is guaranteed to have run before this is called.
+  ///
+  /// Delete errors are logged, never fatal.
+  static Future<void> _retireMusicLibraryDbIfMigrated(String? dbPath) async {
+    if (dbPath == null) return; // file was absent at startup — nothing to delete
+
+    // Verify the folders-kv sentinel (same check as _migrateKvFoldersMeta).
+    final foldersAt = RustCoreService.kvGet('folders_changed_at');
+    final foldersOk = foldersAt != null &&
+        foldersAt.isNotEmpty &&
+        foldersAt != 'null' &&
+        !foldersAt.startsWith('error:');
+    if (!foldersOk) {
+      debugPrint(
+        '[AppState] retire: folders_changed_at not set — skipping delete',
+      );
+      return;
+    }
+
+    // Delete music_library.db and its WAL/SHM companions (best-effort).
+    for (final suffix in const ['', '-wal', '-shm']) {
+      final file = File('$dbPath$suffix');
+      try {
+        if (await file.exists()) {
+          await file.delete();
+          debugPrint('[AppState] retire: deleted ${file.path}');
+        }
+      } catch (e) {
+        debugPrint('[AppState] retire: could not delete ${file.path}: $e');
+      }
+    }
   }
 
   /// One-shot migration: copy folder sync meta keys from sqflite [LibraryDatabase]
