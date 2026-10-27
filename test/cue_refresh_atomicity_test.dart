@@ -2,34 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/models/library_track.dart';
-import 'package:webdav_media_manager/services/library_database.dart';
 import 'package:webdav_media_manager/services/library_service.dart';
 import 'package:webdav_media_manager/utils/cue_sheet.dart';
 import 'package:webdav_media_manager/utils/track_identity.dart';
-
-class _RecordingLibraryDatabase extends LibraryDatabase {
-  int deleteCueCalls = 0;
-  int replaceCueCalls = 0;
-
-  @override
-  Future<int> deleteTracksForCue(
-    String sourceName,
-    String cueRemotePath,
-  ) async {
-    deleteCueCalls++;
-    return 1;
-  }
-
-  @override
-  Future<void> replaceCueAlbumTracks({
-    required String sourceName,
-    required String cueRemotePath,
-    required List<String> audioRemotePaths,
-    required List<LibraryTrack> tracks,
-  }) async {
-    replaceCueCalls++;
-  }
-}
 
 void main() {
   test('missing CUE audio leaves previous library group intact', () async {
@@ -52,12 +27,13 @@ FILE "disc.flac" WAVE
       audioRemotePath: audioPath,
       title: 'Existing metadata',
     );
-    final db = _RecordingLibraryDatabase();
-    final library = LibraryService(db: db);
+    final library = LibraryService();
     library.debugSetTracksForTest([existing]);
     final missingPath =
         '${Directory.systemTemp.path}/wdmm-missing-${DateTime.now().microsecondsSinceEpoch}.flac';
 
+    // Core-only: the per-audio File(localPath).exists() check throws before any
+    // CUE album/slice write reaches Core, so the in-memory projection is intact.
     await expectLater(
       library.ingestCueAlbum(
         sourceName: source,
@@ -70,7 +46,5 @@ FILE "disc.flac" WAVE
     );
 
     expect(library.tracks, [same(existing)]);
-    expect(db.deleteCueCalls, 0);
-    expect(db.replaceCueCalls, 0);
   });
 }

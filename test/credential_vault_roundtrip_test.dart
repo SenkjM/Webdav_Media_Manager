@@ -483,7 +483,7 @@ void main() {
       playlists = PlaylistService(store: _MemoryPlaylistStore(), webDav: webDav);
       backup = BackupService(
         libraryDb: db,
-        library: LibraryService(db: db),
+        library: LibraryService(),
         accounts: accounts,
         settings: settings,
         playlists: playlists,

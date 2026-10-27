@@ -198,12 +198,10 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
-  LibraryService({LibraryDatabase? db, TagService? tags, CoverService? covers})
-    : _db = db ?? LibraryDatabase(),
-      _tags = tags ?? TagService(),
+  LibraryService({TagService? tags, CoverService? covers})
+    : _tags = tags ?? TagService(),
       _covers = covers ?? CoverService();
 
-  final LibraryDatabase _db;
   final TagService _tags;
   final CoverService _covers;
 
@@ -225,35 +223,24 @@ class LibraryService extends ChangeNotifier {
   bool get loaded => _loaded;
   int get count => _tracks.length;
 
-  LibraryDatabase get database => _db;
   CoverService get covers => _covers;
   TagService get tags => _tags;
 
   Future<void> init() async {
-    await _db.database;
     await _covers.init();
     await refresh();
   }
 
   Future<void> refresh() async {
-    // Forced Rust path when [kRustLibraryReadEnabled] — no sqflite fallback
-    // (fallback hid missing libwdmm_ffi.so during device smoke).
-    if (kRustLibraryReadEnabled) {
-      final rustTracks = RustLibraryService.listAll();
-      if (rustTracks == null) {
-        throw StateError(
-          'Rust library read failed; Dart sqflite fallback removed',
-        );
-      }
-      _tracks
-        ..clear()
-        ..addAll(rustTracks);
-    } else {
-      final all = await _db.allTracks();
-      _tracks
-        ..clear()
-        ..addAll(all);
+    final rustTracks = RustLibraryService.listAll();
+    if (rustTracks == null) {
+      throw StateError(
+        'Rust library read failed; Dart sqflite fallback removed',
+      );
     }
+    _tracks
+      ..clear()
+      ..addAll(rustTracks);
     _loaded = true;
     notifyListeners();
   }
@@ -264,14 +251,10 @@ class LibraryService extends ChangeNotifier {
   /// Upsert tracks from a sync/backup payload; only touches listed rows.
   Future<void> upsertTracks(Iterable<LibraryTrack> tracks) async {
     for (final track in tracks) {
-      if (kRustLibraryWriteEnabled) {
-        // Rust-only write: sqflite dual-path removed per Round 11 cutover.
-        final result = RustLibraryService.upsertTrack(track);
-        if (result != null && result.startsWith('error:')) {
-          throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-        }
-      } else {
-        await _db.upsertTrack(track);
+      // Rust-only write: sqflite dual-path removed per Round 11 cutover.
+      final result = RustLibraryService.upsertTrack(track);
+      if (result != null && result.startsWith('error:')) {
+        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
       }
       final idx = _tracks.indexWhere(
         (t) =>
@@ -293,24 +276,16 @@ class LibraryService extends ChangeNotifier {
     String sourceName,
     List<LibraryTrack> tracks,
   ) async {
-    if (kRustLibraryWriteEnabled) {
-      // Rust: delete all tracks for this account in one call
-      final result = RustLibraryService.deleteTracksBySource(sourceName);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library delete-by-source failed; sqflite fallback removed: $result');
-      }
-    } else {
-      await _db.deleteTracksForSource(sourceName);
+    // Rust: delete all tracks for this account in one call
+    final result = RustLibraryService.deleteTracksBySource(sourceName);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library delete-by-source failed; sqflite fallback removed: $result');
     }
     _tracks.removeWhere((t) => t.sourceName == sourceName);
     for (final track in tracks) {
-      if (kRustLibraryWriteEnabled) {
-        final result = RustLibraryService.upsertTrack(track);
-        if (result != null && result.startsWith('error:')) {
-          throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-        }
-      } else {
-        await _db.upsertTrack(track);
+      final upsertResult = RustLibraryService.upsertTrack(track);
+      if (upsertResult != null && upsertResult.startsWith('error:')) {
+        throw StateError('Rust library upsert failed; sqflite fallback removed: $upsertResult');
       }
       _tracks.add(track);
     }
@@ -338,61 +313,45 @@ class LibraryService extends ChangeNotifier {
   /// Bidirectional CUE: slice → cue album + audio music_id.
   Future<Map<String, dynamic>?> cueRelationForSlice(LibraryTrack track) async {
     if (!track.isCueVirtual) return null;
-    // Core-first: try Rust rusqlite; fall back to sqflite.
     final coreAlbum = RustLibraryService.cueAlbumForSlice(track.musicId);
-    if (coreAlbum != null) {
-      final cueId = coreAlbum['cue_id'] as String;
-      final coreSlices = RustLibraryService.slicesForCue(cueId);
-      if (coreSlices != null) {
-        return {
-          'cueId': cueId,
-          'cueRemotePath': coreAlbum['cue_remote_path'],
-          'audioMusicId': track.audioMusicId ?? track.cacheMusicId,
-          'audioRemotePath': track.audioRemotePath,
-          'sliceMusicIds': coreSlices.map((s) => s.musicId).toList(),
-        };
-      }
+    if (coreAlbum == null) {
+      throw StateError(
+        'Rust CUE album lookup failed; sqflite fallback removed (musicId=${track.musicId})',
+      );
     }
-    // sqflite fallback
-    final album = await _db.cueAlbumForSlice(track.musicId);
-    if (album == null) return null;
-    final cueId = album['cue_id'] as String;
-    final slices = await _db.sliceMusicIdsForCue(cueId);
+    final cueId = coreAlbum['cue_id'] as String;
+    final coreSlices = RustLibraryService.slicesForCue(cueId);
+    if (coreSlices == null) {
+      throw StateError(
+        'Rust CUE slices lookup failed; sqflite fallback removed (cueId=$cueId)',
+      );
+    }
     return {
       'cueId': cueId,
-      'cueRemotePath': album['cue_remote_path'],
+      'cueRemotePath': coreAlbum['cue_remote_path'],
       'audioMusicId': track.audioMusicId ?? track.cacheMusicId,
       'audioRemotePath': track.audioRemotePath,
-      'sliceMusicIds': slices,
+      'sliceMusicIds': coreSlices.map((s) => s.musicId).toList(),
     };
   }
 
   /// Bidirectional CUE: cue → original audio + slice music_ids.
   Future<Map<String, dynamic>?> cueRelationForCueId(String cueId) async {
-    // Core-first: try Rust rusqlite; fall back to sqflite on null/empty.
     final coreSlices = RustLibraryService.slicesForCue(cueId);
-    if (coreSlices != null && coreSlices.isNotEmpty) {
-      final first = coreSlices.first;
-      return {
-        'cueId': cueId,
-        'cueRemotePath': first.cueRemotePath,
-        'audioMusicId': first.audioMusicId ?? first.cacheMusicId,
-        'audioRemotePath': first.audioRemotePath,
-        'sliceMusicIds': coreSlices.map((s) => s.musicId).toList(),
-        'slices': coreSlices,
-      };
+    if (coreSlices == null) {
+      throw StateError(
+        'Rust CUE slices lookup failed; sqflite fallback removed (cueId=$cueId)',
+      );
     }
-    // sqflite fallback
-    final slices = await _db.slicesForCue(cueId);
-    if (slices.isEmpty) return null;
-    final first = slices.first;
+    if (coreSlices.isEmpty) return null;
+    final first = coreSlices.first;
     return {
       'cueId': cueId,
       'cueRemotePath': first.cueRemotePath,
       'audioMusicId': first.audioMusicId ?? first.cacheMusicId,
       'audioRemotePath': first.audioRemotePath,
-      'sliceMusicIds': slices.map((s) => s.musicId).toList(),
-      'slices': slices,
+      'sliceMusicIds': coreSlices.map((s) => s.musicId).toList(),
+      'slices': coreSlices,
     };
   }
 
@@ -409,11 +368,7 @@ class LibraryService extends ChangeNotifier {
     bool updateDownloadTime = true,
   }) async {
     final now = DateTime.now();
-    LibraryTrack? existing;
-    if (kRustLibraryReadEnabled) {
-      existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
-    }
-    existing ??= await _db.getTrack(sourceName, remotePath);
+    final existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
     final read = await _tags.readFromFile(localPath);    String? coverPath;
     if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
       coverPath = await _covers.saveThumb(
@@ -455,14 +410,10 @@ class LibraryService extends ChangeNotifier {
           : existing?.lastDownloadedAt ?? now,
       lastTagReadAt: now,
     );
-    if (kRustLibraryWriteEnabled) {
-      // Rust-only write: sqflite dual-path removed per Round 11 cutover.
-      final result = RustLibraryService.upsertTrack(track);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-      }
-    } else {
-      await _db.upsertTrack(track);
+    // Rust-only write: sqflite dual-path removed per Round 11 cutover.
+    final result = RustLibraryService.upsertTrack(track);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
     }
     final idx = _tracks.indexWhere(
       (t) => t.sourceName == sourceName && t.remotePath == remotePath,
@@ -488,13 +439,9 @@ class LibraryService extends ChangeNotifier {
     if (existing.remoteMissing) return;
     existing.remoteMissing = true;
     existing.rev = _nextRev();
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.upsertTrack(existing);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-      }
-    } else {
-      await _db.upsertTrack(existing);
+    final result = RustLibraryService.upsertTrack(existing);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
     }
     notifyListeners();
   }
@@ -507,13 +454,9 @@ class LibraryService extends ChangeNotifier {
     if (existing == null || !existing.remoteMissing) return;
     existing.remoteMissing = false;
     existing.rev = _nextRev();
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.upsertTrack(existing);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-      }
-    } else {
-      await _db.upsertTrack(existing);
+    final result = RustLibraryService.upsertTrack(existing);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
     }
     notifyListeners();
   }
@@ -529,13 +472,9 @@ class LibraryService extends ChangeNotifier {
     if (existing == null) return;
     existing.coverPath = coverPath;
     existing.rev = _nextRev();
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.upsertTrack(existing);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-      }
-    } else {
-      await _db.upsertTrack(existing);
+    final result = RustLibraryService.upsertTrack(existing);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
     }
     notifyListeners();
   }
@@ -546,16 +485,10 @@ class LibraryService extends ChangeNotifier {
     String? newFileName,
   }) async {
     final name = newFileName ?? newRemotePath.split('/').where((s) => s.isNotEmpty).last;
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.deleteTrack(track.musicId);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library delete failed; sqflite fallback removed: $result');
-      }
-    } else {
-      await _db.deleteTrack(track.sourceName, track.remotePath);
+    final deleteResult = RustLibraryService.deleteTrack(track.musicId);
+    if (deleteResult != null && deleteResult.startsWith('error:')) {
+      throw StateError('Rust library delete failed; sqflite fallback removed: $deleteResult');
     }
-    // Rust delete: Round 11 cutover.
-    RustLibraryService.deleteTrack(track.musicId);
     _tracks.removeWhere(
       (t) => t.sourceName == track.sourceName && t.remotePath == track.remotePath,
     );
@@ -583,13 +516,9 @@ class LibraryService extends ChangeNotifier {
       lastTagReadAt: track.lastTagReadAt,
       remoteMissing: false,
     );
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.upsertTrack(next);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-      }
-    } else {
-      await _db.upsertTrack(next);
+    final upsertResult = RustLibraryService.upsertTrack(next);
+    if (upsertResult != null && upsertResult.startsWith('error:')) {
+      throw StateError('Rust library upsert failed; sqflite fallback removed: $upsertResult');
     }
     _tracks.add(next);
     notifyListeners();
@@ -608,11 +537,7 @@ class LibraryService extends ChangeNotifier {
     required ReadTags tags,
   }) async {
     final now = DateTime.now();
-    LibraryTrack? existing;
-    if (kRustLibraryReadEnabled) {
-      existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
-    }
-    existing ??= await _db.getTrack(sourceName, remotePath);
+    final existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
     String? coverPath = existing?.coverPath;
     if (tags.coverBytes != null && tags.coverBytes!.isNotEmpty) {
       coverPath = await _covers.saveThumb(
@@ -649,13 +574,9 @@ class LibraryService extends ChangeNotifier {
           DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
       lastTagReadAt: now,
     );
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.upsertTrack(track);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-      }
-    } else {
-      await _db.upsertTrack(track);
+    final result = RustLibraryService.upsertTrack(track);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
     }
     final idx = _tracks.indexWhere(
       (t) => t.sourceName == sourceName && t.remotePath == remotePath,
@@ -779,48 +700,46 @@ class LibraryService extends ChangeNotifier {
     if (created.isEmpty) return const [];
 
     // Core-only CUE write (Class B sqflite dual-write unloaded)
-    if (kRustLibraryWriteEnabled) {
-      // Delete-then-upsert mirrors replace semantics
-      final deleteResult = RustLibraryService.deleteCueAlbum(
-        sourceName,
-        cueRemotePath,
-      );
-      // Ignore "not found" errors — the album may not exist yet
-      if (deleteResult != null &&
-          deleteResult.startsWith('error:') &&
-          !deleteResult.contains('not found')) {
-        throw StateError('Rust CUE album delete failed during replace: $deleteResult');
-      }
+    // Delete-then-upsert mirrors replace semantics
+    final deleteResult = RustLibraryService.deleteCueAlbum(
+      sourceName,
+      cueRemotePath,
+    );
+    // Ignore "not found" errors — the album may not exist yet
+    if (deleteResult != null &&
+        deleteResult.startsWith('error:') &&
+        !deleteResult.contains('not found')) {
+      throw StateError('Rust CUE album delete failed during replace: $deleteResult');
+    }
 
-      // Build and upsert the album record
-      final albumJson = RustLibraryService.cueAlbumJson(
-        cueId: created.first.cueId!,
-        sourceName: sourceName,
-        cueRemotePath: cueRemotePath,
-        title: created.first.album,
-        performer: created.first.albumArtist ?? created.first.artist,
-        cacheGroupId: groupId,
-        createdAt: now,
+    // Build and upsert the album record
+    final albumJson = RustLibraryService.cueAlbumJson(
+      cueId: created.first.cueId!,
+      sourceName: sourceName,
+      cueRemotePath: cueRemotePath,
+      title: created.first.album,
+      performer: created.first.albumArtist ?? created.first.artist,
+      cacheGroupId: groupId,
+      createdAt: now,
+    );
+    if (albumJson != null) {
+      final albumResult = RustLibraryService.upsertCueAlbum(
+        jsonEncode(albumJson),
       );
-      if (albumJson != null) {
-        final albumResult = RustLibraryService.upsertCueAlbum(
-          jsonEncode(albumJson),
+      if (albumResult != null && albumResult.startsWith('error:')) {
+        throw StateError('Rust CUE album upsert failed: $albumResult');
+      }
+    }
+
+    // Upsert each slice
+    for (final track in created) {
+      final sliceJson = RustLibraryService.cueSliceJson(track);
+      if (sliceJson != null) {
+        final sliceResult = RustLibraryService.upsertCueSlice(
+          jsonEncode(sliceJson),
         );
-        if (albumResult != null && albumResult.startsWith('error:')) {
-          throw StateError('Rust CUE album upsert failed: $albumResult');
-        }
-      }
-
-      // Upsert each slice
-      for (final track in created) {
-        final sliceJson = RustLibraryService.cueSliceJson(track);
-        if (sliceJson != null) {
-          final sliceResult = RustLibraryService.upsertCueSlice(
-            jsonEncode(sliceJson),
-          );
-          if (sliceResult != null && sliceResult.startsWith('error:')) {
-            throw StateError('Rust CUE slice upsert failed: $sliceResult');
-          }
+        if (sliceResult != null && sliceResult.startsWith('error:')) {
+          throw StateError('Rust CUE slice upsert failed: $sliceResult');
         }
       }
     }
@@ -854,15 +773,13 @@ class LibraryService extends ChangeNotifier {
       row.rev = _nextRev();
 
       // Core-only CUE write (Class B sqflite dual-write unloaded)
-      if (kRustLibraryWriteEnabled) {
-        final sliceJson = RustLibraryService.cueSliceJson(row);
-        if (sliceJson != null) {
-          final sliceResult = RustLibraryService.upsertCueSlice(
-            jsonEncode(sliceJson),
-          );
-          if (sliceResult != null && sliceResult.startsWith('error:')) {
-            throw StateError('Rust CUE slice upsert failed in cover refresh: $sliceResult');
-          }
+      final sliceJson = RustLibraryService.cueSliceJson(row);
+      if (sliceJson != null) {
+        final sliceResult = RustLibraryService.upsertCueSlice(
+          jsonEncode(sliceJson),
+        );
+        if (sliceResult != null && sliceResult.startsWith('error:')) {
+          throw StateError('Rust CUE slice upsert failed in cover refresh: $sliceResult');
         }
       }
 
@@ -984,48 +901,46 @@ class LibraryService extends ChangeNotifier {
     // persisted rows together, then replace the in-memory projection at once.
 
     // Core-only CUE write (Class B sqflite dual-write unloaded)
-    if (kRustLibraryWriteEnabled) {
-      // Delete-then-upsert mirrors replace semantics
-      final deleteResult = RustLibraryService.deleteCueAlbum(
-        sourceName,
-        cueRemotePath,
-      );
-      // Ignore "not found" errors — the album may not exist yet
-      if (deleteResult != null &&
-          deleteResult.startsWith('error:') &&
-          !deleteResult.contains('not found')) {
-        throw StateError('Rust CUE album delete failed during replace: $deleteResult');
-      }
+    // Delete-then-upsert mirrors replace semantics
+    final cueDeleteResult = RustLibraryService.deleteCueAlbum(
+      sourceName,
+      cueRemotePath,
+    );
+    // Ignore "not found" errors — the album may not exist yet
+    if (cueDeleteResult != null &&
+        cueDeleteResult.startsWith('error:') &&
+        !cueDeleteResult.contains('not found')) {
+      throw StateError('Rust CUE album delete failed during replace: $cueDeleteResult');
+    }
 
-      // Build and upsert the album record
-      final albumJson = RustLibraryService.cueAlbumJson(
-        cueId: created.first.cueId!,
-        sourceName: sourceName,
-        cueRemotePath: cueRemotePath,
-        title: created.first.album,
-        performer: created.first.albumArtist ?? created.first.artist,
-        cacheGroupId: cacheGroupId,
-        createdAt: now,
+    // Build and upsert the album record
+    final albumJson = RustLibraryService.cueAlbumJson(
+      cueId: created.first.cueId!,
+      sourceName: sourceName,
+      cueRemotePath: cueRemotePath,
+      title: created.first.album,
+      performer: created.first.albumArtist ?? created.first.artist,
+      cacheGroupId: cacheGroupId,
+      createdAt: now,
+    );
+    if (albumJson != null) {
+      final albumResult = RustLibraryService.upsertCueAlbum(
+        jsonEncode(albumJson),
       );
-      if (albumJson != null) {
-        final albumResult = RustLibraryService.upsertCueAlbum(
-          jsonEncode(albumJson),
+      if (albumResult != null && albumResult.startsWith('error:')) {
+        throw StateError('Rust CUE album upsert failed: $albumResult');
+      }
+    }
+
+    // Upsert each slice
+    for (final track in created) {
+      final sliceJson = RustLibraryService.cueSliceJson(track);
+      if (sliceJson != null) {
+        final sliceResult = RustLibraryService.upsertCueSlice(
+          jsonEncode(sliceJson),
         );
-        if (albumResult != null && albumResult.startsWith('error:')) {
-          throw StateError('Rust CUE album upsert failed: $albumResult');
-        }
-      }
-
-      // Upsert each slice
-      for (final track in created) {
-        final sliceJson = RustLibraryService.cueSliceJson(track);
-        if (sliceJson != null) {
-          final sliceResult = RustLibraryService.upsertCueSlice(
-            jsonEncode(sliceJson),
-          );
-          if (sliceResult != null && sliceResult.startsWith('error:')) {
-            throw StateError('Rust CUE slice upsert failed: $sliceResult');
-          }
+        if (sliceResult != null && sliceResult.startsWith('error:')) {
+          throw StateError('Rust CUE slice upsert failed: $sliceResult');
         }
       }
     }
@@ -1045,48 +960,22 @@ class LibraryService extends ChangeNotifier {
   }
 
   /// Case-insensitive search over title / artist / album / file name.
-  ///
-  /// When [kRustLibraryReadEnabled] is true, search is Rust-only (throws if FFI fails).
-  /// When the flag is off, searches the in-memory list from the last [refresh].
   List<LibraryTrack> search(
     String query, {
     LibrarySortMode sort = LibrarySortMode.byName,
   }) {
-    // Forced Rust search when flag on — no in-memory/sqflite fallback.
-    if (kRustLibraryReadEnabled) {
-      final rustResult = RustLibraryService.search(query);
-      if (rustResult == null) {
-        throw StateError(
-          'Rust library search failed; Dart fallback removed',
-        );
-      }
-      rustResult.sort(
-        sort == LibrarySortMode.byAlbumTrack
-            ? compareTracksByAlbumOrder
-            : compareTracksByName,
+    final rustResult = RustLibraryService.search(query);
+    if (rustResult == null) {
+      throw StateError(
+        'Rust library search failed; Dart fallback removed',
       );
-      return rustResult;
     }
-
-    // Flag off: in-memory search over last refresh().
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) return byTitle(sort: sort);
-    final matched = _tracks.where((t) {
-      bool has(String? s) => (s ?? '').toLowerCase().contains(q);
-      return has(t.title) ||
-          has(t.artist) ||
-          has(t.albumArtist) ||
-          has(t.album) ||
-          has(t.fileName) ||
-          has(t.genre) ||
-          t.displayTitle.toLowerCase().contains(q);
-    }).toList();
-    matched.sort(
+    rustResult.sort(
       sort == LibrarySortMode.byAlbumTrack
           ? compareTracksByAlbumOrder
           : compareTracksByName,
     );
-    return matched;
+    return rustResult;
   }
 
   /// Distinct non-empty genre values, sorted (case-insensitive unique).
@@ -1299,25 +1188,14 @@ class LibraryService extends ChangeNotifier {
     await recordTombstone(sourceName, remotePath);
     // Resolve the musicId from the in-memory index before the row is gone.
     final id = find(sourceName, remotePath)?.musicId;
-    if (kRustLibraryWriteEnabled) {
-      final result = RustLibraryService.deleteTrack(id);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust library delete failed; sqflite fallback removed: $result');
-      }
-    } else {
-      RustLibraryService.deleteTrack(id);
-      await _db.deleteTrack(sourceName, remotePath);
+    final result = RustLibraryService.deleteTrack(id);
+    if (result != null && result.startsWith('error:')) {
+      throw StateError('Rust library delete failed; sqflite fallback removed: $result');
     }
     _tracks.removeWhere(
       (t) => t.sourceName == sourceName && t.remotePath == remotePath,
     );
     notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    _db.close();
-    super.dispose();
   }
 
   /// Decode Rust deleted_tracks JSON array to sqflite-compatible maps.

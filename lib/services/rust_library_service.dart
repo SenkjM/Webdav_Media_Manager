@@ -8,12 +8,10 @@ import '../models/library_track.dart';
 import '../utils/track_identity.dart';
 import 'rust_core_service.dart';
 
-/// Round 8/9 — Rust library service.
+/// Core FFI library service — always-on Rust rusqlite backend.
 ///
-/// Gates read ops behind [kRustLibraryReadEnabled] and write ops behind
-/// [kRustLibraryWriteEnabled].  When a flag is `true`, the matching ops are
-/// served from the Rust rusqlite DB via FFI; the Dart sqflite path remains
-/// the source of truth while a flag is `false`.
+/// All read and write ops go directly to the Rust rusqlite DB via FFI.
+/// Dart sqflite is no longer involved in any music/CUE path.
 ///
 /// ## Schema gap notes
 /// The Rust `LibraryTrack` JSON uses snake_case field names (`account_id`,
@@ -25,15 +23,6 @@ import 'rust_core_service.dart';
 /// Fields that do not exist in the Rust schema (cover_path, bitrate,
 /// sample_rate, cue_*, cache_group_id, remote_missing) are filled with safe
 /// defaults so the resulting LibraryTrack works correctly in the Dart UI.
-///
-/// ## Cutover path (Round 9)
-/// 1. Validate row-count parity on device (RustLibraryProbe still runs at
-///    startup in debug builds).
-/// 2. Flip [kRustLibraryReadEnabled] = `true` in this file.
-/// 3. Rebuild + smoke-test on a real device.
-/// 4. After device green: flip [kRustLibraryWriteEnabled] = `true`, run a
-///    dual-write probe, and confirm parity before deleting
-///    `music_library_database_impl.dart`.
 class RustLibraryService {
   RustLibraryService._();
 
@@ -41,12 +30,11 @@ class RustLibraryService {
 
   /// List all tracks from the Rust rusqlite DB.
   ///
-  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or when the
-  /// native library is unavailable — throws [StateError] (no Dart fallback).
+  /// Returns `null` when the native library is unavailable — throws
+  /// [StateError] (no Dart fallback).
   ///
   /// Never throws.
   static List<LibraryTrack>? listAll() {
-    if (!kRustLibraryReadEnabled) return null;
     final json = RustCoreService.trackList();
     if (json == null || json.startsWith('error:')) {
       debugPrint('[RustLibraryService] listAll failed: $json');
@@ -58,12 +46,10 @@ class RustLibraryService {
 
   /// Search tracks by title/artist substring.
   ///
-  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
-  /// is unavailable (throws).  Returns an empty list on a genuine zero-hit search.
+  /// Returns an empty list on a genuine zero-hit search.
   ///
   /// Never throws.
   static List<LibraryTrack>? search(String query) {
-    if (!kRustLibraryReadEnabled) return null;
     if (query.trim().isEmpty) return listAll();
     final json = RustCoreService.trackSearch(query.trim());
     if (json == null || json.startsWith('error:')) {
@@ -75,12 +61,10 @@ class RustLibraryService {
 
   /// Get a single track by its rusqlite `id` (SHA-1 hex).
   ///
-  /// Returns `null` when [kRustLibraryReadEnabled] is `false`, the track is
-  /// not found, or the library is unavailable.
+  /// Returns `null` when the track is not found or the library is unavailable.
   ///
   /// Never throws.
   static LibraryTrack? getById(String id) {
-    if (!kRustLibraryReadEnabled) return null;
     final json = RustCoreService.trackGet(id);
     if (json == null || json == 'null' || json.startsWith('error:')) {
       return null;
@@ -98,16 +82,14 @@ class RustLibraryService {
 
   /// Upsert [track] into the Rust rusqlite DB.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` (the default) or when
-  /// the native library is unavailable.  Returns the result string from FFI
-  /// (`'ok'` on success, `'error:…'` on failure), or `null` if disabled.
+  /// Returns the result string from FFI (`'ok'` on success, `'error:…'` on
+  /// failure), or `null` when the native library is unavailable.
   ///
   /// CUE slice tracks are routed to [upsertCueSlice] when [track.isCueVirtual]
   /// is true.  Regular tracks use the track table.
   ///
   /// Never throws.
   static String? upsertTrack(LibraryTrack track) {
-    if (!kRustLibraryWriteEnabled) return null;
 
     // Route CUE virtuals to the CUE upsert path
     if (track.isCueVirtual) {
@@ -136,12 +118,10 @@ class RustLibraryService {
 
   /// Delete the track identified by [musicId] from the Rust rusqlite DB.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false`, [musicId] is null/
-  /// empty, or the library is unavailable.
+  /// No-op when [musicId] is null/empty or the library is unavailable.
   ///
   /// Never throws.
   static String? deleteTrack(String? musicId) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (musicId == null || musicId.isEmpty) return null;
     try {
       final result = RustCoreService.trackDelete(musicId);
@@ -157,12 +137,10 @@ class RustLibraryService {
 
   /// Delete all tracks for [accountId] from the Rust rusqlite DB.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false`, [accountId] is null/
-  /// empty, or the library is unavailable.
+  /// No-op when [accountId] is null/empty or the library is unavailable.
   ///
   /// Never throws.
   static String? deleteTracksBySource(String? accountId) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (accountId == null || accountId.isEmpty) return null;
     try {
       final result = RustCoreService.trackDeleteBySource(accountId);
@@ -178,12 +156,10 @@ class RustLibraryService {
 
   /// Clear the entire library (tracks, playlists, manga, CUE sheets).
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or the library is
-  /// unavailable.
+  /// No-op when the library is unavailable.
   ///
   /// Never throws.
   static String? clearLibraryAll() {
-    if (!kRustLibraryWriteEnabled) return null;
     try {
       final result = RustCoreService.libraryClearAll();
       if (result != null && result.startsWith('error:')) {
@@ -199,12 +175,10 @@ class RustLibraryService {
   /// Clear the library index (tracks, CUE sheets, deleted_tracks) but preserve
   /// playlists and manga.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or the library is
-  /// unavailable.
+  /// No-op when the library is unavailable.
   ///
   /// Never throws.
   static String? clearLibraryIndex() {
-    if (!kRustLibraryWriteEnabled) return null;
     try {
       final result = RustCoreService.libraryClearIndex();
       if (result != null && result.startsWith('error:')) {
@@ -219,12 +193,10 @@ class RustLibraryService {
 
   /// Delete one CUE slice from the Rust rusqlite DB.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false`, [musicId] is null/
-  /// empty, or the library is unavailable.
+  /// No-op when [musicId] is null/empty or the library is unavailable.
   ///
   /// Never throws.
   static String? deleteCueSlice(String? musicId) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (musicId == null || musicId.isEmpty) return null;
     try {
       final result = RustCoreService.cueSliceDelete(musicId);
@@ -240,12 +212,10 @@ class RustLibraryService {
 
   /// Delete an entire CUE album and its slices from the Rust rusqlite DB.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or parameters are
-  /// null/empty.
+  /// No-op when parameters are null/empty.
   ///
   /// Never throws.
   static String? deleteCueAlbum(String? sourceName, String? cueRemotePath) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (sourceName == null || sourceName.isEmpty) return null;
     if (cueRemotePath == null || cueRemotePath.isEmpty) return null;
     try {
@@ -263,11 +233,10 @@ class RustLibraryService {
   /// Count remaining CUE slices for the given album from the Rust rusqlite DB.
   ///
   /// Returns a decimal count string (e.g. "5"), "error:...", or `null` if
-  /// [kRustLibraryReadEnabled] is `false` or the library is unavailable.
+  /// the library is unavailable.
   ///
   /// Never throws.
   static String? listCueRemainingSlices(String? sourceName, String? cueRemotePath) {
-    if (!kRustLibraryReadEnabled) return null;
     if (sourceName == null || sourceName.isEmpty) return null;
     if (cueRemotePath == null || cueRemotePath.isEmpty) return null;
     try {
@@ -285,7 +254,7 @@ class RustLibraryService {
   /// Get a track (or CUE slice) by source name and remote path.
   ///
   /// The FFI export tries `tracks` first; on miss it tries `cue_slices`.
-  /// Returns a [LibraryTrack] on hit, `null` on miss / error / flag off.
+  /// Returns a [LibraryTrack] on hit, `null` on miss or error.
   ///
   /// CUE slice JSON (discriminant: has `music_id` + `cue_id`) is decoded via
   /// [LibraryTrack.fromMap] which populates all CUE fields.  Track JSON is
@@ -293,7 +262,6 @@ class RustLibraryService {
   ///
   /// Never throws.
   static LibraryTrack? getBySourcePath(String sourceName, String remotePath) {
-    if (!kRustLibraryReadEnabled) return null;
     final json = RustCoreService.trackGetBySourcePath(sourceName, remotePath);
     if (json == null || json == 'null' || json.startsWith('error:')) {
       if (json != null && json != 'null') {
@@ -326,11 +294,10 @@ class RustLibraryService {
 
   /// Get the CUE album that owns the slice with [musicId].
   ///
-  /// Returns the raw album map on hit, `null` on miss / error / flag off.
+  /// Returns the raw album map on hit, `null` on miss or error.
   ///
   /// Never throws.
   static Map<String, dynamic>? cueAlbumForSlice(String musicId) {
-    if (!kRustLibraryReadEnabled) return null;
     final json = RustCoreService.cueAlbumForSlice(musicId);
     if (json == null || json == 'null' || json.startsWith('error:')) {
       if (json != null && json != 'null') {
@@ -349,11 +316,10 @@ class RustLibraryService {
   /// List all CUE slices for [cueId], ordered by track_index ASC.
   ///
   /// Returns a list of [LibraryTrack] on success (may be empty), `null` on
-  /// error or flag off.
+  /// error.
   ///
   /// Never throws.
   static List<LibraryTrack>? slicesForCue(String cueId) {
-    if (!kRustLibraryReadEnabled) return null;
     final json = RustCoreService.cueSlicesForCue(cueId);
     if (json == null || json.startsWith('error:')) {
       if (json != null) {
@@ -391,12 +357,10 @@ class RustLibraryService {
 
   /// Upsert a CUE slice into the Rust rusqlite DB.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or [sliceJson] is
-  /// null/empty.
+  /// No-op when [sliceJson] is null/empty.
   ///
   /// Never throws.
   static String? upsertCueSlice(String? sliceJson) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (sliceJson == null || sliceJson.isEmpty) return null;
     try {
       final result = RustCoreService.cueSliceUpsert(sliceJson);
@@ -412,12 +376,10 @@ class RustLibraryService {
 
   /// Upsert a CUE album into the Rust rusqlite DB.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or [albumJson] is
-  /// null/empty.
+  /// No-op when [albumJson] is null/empty.
   ///
   /// Never throws.
   static String? upsertCueAlbum(String? albumJson) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (albumJson == null || albumJson.isEmpty) return null;
     try {
       final result = RustCoreService.cueAlbumUpsert(albumJson);
@@ -435,10 +397,9 @@ class RustLibraryService {
 
   /// Upsert a deleted track tombstone.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or [json] is null/empty.
+  /// No-op when [json] is null/empty.
   /// Never throws.
   static String? deletedTrackUpsert(String? json) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (json == null || json.isEmpty) return null;
     try {
       final result = RustCoreService.deletedTrackUpsert(json);
@@ -454,10 +415,8 @@ class RustLibraryService {
 
   /// Clear a deleted track tombstone by source and remote path.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or parameters are
-  /// null/empty. Never throws.
+  /// No-op when parameters are null/empty. Never throws.
   static String? deletedTrackClear(String? sourceName, String? remotePath) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (sourceName == null || sourceName.isEmpty) return null;
     if (remotePath == null || remotePath.isEmpty) return null;
     try {
@@ -474,10 +433,8 @@ class RustLibraryService {
 
   /// List all deleted tracks from the Rust DB.
   ///
-  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
-  /// is unavailable (throws). Never throws.
+  /// Returns `null` when the library is unavailable (throws). Never throws.
   static String? deletedTracksList() {
-    if (!kRustLibraryReadEnabled) return null;
     try {
       final result = RustCoreService.deletedTracksList();
       if (result != null && result.startsWith('error:')) {
@@ -493,10 +450,8 @@ class RustLibraryService {
 
   /// List unpushed deleted tracks (pushed=0).
   ///
-  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
-  /// is unavailable (throws). Never throws.
+  /// Returns `null` when the library is unavailable (throws). Never throws.
   static String? deletedTracksUnpushed() {
-    if (!kRustLibraryReadEnabled) return null;
     try {
       final result = RustCoreService.deletedTracksUnpushed();
       if (result != null && result.startsWith('error:')) {
@@ -512,10 +467,8 @@ class RustLibraryService {
 
   /// Mark deleted tracks as pushed by revision numbers.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or [revsJson] is
-  /// null/empty. Never throws.
+  /// No-op when [revsJson] is null/empty. Never throws.
   static String? deletedTracksMarkPushed(String? revsJson) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (revsJson == null || revsJson.isEmpty) return null;
     try {
       final result = RustCoreService.deletedTracksMarkPushed(revsJson);
@@ -531,9 +484,8 @@ class RustLibraryService {
 
   /// Purge pushed deleted tracks up to and including the given revision.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false`. Never throws.
+  /// Never throws.
   static String? deletedTracksPurgeUpTo(int upTo) {
-    if (!kRustLibraryWriteEnabled) return null;
     try {
       final result = RustCoreService.deletedTracksPurgeUpTo(upTo);
       if (result != null && result.startsWith('error:')) {
@@ -548,10 +500,8 @@ class RustLibraryService {
 
   /// Get tombstoned remote paths for a source.
   ///
-  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
-  /// is unavailable (throws). Never throws.
+  /// Returns `null` when the library is unavailable (throws). Never throws.
   static String? tombstonedRemotePaths(String? sourceName) {
-    if (!kRustLibraryReadEnabled) return null;
     if (sourceName == null || sourceName.isEmpty) return null;
     try {
       final result = RustCoreService.tombstonedRemotePaths(sourceName);
@@ -568,10 +518,8 @@ class RustLibraryService {
 
   /// Get sync state by remote key.
   ///
-  /// Returns `null` when [kRustLibraryReadEnabled] is `false` or the library
-  /// is unavailable (throws). Never throws.
+  /// Returns `null` when the library is unavailable (throws). Never throws.
   static String? syncStateGet(String? remoteKey) {
-    if (!kRustLibraryReadEnabled) return null;
     if (remoteKey == null || remoteKey.isEmpty) return null;
     try {
       final result = RustCoreService.syncStateGet(remoteKey);
@@ -588,10 +536,9 @@ class RustLibraryService {
 
   /// Save sync state from JSON.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false` or [json] is null/empty.
+  /// No-op when [json] is null/empty.
   /// Never throws.
   static String? syncStateSave(String? json) {
-    if (!kRustLibraryWriteEnabled) return null;
     if (json == null || json.isEmpty) return null;
     try {
       final result = RustCoreService.syncStateSave(json);
@@ -607,9 +554,8 @@ class RustLibraryService {
 
   /// Clear sync state by optional prefix.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is `false`. Never throws.
+  /// Never throws.
   static String? syncStateClear([String? prefix]) {
-    if (!kRustLibraryWriteEnabled) return null;
     try {
       final result = RustCoreService.syncStateClear(prefix);
       if (result != null && result.startsWith('error:')) {
@@ -626,10 +572,8 @@ class RustLibraryService {
 
   /// List all artists.
   ///
-  /// Returns a JSON array of artist objects when [kRustLibraryReadEnabled]
-  /// is true, null otherwise. Never throws.
+  /// Returns a JSON array of artist objects, or null on error. Never throws.
   static String? listArtists() {
-    if (!kRustLibraryReadEnabled) return null;
     try {
       final result = RustCoreService.artistList();
       if (result != null && result.startsWith('error:')) {
@@ -645,10 +589,8 @@ class RustLibraryService {
 
   /// Get one artist by name.
   ///
-  /// Returns a JSON object, "null" if absent, or throws on error.
-  /// Returns null when [kRustLibraryReadEnabled] is false. Never throws.
+  /// Returns a JSON object, "null" if absent, or throws on error. Never throws.
   static String? getArtist(String name) {
-    if (!kRustLibraryReadEnabled) return null;
     try {
       final result = RustCoreService.artistGet(name);
       if (result != null && result.startsWith('error:')) {
@@ -664,10 +606,8 @@ class RustLibraryService {
 
   /// List all albums.
   ///
-  /// Returns a JSON array of album objects when [kRustLibraryReadEnabled]
-  /// is true, null otherwise. Never throws.
+  /// Returns a JSON array of album objects, or null on error. Never throws.
   static String? listAlbums() {
-    if (!kRustLibraryReadEnabled) return null;
     try {
       final result = RustCoreService.albumList();
       if (result != null && result.startsWith('error:')) {
@@ -683,10 +623,8 @@ class RustLibraryService {
 
   /// Get one album by title.
   ///
-  /// Returns a JSON object, "null" if absent, or throws on error.
-  /// Returns null when [kRustLibraryReadEnabled] is false. Never throws.
+  /// Returns a JSON object, "null" if absent, or throws on error. Never throws.
   static String? getAlbum(String title) {
-    if (!kRustLibraryReadEnabled) return null;
     try {
       final result = RustCoreService.albumGet(title);
       if (result != null && result.startsWith('error:')) {
@@ -702,10 +640,8 @@ class RustLibraryService {
 
   /// List tracks by artist name.
   ///
-  /// Returns a JSON array of track objects when [kRustLibraryReadEnabled]
-  /// is true, null otherwise. Decodes to List<LibraryTrack> via _decodeArray.
+  /// Returns a list of [LibraryTrack], or throws on error.
   static List<LibraryTrack>? tracksByArtist(String name) {
-    if (!kRustLibraryReadEnabled) return null;
     final json = RustCoreService.tracksByArtist(name);
     if (json == null || json.startsWith('error:')) {
       debugPrint('[RustLibraryService] tracksByArtist("$name") failed: $json');
@@ -716,10 +652,8 @@ class RustLibraryService {
 
   /// List tracks by album title.
   ///
-  /// Returns a JSON array of track objects when [kRustLibraryReadEnabled]
-  /// is true, null otherwise. Decodes to List<LibraryTrack> via _decodeArray.
+  /// Returns a list of [LibraryTrack], or throws on error.
   static List<LibraryTrack>? tracksByAlbum(String title) {
-    if (!kRustLibraryReadEnabled) return null;
     final json = RustCoreService.tracksByAlbum(title);
     if (json == null || json.startsWith('error:')) {
       debugPrint('[RustLibraryService] tracksByAlbum("$title") failed: $json');
@@ -730,9 +664,8 @@ class RustLibraryService {
 
   /// Rebuild artist and album aggregates.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is false. Never throws.
+  /// Never throws.
   static String? rebuildAggregates() {
-    if (!kRustLibraryWriteEnabled) return null;
     try {
       final result = RustCoreService.libraryRebuildAggregates();
       if (result != null && result.startsWith('error:')) {
@@ -747,9 +680,8 @@ class RustLibraryService {
 
   /// Rebuild FTS5 search index.
   ///
-  /// No-op when [kRustLibraryWriteEnabled] is false. Never throws.
+  /// Never throws.
   static String? rebuildFts() {
-    if (!kRustLibraryWriteEnabled) return null;
     try {
       final result = RustCoreService.libraryRebuildFts();
       if (result != null && result.startsWith('error:')) {
@@ -950,45 +882,3 @@ class RustLibraryService {
     };
   }
 }
-
-// ── Feature flags ─────────────────────────────────────────────────────────────
-
-/// Gate for the Rust library read path.
-///
-/// **Default: `false`** — Dart sqflite ([LibraryDatabase]) remains the source
-/// of truth for list / search / get ops.
-///
-/// When `true`, [RustLibraryService.listAll], [RustLibraryService.search], and
-/// [RustLibraryService.getById] return data from the Rust rusqlite DB via FFI.
-///
-/// ## Enable instructions
-/// 1. Verify row-count parity in logcat: `[RustLibraryProbe] tracks … (match)`.
-/// 2. Change `kRustLibraryReadEnabled = false` → `kRustLibraryReadEnabled = true`.
-/// 3. Rebuild and run on a real Android device.
-/// 4. Confirm the library screen loads correctly with the same tracks.
-/// 5. Round 9+: flip write flag and delete `music_library_database_impl.dart`.
-///
-/// Serial invariant: list / search / get are read-only — no concurrency risk.
-// ignore: constant_identifier_names
-const bool kRustLibraryReadEnabled = true;
-
-/// Gate for the Rust library write path.
-///
-/// **Default: `false`** — Dart sqflite remains the write target.
-///
-/// When `true`, [RustLibraryService.upsertTrack] and [RustLibraryService.deleteTrack]
-/// mirror every Dart sqflite write into the Rust rusqlite DB via FFI.  This
-/// enables a dual-write probe: both DBs are updated in parallel so row-count
-/// and content parity can be verified before the sqflite path is removed.
-///
-/// ## Cutover path
-/// 1. Ensure [kRustLibraryReadEnabled] is `true` and device smoke green.
-/// 2. Change `kRustLibraryWriteEnabled = false` → `kRustLibraryWriteEnabled = true`.
-/// 3. Rebuild.  Both DBs are now written on every ingest / upsert / delete.
-/// 4. Verify logcat shows no `[RustLibraryService] upsertTrack failed` lines.
-/// 5. After dual-write probe passes: remove sqflite calls and delete
-///    `music_library_database_impl.dart`.
-///
-/// Do **not** flip to `true` before [kRustLibraryReadEnabled] is confirmed.
-// ignore: constant_identifier_names
-const bool kRustLibraryWriteEnabled = true;
