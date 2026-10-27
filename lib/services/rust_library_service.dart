@@ -393,6 +393,36 @@ class RustLibraryService {
     }
   }
 
+  /// List all CUE albums from the Rust rusqlite DB.
+  ///
+  /// Returns the raw Core JSON maps (snake_case CueAlbum shape: `cue_id`,
+  /// `source_name`, `cue_remote_path`, `title`, `performer`,
+  /// `cache_group_id`, `created_at`).
+  ///
+  /// Throws [StateError] when Core FFI is unavailable or returns an error —
+  /// same hard-fail policy as [listAll] (backup export must not silently fall
+  /// back to an empty library). Never throws otherwise.
+  static List<Map<String, dynamic>> listCueAlbums() {
+    final json = RustCoreService.listCueAlbums();
+    if (json == null || json.startsWith('error:')) {
+      debugPrint('[RustLibraryService] listCueAlbums failed: $json');
+      throw StateError('RustLibraryService.listCueAlbums failed: $json');
+    }
+    try {
+      final raw = jsonDecode(json);
+      if (raw is! List) {
+        throw StateError('RustLibraryService.listCueAlbums: expected array');
+      }
+      return [
+        for (final e in raw)
+          Map<String, dynamic>.from(e as Map),
+      ];
+    } catch (e) {
+      debugPrint('[RustLibraryService] listCueAlbums decode error: $e');
+      throw StateError('RustLibraryService.listCueAlbums decode: $e');
+    }
+  }
+
   // ── Schema v6 — deleted_tracks + sync_state write ops ──────────────────────
 
   /// Upsert a deleted track tombstone.

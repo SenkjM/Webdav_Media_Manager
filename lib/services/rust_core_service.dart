@@ -2282,6 +2282,11 @@ class RustCoreService {
   static _NoArgToStrDart?     _mangaListProgress;
   static _NoArgToStrDart?     _mangaListSeries;
 
+  // Wave E — backup export / import helpers
+  static _NoArgToStrDart?  _listCueAlbums;
+  static _NoArgToStrDart?  _deletedMangaList;
+  static _OneStrToStrDart? _deletedMangaUpsert;
+
   static bool _mangaSymbolsLoaded = false;
 
   static void _loadMangaSymbolsSafe() {
@@ -2332,6 +2337,17 @@ class RustCoreService {
       _mangaListSeries = lib
           .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
               'wdmm_manga_list_series')
+          .asFunction();
+      _listCueAlbums = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_list_cue_albums')
+          .asFunction();
+      _deletedMangaList = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_deleted_manga_list')
+          .asFunction();
+      _deletedMangaUpsert = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_deleted_manga_upsert')
           .asFunction();
       _mangaSymbolsLoaded = true;
     } catch (e) {
@@ -2476,6 +2492,38 @@ class RustCoreService {
   static String? mangaListSeries() {
     if (!_ensureMangaSymbols() || _mangaListSeries == null) return null;
     return _readAndFreeString(_mangaListSeries!());
+  }
+
+  // ── Wave E — backup export / import helpers ───────────────────────────────
+
+  /// List all CUE albums as a JSON array (ordered cue_id ASC), or null if
+  /// FFI unavailable.
+  static String? listCueAlbums() {
+    if (!_ensureMangaSymbols() || _listCueAlbums == null) return null;
+    return _readAndFreeString(_listCueAlbums!());
+  }
+
+  /// List all deleted-manga tombstones as a JSON array (ordered rowid ASC),
+  /// or null if FFI unavailable.
+  static String? deletedMangaList() {
+    if (!_ensureMangaSymbols() || _deletedMangaList == null) return null;
+    return _readAndFreeString(_deletedMangaList!());
+  }
+
+  /// Upsert a deleted-manga tombstone from [json]. Returns `"ok"` or
+  /// `"error:…"`. Null if FFI unavailable.
+  ///
+  /// Do NOT embed a literal NUL byte (U+0000) in the outer C-string.
+  /// When sync_key contains a NUL separator, encode via [jsonEncode] so it
+  /// becomes the `\u0000` escape sequence; Core serde decodes it correctly.
+  static String? deletedMangaUpsert(String json) {
+    if (!_ensureMangaSymbols() || _deletedMangaUpsert == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_deletedMangaUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
   }
 
   // ── Wave C driver/account API ────────────────────────────────────────────────

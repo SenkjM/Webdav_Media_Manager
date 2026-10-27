@@ -657,6 +657,169 @@ class MangaLibraryService extends ChangeNotifier {
     }
   }
 
+  // ── Backup snapshot helpers ──────────────────────────────────────────────
+
+  /// Export a complete manga snapshot for backup.
+  ///
+  /// Shape: `{mangas, pages, progress, tombstones}` — mirrors the sqflite
+  /// [LibraryDatabase.exportMangaSnapshot] shape that backup archives carry.
+  ///
+  /// * `mangas` — all manga rows (Core snake_case maps).
+  /// * `pages` — pages for loose-image books only ([MangaFormat.images]),
+  ///   same filter as [syncRows]; CBZ page order is rebuilt on open.
+  /// * `progress` — all reading-progress rows.
+  /// * `tombstones` — all deleted-manga tombstones.
+  ///
+  /// Reads fresh from Core every time (bypasses the in-memory cache) so the
+  /// snapshot is consistent even when [reload] has not run yet.
+  ///
+  /// Throws [StateError] when Core FFI is unavailable or returns an error —
+  /// backup export must not silently fall back to an empty library.
+  Future<Map<String, dynamic>> exportCoreMangaSnapshot() async {
+    final mangasJson = RustCoreService.mangaList();
+    if (mangasJson == null || mangasJson.startsWith('error:')) {
+      throw StateError('exportCoreMangaSnapshot: mangaList failed: $mangasJson');
+    }
+    final List<dynamic> mangaDecoded;
+    try {
+      mangaDecoded = jsonDecode(mangasJson) as List<dynamic>;
+    } catch (e) {
+      throw StateError('exportCoreMangaSnapshot: mangas decode: $e');
+    }
+    final mangas = [
+      for (final m in mangaDecoded) Map<String, dynamic>.from(m as Map),
+    ];
+
+    // Loose-image pages only. CBZ membership is rebuilt on first open.
+    final allPages = <Map<String, dynamic>>[];
+    for (final m in mangas) {
+      if ((m['format'] as String?) != MangaFormat.images) continue;
+      final id = m['id'] as String?;
+      if (id == null || id.isEmpty) continue;
+      final pagesJson = RustCoreService.mangaListPages(id);
+      if (pagesJson == null || pagesJson.startsWith('error:')) continue;
+      try {
+        for (final p in jsonDecode(pagesJson) as List<dynamic>) {
+          allPages.add(Map<String, dynamic>.from(p as Map));
+        }
+      } catch (_) {}
+    }
+
+    final progressJson = RustCoreService.mangaListProgress();
+    if (progressJson == null || progressJson.startsWith('error:')) {
+      throw StateError(
+          'exportCoreMangaSnapshot: mangaListProgress failed: $progressJson');
+    }
+    final List<dynamic> progressDecoded;
+    try {
+      progressDecoded = jsonDecode(progressJson) as List<dynamic>;
+    } catch (e) {
+      throw StateError('exportCoreMangaSnapshot: progress decode: $e');
+    }
+
+    final tombstonesJson = RustCoreService.deletedMangaList();
+    if (tombstonesJson == null || tombstonesJson.startsWith('error:')) {
+      throw StateError(
+          'exportCoreMangaSnapshot: deletedMangaList failed: $tombstonesJson');
+    }
+    final List<dynamic> tombstoneDecoded;
+    try {
+      tombstoneDecoded = jsonDecode(tombstonesJson) as List<dynamic>;
+    } catch (e) {
+      throw StateError('exportCoreMangaSnapshot: tombstones decode: $e');
+    }
+
+    return {
+      'mangas': mangas,
+      'pages': allPages,
+      'progress': [
+        for (final p in progressDecoded) Map<String, dynamic>.from(p as Map),
+      ],
+      'tombstones': [
+        for (final t in tombstoneDecoded) Map<String, dynamic>.from(t as Map),
+      ],
+    };
+  }
+
+  /// Import a manga snapshot produced by [exportCoreMangaSnapshot] (or the
+  /// legacy sqflite [LibraryDatabase.exportMangaSnapshot]).
+  ///
+  /// Clears the Core manga index first (hard-fail). Then upserts all rows,
+  /// loose-image page lists, reading progress, and tombstones. Legacy
+  /// archives that omit `progress` / `tombstones` are skipped silently for
+  /// those sections.
+  ///
+  /// Throws [StateError] when Core FFI is unavailable or [mangaClearIndex]
+  /// returns an error. Per-row upsert failures are logged (best-effort) so a
+  /// single bad row does not abort the whole restore.
+  Future<void> importCoreMangaSnapshot(Map<String, dynamic> snap) async {
+    // 1. Wipe the Core manga index — hard-fail. Backup restore replaces the
+    //    whole library; a partial clear leaves stale rows.
+    final clearResult = RustCoreService.mangaClearIndex();
+    if (clearResult == null || clearResult.startsWith('error:')) {
+      throw StateError(
+          'importCoreMangaSnapshot: mangaClearIndex failed: $clearResult');
+    }
+
+    // 2. Upsert every manga row (rev kept verbatim from the archive).
+    final mangas = snap['mangas'] as List<dynamic>? ?? const [];
+    for (final raw in mangas) {
+      final row = Map<String, dynamic>.from(raw as Map);
+      final r = RustCoreService.mangaUpsert(jsonEncode(row));
+      if (r != null && r.startsWith('error:')) {
+        debugPrint('[MangaLibrary] importCoreMangaSnapshot mangaUpsert: $r');
+      }
+    }
+
+    // 3. Restore loose-image page lists, grouped by manga_id.
+    final pages = snap['pages'] as List<dynamic>? ?? const [];
+    final byMangaId = <String, List<Map<String, dynamic>>>{};
+    for (final raw in pages) {
+      final p = Map<String, dynamic>.from(raw as Map);
+      final mid = p['manga_id'] as String?;
+      if (mid == null || mid.isEmpty) continue;
+      (byMangaId[mid] ??= []).add(p);
+    }
+    for (final entry in byMangaId.entries) {
+      final sorted = [...entry.value]
+        ..sort((a, b) => ((a['page_index'] as int?) ?? 0)
+            .compareTo((b['page_index'] as int?) ?? 0));
+      final r = RustCoreService.mangaSetPages(entry.key, jsonEncode(sorted));
+      if (r != null && r.startsWith('error:')) {
+        debugPrint('[MangaLibrary] importCoreMangaSnapshot mangaSetPages: $r');
+      }
+    }
+
+    // 4. Restore reading progress.
+    final progress = snap['progress'] as List<dynamic>? ?? const [];
+    for (final raw in progress) {
+      final p = Map<String, dynamic>.from(raw as Map);
+      final mangaId = p['manga_id'] as String?;
+      if (mangaId == null || mangaId.isEmpty) continue;
+      final pageIndex = (p['page_index'] as int?) ?? 0;
+      final r = RustCoreService.mangaSetProgress(mangaId, pageIndex);
+      if (r != null && r.startsWith('error:')) {
+        debugPrint(
+            '[MangaLibrary] importCoreMangaSnapshot mangaSetProgress: $r');
+      }
+    }
+
+    // 5. Restore deleted-manga tombstones. sync_key may contain a NUL
+    //    separator (source + NUL + path); jsonEncode emits it as the
+    //    \u0000 escape, which Core serde decodes back to a real NUL.
+    final tombstones = snap['tombstones'] as List<dynamic>? ?? const [];
+    for (final raw in tombstones) {
+      final t = Map<String, dynamic>.from(raw as Map);
+      final r = RustCoreService.deletedMangaUpsert(jsonEncode(t));
+      if (r != null && r.startsWith('error:')) {
+        debugPrint(
+            '[MangaLibrary] importCoreMangaSnapshot deletedMangaUpsert: $r');
+      }
+    }
+
+    await reload();
+  }
+
   // ── Re-scan ───────────────────────────────────────────────────────────────
 
   /// Re-scan a loose-image book the user already owns.

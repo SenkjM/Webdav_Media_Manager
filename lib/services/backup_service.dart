@@ -22,8 +22,10 @@ import 'credential_vault_codec.dart';
 import 'credential_vault_service.dart';
 import 'library_shard_codec.dart';
 import 'playlist_codec.dart';
-import 'library_database.dart';
 import 'library_service.dart';
+import 'manga_library_service.dart';
+import 'rust_library_service.dart';
+import 'user_folder_service.dart';
 import 'playlist_service.dart';
 import 'rust_core_service.dart';
 import 'rust_dmr_prefs_service.dart';
@@ -56,7 +58,8 @@ import 'webdav_service.dart';
 /// with a passphrase (magic `WDMMEN01`).
 class BackupService extends ChangeNotifier {
   BackupService({
-    required LibraryDatabase libraryDb,
+    required UserFolderService userFolders,
+    required MangaLibraryService manga,
     required LibraryService library,
     required AccountsService accounts,
     required SettingsService settings,
@@ -67,7 +70,8 @@ class BackupService extends ChangeNotifier {
     CoverService? covers,
     Future<void> Function()? onSettingsImported,
     RustDmrPrefsService? dmrPrefs,
-  }) : _libraryDb = libraryDb,
+  }) : _userFolders = userFolders,
+       _manga = manga,
        _library = library,
        _accounts = accounts,
        _settings = settings,
@@ -79,7 +83,8 @@ class BackupService extends ChangeNotifier {
        _dmrPrefs = dmrPrefs,
        _onSettingsImported = onSettingsImported;
 
-  final LibraryDatabase _libraryDb;
+  final UserFolderService _userFolders;
+  final MangaLibraryService _manga;
   final LibraryService _library;
   final AccountsService _accounts;
   final SettingsService _settings;
@@ -114,7 +119,7 @@ class BackupService extends ChangeNotifier {
       // manga covers subdir may not exist until first write — create it
       Directory mangaCovers;
       if (_cache != null) {
-        mangaCovers = Directory(p.join(_cache!.mangaCacheDir.path, 'covers'));
+        mangaCovers = Directory(p.join(_cache.mangaCacheDir.path, 'covers'));
       } else {
         // Cache not initialized yet — resolve path directly
         final support = await getApplicationSupportDirectory();
@@ -146,7 +151,11 @@ class BackupService extends ChangeNotifier {
   Future<Map<String, dynamic>> _buildPayload({
     required String passphrase,
   }) async {
-    final tracks = await _libraryDb.allTracks();
+    final tracks = RustLibraryService.listAll();
+    if (tracks == null) {
+      throw StateError(
+          '_buildPayload: Core FFI unavailable — listAll returned null');
+    }
     final cueAlbums = <Map<String, dynamic>>[];
     final cueSlices = <Map<String, dynamic>>[];
     for (final t in tracks) {
@@ -154,7 +163,7 @@ class BackupService extends ChangeNotifier {
         cueSlices.add(t.toMap());
       }
     }
-    for (final e in await _libraryDb.allCueAlbums()) {
+    for (final e in RustLibraryService.listCueAlbums()) {
       cueAlbums.add(e);
     }
 
@@ -220,12 +229,16 @@ class BackupService extends ChangeNotifier {
       // 3. Playlists
       'playlists': _playlists.exportJson(),
       'settings': _settings.exportForBackup(),
-      'mangaLibrary': await _libraryDb.exportMangaSnapshot(),
-      'userFolders': await _libraryDb.exportUserFoldersSnapshot(),
+      'mangaLibrary': await _manga.exportCoreMangaSnapshot(),
+      'userFolders': _userFolders.exportSnapshot(),
     };
   }
 
-  /// Build the backup archive as a [WmpContainer] (optionally encrypted).
+  /// Build backup archive bytes (Android WMP container format).
+  ///
+  /// Data is sourced from Core FFI — no sqflite reads. This method is used by
+  /// [buildJsonExport] and tests. Production upload uses [uploadBackup] which
+  /// delegates to [createArchiveBytes] (Core JSON format).
   ///
   /// Sections: `META` + `TRACKS` (every row, CUE slices included, **each with its
   /// own cover copy** in the raw `COVERS` section) + `SETTINGS` / `CUEALBUMS`
@@ -241,17 +254,12 @@ class BackupService extends ChangeNotifier {
   /// containers, so deflating them again would burn CPU and shrink nothing
   /// (docs/10 §4.3). Nesting stops at this one level — an embedded container
   /// never embeds another.
-  /// Build backup archive bytes from sqflite library.
-  ///
-  /// **Legacy path (Phase D)**: Production `.wdmm` create now uses Core FFI
-  /// (see `createArchiveBytes`). This method remains for:
-  /// - `buildJsonExport` (readable JSON troubleshooting export)
-  /// - Tests that need direct sqflite-based archive construction
-  ///
-  /// Do NOT use this for production backup upload; use `uploadBackup` which
-  /// delegates to Core.
   Future<Uint8List> buildArchiveBytes({required String passphrase}) async {
-    final allTracks = await _libraryDb.allTracks();
+    final allTracks = RustLibraryService.listAll();
+    if (allTracks == null) {
+      throw StateError(
+          'buildArchiveBytes: Core FFI unavailable — listAll returned null');
+    }
     // Non-CUE rows first, then CUE slices: the order the JSON payload used, so
     // cover indices stay aligned with what earlier archives produced.
     final tracks = <LibraryTrack>[
@@ -278,7 +286,7 @@ class BackupService extends ChangeNotifier {
       );
     }
 
-    final cueAlbums = await _libraryDb.allCueAlbums();
+    final cueAlbums = RustLibraryService.listCueAlbums();
 
     final credentialsBytes = await _credentials.encodeVaultBytes(
       passphrase: passphrase,
@@ -298,7 +306,7 @@ class BackupService extends ChangeNotifier {
     // Manga thumbnails travel like track covers: bytes in their own section,
     // an index on the row. The path is derived from the manga id, so nothing
     // about this device's cache leaks into the archive.
-    final mangaSnapshot = await _libraryDb.exportMangaSnapshot();
+    final mangaSnapshot = await _manga.exportCoreMangaSnapshot();
     final mangaCoverBlobs = await collectMangaCovers(
       snapshot: mangaSnapshot,
       cache: _cache,
@@ -330,7 +338,7 @@ class BackupService extends ChangeNotifier {
         WmpSections.cueAlbums: _jsonBytes(cueAlbums),
         WmpSections.mangaLibrary: _jsonBytes(mangaSnapshot),
         WmpSections.userFolders: _jsonBytes(
-          await _libraryDb.exportUserFoldersSnapshot(),
+          _userFolders.exportSnapshot(),
         ),
         if (mangaCoverBlobs.isNotEmpty)
           WmpSections.mangaCovers: buildCoverSection([
@@ -941,9 +949,18 @@ class BackupService extends ChangeNotifier {
       for (final raw in (lib['cueSlices'] as List<dynamic>? ?? const [])) {
         tracks.add(LibraryTrack.fromMap(Map<String, dynamic>.from(raw as Map)));
       }
-      await _libraryDb.clearAllLibraryData();
+      // Hard-fail: backup restore must not silently leave stale library rows.
+      final clearResult = RustLibraryService.clearLibraryAll();
+      if (clearResult == null || clearResult.startsWith('error:')) {
+        throw StateError(
+            'backup restore: clearLibraryAll failed: $clearResult');
+      }
       for (final t in tracks) {
-        await _libraryDb.upsertTrack(t);
+        RustLibraryService.upsertTrack(t);
+      }
+      // Upsert CUE albums from the archive's cueAlbums section.
+      for (final raw in (lib['cueAlbums'] as List<dynamic>? ?? const [])) {
+        RustLibraryService.upsertCueAlbum(jsonEncode(raw));
       }
       // Cached state is derived from disk (v9): nothing to clear, kept for the
       // call-site contract.
@@ -952,17 +969,14 @@ class BackupService extends ChangeNotifier {
       }
     }
 
-    // 3. Manga library + user folders (clearAllLibraryData above wiped them;
-    //    an archive without these sections leaves them empty).
+    // 3. Manga library + user folders.
     final manga = payload['mangaLibrary'];
     if (manga is Map && manga.isNotEmpty) {
-      await _libraryDb.importMangaSnapshot(Map<String, dynamic>.from(manga));
+      await _manga.importCoreMangaSnapshot(Map<String, dynamic>.from(manga));
     }
     final folders = payload['userFolders'];
     if (folders is Map && folders.isNotEmpty) {
-      await _libraryDb.importUserFoldersSnapshot(
-        Map<String, dynamic>.from(folders),
-      );
+      await _userFolders.importSnapshot(Map<String, dynamic>.from(folders));
     }
 
     // 4. Playlists.
@@ -1004,36 +1018,18 @@ class BackupService extends ChangeNotifier {
   }
 
   Future<void> _rewriteCoverPaths(String docsPath) async {
-    final db = await _libraryDb.database;
+    final allTracks = RustLibraryService.listAll();
+    if (allTracks == null) return; // FFI unavailable — skip rewrite
     final coversRoot = p.join(docsPath, 'covers');
-    for (final table in ['tracks', 'cue_slices']) {
-      final rows = await db.query(
-        table,
-        columns: ['music_id', 'source_name', 'remote_path', 'cover_path'],
+    for (final t in allTracks) {
+      final cover = t.coverPath;
+      if (cover == null || cover.isEmpty) continue;
+      final base = p.basename(cover);
+      final newPath = p.join(coversRoot, base);
+      if (cover == newPath) continue;
+      RustLibraryService.upsertTrack(
+        LibraryTrack.fromMap({...t.toMap(), 'cover_path': newPath}),
       );
-      for (final row in rows) {
-        final cover = row['cover_path'] as String?;
-        if (cover == null || cover.isEmpty) continue;
-        final base = p.basename(cover);
-        final newPath = p.join(coversRoot, base);
-        if (cover == newPath) continue;
-        final musicId = row['music_id'] as String?;
-        if (musicId != null && musicId.isNotEmpty) {
-          await db.update(
-            table,
-            {'cover_path': newPath},
-            where: 'music_id = ?',
-            whereArgs: [musicId],
-          );
-        } else {
-          await db.update(
-            table,
-            {'cover_path': newPath},
-            where: 'source_name = ? AND remote_path = ?',
-            whereArgs: [row['source_name'], row['remote_path']],
-          );
-        }
-      }
     }
   }
 

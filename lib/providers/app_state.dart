@@ -43,8 +43,6 @@ class AppState extends ChangeNotifier {
     : _audioHandler = audioHandler {
     settings = SettingsService();
     notificationPermission = NotificationPermissionService();
-    final db = LibraryDatabase();
-    libraryDb = db;
     cacheIndex = CacheIndexDb();
     cache = CacheService(indexDb: cacheIndex);
     library = LibraryService();
@@ -77,7 +75,8 @@ class AppState extends ChangeNotifier {
       export: platformExport,
     );
     backup = BackupService(
-      libraryDb: db,
+      userFolders: userFolders,
+      manga: mangaLibrary,
       library: library,
       accounts: accounts,
       settings: settings,
@@ -140,7 +139,6 @@ class AppState extends ChangeNotifier {
 
   /// Access-time index shared by [cache]; owns `cache_index.db`.
   late final CacheIndexDb cacheIndex;
-  late final LibraryDatabase libraryDb;
   late final LibraryService library;
   late final UserFolderService userFolders;
   late final MangaLibraryService mangaLibrary;
@@ -164,7 +162,6 @@ class AppState extends ChangeNotifier {
   Future<void> closeDatabases() async {
     await taskQueue.closeDatabase();
     await playlists.closeDatabase();
-    await libraryDb.close();
   }
 
   Future<void>? _shutdownFuture;
@@ -219,7 +216,6 @@ class AppState extends ChangeNotifier {
       // column compat). The 0.2.2 sentinel only rewrites rows and must not
       // run against tables the open has not created yet.
       _initPhase = 'databases';
-      await libraryDb.database;
       await playlists.openDatabase();
       await taskQueue.openDatabase();
       _initPhase = 'cache';
@@ -242,12 +238,11 @@ class AppState extends ChangeNotifier {
       );
       library.attachRevClock(revClock);
       mangaLibrary.attachRevClock(revClock);
-      libraryDb.mangaRevSource = revClock.next;
       _initPhase = 'library';
       await library.init();
       _initPhase = 'user-folders';
       await userFolders.init();
-      await _migrateKvFoldersMeta(libraryDb);
+      await _migrateKvFoldersMeta();
       _initPhase = 'manga-library';
       await mangaLibrary.init();
       _initPhase = 'accounts';
@@ -820,9 +815,10 @@ class AppState extends ChangeNotifier {
   /// One-shot migration: copy folder sync meta keys from sqflite [LibraryDatabase]
   /// into the Core KV store, then never read them from sqflite again.
   ///
-  /// Skipped when `folders_changed_at` is already present in the KV store, or
-  /// when Core FFI is unavailable (non-Android).
-  static Future<void> _migrateKvFoldersMeta(LibraryDatabase db) async {
+  /// Opens a temporary [LibraryDatabase] for the read-only migration and closes
+  /// it immediately after. Skipped when `folders_changed_at` is already present
+  /// in the KV store, or when Core FFI is unavailable (non-Android).
+  static Future<void> _migrateKvFoldersMeta() async {
     final existing = RustCoreService.kvGet('folders_changed_at');
     // Dart null → Core FFI unavailable (skip). Literal "null"/empty/error →
     // key absent or bad → migrate from sqflite. Any other value → already set.
@@ -833,36 +829,41 @@ class AppState extends ChangeNotifier {
         !existing.startsWith('error:');
     if (already) return;
 
-    // Migrate the three key families once.
-    const keys = [
-      'folders_changed_at',
-      // last_sync and cloud_seen are per-destination (open-ended); we scan
-      // all local_meta rows that match the prefix rather than enumerating dests.
-    ];
-    for (final k in keys) {
-      final v = await db.loadMeta(k);
-      if (v != null && v.isNotEmpty) RustCoreService.kvSet(k, v);
-    }
-    // Migrate per-destination keys by scanning known prefixes from the sqflite
-    // local_meta table. We read them via loadMeta using the known pattern; the
-    // dest string is opaque so we copy them all via the two prefixes.
-    for (final prefix in const [
-      'folders_last_sync_at:',
-      'folders_cloud_seen:',
-    ]) {
-      final allMeta = await db.loadMetaByPrefix(prefix);
-      for (final entry in allMeta.entries) {
-        RustCoreService.kvSet(entry.key, entry.value);
+    final db = LibraryDatabase();
+    try {
+      // Migrate the three key families once.
+      const keys = [
+        'folders_changed_at',
+        // last_sync and cloud_seen are per-destination (open-ended); we scan
+        // all local_meta rows that match the prefix rather than enumerating dests.
+      ];
+      for (final k in keys) {
+        final v = await db.loadMeta(k);
+        if (v != null && v.isNotEmpty) RustCoreService.kvSet(k, v);
       }
-    }
-    // Ensure the sentinel key exists so we do not re-scan sqflite every launch
-    // when the old DB had no folders meta either.
-    final after = RustCoreService.kvGet('folders_changed_at');
-    if (after == null ||
-        after.isEmpty ||
-        after == 'null' ||
-        after.startsWith('error:')) {
-      RustCoreService.kvSet('folders_changed_at', '0');
+      // Migrate per-destination keys by scanning known prefixes from the sqflite
+      // local_meta table. We read them via loadMeta using the known pattern; the
+      // dest string is opaque so we copy them all via the two prefixes.
+      for (final prefix in const [
+        'folders_last_sync_at:',
+        'folders_cloud_seen:',
+      ]) {
+        final allMeta = await db.loadMetaByPrefix(prefix);
+        for (final entry in allMeta.entries) {
+          RustCoreService.kvSet(entry.key, entry.value);
+        }
+      }
+      // Ensure the sentinel key exists so we do not re-scan sqflite every launch
+      // when the old DB had no folders meta either.
+      final after = RustCoreService.kvGet('folders_changed_at');
+      if (after == null ||
+          after.isEmpty ||
+          after == 'null' ||
+          after.startsWith('error:')) {
+        RustCoreService.kvSet('folders_changed_at', '0');
+      }
+    } finally {
+      await db.close();
     }
   }
 }
