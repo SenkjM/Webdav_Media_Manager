@@ -249,9 +249,9 @@ These enable full WebDAV backup workflows without Dart HTTP drivers when used wi
 
 ---
 
-## Account Sync (Android → Core DB)
+## Account Sync (Core DB is SoT)
 
-**Status (2026-10-25)**: Android `AccountsService` now mirrors every account into Core DB via FFI. Cloud driver instantiation checks Core DB first.
+**Status (2026-10-27)**: Core DB (`wdmm-core` via FFI) is the **sole source of truth** for account metadata. Android sqflite is no longer written for accounts after the one-shot migrate. Matches Desktop `AccountStore.cs`.
 
 ### FFI Bindings
 
@@ -261,7 +261,7 @@ These enable full WebDAV backup workflows without Dart HTTP drivers when used wi
 - `accountUpsert(String coreJson)` → `"ok"` or `"error:..."` — core JSON = `{id, provider_type, display_name, base_url, credentials}`
 - `accountDelete(String id)` → `"ok"` or `"error:..."`
 
-All return `String?` (null if FFI unavailable).
+All return `String?` (null if FFI unavailable / non-Android).
 
 ### Credentials Structure
 
@@ -269,35 +269,38 @@ All return `String?` (null if FFI unavailable).
 |--------------|----------------|
 | `webdav` | `{username, password, remote_dir}` |
 | Cloud drivers | driver config (tokens/cookies from `AccountsService.loadDriverConfig`) |
-| `crypt` | driver config + nested `source: {provider_type, config}` if source account is resolved |
+| `crypt` | driver config + nested `source: {provider_type, config}` resolved at upsert time |
 
-For crypt drivers, if the config has `source_account_id_name` but not a nested `source` structure, `_syncAccountToCore` resolves the source account by name and embeds its credentials as `source: {provider_type, config}`.
+Passwords and driver configs are **also** kept in `FlutterSecureStorage` so Dart-side drivers can access them without FFI round-trips. On every `_loadFromCore()` call, missing secure-storage keys are back-filled from the Core credentials payload.
 
-### Sync Triggers
+### Init + One-Shot Migrate
 
-`AccountsService._syncAccountToCore(WebDavAccount)` is called after:
-1. `addAccount` — mirror new account immediately
-2. `updateAccount` — update Core DB after local sqflite save
-3. `saveDriverConfig` — reload account by id and sync (tokens/cookies changed)
-4. `deleteAccount` — calls `RustCoreService.accountDelete(id)`
-5. `init` — best-effort sync all accounts once at startup
+`AccountsService.init()` order:
+1. **Load from Core** via `accountList()` → parse JSON → fill `_accounts`; back-fill secure-storage keys (passwords, driver configs) if missing.
+2. If Core is empty: **one-shot sqflite→Core migrate** — create a temporary `LibraryDatabase()`, read existing rows, upsert each to Core via `_upsertToCore`. **Fail hard** on any upsert error (throws `StateError`). After migrate, sqflite is never read for accounts again.
+3. If still empty: **legacy flutter_secure migrate** — read old single-server `webdav_url/username/password` keys, upsert to Core, delete legacy keys.
 
-Fail-soft: errors are logged via `debugPrint` in debug mode but never block the local sqflite save.
+After a successful migrate the prefs key `active_webdav_account_id` is preserved; Core is non-empty on every subsequent launch so steps 2–3 are skipped.
+
+### CRUD — Core Only, Fail Hard
+
+All write operations (`addAccount`, `updateAccount`, `deleteAccount`, `saveDriverConfig`) call `_upsertToCore` / `accountDelete` and **throw `StateError`** on FFI null or `"error:..."`. There is no fallback to sqflite and no silent swallowing of Core errors.
+
+`deleteAccount`: Core delete first; if Core returns an error, the in-memory list is **not** updated (transactional intent preserved). Secure-storage keys are cleaned up after a successful Core delete.
 
 ### Cloud Driver Integration
 
-`CloudDriveService.registerAccounts` ensures each account exists in Core DB before calling `_createDriver`:
-1. Call `RustCoreService.accountGet(a.id)` to check Core DB
-2. If null or `"error:..."`, call `AccountsService.syncAccountToCoreById(a.id)` (public wrapper)
-3. Proceed with driver instantiation
-
-Fail-soft: driver creation continues even if Core sync fails.
+`CloudDriveService.registerAccounts` ensures Core has the account row before driver instantiation:
+1. Call `RustCoreService.accountGet(a.id)`.
+2. If absent or error, call `AccountsService.ensureAccountInCore(a.id)` — **throws on failure**.
+3. Verify the row landed with a second `accountGet`; throw if still missing.
+4. Proceed with `_createDriver`. `CloudDriverException` is caught per-account (driver skipped, `complete = false`); `StateError` from Core propagates up.
 
 ### Rationale
 
-- Core DB is the source of truth for Rust drivers — WebDAV, cloud, and crypt drivers all read accounts from Core DB during driver instantiation
-- Android's sqflite `LibraryDatabase` is still the source of truth for tracks/playlists; account mirroring enables Core drivers to work without requiring Android to read from Core DB
-- Dual-write is acceptable: account CRUD is infrequent (user-initiated only), and the sync is fail-soft (never blocks UI)
+- Single authority: Core owns account metadata + credentials; Dart SecureStorage is a read-cache for the Dart driver layer.
+- Desktop parity: mirrors `AccountStore.cs` (`List()` / `Upsert()` / `Delete()` / `MigrateFromLocalJsonIfNeeded()`).
+- Fail-hard keeps the app state consistent: a half-written account (in memory but not Core) would cause silent driver failures later.
 
 ---
 
