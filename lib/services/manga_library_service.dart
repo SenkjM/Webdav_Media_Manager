@@ -56,8 +56,8 @@ class MangaIngestDraft {
 /// Rust FFI ([RustCoreService.mangaList] / [RustCoreService.mangaUpsert] etc.)
 /// instead of sqflite. Class B unload (2026-10-27): tombstones (`deleted_mangas`)
 /// go through Core FFI ([RustCoreService.deletedMangaClear] / mangaDelete).
-/// No LibraryDatabase dependency — accounts remain sqflite-primary elsewhere
-/// (LibraryDatabase may still open on launch for accounts).
+/// No LibraryDatabase dependency. Accounts SoT is Core FFI; LibraryDatabase
+/// may still open for cache / Class C recovery / leftover tables.
 class MangaLibraryService extends ChangeNotifier {
   MangaLibraryService();
 

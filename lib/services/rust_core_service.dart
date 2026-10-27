@@ -2665,6 +2665,6 @@ extension _Let<T> on T {
 /// Class B unload (2026-10-27): SyncService no longer reads sqflite
 /// `deleted_mangas` — manga sync is Core-only (`MangaSyncEngine` via
 /// `wdmm_sync_trigger` / `wdmm_sync_full`).
-/// Accounts remain sqflite-primary; [LibraryDatabase] may still open for them.
+/// Accounts SoT is Core FFI; [LibraryDatabase] may still open for cache/etc.
 // ignore: constant_identifier_names
 const bool kRustMangaEnabled = true;
