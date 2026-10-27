@@ -1659,6 +1659,21 @@ WHERE series_id IS NOT NULL
     return rows.isEmpty ? null : rows.first['value'] as String?;
   }
 
+  /// Load all `local_meta` rows whose key starts with [prefix].
+  /// Returns a map of key → value.
+  Future<Map<String, String>> loadMetaByPrefix(String prefix) async {
+    final db = await database;
+    final rows = await db.query(
+      'local_meta',
+      where: 'key LIKE ?',
+      whereArgs: ['${prefix.replaceAll('%', '\\%').replaceAll('_', '\\_')}%'],
+    );
+    return {
+      for (final r in rows)
+        r['key'] as String: r['value'] as String,
+    };
+  }
+
   Future<void> saveMeta(String key, String value) async {
     final db = await database;
     await db.insert('local_meta', {

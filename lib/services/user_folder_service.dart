@@ -167,6 +167,9 @@ class UserFolderService extends ChangeNotifier {
           )
         : _parseFolderObject(jsonDecode(resultJson) as Map<String, dynamic>);
     _folders.add(folder);
+    if (resultJson != null && !resultJson.startsWith('error:')) {
+      _stampChanged();
+    }
     notifyListeners();
     return folder;
   }
@@ -176,16 +179,17 @@ class UserFolderService extends ChangeNotifier {
     if (f == null) return;
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
-    RustCoreService.userFolderRename(id, trimmed);
+    final res = RustCoreService.userFolderRename(id, trimmed);
     final updated = f.copyWith(name: trimmed);
     final idx = _folders.indexWhere((x) => x.id == id);
     if (idx >= 0) _folders[idx] = updated;
+    if (res != null && !res.startsWith('error:')) _stampChanged();
     notifyListeners();
   }
 
   Future<void> deleteFolder(String id) async {
     // Rust cascades descendants + items atomically.
-    RustCoreService.userFolderDelete(id);
+    final res = RustCoreService.userFolderDelete(id);
     final dropIds = <String>{id};
     // Collect descendants already removed from DB recursively.
     var grew = true;
@@ -201,6 +205,7 @@ class UserFolderService extends ChangeNotifier {
     }
     _folders.removeWhere((f) => dropIds.contains(f.id));
     _items.removeWhere((i) => dropIds.contains(i.folderId));
+    if (res != null && !res.startsWith('error:')) _stampChanged();
     notifyListeners();
   }
 
@@ -242,7 +247,10 @@ class UserFolderService extends ChangeNotifier {
       existing.add(k);
       added++;
     }
-    if (added > 0) notifyListeners();
+    if (added > 0) {
+      _stampChanged();
+      notifyListeners();
+    }
     return added;
   }
 
@@ -251,11 +259,13 @@ class UserFolderService extends ChangeNotifier {
     required String refKind,
     required String refKey,
   }) async {
-    RustCoreService.userFolderRemoveItem(folderId, refKind, refKey);
+    final res =
+        RustCoreService.userFolderRemoveItem(folderId, refKind, refKey);
     _items.removeWhere(
       (i) =>
           i.folderId == folderId && i.refKind == refKind && i.refKey == refKey,
     );
+    if (res != null && !res.startsWith('error:')) _stampChanged();
     notifyListeners();
   }
 
@@ -301,6 +311,7 @@ class UserFolderService extends ChangeNotifier {
         addedAt: next[i].addedAt,
       ));
     }
+    _stampChanged();
     notifyListeners();
     return true;
   }
@@ -344,11 +355,10 @@ class UserFolderService extends ChangeNotifier {
     );
     final idx = _folders.indexWhere((x) => x.id == folderId);
     if (idx >= 0) _folders[idx] = updated;
+    if (res != null && !res.startsWith('error:')) _stampChanged();
     notifyListeners();
     return true;
   }
-
-  /// Copy [folderId] and its whole subtree under [newParentId].
   ///
   /// Returns the id of the new root folder, or null when the copy is
   /// refused (unknown source, or a target inside the source subtree — the
@@ -468,5 +478,41 @@ class UserFolderService extends ChangeNotifier {
       return DateTime.fromMillisecondsSinceEpoch(raw * 1000);
     }
     return DateTime.tryParse(raw as String? ?? '') ?? DateTime.now();
+  }
+
+  // ── Sync helpers ──────────────────────────────────────────────────────────
+
+  /// Stamp `folders_changed_at` in the Core KV store to mark a local mutation.
+  /// Only called when the Core call that triggered the mutation succeeded
+  /// (non-null, non-error: result).
+  static void _stampChanged() {
+    RustCoreService.kvSet(
+      'folders_changed_at',
+      '${DateTime.now().millisecondsSinceEpoch}',
+    );
+  }
+
+  /// Whole user-folder overlay as JSON-friendly maps, suitable for WebDAV sync.
+  ///
+  /// Uses in-memory state directly — callers should ensure [reload()] was
+  /// called recently if staleness is a concern.
+  Map<String, dynamic> exportSnapshot() => {
+    'folders': [for (final f in _folders) f.toMap()],
+    'items': [for (final i in _items) i.toMap()],
+  };
+
+  /// Replace the whole user-folder overlay from [snap] via Core FFI, then
+  /// reload in-memory state.
+  ///
+  /// Throws [StateError] if Core FFI is unavailable or returns an error.
+  /// Does **not** bump `folders_changed_at` — adopting a cloud snapshot is
+  /// not a local edit.
+  Future<void> importSnapshot(Map<String, dynamic> snap) async {
+    final json = jsonEncode(snap);
+    final result = RustCoreService.userFolderReplaceSnapshot(json);
+    if (result == null || result.startsWith('error:')) {
+      throw StateError('userFolderReplaceSnapshot failed: $result');
+    }
+    await reload();
   }
 }

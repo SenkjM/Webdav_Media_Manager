@@ -1738,6 +1738,7 @@ class RustCoreService {
   static _OneStrToStrDart? _userFolderAddItem;
   static _ThreeStrToOneStrDart? _userFolderRemoveItem;
   static _TwoStrToOneStrDart? _userFolderSetItems;
+  static _OneStrToStrDart? _userFolderReplaceSnapshot;
   static _NoArgToStrDart? _playlistList;
   static _OneStrToStrDart? _playlistCreate;
   static _OneStrToStrDart? _playlistDelete;
@@ -1811,6 +1812,10 @@ class RustCoreService {
       _userFolderSetItems = lib
           .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
               'wdmm_user_folder_set_items')
+          .asFunction();
+      _userFolderReplaceSnapshot = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_replace_snapshot')
           .asFunction();
       _playlistList = lib
           .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_playlist_list')
@@ -2042,6 +2047,19 @@ class RustCoreService {
     } finally {
       calloc.free(f);
       calloc.free(a);
+    }
+  }
+
+  /// Replace the whole user-folder snapshot atomically.
+  /// [json] is `{"folders":[…],"items":[…]}`; timestamps accept unix i64 or ISO8601.
+  /// Returns `"ok"` on success, `"error:…"` on failure, null if unavailable.
+  static String? userFolderReplaceSnapshot(String json) {
+    if (!_ensureBSymbols() || _userFolderReplaceSnapshot == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderReplaceSnapshot!(ptr));
+    } finally {
+      calloc.free(ptr);
     }
   }
 

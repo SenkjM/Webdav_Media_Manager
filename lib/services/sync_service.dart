@@ -3,32 +3,27 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-import '../models/library_track.dart';
 import '../models/webdav_account.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../utils/backup_paths.dart';
 import '../utils/l10n_host.dart';
-import '../utils/track_identity.dart';
 import 'accounts_service.dart';
 import 'backup_service.dart';
 import 'credential_vault_service.dart';
 import 'library_service.dart';
 import 'library_sync_store.dart';
 import 'cache_service.dart';
-import 'library_database.dart';
-import 'manga_cover_writer.dart';
 import 'manga_library_service.dart';
 import 'manga_sync_store.dart';
+import 'rust_core_service.dart';
 import 'user_folder_service.dart';
 import 'user_folder_sync.dart';
 import 'playlist_service.dart';
 import 'platform_export_service.dart';
 import '../models/account_capabilities.dart';
-
 import 'settings_service.dart';
 import 'webdav_service.dart';
 import 'download_destination_service.dart';
-import 'rust_core_service.dart';
 
 /// What a single operation touched.
 class SyncOutcome {
@@ -149,12 +144,10 @@ class SyncService extends ChangeNotifier {
     PlatformExportService? export,
     MangaLibraryService? manga,
     UserFolderService? folders,
-    LibraryDatabase? db,
     CacheService? cache,
     DownloadDestinationService? destination,
   }) : _manga = manga,
        _folders = folders,
-       _db = db,
        _cache = cache,
        _accounts = accounts,
        _settings = settings,
@@ -177,7 +170,6 @@ class SyncService extends ChangeNotifier {
   final DownloadDestinationService? _destination;
   final MangaLibraryService? _manga;
   final UserFolderService? _folders;
-  final LibraryDatabase? _db;
   final CacheService? _cache;
 
   static const localExportSubdir = 'WebdavMediaManager';
@@ -526,7 +518,7 @@ class SyncService extends ChangeNotifier {
   int mangaCloudFragmentCount = 0;
   int mangaCloudFragmentBytes = 0;
 
-  bool get hasMangaSync => _manga != null && _db != null && _cache != null;
+  bool get hasMangaSync => _manga != null && _cache != null;
 
   MangaSyncStore _mangaStore() => MangaSyncStore(
     webDav: _webDav,
@@ -596,8 +588,7 @@ class SyncService extends ChangeNotifier {
   Future<SyncOutcome> syncUserFolders() async {
     final outcome = SyncOutcome(direction: 'sync');
     final folders = _folders;
-    final db = _db;
-    if (folders == null || db == null) return outcome;
+    if (folders == null) return outcome;
     await _run(outcome, () async {
       final dest = await syncDestination();
       if (dest == null) throw StateError('err.noWebdavAccount');
@@ -612,23 +603,24 @@ class SyncService extends ChangeNotifier {
           rethrow;
         }
       }
-      final snapshot = await db.exportUserFoldersSnapshot();
+      final snapshot = folders.exportSnapshot();
       final localEmpty =
           (snapshot['folders'] as List).isEmpty &&
           (snapshot['items'] as List).isEmpty;
+      final rawChangedAt = RustCoreService.kvGet('folders_changed_at');
+      if (rawChangedAt == null) {
+        throw StateError('folders_changed_at kv unavailable (Core FFI missing)');
+      }
       final action = planFolderSync(
-        localChangedAtMs:
-            int.tryParse(
-              await db.loadMeta(LibraryDatabase.foldersChangedAtKey) ?? '',
-            ) ??
-            0,
+        localChangedAtMs: int.tryParse(rawChangedAt) ?? 0,
         lastSyncAtMs:
             int.tryParse(
-              await db.loadMeta('$_foldersLastSyncKey$dest') ?? '',
+              RustCoreService.kvGet('$_foldersLastSyncKey$dest') ?? '',
             ) ??
             0,
         cloudUpdatedAt: cloud?.updatedAt,
-        lastSeenCloudUpdatedAt: await db.loadMeta('$_foldersCloudSeenKey$dest'),
+        lastSeenCloudUpdatedAt:
+            RustCoreService.kvGet('$_foldersCloudSeenKey$dest'),
         localEmpty: localEmpty,
       );
       var seen = cloud?.updatedAt;
@@ -636,8 +628,8 @@ class SyncService extends ChangeNotifier {
         case FolderSyncAction.none:
           outcome.step(L10nHost.current.stepFoldersUnchanged);
         case FolderSyncAction.pull:
-          await db.importUserFoldersSnapshot(cloud!.snapshot);
-          await folders.reload();
+          await folders.importSnapshot(cloud!.snapshot);
+          // importSnapshot calls reload() internally; do not double-bump stamp.
           outcome.step(L10nHost.current.stepFoldersPulled);
         case FolderSyncAction.push:
           final stamp = DateTime.now().toUtc().toIso8601String();
@@ -655,11 +647,13 @@ class SyncService extends ChangeNotifier {
           outcome.step(L10nHost.current.stepFoldersPushed);
       }
       if (action != FolderSyncAction.none) {
-        await db.saveMeta(
+        RustCoreService.kvSet(
           '$_foldersLastSyncKey$dest',
           '${DateTime.now().millisecondsSinceEpoch}',
         );
-        if (seen != null) await db.saveMeta('$_foldersCloudSeenKey$dest', seen);
+        if (seen != null) {
+          RustCoreService.kvSet('$_foldersCloudSeenKey$dest', seen);
+        }
       }
     });
     return outcome;

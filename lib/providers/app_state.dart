@@ -99,7 +99,6 @@ class AppState extends ChangeNotifier {
       backup: backup,
       manga: mangaLibrary,
       folders: userFolders,
-      db: db,
       cache: cache,
     );
     taskQueue = TaskQueueService(
@@ -248,6 +247,7 @@ class AppState extends ChangeNotifier {
       await library.init();
       _initPhase = 'user-folders';
       await userFolders.init();
+      await _migrateKvFoldersMeta(libraryDb);
       _initPhase = 'manga-library';
       await mangaLibrary.init();
       _initPhase = 'accounts';
@@ -815,5 +815,40 @@ class AppState extends ChangeNotifier {
   void dispose() {
     unawaited(shutdown());
     super.dispose();
+  }
+
+  /// One-shot migration: copy folder sync meta keys from sqflite [LibraryDatabase]
+  /// into the Core KV store, then never read them from sqflite again.
+  ///
+  /// Skipped when `folders_changed_at` is already present in the KV store, or
+  /// when Core FFI is unavailable (non-Android).
+  static Future<void> _migrateKvFoldersMeta(LibraryDatabase db) async {
+    final existing = RustCoreService.kvGet('folders_changed_at');
+    // null → Core FFI unavailable; non-empty non-error → already migrated.
+    if (existing == null) return;
+    if (existing.isNotEmpty && !existing.startsWith('error:')) return;
+
+    // Migrate the three key families once.
+    const keys = [
+      'folders_changed_at',
+      // last_sync and cloud_seen are per-destination (open-ended); we scan
+      // all local_meta rows that match the prefix rather than enumerating dests.
+    ];
+    for (final k in keys) {
+      final v = await db.loadMeta(k);
+      if (v != null && v.isNotEmpty) RustCoreService.kvSet(k, v);
+    }
+    // Migrate per-destination keys by scanning known prefixes from the sqflite
+    // local_meta table. We read them via loadMeta using the known pattern; the
+    // dest string is opaque so we copy them all via the two prefixes.
+    for (final prefix in const [
+      'folders_last_sync_at:',
+      'folders_cloud_seen:',
+    ]) {
+      final allMeta = await db.loadMetaByPrefix(prefix);
+      for (final entry in allMeta.entries) {
+        RustCoreService.kvSet(entry.key, entry.value);
+      }
+    }
   }
 }
