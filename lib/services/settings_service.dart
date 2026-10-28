@@ -23,7 +23,6 @@ import '../utils/subtitle_sidecar.dart';
 
 import 'package:openlist_crypt/openlist_crypt.dart';
 
-import 'library_sync_store.dart';
 import 'rust_core_service.dart';
 import '../models/page_turn_direction.dart';
 import '../models/manga_build.dart';
@@ -755,8 +754,7 @@ class SettingsService extends ChangeNotifier {
   /// Cloud-library fragment count (delta + tombstone parts) at which the sync
   /// screen suggests a rebuild. The hint is advisory — nothing is compacted
   /// automatically.
-  static const int defaultLibraryRebuildHintFragments =
-      LibrarySyncStore.suggestRebuildAtFragments;
+  static const int defaultLibraryRebuildHintFragments = 20;
 
   /// Choices offered in Settings.
   static const List<int> rebuildHintPresets = [10, 20, 30, 50];

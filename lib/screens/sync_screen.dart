@@ -13,7 +13,6 @@ import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/platform_export_service.dart';
 import '../services/settings_service.dart';
-import '../services/library_sync_store.dart';
 import '../models/account_capabilities.dart';
 import '../services/sync_service.dart';
 import '../services/webdav_service.dart';
@@ -1652,7 +1651,7 @@ class _RebuildLibraryDialog extends StatefulWidget {
 class _RebuildLibraryDialogState extends State<_RebuildLibraryDialog> {
   static const _presets = [200, 500, 1000, 2000];
 
-  int _perShard = LibrarySyncStore.defaultTracksPerShard;
+  int _perShard = SyncService.defaultTracksPerShard;
   bool _withCovers = true;
   RebuildEstimate? _estimate;
   bool _loading = false;

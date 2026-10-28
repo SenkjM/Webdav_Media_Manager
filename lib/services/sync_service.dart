@@ -11,10 +11,8 @@ import 'accounts_service.dart';
 import 'backup_service.dart';
 import 'credential_vault_service.dart';
 import 'library_service.dart';
-import 'library_sync_store.dart';
 import 'cache_service.dart';
 import 'manga_library_service.dart';
-import 'manga_sync_store.dart';
 import 'rust_core_service.dart';
 import 'user_folder_service.dart';
 import 'user_folder_sync.dart';
@@ -119,6 +117,82 @@ class SyncOutcome {
   }
 }
 
+/// Result of comparing the cloud manifest against the actual remote directory.
+///
+/// Populated from the JSON that `wdmm_sync_audit_music` /
+/// `wdmm_sync_audit_manga` return:
+/// `{"missing":[…],"orphans":[…],"healthy":bool,"summary":"…"}`.
+class LibraryAudit {
+  const LibraryAudit({
+    required this.missing,
+    required this.orphans,
+    required this.healthy,
+    required this.summary,
+  });
+
+  /// Files the manifest names but that are absent from the remote.
+  final List<String> missing;
+
+  /// Files present on the remote but not named by the manifest.
+  final List<String> orphans;
+
+  /// True when both [missing] and [orphans] are empty.
+  final bool healthy;
+
+  /// Human-readable one-liner from Core (language of the server locale; shown
+  /// as-is in the sync screen audit panel).
+  final String summary;
+
+  factory LibraryAudit.fromJson(Map<String, dynamic> json) => LibraryAudit(
+    missing: List<String>.from(json['missing'] as List? ?? const []),
+    orphans: List<String>.from(json['orphans'] as List? ?? const []),
+    healthy: (json['healthy'] as bool?) ?? true,
+    summary: json['summary'] as String? ?? '',
+  );
+}
+
+/// What a rebuild would produce (shard count + byte estimate).
+///
+/// Populated from the JSON that `wdmm_sync_estimate_music` /
+/// `wdmm_sync_estimate_manga` return:
+/// `{"shards":N,"estimated_bytes":N,"fragment_count":N,"fragment_bytes":N}`.
+class RebuildEstimate {
+  const RebuildEstimate({
+    required this.shards,
+    required this.bytes,
+    required this.withCovers,
+  });
+
+  final int shards;
+
+  /// Total estimated bytes for the requested [withCovers] setting.
+  final int bytes;
+
+  /// Whether the estimate includes embedded cover thumbnails.
+  final bool withCovers;
+
+  String get sizeLabel => _fmt(bytes);
+
+  String get label => withCovers
+      ? L10nHost.current.estimateLabelWithCovers(shards, sizeLabel)
+      : L10nHost.current.estimateLabelNoCovers(shards, sizeLabel);
+
+  static String _fmt(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(0)} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+  }
+
+  factory RebuildEstimate.fromJson(
+    Map<String, dynamic> json, {
+    required bool withCovers,
+  }) => RebuildEstimate(
+    shards: (json['shards'] as num?)?.toInt() ?? 0,
+    bytes: (json['estimated_bytes'] as num?)?.toInt() ?? 0,
+    withCovers: withCovers,
+  );
+}
+
 /// 同步 / 备份.
 ///
 /// The app only has three kinds of data, and each gets the treatment that fits
@@ -175,32 +249,9 @@ class SyncService extends ChangeNotifier {
   static const localExportSubdir = 'WebdavMediaManager';
   static const localExportPrefix = 'wdmm-export';
 
-  /// Incremental library index (state kept by [LibrarySyncStore]).
-  ///
-  /// WebDAV has no append: a `PUT` always replaces the whole file. A single
-  /// `library_index.json` therefore meant **every** new downloaded track
-  /// re-uploaded the entire library. Instead the directory now holds:
-  ///
-  /// * `library_index.json` — a small **manifest**: which snapshot + segments
-  ///   make up the current index;
-  /// * `seg-<ts>-<rand>.json` — an **append-only batch** with just the rows that
-  ///   changed (one new track = one small file);
-  /// * `snap-<ts>.json` — a **compacted snapshot** of everything, written when
-  ///   the segments pile up (see [libraryMaxSegments]) or on a full sync.
-  ///
-  /// Reading merges snapshot + all segments by `remotePath`, newest
-  /// `lastTagReadAt` winning.
-  static const librarySubdir = 'library/';
-  static const libraryIndexName = 'library_index.json';
-  static const librarySegmentPrefix = 'seg-';
-  static const librarySnapshotPrefix = 'snap-';
-
-  /// Compact once the manifest lists more segments than this.
-  static const libraryMaxSegments = 24;
-
-  /// Marker for the per-account index format.
-  static const libraryFormat = 'webdav_media_manager_library_index';
-  static const libraryFormatVersion = 3;
+  /// Default rows per shard for music/manga rebuild estimates (matches Core default).
+  static const defaultTracksPerShard = 500;
+  static const defaultMangasPerShard = 200;
 
   bool busy = false;
   String? lastError;
@@ -219,6 +270,14 @@ class SyncService extends ChangeNotifier {
   }
 
   // --- Helpers ----------------------------------------------------------
+
+  /// True when a remote fetch failed because the object does not exist.
+  /// Mirrors the old `LibrarySyncStore.isMissingError` semantics.
+  static bool _isMissingRemote(String lower) =>
+      lower.contains('404') ||
+      lower.contains('not found') ||
+      lower.contains('does not exist') ||
+      lower.contains('no such file');
 
   List<WebDavAccount> get accounts => _accounts.accounts;
 
@@ -401,10 +460,9 @@ class SyncService extends ChangeNotifier {
   int cloudFragmentCount = 0;
   int cloudFragmentBytes = 0;
 
-  /// Incremental library sync — delegates to Core FFI (`run_sync_all`).
+  /// Incremental library sync — delegates entirely to Core FFI (`run_sync_all`).
   ///
-  /// Runs credentials + music library + manga + playlists via
-  /// [RustCoreService.syncTrigger]. Refreshes Dart caches on completion.
+  /// Runs credentials + music library + manga + playlists. Refreshes Dart caches on completion.
   Future<SyncOutcome> syncLibraryIncremental() async {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
@@ -415,13 +473,10 @@ class SyncService extends ChangeNotifier {
 
   /// Full library sync (base-shard rebuild) — delegates to Core FFI (`run_sync_full`).
   ///
-  /// Runs credentials + music library + manga + playlists via
-  /// [RustCoreService.syncFull]. Refreshes Dart caches on completion.
-  /// [tracksPerShard] is accepted for API compatibility (Core picks shard size).
-  /// [withCovers] is passed to Core: when true, rebuilt `lib-*` base shards
-  /// embed `SEC_COVERS` (3); incremental segs never carry covers.
+  /// [tracksPerShard]: accepted for API compatibility; Core picks its own shard size.
+  /// [withCovers]: passed to Core for the rebuilt base shards.
   Future<SyncOutcome> syncLibraryFull({
-    int tracksPerShard = LibrarySyncStore.defaultTracksPerShard,
+    int tracksPerShard = defaultTracksPerShard,
     bool withCovers = false,
   }) async {
     final outcome = SyncOutcome(direction: 'push');
@@ -431,67 +486,71 @@ class SyncService extends ChangeNotifier {
     return outcome;
   }
 
-  /// Compare the cloud manifest with the directory's real contents.
+  /// Audit the music library remote (manifest vs live listing) via Core FFI.
   Future<LibraryAudit> auditLibrary() async {
     final dest = await syncDestination();
     if (dest == null) throw StateError('err.noWebdavAccount');
-    final store = await _libraryStore();
-    return store.audit(dest);
+    final result = RustCoreService.syncAuditMusic(
+      accountId: dest,
+      remoteDir: _settings.syncRemoteRoot,
+    );
+    if (result == null) throw StateError('Core FFI unavailable');
+    if (result.startsWith('error:')) throw StateError(result);
+    return LibraryAudit.fromJson(jsonDecode(result) as Map<String, dynamic>);
   }
 
-  /// Delete the orphan files an audit found (best effort).
+  /// Delete the orphan files an audit found via Core FFI (best effort).
   Future<int> tidyLibraryOrphans(LibraryAudit audit) async {
     final dest = await syncDestination();
     if (dest == null) throw StateError('err.noWebdavAccount');
-    final store = await _libraryStore();
-    return store.deleteOrphans(dest, audit);
+    final result = RustCoreService.syncTidyOrphansMusic(
+      accountId: dest,
+      remoteDir: _settings.syncRemoteRoot,
+      orphansJson: jsonEncode(audit.orphans),
+    );
+    if (result == null) throw StateError('Core FFI unavailable');
+    if (result.startsWith('error:')) throw StateError(result);
+    return int.tryParse(result) ?? 0;
   }
 
-  /// Preview a rebuild (shard count + bytes) without touching the cloud.
+  /// Preview a rebuild (shard count + bytes) via Core FFI without touching the cloud.
   Future<RebuildEstimate> estimateLibraryRebuild({
-    int tracksPerShard = LibrarySyncStore.defaultTracksPerShard,
+    int tracksPerShard = defaultTracksPerShard,
     bool withCovers = true,
   }) async {
-    final store = await _libraryStore();
-    return store.estimate(
-      tracks: _library.tracks,
+    final dest = await syncDestination();
+    if (dest == null) throw StateError('err.noWebdavAccount');
+    final result = RustCoreService.syncEstimateMusic(
+      accountId: dest,
+      remoteDir: _settings.syncRemoteRoot,
       tracksPerShard: tracksPerShard,
+    );
+    if (result == null) throw StateError('Core FFI unavailable');
+    if (result.startsWith('error:')) throw StateError(result);
+    return RebuildEstimate.fromJson(
+      jsonDecode(result) as Map<String, dynamic>,
       withCovers: withCovers,
     );
   }
 
-  /// Shared Core FFI sync helper — resolves account, calls either
+  /// Core FFI sync helper — resolves account_id and calls either
   /// [RustCoreService.syncTrigger] (incremental) or [RustCoreService.syncFull]
-  /// (base-shard rebuild), then refreshes all Dart caches.
+  /// (full rebuild), then refreshes all Dart caches.
   ///
-  /// Requires the configured sync destination to have `providerType == 'webdav'`
-  /// (Core builds `WebDavDriver` from url/user/pass).
+  /// Core resolves the driver via DriverRegistry; no url/user/pass needed here.
   Future<void> _runCoreSync(SyncOutcome outcome, {required bool full, bool withCovers = false}) async {
     final dest = await syncDestination();
     if (dest == null) throw StateError('err.noWebdavAccount');
-    final account = _accounts.accountById(dest);
-    if (account == null) throw StateError('err.noWebdavAccount');
-    if (account.providerType != 'webdav') {
-      throw StateError(
-        'Core sync requires providerType=webdav '
-        '(got ${account.providerType}); choose a WebDAV sync destination',
-      );
-    }
-    final password = await _accounts.passwordFor(account.id) ?? '';
     final remoteDir = _settings.syncRemoteRoot;
     _progress(L10nHost.current.progressReadingCloudIndex, 0.4);
     final result = full
         ? RustCoreService.syncFull(
-            webdavUrl: account.url,
-            username: account.username,
-            password: password,
+            accountId: dest,
             remoteDir: remoteDir,
             withCovers: withCovers,
           )
         : RustCoreService.syncTrigger(
-            webdavUrl: account.url,
-            username: account.username,
-            password: password,
+            accountId: dest,
             remoteDir: remoteDir,
           );
     if (result == null) {
@@ -505,13 +564,6 @@ class SyncService extends ChangeNotifier {
     await _manga?.reload();
     outcome.step('Core ${full ? "syncFull" : "syncTrigger"} ok: $result');
   }
-
-  /// The binary store, bound to the configured library sync root.
-  Future<LibrarySyncStore> _libraryStore() async => LibrarySyncStore(
-    webDav: _webDav,
-    covers: _library.covers,
-    settings: _settings,
-  );
   // --- Manga library (incremental / rebuild), mirrors music --------------
 
   /// Manga fragments on the cloud (for the 建议重建 hint).
@@ -519,12 +571,6 @@ class SyncService extends ChangeNotifier {
   int mangaCloudFragmentBytes = 0;
 
   bool get hasMangaSync => _manga != null && _cache != null;
-
-  MangaSyncStore _mangaStore() => MangaSyncStore(
-    webDav: _webDav,
-    settings: _settings,
-    coverFile: _cache!.mangaCoverFile,
-  );
 
   /// Incremental manga sync via Core FFI ([RustCoreService.syncTrigger]).
   /// Core is the sole sync authority: it adopts cloud rows, applies peer
@@ -544,7 +590,7 @@ class SyncService extends ChangeNotifier {
   /// base, clears all tombstones and cursors. Both manga and music shard engines
   /// rebuild in one `run_sync_full` call.
   Future<SyncOutcome> syncMangaFull({
-    int perShard = MangaSyncStore.defaultMangasPerShard,
+    int perShard = defaultMangasPerShard,
     bool withCovers = false,
   }) async {
     final outcome = SyncOutcome(direction: 'push');
@@ -555,25 +601,49 @@ class SyncService extends ChangeNotifier {
     return outcome;
   }
 
+  /// Audit the manga library remote (manifest vs live listing) via Core FFI.
   Future<LibraryAudit> auditMangaLibrary() async {
     final dest = await syncDestination();
     if (dest == null) throw StateError('err.noWebdavAccount');
-    return _mangaStore().audit(dest);
+    final result = RustCoreService.syncAuditManga(
+      accountId: dest,
+      remoteDir: _settings.syncRemoteRoot,
+    );
+    if (result == null) throw StateError('Core FFI unavailable');
+    if (result.startsWith('error:')) throw StateError(result);
+    return LibraryAudit.fromJson(jsonDecode(result) as Map<String, dynamic>);
   }
 
+  /// Delete the orphan files an audit found (manga) via Core FFI.
   Future<int> tidyMangaOrphans(LibraryAudit audit) async {
     final dest = await syncDestination();
     if (dest == null) throw StateError('err.noWebdavAccount');
-    return _mangaStore().deleteOrphans(dest, audit);
+    final result = RustCoreService.syncTidyOrphansManga(
+      accountId: dest,
+      remoteDir: _settings.syncRemoteRoot,
+      orphansJson: jsonEncode(audit.orphans),
+    );
+    if (result == null) throw StateError('Core FFI unavailable');
+    if (result.startsWith('error:')) throw StateError(result);
+    return int.tryParse(result) ?? 0;
   }
 
+  /// Preview a manga rebuild (shard count + bytes) via Core FFI.
   Future<RebuildEstimate> estimateMangaRebuild({
-    int perShard = MangaSyncStore.defaultMangasPerShard,
+    int perShard = defaultMangasPerShard,
     bool withCovers = true,
   }) async {
-    return _mangaStore().estimate(
-      rows: await _manga!.syncRows(),
-      perShard: perShard,
+    final dest = await syncDestination();
+    if (dest == null) throw StateError('err.noWebdavAccount');
+    final result = RustCoreService.syncEstimateManga(
+      accountId: dest,
+      remoteDir: _settings.syncRemoteRoot,
+      mangasPerShard: perShard,
+    );
+    if (result == null) throw StateError('Core FFI unavailable');
+    if (result.startsWith('error:')) throw StateError(result);
+    return RebuildEstimate.fromJson(
+      jsonDecode(result) as Map<String, dynamic>,
       withCovers: withCovers,
     );
   }
@@ -599,7 +669,7 @@ class SyncService extends ChangeNotifier {
       try {
         cloud = decodeUserFoldersDoc(await _webDav.readAsBytes(dest, path));
       } catch (e) {
-        if (!LibrarySyncStore.isMissingError(e.toString().toLowerCase())) {
+        if (!_isMissingRemote(e.toString().toLowerCase())) {
           rethrow;
         }
       }

@@ -12,7 +12,6 @@ import '../utils/manga_file_types.dart';
 import '../utils/manga_identity.dart';
 import '../utils/rev_clock.dart';
 import '../utils/track_identity.dart';
-import 'manga_sync_store.dart';
 import 'rust_core_service.dart';
 
 /// Draft metadata shown in the confirm sheet before commit.
@@ -577,53 +576,6 @@ class MangaLibraryService extends ChangeNotifier {
     return null;
   }
 
-  /// Every local row as sync ships it. Loose-image rows carry their page list
-  /// (membership); CBZ rows never do. Uses fresh data from Rust rather than
-  /// the in-memory cache so the snapshot is consistent even if reload() has
-  /// not been called yet.
-  Future<List<MangaSyncRow>> syncRows() async {
-    final mangas = _decodeMangaList(RustCoreService.mangaList());
-    final pagesById = <String, List<String>>{};
-    for (final m in mangas) {
-      if (m.format != MangaFormat.images) continue;
-      final ps = _decodePageList(RustCoreService.mangaListPages(m.id));
-      if (ps.isNotEmpty) pagesById[m.id] = [for (final p in ps) p.relPath];
-    }
-    return [
-      for (final m in mangas)
-        if (!isLegacyLooseManga(
-          id: m.id,
-          sourceName: m.sourceName,
-          remotePath: m.remotePath,
-          format: m.format,
-        ))
-          MangaSyncRow(manga: m, pages: pagesById[m.id] ?? const []),
-    ];
-  }
-
-  /// Adopt rows pulled from the cloud verbatim (rev kept, tombstone NOT
-  /// cleared). Loose-image rows replace local page lists; CBZ rows leave
-  /// local page order alone (rebuilt on first open / scrape).
-  Future<void> adoptCloudRows(List<MangaSyncRow> rows) async {
-    for (final r in rows) {
-      if (isLegacyLooseManga(
-        id: r.manga.id,
-        sourceName: r.manga.sourceName,
-        remotePath: r.manga.remotePath,
-        format: r.manga.format,
-      )) {
-        continue;
-      }
-      await _ffiUpsertManga(r.manga, keepRev: true);
-      if (r.manga.format == MangaFormat.images) {
-        _ffiSetPages(r.manga.id, [
-          for (var i = 0; i < r.pages.length; i++)
-            MangaPage(mangaId: r.manga.id, pageIndex: i, relPath: r.pages[i]),
-        ]);
-      }
-    }
-    if (rows.isNotEmpty) await reload();
-  }
 
   /// All progress rows, read fresh from Rust.
   Future<List<MangaProgress>> allProgress() async =>
@@ -657,7 +609,7 @@ class MangaLibraryService extends ChangeNotifier {
   ///
   /// * `mangas` — all manga rows (Core snake_case maps).
   /// * `pages` — pages for loose-image books only ([MangaFormat.images]),
-  ///   same filter as [syncRows]; CBZ page order is rebuilt on open.
+  ///   same filter as [syncRows] (images only); CBZ page order is rebuilt on open.
   /// * `progress` — all reading-progress rows.
   /// * `tombstones` — all deleted-manga tombstones.
   ///

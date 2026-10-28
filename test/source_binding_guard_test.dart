@@ -29,16 +29,6 @@ void main() {
       },
     );
 
-    test('the cloud library store only talks to WebDAV with account ids', () {
-      final source = File('lib/services/library_sync_store.dart')
-          .readAsStringSync();
-      final offenders = RegExp(r'_webDav\.\w+\(\s*sourceName\b')
-          .allMatches(source)
-          .map((m) => m.group(0)!)
-          .toList();
-      expect(offenders, isEmpty);
-    });
-
     test('every _webDav call in the queue resolves an account first', () {
       final source = File('lib/services/task_queue_service.dart')
           .readAsStringSync();

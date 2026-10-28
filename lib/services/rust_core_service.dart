@@ -69,11 +69,11 @@ typedef _FiveStrToOneStrNative = ffi.Pointer<Utf8> Function(
 typedef _FiveStrToOneStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
-// wdmm_sync_full(url, user, pass, dir, with_covers: c_int) → FfiString
-typedef _FourStrOneIntToStrNative = ffi.Pointer<Utf8> Function(
-    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Int32);
-typedef _FourStrOneIntToStrDart = ffi.Pointer<Utf8> Function(
-    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int);
+// wdmm_sync_full(account_id, remote_dir, with_covers: c_int) → FfiString
+typedef _TwoStrOneIntToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Int32);
+typedef _TwoStrOneIntToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int);
 
 // Wave D — wdmm_manga_set_progress(manga_id, page_index: i64)
 typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
@@ -203,8 +203,15 @@ class RustCoreService {
 
   static _CryptoEncryptDart? _cryptoEncrypt;
   static _TwoStrToOneStrDart? _cryptoDecrypt;
-  static _FourStrToOneStrDart? _syncTrigger;
-  static _FourStrOneIntToStrDart? _syncFull;
+  // Sync FFI — account_id based (Core resolves the driver via DriverRegistry).
+  static _TwoStrToOneStrDart? _syncTrigger;
+  static _TwoStrOneIntToStrDart? _syncFull;
+  static _TwoStrToOneStrDart? _syncAuditMusic;
+  static _TwoStrToOneStrDart? _syncAuditManga;
+  static _TwoStrOneIntToStrDart? _syncEstimateMusic;
+  static _TwoStrOneIntToStrDart? _syncEstimateManga;
+  static _ThreeStrToOneStrDart? _syncTidyOrphansMusic;
+  static _ThreeStrToOneStrDart? _syncTidyOrphansManga;
   static _Uint32ToStrDart? _dlnaDiscover;
   static _TwoStrToOneStrDart? _dlnaCast;
   static _VersionDart? _tokenGet; // no-arg → Utf8, same shape as version
@@ -273,10 +280,28 @@ class RustCoreService {
         .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_crypto_decrypt')
         .asFunction();
     _syncTrigger = lib
-        .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_sync_trigger')
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_trigger')
         .asFunction();
     _syncFull = lib
-        .lookup<ffi.NativeFunction<_FourStrOneIntToStrNative>>('wdmm_sync_full')
+        .lookup<ffi.NativeFunction<_TwoStrOneIntToStrNative>>('wdmm_sync_full')
+        .asFunction();
+    _syncAuditMusic = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_audit_music')
+        .asFunction();
+    _syncAuditManga = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_audit_manga')
+        .asFunction();
+    _syncEstimateMusic = lib
+        .lookup<ffi.NativeFunction<_TwoStrOneIntToStrNative>>('wdmm_sync_estimate_music')
+        .asFunction();
+    _syncEstimateManga = lib
+        .lookup<ffi.NativeFunction<_TwoStrOneIntToStrNative>>('wdmm_sync_estimate_manga')
+        .asFunction();
+    _syncTidyOrphansMusic = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_sync_tidy_orphans_music')
+        .asFunction();
+    _syncTidyOrphansManga = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_sync_tidy_orphans_manga')
         .asFunction();
     _dlnaDiscover = lib
         .lookup<ffi.NativeFunction<_Uint32ToStrNative>>('wdmm_dlna_discover_json')
@@ -488,27 +513,20 @@ class RustCoreService {
   /// Trigger an incremental Rust sync run (credentials + music library +
   /// manga + playlists via `run_sync_all`).
   ///
+  /// [accountId]: Cloud account ID; Core resolves the driver via DriverRegistry.
   /// Returns a JSON summary string on success or 'error:...' on failure.
   /// Returns null if the native library is not available.
-  ///
-  /// Semantics: `run_sync_all` runs every engine's `sync_incremental`.
   static String? syncTrigger({
-    required String webdavUrl,
-    required String username,
-    required String password,
+    required String accountId,
     String remoteDir = '/wdmm_sync',
   }) {
     if (!_ensureSymbols() || _syncTrigger == null) return null;
-    final urlPtr = webdavUrl.toNativeUtf8();
-    final userPtr = username.toNativeUtf8();
-    final passPtr = password.toNativeUtf8();
+    final idPtr = accountId.toNativeUtf8();
     final dirPtr = remoteDir.toNativeUtf8();
     try {
-      return _readAndFreeString(_syncTrigger!(urlPtr, userPtr, passPtr, dirPtr));
+      return _readAndFreeString(_syncTrigger!(idPtr, dirPtr));
     } finally {
-      calloc.free(urlPtr);
-      calloc.free(userPtr);
-      calloc.free(passPtr);
+      calloc.free(idPtr);
       calloc.free(dirPtr);
     }
   }
@@ -516,34 +534,139 @@ class RustCoreService {
   /// Full-rebuild Rust sync run (credentials + music library + manga +
   /// playlists via `run_sync_full`).
   ///
-  /// Triggers `sync_full` on every engine — base-shard rebuild for music
-  /// and manga. Use after a device reset or to compact a fragmented remote.
-  ///
-  /// [withCovers]: when true, the rebuilt `lib-*` base shards embed
-  /// `SEC_COVERS` (3) cover blobs from the configured cover roots.
-  /// Default false — covers stay cover-free.
-  ///
+  /// [accountId]: Cloud account ID; Core resolves the driver via DriverRegistry.
+  /// [withCovers]: embed cover blobs in rebuilt base shards.
   /// Returns a JSON summary string on success or 'error:...' on failure.
   /// Returns null if the native library is not available.
   static String? syncFull({
-    required String webdavUrl,
-    required String username,
-    required String password,
+    required String accountId,
     String remoteDir = '/wdmm_sync',
     bool withCovers = false,
   }) {
     if (!_ensureSymbols() || _syncFull == null) return null;
-    final urlPtr = webdavUrl.toNativeUtf8();
-    final userPtr = username.toNativeUtf8();
-    final passPtr = password.toNativeUtf8();
+    final idPtr = accountId.toNativeUtf8();
     final dirPtr = remoteDir.toNativeUtf8();
     try {
-      return _readAndFreeString(_syncFull!(urlPtr, userPtr, passPtr, dirPtr, withCovers ? 1 : 0));
+      return _readAndFreeString(_syncFull!(idPtr, dirPtr, withCovers ? 1 : 0));
     } finally {
-      calloc.free(urlPtr);
-      calloc.free(userPtr);
-      calloc.free(passPtr);
+      calloc.free(idPtr);
       calloc.free(dirPtr);
+    }
+  }
+
+  /// Audit the music library remote (manifest vs live listing).
+  /// Returns JSON `{"missing":[…],"orphans":[…],"healthy":bool,"summary":"…"}`
+  /// or `"error:<message>"`. Returns null if the native library is unavailable.
+  static String? syncAuditMusic({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncAuditMusic == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncAuditMusic!(idPtr, dirPtr));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  /// Audit the manga library remote (manifest vs live listing).
+  /// Returns JSON `{"missing":[…],"orphans":[…],"healthy":bool,"summary":"…"}`
+  /// or `"error:<message>"`. Returns null if the native library is unavailable.
+  static String? syncAuditManga({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncAuditManga == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncAuditManga!(idPtr, dirPtr));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  /// Estimate the network cost of a full music library rebuild.
+  /// Returns JSON `{"shards":N,"estimated_bytes":N,"fragment_count":N,"fragment_bytes":N}`
+  /// or `"error:<message>"`. [tracksPerShard] 0 → Core default (500).
+  static String? syncEstimateMusic({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+    int tracksPerShard = 0,
+  }) {
+    if (!_ensureSymbols() || _syncEstimateMusic == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncEstimateMusic!(idPtr, dirPtr, tracksPerShard));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  /// Estimate the network cost of a full manga library rebuild.
+  /// Returns JSON `{"shards":N,"estimated_bytes":N,"fragment_count":N,"fragment_bytes":N}`
+  /// or `"error:<message>"`. [mangasPerShard] 0 → Core default (200).
+  static String? syncEstimateManga({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+    int mangasPerShard = 0,
+  }) {
+    if (!_ensureSymbols() || _syncEstimateManga == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncEstimateManga!(idPtr, dirPtr, mangasPerShard));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  /// Delete orphan shards from the music library remote.
+  /// [orphansJson]: JSON array of filenames from [syncAuditMusic].
+  /// Returns deleted count as decimal string or `"error:<message>"`.
+  static String? syncTidyOrphansMusic({
+    required String accountId,
+    required String orphansJson,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncTidyOrphansMusic == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    final orphansPtr = orphansJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncTidyOrphansMusic!(idPtr, dirPtr, orphansPtr));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+      calloc.free(orphansPtr);
+    }
+  }
+
+  /// Delete orphan shards from the manga library remote.
+  /// [orphansJson]: JSON array of filenames from [syncAuditManga].
+  /// Returns deleted count as decimal string or `"error:<message>"`.
+  static String? syncTidyOrphansManga({
+    required String accountId,
+    required String orphansJson,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncTidyOrphansManga == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    final orphansPtr = orphansJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncTidyOrphansManga!(idPtr, dirPtr, orphansPtr));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+      calloc.free(orphansPtr);
     }
   }
 

@@ -3,9 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:webdav_media_manager/models/manga.dart';
 import 'package:webdav_media_manager/models/page_turn_direction.dart';
-import 'package:webdav_media_manager/models/manga_page.dart';
 import 'package:webdav_media_manager/services/manga_library_service.dart';
-import 'package:webdav_media_manager/services/manga_sync_store.dart';
 import 'package:webdav_media_manager/services/settings_service.dart';
 import 'package:webdav_media_manager/utils/manga_file_types.dart';
 import 'package:webdav_media_manager/utils/manga_identity.dart';
@@ -259,61 +257,4 @@ void main() {
     expect(again.imagePageTurn, PageTurnDirection.rtl);
   });
 
-  group('page lists in sync: images = membership, CBZ = local cache', () {
-    Manga m(String path, String format) => Manga(
-      // Loose-image books are surrogate-keyed; only containers are
-      // path-derived. A path-derived *images* row is a pre-v18 leftover, which
-      // sync and restore deliberately drop.
-      id: format == MangaFormat.images
-          ? 'uuid-${path.replaceAll('/', '_')}'
-          : mangaIdForRemote('nas', path),
-      sourceName: 'nas',
-      remotePath: path,
-      title: path,
-      format: format,
-      updatedAt: DateTime.utc(2026, 1, 1),
-      rev: 7,
-    );
-    MangaPage pg(String id, int i, String rel) =>
-        MangaPage(mangaId: id, pageIndex: i, relPath: rel);
-
-    // Class B unload: MangaLibraryService is Core-only (no injected sqflite).
-    // These cases exercise adoptCloudRows / replacePages / syncRows via FFI when
-    // the native library is present; without it they no-op / empty.
-
-    test('pull replaces images pages; CBZ keeps prior local pages', () async {
-      final img = m('/imgs', MangaFormat.images);
-      final cbz = m('/a.cbz', MangaFormat.cbz);
-      final svc = MangaLibraryService();
-      await svc.init();
-      // Seed CBZ local pages first, then adopt cloud (CBZ pages ignored on pull).
-      await svc.replacePages(cbz.id, pages: [pg(cbz.id, 0, 'local.jpg')]);
-      await svc.adoptCloudRows([
-        MangaSyncRow(manga: img, pages: ['a/1.jpg', 'b/1.jpg']),
-        MangaSyncRow(manga: cbz, pages: ['ignored.jpg']),
-      ]);
-      expect((await svc.pagesFor(img.id)).map((p) => p.relPath), [
-        'a/1.jpg',
-        'b/1.jpg',
-      ]);
-      final cbzPages = await svc.pagesFor(cbz.id);
-      if (cbzPages.isNotEmpty) {
-        expect(cbzPages.single.relPath, 'local.jpg');
-      }
-    });
-
-    test('replacePages updates images membership list', () async {
-      final img = m('/imgs', MangaFormat.images);
-      final svc = MangaLibraryService();
-      await svc.init();
-      await svc.adoptCloudRows([
-        MangaSyncRow(manga: img, pages: ['old.jpg']),
-      ]);
-      await svc.replacePages(img.id, pages: [pg(img.id, 0, '1.jpg')]);
-      final pages = await svc.pagesFor(img.id);
-      if (pages.isNotEmpty) {
-        expect(pages.single.relPath, '1.jpg');
-      }
-    });
-  });
 }
