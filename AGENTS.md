@@ -49,4 +49,16 @@ Use a normal `flutter` command only when the user has explicitly provided full a
 
 **Adding a new cloud driver.**
 
-One new file (`lib/services/cloud_drivers/<name>_driver.dart`) + one line in `lib/services/driver_registry.dart`. The public layer (`WebDavService`, `CloudDriveService`) must not change. See `docs/12-DRIVER-PORTING-GUIDE.md`.
+One new file (`lib/services/cloud_drivers/<name>_driver.dart`) + one line in `lib/services/driver_registry.dart`. The public layer (`WebDavService`, `CloudDriveService`) must not change.
+
+## Cloud file ops: CloudDriver is the single authority
+
+All in-app cloud file operations go through **`CloudDriver`** — the unified driver trait in `wdmm-core`. This *is* the "virtual file layer" in product language; there is no second trait alongside it.
+
+- Sync, backup, browse, and any other file I/O that already belongs on drivers must call `CloudDriver` methods (`list` / `mkdir` / `remove` / `put_content` / `get_content`). Do not reach past it into a raw `WebDavClient` / `Dio`.
+- **Do not** introduce a `VirtualFs`, `ObjectFs`, or `RemoteStore`-as-public-VFS layer that duplicates `CloudDriver`. A private shim that only renames `CloudDriver` is deleted/inlined; engines take `Arc<dyn CloudDriver>` directly.
+- Account-scoped driver factory lives only at the FFI/outer edge: `account_id` → `DriverRegistry::create_driver` → `CloudDriver`. Sync FFI takes `account_id + remote_dir (+ with_covers)`, never `url/user/pass`.
+- Unsupported put/get on a driver returns a driver error — do not implement sync per driver, and do **not** silently fall back to a WebDAV-only / Dart-store path. A missing put/get must fail loudly.
+- Wrapper drivers (Crypt) expose `LocalStream` (MustProxy), never a plaintext `raw_url`. Content-delivery kinds stay labeled on `CloudFileItem` / driver `get`.
+
+This is a clean one-shot codebase: no feature flags, no dual-write/dual-read, no soft fallback to a Dart store "so mid-steps still work". See `CLAUDE.md`.
