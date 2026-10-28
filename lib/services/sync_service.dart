@@ -272,7 +272,6 @@ class SyncService extends ChangeNotifier {
   // --- Helpers ----------------------------------------------------------
 
   /// True when a remote fetch failed because the object does not exist.
-  /// Mirrors the old `LibrarySyncStore.isMissingError` semantics.
   static bool _isMissingRemote(String lower) =>
       lower.contains('404') ||
       lower.contains('not found') ||
