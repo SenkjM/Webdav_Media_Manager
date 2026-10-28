@@ -190,15 +190,20 @@ if (-not $SkipFfmpeg) {
         $env:WDMM_FFMPEG_ONLY = 'android-arm64'
         $env:WDMM_FFMPEG_CACHE = $cache
         # Convert Windows path to Git Bash style when needed
-        # Pass the script as an arg so a CRLF shebang (#!/usr/bin/env bash\r) cannot break Git Bash.
+        # Windows checkouts often CRLF the .sh (core.autocrlf). Strip CR into a temp
+        # copy, then run with `bash file` so neither shebang nor body sees \r.
+        $fetchLf = Join-Path $env:TEMP ('wdmm-fetch-ffmpeg-vendor-{0}.sh' -f [guid]::NewGuid().ToString('N'))
+        $raw = [System.IO.File]::ReadAllText($fetchSh)
+        [System.IO.File]::WriteAllText($fetchLf, ($raw -replace "`r", ''))
         Push-Location $core
         try {
-            & $bash --noprofile --norc -c 'bash "./scripts/fetch-ffmpeg-vendor.sh"'
+            & $bash --noprofile --norc $fetchLf
             if ($LASTEXITCODE -ne 0) {
                 Fail 'fetch-ffmpeg-vendor.sh failed (need network once, or -SkipFfmpeg)'
             }
         } finally {
             Pop-Location
+            Remove-Item -LiteralPath $fetchLf -Force -ErrorAction SilentlyContinue
         }
         Write-Ok 'FFmpeg vendor ready'
     }
