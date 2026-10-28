@@ -1,6 +1,7 @@
 <#
 .SYNOPSIS
-  One-shot build of WDMM Rust FFI (libwdmm_ffi.so) into android jniLibs (Windows).
+  One-shot build of WDMM Rust FFI (libwdmm_ffi.so) into android jniLibs.
+  Windows PC only (local E:/ checkout); not for Linux CI/box.
 
 .DESCRIPTION
   Mirrors .github/workflows/testbuild.yml cargo-ndk steps for local Windows use:
@@ -10,7 +11,7 @@
     - Rust stable + cargo
     - cargo-ndk  (script can `cargo install cargo-ndk` if missing)
     - Android NDK (ANDROID_NDK_HOME / ANDROID_HOME\ndk\<ver> / Flutter side-by-side NDK)
-    - For FFmpeg vendor: Git Bash (bash.exe) so rust/wdmm-core/scripts/fetch-ffmpeg-vendor.sh runs
+    - Network once for android-arm64 FFmpeg vendor (PowerShell download; no Git Bash)
 
   Run from anywhere:
     pwsh -ExecutionPolicy Bypass -File tool\build-rust.ps1
@@ -27,7 +28,7 @@
   (Named -DebugBuild because -Debug is reserved by PowerShell.)
 
 .PARAMETER SkipFfmpeg
-  Skip fetch-ffmpeg-vendor.sh (use when vendor/android-arm64 already present).
+  Skip android-arm64 FFmpeg vendor download (use when vendor already present).
 
 .PARAMETER InstallCargoNdk
   Run `cargo install cargo-ndk` when cargo-ndk is missing (default: try install).
@@ -45,7 +46,6 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $core = Join-Path $root 'rust\wdmm-core'
 $outJni = Join-Path $root 'android\app\src\main\jniLibs'
-$fetchSh = Join-Path $core 'scripts\fetch-ffmpeg-vendor.sh'
 
 function Write-Step([string] $msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-Ok([string] $msg) { Write-Host "OK  $msg" -ForegroundColor Green }
@@ -56,19 +56,6 @@ function Test-Cmd([string] $Name) {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
-function Resolve-Bash {
-    $cmd = Get-Command bash.exe -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    $candidates = @(
-        'C:\Program Files\Git\bin\bash.exe',
-        'C:\Program Files\Git\usr\bin\bash.exe',
-        'C:\Program Files (x86)\Git\bin\bash.exe'
-    )
-    foreach ($c in $candidates) {
-        if (Test-Path -LiteralPath $c) { return $c }
-    }
-    return $null
-}
 
 function Resolve-NdkHome {
     if ($env:ANDROID_NDK_HOME -and (Test-Path -LiteralPath $env:ANDROID_NDK_HOME)) {
@@ -176,38 +163,46 @@ foreach ($a in $Abi) {
 }
 
 if (-not $SkipFfmpeg) {
-    if (-not (Test-Path -LiteralPath $fetchSh)) {
-        Fail "missing $fetchSh"
-    }
-    $bash = Resolve-Bash
-    if (-not $bash) {
-        Write-Host 'WARN: bash.exe not found (Git for Windows). Skipping FFmpeg vendor fetch.' -ForegroundColor Yellow
-        Write-Host '      Re-run with Git Bash on PATH, or pass -SkipFfmpeg if vendor is already filled.' -ForegroundColor Yellow
+    # Windows-local only: download android-arm64 vendor with PowerShell (no bash).
+    $arm64Vendor = Join-Path $core 'crates\wdmm-ffmpeg\vendor\android-arm64'
+    $ffOut = Join-Path $arm64Vendor 'ffmpeg'
+    $fpOut = Join-Path $arm64Vendor 'ffprobe'
+    $cache = Join-Path $core '.ffmpeg-vendor-cache'
+    $ffUrl = 'https://github.com/SenkjM/WDMM-core/releases/download/ffmpeg-vendor-seed-20261025/hzw-ffmpeg-arm64'
+    $fpUrl = 'https://github.com/SenkjM/WDMM-core/releases/download/ffmpeg-vendor-seed-20261025/hzw-ffprobe-arm64'
+    $ffCache = Join-Path $cache 'hzw-ffmpeg-arm64'
+    $fpCache = Join-Path $cache 'hzw-ffprobe-arm64'
+
+    New-Item -ItemType Directory -Force -Path $arm64Vendor | Out-Null
+    New-Item -ItemType Directory -Force -Path $cache | Out-Null
+
+    if ((Test-Path -LiteralPath $ffOut) -and (Test-Path -LiteralPath $fpOut) `
+        -and ((Get-Item -LiteralPath $ffOut).Length -gt 0) `
+        -and ((Get-Item -LiteralPath $fpOut).Length -gt 0)) {
+        Write-Ok "FFmpeg vendor already present: $arm64Vendor"
     } else {
-        Write-Step 'fetch FFmpeg vendor (android-arm64)'
-        # Keep cache inside the core tree as a relative path — Git Bash on some
-        # setups cannot mkdir /c/... (Permission denied on /c).
-        $cache = Join-Path $core '.ffmpeg-vendor-cache'
-        New-Item -ItemType Directory -Force -Path $cache | Out-Null
-        $env:WDMM_FFMPEG_ONLY = 'android-arm64'
-        $env:WDMM_FFMPEG_CACHE = './.ffmpeg-vendor-cache'
-        # Windows checkouts often CRLF the .sh. Strip CR into a temp under scripts/
-        # and invoke relatively.
-        $fetchLf = Join-Path $core 'scripts\.fetch-ffmpeg-vendor.lf.sh'
-        $raw = [System.IO.File]::ReadAllText($fetchSh)
-        [System.IO.File]::WriteAllText($fetchLf, ($raw -replace "`r", ''))
-        Push-Location $core
-        try {
-            $bashCmd = "export WDMM_FFMPEG_ONLY=android-arm64; export WDMM_FFMPEG_CACHE='./.ffmpeg-vendor-cache'; bash './scripts/.fetch-ffmpeg-vendor.lf.sh'"
-            & $bash --noprofile --norc -c $bashCmd
-            if ($LASTEXITCODE -ne 0) {
-                Fail 'fetch-ffmpeg-vendor.sh failed (need network once, or -SkipFfmpeg)'
+        Write-Step 'download FFmpeg vendor (android-arm64)'
+        foreach ($pair in @(
+            @{ Url = $ffUrl; Dest = $ffCache; Name = 'hzw-ffmpeg-arm64' },
+            @{ Url = $fpUrl; Dest = $fpCache; Name = 'hzw-ffprobe-arm64' }
+        )) {
+            if ((Test-Path -LiteralPath $pair.Dest) -and ((Get-Item -LiteralPath $pair.Dest).Length -gt 0)) {
+                Write-Ok "cached $($pair.Name)"
+                continue
             }
-        } finally {
-            Pop-Location
-            Remove-Item -LiteralPath $fetchLf -Force -ErrorAction SilentlyContinue
+            Write-Host "  GET $($pair.Url)"
+            try {
+                Invoke-WebRequest -Uri $pair.Url -OutFile $pair.Dest -UseBasicParsing
+            } catch {
+                Fail "download failed for $($pair.Name): $_"
+            }
+            if (-not (Test-Path -LiteralPath $pair.Dest) -or ((Get-Item -LiteralPath $pair.Dest).Length -le 0)) {
+                Fail "download empty for $($pair.Name)"
+            }
         }
-        Write-Ok 'FFmpeg vendor ready'
+        Copy-Item -LiteralPath $ffCache -Destination $ffOut -Force
+        Copy-Item -LiteralPath $fpCache -Destination $fpOut -Force
+        Write-Ok "FFmpeg vendor ready: $arm64Vendor"
     }
 } else {
     Write-Step 'SkipFfmpeg: not fetching vendor'
