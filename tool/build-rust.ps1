@@ -190,14 +190,14 @@ if (-not $SkipFfmpeg) {
         $env:WDMM_FFMPEG_ONLY = 'android-arm64'
         $env:WDMM_FFMPEG_CACHE = $cache
         # Convert Windows path to Git Bash style when needed
-        # Windows checkouts often CRLF the .sh (core.autocrlf). Strip CR into a temp
-        # copy, then run with `bash file` so neither shebang nor body sees \r.
-        $fetchLf = Join-Path $env:TEMP ('wdmm-fetch-ffmpeg-vendor-{0}.sh' -f [guid]::NewGuid().ToString('N'))
+        # Windows checkouts often CRLF the .sh (core.autocrlf). Strip CR into a
+        # temp under rust/wdmm-core (relative path — Git Bash mangles C:\ TEMP paths).
+        $fetchLf = Join-Path $core 'scripts\.fetch-ffmpeg-vendor.lf.sh'
         $raw = [System.IO.File]::ReadAllText($fetchSh)
         [System.IO.File]::WriteAllText($fetchLf, ($raw -replace "`r", ''))
         Push-Location $core
         try {
-            & $bash --noprofile --norc $fetchLf
+            & $bash --noprofile --norc './scripts/.fetch-ffmpeg-vendor.lf.sh'
             if ($LASTEXITCODE -ne 0) {
                 Fail 'fetch-ffmpeg-vendor.sh failed (need network once, or -SkipFfmpeg)'
             }
