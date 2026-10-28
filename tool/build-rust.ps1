@@ -185,25 +185,20 @@ if (-not $SkipFfmpeg) {
         Write-Host '      Re-run with Git Bash on PATH, or pass -SkipFfmpeg if vendor is already filled.' -ForegroundColor Yellow
     } else {
         Write-Step 'fetch FFmpeg vendor (android-arm64)'
-        $cache = Join-Path $env:TEMP 'wdmm-ffmpeg-vendor-cache'
+        # Keep cache inside the core tree as a relative path — Git Bash on some
+        # setups cannot mkdir /c/... (Permission denied on /c).
+        $cache = Join-Path $core '.ffmpeg-vendor-cache'
         New-Item -ItemType Directory -Force -Path $cache | Out-Null
-        # Git Bash needs /c/... ; Windows C:\... CACHE breaks (backslash / MSYS) and
-        # the .sh then falls back to /workspace/agent-tools/... which does not exist here.
-        if ($cache -match '^([A-Za-z]):\\(.*)$') {
-            $cacheUnix = '/' + $Matches[1].ToLowerInvariant() + '/' + ($Matches[2] -replace '\\', '/')
-        } else {
-            $cacheUnix = ($cache -replace '\\', '/')
-        }
         $env:WDMM_FFMPEG_ONLY = 'android-arm64'
-        $env:WDMM_FFMPEG_CACHE = $cacheUnix
-        # Windows checkouts often CRLF the .sh. Strip CR into a temp under the core
-        # tree and invoke with a relative path (absolute TEMP paths break under Git Bash).
+        $env:WDMM_FFMPEG_CACHE = './.ffmpeg-vendor-cache'
+        # Windows checkouts often CRLF the .sh. Strip CR into a temp under scripts/
+        # and invoke relatively.
         $fetchLf = Join-Path $core 'scripts\.fetch-ffmpeg-vendor.lf.sh'
         $raw = [System.IO.File]::ReadAllText($fetchSh)
         [System.IO.File]::WriteAllText($fetchLf, ($raw -replace "`r", ''))
         Push-Location $core
         try {
-            $bashCmd = "export WDMM_FFMPEG_ONLY=android-arm64; export WDMM_FFMPEG_CACHE='$cacheUnix'; bash './scripts/.fetch-ffmpeg-vendor.lf.sh'"
+            $bashCmd = "export WDMM_FFMPEG_ONLY=android-arm64; export WDMM_FFMPEG_CACHE='./.ffmpeg-vendor-cache'; bash './scripts/.fetch-ffmpeg-vendor.lf.sh'"
             & $bash --noprofile --norc -c $bashCmd
             if ($LASTEXITCODE -ne 0) {
                 Fail 'fetch-ffmpeg-vendor.sh failed (need network once, or -SkipFfmpeg)'
