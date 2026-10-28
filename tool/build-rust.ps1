@@ -15,15 +15,16 @@
   Run from anywhere:
     pwsh -ExecutionPolicy Bypass -File tool\build-rust.ps1
     pwsh -File tool\build-rust.ps1 -Abi arm64-v8a,x86_64
-    pwsh -File tool\build-rust.ps1 -Debug
+    pwsh -File tool\build-rust.ps1 -DebugBuild
     pwsh -File tool\build-rust.ps1 -SkipFfmpeg
     tool\build-rust.bat
 
 .PARAMETER Abi
   Android ABIs for cargo-ndk. Default: arm64-v8a (same as Testbuild / sandbox).
 
-.PARAMETER Debug
+.PARAMETER DebugBuild
   Build Rust debug profile instead of --release.
+  (Named -DebugBuild because -Debug is reserved by PowerShell.)
 
 .PARAMETER SkipFfmpeg
   Skip fetch-ffmpeg-vendor.sh (use when vendor/android-arm64 already present).
@@ -35,7 +36,7 @@
 [CmdletBinding()]
 param(
     [string[]] $Abi = @('arm64-v8a'),
-    [switch] $Debug,
+    [switch] $DebugBuild,
     [switch] $SkipFfmpeg,
     [switch] $NoInstallCargoNdk
 )
@@ -209,7 +210,7 @@ New-Item -ItemType Directory -Force -Path $outJni | Out-Null
 $ndkArgs = @()
 foreach ($a in $Abi) { $ndkArgs += @('-t', $a) }
 $ndkArgs += @('-o', $outJni)
-$profileArgs = if ($Debug) { @('build', '-p', 'wdmm-ffi') } else { @('build', '--release', '-p', 'wdmm-ffi') }
+$profileArgs = if ($DebugBuild) { @('build', '-p', 'wdmm-ffi') } else { @('build', '--release', '-p', 'wdmm-ffi') }
 
 Write-Step ("cargo ndk " + ($ndkArgs + $profileArgs -join ' '))
 Push-Location $core
