@@ -10,15 +10,11 @@ import 'package:webdav_media_manager/services/playlist_store.dart';
 import 'package:webdav_media_manager/services/webdav_service.dart';
 import 'package:webdav_media_manager/utils/track_identity.dart';
 import 'package:webdav_media_manager/utils/wmp_container.dart';
-import 'package:sqflite/sqflite.dart';
 
 /// In-memory stand-in for the playlist sqlite table: these tests are about the
 /// `WDMMPL01` bytes and the merge rule, never about sqflite.
 class _MemoryPlaylistStore implements PlaylistStore {
   final Map<String, Playlist> rows = {};
-
-  @override
-  Future<Database> get database async => throw UnimplementedError();
 
   @override
   Future<List<Playlist>> loadAll() async => rows.values.toList();

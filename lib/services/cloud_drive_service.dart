@@ -141,14 +141,10 @@ class CloudDriveService extends ChangeNotifier {
     for (final d in replaced) {
       unawaited(d.dispose());
     }
-    _accountSignatures = fresh;
     _registeredBatch = batch;
     _registrationComplete = complete;
     notifyListeners();
   }
-
-  /// accountId → 该账号上次登记时的指纹（[cloudAccountSignature]）。
-  Map<String, String> _accountSignatures = <String, String>{};
 
   /// 上次登记时的整批指纹；[registerAccounts] 用它判断「要不要重建」。
   String? _registeredBatch;
@@ -236,25 +232,6 @@ class CloudDriveService extends ChangeNotifier {
     resolveSource: _resolveSource,
     resolveSourceByName: _resolveSourceByName,
   );
-
-  /// 令牌轮换持久化（驱动回调）：patch 原样合并进存储的配置。
-  ///
-  /// 驱动自己写回的令牌缓存**不算**「用户改了配置」：同步更新该账号的指纹，
-  /// 下一次 [registerAccounts] 才不会因为一次令牌轮换白重建一遍驱动（那会丢掉
-  /// 驱动的内部缓存与连接池）。指纹同步后与「重新从存储读一遍配置」逐字节一致。
-  Future<void> _persistTokens(
-    String accountId,
-    Map<String, dynamic> patch,
-  ) async {
-    final cfg =
-        await _accounts.loadDriverConfig(accountId) ?? <String, dynamic>{};
-    cfg.addAll(patch);
-    await _accounts.saveDriverConfig(accountId, cfg);
-    final account = _accounts.accountById(accountId);
-    if (account == null || !_accountSignatures.containsKey(accountId)) return;
-    _accountSignatures[accountId] = cloudAccountSignature(account, cfg);
-    _registeredBatch = cloudRegistrationSignature(_accountSignatures);
-  }
 
   /// 表单保存前的真连校验（99 §7.3.1：能换到 access_token 才保存）。
   /// 失败原样抛 [CloudDriverException]，由表单展示给用户。

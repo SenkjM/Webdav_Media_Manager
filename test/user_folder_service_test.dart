@@ -4,7 +4,6 @@ import 'package:webdav_media_manager/models/library_sentinels.dart';
 import 'package:webdav_media_manager/models/library_tag_dimension.dart';
 import 'package:webdav_media_manager/models/library_track.dart';
 import 'package:webdav_media_manager/models/user_folder.dart';
-import 'package:webdav_media_manager/models/user_folder_item.dart';
 import 'package:webdav_media_manager/services/user_folder_service.dart';
 
 void main() {

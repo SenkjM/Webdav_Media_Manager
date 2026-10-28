@@ -195,7 +195,6 @@ class RustCoreService {
   static _IntResultDart? _queueCancel;
   static _IntDart? _queuePendingCount;
   static _OpenApiStartDart? _openApiStart;
-  static _FreeStringDart? _openApiStop;
   static _IntDart? _openApiIsRunning;
   static _IntDart? _openApiPort;
 
@@ -262,9 +261,6 @@ class RustCoreService {
         .asFunction();
     _openApiStart = lib
         .lookup<ffi.NativeFunction<_OpenApiStartNative>>('wdmm_openapi_start')
-        .asFunction();
-    _openApiStop = lib
-        .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_openapi_stop')
         .asFunction();
     _openApiIsRunning = lib
         .lookup<ffi.NativeFunction<_IntNative>>('wdmm_openapi_is_running')

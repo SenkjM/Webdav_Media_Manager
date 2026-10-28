@@ -14,13 +14,9 @@ import 'package:webdav_media_manager/services/playlist_sync_plan.dart';
 import 'package:webdav_media_manager/services/webdav_service.dart';
 import 'package:webdav_media_manager/utils/track_identity.dart';
 import 'package:webdav_media_manager/utils/wmp_container.dart';
-import 'package:sqflite/sqflite.dart';
 
 class _MemoryPlaylistStore implements PlaylistStore {
   final Map<String, Playlist> rows = {};
-
-  @override
-  Future<Database> get database async => throw UnimplementedError();
 
   @override
   Future<List<Playlist>> loadAll() async => rows.values.toList();
