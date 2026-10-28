@@ -190,9 +190,10 @@ if (-not $SkipFfmpeg) {
         $env:WDMM_FFMPEG_ONLY = 'android-arm64'
         $env:WDMM_FFMPEG_CACHE = $cache
         # Convert Windows path to Git Bash style when needed
+        # Pass the script as an arg so a CRLF shebang (#!/usr/bin/env bash\r) cannot break Git Bash.
         Push-Location $core
         try {
-            & $bash -lc "./scripts/fetch-ffmpeg-vendor.sh"
+            & $bash --noprofile --norc -c 'bash "./scripts/fetch-ffmpeg-vendor.sh"'
             if ($LASTEXITCODE -ne 0) {
                 Fail 'fetch-ffmpeg-vendor.sh failed (need network once, or -SkipFfmpeg)'
             }
