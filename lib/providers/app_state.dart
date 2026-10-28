@@ -12,6 +12,7 @@ import '../models/file_type_config.dart';
 import '../models/library_track.dart';
 import '../models/sync_interval.dart';
 import '../utils/app_snack.dart';
+import '../utils/boot_trace.dart';
 import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
@@ -77,6 +78,12 @@ class AppState extends ChangeNotifier {
       settings: settings,
       export: platformExport,
     );
+    // Built before BackupService and DlnaCastService: both consume it in
+    // their constructors (backup embeds prefs for backup/restore; dlnaCast
+    // uses it to route USN-keyed force-direct). Assigning after BackupService
+    // (as a previous layout did) triggered a LateInitializationError because
+    // the BackupService ctor read the late field before it was set.
+    dmrPrefs = RustDmrPrefsService();
     backup = BackupService(
       userFolders: userFolders,
       manga: mangaLibrary,
@@ -127,7 +134,6 @@ class AppState extends ChangeNotifier {
       notificationPermission: notificationPermission,
     );
     videoPlayback = VideoPlaybackService(handler: audioHandler);
-    dmrPrefs = RustDmrPrefsService();
     dlnaCast = DlnaCastService(webDav: webDav, dmrPrefs: dmrPrefs);
   }
 
@@ -206,6 +212,22 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     try {
+      BootTrace.mark('init-start');
+      // Resolve the documents directory first: wdmm_library_init (I2) must
+      // receive the real DB path before the very first Core FFI call, which
+      // happens inside settings.init() → kvGet(). A :memory: fallback no
+      // longer exists in production builds — the singleton panics without init.
+      _initPhase = 'core-init';
+      final docs = await getApplicationDocumentsDirectory();
+      if (Platform.isAndroid) {
+        final coreDbPath = '${docs.path}/wdmm_library.db';
+        final coreResult = RustCoreService.libraryInit(coreDbPath);
+        assert(
+          coreResult == null || !coreResult.startsWith('error:'),
+          '[AppState] wdmm_library_init failed: $coreResult',
+        );
+      }
+      BootTrace.mark('core-init-done');
       _initPhase = 'settings';
       await settings.init();
       AppSnack.attach(settings);
@@ -224,10 +246,8 @@ class AppState extends ChangeNotifier {
       _initPhase = 'cache';
       await cache.init();
       _initPhase = 'dmr-prefs';
-      debugPrint('[AppState] dmr-prefs phase: about to get documents directory');
-      final docs = await getApplicationDocumentsDirectory();
-      debugPrint('[AppState] dmr-prefs phase: got docs path: ${docs.path}');
-      debugPrint('[AppState] dmr-prefs phase: calling dmrPrefs.init');
+      // docs already fetched above for core-init — reuse it here.
+      debugPrint('[AppState] dmr-prefs phase: docs path: ${docs.path}');
       await dmrPrefs.init(docs.path);
       debugPrint('[AppState] dmr-prefs phase: dmrPrefs.init completed');
       // Configure Core cover roots once paths are known, so backup/restore operations
@@ -894,7 +914,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Best-effort delete of the legacy sqflite files once all migrates have
+  /// Best-effort retire of the legacy sqflite files once all migrates have
   /// succeeded on this launch.
   ///
   /// Only runs when [dbPath] is non-null (file existed at startup and the
@@ -902,9 +922,11 @@ class AppState extends ChangeNotifier {
   /// set (confirming the folders-kv migrate ran this launch).
   /// [cache.init()] is guaranteed to have run before this is called.
   ///
-  /// Delete errors are logged, never fatal.
+  /// Renames the sqflite file to a `.migrated-bak` sidecar instead of deleting
+  /// it (invariant I7: cutover must keep a restorable backup of the old
+  /// authority, never an auto-delete). Errors are logged, never fatal.
   static Future<void> _retireMusicLibraryDbIfMigrated(String? dbPath) async {
-    if (dbPath == null) return; // file was absent at startup — nothing to delete
+    if (dbPath == null) return; // file was absent at startup — nothing to retire
 
     // Verify the folders-kv sentinel (same check as _migrateKvFoldersMeta).
     final foldersAt = RustCoreService.kvGet('folders_changed_at');
@@ -914,21 +936,24 @@ class AppState extends ChangeNotifier {
         !foldersAt.startsWith('error:');
     if (!foldersOk) {
       debugPrint(
-        '[AppState] retire: folders_changed_at not set — skipping delete',
+        '[AppState] retire: folders_changed_at not set — skipping rename',
       );
       return;
     }
 
-    // Delete music_library.db and its WAL/SHM companions (best-effort).
+    // Rename music_library.db and its WAL/SHM companions to a
+    // `.migrated-bak` sidecar (best-effort). I7: keep the old authority
+    // restorable — never auto-delete migrated data.
     for (final suffix in const ['', '-wal', '-shm']) {
       final file = File('$dbPath$suffix');
       try {
         if (await file.exists()) {
-          await file.delete();
-          debugPrint('[AppState] retire: deleted ${file.path}');
+          final target = '${file.path}.migrated-bak';
+          await file.rename(target);
+          debugPrint('[AppState] retire: renamed ${file.path} → $target');
         }
       } catch (e) {
-        debugPrint('[AppState] retire: could not delete ${file.path}: $e');
+        debugPrint('[AppState] retire: could not rename ${file.path}: $e');
       }
     }
   }

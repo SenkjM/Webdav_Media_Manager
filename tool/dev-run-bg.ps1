@@ -17,6 +17,7 @@
 
 param(
     [string] $Device = '',
+    [string] $Flavor = '',
     [switch] $Stop
 )
 
@@ -58,6 +59,7 @@ Remove-Item $uriFile -Force -ErrorAction SilentlyContinue
 
 # --- 组装命令 ---------------------------------------------------------------
 $argList = @('run')
+if ($Flavor) { $argList += @('--flavor', $Flavor) }
 if ($Device) { $argList += @('-d', $Device) }
 $argList += @('--dart-define=AUDIO_NOTIF_DEBUG=true')
 
