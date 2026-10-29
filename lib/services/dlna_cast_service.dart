@@ -414,7 +414,7 @@ class DlnaCastService extends ChangeNotifier {
     );
     if (source == null) throw Exception('无法解析流源: ${item.name}');
 
-    // 生成代理 URL（R12：经 Rust 代理；LAN cast 受 loopback-only 限制）
+    // 生成代理 URL（B3.g：proxy 绑定 LAN 接口，URL host 由 Core 签发）
     final (:uri, :token) = await RustProxyStreamBridge.expose(
       size: item.size ?? 0,
       name: item.name,
@@ -427,7 +427,7 @@ class DlnaCastService extends ChangeNotifier {
         }
         return bytes;
       },
-      lanHost: _localIp,
+      bindMode: _localIp != null ? 'lan_if:$_localIp' : 'loopback',
     );
     _currentStreamToken = token;
 

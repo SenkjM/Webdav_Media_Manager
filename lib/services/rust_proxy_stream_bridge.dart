@@ -47,8 +47,8 @@ class _StreamReg {
 /// Routes Dart-driver Range reads through the Rust local HTTP proxy.
 ///
 /// Each [expose] call registers a stream with `wdmm_proxy_register_stream` and
-/// returns a `http://127.0.0.1:{port}{path}` URI (or a LAN-IP URI when
-/// [expose.lanHost] is provided).
+/// returns a `http://{host}:{port}{path}` URI, where `host` and `port` come
+/// from the Core FFI JSON response — the actual address the proxy is bound on.
 ///
 /// For each Range request Rust invokes the registered callback from a Tokio
 /// worker thread. The callable is created with [NativeCallable.listener]:
@@ -60,13 +60,11 @@ class _StreamReg {
 /// `wdmm_proxy_stream_set_result`. Rust waits up to 30 s
 /// (`PROXY_STREAM_TIMEOUT_SECS`).
 ///
-/// ## LAN cast note
-/// The Rust proxy binds `127.0.0.1` (loopback-only). Passing a LAN IP as
-/// [expose.lanHost] changes only the URL host returned to the caller; the proxy
-/// socket is loopback-only, so DLNA renderers on the LAN **cannot** reach it.
-/// Cloud MustProxy local playback on `127.0.0.1` (the primary R12 fix) works
-/// correctly. See the R12 stream spec + out.txt for the documented
-/// cloud-LAN-cast limitation.
+/// ## Bind modes
+/// Pass [expose.bindMode] = `'lan_if:<ip>'` for DLNA cast so the proxy binds
+/// on a LAN interface reachable by the renderer. The returned URI host is the
+/// address Core actually bound on — Dart never assembles a URL host itself.
+/// Default `'loopback'` is for on-device playback only.
 class RustProxyStreamBridge {
   RustProxyStreamBridge._();
 
@@ -80,9 +78,9 @@ class RustProxyStreamBridge {
   /// - [accountId] / [remotePath] — used for debug logging only.
   /// - [readRange] — called with `(start, end)` for each Range request.
   ///   `end` is inclusive; `-1` means read to EOF. Returns the raw bytes.
-  /// - [lanHost]   — override the URL host for DLNA renderers (e.g. a LAN IP).
-  ///   `null` → `127.0.0.1`. Note: the proxy socket is loopback-only, so a LAN
-  ///   host only works if the renderer can reach the device's loopback interface.
+  /// - [bindMode]  — Rust proxy bind mode string. `'loopback'` (default) for
+  ///   on-device playback; `'lan_if:<ip>'` binds a LAN interface for DLNA cast.
+  ///   The returned URI host is read from the Core JSON response.
   ///
   /// Returns `({Uri uri, String token})`. Pass [token] to [unregister] when
   /// playback ends to release the Rust-side slot.
@@ -95,11 +93,10 @@ class RustProxyStreamBridge {
     required String accountId,
     required String remotePath,
     required FutureOr<List<int>> Function(int start, int end) readRange,
-    String? lanHost,
+    String bindMode = 'loopback',
   }) async {
-    // Ensure the proxy singleton is running. Idempotent.
-    // TODO(B3.d): use LAN bind mode for DLNA cast scenarios.
-    final proxyPort = RustProxyBridge.start(bindMode: 'loopback');
+    // Ensure the proxy singleton is running with the requested bind mode.
+    final proxyPort = RustProxyBridge.start(bindMode: bindMode);
     if (proxyPort == null) {
       throw StateError(
         '[RustProxyStreamBridge] proxy could not be started '
@@ -150,6 +147,8 @@ class RustProxyStreamBridge {
     }
     final token = json['token'] as String?;
     final pathTemplate = json['path_template'] as String?;
+    // host is the IP Core is actually bound on — never assembled in Dart.
+    final host = (json['host'] as String?) ?? '127.0.0.1';
     final port = json['port'] as int?;
     if (token == null || pathTemplate == null || port == null) {
       callable.close();
@@ -161,10 +160,9 @@ class RustProxyStreamBridge {
     _regs[token] = _StreamReg(token: token, callable: callable);
     debugPrint(
       '[RustProxyStreamBridge] registered $token ($remotePath) '
-      'size=$size port=$port',
+      'size=$size host=$host port=$port',
     );
 
-    final host = lanHost ?? '127.0.0.1';
     final uri = Uri.parse('http://$host:$port$pathTemplate');
     return (uri: uri, token: token);
   }
