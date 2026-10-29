@@ -402,6 +402,9 @@ class AccountsService extends ChangeNotifier {
             final srcCfg = await loadDriverConfig(src.id);
             final srcCreds = <String, dynamic>{};
             if (src.providerType == 'webdav') {
+              // Rust create_driver('webdav', …) requires 'url'; the URL lives in
+              // src.url (base_url), not in the credential map — add it explicitly.
+              srcCreds['url'] = src.url;
               srcCreds['username'] = src.username;
               srcCreds['password'] = await passwordFor(src.id) ?? '';
               srcCreds['remote_dir'] = src.remotePath;
