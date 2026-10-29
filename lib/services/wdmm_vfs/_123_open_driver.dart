@@ -12,7 +12,7 @@
 /// `Copy` 依赖上传秒传（上传已砍，99 §7.2.1），两版都没有可移植的实现。
 /// 上传 / put 同样不移植。
 ///
-/// 与 worker 底稿的有意差异（对齐 [CloudDriver.get] 的契约，见 11 §10）：
+/// 与 worker 底稿的有意差异（对齐 [WdmmVfs.get] 的契约，见 11 §10）：
 /// - [Driver123Open.get] 文件拿不到直链时**抛真实原因**，而不是像 worker
 ///   那样把 `raw_url_error` 记在条目上返回无直链的条目——客户端里下游
 ///   必然失败，不如直说。
@@ -27,7 +27,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 import '../../utils/l10n_host.dart';
 
 /// 驱动配置（对齐上游 `Driver123OpenAddition`；键名与上游一致，便于对照排错）。
@@ -213,9 +213,9 @@ class Driver123OpenClient {
 
     // 缺必填 refresh_token 时给出可读原因（表单已标必填，这是后端兜底）。
     if (a.refreshToken.trim().isEmpty) {
-      throw const CloudDriverException('err.missingRefreshToken');
+      throw const WdmmVfsException('err.missingRefreshToken');
     }
-    throw const CloudDriverException(
+    throw const WdmmVfsException(
       '[123Open] no valid authentication method '
       '(access_token / refresh_token / client_id+client_secret)',
     );
@@ -261,9 +261,9 @@ class Driver123OpenClient {
                 data?['error'])
             as String?;
     if (err != null && err.isNotEmpty) {
-      throw CloudDriverException('[123Open] $err');
+      throw WdmmVfsException('[123Open] $err');
     }
-    throw CloudDriverException(
+    throw WdmmVfsException(
       raw.isEmpty
           ? 'err.refreshOnlineFailedNonJson|${res.statusCode}'
           : 'err.refreshOnlineFailed|${res.statusCode}|'
@@ -285,7 +285,7 @@ class Driver123OpenClient {
     final code = (resp['code'] as num?)?.toInt() ?? 0;
     if (code != 0) {
       final message = resp['message'] as String? ?? '';
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[123Open] ${message.isEmpty ? 'code $code' : message}',
       );
     }
@@ -295,7 +295,7 @@ class Driver123OpenClient {
         : <String, dynamic>{};
     final access = map['access_token'] as String?;
     if (access == null || access.isEmpty) {
-      throw const CloudDriverException('[123Open] empty access token');
+      throw const WdmmVfsException('[123Open] empty access token');
     }
     // 自建应用刷新只换 access_token，refresh_token 不动。
     _applyTokens(access, a.refreshToken);
@@ -311,7 +311,7 @@ class Driver123OpenClient {
     });
   }
 
-  /// 带钱包的请求：`code !== 0` 抛 [CloudDriverException]；
+  /// 带钱包的请求：`code !== 0` 抛 [WdmmVfsException]；
   /// `code === 401` 强制刷新一次后**重试一次**（对齐 worker `request`）。
   ///
   /// [pathname] 只用于错误原文，让报错带上端点。
@@ -327,10 +327,10 @@ class Driver123OpenClient {
     Map<String, dynamic> data;
     try {
       data = await _send(path, method: method, query: query, body: body);
-    } on CloudDriverException {
+    } on WdmmVfsException {
       rethrow; // 业务错误不重试。
     } catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.driver123RequestFailed|${pathname ?? path}',
         e,
       );
@@ -344,7 +344,7 @@ class Driver123OpenClient {
     final code = (data['code'] as num?)?.toInt() ?? 0;
     if (code != 0) {
       final message = data['message'] as String? ?? '';
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[123Open] ${message.isEmpty ? 'code $code' : message}',
       );
     }
@@ -375,7 +375,7 @@ class Driver123OpenClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.driver123NetworkFailed|${e.message ?? e}',
       );
     }
@@ -385,7 +385,7 @@ class Driver123OpenClient {
       final json = jsonDecode(text);
       decoded = json is Map<String, dynamic> ? json : <String, dynamic>{};
     } catch (_) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[123Open] invalid JSON response, status ${res.statusCode}',
       );
     }
@@ -459,7 +459,7 @@ class Driver123OpenClient {
     );
     final url = data['download_url'] as String?;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException('[123Open] empty download url');
+      throw const WdmmVfsException('[123Open] empty download url');
     }
     return url;
   }
@@ -516,12 +516,12 @@ class Driver123OpenClient {
   }
 }
 
-/// 123 云盘驱动（[CloudDriver] 实现）。
+/// 123 云盘驱动（[WdmmVfs] 实现）。
 ///
 /// 上游用**文件 id** 操作，本应用给的是**绝对路径**，因此在实例内维护
 /// path→id 缓存（对齐 worker 的 `pathCache`；写操作后整表 clear）。
 /// 缓存随驱动重建失效（99 §4.6）。
-class Driver123Open extends CloudDriver {
+class Driver123Open extends WdmmVfs {
   Driver123Open({
     required Driver123OpenAddition addition,
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
@@ -560,7 +560,7 @@ class Driver123Open extends CloudDriver {
   /// 取单个条目（对齐 worker `get` 的探测顺序）。
   ///
   /// **有意差异**：worker 拿不到直链时把 `raw_url_error` 记在条目上返回，
-  /// 本实现按 [CloudDriver.get] 的契约**抛真实原因**——文件必须带 `rawUrl`
+  /// 本实现按 [WdmmVfs.get] 的契约**抛真实原因**——文件必须带 `rawUrl`
   /// （11 §10）。
   @override
   Future<CloudFileItem> get(String path) async {
@@ -583,7 +583,7 @@ class Driver123Open extends CloudDriver {
           break;
         }
       }
-    } on CloudDriverException {
+    } on WdmmVfsException {
       // 父目录解析 / 列表失败 → 落到目录探测分支（同 worker 的 try/catch 包裹）。
       file = null;
     }
@@ -591,7 +591,7 @@ class Driver123Open extends CloudDriver {
     if (file != null) {
       final item = _toItem(file);
       if (!item.isDir) {
-        // 直链失败要抛出真实原因（网络 / 业务码都已被包成 CloudDriverException）。
+        // 直链失败要抛出真实原因（网络 / 业务码都已被包成 WdmmVfsException）。
         final url = await _client.getDownloadUrl(file.fileId);
         return CloudFileItem(
           name: item.name,
@@ -610,8 +610,8 @@ class Driver123Open extends CloudDriver {
     try {
       await _resolveDirId(clean);
       return CloudFileItem(name: rawName, isDir: true);
-    } on CloudDriverException {
-      throw CloudDriverException('err.driver123FileNotFound|$rawName');
+    } on WdmmVfsException {
+      throw WdmmVfsException('err.driver123FileNotFound|$rawName');
     }
   }
 
@@ -620,7 +620,7 @@ class Driver123Open extends CloudDriver {
     final clean = _clean(path);
     final name = cloudBasename(clean);
     if (name.isEmpty) {
-      throw const CloudDriverException('err.mkdirRoot');
+      throw const WdmmVfsException('err.mkdirRoot');
     }
     final parentId = await _resolveDirId(cloudDirname(clean));
     await _client.mkdir(parentId, name);
@@ -670,7 +670,7 @@ class Driver123Open extends CloudDriver {
   /// 能力位不给 `copy`，这里兜底报错（正常不会被调用）。
   @override
   Future<void> copy(String srcPath, String dstDir, String newName) =>
-      throw const CloudDriverException('[123Open] copy not supported');
+      throw const WdmmVfsException('[123Open] copy not supported');
 
   /// 逐层列目录把路径解析成目录 id（对齐 worker `resolveDirId`）。
   Future<String> _resolveDirId(String path) async {
@@ -692,7 +692,7 @@ class Driver123Open extends CloudDriver {
         }
       }
       if (next == null) {
-        throw CloudDriverException(
+        throw WdmmVfsException(
           "[123Open] Directory '${parts[i]}' not found",
         );
       }
@@ -710,14 +710,14 @@ class Driver123Open extends CloudDriver {
     final clean = _clean(path);
     final name = cloudBasename(clean);
     if (name.isEmpty) {
-      throw const CloudDriverException('err.rootOp');
+      throw const WdmmVfsException('err.rootOp');
     }
     final parentId = await _resolveDirId(cloudDirname(clean));
     final files = await _client.getFiles(parentId);
     for (final f in files) {
       if (f.filename == name) return f;
     }
-    throw CloudDriverException("[123Open] '$name' not found");
+    throw WdmmVfsException("[123Open] '$name' not found");
   }
 
   String _rootId() {
@@ -786,7 +786,7 @@ DateTime? parse123OpenTime(String? s) {
 
 /// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造
 /// 全部收在本文件；`driver_registry.dart` 加一行即接入账号表单。
-class Driver123OpenSpec extends CloudDriverSpec {
+class Driver123OpenSpec extends WdmmVfsSpec {
   const Driver123OpenSpec();
 
   /// 与 OpenList 驱动目录名一致（文件名带下划线前缀只是 Dart 标识符限制）。
@@ -813,15 +813,15 @@ class Driver123OpenSpec extends CloudDriverSpec {
       AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => [
-    CloudDriverField(
+  List<WdmmVfsFormItem> get form => [
+    WdmmVfsField(
       key: 'refresh_token',
       label: 'refresh_token',
       hint: L10nHost.current.formHintOpenListDoc('123_open'),
       required: true,
       obscure: true,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'api_url_address',
       label: L10nHost.current.formLabelRenewApi,
       hint: L10nHost.current.formHintRenewApiDefault,
@@ -829,23 +829,23 @@ class Driver123OpenSpec extends CloudDriverSpec {
       disabledWhenSwitch: 'local_refresh',
       disabledHint: L10nHost.current.formHintLocalRefreshDisabled,
     ),
-    CloudDriverSwitchField(
+    WdmmVfsSwitchField(
       key: 'local_refresh',
       label: L10nHost.current.formLabelLocalRefresh,
       subtitle: L10nHost.current.formSubLocalRefresh123,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'client_id',
       label: 'Client ID',
       visibleWhenSwitch: 'local_refresh',
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'client_secret',
       label: 'Client Secret',
       obscure: true,
       visibleWhenSwitch: 'local_refresh',
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'root_folder_id',
       label: L10nHost.current.formLabelRootId,
       hint: L10nHost.current.formHintRootIdOpaque('0'),
@@ -854,10 +854,10 @@ class Driver123OpenSpec extends CloudDriverSpec {
   ];
 
   @override
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) {
     return Driver123Open(
       addition: Driver123OpenAddition.fromJson(config),

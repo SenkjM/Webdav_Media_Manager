@@ -11,20 +11,20 @@ import '../providers/app_state.dart';
 import '../services/accounts_service.dart';
 import '../services/cloud_drive_service.dart';
 import '../services/webdav_service.dart';
-import '../services/cloud_driver_errors.dart';
-import '../services/cloud_driver.dart';
-import '../services/cloud_drivers/driver_registry.dart';
+import '../services/wdmm_vfs_errors.dart';
+import '../services/wdmm_vfs.dart';
+import '../services/wdmm_vfs/driver_registry.dart';
 import '../theme/app_theme.dart';
 import '../widgets/marquee_text.dart';
 import '../widgets/webdav_error_dialog.dart';
 
 /// 解析一个「开关字段」的当前值，供可见性 / 可编辑性联动使用。
 ///
-/// 委派给 [CloudDriverSpec.switchValue]：渲染、联动、保存三条路径共用同一
+/// 委派给 [WdmmVfsSpec.switchValue]：渲染、联动、保存三条路径共用同一
 /// 份取值规则（实时值 → spec 默认值 → false），避免任何一处写死 false 导致
 /// 「默认开」的开关被误判为关。spec 为空（未知类型）时按 false 处理。
 bool _switchValue(
-  CloudDriverSpec? spec,
+  WdmmVfsSpec? spec,
   String key,
   Map<String, bool> values,
 ) => spec?.switchValue(key, values) ?? false;
@@ -191,7 +191,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
           context,
           webDav.lastError == null
               ? l10n.connectionFailed
-              : CloudDriverErrors.describe(webDav.lastError!, l10n),
+              : WdmmVfsErrors.describe(webDav.lastError!, l10n),
         );
       }
       return;
@@ -215,7 +215,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
         context,
         webDav.lastError == null
             ? l10n.connectionFailed
-            : CloudDriverErrors.describe(webDav.lastError!, l10n),
+            : WdmmVfsErrors.describe(webDav.lastError!, l10n),
       );
     }
     // Restore active account connection.
@@ -271,32 +271,32 @@ class _AccountsScreenState extends State<AccountsScreen> {
     var obscure = true;
     // 云盘动态控件按驱动 spec 生成（99 §7.2.10）：控制器 / 开关值 / 明暗态
     // 三个映射，键都是驱动声明的字段 key；切换类型（仅新增时）重建。
-    CloudDriverSpec? spec = cloudDriverSpec(providerType);
+    WdmmVfsSpec? spec = wdmmVfsSpec(providerType);
     var fieldCtrls = <String, TextEditingController>{};
     var switchValues = <String, bool>{};
     var fieldObscure = <String, bool>{};
     void ensureSpecControls() {
-      final s = cloudDriverSpec(providerType);
+      final s = wdmmVfsSpec(providerType);
       if (identical(s, spec) && fieldCtrls.isNotEmpty) return;
       spec = s;
       fieldCtrls = <String, TextEditingController>{};
       switchValues = <String, bool>{};
       fieldObscure = <String, bool>{};
-      for (final item in s?.form ?? const <CloudDriverFormItem>[]) {
-        if (item is CloudDriverField) {
+      for (final item in s?.form ?? const <WdmmVfsFormItem>[]) {
+        if (item is WdmmVfsField) {
           final stored = existingCfg[item.key] as String?;
           fieldCtrls[item.key] = TextEditingController(
             text: stored?.isNotEmpty == true ? stored : item.defaultValue,
           );
           fieldObscure[item.key] = item.obscure;
-        } else if (item is CloudDriverSwitchField) {
+        } else if (item is WdmmVfsSwitchField) {
           switchValues[item.key] =
               existingCfg[item.key] as bool? ?? item.defaultValue;
-        } else if (item is CloudDriverAccountField) {
+        } else if (item is WdmmVfsAccountField) {
           fieldCtrls[item.key] = TextEditingController(
             text: existingCfg[item.key] as String? ?? '',
           );
-        } else if (item is CloudDriverSelectField) {
+        } else if (item is WdmmVfsSelectField) {
           final stored = existingCfg[item.key] as String?;
           fieldCtrls[item.key] = TextEditingController(
             text: stored?.isNotEmpty == true ? stored : item.defaultValue,
@@ -355,21 +355,21 @@ class _AccountsScreenState extends State<AccountsScreen> {
         // 配置的键 / 必填项 / 默认值全部来自驱动声明（99 §7.2.10）。
         final cfg = <String, dynamic>{};
         for (final item in s.form) {
-          if (item is CloudDriverField) {
+          if (item is WdmmVfsField) {
             final text = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && text.isEmpty) {
               fail(l10n.accountFillField(item.label));
               return false;
             }
             cfg[item.key] = text;
-          } else if (item is CloudDriverSelectField) {
+          } else if (item is WdmmVfsSelectField) {
             final v = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && v.isEmpty) {
               fail(l10n.accountSelectField(item.label));
               return false;
             }
             cfg[item.key] = v;
-          } else if (item is CloudDriverAccountField) {
+          } else if (item is WdmmVfsAccountField) {
             final v = fieldCtrls[item.key]?.text.trim() ?? '';
             if (item.required && v.isEmpty) {
               fail(l10n.accountSelectField(item.label));
@@ -378,7 +378,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
             cfg[item.key] = v;
             // 源账号名快照：源被删后重添同名账号可按名恢复（crypt 场景）。
             cfg['${item.key}_name'] = accounts.accountById(v)?.name ?? '';
-          } else if (item is CloudDriverSwitchField) {
+          } else if (item is WdmmVfsSwitchField) {
             // 与联动渲染同源：缺键时回落到 spec 默认值，保证「界面看到的
             // 状态」与「保存下来的值」永远一致。
             cfg[item.key] = _switchValue(s, item.key, switchValues);
@@ -398,9 +398,9 @@ class _AccountsScreenState extends State<AccountsScreen> {
             cloudConfig!,
           );
         } catch (e) {
-          // 不只 CloudDriverException：驱动/网络层抛出的任何异常都必须变成
+          // 不只 WdmmVfsException：驱动/网络层抛出的任何异常都必须变成
           // 用户看得见的一句提示，绝不让保存按钮默默恢复（99 §7.3.1）。
-          fail(CloudDriverErrors.describeException(e, l10n));
+          fail(WdmmVfsErrors.describeException(e, l10n));
           return false;
         }
       }
@@ -467,7 +467,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
                             child: Text('WebDAV'),
                           ),
                           // 云盘类型来自驱动注册表（99 §7.2.10），顺序即注册顺序。
-                          for (final s in kCloudDriverSpecs)
+                          for (final s in kWdmmVfsSpecs)
                             DropdownMenuItem(
                               value: s.typeId,
                               child: Text(s.displayName),
@@ -566,8 +566,8 @@ class _AccountsScreenState extends State<AccountsScreen> {
                         // 云盘动态区完全按驱动 spec 渲染（99 §7.2.10）：
                         // 表单不含任何具体盘的知识，新增盘零改动。
                         for (final item
-                            in spec?.form ?? const <CloudDriverFormItem>[]) ...[
-                          if (item is CloudDriverField)
+                            in spec?.form ?? const <WdmmVfsFormItem>[]) ...[
+                          if (item is WdmmVfsField)
                             Builder(
                               builder: (_) {
                                 final f = item;
@@ -640,7 +640,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
                                 );
                               },
                             )
-                          else if (item is CloudDriverSwitchField)
+                          else if (item is WdmmVfsSwitchField)
                             SwitchListTile(
                               contentPadding: EdgeInsets.zero,
                               title: Text(
@@ -658,7 +658,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
                               onChanged: (v) =>
                                   setLocal(() => switchValues[item.key] = v),
                             )
-                          else if (item is CloudDriverSelectField)
+                          else if (item is WdmmVfsSelectField)
                             DropdownButtonFormField<String>(
                               borderRadius: BorderRadius.circular(10),
                               isExpanded: true,
@@ -689,7 +689,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
                                 () => fieldCtrls[item.key]?.text = v ?? '',
                               ),
                             )
-                          else if (item is CloudDriverAccountField)
+                          else if (item is WdmmVfsAccountField)
                             DropdownButtonFormField<String>(
                               borderRadius: BorderRadius.circular(10),
                               isExpanded: true,
@@ -711,7 +711,7 @@ class _AccountsScreenState extends State<AccountsScreen> {
                                 for (final a in accounts.accounts)
                                   // 包装驱动不当别人的源（防套娃）；UI 只问
                                   // spec 的 isWrapper，不认识具体类型。
-                                  if (cloudDriverSpec(a.providerType)
+                                  if (wdmmVfsSpec(a.providerType)
                                           ?.isWrapper !=
                                       true)
                                     DropdownMenuItem(

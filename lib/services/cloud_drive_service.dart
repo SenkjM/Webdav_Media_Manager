@@ -8,13 +8,13 @@ import 'package:flutter/foundation.dart';
 
 import '../models/account_capabilities.dart';
 import '../models/file_type_config.dart';
-import '../models/rust_cloud_driver.dart';
+import '../models/rust_wdmm_vfs.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
-import 'cloud_driver.dart';
-import 'cloud_drivers/driver_registry.dart';
+import 'wdmm_vfs.dart';
+import 'wdmm_vfs/driver_registry.dart';
 import 'resumable_download.dart';
 import 'rust_core_service.dart';
 import 'rust_proxy_stream_bridge.dart';
@@ -36,7 +36,7 @@ class CloudDriveService extends ChangeNotifier {
   final AccountsService _accounts;
 
   /// accountId → 驱动实例。只含云盘账号。
-  final Map<String, CloudDriver> _drivers = {};
+  final Map<String, WdmmVfs> _drivers = {};
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -67,7 +67,7 @@ class CloudDriveService extends ChangeNotifier {
     // 回落驱动静态表；未注册类型保守只给列出。
     final runtime = _drivers[accountId]?.runtimeCapabilities;
     if (runtime != null) return runtime;
-    return cloudDriverSpec(a.providerType)?.capabilities ?? AccountCaps.list;
+    return wdmmVfsSpec(a.providerType)?.capabilities ?? AccountCaps.list;
   }
 
   /// 账号是否具备某能力位（UI 按钮遮罩用，99 §7.2.3 / §7.2.6）。
@@ -103,7 +103,7 @@ class CloudDriveService extends ChangeNotifier {
       // 什么都不用通知——没有变化就没有需要重绘的东西。
       return;
     }
-    final replaced = <CloudDriver>[];
+    final replaced = <WdmmVfs>[];
     var complete = true;
     for (final a in wanted) {
       try {
@@ -125,7 +125,7 @@ class CloudDriveService extends ChangeNotifier {
         final driver = _createDriver(a, cfgs[a.id]);
         if (old != null && !identical(old, driver)) replaced.add(old);
         _drivers[a.id] = driver;
-      } on CloudDriverException catch (e) {
+      } on WdmmVfsException catch (e) {
         complete = false;
         final old = _drivers.remove(a.id);
         if (old != null) replaced.add(old);
@@ -159,7 +159,7 @@ class CloudDriveService extends ChangeNotifier {
   String typeLabelFor(WebDavAccount a) {
     final runtime = _drivers[a.id]?.runtimeTypeLabel;
     if (runtime != null && runtime.isNotEmpty) return runtime;
-    return cloudDriverSpec(a.providerType)?.displayName ?? a.providerType;
+    return wdmmVfsSpec(a.providerType)?.displayName ?? a.providerType;
   }
 
   /// Tokens for active Rust proxy stream registrations owned by this service.
@@ -181,14 +181,14 @@ class CloudDriveService extends ChangeNotifier {
     super.dispose();
   }
 
-  CloudDriver _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
-    final spec = cloudDriverSpec(a.providerType);
+  WdmmVfs _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
+    final spec = wdmmVfsSpec(a.providerType);
     if (spec == null) {
-      throw CloudDriverException('err.unknownDriverType|${a.providerType}');
+      throw WdmmVfsException('err.unknownDriverType|${a.providerType}');
     }
-    // Phase 2.3: all cloud drivers now go through wdmm-core FFI via RustCloudDriver.
+    // Phase 2.3: all cloud drivers now go through wdmm-core FFI via RustWdmmVfs.
     // Dart driver constructors (spec.create) are no longer used.
-    return RustCloudDriver(a);
+    return RustWdmmVfs(a);
   }
 
   /// WebDAV 源工厂（crypt 的 WebDAV 源需要）。由装配层注入——兼容层
@@ -208,7 +208,7 @@ class CloudDriveService extends ChangeNotifier {
     }
     final driver = _drivers[accountId];
     if (driver == null) return null;
-    final spec = cloudDriverSpec(a.providerType);
+    final spec = wdmmVfsSpec(a.providerType);
     return CloudAccountSource(
       driver: driver,
       basePath: WebDavAccount.normalizeRemotePath(a.remotePath),
@@ -221,27 +221,27 @@ class CloudDriveService extends ChangeNotifier {
   /// 报错只显示一长串源 id，用户即使重加源也接不上）。
   CloudSource? _resolveSourceByName(String accountName) {
     final a = _accounts.accounts
-        .where((x) => cloudDriverSpec(x.providerType)?.isWrapper != true)
+        .where((x) => wdmmVfsSpec(x.providerType)?.isWrapper != true)
         .where((x) => x.name.trim() == accountName.trim())
         .firstOrNull;
     if (a == null) return null;
     return _resolveSource(a.id);
   }
 
-  CloudDriverEnv _buildEnv() => CloudDriverEnv(
+  WdmmVfsEnv _buildEnv() => WdmmVfsEnv(
     resolveSource: _resolveSource,
     resolveSourceByName: _resolveSourceByName,
   );
 
   /// 表单保存前的真连校验（99 §7.3.1：能换到 access_token 才保存）。
-  /// 失败原样抛 [CloudDriverException]，由表单展示给用户。
+  /// 失败原样抛 [WdmmVfsException]，由表单展示给用户。
   Future<void> verifyNewAccount(
     WebDavAccount account,
     Map<String, dynamic> config,
   ) async {
-    final spec = cloudDriverSpec(account.providerType);
+    final spec = wdmmVfsSpec(account.providerType);
     if (spec == null) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.unknownDriverType|${account.providerType}',
       );
     }
@@ -249,10 +249,10 @@ class CloudDriveService extends ChangeNotifier {
   }
 
   /// 该账号的驱动；未接入返回 null。
-  CloudDriver? driverFor(String accountId) => _drivers[accountId];
+  WdmmVfs? driverFor(String accountId) => _drivers[accountId];
 
   /// 账号状态标签（会员 / 带宽等小 Chip，账号列表展示）。
-  /// 驱动已实现 [CloudDriver.statusTags] 就转调；WebDAV 与未接入类型返回空。
+  /// 驱动已实现 [WdmmVfs.statusTags] 就转调；WebDAV 与未接入类型返回空。
   /// 失败静默返回空，绝不阻塞账号列表。
   Future<List<AccountStatusTag>> statusTagsFor(String accountId) async {
     final driver = _drivers[accountId];
@@ -282,7 +282,7 @@ class CloudDriveService extends ChangeNotifier {
     try {
       await driver.init();
       return true;
-    } on CloudDriverException {
+    } on WdmmVfsException {
       return false;
     }
   }
@@ -354,7 +354,7 @@ class CloudDriveService extends ChangeNotifier {
       // 大小未知时拒绝下载：整包/分块的判定依赖密文总长，未知大小会被误当成
       // 「源回了整包」，静默产出损坏的空文件比明确报错糟糕得多。
       if (item.size <= 0) {
-        throw CloudDriverException('err.downloadSizeUnknown|${item.name}');
+        throw WdmmVfsException('err.downloadSizeUnknown|${item.name}');
       }
       final driver = _requireDriver(accountId);
       final canResume = resumeFrom > 0 && item.size > resumeFrom;
@@ -549,7 +549,7 @@ class CloudDriveService extends ChangeNotifier {
       // media_kit 只认 URL，交给 Rust 代理按 Range 逐块取。大小未知时回不了
       // Content-Length，明确拒绝。
       if (item.size <= 0) {
-        throw CloudDriverException('err.streamSizeUnknown|$name');
+        throw WdmmVfsException('err.streamSizeUnknown|$name');
       }
       final (:uri, :token) = await RustProxyStreamBridge.expose(
         size: item.size,
@@ -617,7 +617,7 @@ class CloudDriveService extends ChangeNotifier {
     return a;
   }
 
-  CloudDriver _requireDriver(String accountId) {
+  WdmmVfs _requireDriver(String accountId) {
     final driver = _drivers[accountId];
     if (driver == null) {
       throw UnsupportedError(_notReady(accountId));

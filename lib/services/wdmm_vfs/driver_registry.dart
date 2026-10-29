@@ -1,10 +1,10 @@
 // 驱动注册表（对齐 OpenList 的 bootstrap/drivers 注册点，99 §7.2.10）。
 //
 // 新增一个网盘 = 新增驱动文件（驱动 + Addition + 能力遮罩 + 表单参数
-// 全在里头）+ 在 kCloudDriverSpecs 加一行；账号表单与兼容层零改动。
+// 全在里头）+ 在 kWdmmVfsSpecs 加一行；账号表单与兼容层零改动。
 // crypt 这类中间处理层落地时同样在这里注册：spec.create() 包住内层驱动。
 
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 
 import '_123_open_driver.dart';
 import 'open115_driver.dart';
@@ -18,7 +18,7 @@ import 'crypt/crypt_driver.dart';
 /// 已落地的驱动；顺序即账号表单类型下拉的显示顺序。
 /// crypt 永远最后（包装层）；netease_music 是并行任务收编进来的，放最后一位
 /// 独立驱动（用户决定），其余按落地时间序。
-const List<CloudDriverSpec> kCloudDriverSpecs = <CloudDriverSpec>[
+const List<WdmmVfsSpec> kWdmmVfsSpecs = <WdmmVfsSpec>[
   BaiduNetdiskSpec(),
   Driver123OpenSpec(),
   Open115Spec(),
@@ -30,8 +30,8 @@ const List<CloudDriverSpec> kCloudDriverSpecs = <CloudDriverSpec>[
 ];
 
 /// 按存库的 provider_type 查驱动描述符；未注册返回 null。
-CloudDriverSpec? cloudDriverSpec(String typeId) {
-  for (final spec in kCloudDriverSpecs) {
+WdmmVfsSpec? wdmmVfsSpec(String typeId) {
+  for (final spec in kWdmmVfsSpecs) {
     if (spec.typeId == typeId) return spec;
   }
   return null;

@@ -35,7 +35,7 @@ import '../services/settings_service.dart';
 import '../services/sync_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/cloud_drive_service.dart';
-import '../services/cloud_drivers/webdav_source.dart';
+import '../services/wdmm_vfs/webdav_source.dart';
 import '../services/dlna_cast_service.dart';
 import '../services/rust_core_service.dart';
 import '../services/rust_dmr_prefs_service.dart';

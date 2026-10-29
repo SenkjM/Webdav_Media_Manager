@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/queue_task.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../utils/cue_sheet.dart';
-import '../services/cloud_driver.dart';
+import '../services/wdmm_vfs.dart';
 import '../services/rust_queue_bridge.dart';
 import '../services/task_queue_service.dart';
 import '../theme/app_theme.dart';

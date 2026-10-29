@@ -5,7 +5,7 @@ import '../utils/l10n_host.dart';
 import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
 import 'cloud_drive_service.dart';
-import 'cloud_drivers/driver_registry.dart';
+import 'wdmm_vfs/driver_registry.dart';
 import 'credential_vault_codec.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
@@ -15,7 +15,7 @@ import 'webdav_service.dart';
 /// v2: WebDAV 服务器条目（url+username+password 三件套）之外，新增云盘
 /// 驱动条目——凭证收在驱动配置 JSON（secure storage `cloud_driver_cfg_<id>`）
 /// 里，其中「配置界面默认为密码」的字段（spec.secretFieldKeys，即
-/// CloudDriverField.obscure）逐字段按 [CredentialVaultCrypto] 加密。
+/// WdmmVfsField.obscure）逐字段按 [CredentialVaultCrypto] 加密。
 class VaultEntry {
   const VaultEntry({
     required this.id,
@@ -187,7 +187,7 @@ class CredentialVaultService extends ChangeNotifier {
     // （spec.secretFieldKeys）逐字段加密，地址类字段保持明文可辨识。
     for (final a in _accounts.accounts) {
       if (CloudDriveService.isCloudType(a.providerType)) {
-        final spec = cloudDriverSpec(a.providerType);
+        final spec = wdmmVfsSpec(a.providerType);
         final raw = await _accounts.loadDriverConfig(a.id) ?? const {};
         final stored = <String, dynamic>{};
         for (final e in raw.entries) {
@@ -391,7 +391,7 @@ class CredentialVaultService extends ChangeNotifier {
     for (final entry in vault.entries) {
       // 云盘条目走驱动配置通道；本机没有注册该类型时静默跳过。
       if (entry.isCloud) {
-        final spec = cloudDriverSpec(entry.providerType);
+        final spec = wdmmVfsSpec(entry.providerType);
         if (spec == null) {
           skippedUnknown++;
           continue;

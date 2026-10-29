@@ -14,8 +14,8 @@
 ///    NeteaseCloudMusicApi 参考实现一致）；worker 送的是内层原始字节，
 ///    属该版疏漏，见 `netease_music_crypto.dart` 文件头。
 /// 2. **拿不到直链时抛真实原因**：worker 把空 url 写进 `raw_url` 并记
-///    `raw_url_error`，客户端里下游必然失败。本实现按 [CloudDriver.get]
-///    的契约抛 [CloudDriverException]（与百度驱动同一取舍）。
+///    `raw_url_error`，客户端里下游必然失败。本实现按 [WdmmVfs.get]
+///    的契约抛 [WdmmVfsException]（与百度驱动同一取舍）。
 /// 3. **校验响应 `code`**：worker / Go 都不看响应码，Cookie 失效时表现为
 ///    「空列表」；本实现在 `code` 存在且非 200 时报错，让保存校验与浏览
 ///    能给出可读原因。
@@ -31,7 +31,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 import 'netease_music_crypto.dart';
 import '../../utils/l10n_host.dart';
 
@@ -163,7 +163,7 @@ class NeteaseMusicClient {
     _csrfToken = getCookie('__csrf');
     _musicU = getCookie('MUSIC_U');
     if (_csrfToken.isEmpty || _musicU.isEmpty) {
-      throw const CloudDriverException('err.neteaseCookieRequired');
+      throw const WdmmVfsException('err.neteaseCookieRequired');
     }
   }
 
@@ -206,7 +206,7 @@ class NeteaseMusicClient {
       headers['User-Agent'] = linuxApiUA;
       target = linuxApiForward;
     } else {
-      throw CloudDriverException('err.neteaseUnknownCrypto|$crypto');
+      throw WdmmVfsException('err.neteaseUnknownCrypto|$crypto');
     }
 
     final Response<String> res;
@@ -221,7 +221,7 @@ class NeteaseMusicClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.neteaseRequestFailed|${_short(e.message ?? '$e')}',
       );
     }
@@ -231,12 +231,12 @@ class NeteaseMusicClient {
     try {
       decoded = jsonDecode(text);
     } catch (_) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.neteaseNonJson|HTTP ${res.statusCode} ${_short(text)}',
       );
     }
     if (decoded is! Map<String, dynamic>) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.neteaseUnexpectedStructure|${_short(text)}',
       );
     }
@@ -251,9 +251,9 @@ class NeteaseMusicClient {
     final message = (body['message'] as String?)?.trim();
     final detail = (message == null || message.isEmpty) ? '' : '：$message';
     if (code == 301 || code == 250) {
-      throw CloudDriverException('err.neteaseLoginExpired|code $code$detail');
+      throw WdmmVfsException('err.neteaseLoginExpired|code $code$detail');
     }
-    throw CloudDriverException('err.neteaseApiError|code $code$detail');
+    throw WdmmVfsException('err.neteaseApiError|code $code$detail');
   }
 
   /// 把 URL 里的 `/<xxx>api/` 段替换为目标段（上游正则 `/\w*api/`）。
@@ -301,12 +301,12 @@ class NeteaseMusicClient {
     );
     final data = body['data'];
     if (data is! List || data.isEmpty) {
-      throw const CloudDriverException('err.neteaseNoSongLink');
+      throw const WdmmVfsException('err.neteaseNoSongLink');
     }
     final first = data.first;
     final url = first is Map ? first['url'] as String? : null;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException('err.neteaseNoSongLink');
+      throw const WdmmVfsException('err.neteaseNoSongLink');
     }
     return url;
   }
@@ -333,7 +333,7 @@ class NeteaseMusicClient {
 /// - [get] / [remove] 按**文件名**在列表里定位（同 worker）。
 /// 账号的「远程路径」对它是**纯虚拟前缀**：条目路径由上层拼接，驱动只认
 /// 文件名，所以改远程路径不会让条目失联。
-class NeteaseMusicDriver extends CloudDriver {
+class NeteaseMusicDriver extends WdmmVfs {
   NeteaseMusicDriver({required NeteaseMusicAddition addition, Dio? dio})
     : _client = NeteaseMusicClient(addition, dio: dio);
 
@@ -365,7 +365,7 @@ class NeteaseMusicDriver extends CloudDriver {
     }
     final song = await _findByName(name);
     if (song == null) {
-      throw CloudDriverException('err.neteaseFileNotFound|$name');
+      throw WdmmVfsException('err.neteaseFileNotFound|$name');
     }
     final item = _toItem(song);
     final url = await _client.getSongLink('${song.songId}');
@@ -385,11 +385,11 @@ class NeteaseMusicDriver extends CloudDriver {
   Future<void> remove(String path) async {
     final name = cloudBasename(path);
     if (name.isEmpty) {
-      throw const CloudDriverException('err.neteaseRootDelete');
+      throw const WdmmVfsException('err.neteaseRootDelete');
     }
     final song = await _findByName(name);
     if (song == null) {
-      throw CloudDriverException('err.neteaseFileNotFound|$name');
+      throw WdmmVfsException('err.neteaseFileNotFound|$name');
     }
     await _client.removeSong('${song.songId}');
   }
@@ -400,22 +400,22 @@ class NeteaseMusicDriver extends CloudDriver {
   /// 抛出会绕过 `await` / `expectLater` 的错误通道，调用方拿不到可读原因。
   @override
   Future<void> mkdir(String path) async =>
-      throw const CloudDriverException('err.neteaseMkdirUnsupported');
+      throw const WdmmVfsException('err.neteaseMkdirUnsupported');
 
   /// 上游 `Rename` 是 `errs.NotSupport` 桩。
   @override
   Future<void> rename(String path, String newPath) async =>
-      throw const CloudDriverException('err.neteaseRenameUnsupported');
+      throw const WdmmVfsException('err.neteaseRenameUnsupported');
 
   /// 上游 `Move` 是 `errs.NotSupport` 桩。
   @override
   Future<void> move(String srcPath, String dstDir, String newName) async =>
-      throw const CloudDriverException('err.neteaseMoveUnsupported');
+      throw const WdmmVfsException('err.neteaseMoveUnsupported');
 
   /// 上游 `Copy` 是 `errs.NotSupport` 桩。
   @override
   Future<void> copy(String srcPath, String dstDir, String newName) async =>
-      throw const CloudDriverException('err.neteaseCopyUnsupported');
+      throw const WdmmVfsException('err.neteaseCopyUnsupported');
 
   Future<NeteaseSong?> _findByName(String name) async {
     final songs = await _client.getSongObjs(addition.songLimit);
@@ -435,7 +435,7 @@ class NeteaseMusicDriver extends CloudDriver {
 
 /// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造
 /// 全部收在本文件；`driver_registry.dart` 加一行即接入账号表单。
-class NeteaseMusicSpec extends CloudDriverSpec {
+class NeteaseMusicSpec extends WdmmVfsSpec {
   const NeteaseMusicSpec();
 
   @override
@@ -451,15 +451,15 @@ class NeteaseMusicSpec extends CloudDriverSpec {
       AccountCaps.list | AccountCaps.read | AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => [
-    CloudDriverField(
+  List<WdmmVfsFormItem> get form => [
+    WdmmVfsField(
       key: 'cookie',
       label: 'Cookie',
       hint: L10nHost.current.formHintNeteaseCookie,
       required: true,
       obscure: true,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'song_limit',
       label: L10nHost.current.formLabelSongLimit,
       hint: L10nHost.current.formHintSongLimit('$kDefaultSongLimit'),
@@ -468,10 +468,10 @@ class NeteaseMusicSpec extends CloudDriverSpec {
   ];
 
   @override
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) {
     // Cookie 是唯一凭证，网易不轮换它，因此没有 onTokenUpdate 通道。
     return NeteaseMusicDriver(addition: NeteaseMusicAddition.fromJson(config));
@@ -483,7 +483,7 @@ class NeteaseMusicSpec extends CloudDriverSpec {
   Future<void> verify(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) async {
     final driver = create(
       config,

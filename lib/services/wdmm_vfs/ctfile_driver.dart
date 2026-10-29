@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// CtFile (城通网盘) CloudDriver implementation
+// CtFile (城通网盘) WdmmVfs implementation
 // ═══════════════════════════════════════════════════════════════════
 //
 // Authoritative spec: /workspace/saf_work/ctfile-wdmm-spec.md
@@ -23,7 +23,7 @@ import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
 import '../../utils/l10n_host.dart';
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 // Addition / Client / types
@@ -316,7 +316,7 @@ class CtFileClient {
     final body = await _callWithId('/$_ns/file/fetch_url', 'file_id', fileId, {}, prefer: 'stripped');
     final url = body['download_url'] as String?;
     if (url == null || url.isEmpty) {
-      throw CloudDriverException('[CtFile] fetch_url returned empty download_url');
+      throw WdmmVfsException('[CtFile] fetch_url returned empty download_url');
     }
     return url;
   }
@@ -331,7 +331,7 @@ class CtFileClient {
         'is_hidden': false,
       });
       return (resp.raw['folder_id'] ?? resp.raw['folder_path'] ?? '').toString();
-    } on CloudDriverException catch (e) {
+    } on WdmmVfsException catch (e) {
       if (e.message.contains('403')) {
         final existing = e.cause is CtFileResp ? (e.cause as CtFileResp).raw['folder_id'] : null;
         if (existing != null) return existing.toString();
@@ -384,7 +384,7 @@ class CtFileClient {
     if (exists > 0) return;
     final uploadUrl = resp.raw['upload_url'] as String?;
     if (uploadUrl == null || uploadUrl.isEmpty) {
-      throw CloudDriverException('[CtFile] upload: no upload_url in ticket');
+      throw WdmmVfsException('[CtFile] upload: no upload_url in ticket');
     }
     final formData = FormData.fromMap({
       'name': fileName,
@@ -393,7 +393,7 @@ class CtFileClient {
     });
     final uploadResp = await _dio.postUri(Uri.parse(uploadUrl), data: formData);
     if (uploadResp.statusCode != 200) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[CtFile] multipart upload failed: ${uploadResp.statusCode}',
       );
     }
@@ -427,12 +427,12 @@ class CtFileClient {
   Future<CtFileResp> _call(String path, Map<String, dynamic> body) async {
     final session = _session;
     if (session.isEmpty) {
-      throw CloudDriverException('[CtFile] Session missing (no token)');
+      throw WdmmVfsException('[CtFile] Session missing (no token)');
     }
     await _awaitThrottle();
     final fullUrl = '$_baseUrl$path';
     Response<String>? response;
-    CloudDriverException? lastErr;
+    WdmmVfsException? lastErr;
     for (var retry = 0; retry < 3; retry++) {
       try {
         response = await _dio.postUri(
@@ -445,12 +445,12 @@ class CtFileClient {
         );
         final resp = CtFileResp.fromText(response.data ?? '');
         if (resp.code == 401) {
-          throw CloudDriverException(
+          throw WdmmVfsException(
             '[CtFile] Session expired (401). Generate new session in backend 开放接口登录密钥管理.',
           );
         }
         if (resp.code == 429 || (resp.code != null && resp.code! >= 500)) {
-          lastErr = CloudDriverException(
+          lastErr = WdmmVfsException(
             '[CtFile] ${resp.code ?? response.statusCode}: ${resp.message ?? 'network error'}',
             resp,
           );
@@ -460,15 +460,15 @@ class CtFileClient {
           }
         }
         if (!resp.isOk) {
-          throw CloudDriverException(
+          throw WdmmVfsException(
             '[CtFile] API error ${resp.code}: ${resp.message ?? ''}',
             resp,
           );
         }
         return resp;
       } catch (e) {
-        if (e is CloudDriverException) rethrow;
-        lastErr = CloudDriverException('[CtFile] Network: ${e.toString()}', e);
+        if (e is WdmmVfsException) rethrow;
+        lastErr = WdmmVfsException('[CtFile] Network: ${e.toString()}', e);
         if (retry < 2 && response?.statusCode != null && response!.statusCode! >= 500) {
           await Future<void>.delayed(Duration(milliseconds: 300 * (retry + 1)));
           continue;
@@ -476,7 +476,7 @@ class CtFileClient {
         rethrow;
       }
     }
-    throw lastErr ?? CloudDriverException('[CtFile] Unknown error');
+    throw lastErr ?? WdmmVfsException('[CtFile] Unknown error');
   }
 
   Future<Map<String, dynamic>> _callWithId(
@@ -492,7 +492,7 @@ class CtFileClient {
     try {
       final resp = await _call(path, {paramKey: primary, ...extra});
       return resp.raw;
-    } on CloudDriverException catch (e) {
+    } on WdmmVfsException catch (e) {
       if (e.cause is CtFileResp) {
         final code = (e.cause as CtFileResp).code;
         if (code == 400 || code == 404) {
@@ -511,7 +511,7 @@ class CtFileClient {
   ) async {
     try {
       await _call(path, {'ids': ids.join(','), ...extra});
-    } on CloudDriverException catch (e) {
+    } on WdmmVfsException catch (e) {
       if (e.cause is CtFileResp) {
         final code = (e.cause as CtFileResp).code;
         if (code == 400 || code == 404 || code == 405) {
@@ -525,10 +525,10 @@ class CtFileClient {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// CtFileDriver — CloudDriver implementation
+// CtFileDriver — WdmmVfs implementation
 // ═══════════════════════════════════════════════════════════════════
 
-class CtFileDriver extends CloudDriver {
+class CtFileDriver extends WdmmVfs {
   CtFileDriver({required this.addition, Dio? dio})
     : _client = CtFileClient(addition, dio: dio);
 
@@ -541,8 +541,8 @@ class CtFileDriver extends CloudDriver {
     try {
       await _client.profile();
     } catch (e) {
-      if (e is CloudDriverException) rethrow;
-      throw CloudDriverException('[CtFile] Init failed: ${e.toString()}', e);
+      if (e is WdmmVfsException) rethrow;
+      throw WdmmVfsException('[CtFile] Init failed: ${e.toString()}', e);
     }
   }
 
@@ -620,7 +620,7 @@ class CtFileDriver extends CloudDriver {
     final srcNorm = _normalizePath(path);
     final dstNorm = _normalizePath(newPath);
     if (srcNorm == dstNorm) return;
-    if (srcNorm.isEmpty) throw CloudDriverException('[CtFile] Cannot rename root');
+    if (srcNorm.isEmpty) throw WdmmVfsException('[CtFile] Cannot rename root');
     final id = await _pathToId(srcNorm, expectDir: false);
     final srcName = _fileName(srcNorm);
     final newName = _fileName(dstNorm);
@@ -714,7 +714,7 @@ class CtFileDriver extends CloudDriver {
     final parentId = await _ensureDirectory(parentPath);
     final bytes = await _streamToBytes(stream);
     if (bytes.length != size) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[CtFile] uploadStream: buffered ${bytes.length} != declared $size',
       );
     }
@@ -832,7 +832,7 @@ class CtFileDriver extends CloudDriver {
         final fileMatch = files.where((f) => f.name == seg).firstOrNull;
         if (fileMatch != null) return fileMatch.key;
       }
-      throw CloudDriverException('[CtFile] Path not found: $normalized');
+      throw WdmmVfsException('[CtFile] Path not found: $normalized');
     }
     return current;
   }
@@ -857,7 +857,7 @@ class CtFileDriver extends CloudDriver {
       } else {
         final newId = await _client.mkdir(current, seg);
         if (newId.isEmpty) {
-          throw CloudDriverException('[CtFile] mkdir returned empty id: $seg');
+          throw WdmmVfsException('[CtFile] mkdir returned empty id: $seg');
         }
         current = newId;
         _pathCache[builtPath] = current;
@@ -883,10 +883,10 @@ class CtFileDriver extends CloudDriver {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// CtFileSpec — CloudDriverSpec implementation (form + registry hook)
+// CtFileSpec — WdmmVfsSpec implementation (form + registry hook)
 // ═══════════════════════════════════════════════════════════════════
 
-class CtFileSpec extends CloudDriverSpec {
+class CtFileSpec extends WdmmVfsSpec {
   const CtFileSpec();
 
   @override
@@ -896,10 +896,10 @@ class CtFileSpec extends CloudDriverSpec {
   String get displayName => L10nHost.current.driverNameCtFile;
 
   @override
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) {
     return CtFileDriver(addition: CtFileAddition.fromJson(config));
   }
@@ -918,15 +918,15 @@ class CtFileSpec extends CloudDriverSpec {
   Set<String> get runtimeSecretKeys => const {};
 
   @override
-  List<CloudDriverFormItem> get form => [
-    CloudDriverField(
+  List<WdmmVfsFormItem> get form => [
+    WdmmVfsField(
       key: 'session',
       label: 'Session',
       hint: L10nHost.current.formHintCtFileSession,
       required: true,
       obscure: true,
     ),
-    CloudDriverSelectField(
+    WdmmVfsSelectField(
       key: 'cloud_type',
       label: L10nHost.current.formLabelCloudType,
       defaultValue: 'public',
@@ -935,13 +935,13 @@ class CtFileSpec extends CloudDriverSpec {
         ('private', L10nHost.current.formOptionCtFilePrivate),
       ],
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'list_cache_sec',
       label: L10nHost.current.formLabelCtFileListCacheSec,
       hint: L10nHost.current.formHintCtFileListCacheSec,
       defaultValue: '$kDefaultListCacheSec',
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'request_interval_ms',
       label: L10nHost.current.formLabelCtFileRequestIntervalMs,
       hint: L10nHost.current.formHintCtFileRequestIntervalMs,

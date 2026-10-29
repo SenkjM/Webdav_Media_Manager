@@ -20,7 +20,7 @@ import '../utils/l10n_host.dart';
 import '../utils/task_error.dart';
 import '../utils/track_identity.dart';
 import 'cache_service.dart';
-import 'cloud_driver.dart';
+import 'wdmm_vfs.dart';
 import 'download_destination_service.dart';
 import 'download_keepalive.dart';
 import 'download_notification_service.dart';
@@ -244,7 +244,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   static bool isRetryable(Object error) {
     // 内容本身坏了（解密失败）：同一份字节再拉一次还是坏的。
     // 上游错误（含 401 / 403 / 奇怪的授权失败）一律重试，不再按状态码或文案排除。
-    if (error is CloudDriverDataException) return false;
+    if (error is WdmmVfsDataException) return false;
     if (error is StateError) return false;
     if (error is DioException && error.type == DioExceptionType.cancel) {
       return false;

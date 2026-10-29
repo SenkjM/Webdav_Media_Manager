@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 import '../../utils/l10n_host.dart';
 
 /// 百度网盘驱动（99 §7.3 首个端到端）。
@@ -148,7 +148,7 @@ class BaiduClient {
         if (decoded is Map<String, dynamic>) data = decoded;
       } catch (_) {}
       if (data == null) {
-        throw CloudDriverException(
+        throw WdmmVfsException(
           raw.isEmpty
               ? 'err.refreshOnlineFailedNonJson|${res.statusCode}'
               : 'err.refreshOnlineFailed|${res.statusCode}|'
@@ -156,7 +156,7 @@ class BaiduClient {
         );
       }
       if (data['refresh_token'] == null || data['access_token'] == null) {
-        throw CloudDriverException(
+        throw WdmmVfsException(
           (data['text'] as String?) ??
               (res.statusCode != 200
                   ? 'err.refreshOnlineNon200|${res.statusCode}'
@@ -172,7 +172,7 @@ class BaiduClient {
 
     // 本地刷新：自建百度应用的 OAuth refresh。
     if (a.clientId.isEmpty || a.clientSecret.isEmpty) {
-      throw CloudDriverException('empty ClientID or ClientSecret');
+      throw WdmmVfsException('empty ClientID or ClientSecret');
     }
     final res = await _dio.get<dynamic>(
       oauthApi,
@@ -187,12 +187,12 @@ class BaiduClient {
         ? Map<String, dynamic>.from(res.data as Map)
         : <String, dynamic>{};
     if (data['error'] != null) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '${data['error']}: ${data['error_description'] ?? ''}',
       );
     }
     if (data['refresh_token'] == null) {
-      throw CloudDriverException('empty refresh token returned from OAuth');
+      throw WdmmVfsException('empty refresh token returned from OAuth');
     }
     _applyTokens(
       (data['access_token'] as String?) ?? '',
@@ -229,7 +229,7 @@ class BaiduClient {
           params: params,
           form: form,
         );
-      } on CloudDriverException {
+      } on WdmmVfsException {
         rethrow; // 业务错误（errno / 风控 / 非 JSON）不重试
       } catch (e) {
         lastErr = e;
@@ -240,7 +240,7 @@ class BaiduClient {
         }
       }
     }
-    throw CloudDriverException('err.baiduRequestFailed', lastErr);
+    throw WdmmVfsException('err.baiduRequestFailed', lastErr);
   }
 
   Future<Map<String, dynamic>> _doRequest(
@@ -274,7 +274,7 @@ class BaiduClient {
       final decoded = jsonDecode(text);
       body = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
     } catch (_) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'req: [$pathname] invalid JSON response, status ${res.statusCode}',
       );
     }
@@ -287,9 +287,9 @@ class BaiduClient {
       final base =
           'req: [$pathname] ,errno: $errno, refer to https://pan.baidu.com/union/doc/';
       if (errno == 31023) {
-        throw CloudDriverException('err.baiduRiskControl|$base');
+        throw WdmmVfsException('err.baiduRiskControl|$base');
       }
-      throw CloudDriverException(base);
+      throw WdmmVfsException(base);
     }
     return body;
   }
@@ -333,7 +333,7 @@ class BaiduClient {
         ? ((list.first as Map<String, dynamic>)['dlink'] as String?)
         : null;
     if (dlink == null || dlink.isEmpty) {
-      throw CloudDriverException('no dlink returned from filemetas');
+      throw WdmmVfsException('no dlink returned from filemetas');
     }
     final u = '$dlink&access_token=$accessToken';
     final head = await _dio.head(
@@ -387,8 +387,8 @@ class BaiduClient {
   }
 }
 
-/// 百度网盘 CloudDriver 实现。
-class BaiduNetdiskDriver extends CloudDriver {
+/// 百度网盘 WdmmVfs 实现。
+class BaiduNetdiskDriver extends WdmmVfs {
   BaiduNetdiskDriver({
     required BaiduAddition addition,
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
@@ -431,7 +431,7 @@ class BaiduNetdiskDriver extends CloudDriver {
       }
     }
     if (file == null) {
-      throw CloudDriverException('file not found: $rawName');
+      throw WdmmVfsException('file not found: $rawName');
     }
     final item = _toItem(file);
     if (!item.isDir) {
@@ -445,10 +445,10 @@ class BaiduNetdiskDriver extends CloudDriver {
           rawUrl: link.url,
           rawHeaders: link.headers,
         );
-      } on CloudDriverException {
+      } on WdmmVfsException {
         rethrow;
       } catch (e) {
-        throw CloudDriverException('err.baiduDirectLinkFailed|$e');
+        throw WdmmVfsException('err.baiduDirectLinkFailed|$e');
       }
     }
     return item;
@@ -549,8 +549,8 @@ class BaiduNetdiskDriver extends CloudDriver {
 
 /// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造
 /// 全部收在本文件——账号表单按 spec 通用渲染，兼容层只查注册表。
-/// register 表：cloud_drivers/driver_registry.dart 里加一行即接入。
-class BaiduNetdiskSpec extends CloudDriverSpec {
+/// register 表：wdmm_vfs/driver_registry.dart 里加一行即接入。
+class BaiduNetdiskSpec extends WdmmVfsSpec {
   const BaiduNetdiskSpec();
 
   @override
@@ -576,15 +576,15 @@ class BaiduNetdiskSpec extends CloudDriverSpec {
       AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => [
-    CloudDriverField(
+  List<WdmmVfsFormItem> get form => [
+    WdmmVfsField(
       key: 'refresh_token',
       label: 'refresh_token',
       hint: L10nHost.current.formHintOpenListDoc('baidu_netdisk'),
       required: true,
       obscure: true,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'api_url_address',
       label: L10nHost.current.formLabelRenewApi,
       hint: L10nHost.current.formHintRenewApiDefault,
@@ -592,17 +592,17 @@ class BaiduNetdiskSpec extends CloudDriverSpec {
       disabledWhenSwitch: 'local_refresh',
       disabledHint: L10nHost.current.formHintLocalRefreshDisabled,
     ),
-    CloudDriverSwitchField(
+    WdmmVfsSwitchField(
       key: 'local_refresh',
       label: L10nHost.current.formLabelLocalRefresh,
       subtitle: L10nHost.current.formSubLocalRefreshBaidu,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'client_id',
       label: 'Client ID',
       visibleWhenSwitch: 'local_refresh',
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'client_secret',
       label: 'Client Secret',
       obscure: true,
@@ -611,10 +611,10 @@ class BaiduNetdiskSpec extends CloudDriverSpec {
   ];
 
   @override
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) {
     return BaiduNetdiskDriver(
       addition: BaiduAddition.fromJson(config),

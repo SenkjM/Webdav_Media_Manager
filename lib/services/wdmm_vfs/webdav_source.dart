@@ -2,12 +2,12 @@ import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
 import '../../models/webdav_account.dart';
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 import '../webdav_service.dart';
 
 /// WebDAV 账号 → [CloudSource]：转调 WebDavService 同名方法。
 ///
-/// 存在的意义只有一个：WebDAV 不走 [CloudDriver] 兼容层（WebDavService 是
+/// 存在的意义只有一个：WebDAV 不走 [WdmmVfs] 兼容层（WebDavService 是
 /// 单列的），而包装驱动只认 [CloudSource] 抽象。装配层把「怎么把一个 WebDAV
 /// 账号包成 CloudSource」注入给兼容层（CloudDriveService.attachWebDavSourceFactory），
 /// 于是兼容层不必反向依赖 WebDavService。
@@ -56,7 +56,7 @@ class WebDavAccountSource implements CloudSource {
       name: cloudBasename(p),
     );
     if (s == null) {
-      throw const CloudDriverException('err.webdavSourceNotConnected');
+      throw const WdmmVfsException('err.webdavSourceNotConnected');
     }
     // 条目大小必须完整带给包装驱动层：流式回 Content-Length、下载进度、
     // Range 分块判断全依赖它。列表接口对单文件拿不到，单独 PROPFIND 一次

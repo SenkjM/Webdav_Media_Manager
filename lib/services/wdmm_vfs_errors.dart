@@ -5,7 +5,7 @@ import '../l10n/generated/app_localizations.dart';
 /// 驱动与服务抛出的用户可见错误一律携带稳定码 err.xxx|detail（首个竖线
 /// 之前是码，之后是动态值或上游文本，按原样透传）。没有码的历史文本
 /// 按原文返回，升级前的数据仍可读。
-class CloudDriverErrors {
+class WdmmVfsErrors {
   static final _errCode = RegExp(r'^err\.[a-zA-Z0-9]+');
 
   static final _invalidArgument = RegExp(
@@ -38,7 +38,7 @@ class CloudDriverErrors {
     final code = codeMatch.group(0)!;
     var detail = text.substring(codeMatch.end);
     if (detail.startsWith('|')) detail = detail.substring(1);
-    // CloudDriverException 的 cause 在 toString 里以全角括号附在码后，剥掉
+    // WdmmVfsException 的 cause 在 toString 里以全角括号附在码后，剥掉
     // 包装，让模板自带的分隔符（如「：」）直接衔接动态值。
     if (detail.length > 1 && detail.startsWith('（') && detail.endsWith('）')) {
       detail = detail.substring(1, detail.length - 1);

@@ -1,12 +1,12 @@
 import 'dart:convert';
 
-import '../services/cloud_driver.dart';
+import '../services/wdmm_vfs.dart';
 import '../services/rust_core_service.dart';
 import 'webdav_account.dart';
 
-/// CloudDriver implementation that calls wdmm-core FFI (Phase 2.3).
-class RustCloudDriver extends CloudDriver {
-  RustCloudDriver(this.account);
+/// WdmmVfs implementation that calls wdmm-core FFI (Phase 2.3).
+class RustWdmmVfs extends WdmmVfs {
+  RustWdmmVfs(this.account);
 
   final WebDavAccount account;
 
@@ -19,10 +19,10 @@ class RustCloudDriver extends CloudDriver {
   Future<List<CloudFileItem>> list(String path) async {
     final result = RustCoreService.accountListDir(account.id, path);
     if (result == null) {
-      throw CloudDriverException('FFI unavailable');
+      throw WdmmVfsException('FFI unavailable');
     }
     if (result.startsWith('error:')) {
-      throw CloudDriverException(result.substring(6));
+      throw WdmmVfsException(result.substring(6));
     }
     final List<dynamic> entries = jsonDecode(result);
     return entries.map((e) => _parseEntry(e as Map<String, dynamic>)).toList();
@@ -32,10 +32,10 @@ class RustCloudDriver extends CloudDriver {
   Future<CloudFileItem> get(String path) async {
     final result = RustCoreService.accountGetEntry(account.id, path);
     if (result == null) {
-      throw CloudDriverException('FFI unavailable');
+      throw WdmmVfsException('FFI unavailable');
     }
     if (result.startsWith('error:')) {
-      throw CloudDriverException(result.substring(6));
+      throw WdmmVfsException(result.substring(6));
     }
     final Map<String, dynamic> entry = jsonDecode(result);
     return _parseEntry(entry);
@@ -45,10 +45,10 @@ class RustCloudDriver extends CloudDriver {
   Future<void> mkdir(String path) async {
     final result = RustCoreService.accountMkdir(account.id, path);
     if (result == null) {
-      throw CloudDriverException('FFI unavailable');
+      throw WdmmVfsException('FFI unavailable');
     }
     if (result.startsWith('error:')) {
-      throw CloudDriverException(result.substring(6));
+      throw WdmmVfsException(result.substring(6));
     }
   }
 
@@ -56,10 +56,10 @@ class RustCloudDriver extends CloudDriver {
   Future<void> rename(String path, String newPath) async {
     final result = RustCoreService.accountRename(account.id, path, newPath);
     if (result == null) {
-      throw CloudDriverException('FFI unavailable');
+      throw WdmmVfsException('FFI unavailable');
     }
     if (result.startsWith('error:')) {
-      throw CloudDriverException(result.substring(6));
+      throw WdmmVfsException(result.substring(6));
     }
   }
 
@@ -67,10 +67,10 @@ class RustCloudDriver extends CloudDriver {
   Future<void> remove(String path) async {
     final result = RustCoreService.accountRemove(account.id, path);
     if (result == null) {
-      throw CloudDriverException('FFI unavailable');
+      throw WdmmVfsException('FFI unavailable');
     }
     if (result.startsWith('error:')) {
-      throw CloudDriverException(result.substring(6));
+      throw WdmmVfsException(result.substring(6));
     }
   }
 
@@ -115,8 +115,8 @@ class RustCloudDriver extends CloudDriver {
   }
 }
 
-/// Factory function for creating a RustCloudDriver.
-CloudDriver createRustDriver(WebDavAccount account) {
-  return RustCloudDriver(account);
+/// Factory function for creating a RustWdmmVfs.
+WdmmVfs createRustDriver(WebDavAccount account) {
+  return RustWdmmVfs(account);
 }
 

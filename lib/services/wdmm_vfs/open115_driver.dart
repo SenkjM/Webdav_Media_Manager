@@ -25,7 +25,7 @@
 ///
 /// **与 worker 的一处有意差异**：[Open115Driver.get] 拿不到直链时**抛出真实
 /// 原因**（含 406 配额用尽），worker 只记 warning 返回无直链条目——客户端里
-/// 下游必然失败，不如直说（[CloudDriver.get] 契约，同百度 / 网易云驱动）。
+/// 下游必然失败，不如直说（[WdmmVfs.get] 契约，同百度 / 网易云驱动）。
 ///
 /// **`limit_rate`**：Go `meta.go` 默认 1（次/秒）。本实现做成「请求间隔节流」，
 /// 并把默认值放到表单文本字段里（`'0'` = 不限速），因为固定 1 次/秒会让浏览
@@ -38,7 +38,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 import '../../utils/l10n_host.dart';
 
 /// 上游 SDK 错误码：对象不存在（`ERR_OBJECT_NOT_FOUND`，util.ts）。
@@ -263,7 +263,7 @@ class Open115Client {
   /// 轮换 refresh_token，不存下去下次就刷不动了。
   Future<void> refreshToken() async {
     if (refreshTokenValue.isEmpty) {
-      throw const CloudDriverException('err.open115MissingRefreshToken');
+      throw const WdmmVfsException('err.open115MissingRefreshToken');
     }
     final res = await _send(
       refreshTokenUrl,
@@ -281,7 +281,7 @@ class Open115Client {
     final access = _asToken(map['access_token']);
     final refresh = _asToken(map['refresh_token']);
     if (body['code'] != 0 || access.isEmpty || refresh.isEmpty) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.open115RefreshFailed|code ${body['code']} ${body['message'] ?? ''}',
       );
     }
@@ -415,7 +415,7 @@ class Open115Client {
         }
       }
     }
-    throw CloudDriverException('err.open115NetworkFailed|$url', lastErr);
+    throw WdmmVfsException('err.open115NetworkFailed|$url', lastErr);
   }
 
   Future<void> _waitRateLimit() async {
@@ -518,7 +518,7 @@ class Open115Client {
     );
     final data = body['data'];
     if (data is! Map) {
-      throw const CloudDriverException('err.open115DownurlEmptyData');
+      throw const WdmmVfsException('err.open115DownurlEmptyData');
     }
     for (final entry in data.values) {
       if (entry is! Map) continue;
@@ -526,7 +526,7 @@ class Open115Client {
       final link = url is Map ? url['url'] as String? : null;
       if (link != null && link.isNotEmpty) return link;
     }
-    throw const CloudDriverException('err.open115DownurlEmptyUrl');
+    throw const WdmmVfsException('err.open115DownurlEmptyUrl');
   }
 
   /// 直链缓存查询（key = `fid|UA`）。过期返回 null。
@@ -555,7 +555,7 @@ class Open115Client {
     final cached = cachedLink(file.fid, ua);
     if (cached != null) return cached;
     if (file.pc.isEmpty) {
-      throw CloudDriverException('err.open115MissingPickCode|${file.fn}');
+      throw WdmmVfsException('err.open115MissingPickCode|${file.fn}');
     }
     final url = await downUrl(file.pc, ua: ua);
     cacheLink(file.fid, ua, url);
@@ -619,7 +619,7 @@ class _Open115LinkEntry {
 }
 
 /// 带上游 `code` 的 API 异常：调用方靠 [code] 区分 430004 / 990002 等语义。
-class _Open115ApiException extends CloudDriverException {
+class _Open115ApiException extends WdmmVfsException {
   const _Open115ApiException(
     super.message, {
     required this.code,
@@ -640,12 +640,12 @@ class _Open115ApiException extends CloudDriverException {
   }
 }
 
-/// 115 网盘 CloudDriver 实现。
+/// 115 网盘 WdmmVfs 实现。
 ///
 /// 路径形态：本应用给驱动的是**绝对路径**，115 的 API 只认 id，所以在驱动
 /// 内维护实例级 `path → id` 缓存（随驱动重建失效，99 §4.6）。缓存 key 是
 /// **正斜杠开头的干净路径**（上游 `clean`，与 115 的路径形态一致）。
-class Open115Driver extends CloudDriver {
+class Open115Driver extends WdmmVfs {
   Open115Driver({
     required Open115Addition addition,
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
@@ -696,11 +696,11 @@ class Open115Driver extends CloudDriver {
       final strippedApi = e.message.startsWith('err.')
           ? e.message.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '')
           : e.message;
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.open115TokenVerifyFailed|$strippedApi',
         e.cause,
       );
-    } on CloudDriverException catch (e) {
+    } on WdmmVfsException catch (e) {
       final msg = e.message;
       if (e.cause is DioException ||
           msg.startsWith('err.open115NetworkFailed') ||
@@ -709,7 +709,7 @@ class Open115Driver extends CloudDriver {
         final strippedNet = msg.startsWith('err.')
             ? msg.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '')
             : msg;
-        throw CloudDriverException(
+        throw WdmmVfsException(
           'err.open115NetworkConnectFailed|$strippedNet',
           e.cause,
         );
@@ -717,7 +717,7 @@ class Open115Driver extends CloudDriver {
       final strippedMsg = msg.startsWith('err.')
           ? msg.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '')
           : msg;
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.open115TokenVerifyFailed|$strippedMsg',
         e.cause,
       );
@@ -772,7 +772,7 @@ class Open115Driver extends CloudDriver {
         // 直链必须带 115 的 UA，否则 403（Go Link 的 Header）。
         rawHeaders: const {'User-Agent': Open115Client.open115UserAgent},
       );
-    } on CloudDriverException catch (e) {
+    } on WdmmVfsException catch (e) {
       // 本项目契约：拿不到直链就抛真实原因，不静默返回无直链条目。
       if (e.message.contains('downurl') || e.message.contains('pick_code')) {
         rethrow;
@@ -780,7 +780,7 @@ class Open115Driver extends CloudDriver {
       final strippedDl = e.message.startsWith('err.')
           ? e.message.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '')
           : e.message;
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.open115DirectLinkFailed|$strippedDl',
         e.cause,
       );
@@ -847,7 +847,7 @@ class Open115Driver extends CloudDriver {
       // 副本的 fid 未知：列一次目标目录把它找出来改名（rename 需要 fid）。
       final copied = await _findInDir(dstDir, currentName);
       if (copied == null || copied.fid.isEmpty) {
-        throw CloudDriverException('err.open115CopyRenameFailed|$newName');
+        throw WdmmVfsException('err.open115CopyRenameFailed|$newName');
       }
       await _client.updateFile(copied.fid, newName);
     }
@@ -912,7 +912,7 @@ class Open115Driver extends CloudDriver {
         }
       }
       if (folder == null) {
-        throw CloudDriverException('err.open115FolderNotFound|$prefix');
+        throw WdmmVfsException('err.open115FolderNotFound|$prefix');
       }
       cid = folder.fid;
       _fidCache[prefix] = cid;
@@ -928,7 +928,7 @@ class Open115Driver extends CloudDriver {
     final clean = _clean(path);
     final segs = clean.split('/').where((s) => s.isNotEmpty).toList();
     if (segs.isEmpty) {
-      throw CloudDriverException('err.open115FileNotFound|$clean');
+      throw WdmmVfsException('err.open115FileNotFound|$clean');
     }
     final rawName = segs.removeLast();
     final decodedName = _tryDecode(rawName);
@@ -957,7 +957,7 @@ class Open115Driver extends CloudDriver {
       if (page.files.isEmpty || offset + page.files.length >= page.count) break;
       offset += page.files.length;
     }
-    throw CloudDriverException('err.open115FileNotFound|$rawName');
+    throw WdmmVfsException('err.open115FileNotFound|$rawName');
   }
 
   /// 在 [dir] 下按名字找一个条目（copy 改名用）。
@@ -1021,7 +1021,7 @@ class Open115Driver extends CloudDriver {
 
 /// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造全部收在
 /// 本文件；`driver_registry.dart` 加一行即接入账号表单。
-class Open115Spec extends CloudDriverSpec {
+class Open115Spec extends WdmmVfsSpec {
   const Open115Spec();
 
   /// 与 OpenList 驱动目录名一致。
@@ -1049,27 +1049,27 @@ class Open115Spec extends CloudDriverSpec {
   Set<String> get runtimeSecretKeys => const {'access_token'};
 
   @override
-  List<CloudDriverFormItem> get form => [
-    CloudDriverField(
+  List<WdmmVfsFormItem> get form => [
+    WdmmVfsField(
       key: 'refresh_token',
       label: 'refresh_token',
       hint: L10nHost.current.formHint115RefreshToken,
       required: true,
       obscure: true,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'root_id',
       label: L10nHost.current.formLabelRootId,
       hint: L10nHost.current.formHint115RootId,
       defaultValue: '0',
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'page_size',
       label: L10nHost.current.formLabelPageSize,
       hint: L10nHost.current.formHintPageSize,
       defaultValue: '200',
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'limit_rate',
       label: L10nHost.current.formLabelRateLimit,
       hint: L10nHost.current.formHintRateLimit,
@@ -1078,10 +1078,10 @@ class Open115Spec extends CloudDriverSpec {
   ];
 
   @override
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) {
     return Open115Driver.fromConfig(config, onTokenUpdate: onTokenUpdate);
   }

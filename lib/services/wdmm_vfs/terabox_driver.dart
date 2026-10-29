@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 import '../../utils/l10n_host.dart';
 
 /// TeraBox（terabox）驱动。
@@ -28,7 +28,7 @@ import '../../utils/l10n_host.dart';
 /// 与 worker 的有意差异：worker 的 `get()` 在拿不到直链时只
 /// `console.warn` 并返回 `raw_url: ""`；本应用契约要求文件条目**必须**带
 /// [CloudFileItem.rawUrl]，所以这里改为抛出带真实原因的
-/// [CloudDriverException]（下游必然失败，不如直说）。
+/// [WdmmVfsException]（下游必然失败，不如直说）。
 ///
 /// ## 签名（上游 util.ts，逐行核对后确认**无任何加密原语依赖**）
 ///
@@ -116,7 +116,7 @@ String teraboxSign(String s1, String s2) {
     // 上游 JS：v = 0 → `q % v` = NaN → charCodeAt(NaN) = NaN → a[q]=NaN，
     // 后续算术全 NaN。Go：s1 空时 `q % v` 除零 panic。两边都不是可用行为，
     // 这里明确报错而不是产出一个「看起来能跑」的签名。
-    throw const CloudDriverException('err.teraboxSignKeyEmpty');
+    throw const WdmmVfsException('err.teraboxSignKeyEmpty');
   }
   final a = List<int>.filled(256, 0);
   final p = List<int>.generate(256, (i) => i);
@@ -214,11 +214,11 @@ class TeraboxClient {
     final errno = _errnoOf(body);
     if (errno != 0) {
       if (errno == 9000) {
-        throw const CloudDriverException(
+        throw const WdmmVfsException(
           'TeraBox is not yet available in this area (errno 9000)',
         );
       }
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'Failed to verify TeraBox login status according to cookie '
         '(errno $errno)',
       );
@@ -278,7 +278,7 @@ class TeraboxClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.teraboxRequestFailed|[$method ${Uri.parse(full).path}]：${e.message ?? e.type.name}',
         e,
       );
@@ -341,13 +341,13 @@ class TeraboxClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'Failed to fetch TeraBox home page: ${e.message}',
         e,
       );
     }
     if (res.statusCode != null && res.statusCode! >= 400) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'Failed to fetch TeraBox home page: HTTP ${res.statusCode}',
       );
     }
@@ -377,7 +377,7 @@ class TeraboxClient {
     final body = await request('/api/home/info');
     final data = body['data'];
     if (data is! Map) {
-      throw const CloudDriverException(
+      throw const WdmmVfsException(
         'Failed to get TeraBox sign keys from home/info',
       );
     }
@@ -385,7 +385,7 @@ class TeraboxClient {
     final sign1 = m['sign1'] as String? ?? '';
     final sign3 = m['sign3'] as String? ?? '';
     if (sign1.isEmpty || sign3.isEmpty) {
-      throw const CloudDriverException(
+      throw const WdmmVfsException(
         'Failed to get TeraBox sign keys from home/info',
       );
     }
@@ -402,7 +402,7 @@ class TeraboxClient {
         params: {'dir': dir, 'page': '$page', 'num': '$pageSize'},
       );
       if (_errnoOf(body) == 9000) {
-        throw const CloudDriverException(
+        throw const WdmmVfsException(
           'TeraBox is not yet available in this area',
         );
       }
@@ -440,7 +440,7 @@ class TeraboxClient {
 
     final dlink = _firstDlink(body);
     if (dlink == null || dlink.isEmpty) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'TeraBox fid $fsId no dlink found (errno: ${_errnoOf(body)})',
       );
     }
@@ -461,7 +461,7 @@ class TeraboxClient {
       final loc = res.headers.value('location');
       url = (loc != null && loc.isNotEmpty) ? loc : dlink;
     } on DioException catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.teraboxRedirectFailed|fid $fsId：${e.message ?? e.type.name}',
         e,
       );
@@ -532,8 +532,8 @@ class TeraboxClient {
   }
 }
 
-/// TeraBox 驱动的 [CloudDriver] 实现。
-class TeraboxDriver extends CloudDriver {
+/// TeraBox 驱动的 [WdmmVfs] 实现。
+class TeraboxDriver extends WdmmVfs {
   TeraboxDriver({required TeraboxAddition addition, Dio? dio})
     : _client = TeraboxClient(addition, dio: dio);
 
@@ -572,7 +572,7 @@ class TeraboxDriver extends CloudDriver {
       },
     );
     if ((body['errno'] as num?)?.toInt() == 9000) {
-      throw const CloudDriverException(
+      throw const WdmmVfsException(
         'TeraBox is not yet available in this area',
       );
     }
@@ -589,7 +589,7 @@ class TeraboxDriver extends CloudDriver {
       }
     }
     if (found == null) {
-      throw CloudDriverException('file not found: $fileName');
+      throw WdmmVfsException('file not found: $fileName');
     }
 
     if (found.isdir == 1) {
@@ -680,7 +680,7 @@ String teraboxPath(String p) {
 
 /// 驱动自描述：类型、显示名、能力遮罩、表单参数、构造全在本文件
 /// （[12 §2 第 4 步](docs/12-DRIVER-PORTING-GUIDE.md)）。
-class TeraboxSpec extends CloudDriverSpec {
+class TeraboxSpec extends WdmmVfsSpec {
   const TeraboxSpec();
 
   @override
@@ -703,15 +703,15 @@ class TeraboxSpec extends CloudDriverSpec {
       AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => [
-    CloudDriverField(
+  List<WdmmVfsFormItem> get form => [
+    WdmmVfsField(
       key: 'cookie',
       label: 'Cookie',
       hint: L10nHost.current.formHintTeraboxCookie,
       required: true,
       obscure: true,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'root_folder_path',
       label: L10nHost.current.formLabelRootPath,
       defaultValue: '/',
@@ -719,10 +719,10 @@ class TeraboxSpec extends CloudDriverSpec {
   ];
 
   @override
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) {
     return TeraboxDriver(addition: TeraboxAddition.fromJson(config));
   }

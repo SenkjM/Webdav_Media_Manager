@@ -45,19 +45,19 @@ Use a normal `flutter` command only when the user has explicitly provided full a
 
 **Error handling.**
 
-- Service methods translate `DioException` / `CloudDriverException` into user-readable strings. Screens must propagate or display errors through the established pattern (`AppSnack.show`, `_error` setState). A silent `catch (_) {}` is only acceptable for cleanup paths (temp file deletion, cover cache miss); annotate with a comment.
+- Service methods translate `DioException` / `WdmmVfsException` into user-readable strings. Screens must propagate or display errors through the established pattern (`AppSnack.show`, `_error` setState). A silent `catch (_) {}` is only acceptable for cleanup paths (temp file deletion, cover cache miss); annotate with a comment.
 
 **Adding a new cloud driver.**
 
-One new file (`lib/services/cloud_drivers/<name>_driver.dart`) + one line in `lib/services/driver_registry.dart`. The public layer (`WebDavService`, `CloudDriveService`) must not change.
+One new file (`lib/services/wdmm_vfs/<name>_driver.dart`) + one line in `lib/services/wdmm_vfs/driver_registry.dart`. The public layer (`WebDavService`, `CloudDriveService`) must not change.
 
-## Cloud file ops: CloudDriver is the single authority
+## Cloud file ops: WDMM-VFS is the single authority
 
-All in-app cloud file operations go through **`CloudDriver`** — the unified driver trait in `wdmm-core`. This *is* the "virtual file layer" in product language; there is no second trait alongside it.
+All in-app cloud file operations go through **`WdmmVfs`** — the unified driver trait in `wdmm-core` (product name **WDMM-VFS**; formerly `CloudDriver`). This *is* the "virtual file layer" in product language; there is no second trait alongside it.
 
-- Sync, backup, browse, and any other file I/O that already belongs on drivers must call `CloudDriver` methods (`list` / `mkdir` / `remove` / `put_content` / `get_content`). Do not reach past it into a raw `WebDavClient` / `Dio`.
-- **Do not** introduce a `VirtualFs`, `ObjectFs`, or `RemoteStore`-as-public-VFS layer that duplicates `CloudDriver`. A private shim that only renames `CloudDriver` is deleted/inlined; engines take `Arc<dyn CloudDriver>` directly.
-- Account-scoped driver factory lives only at the FFI/outer edge: `account_id` → `DriverRegistry::create_driver` → `CloudDriver`. Sync FFI takes `account_id + remote_dir (+ with_covers)`, never `url/user/pass`.
+- Sync, backup, browse, and any other file I/O that already belongs on drivers must call `WdmmVfs` methods (`list` / `mkdir` / `remove` / `put_content` / `get_content`). Do not reach past it into a raw `WebDavClient` / `Dio`.
+- **Do not** introduce a `VirtualFs`, `ObjectFs`, or `RemoteStore`-as-public-VFS layer that duplicates `WdmmVfs`. A private shim that only renames `WdmmVfs` is deleted/inlined; engines take `Arc<dyn WdmmVfs>` directly.
+- Account-scoped driver factory lives only at the FFI/outer edge: `account_id` → `DriverRegistry::create_driver` → `WdmmVfs`. Sync FFI takes `account_id + remote_dir (+ with_covers)`, never `url/user/pass`.
 - Unsupported put/get on a driver returns a driver error — do not implement sync per driver, and do **not** silently fall back to a WebDAV-only / Dart-store path. A missing put/get must fail loudly.
 - Wrapper drivers (Crypt) expose `LocalStream` (MustProxy), never a plaintext `raw_url`. Content-delivery kinds stay labeled on `CloudFileItem` / driver `get`.
 

@@ -9,7 +9,7 @@ import 'package:openlist_crypt/openlist_crypt.dart';
 
 import '../../../models/account_capabilities.dart';
 import '../../../utils/track_identity.dart';
-import '../../cloud_driver.dart';
+import '../../wdmm_vfs.dart';
 import '../../../utils/l10n_host.dart';
 
 /// Decrypt a network-sized batch away from Flutter's UI isolate.
@@ -40,10 +40,10 @@ Future<List<Uint8List>> _decryptBatchInIsolate({
 ///   播放器反复拖动进度条不会每次都重新解析直链。
 /// * **名字解密大目录整批丢 isolate**，小目录就地做且定期让出事件循环。
 ///
-/// 分层纪律：`openlist_crypt` 的异常在这里全部翻译成 [CloudDriverException] /
-/// [CloudDriverDataException]，密码学细节不越过本文件。
-class CryptDriver extends CloudDriver {
-  CryptDriver({required Map<String, dynamic> config, CloudDriverEnv? env})
+/// 分层纪律：`openlist_crypt` 的异常在这里全部翻译成 [WdmmVfsException] /
+/// [WdmmVfsDataException]，密码学细节不越过本文件。
+class CryptDriver extends WdmmVfs {
+  CryptDriver({required Map<String, dynamic> config, WdmmVfsEnv? env})
     : _env = env,
       _password = (config['password'] as String?) ?? '',
       _salt = (config['salt'] as String?) ?? '',
@@ -57,7 +57,7 @@ class CryptDriver extends CloudDriver {
         (config['filename_encryption'] as String?) ?? 'off',
       );
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException('err.cryptInvalidConfig|${e.message}', e);
+      throw WdmmVfsDataException('err.cryptInvalidConfig|${e.message}', e);
     }
     _sourceAccountName = (config['source_account_id_name'] as String?) ?? '';
     _sourceDir = (config['source_dir'] as String?) ?? '/';
@@ -66,7 +66,7 @@ class CryptDriver extends CloudDriver {
     unawaited(_materialFuture.then((_) {}, onError: (Object _) {}));
   }
 
-  final CloudDriverEnv? _env;
+  final WdmmVfsEnv? _env;
   final String _password;
   final String _salt;
   final String _nameEncoding;
@@ -151,13 +151,13 @@ class CryptDriver extends CloudDriver {
   CloudSource _requireSource() {
     final sourceName = normalizeSourceName(_sourceAccountName);
     if (sourceName.isEmpty) {
-      throw const CloudDriverException('err.cryptNoSourceName');
+      throw const WdmmVfsException('err.cryptNoSourceName');
     }
     // 名称是 Crypt 源的唯一绑定关系。source_account_id 仅保留作旧配置
     // 兼容字段，不参与实际解析；这样删除并重建账号后同名账号仍可恢复。
     final s = _env?.resolveSourceByName?.call(sourceName);
     if (s == null) {
-      throw CloudDriverException('err.cryptSourceMissing|$sourceName');
+      throw WdmmVfsException('err.cryptSourceMissing|$sourceName');
     }
     return s;
   }
@@ -331,7 +331,7 @@ class CryptDriver extends CloudDriver {
         await _mapToInner(path, lastIsFile: true),
         await _mapToInner(newPath, lastIsFile: true),
       );
-    } on CloudDriverException {
+    } on WdmmVfsException {
       // 末段可能是目录：按目录映射重试。
       await src.rename(
         await _mapToInner(path, lastIsFile: false),
@@ -346,7 +346,7 @@ class CryptDriver extends CloudDriver {
     final src = _requireSource();
     try {
       await src.remove(await _mapToInner(path, lastIsFile: true));
-    } on CloudDriverException {
+    } on WdmmVfsException {
       await src.remove(await _mapToInner(path, lastIsFile: false));
     }
     _invalidateTargets();
@@ -362,7 +362,7 @@ class CryptDriver extends CloudDriver {
         await _mapToInner(dstDir, lastIsFile: false),
         cipher.encryptFileName(newName),
       );
-    } on CloudDriverException {
+    } on WdmmVfsException {
       await src.move(
         await _mapToInner(srcPath, lastIsFile: false),
         await _mapToInner(dstDir, lastIsFile: false),
@@ -382,7 +382,7 @@ class CryptDriver extends CloudDriver {
         await _mapToInner(dstDir, lastIsFile: false),
         cipher.encryptFileName(newName),
       );
-    } on CloudDriverException {
+    } on WdmmVfsException {
       await src.copy(
         await _mapToInner(srcPath, lastIsFile: false),
         await _mapToInner(dstDir, lastIsFile: false),
@@ -423,7 +423,7 @@ class CryptDriver extends CloudDriver {
     final inner = await src.get(innerPath);
     final url = inner.rawUrl;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException('err.cryptNoDirectLinkStream');
+      throw const WdmmVfsException('err.cryptNoDirectLinkStream');
     }
 
     final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 20)));
@@ -450,7 +450,7 @@ class CryptDriver extends CloudDriver {
       );
       final stream = response.data?.stream;
       if (stream == null) {
-        throw const CloudDriverException('err.cryptNoResponseBody');
+        throw const WdmmVfsException('err.cryptNoResponseBody');
       }
 
       await for (final chunk in stream) {
@@ -471,7 +471,7 @@ class CryptDriver extends CloudDriver {
           try {
             yield cipher.decryptBlock(nonce, block++, encrypted);
           } on RcloneCipherException catch (e) {
-            throw CloudDriverDataException(
+            throw WdmmVfsDataException(
               'err.cryptBlockDecryptFailed|${block - 1}',
               e,
             );
@@ -481,14 +481,14 @@ class CryptDriver extends CloudDriver {
       }
 
       if (nonce == null) {
-        throw const CloudDriverException('err.cryptNoHeader');
+        throw const WdmmVfsException('err.cryptNoHeader');
       }
       if (pending.length > 0) {
         final encrypted = pending.takeBytes();
         try {
           yield cipher.decryptBlock(nonce, block, encrypted);
         } on RcloneCipherException catch (e) {
-          throw CloudDriverDataException(
+          throw WdmmVfsDataException(
             'err.cryptBlockDecryptFailed|$block',
             e,
           );
@@ -496,7 +496,7 @@ class CryptDriver extends CloudDriver {
         total += encrypted.length;
       }
       if (inner.size > 0 && total != inner.size) {
-        throw CloudDriverException(
+        throw WdmmVfsException(
           'err.cryptLengthMismatch|${inner.size}|$total',
         );
       }
@@ -520,7 +520,7 @@ class CryptDriver extends CloudDriver {
           // 密文只有文件头：合法的 0 字节明文文件。
           return;
         case _CryptTarget.shapeUnknownSize:
-          throw const CloudDriverException('err.cryptSizeUnknown');
+          throw const WdmmVfsException('err.cryptSizeUnknown');
         default:
           break; // shapeRanged：走下方分块解密。
       }
@@ -573,7 +573,7 @@ class CryptDriver extends CloudDriver {
         // 顶掉 UI 帧。
         if (window.isNotEmpty) await Future<void>.delayed(Duration.zero);
       }
-    } on CloudDriverDataException {
+    } on WdmmVfsDataException {
       _dropTarget(t); // 内容本身坏了：别让缓存的解析结果继续骗下一个人。
       rethrow;
     } finally {
@@ -604,7 +604,7 @@ class CryptDriver extends CloudDriver {
         case _CryptTarget.shapeEmptyFile:
           return; // 0 字节明文，任何区间都是空。
         case _CryptTarget.shapeUnknownSize:
-          throw const CloudDriverException('err.cryptSizeUnknown');
+          throw const WdmmVfsException('err.cryptSizeUnknown');
         default:
           break; // shapeRanged：走下方分块解密。
       }
@@ -643,7 +643,7 @@ class CryptDriver extends CloudDriver {
           final expected = cipherEnd - cipherStart + 1;
           final future = _fetchRange(t, cipherStart, cipherEnd).then((chunk) {
             if (chunk.length < expected) {
-              throw CloudDriverException(
+              throw WdmmVfsException(
                 'err.cryptEarlyEof|$batchFirst|$expected|${chunk.length}',
               );
             }
@@ -690,7 +690,7 @@ class CryptDriver extends CloudDriver {
         b = batchLast + 1;
         if (window.isNotEmpty) await Future<void>.delayed(Duration.zero);
       }
-    } on CloudDriverDataException {
+    } on WdmmVfsDataException {
       _dropTarget(t);
       rethrow;
     } finally {
@@ -713,7 +713,7 @@ class CryptDriver extends CloudDriver {
         blocks: blocks,
       );
     } catch (e) {
-      throw CloudDriverDataException(
+      throw WdmmVfsDataException(
         'err.cryptBlockRangeDecryptFailed|$firstBlock',
         e,
       );
@@ -728,7 +728,7 @@ class CryptDriver extends CloudDriver {
         () => RcloneCipher.fromKeyMaterial(material).decrypt(t.body),
       );
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException('err.cryptDecryptFailed', e);
+      throw WdmmVfsDataException('err.cryptDecryptFailed', e);
     }
   }
 
@@ -736,7 +736,7 @@ class CryptDriver extends CloudDriver {
     try {
       return RcloneCipher.decryptedSize(cipherSize);
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException(
+      throw WdmmVfsDataException(
         'err.cryptBadCipherLength|${e.message}',
         e,
       );
@@ -747,7 +747,7 @@ class CryptDriver extends CloudDriver {
     try {
       return RcloneCipher.fileNonceOf(header);
     } on RcloneCipherException catch (e) {
-      throw CloudDriverDataException('err.cryptNotRcloneFile|${e.message}', e);
+      throw WdmmVfsDataException('err.cryptNotRcloneFile|${e.message}', e);
     }
   }
 
@@ -807,7 +807,7 @@ class CryptDriver extends CloudDriver {
     final inner = await src.get(innerPath);
     final url = inner.rawUrl;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException('err.cryptNoDirectLinkDecrypt');
+      throw const WdmmVfsException('err.cryptNoDirectLinkDecrypt');
     }
     final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 20)));
     try {
@@ -827,7 +827,7 @@ class CryptDriver extends CloudDriver {
       );
       final body = res.$1;
       if (body.length < kFileHeaderSize) {
-        throw const CloudDriverException('err.cryptNoHeader');
+        throw const WdmmVfsException('err.cryptNoHeader');
       }
       // 回了比请求更多的字节 = 服务器无视 Range，手上就是整包。
       final rangeIgnored = body.length > wantEnd + 1;
@@ -886,7 +886,7 @@ class CryptDriver extends CloudDriver {
     final chunk = await _fetchRange(t, offset, offset + want - 1);
     if (chunk.length < want) {
       final block = (offset - kFileHeaderSize) ~/ kBlockSize;
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.cryptEarlyEof|$block|$want|${chunk.length}',
       );
     }
@@ -940,7 +940,7 @@ class CryptDriver extends CloudDriver {
     final inner = await t.refresh();
     final url = inner.rawUrl;
     if (url == null || url.isEmpty) {
-      throw const CloudDriverException('err.cryptNoDirectLinkAnymore');
+      throw const WdmmVfsException('err.cryptNoDirectLinkAnymore');
     }
     t.url = url;
     t.headers = inner.rawHeaders;
@@ -987,7 +987,7 @@ class CryptDriver extends CloudDriver {
     return int.tryParse(total);
   }
 
-  /// 流式加密上传（[CloudDriver.uploadStream] 实现）：明文流 → 逐块 secretbox 加密 → 源写入原语。
+  /// 流式加密上传（[WdmmVfs.uploadStream] 实现）：明文流 → 逐块 secretbox 加密 → 源写入原语。
   ///
   /// 这是 [openDownloadContent] 的上传方向孪生件。加密用包侧的 [RcloneStreamEncrypter]
   /// （O(64KiB) 内存，任意大文件不整体驻留），路径用 [_mapToInner] 逐段加密映射到密文路径。
@@ -1054,7 +1054,7 @@ class CryptDriver extends CloudDriver {
     );
   }
 
-  /// 幂等建目录（[CloudDriver.ensureDirectory] 实现）：逐级加密路径名后调源层建目录；
+  /// 幂等建目录（[WdmmVfs.ensureDirectory] 实现）：逐级加密路径名后调源层建目录；
   /// 「已存在」错误（WebDAV 405/409）静默吞掉，其他错误继续上抛。
   @override
   Future<void> ensureDirectory(String path) async {
@@ -1083,7 +1083,7 @@ class CryptDriver extends CloudDriver {
       final code = e.response?.statusCode;
       if (code == 405 || code == 409) return true;
     }
-    if (e is CloudDriverException) {
+    if (e is WdmmVfsException) {
       return e.message.contains('405') || e.message.contains('409');
     }
     return false;
@@ -1123,7 +1123,7 @@ class CryptDriver extends CloudDriver {
 
 /// crypt 驱动自描述（99 §7.2.10 / §7.5）：字段照 OpenList meta.go 子集 +
 /// 源账号 / 源目录（用户决定：源 = 已有账号 id，WebDAV 亦可）。
-class CryptSpec extends CloudDriverSpec {
+class CryptSpec extends WdmmVfsSpec {
   const CryptSpec();
 
   @override
@@ -1149,19 +1149,19 @@ class CryptSpec extends CloudDriverSpec {
       AccountCaps.delete;
 
   @override
-  List<CloudDriverFormItem> get form => [
-    CloudDriverAccountField(
+  List<WdmmVfsFormItem> get form => [
+    WdmmVfsAccountField(
       key: 'source_account_id',
       label: L10nHost.current.formLabelSourceAccount,
       required: true,
       hint: L10nHost.current.formHintSourceAccount,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'source_dir',
       label: L10nHost.current.formLabelSourceDir,
       hint: L10nHost.current.formHintSourceDir,
     ),
-    CloudDriverSelectField(
+    WdmmVfsSelectField(
       key: 'filename_encoding',
       label: L10nHost.current.formLabelFilenameEncoding,
       required: true,
@@ -1173,25 +1173,25 @@ class CryptSpec extends CloudDriverSpec {
       ],
       hint: L10nHost.current.formHintFilenameEncoding,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'encrypted_suffix',
       label: L10nHost.current.formLabelEncryptedSuffix,
       defaultValue: '.bin',
       hint: L10nHost.current.formHintEncryptedSuffix,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'password',
       label: L10nHost.current.formLabelPassword,
       required: true,
       obscure: true,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'salt',
       label: L10nHost.current.formLabelSalt,
       obscure: true,
       hint: L10nHost.current.formHintSalt,
     ),
-    CloudDriverSelectField(
+    WdmmVfsSelectField(
       key: 'filename_encryption',
       label: L10nHost.current.formLabelFilenameEncryption,
       required: true,
@@ -1202,7 +1202,7 @@ class CryptSpec extends CloudDriverSpec {
         ('off', L10nHost.current.optionCryptOff),
       ],
     ),
-    CloudDriverSwitchField(
+    WdmmVfsSwitchField(
       key: 'directory_name_encryption',
       label: L10nHost.current.formLabelDirNameEncryption,
       subtitle: L10nHost.current.formSubDirNameEncryption,
@@ -1211,10 +1211,10 @@ class CryptSpec extends CloudDriverSpec {
   ];
 
   @override
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) {
     return CryptDriver(config: config, env: env);
   }

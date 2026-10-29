@@ -8,7 +8,7 @@
 /// **API 形态**：基址 `https://openapi.aliyundrive.com/adrive/v1.0`，
 /// 所有请求都是 `POST` + JSON body，头带 `Authorization: Bearer <access_token>`
 /// （util.ts `openApiRequest`）。非 2xx 不是异常——本驱动 `validateStatus`
-/// 全放行，读 body 拿**上游原文**再包成 [CloudDriverException]（12 §2 第 2 步）。
+/// 全放行，读 body 拿**上游原文**再包成 [WdmmVfsException]（12 §2 第 2 步）。
 ///
 /// **不移植**（12 §2 字段裁剪规则 / 99 §7.2.1 上传已砍）：
 /// - `putFile`（`/openFile/create` 传 content 那一段）与秒传相关字段；
@@ -19,7 +19,7 @@
 /// - `chunk_size` / `rapid_upload` / `internal_upload` / `livp_download_format`
 ///   等上传与代理下载字段。
 ///
-/// **与 worker 底稿的有意差异**（对齐 `CloudDriver.get` 的契约，11 §10）：
+/// **与 worker 底稿的有意差异**（对齐 `WdmmVfs.get` 的契约，11 §10）：
 /// worker 的 `get()` 拿不到直链时静默返回 `raw_url: ""`，本驱动让直链失败
 /// **自然抛出真实原因**——客户端里没有直链的下游必然失败，不如直说。
 /// 目录探测分支（`getFile` 为空 → 列一次目录判断是不是文件夹）照抄保留。
@@ -30,7 +30,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../../models/account_capabilities.dart';
-import '../cloud_driver.dart';
+import '../wdmm_vfs.dart';
 import '../../utils/l10n_host.dart';
 
 /// 驱动配置（对齐上游 `AliyundriveOpenAddition`）。
@@ -273,7 +273,7 @@ class AliyundriveOpenClient {
   Future<void> refreshAccessToken() async {
     final token = addition.refreshToken.trim();
     if (token.isEmpty) {
-      throw const CloudDriverException('err.aliyunMissingRefreshToken');
+      throw const WdmmVfsException('err.aliyunMissingRefreshToken');
     }
 
     final failures = <String>[];
@@ -284,7 +284,7 @@ class AliyundriveOpenClient {
           final tokens = await _renewViaOnlineApi(url, token);
           _applyTokens(tokens.access, tokens.refresh);
           return; // 第一个成功的就用（worker：Success!）。
-        } on CloudDriverException catch (e) {
+        } on WdmmVfsException catch (e) {
           failures.add(
             '$url → ${e.message.startsWith('err.') ? e.message.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '') : e.message}',
           );
@@ -298,7 +298,7 @@ class AliyundriveOpenClient {
       final tokens = await _renewViaOAuth(token);
       _applyTokens(tokens.access, tokens.refresh);
       return;
-    } on CloudDriverException catch (e) {
+    } on WdmmVfsException catch (e) {
       failures.add(
         '${AliyundriveOpenClient.oauthApi} → ${e.message.startsWith('err.') ? e.message.replaceFirst(RegExp(r'^err\.[a-zA-Z0-9]+\|'), '') : e.message}',
       );
@@ -306,7 +306,7 @@ class AliyundriveOpenClient {
       failures.add('${AliyundriveOpenClient.oauthApi} → $e');
     }
 
-    throw CloudDriverException(
+    throw WdmmVfsException(
       'err.aliyunRefreshAllFailed|${failures.join(' ; ')}',
     );
   }
@@ -347,7 +347,7 @@ class AliyundriveOpenClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[Status ${e.response?.statusCode ?? '-'}] '
         '${e.message ?? e}',
       );
@@ -362,7 +362,7 @@ class AliyundriveOpenClient {
       body = null;
     }
     if (body == null) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.aliyunNonJson|[Status ${res.statusCode}] ${raw.isEmpty ? '(no body)' : _clip(raw)}',
       );
     }
@@ -375,7 +375,7 @@ class AliyundriveOpenClient {
       data['access_token'] as String?,
     ]);
     if (access == null) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[Status ${res.statusCode}] Empty access_token from online API: '
         '${_clip(raw)}',
       );
@@ -414,7 +414,7 @@ class AliyundriveOpenClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[Status ${e.response?.statusCode ?? '-'}] '
         '${e.message ?? e}',
       );
@@ -429,14 +429,14 @@ class AliyundriveOpenClient {
       body = null;
     }
     if (body == null) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.aliyunNonJson|[Status ${res.statusCode}] ${raw.isEmpty ? '(no body)' : _clip(raw)}',
       );
     }
 
     final access = body['access_token'] as String?;
     if (access == null || access.isEmpty) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[Status ${res.statusCode}] Invalid response: ${_clip(raw)}',
       );
     }
@@ -480,7 +480,7 @@ class AliyundriveOpenClient {
         ),
       );
     } on DioException catch (e) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.aliyunNetworkFailed|$path：${e.message ?? e}',
       );
     }
@@ -493,7 +493,7 @@ class AliyundriveOpenClient {
     final text = res.data ?? '';
     if (res.statusCode != 200) {
       // 原样带上端点与上游返回体（12 §2 第 2 步 / 11 §10 保存语义）。
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[AliyundriveOpen] API error [${res.statusCode}] $path: ${_clip(text)}',
       );
     }
@@ -503,7 +503,7 @@ class AliyundriveOpenClient {
       final json = jsonDecode(text);
       decoded = json is Map<String, dynamic> ? json : <String, dynamic>{};
     } catch (_) {
-      throw CloudDriverException(
+      throw WdmmVfsException(
         '[AliyundriveOpen] API error [${res.statusCode}] $path: '
         'invalid JSON response: ${_clip(text)}',
       );
@@ -557,7 +557,7 @@ class AliyundriveOpenClient {
           '';
     }
     if (picked.isEmpty) {
-      throw const CloudDriverException('err.aliyunNoDriveId');
+      throw const WdmmVfsException('err.aliyunNoDriveId');
     }
     driveId = picked;
     return driveId;
@@ -591,7 +591,7 @@ class AliyundriveOpenClient {
       Map<String, dynamic> resp;
       try {
         resp = await openApiRequest('/openFile/list', body);
-      } on CloudDriverException catch (e) {
+      } on WdmmVfsException catch (e) {
         if (!e.message.contains('UserNotAllowedAccessDrive')) rethrow;
         // 自愈：按 resource 类型重新解析 drive_id 后用新 id 重试一次。
         await resolveDriveId(forceResource: true);
@@ -631,7 +631,7 @@ class AliyundriveOpenClient {
 
   /// 直链（`/openFile/getDownloadUrl`）→ `url || download_url`。
   ///
-  /// **空直链抛错**（worker 返回空串），对齐 [CloudDriver.get] 的契约（11 §10）。
+  /// **空直链抛错**（worker 返回空串），对齐 [WdmmVfs.get] 的契约（11 §10）。
   Future<String> getDownloadUrl(String fileId) async {
     final resp = await openApiRequest('/openFile/getDownloadUrl', {
       'drive_id': await _requireDriveId(),
@@ -643,7 +643,7 @@ class AliyundriveOpenClient {
       resp['download_url'] as String?,
     ]);
     if (url == null) {
-      throw const CloudDriverException('err.aliyunNoDirectLink');
+      throw const WdmmVfsException('err.aliyunNoDirectLink');
     }
     return url;
   }
@@ -723,12 +723,12 @@ class AliyundriveOpenClient {
       s.length > max ? s.substring(0, max) : s;
 }
 
-/// 阿里云盘开放平台驱动（[CloudDriver] 实现）。
+/// 阿里云盘开放平台驱动（[WdmmVfs] 实现）。
 ///
 /// 上游用**文件 id** 操作，本应用给的是**绝对路径**，因此在实例内维护
 /// path→id 缓存（对齐 worker 的 `pathFileIdCache`）；写操作后整表 clear。
 /// 缓存随驱动重建失效（12 §3 注记 / 99 §4.6）。
-class AliyundriveOpenDriver extends CloudDriver {
+class AliyundriveOpenDriver extends WdmmVfs {
   AliyundriveOpenDriver({
     required AliyundriveOpenAddition addition,
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
@@ -768,7 +768,7 @@ class AliyundriveOpenDriver extends CloudDriver {
   ///
   /// **有意差异**：worker 拿不到直链时把 `raw_url` 留空返回，
   /// 本实现让 [AliyundriveOpenClient.getDownloadUrl] 的异常**自然抛出**
-  /// —— [CloudDriver.get] 的契约要求文件必须带 `rawUrl`（11 §10）。
+  /// —— [WdmmVfs.get] 的契约要求文件必须带 `rawUrl`（11 §10）。
   @override
   Future<CloudFileItem> get(String path) async {
     final clean = _clean(path);
@@ -783,14 +783,14 @@ class AliyundriveOpenDriver extends CloudDriver {
     AliyundriveOpenFile? file;
     try {
       file = await _client.getFile(fileId);
-    } on CloudDriverException {
+    } on WdmmVfsException {
       file = null;
     }
 
     if (file != null) {
       final item = _toItem(file);
       if (item.isDir) return item;
-      // 直链失败要抛出真实原因（网络 / 业务码都已被包成 CloudDriverException）。
+      // 直链失败要抛出真实原因（网络 / 业务码都已被包成 WdmmVfsException）。
       final url = await _client.getDownloadUrl(fileId);
       return CloudFileItem(
         name: item.name,
@@ -807,10 +807,10 @@ class AliyundriveOpenDriver extends CloudDriver {
     try {
       await _client.listFiles(fileId);
       return CloudFileItem(name: cloudBasename(clean), isDir: true);
-    } on CloudDriverException {
+    } on WdmmVfsException {
       // 3. 两者都不是：报真实原因（worker 在这里返回一个 is_dir:false 的
       //    无直链条目，本应用按契约直说）。
-      throw CloudDriverException(
+      throw WdmmVfsException(
         'err.aliyunEntryOrLinkFailed|$clean (file_id=$fileId)',
       );
     }
@@ -821,7 +821,7 @@ class AliyundriveOpenDriver extends CloudDriver {
     final clean = _clean(path);
     final name = cloudBasename(clean);
     if (name.isEmpty) {
-      throw const CloudDriverException('err.mkdirRoot');
+      throw const WdmmVfsException('err.mkdirRoot');
     }
     final parentId = await _resolveFileId(cloudDirname(clean));
     await _client.mkdir(parentId, name);
@@ -914,7 +914,7 @@ class AliyundriveOpenDriver extends CloudDriver {
         }
       }
       if (target == null) {
-        throw CloudDriverException(
+        throw WdmmVfsException(
           "[AliyundriveOpen] Path '$rawPart' not found",
         );
       }
@@ -929,12 +929,12 @@ class AliyundriveOpenDriver extends CloudDriver {
     final clean = _clean(path);
     final name = cloudBasename(clean);
     if (name.isEmpty) {
-      throw const CloudDriverException('err.rootOp');
+      throw const WdmmVfsException('err.rootOp');
     }
     final parentId = await _resolveFileId(cloudDirname(clean));
     final found = await _findInDir(parentId, name);
     if (found == null) {
-      throw CloudDriverException("[AliyundriveOpen] '$name' not found");
+      throw WdmmVfsException("[AliyundriveOpen] '$name' not found");
     }
     return found;
   }
@@ -990,7 +990,7 @@ DateTime? parseAliyundriveOpenTime(String? s) {
 
 /// 驱动自描述（99 §7.2.10）：类型、显示名、能力遮罩、表单参数、构造
 /// 全部收在本文件；`driver_registry.dart` 加一行即接入账号表单。
-class AliyundriveOpenSpec extends CloudDriverSpec {
+class AliyundriveOpenSpec extends WdmmVfsSpec {
   const AliyundriveOpenSpec();
 
   /// 与 OpenList 驱动目录名一致。
@@ -1018,15 +1018,15 @@ class AliyundriveOpenSpec extends CloudDriverSpec {
   Set<String> get runtimeSecretKeys => const {'access_token'};
 
   @override
-  List<CloudDriverFormItem> get form => [
-    CloudDriverField(
+  List<WdmmVfsFormItem> get form => [
+    WdmmVfsField(
       key: 'refresh_token',
       label: 'refresh_token',
       hint: L10nHost.current.formHintOpenListDoc('aliyundrive_open'),
       required: true,
       obscure: true,
     ),
-    CloudDriverSelectField(
+    WdmmVfsSelectField(
       key: 'drive_type',
       label: L10nHost.current.formLabelDriveType,
       hint: L10nHost.current.formHintDriveType,
@@ -1038,7 +1038,7 @@ class AliyundriveOpenSpec extends CloudDriverSpec {
       defaultValue: AliyundriveOpenClient.defaultDriveType,
       required: true,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'api_url_address',
       label: L10nHost.current.formLabelRenewApi,
       hint: L10nHost.current.formHintRenewApiDefault,
@@ -1046,23 +1046,23 @@ class AliyundriveOpenSpec extends CloudDriverSpec {
       disabledWhenSwitch: 'local_refresh',
       disabledHint: L10nHost.current.formHintLocalRefreshDisabled,
     ),
-    CloudDriverSwitchField(
+    WdmmVfsSwitchField(
       key: 'local_refresh',
       label: L10nHost.current.formLabelLocalRefresh,
       subtitle: L10nHost.current.formSubLocalRefreshAliyun,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'client_id',
       label: 'Client ID',
       visibleWhenSwitch: 'local_refresh',
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'client_secret',
       label: 'Client Secret',
       obscure: true,
       visibleWhenSwitch: 'local_refresh',
     ),
-    CloudDriverSelectField(
+    WdmmVfsSelectField(
       key: 'remove_way',
       label: L10nHost.current.formLabelDeleteMode,
       hint: L10nHost.current.formHintDeleteMode,
@@ -1072,7 +1072,7 @@ class AliyundriveOpenSpec extends CloudDriverSpec {
       ],
       defaultValue: AliyundriveOpenClient.defaultRemoveWay,
     ),
-    CloudDriverField(
+    WdmmVfsField(
       key: 'root_folder_id',
       label: L10nHost.current.formLabelRootId,
       hint: L10nHost.current.formHintRootIdOpaque('root'),
@@ -1081,10 +1081,10 @@ class AliyundriveOpenSpec extends CloudDriverSpec {
   ];
 
   @override
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) {
     return AliyundriveOpenDriver(
       addition: AliyundriveOpenAddition.fromJson(config),

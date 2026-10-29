@@ -10,7 +10,7 @@ import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/cloud_drive_service.dart';
-import 'cloud_driver.dart';
+import 'wdmm_vfs.dart';
 import '../utils/audio_extensions.dart';
 import 'resumable_download.dart';
 
@@ -89,7 +89,7 @@ class WebDavService extends ChangeNotifier {
     Map<String, dynamic> config,
   ) async {
     if (_cloudDrive == null) {
-      throw CloudDriverException('CloudDriveService not initialized');
+      throw WdmmVfsException('CloudDriveService not initialized');
     }
     await _cloudDrive.verifyNewAccount(account, config);
   }

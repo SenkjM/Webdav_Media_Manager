@@ -14,7 +14,7 @@ import '../models/webdav_account.dart';
 import '../utils/credential_vault_crypto.dart';
 import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
-import 'cloud_drivers/driver_registry.dart';
+import 'wdmm_vfs/driver_registry.dart';
 import 'library_database.dart'; // only for one-shot sqflite→Core migrate helper
 import 'rust_core_service.dart';
 
@@ -533,7 +533,7 @@ class AccountsService extends ChangeNotifier {
       capabilities: capabilities ??
           (providerType == 'webdav'
               ? AccountCaps.all
-              : (cloudDriverSpec(providerType)?.capabilities ?? AccountCaps.list)),
+              : (wdmmVfsSpec(providerType)?.capabilities ?? AccountCaps.list)),
     );
     await _secure.write(key: '$_kPassPrefix${account.id}', value: password);
     await _upsertToCore(account); // throws on error
@@ -710,7 +710,7 @@ class AccountsService extends ChangeNotifier {
     for (final raw in list) {
       final m = Map<String, dynamic>.from(raw as Map);
       final providerType = m['providerType'] as String? ?? 'webdav';
-      if (providerType != 'webdav' && cloudDriverSpec(providerType) == null) {
+      if (providerType != 'webdav' && wdmmVfsSpec(providerType) == null) {
         continue;
       }
       final account = WebDavAccount(

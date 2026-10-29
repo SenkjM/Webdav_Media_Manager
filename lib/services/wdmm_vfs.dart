@@ -18,7 +18,7 @@ class AccountStatusTag {
   final String label;
 }
 
-abstract class CloudDriver {
+abstract class WdmmVfs {
   Future<void> init();
 
   /// 运行时能力位（包装驱动随源映射）；null = 用 spec 的静态表。
@@ -27,7 +27,7 @@ abstract class CloudDriver {
   /// 运行时类型名（账号列表 / 下拉显示用）。
   ///
   /// 包装驱动的类型名取决于它包住的源（如「百度网盘 Crypt」），静态的
-  /// [CloudDriverSpec.displayName] 表达不了。返回 null = 用静态表。
+  /// [WdmmVfsSpec.displayName] 表达不了。返回 null = 用静态表。
   /// 兼容层只读这个字符串，不知道也不需要知道它是怎么拼出来的。
   String? get runtimeTypeLabel => null;
 
@@ -64,7 +64,7 @@ abstract class CloudDriver {
   Future<List<CloudFileItem>> list(String path);
 
   /// 取单个条目；文件必须带 [CloudFileItem.rawUrl]（拿不到直链时抛
-  /// [CloudDriverException]，上层把真实原因透给用户）。
+  /// [WdmmVfsException]，上层把真实原因透给用户）。
   Future<CloudFileItem> get(String path);
 
   Future<void> mkdir(String path);
@@ -121,8 +121,8 @@ class CloudFileItem {
   final Map<String, String>? rawHeaders;
 }
 
-class CloudDriverException implements Exception {
-  const CloudDriverException(this.message, [this.cause]);
+class WdmmVfsException implements Exception {
+  const WdmmVfsException(this.message, [this.cause]);
 
   final String message;
   final Object? cause;
@@ -136,8 +136,8 @@ class CloudDriverException implements Exception {
 /// **重试没有意义**（同一份字节再拉一次还是坏的），下载队列据此直接判失败，
 /// 而不再退避重试。驱动负责把底层密码学库 / 传输层的这类失败翻译成它，
 /// 于是上层不必认识任何具体实现（分层：兼容层之上看不到驱动内部用什么）。
-class CloudDriverDataException extends CloudDriverException {
-  const CloudDriverDataException(super.message, [super.cause]);
+class WdmmVfsDataException extends WdmmVfsException {
+  const WdmmVfsDataException(super.message, [super.cause]);
 }
 
 /// 路径工具（与 worker driver 的 basename / dirname 同语义）。
@@ -162,20 +162,20 @@ String cloudDirname(String p) {
 }
 
 // ─── 驱动自描述层（99 §7.2.10）───────────────────────────────────
-// 每个驱动文件导出一个 CloudDriverSpec 常量：类型、显示名、能力遮罩、
-// 表单参数、构造与校验全部收在驱动文件里；注册表（cloud_drivers/
+// 每个驱动文件导出一个 WdmmVfsSpec 常量：类型、显示名、能力遮罩、
+// 表单参数、构造与校验全部收在驱动文件里；注册表（wdmm_vfs/
 // driver_registry.dart）只认这个形状。账号表单按 spec 通用渲染，兼容层
 // 只查表——新增一个盘 = 新增一个文件 + 注册表加一行（OpenList 同款）。
 // crypt 这类中间处理层以后同样实现 spec：create() 里把内层驱动包起来。
 
 /// 表单项基类：字段与开关按声明顺序渲染。
-sealed class CloudDriverFormItem {
-  const CloudDriverFormItem();
+sealed class WdmmVfsFormItem {
+  const WdmmVfsFormItem();
 }
 
 /// 文本字段（粘贴令牌 / 地址 / 密钥类）。
-class CloudDriverField extends CloudDriverFormItem {
-  const CloudDriverField({
+class WdmmVfsField extends WdmmVfsFormItem {
+  const WdmmVfsField({
     required this.key,
     required this.label,
     this.hint,
@@ -224,8 +224,8 @@ class CloudDriverField extends CloudDriverFormItem {
 }
 
 /// 下拉选择字段（如 crypt 的 filename_encryption）。
-class CloudDriverSelectField extends CloudDriverFormItem {
-  const CloudDriverSelectField({
+class WdmmVfsSelectField extends WdmmVfsFormItem {
+  const WdmmVfsSelectField({
     required this.key,
     required this.label,
     required this.options,
@@ -245,10 +245,10 @@ class CloudDriverSelectField extends CloudDriverFormItem {
 }
 
 /// 账号引用字段（包装驱动的源账号）：渲染为现有账号下拉（WebDAV + 云盘，
-/// 排除声明了 [CloudDriverSpec.isWrapper] 的类型防套娃），值为账号 id。
+/// 排除声明了 [WdmmVfsSpec.isWrapper] 的类型防套娃），值为账号 id。
 /// 选项来自运行时账号列表，由表单渲染器解析，spec 只声明占位。
-class CloudDriverAccountField extends CloudDriverFormItem {
-  const CloudDriverAccountField({
+class WdmmVfsAccountField extends WdmmVfsFormItem {
+  const WdmmVfsAccountField({
     required this.key,
     required this.label,
     this.required = false,
@@ -262,8 +262,8 @@ class CloudDriverAccountField extends CloudDriverFormItem {
 }
 
 /// 开关字段。
-class CloudDriverSwitchField extends CloudDriverFormItem {
-  const CloudDriverSwitchField({
+class WdmmVfsSwitchField extends WdmmVfsFormItem {
+  const WdmmVfsSwitchField({
     required this.key,
     required this.label,
     required this.subtitle,
@@ -317,8 +317,8 @@ abstract class CloudSource {
 }
 
 /// 兼容层注入给驱动的运行环境。
-class CloudDriverEnv {
-  const CloudDriverEnv({required this.resolveSource, this.resolveSourceByName});
+class WdmmVfsEnv {
+  const WdmmVfsEnv({required this.resolveSource, this.resolveSourceByName});
 
   /// 按账号 id 解析内容源（WebDAV 或云盘适配器）；源不存在返回 null。
   final CloudSource? Function(String accountId) resolveSource;
@@ -329,8 +329,8 @@ class CloudDriverEnv {
 }
 
 /// 驱动注册描述符：驱动的全部「对外知识」收在这里。
-abstract class CloudDriverSpec {
-  const CloudDriverSpec();
+abstract class WdmmVfsSpec {
+  const WdmmVfsSpec();
 
   /// provider_type 存库值（如 'baidu_netdisk'）。
   String get typeId;
@@ -348,16 +348,16 @@ abstract class CloudDriverSpec {
   bool get isWrapper => false;
 
   /// 动态表单项（顺序即界面顺序）。远程路径是通用字段，不在这里。
-  List<CloudDriverFormItem> get form;
+  List<WdmmVfsFormItem> get form;
 
   /// 驱动配置 JSON 里的**密文字段**键集合（账号凭证同步/备份的加密范围）。
   ///
-  /// 组成：表单声明（渲染为密码输入的 [CloudDriverField.obscure] 字段，
+  /// 组成：表单声明（渲染为密码输入的 [WdmmVfsField.obscure] 字段，
   /// 即「配置界面默认为密码的数据」）∪ [runtimeSecretKeys]（运行时轮换
   /// 的令牌缓存键）。新驱动加 obscure 字段自动纳入。
   Set<String> get secretFieldKeys => {
     for (final item in form)
-      if (item is CloudDriverField && item.obscure) item.key,
+      if (item is WdmmVfsField && item.obscure) item.key,
     ...runtimeSecretKeys,
   };
 
@@ -372,7 +372,7 @@ abstract class CloudDriverSpec {
 
   /// 解析某个开关字段的当前值，供渲染与保存共用（单一事实来源）。
   ///
-  /// 优先级：[values] 里的实时值 → 该开关声明的 [CloudDriverSwitchField.defaultValue]
+  /// 优先级：[values] 里的实时值 → 该开关声明的 [WdmmVfsSwitchField.defaultValue]
   /// → false。中间这一步不能省：表单控件重建时 [values] 可能缺键，此时若写死
   /// false，「默认开」的开关就会被当成关，联动字段被错误隐藏 / 停用，
   /// 且保存下来的值与界面显示相反（开关联动回退的根因）。
@@ -382,7 +382,7 @@ abstract class CloudDriverSpec {
     final live = values[key];
     if (live != null) return live;
     for (final item in form) {
-      if (item is CloudDriverSwitchField && item.key == key) {
+      if (item is WdmmVfsSwitchField && item.key == key) {
         return item.defaultValue;
       }
     }
@@ -391,28 +391,28 @@ abstract class CloudDriverSpec {
 
   /// 用表单值构造驱动实例。[onTokenUpdate] 收令牌轮换 patch（键值对），
   /// 兼容层负责持久化；[env] 供包装驱动做源解析用。
-  CloudDriver create(
+  WdmmVfs create(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   });
 
   /// 表单保存前的真连校验：默认构造实例并 init()（99 §7.3.1）。
   Future<void> verify(
     Map<String, dynamic> config, {
     void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    CloudDriverEnv? env,
+    WdmmVfsEnv? env,
   }) async {
     await create(config, onTokenUpdate: onTokenUpdate, env: env).init();
   }
 }
 
 /// 云盘账号 → [CloudSource]：包已注册的内层驱动，路径挂到浏览根。
-/// （WebDAV 账号的适配在 cloud_drivers/webdav_source.dart——那里才需要
+/// （WebDAV 账号的适配在 wdmm_vfs/webdav_source.dart——那里才需要
 /// 依赖 WebDavService，接口层保持零反向依赖。）
 class CloudAccountSource implements CloudSource {
   CloudAccountSource({
-    required CloudDriver driver,
+    required WdmmVfs driver,
     required String basePath,
     required int capabilities,
     String displayName = '',
@@ -421,7 +421,7 @@ class CloudAccountSource implements CloudSource {
        _capabilities = capabilities,
        displayName = displayName;
 
-  final CloudDriver _driver;
+  final WdmmVfs _driver;
 
   @override
   final String basePath;
@@ -460,7 +460,7 @@ class CloudAccountSource implements CloudSource {
   Future<void> copy(String srcPath, String dstDir, String newName) =>
       _driver.copy(_join(srcPath), _join(dstDir), newName);
 
-  // 云盘源不写：CloudDriver 接口无上传原语，源不可写 → crypt 也不继承 write。
+  // 云盘源不写：WdmmVfs 接口无上传原语，源不可写 → crypt 也不继承 write。
   // 未来某驱动补上传时在此转调，并给该驱动 spec.capabilities 加 write 位。
   @override
   Future<void> writeFile(
