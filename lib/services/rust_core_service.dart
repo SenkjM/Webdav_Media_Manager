@@ -242,6 +242,13 @@ class RustCoreService {
   static _ThreeStrToOneStrDart? _accountRename;
   static _TwoStrToOneStrDart? _accountRemove;
   static _TwoStrToOneStrDart? _accountGetEntry;
+  // B1 step 3 — copy/ensure_dir/content/status_tags exports.
+  static _ThreeStrToOneStrDart? _accountCopy;
+  static _TwoStrToOneStrDart? _accountEnsureDir;
+  static _ThreeStrToOneStrDart? _accountPutContent;
+  static _TwoStrToOneStrDart? _accountGetContent;
+  static _FourStrToOneStrDart? _accountGetContentRange;
+  static _OneStrToStrDart? _accountStatusTags;
 
   static void _loadSymbols(ffi.DynamicLibrary lib) {
     _freeString = lib
@@ -353,6 +360,24 @@ class RustCoreService {
         .asFunction();
     _accountGetEntry = lib
         .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_get_entry')
+        .asFunction();
+    _accountCopy = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_account_copy')
+        .asFunction();
+    _accountEnsureDir = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_ensure_dir')
+        .asFunction();
+    _accountPutContent = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_account_put_content')
+        .asFunction();
+    _accountGetContent = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_get_content')
+        .asFunction();
+    _accountGetContentRange = lib
+        .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_account_get_content_range')
+        .asFunction();
+    _accountStatusTags = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_status_tags')
         .asFunction();
   }
 
@@ -2802,6 +2827,106 @@ class RustCoreService {
     } finally {
       calloc.free(pAcc);
       calloc.free(pPath);
+    }
+  }
+
+  // ── B1 step 3 — content / copy / ensure_dir / status_tags ───────────────────
+
+
+  /// Server-side copy of [srcPath] to [dstPath] (account-absolute). Returns
+  /// `"ok"` or `"error:…"`. Null if the FFI symbol is unavailable.
+  static String? accountCopy(String accountId, String srcPath, String dstPath) {
+    if (!_ensureSymbols() || _accountCopy == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pSrc = srcPath.toNativeUtf8();
+    final pDst = dstPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountCopy!(pAcc, pSrc, pDst));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pSrc);
+      calloc.free(pDst);
+    }
+  }
+
+  /// Idempotent directory creation at [path]. Returns `"ok"` or `"error:…"`.
+  static String? accountEnsureDir(String accountId, String path) {
+    if (!_ensureSymbols() || _accountEnsureDir == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountEnsureDir!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Write [dataBase64] (standard base64, no line breaks) to remote [path].
+  /// Returns `"ok"` or `"error:…"`.
+  static String? accountPutContent(String accountId, String path, String dataBase64) {
+    if (!_ensureSymbols() || _accountPutContent == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    final pData = dataBase64.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountPutContent!(pAcc, pPath, pData));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+      calloc.free(pData);
+    }
+  }
+
+  /// Fetch full raw bytes of remote [path]. Returns JSON `{"data":"<base64>"}`
+  /// or `"error:…"`.
+  static String? accountGetContent(String accountId, String path) {
+    if (!_ensureSymbols() || _accountGetContent == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountGetContent!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Fetch byte range `[start, end]` (inclusive) of remote [path].
+  /// Pass the string form of [u64.maxValue] (`'18446744073709551615'`) for
+  /// [endStr] to read to end of file. Returns JSON `{"data":"<base64>"}`
+  /// or `"error:…"`.
+  static String? accountGetContentRange(
+    String accountId,
+    String path,
+    String startStr,
+    String endStr,
+  ) {
+    if (!_ensureSymbols() || _accountGetContentRange == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    final pStart = startStr.toNativeUtf8();
+    final pEnd = endStr.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountGetContentRange!(pAcc, pPath, pStart, pEnd));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+      calloc.free(pStart);
+      calloc.free(pEnd);
+    }
+  }
+
+  /// Short status labels for the accounts list. Returns JSON array
+  /// `[{"key":"…","label":"…"}, …]` (empty array when the driver has no
+  /// status API) or `"error:…"`.
+  static String? accountStatusTags(String accountId) {
+    if (!_ensureSymbols() || _accountStatusTags == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountStatusTags!(pAcc));
+    } finally {
+      calloc.free(pAcc);
     }
   }
 }
