@@ -329,7 +329,10 @@ class _AccountsScreenState extends State<AccountsScreen> {
     /// 已填内容都在，保存按钮恢复可点。
     Future<bool> validateAndPrepare() async {
       final name = nameCtrl.text.trim();
-      final isCloud = CloudDriveService.isCloudType(providerType);
+      // isCloud = has a Dart driver spec (webdav uses URL/username/password form fields,
+      // not driverConfig; B1 step 4: isCloudType now returns true for webdav too, so
+      // we check providerType directly for form-level distinctions).
+      final isCloud = providerType != 'webdav';
       if (name.isEmpty) {
         fail(l10n.accountFillName);
         return false;

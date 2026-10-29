@@ -47,8 +47,11 @@ class CloudDriveService extends ChangeNotifier {
     ),
   );
 
-  /// 'webdav' 之外的一切类型都算云盘 provider。
-  static bool isCloudType(String providerType) => providerType != 'webdav';
+  /// B1 step 4：所有 provider（含 webdav）都进 CloudDriveService，
+  /// 通过 Rust FFI 统一路由。旧义"webdav 之外才是云盘"已废弃——
+  /// 请勿用本方法区分"driverConfig 格式 vs 密码格式"，
+  /// 那类判断直接写 `providerType == 'webdav'`。
+  static bool isCloudType(String providerType) => true;
 
   /// 该账号是否由本服务接管（WebDavService 分流缝调用）。
   bool handles(String accountId) {
@@ -90,7 +93,6 @@ class CloudDriveService extends ChangeNotifier {
     final cfgs = <String, Map<String, dynamic>?>{};
     final fresh = <String, String>{};
     for (final a in accounts) {
-      if (!isCloudType(a.providerType)) continue;
       wanted.add(a);
       ids.add(a.id);
       final cfg = await _accounts.loadDriverConfig(a.id);
@@ -182,6 +184,12 @@ class CloudDriveService extends ChangeNotifier {
   }
 
   WdmmVfs _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
+    // B1 step 4: webdav has no Dart WdmmVfsSpec (no form verify needed — Rust
+    // webdav driver authenticates directly with Basic creds from Core), so it
+    // short-circuits straight to the FFI wrapper before the spec null-check.
+    if (a.providerType == 'webdav') {
+      return RustWdmmVfs(a);
+    }
     final spec = wdmmVfsSpec(a.providerType);
     if (spec == null) {
       throw WdmmVfsException('err.unknownDriverType|${a.providerType}');

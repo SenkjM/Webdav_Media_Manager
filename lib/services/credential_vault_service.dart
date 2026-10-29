@@ -4,7 +4,6 @@ import '../models/webdav_account.dart';
 import '../utils/l10n_host.dart';
 import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
-import 'cloud_drive_service.dart';
 import 'wdmm_vfs/driver_registry.dart';
 import 'credential_vault_codec.dart';
 import 'settings_service.dart';
@@ -186,7 +185,9 @@ class CredentialVaultService extends ChangeNotifier {
     // 账号凭证库：WebDAV 三件套 + 云盘驱动配置。云盘条目的密文字段
     // （spec.secretFieldKeys）逐字段加密，地址类字段保持明文可辨识。
     for (final a in _accounts.accounts) {
-      if (CloudDriveService.isCloudType(a.providerType)) {
+      // 云盘条目走驱动配置通道（判 providerType 而非 isCloudType，防止
+      // webdav 账号因 isCloudType=true 进错分支——webdav 用密码通道）。
+      if (a.providerType != 'webdav') {
         final spec = wdmmVfsSpec(a.providerType);
         final raw = await _accounts.loadDriverConfig(a.id) ?? const {};
         final stored = <String, dynamic>{};

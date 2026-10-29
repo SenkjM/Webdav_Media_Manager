@@ -13,7 +13,6 @@ import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
 import '../utils/l10n_host.dart';
 import 'accounts_service.dart';
-import 'cloud_drive_service.dart';
 import 'wdmm_vfs/driver_registry.dart';
 import '../utils/wmp_container.dart';
 import 'cache_service.dart';
@@ -173,7 +172,9 @@ class BackupService extends ChangeNotifier {
     // 字段（spec.secretFieldKeys，即表单 obscure）按口令逐字段加密；URL/
     // 名称/开关类字段保持明文，坏口令时账号与配置仍可恢复，仅密文留空。
     for (final a in _accounts.accounts) {
-      if (CloudDriveService.isCloudType(a.providerType)) {
+      // 云盘账号走驱动配置通道；webdav 账号走密码通道（判 providerType
+      // 而非 isCloudType，B1 step 4 后 isCloudType 对 webdav 也返回 true）。
+      if (a.providerType != 'webdav') {
         final spec = wdmmVfsSpec(a.providerType);
         final raw = await _accounts.loadDriverConfig(a.id) ?? const {};
         final cfg = <String, dynamic>{};
@@ -198,7 +199,6 @@ class BackupService extends ChangeNotifier {
         });
         continue;
       }
-      if (a.providerType != 'webdav') continue;
       final pass = await _accounts.passwordFor(a.id) ?? '';
       accounts.add({
         ...a.toMap(),
