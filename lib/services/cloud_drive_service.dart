@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:collection/collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
@@ -199,72 +199,32 @@ class CloudDriveService extends ChangeNotifier {
     return RustWdmmVfs(a);
   }
 
-  /// WebDAV 源工厂（crypt 的 WebDAV 源需要）。由装配层注入——兼容层
-  /// 只认 [CloudSource] 抽象，不反向依赖 WebDavService（保持解耦）。
-  CloudSource? Function(String accountId)? _webDavSourceFactory;
-
-  void attachWebDavSourceFactory(CloudSource? Function(String accountId) f) =>
-      _webDavSourceFactory = f;
-
-  /// 包装驱动等所需的源解析：WebDAV / 云盘账号各给一个适配器视图；
-  /// 源不存在返回 null（由驱动在浏览时报错，99 §7.5）。
-  CloudSource? _resolveSource(String accountId) {
-    final a = _accounts.accountById(accountId);
-    if (a == null) return null;
-    if (a.providerType == 'webdav') {
-      return _webDavSourceFactory?.call(accountId);
-    }
-    final driver = _drivers[accountId];
-    if (driver == null) return null;
-    final spec = wdmmVfsSpec(a.providerType);
-    return CloudAccountSource(
-      driver: driver,
-      basePath: WebDavAccount.normalizeRemotePath(a.remotePath),
-      capabilities: spec?.capabilities ?? AccountCaps.list,
-      displayName: spec?.displayName ?? a.providerType,
-    );
-  }
-
-  /// 源被删后按**名字**找回：重添同名账号即可恢复（真机反馈：
-  /// 报错只显示一长串源 id，用户即使重加源也接不上）。
-  CloudSource? _resolveSourceByName(String accountName) {
-    final a = _accounts.accounts
-        .where((x) => wdmmVfsSpec(x.providerType)?.isWrapper != true)
-        .where((x) => x.name.trim() == accountName.trim())
-        .firstOrNull;
-    if (a == null) return null;
-    return _resolveSource(a.id);
-  }
-
-  WdmmVfsEnv _buildEnv() => WdmmVfsEnv(
-    resolveSource: _resolveSource,
-    resolveSourceByName: _resolveSourceByName,
-  );
-
   /// 表单保存前的真连校验（99 §7.3.1：能换到 access_token 才保存）。
   /// 失败原样抛 [WdmmVfsException]，由表单展示给用户。
   ///
-  /// [config] 在校验期间会被**就地修改**（mutated in-place）：驱动 OAuth 换到的
-  /// access_token / drive_id / refresh_token 等令牌通过 onTokenUpdate 写回 config，
+  /// [config] 在校验期间会被**就地修改**（mutated in-place）：Rust 驱动 OAuth 换到的
+  /// access_token / drive_id / refresh_token 等令牌通过 token_patches 写回 config，
   /// 这样调用方在校验成功后直接把 config 传给 saveDriverConfig，Core 库里存的
   /// credentials 就已包含完整令牌，重启后可直接重建 driver（I2+aliyun drive_id）。
   Future<void> verifyNewAccount(
     WebDavAccount account,
     Map<String, dynamic> config,
   ) async {
-    final spec = wdmmVfsSpec(account.providerType);
-    if (spec == null) {
-      throw WdmmVfsException(
-        'err.unknownDriverType|${account.providerType}',
-      );
-    }
-    // onTokenUpdate merges OAuth token patches (access_token, drive_id, …) into
-    // config in-place so they are persisted when the caller saves to Core vault.
-    await spec.verify(
-      config,
-      onTokenUpdate: (patch) => config.addAll(patch),
-      env: _buildEnv(),
+    final raw = RustCoreService.accountVerify(
+      account.providerType,
+      jsonEncode(config),
     );
+    if (raw == null) {
+      throw WdmmVfsException('err.ffiUnavailable');
+    }
+    if (raw.startsWith('error:')) {
+      throw WdmmVfsException(raw.substring(6));
+    }
+    final result = jsonDecode(raw) as Map<String, dynamic>;
+    final patches = result['token_patches'] as Map<String, dynamic>?;
+    if (patches != null && patches.isNotEmpty) {
+      config.addAll(patches);
+    }
   }
 
   /// 该账号的驱动；未接入返回 null。

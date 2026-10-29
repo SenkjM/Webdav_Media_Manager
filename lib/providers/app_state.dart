@@ -35,7 +35,6 @@ import '../services/settings_service.dart';
 import '../services/sync_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/cloud_drive_service.dart';
-import '../services/wdmm_vfs/webdav_source.dart';
 import '../services/dlna_cast_service.dart';
 import '../services/rust_core_service.dart';
 import '../services/rust_dmr_prefs_service.dart';
@@ -55,13 +54,6 @@ class AppState extends ChangeNotifier {
     accounts = AccountsService();
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
-    // 包装驱动（如 Crypt）的 WebDAV 源解析：装配层注入工厂（99 §7.5），
-    // 兼容层不依赖 WebDavService。
-    cloudDrive.attachWebDavSourceFactory((id) {
-      final acc = accounts.accountById(id);
-      if (acc == null || acc.providerType != 'webdav') return null;
-      return WebDavAccountSource(webDav: webDav, account: acc);
-    });
     // Cover tier follows the music-library setting, so an embedded playlist
     // cover is the same art the library would show (docs/10 §4.2 cover policy).
     playlists = PlaylistService(webDav: webDav, covers: library.covers);

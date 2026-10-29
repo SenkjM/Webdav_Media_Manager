@@ -388,23 +388,6 @@ abstract class WdmmVfsSpec {
     }
     return false;
   }
-
-  /// 用表单值构造驱动实例。[onTokenUpdate] 收令牌轮换 patch（键值对），
-  /// 兼容层负责持久化；[env] 供包装驱动做源解析用。
-  WdmmVfs create(
-    Map<String, dynamic> config, {
-    void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    WdmmVfsEnv? env,
-  });
-
-  /// 表单保存前的真连校验：默认构造实例并 init()（99 §7.3.1）。
-  Future<void> verify(
-    Map<String, dynamic> config, {
-    void Function(Map<String, dynamic> patch)? onTokenUpdate,
-    WdmmVfsEnv? env,
-  }) async {
-    await create(config, onTokenUpdate: onTokenUpdate, env: env).init();
-  }
 }
 
 /// 云盘账号 → [CloudSource]：包已注册的内层驱动，路径挂到浏览根。

@@ -249,7 +249,7 @@ class RustCoreService {
   static _TwoStrToOneStrDart? _accountGetContent;
   static _FourStrToOneStrDart? _accountGetContentRange;
   static _OneStrToStrDart? _accountStatusTags;
-
+  static _TwoStrToOneStrDart? _accountVerify;
   static void _loadSymbols(ffi.DynamicLibrary lib) {
     _freeString = lib
         .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
@@ -378,6 +378,9 @@ class RustCoreService {
         .asFunction();
     _accountStatusTags = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_status_tags')
+        .asFunction();
+    _accountVerify = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_verify')
         .asFunction();
   }
 
@@ -2927,6 +2930,24 @@ class RustCoreService {
       return _readAndFreeString(_accountStatusTags!(pAcc));
     } finally {
       calloc.free(pAcc);
+    }
+  }
+
+  /// Verify a cloud account connection. For OAuth providers (aliyun, baidu)
+  /// this exchanges the refresh_token for access_token (+ drive_id for aliyun).
+  /// For other providers this performs a list('/') connection test.
+  ///
+  /// Returns `{"ok":true,"token_patches":{…}}` or `"error:…"`. Patches must
+  /// be merged into the config before calling [accountUpsert].
+  static String? accountVerify(String providerType, String configJson) {
+    if (!_ensureSymbols() || _accountVerify == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pCfg = configJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountVerify!(pType, pCfg));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pCfg);
     }
   }
 }

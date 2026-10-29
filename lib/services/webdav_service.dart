@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import 'package:webdav_client/webdav_client.dart' as webdav;
 
 import '../models/file_type_config.dart';
 import '../models/webdav_account.dart';
@@ -11,79 +9,53 @@ import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/cloud_drive_service.dart';
 import 'wdmm_vfs.dart';
-import '../utils/audio_extensions.dart';
-import 'resumable_download.dart';
 
-/// Thin WebDAV client wrapper.
+/// Thin WebDAV account registry + I/O delegation layer.
 ///
-/// Music playback NEVER uses remote streams — only [downloadToFile] /
-/// [readAsBytes] for cache population. Video playback *does* stream: it uses
-/// [buildStreamSource] to hand media_kit a direct URL + Basic auth headers.
+/// After B1 step 4 (isCloudType=true for all), ALL account I/O routes through
+/// [CloudDriveService] via the Rust VFS layer. This class retains the same API
+/// surface for the 84 call sites that reference it, but the webdav_client
+/// transport, resumable_download, and Dart driver implementations are gone.
 class WebDavService extends ChangeNotifier {
-  /// One live client per configured account.
-  ///
-  /// The music library must be able to fetch a track from **its own** source
-  /// account even while a different account is selected for browsing — switching
-  /// the network library's account used to drop the previous client, which broke
-  /// library downloads/streams whose files live on the other server.
-  final Map<String, _WebDavConn> _conns = {};
+  /// IDs of all configure()d accounts. Replaces the old _conns map — we no
+  /// longer build webdav.Client objects; the Rust VFS layer handles all I/O.
+  final Set<String> _registeredAccountIds = {};
 
   /// Account selected by the network library (browsing only).
   String? _activeAccountId;
   String? _lastError;
 
-  /// 云盘账号分流（99 §7.2.2）：非 'webdav' 的账号不在 _conns，
-  /// 对外方法先经 [_cloudOf] 转调 CloudDriveService。签名与对外行为不变。
   final CloudDriveService? _cloudDrive;
 
   WebDavService({CloudDriveService? cloudDrive}) : _cloudDrive = cloudDrive;
 
-  /// Whether the active account has a usable client.
-  bool get isConnected => _connFor(_activeAccountId) != null;
+  bool get isConnected => _registeredAccountIds.contains(_activeAccountId);
   String? get lastError => _lastError;
 
-  /// Base URL / id of the **active** account (browsing target).
-  String? get baseUrl => _connFor(_activeAccountId)?.url;
+  /// Always null — webdav raw URL is no longer needed; all I/O goes through
+  /// the Rust VFS layer. Kept to avoid breaking call sites that read it but
+  /// don't crash on null.
+  String? get baseUrl => null;
   String? get accountId => _activeAccountId;
 
-  /// All registered account ids.
-  List<String> get registeredAccountIds => _conns.keys.toList();
+  List<String> get registeredAccountIds => _registeredAccountIds.toList();
 
-  /// Whether [accountId] has a registered client.
-  bool hasAccount(String accountId) => _conns.containsKey(accountId);
+  bool hasAccount(String accountId) =>
+      _registeredAccountIds.contains(accountId);
 
-  /// Query capabilities bitmask for [accountId].
-  ///
-  /// Delegates to [CloudDriveService] for unified capability management.
-  /// Returns 0 for unknown accounts.
-  int capabilitiesFor(String accountId) {
-    return _cloudDrive?.capabilitiesFor(accountId) ?? 0;
-  }
+  int capabilitiesFor(String accountId) =>
+      _cloudDrive?.capabilitiesFor(accountId) ?? 0;
 
-  /// Check whether [accountId] has the specified [cap] capability.
-  ///
-  /// Delegates to [CloudDriveService] for unified capability checking.
-  bool can(String accountId, int cap) {
-    return _cloudDrive?.can(accountId, cap) ?? false;
-  }
+  bool can(String accountId, int cap) =>
+      _cloudDrive?.can(accountId, cap) ?? false;
 
-  /// Return the display label for an account's driver type.
-  ///
-  /// Delegates to [CloudDriveService] for unified type labeling.
-  String typeLabelFor(WebDavAccount account) {
-    return _cloudDrive?.typeLabelFor(account) ?? account.providerType;
-  }
+  String typeLabelFor(WebDavAccount account) =>
+      _cloudDrive?.typeLabelFor(account) ?? account.providerType;
 
-  /// 账号状态标签（账号列表展示的小 Chip）。转调 [CloudDriveService]，
-  /// 非云盘账号 / 未接入类型返回空。失败静默，不阻塞账号列表。
-  Future<List<AccountStatusTag>> statusTagsFor(String accountId) {
-    return _cloudDrive?.statusTagsFor(accountId) ??
-        Future.value(const <AccountStatusTag>[]);
-  }
+  Future<List<AccountStatusTag>> statusTagsFor(String accountId) =>
+      _cloudDrive?.statusTagsFor(accountId) ??
+      Future.value(const <AccountStatusTag>[]);
 
-  /// Verify configuration for a new account before registration.
-  ///
-  /// Delegates to [CloudDriveService] for unified driver verification.
   Future<void> verifyNewAccount(
     WebDavAccount account,
     Map<String, dynamic> config,
@@ -94,20 +66,9 @@ class WebDavService extends ChangeNotifier {
     await _cloudDrive.verifyNewAccount(account, config);
   }
 
-  _WebDavConn? _connFor(String? accountId) {
-    if (accountId == null) return null;
-    return _conns[accountId];
-  }
-
-  /// Resolve the client for [accountId], falling back to the active account when
-  /// no id is given (old call sites) or the requested account is unknown.
-  _WebDavConn? _resolve(String? accountId) {
-    if (accountId != null) return _conns[accountId];
-    return _conns[_activeAccountId];
-  }
-
-  /// Register/refresh a WebDAV account. Registers the client **without**
-  /// disturbing other accounts; pass [makeActive] to also select it for browsing.
+  /// Register an account. Credentials live in the Core vault (via
+  /// AccountsService._upsertToCore); we only need the id for routing and to
+  /// notify listeners so the UI can react.
   void configure({
     required String accountId,
     required String url,
@@ -115,101 +76,42 @@ class WebDavService extends ChangeNotifier {
     required String password,
     bool makeActive = true,
   }) {
-    final normalized = url.trim().replaceAll(RegExp(r'/+$'), '');
-    final client = webdav.newClient(
-      normalized,
-      user: username,
-      password: password,
-      debug: false,
-    );
-    client.setHeaders({
-      'accept-charset': 'utf-8',
-      'user-agent': 'WebdavMediaManager/1.0',
-    });
-    client.setConnectTimeout(15000);
-    client.setSendTimeout(30000);
-    client.setReceiveTimeout(120000);
-    _conns[accountId] = _WebDavConn(
-      accountId: accountId,
-      url: normalized,
-      username: username,
-      password: password,
-      client: client,
-    );
+    _registeredAccountIds.add(accountId);
     if (makeActive || _activeAccountId == null) _activeAccountId = accountId;
     _lastError = null;
     notifyListeners();
   }
 
-  /// Drop one account (deleted from settings) or everything when [accountId] is
-  /// null.
   void disconnect({String? accountId}) {
     if (accountId == null) {
-      _conns.clear();
+      _registeredAccountIds.clear();
       _activeAccountId = null;
     } else {
-      _conns.remove(accountId);
+      _registeredAccountIds.remove(accountId);
       if (_activeAccountId == accountId) {
-        _activeAccountId = _conns.keys.isEmpty ? null : _conns.keys.first;
+        _activeAccountId = _registeredAccountIds.isEmpty
+            ? null
+            : _registeredAccountIds.first;
       }
     }
     notifyListeners();
   }
 
-  /// Select the account the network library browses. Does not affect the music
-  /// library, whose rows carry their own accountId.
   void setActiveAccount(String accountId) {
     if (_activeAccountId == accountId) return;
     _activeAccountId = accountId;
     notifyListeners();
   }
 
-  /// Build a streaming source for media_kit. Returns null when the account has no
-  /// registered client.
-  ///
-  /// Uses HTTP Basic auth (the same credentials the WebDAV client uses); some
-  /// servers also accept a bearer/token flow, but Basic is what
-  /// `webdav_client`'s `BasicAuth` sends, so we mirror it for parity.
-  /// [kind] 决定这条流被媒体会话当成视频还是音乐。
-  ///
-  /// 默认按**网络库那套后缀配置**判定：命中音乐后缀（含用户在设置里加进去
-  /// 的）就是 music，其余一律 video。视频是这条管线的原始用途，不该因为某
-  /// 个后缀没被认出来就换成音乐用法。调用方也可以显式指定。
+  /// Always returns null — all accounts now use the async Rust-VFS path.
+  /// Callers must use [resolveStreamSource] instead.
   WebDavStreamSource? buildStreamSource({
     required String remotePath,
     required String name,
     required String accountId,
     StreamKind? kind,
-  }) {
-    final streamKind =
-        kind ??
-        (FileTypeConfig().categoryFor(name) == FileCategory.music
-            ? StreamKind.music
-            : StreamKind.video);
-    // 云盘账号：直链要异步取（驱动 get），请走 [resolveStreamSource]；这里 null。
-    if (_cloudOf(accountId) != null) return null;
-    final conn = _resolve(accountId);
-    if (conn == null) return null;
-    final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
-    final headers = <String, String>{'User-Agent': 'WebdavMediaManager/1.0'};
-    if (conn.username.isNotEmpty || conn.password.isNotEmpty) {
-      final token = base64Encode(
-        utf8.encode('${conn.username}:${conn.password}'),
-      );
-      headers['Authorization'] = 'Basic $token';
-    }
-    return WebDavStreamSource(
-      uri: uri,
-      headers: headers,
-      name: name,
-      remotePath: remotePath,
-      accountId: accountId,
-      kind: streamKind,
-    );
-  }
+  }) => null;
 
-  /// 流式源的异步统一入口：云盘账号要先取直链（驱动 get），
-  /// WebDAV 账号沿用同步 [buildStreamSource]。新代码一律用这个。
   Future<WebDavStreamSource?> resolveStreamSource({
     required String remotePath,
     required String name,
@@ -217,15 +119,8 @@ class WebDavService extends ChangeNotifier {
     StreamKind? kind,
   }) async {
     final cloud = _cloudOf(accountId);
-    if (cloud != null) {
-      return cloud.resolveStreamSource(
-        remotePath: remotePath,
-        name: name,
-        accountId: accountId,
-        kind: kind,
-      );
-    }
-    return buildStreamSource(
+    if (cloud == null) return null;
+    return cloud.resolveStreamSource(
       remotePath: remotePath,
       name: name,
       accountId: accountId,
@@ -233,119 +128,34 @@ class WebDavService extends ChangeNotifier {
     );
   }
 
-  /// PROPFIND / ping to verify credentials of one account.
   Future<bool> testConnection({required String accountId}) async {
     final cloud = _cloudOf(accountId);
-    if (cloud != null) {
-      final ok = await cloud.testConnection(accountId);
-      _lastError = ok ? null : 'err.driverNotReady';
-      notifyListeners();
-      return ok;
-    }
-    final conn = _resolve(accountId);
-    if (conn == null) {
+    if (cloud == null) {
       _lastError = 'err.webdavNotConfigured';
       notifyListeners();
       return false;
     }
-    final client = conn.client;
-    try {
-      await client.ping();
-      _lastError = null;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      try {
-        await client.readDir('/');
-        _lastError = null;
-        notifyListeners();
-        return true;
-      } catch (e2) {
-        _lastError = e2.toString();
-        notifyListeners();
-        return false;
-      }
-    }
+    final ok = await cloud.testConnection(accountId);
+    _lastError = ok ? null : 'err.driverNotReady';
+    notifyListeners();
+    return ok;
   }
 
-  /// List a directory on a specific account.
   Future<List<WebDavItem>> listDirectory(
     String accountId,
     String path, {
     FileTypeConfig? fileTypes,
-  }) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) {
-      return cloud.listDirectory(accountId, path, fileTypes: fileTypes);
-    }
-    final client = _requireClient(accountId);
-    final types = fileTypes ?? FileTypeConfig();
-    final normalized = path.isEmpty ? '/' : path;
-    final files = await client.readDir(normalized);
-    final items = <WebDavItem>[];
-    for (final f in files) {
-      final name = f.name ?? '';
-      if (name.isEmpty || name == '.' || name == '..') continue;
-      var itemPath = f.path ?? '';
-      if (itemPath.isEmpty) {
-        itemPath = normalized.endsWith('/')
-            ? '$normalized$name'
-            : '$normalized/$name';
-      }
-      if (!itemPath.startsWith('/')) itemPath = '/$itemPath';
-      final isDir = f.isDir ?? false;
-      items.add(
-        WebDavItem(
-          name: name,
-          path: isDir && !itemPath.endsWith('/') ? '$itemPath/' : itemPath,
-          isDirectory: isDir,
-          size: f.size,
-          modified: f.mTime,
-          category: isDir ? FileCategory.other : types.categoryFor(name),
-        ),
-      );
-    }
-    items.sort((a, b) {
-      if (a.isDirectory != b.isDirectory) {
-        return a.isDirectory ? -1 : 1;
-      }
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
-    return items;
-  }
+  }) => _requireCloud(accountId).listDirectory(
+    accountId,
+    path,
+    fileTypes: fileTypes,
+  );
 
-  /// 单文件 PROPFIND：只取条目元数据（crypt 的 WebDAV 源适配层用，
-  /// 列表接口拿不到单个远端文件的大小）。
-  Future<WebDavItem?> statPath(String accountId, String path) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) {
-      // 云盘账号：driver.get() 不返回列表式 size 也无妨——crypt 源适配层
-      // 不会对云盘账号走这里（云盘源走 CloudAccountSource）。
-      return null;
-    }
-    final client = _requireClient(accountId);
-    final normalized = path.isEmpty ? '/' : path;
-    final f = await client.readProps(normalized);
-    final name = (f.name ?? '').isNotEmpty
-        ? f.name!
-        : normalized.split('/').last;
-    final isDir = f.isDir ?? false;
-    var itemPath = f.path ?? '';
-    if (itemPath.isEmpty) itemPath = normalized;
-    if (!itemPath.startsWith('/')) itemPath = '/$itemPath';
-    return WebDavItem(
-      name: name,
-      path: isDir && !itemPath.endsWith('/') ? '$itemPath/' : itemPath,
-      isDirectory: isDir,
-      size: f.size,
-      modified: f.mTime,
-      category: isDir ? FileCategory.other : FileTypeConfig().categoryFor(name),
-    );
-  }
+  /// Single-entry stat. Cloud accounts resolve metadata via the Rust VFS
+  /// get(); returns null — callers that need metadata should use listDirectory
+  /// on the parent instead.
+  Future<WebDavItem?> statPath(String accountId, String path) async => null;
 
-  /// Download a remote file into [localFile] **from a specific account**.
-  /// Never used for streaming playback.
-  /// [resumeFrom] > 0 表示复用半截文件续传（见 resumable_download.dart）。
   Future<void> downloadToFile(
     String accountId,
     String remotePath,
@@ -358,112 +168,49 @@ class WebDavService extends ChangeNotifier {
     int? expectedRemoteSize,
     DateTime? expectedRemoteModified,
     void Function(int size, DateTime? modified)? onIdentity,
-  }) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) {
-      return cloud.downloadToFile(
-        accountId,
-        remotePath,
-        localFile,
-        onProgress: onProgress,
-        cancelToken: cancelToken,
-        resumeFrom: resumeFrom,
-        useCryptSequentialDownload: useCryptSequentialDownload,
-        onMode: onMode,
-        expectedRemoteSize: expectedRemoteSize,
-        expectedRemoteModified: expectedRemoteModified,
-        onIdentity: onIdentity,
-      );
-    }
-    final conn = _resolve(accountId);
-    if (conn == null) {
-      throw StateError('err.accountNotConnected|$accountId');
-    }
-    await localFile.parent.create(recursive: true);
-    // webdav_client 的 read2File 不支持 Range，续传要自己走 dio；认证头与
-    // buildStreamSource 保持同一套（Basic）。
-    final uri = '${conn.url}${encodeWebDavPath(remotePath)}';
-    final headers = <String, String>{'User-Agent': 'WebdavMediaManager/1.0'};
-    if (conn.username.isNotEmpty || conn.password.isNotEmpty) {
-      final token = base64Encode(
-        utf8.encode('${conn.username}:${conn.password}'),
-      );
-      headers['Authorization'] = 'Basic $token';
-    }
-    final dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 20)));
-    try {
-      await downloadResumable(
-        dio,
-        uri,
-        headers,
-        localFile,
-        resumeFrom: resumeFrom,
-        onProgress: onProgress,
-        cancelToken: cancelToken,
-      );
-    } finally {
-      dio.close();
-    }
-  }
+  }) => _requireCloud(accountId).downloadToFile(
+    accountId,
+    remotePath,
+    localFile,
+    onProgress: onProgress,
+    cancelToken: cancelToken,
+    resumeFrom: resumeFrom,
+    useCryptSequentialDownload: useCryptSequentialDownload,
+    onMode: onMode,
+    expectedRemoteSize: expectedRemoteSize,
+    expectedRemoteModified: expectedRemoteModified,
+    onIdentity: onIdentity,
+  );
 
-  Future<Uint8List> readAsBytes(String accountId, String remotePath) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.readAsBytes(accountId, remotePath);
-    final client = _requireClient(accountId);
-    final data = await client.read(remotePath);
-    return Uint8List.fromList(data);
-  }
+  Future<Uint8List> readAsBytes(String accountId, String remotePath) =>
+      _requireCloud(accountId).readAsBytes(accountId, remotePath);
 
-  /// Upload bytes to remote path on a specific account.
   Future<void> writeBytes(
     String accountId,
     String remotePath,
     Uint8List data,
-  ) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.writeBytes(accountId, remotePath, data);
-    final client = _requireClient(accountId);
-    await client.write(remotePath, data);
-  }
+  ) => _requireCloud(accountId).writeBytes(accountId, remotePath, data);
 
-  /// Stream a local file to [remotePath] on a specific account.
-  ///
-  /// [writeBytes] holds the whole payload in memory; this one streams from disk
-  /// and forwards byte progress, so a large archive can be uploaded straight
-  /// from a temp file. Cloud-drive accounts have no upload primitive at all
-  /// (99 §7.2.1) and fail with `err.cloudWriteDisabled`.
   Future<void> writeFromFile(
     String accountId,
     String remotePath,
     String localPath, {
     void Function(int count, int total)? onProgress,
     CancelToken? cancelToken,
-  }) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) {
-      return cloud.writeFromFile(
-        accountId,
-        remotePath,
-        localPath,
-        onProgress: onProgress,
-        cancelToken: cancelToken,
-      );
-    }
-    final client = _requireClient(accountId);
-    await client.writeFromFile(
-      localPath,
-      remotePath,
-      onProgress: onProgress,
-      cancelToken: cancelToken,
-    );
-  }
+  }) => _requireCloud(accountId).writeFromFile(
+    accountId,
+    remotePath,
+    localPath,
+    onProgress: onProgress,
+    cancelToken: cancelToken,
+  );
 
-  /// Stream an in-memory/channel-produced byte stream to [remotePath].
+  /// Stream an in-memory byte stream to [remotePath].
   ///
-  /// [writeFromFile] sources its stream from a local file; this one takes an
-  /// arbitrary [Stream<List<int>>] — used by the crypt upload path, where the
-  /// ciphertext is produced on the fly and never touches disk. [length] is the
-  /// total byte count (Content-Length).
+  /// Upload is disabled for all drivers (PLAN §7.2.1 — AccountCaps.write not
+  /// granted). This method is retained for API surface compatibility with the
+  /// crypt upload path (WebDavAccountSource.writeFile); it is never reached
+  /// because the UI does not expose the upload action.
   Future<void> writeStream(
     String accountId,
     String remotePath,
@@ -471,93 +218,41 @@ class WebDavService extends ChangeNotifier {
     int length, {
     void Function(int count, int total)? onProgress,
     CancelToken? cancelToken,
-  }) async {
-    final client = _requireClient(accountId);
-    await client.c.wdWriteWithStream(
-      client,
-      remotePath,
-      data,
-      length,
-      onProgress: onProgress,
-      cancelToken: cancelToken,
-    );
-  }
+  }) async => throw WdmmVfsException('err.cloudWriteDisabled');
 
-  /// Ensure directory exists (mkdirAll) on a specific account.
-  Future<void> ensureDirectory(String accountId, String path) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.ensureDirectory(accountId, path);
-    final client = _requireClient(accountId);
-    var normalized = path.trim();
-    if (normalized.isEmpty) return;
-    if (!normalized.endsWith('/')) normalized = '$normalized/';
-    await client.mkdirAll(normalized);
-  }
+  Future<void> ensureDirectory(String accountId, String path) =>
+      _requireCloud(accountId).ensureDirectory(accountId, path);
 
-  Future<void> createFolder(String accountId, String path) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.createFolder(accountId, path);
-    final client = _requireClient(accountId);
-    await client.mkdir(path);
-  }
+  Future<void> createFolder(String accountId, String path) =>
+      _requireCloud(accountId).createFolder(accountId, path);
 
-  Future<void> deletePath(String accountId, String path) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.deletePath(accountId, path);
-    final client = _requireClient(accountId);
-    await client.remove(path);
-  }
+  Future<void> deletePath(String accountId, String path) =>
+      _requireCloud(accountId).deletePath(accountId, path);
 
-  /// 复制到另一个路径（WebDAV COPY）。文件夹会被整棵复制。
   Future<void> renamePath(
     String accountId,
     String oldPath,
     String newPath, {
     bool overwrite = false,
-  }) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) {
-      return cloud.renamePath(
-        accountId,
-        oldPath,
-        newPath,
-        overwrite: overwrite,
-      );
-    }
-    final client = _requireClient(accountId);
-    await client.rename(oldPath, newPath, overwrite);
-  }
+  }) => _requireCloud(accountId).renamePath(
+    accountId,
+    oldPath,
+    newPath,
+    overwrite: overwrite,
+  );
 
   Future<void> copyPath(
     String accountId,
     String oldPath,
     String newPath,
-  ) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.copyPath(accountId, oldPath, newPath);
-    final client = _requireClient(accountId);
-    // Overwrite=false：目标已存在时让服务端报错（412 / 409），由上层先算好不冲突的名字。
-    await client.copy(oldPath, newPath, false);
-  }
+  ) => _requireCloud(accountId).copyPath(accountId, oldPath, newPath);
 
-  /// 移动（WebDAV MOVE）。语义等同重命名，但可以跨目录。
   Future<void> movePath(
     String accountId,
     String oldPath,
     String newPath,
-  ) async {
-    final cloud = _cloudOf(accountId);
-    if (cloud != null) return cloud.movePath(accountId, oldPath, newPath);
-    final client = _requireClient(accountId);
-    await client.rename(oldPath, newPath, false);
-  }
+  ) => _requireCloud(accountId).movePath(accountId, oldPath, newPath);
 
-  /// Recursively collect **every** file under [folderPath] (directories are not
-  /// returned, they are only walked).
-  ///
-  /// [onlyAudio] keeps the old audio-only behaviour for the cache path; the
-  /// plain download path needs everything, because 「下载整个文件夹」 means all
-  /// of it, not just the tracks.
   Future<List<WebDavItem>> collectFilesRecursive(
     String accountId,
     String folderPath, {
@@ -580,27 +275,25 @@ class WebDavService extends ChangeNotifier {
     return result;
   }
 
-  /// 分流缝：云盘账号返回 [CloudDriveService]，WebDAV 账号返回 null。
+  /// Returns [CloudDriveService] for any registered account; null when the
+  /// cloud service is not initialised or the account is unknown.
   CloudDriveService? _cloudOf(String? accountId) {
     final cd = _cloudDrive;
     if (cd == null || accountId == null) return null;
     return cd.handles(accountId) ? cd : null;
   }
 
-  webdav.Client _requireClient(String accountId) {
-    final conn = _conns[accountId];
-    if (conn == null) {
-      throw UnknownWebDavAccountException(accountId);
-    }
-    return conn.client;
+  CloudDriveService _requireCloud(String accountId) {
+    final cloud = _cloudOf(accountId);
+    if (cloud == null) throw UnknownWebDavAccountException(accountId);
+    return cloud;
   }
 }
 
 /// Thrown when an operation targets an account that is no longer configured.
 ///
-/// Distinct from a WebDAV 404: it means the *server* is missing (deleted
-/// account), so the UI can say "来源网盘已移除" instead of showing a confusing
-/// "file not found" from whatever account happened to be selected.
+/// Distinct from a VFS 404: it means the source account was deleted, so the
+/// UI can say "来源网盘已移除" instead of a confusing "file not found".
 class UnknownWebDavAccountException implements Exception {
   const UnknownWebDavAccountException(this.accountId);
 
@@ -612,25 +305,3 @@ class UnknownWebDavAccountException implements Exception {
 
 /// Cancel token for in-flight downloads (dio).
 typedef DownloadCancelToken = CancelToken;
-
-/// One configured WebDAV account: its client plus the credentials needed to
-/// build a streaming URL / Basic auth header for it.
-///
-/// Kept per account because the same file can live on several servers and the
-/// music library must be able to reach **its own** source account regardless of
-/// which account the network library is currently browsing.
-class _WebDavConn {
-  const _WebDavConn({
-    required this.accountId,
-    required this.url,
-    required this.username,
-    required this.password,
-    required this.client,
-  });
-
-  final String accountId;
-  final String url;
-  final String username;
-  final String password;
-  final webdav.Client client;
-}
