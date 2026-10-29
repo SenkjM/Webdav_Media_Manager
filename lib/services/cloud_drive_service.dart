@@ -235,6 +235,11 @@ class CloudDriveService extends ChangeNotifier {
 
   /// 表单保存前的真连校验（99 §7.3.1：能换到 access_token 才保存）。
   /// 失败原样抛 [WdmmVfsException]，由表单展示给用户。
+  ///
+  /// [config] 在校验期间会被**就地修改**（mutated in-place）：驱动 OAuth 换到的
+  /// access_token / drive_id / refresh_token 等令牌通过 onTokenUpdate 写回 config，
+  /// 这样调用方在校验成功后直接把 config 传给 saveDriverConfig，Core 库里存的
+  /// credentials 就已包含完整令牌，重启后可直接重建 driver（I2+aliyun drive_id）。
   Future<void> verifyNewAccount(
     WebDavAccount account,
     Map<String, dynamic> config,
@@ -245,7 +250,13 @@ class CloudDriveService extends ChangeNotifier {
         'err.unknownDriverType|${account.providerType}',
       );
     }
-    await spec.verify(config, env: _buildEnv());
+    // onTokenUpdate merges OAuth token patches (access_token, drive_id, …) into
+    // config in-place so they are persisted when the caller saves to Core vault.
+    await spec.verify(
+      config,
+      onTokenUpdate: (patch) => config.addAll(patch),
+      env: _buildEnv(),
+    );
   }
 
   /// 该账号的驱动；未接入返回 null。
