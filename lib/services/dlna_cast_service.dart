@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../screens/video_player_screen.dart' show VideoQueueSeed;
+import 'dlna_cast_channel.dart';
 import 'dlna_queue_controller.dart';
 import 'rust_proxy_stream_bridge.dart';
 import 'rust_dmr_prefs_service.dart';
@@ -223,6 +224,10 @@ class DlnaCastService extends ChangeNotifier {
     _state = DlnaCastState.discovering;
     notifyListeners();
 
+    // Acquire Android MulticastLock so the kernel forwards SSDP multicast
+    // packets to the Dart socket. No-op on non-Android platforms.
+    unawaited(DlnaCastChannel.start());
+
     try {
       _ssdpSocket = await RawDatagramSocket.bind(
         InternetAddress.anyIPv4,
@@ -258,6 +263,8 @@ class DlnaCastService extends ChangeNotifier {
     _discoveryTimeout = null;
     _ssdpSocket?.close();
     _ssdpSocket = null;
+    // Release Android MulticastLock when discovery ends.
+    unawaited(DlnaCastChannel.stop());
     if (_state == DlnaCastState.discovering) {
       _state = DlnaCastState.idle;
       notifyListeners();

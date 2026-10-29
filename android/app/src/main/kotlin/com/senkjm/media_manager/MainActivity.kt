@@ -240,6 +240,56 @@ class MainActivity : AudioServiceFragmentActivity() {
             }
         }
         registerDownloadKeepAliveChannel(flutterEngine)
+        registerDlnaCastChannel(flutterEngine)
+    }
+
+    /**
+     * Thin channel for DLNA cast lifecycle: acquires/releases the Wi-Fi
+     * MulticastLock via [DlnaCastService]. Discovery itself stays in Dart
+     * (RawDatagramSocket); Android only needs the lock so the kernel delivers
+     * multicast packets to the app socket.
+     */
+    private fun registerDlnaCastChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DlnaCastService.CHANNEL,
+        )
+        DlnaCastService.flutterChannel = channel
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    try {
+                        ContextCompat.startForegroundService(
+                            this,
+                            DlnaCastService.startIntent(this),
+                        )
+                        result.success(mapOf("ok" to true))
+                    } catch (e: Exception) {
+                        result.success(
+                            mapOf(
+                                "ok" to false,
+                                "error" to "${e.javaClass.simpleName}: ${e.message}",
+                            ),
+                        )
+                    }
+                }
+                "stop" -> {
+                    try {
+                        startService(DlnaCastService.stopIntent(this))
+                        result.success(mapOf("ok" to true))
+                    } catch (e: Exception) {
+                        result.success(
+                            mapOf(
+                                "ok" to false,
+                                "error" to "${e.javaClass.simpleName}: ${e.message}",
+                            ),
+                        )
+                    }
+                }
+                "isRunning" -> result.success(mapOf("running" to DlnaCastService.isRunning))
+                else -> result.notImplemented()
+            }
+        }
     }
 
     /**
