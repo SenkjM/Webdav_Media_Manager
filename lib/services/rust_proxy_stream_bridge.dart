@@ -98,7 +98,8 @@ class RustProxyStreamBridge {
     String? lanHost,
   }) async {
     // Ensure the proxy singleton is running. Idempotent.
-    final proxyPort = RustProxyBridge.start();
+    // TODO(B3.d): use LAN bind mode for DLNA cast scenarios.
+    final proxyPort = RustProxyBridge.start(bindMode: 'loopback');
     if (proxyPort == null) {
       throw StateError(
         '[RustProxyStreamBridge] proxy could not be started '

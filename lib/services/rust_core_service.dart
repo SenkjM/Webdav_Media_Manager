@@ -81,8 +81,8 @@ typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
 typedef _StrInt64ToStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, int);
 
-typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
-typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(int);
+typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Uint16);
+typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, int);
 typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
 typedef _ProxyNoArgStrDart   = ffi.Pointer<Utf8> Function();
 typedef _ProxyPortNative  = ffi.Int32 Function();
@@ -1766,11 +1766,30 @@ class RustCoreService {
   /// Returns null if the native library is unavailable.
   ///
   /// Do NOT call directly — use [RustProxyBridge] which enforces the flag.
-  static String? proxyStart({int port = 0}) {
+  /// Start the local HTTP proxy with the given bind mode and port.
+  ///
+  /// [bindMode] specifies where the proxy listens:
+  /// - `"loopback"` — 127.0.0.1 (localhost only; DLNA devices cannot reach)
+  /// - `"lan_any"` — 0.0.0.0 (all interfaces; OS routes to appropriate one)
+  /// - `"lan_if:<ip>"` — specific interface (e.g., `"lan_if:192.168.1.100"`)
+  /// - `"explicit:<addr>"` — exact SocketAddr (e.g., `"explicit:192.168.1.100:8080"`)
+  ///
+  /// [port] — port number; use 0 to let OS assign a free port (ignored for `explicit:<addr>`).
+  ///
+  /// Returns the bound port as a string, or an `"error:<message>"` string on failure,
+  /// or null if the native library is unavailable.
+  ///
+  /// Idempotent — if the proxy is already running, returns its current port.
+  static String? proxyStart({required String bindMode, int port = 0}) {
     if (!_ensureSymbols()) return null;
     _loadProxySymbolsSafe();
     if (_proxyStart == null) return null;
-    return _readAndFreeString(_proxyStart!(port));
+    final cBindMode = bindMode.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyStart!(cBindMode.cast(), port));
+    } finally {
+      malloc.free(cBindMode);
+    }
   }
 
   /// Stop the local HTTP proxy. No-op if not running.

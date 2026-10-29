@@ -32,21 +32,29 @@ class RustProxyBridge {
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  /// Start the local HTTP proxy on `127.0.0.1` at [port] (0 = OS-assigned).
+  /// Start the local HTTP proxy with the given bind mode and port.
+  ///
+  /// [bindMode] specifies where the proxy listens:
+  /// - `"loopback"` — 127.0.0.1 (localhost only; DLNA devices cannot reach)
+  /// - `"lan_any"` — 0.0.0.0 (all interfaces; OS routes to appropriate one)
+  /// - `"lan_if:<ip>"` — specific interface (e.g., `"lan_if:192.168.1.100"`)
+  /// - `"explicit:<addr>"` — exact SocketAddr (e.g., `"explicit:192.168.1.100:8080"`)
+  ///
+  /// [port] — port number; use 0 to let OS assign (ignored for `explicit:<addr>`).
   ///
   /// Returns the bound port as an integer on success, or null on failure /
   /// when [kRustProxyEnabled] is false.
   ///
   /// Idempotent — if the proxy is already running, returns its current port.
-  static int? start({int port = 0}) {
+  static int? start({required String bindMode, int port = 0}) {
     if (!kRustProxyEnabled) return null;
-    final result = RustCoreService.proxyStart(port: port);
+    final result = RustCoreService.proxyStart(bindMode: bindMode, port: port);
     if (result == null || result.startsWith('error:')) {
       debugPrint('[RustProxyBridge] start failed: $result');
       return null;
     }
     final p = int.tryParse(result);
-    debugPrint('[RustProxyBridge] started on port $p');
+    debugPrint('[RustProxyBridge] started on port $p (bind: $bindMode)');
     return p;
   }
 

@@ -562,7 +562,8 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
   }
 
   void _start() {
-    final p = RustProxyBridge.start();
+    // TODO(B3.d): use LAN bind mode for DLNA cast scenarios.
+    final p = RustProxyBridge.start(bindMode: 'loopback');
     setState(() => _port = p ?? -1);
     if (p == null) {
       AppSnack.show(context, 'Rust proxy start failed (see logs).');
