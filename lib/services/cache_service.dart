@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/cache_policy.dart';
 import '../models/library_track.dart';
@@ -25,14 +24,11 @@ import 'cache_index_db.dart';
 /// Cache group membership (CUE albums) lives in [CacheIndexDb] (`cache_index.db`)
 /// since schema v2. [CacheService] never writes groups to `music_library.db`.
 class CacheService extends ChangeNotifier {
-  CacheService({SharedPreferences? prefs, CacheIndexDb? indexDb})
-    : _prefs = prefs,
-      _index = indexDb;
+  CacheService({CacheIndexDb? indexDb}) : _index = indexDb;
 
-  // Legacy prefs key prefixes moved to [cache_group_codec.dart]; only used here
-  // for the one-time migration in [_migrateLegacyPrefs].
+  // Legacy prefs key prefixes moved to [cache_group_codec.dart]; the one-time
+  // migration from prefs to cache_index.db was completed in prior versions.
 
-  SharedPreferences? _prefs;
   CacheIndexDb? _index;
   Directory? _cacheDir;
   Directory? _mangaCacheDir;
@@ -44,7 +40,6 @@ class CacheService extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    _prefs ??= await SharedPreferences.getInstance();
     final root = await getApplicationSupportDirectory();
     _cacheDir = Directory(p.join(root.path, 'music_cache'));
     if (!await _cacheDir!.exists()) {
@@ -61,42 +56,6 @@ class CacheService extends ChangeNotifier {
       await idx.database; // triggers onCreate/onUpgrade if schema is stale
       final docs = await getApplicationDocumentsDirectory();
       await idx.migrateGroupsFromLibraryDb(p.join(docs.path, 'music_library.db'));
-    }
-    await _migrateLegacyPrefs();
-  }
-
-  /// One-time move of the legacy prefs group membership into
-  /// `cache_index.db` (`cache_groups`), then drop the old keys.
-  ///
-  /// The legacy `cache_group_*` keys are `String.hashCode`-suffixed: the
-  /// member lists (stored in the value) are recoverable, but the per-path LRU
-  /// `cache_access_*` timestamps are not — those keys are simply removed and
-  /// expiry falls back to file mtime (the existing behaviour when no timestamp
-  /// is recorded).
-  Future<void> _migrateLegacyPrefs() async {
-    final prefs = _prefs;
-    final idx = _index;
-    if (prefs == null || idx == null) return;
-
-    final keys = prefs.getKeys();
-    final entries = <String, String>{};
-    for (final k in keys) {
-      // Legacy preferences may contain bool/int values under keys that share
-      // the cache prefix. Only string values are cache-group payloads.
-      final v = prefs.get(k);
-      if (v is String) entries[k] = v;
-    }
-
-    final groups = parseLegacyCacheGroups(entries);
-    for (final g in groups) {
-      await idx.bindCacheGroupMembers(groupId: g.groupId, identities: g.members);
-    }
-
-    for (final k in keys) {
-      if (k.startsWith(legacyCacheGroupKeyPrefix) ||
-          k.startsWith(legacyCacheAccessKeyPrefix)) {
-        await prefs.remove(k);
-      }
     }
   }
 

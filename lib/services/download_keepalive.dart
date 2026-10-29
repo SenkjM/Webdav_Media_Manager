@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:webdav_media_manager/services/rust_core_service.dart';
 
 /// Method channel shared with `DownloadKeepAliveService`.
 const String kDownloadKeepAliveChannel =
@@ -36,27 +36,30 @@ abstract class DownloadKeepAliveSuppressionStore {
   Future<void> write(DateTime? until);
 }
 
-/// Default store: one `SharedPreferences` entry.
-class PrefsDownloadKeepAliveSuppressionStore
+/// Default store: one Rust KV entry.
+class KvDownloadKeepAliveSuppressionStore
     implements DownloadKeepAliveSuppressionStore {
   static const String key = 'download_keepalive_suppress_until';
 
   @override
-  Future<DateTime?> read() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getInt(key);
-    if (raw == null) return null;
-    return DateTime.fromMillisecondsSinceEpoch(raw);
+  Future<DateTime?> read() {
+    final raw = RustCoreService.kvGet(key);
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) {
+      return Future.value(null);
+    }
+    final ms = int.tryParse(raw);
+    if (ms == null) return Future.value(null);
+    return Future.value(DateTime.fromMillisecondsSinceEpoch(ms));
   }
 
   @override
-  Future<void> write(DateTime? until) async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> write(DateTime? until) {
     if (until == null) {
-      await prefs.remove(key);
+      RustCoreService.kvDelete(key);
     } else {
-      await prefs.setInt(key, until.millisecondsSinceEpoch);
+      RustCoreService.kvSet(key, until.millisecondsSinceEpoch.toString());
     }
+    return Future.value();
   }
 }
 
@@ -96,7 +99,7 @@ class DownloadKeepAlive {
     DownloadKeepAliveBridge? bridge,
     DownloadKeepAliveSuppressionStore? suppression,
   }) : _injected = bridge,
-       _suppression = suppression ?? PrefsDownloadKeepAliveSuppressionStore() {
+       _suppression = suppression ?? KvDownloadKeepAliveSuppressionStore() {
     unawaited(_restoreSuppression());
   }
 

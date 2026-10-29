@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/directory_walk.dart';
 import '../models/cache_policy.dart';
@@ -31,10 +30,8 @@ import '../models/manga_build.dart';
 /// WebDAV credentials live in AccountsService / flutter_secure_storage.
 class SettingsService extends ChangeNotifier {
   SettingsService({
-    SharedPreferences? prefs,
     FlutterSecureStorage? secureStorage,
-  }) : _prefs = prefs,
-       _secure = secureStorage ?? const FlutterSecureStorage();
+  }) : _secure = secureStorage ?? const FlutterSecureStorage();
 
   static const _kRetention = 'cache_retention';
   static const _kMusicCacheMaxMb = 'music_cache_max_mb';
@@ -281,7 +278,6 @@ class SettingsService extends ChangeNotifier {
   /// hang below this one directory.
   static const String defaultSyncRemoteRoot = '/WebdavMediaManager/';
 
-  SharedPreferences? _prefs;
   final FlutterSecureStorage _secure;
   CacheRetention _retention = CacheRetention.oneWeek;
 
@@ -435,8 +431,7 @@ class SettingsService extends ChangeNotifier {
   Future<void> setAppThemeMode(AppThemeMode value) async {
     if (value == _appThemeMode) return;
     _appThemeMode = value;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kThemeMode, value.storageKey);
+    RustCoreService.kvSet(_kThemeMode, value.storageKey);
     notifyListeners();
   }
 
@@ -449,8 +444,7 @@ class SettingsService extends ChangeNotifier {
     final argb = value.toARGB32() | 0xFF000000;
     if (argb == _themeSeedArgb) return;
     _themeSeedArgb = argb;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kThemeSeed, argb);
+    RustCoreService.kvSet(_kThemeSeed, argb.toString());
     notifyListeners();
   }
 
@@ -629,7 +623,7 @@ class SettingsService extends ChangeNotifier {
   bool get dlnaRemuxContainer {
     final v = RustCoreService.kvGet(_kDlnaRemuxContainer);
     if (v != null && v != 'null' && !v.startsWith('error:')) return v == 'true';
-    return _prefs?.getBool(_kDlnaRemuxContainer) ?? false;
+    return false;
   }
   set dlnaRemuxContainer(bool v) {
     RustCoreService.kvSet(_kDlnaRemuxContainer, v.toString());
@@ -640,7 +634,7 @@ class SettingsService extends ChangeNotifier {
   bool get dlnaTranscodeVideo {
     final v = RustCoreService.kvGet(_kDlnaTranscodeVideo);
     if (v != null && v != 'null' && !v.startsWith('error:')) return v == 'true';
-    return _prefs?.getBool(_kDlnaTranscodeVideo) ?? false;
+    return false;
   }
   set dlnaTranscodeVideo(bool v) {
     RustCoreService.kvSet(_kDlnaTranscodeVideo, v.toString());
@@ -651,7 +645,7 @@ class SettingsService extends ChangeNotifier {
   bool get dlnaTranscodeAudio {
     final v = RustCoreService.kvGet(_kDlnaTranscodeAudio);
     if (v != null && v != 'null' && !v.startsWith('error:')) return v == 'true';
-    return _prefs?.getBool(_kDlnaTranscodeAudio) ?? false;
+    return false;
   }
   set dlnaTranscodeAudio(bool v) {
     RustCoreService.kvSet(_kDlnaTranscodeAudio, v.toString());
@@ -768,8 +762,7 @@ class SettingsService extends ChangeNotifier {
   Future<void> setSyncInterval(SyncInterval value) async {
     if (value == _syncInterval) return;
     _syncInterval = value;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kSyncInterval, value.storageKey);
+    RustCoreService.kvSet(_kSyncInterval, value.storageKey);
     notifyListeners();
   }
 
@@ -777,8 +770,7 @@ class SettingsService extends ChangeNotifier {
     final next = _clampRebuildHint(value);
     if (next == _libraryRebuildHintFragments) return;
     _libraryRebuildHintFragments = next;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kLibraryRebuildHint, next);
+    RustCoreService.kvSet(_kLibraryRebuildHint, next.toString());
     notifyListeners();
   }
 
@@ -811,29 +803,27 @@ class SettingsService extends ChangeNotifier {
   bool get loaded => _loaded;
 
   Future<void> init() async {
-    _prefs ??= await SharedPreferences.getInstance();
     _appLocale = AppLocalePreferenceX.fromStorageKey(
       _readKvString(_kAppLocale),
     );
     _appThemeMode = AppThemeModeX.fromStorageKey(
-      _prefs!.getString(_kThemeMode),
+      _readKvString(_kThemeMode),
     );
     _themeSeedArgb =
-        (_prefs!.getInt(_kThemeSeed) ?? defaultThemeSeedArgb) | 0xFF000000;
-    _retention = CacheRetentionX.fromStorageKey(_prefs!.getString(_kRetention));
-    _musicCacheMaxMb = (_prefs!.getInt(_kMusicCacheMaxMb) ?? 0).clamp(
+        (_readKvInt(_kThemeSeed, defaultThemeSeedArgb)) | 0xFF000000;
+    _retention = CacheRetentionX.fromStorageKey(_readKvString(_kRetention));
+    _musicCacheMaxMb = (_readKvInt(_kMusicCacheMaxMb, 0)).clamp(
       0,
       1024 * 1024,
     );
-    final storedHours = _prefs!.getInt(_kCustomRetentionHours);
     _customRetentionHours = _clampCustomHours(
-      storedHours ?? defaultCustomRetentionHours,
+      _readKvInt(_kCustomRetentionHours, defaultCustomRetentionHours),
     );
     _librarySort = LibrarySortModeX.fromStorageKey(
-      _prefs!.getString(_kLibrarySort),
+      _readKvString(_kLibrarySort),
     );
     _folderViewModes.clear();
-    final modesJson = _prefs!.getString(_kFolderViewModes);
+    final modesJson = _readKvString(_kFolderViewModes);
     if (modesJson != null && modesJson.isNotEmpty) {
       try {
         final decoded = jsonDecode(modesJson);
@@ -850,13 +840,13 @@ class SettingsService extends ChangeNotifier {
     }
     // Migrate legacy global key into root once.
     if (!_folderViewModes.containsKey('root')) {
-      final legacy = _prefs!.getString(_kFolderViewMode);
+      final legacy = _readKvString(_kFolderViewMode);
       if (legacy != null) {
         _folderViewModes['root'] = FolderViewModeX.fromStorageKey(legacy);
       }
     }
     _mangaViewModes.clear();
-    final mangaModesJson = _prefs!.getString(_kMangaViewModes);
+    final mangaModesJson = _readKvString(_kMangaViewModes);
     if (mangaModesJson != null && mangaModesJson.isNotEmpty) {
       try {
         final decoded = jsonDecode(mangaModesJson);
@@ -872,7 +862,7 @@ class SettingsService extends ChangeNotifier {
       } catch (_) {}
     }
     _musicViewModes.clear();
-    final musicModesJson = _prefs!.getString(_kMusicViewModes);
+    final musicModesJson = _readKvString(_kMusicViewModes);
     if (musicModesJson != null && musicModesJson.isNotEmpty) {
       try {
         final decoded = jsonDecode(musicModesJson);
@@ -887,33 +877,32 @@ class SettingsService extends ChangeNotifier {
         }
       } catch (_) {}
     }
-    _mangaCacheMaxMb = (_prefs!.getInt(_kMangaCacheMaxMb) ?? 0).clamp(
+    _mangaCacheMaxMb = (_readKvInt(_kMangaCacheMaxMb, 0)).clamp(
       0,
       1024 * 1024,
     );
     _mangaRetention = CacheRetentionX.fromStorageKey(
-      _prefs!.getString(_kMangaRetention),
+      _readKvString(_kMangaRetention),
     );
     _mangaCustomRetentionHours = _clampCustomHours(
-      _prefs!.getInt(_kMangaCustomRetentionHours) ??
-          defaultCustomRetentionHours,
+      _readKvInt(_kMangaCustomRetentionHours, defaultCustomRetentionHours),
     );
     _mangaReadMode = MangaReadModeX.fromStorageKey(
-      _prefs!.getString(_kMangaReadMode),
+      _readKvString(_kMangaReadMode),
     );
     _playlistSyncEnabled = _readKvBool(_kPlaylistSyncEnabled, true);
     _coverThumbSize = clampCoverThumbSize(
-      _prefs!.getInt(_kCoverThumbSize) ?? coverThumbSize,
+      _readKvInt(_kCoverThumbSize, coverThumbSize),
     );
     _fileTypes = _readFileTypes();
     _musicTapAction = MusicTapActionX.fromStorageKey(
-      _prefs!.getString(_kMusicTapAction),
+      _readKvString(_kMusicTapAction),
     );
     _videoTapAction = VideoTapActionX.fromStorageKey(
-      _prefs!.getString(_kVideoTapAction),
+      _readKvString(_kVideoTapAction),
     );
     _audioStreamingEnabled = true;
-    await _prefs!.setBool(_kAudioStreamingEnabled, true);
+    RustCoreService.kvSet(_kAudioStreamingEnabled, true.toString());
     _fileActions = _readFileActions();
     // Ensure suffix-page music actions always allow streamMusic.
     if (!_fileActions.allowMusicStreaming) {
@@ -922,28 +911,28 @@ class SettingsService extends ChangeNotifier {
         allowMusicStreaming: true,
       );
     }
-    _musicDefaultStream = _prefs!.getBool(_kMusicDefaultStream) ?? false;
-    if (!_prefs!.containsKey(_kMusicDefaultStream) &&
+    _musicDefaultStream = _readKvBool(_kMusicDefaultStream, false);
+    if (_readKvString(_kMusicDefaultStream) == null &&
         _fileActions.music == FileAction.streamMusic) {
       _musicDefaultStream = true;
     }
-    if (!(_prefs!.getBool(_kHomeTabFoldersV024) ?? false)) {
-      final raw = _prefs!.getInt(_kHomeTab);
-      if (raw != null) {
+    if (!(_readKvBool(_kHomeTabFoldersV024, false))) {
+      final raw = _readKvInt(_kHomeTab, 0);
+      if (raw != 0 || _readKvString(_kHomeTab) != null) {
         // Inserted folders at index 0; shift prior destinations up by one.
-        await _prefs!.setInt(_kHomeTab, (raw + 1).clamp(0, 6));
+        RustCoreService.kvSet(_kHomeTab, (raw + 1).clamp(0, 6).toString());
       }
-      await _prefs!.setBool(_kHomeTabFoldersV024, true);
+      RustCoreService.kvSet(_kHomeTabFoldersV024, true.toString());
     }
-    if (!(_prefs!.getBool(_kHomeTabMangaV025) ?? false)) {
-      final raw = _prefs!.getInt(_kHomeTab);
-      if (raw != null && raw >= 3) {
+    if (!(_readKvBool(_kHomeTabMangaV025, false))) {
+      final raw = _readKvInt(_kHomeTab, 0);
+      if (raw >= 3) {
         // Inserted manga library at index 3; shift network/tasks/settings +1.
-        await _prefs!.setInt(_kHomeTab, (raw + 1).clamp(0, 6));
+        RustCoreService.kvSet(_kHomeTab, (raw + 1).clamp(0, 6).toString());
       }
-      await _prefs!.setBool(_kHomeTabMangaV025, true);
+      RustCoreService.kvSet(_kHomeTabMangaV025, true.toString());
     }
-    _homeTab = (_prefs!.getInt(_kHomeTab) ?? 0).clamp(0, 6);
+    _homeTab = (_readKvInt(_kHomeTab, 0)).clamp(0, 6);
     // B4: networkRememberLastPath lives in the Rust core settings store, not
     // SharedPreferences. Fall back to prefs on first launch after upgrade (FFI
     // returns null when unavailable / unset), then scrub the legacy prefs key
@@ -953,17 +942,17 @@ class SettingsService extends ChangeNotifier {
       _networkRememberLastPath = ffiRemember;
     } else {
       _networkRememberLastPath =
-          _prefs!.getBool(_kNetworkRememberLastPath) ?? false;
+          _readKvBool(_kNetworkRememberLastPath, false);
     }
-    if (_prefs!.containsKey(_kNetworkRememberLastPath)) {
-      await _prefs!.remove(_kNetworkRememberLastPath);
+    if (_readKvString(_kNetworkRememberLastPath) != null) {
+      RustCoreService.kvDelete(_kNetworkRememberLastPath);
     }
     // network_last_path is session-only (in-process via the core's session
     // store). Never restore from prefs / backup; scrub any leftover key from
     // older installs, then seed the core with the default '/'.
     _networkLastPath = '/';
-    if (_prefs!.containsKey(_kNetworkLastPath)) {
-      await _prefs!.remove(_kNetworkLastPath);
+    if (_readKvString(_kNetworkLastPath) != null) {
+      RustCoreService.kvDelete(_kNetworkLastPath);
     }
     final ffiLastPath = RustCoreService.settingsGetNetworkLastPath();
     if (ffiLastPath != null && ffiLastPath.isNotEmpty) {
@@ -972,37 +961,37 @@ class SettingsService extends ChangeNotifier {
       RustCoreService.settingsSetNetworkLastPath(_networkLastPath);
     }
     _videoLeftDoubleTap = VideoGestureActionX.fromStorageKey(
-      _prefs!.getString(_kVideoLeftDoubleTap),
+      _readKvString(_kVideoLeftDoubleTap),
     );
     _videoRightDoubleTap = VideoGestureActionX.fromStorageKey(
-      _prefs!.getString(_kVideoRightDoubleTap),
+      _readKvString(_kVideoRightDoubleTap),
     );
     _videoLongPress = VideoGestureActionX.fromStorageKey(
-      _prefs!.getString(_kVideoLongPress),
+      _readKvString(_kVideoLongPress),
     );
     _videoBackgroundPlayback =
-        _prefs!.getBool(_kVideoBackgroundPlayback) ?? true;
-    _videoPipEnabled = _prefs!.getBool(_kVideoPipEnabled) ?? false;
+        _readKvBool(_kVideoBackgroundPlayback, true);
+    _videoPipEnabled = _readKvBool(_kVideoPipEnabled, false);
     _musicStreamPlayMode = MusicStreamPlayModeX.fromStorageKey(
-      _prefs!.getString(_kMusicStreamPlayMode),
+      _readKvString(_kMusicStreamPlayMode),
     );
-    _audioScanSubdirs = _prefs!.getBool(_kAudioScanSubdirs) ?? false;
+    _audioScanSubdirs = _readKvBool(_kAudioScanSubdirs, false);
     _audioPlaylistMaxDepth = WalkOptions.clampDepth(
-      _prefs!.getInt(_kAudioPlaylistMaxDepth) ?? WalkOptions.defaultMaxDepth,
+      _readKvInt(_kAudioPlaylistMaxDepth, WalkOptions.defaultMaxDepth),
     );
     _audioStreamSidecarCover =
-        _prefs!.getBool(_kAudioStreamSidecarCover) ?? false;
+        _readKvBool(_kAudioStreamSidecarCover, false);
     _audioStreamSidecarNames =
-        _prefs!.getString(_kAudioStreamSidecarNames) ?? defaultSidecarNames;
+        _readKvString(_kAudioStreamSidecarNames) ?? defaultSidecarNames;
     _audioStreamPrefetchBackward = clampStreamPrefetch(
-      _prefs!.getInt(_kAudioStreamPrefetchBackward) ?? defaultStreamPrefetch,
+      _readKvInt(_kAudioStreamPrefetchBackward, defaultStreamPrefetch),
     );
     _audioStreamPrefetchForward = clampStreamPrefetch(
-      _prefs!.getInt(_kAudioStreamPrefetchForward) ?? defaultStreamPrefetch,
+      _readKvInt(_kAudioStreamPrefetchForward, defaultStreamPrefetch),
     );
-    _videoScanSubdirs = _prefs!.getBool(_kVideoScanSubdirs) ?? false;
+    _videoScanSubdirs = _readKvBool(_kVideoScanSubdirs, false);
     _videoPlaylistMaxDepth = WalkOptions.clampDepth(
-      _prefs!.getInt(_kVideoPlaylistMaxDepth) ?? WalkOptions.defaultMaxDepth,
+      _readKvInt(_kVideoPlaylistMaxDepth, WalkOptions.defaultMaxDepth),
     );
     _mediaScanRecursive = _readKvBool(_kMediaScanRecursive, true);
     _mediaScanMaxDepth = WalkOptions.clampDepth(
@@ -1016,88 +1005,85 @@ class SettingsService extends ChangeNotifier {
     _mangaCreateMaxDepth = WalkOptions.clampDepth(
       _readKvInt(_kMangaCreateMaxDepth, 1),
     );
-    _mangaCoverThumbSize = _prefs!.getInt(_kMangaCoverThumbSize) ?? 500;
+    _mangaCoverThumbSize = _readKvInt(_kMangaCoverThumbSize, 500);
     _musicLibraryAutoBackfill =
-        _prefs!.getBool(_kMusicLibraryAutoBackfill) ?? false;
-    _queueAddToEnd = _prefs!.getBool(_kQueueAddToEnd) ?? false;
+        _readKvBool(_kMusicLibraryAutoBackfill, false);
+    _queueAddToEnd = _readKvBool(_kQueueAddToEnd, false);
     // Legacy `music_library_backfill_on_open` ignored: play scrape is always
     // on while auto-backfill is enabled.
     _musicLibraryBackfillBindRoots =
-        _prefs!.getBool(_kMusicLibraryBackfillBindRoots) ?? false;
+        _readKvBool(_kMusicLibraryBackfillBindRoots, false);
     _musicLibraryBackfillRoots = _readMusicLibraryBackfillRoots();
     _imageSlideshowEnabled =
-        _prefs!.getBool(_kImageSlideshow) ?? defaultImageSlideshow;
+        _readKvBool(_kImageSlideshow, defaultImageSlideshow);
     _imageSlideshowIntervalSeconds = _clampImageSlideshowSeconds(
-      _prefs!.getInt(_kImageSlideshowSeconds) ?? defaultImageSlideshowSeconds,
+      _readKvInt(_kImageSlideshowSeconds, defaultImageSlideshowSeconds),
     );
     _imageSlideshowLoop =
-        _prefs!.getBool(_kImageSlideshowLoop) ?? defaultImageSlideshowLoop;
-    _imageFit = _normalizeImageFit(_prefs!.getString(_kImageFit));
+        _readKvBool(_kImageSlideshowLoop, defaultImageSlideshowLoop);
+    _imageFit = _normalizeImageFit(_readKvString(_kImageFit));
     _imagePageTurn = PageTurnDirection.normalize(
-      _prefs!.getString(_kImagePageTurn),
+      _readKvString(_kImagePageTurn),
     );
-    _imageTapDeadZone = (_prefs!.getDouble(_kImageTapDeadZone) ?? 0.15).clamp(0.0, 0.4);
-    _imageTapHorizDead = (_prefs!.getDouble(_kImageTapHorizDead) ?? 0.0).clamp(0.0, 0.3);
-    _imageTapCenterSize = (_prefs!.getDouble(_kImageTapCenterSize) ?? 0.33).clamp(0.1, 0.6);
+    _imageTapDeadZone = _readKvDouble(_kImageTapDeadZone, 0.15).clamp(0.0, 0.4);
+    _imageTapHorizDead = _readKvDouble(_kImageTapHorizDead, 0.0).clamp(0.0, 0.3);
+    _imageTapCenterSize =
+        _readKvDouble(_kImageTapCenterSize, 0.33).clamp(0.1, 0.6);
     _imagePrefetchCount = _clampImagePrefetch(
-      _prefs!.getInt(_kImagePrefetch) ?? defaultImagePrefetchCount,
+      _readKvInt(_kImagePrefetch, defaultImagePrefetchCount),
     );
-    _imageScanSubdirs = _prefs!.getBool(_kImageScanSubdirs) ?? false;
+    _imageScanSubdirs = _readKvBool(_kImageScanSubdirs, false);
     _imageScanMaxDepth = WalkOptions.clampDepth(
-      _prefs!.getInt(_kImageScanMaxDepth) ?? WalkOptions.defaultMaxDepth,
+      _readKvInt(_kImageScanMaxDepth, WalkOptions.defaultMaxDepth),
     );
-    _videoHardwareDecoding = _prefs!.getBool(_kVideoHardwareDecoding) ?? true;
+    _videoHardwareDecoding = _readKvBool(_kVideoHardwareDecoding, true);
     _videoBufferSizeMb = _clampBufferMb(
-      _prefs!.getInt(_kVideoBufferSizeMb) ?? defaultVideoBufferMb,
+      _readKvInt(_kVideoBufferSizeMb, defaultVideoBufferMb),
     );
     _downloadPartMaxAgeHours =
-        (_prefs!.getInt(_kDownloadPartMaxAgeHours) ??
-                defaultDownloadPartMaxAgeHours)
+        (_readKvInt(_kDownloadPartMaxAgeHours, defaultDownloadPartMaxAgeHours))
             .clamp(1, 720);
     _downloadPartMaxMb =
-        (_prefs!.getInt(_kDownloadPartMaxMb) ?? defaultDownloadPartMaxMb).clamp(
+        (_readKvInt(_kDownloadPartMaxMb, defaultDownloadPartMaxMb)).clamp(
           64,
           1024 * 64,
         );
     _cryptSequentialDownload =
         _readKvBool(_kCryptSequentialDownload, true);
     _preferLibsodiumSecretbox =
-        _prefs!.getBool(_kPreferLibsodiumSecretbox) ??
-        defaultPreferLibsodiumSecretbox;
+        _readKvBool(_kPreferLibsodiumSecretbox, defaultPreferLibsodiumSecretbox);
     applySecretboxBackendPreference();
     _videoLongPressRate = _clampRate(
-      _prefs!.getDouble(_kVideoLongPressRate) ?? defaultVideoLongPressRate,
+      _readKvDouble(_kVideoLongPressRate, defaultVideoLongPressRate),
     );
-    _videoLastRate = _clampRate(_prefs!.getDouble(_kVideoLastRate) ?? 1.0);
-    _videoConfirmExit = _prefs!.getBool(_kVideoConfirmExit) ?? false;
+    _videoLastRate = _clampRate(_readKvDouble(_kVideoLastRate, 1.0));
+    _videoConfirmExit = _readKvBool(_kVideoConfirmExit, false);
     _videoSubtitlePosition = VideoSubtitlePositionX.fromStorageKey(
-      _prefs!.getString(_kVideoSubtitlePosition),
+      _readKvString(_kVideoSubtitlePosition),
     );
     _videoSubtitleOffset = _clampSubtitleOffset(
-      _prefs!.getDouble(_kVideoSubtitleOffset) ?? defaultVideoSubtitleOffset,
+      _readKvDouble(_kVideoSubtitleOffset, defaultVideoSubtitleOffset),
     );
     _videoSubtitleFontSize = _clampSubtitleFontSize(
-      _prefs!.getDouble(_kVideoSubtitleFontSize) ??
-          defaultVideoSubtitleFontSize,
+      _readKvDouble(_kVideoSubtitleFontSize, defaultVideoSubtitleFontSize),
     );
-    _videoAutoSubtitle = _prefs!.getBool(_kVideoAutoSubtitle) ?? true;
+    _videoAutoSubtitle = _readKvBool(_kVideoAutoSubtitle, true);
     _videoSubtitleSubdirEnabled =
-        _prefs!.getBool(_kVideoSubtitleSubdirEnabled) ?? false;
-    _videoSubtitleSubdir = _prefs!.getString(_kVideoSubtitleSubdir) ?? 'sub';
+        _readKvBool(_kVideoSubtitleSubdirEnabled, false);
+    _videoSubtitleSubdir = _readKvString(_kVideoSubtitleSubdir) ?? 'sub';
     _shareTagRenameEnabled =
-        _prefs!.getBool(_kShareTagRenameEnabled) ?? defaultShareTagRename;
+        _readKvBool(_kShareTagRenameEnabled, defaultShareTagRename);
     _shareTagRenamePattern =
-        _prefs!.getString(_kShareTagRenamePattern) ??
+        _readKvString(_kShareTagRenamePattern) ??
         defaultShareTagRenamePattern;
     _syncRemoteRoot =
-        _prefs!.getString(_kSyncRemoteRoot) ?? defaultSyncRemoteRoot;
-    _syncEncryptPassword = _prefs!.getBool(_kSyncEncryptPassword) ?? true;
+        _readKvString(_kSyncRemoteRoot) ?? defaultSyncRemoteRoot;
+    _syncEncryptPassword = _readKvBool(_kSyncEncryptPassword, true);
     _syncInterval = SyncIntervalX.fromStorageKey(
-      _prefs!.getString(_kSyncInterval),
+      _readKvString(_kSyncInterval),
     );
     _libraryRebuildHintFragments = _clampRebuildHint(
-      _prefs!.getInt(_kLibraryRebuildHint) ??
-          defaultLibraryRebuildHintFragments,
+      _readKvInt(_kLibraryRebuildHint, defaultLibraryRebuildHintFragments),
     );
     // The vault key lives in secure storage (Keystore), like account passwords.
     try {
@@ -1111,25 +1097,25 @@ class SettingsService extends ChangeNotifier {
     );
     // Device id + rev high-water mark: the `rev` clock survives restarts, and an
     // exact tie between two devices is broken by the id.
-    _deviceId = _prefs!.getString(_kDeviceId) ?? '';
+    _deviceId = _readKvString(_kDeviceId) ?? '';
     if (_deviceId.isEmpty) {
       _deviceId =
           'dev-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
-      await _prefs!.setString(_kDeviceId, _deviceId);
+      RustCoreService.kvSet(_kDeviceId, _deviceId);
     }
-    _lastRev = _prefs!.getInt(_kLastRev) ?? 0;
-    _downloadNotifications = _prefs!.getBool(_kDownloadNotifications) ?? true;
-    _downloadKeepAlive = _prefs!.getBool(_kDownloadKeepAlive) ?? true;
-    _downloadNomedia = _prefs!.getBool(_kDownloadNomedia) ?? false;
+    _lastRev = _readKvInt(_kLastRev, 0);
+    _downloadNotifications = _readKvBool(_kDownloadNotifications, true);
+    _downloadKeepAlive = _readKvBool(_kDownloadKeepAlive, true);
+    _downloadNomedia = _readKvBool(_kDownloadNomedia, false);
     // SAF 自定义下载目录（本机，不进备份）
-    _useCustomDownloadDir = _prefs!.getBool(_kUseCustomDownloadDir) ?? false;
-    _customDownloadTreeUri = _prefs!.getString(_kCustomDownloadTreeUri);
-    _customDownloadDisplayName = _prefs!.getString(_kCustomDownloadDisplayName);
+    _useCustomDownloadDir = _readKvBool(_kUseCustomDownloadDir, false);
+    _customDownloadTreeUri = _readKvString(_kCustomDownloadTreeUri);
+    _customDownloadDisplayName = _readKvString(_kCustomDownloadDisplayName);
     // 启动时 flag 开但 uri 空 → 视为关闭并写回 false
     if (_useCustomDownloadDir &&
         (_customDownloadTreeUri == null || _customDownloadTreeUri!.isEmpty)) {
       _useCustomDownloadDir = false;
-      await _prefs!.setBool(_kUseCustomDownloadDir, false);
+      RustCoreService.kvSet(_kUseCustomDownloadDir, false.toString());
     }
     _syncAccountId = _readSyncAccountId();
     _loaded = true;
@@ -1142,49 +1128,48 @@ class SettingsService extends ChangeNotifier {
   /// is carried over so an existing choice is not silently dropped. Nothing
   /// writes the legacy keys any more.
   String? _readSyncAccountId() {
-    final stored = _prefs!.getString(_kSyncAccountId);
+    final stored = _readKvString(_kSyncAccountId);
     if (stored != null && stored.isNotEmpty) return stored;
     for (final key in _kLegacySyncAccountKeys) {
-      final legacy = _prefs!.getString(key);
+      final legacy = _readKvString(key);
       if (legacy != null && legacy.isNotEmpty) return legacy;
     }
     return null;
   }
 
-  /// Read a string-valued Wave A setting from the Core KV store, with an
-  /// automatic prefs → KV migration on first read after upgrade. Returns
-  /// null when neither KV nor prefs has the key (or the FFI is unavailable).
+  /// Read a string-valued Wave A setting from the Core KV store.
+  /// Returns null when the key is absent or the FFI is unavailable.
   String? _readKvString(String key) {
     final v = RustCoreService.kvGet(key);
     if (v != null && v != 'null' && !v.startsWith('error:')) return v;
-    // First run after upgrade: KV unset, fall back to prefs and migrate.
-    final pref = _prefs!.getString(key);
-    if (pref != null) RustCoreService.kvSet(key, pref);
-    return pref;
+    return null;
   }
 
-  /// Read a bool-valued Wave A setting from the Core KV store, with an
-  /// automatic prefs → KV migration on first read after upgrade.
+  /// Read a bool-valued setting from the Core KV store.
   bool _readKvBool(String key, bool fallback) {
     final v = RustCoreService.kvGet(key);
     if (v != null && v != 'null' && !v.startsWith('error:')) {
       return v == 'true';
     }
-    final pref = _prefs!.getBool(key);
-    if (pref != null) RustCoreService.kvSet(key, pref.toString());
-    return pref ?? fallback;
+    return fallback;
   }
 
-  /// Read an int-valued Wave A setting from the Core KV store, with an
-  /// automatic prefs → KV migration on first read after upgrade.
+  /// Read an int-valued setting from the Core KV store.
   int _readKvInt(String key, int fallback) {
     final v = RustCoreService.kvGet(key);
     if (v != null && v != 'null' && !v.startsWith('error:')) {
       return int.tryParse(v) ?? fallback;
     }
-    final pref = _prefs!.getInt(key);
-    if (pref != null) RustCoreService.kvSet(key, pref.toString());
-    return pref ?? fallback;
+    return fallback;
+  }
+
+  /// Read a double-valued setting from the Core KV store.
+  double _readKvDouble(String key, double fallback) {
+    final v = RustCoreService.kvGet(key);
+    if (v != null && v != 'null' && !v.startsWith('error:')) {
+      return double.tryParse(v) ?? fallback;
+    }
+    return fallback;
   }
 
   FileTypeConfig _readFileTypes() {
@@ -1200,13 +1185,12 @@ class SettingsService extends ChangeNotifier {
   Future<void> setMusicCacheMaxMb(int mb) async {
     _musicCacheMaxMb = mb.clamp(0, 1024 * 1024);
     notifyListeners();
-    await _prefs!.setInt(_kMusicCacheMaxMb, _musicCacheMaxMb);
+    RustCoreService.kvSet(_kMusicCacheMaxMb, _musicCacheMaxMb.toString());
   }
 
   Future<void> setRetention(CacheRetention retention) async {
     _retention = retention;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kRetention, retention.storageKey);
+    RustCoreService.kvSet(_kRetention, retention.storageKey);
     notifyListeners();
   }
 
@@ -1217,15 +1201,13 @@ class SettingsService extends ChangeNotifier {
     if (duration > Duration.zero && _customRetentionHours < 1) {
       _customRetentionHours = 1;
     }
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kCustomRetentionHours, _customRetentionHours);
+    RustCoreService.kvSet(_kCustomRetentionHours, _customRetentionHours.toString());
     notifyListeners();
   }
 
   Future<void> setLibrarySort(LibrarySortMode mode) async {
     _librarySort = mode;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kLibrarySort, mode.storageKey);
+    RustCoreService.kvSet(_kLibrarySort, mode.storageKey);
     notifyListeners();
   }
 
@@ -1235,8 +1217,7 @@ class SettingsService extends ChangeNotifier {
   }) async {
     final key = folderId ?? 'root';
     _folderViewModes[key] = mode;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(
+    RustCoreService.kvSet(
       _kFolderViewModes,
       jsonEncode({
         for (final e in _folderViewModes.entries) e.key: e.value.storageKey,
@@ -1247,8 +1228,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setMangaViewMode(String tabKey, FolderViewMode mode) async {
     _mangaViewModes[tabKey] = mode;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(
+    RustCoreService.kvSet(
       _kMangaViewModes,
       jsonEncode({
         for (final e in _mangaViewModes.entries) e.key: e.value.storageKey,
@@ -1259,8 +1239,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setMusicViewMode(String tabKey, FolderViewMode mode) async {
     _musicViewModes[tabKey] = mode;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(
+    RustCoreService.kvSet(
       _kMusicViewModes,
       jsonEncode({
         for (final e in _musicViewModes.entries) e.key: e.value.storageKey,
@@ -1271,23 +1250,20 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setMangaCacheMaxMb(int mb) async {
     _mangaCacheMaxMb = mb < 0 ? 0 : mb;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kMangaCacheMaxMb, _mangaCacheMaxMb);
+    RustCoreService.kvSet(_kMangaCacheMaxMb, _mangaCacheMaxMb.toString());
     notifyListeners();
   }
 
   Future<void> setMangaRetention(CacheRetention retention) async {
     _mangaRetention = retention;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kMangaRetention, retention.storageKey);
+    RustCoreService.kvSet(_kMangaRetention, retention.storageKey);
     notifyListeners();
   }
 
   Future<void> setMangaReadMode(MangaReadMode mode) async {
     if (_mangaReadMode == mode) return;
     _mangaReadMode = mode;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kMangaReadMode, mode.storageKey);
+    RustCoreService.kvSet(_kMangaReadMode, mode.storageKey);
     notifyListeners();
   }
 
@@ -1297,10 +1273,9 @@ class SettingsService extends ChangeNotifier {
     if (duration > Duration.zero && _mangaCustomRetentionHours < 1) {
       _mangaCustomRetentionHours = 1;
     }
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(
+    RustCoreService.kvSet(
       _kMangaCustomRetentionHours,
-      _mangaCustomRetentionHours,
+      _mangaCustomRetentionHours.toString(),
     );
     notifyListeners();
   }
@@ -1316,8 +1291,7 @@ class SettingsService extends ChangeNotifier {
   /// existing files keep old size until re-download/re-ingest (or destroy).
   Future<void> setCoverThumbSize(int size) async {
     _coverThumbSize = clampCoverThumbSize(size);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kCoverThumbSize, _coverThumbSize);
+    RustCoreService.kvSet(_kCoverThumbSize, _coverThumbSize.toString());
     notifyListeners();
   }
 
@@ -1329,15 +1303,15 @@ class SettingsService extends ChangeNotifier {
   /// 不改用户选过的动作；开关键缺失则维持旧默认（关），除非 JSON 里还有
   /// legacy 标记。已写入的开关值不会被覆盖。
   bool _resolveAudioStreamingEnabled() {
-    if (_prefs!.containsKey(_kAudioStreamingEnabled)) {
-      return _prefs!.getBool(_kAudioStreamingEnabled) ?? false;
+    if (_readKvString(_kAudioStreamingEnabled) != null) {
+      return _readKvBool(_kAudioStreamingEnabled, false);
     }
-    final raw = _prefs!.getString(_kFileActionConfig);
+    final raw = _readKvString(_kFileActionConfig);
     if (raw != null && raw.isNotEmpty) {
       return _legacyMusicStreaming(raw);
     }
-    if (_prefs!.containsKey(_kMusicTapAction) ||
-        _prefs!.containsKey(_kVideoTapAction)) {
+    if (_readKvString(_kMusicTapAction) != null ||
+        _readKvString(_kVideoTapAction) != null) {
       return false;
     }
     return true;
@@ -1351,7 +1325,7 @@ class SettingsService extends ChangeNotifier {
   /// 完全没有旧键的新安装不走迁移表，直接用出厂默认（音乐是缓存，不是流式）。
   FileActionConfig _readFileActions() {
     final streaming = _resolveAudioStreamingEnabled();
-    final raw = _prefs!.getString(_kFileActionConfig);
+    final raw = _readKvString(_kFileActionConfig);
     if (raw != null && raw.isNotEmpty) {
       try {
         final json = jsonDecode(raw);
@@ -1367,8 +1341,8 @@ class SettingsService extends ChangeNotifier {
       }
       return _legacyFileActions(streaming);
     }
-    if (_prefs!.containsKey(_kMusicTapAction) ||
-        _prefs!.containsKey(_kVideoTapAction)) {
+    if (_readKvString(_kMusicTapAction) != null ||
+        _readKvString(_kVideoTapAction) != null) {
       return _legacyFileActions(streaming);
     }
     return FileActionConfig(allowMusicStreaming: true);
@@ -1408,8 +1382,7 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setFileActions(FileActionConfig config) async {
     _fileActions = config.copyWith();
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kFileActionConfig, jsonEncode(config.toJson()));
+    RustCoreService.kvSet(_kFileActionConfig, jsonEncode(config.toJson()));
     notifyListeners();
   }
 
@@ -1429,22 +1402,19 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setMusicTapAction(MusicTapAction action) async {
     _musicTapAction = action;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kMusicTapAction, action.storageKey);
+    RustCoreService.kvSet(_kMusicTapAction, action.storageKey);
     notifyListeners();
   }
 
   Future<void> setVideoTapAction(VideoTapAction action) async {
     _videoTapAction = action;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kVideoTapAction, action.storageKey);
+    RustCoreService.kvSet(_kVideoTapAction, action.storageKey);
     notifyListeners();
   }
 
   Future<void> setHomeTab(int index) async {
     _homeTab = index.clamp(0, 6);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kHomeTab, _homeTab);
+    RustCoreService.kvSet(_kHomeTab, _homeTab.toString());
     notifyListeners();
   }
 
@@ -1452,9 +1422,8 @@ class SettingsService extends ChangeNotifier {
     _networkRememberLastPath = enabled;
     // B4: persist to Core settings FFI; remove legacy SharedPreferences key.
     RustCoreService.settingsSetNetworkRememberLastPath(enabled);
-    _prefs ??= await SharedPreferences.getInstance();
-    if (_prefs!.containsKey(_kNetworkRememberLastPath)) {
-      await _prefs!.remove(_kNetworkRememberLastPath);
+    if (_readKvString(_kNetworkRememberLastPath) != null) {
+      RustCoreService.kvDelete(_kNetworkRememberLastPath);
     }
     notifyListeners();
   }
@@ -1487,15 +1456,13 @@ class SettingsService extends ChangeNotifier {
   }
 
   Future<void> _persistGesture(String key, VideoGestureAction action) async {
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(key, action.storageKey);
+    RustCoreService.kvSet(key, action.storageKey);
     notifyListeners();
   }
 
   Future<void> setMusicStreamPlayMode(MusicStreamPlayMode mode) async {
     _musicStreamPlayMode = mode;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kMusicStreamPlayMode, mode.storageKey);
+    RustCoreService.kvSet(_kMusicStreamPlayMode, mode.storageKey);
     notifyListeners();
   }
 
@@ -1503,16 +1470,14 @@ class SettingsService extends ChangeNotifier {
   /// `file_action_config_json` 里）保留为**兼容读**，见 [_readFileActions]。
   Future<void> setMusicDefaultStream(bool stream) async {
     _musicDefaultStream = stream;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kMusicDefaultStream, stream);
+    RustCoreService.kvSet(_kMusicDefaultStream, stream.toString());
     notifyListeners();
   }
 
   Future<void> setAudioStreamingEnabled(bool enabled) async {
     // Streaming is always available; ignore off requests from old backups.
     _audioStreamingEnabled = true;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kAudioStreamingEnabled, true);
+    RustCoreService.kvSet(_kAudioStreamingEnabled, true.toString());
     _fileActions = FileActionConfig(
       actions: _fileActions.actions,
       allowMusicStreaming: true,
@@ -1522,63 +1487,55 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setAudioScanSubdirs(bool enabled) async {
     _audioScanSubdirs = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kAudioScanSubdirs, enabled);
+    RustCoreService.kvSet(_kAudioScanSubdirs, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setAudioPlaylistMaxDepth(int value) async {
     _audioPlaylistMaxDepth = WalkOptions.clampDepth(value);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kAudioPlaylistMaxDepth, _audioPlaylistMaxDepth);
+    RustCoreService.kvSet(_kAudioPlaylistMaxDepth, _audioPlaylistMaxDepth.toString());
     notifyListeners();
   }
 
   Future<void> setAudioStreamSidecarCover(bool enabled) async {
     _audioStreamSidecarCover = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kAudioStreamSidecarCover, enabled);
+    RustCoreService.kvSet(_kAudioStreamSidecarCover, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setAudioStreamSidecarNames(String raw) async {
     _audioStreamSidecarNames = raw;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kAudioStreamSidecarNames, raw);
+    RustCoreService.kvSet(_kAudioStreamSidecarNames, raw);
     notifyListeners();
   }
 
   Future<void> setAudioStreamPrefetchBackward(int value) async {
     _audioStreamPrefetchBackward = clampStreamPrefetch(value);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(
+    RustCoreService.kvSet(
       _kAudioStreamPrefetchBackward,
-      _audioStreamPrefetchBackward,
+      _audioStreamPrefetchBackward.toString(),
     );
     notifyListeners();
   }
 
   Future<void> setAudioStreamPrefetchForward(int value) async {
     _audioStreamPrefetchForward = clampStreamPrefetch(value);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(
+    RustCoreService.kvSet(
       _kAudioStreamPrefetchForward,
-      _audioStreamPrefetchForward,
+      _audioStreamPrefetchForward.toString(),
     );
     notifyListeners();
   }
 
   Future<void> setVideoScanSubdirs(bool enabled) async {
     _videoScanSubdirs = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kVideoScanSubdirs, enabled);
+    RustCoreService.kvSet(_kVideoScanSubdirs, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setVideoPlaylistMaxDepth(int value) async {
     _videoPlaylistMaxDepth = WalkOptions.clampDepth(value);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kVideoPlaylistMaxDepth, _videoPlaylistMaxDepth);
+    RustCoreService.kvSet(_kVideoPlaylistMaxDepth, _videoPlaylistMaxDepth.toString());
     notifyListeners();
   }
 
@@ -1621,29 +1578,25 @@ class SettingsService extends ChangeNotifier {
   /// 0 = 保持原图不缩放；正整数 = 缩放到该边长的正方形（居中裁剪）。
   Future<void> setMangaCoverThumbSize(int size) async {
     _mangaCoverThumbSize = size < 0 ? 0 : size;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kMangaCoverThumbSize, _mangaCoverThumbSize);
+    RustCoreService.kvSet(_kMangaCoverThumbSize, _mangaCoverThumbSize.toString());
     notifyListeners();
   }
 
   Future<void> setMusicLibraryAutoBackfill(bool enabled) async {
     _musicLibraryAutoBackfill = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kMusicLibraryAutoBackfill, enabled);
+    RustCoreService.kvSet(_kMusicLibraryAutoBackfill, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setQueueAddToEnd(bool enabled) async {
     _queueAddToEnd = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kQueueAddToEnd, enabled);
+    RustCoreService.kvSet(_kQueueAddToEnd, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setMusicLibraryBackfillBindRoots(bool enabled) async {
     _musicLibraryBackfillBindRoots = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kMusicLibraryBackfillBindRoots, enabled);
+    RustCoreService.kvSet(_kMusicLibraryBackfillBindRoots, enabled.toString());
     notifyListeners();
   }
 
@@ -1659,8 +1612,7 @@ class SettingsService extends ChangeNotifier {
       deduped[normalized.identityKey] = normalized;
     }
     _musicLibraryBackfillRoots = deduped.values.toList(growable: false);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(
+    RustCoreService.kvSet(
       _kMusicLibraryBackfillRoots,
       jsonEncode([for (final r in _musicLibraryBackfillRoots) r.toJson()]),
     );
@@ -1683,7 +1635,7 @@ class SettingsService extends ChangeNotifier {
   }
 
   List<MusicLibraryBackfillRoot> _readMusicLibraryBackfillRoots() {
-    final raw = _prefs!.getString(_kMusicLibraryBackfillRoots);
+    final raw = _readKvString(_kMusicLibraryBackfillRoots);
     if (raw == null || raw.isEmpty) return const [];
     try {
       final decoded = jsonDecode(raw);
@@ -1746,81 +1698,70 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setImageSlideshowEnabled(bool enabled) async {
     _imageSlideshowEnabled = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kImageSlideshow, enabled);
+    RustCoreService.kvSet(_kImageSlideshow, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setImageSlideshowIntervalSeconds(int seconds) async {
     _imageSlideshowIntervalSeconds = _clampImageSlideshowSeconds(seconds);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(
+    RustCoreService.kvSet(
       _kImageSlideshowSeconds,
-      _imageSlideshowIntervalSeconds,
+      _imageSlideshowIntervalSeconds.toString(),
     );
     notifyListeners();
   }
 
   Future<void> setImageSlideshowLoop(bool enabled) async {
     _imageSlideshowLoop = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kImageSlideshowLoop, enabled);
+    RustCoreService.kvSet(_kImageSlideshowLoop, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setImageFit(String fit) async {
     _imageFit = _normalizeImageFit(fit);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kImageFit, _imageFit);
+    RustCoreService.kvSet(_kImageFit, _imageFit);
     notifyListeners();
   }
 
   Future<void> setImagePageTurn(String direction) async {
     _imagePageTurn = PageTurnDirection.normalize(direction);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kImagePageTurn, _imagePageTurn);
+    RustCoreService.kvSet(_kImagePageTurn, _imagePageTurn);
     notifyListeners();
   }
 
   Future<void> setImageTapDeadZone(double fraction) async {
     _imageTapDeadZone = fraction.clamp(0.0, 0.4);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setDouble(_kImageTapDeadZone, _imageTapDeadZone);
+    RustCoreService.kvSet(_kImageTapDeadZone, _imageTapDeadZone.toString());
     notifyListeners();
   }
 
   Future<void> setImageTapHorizDead(double fraction) async {
     _imageTapHorizDead = fraction.clamp(0.0, 0.3);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setDouble(_kImageTapHorizDead, _imageTapHorizDead);
+    RustCoreService.kvSet(_kImageTapHorizDead, _imageTapHorizDead.toString());
     notifyListeners();
   }
 
   Future<void> setImageTapCenterSize(double fraction) async {
     _imageTapCenterSize = fraction.clamp(0.1, 0.6);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setDouble(_kImageTapCenterSize, _imageTapCenterSize);
+    RustCoreService.kvSet(_kImageTapCenterSize, _imageTapCenterSize.toString());
     notifyListeners();
   }
 
   Future<void> setImagePrefetchCount(int count) async {
     _imagePrefetchCount = _clampImagePrefetch(count);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kImagePrefetch, _imagePrefetchCount);
+    RustCoreService.kvSet(_kImagePrefetch, _imagePrefetchCount.toString());
     notifyListeners();
   }
 
   Future<void> setImageScanSubdirs(bool enabled) async {
     _imageScanSubdirs = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kImageScanSubdirs, enabled);
+    RustCoreService.kvSet(_kImageScanSubdirs, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setImageScanMaxDepth(int value) async {
     _imageScanMaxDepth = WalkOptions.clampDepth(value);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kImageScanMaxDepth, _imageScanMaxDepth);
+    RustCoreService.kvSet(_kImageScanMaxDepth, _imageScanMaxDepth.toString());
     notifyListeners();
   }
 
@@ -1841,43 +1782,37 @@ class SettingsService extends ChangeNotifier {
 
   Future<void> setVideoBackgroundPlayback(bool enabled) async {
     _videoBackgroundPlayback = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kVideoBackgroundPlayback, enabled);
+    RustCoreService.kvSet(_kVideoBackgroundPlayback, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setVideoPipEnabled(bool enabled) async {
     _videoPipEnabled = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kVideoPipEnabled, enabled);
+    RustCoreService.kvSet(_kVideoPipEnabled, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setVideoHardwareDecoding(bool enabled) async {
     _videoHardwareDecoding = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kVideoHardwareDecoding, enabled);
+    RustCoreService.kvSet(_kVideoHardwareDecoding, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setVideoBufferSizeMb(int mb) async {
     _videoBufferSizeMb = _clampBufferMb(mb);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kVideoBufferSizeMb, _videoBufferSizeMb);
+    RustCoreService.kvSet(_kVideoBufferSizeMb, _videoBufferSizeMb.toString());
     notifyListeners();
   }
 
   Future<void> setDownloadPartMaxAgeHours(int hours) async {
     _downloadPartMaxAgeHours = hours.clamp(1, 720);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kDownloadPartMaxAgeHours, _downloadPartMaxAgeHours);
+    RustCoreService.kvSet(_kDownloadPartMaxAgeHours, _downloadPartMaxAgeHours.toString());
     notifyListeners();
   }
 
   Future<void> setDownloadPartMaxMb(int mb) async {
     _downloadPartMaxMb = mb.clamp(64, 1024 * 64);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kDownloadPartMaxMb, _downloadPartMaxMb);
+    RustCoreService.kvSet(_kDownloadPartMaxMb, _downloadPartMaxMb.toString());
     notifyListeners();
   }
 
@@ -1891,8 +1826,7 @@ class SettingsService extends ChangeNotifier {
   /// [preferDartSecretbox] immediately.
   Future<void> setPreferLibsodiumSecretboxEnabled(bool enabled) async {
     _preferLibsodiumSecretbox = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kPreferLibsodiumSecretbox, enabled);
+    RustCoreService.kvSet(_kPreferLibsodiumSecretbox, enabled.toString());
     applySecretboxBackendPreference();
     notifyListeners();
   }
@@ -1916,16 +1850,14 @@ class SettingsService extends ChangeNotifier {
   /// Persist the long-press speed boost rate (used while long-pressing video).
   Future<void> setVideoLongPressRate(double rate) async {
     _videoLongPressRate = _clampRate(rate);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setDouble(_kVideoLongPressRate, _videoLongPressRate);
+    RustCoreService.kvSet(_kVideoLongPressRate, _videoLongPressRate.toString());
     notifyListeners();
   }
 
   /// Remember the user's last chosen video speed for the next session.
   Future<void> setVideoLastRate(double rate) async {
     _videoLastRate = _clampRate(rate);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setDouble(_kVideoLastRate, _videoLastRate);
+    RustCoreService.kvSet(_kVideoLastRate, _videoLastRate.toString());
     // No notifyListeners: only the video screen reads this on open.
   }
 
@@ -1933,24 +1865,21 @@ class SettingsService extends ChangeNotifier {
   /// whether to confirm the close).
   Future<void> setVideoConfirmExit(bool enabled) async {
     _videoConfirmExit = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kVideoConfirmExit, enabled);
+    RustCoreService.kvSet(_kVideoConfirmExit, enabled.toString());
     notifyListeners();
   }
 
   /// Where subtitles are drawn (inside the picture / below it / hidden).
   Future<void> setVideoSubtitlePosition(VideoSubtitlePosition position) async {
     _videoSubtitlePosition = position;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kVideoSubtitlePosition, position.storageKey);
+    RustCoreService.kvSet(_kVideoSubtitlePosition, position.storageKey);
     notifyListeners();
   }
 
   /// Distance (dp) between subtitles and the picture's lower edge.
   Future<void> setVideoSubtitleOffset(double dp) async {
     _videoSubtitleOffset = _clampSubtitleOffset(dp);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setDouble(_kVideoSubtitleOffset, _videoSubtitleOffset);
+    RustCoreService.kvSet(_kVideoSubtitleOffset, _videoSubtitleOffset.toString());
     notifyListeners();
   }
 
@@ -1964,22 +1893,19 @@ class SettingsService extends ChangeNotifier {
   /// Subtitle font size (sp).
   Future<void> setVideoSubtitleFontSize(double sp) async {
     _videoSubtitleFontSize = _clampSubtitleFontSize(sp);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setDouble(_kVideoSubtitleFontSize, _videoSubtitleFontSize);
+    RustCoreService.kvSet(_kVideoSubtitleFontSize, _videoSubtitleFontSize.toString());
     notifyListeners();
   }
 
   Future<void> setVideoAutoSubtitle(bool enabled) async {
     _videoAutoSubtitle = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kVideoAutoSubtitle, enabled);
+    RustCoreService.kvSet(_kVideoAutoSubtitle, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setVideoSubtitleSubdirEnabled(bool enabled) async {
     _videoSubtitleSubdirEnabled = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kVideoSubtitleSubdirEnabled, enabled);
+    RustCoreService.kvSet(_kVideoSubtitleSubdirEnabled, enabled.toString());
     notifyListeners();
   }
 
@@ -1989,8 +1915,7 @@ class SettingsService extends ChangeNotifier {
     final next = sanitizeSubtitleSubdir(raw);
     if (next == null) return false;
     _videoSubtitleSubdir = next;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kVideoSubtitleSubdir, next);
+    RustCoreService.kvSet(_kVideoSubtitleSubdir, next);
     notifyListeners();
     return true;
   }
@@ -2005,27 +1930,23 @@ class SettingsService extends ChangeNotifier {
   /// Toggle download-queue system notifications.
   Future<void> setDownloadNotificationsEnabled(bool enabled) async {
     _downloadNotifications = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kDownloadNotifications, enabled);
+    RustCoreService.kvSet(_kDownloadNotifications, enabled.toString());
     notifyListeners();
   }
 
   /// Toggle the download dataSync foreground service. Default is on.
   Future<void> setDownloadKeepAliveEnabled(bool enabled) async {
     _downloadKeepAlive = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kDownloadKeepAlive, enabled);
+    RustCoreService.kvSet(_kDownloadKeepAlive, enabled.toString());
     notifyListeners();
   }
 
   Future<void> setDownloadNomediaEnabled(bool enabled) async {
-    if (_downloadNomedia == enabled &&
-        _prefs?.containsKey(_kDownloadNomedia) == true) {
+    if (_downloadNomedia == enabled) {
       return;
     }
     _downloadNomedia = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kDownloadNomedia, enabled);
+    RustCoreService.kvSet(_kDownloadNomedia, enabled.toString());
     notifyListeners();
   }
 
@@ -2037,13 +1958,12 @@ class SettingsService extends ChangeNotifier {
     _useCustomDownloadDir = true;
     _customDownloadTreeUri = uri;
     _customDownloadDisplayName = displayName;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kUseCustomDownloadDir, true);
-    await _prefs!.setString(_kCustomDownloadTreeUri, uri);
+    RustCoreService.kvSet(_kUseCustomDownloadDir, true.toString());
+    RustCoreService.kvSet(_kCustomDownloadTreeUri, uri);
     if (displayName != null && displayName.isNotEmpty) {
-      await _prefs!.setString(_kCustomDownloadDisplayName, displayName);
+      RustCoreService.kvSet(_kCustomDownloadDisplayName, displayName);
     } else {
-      await _prefs!.remove(_kCustomDownloadDisplayName);
+      RustCoreService.kvDelete(_kCustomDownloadDisplayName);
     }
     notifyListeners();
   }
@@ -2053,10 +1973,9 @@ class SettingsService extends ChangeNotifier {
     _useCustomDownloadDir = false;
     _customDownloadTreeUri = null;
     _customDownloadDisplayName = null;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kUseCustomDownloadDir, false);
-    await _prefs!.remove(_kCustomDownloadTreeUri);
-    await _prefs!.remove(_kCustomDownloadDisplayName);
+    RustCoreService.kvSet(_kUseCustomDownloadDir, false.toString());
+    RustCoreService.kvDelete(_kCustomDownloadTreeUri);
+    RustCoreService.kvDelete(_kCustomDownloadDisplayName);
     notifyListeners();
   }
 
@@ -2072,15 +1991,13 @@ class SettingsService extends ChangeNotifier {
     _syncAccountId = (accountId == null || accountId.isEmpty)
         ? null
         : accountId;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kSyncAccountId, _syncAccountId ?? '');
+    RustCoreService.kvSet(_kSyncAccountId, _syncAccountId ?? '');
     notifyListeners();
   }
 
   Future<void> setShareTagRenameEnabled(bool enabled) async {
     _shareTagRenameEnabled = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kShareTagRenameEnabled, enabled);
+    RustCoreService.kvSet(_kShareTagRenameEnabled, enabled.toString());
     notifyListeners();
   }
 
@@ -2089,8 +2006,7 @@ class SettingsService extends ChangeNotifier {
     _shareTagRenamePattern = trimmed.isEmpty
         ? defaultShareTagRenamePattern
         : trimmed;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kShareTagRenamePattern, _shareTagRenamePattern);
+    RustCoreService.kvSet(_kShareTagRenamePattern, _shareTagRenamePattern);
     notifyListeners();
   }
 
@@ -2101,15 +2017,13 @@ class SettingsService extends ChangeNotifier {
     if (!value.startsWith('/')) value = '/$value';
     if (!value.endsWith('/')) value = '$value/';
     _syncRemoteRoot = value;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kSyncRemoteRoot, _syncRemoteRoot);
+    RustCoreService.kvSet(_kSyncRemoteRoot, _syncRemoteRoot);
     notifyListeners();
   }
 
   Future<void> setSyncEncryptPassword(bool enabled) async {
     _syncEncryptPassword = enabled;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setBool(_kSyncEncryptPassword, enabled);
+    RustCoreService.kvSet(_kSyncEncryptPassword, enabled.toString());
     notifyListeners();
   }
 
@@ -2136,8 +2050,7 @@ class SettingsService extends ChangeNotifier {
   Future<void> setLastRev(int value) async {
     if (value <= _lastRev) return;
     _lastRev = value;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setInt(_kLastRev, value);
+    RustCoreService.kvSet(_kLastRev, value.toString());
   }
 
   /// Whether a unified decryption key is configured.
@@ -2271,7 +2184,6 @@ class SettingsService extends ChangeNotifier {
       exportForBackup();
 
   Future<void> importFromBackup(Map<String, dynamic> json) async {
-    _prefs ??= await SharedPreferences.getInstance();
     if (json['music_cache_max_mb'] is num) {
       await setMusicCacheMaxMb((json['music_cache_max_mb'] as num).toInt());
     }

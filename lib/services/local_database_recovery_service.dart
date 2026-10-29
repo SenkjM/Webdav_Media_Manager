@@ -4,7 +4,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'cache_index_db.dart';
-import 'library_database.dart';
 import 'platform_export_service.dart';
 import 'playlist_store.dart';
 import 'task_store.dart';
@@ -35,7 +34,7 @@ class LocalDatabaseRecoveryService {
     final docs = await getApplicationDocumentsDirectory();
     final support = await getApplicationSupportDirectory();
     final bases = <String>[
-      p.join(docs.path, LibraryDatabase.fileName),
+      p.join(docs.path, 'music_library.db'),
       p.join(docs.path, PlaylistStore.fileName),
       p.join(docs.path, TaskStore.fileName),
       // The cache index lives beside the cache it describes, not with the

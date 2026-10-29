@@ -57,7 +57,6 @@ import 'stream_window.dart';
 import 'package:archive/archive_io.dart';
 
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:flutter/widgets.dart';
 
 /// Background async task queue. Does not block UI/navigation.
@@ -130,9 +129,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// Re-point the resolver (called on init / after accounts change).
   Future<void> closeDatabase() => _store.close();
 
-  /// Opens the queue database. The 0.2.2 sentinel migration uses this before
-  /// [init] loads tasks.
-  Future<Database> openDatabase() => _store.database;
+  /// No-op kept for call-site symmetry with [PlaylistService.openDatabase].
+  Future<void> openDatabase() async {}
 
   void configureAccountResolver(String? Function(String sourceName) resolve) {
     _accountIdForSource = resolve;

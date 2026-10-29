@@ -22,7 +22,6 @@ import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
 import '../services/download_destination_service.dart';
 import '../services/task_queue_service.dart';
-import '../services/library_database.dart';
 import '../services/library_service.dart';
 import '../services/user_folder_service.dart';
 import '../services/manga_library_service.dart';
@@ -268,7 +267,6 @@ class AppState extends ChangeNotifier {
       await library.init();
       _initPhase = 'user-folders';
       await userFolders.init();
-      await _migrateKvFoldersMeta();
       _initPhase = 'manga-library';
       await mangaLibrary.init();
       _initPhase = 'accounts';
@@ -863,7 +861,7 @@ class AppState extends ChangeNotifier {
   static Future<String?> _importLibraryFromSqfliteIfNeeded() async {
     if (!Platform.isAndroid) return null;
     final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, LibraryDatabase.fileName);
+    final path = p.join(dir.path, 'music_library.db');
     if (!File(path).existsSync()) return null;
 
     final result = RustCoreService.libraryImportFromSqflite(path);
@@ -947,61 +945,6 @@ class AppState extends ChangeNotifier {
       } catch (e) {
         debugPrint('[AppState] retire: could not rename ${file.path}: $e');
       }
-    }
-  }
-
-  /// One-shot migration: copy folder sync meta keys from sqflite [LibraryDatabase]
-  /// into the Core KV store, then never read them from sqflite again.
-  ///
-  /// Opens a temporary [LibraryDatabase] for the read-only migration and closes
-  /// it immediately after. Skipped when `folders_changed_at` is already present
-  /// in the KV store, or when Core FFI is unavailable (non-Android).
-  static Future<void> _migrateKvFoldersMeta() async {
-    final existing = RustCoreService.kvGet('folders_changed_at');
-    // Dart null → Core FFI unavailable (skip). Literal "null"/empty/error →
-    // key absent or bad → migrate from sqflite. Any other value → already set.
-    if (existing == null) return;
-    final already =
-        existing.isNotEmpty &&
-        existing != 'null' &&
-        !existing.startsWith('error:');
-    if (already) return;
-
-    final db = LibraryDatabase();
-    try {
-      // Migrate the three key families once.
-      const keys = [
-        'folders_changed_at',
-        // last_sync and cloud_seen are per-destination (open-ended); we scan
-        // all local_meta rows that match the prefix rather than enumerating dests.
-      ];
-      for (final k in keys) {
-        final v = await db.loadMeta(k);
-        if (v != null && v.isNotEmpty) RustCoreService.kvSet(k, v);
-      }
-      // Migrate per-destination keys by scanning known prefixes from the sqflite
-      // local_meta table. We read them via loadMeta using the known pattern; the
-      // dest string is opaque so we copy them all via the two prefixes.
-      for (final prefix in const [
-        'folders_last_sync_at:',
-        'folders_cloud_seen:',
-      ]) {
-        final allMeta = await db.loadMetaByPrefix(prefix);
-        for (final entry in allMeta.entries) {
-          RustCoreService.kvSet(entry.key, entry.value);
-        }
-      }
-      // Ensure the sentinel key exists so we do not re-scan sqflite every launch
-      // when the old DB had no folders meta either.
-      final after = RustCoreService.kvGet('folders_changed_at');
-      if (after == null ||
-          after.isEmpty ||
-          after == 'null' ||
-          after.startsWith('error:')) {
-        RustCoreService.kvSet('folders_changed_at', '0');
-      }
-    } finally {
-      await db.close();
     }
   }
 }

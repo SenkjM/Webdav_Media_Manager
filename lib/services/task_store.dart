@@ -1,163 +1,89 @@
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:sqflite/sqflite.dart';
+import 'dart:convert';
 
 import '../models/queue_task.dart';
+import 'rust_core_service.dart';
 
-/// SQLite persistence for the task queue.
+/// KV-backed persistence for the task queue (replaces the sqflite backend).
 ///
-/// IMPORTANT: [upsert] passes `task.toMap()` straight to `db.insert`, so **the
-/// map keys are the column names**. Any field added to [QueueTask] must get a
-/// matching column here and a schema bump, or every insert throws
-/// `table queue_tasks has no column named <field>` and the queue silently
-/// stays empty.
+/// Each task is stored under `queue_task_<id>` as a JSON map; the ordered ID
+/// list lives under `queue_task_ids`. The queue is a transient list — losing
+/// it costs a re-enqueue, not data.
+///
+/// The [fileName] constant is kept so [LocalDatabaseRecoveryService] can find
+/// and clean up the old `task_queue.db` SQLite file on upgraded devices.
 class TaskStore {
-  Database? _db;
+  static const _kIndex = 'queue_task_ids';
+  static const _kPrefix = 'queue_task_';
 
-  /// Bumped whenever the queue schema changes.
-  ///
-  /// There is deliberately **no** migration code: an older on-disk schema is
-  /// dropped and recreated (see [onUpgrade]). The queue is a transient list —
-  /// losing it costs a re-enqueue, not data.
-  ///
-  /// v9: added `is_enumerator`, which [QueueTask] had been writing all along —
-  /// without the column every insert threw and nothing was ever persisted.
-  ///
-  /// v10: added `local_uri` for JIT SAF materialisation (local CBZ upload).
-  static const schemaVersion = 10;
-
-  /// On-disk name; see [LocalDatabaseRecoveryService].
+  /// Old SQLite on-disk name; kept only for [LocalDatabaseRecoveryService].
   static const fileName = 'task_queue.db';
 
-  Future<Database> get database async {
-    if (_db != null) return _db!;
-    final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, fileName);
-    _db = await openDatabase(
-      path,
-      version: schemaVersion,
-      onCreate: (db, version) async {
-        await _createSchema(db);
-      },
-      onUpgrade: (db, oldVersion, newVersion) async {
-        await db.execute('DROP TABLE IF EXISTS queue_tasks');
-        await db.execute('DROP TABLE IF EXISTS download_tasks');
-        await _createSchema(db);
-      },
-    );
-    return _db!;
+  List<String> _readIndex() {
+    final raw = RustCoreService.kvGet(_kIndex);
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) return [];
+    try {
+      return (jsonDecode(raw) as List<dynamic>).cast<String>();
+    } catch (_) {
+      return [];
+    }
   }
 
-  /// The `queue_tasks` DDL.
-  ///
-  /// Public on purpose: `test/task_store_schema_test.dart` diffs it against
-  /// `QueueTask.toMap()`. The map keys *are* the column names, so a field with
-  /// no column here throws `no column named <field>` on **every** insert while
-  /// `flutter analyze` stays green — that is exactly how `is_enumerator`
-  /// shipped broken and the queue silently stopped persisting.
-  static const createTableSql = '''
-CREATE TABLE queue_tasks (
-  id TEXT PRIMARY KEY,
-  remote_path TEXT NOT NULL,
-  file_name TEXT NOT NULL,
-  created_at TEXT NOT NULL,
-  kind TEXT NOT NULL DEFAULT 'download',
-  status TEXT NOT NULL,
-  local_path TEXT,
-  local_uri TEXT,
-  error_message TEXT,
-  progress REAL NOT NULL DEFAULT 0,
-  progress_mode TEXT NOT NULL DEFAULT 'bytes',
-  completed_at TEXT,
-  bytes_total INTEGER,
-  bytes_received INTEGER NOT NULL DEFAULT 0,
-  units_total INTEGER,
-  units_done INTEGER NOT NULL DEFAULT 0,
-  cache_group_id TEXT,
-  is_enumerator INTEGER NOT NULL DEFAULT 0,
-  source_name TEXT NOT NULL DEFAULT '',
-  target TEXT NOT NULL DEFAULT 'cache',
-  download_mode TEXT,
-  remote_size INTEGER,
-  remote_modified TEXT,
-  attempts INTEGER NOT NULL DEFAULT 0,
-  next_retry_at TEXT
-)
-''';
-
-  Future<void> _createSchema(Database db) async {
-    await db.execute(createTableSql);
-    await _createIndexes(db);
-  }
-
-  Future<void> _createIndexes(Database db) async {
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_tasks_status ON queue_tasks(status)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_tasks_kind ON queue_tasks(kind)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_tasks_created ON queue_tasks(created_at)',
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_tasks_source_path ON queue_tasks(source_name, remote_path)',
-    );
+  void _writeIndex(List<String> ids) {
+    RustCoreService.kvSet(_kIndex, jsonEncode(ids));
   }
 
   Future<List<QueueTask>> loadAll() async {
-    final db = await database;
-    final rows = await db.query('queue_tasks', orderBy: 'created_at ASC');
-    return rows.map(QueueTask.fromMap).toList();
+    final ids = _readIndex();
+    final tasks = <QueueTask>[];
+    for (final id in ids) {
+      final raw = RustCoreService.kvGet('$_kPrefix$id');
+      if (raw == null || raw.isEmpty || raw.startsWith('error:')) continue;
+      try {
+        tasks.add(QueueTask.fromMap(jsonDecode(raw) as Map<String, dynamic>));
+      } catch (_) {
+        // Corrupt KV entry — skip silently; the ID remains in the index until
+        // the next upsert/delete cycle cleans it.
+      }
+    }
+    return tasks;
   }
 
   Future<void> upsert(QueueTask task) async {
-    final db = await database;
-    await db.insert(
-      'queue_tasks',
-      task.toMap(),
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    final ids = _readIndex();
+    if (!ids.contains(task.id)) {
+      ids.add(task.id);
+      _writeIndex(ids);
+    }
+    RustCoreService.kvSet('$_kPrefix${task.id}', jsonEncode(task.toMap()));
   }
 
   Future<void> delete(String id) async {
-    final db = await database;
-    await db.delete('queue_tasks', where: 'id = ?', whereArgs: [id]);
+    final ids = _readIndex();
+    if (ids.remove(id)) _writeIndex(ids);
+    RustCoreService.kvDelete('$_kPrefix$id');
   }
 
   Future<void> deleteByStatus(TaskStatus status) async {
-    final db = await database;
-    await db.delete(
-      'queue_tasks',
-      where: 'status = ?',
-      whereArgs: [status.name],
-    );
+    final tasks = await loadAll();
+    for (final t in tasks) {
+      if (t.status == status) await delete(t.id);
+    }
   }
 
   Future<QueueTask?> findByRemotePath(
     String remotePath, {
     String? accountId,
   }) async {
-    final db = await database;
-    final rows = accountId == null
-        ? await db.query(
-            'queue_tasks',
-            where: 'remote_path = ?',
-            whereArgs: [remotePath],
-            limit: 1,
-          )
-        : await db.query(
-            'queue_tasks',
-            where: 'source_name = ? AND remote_path = ?',
-            whereArgs: [accountId, remotePath],
-            limit: 1,
-          );
-    if (rows.isEmpty) return null;
-    return QueueTask.fromMap(rows.first);
+    final tasks = await loadAll();
+    for (final t in tasks) {
+      if (t.remotePath == remotePath &&
+          (accountId == null || t.sourceName == accountId)) {
+        return t;
+      }
+    }
+    return null;
   }
 
-  Future<void> close() async {
-    await _db?.close();
-    _db = null;
-  }
+  /// No-op: the KV store is always open.
+  Future<void> close() async {}
 }

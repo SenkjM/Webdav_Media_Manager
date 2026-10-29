@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/account_capabilities.dart';
@@ -15,7 +13,6 @@ import '../utils/credential_vault_crypto.dart';
 import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'wdmm_vfs/driver_registry.dart';
-import 'library_database.dart'; // only for one-shot sqflite→Core migrate helper
 import 'rust_core_service.dart';
 
 /// Multi-WebDAV account management.
@@ -28,11 +25,8 @@ import 'rust_core_service.dart';
 ///   Core empty → sqflite has rows  → upsert each to Core, then ignore sqflite.
 ///   Core empty + sqflite empty     → check legacy flutter_secure single-server keys.
 class AccountsService extends ChangeNotifier {
-  AccountsService({
-    FlutterSecureStorage? secureStorage,
-    SharedPreferences? prefs,
-  })  : _secure = secureStorage ?? const FlutterSecureStorage(),
-        _prefs = prefs;
+  AccountsService({FlutterSecureStorage? secureStorage})
+      : _secure = secureStorage ?? const FlutterSecureStorage();
 
   static const _kActiveAccount = 'active_webdav_account_id';
   static const _kPassPrefix = 'webdav_pass_';
@@ -43,7 +37,6 @@ class AccountsService extends ChangeNotifier {
   static const _legacyPass = 'webdav_password';
 
   final FlutterSecureStorage _secure;
-  SharedPreferences? _prefs;
   final _uuid = const Uuid();
 
   final List<WebDavAccount> _accounts = [];
@@ -137,18 +130,10 @@ class AccountsService extends ChangeNotifier {
     final gate = Completer<void>();
     _initInFlight = gate.future;
     try {
-      _prefs ??= await SharedPreferences.getInstance();
-
       // 1. Load from Core.
       var loaded = await _loadFromCore();
 
-      // 2. One-shot migrate: Core empty — try sqflite rows.
-      if (loaded.isEmpty) {
-        await _migrateFromSqfliteIfNeeded();
-        loaded = await _loadFromCore();
-      }
-
-      // 3. Still empty — try legacy flutter_secure single-server keys.
+      // 2. One-shot migrate: Core empty — try legacy flutter_secure keys.
       if (loaded.isEmpty) {
         await _migrateLegacyIfNeeded();
         loaded = await _loadFromCore();
@@ -166,14 +151,14 @@ class AccountsService extends ChangeNotifier {
 
       await _collapseDuplicatesIfNeeded();
 
-      _activeAccountId = _prefs!.getString(_kActiveAccount);
+      _activeAccountId = RustCoreService.kvGet(_kActiveAccount);
       if (_activeAccountId != null &&
           !_accounts.any((a) => a.id == _activeAccountId)) {
         _activeAccountId = null;
       }
       if (_activeAccountId == null && _accounts.isNotEmpty) {
         _activeAccountId = _accounts.first.id;
-        await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+        RustCoreService.kvSet(_kActiveAccount, _activeAccountId!);
       }
 
       _loaded = true;
@@ -277,25 +262,8 @@ class AccountsService extends ChangeNotifier {
   // One-shot migrations (run only when Core is empty)
   // ---------------------------------------------------------------------------
 
-  /// Migrate sqflite accounts into Core; **fail hard** on any upsert error.
-  /// Uses a temporary [LibraryDatabase]; this service retains no db field.
-  /// After a successful migrate Core is never read via sqflite again.
-  ///
-  /// Android-only: sqflite accounts only exist on Android, and a real
-  /// [LibraryDatabase] cannot open on the host test runner. On non-Android
-  /// there is nothing to migrate from, so the call is a no-op.
-  Future<void> _migrateFromSqfliteIfNeeded() async {
-    if (!Platform.isAndroid) return;
-    final db = LibraryDatabase();
-    final rows = await db.loadAccounts();
-    if (rows.isEmpty) return;
-    for (final a in rows) {
-      await _upsertToCore(a); // throws on Core error → aborts migrate
-    }
-  }
-
   /// Legacy: single-server keys from flutter_secure → upsert into Core.
-  /// Only reached when both Core and sqflite are empty.
+  /// Only reached when Core is empty.
   Future<void> _migrateLegacyIfNeeded() async {
     final url = await _secure.read(key: _legacyUrl) ?? '';
     if (url.trim().isEmpty) return;
@@ -313,8 +281,7 @@ class AccountsService extends ChangeNotifier {
     await _secure.delete(key: _legacyUrl);
     await _secure.delete(key: _legacyUser);
     await _secure.delete(key: _legacyPass);
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kActiveAccount, id);
+    RustCoreService.kvSet(_kActiveAccount, id);
   }
 
   // ---------------------------------------------------------------------------
@@ -502,11 +469,10 @@ class AccountsService extends ChangeNotifier {
     if (_activeAccountId != null &&
         !_accounts.any((a) => a.id == _activeAccountId)) {
       _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
-      _prefs ??= await SharedPreferences.getInstance();
       if (_activeAccountId == null) {
-        await _prefs!.remove(_kActiveAccount);
+        RustCoreService.kvDelete(_kActiveAccount);
       } else {
-        await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+        RustCoreService.kvSet(_kActiveAccount, _activeAccountId!);
       }
     }
   }
@@ -542,9 +508,8 @@ class AccountsService extends ChangeNotifier {
     await _upsertToCore(account); // throws on error
     _accounts.add(account);
     _activeAccountId ??= account.id;
-    _prefs ??= await SharedPreferences.getInstance();
-    if (_prefs!.getString(_kActiveAccount) == null) {
-      await _prefs!.setString(_kActiveAccount, account.id);
+    if (RustCoreService.kvGet(_kActiveAccount) == null) {
+      RustCoreService.kvSet(_kActiveAccount, account.id);
       _activeAccountId = account.id;
     }
     notifyListeners();
@@ -600,11 +565,10 @@ class AccountsService extends ChangeNotifier {
     _accounts.removeWhere((a) => a.id == id);
     if (_activeAccountId == id) {
       _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
-      _prefs ??= await SharedPreferences.getInstance();
       if (_activeAccountId == null) {
-        await _prefs!.remove(_kActiveAccount);
+        RustCoreService.kvDelete(_kActiveAccount);
       } else {
-        await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+        RustCoreService.kvSet(_kActiveAccount, _activeAccountId!);
       }
     }
     notifyListeners();
@@ -613,8 +577,7 @@ class AccountsService extends ChangeNotifier {
   Future<void> setActiveAccount(String id) async {
     if (!_accounts.any((a) => a.id == id)) return;
     _activeAccountId = id;
-    _prefs ??= await SharedPreferences.getInstance();
-    await _prefs!.setString(_kActiveAccount, id);
+    RustCoreService.kvSet(_kActiveAccount, id);
     notifyListeners();
   }
 
@@ -688,9 +651,8 @@ class AccountsService extends ChangeNotifier {
     } else {
       _accounts.add(account);
     }
-    _prefs ??= await SharedPreferences.getInstance();
     _activeAccountId = id;
-    await _prefs!.setString(_kActiveAccount, id);
+    RustCoreService.kvSet(_kActiveAccount, id);
     notifyListeners();
     return passwordRecovered;
   }
@@ -705,7 +667,6 @@ class AccountsService extends ChangeNotifier {
   }) async {
     final list = json['accounts'] as List<dynamic>? ?? [];
     final missing = <String>[];
-    _prefs ??= await SharedPreferences.getInstance();
     final existingIds = {for (final a in _accounts) a.id};
     final keepIds = <String>{};
     final seenNames = <String>{};
@@ -805,9 +766,9 @@ class AccountsService extends ChangeNotifier {
       _activeAccountId = _accounts.isEmpty ? null : _accounts.first.id;
     }
     if (_activeAccountId == null) {
-      await _prefs!.remove(_kActiveAccount);
+      RustCoreService.kvDelete(_kActiveAccount);
     } else {
-      await _prefs!.setString(_kActiveAccount, _activeAccountId!);
+      RustCoreService.kvSet(_kActiveAccount, _activeAccountId!);
     }
     notifyListeners();
     return missing;
