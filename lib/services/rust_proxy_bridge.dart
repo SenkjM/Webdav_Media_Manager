@@ -6,9 +6,9 @@ import 'package:flutter/foundation.dart';
 
 import 'rust_core_service.dart';
 
-/// Round 11 — Rust local HTTP proxy bridge (kRustProxyEnabled = true).
+/// Round 11 — Rust local HTTP proxy bridge.
 ///
-/// Thin wrappers for the `wdmm_proxy_*` FFI exports. Gated by [kRustProxyEnabled].
+/// Thin wrappers for the `wdmm_proxy_*` FFI exports.
 ///
 /// ## Purpose
 /// The Rust proxy (`wdmm-proxy`) serves local files over HTTP so that DLNA
@@ -16,7 +16,6 @@ import 'rust_core_service.dart';
 /// media without direct filesystem access.
 ///
 /// ## R12 cutover status
-/// - [kRustProxyEnabled] is `true` (device smoke passed in Round 10/11).
 /// - [LocalStreamBridge] is **deleted** (R12): MustProxy (crypt) streaming and
 ///   DLNA LAN cast now route through [RustProxyStreamBridge], which drives the
 ///   `wdmm_proxy_register_stream` / `wdmm_proxy_stream_set_result` FFI added in
@@ -42,12 +41,10 @@ class RustProxyBridge {
   ///
   /// [port] — port number; use 0 to let OS assign (ignored for `explicit:<addr>`).
   ///
-  /// Returns the bound port as an integer on success, or null on failure /
-  /// when [kRustProxyEnabled] is false.
+  /// Returns the bound port as an integer on success, or null on failure.
   ///
   /// Idempotent — if the proxy is already running, returns its current port.
   static int? start({required String bindMode, int port = 0}) {
-    if (!kRustProxyEnabled) return null;
     final result = RustCoreService.proxyStart(bindMode: bindMode, port: port);
     if (result == null || result.startsWith('error:')) {
       debugPrint('[RustProxyBridge] start failed: $result');
@@ -58,16 +55,14 @@ class RustProxyBridge {
     return p;
   }
 
-  /// Stop the local HTTP proxy. No-op if not running or flag is off.
+  /// Stop the local HTTP proxy. No-op if not running.
   static void stop() {
-    if (!kRustProxyEnabled) return;
     RustCoreService.proxyStop();
     debugPrint('[RustProxyBridge] stopped');
   }
 
-  /// Returns the bound proxy port, or -1 if not running / flag is off.
+  /// Returns the bound proxy port, or -1 if not running.
   static int port() {
-    if (!kRustProxyEnabled) return -1;
     return RustCoreService.proxyPort();
   }
 
@@ -79,11 +74,10 @@ class RustProxyBridge {
   /// - `port`          — the proxy port.
   /// - `url`           — full URL: `http://127.0.0.1:{port}{pathTemplate}`.
   ///
-  /// Returns null on failure or when [kRustProxyEnabled] is false.
+  /// Returns null on failure.
   ///
   /// [name] is optional; used for Content-Type guessing (e.g. `"track.mp3"`).
   static Map<String, dynamic>? registerFile(String filePath, {String? name}) {
-    if (!kRustProxyEnabled) return null;
     final result = RustCoreService.proxyRegisterFile(filePath, name: name);
     if (result == null || result.startsWith('error:')) {
       debugPrint('[RustProxyBridge] registerFile failed: $result');
@@ -102,21 +96,8 @@ class RustProxyBridge {
     }
   }
 
-  /// Unregister [token] from the proxy. No-op if [kRustProxyEnabled] is false.
+  /// Unregister [token] from the proxy.
   static void unregister(String token) {
-    if (!kRustProxyEnabled) return;
     RustCoreService.proxyUnregister(token);
   }
 }
-
-// ── Feature flag ──────────────────────────────────────────────────────────────
-
-/// Gate for the Rust local HTTP proxy.
-///
-/// **R12: `true`** — LocalStreamBridge deleted. MustProxy + DLNA cast route
-/// through [RustProxyStreamBridge] via [wdmm_proxy_register_stream] FFI.
-///
-/// Serial invariant: the proxy is a process-global singleton — never create
-/// more than one instance per process.
-// ignore: constant_identifier_names
-const bool kRustProxyEnabled = true;

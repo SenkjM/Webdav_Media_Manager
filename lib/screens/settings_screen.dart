@@ -484,19 +484,17 @@ class _RustQueueSettingsSectionState
           leading: const Icon(Icons.queue_outlined),
           title: const Text('Rust queue enabled'),
           subtitle: Text(
-            kRustQueueEnabled
-                ? 'ON — downloads routed through SerialPump'
-                : 'OFF (default) — Dart TaskQueueService is active.\n'
+            'ON — downloads routed through SerialPump'
                   'Set kRustQueueEnabled=true in rust_queue_bridge.dart '
                   'and rebuild to enable Rust routing.',
           ),
           trailing: Switch(
-            value: kRustQueueEnabled,
+            value: true,
             // kRustQueueEnabled is a compile-time const; rebuild required.
             // Switch is display-only; tapping it shows a hint.
             onChanged: (_) => AppSnack.show(
               context,
-              'Change kRustQueueEnabled in rust_queue_bridge.dart and rebuild.',
+              'Rust queue is always enabled (no flag to toggle).',
             ),
           ),
         ),
@@ -585,17 +583,15 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
           leading: const Icon(Icons.cast_connected_outlined),
           title: const Text('Rust proxy enabled'),
           subtitle: Text(
-            kRustProxyEnabled
-                ? 'ON — MustProxy + DLNA cast served via wdmm-proxy (R12)'
-                : 'OFF — set kRustProxyEnabled=true in rust_proxy_bridge.dart '
+            'ON — MustProxy + DLNA cast served via wdmm-proxy (R12)'
                   'and rebuild to enable the Rust proxy.',
           ),
           trailing: Switch(
-            value: kRustProxyEnabled,
+            value: true,
             // Compile-time const; display-only — tapping shows a hint.
             onChanged: (_) => AppSnack.show(
               context,
-              'Change kRustProxyEnabled in rust_proxy_bridge.dart and rebuild.',
+              'Rust proxy is always enabled (no flag to toggle).',
             ),
           ),
         ),
@@ -607,8 +603,8 @@ class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextButton(onPressed: kRustProxyEnabled ? _start : null, child: const Text('Start')),
-              TextButton(onPressed: kRustProxyEnabled ? _stop : null, child: const Text('Stop')),
+              TextButton(onPressed: _start, child: const Text('Start')),
+              TextButton(onPressed: _stop, child: const Text('Stop')),
               TextButton(onPressed: _refresh, child: const Text('Poll')),
             ],
           ),

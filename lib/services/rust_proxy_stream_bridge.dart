@@ -100,7 +100,7 @@ class RustProxyStreamBridge {
     if (proxyPort == null) {
       throw StateError(
         '[RustProxyStreamBridge] proxy could not be started '
-        '(kRustProxyEnabled=$kRustProxyEnabled)',
+        '',
       );
     }
 

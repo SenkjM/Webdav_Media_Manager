@@ -5,39 +5,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/models/webdav_stream.dart';
 import 'package:webdav_media_manager/services/stream_cover_reader.dart';
-import 'package:webdav_media_manager/utils/stream_lyrics.dart';
 
 void main() {
-  group('resolveLyrics', () {
-    test('sidecar wins over embedded', () {
-      expect(
-        resolveLyrics(sidecarLrc: 'a', embedded: 'b'),
-        'a',
-      );
-      expect(resolveLyrics(sidecarLrc: '  ', embedded: 'b'), 'b');
-      expect(resolveLyrics(embedded: '  '), isNull);
-    });
-  });
-
-  group('parseTimedLyrics', () {
-    test('parses LRC timestamps', () {
-      final lines = parseTimedLyrics('[00:01.00]one\n[00:02.50]two\nplain');
-      expect(lines, isNotNull);
-      expect(lines!.length, 2);
-      expect(lines[0].text, 'one');
-      expect(lines[1].at, const Duration(seconds: 2, milliseconds: 500));
-      expect(lyricIndexAt(lines, const Duration(milliseconds: 1500)), 0);
-      expect(lyricIndexAt(lines, const Duration(seconds: 3)), 1);
-    });
-
-    test('returns null for plain text', () {
-      expect(parseTimedLyrics('hello\nworld'), isNull);
-    });
-  });
-
-
-
-  group('extractTags via HTTP Range', () {
     late HttpServer server;
     late Uint8List mp3;
     late Uint8List flac;

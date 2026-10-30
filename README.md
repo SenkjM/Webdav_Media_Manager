@@ -4,6 +4,26 @@
 
 > **Front/Back Split**: Business logic (cloud drivers, DB, sync, crypto, DLNA) is being extracted into a **separate Rust workspace** [WDMM-core](https://github.com/SenkjM/WDMM-core) to enable Windows desktop support and unified local proxy. This Flutter repo becomes **UI + platform adapters** only (playback, SAF, notifications). See `docs/100-RUST-CORE-SPLIT.md` for migration map and FFI integration notes.
 
+## 模块结构 / Module diagram
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Flutter UI  (lib/)  screens · widgets · blocs          │
+└────────────────────┬────────────────────────────────────┘
+                     │ Dart FFI  rust_core_service.dart
+┌────────────────────▼────────────────────────────────────┐
+│  wdmm-ffi  (libwdmm_ffi.so)  — single C ABI boundary    │
+│  ├─ wdmm-storage  SQLite v12 (tracks · accounts · KV)   │
+│  ├─ wdmm-core     models · TaskQueue · SyncEngine       │
+│  ├─ wdmm-drivers  9 cloud drivers (WdmmVfs trait)        │
+│  ├─ wdmm-ffmpeg   in-process libav transcode (HLS)      │
+│  ├─ wdmm-proxy    local HTTP proxy (Range/206/416)       │
+│  └─ wdmm-openapi  local REST API (loopback)             │
+└─────────────────────────────────────────────────────────┘
+```
+
+详见 `docs/ARCHITECTURE.md`（crate 职责、启动序列、约束）。
+
 目前已支持多个网盘的原生直连挂载，后续会持续增加更多网盘类型，同时提供与 rclone Crypt 格式逐字节兼容的加密源实现和 open api 令牌自动刷新功能。目前对于非WEBDAV均采用只读配置，因为不同API上传方式不同且基本都不是很稳定，为了~~偷懒~~用户数据安全着想不支持上传。
 
 底层的媒体播放使用Media Kit，底层libmpv实现，有着强大的~~偷懒~~解码兜底能力，不过对于必须使用本地处理的数据（如Crypt）播放通过小型的本地HTTP服务器实现（内容解密后以本地流形式供播放器使用），虽然libmpv应该支持。相当不美观，有什么好的解决方法可以提，目前个人想到的是mod Media Kit自编译。有视频、音乐解码问题请向上游询问。

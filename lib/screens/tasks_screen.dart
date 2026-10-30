@@ -220,7 +220,7 @@ class TasksScreen extends StatelessWidget {
           // When the Rust queue is enabled, show a live Rust-side status panel
           // above the Dart task list so developers can verify both queues side
           // by side without opening Settings.  The panel auto-polls every 3 s.
-          if (kRustQueueEnabled) const _RustQueuePanel(),
+          const _RustQueuePanel(),
           Expanded(
             child: rows.isEmpty
                 ? Center(

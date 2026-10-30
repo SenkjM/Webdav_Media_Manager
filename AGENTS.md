@@ -62,3 +62,39 @@ All in-app cloud file operations go through **`WdmmVfs`** — the unified driver
 - Wrapper drivers (Crypt) expose `LocalStream` (MustProxy), never a plaintext `raw_url`. Content-delivery kinds stay labeled on `CloudFileItem` / driver `get`.
 
 This is a clean one-shot codebase: no feature flags, no dual-write/dual-read, no soft fallback to a Dart store "so mid-steps still work". See `CLAUDE.md`.
+
+## HLS / DLNA cast path
+
+`wdmm_proxy_register_hls(device_id, input_url, preset_id)` is the only entry point for HLS transcoding. It looks up the `TranscodePreset` from the DB, starts an in-process libav job (wdmm-ffmpeg), and returns `{token, playlist_url}`. Do **not** spawn an external `ffmpeg` process or call `Process.start`/`Process.run` for transcoding.
+
+Preset CRUD is via `wdmm_transcode_presets_json` / `wdmm_transcode_preset_save` / `wdmm_transcode_preset_delete` FFI calls. The 5 built-in presets (`passthrough`, `dlna-compat`, `balanced`, `high`, `audio-only`) are seeded at DB schema v11 init; do not hard-code preset parameters in Dart.
+
+## OpenAPI token
+
+`wdmm_openapi_start(port)` resolves the bearer token automatically (reads `<db_dir>/api-token` file, falls back to KV, otherwise mints a new UUID and persists both). The token file is mode 0600. Do **not** read the file or construct the token in Dart; call `wdmm_openapi_port()` and use the Dart bindings in `rust_core_service.dart`.
+
+## Media bytes
+
+All media byte delivery must go through `POST /v1/media/link` (OpenAPI). Dart **must not** splice upstream `raw_url` or `raw_headers` from a `CloudFileItem` directly into a player URL or DLNA `SetAVTransportURI` call. The media-link API returns a stable proxy URL or a signed direct URL; use that.
+
+## Verification commands (Linux CI / this repo)
+
+```sh
+# Dart static analysis (lib/ only — test/ has pre-existing errors)
+flutter analyze lib/
+
+# Dart unit tests
+dart test
+
+# Rust compile check
+cargo check -p wdmm-ffi -p wdmm-storage -p wdmm-openapi -p wdmm-proxy -p wdmm-ffmpeg
+
+# Rust unit tests
+cargo test -p wdmm-storage && cargo test -p wdmm-openapi
+
+# Full CI guard (see .github/workflows/verify.yml)
+```
+
+## Architecture reference
+
+See `docs/ARCHITECTURE.md` for the full layer diagram, crate responsibilities, DB schema, startup sequence, and active constraints.

@@ -1684,9 +1684,8 @@ class RustCoreService {
 
   // ── Round 7 — Queue enqueue FFI ───────────────────────────────────────────
   //
-  // Wires to `wdmm_queue_enqueue` added in Round 7. Gated by
-  // [kRustQueueEnabled] in rust_queue_bridge.dart — default `false` so the
-  // Dart TaskQueueService remains the live download engine.
+  // Wires to `wdmm_queue_enqueue` added in Round 7.
+  // [RustQueueBridge] routes single-file downloads through the Rust SerialPump.
 
   static _OneStrToStrDart? _queueEnqueue;
   static bool _queueSymbolsLoaded = false;
@@ -1727,8 +1726,7 @@ class RustCoreService {
   // ── Round 9 — Proxy FFI ───────────────────────────────────────────────────
   //
   // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
-  // round. Gated by `kRustProxyEnabled` in rust_proxy_bridge.dart.
-  // R12: LocalStreamBridge deleted — MustProxy + DLNA cast route through
+  // round. R12: LocalStreamBridge deleted — MustProxy + DLNA cast route through
   // RustProxyStreamBridge (wdmm_proxy_register_stream / set_result).
 
   static _ProxyStartDart?   _proxyStart;
@@ -2533,7 +2531,7 @@ class RustCoreService {
   //
   // Binds wdmm_manga_* exports landed in Wave D (fdb05df).
   // [MangaLibraryService] routes index CRUD and progress through these;
-  // sqflite is no longer written for manga once [kRustMangaEnabled] is true.
+  // sqflite is no longer written for manga.
 
   static _NoArgToStrDart?     _mangaList;
   static _OneStrToStrDart?    _mangaGet;
@@ -3116,5 +3114,3 @@ extension _Let<T> on T {
 /// `deleted_mangas` — manga sync is Core-only (`MangaSyncEngine` via
 /// `wdmm_sync_trigger` / `wdmm_sync_full`).
 /// Accounts SoT is Core FFI; [LibraryDatabase] may still open for cache/etc.
-// ignore: constant_identifier_names
-const bool kRustMangaEnabled = true;

@@ -1812,7 +1812,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       task.status = TaskStatus.cancelled;
       task.errorMessage = 'err.cancelled';
       // Mirror cancel to the Rust queue so pollStatus reflects it.
-      if (kRustQueueEnabled) RustQueueBridge.cancel(id);
+      RustQueueBridge.cancel(id);
       await _store.upsert(task);
       _completeWaiter(task);
       notifyListeners();
@@ -2856,9 +2856,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     // download, so the Dart _pump remains the live engine.
     // TODO(queue-cutover-R12): once a Rust executor + credential flow lands,
     // hand the whole download to Rust and remove the Dart _pump download branch.
-    if (kRustQueueEnabled) {
-      RustQueueBridge.enqueue(_rustQueueTaskJson(task));
-    }
+    RustQueueBridge.enqueue(_rustQueueTaskJson(task));
     final dest = _cache.fileForRemote(
       task.remotePath,
       sourceName: task.sourceName,
