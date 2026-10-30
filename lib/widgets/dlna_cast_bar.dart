@@ -59,9 +59,6 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   double _right = _kDefaultRight;
   double _bottom = _kDefaultBottom;
 
-  /// 是否显示兼容模式面板
-  bool _showTranscodePanel = false;
-
   /// 进度条拖动中的覆盖值（null = 未拖动，显示服务的真实进度）
   double? _seekOverride;
   Timer? _seekSettle;
@@ -99,7 +96,6 @@ class _DlnaCastBarState extends State<DlnaCastBar>
     setState(() {
       _expanded = !_expanded;
       if (_expanded) {
-        _showTranscodePanel = false;
         _expandCtrl.forward();
       } else {
         _expandCtrl.reverse();
@@ -111,7 +107,6 @@ class _DlnaCastBarState extends State<DlnaCastBar>
     if (!_expanded) return;
     setState(() {
       _expanded = false;
-      _showTranscodePanel = false;
       _expandCtrl.reverse();
     });
   }
@@ -570,50 +565,9 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                       ],
 
                       const Spacer(),
-
-                      // 兼容模式切换按钮
-                      TextButton.icon(
-                        onPressed: () =>
-                            setState(() => _showTranscodePanel =
-                                !_showTranscodePanel),
-                        icon: Icon(
-                          Icons.tune,
-                          size: 16,
-                          color: cast.transcodeSettings.remuxContainer
-                              ? scheme.primary
-                              : scheme.onSurfaceVariant,
-                        ),
-                        label: Text(
-                          '兼容模式',
-                          style: TextStyle(
-                            color: cast.transcodeSettings.remuxContainer
-                                ? scheme.primary
-                                : scheme.onSurfaceVariant,
-                            fontSize: 13,
-                            fontWeight: cast.transcodeSettings.remuxContainer
-                                ? FontWeight.w600
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        style: TextButton.styleFrom(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 8),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                      ),
                     ],
                   ),
 
-                  // ── 兼容模式面板（AnimatedSize 展开） ───────────
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                    child: _showTranscodePanel
-                        ? _TranscodePanel(castService: cast)
-                        : const SizedBox.shrink(),
-                  ),
-                ],
 
                 // 收起按钮
                 Align(
@@ -630,6 +584,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                     ),
                   ),
                 ),
+                ],  // else ...[
               ],
             ),
           ),
@@ -735,116 +690,6 @@ class _ExpandedProgressBar extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────
-//  兼容模式面板
-// ─────────────────────────────────────────────────────────────
-
-/// 内嵌在展开态底部的兼容转码设置面板。
-class _TranscodePanel extends StatelessWidget {
-  const _TranscodePanel({required this.castService});
-
-  final DlnaCastService castService;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final settings = castService.transcodeSettings;
-
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: scheme.outline.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text(
-              '兼容模式',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: scheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-
-          // 容器重封装
-          _TranscodeSwitchRow(
-            label: '容器重封装',
-            hint: '将原始流重新封装为 DLNA 兼容容器',
-            value: settings.remuxContainer,
-            onChanged: (v) => castService.setTranscodeSettings(
-              DlnaTranscodeSettings(
-                remuxContainer: v,
-                transcodeVideo: settings.transcodeVideo,
-                transcodeAudio: settings.transcodeAudio,
-              ),
-            ),
-          ),
-
-
-        ],
-      ),
-    );
-  }
-}
-
-/// 单行 Switch 控件
-class _TranscodeSwitchRow extends StatelessWidget {
-  const _TranscodeSwitchRow({
-    required this.label,
-    required this.hint,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String hint;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurface,
-                  ),
-                ),
-                Text(
-                  hint,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          ),
-        ],
-      ),
     );
   }
 }

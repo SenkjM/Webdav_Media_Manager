@@ -11,6 +11,7 @@ import 'dlna_cast_channel.dart';
 import 'dlna_queue_controller.dart';
 import 'rust_proxy_stream_bridge.dart';
 import 'rust_dmr_prefs_service.dart';
+import 'rust_core_service.dart';
 import 'webdav_service.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -94,36 +95,6 @@ class DlnaRenderer {
   );
 }
 
-/// 兼容模式转码选项，默认全部关闭。
-class DlnaTranscodeSettings {
-  const DlnaTranscodeSettings({
-    this.remuxContainer = false,
-    this.transcodeVideo = false,
-    this.transcodeAudio = false,
-  });
-
-  /// 容器重封装：MKV/AVI 等→MP4，不重新编码，CPU 开销极低。
-  final bool remuxContainer;
-
-  /// 视频流转码：任意→H.264。CPU 开销高。
-  final bool transcodeVideo;
-
-  /// 音频流转码：任意→AAC。CPU 开销中等。
-  final bool transcodeAudio;
-
-  bool get anyEnabled => remuxContainer || transcodeVideo || transcodeAudio;
-
-  DlnaTranscodeSettings copyWith({
-    bool? remuxContainer,
-    bool? transcodeVideo,
-    bool? transcodeAudio,
-  }) => DlnaTranscodeSettings(
-    remuxContainer: remuxContainer ?? this.remuxContainer,
-    transcodeVideo: transcodeVideo ?? this.transcodeVideo,
-    transcodeAudio: transcodeAudio ?? this.transcodeAudio,
-  );
-}
-
 /// 文件兼容性提示（按扩展名快速判断，不运行 ffprobe）。
 class DlnaCompatibilityHint {
   const DlnaCompatibilityHint({
@@ -176,7 +147,6 @@ class DlnaCastService extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration? _duration;
   String? _error;
-  DlnaTranscodeSettings _transcodeSettings = const DlnaTranscodeSettings();
   DlnaCompatibilityHint? _compatHint;
 
   DlnaCastState get state => _state;
@@ -188,12 +158,7 @@ class DlnaCastService extends ChangeNotifier {
   Duration get position => _position;
   Duration? get duration => _duration;
   String? get error => _error;
-  DlnaTranscodeSettings get transcodeSettings => _transcodeSettings;
   DlnaCompatibilityHint? get compatibilityHint => _compatHint;
-
-  /// 系统 FFmpeg 是否可用（null = 尚未检测，false = 不可用，true = 可用）。
-  bool? _ffmpegAvailable;
-  bool get ffmpegAvailable => _ffmpegAvailable ?? false;
 
   // --- 内部 ---
   RawDatagramSocket? _ssdpSocket;
@@ -201,6 +166,9 @@ class DlnaCastService extends ChangeNotifier {
   /// Token for the active Rust proxy stream registration. Cleared in
   /// [_cleanupSession]. null when no cast session is active.
   String? _currentStreamToken;
+  /// Token for an active HLS transcode job (wdmm_proxy_register_hls).
+  /// Non-null only when the current session uses HLS mode (forceDirect=false).
+  String? _currentHlsToken;
   String? _localIp;
   Timer? _pollTimer;
 
@@ -373,8 +341,6 @@ class DlnaCastService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 检测系统 FFmpeg 可用性（仅首次）
-      _ffmpegAvailable ??= await _checkFfmpeg();
       // 选择与 DMR 同子网的本机 IP，确保 DMR 可路由到代理地址
       _localIp = await _getLocalIpFor(renderer.host);
       debugPrint('[DLNA] localIp=$_localIp rendererHost=${renderer.host}');
@@ -441,21 +407,32 @@ class DlnaCastService extends ChangeNotifier {
     final proxyUrl = uri.toString();
     final mimeType = _mimeFor(item.name);
 
-    // DMR 偏好设置：forceDirect 决定是否跳过 HLS 转码代理。
-    // forceDirect=true → 单文件直通（当前实现）
-    // forceDirect=false → HLS 转码代理（需要 Core FFI `wdmm_proxy_register_hls`）
+    // DMR 偏好设置：forceDirect 决定是否使用 HLS 转码代理。
+    // forceDirect=true (默认) → 单文件直通（Rust 流代理）
+    // forceDirect=false → HLS 转码代理（wdmm_proxy_register_hls FFI）
     final prefs = _dmrPrefs[_renderer!.usn];
-    final useDirect = prefs?.forceDirect ?? true; // 默认直通
+    final useDirect = prefs?.forceDirect ?? true;
 
+    String castUrl;
     if (!useDirect) {
-      // HLS 模式：需要 wdmm_proxy_register_hls FFI。
-      // 当前 Core submodule 已有 FFI（9d01e09），但 Android 尚未调用。
-      // 临时：抛出友好错误，引导用户启用单文件直通。
-      throw Exception(
-        'HLS 转码代理暂不可用。\n'
-        '请在「兼容性设置」中启用「单文件直通」，'
-        '或等待后续版本支持 HLS 转码。',
+      // HLS 转码模式：调用 Rust in-process libav transcoder。
+      // presetId 默认 "balanced"；后续可在 DmrPreference 中存储用户选择。
+      const presetId = 'balanced';
+      final hlsResult = RustCoreService.proxyRegisterHls(
+        _renderer!.usn, proxyUrl, presetId,
       );
+      if (hlsResult == null || hlsResult.startsWith('error:')) {
+        throw Exception(
+          'HLS 转码代理启动失败：${hlsResult ?? 'native library unavailable'}\n'
+          '请切换到「单文件直通」模式，或检查日志。',
+        );
+      }
+      // Rust returns JSON: {"token":"…","playlist_url":"http://…/index.m3u8"}
+      final decoded = jsonDecode(hlsResult) as Map<String, dynamic>;
+      _currentHlsToken = decoded['token'] as String?;
+      castUrl = decoded['playlist_url'] as String;
+    } else {
+      castUrl = proxyUrl;
     }
 
     // 查询 DMR 支持的 SinkProtocolInfo，协商 protocolInfo
@@ -476,15 +453,15 @@ class DlnaCastService extends ChangeNotifier {
     }
 
     final protocolInfo = _negotiateProtocolInfo(mimeType, sinkProtocols);
-    debugPrint('[DLNA] castItem: proxyUrl=$proxyUrl mimeType=$mimeType protocolInfo=$protocolInfo');
+    debugPrint('[DLNA] castItem: castUrl=$castUrl mimeType=$mimeType protocolInfo=$protocolInfo');
 
     // SetAVTransportURI
     await _soap(
       _renderer!.controlUrl,
       'SetAVTransportURI',
       '<InstanceID>0</InstanceID>'
-      '<CurrentURI>${_xmlEscape(proxyUrl)}</CurrentURI>'
-      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, proxyUrl, protocolInfo))}</CurrentURIMetaData>',
+      '<CurrentURI>${_xmlEscape(castUrl)}</CurrentURI>'
+      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, castUrl, protocolInfo))}</CurrentURIMetaData>',
     );
 
     // Play
@@ -501,17 +478,13 @@ class DlnaCastService extends ChangeNotifier {
     _startPolling(accountId);
   }
 
-  /// 代理 Range 请求：透明转发或转码。
+  /// 代理 Range 请求：透明转发到 WebDAV 源。
+  /// HLS 模式下 Rust 转码器直接向渲染器推流，不经过此路径。
   Stream<List<int>> _proxyRange(
     WebDavStreamSource source,
     int start,
     int end,
   ) {
-    if (_transcodeSettings.anyEnabled && _ffmpegAvailable == true) {
-      // 转码模式：忽略 Range（流式输出不支持随机访问），返回 ffmpeg stdout
-      return _transcodeStream(source);
-    }
-    // 透明转发：通过 dart:io HttpClient 带认证转发
     return _forwardRange(source, start, end);
   }
 
@@ -531,47 +504,6 @@ class DlnaCastService extends ChangeNotifier {
       }
     } finally {
       client.close(force: true);
-    }
-  }
-
-  Stream<List<int>> _transcodeStream(WebDavStreamSource source) async* {
-    final settings = _transcodeSettings;
-    final args = <String>[
-      '-loglevel', 'error',
-    ];
-    // 注入认证 header 给 ffmpeg（必须在 -i 之前）
-    if (source.headers.isNotEmpty) {
-      // ffmpeg 用单个 -headers 接受 "\r\n" 分隔的多行 header
-      final headerBlock = source.headers.entries
-          .map((e) => '${e.key}: ${e.value}')
-          .join('\r\n');
-      args.addAll(['-headers', '$headerBlock\r\n']);
-    }
-    args.addAll(['-i', source.uri]);
-    // 视频编码
-    if (settings.transcodeVideo) {
-      args.addAll(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23']);
-    } else {
-      args.addAll(['-c:v', 'copy']);
-    }
-    // 音频编码
-    if (settings.transcodeAudio) {
-      args.addAll(['-c:a', 'aac', '-b:a', '192k']);
-    } else {
-      args.addAll(['-c:a', 'copy']);
-    }
-    // 输出容器（MP4 流式）
-    args.addAll([
-      '-f', 'mp4',
-      '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-      'pipe:1',
-    ]);
-
-    final process = await Process.start('ffmpeg', args);
-    // stderr 静默丢弃（避免管道阻塞）
-    unawaited(process.stderr.drain<List<int>>());
-    await for (final chunk in process.stdout) {
-      yield chunk;
     }
   }
 
@@ -651,21 +583,6 @@ class DlnaCastService extends ChangeNotifier {
     final item = q.tracks[index];
     q.selectRemotePath(item.path);
     await _castItem(item, q.accountId);
-  }
-
-  Future<void> setTranscodeSettings(DlnaTranscodeSettings settings) async {
-    final renderer = _renderer;
-    if (renderer != null) {
-      await _dmrPrefs.save(
-        DmrPreference(
-          usn: renderer.usn,
-          forceDirect: !settings.anyEnabled,
-          overrideName: _dmrPrefs[renderer.usn]?.overrideName,
-        ),
-      );
-    }
-    _transcodeSettings = settings;
-    notifyListeners();
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -805,6 +722,10 @@ class DlnaCastService extends ChangeNotifier {
     _pollTimer = null;
     _queue?.dispose();
     _queue = null;
+    if (_currentHlsToken != null) {
+      RustCoreService.proxyUnregisterHls(_currentHlsToken!);
+      _currentHlsToken = null;
+    }
     if (_currentStreamToken != null) {
       RustProxyStreamBridge.unregister(_currentStreamToken!);
       _currentStreamToken = null;
@@ -815,17 +736,6 @@ class DlnaCastService extends ChangeNotifier {
     _duration = null;
     _playbackState = DlnaPlaybackState.stopped;
     _compatHint = null;
-  }
-
-  /// 检测系统 ffmpeg 是否可用（运行 ffmpeg -version）。
-  /// 结果缓存在 [_ffmpegAvailable]，不重复检测。
-  Future<bool> _checkFfmpeg() async {
-    try {
-      final result = await Process.run('ffmpeg', ['-version']);
-      return result.exitCode == 0;
-    } catch (_) {
-      return false;
-    }
   }
 
   /// 选择与 [targetIp]（DMR IP）同子网的本机 IPv4 地址。

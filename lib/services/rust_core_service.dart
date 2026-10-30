@@ -81,6 +81,12 @@ typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
 typedef _StrInt64ToStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, int);
 
+// (str, f64) → str — used by wdmm_proxy_hls_seek(token, secs).
+typedef _StrF64ToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Double);
+typedef _StrF64ToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, double);
+
 typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Uint16);
 typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, int);
 typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
@@ -1730,6 +1736,13 @@ class RustCoreService {
   static _ProxyPortDart?    _proxyPort;
   static _ProxyTwoStrDart?  _proxyRegisterFile;
   static _OneStrToStrDart?  _proxyUnregister;
+  // ── B3.5 HLS transcoder bindings ─────────────────────────────────────────
+  static _ThreeStrToOneStrDart? _proxyRegisterHls;
+  static _StrF64ToStrDart?      _proxyHlsSeek;
+  static _OneStrToStrDart?      _proxyUnregisterHls;
+  static _NoArgToStrDart?       _transcodePresetsJson;
+  static _OneStrToStrDart?      _transcodePresetSave;
+  static _OneStrToStrDart?      _transcodePresetDelete;
 
   static bool _proxySymbolsLoaded = false;
 
@@ -1752,6 +1765,31 @@ class RustCoreService {
           .asFunction();
       _proxyUnregister = lib
           .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_proxy_unregister')
+          .asFunction();
+      // ── B3.5 HLS transcoder + preset CRUD ───────────────────────────────
+      _proxyRegisterHls = lib
+          .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>(
+              'wdmm_proxy_register_hls')
+          .asFunction();
+      _proxyHlsSeek = lib
+          .lookup<ffi.NativeFunction<_StrF64ToStrNative>>(
+              'wdmm_proxy_hls_seek')
+          .asFunction();
+      _proxyUnregisterHls = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_proxy_unregister_hls')
+          .asFunction();
+      _transcodePresetsJson = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_transcode_presets_json')
+          .asFunction();
+      _transcodePresetSave = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_transcode_preset_save')
+          .asFunction();
+      _transcodePresetDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_transcode_preset_delete')
           .asFunction();
       _proxySymbolsLoaded = true;
     } catch (e) {
@@ -1844,6 +1882,100 @@ class RustCoreService {
     final ptr = token.toNativeUtf8();
     try {
       return _readAndFreeString(_proxyUnregister!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── B3.5 HLS transcoder + preset CRUD ────────────────────────────────────
+
+  /// Register an HLS transcode job for [inputUrl] using preset [presetId].
+  ///
+  /// [deviceId] is an opaque identifier for the cast session (e.g. renderer USN).
+  /// [inputUrl] should be the loopback proxy URL for the file (so the Rust
+  /// transcoder fetches via the existing proxy — no separate auth needed).
+  /// [presetId] is the `id` column from `transcode_presets` (e.g. `"balanced"`).
+  ///
+  /// Returns a JSON string on success:
+  ///   `{"token":"…","playlist_url":"http://127.0.0.1:PORT/hls/TOKEN/index.m3u8"}`
+  /// or `'error:…'` on failure.
+  /// Returns null if the native library is unavailable.
+  static String? proxyRegisterHls(
+      String deviceId, String inputUrl, String presetId) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyRegisterHls == null) return null;
+    final pDev   = deviceId.toNativeUtf8();
+    final pInput = inputUrl.toNativeUtf8();
+    final pPreset = presetId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyRegisterHls!(pDev, pInput, pPreset));
+    } finally {
+      calloc.free(pDev);
+      calloc.free(pInput);
+      calloc.free(pPreset);
+    }
+  }
+
+  /// Seek the active HLS job identified by [token] to [secs] seconds from
+  /// the start of the stream.  Returns `'ok'` or `'error:…'`.
+  static String? proxyHlsSeek(String token, double secs) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyHlsSeek == null) return null;
+    final ptr = token.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyHlsSeek!(ptr, secs));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Stop and clean up the HLS job for [token].
+  /// Returns `'ok'` or `'error:…'`.
+  static String? proxyUnregisterHls(String token) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyUnregisterHls == null) return null;
+    final ptr = token.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyUnregisterHls!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List all transcode presets as a JSON array.
+  /// Returns a JSON string or `'error:…'`.
+  static String? transcodePresetsJson() {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_transcodePresetsJson == null) return null;
+    return _readAndFreeString(_transcodePresetsJson!());
+  }
+
+  /// Create or update a transcode preset from [json] (a serialised
+  /// `TranscodePreset` object).  Returns `'ok'` or `'error:…'`.
+  static String? transcodePresetSave(String json) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_transcodePresetSave == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_transcodePresetSave!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete the transcode preset with [id].  Returns `'ok'` or `'error:…'`.
+  static String? transcodePresetDelete(String id) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_transcodePresetDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_transcodePresetDelete!(ptr));
     } finally {
       calloc.free(ptr);
     }
