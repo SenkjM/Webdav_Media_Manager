@@ -104,14 +104,36 @@ jobs:
           echo "ANDROID_NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
           echo "NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
 
-      - name: Fetch FFmpeg vendor (android-arm64 only)
-        env:
-          WDMM_FFMPEG_ONLY: android-arm64
-          WDMM_FFMPEG_CACHE: ${{ runner.temp }}/ffmpeg-vendor-cache
+      - name: Download FFmpeg Android shared libs
+        # Fetch the FFmpeg shared libs produced by build-ffmpeg-android.yml.
+        # They live under the rolling release tag `ffmpeg-android-libs`.
+        # If the release does not exist yet (first run before the FFmpeg build
+        # workflow has fired), the step prints a warning and continues so that
+        # `cargo ndk` can still verify that non-FFmpeg code compiles, even
+        # though the final APK will crash when libav is dlopen'd at runtime.
         run: |
           set -euo pipefail
-          mkdir -p "$WDMM_FFMPEG_CACHE"
-          bash rust/wdmm-core/scripts/fetch-ffmpeg-vendor.sh
+          JNILIBS="android/app/src/main/jniLibs"
+          TMPLIBS="${{ runner.temp }}/ffmpeg-android-libs"
+          mkdir -p "$TMPLIBS" "${JNILIBS}/arm64-v8a" "${JNILIBS}/x86_64"
+          for abi in arm64-v8a x86_64; do
+            tarball="${TMPLIBS}/ffmpeg-android-${abi}.tar.gz"
+            gh release download ffmpeg-android-libs \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "ffmpeg-android-${abi}.tar.gz" \
+              --output "$tarball" \
+              2>/dev/null && {
+              tar -xzf "$tarball" -C "$TMPLIBS"
+              cp "${TMPLIBS}/${abi}/lib"*.so "${JNILIBS}/${abi}/" 2>/dev/null || true
+              echo "FFmpeg libs for ${abi}: $(ls "${JNILIBS}/${abi}"/*.so 2>/dev/null | wc -l) .so files"
+            } || {
+              echo "::warning::FFmpeg libs for ${abi} not in release — run build-ffmpeg-android.yml first."
+            }
+          done
+          # Expose the arm64 lib dir to cargo-ndk for the linker search path.
+          echo "WDMM_FFMPEG_LIB_DIR=${JNILIBS}/arm64-v8a" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       - name: Build wdmm-ffi for arm64-v8a
         run: |

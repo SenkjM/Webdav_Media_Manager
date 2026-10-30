@@ -1,0 +1,174 @@
+# Build FFmpeg 7.1 shared libraries for Android (arm64-v8a + x86_64).
+#
+# Part of B3.5 (in-process libav transcoder).  The Rust `wdmm-ffmpeg` crate
+# dynamically links libavcodec/libavformat/...; those `.so` files are built
+# here and published to a rolling GitHub release tag (`ffmpeg-android-libs`)
+# so the APK build workflow (testbuild.yml) can download them without
+# rebuilding every run.
+#
+# License posture (PLAN B3.5 / m01480): --disable-nonfree is mandatory
+# (AGPL project); --enable-gpl + libx264 are allowed (GPL v2+, not nonfree).
+# The build script audits ffbuild/config.log and refuses nonfree.
+
+name: Build FFmpeg Android Libs
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - refactor/rust-core
+    paths:
+      - 'rust/wdmm-core/scripts/build-ffmpeg-android.sh'
+      - '.github/workflows/build-ffmpeg-android.yml'
+  schedule:
+    # Monthly refresh keeps the rolling release current if the script or
+    # upstream FFmpeg/x264 move.  Off the :00 mark to spread load.
+    - cron: '17 3 3 * *'
+
+env:
+  NDK_VERSION: "28.2.13676358"
+  MIN_API: "24"
+  FFMPEG_VERSION: "n7.1"
+
+jobs:
+  build:
+    name: FFmpeg ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [arm64-v8a, x86_64]
+
+    steps:
+      - name: Checkout (with submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install NDK ${{ env.NDK_VERSION }}
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}"
+          SDKMANAGER="${SDK_ROOT}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager || true)"
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;${NDK_VERSION}"
+          NDK_PATH="${SDK_ROOT}/ndk/${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
+          echo "NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
+
+      - name: Build FFmpeg + x264 (${{ matrix.abi }})
+        env:
+          ABI: ${{ matrix.abi }}
+          OUTPUT_DIR: ${{ github.workspace }}/ffmpeg-libs/${{ matrix.abi }}
+          MIN_API: ${{ env.MIN_API }}
+          FFMPEG_VERSION: ${{ env.FFMPEG_VERSION }}
+          BUILD_DIR: ${{ runner.temp }}/ffmpeg-build-${{ matrix.abi }}
+          JOBS: "4"
+        run: |
+          set -euo pipefail
+          bash rust/wdmm-core/scripts/build-ffmpeg-android.sh
+
+      - name: Audit configure flags (forbid --enable-nonfree)
+        run: |
+          set -euo pipefail
+          # The build script already audits ffbuild/config.log, but verify the
+          # produced binaries carry no nonfree marker either — a belt and
+          # braces check for license compliance (PLAN acceptance gate).
+          bad=0
+          for so in ffmpeg-libs/${{ matrix.abi }}/lib*.so; do
+            if strings "$so" | grep -qi "nonfree"; then
+              echo "::error::nonfree marker found in ${so##*/}"
+              bad=1
+            fi
+          done
+          if [ "$bad" -ne 0 ]; then
+            echo "::error::License violation — FFmpeg built with nonfree components"
+            exit 1
+          fi
+          echo "License OK: no nonfree marker in any .so"
+
+      - name: Audit 16 KB page alignment
+        run: |
+          set -euo pipefail
+          bad=0
+          for so in ffmpeg-libs/${{ matrix.abi }}/lib*.so; do
+            align=$(readelf -lW "$so" 2>/dev/null \
+              | awk '/^LOAD/ {print $NF; exit}' | sed 's/^0*//')
+            if [ -z "$align" ] || [ "$((align))" -lt 16384 ]; then
+              echo "::error::${so##*/} LOAD alignment < 16384 (got ${align:-?})"
+              bad=1
+            else
+              echo "${so##*/}: 16 KB aligned (0x$(printf '%x' "$align"))"
+            fi
+          done
+          [ "$bad" -eq 0 ] || exit 1
+
+      - name: Tarball for release (preserve ABI dir layout)
+        run: |
+          set -euo pipefail
+          tar -C ffmpeg-libs -czf ffmpeg-android-${{ matrix.abi }}.tar.gz ${{ matrix.abi }}
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-android-${{ matrix.abi }}
+          path: ffmpeg-libs/${{ matrix.abi }}/*.so
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-android-${{ matrix.abi }}-tarball
+          path: ffmpeg-android-${{ matrix.abi }}.tar.gz
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    name: Publish rolling release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || github.ref == 'refs/heads/refactor/rust-core'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all ABI tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ffmpeg-android-*-tarball
+          path: tarballs
+          merge-multiple: false
+
+      - name: Flatten tarballs
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find tarballs -name 'ffmpeg-android-*.tar.gz' -exec cp {} release-assets/ \;
+          ls -lh release-assets/
+
+      - name: Publish / update rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ffmpeg-android-libs
+          name: FFmpeg Android Shared Libs (rolling)
+          prerelease: true
+          files: release-assets/*.tar.gz
+          body: |
+            Auto-built FFmpeg `${{ env.FFMPEG_VERSION }}` shared libraries for Android.
+
+            - ABIs: `arm64-v8a`, `x86_64` (armeabi-v7a excluded — LP64-only struct offsets)
+            - Configure: `--disable-nonfree --enable-gpl --enable-libx264 --disable-symver`
+            - Linker: `--max-page-size=16384` (Android 15+ 16 KB pages)
+            - NDK: `${{ env.NDK_VERSION }}`, min API `${{ env.MIN_API }}`
+            - License: GPL v2+ (libx264 bundled static)
+
+            Consumed by `testbuild.yml` via `gh release download`.
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

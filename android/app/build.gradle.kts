@@ -34,7 +34,12 @@ val flutterDefaultAbis = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
 android {
     namespace = "com.senkjm.media_manager"
     compileSdk = maxOf(flutter.compileSdkVersion, 35)
-    ndkVersion = flutter.ndkVersion
+    // Pin NDK r28.x for the in-process libav transcoder (B3.5).
+    // FFmpeg 7.1 shared libs are built by `.github/workflows/build-ffmpeg-android.yml`
+    // against this exact NDK; the Rust `wdmm-ffi` link step and the prebuilt
+    // `.so` files must use the same toolchain. r28 is also the first NDK to
+    // default to 16 KB page alignment, matching `--max-page-size=16384`.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
