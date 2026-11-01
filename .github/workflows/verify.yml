@@ -46,7 +46,7 @@ jobs:
         run: dart analyze --fatal-infos lib/
 
       - name: dart test
-        run: dart test --reporter=compact
+        run: flutter test --reporter=compact
 
       # ── Naming guard (I9) ────────────────────────────────────────────────
       # CloudDriver / cloud_drivers / RustCloudDriver must not appear in lib/.
@@ -303,7 +303,7 @@ jobs:
 
       # Run the openapi integration tests (token persist + rotate, health, etc.)
       - name: cargo test -p wdmm-openapi (smoke routes)
-        run: cargo test -p wdmm-openapi -- --test-output immediate
+        run: cargo test -p wdmm-openapi
 
       # Verify token file 0600 logic compiles and token KV path is present
       - name: Token file + loopback bind check (static)
