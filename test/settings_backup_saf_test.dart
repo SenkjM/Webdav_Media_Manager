@@ -72,7 +72,7 @@ void main() {
 
     SharedPreferences.setMockInitialValues({});
     final prefs2 = await SharedPreferences.getInstance();
-    final s2 = SettingsService(prefs: prefs2);
+    final s2 = SettingsService();
     await s2.init();
     expect(s2.customDownloadDirActive, isFalse);
 
