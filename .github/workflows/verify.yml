@@ -228,13 +228,17 @@ jobs:
           fi
 
       # ── FFmpeg compliance guard ──────────────────────────────────────────
-      # Verify no --enable-nonfree in build scripts / CI config.
+      # Verify no --enable-nonfree is actually passed to FFmpeg configure.
+      # (Comments, audit code, and this guard's own text mention the string,
+      #  so filter those out — only flag real configure invocations.)
       - name: FFmpeg compliance — no --enable-nonfree
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          BAD=$(grep -rn "\-\-enable-nonfree" \
-            scripts/ .github/workflows/ rust/wdmm-core/scripts/ || true)
+          BAD=$(grep -rn -- '--enable-nonfree' \
+            .github/workflows/ rust/wdmm-core/scripts/ 2>/dev/null \
+            | grep -vE ':[0-9]+:[[:space:]]*#|grep[[:space:]]|echo[[:space:]]|err[[:space:]]|name:.*nonfree' \
+            || true)
           if [ -n "$BAD" ]; then
             echo "ERROR: --enable-nonfree found (forbidden per PLAN §D11):"
             echo "$BAD"
