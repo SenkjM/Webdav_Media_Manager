@@ -194,13 +194,13 @@ jobs:
           SYMBOLS=$(grep -E '^pub extern "C" fn ' rust/wdmm-core/crates/wdmm-ffi/src/lib.rs \
             | sed 's/pub extern "C" fn \([a-z_]*\).*/\1/' | sort)
 
-          # Extract all looked-up symbols from Dart service
-          DART_LOOKUPS=$(grep -oE 'lookupFunction<[^>]+>\s*\([^)]*\)|_lib\.lookup<[^>]+>\s*\([^,)]+\)|_lib\.lookupFunction<[^)]+>' \
-            lib/services/rust_core_service.dart | grep -oE '"wdmm_[a-z_]+"' \
-            | tr -d '"' | sort -u || true)
-          # Also look for string literals used with lookup
-          DART_LOOKUPS2=$(grep -oE '"wdmm_[a-z_]+"' lib/services/rust_core_service.dart \
-            | tr -d '"' | sort -u)
+          # Extract all looked-up symbols from Dart service (single-quoted in Dart)
+          DART_LOOKUPS=$(grep -oE "lookup<[^>]+>\s*\('[^']+'\)|lookupFunction<[^>]+>\s*\('[^']+'\)" \
+            lib/services/rust_core_service.dart | grep -oE "'wdmm_[a-z_]+'" \
+            | tr -d "'" | sort -u || true)
+          # Also look for bare string literals used with lookup (single-quoted style)
+          DART_LOOKUPS2=$(grep -oE "'wdmm_[a-z_]+'" lib/services/rust_core_service.dart \
+            | tr -d "'" | sort -u || true)
 
           ALL_DART=$(echo "$DART_LOOKUPS"$'\n'"$DART_LOOKUPS2" | sort -u)
 

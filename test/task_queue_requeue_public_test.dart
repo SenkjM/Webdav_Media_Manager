@@ -13,7 +13,6 @@ import 'package:webdav_media_manager/services/cache_service.dart';
 import 'package:webdav_media_manager/services/task_queue_service.dart';
 import 'package:webdav_media_manager/services/task_store.dart';
 import 'package:webdav_media_manager/services/webdav_service.dart';
-import 'package:webdav_media_manager/services/cloud_driver.dart';
 
 class _MemStore extends TaskStore {
   final Map<String, QueueTask> rows = {};
