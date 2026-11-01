@@ -155,6 +155,8 @@ jobs:
 
       - name: Publish / update rolling release
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ffmpeg-android-libs
           name: FFmpeg Android Shared Libs (rolling)
@@ -170,5 +172,3 @@ jobs:
             - License: GPL v2+ (libx264 bundled static)
 
             Consumed by `testbuild.yml` via `gh release download`.
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
