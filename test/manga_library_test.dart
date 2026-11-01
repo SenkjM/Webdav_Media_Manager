@@ -108,13 +108,13 @@ void main() {
       'home_tab_v024_folders_inserted': true,
     });
     final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsService(prefs: prefs);
+    final settings = SettingsService();
     await settings.init();
     expect(settings.homeTab, 4); // network moved to 4
     expect(prefs.getBool('home_tab_v025_manga_inserted'), isTrue);
 
     // Second init does not shift again.
-    final again = SettingsService(prefs: prefs);
+    final again = SettingsService();
     await again.init();
     expect(again.homeTab, 4);
   });
@@ -125,7 +125,7 @@ void main() {
       'home_tab_v024_folders_inserted': true,
     });
     final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsService(prefs: prefs);
+    final settings = SettingsService();
     await settings.init();
     expect(settings.homeTab, 2);
   });
@@ -178,7 +178,7 @@ void main() {
       'home_tab_v025_manga_inserted': true,
     });
     final prefs = await SharedPreferences.getInstance();
-    final s = SettingsService(prefs: prefs);
+    final s = SettingsService();
     await s.init();
     expect(s.mangaScanSubdirs, isTrue);
     expect(s.mangaCreateSubdirs, isTrue);
@@ -197,7 +197,7 @@ void main() {
       'home_tab_v025_manga_inserted': true,
     });
     final prefs = await SharedPreferences.getInstance();
-    final s = SettingsService(prefs: prefs);
+    final s = SettingsService();
     await s.init();
     expect(SettingsService.maxImagePrefetchCount, 20);
     await s.setImagePrefetchCount(20);
@@ -247,12 +247,12 @@ void main() {
       'home_tab_v025_manga_inserted': true,
     });
     final prefs = await SharedPreferences.getInstance();
-    final s = SettingsService(prefs: prefs);
+    final s = SettingsService();
     await s.init();
     expect(s.imagePageTurn, PageTurnDirection.ltr);
     await s.setImagePageTurn(PageTurnDirection.rtl);
     expect(s.imagePageTurn, PageTurnDirection.rtl);
-    final again = SettingsService(prefs: prefs);
+    final again = SettingsService();
     await again.init();
     expect(again.imagePageTurn, PageTurnDirection.rtl);
   });

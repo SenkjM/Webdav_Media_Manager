@@ -17,7 +17,7 @@ void main() {
   test('crypt sequential download defaults to true', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final s = SettingsService(prefs: prefs);
+    final s = SettingsService();
     await s.init();
     expect(s.cryptSequentialDownloadEnabled, isTrue);
   });
@@ -26,7 +26,7 @@ void main() {
       () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final s = SettingsService(prefs: prefs);
+    final s = SettingsService();
     await s.init();
 
     await s.setMusicCacheMaxMb(512);

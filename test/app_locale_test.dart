@@ -34,7 +34,7 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsService(prefs: prefs);
+    final settings = SettingsService();
     await settings.setAppLocale(AppLocalePreference.zhCN);
 
     await tester.pumpWidget(
@@ -60,11 +60,11 @@ void main() {
   test('settings persist locale preference across reinitialization', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsService(prefs: prefs);
+    final settings = SettingsService();
 
     await settings.setAppLocale(AppLocalePreference.zhTW);
 
-    final restored = SettingsService(prefs: prefs);
+    final restored = SettingsService();
     await restored.init();
     expect(restored.appLocale, AppLocalePreference.zhTW);
     expect(prefs.getString('app_locale'), 'zh-TW');

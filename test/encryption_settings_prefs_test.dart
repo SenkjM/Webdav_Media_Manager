@@ -14,7 +14,7 @@ void main() {
   test('prefer libsodium defaults from dart-define and persists', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final fresh = SettingsService(prefs: prefs);
+    final fresh = SettingsService();
     await fresh.init();
 
     expect(
@@ -37,7 +37,7 @@ void main() {
     await fresh.setPreferLibsodiumSecretboxEnabled(false);
     expect(secretboxBackend, SecretboxBackend.dart);
 
-    final restored = SettingsService(prefs: prefs);
+    final restored = SettingsService();
     await restored.init();
     expect(restored.preferLibsodiumSecretboxEnabled, isFalse);
     expect(secretboxBackend, SecretboxBackend.dart);
@@ -46,12 +46,12 @@ void main() {
   test('crypt sequential download still persists', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final fresh = SettingsService(prefs: prefs);
+    final fresh = SettingsService();
     await fresh.init();
     expect(fresh.cryptSequentialDownloadEnabled, isTrue);
 
     await fresh.setCryptSequentialDownloadEnabled(false);
-    final restored = SettingsService(prefs: prefs);
+    final restored = SettingsService();
     await restored.init();
     expect(restored.cryptSequentialDownloadEnabled, isFalse);
     expect(prefs.getBool('crypt_sequential_download'), isFalse);

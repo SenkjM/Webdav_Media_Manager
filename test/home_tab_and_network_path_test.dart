@@ -9,7 +9,7 @@ void main() {
   test('home_tab_index persists across SettingsService reloads', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final fresh = SettingsService(prefs: prefs);
+    final fresh = SettingsService();
     await fresh.init();
     expect(fresh.homeTab, 0);
 
@@ -17,7 +17,7 @@ void main() {
     expect(fresh.homeTab, 2);
     expect(prefs.getInt('home_tab_index'), 2);
 
-    final restored = SettingsService(prefs: prefs);
+    final restored = SettingsService();
     await restored.init();
     expect(restored.homeTab, 2);
   });
@@ -28,7 +28,7 @@ void main() {
       'network_remember_last_path': true,
     });
     final prefs = await SharedPreferences.getInstance();
-    final fresh = SettingsService(prefs: prefs);
+    final fresh = SettingsService();
     await fresh.init();
 
     // Stale prefs key scrubbed; cold start always begins at root.
@@ -40,7 +40,7 @@ void main() {
     expect(fresh.networkLastPath, '/music/album');
     expect(prefs.containsKey('network_last_path'), isFalse);
 
-    final again = SettingsService(prefs: prefs);
+    final again = SettingsService();
     await again.init();
     expect(again.networkLastPath, '/');
     expect(again.exportForBackup().containsKey('network_last_path'), isFalse);

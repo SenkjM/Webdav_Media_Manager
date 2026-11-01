@@ -23,7 +23,7 @@ void main() {
   test('auto backfill prefs default and persist (bind roots)', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final fresh = SettingsService(prefs: prefs);
+    final fresh = SettingsService();
     await fresh.init();
 
     expect(fresh.musicLibraryAutoBackfill, isFalse);
@@ -44,7 +44,7 @@ void main() {
     expect(fresh.musicLibraryBackfillRoots, hasLength(1));
     expect(fresh.musicLibraryBackfillRoots.single.path, '/Music');
 
-    final restored = SettingsService(prefs: prefs);
+    final restored = SettingsService();
     await restored.init();
     expect(restored.musicLibraryAutoBackfill, isTrue);
     expect(restored.musicLibraryBackfillBindRoots, isTrue);
@@ -58,7 +58,7 @@ void main() {
       'music_library_auto_backfill': true,
     });
     final prefs = await SharedPreferences.getInstance();
-    final s = SettingsService(prefs: prefs);
+    final s = SettingsService();
     await s.init();
     // Auto on → play trigger always allowed; legacy on-open false is ignored.
     expect(s.musicLibraryAutoBackfill, isTrue);
@@ -68,7 +68,7 @@ void main() {
   test('shouldPlayTriggerBackfill follows auto mode only', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final s = SettingsService(prefs: prefs);
+    final s = SettingsService();
     await s.init();
 
     expect(shouldPlayTriggerBackfill(s), isFalse);
@@ -83,7 +83,7 @@ void main() {
   test('shouldBackfillForPlayingTrack respects bind filter', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final s = SettingsService(prefs: prefs);
+    final s = SettingsService();
     await s.init();
     await s.setMusicLibraryAutoBackfill(true);
 

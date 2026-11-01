@@ -24,19 +24,19 @@ void main() {
   test('settings persist theme mode and default to system', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final fresh = SettingsService(prefs: prefs);
+    final fresh = SettingsService();
     await fresh.init();
     expect(fresh.appThemeMode, AppThemeMode.system);
     expect(fresh.themeMode, ThemeMode.system);
 
     await fresh.setAppThemeMode(AppThemeMode.dark);
-    final restored = SettingsService(prefs: prefs);
+    final restored = SettingsService();
     await restored.init();
     expect(restored.appThemeMode, AppThemeMode.dark);
     expect(prefs.getString('theme_mode'), 'dark');
 
     await restored.setAppThemeMode(AppThemeMode.system);
-    final again = SettingsService(prefs: prefs);
+    final again = SettingsService();
     await again.init();
     expect(again.themeMode, ThemeMode.system);
   });
@@ -102,7 +102,7 @@ void main() {
   testWidgets('MaterialApp reads the saved theme mode', (tester) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsService(prefs: prefs);
+    final settings = SettingsService();
     await settings.setAppThemeMode(AppThemeMode.dark);
 
     await tester.pumpWidget(
@@ -130,13 +130,13 @@ void main() {
   test('seed color persists beside theme mode', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
-    final settings = SettingsService(prefs: prefs);
+    final settings = SettingsService();
     await settings.init();
     expect(settings.themeSeed, const Color(0xFF2EC4B6));
 
     const custom = Color(0xFF6750A4);
     await settings.setThemeSeed(custom);
-    final restored = SettingsService(prefs: prefs);
+    final restored = SettingsService();
     await restored.init();
     expect(restored.themeSeedArgb, 0xFF6750A4);
     expect(prefs.getInt('theme_seed_argb'), 0xFF6750A4);
