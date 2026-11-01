@@ -125,12 +125,20 @@ jobs:
       # ── Media-link guard ─────────────────────────────────────────────────
       # Dart must not splice upstream raw URLs (account raw_url) into player
       # or DLNA directly; media bytes must come through the /v1/media/link API.
+      # Exclusions:
+      #   cloud_drive_service.dart — legitimate download path: rawUrl is passed
+      #     directly to dio for file-to-disk downloads (not playback/DLNA); the
+      #     B5 guard targets streaming, not background file downloads.
+      #   wdmm_vfs.dart — only defines the rawUrl field on CloudFileItem (model
+      #     field declaration), not a URL-splice violation.
       - name: Media-link guard — no direct raw URL splicing in lib/
         run: |
           set -euo pipefail
           BAD=$(grep -rn --include="*.dart" \
+            --exclude="cloud_drive_service.dart" \
+            --exclude="wdmm_vfs.dart" \
             -e "raw_url" -e "rawUrl" -e "delivery_url" \
-            lib/services/ lib/screens/ lib/widgets/ lib/blocs/ || true)
+            lib/services/ lib/screens/ lib/widgets/ lib/blocs/ 2>/dev/null || true)
           if [ -n "$BAD" ]; then
             echo "ERROR: direct raw URL reference found (use /v1/media/link instead):"
             echo "$BAD"
