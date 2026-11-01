@@ -77,9 +77,16 @@ jobs:
           # The build script already audits ffbuild/config.log, but verify the
           # produced binaries carry no nonfree marker either — a belt and
           # braces check for license compliance (PLAN acceptance gate).
+          #
+          # FFmpeg embeds its full configure commandline in every library's
+          # *_configuration() function (FFMPEG_CONFIGURATION macro), so a build
+          # with --disable-nonfree will have the literal text "--disable-nonfree"
+          # in all six .so files.  grep -qi "nonfree" matches that text and
+          # produces a false positive.  The real nonfree marker is
+          # "--enable-nonfree"; "--disable-nonfree" is safe.
           bad=0
           for so in ffmpeg-libs/${{ matrix.abi }}/lib*.so; do
-            if strings "$so" | grep -qi "nonfree"; then
+            if strings "$so" | grep -qF -- "--enable-nonfree"; then
               echo "::error::nonfree marker found in ${so##*/}"
               bad=1
             fi
@@ -95,13 +102,20 @@ jobs:
           set -euo pipefail
           bad=0
           for so in ffmpeg-libs/${{ matrix.abi }}/lib*.so; do
+            # readelf -lW indents each program header with spaces, so the first
+            # field is "LOAD" not "^LOAD".  Use awk field match, not a line anchor.
             align=$(readelf -lW "$so" 2>/dev/null \
-              | awk '/^LOAD/ {print $NF; exit}' | sed 's/^0*//')
-            if [ -z "$align" ] || [ "$((align))" -lt 16384 ]; then
-              echo "::error::${so##*/} LOAD alignment < 16384 (got ${align:-?})"
+              | awk '$1=="LOAD" {print $NF; exit}' || true)
+            # Strip 0x prefix; parse as hex with $((16#...)).
+            align="${align#0x}"; align="${align#0X}"
+            if [ -z "$align" ]; then
+              echo "::error::${so##*/} could not read LOAD alignment (got ?)"
+              bad=1
+            elif [ "$((16#$align))" -lt 16384 ]; then
+              echo "::error::${so##*/} LOAD alignment < 16384 (got 0x${align})"
               bad=1
             else
-              echo "${so##*/}: 16 KB aligned (0x$(printf '%x' "$align"))"
+              echo "${so##*/}: 16 KB aligned (0x${align})"
             fi
           done
           [ "$bad" -eq 0 ] || exit 1
