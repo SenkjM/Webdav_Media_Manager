@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import 'cache_index_db.dart';
+import '../storage/cache_index_db.dart';
 import 'platform_export_service.dart';
 import 'playlist_store.dart';
 import 'task_store.dart';

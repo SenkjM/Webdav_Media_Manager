@@ -17,7 +17,7 @@ import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/backup_service.dart';
-import '../services/cache_index_db.dart';
+import '../storage/cache_index_db.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
 import '../services/download_destination_service.dart';

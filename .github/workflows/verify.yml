@@ -90,8 +90,10 @@ jobs:
       - name: grep whitelist — confined legacy deps
         run: |
           set -euo pipefail
+          # `dio` is a general-purpose HTTP client used throughout the app
+          # (downloads, image loading, app updates, etc.); it is not confined.
           ALLOWED_DIRS="lib/adapters/ lib/platform/ lib/services/webdav_service.dart lib/storage/"
-          for PKG in webdav_client dio sqflite shared_preferences; do
+          for PKG in webdav_client sqflite shared_preferences; do
             HITS=$(grep -rn --include="*.dart" "import.*['\"]package:${PKG}/" lib/ || true)
             # Filter out allowed dirs
             BAD=$(echo "$HITS" | grep -v \

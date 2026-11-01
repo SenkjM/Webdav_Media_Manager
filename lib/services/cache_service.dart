@@ -11,7 +11,7 @@ import '../utils/audio_extensions.dart';
 import '../utils/cache_group_codec.dart';
 import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
-import 'cache_index_db.dart';
+import '../storage/cache_index_db.dart';
 
 /// Local file cache for downloaded music. Playback always uses these files.
 /// Cleanup NEVER touches library DB tracks/cue tables or cover thumbs.
