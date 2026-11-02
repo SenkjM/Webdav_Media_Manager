@@ -8,6 +8,7 @@ import '../models/app_locale.dart';
 import '../models/snack_duration.dart';
 import '../services/notification_permission_service.dart';
 import '../services/settings_service.dart';
+import '../services/transcode_preset_catalog.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
@@ -33,13 +34,24 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
+  /// DLNA 转码预设选项：来自 Core 数据库（已排除直通），管理页返回后刷新。
+  List<TranscodePresetOption> _dlnaPresets = TranscodePresetCatalog.fallback;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _dlnaPresets = TranscodePresetCatalog.load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationPermissionService>().refresh();
     });
+  }
+
+  /// 重新读取数据库里的转码预设（从「管理转码预设」返回后调用）。
+  void _reloadDlnaPresets() {
+    final presets = TranscodePresetCatalog.load();
+    if (!mounted) return;
+    setState(() => _dlnaPresets = presets);
   }
 
   @override
@@ -124,13 +136,8 @@ class _SettingsScreenState extends State<SettingsScreen>
     final notif = context.watch<NotificationPermissionService>();
     final l10n = AppLocalizations.of(context)!;
 
-    // Preset display labels — must match Rust database IDs
-    const presetLabels = {
-      'passthrough': '单文件直通（不转码）',
-      'balanced': '均衡（默认）',
-      'dlna-compat': '高兼容',
-    };
-    const presets = ['passthrough', 'balanced', 'dlna-compat'];
+    // DLNA 转码预设选项来自 Core 数据库（不含直通）。
+    final dlnaPresetIds = [for (final preset in _dlnaPresets) preset.id];
 
     return Scaffold(
       appBar: AppBar(
@@ -341,21 +348,17 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.cast_outlined),
-            title: const Text('转码预设（默认）'),
-            subtitle: Text(
-              presetLabels[settings.dlnaDefaultTranscodePreset] ??
-                  settings.dlnaDefaultTranscodePreset,
-            ),
+            title: const Text('转码预设'),
             trailing: DropdownButton<String>(
               borderRadius: BorderRadius.circular(10),
-              value: presets.contains(settings.dlnaDefaultTranscodePreset)
+              value: dlnaPresetIds.contains(settings.dlnaDefaultTranscodePreset)
                   ? settings.dlnaDefaultTranscodePreset
-                  : 'balanced',
+                  : _dlnaPresets.first.id,
               items: [
-                for (final p in presets)
+                for (final preset in _dlnaPresets)
                   DropdownMenuItem(
-                    value: p,
-                    child: Text(presetLabels[p] ?? p),
+                    value: preset.id,
+                    child: Text(preset.label),
                   ),
               ],
               onChanged: (v) {
@@ -373,13 +376,15 @@ class _SettingsScreenState extends State<SettingsScreen>
             title: const Text('管理转码预设'),
             subtitle: const Text('添加、编辑或删除自定义转码预设'),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.push(
+            onTap: () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => const TranscodePresetsScreen(),
                 ),
               );
+              if (!mounted) return;
+              _reloadDlnaPresets();
             },
           ),
           const Divider(height: 40),

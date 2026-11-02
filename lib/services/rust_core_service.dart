@@ -2563,6 +2563,12 @@ class RustCoreService {
   static bool _dlnaDiscoverExtLoaded = false;
   static bool _proxyRegAccountLoaded = false;
 
+  // ConnectionManager:1 GetProtocolInfo — added after the Round 10 session
+  // facade, so it gets its own lazy loader to stay compatible with older
+  // `libwdmm_ffi.so` builds that predate the export.
+  static _OneStrToStrDart? _dlnaSinkProtocolInfo;
+  static bool _dlnaSinkProtocolInfoLoaded = false;
+
   static void _loadDlnaSessionSymbolsSafe() {
     if (_dlnaSessionSymbolsLoaded) return;
     final lib = _tryLib;
@@ -2604,6 +2610,22 @@ class RustCoreService {
     } catch (e) {
       debugPrint(
           '[RustCore] DLNA discover_ext symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  static void _loadDlnaSinkProtocolInfoSafe() {
+    if (_dlnaSinkProtocolInfoLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _dlnaSinkProtocolInfo = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_dlna_sink_protocol_info_json')
+          .asFunction();
+      _dlnaSinkProtocolInfoLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] DLNA sink protocol_info symbol lookup failed (non-fatal): $e');
     }
   }
 
@@ -2690,6 +2712,25 @@ class RustCoreService {
     final fn = _dlnaDiscoverExt;
     if (fn == null) return null;
     return _readAndFreeString(fn(timeoutMs));
+  }
+
+  /// Ask a DLNA renderer for its ConnectionManager `GetProtocolInfo` answer.
+  ///
+  /// [rendererLocation] is the device description URL (`location`) reported by
+  /// SSDP. Returns `{"ok":true,"source":…,"sink":…,"sink_count":N}` (both CSVs
+  /// in `protocolInfo` form) or `{"ok":false,"error":…}`. Null when the native
+  /// library or the symbol is unavailable — callers must degrade gracefully.
+  static String? dlnaSinkProtocolInfo(String rendererLocation) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSinkProtocolInfoSafe();
+    final fn = _dlnaSinkProtocolInfo;
+    if (fn == null) return null;
+    final location = rendererLocation.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(location));
+    } finally {
+      calloc.free(location);
+    }
   }
 
   /// Expose an account-scoped remote file as a proxy stream, resolved in Rust.

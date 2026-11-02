@@ -4,13 +4,14 @@ import 'package:provider/provider.dart';
 import '../services/dlna_cast_service.dart';
 import '../services/rust_dmr_prefs_service.dart';
 import '../services/settings_service.dart';
+import '../services/transcode_preset_catalog.dart';
 import '../utils/app_snack.dart';
 
 /// DLNA 设备兼容性设置 BottomSheet。
 ///
 /// 提供：
 /// - 显示名称覆盖（优先于 friendlyName）
-/// - 单文件直通 (forceDirect) 开关（与 HLS 转码互斥）
+/// - 直通（不转码）兼容开关 `forceDirect`（默认开）
 /// - 转码预设选择（仅在 forceDirect=false 时有效）
 ///
 /// 设置通过 USN 键存储在 `RustDmrPrefsService` / Core `dmr_prefs.db`。
@@ -53,31 +54,33 @@ class DlnaCompatSheet extends StatefulWidget {
   State<DlnaCompatSheet> createState() => _DlnaCompatSheetState();
 }
 
-// Preset ids and their display labels.
-// Must match Rust database IDs: passthrough, balanced, dlna-compat, high, audio-only
-const _kPresets = ['passthrough', 'balanced', 'dlna-compat'];
-const _kPresetLabels = {
-  'passthrough': '单文件直通（不转码）',
-  'balanced': '均衡（默认）',
-  'dlna-compat': '高兼容',
-};
-
+// 转码预设选项来自 Core 数据库（排除直通），不再硬编码预设列表。
 class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
   late TextEditingController _nameController;
   late bool _forceDirect;
   // null means "follow app default"
   String? _presetId;
+  // 数据库里的可选转码预设（不含 passthrough）。
+  late List<TranscodePresetOption> _presets;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
+    _presets = TranscodePresetCatalog.load();
     final pref = widget.dmrPrefs[widget.renderer.usn];
     _nameController = TextEditingController(
       text: pref?.overrideName ?? '',
     );
-    _forceDirect = pref?.forceDirect ?? false;
-    _presetId = pref?.presetId; // null = follow global default
+    // 直通是默认方案：没有保存过偏好时默认开启。
+    _forceDirect = pref?.forceDirect ?? true;
+    // 直通不是转码预设：历史遗留的 passthrough 值按「跟随全局默认」处理。
+    final savedPreset = pref?.presetId;
+    _presetId = (savedPreset != null &&
+            savedPreset.isNotEmpty &&
+            savedPreset != TranscodePresetCatalog.passthroughId)
+        ? savedPreset
+        : null; // null = follow global default
   }
 
   @override
@@ -96,7 +99,10 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
       usn: widget.renderer.usn,
       forceDirect: _forceDirect,
       overrideName: overrideName.isEmpty ? null : overrideName,
-      presetId: _forceDirect ? null : _presetId,
+      // 直通时 preset_id 必须为 null；被删除的自定义预设也回退到全局默认。
+      presetId: _forceDirect || !_presets.any((p) => p.id == _presetId)
+          ? null
+          : _presetId,
     );
 
     final ok = await widget.dmrPrefs.save(pref);
@@ -117,6 +123,8 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
     final textTheme = Theme.of(context).textTheme;
     final globalDefault =
         context.watch<SettingsService>().dlnaDefaultTranscodePreset;
+    final presetIds = {for (final p in _presets) p.id};
+    final selectedPreset = presetIds.contains(_presetId) ? _presetId : null;
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -192,7 +200,7 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
 
                   const SizedBox(height: 20),
 
-                  // 单文件直通开关
+                  // 直通（不转码）兼容开关
                   Text(
                     '投屏模式',
                     style: textTheme.titleSmall?.copyWith(
@@ -217,7 +225,7 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
                                 setState(() => _forceDirect = val),
                             contentPadding: EdgeInsets.zero,
                             title: Text(
-                              '单文件直通',
+                              '直通（不转码）',
                               style: textTheme.bodyLarge?.copyWith(
                                 color: scheme.onSurface,
                                 fontWeight: FontWeight.w500,
@@ -227,8 +235,8 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
                               padding: const EdgeInsets.only(top: 4),
                               child: Text(
                                 _forceDirect
-                                    ? '已启用：直接投放原始文件（不经过 HLS 转码）'
-                                    : '已禁用：通过 HLS 代理投屏（支持转码/兼容性）',
+                                    ? '已启用：设备直接读取原始文件（经本机代理中转，不经过 FFmpeg）'
+                                    : '已禁用：经 HLS 转码代理投屏（按转码预设处理兼容性）',
                                 style: textTheme.bodySmall?.copyWith(
                                   color: scheme.onSurfaceVariant,
                                 ),
@@ -238,7 +246,7 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
                           Padding(
                             padding: const EdgeInsets.only(left: 0, bottom: 8),
                             child: Text(
-                              '注意：单文件直通与 HLS 转码互斥。启用后将跳过所有容器重封装和编码转换。',
+                              '注意：直通是独立方案，不是转码预设，且与 HLS 转码互斥。启用后跳过所有容器重封装和编码转换；设备能直接播放时建议保持开启。',
                               style: textTheme.bodySmall?.copyWith(
                                 color: scheme.onSurfaceVariant,
                                 fontStyle: FontStyle.italic,
@@ -267,22 +275,19 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
                         labelText: '为本设备选择预设',
                         helperText: '留空则使用全局默认预设',
                       ),
-                      initialValue: (_presetId != null &&
-                              _kPresets.contains(_presetId))
-                          ? _presetId
-                          : null,
+                      initialValue: selectedPreset,
                       items: [
                         DropdownMenuItem<String?>(
                           value: null,
                           child: Text(
-                            '全局默认（${_kPresetLabels[globalDefault] ?? globalDefault}）',
+                            '全局默认（${TranscodePresetCatalog.labelOf(_presets, globalDefault)}）',
                             style: TextStyle(color: scheme.onSurfaceVariant),
                           ),
                         ),
-                        for (final p in _kPresets)
+                        for (final preset in _presets)
                           DropdownMenuItem<String?>(
-                            value: p,
-                            child: Text(_kPresetLabels[p] ?? p),
+                            value: preset.id,
+                            child: Text(preset.label),
                           ),
                       ],
                       onChanged: (v) => setState(() => _presetId = v),

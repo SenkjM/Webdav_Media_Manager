@@ -13,6 +13,7 @@ import 'dlna_queue_controller.dart';
 import 'rust_core_service.dart';
 import 'rust_dmr_prefs_service.dart';
 import 'settings_service.dart';
+import 'transcode_preset_catalog.dart';
 import 'webdav_service.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -199,6 +200,11 @@ class DlnaCastService extends ChangeNotifier {
   Duration? get duration => _duration;
   String? get error => _error;
   DlnaCompatibilityHint? get compatibilityHint => _compatHint;
+
+  /// Rust 协商出的协议信息（会话建立 / 状态 tick 时更新）。
+  ///
+  /// 设备详情页优先展示它；为 null 表示当前没有活动会话。
+  String? get protocolInfo => _protocolInfo;
 
   /// 当前视频的字幕候选列表（Rust 匹配结果）。
   List<SidecarHit> get subtitleCandidates =>
@@ -447,6 +453,24 @@ class DlnaCastService extends ChangeNotifier {
     }
   }
 
+  /// 解析转码路径下真正发给 Rust 的预设 id。
+  ///
+  /// 设备级覆盖优先于全局默认；直通（`passthrough`）与空值一律忽略，
+  /// 保证「直通」永远不会作为转码预设穿过 FFI。
+  String _effectivePresetId(String? devicePresetId) {
+    final override = devicePresetId?.trim();
+    if (override != null &&
+        override.isNotEmpty &&
+        override != TranscodePresetCatalog.passthroughId) {
+      return override;
+    }
+    final global = _settings.dlnaDefaultTranscodePreset.trim();
+    if (global.isEmpty || global == TranscodePresetCatalog.passthroughId) {
+      return 'balanced';
+    }
+    return global;
+  }
+
   Future<void> _beginItem(
     WebDavItem item,
     String accountId, {
@@ -466,11 +490,10 @@ class DlnaCastService extends ChangeNotifier {
 
     final prefs = _dmrPrefs[renderer.usn];
     final forceDirect = prefs?.forceDirect ?? true;
-    final presetId = forceDirect
-        ? null
-        : ((prefs?.presetId?.isNotEmpty == true)
-              ? prefs!.presetId
-              : _settings.dlnaDefaultTranscodePreset);
+    // 直通（不转码）只由 forceDirect 开关表达：`passthrough` 不是转码预设，
+    // 不允许经 `preset_id` 偷偷走直通，否则就绕过了兼容开关。
+    final presetId =
+        forceDirect ? null : _effectivePresetId(prefs?.presetId);
 
     final handle = _handle;
     if (first || handle == null) {
@@ -490,7 +513,13 @@ class DlnaCastService extends ChangeNotifier {
       );
       final json = _decodeJson(raw);
       final newHandle = _asInt(json?['handle']);
-      if (json == null || json['ok'] == false || newHandle == null) {
+      final started = json != null && json['ok'] != false && newHandle != null;
+      if (started) {
+        debugPrint('[DLNA] start ok: $raw');
+      } else {
+        debugPrint('[DLNA] start failed: $raw');
+      }
+      if (!started) {
         throw _CastError(_sessionError(raw, json));
       }
       _handle = newHandle;
@@ -510,7 +539,10 @@ class DlnaCastService extends ChangeNotifier {
       final raw = await _runOnWorker(
         () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
       );
-      if (!_isOk(raw)) throw _CastError(_cmdError(raw));
+      if (!_isOk(raw)) {
+        debugPrint('[DLNA] select failed: $raw');
+        throw _CastError(_cmdError(raw));
+      }
     }
 
     if (_disposed) return;
@@ -628,10 +660,13 @@ class DlnaCastService extends ChangeNotifier {
   }
 
   Future<void> _failWith(Object error) async {
+    final text = _errorText(error);
+    // 用户报「投屏完全无响应」时，唯一可用的线索就是这条原始错误。
+    debugPrint('[DLNA] cast failed: $text');
     await _cleanupSession();
     if (_disposed) return;
     _state = DlnaCastState.error;
-    _error = _errorText(error);
+    _error = text;
     _notify();
   }
 

@@ -654,9 +654,16 @@ class SettingsService extends ChangeNotifier {
   }
 
   /// DLNA 投屏默认转码预设。键 `dlna_default_transcode_preset`，默认 `'balanced'`。
+  ///
+  /// 直通（`passthrough`）不是转码预设：它只由设备级「直通（不转码）」开关
+  /// 表达（`force_direct`），因此历史遗留值一律归一到 `'balanced'`。
   String get dlnaDefaultTranscodePreset {
     final v = RustCoreService.kvGet(_kDlnaDefaultTranscodePreset);
-    if (v != null && v != 'null' && !v.startsWith('error:') && v.isNotEmpty) {
+    if (v != null &&
+        v != 'null' &&
+        !v.startsWith('error:') &&
+        v.isNotEmpty &&
+        v != 'passthrough') {
       return v;
     }
     return 'balanced';
