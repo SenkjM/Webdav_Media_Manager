@@ -27,9 +27,10 @@ val splitPerAbi =
 // 写成下面这三个 ABI；AGP 把 defaultConfig 与 flavor 的 abiFilters 取并集，
 // 于是 sandbox 的 arm64-v8a 过滤不起作用（插件 AAR 的 v7a / x86_64 库照样进包）。
 // gradle.properties 里设了 disable-abi-filtering=true 关掉这份默认，
-// 改由各 flavor 自己写：prod / dev 保持 Flutter 原来的三个 ABI，sandbox 只留 arm64。
-// split-per-abi 时插件本来就不写 abiFilters，这里也一个都不写。
-val flutterDefaultAbis = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+// 改由各 flavor 自己写：prod / dev 保持 Flutter 原来的 ABI 集合减去 armeabi-v7a
+// （wdmm-ffi 无 armv7 Rust 目标，FFmpeg 也排除 v7a — LP64-only struct offsets），
+// sandbox 只留 arm64。split-per-abi 时插件本来就不写 abiFilters，这里也一个都不写。
+val flutterDefaultAbis = listOf("arm64-v8a", "x86_64")
 
 android {
     namespace = "com.senkjm.media_manager"
