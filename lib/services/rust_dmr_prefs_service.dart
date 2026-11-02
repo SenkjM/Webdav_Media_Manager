@@ -8,18 +8,23 @@ class DmrPreference {
     required this.usn,
     required this.forceDirect,
     this.overrideName,
+    this.presetId,
     this.updatedAt,
   });
 
   final String usn;
   final bool forceDirect;
   final String? overrideName;
+  /// HLS transcode preset id (e.g. `'balanced'`, `'compatible'`).
+  /// Null means use the app-wide default from SettingsService.
+  final String? presetId;
   final String? updatedAt;
 
   factory DmrPreference.fromJson(Map<String, dynamic> json) => DmrPreference(
         usn: json['usn'] as String? ?? '',
         forceDirect: json['force_direct'] == true,
         overrideName: json['override_name'] as String?,
+        presetId: json['preset_id'] as String?,
         updatedAt: json['updated_at'] as String?,
       );
 
@@ -28,6 +33,10 @@ class DmrPreference {
         'force_direct': forceDirect,
         if (overrideName != null && overrideName!.isNotEmpty)
           'override_name': overrideName,
+        if (presetId != null && presetId!.isNotEmpty)
+          'preset_id': presetId,
+        // updated_at intentionally omitted: Rust fills it with Utc::now()
+        // when the field is absent (uses #[serde(default)] + empty-check).
       };
 }
 

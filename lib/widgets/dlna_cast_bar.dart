@@ -8,6 +8,7 @@ import '../providers/app_state.dart';
 import '../services/dlna_cast_service.dart';
 import '../utils/app_snack.dart';
 import 'dlna_compat_sheet.dart';
+import 'dlna_subtitle_sheet.dart';
 
 // ─────────────────────────────────────────────────────────────
 //  常量
@@ -563,6 +564,38 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                         ),
                         const SizedBox(width: 4),
                       ],
+
+                      // 字幕按钮（有候选时显示）
+                      if (cast.subtitleCandidates.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: () =>
+                              DlnaSubtitleSheet.show(context, cast),
+                          icon: Icon(
+                            cast.selectedSubtitle != null
+                                ? Icons.subtitles
+                                : Icons.subtitles_outlined,
+                            size: 16,
+                            color: cast.selectedSubtitle != null
+                                ? scheme.primary
+                                : scheme.onSurfaceVariant,
+                          ),
+                          label: Text(
+                            cast.selectedSubtitle != null ? '字幕' : '字幕',
+                            style: TextStyle(
+                              color: cast.selectedSubtitle != null
+                                  ? scheme.primary
+                                  : scheme.onSurfaceVariant,
+                              fontSize: 13,
+                            ),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            minimumSize: Size.zero,
+                            tapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
 
                       const Spacer(),
                     ],

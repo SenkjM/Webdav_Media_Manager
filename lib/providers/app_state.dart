@@ -125,7 +125,7 @@ class AppState extends ChangeNotifier {
       notificationPermission: notificationPermission,
     );
     videoPlayback = VideoPlaybackService(handler: audioHandler);
-    dlnaCast = DlnaCastService(webDav: webDav, dmrPrefs: dmrPrefs);
+    dlnaCast = DlnaCastService(webDav: webDav, dmrPrefs: dmrPrefs, settings: settings);
   }
 
   final MusicAudioHandler _audioHandler;

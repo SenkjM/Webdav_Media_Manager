@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -8,9 +7,6 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
 import '../models/snack_duration.dart';
 import '../services/notification_permission_service.dart';
-import '../services/rust_core_service.dart';
-import '../services/rust_proxy_bridge.dart';
-import '../services/rust_queue_bridge.dart';
 import '../services/settings_service.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
@@ -22,7 +18,7 @@ import 'home_shell.dart';
 import 'image_settings_screen.dart';
 import 'manga_library_settings_screen.dart';
 import 'media_library_settings_screen.dart';
-import 'openapi_settings_section.dart';
+import 'openapi_settings_screen.dart';
 import 'share_settings_screen.dart';
 import 'sync_screen.dart';
 import 'video_settings_screen.dart';
@@ -126,6 +122,14 @@ class _SettingsScreenState extends State<SettingsScreen>
     final settings = context.watch<SettingsService>();
     final notif = context.watch<NotificationPermissionService>();
     final l10n = AppLocalizations.of(context)!;
+
+    // Preset display labels
+    const presetLabels = {
+      'direct': '单文件直通（不转码）',
+      'balanced': '均衡（默认）',
+      'compatible': '高兼容',
+    };
+    const presets = ['direct', 'balanced', 'compatible'];
 
     return Scaffold(
       appBar: AppBar(
@@ -330,6 +334,39 @@ class _SettingsScreenState extends State<SettingsScreen>
             },
           ),
           const Divider(height: 40),
+          // ── DLNA 投屏 ──────────────────────────────────────────────────────
+          _sectionTitle(context, 'DLNA 投屏'),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.cast_outlined),
+            title: const Text('转码预设（默认）'),
+            subtitle: Text(
+              presetLabels[settings.dlnaDefaultTranscodePreset] ??
+                  settings.dlnaDefaultTranscodePreset,
+            ),
+            trailing: DropdownButton<String>(
+              borderRadius: BorderRadius.circular(10),
+              value: presets.contains(settings.dlnaDefaultTranscodePreset)
+                  ? settings.dlnaDefaultTranscodePreset
+                  : 'balanced',
+              items: [
+                for (final p in presets)
+                  DropdownMenuItem(
+                    value: p,
+                    child: Text(presetLabels[p] ?? p),
+                  ),
+              ],
+              onChanged: (v) {
+                if (v != null) {
+                  context
+                      .read<SettingsService>()
+                      .dlnaDefaultTranscodePreset = v;
+                }
+              },
+            ),
+          ),
+          const Divider(height: 40),
           _sectionTitle(context, l10n.settingsMisc),
           const SizedBox(height: 8),
           ThemeSettingsSection(
@@ -410,214 +447,32 @@ class _SettingsScreenState extends State<SettingsScreen>
                   .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
             },
           ),
-
+          const Divider(height: 40),
+          // ── OpenAPI ────────────────────────────────────────────────────────
+          _sectionTitle(context, 'OpenAPI'),
+          const SizedBox(height: 8),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.api_outlined),
+            title: const Text('OpenAPI 设置'),
+            subtitle: const Text('配置外部 API 访问与鉴权'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const OpenApiSettingsScreen(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
           Text(
             l10n.settingsPlaybackFooter,
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          // ── Developer: OpenAPI + Rust Queue + Rust Proxy (debug only) ──────
-          if (kDebugMode) ...[
-            const Divider(height: 40),
-            _sectionTitle(context, 'Developer / OpenAPI'),
-            const SizedBox(height: 8),
-            const OpenApiSettingsSection(),
-            const Divider(height: 24),
-            _sectionTitle(context, 'Developer / Rust Queue'),
-            const SizedBox(height: 8),
-            const _RustQueueSettingsSection(),
-            const Divider(height: 24),
-            _sectionTitle(context, 'Developer / Rust Proxy'),
-            const SizedBox(height: 8),
-            const _RustProxySettingsSection(),
-          ],
+          const SizedBox(height: 8),
         ],
       ),
-    );
-  }
-}
-
-// ── Rust Queue settings section (debug only) ─────────────────────────────────
-
-/// Shows Rust queue status and a diagnostic poll button.
-///
-/// The [kRustQueueEnabled] const is intentionally left `false` — it gates the
-/// actual download routing.  This section only shows poll output so a developer
-/// can verify queue serialisation without rerouting live downloads.
-///
-/// ## One happy-path device smoke
-/// 1. Build with `cargo-ndk` + `flutter run`.
-/// 2. Enqueue one download from the network library.
-/// 3. Open Settings → Developer / Rust Queue → tap "Poll status".
-/// 4. Confirm the task appears with status "Pending" (Dart side handles it).
-/// 5. To test Rust routing: change `kRustQueueEnabled = true` in
-///    `rust_queue_bridge.dart`, rebuild, repeat step 2-3 and confirm
-///    `[RustQueueBridge] enqueue ok` in logcat.
-class _RustQueueSettingsSection extends StatefulWidget {
-  const _RustQueueSettingsSection();
-
-  @override
-  State<_RustQueueSettingsSection> createState() =>
-      _RustQueueSettingsSectionState();
-}
-
-class _RustQueueSettingsSectionState
-    extends State<_RustQueueSettingsSection> {
-  String _statusJson = '(not polled)';
-  int _pendingCount = 0;
-
-  void _poll() {
-    final json = RustQueueBridge.pollStatus();
-    final count = RustCoreService.queuePendingCount();
-    setState(() {
-      _statusJson = json.isEmpty ? '[]' : json;
-      _pendingCount = count;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.queue_outlined),
-          title: const Text('Rust queue enabled'),
-          subtitle: Text(
-            'ON — downloads routed through SerialPump'
-                  'Set kRustQueueEnabled=true in rust_queue_bridge.dart '
-                  'and rebuild to enable Rust routing.',
-          ),
-          trailing: Switch(
-            value: true,
-            // kRustQueueEnabled is a compile-time const; rebuild required.
-            // Switch is display-only; tapping it shows a hint.
-            onChanged: (_) => AppSnack.show(
-              context,
-              'Rust queue is always enabled (no flag to toggle).',
-            ),
-          ),
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.refresh_outlined),
-          title: const Text('Poll Rust queue status'),
-          subtitle: Text('Pending tasks: $_pendingCount'),
-          trailing: TextButton(
-            onPressed: _poll,
-            child: const Text('Poll'),
-          ),
-        ),
-        if (_statusJson != '(not polled)')
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: SelectableText(
-              _statusJson,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 8),
-          child: Text(
-            'Serial invariant: SerialPump enforces concurrency = 1. '
-            'Never introduce a concurrency knob on either side.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ── Rust Proxy settings section (debug only) ─────────────────────────────────
-
-/// Thin developer note for the Rust local HTTP proxy.
-///
-/// [kRustProxyEnabled] is `true` (R12). MustProxy (crypt) streams and DLNA
-/// cast are now routed through [RustProxyStreamBridge] — [LocalStreamBridge]
-/// is deleted. This section surfaces proxy state (port, start/stop) for
-/// developer validation.
-///
-/// ## Happy-path device smoke
-/// 1. App start triggers proxy auto-start on first MustProxy play or DLNA cast.
-/// 2. Open this panel — confirm the port is assigned (> 0).
-/// 3. Register a cached media file via code or a debug entry.
-/// 4. Confirm the returned URL serves the file from a PC on the same network.
-/// 5. Tap "Stop proxy" — confirm port returns to -1.
-class _RustProxySettingsSection extends StatefulWidget {
-  const _RustProxySettingsSection();
-
-  @override
-  State<_RustProxySettingsSection> createState() =>
-      _RustProxySettingsSectionState();
-}
-
-class _RustProxySettingsSectionState extends State<_RustProxySettingsSection> {
-  int _port = -1;
-
-  void _refresh() {
-    setState(() => _port = RustProxyBridge.port());
-  }
-
-  void _start() {
-    // TODO(B3.d): use LAN bind mode for DLNA cast scenarios.
-    final p = RustProxyBridge.start(bindMode: 'loopback');
-    setState(() => _port = p ?? -1);
-    if (p == null) {
-      AppSnack.show(context, 'Rust proxy start failed (see logs).');
-    }
-  }
-
-  void _stop() {
-    RustProxyBridge.stop();
-    setState(() => _port = -1);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.cast_connected_outlined),
-          title: const Text('Rust proxy enabled'),
-          subtitle: Text(
-            'ON — MustProxy + DLNA cast served via wdmm-proxy (R12)'
-                  'and rebuild to enable the Rust proxy.',
-          ),
-          trailing: Switch(
-            value: true,
-            // Compile-time const; display-only — tapping shows a hint.
-            onChanged: (_) => AppSnack.show(
-              context,
-              'Rust proxy is always enabled (no flag to toggle).',
-            ),
-          ),
-        ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.settings_ethernet),
-          title: const Text('Rust proxy port'),
-          subtitle: Text(_port >= 0 ? '$_port' : '(not running)'),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextButton(onPressed: _start, child: const Text('Start')),
-              TextButton(onPressed: _stop, child: const Text('Stop')),
-              TextButton(onPressed: _refresh, child: const Text('Poll')),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 8),
-          child: Text(
-            'R12: LocalStreamBridge deleted. The Rust proxy is a '
-            'process-global singleton — never create a second instance.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-      ],
     );
   }
 }

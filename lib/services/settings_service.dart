@@ -125,6 +125,7 @@ class SettingsService extends ChangeNotifier {
   static const _kDlnaRemuxContainer = 'dlna_remux_container';
   static const _kDlnaTranscodeVideo = 'dlna_transcode_video';
   static const _kDlnaTranscodeAudio = 'dlna_transcode_audio';
+  static const _kDlnaDefaultTranscodePreset = 'dlna_default_transcode_preset';
 
   /// Media-library scrape (scan task). Independent from playlist prefs.
   static const _kMediaScanRecursive = 'media_scan_recursive';
@@ -649,6 +650,20 @@ class SettingsService extends ChangeNotifier {
   }
   set dlnaTranscodeAudio(bool v) {
     RustCoreService.kvSet(_kDlnaTranscodeAudio, v.toString());
+    notifyListeners();
+  }
+
+  /// DLNA 投屏默认转码预设。键 `dlna_default_transcode_preset`，默认 `'balanced'`。
+  String get dlnaDefaultTranscodePreset {
+    final v = RustCoreService.kvGet(_kDlnaDefaultTranscodePreset);
+    if (v != null && v != 'null' && !v.startsWith('error:') && v.isNotEmpty) {
+      return v;
+    }
+    return 'balanced';
+  }
+
+  set dlnaDefaultTranscodePreset(String v) {
+    RustCoreService.kvSet(_kDlnaDefaultTranscodePreset, v);
     notifyListeners();
   }
 

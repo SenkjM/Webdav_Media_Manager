@@ -4,14 +4,17 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/app_locale.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../screens/video_player_screen.dart' show VideoQueueSeed;
+import '../utils/subtitle_sidecar.dart';
 import 'dlna_cast_channel.dart';
 import 'dlna_queue_controller.dart';
 import 'rust_proxy_stream_bridge.dart';
 import 'rust_dmr_prefs_service.dart';
 import 'rust_core_service.dart';
+import 'settings_service.dart';
 import 'webdav_service.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -131,11 +134,14 @@ class DlnaCastService extends ChangeNotifier {
   DlnaCastService({
     required WebDavService webDav,
     required RustDmrPrefsService dmrPrefs,
+    required SettingsService settings,
   }) : _webDav = webDav,
-       _dmrPrefs = dmrPrefs;
+       _dmrPrefs = dmrPrefs,
+       _settings = settings;
 
   final WebDavService _webDav;
   final RustDmrPrefsService _dmrPrefs;
+  final SettingsService _settings;
 
   // --- 状态 ---
   DlnaCastState _state = DlnaCastState.idle;
@@ -149,6 +155,14 @@ class DlnaCastService extends ChangeNotifier {
   String? _error;
   DlnaCompatibilityHint? _compatHint;
 
+  // --- 字幕状态 ---
+  /// 当前视频在同级目录中找到的字幕候选项。
+  List<SidecarHit> _subtitleCandidates = const [];
+  /// 当前选中的字幕（null = 无字幕）。
+  SidecarHit? _selectedSubtitle;
+  /// 字幕代理流的 token，用于清理。
+  String? _currentSubtitleToken;
+
   DlnaCastState get state => _state;
   DlnaPlaybackState get playbackState => _playbackState;
   DlnaRenderer? get renderer => _renderer;
@@ -159,6 +173,13 @@ class DlnaCastService extends ChangeNotifier {
   Duration? get duration => _duration;
   String? get error => _error;
   DlnaCompatibilityHint? get compatibilityHint => _compatHint;
+
+  /// 当前视频的字幕候选列表（扫描同级目录后填充）。
+  List<SidecarHit> get subtitleCandidates =>
+      List.unmodifiable(_subtitleCandidates);
+
+  /// 当前选中的字幕，null 表示无字幕。
+  SidecarHit? get selectedSubtitle => _selectedSubtitle;
 
   // --- 内部 ---
   RawDatagramSocket? _ssdpSocket;
@@ -416,8 +437,10 @@ class DlnaCastService extends ChangeNotifier {
     String castUrl;
     if (!useDirect) {
       // HLS 转码模式：调用 Rust in-process libav transcoder。
-      // presetId 默认 "balanced"；后续可在 DmrPreference 中存储用户选择。
-      const presetId = 'balanced';
+      // 预设优先级：per-MDR 偏好 > 全局默认预设（settings.dlnaDefaultTranscodePreset）。
+      final presetId = (prefs?.presetId?.isNotEmpty == true)
+          ? prefs!.presetId!
+          : _settings.dlnaDefaultTranscodePreset;
       final hlsResult = RustCoreService.proxyRegisterHls(
         _renderer!.usn, proxyUrl, presetId,
       );
@@ -455,13 +478,55 @@ class DlnaCastService extends ChangeNotifier {
     final protocolInfo = _negotiateProtocolInfo(mimeType, sinkProtocols);
     debugPrint('[DLNA] castItem: castUrl=$castUrl mimeType=$mimeType protocolInfo=$protocolInfo');
 
+    // ── 字幕扫描 ────────────────────────────────────────────────
+    // 清理上一个字幕代理（新 item 开始时）
+    if (_currentSubtitleToken != null) {
+      RustProxyStreamBridge.unregister(_currentSubtitleToken!);
+      _currentSubtitleToken = null;
+    }
+    _subtitleCandidates = const [];
+    _selectedSubtitle = null;
+
+    // 扫描同级目录，收集与视频名匹配的字幕文件。
+    String? subtitleProxyUrl;
+    try {
+      final parentPath = _parentPath(item.path);
+      final siblings = await _webDav.listDirectory(
+        accountId,
+        parentPath,
+      );
+      final candidates = collectSidecars(
+        videoFileName: item.name,
+        sameDirectory: siblings,
+      );
+      _subtitleCandidates = candidates;
+      if (candidates.isNotEmpty) {
+        // 自动选择最佳字幕（按 UI 语言排序）
+        final uiLang = _settings.appLocale.locale?.languageCode ?? '';
+        final best = pickSidecar(candidates, uiLang);
+        if (best != null) {
+          subtitleProxyUrl = await _exposeSubtitle(
+            best, accountId,
+          );
+          _selectedSubtitle = best;
+        }
+      }
+    } catch (e) {
+      // 字幕扫描失败不影响主视频投屏，静默忽略
+      debugPrint('[DLNA] subtitle scan failed (non-fatal): $e');
+    }
+    notifyListeners(); // 更新 subtitleCandidates / selectedSubtitle
+
+    // 存储主视频 URL，供 selectSubtitle 重新推送时使用
+    _lastCastUrl = castUrl;
+
     // SetAVTransportURI
     await _soap(
       _renderer!.controlUrl,
       'SetAVTransportURI',
       '<InstanceID>0</InstanceID>'
       '<CurrentURI>${_xmlEscape(castUrl)}</CurrentURI>'
-      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, castUrl, protocolInfo))}</CurrentURIMetaData>',
+      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, castUrl, protocolInfo, subtitleUrl: subtitleProxyUrl))}</CurrentURIMetaData>',
     );
 
     // Play
@@ -506,6 +571,105 @@ class DlnaCastService extends ChangeNotifier {
       client.close(force: true);
     }
   }
+
+  /// 通过 RustProxyStreamBridge 暴露字幕文件，返回代理 URL。
+  ///
+  /// 字幕文件通常很小（几 KB ~ 几 MB），直接整体下载后通过代理服务。
+  Future<String?> _exposeSubtitle(
+    SidecarHit hit,
+    String accountId,
+  ) async {
+    try {
+      final source = await _webDav.resolveStreamSource(
+        remotePath: hit.path,
+        name: hit.name,
+        accountId: accountId,
+      );
+      if (source == null) return null;
+
+      final (:uri, :token) = await RustProxyStreamBridge.expose(
+        size: hit.size ?? 0,
+        name: hit.name,
+        accountId: accountId,
+        remotePath: hit.path,
+        readRange: (start, end) async {
+          final bytes = <int>[];
+          await for (final chunk in _forwardRange(source, start, end)) {
+            bytes.addAll(chunk);
+          }
+          return bytes;
+        },
+        bindMode: _localIp != null ? 'lan_if:$_localIp' : 'loopback',
+      );
+      _currentSubtitleToken = token;
+      return uri.toString();
+    } catch (e) {
+      debugPrint('[DLNA] subtitle expose failed (non-fatal): $e');
+      return null;
+    }
+  }
+
+  /// 手动选择字幕。传入 null 取消字幕。
+  ///
+  /// 会在当前视频上重新推送 SetAVTransportURI（含新字幕 URL）。
+  /// 必须在投屏会话活跃时调用。
+  Future<void> selectSubtitle(SidecarHit? hit) async {
+    if (_state != DlnaCastState.casting || _currentItem == null) return;
+
+    // 清理旧字幕代理
+    if (_currentSubtitleToken != null) {
+      RustProxyStreamBridge.unregister(_currentSubtitleToken!);
+      _currentSubtitleToken = null;
+    }
+
+    _selectedSubtitle = hit;
+
+    String? subtitleProxyUrl;
+    if (hit != null) {
+      // 获取 accountId 从队列中
+      final accountId = _queue?.accountId;
+      if (accountId != null) {
+        subtitleProxyUrl = await _exposeSubtitle(hit, accountId);
+      }
+    }
+
+    notifyListeners();
+
+    // 重新推送 SetAVTransportURI（仅更新元数据中的字幕 URL）
+    // 注意：部分 DMR 可能不支持在播放中途切换字幕 URL，
+    // 此操作可能需要 DMR 重新加载内容。
+    final item = _currentItem!;
+    final mimeType = _mimeFor(item.name);
+    final sinkProtocols = await _getSinkProtocolInfo(
+      _renderer!.connMgrControlUrl,
+    );
+    final protocolInfo = _negotiateProtocolInfo(mimeType, sinkProtocols);
+
+    // 重新生成主视频代理 URL（如果已存在的话复用）
+    final castUrl = _currentStreamToken != null
+        ? _buildProxyUrlFromToken(_currentStreamToken!)
+        : null;
+    if (castUrl == null) return; // 无主视频流，无法重新推送
+
+    await _soap(
+      _renderer!.controlUrl,
+      'SetAVTransportURI',
+      '<InstanceID>0</InstanceID>'
+      '<CurrentURI>${_xmlEscape(castUrl)}</CurrentURI>'
+      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, castUrl, protocolInfo, subtitleUrl: subtitleProxyUrl))}</CurrentURIMetaData>',
+    );
+  }
+
+  /// 从 token 重建代理 URL（用于重新推送元数据时）。
+  String? _buildProxyUrlFromToken(String token) {
+    // RustProxyStreamBridge 不直接暴露 URL，但代理 URL 的格式是
+    // http://<bindAddr>/stream/<token>
+    // 我们在 _castItem 中已有 proxyUrl，这里用更简单的方式：存最近一次的 castUrl
+    return _lastCastUrl;
+  }
+
+  /// 最近一次 SetAVTransportURI 使用的主视频 URL（用于 selectSubtitle 重新推送）。
+  String? _lastCastUrl;
 
   Future<void> stop() async {
     if (_state == DlnaCastState.idle) return;
@@ -730,12 +894,19 @@ class DlnaCastService extends ChangeNotifier {
       RustProxyStreamBridge.unregister(_currentStreamToken!);
       _currentStreamToken = null;
     }
+    if (_currentSubtitleToken != null) {
+      RustProxyStreamBridge.unregister(_currentSubtitleToken!);
+      _currentSubtitleToken = null;
+    }
     _renderer = null;
     _currentItem = null;
     _position = Duration.zero;
     _duration = null;
     _playbackState = DlnaPlaybackState.stopped;
     _compatHint = null;
+    _subtitleCandidates = const [];
+    _selectedSubtitle = null;
+    _lastCastUrl = null;
   }
 
   /// 选择与 [targetIp]（DMR IP）同子网的本机 IPv4 地址。
@@ -836,9 +1007,16 @@ class DlnaCastService extends ChangeNotifier {
     }
   }
 
-  String _didlLite(String title, String url, String protocolInfo) {
+  String _didlLite(String title, String url, String protocolInfo, {String? subtitleUrl}) {
     final escapedTitle = _xmlEscape(title);
     final escapedUrl = _xmlEscape(url);
+    // 字幕 res 元素：部分 DMR 支持 `res` with `captionInfo` 或 `pv:subtitlefileUri`。
+    // 使用 `upnp:res@type` 语义 — 有些 DMR 识别第二个 <res> 作为字幕。
+    final subtitleRes = subtitleUrl != null
+        ? '<res protocolInfo="${_xmlEscape('http-get:*:text/plain:DLNA.ORG_PN=*')}">'
+            '${_xmlEscape(subtitleUrl)}'
+            '</res>'
+        : '';
     return '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
         'xmlns:dc="http://purl.org/dc/elements/1.1/" '
         'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">'
@@ -848,6 +1026,7 @@ class DlnaCastService extends ChangeNotifier {
         '<res protocolInfo="${_xmlEscape(protocolInfo)}">'
         '$escapedUrl'
         '</res>'
+        '$subtitleRes'
         '</item>'
         '</DIDL-Lite>';
   }
