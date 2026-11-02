@@ -234,10 +234,19 @@ class _DlnaCastBarState extends State<DlnaCastBar>
     final screenWidth = MediaQuery.of(context).size.width;
 
     final isError = cast.state == DlnaCastState.error;
-    final bubbleColor =
-        isError ? scheme.errorContainer : scheme.primaryContainer;
-    final iconColor =
-        isError ? scheme.onErrorContainer : scheme.onPrimaryContainer;
+    // §3 预热阶段：气泡用沙漏图标 + 不确定进度条，提示「正在准备投屏」。
+    final isWarming = cast.phase == 'warming';
+    final isWarmFailed = cast.phase == 'failed';
+    final bubbleColor = isError || isWarmFailed
+        ? scheme.errorContainer
+        : isWarming
+            ? scheme.secondaryContainer
+            : scheme.primaryContainer;
+    final iconColor = isError || isWarmFailed
+        ? scheme.onErrorContainer
+        : isWarming
+            ? scheme.onSecondaryContainer
+            : scheme.onPrimaryContainer;
 
     // 进度 0..1（只读，不可拖动）
     final progress = _progress(cast);
@@ -261,11 +270,15 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                 clipBehavior: Clip.none,
                 children: [
                   Icon(
-                    isError ? Icons.cast : Icons.cast_connected,
+                    isWarmFailed
+                        ? Icons.error_outline
+                        : isWarming
+                            ? Icons.hourglass_top_rounded
+                            : (isError ? Icons.cast : Icons.cast_connected),
                     color: iconColor,
                     size: 24,
                   ),
-                  if (isError)
+                  if (isError || isWarmFailed)
                     Positioned(
                       right: -3,
                       top: -3,
@@ -293,11 +306,17 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(2),
                   child: LinearProgressIndicator(
-                    value: isError ? 0 : progress,
+                    value: isError || isWarmFailed
+                        ? 0
+                        : isWarming
+                            ? (cast.playlistReady ? 1.0 : null)
+                            : progress,
                     minHeight: 3,
                     backgroundColor:
                         iconColor.withValues(alpha: 0.25),
-                    color: isError ? scheme.error : iconColor,
+                    color: isError || isWarmFailed
+                        ? scheme.error
+                        : iconColor,
                   ),
                 ),
               ),
@@ -314,6 +333,11 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   Widget _buildExpandedBar(BuildContext context, DlnaCastService cast) {
     final scheme = Theme.of(context).colorScheme;
     final isError = cast.state == DlnaCastState.error;
+    // §3 预热：`phase == "warming"` 只测速 + 本地生成播放列表，暂不投送；
+    // `phase == "failed"` 显示转码失败原因与 §7.5 诊断日志。
+    // 旧版 `.so` 不返回 phase（服务已降级为 playing），不会进入这两个分支。
+    final isWarming = cast.phase == 'warming';
+    final isWarmFailed = cast.phase == 'failed';
     final isBuffering = cast.playbackState == DlnaPlaybackState.buffering;
     final hasPrev = cast.queue?.hasPrevious ?? false;
     final hasNext = cast.queue?.hasNext ?? false;
@@ -399,6 +423,12 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                     error: cast.error ?? '投屏出错',
                     renderer: cast.renderer,
                   )
+                else if (isWarmFailed)
+                  // ── 预热失败（§3 phase:"failed"）：错误全文 + 诊断日志 ──
+                  _WarmingFailedPanel(cast: cast, onCollapse: _collapse)
+                else if (isWarming)
+                  // ── 预热中（§3）：实时测速 / 播放列表就绪 / 投送 ──
+                  _WarmingPanel(cast: cast, onCollapse: _collapse)
                 else ...[
                   // ── 进度条行 ────────────────────────────────────
                   Row(
@@ -807,6 +837,568 @@ class _ErrorDetail extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  预热 / 测速面板（契约 dlna-warmup-ffi §3、§7.5）
+// ─────────────────────────────────────────────────────────────
+
+/// 预热中（`phase == "warming"`）的面板：
+/// 实时转码速度、播放列表生成进度、编码器信息与「投送」按钮。
+///
+/// 所有遥测字段都由服务层容错解析：旧版 `.so` 不返回这些字段时，
+/// 服务直接把 phase 降级为 `playing`，本面板不会出现。
+class _WarmingPanel extends StatelessWidget {
+  const _WarmingPanel({required this.cast, required this.onCollapse});
+
+  final DlnaCastService cast;
+  final VoidCallback onCollapse;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final ready = cast.playlistReady;
+    final realtime = cast.estimatedRealtime;
+    final speed = cast.encodeSpeed;
+    final speedColor = realtime == false
+        ? Colors.orange.shade700
+        : realtime == true
+            ? Colors.green.shade600
+            : scheme.onSurfaceVariant;
+
+    final encoder = _encoderLabel(cast);
+    final fallbackLine = _hardwareFallbackLine(cast);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── 测速行 ─────────────────────────────────────────
+        Row(
+          children: [
+            Icon(Icons.speed_rounded, size: 18, color: scheme.primary),
+            const SizedBox(width: 8),
+            Text(
+              realtime == null ? '测速中…' : '转码速度',
+              style: textTheme.labelMedium?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              speed > 0 ? '${speed.toStringAsFixed(2)}×' : '--',
+              style: textTheme.titleMedium?.copyWith(
+                color: speedColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '已编码 ${_fmtEncodeSeconds(cast.encodeContentMs)}',
+              style: textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+
+        if (realtime == false) ...[
+          const SizedBox(height: 4),
+          Text(
+            '低于实时，播放可能卡顿，建议改用直通或更低预设',
+            style: textTheme.labelSmall?.copyWith(
+              color: Colors.orange.shade700,
+            ),
+          ),
+        ],
+
+        const SizedBox(height: 10),
+
+        // ── 播放列表状态 ───────────────────────────────────
+        Row(
+          children: [
+            Icon(
+              ready
+                  ? Icons.check_circle_outline
+                  : Icons.movie_creation_outlined,
+              size: 16,
+              color: ready ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                ready
+                    ? '播放列表已就绪（${cast.segments} 个片段）'
+                    : '正在本地生成播放列表…',
+                style: textTheme.labelMedium?.copyWith(
+                  color: ready ? scheme.primary : scheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            if (!ready)
+              SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        ),
+
+        // ── 编码器（§7.5）───────────────────────────────────
+        if (encoder != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Icon(
+                Icons.memory_rounded,
+                size: 16,
+                color: scheme.onSurfaceVariant,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  encoder,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+        if (fallbackLine != null)
+          Padding(
+            padding: const EdgeInsets.only(left: 22, top: 2),
+            child: Text(
+              fallbackLine,
+              style: textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+              ),
+            ),
+          ),
+
+        // ── 转码警告（§7.5）─────────────────────────────────
+        if (cast.encodeWarnings.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _WarmingWarnings(warnings: cast.encodeWarnings),
+        ],
+
+        // ── 诊断日志（默认折叠）─────────────────────────────
+        _WarmingDiagnostics(lines: cast.diagnostics),
+
+        const SizedBox(height: 8),
+
+        // ── 操作行 ─────────────────────────────────────────
+        Row(
+          children: [
+            TextButton(
+              onPressed: () {
+                onCollapse();
+                cast.stop();
+              },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                '取消',
+                style: TextStyle(
+                  color: scheme.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: ready ? () => cast.castNow() : null,
+              icon: const Icon(Icons.cast, size: 18),
+              label: Text(ready ? '投送' : '等待就绪…'),
+            ),
+          ],
+        ),
+
+        if (cast.error != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            cast.error!,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: textTheme.labelSmall?.copyWith(
+              color: Colors.orange.shade700,
+            ),
+          ),
+        ],
+
+        _CollapseHandle(onTap: onCollapse),
+      ],
+    );
+  }
+}
+
+/// 预热失败（`phase == "failed"`）面板：错误全文 + 警告 + 自动展开诊断日志。
+class _WarmingFailedPanel extends StatelessWidget {
+  const _WarmingFailedPanel({required this.cast, required this.onCollapse});
+
+  final DlnaCastService cast;
+  final VoidCallback onCollapse;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final error = cast.errorText ?? '转码失败（Rust 未提供具体原因）';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: scheme.errorContainer.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: scheme.error.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.error_outline, color: scheme.error, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 120),
+                      child: SingleChildScrollView(
+                        child: SelectableText(
+                          error,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: scheme.onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    iconSize: 16,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                    icon: Icon(Icons.copy, color: scheme.error, size: 14),
+                    tooltip: '复制错误信息',
+                    onPressed: () {
+                      // Flutter 3.x Clipboard
+                      // ignore: deprecated_member_use
+                      Clipboard.setData(ClipboardData(text: error));
+                      AppSnack.show(context, '已复制到剪贴板');
+                    },
+                  ),
+                ],
+              ),
+              if (cast.renderer != null) ...[
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: () async {
+                    final appState = context.read<AppState>();
+                    await DlnaCompatSheet.show(
+                      context,
+                      cast.renderer!,
+                      appState.dmrPrefs,
+                    );
+                  },
+                  icon: const Icon(Icons.tune, size: 16),
+                  label: const Text('兼容性设置'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 36),
+                    backgroundColor: scheme.error.withValues(alpha: 0.1),
+                    foregroundColor: scheme.error,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        if (cast.encodeMode != 'remux')
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              '可尝试改用「直通」预设重试',
+              style: textTheme.labelSmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+
+        if (cast.encodeWarnings.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          _WarmingWarnings(warnings: cast.encodeWarnings),
+        ],
+
+        // 失败时自动展开诊断日志，用户不用再点一次。
+        _WarmingDiagnostics(lines: cast.diagnostics, autoExpand: true),
+
+        _CollapseHandle(onTap: onCollapse),
+      ],
+    );
+  }
+}
+
+/// 转码警告列表：橙色，最多展示 3 行，其余折叠为「…」。
+class _WarmingWarnings extends StatelessWidget {
+  const _WarmingWarnings({required this.warnings});
+
+  final List<String> warnings;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final color = Colors.orange.shade700;
+    final shown = warnings.take(3).toList();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final warning in shown)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 1),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 14, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      warning,
+                      style: textTheme.labelSmall?.copyWith(color: color),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (warnings.length > 3)
+            Padding(
+              padding: const EdgeInsets.only(left: 20, top: 2),
+              child: Text(
+                '…',
+                style: textTheme.labelSmall?.copyWith(color: color),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 诊断日志折叠区（§7.5）：等宽字体、可选中、可滚动、「复制」到剪贴板。
+///
+/// [autoExpand] 为 true 时（预热失败）默认展开。
+class _WarmingDiagnostics extends StatefulWidget {
+  const _WarmingDiagnostics({
+    required this.lines,
+    this.autoExpand = false,
+  });
+
+  final List<String> lines;
+  final bool autoExpand;
+
+  @override
+  State<_WarmingDiagnostics> createState() => _WarmingDiagnosticsState();
+}
+
+class _WarmingDiagnosticsState extends State<_WarmingDiagnostics> {
+  late bool _open = widget.autoExpand;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = widget.lines;
+    if (lines.isEmpty) return const SizedBox.shrink();
+
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final text = lines.join('\n');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Icon(
+                  _open
+                      ? Icons.expand_more_rounded
+                      : Icons.chevron_right_rounded,
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 2),
+                Text(
+                  '诊断日志（${lines.length} 行）',
+                  style: textTheme.labelMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+                const Spacer(),
+                if (_open)
+                  IconButton(
+                    iconSize: 16,
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                    icon: Icon(
+                      Icons.copy,
+                      size: 14,
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    tooltip: '复制诊断日志',
+                    onPressed: () {
+                      // Flutter 3.x Clipboard
+                      // ignore: deprecated_member_use
+                      Clipboard.setData(ClipboardData(text: text));
+                      AppSnack.show(context, '已复制到剪贴板');
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (_open)
+          Container(
+            constraints: const BoxConstraints(maxHeight: 160),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Scrollbar(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(8),
+                child: SelectableText(
+                  text,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 11,
+                    height: 1.35,
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 面板底部的收起箭头（与常规控制条保持一致）。
+class _CollapseHandle extends StatelessWidget {
+  const _CollapseHandle({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.center,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: scheme.onSurfaceVariant,
+            size: 24,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 编码方式一行文案：`封装直转 (remux)` / `H.264 软编 libx264 · AAC`。
+///
+/// 字段缺失时返回 null（不显示该行）。
+String? _encoderLabel(DlnaCastService cast) {
+  final mode = cast.encodeMode;
+  if (mode == 'remux') return '封装直转 (remux)';
+
+  final video = cast.videoEncoder;
+  final audio = cast.audioEncoder;
+  final parts = <String>[];
+  if (video != null && video.isNotEmpty) {
+    parts.add(_videoEncoderLabel(video));
+  }
+  if (audio != null && audio.isNotEmpty) {
+    parts.add(_audioEncoderLabel(audio));
+  }
+  if (parts.isNotEmpty) return parts.join(' · ');
+  return mode == 'transcode' ? '实时转码' : null;
+}
+
+String _videoEncoderLabel(String name) {
+  final n = name.toLowerCase();
+  if (n.contains('libx264')) return 'H.264 软编 $name';
+  if (n.contains('libx265')) return 'H.265 软编 $name';
+  if (n.contains('x264') || n.contains('h264') || n.contains('avc')) {
+    return 'H.264 硬编 $name';
+  }
+  if (n.contains('x265') || n.contains('h265') || n.contains('hevc')) {
+    return 'H.265 硬编 $name';
+  }
+  return name;
+}
+
+String _audioEncoderLabel(String name) {
+  if (name.toLowerCase() == 'copy') return '音频直拷';
+  return name.toUpperCase();
+}
+
+/// 硬件回退提示（灰色小字）。
+///
+/// Rust 的 `encode_warnings` 已经带原文时优先展示警告列表，避免重复；
+/// 否则用 `encode_mode == transcode` + 软编器名推导。
+String? _hardwareFallbackLine(DlnaCastService cast) {
+  if (cast.encodeMode != 'transcode') return null;
+  if (cast.encodeWarnings.any(_isHardwareFallbackWarning)) return null;
+  final video = cast.videoEncoder?.toLowerCase() ?? '';
+  if (video.contains('libx264') ||
+      video.contains('libx265') ||
+      video.contains('libvpx')) {
+    return '硬件编码器不可用，已回退软件编码';
+  }
+  return null;
+}
+
+bool _isHardwareFallbackWarning(String warning) {
+  final w = warning.toLowerCase();
+  return w.contains('回退') ||
+      w.contains('fallback') ||
+      w.contains('不可用') ||
+      w.contains('unavailable');
+}
+
+/// 「已编码 x.x 秒」：小于 10 秒保留一位小数，之后取整。
+String _fmtEncodeSeconds(int ms) {
+  final seconds = ms / 1000;
+  if (seconds < 10) return '${seconds.toStringAsFixed(1)} 秒';
+  return '${seconds.round()} 秒';
 }
 
 // ─────────────────────────────────────────────────────────────

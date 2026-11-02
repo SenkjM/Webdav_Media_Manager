@@ -206,6 +206,44 @@ class DlnaCastService extends ChangeNotifier {
   /// 设备详情页优先展示它；为 null 表示当前没有活动会话。
   String? get protocolInfo => _protocolInfo;
 
+  /// 转码阶段（契约 §3）：`warming` / `playing` / `ended` / `failed` / `idle`。
+  ///
+  /// 旧版 `.so` 不返回该字段时按 `playing` 处理，绝不把用户困在预热界面里。
+  String get phase => _phase;
+
+  /// 实测转码速度（内容时间 / 墙钟时间）；direct 模式或未知时为 0。
+  double get encodeSpeed => _encodeSpeed;
+
+  /// 已编码的媒体时间（毫秒），UI 显示「已编码 x.x 秒」。
+  int get encodeContentMs => _encodeContentMs;
+
+  /// 播放列表是否已就绪；只有就绪后 `{"cmd":"cast"}` 才合法。
+  bool get playlistReady => _playlistReady;
+
+  /// 已落盘的分段数量（播放列表就绪时显示）。
+  int get segments => _segments;
+
+  /// 转码速度估算：`null` 表示还在测速，`true/false` 表示能否实时。
+  bool? get estimatedRealtime => _estimatedRealtime;
+
+  /// `phase == "failed"` 时的失败原因（投屏会话级错误见 [error]）。
+  String? get errorText => _warmupError;
+
+  /// `remux` / `transcode`；旧版 `.so` 或直通模式为空串。
+  String get encodeMode => _encodeMode;
+
+  /// 实际使用的视频编码器名；remux / 直通 / 未知为 null。
+  String? get videoEncoder => _videoEncoder;
+
+  /// 实际使用的音频编码名，`copy` 表示直拷；未知为 null。
+  String? get audioEncoder => _audioEncoder;
+
+  /// Rust 上报的转码警告（橙色提示，契约 §7.4 最多 8 条）。
+  List<String> get encodeWarnings => List.unmodifiable(_encodeWarnings);
+
+  /// Rust 诊断环形缓冲（最旧在前），用于「诊断日志」折叠区。
+  List<String> get diagnostics => List.unmodifiable(_diagnostics);
+
   /// 当前视频的字幕候选列表（Rust 匹配结果）。
   List<SidecarHit> get subtitleCandidates =>
       List.unmodifiable(_subtitleCandidates);
@@ -224,6 +262,36 @@ class DlnaCastService extends ChangeNotifier {
   bool _everPlaying = false;
   /// Rust 协商出的协议信息（只用于设备详情页展示）。
   String? _protocolInfo;
+
+  // --- 内部：HLS 预热 / 转码遥测（契约 dlna-warmup-ffi §4、§7.5）---
+  /// 转码阶段：`warming` / `playing` / `ended` / `failed` / `idle`。
+  ///
+  /// 旧版 `.so` 不返回 `phase` 字段，此时按 `playing` 降级（见 [_applyWarmupFields]）。
+  String _phase = 'idle';
+  /// 实测转码速度（已编码媒体时间 / 墙钟时间）。
+  double _encodeSpeed = 0;
+  /// 已写入 muxer 的媒体时间（毫秒），UI 用来显示「已编码 x.x 秒」。
+  int _encodeContentMs = 0;
+  /// 播放列表（index.m3u8）是否已生成。
+  bool _playlistReady = false;
+  /// 已落盘的分段数量。
+  int _segments = 0;
+  /// 转码速度估算：`null` = 采样不足（`encode_content_ms < 3000`）。
+  bool? _estimatedRealtime;
+  /// `phase == "failed"` 时的失败原因；与投屏会话级错误 [error] 分开。
+  String? _warmupError;
+  /// `remux` / `transcode`；未知（旧 `.so` / direct）为空串。
+  String _encodeMode = '';
+  /// 实际使用的视频编码器名（remux 时为 null）。
+  String? _videoEncoder;
+  /// 实际使用的音频编码名，`copy` 表示直拷。
+  String? _audioEncoder;
+  /// Rust 上报的转码警告（硬件回退等），最多 8 条。
+  List<String> _encodeWarnings = const [];
+  /// Rust 诊断环形缓冲（最旧在前，最多 40 行）。
+  List<String> _diagnostics = const [];
+  /// 「投送」命令进行中，避免连点重复下发。
+  bool _castInFlight = false;
 
   // --- 内部：发现 / 生命周期 ---
   int _discoveryEpoch = 0;
@@ -329,6 +397,9 @@ class DlnaCastService extends ChangeNotifier {
   }
 
   /// 结束投屏并回到 idle。
+  ///
+  /// 预热（`phase == "warming"`）中调用时，Rust 侧 `{"cmd":"stop"}` 会取消转码
+  /// 任务并清理分段目录（契约 §3），不会操作渲染器。
   Future<void> stop() async {
     _stateTimer?.cancel();
     _stateTimer = null;
@@ -339,10 +410,42 @@ class DlnaCastService extends ChangeNotifier {
         () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
       );
     }
+    // 已发过 stop，避免 _cleanupSession 在 warming 时重复发送。
+    _phase = 'idle';
     await _cleanupSession();
     if (_disposed) return;
     _state = DlnaCastState.idle;
     _notify();
+  }
+
+  /// 预热完成后把 HLS 会话投送到渲染器（契约 §3 `{"cmd":"cast"}`）。
+  ///
+  /// 只有 Rust 报告 `phase == "warming"` 且 `playlist_ready == true` 时才合法；
+  /// 失败时把原因写进 [error] 供 UI 提示，不抛异常（用户可点「取消」重来）。
+  Future<void> castNow() async {
+    final handle = _handle;
+    if (handle == null || _phase != 'warming' || _castInFlight) return;
+    _castInFlight = true;
+    try {
+      final cmdJson = jsonEncode(<String, Object?>{'cmd': 'cast'});
+      final raw = await _runOnWorker(
+        () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
+      );
+      if (_disposed || _handle != handle) return;
+      if (!_isOk(raw)) {
+        debugPrint('[DLNA] cast rejected: $raw');
+        _error = _cmdError(raw);
+        _notify();
+        return;
+      }
+      _phase = 'playing';
+      _error = null;
+      _warmupError = null;
+      _playbackState = DlnaPlaybackState.playing;
+      _notify();
+    } finally {
+      _castInFlight = false;
+    }
   }
 
   /// 切换播放 / 暂停。
@@ -489,6 +592,7 @@ class DlnaCastService extends ChangeNotifier {
     _everPlaying = false;
     _subtitleCandidates = const [];
     _selectedSubtitle = null;
+    _resetWarmupState();
     _notify();
 
     final prefs = _dmrPrefs[renderer.usn];
@@ -509,6 +613,9 @@ class DlnaCastService extends ChangeNotifier {
         'size': item.size ?? 0,
         'preset_id': presetId,
         'force_direct': forceDirect,
+        // §3 预热：HLS 起转码后立即返回 `phase:"warming"`，Dart 不再干等 20s。
+        // 旧版 `.so` 不认识该键（直接忽略），行为与之前一致。
+        'warmup': true,
         'ui_lang': _settings.appLocale.locale?.languageCode ?? '',
       });
       final raw = await _runOnWorker(
@@ -530,6 +637,8 @@ class DlnaCastService extends ChangeNotifier {
       if (info != null && info.isNotEmpty) _protocolInfo = info;
       final compat = _compatFrom(json['compat']);
       if (compat != null) _compatHint = compat;
+      // 启动响应里的 `phase`（旧版 `.so` 没有 → 降级为 playing）。
+      _applyWarmupFields(json);
       _startStateTimer();
     } else {
       final cmdJson = jsonEncode(<String, Object?>{
@@ -549,7 +658,10 @@ class DlnaCastService extends ChangeNotifier {
     }
 
     if (_disposed) return;
-    _playbackState = DlnaPlaybackState.playing;
+    // 预热阶段（§3）还没投送：保持 buffering，UI 由「预热/预检」面板接管。
+    _playbackState = _phase == 'warming'
+        ? DlnaPlaybackState.buffering
+        : DlnaPlaybackState.playing;
     _notify();
   }
 
@@ -594,10 +706,18 @@ class DlnaCastService extends ChangeNotifier {
       return;
     }
 
-    final mapped = _playbackFromTransport(json['transport']?.toString());
-    if (mapped != null) {
-      if (mapped == DlnaPlaybackState.playing) _everPlaying = true;
-      _playbackState = mapped;
+    // §3 / §7.5 预热遥测：缺失的字段保持原值，不抛异常。
+    _applyWarmupFields(json);
+
+    // 预热 / 预热失败阶段还没投送到渲染器：此时传输层通常是 STOPPED，
+    // 但用户可见状态应由预热面板接管，所以不覆盖 playbackState。
+    final inWarmup = _phase == 'warming' || _phase == 'failed';
+    if (!inWarmup) {
+      final mapped = _playbackFromTransport(json['transport']?.toString());
+      if (mapped != null) {
+        if (mapped == DlnaPlaybackState.playing) _everPlaying = true;
+        _playbackState = mapped;
+      }
     }
 
     final positionMs = _asInt(json['position_ms']);
@@ -625,7 +745,9 @@ class DlnaCastService extends ChangeNotifier {
 
     _notify();
 
-    if (json['ended'] == true) {
+    // 预热 / 预热失败期间 Rust 可能报 ended（转码结束时内部状态机收尾），
+    // 这不是用户可见的播放结束，忽略即可。
+    if (json['ended'] == true && !inWarmup) {
       await _handleEnded(
         json['ended_reason']?.toString(),
         json['current_path']?.toString(),
@@ -689,6 +811,15 @@ class DlnaCastService extends ChangeNotifier {
     _stateTimer = null;
     final handle = _handle;
     _handle = null;
+    // 预热中直接收尾（返回键 / 切歌 / 报错）：先让 Rust 取消转码任务并清理
+    // 分段目录（§3），再 close。旧版 `.so` 没有 warming 阶段，不会走到这里。
+    final wasWarming = _phase == 'warming' || _phase == 'failed';
+    if (handle != null && wasWarming) {
+      final cmdJson = jsonEncode(<String, Object?>{'cmd': 'stop'});
+      await _runOnWorker(
+        () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
+      );
+    }
     _queue?.dispose();
     _queue = null;
     _renderer = null;
@@ -703,6 +834,7 @@ class DlnaCastService extends ChangeNotifier {
     _endedForPath = null;
     _everPlaying = false;
     _error = null;
+    _resetWarmupState();
     if (handle != null) {
       await _runOnWorker(() => RustCoreService.dlnaSessionClose(handle));
     }
@@ -855,6 +987,72 @@ class DlnaCastService extends ChangeNotifier {
     }
   }
 
+  // ── 内部：预热 / 转码遥测（契约 §3、§7.5）────────────────────────────────
+
+  /// 重置 §3 预热字段与 §7.5 遥测字段（新会话 / 切歌 / 收尾时调用）。
+  void _resetWarmupState() {
+    _phase = 'idle';
+    _encodeSpeed = 0;
+    _encodeContentMs = 0;
+    _playlistReady = false;
+    _segments = 0;
+    _estimatedRealtime = null;
+    _warmupError = null;
+    _encodeMode = '';
+    _videoEncoder = null;
+    _audioEncoder = null;
+    _encodeWarnings = const [];
+    _diagnostics = const [];
+    _castInFlight = false;
+  }
+
+  /// 合并一次 Rust 会话 JSON（start 响应 / state tick）里的预热字段。
+  ///
+  /// 所有字段都可缺失，**绝不**抛异常：
+  /// * `phase` 缺失（旧版 `.so`）或为 null → 按 `playing` 降级，不把用户困在
+  ///   预热界面里；
+  /// * 速度 / 播放列表就绪 / 编码器 / 警告 / 诊断缺省时保持原值，UI 自动隐藏。
+  void _applyWarmupFields(Map<String, dynamic> json) {
+    final phase = _nonEmpty(json['phase']);
+    // 旧版 `.so` 不返回 phase：直接当作已在播放。
+    _phase = phase ?? 'playing';
+
+    final speed = _asDouble(json['encode_speed']);
+    if (speed != null && speed >= 0) _encodeSpeed = speed;
+
+    final contentMs = _asInt(json['encode_content_ms']);
+    if (contentMs != null && contentMs >= 0) _encodeContentMs = contentMs;
+
+    final segments = _asInt(json['segments']);
+    if (segments != null && segments >= 0) _segments = segments;
+
+    if (json.containsKey('playlist_ready')) {
+      _playlistReady = json['playlist_ready'] == true;
+    }
+    // null = 采样不足（encode_content_ms < 3000），必须保留 null 让 UI 显示「测速中」。
+    if (json.containsKey('estimated_realtime')) {
+      _estimatedRealtime = _asBool(json['estimated_realtime']);
+    }
+
+    final mode = _nonEmpty(json['encode_mode']);
+    if (mode != null) _encodeMode = mode;
+    if (json.containsKey('video_encoder')) {
+      _videoEncoder = _nonEmpty(json['video_encoder']);
+    }
+    if (json.containsKey('audio_encoder')) {
+      _audioEncoder = _nonEmpty(json['audio_encoder']);
+    }
+    if (json.containsKey('encode_warnings')) {
+      _encodeWarnings = _stringList(json['encode_warnings']) ?? const [];
+    }
+    if (json.containsKey('diagnostics')) {
+      _diagnostics = _stringList(json['diagnostics']) ?? const [];
+    }
+    if (json.containsKey('error')) {
+      _warmupError = _nonEmpty(json['error']);
+    }
+  }
+
   Map<String, dynamic>? _decodeJson(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     if (raw.startsWith('error:')) return null;
@@ -907,6 +1105,23 @@ class DlnaCastService extends ChangeNotifier {
     if (value is int) return value;
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  double? _asDouble(Object? value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  bool? _asBool(Object? value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      if (value == 'true') return true;
+      if (value == 'false') return false;
+    }
     return null;
   }
 
