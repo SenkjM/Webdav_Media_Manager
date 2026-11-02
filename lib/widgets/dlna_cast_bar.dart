@@ -988,6 +988,12 @@ class _WarmingPanel extends StatelessWidget {
           _WarmingWarnings(warnings: cast.encodeWarnings),
         ],
 
+        // ── 字幕准备提示（task-11 §6）───────────────────────
+        if (cast.subtitleStatus?.hasNotice ?? false) ...[
+          const SizedBox(height: 8),
+          _SubtitleStatusNotes(status: cast.subtitleStatus!),
+        ],
+
         // ── 诊断日志（默认折叠）─────────────────────────────
         _WarmingDiagnostics(lines: cast.diagnostics),
 
@@ -1142,6 +1148,12 @@ class _WarmingFailedPanel extends StatelessWidget {
           _WarmingWarnings(warnings: cast.encodeWarnings),
         ],
 
+        // 字幕准备提示（task-11 §6）：失败时同样展示，便于判断是不是字幕问题。
+        if (cast.subtitleStatus?.hasNotice ?? false) ...[
+          const SizedBox(height: 8),
+          _SubtitleStatusNotes(status: cast.subtitleStatus!),
+        ],
+
         // 失败时自动展开诊断日志，用户不用再点一次。
         _WarmingDiagnostics(lines: cast.diagnostics, autoExpand: true),
 
@@ -1198,6 +1210,71 @@ class _WarmingWarnings extends StatelessWidget {
                 style: textTheme.labelSmall?.copyWith(color: color),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 字幕准备提示（Rust `subtitle_status`，契约 task-11 §6）。
+///
+/// 侧车扫描失败 / 超时时显示 `message`，位图字幕（PGS/DVD）无法经 HLS
+/// 投送时显示 `bitmap_note`。两者都为 null 时整个组件不渲染。
+class _SubtitleStatusNotes extends StatelessWidget {
+  const _SubtitleStatusNotes({required this.status});
+
+  final DlnaSubtitleStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final message = status.message;
+    final bitmapNote = status.bitmapNote;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (message != null)
+          _noteRow(
+            context,
+            icon: Icons.info_outline,
+            text: '字幕：$message',
+            color: Colors.orange.shade700,
+            textTheme: textTheme,
+          ),
+        if (bitmapNote != null)
+          _noteRow(
+            context,
+            icon: Icons.image_not_supported_outlined,
+            text: '字幕：$bitmapNote',
+            color: scheme.onSurfaceVariant,
+            textTheme: textTheme,
+          ),
+      ],
+    );
+  }
+
+  Widget _noteRow(
+    BuildContext context, {
+    required IconData icon,
+    required String text,
+    required Color color,
+    required TextTheme textTheme,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: textTheme.labelSmall?.copyWith(color: color),
+            ),
+          ),
         ],
       ),
     );

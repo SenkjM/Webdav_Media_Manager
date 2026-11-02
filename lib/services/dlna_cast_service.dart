@@ -120,6 +120,34 @@ class DlnaCompatibilityHint {
       likelyNeedsRemux || likelyNeedsVideoTranscode || likelyNeedsAudioTranscode;
 }
 
+/// Rust 回传的 `subtitle_status`（契约 task-11 §6）。
+///
+/// 字幕准备状态：源文件里有多少内置文本 / 位图字幕轨，以及被降级时给用户看
+/// 的提示。旧版 `.so` 不返回该字段，此时 getter 为 null，UI 不显示任何提示。
+class DlnaSubtitleStatus {
+  const DlnaSubtitleStatus({
+    this.textTracks = 0,
+    this.bitmapTracks = 0,
+    this.bitmapNote,
+    this.message,
+  });
+
+  /// 源文件中的内置**文本**字幕轨数量（direct 模式不探测，恒为 0）。
+  final int textTracks;
+
+  /// 源文件中的内置**位图**字幕轨数量（direct 模式不探测，恒为 0）。
+  final int bitmapTracks;
+
+  /// 位图字幕被丢弃的说明（HLS 投屏无法显示 PGS/DVD）；null = 无。
+  final String? bitmapNote;
+
+  /// 字幕准备降级说明（侧车扫描超时 / 提取失败等）；null = 无。
+  final String? message;
+
+  /// 是否有需要展示给用户的提示。
+  bool get hasNotice => message != null || bitmapNote != null;
+}
+
 enum DlnaCastState { idle, discovering, casting, error }
 enum DlnaPlaybackState { playing, paused, buffering, stopped }
 
@@ -189,6 +217,8 @@ class DlnaCastService extends ChangeNotifier {
   List<SidecarHit> _subtitleCandidates = const [];
   /// 当前选中的字幕（null = 无字幕）。
   SidecarHit? _selectedSubtitle;
+  /// Rust 回传的字幕准备状态（契约 task-11 §6）；旧版 `.so` 为 null。
+  DlnaSubtitleStatus? _subtitleStatus;
 
   DlnaCastState get state => _state;
   DlnaPlaybackState get playbackState => _playbackState;
@@ -250,6 +280,9 @@ class DlnaCastService extends ChangeNotifier {
 
   /// 当前选中的字幕，null 表示无字幕。
   SidecarHit? get selectedSubtitle => _selectedSubtitle;
+
+  /// 字幕准备状态 / 降级提示；null 表示旧版 `.so` 未提供或当前无会话。
+  DlnaSubtitleStatus? get subtitleStatus => _subtitleStatus;
 
   // --- 内部：Rust 会话 ---
   int? _handle;
@@ -517,9 +550,18 @@ class DlnaCastService extends ChangeNotifier {
   }
 
   /// 选择字幕（null = 关闭字幕）。
-  Future<void> selectSubtitle(SidecarHit? hit) async {
+  ///
+  /// 返回 `null` 表示成功；返回非空字符串表示失败原因，调用方（字幕弹窗）
+  /// 用 SnackBar 展示，**不再静默失败**。位图字幕（PGS/DVD）Rust 会明确拒绝
+  /// （`{"ok":false,"error":…,"support":"bitmap-unsupported"}`，契约 §5），
+  /// 这里翻译成中文提示；即使 UI 已禁用该行也要有兜底。
+  Future<String?> selectSubtitle(SidecarHit? hit) async {
     final handle = _handle;
-    if (handle == null || _currentItem == null) return;
+    if (handle == null || _currentItem == null) {
+      return '投屏会话已结束';
+    }
+    // path 必须原样回传：内置字幕是 `<remote_path>#embedded:<index>`，
+    // 不要重新推导或做 URL 编码（契约 §4）。
     final cmdJson = jsonEncode(<String, Object?>{
       'cmd': 'subtitle',
       'path': hit?.path,
@@ -528,12 +570,16 @@ class DlnaCastService extends ChangeNotifier {
       () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
     );
     if (!_isOk(raw)) {
-      _error = _cmdError(raw);
+      final message = _subtitleErrorText(raw);
+      debugPrint('[DLNA] subtitle select failed: $raw');
+      _error = message;
       _notify();
-      return;
+      return message;
     }
     _selectedSubtitle = hit;
+    _error = null;
     _notify();
+    return null;
   }
 
   @override
@@ -592,6 +638,7 @@ class DlnaCastService extends ChangeNotifier {
     _everPlaying = false;
     _subtitleCandidates = const [];
     _selectedSubtitle = null;
+    _subtitleStatus = null;
     _resetWarmupState();
     _notify();
 
@@ -639,6 +686,7 @@ class DlnaCastService extends ChangeNotifier {
       if (compat != null) _compatHint = compat;
       // 启动响应里的 `phase`（旧版 `.so` 没有 → 降级为 playing）。
       _applyWarmupFields(json);
+      _applySubtitleStatus(json);
       _startStateTimer();
     } else {
       final cmdJson = jsonEncode(<String, Object?>{
@@ -708,6 +756,7 @@ class DlnaCastService extends ChangeNotifier {
 
     // §3 / §7.5 预热遥测：缺失的字段保持原值，不抛异常。
     _applyWarmupFields(json);
+    _applySubtitleStatus(json);
 
     // 预热 / 预热失败阶段还没投送到渲染器：此时传输层通常是 STOPPED，
     // 但用户可见状态应由预热面板接管，所以不覆盖 playbackState。
@@ -830,6 +879,7 @@ class DlnaCastService extends ChangeNotifier {
     _compatHint = null;
     _subtitleCandidates = const [];
     _selectedSubtitle = null;
+    _subtitleStatus = null;
     _protocolInfo = null;
     _endedForPath = null;
     _everPlaying = false;
@@ -939,14 +989,24 @@ class DlnaCastService extends ChangeNotifier {
     return hits;
   }
 
-  /// 把 Rust 回传的 `{name,path,lang}` 还原成 UI 需要的 [SidecarHit]。
+  /// 把 Rust 回传的候选字幕还原成 UI 需要的 [SidecarHit]。
+  ///
+  /// 契约 task-11 §3：外置字幕带 `embedded:false`、`track`/`codec` 为 null、
+  /// `support:"external"`；HLS 内置轨带 `embedded:true` + `track`/`codec`，
+  /// `support` 为 `webvtt` 或 `bitmap-unsupported`。旧版 `.so` 只有
+  /// `{name,path,lang,size}`，此时按外置字幕降级（support 为 null = 可投送）。
   SidecarHit? _hitFromJson(Object? raw, {String? videoName}) {
     if (raw is! Map) return null;
     final name = raw['name']?.toString() ?? '';
     final path = raw['path']?.toString() ?? '';
     if (name.isEmpty || path.isEmpty) return null;
     final lang = raw['lang']?.toString() ?? '';
-    final match = videoName == null
+    final embedded = raw['embedded'] == true;
+    final codec = _nonEmpty(raw['codec']);
+    final support = _nonEmpty(raw['support']);
+    // 内置轨的 name 形如 `zh (ass, embedded)`，不能拿去匹配 sidecar 文件名；
+    // 语言直接用 Rust 的 `lang`，展示格式用 codec。
+    final match = (embedded || videoName == null)
         ? null
         : matchSubtitleFileName(
             videoFileName: videoName,
@@ -958,9 +1018,15 @@ class DlnaCastService extends ChangeNotifier {
       language: match?.language ??
           (lang.trim().isEmpty ? '默认' : displaySubtitleLanguage(lang)),
       languageKey: match?.languageKey ?? uiSubtitleLanguageKey(lang),
-      format: match?.format ?? _extensionOf(name),
+      format: embedded
+          ? (codec ?? _extensionOf(name))
+          : (match?.format ?? _extensionOf(name)),
       exact: match?.exact ?? false,
       size: _asInt(raw['size']),
+      embedded: embedded,
+      track: _asInt(raw['track']),
+      codec: codec,
+      support: support,
     );
   }
 
@@ -1053,6 +1119,25 @@ class DlnaCastService extends ChangeNotifier {
     }
   }
 
+  /// 合并 `subtitle_status`（契约 task-11 §6）。
+  ///
+  /// 旧版 `.so` 不返回该键 → 保持 null，UI 不显示字幕提示；
+  /// 非 Map 的脏值同样降级为 null，绝不抛异常。
+  void _applySubtitleStatus(Map<String, dynamic> json) {
+    if (!json.containsKey('subtitle_status')) return;
+    final raw = json['subtitle_status'];
+    if (raw is! Map) {
+      _subtitleStatus = null;
+      return;
+    }
+    _subtitleStatus = DlnaSubtitleStatus(
+      textTracks: _asInt(raw['text_tracks']) ?? 0,
+      bitmapTracks: _asInt(raw['bitmap_tracks']) ?? 0,
+      bitmapNote: _nonEmpty(raw['bitmap_note']),
+      message: _nonEmpty(raw['message']),
+    );
+  }
+
   Map<String, dynamic>? _decodeJson(String? raw) {
     if (raw == null || raw.isEmpty) return null;
     if (raw.startsWith('error:')) return null;
@@ -1083,6 +1168,15 @@ class DlnaCastService extends ChangeNotifier {
     if (err != null && err.isNotEmpty) return err;
     if (raw.startsWith('error:')) return raw.substring('error:'.length);
     return raw;
+  }
+
+  /// 字幕命令失败原因：位图字幕（PGS/DVD）给出中文解释，其余沿用 Rust 文本。
+  String _subtitleErrorText(String? raw) {
+    final support = _nonEmpty(_decodeJson(raw)?['support']);
+    if (support == 'bitmap-unsupported') {
+      return '位图字幕（PGS/DVD）无法通过投屏显示，请改用文本字幕或直通模式';
+    }
+    return _cmdError(raw);
   }
 
   String _sessionError(String? raw, Map<String, dynamic>? json) {

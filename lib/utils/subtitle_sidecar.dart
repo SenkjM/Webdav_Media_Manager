@@ -213,6 +213,10 @@ SubtitleRowLabel labelManualSubtitle({
 }) => SubtitleRowLabel(title: fileName, formatTag: format.toLowerCase());
 
 /// A sidecar file that matched the video name.
+///
+/// DLNA 投屏时 Rust 还会回传**内置**字幕轨（合成 path
+/// `<remote_path>#embedded:<index>`，契约 task-11 §3）；本机播放场景只用前
+/// 半部分字段，新增字段恒为默认值。
 class SidecarHit {
   const SidecarHit({
     required this.name,
@@ -223,6 +227,10 @@ class SidecarHit {
     required this.exact,
     this.subdirectory,
     this.size,
+    this.embedded = false,
+    this.track,
+    this.codec,
+    this.support,
   });
 
   final String name;
@@ -237,6 +245,23 @@ class SidecarHit {
 
   /// Remote size when the listing provided one. Used to skip huge `.sub` files.
   final int? size;
+
+  /// 是否为容器内置字幕轨（Rust 合成项）；外置字幕文件恒为 false。
+  final bool embedded;
+
+  /// 内置字幕的 AV stream index；外置字幕为 null。
+  final int? track;
+
+  /// 内置字幕的 libav codec 名（`ass` / `subrip` / `hdmv_pgs_subtitle` …）。
+  final String? codec;
+
+  /// Rust 判定能否投送：`external` / `webvtt` / `bitmap-unsupported`。
+  ///
+  /// 旧版 `.so` 不返回该字段时为 null（按可投送处理）。
+  final String? support;
+
+  /// 位图字幕（PGS/DVD）：HLS 投屏无法显示，UI 必须禁用该行并说明原因。
+  bool get bitmapUnsupported => support == 'bitmap-unsupported';
 
   SubtitleRowLabel labelFor(AppLocalizations l10n) => subdirectory == null
       ? labelSameDirectorySidecar(language: language, format: format, l10n: l10n)
