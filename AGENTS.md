@@ -1,31 +1,11 @@
 # Webdav Media Manager — Agent Instructions
 
-## Flutter in the DSH workspace sandbox
+## Repository role
 
-`flutter` resolves to `D:\flutter\bin\flutter.bat`. Its standard startup path takes a shared-cache lock under `D:\flutter\bin\cache`, may run a Flutter version check (`git fetch --tags`), and may implicitly verify dependencies. Those steps are outside this repository and can stall or require broader permissions in a `workspace-write` DSH session.
-
-For routine verification, do **not** invoke `flutter analyze`, `flutter test`, or `flutter gen-l10n` directly. Use the checked-in wrappers instead:
-
-```powershell
-pwsh -File tool\flutter-sandbox.ps1 Analyze
-pwsh -File tool\flutter-sandbox.ps1 Test
-pwsh -File tool\flutter-sandbox.ps1 Test test\download_queue_ordering_test.dart
-pwsh -File tool\flutter-sandbox.ps1 GenL10n
-```
-
-`tool\flutter-sandbox.ps1 Analyze` uses `dart analyze --fatal-infos --fatal-warnings` directly, so it does not invoke Flutter's universal-artifact update and must not request access to update `D:\flutter\bin\cache`. However, the DSH `workspace-write` sandbox may deny Dart's analysis-server child process with `ProcessException: 拒绝访问`. This cannot be fixed with command-line flags. In that case, stop, report that static analysis was not run, and do **not** automatically request or assume an elevation. Run the wrapper only after the user explicitly switches the session to full access.
-
-`Test` and `GenL10n` use Flutter's cached Dart snapshot with `FLUTTER_ALREADY_LOCKED=true`, `--no-version-check`, and `--no-pub`. They are valid only when dependencies and the required Flutter SDK artifacts are already available. If one reports an absent or stale SDK artifact such as `libimobiledevice.stamp`, stop and tell the user that the SDK cache requires explicit initialization with full access; do **not** automatically request or assume an elevation for routine verification.
-
-When `pubspec.yaml`, `pubspec.lock`, or `pubspec_overrides.yaml` changes, initialize dependencies first:
-
-```powershell
-pwsh -File tool\flutter-pub-get.ps1
-```
-
-That script redirects `PUB_CACHE` to `.pub-cache/` in this workspace. It intentionally uses the official launcher because `pub get` is stateful. Do not set `PUB_HOSTED_URL`; this repository's tracked lockfile is pinned to `https://pub.dev`.
-
-Use a normal `flutter` command only when the user has explicitly provided full access or when a wrapper reports a missing cached prerequisite. Always report the exact wrapper and outcome used for verification.
+Webdav Media Manager is the Android (Flutter) UI layer for WDMM. It owns screens, widgets, blocs,
+and platform adapters (SAF, MediaStore, notifications, foreground service, playback). Business
+logic — cloud drivers, DB, sync, crypto, DLNA, and the local proxy — lives in the WDMM-core Rust
+crate compiled into `libwdmm_ffi.so` and reached via Dart FFI (`rust_core_service.dart`).
 
 ## Architecture: module reuse principles
 
@@ -61,7 +41,7 @@ All in-app cloud file operations go through **`WdmmVfs`** — the unified driver
 - Unsupported put/get on a driver returns a driver error — do not implement sync per driver, and do **not** silently fall back to a WebDAV-only / Dart-store path. A missing put/get must fail loudly.
 - Wrapper drivers (Crypt) expose `LocalStream` (MustProxy), never a plaintext `raw_url`. Content-delivery kinds stay labeled on `CloudFileItem` / driver `get`.
 
-This is a clean one-shot codebase: no feature flags, no dual-write/dual-read, no soft fallback to a Dart store "so mid-steps still work". See `CLAUDE.md`.
+This is a clean one-shot codebase: no feature flags, no dual-write/dual-read, no soft fallback to a Dart store "so mid-steps work".
 
 ## HLS / DLNA cast path
 
@@ -77,7 +57,7 @@ Preset CRUD is via `wdmm_transcode_presets_json` / `wdmm_transcode_preset_save` 
 
 All media byte delivery must go through `POST /v1/media/link` (OpenAPI). Dart **must not** splice upstream `raw_url` or `raw_headers` from a `CloudFileItem` directly into a player URL or DLNA `SetAVTransportURI` call. The media-link API returns a stable proxy URL or a signed direct URL; use that.
 
-## Verification commands (Linux CI / this repo)
+## Build, test, lint
 
 ```sh
 # Dart static analysis (lib/ only — test/ has pre-existing errors)
@@ -91,10 +71,44 @@ cargo check -p wdmm-ffi -p wdmm-storage -p wdmm-openapi -p wdmm-proxy -p wdmm-ff
 
 # Rust unit tests
 cargo test -p wdmm-storage && cargo test -p wdmm-openapi
-
-# Full CI guard (see .github/workflows/verify.yml)
 ```
 
-## Architecture reference
+On Windows, use the checked-in PowerShell wrappers in `tool/` (`flutter-sandbox.ps1` for
+analyze/test/gen-l10n, `flutter-pub-get.ps1` for dependency resolution). Set `FLUTTER_ROOT` to your
+Flutter SDK root (defaults to `D:\flutter`); `pub get` redirects `PUB_CACHE` into a workspace-local
+`.pub-cache/`. This repo's tracked lockfile is pinned to `https://pub.dev` — do not set
+`PUB_HOSTED_URL`.
 
-See `docs/ARCHITECTURE.md` for the full layer diagram, crate responsibilities, DB schema, startup sequence, and active constraints.
+## Branch and commit conventions
+
+- Active branch: `refactor/rust-core`
+- Commit prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`
+- Do not commit to `main` directly. No force-push. No triggering CI via API.
+- Submodule bump rule: when `rust/wdmm-core` changes, pin to the target Core SHA in the same
+  commit that updates Dart callers.
+
+## CI workflows
+
+| Workflow | Purpose |
+|---|---|
+| `verify.yml` | Static analysis + unit tests on push/PR |
+| `testbuild.yml` | Full Android build check (unsigned) |
+| `pre-release-build.yml` | Signed pre-release build; triggers on valid pre-release tag; opens an issue if none |
+| `release-build.yml` | Signed release build; triggers on an incremental `vX.Y.Z` tag or manual dispatch |
+| `pages.yml` | Publishes the project page |
+| `build-ffmpeg-android.yml` | Builds FFmpeg Android binaries (arm64-v8a) consumed by `wdmm-ffmpeg` |
+
+## Where docs live
+
+- Architecture layer diagram, crate responsibilities, DB schema, startup sequence, active
+  constraints: `docs/ARCHITECTURE.md`
+- Per-feature docs: `docs/` (indexed at `docs/00-INDEX.md`)
+- Agent instructions: this file (`AGENTS.md`)
+
+## One-shot coding rule (mandatory)
+
+Finish the new authority completely, then delete the old path and wire callers. No feature flags,
+no dual-write/dual-read, no soft fallbacks, no dead code kept for "mid-step usability".
+
+See `docs/ARCHITECTURE.md` for the full layer diagram, crate responsibilities, DB schema, startup
+sequence, and active constraints.
