@@ -220,6 +220,8 @@ class DlnaCastService extends ChangeNotifier {
   bool _stateUnavailableLogged = false;
   /// 已处理过 `ended` 的条目路径，避免每秒 tick 重复触发自动下一集。
   String? _endedForPath;
+  /// 本次会话是否真的播起来过（用来区分「播完/用户停」与「压根没播起来」）。
+  bool _everPlaying = false;
   /// Rust 协商出的协议信息（只用于设备详情页展示）。
   String? _protocolInfo;
 
@@ -484,6 +486,7 @@ class DlnaCastService extends ChangeNotifier {
     _duration = null;
     _playbackState = DlnaPlaybackState.buffering;
     _endedForPath = null;
+    _everPlaying = false;
     _subtitleCandidates = const [];
     _selectedSubtitle = null;
     _notify();
@@ -592,7 +595,10 @@ class DlnaCastService extends ChangeNotifier {
     }
 
     final mapped = _playbackFromTransport(json['transport']?.toString());
-    if (mapped != null) _playbackState = mapped;
+    if (mapped != null) {
+      if (mapped == DlnaPlaybackState.playing) _everPlaying = true;
+      _playbackState = mapped;
+    }
 
     final positionMs = _asInt(json['position_ms']);
     if (positionMs != null && positionMs >= 0) {
@@ -648,6 +654,14 @@ class DlnaCastService extends ChangeNotifier {
         await playNext();
         return;
       }
+    } else if (!_everPlaying) {
+      // 设备从未进入过 PLAYING 就报 STOPPED：这不是"播完"，也不是用户主动停，
+      // 而是设备打不开流（转码未就绪、编码不支持、代理不可达）。以前这种情况
+      // 只会静默收起投屏条，用户以为"安卓直接退出投屏"。
+      await _failWith(
+        _CastError('设备没能开始播放（可能是转码未就绪或编码不被支持）'),
+      );
+      return;
     }
     await _windDown();
   }
@@ -687,6 +701,7 @@ class DlnaCastService extends ChangeNotifier {
     _selectedSubtitle = null;
     _protocolInfo = null;
     _endedForPath = null;
+    _everPlaying = false;
     _error = null;
     if (handle != null) {
       await _runOnWorker(() => RustCoreService.dlnaSessionClose(handle));
