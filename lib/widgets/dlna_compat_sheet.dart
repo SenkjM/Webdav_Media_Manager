@@ -54,11 +54,12 @@ class DlnaCompatSheet extends StatefulWidget {
 }
 
 // Preset ids and their display labels.
-const _kPresets = ['direct', 'balanced', 'compatible'];
+// Must match Rust database IDs: passthrough, balanced, dlna-compat, high, audio-only
+const _kPresets = ['passthrough', 'balanced', 'dlna-compat'];
 const _kPresetLabels = {
-  'direct': '单文件直通（不转码）',
+  'passthrough': '单文件直通（不转码）',
   'balanced': '均衡（默认）',
-  'compatible': '高兼容',
+  'dlna-compat': '高兼容',
 };
 
 class _DlnaCompatSheetState extends State<DlnaCompatSheet> {

@@ -21,6 +21,7 @@ import 'media_library_settings_screen.dart';
 import 'openapi_settings_screen.dart';
 import 'share_settings_screen.dart';
 import 'sync_screen.dart';
+import 'transcode_presets_screen.dart';
 import 'video_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -123,13 +124,13 @@ class _SettingsScreenState extends State<SettingsScreen>
     final notif = context.watch<NotificationPermissionService>();
     final l10n = AppLocalizations.of(context)!;
 
-    // Preset display labels
+    // Preset display labels — must match Rust database IDs
     const presetLabels = {
-      'direct': '单文件直通（不转码）',
+      'passthrough': '单文件直通（不转码）',
       'balanced': '均衡（默认）',
-      'compatible': '高兼容',
+      'dlna-compat': '高兼容',
     };
-    const presets = ['direct', 'balanced', 'compatible'];
+    const presets = ['passthrough', 'balanced', 'dlna-compat'];
 
     return Scaffold(
       appBar: AppBar(
@@ -365,6 +366,21 @@ class _SettingsScreenState extends State<SettingsScreen>
                 }
               },
             ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.tune),
+            title: const Text('管理转码预设'),
+            subtitle: const Text('添加、编辑或删除自定义转码预设'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const TranscodePresetsScreen(),
+                ),
+              );
+            },
           ),
           const Divider(height: 40),
           _sectionTitle(context, l10n.settingsMisc),
