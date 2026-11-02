@@ -179,6 +179,7 @@ void main() {
     // A fresh instance inside the window must not start the FGS again.
     final bridge = _FakeBridge();
     final restarted = _make(bridge, store);
+    await restarted.restoreSuppression(); // must be called before ensureRunning (mirrors TaskQueueService.init)
     await pumpEventQueue();
     await _start(bridge, restarted);
     expect(bridge.starts, 0);
