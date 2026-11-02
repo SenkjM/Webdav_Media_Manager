@@ -158,6 +158,20 @@ typedef _ProxyStreamSetResultNative = ffi.Void Function(
 typedef _ProxyStreamSetResultDart   = void Function(
     int, ffi.Pointer<ffi.Uint8>, int, int);
 
+// ── DLNA session facade typedefs ─────────────────────────────────────────────
+
+// wdmm_dlna_session_cmd(handle, cmd_json) → FfiString ("ok" / "error:…")
+typedef _Uint32StrToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Uint32, ffi.Pointer<Utf8>);
+typedef _Uint32StrToStrDart = ffi.Pointer<Utf8> Function(
+    int, ffi.Pointer<Utf8>);
+
+// wdmm_proxy_register_account(account_id, remote_path, name?, size) → FfiString
+typedef _ProxyRegAccountNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Uint64);
+typedef _ProxyRegAccountDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int);
+
 /// Rust FFI bridge to WDMM-core via wdmm-ffi.
 ///
 /// Dart services remain **source of truth** until the full DB cutover in
@@ -2525,6 +2539,183 @@ class RustCoreService {
     if (!_ensureSymbols()) return;
     _loadStreamSymbolsSafe();
     _proxyStreamSetResult?.call(requestId, buf, len, status);
+  }
+
+  // ── Round 10 — DLNA session facade ───────────────────────────────────────
+  //
+  // The DLNA protocol stack (SSDP discovery, device description, SOAP /
+  // DIDL-Lite control, ConnectionManager negotiation, transport state polling,
+  // subtitle matching) lives in Rust. [DlnaCastService] only marshals user
+  // intent (config / command JSON) and renders the state JSON that comes back.
+  //
+  // Loaded through dedicated lazy loaders: an older `libwdmm_ffi.so` that does
+  // not export these symbols leaves them null instead of breaking the rest of
+  // the FFI surface.
+
+  static _OneStrToStrDart? _dlnaSessionStart;
+  static _Uint32ToStrDart? _dlnaSessionState;
+  static _Uint32StrToStrDart? _dlnaSessionCmd;
+  static _Uint32ToStrDart? _dlnaSessionClose;
+  static _Uint32ToStrDart? _dlnaDiscoverExt;
+  static _ProxyRegAccountDart? _proxyRegisterAccount;
+
+  static bool _dlnaSessionSymbolsLoaded = false;
+  static bool _dlnaDiscoverExtLoaded = false;
+  static bool _proxyRegAccountLoaded = false;
+
+  static void _loadDlnaSessionSymbolsSafe() {
+    if (_dlnaSessionSymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _dlnaSessionStart = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_dlna_session_start')
+          .asFunction();
+      _dlnaSessionState = lib
+          .lookup<ffi.NativeFunction<_Uint32ToStrNative>>(
+              'wdmm_dlna_session_state')
+          .asFunction();
+      _dlnaSessionCmd = lib
+          .lookup<ffi.NativeFunction<_Uint32StrToStrNative>>(
+              'wdmm_dlna_session_cmd')
+          .asFunction();
+      _dlnaSessionClose = lib
+          .lookup<ffi.NativeFunction<_Uint32ToStrNative>>(
+              'wdmm_dlna_session_close')
+          .asFunction();
+      _dlnaSessionSymbolsLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] DLNA session symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  static void _loadDlnaDiscoverExtSafe() {
+    if (_dlnaDiscoverExtLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _dlnaDiscoverExt = lib
+          .lookup<ffi.NativeFunction<_Uint32ToStrNative>>(
+              'wdmm_dlna_discover_ext_json')
+          .asFunction();
+      _dlnaDiscoverExtLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] DLNA discover_ext symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  static void _loadProxyRegAccountSafe() {
+    if (_proxyRegAccountLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _proxyRegisterAccount = lib
+          .lookup<ffi.NativeFunction<_ProxyRegAccountNative>>(
+              'wdmm_proxy_register_account')
+          .asFunction();
+      _proxyRegAccountLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] proxy_register_account lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Start a DLNA cast session completely inside Rust.
+  ///
+  /// [configJson] carries `renderer_location`, `renderer_usn`, `account_id`,
+  /// `remote_path`, `name`, `size`, `preset_id`, `force_direct` and `ui_lang`.
+  /// Returns `{"handle":…,"url":…,"provider":…,"protocol_info":…,"compat":{…}}`
+  /// or `{"ok":false,"error":…}`. Null when the native library (or the symbol)
+  /// is unavailable.
+  static String? dlnaSessionStart(String configJson) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSessionSymbolsSafe();
+    if (_dlnaSessionStart == null) return null;
+    final cfg = configJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_dlnaSessionStart!(cfg));
+    } finally {
+      calloc.free(cfg);
+    }
+  }
+
+  /// Fetch (and internally tick) the state of session [handle].
+  ///
+  /// Returns the state JSON documented on the contract, or null when the
+  /// symbol is unavailable.
+  static String? dlnaSessionState(int handle) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSessionSymbolsSafe();
+    final fn = _dlnaSessionState;
+    if (fn == null) return null;
+    return _readAndFreeString(fn(handle));
+  }
+
+  /// Send a user command ([cmdJson]) to session [handle].
+  ///
+  /// Returns `"ok"` or `"error:<message>"`; null when unavailable.
+  static String? dlnaSessionCmd(int handle, String cmdJson) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSessionSymbolsSafe();
+    final fn = _dlnaSessionCmd;
+    if (fn == null) return null;
+    final cmd = cmdJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(handle, cmd));
+    } finally {
+      calloc.free(cmd);
+    }
+  }
+
+  /// Tear down session [handle] (media proxy tokens included).
+  static String? dlnaSessionClose(int handle) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSessionSymbolsSafe();
+    final fn = _dlnaSessionClose;
+    if (fn == null) return null;
+    return _readAndFreeString(fn(handle));
+  }
+
+  /// SSDP discovery via Rust.
+  ///
+  /// Returns `[{"usn","location","server","friendly_name","has_avtransport"}]`,
+  /// or null when the extended symbol is missing (caller may fall back to
+  /// [dlnaDiscover]).
+  static String? dlnaDiscoverExt({int timeoutMs = 4000}) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaDiscoverExtSafe();
+    final fn = _dlnaDiscoverExt;
+    if (fn == null) return null;
+    return _readAndFreeString(fn(timeoutMs));
+  }
+
+  /// Expose an account-scoped remote file as a proxy stream, resolved in Rust.
+  ///
+  /// Returns `{"token":…,"url":…}` (the same URL that is handed to the
+  /// renderer) or an `error:` string. Null when the symbol is unavailable.
+  static String? proxyRegisterAccount({
+    required String accountId,
+    required String remotePath,
+    String? name,
+    int size = 0,
+  }) {
+    if (!_ensureSymbols()) return null;
+    _loadProxyRegAccountSafe();
+    final fn = _proxyRegisterAccount;
+    if (fn == null) return null;
+    final account = accountId.toNativeUtf8();
+    final path = remotePath.toNativeUtf8();
+    final namePtr = name != null ? name.toNativeUtf8() : ffi.nullptr.cast<Utf8>();
+    try {
+      return _readAndFreeString(fn(account, path, namePtr, size));
+    } finally {
+      calloc.free(account);
+      calloc.free(path);
+      if (name != null) calloc.free(namePtr);
+    }
   }
 
   // ── Wave D — Manga FFI ───────────────────────────────────────────────────
