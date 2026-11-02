@@ -181,6 +181,7 @@ jobs:
 
             - ABIs: `arm64-v8a`, `x86_64` (armeabi-v7a excluded — LP64-only struct offsets)
             - Configure: `--disable-nonfree --enable-gpl --enable-libx264 --disable-symver`
+            - Hardware encode: `--enable-jni --enable-mediacodec --enable-encoder=h264_mediacodec,hevc_mediacodec` (NDK `libmediandk`, ByteBuffer NV12/YUV420P input, no EGL/Surface needed)
             - Linker: `--max-page-size=16384` (Android 15+ 16 KB pages)
             - NDK: `${{ env.NDK_VERSION }}`, min API `${{ env.MIN_API }}`
             - License: GPL v2+ (libx264 bundled static)
