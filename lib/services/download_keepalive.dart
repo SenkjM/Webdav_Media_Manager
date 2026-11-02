@@ -99,9 +99,13 @@ class DownloadKeepAlive {
     DownloadKeepAliveBridge? bridge,
     DownloadKeepAliveSuppressionStore? suppression,
   }) : _injected = bridge,
-       _suppression = suppression ?? KvDownloadKeepAliveSuppressionStore() {
-    unawaited(_restoreSuppression());
-  }
+       _suppression = suppression ?? KvDownloadKeepAliveSuppressionStore();
+
+  /// Restore the persisted suppression deadline from the KV store.
+  ///
+  /// Must be called after [wdmm_library_init] has been called (i.e. inside
+  /// [TaskQueueService.init]), never from the constructor.
+  Future<void> restoreSuppression() => _restoreSuppression();
 
   /// After Android 15+ `onTimeout`, don't immediately start the FGS again.
   /// This is not a quota reset — it only avoids a tight restart loop.

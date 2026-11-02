@@ -342,6 +342,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> init() async {
     if (_initialized) return;
+    await _keepAlive.restoreSuppression();
     final loaded = await _store.loadAll();
     for (final t in loaded) {
       if (t.status == TaskStatus.active) {

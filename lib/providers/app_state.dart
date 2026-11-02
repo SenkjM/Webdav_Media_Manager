@@ -207,16 +207,19 @@ class AppState extends ChangeNotifier {
       // Resolve the documents directory first: wdmm_library_init (I2) must
       // receive the real DB path before the very first Core FFI call, which
       // happens inside settings.init() → kvGet(). A :memory: fallback no
-      // longer exists in production builds — the singleton panics without init.
+      // longer exists in production builds — the singleton returns an error
+      // string on failure which we promote to a StateError here.
       _initPhase = 'core-init';
       final docs = await getApplicationDocumentsDirectory();
       if (Platform.isAndroid) {
         final coreDbPath = '${docs.path}/wdmm_library.db';
         final coreResult = RustCoreService.libraryInit(coreDbPath);
-        assert(
-          coreResult == null || !coreResult.startsWith('error:'),
-          '[AppState] wdmm_library_init failed: $coreResult',
-        );
+        if (coreResult == null) {
+          throw StateError('wdmm_library_init: FFI library unavailable');
+        }
+        if (coreResult.startsWith('error:')) {
+          throw StateError('wdmm_library_init failed: $coreResult');
+        }
       }
       BootTrace.mark('core-init-done');
       _initPhase = 'settings';

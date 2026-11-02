@@ -18,6 +18,7 @@
     pwsh -File tool\build-rust.ps1 -Abi arm64-v8a,x86_64
     pwsh -File tool\build-rust.ps1 -DebugBuild
     pwsh -File tool\build-rust.ps1 -SkipFfmpeg
+    pwsh -File tool\build-rust.ps1 -Ffmpeg
     tool\build-rust.bat
 
 .PARAMETER Abi
@@ -28,7 +29,17 @@
   (Named -DebugBuild because -Debug is reserved by PowerShell.)
 
 .PARAMETER SkipFfmpeg
-  Skip android-arm64 FFmpeg vendor download (use when vendor already present).
+  Skip the legacy android-arm64 FFmpeg vendor (hzw-ffmpeg / hzw-ffprobe) download.
+  This is unrelated to -Ffmpeg: the current crates/wdmm-ffmpeg/build.rs links
+  libav* shared libraries instead of spawning those binaries.
+
+.PARAMETER Ffmpeg
+  Build with the real FFmpeg bindings enabled: download the prebuilt android
+  libav* shared libraries from the `ffmpeg-android-libs` rolling release,
+  drop them into jniLibs/<abi>/ (so the APK ships them), and pass
+  `--features ffmpeg` plus WDMM_FFMPEG_LIB_DIR to cargo-ndk.
+  Supported ABIs: arm64-v8a, x86_64. Requires network once per ABI
+  (cached under .tmp\ffmpeg-android-libs).
 
 .PARAMETER InstallCargoNdk
   Run `cargo install cargo-ndk` when cargo-ndk is missing (default: try install).
@@ -39,6 +50,7 @@ param(
     [string[]] $Abi = @('arm64-v8a'),
     [switch] $DebugBuild,
     [switch] $SkipFfmpeg,
+    [switch] $Ffmpeg,
     [switch] $NoInstallCargoNdk
 )
 
@@ -108,6 +120,66 @@ $abiToTriple = @{
     'armeabi-v7a' = 'armv7-linux-androideabi'
     'x86_64'      = 'x86_64-linux-android'
     'x86'         = 'i686-linux-android'
+}
+
+# Prebuilt android libav* shared libs come from the rolling `ffmpeg-android-libs`
+# release (same assets .github/workflows/testbuild.yml consumes).
+$ffmpegLibAssets = @{
+    'arm64-v8a' = 'ffmpeg-android-arm64-v8a.tar.gz'
+    'x86_64'    = 'ffmpeg-android-x86_64.tar.gz'
+}
+$ffmpegLibsBase = 'https://github.com/SenkjM/Webdav_Media_Manager/releases/download/ffmpeg-android-libs'
+$ffmpegLibsCache = Join-Path $root '.tmp\ffmpeg-android-libs'
+
+function Ensure-FfmpegLibs([string] $Abi) {
+    if (-not $ffmpegLibAssets.ContainsKey($Abi)) {
+        Fail "-Ffmpeg has no prebuilt libav* for '$Abi' (available: $($ffmpegLibAssets.Keys -join ', '))"
+    }
+    $asset = $ffmpegLibAssets[$Abi]
+    $srcDir = Join-Path $ffmpegLibsCache $Abi
+    $marker = Join-Path $srcDir 'libavcodec.so'
+    $markerOk = (Test-Path -LiteralPath $marker) -and ((Get-Item -LiteralPath $marker).Length -gt 0)
+
+    if ($markerOk) {
+        Write-Ok "FFmpeg shared libs cached: $srcDir"
+    } else {
+        New-Item -ItemType Directory -Force -Path $ffmpegLibsCache | Out-Null
+        $tgz = Join-Path $ffmpegLibsCache $asset
+        if (-not ((Test-Path -LiteralPath $tgz) -and ((Get-Item -LiteralPath $tgz).Length -gt 0))) {
+            $url = "$ffmpegLibsBase/$asset"
+            Write-Step "download FFmpeg android shared libs $asset"
+            Write-Host "  GET $url"
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $tgz -UseBasicParsing
+            } catch {
+                Fail "download failed for $asset : $_"
+            }
+            if ((Get-Item -LiteralPath $tgz).Length -le 0) { Fail "download empty for $asset" }
+        }
+        Write-Step "extract $asset"
+        & tar -xzf $tgz -C $ffmpegLibsCache
+        if ($LASTEXITCODE -ne 0) { Fail "tar extract failed for $asset" }
+        if (-not (Test-Path -LiteralPath $marker)) { Fail "missing $marker after extracting $asset" }
+        Write-Ok "FFmpeg shared libs ready: $srcDir"
+    }
+
+    $destDir = Join-Path $outJni $Abi
+    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+    Copy-Item -Path (Join-Path $srcDir 'lib*.so') -Destination $destDir -Force
+    Write-Ok "FFmpeg libs -> $destDir"
+}
+
+function Assert-FfmpegLinked([string] $So) {
+    $readelf = Join-Path $env:ANDROID_NDK_HOME 'toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe'
+    if (-not (Test-Path -LiteralPath $readelf)) {
+        Write-Host '  (llvm-readelf not found; skipping libav* link verification)'
+        return
+    }
+    $needed = & $readelf -d $So | Select-String 'NEEDED' | ForEach-Object { $_.Line }
+    if (-not ($needed -match 'libavformat\.so')) {
+        Fail "libwdmm_ffi.so has no libav* NEEDED entry; --features ffmpeg did not link: $So"
+    }
+    Write-Ok "link verified: libav* NEEDED present in $So"
 }
 
 # --- start ---
@@ -210,18 +282,39 @@ if (-not $SkipFfmpeg) {
 
 New-Item -ItemType Directory -Force -Path $outJni | Out-Null
 
-$ndkArgs = @()
-foreach ($a in $Abi) { $ndkArgs += @('-t', $a) }
-$ndkArgs += @('-o', $outJni)
 $profileArgs = if ($DebugBuild) { @('build', '-p', 'wdmm-ffi') } else { @('build', '--release', '-p', 'wdmm-ffi') }
 
-Write-Step ("cargo ndk " + ($ndkArgs + $profileArgs -join ' '))
-Push-Location $core
-try {
-    & cargo ndk @ndkArgs @profileArgs
-    if ($LASTEXITCODE -ne 0) { Fail "cargo ndk failed (exit $LASTEXITCODE)" }
-} finally {
-    Pop-Location
+if ($Ffmpeg) {
+    # One cargo-ndk run per ABI: WDMM_FFMPEG_LIB_DIR is a single link-search dir,
+    # so ABI-specific libav* copies cannot be mixed in one invocation.
+    foreach ($a in $Abi) {
+        Ensure-FfmpegLibs $a
+        $env:WDMM_FFMPEG_LIB_DIR = (Join-Path $outJni $a)
+        $callArgs = @('-t', $a, '-o', $outJni) + $profileArgs + @('--features', 'ffmpeg')
+        Write-Step ("cargo ndk " + ($callArgs -join ' ') + "   [WDMM_FFMPEG_LIB_DIR=$($env:WDMM_FFMPEG_LIB_DIR)]")
+        Push-Location $core
+        try {
+            & cargo ndk @callArgs
+            if ($LASTEXITCODE -ne 0) { Fail "cargo ndk failed for $a (exit $LASTEXITCODE)" }
+        } finally {
+            Pop-Location
+        }
+        Assert-FfmpegLinked (Join-Path $outJni "$a\libwdmm_ffi.so")
+    }
+    Remove-Item Env:\WDMM_FFMPEG_LIB_DIR -ErrorAction SilentlyContinue
+} else {
+    $ndkArgs = @()
+    foreach ($a in $Abi) { $ndkArgs += @('-t', $a) }
+    $ndkArgs += @('-o', $outJni)
+
+    Write-Step ("cargo ndk " + ($ndkArgs + $profileArgs -join ' '))
+    Push-Location $core
+    try {
+        & cargo ndk @ndkArgs @profileArgs
+        if ($LASTEXITCODE -ne 0) { Fail "cargo ndk failed (exit $LASTEXITCODE)" }
+    } finally {
+        Pop-Location
+    }
 }
 
 $missing = @()
