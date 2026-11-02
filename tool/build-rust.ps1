@@ -170,7 +170,8 @@ function Ensure-FfmpegLibs([string] $Abi) {
 }
 
 function Assert-FfmpegLinked([string] $So) {
-    $readelf = Join-Path $env:ANDROID_NDK_HOME 'toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-readelf.exe'
+    $bin = Join-Path $env:ANDROID_NDK_HOME 'toolchains\llvm\prebuilt\windows-x86_64\bin'
+    $readelf = Join-Path $bin 'llvm-readelf.exe'
     if (-not (Test-Path -LiteralPath $readelf)) {
         Write-Host '  (llvm-readelf not found; skipping libav* link verification)'
         return
@@ -180,6 +181,47 @@ function Assert-FfmpegLinked([string] $So) {
         Fail "libwdmm_ffi.so has no libav* NEEDED entry; --features ffmpeg did not link: $So"
     }
     Write-Ok "link verified: libav* NEEDED present in $So"
+
+    # A NEEDED entry only proves the link happened; dlopen() additionally needs
+    # every undefined av*/swr*/sws* symbol to exist in the packaged libav*.so.
+    # FFmpeg 7 made av_q2d() a static inline, so an `extern av_q2d` left the whole
+    # library unloadable on device ("cannot locate symbol", FFI unavailable).
+    $nm = Join-Path $bin 'llvm-nm.exe'
+    if (-not (Test-Path -LiteralPath $nm)) {
+        Write-Host '  (llvm-nm not found; skipping libav* symbol resolution check)'
+        return
+    }
+    $libDir = Split-Path -Parent $So
+    $defined = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($lib in Get-ChildItem -Path $libDir -Filter 'libav*.so' -File) {
+        foreach ($line in (& $nm -D --defined-only $lib.FullName 2>$null)) {
+            $parts = @($line -split '\s+' | Where-Object { $_ })
+            if ($parts.Count -ge 2) { [void]$defined.Add(($parts[-1] -split '@')[0]) }
+        }
+    }
+    foreach ($lib in Get-ChildItem -Path $libDir -Filter 'libsw*.so' -File) {
+        foreach ($line in (& $nm -D --defined-only $lib.FullName 2>$null)) {
+            $parts = @($line -split '\s+' | Where-Object { $_ })
+            if ($parts.Count -ge 2) { [void]$defined.Add(($parts[-1] -split '@')[0]) }
+        }
+    }
+    if ($defined.Count -eq 0) {
+        Write-Host '  (no libav* exports enumerated; skipping symbol resolution check)'
+        return
+    }
+    $missing = @()
+    foreach ($line in (& $nm -D --undefined-only $So 2>$null)) {
+        $parts = @($line -split '\s+' | Where-Object { $_ })
+        if ($parts.Count -lt 2) { continue }
+        $sym = ($parts[-1] -split '@')[0]
+        if ($sym -notmatch '^(av|swr|sws)_') { continue }
+        if (-not $defined.Contains($sym)) { $missing += $sym }
+    }
+    if ($missing.Count -gt 0) {
+        Fail ("libwdmm_ffi.so needs libav* symbols that the packaged libs do not export " +
+            "(dlopen would fail on device): " + (($missing | Sort-Object -Unique) -join ', '))
+    }
+    Write-Ok 'symbol resolution verified: every libav* import is exported by the packaged libs'
 }
 
 # --- start ---
