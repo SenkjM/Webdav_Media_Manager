@@ -2,6 +2,7 @@
 
 import 'dart:ffi' as ffi;
 import 'dart:io';
+import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 
@@ -184,6 +185,18 @@ typedef _ProxyRegAccountDart = ffi.Pointer<Utf8> Function(
 class RustCoreService {
   static ffi.DynamicLibrary? _lib;
   static bool _loadFailed = false;
+
+  // ── Off-main execution ───────────────────────────────────────────────────
+
+  /// Run a blocking FFI entry point on a worker isolate.
+  ///
+  /// Every `wdmm_*` entry point that touches the network `block_on`s inside the
+  /// Rust runtime, so calling one from the UI isolate freezes Flutter until it
+  /// returns — on a slow share that is an immediate ANR ("Input dispatching
+  /// timed out", main thread parked inside the FFI call). [body] may only
+  /// capture sendable values (strings, numbers, transferable data); never
+  /// capture `this` or a service object.
+  static Future<T> runOffMain<T>(T Function() body) => Isolate.run<T>(body);
 
   // ── Library loading ──────────────────────────────────────────────────────
 

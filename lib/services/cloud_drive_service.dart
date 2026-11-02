@@ -210,9 +210,12 @@ class CloudDriveService extends ChangeNotifier {
     WebDavAccount account,
     Map<String, dynamic> config,
   ) async {
-    final raw = RustCoreService.accountVerify(
-      account.providerType,
-      jsonEncode(config),
+    // 真连校验是一次网络 FFI（Rust 内部 block_on），留在 UI isolate 上会让
+    // 表单在账号不可达时整页冻死，因此放到 worker isolate 上跑。
+    final providerType = account.providerType;
+    final configJson = jsonEncode(config);
+    final raw = await RustCoreService.runOffMain<String?>(
+      () => RustCoreService.accountVerify(providerType, configJson),
     );
     if (raw == null) {
       throw WdmmVfsException('err.ffiUnavailable');

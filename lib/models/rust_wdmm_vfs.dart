@@ -32,7 +32,8 @@ class RustWdmmVfs extends WdmmVfs {
   ///
   /// The closure must only capture sendable values (`account.id` is read into a
   /// local before the call); it must never capture `this`.
-  static Future<T> _offMain<T>(T Function() body) => Isolate.run<T>(body);
+  static Future<T> _offMain<T>(T Function() body) =>
+      RustCoreService.runOffMain<T>(body);
 
   @override
   Future<List<CloudFileItem>> list(String path) async {
