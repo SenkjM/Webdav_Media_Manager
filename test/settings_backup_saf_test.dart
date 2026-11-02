@@ -16,7 +16,7 @@ void main() {
 
   test('crypt sequential download defaults to true', () async {
     SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
+    await SharedPreferences.getInstance();
     final s = SettingsService();
     await s.init();
     expect(s.cryptSequentialDownloadEnabled, isTrue);
@@ -25,7 +25,7 @@ void main() {
   test('new backup keys round-trip; custom_download_* never exported/imported',
       () async {
     SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
+    await SharedPreferences.getInstance();
     final s = SettingsService();
     await s.init();
 
@@ -71,7 +71,7 @@ void main() {
     expect(exported['download_nomedia'], isTrue);
 
     SharedPreferences.setMockInitialValues({});
-    final prefs2 = await SharedPreferences.getInstance();
+    await SharedPreferences.getInstance();
     final s2 = SettingsService();
     await s2.init();
     expect(s2.customDownloadDirActive, isFalse);

@@ -94,7 +94,7 @@ void main() {
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
+    await SharedPreferences.getInstance();
     settings = SettingsService();
     await settings.init();
     export = FakeExport();
