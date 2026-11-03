@@ -290,13 +290,15 @@ class DlnaCastService extends ChangeNotifier {
   /// 按需转码运行状态：`active` / `idle` / `error`；空串 = 旧版 `.so` 或直通。
   String get runState => _runState;
 
-  /// 定位对齐方式的中文标签（精确 / 关键帧 / 标定 / 近似）；未知为空串。
+  /// 定位对齐方式的中文标签（精确 / 标定 / 近似）；未知为空串。
+  ///
+  /// Rust 只会上报 `exact` / `calibrated` / `approx`：整份计划由实测节奏生成，
+  /// 不再有「按关键帧索引」这一档（容器索引对 MKV 不可靠）。
   String get alignmentLabel {
     switch (_alignment) {
       case 'exact':
         return '精确';
-      case 'keyframe':
-        return '关键帧';
+
       case 'calibrated':
         return '标定';
       case 'approx':
@@ -588,8 +590,15 @@ class DlnaCastService extends ChangeNotifier {
       () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
     );
     if (!_isOk(raw)) {
-      // 渲染器拒收 seek 很常见，保持与旧实现一致的静默处理。
+      final message = _cmdError(raw);
       debugPrint('[DLNA] seek rejected: $raw');
+      // 会话已经不存在说明投屏整体已经结束（本机代理/渲染器这边都没了），
+      // 静默返回会让用户以为进度条坏了，所以明确报错并收尾。
+      if (message.contains('session')) {
+        await _failWith(_CastError('投屏会话已结束，请重新投屏'));
+        return;
+      }
+      // 其余情况是渲染器暂时拒收（例如还在预热/切段），保持旧实现的静默处理。
       return;
     }
     _position = position;
@@ -944,11 +953,11 @@ class DlnaCastService extends ChangeNotifier {
       );
       return;
     }
-    await _windDown();
+    await _windDown(reason: 'ended: ${reason ?? 'unknown'}');
   }
 
-  Future<void> _windDown() async {
-    await _cleanupSession();
+  Future<void> _windDown({String reason = 'wind-down'}) async {
+    await _cleanupSession(reason: reason);
     if (_disposed) return;
     _state = DlnaCastState.idle;
     _notify();
@@ -958,18 +967,23 @@ class DlnaCastService extends ChangeNotifier {
     final text = _errorText(error);
     // 用户报「投屏完全无响应」时，唯一可用的线索就是这条原始错误。
     debugPrint('[DLNA] cast failed: $text');
-    await _cleanupSession();
+    await _cleanupSession(reason: 'failed: $text');
     if (_disposed) return;
     _state = DlnaCastState.error;
     _error = text;
     _notify();
   }
 
-  Future<void> _cleanupSession() async {
+  Future<void> _cleanupSession({String reason = 'unspecified'}) async {
     _stateTimer?.cancel();
     _stateTimer = null;
     final handle = _handle;
     _handle = null;
+    if (handle != null) {
+      // 「seek 时报 unknown session handle」这类丢失会话现场的问题，只能靠这条
+      // 日志定位是谁先收的尾（失败 / 播完 / 用户停止）。
+      debugPrint('[DLNA] session teardown: handle=$handle reason=$reason');
+    }
     // 预热中直接收尾（返回键 / 切歌 / 报错）：先让 Rust 取消转码任务并清理
     // 分段目录（§3），再 close。旧版 `.so` 没有 warming 阶段，不会走到这里。
     final wasWarming = _phase == 'warming' || _phase == 'failed';

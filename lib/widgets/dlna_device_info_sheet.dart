@@ -53,6 +53,16 @@ class DlnaDeviceInfoSheet extends StatefulWidget {
   State<DlnaDeviceInfoSheet> createState() => _DlnaDeviceInfoSheetState();
 }
 
+/// 在 worker isolate 里读取设备 ConnectionManager 的 SinkProtocolInfo。
+///
+/// 这个函数必须是**顶层**函数：`Isolate.run` 的闭包如果写在 widget 方法里，
+/// 会连同外层异步上下文一起捕获（其中包含 `State`：Completer、监听器、
+/// BuildContext），dart:isolate 拒绝发送，报
+/// `Illegal argument in isolate message: object is unsendable`。
+/// 放在顶层的闭包上下文里只有可发送的 `location` 字符串。
+Future<String?> _readSinkProtocolInfoOffMain(String location) =>
+    Isolate.run(() => RustCoreService.dlnaSinkProtocolInfo(location));
+
 class _DlnaDeviceInfoSheetState extends State<DlnaDeviceInfoSheet> {
   /// 设备支持（Sink）的 protocolInfo 条目，Rust 返回的 CSV 已拆好。
   List<String> _sink = const [];
@@ -85,9 +95,7 @@ class _DlnaDeviceInfoSheetState extends State<DlnaDeviceInfoSheet> {
     String? raw;
     try {
       // SOAP 往返会阻塞当前 isolate，必须放到 worker isolate。
-      raw = await Isolate.run(
-        () => RustCoreService.dlnaSinkProtocolInfo(location),
-      );
+      raw = await _readSinkProtocolInfoOffMain(location);
     } catch (e) {
       debugPrint('[DLNA] sink protocol_info request failed: $e');
       raw = null;
