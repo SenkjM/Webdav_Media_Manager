@@ -1,4 +1,4 @@
-﻿package com.senkjm.media_manager
+package com.senkjm.media_manager
 
 import android.app.Activity
 import android.app.NotificationManager
@@ -276,6 +276,13 @@ class MainActivity : AudioServiceFragmentActivity() {
                 "stop" -> {
                     try {
                         startService(DlnaCastService.stopIntent(this))
+                        result.success(mapOf("ok" to true))
+                    } catch (e: IllegalStateException) {
+                        // Android 12+ refuses startService() from the background.
+                        // Stopping is still what the caller asked for, and
+                        // stopService() tears the service down just the same
+                        // (onDestroy releases the lock and leaves foreground).
+                        stopService(DlnaCastService.stopIntent(this))
                         result.success(mapOf("ok" to true))
                     } catch (e: Exception) {
                         result.success(
