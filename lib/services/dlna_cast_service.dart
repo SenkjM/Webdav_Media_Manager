@@ -574,6 +574,23 @@ class DlnaCastService extends ChangeNotifier {
     _notify();
   }
 
+  /// 进入「选择投屏设备」搜索前调用：销毁上一次投屏残留的会话与 UI 状态。
+  ///
+  /// 复用 [stop] 的既有收尾路径（`{"cmd":"stop"}` → `dlnaSessionClose` →
+  /// 代次自增），再把设备列表与本地状态收回 idle：搜索面板出现的那一刻就
+  /// 不应该还看到上一次投屏的小窗 / 底部投屏条 / 预热面板 / 进度条 / 队列。
+  Future<void> prepareForDeviceSearch() async {
+    if (_disposed) return;
+    await stop();
+    if (_disposed) return;
+    // 进行中的旧发现窗口不再需要，避免搜索面板闪回上一次的设备列表。
+    _discoveryEpoch++;
+    unawaited(DlnaCastChannel.stop());
+    _discovered.clear();
+    _state = DlnaCastState.idle;
+    _notify();
+  }
+
   /// 预热完成后把 HLS 会话投送到渲染器（契约 §3 `{"cmd":"cast"}`）。
   ///
   /// 只有 Rust 报告 `phase == "warming"` 且 `playlist_ready == true` 时才合法；

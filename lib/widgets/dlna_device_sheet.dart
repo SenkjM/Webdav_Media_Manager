@@ -17,6 +17,10 @@ class DlnaDeviceSheet extends StatefulWidget {
 
   /// 弹出设备选择 Sheet，返回用户所选的 [DlnaRenderer]，取消时返回 null。
   static Future<DlnaRenderer?> show(BuildContext context) async {
+    // 进入设备搜索的瞬间就销毁上一次投屏残留的会话与 UI（小窗 / 投屏条 /
+    // 预热面板 / 进度条 / 队列 / 转码遥测），不要等新会话建立后才清。
+    await context.read<DlnaCastService>().prepareForDeviceSearch();
+    if (!context.mounted) return null;
     return showModalBottomSheet<DlnaRenderer>(
       context: context,
       isScrollControlled: true,

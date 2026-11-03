@@ -14,14 +14,11 @@ import 'dlna_subtitle_sheet.dart';
 //  常量
 // ─────────────────────────────────────────────────────────────
 
-/// 气泡距屏幕右边缘的默认距离
-const double _kDefaultRight = 12.0;
-
-/// 气泡距屏幕底部的默认距离（MiniPlayer 高度 + 安全区约 80 px）
-const double _kDefaultBottom = 80.0;
-
-/// 气泡最大宽度
-const double _kBubbleMaxWidth = 280.0;
+/// 收起态气泡尺寸（宽 = 进度条 28 + 左右内边距 20；
+/// 高 = 图标 24 + 间距 6 + 进度条 3 + 上下内边距 18）。
+/// 用于把首次出现的小窗精确摆在屏幕正中。
+const double _kCollapsedBubbleWidth = 48.0;
+const double _kCollapsedBubbleHeight = 51.0;
 
 /// 展开态进度条轨道高度
 const double _kTrackHeight = 4.0;
@@ -42,7 +39,7 @@ const double _kThumbSize = 16.0;
 /// 覆盖整个屏幕。
 ///
 /// * `DlnaCastState.idle` → 返回 [SizedBox.shrink()]，不占位。
-/// * 非 idle → 根据 [_expanded] 在「右下角气泡」与「底部全宽卡片」间切换。
+/// * 非 idle → 根据 [_expanded] 在「可拖动悬浮小窗」与「底部全宽卡片」间切换。
 class DlnaCastBar extends StatefulWidget {
   const DlnaCastBar({super.key});
 
@@ -57,14 +54,25 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   bool _expanded = false;
 
   /// 气泡位置（右侧、底部距屏幕边缘）
-  double _right = _kDefaultRight;
-  double _bottom = _kDefaultBottom;
+  double _right = 0;
+  double _bottom = 0;
+
+  /// 本次会话是否已按屏幕尺寸算过小窗初始位置（会话结束后复位）。
+  bool _bubblePositionInitialized = false;
+
+  /// 服务层会话复位监听：进入设备搜索 / 停止投屏时把本地 UI 一起收回初始值。
+  DlnaCastService? _cast;
 
   /// 进度条拖动中的覆盖值（null = 未拖动，显示服务的真实进度）
   double? _seekOverride;
   Timer? _seekSettle;
 
-  static const _seekSettleTimeout = Duration(milliseconds: 900);
+  /// 拖动结束后进度条保持新位置的时长。
+  ///
+  /// 渲染器收到 Seek 后要重新拉播放列表并重启一段转码作业（约 1 s 节流 +
+  /// 缓冲），远长于旧的 900 ms；提前清掉覆盖值会让进度条「弹回定位前的
+  /// 位置」。真实位置一旦追平（见 [_progress]）会立即清除，不等这个超时。
+  static const _seekSettleTimeout = Duration(seconds: 15);
   static const _seekSettleTolerance = 0.02;
 
   // ── 动画 ────────────────────────────────────────────────────
@@ -86,10 +94,40 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final cast = context.read<DlnaCastService>();
+    if (identical(cast, _cast)) return;
+    _cast?.removeListener(_onCastChanged);
+    _cast = cast..addListener(_onCastChanged);
+  }
+
+  @override
   void dispose() {
+    _cast?.removeListener(_onCastChanged);
+    _cast = null;
     _seekSettle?.cancel();
     _expandCtrl.dispose();
     super.dispose();
+  }
+
+  /// 服务层回到 idle（停止投屏 / 进入新的设备搜索）时复位本地 UI 状态。
+  ///
+  /// 展开态、进度覆盖值与拖动过的气泡位置都属于「上一次会话」，下一次投屏
+  /// 必须从小窗的初始位置重新开始，否则搜索面板后面还留着上一次的投屏界面。
+  void _onCastChanged() {
+    final cast = _cast;
+    if (cast == null || cast.state != DlnaCastState.idle) return;
+    if (!mounted) return;
+    setState(() {
+      _expanded = false;
+      _expandCtrl.value = 0;
+      _autoExpandConsumed = false;
+      _bubblePositionInitialized = false;
+      _seekSettle?.cancel();
+      _seekSettle = null;
+      _seekOverride = null;
+    });
   }
 
   // ── 展开 / 收起 ─────────────────────────────────────────────
@@ -145,15 +183,16 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   }
 
   void _onBubblePanEnd(DragEndDetails d, double screenWidth) {
-    // 松开时吸附到左侧或右侧
-    final centerX = screenWidth - _right - _kBubbleMaxWidth / 2;
+    // 松开时吸附到左侧或右侧（按小窗真实宽度，不再用最大宽度估算）。
+    final centerX = screenWidth - _right - _kCollapsedBubbleWidth / 2;
+    const edge = 12.0;
     setState(() {
       if (centerX < screenWidth / 2) {
         // 吸附左侧：right 较大
-        _right = screenWidth - _kBubbleMaxWidth - 12;
+        _right = screenWidth - _kCollapsedBubbleWidth - edge;
       } else {
         // 吸附右侧
-        _right = 12;
+        _right = edge;
       }
     });
   }
@@ -231,6 +270,17 @@ class _DlnaCastBarState extends State<DlnaCastBar>
 
     _maybeAutoExpand(cast);
 
+    // 收起态小窗第一次出现时放在屏幕正中（水平 / 垂直都居中），
+    // 避免和底部投屏面板 / MiniPlayer 重叠；同一会话内用户拖过的位置继续保留。
+    if (!_bubblePositionInitialized) {
+      final size = MediaQuery.sizeOf(context);
+      _bubblePositionInitialized = true;
+      _right = ((size.width - _kCollapsedBubbleWidth) / 2)
+          .clamp(0.0, double.infinity);
+      _bottom = ((size.height - _kCollapsedBubbleHeight) / 2)
+          .clamp(0.0, double.infinity);
+    }
+
     return Stack(
       children: [
         if (_expanded)
@@ -242,7 +292,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
             child: _buildExpandedBar(context, cast),
           )
         else
-          // 收起态：右下角可拖动气泡
+          // 收起态：可拖动悬浮小窗（首次出现在屏幕中央）
           Positioned(
             right: _right,
             bottom: _bottom,
