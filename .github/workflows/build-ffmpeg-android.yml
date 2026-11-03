@@ -9,6 +9,12 @@
 # License posture (PLAN B3.5 / m01480): --disable-nonfree is mandatory
 # (AGPL project); --enable-gpl + libx264 are allowed (GPL v2+, not nonfree).
 # The build script audits ffbuild/config.log and refuses nonfree.
+#
+# The build script also enables the MediaCodec H.264/HEVC **decoders** (the
+# encoders were already on): without them the transcode pipeline decodes
+# 1080p HEVC 10-bit sources on the CPU. Bumping this line is what republishes
+# the rolling `ffmpeg-android-libs` release after a script change, because a
+# submodule-only commit does not match the `paths` filter below.
 
 name: Build FFmpeg Android Libs
 
