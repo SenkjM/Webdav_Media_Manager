@@ -263,7 +263,8 @@ class DlnaCastService extends ChangeNotifier {
   /// 实测转码速度（内容时间 / 墙钟时间）；direct 模式或未知时为 0。
   double get encodeSpeed => _encodeSpeed;
 
-  /// 已编码的媒体时间（毫秒），UI 显示「已编码 x.x 秒」。
+  /// 已编码到的**绝对**媒体时间（毫秒）：定位后新作业从锚点起算，这里报的是
+  /// 缓冲前沿在整片里的位置，UI 显示「已编码 x.x 秒」。
   int get encodeContentMs => _encodeContentMs;
 
   /// 播放列表是否已就绪；只有就绪后 `{"cmd":"cast"}` 才合法。
@@ -329,7 +330,8 @@ class DlnaCastService extends ChangeNotifier {
   int get cacheHits => _cacheHits;
   bool get cacheOverBudget => _cacheOverBudget;
 
-  /// 本次运行的产出位置与计划网格的偏差（毫秒，绝对值不超过一个分片）。
+  /// 当前作业的产出位置与计划网格的偏差（毫秒）。两侧都用绝对媒体时间，
+  /// 所以偏差有界于一个分片；定位后不会再出现分钟级的假值。
   int get driftMs => _driftMs;
 
   /// 当前视频的字幕候选列表（Rust 匹配结果）。
