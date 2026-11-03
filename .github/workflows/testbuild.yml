@@ -70,7 +70,7 @@ jobs:
         run: flutter pub get
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.1
         with:
           targets: aarch64-linux-android
 

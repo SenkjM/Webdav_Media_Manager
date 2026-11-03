@@ -160,7 +160,7 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: clippy
 
@@ -313,7 +313,7 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1
 
       # Run the openapi integration tests (token persist + rotate, health, etc.)
       - name: cargo test -p wdmm-openapi (smoke routes)

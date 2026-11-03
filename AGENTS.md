@@ -73,6 +73,13 @@ cargo check -p wdmm-ffi -p wdmm-storage -p wdmm-openapi -p wdmm-proxy -p wdmm-ff
 cargo test -p wdmm-storage && cargo test -p wdmm-openapi
 ```
 
+The Rust toolchain is pinned in `rust/wdmm-core/rust-toolchain.toml` (channel + both Android
+targets) and mirrored by the `dtolnay/rust-toolchain@<version>` refs in `.github/workflows/*.yml`.
+Bump both in the same commit. The pin exists because `verify.yml` runs
+`cargo clippy --all-targets -- -D warnings`: when the local toolchain lagged behind CI's newest
+stable, clippy gained lints that only CI saw, so the guard failed on every push while passing
+locally. Always run the clippy command above with the pinned toolchain before pushing.
+
 On Windows, use the checked-in PowerShell wrappers in `tool/` (`flutter-sandbox.ps1` for
 analyze/test/gen-l10n, `flutter-pub-get.ps1` for dependency resolution). Set `FLUTTER_ROOT` to your
 Flutter SDK root (defaults to `D:\flutter`); `pub get` redirects `PUB_CACHE` into a workspace-local

@@ -120,7 +120,7 @@ jobs:
         run: flutter test
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.99.1
         with:
           targets: aarch64-linux-android,x86_64-linux-android
 
