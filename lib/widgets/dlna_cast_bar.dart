@@ -112,6 +112,29 @@ class _DlnaCastBarState extends State<DlnaCastBar>
     });
   }
 
+  /// 每段投屏会话只自动展开一次。
+  bool _autoExpandConsumed = false;
+
+  /// 点「投送」/ 预热开始 / 出错时自动展开卡面，让预热面板立刻可见。
+  ///
+  /// 用户手动收起后不再抢回焦点（[_autoExpandConsumed]），直到会话回到 idle。
+  /// 这是契约 task-21 §1「点下去立刻进入预热面板」的一半：前半段由服务层
+  /// 的乐观 `preparing` 状态提供，这里保证卡面不是一直缩成气泡。
+  void _maybeAutoExpand(DlnaCastService cast) {
+    if (_autoExpandConsumed || _expanded) return;
+    final active = cast.preparing ||
+        cast.phase == 'warming' ||
+        cast.phase == 'failed' ||
+        cast.state == DlnaCastState.error;
+    if (!active) return;
+    _autoExpandConsumed = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _expanded) return;
+      setState(() => _expanded = true);
+      _expandCtrl.forward();
+    });
+  }
+
   // ── 气泡拖动 ────────────────────────────────────────────────
   void _onBubblePanUpdate(DragUpdateDetails d) {
     setState(() {
@@ -202,8 +225,11 @@ class _DlnaCastBarState extends State<DlnaCastBar>
 
     // idle 时不显示任何内容
     if (cast.state == DlnaCastState.idle) {
+      _autoExpandConsumed = false;
       return const SizedBox.shrink();
     }
+
+    _maybeAutoExpand(cast);
 
     return Stack(
       children: [
@@ -235,7 +261,8 @@ class _DlnaCastBarState extends State<DlnaCastBar>
 
     final isError = cast.state == DlnaCastState.error;
     // §3 预热阶段：气泡用沙漏图标 + 不确定进度条，提示「正在准备投屏」。
-    final isWarming = cast.phase == 'warming';
+    // 点下投送的瞬间（`preparing`）同样显示，避免会话建立期间看着像卡住。
+    final isWarming = cast.phase == 'warming' || cast.preparing;
     final isWarmFailed = cast.phase == 'failed';
     final bubbleColor = isError || isWarmFailed
         ? scheme.errorContainer
@@ -333,11 +360,13 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   Widget _buildExpandedBar(BuildContext context, DlnaCastService cast) {
     final scheme = Theme.of(context).colorScheme;
     final isError = cast.state == DlnaCastState.error;
+    final isWarmFailed = cast.phase == 'failed';
     // §3 预热：`phase == "warming"` 只测速 + 本地生成播放列表，暂不投送；
     // `phase == "failed"` 显示转码失败原因与 §7.5 诊断日志。
     // 旧版 `.so` 不返回 phase（服务已降级为 playing），不会进入这两个分支。
-    final isWarming = cast.phase == 'warming';
-    final isWarmFailed = cast.phase == 'failed';
+    // `preparing`（task-21 §1）覆盖「已点投送、Rust 还没返回 phase」的窗口。
+    final preparing = cast.preparing && !isWarmFailed && !isError;
+    final isWarming = cast.phase == 'warming' || preparing;
     final isBuffering = cast.playbackState == DlnaPlaybackState.buffering;
     final hasPrev = cast.queue?.hasPrevious ?? false;
     final hasNext = cast.queue?.hasNext ?? false;
@@ -426,6 +455,9 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                 else if (isWarmFailed)
                   // ── 预热失败（§3 phase:"failed"）：错误全文 + 诊断日志 ──
                   _WarmingFailedPanel(cast: cast, onCollapse: _collapse)
+                else if (preparing)
+                  // ── 已点投送、会话仍在建立（task-21 §1）：立刻给不确定进度 ──
+                  _PreparingPanel(cast: cast, onCollapse: _collapse)
                 else if (isWarming)
                   // ── 预热中（§3）：实时测速 / 播放列表就绪 / 投送 ──
                   _WarmingPanel(cast: cast, onCollapse: _collapse)
@@ -598,8 +630,9 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                         const SizedBox(width: 4),
                       ],
 
-                      // 字幕按钮（有候选时显示）
-                      if (cast.subtitleCandidates.isNotEmpty)
+                      // 字幕按钮（有候选时显示；纯音频投送没有字幕，隐藏）
+                      if (cast.subtitleCandidates.isNotEmpty &&
+                          !cast.isAudioOnly)
                         TextButton.icon(
                           onPressed: () =>
                               DlnaSubtitleSheet.show(context, cast),
@@ -1002,6 +1035,85 @@ class _CastTelemetry extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  会话建立中（乐观预热，契约 task-21 §1）
+// ─────────────────────────────────────────────────────────────
+
+/// 已点「投送」、Rust 还没返回 `phase` 时的过渡面板。
+///
+/// 会话建立（驱动解析、代理启动、时长探测、字幕扫描）可能要数秒；这里立刻
+/// 显示不确定进度与「正在准备缓存预热…」，等 Rust 的 `phase:"warming"` /
+/// `"playing"` 到达后由服务层自动切走，避免用户对着裸转圈等。
+class _PreparingPanel extends StatelessWidget {
+  const _PreparingPanel({required this.cast, required this.onCollapse});
+
+  final DlnaCastService cast;
+  final VoidCallback onCollapse;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: scheme.primary,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '正在准备缓存预热…',
+              style: textTheme.titleSmall?.copyWith(
+                color: scheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '正在建立投屏会话、探测媒体时长与字幕，随后开始测速。',
+          style: textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            TextButton(
+              onPressed: () {
+                onCollapse();
+                cast.stop();
+              },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                '取消',
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+              ),
+            ),
+            const Spacer(),
+            FilledButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.cast, size: 18),
+              label: const Text('等待就绪…'),
+            ),
+          ],
+        ),
+        _CollapseHandle(onTap: onCollapse),
+      ],
     );
   }
 }
@@ -1711,7 +1823,12 @@ class _DlnaQueueSheet extends StatelessWidget {
                 final isCurrent = i == currentIndex;
                 return ListTile(
                   leading: Icon(
-                    isCurrent ? Icons.play_arrow_rounded : Icons.video_file,
+                    // 音频投送队列用音乐图标，不再一律显示视频文件。
+                    isCurrent
+                        ? Icons.play_arrow_rounded
+                        : item.isAudio
+                            ? Icons.audiotrack
+                            : Icons.video_file,
                     color: isCurrent ? scheme.primary : scheme.onSurfaceVariant,
                     size: 20,
                   ),

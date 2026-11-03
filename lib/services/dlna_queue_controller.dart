@@ -219,7 +219,8 @@ class DlnaQueueController extends ChangeNotifier {
       name: name,
       path: remotePath,
       isDirectory: false,
-      category: FileCategory.video,
+      // 音频投送也走本队列：初始条目继承队列类别，不能硬编码成视频。
+      category: category,
     );
     _tracks.add(item);
     _knownPaths.add(remotePath);

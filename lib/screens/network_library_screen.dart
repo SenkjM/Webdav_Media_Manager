@@ -1089,7 +1089,8 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                       },
                     ),
                   // 相册与下载目录是两条不同的落盘路径，视频两个都保留。
-                  if (item.isVideo) ...[
+                  // 投屏对音频同样开放（音乐文件也能投送到 DMR，task-21 §3）。
+                  if (item.isVideo || item.isAudio) ...[
                     ListTile(
                       leading: const Icon(Icons.cast),
                       title: Text(l10n.dlnaCast),
@@ -1099,15 +1100,16 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                         await _startDlnaCast(item);
                       },
                     ),
-                    ListTile(
-                      leading: const Icon(Icons.photo_library_outlined),
-                      title: Text(l10n.netDownloadToGallery),
-                      subtitle: Text(l10n.netDownloadToGalleryDesc),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _downloadToGallery(item);
-                      },
-                    ),
+                    if (item.isVideo)
+                      ListTile(
+                        leading: const Icon(Icons.photo_library_outlined),
+                        title: Text(l10n.netDownloadToGallery),
+                        subtitle: Text(l10n.netDownloadToGalleryDesc),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _downloadToGallery(item);
+                        },
+                      ),
                   ],
                 ],
                 Divider(

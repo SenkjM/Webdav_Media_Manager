@@ -123,6 +123,15 @@ class DlnaSubtitleSheet extends StatelessWidget {
     final blocked = hit.bitmapUnsupported;
     final label = hit.labelFor(l10n);
     final format = _subtitleFormatTag(hit);
+    // 契约 task-21 §2：内置轨优先显示容器标题，其次语言中文名，最后「轨道 N」；
+    // 外置字幕仍用文件名解析出的语言。
+    final languageName = subtitleLanguageName(hit.languageCode);
+    final titleText = hit.trackLanguageLabel ?? label.title;
+    final languageDetail = hit.embedded &&
+            languageName != null &&
+            languageName != titleText
+        ? languageName
+        : null;
 
     final String kindText;
     final Color kindColor;
@@ -153,7 +162,7 @@ class DlnaSubtitleSheet extends StatelessWidget {
                 : scheme.outlineVariant,
       ),
       title: Text(
-        label.title,
+        titleText,
         style: isSelected
             ? TextStyle(color: scheme.primary)
             : blocked
@@ -163,7 +172,24 @@ class DlnaSubtitleSheet extends StatelessWidget {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SubtitleKindBadge(text: kindText, color: kindColor),
+          Row(
+            children: [
+              _SubtitleKindBadge(text: kindText, color: kindColor),
+              if (languageDetail != null) ...[
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    languageDetail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.labelSmall?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
           if (blocked)
             Padding(
               padding: const EdgeInsets.only(top: 2),

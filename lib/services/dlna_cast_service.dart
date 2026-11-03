@@ -244,6 +244,17 @@ class DlnaCastService extends ChangeNotifier {
   /// 因此按它隐藏，避免在直通投屏上显示「闲置」这种误导性状态。
   String get provider => _provider;
 
+  /// 是否正在建立投屏会话（已点投送、Rust 尚未返回 `phase:"warming"`）。
+  ///
+  /// UI 用它立刻渲染预热面板的「正在准备缓存预热…」状态（契约 task-21 §1）。
+  bool get preparing => _preparing;
+
+  /// Rust 上报的媒体类型：`audio` 为纯音频投送；空串/未知按视频处理。
+  String get mediaKind => _mediaKind;
+
+  /// 纯音频投送（契约 task-21 §3）：字幕等视频专属控件应隐藏。
+  bool get isAudioOnly => _mediaKind == 'audio';
+
   /// 转码阶段（契约 §3）：`warming` / `playing` / `ended` / `failed` / `idle`。
   ///
   /// 旧版 `.so` 不返回该字段时按 `playing` 处理，绝不把用户困在预热界面里。
@@ -350,6 +361,20 @@ class DlnaCastService extends ChangeNotifier {
   String? _protocolInfo;
   /// 会话类型：`hls` / `direct`（来自 start / state 的 `provider`）。
   String _provider = '';
+
+  /// 用户刚点「投送」、会话尚未建立完成的乐观状态（契约 task-21 §1）。
+  ///
+  /// 真正的阶段仍以 Rust 的 `phase` 为准；这个标志只是让预热面板立刻出现，
+  /// 不必对着一个裸转圈等 driver / 代理 / 时长探测 / 字幕扫描。
+  bool _preparing = false;
+
+  /// 会话代次：每次 `_cleanupSession()` 自增，用来丢弃「取消后才返回」的句柄。
+  int _castEpoch = 0;
+
+  /// Rust 上报的媒体类型：`video` / `audio`（契约 task-21 §3）。
+  ///
+  /// 旧版 `.so` 不返回该字段，保持空串 → 按视频处理。
+  String _mediaKind = '';
 
   // --- 内部：HLS 预热 / 转码遥测（契约 dlna-warmup-ffi §4、§7.5）---
   /// 转码阶段：`warming` / `playing` / `ended` / `failed` / `idle`。
@@ -480,27 +505,49 @@ class DlnaCastService extends ChangeNotifier {
     String? accountId,
   }) async {
     assert(seed != null || (singleItem != null && accountId != null));
-    await _cleanupSession();
+    // 乐观 UI（契约 task-21 §1）：点下去立刻显示预热面板。会话建立要等
+    // driver / 代理 / 时长探测 / 字幕扫描，不能让用户对着裸转圈干等；
+    // 随后由 Rust 的 `phase:"warming"` 接管。
+    _state = DlnaCastState.casting;
     _renderer = renderer;
     _error = null;
+    _preparing = true;
+    _notify();
+
+    await _cleanupSession();
+    if (_disposed) return;
+
+    // cleanup 会把预热状态清空，重新建立乐观状态。
+    _preparing = true;
+    _renderer = renderer;
+    _error = null;
+    final epoch = _castEpoch;
 
     final effAccountId = accountId ?? seed!.accountId;
     final initial = singleItem ?? seed!.current;
     final siblings = seed?.siblings ?? const <WebDavItem>[];
-    _queue = DlnaQueueController(
+    final queue = DlnaQueueController(
       webDav: _webDav,
       accountId: effAccountId,
       rootPath: seed?.folderPath ?? _parentPath(initial.path),
       seed: siblings.isNotEmpty ? siblings : [initial],
       initialRemotePath: initial.path,
-    )..startScan();
-
+      // 音频投送也走同一个队列：只按当前条目的类别过滤同名扫描结果。
+      category: initial.category,
+    );
+    _queue = queue;
     _state = DlnaCastState.casting;
     _notify();
+    if (epoch != _castEpoch) {
+      queue.dispose();
+      return;
+    }
+    queue.startScan();
 
     try {
-      await _beginItem(initial, effAccountId, first: true);
+      await _beginItem(initial, effAccountId, first: true, epoch: epoch);
     } catch (e) {
+      if (epoch != _castEpoch) return;
       await _failWith(e);
     }
   }
@@ -728,9 +775,11 @@ class DlnaCastService extends ChangeNotifier {
     WebDavItem item,
     String accountId, {
     required bool first,
+    int? epoch,
   }) async {
     final renderer = _renderer;
     if (renderer == null) return;
+    final token = epoch ?? _castEpoch;
 
     _currentItem = item;
     _position = Duration.zero;
@@ -742,6 +791,8 @@ class DlnaCastService extends ChangeNotifier {
     _selectedSubtitle = null;
     _subtitleStatus = null;
     _resetWarmupState();
+    // 切到新条目同样要先亮「正在准备缓存预热…」，等 Rust 返回 phase 再切走。
+    _preparing = true;
     _notify();
 
     final prefs = _dmrPrefs[renderer.usn];
@@ -781,6 +832,13 @@ class DlnaCastService extends ChangeNotifier {
         () => RustCoreService.dlnaSessionStart(configJson),
       );
       final json = _decodeJson(raw);
+      if (token != _castEpoch) {
+        // 建立会话期间用户已取消（点「取消」/ 断开 / 切歌）：把晚到的 Rust
+        // 会话收掉，否则预热作业会在后台继续跑。
+        final lateHandle = _asInt(json?['handle']);
+        if (lateHandle != null) await _discardSession(lateHandle);
+        return;
+      }
       final newHandle = _asInt(json?['handle']);
       final started = json != null && json['ok'] != false && newHandle != null;
       if (started) {
@@ -815,17 +873,19 @@ class DlnaCastService extends ChangeNotifier {
       final raw = await _runOnWorker(
         () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
       );
+      if (token != _castEpoch) return;
       if (!_isOk(raw)) {
         debugPrint('[DLNA] select failed: $raw');
         throw _CastError(_cmdError(raw));
       }
     }
 
-    if (_disposed) return;
+    if (_disposed || token != _castEpoch) return;
     // 预热阶段（§3）还没投送：保持 buffering，UI 由「预热/预检」面板接管。
     _playbackState = _phase == 'warming'
         ? DlnaPlaybackState.buffering
         : DlnaPlaybackState.playing;
+    _preparing = false;
     _notify();
   }
 
@@ -975,6 +1035,9 @@ class DlnaCastService extends ChangeNotifier {
   }
 
   Future<void> _cleanupSession({String reason = 'unspecified'}) async {
+    // 代次自增：正在建立会话的 startCast/_beginItem 会在 await 之后发现
+    // 代次已变，丢弃晚到的句柄（见 _discardSession）。
+    _castEpoch++;
     _stateTimer?.cancel();
     _stateTimer = null;
     final handle = _handle;
@@ -1013,6 +1076,17 @@ class DlnaCastService extends ChangeNotifier {
     if (handle != null) {
       await _runOnWorker(() => RustCoreService.dlnaSessionClose(handle));
     }
+  }
+
+  /// 丢弃一个「取消后才返回」的 Rust 会话（`start` 在用户取消之后才完成）。
+  ///
+  /// 先 `{"cmd":"stop"}` 让 Rust 取消预热作业并清理分段（§3），再 close，
+  /// 避免取消投屏后后台还在转码。
+  Future<void> _discardSession(int handle) async {
+    debugPrint('[DLNA] discarding late session: handle=$handle');
+    final cmdJson = jsonEncode(<String, Object?>{'cmd': 'stop'});
+    await _runOnWorker(() => RustCoreService.dlnaSessionCmd(handle, cmdJson));
+    await _runOnWorker(() => RustCoreService.dlnaSessionClose(handle));
   }
 
   // ── 内部：FFI 调度 ────────────────────────────────────────────────────────
@@ -1120,6 +1194,9 @@ class DlnaCastService extends ChangeNotifier {
   /// `support:"external"`；HLS 内置轨带 `embedded:true` + `track`/`codec`，
   /// `support` 为 `webvtt` 或 `bitmap-unsupported`。旧版 `.so` 只有
   /// `{name,path,lang,size}`，此时按外置字幕降级（support 为 null = 可投送）。
+  ///
+  /// 契约 task-21 §2：内置轨新增 `title`（容器标题）与 `language`（ISO-639
+  /// 语言码）；33 条轨道时两者是唯一的人类可读区分，缺失时退回 `lang`。
   SidecarHit? _hitFromJson(Object? raw, {String? videoName}) {
     if (raw is! Map) return null;
     final name = raw['name']?.toString() ?? '';
@@ -1129,6 +1206,13 @@ class DlnaCastService extends ChangeNotifier {
     final embedded = raw['embedded'] == true;
     final codec = _nonEmpty(raw['codec']);
     final support = _nonEmpty(raw['support']);
+    final title = _nonEmpty(raw['title']);
+    final languageCode =
+        _nonEmpty(raw['language']) ?? _nonEmpty(raw['language_code']);
+    // 内置轨优先展示中文语言名（ISO-639 码 → 中文），外置字幕仍用文件名解析。
+    final languageLabel =
+        subtitleLanguageName(languageCode ?? lang) ??
+            (lang.trim().isEmpty ? null : displaySubtitleLanguage(lang));
     // 内置轨的 name 形如 `zh (ass, embedded)`，不能拿去匹配 sidecar 文件名；
     // 语言直接用 Rust 的 `lang`，展示格式用 codec。
     final match = (embedded || videoName == null)
@@ -1140,8 +1224,7 @@ class DlnaCastService extends ChangeNotifier {
     return SidecarHit(
       name: name,
       path: path,
-      language: match?.language ??
-          (lang.trim().isEmpty ? '默认' : displaySubtitleLanguage(lang)),
+      language: match?.language ?? languageLabel ?? '默认',
       languageKey: match?.languageKey ?? uiSubtitleLanguageKey(lang),
       format: embedded
           ? (codec ?? _extensionOf(name))
@@ -1152,6 +1235,8 @@ class DlnaCastService extends ChangeNotifier {
       track: _asInt(raw['track']),
       codec: codec,
       support: support,
+      title: title,
+      languageCode: languageCode,
     );
   }
 
@@ -1206,6 +1291,9 @@ class DlnaCastService extends ChangeNotifier {
     _cacheHits = 0;
     _cacheBytes = 0;
     _cacheOverBudget = false;
+    // 乐观 UI：预热面板由真实 phase 接管；媒体类型等 Rust 下一次上报。
+    _preparing = false;
+    _mediaKind = '';
   }
 
   /// 合并一次 Rust 会话 JSON（start 响应 / state tick）里的预热字段。
@@ -1218,6 +1306,8 @@ class DlnaCastService extends ChangeNotifier {
     final phase = _nonEmpty(json['phase']);
     // 旧版 `.so` 不返回 phase：直接当作已在播放。
     _phase = phase ?? 'playing';
+    // Rust 已经报告真实阶段，乐观的「准备预热」状态让位。
+    _preparing = false;
 
     final speed = _asDouble(json['encode_speed']);
     if (speed != null && speed >= 0) _encodeSpeed = speed;
@@ -1279,6 +1369,10 @@ class DlnaCastService extends ChangeNotifier {
     if (json.containsKey('error')) {
       _warmupError = _nonEmpty(json['error']);
     }
+
+    // §3 音频投送：`media_kind:"audio"` 时 UI 隐藏字幕等视频专属控件。
+    final mediaKind = _nonEmpty(json['media_kind']);
+    if (mediaKind != null) _mediaKind = mediaKind;
   }
 
   /// 合并 `subtitle_status`（契约 task-11 §6）。
