@@ -4,7 +4,6 @@ import '../l10n/generated/app_localizations.dart';
 import '../services/dlna_cast_service.dart';
 import '../utils/app_snack.dart';
 import '../utils/subtitle_sidecar.dart';
-import 'dlna_subtitle_switch_dialog.dart';
 
 /// DLNA 字幕选择底部弹窗。
 ///
@@ -101,18 +100,13 @@ class DlnaSubtitleSheet extends StatelessWidget {
 
   /// 选中字幕或关闭字幕。
   ///
-  /// 播放中（`cast.isActive`）先弹二次确认：切换会让渲染器重新加载播放并二次
-  /// seek，取消时**不发任何命令**、保留本弹窗。失败时**保留弹窗**并用 SnackBar
-  /// 说明原因（例如位图字幕被 Rust 拒绝），不再像以前那样静默关闭。
+  /// 切换会让渲染器重新加载播放并二次 seek 回原位置（画面短暂中断），实测稳定，
+  /// 因此直接执行。失败时**保留弹窗**并用 SnackBar 说明原因（例如位图字幕被
+  /// Rust 拒绝），不再像以前那样静默关闭。
   Future<void> _select(BuildContext context, SidecarHit? hit) async {
-    final result = await cast.selectSubtitle(
-      hit,
-      confirmReload: () => DlnaSubtitleSwitchDialog.show(context),
-    );
+    final result = await cast.selectSubtitle(hit);
     if (!context.mounted) return;
     switch (result.status) {
-      case DlnaSubtitleSelectStatus.cancelled:
-        return;
       case DlnaSubtitleSelectStatus.failed:
         AppSnack.show(context, result.message ?? '切换字幕失败', error: true);
         return;

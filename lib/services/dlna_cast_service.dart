@@ -151,10 +151,7 @@ class DlnaSubtitleStatus {
 }
 
 /// [DlnaCastService.selectSubtitle] 的结果状态。
-///
-/// 播放中切换字幕要先让用户二次确认，取消时要和「切换失败」区分开，所以不再用
-/// `String?`（null = 成功）表达返回值。
-enum DlnaSubtitleSelectStatus { applied, cancelled, failed }
+enum DlnaSubtitleSelectStatus { applied, failed }
 
 /// [DlnaCastService.selectSubtitle] 的返回结果。
 class DlnaSubtitleSelectResult {
@@ -163,10 +160,6 @@ class DlnaSubtitleSelectResult {
   /// 命令已生效（字幕已切换或关闭）。
   const DlnaSubtitleSelectResult.applied({Duration? resumedAt})
     : this._(DlnaSubtitleSelectStatus.applied, resumedAt: resumedAt);
-
-  /// 用户在二次确认里点了「取消」，**没有向 Rust 发送任何命令**。
-  const DlnaSubtitleSelectResult.cancelled()
-    : this._(DlnaSubtitleSelectStatus.cancelled);
 
   /// 切换失败，[message] 是给用户看的原因。
   const DlnaSubtitleSelectResult.failed(String message)
@@ -290,15 +283,6 @@ class DlnaCastService extends ChangeNotifier {
   ///
   /// 旧版 `.so` 不返回该字段时按 `playing` 处理，绝不把用户困在预热界面里。
   String get phase => _phase;
-
-  /// 是否已在渲染器上真正开始播放（预热 / 预览阶段为 false）。
-  ///
-  /// 播放中切换字幕会让渲染器重新加载播放并二次 seek 回原位置，UI 用它决定
-  /// 是否需要先弹二次确认（契约 subtitle-lane-and-hwdecode §D）。
-  bool get isActive =>
-      _handle != null &&
-      _state == DlnaCastState.casting &&
-      _phase == 'playing';
 
   /// 实测转码速度（内容时间 / 墙钟时间）；direct 模式或未知时为 0。
   double get encodeSpeed => _encodeSpeed;
@@ -734,33 +718,18 @@ class DlnaCastService extends ChangeNotifier {
 
   /// 选择字幕（null = 关闭字幕）。
   ///
-  /// 字幕投送改为「投屏开始时一次性全量投送」后，播放期间切换字幕会让渲染器
-  /// **重新加载播放并二次 seek 回原播放位置**（画面短暂中断）。因此只在真正
-  /// 在播的会话（[isActive]）里先调用 [confirmReload] 让用户确认；它返回 false
-  /// 时**不向 Rust 发送任何命令**，直接返回 [DlnaSubtitleSelectStatus.cancelled]。
-  /// 预热 / 预览阶段还没在播，直接切换，不打扰用户。
+  /// 字幕在投屏开始时已一次性全量投送，播放期间切换会让渲染器**重新加载播放并
+  /// 二次 seek 回原播放位置**（画面短暂中断），实测稳定，因此直接执行、不再二次
+  /// 确认。
   ///
   /// 位图字幕（PGS/DVD）Rust 会明确拒绝
   /// （`{"ok":false,"error":…,"support":"bitmap-unsupported"}`，契约 §5），
   /// 这里翻译成中文提示；即使 UI 已禁用该行也要有兜底。
-  Future<DlnaSubtitleSelectResult> selectSubtitle(
-    SidecarHit? hit, {
-    required Future<bool> Function() confirmReload,
-  }) async {
-    var handle = _handle;
-    if (handle == null || _currentItem == null) {
+  Future<DlnaSubtitleSelectResult> selectSubtitle(SidecarHit? hit) async {
+    final sessionHandle = _handle;
+    if (sessionHandle == null || _currentItem == null) {
       return const DlnaSubtitleSelectResult.failed('投屏会话已结束');
     }
-    if (isActive) {
-      final confirmed = await confirmReload();
-      if (!confirmed) return const DlnaSubtitleSelectResult.cancelled();
-      // 弹窗期间会话可能已经结束或被切集：重新取句柄，绝不把命令发给旧会话。
-      handle = _handle;
-      if (handle == null) {
-        return const DlnaSubtitleSelectResult.failed('投屏会话已结束');
-      }
-    }
-    final sessionHandle = handle;
     // path 必须原样回传：内置字幕是 `<remote_path>#embedded:<index>`，
     // 不要重新推导或做 URL 编码（契约 §4）。
     final cmdJson = jsonEncode(<String, Object?>{
