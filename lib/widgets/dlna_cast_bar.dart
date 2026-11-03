@@ -16,9 +16,12 @@ import 'dlna_subtitle_sheet.dart';
 
 /// 收起态气泡尺寸（宽 = 进度条 28 + 左右内边距 20；
 /// 高 = 图标 24 + 间距 6 + 进度条 3 + 上下内边距 18）。
-/// 用于把首次出现的小窗精确摆在屏幕正中。
+/// 用于把首次出现的小窗精确摆在屏幕右侧、垂直居中。
 const double _kCollapsedBubbleWidth = 48.0;
 const double _kCollapsedBubbleHeight = 51.0;
+
+/// 收起态小窗距屏幕左右边缘的安全边距（首现位置与拖动吸附共用）。
+const double _kCollapsedBubbleEdge = 12.0;
 
 /// 展开态进度条轨道高度
 const double _kTrackHeight = 4.0;
@@ -185,14 +188,13 @@ class _DlnaCastBarState extends State<DlnaCastBar>
   void _onBubblePanEnd(DragEndDetails d, double screenWidth) {
     // 松开时吸附到左侧或右侧（按小窗真实宽度，不再用最大宽度估算）。
     final centerX = screenWidth - _right - _kCollapsedBubbleWidth / 2;
-    const edge = 12.0;
     setState(() {
       if (centerX < screenWidth / 2) {
         // 吸附左侧：right 较大
-        _right = screenWidth - _kCollapsedBubbleWidth - edge;
+        _right = screenWidth - _kCollapsedBubbleWidth - _kCollapsedBubbleEdge;
       } else {
         // 吸附右侧
-        _right = edge;
+        _right = _kCollapsedBubbleEdge;
       }
     });
   }
@@ -270,13 +272,12 @@ class _DlnaCastBarState extends State<DlnaCastBar>
 
     _maybeAutoExpand(cast);
 
-    // 收起态小窗第一次出现时放在屏幕正中（水平 / 垂直都居中），
-    // 避免和底部投屏面板 / MiniPlayer 重叠；同一会话内用户拖过的位置继续保留。
+    // 收起态小窗第一次出现时贴在屏幕右侧、垂直居中：水平靠边避免挡住画面，
+    // 垂直居中避免和底部投屏面板 / MiniPlayer 重叠；同一会话内用户拖过的位置继续保留。
     if (!_bubblePositionInitialized) {
       final size = MediaQuery.sizeOf(context);
       _bubblePositionInitialized = true;
-      _right = ((size.width - _kCollapsedBubbleWidth) / 2)
-          .clamp(0.0, double.infinity);
+      _right = _kCollapsedBubbleEdge;
       _bottom = ((size.height - _kCollapsedBubbleHeight) / 2)
           .clamp(0.0, double.infinity);
     }
@@ -292,7 +293,7 @@ class _DlnaCastBarState extends State<DlnaCastBar>
             child: _buildExpandedBar(context, cast),
           )
         else
-          // 收起态：可拖动悬浮小窗（首次出现在屏幕中央）
+          // 收起态：可拖动悬浮小窗（首次出现在屏幕右侧、垂直居中）
           Positioned(
             right: _right,
             bottom: _bottom,
@@ -948,9 +949,9 @@ class _CastTelemetry extends StatelessWidget {
     final runState = cast.runState;
     final label = _runStateLabel(runState);
     final showSpeed = speed > 0;
-    final limited = cast.positionAccuracyLimited;
+    final drift = cast.driftMs.abs();
     final errorText = runState == 'error' ? cast.errorText : null;
-    if (!showSpeed && label == null && !limited && errorText == null) {
+    if (!showSpeed && label == null && drift <= 500 && errorText == null) {
       return const SizedBox.shrink();
     }
 
@@ -984,7 +985,7 @@ class _CastTelemetry extends StatelessWidget {
               ],
               if (showSpeed && label != null) const SizedBox(width: 8),
               if (label != null) _runStateBadge(context, runState, label),
-              if (cast.alignmentLabel.isNotEmpty && !limited) ...[
+              if (cast.alignmentLabel.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 Text(
                   '定位：${cast.alignmentLabel}',
@@ -1003,14 +1004,12 @@ class _CastTelemetry extends StatelessWidget {
                 ),
             ],
           ),
-          // VFR 兜底：进度按名义网格估算，拖动可能偏几秒。
-          if (limited)
+          // 产出位置与计划网格的偏差（正常情况下不超过一个分片）。
+          if (drift > 500)
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text(
-                cast.driftMs > 0
-                    ? '定位精度受限（偏差约 ${(cast.driftMs / 1000).toStringAsFixed(1)} 秒）'
-                    : '定位精度受限',
+                '产出与网格偏差 ${(drift / 1000).toStringAsFixed(1)} 秒',
                 style: textTheme.labelSmall?.copyWith(
                   color: Colors.orange.shade700,
                 ),

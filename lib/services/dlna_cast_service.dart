@@ -301,26 +301,20 @@ class DlnaCastService extends ChangeNotifier {
   /// 按需转码运行状态：`active` / `idle` / `error`；空串 = 旧版 `.so` 或直通。
   String get runState => _runState;
 
-  /// 定位对齐方式的中文标签（精确 / 标定 / 近似）；未知为空串。
+  /// 定位对齐方式的中文标签（精确网格 / 关键帧）；未知为空串。
   ///
-  /// Rust 只会上报 `exact` / `calibrated` / `approx`：整份计划由实测节奏生成，
-  /// 不再有「按关键帧索引」这一档（容器索引对 MKV 不可靠）。
+  /// Rust 只会上报 `exact` / `keyframe`：整份计划在会话建立前就由
+  /// `source_plan` 固定，没有测量标定或近似网格这两档了。
   String get alignmentLabel {
     switch (_alignment) {
       case 'exact':
-        return '精确';
-
-      case 'calibrated':
-        return '标定';
-      case 'approx':
-        return '近似';
+        return '精确网格';
+      case 'keyframe':
+        return '关键帧';
       default:
         return '';
     }
   }
-
-  /// 定位精度受限（`alignment == "approx"`，VFR 兜底时进度按名义网格估算）。
-  bool get positionAccuracyLimited => _alignment == 'approx';
 
   /// 当前会话已用的转码缓存字节数。
   int get cacheBytes => _cacheBytes;
@@ -335,7 +329,7 @@ class DlnaCastService extends ChangeNotifier {
   int get cacheHits => _cacheHits;
   bool get cacheOverBudget => _cacheOverBudget;
 
-  /// `alignment == "approx"` 时上报的位置漂移（毫秒）。
+  /// 本次运行的产出位置与计划网格的偏差（毫秒，绝对值不超过一个分片）。
   int get driftMs => _driftMs;
 
   /// 当前视频的字幕候选列表（Rust 匹配结果）。
@@ -416,9 +410,9 @@ class DlnaCastService extends ChangeNotifier {
   /// 已落盘分片数 / 预转窗口分片数。
   int _readySegments = 0;
   int _lookaheadSegments = 0;
-  /// 定位对齐方式：`exact` / `keyframe` / `calibrated` / `approx`；旧版 `.so` 为空串。
+  /// 定位对齐方式：`exact` / `keyframe`；旧版 `.so` 为空串。
   String _alignment = '';
-  /// `alignment == "approx"` 时位置计算的最大漂移（毫秒）。
+  /// 产出位置与计划网格的偏差（毫秒），正负都可能。
   int _driftMs = 0;
   /// 本次会话的转码缓存命中次数 / 缓存字节数 / 是否超出预算。
   int _cacheHits = 0;
