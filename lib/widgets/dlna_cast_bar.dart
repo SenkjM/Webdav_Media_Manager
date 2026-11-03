@@ -430,6 +430,9 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                   // ── 预热中（§3）：实时测速 / 播放列表就绪 / 投送 ──
                   _WarmingPanel(cast: cast, onCollapse: _collapse)
                 else ...[
+                  // ── §4 HLS 点播化遥测：转码速度 + 运行状态 ──────
+                  _CastTelemetry(cast: cast),
+
                   // ── 进度条行 ────────────────────────────────────
                   Row(
                     children: [
@@ -833,6 +836,170 @@ class _ErrorDetail extends StatelessWidget {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  HLS 点播化遥测行（契约 hls-vod-transcode-cache §4）
+// ─────────────────────────────────────────────────────────────
+
+/// 播放中的转码遥测行：转码速度 + 按需运行状态徽标 + 定位精度提示。
+///
+/// 只在有数据时渲染：旧版 `.so`（不返回 `run_state` / `alignment`）与直通
+/// 会话（无转码）都保持原布局，不额外占一行。
+class _CastTelemetry extends StatelessWidget {
+  const _CastTelemetry({required this.cast});
+
+  final DlnaCastService cast;
+
+  @override
+  Widget build(BuildContext context) {
+    // 直通投屏没有转码作业（Rust 仍会报 `run_state:"idle"`），不显示遥测。
+    if (cast.provider == 'direct') return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final speed = cast.transcodeSpeed;
+    final runState = cast.runState;
+    final label = _runStateLabel(runState);
+    final showSpeed = speed > 0;
+    final limited = cast.positionAccuracyLimited;
+    final errorText = runState == 'error' ? cast.errorText : null;
+    if (!showSpeed && label == null && !limited && errorText == null) {
+      return const SizedBox.shrink();
+    }
+
+    final speedColor = !showSpeed
+        ? scheme.onSurfaceVariant
+        : speed >= 1
+            ? Colors.green.shade600
+            : Colors.orange.shade700;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              if (showSpeed) ...[
+                Icon(
+                  Icons.speed_rounded,
+                  size: 14,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${speed.toStringAsFixed(2)}×',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: speedColor,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              if (showSpeed && label != null) const SizedBox(width: 8),
+              if (label != null) _runStateBadge(context, runState, label),
+              if (cast.alignmentLabel.isNotEmpty && !limited) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '定位：${cast.alignmentLabel}',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+              const Spacer(),
+              if (cast.cacheHits > 0)
+                Text(
+                  '缓存命中 ${cast.cacheHits}',
+                  style: textTheme.labelSmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          // VFR 兜底：进度按名义网格估算，拖动可能偏几秒。
+          if (limited)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                cast.driftMs > 0
+                    ? '定位精度受限（偏差约 ${(cast.driftMs / 1000).toStringAsFixed(1)} 秒）'
+                    : '定位精度受限',
+                style: textTheme.labelSmall?.copyWith(
+                  color: Colors.orange.shade700,
+                ),
+              ),
+            ),
+          if (errorText != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                errorText,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.labelSmall?.copyWith(
+                  color: scheme.error,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String? _runStateLabel(String runState) {
+    switch (runState) {
+      case 'active':
+        return '活动';
+      case 'idle':
+        return '闲置';
+      case 'error':
+        return '错误';
+      default:
+        return null;
+    }
+  }
+
+  Widget _runStateBadge(BuildContext context, String runState, String label) {
+    final scheme = Theme.of(context).colorScheme;
+    Color bg;
+    Color fg;
+    String tooltip;
+    switch (runState) {
+      case 'active':
+        bg = scheme.secondaryContainer;
+        fg = scheme.onSecondaryContainer;
+        tooltip = '正在转码后续片段';
+      case 'idle':
+        bg = scheme.surfaceContainerHighest;
+        fg = scheme.onSurfaceVariant;
+        tooltip = '已追平播放进度，等待播放推进后再转码';
+      case 'error':
+        bg = scheme.errorContainer;
+        fg = scheme.onErrorContainer;
+        tooltip = '转码作业出错';
+      default:
+        bg = scheme.surfaceContainerHighest;
+        fg = scheme.onSurfaceVariant;
+        tooltip = '';
+    }
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          label,
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: fg,
+            fontSize: 10,
+          ),
         ),
       ),
     );

@@ -127,6 +127,10 @@ class SettingsService extends ChangeNotifier {
   static const _kDlnaTranscodeAudio = 'dlna_transcode_audio';
   static const _kDlnaDefaultTranscodePreset = 'dlna_default_transcode_preset';
 
+  /// HLS VOD transcode cache budget (MiB). Consumed by the DLNA session config
+  /// as `cache_budget_mb` (contract hls-vod-transcode-cache §3.5).
+  static const _kTranscodeCacheBudgetMb = 'transcode_cache_budget_mb';
+
   /// Media-library scrape (scan task). Independent from playlist prefs.
   static const _kMediaScanRecursive = 'media_scan_recursive';
   static const _kMediaScanMaxDepth = 'media_scan_max_depth';
@@ -671,6 +675,28 @@ class SettingsService extends ChangeNotifier {
 
   set dlnaDefaultTranscodePreset(String v) {
     RustCoreService.kvSet(_kDlnaDefaultTranscodePreset, v);
+    notifyListeners();
+  }
+
+  /// 转码缓存预算默认值（MiB）。
+  static const defaultTranscodeCacheBudgetMb = 2048;
+
+  /// HLS 转码缓存预算（MiB）。键 `transcode_cache_budget_mb`，默认 2048。
+  ///
+  /// 非法值（非数字或 <= 0）回落到默认值。该值随每次 DLNA 会话配置下发为
+  /// `cache_budget_mb`，Rust 侧按此预算做 LRU 淘汰。
+  int get transcodeCacheBudgetMb {
+    final v = RustCoreService.kvGet(_kTranscodeCacheBudgetMb);
+    if (v != null && v != 'null' && !v.startsWith('error:')) {
+      final parsed = int.tryParse(v.trim());
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    return defaultTranscodeCacheBudgetMb;
+  }
+
+  set transcodeCacheBudgetMb(int v) {
+    final mb = v > 0 ? v : defaultTranscodeCacheBudgetMb;
+    RustCoreService.kvSet(_kTranscodeCacheBudgetMb, mb.toString());
     notifyListeners();
   }
 

@@ -82,12 +82,6 @@ typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
 typedef _StrInt64ToStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, int);
 
-// (str, f64) → str — used by wdmm_proxy_hls_seek(token, secs).
-typedef _StrF64ToStrNative = ffi.Pointer<Utf8> Function(
-    ffi.Pointer<Utf8>, ffi.Double);
-typedef _StrF64ToStrDart = ffi.Pointer<Utf8> Function(
-    ffi.Pointer<Utf8>, double);
-
 typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Uint16);
 typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, int);
 typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
@@ -1763,7 +1757,6 @@ class RustCoreService {
   static _OneStrToStrDart?  _proxyUnregister;
   // ── B3.5 HLS transcoder bindings ─────────────────────────────────────────
   static _ThreeStrToOneStrDart? _proxyRegisterHls;
-  static _StrF64ToStrDart?      _proxyHlsSeek;
   static _OneStrToStrDart?      _proxyUnregisterHls;
   static _NoArgToStrDart?       _transcodePresetsJson;
   static _OneStrToStrDart?      _transcodePresetSave;
@@ -1795,10 +1788,6 @@ class RustCoreService {
       _proxyRegisterHls = lib
           .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>(
               'wdmm_proxy_register_hls')
-          .asFunction();
-      _proxyHlsSeek = lib
-          .lookup<ffi.NativeFunction<_StrF64ToStrNative>>(
-              'wdmm_proxy_hls_seek')
           .asFunction();
       _proxyUnregisterHls = lib
           .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
@@ -1942,20 +1931,6 @@ class RustCoreService {
     }
   }
 
-  /// Seek the active HLS job identified by [token] to [secs] seconds from
-  /// the start of the stream.  Returns `'ok'` or `'error:…'`.
-  static String? proxyHlsSeek(String token, double secs) {
-    if (!_ensureSymbols()) return null;
-    _loadProxySymbolsSafe();
-    if (_proxyHlsSeek == null) return null;
-    final ptr = token.toNativeUtf8();
-    try {
-      return _readAndFreeString(_proxyHlsSeek!(ptr, secs));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
   /// Stop and clean up the HLS job for [token].
   /// Returns `'ok'` or `'error:…'`.
   static String? proxyUnregisterHls(String token) {
@@ -2004,6 +1979,73 @@ class RustCoreService {
     } finally {
       calloc.free(ptr);
     }
+  }
+
+  // ── HLS VOD transcode-cache management ────────────────────────────────────
+  //
+  // The VOD HLS path keeps transcoded segments in a disk cache (contract
+  // hls-vod-transcode-cache §3.5). These exports are read-only telemetry plus a
+  // bulk clear; the budget itself is passed per session through
+  // `cache_budget_mb`. Both symbols are lazy and optional: an older .so simply
+  // returns null and the settings UI degrades to “不可用”.
+
+  static _NoArgToStrDart? _transcodeCacheStatsJson;
+  static _NoArgToStrDart? _transcodeCacheClear;
+
+  static bool _transcodeCacheStatsLoaded = false;
+  static bool _transcodeCacheClearLoaded = false;
+
+  static void _loadTranscodeCacheStatsSafe() {
+    if (_transcodeCacheStatsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _transcodeCacheStatsJson = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_transcode_cache_stats_json')
+          .asFunction();
+      _transcodeCacheStatsLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] transcode cache stats lookup failed (non-fatal): $e');
+    }
+  }
+
+  static void _loadTranscodeCacheClearSafe() {
+    if (_transcodeCacheClearLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _transcodeCacheClear = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_transcode_cache_clear')
+          .asFunction();
+      _transcodeCacheClearLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] transcode cache clear lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Transcode cache telemetry as JSON:
+  /// `{"ok":true,"bytes","budget","entries","hits","misses","over_budget"}`.
+  ///
+  /// Returns null when the native library predates the export, so callers can
+  /// render a “不可用” state instead of throwing.
+  static String? transcodeCacheStatsJson() {
+    if (!_ensureSymbols()) return null;
+    _loadTranscodeCacheStatsSafe();
+    if (_transcodeCacheStatsJson == null) return null;
+    return _readAndFreeString(_transcodeCacheStatsJson!());
+  }
+
+  /// Drop every cached transcoded segment. Returns `'ok'` / `'error:…'`, or
+  /// null when the native library predates the export.
+  static String? transcodeCacheClear() {
+    if (!_ensureSymbols()) return null;
+    _loadTranscodeCacheClearSafe();
+    if (_transcodeCacheClear == null) return null;
+    return _readAndFreeString(_transcodeCacheClear!());
   }
 
   // ── Wave B — KV / settings / user-folder / playlist FFI ───────────────────

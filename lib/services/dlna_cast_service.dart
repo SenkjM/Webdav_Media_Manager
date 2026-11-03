@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../models/app_locale.dart';
 import '../models/webdav_item.dart';
@@ -236,6 +238,12 @@ class DlnaCastService extends ChangeNotifier {
   /// 设备详情页优先展示它；为 null 表示当前没有活动会话。
   String? get protocolInfo => _protocolInfo;
 
+  /// 会话类型：`hls`（转码）/ `direct`（直通）；未知时为空串。
+  ///
+  /// 直通会话没有转码作业（Rust 仍会报 `run_state:"idle"`），播放态遥测行
+  /// 因此按它隐藏，避免在直通投屏上显示「闲置」这种误导性状态。
+  String get provider => _provider;
+
   /// 转码阶段（契约 §3）：`warming` / `playing` / `ended` / `failed` / `idle`。
   ///
   /// 旧版 `.so` 不返回该字段时按 `playing` 处理，绝不把用户困在预热界面里。
@@ -274,6 +282,49 @@ class DlnaCastService extends ChangeNotifier {
   /// Rust 诊断环形缓冲（最旧在前），用于「诊断日志」折叠区。
   List<String> get diagnostics => List.unmodifiable(_diagnostics);
 
+  // --- HLS 点播化遥测（契约 hls-vod-transcode-cache §4）---
+
+  /// 转码速度（内容时间 / 墙钟时间）；>= 1 表示能实时产出，0 = 无数据。
+  double get transcodeSpeed => _encodeSpeed;
+
+  /// 按需转码运行状态：`active` / `idle` / `error`；空串 = 旧版 `.so` 或直通。
+  String get runState => _runState;
+
+  /// 定位对齐方式的中文标签（精确 / 关键帧 / 标定 / 近似）；未知为空串。
+  String get alignmentLabel {
+    switch (_alignment) {
+      case 'exact':
+        return '精确';
+      case 'keyframe':
+        return '关键帧';
+      case 'calibrated':
+        return '标定';
+      case 'approx':
+        return '近似';
+      default:
+        return '';
+    }
+  }
+
+  /// 定位精度受限（`alignment == "approx"`，VFR 兜底时进度按名义网格估算）。
+  bool get positionAccuracyLimited => _alignment == 'approx';
+
+  /// 当前会话已用的转码缓存字节数。
+  int get cacheBytes => _cacheBytes;
+
+  /// 分段计划：总片段数 / 每段秒数（旧版 `.so` 为 0）。
+  int get segCount => _segCount;
+  double get segSecs => _segSecs;
+
+  /// 已落盘分片数 / 预转窗口分片数 / 缓存命中次数 / 是否超出预算。
+  int get readySegments => _readySegments;
+  int get lookaheadSegments => _lookaheadSegments;
+  int get cacheHits => _cacheHits;
+  bool get cacheOverBudget => _cacheOverBudget;
+
+  /// `alignment == "approx"` 时上报的位置漂移（毫秒）。
+  int get driftMs => _driftMs;
+
   /// 当前视频的字幕候选列表（Rust 匹配结果）。
   List<SidecarHit> get subtitleCandidates =>
       List.unmodifiable(_subtitleCandidates);
@@ -295,6 +346,8 @@ class DlnaCastService extends ChangeNotifier {
   bool _everPlaying = false;
   /// Rust 协商出的协议信息（只用于设备详情页展示）。
   String? _protocolInfo;
+  /// 会话类型：`hls` / `direct`（来自 start / state 的 `provider`）。
+  String _provider = '';
 
   // --- 内部：HLS 预热 / 转码遥测（契约 dlna-warmup-ffi §4、§7.5）---
   /// 转码阶段：`warming` / `playing` / `ended` / `failed` / `idle`。
@@ -325,6 +378,27 @@ class DlnaCastService extends ChangeNotifier {
   List<String> _diagnostics = const [];
   /// 「投送」命令进行中，避免连点重复下发。
   bool _castInFlight = false;
+
+  // --- 内部：HLS 点播化遥测（契约 hls-vod-transcode-cache §4）---
+  /// 按需转码运行状态：`active`（正在转码）/ `idle`（已追平，等播放推进）/
+  /// `error`；旧版 `.so` 或直通会话为空串。
+  String _runState = '';
+  /// 分段计划：总片段数与每段秒数（旧版 `.so` 为 0）。
+  int _segCount = 0;
+  double _segSecs = 0;
+  /// 已落盘分片数 / 预转窗口分片数。
+  int _readySegments = 0;
+  int _lookaheadSegments = 0;
+  /// 定位对齐方式：`exact` / `keyframe` / `calibrated` / `approx`；旧版 `.so` 为空串。
+  String _alignment = '';
+  /// `alignment == "approx"` 时位置计算的最大漂移（毫秒）。
+  int _driftMs = 0;
+  /// 本次会话的转码缓存命中次数 / 缓存字节数 / 是否超出预算。
+  int _cacheHits = 0;
+  int _cacheBytes = 0;
+  bool _cacheOverBudget = false;
+  /// 会话配置里的缓存父目录（`<平台 cache_dir>`），首次会话时解析一次。
+  String? _resolvedCacheDir;
 
   // --- 内部：发现 / 生命周期 ---
   int _discoveryEpoch = 0;
@@ -622,6 +696,25 @@ class DlnaCastService extends ChangeNotifier {
     return global;
   }
 
+  /// 解析会话配置里的缓存根目录（`<平台 cache_dir>/transcode`，契约 §3.5）。
+  ///
+  /// Rust 的 `cache_dir` 就是缓存根目录本身（缺省 `<temp>/wdmm-transcode`），
+  /// 所以这里显式加上 `transcode` 叶子目录，避免把分片直接撒在应用缓存根上。
+  /// 只解析一次；失败返回 null，让 Rust 用自己的默认目录（旧 `.so` 忽略该键）。
+  Future<String?> _resolveCacheDir() async {
+    final cached = _resolvedCacheDir;
+    if (cached != null) return cached;
+    try {
+      final dir = await getApplicationCacheDirectory();
+      final root = p.join(dir.path, 'transcode');
+      _resolvedCacheDir = root;
+      return root;
+    } catch (e) {
+      debugPrint('[DLNA] cache dir unavailable: $e');
+      return null;
+    }
+  }
+
   Future<void> _beginItem(
     WebDavItem item,
     String accountId, {
@@ -651,7 +744,11 @@ class DlnaCastService extends ChangeNotifier {
 
     final handle = _handle;
     if (first || handle == null) {
-      final configJson = jsonEncode(<String, Object?>{
+      // §3.5 转码缓存：Dart 传缓存根目录（`<cache>/transcode`），预算随会话
+      // 下发；`cache_ident`（mtime）让同一源文件的第二次投屏直接复用分片。
+      final cacheDir = await _resolveCacheDir();
+      final cacheIdent = item.modified?.millisecondsSinceEpoch.toString() ?? '';
+      final config = <String, Object?>{
         'renderer_location': renderer.location,
         'renderer_usn': renderer.usn,
         'account_id': accountId,
@@ -663,8 +760,14 @@ class DlnaCastService extends ChangeNotifier {
         // §3 预热：HLS 起转码后立即返回 `phase:"warming"`，Dart 不再干等 20s。
         // 旧版 `.so` 不认识该键（直接忽略），行为与之前一致。
         'warmup': true,
+        'cache_budget_mb': _settings.transcodeCacheBudgetMb,
+        'cache_ident': cacheIdent,
         'ui_lang': _settings.appLocale.locale?.languageCode ?? '',
-      });
+      };
+      if (cacheDir != null && cacheDir.isNotEmpty) {
+        config['cache_dir'] = cacheDir;
+      }
+      final configJson = jsonEncode(config);
       final raw = await _runOnWorker(
         () => RustCoreService.dlnaSessionStart(configJson),
       );
@@ -682,6 +785,8 @@ class DlnaCastService extends ChangeNotifier {
       _handle = newHandle;
       final info = json['protocol_info']?.toString();
       if (info != null && info.isNotEmpty) _protocolInfo = info;
+      final provider = _nonEmpty(json['provider']);
+      if (provider != null) _provider = provider;
       final compat = _compatFrom(json['compat']);
       if (compat != null) _compatHint = compat;
       // 启动响应里的 `phase`（旧版 `.so` 没有 → 降级为 playing）。
@@ -689,12 +794,14 @@ class DlnaCastService extends ChangeNotifier {
       _applySubtitleStatus(json);
       _startStateTimer();
     } else {
+      // §3.5：切集时缓存标识跟着新文件走，否则 Rust 把该文件当一次性条目。
       final cmdJson = jsonEncode(<String, Object?>{
         'cmd': 'select',
         'remote_path': item.path,
         'name': item.name,
         'size': item.size ?? 0,
         'preset_id': presetId,
+        'cache_ident': item.modified?.millisecondsSinceEpoch.toString() ?? '',
       });
       final raw = await _runOnWorker(
         () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
@@ -780,6 +887,9 @@ class DlnaCastService extends ChangeNotifier {
 
     final info = json['protocol_info']?.toString();
     if (info != null && info.isNotEmpty) _protocolInfo = info;
+
+    final provider = _nonEmpty(json['provider']);
+    if (provider != null) _provider = provider;
 
     final compat = _compatFrom(json['compat']);
     if (compat != null) _compatHint = compat;
@@ -881,6 +991,7 @@ class DlnaCastService extends ChangeNotifier {
     _selectedSubtitle = null;
     _subtitleStatus = null;
     _protocolInfo = null;
+    _provider = '';
     _endedForPath = null;
     _everPlaying = false;
     _error = null;
@@ -1070,6 +1181,17 @@ class DlnaCastService extends ChangeNotifier {
     _encodeWarnings = const [];
     _diagnostics = const [];
     _castInFlight = false;
+    // §4 HLS 点播化遥测。
+    _runState = '';
+    _segCount = 0;
+    _segSecs = 0;
+    _readySegments = 0;
+    _lookaheadSegments = 0;
+    _alignment = '';
+    _driftMs = 0;
+    _cacheHits = 0;
+    _cacheBytes = 0;
+    _cacheOverBudget = false;
   }
 
   /// 合并一次 Rust 会话 JSON（start 响应 / state tick）里的预热字段。
@@ -1114,6 +1236,32 @@ class DlnaCastService extends ChangeNotifier {
     if (json.containsKey('diagnostics')) {
       _diagnostics = _stringList(json['diagnostics']) ?? const [];
     }
+
+    // §4 HLS 点播化遥测：按需运行状态 / 定位对齐 / 缓存统计；缺失保持原值。
+    final runState = _nonEmpty(json['run_state']);
+    if (runState != null) _runState = runState;
+    final alignment = _nonEmpty(json['alignment']);
+    if (alignment != null) _alignment = alignment;
+    final driftMs = _asInt(json['drift_ms']);
+    if (driftMs != null && driftMs >= 0) _driftMs = driftMs;
+    final segCount = _asInt(json['seg_count']);
+    if (segCount != null && segCount >= 0) _segCount = segCount;
+    final segSecs = _asDouble(json['seg_secs']);
+    if (segSecs != null && segSecs > 0) _segSecs = segSecs;
+    final readySegments = _asInt(json['ready_segments']);
+    if (readySegments != null && readySegments >= 0) {
+      _readySegments = readySegments;
+    }
+    final lookahead = _asInt(json['lookahead_segments']);
+    if (lookahead != null && lookahead >= 0) _lookaheadSegments = lookahead;
+    final cacheHits = _asInt(json['cache_hits']);
+    if (cacheHits != null && cacheHits >= 0) _cacheHits = cacheHits;
+    final cacheBytes = _asInt(json['cache_bytes']);
+    if (cacheBytes != null && cacheBytes >= 0) _cacheBytes = cacheBytes;
+    if (json.containsKey('cache_over_budget')) {
+      _cacheOverBudget = json['cache_over_budget'] == true;
+    }
+
     if (json.containsKey('error')) {
       _warmupError = _nonEmpty(json['error']);
     }

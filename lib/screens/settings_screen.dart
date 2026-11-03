@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
 import '../models/snack_duration.dart';
 import '../services/notification_permission_service.dart';
+import '../services/rust_core_service.dart';
 import '../services/settings_service.dart';
 import '../services/transcode_preset_catalog.dart';
 import '../widgets/theme_settings_section.dart';
@@ -37,6 +40,14 @@ class _SettingsScreenState extends State<SettingsScreen>
   /// DLNA 转码预设选项：来自 Core 数据库（已排除直通），管理页返回后刷新。
   List<TranscodePresetOption> _dlnaPresets = TranscodePresetCatalog.fallback;
 
+  /// 转码缓存统计（Rust `wdmm_transcode_cache_stats_json`）。
+  /// null 且 [_transcodeCacheStatsLoaded] 为 true 表示旧版 `.so` 不支持。
+  _TranscodeCacheStats? _transcodeCacheStats;
+  bool _transcodeCacheStatsLoaded = false;
+
+  /// 统计读取失败时的可读原因（如「本地代理未启动」），成功时为 null。
+  String? _transcodeCacheStatsError;
+
   @override
   void initState() {
     super.initState();
@@ -44,6 +55,7 @@ class _SettingsScreenState extends State<SettingsScreen>
     _dlnaPresets = TranscodePresetCatalog.load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationPermissionService>().refresh();
+      unawaited(_refreshTranscodeCacheStats());
     });
   }
 
@@ -52,6 +64,151 @@ class _SettingsScreenState extends State<SettingsScreen>
     final presets = TranscodePresetCatalog.load();
     if (!mounted) return;
     setState(() => _dlnaPresets = presets);
+  }
+
+  // ── 转码缓存（契约 hls-vod-transcode-cache §3.5、§4）────────────────────
+
+  /// 读取转码缓存统计。轻量本地 FFI（只读内存里的统计），直接调用即可。
+  Future<void> _refreshTranscodeCacheStats() async {
+    final raw = RustCoreService.transcodeCacheStatsJson();
+    final stats = _TranscodeCacheStats.parse(raw);
+    final error =
+        stats == null && raw != null ? _decodeCacheError(raw) : null;
+    if (!mounted) return;
+    setState(() {
+      _transcodeCacheStats = stats;
+      _transcodeCacheStatsLoaded = true;
+      _transcodeCacheStatsError = error;
+    });
+  }
+
+  /// 清理全部转码缓存，然后刷新用量。
+  Future<void> _clearTranscodeCache() async {
+    final raw = RustCoreService.transcodeCacheClear();
+    if (!mounted) return;
+    final ok = _cacheClearSucceeded(raw);
+    final String message;
+    if (ok) {
+      message = '转码缓存已清理';
+    } else if (raw == null) {
+      message = '当前原生库不支持清理转码缓存';
+    } else {
+      final error = _decodeCacheError(raw);
+      message = error == null ? '清理失败' : '清理失败：$error';
+    }
+    AppSnack.show(context, message, error: !ok);
+    await _refreshTranscodeCacheStats();
+  }
+
+  /// Rust 清理命令的成功判定：字面量 `ok` 或 `{"ok":true,…}` 都算成功。
+  static bool _cacheClearSucceeded(String? raw) {
+    if (raw == null || raw.isEmpty) return false;
+    if (raw == 'ok') return true;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) return decoded['ok'] == true;
+    } catch (_) {
+      // 非 JSON：旧版 `.so` 的 `error:…` 前缀走下面的兜底判定。
+    }
+    return !raw.startsWith('error:');
+  }
+
+  /// 从命令回包里取错误文本（`error:` 前缀或 `{"error":…}`）。
+  ///
+  /// Rust 的 `proxy not started` 在 UI 上换成中文，其余保持原样便于排查。
+  static String? _decodeCacheError(String raw) {
+    String? message;
+    if (raw.startsWith('error:')) {
+      message = raw.substring(6);
+    } else {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final error = decoded['error']?.toString();
+          if (error != null && error.isNotEmpty) message = error;
+        }
+      } catch (_) {}
+    }
+    if (message == null) return null;
+    if (message.contains('proxy not started')) return '本地代理未启动';
+    return message;
+  }
+
+  /// 编辑缓存预算（MB）。非法值不落盘。
+  Future<void> _editTranscodeCacheBudget() async {
+    final settings = context.read<SettingsService>();
+    final controller = TextEditingController(
+      text: settings.transcodeCacheBudgetMb.toString(),
+    );
+    final saved = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('转码缓存预算'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+          decoration: const InputDecoration(
+            labelText: '预算（MB）',
+            helperText: '默认 2048 MB；超出后按最久未使用淘汰',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = int.tryParse(controller.text.trim());
+              Navigator.of(dialogContext).pop(parsed);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (!mounted || saved == null) return;
+    if (saved <= 0) {
+      AppSnack.show(context, '缓存预算必须大于 0 MB', error: true);
+      return;
+    }
+    settings.transcodeCacheBudgetMb = saved;
+    AppSnack.show(context, '缓存预算已设为 $saved MB，新投屏会话生效');
+    await _refreshTranscodeCacheStats();
+  }
+
+  /// 缓存用量副标题：读取中 / 不可用原因 / 旧版不支持 / 已用 + 预算 + 文件数。
+  String _cacheStatsSubtitle() {
+    if (!_transcodeCacheStatsLoaded) return '读取中…';
+    final stats = _transcodeCacheStats;
+    if (stats == null) {
+      final error = _transcodeCacheStatsError;
+      return error == null ? '当前原生库不提供缓存统计' : '暂不可用：$error';
+    }
+    final parts = <String>[
+      '已用 ${_formatCacheBytes(stats.bytes)} / '
+          '${stats.budget > 0 ? _formatCacheBytes(stats.budget) : '未知'}',
+      '${stats.entries} 个文件',
+    ];
+    if (stats.hits > 0) parts.add('命中 ${stats.hits} 次');
+    if (stats.overBudget) parts.add('超出预算');
+    return parts.join(' · ');
+  }
+
+  static String _formatCacheBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+    const units = ['KB', 'MB', 'GB', 'TB'];
+    var value = bytes / 1024;
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return '${value.toStringAsFixed(value >= 100 ? 0 : 1)} ${units[unit]}';
   }
 
   @override
@@ -387,6 +544,40 @@ class _SettingsScreenState extends State<SettingsScreen>
               _reloadDlnaPresets();
             },
           ),
+          // ── 转码缓存（VOD 点播化 §3.5）────────────────────────────────
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.sd_storage_outlined),
+            title: const Text('转码缓存'),
+            subtitle: Text(_cacheStatsSubtitle()),
+            trailing: IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: '刷新',
+              onPressed: () => unawaited(_refreshTranscodeCacheStats()),
+            ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.data_usage),
+            title: const Text('缓存预算'),
+            subtitle: const Text('超出后按最久未使用淘汰；新投屏会话生效'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${settings.transcodeCacheBudgetMb} MB'),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
+            onTap: () => unawaited(_editTranscodeCacheBudget()),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.delete_sweep_outlined),
+            title: const Text('清理缓存'),
+            subtitle: const Text('删除所有已缓存的分片，下次投屏会重新转码'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => unawaited(_clearTranscodeCache()),
+          ),
           const Divider(height: 40),
           _sectionTitle(context, l10n.settingsMisc),
           const SizedBox(height: 8),
@@ -495,5 +686,48 @@ class _SettingsScreenState extends State<SettingsScreen>
         ],
       ),
     );
+  }
+}
+
+/// `wdmm_transcode_cache_stats_json()` 的解析结果。
+///
+/// 只用于设置页展示；旧版 `.so` 缺符号时解析为 null，页面显示「不支持」。
+class _TranscodeCacheStats {
+  const _TranscodeCacheStats({
+    required this.bytes,
+    required this.budget,
+    required this.entries,
+    required this.hits,
+    required this.overBudget,
+  });
+
+  final int bytes;
+  final int budget;
+  final int entries;
+  final int hits;
+  final bool overBudget;
+
+  /// 解析 Rust 回传的 JSON；null / `error:` 前缀 / 非法 JSON / `ok:false` → null。
+  static _TranscodeCacheStats? parse(String? raw) {
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map || decoded['ok'] == false) return null;
+      return _TranscodeCacheStats(
+        bytes: _int(decoded['bytes']) ?? 0,
+        budget: _int(decoded['budget']) ?? 0,
+        entries: _int(decoded['entries']) ?? 0,
+        hits: _int(decoded['hits']) ?? 0,
+        overBudget: decoded['over_budget'] == true,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static int? _int(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value');
   }
 }
