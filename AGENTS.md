@@ -78,7 +78,8 @@ targets) and mirrored by the `dtolnay/rust-toolchain@<version>` refs in `.github
 Bump both in the same commit. The pin exists because `verify.yml` runs
 `cargo clippy --all-targets -- -D warnings`: when the local toolchain lagged behind CI's newest
 stable, clippy gained lints that only CI saw, so the guard failed on every push while passing
-locally. Always run the clippy command above with the pinned toolchain before pushing.
+locally. Before pushing, run `cargo clippy --all-targets -- -D warnings` inside `rust/wdmm-core`
+with the pinned toolchain (plain `cargo` there already resolves to it).
 
 On Windows, use the checked-in PowerShell wrappers in `tool/` (`flutter-sandbox.ps1` for
 analyze/test/gen-l10n, `flutter-pub-get.ps1` for dependency resolution). Set `FLUTTER_ROOT` to your
