@@ -1428,29 +1428,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'The passphrase did not pass verification. Continuing the restore may cause unexpected problems (for example password fields becoming empty ciphertext). Cancel to correct the passphrase, or force-continue with the existing restore logic.';
 
   @override
-  String get restorePassphraseUnverifiableTitle =>
-      'Cannot pre-check backup passphrase';
-
-  @override
-  String get restorePassphraseUnverifiableBody =>
-      'This older backup has no check block, and no existing ciphertext field could be tried. If the passphrase is wrong, continuing may cause unexpected problems (for example empty ciphertext). Cancel, or force-continue with the existing restore logic.';
-
-  @override
-  String get restoreEnvelopeMismatchTitle => 'Cannot open encrypted backup';
-
-  @override
-  String get restoreEnvelopeMismatchBody =>
-      'This backup uses whole-package encryption (WDMMEN01), and the current passphrase cannot decrypt it. Without opening the package, nothing can be imported. Cancel to correct the passphrase, or continue to try once more; if it still fails, you will be told import is impossible.';
-
-  @override
   String get restoreContinue => 'Continue';
-
-  @override
-  String get restoreEnvelopeDecryptFailedTitle => 'Cannot import backup';
-
-  @override
-  String get restoreEnvelopeDecryptFailedBody =>
-      'The passphrase is wrong or the ciphertext is damaged. The whole package cannot be decrypted, so nothing was imported.';
 
   @override
   String get restoreForceContinue => 'Force continue';

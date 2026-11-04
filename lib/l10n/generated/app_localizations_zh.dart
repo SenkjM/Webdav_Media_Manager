@@ -1381,27 +1381,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '输入的口令未通过校验。若继续恢复，可能出现预料之外的问题（例如密码等密文字段被解成空）。可取消后改正口令，或强制按现有逻辑继续。';
 
   @override
-  String get restorePassphraseUnverifiableTitle => '无法预检备份口令';
-
-  @override
-  String get restorePassphraseUnverifiableBody =>
-      '这份旧备份没有校验块，也无法用已有密文字段试解。若口令不对，继续恢复可能出现预料之外的问题（例如空密文）。可取消，或强制按现有逻辑继续。';
-
-  @override
-  String get restoreEnvelopeMismatchTitle => '无法解开整包备份';
-
-  @override
-  String get restoreEnvelopeMismatchBody =>
-      '这份备份使用整包加密（WDMMEN01），当前口令无法解密。整包解不开就不能真正导入。可取消后改正口令，或继续再试一次；若仍失败将提示无法导入。';
-
-  @override
   String get restoreContinue => '继续';
-
-  @override
-  String get restoreEnvelopeDecryptFailedTitle => '无法导入备份';
-
-  @override
-  String get restoreEnvelopeDecryptFailedBody => '密钥不正确或备份密文损坏，整包无法解密，不能导入。';
 
   @override
   String get restoreForceContinue => '强制继续';
@@ -6636,27 +6616,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
       '輸入的口令未通過校驗。若繼續還原，可能出現預料之外的問題（例如密碼等密文字段被解成空）。可取消後改正口令，或強制按現有邏輯繼續。';
 
   @override
-  String get restorePassphraseUnverifiableTitle => '無法預檢備份口令';
-
-  @override
-  String get restorePassphraseUnverifiableBody =>
-      '這份舊備份沒有校驗塊，也無法用既有密文字段試解。若口令不對，繼續還原可能出現預料之外的問題（例如空密文）。可取消，或強制按現有邏輯繼續。';
-
-  @override
-  String get restoreEnvelopeMismatchTitle => '無法解開整包備份';
-
-  @override
-  String get restoreEnvelopeMismatchBody =>
-      '這份備份使用整包加密（WDMMEN01），目前口令無法解密。整包解不開就不能真正匯入。可取消後改正口令，或繼續再試一次；若仍失敗將提示無法匯入。';
-
-  @override
   String get restoreContinue => '繼續';
-
-  @override
-  String get restoreEnvelopeDecryptFailedTitle => '無法匯入備份';
-
-  @override
-  String get restoreEnvelopeDecryptFailedBody => '金鑰不正確或備份密文損毀，整包無法解密，不能匯入。';
 
   @override
   String get restoreForceContinue => '強制繼續';

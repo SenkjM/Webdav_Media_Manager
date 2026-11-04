@@ -7,14 +7,12 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/library_track.dart';
 import '../models/playlist.dart';
-import '../utils/backup_crypto.dart';
 import '../utils/backup_pass_check.dart';
 import '../utils/backup_paths.dart';
 import '../utils/credential_vault_crypto.dart';
 import '../utils/l10n_host.dart';
 import 'accounts_service.dart';
 import 'wdmm_vfs/driver_registry.dart';
-import '../utils/wmp_container.dart';
 import 'cache_service.dart';
 import 'cover_service.dart';
 import 'credential_vault_codec.dart';
@@ -398,8 +396,10 @@ class BackupService extends ChangeNotifier {
   /// Restore an archive produced by the Core FFI (`.wdmm`) or the readable JSON
   /// produced by [buildJsonExport]).
   ///
-  /// Passwords that cannot be decrypted with [passphrase] are left **empty**
-  /// instead of aborting; everything else is restored.
+  /// The archive format (container + optional `WDMMEN01` envelope) belongs to
+  /// Rust: binary bytes go straight to `wdmm_backup_restore`, which unwraps and
+  /// decrypts them. Passwords that cannot be decrypted with [passphrase] are
+  /// left **empty** instead of aborting; everything else is restored.
   Future<void> restoreFromBytes({
     required Uint8List data,
     required String passphrase,
@@ -409,17 +409,10 @@ class BackupService extends ChangeNotifier {
     lastMessage = null;
     notifyListeners();
     try {
-      Uint8List bytes = data;
-      if (BackupCrypto.looksEncrypted(data)) {
-        if (passphrase.isEmpty) {
-          throw StateError('err.backupEncryptedNeedPassphrase');
-        }
-        bytes = await BackupCrypto.decrypt(data: data, passphrase: passphrase);
-      }
-
-      if (WmpContainer.looksLikeContainer(bytes)) {
-        // All WmpContainer archives → Core FFI restore (handles both legacy and
-        // current Core JSON format).
+      // Dart only understands the readable JSON interchange export it writes in
+      // [buildJsonExport]; every binary archive is Rust's to decode.
+      final payload = _readableJsonPayload(data);
+      if (payload == null) {
         await ensureCoversConfigured();
         final tempDir = await getTemporaryDirectory();
         final tempFile = File(p.join(tempDir.path, 'restore_${DateTime.now().millisecondsSinceEpoch}.wdmm'));
@@ -430,6 +423,10 @@ class BackupService extends ChangeNotifier {
             throw StateError('Core FFI unavailable');
           }
           if (result.startsWith('error:')) {
+            final detail = result.substring('error:'.length);
+            if (detail.startsWith('err.backupEncryptedNeedPassphrase')) {
+              throw StateError('err.backupEncryptedNeedPassphrase');
+            }
             throw StateError(result);
           }
           lastMessage = 'Restored via Core JSON backup';
@@ -443,10 +440,6 @@ class BackupService extends ChangeNotifier {
 
       // Readable JSON export (no cover bytes) — accepted as an interchange
       // format for troubleshooting / hand editing.
-      final decoded = jsonDecode(utf8.decode(bytes));
-      if (decoded is! Map) throw StateError('err.backupUnrecognizedContent');
-      final payload = Map<String, dynamic>.from(decoded);
-
       final missing = await _applyPayload(payload, passphrase);
       final accountCount =
           (payload['credentials'] as Map?)?['accounts'] is List
@@ -463,6 +456,17 @@ class BackupService extends ChangeNotifier {
     } finally {
       busy = false;
       notifyListeners();
+    }
+  }
+
+  /// Decode [data] as the readable JSON interchange export, or `null` when the
+  /// bytes are a binary archive (Rust owns those).
+  static Map<String, dynamic>? _readableJsonPayload(Uint8List data) {
+    try {
+      final decoded = jsonDecode(utf8.decode(data));
+      return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+    } on FormatException {
+      return null;
     }
   }
 

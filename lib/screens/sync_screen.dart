@@ -18,7 +18,6 @@ import '../services/sync_service.dart';
 import '../services/webdav_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
-import '../utils/l10n_host.dart';
 import '../widgets/destroy_progress_dialog.dart';
 import '../widgets/marquee_text.dart';
 
@@ -129,10 +128,6 @@ class _SyncScreenState extends State<SyncScreen> {
     try {
       await body();
     } catch (e) {
-      if (_isBackupDecryptFailureText(e.toString())) {
-        await _showEnvelopeDecryptFailedAck();
-        return;
-      }
       final l10n = AppLocalizations.of(context)!;
       AppSnack.showGlobal(
         l10n.operationFailed(SyncOutcome.describeError(e.toString(), l10n)),
@@ -144,38 +139,7 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
   void _showOutcome(SyncOutcome outcome) {
-    if (!outcome.ok &&
-        _isBackupDecryptFailureText(outcome.error ?? outcome.message)) {
-      // Fire-and-forget ack dialog; caller may already be past the restore.
-      _showEnvelopeDecryptFailedAck();
-      return;
-    }
     AppSnack.showGlobal(outcome.message, error: !outcome.ok);
-  }
-
-  /// Whole-package GCM / empty-passphrase failures (not field-level mismatch).
-  static bool _isBackupDecryptFailureText(String raw) {
-    var text = raw;
-    for (final prefix in const [
-      'Bad state: ',
-      'FormatException: ',
-      'Exception: ',
-    ]) {
-      if (text.startsWith(prefix)) text = text.substring(prefix.length);
-    }
-    if (text.contains('err.backupEncryptedNeedPassphrase')) return true;
-    if (text.contains('SecretBoxAuthenticationError')) return true;
-    if (text.contains('wrong message authentication code')) return true;
-    try {
-      final l10n = L10nHost.current;
-      if (text.contains(l10n.backupCiphertextDamaged)) return true;
-      if (text.contains(l10n.backupTooShort)) return true;
-      // [backupNotEncrypted] embeds the magic; match the stable prefix.
-      final sample = l10n.backupNotEncrypted('WDMMEN01');
-      final cut = sample.indexOf('WDMMEN01');
-      if (cut > 0 && text.contains(sample.substring(0, cut))) return true;
-    } catch (_) {}
-    return false;
   }
 
   // --- Actions ----------------------------------------------------------
@@ -653,66 +617,29 @@ class _SyncScreenState extends State<SyncScreen> {
   }
 
 
-  /// Ack-only dialog when whole-package decrypt still fails after continue.
-  Future<void> _showEnvelopeDecryptFailedAck() async {
-    if (!mounted) return;
-    final l10n = AppLocalizations.of(context)!;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-        title: Text(l10n.restoreEnvelopeDecryptFailedTitle),
-        content: Text(l10n.restoreEnvelopeDecryptFailedBody),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l10n.confirm),
-          ),
-        ],
-      ),
-    );
-  }
-
   /// Pre-check the backup passphrase **before** [_runSync] / [_guard].
   ///
-  /// Returns `true` when restore may proceed (matched / not needed / user
-  /// chose continue or force-continue). Returns `false` when the user cancels.
+  /// The verdict comes from the Rust probe (`wdmm_backup_probe`): `matched`
+  /// (archive opens with this passphrase), `mismatched` (wrong passphrase) or
+  /// `notNeeded` (unprotected / unreadable archive). Only a mismatch asks: the
+  /// user may cancel or force-continue, and the restore itself then reports any
+  /// remaining damage.
   ///
-  /// [BackupPassphraseProbe.envelopeMismatched] uses cancel / continue (whole
-  /// package still cannot import if decrypt fails again). Field-level
-  /// [BackupPassphraseProbe.mismatched] / [BackupPassphraseProbe.unverifiable]
-  /// keep cancel / force-continue.
+  /// Returns `true` when restore may proceed, `false` when the user cancels.
   Future<bool> _confirmPassphraseProbe(Uint8List bytes) async {
     final probe = await BackupService.probePassphrase(
       data: bytes,
       passphrase: _pass,
     );
-    if (probe == BackupPassphraseProbe.notNeeded ||
-        probe == BackupPassphraseProbe.matched) {
-      return true;
-    }
+    if (probe != BackupPassphraseProbe.mismatched) return true;
     if (!mounted) return false;
     final l10n = AppLocalizations.of(context)!;
-    final envelope = probe == BackupPassphraseProbe.envelopeMismatched;
-    final unverifiable = probe == BackupPassphraseProbe.unverifiable;
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
-        title: Text(
-          envelope
-              ? l10n.restoreEnvelopeMismatchTitle
-              : unverifiable
-                  ? l10n.restorePassphraseUnverifiableTitle
-                  : l10n.restorePassphraseMismatchTitle,
-        ),
-        content: Text(
-          envelope
-              ? l10n.restoreEnvelopeMismatchBody
-              : unverifiable
-                  ? l10n.restorePassphraseUnverifiableBody
-                  : l10n.restorePassphraseMismatchBody,
-        ),
+        title: Text(l10n.restorePassphraseMismatchTitle),
+        content: Text(l10n.restorePassphraseMismatchBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -720,9 +647,7 @@ class _SyncScreenState extends State<SyncScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              envelope ? l10n.restoreContinue : l10n.restoreForceContinue,
-            ),
+            child: Text(l10n.restoreForceContinue),
           ),
         ],
       ),

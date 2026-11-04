@@ -2589,47 +2589,11 @@ abstract class AppLocalizations {
   /// **'输入的口令未通过校验。若继续恢复，可能出现预料之外的问题（例如密码等密文字段被解成空）。可取消后改正口令，或强制按现有逻辑继续。'**
   String get restorePassphraseMismatchBody;
 
-  /// No description provided for @restorePassphraseUnverifiableTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法预检备份口令'**
-  String get restorePassphraseUnverifiableTitle;
-
-  /// No description provided for @restorePassphraseUnverifiableBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'这份旧备份没有校验块，也无法用已有密文字段试解。若口令不对，继续恢复可能出现预料之外的问题（例如空密文）。可取消，或强制按现有逻辑继续。'**
-  String get restorePassphraseUnverifiableBody;
-
-  /// No description provided for @restoreEnvelopeMismatchTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法解开整包备份'**
-  String get restoreEnvelopeMismatchTitle;
-
-  /// No description provided for @restoreEnvelopeMismatchBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'这份备份使用整包加密（WDMMEN01），当前口令无法解密。整包解不开就不能真正导入。可取消后改正口令，或继续再试一次；若仍失败将提示无法导入。'**
-  String get restoreEnvelopeMismatchBody;
-
   /// No description provided for @restoreContinue.
   ///
   /// In zh, this message translates to:
   /// **'继续'**
   String get restoreContinue;
-
-  /// No description provided for @restoreEnvelopeDecryptFailedTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法导入备份'**
-  String get restoreEnvelopeDecryptFailedTitle;
-
-  /// No description provided for @restoreEnvelopeDecryptFailedBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'密钥不正确或备份密文损坏，整包无法解密，不能导入。'**
-  String get restoreEnvelopeDecryptFailedBody;
 
   /// No description provided for @restoreForceContinue.
   ///

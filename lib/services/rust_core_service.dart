@@ -88,6 +88,12 @@ typedef _BytesToStrNative = ffi.Pointer<Utf8> Function(
 typedef _BytesToStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<ffi.Uint8>, int);
 
+// Same, with a forced charset name (subtitle decoding override).
+typedef _BytesStrToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Uint8>, ffi.Size, ffi.Pointer<Utf8>);
+typedef _BytesStrToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Uint8>, int, ffi.Pointer<Utf8>);
+
 typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Uint16);
 typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, int);
 typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
@@ -291,6 +297,7 @@ class RustCoreService {
   static _OneStrToStrDart? _cueParse;
   static _FiveStrToOneStrDart? _accountWalk;
   static _BytesToStrDart? _subtitleDecode;
+  static _BytesStrToStrDart? _subtitleDecodeAs;
   static _OneStrToStrDart? _vaultEncode;
   static _BytesToStrDart? _vaultDecode;
   static _OneStrToStrDart? _playlistEncode;
@@ -1020,6 +1027,30 @@ class RustCoreService {
   static String? subtitleDecode(Uint8List bytes) =>
       _callExtBytes(_subtitleDecode, bytes);
 
+  /// Decode subtitle bytes as [encoding] (`utf8`, `utf16le`, `utf16be`, `gbk`,
+  /// `gb18030`, `big5`), bypassing detection.
+  static String? subtitleDecodeAs(Uint8List bytes, String encoding) =>
+      _callExtBytesString(_ensureSubtitleDecodeAs, bytes, encoding);
+
+  /// Lazily resolve `wdmm_subtitle_decode_as`.
+  ///
+  /// Kept apart from [_ensureExtSymbols] so a `.so` built before that symbol
+  /// existed cannot disable every other cut-over binding.
+  static _BytesStrToStrDart? _ensureSubtitleDecodeAs() {
+    final lib = _tryLib;
+    if (lib == null) return null;
+    try {
+      _subtitleDecodeAs ??= lib
+          .lookup<ffi.NativeFunction<_BytesStrToStrNative>>(
+              'wdmm_subtitle_decode_as')
+          .asFunction();
+      return _subtitleDecodeAs;
+    } catch (e) {
+      debugPrint('[RustCore] subtitle_decode_as lookup failed: $e');
+      return null;
+    }
+  }
+
   /// Encode vault records into the `WDMMCV01` container.
   static String? vaultEncode(String recordsJson) =>
       _callExtOneString(_vaultEncode, recordsJson);
@@ -1102,7 +1133,26 @@ class RustCoreService {
     }
   }
 
-  // ── Round 4 — Token FFI ───────────────────────────────────────────────────
+  static String? _callExtBytesString(
+    _BytesStrToStrDart? Function() resolve,
+    Uint8List bytes,
+    String encoding,
+  ) {
+    final fn = resolve();
+    if (fn == null) return null;
+    final buffer = calloc<ffi.Uint8>(bytes.isEmpty ? 1 : bytes.length);
+    final encPtr = encoding.toNativeUtf8();
+    try {
+      if (bytes.isNotEmpty) {
+        buffer.asTypedList(bytes.length).setAll(0, bytes);
+      }
+      return _readAndFreeString(fn(buffer, bytes.length, encPtr));
+    } finally {
+      calloc.free(buffer);
+      calloc.free(encPtr);
+    }
+  }
+
 
   /// Get the current OpenAPI bearer token.
   ///
