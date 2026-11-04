@@ -5464,10 +5464,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get codecCapsSectionTitle => 'Device encoder capabilities';
 
   @override
-  String get codecCapsSectionSubtitle =>
-      'Advisory only; the real encoder is decided when transcoding starts';
-
-  @override
   String get codecCapsLoading => 'Querying device encoders…';
 
   @override

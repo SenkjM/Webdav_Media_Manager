@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -252,22 +251,22 @@ class _TranscodePresetsScreenState extends State<TranscodePresetsScreen> {
     );
   }
 
-  /// 列表副标题：视频命中层摘要（复制 / 硬编 / 软编 / 无）。
+  /// 列表副标题：视频摘要（remux / 硬编 / 软编 / 无）。
   String _videoSummary(TranscodePreset preset) {
-    if (preset.videoCopy) return '视频: 复制';
+    if (preset.videoRemux != 'off') return '视频 remux';
     if (preset.hwVideoEncoder.isNotEmpty) {
-      return '视频: 硬编 ${_catalog.labelOf(preset.hwVideoEncoder)}';
+      return '视频硬编 ${_catalog.labelOf(preset.hwVideoEncoder)}';
     }
     if (preset.swVideoEncoder.isNotEmpty) {
-      return '视频: 软编 ${_catalog.labelOf(preset.swVideoEncoder)}';
+      return '视频软编 ${_catalog.labelOf(preset.swVideoEncoder)}';
     }
-    return '视频: 无';
+    return '视频无';
   }
 
-  /// 列表副标题：音频命中层摘要（复制 / 编码）。
+  /// 列表副标题：音频摘要（remux / 编码）。
   static String _audioSummary(TranscodePreset preset) {
-    if (preset.audioCopy) return '音频: 复制';
-    return '音频: ${preset.audioCodec.toUpperCase()} '
+    if (preset.audioRemux != 'off') return '音频 remux';
+    return '音频编码 ${preset.audioCodec.toUpperCase()} '
         '${preset.audioBitrate ~/ 1000}kbps';
   }
 }
@@ -299,17 +298,20 @@ class _TranscodePresetEditScreenState
     'cbr': '恒定码率',
   };
 
-  static const Map<String, String> _kRateControlHints = {
-    'vbr': '按画面复杂度动态分配码率，兼容性最好',
-    'cbr': '码率恒定，适合弱网/老设备，画质波动更大',
-    'cq': '恒定质量，码率随画面变化，体积不可控',
+  /// 三档 remux（契约 `remux-modes` §6）。
+  static const Map<String, String> _kRemuxLabels = {
+    'off': '禁用',
+    'strict': '严格',
+    'on': '开启',
   };
 
-  /// x264 速度挡位（只暴露三档，不展示编码器底层 preset 名）。
+  /// x264 速度挡位：五档 UI 投影（契约 `remux-modes` 追加要求）。
   static const Map<String, String> _kSpeedPresetLabels = {
+    'superfast': '极速',
     'veryfast': '快速',
     'medium': '均衡',
     'slow': '高质量',
+    'veryslow': '极致',
   };
 
   /// CQ 质量可选值（契约 §4）。
@@ -334,8 +336,8 @@ class _TranscodePresetEditScreenState
   late final VideoEncoderCatalog _catalog;
   late final CodecCapabilityService _caps;
 
-  bool _videoCopy = false;
-  bool _audioCopy = false;
+  String _videoRemux = 'on';
+  String _audioRemux = 'on';
   String _hwVideoEncoder = '';
   String _swVideoEncoder = '';
   String _swVideoPreset = 'veryfast';
@@ -374,8 +376,8 @@ class _TranscodePresetEditScreenState
         TextEditingController(text: (p?.sortOrder ?? 100).toString());
 
     if (p != null) {
-      _videoCopy = p.videoCopy;
-      _audioCopy = p.audioCopy;
+      _videoRemux = p.videoRemux;
+      _audioRemux = p.audioRemux;
       _hwVideoEncoder = p.hwVideoEncoder;
       _swVideoEncoder = p.swVideoEncoder;
       _swVideoPreset = _nearestSpeedPreset(p.swVideoPreset);
@@ -423,19 +425,6 @@ class _TranscodePresetEditScreenState
     return null;
   }
 
-  /// 当前表单的推导码率（bps）。
-  ///
-  /// 与 Rust `default_video_bitrate` 同口径（crates/wdmm-ffmpeg/src/plan.rs）：
-  /// `round(width × height × fps × 0.10)`，下限 800 kbps。编辑器不知道片源的真实
-  /// 分辨率，未填上限时按 1920×1080@30 估算，与内置预设的默认包络一致。
-  int get _derivedBitrate {
-    final width = _intOrNull(_videoMaxWController) ?? 1920;
-    final height = _intOrNull(_videoMaxHController) ?? 1080;
-    final fps = _intOrNull(_videoFpsCapController) ?? 30;
-    final derived = (width * height * fps * 0.10).round();
-    return math.max(derived, 800000);
-  }
-
   int? get _bitrateBps {
     final text = _videoBitrateMbpsController.text.trim();
     if (text.isEmpty) return null;
@@ -455,26 +444,16 @@ class _TranscodePresetEditScreenState
     return text;
   }
 
-  /// 展示用的一两位小数版本（不参与回填，避免数值漂移）。
-  static String _formatMbpsShort(int bps) =>
-      (bps / 1000000).toStringAsFixed(1);
-
-  /// 把任意历史 x264 preset 名归一到编辑器暴露的三档之一。
-  static String _nearestSpeedPreset(String raw) {
-    if (_kSpeedPresetLabels.containsKey(raw)) return raw;
-    final index = TranscodePreset.x264Presets.indexOf(raw);
-    if (index < 0) return 'medium';
-    if (index <= 3) return 'veryfast';
-    if (index <= 5) return 'medium';
-    return 'slow';
-  }
+  /// 把任意历史 x264 preset 名归一到编辑器暴露的五档之一。
+  static String _nearestSpeedPreset(String raw) =>
+      TranscodePreset.normalizeSpeedPreset(raw);
 
   // ── 码率控制 ──────────────────────────────────────────────────────────────
 
   /// 当前编码器组合是否支持某个码率控制模式。
   ///
   /// 需要同时满足：catalog 声明该编码器支持该模式，且机型探测没有明确否认
-  /// （硬编）；探测不可用时 [CodecCapabilityService] 保守放行。只复制、没有
+  /// （硬编）；探测不可用时 [CodecCapabilityService] 保守放行。只 remux、没有
   /// 编码器时三档都可用（模式不会真正生效）。
   bool _rateModeEnabled(String mode) {
     final hw = _hwVideoEncoder;
@@ -489,20 +468,13 @@ class _TranscodePresetEditScreenState
     return hwSupported || swSupported;
   }
 
-  String _rateModeTooltip(String mode) {
-    if (_rateModeEnabled(mode)) return _kRateControlHints[mode] ?? '';
-    final label = _kRateControlLabels[mode] ?? mode;
-    if (_hwVideoEncoder.isNotEmpty && !_caps.supportsHw(_hwVideoEncoder)) {
-      return '当前机型未报告 ${_catalog.labelOf(_hwVideoEncoder)} 硬件编码能力，该模式不可用';
-    }
-    return '当前编码器不支持「$label」，请先选择支持的编码器';
-  }
-
   // ── 保存 ──────────────────────────────────────────────────────────────────
 
-  /// 至少配置一条视频路（复制 / 硬编 / 软编），否则 Rust 会拒绝保存。
+  /// 至少配置一条视频路（remux / 硬编 / 软编），否则 Rust 会拒绝保存。
   bool get _hasVideoPath =>
-      _videoCopy || _hwVideoEncoder.isNotEmpty || _swVideoEncoder.isNotEmpty;
+      _videoRemux != 'off' ||
+      _hwVideoEncoder.isNotEmpty ||
+      _swVideoEncoder.isNotEmpty;
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
@@ -511,13 +483,12 @@ class _TranscodePresetEditScreenState
     final preset = TranscodePreset(
       id: _idController.text.trim(),
       label: _labelController.text.trim(),
-      videoCopy: _videoCopy,
-      audioCopy: _audioCopy,
+      videoRemux: _videoRemux,
+      audioRemux: _audioRemux,
       hwVideoEncoder: _hwVideoEncoder,
       swVideoEncoder: _swVideoEncoder,
-      swVideoPreset: _swVideoEncoder == 'libx264' && !_videoCopy
-          ? _swVideoPreset
-          : '',
+      // 速度预设属于预设模板，与本次是否 remux 无关。
+      swVideoPreset: _swVideoEncoder == 'libx264' ? _swVideoPreset : '',
       videoMaxW: _intOrNull(_videoMaxWController),
       videoMaxH: _intOrNull(_videoMaxHController),
       videoMaxBitrate: _videoRateControl == 'cq' ? null : _bitrateBps,
@@ -554,29 +525,38 @@ class _TranscodePresetEditScreenState
 
   // ── 布局辅助 ──────────────────────────────────────────────────────────────
 
-  Widget _sectionTitle(BuildContext context, String title, String subtitle) {
+  Widget _sectionTitle(BuildContext context, String title) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: theme.colorScheme.primary,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
+      child: Text(
+        title,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.w600,
+        ),
       ),
+    );
+  }
+
+  /// 三档 remux 下拉：禁用 / 严格 / 开启（契约 `remux-modes` §6）。
+  Widget _remuxDropdown({
+    required String label,
+    required String value,
+    required ValueChanged<String> onChanged,
+  }) {
+    return DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label),
+      items: [
+        for (final mode in TranscodePreset.remuxModes)
+          DropdownMenuItem(
+            value: mode,
+            child: Text(_kRemuxLabels[mode] ?? mode),
+          ),
+      ],
+      onChanged: (next) => onChanged(next ?? 'on'),
     );
   }
 
@@ -617,7 +597,7 @@ class _TranscodePresetEditScreenState
           children: [
             for (final mode in _kRateControlOrder)
               Tooltip(
-                message: _rateModeTooltip(mode),
+                message: _rateModeEnabled(mode) ? null : '当前编码器不支持',
                 child: ChoiceChip(
                   label: Text(_kRateControlLabels[mode] ?? mode),
                   selected: _videoRateControl == mode,
@@ -627,11 +607,6 @@ class _TranscodePresetEditScreenState
                 ),
               ),
           ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _kRateControlHints[_videoRateControl] ?? '',
-          style: Theme.of(context).textTheme.bodySmall,
         ),
         if (!_rateModeEnabled(_videoRateControl))
           Padding(
@@ -668,11 +643,6 @@ class _TranscodePresetEditScreenState
               ),
           ],
         ),
-        const SizedBox(height: 4),
-        Text(
-          '数值越低画质越好、体积越大；默认 23。',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
       ],
     );
   }
@@ -690,8 +660,6 @@ class _TranscodePresetEditScreenState
             labelText: '目标码率',
             suffixText: 'Mbps',
             hintText: '留空 = 自动推导',
-            helperText:
-                '自动推导约 ${_formatMbpsShort(_derivedBitrate)} Mbps（分辨率 × 帧率估算）',
           ),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           validator: (v) {
@@ -732,7 +700,7 @@ class _TranscodePresetEditScreenState
     final isEdit = widget.preset != null;
     final colorScheme = Theme.of(context).colorScheme;
     final swIsX264 = _swVideoEncoder == 'libx264';
-    final showSpeedPreset = swIsX264 && !_videoCopy;
+    final showSpeedPreset = swIsX264;
     final isCq = _videoRateControl == 'cq';
 
     return Scaffold(
@@ -780,14 +748,11 @@ class _TranscodePresetEditScreenState
             ),
 
             // ① 视频命中层
-            _sectionTitle(context, '视频',
-                '复制 → 硬件编码 → 软件编码，前一层不可用时自动落到下一层'),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('视频复制'),
-              subtitle: const Text('MPEG-TS 兼容时直接复制视频流，画质无损且最快'),
-              value: _videoCopy,
-              onChanged: (v) => setState(() => _videoCopy = v),
+            _sectionTitle(context, '视频'),
+            _remuxDropdown(
+              label: '视频 remux',
+              value: _videoRemux,
+              onChanged: (v) => setState(() => _videoRemux = v),
             ),
             _encoderDropdown(
               label: '硬件编码器',
@@ -813,10 +778,7 @@ class _TranscodePresetEditScreenState
               DropdownButtonFormField<String>(
                 initialValue: _swVideoPreset,
                 isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: '速度预设',
-                  helperText: '越快越省 CPU，越慢同码率画质越好',
-                ),
+                decoration: const InputDecoration(labelText: '速度预设'),
                 items: [
                   for (final entry in _kSpeedPresetLabels.entries)
                     DropdownMenuItem(
@@ -832,7 +794,7 @@ class _TranscodePresetEditScreenState
             ],
 
             // ② 输出包络
-            _sectionTitle(context, '输出包络', '留空 = 不限制；目标码率留空按分辨率自动推导'),
+            _sectionTitle(context, '输出包络'),
             TextFormField(
               controller: _videoMaxWController,
               decoration: const InputDecoration(
@@ -864,18 +826,16 @@ class _TranscodePresetEditScreenState
             ),
 
             // ③ 码率控制
-            _sectionTitle(context, '码率控制', '只显示当前编码器支持的模式'),
+            _sectionTitle(context, '码率控制'),
             _rateControlPicker(),
             if (isCq) _qualityPicker() else _bitratePicker(),
 
             // ④ 音频
-            _sectionTitle(context, '音频', '视频复制时音频也按此编码（除非开启音频复制）'),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('音频复制'),
-              subtitle: const Text('编码兼容时直接复制音频流'),
-              value: _audioCopy,
-              onChanged: (v) => setState(() => _audioCopy = v),
+            _sectionTitle(context, '音频'),
+            _remuxDropdown(
+              label: '音频 remux',
+              value: _audioRemux,
+              onChanged: (v) => setState(() => _audioRemux = v),
             ),
             DropdownButtonFormField<String>(
               initialValue: _audioCodec,
@@ -927,7 +887,7 @@ class _TranscodePresetEditScreenState
             ),
 
             // ⑤ 分段
-            _sectionTitle(context, '分段', 'HLS 分片时长'),
+            _sectionTitle(context, '分段'),
             TextFormField(
               controller: _hlsSegmentSecsController,
               decoration: const InputDecoration(
@@ -960,7 +920,7 @@ class _TranscodePresetEditScreenState
             if (!_hasVideoPath) ...[
               const SizedBox(height: 16),
               Text(
-                '至少启用「视频复制」、硬件编码器或软件编码器之一。',
+                '至少启用「视频 remux」、硬件编码器或软件编码器之一。',
                 style: TextStyle(color: colorScheme.error),
               ),
             ],

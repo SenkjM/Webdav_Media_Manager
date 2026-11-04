@@ -1788,8 +1788,6 @@
   "@dlnaHitAudio": {},
   "codecCapsSectionTitle": "设备编码能力",
   "@codecCapsSectionTitle": {},
-  "codecCapsSectionSubtitle": "仅用于界面提示；实际编码以转码开始时的尝试结果为准",
-  "@codecCapsSectionSubtitle": {},
   "codecCapsLoading": "正在查询本机编码能力…",
   "@codecCapsLoading": {},
   "codecCapsUnavailable": "无法查询本机编码能力（不影响投屏与转码）",

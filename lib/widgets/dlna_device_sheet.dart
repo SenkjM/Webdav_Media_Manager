@@ -265,14 +265,6 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
                       color: scheme.onSurface,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '请确认电视或音箱已开启并连接同一局域网',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
                   const SizedBox(height: 20),
                   FilledButton.tonal(
                     onPressed: _retry,

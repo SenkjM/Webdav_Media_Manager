@@ -1762,7 +1762,6 @@
   "dlnaHitVideo": "Video",
   "dlnaHitAudio": "Audio",
   "codecCapsSectionTitle": "Device encoder capabilities",
-  "codecCapsSectionSubtitle": "Advisory only; the real encoder is decided when transcoding starts",
   "codecCapsLoading": "Querying device encoders…",
   "codecCapsUnavailable": "Could not query device encoders (casting and transcoding are unaffected)",
   "codecCapsEmpty": "No hardware encoders reported",

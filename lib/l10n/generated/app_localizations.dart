@@ -9274,12 +9274,6 @@ abstract class AppLocalizations {
   /// **'设备编码能力'**
   String get codecCapsSectionTitle;
 
-  /// No description provided for @codecCapsSectionSubtitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'仅用于界面提示；实际编码以转码开始时的尝试结果为准'**
-  String get codecCapsSectionSubtitle;
-
   /// No description provided for @codecCapsLoading.
   ///
   /// In zh, this message translates to:

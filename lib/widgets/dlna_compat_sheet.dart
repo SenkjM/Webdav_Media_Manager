@@ -194,7 +194,6 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
                     decoration: InputDecoration(
                       hintText: widget.renderer.friendlyName,
                       labelText: '自定义显示名称（可选）',
-                      helperText: '留空则使用设备原始名称',
                       border: const OutlineInputBorder(),
                     ),
                   ),
@@ -253,7 +252,6 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         labelText: '为本设备选择预设',
-                        helperText: '留空则使用全局默认预设',
                       ),
                       initialValue: selectedPreset,
                       items: [

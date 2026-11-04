@@ -1069,7 +1069,9 @@ class _CastTelemetry extends StatelessWidget {
       case 'active':
         bg = scheme.secondaryContainer;
         fg = scheme.onSecondaryContainer;
-        tooltip = '正在转码后续片段';
+        tooltip = cast.videoAction == 'copy' || cast.encodeMode == 'remux'
+            ? '正在处理后续片段'
+            : '正在转码后续片段';
       case 'idle':
         bg = scheme.surfaceContainerHighest;
         fg = scheme.onSurfaceVariant;
@@ -1212,6 +1214,9 @@ class _WarmingPanel extends StatelessWidget {
 
     final encoder = _encoderLabel(cast);
     final fallbackLine = _hardwareFallbackLine(cast);
+    // 视频走 remux 时没有「转码」步骤，只有音频可能被编码，文案改为处理速度。
+    final videoRemux =
+        cast.videoAction == 'copy' || cast.encodeMode == 'remux';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1222,7 +1227,11 @@ class _WarmingPanel extends StatelessWidget {
             Icon(Icons.speed_rounded, size: 18, color: scheme.primary),
             const SizedBox(width: 8),
             Text(
-              realtime == null ? '测速中…' : '转码速度',
+              realtime == null
+                  ? '测速中…'
+                  : videoRemux
+                      ? '处理速度'
+                      : '转码速度',
               style: textTheme.labelMedium?.copyWith(
                 color: scheme.onSurfaceVariant,
               ),
@@ -1823,41 +1832,59 @@ class _HitLayerBadge extends StatelessWidget {
   }
 }
 
-/// 编码方式一行文案：`封装直转 (remux)` / `H.264 软编 libx264 · AAC`。
+/// 编码方式一行文案：`视频 remux · 音频 remux` / `视频硬编 · AAC`。
 ///
-/// 字段缺失时返回 null（不显示该行）。
+/// 契约 `remux-modes` §4：`encode_mode` 只区分「视频是否被重编码」——
+/// `remux` 表示视频直接走 remux（音频仍可能被编码），细节看
+/// `video_action` / `audio_action`。字段缺失时返回 null（不显示该行）。
 String? _encoderLabel(DlnaCastService cast) {
   final mode = cast.encodeMode;
-  if (mode == 'remux') return '封装直转 (remux)';
-
-  final video = cast.videoEncoder;
-  final audio = cast.audioEncoder;
+  final videoAction = cast.videoAction;
+  final audioAction = cast.audioAction;
   final parts = <String>[];
-  if (video != null && video.isNotEmpty) {
-    parts.add(_videoEncoderLabel(video));
+
+  final videoRemux = videoAction == 'copy' || (videoAction == null && mode == 'remux');
+  if (videoRemux) {
+    parts.add('视频 remux');
+  } else {
+    final video = cast.videoEncoder;
+    if (video != null && video.isNotEmpty) {
+      parts.add(_videoEncoderLabel(video));
+    }
   }
-  if (audio != null && audio.isNotEmpty) {
-    parts.add(_audioEncoderLabel(audio));
+
+  if (audioAction == 'copy') {
+    parts.add('音频 remux');
+  } else {
+    final audio = cast.audioEncoder;
+    if (audio != null && audio.isNotEmpty) {
+      parts.add(_audioEncoderLabel(audio));
+    }
   }
+
   if (parts.isNotEmpty) return parts.join(' · ');
   return mode == 'transcode' ? '实时转码' : null;
 }
 
+/// 编码器 id → 用户可读文案（契约 §2.2，不出现 `MediaCodec` 字样）。
 String _videoEncoderLabel(String name) {
   final n = name.toLowerCase();
-  if (n.contains('libx264')) return 'H.264 软编 $name';
-  if (n.contains('libx265')) return 'H.265 软编 $name';
-  if (n.contains('x264') || n.contains('h264') || n.contains('avc')) {
-    return 'H.264 硬编 $name';
+  if (n.contains('mediacodec')) {
+    if (n.contains('hevc') || n.contains('h265') || n.contains('he')) {
+      return 'H.265 硬编';
+    }
+    if (n.contains('mpeg4')) return 'MPEG-4 硬编';
+    return 'H.264 硬编';
   }
-  if (n.contains('x265') || n.contains('h265') || n.contains('hevc')) {
-    return 'H.265 硬编 $name';
-  }
+  if (n.contains('libx264') || n.contains('x264')) return 'x264（软件）';
+  if (n.contains('libx265') || n.contains('x265')) return 'x265（软件）';
+  if (n.contains('mpeg2')) return 'MPEG-2（软件）';
+  if (n.contains('mpeg4')) return 'MPEG-4（软件）';
   return name;
 }
 
 String _audioEncoderLabel(String name) {
-  if (name.toLowerCase() == 'copy') return '音频直拷';
+  if (name.toLowerCase() == 'copy') return '音频 remux';
   return name.toUpperCase();
 }
 

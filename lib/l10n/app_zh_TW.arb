@@ -1751,7 +1751,6 @@
   "dlnaHitVideo": "影片",
   "dlnaHitAudio": "音訊",
   "codecCapsSectionTitle": "裝置編碼能力",
-  "codecCapsSectionSubtitle": "僅供介面提示；實際編碼以轉碼開始時的嘗試結果為準",
   "codecCapsLoading": "正在查詢本機編碼能力…",
   "codecCapsUnavailable": "無法查詢本機編碼能力（不影響投屏與轉碼）",
   "codecCapsEmpty": "本機未回報可用的硬體編碼器",

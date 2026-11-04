@@ -533,7 +533,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.tune),
             title: const Text('管理转码预设'),
-            subtitle: const Text('添加、编辑或删除自定义转码预设'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
               await Navigator.push(
@@ -560,10 +559,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.movie_filter_outlined),
             title: const Text('MKV 直通（不转码）'),
-            subtitle: const Text(
-              'MKV 包含内嵌字幕，转码会丢失；开启后 MKV 一律直通，'
-              '接收端不支持其编码时可能无法播放',
-            ),
             value: settings.dlnaMkvPassthrough,
             onChanged: (v) {
               context.read<SettingsService>().dlnaMkvPassthrough = v;
@@ -585,7 +580,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.data_usage),
             title: const Text('缓存预算'),
-            subtitle: const Text('超出后按最久未使用淘汰；新投屏会话生效'),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -599,7 +593,6 @@ class _SettingsScreenState extends State<SettingsScreen>
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.delete_sweep_outlined),
             title: const Text('清理缓存'),
-            subtitle: const Text('删除所有已缓存的分片，下次投屏会重新转码'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => unawaited(_clearTranscodeCache()),
           ),
@@ -809,7 +802,6 @@ class _CodecCapabilitySectionState extends State<_CodecCapabilitySection> {
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
         title: Text(l10n.codecCapsLoading),
-        subtitle: Text(l10n.codecCapsSectionSubtitle),
       );
     }
 
@@ -818,7 +810,6 @@ class _CodecCapabilitySectionState extends State<_CodecCapabilitySection> {
         contentPadding: EdgeInsets.zero,
         leading: const Icon(Icons.info_outline),
         title: Text(l10n.codecCapsUnavailable),
-        subtitle: Text(l10n.codecCapsSectionSubtitle),
         trailing: TextButton(
           onPressed: () => unawaited(service.refresh()),
           child: Text(l10n.codecCapsRetry),
@@ -831,7 +822,6 @@ class _CodecCapabilitySectionState extends State<_CodecCapabilitySection> {
         contentPadding: EdgeInsets.zero,
         leading: const Icon(Icons.info_outline),
         title: Text(l10n.codecCapsEmpty),
-        subtitle: Text(l10n.codecCapsSectionSubtitle),
         trailing: TextButton(
           onPressed: () => unawaited(service.refresh()),
           child: Text(l10n.codecCapsRetry),
@@ -842,11 +832,6 @@ class _CodecCapabilitySectionState extends State<_CodecCapabilitySection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          l10n.codecCapsSectionSubtitle,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        const SizedBox(height: 4),
         for (final codecId in knownHwCodecIds)
           _CodecCapabilityTile(
             codecId: codecId,

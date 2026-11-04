@@ -1,11 +1,14 @@
 /// Model for transcode presets, matching the Rust `TranscodePreset` struct
-/// (contract `preset-editor-slimming` §1 / DB schema v15).
+/// (contract `remux-modes` §1 / DB schema v16).
 ///
-/// A preset describes the video pipeline in three layers — copy → hardware
-/// encoder → software encoder — plus the rate-control knobs shared by the two
-/// encode layers. All parameters are resolved in Rust; this model is a
-/// transport/UI mirror only.
+/// A preset describes the video pipeline in three layers — remux (stream copy)
+/// → hardware encoder → software encoder — plus the rate-control knobs shared
+/// by the two encode layers. All parameters are resolved in Rust; this model is
+/// a transport/UI mirror only.
 class TranscodePreset {
+  /// `video_remux` / `audio_remux` values (contract `remux-modes` §1).
+  static const List<String> remuxModes = ['off', 'strict', 'on'];
+
   /// `video_rate_control` values (contract §13.5).
   static const List<String> rateControlModes = ['auto', 'vbr', 'cbr', 'cq'];
 
@@ -23,8 +26,35 @@ class TranscodePreset {
     'placebo',
   ];
 
-  /// Audio codecs a preset may select when `audio_copy` is off.
+  /// Audio codecs a preset may select when audio is encoded (remux off/strict).
   static const List<String> audioCodecs = ['aac', 'ac3', 'eac3', 'mp2'];
+
+  /// UI 五档速度预设（x264 十档阶梯的对数投影）。
+  static const List<String> speedPresets = [
+    'superfast',
+    'veryfast',
+    'medium',
+    'slow',
+    'veryslow',
+  ];
+
+  /// 十档 x264 preset → 五档 UI 投影的别名表。
+  static const Map<String, String> _speedPresetAliases = {
+    'ultrafast': 'superfast',
+    'superfast': 'superfast',
+    'veryfast': 'veryfast',
+    'faster': 'veryfast',
+    'fast': 'medium',
+    'medium': 'medium',
+    'slow': 'slow',
+    'slower': 'veryslow',
+    'veryslow': 'veryslow',
+    'placebo': 'veryslow',
+  };
+
+  /// 把历史/未知的 x264 preset 名投影到五档之一（未知值回落 `medium`）。
+  static String normalizeSpeedPreset(String raw) =>
+      _speedPresetAliases[raw] ?? 'medium';
 
   /// Stable identifier (`"h264"`, `"hevc"`, or a user preset id).
   final String id;
@@ -32,11 +62,13 @@ class TranscodePreset {
   /// Human-readable label shown in the UI.
   final String label;
 
-  /// Try to copy the video stream without re-encoding.
-  final bool videoCopy;
+  /// Video remux mode: `off` (always encode), `strict` (remux only when the
+  /// runtime target codec matches the source), `on` (remux whenever MPEG-TS
+  /// accepts the source codec).
+  final String videoRemux;
 
-  /// Try to copy the audio stream without re-encoding.
-  final bool audioCopy;
+  /// Audio remux mode, same three values as [videoRemux].
+  final String audioRemux;
 
   /// Hardware video encoder: `"h264_mediacodec"`, `"hevc_mediacodec"`,
   /// `"mpeg4_mediacodec"`, or `""` (disabled).
@@ -93,8 +125,8 @@ class TranscodePreset {
   const TranscodePreset({
     required this.id,
     required this.label,
-    required this.videoCopy,
-    required this.audioCopy,
+    required this.videoRemux,
+    required this.audioRemux,
     this.hwVideoEncoder = '',
     this.swVideoEncoder = '',
     this.swVideoPreset = '',
@@ -113,9 +145,9 @@ class TranscodePreset {
     required this.isBuiltin,
   });
 
-  /// At least one video path must be configured: copy, hardware, or software.
+  /// At least one video path must be configured: remux, hardware, or software.
   bool get hasVideoPath =>
-      videoCopy || hwVideoEncoder.isNotEmpty || swVideoEncoder.isNotEmpty;
+      videoRemux != 'off' || hwVideoEncoder.isNotEmpty || swVideoEncoder.isNotEmpty;
 
   /// Whether the constant-quality value applies to the current mode.
   bool get usesConstantQuality => videoRateControl == 'cq';
@@ -124,8 +156,8 @@ class TranscodePreset {
     return TranscodePreset(
       id: json['id'] as String,
       label: json['label'] as String,
-      videoCopy: json['video_copy'] as bool? ?? false,
-      audioCopy: json['audio_copy'] as bool? ?? false,
+      videoRemux: _remuxMode(json['video_remux']),
+      audioRemux: _remuxMode(json['audio_remux']),
       hwVideoEncoder: json['hw_video_encoder'] as String? ?? '',
       swVideoEncoder: json['sw_video_encoder'] as String? ?? '',
       swVideoPreset: json['sw_video_preset'] as String? ?? '',
@@ -149,8 +181,8 @@ class TranscodePreset {
     return {
       'id': id,
       'label': label,
-      'video_copy': videoCopy,
-      'audio_copy': audioCopy,
+      'video_remux': videoRemux,
+      'audio_remux': audioRemux,
       'hw_video_encoder': hwVideoEncoder,
       'sw_video_encoder': swVideoEncoder,
       'sw_video_preset': swVideoPreset,
@@ -169,4 +201,8 @@ class TranscodePreset {
       'is_builtin': isBuiltin,
     };
   }
+
+  /// Missing or unknown remux values fall back to `on` (Rust default).
+  static String _remuxMode(Object? value) =>
+      value is String && remuxModes.contains(value) ? value : 'on';
 }

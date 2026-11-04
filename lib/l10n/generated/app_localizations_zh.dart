@@ -5211,9 +5211,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get codecCapsSectionTitle => '设备编码能力';
 
   @override
-  String get codecCapsSectionSubtitle => '仅用于界面提示；实际编码以转码开始时的尝试结果为准';
-
-  @override
   String get codecCapsLoading => '正在查询本机编码能力…';
 
   @override
@@ -10467,9 +10464,6 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get codecCapsSectionTitle => '裝置編碼能力';
-
-  @override
-  String get codecCapsSectionSubtitle => '僅供介面提示；實際編碼以轉碼開始時的嘗試結果為準';
 
   @override
   String get codecCapsLoading => '正在查詢本機編碼能力…';
