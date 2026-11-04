@@ -1,7 +1,5 @@
-import 'dart:convert';
-
 /// Model for transcode presets, matching the Rust `TranscodePreset` struct
-/// (contract `preset-rate-control-and-codec-probe` §13 / DB schema v14).
+/// (contract `preset-editor-slimming` §1 / DB schema v15).
 ///
 /// A preset describes the video pipeline in three layers — copy → hardware
 /// encoder → software encoder — plus the rate-control knobs shared by the two
@@ -44,10 +42,6 @@ class TranscodePreset {
   /// `"mpeg4_mediacodec"`, or `""` (disabled).
   final String hwVideoEncoder;
 
-  /// Advanced `AVDictionary` options for the hardware encoder, keyed by the
-  /// exact option name passed to `avcodec_open2` (contract §13.4). Empty = none.
-  final Map<String, String> hwVideoOptions;
-
   /// Software video encoder: `"libx264"`, `"mpeg2video"`, `"mpeg4"`, or `""`
   /// (disabled).
   final String swVideoEncoder;
@@ -55,9 +49,6 @@ class TranscodePreset {
   /// libx264 `preset` name (`veryfast`, `medium`, …); `""` when the selected
   /// software encoder has no preset ladder (`mpeg2video` / `mpeg4`).
   final String swVideoPreset;
-
-  /// Advanced `AVDictionary` options for the software encoder. Empty = none.
-  final Map<String, String> swVideoOptions;
 
   /// Max output width px (scale-down only). `null` = no limit.
   final int? videoMaxW;
@@ -105,10 +96,8 @@ class TranscodePreset {
     required this.videoCopy,
     required this.audioCopy,
     this.hwVideoEncoder = '',
-    this.hwVideoOptions = const {},
     this.swVideoEncoder = '',
     this.swVideoPreset = '',
-    this.swVideoOptions = const {},
     this.videoMaxW,
     this.videoMaxH,
     this.videoMaxBitrate,
@@ -138,10 +127,8 @@ class TranscodePreset {
       videoCopy: json['video_copy'] as bool? ?? false,
       audioCopy: json['audio_copy'] as bool? ?? false,
       hwVideoEncoder: json['hw_video_encoder'] as String? ?? '',
-      hwVideoOptions: _optionsFromJson(json['hw_video_options']),
       swVideoEncoder: json['sw_video_encoder'] as String? ?? '',
       swVideoPreset: json['sw_video_preset'] as String? ?? '',
-      swVideoOptions: _optionsFromJson(json['sw_video_options']),
       videoMaxW: json['video_max_w'] as int?,
       videoMaxH: json['video_max_h'] as int?,
       videoMaxBitrate: json['video_max_bitrate'] as int?,
@@ -165,10 +152,8 @@ class TranscodePreset {
       'video_copy': videoCopy,
       'audio_copy': audioCopy,
       'hw_video_encoder': hwVideoEncoder,
-      'hw_video_options': hwVideoOptions,
       'sw_video_encoder': swVideoEncoder,
       'sw_video_preset': swVideoPreset,
-      'sw_video_options': swVideoOptions,
       if (videoMaxW != null) 'video_max_w': videoMaxW,
       if (videoMaxH != null) 'video_max_h': videoMaxH,
       if (videoMaxBitrate != null) 'video_max_bitrate': videoMaxBitrate,
@@ -183,31 +168,5 @@ class TranscodePreset {
       'sort_order': sortOrder,
       'is_builtin': isBuiltin,
     };
-  }
-
-  /// Parse the options map from either a JSON object (current FFI shape) or a
-  /// JSON object encoded as text (older hand-written payloads).
-  static Map<String, String> _optionsFromJson(Object? value) {
-    if (value is Map) {
-      return {
-        for (final entry in value.entries)
-          if (entry.value != null) entry.key.toString(): entry.value.toString(),
-      };
-    }
-    if (value is String && value.isNotEmpty) {
-      try {
-        final decoded = jsonDecode(value);
-        if (decoded is Map) {
-          return {
-            for (final entry in decoded.entries)
-              if (entry.value != null)
-                entry.key.toString(): entry.value.toString(),
-          };
-        }
-      } catch (_) {
-        // Malformed options text from an old row: treat as "no overrides".
-      }
-    }
-    return const {};
   }
 }

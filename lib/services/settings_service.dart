@@ -131,6 +131,9 @@ class SettingsService extends ChangeNotifier {
   /// MKV/MKA 全部直通（不转码）。默认**开**。键 `dlna_mkv_passthrough`。
   static const _kDlnaMkvPassthrough = 'dlna_mkv_passthrough';
 
+  /// 投屏默认直通（不转码）。默认**关**。键 `dlna_default_direct`。
+  static const _kDlnaDefaultDirect = 'dlna_default_direct';
+
   /// HLS VOD transcode cache budget (MiB). Consumed by the DLNA session config
   /// as `cache_budget_mb` (contract hls-vod-transcode-cache §3.5).
   static const _kTranscodeCacheBudgetMb = 'transcode_cache_budget_mb';
@@ -695,6 +698,21 @@ class SettingsService extends ChangeNotifier {
 
   set dlnaMkvPassthrough(bool v) {
     RustCoreService.kvSet(_kDlnaMkvPassthrough, v.toString());
+    notifyListeners();
+  }
+
+  /// 投屏默认直通（不转码）。默认**关**。键 `dlna_default_direct`。
+  ///
+  /// 仅作为设备兼容页「直通：不转码」开关的**初始值**：设备级覆盖优先，
+  /// 其次读本全局值；用户仍可在本次投屏里改，不做强制。
+  bool get dlnaDefaultDirect {
+    final v = RustCoreService.kvGet(_kDlnaDefaultDirect);
+    if (v != null && v != 'null' && !v.startsWith('error:')) return v == 'true';
+    return false;
+  }
+
+  set dlnaDefaultDirect(bool v) {
+    RustCoreService.kvSet(_kDlnaDefaultDirect, v.toString());
     notifyListeners();
   }
 

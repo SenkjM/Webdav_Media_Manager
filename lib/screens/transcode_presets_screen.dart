@@ -4,16 +4,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../models/encoder_options_schema.dart';
 import '../models/transcode_preset.dart';
+import '../models/video_encoder_catalog.dart';
 import '../services/codec_capability_service.dart';
 import '../services/rust_core_service.dart';
 import '../utils/app_snack.dart';
 
 /// 转码预设管理页面。
 ///
-/// 预设是三层方案（契约 `preset-rate-control-and-codec-probe` §13）：
-/// 流复制 → 硬件编码器 → 软件编码器，编码层再叠加码率控制与高级 AVOptions。
+/// 预设是三层方案（契约 `preset-editor-slimming` §4）：
+/// 流复制 → 硬件编码器 → 软件编码器，编码层共享一套码率控制。
 /// 内置只有 `h264` / `hevc` 两个，可编辑、不可删除，并提供「恢复默认」。
 class TranscodePresetsScreen extends StatefulWidget {
   const TranscodePresetsScreen({super.key});
@@ -26,10 +26,13 @@ class _TranscodePresetsScreenState extends State<TranscodePresetsScreen> {
   List<TranscodePreset>? _presets;
   String? _error;
   bool _loading = true;
+  late VideoEncoderCatalog _catalog;
 
   @override
   void initState() {
     super.initState();
+    _catalog =
+        VideoEncoderCatalog.parse(RustCoreService.videoEncoderCatalogJson());
     _loadPresets();
   }
 
@@ -140,7 +143,10 @@ class _TranscodePresetsScreenState extends State<TranscodePresetsScreen> {
     final result = await Navigator.push<TranscodePreset>(
       context,
       MaterialPageRoute(
-        builder: (_) => _TranscodePresetEditScreen(preset: preset),
+        builder: (_) => _TranscodePresetEditScreen(
+          preset: preset,
+          catalog: _catalog,
+        ),
       ),
     );
     if (result != null) {
@@ -195,21 +201,7 @@ class _TranscodePresetsScreenState extends State<TranscodePresetsScreen> {
                                       .colorScheme
                                       .surfaceContainerHighest,
                                 ),
-                              if (preset.isBuiltin)
-                                IconButton(
-                                  icon: const Icon(Icons.restore),
-                                  tooltip: '恢复默认',
-                                  onPressed: () => _resetBuiltin(preset),
-                                ),
-                              IconButton(
-                                icon: const Icon(Icons.edit),
-                                onPressed: () => _editPreset(preset),
-                              ),
-                              if (!preset.isBuiltin)
-                                IconButton(
-                                  icon: const Icon(Icons.delete),
-                                  onPressed: () => _deletePreset(preset),
-                                ),
+                              _buildPresetMenu(preset),
                             ],
                           ),
                           onTap: () => _editPreset(preset),
@@ -223,14 +215,51 @@ class _TranscodePresetsScreenState extends State<TranscodePresetsScreen> {
     );
   }
 
+  /// 每行只留一个「更多」菜单：编辑 / 恢复默认 / 删除。
+  Widget _buildPresetMenu(TranscodePreset preset) {
+    return PopupMenuButton<String>(
+      tooltip: '更多操作',
+      onSelected: (action) {
+        if (action == 'edit') {
+          unawaited(_editPreset(preset));
+        } else if (action == 'reset') {
+          unawaited(_resetBuiltin(preset));
+        } else if (action == 'delete') {
+          unawaited(_deletePreset(preset));
+        }
+      },
+      itemBuilder: (ctx) => [
+        _menuItem('edit', Icons.edit_outlined, '编辑'),
+        if (preset.isBuiltin)
+          _menuItem('reset', Icons.restore, '恢复默认'),
+        if (!preset.isBuiltin) _menuItem('delete', Icons.delete_outline, '删除'),
+      ],
+    );
+  }
+
+  static PopupMenuItem<String> _menuItem(
+      String value, IconData icon, String label) {
+    return PopupMenuItem<String>(
+      value: value,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Text(label),
+        ],
+      ),
+    );
+  }
+
   /// 列表副标题：视频命中层摘要（复制 / 硬编 / 软编 / 无）。
-  static String _videoSummary(TranscodePreset preset) {
+  String _videoSummary(TranscodePreset preset) {
     if (preset.videoCopy) return '视频: 复制';
     if (preset.hwVideoEncoder.isNotEmpty) {
-      return '视频: 硬编 ${_encoderLabel(preset.hwVideoEncoder)}';
+      return '视频: 硬编 ${_catalog.labelOf(preset.hwVideoEncoder)}';
     }
     if (preset.swVideoEncoder.isNotEmpty) {
-      return '视频: 软编 ${_encoderLabel(preset.swVideoEncoder)}';
+      return '视频: 软编 ${_catalog.labelOf(preset.swVideoEncoder)}';
     }
     return '视频: 无';
   }
@@ -241,95 +270,18 @@ class _TranscodePresetsScreenState extends State<TranscodePresetsScreen> {
     return '音频: ${preset.audioCodec.toUpperCase()} '
         '${preset.audioBitrate ~/ 1000}kbps';
   }
-
-  static String _encoderLabel(String value) {
-    switch (value) {
-      case 'h264_mediacodec':
-        return 'H.264 硬编';
-      case 'hevc_mediacodec':
-        return 'H.265 硬编';
-      case 'mpeg4_mediacodec':
-        return 'MPEG-4 硬编';
-      case 'libx264':
-        return 'x264';
-      case 'mpeg2video':
-        return 'MPEG-2';
-      case 'mpeg4':
-        return 'MPEG-4';
-      default:
-        return value;
-    }
-  }
 }
-
-/// 编辑器模板（契约 §13.3）：点一下填整张表单，之后仍可逐项修改。
-class _TemplatePreset {
-  const _TemplatePreset({
-    required this.label,
-    required this.swPreset,
-    required this.rateControl,
-    required this.bitrateFactor,
-    this.quality,
-  });
-
-  final String label;
-  final String swPreset;
-  final String rateControl;
-
-  /// 系数 × 推导码率。
-  final double bitrateFactor;
-
-  /// CQ 质量值（仅「好」模板使用）。
-  final int? quality;
-
-  int bitrateFor(int derivedBps) => (derivedBps * bitrateFactor).round();
-
-  bool matches({
-    required String swPreset,
-    required String rateControl,
-    required int? quality,
-    required int? bitrateBps,
-    required int derivedBps,
-  }) {
-    if (this.swPreset != swPreset || this.rateControl != rateControl) {
-      return false;
-    }
-    if (this.quality != null && this.quality != quality) return false;
-    return bitrateBps == bitrateFor(derivedBps);
-  }
-}
-
-const List<_TemplatePreset> _kEditorTemplates = [
-  _TemplatePreset(
-    label: '快',
-    swPreset: 'veryfast',
-    rateControl: 'vbr',
-    bitrateFactor: 0.5,
-  ),
-  _TemplatePreset(
-    label: '均衡',
-    swPreset: 'veryfast',
-    rateControl: 'vbr',
-    bitrateFactor: 1.0,
-  ),
-  _TemplatePreset(
-    label: '好',
-    swPreset: 'medium',
-    rateControl: 'cq',
-    bitrateFactor: 1.3,
-    quality: 23,
-  ),
-];
 
 /// 转码预设编辑页面。
 ///
-/// 所有编码器/选项都从 Rust 的 `wdmm_encoder_options_schema_json()` 渲染
-/// （契约 §13.4）；旧 `.so` 缺符号时降级为 [EncoderOptionsSchema.fallback]，
-/// 界面仍可完整编辑基础字段，只是没有高级选项。
+/// 全部为可视化控件（契约 §4）：码率控制用 `Wrap` + `ChoiceChip`，恒定质量
+/// 时隐藏目标码率；编码器列表来自 [VideoEncoderCatalog]（旧 `.so` 缺符号时
+/// 用内置 6 条目录兜底），不提供任何命令行式 key=value 输入。
 class _TranscodePresetEditScreen extends StatefulWidget {
   final TranscodePreset? preset;
+  final VideoEncoderCatalog catalog;
 
-  const _TranscodePresetEditScreen({this.preset});
+  const _TranscodePresetEditScreen({this.preset, required this.catalog});
 
   @override
   State<_TranscodePresetEditScreen> createState() =>
@@ -338,6 +290,34 @@ class _TranscodePresetEditScreen extends StatefulWidget {
 
 class _TranscodePresetEditScreenState
     extends State<_TranscodePresetEditScreen> {
+  /// 编辑器只展示三档码率控制（契约 §4）；`auto` 是旧值，读入时归一为 VBR。
+  static const List<String> _kRateControlOrder = ['cq', 'vbr', 'cbr'];
+
+  static const Map<String, String> _kRateControlLabels = {
+    'cq': '恒定质量',
+    'vbr': '可变码率',
+    'cbr': '恒定码率',
+  };
+
+  static const Map<String, String> _kRateControlHints = {
+    'vbr': '按画面复杂度动态分配码率，兼容性最好',
+    'cbr': '码率恒定，适合弱网/老设备，画质波动更大',
+    'cq': '恒定质量，码率随画面变化，体积不可控',
+  };
+
+  /// x264 速度挡位（只暴露三档，不展示编码器底层 preset 名）。
+  static const Map<String, String> _kSpeedPresetLabels = {
+    'veryfast': '快速',
+    'medium': '均衡',
+    'slow': '高质量',
+  };
+
+  /// CQ 质量可选值（契约 §4）。
+  static const List<int> _kQualityValues = [18, 20, 23, 26, 30];
+
+  /// 目标码率快捷选项（Mbps；`null` = 自动推导）。
+  static const List<int?> _kBitrateChoices = [null, 2, 4, 6, 8];
+
   final _formKey = GlobalKey<FormState>();
 
   late final TextEditingController _idController;
@@ -351,7 +331,8 @@ class _TranscodePresetEditScreenState
   late final TextEditingController _hlsSegmentSecsController;
   late final TextEditingController _sortOrderController;
 
-  late EncoderOptionsSchema _schema;
+  late final VideoEncoderCatalog _catalog;
+  late final CodecCapabilityService _caps;
 
   bool _videoCopy = false;
   bool _audioCopy = false;
@@ -360,17 +341,14 @@ class _TranscodePresetEditScreenState
   String _swVideoPreset = 'veryfast';
   String _videoRateControl = 'vbr';
   int _videoQuality = 23;
-  final Map<String, String> _hwVideoOptions = {};
-  final Map<String, String> _swVideoOptions = {};
-  late final CodecCapabilityService _caps;
+  String _audioCodec = 'aac';
+  int _audioChannels = 2;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    // Schema 是可选 FFI：旧 .so 缺符号时 parse(null) 返回内置最小 schema。
-    _schema =
-        EncoderOptionsSchema.parse(RustCoreService.encoderOptionsSchemaJson());
+    _catalog = widget.catalog;
     // 机型编码能力：探测失败时 API 保守放行，不会挡住保存/投屏。
     _caps = CodecCapabilityService.shared;
     _caps.addListener(_onCapsChanged);
@@ -400,24 +378,17 @@ class _TranscodePresetEditScreenState
       _audioCopy = p.audioCopy;
       _hwVideoEncoder = p.hwVideoEncoder;
       _swVideoEncoder = p.swVideoEncoder;
-      if (TranscodePreset.x264Presets.contains(p.swVideoPreset)) {
-        _swVideoPreset = p.swVideoPreset;
-      }
-      if (TranscodePreset.rateControlModes.contains(p.videoRateControl)) {
-        _videoRateControl = p.videoRateControl;
-      }
+      _swVideoPreset = _nearestSpeedPreset(p.swVideoPreset);
+      _videoRateControl = _kRateControlOrder.contains(p.videoRateControl)
+          ? p.videoRateControl
+          : 'vbr';
       _videoQuality = p.videoQuality ?? 23;
-      _hwVideoOptions.addAll(p.hwVideoOptions);
-      _swVideoOptions.addAll(p.swVideoOptions);
       _audioCodec = p.audioCodec;
       _audioChannels = p.audioChannels;
     }
   }
 
-  String _audioCodec = 'aac';
-  int _audioChannels = 2;
-
-  /// 机型编码能力探测完成后刷新「置灰/提示」，探测失败时保持全部可用。
+  /// 机型编码能力探测完成后刷新「置灰」，探测失败时保持全部可用。
   void _onCapsChanged() {
     if (mounted) setState(() {});
   }
@@ -484,317 +455,47 @@ class _TranscodePresetEditScreenState
     return text;
   }
 
-  /// 展示用的一两位小数版本（不参与回填，避免模板比对漂移）。
+  /// 展示用的一两位小数版本（不参与回填，避免数值漂移）。
   static String _formatMbpsShort(int bps) =>
       (bps / 1000000).toStringAsFixed(1);
 
-  // ── 模板 ──────────────────────────────────────────────────────────────────
-
-  int? get _activeTemplate {
-    final bps = _bitrateBps;
-    if (bps == null) return null;
-    for (var i = 0; i < _kEditorTemplates.length; i++) {
-      final template = _kEditorTemplates[i];
-      if (template.matches(
-        swPreset: _swVideoPreset,
-        rateControl: _videoRateControl,
-        quality: _videoRateControl == 'cq' ? _videoQuality : null,
-        bitrateBps: bps,
-        derivedBps: _derivedBitrate,
-      )) {
-        return i;
-      }
-    }
-    return null;
-  }
-
-  void _applyTemplate(_TemplatePreset template) {
-    setState(() {
-      if (_swVideoEncoder.isEmpty) _swVideoEncoder = 'libx264';
-      _swVideoPreset = template.swPreset;
-      _videoRateControl = template.rateControl;
-      if (template.quality != null) _videoQuality = template.quality!;
-      final bitrate = template.bitrateFor(_derivedBitrate);
-      _videoBitrateMbpsController.text = _formatMbps(bitrate);
-    });
+  /// 把任意历史 x264 preset 名归一到编辑器暴露的三档之一。
+  static String _nearestSpeedPreset(String raw) {
+    if (_kSpeedPresetLabels.containsKey(raw)) return raw;
+    final index = TranscodePreset.x264Presets.indexOf(raw);
+    if (index < 0) return 'medium';
+    if (index <= 3) return 'veryfast';
+    if (index <= 5) return 'medium';
+    return 'slow';
   }
 
   // ── 码率控制 ──────────────────────────────────────────────────────────────
 
-  static const Map<String, String> _rateControlLabels = {
-    'auto': '自动',
-    'vbr': '可变码率',
-    'cbr': '恒定码率',
-    'cq': '恒定质量',
-  };
-
-  static const Map<String, String> _rateControlHints = {
-    'auto': 'VBR / CBR / CQ · 不干预编码器默认',
-    'vbr': '按画面复杂度动态分配码率，兼容性最好',
-    'cbr': '码率恒定，适合弱网/老设备，画质波动更大',
-    'cq': '恒定质量，码率随画面变化，体积不可控',
-  };
-
   /// 当前编码器组合是否支持某个码率控制模式。
   ///
-  /// 需要同时满足：schema 声明该编码器支持该模式，且机型探测没有明确否认
-  /// （硬编）；探测不可用时 [CodecCapabilityService] 保守放行。
+  /// 需要同时满足：catalog 声明该编码器支持该模式，且机型探测没有明确否认
+  /// （硬编）；探测不可用时 [CodecCapabilityService] 保守放行。只复制、没有
+  /// 编码器时三档都可用（模式不会真正生效）。
   bool _rateModeEnabled(String mode) {
-    if (mode == 'auto') return true;
-    final hwSupported = _hwVideoEncoder.isNotEmpty &&
-        _caps.supportsHw(_hwVideoEncoder) &&
-        _schema.rateControlFor(_hwVideoEncoder).contains(mode) &&
-        _caps.supportsRateControl(_hwVideoEncoder, mode);
-    final swSupported = _swVideoEncoder.isNotEmpty &&
-        _schema.rateControlFor(_swVideoEncoder).contains(mode);
+    final hw = _hwVideoEncoder;
+    final sw = _swVideoEncoder;
+    if (hw.isEmpty && sw.isEmpty) return true;
+    final hwSupported = hw.isNotEmpty &&
+        _caps.supportsHw(hw) &&
+        _catalog.rateControlFor(hw).contains(mode) &&
+        _caps.supportsRateControl(hw, mode);
+    final swSupported =
+        sw.isNotEmpty && _catalog.rateControlFor(sw).contains(mode);
     return hwSupported || swSupported;
   }
 
   String _rateModeTooltip(String mode) {
-    if (_rateModeEnabled(mode)) return _rateControlHints[mode] ?? '';
+    if (_rateModeEnabled(mode)) return _kRateControlHints[mode] ?? '';
+    final label = _kRateControlLabels[mode] ?? mode;
     if (_hwVideoEncoder.isNotEmpty && !_caps.supportsHw(_hwVideoEncoder)) {
-      final label = _schema.codecById(_hwVideoEncoder)?.label ?? _hwVideoEncoder;
-      return '当前机型未报告 $label 硬件编码能力，该模式不可用';
+      return '当前机型未报告 ${_catalog.labelOf(_hwVideoEncoder)} 硬件编码能力，该模式不可用';
     }
-    return '当前编码器不支持「${_rateControlLabels[mode] ?? mode}」，请先选择支持的编码器';
-  }
-
-  // ── 高级选项 ──────────────────────────────────────────────────────────────
-
-  Map<String, String> _optionsMap(bool hardware) =>
-      hardware ? _hwVideoOptions : _swVideoOptions;
-
-  /// 编码器切换后，丢弃不再适用的高级选项，避免把无效键传给 Rust。
-  void _pruneOptions(Map<String, String> options, String encoderId) {
-    final allowed = _schema.optionKeysFor(encoderId);
-    options.removeWhere((key, _) => !allowed.contains(key));
-  }
-
-  Widget _buildAdvancedOptions() {
-    final hwOptions = _schema.advancedOptionsFor(_hwVideoEncoder);
-    final swOptions = _schema.advancedOptionsFor(_swVideoEncoder);
-    final children = <Widget>[
-      if (_schema.isFallback)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            '当前原生库未提供高级选项清单，无法配置编码器高级参数。',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-        ),
-      if (!_schema.isFallback && hwOptions.isEmpty && swOptions.isEmpty)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            _hwVideoEncoder.isEmpty && _swVideoEncoder.isEmpty
-                ? '先选择硬件或软件编码器，再配置高级选项。'
-                : '所选编码器没有可配置的高级选项。',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-          ),
-        ),
-      if (hwOptions.isNotEmpty) ...[
-        _optionGroupTitle(
-            '硬件编码器 · ${_schema.codecById(_hwVideoEncoder)?.label ?? _hwVideoEncoder}'),
-        for (final option in hwOptions)
-          _buildOption(option, _hwVideoOptions, hardware: true),
-      ],
-      if (swOptions.isNotEmpty) ...[
-        _optionGroupTitle(
-            '软件编码器 · ${_schema.codecById(_swVideoEncoder)?.label ?? _swVideoEncoder}'),
-        for (final option in swOptions)
-          _buildOption(option, _swVideoOptions, hardware: false),
-      ],
-    ];
-    return ExpansionTile(
-      title: const Text('高级编码器设置'),
-      subtitle: Text(
-        _schema.isFallback ? '原生库未提供清单' : '默认不覆盖；开启的选项才会传给底层编码器',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-      childrenPadding: const EdgeInsets.only(bottom: 8),
-      children: children,
-    );
-  }
-
-  Widget _optionGroupTitle(String title) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Text(
-        title,
-        style: theme.textTheme.labelLarge?.copyWith(
-          color: theme.colorScheme.primary,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOption(
-    EncoderOptionSchema option,
-    Map<String, String> target, {
-    required bool hardware,
-  }) {
-    final current = target[option.key];
-    final enabled = current != null;
-    final theme = Theme.of(context);
-    final control = enabled
-        ? _buildOptionControl(option, current, hardware: hardware)
-        : null;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(option.label, style: theme.textTheme.bodyMedium),
-                    Text(
-                      enabled ? option.key : '使用默认 · ${option.key}',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: enabled,
-                onChanged: (value) {
-                  setState(() {
-                    if (value) {
-                      target[option.key] =
-                          option.defaultValue ?? option.initialValue();
-                    } else {
-                      target.remove(option.key);
-                    }
-                  });
-                },
-              ),
-            ],
-          ),
-          ?control,
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOptionControl(
-    EncoderOptionSchema option,
-    String current, {
-    required bool hardware,
-  }) {
-    switch (option.type) {
-      case EncoderOptionType.enumValue:
-        final values = [
-          if (option.values.isNotEmpty) ...option.values,
-          if (!option.values.contains(current) && current.isNotEmpty) current,
-        ];
-        return DropdownButtonFormField<String>(
-          initialValue: values.contains(current)
-              ? current
-              : (values.isEmpty ? null : values.first),
-          decoration: InputDecoration(labelText: option.label),
-          items: [
-            for (final value in values)
-              DropdownMenuItem(value: value, child: Text(value)),
-          ],
-          onChanged: (value) {
-            if (value == null) return;
-            setState(() => _setOptionValue(option, value, hardware: hardware));
-          },
-        );
-      case EncoderOptionType.boolValue:
-        return SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text(option.label),
-          value: current == 'true',
-          onChanged: (value) {
-            setState(() => _setOptionValue(option, value.toString(),
-                hardware: hardware));
-          },
-        );
-      case EncoderOptionType.intValue:
-      case EncoderOptionType.floatValue:
-        if (option.hasRange) {
-          final min = option.min!.toDouble();
-          final max = option.max!.toDouble();
-          final parsed = double.tryParse(current) ?? min;
-          final value = parsed.clamp(min, max).toDouble();
-          final isInt = option.type == EncoderOptionType.intValue;
-          return Row(
-            children: [
-              Expanded(
-                child: Slider(
-                  value: value,
-                  min: min,
-                  max: max,
-                  divisions: isInt
-                      ? ((max - min).round()).clamp(1, 1000)
-                      : null,
-                  label: isInt
-                      ? value.round().toString()
-                      : value.toStringAsFixed(1),
-                  onChanged: (next) {
-                    setState(() => _setOptionValue(
-                          option,
-                          isInt ? next.round().toString() : next.toString(),
-                          hardware: hardware,
-                        ));
-                  },
-                ),
-              ),
-              SizedBox(
-                width: 56,
-                child: Text(
-                  isInt ? value.round().toString() : value.toStringAsFixed(1),
-                  textAlign: TextAlign.end,
-                ),
-              ),
-            ],
-          );
-        }
-        return TextFormField(
-          initialValue: current,
-          decoration: InputDecoration(
-            labelText: option.label,
-            helperText: _rangeHelper(option),
-          ),
-          keyboardType: option.type == EncoderOptionType.intValue
-              ? TextInputType.number
-              : const TextInputType.numberWithOptions(decimal: true),
-          onChanged: (value) {
-            final text = value.trim();
-            setState(() {
-              if (text.isEmpty) {
-                _optionsMap(hardware).remove(option.key);
-              } else {
-                _setOptionValue(option, text, hardware: hardware);
-              }
-            });
-          },
-        );
-    }
-  }
-
-  String? _rangeHelper(EncoderOptionSchema option) {
-    if (option.min == null && option.max == null) return null;
-    return '范围 ${option.min ?? '-'} ~ ${option.max ?? '-'}';
-  }
-
-  void _setOptionValue(
-    EncoderOptionSchema option,
-    String value, {
-    required bool hardware,
-  }) {
-    _optionsMap(hardware)[option.key] = value;
+    return '当前编码器不支持「$label」，请先选择支持的编码器';
   }
 
   // ── 保存 ──────────────────────────────────────────────────────────────────
@@ -813,13 +514,13 @@ class _TranscodePresetEditScreenState
       videoCopy: _videoCopy,
       audioCopy: _audioCopy,
       hwVideoEncoder: _hwVideoEncoder,
-      hwVideoOptions: Map.of(_hwVideoOptions),
       swVideoEncoder: _swVideoEncoder,
-      swVideoPreset: _swVideoEncoder == 'libx264' ? _swVideoPreset : '',
-      swVideoOptions: Map.of(_swVideoOptions),
+      swVideoPreset: _swVideoEncoder == 'libx264' && !_videoCopy
+          ? _swVideoPreset
+          : '',
       videoMaxW: _intOrNull(_videoMaxWController),
       videoMaxH: _intOrNull(_videoMaxHController),
-      videoMaxBitrate: _bitrateBps,
+      videoMaxBitrate: _videoRateControl == 'cq' ? null : _bitrateBps,
       videoFpsCap: _intOrNull(_videoFpsCapController),
       videoRateControl: _videoRateControl,
       videoQuality: _videoRateControl == 'cq' ? _videoQuality : null,
@@ -882,67 +583,157 @@ class _TranscodePresetEditScreenState
   Widget _encoderDropdown({
     required String label,
     required String value,
-    required List<EncoderCodecSchema> codecs,
+    required List<VideoEncoderInfo> codecs,
     required ValueChanged<String> onChanged,
   }) {
     return DropdownButtonFormField<String>(
       initialValue: value,
+      isExpanded: true,
       decoration: InputDecoration(labelText: label),
       items: [
         const DropdownMenuItem(value: '', child: Text('禁用')),
         for (final codec in codecs)
           DropdownMenuItem(
             value: codec.id,
-            enabled: codec.isHardware ? _caps.supportsHw(codec.id) : true,
-            child: Text(
-              codec.isHardware && !_caps.supportsHw(codec.id)
-                  ? '${codec.label}（机型未报告）'
-                  : codec.label,
-            ),
+            enabled: codec.hardware ? _caps.supportsHw(codec.id) : true,
+            child: Text(codec.label),
           ),
-        // 预设里保存了当前 schema 不认识的编码器时，保留它而不是悄悄清空。
+        // 预设里保存了当前 catalog 不认识的编码器时，保留它而不是悄悄清空。
         if (value.isNotEmpty && !codecs.any((codec) => codec.id == value))
-          DropdownMenuItem(value: value, child: Text(value)),
+          DropdownMenuItem(value: value, child: Text(_catalog.labelOf(value))),
       ],
       onChanged: (next) => onChanged(next ?? ''),
     );
   }
 
-  /// 选中的硬编在当前机型上不可用时，明确提示会回落到软编。
-  Widget? _hardwareCapabilityHint() {
-    final codec = _schema.codecById(_hwVideoEncoder);
-    if (codec == null || !codec.isHardware) return null;
-    if (_caps.supportsHw(codec.id)) {
-      if (_caps.status == CodecCapabilityStatus.failed) {
-        return _hintText('未能读取本机硬件编码能力，硬件选项按可用处理。', null);
-      }
-      return null;
-    }
-    return _hintText(
-      '当前机型未报告 ${codec.label} 硬件编码能力，保存后编码时会自动回落到软件编码器。',
-      Theme.of(context).colorScheme.error,
+  Widget _rateControlPicker() {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final mode in _kRateControlOrder)
+              Tooltip(
+                message: _rateModeTooltip(mode),
+                child: ChoiceChip(
+                  label: Text(_kRateControlLabels[mode] ?? mode),
+                  selected: _videoRateControl == mode,
+                  onSelected: _rateModeEnabled(mode)
+                      ? (_) => setState(() => _videoRateControl = mode)
+                      : null,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(
+          _kRateControlHints[_videoRateControl] ?? '',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        if (!_rateModeEnabled(_videoRateControl))
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '当前编码器组合不支持所选码率控制模式。',
+              style: Theme.of(context)
+                  .textTheme
+                  .bodySmall
+                  ?.copyWith(color: colorScheme.error),
+            ),
+          ),
+      ],
     );
   }
 
-  Widget _hintText(String text, Color? color) => Padding(
-        padding: const EdgeInsets.only(top: 4, bottom: 4),
-        child: Text(
-          text,
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(color: color ?? Theme.of(context).hintColor),
+  /// 恒定质量：只出质量挡位，目标码率整块隐藏（契约 §4）。
+  Widget _qualityPicker() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        Text('质量', style: Theme.of(context).textTheme.bodyMedium),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final quality in _kQualityValues)
+              ChoiceChip(
+                label: Text('$quality'),
+                selected: _videoQuality == quality,
+                onSelected: (_) => setState(() => _videoQuality = quality),
+              ),
+          ],
         ),
-      );
+        const SizedBox(height: 4),
+        Text(
+          '数值越低画质越好、体积越大；默认 23。',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+
+  /// 可变/恒定码率：目标码率输入 + 自动/2M/4M/6M/8M 快捷挡位。
+  Widget _bitratePicker() {
+    final currentBps = _bitrateBps;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _videoBitrateMbpsController,
+          decoration: InputDecoration(
+            labelText: '目标码率',
+            suffixText: 'Mbps',
+            hintText: '留空 = 自动推导',
+            helperText:
+                '自动推导约 ${_formatMbpsShort(_derivedBitrate)} Mbps（分辨率 × 帧率估算）',
+          ),
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          validator: (v) {
+            final text = v?.trim() ?? '';
+            if (text.isEmpty) return null;
+            final value = double.tryParse(text);
+            if (value == null || value <= 0) return '请输入大于 0 的数字';
+            return null;
+          },
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final choice in _kBitrateChoices)
+              ChoiceChip(
+                label: Text(choice == null ? '自动' : '$choice Mbps'),
+                selected: choice == null
+                    ? currentBps == null
+                    : currentBps == choice * 1000000,
+                onSelected: (_) => setState(() {
+                  if (choice == null) {
+                    _videoBitrateMbpsController.clear();
+                  } else {
+                    _videoBitrateMbpsController.text = '$choice';
+                  }
+                }),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.preset != null;
     final colorScheme = Theme.of(context).colorScheme;
-    final activeTemplate = _activeTemplate;
     final swIsX264 = _swVideoEncoder == 'libx264';
-    final hwInline = _schema.inlineOptionsFor(_hwVideoEncoder);
-    final swInline = _schema.inlineOptionsFor(_swVideoEncoder);
+    final showSpeedPreset = swIsX264 && !_videoCopy;
+    final isCq = _videoRateControl == 'cq';
 
     return Scaffold(
       appBar: AppBar(
@@ -988,21 +779,6 @@ class _TranscodePresetEditScreenState
                   v == null || v.trim().isEmpty ? '显示名称不能为空' : null,
             ),
 
-            // 0. 模板 chips（契约 §13.3）
-            _sectionTitle(context, '模板', '点一下填好整张表单，之后仍可逐项调整'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                for (var i = 0; i < _kEditorTemplates.length; i++)
-                  ChoiceChip(
-                    label: Text(_kEditorTemplates[i].label),
-                    selected: activeTemplate == i,
-                    onSelected: (_) => _applyTemplate(_kEditorTemplates[i]),
-                  ),
-              ],
-            ),
-
             // ① 视频命中层
             _sectionTitle(context, '视频',
                 '复制 → 硬件编码 → 软件编码，前一层不可用时自动落到下一层'),
@@ -1016,43 +792,37 @@ class _TranscodePresetEditScreenState
             _encoderDropdown(
               label: '硬件编码器',
               value: _hwVideoEncoder,
-              codecs: _schema.hardwareCodecs,
-              onChanged: (value) => setState(() {
-                _hwVideoEncoder = value;
-                _pruneOptions(_hwVideoOptions, value);
-              }),
+              codecs: _catalog.hardwareCodecs,
+              onChanged: (value) => setState(() => _hwVideoEncoder = value),
             ),
-            ?_hardwareCapabilityHint(),
-            for (final option in hwInline)
-              _buildOption(option, _hwVideoOptions, hardware: true),
             const SizedBox(height: 8),
             _encoderDropdown(
               label: '软件编码器',
               value: _swVideoEncoder,
-              codecs: _schema.softwareCodecs,
+              codecs: _catalog.softwareCodecs,
               onChanged: (value) => setState(() {
                 _swVideoEncoder = value;
                 if (value != 'libx264') {
-                  // 只有 libx264 有 preset 阶梯。
+                  // 只有 libx264 有速度挡位。
                   _swVideoPreset = 'veryfast';
                 }
-                _pruneOptions(_swVideoOptions, value);
               }),
             ),
-            if (swIsX264) ...[
+            if (showSpeedPreset) ...[
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
-                initialValue: TranscodePreset.x264Presets
-                        .contains(_swVideoPreset)
-                    ? _swVideoPreset
-                    : 'veryfast',
+                initialValue: _swVideoPreset,
+                isExpanded: true,
                 decoration: const InputDecoration(
-                  labelText: 'x264 预设',
+                  labelText: '速度预设',
                   helperText: '越快越省 CPU，越慢同码率画质越好',
                 ),
                 items: [
-                  for (final preset in TranscodePreset.x264Presets)
-                    DropdownMenuItem(value: preset, child: Text(preset)),
+                  for (final entry in _kSpeedPresetLabels.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
                 ],
                 onChanged: (value) {
                   if (value == null) return;
@@ -1060,11 +830,9 @@ class _TranscodePresetEditScreenState
                 },
               ),
             ],
-            for (final option in swInline)
-              _buildOption(option, _swVideoOptions, hardware: false),
 
             // ② 输出包络
-            _sectionTitle(context, '输出包络', '留空 = 不限制；码率留空按分辨率自动推导'),
+            _sectionTitle(context, '输出包络', '留空 = 不限制；目标码率留空按分辨率自动推导'),
             TextFormField(
               controller: _videoMaxWController,
               decoration: const InputDecoration(
@@ -1094,100 +862,13 @@ class _TranscodePresetEditScreenState
               keyboardType: TextInputType.number,
               validator: _positiveIntValidator,
             ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _videoBitrateMbpsController,
-              decoration: InputDecoration(
-                labelText: '码率上限',
-                suffixText: 'Mbps',
-                hintText: '留空 = 自动推导',
-                helperText:
-                    '自动推导约 ${_formatMbpsShort(_derivedBitrate)} Mbps（分辨率 × 帧率估算）',
-              ),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              validator: (v) {
-                final text = v?.trim() ?? '';
-                if (text.isEmpty) return null;
-                final value = double.tryParse(text);
-                if (value == null || value <= 0) return '请输入大于 0 的数字';
-                return null;
-              },
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final mbps in const [2, 4, 6, 8])
-                  ActionChip(
-                    label: Text('$mbps Mbps'),
-                    onPressed: () => setState(
-                        () => _videoBitrateMbpsController.text = '$mbps'),
-                  ),
-              ],
-            ),
 
             // ③ 码率控制
-            _sectionTitle(context, '码率控制', '自动 = 不干预编码器默认'),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SegmentedButton<String>(
-                segments: [
-                  for (final mode in TranscodePreset.rateControlModes)
-                    ButtonSegment<String>(
-                      value: mode,
-                      label: Text(_rateControlLabels[mode] ?? mode),
-                      tooltip: _rateModeTooltip(mode),
-                      enabled: _rateModeEnabled(mode),
-                    ),
-                ],
-                selected: {_videoRateControl},
-                onSelectionChanged: (selection) =>
-                    setState(() => _videoRateControl = selection.first),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _rateControlHints[_videoRateControl] ?? '',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            if (!_rateModeEnabled(_videoRateControl))
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  '当前编码器组合不支持所选码率控制模式。',
-                  style: Theme.of(context)
-                      .textTheme
-                      .bodySmall
-                      ?.copyWith(color: colorScheme.error),
-                ),
-              ),
-            if (_videoRateControl == 'cq') ...[
-              const SizedBox(height: 8),
-              Text('质量（CQ）: $_videoQuality',
-                  style: Theme.of(context).textTheme.bodyMedium),
-              Slider(
-                value: _videoQuality.toDouble(),
-                min: 0,
-                max: 51,
-                divisions: 51,
-                label: '$_videoQuality',
-                onChanged: (value) =>
-                    setState(() => _videoQuality = value.round()),
-              ),
-              Text(
-                _videoQuality < 18
-                    ? '质量优先：数值越低画质越好，体积也明显更大。'
-                    : '0–51，默认 23；数值越低画质越好、体积越大。',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+            _sectionTitle(context, '码率控制', '只显示当前编码器支持的模式'),
+            _rateControlPicker(),
+            if (isCq) _qualityPicker() else _bitratePicker(),
 
-            // ④ 高级编码器设置
-            _sectionTitle(context, '高级编码器设置', '默认不覆盖；开启的选项才会传给底层编码器'),
-            _buildAdvancedOptions(),
-
-            // ⑤ 音频
+            // ④ 音频
             _sectionTitle(context, '音频', '视频复制时音频也按此编码（除非开启音频复制）'),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -1198,6 +879,7 @@ class _TranscodePresetEditScreenState
             ),
             DropdownButtonFormField<String>(
               initialValue: _audioCodec,
+              isExpanded: true,
               decoration: const InputDecoration(labelText: '音频编码'),
               items: const [
                 DropdownMenuItem(value: 'aac', child: Text('AAC')),
@@ -1225,6 +907,7 @@ class _TranscodePresetEditScreenState
             const SizedBox(height: 8),
             DropdownButtonFormField<int>(
               initialValue: _audioChannels,
+              isExpanded: true,
               decoration: const InputDecoration(labelText: '音频声道数'),
               items: const [
                 DropdownMenuItem(value: 1, child: Text('单声道 (1)')),
@@ -1243,7 +926,7 @@ class _TranscodePresetEditScreenState
               validator: _positiveIntValidator,
             ),
 
-            // ⑥ 分段
+            // ⑤ 分段
             _sectionTitle(context, '分段', 'HLS 分片时长'),
             TextFormField(
               controller: _hlsSegmentSecsController,

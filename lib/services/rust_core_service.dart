@@ -2023,40 +2023,41 @@ class RustCoreService {
     }
   }
 
-  // ── Encoder options schema (contract preset-rate-control §13.4) ───────────
+  // ── Video encoder catalog (contract preset-editor-slimming §2) ────────────
   //
-  // `wdmm_encoder_options_schema_json()` describes every encoder plus its
-  // rate-control modes and configurable AVOptions. Optional export: an older
-  // .so returns null and the editor renders `EncoderOptionsSchema.fallback()`
-  // instead of hard-coding the option list in Dart.
+  // `wdmm_video_encoder_catalog_json()` describes every encoder the preset
+  // editor may offer: id, display label, hardware flag, output codec and the
+  // rate-control modes it supports. Optional export: an older .so returns null
+  // and the editor renders `VideoEncoderCatalog.fallback()` instead of
+  // hard-coding the encoder list in Dart.
 
-  static _NoArgToStrDart? _encoderOptionsSchemaJson;
+  static _NoArgToStrDart? _videoEncoderCatalogJson;
 
-  static bool _encoderOptionsSchemaLoaded = false;
+  static bool _videoEncoderCatalogLoaded = false;
 
-  static void _loadEncoderOptionsSchemaSafe() {
-    if (_encoderOptionsSchemaLoaded) return;
+  static void _loadVideoEncoderCatalogSafe() {
+    if (_videoEncoderCatalogLoaded) return;
     final lib = _tryLib;
     if (lib == null) return;
     try {
-      _encoderOptionsSchemaJson = lib
+      _videoEncoderCatalogJson = lib
           .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
-              'wdmm_encoder_options_schema_json')
+              'wdmm_video_encoder_catalog_json')
           .asFunction();
-      _encoderOptionsSchemaLoaded = true;
+      _videoEncoderCatalogLoaded = true;
     } catch (e) {
       debugPrint(
-          '[RustCore] encoder options schema lookup failed (non-fatal): $e');
+          '[RustCore] video encoder catalog lookup failed (non-fatal): $e');
     }
   }
 
-  /// Encoder/options schema as JSON (contract §13.4), or null when the native
-  /// library predates the export (callers degrade to a built-in minimal schema).
-  static String? encoderOptionsSchemaJson() {
+  /// Video encoder catalog as JSON (contract §2), or null when the native
+  /// library predates the export (callers degrade to a built-in catalog).
+  static String? videoEncoderCatalogJson() {
     if (!_ensureSymbols()) return null;
-    _loadEncoderOptionsSchemaSafe();
-    if (_encoderOptionsSchemaJson == null) return null;
-    return _readAndFreeString(_encoderOptionsSchemaJson!());
+    _loadVideoEncoderCatalogSafe();
+    if (_videoEncoderCatalogJson == null) return null;
+    return _readAndFreeString(_videoEncoderCatalogJson!());
   }
 
   // ── HLS VOD transcode-cache management ────────────────────────────────────

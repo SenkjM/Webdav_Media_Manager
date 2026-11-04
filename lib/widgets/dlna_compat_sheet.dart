@@ -11,7 +11,7 @@ import '../utils/app_snack.dart';
 ///
 /// 提供：
 /// - 显示名称覆盖（优先于 friendlyName）
-/// - 直通（不转码）兼容开关 `forceDirect`（默认开）
+/// - 直通（不转码）兼容开关 `forceDirect`：初始值 = 设备级覆盖 > 全局「默认直通」
 /// - 转码预设选择（仅在 forceDirect=false 时有效）
 ///
 /// 设置通过 USN 键存储在 `RustDmrPrefsService` / Core `dmr_prefs.db`。
@@ -72,8 +72,9 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
     _nameController = TextEditingController(
       text: pref?.overrideName ?? '',
     );
-    // 直通是默认方案：没有保存过偏好时默认开启。
-    _forceDirect = pref?.forceDirect ?? true;
+    // 初始值：设备级覆盖优先，否则跟随设置页「默认直通」；仅初始值，可改。
+    _forceDirect =
+        pref?.forceDirect ?? context.read<SettingsService>().dlnaDefaultDirect;
     // 直通不是转码预设：历史遗留的 passthrough 值按「跟随全局默认」处理。
     final savedPreset = pref?.presetId;
     _presetId = (savedPreset != null &&
@@ -225,31 +226,10 @@ class _DlnaCompatSheetState extends State<DlnaCompatSheet> {
                                 setState(() => _forceDirect = val),
                             contentPadding: EdgeInsets.zero,
                             title: Text(
-                              '直通（不转码）',
+                              '直通：不转码',
                               style: textTheme.bodyLarge?.copyWith(
                                 color: scheme.onSurface,
                                 fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            subtitle: Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(
-                                _forceDirect
-                                    ? '已启用：设备直接读取原始文件（经本机代理中转，不经过 FFmpeg）'
-                                    : '已禁用：经 HLS 转码代理投屏（按转码预设处理兼容性）',
-                                style: textTheme.bodySmall?.copyWith(
-                                  color: scheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(left: 0, bottom: 8),
-                            child: Text(
-                              '注意：直通是独立方案，不是转码预设，且与 HLS 转码互斥。启用后跳过所有容器重封装和编码转换；设备能直接播放时建议保持开启。',
-                              style: textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                                fontStyle: FontStyle.italic,
                               ),
                             ),
                           ),

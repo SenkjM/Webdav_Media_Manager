@@ -698,8 +698,8 @@ class DlnaCastService extends ChangeNotifier {
       debugPrint('[DLNA] seek rejected: $raw');
       // 会话已经不存在说明投屏整体已经结束（本机代理/渲染器这边都没了），
       // 静默返回会让用户以为进度条坏了，所以明确报错并收尾。
-      if (message.contains('session')) {
-        await _failWith(_CastError('投屏会话已结束，请重新投屏'));
+      if (_isSessionErrorText(_errorRawText(raw))) {
+        await _failWith(_CastError(message));
         return;
       }
       // 其余情况是渲染器暂时拒收（例如还在预热/切段），保持旧实现的静默处理。
@@ -1069,9 +1069,18 @@ class DlnaCastService extends ChangeNotifier {
 
   Future<void> _applyState(Map<String, dynamic> json) async {
     if (json['ok'] == false) {
-      await _failWith(
-        _CastError(json['error']?.toString() ?? '投屏会话异常结束'),
-      );
+      final reason = json['error']?.toString();
+      // session 类错误（`unknown session handle` / 会话已被收尾）只是
+      // 「这一轮问得太晚」：切集 / mode-switch / 收尾与 tick 交锋时会短暂
+      // 出现。它不代表投屏失败，只跳过本轮，绝不让用户看到原生错误。
+      if (_isSessionErrorText(reason)) {
+        if (!_stateUnavailableLogged) {
+          _stateUnavailableLogged = true;
+          debugPrint('[DLNA] session state skipped: $reason');
+        }
+        return;
+      }
+      await _failWith(_CastError(reason ?? '投屏会话异常结束'));
       return;
     }
 
@@ -1248,14 +1257,41 @@ class DlnaCastService extends ChangeNotifier {
 
   // ── 内部：FFI 调度 ────────────────────────────────────────────────────────
 
-  /// 在临时 isolate 中执行 [body] 并返回结果。
+  /// 所有 FFI 调用共用的串行队列尾（契约 preset-editor-slimming §6）。
+  ///
+  /// Rust 侧一个句柄同一时刻只允许一个 FFI 调用在飞（会话注册表是 take/put
+  /// 语义）。Dart 以前只串行化了 tick-vs-tick（[_stateTickInFlight]），命令
+  /// （select / stop / close / seek / 字幕）与 tick 仍然真并行，队列切集时
+  /// 于是会出现 `unknown session handle`。这里把每一次 FFI 调用挂到同一条
+  /// Future 链上，保证任一时刻只有一个调用在飞；队列只做串行化，真正的调用
+  /// 仍在 [_runOnWorkerTask] 的临时 isolate 里执行，不会把计算拉回主线程。
+  Future<void> _ffiTail = Future<void>.value();
+
+  /// 在临时 isolate 中串行执行 [body] 并返回结果。
+  ///
+  /// [body] 只能捕获可跨 isolate 传递的值（String / int 等），不能引用 `this`。
+  /// 调用按提交顺序逐个执行：上一调用结束后才开始下一调用（契约 §6）。
+  Future<T?> _runOnWorker<T>(FutureOr<T> Function() body) {
+    final completer = Completer<T?>();
+    _ffiTail = _ffiTail.then((_) async {
+      try {
+        completer.complete(await _runOnWorkerTask<T>(body));
+      } catch (e) {
+        // 兜底：completer 之外不应再抛；这里保证队列本身永不进入错误态，
+        // 否则后续所有 FFI 调用都会被 skipped。
+        debugPrint('[DLNA] FFI queue error: $e');
+        if (!completer.isCompleted) completer.complete(null);
+      }
+    });
+    return completer.future;
+  }
+
+  /// 真正的 off-main 执行点（[Isolate.run]），只被串行队列调用。
   ///
   /// Rust 会话门面是**同步** FFI 调用，内部包含 SSDP / SOAP 网络往返
   /// （单次 100–300 ms）。直接在主 isolate 调用会卡住帧循环（1 秒轮询尤甚），
-  /// 因此所有 FFI 调用都通过 [Isolate.run] 搬到后台 isolate。
-  ///
-  /// [body] 只能捕获可跨 isolate 传递的值（String / int 等），不能引用 `this`。
-  Future<T?> _runOnWorker<T>(FutureOr<T> Function() body) async {
+  /// 因此所有 FFI 调用都搬到后台 isolate。
+  Future<T?> _runOnWorkerTask<T>(FutureOr<T> Function() body) async {
     try {
       return await Isolate.run<T>(body);
     } catch (e) {
@@ -1598,12 +1634,38 @@ class DlnaCastService extends ChangeNotifier {
     return !raw.startsWith('error:');
   }
 
-  String _cmdError(String? raw) {
-    if (raw == null) return '原生投屏模块不可用';
+  /// 从 Rust 返回值里取出原始错误文本（JSON `error` 字段或 `error:` 前缀）。
+  String? _errorRawText(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
     final err = _decodeJson(raw)?['error']?.toString();
     if (err != null && err.isNotEmpty) return err;
     if (raw.startsWith('error:')) return raw.substring('error:'.length);
     return raw;
+  }
+
+  /// 是否是 session 类错误（句柄已被取用 / 会话已收尾）。
+  ///
+  /// 串行队列（[_runOnWorker]）修好后，正常路径不应再出现；tick 一旦遇到
+  /// 只跳过本轮（见 [_applyState]），命令遇到时由 [_cmdError] 翻成中文。
+  static bool _isSessionErrorText(String? text) {
+    if (text == null || text.isEmpty) return false;
+    final lower = text.toLowerCase();
+    return lower.contains('unknown session handle') ||
+        lower.contains('unknown session') ||
+        lower.contains('session handle') ||
+        lower.contains('session not found') ||
+        lower.contains('session closed') ||
+        text.contains('会话已结束');
+  }
+
+  String _cmdError(String? raw) {
+    if (raw == null) return '原生投屏模块不可用';
+    final text = _errorRawText(raw);
+    if (text == null || text.isEmpty) return raw;
+    // 契约 preset-editor-slimming §6：session 类错误给用户可读文案，
+    // 不把 `unknown session handle` 这种原生错误直接抛到界面上。
+    if (_isSessionErrorText(text)) return '投屏会话已结束，请重新投屏';
+    return text;
   }
 
   /// 字幕命令失败原因：位图字幕（PGS/DVD）给出中文解释，其余沿用 Rust 文本。

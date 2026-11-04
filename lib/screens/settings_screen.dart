@@ -548,6 +548,16 @@ class _SettingsScreenState extends State<SettingsScreen>
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.bolt_outlined),
+            title: const Text('默认直通'),
+            subtitle: const Text('投屏时默认不转码，直接播放原文件'),
+            value: settings.dlnaDefaultDirect,
+            onChanged: (v) {
+              context.read<SettingsService>().dlnaDefaultDirect = v;
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.movie_filter_outlined),
             title: const Text('MKV 直通（不转码）'),
             subtitle: const Text(
