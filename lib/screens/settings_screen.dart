@@ -7,7 +7,9 @@ import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
+import '../models/codec_capability.dart';
 import '../models/snack_duration.dart';
+import '../services/codec_capability_service.dart';
 import '../services/notification_permission_service.dart';
 import '../services/rust_core_service.dart';
 import '../services/settings_service.dart';
@@ -591,6 +593,11 @@ class _SettingsScreenState extends State<SettingsScreen>
             trailing: const Icon(Icons.chevron_right),
             onTap: () => unawaited(_clearTranscodeCache()),
           ),
+          // ── 设备编码能力（契约 preset-rate-control-and-codec-probe §13.4）──
+          const Divider(height: 40),
+          _sectionTitle(context, l10n.codecCapsSectionTitle),
+          const SizedBox(height: 8),
+          const _CodecCapabilitySection(),
           const Divider(height: 40),
           _sectionTitle(context, l10n.settingsMisc),
           const SizedBox(height: 8),
@@ -742,5 +749,242 @@ class _TranscodeCacheStats {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse('$value');
+  }
+}
+
+/// 只读的「设备编码能力」区块（契约 `preset-rate-control-and-codec-probe` §13.4）。
+///
+/// 数据来自安卓原生 `MediaCodecList` 的只读查询（Kotlin `CodecCapsProbe`），
+/// 只用于提示机型上有哪些编码器 / 码率控制模式可用；实际编码能力仍由 Rust
+/// 在转码开始时以「真开一次编码器」判定。因此探测不可用时这里只显示一行
+/// 说明，不隐藏、不禁用任何功能。
+class _CodecCapabilitySection extends StatefulWidget {
+  const _CodecCapabilitySection();
+
+  @override
+  State<_CodecCapabilitySection> createState() =>
+      _CodecCapabilitySectionState();
+}
+
+class _CodecCapabilitySectionState extends State<_CodecCapabilitySection> {
+  CodecCapabilityService get _service => CodecCapabilityService.shared;
+
+  @override
+  void initState() {
+    super.initState();
+    // 懒加载：进入设置页才探测一次（全进程缓存，重复进入不重复查询）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_service.load());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _service,
+      builder: (context, _) => _buildBody(context),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final service = _service;
+
+    if (service.status == CodecCapabilityStatus.idle || service.isLoading) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        title: Text(l10n.codecCapsLoading),
+        subtitle: Text(l10n.codecCapsSectionSubtitle),
+      );
+    }
+
+    if (service.status == CodecCapabilityStatus.failed) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.info_outline),
+        title: Text(l10n.codecCapsUnavailable),
+        subtitle: Text(l10n.codecCapsSectionSubtitle),
+        trailing: TextButton(
+          onPressed: () => unawaited(service.refresh()),
+          child: Text(l10n.codecCapsRetry),
+        ),
+      );
+    }
+
+    if (service.encoders.isEmpty) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.info_outline),
+        title: Text(l10n.codecCapsEmpty),
+        subtitle: Text(l10n.codecCapsSectionSubtitle),
+        trailing: TextButton(
+          onPressed: () => unawaited(service.refresh()),
+          child: Text(l10n.codecCapsRetry),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.codecCapsSectionSubtitle,
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 4),
+        for (final codecId in knownHwCodecIds)
+          _CodecCapabilityTile(
+            codecId: codecId,
+            capability: service.capabilitiesFor(codecId),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => unawaited(service.refresh()),
+            icon: const Icon(Icons.refresh, size: 18),
+            label: Text(l10n.codecCapsRetry),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 单个硬件编码器（H.264 / H.265 / MPEG-4）的能力明细。
+class _CodecCapabilityTile extends StatelessWidget {
+  const _CodecCapabilityTile({required this.codecId, this.capability});
+
+  final String codecId;
+  final CodecCapability? capability;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final cap = capability;
+    final title = Text(_codecLabel(l10n));
+
+    if (cap == null) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.memory),
+        title: title,
+        subtitle: Text(l10n.codecCapsNotReported),
+      );
+    }
+
+    final subtitleParts = <String>[
+      cap.hardware ? l10n.codecCapsHardware : l10n.codecCapsSoftware,
+      if (cap.name.isNotEmpty) cap.name,
+    ];
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      leading: const Icon(Icons.memory),
+      title: title,
+      subtitle: Text(subtitleParts.join(' · ')),
+      children: [
+        _row(
+          context,
+          l10n.codecCapsRateControl,
+          _rateControlLabel(l10n, cap),
+        ),
+        _row(
+          context,
+          l10n.codecCapsBitrateRange,
+          _bitrateLabel(l10n, cap.bitrateRange),
+        ),
+        _row(context, l10n.codecCapsResolutionRange, _resolutionLabel(l10n, cap)),
+        _row(context, l10n.codecCapsAlignment, _alignmentLabel(l10n, cap)),
+        _row(context, l10n.codecCapsFpsRange, _fpsLabel(l10n, cap.fpsRange)),
+        _row(
+          context,
+          l10n.codecCapsProfileLevels,
+          _profileLevelsLabel(l10n, cap.profileLevels),
+        ),
+      ],
+    );
+  }
+
+  String _codecLabel(AppLocalizations l10n) => switch (codecId) {
+        'h264_mediacodec' => l10n.codecCapsCodecH264,
+        'hevc_mediacodec' => l10n.codecCapsCodecHevc,
+        _ => l10n.codecCapsCodecMpeg4,
+      };
+
+  String _rateControlLabel(AppLocalizations l10n, CodecCapability cap) {
+    final modes = cap.bitrateModes;
+    if (modes == null) return l10n.codecCapsNotReported;
+    return modes.map((m) => m.toUpperCase()).join(' / ');
+  }
+
+  String _bitrateLabel(AppLocalizations l10n, CodecRange? range) {
+    if (range == null) return l10n.codecCapsNotReported;
+    return '${_bps(range.min)} – ${_bps(range.max)}';
+  }
+
+  String _resolutionLabel(AppLocalizations l10n, CodecCapability cap) {
+    final width = cap.widthRange;
+    final height = cap.heightRange;
+    if (width == null || height == null) return l10n.codecCapsNotReported;
+    return '${width.min.toInt()}×${height.min.toInt()} – '
+        '${width.max.toInt()}×${height.max.toInt()}';
+  }
+
+  String _alignmentLabel(AppLocalizations l10n, CodecCapability cap) {
+    final width = cap.widthAlignment;
+    final height = cap.heightAlignment;
+    if (width == null && height == null) return l10n.codecCapsNotReported;
+    return '${width ?? '?'}×${height ?? '?'} px';
+  }
+
+  String _fpsLabel(AppLocalizations l10n, CodecRange? range) {
+    if (range == null) return l10n.codecCapsNotReported;
+    return '${_short(range.min)} – ${_short(range.max)} fps';
+  }
+
+  String _profileLevelsLabel(AppLocalizations l10n, List<String> levels) {
+    if (levels.isEmpty) return l10n.codecCapsNotReported;
+    const maxShown = 8;
+    final shown = levels.take(maxShown).join(' · ');
+    return levels.length > maxShown ? '$shown …' : shown;
+  }
+
+  static String _bps(num bitsPerSecond) {
+    final value = bitsPerSecond.toDouble();
+    if (value >= 1000000) {
+      return '${_short(value / 1000000)} Mbps';
+    }
+    if (value >= 1000) {
+      return '${_short(value / 1000)} kbps';
+    }
+    return '${value.toStringAsFixed(0)} bps';
+  }
+
+  /// 整数值不带小数点，例如 `4` / `4.5`。
+  static String _short(num value) {
+    final asDouble = value.toDouble();
+    if (asDouble == asDouble.roundToDouble()) {
+      return asDouble.round().toString();
+    }
+    return asDouble.toStringAsFixed(1);
+  }
+
+  Widget _row(BuildContext context, String label, String value) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 2, bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 120, child: Text(label, style: style)),
+          Expanded(child: Text(value, style: style)),
+        ],
+      ),
+    );
   }
 }

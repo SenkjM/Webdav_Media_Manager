@@ -9267,6 +9267,114 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'音频'**
   String get dlnaHitAudio;
+
+  /// No description provided for @codecCapsSectionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备编码能力'**
+  String get codecCapsSectionTitle;
+
+  /// No description provided for @codecCapsSectionSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'仅用于界面提示；实际编码以转码开始时的尝试结果为准'**
+  String get codecCapsSectionSubtitle;
+
+  /// No description provided for @codecCapsLoading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在查询本机编码能力…'**
+  String get codecCapsLoading;
+
+  /// No description provided for @codecCapsUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法查询本机编码能力（不影响投屏与转码）'**
+  String get codecCapsUnavailable;
+
+  /// No description provided for @codecCapsEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机未报告可用的硬件编码器'**
+  String get codecCapsEmpty;
+
+  /// No description provided for @codecCapsRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新探测'**
+  String get codecCapsRetry;
+
+  /// No description provided for @codecCapsHardware.
+  ///
+  /// In zh, this message translates to:
+  /// **'硬件编码'**
+  String get codecCapsHardware;
+
+  /// No description provided for @codecCapsSoftware.
+  ///
+  /// In zh, this message translates to:
+  /// **'软件编码'**
+  String get codecCapsSoftware;
+
+  /// No description provided for @codecCapsRateControl.
+  ///
+  /// In zh, this message translates to:
+  /// **'码率控制'**
+  String get codecCapsRateControl;
+
+  /// No description provided for @codecCapsBitrateRange.
+  ///
+  /// In zh, this message translates to:
+  /// **'码率范围'**
+  String get codecCapsBitrateRange;
+
+  /// No description provided for @codecCapsResolutionRange.
+  ///
+  /// In zh, this message translates to:
+  /// **'分辨率范围'**
+  String get codecCapsResolutionRange;
+
+  /// No description provided for @codecCapsAlignment.
+  ///
+  /// In zh, this message translates to:
+  /// **'宽高对齐'**
+  String get codecCapsAlignment;
+
+  /// No description provided for @codecCapsFpsRange.
+  ///
+  /// In zh, this message translates to:
+  /// **'帧率范围'**
+  String get codecCapsFpsRange;
+
+  /// No description provided for @codecCapsProfileLevels.
+  ///
+  /// In zh, this message translates to:
+  /// **'Profile / Level'**
+  String get codecCapsProfileLevels;
+
+  /// No description provided for @codecCapsNotReported.
+  ///
+  /// In zh, this message translates to:
+  /// **'未报告'**
+  String get codecCapsNotReported;
+
+  /// No description provided for @codecCapsCodecH264.
+  ///
+  /// In zh, this message translates to:
+  /// **'H.264'**
+  String get codecCapsCodecH264;
+
+  /// No description provided for @codecCapsCodecHevc.
+  ///
+  /// In zh, this message translates to:
+  /// **'H.265（HEVC）'**
+  String get codecCapsCodecHevc;
+
+  /// No description provided for @codecCapsCodecMpeg4.
+  ///
+  /// In zh, this message translates to:
+  /// **'MPEG-4'**
+  String get codecCapsCodecMpeg4;
 }
 
 class _AppLocalizationsDelegate

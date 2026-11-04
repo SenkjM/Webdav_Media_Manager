@@ -5206,6 +5206,60 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get dlnaHitAudio => '音频';
+
+  @override
+  String get codecCapsSectionTitle => '设备编码能力';
+
+  @override
+  String get codecCapsSectionSubtitle => '仅用于界面提示；实际编码以转码开始时的尝试结果为准';
+
+  @override
+  String get codecCapsLoading => '正在查询本机编码能力…';
+
+  @override
+  String get codecCapsUnavailable => '无法查询本机编码能力（不影响投屏与转码）';
+
+  @override
+  String get codecCapsEmpty => '本机未报告可用的硬件编码器';
+
+  @override
+  String get codecCapsRetry => '重新探测';
+
+  @override
+  String get codecCapsHardware => '硬件编码';
+
+  @override
+  String get codecCapsSoftware => '软件编码';
+
+  @override
+  String get codecCapsRateControl => '码率控制';
+
+  @override
+  String get codecCapsBitrateRange => '码率范围';
+
+  @override
+  String get codecCapsResolutionRange => '分辨率范围';
+
+  @override
+  String get codecCapsAlignment => '宽高对齐';
+
+  @override
+  String get codecCapsFpsRange => '帧率范围';
+
+  @override
+  String get codecCapsProfileLevels => 'Profile / Level';
+
+  @override
+  String get codecCapsNotReported => '未报告';
+
+  @override
+  String get codecCapsCodecH264 => 'H.264';
+
+  @override
+  String get codecCapsCodecHevc => 'H.265（HEVC）';
+
+  @override
+  String get codecCapsCodecMpeg4 => 'MPEG-4';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10410,4 +10464,58 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get dlnaHitAudio => '音訊';
+
+  @override
+  String get codecCapsSectionTitle => '裝置編碼能力';
+
+  @override
+  String get codecCapsSectionSubtitle => '僅供介面提示；實際編碼以轉碼開始時的嘗試結果為準';
+
+  @override
+  String get codecCapsLoading => '正在查詢本機編碼能力…';
+
+  @override
+  String get codecCapsUnavailable => '無法查詢本機編碼能力（不影響投屏與轉碼）';
+
+  @override
+  String get codecCapsEmpty => '本機未回報可用的硬體編碼器';
+
+  @override
+  String get codecCapsRetry => '重新偵測';
+
+  @override
+  String get codecCapsHardware => '硬體編碼';
+
+  @override
+  String get codecCapsSoftware => '軟體編碼';
+
+  @override
+  String get codecCapsRateControl => '位元率控制';
+
+  @override
+  String get codecCapsBitrateRange => '位元率範圍';
+
+  @override
+  String get codecCapsResolutionRange => '解析度範圍';
+
+  @override
+  String get codecCapsAlignment => '對齊';
+
+  @override
+  String get codecCapsFpsRange => '影格率範圍';
+
+  @override
+  String get codecCapsProfileLevels => 'Profile / Level';
+
+  @override
+  String get codecCapsNotReported => '未回報';
+
+  @override
+  String get codecCapsCodecH264 => 'H.264';
+
+  @override
+  String get codecCapsCodecHevc => 'H.265（HEVC）';
+
+  @override
+  String get codecCapsCodecMpeg4 => 'MPEG-4';
 }

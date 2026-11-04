@@ -2023,6 +2023,42 @@ class RustCoreService {
     }
   }
 
+  // ── Encoder options schema (contract preset-rate-control §13.4) ───────────
+  //
+  // `wdmm_encoder_options_schema_json()` describes every encoder plus its
+  // rate-control modes and configurable AVOptions. Optional export: an older
+  // .so returns null and the editor renders `EncoderOptionsSchema.fallback()`
+  // instead of hard-coding the option list in Dart.
+
+  static _NoArgToStrDart? _encoderOptionsSchemaJson;
+
+  static bool _encoderOptionsSchemaLoaded = false;
+
+  static void _loadEncoderOptionsSchemaSafe() {
+    if (_encoderOptionsSchemaLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _encoderOptionsSchemaJson = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_encoder_options_schema_json')
+          .asFunction();
+      _encoderOptionsSchemaLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] encoder options schema lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Encoder/options schema as JSON (contract §13.4), or null when the native
+  /// library predates the export (callers degrade to a built-in minimal schema).
+  static String? encoderOptionsSchemaJson() {
+    if (!_ensureSymbols()) return null;
+    _loadEncoderOptionsSchemaSafe();
+    if (_encoderOptionsSchemaJson == null) return null;
+    return _readAndFreeString(_encoderOptionsSchemaJson!());
+  }
+
   // ── HLS VOD transcode-cache management ────────────────────────────────────
   //
   // The VOD HLS path keeps transcoded segments in a disk cache (contract

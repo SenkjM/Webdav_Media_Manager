@@ -241,6 +241,8 @@ class MainActivity : AudioServiceFragmentActivity() {
         }
         registerDownloadKeepAliveChannel(flutterEngine)
         registerDlnaCastChannel(flutterEngine)
+        // Read-only video-encoder capability probe (settings screen hints only).
+        CodecCapsProbe.register(flutterEngine)
     }
 
     /**

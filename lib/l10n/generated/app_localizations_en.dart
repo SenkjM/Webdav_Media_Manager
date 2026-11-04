@@ -5459,4 +5459,60 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dlnaHitAudio => 'Audio';
+
+  @override
+  String get codecCapsSectionTitle => 'Device encoder capabilities';
+
+  @override
+  String get codecCapsSectionSubtitle =>
+      'Advisory only; the real encoder is decided when transcoding starts';
+
+  @override
+  String get codecCapsLoading => 'Querying device encoders…';
+
+  @override
+  String get codecCapsUnavailable =>
+      'Could not query device encoders (casting and transcoding are unaffected)';
+
+  @override
+  String get codecCapsEmpty => 'No hardware encoders reported';
+
+  @override
+  String get codecCapsRetry => 'Probe again';
+
+  @override
+  String get codecCapsHardware => 'Hardware encoder';
+
+  @override
+  String get codecCapsSoftware => 'Software encoder';
+
+  @override
+  String get codecCapsRateControl => 'Rate control';
+
+  @override
+  String get codecCapsBitrateRange => 'Bitrate range';
+
+  @override
+  String get codecCapsResolutionRange => 'Resolution range';
+
+  @override
+  String get codecCapsAlignment => 'Alignment';
+
+  @override
+  String get codecCapsFpsRange => 'Frame rate range';
+
+  @override
+  String get codecCapsProfileLevels => 'Profile / Level';
+
+  @override
+  String get codecCapsNotReported => 'Not reported';
+
+  @override
+  String get codecCapsCodecH264 => 'H.264';
+
+  @override
+  String get codecCapsCodecHevc => 'H.265 (HEVC)';
+
+  @override
+  String get codecCapsCodecMpeg4 => 'MPEG-4';
 }
