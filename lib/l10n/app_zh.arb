@@ -1775,5 +1775,15 @@
   "formLabelCtFileRequestIntervalMs": "请求间隔（毫秒）",
   "formHintCtFileRequestIntervalMs": "两次 API 调用之间的最小间隔；默认 400，填 0 不节流",
   "fileQueuedOrSaved": "该文件已在任务队列或已下载",
-  "fileQueuedOrSavedShort": "该文件已在队列或已保存"
+  "fileQueuedOrSavedShort": "该文件已在队列或已保存",
+  "dlnaHitCopy": "复制",
+  "@dlnaHitCopy": {},
+  "dlnaHitHw": "硬编",
+  "@dlnaHitHw": {},
+  "dlnaHitSw": "软编",
+  "@dlnaHitSw": {},
+  "dlnaHitVideo": "视频",
+  "@dlnaHitVideo": {},
+  "dlnaHitAudio": "音频",
+  "@dlnaHitAudio": {}
 }

@@ -1908,7 +1908,7 @@ class RustCoreService {
   /// [deviceId] is an opaque identifier for the cast session (e.g. renderer USN).
   /// [inputUrl] should be the loopback proxy URL for the file (so the Rust
   /// transcoder fetches via the existing proxy — no separate auth needed).
-  /// [presetId] is the `id` column from `transcode_presets` (e.g. `"balanced"`).
+  /// [presetId] is the `id` column from `transcode_presets` (e.g. `"h264"`).
   ///
   /// Returns a JSON string on success:
   ///   `{"token":"…","playlist_url":"http://127.0.0.1:PORT/hls/TOKEN/index.m3u8"}`
@@ -1976,6 +1976,48 @@ class RustCoreService {
     final ptr = id.toNativeUtf8();
     try {
       return _readAndFreeString(_transcodePresetDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Builtin preset reset (contract preset-encoder-tiers §4) ───────────────
+  //
+  // `wdmm_transcode_preset_reset(id)` restores a factory preset to its seeded
+  // parameters. Optional export: an older .so returns null and the editor shows
+  // “恢复默认不可用” instead of crashing.
+
+  static _OneStrToStrDart? _transcodePresetReset;
+
+  static bool _transcodePresetResetLoaded = false;
+
+  static void _loadTranscodePresetResetSafe() {
+    if (_transcodePresetResetLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _transcodePresetReset = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_transcode_preset_reset')
+          .asFunction();
+      _transcodePresetResetLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] transcode preset reset lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Reset the builtin preset [id] to its factory defaults.
+  ///
+  /// Returns `'ok'` / `'error:…'`, or null when the native library predates the
+  /// export (the editor degrades to “恢复默认不可用”).
+  static String? transcodePresetReset(String id) {
+    if (!_ensureSymbols()) return null;
+    _loadTranscodePresetResetSafe();
+    if (_transcodePresetReset == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_transcodePresetReset!(ptr));
     } finally {
       calloc.free(ptr);
     }

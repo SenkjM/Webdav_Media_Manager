@@ -3,12 +3,17 @@ import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 
 /// Extensions treated as text sidecars. `.idx` is not one of them.
+///
+/// Kept in parity with the Rust side (`SUBTITLE_EXTS` in
+/// `crates/wdmm-ffi/src/dlna_session.rs`) and with `text/<ext>` MIME subtypes in
+/// `crates/wdmm-dlna/src/didl.rs`, which is what DLNA renderers match on.
 const Set<String> subtitleSidecarExtensions = {
   'srt',
   'ass',
   'ssa',
   'vtt',
   'sub',
+  'smi',
 };
 
 /// Filename without its last video extension, compared case-insensitively.

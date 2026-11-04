@@ -268,6 +268,19 @@ class DlnaCastService extends ChangeNotifier {
   /// 因此按它隐藏，避免在直通投屏上显示「闲置」这种误导性状态。
   String get provider => _provider;
 
+  /// 本次会话开始时就已确定的直通意图（设备级开关或 MKV 强制直通）。
+  ///
+  /// 直通会话不显示 HLS 预热面板（契约 preset-encoder-tiers §7.4），但 phase
+  /// 要等 Rust 首个 tick 才回来；UI 先用这个「开始投屏时已知」的标志判定，
+  /// 后端随后回报 [provider]` == 'direct'` 时同样跳过。
+  bool get expectDirect => _expectDirect;
+
+  /// 视频流命中层：`copy` / `hw` / `sw` / `none`；null = 旧版 `.so` 未上报。
+  String? get videoAction => _videoAction;
+
+  /// 音频流命中层：`copy` / `hw` / `sw` / `none`；null = 旧版 `.so` 未上报。
+  String? get audioAction => _audioAction;
+
   /// 是否正在建立投屏会话（已点投送、Rust 尚未返回 `phase:"warming"`）。
   ///
   /// UI 用它立刻渲染预热面板的「正在准备缓存预热…」状态（契约 task-21 §1）。
@@ -381,6 +394,13 @@ class DlnaCastService extends ChangeNotifier {
   String? _protocolInfo;
   /// 会话类型：`hls` / `direct`（来自 start / state 的 `provider`）。
   String _provider = '';
+
+  /// 会话开始前就确定的直通意图（契约 preset-encoder-tiers §7.4）。
+  bool _expectDirect = false;
+
+  /// 本次会话的流命中层（契约 §11）：`copy` / `hw` / `sw` / `none`。
+  String? _videoAction;
+  String? _audioAction;
 
   /// 用户刚点「投送」、会话尚未建立完成的乐观状态（契约 task-21 §1）。
   ///
@@ -769,30 +789,101 @@ class DlnaCastService extends ChangeNotifier {
 
   // ── 内部：会话推进 ────────────────────────────────────────────────────────
 
-  /// 把队列中的条目切到当前投屏（首次 = 新建会话，之后 = `select` 命令）。
+  /// 把队列中的条目切到当前投屏。
+  ///
+  /// 直通（`direct`）与 HLS 是两种会话类型，不能在同一条 Rust 会话里互转：
+  /// 下一条期望模式与当前会话不同时先收掉旧会话、再按 `first: true` 重开
+  /// （例如 HLS 队列里切到 `.mkv` 且 MKV 直通开关打开）。模式相同则沿用
+  /// 既有 `select` 命令切集，避免白白重建会话。
   Future<void> _castQueuedItem(WebDavItem item, String accountId) async {
-    if (_renderer == null) return;
+    final renderer = _renderer;
+    if (renderer == null) return;
+    final prefs = _dmrPrefs[renderer.usn];
+    // 与 `_beginItem` 保持同一套判定：设备级直通开关 + MKV 全局直通。
+    final targetDirect = (prefs?.forceDirect ?? true) ||
+        (_settings.dlnaMkvPassthrough && _isMatroska(item.name));
+    final sessionDirect = _expectDirect || _provider == 'direct';
     try {
+      if (targetDirect != sessionDirect) {
+        await _restartSessionForMode(
+          item,
+          accountId,
+          targetDirect: targetDirect,
+        );
+        return;
+      }
       await _beginItem(item, accountId, first: false);
     } catch (e) {
       await _failWith(e);
     }
   }
 
+  /// 切集时按新的投送模式（直通 / HLS）重建会话。
+  ///
+  /// 旧会话收尾时保留队列与渲染器（`keepQueue: true`），并在过渡期保持
+  /// `_preparing`，避免投屏条/小窗在 stop 与 restart 之间闪成 idle。
+  ///
+  /// 部分 DMR 收到 `Stop` 后几百毫秒内会拒绝新的 `SetAVTransportURI`：
+  /// 首次启动失败时清理半成品会话、等一小段再重试一次，两次都失败才把异常
+  /// 抛回 [stop]-[close]-[start] 的正常失败路径。
+  Future<void> _restartSessionForMode(
+    WebDavItem item,
+    String accountId, {
+    required bool targetDirect,
+  }) async {
+    if (_renderer == null) return;
+    final fromDirect = _expectDirect || _provider == 'direct';
+    debugPrint(
+      '[cast] mode switch ${fromDirect ? 'direct' : 'hls'}→'
+      '${targetDirect ? 'direct' : 'hls'} restart for ${item.name}',
+    );
+    // 过渡态：先亮「正在准备」再收尾，UI 不会掉回 idle。
+    _preparing = true;
+    _notify();
+    await _cleanupSession(reason: 'mode-switch', keepQueue: true);
+    // 过渡期用户可能按了停止 / 取消：`stop()` 会清空队列并回到 idle。
+    if (_disposed || _state != DlnaCastState.casting || _renderer == null) {
+      return;
+    }
+    _preparing = true;
+    final epoch = _castEpoch;
+    try {
+      await _beginItem(item, accountId, first: true, epoch: epoch);
+    } catch (e) {
+      debugPrint('[cast] mode switch restart failed, retrying in 600ms: $e');
+      // 先收掉可能已半建立的会话，再退避重试一次。
+      await _cleanupSession(reason: 'mode-switch-retry', keepQueue: true);
+      if (_disposed || _state != DlnaCastState.casting || _renderer == null) {
+        return;
+      }
+      _preparing = true;
+      _notify();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (_disposed || _state != DlnaCastState.casting || _renderer == null) {
+        return;
+      }
+      _preparing = true;
+      _notify();
+      await _beginItem(item, accountId, first: true, epoch: _castEpoch);
+    }
+  }
+
   /// 解析转码路径下真正发给 Rust 的预设 id。
   ///
-  /// 设备级覆盖优先于全局默认；直通（`passthrough`）与空值一律忽略，
-  /// 保证「直通」永远不会作为转码预设穿过 FFI。
+  /// 设备级覆盖优先于全局默认；直通（`passthrough`）、v13 已删除的旧内置 id
+  /// 与空值一律忽略，保证「直通」永远不会作为转码预设穿过 FFI，也不会把不存在
+  /// 的 preset id 发给 Rust。
   String _effectivePresetId(String? devicePresetId) {
     final override = devicePresetId?.trim();
     if (override != null &&
         override.isNotEmpty &&
-        override != TranscodePresetCatalog.passthroughId) {
+        !TranscodePresetCatalog.removedBuiltinIds.contains(override)) {
       return override;
     }
     final global = _settings.dlnaDefaultTranscodePreset.trim();
-    if (global.isEmpty || global == TranscodePresetCatalog.passthroughId) {
-      return 'balanced';
+    if (global.isEmpty ||
+        TranscodePresetCatalog.removedBuiltinIds.contains(global)) {
+      return TranscodePresetCatalog.defaultId;
     }
     return global;
   }
@@ -836,16 +927,25 @@ class DlnaCastService extends ChangeNotifier {
     _selectedSubtitle = null;
     _subtitleStatus = null;
     _resetWarmupState();
-    // 切到新条目同样要先亮「正在准备缓存预热…」，等 Rust 返回 phase 再切走。
-    _preparing = true;
-    _notify();
 
     final prefs = _dmrPrefs[renderer.usn];
-    final forceDirect = prefs?.forceDirect ?? true;
+    // MKV 直通（契约 preset-encoder-tiers §7.3）：Matroska 容器 + 全局开关
+    // ⇒ 强制直通，即使设备级「直通（不转码）」开关是关的。只对新建会话生效：
+    // 已建立的 HLS 会话无法在切集时改成直通，沿用原会话类型（已在报告点名）。
+    final mkvDirect =
+        first && _settings.dlnaMkvPassthrough && _isMatroska(item.name);
+    final forceDirect = mkvDirect || (prefs?.forceDirect ?? true);
+    // 直通意图在会话开始前就已确定（契约 §7.4），UI 因此可以直接跳过预热面板；
+    // 队列切条目（非首次）不改变已建立会话的类型，只对首次生效。
+    if (first) _expectDirect = forceDirect;
     // 直通（不转码）只由 forceDirect 开关表达：`passthrough` 不是转码预设，
     // 不允许经 `preset_id` 偷偷走直通，否则就绕过了兼容开关。
     final presetId =
         forceDirect ? null : _effectivePresetId(prefs?.presetId);
+
+    // 切到新条目同样要先亮「正在准备缓存预热…」，等 Rust 返回 phase 再切走。
+    _preparing = true;
+    _notify();
 
     final handle = _handle;
     if (first || handle == null) {
@@ -1079,7 +1179,14 @@ class DlnaCastService extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> _cleanupSession({String reason = 'unspecified'}) async {
+  /// 收掉当前 Rust 会话与 UI 会话态。
+  ///
+  /// [keepQueue] 仅用于「直通 / HLS 模式切换后重开会话」：保留队列与渲染器，
+  /// 由调用方在重建会话时重新挂回，避免切集把播放队列一起销毁。
+  Future<void> _cleanupSession({
+    String reason = 'unspecified',
+    bool keepQueue = false,
+  }) async {
     // 代次自增：正在建立会话的 startCast/_beginItem 会在 await 之后发现
     // 代次已变，丢弃晚到的句柄（见 _discardSession）。
     _castEpoch++;
@@ -1101,9 +1208,13 @@ class DlnaCastService extends ChangeNotifier {
         () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
       );
     }
-    _queue?.dispose();
-    _queue = null;
-    _renderer = null;
+    if (!keepQueue) {
+      _queue?.dispose();
+      _queue = null;
+      _renderer = null;
+    }
+    // `keepQueue`（模式切换重建）时保留队列与渲染器，避免过渡期 UI 看到
+    // 空的 renderer/queue；新会话由 `_beginItem(first: true)` 重开。
     _currentItem = null;
     _position = Duration.zero;
     _duration = null;
@@ -1114,6 +1225,7 @@ class DlnaCastService extends ChangeNotifier {
     _subtitleStatus = null;
     _protocolInfo = null;
     _provider = '';
+    _expectDirect = false;
     _endedForPath = null;
     _everPlaying = false;
     _error = null;
@@ -1336,6 +1448,9 @@ class DlnaCastService extends ChangeNotifier {
     _cacheHits = 0;
     _cacheBytes = 0;
     _cacheOverBudget = false;
+    // §11 命中层：等 Rust 下一次上报。
+    _videoAction = null;
+    _audioAction = null;
     // 乐观 UI：预热面板由真实 phase 接管；媒体类型等 Rust 下一次上报。
     _preparing = false;
     _mediaKind = '';
@@ -1418,6 +1533,26 @@ class DlnaCastService extends ChangeNotifier {
     // §3 音频投送：`media_kind:"audio"` 时 UI 隐藏字幕等视频专属控件。
     final mediaKind = _nonEmpty(json['media_kind']);
     if (mediaKind != null) _mediaKind = mediaKind;
+
+    // §11 命中层：`copy` / `hw` / `sw` / `none`。缺失或非法值保持原值
+    // （不猜），旧版 `.so` 因此永远是 null，UI 不显示标签。
+    final videoAction = _hitAction(json['video_action']);
+    if (videoAction != null) _videoAction = videoAction;
+    final audioAction = _hitAction(json['audio_action']);
+    if (audioAction != null) _audioAction = audioAction;
+  }
+
+  /// 解析 `video_action` / `audio_action` 的合法取值；其余（含 null）返回 null。
+  static String? _hitAction(Object? value) {
+    switch (value) {
+      case 'copy':
+      case 'hw':
+      case 'sw':
+      case 'none':
+        return value as String;
+      default:
+        return null;
+    }
   }
 
   /// 合并 `subtitle_status`（契约 task-11 §6）。
@@ -1539,6 +1674,12 @@ class DlnaCastService extends ChangeNotifier {
     final dot = fileName.lastIndexOf('.');
     if (dot < 0 || dot == fileName.length - 1) return '';
     return fileName.substring(dot + 1).toLowerCase();
+  }
+
+  /// Matroska 容器（`.mkv` / `.mka`）：MKV 直通开关打开时强制直通。
+  bool _isMatroska(String fileName) {
+    final ext = _extensionOf(fileName);
+    return ext == 'mkv' || ext == 'mka';
   }
 
   String _parentPath(String path) {

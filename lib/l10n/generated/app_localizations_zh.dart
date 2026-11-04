@@ -5191,6 +5191,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get fileQueuedOrSavedShort => '该文件已在队列或已保存';
+
+  @override
+  String get dlnaHitCopy => '复制';
+
+  @override
+  String get dlnaHitHw => '硬编';
+
+  @override
+  String get dlnaHitSw => '软编';
+
+  @override
+  String get dlnaHitVideo => '视频';
+
+  @override
+  String get dlnaHitAudio => '音频';
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10380,4 +10395,19 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get fileQueuedOrSavedShort => '檔案已在佇列或已儲存';
+
+  @override
+  String get dlnaHitCopy => '複製';
+
+  @override
+  String get dlnaHitHw => '硬編';
+
+  @override
+  String get dlnaHitSw => '軟編';
+
+  @override
+  String get dlnaHitVideo => '影片';
+
+  @override
+  String get dlnaHitAudio => '音訊';
 }

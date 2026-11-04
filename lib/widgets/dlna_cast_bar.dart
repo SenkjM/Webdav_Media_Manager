@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/app_state.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/dlna_cast_service.dart';
 import '../utils/app_snack.dart';
 import 'dlna_compat_sheet.dart';
@@ -412,12 +413,16 @@ class _DlnaCastBarState extends State<DlnaCastBar>
     final scheme = Theme.of(context).colorScheme;
     final isError = cast.state == DlnaCastState.error;
     final isWarmFailed = cast.phase == 'failed';
+    // §7.4 直通（不转码）：本次会话开始时就已确定，会话建立前就能跳过预热面板，
+    // 不能等异步 progress 回来才判断。后端随后回报 direct 时同样跳过。
+    final direct = cast.expectDirect || cast.provider == 'direct';
     // §3 预热：`phase == "warming"` 只测速 + 本地生成播放列表，暂不投送；
     // `phase == "failed"` 显示转码失败原因与 §7.5 诊断日志。
     // 旧版 `.so` 不返回 phase（服务已降级为 playing），不会进入这两个分支。
     // `preparing`（task-21 §1）覆盖「已点投送、Rust 还没返回 phase」的窗口。
-    final preparing = cast.preparing && !isWarmFailed && !isError;
-    final isWarming = cast.phase == 'warming' || preparing;
+    final preparing =
+        !direct && cast.preparing && !isWarmFailed && !isError;
+    final isWarming = !direct && (cast.phase == 'warming' || preparing);
     final isBuffering = cast.playbackState == DlnaPlaybackState.buffering;
     final hasPrev = cast.queue?.hasPrevious ?? false;
     final hasNext = cast.queue?.hasNext ?? false;
@@ -513,6 +518,16 @@ class _DlnaCastBarState extends State<DlnaCastBar>
                   // ── 预热中（§3）：实时测速 / 播放列表就绪 / 投送 ──
                   _WarmingPanel(cast: cast, onCollapse: _collapse)
                 else ...[
+                  // ── 直通命中层（§11）：直通没有速度预测区，在控制区
+                  // 同一位置显示「复制」小标签，表明原始字节未被重编码。
+                  if (direct)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _HitLayerBadge(video: 'copy'),
+                      ),
+                    ),
                   // ── §4 HLS 点播化遥测：转码速度 + 运行状态 ──────
                   _CastTelemetry(cast: cast),
 
@@ -1220,6 +1235,9 @@ class _WarmingPanel extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
+            const SizedBox(width: 8),
+            // §11 命中层小标签：copy / hw / sw；缺失或 none 不占位。
+            _HitLayerBadge(video: cast.videoAction, audio: cast.audioAction),
             const Spacer(),
             Text(
               '已编码 ${_fmtEncodeSeconds(cast.encodeContentMs)}',
@@ -1734,6 +1752,74 @@ class _CollapseHandle extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// 命中层小标签（契约 preset-encoder-tiers §11）：复制 / 硬编 / 软编。
+///
+/// 主标签显示视频层；视频层为 `none`（纯音频投屏）时显示音频层。两层不同
+/// （如「复制视频 + 软编音频」）时 Tooltip 显示完整组合。缺失或 `none` 时
+/// 返回零尺寸占位，不占位。
+class _HitLayerBadge extends StatelessWidget {
+  const _HitLayerBadge({this.video, this.audio});
+
+  final String? video;
+  final String? audio;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final videoLabel = _actionLabel(l10n, video);
+    final audioLabel = _actionLabel(l10n, audio);
+    final primaryLabel = videoLabel ?? audioLabel;
+    if (primaryLabel == null) return const SizedBox.shrink();
+    final primaryAction = videoLabel != null ? video : audio;
+    final color = _actionColor(Theme.of(context).colorScheme, primaryAction);
+
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        primaryLabel,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+      ),
+    );
+    if (videoLabel == null || audioLabel == null) return badge;
+    final combo = '${l10n.dlnaHitVideo}$videoLabel · '
+        '${l10n.dlnaHitAudio}$audioLabel';
+    return Tooltip(message: combo, child: badge);
+  }
+
+  static String? _actionLabel(AppLocalizations l10n, String? action) {
+    switch (action) {
+      case 'copy':
+        return l10n.dlnaHitCopy;
+      case 'hw':
+        return l10n.dlnaHitHw;
+      case 'sw':
+        return l10n.dlnaHitSw;
+      default:
+        return null;
+    }
+  }
+
+  static Color _actionColor(ColorScheme scheme, String? action) {
+    switch (action) {
+      case 'copy':
+        return scheme.tertiary;
+      case 'hw':
+        return scheme.primary;
+      case 'sw':
+        return scheme.secondary;
+      default:
+        return scheme.onSurfaceVariant;
+    }
   }
 }
 

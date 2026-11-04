@@ -9237,6 +9237,36 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'该文件已在队列或已保存'**
   String get fileQueuedOrSavedShort;
+
+  /// No description provided for @dlnaHitCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制'**
+  String get dlnaHitCopy;
+
+  /// No description provided for @dlnaHitHw.
+  ///
+  /// In zh, this message translates to:
+  /// **'硬编'**
+  String get dlnaHitHw;
+
+  /// No description provided for @dlnaHitSw.
+  ///
+  /// In zh, this message translates to:
+  /// **'软编'**
+  String get dlnaHitSw;
+
+  /// No description provided for @dlnaHitVideo.
+  ///
+  /// In zh, this message translates to:
+  /// **'视频'**
+  String get dlnaHitVideo;
+
+  /// No description provided for @dlnaHitAudio.
+  ///
+  /// In zh, this message translates to:
+  /// **'音频'**
+  String get dlnaHitAudio;
 }
 
 class _AppLocalizationsDelegate

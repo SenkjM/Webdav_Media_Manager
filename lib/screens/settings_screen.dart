@@ -544,6 +544,19 @@ class _SettingsScreenState extends State<SettingsScreen>
               _reloadDlnaPresets();
             },
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.movie_filter_outlined),
+            title: const Text('MKV 直通（不转码）'),
+            subtitle: const Text(
+              'MKV 包含内嵌字幕，转码会丢失；开启后 MKV 一律直通，'
+              '接收端不支持其编码时可能无法播放',
+            ),
+            value: settings.dlnaMkvPassthrough,
+            onChanged: (v) {
+              context.read<SettingsService>().dlnaMkvPassthrough = v;
+            },
+          ),
           // ── 转码缓存（VOD 点播化 §3.5）────────────────────────────────
           ListTile(
             contentPadding: EdgeInsets.zero,

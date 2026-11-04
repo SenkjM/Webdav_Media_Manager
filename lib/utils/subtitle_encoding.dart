@@ -29,7 +29,7 @@ const _gbk = GbkCodec(allowMalformed: false);
 const _big5 = extra.Big5Codec(allowInvalid: false);
 const _utf16 = Utf16Decoder();
 
-const _subtitleExtensions = {'srt', 'ass', 'ssa', 'vtt', 'sub'};
+const _subtitleExtensions = {'srt', 'ass', 'ssa', 'vtt', 'sub', 'smi'};
 
 /// Text sidecar extensions we know how to hand to mpv.
 bool isTextSubtitleExtension(String extension) =>

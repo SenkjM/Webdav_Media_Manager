@@ -1755,5 +1755,10 @@
   "formLabelCtFileRequestIntervalMs": "Request interval (ms)",
   "formHintCtFileRequestIntervalMs": "Minimum gap between API calls; default 400, 0 disables",
   "fileQueuedOrSaved": "This file is already in the task queue or downloaded",
-  "fileQueuedOrSavedShort": "This file is already queued or saved"
+  "fileQueuedOrSavedShort": "This file is already queued or saved",
+  "dlnaHitCopy": "Copy",
+  "dlnaHitHw": "HW",
+  "dlnaHitSw": "SW",
+  "dlnaHitVideo": "Video",
+  "dlnaHitAudio": "Audio"
 }

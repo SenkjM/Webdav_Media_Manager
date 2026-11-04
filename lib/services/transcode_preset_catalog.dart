@@ -6,7 +6,7 @@ import 'rust_core_service.dart';
 class TranscodePresetOption {
   const TranscodePresetOption({required this.id, required this.label});
 
-  /// 数据库主键（如 `balanced`、`dlna-compat`）。
+  /// 数据库主键（如 `h264`、`hevc`）。
   final String id;
 
   /// 展示名称：内置预设用中文名，自定义预设用数据库里的 label。
@@ -25,23 +25,32 @@ class TranscodePresetCatalog {
   /// 直通预设 id：只作为兼容开关存在，不出现在转码预设选项里。
   static const String passthroughId = 'passthrough';
 
+  /// v13 之前的旧内置预设 id（含直通）。这些 id 在 v13 数据库里已不存在，
+  /// 读取旧设置/旧设备偏好时要归一化，避免把不存在的 preset id 发给 Rust。
+  static const Set<String> removedBuiltinIds = {
+    'passthrough',
+    'balanced',
+    'dlna-compat',
+    'high',
+    'audio-only',
+  };
+
   /// 内置预设的中文展示名称（仅 UI 文案；转码参数始终以数据库为准）。
   static const Map<String, String> _builtinLabels = {
-    'balanced': '均衡',
-    'dlna-compat': '高兼容',
-    'high': '高画质',
-    'audio-only': '仅音频',
+    'h264': 'H.264（兼容优先）',
+    'hevc': 'H.265（更高压缩）',
   };
 
   /// FFI 不可用时的回退选项（与数据库种子的内置预设 id 一致，排除直通）。
   static const List<TranscodePresetOption> fallback = [
-    TranscodePresetOption(id: 'balanced', label: '均衡'),
-    TranscodePresetOption(id: 'dlna-compat', label: '高兼容'),
-    TranscodePresetOption(id: 'high', label: '高画质'),
-    TranscodePresetOption(id: 'audio-only', label: '仅音频'),
+    TranscodePresetOption(id: 'h264', label: 'H.264（兼容优先）'),
+    TranscodePresetOption(id: 'hevc', label: 'H.265（更高压缩）'),
   ];
 
-  /// 读取数据库中的转码预设（已排除直通、按 `sort_order` 排序）。
+  /// 默认预设 id（设置页与投屏在无有效选择时使用）。
+  static const String defaultId = 'h264';
+
+  /// 读取数据库中的转码预设（已排除直通与 v13 前的旧内置 id、按 `sort_order` 排序）。
   ///
   /// 任何 FFI / 解析失败都回退到 [fallback]；结果保证非空。
   static List<TranscodePresetOption> load() {
@@ -56,7 +65,9 @@ class TranscodePresetCatalog {
       for (final entry in decoded) {
         if (entry is! Map) continue;
         final id = entry['id']?.toString() ?? '';
-        if (id.isEmpty || id == passthroughId) continue;
+        // v13 前的旧内置 id（含 `passthrough`）即使因迁移残留出现在 DB 里，
+        // 也不能出现在下拉选项中：这些 id 已不是合法转码预设。
+        if (id.isEmpty || removedBuiltinIds.contains(id)) continue;
         final rawLabel = entry['label']?.toString() ?? '';
         final label = _builtinLabels[id] ?? (rawLabel.isEmpty ? id : rawLabel);
         final order = entry['sort_order'] as int? ?? 0;

@@ -23,6 +23,7 @@ import '../utils/subtitle_sidecar.dart';
 import 'package:openlist_crypt/openlist_crypt.dart';
 
 import 'rust_core_service.dart';
+import 'transcode_preset_catalog.dart';
 import '../models/page_turn_direction.dart';
 import '../models/manga_build.dart';
 
@@ -126,6 +127,9 @@ class SettingsService extends ChangeNotifier {
   static const _kDlnaTranscodeVideo = 'dlna_transcode_video';
   static const _kDlnaTranscodeAudio = 'dlna_transcode_audio';
   static const _kDlnaDefaultTranscodePreset = 'dlna_default_transcode_preset';
+
+  /// MKV/MKA 全部直通（不转码）。默认**开**。键 `dlna_mkv_passthrough`。
+  static const _kDlnaMkvPassthrough = 'dlna_mkv_passthrough';
 
   /// HLS VOD transcode cache budget (MiB). Consumed by the DLNA session config
   /// as `cache_budget_mb` (contract hls-vod-transcode-cache §3.5).
@@ -657,24 +661,40 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// DLNA 投屏默认转码预设。键 `dlna_default_transcode_preset`，默认 `'balanced'`。
+  /// DLNA 投屏默认转码预设。键 `dlna_default_transcode_preset`，默认 `'h264'`。
   ///
   /// 直通（`passthrough`）不是转码预设：它只由设备级「直通（不转码）」开关
-  /// 表达（`force_direct`），因此历史遗留值一律归一到 `'balanced'`。
+  /// 表达（`force_direct`）。v13 之前的旧内置 id（`balanced` 等）已从数据库
+  /// 删除，读取时一并归一到 [`TranscodePresetCatalog.defaultId`]。
   String get dlnaDefaultTranscodePreset {
     final v = RustCoreService.kvGet(_kDlnaDefaultTranscodePreset);
     if (v != null &&
         v != 'null' &&
         !v.startsWith('error:') &&
         v.isNotEmpty &&
-        v != 'passthrough') {
+        !TranscodePresetCatalog.removedBuiltinIds.contains(v)) {
       return v;
     }
-    return 'balanced';
+    return TranscodePresetCatalog.defaultId;
   }
 
   set dlnaDefaultTranscodePreset(String v) {
     RustCoreService.kvSet(_kDlnaDefaultTranscodePreset, v);
+    notifyListeners();
+  }
+
+  /// MKV/MKA 全局直通开关。默认**开**。键 `dlna_mkv_passthrough`。
+  ///
+  /// `.mkv`/`.mka` 通常带内嵌字幕，转码会丢字幕；开启后这两类容器一律强制
+  /// 直通（经本机代理投放原始字节，不经过 FFmpeg），跳过 HLS 转码。
+  bool get dlnaMkvPassthrough {
+    final v = RustCoreService.kvGet(_kDlnaMkvPassthrough);
+    if (v != null && v != 'null' && !v.startsWith('error:')) return v == 'true';
+    return true;
+  }
+
+  set dlnaMkvPassthrough(bool v) {
+    RustCoreService.kvSet(_kDlnaMkvPassthrough, v.toString());
     notifyListeners();
   }
 

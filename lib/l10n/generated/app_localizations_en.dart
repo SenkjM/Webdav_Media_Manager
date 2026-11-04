@@ -5444,4 +5444,19 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fileQueuedOrSavedShort => 'This file is already queued or saved';
+
+  @override
+  String get dlnaHitCopy => 'Copy';
+
+  @override
+  String get dlnaHitHw => 'HW';
+
+  @override
+  String get dlnaHitSw => 'SW';
+
+  @override
+  String get dlnaHitVideo => 'Video';
+
+  @override
+  String get dlnaHitAudio => 'Audio';
 }
