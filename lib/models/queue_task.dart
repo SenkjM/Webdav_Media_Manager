@@ -157,6 +157,7 @@ class QueueTask {
     this.isEnumerator = false,
     this.target = DownloadTarget.cache,
     this.attempts = 0,
+    this.attemptsCap,
     this.nextRetryAt,
     this.downloadMode,
     this.remoteSize,
@@ -210,6 +211,11 @@ class QueueTask {
   DateTime? remoteModified;
 
   int attempts;
+
+  /// 本次生效的自动重试上限（由 Rust 裁决给出：后台离线 3 / 其余 5）。
+  ///
+  /// 只在至少失败过一次后才有值；UI 用它渲染 `attempts/cap`。
+  int? attemptsCap;
   DateTime? nextRetryAt;
 
   /// In-memory scheduling priority (higher runs first). Not persisted: a
@@ -276,6 +282,7 @@ class QueueTask {
     'remote_size': remoteSize,
     'remote_modified': remoteModified?.toIso8601String(),
     'attempts': attempts,
+    'attempts_cap': attemptsCap,
     'next_retry_at': nextRetryAt?.toIso8601String(),
   };
 
@@ -320,6 +327,7 @@ class QueueTask {
         ? _asDate(map['remote_modified'])
         : null,
     attempts: (map['attempts'] as int?) ?? 0,
+    attemptsCap: map['attempts_cap'] as int?,
     nextRetryAt: map['next_retry_at'] != null
         ? _asDate(map['next_retry_at'])
         : null,
@@ -342,6 +350,7 @@ class QueueTask {
     CloudDownloadMode? downloadMode,
     int? remoteSize,
     DateTime? remoteModified,
+    int? attemptsCap,
   }) {
     return QueueTask(
       id: id,
@@ -367,6 +376,7 @@ class QueueTask {
       remoteSize: remoteSize ?? this.remoteSize,
       remoteModified: remoteModified ?? this.remoteModified,
       attempts: attempts,
+      attemptsCap: attemptsCap ?? this.attemptsCap,
       nextRetryAt: nextRetryAt,
     );
   }

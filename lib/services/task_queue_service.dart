@@ -37,6 +37,7 @@ import '../utils/cbz_range_zip.dart';
 import '../utils/manga_pack_followup.dart';
 import 'playlist_service.dart';
 import 'platform_export_service.dart';
+import 'rust_core_service.dart';
 import 'webdav_service.dart';
 
 import 'dart:math';
@@ -183,86 +184,30 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   bool _pumpRequested = false;
   bool _initialized = false;
 
-  /// 自动重试上限（网络类错误）。手动点「重试」不受此限。
-  static const int maxAutoRetries = 5;
-
-  /// 应用在后台且错误属于 [isOfflineError] 时的自动重试上限。
-  /// 前台，以及后台的非 offline 错误，仍用 [maxAutoRetries]。
-  static const int backgroundOfflineMaxAutoRetries = 3;
-
-  /// `_handleFailure` 用的上限。后台 offline 为 3，其余为 5。
-  static int autoRetryCap({required bool inBackground, required bool offline}) {
-    if (inBackground && offline) return backgroundOfflineMaxAutoRetries;
-    return maxAutoRetries;
-  }
-
-  /// 这次失败还该不该自动再试。取消与不可重试的错误由调用方另判。
-  static bool shouldAutoRetry({
-    required int attempts,
-    required Object error,
-    required bool inBackground,
-  }) {
-    if (!isRetryable(error)) return false;
-    return attempts <
-        autoRetryCap(
-          inBackground: inBackground,
-          offline: isOfflineError(error),
-        );
-  }
-
-  /// 完全没网时的等待时间。网络事件能提前唤醒。次数仍算进 [autoRetryCap]。
+  /// Dart 侧唯一的失败判定逻辑：把异常归类给 Rust。
   ///
-  /// 别调大：断网时用户等的就是这个间隔，5 分钟看起来和「卡死」没区别。
-  static const Duration offlineRetryDelay = Duration(seconds: 10);
+  /// 自动重试上限、退避表、离线判定与 cancel/fail/retry 裁决都在 Rust
+  /// （`wdmm_queue_retry_json` / `crates/wdmm-queue/src/policy.rs`）。这里只做
+  /// 类型判断，不看文案。
+  static String failureCategory(Object error) {
+    if (error is WdmmVfsDataException) return 'vfs_data';
+    if (error is StateError) return 'state';
+    if (error is DioException) return 'dio';
+    return 'other';
+  }
+
+  /// 交给 Rust 做离线判定的错误文本。
+  ///
+  /// Dio 的 `toString()` 往往只有 "connection error"，真正的 DNS 文案挂在内层
+  /// `error.error` 上；离线识别必须看到内层。
+  static String failureMessage(Object error) =>
+      error is DioException ? (error.error ?? error).toString() : error.toString();
 
   Timer? _retryTimer;
 
   /// 原地重试正等在这次退避上时，网络事件用它提前叫醒。
   Completer<void>? _wake;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
-
-  /// 退避：2/4/8/16/32 秒，加 0~1 秒抖动（抖动避免多任务同时回头打源站）。
-  static Duration retryDelay(int attempt) {
-    final seconds = 1 << attempt.clamp(1, 5);
-    return Duration(milliseconds: seconds * 1000 + Random().nextInt(1000));
-  }
-
-  /// 第 [attempts] 次失败后等多久再试。
-  ///
-  /// 没网固定 10 秒（这时等网络回来最要紧，退避拉长反而像卡死），
-  /// 其余按 2/4/8/16/32 退避。**两种情况都算一次尝试**——计数只有一个来源。
-  static Duration retryDelayFor(int attempts, {required bool offline}) =>
-      offline ? offlineRetryDelay : retryDelay(attempts);
-
-  /// 错误值不值得自动重试。
-  ///
-  /// **默认倾向可重试**：认不出来的错误也必须落到退避兜底（用户要求），
-  /// 只有明确「重试也没用」的才直接判失败。
-  static bool isRetryable(Object error) {
-    // 内容本身坏了（解密失败）：同一份字节再拉一次还是坏的。
-    // 上游错误（含 401 / 403 / 奇怪的授权失败）一律重试，不再按状态码或文案排除。
-    if (error is WdmmVfsDataException) return false;
-    if (error is StateError) return false;
-    if (error is DioException && error.type == DioExceptionType.cancel) {
-      return false;
-    }
-    return true;
-  }
-
-  /// 这个失败是不是「当前根本没网」（DNS / unreachable）。
-  ///
-  /// 计数仍走 [autoRetryCap]：后台这类失败最多 3 次，前台与其它错误仍是 5 次。
-  static bool isOfflineError(Object error) {
-    final text = error is DioException
-        ? (error.error ?? error).toString().toLowerCase()
-        : error.toString().toLowerCase();
-    return text.contains('network is unreachable') ||
-        text.contains('network is down') ||
-        text.contains('failed host lookup') ||
-        text.contains('unable to resolve host') ||
-        text.contains('no address associated') ||
-        text.contains('nodename nor servname');
-  }
 
   /// Last failure while persisting/starting a task.
   ///
@@ -1835,6 +1780,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     old.bytesReceived = 0;
     // 手动重试是明确的用户意图：重置自动重试计数（半截文件仍然复用）。
     old.attempts = 0;
+    old.attemptsCap = null;
     old.nextRetryAt = null;
     _sessionIds.add(old.id);
     await _store.upsert(old);
@@ -1870,6 +1816,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       task.bytesReceived = 0;
       task.nextRetryAt = null;
       task.attempts = 0;
+      task.attemptsCap = null;
       _sessionIds.add(task.id);
       await _store.upsert(task);
     }
@@ -2239,7 +2186,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
   /// 一次下载失败后的统一处理：立刻失败 / 退避重试 / 等网络。
   ///
   /// 文案码不变（`err.dlNetworkInterruptedRetry` / `err.dlOfflineRetryWait` /
-  /// `err.dlRetryExhausted`）。次数上限见 [autoRetryCap]：前台 5，后台 offline 3。
+  /// `err.dlRetryExhausted`）。上限、退避、离线判定与裁决全部来自 Rust 的
+  /// `wdmm_queue_retry_json`（slice 10）。
   Future<void> _handleFailure(
     QueueTask task,
     Object error, {
@@ -2264,40 +2212,44 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     final userCancelled = cancelled || task.status == TaskStatus.cancelled;
+    final decision = await _askRetryPolicy(
+      error,
+      attempts: task.attempts,
+      cancelled: userCancelled,
+    );
     if (!userCancelled) {
-      unawaited(_recordFailureDiagnostics(error));
+      unawaited(_recordFailureDiagnostics(error, offline: decision?.offline ?? false));
     }
-    final offline = isOfflineError(error);
-    final inBackground = _isBackground;
-    final cap = autoRetryCap(inBackground: inBackground, offline: offline);
-    if (userCancelled) {
+    if (decision == null) {
+      // 没有策略回包（原生库不可用）：把失败如实抛给用户，而不是假装已排重试。
+      task.status = TaskStatus.failed;
+      task.nextRetryAt = null;
+      task.errorMessage = _describeError(error);
+    } else if (decision.action == 'cancel') {
       task.status = TaskStatus.cancelled;
       task.errorMessage = 'err.cancelled';
       task.nextRetryAt = null;
-    } else if (shouldAutoRetry(
-      attempts: task.attempts,
-      error: error,
-      inBackground: inBackground,
-    )) {
-      // 计数**只有一个来源**：task.attempts。没网也照样 +1 —— 否则
+    } else if (decision.action == 'retry') {
+      // 计数**只有一个来源**：Rust 回包里的 attempts。没网也照样 +1 —— 否则
       // 「重试中 (n/5)」会停在原地不动，看起来就是卡死（真机反馈）。
       // 后台 offline 的上限是 3，其余仍是 5；文案码本身不改。
-      task.attempts += 1;
+      task.attempts = decision.attempts;
+      task.attemptsCap = decision.cap;
       task.nextRetryAt = DateTime.now().add(
-        retryDelayFor(task.attempts, offline: offline),
+        Duration(milliseconds: decision.delayMs),
       );
       task.status = TaskStatus.pending;
-      task.errorMessage = offline
-          ? 'err.dlOfflineRetryWait|${task.attempts}|$cap|'
-                '${offlineRetryDelay.inSeconds}'
-          : 'err.dlNetworkInterruptedRetry|${task.attempts}|$cap';
+      task.errorMessage = decision.offline
+          ? 'err.dlOfflineRetryWait|${decision.attempts}|${decision.cap}|'
+                '${Duration(milliseconds: decision.delayMs).inSeconds}'
+          : 'err.dlNetworkInterruptedRetry|${decision.attempts}|${decision.cap}';
     } else {
       task.status = TaskStatus.failed;
       task.nextRetryAt = null;
       // Persist a stable short code + full detail (DNS/timeout/403…), not a Dio dump alone.
       final why = _describeError(error);
-      task.errorMessage = task.attempts >= cap
-          ? 'err.dlRetryExhausted|$cap|$why'
+      task.errorMessage = decision.attempts >= decision.cap
+          ? 'err.dlRetryExhausted|${decision.cap}|$why'
           : why;
     }
     await _guardPersist(() => _store.upsert(task));
@@ -2305,6 +2257,27 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
     _publishProgress();
     if (task.status == TaskStatus.pending) _scheduleRetryWake();
+  }
+
+  /// 问 Rust 这一次失败该怎么处理（slice 10）。
+  ///
+  /// 抖动由 Dart 提供，好让一次裁决是确定性的；其余判定一律在 Rust。
+  Future<_QueueRetryDecision?> _askRetryPolicy(
+    Object error, {
+    required int attempts,
+    required bool cancelled,
+  }) async {
+    final reply = await RustCoreService.queueRetryDecision(
+      jsonEncode({
+        'attempts': attempts,
+        'in_background': _isBackground,
+        'category': failureCategory(error),
+        'message': failureMessage(error),
+        'cancelled': cancelled,
+        'jitter_ms': Random().nextInt(1000),
+      }),
+    );
+    return _QueueRetryDecision.parse(reply);
   }
 
   bool get _isBackground => DownloadKeepAlive.lifecycleIsBackground();
@@ -2347,7 +2320,10 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     _scheduleRetryWake();
   }
 
-  Future<void> _recordFailureDiagnostics(Object error) async {
+  Future<void> _recordFailureDiagnostics(
+    Object error, {
+    required bool offline,
+  }) async {
     try {
       String connectivity;
       try {
@@ -2365,7 +2341,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         'DownloadQueue KeepAlive failure '
         'background=$_isBackground '
         'connectivity=$connectivity '
-        'offline=${isOfflineError(error)} '
+        'offline=$offline '
         'dioType=$dioType '
         'fgsRunning=${_keepAlive.isRunning} '
         'phase=${_keepAlive.phase.name} '
@@ -2818,6 +2794,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       task.completedAt = DateTime.now();
       task.errorMessage = null;
       task.attempts = 0;
+      task.attemptsCap = null;
       await _store.upsert(task);
       _completeWaiter(task);
       notifyListeners();
@@ -2892,6 +2869,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       task.completedAt = DateTime.now();
       task.errorMessage = null;
       task.attempts = 0;
+      task.attemptsCap = null;
       await _cache.registerCompleted(
         task.sourceName,
         task.remotePath,
@@ -4209,6 +4187,60 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         return false;
       }
       rethrow;
+    }
+  }
+}
+
+/// Rust 回包的一次重试裁决（`wdmm_queue_retry_json`）。
+///
+/// Dart 不解释语义，只把数字落到 [QueueTask] 上并选择文案码。
+class _QueueRetryDecision {
+  const _QueueRetryDecision({
+    required this.action,
+    required this.attempts,
+    required this.delayMs,
+    required this.offline,
+    required this.cap,
+  });
+
+  /// `cancel` / `retry` / `fail`。
+  final String action;
+
+  /// retry 时是新的计数，cancel/fail 时是原值。
+  final int attempts;
+  final int delayMs;
+  final bool offline;
+
+  /// 本次生效的上限（后台离线 3 / 其余 5）。
+  final int cap;
+
+  static _QueueRetryDecision? parse(String? reply) {
+    if (reply == null || reply.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(reply);
+      if (decoded is! Map<String, dynamic>) return null;
+      if (decoded['ok'] != true) return null;
+      final action = decoded['action'];
+      final attempts = decoded['attempts'];
+      final delayMs = decoded['delay_ms'];
+      final offline = decoded['offline'];
+      final cap = decoded['cap'];
+      if (action is! String ||
+          attempts is! int ||
+          delayMs is! int ||
+          offline is! bool ||
+          cap is! int) {
+        return null;
+      }
+      return _QueueRetryDecision(
+        action: action,
+        attempts: attempts,
+        delayMs: delayMs,
+        offline: offline,
+        cap: cap,
+      );
+    } catch (_) {
+      return null;
     }
   }
 }

@@ -461,8 +461,13 @@ class _TaskTile extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final retryWaiting =
         task.status == TaskStatus.pending && task.nextRetryAt != null;
+    // Cap comes from the Rust retry decision (background offline 3, else 5);
+    // before the first failure there is nothing to render.
+    final cap = task.attemptsCap;
     final label = retryWaiting
-        ? '${l10n.downloadActive} (${task.attempts}/${TaskQueueService.maxAutoRetries})'
+        ? (cap == null
+              ? '${l10n.downloadActive} (${task.attempts})'
+              : '${l10n.downloadActive} (${task.attempts}/$cap)')
         : task.status.label(l10n);
     final color = switch (task.status) {
       TaskStatus.pending =>
