@@ -87,6 +87,22 @@ Flutter SDK root (defaults to `D:\flutter`); `pub get` redirects `PUB_CACHE` int
 `.pub-cache/`. This repo's tracked lockfile is pinned to `https://pub.dev` — do not set
 `PUB_HOSTED_URL`.
 
+## Dependency freshness (mandatory)
+
+Whenever a new component, library, toolchain, prebuilt asset, or service dependency is introduced —
+and whenever an existing pinned version is touched — check the current upstream release first:
+
+- Look up the latest stable release online (tags/releases, not blog posts) before writing a version
+  number. Record the version **and** the date it was checked next to the pin.
+- Never carry a version forward just because it was the default in the script when it was written.
+  A stale pin silently becomes tech debt (see the FFmpeg `n7.1` → `n9.0.2` bump: `n7.1` shipped a
+  MediaCodec encoder bug that every 16-aligned output resolution tripped).
+- Keep each pin in exactly one place (`FFMPEG_VERSION` in the build script, `NDK_VERSION` in the
+  workflow, `rust-toolchain.toml`, `pubspec.lock`, …) so a bump is a one-line change.
+- When a bump crosses a major version, list the verification that must be re-run (ABI/struct layout
+  audit, host `--features ffmpeg` tests, device smoke test) in the commit message.
+- If the network is unavailable, say so in the commit message ("could not verify upstream, kept X").
+
 ## Branch and commit conventions
 
 - Active branch: `refactor/rust-core`

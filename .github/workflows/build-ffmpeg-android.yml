@@ -34,7 +34,7 @@ on:
 env:
   NDK_VERSION: "28.2.13676358"
   MIN_API: "24"
-  FFMPEG_VERSION: "n7.1"
+  FFMPEG_VERSION: "n9.0.2"
 
 jobs:
   build:
