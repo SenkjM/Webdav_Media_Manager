@@ -276,37 +276,28 @@ class _ImageViewerScreenState extends State<ImageViewerScreen> {
   Future<void> _scanSubdirs() async {
     if (!widget.enableSubdirScan) return;
     final gen = ++_scanGen;
-    final webDav = _webDav;
     final settings = _settings;
-    if (webDav == null || settings == null) return;
+    if (_webDav == null || settings == null) return;
     setState(() => _scanning = true);
     final types = settings.fileTypes;
-    final walker = DirectoryWalker(
-      rootPath: widget.folderPath,
-      options: settings.imageScanWalkOptions,
-    );
     final found = <WebDavItem>[];
-    while (true) {
+    try {
+      final walk = await DirectoryWalker.scan(
+        accountId: widget.accountId,
+        rootPath: widget.folderPath,
+        options: settings.imageScanWalkOptions,
+        extensions: types.imageExtensions,
+      );
       if (_disposed || gen != _scanGen) return;
       if (!(_settings?.imageScanSubdirs ?? false)) return;
-      final dir = walker.nextDirectory();
-      if (dir == null) break;
-      List<WebDavItem> items;
-      try {
-        items = await webDav.listDirectory(
-          widget.accountId,
-          dir,
-          fileTypes: types,
-        );
-      } catch (_) {
-        continue;
+      for (final entry in walk.files) {
+        final item = entry.toItem(types);
+        if (item.isImage) found.add(item);
       }
-      if (_disposed || gen != _scanGen) return;
-      found.addAll(items.where((e) => e.isImage));
-      walker.acceptChildren(dir, [
-        for (final child in items)
-          if (child.isDirectory) child.path,
-      ]);
+    } catch (_) {
+      if (_disposed || gen != _scanGen || !mounted) return;
+      setState(() => _scanning = false);
+      return;
     }
     if (_disposed || gen != _scanGen || !mounted) return;
     setState(() => _scanning = false);

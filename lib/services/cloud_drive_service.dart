@@ -489,29 +489,6 @@ class CloudDriveService extends ChangeNotifier {
     );
   }
 
-  /// 与 WebDavService 同构的递归收集（走 [listDirectory]，自动继承分流与分类）。
-  Future<List<WebDavItem>> collectFilesRecursive(
-    String accountId,
-    String folderPath, {
-    FileTypeConfig? fileTypes,
-    bool onlyAudio = false,
-  }) async {
-    final result = <WebDavItem>[];
-    final queue = <String>[folderPath];
-    while (queue.isNotEmpty) {
-      final dir = queue.removeAt(0);
-      final items = await listDirectory(accountId, dir, fileTypes: fileTypes);
-      for (final item in items) {
-        if (item.isDirectory) {
-          queue.add(item.path);
-        } else if (!onlyAudio || item.isAudio) {
-          result.add(item);
-        }
-      }
-    }
-    return result;
-  }
-
   /// 异步流式源：driver.get() → 直链 + 头；后缀判定与 WebDAV 版一致。
   Future<WebDavStreamSource?> resolveStreamSource({
     required String remotePath,

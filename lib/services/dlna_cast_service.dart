@@ -16,7 +16,6 @@ import 'rust_core_service.dart';
 import 'rust_dmr_prefs_service.dart';
 import 'settings_service.dart';
 import 'transcode_preset_catalog.dart';
-import 'webdav_service.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 数据模型
@@ -209,14 +208,11 @@ class _CastError implements Exception {
 /// 3. [stop] 结束会话 → state 回到 idle
 class DlnaCastService extends ChangeNotifier {
   DlnaCastService({
-    required WebDavService webDav,
     required RustDmrPrefsService dmrPrefs,
     required SettingsService settings,
-  }) : _webDav = webDav,
-       _dmrPrefs = dmrPrefs,
+  }) : _dmrPrefs = dmrPrefs,
        _settings = settings;
 
-  final WebDavService _webDav;
   final RustDmrPrefsService _dmrPrefs;
   final SettingsService _settings;
 
@@ -567,7 +563,6 @@ class DlnaCastService extends ChangeNotifier {
     final initial = singleItem ?? seed!.current;
     final siblings = seed?.siblings ?? const <WebDavItem>[];
     final queue = DlnaQueueController(
-      webDav: _webDav,
       accountId: effAccountId,
       rootPath: seed?.folderPath ?? _parentPath(initial.path),
       seed: siblings.isNotEmpty ? siblings : [initial],

@@ -848,74 +848,50 @@ class AudioPlayerService extends ChangeNotifier {
   /// Never blocks the first frame: the caller seeds the queue with the current
   /// directory and starts playback first, then this walks in the background.
   /// Current-directory order stays the listing order; subdirectories append in
-  /// walk order. [rootListing] reuses the listing the screen already has.
+  /// walk order. The directory walk itself runs in Rust.
   Future<void> extendNetworkFolderQueue({
     required String accountId,
     required String sourceName,
     required String rootPath,
     required bool includeSubdirs,
     required int maxDepth,
-    List<WebDavItem>? rootListing,
   }) async {
     if (!includeSubdirs) return;
     _queueWalkToken++;
     final token = _queueWalkToken;
     try {
-      final walker = DirectoryWalker(
+      final walk = await DirectoryWalker.scan(
+        accountId: accountId,
         rootPath: rootPath,
         options: WalkOptions(
           includeSubdirs: true,
           maxDepth: WalkOptions.clampDepth(maxDepth),
         ),
+        kinds: const ['music'],
       );
-      final root = walker.nextDirectory();
-      if (root == null) return;
-      final rootItems =
-          rootListing ??
-          await _webDav.listDirectory(
-            accountId,
-            root,
-            fileTypes: _settings.fileTypes,
-          );
-      walker.acceptChildren(
-        root,
-        rootItems.where((e) => e.isDirectory).map((e) => e.path),
-      );
+      if (token != _queueWalkToken) return;
       final known = <String>{
         for (final t in _handler.tracks) '${t.sourceName}\u0000${t.remotePath}',
       };
-      while (token == _queueWalkToken) {
-        final dir = walker.nextDirectory();
-        if (dir == null) break;
-        try {
-          final items = await _webDav.listDirectory(
-            accountId,
-            dir,
-            fileTypes: _settings.fileTypes,
-          );
-          if (token != _queueWalkToken) break;
-          walker.acceptChildren(
-            dir,
-            items.where((e) => e.isDirectory).map((e) => e.path),
-          );
-          final batch = <TrackInfo>[];
-          for (final item in items) {
-            if (item.category != FileCategory.music) continue;
-            final key = '$sourceName\u0000${item.path}';
-            if (!known.add(key)) continue;
-            batch.add(
-              TrackInfo(
-                sourceName: sourceName,
-                accountId: accountId,
-                remotePath: item.path,
-                fileName: item.name,
-              ),
-            );
+      for (final dir in walk.directoryPaths) {
+        if (token != _queueWalkToken) return;
+        final batch = <TrackInfo>[];
+        for (final entry in walk.filesIn(dir)) {
+          if (entry.toItem(_settings.fileTypes).category != FileCategory.music) {
+            continue;
           }
-          if (batch.isNotEmpty) await appendToQueue(batch);
-        } catch (_) {
-          // One unreadable subdirectory must not abort the rest of the walk.
+          final key = '$sourceName\u0000${entry.path}';
+          if (!known.add(key)) continue;
+          batch.add(
+            TrackInfo(
+              sourceName: sourceName,
+              accountId: accountId,
+              remotePath: entry.path,
+              fileName: entry.name,
+            ),
+          );
         }
+        if (batch.isNotEmpty) await appendToQueue(batch);
       }
     } catch (_) {
       // Best-effort background walk; playback already started from the seed.

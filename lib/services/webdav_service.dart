@@ -8,6 +8,7 @@ import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../services/cloud_drive_service.dart';
+import '../utils/directory_walk.dart';
 import 'wdmm_vfs.dart';
 
 /// Thin WebDAV account registry + I/O delegation layer.
@@ -253,26 +254,32 @@ class WebDavService extends ChangeNotifier {
     String newPath,
   ) => _requireCloud(accountId).movePath(accountId, oldPath, newPath);
 
+  /// Recursive file collection backed by the Rust directory walker.
+  ///
+  /// Kept for the legacy `task_queue_service.dart` call site; new code awaits
+  /// `DirectoryWalker.scan` directly.
   Future<List<WebDavItem>> collectFilesRecursive(
     String accountId,
     String folderPath, {
     FileTypeConfig? fileTypes,
     bool onlyAudio = false,
   }) async {
-    final result = <WebDavItem>[];
-    final queue = <String>[folderPath];
-    while (queue.isNotEmpty) {
-      final dir = queue.removeAt(0);
-      final items = await listDirectory(accountId, dir, fileTypes: fileTypes);
-      for (final item in items) {
-        if (item.isDirectory) {
-          queue.add(item.path);
-        } else if (!onlyAudio || item.isAudio) {
-          result.add(item);
-        }
-      }
-    }
-    return result;
+    final typeConfig = fileTypes ?? FileTypeConfig();
+    final walk = await DirectoryWalker.scan(
+      accountId: accountId,
+      rootPath: folderPath,
+      options: const WalkOptions(
+        includeSubdirs: true,
+        maxDepth: WalkOptions.maxDepthClamp,
+        maxEntries: WalkOptions.maxEntriesClamp,
+      ),
+    );
+    final items = [for (final entry in walk.files) entry.toItem(typeConfig)];
+    if (!onlyAudio) return items;
+    return [
+      for (final item in items)
+        if (item.isAudio) item,
+    ];
   }
 
   /// Returns [CloudDriveService] for any registered account; null when the

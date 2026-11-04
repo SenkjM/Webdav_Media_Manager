@@ -651,7 +651,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         rootPath: _path,
         includeSubdirs: settings.audioScanSubdirs,
         maxDepth: settings.audioPlaylistMaxDepth,
-        rootListing: _items,
       ),
     );
   }

@@ -264,7 +264,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen>
     final seed = widget.seed;
     if (seed == null) return;
     final queue = VideoQueueController(
-      webDav: context.read<WebDavService>(),
       accountId: seed.accountId,
       rootPath: seed.folderPath,
       seed: seed.siblings,

@@ -6,7 +6,6 @@ import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import '../utils/directory_walk.dart';
 import 'stream_window.dart';
-import 'webdav_service.dart';
 
 /// DLNA 投屏专用播放队列控制器。
 ///
@@ -23,7 +22,6 @@ import 'webdav_service.dart';
 /// 排序按文件名（不区分大小写），与 [VideoQueueController] 完全一致。
 class DlnaQueueController extends ChangeNotifier {
   DlnaQueueController({
-    required WebDavService webDav,
     required this.accountId,
     required this.rootPath,
     required List<WebDavItem> seed,
@@ -31,13 +29,10 @@ class DlnaQueueController extends ChangeNotifier {
     FileTypeConfig? fileTypes,
     this.category = FileCategory.video,
     this.walkOptions = const WalkOptions(),
-  }) : _webDav = webDav,
-       _fileTypes = fileTypes ?? FileTypeConfig() {
+  }) : _fileTypes = fileTypes ?? FileTypeConfig() {
     _merge(seed);
     _currentRemotePath = _resolveCurrent(initialRemotePath);
   }
-
-  final WebDavService _webDav;
 
   /// 账号 ID，投屏拉流时需要携带。
   final String accountId;
@@ -160,32 +155,25 @@ class DlnaQueueController extends ChangeNotifier {
 
   // ── 内部实现 ─────────────────────────────────────────────────────────────────
 
-  /// 后台渐进扫描：每个目录列举后立即合并，让队列在扫描过程中持续增长。
+  /// 后台扫描：遍历在 Rust（[DirectoryWalker.scan]）内完成，返回后一次合并。
   Future<void> _scan() async {
-    final walker = DirectoryWalker(rootPath: rootPath, options: walkOptions);
-    var failed = 0;
     try {
-      while (!_cancelled) {
-        final dir = walker.nextDirectory();
-        if (dir == null) break;
-        try {
-          final items = await _webDav.listDirectory(
-            accountId,
-            dir,
-            fileTypes: _fileTypes,
-          );
-          noteListing(dir, items);
-          final media = items.where((e) => e.category == category).toList();
-          walker.acceptChildren(
-            dir,
-            items.where((e) => e.isDirectory).map((e) => e.path),
-          );
-          if (media.isNotEmpty) _merge(media);
-        } catch (e) {
-          failed++;
-          if (failed == 1) _scanError = e.toString();
-        }
+      final walk = await DirectoryWalker.scan(
+        accountId: accountId,
+        rootPath: rootPath,
+        options: walkOptions,
+      );
+      if (_cancelled) return;
+      for (final entry in walk.namesByDirectory.entries) {
+        _namesByDir[normDir(entry.key)] = entry.value;
       }
+      final media = walk.files
+          .map((entry) => entry.toItem(_fileTypes))
+          .where((item) => item.category == category)
+          .toList();
+      if (media.isNotEmpty) _merge(media);
+    } catch (e) {
+      _scanError = e.toString();
     } finally {
       if (!_cancelled) {
         _scanning = false;
