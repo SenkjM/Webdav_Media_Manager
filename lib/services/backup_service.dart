@@ -9,7 +9,6 @@ import '../models/library_track.dart';
 import '../models/playlist.dart';
 import '../utils/backup_pass_check.dart';
 import '../utils/backup_paths.dart';
-import '../utils/credential_vault_crypto.dart';
 import '../utils/l10n_host.dart';
 import 'accounts_service.dart';
 import 'wdmm_vfs/driver_registry.dart';
@@ -180,7 +179,7 @@ class BackupService extends ChangeNotifier {
               value.isNotEmpty &&
               spec != null &&
               spec.secretFieldKeys.contains(e.key) &&
-              !CredentialVaultCrypto.isEncrypted(value)) {
+              !await _vaultIsEncrypted(value)) {
             cfg[e.key] = await _encodePassword(value, passphrase);
           } else {
             cfg[e.key] = value;
@@ -259,10 +258,7 @@ class BackupService extends ChangeNotifier {
   /// the credential vault rule: 地址与用户名明文，仅密码可选加密.
   Future<String> _encodePassword(String password, String passphrase) async {
     if (passphrase.isEmpty || password.isEmpty) return password;
-    return CredentialVaultCrypto.encrypt(
-      plaintext: password,
-      passphrase: passphrase,
-    );
+    return _vaultEncrypt(password, passphrase);
   }
 
   // --- Upload / download -----------------------------------------------
@@ -590,4 +586,29 @@ class BackupService extends ChangeNotifier {
     if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
     return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
   }
+}
+
+/// Bridge to the Rust-owned `AESGCMv1:` field crypto (`wdmm_vault_crypto_*`).
+Future<bool> _vaultIsEncrypted(String value) async {
+  final reply = await RustCoreService.vaultCryptoIsEncrypted(value);
+  if (reply == null || reply.isEmpty) {
+    throw StateError('err.rustUnavailable:vault crypto');
+  }
+  final decoded = jsonDecode(reply);
+  if (decoded is! Map || decoded['ok'] != true) {
+    throw FormatException('vault crypto is_encrypted failed: $reply');
+  }
+  return decoded['encrypted'] == true;
+}
+
+Future<String> _vaultEncrypt(String plaintext, String passphrase) async {
+  final reply = await RustCoreService.vaultCryptoEncrypt(plaintext, passphrase);
+  if (reply == null || reply.isEmpty) {
+    throw StateError('err.rustUnavailable:vault crypto');
+  }
+  final decoded = jsonDecode(reply);
+  if (decoded is! Map || decoded['ok'] != true) {
+    throw FormatException('vault crypto encrypt failed: $reply');
+  }
+  return decoded['value'] as String;
 }

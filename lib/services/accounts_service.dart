@@ -9,7 +9,6 @@ import 'package:uuid/uuid.dart';
 import '../models/account_capabilities.dart';
 import '../models/account_sentinels.dart';
 import '../models/webdav_account.dart';
-import '../utils/credential_vault_crypto.dart';
 import '../utils/l10n_host.dart';
 import '../utils/track_identity.dart';
 import 'wdmm_vfs/driver_registry.dart';
@@ -606,14 +605,11 @@ class AccountsService extends ChangeNotifier {
     final rawPass = accountJson['password'] as String? ?? '';
     final encrypted =
         accountJson['passwordEncrypted'] as bool? ??
-        CredentialVaultCrypto.isEncrypted(rawPass);
+        await _vaultIsEncrypted(rawPass);
     var passwordRecovered = true;
     String pass = rawPass;
-    if (encrypted && CredentialVaultCrypto.isEncrypted(rawPass)) {
-      final clear = await CredentialVaultCrypto.tryDecrypt(
-        encoded: rawPass,
-        passphrase: passphrase,
-      );
+    if (encrypted && await _vaultIsEncrypted(rawPass)) {
+      final clear = await _vaultTryDecrypt(rawPass, passphrase);
       if (clear == null) {
         pass = '';
         passwordRecovered = false;
@@ -698,11 +694,8 @@ class AccountsService extends ChangeNotifier {
             cfg.entries.toList(),
           )) {
             final value = e.value;
-            if (value is String && CredentialVaultCrypto.isEncrypted(value)) {
-              final clear = await CredentialVaultCrypto.tryDecrypt(
-                encoded: value,
-                passphrase: passphrase,
-              );
+            if (value is String && await _vaultIsEncrypted(value)) {
+              final clear = await _vaultTryDecrypt(value, passphrase);
               if (clear == null) {
                 cfg[e.key] = '';
                 secretsRecovered = false;
@@ -721,11 +714,8 @@ class AccountsService extends ChangeNotifier {
         await _secure.delete(key: '$_kPassPrefix${account.id}');
         final rawPass = m['password'] as String? ?? '';
         String pass = rawPass;
-        if (CredentialVaultCrypto.isEncrypted(rawPass)) {
-          final clear = await CredentialVaultCrypto.tryDecrypt(
-            encoded: rawPass,
-            passphrase: passphrase,
-          );
+        if (await _vaultIsEncrypted(rawPass)) {
+          final clear = await _vaultTryDecrypt(rawPass, passphrase);
           if (clear == null) {
             pass = '';
             missing.add(account.name);
@@ -773,4 +763,35 @@ class AccountsService extends ChangeNotifier {
     notifyListeners();
     return missing;
   }
+}
+
+/// Bridge to the Rust-owned `AESGCMv1:` field crypto (`wdmm_vault_crypto_*`).
+Future<bool> _vaultIsEncrypted(String value) async {
+  final reply = await RustCoreService.vaultCryptoIsEncrypted(value);
+  if (reply == null || reply.isEmpty) {
+    throw StateError('err.rustUnavailable:vault crypto');
+  }
+  final decoded = jsonDecode(reply);
+  if (decoded is! Map || decoded['ok'] != true) {
+    throw FormatException('vault crypto is_encrypted failed: $reply');
+  }
+  return decoded['encrypted'] == true;
+}
+
+Future<String?> _vaultTryDecrypt(String value, String passphrase) async {
+  final reply = await RustCoreService.vaultCryptoDecrypt(value, passphrase);
+  if (reply == null || reply.isEmpty) {
+    throw StateError('err.rustUnavailable:vault crypto');
+  }
+  final decoded = jsonDecode(reply);
+  if (decoded is! Map) {
+    throw FormatException('vault crypto decrypt failed: $reply');
+  }
+  if (decoded['ok'] == true) {
+    return decoded['plaintext'] as String?;
+  }
+  if (decoded['reason'] == 'damaged') {
+    throw FormatException(L10nHost.current.vaultCiphertextDamaged);
+  }
+  return null;
 }

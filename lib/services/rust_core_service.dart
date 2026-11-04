@@ -28,11 +28,6 @@ typedef _IntDart = int Function();
 typedef _OpenApiStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
 typedef _OpenApiStartDart = ffi.Pointer<Utf8> Function(int);
 
-typedef _CryptoEncryptNative = ffi.Pointer<Utf8> Function(
-    ffi.Pointer<Utf8>, ffi.Pointer<ffi.Uint8>, ffi.IntPtr);
-typedef _CryptoEncryptDart = ffi.Pointer<Utf8> Function(
-    ffi.Pointer<Utf8>, ffi.Pointer<ffi.Uint8>, int);
-
 typedef _TwoStrToOneStrNative = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 typedef _TwoStrToOneStrDart = ffi.Pointer<Utf8> Function(
@@ -233,8 +228,6 @@ class RustCoreService {
 
   // ── Round 4 FFI binding types ──────────────────────────────────────────────
 
-  static _CryptoEncryptDart? _cryptoEncrypt;
-  static _TwoStrToOneStrDart? _cryptoDecrypt;
   // Sync FFI — account_id based (Core resolves the driver via DriverRegistry).
   static _TwoStrToOneStrDart? _syncTrigger;
   static _TwoStrOneIntToStrDart? _syncFull;
@@ -299,6 +292,10 @@ class RustCoreService {
   static _StrStrToStrDart? _zipOpen;
   static _StrStrToStrDart? _zipReadEntry;
   static _StrStrToStrDart? _tagsExtract;
+  static _StrStrToStrDart? _vaultCryptoEncrypt;
+  static _StrStrToStrDart? _vaultCryptoDecrypt;
+  static _OneStrToStrDart? _vaultCryptoIsEncrypted;
+  static _OneStrToStrDart? _queueRetry;
   static void _loadSymbols(ffi.DynamicLibrary lib) {
     _freeString = lib
         .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
@@ -314,13 +311,6 @@ class RustCoreService {
         .asFunction();
     _openApiPort = lib
         .lookup<ffi.NativeFunction<_IntNative>>('wdmm_openapi_port')
-        .asFunction();
-    // Round 4 exports
-    _cryptoEncrypt = lib
-        .lookup<ffi.NativeFunction<_CryptoEncryptNative>>('wdmm_crypto_encrypt')
-        .asFunction();
-    _cryptoDecrypt = lib
-        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_crypto_decrypt')
         .asFunction();
     _syncTrigger = lib
         .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_trigger')
@@ -503,50 +493,6 @@ class RustCoreService {
       }
     } catch (e) {
       debugPrint('[RustCore] startup probe failed (non-fatal): $e');
-    }
-  }
-
-  // ── Round 4 — Crypto FFI probes ────────────────────────────────────────────
-  //
-  // Dart services are still the source of truth for encryption.  These are
-  // **parallel FFI probes**: they run alongside the Dart vault, so you can
-  // compare outputs before cutover.  Guarded by `kDebugMode` in the caller.
-
-  /// Encrypt [plaintext] bytes with [passphrase] via the Rust AES-256-GCM
-  /// vault.  Returns base64-encoded ciphertext, or 'error:...' on failure.
-  /// Returns null if the native library is not available.
-  ///
-  /// Dart `CredentialVaultService` remains source of truth until cutover.
-  static String? cryptoEncrypt(String passphrase, Uint8List plaintext) {
-    if (!_ensureSymbols() || _cryptoEncrypt == null) return null;
-    final passPtr = passphrase.toNativeUtf8();
-    final dataPtr = calloc<ffi.Uint8>(plaintext.length);
-    try {
-      for (var i = 0; i < plaintext.length; i++) {
-        dataPtr[i] = plaintext[i];
-      }
-      final result = _readAndFreeString(_cryptoEncrypt!(passPtr, dataPtr, plaintext.length));
-      return result;
-    } finally {
-      calloc.free(passPtr);
-      calloc.free(dataPtr);
-    }
-  }
-
-  /// Decrypt base64-encoded [ciphertext] with [passphrase] via the Rust vault.
-  /// Returns plaintext string, or 'error:...' on failure.
-  /// Returns null if the native library is not available.
-  ///
-  /// Dart `CredentialVaultService` remains source of truth until cutover.
-  static String? cryptoDecrypt(String passphrase, String ciphertextB64) {
-    if (!_ensureSymbols() || _cryptoDecrypt == null) return null;
-    final passPtr = passphrase.toNativeUtf8();
-    final dataPtr = ciphertextB64.toNativeUtf8();
-    try {
-      return _readAndFreeString(_cryptoDecrypt!(passPtr, dataPtr));
-    } finally {
-      calloc.free(passPtr);
-      calloc.free(dataPtr);
     }
   }
 
@@ -955,6 +901,22 @@ class RustCoreService {
       _tagsExtract ??= lib
           .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_tags_extract')
           .asFunction();
+      _vaultCryptoEncrypt ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>(
+              'wdmm_vault_crypto_encrypt')
+          .asFunction();
+      _vaultCryptoDecrypt ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>(
+              'wdmm_vault_crypto_decrypt')
+          .asFunction();
+      _vaultCryptoIsEncrypted ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_vault_crypto_is_encrypted')
+          .asFunction();
+      _queueRetry ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_queue_retry_json')
+          .asFunction();
       return true;
     } catch (e) {
       debugPrint('[RustCore] ext symbol lookup failed: $e');
@@ -1038,9 +1000,50 @@ class RustCoreService {
   static String? zipReadEntry(String handle, String index) =>
       _callExtTwoStrings(_zipReadEntry, handle, index);
 
+  /// Encrypt a vault field with the 120k-iteration AESGCMv1 format.
+  ///
+  /// Returns `{"ok":true,"value":"AESGCMv1:..."}` / `{"ok":false,"reason":...}`,
+  /// or null when the native library is unavailable. Runs off the UI isolate:
+  /// PBKDF2 at 120k iterations blocks for ~100 ms.
+  static Future<String?> vaultCryptoEncrypt(
+    String plaintext,
+    String passphrase,
+  ) => runOffMain(
+    () => _callExtTwoStrings(_vaultCryptoEncrypt, plaintext, passphrase),
+  );
+
+  /// Decrypt an `AESGCMv1:` vault field.
+  ///
+  /// Returns `{"ok":true,"plaintext":...}` / `{"ok":false,"reason":"..."}`;
+  /// an unprefixed value comes back unchanged, as before.
+  static Future<String?> vaultCryptoDecrypt(
+    String value,
+    String passphrase,
+  ) => runOffMain(
+    () => _callExtTwoStrings(_vaultCryptoDecrypt, value, passphrase),
+  );
+
+  /// Whether [value] carries the vault ciphertext prefix.
+  ///
+  /// Returns `{"ok":true,"encrypted":bool}` or null without natives.
+  static Future<String?> vaultCryptoIsEncrypted(String value) => runOffMain(
+    () => _callExtOneString(_vaultCryptoIsEncrypted, value),
+  );
+
   /// Extract embedded tags and cover art from a remote media file.
   static String? tagsExtract(String accountId, String remotePath) =>
       _callExtTwoStrings(_tagsExtract, accountId, remotePath);
+
+  /// Ask Rust what to do with a failed queue task.
+  ///
+  /// [inputJson] is
+  /// `{"attempts":n,"in_background":bool,"category":"dio|vfs_data|state|other","message":"...","cancelled":bool,"jitter_ms":n}`.
+  /// The reply is
+  /// `{"ok":true,"action":"cancel|retry|fail","attempts":n,"delay_ms":m,"offline":bool,"cap":n}`,
+  /// or null when the native library is unavailable.
+  static Future<String?> queueRetryDecision(String inputJson) => runOffMain(
+    () => _callExtOneString(_queueRetry, inputJson),
+  );
 
   static String? _callExtOneString(_OneStrToStrDart? fn, String value) {
     if (!_ensureExtSymbols()) return null;

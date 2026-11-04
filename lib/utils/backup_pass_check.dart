@@ -6,7 +6,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../services/rust_core_service.dart';
-import 'credential_vault_crypto.dart';
 
 /// Result of probing a backup archive's passphrase **before** writing the DB.
 ///
@@ -42,11 +41,16 @@ class BackupPassCheck {
   static const plainToken = 'WDMM-BACKUP-PASS-OK\u0001';
 
   /// Build the `AESGCMv1:…` canary for [passphrase].
-  static Future<String> create(String passphrase) {
-    return CredentialVaultCrypto.encrypt(
-      plaintext: plainToken,
-      passphrase: passphrase,
-    );
+  static Future<String> create(String passphrase) async {
+    final reply = await RustCoreService.vaultCryptoEncrypt(plainToken, passphrase);
+    if (reply == null || reply.isEmpty) {
+      throw StateError('err.rustUnavailable:vault crypto');
+    }
+    final decoded = jsonDecode(reply);
+    if (decoded is! Map || decoded['ok'] != true) {
+      throw FormatException('vault crypto encrypt failed: $reply');
+    }
+    return decoded['value'] as String;
   }
 
   /// Probe [data] without writing the database.

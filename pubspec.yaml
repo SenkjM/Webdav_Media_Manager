@@ -73,7 +73,6 @@ dependencies:
   # pubspec_overrides.yaml with `dependency_overrides: openlist_crypt: path: ...`.
   openlist_crypt: ^0.1.0
   audio_session: ^0.2.2
-  cryptography: ^2.9.0
   package_info_plus: ^10.2.1
   crypto: ^3.0.7
   archive: ^4.3.0
