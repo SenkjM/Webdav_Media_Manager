@@ -82,6 +82,12 @@ typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
 typedef _StrInt64ToStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, int);
 
+// Dart→Rust cut-over `ext` surface: (bytes: *const u8, len: usize) → FfiString.
+typedef _BytesToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Uint8>, ffi.Size);
+typedef _BytesToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Uint8>, int);
+
 typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Uint16);
 typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, int);
 typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
@@ -277,6 +283,21 @@ class RustCoreService {
   static _FourStrToOneStrDart? _accountGetContentRange;
   static _OneStrToStrDart? _accountStatusTags;
   static _TwoStrToOneStrDart? _accountVerify;
+
+  // ── Dart→Rust cut-over (`crates/wdmm-ffi/src/ext/`) ────────────────────────
+  // One binding per migrated capability. Implementations land slice by slice;
+  // until then the native side answers 'error:unimplemented:<name>'.
+  static _StrStrToStrDart? _backupProbe;
+  static _OneStrToStrDart? _cueParse;
+  static _FiveStrToOneStrDart? _accountWalk;
+  static _BytesToStrDart? _subtitleDecode;
+  static _OneStrToStrDart? _vaultEncode;
+  static _BytesToStrDart? _vaultDecode;
+  static _OneStrToStrDart? _playlistEncode;
+  static _BytesToStrDart? _playlistDecode;
+  static _StrStrToStrDart? _zipOpen;
+  static _StrStrToStrDart? _zipReadEntry;
+  static _StrStrToStrDart? _tagsExtract;
   static void _loadSymbols(ffi.DynamicLibrary lib) {
     _freeString = lib
         .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
@@ -920,6 +941,164 @@ class RustCoreService {
       calloc.free(c);
       calloc.free(d);
       calloc.free(e);
+    }
+  }
+
+  // ── Dart→Rust cut-over bindings (`crates/wdmm-ffi/src/ext/`) ───────────────
+
+  /// Look up the cut-over symbols once. Returns false when the library or any
+  /// symbol is missing (older `.so`, unit tests without natives).
+  static bool _ensureExtSymbols() {
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _backupProbe ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_backup_probe')
+          .asFunction();
+      _cueParse ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_parse')
+          .asFunction();
+      _accountWalk ??= lib
+          .lookup<ffi.NativeFunction<_FiveStrToOneStrNative>>('wdmm_account_walk')
+          .asFunction();
+      _subtitleDecode ??= lib
+          .lookup<ffi.NativeFunction<_BytesToStrNative>>('wdmm_subtitle_decode')
+          .asFunction();
+      _vaultEncode ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_vault_encode')
+          .asFunction();
+      _vaultDecode ??= lib
+          .lookup<ffi.NativeFunction<_BytesToStrNative>>('wdmm_vault_decode')
+          .asFunction();
+      _playlistEncode ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_playlist_encode')
+          .asFunction();
+      _playlistDecode ??= lib
+          .lookup<ffi.NativeFunction<_BytesToStrNative>>('wdmm_playlist_decode')
+          .asFunction();
+      _zipOpen ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_zip_open')
+          .asFunction();
+      _zipReadEntry ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_zip_read_entry')
+          .asFunction();
+      _tagsExtract ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_tags_extract')
+          .asFunction();
+      return true;
+    } catch (e) {
+      debugPrint('[RustCore] ext symbol lookup failed: $e');
+      return false;
+    }
+  }
+
+  /// Check a backup archive's passphrase without decrypting it twice.
+  ///
+  /// Returns `{"ok":true,"encrypted":bool,...}` or `'error:...'`; null when the
+  /// native library is unavailable.
+  static String? backupProbe(String dataPath, String passphrase) =>
+      _callExtTwoStrings(_backupProbe, dataPath, passphrase);
+
+  /// Parse a CUE sheet into `{"title":...,"tracks":[...]}`.
+  static String? cueParse(String text) => _callExtOneString(_cueParse, text);
+
+  /// Walk a remote tree under [root] in Rust.
+  ///
+  /// `kindsJson` selects what to collect (`{"kinds":["video","audio",...]}`);
+  /// `maxDepth`/`maxEntries` are decimal strings, `0` meaning "no limit".
+  static String? accountWalk({
+    required String accountId,
+    required String root,
+    required String maxDepth,
+    required String maxEntries,
+    required String kindsJson,
+  }) =>
+      _callExtFiveStrings(
+          _accountWalk, accountId, root, maxDepth, maxEntries, kindsJson);
+
+  /// Decode subtitle bytes, detecting the charset in Rust.
+  static String? subtitleDecode(Uint8List bytes) =>
+      _callExtBytes(_subtitleDecode, bytes);
+
+  /// Encode vault records into the `WDMMCV01` container.
+  static String? vaultEncode(String recordsJson) =>
+      _callExtOneString(_vaultEncode, recordsJson);
+
+  /// Decode a `WDMMCV01` vault container.
+  static String? vaultDecode(Uint8List bytes) =>
+      _callExtBytes(_vaultDecode, bytes);
+
+  /// Encode one playlist into the `WDMMPL01` container.
+  static String? playlistEncode(String playlistJson) =>
+      _callExtOneString(_playlistEncode, playlistJson);
+
+  /// Decode a `WDMMPL01` playlist container.
+  static String? playlistDecode(Uint8List bytes) =>
+      _callExtBytes(_playlistDecode, bytes);
+
+  /// Open a remote CBZ/ZIP and cache its central directory in Rust.
+  static String? zipOpen(String accountId, String remotePath) =>
+      _callExtTwoStrings(_zipOpen, accountId, remotePath);
+
+  /// Read one entry of a previously opened archive by index.
+  static String? zipReadEntry(String handle, String index) =>
+      _callExtTwoStrings(_zipReadEntry, handle, index);
+
+  /// Extract embedded tags and cover art from a remote media file.
+  static String? tagsExtract(String accountId, String remotePath) =>
+      _callExtTwoStrings(_tagsExtract, accountId, remotePath);
+
+  static String? _callExtOneString(_OneStrToStrDart? fn, String value) {
+    if (!_ensureExtSymbols()) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? _callExtTwoStrings(_StrStrToStrDart? fn, String first, String second) {
+    if (!_ensureExtSymbols()) return null;
+    final a = first.toNativeUtf8();
+    final b = second.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn!(a, b));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+    }
+  }
+
+  static String? _callExtFiveStrings(_FiveStrToOneStrDart? fn, String s1, String s2,
+      String s3, String s4, String s5) {
+    if (!_ensureExtSymbols()) return null;
+    final a = s1.toNativeUtf8();
+    final b = s2.toNativeUtf8();
+    final c = s3.toNativeUtf8();
+    final d = s4.toNativeUtf8();
+    final e = s5.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn!(a, b, c, d, e));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+      calloc.free(c);
+      calloc.free(d);
+      calloc.free(e);
+    }
+  }
+
+  static String? _callExtBytes(_BytesToStrDart? fn, Uint8List bytes) {
+    if (!_ensureExtSymbols()) return null;
+    final buffer = calloc<ffi.Uint8>(bytes.isEmpty ? 1 : bytes.length);
+    try {
+      if (bytes.isNotEmpty) {
+        buffer.asTypedList(bytes.length).setAll(0, bytes);
+      }
+      return _readAndFreeString(fn!(buffer, bytes.length));
+    } finally {
+      calloc.free(buffer);
     }
   }
 
