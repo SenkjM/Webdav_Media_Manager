@@ -2,12 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webdav_media_manager/models/library_track.dart';
-import 'package:webdav_media_manager/models/playlist.dart';
-import 'package:webdav_media_manager/services/credential_vault_codec.dart';
-import 'package:webdav_media_manager/services/library_shard_codec.dart';
-import 'package:webdav_media_manager/services/playlist_codec.dart';
-import 'package:webdav_media_manager/utils/track_identity.dart';
 import 'package:webdav_media_manager/utils/wmp_container.dart';
 
 /// The backup archive is a container: META + TRACKS (every row, CUE slices
@@ -17,93 +11,62 @@ import 'package:webdav_media_manager/utils/wmp_container.dart';
 /// `WDMMPL01` document). This mirrors `BackupService.buildArchiveBytes` without
 /// touching the filesystem, so the *format* is pinned even though the service
 /// itself needs path_provider.
-LibraryTrack _track(
-  String path, {
-  String source = '123pan',
-  int rev = 7,
-  String? cueRemotePath,
-  int? cueIndex,
-}) => LibraryTrack(
-  sourceName: source,
-  remotePath: path,
-  fileName: path.split('/').last,
-  title: '标题',
-  artist: 'Ado',
-  album: '心臓',
-  cueRemotePath: cueRemotePath,
-  cueTrackIndex: cueIndex,
-  rev: rev,
-);
+///
+/// The two embedded byte blobs are produced by Rust now (`wdmm-sync::wmp`), not
+/// by a Dart codec: `flutter test` cannot load `libwdmm_ffi`, so the fixtures
+/// are pinned constants. `crates/wdmm-sync/src/wmp.rs::
+/// backup_fixtures_are_readable_documents` decodes these exact bytes and
+/// asserts the expected documents, keeping both sides honest.
+const _vaultFixtureBase64 =
+    'V0RNTUNWMDECAAAAAQEwAAAAJgAAACgAAABQKdelBQFWAAAATgAAAEkAAAAX3Zg+Y2RnYWRlTUkt0zVkkzAyMDLTNbDUNTIIMTCwAiM9AwODKB4mBgABSQC2/wEFYWNjLTECBjEyM3BhbgMGd2ViZGF2BBdodHRwczovL25hcy5leGFtcGxlLmNvbQUFYWxpY2UGCkFFU0dDTXYxOngHAQgBLwA=';
+const _playlistFixtureBase64 =
+    'V0RNTVBMMDECAAAAAQEwAAAASAAAAE4AAADy9FHuCQF4AAAANwAAADIAAAArdlVLdcqxDYAgEAVQSeASdQGXOPO5wkTnsLLWzoKKmpIhWIKlYA0SepJXPkVaGfN+ni1tAjkYJwtu4Op2AM+s3c92oZJCjXkdvqkBATIAzf8BEDEyM3BhbjovbS9hLmZsYWMCBjEyM3BhbgMJL20vYS5mbGFjBAZhLmZsYWMF2I8NAA==';
 
 Uint8List _blob(int length, int seed) =>
     Uint8List.fromList(List<int>.generate(length, (i) => (i + seed) & 0xFF));
 
-/// A one-playlist `WDMMPL01` document, built the way the service builds it.
-Uint8List _playlistBytes({String id = 'pl-1', String name = '最爱'}) =>
-    PlaylistCodec.encode(
-      Playlist(
-        id: id,
-        name: name,
-        updatedAt: DateTime.utc(2026, 9, 20),
-        entries: [
-          PlaylistEntry(
-            sourceName: '123pan',
-            remotePath: '/m/a.flac',
-            musicId: musicIdForRemote('123pan', '/m/a.flac'),
-            title: 'a.flac',
-            durationMs: 215000,
-          ),
-        ],
-      ),
-      deviceId: 'dev-1',
-    );
+/// A one-entry `WDMMCV01` document (`acc-1` / `123pan` / encrypted password).
+Uint8List _vaultBytes() => base64Decode(_vaultFixtureBase64);
 
-/// A one-entry `WDMMCV01` document, built the way the service builds it.
-Uint8List _vaultBytes() => CredentialVaultCodec.encode(
-  const [
-    VaultRecord(
-      id: 'acc-1',
-      name: '123pan',
-      providerType: 'webdav',
-      url: 'https://nas.example.com',
-      username: 'alice',
-      password: 'AESGCMv1:x',
-      passwordEncrypted: true,
-      remotePath: '/',
-    ),
-  ],
-  formatVersion: 2,
-  deviceId: 'dev-1',
-);
+/// A one-entry `WDMMPL01` document (`pl-1` / `最爱` / one flac entry).
+Uint8List _playlistBytes() => base64Decode(_playlistFixtureBase64);
+
+Map<int, Object?> _trackRecord({
+  required String source,
+  required String path,
+  required int rev,
+  String? cueRemotePath,
+  int? cueIndex,
+  int? coverIndex,
+}) => {
+  WmpTrack.sourceName: source,
+  WmpTrack.remotePath: path,
+  WmpTrack.fileName: path.split('/').last,
+  WmpTrack.title: '标题',
+  WmpTrack.artist: 'Ado',
+  WmpTrack.album: '心臓',
+  WmpTrack.rev: rev,
+  WmpTrack.cueRemotePath: ?cueRemotePath,
+  WmpTrack.cueTrackIndex: ?cueIndex,
+  WmpTrack.coverIndex: ?coverIndex,};
 
 void main() {
   group('backup container', () {
     test('round-trips rows, per-track covers and the embedded container sections', () {
-      final tracks = [
-        _track('/m/a.flac'),
-        _track(
-          '/m/disc.cue#cue:2',
+      final coverA = _blob(32, 1);
+      final coverC = _blob(48, 3);
+
+      final records = <Map<int, Object?>>[
+        _trackRecord(source: '123pan', path: '/m/a.flac', rev: 7, coverIndex: 0),
+        _trackRecord(
+          source: '123pan',
+          path: '/m/disc.cue#cue:2',
           rev: 8,
           cueRemotePath: '/m/disc.cue',
           cueIndex: 2,
         ),
-        _track('/m/b.flac', source: 'aliyun', rev: 9),
+        _trackRecord(source: 'aliyun', path: '/m/b.flac', rev: 9, coverIndex: 1),
       ];
-      final coverA = _blob(32, 1);
-      final coverC = _blob(48, 3);
-      final blobs = <Uint8List?>[coverA, null, coverC];
-
-      final records = <Map<int, Object?>>[];
-      var coverIndex = 0;
-      for (var i = 0; i < tracks.length; i++) {
-        final has = blobs[i] != null;
-        records.add(
-          LibraryShardCodec.trackToRecord(
-            tracks[i],
-            coverIndex: has ? coverIndex++ : null,
-          ),
-        );
-      }
 
       final vaultBytes = _vaultBytes();
       final playlistBytes = _playlistBytes();
@@ -113,7 +76,7 @@ void main() {
           WmpSections.meta: encodeRecords([
             {
               WmpMeta.kind: WmpKind.backup,
-              WmpMeta.count: tracks.length,
+              WmpMeta.count: records.length,
               WmpMeta.deviceId: 'dev-1',
               WmpMeta.note: jsonEncode({
                 'format': 'webdav_media_manager_backup',
@@ -177,13 +140,11 @@ void main() {
       final coverTable = parseCoverSection(coversRaw);
       expect(coverTable, hasLength(2));
 
-      final restored = <LibraryTrack>[];
-      for (final row in rows) {
-        restored.add(LibraryShardCodec.recordToTrack(row));
-      }
-      expect(restored[0].sourceName, '123pan');
-      expect(restored[1].isCueVirtual, isTrue);
-      expect(restored[2].sourceName, 'aliyun');
+      expect(rows[0][WmpTrack.sourceName], '123pan');
+      expect(rows[0][WmpTrack.remotePath], '/m/a.flac');
+      expect(rows[1][WmpTrack.cueRemotePath], '/m/disc.cue');
+      expect(rows[1][WmpTrack.cueTrackIndex], 2);
+      expect(rows[2][WmpTrack.sourceName], 'aliyun');
       // Cover indexes point at this row's own blob.
       expect(rows[0][WmpTrack.coverIndex], 0);
       expect(rows[1].containsKey(WmpTrack.coverIndex), isFalse);
@@ -193,14 +154,14 @@ void main() {
       expect(coverTable[0].kind, WmpImageKind.jpeg);
       expect(coverTable[1].kind, WmpImageKind.webp);
 
-      // CREDENTIALS 段整段就是远端那份 CV 文档，恢复侧直接喂 codec。
+      // CREDENTIALS 段整段就是远端那份 CV 文档；解码归 Rust（`wdmm_vault_decode`），
+      // 这里只钉住「嵌入字节 == Rust 生成的文档」和结构。
       final credsRaw = parsed.readSection(WmpSections.credentials)!;
       expect(credsRaw, vaultBytes);
       expect(WmpContainer.kindOf(credsRaw), WmpFileKind.vault);
-      final vault = CredentialVaultCodec.decode(credsRaw);
-      expect(vault.entryCount, 1);
-      expect(vault.entries.single.name, '123pan');
-      expect(vault.entries.single.password, 'AESGCMv1:x');
+      final vaultContainer = WmpContainer.fromBytes(credsRaw);
+      expect(vaultContainer.has(WmpSections.meta), isTrue);
+      expect(vaultContainer.has(WmpSections.credentials), isTrue);
 
       // PLAYLISTS 段：每歌单一条 record，blob 是完整 .wdmp 字节。
       final playlistRaw = parsed.readSection(WmpSections.playlists)!;
@@ -213,11 +174,10 @@ void main() {
       final blob = playlistRecords.single[WmpBackupPlaylist.blob];
       expect(blob, isA<Uint8List>());
       expect(blob! as Uint8List, playlistBytes);
-      // 与远端拉取共用同一个解码函数。
-      final playlist = PlaylistCodec.decode(blob as Uint8List);
-      expect(playlist.playlist.id, 'pl-1');
-      expect(playlist.playlist.name, '最爱');
-      expect(playlist.entryCount, 1);
+      expect(WmpContainer.kindOf(blob as Uint8List), WmpFileKind.playlist);
+      final playlistContainer = WmpContainer.fromBytes(blob);
+      expect(playlistContainer.has(WmpSections.meta), isTrue);
+      expect(playlistContainer.has(WmpSections.entries), isTrue);
 
       // SETTINGS / CUE_ALBUMS 保持 JSON 不变。
       expect(

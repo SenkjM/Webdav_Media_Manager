@@ -4,7 +4,6 @@ import 'package:webdav_media_manager/models/playlist.dart';
 import 'package:webdav_media_manager/models/webdav_item.dart';
 import 'package:webdav_media_manager/utils/track_identity.dart';
 import 'package:webdav_media_manager/utils/wmp_container.dart';
-import 'package:webdav_media_manager/services/playlist_codec.dart';
 
 void main() {
   group('playlist ↔ library status alignment', () {
@@ -63,24 +62,14 @@ void main() {
       expect(TrackUiState.values.contains(TrackUiState.streamable), isTrue);
     });
 
-    test('wdmp ENTRIES round-trips remoteMissing', () {
-      final pl = Playlist(
-        id: 'p1',
-        name: 'T',
-        entries: [
-          PlaylistEntry(
-            sourceName: 'disk',
-            remotePath: '/a.mp3',
-            musicId: musicIdForRemote('disk', '/a.mp3'),
-            title: 'A',
-            remoteMissing: true,
-          ),
-        ],
-      );
-      final bytes = PlaylistCodec.encode(pl);
-      final decoded = PlaylistCodec.decode(bytes);
-      expect(decoded.playlist.entries.single.remoteMissing, isTrue);
+    // The ENTRIES round-trip itself lives in Rust now: `PlaylistEntryDoc` in
+    // `crates/wdmm-sync/src/wmp.rs` maps tag 8 to `remote_missing` and the
+    // document tests round-trip it through `WDMMPL01`. The tag value is still
+    // pinned on the Dart side because `wmp_container.dart` stays the shared
+    // constant table.
+    test('ENTRIES remoteMissing tag stays 8', () {
       expect(WmpPlaylistEntry.remoteMissing, 8);
+      expect(WmpSections.entries, 9);
     });
   });
 }

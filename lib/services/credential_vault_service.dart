@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/webdav_account.dart';
@@ -5,7 +7,7 @@ import '../utils/l10n_host.dart';
 import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
 import 'wdmm_vfs/driver_registry.dart';
-import 'credential_vault_codec.dart';
+import 'rust_core_service.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
 
@@ -120,10 +122,12 @@ class VaultApplyResult {
 /// Account credential vault stored **on the WebDAV cloud** (同步根目录).
 ///
 /// Layout under [SettingsService.syncRemoteRoot]:
-/// * `credentials.json` — all accounts: WebDAV mounts with **plaintext
-///   URL + username** and an encrypted (`AESGCMv1:`) or plaintext password,
-///   plus cloud-driver accounts whose driver config carries the credentials
-///   (cookie / refresh_token / client_secret / crypt password+salt …).
+/// * `credentials.wdmcv` — one `WDMMCV01` container: WebDAV mounts with
+///   **plaintext URL + username** and an encrypted (`AESGCMv1:`) or plaintext
+///   password, plus cloud-driver accounts whose driver config carries the
+///   credentials (cookie / refresh_token / client_secret / crypt
+///   password+salt …). Encoded and decoded by Rust — this service never
+///   implements the wire format itself.
 ///
 /// Only「配置界面默认为密码」的数据 is ever encrypted, which is what makes
 /// recovery possible without the passphrase: the rest still identifies the
@@ -286,8 +290,23 @@ class CredentialVaultService extends ChangeNotifier {
     return _encodeRecords(records);
   }
 
-  Uint8List _encodeRecords(List<VaultRecord> records) =>
-      CredentialVaultCodec.encode(records, formatVersion: formatVersion);
+  Uint8List _encodeRecords(List<VaultRecord> records) {
+    final reply = _rustReply(
+      RustCoreService.vaultEncode(
+        jsonEncode({
+          'device_id': '',
+          'format_version': formatVersion,
+          'records': [for (final record in records) record.toJson()],
+        }),
+      ),
+      'vault encode',
+    );
+    final encoded = reply['bytes_base64'];
+    if (encoded is! String || encoded.isEmpty) {
+      throw const FormatException('vault encode returned no bytes');
+    }
+    return base64Decode(encoded);
+  }
 
   /// Upload the vault to [accountId] (the credentials destination the user
   /// configured for this feature).
@@ -331,7 +350,21 @@ class CredentialVaultService extends ChangeNotifier {
     _requireAccount(accountId);
     try {
       final bytes = await _webDav.readAsBytes(accountId, remotePath);
-      return CredentialVaultCodec.decode(bytes);
+      final reply = _rustReply(
+        RustCoreService.vaultDecode(bytes),
+        'vault decode',
+      );
+      final entries = <VaultRecord>[
+        for (final record in (reply['records'] as List? ?? const []))
+          if (record is Map)
+            VaultRecord.fromJson(Map<String, dynamic>.from(record)),
+      ];
+      return DecodedVault(
+        formatVersion: (reply['format_version'] as num?)?.toInt() ?? 1,
+        deviceId: reply['device_id'] as String? ?? '',
+        createdAt: reply['created_at'] as String? ?? '',
+        entries: entries,
+      );
     } catch (e) {
       final msg = e.toString().toLowerCase();
       final missing =
@@ -558,4 +591,115 @@ class CredentialVaultService extends ChangeNotifier {
       throw StateError('err.vaultDestNotConfigured');
     }
   }
+}
+
+/// One account entry inside the credential vault document (`WDMMCV01`).
+///
+/// The document is encoded and decoded by Rust (`wdmm_vault_encode` /
+/// `wdmm_vault_decode`); this class is the Dart view of one record, not a
+/// second implementation of the wire format.
+class VaultRecord {
+  const VaultRecord({
+    required this.id,
+    required this.name,
+    required this.url,
+    required this.username,
+    required this.password,
+    required this.passwordEncrypted,
+    this.providerType = 'webdav',
+    this.remotePath = '/',
+    this.driverConfig,
+  });
+
+  final String id;
+  final String name;
+  final String providerType;
+
+  /// Stored in **plain text** by design (WebDAV mount address).
+  final String url;
+
+  /// Stored in **plain text** by design.
+  final String username;
+
+  /// Plaintext password, or the `AESGCMv1:` blob when [passwordEncrypted].
+  final String password;
+  final bool passwordEncrypted;
+
+  /// 云盘账号的远端路径（WebDAV 条目恒 '/'）。
+  final String remotePath;
+
+  /// 云盘驱动的配置；null = WebDAV 条目。密文字段带 `AESGCMv1:` 前缀。
+  final Map<String, dynamic>? driverConfig;
+
+  bool get isCloud => providerType != 'webdav';
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'provider_type': providerType,
+    'url': url,
+    'username': username,
+    'password': password,
+    'password_encrypted': passwordEncrypted,
+    'remote_path': remotePath,
+    'driver_config': driverConfig,
+  };
+
+  factory VaultRecord.fromJson(Map<String, dynamic> json) => VaultRecord(
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    providerType: json['provider_type'] as String? ?? 'webdav',
+    url: json['url'] as String? ?? '',
+    username: json['username'] as String? ?? '',
+    password: json['password'] as String? ?? '',
+    passwordEncrypted: json['password_encrypted'] as bool? ?? false,
+    remotePath: json['remote_path'] as String? ?? '/',
+    driverConfig: json['driver_config'] is Map
+        ? Map<String, dynamic>.from(json['driver_config'] as Map)
+        : null,
+  );
+}
+
+/// One decoded `WDMMCV01` vault document.
+class DecodedVault {
+  const DecodedVault({
+    required this.formatVersion,
+    required this.deviceId,
+    required this.createdAt,
+    required this.entries,
+  });
+
+  final int formatVersion;
+  final String deviceId;
+  final String createdAt;
+  final List<VaultRecord> entries;
+
+  int get entryCount => entries.length;
+}
+
+/// Parse the JSON reply of an `ext::json_reply` handler.
+///
+/// Handlers answer `{"ok":true,...}` on success and `error:<msg>` on failure.
+/// A null reply means the native library is not available at all.
+Map<String, dynamic> _rustReply(String? raw, String what) {
+  if (raw == null || raw.isEmpty) {
+    throw StateError('err.rustUnavailable:$what');
+  }
+  if (raw.startsWith('error:')) {
+    throw FormatException('$what failed: ${raw.substring('error:'.length)}');
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    throw FormatException('$what returned invalid JSON');
+  }
+  if (decoded is! Map) {
+    throw FormatException('$what returned a non-object reply');
+  }
+  final map = Map<String, dynamic>.from(decoded);
+  if (map['ok'] != true) {
+    throw FormatException('$what failed: ${map['error'] ?? raw}');
+  }
+  return map;
 }

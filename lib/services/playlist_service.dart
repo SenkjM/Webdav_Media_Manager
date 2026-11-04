@@ -1,20 +1,20 @@
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/playlist.dart';
 import '../models/playlist_deletion.dart';
+import '../models/playlist_sentinels.dart';
 import '../utils/cover_image.dart';
 import '../utils/track_identity.dart';
-import '../utils/wmp_container.dart';
 import 'cover_service.dart';
-import 'playlist_codec.dart';
 import 'playlist_cover_policy.dart';
-import 'playlist_deletion_codec.dart';
 import 'playlist_deletion_log.dart';
 import 'playlist_store.dart';
 import 'playlist_sync_plan.dart';
+import 'rust_core_service.dart';
 import 'webdav_service.dart';
 
 /// Local playlist CRUD + optional WebDAV `WDMMPL01` sync (last-write-wins).
@@ -123,7 +123,7 @@ class PlaylistService extends ChangeNotifier {
       entries: entries,
       updatedAt: DateTime.now().toUtc(),
     );
-    pl.remoteFileName = PlaylistCodec.safeFileName(pl.name, pl.id);
+    pl.remoteFileName = _playlistFileName(pl);
     await _store.upsert(pl);
     _playlists.add(pl);
     _sortLocal();
@@ -146,7 +146,7 @@ class PlaylistService extends ChangeNotifier {
     final pl = _playlists[idx];
     pl.name = name.trim().isEmpty ? pl.name : name.trim();
     pl.updatedAt = DateTime.now().toUtc();
-    pl.remoteFileName ??= PlaylistCodec.safeFileName(pl.name, pl.id);
+    pl.remoteFileName ??= _playlistFileName(pl);
     await _store.upsert(pl);
     _sortLocal();
     notifyListeners();
@@ -370,31 +370,29 @@ class PlaylistService extends ChangeNotifier {
       final canonicalPackSeen = <String>{};
       for (final item in items) {
         if (item.isDirectory) continue;
-        if (!item.name.toLowerCase().endsWith(
-          '.${PlaylistCodec.fileExtension}',
-        )) {
-          continue;
-        }
+        if (!_looksLikePlaylistFileName(item.name)) continue;
         try {
           final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
-          final kind = WmpContainer.kindOf(bytes);
-          if (kind == WmpFileKind.playlistDeletion) {
-            final decoded = PlaylistDeletionCodec.decode(bytes);
+          final decoded = _decodePlaylistDocument(bytes);
+          // 同目录下的其它 `WDMM*` 容器不属于歌单，直接忽略。
+          if (decoded == null) continue;
+          if (decoded['kind'] == 'deletion') {
+            final playlistId = decoded['playlist_id'] as String? ?? '';
+            if (playlistId.isEmpty) continue;
             remotePacks
-                .putIfAbsent(decoded.playlistId, () => [])
-                .addAll(decoded.records);
-            if (item.name ==
-                PlaylistDeletionCodec.fileNameFor(decoded.playlistId)) {
-              canonicalPackSeen.add(decoded.playlistId);
+                .putIfAbsent(playlistId, () => [])
+                .addAll(_deletionsFromReply(decoded, playlistId));
+            if (item.name == _deletionFileName(playlistId)) {
+              canonicalPackSeen.add(playlistId);
             } else {
               // Content is merged, but the canonical name is what the next
               // pull looks up. A misnamed pack is rewritten, then removed.
               stalePackNames.add(item.name);
             }
-          } else if (kind == WmpFileKind.playlist) {
-            final decoded = PlaylistCodec.decode(bytes);
-            decoded.playlist.remoteFileName = item.name;
-            remotes.add(decoded.playlist);
+          } else {
+            final remote = _playlistFromReply(decoded);
+            remote.remoteFileName = item.name;
+            remotes.add(remote);
           }
         } catch (e) {
           // Format/CRC failure on one file: skip it, keep the rest.
@@ -462,16 +460,11 @@ class PlaylistService extends ChangeNotifier {
     final items = await _webDav.listDirectory(_syncAccountId!, _remotePath);
     for (final item in items) {
       if (item.isDirectory) continue;
-      if (!item.name.toLowerCase().endsWith(
-        '.${PlaylistCodec.fileExtension}',
-      )) {
-        continue;
-      }
+      if (!_looksLikePlaylistFileName(item.name)) continue;
       try {
         final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
-        if (WmpContainer.kindOf(bytes) != WmpFileKind.playlistDeletion) {
-          continue;
-        }
+        final decoded = _decodePlaylistDocument(bytes);
+        if (decoded == null || decoded['kind'] != 'deletion') continue;
         await _webDav.deletePath(_syncAccountId!, item.path);
       } catch (e) {
         _lastSyncError = e.toString();
@@ -492,16 +485,29 @@ class PlaylistService extends ChangeNotifier {
   /// written without a `coverIndex`.
   Future<void> uploadPlaylist(Playlist pl) async {
     if (!canSync) return;
-    pl.remoteFileName ??= PlaylistCodec.safeFileName(pl.name, pl.id);
+    final document = await encodePlaylistDocument(pl);
+    pl.remoteFileName = document.fileName;
     await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
-    final bytes = await encodePlaylistBytes(pl);
-    await _webDav.writeBytes(_syncAccountId!, _remoteFilePath(pl), bytes);
+    await _webDav.writeBytes(
+      _syncAccountId!,
+      _filePath(document.fileName),
+      document.bytes,
+    );
     await _store.upsert(pl);
   }
 
   /// Encode [pl] to bytes without uploading — used by backup embedding (⑥) and
   /// by tests.
   Future<Uint8List> encodePlaylistBytes(
+    Playlist pl, {
+    bool withCovers = true,
+  }) async {
+    return (await encodePlaylistDocument(pl, withCovers: withCovers)).bytes;
+  }
+
+  /// Encode [pl] with the Rust document engine; the reply carries the file
+  /// name (Rust is the only place the naming rule lives).
+  Future<({String fileName, Uint8List bytes})> encodePlaylistDocument(
     Playlist pl, {
     bool withCovers = true,
   }) async {
@@ -512,7 +518,7 @@ class PlaylistService extends ChangeNotifier {
             fallbackEdgeSize: _libraryCoverEdge,
           )
         : null;
-    return PlaylistCodec.encode(pl, coverBlobs: covers);
+    return _encodePlaylistDocument(pl, covers: covers);
   }
 
   void unawaitedSyncUpload(Playlist pl) {
@@ -540,17 +546,16 @@ class PlaylistService extends ChangeNotifier {
     ];
     if (records.isEmpty) return;
     await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
-    final bytes = PlaylistDeletionCodec.encode(playlistId, records);
+    final pack = _encodeDeletionPack(playlistId, records);
     await _webDav.writeBytes(
       _syncAccountId!,
-      _filePath(PlaylistDeletionCodec.fileNameFor(playlistId)),
-      bytes,
+      _filePath(pack.fileName),
+      pack.bytes,
     );
   }
 
   String _remoteFilePath(Playlist pl) {
-    final file =
-        pl.remoteFileName ?? PlaylistCodec.safeFileName(pl.name, pl.id);
+    final file = pl.remoteFileName ?? _playlistFileName(pl);
     return _filePath(file);
   }
 
@@ -563,6 +568,170 @@ class PlaylistService extends ChangeNotifier {
     _playlists.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
     );
+  }
+
+  // ── WDMMPL01 / WDMMPD01 document engine (Rust owns the wire format) ──────
+
+  /// `.wdmp` is the only extension the playlist sync root holds.
+  static const _playlistFileExtension = 'wdmp';
+
+  bool _looksLikePlaylistFileName(String name) =>
+      name.toLowerCase().endsWith('.$_playlistFileExtension');
+
+  /// Encode [pl] through `wdmm_playlist_encode`; covers are parallel to entries.
+  ({String fileName, Uint8List bytes}) _encodePlaylistDocument(
+    Playlist pl, {
+    List<Uint8List?>? covers,
+  }) {
+    final payload = {
+      'kind': 'playlist',
+      'device_id': '',
+      'playlist': {
+        'id': pl.id,
+        'name': pl.name,
+        'created_at': null,
+        'updated_at': pl.updatedAt.toUtc().toIso8601String(),
+        'entries': [
+          for (final entry in pl.entries)
+            {
+              'music_id': entry.musicId,
+              'source_name': entry.sourceName,
+              'remote_path': entry.remotePath,
+              'title': entry.title,
+              'duration_ms': entry.durationMs,
+              'cue_track_index': entry.cueTrackIndex,
+              'cover_index': null,
+              'remote_missing': entry.remoteMissing,
+            },
+        ],
+      },
+      'covers': [
+        for (final cover in covers ?? const <Uint8List?>[])
+          if (cover == null || cover.isEmpty) null else base64Encode(cover),
+      ],
+    };
+    return _encodePlaylistReply(
+      payload,
+      'playlist encode',
+      fallbackFileName: pl.remoteFileName,
+    );
+  }
+
+  /// File name the Rust engine assigns to [pl] (no cover bytes needed).
+  String _playlistFileName(Playlist pl) =>
+      _encodePlaylistDocument(pl, covers: null).fileName;
+
+  /// Encode one playlist deletion pack (`WDMMPD01`).
+  ({String fileName, Uint8List bytes}) _encodeDeletionPack(
+    String playlistId,
+    List<PlaylistDeletion> records,
+  ) {
+    final payload = {
+      'kind': 'deletion',
+      'device_id': '',
+      'playlist_id': playlistId,
+      'created_at': null,
+      'updated_at': null,
+      'records': [
+        for (final record in records)
+          {
+            'entry_identity': record.entryIdentity,
+            'deleted_at': record.deletedAt.toUtc().toIso8601String(),
+          },
+      ],
+    };
+    return _encodePlaylistReply(payload, 'deletion encode');
+  }
+
+  /// Canonical file name of a playlist's deletion pack.
+  String _deletionFileName(String playlistId) =>
+      _encodeDeletionPack(playlistId, const []).fileName;
+
+  ({String fileName, Uint8List bytes}) _encodePlaylistReply(
+    Map<String, dynamic> payload,
+    String what, {
+    String? fallbackFileName,
+  }) {
+    final reply = _rustReply(
+      RustCoreService.playlistEncode(jsonEncode(payload)),
+      what,
+    );
+    final encoded = reply['bytes_base64'];
+    if (encoded is! String || encoded.isEmpty) {
+      throw FormatException('$what returned no bytes');
+    }
+    final name = reply['file_name'];
+    final fileName = name is String && name.isNotEmpty
+        ? name
+        : (fallbackFileName ?? '${payload['playlist_id'] ?? ''}.wdmp');
+    return (fileName: fileName, bytes: base64Decode(encoded));
+  }
+
+  /// Decode one `.wdmp` file; null when the container is not a playlist or a
+  /// playlist deletion pack (some other feature's document in the same dir).
+  Map<String, dynamic>? _decodePlaylistDocument(Uint8List bytes) {
+    final raw = RustCoreService.playlistDecode(bytes);
+    if (raw == null || raw.isEmpty) {
+      throw StateError('err.rustUnavailable:playlist decode');
+    }
+    if (raw == _unsupportedContainerError) return null;
+    return _rustReply(raw, 'playlist decode');
+  }
+
+  Playlist _playlistFromReply(Map<String, dynamic> reply) {
+    final raw = reply['playlist'];
+    if (raw is! Map) {
+      throw const FormatException('playlist decode returned no playlist');
+    }
+    final data = Map<String, dynamic>.from(raw);
+    final entries = <PlaylistEntry>[];
+    for (final entry in (data['entries'] as List? ?? const [])) {
+      if (entry is! Map) continue;
+      final values = Map<String, dynamic>.from(entry);
+      entries.add(
+        PlaylistEntry(
+          sourceName: values['source_name'] as String? ?? '',
+          remotePath: values['remote_path'] as String? ?? '',
+          musicId: values['music_id'] as String?,
+          title: values['title'] as String?,
+          durationMs: (values['duration_ms'] as num?)?.toInt(),
+          cueTrackIndex: (values['cue_track_index'] as num?)?.toInt(),
+          remoteMissing: values['remote_missing'] == true,
+        ),
+      );
+    }
+    final name = (data['name'] as String? ?? '').trim();
+    return Playlist(
+      id: data['id'] as String? ?? '',
+      name: name.isEmpty ? kUnnamedPlaylistName : name,
+      entries: entries,
+      updatedAt:
+          DateTime.tryParse(data['updated_at'] as String? ?? '')?.toUtc() ??
+          DateTime.now().toUtc(),
+    );
+  }
+
+  List<PlaylistDeletion> _deletionsFromReply(
+    Map<String, dynamic> reply,
+    String playlistId,
+  ) {
+    final records = <PlaylistDeletion>[];
+    for (final record in (reply['records'] as List? ?? const [])) {
+      if (record is! Map) continue;
+      final values = Map<String, dynamic>.from(record);
+      final deletedAt = DateTime.tryParse(
+        values['deleted_at'] as String? ?? '',
+      );
+      if (deletedAt == null) continue;
+      records.add(
+        PlaylistDeletion(
+          playlistId: playlistId,
+          entryIdentity: values['entry_identity'] as String? ?? '',
+          deletedAt: deletedAt.toUtc(),
+        ),
+      );
+    }
+    return records;
   }
 
   static String _normalizeDir(String path) {
@@ -610,4 +779,35 @@ class PlaylistService extends ChangeNotifier {
     }
     await refresh();
   }
+}
+
+/// Reply of `wdmm_playlist_decode` for a `WDMM*` container that is not a
+/// playlist document — the caller skips the file instead of reporting an error.
+const _unsupportedContainerError = 'error:unsupported container kind';
+
+/// Parse the JSON reply of an `ext::json_reply` handler.
+///
+/// Handlers answer `{"ok":true,...}` on success and `error:<msg>` on failure.
+/// A null reply means the native library is not available at all.
+Map<String, dynamic> _rustReply(String? raw, String what) {
+  if (raw == null || raw.isEmpty) {
+    throw StateError('err.rustUnavailable:$what');
+  }
+  if (raw.startsWith('error:')) {
+    throw FormatException('$what failed: ${raw.substring('error:'.length)}');
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    throw FormatException('$what returned invalid JSON');
+  }
+  if (decoded is! Map) {
+    throw FormatException('$what returned a non-object reply');
+  }
+  final map = Map<String, dynamic>.from(decoded);
+  if (map['ok'] != true) {
+    throw FormatException('$what failed: ${map['error'] ?? raw}');
+  }
+  return map;
 }

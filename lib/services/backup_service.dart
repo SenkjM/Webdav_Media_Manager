@@ -15,7 +15,6 @@ import 'accounts_service.dart';
 import 'wdmm_vfs/driver_registry.dart';
 import 'cache_service.dart';
 import 'cover_service.dart';
-import 'credential_vault_codec.dart';
 import 'credential_vault_service.dart';
 import 'library_service.dart';
 import 'manga_library_service.dart';
