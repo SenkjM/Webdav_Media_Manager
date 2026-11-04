@@ -233,16 +233,13 @@ class VideoSubtitleBinder {
       onError?.call('unsupported');
       return false;
     }
-    if (format == 'sub' && looksLikeBinarySubtitle(bytes)) {
-      onError?.call('binary');
-      return false;
-    }
-    final decoded = decodeSubtitleBytes(
+    final result = decodeSubtitleBytes(
       bytes,
       override: encoding == SubtitleEncodingChoice.auto ? null : encoding,
     );
+    final decoded = result.subtitle;
     if (decoded == null) {
-      onError?.call(looksLikeBinarySubtitle(bytes) ? 'binary' : 'decode');
+      onError?.call(result.reason ?? 'decode');
       return false;
     }
     final item = ManualSubtitle(
@@ -408,7 +405,11 @@ class VideoSubtitleBinder {
     try {
       final bytes = _bytesCache[hit.path] ?? await readBytes(hit.path);
       if (token != epoch) return;
-      if (hit.format == 'sub' && looksLikeBinarySubtitle(bytes)) {
+      final decoded = decodeSubtitleBytes(
+        bytes,
+        override: encoding == SubtitleEncodingChoice.auto ? null : encoding,
+      );
+      if (hit.format == 'sub' && decoded.reason == 'binary') {
         sidecars = [
           for (final item in sidecars)
             if (item.path != hit.path) item,
@@ -420,7 +421,12 @@ class VideoSubtitleBinder {
         return;
       }
       _bytesCache[hit.path] = bytes;
-      final file = await _materialize(bytes, hit.format, hit.path);
+      final file = await _materialize(
+        bytes,
+        hit.format,
+        hit.path,
+        decodedResult: decoded,
+      );
       if (token != epoch || file == null) {
         if (file == null && token == epoch) {
           _appliedKey = null;
@@ -520,12 +526,16 @@ class VideoSubtitleBinder {
   Future<File?> _materialize(
     List<int> bytes,
     String extension,
-    String identity,
-  ) async {
-    final decoded = decodeSubtitleBytes(
-      bytes,
-      override: encoding == SubtitleEncodingChoice.auto ? null : encoding,
-    );
+    String identity, {
+    SubtitleDecodeResult? decodedResult,
+  }) async {
+    final result =
+        decodedResult ??
+        decodeSubtitleBytes(
+          bytes,
+          override: encoding == SubtitleEncodingChoice.auto ? null : encoding,
+        );
+    final decoded = result.subtitle;
     if (decoded == null) return null;
     final dir = await _ensureTemp();
     final safeExt = extension.toLowerCase().replaceAll(
