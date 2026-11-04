@@ -456,6 +456,21 @@ class _TranscodePresetEditScreenState
     return Scaffold(
       appBar: AppBar(
         title: Text(isEdit ? '编辑预设' : '新建预设'),
+        // Save lives in the app bar so it is reachable from anywhere in the
+        // form instead of only after scrolling past every section.
+        actions: [
+          IconButton(
+            tooltip: '保存',
+            icon: _saving
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.save_outlined),
+            onPressed: _saving || !_hasVideoPath ? null : _save,
+          ),
+        ],
       ),
       body: Form(
         key: _formKey,
@@ -667,17 +682,6 @@ class _TranscodePresetEditScreenState
                 style: TextStyle(color: colorScheme.error),
               ),
             ],
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _saving || !_hasVideoPath ? null : _save,
-              child: _saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text('保存'),
-            ),
           ],
         ),
       ),
