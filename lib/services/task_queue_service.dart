@@ -37,7 +37,6 @@ import '../utils/cbz_range_zip.dart';
 import '../utils/manga_pack_followup.dart';
 import 'playlist_service.dart';
 import 'platform_export_service.dart';
-import 'rust_queue_bridge.dart';
 import 'webdav_service.dart';
 
 import 'dart:math';
@@ -1812,8 +1811,6 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (task.status == TaskStatus.pending || task.status == TaskStatus.active) {
       task.status = TaskStatus.cancelled;
       task.errorMessage = 'err.cancelled';
-      // Mirror cancel to the Rust queue so pollStatus reflects it.
-      RustQueueBridge.cancel(id);
       await _store.upsert(task);
       _completeWaiter(task);
       notifyListeners();
@@ -2851,13 +2848,6 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (accountId == null) {
       throw StateError('err.sourceUnbound|${task.sourceName}');
     }
-    // Notify the Rust SerialPump that this download is active so the Tasks UI
-    // (which polls RustQueueBridge.pollStatus) sees it. The Rust global queue is
-    // status-only here — it has no executor wired to perform the HTTP/crypto
-    // download, so the Dart _pump remains the live engine.
-    // TODO(queue-cutover-R12): once a Rust executor + credential flow lands,
-    // hand the whole download to Rust and remove the Dart _pump download branch.
-    RustQueueBridge.enqueue(_rustQueueTaskJson(task));
     final dest = _cache.fileForRemote(
       task.remotePath,
       sourceName: task.sourceName,
@@ -4230,20 +4220,5 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       }
       rethrow;
     }
-  }
-
-  /// Build the minimal JSON payload for [RustQueueBridge.enqueue].
-  ///
-  /// The Rust global queue is a status tracker in Round 11: it stores the task
-  /// so [RustQueueBridge.pollStatus] reflects it in the Tasks UI, but no Rust
-  /// executor actually performs the download (the Dart _pump does that).
-  static String _rustQueueTaskJson(QueueTask task) {
-    return jsonEncode({
-      'id': task.id,
-      'kind': 'download_track',
-      'remote_path': task.remotePath,
-      'local_path': '',
-      'total_bytes': task.bytesTotal ?? 0,
-    });
   }
 }

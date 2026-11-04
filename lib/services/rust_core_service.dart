@@ -22,9 +22,6 @@ typedef _StrStrToStrNative = ffi.Pointer<Utf8> Function(
 typedef _StrStrToStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
-typedef _IntResultNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
-typedef _IntResultDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
-
 typedef _IntNative = ffi.Int32 Function();
 typedef _IntDart = int Function();
 
@@ -230,9 +227,6 @@ class RustCoreService {
 
   static _FreeStringDart? _freeString;
   static _VersionDart? _version;
-  static _QueueStatusDart? _queueStatus;
-  static _IntResultDart? _queueCancel;
-  static _IntDart? _queuePendingCount;
   static _OpenApiStartDart? _openApiStart;
   static _IntDart? _openApiIsRunning;
   static _IntDart? _openApiPort;
@@ -311,15 +305,6 @@ class RustCoreService {
         .asFunction();
     _version = lib
         .lookup<ffi.NativeFunction<_VersionNative>>('wdmm_version')
-        .asFunction();
-    _queueStatus = lib
-        .lookup<ffi.NativeFunction<_QueueStatusNative>>('wdmm_queue_status_json')
-        .asFunction();
-    _queueCancel = lib
-        .lookup<ffi.NativeFunction<_IntResultNative>>('wdmm_queue_cancel')
-        .asFunction();
-    _queuePendingCount = lib
-        .lookup<ffi.NativeFunction<_IntNative>>('wdmm_queue_pending_count')
         .asFunction();
     _openApiStart = lib
         .lookup<ffi.NativeFunction<_OpenApiStartNative>>('wdmm_openapi_start')
@@ -469,28 +454,6 @@ class RustCoreService {
   static String? getVersion() {
     if (!_ensureSymbols()) return null;
     return _readAndFreeString(_version!());
-  }
-
-  /// Returns queue tasks as a JSON string, or '[]' if library unavailable.
-  static String getQueueStatusJson() {
-    if (!_ensureSymbols()) return '[]';
-    return _readAndFreeString(_queueStatus!());
-  }
-
-  /// Cancel a queue task by id. Returns 'ok' or an error message.
-  static String cancelTask(String taskId) {
-    if (!_ensureSymbols()) return 'library not available';
-    return taskId.toNativeUtf8().let((ptr) {
-      final result = _readAndFreeString(_queueCancel!(ptr));
-      calloc.free(ptr);
-      return result;
-    });
-  }
-
-  /// Number of pending queue tasks.
-  static int queuePendingCount() {
-    if (!_ensureSymbols()) return 0;
-    return _queuePendingCount!();
   }
 
   /// Start the OpenAPI server on the given port (0 = OS-assigned).
@@ -1932,47 +1895,6 @@ class RustCoreService {
     }
   }
 
-  // ── Round 7 — Queue enqueue FFI ───────────────────────────────────────────
-  //
-  // Wires to `wdmm_queue_enqueue` added in Round 7.
-  // [RustQueueBridge] routes single-file downloads through the Rust SerialPump.
-
-  static _OneStrToStrDart? _queueEnqueue;
-  static bool _queueSymbolsLoaded = false;
-
-  static void _loadQueueSymbolsSafe() {
-    if (_queueSymbolsLoaded) return;
-    final lib = _tryLib;
-    if (lib == null) return;
-    try {
-      _queueEnqueue = lib
-          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_queue_enqueue')
-          .asFunction();
-      _queueSymbolsLoaded = true;
-    } catch (e) {
-      debugPrint('[RustCore] queue symbol lookup failed (non-fatal): $e');
-    }
-  }
-
-  /// Enqueue a download task in the Rust SerialPump.
-  ///
-  /// [taskJson] must be a JSON object with at minimum `"id"` and `"kind"`.
-  /// Returns `'ok'` on success, `'error:…'` on failure, or `null` if the
-  /// native library is unavailable.
-  ///
-  /// This is the backing call for [RustQueueBridge.enqueue]. Do not call
-  /// directly — use [RustQueueBridge] which enforces the feature flag.
-  static String? queueEnqueue(String taskJson) {
-    if (!_ensureSymbols()) return null;
-    _loadQueueSymbolsSafe();
-    if (_queueEnqueue == null) return null;
-    final ptr = taskJson.toNativeUtf8();
-    try {
-      return _readAndFreeString(_queueEnqueue!(ptr));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
   // ── Round 9 — Proxy FFI ───────────────────────────────────────────────────
   //
   // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
