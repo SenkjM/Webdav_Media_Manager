@@ -1,4 +1,7 @@
-# Build FFmpeg 7.1 shared libraries for Android (arm64-v8a + x86_64).
+# Build FFmpeg 9.0.2 shared libraries for Android (arm64-v8a + x86_64).
+# The Android build is component-trimmed (--disable-encoders/muxers/avfilter),
+# so it ships five libraries per ABI instead of six.  Both ABIs are built here;
+# local development only builds arm64-v8a.
 #
 # Part of B3.5 (in-process libav transcoder).  The Rust `wdmm-ffmpeg` crate
 # dynamically links libavcodec/libavformat/...; those `.so` files are built
