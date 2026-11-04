@@ -3284,22 +3284,12 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
       return;
     }
-    final source = await _webDav.resolveStreamSource(
-      accountId: accountId,
-      remotePath: task.remotePath,
-      name: task.fileName,
-    );
-    if (source == null) {
-      throw StateError('err.streamSourceMissing');
-    }
-    final zip = CbzRangeZip(source: source);
+    final zip = CbzRangeZip(accountId: accountId, remotePath: task.remotePath);
     try {
       await retryItem(
         () => zip.open(cancel: token),
         isCancel: (e) =>
-            e is CbzRangeUnsupportedException ||
-            token.isCancelled ||
-            (e is DioException && CancelToken.isCancel(e)),
+            e is CbzRangeUnsupportedException || token.isCancelled,
       );
     } on CbzRangeUnsupportedException {
       throw StateError('err.rangeUnsupported');
