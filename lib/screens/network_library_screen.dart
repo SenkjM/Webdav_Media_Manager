@@ -683,7 +683,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     try {
       final webDav = context.read<WebDavService>();
       final bytes = await webDav.readAsBytes(_accountId!, item.path);
-      final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
+      final sheet = CueSheet.parseOrNull(decodeCueText(bytes));
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); // close loading
       // Do not stack the preview sheet on a dialog still in its pop animation.

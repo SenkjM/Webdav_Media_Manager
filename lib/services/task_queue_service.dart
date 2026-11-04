@@ -1394,7 +1394,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         throw StateError('err.sourceUnbound|$sourceName');
       }
       final bytes = await _webDav.readAsBytes(accountId, cueRemotePath);
-      final parsed = CueSheetParser.tryParse(decodeCueText(bytes));
+      final parsed = CueSheet.parseOrNull(decodeCueText(bytes));
       if (parsed == null) {
         throw StateError('err.cueMalformed');
       }
@@ -1621,7 +1621,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     if (sheet == null) {
       try {
         final bytes = await File(cueTask.localPath!).readAsBytes();
-        sheet = CueSheetParser.tryParse(decodeCueText(bytes));
+        sheet = CueSheet.parseOrNull(decodeCueText(bytes));
       } catch (e, st) {
         debugPrint('CUE re-parse failed: $e\n$st');
         return;
@@ -1706,7 +1706,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       sourceName: track.sourceName,
     );
     if (cueLocal == null) return false;
-    final sheet = CueSheetParser.tryParse(
+    final sheet = CueSheet.parseOrNull(
       decodeCueText(await File(cueLocal).readAsBytes()),
     );
     if (sheet == null) return false;
@@ -3099,7 +3099,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
               });
           if (!already || needsCover) {
             final bytes = await _webDav.readAsBytes(accountId, item.path);
-            final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
+            final sheet = CueSheet.parseOrNull(decodeCueText(bytes));
             if (sheet == null) {
               throw StateError('err.cueMalformed|${item.path}');
             }

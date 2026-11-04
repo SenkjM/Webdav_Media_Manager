@@ -11,13 +11,18 @@ void main() {
     const source = 'webdav';
     const cuePath = '/album/disc.cue';
     const audioPath = '/album/disc.flac';
-    final sheet = CueSheetParser.parse('''
-TITLE "Album"
-FILE "disc.flac" WAVE
-  TRACK 01 AUDIO
-    TITLE "Song"
-    INDEX 01 00:00:00
-''');
+    const sheet = CueSheet(
+      files: ['disc.flac'],
+      tracks: [
+        CueTrack(
+          number: 1,
+          fileName: 'disc.flac',
+          index01: Duration.zero,
+          title: 'Song',
+        ),
+      ],
+      title: 'Album',
+    );
     final existing = LibraryTrack(
       sourceName: source,
       remotePath: cueVirtualRemotePath(audioPath, 1),

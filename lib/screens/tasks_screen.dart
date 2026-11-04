@@ -309,7 +309,7 @@ class _CueGroupTile extends StatelessWidget {
       final cueFile = cue?.localPath;
       if (cueFile != null && File(cueFile).existsSync()) {
         try {
-          final sheet = CueSheetParser.tryParse(
+          final sheet = CueSheet.parseOrNull(
             decodeCueText(File(cueFile).readAsBytesSync()),
           );
           if (sheet != null) {

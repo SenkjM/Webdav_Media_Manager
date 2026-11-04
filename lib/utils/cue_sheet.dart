@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:path/path.dart' as p;
 
+import '../services/rust_core_service.dart';
+
 /// Decode CUE file bytes for parsing.
 ///
 /// Many Chinese / Exact Audio Copy CUEs are GBK or UTF-16, not strict
@@ -9,6 +11,9 @@ import 'package:path/path.dart' as p;
 /// `_maybeIngestCueGroup` to abort — downloads succeeded but virtual
 /// tracks never entered 音乐库. Structural keywords (FILE/TRACK/INDEX)
 /// are ASCII, so a lenient decode is enough to ingest slices.
+///
+/// Decoding stays here because `wdmm_cue_parse` takes text; the parse itself is
+/// owned by Rust (`wdmm_text::cue`).
 String decodeCueText(List<int> bytes) {
   if (bytes.isEmpty) return '';
   // UTF-8 BOM
@@ -43,6 +48,10 @@ String decodeCueText(List<int> bytes) {
   }
 }
 
+/// A parsed `.cue` sheet.
+///
+/// The parser lives in Rust (`wdmm_text::cue`, exposed as `wdmm_cue_parse`);
+/// this class is only the model plus the remote-path helpers the library uses.
 class CueSheet {
   const CueSheet({
     required this.files,
@@ -52,6 +61,56 @@ class CueSheet {
     this.remGenre,
     this.remDate,
   });
+
+  /// Parse [text] through Rust.
+  ///
+  /// Returns `null` when the native library is unavailable (host unit tests,
+  /// older `.so`) or when Rust rejects the sheet (no complete `TRACK`), which is
+  /// the old `CueSheetParser.tryParse` contract.
+  static CueSheet? parseOrNull(String text) {
+    final reply = RustCoreService.cueParse(text);
+    if (reply == null) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(reply);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! Map<String, dynamic> || decoded['ok'] != true) return null;
+    final sheet = decoded['sheet'];
+    if (sheet is! Map<String, dynamic>) return null;
+    return CueSheet._fromJson(sheet);
+  }
+
+  /// Parse [text] or throw `StateError('err.cueMalformed')`, like the old
+  /// `CueSheetParser.parse`.
+  static CueSheet parse(String text) {
+    final sheet = parseOrNull(text);
+    if (sheet == null) throw StateError('err.cueMalformed');
+    return sheet;
+  }
+
+  factory CueSheet._fromJson(Map<String, dynamic> json) {
+    final rawFiles = json['files'];
+    final rawTracks = json['tracks'];
+    return CueSheet(
+      files: rawFiles is List
+          ? List<String>.unmodifiable(rawFiles.whereType<String>())
+          : const <String>[],
+      tracks: rawTracks is List
+          ? List<CueTrack>.unmodifiable(
+              rawTracks
+                  .whereType<Map<String, dynamic>>()
+                  .map(CueTrack._fromJson),
+            )
+          : const <CueTrack>[],
+      title: _emptyToNull(json['title']),
+      performer: _emptyToNull(json['performer']),
+      remGenre: _emptyToNull(json['rem_genre']),
+      remDate: _emptyToNull(json['rem_date']),
+    );
+  }
+
   final List<String> files;
   final List<CueTrack> tracks;
   final String? title;
@@ -79,6 +138,7 @@ class CueSheet {
   }
 }
 
+/// One track of a [CueSheet].
 class CueTrack {
   const CueTrack({
     required this.number,
@@ -88,6 +148,18 @@ class CueTrack {
     this.performer,
     this.isrc,
   });
+
+  factory CueTrack._fromJson(Map<String, dynamic> json) {
+    return CueTrack(
+      number: (json['number'] as num?)?.toInt() ?? 0,
+      fileName: json['file_name'] as String? ?? '',
+      index01: Duration(milliseconds: (json['start_ms'] as num?)?.toInt() ?? 0),
+      title: _emptyToNull(json['title']),
+      performer: _emptyToNull(json['performer']),
+      isrc: _emptyToNull(json['isrc']),
+    );
+  }
+
   final int number;
   final String fileName;
   final Duration index01;
@@ -96,175 +168,10 @@ class CueTrack {
   final String? isrc;
 }
 
-class CueSheetParser {
-  static CueSheet parse(String text) {
-    final r = tryParse(text);
-    if (r == null) throw StateError('err.cueMalformed');
-    return r;
-  }
-
-  static CueSheet? tryParse(String text) {
-    if (text.trim().isEmpty) return null;
-    String? albumTitle, albumPerformer, remGenre, remDate, currentFile;
-    final files = <String>[];
-    final tracks = <CueTrack>[];
-    int? trackNumber;
-    String? trackTitle, trackPerformer, trackIsrc;
-    Duration? index01;
-    var inTrack = false;
-    var incomplete = false;
-
-    void flush() {
-      if (!inTrack || trackNumber == null) return;
-      final number = trackNumber!;
-      final file = currentFile;
-      final index = index01;
-      if (file == null || file.isEmpty || index == null) {
-        incomplete = true;
-        inTrack = false;
-        trackNumber = null;
-        trackTitle = null;
-        trackPerformer = null;
-        trackIsrc = null;
-        index01 = null;
-        return;
-      }
-      tracks.add(
-        CueTrack(
-          number: number,
-          fileName: file,
-          index01: index,
-          title: trackTitle,
-          performer: trackPerformer,
-          isrc: trackIsrc,
-        ),
-      );
-      inTrack = false;
-      trackNumber = null;
-      trackTitle = null;
-      trackPerformer = null;
-      trackIsrc = null;
-      index01 = null;
-    }
-
-    for (var raw
-        in text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
-      var line = raw.trim();
-      if (line.startsWith('\uFEFF')) line = line.substring(1).trim();
-      if (line.isEmpty) continue;
-      final u = line.toUpperCase();
-      if (u.startsWith('REM ')) {
-        final rem = line.substring(4).trim();
-        final ru = rem.toUpperCase();
-        if (ru.startsWith('GENRE ')) {
-          remGenre = _uq(rem.substring(6).trim());
-        } else if (ru.startsWith('DATE ')) {
-          remDate = _uq(rem.substring(5).trim());
-        }
-        continue;
-      }
-      if (u.startsWith('TITLE ')) {
-        final v = _uq(line.substring(6).trim());
-        if (inTrack) {
-          trackTitle = v;
-        } else {
-          albumTitle = v;
-        }
-        continue;
-      }
-      if (u.startsWith('PERFORMER ')) {
-        final v = _uq(line.substring(10).trim());
-        if (inTrack) {
-          trackPerformer = v;
-        } else {
-          albumPerformer = v;
-        }
-        continue;
-      }
-      if (u.startsWith('FILE ')) {
-        flush();
-        final fn = _file(line.substring(5).trim());
-        if (fn == null || fn.isEmpty) return null;
-        currentFile = fn;
-        if (!files.contains(fn)) files.add(fn);
-        continue;
-      }
-      if (u.startsWith('TRACK ')) {
-        flush();
-        if (currentFile == null) return null;
-        final n = int.tryParse(
-          line.substring(6).trim().split(RegExp(r'\s+')).first,
-        );
-        if (n == null || n < 1) return null;
-        inTrack = true;
-        trackNumber = n;
-        continue;
-      }
-      if (u.startsWith('INDEX ')) {
-        if (!inTrack) continue;
-        final parts = line.substring(6).trim().split(RegExp(r'\s+'));
-        if (parts.length < 2 || int.tryParse(parts[0]) != 1) continue;
-        final d = parseCueIndexTime(parts[1]);
-        if (d == null) return null;
-        index01 = d;
-        continue;
-      }
-      if (u.startsWith('ISRC ') && inTrack) {
-        trackIsrc = _uq(line.substring(5).trim());
-      }
-    }
-    flush();
-    if (incomplete || files.isEmpty || tracks.isEmpty) return null;
-    return CueSheet(
-      files: List.unmodifiable(files),
-      tracks: List.unmodifiable(tracks),
-      title: albumTitle,
-      performer: albumPerformer,
-      remGenre: remGenre,
-      remDate: remDate,
-    );
-  }
-
-  static Duration? parseCueIndexTime(String raw) {
-    final parts = raw.trim().split(':');
-    if (parts.length != 3) return null;
-    final m = int.tryParse(parts[0]);
-    final s = int.tryParse(parts[1]);
-    final f = int.tryParse(parts[2]);
-    if (m == null ||
-        s == null ||
-        f == null ||
-        m < 0 ||
-        s < 0 ||
-        s > 59 ||
-        f < 0 ||
-        f > 74) {
-      return null;
-    }
-    return Duration(
-      milliseconds: ((m * 60 + s) * 1000) + ((f * 1000) / 75).round(),
-    );
-  }
-
-  static String? _file(String rest) {
-    final q = RegExp(r'^"([^"]*)"').firstMatch(rest);
-    if (q != null) return q.group(1);
-    final s = RegExp(r"^'([^']*)'").firstMatch(rest);
-    if (s != null) return s.group(1);
-    final sp = rest.split(RegExp(r'\s+'));
-    return (sp.isEmpty || sp.first.isEmpty) ? null : sp.first;
-  }
-
-  static String _uq(String s) {
-    if (s.length >= 2 &&
-        ((s.startsWith('"') && s.endsWith('"')) ||
-            (s.startsWith("'") && s.endsWith("'")))) {
-      return s.substring(1, s.length - 1);
-    }
-    return s;
-  }
-}
-
+/// Clip ranges (`INDEX 01` … next track / file duration) for [tracks].
+///
+/// Tracks of the same `FILE` are chained; the last track of a file ends at
+/// [fileDurations] (resolved from local tags) or stays open.
 List<({Duration start, Duration? end})> cueClipRanges(
   List<CueTrack> tracks, {
   Map<String, Duration?> fileDurations = const {},
@@ -333,4 +240,11 @@ mergeCueOverFileTags({
     year: cueYear ?? fileYear,
     genre: prefer(sheet.remGenre, fileGenre),
   );
+}
+
+/// `null` for absent/empty JSON strings, so the model keeps the old nullable
+/// semantics (`TITLE ""` was indistinguishable from no title for consumers).
+String? _emptyToNull(Object? value) {
+  if (value is! String || value.isEmpty) return null;
+  return value;
 }
