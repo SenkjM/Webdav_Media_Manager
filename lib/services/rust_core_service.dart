@@ -749,15 +749,15 @@ class RustCoreService {
     return _readAndFreeString(_dmrPrefsList!());
   }
 
-  static String? dmrPrefsGet(String usn) => _callOneString(_dmrPrefsGet, usn);
-  static String? dmrPrefsUpsert(String json) => _callOneString(_dmrPrefsUpsert, json);
-  static String? dmrPrefsDelete(String usn) => _callOneString(_dmrPrefsDelete, usn);
+  static String? dmrPrefsGet(String usn) => _callOneString(() => _dmrPrefsGet, usn);
+  static String? dmrPrefsUpsert(String json) => _callOneString(() => _dmrPrefsUpsert, json);
+  static String? dmrPrefsDelete(String usn) => _callOneString(() => _dmrPrefsDelete, usn);
 
   static String? backupCreate(String passphrase, String outputPath) =>
-      _callTwoStrings(_backupCreate, passphrase, outputPath);
+      _callTwoStrings(() => _backupCreate, passphrase, outputPath);
 
   static String? backupRestore(String passphrase, String path) =>
-      _callTwoStrings(_backupRestore, passphrase, path);
+      _callTwoStrings(() => _backupRestore, passphrase, path);
 
   /// Upload a backup to WebDAV.
   ///
@@ -770,7 +770,7 @@ class RustCoreService {
     required String remoteDir,
     required String passphrase,
   }) =>
-      _callFiveStrings(_backupUpload, url, user, pass, remoteDir, passphrase);
+      _callFiveStrings(() => _backupUpload, url, user, pass, remoteDir, passphrase);
 
   /// List backups in a WebDAV directory.
   ///
@@ -782,7 +782,7 @@ class RustCoreService {
     required String pass,
     required String remoteDir,
   }) =>
-      _callFourStrings(_backupList, url, user, pass, remoteDir);
+      _callFourStrings(() => _backupList, url, user, pass, remoteDir);
 
   /// Download a backup from WebDAV and restore it.
   ///
@@ -795,45 +795,56 @@ class RustCoreService {
     required String remoteFile,
     required String passphrase,
   }) =>
-      _callFiveStrings(_backupDownloadRestore, url, user, pass, remoteFile, passphrase);
+      _callFiveStrings(() => _backupDownloadRestore, url, user, pass, remoteFile, passphrase);
 
   /// Configure the cover image directories used during backup create/restore.
   ///
   /// Both paths must be non-empty UTF-8. Returns 'ok' on success or 'error:...'
   /// on failure. Returns null if the native library is not available.
   static String? coversConfigure(String musicCoversDir, String mangaCoversDir) =>
-      _callTwoStrings(_coversConfigure, musicCoversDir, mangaCoversDir);
+      _callTwoStrings(() => _coversConfigure, musicCoversDir, mangaCoversDir);
 
-  static String? _callOneString(_OneStrToStrDart? fn, String value) {
+  /// Same null-check trap as [_callExtOneString]: the symbol must be resolved
+  /// *after* [_ensureDmrSymbols], so callers pass a closure, not the field.
+  static String? _callOneString(
+      _OneStrToStrDart? Function() resolve, String value) {
     if (!_ensureDmrSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
     final ptr = value.toNativeUtf8();
     try {
-      return _readAndFreeString(fn!(ptr));
+      return _readAndFreeString(fn(ptr));
     } finally {
       calloc.free(ptr);
     }
   }
 
-  static String? _callTwoStrings(_StrStrToStrDart? fn, String first, String second) {
+  static String? _callTwoStrings(
+      _StrStrToStrDart? Function() resolve, String first, String second) {
     if (!_ensureDmrSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
     final a = first.toNativeUtf8();
     final b = second.toNativeUtf8();
     try {
-      return _readAndFreeString(fn!(a, b));
+      return _readAndFreeString(fn(a, b));
     } finally {
       calloc.free(a);
       calloc.free(b);
     }
   }
 
-  static String? _callFourStrings(_FourStrToOneStrDart? fn, String s1, String s2, String s3, String s4) {
+  static String? _callFourStrings(_FourStrToOneStrDart? Function() resolve,
+      String s1, String s2, String s3, String s4) {
     if (!_ensureDmrSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
     final a = s1.toNativeUtf8();
     final b = s2.toNativeUtf8();
     final c = s3.toNativeUtf8();
     final d = s4.toNativeUtf8();
     try {
-      return _readAndFreeString(fn!(a, b, c, d));
+      return _readAndFreeString(fn(a, b, c, d));
     } finally {
       calloc.free(a);
       calloc.free(b);
@@ -842,15 +853,18 @@ class RustCoreService {
     }
   }
 
-  static String? _callFiveStrings(_FiveStrToOneStrDart? fn, String s1, String s2, String s3, String s4, String s5) {
+  static String? _callFiveStrings(_FiveStrToOneStrDart? Function() resolve,
+      String s1, String s2, String s3, String s4, String s5) {
     if (!_ensureDmrSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
     final a = s1.toNativeUtf8();
     final b = s2.toNativeUtf8();
     final c = s3.toNativeUtf8();
     final d = s4.toNativeUtf8();
     final e = s5.toNativeUtf8();
     try {
-      return _readAndFreeString(fn!(a, b, c, d, e));
+      return _readAndFreeString(fn(a, b, c, d, e));
     } finally {
       calloc.free(a);
       calloc.free(b);
@@ -929,10 +943,10 @@ class RustCoreService {
   /// Returns `{"ok":true,"encrypted":bool,...}` or `'error:...'`; null when the
   /// native library is unavailable.
   static String? backupProbe(String dataPath, String passphrase) =>
-      _callExtTwoStrings(_backupProbe, dataPath, passphrase);
+      _callExtTwoStrings(() => _backupProbe, dataPath, passphrase);
 
   /// Parse a CUE sheet into `{"title":...,"tracks":[...]}`.
-  static String? cueParse(String text) => _callExtOneString(_cueParse, text);
+  static String? cueParse(String text) => _callExtOneString(() => _cueParse, text);
 
   /// Walk a remote tree under [root] in Rust.
   ///
@@ -945,12 +959,11 @@ class RustCoreService {
     required String maxEntries,
     required String kindsJson,
   }) =>
-      _callExtFiveStrings(
-          _accountWalk, accountId, root, maxDepth, maxEntries, kindsJson);
+      _callExtFiveStrings(() => _accountWalk, accountId, root, maxDepth, maxEntries, kindsJson);
 
   /// Decode subtitle bytes, detecting the charset in Rust.
   static String? subtitleDecode(Uint8List bytes) =>
-      _callExtBytes(_subtitleDecode, bytes);
+      _callExtBytes(() => _subtitleDecode, bytes);
 
   /// Decode subtitle bytes as [encoding] (`utf8`, `utf16le`, `utf16be`, `gbk`,
   /// `gb18030`, `big5`), bypassing detection.
@@ -978,27 +991,27 @@ class RustCoreService {
 
   /// Encode vault records into the `WDMMCV01` container.
   static String? vaultEncode(String recordsJson) =>
-      _callExtOneString(_vaultEncode, recordsJson);
+      _callExtOneString(() => _vaultEncode, recordsJson);
 
   /// Decode a `WDMMCV01` vault container.
   static String? vaultDecode(Uint8List bytes) =>
-      _callExtBytes(_vaultDecode, bytes);
+      _callExtBytes(() => _vaultDecode, bytes);
 
   /// Encode one playlist into the `WDMMPL01` container.
   static String? playlistEncode(String playlistJson) =>
-      _callExtOneString(_playlistEncode, playlistJson);
+      _callExtOneString(() => _playlistEncode, playlistJson);
 
   /// Decode a `WDMMPL01` playlist container.
   static String? playlistDecode(Uint8List bytes) =>
-      _callExtBytes(_playlistDecode, bytes);
+      _callExtBytes(() => _playlistDecode, bytes);
 
   /// Open a remote CBZ/ZIP and cache its central directory in Rust.
   static String? zipOpen(String accountId, String remotePath) =>
-      _callExtTwoStrings(_zipOpen, accountId, remotePath);
+      _callExtTwoStrings(() => _zipOpen, accountId, remotePath);
 
   /// Read one entry of a previously opened archive by index.
   static String? zipReadEntry(String handle, String index) =>
-      _callExtTwoStrings(_zipReadEntry, handle, index);
+      _callExtTwoStrings(() => _zipReadEntry, handle, index);
 
   /// Encrypt a vault field with the 120k-iteration AESGCMv1 format.
   ///
@@ -1009,7 +1022,7 @@ class RustCoreService {
     String plaintext,
     String passphrase,
   ) => runOffMain(
-    () => _callExtTwoStrings(_vaultCryptoEncrypt, plaintext, passphrase),
+    () => _callExtTwoStrings(() => _vaultCryptoEncrypt, plaintext, passphrase),
   );
 
   /// Decrypt an `AESGCMv1:` vault field.
@@ -1020,19 +1033,19 @@ class RustCoreService {
     String value,
     String passphrase,
   ) => runOffMain(
-    () => _callExtTwoStrings(_vaultCryptoDecrypt, value, passphrase),
+    () => _callExtTwoStrings(() => _vaultCryptoDecrypt, value, passphrase),
   );
 
   /// Whether [value] carries the vault ciphertext prefix.
   ///
   /// Returns `{"ok":true,"encrypted":bool}` or null without natives.
   static Future<String?> vaultCryptoIsEncrypted(String value) => runOffMain(
-    () => _callExtOneString(_vaultCryptoIsEncrypted, value),
+    () => _callExtOneString(() => _vaultCryptoIsEncrypted, value),
   );
 
   /// Extract embedded tags and cover art from a remote media file.
   static String? tagsExtract(String accountId, String remotePath) =>
-      _callExtTwoStrings(_tagsExtract, accountId, remotePath);
+      _callExtTwoStrings(() => _tagsExtract, accountId, remotePath);
 
   /// Ask Rust what to do with a failed queue task.
   ///
@@ -1042,41 +1055,55 @@ class RustCoreService {
   /// `{"ok":true,"action":"cancel|retry|fail","attempts":n,"delay_ms":m,"offline":bool,"cap":n}`,
   /// or null when the native library is unavailable.
   static Future<String?> queueRetryDecision(String inputJson) => runOffMain(
-    () => _callExtOneString(_queueRetry, inputJson),
+    () => _callExtOneString(() => _queueRetry, inputJson),
   );
 
-  static String? _callExtOneString(_OneStrToStrDart? fn, String value) {
+  /// Call an `ext` symbol, resolving it **after** the symbol table is warmed.
+  ///
+  /// The resolver must be a closure: reading the static field at the call site
+  /// would hand us the value from *before* [_ensureExtSymbols] ran — null in
+  /// every fresh isolate (`Isolate.run` starts with all statics null), which
+  /// made the first call in each worker isolate throw a null-check error.
+  static String? _callExtOneString(
+      _OneStrToStrDart? Function() resolve, String value) {
     if (!_ensureExtSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
     final ptr = value.toNativeUtf8();
     try {
-      return _readAndFreeString(fn!(ptr));
+      return _readAndFreeString(fn(ptr));
     } finally {
       calloc.free(ptr);
     }
   }
 
-  static String? _callExtTwoStrings(_StrStrToStrDart? fn, String first, String second) {
+  static String? _callExtTwoStrings(
+      _StrStrToStrDart? Function() resolve, String first, String second) {
     if (!_ensureExtSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
     final a = first.toNativeUtf8();
     final b = second.toNativeUtf8();
     try {
-      return _readAndFreeString(fn!(a, b));
+      return _readAndFreeString(fn(a, b));
     } finally {
       calloc.free(a);
       calloc.free(b);
     }
   }
 
-  static String? _callExtFiveStrings(_FiveStrToOneStrDart? fn, String s1, String s2,
-      String s3, String s4, String s5) {
+  static String? _callExtFiveStrings(_FiveStrToOneStrDart? Function() resolve,
+      String s1, String s2, String s3, String s4, String s5) {
     if (!_ensureExtSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
     final a = s1.toNativeUtf8();
     final b = s2.toNativeUtf8();
     final c = s3.toNativeUtf8();
     final d = s4.toNativeUtf8();
     final e = s5.toNativeUtf8();
     try {
-      return _readAndFreeString(fn!(a, b, c, d, e));
+      return _readAndFreeString(fn(a, b, c, d, e));
     } finally {
       calloc.free(a);
       calloc.free(b);
@@ -1086,14 +1113,17 @@ class RustCoreService {
     }
   }
 
-  static String? _callExtBytes(_BytesToStrDart? fn, Uint8List bytes) {
+  static String? _callExtBytes(
+      _BytesToStrDart? Function() resolve, Uint8List bytes) {
     if (!_ensureExtSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
     final buffer = calloc<ffi.Uint8>(bytes.isEmpty ? 1 : bytes.length);
     try {
       if (bytes.isNotEmpty) {
         buffer.asTypedList(bytes.length).setAll(0, bytes);
       }
-      return _readAndFreeString(fn!(buffer, bytes.length));
+      return _readAndFreeString(fn(buffer, bytes.length));
     } finally {
       calloc.free(buffer);
     }

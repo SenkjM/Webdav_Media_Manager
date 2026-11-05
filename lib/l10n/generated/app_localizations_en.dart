@@ -1463,6 +1463,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get remoteRootRequired => 'Enter a remote path first';
+
+  @override
   String get derivedPathCredentials => 'Credentials';
 
   @override

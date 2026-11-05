@@ -424,6 +424,9 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         await _openVideo(item);
       case FileAction.readCue:
         await _openCue(item);
+      case FileAction.scrapeCue:
+        // 与「扫描音乐」同一个入口：远端列出该 .cue 的曲目后逐条入库。
+        await _scanSelection(const [], [item]);
       case FileAction.streamMusic:
         await _streamMusic(item);
       case FileAction.viewImage:
@@ -833,9 +836,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                   child: Row(
                     children: [
                       Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(ctx, 'close'),
-                          child: Text(AppLocalizations.of(ctx)!.close),
+                        child: OutlinedButton.icon(
+                          // 关闭不占按钮位：下滑 / 返回键 / 点遮罩都能关。
+                          onPressed: () => Navigator.pop(ctx, 'scrape'),
+                          icon: const Icon(Icons.travel_explore_outlined),
+                          label: Text(AppLocalizations.of(ctx)!.taskKindScan),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -864,6 +869,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       },
     );
 
+    if (action == 'scrape' && mounted) {
+      await _scanSelection(const [], [item]);
+      return;
+    }
     if (action == 'play' && mounted) {
       await _playCueGroup(item, sheet);
       return;
@@ -1163,6 +1172,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     FileAction.download => Icons.download,
     FileAction.stream => Icons.play_circle_outline,
     FileAction.readCue => Icons.queue_music_outlined,
+    FileAction.scrapeCue => Icons.travel_explore_outlined,
     FileAction.streamMusic => Icons.stream,
     FileAction.viewImage => Icons.image_outlined,
     FileAction.downloadToGallery => Icons.photo_library_outlined,

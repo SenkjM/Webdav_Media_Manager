@@ -137,41 +137,18 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 
   /// 编辑缓存预算（MB）。非法值不落盘。
+  ///
+  /// 输入框的 controller 由对话框自己持有：[showDialog] 的 future 在 pop 那一刻
+  /// 就完成，但路由的退场动画还要跑几百毫秒、IME 也还在收。在这里 dispose 会让
+  /// 仍在树上的 TextField 摸到已释放的 controller（真机报 framework 断言）。
   Future<void> _editTranscodeCacheBudget() async {
     final settings = context.read<SettingsService>();
-    final controller = TextEditingController(
-      text: settings.transcodeCacheBudgetMb.toString(),
-    );
     final saved = await showDialog<int>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('转码缓存预算'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-          decoration: const InputDecoration(
-            labelText: '预算（MB）',
-            helperText: '默认 2048 MB；超出后按最久未使用淘汰',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final parsed = int.tryParse(controller.text.trim());
-              Navigator.of(dialogContext).pop(parsed);
-            },
-            child: const Text('保存'),
-          ),
-        ],
+      builder: (_) => _TranscodeCacheBudgetDialog(
+        initialMb: settings.transcodeCacheBudgetMb,
       ),
     );
-    controller.dispose();
     if (!mounted || saved == null) return;
     if (saved <= 0) {
       AppSnack.show(context, '缓存预算必须大于 0 MB', error: true);
@@ -980,6 +957,63 @@ class _CodecCapabilityTile extends StatelessWidget {
           Expanded(child: Text(value, style: style)),
         ],
       ),
+    );
+  }
+}
+
+/// 缓存预算的输入对话框。
+///
+/// 自己持有 controller 并在 State.dispose 里释放：`showDialog` 的 future 在 pop
+/// 时立刻完成，此时路由还在退场动画中，立即 dispose 会让仍在树上的 TextField
+/// 拿到已释放的 controller（真机报 framework 断言）。
+class _TranscodeCacheBudgetDialog extends StatefulWidget {
+  const _TranscodeCacheBudgetDialog({required this.initialMb});
+
+  final int initialMb;
+
+  @override
+  State<_TranscodeCacheBudgetDialog> createState() =>
+      _TranscodeCacheBudgetDialogState();
+}
+
+class _TranscodeCacheBudgetDialogState
+    extends State<_TranscodeCacheBudgetDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialMb.toString());
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('转码缓存预算'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        decoration: const InputDecoration(
+          labelText: '预算（MB）',
+          helperText: '默认 2048 MB；超出后按最久未使用淘汰',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final parsed = int.tryParse(_controller.text.trim());
+            Navigator.of(context).pop(parsed);
+          },
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

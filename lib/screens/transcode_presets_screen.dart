@@ -586,6 +586,20 @@ class _TranscodePresetEditScreenState
     );
   }
 
+  /// Tooltip 的 message 不能为 null（`tooltip.dart` 的构造断言），
+  /// 所以只在禁用时才包一层，不要在可用时传空外壳。
+  Widget _rateChip(String mode) {
+    final enabled = _rateModeEnabled(mode);
+    final chip = ChoiceChip(
+      label: Text(_kRateControlLabels[mode] ?? mode),
+      selected: _videoRateControl == mode,
+      onSelected:
+          enabled ? (_) => setState(() => _videoRateControl = mode) : null,
+    );
+    if (enabled) return chip;
+    return Tooltip(message: '当前编码器不支持', child: chip);
+  }
+
   Widget _rateControlPicker() {
     final colorScheme = Theme.of(context).colorScheme;
     return Column(
@@ -595,17 +609,7 @@ class _TranscodePresetEditScreenState
           spacing: 8,
           runSpacing: 4,
           children: [
-            for (final mode in _kRateControlOrder)
-              Tooltip(
-                message: _rateModeEnabled(mode) ? null : '当前编码器不支持',
-                child: ChoiceChip(
-                  label: Text(_kRateControlLabels[mode] ?? mode),
-                  selected: _videoRateControl == mode,
-                  onSelected: _rateModeEnabled(mode)
-                      ? (_) => setState(() => _videoRateControl = mode)
-                      : null,
-                ),
-              ),
+            for (final mode in _kRateControlOrder) _rateChip(mode),
           ],
         ),
         if (!_rateModeEnabled(_videoRateControl))

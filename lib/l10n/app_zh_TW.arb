@@ -458,6 +458,7 @@
   "pickFileFailed": "選擇檔案失敗：{error}",
   "pasteBase64First": "請先貼上備份內容（Base64）",
   "remoteRootUpdated": "遠端路徑已更新：{path}",
+  "remoteRootRequired": "請先填寫遠端路徑",
   "derivedPathCredentials": "帳號憑證",
   "derivedPathPlaylists": "歌單",
   "derivedPathLibrary": "音樂庫",

@@ -458,6 +458,7 @@
   "pickFileFailed": "选择文件失败：{error}",
   "pasteBase64First": "请先粘贴备份内容（Base64）",
   "remoteRootUpdated": "远端路径已更新：{path}",
+  "remoteRootRequired": "请先填写远端路径",
   "derivedPathCredentials": "账号凭证",
   "derivedPathPlaylists": "歌单",
   "derivedPathLibrary": "音乐库",

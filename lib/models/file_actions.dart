@@ -21,6 +21,13 @@ enum FileAction {
   /// CUE：读取并解析，整组下载。
   readCue,
 
+  /// CUE：对 `.cue` 直接触发与「扫描音乐」同一套刮削（由远端列出曲目后入库）。
+  ///
+  /// 不落盘：刮削只写音乐库与封面缓存，音频字节仍在播放/缓存时按需读取。
+  /// 它取代的旧入口是 CUE 预览弹窗里的「关闭」——关闭本来就能用下滑/返回键/
+  /// 点遮罩完成，按钮位留给真正缺的能力。
+  scrapeCue,
+
   /// 音乐：远端流式播放（见 docs/99 的可行性分析）。不是单击出厂默认。
   streamMusic,
 
@@ -46,6 +53,7 @@ extension FileActionX on FileAction {
     FileAction.download => 'download',
     FileAction.stream => 'stream',
     FileAction.readCue => 'read_cue',
+    FileAction.scrapeCue => 'scrape_cue',
     FileAction.streamMusic => 'stream_music',
     FileAction.viewImage => 'view_image',
     FileAction.downloadToGallery => 'download_to_gallery',
@@ -57,6 +65,7 @@ extension FileActionX on FileAction {
     FileAction.download => l10n.actionDownload,
     FileAction.stream => l10n.actionStream,
     FileAction.readCue => l10n.actionReadCue,
+    FileAction.scrapeCue => l10n.taskKindScan,
     FileAction.streamMusic => l10n.actionStreamMusic,
     FileAction.viewImage => l10n.actionViewImage,
     FileAction.downloadToGallery => l10n.netDownloadToGallery,
@@ -69,6 +78,7 @@ extension FileActionX on FileAction {
     FileAction.download => l10n.actionShortDownload,
     FileAction.stream => l10n.actionShortStream,
     FileAction.readCue => l10n.actionShortCue,
+    FileAction.scrapeCue => l10n.taskKindScan,
     FileAction.streamMusic => l10n.actionShortStreamMusic,
     FileAction.viewImage => l10n.actionShortViewImage,
     FileAction.downloadToGallery => l10n.actionShortGallery,
@@ -84,6 +94,7 @@ extension FileActionX on FileAction {
     FileAction.stream ||
     FileAction.streamMusic ||
     FileAction.viewImage ||
+    FileAction.scrapeCue ||
     FileAction.addToMangaLibrary => null,
   };
 
@@ -109,7 +120,15 @@ class FileActionCatalog {
     FileAction.download,
   ];
 
-  static const List<FileAction> cue = [FileAction.readCue, FileAction.download];
+  /// CUE 的候选动作：读取 / 刮削 / 下载。
+  ///
+  /// 没有「关闭/不处理」：关闭由预览弹窗自身的下滑/返回/点遮罩承担，
+  /// 不需要占一个动作位；刮削则是用户明确要求补上的能力。
+  static const List<FileAction> cue = [
+    FileAction.readCue,
+    FileAction.scrapeCue,
+    FileAction.download,
+  ];
 
   static const List<FileAction> image = [
     FileAction.viewImage,

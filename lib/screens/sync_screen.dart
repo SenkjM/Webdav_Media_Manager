@@ -833,10 +833,18 @@ class _SyncScreenState extends State<SyncScreen> {
   /// `libraryRemotePath` / `backupRemotePath`) at call time.
   Future<void> _applyRemoteRoot() async {
     final settings = context.read<SettingsService>();
-    await settings.setSyncRemoteRoot(_rootController.text);
+    final typed = _rootController.text.trim();
+    // Empty means "nothing to apply": do **not** silently swap in the default
+    // path — that is exactly how the field used to rewrite itself under the
+    // user's cursor (真机反馈).
+    if (typed.isEmpty) {
+      AppSnack.showGlobal(AppLocalizations.of(context)!.remoteRootRequired);
+      return;
+    }
+    await settings.setSyncRemoteRoot(typed);
     if (!mounted) return;
-    // Show the normalised value (the setter adds the leading/trailing slash).
-    setState(() => _rootController.text = settings.syncRemoteRoot);
+    // Leave the field alone: the setter normalises the stored value (leading and
+    // trailing slash), and the derived-path list below shows the result.
     AppSnack.showGlobal(
       AppLocalizations.of(context)!.remoteRootUpdated(settings.syncRemoteRoot),
     );

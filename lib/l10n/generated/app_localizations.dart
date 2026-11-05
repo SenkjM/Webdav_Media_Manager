@@ -2643,6 +2643,12 @@ abstract class AppLocalizations {
   /// **'远端路径已更新：{path}'**
   String remoteRootUpdated(Object path);
 
+  /// No description provided for @remoteRootRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写远端路径'**
+  String get remoteRootRequired;
+
   /// No description provided for @derivedPathCredentials.
   ///
   /// In zh, this message translates to:

@@ -1416,6 +1416,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get remoteRootRequired => '请先填写远端路径';
+
+  @override
   String get derivedPathCredentials => '账号凭证';
 
   @override
@@ -6649,6 +6652,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String remoteRootUpdated(Object path) {
     return '遠端路徑已更新：$path';
   }
+
+  @override
+  String get remoteRootRequired => '請先填寫遠端路徑';
 
   @override
   String get derivedPathCredentials => '帳號憑證';

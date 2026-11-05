@@ -1716,7 +1716,9 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         fileName: task.fileName,
         localPath: local,
       );
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('queue ingest failed ${task.remotePath}: $e\n$st');
+    }
   }
 
   Future<QueueTask> _waitFor(String id) {
@@ -2578,23 +2580,27 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
     try {
       await _ensureKeepAliveBounded();
       await _runOne(task);
-    } catch (e) {
+    } catch (e, st) {
       // A task that throws before its own try/catch (e.g. a schema error
       // while persisting, or an unresolvable source disk) must not stall the
       // whole queue forever — and the failure has to be **persisted**, or the
       // row stays `active` in the database while memory says failed.
       _lastError = _describeError(e);
-      debugPrint('TaskQueueService _runOne failed: $e');
+      debugPrint(
+        'TaskQueueService _runOne failed: $e '
+        '(kind=${task.kind.name} source=${task.sourceName} '
+        'path=${task.remotePath})\n$st',
+      );
       // 这里也走统一失败处理：认不出来的错误默认按可重试兜底，
       // 而不是把任务直接判死（99 §7.5 之后的下载可靠性要求）。
       try {
         await _handleFailure(task, e);
-      } catch (inner) {
+      } catch (inner, innerSt) {
         // _handleFailure persists the failure; if *that* write fails too the
         // exception must not escape, or one unwritable row takes the whole
         // _pump loop down with it.
         _lastError = _describeError(inner);
-        debugPrint('TaskQueueService _handleFailure failed: $inner');
+        debugPrint('TaskQueueService _handleFailure failed: $inner\n$innerSt');
       }
     }
   }
@@ -2801,7 +2807,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       _publishProgress();
       // 释放不再使用的只读树授权（规格 §2.8）
       unawaited(_releaseUnusedReadTreeGrants());
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('public download failed ${task.remotePath}: $e\n$st');
       await _handleFailure(
         task,
         e,
@@ -2883,7 +2890,8 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
       await _ingest(task);
       _completeWaiter(task);
       notifyListeners();
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('cache download failed ${task.remotePath}: $e\n$st');
       final cancelled =
           task.status == TaskStatus.cancelled || token.isCancelled;
       if (cancelled && await tmp.exists()) {
@@ -3059,7 +3067,10 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
               already &&
               existing.any((r) {
                 if (r.coverStateEnum == CoverState.none) return false;
-                final thumb = _library!.covers.thumbPath(
+                // Use the captured non-null local instead of `_library!` so a
+                // future detach can never turn a cover-check into a task-level
+                // null-check crash.
+                final thumb = library.covers.thumbPath(
                   r.sourceName,
                   r.effectiveAudioRemotePath,
                 );
@@ -3107,7 +3118,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             coveredByCue.addAll(sheet.audioRemotePaths(item.path));
           }
         });
-      } catch (e) {
+      } catch (e, st) {
         if (token.isCancelled ||
             (e is DioException && CancelToken.isCancel(e))) {
           task.status = TaskStatus.cancelled;
@@ -3117,7 +3128,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         }
         failedCount++;
         task.errorMessage = TaskError.classify(e).persisted;
-        debugPrint('scan cue failed ${item.path}: $e');
+        debugPrint('scan cue failed ${item.path}: $e\n$st');
       }
       done++;
       await reportUnitsProgress(task.id, done: done, total: total);
@@ -3207,7 +3218,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             tags: effective,
           );
         });
-      } catch (e) {
+      } catch (e, st) {
         if (token.isCancelled ||
             (e is DioException && CancelToken.isCancel(e))) {
           task.status = TaskStatus.cancelled;
@@ -3217,7 +3228,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
         }
         failedCount++;
         task.errorMessage = TaskError.classify(e).persisted;
-        debugPrint('scan music failed ${item.path}: $e');
+        debugPrint('scan music failed ${item.path}: $e\n$st');
       }
       done++;
       await reportUnitsProgress(task.id, done: done, total: total);
@@ -4141,7 +4152,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
             missing: true,
           );
         }
-      } catch (e) {
+      } catch (e, st) {
         if (token.isCancelled ||
             (e is DioException && CancelToken.isCancel(e))) {
           task.status = TaskStatus.cancelled;
@@ -4149,7 +4160,7 @@ class TaskQueueService extends ChangeNotifier with WidgetsBindingObserver {
           notifyListeners();
           return;
         }
-        debugPrint('matchRemote unit failed ${tr.remotePath}: $e');
+        debugPrint('matchRemote unit failed ${tr.remotePath}: $e\n$st');
         task.errorMessage = TaskError.classify(e).persisted;
       }
       done++;

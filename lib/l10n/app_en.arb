@@ -458,6 +458,7 @@
   "pickFileFailed": "Failed to pick a file: {error}",
   "pasteBase64First": "Paste the backup content (Base64) first",
   "remoteRootUpdated": "Remote path updated: {path}",
+  "remoteRootRequired": "Enter a remote path first",
   "derivedPathCredentials": "Credentials",
   "derivedPathPlaylists": "Playlists",
   "derivedPathLibrary": "Library",
