@@ -280,31 +280,30 @@ class SyncService extends ChangeNotifier {
 
   List<WebDavAccount> get accounts => _accounts.accounts;
 
-  WebDavAccount? get targetAccount {
-    // 同步目标需要写能力；查 WebDavService.can(id, AccountCaps.write)。
-    final connectedId = _webDav.accountId;
-    if (connectedId != null) {
-      for (final a in _accounts.accounts) {
-        if (a.id == connectedId) {
-          return _webDav.can(a.id, AccountCaps.write) ? a : null;
-        }
-      }
+  /// The account the 同步与备份 page is pointed at, or null when none can take a
+  /// write.
+  ///
+  /// The pinned [SettingsService.syncAccountId] wins; the active account is only
+  /// the fallback the page itself uses for display. Both must hold
+  /// [AccountCaps.write] so the destination never disagrees with what the page
+  /// shows (and never wastes a round trip writing to a read-only drive).
+  WebDavAccount? get targetAccount =>
+      _writableAccount(_settings.syncAccountId) ??
+      _writableAccount(_accounts.activeAccountId);
+
+  WebDavAccount? _writableAccount(String? id) {
+    if (id == null) return null;
+    for (final a in _accounts.accounts) {
+      if (a.id == id) return _webDav.can(a.id, AccountCaps.write) ? a : null;
     }
-    final active = _accounts.activeAccount;
-    return active != null && _webDav.can(active.id, AccountCaps.write)
-        ? active
-        : null;
+    return null;
   }
 
   String get syncRoot => _settings.syncRemoteRoot;
 
   /// Whether there is an account we could sync with (password may still be
   /// blank, which background scans treat as "not usable").
-  bool get hasUsableAccount {
-    final a = targetAccount;
-    if (a == null) return false;
-    return _accounts.accounts.any((e) => e.id == a.id);
-  }
+  bool get hasUsableAccount => targetAccount != null;
 
   Future<void> _run(SyncOutcome outcome, Future<void> Function() body) async {
     busy = true;
@@ -375,8 +374,12 @@ class SyncService extends ChangeNotifier {
 
   /// The **one** 网盘 凭证 / 歌单 / 音乐库 / 备份 all sync to (设置 → 同步与备份
   /// → 远端路径). Falls back to the active account when the user pinned none.
-  Future<String?> syncDestination() async =>
-      _settings.syncAccountId ?? _accounts.activeAccountId;
+  ///
+  /// Only accounts with [AccountCaps.write] qualify, and the order matches what
+  /// the 同步与备份 page shows: the account pinned there first, then the active
+  /// one. Anything else (read-only cloud drives, deleted accounts) is skipped —
+  /// otherwise the page could show account A while sync quietly wrote through B.
+  Future<String?> syncDestination() async => targetAccount?.id;
 
   /// Upload local credentials to the configured destination.
   ///
