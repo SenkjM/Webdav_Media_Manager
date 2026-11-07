@@ -21,9 +21,15 @@ Suites:
   ui       walks every settings screen for overflows  (integration_test/e2e_layout_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
 
-The script never uninstalls the app and never clears its data: on this lab phone
-an uninstall/reinstall forces the user to re-confirm the install and re-grant
-runtime permissions. Suites run through
+Suites run against the **autodev** flavour, not dev. On a device `flutter test
+<target> -d <serial>` compiles the test file as the app entrypoint and installs
+that build, which a manual launcher tap cannot start; keeping a separate flavour
+means the dev install the user actually runs is never replaced. autodev holds
+its own data, so a run also stops mutating the real library.
+
+The script never uninstalls the flavour and never clears its data: on this lab
+phone an uninstall/reinstall forces the user to re-confirm the install and
+re-grant runtime permissions. Suites run through
 `flutter test <target> -d <serial> --no-uninstall`, which installs with
 `adb install -r` and keeps data and grants.
 
@@ -69,8 +75,8 @@ $defaults = [ordered]@{
     requireDmr  = $false
 }
 
-$pkg = 'com.senkjm.media_manager.dev'
-$apk = Join-Path $root 'build\app\outputs\flutter-apk\app-dev-debug.apk'
+$pkg = 'com.senkjm.media_manager.autodev'
+$apk = Join-Path $root 'build\app\outputs\flutter-apk\app-autodev-debug.apk'
 $configPath = Join-Path $root '.tmp\e2e\local.json'
 $config = @{}
 if (Test-Path -LiteralPath $configPath) {
@@ -150,7 +156,7 @@ try {
             $targets[$name],
             '-d', $dev,
             '--no-uninstall',
-            '--flavor', 'dev',
+            '--flavor', 'autodev',
             '--no-version-check'
         )
         $arguments += $defines
@@ -158,7 +164,7 @@ try {
         $code = $LASTEXITCODE
         Write-Host "e2e: $name -> exit $code"
 
-        # Never let a run leave the phone without the app: an uninstall would
+        # Never let a run leave autodev uninstalled: an uninstall would
         # cost a manual install confirmation and every runtime permission.
         $installed = (& adb -s $dev shell pm path $pkg) -join ''
         if ($installed -notmatch 'package:') {

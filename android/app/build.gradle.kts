@@ -132,6 +132,23 @@ android {
                 }
             }
         }
+        // Test-only flavour: `flutter test -d <device>` (integration tests) builds
+        // with the *test* as the entrypoint and would replace the dev APK on the
+        // phone with an unlaunchable build. The suites install this copy instead,
+        // so the app the user runs is never overwritten. Same everything as dev,
+        // only the package id (and sticker) differ, so both can coexist.
+        create("autodev") {
+            dimension = "env"
+            signingConfig = releaseSigning
+            applicationIdSuffix = ".autodev"
+            versionNameSuffix = "-autodev"
+            manifestPlaceholders["appName"] = "Webdav Media Manager AutoDev"
+            if (!splitPerAbi) {
+                ndk {
+                    abiFilters += "arm64-v8a"
+                }
+            }
+        }
         create("sandbox") {
             dimension = "env"
             applicationIdSuffix = ".test"
