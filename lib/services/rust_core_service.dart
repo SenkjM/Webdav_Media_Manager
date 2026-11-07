@@ -1,5 +1,6 @@
 // ignore_for_file: unused_element, non_constant_identifier_names
 
+import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:isolate';
@@ -62,7 +63,7 @@ typedef _FiveStrToOneStrNative = ffi.Pointer<Utf8> Function(
 typedef _FiveStrToOneStrDart = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 
-// wdmm_sync_full(account_id, remote_dir, with_covers: c_int) → FfiString
+// wdmm_sync_run({account_id, remote_dir, mode, with_covers}) → FfiString
 typedef _TwoStrOneIntToStrNative = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Int32);
 typedef _TwoStrOneIntToStrDart = ffi.Pointer<Utf8> Function(
@@ -229,8 +230,7 @@ class RustCoreService {
   // ── Round 4 FFI binding types ──────────────────────────────────────────────
 
   // Sync FFI — account_id based (Core resolves the driver via DriverRegistry).
-  static _TwoStrToOneStrDart? _syncTrigger;
-  static _TwoStrOneIntToStrDart? _syncFull;
+  static _OneStrToStrDart? _syncRun;
   static _TwoStrToOneStrDart? _syncAuditMusic;
   static _TwoStrToOneStrDart? _syncAuditManga;
   static _TwoStrOneIntToStrDart? _syncEstimateMusic;
@@ -324,11 +324,8 @@ class RustCoreService {
     _openApiPort = lib
         .lookup<ffi.NativeFunction<_IntNative>>('wdmm_openapi_port')
         .asFunction();
-    _syncTrigger = lib
-        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_trigger')
-        .asFunction();
-    _syncFull = lib
-        .lookup<ffi.NativeFunction<_TwoStrOneIntToStrNative>>('wdmm_sync_full')
+    _syncRun = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_run')
         .asFunction();
     _syncAuditMusic = lib
         .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_audit_music')
@@ -510,47 +507,33 @@ class RustCoreService {
 
   // ── Round 4 — Sync FFI ────────────────────────────────────────────────────
 
-  /// Trigger an incremental Rust sync run (credentials + music library +
-  /// manga + playlists via `run_sync_all`).
+  /// Run the aggregate Rust sync through the single Core entry point.
   ///
   /// [accountId]: Cloud account ID; Core resolves the driver via DriverRegistry.
-  /// Returns a JSON summary string on success or 'error:...' on failure.
-  /// Returns null if the native library is not available.
-  static String? syncTrigger({
-    required String accountId,
-    String remoteDir = '/wdmm_sync',
-  }) {
-    if (!_ensureSymbols() || _syncTrigger == null) return null;
-    final idPtr = accountId.toNativeUtf8();
-    final dirPtr = remoteDir.toNativeUtf8();
-    try {
-      return _readAndFreeString(_syncTrigger!(idPtr, dirPtr));
-    } finally {
-      calloc.free(idPtr);
-      calloc.free(dirPtr);
-    }
-  }
-
-  /// Full-rebuild Rust sync run (credentials + music library + manga +
-  /// playlists via `run_sync_full`).
+  /// [mode]: `incremental` (cursor driven) or `full` (reconcile, then rebuild
+  /// the base shards).
+  /// [withCovers]: embed cover blobs in rebuilt base shards (full mode only).
   ///
-  /// [accountId]: Cloud account ID; Core resolves the driver via DriverRegistry.
-  /// [withCovers]: embed cover blobs in rebuilt base shards.
-  /// Returns a JSON summary string on success or 'error:...' on failure.
-  /// Returns null if the native library is not available.
-  static String? syncFull({
+  /// Returns `{"ok":true,"mode":"…","conflicts":N,"entities":{…}}` or
+  /// `'error:...'`; null when the native library is unavailable.
+  static String? syncRun({
     required String accountId,
     String remoteDir = '/wdmm_sync',
+    String mode = 'incremental',
     bool withCovers = false,
   }) {
-    if (!_ensureSymbols() || _syncFull == null) return null;
-    final idPtr = accountId.toNativeUtf8();
-    final dirPtr = remoteDir.toNativeUtf8();
+    if (!_ensureSymbols() || _syncRun == null) return null;
+    final payload = jsonEncode({
+      'account_id': accountId,
+      'remote_dir': remoteDir,
+      'mode': mode,
+      'with_covers': withCovers,
+    });
+    final ptr = payload.toNativeUtf8();
     try {
-      return _readAndFreeString(_syncFull!(idPtr, dirPtr, withCovers ? 1 : 0));
+      return _readAndFreeString(_syncRun!(ptr));
     } finally {
-      calloc.free(idPtr);
-      calloc.free(dirPtr);
+      calloc.free(ptr);
     }
   }
 
@@ -3841,5 +3824,5 @@ extension _Let<T> on T {
 /// and tombstones through the Rust FFI (wdmm_manga_* / wdmm_deleted_manga_clear).
 /// Class B unload (2026-10-27): SyncService no longer reads sqflite
 /// `deleted_mangas` — manga sync is Core-only (`MangaSyncEngine` via
-/// `wdmm_sync_trigger` / `wdmm_sync_full`).
+/// `wdmm_sync_run`).
 /// Accounts SoT is Core FFI; [LibraryDatabase] may still open for cache/etc.

@@ -535,21 +535,23 @@ class SyncService extends ChangeNotifier {
     );
   }
 
-  /// Core FFI sync helper — resolves account_id and calls either
-  /// [RustCoreService.syncTrigger] (incremental) or [RustCoreService.syncFull]
-  /// (full rebuild), then refreshes all Dart caches.
+  /// Core FFI sync helper — resolves account_id, calls
+  /// [RustCoreService.syncRun] with the right mode, then refreshes all Dart
+  /// caches.
   ///
   /// Core resolves the driver via DriverRegistry; no url/user/pass needed here.
   /// Conflicts the Core reported across entities.
   ///
-  /// The summary payload is per-entity; older `.so` builds return plain text, in
-  /// which case there is nothing to count.
+  /// The per-entity counts sit under `entities` in the current summary; older
+  /// `.so` builds return the bare map or plain text, which is handled too.
   static int coreConflictCount(String payload) {
     try {
       final decoded = jsonDecode(payload);
       if (decoded is! Map) return 0;
+      final entities = decoded['entities'];
+      final scope = entities is Map ? entities : decoded;
       var total = 0;
-      for (final value in decoded.values) {
+      for (final value in scope.values) {
         if (value is Map && value['conflicts'] is num) {
           total += (value['conflicts'] as num).toInt();
         }
@@ -569,16 +571,12 @@ class SyncService extends ChangeNotifier {
     // that on the UI isolate froze frames while a background auto-scan was in
     // flight, so the whole call goes to a worker isolate.
     final result = await RustCoreService.runOffMain<String?>(() {
-      return full
-          ? RustCoreService.syncFull(
-              accountId: dest,
-              remoteDir: remoteDir,
-              withCovers: withCovers,
-            )
-          : RustCoreService.syncTrigger(
-              accountId: dest,
-              remoteDir: remoteDir,
-            );
+      return RustCoreService.syncRun(
+        accountId: dest,
+        remoteDir: remoteDir,
+        mode: full ? 'full' : 'incremental',
+        withCovers: withCovers,
+      );
     });
     if (result == null) {
       throw StateError('Core FFI unavailable — cannot run Core sync');
@@ -589,7 +587,7 @@ class SyncService extends ChangeNotifier {
     // Core mutated rusqlite; refresh Dart caches.
     await _library.refresh();
     await _manga?.reload();
-    outcome.step('Core ${full ? "syncFull" : "syncTrigger"} ok: $result');
+    outcome.step('Core ${full ? "full" : "incremental"} sync ok: $result');
     final conflicts = coreConflictCount(result);
     if (conflicts > 0) {
       outcome.step(L10nHost.current.stepSyncConflicts(conflicts));
@@ -603,7 +601,7 @@ class SyncService extends ChangeNotifier {
 
   bool get hasMangaSync => _manga != null && _cache != null;
 
-  /// Incremental manga sync via Core FFI ([RustCoreService.syncTrigger]).
+  /// Incremental manga sync via Core FFI ([RustCoreService.syncRun]).
   /// Core is the sole sync authority: it adopts cloud rows, applies peer
   /// tombstones, and publishes local deltas/tombstones for both the manga and
   /// music shard engines in one `run_sync_all` call.
@@ -616,7 +614,7 @@ class SyncService extends ChangeNotifier {
     return outcome;
   }
 
-  /// Rebuild the cloud manga library via Core FFI ([RustCoreService.syncFull]).
+  /// Rebuild the cloud manga library via Core FFI ([RustCoreService.syncRun]).
   /// Core is the sole sync authority: materialises all local rows as the new
   /// base, clears all tombstones and cursors. Both manga and music shard engines
   /// rebuild in one `run_sync_full` call.
