@@ -134,20 +134,6 @@ $defines = @(
     "--dart-define=E2E_REQUIRE_DMR=$(if ($needDmr) { '1' } else { '0' })"
 )
 
-# `flutter test` on a device builds the *test* as the entrypoint and overwrites
-# the debug APK, so the app that stays installed afterwards opens into the test
-# harness (a blank screen when launched by hand). Keep the real build here and
-# put it back when the suites finish, so the phone is always left runnable.
-$normalApk = Join-Path $root '.tmp\e2e\app-normal.apk'
-$hasNormalApk = Test-Path -LiteralPath $apk
-if ($hasNormalApk) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $normalApk) | Out-Null
-    Copy-Item -LiteralPath $apk -Destination $normalApk -Force
-    Write-Host "e2e: saved the app build for restore ($apk)"
-} else {
-    Write-Host "e2e: no app build at $apk — build one first or the phone keeps the test build" -ForegroundColor Yellow
-}
-
 $env:FLUTTER_ALREADY_LOCKED = 'true'
 Push-Location $root
 $failures = @()
@@ -186,15 +172,6 @@ could not restore $pkg; install it manually" }
     }
 } finally {
     Pop-Location
-    if ($hasNormalApk -and (Test-Path -LiteralPath $normalApk)) {
-        # Undo the test-entrypoint install even when a suite failed.
-        & adb -s $dev install -r $normalApk *> $null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "e2e: restored the app build (launcher opens the app again)" -ForegroundColor Green
-        } else {
-            Write-Host "e2e: could not restore the app build; reinstall $normalApk by hand" -ForegroundColor Yellow
-        }
-    }
 }
 
 if ($failures.Count -gt 0) {
