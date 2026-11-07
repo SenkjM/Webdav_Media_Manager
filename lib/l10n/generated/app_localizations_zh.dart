@@ -5197,6 +5197,45 @@ class AppLocalizationsZh extends AppLocalizations {
   String get dlnaHitAudio => '音频';
 
   @override
+  String get settingsDlnaSection => 'DLNA 投屏';
+
+  @override
+  String get settingsTranscodePreset => '转码预设';
+
+  @override
+  String get settingsManagePresets => '管理转码预设';
+
+  @override
+  String get settingsDefaultDirect => '默认直通';
+
+  @override
+  String get settingsDefaultDirectSubtitle => '投屏时默认不转码，直接播放原文件';
+
+  @override
+  String get settingsMkvPassthrough => 'MKV 直通（不转码）';
+
+  @override
+  String get settingsTranscodeCache => '转码缓存';
+
+  @override
+  String get settingsCacheBudget => '缓存预算';
+
+  @override
+  String get settingsCacheBudgetTitle => '转码缓存预算';
+
+  @override
+  String get settingsClearTranscodeCache => '清理缓存';
+
+  @override
+  String get cacheBudgetMustBePositive => '缓存预算必须大于 0 MB';
+
+  @override
+  String get openApiSettingsTitle => 'OpenAPI 设置';
+
+  @override
+  String get openApiSettingsSubtitle => '配置外部 API 访问与鉴权';
+
+  @override
   String get codecCapsSectionTitle => '设备编码能力';
 
   @override
@@ -5246,6 +5285,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get codecCapsCodecMpeg4 => 'MPEG-4';
+
+  @override
+  String cacheBudgetUpdated(Object mb) {
+    return '缓存预算已设为 $mb MB，新投屏会话生效';
+  }
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -10441,6 +10485,45 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get dlnaHitAudio => '音訊';
 
   @override
+  String get settingsDlnaSection => 'DLNA 投放';
+
+  @override
+  String get settingsTranscodePreset => '轉碼預設';
+
+  @override
+  String get settingsManagePresets => '管理轉碼預設';
+
+  @override
+  String get settingsDefaultDirect => '預設直通';
+
+  @override
+  String get settingsDefaultDirectSubtitle => '投放時預設不轉碼，直接播放原始檔案';
+
+  @override
+  String get settingsMkvPassthrough => 'MKV 直通（不轉碼）';
+
+  @override
+  String get settingsTranscodeCache => '轉碼快取';
+
+  @override
+  String get settingsCacheBudget => '快取預算';
+
+  @override
+  String get settingsCacheBudgetTitle => '轉碼快取預算';
+
+  @override
+  String get settingsClearTranscodeCache => '清理快取';
+
+  @override
+  String get cacheBudgetMustBePositive => '快取預算必須大於 0 MB';
+
+  @override
+  String get openApiSettingsTitle => 'OpenAPI 設定';
+
+  @override
+  String get openApiSettingsSubtitle => '設定外部 API 存取與驗證';
+
+  @override
   String get codecCapsSectionTitle => '裝置編碼能力';
 
   @override
@@ -10490,4 +10573,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get codecCapsCodecMpeg4 => 'MPEG-4';
+
+  @override
+  String cacheBudgetUpdated(Object mb) {
+    return '快取預算已設為 $mb MB，新投放生效';
+  }
 }

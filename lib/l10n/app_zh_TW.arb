@@ -1747,6 +1747,19 @@
   "dlnaHitSw": "軟編",
   "dlnaHitVideo": "影片",
   "dlnaHitAudio": "音訊",
+  "settingsDlnaSection": "DLNA 投放",
+  "settingsTranscodePreset": "轉碼預設",
+  "settingsManagePresets": "管理轉碼預設",
+  "settingsDefaultDirect": "預設直通",
+  "settingsDefaultDirectSubtitle": "投放時預設不轉碼，直接播放原始檔案",
+  "settingsMkvPassthrough": "MKV 直通（不轉碼）",
+  "settingsTranscodeCache": "轉碼快取",
+  "settingsCacheBudget": "快取預算",
+  "settingsCacheBudgetTitle": "轉碼快取預算",
+  "settingsClearTranscodeCache": "清理快取",
+  "cacheBudgetMustBePositive": "快取預算必須大於 0 MB",
+  "openApiSettingsTitle": "OpenAPI 設定",
+  "openApiSettingsSubtitle": "設定外部 API 存取與驗證",
   "codecCapsSectionTitle": "裝置編碼能力",
   "codecCapsLoading": "正在查詢本機編碼能力…",
   "codecCapsUnavailable": "無法查詢本機編碼能力（不影響投屏與轉碼）",
@@ -1763,5 +1776,6 @@
   "codecCapsNotReported": "未回報",
   "codecCapsCodecH264": "H.264",
   "codecCapsCodecHevc": "H.265（HEVC）",
-  "codecCapsCodecMpeg4": "MPEG-4"
+  "codecCapsCodecMpeg4": "MPEG-4",
+  "cacheBudgetUpdated": "快取預算已設為 {mb} MB，新投放生效"
 }

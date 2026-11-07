@@ -1758,6 +1758,19 @@
   "dlnaHitSw": "SW",
   "dlnaHitVideo": "Video",
   "dlnaHitAudio": "Audio",
+  "settingsDlnaSection": "DLNA casting",
+  "settingsTranscodePreset": "Transcode preset",
+  "settingsManagePresets": "Manage presets",
+  "settingsDefaultDirect": "Default passthrough",
+  "settingsDefaultDirectSubtitle": "Cast without transcoding by default",
+  "settingsMkvPassthrough": "MKV passthrough (no transcode)",
+  "settingsTranscodeCache": "Transcode cache",
+  "settingsCacheBudget": "Cache budget",
+  "settingsCacheBudgetTitle": "Transcode cache budget",
+  "settingsClearTranscodeCache": "Clear cache",
+  "cacheBudgetMustBePositive": "The budget must be greater than 0 MB",
+  "openApiSettingsTitle": "OpenAPI settings",
+  "openApiSettingsSubtitle": "Configure external API access and auth",
   "codecCapsSectionTitle": "Device encoder capabilities",
   "codecCapsLoading": "Querying device encoders…",
   "codecCapsUnavailable": "Could not query device encoders (casting and transcoding are unaffected)",
@@ -1774,5 +1787,6 @@
   "codecCapsNotReported": "Not reported",
   "codecCapsCodecH264": "H.264",
   "codecCapsCodecHevc": "H.265 (HEVC)",
-  "codecCapsCodecMpeg4": "MPEG-4"
+  "codecCapsCodecMpeg4": "MPEG-4",
+  "cacheBudgetUpdated": "Budget set to {mb} MB; applies to new casts"
 }

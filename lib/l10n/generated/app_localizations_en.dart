@@ -5448,6 +5448,48 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dlnaHitAudio => 'Audio';
 
   @override
+  String get settingsDlnaSection => 'DLNA casting';
+
+  @override
+  String get settingsTranscodePreset => 'Transcode preset';
+
+  @override
+  String get settingsManagePresets => 'Manage presets';
+
+  @override
+  String get settingsDefaultDirect => 'Default passthrough';
+
+  @override
+  String get settingsDefaultDirectSubtitle =>
+      'Cast without transcoding by default';
+
+  @override
+  String get settingsMkvPassthrough => 'MKV passthrough (no transcode)';
+
+  @override
+  String get settingsTranscodeCache => 'Transcode cache';
+
+  @override
+  String get settingsCacheBudget => 'Cache budget';
+
+  @override
+  String get settingsCacheBudgetTitle => 'Transcode cache budget';
+
+  @override
+  String get settingsClearTranscodeCache => 'Clear cache';
+
+  @override
+  String get cacheBudgetMustBePositive =>
+      'The budget must be greater than 0 MB';
+
+  @override
+  String get openApiSettingsTitle => 'OpenAPI settings';
+
+  @override
+  String get openApiSettingsSubtitle =>
+      'Configure external API access and auth';
+
+  @override
   String get codecCapsSectionTitle => 'Device encoder capabilities';
 
   @override
@@ -5498,4 +5540,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get codecCapsCodecMpeg4 => 'MPEG-4';
+
+  @override
+  String cacheBudgetUpdated(Object mb) {
+    return 'Budget set to $mb MB; applies to new casts';
+  }
 }

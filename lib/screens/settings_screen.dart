@@ -14,6 +14,7 @@ import '../services/notification_permission_service.dart';
 import '../services/rust_core_service.dart';
 import '../services/settings_service.dart';
 import '../services/transcode_preset_catalog.dart';
+import '../widgets/trailing_dropdown.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
@@ -142,6 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen>
   /// 就完成，但路由的退场动画还要跑几百毫秒、IME 也还在收。在这里 dispose 会让
   /// 仍在树上的 TextField 摸到已释放的 controller（真机报 framework 断言）。
   Future<void> _editTranscodeCacheBudget() async {
+    final l10n = AppLocalizations.of(context)!;
     final settings = context.read<SettingsService>();
     final saved = await showDialog<int>(
       context: context,
@@ -151,11 +153,11 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
     if (!mounted || saved == null) return;
     if (saved <= 0) {
-      AppSnack.show(context, '缓存预算必须大于 0 MB', error: true);
+      AppSnack.show(context, l10n.cacheBudgetMustBePositive, error: true);
       return;
     }
     settings.transcodeCacheBudgetMb = saved;
-    AppSnack.show(context, '缓存预算已设为 $saved MB，新投屏会话生效');
+    AppSnack.show(context, l10n.cacheBudgetUpdated(saved));
     await _refreshTranscodeCacheStats();
   }
 
@@ -258,13 +260,25 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _sectionTitle(BuildContext context, String text) {
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.titleMedium
-          ?.copyWith(color: Theme.of(context).colorScheme.primary),
+  /// Section heading: one rhythm for every group (20 above, 6 below), small
+  /// caps-ish label in the primary colour. Groups used to be separated by a
+  /// `Divider(height: 40)` plus an 8px `SizedBox`, which left uneven gaps
+  /// whenever a group started with a taller widget.
+  Widget _sectionHeader(BuildContext context, String text) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 6),
+      child: Text(
+        text,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+        ),
+      ),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -283,15 +297,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _sectionTitle(context, l10n.homeAndNavigation),
+          _sectionHeader(context, l10n.homeAndNavigation),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.home_outlined),
             title: Text(l10n.customHome),
             subtitle: Text(l10n.customHomeSubtitle),
-            trailing: DropdownButton<int>(
-              borderRadius: BorderRadius.circular(10),
+            trailing: TrailingDropdown<int>(
               value: settings.homeTab,
               items: [
                 DropdownMenuItem(
@@ -331,7 +344,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               );
             },
           ),
-          const Divider(height: 40),
+          const SizedBox(height: 12),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: Icon(
@@ -367,9 +380,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ),
             ),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.mediaLibrarySection),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.mediaLibrarySection),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.library_music_outlined),
@@ -398,9 +409,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               );
             },
           ),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.networkLibrary),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.networkLibrary),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.dns_outlined),
@@ -477,16 +486,14 @@ class _SettingsScreenState extends State<SettingsScreen>
               );
             },
           ),
-          const Divider(height: 40),
           // ── DLNA 投屏 ──────────────────────────────────────────────────────
-          _sectionTitle(context, 'DLNA 投屏'),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.settingsDlnaSection),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.cast_outlined),
-            title: const Text('转码预设'),
-            trailing: DropdownButton<String>(
-              borderRadius: BorderRadius.circular(10),
+            title: Text(l10n.settingsTranscodePreset),
+            trailing: TrailingDropdown<String>(
+              width: 168,
               value: dlnaPresetIds.contains(settings.dlnaDefaultTranscodePreset)
                   ? settings.dlnaDefaultTranscodePreset
                   : _dlnaPresets.first.id,
@@ -509,7 +516,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.tune),
-            title: const Text('管理转码预设'),
+            title: Text(l10n.settingsManagePresets),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
               await Navigator.push(
@@ -525,8 +532,8 @@ class _SettingsScreenState extends State<SettingsScreen>
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.bolt_outlined),
-            title: const Text('默认直通'),
-            subtitle: const Text('投屏时默认不转码，直接播放原文件'),
+            title: Text(l10n.settingsDefaultDirect),
+            subtitle: Text(l10n.settingsDefaultDirectSubtitle),
             value: settings.dlnaDefaultDirect,
             onChanged: (v) {
               context.read<SettingsService>().dlnaDefaultDirect = v;
@@ -535,7 +542,7 @@ class _SettingsScreenState extends State<SettingsScreen>
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: const Icon(Icons.movie_filter_outlined),
-            title: const Text('MKV 直通（不转码）'),
+            title: Text(l10n.settingsMkvPassthrough),
             value: settings.dlnaMkvPassthrough,
             onChanged: (v) {
               context.read<SettingsService>().dlnaMkvPassthrough = v;
@@ -545,18 +552,18 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.sd_storage_outlined),
-            title: const Text('转码缓存'),
+            title: Text(l10n.settingsTranscodeCache),
             subtitle: Text(_cacheStatsSubtitle()),
             trailing: IconButton(
               icon: const Icon(Icons.refresh),
-              tooltip: '刷新',
+              tooltip: l10n.refresh,
               onPressed: () => unawaited(_refreshTranscodeCacheStats()),
             ),
           ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.data_usage),
-            title: const Text('缓存预算'),
+            title: Text(l10n.settingsCacheBudget),
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -569,18 +576,14 @@ class _SettingsScreenState extends State<SettingsScreen>
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.delete_sweep_outlined),
-            title: const Text('清理缓存'),
+            title: Text(l10n.settingsClearTranscodeCache),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => unawaited(_clearTranscodeCache()),
           ),
           // ── 设备编码能力（契约 preset-rate-control-and-codec-probe §13.4）──
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.codecCapsSectionTitle),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.codecCapsSectionTitle),
           const _CodecCapabilitySection(),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.settingsMisc),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.settingsMisc),
           ThemeSettingsSection(
             mode: settings.appThemeMode,
             onModeChanged: (value) {
@@ -596,8 +599,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             leading: const Icon(Icons.language),
             title: Text(l10n.language),
             subtitle: Text(l10n.languageSettingSubtitle),
-            trailing: DropdownButton<AppLocalePreference>(
-              borderRadius: BorderRadius.circular(10),
+            trailing: TrailingDropdown<AppLocalePreference>(
               value: settings.appLocale,
               items: [
                 DropdownMenuItem(
@@ -629,8 +631,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             leading: const Icon(Icons.timer_outlined),
             title: Text(l10n.hintDuration),
             subtitle: Text(settings.snackMode.label(l10n)),
-            trailing: DropdownButton<SnackDuration>(
-              borderRadius: BorderRadius.circular(10),
+            trailing: TrailingDropdown<SnackDuration>(
               value: settings.snackMode,
               items: [
                 for (final m in SnackDuration.values)
@@ -641,9 +642,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               },
             ),
           ),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.syncAndBackup),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.syncAndBackup),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.sync),
@@ -659,15 +658,13 @@ class _SettingsScreenState extends State<SettingsScreen>
                   .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
             },
           ),
-          const Divider(height: 40),
           // ── OpenAPI ────────────────────────────────────────────────────────
-          _sectionTitle(context, 'OpenAPI'),
-          const SizedBox(height: 8),
+          _sectionHeader(context, 'OpenAPI'),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.api_outlined),
-            title: const Text('OpenAPI 设置'),
-            subtitle: const Text('配置外部 API 访问与鉴权'),
+            title: Text(l10n.openApiSettingsTitle),
+            subtitle: Text(l10n.openApiSettingsSubtitle),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(

@@ -1782,6 +1782,19 @@
   "dlnaHitVideo": "视频",
   "@dlnaHitVideo": {},
   "dlnaHitAudio": "音频",
+  "settingsDlnaSection": "DLNA 投屏",
+  "settingsTranscodePreset": "转码预设",
+  "settingsManagePresets": "管理转码预设",
+  "settingsDefaultDirect": "默认直通",
+  "settingsDefaultDirectSubtitle": "投屏时默认不转码，直接播放原文件",
+  "settingsMkvPassthrough": "MKV 直通（不转码）",
+  "settingsTranscodeCache": "转码缓存",
+  "settingsCacheBudget": "缓存预算",
+  "settingsCacheBudgetTitle": "转码缓存预算",
+  "settingsClearTranscodeCache": "清理缓存",
+  "cacheBudgetMustBePositive": "缓存预算必须大于 0 MB",
+  "openApiSettingsTitle": "OpenAPI 设置",
+  "openApiSettingsSubtitle": "配置外部 API 访问与鉴权",
   "@dlnaHitAudio": {},
   "codecCapsSectionTitle": "设备编码能力",
   "@codecCapsSectionTitle": {},
@@ -1816,5 +1829,6 @@
   "codecCapsCodecHevc": "H.265（HEVC）",
   "@codecCapsCodecHevc": {},
   "codecCapsCodecMpeg4": "MPEG-4",
-  "@codecCapsCodecMpeg4": {}
+  "@codecCapsCodecMpeg4": {},
+  "cacheBudgetUpdated": "缓存预算已设为 {mb} MB，新投屏会话生效"
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 
+import 'package:webdav_media_manager/l10n/generated/app_localizations.dart';
 import 'package:webdav_media_manager/main.dart' as app;
 import 'package:webdav_media_manager/services/rust_core_service.dart';
 import 'package:webdav_media_manager/utils/cue_sheet.dart';
@@ -55,11 +56,48 @@ bool get webdavConfigured =>
 /// user gets, not a test-only bootstrap.
 Future<void> bootApp(WidgetTester tester) async {
   await app.main();
-  await tester.pumpAndSettle(
-    const Duration(milliseconds: 200),
-    EnginePhase.sendSemanticsUpdate,
-    const Duration(minutes: 2),
-  );
+  await settle(tester);
+}
+
+/// Pumps frames until the tree comes to rest, but never blocks forever.
+///
+/// A freshly booted app can restore a screen with an indefinite animation
+/// (spinners, prefetch progress, marquee text). `pumpAndSettle` waits for the
+/// scheduler to go idle and would run until its timeout, stalling the whole
+/// test; the frames pumped up to that point already laid the tree out, which is
+/// all the suites need.
+Future<void> settle(
+  WidgetTester tester, {
+  Duration timeout = const Duration(seconds: 8),
+}) async {
+  try {
+    await tester.pumpAndSettle(
+      const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate,
+      timeout,
+    );
+  } on FlutterError {
+    // Indefinite animation — settle what we have instead of failing.
+  }
+}
+
+/// Pumps a fixed number of frames without waiting for the tree to rest.
+///
+/// Layout sweeps only need the first frames after a push: overflow reports are
+/// raised during layout, and screens with indefinite animations never go idle,
+/// so waiting for "settled" would burn the whole timeout on every screen.
+Future<void> pumpFrames(
+  WidgetTester tester, {
+  int frames = 16,
+  Duration interval = const Duration(milliseconds: 40),
+  String? label,
+}) async {
+  for (var i = 0; i < frames; i++) {
+    if (label != null && i % 4 == 0) {
+      debugPrint('[E2E] pump $label frame ${i + 1}/$frames');
+    }
+    await tester.pump(interval);
+  }
 }
 
 /// The [BuildContext] below [MaterialApp], i.e. with every provider in scope.
@@ -68,6 +106,17 @@ BuildContext appContext(WidgetTester tester) =>
 
 /// Reads a provider that `main.dart` puts above [MaterialApp].
 T appService<T>(WidgetTester tester) => appContext(tester).read<T>();
+
+/// The app's localisations, resolved *below* [MaterialApp].
+///
+/// `appContext` hands back the `MaterialApp` element itself, which sits above
+/// the `Localizations` widget that `MaterialApp` installs, so
+/// `AppLocalizations.of` there returns null.
+AppLocalizations appL10n(WidgetTester tester) {
+  final l10n = AppLocalizations.of(tester.element(find.byType(Navigator).first));
+  expect(l10n, isNotNull, reason: 'the app did not install its localisations');
+  return l10n!;
+}
 
 /// Pumps until [predicate] holds, letting real timers/FFI run between frames.
 ///

@@ -9250,6 +9250,84 @@ abstract class AppLocalizations {
   /// **'音频'**
   String get dlnaHitAudio;
 
+  /// No description provided for @settingsDlnaSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'DLNA 投屏'**
+  String get settingsDlnaSection;
+
+  /// No description provided for @settingsTranscodePreset.
+  ///
+  /// In zh, this message translates to:
+  /// **'转码预设'**
+  String get settingsTranscodePreset;
+
+  /// No description provided for @settingsManagePresets.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理转码预设'**
+  String get settingsManagePresets;
+
+  /// No description provided for @settingsDefaultDirect.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认直通'**
+  String get settingsDefaultDirect;
+
+  /// No description provided for @settingsDefaultDirectSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'投屏时默认不转码，直接播放原文件'**
+  String get settingsDefaultDirectSubtitle;
+
+  /// No description provided for @settingsMkvPassthrough.
+  ///
+  /// In zh, this message translates to:
+  /// **'MKV 直通（不转码）'**
+  String get settingsMkvPassthrough;
+
+  /// No description provided for @settingsTranscodeCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'转码缓存'**
+  String get settingsTranscodeCache;
+
+  /// No description provided for @settingsCacheBudget.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存预算'**
+  String get settingsCacheBudget;
+
+  /// No description provided for @settingsCacheBudgetTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'转码缓存预算'**
+  String get settingsCacheBudgetTitle;
+
+  /// No description provided for @settingsClearTranscodeCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理缓存'**
+  String get settingsClearTranscodeCache;
+
+  /// No description provided for @cacheBudgetMustBePositive.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存预算必须大于 0 MB'**
+  String get cacheBudgetMustBePositive;
+
+  /// No description provided for @openApiSettingsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'OpenAPI 设置'**
+  String get openApiSettingsTitle;
+
+  /// No description provided for @openApiSettingsSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置外部 API 访问与鉴权'**
+  String get openApiSettingsSubtitle;
+
   /// No description provided for @codecCapsSectionTitle.
   ///
   /// In zh, this message translates to:
@@ -9351,6 +9429,12 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'MPEG-4'**
   String get codecCapsCodecMpeg4;
+
+  /// No description provided for @cacheBudgetUpdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存预算已设为 {mb} MB，新投屏会话生效'**
+  String cacheBudgetUpdated(Object mb);
 }
 
 class _AppLocalizationsDelegate

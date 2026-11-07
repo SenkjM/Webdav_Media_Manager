@@ -18,6 +18,7 @@ Suites:
   queue    one cache download through the queue      (integration_test/e2e_queue_test.dart)
   scrape   scans one file into the music library     (integration_test/e2e_scrape_test.dart)
   castplay casts a real video and waits for PLAYING  (integration_test/e2e_cast_play_test.dart)
+  ui       walks every settings screen for overflows  (integration_test/e2e_layout_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
 
 The script never uninstalls the app and never clears its data: on this lab phone
@@ -38,7 +39,7 @@ On failure the run drops logcat and a uiautomator dump into
 [CmdletBinding()]
 param(
     [ValidateSet('boot', 'webdav', 'cast', 'music', 'cue', 'cbz', 'queue',
-        'scrape', 'castplay', 'all')]
+        'scrape', 'castplay', 'ui', 'all')]
     [string] $Suite = 'all',
 
     [string] $Device,
@@ -111,6 +112,7 @@ $targets = @{
     queue    = 'integration_test\e2e_queue_test.dart'
     scrape   = 'integration_test\e2e_scrape_test.dart'
     castplay = 'integration_test\e2e_cast_play_test.dart'
+    ui       = 'integration_test\e2e_layout_test.dart'
     all      = 'integration_test\e2e_full_test.dart'
 }
 
