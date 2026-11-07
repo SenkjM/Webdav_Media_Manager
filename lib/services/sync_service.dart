@@ -540,6 +540,26 @@ class SyncService extends ChangeNotifier {
   /// (full rebuild), then refreshes all Dart caches.
   ///
   /// Core resolves the driver via DriverRegistry; no url/user/pass needed here.
+  /// Conflicts the Core reported across entities.
+  ///
+  /// The summary payload is per-entity; older `.so` builds return plain text, in
+  /// which case there is nothing to count.
+  static int coreConflictCount(String payload) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is! Map) return 0;
+      var total = 0;
+      for (final value in decoded.values) {
+        if (value is Map && value['conflicts'] is num) {
+          total += (value['conflicts'] as num).toInt();
+        }
+      }
+      return total;
+    } on FormatException {
+      return 0; // Not a summary payload; keep the raw text only.
+    }
+  }
+
   Future<void> _runCoreSync(SyncOutcome outcome, {required bool full, bool withCovers = false}) async {
     final dest = await syncDestination();
     if (dest == null) throw StateError('err.noWebdavAccount');
@@ -570,6 +590,10 @@ class SyncService extends ChangeNotifier {
     await _library.refresh();
     await _manga?.reload();
     outcome.step('Core ${full ? "syncFull" : "syncTrigger"} ok: $result');
+    final conflicts = coreConflictCount(result);
+    if (conflicts > 0) {
+      outcome.step(L10nHost.current.stepSyncConflicts(conflicts));
+    }
   }
   // --- Manga library (incremental / rebuild), mirrors music --------------
 

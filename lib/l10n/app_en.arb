@@ -1569,6 +1569,7 @@
   "progressSyncingMangaProgress": "Syncing reading progress…",
   "progressUploadingFullMangaShards": "Uploading full manga shards…",
   "stepMangaIncremental": "Manga: uploaded {uploaded}, adopted {adopted}, deleted {tombs}, progress changes {progress}",
+  "stepSyncConflicts": "Sync conflicts resolved: {count}",
   "stepMangaRebuildDone": "Manga rebuild done: {shards} shards ({count} local manga)",
   "progressSyncingFolders": "Syncing folders…",
   "stepFoldersUnchanged": "Folders: no changes",

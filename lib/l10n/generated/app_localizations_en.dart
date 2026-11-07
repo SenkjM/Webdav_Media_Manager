@@ -4976,6 +4976,11 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String stepSyncConflicts(Object count) {
+    return 'Sync conflicts resolved: $count';
+  }
+
+  @override
   String stepMangaRebuildDone(Object count, Object shards) {
     return 'Manga rebuild done: $shards shards ($count local manga)';
   }

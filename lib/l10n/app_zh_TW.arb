@@ -1558,6 +1558,7 @@
   "progressSyncingMangaProgress": "同步閱讀進度…",
   "progressUploadingFullMangaShards": "上傳完整漫畫庫分片…",
   "stepMangaIncremental": "漫畫庫：上傳 {uploaded} 部，採納 {adopted} 部，刪除 {tombs} 條，進度變更 {progress} 處",
+  "stepSyncConflicts": "同步衝突 {count} 處（已保留較新的版本）",
   "stepMangaRebuildDone": "漫畫庫重建完成：{shards} 個分片（本機 {count} 部）",
   "progressSyncingFolders": "同步資料夾…",
   "stepFoldersUnchanged": "資料夾：無變化",

@@ -4753,6 +4753,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String stepSyncConflicts(Object count) {
+    return '同步冲突 $count 处（已保留较新的版本）';
+  }
+
+  @override
   String stepMangaRebuildDone(Object count, Object shards) {
     return '漫画库重建完成：$shards 个分片（本机 $count 部）';
   }
@@ -10053,6 +10058,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
     Object uploaded,
   ) {
     return '漫畫庫：上傳 $uploaded 部，採納 $adopted 部，刪除 $tombs 條，進度變更 $progress 處';
+  }
+
+  @override
+  String stepSyncConflicts(Object count) {
+    return '同步衝突 $count 處（已保留較新的版本）';
   }
 
   @override

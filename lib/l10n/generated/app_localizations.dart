@@ -8434,6 +8434,12 @@ abstract class AppLocalizations {
     Object uploaded,
   );
 
+  /// No description provided for @stepSyncConflicts.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步冲突 {count} 处（已保留较新的版本）'**
+  String stepSyncConflicts(Object count);
+
   /// No description provided for @stepMangaRebuildDone.
   ///
   /// In zh, this message translates to:
