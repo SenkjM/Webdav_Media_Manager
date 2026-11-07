@@ -328,9 +328,13 @@ class AppState extends ChangeNotifier {
   /// selection: a track row carries its own `accountId`, and its client stays
   /// available no matter which account the user is browsing.
   Future<void> registerAllAccounts() async {
+    // Every account gets a routing entry, cloud providers included: since
+    // B1 step 4 all I/O goes through [CloudDriveService], but the id set is
+    // still what guards credential vault / backup / playlist sync / network
+    // library writes. Skipping cloud types here left it empty after a restart,
+    // so `hasAccount()` said false for every account and the vault refused to
+    // push (`err.vaultDestNotConfigured`).
     for (final a in accounts.accounts) {
-      // 云盘账号不建 WebDAV 客户端（99 §7.2.2），由 cloudDrive 统一登记。
-      if (CloudDriveService.isCloudType(a.providerType)) continue;
       final pass = await accounts.passwordFor(a.id) ?? '';
       webDav.configure(
         accountId: a.id,
