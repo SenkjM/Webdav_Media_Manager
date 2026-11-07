@@ -561,6 +561,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             ),
           ),
           ListTile(
+            key: const ValueKey('settings.cacheBudget'),
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.data_usage),
             title: Text(l10n.settingsCacheBudget),

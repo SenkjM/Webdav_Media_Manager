@@ -20,6 +20,9 @@ Suites:
   maintenance  batch retag + cover recovery          (integration_test/e2e_library_maintenance_test.dart)
   castplay casts a real video and waits for PLAYING  (integration_test/e2e_cast_play_test.dart)
   ui       walks every settings screen for overflows  (integration_test/e2e_layout_test.dart)
+  sync     sync root field + credential round trip    (integration_test/e2e_sync_test.dart)
+  crypt    crypt source config save/reload            (integration_test/e2e_crypt_config_test.dart)
+  ui_regressions  preset editor + cache budget dialog (integration_test/e2e_ui_regressions_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
 
 The renderer (Kodi) is part of the fixture, not something the operator starts by
@@ -53,7 +56,8 @@ On failure the run drops logcat and a uiautomator dump into
 [CmdletBinding()]
 param(
     [ValidateSet('boot', 'webdav', 'cast', 'music', 'cue', 'cbz', 'queue',
-        'scrape', 'maintenance', 'castplay', 'ui', 'all')]
+        'scrape', 'maintenance', 'sync', 'crypt', 'ui_regressions', 'castplay',
+        'ui', 'all')]
     [string] $Suite = 'all',
 
     [string] $Device,
@@ -131,6 +135,9 @@ $targets = @{
     queue    = 'integration_test\e2e_queue_test.dart'
     scrape   = 'integration_test\e2e_scrape_test.dart'
     maintenance = 'integration_test\e2e_library_maintenance_test.dart'
+    sync     = 'integration_test\e2e_sync_test.dart'
+    crypt    = 'integration_test\e2e_crypt_config_test.dart'
+    ui_regressions = 'integration_test\e2e_ui_regressions_test.dart'
     castplay = 'integration_test\e2e_cast_play_test.dart'
     ui       = 'integration_test\e2e_layout_test.dart'
     all      = 'integration_test\e2e_full_test.dart'
@@ -387,6 +394,11 @@ try {
     foreach ($name in $suites) {
         Write-Host ""
         Write-Host "=== e2e: $name ===" -ForegroundColor Cyan
+        # An aborted run leaks its Dart VM Service tunnel in the adb forward
+        # table. The next `flutter test` then connects through a stale port and
+        # dies with "Connection closed before full header was received", which
+        # looks like a device crash but is only leftover state.
+        & adb -s $dev forward --remove-all 2>&1 | Out-Null
         # `flutter test` in device mode instead of `flutter drive`: drive runs
         # the integration-test path with `--uninstall` defaulting to true, so it
         # removes the app (and its data) after every run. `--no-uninstall` keeps

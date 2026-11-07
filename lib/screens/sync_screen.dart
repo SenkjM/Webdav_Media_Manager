@@ -1006,6 +1006,7 @@ class _SyncScreenState extends State<SyncScreen> {
               children: [
                 Expanded(
                   child: TextField(
+                    key: const ValueKey('sync.remoteRoot'),
                     controller: _rootController,
                     decoration: InputDecoration(
                       labelText: l10n.pathStep,
@@ -1022,6 +1023,7 @@ class _SyncScreenState extends State<SyncScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: FilledButton.tonal(
+                    key: const ValueKey('sync.applyRoot'),
                     onPressed: _running ? null : _applyRemoteRoot,
                     child: Text(l10n.apply),
                   ),
