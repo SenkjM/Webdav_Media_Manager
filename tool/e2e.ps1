@@ -6,7 +6,7 @@ Runs the on-device end-to-end suites against the local test lab.
 Configuration comes from `.tmp/e2e/local.json` (gitignored) merged over the
 defaults below, and every value can be overridden with an environment variable
 (E2E_DEVICE, E2E_WEBDAV_URL, E2E_WEBDAV_USER, E2E_WEBDAV_PASS, E2E_MUSIC_ROOT,
-E2E_TV_ROOT). No host, path or credential is baked into the repository.
+E2E_TV_ROOT, E2E_DMR_RPC). No host, path or credential is baked into the repository.
 
 Suites:
   boot     app boots and renders its shell           (integration_test/app_boot_test.dart)
@@ -20,6 +20,10 @@ Suites:
   castplay casts a real video and waits for PLAYING  (integration_test/e2e_cast_play_test.dart)
   ui       walks every settings screen for overflows  (integration_test/e2e_layout_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
+
+Before the first suite the script mutes the lab renderer over JSON-RPC
+(`dmrRpc`, e.g. http://kodi-host:9090/jsonrpc) so a cast does not blast the
+room, and restores the mute/volume state in `finally`.
 
 Suites run against the **autodev** flavour, not dev. On a device `flutter test
 <target> -d <serial>` compiles the test file as the app entrypoint and installs
@@ -72,6 +76,7 @@ $defaults = [ordered]@{
     cuePath     = ''
     cbzPath     = ''
     dmrName     = 'Kodi'
+    dmrRpc      = ''
     requireDmr  = $false
 }
 
@@ -104,6 +109,7 @@ $manga = Resolve-Setting 'mangaRoot' 'E2E_MANGA_ROOT' $defaults.mangaRoot
 $cue = Resolve-Setting 'cuePath' 'E2E_CUE_PATH' $defaults.cuePath
 $cbz = Resolve-Setting 'cbzPath' 'E2E_CBZ_PATH' $defaults.cbzPath
 $dmrName = Resolve-Setting 'dmrName' 'E2E_DMR_NAME' $defaults.dmrName
+$dmrRpc = Resolve-Setting 'dmrRpc' 'E2E_DMR_RPC' $defaults.dmrRpc
 $needDmr = if ($RequireDmr) { $true } else { [bool](Resolve-Setting 'requireDmr' $null $defaults.requireDmr) }
 
 # 'all' runs the combined target on purpose: one drive = one install.
@@ -120,6 +126,57 @@ $targets = @{
     castplay = 'integration_test\e2e_cast_play_test.dart'
     ui       = 'integration_test\e2e_layout_test.dart'
     all      = 'integration_test\e2e_full_test.dart'
+}
+
+# --- renderer audio (Kodi JSON-RPC) -----------------------------------------
+#
+# Casts are loud: the lab renderer sits on the desktop these suites drive. Mute
+# it for the run and put the previous mute/volume state back afterwards, so a
+# test never leaves the box silent or blaring.
+
+$script:rendererAudio = $null
+
+function Invoke-RendererRpc([string] $method, $params) {
+    $body = @{ jsonrpc = '2.0'; id = 1; method = $method; params = $params } |
+        ConvertTo-Json -Depth 6 -Compress
+    Invoke-RestMethod -Uri $dmrRpc -Method Post -ContentType 'application/json' `
+        -Body $body -TimeoutSec 5
+}
+
+function Save-RendererAudio {
+    if (-not $dmrRpc) {
+        Write-Host 'e2e: no dmrRpc configured — leaving the renderer audio alone'
+        return
+    }
+    try {
+        $props = (Invoke-RendererRpc 'Application.GetProperties' @('mute', 'volume')).result
+        $script:rendererAudio = @{
+            mute   = [bool] $props.mute
+            volume = [int] $props.volume
+        }
+        # 0-100 on this endpoint; keep the level so the unmute is not a jump.
+        Invoke-RendererRpc 'Application.SetMute' @{ mute = $true } | Out-Null
+        Write-Host ("e2e: renderer muted (was mute={0} volume={1})" -f `
+                $script:rendererAudio.mute, $script:rendererAudio.volume)
+    } catch {
+        $script:rendererAudio = $null
+        Write-Host "e2e: could not mute the renderer ($($_.Exception.Message)) — continuing" `
+            -ForegroundColor Yellow
+    }
+}
+
+function Restore-RendererAudio {
+    if (-not $dmrRpc -or $null -eq $script:rendererAudio) { return }
+    $saved = $script:rendererAudio
+    try {
+        Invoke-RendererRpc 'Application.SetVolume' @{ volume = $saved.volume } | Out-Null
+        Invoke-RendererRpc 'Application.SetMute' @{ mute = $saved.mute } | Out-Null
+        Write-Host ("e2e: renderer audio restored (mute={0} volume={1})" -f `
+                $saved.mute, $saved.volume)
+    } catch {
+        Write-Host "e2e: could not restore the renderer audio ($($_.Exception.Message))" `
+            -ForegroundColor Yellow
+    }
 }
 
 $devices = (& adb devices) -join "`n"
@@ -144,6 +201,7 @@ $env:FLUTTER_ALREADY_LOCKED = 'true'
 Push-Location $root
 $failures = @()
 try {
+    Save-RendererAudio
     foreach ($name in $suites) {
         Write-Host ""
         Write-Host "=== e2e: $name ===" -ForegroundColor Cyan
@@ -166,6 +224,14 @@ try {
 
         # Never let a run leave autodev uninstalled: an uninstall would
         # cost a manual install confirmation and every runtime permission.
+        # A device that dropped mid-run cannot be repaired here -- report it and
+        # keep the suite's own exit code instead of masking it with an adb error.
+        if ((& adb devices) -join "`n" -notmatch [regex]::Escape($dev)) {
+            Write-Host "e2e: device $dev is gone — skipping the install check" `
+                -ForegroundColor Yellow
+            if ($code -ne 0) { $failures += $name }
+            continue
+        }
         $installed = (& adb -s $dev shell pm path $pkg) -join ''
         if ($installed -notmatch 'package:') {
             Write-Host "e2e: app is no longer installed ($pkg) — reinstalling " -NoNewline -ForegroundColor Yellow
@@ -177,6 +243,7 @@ could not restore $pkg; install it manually" }
         if ($code -ne 0) { $failures += $name }
     }
 } finally {
+    Restore-RendererAudio
     Pop-Location
 }
 
