@@ -169,14 +169,26 @@ function Save-RendererAudio {
 function Restore-RendererAudio {
     if (-not $dmrRpc -or $null -eq $script:rendererAudio) { return }
     $saved = $script:rendererAudio
+    $restored = $true
+    # The two calls are independent: an unreachable volume must never leave the
+    # box muted, so each is attempted on its own.
     try {
         Invoke-RendererRpc 'Application.SetVolume' @{ volume = $saved.volume } | Out-Null
+    } catch {
+        $restored = $false
+        Write-Host "e2e: could not restore the renderer volume ($($_.Exception.Message))" `
+            -ForegroundColor Yellow
+    }
+    try {
         Invoke-RendererRpc 'Application.SetMute' @{ mute = $saved.mute } | Out-Null
+    } catch {
+        $restored = $false
+        Write-Host "e2e: could not restore the renderer mute state ($($_.Exception.Message))" `
+            -ForegroundColor Yellow
+    }
+    if ($restored) {
         Write-Host ("e2e: renderer audio restored (mute={0} volume={1})" -f `
                 $saved.mute, $saved.volume)
-    } catch {
-        Write-Host "e2e: could not restore the renderer audio ($($_.Exception.Message))" `
-            -ForegroundColor Yellow
     }
 }
 
