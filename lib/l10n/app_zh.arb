@@ -824,6 +824,7 @@
   "sourceUnbound": "来源未绑定",
   "downloadingPercent": "下载中 {p}%",
   "libraryEmptyGuide": "暂无曲目：可在文件源扫描入库，或下载后进入曲库。",
+  "libraryRefreshFailed": "刷新音乐库失败",
   "tagTitle": "标题",
   "tagArtist": "艺术家",
   "tagAlbumArtist": "专辑艺术家",

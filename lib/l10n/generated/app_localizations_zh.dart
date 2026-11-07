@@ -2653,6 +2653,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get libraryEmptyGuide => '暂无曲目：可在文件源扫描入库，或下载后进入曲库。';
 
   @override
+  String get libraryRefreshFailed => '刷新音乐库失败';
+
+  @override
   String get tagTitle => '标题';
 
   @override
@@ -7892,6 +7895,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get libraryEmptyGuide => '暫無曲目：可在網路磁碟掃描入庫，或下載後進入曲庫。';
+
+  @override
+  String get libraryRefreshFailed => '重新整理音樂庫失敗';
 
   @override
   String get tagTitle => '標題';

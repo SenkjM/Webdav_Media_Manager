@@ -824,6 +824,7 @@
   "sourceUnbound": "來源網路磁碟未綁定",
   "downloadingPercent": "下載中 {p}%",
   "libraryEmptyGuide": "暫無曲目：可在網路磁碟掃描入庫，或下載後進入曲庫。",
+  "libraryRefreshFailed": "重新整理音樂庫失敗",
   "tagTitle": "標題",
   "tagArtist": "藝術家",
   "tagAlbumArtist": "專輯藝術家",

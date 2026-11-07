@@ -112,6 +112,18 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
   bool get notificationsEnabled => _notificationsEnabled;
   bool get keepAliveEnabled => _keepAliveEnabled;
 
+  /// Bumped when a task that writes music rows reaches a terminal state.
+  ///
+  /// The Rust queue owns ingest, so the in-memory Dart library is stale after
+  /// a scrape. The app listens to this counter and refreshes once, with a
+  /// debounce, instead of every task row reloading the whole library.
+  int get musicLibraryRevision => _musicLibraryRevision;
+  int _musicLibraryRevision = 0;
+
+  /// Same counter for manga rows (scrape/build write the manga library).
+  int get mangaLibraryRevision => _mangaLibraryRevision;
+  int _mangaLibraryRevision = 0;
+
   bool get isBusy => _tasks.any(
     (t) =>
         t.status == QueueTaskStatus.pending ||
@@ -401,8 +413,29 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
       remotePath: remotePath,
       fileName: fileName,
       priority: priority,
+      batchLabel: scanBatchLabel(remotePath),
       payload: payload,
     );
+  }
+
+  /// Directory name for a scan batch row.
+  ///
+  /// A folder scan uses its own last path segment; a single-file scan (CUE)
+  /// uses the name of its parent directory, so rows stay distinguishable
+  /// without spelling out the full remote path (the details sheet shows it).
+  static String? scanBatchLabel(String remotePath) {
+    final parts = remotePath
+        .trim()
+        .replaceAll('\\', '/')
+        .split('/')
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return null;
+    final last = parts.last;
+    if (last.contains('.')) {
+      return parts.length >= 2 ? parts[parts.length - 2] : null;
+    }
+    return last;
   }
 
   /// Fire-and-forget cache enqueue, mirroring the old helper's refusal cases.
@@ -780,6 +813,32 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Note that a task wrote rows the in-memory library does not have yet.
+  ///
+  /// Only ingest-shaped kinds count, and only on success (a partial scrape
+  /// still wrote rows, a failed one wrote none).
+  void _noteLibraryWrite(QueueTaskKind kind, QueueTaskStatus status) {
+    if (status != QueueTaskStatus.completed &&
+        status != QueueTaskStatus.partial) {
+      return;
+    }
+    switch (kind) {
+      case QueueTaskKind.scan:
+        _musicLibraryRevision++;
+      case QueueTaskKind.mangaScrape:
+      case QueueTaskKind.mangaBuild:
+      case QueueTaskKind.mangaPack:
+        _mangaLibraryRevision++;
+      case QueueTaskKind.downloadCache:
+      case QueueTaskKind.downloadPublic:
+      case QueueTaskKind.retagCloud:
+      case QueueTaskKind.matchRemote:
+      case QueueTaskKind.mangaCache:
+      case QueueTaskKind.upload:
+        break;
+    }
+  }
+
   void _handleEvent(Map<String, dynamic> event) {
     switch (event['type']) {
       case 'task_added':
@@ -823,6 +882,10 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
             resultJson: event['result_json']?.toString(),
             progress: _asDouble(event['progress']),
           ),
+        );
+        _noteLibraryWrite(
+          task.kind,
+          QueueTaskStatus.tryParse(event['status']) ?? task.status,
         );
         _publishProgress();
       case 'batch_updated':

@@ -291,6 +291,12 @@ class AppState extends ChangeNotifier {
       );
       await queue.setNotificationsEnabled(settings.downloadNotificationsEnabled);
       await queue.setKeepAliveEnabled(settings.downloadKeepAliveEnabled);
+      // The queue owns ingest, so the in-memory libraries go stale after an
+      // ingest task finishes. Watch its terminal revisions and refresh shortly
+      // after, instead of asking every caller to reload.
+      _queueMusicRevision = queue.musicLibraryRevision;
+      _queueMangaRevision = queue.mangaLibraryRevision;
+      queue.addListener(_onQueueChanged);
       // Restore the persisted now-playing queue after accounts + library are
       // loaded (entries bind accounts by source name, metadata comes from the
       // library). Restoring never starts audio.
@@ -374,6 +380,13 @@ class AppState extends ChangeNotifier {
   Timer? _mangaPushDebounce;
   Timer? _foldersPushDebounce;
 
+  /// Coalesced library refresh driven by queue terminal events.
+  Timer? _libraryRefreshDebounce;
+  int _queueMusicRevision = 0;
+  int _queueMangaRevision = 0;
+  bool _queueMusicDirty = false;
+  bool _queueMangaDirty = false;
+
   /// True while a library maintenance action (从云端覆写 / 销毁) owns the library
   /// tables. Automatic writers are shut off for its duration rather than raced
   /// against: a background scan firing mid-wipe would push a half-empty index (or
@@ -423,6 +436,34 @@ class AppState extends ChangeNotifier {
       const Duration(seconds: 20),
       () => unawaited(pushFoldersSync()),
     );
+  }
+
+  /// Coalesce queue terminal events into one library reload.
+  ///
+  /// A batch scan emits one `task_terminal` per member, so refreshing the
+  /// library per event would rebuild it dozens of times for one scrape.
+  void _onQueueChanged() {
+    if (_libraryMaintenance) return;
+    final music = queue.musicLibraryRevision;
+    final manga = queue.mangaLibraryRevision;
+    if (music != _queueMusicRevision) {
+      _queueMusicRevision = music;
+      _queueMusicDirty = true;
+    }
+    if (manga != _queueMangaRevision) {
+      _queueMangaRevision = manga;
+      _queueMangaDirty = true;
+    }
+    if (!_queueMusicDirty && !_queueMangaDirty) return;
+    _libraryRefreshDebounce?.cancel();
+    _libraryRefreshDebounce = Timer(const Duration(milliseconds: 400), () {
+      final refreshMusic = _queueMusicDirty;
+      final refreshManga = _queueMangaDirty;
+      _queueMusicDirty = false;
+      _queueMangaDirty = false;
+      if (refreshMusic) unawaited(library.refresh());
+      if (refreshManga) unawaited(mangaLibrary.reload());
+    });
   }
 
   /// Background manga push (rows + tombstones + reading progress).
@@ -817,6 +858,8 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    queue.removeListener(_onQueueChanged);
+    _libraryRefreshDebounce?.cancel();
     unawaited(shutdown());
     super.dispose();
   }

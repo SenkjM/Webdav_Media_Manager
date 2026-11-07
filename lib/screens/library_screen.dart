@@ -55,6 +55,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
     super.dispose();
   }
 
+  /// Pull-to-refresh: reload the in-memory library from the Rust store.
+  ///
+  /// The queue refreshes the library on its own after an ingest; this is the
+  /// manual escape hatch for another device's changes or a missed event.
+  Future<void> _refreshLibrary() async {
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      await context.read<LibraryService>().refresh();
+    } catch (e) {
+      debugPrint('library refresh failed: $e');
+      if (!mounted) return;
+      AppSnack.showGlobal(l10n.libraryRefreshFailed);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final library = context.watch<LibraryService>();
@@ -141,37 +156,40 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            library.count == 0
-                ? _LibraryEmpty()
-                : _AlbumTab(
-                    library: library,
-                    query: _query,
-                    viewMode: settings.musicViewModeFor('albums'),
-                  ),
-            library.count == 0
-                ? _LibraryEmpty()
-                : _ArtistTab(
-                    library: library,
-                    query: _query,
-                    viewMode: settings.musicViewModeFor('artists'),
-                  ),
-            library.count == 0
-                ? _LibraryEmpty()
-                : _TitleTab(
-                    library: library,
-                    query: _query,
-                    viewMode: settings.musicViewModeFor('titles'),
-                  ),
-            library.count == 0
-                ? _LibraryEmpty()
-                : _TagsTab(
-                    library: library,
-                    query: _query,
-                    viewMode: settings.musicViewModeFor('genres'),
-                  ),
-          ],
+        body: RefreshIndicator(
+          onRefresh: _refreshLibrary,
+          child: TabBarView(
+            children: [
+              library.count == 0
+                  ? _LibraryEmpty()
+                  : _AlbumTab(
+                      library: library,
+                      query: _query,
+                      viewMode: settings.musicViewModeFor('albums'),
+                    ),
+              library.count == 0
+                  ? _LibraryEmpty()
+                  : _ArtistTab(
+                      library: library,
+                      query: _query,
+                      viewMode: settings.musicViewModeFor('artists'),
+                    ),
+              library.count == 0
+                  ? _LibraryEmpty()
+                  : _TitleTab(
+                      library: library,
+                      query: _query,
+                      viewMode: settings.musicViewModeFor('titles'),
+                    ),
+              library.count == 0
+                  ? _LibraryEmpty()
+                  : _TagsTab(
+                      library: library,
+                      query: _query,
+                      viewMode: settings.musicViewModeFor('genres'),
+                    ),
+            ],
+          ),
         ),
       ),
     );
@@ -181,17 +199,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
 class _LibraryEmpty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          AppLocalizations.of(context)!.libraryEmptyGuide,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+    // A scrollable empty state keeps pull-to-refresh usable on a fresh install.
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            AppLocalizations.of(context)!.libraryEmptyGuide,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -516,6 +538,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
         Expanded(
           child: widget.viewMode.isGrid
               ? GridView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(12),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: widget.viewMode.crossAxisCount!,
@@ -577,6 +600,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                   },
                 )
               : ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: widget.keys.length,
                   itemBuilder: (context, i) {
                     final key = widget.keys[i];
@@ -1066,6 +1090,7 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
         Expanded(
           child: widget.viewMode.isGrid
               ? GridView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(8),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: widget.viewMode.crossAxisCount!,
@@ -1090,6 +1115,7 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
                   },
                 )
               : ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   itemCount: widget.tracks.length,
                   itemBuilder: (context, i) {

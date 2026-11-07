@@ -29,6 +29,7 @@ import 'prefetch_cache.dart';
 import 'stream_window.dart';
 import 'notification_permission_service.dart';
 import 'settings_service.dart';
+import 'tag_service.dart';
 import 'stream_cover_reader.dart';
 import 'queue_service.dart';
 import 'webdav_service.dart';
@@ -264,30 +265,44 @@ class AudioPlayerService extends ChangeNotifier {
     return PlayableMedia.stream(uri: source.uri, headers: source.headers);
   }
 
-  /// In-memory Range covers for the player screen (never persisted).
+  /// In-memory Range metadata for the player screen (never persisted).
   ///
-  /// One request runs at a time (`_coverTail`), matching the single network
-  /// window the music cache/prefetch already uses. Entries are cheap bytes and
-  /// stay only for this process; the durable cover is the resampled thumb.
+  /// One request runs at a time (`_tagsTail`), matching the single network
+  /// window the music cache/prefetch already uses. One Rust
+  /// `wdmm_tags_extract` call yields both the fields the player shows and the
+  /// embedded cover, so a screen never pays two Range reads for one track.
   final StreamCoverReader _rangeCoverReader = StreamCoverReader();
-  final Map<String, Uint8List?> _rangeCoverCache = {};
-  final Map<String, Future<Uint8List?>> _rangeCoverInflight = {};
-  Future<void> _coverTail = Future<void>.value();
+  final Map<String, ReadTags?> _rangeTagsCache = {};
+  final Map<String, Future<ReadTags?>> _rangeTagsInflight = {};
+  Future<void> _tagsTail = Future<void>.value();
+  static const int _rangeTagsCacheLimit = 16;
 
-  /// Range-read the embedded cover for the player screen. Local audio should be
-  /// read from its file tags by the caller; this is the remote path.
-  Future<Uint8List?> networkCoverBytes({
+  /// Track keys whose metadata came from the durable library row.
+  ///
+  /// Library wins over tags; a library refresh clears this so the new rows are
+  /// applied on the next track change.
+  final Set<String> _libraryBackedTracks = {};
+
+  /// Track keys already resolved from audio tags in this session.
+  final Set<String> _tagFilledTracks = {};
+
+  /// Range-read the embedded tags for the remote track.
+  ///
+  /// Local audio is read from its own file by the caller. The result stays in
+  /// memory only: it is display metadata, never written to the library and
+  /// never enqueued as a scrape.
+  Future<ReadTags?> networkTags({
     required String sourceName,
     required String remotePath,
     required String fileName,
   }) {
     final key = '$sourceName\u0000$remotePath';
-    if (_rangeCoverCache.containsKey(key)) {
-      return Future.value(_rangeCoverCache[key]);
+    if (_rangeTagsCache.containsKey(key)) {
+      return Future.value(_rangeTagsCache[key]);
     }
-    final running = _rangeCoverInflight[key];
+    final running = _rangeTagsInflight[key];
     if (running != null) return running;
-    final future = _enqueueCover(() async {
+    final future = _enqueueSerial<ReadTags?>(() async {
       try {
         final accountId = _accounts.idForSource(sourceName) ?? '';
         if (accountId.isEmpty) return null;
@@ -299,26 +314,39 @@ class AudioPlayerService extends ChangeNotifier {
         );
         if (source == null || source.uri.isEmpty) return null;
         final tags = await _rangeCoverReader.extractTags(source);
-        final bytes = tags?.coverBytes;
-        if (bytes == null || bytes.isEmpty) return null;
-        _rangeCoverCache[key] = bytes;
-        if (_rangeCoverCache.length > 8) {
-          _rangeCoverCache.remove(_rangeCoverCache.keys.first);
+        _rangeTagsCache[key] = tags;
+        if (_rangeTagsCache.length > _rangeTagsCacheLimit) {
+          _rangeTagsCache.remove(_rangeTagsCache.keys.first);
         }
-        return bytes;
+        return tags;
       } catch (_) {
         return null;
       }
     });
-    _rangeCoverInflight[key] = future;
-    future.whenComplete(() => _rangeCoverInflight.remove(key));
+    _rangeTagsInflight[key] = future;
+    future.whenComplete(() => _rangeTagsInflight.remove(key));
     return future;
   }
 
-  Future<Uint8List?> _enqueueCover(Future<Uint8List?> Function() job) {
-    final previous = _coverTail;
+  /// Range-read the embedded cover for the player screen. Shares the tag read.
+  Future<Uint8List?> networkCoverBytes({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+  }) async {
+    final tags = await networkTags(
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: fileName,
+    );
+    final bytes = tags?.coverBytes;
+    return bytes == null || bytes.isEmpty ? null : bytes;
+  }
+
+  Future<T> _enqueueSerial<T>(Future<T> Function() job) {
+    final previous = _tagsTail;
     final gate = Completer<void>();
-    _coverTail = gate.future;
+    _tagsTail = gate.future;
     return previous.then((_) => job()).whenComplete(gate.complete);
   }
 
@@ -526,6 +554,8 @@ class AudioPlayerService extends ChangeNotifier {
       value != null && value.trim().isNotEmpty;
 
   void _onLibraryChanged() {
+    // New/updated rows: let every track fall back to its durable row again.
+    _libraryBackedTracks.clear();
     _scheduleEnrichment();
   }
 
@@ -935,9 +965,12 @@ class AudioPlayerService extends ChangeNotifier {
     }
   }
 
-  bool _hasRangeCover(TrackInfo track) => _rangeCoverCache.containsKey(
-    '${track.sourceName}\u0000${track.effectiveAudioRemotePath}',
-  );
+  bool _hasRangeCover(TrackInfo track) {
+    final tags = _rangeTagsCache[
+        '${track.sourceName}\u0000${track.effectiveAudioRemotePath}'];
+    final bytes = tags?.coverBytes;
+    return bytes != null && bytes.isNotEmpty;
+  }
 
   Future<Uint8List?> _loadRangeCoverFor(TrackInfo track) => networkCoverBytes(
     sourceName: track.sourceName,
@@ -960,7 +993,85 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _applyMediaItemTags(MediaItem? item) {
-    // no-op placeholder — queue metadata is applied by [_enrichQueue].
+    // Every track change lands here. Fill the now-playing row from the
+    // library, its local file, or one transient Range read, so a streamed
+    // track never shows a bare file name in the player/notification.
+    unawaited(_fillTransientMetadata());
+  }
+
+  /// Fill [current] from the cheapest source that has the fields.
+  ///
+  /// Order: durable library row -> local file tags -> one transient remote tag
+  /// read (`wdmm_tags_extract`). Nothing is persisted and no scrape is queued.
+  Future<void> _fillTransientMetadata() async {
+    final track = current;
+    if (track == null) return;
+    final key = '${track.sourceName}\u0000${track.remotePath}';
+    if (_libraryBackedTracks.contains(key)) return;
+    final row = _library.find(track.sourceName, track.remotePath);
+    if (row != null) {
+      _applyRowMetadata(track, row);
+      _libraryBackedTracks.add(key);
+      notifyListeners();
+      return;
+    }
+    if (_tagFilledTracks.contains(key)) return;
+    final local = track.localPath;
+    if (local != null && local.isNotEmpty && File(local).existsSync()) {
+      final tags = await _library.tags.readFromFile(local);
+      if (!identical(current, track)) return;
+      if (_applyTags(track, tags)) {
+        _tagFilledTracks.add(key);
+        notifyListeners();
+        return;
+      }
+    }
+    final tags = await networkTags(
+      sourceName: track.sourceName,
+      remotePath: track.effectiveAudioRemotePath,
+      fileName: track.fileName,
+    );
+    if (!identical(current, track)) return;
+    if (_applyTags(track, tags)) {
+      _tagFilledTracks.add(key);
+      notifyListeners();
+    }
+  }
+
+  /// Overwrite [t] with the present tag fields; returns whether anything moved.
+  bool _applyTags(TrackInfo t, ReadTags? tags) {
+    if (tags == null) return false;
+    var changed = false;
+    bool text(String? value, String? current, void Function(String) assign) {
+      if (!_present(value) || value == current) return false;
+      assign(value!.trim());
+      return true;
+    }
+
+    changed |= text(tags.title, t.title, (v) => t.title = v);
+    changed |= text(tags.artist, t.artist, (v) => t.artist = v);
+    changed |= text(tags.albumArtist, t.albumArtist, (v) => t.albumArtist = v);
+    changed |= text(tags.album, t.album, (v) => t.album = v);
+    changed |= text(tags.genre, t.genre, (v) => t.genre = v);
+    final ms = tags.durationMs;
+    if (ms != null && ms > 0 && t.duration?.inMilliseconds != ms) {
+      t.duration = Duration(milliseconds: ms);
+      changed = true;
+    }
+    bool number(int? value, int? current, void Function(int) assign) {
+      if (value == null || value <= 0 || value == current) return false;
+      assign(value);
+      return true;
+    }
+
+    changed |= number(tags.trackNumber, t.trackNumber, (v) => t.trackNumber = v);
+    changed |= number(tags.trackTotal, t.trackTotal, (v) => t.trackTotal = v);
+    changed |= number(tags.discNumber, t.discNumber, (v) => t.discNumber = v);
+    changed |= number(tags.discTotal, t.discTotal, (v) => t.discTotal = v);
+    changed |= number(tags.year, t.year, (v) => t.year = v);
+    changed |= number(tags.bitrate, t.bitrate, (v) => t.bitrate = v);
+    changed |= number(tags.sampleRate, t.sampleRate, (v) => t.sampleRate = v);
+    return changed;
   }
 
   Future<void> playPause() async {

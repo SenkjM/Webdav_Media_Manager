@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -165,9 +167,7 @@ class _QueueRowTile extends StatelessWidget {
         : null;
 
     return InkWell(
-      onTap: row.taskIds.length > 1
-          ? () => _showMembers(context, row)
-          : null,
+      onTap: row.taskIds.isEmpty ? null : () => _showMembers(context, row),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
         child: Column(
@@ -190,7 +190,12 @@ class _QueueRowTile extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  l10n.taskGroupCount(total),
+                  row.progressMode == QueueProgressMode.units
+                      ? l10n.taskProgressUnits(
+                          row.unitsDone,
+                          row.unitsTotal ?? total,
+                        )
+                      : l10n.taskGroupCount(total),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 _RowActions(row: row, queue: queue),
@@ -308,19 +313,59 @@ class _QueueRowTile extends StatelessWidget {
                     itemCount: members.length,
                     itemBuilder: (context, index) {
                       final task = members[index];
+                      final failed = _failedUnits(task);
+                      final progress = task.displayProgress;
+                      final statusLine =
+                          task.status == QueueTaskStatus.active ||
+                                  task.status ==
+                                      QueueTaskStatus.awaitingPlatform
+                              ? '${task.status.label(l10n)} · '
+                                  '${(progress * 100).toStringAsFixed(0)}%'
+                              : task.status.label(l10n);
                       return ListTile(
                         dense: true,
+                        isThreeLine: true,
                         title: Text(
                           task.fileName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        subtitle: Text(
-                          task.status == QueueTaskStatus.active ||
-                                  task.status == QueueTaskStatus.awaitingPlatform
-                              ? '${task.status.label(l10n)} · '
-                                '${(task.displayProgress * 100).toStringAsFixed(0)}%'
-                              : task.status.label(l10n),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${l10n.playerRowAccount}: ${task.sourceName}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              '${l10n.remotePath}: ${task.remotePath}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            Text(
+                              task.unitsTotal != null && task.unitsTotal! > 1
+                                  ? '$statusLine · '
+                                      '${l10n.taskProgressUnits(task.unitsDone, task.unitsTotal!)}'
+                                  : statusLine,
+                            ),
+                            for (final unit in failed.take(5))
+                              Text(
+                                '${unit.$1}: '
+                                '${QueueService.describeError(unit.$2, l10n)}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: AppColors.error),
+                              ),
+                            if (failed.length > 5)
+                              Text(
+                                '…',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                          ],
                         ),
                       );
                     },
@@ -332,6 +377,32 @@ class _QueueRowTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// Per-unit failures carried by a partial scan task.
+  ///
+  /// `crates/wdmm-jobs/src/scan.rs` folds the failed units into
+  /// `{"ok":n,"failed":[{"path","error"}]}`; anything else yields an empty
+  /// list so the sheet simply omits the block.
+  static List<(String, String)> _failedUnits(QueueTask task) {
+    final raw = task.resultJson;
+    if (raw == null || raw.isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return const [];
+      final failed = decoded['failed'];
+      if (failed is! List) return const [];
+      return [
+        for (final entry in failed)
+          if (entry is Map)
+            (
+              entry['path']?.toString() ?? '',
+              entry['error']?.toString() ?? '',
+            ),
+      ];
+    } catch (_) {
+      return const [];
+    }
   }
 
   void _showErrorDetail(BuildContext context, String raw) {

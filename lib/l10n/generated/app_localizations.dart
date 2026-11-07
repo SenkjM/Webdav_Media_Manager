@@ -4698,6 +4698,12 @@ abstract class AppLocalizations {
   /// **'暂无曲目：可在文件源扫描入库，或下载后进入曲库。'**
   String get libraryEmptyGuide;
 
+  /// No description provided for @libraryRefreshFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新音乐库失败'**
+  String get libraryRefreshFailed;
+
   /// No description provided for @tagTitle.
   ///
   /// In zh, this message translates to:

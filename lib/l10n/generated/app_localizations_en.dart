@@ -2749,6 +2749,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'No tracks yet: scan music in the File source, or download to add tracks.';
 
   @override
+  String get libraryRefreshFailed => 'Could not refresh the music library';
+
+  @override
   String get tagTitle => 'Title';
 
   @override

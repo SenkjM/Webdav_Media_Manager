@@ -824,6 +824,7 @@
   "sourceUnbound": "Source not linked",
   "downloadingPercent": "Downloading {p}%",
   "libraryEmptyGuide": "No tracks yet: scan music in the File source, or download to add tracks.",
+  "libraryRefreshFailed": "Could not refresh the music library",
   "tagTitle": "Title",
   "tagArtist": "Artist",
   "tagAlbumArtist": "Album artist",
