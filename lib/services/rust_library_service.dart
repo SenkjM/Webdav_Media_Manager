@@ -825,7 +825,8 @@ class RustLibraryService {
   ///
   /// The Rust schema uses `account_id` for what Dart calls `source_name`.
   /// `remote_path` and `title` are shared.  Missing Dart-only fields (CUE
-  /// columns, cover_state, bitrate, …) are filled with 0 / defaults.
+  /// columns, bitrate, …) are filled with 0 / defaults; `cover_state` **is**
+  /// in the Rust row and must be carried over, or every row looks unprobed.
   static LibraryTrack? _rustJsonToTrack(Map<String, dynamic> map) {
     try {
       // `source_name` takes precedence over `account_id` in case a row was
@@ -860,7 +861,7 @@ class RustLibraryService {
         // Fields with no Rust equivalent — safe defaults:
         bitrate: null,
         sampleRate: null,
-        coverState: 0,
+        coverState: _asInt(map['cover_state']) ?? 0,
         cueId: null,
         cueRemotePath: null,
         cueTrackIndex: null,
