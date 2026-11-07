@@ -304,6 +304,17 @@ class NowPlayingQueueScreen extends StatelessWidget {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (t.duration != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: Text(
+                            _queueDurationLabel(t.duration!),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.outline,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                       if (playing)
                         const Padding(
                           padding: EdgeInsets.only(right: 4),
@@ -353,5 +364,16 @@ class NowPlayingQueueScreen extends StatelessWidget {
               },
             ),
     );
+  }
+
+  /// `mm:ss`, or `h:mm:ss` for long items.
+  ///
+  /// Durations arrive from tags/library rows, so a queue entry shows its length
+  /// before the user opens it.
+  static String _queueDurationLabel(Duration d) {
+    final h = d.inHours;
+    final mm = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return h > 0 ? '$h:$mm:$ss' : '$mm:$ss';
   }
 }

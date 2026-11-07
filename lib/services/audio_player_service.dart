@@ -17,6 +17,7 @@ import '../utils/l10n_host.dart';
 import '../utils/remote_path.dart';
 import '../utils/task_error.dart';
 import 'accounts_service.dart';
+import 'audio_tag_worker.dart';
 import 'cache_service.dart';
 import 'library_actions.dart';
 import 'library_backfill.dart';
@@ -175,6 +176,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _onSettings() {
     _prefetch?.nudge();
+    _scheduleNeighborFill();
   }
 
   /// Resolve playable for [track] under [_playOpenMode] (or [mode] override).
@@ -285,6 +287,16 @@ class AudioPlayerService extends ChangeNotifier {
 
   /// Track keys already resolved from audio tags in this session.
   final Set<String> _tagFilledTracks = {};
+
+  /// Serial tail for local parses: one worker isolate at a time, matching the
+  /// single network window. Parsing two large covers in parallel would fight
+  /// playback for CPU without making metadata appear any sooner.
+  Future<void> _tagParseTail = Future<void>.value();
+
+  /// Generation of the neighbour fill pass, bumped on every schedule so a parse
+  /// started for the previous queue/window is dropped instead of written.
+  int _neighborFillGen = 0;
+  Timer? _neighborFillTimer;
 
   /// Range-read the embedded tags for the remote track.
   ///
@@ -557,6 +569,7 @@ class AudioPlayerService extends ChangeNotifier {
     // New/updated rows: let every track fall back to its durable row again.
     _libraryBackedTracks.clear();
     _scheduleEnrichment();
+    _scheduleNeighborFill();
   }
 
   void _scheduleEnrichment() {
@@ -930,8 +943,8 @@ class AudioPlayerService extends ChangeNotifier {
   /// Cache-mode neighbor warm: same forward/back window as stream prefetch,
   /// but enqueue into music_cache via the task queue (no prefetch_cache).
   ///
-  /// Neighbour covers are Range-read **first** (higher priority than audio) into
-  /// the player's memory cache, matching the stream-prefetch order.
+  /// Neighbours never touch the network for metadata: once their audio lands in
+  /// a local cache, the neighbour fill pass parses it from bytes.
   Future<void> _warmCacheNeighbors(List<TrackInfo> playlist, int index) async {
     final indexes = prefetchNeighborIndexes(
       current: index,
@@ -939,13 +952,6 @@ class AudioPlayerService extends ChangeNotifier {
       backward: _settings.audioStreamPrefetchBackward,
       forward: _settings.audioStreamPrefetchForward,
     );
-    for (final i in indexes) {
-      final t = playlist[i];
-      if (t.localPath != null && File(t.localPath!).existsSync()) continue;
-      try {
-        await _loadRangeCoverFor(t);
-      } catch (_) {}
-    }
     for (final i in indexes) {
       final t = playlist[i];
       if (t.accountId.isEmpty && t.sourceName.isEmpty) continue;
@@ -963,20 +969,21 @@ class AudioPlayerService extends ChangeNotifier {
         );
       } catch (_) {}
     }
+    _scheduleNeighborFill();
   }
 
-  bool _hasRangeCover(TrackInfo track) {
-    final tags = _rangeTagsCache[
-        '${track.sourceName}\u0000${track.effectiveAudioRemotePath}'];
+  /// Full-size cover bytes already in memory for the now-playing track.
+  ///
+  /// The player backdrop asks for this before falling back to its own local
+  /// read, so a cache-mode track does not decode tags on the UI isolate.
+  Uint8List? cachedCoverBytes({
+    required String sourceName,
+    required String remotePath,
+  }) {
+    final tags = _rangeTagsCache['$sourceName\u0000$remotePath'];
     final bytes = tags?.coverBytes;
-    return bytes != null && bytes.isNotEmpty;
+    return bytes == null || bytes.isEmpty ? null : bytes;
   }
-
-  Future<Uint8List?> _loadRangeCoverFor(TrackInfo track) => networkCoverBytes(
-    sourceName: track.sourceName,
-    remotePath: track.effectiveAudioRemotePath,
-    fileName: track.fileName,
-  );
 
   void _startPrefetch(List<TrackInfo> playlist, int index, String accountId) {
     unawaited(_prefetch?.dispose());
@@ -986,8 +993,7 @@ class AudioPlayerService extends ChangeNotifier {
       currentIndex: () => _handler.index,
       backward: () => _settings.audioStreamPrefetchBackward,
       forward: () => _settings.audioStreamPrefetchForward,
-      coverFor: _loadRangeCoverFor,
-      coverReady: _hasRangeCover,
+      onAudioComplete: (track, path) => _onPrefetchAudioReady(track),
     );
     _prefetch!.start(accountId: accountId);
   }
@@ -997,16 +1003,19 @@ class AudioPlayerService extends ChangeNotifier {
     // library, its local file, or one transient Range read, so a streamed
     // track never shows a bare file name in the player/notification.
     unawaited(_fillTransientMetadata());
+    _scheduleNeighborFill();
   }
 
   /// Fill [current] from the cheapest source that has the fields.
   ///
-  /// Order: durable library row -> local file tags -> one transient remote tag
-  /// read (`wdmm_tags_extract`). Nothing is persisted and no scrape is queued.
+  /// Order: durable library row -> local file tags (worker isolate) -> one
+  /// transient remote tag read (`wdmm_tags_extract`). Nothing is persisted and
+  /// no scrape is queued; the remote read exists only so the now-playing row is
+  /// never a bare file name.
   Future<void> _fillTransientMetadata() async {
     final track = current;
     if (track == null) return;
-    final key = '${track.sourceName}\u0000${track.remotePath}';
+    final key = _metaKey(track);
     if (_libraryBackedTracks.contains(key)) return;
     final row = _library.find(track.sourceName, track.remotePath);
     if (row != null) {
@@ -1016,11 +1025,14 @@ class AudioPlayerService extends ChangeNotifier {
       return;
     }
     if (_tagFilledTracks.contains(key)) return;
-    final local = track.localPath;
-    if (local != null && local.isNotEmpty && File(local).existsSync()) {
-      final tags = await _library.tags.readFromFile(local);
+    final local = await _localAudioPathFor(track);
+    if (local != null) {
+      final parsed = await _parseLocalAudio(track, local, keepCoverBytes: true);
       if (!identical(current, track)) return;
-      if (_applyTags(track, tags)) {
+      if (parsed != null) {
+        _rememberCurrentTags(track, parsed.tags);
+        _applyTags(track, parsed.tags);
+        _applyThumb(track, parsed.thumbPath);
         _tagFilledTracks.add(key);
         notifyListeners();
         return;
@@ -1034,6 +1046,158 @@ class AudioPlayerService extends ChangeNotifier {
     if (!identical(current, track)) return;
     if (_applyTags(track, tags)) {
       _tagFilledTracks.add(key);
+      final cover = tags?.coverBytes;
+      if (cover != null && cover.isNotEmpty) {
+        unawaited(_writeRemoteCover(track, cover));
+      }
+      notifyListeners();
+    }
+  }
+
+  /// Remember the now-playing tags under both keys the screens use: the
+  /// track's own path (queue rows) and its backing audio path (the backdrop).
+  void _rememberCurrentTags(TrackInfo track, ReadTags tags) {
+    _rangeTagsCache[_metaKey(track)] = tags;
+    _rangeTagsCache['${track.sourceName}\u0000${track.effectiveAudioRemotePath}'] =
+        tags;
+    while (_rangeTagsCache.length > _rangeTagsCacheLimit) {
+      _rangeTagsCache.remove(_rangeTagsCache.keys.first);
+    }
+  }
+
+  /// Parse the now-playing track's audio off the UI isolate.
+  ///
+  /// [keepCoverBytes] is true for the current track only: the player backdrop
+  /// wants the full art, while neighbours get a thumb file and fields.
+  Future<ParsedAudioMetadata?> _parseLocalAudio(
+    TrackInfo track,
+    String localPath, {
+    required bool keepCoverBytes,
+  }) async {
+    var thumb = _library.covers.thumbPath(track.sourceName, track.remotePath);
+    if (thumb == null) {
+      await _library.covers.init();
+      thumb = _library.covers.thumbPath(track.sourceName, track.remotePath);
+    }
+    try {
+      return await _enqueueParse(
+        () => parseAudioMetadata(
+          path: localPath,
+          thumbPath: thumb,
+          thumbSize: _settings.coverThumbSizePx,
+          keepCoverBytes: keepCoverBytes,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Write a thumb for a cover that came from the remote tag read.
+  Future<void> _writeRemoteCover(TrackInfo track, Uint8List bytes) async {
+    var thumb = _library.covers.thumbPath(track.sourceName, track.remotePath);
+    if (thumb == null) {
+      await _library.covers.init();
+      thumb = _library.covers.thumbPath(track.sourceName, track.remotePath);
+    }
+    if (thumb == null) return;
+    final written = await writeCoverThumbInWorker(
+      bytes: bytes,
+      thumbPath: thumb,
+      thumbSize: _settings.coverThumbSizePx,
+    );
+    if (!identical(current, track)) return;
+    _applyThumb(track, written);
+    notifyListeners();
+  }
+
+  Future<T> _enqueueParse<T>(Future<T> Function() job) {
+    final previous = _tagParseTail;
+    final gate = Completer<void>();
+    _tagParseTail = gate.future;
+    return previous.then((_) => job()).whenComplete(gate.complete);
+  }
+
+  void _applyThumb(TrackInfo track, String? thumbPath) {
+    if (thumbPath == null || thumbPath.isEmpty) return;
+    if (track.coverPath == thumbPath) return;
+    track.coverPath = thumbPath;
+    _queueRevision++;
+  }
+
+  String _metaKey(TrackInfo track) => '${track.sourceName}\u0000${track.remotePath}';
+
+  /// A local file for [track]'s audio, or null when nothing is on disk yet.
+  ///
+  /// Prefer the playing file, then the durable music cache, then this session's
+  /// prefetch file. Neighbours use this and never fall back to the network.
+  Future<String?> _localAudioPathFor(TrackInfo track) async {
+    final local = track.localPath;
+    if (local != null && local.isNotEmpty && File(local).existsSync()) {
+      return local;
+    }
+    final audioRemote = track.effectiveAudioRemotePath;
+    try {
+      final cached = await _cache.localPathIfCached(
+        audioRemote,
+        sourceName: track.sourceName,
+      );
+      if (cached != null) return cached;
+    } catch (_) {
+      // Cache index unavailable: fall through to the prefetch file.
+    }
+    return _prefetchedAudioPath(track, audioRemote);
+  }
+
+  /// Parse neighbours once their audio is on disk (prefetch completion, queue
+  /// terminal, window change), one worker isolate at a time.
+  void _scheduleNeighborFill() {
+    _neighborFillTimer?.cancel();
+    _neighborFillTimer = Timer(const Duration(milliseconds: 300), () {
+      unawaited(_fillNeighborMetadata());
+    });
+  }
+
+  void _onPrefetchAudioReady(TrackInfo track) {
+    if (_settings.audioStreamPrefetchBackward <= 0 &&
+        _settings.audioStreamPrefetchForward <= 0) {
+      return;
+    }
+    _scheduleNeighborFill();
+  }
+
+  Future<void> _fillNeighborMetadata() async {
+    final gen = ++_neighborFillGen;
+    final queue = _handler.tracks;
+    final index = _handler.index;
+    if (index < 0 || index >= queue.length) return;
+    final indexes = prefetchNeighborIndexes(
+      current: index,
+      length: queue.length,
+      backward: _settings.audioStreamPrefetchBackward,
+      forward: _settings.audioStreamPrefetchForward,
+    );
+    for (final i in indexes) {
+      if (gen != _neighborFillGen) return;
+      final track = queue[i];
+      final key = _metaKey(track);
+      if (_tagFilledTracks.contains(key) ||
+          _libraryBackedTracks.contains(key)) {
+        continue;
+      }
+      final path = await _localAudioPathFor(track);
+      if (path == null) continue;
+      final parsed = await _parseLocalAudio(
+        track,
+        path,
+        keepCoverBytes: false,
+      );
+      if (gen != _neighborFillGen) return;
+      if (parsed == null) continue;
+      _applyTags(track, parsed.tags);
+      _applyThumb(track, parsed.thumbPath);
+      _tagFilledTracks.add(key);
+      _queueRevision++;
       notifyListeners();
     }
   }
@@ -1213,6 +1377,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _onTaskQueueChanged() {
+    _scheduleNeighborFill();
     final pending = _pendingPlayBackfillSync;
     if (pending == null) return;
     QueueTask? task;

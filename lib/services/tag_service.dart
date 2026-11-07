@@ -90,10 +90,17 @@ class ReadTags {
 /// Reads ID3 / common tags from a local cached file (pure Dart, no native plugin).
 class TagService {
   /// Best-effort read; never throws to callers — returns empty tags on failure.
-  Future<ReadTags> readFromFile(String localPath) async {
+  Future<ReadTags> readFromFile(String localPath) async =>
+      readFromFileSync(localPath);
+
+  /// Synchronous variant, safe to call inside a worker isolate.
+  ///
+  /// Parsing is CPU work (tag frames plus embedded image bytes), so the player
+  /// runs this off the UI isolate through `parseAudioMetadata`.
+  ReadTags readFromFileSync(String localPath) {
     try {
       final file = File(localPath);
-      if (!await file.exists()) return const ReadTags();
+      if (!file.existsSync()) return const ReadTags();
 
       final meta = readMetadata(file, getImage: true);
       Uint8List? cover;

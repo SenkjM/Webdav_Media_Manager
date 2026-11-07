@@ -762,6 +762,21 @@ class _PlayerBackdropState extends State<_PlayerBackdrop> {
     final library = context.read<LibraryService>();
     final covers = library.covers;
     await covers.init();
+    // The player already parsed this track in a worker isolate (cache-mode
+    // audio, or a completed prefetch); reuse those bytes before reading tags on
+    // the UI isolate.
+    final cached = context
+        .read<AudioPlayerService>()
+        .cachedCoverBytes(sourceName: sourceName, remotePath: remote);
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _fullPath = null;
+          _bytes = cached;
+        });
+      }
+      return;
+    }
     final local = widget.localPath;
     if (local != null && File(local).existsSync()) {
       final tags = await library.tags.readFromFile(local);

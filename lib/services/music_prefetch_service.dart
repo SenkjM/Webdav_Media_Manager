@@ -1,22 +1,19 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
 import '../models/webdav_item.dart';
 import 'prefetch_cache.dart';
-import 'stream_window.dart';
 import 'webdav_service.dart';
 
 /// Window lookahead for the unified music player.
 ///
-/// Order is **covers first, then audio** for the same ±N window: a neighbour's
-/// embedded cover is Range-read into memory (the player screen uses it when the
-/// user jumps) before the audio bytes are downloaded into [PrefetchCache].
-/// Covers are never persisted and never touch the library; audio files live in
-/// the system-managed prefetch cache (cleared on every app start), so no manual
-/// cleanup or cap is needed.
+/// Only **audio** is fetched: neighbours keep their bytes on disk in
+/// [PrefetchCache] (system-managed, cleared on every app start), and the player
+/// parses their tags from those bytes once the download lands. Metadata is
+/// never fetched from the network for a neighbour and covers are never
+/// persisted here — the durable cover thumb is written by the tag worker.
 class MusicPrefetchService {
   MusicPrefetchService({
     required this.webDav,
@@ -24,8 +21,7 @@ class MusicPrefetchService {
     required this.currentIndex,
     required this.backward,
     required this.forward,
-    this.coverFor,
-    this.coverReady,
+    this.onAudioComplete,
   });
 
   final WebDavService webDav;
@@ -34,16 +30,14 @@ class MusicPrefetchService {
   final int Function() backward;
   final int Function() forward;
 
-  /// Range-read (or memory-cache hit) one neighbour cover. Null when unavailable.
-  final Future<Uint8List?> Function(TrackInfo track)? coverFor;
-
-  /// True when the cover for [track] is already in the player's memory cache.
-  final bool Function(TrackInfo track)? coverReady;
+  /// Called once a neighbour's audio file is complete on disk.
+  ///
+  /// The player uses it to start parsing that file's tags in a worker isolate,
+  /// so a queue jump shows the right title/artist/cover immediately.
+  final void Function(TrackInfo track, String path)? onAudioComplete;
 
   String? _accountId;
   final Set<String> _failed = {};
-  final Set<String> _failedCovers = {};
-  final Set<String> _triedCovers = {};
   bool _disposed = false;
   bool _looping = false;
   int _gen = 0;
@@ -98,23 +92,6 @@ class MusicPrefetchService {
     final token = _token;
     try {
       while (gen == _gen && !_disposed) {
-        // Covers have priority over audio for the same window.
-        final coverJob = _pickCover();
-        if (coverJob != null) {
-          final loader = coverFor;
-          if (loader == null) break;
-          _triedCovers.add(_coverKey(coverJob));
-          try {
-            final bytes = await loader(coverJob);
-            if (bytes == null || bytes.isEmpty) {
-              _failedCovers.add(_coverKey(coverJob));
-            }
-          } catch (e) {
-            if (gen != _gen || _isCancel(e)) break;
-            _failedCovers.add(_coverKey(coverJob));
-          }
-          continue;
-        }
         final job = await _pickAudio();
         if (job == null) break;
         try {
@@ -128,39 +105,6 @@ class MusicPrefetchService {
       _looping = false;
       if (!_disposed && gen != _gen) _ensureLoop();
     }
-  }
-
-  List<int> _windowIndexes() {
-    final queue = tracks();
-    final current = currentIndex();
-    if (current < 0 || current >= queue.length) return const [];
-    return prefetchNeighborIndexes(
-      current: current,
-      length: queue.length,
-      backward: backward(),
-      forward: forward(),
-    );
-  }
-
-  String _coverKey(TrackInfo t) =>
-      '${t.sourceName}\u0000${t.effectiveAudioRemotePath}';
-
-  TrackInfo? _pickCover() {
-    final queue = tracks();
-    for (final i in _windowIndexes()) {
-      final item = queue[i];
-      if (item.localPath != null && File(item.localPath!).existsSync()) {
-        // Local audio art is read from the file itself; no Range needed.
-        continue;
-      }
-      final key = _coverKey(item);
-      if (_triedCovers.contains(key)) continue;
-      if (_failedCovers.contains(key)) continue;
-      if (coverReady?.call(item) ?? false) continue;
-      if (coverFor == null) continue;
-      return item;
-    }
-    return null;
   }
 
   Future<TrackInfo?> _pickAudio() async {
@@ -208,6 +152,7 @@ class MusicPrefetchService {
     if (!part.existsSync() || part.lengthSync() <= 0) return;
     if (dest.existsSync()) dest.deleteSync();
     await part.rename(dest.path);
+    onAudioComplete?.call(item, dest.path);
   }
 }
 
