@@ -9,9 +9,16 @@ defaults below, and every value can be overridden with an environment variable
 E2E_TV_ROOT). No host, path or credential is baked into the repository.
 
 Suites:
-  boot    app boots and renders its shell          (integration_test/app_boot_test.dart)
-  webdav  lists music/video roots and reads a range (integration_test/e2e_webdav_test.dart)
-  cast    SSDP finds a MediaRenderer                (integration_test/e2e_cast_test.dart)
+  boot     app boots and renders its shell           (integration_test/app_boot_test.dart)
+  webdav   lists music/video roots and reads a range (integration_test/e2e_webdav_test.dart)
+  cast     SSDP finds a MediaRenderer                (integration_test/e2e_cast_test.dart)
+  music    reads tags from a remote audio file       (integration_test/e2e_music_test.dart)
+  cue      parses the lab .cue sheet                 (integration_test/e2e_cue_test.dart)
+  cbz      opens a .cbz and reads one page           (integration_test/e2e_cbz_test.dart)
+  queue    one cache download through the queue      (integration_test/e2e_queue_test.dart)
+  scrape   scans one file into the music library     (integration_test/e2e_scrape_test.dart)
+  castplay casts a real video and waits for PLAYING  (integration_test/e2e_cast_play_test.dart)
+  all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
 
 The script never uninstalls the app and never clears its data: on this lab phone
 an uninstall/reinstall forces the user to re-confirm the install and re-grant
@@ -30,7 +37,8 @@ On failure the run drops logcat and a uiautomator dump into
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('boot', 'webdav', 'cast', 'all')]
+    [ValidateSet('boot', 'webdav', 'cast', 'music', 'cue', 'cbz', 'queue',
+        'scrape', 'castplay', 'all')]
     [string] $Suite = 'all',
 
     [string] $Device,
@@ -53,6 +61,10 @@ $defaults = [ordered]@{
     webdavPass  = 'guest'
     musicRoot   = '/Local/Music'
     tvRoot      = '/Local/Downloads/TV'
+    mangaRoot   = '/Local/Downloads/Manga'
+    cuePath     = ''
+    cbzPath     = ''
+    dmrName     = 'Kodi'
     requireDmr  = $false
 }
 
@@ -81,15 +93,25 @@ $user = Resolve-Setting 'webdavUser' 'E2E_WEBDAV_USER' $defaults.webdavUser
 $pass = Resolve-Setting 'webdavPass' 'E2E_WEBDAV_PASS' $defaults.webdavPass
 $music = Resolve-Setting 'musicRoot' 'E2E_MUSIC_ROOT' $defaults.musicRoot
 $tv = Resolve-Setting 'tvRoot' 'E2E_TV_ROOT' $defaults.tvRoot
+$manga = Resolve-Setting 'mangaRoot' 'E2E_MANGA_ROOT' $defaults.mangaRoot
+$cue = Resolve-Setting 'cuePath' 'E2E_CUE_PATH' $defaults.cuePath
+$cbz = Resolve-Setting 'cbzPath' 'E2E_CBZ_PATH' $defaults.cbzPath
+$dmrName = Resolve-Setting 'dmrName' 'E2E_DMR_NAME' $defaults.dmrName
 $needDmr = if ($RequireDmr) { $true } else { [bool](Resolve-Setting 'requireDmr' $null $defaults.requireDmr) }
 
 # 'all' runs the combined target on purpose: one drive = one install.
 $suites = if ($Suite -eq 'all') { @('all') } else { @($Suite) }
 $targets = @{
-    boot   = 'integration_test\app_boot_test.dart'
-    webdav = 'integration_test\e2e_webdav_test.dart'
-    cast   = 'integration_test\e2e_cast_test.dart'
-    all    = 'integration_test\e2e_full_test.dart'
+    boot     = 'integration_test\app_boot_test.dart'
+    webdav   = 'integration_test\e2e_webdav_test.dart'
+    cast     = 'integration_test\e2e_cast_test.dart'
+    music    = 'integration_test\e2e_music_test.dart'
+    cue      = 'integration_test\e2e_cue_test.dart'
+    cbz      = 'integration_test\e2e_cbz_test.dart'
+    queue    = 'integration_test\e2e_queue_test.dart'
+    scrape   = 'integration_test\e2e_scrape_test.dart'
+    castplay = 'integration_test\e2e_cast_play_test.dart'
+    all      = 'integration_test\e2e_full_test.dart'
 }
 
 $devices = (& adb devices) -join "`n"
@@ -103,6 +125,10 @@ $defines = @(
     "--dart-define=E2E_WEBDAV_PASS=$pass",
     "--dart-define=E2E_MUSIC_ROOT=$music",
     "--dart-define=E2E_TV_ROOT=$tv",
+    "--dart-define=E2E_MANGA_ROOT=$manga",
+    "--dart-define=E2E_CUE_PATH=$cue",
+    "--dart-define=E2E_CBZ_PATH=$cbz",
+    "--dart-define=E2E_DMR_NAME=$dmrName",
     "--dart-define=E2E_REQUIRE_DMR=$(if ($needDmr) { '1' } else { '0' })"
 )
 

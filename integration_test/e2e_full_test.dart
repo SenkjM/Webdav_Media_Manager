@@ -2,27 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
-import 'package:webdav_media_manager/main.dart' as app;
-
 import 'e2e_support.dart';
 
-/// One boot, one install, all probes.
+/// One boot, one install, every read-only probe.
 ///
-/// `flutter drive` installs the APK for every target; running each probe as a
-/// separate target reinstalls the app repeatedly, and on this lab phone an
-/// uninstall/reinstall forces the user to re-confirm the install and re-grant
-/// runtime permissions. Keeping the whole smoke in one target means one
-/// `adb install -r` per run and no data loss.
+/// `flutter test` still runs Gradle once per target, so the combined target
+/// keeps the whole smoke to a single install. Suites that mutate the queue or
+/// start a cast session live in their own targets on purpose.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('e2e full: boot, webdav, cast discovery', (tester) async {
-    await app.main();
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 200),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(minutes: 2),
-    );
+  testWidgets('e2e full: boot, webdav, metadata, cue, cbz, cast discovery',
+      (tester) async {
+    await bootApp(tester);
 
     // --- boot -------------------------------------------------------------
     expect(find.byType(MaterialApp), findsOneWidget);
@@ -30,13 +22,18 @@ void main() {
     expect(tester.takeException(), isNull);
     debugPrint('[E2E] boot ok');
 
-    // --- webdav -----------------------------------------------------------
-    if (webdavConfigured) {
-      probeWebdav();
-    } else {
+    if (!webdavConfigured) {
       debugPrint('[E2E] webdav skipped: no E2E_WEBDAV_* dart-defines');
+      return;
     }
 
+    // --- webdav -----------------------------------------------------------
+    probeWebdav();
+    // --- metadata ---------------------------------------------------------
+    probeMetadata();
+    // --- cue / cbz --------------------------------------------------------
+    probeCue();
+    probeCbz();
     // --- cast -------------------------------------------------------------
     probeRenderers();
 

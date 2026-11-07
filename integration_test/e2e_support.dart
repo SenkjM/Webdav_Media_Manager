@@ -1,9 +1,13 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 
+import 'package:webdav_media_manager/main.dart' as app;
 import 'package:webdav_media_manager/services/rust_core_service.dart';
+import 'package:webdav_media_manager/utils/cue_sheet.dart';
 
 /// Shared probe helpers for the on-device E2E suites.
 ///
@@ -14,6 +18,13 @@ const e2eWebdavUser = String.fromEnvironment('E2E_WEBDAV_USER');
 const e2eWebdavPass = String.fromEnvironment('E2E_WEBDAV_PASS');
 const e2eMusicRoot = String.fromEnvironment('E2E_MUSIC_ROOT');
 const e2eTvRoot = String.fromEnvironment('E2E_TV_ROOT');
+const e2eMangaRoot = String.fromEnvironment(
+  'E2E_MANGA_ROOT',
+  defaultValue: '/Local/Downloads/Manga',
+);
+const e2eCuePath = String.fromEnvironment('E2E_CUE_PATH');
+const e2eCbzPath = String.fromEnvironment('E2E_CBZ_PATH');
+const e2eDmrName = String.fromEnvironment('E2E_DMR_NAME', defaultValue: 'Kodi');
 const e2eRequireDmr = String.fromEnvironment('E2E_REQUIRE_DMR') == '1';
 
 const e2eAccountId = 'e2e-local';
@@ -36,6 +47,47 @@ bool get webdavConfigured =>
     e2eWebdavUrl.isNotEmpty &&
     e2eMusicRoot.isNotEmpty &&
     e2eTvRoot.isNotEmpty;
+
+/// Boots the real app once and waits for the first frame.
+///
+/// Every suite starts from the production entry point on purpose: the E2E
+/// target must exercise the same wiring (providers, FFI init, boot trace) the
+/// user gets, not a test-only bootstrap.
+Future<void> bootApp(WidgetTester tester) async {
+  await app.main();
+  await tester.pumpAndSettle(
+    const Duration(milliseconds: 200),
+    EnginePhase.sendSemanticsUpdate,
+    const Duration(minutes: 2),
+  );
+}
+
+/// The [BuildContext] below [MaterialApp], i.e. with every provider in scope.
+BuildContext appContext(WidgetTester tester) =>
+    tester.element(find.byType(MaterialApp).first);
+
+/// Reads a provider that `main.dart` puts above [MaterialApp].
+T appService<T>(WidgetTester tester) => appContext(tester).read<T>();
+
+/// Pumps until [predicate] holds, letting real timers/FFI run between frames.
+///
+/// Integration tests run with real timers, so a bare `pumpAndSettle` does not
+/// advance the queue's 200 ms poll loop — this helper does both.
+Future<void> pumpUntil(
+  WidgetTester tester,
+  String label,
+  bool Function() predicate, {
+  Duration timeout = const Duration(minutes: 3),
+  Duration interval = const Duration(milliseconds: 250),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    if (predicate()) return;
+    await Future<void>.delayed(interval);
+    await tester.pump();
+  }
+  fail('timed out after ${timeout.inSeconds}s waiting for $label');
+}
 
 /// Upserts the lab account so the native core can reach the server.
 void ensureE2eAccount() {
@@ -122,12 +174,7 @@ String probeWebdav() {
 
 /// SSDP discovery. Returns the renderer descriptions found.
 List<Map<String, dynamic>> probeRenderers() {
-  final raw = RustCoreService.dlnaDiscoverExt(timeoutMs: 4000);
-  expect(raw, isNotNull, reason: 'native core must expose dlna discovery');
-  expect(raw!.startsWith('error:'), isFalse, reason: 'discovery failed: $raw');
-  final renderers = (jsonDecode(raw) as List<dynamic>)
-      .whereType<Map<String, dynamic>>()
-      .toList(growable: false);
+  final renderers = discoverRenderers();
   final described = renderers
       .map((r) => '${r['friendly_name'] ?? '(unnamed)'} @ ${r['location'] ?? '?'}')
       .join(' | ');
@@ -139,6 +186,93 @@ List<Map<String, dynamic>> probeRenderers() {
             '(is Kodi running with UPnP enabled?)');
   }
   return renderers;
+}
+
+/// SSDP discovery without assertions, for suites that tolerate no renderer.
+List<Map<String, dynamic>> discoverRenderers() {
+  final raw = RustCoreService.dlnaDiscoverExt(timeoutMs: 4000);
+  expect(raw, isNotNull, reason: 'native core must expose dlna discovery');
+  expect(raw!.startsWith('error:'), isFalse, reason: 'discovery failed: $raw');
+  return (jsonDecode(raw) as List<dynamic>)
+      .whereType<Map<String, dynamic>>()
+      .toList(growable: false);
+}
+
+/// First audio file found under [e2eMusicRoot], searching at most 5 albums.
+String findAudioFile() {
+  final dirs = listDir(e2eMusicRoot).where(isDir).toList();
+  expect(dirs, isNotEmpty, reason: 'no album under $e2eMusicRoot');
+  for (final dir in dirs.take(5)) {
+    final dirPath = joinPath(e2eMusicRoot, dir);
+    for (final entry in listDir(dirPath)) {
+      if (isDir(entry)) continue;
+      final path = joinPath(dirPath, entry);
+      if (isAudio(path)) return path;
+    }
+  }
+  fail('no audio file under $e2eMusicRoot');
+}
+
+/// First video file under [e2eTvRoot].
+String findVideoFile() {
+  for (final entry in listDir(e2eTvRoot)) {
+    if (isDir(entry)) continue;
+    if (isVideo(entry)) return joinPath(e2eTvRoot, entry);
+  }
+  fail('no video file under $e2eTvRoot');
+}
+
+/// Breadth-first search for the first file whose path ends with [suffix].
+///
+/// Returns null when nothing matches; callers decide whether that is a skip or
+/// a failure. Directory depth is bounded so a stray symlink-ish tree cannot
+/// stall the suite.
+String? findFileBySuffix(
+  String root,
+  String suffix, {
+  int maxDepth = 3,
+  int maxDirs = 300,
+}) {
+  final wanted = suffix.toLowerCase();
+  final queue = <MapEntry<String, int>>[MapEntry(root, 0)];
+  var dirs = 0;
+  while (queue.isNotEmpty && dirs < maxDirs) {
+    final current = queue.removeAt(0);
+    dirs++;
+    for (final entry in listDir(current.key)) {
+      final name = entry['name'] as String? ?? '';
+      final path = joinPath(current.key, entry);
+      if (!isDir(entry)) {
+        if (name.toLowerCase().endsWith(wanted)) return path;
+        continue;
+      }
+      if (current.value < maxDepth) {
+        queue.add(MapEntry(path, current.value + 1));
+      }
+    }
+  }
+  return null;
+}
+
+/// Reads up to [maxBytes] of remote [path] as raw bytes.
+Uint8List readFileBytes(String path, {int maxBytes = 1 << 20}) {
+  final raw = RustCoreService.accountGetContentRange(
+    e2eAccountId,
+    path,
+    '0',
+    '${maxBytes - 1}',
+  );
+  expect(raw, isNotNull, reason: 'accountGetContentRange returned null');
+  expect(raw!.startsWith('error:'), isFalse, reason: 'range read: $raw');
+  final encoded = (jsonDecode(raw) as Map<String, dynamic>)['data'] as String?;
+  expect(encoded, isNotNull, reason: 'range payload has no data: $raw');
+  return base64Decode(encoded!);
+}
+
+/// Reads a small text file (CUE, NFO, …) through the native driver.
+String readFileText(String path, {int maxBytes = 1 << 20}) {
+  final bytes = readFileBytes(path, maxBytes: maxBytes);
+  return utf8.decode(bytes, allowMalformed: true);
 }
 
 List<Map<String, dynamic>> listDir(String path) {
@@ -172,3 +306,101 @@ String joinPath(String root, Map<String, dynamic> entry) {
 
 String entryNames(List<Map<String, dynamic>> entries) =>
     entries.map((e) => e['name']).take(8).join(', ');
+
+/// Metadata probe: real tags from a remote audio file via `wdmm_tags_extract`.
+String probeMetadata() {
+  final path = findAudioFile();
+  final reply = decodeReply(
+    RustCoreService.tagsExtract(e2eAccountId, path),
+    'tagsExtract',
+  );
+  expect(reply['ok'], isTrue, reason: 'tagsExtract: $reply');
+  final tags = reply['tags'];
+  expect(tags, isA<Map<String, dynamic>>(),
+      reason: 'tagsExtract returned no tags map: $reply');
+  final map = tags as Map<String, dynamic>;
+  expect(reply['format'], isA<String>(),
+      reason: 'tagsExtract returned no format: $reply');
+  expect(reply['format'] as String, isNotEmpty);
+  // A real album rip carries at least one of these; an empty result would mean
+  // the Range reader or lofty wiring silently lost the tags.
+  final hasText = [map['title'], map['artist'], map['album']]
+      .any((v) => v is String && v.trim().isNotEmpty);
+  expect(hasText, isTrue,
+      reason: 'no title/artist/album parsed from $path: $map');
+  final summary = '$path format=${reply['format']} title=${map['title']} '
+      'artist=${map['artist']} cover=${reply['cover'] is Map ? 'yes' : 'no'}';
+  debugPrint('[E2E] metadata ok: $summary');
+  return summary;
+}
+
+/// CUE parser entry point, kept here so the suites share one code path.
+CueSheet? cueSheetParse(String text) => CueSheet.parseOrNull(text);
+
+/// CUE probe. Returns null (and logs a skip reason) when no sheet exists.
+String? probeCue({bool required = false}) {
+  final path = e2eCuePath.isNotEmpty
+      ? e2eCuePath
+      : findFileBySuffix(e2eMusicRoot, '.cue');
+  if (path == null) {
+    if (required) fail('no .cue under $e2eMusicRoot; set E2E_CUE_PATH');
+    debugPrint('[E2E] cue skipped: no .cue under $e2eMusicRoot');
+    return null;
+  }
+  final text = readFileText(path);
+  expect(text, contains('TRACK'), reason: '$path does not look like a CUE');
+  final sheet = cueSheetParse(text);
+  expect(sheet, isNotNull, reason: 'Rust rejected $path');
+  expect(sheet!.tracks, isNotEmpty, reason: '$path parsed with no tracks');
+  final summary = '$path title=${sheet.title} tracks=${sheet.tracks.length}';
+  debugPrint('[E2E] cue ok: $summary');
+  return summary;
+}
+
+/// CBZ probe. Returns null (and logs a skip reason) when no archive exists.
+String? probeCbz({bool required = false}) {
+  final path = e2eCbzPath.isNotEmpty
+      ? e2eCbzPath
+      : findFileBySuffix(e2eMangaRoot, '.cbz');
+  if (path == null) {
+    if (required) fail('no .cbz under $e2eMangaRoot; set E2E_CBZ_PATH');
+    debugPrint('[E2E] cbz skipped: no .cbz under $e2eMangaRoot');
+    return null;
+  }
+  final opened = decodeReply(
+    RustCoreService.zipOpen(e2eAccountId, path),
+    'zipOpen',
+  );
+  expect(opened['ok'], isTrue, reason: 'zipOpen: $opened');
+  final images = (opened['images'] as List<dynamic>? ?? const [])
+      .whereType<int>()
+      .toList(growable: false);
+  expect(images, isNotEmpty,
+      reason: 'no image entries in $path: ${opened['entries']}');
+  // Rust serialises the handle as a string (it is only ever a token).
+  final handle = '${opened['handle']}';
+  expect(handle, isNotEmpty, reason: 'zipOpen returned no handle: $opened');
+
+  final page = decodeReply(
+    RustCoreService.zipReadEntry(handle, '${images.first}'),
+    'zipReadEntry',
+  );
+  expect(page['ok'], isTrue, reason: 'zipReadEntry: $page');
+  final bytes = base64Decode(page['bytes_b64'] as String? ?? '');
+  expect(bytes, isNotEmpty, reason: 'page ${images.first} of $path is empty');
+  final summary = '$path entries=${(opened['entries'] as List<dynamic>? ??
+      const []).length} images=${images.length} page=${page['name']} '
+      'bytes=${bytes.length}';
+  debugPrint('[E2E] cbz ok: $summary');
+  return summary;
+}
+
+/// Decodes a native JSON reply, failing the test on error prefixes.
+Map<String, dynamic> decodeReply(String? raw, String what) {
+  expect(raw, isNotNull, reason: '$what returned null (native symbol missing)');
+  expect(raw!.startsWith('error:'), isFalse, reason: '$what failed: $raw');
+  final decoded = jsonDecode(raw);
+  expect(decoded, isA<Map<String, dynamic>>(),
+      reason: '$what returned a non-object payload: $raw');
+  return decoded as Map<String, dynamic>;
+}
