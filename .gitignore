@@ -81,3 +81,9 @@ android/app/src/main/jniLibs/**/*.so
 # Local FFmpeg vendor download cache (build-rust.ps1)
 rust/wdmm-core/.ffmpeg-vendor-cache/
 rust/wdmm-core/scripts/.fetch-ffmpeg-vendor.lf.sh
+
+# Local E2E lab: real host/paths/credentials stay out of the repo.
+# `.tmp/` above already covers .tmp/e2e/ (logs, dumps, local.json).
+/e2e.local.json
+/tool/e2e.local.psd1
+/tool/e2e.local.json
