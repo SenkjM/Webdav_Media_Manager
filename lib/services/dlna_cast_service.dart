@@ -206,6 +206,22 @@ class _CastError implements Exception {
 /// 1. 设备选择界面调用 [startDiscovery] → [stopDiscovery]
 /// 2. [startCast] 建立投屏会话（Rust `wdmm_dlna_session_start`）
 /// 3. [stop] 结束会话 → state 回到 idle
+/// Whether a **new** cast session should send the file untouched (direct).
+///
+/// The device preset is the only persistent truth: a device the user configured
+/// keeps its own switch. Devices without a preset follow the settings-page
+/// default -- the very value the compatibility sheet shows for them -- so the UI
+/// and the cast can no longer disagree (they used to: the sheet read the global
+/// default while the cast hard-coded `true`).
+bool resolveSessionDirect({
+  required bool? deviceForceDirect,
+  required bool defaultValue,
+  required bool mkvDirect,
+}) {
+  if (mkvDirect) return true;
+  return deviceForceDirect ?? defaultValue;
+}
+
 class DlnaCastService extends ChangeNotifier {
   DlnaCastService({
     required RustDmrPrefsService dmrPrefs,
@@ -393,6 +409,14 @@ class DlnaCastService extends ChangeNotifier {
 
   /// 会话开始前就确定的直通意图（契约 preset-encoder-tiers §7.4）。
   bool _expectDirect = false;
+
+  /// 会话创建时快照下来的直通意图与转码预设（契约 §7.4）。
+  ///
+  /// 一条会话一旦建立，切集就不能再改模式与预设：设备级开关或设置页的
+  /// 全局默认在会话中途被改动时，后续条目仍沿用这份快照，直到下一次
+  /// 新建会话（`_cleanupSession` 会把它们清空）。
+  bool? _sessionDirect;
+  String? _sessionPresetId;
 
   /// 本次会话的流命中层（契约 §11）：`copy` / `hw` / `sw` / `none`。
   String? _videoAction;
@@ -794,9 +818,13 @@ class DlnaCastService extends ChangeNotifier {
     final renderer = _renderer;
     if (renderer == null) return;
     final prefs = _dmrPrefs[renderer.usn];
-    // 与 `_beginItem` 保持同一套判定：设备级直通开关 + MKV 全局直通。
-    final targetDirect = (prefs?.forceDirect ?? true) ||
-        (_settings.dlnaMkvPassthrough && _isMatroska(item.name));
+    // 与 `_beginItem` 保持同一套判定：设备级直通开关 > 设置页全局默认 >
+    // MKV 全局直通。
+    final targetDirect = resolveSessionDirect(
+      deviceForceDirect: prefs?.forceDirect,
+      defaultValue: _settings.dlnaDefaultDirect,
+      mkvDirect: _settings.dlnaMkvPassthrough && _isMatroska(item.name),
+    );
     final sessionDirect = _expectDirect || _provider == 'direct';
     try {
       if (targetDirect != sessionDirect) {
@@ -929,14 +957,28 @@ class DlnaCastService extends ChangeNotifier {
     // 已建立的 HLS 会话无法在切集时改成直通，沿用原会话类型（已在报告点名）。
     final mkvDirect =
         first && _settings.dlnaMkvPassthrough && _isMatroska(item.name);
-    final forceDirect = mkvDirect || (prefs?.forceDirect ?? true);
-    // 直通意图在会话开始前就已确定（契约 §7.4），UI 因此可以直接跳过预热面板；
-    // 队列切条目（非首次）不改变已建立会话的类型，只对首次生效。
-    if (first) _expectDirect = forceDirect;
-    // 直通（不转码）只由 forceDirect 开关表达：`passthrough` 不是转码预设，
-    // 不允许经 `preset_id` 偷偷走直通，否则就绕过了兼容开关。
-    final presetId =
-        forceDirect ? null : _effectivePresetId(prefs?.presetId);
+    // 会话在创建时就把「直通 / 转码 + 预设」定下来，切集只沿用快照：设置页的
+    // 全局默认或设备预置在会话中途被改动时，不能悄悄换掉正在播的那条流。
+    final newSession = first || _handle == null;
+    final forceDirect = newSession
+        ? resolveSessionDirect(
+            deviceForceDirect: prefs?.forceDirect,
+            defaultValue: _settings.dlnaDefaultDirect,
+            mkvDirect: mkvDirect,
+          )
+        // 直通（不转码）只由 forceDirect 开关表达：`passthrough` 不是转码预设，
+        // 不允许经 `preset_id` 偷偷走直通，否则就绕过了兼容开关。
+        : (_sessionDirect ?? _expectDirect);
+    if (newSession) {
+      _expectDirect = forceDirect;
+      _sessionDirect = forceDirect;
+    }
+    final presetId = forceDirect
+        ? null
+        : (newSession
+              ? _effectivePresetId(prefs?.presetId)
+              : (_sessionPresetId ?? _effectivePresetId(prefs?.presetId)));
+    if (newSession) _sessionPresetId = presetId;
 
     // 切到新条目同样要先亮「正在准备缓存预热…」，等 Rust 返回 phase 再切走。
     _preparing = true;
@@ -1008,6 +1050,8 @@ class DlnaCastService extends ChangeNotifier {
         'name': item.name,
         'size': item.size ?? 0,
         'preset_id': presetId,
+        // 显式带上会话快照，Rust 不再用「preset_id 为空」反推直通。
+        'force_direct': forceDirect,
         'cache_ident': item.modified?.millisecondsSinceEpoch.toString() ?? '',
       });
       final raw = await _runOnWorker(
@@ -1230,6 +1274,9 @@ class DlnaCastService extends ChangeNotifier {
     _protocolInfo = null;
     _provider = '';
     _expectDirect = false;
+    // 会话结束即丢弃快照：下一次投屏重新读设备预置 / 全局默认。
+    _sessionDirect = null;
+    _sessionPresetId = null;
     _endedForPath = null;
     _everPlaying = false;
     _error = null;

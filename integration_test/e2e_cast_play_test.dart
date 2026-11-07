@@ -86,7 +86,7 @@ void main() {
       );
 
       debugPrint('[E2E] cast ok: ${renderer['friendly_name']} '
-          '$remotePath position=${position}ms');
+          '$remotePath provider=${start['provider']} position=${position}ms');
     } finally {
       final stopped = RustCoreService.dlnaSessionCmd(
         handle as int,
