@@ -6,7 +6,7 @@ Runs the on-device end-to-end suites against the local test lab.
 Configuration comes from `.tmp/e2e/local.json` (gitignored) merged over the
 defaults below, and every value can be overridden with an environment variable
 (E2E_DEVICE, E2E_WEBDAV_URL, E2E_WEBDAV_USER, E2E_WEBDAV_PASS, E2E_MUSIC_ROOT,
-E2E_TV_ROOT, E2E_DMR_RPC). No host, path or credential is baked into the repository.
+E2E_TV_ROOT). No host, path or credential is baked into the repository.
 
 Suites:
   boot     app boots and renders its shell           (integration_test/app_boot_test.dart)
@@ -21,10 +21,12 @@ Suites:
   ui       walks every settings screen for overflows  (integration_test/e2e_layout_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
 
-A suite that actually plays on the renderer (`castplay`) mutes it over
-JSON-RPC first (`dmrRpc`, e.g. http://kodi-host:9090/jsonrpc) so the cast does
-not blast the room, and restores the mute/volume state in `finally`. Read-only
-suites leave the audio alone.
+The renderer (Kodi) is part of the fixture, not something the operator starts by
+hand: suites that need it (`cast`, `castplay`, `all`) start it when it is not
+running, wait until its UPnP endpoint listens, and stop it again if the script
+started it. The same runs mute the Windows output so a cast does not blast the
+room; `finally` puts the previous mute state back. Read-only suites touch
+neither.
 
 Suites run against the **autodev** flavour, not dev. On a device `flutter test
 <target> -d <serial>` compiles the test file as the app entrypoint and installs
@@ -77,7 +79,7 @@ $defaults = [ordered]@{
     cuePath     = ''
     cbzPath     = ''
     dmrName     = 'Kodi'
-    dmrRpc      = ''
+    kodiExe     = ''
     requireDmr  = $false
 }
 
@@ -110,11 +112,14 @@ $manga = Resolve-Setting 'mangaRoot' 'E2E_MANGA_ROOT' $defaults.mangaRoot
 $cue = Resolve-Setting 'cuePath' 'E2E_CUE_PATH' $defaults.cuePath
 $cbz = Resolve-Setting 'cbzPath' 'E2E_CBZ_PATH' $defaults.cbzPath
 $dmrName = Resolve-Setting 'dmrName' 'E2E_DMR_NAME' $defaults.dmrName
-$dmrRpc = Resolve-Setting 'dmrRpc' 'E2E_DMR_RPC' $defaults.dmrRpc
+$kodiExe = Resolve-Setting 'kodiExe' 'E2E_KODI_EXE' $defaults.kodiExe
 $needDmr = if ($RequireDmr) { $true } else { [bool](Resolve-Setting 'requireDmr' $null $defaults.requireDmr) }
 
 # 'all' runs the combined target on purpose: one drive = one install.
 $suites = if ($Suite -eq 'all') { @('all') } else { @($Suite) }
+# Suites that need a live MediaRenderer; the rest run without one.
+$needsRenderer =
+    @($suites | Where-Object { @('cast', 'castplay', 'all') -contains $_ }).Count -gt 0
 $targets = @{
     boot     = 'integration_test\app_boot_test.dart'
     webdav   = 'integration_test\e2e_webdav_test.dart'
@@ -129,67 +134,177 @@ $targets = @{
     all      = 'integration_test\e2e_full_test.dart'
 }
 
-# --- renderer audio (Kodi JSON-RPC) -----------------------------------------
+# --- host audio -------------------------------------------------------------
 #
-# Casts are loud: the lab renderer sits on the desktop these suites drive. Mute
-# it for the run and put the previous mute/volume state back afterwards, so a
-# test never leaves the box silent or blaring.
+# Casts are loud and the renderer sits on the desktop these suites drive. Mute
+# the Windows output for the run and put the previous state back afterwards, so
+# a test never leaves the box silent (or blaring).
 
-$script:rendererAudio = $null
+if (-not ('EndpointAudio' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
 
-function Invoke-RendererRpc([string] $method, $params) {
-    $body = @{ jsonrpc = '2.0'; id = 1; method = $method; params = $params } |
-        ConvertTo-Json -Depth 6 -Compress
-    Invoke-RestMethod -Uri $dmrRpc -Method Post -ContentType 'application/json' `
-        -Body $body -TimeoutSec 5
+public static class EndpointAudio
+{
+    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+    private class MMDeviceEnumeratorComObject { }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
+    private interface IMMDeviceEnumerator
+    {
+        int NotImpl1();
+        int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+    }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("D666063F-1587-4E43-81F1-B948E807363F")]
+    private interface IMMDevice
+    {
+        int Activate(ref Guid iid, int dwClsCtx, IntPtr pActivationParams,
+            [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+    }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
+    private interface IAudioEndpointVolume
+    {
+        int NotImpl1(); int NotImpl2(); int NotImpl3(); int NotImpl4();
+        int NotImpl5(); int NotImpl6(); int NotImpl7(); int NotImpl8();
+        int NotImpl9(); int NotImpl10(); int NotImpl11();
+        int SetMute([MarshalAs(UnmanagedType.Bool)] bool bMute, ref Guid pguidEventContext);
+        int GetMute([MarshalAs(UnmanagedType.Bool)] out bool pbMute);
+    }
+
+    private static IAudioEndpointVolume GetVolume()
+    {
+        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+        IMMDevice device;
+        Check(enumerator.GetDefaultAudioEndpoint(0, 1, out device));
+        var iid = typeof(IAudioEndpointVolume).GUID;
+        object raw;
+        Check(device.Activate(ref iid, 1, IntPtr.Zero, out raw));
+        return (IAudioEndpointVolume)raw;
+    }
+
+    private static void Check(int hr)
+    {
+        if (hr < 0) Marshal.ThrowExceptionForHR(hr);
+    }
+
+    public static bool IsMuted()
+    {
+        bool muted;
+        Check(GetVolume().GetMute(out muted));
+        return muted;
+    }
+
+    public static void SetMuted(bool muted)
+    {
+        var context = Guid.Empty;
+        Check(GetVolume().SetMute(muted, ref context));
+    }
+}
+'@
 }
 
-function Save-RendererAudio {
-    if (-not $dmrRpc) {
-        Write-Host 'e2e: no dmrRpc configured — leaving the renderer audio alone'
+$script:audioWasMuted = $null
+
+function Save-SystemAudio {
+    try {
+        $script:audioWasMuted = [bool] [EndpointAudio]::IsMuted()
+        if ($script:audioWasMuted) {
+            Write-Host 'e2e: system audio is already muted'
+            return
+        }
+        [EndpointAudio]::SetMuted($true)
+        Write-Host 'e2e: system audio muted for the run'
+    } catch {
+        $script:audioWasMuted = $null
+        Write-Host "e2e: could not mute the system audio ($($_.Exception.Message)) — continuing" `
+            -ForegroundColor Yellow
+    }
+}
+
+function Restore-SystemAudio {
+    if ($null -eq $script:audioWasMuted) { return }
+    if ($script:audioWasMuted) { return }
+    try {
+        [EndpointAudio]::SetMuted($false)
+        Write-Host 'e2e: system audio restored'
+    } catch {
+        Write-Host "e2e: could not restore the system audio ($($_.Exception.Message)); " `
+            -ForegroundColor Yellow
+        Write-Host 'unmute the host manually' -ForegroundColor Yellow
+    }
+}
+
+# --- renderer lifecycle -----------------------------------------------------
+#
+# The lab renderer (Kodi) runs on this host. A suite must not depend on someone
+# having launched it by hand: start it, wait until its UPnP endpoint listens, and
+# stop it again only when this script was the one that started it. `kodiExe`
+# (env E2E_KODI_EXE) is a local path, kept out of the repository like every other
+# lab value.
+
+$script:rendererStarted = $false
+
+function Test-RendererReady {
+    if (-not (Get-Process -Name kodi -ErrorAction SilentlyContinue)) {
+        return $false
+    }
+    try {
+        return [bool] (Get-NetTCPConnection -State Listen -LocalPort 1892 `
+                -ErrorAction Stop | Select-Object -First 1)
+    } catch {
+        # The UPnP port is not queryable on every host; a live process is the
+        # best signal we have then.
+        return $true
+    }
+}
+
+function Start-Renderer {
+    if (Test-RendererReady) {
+        Write-Host 'e2e: renderer is already running'
         return
     }
-    try {
-        $props = (Invoke-RendererRpc 'Application.GetProperties' @('mute', 'volume')).result
-        $script:rendererAudio = @{
-            mute   = [bool] $props.mute
-            volume = [int] $props.volume
-        }
-        # 0-100 on this endpoint; keep the level so the unmute is not a jump.
-        Invoke-RendererRpc 'Application.SetMute' @{ mute = $true } | Out-Null
-        Write-Host ("e2e: renderer muted (was mute={0} volume={1})" -f `
-                $script:rendererAudio.mute, $script:rendererAudio.volume)
-    } catch {
-        $script:rendererAudio = $null
-        Write-Host "e2e: could not mute the renderer ($($_.Exception.Message)) — continuing" `
+    if (-not $kodiExe -or -not (Test-Path -LiteralPath $kodiExe)) {
+        Write-Host ("e2e: renderer is not running and kodiExe is not set " +
+                "(set kodiExe in .tmp/e2e/local.json or E2E_KODI_EXE)") `
             -ForegroundColor Yellow
+        return
     }
+    Write-Host "e2e: starting the renderer ($kodiExe)"
+    Start-Process -FilePath $kodiExe -WorkingDirectory (Split-Path -Parent $kodiExe)
+    $script:rendererStarted = $true
+    for ($i = 0; $i -lt 60; $i++) {
+        Start-Sleep -Seconds 2
+        if (Test-RendererReady) {
+            Write-Host "e2e: renderer ready after $(($i + 1) * 2)s"
+            return
+        }
+    }
+    Write-Host 'e2e: renderer did not come up within 120s — continuing and ' `
+        -ForegroundColor Yellow
+    Write-Host 'letting the suite decide' -ForegroundColor Yellow
 }
 
-function Restore-RendererAudio {
-    if (-not $dmrRpc -or $null -eq $script:rendererAudio) { return }
-    $saved = $script:rendererAudio
-    $restored = $true
-    # The two calls are independent: an unreachable volume must never leave the
-    # box muted, so each is attempted on its own.
-    try {
-        Invoke-RendererRpc 'Application.SetVolume' @{ volume = $saved.volume } | Out-Null
-    } catch {
-        $restored = $false
-        Write-Host "e2e: could not restore the renderer volume ($($_.Exception.Message))" `
-            -ForegroundColor Yellow
+function Stop-Renderer {
+    if (-not $script:rendererStarted) { return }
+    $process = Get-Process -Name kodi -ErrorAction SilentlyContinue
+    if (-not $process) {
+        Write-Host 'e2e: renderer already exited'
+        return
     }
-    try {
-        Invoke-RendererRpc 'Application.SetMute' @{ mute = $saved.mute } | Out-Null
-    } catch {
-        $restored = $false
-        Write-Host "e2e: could not restore the renderer mute state ($($_.Exception.Message))" `
-            -ForegroundColor Yellow
+    $null = $process.CloseMainWindow()
+    for ($i = 0; $i -lt 20; $i++) {
+        Start-Sleep -Seconds 1
+        if (-not (Get-Process -Id $process.Id -ErrorAction SilentlyContinue)) {
+            Write-Host 'e2e: renderer stopped (this run started it)'
+            return
+        }
     }
-    if ($restored) {
-        Write-Host ("e2e: renderer audio restored (mute={0} volume={1})" -f `
-                $saved.mute, $saved.volume)
-    }
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    Write-Host 'e2e: renderer did not close gracefully; terminated it' `
+        -ForegroundColor Yellow
 }
 
 $devices = (& adb devices) -join "`n"
@@ -214,9 +329,12 @@ $env:FLUTTER_ALREADY_LOCKED = 'true'
 Push-Location $root
 $failures = @()
 try {
-    # Only the suite that plays audio needs the mute; discovery/read-only runs
-    # must not touch the user's volume.
-    if ($suites -contains 'castplay') { Save-RendererAudio }
+    # A run that involves the renderer brings it up and silences the host; the
+    # finally block puts both back.
+    if ($needsRenderer) {
+        Start-Renderer
+        Save-SystemAudio
+    }
     foreach ($name in $suites) {
         Write-Host ""
         Write-Host "=== e2e: $name ===" -ForegroundColor Cyan
@@ -258,7 +376,8 @@ could not restore $pkg; install it manually" }
         if ($code -ne 0) { $failures += $name }
     }
 } finally {
-    Restore-RendererAudio
+    Restore-SystemAudio
+    Stop-Renderer
     Pop-Location
 }
 
