@@ -316,6 +316,19 @@ function Stop-Renderer {
         -ForegroundColor Yellow
 }
 
+# --- device screen -----------------------------------------------------------
+#
+# An idle phone turns its screen off between runs. A paused Flutter app stops
+# producing frames, so `tester.pump` waits forever and the run dies with
+# "did not complete". Wake it before the suites and keep poking it while they
+# run: `stayon` only guarantees the screen stays on while charging, and this
+# lab phone is on battery during wireless debugging.
+
+function Wake-Device {
+    & adb -s $dev shell input keyevent KEYCODE_WAKEUP 2>&1 | Out-Null
+    & adb -s $dev shell wm dismiss-keyguard 2>&1 | Out-Null
+}
+
 # --- device address -----------------------------------------------------------
 #
 # The phone is usually reached over wireless adb, where the system picks the
@@ -391,6 +404,15 @@ try {
         Start-Renderer
         Save-SystemAudio
     }
+    & adb -s $dev shell svc power stayon true 2>&1 | Out-Null
+    Wake-Device
+    $keepAwake = Start-Job -ScriptBlock {
+        param($serial)
+        while ($true) {
+            & adb -s $serial shell input keyevent KEYCODE_WAKEUP 2>&1 | Out-Null
+            Start-Sleep -Seconds 15
+        }
+    } -ArgumentList $dev
     foreach ($name in $suites) {
         Write-Host ""
         Write-Host "=== e2e: $name ===" -ForegroundColor Cyan
@@ -437,6 +459,10 @@ could not restore $pkg; install it manually" }
         if ($code -ne 0) { $failures += $name }
     }
 } finally {
+    if ($keepAwake) {
+        Stop-Job $keepAwake -ErrorAction SilentlyContinue
+        Remove-Job $keepAwake -Force -ErrorAction SilentlyContinue
+    }
     Restore-SystemAudio
     Stop-Renderer
     Pop-Location

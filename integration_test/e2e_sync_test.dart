@@ -30,9 +30,11 @@ void main() {
     final sync = appService<SyncService>(tester);
     final webdav = appService<WebDavService>(tester);
 
-    // `ensureE2eAccount` only writes the account into the Rust core; the Dart
-    // client registry is filled by AppState. Without this the vault refuses to
-    // push ("err.vaultDestNotConfigured") even though the account exists.
+    // `ensureE2eAccount` only writes the account into the Rust core; reload the
+    // Dart mirror so the list the page reads contains it, then register the
+    // client routes AppState owns. Without both the vault refuses to push
+    // ("err.vaultDestNotConfigured") even though the account exists natively.
+    await accounts.init();
     await appService<AppState>(tester).registerAllAccounts();
 
     final account = accounts.accountForSource(e2eAccountName);

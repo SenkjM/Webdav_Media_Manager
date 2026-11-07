@@ -545,16 +545,21 @@ class SyncService extends ChangeNotifier {
     if (dest == null) throw StateError('err.noWebdavAccount');
     final remoteDir = _settings.syncRemoteRoot;
     _progress(L10nHost.current.progressReadingCloudIndex, 0.4);
-    final result = full
-        ? RustCoreService.syncFull(
-            accountId: dest,
-            remoteDir: remoteDir,
-            withCovers: withCovers,
-          )
-        : RustCoreService.syncTrigger(
-            accountId: dest,
-            remoteDir: remoteDir,
-          );
+    // The FFI call blocks until Core finishes the run, network included. Doing
+    // that on the UI isolate froze frames while a background auto-scan was in
+    // flight, so the whole call goes to a worker isolate.
+    final result = await RustCoreService.runOffMain<String?>(() {
+      return full
+          ? RustCoreService.syncFull(
+              accountId: dest,
+              remoteDir: remoteDir,
+              withCovers: withCovers,
+            )
+          : RustCoreService.syncTrigger(
+              accountId: dest,
+              remoteDir: remoteDir,
+            );
+    });
     if (result == null) {
       throw StateError('Core FFI unavailable — cannot run Core sync');
     }
