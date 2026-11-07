@@ -4351,10 +4351,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get refreshTagsFromLocalHint => 'Read tags from cached audio';
 
   @override
-  String get refreshTagsFromCloud => 'Update tags from cloud';
+  String get refreshTagsFromCloud =>
+      'Refresh all music metadata from the cloud';
 
   @override
-  String get refreshTagsFromCloudHint => 'Queue cloud tag fetches';
+  String get refreshTagsFromCloudHint => 'Re-read every track in a single task';
+
+  @override
+  String get taskKindCoverRefresh => 'Cover refresh (cloud)';
+
+  @override
+  String get refreshCoversFromCloud => 'Recover covers from the cloud';
+
+  @override
+  String get refreshCoversFromCloudHint =>
+      'Refresh music metadata whose cover is missing';
+
+  @override
+  String get coverRefreshQueued => 'Cover recovery queued';
+
+  @override
+  String get retagAllQueued => 'Queued: refresh all music metadata';
 
   @override
   String get destroyTracksAction => 'Destroy selected tracks';

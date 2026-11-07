@@ -17,6 +17,7 @@ Suites:
   cbz      opens a .cbz and reads one page           (integration_test/e2e_cbz_test.dart)
   queue    one cache download through the queue      (integration_test/e2e_queue_test.dart)
   scrape   scans one file into the music library     (integration_test/e2e_scrape_test.dart)
+  maintenance  batch retag + cover recovery          (integration_test/e2e_library_maintenance_test.dart)
   castplay casts a real video and waits for PLAYING  (integration_test/e2e_cast_play_test.dart)
   ui       walks every settings screen for overflows  (integration_test/e2e_layout_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
@@ -52,7 +53,7 @@ On failure the run drops logcat and a uiautomator dump into
 [CmdletBinding()]
 param(
     [ValidateSet('boot', 'webdav', 'cast', 'music', 'cue', 'cbz', 'queue',
-        'scrape', 'castplay', 'ui', 'all')]
+        'scrape', 'maintenance', 'castplay', 'ui', 'all')]
     [string] $Suite = 'all',
 
     [string] $Device,
@@ -129,6 +130,7 @@ $targets = @{
     cbz      = 'integration_test\e2e_cbz_test.dart'
     queue    = 'integration_test\e2e_queue_test.dart'
     scrape   = 'integration_test\e2e_scrape_test.dart'
+    maintenance = 'integration_test\e2e_library_maintenance_test.dart'
     castplay = 'integration_test\e2e_cast_play_test.dart'
     ui       = 'integration_test\e2e_layout_test.dart'
     all      = 'integration_test\e2e_full_test.dart'
@@ -335,6 +337,18 @@ function Resolve-DeviceAddress([string] $wanted) {
                 Write-Host "e2e: wireless adb -> $wanted at $addr"
                 return $addr
             }
+        }
+    }
+    # `adb mdns services` can come back empty (the mDNS daemon is flaky on some
+    # phones). Every attached network transport still answers `getprop`, so ask
+    # each one for its serial and match the requested device that way.
+    $network = [regex]::Matches($attached, '(?m)^([0-9.]+:\d+)\s+device') |
+        ForEach-Object { $_.Groups[1].Value }
+    foreach ($addr in $network) {
+        $serial = (& adb -s $addr shell getprop ro.serialno 2>$null | Out-String).Trim()
+        if ($serial -eq $wanted) {
+            Write-Host "e2e: wireless adb -> $wanted at $addr"
+            return $addr
         }
     }
     return $wanted

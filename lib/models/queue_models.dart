@@ -6,6 +6,7 @@ enum QueueTaskKind {
   downloadPublic('download_public'),
   scan('scan'),
   retagCloud('retag_cloud'),
+  coverRefresh('cover_refresh'),
   matchRemote('match_remote'),
   mangaScrape('manga_scrape'),
   mangaCache('manga_cache'),
@@ -37,6 +38,8 @@ enum QueueTaskKind {
         return l10n.taskKindScan;
       case QueueTaskKind.retagCloud:
         return l10n.taskKindRetagCloud;
+      case QueueTaskKind.coverRefresh:
+        return l10n.taskKindCoverRefresh;
       case QueueTaskKind.matchRemote:
         return l10n.taskKindMatchRemote;
       case QueueTaskKind.mangaScrape:

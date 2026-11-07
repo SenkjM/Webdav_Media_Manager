@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as p;
 
+import '../models/library_track.dart';
 import '../models/queue_models.dart';
 import '../utils/app_snack.dart';
 import '../utils/l10n_host.dart';
@@ -418,6 +419,71 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
+  /// Queue a library-wide metadata refresh, **one task per source account**.
+  ///
+  /// A task resolves its cloud driver from its own account id, so a batch must
+  /// not span accounts. Inside one account this stays a single task: the payload
+  /// carries one entry per track and the job reports unit progress, instead of
+  /// flooding the queue (and its notification) with one row per song.
+  Future<List<QueueTask>> enqueueRetagAll(Iterable<LibraryTrack> tracks) async {
+    final bySource = <String, List<LibraryTrack>>{};
+    for (final track in tracks) {
+      if (track.isCueVirtual) continue;
+      (bySource[track.sourceName] ??= <LibraryTrack>[]).add(track);
+    }
+    final queued = <QueueTask>[];
+    for (final group in bySource.entries) {
+      final entries = [
+        for (final track in group.value)
+          {
+            'path': track.remotePath,
+            'name': track.fileName,
+            'source': track.sourceName,
+          },
+      ];
+      queued.add(
+        await enqueue(
+          kind: QueueTaskKind.retagCloud,
+          sourceName: group.key,
+          remotePath: '/',
+          fileName: 'retag_all',
+          batchLabel: L10nHost.current.refreshTagsFromCloud,
+          payload: entries,
+          unitsTotal: entries.length,
+        ),
+      );
+    }
+    return queued;
+  }
+
+  /// Recover cover thumbnails, **one task per source account**.
+  ///
+  /// Rust picks the candidates from the library, but a task's driver belongs to
+  /// its account, so accounts get their own task. Rows already recorded as
+  /// authoritatively coverless (`1`) cannot need art, so a source with nothing
+  /// else to probe is skipped rather than spawning an empty task.
+  Future<List<QueueTask>> enqueueCoverRefresh(
+    Iterable<LibraryTrack> tracks,
+  ) async {
+    final sources = <String>{};
+    for (final track in tracks) {
+      if (track.coverState != 1) sources.add(track.sourceName);
+    }
+    final queued = <QueueTask>[];
+    for (final source in sources) {
+      queued.add(
+        await enqueue(
+          kind: QueueTaskKind.coverRefresh,
+          sourceName: source,
+          remotePath: '/',
+          fileName: 'cover_refresh',
+          batchLabel: L10nHost.current.refreshCoversFromCloud,
+        ),
+      );
+    }
+    return queued;
+  }
+
   /// Directory name for a scan batch row.
   ///
   /// A folder scan uses its own last path segment; a single-file scan (CUE)
@@ -671,7 +737,9 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
           tasks.add(task);
         }
       }
+      final previous = Map<String, QueueTask>.of(_byId);
       _installTasks(tasks);
+      _noteTerminalTransitions(previous, tasks);
     }
     final rawBatches = map['batches'];
     if (rawBatches is List) {
@@ -691,6 +759,23 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
           if (raw is Map) QueueRow.fromJson(Map<String, dynamic>.from(raw)),
       ];
       _lastRowsFetch = DateTime.now();
+    }
+  }
+
+  /// A snapshot can be the first place we notice a terminal status (the event
+  /// poll and the snapshot poll race), and only an actual transition should
+  /// bump a library revision: the initial load and repeated snapshots must not.
+  void _noteTerminalTransitions(
+    Map<String, QueueTask> previous,
+    List<QueueTask> tasks,
+  ) {
+    if (!_initialized) return;
+    for (final task in tasks) {
+      if (!task.status.isTerminal) continue;
+      final old = previous[task.id];
+      if (old == null || !old.status.isTerminal) {
+        _noteLibraryWrite(task.kind, task.status);
+      }
     }
   }
 
@@ -824,6 +909,10 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
     }
     switch (kind) {
       case QueueTaskKind.scan:
+      // Retag rewrites tag fields, cover refresh fills `cover_state` and may
+      // write a thumbnail: both change what the music library shows.
+      case QueueTaskKind.retagCloud:
+      case QueueTaskKind.coverRefresh:
         _musicLibraryRevision++;
       case QueueTaskKind.mangaScrape:
       case QueueTaskKind.mangaBuild:
@@ -831,7 +920,6 @@ class QueueService extends ChangeNotifier with WidgetsBindingObserver {
         _mangaLibraryRevision++;
       case QueueTaskKind.downloadCache:
       case QueueTaskKind.downloadPublic:
-      case QueueTaskKind.retagCloud:
       case QueueTaskKind.matchRemote:
       case QueueTaskKind.mangaCache:
       case QueueTaskKind.upload:

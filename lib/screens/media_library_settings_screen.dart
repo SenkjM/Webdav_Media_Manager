@@ -425,6 +425,13 @@ class _MediaLibrarySettingsScreenState
             subtitle: Text(l10n.refreshTagsFromCloudHint),
             onTap: () => unawaited(_refreshCloud(context)),
           ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.image_outlined),
+            title: Text(l10n.refreshCoversFromCloud),
+            subtitle: Text(l10n.refreshCoversFromCloudHint),
+            onTap: () => unawaited(_refreshCovers(context)),
+          ),
           const Divider(height: 32),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -559,16 +566,25 @@ class _MediaLibrarySettingsScreenState
       AppSnack.show(context, l10n.libraryEmpty);
       return;
     }
-    for (final t in tracks) {
-      await queue.enqueue(
-        kind: QueueTaskKind.retagCloud,
-        sourceName: t.sourceName,
-        remotePath: t.remotePath,
-        fileName: t.fileName,
-      );
-    }
+    // One batch task per account, not one task per song: the job reports unit
+    // progress and the queue/notification stay readable for a whole library.
+    await queue.enqueueRetagAll(tracks);
     if (context.mounted) {
-      AppSnack.show(context, l10n.mediaScanQueued(tracks.length));
+      AppSnack.show(context, l10n.retagAllQueued);
+    }
+  }
+
+  Future<void> _refreshCovers(BuildContext context) async {
+    final library = context.read<LibraryService>();
+    final queue = context.read<QueueService>();
+    final l10n = AppLocalizations.of(context)!;
+    if (library.tracks.isEmpty) {
+      AppSnack.show(context, l10n.libraryEmpty);
+      return;
+    }
+    await queue.enqueueCoverRefresh(library.tracks);
+    if (context.mounted) {
+      AppSnack.show(context, l10n.coverRefreshQueued);
     }
   }
 

@@ -4154,10 +4154,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get refreshTagsFromLocalHint => '读取已缓存音频的标签';
 
   @override
-  String get refreshTagsFromCloud => '从云端更新标签';
+  String get refreshTagsFromCloud => '从云端更新所有音乐元数据';
 
   @override
-  String get refreshTagsFromCloudHint => '排队从云端拉取标签';
+  String get refreshTagsFromCloudHint => '一次任务重读全部曲目的标签与封面';
+
+  @override
+  String get taskKindCoverRefresh => '恢复封面（云端）';
+
+  @override
+  String get refreshCoversFromCloud => '从云端恢复封面';
+
+  @override
+  String get refreshCoversFromCloudHint => '更新缺失封面的音乐元数据';
+
+  @override
+  String get coverRefreshQueued => '已加入封面恢复队列';
+
+  @override
+  String get retagAllQueued => '已加入队列：更新所有音乐元数据';
 
   @override
   String get destroyTracksAction => '删除所选曲目';
@@ -9442,10 +9457,25 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get refreshTagsFromLocalHint => '讀取已快取音訊的標籤';
 
   @override
-  String get refreshTagsFromCloud => '從雲端更新標籤';
+  String get refreshTagsFromCloud => '從雲端更新所有音樂中繼資料';
 
   @override
-  String get refreshTagsFromCloudHint => '排隊從雲端拉取標籤';
+  String get refreshTagsFromCloudHint => '以單一任務重讀全部曲目標籤與封面';
+
+  @override
+  String get taskKindCoverRefresh => '復原封面（雲端）';
+
+  @override
+  String get refreshCoversFromCloud => '從雲端復原封面';
+
+  @override
+  String get refreshCoversFromCloudHint => '更新缺少封面的音樂中繼資料';
+
+  @override
+  String get coverRefreshQueued => '已加入封面復原佇列';
+
+  @override
+  String get retagAllQueued => '已加入佇列：更新所有音樂中繼資料';
 
   @override
   String get destroyTracksAction => '刪除所選曲目';

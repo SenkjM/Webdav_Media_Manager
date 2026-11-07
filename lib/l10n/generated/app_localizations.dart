@@ -7316,14 +7316,44 @@ abstract class AppLocalizations {
   /// No description provided for @refreshTagsFromCloud.
   ///
   /// In zh, this message translates to:
-  /// **'从云端更新标签'**
+  /// **'从云端更新所有音乐元数据'**
   String get refreshTagsFromCloud;
 
   /// No description provided for @refreshTagsFromCloudHint.
   ///
   /// In zh, this message translates to:
-  /// **'排队从云端拉取标签'**
+  /// **'一次任务重读全部曲目的标签与封面'**
   String get refreshTagsFromCloudHint;
+
+  /// No description provided for @taskKindCoverRefresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复封面（云端）'**
+  String get taskKindCoverRefresh;
+
+  /// No description provided for @refreshCoversFromCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'从云端恢复封面'**
+  String get refreshCoversFromCloud;
+
+  /// No description provided for @refreshCoversFromCloudHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新缺失封面的音乐元数据'**
+  String get refreshCoversFromCloudHint;
+
+  /// No description provided for @coverRefreshQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入封面恢复队列'**
+  String get coverRefreshQueued;
+
+  /// No description provided for @retagAllQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入队列：更新所有音乐元数据'**
+  String get retagAllQueued;
 
   /// No description provided for @destroyTracksAction.
   ///
