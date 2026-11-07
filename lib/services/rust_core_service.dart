@@ -296,6 +296,18 @@ class RustCoreService {
   static _StrStrToStrDart? _vaultCryptoDecrypt;
   static _OneStrToStrDart? _vaultCryptoIsEncrypted;
   static _OneStrToStrDart? _queueRetry;
+
+  // ── Queue thin layer (`crates/wdmm-ffi/src/queue_api.rs`) ──────────────────
+  static _StrStrToStrDart? _queueSetPaths;
+  static _OneStrToStrDart? _queueCmd;
+  static _OneStrToStrDart? _queueQuery;
+  static _StrInt64ToStrDart? _queueWait;
+  static _StrStrToStrDart? _queuePlatformResult;
+
+  // ── Cache index thin layer (`crates/wdmm-ffi/src/cache_api.rs`) ────────────
+  static _OneStrToStrDart? _cacheCmd;
+  static _OneStrToStrDart? _cacheQuery;
+
   static void _loadSymbols(ffi.DynamicLibrary lib) {
     _freeString = lib
         .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
@@ -1058,12 +1070,179 @@ class RustCoreService {
     () => _callExtOneString(() => _queueRetry, inputJson),
   );
 
+  // ── Queue thin layer ──────────────────────────────────────────────────────
+  //
+  // The queue lives entirely in Rust (`wdmm-queue`). Dart only installs the
+  // paths once, issues commands, reads folded rows/events, and answers platform
+  // requests. No ordering, retry or drain logic belongs on this side.
+
+  /// Install the queue database/task paths. Call once after the library DB is
+  /// initialized; idempotent (`{"ok":true,"already":true}` on the second call).
+  ///
+  /// [cacheRoot] must be the app **support** directory (it contains
+  /// `music_cache` / `manga_cache`); [appDocs] the app documents directory.
+  static String? queueSetPaths({
+    required String appDocs,
+    required String cacheRoot,
+  }) => _callQueueTwoStrings(() => _queueSetPaths, appDocs, cacheRoot);
+
+  /// Dispatch one queue command (enqueue/cancel/retry/settings/...).
+  static String? queueCmd(String payloadJson) =>
+      _callQueueOneString(() => _queueCmd, payloadJson);
+
+  /// Dispatch one queue query (snapshot/rows/events/stats/...).
+  static String? queueQuery(String queryJson) =>
+      _callQueueOneString(() => _queueQuery, queryJson);
+
+  /// Block until [taskId] reaches a terminal status, or [timeoutMs] elapses.
+  ///
+  /// Runs on a worker isolate: the Rust side parks a runtime thread, so calling
+  /// it from the UI isolate would freeze the app for the whole wait.
+  static Future<String?> queueWait(
+    String taskId, {
+    int timeoutMs = 1800000,
+  }) => runOffMain(
+    () => _callQueueStrInt(() => _queueWait, taskId, timeoutMs),
+  );
+
+  /// Answer a `platform_request` event (`req_id`, `{"ok":..,"result":..}`).
+  static String? queuePlatformResult(String reqId, String resultJson) =>
+      _callQueueTwoStrings(() => _queuePlatformResult, reqId, resultJson);
+
+  // ── Cache index thin layer ────────────────────────────────────────────────
+  //
+  // The cache index (access times + CUE group membership) lives in Rust,
+  // storage schema v17. Dart owns only the files; these two calls are the whole
+  // mutation/query surface (see `crates/wdmm-ffi/src/cache_api.rs`).
+
+  /// Dispatch one cache-index command
+  /// (`touch`/`put`/`delete`/`forget_kind`/`evict`/`delete_group`/`bind_group`).
+  static String? cacheCmd(String payloadJson) =>
+      _callCacheOneString(() => _cacheCmd, payloadJson);
+
+  /// Dispatch one cache-index query
+  /// (`stats`/`lru`/`list`/`group_paths`/`groups_for_path`/`groups`).
+  static String? cacheQuery(String queryJson) =>
+      _callCacheOneString(() => _cacheQuery, queryJson);
+
+  /// Look up the queue symbols once. Separate from [_ensureExtSymbols] so a
+  /// missing queue symbol cannot take the ext cut-over bindings down with it.
+  static bool _ensureQueueSymbols() {
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _freeString ??= lib
+          .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
+          .asFunction();
+      _queueSetPaths ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_queue_set_paths')
+          .asFunction();
+      _queueCmd ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_queue_cmd')
+          .asFunction();
+      _queueQuery ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_queue_query')
+          .asFunction();
+      _queueWait ??= lib
+          .lookup<ffi.NativeFunction<_StrInt64ToStrNative>>('wdmm_queue_wait')
+          .asFunction();
+      _queuePlatformResult ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>(
+              'wdmm_queue_platform_result')
+          .asFunction();
+      return true;
+    } catch (e) {
+      debugPrint('[RustCore] queue symbol lookup failed: $e');
+      return false;
+    }
+  }
+
+  static String? _callQueueOneString(
+      _OneStrToStrDart? Function() resolve, String value) {
+    if (!_ensureQueueSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? _callQueueTwoStrings(
+      _StrStrToStrDart? Function() resolve, String first, String second) {
+    if (!_ensureQueueSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final a = first.toNativeUtf8();
+    final b = second.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(a, b));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+    }
+  }
+
+  static String? _callQueueStrInt(
+      _StrInt64ToStrDart? Function() resolve, String value, int arg) {
+    if (!_ensureQueueSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(ptr, arg));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
   /// Call an `ext` symbol, resolving it **after** the symbol table is warmed.
   ///
   /// The resolver must be a closure: reading the static field at the call site
   /// would hand us the value from *before* [_ensureExtSymbols] ran — null in
   /// every fresh isolate (`Isolate.run` starts with all statics null), which
   /// made the first call in each worker isolate throw a null-check error.
+  /// Call a `cache` symbol, resolving it **after** the symbol table is warmed.
+  ///
+  /// Same reason as [_callExtOneString]: a resolver closure (`() => _cacheCmd`)
+  /// must read the static *after* [_ensureCacheSymbols] populated it — reading
+  /// it at the call site yields null in fresh worker isolates.
+  static String? _callCacheOneString(
+      _OneStrToStrDart? Function() resolve, String value) {
+    if (!_ensureCacheSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Look up the cache-index symbols once, independently of queue/ext.
+  static bool _ensureCacheSymbols() {
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _freeString ??= lib
+          .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
+          .asFunction();
+      _cacheCmd ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cache_cmd')
+          .asFunction();
+      _cacheQuery ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cache_query')
+          .asFunction();
+      return true;
+    } catch (e) {
+      debugPrint('[RustCore] cache symbol lookup failed: $e');
+      return false;
+    }
+  }
+
   static String? _callExtOneString(
       _OneStrToStrDart? Function() resolve, String value) {
     if (!_ensureExtSymbols()) return null;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -8,10 +9,8 @@ import 'package:path_provider/path_provider.dart';
 import '../models/cache_policy.dart';
 import '../models/library_track.dart';
 import '../utils/audio_extensions.dart';
-import '../utils/cache_group_codec.dart';
 import '../utils/l10n_host.dart';
-import '../utils/track_identity.dart';
-import '../storage/cache_index_db.dart';
+import 'rust_core_service.dart';
 
 /// Local file cache for downloaded music. Playback always uses these files.
 /// Cleanup NEVER touches library DB tracks/cue tables or cover thumbs.
@@ -21,23 +20,16 @@ import '../storage/cache_index_db.dart';
 /// isLocal is a lazy `File.exists` on the derived path — no table, no
 /// startup reconciliation, nothing to go stale.
 ///
-/// Cache group membership (CUE albums) lives in [CacheIndexDb] (`cache_index.db`)
-/// since schema v2. [CacheService] never writes groups to `music_library.db`.
+/// The cache **index** (access times + CUE group membership) lives in Rust
+/// (`wdmm_cache_cmd` / `wdmm_cache_query`, storage schema v17). This class owns
+/// only the filesystem side: roots, derived paths, size accounting and the
+/// actual unlink calls. Every index mutation/read goes through the FFI, so
+/// there is exactly one authority and no Dart-side schema.
 class CacheService extends ChangeNotifier {
-  CacheService({CacheIndexDb? indexDb}) : _index = indexDb;
+  CacheService();
 
-  // Legacy prefs key prefixes moved to [cache_group_codec.dart]; the one-time
-  // migration from prefs to cache_index.db was completed in prior versions.
-
-  CacheIndexDb? _index;
   Directory? _cacheDir;
   Directory? _mangaCacheDir;
-
-  /// Attach the access-time + group index. Required before any group or
-  /// touch/lastAccessed operation; [init] wires it from [AppState].
-  void attachIndexDb(CacheIndexDb index) {
-    _index = index;
-  }
 
   Future<void> init() async {
     final root = await getApplicationSupportDirectory();
@@ -48,14 +40,6 @@ class CacheService extends ChangeNotifier {
     _mangaCacheDir = Directory(p.join(root.path, 'manga_cache'));
     if (!await _mangaCacheDir!.exists()) {
       await _mangaCacheDir!.create(recursive: true);
-    }
-    // Ensure index schema is open, then one-shot migrate cache_groups from
-    // music_library.db → cache_index.db. After this, groups are index-only.
-    final idx = _index;
-    if (idx != null) {
-      await idx.database; // triggers onCreate/onUpgrade if schema is stale
-      final docs = await getApplicationDocumentsDirectory();
-      await idx.migrateGroupsFromLibraryDb(p.join(docs.path, 'music_library.db'));
     }
   }
 
@@ -136,12 +120,11 @@ class CacheService extends ChangeNotifier {
     for (final file in doomed) {
       try {
         await file.delete();
-        await _index?.forget(file.path);
         removed++;
       } catch (_) {}
     }
     if (removed > 0) notifyListeners();
-    await _index?.forgetKind(CacheKind.manga);
+    _forgetKind(CacheKind.manga);
     return removed;
   }
 
@@ -164,7 +147,7 @@ class CacheService extends ChangeNotifier {
       } catch (_) {}
     }
     if (removed) {
-      await _index?.forget(f.path);
+      _deleteIndexRows([f.path]);
       notifyListeners();
     }
     return removed;
@@ -179,13 +162,16 @@ class CacheService extends ChangeNotifier {
     required String sourceName,
     required String remotePath,
   }) async {
-    var removed = 0;
+    final deleted = <String>[];
     if (await deleteLocalMangaFile(
       sourceName: sourceName,
       remotePath: remotePath,
     )) {
-      removed++;
+      deleted.add(
+        mangaFileForRemote(remotePath, sourceName: sourceName).path,
+      );
     }
+    var removed = deleted.length;
     if (_mangaCacheDir != null) {
       final cover = mangaCoverFile(mangaId);
       for (final path in <String>[cover.path, '${cover.path}.part']) {
@@ -193,8 +179,8 @@ class CacheService extends ChangeNotifier {
         if (!await f.exists()) continue;
         try {
           await f.delete();
+          deleted.add(path);
           removed++;
-          await _index?.forget(path);
         } catch (_) {}
       }
     }
@@ -207,6 +193,7 @@ class CacheService extends ChangeNotifier {
         await pages.delete(recursive: true);
       } catch (_) {}
     }
+    if (deleted.isNotEmpty) _deleteIndexRows(deleted);
     if (removed > 0) notifyListeners();
     return removed;
   }
@@ -297,26 +284,32 @@ class CacheService extends ChangeNotifier {
     required String groupId,
   }) async {
     if (groupId.isEmpty) return;
-    final idx = _index;
-    if (idx == null) throw StateError('CacheIndexDb not attached — call init() first');
-    await idx.bindCacheGroupMembers(
-      groupId: groupId,
-      identities: [trackIdentityKey(sourceName, remotePath)],
-    );
+    final path = fileForRemote(remotePath, sourceName: sourceName).path;
+    _cmd({
+      'cmd': 'bind_group',
+      'group_id': groupId,
+      'paths': [path],
+    });
   }
 
+  /// Local absolute paths that belong to [groupId].
+  ///
+  /// Storage schema v17 keeps `(group_id, local path)` rows, so this is the
+  /// authoritative membership — no identity string is reconstructed from the
+  /// remote side.
   Future<List<String>> groupMemberIdentities(String groupId) async {
-    final idx = _index;
-    if (idx == null) throw StateError('CacheIndexDb not attached — call init() first');
-    return idx.cacheGroupMembers(groupId);
+    final reply = _query({'q': 'group_paths', 'group_id': groupId});
+    final paths = reply?['paths'];
+    if (paths is! List) return const [];
+    return [
+      for (final path in paths)
+        if (path is String && path.isNotEmpty) path,
+    ];
   }
 
   Future<List<String>> groupMemberFileNames(String groupId) async {
-    final ids = await groupMemberIdentities(groupId);
-    return ids
-        .map((id) => splitCacheIdentity(id)?.remotePath ?? id)
-        .map(p.basename)
-        .toList();
+    final paths = await groupMemberIdentities(groupId);
+    return paths.map(p.basename).toList();
   }
 
   Future<bool> deleteLocalFile({
@@ -331,14 +324,14 @@ class CacheService extends ChangeNotifier {
         removed = true;
       } catch (_) {}
     }
-    final part = File('$f.part');
+    final part = File('${f.path}.part');
     if (await part.exists()) {
       try {
         await part.delete();
       } catch (_) {}
     }
     if (removed) {
-      await _index?.forget(f.path);
+      _deleteIndexRows([f.path]);
       notifyListeners();
     }
     return removed;
@@ -346,36 +339,32 @@ class CacheService extends ChangeNotifier {
 
   Future<int> deleteCacheGroup(String groupId) async {
     var removed = 0;
-    final identities = await groupMemberIdentities(groupId);
-    for (final identity in identities) {
-      final parts = splitCacheIdentity(identity);
-      if (parts == null) continue;
-      if (await deleteLocalFile(
-        sourceName: parts.sourceName,
-        remotePath: parts.remotePath,
-      )) {
-        removed++;
+    final paths = await groupMemberIdentities(groupId);
+    for (final path in paths) {
+      final f = File(path);
+      if (await f.exists()) {
+        try {
+          await f.delete();
+          removed++;
+        } catch (_) {}
       }
     }
-    final idx = _index;
-    if (idx == null) throw StateError('CacheIndexDb not attached — call init() first');
-    await idx.deleteCacheGroup(groupId);
+    _cmd({'cmd': 'delete_group', 'group_id': groupId});
     if (removed > 0) notifyListeners();
     return removed;
   }
 
   Future<void> touch(String sourceName, String remotePath) async {
-    await _indexTouchRead(
-      fileForRemote(remotePath, sourceName: sourceName).path,
+    await _indexTouch(
+      fileForRemote(remotePath, sourceName: sourceName),
       CacheKind.music,
     );
   }
 
   Future<DateTime?> lastAccessed(String sourceName, String remotePath) async {
     if (_cacheDir != null) {
-      final indexed = await _indexAt(
-        fileForRemote(remotePath, sourceName: sourceName).path,
-      );
+      final path = fileForRemote(remotePath, sourceName: sourceName).path;
+      final indexed = await _indexAt(path, CacheKind.music);
       if (indexed != null) return indexed;
     }
     // Fall back to file mtime when the index has no record (pre-index files).
@@ -386,35 +375,106 @@ class CacheService extends ChangeNotifier {
     return null;
   }
 
-  // --- access-time index ---------------------------------------------------
+  // --- access-time index (Rust `wdmm_cache_*`) -----------------------------
 
-  Future<void> _indexTouch(File f, CacheKind kind) async {
-    final idx = _index;
-    if (idx == null) return;
+  Map<String, dynamic>? _cmd(Map<String, dynamic> body) {
     try {
-      if (!await f.exists()) return;
-      await idx.touch(f.path, kind: kind, size: await f.length());
-    } catch (_) {}
-  }
-
-  Future<void> _indexTouchRead(String path, CacheKind kind) async {
-    await _index?.touchRead(path, kind: kind);
-  }
-
-  Future<DateTime?> _indexAt(String path) async {
-    final idx = _index;
-    if (idx == null) return null;
-    try {
-      return await idx.accessedAt(path);
+      return _decode(RustCoreService.cacheCmd(jsonEncode(body)));
     } catch (_) {
       return null;
     }
   }
 
+  Map<String, dynamic>? _query(Map<String, dynamic> body) {
+    try {
+      return _decode(RustCoreService.cacheQuery(jsonEncode(body)));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Map<String, dynamic>? _decode(String? raw) {
+    if (raw == null) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) {
+        return decoded['ok'] == true ? decoded : null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Index rows of [kind] (`{"q":"list"}` reply), newest access first order
+  /// irrelevant — callers build a path→time map.
+  List<Map<String, dynamic>> _entries(CacheKind kind) {
+    final reply = _query({'q': 'list', 'kind': kind.storageKey});
+    final entries = reply?['entries'];
+    if (entries is! List) return const [];
+    return [
+      for (final entry in entries)
+        if (entry is Map<String, dynamic>) entry,
+    ];
+  }
+
+  Map<String, DateTime> _accessedTimes(CacheKind kind) {
+    final out = <String, DateTime>{};
+    for (final entry in _entries(kind)) {
+      final path = entry['path'];
+      final at = entry['accessed_at'];
+      if (path is String && at is int) {
+        out[path] = DateTime.fromMillisecondsSinceEpoch(at);
+      }
+    }
+    return out;
+  }
+
+  Future<void> _indexPut(File f, CacheKind kind, {String? remotePath}) async {
+    try {
+      if (!await f.exists()) return;
+      final size = await f.length();
+      _cmd({
+        'cmd': 'put',
+        'kind': kind.storageKey,
+        'path': f.path,
+        'size': size,
+        'remote_path': ?remotePath,
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _indexTouch(File f, CacheKind kind) => _indexPut(f, kind);
+
+  Future<DateTime?> _indexAt(String path, CacheKind kind) async {
+    final entries = _entries(kind);
+    for (final entry in entries) {
+      if (entry['path'] == path) {
+        final at = entry['accessed_at'];
+        if (at is int) return DateTime.fromMillisecondsSinceEpoch(at);
+      }
+    }
+    return null;
+  }
+
+  void _deleteIndexRows(Iterable<String> paths) {
+    final list = [
+      for (final path in paths)
+        if (path.isNotEmpty) path,
+    ];
+    if (list.isEmpty) return;
+    _cmd({'cmd': 'delete', 'paths': list});
+  }
+
+  void _forgetKind(CacheKind kind) {
+    _cmd({'cmd': 'forget_kind', 'kind': kind.storageKey});
+  }
+
   /// Last access for [f]: the index when it knows the file, else its mtime —
   /// which is precisely the pre-index behaviour.
-  Future<DateTime> _accessTime(File f) async {
-    final indexed = await _indexAt(f.path);
+  Future<DateTime> _accessTime(
+    File f, {
+    Map<String, DateTime>? index,
+  }) async {
+    final indexed = index?[f.path];
     if (indexed != null) return indexed;
     try {
       return (await f.stat()).modified;
@@ -428,15 +488,15 @@ class CacheService extends ChangeNotifier {
     String remotePath, {
     required String sourceName,
   }) async {
-    await _indexTouchRead(
-      mangaFileForRemote(remotePath, sourceName: sourceName).path,
+    await _indexTouch(
+      mangaFileForRemote(remotePath, sourceName: sourceName),
       CacheKind.manga,
     );
   }
 
   /// Record that a manga cover thumb was read.
   Future<void> touchMangaCover(String mangaId) async {
-    await _indexTouchRead(mangaCoverFile(mangaId).path, CacheKind.manga);
+    await _indexTouch(mangaCoverFile(mangaId), CacheKind.manga);
   }
 
   /// Record a freshly written manga archive together with its size.
@@ -502,6 +562,7 @@ class CacheService extends ChangeNotifier {
   Future<List<({File file, int size, DateTime accessed})>> _cacheCandidates(
     CacheKind kind,
   ) async {
+    final index = _accessedTimes(kind);
     final out = <({File file, int size, DateTime accessed})>[];
     for (final root in await _cacheRoots(kind)) {
       if (!await root.dir.exists()) continue;
@@ -515,7 +576,7 @@ class CacheService extends ChangeNotifier {
           out.add((
             file: entity,
             size: await entity.length(),
-            accessed: await _accessTime(entity),
+            accessed: await _accessTime(entity, index: index),
           ));
         } catch (_) {}
       }
@@ -532,6 +593,7 @@ class CacheService extends ChangeNotifier {
   }) async {
     final clock = now ?? DateTime.now();
     var removed = 0;
+    final deleted = <String>[];
     for (final e in await _cacheCandidates(kind)) {
       if (protectedPaths.contains(e.file.path)) continue;
       final expired = policy.shouldDelete(
@@ -543,16 +605,22 @@ class CacheService extends ChangeNotifier {
       if (!expired) continue;
       try {
         await e.file.delete();
-        await _index?.forget(e.file.path);
+        deleted.add(e.file.path);
         removed++;
       } catch (_) {}
     }
+    if (deleted.isNotEmpty) _deleteIndexRows(deleted);
     if (removed > 0) notifyListeners();
     return removed;
   }
 
   /// Evict least-recently-used entries of [kind] until the evictable total is
   /// at or below [maxBytes]. `maxBytes <= 0` means unlimited.
+  ///
+  /// Rust owns the LRU order (`{"q":"lru"}` / the `evict` command); this side
+  /// only unlinks the files it can see and then drops their index rows by local
+  /// path. Those rows are exactly the ones the index still holds — the budget
+  /// itself (`SettingsService.cacheBudgetMb`) stays a Dart decision.
   Future<int> evictCacheToMaxBytes({
     required CacheKind kind,
     required int maxBytes,
@@ -569,27 +637,30 @@ class CacheService extends ChangeNotifier {
     if (total <= maxBytes) return 0;
     candidates.sort((a, b) => a.accessed.compareTo(b.accessed));
     var removed = 0;
+    final deleted = <String>[];
     for (final e in candidates) {
       if (total <= maxBytes) break;
       try {
         await e.file.delete();
-        await _index?.forget(e.file.path);
+        deleted.add(e.file.path);
         total -= e.size;
         removed++;
       } catch (_) {}
     }
+    if (deleted.isNotEmpty) _deleteIndexRows(deleted);
     if (removed > 0) notifyListeners();
     return removed;
   }
 
   /// Drop index rows for [kind] whose file is gone (lazy sweep).
   Future<void> pruneIndex(CacheKind kind) async {
-    final idx = _index;
-    if (idx == null) return;
-    try {
-      final known = await idx.entries(kind);
-      await idx.pruneMissing(known.keys);
-    } catch (_) {}
+    final doomed = <String>[];
+    for (final entry in _entries(kind)) {
+      final path = entry['path'];
+      if (path is! String) continue;
+      if (!File(path).existsSync()) doomed.add(path);
+    }
+    if (doomed.isNotEmpty) _deleteIndexRows(doomed);
   }
 
   Future<void> registerCompleted(
@@ -599,14 +670,15 @@ class CacheService extends ChangeNotifier {
     String? cacheGroupId,
     String? musicId,
   }) async {
-    await touch(sourceName, remotePath);
-    await _indexTouch(File(localPath), CacheKind.music);
+    final file = File(localPath);
+    await _indexPut(file, CacheKind.music, remotePath: remotePath);
     if (cacheGroupId != null && cacheGroupId.isNotEmpty) {
-      await bindCacheGroup(
-        sourceName: sourceName,
-        remotePath: remotePath,
-        groupId: cacheGroupId,
-      );
+      final groupId = cacheGroupId;
+      _cmd({
+        'cmd': 'bind_group',
+        'group_id': groupId,
+        'paths': [localPath],
+      });
     }
     notifyListeners();
   }
@@ -637,7 +709,7 @@ class CacheService extends ChangeNotifier {
       } catch (_) {}
     }
     if (removed > 0) notifyListeners();
-    await _index?.forgetKind(CacheKind.music);
+    _forgetKind(CacheKind.music);
     return removed;
   }
 
@@ -667,7 +739,9 @@ class CacheService extends ChangeNotifier {
       customDuration: customDuration,
     );
     final clock = now ?? DateTime.now();
+    final index = _accessedTimes(CacheKind.music);
     var removed = 0;
+    final deleted = <String>[];
     for (final entry in identityToLocal.entries) {
       final identity = entry.key;
       final local = entry.value;
@@ -675,13 +749,8 @@ class CacheService extends ChangeNotifier {
       if (!await file.exists()) continue;
       final isPlaying = playingIdentityKey == identity;
       final isDownloading = downloadingIdentityKeys.contains(identity);
-      final parts = splitCacheIdentity(identity);
-      if (parts == null) continue;
-      final sourceName = parts.sourceName;
-      final remote = parts.remotePath;
       final accessed =
-          await lastAccessed(sourceName, remote) ??
-          (await file.stat()).modified;
+          index[local] ?? (await _accessTime(file, index: index));
       if (policy.shouldDelete(
         lastAccessed: accessed,
         now: clock,
@@ -690,10 +759,12 @@ class CacheService extends ChangeNotifier {
       )) {
         try {
           await file.delete();
+          deleted.add(local);
           removed++;
         } catch (_) {}
       }
     }
+    if (deleted.isNotEmpty) _deleteIndexRows(deleted);
     if (removed > 0) notifyListeners();
     return removed;
   }

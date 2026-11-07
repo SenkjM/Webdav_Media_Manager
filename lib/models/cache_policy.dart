@@ -24,8 +24,8 @@ extension CacheRetentionX on CacheRetention {
 ///
 /// The two caches are managed **independently**: each has its own retention
 /// window, its own size cap and its own "clear everything" action, and each has
-/// its own settings page. [CacheIndexDb] stores the kind alongside the access
-/// time so a cleanup pass only ever touches its own cache.
+/// its own settings page. The Rust cache index stores the kind alongside the
+/// access time so a cleanup pass only ever touches its own cache.
 enum CacheKind { music, manga }
 
 extension CacheKindX on CacheKind {

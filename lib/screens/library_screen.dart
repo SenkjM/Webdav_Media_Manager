@@ -11,7 +11,8 @@ import '../services/accounts_service.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
-import '../services/task_queue_service.dart';
+import '../models/queue_models.dart';
+import '../services/queue_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/stream_cover_reader.dart';
@@ -1241,11 +1242,11 @@ class _TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
-    final downloads = context.watch<TaskQueueService>();
+    final queue = context.watch<QueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
     // A library row can be re-queued after its cache was deleted, so surface the
     // queue state here too (network library already does).
-    final task = downloads.taskForRemote(
+    final task = queue.taskForRemote(
       track.sourceName,
       track.effectiveAudioRemotePath,
     );
@@ -1253,7 +1254,8 @@ class _TrackTile extends StatelessWidget {
     // so watching it here would rebuild the whole list several times a second.
     final audio = context.read<AudioPlayerService>();
     final state = libraryRowUiState(
-      downloads: downloads,
+      queue: queue,
+      cache: cache,
       track: track,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,
@@ -1623,7 +1625,8 @@ class _TrackTile extends StatelessWidget {
           );
           return;
         }
-        await context.read<TaskQueueService>().enqueueRetagCloud(
+        await context.read<QueueService>().enqueue(
+          kind: QueueTaskKind.retagCloud,
           sourceName: track.sourceName,
           remotePath: track.remotePath,
           fileName: track.fileName,
@@ -1718,16 +1721,17 @@ class _TrackGridTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
-    final downloads = context.watch<TaskQueueService>();
+    final queue = context.watch<QueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
-    final task = downloads.taskForRemote(
+    final task = queue.taskForRemote(
       track.sourceName,
       track.effectiveAudioRemotePath,
     );
     // `read` (not `watch`): AudioPlayerService ticks on every position update.
     final audio = context.read<AudioPlayerService>();
     final state = libraryRowUiState(
-      downloads: downloads,
+      queue: queue,
+      cache: cache,
       track: track,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,

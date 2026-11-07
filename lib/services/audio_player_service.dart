@@ -9,13 +9,12 @@ import '../models/library_track.dart';
 import '../models/play_open_mode.dart';
 import '../models/playable_media.dart';
 import '../models/playback_queue_source.dart';
-import '../models/queue_task.dart';
+import '../models/queue_models.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../utils/directory_walk.dart';
 import '../utils/l10n_host.dart';
 import '../utils/remote_path.dart';
-import '../utils/scan_candidates.dart';
 import '../utils/task_error.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
@@ -31,7 +30,7 @@ import 'stream_window.dart';
 import 'notification_permission_service.dart';
 import 'settings_service.dart';
 import 'stream_cover_reader.dart';
-import 'task_queue_service.dart';
+import 'queue_service.dart';
 import 'webdav_service.dart';
 
 /// Unified music player: local cache and stream share one queue, MiniPlayer,
@@ -41,7 +40,7 @@ import 'webdav_service.dart';
 /// stream URL + headers). Prefetch + tag ingest run on the same service.
 class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
-    required TaskQueueService taskQueue,
+    required QueueService taskQueue,
     required MusicAudioHandler handler,
     required WebDavService webDav,
     required CacheService cache,
@@ -90,7 +89,7 @@ class AudioPlayerService extends ChangeNotifier {
     _library.addListener(_onLibraryChanged);
   }
 
-  final TaskQueueService _taskQueue;
+  final QueueService _taskQueue;
   final NotificationPermissionService? _notifications;
   final MusicAudioHandler _handler;
   final WebDavService _webDav;
@@ -136,9 +135,6 @@ class AudioPlayerService extends ChangeNotifier {
   final Map<String, int> _rowRevs = {};
   bool _enrichScheduled = false;
   bool _enriching = false;
-  bool _scrapePumping = false;
-  final Set<String> _scrapeAttempted = {};
-  final Map<String, Completer<void>> _scanWaiters = {};
   int _queueWalkToken = 0;
 
   /// Source descriptor of the now-playing queue (for the queue UI / debug).
@@ -178,9 +174,6 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _onSettings() {
     _prefetch?.nudge();
-    // Turning 自动补齐 on mid-queue should start filling missing rows without
-    // requiring another play action.
-    if (_autoScrapeQueue) _scheduleMissingScrapes();
   }
 
   /// Resolve playable for [track] under [_playOpenMode] (or [mode] override).
@@ -218,7 +211,7 @@ class AudioPlayerService extends ChangeNotifier {
 
     final task = _taskQueue.taskForRemote(track.sourceName, audioRemote);
     if (task != null &&
-        task.status == TaskStatus.completed &&
+        task.status == QueueTaskStatus.completed &&
         task.localPath != null &&
         File(task.localPath!).existsSync() &&
         _cache.isMusicCachePath(task.localPath!)) {
@@ -456,7 +449,6 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     _queueSource = source ?? PlaybackQueueSource.libraryQueue();
-    _scrapeAttempted.clear();
     _queueWalkToken++; // stop any previous network-folder walk
     // Library rows are already in memory: fill title/cover/duration before the
     // first frame so a scraped/cached track never waits on the network for its
@@ -472,7 +464,8 @@ class AudioPlayerService extends ChangeNotifier {
   void _afterQueueStarted() {
     _persistQueueSoon();
     _scheduleEnrichment();
-    _scheduleMissingScrapes();
+    final track = current;
+    if (track != null) unawaited(_maybePlayTriggeredBackfill(track));
   }
 
   // ---- persistent playback queue -----------------------------------------
@@ -614,7 +607,6 @@ class AudioPlayerService extends ChangeNotifier {
       ...batch,
       ...old.sublist(at),
     ];
-    _scrapeAttempted.clear();
     await _loadAndPlay(next, at);
     _afterQueueStarted();
   }
@@ -637,7 +629,8 @@ class AudioPlayerService extends ChangeNotifier {
     notifyListeners();
     _persistQueueSoon();
     _scheduleEnrichment();
-    _scheduleMissingScrapes();
+    final track = current;
+    if (track != null) unawaited(_maybePlayTriggeredBackfill(track));
   }
 
   bool get canEditQueue => _handler.tracks.isNotEmpty;
@@ -687,7 +680,6 @@ class AudioPlayerService extends ChangeNotifier {
     await _handler.stop();
     await _queueStore.clear();
     _queueSource = null;
-    _scrapeAttempted.clear();
     notifyListeners();
   }
 
@@ -723,123 +715,6 @@ class AudioPlayerService extends ChangeNotifier {
         source: _queueSource,
       ),
     );
-  }
-
-  // ---- auto-scrape missing queue rows ------------------------------------
-
-  /// Queue metadata scrape: one task at a time, in playback order. Library
-  /// changes then flow back through [_enrichQueue], so the queue updates
-  /// dynamically after the scrape completes.
-  void _scheduleMissingScrapes() {
-    unawaited(_pumpMissingScrapes());
-  }
-
-  /// Missing queue rows are scraped automatically for the network-library
-  /// auto-scrape feature, and for library queues only while 自动补齐 is on —
-  /// manual mode keeps the library manual (explicit scans still work).
-  bool get _autoScrapeQueue => _queueSource?.isFolderRoot == true;
-
-  Future<void> _pumpMissingScrapes() async {
-    if (_scrapePumping) return;
-    if (!_autoScrapeQueue) return;
-    final current = _handler.index >= 0 && _handler.index < _handler.tracks.length
-        ? _handler.tracks[_handler.index]
-        : null;
-    if (current == null) return;
-    final parent = remoteParent(current.remotePath);
-    if (parent == null) return;
-    _scrapePumping = true;
-    try {
-      while (true) {
-        final entry = _nextUnscrapedEntry(parent);
-        if (entry == null) break;
-        final key = _scrapeKey(entry);
-        if (!_scrapeAttempted.add(key)) continue;
-        final accountId = entry.accountId.isNotEmpty
-            ? entry.accountId
-            : (_accounts.idForSource(entry.sourceName) ?? '');
-        if (accountId.isEmpty) continue;
-        final path = entry.isCueVirtual
-            ? (entry.cueRemotePath ?? '')
-            : entry.effectiveAudioRemotePath;
-        if (path.isEmpty) continue;
-        final name = path.split('/').last;
-        final task = await _taskQueue.enqueueScan(
-          sourceName: entry.sourceName,
-          remotePath: path,
-          fileName: name,
-          unitsTotal: 1,
-          paths: [
-            ScanPathEntry(path: path, name: name, isCue: entry.isCueVirtual),
-          ],
-          priority: 5,
-        );
-        await _waitForScan(task.id);
-      }
-    } catch (_) {
-      // Best-effort background work; playback must never fail because of it.
-    } finally {
-      _scrapePumping = false;
-    }
-  }
-
-  TrackInfo? _nextUnscrapedEntry(String parent) {
-    final tracks = _handler.tracks;
-    if (tracks.isEmpty) return null;
-    final start = _handler.index >= 0 ? _handler.index : 0;
-    for (var step = 0; step < tracks.length; step++) {
-      final t = tracks[(start + step) % tracks.length];
-      final key = _scrapeKey(t);
-      if (_scrapeAttempted.contains(key)) continue;
-      if (remoteParent(t.remotePath) != parent) continue;
-      if (_library.find(t.sourceName, t.remotePath) != null) {
-        // Already in the library: nothing to scrape, keep the cursor moving.
-        _scrapeAttempted.add(key);
-        continue;
-      }
-      return t;
-    }
-    return null;
-  }
-
-  static String _scrapeKey(TrackInfo t) =>
-      '${t.sourceName}\u0000${t.isCueVirtual ? (t.cueRemotePath ?? '') : t.effectiveAudioRemotePath}';
-
-  Future<void> _waitForScan(String taskId) async {
-    final completer = Completer<void>();
-    _scanWaiters[taskId] = completer;
-    try {
-      await completer.future.timeout(
-        const Duration(minutes: 5),
-        onTimeout: () {},
-      );
-    } finally {
-      _scanWaiters.remove(taskId);
-    }
-  }
-
-  void _resolveScanWaiters() {
-    if (_scanWaiters.isEmpty) return;
-    final done = <String>[];
-    for (final entry in _scanWaiters.entries) {
-      QueueTask? task;
-      for (final t in _taskQueue.tasks) {
-        if (t.id == entry.key) {
-          task = t;
-          break;
-        }
-      }
-      if (task == null) continue;
-      if (task.status == TaskStatus.completed ||
-          task.status == TaskStatus.failed ||
-          task.status == TaskStatus.partial ||
-          task.status == TaskStatus.cancelled) {
-        done.add(entry.key);
-      }
-    }
-    for (final id in done) {
-      _scanWaiters.remove(id)?.complete();
-    }
   }
 
   /// Extend a network-folder queue with its subdirectories, using the audio
@@ -964,7 +839,6 @@ class AudioPlayerService extends ChangeNotifier {
         playable: playable,
       );
       unawaited(_clearRemoteMissingMirror(track));
-      unawaited(_maybePlayTriggeredBackfill(track));
       if (_playOpenMode == PlayOpenMode.stream) {
         _startPrefetch(playlist, index, track.accountId);
       } else {
@@ -1228,7 +1102,6 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _onTaskQueueChanged() {
-    _resolveScanWaiters();
     final pending = _pendingPlayBackfillSync;
     if (pending == null) return;
     QueueTask? task;
@@ -1239,12 +1112,12 @@ class AudioPlayerService extends ChangeNotifier {
       }
     }
     if (task == null) return;
-    if (task.status == TaskStatus.failed ||
-        task.status == TaskStatus.cancelled) {
+    if (task.status == QueueTaskStatus.failed ||
+        task.status == QueueTaskStatus.cancelled) {
       _pendingPlayBackfillSync = null;
       return;
     }
-    if (task.status != TaskStatus.completed) return;
+    if (task.status != QueueTaskStatus.completed) return;
     _pendingPlayBackfillSync = null;
     _syncQueueAfterPlayBackfill(pending);
   }
@@ -1360,10 +1233,6 @@ class AudioPlayerService extends ChangeNotifier {
     _pendingPlayBackfillSync = null;
     _persistTimer?.cancel();
     unawaited(_persistQueue());
-    for (final waiter in _scanWaiters.values) {
-      if (!waiter.isCompleted) waiter.complete();
-    }
-    _scanWaiters.clear();
     unawaited(_prefetch?.dispose());
     _posSub?.cancel();
     _durSub?.cancel();

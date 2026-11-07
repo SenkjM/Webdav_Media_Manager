@@ -14,7 +14,8 @@ import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
 import '../services/library_service.dart';
 import '../services/library_actions.dart';
-import '../services/task_queue_service.dart';
+import '../models/queue_models.dart';
+import '../services/queue_service.dart';
 import '../services/tag_service.dart';
 import '../widgets/cover_art.dart';
 import '../widgets/library_cover_art.dart';
@@ -353,13 +354,12 @@ class PlayerScreen extends StatelessWidget {
                                 AppSnack.show(ctx, l10n.tagsNeedDownloadFirst);
                                 return;
                               }
-                              await ctx
-                                  .read<TaskQueueService>()
-                                  .enqueueRetagCloud(
-                                    sourceName: lib.sourceName,
-                                    remotePath: lib.remotePath,
-                                    fileName: lib.fileName,
-                                  );
+                              await ctx.read<QueueService>().enqueue(
+                                kind: QueueTaskKind.retagCloud,
+                                sourceName: lib.sourceName,
+                                remotePath: lib.remotePath,
+                                fileName: lib.fileName,
+                              );
                               if (!ctx.mounted) return;
                               AppSnack.show(ctx, l10n.mediaScanQueued(1));
                               Navigator.of(ctx).pop();

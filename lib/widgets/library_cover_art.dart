@@ -9,7 +9,7 @@ import '../services/cover_service.dart';
 import '../models/cover_state.dart';
 import '../models/library_track.dart';
 import '../services/cache_service.dart';
-import '../services/task_queue_service.dart';
+import '../services/queue_service.dart';
 import '../services/library_service.dart';
 import '../services/webdav_service.dart';
 import '../services/stream_cover_reader.dart';
@@ -129,7 +129,7 @@ class _LibraryCoverArtState extends State<LibraryCoverArt> {
   Future<void> _resolve() async {
     final cache = context.read<CacheService>();
     final library = context.read<LibraryService>();
-    final downloads = context.read<TaskQueueService>();
+    final downloads = context.read<QueueService>();
     final covers = library.covers;
     await covers.init();
 

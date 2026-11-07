@@ -1576,6 +1576,7 @@
   "clearMangaCacheConfirm": "将删除 manga_cache 中的整包与封面缓存，不影响漫画库元数据。",
   "musicViewMode": "视图",
   "taskPartialFailed": "部分失败",
+  "taskAwaitingPlatform": "等待系统处理",
   "progressReadingCloudMangaIndex": "读取云端漫画库清单…",
   "progressAdoptingCloudMangas": "采纳云端 {count} 部漫画…",
   "progressAppendingMangaSegments": "追加 {count} 部漫画到云端增量分片…",

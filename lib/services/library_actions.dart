@@ -13,20 +13,24 @@ import 'package:share_plus/share_plus.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/library_track.dart';
+import '../models/queue_models.dart';
 import '../models/webdav_item.dart';
 import '../models/playlist.dart';
 import '../providers/app_state.dart';
 import '../screens/playlists_screen.dart';
 import '../theme/app_theme.dart';
 import '../utils/audio_extensions.dart';
+import '../utils/cue_sheet.dart';
 import '../utils/track_identity.dart';
 import '../widgets/destroy_progress_dialog.dart';
 import 'accounts_service.dart';
 import 'cache_service.dart';
-import 'task_queue_service.dart';
+import 'library_service.dart';
+import 'queue_service.dart';
 import 'platform_export_service.dart';
 import 'settings_service.dart';
 import 'share_rename_service.dart';
+import 'webdav_service.dart';
 
 /// Whether the track's audio is local: derived cache file exists on disk.
 String unboundSourceMessage(AppLocalizations l10n, String sourceName) =>
@@ -36,21 +40,191 @@ bool libraryTrackIsLocal(CacheService cache, LibraryTrack track) {
   return cache.isLocalTrack(track);
 }
 
+/// Row state for one `(source, remote)` pair, derived from the Rust queue rows.
+///
+/// This replaces the retired Dart executor's `uiStateFor`. State precedence:
+/// playing → in-flight (queued/downloading) → error → on-disk ready →
+/// streamable (library rows) → remote (no chip in the network browser).
+TrackUiState queueTrackUiState({
+  required QueueService queue,
+  required CacheService cache,
+  required String sourceName,
+  required String remotePath,
+  String? playingRemotePath,
+  String? playingSourceName,
+  bool libraryRow = false,
+}) {
+  if (playingRemotePath == remotePath && playingSourceName == sourceName) {
+    return TrackUiState.playing;
+  }
+  final task = queue.taskForRemote(sourceName, remotePath);
+  if (task != null) {
+    switch (task.status) {
+      case QueueTaskStatus.pending:
+        return TrackUiState.queued;
+      case QueueTaskStatus.active:
+        return TrackUiState.downloading;
+      case QueueTaskStatus.failed:
+      case QueueTaskStatus.partial:
+      case QueueTaskStatus.cancelled:
+        return TrackUiState.error;
+      case QueueTaskStatus.completed:
+        if (task.isPublic) return TrackUiState.ready;
+        break;
+      case QueueTaskStatus.awaitingPlatform:
+        break;
+    }
+  }
+  final cached = cache.fileForRemote(remotePath, sourceName: sourceName);
+  if (cached.existsSync()) return TrackUiState.ready;
+  final local = task?.localPath;
+  if (task?.status == QueueTaskStatus.completed &&
+      local != null &&
+      File(local).existsSync()) {
+    return TrackUiState.ready;
+  }
+  if (libraryRow) return TrackUiState.streamable;
+  return TrackUiState.remote;
+}
+
+/// Re-read tags from an already-cached file. A CUE selection refreshes its
+/// whole virtual album so cue-file metadata keeps precedence over audio tags.
+Future<bool> refreshCachedTrackTags({
+  required CacheService cache,
+  required LibraryService library,
+  required LibraryTrack track,
+}) async {
+  if (!track.isCueVirtual) {
+    final localPath = await cache.localPathForTrack(track);
+    if (localPath == null) return false;
+    await library.refreshTrackTagsFromFile(
+      track: track,
+      localPath: localPath,
+    );
+    return true;
+  }
+  final cuePath = track.cueRemotePath;
+  if (cuePath == null) return false;
+  final cueLocal = await cache.localPathIfCached(
+    cuePath,
+    sourceName: track.sourceName,
+  );
+  if (cueLocal == null) return false;
+  final sheet = CueSheet.parseOrNull(
+    decodeCueText(await File(cueLocal).readAsBytes()),
+  );
+  if (sheet == null) return false;
+  final audioPaths = sheet.audioRemotePaths(cuePath);
+  for (final path in audioPaths) {
+    if (!await cache.isCached(path, sourceName: track.sourceName)) {
+      return false;
+    }
+  }
+  final groupId =
+      track.cacheGroupId ?? cueCacheGroupId(track.sourceName, cuePath);
+  await library.ingestCueAlbum(
+    sourceName: track.sourceName,
+    cueRemotePath: cuePath,
+    sheet: sheet,
+    cacheGroupId: groupId,
+    localPathFor: (remote) =>
+        cache.fileForRemote(remote, sourceName: track.sourceName).path,
+  );
+  for (final path in audioPaths) {
+    final file = cache.fileForRemote(path, sourceName: track.sourceName);
+    if (file.existsSync()) {
+      await cache.registerCompleted(
+        track.sourceName,
+        path,
+        file.path,
+        cacheGroupId: groupId,
+      );
+    }
+  }
+  return true;
+}
+
+/// Queue every member of a CUE album (the `.cue` sheet plus its backing audio)
+/// and bind them to one cache group. Returns the sheet's track count.
+///
+/// Members are offered as ordinary cache downloads; the queue owns retry and
+/// progress, and the group binding is what later maps "one album" back to the
+/// files on disk.
+Future<int> enqueueCueGroup(
+  BuildContext context, {
+  required String sourceName,
+  required String cueRemotePath,
+  CueSheet? preParsed,
+}) async {
+  final queue = context.read<QueueService>();
+  final cache = context.read<CacheService>();
+  final webDav = context.read<WebDavService>();
+  final accounts = context.read<AccountsService>();
+  CueSheet sheet;
+  if (preParsed != null) {
+    sheet = preParsed;
+  } else {
+    final accountId = accounts.idForSource(sourceName);
+    if (accountId == null) {
+      throw StateError('err.sourceUnbound|$sourceName');
+    }
+    final bytes = await webDav.readAsBytes(accountId, cueRemotePath);
+    final parsed = CueSheet.parseOrNull(decodeCueText(bytes));
+    if (parsed == null) throw StateError('err.cueMalformed');
+    sheet = parsed;
+  }
+  final groupId = cueCacheGroupId(sourceName, cueRemotePath);
+  final paths = <String>[
+    cueRemotePath,
+    ...sheet.audioRemotePaths(cueRemotePath),
+  ];
+  final wanted = paths.toSet();
+  for (final path in paths) {
+    await cache.bindCacheGroup(
+      sourceName: sourceName,
+      remotePath: path,
+      groupId: groupId,
+    );
+  }
+  // Drop stale cancelled/failed members (or rows outside this sheet) so member
+  // counts stay stable across a cache clear + re-download.
+  for (final task in queue.tasks.toList()) {
+    if (task.cacheGroupId != groupId) continue;
+    final dead =
+        task.status == QueueTaskStatus.cancelled ||
+        task.status == QueueTaskStatus.failed ||
+        !wanted.contains(task.remotePath);
+    if (dead) await queue.remove(task.id);
+  }
+  for (final path in paths) {
+    await queue.ensureQueued(
+      sourceName,
+      path,
+      fileName: p.basename(path),
+      cacheGroupId: groupId,
+    );
+  }
+  return sheet.tracks.length;
+}
+
 /// List-row UI state shared by music library and playlist detail.
 ///
 /// Overlays [LibraryTrack.remoteMissing] as a red-dot state unless the row is
 /// already playing / downloading / queued. Ready and streamable stay icon-dot
 /// only (no text chip).
 TrackUiState libraryRowUiState({
-  required TaskQueueService downloads,
+  required QueueService queue,
+  required CacheService cache,
   required LibraryTrack track,
   String? playingRemotePath,
   String? playingSourceName,
   bool entryRemoteMissing = false,
 }) {
-  var state = downloads.uiStateFor(
-    track.sourceName,
-    track.effectiveAudioRemotePath,
+  var state = queueTrackUiState(
+    queue: queue,
+    cache: cache,
+    sourceName: track.sourceName,
+    remotePath: track.effectiveAudioRemotePath,
     playingRemotePath: playingRemotePath,
     playingSourceName: playingSourceName,
     libraryRow: true,
@@ -109,8 +283,11 @@ TrackInfo libraryTrackToTrackInfo(
 Future<bool> refreshOneLibraryTrackTags(
   BuildContext context,
   LibraryTrack track,
-) async =>
-    context.read<TaskQueueService>().refreshTrackTagsFromCache(track);
+) async => refreshCachedTrackTags(
+  cache: context.read<CacheService>(),
+  library: context.read<LibraryService>(),
+  track: track,
+);
 
 Future<({int updated, int skipped, int failed, bool cancelled})>
 refreshLibraryTrackTags(
@@ -126,7 +303,8 @@ refreshLibraryTrackTags(
     unique.putIfAbsent(key, () => track);
   }
   final items = unique.values.toList();
-  final downloads = context.read<TaskQueueService>();
+  final cache = context.read<CacheService>();
+  final library = context.read<LibraryService>();
   var updated = 0;
   var skipped = 0;
   var failed = 0;
@@ -144,7 +322,11 @@ refreshLibraryTrackTags(
       final track = items[i];
       onProgress(i, track.displayTitle);
       try {
-        if (await downloads.refreshTrackTagsFromCache(track)) {
+        if (await refreshCachedTrackTags(
+          cache: cache,
+          library: library,
+          track: track,
+        )) {
           updated++;
         } else {
           skipped++;
@@ -183,7 +365,7 @@ Future<int> downloadUncachedLibraryTracks(
 ) async {
   final cache = context.read<CacheService>();
   final accounts = context.read<AccountsService>();
-  final downloads = context.read<TaskQueueService>();
+  final queue = context.read<QueueService>();
   final seen = <String>{};
   var queued = 0;
   var unavailable = 0;
@@ -198,12 +380,13 @@ Future<int> downloadUncachedLibraryTracks(
     }
     try {
       if (track.isCueVirtual && track.cueRemotePath != null) {
-        await downloads.enqueueCueGroup(
+        await enqueueCueGroup(
+          context,
           sourceName: track.sourceName,
           cueRemotePath: track.cueRemotePath!,
         );
         queued++;
-      } else if (await downloads.ensureQueued(
+      } else if (await queue.ensureQueued(
         track.sourceName,
         track.effectiveAudioRemotePath,
         fileName: track.fileName,
@@ -243,17 +426,18 @@ Future<void> enqueueLibraryTrackDownload(
     }
     return;
   }
-  final downloads = context.read<TaskQueueService>();
+  final queue = context.read<QueueService>();
   if (track.isCueVirtual && track.cueRemotePath != null) {
     unawaited(
-      downloads.enqueueCueGroup(
+      enqueueCueGroup(
+        context,
         sourceName: track.sourceName,
         cueRemotePath: track.cueRemotePath!,
       ),
     );
   } else {
     unawaited(
-      downloads.ensureQueued(
+      queue.ensureQueued(
         track.sourceName,
         track.effectiveAudioRemotePath,
         fileName: track.fileName,

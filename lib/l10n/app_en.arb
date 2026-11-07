@@ -1556,6 +1556,7 @@
   "clearMangaCacheConfirm": "Deletes archives and covers under manga_cache. Library metadata is kept.",
   "musicViewMode": "View",
   "taskPartialFailed": "Partially failed",
+  "taskAwaitingPlatform": "Waiting for the system",
   "progressReadingCloudMangaIndex": "Reading the cloud manga index…",
   "progressAdoptingCloudMangas": "Adopting {count} cloud manga…",
   "progressAppendingMangaSegments": "Appending {count} manga to a cloud delta shard…",

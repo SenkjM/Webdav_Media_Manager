@@ -104,7 +104,7 @@ class DownloadKeepAlive {
   /// Restore the persisted suppression deadline from the KV store.
   ///
   /// Must be called after [wdmm_library_init] has been called (i.e. inside
-  /// [TaskQueueService.init]), never from the constructor.
+  /// [QueueService.init]), never from the constructor.
   Future<void> restoreSuppression() => _restoreSuppression();
 
   /// After Android 15+ `onTimeout`, don't immediately start the FGS again.

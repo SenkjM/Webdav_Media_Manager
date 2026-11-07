@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../services/download_destination_service.dart';
-import '../services/task_queue_service.dart';
+import '../services/queue_service.dart';
 import '../services/settings_service.dart';
 import '../utils/app_snack.dart';
 import '../l10n/generated/app_localizations.dart';
@@ -199,7 +199,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             onChanged: (v) async {
               await settings.setDownloadNotificationsEnabled(v);
               if (!context.mounted) return;
-              await context.read<TaskQueueService>().setNotifications(v);
+              await context.read<QueueService>().setNotificationsEnabled(v);
             },
           ),
           SwitchListTile(
@@ -210,7 +210,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             onChanged: (v) async {
               await settings.setDownloadKeepAliveEnabled(v);
               if (!context.mounted) return;
-              await context.read<TaskQueueService>().setKeepAliveEnabled(v);
+              await context.read<QueueService>().setKeepAliveEnabled(v);
             },
           ),
           ListTile(
@@ -226,7 +226,7 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             ),
             onTap: () async {
               final err = await context
-                  .read<TaskQueueService>()
+                  .read<QueueService>()
                   .notificationService
                   .selfTest();
               if (!context.mounted) return;
@@ -242,8 +242,9 @@ class _DownloadSettingsScreenState extends State<DownloadSettingsScreen> {
             title: Text(l10n.dlCleanNow),
             subtitle: Text(l10n.dlCleanNowSub),
             onTap: () async {
-              final queue = context.read<TaskQueueService>();
-              final removed = await queue.cleanupStaleParts();
+              final queue = context.read<QueueService>();
+              final result = await queue.cleanupStaleParts();
+              final removed = result.removed;
               if (!context.mounted) return;
               AppSnack.show(
                 context,

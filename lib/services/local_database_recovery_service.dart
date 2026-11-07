@@ -3,10 +3,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import '../storage/cache_index_db.dart';
 import 'platform_export_service.dart';
 import 'playlist_store.dart';
-import 'task_store.dart';
 import 'download_destination_service.dart';
 
 /// Emergency recovery for schema conflicts before normal services are usable.
@@ -21,9 +19,13 @@ class LocalDatabaseRecoveryService {
 
   /// Names older builds used for stores that were renamed or dropped.
   ///
-  /// `download_queue.db` became `task_queue.db` (56c02d3); the old file is
-  /// still on upgraded devices and has to go when the user clears the data.
-  static const legacyFileNames = <String>['download_queue.db'];
+  /// `download_queue.db` became `task_queue.db` (56c02d3); both are gone now
+  /// that the queue lives in the Rust core, but upgraded devices still carry
+  /// the files and they have to go when the user clears the data.
+  static const legacyFileNames = <String>[
+    'download_queue.db',
+    'task_queue.db',
+  ];
 
   /// SQLite keeps rollback journals next to the database; they are exported
   /// and deleted together with it.
@@ -36,10 +38,10 @@ class LocalDatabaseRecoveryService {
     final bases = <String>[
       p.join(docs.path, 'music_library.db'),
       p.join(docs.path, PlaylistStore.fileName),
-      p.join(docs.path, TaskStore.fileName),
-      // The cache index lives beside the cache it describes, not with the
-      // library databases.
-      p.join(support.path, CacheIndexDb.fileName),
+      // The queue and the cache index moved into the Rust core; their old
+      // SQLite files still exist on upgraded devices and are exported and
+      // deleted with the rest of the local databases.
+      p.join(support.path, 'cache_index.db'),
       for (final name in legacyFileNames) p.join(docs.path, name),
     ];
     final files = <File>[];

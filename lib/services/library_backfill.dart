@@ -1,13 +1,13 @@
 import '../models/file_type_config.dart';
 import '../models/music_library_backfill_root.dart';
-import '../models/queue_task.dart';
+import '../models/queue_models.dart';
 import '../utils/directory_walk.dart';
 import '../utils/remote_path.dart';
 import '../utils/scan_candidates.dart';
 import 'accounts_service.dart';
 import 'library_service.dart';
 import 'settings_service.dart';
-import 'task_queue_service.dart';
+import 'queue_service.dart';
 import 'webdav_service.dart';
 
 /// True when auto-backfill may run a play-triggered shallow scrape.
@@ -66,13 +66,13 @@ bool shouldBackfillForPlayingTrack({
 
 /// Whether a scan for [sourceName]+[remotePath] is already pending/active.
 bool hasActiveScanForRoot({
-  required TaskQueueService queue,
+  required QueueService queue,
   required String sourceName,
   required String remotePath,
 }) {
   for (final t in queue.tasks) {
-    if (t.kind != TaskKind.scan) continue;
-    if (t.status != TaskStatus.pending && t.status != TaskStatus.active) {
+    if (t.kind != QueueTaskKind.scan) continue;
+    if (t.status != QueueTaskStatus.pending && t.status != QueueTaskStatus.active) {
       continue;
     }
     if (t.sourceName == sourceName && t.remotePath == remotePath) return true;
@@ -92,7 +92,7 @@ Future<QueueTask?> enqueuePlayTriggeredShallowScrape({
   required AccountsService accounts,
   required LibraryService library,
   required WebDavService webDav,
-  required TaskQueueService queue,
+  required QueueService queue,
   required String accountId,
   required String sourceName,
   required String remotePath,

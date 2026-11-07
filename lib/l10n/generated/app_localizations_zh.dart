@@ -4703,6 +4703,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get taskPartialFailed => '部分失败';
 
   @override
+  String get taskAwaitingPlatform => '等待系统处理';
+
+  @override
   String get progressReadingCloudMangaIndex => '读取云端漫画库清单…';
 
   @override
@@ -9939,6 +9942,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get taskPartialFailed => '部分失敗';
+
+  @override
+  String get taskAwaitingPlatform => '等待系統處理';
 
   @override
   String get progressReadingCloudMangaIndex => '讀取雲端漫畫庫清單…';

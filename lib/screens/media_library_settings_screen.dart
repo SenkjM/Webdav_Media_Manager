@@ -15,7 +15,8 @@ import '../services/library_actions.dart';
 import '../services/library_backfill.dart';
 import '../services/library_service.dart';
 import '../services/settings_service.dart';
-import '../services/task_queue_service.dart';
+import '../models/queue_models.dart';
+import '../services/queue_service.dart';
 import '../utils/app_snack.dart';
 import '../models/cache_policy.dart';
 import '../utils/directory_walk.dart';
@@ -549,7 +550,7 @@ class _MediaLibrarySettingsScreenState
 
   Future<void> _refreshCloud(BuildContext context) async {
     final library = context.read<LibraryService>();
-    final queue = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
     final l10n = AppLocalizations.of(context)!;
     final tracks = library.tracks
         .where((t) => !t.isCueVirtual)
@@ -559,7 +560,8 @@ class _MediaLibrarySettingsScreenState
       return;
     }
     for (final t in tracks) {
-      await queue.enqueueRetagCloud(
+      await queue.enqueue(
+        kind: QueueTaskKind.retagCloud,
         sourceName: t.sourceName,
         remotePath: t.remotePath,
         fileName: t.fileName,
@@ -572,14 +574,17 @@ class _MediaLibrarySettingsScreenState
 
   Future<void> _matchRemote(BuildContext context) async {
     final library = context.read<LibraryService>();
-    final queue = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
     final l10n = AppLocalizations.of(context)!;
     if (library.tracks.isEmpty) {
       AppSnack.show(context, l10n.libraryEmpty);
       return;
     }
-    await queue.enqueueMatchRemote(
+    await queue.enqueue(
+      kind: QueueTaskKind.matchRemote,
       sourceName: '*',
+      remotePath: '/',
+      fileName: 'match_remote',
       unitsTotal: library.tracks.length,
     );
     if (context.mounted) {

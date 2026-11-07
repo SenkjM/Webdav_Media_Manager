@@ -1545,6 +1545,7 @@
   "clearMangaCacheConfirm": "將刪除 manga_cache 中的整包與封面快取，不影響漫畫庫中繼資料。",
   "musicViewMode": "檢視",
   "taskPartialFailed": "部分失敗",
+  "taskAwaitingPlatform": "等待系統處理",
   "progressReadingCloudMangaIndex": "讀取雲端漫畫庫清單…",
   "progressAdoptingCloudMangas": "採納雲端 {count} 部漫畫…",
   "progressAppendingMangaSegments": "追加 {count} 部漫畫到雲端增量分片…",

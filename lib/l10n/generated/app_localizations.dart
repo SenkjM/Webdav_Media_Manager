@@ -8351,6 +8351,12 @@ abstract class AppLocalizations {
   /// **'部分失败'**
   String get taskPartialFailed;
 
+  /// No description provided for @taskAwaitingPlatform.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待系统处理'**
+  String get taskAwaitingPlatform;
+
   /// No description provided for @progressReadingCloudMangaIndex.
   ///
   /// In zh, this message translates to:

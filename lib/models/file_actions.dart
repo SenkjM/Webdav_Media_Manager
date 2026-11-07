@@ -1,6 +1,5 @@
 import '../l10n/generated/app_localizations.dart';
 import 'file_type_config.dart';
-import 'queue_task.dart';
 
 /// 网络库对文件能做的事。
 ///
@@ -83,19 +82,6 @@ extension FileActionX on FileAction {
     FileAction.viewImage => l10n.actionShortViewImage,
     FileAction.downloadToGallery => l10n.actionShortGallery,
     FileAction.addToMangaLibrary => l10n.mangaAddComic,
-  };
-
-  /// 该动作落盘到哪里。流式播放不落盘，返回 null。
-  DownloadTarget? get downloadTarget => switch (this) {
-    FileAction.cacheMusic => DownloadTarget.cache,
-    FileAction.download => DownloadTarget.downloads,
-    FileAction.readCue => DownloadTarget.cache,
-    FileAction.downloadToGallery => DownloadTarget.gallery,
-    FileAction.stream ||
-    FileAction.streamMusic ||
-    FileAction.viewImage ||
-    FileAction.scrapeCue ||
-    FileAction.addToMangaLibrary => null,
   };
 
   static FileAction fromStorageKey(String? key, FileAction fallback) =>

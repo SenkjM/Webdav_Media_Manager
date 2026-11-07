@@ -4924,6 +4924,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get taskPartialFailed => 'Partially failed';
 
   @override
+  String get taskAwaitingPlatform => 'Waiting for the system';
+
+  @override
   String get progressReadingCloudMangaIndex => 'Reading the cloud manga index…';
 
   @override

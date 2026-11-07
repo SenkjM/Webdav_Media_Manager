@@ -9,7 +9,6 @@ import '../l10n/generated/app_localizations.dart';
 import '../models/manga.dart';
 import '../models/manga_read_mode.dart';
 import '../models/manga_build.dart';
-import '../models/queue_task.dart';
 import '../models/file_actions.dart';
 import '../models/play_open_mode.dart';
 import '../models/playback_queue_source.dart';
@@ -21,7 +20,9 @@ import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/webdav_service.dart';
 import '../services/cache_service.dart';
-import '../services/task_queue_service.dart';
+import '../models/queue_models.dart';
+import '../services/queue_service.dart';
+import '../services/library_actions.dart';
 import '../services/settings_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/platform_export_service.dart';
@@ -494,22 +495,34 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
     try {
-      await downloads.ensureQueued(sourceName, item.path, fileName: item.name);
+      await queue.ensureQueued(sourceName, item.path, fileName: item.name);
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
       AppSnack.error(
         context,
-        l10n.netEnqueueFailed(
-          TaskQueueService.describeError(
-            downloads.lastError ?? e.toString(),
-            l10n,
-          ),
-        ),
+        l10n.netEnqueueFailed(QueueService.describeError(e.toString(), l10n)),
       );
     }
+  }
+
+  /// Public tasks that block a fresh enqueue: pending/active/completed rows for
+  /// the same account+remote. Failed/partial/cancelled do not block.
+  QueueTask? _blockingPublic(String sourceName, String remotePath) {
+    for (final task in context.read<QueueService>().tasks) {
+      if (task.target != QueueTarget.public) continue;
+      if (task.sourceName != sourceName || task.remotePath != remotePath) {
+        continue;
+      }
+      if (task.status == QueueTaskStatus.pending ||
+          task.status == QueueTaskStatus.active ||
+          task.status == QueueTaskStatus.completed) {
+        return task;
+      }
+    }
+    return null;
   }
 
   /// 任何文件 → 系统下载目录（不缓存、不进音乐库）。
@@ -517,14 +530,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
 
     // 检查是否有重复任务
-    final blocking = downloads.blockingPublicDuplicate(
-      sourceName,
-      item.path,
-      DownloadTarget.downloads,
-    );
+    final blocking = _blockingPublic(sourceName, item.path);
 
     if (blocking != null) {
       // 有重复任务，弹窗询问
@@ -551,23 +560,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
       // 确认：重新入队
       try {
-        await downloads.requeuePublicFresh(
+        await queue.replacePublic(
           sourceName,
           item.path,
           fileName: item.name,
-          target: DownloadTarget.downloads,
         );
       } catch (e) {
         if (!mounted) return;
         final l10n = AppLocalizations.of(context)!;
         AppSnack.error(
           context,
-          l10n.netEnqueueFailed(
-            TaskQueueService.describeError(
-              downloads.lastError ?? e.toString(),
-              l10n,
-            ),
-          ),
+          l10n.netEnqueueFailed(QueueService.describeError(e.toString(), l10n)),
         );
       }
       return;
@@ -575,22 +578,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
     // 无重复：正常入队
     try {
-      await downloads.enqueueToDownloads(
-        sourceName,
-        item.path,
-        fileName: item.name,
-      );
+      await queue.enqueuePublic(sourceName, item.path, fileName: item.name);
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
       AppSnack.error(
         context,
-        l10n.netEnqueueFailed(
-          TaskQueueService.describeError(
-            downloads.lastError ?? e.toString(),
-            l10n,
-          ),
-        ),
+        l10n.netEnqueueFailed(QueueService.describeError(e.toString(), l10n)),
       );
     }
   }
@@ -705,7 +699,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.show(
         context,
         l10n.netCueReadFailed(
-          TaskQueueService.describeError(e.toString(), l10n),
+          QueueService.describeError(e.toString(), l10n),
         ),
       );
     }
@@ -948,10 +942,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
     try {
-      await context.read<TaskQueueService>().enqueueCueGroup(
+      await enqueueCueGroup(
+        context,
         sourceName: sourceName,
         cueRemotePath: item.path,
-        cueFileName: item.name,
         preParsed: sheet,
       );
     } catch (e) {
@@ -960,7 +954,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       AppSnack.error(
         context,
         l10n.netCueDownloadFailed(
-          TaskQueueService.describeError(e.toString(), l10n),
+          QueueService.describeError(e.toString(), l10n),
         ),
       );
     }
@@ -1199,14 +1193,10 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final accountId = _accountId;
     if (accountId == null) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
 
     // 检查是否有重复任务
-    final blocking = downloads.blockingPublicDuplicate(
-      sourceName,
-      item.path,
-      DownloadTarget.gallery,
-    );
+    final blocking = _blockingPublic(sourceName, item.path);
 
     if (blocking != null) {
       // 有重复任务，弹窗询问
@@ -1233,23 +1223,17 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
       // 确认：重新入队
       try {
-        await downloads.requeuePublicFresh(
+        await queue.replacePublic(
           sourceName,
           item.path,
           fileName: item.name,
-          target: DownloadTarget.gallery,
         );
       } catch (e) {
         if (!mounted) return;
         final l10n = AppLocalizations.of(context)!;
         AppSnack.error(
           context,
-          l10n.netEnqueueFailed(
-            TaskQueueService.describeError(
-              downloads.lastError ?? e.toString(),
-              l10n,
-            ),
-          ),
+          l10n.netEnqueueFailed(QueueService.describeError(e.toString(), l10n)),
         );
       }
       return;
@@ -1257,22 +1241,13 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
     // 无重复：正常入队
     try {
-      await downloads.enqueueGallery(
-        sourceName,
-        item.path,
-        fileName: item.name,
-      );
+      await queue.enqueuePublic(sourceName, item.path, fileName: item.name);
     } catch (e) {
       if (!mounted) return;
       final l10n = AppLocalizations.of(context)!;
       AppSnack.error(
         context,
-        l10n.netEnqueueFailed(
-          TaskQueueService.describeError(
-            downloads.lastError ?? e.toString(),
-            l10n,
-          ),
-        ),
+        l10n.netEnqueueFailed(QueueService.describeError(e.toString(), l10n)),
       );
     }
   }
@@ -1350,7 +1325,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       return;
     }
     final parent = _path.endsWith('/') ? _path : '$_path/';
-    final queue = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
     final sourceName = _nameFor(accountId);
     var queued = 0;
     for (final file in okFiles) {
@@ -1362,10 +1337,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           fileName.isEmpty) {
         continue;
       }
-      await queue.enqueueUpload(
+      await queue.enqueue(
+        kind: QueueTaskKind.upload,
         sourceName: sourceName,
         remotePath: '$parent$fileName',
-        displayName: fileName,
+        fileName: fileName,
         localPath: localPath,
       );
       queued++;
@@ -1409,7 +1385,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       return;
     }
     final parent = _path.endsWith('/') ? _path : '$_path/';
-    final queue = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
     final sourceName = _nameFor(accountId);
     final groupId = 'folder-${DateTime.now().microsecondsSinceEpoch}';
     var queued = 0;
@@ -1427,10 +1403,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       }
       // 相对路径自带所选根文件夹名（如 `photos/2024/cat.jpg`），整棵目录
       // 在远端当前目录下原样落盘。
-      await queue.enqueueUpload(
+      await queue.enqueue(
+        kind: QueueTaskKind.upload,
         sourceName: sourceName,
         remotePath: '$parent$relative',
-        displayName: relative,
+        fileName: fileName,
         localPath: localPath,
         cacheGroupId: groupId,
       );
@@ -1511,7 +1488,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final accounts = context.watch<AccountsService>();
-    final downloads = context.watch<TaskQueueService>();
+    final queue = context.watch<QueueService>();
     final player = context.watch<AudioPlayerService>();
     final active = accounts.activeAccount;
 
@@ -1553,12 +1530,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     // initState), which the app shell consults before its own fallbacks. Doing it
     // with PopScope here did not work: this screen sits in a nested Navigator
     // inside the shell's own PopScope, and the event never reached our handler.
-    return _buildScaffold(accounts, downloads, player, active);
+    return _buildScaffold(accounts, queue, player, active);
   }
 
   Widget _buildScaffold(
     AccountsService accounts,
-    TaskQueueService downloads,
+    QueueService queue,
     AudioPlayerService player,
     WebDavAccount? active,
   ) {
@@ -1677,14 +1654,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                 onChanged: _onAccountChanged,
               ),
             ),
-          Expanded(child: _buildBody(downloads, player, active)),
+          Expanded(child: _buildBody(queue, player, active)),
         ],
       ),
     );
   }
 
   Widget _buildBody(
-    TaskQueueService downloads,
+    QueueService queue,
     AudioPlayerService player,
     WebDavAccount? active,
   ) {
@@ -1776,11 +1753,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
               if (item.isVideo) {
                 final task = sourceName.isEmpty
                     ? null
-                    : downloads.taskFor(sourceName, item.path);
+                    : queue.taskForRemote(sourceName, item.path);
                 final saved =
                     task != null &&
                     task.isGallery &&
-                    task.status == TaskStatus.completed;
+                    task.status == QueueTaskStatus.completed;
                 return ListTile(
                   leading: _selectionLeading(
                     item,
@@ -1856,13 +1833,15 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
 
               final task = sourceName.isEmpty
                   ? null
-                  : downloads.taskForRemote(sourceName, item.path);
+                  : queue.taskForRemote(sourceName, item.path);
               // Undownloaded + never enqueued → TrackUiState.remote (no chip).
               final state = sourceName.isEmpty
                   ? TrackUiState.remote
-                  : downloads.uiStateFor(
-                      sourceName,
-                      item.path,
+                  : queueTrackUiState(
+                      queue: queue,
+                      cache: context.read<CacheService>(),
+                      sourceName: sourceName,
+                      remotePath: item.path,
                       playingRemotePath: player.currentRemotePath,
                       playingSourceName: player.currentSourceName,
                     );
@@ -1889,7 +1868,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
                     if (state != TrackUiState.remote)
                       TrackStatusChip(
                         state: state,
-                        progress: task?.status == TaskStatus.active
+                        progress: task?.status == QueueTaskStatus.active
                             ? task?.progress
                             : null,
                       ),
@@ -2092,7 +2071,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         AppSnack.show(context, l10n.mangaNoComicsInFolder);
         return;
       }
-      final queue = context.read<TaskQueueService>();
+      final queue = context.read<QueueService>();
       var n = 0;
       for (final hit in hits) {
         final draft = MangaLibraryService.draftForComicFile(
@@ -2104,11 +2083,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         // Queue the scrape rather than running it inline: the row appears
         // immediately and the queue shows the progress. Range reads only, so
         // the archive itself is never downloaded.
-        await queue.enqueueMangaScrape(
-          accountId: accountId,
+        await queue.enqueue(
+          kind: QueueTaskKind.mangaScrape,
           sourceName: sourceName,
           remotePath: hit.path,
-          displayName: hit.name,
+          fileName: hit.name,
           mangaId: created.id,
         );
         n++;
@@ -2119,7 +2098,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       if (!mounted) return;
       AppSnack.error(
         context,
-        TaskQueueService.describeError(e.toString(), l10n),
+        QueueService.describeError(e.toString(), l10n),
       );
     }
   }
@@ -2133,6 +2112,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (sourceName == null || sourceName.isEmpty) return;
     final l10n = AppLocalizations.of(context)!;
     final settings = context.read<SettingsService>();
+    final queue = context.read<QueueService>();
     try {
       // Metadata first, listing later: the sheet opens without touching the
       // server and the recursive walk happens inside the queue task.
@@ -2148,8 +2128,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         draft: draft,
       );
       if (confirmed == null || !mounted) return;
-      await context.read<TaskQueueService>().enqueueMangaBuild(
-        MangaBuildPayload(
+      await queue.enqueue(
+        kind: QueueTaskKind.mangaBuild,
+        sourceName: sourceName,
+        remotePath: folder.path,
+        fileName: folder.name,
+        payload: MangaBuildPayload(
           mode: MangaBuildMode.merged,
           accountId: accountId,
           sourceName: sourceName,
@@ -2162,7 +2146,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           maxDepth: settings.mangaCreateMaxDepth,
           maxEntries: settings.mangaCreateWalkOptions.maxEntries,
           imageExtensions: _mangaImageExts(settings),
-        ),
+        ).toJson(),
       );
       if (!mounted) return;
       AppSnack.show(context, l10n.mangaBuildQueued);
@@ -2170,7 +2154,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       if (!mounted) return;
       AppSnack.error(
         context,
-        TaskQueueService.describeError(e.toString(), l10n),
+        QueueService.describeError(e.toString(), l10n),
       );
     }
   }
@@ -2184,6 +2168,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     if (sourceName == null || sourceName.isEmpty) return;
     final l10n = AppLocalizations.of(context)!;
     final settings = context.read<SettingsService>();
+    final queue = context.read<QueueService>();
     try {
       // The count is unknown until the worker walks, so this confirm is
       // static: it only guards against a mistaken tap on a huge folder.
@@ -2207,8 +2192,12 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         ),
       );
       if (go != true || !mounted) return;
-      await context.read<TaskQueueService>().enqueueMangaBuild(
-        MangaBuildPayload(
+      await queue.enqueue(
+        kind: QueueTaskKind.mangaBuild,
+        sourceName: sourceName,
+        remotePath: folder.path,
+        fileName: folder.name,
+        payload: MangaBuildPayload(
           mode: MangaBuildMode.perDir,
           accountId: accountId,
           sourceName: sourceName,
@@ -2219,7 +2208,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
           maxDepth: settings.mangaCreateMaxDepth,
           maxEntries: settings.mangaCreateWalkOptions.maxEntries,
           imageExtensions: _mangaImageExts(settings),
-        ),
+        ).toJson(),
       );
       if (!mounted) return;
       AppSnack.show(context, l10n.mangaBuildQueued);
@@ -2227,7 +2216,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       if (!mounted) return;
       AppSnack.error(
         context,
-        TaskQueueService.describeError(e.toString(), l10n),
+        QueueService.describeError(e.toString(), l10n),
       );
     }
   }
@@ -2252,7 +2241,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final settings = context.read<SettingsService>();
     final webDav = context.read<WebDavService>();
     final mangaLib = context.read<MangaLibraryService>();
-    final queue = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
     try {
       final targets = <({String path, String name})>[
         for (final f in files)
@@ -2285,11 +2274,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         );
         final created = await mangaLib.upsertFromDraft(draft);
         // 与单文件入口、文件夹扫描一致：建立完入队刮削。
-        await queue.enqueueMangaScrape(
-          accountId: accountId,
+        await queue.enqueue(
+          kind: QueueTaskKind.mangaScrape,
           sourceName: sourceName,
           remotePath: t.path,
-          displayName: t.name,
+          fileName: t.name,
           mangaId: created.id,
         );
         n++;
@@ -2300,7 +2289,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       if (!mounted) return;
       AppSnack.error(
         context,
-        TaskQueueService.describeError(e.toString(), l10n),
+        QueueService.describeError(e.toString(), l10n),
       );
     }
   }
@@ -2335,14 +2324,14 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final confirmed = await showMangaIngestConfirmSheet(context, draft: draft);
     if (confirmed == null || !mounted) return;
     try {
-      final queue = context.read<TaskQueueService>();
+      final queue = context.read<QueueService>();
       final created = await mangaLib.upsertFromDraft(confirmed);
       // Same as the batch scan: queue the ComicInfo + cover scrape.
-      await queue.enqueueMangaScrape(
-        accountId: accountId,
+      await queue.enqueue(
+        kind: QueueTaskKind.mangaScrape,
         sourceName: sourceName,
         remotePath: item.path,
-        displayName: item.name,
+        fileName: item.name,
         mangaId: created.id,
       );
       // The read mode says how this book will be opened, so start the archive
@@ -2354,7 +2343,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
       if (!mounted) return;
       AppSnack.error(
         context,
-        TaskQueueService.describeError(e.toString(), l10n),
+        QueueService.describeError(e.toString(), l10n),
       );
     }
   }
@@ -2387,11 +2376,11 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     )) {
       return false;
     }
-    await context.read<TaskQueueService>().enqueueMangaCache(
-      accountId: accountId,
+    await context.read<QueueService>().enqueue(
+      kind: QueueTaskKind.mangaCache,
       sourceName: manga.sourceName,
       remotePath: manga.remotePath,
-      displayName: manga.title,
+      fileName: manga.title,
       mangaId: manga.id,
     );
     if (mounted) {
@@ -2412,7 +2401,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
     final sourceName = account?.name;
     if (sourceName == null || sourceName.isEmpty) return;
     final l10n = AppLocalizations.of(context)!;
-    final queue = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
 
     final roots = <WebDavItem>[
       ...folders,
@@ -2454,9 +2443,6 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         sourceName: sourceName,
         remotePath: root.path,
         fileName: root.name,
-        // A folder root only discovers tracks; a selected audio file is its own
-        // unit and stays counted.
-        isEnumerator: root.isDirectory,
       );
       queued++;
     }
@@ -2475,7 +2461,7 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   ) => _queueSelection(
     folders,
     files,
-    target: DownloadTarget.cache,
+    target: QueueTarget.cache,
     busyText: AppLocalizations.of(context)!.netCachingMusic,
     emptyText: AppLocalizations.of(context)!.netNoNewAudio,
   );
@@ -2490,54 +2476,91 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
   ) => _queueSelection(
     folders,
     files,
-    target: DownloadTarget.downloads,
+    target: QueueTarget.public,
     busyText: AppLocalizations.of(context)!.netEnqueueing,
     emptyText: AppLocalizations.of(context)!.netNothingDownloadable,
   );
 
   /// 两条线共用的排队流程。
   ///
-  /// 界面只管把「选中的文件夹」和「选中的文件」一起交出去：扫描、去重、
-  /// 入队全在服务层（[TaskQueueService.enqueueSelection]）。界面这边再分
-  /// 「文件夹那条路 / 文件那条路」，一旦同时选中文件夹和里面的文件，同一个
-  /// 路径就会从两个入口各排一次。
+  /// 选中的文件先占位，文件夹再递归展开、按路径去重；随后逐个入队。public
+  /// 目标先收集会阻塞的重复项，用户确认后走 `replace_public` 原子替换。
   Future<void> _queueSelection(
     List<WebDavItem> folders,
     List<WebDavItem> files, {
-    required DownloadTarget target,
+    required QueueTarget target,
     required String busyText,
     required String emptyText,
   }) async {
     final accountId = _accountId;
     if (accountId == null || (folders.isEmpty && files.isEmpty)) return;
     final sourceName = _nameFor(accountId);
-    final downloads = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
+    final webDav = context.read<WebDavService>();
     AppSnack.show(context, busyText);
     try {
-      // 第一次扫描：不替换重复，收集重复项
-      final r = await downloads.enqueueSelection(
-        sourceName,
-        folderPaths: folders.map((e) => e.path),
-        files: files,
-        target: target,
-        replaceDuplicates: false,
-      );
+      final pending = <String, String>{};
+      for (final file in files) {
+        pending.putIfAbsent(file.path, () => file.name);
+      }
+      var failed = 0;
+      Object? firstError;
+      for (final folder in folders) {
+        try {
+          final items = await webDav.collectFilesRecursive(
+            accountId,
+            folder.path,
+          );
+          for (final item in items) {
+            pending.putIfAbsent(item.path, () => item.name);
+          }
+        } catch (e) {
+          // 一个文件夹扫不动不该拖垮其余的。
+          failed++;
+          firstError ??= e;
+        }
+      }
+
+      var ok = 0;
+      var duplicates = 0;
+      final duplicateEntries = <({String path, String name})>[];
+      for (final entry in pending.entries) {
+        if (target == QueueTarget.cache) {
+          if (await queue.ensureQueued(
+            sourceName,
+            entry.key,
+            fileName: entry.value,
+          )) {
+            ok++;
+          }
+        } else if (_blockingPublic(sourceName, entry.key) != null) {
+          duplicates++;
+          duplicateEntries.add((path: entry.key, name: entry.value));
+        } else {
+          await queue.enqueuePublic(
+            sourceName,
+            entry.key,
+            fileName: entry.value,
+          );
+          ok++;
+        }
+      }
+
       if (!mounted) return;
-      final firstError = r.firstError;
-      if (r.failed > 0 && r.ok == 0 && r.scanned == 0 && firstError != null) {
+      if (failed > 0 && ok == 0 && pending.isEmpty && firstError != null) {
         // 一个都没读到，通常是凭证 / 网络问题，按错误弹窗处理更好定位。
         await showWebDavErrorDialog(context, firstError);
         return;
       }
 
       // 如果有重复任务，询问用户是否全部重新进行
-      if (target != DownloadTarget.cache && r.duplicates > 0) {
+      if (target != QueueTarget.cache && duplicates > 0) {
         final l10n = AppLocalizations.of(context)!;
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
             title: Text(l10n.dupTaskTitle),
-            content: Text(l10n.dupTaskBatchBody(r.duplicates)),
+            content: Text(l10n.dupTaskBatchBody(duplicates)),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -2552,24 +2575,31 @@ class _NetworkLibraryScreenState extends State<NetworkLibraryScreen> {
         );
 
         if (confirmed == true && mounted) {
-          // 确认：重新入队重复项
-          await downloads.requeuePublicFreshMany(
-            sourceName,
-            r.duplicateEntries,
-            target,
-          );
+          for (final entry in duplicateEntries) {
+            try {
+              await queue.replacePublic(
+                sourceName,
+                entry.path,
+                fileName: entry.name,
+              );
+              ok++;
+            } catch (e) {
+              failed++;
+              firstError ??= e;
+            }
+          }
         }
       }
 
       // 显示结果
       if (!mounted) return;
       final parts = <String>[];
-      if (r.ok > 0) {
-        parts.add(AppLocalizations.of(context)!.netEnqueuedCount(r.ok));
+      if (ok > 0) {
+        parts.add(AppLocalizations.of(context)!.netEnqueuedCount(ok));
       }
-      if (r.failed > 0) {
+      if (failed > 0) {
         parts.add(
-          AppLocalizations.of(context)!.netEnqueueFailedFolders(r.failed),
+          AppLocalizations.of(context)!.netEnqueueFailedFolders(failed),
         );
       }
       AppSnack.show(

@@ -18,10 +18,12 @@ import '../services/cache_service.dart';
 import '../services/manga_library_service.dart';
 import '../services/manga_reader_prep.dart';
 import '../services/settings_service.dart';
-import '../services/task_queue_service.dart';
+import '../models/queue_models.dart';
+import '../services/queue_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/app_snack.dart';
 import '../utils/manga_file_types.dart';
+import '../utils/manga_pack_followup.dart';
 import '../utils/upload_backend.dart';
 import '../utils/selection_controller.dart';
 import '../widgets/manga_cover_art.dart';
@@ -235,24 +237,34 @@ class _MangaLibraryScreenState extends State<MangaLibraryScreen> {
     );
     if (dest == null || !mounted) return;
 
-    final taskQueue = context.read<TaskQueueService>();
+    final queue = context.read<QueueService>();
     final entries = [
       for (final f in tree.files)
         {'uri': f.uri, 'relativePath': f.relativePath, 'fileName': f.fileName},
     ];
-    await taskQueue.enqueueMangaBuild(MangaBuildPayload(
-      mode: MangaBuildMode.perDir,
-      accountId: dest.accountId,
+    await queue.enqueue(
+      kind: QueueTaskKind.mangaBuild,
       sourceName: writeAccounts
           .firstWhere((a) => a.id == dest.accountId,
               orElse: () => writeAccounts.first)
           .name
           .trim(),
       remotePath: dest.path,
-      folderName: tree.folderName ?? l10n.mangaLocalCbzBuild,
-      title: tree.folderName ?? l10n.mangaLocalCbzBuild,
-      localFileUris: entries,
-    ));
+      fileName: tree.folderName ?? l10n.mangaLocalCbzBuild,
+      payload: MangaBuildPayload(
+        mode: MangaBuildMode.perDir,
+        accountId: dest.accountId,
+        sourceName: writeAccounts
+            .firstWhere((a) => a.id == dest.accountId,
+                orElse: () => writeAccounts.first)
+            .name
+            .trim(),
+        remotePath: dest.path,
+        folderName: tree.folderName ?? l10n.mangaLocalCbzBuild,
+        title: tree.folderName ?? l10n.mangaLocalCbzBuild,
+        localFileUris: entries,
+      ).toJson(),
+    );
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(l10n.mangaLocalCbzQueued)),
@@ -798,8 +810,12 @@ Future<void> _rescanLooseManga(BuildContext context, Manga manga) async {
   );
   if (!context.mounted || picked == null) return;
   final segments = picked.split('/').where((s) => s.isNotEmpty).toList();
-  await context.read<TaskQueueService>().enqueueMangaBuild(
-    MangaBuildPayload(
+  await context.read<QueueService>().enqueue(
+    kind: QueueTaskKind.mangaBuild,
+    sourceName: manga.sourceName,
+    remotePath: picked,
+    fileName: segments.isEmpty ? picked : segments.last,
+    payload: MangaBuildPayload(
       mode: MangaBuildMode.merged,
       accountId: accountId,
       sourceName: manga.sourceName,
@@ -814,7 +830,7 @@ Future<void> _rescanLooseManga(BuildContext context, Manga manga) async {
         ...kMangaImageExtensions,
       ],
       targetMangaId: manga.id,
-    ),
+    ).toJson(),
   );
   if (context.mounted) AppSnack.show(context, l10n.mangaBuildQueued);
 }
@@ -899,12 +915,18 @@ Future<void> _materializeManga(BuildContext context, Manga manga) async {
     AppSnack.show(context, l10n.mangaReaderUnboundSource);
     return;
   }
-  await context.read<TaskQueueService>().enqueueMangaPack(
+  await context.read<QueueService>().enqueue(
+    kind: QueueTaskKind.mangaPack,
     sourceName: manga.sourceName,
-    uploadSourceName: uploadSource,
-    mangaId: manga.id,
     remotePath: '$parent$fileName',
-    displayName: fileName,
+    fileName: fileName,
+    mangaId: manga.id,
+    cacheGroupId: packUploadMarker(
+      PackUploadTarget(
+        uploadSourceName: uploadSource,
+        originMangaId: manga.id,
+      ),
+    ),
   );
   if (context.mounted) AppSnack.show(context, l10n.mangaPackQueued);
 }
@@ -1005,17 +1027,16 @@ Future<void> _editMangaMetadata(BuildContext context, Manga manga) async {
 Future<void> _enqueueMangaScrape(BuildContext context, Manga manga) async {
   final l10n = AppLocalizations.of(context)!;
   final accounts = context.read<AccountsService>();
-  final accountId = accounts.idForSource(manga.sourceName);
-  if (accountId == null || accountId.isEmpty) {
+  if (!accounts.isSourceBound(manga.sourceName)) {
     AppSnack.show(context, l10n.mangaReaderUnboundSource);
     return;
   }
-  final queue = context.read<TaskQueueService>();
-  await queue.enqueueMangaScrape(
-    accountId: accountId,
+  final queue = context.read<QueueService>();
+  await queue.enqueue(
+    kind: QueueTaskKind.mangaScrape,
     sourceName: manga.sourceName,
     remotePath: manga.remotePath,
-    displayName: manga.title,
+    fileName: manga.title,
     mangaId: manga.id,
   );
   if (context.mounted) {
@@ -1027,17 +1048,16 @@ Future<void> _enqueueMangaScrape(BuildContext context, Manga manga) async {
 Future<void> _enqueueMangaCache(BuildContext context, Manga manga) async {
   final l10n = AppLocalizations.of(context)!;
   final accounts = context.read<AccountsService>();
-  final accountId = accounts.idForSource(manga.sourceName);
-  if (accountId == null || accountId.isEmpty) {
+  if (!accounts.isSourceBound(manga.sourceName)) {
     AppSnack.show(context, l10n.mangaReaderUnboundSource);
     return;
   }
-  final queue = context.read<TaskQueueService>();
-  await queue.enqueueMangaCache(
-    accountId: accountId,
+  final queue = context.read<QueueService>();
+  await queue.enqueue(
+    kind: QueueTaskKind.mangaCache,
     sourceName: manga.sourceName,
     remotePath: manga.remotePath,
-    displayName: manga.title,
+    fileName: manga.title,
     mangaId: manga.id,
   );
   if (context.mounted) {
