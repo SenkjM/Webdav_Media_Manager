@@ -307,6 +307,41 @@ function Stop-Renderer {
         -ForegroundColor Yellow
 }
 
+# --- device address -----------------------------------------------------------
+#
+# The phone is usually reached over wireless adb, where the system picks the
+# port (`_adb-tls-connect._tcp` advertises something like 192.168.0.104:37287)
+# and changes it whenever wireless debugging is toggled or the phone reboots.
+# The configured value stays the hardware serial the user knows; resolve it to
+# whatever address adb exposes before handing it to `flutter test -d`.
+
+function Resolve-DeviceAddress([string] $wanted) {
+    $attached = (& adb devices) -join "`n"
+    if ($attached -match [regex]::Escape("$wanted`tdevice")) { return $wanted }
+    if ($wanted -match '^[0-9.]+:\d+$') {
+        & adb connect $wanted | Out-Null
+        return $wanted
+    }
+    $mdns = (& adb mdns services 2>&1) -join "`n"
+    $line = ($mdns -split "`n" |
+        Where-Object { $_ -match "adb-$([regex]::Escape($wanted))-" } |
+        Select-Object -First 1)
+    if ($line) {
+        $addr = [regex]::Match($line, '(\d{1,3}(?:\.\d{1,3}){3}:\d+)').Groups[1].Value
+        if ($addr) {
+            & adb connect $addr | Out-Null
+            $state = ((& adb devices) -join "`n") -match [regex]::Escape("$addr`tdevice")
+            if ($state) {
+                Write-Host "e2e: wireless adb -> $wanted at $addr"
+                return $addr
+            }
+        }
+    }
+    return $wanted
+}
+
+$dev = Resolve-DeviceAddress $dev
+
 $devices = (& adb devices) -join "`n"
 if ($devices -notmatch [regex]::Escape($dev)) {
     throw "device $dev not attached:`n$devices"
