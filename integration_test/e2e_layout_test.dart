@@ -14,6 +14,7 @@ import 'package:webdav_media_manager/screens/share_settings_screen.dart';
 import 'package:webdav_media_manager/screens/sync_screen.dart';
 import 'package:webdav_media_manager/screens/transcode_presets_screen.dart';
 import 'package:webdav_media_manager/screens/video_settings_screen.dart';
+import 'package:webdav_media_manager/widgets/trailing_dropdown.dart';
 
 import 'e2e_support.dart';
 
@@ -72,6 +73,34 @@ void main() {
     }
 
     await visit('settings root', const SettingsScreen());
+    navigator.push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
+    await pumpFrames(tester, label: 'settings align');
+    final dropdowns =
+        find.byWidgetPredicate((widget) => widget is TrailingDropdown);
+    // The list builds lazily, so walk it once and collect every control the
+    // scroll pass reveals.
+    final rects = <Rect>[];
+    for (var step = 0; step < 10; step++) {
+      for (var i = 0; i < dropdowns.evaluate().length; i++) {
+        final rect = tester.getRect(dropdowns.at(i));
+        if (!rects.any((seen) => seen == rect)) rects.add(rect);
+      }
+      if (step == 9) break;
+      await tester.drag(find.byType(ListView).first, const Offset(0, -400));
+      await pumpFrames(tester, frames: 4, label: 'settings scroll $step');
+    }
+    expect(rects.length, greaterThanOrEqualTo(3),
+        reason: 'expected several trailing controls, saw $rects');
+    final right = rects.first.right;
+    for (final rect in rects) {
+      expect(rect.right, moreOrLessEquals(right, epsilon: 0.5),
+          reason: 'trailing controls do not share one right edge: $rects');
+      expect([148.0, 168.0], contains(rect.width),
+          reason: 'unexpected trailing width: $rects');
+    }
+    debugPrint('[E2E] ui: ${rects.length} trailing control(s) aligned');
+    navigator.pop();
+    await pumpFrames(tester, frames: 8, label: 'settings align pop');
     await visit('accounts', const AccountsScreen());
     await visit('download', const DownloadSettingsScreen());
     await visit('encryption', const EncryptionSettingsScreen());
