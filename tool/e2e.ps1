@@ -21,9 +21,10 @@ Suites:
   ui       walks every settings screen for overflows  (integration_test/e2e_layout_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
 
-Before the first suite the script mutes the lab renderer over JSON-RPC
-(`dmrRpc`, e.g. http://kodi-host:9090/jsonrpc) so a cast does not blast the
-room, and restores the mute/volume state in `finally`.
+A suite that actually plays on the renderer (`castplay`) mutes it over
+JSON-RPC first (`dmrRpc`, e.g. http://kodi-host:9090/jsonrpc) so the cast does
+not blast the room, and restores the mute/volume state in `finally`. Read-only
+suites leave the audio alone.
 
 Suites run against the **autodev** flavour, not dev. On a device `flutter test
 <target> -d <serial>` compiles the test file as the app entrypoint and installs
@@ -201,7 +202,9 @@ $env:FLUTTER_ALREADY_LOCKED = 'true'
 Push-Location $root
 $failures = @()
 try {
-    Save-RendererAudio
+    # Only the suite that plays audio needs the mute; discovery/read-only runs
+    # must not touch the user's volume.
+    if ($suites -contains 'castplay') { Save-RendererAudio }
     foreach ($name in $suites) {
         Write-Host ""
         Write-Host "=== e2e: $name ===" -ForegroundColor Cyan
