@@ -58,6 +58,7 @@ jobs:
     needs: check
     if: needs.check.outputs.proceed == 'true'
     runs-on: ubuntu-26.04
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -102,11 +103,11 @@ jobs:
             "platforms;android-36" \
             "build-tools;36.0.0"
 
-      - name: Install libmpv (media_kit native backend for `flutter test` on Linux)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libmpv-dev mpv
-
+      # Deliberately no libmpv here. With libmpv present, the media_kit
+      # live-player test (`test/music_audio_handler_idle_guard_test.dart`)
+      # creates a real mpv instance and hangs forever on the headless runner.
+      # Without libmpv that test skips itself, exactly like the `verify.yml`
+      # Dart job, which is the authoritative unit-test gate.
       - name: Install dependencies
         run: flutter pub get
 
@@ -114,6 +115,9 @@ jobs:
         run: flutter analyze
 
       - name: Test
+        # Keep the gate deterministic: a hanging native backend must fail the
+        # step instead of burning the job's default six-hour budget.
+        timeout-minutes: 15
         run: flutter test
 
       - name: Install Rust toolchain
