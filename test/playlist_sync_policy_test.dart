@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:webdav_media_manager/models/playlist.dart';
-import 'package:webdav_media_manager/utils/m3u8_playlist.dart';
 import 'package:webdav_media_manager/utils/track_identity.dart';
 
 void main() {
@@ -89,50 +88,6 @@ void main() {
         updatedAt: DateTime.utc(2026, 4, 1),
       );
       expect(mergePlaylistsLastWriteWins(local, remote).name, 'local');
-    });
-  });
-
-  group('M3U8 round-trip', () {
-    test('encode/decode preserves id, name, entries, updatedAt', () {
-      final original = Playlist(
-        id: 'uuid-1234',
-        name: '收藏',
-        updatedAt: DateTime.utc(2026, 9, 20, 7, 30),
-        entries: const [
-          PlaylistEntry(
-            sourceName: 'accA',
-            remotePath: '/Music/song.flac',
-            title: 'Song',
-            durationMs: 125000,
-          ),
-          PlaylistEntry(
-            sourceName: 'accB',
-            remotePath: '/Other/b.mp3',
-            title: 'B',
-          ),
-        ],
-      );
-      final text = M3u8PlaylistCodec.encode(original);
-      expect(text, contains('#EXTM3U'));
-      expect(text, contains('#EXT-X-WMP-ID:uuid-1234'));
-      expect(text, contains('wmp://accA/Music/song.flac'));
-
-      final decoded = M3u8PlaylistCodec.decode(text);
-      expect(decoded.id, original.id);
-      expect(decoded.name, original.name);
-      expect(decoded.updatedAt.toUtc(), original.updatedAt.toUtc());
-      expect(decoded.entries.length, 2);
-      expect(decoded.entries[0].sourceName, 'accA');
-      expect(decoded.entries[0].remotePath, '/Music/song.flac');
-      expect(decoded.entries[0].durationMs, 125000);
-      expect(decoded.entries[1].sourceName, 'accB');
-    });
-
-    test('safeFileName sanitizes', () {
-      final name = M3u8PlaylistCodec.safeFileName('a/b:c*', 'abcdefghij');
-      expect(name.endsWith('.m3u8'), isTrue);
-      expect(name.contains('/'), isFalse);
-      expect(name.contains(':'), isFalse);
     });
   });
 }

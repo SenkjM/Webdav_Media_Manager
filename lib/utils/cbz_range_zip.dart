@@ -3,11 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
-import 'package:dio/dio.dart';
-
 import '../models/webdav_stream.dart';
-import 'manga_file_types.dart';
+import '../services/rust_core_service.dart';
 
 /// Thrown when the remote refuses HTTP Range (not 206) — caller must full-cache.
 class CbzRangeUnsupportedException implements Exception {
@@ -17,315 +14,198 @@ class CbzRangeUnsupportedException implements Exception {
   String toString() => detail ?? 'Range unsupported';
 }
 
+/// One central-directory entry, as reported by `wdmm_zip_open`.
 class CbzZipEntry {
   const CbzZipEntry({
+    required this.index,
     required this.name,
-    required this.localHeaderOffset,
     required this.compressedSize,
     required this.uncompressedSize,
     required this.compressionMethod,
-    required this.generalBitFlag,
   });
 
+  /// Index into the archive's central directory; this is what
+  /// `wdmm_zip_read_entry` takes.
+  final int index;
   final String name;
-  final int localHeaderOffset;
   final int compressedSize;
   final int uncompressedSize;
 
-  /// 0 = store, 8 = deflate (PKZIP).
+  /// 0 = store, 8 = deflate, 99 = anything else (PKZIP).
   final int compressionMethod;
-  final int generalBitFlag;
 
   bool get isDirectory => name.endsWith('/');
 }
 
-/// HTTP Range ZIP: EOCD → central directory → per-entry local header + payload.
+/// Thin client over the Rust ZIP reader (`wdmm_zip_open` /
+/// `wdmm_zip_read_entry`).
 ///
-/// The same walk runs against a local archive when [file] is given, so a
-/// cached CBZ is read page by page instead of being loaded whole.
+/// The end-of-central-directory scan, the central-directory walk, range
+/// fetching and decompression all happen in Rust; Dart only carries the entry
+/// list and page bytes. The remote is read through the account driver, so no
+/// Dart-side HTTP client is involved (AGENTS.md forbids constructing `Dio`
+/// outside the service layer) and cached archives are read page by page from
+/// the local file the same way.
+///
+/// Page order comes from Rust's `images` list, which applies the same natural
+/// key as [mangaPageSortKey] on the Dart side, so the reader shows pages in the
+/// same order as before.
 class CbzRangeZip {
-  CbzRangeZip({this.source, this.file, Dio? dio})
-    : assert(source != null || file != null, 'needs a source or a file'),
-      _dio = dio ?? Dio();
+  CbzRangeZip({
+    this.source,
+    this.file,
+    String? accountId,
+    String? remotePath,
+  }) : assert(
+         file != null ||
+             source != null ||
+             (accountId != null && remotePath != null),
+         'needs a file, a source, or accountId + remotePath',
+       ),
+       _accountId = accountId ?? source?.accountId,
+       _remotePath = remotePath ?? source?.remotePath;
 
+  /// Remote source the caller already resolved. Only its account/path are used;
+  /// the bytes are fetched in Rust.
   final WebDavStreamSource? source;
 
-  /// Local archive to stream from. Takes precedence over [source].
+  /// Local archive to read from. Takes precedence over [source].
   final File? file;
-  final Dio _dio;
 
+  final String? _accountId;
+  final String? _remotePath;
+
+  String? _handle;
   int? _totalSize;
-  List<CbzZipEntry>? _entries;
+  List<CbzZipEntry> _entries = const [];
+  List<CbzZipEntry> _images = const [];
 
   int? get totalSize => _totalSize;
-  List<CbzZipEntry> get entries =>
-      List.unmodifiable(_entries ?? const <CbzZipEntry>[]);
+  List<CbzZipEntry> get entries => List.unmodifiable(_entries);
 
-  /// Image entries sorted by natural manga page key.
-  List<CbzZipEntry> get imageEntries {
-    final list =
-        [
-          for (final e in entries)
-            if (!e.isDirectory && isMangaImageFileName(_basename(e.name))) e,
-        ]..sort(
-          (a, b) =>
-              mangaPageSortKey(a.name).compareTo(mangaPageSortKey(b.name)),
-        );
-    return list;
-  }
+  /// Image entries in natural manga page order.
+  List<CbzZipEntry> get imageEntries => List.unmodifiable(_images);
 
-  /// Load central directory. Throws [CbzRangeUnsupportedException] if not 206.
-  Future<void> open({CancelToken? cancel}) async {
+  /// Load the central directory (Rust keeps the archive open under [handle]).
+  ///
+  /// [cancel] is accepted for call-site compatibility but has no effect: the
+  /// FFI entry point is synchronous and cancellation is decided by the caller's
+  /// retry loop between calls.
+  Future<void> open({Object? cancel}) async {
     final local = file;
+    final String accountId;
+    final String remotePath;
     if (local != null) {
-      _totalSize = await local.length();
+      accountId = '';
+      remotePath = local.path;
     } else {
-      // Probe size + Range support with a tiny read.
-      await _rangeBytes(0, 0, cancel: cancel, allowEmpty: true);
+      final id = _accountId;
+      final path = _remotePath;
+      if (id == null || path == null) {
+        throw StateError('CBZ: no archive location');
+      }
+      accountId = id;
+      remotePath = path;
     }
-    // Prefer Content-Range total from a real tail fetch.
-    final tailWant = 65536;
-    // If total unknown, try last 64KiB via suffix range first.
-    Uint8List? tail;
-    if (_totalSize != null && _totalSize! > 0) {
-      final start = (_totalSize! - tailWant).clamp(0, _totalSize! - 1);
-      tail = await _rangeBytes(start, _totalSize! - 1, cancel: cancel);
-    } else {
-      // bytes=-N suffix
-      tail = await _rangeSuffix(tailWant, cancel: cancel);
-    }
-    if (tail == null || tail.length < 22) {
-      throw StateError('CBZ EOCD not found');
-    }
-    final eocd = _findEocd(tail);
-    if (eocd == null) {
-      throw StateError('CBZ EOCD signature missing');
-    }
-    final cdSize = _u32(tail, eocd + 12);
-    final cdOffset = _u32(tail, eocd + 16);
-    final total = _totalSize;
-    if (total == null || cdOffset + cdSize > total) {
-      throw StateError('CBZ central directory out of range');
-    }
-    final cd = await _rangeBytes(
-      cdOffset,
-      cdOffset + cdSize - 1,
-      cancel: cancel,
+
+    final raw = await RustCoreService.runOffMain<String?>(
+      () => RustCoreService.zipOpen(accountId, remotePath),
     );
-    if (cd == null || cd.length < cdSize) {
-      throw StateError('CBZ central directory incomplete');
+    if (raw == null) {
+      throw StateError('CBZ: native Rust core unavailable (wdmm_zip_open)');
     }
-    _entries = _parseCentralDirectory(cd);
+    final Map<String, dynamic> reply = _decodeReply(raw, 'wdmm_zip_open');
+
+    final entries = <CbzZipEntry>[
+      for (final item in _asList(reply['entries']))
+        if (item is Map<String, dynamic>)
+          CbzZipEntry(
+            index: _asInt(item['index']),
+            name: _asString(item['name']),
+            compressedSize: _asInt(item['compressed_size']),
+            uncompressedSize: _asInt(item['uncompressed_size']),
+            compressionMethod: _asInt(item['method']),
+          ),
+    ];
+    // `images` is a list of indices into `entries`, already in page order.
+    final images = <CbzZipEntry>[
+      for (final index in _asList(reply['images']))
+        if (index is int && index >= 0 && index < entries.length)
+          entries[index],
+    ];
+
+    _handle = _asString(reply['handle']);
+    _totalSize = _asInt(reply['size']);
+    _entries = entries;
+    _images = images;
   }
 
-  /// Extract one entry's uncompressed bytes via Range.
+  /// Extract one entry's uncompressed bytes.
+  ///
+  /// [cancel] is accepted for call-site compatibility but ignored (see [open]).
   Future<Uint8List> extractEntry(
     CbzZipEntry entry, {
-    CancelToken? cancel,
+    Object? cancel,
   }) async {
-    // Local file header is at least 30 bytes + name + extra.
-    final headerPeek = await _rangeBytes(
-      entry.localHeaderOffset,
-      entry.localHeaderOffset + 29,
-      cancel: cancel,
+    final handle = _handle;
+    if (handle == null) {
+      throw StateError('CBZ: call open() before extractEntry()');
+    }
+    final index = entry.index;
+    final raw = await RustCoreService.runOffMain<String?>(
+      () => RustCoreService.zipReadEntry(handle, '$index'),
     );
-    if (headerPeek == null || headerPeek.length < 30) {
-      throw StateError('local header short');
+    if (raw == null) {
+      throw StateError('CBZ: native Rust core unavailable (wdmm_zip_read_entry)');
     }
-    if (_u32(headerPeek, 0) != 0x04034b50) {
-      throw StateError('bad local header signature');
+    final reply = _decodeReply(raw, 'wdmm_zip_read_entry');
+    final encoded = reply['bytes_b64'];
+    if (encoded is! String) {
+      throw StateError('CBZ: entry reply missing bytes_b64');
     }
-    final nameLen = _u16(headerPeek, 26);
-    final extraLen = _u16(headerPeek, 28);
-    final dataStart = entry.localHeaderOffset + 30 + nameLen + extraLen;
-    final dataEnd = dataStart + entry.compressedSize - 1;
-    if (entry.compressedSize <= 0) {
-      return Uint8List(0);
-    }
-    final compressed = await _rangeBytes(dataStart, dataEnd, cancel: cancel);
-    if (compressed == null || compressed.length < entry.compressedSize) {
-      throw StateError('compressed payload incomplete');
-    }
-    return _decompress(entry, compressed);
+    return base64Decode(encoded);
   }
 
   /// Find ComicInfo.xml (any folder depth, case-insensitive).
   CbzZipEntry? findComicInfo() {
-    for (final e in entries) {
-      if (_basename(e.name).toLowerCase() == 'comicinfo.xml') return e;
+    for (final entry in _entries) {
+      final base = _basename(entry.name);
+      if (base.toLowerCase() == 'comicinfo.xml') return entry;
     }
     return null;
   }
+}
 
-  Future<Uint8List> _decompress(CbzZipEntry entry, Uint8List compressed) async {
-    switch (entry.compressionMethod) {
-      case 0:
-        return compressed;
-      case 8:
-        final out = Inflate(compressed).getBytes();
-        return Uint8List.fromList(out);
-      default:
-        throw StateError('unsupported ZIP method ${entry.compressionMethod}');
+/// Decode a cut-over reply, mapping the Rust error convention
+/// (`"error:<msg>"`) onto Dart exceptions. Range refusal keeps its own type so
+/// callers can offer the full-cache fallback.
+Map<String, dynamic> _decodeReply(String raw, String symbol) {
+  if (raw.startsWith('error:')) {
+    final message = raw.substring('error:'.length).trim();
+    if (message == 'range_unsupported' || message.contains('range_unsupported')) {
+      throw CbzRangeUnsupportedException(message);
     }
+    throw StateError('$symbol failed: $message');
   }
-
-  Future<Uint8List?> _rangeBytes(
-    int start,
-    int end, {
-    CancelToken? cancel,
-    bool allowEmpty = false,
-  }) async {
-    if (end < start && !allowEmpty) return null;
-    final local = file;
-    if (local != null) {
-      final length = await local.length();
-      final from = start.clamp(0, length);
-      final to = (end + 1).clamp(0, length);
-      if (to <= from) return allowEmpty ? Uint8List(0) : null;
-      final raf = await local.open();
-      try {
-        await raf.setPosition(from);
-        return await raf.read(to - from);
-      } finally {
-        await raf.close();
-      }
-    }
-    try {
-      final res = await _dio.get<List<int>>(
-        source!.uri,
-        cancelToken: cancel,
-        options: Options(
-          responseType: ResponseType.bytes,
-          headers: {...source!.headers, 'Range': 'bytes=$start-$end'},
-          validateStatus: (c) => c == 206 || c == 200,
-        ),
-      );
-      if (res.statusCode == 200) {
-        // Server ignored Range — refuse stream path.
-        throw CbzRangeUnsupportedException('HTTP ${res.statusCode}');
-      }
-      if (res.statusCode != 206) {
-        throw CbzRangeUnsupportedException('HTTP ${res.statusCode}');
-      }
-      _noteTotal(res.headers.value(HttpHeaders.contentRangeHeader));
-      final data = res.data;
-      if (data == null) return allowEmpty ? Uint8List(0) : null;
-      return Uint8List.fromList(data);
-    } on CbzRangeUnsupportedException {
-      rethrow;
-    } on DioException catch (e) {
-      final code = e.response?.statusCode;
-      if (code == 200 || (code != null && code != 206)) {
-        throw CbzRangeUnsupportedException('HTTP $code');
-      }
-      rethrow;
-    }
+  final Object? decoded = jsonDecode(raw);
+  if (decoded is! Map<String, dynamic>) {
+    throw StateError('$symbol: unexpected reply: $raw');
   }
-
-  Future<Uint8List?> _rangeSuffix(int length, {CancelToken? cancel}) async {
-    if (file != null) {
-      final total = await file!.length();
-      if (total <= 0) return null;
-      return _rangeBytes(
-        (total - length).clamp(0, total - 1),
-        total - 1,
-        cancel: cancel,
-      );
-    }
-    try {
-      final res = await _dio.get<List<int>>(
-        source!.uri,
-        cancelToken: cancel,
-        options: Options(
-          responseType: ResponseType.bytes,
-          headers: {...source!.headers, 'Range': 'bytes=-$length'},
-          validateStatus: (c) => c == 206 || c == 200,
-        ),
-      );
-      if (res.statusCode != 206) {
-        throw CbzRangeUnsupportedException('HTTP ${res.statusCode}');
-      }
-      _noteTotal(res.headers.value(HttpHeaders.contentRangeHeader));
-      final data = res.data;
-      if (data == null) return null;
-      return Uint8List.fromList(data);
-    } on CbzRangeUnsupportedException {
-      rethrow;
-    } on DioException catch (e) {
-      final code = e.response?.statusCode;
-      if (code != null && code != 206) {
-        throw CbzRangeUnsupportedException('HTTP $code');
-      }
-      rethrow;
-    }
+  if (decoded['ok'] == false) {
+    throw StateError('$symbol failed: ${decoded['error'] ?? 'unknown error'}');
   }
+  return decoded;
+}
 
-  void _noteTotal(String? contentRange) {
-    if (contentRange == null) return;
-    // bytes start-end/total
-    final slash = contentRange.lastIndexOf('/');
-    if (slash < 0) return;
-    final totalStr = contentRange.substring(slash + 1).trim();
-    final t = int.tryParse(totalStr);
-    if (t != null && t > 0) _totalSize = t;
-  }
+List<Object?> _asList(Object? value) => value is List ? value : const [];
 
-  static int? _findEocd(Uint8List buf) {
-    // Scan backwards for PK\x05\x06
-    for (var i = buf.length - 22; i >= 0; i--) {
-      if (buf[i] == 0x50 &&
-          buf[i + 1] == 0x4b &&
-          buf[i + 2] == 0x05 &&
-          buf[i + 3] == 0x06) {
-        return i;
-      }
-    }
-    return null;
-  }
+int _asInt(Object? value) => value is num ? value.toInt() : 0;
 
-  static List<CbzZipEntry> _parseCentralDirectory(Uint8List cd) {
-    final out = <CbzZipEntry>[];
-    var o = 0;
-    while (o + 46 <= cd.length) {
-      if (_u32(cd, o) != 0x02014b50) break;
-      final flag = _u16(cd, o + 8);
-      final method = _u16(cd, o + 10);
-      final comp = _u32(cd, o + 20);
-      final uncomp = _u32(cd, o + 24);
-      final nameLen = _u16(cd, o + 28);
-      final extraLen = _u16(cd, o + 30);
-      final commentLen = _u16(cd, o + 32);
-      final localOff = _u32(cd, o + 42);
-      final nameStart = o + 46;
-      final nameEnd = nameStart + nameLen;
-      if (nameEnd > cd.length) break;
-      final name = utf8.decode(
-        cd.sublist(nameStart, nameEnd),
-        allowMalformed: true,
-      );
-      out.add(
-        CbzZipEntry(
-          name: name.replaceAll('\\', '/'),
-          localHeaderOffset: localOff,
-          compressedSize: comp,
-          uncompressedSize: uncomp,
-          compressionMethod: method,
-          generalBitFlag: flag,
-        ),
-      );
-      o = nameEnd + extraLen + commentLen;
-    }
-    return out;
-  }
+String _asString(Object? value) => value is String ? value : '';
 
-  static int _u16(Uint8List b, int o) => b[o] | (b[o + 1] << 8);
-  static int _u32(Uint8List b, int o) =>
-      b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24);
-
-  static String _basename(String path) {
-    final i = path.lastIndexOf('/');
-    return i < 0 ? path : path.substring(i + 1);
-  }
+String _basename(String path) {
+  final index = path.lastIndexOf('/');
+  return index < 0 ? path : path.substring(index + 1);
 }
 
 /// Minimal ComicInfo.xml field scrape (title / series / writer|penciller).

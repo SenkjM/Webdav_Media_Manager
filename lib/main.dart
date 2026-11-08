@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
@@ -16,7 +17,7 @@ import 'services/cache_service.dart';
 import 'services/credential_vault_service.dart';
 import 'services/dlna_cast_service.dart';
 import 'services/download_destination_service.dart';
-import 'services/task_queue_service.dart';
+import 'services/queue_service.dart';
 import 'services/library_service.dart';
 import 'services/user_folder_service.dart';
 import 'services/manga_library_service.dart';
@@ -27,6 +28,7 @@ import 'services/platform_export_service.dart';
 import 'services/prefetch_cache.dart';
 import 'services/playlist_service.dart';
 import 'services/settings_service.dart';
+import 'services/rust_core_service.dart';
 import 'services/sync_service.dart';
 import 'services/video_playback_service.dart';
 
@@ -38,6 +40,9 @@ import 'utils/third_party_licenses.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Probe Rust core version at debug startup — non-fatal, Dart services
+  // remain source of truth until round 4 DB cutover.
+  RustCoreService.debugLogVersion();
   // libsodium (ISC) ships as a native asset; Flutter does not collect it.
   registerThirdPartyLicenses();
   // Drop last run's prefetch bytes before any player opens a cached file.
@@ -55,7 +60,6 @@ Future<void> main() async {
     audioHandler = MusicAudioHandler();
   }
   final app = AppState(audioHandler: audioHandler);
-  await app.init();
   // Re-resolve the locale from persisted settings on every call so an
   // in-app language switch applies to services immediately.
   L10nHost.configure(() {
@@ -68,10 +72,25 @@ Future<void> main() async {
       return lookupAppLocalizations(const Locale('zh'));
     }
   });
-  if (!kIsWeb && Platform.isAndroid) {
-    await app.notificationPermission.request();
-  }
+  // Run init in the background so runApp() is reached immediately.
+  // A loading screen covers the app until init completes; the native splash
+  // transitions to Flutter within the ~50 ms of initMusicAudioService() above
+  // instead of blocking for the entire AppState.init() duration.
+  unawaited(app.init());
   runApp(WebDavMusicApp(appState: app));
+}
+
+/// Shown on the first frame while [AppState.init] runs in the background.
+/// Replaced by [HomeShell] (or [RecoveryScreen]) once [AppState.ready] flips.
+class _AppLoadingScreen extends StatelessWidget {
+  const _AppLoadingScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
 }
 
 class WebDavMusicApp extends StatelessWidget {
@@ -106,9 +125,7 @@ class WebDavMusicApp extends StatelessWidget {
         ),
         ChangeNotifierProvider<WebDavService>.value(value: appState.webDav),
         ChangeNotifierProvider<CacheService>.value(value: appState.cache),
-        ChangeNotifierProvider<TaskQueueService>.value(
-          value: appState.taskQueue,
-        ),
+        ChangeNotifierProvider<QueueService>.value(value: appState.queue),
         ChangeNotifierProvider<NotificationPermissionService>.value(
           value: appState.notificationPermission,
         ),
@@ -135,12 +152,16 @@ class WebDavMusicApp extends StatelessWidget {
           themeMode: settings.themeMode,
           theme: AppTheme.lightFrom(settings.themeSeed),
           darkTheme: AppTheme.darkFrom(settings.themeSeed),
-          home: appState.initError != null
-              ? RecoveryScreen(
-                  error: appState.initError!,
-                  beforeClear: appState.closeDatabases,
-                )
-              : const HomeShell(),
+          home: Consumer<AppState>(
+            builder: (context, state, _) => state.initError != null
+                ? RecoveryScreen(
+                    error: state.initError!,
+                    beforeClear: state.closeDatabases,
+                  )
+                : !state.ready
+                    ? const _AppLoadingScreen()
+                    : const HomeShell(),
+          ),
         ),
       ),
     );

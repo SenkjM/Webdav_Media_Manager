@@ -3,12 +3,17 @@ import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 
 /// Extensions treated as text sidecars. `.idx` is not one of them.
+///
+/// Kept in parity with the Rust side (`SUBTITLE_EXTS` in
+/// `crates/wdmm-ffi/src/dlna_session.rs`) and with `text/<ext>` MIME subtypes in
+/// `crates/wdmm-dlna/src/didl.rs`, which is what DLNA renderers match on.
 const Set<String> subtitleSidecarExtensions = {
   'srt',
   'ass',
   'ssa',
   'vtt',
   'sub',
+  'smi',
 };
 
 /// Filename without its last video extension, compared case-insensitively.
@@ -162,6 +167,129 @@ String uiSubtitleLanguageKey(String languageCode) {
   return displaySubtitleLanguage(languageCode).toLowerCase();
 }
 
+/// 常见 ISO-639 语言码 → 中文名。
+///
+/// 用于投屏字幕列表（契约 task-21 §2）：容器里的字幕轨往往只有语言码和标题，
+/// 33 条轨道的人类可读区分全靠这里。未收录的码原样大写返回，空/unknown → null。
+String? subtitleLanguageName(String? raw) {
+  if (raw == null) return null;
+  final trimmed = raw.trim();
+  if (trimmed.isEmpty) return null;
+  final key = trimmed.toLowerCase().replaceAll('_', '-');
+  if (key == 'und' || key == 'undetermined' || key == 'unknown') return null;
+  final direct = _subtitleLanguageNames[key];
+  if (direct != null) return direct;
+  if (key.startsWith('zh-')) return '中文';
+  if (key.startsWith('en-')) return '英语';
+  if (key.startsWith('pt-br')) return '葡萄牙语';
+  return trimmed.toUpperCase();
+}
+
+const Map<String, String> _subtitleLanguageNames = {
+  'zh': '中文',
+  'zho': '中文',
+  'chi': '中文',
+  'cmn': '中文',
+  'chs': '中文',
+  'cht': '中文',
+  'cn': '中文',
+  'yue': '粤语',
+  'en': '英语',
+  'eng': '英语',
+  'ja': '日语',
+  'jpn': '日语',
+  'ko': '韩语',
+  'kor': '韩语',
+  'fr': '法语',
+  'fre': '法语',
+  'fra': '法语',
+  'de': '德语',
+  'ger': '德语',
+  'deu': '德语',
+  'es': '西班牙语',
+  'spa': '西班牙语',
+  'it': '意大利语',
+  'ita': '意大利语',
+  'pt': '葡萄牙语',
+  'por': '葡萄牙语',
+  'ru': '俄语',
+  'rus': '俄语',
+  'ar': '阿拉伯语',
+  'ara': '阿拉伯语',
+  'hi': '印地语',
+  'hin': '印地语',
+  'th': '泰语',
+  'tha': '泰语',
+  'vi': '越南语',
+  'vie': '越南语',
+  'id': '印尼语',
+  'ind': '印尼语',
+  'ms': '马来语',
+  'may': '马来语',
+  'msa': '马来语',
+  'tr': '土耳其语',
+  'tur': '土耳其语',
+  'pl': '波兰语',
+  'pol': '波兰语',
+  'nl': '荷兰语',
+  'dut': '荷兰语',
+  'nld': '荷兰语',
+  'sv': '瑞典语',
+  'swe': '瑞典语',
+  'no': '挪威语',
+  'nor': '挪威语',
+  'nb': '挪威语',
+  'da': '丹麦语',
+  'dan': '丹麦语',
+  'fi': '芬兰语',
+  'fin': '芬兰语',
+  'cs': '捷克语',
+  'cze': '捷克语',
+  'ces': '捷克语',
+  'hu': '匈牙利语',
+  'hun': '匈牙利语',
+  'el': '希腊语',
+  'gre': '希腊语',
+  'ell': '希腊语',
+  'he': '希伯来语',
+  'heb': '希伯来语',
+  'uk': '乌克兰语',
+  'ukr': '乌克兰语',
+  'ro': '罗马尼亚语',
+  'ron': '罗马尼亚语',
+  'rum': '罗马尼亚语',
+  'bg': '保加利亚语',
+  'bul': '保加利亚语',
+  'sr': '塞尔维亚语',
+  'srp': '塞尔维亚语',
+  'hr': '克罗地亚语',
+  'hrv': '克罗地亚语',
+  'sk': '斯洛伐克语',
+  'slk': '斯洛伐克语',
+  'slo': '斯洛伐克语',
+  'sl': '斯洛文尼亚语',
+  'slv': '斯洛文尼亚语',
+  'et': '爱沙尼亚语',
+  'est': '爱沙尼亚语',
+  'lv': '拉脱维亚语',
+  'lav': '拉脱维亚语',
+  'lt': '立陶宛语',
+  'lit': '立陶宛语',
+  'ca': '加泰罗尼亚语',
+  'cat': '加泰罗尼亚语',
+  'tl': '菲律宾语',
+  'fil': '菲律宾语',
+  'fa': '波斯语',
+  'per': '波斯语',
+  'fas': '波斯语',
+  'bn': '孟加拉语',
+  'ben': '孟加拉语',
+  'ta': '泰米尔语',
+  'tam': '泰米尔语',
+  'te': '泰卢固语',
+  'tel': '泰卢固语',
+};
+
 /// Picker title plus an optional format tag. Embedded rows never have a tag.
 class SubtitleRowLabel {
   const SubtitleRowLabel({required this.title, this.formatTag});
@@ -213,6 +341,10 @@ SubtitleRowLabel labelManualSubtitle({
 }) => SubtitleRowLabel(title: fileName, formatTag: format.toLowerCase());
 
 /// A sidecar file that matched the video name.
+///
+/// DLNA 投屏时 Rust 还会回传**内置**字幕轨（合成 path
+/// `<remote_path>#embedded:<index>`，契约 task-11 §3）；本机播放场景只用前
+/// 半部分字段，新增字段恒为默认值。
 class SidecarHit {
   const SidecarHit({
     required this.name,
@@ -223,6 +355,12 @@ class SidecarHit {
     required this.exact,
     this.subdirectory,
     this.size,
+    this.embedded = false,
+    this.track,
+    this.codec,
+    this.support,
+    this.title,
+    this.languageCode,
   });
 
   final String name;
@@ -237,6 +375,43 @@ class SidecarHit {
 
   /// Remote size when the listing provided one. Used to skip huge `.sub` files.
   final int? size;
+
+  /// 是否为容器内置字幕轨（Rust 合成项）；外置字幕文件恒为 false。
+  final bool embedded;
+
+  /// 内置字幕的 AV stream index；外置字幕为 null。
+  final int? track;
+
+  /// 内置字幕的 libav codec 名（`ass` / `subrip` / `hdmv_pgs_subtitle` …）。
+  final String? codec;
+
+  /// Rust 判定能否投送：`external` / `webvtt` / `bitmap-unsupported`。
+  ///
+  /// 旧版 `.so` 不返回该字段时为 null（按可投送处理）。
+  final String? support;
+
+  /// 内置字幕轨在容器里的原始标题（Rust `title`，契约 task-21 §2）；可能为空。
+  final String? title;
+
+  /// 内置字幕轨的 ISO-639 语言码（Rust `language`，如 `jpn` / `chi`）。
+  ///
+  /// 外置字幕文件为 null；旧版 `.so` 也为 null。
+  final String? languageCode;
+
+  /// 位图字幕（PGS/DVD）：HLS 投屏无法显示，UI 必须禁用该行并说明原因。
+  bool get bitmapUnsupported => support == 'bitmap-unsupported';
+
+  /// 内置字幕轨的可读语言名：优先 `title`，其次语言码中文名，最后「轨道 N」。
+  ///
+  /// 外置字幕返回 null（文件名已经表达了语言）。
+  String? get trackLanguageLabel {
+    final trimmedTitle = title?.trim();
+    if (trimmedTitle != null && trimmedTitle.isNotEmpty) return trimmedTitle;
+    if (!embedded) return null;
+    final name = subtitleLanguageName(languageCode);
+    if (name != null) return name;
+    return track == null ? null : '轨道 $track';
+  }
 
   SubtitleRowLabel labelFor(AppLocalizations l10n) => subdirectory == null
       ? labelSameDirectorySidecar(language: language, format: format, l10n: l10n)

@@ -64,6 +64,10 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.check.outputs.sha }}
+          # The Rust shared library is built from the `rust/wdmm-core` submodule;
+          # without this the checkout leaves the directory empty and the build
+          # fails inside `cargo ndk`.
+          submodules: recursive
 
       - name: Setup Java 17
         uses: actions/setup-java@v6
@@ -112,6 +116,84 @@ jobs:
       - name: Test
         run: flutter test
 
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Setup NDK for cargo-ndk
+        run: |
+          set -euo pipefail
+          # Pin the same NDK version used by build-ffmpeg-android.yml and
+          # android/app/build.gradle.kts so the Rust toolchain, FFmpeg shared
+          # libs, and Gradle all use a single consistent sysroot.
+          NDK_VER="28.2.13676358"
+          echo "Installing NDK ${NDK_VER}"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;${NDK_VER}"
+          NDK_PATH="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/lib/android-sdk}}/ndk/${NDK_VER}"
+          echo "ANDROID_NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
+          echo "NDK_HOME=${NDK_PATH}" >> "$GITHUB_ENV"
+
+      - name: Download FFmpeg Android shared libs
+        # Fetch the FFmpeg shared libs produced by build-ffmpeg-android.yml.
+        # They live under the rolling release tag `ffmpeg-android-libs`.
+        # Release builds need arm64-v8a and x86_64 for --split-per-abi.
+        # armeabi-v7a is not supported: FFmpeg excludes it (LP64-only struct
+        # offsets) and wdmm-ffi has no armv7 Rust target.
+        run: |
+          set -euo pipefail
+          JNILIBS="android/app/src/main/jniLibs"
+          TMPLIBS="${{ runner.temp }}/ffmpeg-android-libs"
+          mkdir -p "$TMPLIBS"
+          for abi in arm64-v8a x86_64; do
+            mkdir -p "${JNILIBS}/${abi}"
+            tarball="${TMPLIBS}/ffmpeg-android-${abi}.tar.gz"
+            gh release download ffmpeg-android-libs \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "ffmpeg-android-${abi}.tar.gz" \
+              --output "$tarball"
+            tar -xzf "$tarball" -C "$TMPLIBS"
+            cp "${TMPLIBS}/${abi}/lib"*.so "${JNILIBS}/${abi}/"
+            echo "FFmpeg libs for ${abi}: $(ls "${JNILIBS}/${abi}"/*.so | wc -l) .so files"
+          done
+          # Absolute paths: the build step below runs from `rust/wdmm-core`, and a
+          # relative link-search path would resolve against the wrong directory.
+          echo "WDMM_FFMPEG_LIB_DIR_ARM64=${GITHUB_WORKSPACE}/${JNILIBS}/arm64-v8a" >> "$GITHUB_ENV"
+          echo "WDMM_FFMPEG_LIB_DIR_X86_64=${GITHUB_WORKSPACE}/${JNILIBS}/x86_64" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build wdmm-ffi for arm64-v8a and x86_64
+        # armeabi-v7a is not built: FFmpeg has no v7a libs (LP64-only struct
+        # offsets) and the split APK for v7a is intentionally absent.
+        run: |
+          set -euo pipefail
+          cd rust/wdmm-core
+          for abi in arm64-v8a x86_64; do
+            if [ "$abi" = "arm64-v8a" ]; then
+              export WDMM_FFMPEG_LIB_DIR="$WDMM_FFMPEG_LIB_DIR_ARM64"
+            else
+              export WDMM_FFMPEG_LIB_DIR="$WDMM_FFMPEG_LIB_DIR_X86_64"
+            fi
+            cargo ndk -t "$abi" \
+              -o ../../android/app/src/main/jniLibs \
+              build --release -p wdmm-ffi --features ffmpeg
+            SO="../../android/app/src/main/jniLibs/${abi}/libwdmm_ffi.so"
+            if [ ! -f "$SO" ]; then
+              echo "::error::libwdmm_ffi.so not found for ${abi}"
+              exit 1
+            fi
+            echo "libwdmm_ffi.so ready for ${abi} at $SO"
+          done
+
       - name: Decode internal keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -134,8 +216,12 @@ jobs:
           # force-version-code-ignoring-abi：关掉 Flutter 分包时给 versionCode
           # 加 ABI 偏移（abi*1000）的行为。否则 arm64-v8a 的 versionCode 会比
           # 下一个预发布 tag 里编码的 code 大 2000，应用内更新检查永远判定
-          # 「已是最新」。三个 ABI 包 versionCode 相同对 GitHub Release 侧载无影响。
-          flutter build apk --release --flavor prod --split-per-abi \
+          # 「已是最新」。两个 ABI 包 versionCode 相同对 GitHub Release 侧载无影响。
+          # armeabi-v7a 不出包：FFmpeg 没有 v7a 共享库，wdmm-ffi 也无 armv7 Rust 目标，
+          # v7a APK 缺 libwdmm_ffi.so 会在启动时崩溃。
+          flutter build apk --release --flavor prod \
+            --target-platform android-arm64,android-x64 \
+            --split-per-abi \
             --build-name="${{ needs.check.outputs.version_name }}" \
             --build-number="${{ needs.check.outputs.version_code }}" \
             -P force-version-code-ignoring-abi=true
@@ -151,25 +237,7 @@ jobs:
           ls -l build/app/outputs/flutter-apk || true
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-arm64-v8a-prod-release.apk "dist/webdav-media-manager-${V}-arm64-v8a.apk"
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-prod-release.apk "dist/webdav-media-manager-${V}-armeabi-v7a.apk"
           cp build/app/outputs/flutter-apk/app-x86_64-prod-release.apk "dist/webdav-media-manager-${V}-x86_64.apk"
-
-      - name: Build arm-only APK (no x86)
-        env:
-          ANDROID_KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          flutter build apk --release --flavor prod --target-platform android-arm,android-arm64 \
-            --build-name="${{ needs.check.outputs.version_name }}" \
-            --build-number="${{ needs.check.outputs.version_code }}"
-
-      - name: Collect arm-only APK
-        run: |
-          set -euo pipefail
-          V="${{ needs.check.outputs.version_name }}"
-          cp build/app/outputs/flutter-apk/app-prod-release.apk "dist/webdav-media-manager-${V}-arm.apk"
 
       - name: Build app bundle (optional)
         env:
@@ -178,7 +246,11 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          # Match the APK split: no armeabi-v7a (FFmpeg has no v7a libs and
+          # libwdmm_ffi.so has no armv7 target), otherwise the bundle would ship
+          # a v7a APK that crashes at startup.
           flutter build appbundle --release --flavor prod \
+            --target-platform android-arm64,android-x64 \
             --build-name="${{ needs.check.outputs.version_name }}" \
             --build-number="${{ needs.check.outputs.version_code }}"
         continue-on-error: true

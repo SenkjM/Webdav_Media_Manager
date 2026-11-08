@@ -1,128 +1,110 @@
 import 'dart:convert';
 
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:sqflite/sqflite.dart';
-
 import '../models/playlist.dart';
+import 'rust_core_service.dart';
 
-/// Dedicated playlist SQLite store under app documents.
-/// Independent from audio cache — never wiped by [CacheService] cleanup.
+/// Local playlist persistence.
+///
+/// The Rust core owns both halves: the playlist spine (id / name / timestamps)
+/// and the ordered entry rows, including `cueTrackIndex` / `remoteMissing`. The
+/// cloud sync engine reads those very tables, so nothing is mirrored into the
+/// KV store any more — a second copy would only go stale after a native pull.
 class PlaylistStore {
-  Database? _db;
-
-  /// On-disk name; see [LocalDatabaseRecoveryService].
+  /// On-disk name kept for [LocalDatabaseRecoveryService] / backups that still
+  /// reference it; the file is no longer opened by this store.
   static const fileName = 'playlists.db';
 
-  Future<Database> get database async {
-    if (_db != null) return _db!;
-    final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, fileName);
-    _db = await openDatabase(
-      path,
-      version: 1,
-      onCreate: (db, version) async {
-        await db.execute('''
-CREATE TABLE playlists (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  updated_at TEXT NOT NULL,
-  remote_file_name TEXT,
-  entries_json TEXT NOT NULL
-)
-''');
-      },
-    );
-    return _db!;
-  }
-
   Future<List<Playlist>> loadAll() async {
-    final db = await database;
-    final rows = await db.query(
-      'playlists',
-      orderBy: 'name COLLATE NOCASE ASC',
-    );
-    return rows.map(_fromRow).toList();
-  }
-
-  Future<Playlist?> getById(String id) async {
-    final db = await database;
-    final rows = await db.query(
-      'playlists',
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-    return _fromRow(rows.first);
+    final raw = RustCoreService.playlistList();
+    if (raw == null || raw.startsWith('error:')) {
+      // FFI unavailable (non-Android / library not loaded). Return empty so the
+      // UI degrades gracefully; a later sync pull repopulates from the cloud.
+      return [];
+    }
+    final list = jsonDecode(raw) as List<dynamic>;
+    final playlists = <Playlist>[];
+    for (final e in list) {
+      final m = Map<String, dynamic>.from(e as Map);
+      final id = m['id'] as String? ?? '';
+      if (id.isEmpty) continue;
+      playlists.add(_load(id, m));
+    }
+    return playlists;
   }
 
   Future<void> upsert(Playlist playlist) async {
-    final db = await database;
-    await db.insert('playlists', {
+    // The spine carries `updated_at` because Core's sync merge is
+    // last-write-wins on it; an edit means "now".
+    final spine = jsonEncode({
       'id': playlist.id,
       'name': playlist.name,
       'updated_at': playlist.updatedAt.toUtc().toIso8601String(),
-      'remote_file_name': playlist.remoteFileName,
-      'entries_json': jsonEncode(
-        playlist.entries.map((e) => e.toJson()).toList(),
-      ),
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
+    final res = RustCoreService.playlistCreate(spine);
+    if (res == null || res.startsWith('error:')) {
+      // FFI unavailable: in-memory only. The caller still holds the object.
+      return;
+    }
+    final arr = <Map<String, dynamic>>[
+      for (final e in playlist.entries)
+        {
+          'music_id': e.musicId ?? '',
+          'source_name': e.sourceName,
+          'remote_path': e.remotePath,
+          'title': e.title ?? '',
+          'duration_ms': e.durationMs ?? 0,
+          'cue_track_index': e.cueTrackIndex,
+          'remote_missing': e.remoteMissing,
+        },
+    ];
+    // A removed entry becomes an entry tombstone here (Core diffs the rows).
+    RustCoreService.playlistSetEntries(playlist.id, jsonEncode(arr));
   }
 
   Future<void> delete(String id) async {
-    final db = await database;
-    await db.delete('playlists', where: 'id = ?', whereArgs: [id]);
+    // Core records the whole-playlist tombstone inside `wdmm_playlist_delete`.
+    RustCoreService.playlistDelete(id);
   }
 
-  Future<void> clearAll() async {
-    final db = await database;
-    await db.delete('playlists');
-  }
+  // ── Helpers ──────────────────────────────────────────────────────────────
 
-  Future<void> replaceAll(List<Playlist> playlists) async {
-    final db = await database;
-    await db.transaction((txn) async {
-      await txn.delete('playlists');
-      for (final pl in playlists) {
-        await txn.insert('playlists', {
-          'id': pl.id,
-          'name': pl.name,
-          'updated_at': pl.updatedAt.toUtc().toIso8601String(),
-          'remote_file_name': pl.remoteFileName,
-          'entries_json': jsonEncode(
-            pl.entries.map((e) => e.toJson()).toList(),
-          ),
-        });
-      }
-    });
-  }
-
-  Playlist _fromRow(Map<String, dynamic> row) {
-    String? asString(Object? value) => value?.toString();
-    final raw = asString(row['entries_json']) ?? '[]';
-    final list = (jsonDecode(raw) as List<dynamic>)
-        .map((e) => PlaylistEntry.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
+  Playlist _load(String id, Map<String, dynamic> spine) {
+    final entriesRaw = RustCoreService.playlistListEntries(id) ?? '[]';
     return Playlist(
-      id: asString(row['id']) ?? '',
-      name: asString(row['name']) ?? '',
+      id: id,
+      name: spine['name'] as String? ?? '',
       updatedAt:
-          DateTime.tryParse(asString(row['updated_at']) ?? '') ??
+          DateTime.tryParse(spine['updated_at'] as String? ?? '')?.toUtc() ??
           DateTime.now().toUtc(),
-      remoteFileName: asString(row['remote_file_name']),
-      entries: list,
+      entries: _parseFfiEntries(entriesRaw),
     );
   }
 
-  /// Absolute path of the DB file (for backup).
-  Future<String> databasePath() async {
-    final dir = await getApplicationDocumentsDirectory();
-    return p.join(dir.path, fileName);
+  List<PlaylistEntry> _parseFfiEntries(String raw) {
+    if (raw.isEmpty || raw == 'null' || raw.startsWith('error:')) return [];
+    final list = jsonDecode(raw) as List<dynamic>;
+    return [
+      for (final e in list) _entry(Map<String, dynamic>.from(e as Map)),
+    ];
   }
 
-  Future<void> close() async {
-    await _db?.close();
-    _db = null;
+  PlaylistEntry _entry(Map<String, dynamic> m) {
+    final musicId = m['music_id'] as String? ?? '';
+    final title = m['title'] as String? ?? '';
+    return PlaylistEntry(
+      sourceName: m['source_name'] as String? ?? '',
+      remotePath: m['remote_path'] as String? ?? '',
+      musicId: musicId.isEmpty ? null : musicId,
+      title: title.isEmpty ? null : title,
+      durationMs: (m['duration_ms'] as num?)?.toInt(),
+      cueTrackIndex: (m['cue_track_index'] as num?)?.toInt(),
+      remoteMissing: m['remote_missing'] == true,
+    );
   }
+
+  /// Absolute path of the legacy DB file (kept for backup compatibility; the
+  /// file is no longer opened by this store).
+  Future<String> databasePath() async => fileName;
+
+  Future<void> close() async {}
 }

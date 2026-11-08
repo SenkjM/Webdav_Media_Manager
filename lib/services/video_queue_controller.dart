@@ -6,7 +6,6 @@ import '../models/file_type_config.dart';
 import '../models/webdav_item.dart';
 import '../utils/directory_walk.dart';
 import 'stream_window.dart';
-import 'webdav_service.dart';
 
 /// Progressive media queue for the player.
 ///
@@ -25,7 +24,6 @@ import 'webdav_service.dart';
 /// prefix.
 class VideoQueueController extends ChangeNotifier {
   VideoQueueController({
-    required WebDavService webDav,
     required this.accountId,
     required this.rootPath,
     required List<WebDavItem> seed,
@@ -34,13 +32,11 @@ class VideoQueueController extends ChangeNotifier {
     this.category = FileCategory.video,
     this.autoAdvance = true,
     this.walkOptions = const WalkOptions(),
-  }) : _webDav = webDav,
-       _fileTypes = fileTypes ?? FileTypeConfig() {
+  }) : _fileTypes = fileTypes ?? FileTypeConfig() {
     _merge(seed);
     _currentRemotePath = _resolveCurrent(initialRemotePath);
   }
 
-  final WebDavService _webDav;
   final String accountId;
   final String rootPath;
   final FileTypeConfig _fileTypes;
@@ -142,33 +138,26 @@ class VideoQueueController extends ChangeNotifier {
     _scanning = false;
   }
 
-  /// Progressive walk of [rootPath] via [DirectoryWalker]; merges on every
-  /// directory listing so the queue grows while the user is already watching.
+  /// Walk [rootPath] in Rust ([DirectoryWalker.scan]) and merge every matching
+  /// file the walk returns.
   Future<void> _scan() async {
-    final walker = DirectoryWalker(rootPath: rootPath, options: walkOptions);
-    var failed = 0;
     try {
-      while (!_cancelled) {
-        final dir = walker.nextDirectory();
-        if (dir == null) break;
-        try {
-          final items = await _webDav.listDirectory(
-            accountId,
-            dir,
-            fileTypes: _fileTypes,
-          );
-          noteListing(dir, items);
-          final media = items.where((e) => e.category == category).toList();
-          walker.acceptChildren(
-            dir,
-            items.where((e) => e.isDirectory).map((e) => e.path),
-          );
-          if (media.isNotEmpty) _merge(media);
-        } catch (e) {
-          failed++;
-          if (failed == 1) _scanError = e.toString();
-        }
+      final walk = await DirectoryWalker.scan(
+        accountId: accountId,
+        rootPath: rootPath,
+        options: walkOptions,
+      );
+      if (_cancelled) return;
+      for (final entry in walk.namesByDirectory.entries) {
+        _namesByDir[normDir(entry.key)] = entry.value;
       }
+      final media = walk.files
+          .map((entry) => entry.toItem(_fileTypes))
+          .where((item) => item.category == category)
+          .toList();
+      if (media.isNotEmpty) _merge(media);
+    } catch (e) {
+      _scanError = e.toString();
     } finally {
       if (!_cancelled) {
         _scanning = false;

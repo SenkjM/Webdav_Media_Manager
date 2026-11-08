@@ -63,32 +63,24 @@ Future<List<ScanPathEntry>> listScanPaths({
     return const [];
   }
 
-  final walker = DirectoryWalker(rootPath: rootPath, options: walk);
+  if (cancel?.isCancelled ?? false) return const [];
+  final result = await DirectoryWalker.scan(
+    accountId: accountId,
+    rootPath: rootPath,
+    options: walk,
+    kinds: const ['any'],
+  );
+  if (cancel?.isCancelled ?? false) return const [];
   final cues = <ScanPathEntry>[];
   final music = <ScanPathEntry>[];
-  while (true) {
-    if (cancel?.isCancelled ?? false) break;
-    final dir = walker.nextDirectory();
-    if (dir == null) break;
-    final items = await webDav.listDirectory(accountId, dir);
-    final childDirs = <String>[];
-    for (final item in items) {
-      if (item.isDirectory) {
-        childDirs.add(item.path);
-        continue;
-      }
-      if (isCue(item.name)) {
-        cues.add(ScanPathEntry(path: item.path, name: item.name, isCue: true));
-        continue;
-      }
-      if (isMusic(item.name)) {
-        music.add(
-          ScanPathEntry(path: item.path, name: item.name, isCue: false),
-        );
-      }
+  for (final entry in result.files) {
+    if (isCue(entry.name)) {
+      cues.add(ScanPathEntry(path: entry.path, name: entry.name, isCue: true));
+      continue;
     }
-    walker.acceptChildren(dir, childDirs);
-    await Future<void>.delayed(Duration.zero);
+    if (isMusic(entry.name)) {
+      music.add(ScanPathEntry(path: entry.path, name: entry.name, isCue: false));
+    }
   }
   return [...cues, ...music];
 }

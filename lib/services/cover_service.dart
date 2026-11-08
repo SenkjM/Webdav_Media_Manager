@@ -18,6 +18,10 @@ import '../utils/track_identity.dart';
 /// old size until re-ingest.
 class CoverService {
   Directory? _coversDir;
+
+  /// Cached path for sync access after [init]. `null` until init completes.
+  String? _coversDirPath;
+
   bool _legacyFullPurged = false;
 
   /// Square edge (px) used by [saveThumb] when no explicit size is passed.
@@ -30,11 +34,22 @@ class CoverService {
     if (!await _coversDir!.exists()) {
       await _coversDir!.create(recursive: true);
     }
+    _coversDirPath = _coversDir!.path;
     return _coversDir!;
   }
 
   String coverFileName(String sourceName, String remotePath) {
     return '${identityHashStem(sourceName, remotePath)}.jpg';
+  }
+
+  /// Synchronous thumb path — returns `null` if [init] has not completed yet.
+  ///
+  /// The path is *deterministic* (derived from identity) so callers may display
+  /// it as a [FileImage] immediately, gated on [File.existsSync].
+  String? thumbPath(String sourceName, String remotePath) {
+    final dir = _coversDirPath;
+    if (dir == null) return null;
+    return p.join(dir, coverFileName(sourceName, remotePath));
   }
 
   Future<File> coverFile(String sourceName, String remotePath) async {
@@ -61,6 +76,32 @@ class CoverService {
       await FileImage(file).evict();
     } catch (_) {}
     return file.path;
+  }
+
+  /// Thin ensure helper: write thumb bytes only if the deterministic file is
+  /// absent. Returns the thumb path on success, `null` if bytes are not
+  /// available or decode fails.
+  ///
+  /// Does **not** write to the database; callers update [CoverState] after
+  /// this returns a non-null path.
+  ///
+  /// [fetchBytes] is called at most once, only when the file is missing.
+  Future<String?> ensureMusicCoverFile({
+    required String sourceName,
+    required String remotePath,
+    required Future<Uint8List?> Function() fetchBytes,
+    int? size,
+  }) async {
+    final file = await coverFile(sourceName, remotePath);
+    if (await file.exists()) return file.path;
+    final bytes = await fetchBytes();
+    if (bytes == null || bytes.isEmpty) return null;
+    return saveThumb(
+      sourceName: sourceName,
+      remotePath: remotePath,
+      bytes: bytes,
+      size: size,
+    );
   }
 
   Future<void> deleteThumb(String sourceName, String remotePath) async {

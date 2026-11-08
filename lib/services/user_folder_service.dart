@@ -1,10 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/library_tag_dimension.dart';
 import '../models/user_folder.dart';
 import '../models/user_folder_item.dart';
-import 'library_database.dart';
+import 'rust_core_service.dart';
 
 /// Local-only user folder tree overlay (99 §18).
 ///
@@ -12,10 +14,12 @@ import 'library_database.dart';
 ///
 /// A ref whose [UserFolderItem.folderId] is [kUserFolderRootId] hangs off the
 /// virtual root 「我的文件夹」, which has no `user_folders` row.
+///
+/// **Wave B cutover**: persistence now lives in the Rust core via
+/// [RustCoreService] FFI. The sqflite user_folder tables are no longer
+/// written; the sqflite read fallback has been removed.
 class UserFolderService extends ChangeNotifier {
-  UserFolderService({required LibraryDatabase db}) : _db = db;
-
-  final LibraryDatabase _db;
+  UserFolderService();
   final _uuid = const Uuid();
 
   final List<UserFolder> _folders = [];
@@ -31,12 +35,51 @@ class UserFolderService extends ChangeNotifier {
   }
 
   Future<void> reload() async {
+    // Prefer the Rust core. On non-Android hosts where the FFI is not loaded,
+    // leave state empty and mark loaded so callers don't retry.
+    if (RustCoreService.userFolderListChildren(kUserFolderRootId) != null) {
+      _reloadFromFfi();
+      return;
+    }
+    _loaded = true;
+    notifyListeners();
+  }
+
+  /// BFS-load the whole tree from the Rust core.
+  ///
+  /// [wdmm_user_folder_list_children] returns only direct children, so we walk
+  /// from the virtual root outward, loading items per folder along the way.
+  void _reloadFromFfi() {
+    final allFolders = <UserFolder>[];
+    final allItems = <UserFolderItem>[];
+
+    // Items parked on the virtual root itself.
+    final rootItemsJson =
+        RustCoreService.userFolderListItems(kUserFolderRootId) ?? '[]';
+    allItems.addAll(_parseItems(rootItemsJson));
+
+    // BFS over the folder tree. Start at the virtual root.
+    final queue = <String>[kUserFolderRootId];
+    final visited = <String>{kUserFolderRootId};
+    while (queue.isNotEmpty) {
+      final parentId = queue.removeAt(0);
+      final childrenJson =
+          RustCoreService.userFolderListChildren(parentId) ?? '[]';
+      final children = _parseFolders(childrenJson);
+      for (final child in children) {
+        allFolders.add(child);
+        final itemsJson = RustCoreService.userFolderListItems(child.id) ?? '[]';
+        allItems.addAll(_parseItems(itemsJson));
+        if (visited.add(child.id)) queue.add(child.id);
+      }
+    }
+
     _folders
       ..clear()
-      ..addAll(await _db.loadUserFolders());
+      ..addAll(allFolders);
     _items
       ..clear()
-      ..addAll(await _db.loadUserFolderItems());
+      ..addAll(allItems);
     _loaded = true;
     notifyListeners();
   }
@@ -104,15 +147,29 @@ class UserFolderService extends ChangeNotifier {
   }) async {
     final trimmed = name.trim().isEmpty ? '新文件夹' : name.trim();
     final siblings = childrenOf(parentId);
-    final folder = UserFolder(
-      id: _uuid.v4(),
-      parentId: parentId,
-      name: trimmed,
-      sortOrder: siblings.isEmpty ? 0 : siblings.last.sortOrder + 1,
-      createdAt: DateTime.now(),
-    );
-    await _db.upsertUserFolder(folder);
+    final sortOrder = siblings.isEmpty ? 0 : siblings.last.sortOrder + 1;
+
+    final payload = jsonEncode({
+      'name': trimmed,
+      'parent_id': parentId,
+      'sort_order': sortOrder,
+    });
+    final resultJson = RustCoreService.userFolderCreate(payload);
+    final folder = resultJson == null || resultJson.startsWith('error:')
+        // FFI unavailable or rejected — keep a local-only placeholder so the
+        // UI is not blocked. The next reload() will resync with the core.
+        ? UserFolder(
+            id: _uuid.v4(),
+            parentId: parentId,
+            name: trimmed,
+            sortOrder: sortOrder,
+            createdAt: DateTime.now(),
+          )
+        : _parseFolderObject(jsonDecode(resultJson) as Map<String, dynamic>);
     _folders.add(folder);
+    if (resultJson != null && !resultJson.startsWith('error:')) {
+      _stampChanged();
+    }
     notifyListeners();
     return folder;
   }
@@ -122,15 +179,17 @@ class UserFolderService extends ChangeNotifier {
     if (f == null) return;
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
+    final res = RustCoreService.userFolderRename(id, trimmed);
     final updated = f.copyWith(name: trimmed);
-    await _db.upsertUserFolder(updated);
     final idx = _folders.indexWhere((x) => x.id == id);
     if (idx >= 0) _folders[idx] = updated;
+    if (res != null && !res.startsWith('error:')) _stampChanged();
     notifyListeners();
   }
 
   Future<void> deleteFolder(String id) async {
-    await _db.deleteUserFolder(id);
+    // Rust cascades descendants + items atomically.
+    final res = RustCoreService.userFolderDelete(id);
     final dropIds = <String>{id};
     // Collect descendants already removed from DB recursively.
     var grew = true;
@@ -146,6 +205,7 @@ class UserFolderService extends ChangeNotifier {
     }
     _folders.removeWhere((f) => dropIds.contains(f.id));
     _items.removeWhere((i) => dropIds.contains(i.folderId));
+    if (res != null && !res.startsWith('error:')) _stampChanged();
     notifyListeners();
   }
 
@@ -168,6 +228,14 @@ class UserFolderService extends ChangeNotifier {
     for (final key in refKeys) {
       final k = key.trim();
       if (k.isEmpty || existing.contains(k)) continue;
+      final payload = jsonEncode({
+        'folder_id': folderId,
+        'ref_kind': refKind,
+        'ref_key': k,
+        'sort_order': order,
+      });
+      final res = RustCoreService.userFolderAddItem(payload);
+      if (res != null && res.startsWith('error:')) continue;
       final item = UserFolderItem(
         folderId: folderId,
         refKind: refKind,
@@ -175,12 +243,14 @@ class UserFolderService extends ChangeNotifier {
         sortOrder: order++,
         addedAt: DateTime.now(),
       );
-      await _db.upsertUserFolderItem(item);
       _items.add(item);
       existing.add(k);
       added++;
     }
-    if (added > 0) notifyListeners();
+    if (added > 0) {
+      _stampChanged();
+      notifyListeners();
+    }
     return added;
   }
 
@@ -189,22 +259,21 @@ class UserFolderService extends ChangeNotifier {
     required String refKind,
     required String refKey,
   }) async {
-    await _db.deleteUserFolderItem(
-      folderId: folderId,
-      refKind: refKind,
-      refKey: refKey,
-    );
+    final res =
+        RustCoreService.userFolderRemoveItem(folderId, refKind, refKey);
     _items.removeWhere(
       (i) =>
           i.folderId == folderId && i.refKind == refKind && i.refKey == refKey,
     );
+    if (res != null && !res.startsWith('error:')) _stampChanged();
     notifyListeners();
   }
 
   /// Move one ref up/down inside its folder (delta -1/+1).
   ///
   /// `sort_order` is rewritten for the whole folder so the visual order is the
-  /// stored order (same rule the tree already uses for folders).
+  /// stored order (same rule the tree already uses for folders). We rewrite
+  /// the core store atomically via [wdmm_user_folder_set_items].
   Future<bool> moveRefWithinFolder({
     required String folderId,
     required String refKind,
@@ -221,29 +290,31 @@ class UserFolderService extends ChangeNotifier {
     final next = List<UserFolderItem>.from(list);
     final moved = next.removeAt(index);
     next.insert(target, moved);
-    var changed = false;
+    // Persist the full ordered set to the core.
+    final arr = [
+      for (var i = 0; i < next.length; i++)
+        {
+          'ref_kind': next[i].refKind,
+          'ref_key': next[i].refKey,
+          'sort_order': i,
+        },
+    ];
+    final setRes = RustCoreService.userFolderSetItems(folderId, jsonEncode(arr));
+    if (setRes == null || setRes.startsWith('error:')) return false;
+    // Mirror into in-memory state with new sort orders.
+    _items.removeWhere((i) => i.folderId == folderId);
     for (var i = 0; i < next.length; i++) {
-      final item = next[i];
-      if (item.sortOrder == i) continue;
-      final updated = UserFolderItem(
-        folderId: item.folderId,
-        refKind: item.refKind,
-        refKey: item.refKey,
+      _items.add(UserFolderItem(
+        folderId: folderId,
+        refKind: next[i].refKind,
+        refKey: next[i].refKey,
         sortOrder: i,
-        addedAt: item.addedAt,
-      );
-      await _db.upsertUserFolderItem(updated);
-      final idx = _items.indexWhere(
-        (x) =>
-            x.folderId == item.folderId &&
-            x.refKind == item.refKind &&
-            x.refKey == item.refKey,
-      );
-      if (idx >= 0) _items[idx] = updated;
-      changed = true;
+        addedAt: next[i].addedAt,
+      ));
     }
-    if (changed) notifyListeners();
-    return changed;
+    _stampChanged();
+    notifyListeners();
+    return true;
   }
 
   /// Descendants of [folderId] including itself.
@@ -273,19 +344,22 @@ class UserFolderService extends ChangeNotifier {
     if (f == null) return false;
     if (f.parentId == newParentId) return true;
     final siblings = childrenOf(newParentId);
+    final sortOrder = siblings.isEmpty ? 0 : siblings.last.sortOrder + 1;
+    // Core expects "root"/"" for the virtual root.
+    final newParentKey = newParentId ?? kUserFolderRootId;
+    final res = RustCoreService.userFolderMove(folderId, newParentKey);
+    if (res != null && res.startsWith('error:')) return false;
     final updated = f.copyWith(
       parentId: newParentId,
       clearParent: newParentId == null,
-      sortOrder: siblings.isEmpty ? 0 : siblings.last.sortOrder + 1,
+      sortOrder: sortOrder,
     );
-    await _db.upsertUserFolder(updated);
     final idx = _folders.indexWhere((x) => x.id == folderId);
     if (idx >= 0) _folders[idx] = updated;
+    if (res != null && !res.startsWith('error:')) _stampChanged();
     notifyListeners();
     return true;
   }
-
-  /// Copy [folderId] and its whole subtree under [newParentId].
   ///
   /// Returns the id of the new root folder, or null when the copy is
   /// refused (unknown source, or a target inside the source subtree — the
@@ -361,5 +435,85 @@ class UserFolderService extends ChangeNotifier {
       refKeys: [refKey],
     );
     return n > 0;
+  }
+
+  // ── FFI JSON parsing helpers ─────────────────────────────────────────────
+  //
+  // The core uses Unix timestamps (int seconds) for `created_at` / `added_at`;
+  // the Dart models use [DateTime]. We convert on the way in.
+
+  static List<UserFolder> _parseFolders(String json) {
+    final list = jsonDecode(json) as List<dynamic>;
+    return [
+      for (final e in list) _parseFolderObject(Map<String, dynamic>.from(e as Map)),
+    ];
+  }
+
+  static UserFolder _parseFolderObject(Map<String, dynamic> m) {
+    return UserFolder(
+      id: m['id'] as String? ?? '',
+      parentId: m['parent_id'] as String?,
+      name: m['name'] as String? ?? '',
+      sortOrder: m['sort_order'] as int? ?? 0,
+      createdAt: _parseUnixOrIso(m['created_at']),
+    );
+  }
+
+  static List<UserFolderItem> _parseItems(String json) {
+    final list = jsonDecode(json) as List<dynamic>;
+    return [
+      for (final e in list)
+        UserFolderItem(
+          folderId: (e as Map)['folder_id'] as String? ?? kUserFolderRootId,
+          refKind: e['ref_kind'] as String? ?? '',
+          refKey: e['ref_key'] as String? ?? '',
+          sortOrder: e['sort_order'] as int? ?? 0,
+          addedAt: _parseUnixOrIso(e['added_at']),
+        ),
+    ];
+  }
+
+  /// Accept either a Unix timestamp (int seconds) or an ISO8601 string.
+  static DateTime _parseUnixOrIso(Object? raw) {
+    if (raw is int) {
+      return DateTime.fromMillisecondsSinceEpoch(raw * 1000);
+    }
+    return DateTime.tryParse(raw as String? ?? '') ?? DateTime.now();
+  }
+
+  // ── Sync helpers ──────────────────────────────────────────────────────────
+
+  /// Stamp `folders_changed_at` in the Core KV store to mark a local mutation.
+  /// Only called when the Core call that triggered the mutation succeeded
+  /// (non-null, non-error: result).
+  static void _stampChanged() {
+    RustCoreService.kvSet(
+      'folders_changed_at',
+      '${DateTime.now().millisecondsSinceEpoch}',
+    );
+  }
+
+  /// Whole user-folder overlay as JSON-friendly maps, suitable for WebDAV sync.
+  ///
+  /// Uses in-memory state directly — callers should ensure [reload()] was
+  /// called recently if staleness is a concern.
+  Map<String, dynamic> exportSnapshot() => {
+    'folders': [for (final f in _folders) f.toMap()],
+    'items': [for (final i in _items) i.toMap()],
+  };
+
+  /// Replace the whole user-folder overlay from [snap] via Core FFI, then
+  /// reload in-memory state.
+  ///
+  /// Throws [StateError] if Core FFI is unavailable or returns an error.
+  /// Does **not** bump `folders_changed_at` — adopting a cloud snapshot is
+  /// not a local edit.
+  Future<void> importSnapshot(Map<String, dynamic> snap) async {
+    final json = jsonEncode(snap);
+    final result = RustCoreService.userFolderReplaceSnapshot(json);
+    if (result == null || result.startsWith('error:')) {
+      throw StateError('userFolderReplaceSnapshot failed: $result');
+    }
+    await reload();
   }
 }

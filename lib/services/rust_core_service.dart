@@ -1,0 +1,3751 @@
+// ignore_for_file: unused_element, non_constant_identifier_names
+
+import 'dart:convert';
+import 'dart:ffi' as ffi;
+import 'dart:io';
+import 'dart:isolate';
+import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
+
+// ── FFI typedefs ─────────────────────────────────────────────────────────────
+
+typedef _VersionNative = ffi.Pointer<Utf8> Function();
+typedef _VersionDart = ffi.Pointer<Utf8> Function();
+
+typedef _FreeStringNative = ffi.Void Function(ffi.Pointer<Utf8>);
+typedef _FreeStringDart = void Function(ffi.Pointer<Utf8>);
+
+typedef _QueueStatusNative = ffi.Pointer<Utf8> Function();
+typedef _QueueStatusDart = ffi.Pointer<Utf8> Function();
+
+typedef _StrStrToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _StrStrToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+typedef _IntNative = ffi.Int32 Function();
+typedef _IntDart = int Function();
+
+typedef _OpenApiStartNative = ffi.Pointer<Utf8> Function(ffi.Uint16);
+typedef _OpenApiStartDart = ffi.Pointer<Utf8> Function(int);
+
+typedef _TwoStrToOneStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _TwoStrToOneStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+typedef _FourStrToOneStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _FourStrToOneStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+typedef _Uint32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Uint32);
+typedef _Uint32ToStrDart = ffi.Pointer<Utf8> Function(int);
+
+typedef _OneStrToStrNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+typedef _OneStrToStrDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+typedef _NoArgToStrNative  = ffi.Pointer<Utf8> Function();
+typedef _NoArgToStrDart    = ffi.Pointer<Utf8> Function();
+
+typedef _ThreeStrToOneStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _ThreeStrToOneStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+typedef _Int32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Int32);
+typedef _Int32ToStrDart = ffi.Pointer<Utf8> Function(int);
+
+
+typedef _FiveStrToOneStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _FiveStrToOneStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+// wdmm_sync_run({account_id, remote_dir, mode, with_covers}) → FfiString
+typedef _TwoStrOneIntToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Int32);
+typedef _TwoStrOneIntToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int);
+
+// Wave D — wdmm_manga_set_progress(manga_id, page_index: i64)
+typedef _StrInt64ToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Int64);
+typedef _StrInt64ToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, int);
+
+// Dart→Rust cut-over `ext` surface: (bytes: *const u8, len: usize) → FfiString.
+typedef _BytesToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Uint8>, ffi.Size);
+typedef _BytesToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Uint8>, int);
+
+// Same, with a forced charset name (subtitle decoding override).
+typedef _BytesStrToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Uint8>, ffi.Size, ffi.Pointer<Utf8>);
+typedef _BytesStrToStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<ffi.Uint8>, int, ffi.Pointer<Utf8>);
+
+typedef _ProxyStartNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Uint16);
+typedef _ProxyStartDart   = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, int);
+typedef _ProxyNoArgStrNative = ffi.Pointer<Utf8> Function();
+typedef _ProxyNoArgStrDart   = ffi.Pointer<Utf8> Function();
+typedef _ProxyPortNative  = ffi.Int32 Function();
+typedef _ProxyPortDart    = int Function();
+typedef _ProxyTwoStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _ProxyTwoStrDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+
+// ── R12 — Proxy stream callback + symbol typedefs ────────────────────────────
+
+/// Native type of the Range callback passed to [wdmm_proxy_register_stream] and
+/// [wdmm_proxy_renew_stream_callback].
+///
+/// Public so [RustProxyStreamBridge] can type its [NativeCallable] with it.
+/// With Dart SDK >= 3.4, [NativeCallable.listener] supports non-void native
+/// return types: the native thunk returns `0` for [Int32] immediately and posts
+/// the Dart callback asynchronously to the isolate event queue.
+typedef WdmmProxyRangeCallbackNative = ffi.Int32 Function(
+  ffi.Pointer<ffi.Void>,                       // user_data  (opaque)
+  ffi.Int64,                                   // start      (inclusive byte offset)
+  ffi.Int64,                                   // end        (inclusive; -1 = EOF)
+  ffi.Pointer<ffi.Pointer<ffi.Uint8>>,         // out_buf    (sync: fill via alloc_buf; async: leave null)
+  ffi.Pointer<ffi.Size>,                       // out_len    (sync: fill; async: ignore)
+  ffi.Uint64,                                  // request_id (pass to set_result on async path)
+);
+
+// wdmm_proxy_register_stream(size, name?, cb, user_data) → FfiString (JSON / error)
+typedef _ProxyRegisterStreamNative = ffi.Pointer<Utf8> Function(
+  ffi.Uint64,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>>,
+  ffi.Pointer<ffi.Void>,
+);
+typedef _ProxyRegisterStreamDart = ffi.Pointer<Utf8> Function(
+  int,
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>>,
+  ffi.Pointer<ffi.Void>,
+);
+
+// wdmm_proxy_renew_stream_callback(token, cb, user_data) → FfiString
+typedef _ProxyRenewStreamCbNative = ffi.Pointer<Utf8> Function(
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>>,
+  ffi.Pointer<ffi.Void>,
+);
+typedef _ProxyRenewStreamCbDart = ffi.Pointer<Utf8> Function(
+  ffi.Pointer<Utf8>,
+  ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>>,
+  ffi.Pointer<ffi.Void>,
+);
+
+// wdmm_proxy_stream_alloc_buf(len) → *mut u8
+typedef _ProxyStreamAllocBufNative = ffi.Pointer<ffi.Uint8> Function(ffi.Size);
+typedef _ProxyStreamAllocBufDart   = ffi.Pointer<ffi.Uint8> Function(int);
+
+// wdmm_proxy_stream_free_buf(buf, len)
+typedef _ProxyStreamFreeBufNative = ffi.Void Function(
+    ffi.Pointer<ffi.Uint8>, ffi.Size);
+typedef _ProxyStreamFreeBufDart   = void Function(
+    ffi.Pointer<ffi.Uint8>, int);
+
+// wdmm_proxy_stream_set_result(request_id, buf, len, status)
+typedef _ProxyStreamSetResultNative = ffi.Void Function(
+    ffi.Uint64, ffi.Pointer<ffi.Uint8>, ffi.Size, ffi.Int32);
+typedef _ProxyStreamSetResultDart   = void Function(
+    int, ffi.Pointer<ffi.Uint8>, int, int);
+
+// ── DLNA session facade typedefs ─────────────────────────────────────────────
+
+// wdmm_dlna_session_cmd(handle, cmd_json) → FfiString ("ok" / "error:…")
+typedef _Uint32StrToStrNative = ffi.Pointer<Utf8> Function(
+    ffi.Uint32, ffi.Pointer<Utf8>);
+typedef _Uint32StrToStrDart = ffi.Pointer<Utf8> Function(
+    int, ffi.Pointer<Utf8>);
+
+// wdmm_proxy_register_account(account_id, remote_path, name?, size) → FfiString
+typedef _ProxyRegAccountNative = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Uint64);
+typedef _ProxyRegAccountDart = ffi.Pointer<Utf8> Function(
+    ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, int);
+
+/// Rust FFI bridge to WDMM-core via wdmm-ffi.
+///
+/// Dart services remain **source of truth** until the full DB cutover in
+/// round 4. This service is called at app startup for a debug smoke-test log
+/// only; no Dart service is replaced yet.
+///
+/// Build: cargo-ndk builds `libwdmm_ffi.so` into
+/// `android/app/src/main/jniLibs/<abi>/` before the Flutter build runs.
+/// See android/app/build.gradle.kts for the hook comment.
+class RustCoreService {
+  static ffi.DynamicLibrary? _lib;
+  static bool _loadFailed = false;
+
+  // ── Off-main execution ───────────────────────────────────────────────────
+
+  /// Run a blocking FFI entry point on a worker isolate.
+  ///
+  /// Every `wdmm_*` entry point that touches the network `block_on`s inside the
+  /// Rust runtime, so calling one from the UI isolate freezes Flutter until it
+  /// returns — on a slow share that is an immediate ANR ("Input dispatching
+  /// timed out", main thread parked inside the FFI call). [body] may only
+  /// capture sendable values (strings, numbers, transferable data); never
+  /// capture `this` or a service object.
+  static Future<T> runOffMain<T>(T Function() body) => Isolate.run<T>(body);
+
+  // ── Library loading ──────────────────────────────────────────────────────
+
+  /// Load the native library once.  Returns null on any platform where the
+  /// library is not yet available (e.g. debug host runs on macOS/Linux).
+  static ffi.DynamicLibrary? get _tryLib {
+    if (_loadFailed) return null;
+    if (_lib != null) return _lib!;
+    try {
+      if (Platform.isAndroid) {
+        _lib = ffi.DynamicLibrary.open('libwdmm_ffi.so');
+      } else {
+        // Not Android — library not shipped for this platform yet.
+        return null;
+      }
+    } catch (e) {
+      _loadFailed = true;
+      debugPrint('[RustCore] library load failed (non-fatal): $e');
+      return null;
+    }
+    return _lib!;
+  }
+
+  // ── FFI bindings ─────────────────────────────────────────────────────────
+
+  static _FreeStringDart? _freeString;
+  static _VersionDart? _version;
+  static _OpenApiStartDart? _openApiStart;
+  static _IntDart? _openApiIsRunning;
+  static _IntDart? _openApiPort;
+
+  // ── Round 4 FFI binding types ──────────────────────────────────────────────
+
+  // Sync FFI — account_id based (Core resolves the driver via DriverRegistry).
+  static _OneStrToStrDart? _syncRun;
+  static _OneStrToStrDart? _syncLayout;
+  static _TwoStrToOneStrDart? _syncAuditMusic;
+  static _TwoStrToOneStrDart? _syncAuditManga;
+  static _TwoStrOneIntToStrDart? _syncEstimateMusic;
+  static _TwoStrOneIntToStrDart? _syncEstimateManga;
+  static _ThreeStrToOneStrDart? _syncTidyOrphansMusic;
+  static _ThreeStrToOneStrDart? _syncTidyOrphansManga;
+  static _Uint32ToStrDart? _dlnaDiscover;
+  static _TwoStrToOneStrDart? _dlnaCast;
+  static _VersionDart? _tokenGet; // no-arg → Utf8, same shape as version
+  static _VersionDart? _tokenRotate; // no-arg → Utf8
+  static _OneStrToStrDart? _dmrPrefsInit;
+  static _NoArgToStrDart? _dmrPrefsList;
+  static _OneStrToStrDart? _dmrPrefsGet;
+  static _OneStrToStrDart? _dmrPrefsUpsert;
+  static _OneStrToStrDart? _dmrPrefsDelete;
+  static _StrStrToStrDart? _coversConfigure;
+  static _StrStrToStrDart? _backupCreate;
+  static _StrStrToStrDart? _backupRestore;
+  static _FiveStrToOneStrDart? _backupUpload;
+  static _FourStrToOneStrDart? _backupList;
+  static _FiveStrToOneStrDart? _backupDownloadRestore;
+
+  // ── Wave C driver/account FFI ──────────────────────────────────────────────
+  static _ThreeStrToOneStrDart? _driverList;
+  static _ThreeStrToOneStrDart? _driverMkdir;
+  static _FourStrToOneStrDart? _driverRename;
+  static _ThreeStrToOneStrDart? _driverRemove;
+  static _ThreeStrToOneStrDart? _driverGet;
+  static _NoArgToStrDart? _accountList;
+  static _OneStrToStrDart? _accountGet;
+  static _OneStrToStrDart? _accountUpsert;
+  static _OneStrToStrDart? _accountDelete;
+  static _TwoStrToOneStrDart? _accountListDir;
+  static _TwoStrToOneStrDart? _accountMkdir;
+  static _ThreeStrToOneStrDart? _accountRename;
+  static _TwoStrToOneStrDart? _accountRemove;
+  static _TwoStrToOneStrDart? _accountGetEntry;
+  // B1 step 3 — copy/ensure_dir/content/status_tags exports.
+  static _ThreeStrToOneStrDart? _accountCopy;
+  static _TwoStrToOneStrDart? _accountEnsureDir;
+  static _ThreeStrToOneStrDart? _accountPutContent;
+  static _TwoStrToOneStrDart? _accountGetContent;
+  static _FourStrToOneStrDart? _accountGetContentRange;
+  static _OneStrToStrDart? _accountStatusTags;
+  static _TwoStrToOneStrDart? _accountVerify;
+
+  // ── Dart→Rust cut-over (`crates/wdmm-ffi/src/ext/`) ────────────────────────
+  // One binding per migrated capability. Implementations land slice by slice;
+  // until then the native side answers 'error:unimplemented:<name>'.
+  static _StrStrToStrDart? _backupProbe;
+  static _OneStrToStrDart? _cueParse;
+  static _FiveStrToOneStrDart? _accountWalk;
+  static _BytesToStrDart? _subtitleDecode;
+  static _BytesStrToStrDart? _subtitleDecodeAs;
+  static _OneStrToStrDart? _vaultEncode;
+  static _BytesToStrDart? _vaultDecode;
+  static _OneStrToStrDart? _playlistEncode;
+  static _BytesToStrDart? _playlistDecode;
+  static _StrStrToStrDart? _zipOpen;
+  static _StrStrToStrDart? _zipReadEntry;
+  static _StrStrToStrDart? _tagsExtract;
+  static _StrStrToStrDart? _vaultCryptoEncrypt;
+  static _StrStrToStrDart? _vaultCryptoDecrypt;
+  static _OneStrToStrDart? _vaultCryptoIsEncrypted;
+  static _OneStrToStrDart? _queueRetry;
+
+  // ── Queue thin layer (`crates/wdmm-ffi/src/queue_api.rs`) ──────────────────
+  static _StrStrToStrDart? _queueSetPaths;
+  static _OneStrToStrDart? _queueCmd;
+  static _OneStrToStrDart? _queueQuery;
+  static _StrInt64ToStrDart? _queueWait;
+  static _StrStrToStrDart? _queuePlatformResult;
+
+  // ── Cache index thin layer (`crates/wdmm-ffi/src/cache_api.rs`) ────────────
+  static _OneStrToStrDart? _cacheCmd;
+  static _OneStrToStrDart? _cacheQuery;
+
+  static void _loadSymbols(ffi.DynamicLibrary lib) {
+    _freeString = lib
+        .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
+        .asFunction();
+    _version = lib
+        .lookup<ffi.NativeFunction<_VersionNative>>('wdmm_version')
+        .asFunction();
+    _openApiStart = lib
+        .lookup<ffi.NativeFunction<_OpenApiStartNative>>('wdmm_openapi_start')
+        .asFunction();
+    _openApiIsRunning = lib
+        .lookup<ffi.NativeFunction<_IntNative>>('wdmm_openapi_is_running')
+        .asFunction();
+    _openApiPort = lib
+        .lookup<ffi.NativeFunction<_IntNative>>('wdmm_openapi_port')
+        .asFunction();
+    _syncRun = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_run')
+        .asFunction();
+    _syncLayout = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_layout_json')
+        .asFunction();
+    _syncAuditMusic = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_audit_music')
+        .asFunction();
+    _syncAuditManga = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_audit_manga')
+        .asFunction();
+    _syncEstimateMusic = lib
+        .lookup<ffi.NativeFunction<_TwoStrOneIntToStrNative>>('wdmm_sync_estimate_music')
+        .asFunction();
+    _syncEstimateManga = lib
+        .lookup<ffi.NativeFunction<_TwoStrOneIntToStrNative>>('wdmm_sync_estimate_manga')
+        .asFunction();
+    _syncTidyOrphansMusic = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_sync_tidy_orphans_music')
+        .asFunction();
+    _syncTidyOrphansManga = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_sync_tidy_orphans_manga')
+        .asFunction();
+    _dlnaDiscover = lib
+        .lookup<ffi.NativeFunction<_Uint32ToStrNative>>('wdmm_dlna_discover_json')
+        .asFunction();
+    _dlnaCast = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_dlna_cast')
+        .asFunction();
+    _tokenGet = lib
+        .lookup<ffi.NativeFunction<_VersionNative>>('wdmm_token_get')
+        .asFunction();
+    _tokenRotate = lib
+        .lookup<ffi.NativeFunction<_VersionNative>>('wdmm_token_rotate')
+        .asFunction();
+    // Wave C driver/account FFI
+    _driverList = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_list')
+        .asFunction();
+    _driverMkdir = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_mkdir')
+        .asFunction();
+    _driverRename = lib
+        .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_driver_rename')
+        .asFunction();
+    _driverRemove = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_remove')
+        .asFunction();
+    _driverGet = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_driver_get')
+        .asFunction();
+    _accountList = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_account_list')
+        .asFunction();
+    _accountGet = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_get')
+        .asFunction();
+    _accountUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_upsert')
+        .asFunction();
+    _accountDelete = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_delete')
+        .asFunction();
+    _accountListDir = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_list_dir')
+        .asFunction();
+    _accountMkdir = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_mkdir')
+        .asFunction();
+    _accountRename = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_account_rename')
+        .asFunction();
+    _accountRemove = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_remove')
+        .asFunction();
+    _accountGetEntry = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_get_entry')
+        .asFunction();
+    _accountCopy = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_account_copy')
+        .asFunction();
+    _accountEnsureDir = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_ensure_dir')
+        .asFunction();
+    _accountPutContent = lib
+        .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>('wdmm_account_put_content')
+        .asFunction();
+    _accountGetContent = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_get_content')
+        .asFunction();
+    _accountGetContentRange = lib
+        .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_account_get_content_range')
+        .asFunction();
+    _accountStatusTags = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_account_status_tags')
+        .asFunction();
+    _accountVerify = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_account_verify')
+        .asFunction();
+  }
+
+  static bool _symbolsLoaded = false;
+
+  static bool _ensureSymbols() {
+    if (_symbolsLoaded) return true;
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _loadSymbols(lib);
+      _symbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] symbol lookup failed: $e');
+      return false;
+    }
+    return true;
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  static String _readAndFreeString(ffi.Pointer<Utf8> ptr) {
+    final s = ptr.toDartString();
+    _freeString?.call(ptr);
+    return s;
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────
+
+  /// Returns WDMM core version, or null if the library is not available.
+  static String? getVersion() {
+    if (!_ensureSymbols()) return null;
+    return _readAndFreeString(_version!());
+  }
+
+  /// Start the OpenAPI server on the given port (0 = OS-assigned).
+  /// Returns the bearer token on success or an error message.
+  /// Dart services remain source of truth — this is for external clients only.
+  static String startOpenApi({int port = 0}) {
+    if (!_ensureSymbols()) return 'library not available';
+    return _readAndFreeString(_openApiStart!(port));
+  }
+
+  /// Stop the OpenAPI server.
+  static void stopOpenApi() {
+    if (!_ensureSymbols()) return;
+    // openapi_stop returns FfiString — free it
+    final lib = _tryLib;
+    if (lib == null) return;
+    final stopFn = lib
+        .lookup<ffi.NativeFunction<_QueueStatusNative>>('wdmm_openapi_stop')
+        .asFunction<_QueueStatusDart>();
+    _readAndFreeString(stopFn());
+  }
+
+  /// Returns true if the OpenAPI server is running.
+  static bool isOpenApiRunning() {
+    if (!_ensureSymbols()) return false;
+    return _openApiIsRunning!() == 1;
+  }
+
+  /// Returns the port the OpenAPI server is bound to, or -1 if not running.
+  static int openApiPort() {
+    if (!_ensureSymbols()) return -1;
+    return _openApiPort!();
+  }
+
+  // ── Startup smoke-test ────────────────────────────────────────────────────
+
+  /// Call once at app startup (debug builds only). Logs the core version.
+  /// Never throws; any failure is swallowed with a debug log.
+  static void debugLogVersion() {
+    if (!kDebugMode) return;
+    try {
+      final v = getVersion();
+      if (v != null) {
+        debugPrint('[RustCore] wdmm-core version: $v');
+      } else {
+        debugPrint('[RustCore] library not available on this platform/build');
+      }
+    } catch (e) {
+      debugPrint('[RustCore] startup probe failed (non-fatal): $e');
+    }
+  }
+
+  // ── Round 4 — Sync FFI ────────────────────────────────────────────────────
+
+  /// Run the aggregate Rust sync through the single Core entry point.
+  ///
+  /// [accountId]: Cloud account ID; Core resolves the driver via DriverRegistry.
+  /// [mode]: `incremental` (cursor driven), `full` (reconcile, then rebuild
+  /// the base shards), or `compact_playlists` (sync playlists, then drop the
+  /// remote deletion packs and the local tombstones).
+  /// [scope]: `all` (credentials + library + manga + playlists) or `playlists`.
+  /// [withCovers]: embed cover blobs in rebuilt base shards and playlist docs.
+  ///
+  /// Returns `{"ok":true,"mode":"…","scope":"…","conflicts":N,"entities":{…}}`
+  /// or `'error:...'`; null when the native library is unavailable.
+  static String? syncRun({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+    String mode = 'incremental',
+    String scope = 'all',
+    bool withCovers = false,
+  }) {
+    if (!_ensureSymbols() || _syncRun == null) return null;
+    final payload = jsonEncode({
+      'account_id': accountId,
+      'remote_dir': remoteDir,
+      'mode': mode,
+      'scope': scope,
+      'with_covers': withCovers,
+    });
+    final ptr = payload.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncRun!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Cloud paths under one sync root, resolved by Core.
+  ///
+  /// Returns the `paths` map (`credentials`, `playlists`, `library`,
+  /// `library_music`, `library_manga`, `backup`) so Dart never keeps a second
+  /// copy of the directory names; null when the native library is unavailable.
+  static Map<String, String>? syncLayout(String remoteRoot) {
+    if (!_ensureSymbols() || _syncLayout == null) return null;
+    final ptr = remoteRoot.toNativeUtf8();
+    try {
+      final raw = _readAndFreeString(_syncLayout!(ptr));
+      if (raw.startsWith('error:')) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final paths = decoded['paths'];
+      if (paths is! Map) return null;
+      return paths.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Audit the music library remote (manifest vs live listing).
+  /// Returns JSON `{"missing":[…],"orphans":[…],"healthy":bool,"summary":"…"}`
+  /// or `"error:<message>"`. Returns null if the native library is unavailable.
+  static String? syncAuditMusic({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncAuditMusic == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncAuditMusic!(idPtr, dirPtr));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  /// Audit the manga library remote (manifest vs live listing).
+  /// Returns JSON `{"missing":[…],"orphans":[…],"healthy":bool,"summary":"…"}`
+  /// or `"error:<message>"`. Returns null if the native library is unavailable.
+  static String? syncAuditManga({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncAuditManga == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncAuditManga!(idPtr, dirPtr));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  /// Estimate the network cost of a full music library rebuild.
+  /// Returns JSON `{"shards":N,"estimated_bytes":N,"fragment_count":N,"fragment_bytes":N}`
+  /// or `"error:<message>"`. [tracksPerShard] 0 → Core default (500).
+  static String? syncEstimateMusic({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+    int tracksPerShard = 0,
+  }) {
+    if (!_ensureSymbols() || _syncEstimateMusic == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncEstimateMusic!(idPtr, dirPtr, tracksPerShard));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  /// Estimate the network cost of a full manga library rebuild.
+  /// Returns JSON `{"shards":N,"estimated_bytes":N,"fragment_count":N,"fragment_bytes":N}`
+  /// or `"error:<message>"`. [mangasPerShard] 0 → Core default (200).
+  static String? syncEstimateManga({
+    required String accountId,
+    String remoteDir = '/wdmm_sync',
+    int mangasPerShard = 0,
+  }) {
+    if (!_ensureSymbols() || _syncEstimateManga == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncEstimateManga!(idPtr, dirPtr, mangasPerShard));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+    }
+  }
+
+  /// Delete orphan shards from the music library remote.
+  /// [orphansJson]: JSON array of filenames from [syncAuditMusic].
+  /// Returns deleted count as decimal string or `"error:<message>"`.
+  static String? syncTidyOrphansMusic({
+    required String accountId,
+    required String orphansJson,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncTidyOrphansMusic == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    final orphansPtr = orphansJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncTidyOrphansMusic!(idPtr, dirPtr, orphansPtr));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+      calloc.free(orphansPtr);
+    }
+  }
+
+  /// Delete orphan shards from the manga library remote.
+  /// [orphansJson]: JSON array of filenames from [syncAuditManga].
+  /// Returns deleted count as decimal string or `"error:<message>"`.
+  static String? syncTidyOrphansManga({
+    required String accountId,
+    required String orphansJson,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureSymbols() || _syncTidyOrphansManga == null) return null;
+    final idPtr = accountId.toNativeUtf8();
+    final dirPtr = remoteDir.toNativeUtf8();
+    final orphansPtr = orphansJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_syncTidyOrphansManga!(idPtr, dirPtr, orphansPtr));
+    } finally {
+      calloc.free(idPtr);
+      calloc.free(dirPtr);
+      calloc.free(orphansPtr);
+    }
+  }
+
+  // ── Round 4 — DLNA FFI probes ─────────────────────────────────────────────
+
+  /// Discover DLNA renderers via SSDP.
+  ///
+  /// Returns a JSON array of renderer objects or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  ///
+  /// **Parallel probe**: Dart `DlnaCastService` remains source of truth;
+  /// compare outputs before cutover.
+  static String? dlnaDiscover({int timeoutMs = 2000}) {
+    if (!_ensureSymbols() || _dlnaDiscover == null) return null;
+    return _readAndFreeString(_dlnaDiscover!(timeoutMs));
+  }
+
+  /// Cast [mediaUrl] to the renderer at [rendererLocation] via AVTransport SOAP.
+  ///
+  /// Returns 'ok' on success or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  ///
+  /// **Parallel probe**: Dart `DlnaCastService` remains source of truth.
+  static String? dlnaCast(String rendererLocation, String mediaUrl) {
+    if (!_ensureSymbols() || _dlnaCast == null) return null;
+    final locPtr = rendererLocation.toNativeUtf8();
+    final urlPtr = mediaUrl.toNativeUtf8();
+    try {
+      return _readAndFreeString(_dlnaCast!(locPtr, urlPtr));
+    } finally {
+      calloc.free(locPtr);
+      calloc.free(urlPtr);
+    }
+  }
+
+  static bool _ensureDmrSymbols() {
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _dmrPrefsInit ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_dmr_prefs_init')
+          .asFunction();
+      _dmrPrefsList ??= lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_dmr_prefs_list')
+          .asFunction();
+      _dmrPrefsGet ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_dmr_prefs_get')
+          .asFunction();
+      _dmrPrefsUpsert ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_dmr_prefs_upsert')
+          .asFunction();
+      _dmrPrefsDelete ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_dmr_prefs_delete')
+          .asFunction();
+      _backupCreate ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_backup_create')
+          .asFunction();
+      _backupRestore ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_backup_restore')
+          .asFunction();
+      _backupUpload ??= lib
+          .lookup<ffi.NativeFunction<_FiveStrToOneStrNative>>('wdmm_backup_upload')
+          .asFunction();
+      _backupList ??= lib
+          .lookup<ffi.NativeFunction<_FourStrToOneStrNative>>('wdmm_backup_list')
+          .asFunction();
+      _backupDownloadRestore ??= lib
+          .lookup<ffi.NativeFunction<_FiveStrToOneStrNative>>('wdmm_backup_download_restore')
+          .asFunction();
+      _coversConfigure ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_covers_configure')
+          .asFunction();
+      return true;
+    } catch (e) {
+      debugPrint('[RustCore] DMR symbol lookup failed: $e');
+      return false;
+    }
+  }
+
+  static String? dmrPrefsInit(String path) {
+    if (!_ensureDmrSymbols()) return null;
+    final ptr = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_dmrPrefsInit!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? dmrPrefsList() {
+    if (!_ensureDmrSymbols()) return null;
+    return _readAndFreeString(_dmrPrefsList!());
+  }
+
+  static String? dmrPrefsGet(String usn) => _callOneString(() => _dmrPrefsGet, usn);
+  static String? dmrPrefsUpsert(String json) => _callOneString(() => _dmrPrefsUpsert, json);
+  static String? dmrPrefsDelete(String usn) => _callOneString(() => _dmrPrefsDelete, usn);
+
+  static String? backupCreate(String passphrase, String outputPath) =>
+      _callTwoStrings(() => _backupCreate, passphrase, outputPath);
+
+  static String? backupRestore(String passphrase, String path) =>
+      _callTwoStrings(() => _backupRestore, passphrase, path);
+
+  /// Upload a backup to WebDAV.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, or null if the native
+  /// library is not available.
+  static String? backupUpload({
+    required String url,
+    required String user,
+    required String pass,
+    required String remoteDir,
+    required String passphrase,
+  }) =>
+      _callFiveStrings(() => _backupUpload, url, user, pass, remoteDir, passphrase);
+
+  /// List backups in a WebDAV directory.
+  ///
+  /// Returns a JSON array of backup metadata, or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  static String? backupList({
+    required String url,
+    required String user,
+    required String pass,
+    required String remoteDir,
+  }) =>
+      _callFourStrings(() => _backupList, url, user, pass, remoteDir);
+
+  /// Download a backup from WebDAV and restore it.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, or null if the native
+  /// library is not available.
+  static String? backupDownloadRestore({
+    required String url,
+    required String user,
+    required String pass,
+    required String remoteFile,
+    required String passphrase,
+  }) =>
+      _callFiveStrings(() => _backupDownloadRestore, url, user, pass, remoteFile, passphrase);
+
+  /// Configure the cover image directories used during backup create/restore.
+  ///
+  /// Both paths must be non-empty UTF-8. Returns 'ok' on success or 'error:...'
+  /// on failure. Returns null if the native library is not available.
+  static String? coversConfigure(String musicCoversDir, String mangaCoversDir) =>
+      _callTwoStrings(() => _coversConfigure, musicCoversDir, mangaCoversDir);
+
+  /// Same null-check trap as [_callExtOneString]: the symbol must be resolved
+  /// *after* [_ensureDmrSymbols], so callers pass a closure, not the field.
+  static String? _callOneString(
+      _OneStrToStrDart? Function() resolve, String value) {
+    if (!_ensureDmrSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? _callTwoStrings(
+      _StrStrToStrDart? Function() resolve, String first, String second) {
+    if (!_ensureDmrSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final a = first.toNativeUtf8();
+    final b = second.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(a, b));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+    }
+  }
+
+  static String? _callFourStrings(_FourStrToOneStrDart? Function() resolve,
+      String s1, String s2, String s3, String s4) {
+    if (!_ensureDmrSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final a = s1.toNativeUtf8();
+    final b = s2.toNativeUtf8();
+    final c = s3.toNativeUtf8();
+    final d = s4.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(a, b, c, d));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+      calloc.free(c);
+      calloc.free(d);
+    }
+  }
+
+  static String? _callFiveStrings(_FiveStrToOneStrDart? Function() resolve,
+      String s1, String s2, String s3, String s4, String s5) {
+    if (!_ensureDmrSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final a = s1.toNativeUtf8();
+    final b = s2.toNativeUtf8();
+    final c = s3.toNativeUtf8();
+    final d = s4.toNativeUtf8();
+    final e = s5.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(a, b, c, d, e));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+      calloc.free(c);
+      calloc.free(d);
+      calloc.free(e);
+    }
+  }
+
+  // ── Dart→Rust cut-over bindings (`crates/wdmm-ffi/src/ext/`) ───────────────
+
+  /// Look up the cut-over symbols once. Returns false when the library or any
+  /// symbol is missing (older `.so`, unit tests without natives).
+  static bool _ensureExtSymbols() {
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _backupProbe ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_backup_probe')
+          .asFunction();
+      _cueParse ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_parse')
+          .asFunction();
+      _accountWalk ??= lib
+          .lookup<ffi.NativeFunction<_FiveStrToOneStrNative>>('wdmm_account_walk')
+          .asFunction();
+      _subtitleDecode ??= lib
+          .lookup<ffi.NativeFunction<_BytesToStrNative>>('wdmm_subtitle_decode')
+          .asFunction();
+      _vaultEncode ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_vault_encode')
+          .asFunction();
+      _vaultDecode ??= lib
+          .lookup<ffi.NativeFunction<_BytesToStrNative>>('wdmm_vault_decode')
+          .asFunction();
+      _playlistEncode ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_playlist_encode')
+          .asFunction();
+      _playlistDecode ??= lib
+          .lookup<ffi.NativeFunction<_BytesToStrNative>>('wdmm_playlist_decode')
+          .asFunction();
+      _zipOpen ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_zip_open')
+          .asFunction();
+      _zipReadEntry ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_zip_read_entry')
+          .asFunction();
+      _tagsExtract ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_tags_extract')
+          .asFunction();
+      _vaultCryptoEncrypt ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>(
+              'wdmm_vault_crypto_encrypt')
+          .asFunction();
+      _vaultCryptoDecrypt ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>(
+              'wdmm_vault_crypto_decrypt')
+          .asFunction();
+      _vaultCryptoIsEncrypted ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_vault_crypto_is_encrypted')
+          .asFunction();
+      _queueRetry ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_queue_retry_json')
+          .asFunction();
+      return true;
+    } catch (e) {
+      debugPrint('[RustCore] ext symbol lookup failed: $e');
+      return false;
+    }
+  }
+
+  /// Check a backup archive's passphrase without decrypting it twice.
+  ///
+  /// Returns `{"ok":true,"encrypted":bool,...}` or `'error:...'`; null when the
+  /// native library is unavailable.
+  static String? backupProbe(String dataPath, String passphrase) =>
+      _callExtTwoStrings(() => _backupProbe, dataPath, passphrase);
+
+  /// Parse a CUE sheet into `{"title":...,"tracks":[...]}`.
+  static String? cueParse(String text) => _callExtOneString(() => _cueParse, text);
+
+  /// Walk a remote tree under [root] in Rust.
+  ///
+  /// `kindsJson` selects what to collect (`{"kinds":["video","audio",...]}`);
+  /// `maxDepth`/`maxEntries` are decimal strings, `0` meaning "no limit".
+  static String? accountWalk({
+    required String accountId,
+    required String root,
+    required String maxDepth,
+    required String maxEntries,
+    required String kindsJson,
+  }) =>
+      _callExtFiveStrings(() => _accountWalk, accountId, root, maxDepth, maxEntries, kindsJson);
+
+  /// Decode subtitle bytes, detecting the charset in Rust.
+  static String? subtitleDecode(Uint8List bytes) =>
+      _callExtBytes(() => _subtitleDecode, bytes);
+
+  /// Decode subtitle bytes as [encoding] (`utf8`, `utf16le`, `utf16be`, `gbk`,
+  /// `gb18030`, `big5`), bypassing detection.
+  static String? subtitleDecodeAs(Uint8List bytes, String encoding) =>
+      _callExtBytesString(_ensureSubtitleDecodeAs, bytes, encoding);
+
+  /// Lazily resolve `wdmm_subtitle_decode_as`.
+  ///
+  /// Kept apart from [_ensureExtSymbols] so a `.so` built before that symbol
+  /// existed cannot disable every other cut-over binding.
+  static _BytesStrToStrDart? _ensureSubtitleDecodeAs() {
+    final lib = _tryLib;
+    if (lib == null) return null;
+    try {
+      _subtitleDecodeAs ??= lib
+          .lookup<ffi.NativeFunction<_BytesStrToStrNative>>(
+              'wdmm_subtitle_decode_as')
+          .asFunction();
+      return _subtitleDecodeAs;
+    } catch (e) {
+      debugPrint('[RustCore] subtitle_decode_as lookup failed: $e');
+      return null;
+    }
+  }
+
+  /// Encode vault records into the `WDMMCV01` container.
+  static String? vaultEncode(String recordsJson) =>
+      _callExtOneString(() => _vaultEncode, recordsJson);
+
+  /// Decode a `WDMMCV01` vault container.
+  static String? vaultDecode(Uint8List bytes) =>
+      _callExtBytes(() => _vaultDecode, bytes);
+
+  /// Encode one playlist into the `WDMMPL01` container.
+  static String? playlistEncode(String playlistJson) =>
+      _callExtOneString(() => _playlistEncode, playlistJson);
+
+  /// Decode a `WDMMPL01` playlist container.
+  static String? playlistDecode(Uint8List bytes) =>
+      _callExtBytes(() => _playlistDecode, bytes);
+
+  /// Open a remote CBZ/ZIP and cache its central directory in Rust.
+  static String? zipOpen(String accountId, String remotePath) =>
+      _callExtTwoStrings(() => _zipOpen, accountId, remotePath);
+
+  /// Read one entry of a previously opened archive by index.
+  static String? zipReadEntry(String handle, String index) =>
+      _callExtTwoStrings(() => _zipReadEntry, handle, index);
+
+  /// Encrypt a vault field with the 120k-iteration AESGCMv1 format.
+  ///
+  /// Returns `{"ok":true,"value":"AESGCMv1:..."}` / `{"ok":false,"reason":...}`,
+  /// or null when the native library is unavailable. Runs off the UI isolate:
+  /// PBKDF2 at 120k iterations blocks for ~100 ms.
+  static Future<String?> vaultCryptoEncrypt(
+    String plaintext,
+    String passphrase,
+  ) => runOffMain(
+    () => _callExtTwoStrings(() => _vaultCryptoEncrypt, plaintext, passphrase),
+  );
+
+  /// Decrypt an `AESGCMv1:` vault field.
+  ///
+  /// Returns `{"ok":true,"plaintext":...}` / `{"ok":false,"reason":"..."}`;
+  /// an unprefixed value comes back unchanged, as before.
+  static Future<String?> vaultCryptoDecrypt(
+    String value,
+    String passphrase,
+  ) => runOffMain(
+    () => _callExtTwoStrings(() => _vaultCryptoDecrypt, value, passphrase),
+  );
+
+  /// Whether [value] carries the vault ciphertext prefix.
+  ///
+  /// Returns `{"ok":true,"encrypted":bool}` or null without natives.
+  static Future<String?> vaultCryptoIsEncrypted(String value) => runOffMain(
+    () => _callExtOneString(() => _vaultCryptoIsEncrypted, value),
+  );
+
+  /// Extract embedded tags and cover art from a remote media file.
+  static String? tagsExtract(String accountId, String remotePath) =>
+      _callExtTwoStrings(() => _tagsExtract, accountId, remotePath);
+
+  /// Ask Rust what to do with a failed queue task.
+  ///
+  /// [inputJson] is
+  /// `{"attempts":n,"in_background":bool,"category":"dio|vfs_data|state|other","message":"...","cancelled":bool,"jitter_ms":n}`.
+  /// The reply is
+  /// `{"ok":true,"action":"cancel|retry|fail","attempts":n,"delay_ms":m,"offline":bool,"cap":n}`,
+  /// or null when the native library is unavailable.
+  static Future<String?> queueRetryDecision(String inputJson) => runOffMain(
+    () => _callExtOneString(() => _queueRetry, inputJson),
+  );
+
+  // ── Queue thin layer ──────────────────────────────────────────────────────
+  //
+  // The queue lives entirely in Rust (`wdmm-queue`). Dart only installs the
+  // paths once, issues commands, reads folded rows/events, and answers platform
+  // requests. No ordering, retry or drain logic belongs on this side.
+
+  /// Install the queue database/task paths. Call once after the library DB is
+  /// initialized; idempotent (`{"ok":true,"already":true}` on the second call).
+  ///
+  /// [cacheRoot] must be the app **support** directory (it contains
+  /// `music_cache` / `manga_cache`); [appDocs] the app documents directory.
+  static String? queueSetPaths({
+    required String appDocs,
+    required String cacheRoot,
+  }) => _callQueueTwoStrings(() => _queueSetPaths, appDocs, cacheRoot);
+
+  /// Dispatch one queue command (enqueue/cancel/retry/settings/...).
+  static String? queueCmd(String payloadJson) =>
+      _callQueueOneString(() => _queueCmd, payloadJson);
+
+  /// Dispatch one queue query (snapshot/rows/events/stats/...).
+  static String? queueQuery(String queryJson) =>
+      _callQueueOneString(() => _queueQuery, queryJson);
+
+  /// Block until [taskId] reaches a terminal status, or [timeoutMs] elapses.
+  ///
+  /// Runs on a worker isolate: the Rust side parks a runtime thread, so calling
+  /// it from the UI isolate would freeze the app for the whole wait.
+  static Future<String?> queueWait(
+    String taskId, {
+    int timeoutMs = 1800000,
+  }) => runOffMain(
+    () => _callQueueStrInt(() => _queueWait, taskId, timeoutMs),
+  );
+
+  /// Answer a `platform_request` event (`req_id`, `{"ok":..,"result":..}`).
+  static String? queuePlatformResult(String reqId, String resultJson) =>
+      _callQueueTwoStrings(() => _queuePlatformResult, reqId, resultJson);
+
+  // ── Cache index thin layer ────────────────────────────────────────────────
+  //
+  // The cache index (access times + CUE group membership) lives in Rust,
+  // storage schema v17. Dart owns only the files; these two calls are the whole
+  // mutation/query surface (see `crates/wdmm-ffi/src/cache_api.rs`).
+
+  /// Dispatch one cache-index command
+  /// (`touch`/`put`/`delete`/`forget_kind`/`evict`/`delete_group`/`bind_group`).
+  static String? cacheCmd(String payloadJson) =>
+      _callCacheOneString(() => _cacheCmd, payloadJson);
+
+  /// Dispatch one cache-index query
+  /// (`stats`/`lru`/`list`/`group_paths`/`groups_for_path`/`groups`).
+  static String? cacheQuery(String queryJson) =>
+      _callCacheOneString(() => _cacheQuery, queryJson);
+
+  /// Look up the queue symbols once. Separate from [_ensureExtSymbols] so a
+  /// missing queue symbol cannot take the ext cut-over bindings down with it.
+  static bool _ensureQueueSymbols() {
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _freeString ??= lib
+          .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
+          .asFunction();
+      _queueSetPaths ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>('wdmm_queue_set_paths')
+          .asFunction();
+      _queueCmd ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_queue_cmd')
+          .asFunction();
+      _queueQuery ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_queue_query')
+          .asFunction();
+      _queueWait ??= lib
+          .lookup<ffi.NativeFunction<_StrInt64ToStrNative>>('wdmm_queue_wait')
+          .asFunction();
+      _queuePlatformResult ??= lib
+          .lookup<ffi.NativeFunction<_StrStrToStrNative>>(
+              'wdmm_queue_platform_result')
+          .asFunction();
+      return true;
+    } catch (e) {
+      debugPrint('[RustCore] queue symbol lookup failed: $e');
+      return false;
+    }
+  }
+
+  static String? _callQueueOneString(
+      _OneStrToStrDart? Function() resolve, String value) {
+    if (!_ensureQueueSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? _callQueueTwoStrings(
+      _StrStrToStrDart? Function() resolve, String first, String second) {
+    if (!_ensureQueueSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final a = first.toNativeUtf8();
+    final b = second.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(a, b));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+    }
+  }
+
+  static String? _callQueueStrInt(
+      _StrInt64ToStrDart? Function() resolve, String value, int arg) {
+    if (!_ensureQueueSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(ptr, arg));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Call an `ext` symbol, resolving it **after** the symbol table is warmed.
+  ///
+  /// The resolver must be a closure: reading the static field at the call site
+  /// would hand us the value from *before* [_ensureExtSymbols] ran — null in
+  /// every fresh isolate (`Isolate.run` starts with all statics null), which
+  /// made the first call in each worker isolate throw a null-check error.
+  /// Call a `cache` symbol, resolving it **after** the symbol table is warmed.
+  ///
+  /// Same reason as [_callExtOneString]: a resolver closure (`() => _cacheCmd`)
+  /// must read the static *after* [_ensureCacheSymbols] populated it — reading
+  /// it at the call site yields null in fresh worker isolates.
+  static String? _callCacheOneString(
+      _OneStrToStrDart? Function() resolve, String value) {
+    if (!_ensureCacheSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Look up the cache-index symbols once, independently of queue/ext.
+  static bool _ensureCacheSymbols() {
+    final lib = _tryLib;
+    if (lib == null) return false;
+    try {
+      _freeString ??= lib
+          .lookup<ffi.NativeFunction<_FreeStringNative>>('wdmm_ffi_free_string')
+          .asFunction();
+      _cacheCmd ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cache_cmd')
+          .asFunction();
+      _cacheQuery ??= lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cache_query')
+          .asFunction();
+      return true;
+    } catch (e) {
+      debugPrint('[RustCore] cache symbol lookup failed: $e');
+      return false;
+    }
+  }
+
+  static String? _callExtOneString(
+      _OneStrToStrDart? Function() resolve, String value) {
+    if (!_ensureExtSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final ptr = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? _callExtTwoStrings(
+      _StrStrToStrDart? Function() resolve, String first, String second) {
+    if (!_ensureExtSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final a = first.toNativeUtf8();
+    final b = second.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(a, b));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+    }
+  }
+
+  static String? _callExtFiveStrings(_FiveStrToOneStrDart? Function() resolve,
+      String s1, String s2, String s3, String s4, String s5) {
+    if (!_ensureExtSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final a = s1.toNativeUtf8();
+    final b = s2.toNativeUtf8();
+    final c = s3.toNativeUtf8();
+    final d = s4.toNativeUtf8();
+    final e = s5.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(a, b, c, d, e));
+    } finally {
+      calloc.free(a);
+      calloc.free(b);
+      calloc.free(c);
+      calloc.free(d);
+      calloc.free(e);
+    }
+  }
+
+  static String? _callExtBytes(
+      _BytesToStrDart? Function() resolve, Uint8List bytes) {
+    if (!_ensureExtSymbols()) return null;
+    final fn = resolve();
+    if (fn == null) return null;
+    final buffer = calloc<ffi.Uint8>(bytes.isEmpty ? 1 : bytes.length);
+    try {
+      if (bytes.isNotEmpty) {
+        buffer.asTypedList(bytes.length).setAll(0, bytes);
+      }
+      return _readAndFreeString(fn(buffer, bytes.length));
+    } finally {
+      calloc.free(buffer);
+    }
+  }
+
+  static String? _callExtBytesString(
+    _BytesStrToStrDart? Function() resolve,
+    Uint8List bytes,
+    String encoding,
+  ) {
+    final fn = resolve();
+    if (fn == null) return null;
+    final buffer = calloc<ffi.Uint8>(bytes.isEmpty ? 1 : bytes.length);
+    final encPtr = encoding.toNativeUtf8();
+    try {
+      if (bytes.isNotEmpty) {
+        buffer.asTypedList(bytes.length).setAll(0, bytes);
+      }
+      return _readAndFreeString(fn(buffer, bytes.length, encPtr));
+    } finally {
+      calloc.free(buffer);
+      calloc.free(encPtr);
+    }
+  }
+
+
+  /// Get the current OpenAPI bearer token.
+  ///
+  /// Returns the token string, or '' if the server is not running.
+  /// Returns null if the native library is not available.
+  /// Native UI may display this token per constraints §2.
+  static String? tokenGet() {
+    if (!_ensureSymbols() || _tokenGet == null) return null;
+    return _readAndFreeString(_tokenGet!());
+  }
+
+  /// Rotate the OpenAPI bearer token.  The old token is immediately
+  /// invalidated.  Returns the new token, or 'error:...' on failure.
+  /// Returns null if the native library is not available.
+  static String? tokenRotate() {
+    if (!_ensureSymbols() || _tokenRotate == null) return null;
+    return _readAndFreeString(_tokenRotate!());
+  }
+
+  // ── Library FFI bindings ──────────────────────────────────────────────────
+
+  static _OneStrToStrDart? _libraryInit;
+  static _OneStrToStrDart? _trackUpsert;
+  static _OneStrToStrDart? _trackGet;
+  static _NoArgToStrDart?  _trackList;
+  static _OneStrToStrDart? _trackSearch;
+  static _OneStrToStrDart? _trackDelete;
+  static _OneStrToStrDart? _trackDeleteBySource;
+  static _NoArgToStrDart?  _libraryClearAll;
+  static _NoArgToStrDart?  _libraryClearIndex;
+  static _OneStrToStrDart? _cueSliceDelete;
+  static _TwoStrToOneStrDart? _cueAlbumDelete;
+  static _TwoStrToOneStrDart? _cueRemainingSlices;
+  static _OneStrToStrDart? _cueSliceUpsert;
+  static _OneStrToStrDart? _cueAlbumUpsert;
+  static _OneStrToStrDart? _libraryImport;
+  static _OneStrToStrDart? _libraryIngest;
+  static _NoArgToStrDart?  _libraryNextRev;
+
+  // ── Class B reads — getTrack by source+path + CUE album/slices reads ──────
+  static _TwoStrToOneStrDart? _trackGetBySourcePath;
+  static _OneStrToStrDart? _cueAlbumForSlice;
+  static _OneStrToStrDart? _cueSlicesForCue;
+
+  // ── Schema v6 — deleted_tracks + sync_state ───────────────────────────────
+  static _OneStrToStrDart? _deletedTrackUpsert;
+
+  // ── Schema v7+v8 — aggregates + FTS5 ───────────────────────────────────────
+  static _NoArgToStrDart? _artistList;
+  static _OneStrToStrDart? _artistGet;
+  static _NoArgToStrDart? _albumList;
+  static _OneStrToStrDart? _albumGet;
+  static _OneStrToStrDart? _tracksByArtist;
+  static _OneStrToStrDart? _tracksByAlbum;
+  static _NoArgToStrDart? _libraryRebuildAggregates;
+  static _NoArgToStrDart? _libraryRebuildFts;
+
+  static void _loadLibrarySymbols(ffi.DynamicLibrary lib) {
+    _libraryInit = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_init')
+        .asFunction();
+    _trackUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_upsert')
+        .asFunction();
+    _trackGet = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_get')
+        .asFunction();
+    _trackList = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_track_list')
+        .asFunction();
+    _trackSearch = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_search')
+        .asFunction();
+    _trackDelete = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_delete')
+        .asFunction();
+    _trackDeleteBySource = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_track_delete_by_source')
+        .asFunction();
+    _libraryClearAll = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_clear_all')
+        .asFunction();
+    _libraryClearIndex = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_clear_index')
+        .asFunction();
+    _cueSliceDelete = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_slice_delete')
+        .asFunction();
+    _cueAlbumDelete = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_cue_album_delete')
+        .asFunction();
+    _cueRemainingSlices = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_cue_remaining_slices')
+        .asFunction();
+    _cueSliceUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_slice_upsert')
+        .asFunction();
+    _cueAlbumUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_album_upsert')
+        .asFunction();
+    _libraryImport = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_import_from_sqflite')
+        .asFunction();
+
+    // Class B reads — track get by source+path + CUE album/slices
+    _trackGetBySourcePath = lib
+        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_track_get_by_source_path')
+        .asFunction();
+    _cueAlbumForSlice = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_album_for_slice')
+        .asFunction();
+    _cueSlicesForCue = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_cue_slices_for_cue')
+        .asFunction();
+
+    // Schema v6
+    _deletedTrackUpsert = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_deleted_track_upsert')
+        .asFunction();
+
+    // Schema v7+v8 aggregates + FTS5
+    _artistList = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_artist_list')
+        .asFunction();
+    _artistGet = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_artist_get')
+        .asFunction();
+    _albumList = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_album_list')
+        .asFunction();
+    _albumGet = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_album_get')
+        .asFunction();
+    _tracksByArtist = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_tracks_by_artist')
+        .asFunction();
+    _tracksByAlbum = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_tracks_by_album')
+        .asFunction();
+    _libraryRebuildAggregates = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_rebuild_aggregates')
+        .asFunction();
+    _libraryRebuildFts = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_rebuild_fts')
+        .asFunction();
+    _libraryIngest = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_ingest')
+        .asFunction();
+    _libraryNextRev = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_next_rev')
+        .asFunction();
+  }
+
+  // ── Library public API ────────────────────────────────────────────────────
+
+  /// Initialise the Rust library DB at [dbPath].
+  ///
+  /// Must be called once at app startup before any other library FFI calls.
+  /// Idempotent — safe to call multiple times (subsequent calls are no-ops in
+  /// Rust since the DB is a global singleton).
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, or null if library
+  /// unavailable.
+  static String? libraryInit(String dbPath) {
+    if (!_ensureSymbols()) return null;
+    if (_libraryInit == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryInit == null) return null;
+    }
+    final pathPtr = dbPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_libraryInit!(pathPtr));
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  /// Ingest one file into the library through the Rust executor.
+  ///
+  /// [json] is {"account_id","remote_path","file_name"?,"source_name"?,"local_path"?}.
+  /// Returns {"ok":true,"rows":n,"title":…,"cover":bool}, rror:…, or null.
+  /// Network reads happen on a worker isolate.
+  static Future<String?> libraryIngestAsync(String json) =>
+      runOffMain(() => libraryIngest(json));
+
+  /// Same as [libraryIngestAsync] on the calling isolate. Prefer the async
+  /// wrapper unless the caller already runs off the UI thread.
+  static String? libraryIngest(String json) {
+    if (!_ensureSymbols()) return null;
+    if (_libraryIngest == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryIngest == null) return null;
+    }
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_libraryIngest!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Next library revision from the persisted Rust watermark {"ok":true,"rev":n}.
+  ///
+  /// Dart used to keep its own monotonic clock in KV; sync compares revisions
+  /// against the Rust watermark, so a local edit must advance the same scale.
+  static String? libraryNextRev() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryNextRev == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryNextRev == null) return null;
+    }
+    return _readAndFreeString(_libraryNextRev!());
+  }
+  /// Upsert a track into the Rust library DB.
+  ///
+  /// [json] must be a JSON object matching the LibraryTrack schema.
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  static String? trackUpsert(String json) {
+    if (!_ensureSymbols()) return null;
+    if (_trackUpsert == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackUpsert == null) return null;
+    }
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Get a track by id from the Rust library DB.
+  ///
+  /// Returns the track as a JSON string, 'null' if not found, or
+  /// 'error:...' on failure.  Returns null if library unavailable.
+  static String? trackGet(String id) {
+    if (!_ensureSymbols()) return null;
+    if (_trackGet == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackGet == null) return null;
+    }
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List all tracks from the Rust library DB.
+  ///
+  /// Returns a JSON array string, or '[]' / 'error:...' on failure.
+  /// Returns null if library unavailable.
+  static String? trackList() {
+    if (!_ensureSymbols()) return null;
+    if (_trackList == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackList == null) return null;
+    }
+    return _readAndFreeString(_trackList!());
+  }
+
+  /// Search tracks by title/artist substring in the Rust library DB.
+  ///
+  /// Returns a JSON array string.  Returns null if library unavailable.
+  static String? trackSearch(String query) {
+    if (!_ensureSymbols()) return null;
+    if (_trackSearch == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackSearch == null) return null;
+    }
+    final ptr = query.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackSearch!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete a track by id from the Rust library DB.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  static String? trackDelete(String id) {
+    if (!_ensureSymbols()) return null;
+    if (_trackDelete == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackDelete == null) return null;
+    }
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? trackDeleteBySource(String accountId) {
+    if (!_ensureSymbols()) return null;
+    if (_trackDeleteBySource == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackDeleteBySource == null) return null;
+    }
+    final ptr = accountId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackDeleteBySource!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? libraryClearAll() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryClearAll == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryClearAll == null) return null;
+    }
+    return _readAndFreeString(_libraryClearAll!());
+  }
+
+  static String? libraryClearIndex() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryClearIndex == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryClearIndex == null) return null;
+    }
+    return _readAndFreeString(_libraryClearIndex!());
+  }
+
+  static String? cueSliceDelete(String musicId) {
+    if (!_ensureSymbols()) return null;
+    if (_cueSliceDelete == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueSliceDelete == null) return null;
+    }
+    final ptr = musicId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueSliceDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? cueAlbumDelete(String sourceName, String cueRemotePath) {
+    if (!_ensureSymbols()) return null;
+    if (_cueAlbumDelete == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueAlbumDelete == null) return null;
+    }
+    final source = sourceName.toNativeUtf8();
+    final path = cueRemotePath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueAlbumDelete!(source, path));
+    } finally {
+      calloc.free(source);
+      calloc.free(path);
+    }
+  }
+
+  static String? cueRemainingSlices(String sourceName, String cueRemotePath) {
+    if (!_ensureSymbols()) return null;
+    if (_cueRemainingSlices == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueRemainingSlices == null) return null;
+    }
+    final source = sourceName.toNativeUtf8();
+    final path = cueRemotePath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueRemainingSlices!(source, path));
+    } finally {
+      calloc.free(source);
+      calloc.free(path);
+    }
+  }
+
+  /// Get a track or CUE slice by source name and remote path.
+  ///
+  /// Returns `LibraryTrack` JSON (keys: `id`, `account_id`) if a track matches,
+  /// `CueSlice` JSON (keys: `music_id`, `cue_id`) if a CUE slice matches,
+  /// literal `"null"` if neither found, or `"error:..."` on failure.
+  /// Returns null if the library is unavailable.
+  static String? trackGetBySourcePath(String accountId, String remotePath) {
+    if (!_ensureSymbols()) return null;
+    if (_trackGetBySourcePath == null) {
+      _loadLibrarySymbolsSafe();
+      if (_trackGetBySourcePath == null) return null;
+    }
+    final acct = accountId.toNativeUtf8();
+    final path = remotePath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_trackGetBySourcePath!(acct, path));
+    } finally {
+      calloc.free(acct);
+      calloc.free(path);
+    }
+  }
+
+  /// Get the CUE album that owns the slice with [musicId].
+  ///
+  /// Returns `CueAlbum` JSON, `"null"` if not found, or `"error:..."`.
+  /// Returns null if the library is unavailable.
+  static String? cueAlbumForSlice(String musicId) {
+    if (!_ensureSymbols()) return null;
+    if (_cueAlbumForSlice == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueAlbumForSlice == null) return null;
+    }
+    final ptr = musicId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueAlbumForSlice!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List all CUE slices for [cueId], ordered by track_index ASC.
+  ///
+  /// Returns a JSON array (may be `[]`), or `"error:..."`.
+  /// Returns null if the library is unavailable.
+  static String? cueSlicesForCue(String cueId) {
+    if (!_ensureSymbols()) return null;
+    if (_cueSlicesForCue == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueSlicesForCue == null) return null;
+    }
+    final ptr = cueId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueSlicesForCue!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? cueSliceUpsert(String sliceJson) {
+    if (!_ensureSymbols()) return null;
+    if (_cueSliceUpsert == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueSliceUpsert == null) return null;
+    }
+    final ptr = sliceJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueSliceUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  static String? cueAlbumUpsert(String albumJson) {
+    if (!_ensureSymbols()) return null;
+    if (_cueAlbumUpsert == null) {
+      _loadLibrarySymbolsSafe();
+      if (_cueAlbumUpsert == null) return null;
+    }
+    final ptr = albumJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_cueAlbumUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Trigger a one-shot import from an old sqflite DB at [oldDbPath] into
+  /// the Rust library DB.  Copies tracks, playlists, playlist_entries, and the
+  /// v6 surfaces (deleted_tracks tombstones + sync_state cursors).  Idempotent
+  /// via the KV flags `sqflite_imported` / `sqflite_imported_v6`; a device that
+  /// already ran the legacy import gets a v6 backfill of the two new surfaces.
+  ///
+  /// Call this from a first-run migration helper, NOT on every app start.
+  ///
+  /// Returns a JSON summary:
+  /// `{"already_done":false,"tracks":42,"playlists":3,"entries":120,"deleted_tracks":5,"sync_state":2}`
+  /// or 'error:...' on failure.  Returns null if library unavailable.
+  static String? libraryImportFromSqflite(String oldDbPath) {
+    if (!_ensureSymbols()) return null;
+    if (_libraryImport == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryImport == null) return null;
+    }
+    final ptr = oldDbPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_libraryImport!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Schema v6 — deleted_tracks public API ────────────────────────────────
+
+  /// Upsert a deleted track tombstone from JSON.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  static String? deletedTrackUpsert(String json) {
+    if (!_ensureSymbols()) return null;
+    if (_deletedTrackUpsert == null) {
+      _loadLibrarySymbolsSafe();
+      if (_deletedTrackUpsert == null) return null;
+    }
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_deletedTrackUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Schema v7+v8 — Aggregates + FTS5 public API ────────────────────────────
+
+  /// List all artists (schema v7 aggregate).
+  ///
+  /// Returns JSON array of `{"name":"...","track_count":N}` objects,
+  /// or 'error:...' on failure, null if unavailable.
+  static String? artistList() {
+    if (!_ensureSymbols()) return null;
+    if (_artistList == null) {
+      _loadLibrarySymbolsSafe();
+      if (_artistList == null) return null;
+    }
+    return _readAndFreeString(_artistList!());
+  }
+
+  /// Get one artist by name (schema v7 aggregate).
+  ///
+  /// Returns JSON object `{"name":"...","track_count":N}`, "null" if absent,
+  /// or 'error:...' on failure, null if unavailable.
+  static String? artistGet(String name) {
+    if (!_ensureSymbols()) return null;
+    if (_artistGet == null) {
+      _loadLibrarySymbolsSafe();
+      if (_artistGet == null) return null;
+    }
+    final ptr = name.toNativeUtf8();
+    try {
+      return _readAndFreeString(_artistGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List all albums (schema v7 aggregate).
+  ///
+  /// Returns JSON array of `{"title":"...","album_artist":"...","track_count":N}` objects,
+  /// or 'error:...' on failure, null if unavailable.
+  static String? albumList() {
+    if (!_ensureSymbols()) return null;
+    if (_albumList == null) {
+      _loadLibrarySymbolsSafe();
+      if (_albumList == null) return null;
+    }
+    return _readAndFreeString(_albumList!());
+  }
+
+  /// Get one album by title (schema v7 aggregate).
+  ///
+  /// Returns JSON object `{"title":"...","album_artist":"...","track_count":N}`, "null" if absent,
+  /// or 'error:...' on failure, null if unavailable.
+  static String? albumGet(String title) {
+    if (!_ensureSymbols()) return null;
+    if (_albumGet == null) {
+      _loadLibrarySymbolsSafe();
+      if (_albumGet == null) return null;
+    }
+    final ptr = title.toNativeUtf8();
+    try {
+      return _readAndFreeString(_albumGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List tracks by artist name (schema v7 aggregate).
+  ///
+  /// Returns JSON array of track objects, or 'error:...' on failure, null if unavailable.
+  static String? tracksByArtist(String name) {
+    if (!_ensureSymbols()) return null;
+    if (_tracksByArtist == null) {
+      _loadLibrarySymbolsSafe();
+      if (_tracksByArtist == null) return null;
+    }
+    final ptr = name.toNativeUtf8();
+    try {
+      return _readAndFreeString(_tracksByArtist!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List tracks by album title (schema v7 aggregate).
+  ///
+  /// Returns JSON array of track objects, or 'error:...' on failure, null if unavailable.
+  static String? tracksByAlbum(String title) {
+    if (!_ensureSymbols()) return null;
+    if (_tracksByAlbum == null) {
+      _loadLibrarySymbolsSafe();
+      if (_tracksByAlbum == null) return null;
+    }
+    final ptr = title.toNativeUtf8();
+    try {
+      return _readAndFreeString(_tracksByAlbum!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Rebuild artist and album aggregates from the tracks table.
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  static String? libraryRebuildAggregates() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryRebuildAggregates == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryRebuildAggregates == null) return null;
+    }
+    return _readAndFreeString(_libraryRebuildAggregates!());
+  }
+
+  /// Rebuild FTS5 search index from the tracks table (schema v8).
+  ///
+  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
+  static String? libraryRebuildFts() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryRebuildFts == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryRebuildFts == null) return null;
+    }
+    return _readAndFreeString(_libraryRebuildFts!());
+  }
+
+  // ── private: lazy library symbol loader ───────────────────────────────────
+
+  static bool _librarySymbolsLoaded = false;
+
+  /// Load library symbols lazily.  No-op if already loaded or if the
+  /// native library is unavailable.  Swallows errors so callers can check for
+  /// null function pointers instead of catching.
+  static void _loadLibrarySymbolsSafe() {
+    if (_librarySymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _loadLibrarySymbols(lib);
+      _librarySymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] library symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  // ── Round 9 — Proxy FFI ───────────────────────────────────────────────────
+  //
+  // Thin Dart bindings for the wdmm_proxy_* exports added in the proxy-extract
+  // round. R12: LocalStreamBridge deleted — MustProxy + DLNA cast route through
+  // RustProxyStreamBridge (wdmm_proxy_register_stream / set_result).
+
+  static _ProxyStartDart?   _proxyStart;
+  static _ProxyNoArgStrDart? _proxyStop;
+  static _ProxyPortDart?    _proxyPort;
+  static _ProxyTwoStrDart?  _proxyRegisterFile;
+  static _OneStrToStrDart?  _proxyUnregister;
+  // ── B3.5 HLS transcoder bindings ─────────────────────────────────────────
+  static _ThreeStrToOneStrDart? _proxyRegisterHls;
+  static _OneStrToStrDart?      _proxyUnregisterHls;
+  static _NoArgToStrDart?       _transcodePresetsJson;
+  static _OneStrToStrDart?      _transcodePresetSave;
+  static _OneStrToStrDart?      _transcodePresetDelete;
+
+  static bool _proxySymbolsLoaded = false;
+
+  static void _loadProxySymbolsSafe() {
+    if (_proxySymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _proxyStart = lib
+          .lookup<ffi.NativeFunction<_ProxyStartNative>>('wdmm_proxy_start')
+          .asFunction();
+      _proxyStop = lib
+          .lookup<ffi.NativeFunction<_ProxyNoArgStrNative>>('wdmm_proxy_stop')
+          .asFunction();
+      _proxyPort = lib
+          .lookup<ffi.NativeFunction<_ProxyPortNative>>('wdmm_proxy_port')
+          .asFunction();
+      _proxyRegisterFile = lib
+          .lookup<ffi.NativeFunction<_ProxyTwoStrNative>>('wdmm_proxy_register_file')
+          .asFunction();
+      _proxyUnregister = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_proxy_unregister')
+          .asFunction();
+      // ── B3.5 HLS transcoder + preset CRUD ───────────────────────────────
+      _proxyRegisterHls = lib
+          .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>(
+              'wdmm_proxy_register_hls')
+          .asFunction();
+      _proxyUnregisterHls = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_proxy_unregister_hls')
+          .asFunction();
+      _transcodePresetsJson = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_transcode_presets_json')
+          .asFunction();
+      _transcodePresetSave = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_transcode_preset_save')
+          .asFunction();
+      _transcodePresetDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_transcode_preset_delete')
+          .asFunction();
+      _proxySymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] proxy symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Start the local HTTP proxy on `127.0.0.1` at [port] (0 = OS-assigned).
+  ///
+  /// Returns the bound port as a decimal string, or `'error:…'` on failure.
+  /// Idempotent — if already running, returns the existing port.
+  /// Returns null if the native library is unavailable.
+  ///
+  /// Do NOT call directly — use [RustProxyBridge] which enforces the flag.
+  /// Start the local HTTP proxy with the given bind mode and port.
+  ///
+  /// [bindMode] specifies where the proxy listens:
+  /// - `"loopback"` — 127.0.0.1 (localhost only; DLNA devices cannot reach)
+  /// - `"lan_any"` — 0.0.0.0 (all interfaces; OS routes to appropriate one)
+  /// - `"lan_if:<ip>"` — specific interface (e.g., `"lan_if:192.168.1.100"`)
+  /// - `"explicit:<addr>"` — exact SocketAddr (e.g., `"explicit:192.168.1.100:8080"`)
+  ///
+  /// [port] — port number; use 0 to let OS assign a free port (ignored for `explicit:<addr>`).
+  ///
+  /// Returns the bound port as a string, or an `"error:<message>"` string on failure,
+  /// or null if the native library is unavailable.
+  ///
+  /// Idempotent — if the proxy is already running, returns its current port.
+  static String? proxyStart({required String bindMode, int port = 0}) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyStart == null) return null;
+    final cBindMode = bindMode.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyStart!(cBindMode.cast(), port));
+    } finally {
+      malloc.free(cBindMode);
+    }
+  }
+
+  /// Stop the local HTTP proxy. No-op if not running.
+  /// Returns null if the native library is unavailable.
+  static String? proxyStop() {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyStop == null) return null;
+    return _readAndFreeString(_proxyStop!());
+  }
+
+  /// Returns the bound proxy port, or -1 if not running.
+  static int proxyPort() {
+    if (!_ensureSymbols()) return -1;
+    _loadProxySymbolsSafe();
+    if (_proxyPort == null) return -1;
+    return _proxyPort!();
+  }
+
+  /// Register a local file with the proxy.
+  ///
+  /// [filePath] is the absolute path to the local file.
+  /// [name] is an optional display name used for Content-Type guessing
+  /// (e.g. `"movie.mp4"`); pass null to omit.
+  ///
+  /// Returns a JSON string:
+  /// `{"token":"…","path_template":"/s/…","port":N}` or `'error:…'`.
+  /// Build the URL as `http://127.0.0.1:{port}{path_template}`.
+  /// Returns null if the library is unavailable.
+  static String? proxyRegisterFile(String filePath, {String? name}) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyRegisterFile == null) return null;
+    final pathPtr = filePath.toNativeUtf8();
+    // Pass null pointer for optional name.
+    final namePtr = name != null ? name.toNativeUtf8() : ffi.nullptr.cast<Utf8>();
+    try {
+      return _readAndFreeString(_proxyRegisterFile!(pathPtr, namePtr));
+    } finally {
+      calloc.free(pathPtr);
+      if (name != null) calloc.free(namePtr);
+    }
+  }
+
+  /// Unregister a proxy token previously returned by [proxyRegisterFile].
+  ///
+  /// Returns `'ok'`, or null if the library is unavailable.
+  static String? proxyUnregister(String token) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyUnregister == null) return null;
+    final ptr = token.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyUnregister!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── B3.5 HLS transcoder + preset CRUD ────────────────────────────────────
+
+  /// Register an HLS transcode job for [inputUrl] using preset [presetId].
+  ///
+  /// [deviceId] is an opaque identifier for the cast session (e.g. renderer USN).
+  /// [inputUrl] should be the loopback proxy URL for the file (so the Rust
+  /// transcoder fetches via the existing proxy — no separate auth needed).
+  /// [presetId] is the `id` column from `transcode_presets` (e.g. `"h264"`).
+  ///
+  /// Returns a JSON string on success:
+  ///   `{"token":"…","playlist_url":"http://127.0.0.1:PORT/hls/TOKEN/index.m3u8"}`
+  /// or `'error:…'` on failure.
+  /// Returns null if the native library is unavailable.
+  static String? proxyRegisterHls(
+      String deviceId, String inputUrl, String presetId) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyRegisterHls == null) return null;
+    final pDev   = deviceId.toNativeUtf8();
+    final pInput = inputUrl.toNativeUtf8();
+    final pPreset = presetId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyRegisterHls!(pDev, pInput, pPreset));
+    } finally {
+      calloc.free(pDev);
+      calloc.free(pInput);
+      calloc.free(pPreset);
+    }
+  }
+
+  /// Stop and clean up the HLS job for [token].
+  /// Returns `'ok'` or `'error:…'`.
+  static String? proxyUnregisterHls(String token) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_proxyUnregisterHls == null) return null;
+    final ptr = token.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyUnregisterHls!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List all transcode presets as a JSON array.
+  /// Returns a JSON string or `'error:…'`.
+  static String? transcodePresetsJson() {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_transcodePresetsJson == null) return null;
+    return _readAndFreeString(_transcodePresetsJson!());
+  }
+
+  /// Create or update a transcode preset from [json] (a serialised
+  /// `TranscodePreset` object).  Returns `'ok'` or `'error:…'`.
+  static String? transcodePresetSave(String json) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_transcodePresetSave == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_transcodePresetSave!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete the transcode preset with [id].  Returns `'ok'` or `'error:…'`.
+  static String? transcodePresetDelete(String id) {
+    if (!_ensureSymbols()) return null;
+    _loadProxySymbolsSafe();
+    if (_transcodePresetDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_transcodePresetDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Builtin preset reset (contract preset-encoder-tiers §4) ───────────────
+  //
+  // `wdmm_transcode_preset_reset(id)` restores a factory preset to its seeded
+  // parameters. Optional export: an older .so returns null and the editor shows
+  // “恢复默认不可用” instead of crashing.
+
+  static _OneStrToStrDart? _transcodePresetReset;
+
+  static bool _transcodePresetResetLoaded = false;
+
+  static void _loadTranscodePresetResetSafe() {
+    if (_transcodePresetResetLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _transcodePresetReset = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_transcode_preset_reset')
+          .asFunction();
+      _transcodePresetResetLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] transcode preset reset lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Reset the builtin preset [id] to its factory defaults.
+  ///
+  /// Returns `'ok'` / `'error:…'`, or null when the native library predates the
+  /// export (the editor degrades to “恢复默认不可用”).
+  static String? transcodePresetReset(String id) {
+    if (!_ensureSymbols()) return null;
+    _loadTranscodePresetResetSafe();
+    if (_transcodePresetReset == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_transcodePresetReset!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Video encoder catalog (contract preset-editor-slimming §2) ────────────
+  //
+  // `wdmm_video_encoder_catalog_json()` describes every encoder the preset
+  // editor may offer: id, display label, hardware flag, output codec and the
+  // rate-control modes it supports. Optional export: an older .so returns null
+  // and the editor renders `VideoEncoderCatalog.fallback()` instead of
+  // hard-coding the encoder list in Dart.
+
+  static _NoArgToStrDart? _videoEncoderCatalogJson;
+
+  static bool _videoEncoderCatalogLoaded = false;
+
+  static void _loadVideoEncoderCatalogSafe() {
+    if (_videoEncoderCatalogLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _videoEncoderCatalogJson = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_video_encoder_catalog_json')
+          .asFunction();
+      _videoEncoderCatalogLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] video encoder catalog lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Video encoder catalog as JSON (contract §2), or null when the native
+  /// library predates the export (callers degrade to a built-in catalog).
+  static String? videoEncoderCatalogJson() {
+    if (!_ensureSymbols()) return null;
+    _loadVideoEncoderCatalogSafe();
+    if (_videoEncoderCatalogJson == null) return null;
+    return _readAndFreeString(_videoEncoderCatalogJson!());
+  }
+
+  // ── HLS VOD transcode-cache management ────────────────────────────────────
+  //
+  // The VOD HLS path keeps transcoded segments in a disk cache (contract
+  // hls-vod-transcode-cache §3.5). These exports are read-only telemetry plus a
+  // bulk clear; the budget itself is passed per session through
+  // `cache_budget_mb`. Both symbols are lazy and optional: an older .so simply
+  // returns null and the settings UI degrades to “不可用”.
+
+  static _NoArgToStrDart? _transcodeCacheStatsJson;
+  static _NoArgToStrDart? _transcodeCacheClear;
+
+  static bool _transcodeCacheStatsLoaded = false;
+  static bool _transcodeCacheClearLoaded = false;
+
+  static void _loadTranscodeCacheStatsSafe() {
+    if (_transcodeCacheStatsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _transcodeCacheStatsJson = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_transcode_cache_stats_json')
+          .asFunction();
+      _transcodeCacheStatsLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] transcode cache stats lookup failed (non-fatal): $e');
+    }
+  }
+
+  static void _loadTranscodeCacheClearSafe() {
+    if (_transcodeCacheClearLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _transcodeCacheClear = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_transcode_cache_clear')
+          .asFunction();
+      _transcodeCacheClearLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] transcode cache clear lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Transcode cache telemetry as JSON:
+  /// `{"ok":true,"bytes","budget","entries","hits","misses","over_budget"}`.
+  ///
+  /// Returns null when the native library predates the export, so callers can
+  /// render a “不可用” state instead of throwing.
+  static String? transcodeCacheStatsJson() {
+    if (!_ensureSymbols()) return null;
+    _loadTranscodeCacheStatsSafe();
+    if (_transcodeCacheStatsJson == null) return null;
+    return _readAndFreeString(_transcodeCacheStatsJson!());
+  }
+
+  /// Drop every cached transcoded segment. Returns `'ok'` / `'error:…'`, or
+  /// null when the native library predates the export.
+  static String? transcodeCacheClear() {
+    if (!_ensureSymbols()) return null;
+    _loadTranscodeCacheClearSafe();
+    if (_transcodeCacheClear == null) return null;
+    return _readAndFreeString(_transcodeCacheClear!());
+  }
+
+  // ── Wave B — KV / settings / user-folder / playlist FFI ───────────────────
+  //
+  // Round B cutover: these exports replace the sqflite user_folder tables, the
+  // sqflite playlist store, and the SharedPreferences keys for the network path
+  // + the well-known KV settings. Dart services call these directly — the old
+  // stores/prefs are no longer written.
+
+  static _OneStrToStrDart? _kvGet;
+  static _TwoStrToOneStrDart? _kvSet;
+  static _OneStrToStrDart? _kvDelete;
+  static _NoArgToStrDart? _settingsGetNetworkRememberLastPath;
+  static _Int32ToStrDart? _settingsSetNetworkRememberLastPath;
+  static _NoArgToStrDart? _settingsGetNetworkLastPath;
+  static _OneStrToStrDart? _settingsSetNetworkLastPath;
+  static _OneStrToStrDart? _userFolderListChildren;
+  static _OneStrToStrDart? _userFolderCreate;
+  static _TwoStrToOneStrDart? _userFolderRename;
+  static _TwoStrToOneStrDart? _userFolderMove;
+  static _OneStrToStrDart? _userFolderDelete;
+  static _OneStrToStrDart? _userFolderListItems;
+  static _OneStrToStrDart? _userFolderAddItem;
+  static _ThreeStrToOneStrDart? _userFolderRemoveItem;
+  static _TwoStrToOneStrDart? _userFolderSetItems;
+  static _OneStrToStrDart? _userFolderReplaceSnapshot;
+  static _NoArgToStrDart? _playlistList;
+  static _OneStrToStrDart? _playlistCreate;
+  static _OneStrToStrDart? _playlistDelete;
+  static _OneStrToStrDart? _playlistListEntries;
+  static _TwoStrToOneStrDart? _playlistSetEntries;
+  static _OneStrToStrDart? _playlistPublish;
+
+  static bool _bSymbolsLoaded = false;
+
+  static void _loadBSymbolsSafe() {
+    if (_bSymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _kvGet = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_kv_get')
+          .asFunction();
+      _kvSet = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_kv_set')
+          .asFunction();
+      _kvDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_kv_delete')
+          .asFunction();
+      _settingsGetNetworkRememberLastPath = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_settings_get_network_remember_last_path')
+          .asFunction();
+      _settingsSetNetworkRememberLastPath = lib
+          .lookup<ffi.NativeFunction<_Int32ToStrNative>>(
+              'wdmm_settings_set_network_remember_last_path')
+          .asFunction();
+      _settingsGetNetworkLastPath = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_settings_get_network_last_path')
+          .asFunction();
+      _settingsSetNetworkLastPath = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_settings_set_network_last_path')
+          .asFunction();
+      _userFolderListChildren = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_list_children')
+          .asFunction();
+      _userFolderCreate = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_create')
+          .asFunction();
+      _userFolderRename = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_user_folder_rename')
+          .asFunction();
+      _userFolderMove = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_user_folder_move')
+          .asFunction();
+      _userFolderDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_delete')
+          .asFunction();
+      _userFolderListItems = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_list_items')
+          .asFunction();
+      _userFolderAddItem = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_add_item')
+          .asFunction();
+      _userFolderRemoveItem = lib
+          .lookup<ffi.NativeFunction<_ThreeStrToOneStrNative>>(
+              'wdmm_user_folder_remove_item')
+          .asFunction();
+      _userFolderSetItems = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_user_folder_set_items')
+          .asFunction();
+      _userFolderReplaceSnapshot = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_user_folder_replace_snapshot')
+          .asFunction();
+      _playlistList = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_playlist_list')
+          .asFunction();
+      _playlistCreate = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_playlist_create')
+          .asFunction();
+      _playlistDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_playlist_delete')
+          .asFunction();
+      _playlistListEntries = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_playlist_list_entries')
+          .asFunction();
+      _playlistSetEntries = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_playlist_set_entries')
+          .asFunction();
+      _playlistPublish = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_playlist_publish')
+          .asFunction();
+      _bSymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] Wave B symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Ensure Wave B symbols are loaded. Returns true if usable.
+  static bool _ensureBSymbols() {
+    if (!_ensureSymbols()) return false;
+    if (_bSymbolsLoaded) return true;
+    _loadBSymbolsSafe();
+    return _bSymbolsLoaded;
+  }
+
+  // ── KV store ─────────────────────────────────────────────────────────────
+
+  /// Get a KV value by [key]. Returns the value string, '' if the key is
+  /// absent, 'error:...' on failure, or null if the library is unavailable.
+  static String? kvGet(String key) {
+    if (!_ensureBSymbols() || _kvGet == null) return null;
+    final ptr = key.toNativeUtf8();
+    try {
+      return _readAndFreeString(_kvGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Set a KV [key] = [value]. Returns 'ok' or 'error:...', null if unavailable.
+  static String? kvSet(String key, String value) {
+    if (!_ensureBSymbols() || _kvSet == null) return null;
+    final k = key.toNativeUtf8();
+    final v = value.toNativeUtf8();
+    try {
+      return _readAndFreeString(_kvSet!(k, v));
+    } finally {
+      calloc.free(k);
+      calloc.free(v);
+    }
+  }
+
+  /// Delete a KV [key]. Returns 'ok' or 'error:...', null if unavailable.
+  static String? kvDelete(String key) {
+    if (!_ensureBSymbols() || _kvDelete == null) return null;
+    final ptr = key.toNativeUtf8();
+    try {
+      return _readAndFreeString(_kvDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Network path settings ────────────────────────────────────────────────
+
+  /// Returns true if the network library should remember the last browse
+  /// path. Returns null if the library is unavailable.
+  static bool? settingsGetNetworkRememberLastPath() {
+    if (!_ensureBSymbols() || _settingsGetNetworkRememberLastPath == null) {
+      return null;
+    }
+    final s = _readAndFreeString(_settingsGetNetworkRememberLastPath!());
+    return s == 'true';
+  }
+
+  /// Enable/disable remembering the last network browse path.
+  /// Returns 'ok' or 'error:...', null if unavailable.
+  static String? settingsSetNetworkRememberLastPath(bool enabled) {
+    if (!_ensureBSymbols() || _settingsSetNetworkRememberLastPath == null) {
+      return null;
+    }
+    return _readAndFreeString(_settingsSetNetworkRememberLastPath!(enabled ? 1 : 0));
+  }
+
+  /// Get the session-only last network browse path.
+  /// Returns the path (or ''/'/'), null if unavailable.
+  static String? settingsGetNetworkLastPath() {
+    if (!_ensureBSymbols() || _settingsGetNetworkLastPath == null) return null;
+    return _readAndFreeString(_settingsGetNetworkLastPath!());
+  }
+
+  /// Set the session-only last network browse path.
+  /// Returns 'ok' or 'error:...', null if unavailable.
+  static String? settingsSetNetworkLastPath(String path) {
+    if (!_ensureBSymbols() || _settingsSetNetworkLastPath == null) return null;
+    final ptr = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_settingsSetNetworkLastPath!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── User folder store ────────────────────────────────────────────────────
+
+  /// List children of [parentId]. Pass `kUserFolderRootId` (or `''`/`null`
+  /// equivalent) for the virtual root 「我的文件夹」.
+  /// Returns a JSON array string, or null if unavailable.
+  static String? userFolderListChildren(String parentId) {
+    if (!_ensureBSymbols() || _userFolderListChildren == null) return null;
+    final ptr = parentId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderListChildren!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Create a user folder. [json] must match the folder schema
+  /// (`{id,name,parent_id,sort_order,created_at}`).
+  /// Returns 'ok' or 'error:...', null if unavailable.
+  static String? userFolderCreate(String json) {
+    if (!_ensureBSymbols() || _userFolderCreate == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderCreate!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Rename folder [id] to [name]. Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderRename(String id, String name) {
+    if (!_ensureBSymbols() || _userFolderRename == null) return null;
+    final i = id.toNativeUtf8();
+    final n = name.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderRename!(i, n));
+    } finally {
+      calloc.free(i);
+      calloc.free(n);
+    }
+  }
+
+  /// Move folder [id] under [newParentId]. Returns 'ok'/'error:...', null if
+  /// unavailable.
+  static String? userFolderMove(String id, String newParentId) {
+    if (!_ensureBSymbols() || _userFolderMove == null) return null;
+    final i = id.toNativeUtf8();
+    final p = newParentId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderMove!(i, p));
+    } finally {
+      calloc.free(i);
+      calloc.free(p);
+    }
+  }
+
+  /// Delete folder [id] (cascades to descendants/items).
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderDelete(String id) {
+    if (!_ensureBSymbols() || _userFolderDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List items in folder [folderId]. Returns a JSON array string, null if
+  /// unavailable.
+  static String? userFolderListItems(String folderId) {
+    if (!_ensureBSymbols() || _userFolderListItems == null) return null;
+    final ptr = folderId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderListItems!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Add an item to a folder. [json] matches the item schema
+  /// (`{folder_id,ref_kind,ref_key,sort_order,added_at}`).
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderAddItem(String json) {
+    if (!_ensureBSymbols() || _userFolderAddItem == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderAddItem!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Remove an item identified by (folder_id, ref_kind, ref_key).
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderRemoveItem(
+      String folderId, String refKind, String refKey) {
+    if (!_ensureBSymbols() || _userFolderRemoveItem == null) return null;
+    final f = folderId.toNativeUtf8();
+    final k = refKind.toNativeUtf8();
+    final r = refKey.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderRemoveItem!(f, k, r));
+    } finally {
+      calloc.free(f);
+      calloc.free(k);
+      calloc.free(r);
+    }
+  }
+
+  /// Replace the full ordered item set of folder [folderId].
+  /// [jsonArray] is a JSON array of item objects.
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? userFolderSetItems(String folderId, String jsonArray) {
+    if (!_ensureBSymbols() || _userFolderSetItems == null) return null;
+    final f = folderId.toNativeUtf8();
+    final a = jsonArray.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderSetItems!(f, a));
+    } finally {
+      calloc.free(f);
+      calloc.free(a);
+    }
+  }
+
+  /// Replace the whole user-folder snapshot atomically.
+  /// [json] is `{"folders":[…],"items":[…]}`; timestamps accept unix i64 or ISO8601.
+  /// Returns `"ok"` on success, `"error:…"` on failure, null if unavailable.
+  static String? userFolderReplaceSnapshot(String json) {
+    if (!_ensureBSymbols() || _userFolderReplaceSnapshot == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_userFolderReplaceSnapshot!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Playlist store ────────────────────────────────────────────────────────
+
+  /// List all playlists. Returns a JSON array string, null if unavailable.
+  static String? playlistList() {
+    if (!_ensureBSymbols() || _playlistList == null) return null;
+    return _readAndFreeString(_playlistList!());
+  }
+
+  /// Create a playlist. [json] matches the playlist schema
+  /// (`{id,name,created_at,updated_at}`).
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? playlistCreate(String json) {
+    if (!_ensureBSymbols() || _playlistCreate == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistCreate!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete playlist [id]. Returns 'ok'/'error:...', null if unavailable.
+  static String? playlistDelete(String id) {
+    if (!_ensureBSymbols() || _playlistDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List entries of playlist [id]. Returns a JSON array string, null if
+  /// unavailable.
+  static String? playlistListEntries(String id) {
+    if (!_ensureBSymbols() || _playlistListEntries == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistListEntries!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Replace the full ordered entry set of playlist [id].
+  /// [jsonArray] is a JSON array of entry objects.
+  /// Returns 'ok'/'error:...', null if unavailable.
+  static String? playlistSetEntries(String id, String jsonArray) {
+    if (!_ensureBSymbols() || _playlistSetEntries == null) return null;
+    final i = id.toNativeUtf8();
+    final a = jsonArray.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistSetEntries!(i, a));
+    } finally {
+      calloc.free(i);
+      calloc.free(a);
+    }
+  }
+
+  /// Publish one playlist right after a local edit, without a full sync round
+  /// trip. Returns `{"ok":true,"action":"pushed"|"pulled"|"no_change"}`
+  /// (or `"none"` when the playlist is unknown), `'error:...'`, or null when
+  /// the native library is unavailable.
+  static String? playlistPublish({
+    required String accountId,
+    required String playlistId,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureBSymbols() || _playlistPublish == null) return null;
+    final payload = jsonEncode({
+      'account_id': accountId,
+      'playlist_id': playlistId,
+      'remote_dir': remoteDir,
+    });
+    final ptr = payload.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistPublish!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── R12 — Proxy stream FFI ─────────────────────────────────────────────────
+  //
+  // Bindings for wdmm_proxy_register_stream / renew_stream_callback /
+  // stream_alloc_buf / stream_free_buf / stream_set_result. Used by
+  // [RustProxyStreamBridge] to route Dart-driver Range reads through the Rust
+  // local HTTP proxy. Do NOT call these directly — go through the bridge.
+
+  static _ProxyRegisterStreamDart?  _proxyRegisterStream;
+  static _ProxyRenewStreamCbDart?   _proxyRenewStreamCb;
+  static _ProxyStreamAllocBufDart?  _proxyStreamAllocBuf;
+  static _ProxyStreamFreeBufDart?   _proxyStreamFreeBuf;
+  static _ProxyStreamSetResultDart? _proxyStreamSetResult;
+  static bool _streamSymbolsLoaded = false;
+
+  static void _loadStreamSymbolsSafe() {
+    if (_streamSymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _proxyRegisterStream = lib
+          .lookup<ffi.NativeFunction<_ProxyRegisterStreamNative>>(
+              'wdmm_proxy_register_stream')
+          .asFunction();
+      _proxyRenewStreamCb = lib
+          .lookup<ffi.NativeFunction<_ProxyRenewStreamCbNative>>(
+              'wdmm_proxy_renew_stream_callback')
+          .asFunction();
+      _proxyStreamAllocBuf = lib
+          .lookup<ffi.NativeFunction<_ProxyStreamAllocBufNative>>(
+              'wdmm_proxy_stream_alloc_buf')
+          .asFunction();
+      _proxyStreamFreeBuf = lib
+          .lookup<ffi.NativeFunction<_ProxyStreamFreeBufNative>>(
+              'wdmm_proxy_stream_free_buf')
+          .asFunction();
+      _proxyStreamSetResult = lib
+          .lookup<ffi.NativeFunction<_ProxyStreamSetResultNative>>(
+              'wdmm_proxy_stream_set_result')
+          .asFunction();
+      _streamSymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] stream symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Register an in-process Range-callback stream with the proxy.
+  ///
+  /// - [size]     — known content length in bytes; `0` if unknown.
+  /// - [name]     — optional; used for Content-Type guessing (pass `null` to
+  ///   omit, e.g. for crypt-wrapped names).
+  /// - [cb]       — native function pointer for the Range callback.
+  /// - [userData] — opaque pointer passed back to every [cb] invocation.
+  ///
+  /// Returns JSON `{"token":"…","path_template":"/s/…","port":N}` on success,
+  /// `"error:…"` on failure, or null if the native library is unavailable.
+  /// Requires the proxy to be started first.
+  static String? proxyRegisterStream({
+    required int size,
+    required String? name,
+    required ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>> cb,
+    required ffi.Pointer<ffi.Void> userData,
+  }) {
+    if (!_ensureSymbols()) return null;
+    _loadStreamSymbolsSafe();
+    if (_proxyRegisterStream == null) return null;
+    final namePtr =
+        name != null ? name.toNativeUtf8() : ffi.nullptr.cast<Utf8>();
+    try {
+      return _readAndFreeString(_proxyRegisterStream!(size, namePtr, cb, userData));
+    } finally {
+      if (name != null) calloc.free(namePtr);
+    }
+  }
+
+  /// Replace the Range callback for an existing stream registration.
+  ///
+  /// Returns `"ok"` on success, `"error:…"` on failure, or null if the native
+  /// library is unavailable. No-op if [token] is unknown or is a file
+  /// registration.
+  static String? proxyRenewStreamCallback(
+    String token,
+    ffi.Pointer<ffi.NativeFunction<WdmmProxyRangeCallbackNative>> cb,
+    ffi.Pointer<ffi.Void> userData,
+  ) {
+    if (!_ensureSymbols()) return null;
+    _loadStreamSymbolsSafe();
+    if (_proxyRenewStreamCb == null) return null;
+    final ptr = token.toNativeUtf8();
+    try {
+      return _readAndFreeString(_proxyRenewStreamCb!(ptr, cb, userData));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Allocate [len] bytes in Rust's heap for use as a Range-callback output
+  /// buffer.
+  ///
+  /// **Must** use this to allocate the buffer passed to [proxyStreamSetResult]
+  /// on the success path. Returns null (`ffi.nullptr`) if [len] is `0` or the
+  /// library is unavailable.
+  static ffi.Pointer<ffi.Uint8> proxyStreamAllocBuf(int len) {
+    if (len <= 0) return ffi.nullptr;
+    if (!_ensureSymbols()) return ffi.nullptr;
+    _loadStreamSymbolsSafe();
+    if (_proxyStreamAllocBuf == null) return ffi.nullptr;
+    return _proxyStreamAllocBuf!(len);
+  }
+
+  /// Free a buffer previously returned by [proxyStreamAllocBuf].
+  ///
+  /// No-op if [buf] is null or [len] is `0`. Use only on error paths — on the
+  /// success path, Rust reclaims the buffer after consuming it.
+  static void proxyStreamFreeBuf(ffi.Pointer<ffi.Uint8> buf, int len) {
+    if (buf == ffi.nullptr || len <= 0) return;
+    if (!_ensureSymbols()) return;
+    _loadStreamSymbolsSafe();
+    _proxyStreamFreeBuf?.call(buf, len);
+  }
+
+  /// Deliver async Range bytes to a parked Rust request handler.
+  ///
+  /// - [requestId] — the id received in the [WdmmProxyRangeCallbackNative].
+  /// - [buf]       — buffer from [proxyStreamAllocBuf]; Rust takes ownership on
+  ///   success (status `0`).
+  /// - [len]       — byte count in [buf].
+  /// - [status]    — `0` = success; negative = error (pass null buf + `0` len).
+  ///
+  /// Safe to call from any thread. No-op if [requestId] is already timed out
+  /// or unknown (30 s timeout → Rust returns a TimedOut IO error to the client).
+  static void proxyStreamSetResult(
+    int requestId,
+    ffi.Pointer<ffi.Uint8> buf,
+    int len,
+    int status,
+  ) {
+    if (!_ensureSymbols()) return;
+    _loadStreamSymbolsSafe();
+    _proxyStreamSetResult?.call(requestId, buf, len, status);
+  }
+
+  // ── Round 10 — DLNA session facade ───────────────────────────────────────
+  //
+  // The DLNA protocol stack (SSDP discovery, device description, SOAP /
+  // DIDL-Lite control, ConnectionManager negotiation, transport state polling,
+  // subtitle matching) lives in Rust. [DlnaCastService] only marshals user
+  // intent (config / command JSON) and renders the state JSON that comes back.
+  //
+  // Loaded through dedicated lazy loaders: an older `libwdmm_ffi.so` that does
+  // not export these symbols leaves them null instead of breaking the rest of
+  // the FFI surface.
+
+  static _OneStrToStrDart? _dlnaSessionStart;
+  static _Uint32ToStrDart? _dlnaSessionState;
+  static _Uint32StrToStrDart? _dlnaSessionCmd;
+  static _Uint32ToStrDart? _dlnaSessionClose;
+  static _Uint32ToStrDart? _dlnaDiscoverExt;
+  static _ProxyRegAccountDart? _proxyRegisterAccount;
+
+  static bool _dlnaSessionSymbolsLoaded = false;
+  static bool _dlnaDiscoverExtLoaded = false;
+  static bool _proxyRegAccountLoaded = false;
+
+  // ConnectionManager:1 GetProtocolInfo — added after the Round 10 session
+  // facade, so it gets its own lazy loader to stay compatible with older
+  // `libwdmm_ffi.so` builds that predate the export.
+  static _OneStrToStrDart? _dlnaSinkProtocolInfo;
+  static bool _dlnaSinkProtocolInfoLoaded = false;
+
+  static void _loadDlnaSessionSymbolsSafe() {
+    if (_dlnaSessionSymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _dlnaSessionStart = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_dlna_session_start')
+          .asFunction();
+      _dlnaSessionState = lib
+          .lookup<ffi.NativeFunction<_Uint32ToStrNative>>(
+              'wdmm_dlna_session_state')
+          .asFunction();
+      _dlnaSessionCmd = lib
+          .lookup<ffi.NativeFunction<_Uint32StrToStrNative>>(
+              'wdmm_dlna_session_cmd')
+          .asFunction();
+      _dlnaSessionClose = lib
+          .lookup<ffi.NativeFunction<_Uint32ToStrNative>>(
+              'wdmm_dlna_session_close')
+          .asFunction();
+      _dlnaSessionSymbolsLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] DLNA session symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  static void _loadDlnaDiscoverExtSafe() {
+    if (_dlnaDiscoverExtLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _dlnaDiscoverExt = lib
+          .lookup<ffi.NativeFunction<_Uint32ToStrNative>>(
+              'wdmm_dlna_discover_ext_json')
+          .asFunction();
+      _dlnaDiscoverExtLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] DLNA discover_ext symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  static void _loadDlnaSinkProtocolInfoSafe() {
+    if (_dlnaSinkProtocolInfoLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _dlnaSinkProtocolInfo = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_dlna_sink_protocol_info_json')
+          .asFunction();
+      _dlnaSinkProtocolInfoLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] DLNA sink protocol_info symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  static void _loadProxyRegAccountSafe() {
+    if (_proxyRegAccountLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _proxyRegisterAccount = lib
+          .lookup<ffi.NativeFunction<_ProxyRegAccountNative>>(
+              'wdmm_proxy_register_account')
+          .asFunction();
+      _proxyRegAccountLoaded = true;
+    } catch (e) {
+      debugPrint(
+          '[RustCore] proxy_register_account lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Start a DLNA cast session completely inside Rust.
+  ///
+  /// [configJson] carries `renderer_location`, `renderer_usn`, `account_id`,
+  /// `remote_path`, `name`, `size`, `preset_id`, `force_direct` and `ui_lang`.
+  /// Returns `{"handle":…,"url":…,"provider":…,"protocol_info":…,"compat":{…}}`
+  /// or `{"ok":false,"error":…}`. Null when the native library (or the symbol)
+  /// is unavailable.
+  static String? dlnaSessionStart(String configJson) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSessionSymbolsSafe();
+    if (_dlnaSessionStart == null) return null;
+    final cfg = configJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_dlnaSessionStart!(cfg));
+    } finally {
+      calloc.free(cfg);
+    }
+  }
+
+  /// Fetch (and internally tick) the state of session [handle].
+  ///
+  /// Returns the state JSON documented on the contract, or null when the
+  /// symbol is unavailable.
+  static String? dlnaSessionState(int handle) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSessionSymbolsSafe();
+    final fn = _dlnaSessionState;
+    if (fn == null) return null;
+    return _readAndFreeString(fn(handle));
+  }
+
+  /// Send a user command ([cmdJson]) to session [handle].
+  ///
+  /// Returns `"ok"` or `"error:<message>"`; null when unavailable.
+  static String? dlnaSessionCmd(int handle, String cmdJson) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSessionSymbolsSafe();
+    final fn = _dlnaSessionCmd;
+    if (fn == null) return null;
+    final cmd = cmdJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(handle, cmd));
+    } finally {
+      calloc.free(cmd);
+    }
+  }
+
+  /// Tear down session [handle] (media proxy tokens included).
+  static String? dlnaSessionClose(int handle) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSessionSymbolsSafe();
+    final fn = _dlnaSessionClose;
+    if (fn == null) return null;
+    return _readAndFreeString(fn(handle));
+  }
+
+  /// SSDP discovery via Rust.
+  ///
+  /// Returns `[{"usn","location","server","friendly_name","has_avtransport"}]`,
+  /// or null when the extended symbol is missing (caller may fall back to
+  /// [dlnaDiscover]).
+  static String? dlnaDiscoverExt({int timeoutMs = 4000}) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaDiscoverExtSafe();
+    final fn = _dlnaDiscoverExt;
+    if (fn == null) return null;
+    return _readAndFreeString(fn(timeoutMs));
+  }
+
+  /// Ask a DLNA renderer for its ConnectionManager `GetProtocolInfo` answer.
+  ///
+  /// [rendererLocation] is the device description URL (`location`) reported by
+  /// SSDP. Returns `{"ok":true,"source":…,"sink":…,"sink_count":N}` (both CSVs
+  /// in `protocolInfo` form) or `{"ok":false,"error":…}`. Null when the native
+  /// library or the symbol is unavailable — callers must degrade gracefully.
+  static String? dlnaSinkProtocolInfo(String rendererLocation) {
+    if (!_ensureSymbols()) return null;
+    _loadDlnaSinkProtocolInfoSafe();
+    final fn = _dlnaSinkProtocolInfo;
+    if (fn == null) return null;
+    final location = rendererLocation.toNativeUtf8();
+    try {
+      return _readAndFreeString(fn(location));
+    } finally {
+      calloc.free(location);
+    }
+  }
+
+  /// Expose an account-scoped remote file as a proxy stream, resolved in Rust.
+  ///
+  /// Returns `{"token":…,"url":…}` (the same URL that is handed to the
+  /// renderer) or an `error:` string. Null when the symbol is unavailable.
+  static String? proxyRegisterAccount({
+    required String accountId,
+    required String remotePath,
+    String? name,
+    int size = 0,
+  }) {
+    if (!_ensureSymbols()) return null;
+    _loadProxyRegAccountSafe();
+    final fn = _proxyRegisterAccount;
+    if (fn == null) return null;
+    final account = accountId.toNativeUtf8();
+    final path = remotePath.toNativeUtf8();
+    final namePtr = name != null ? name.toNativeUtf8() : ffi.nullptr.cast<Utf8>();
+    try {
+      return _readAndFreeString(fn(account, path, namePtr, size));
+    } finally {
+      calloc.free(account);
+      calloc.free(path);
+      if (name != null) calloc.free(namePtr);
+    }
+  }
+
+  // ── Wave D — Manga FFI ───────────────────────────────────────────────────
+  //
+  // Binds wdmm_manga_* exports landed in Wave D (fdb05df).
+  // [MangaLibraryService] routes index CRUD and progress through these;
+  // sqflite is no longer written for manga.
+
+  static _NoArgToStrDart?     _mangaList;
+  static _OneStrToStrDart?    _mangaGet;
+  static _OneStrToStrDart?    _mangaUpsert;
+  static _OneStrToStrDart?    _mangaDelete;
+  static _OneStrToStrDart?    _deletedMangaClear;
+  static _NoArgToStrDart?     _mangaClearIndex;
+  static _OneStrToStrDart?    _mangaListPages;
+  static _TwoStrToOneStrDart? _mangaSetPages;
+  static _OneStrToStrDart?    _mangaGetProgress;
+  static _StrInt64ToStrDart?  _mangaSetProgress;
+  static _NoArgToStrDart?     _mangaListProgress;
+  static _NoArgToStrDart?     _mangaListSeries;
+
+  // Wave E — backup export / import helpers
+  static _NoArgToStrDart?  _listCueAlbums;
+  static _NoArgToStrDart?  _deletedMangaList;
+  static _OneStrToStrDart? _deletedMangaUpsert;
+
+  static bool _mangaSymbolsLoaded = false;
+
+  static void _loadMangaSymbolsSafe() {
+    if (_mangaSymbolsLoaded) return;
+    final lib = _tryLib;
+    if (lib == null) return;
+    try {
+      _mangaList = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_manga_list')
+          .asFunction();
+      _mangaGet = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_manga_get')
+          .asFunction();
+      _mangaUpsert = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_manga_upsert')
+          .asFunction();
+      _mangaDelete = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_manga_delete')
+          .asFunction();
+      _deletedMangaClear = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_deleted_manga_clear')
+          .asFunction();
+      _mangaClearIndex = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_manga_clear_index')
+          .asFunction();
+      _mangaListPages = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_manga_list_pages')
+          .asFunction();
+      _mangaSetPages = lib
+          .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
+              'wdmm_manga_set_pages')
+          .asFunction();
+      _mangaGetProgress = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_manga_get_progress')
+          .asFunction();
+      _mangaSetProgress = lib
+          .lookup<ffi.NativeFunction<_StrInt64ToStrNative>>(
+              'wdmm_manga_set_progress')
+          .asFunction();
+      _mangaListProgress = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_manga_list_progress')
+          .asFunction();
+      _mangaListSeries = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_manga_list_series')
+          .asFunction();
+      _listCueAlbums = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_list_cue_albums')
+          .asFunction();
+      _deletedMangaList = lib
+          .lookup<ffi.NativeFunction<_NoArgToStrNative>>(
+              'wdmm_deleted_manga_list')
+          .asFunction();
+      _deletedMangaUpsert = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_deleted_manga_upsert')
+          .asFunction();
+      _mangaSymbolsLoaded = true;
+    } catch (e) {
+      debugPrint('[RustCore] Wave D manga symbol lookup failed (non-fatal): $e');
+    }
+  }
+
+  /// Ensure Wave D manga symbols are loaded. Returns true if usable.
+  static bool _ensureMangaSymbols() {
+    if (!_ensureSymbols()) return false;
+    if (_mangaSymbolsLoaded) return true;
+    _loadMangaSymbolsSafe();
+    return _mangaSymbolsLoaded;
+  }
+
+  // ── Manga public API ──────────────────────────────────────────────────────
+
+  /// List all manga rows as a JSON array string, or null if FFI unavailable.
+  static String? mangaList() {
+    if (!_ensureMangaSymbols() || _mangaList == null) return null;
+    return _readAndFreeString(_mangaList!());
+  }
+
+  /// Get one manga by [id]. Returns a JSON object, `"null"` if absent, or
+  /// `"error:…"` on failure. Returns null if FFI unavailable.
+  static String? mangaGet(String id) {
+    if (!_ensureMangaSymbols() || _mangaGet == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Upsert one manga. [json] is the manga serialised to a JSON object.
+  /// Returns `"ok"` or `"error:…"`, null if FFI unavailable.
+  static String? mangaUpsert(String json) {
+    if (!_ensureMangaSymbols() || _mangaUpsert == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete a manga by [id] (cascades to pages + progress; writes tombstone).
+  /// Returns `"ok"`, `"not_found"`, or `"error:…"`. Null if FFI unavailable.
+  static String? mangaDelete(String id) {
+    if (!_ensureMangaSymbols() || _mangaDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Clear a single `deleted_mangas` tombstone by [syncKey].
+  /// Returns `"ok"` or `"error:…"`. Null if FFI unavailable.
+  static String? deletedMangaClear(String syncKey) {
+    if (!_ensureMangaSymbols() || _deletedMangaClear == null) return null;
+    final ptr = syncKey.toNativeUtf8();
+    try {
+      return _readAndFreeString(_deletedMangaClear!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Wipe manga index (mangas / pages / deleted_mangas / manga sync cursors).
+  /// Keeps manga_progress. Returns `"ok"` or `"error:…"`. Null if FFI unavailable.
+  static String? mangaClearIndex() {
+    if (!_ensureMangaSymbols() || _mangaClearIndex == null) return null;
+    try {
+      return _readAndFreeString(_mangaClearIndex!());
+    } catch (e) {
+      debugPrint('[RustCore] mangaClearIndex exception: $e');
+      return null;
+    }
+  }
+
+  /// List pages for [mangaId] as a JSON array. Null if FFI unavailable.
+  static String? mangaListPages(String mangaId) {
+    if (!_ensureMangaSymbols() || _mangaListPages == null) return null;
+    final ptr = mangaId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaListPages!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Replace all pages for [mangaId]. [jsonArray] is a JSON array of
+  /// `{"manga_id","page_index","rel_path"}` objects.
+  /// Returns `"ok"` or `"error:…"`, null if FFI unavailable.
+  static String? mangaSetPages(String mangaId, String jsonArray) {
+    if (!_ensureMangaSymbols() || _mangaSetPages == null) return null;
+    final mid = mangaId.toNativeUtf8();
+    final arr = jsonArray.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaSetPages!(mid, arr));
+    } finally {
+      calloc.free(mid);
+      calloc.free(arr);
+    }
+  }
+
+  /// Get reading progress for [mangaId]. Returns a JSON object, `"null"`, or
+  /// `"error:…"`. Null if FFI unavailable.
+  static String? mangaGetProgress(String mangaId) {
+    if (!_ensureMangaSymbols() || _mangaGetProgress == null) return null;
+    final ptr = mangaId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaGetProgress!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Set reading progress for [mangaId] to [pageIndex] (0-based).
+  /// Returns `"ok"` or `"error:…"`, null if FFI unavailable.
+  static String? mangaSetProgress(String mangaId, int pageIndex) {
+    if (!_ensureMangaSymbols() || _mangaSetProgress == null) return null;
+    final ptr = mangaId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_mangaSetProgress!(ptr, pageIndex));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// List reading progress for all mangas as a JSON array. Null if unavailable.
+  static String? mangaListProgress() {
+    if (!_ensureMangaSymbols() || _mangaListProgress == null) return null;
+    return _readAndFreeString(_mangaListProgress!());
+  }
+
+  /// List distinct series tags as a JSON array of `{"id","title"}` objects.
+  /// Null if FFI unavailable.
+  static String? mangaListSeries() {
+    if (!_ensureMangaSymbols() || _mangaListSeries == null) return null;
+    return _readAndFreeString(_mangaListSeries!());
+  }
+
+  // ── Wave E — backup export / import helpers ───────────────────────────────
+
+  /// List all CUE albums as a JSON array (ordered cue_id ASC), or null if
+  /// FFI unavailable.
+  static String? listCueAlbums() {
+    if (!_ensureMangaSymbols() || _listCueAlbums == null) return null;
+    return _readAndFreeString(_listCueAlbums!());
+  }
+
+  /// List all deleted-manga tombstones as a JSON array (ordered rowid ASC),
+  /// or null if FFI unavailable.
+  static String? deletedMangaList() {
+    if (!_ensureMangaSymbols() || _deletedMangaList == null) return null;
+    return _readAndFreeString(_deletedMangaList!());
+  }
+
+  /// Upsert a deleted-manga tombstone from [json]. Returns `"ok"` or
+  /// `"error:…"`. Null if FFI unavailable.
+  ///
+  /// Do NOT embed a literal NUL byte (U+0000) in the outer C-string.
+  /// When sync_key contains a NUL separator, encode via [jsonEncode] so it
+  /// becomes the `\u0000` escape sequence; Core serde decodes it correctly.
+  static String? deletedMangaUpsert(String json) {
+    if (!_ensureMangaSymbols() || _deletedMangaUpsert == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_deletedMangaUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Wave C driver/account API ────────────────────────────────────────────────
+
+  // ── Account CRUD ─────────────────────────────────────────────────────────────
+
+  /// List all accounts. Returns JSON array or `"error:…"`. Null if FFI unavailable.
+  static String? accountList() {
+    if (!_ensureSymbols() || _accountList == null) return null;
+    return _readAndFreeString(_accountList!());
+  }
+
+  /// Get account by [id]. Returns JSON object, `"null"` if absent, or `"error:…"`.
+  /// Null if FFI unavailable.
+  static String? accountGet(String id) {
+    if (!_ensureSymbols() || _accountGet == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountGet!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Upsert account. [json] is the account JSON object.
+  /// Returns `"ok"` or `"error:…"`. Null if FFI unavailable.
+  static String? accountUpsert(String json) {
+    if (!_ensureSymbols() || _accountUpsert == null) return null;
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountUpsert!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Delete account by [id]. Returns `"ok"` or `"error:…"`. Null if FFI unavailable.
+  static String? accountDelete(String id) {
+    if (!_ensureSymbols() || _accountDelete == null) return null;
+    final ptr = id.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountDelete!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  // ── Account file operations ──────────────────────────────────────────────────
+
+  /// List entries at [path] using the driver for [providerType] with [configJson].
+  /// Returns JSON array of entries or `"error:…"`. Null if FFI unavailable.
+  static String? driverList(String providerType, String configJson, String path) {
+    if (!_ensureSymbols() || _driverList == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverList!(pType, pConf, pPath));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Create directory at [path]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? driverMkdir(String providerType, String configJson, String path) {
+    if (!_ensureSymbols() || _driverMkdir == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverMkdir!(pType, pConf, pPath));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Rename [oldPath] to [newPath]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? driverRename(String providerType, String configJson, String oldPath, String newPath) {
+    if (!_ensureSymbols() || _driverRename == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pOld = oldPath.toNativeUtf8();
+    final pNew = newPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverRename!(pType, pConf, pOld, pNew));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pOld);
+      calloc.free(pNew);
+    }
+  }
+
+  /// Remove entry at [path]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? driverRemove(String providerType, String configJson, String path) {
+    if (!_ensureSymbols() || _driverRemove == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverRemove!(pType, pConf, pPath));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Get metadata for entry at [path]. Returns JSON entry or `"error:…"`. Null if unavailable.
+  static String? driverGet(String providerType, String configJson, String path) {
+    if (!_ensureSymbols() || _driverGet == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pConf = configJson.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_driverGet!(pType, pConf, pPath));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pConf);
+      calloc.free(pPath);
+    }
+  }
+
+  /// List entries at [path] for [accountId]. Returns JSON array or `"error:…"`. Null if unavailable.
+  static String? accountListDir(String accountId, String path) {
+    if (!_ensureSymbols() || _accountListDir == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountListDir!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Create directory at [path] for [accountId]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? accountMkdir(String accountId, String path) {
+    if (!_ensureSymbols() || _accountMkdir == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountMkdir!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Rename [oldPath] to [newPath] for [accountId]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? accountRename(String accountId, String oldPath, String newPath) {
+    if (!_ensureSymbols() || _accountRename == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pOld = oldPath.toNativeUtf8();
+    final pNew = newPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountRename!(pAcc, pOld, pNew));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pOld);
+      calloc.free(pNew);
+    }
+  }
+
+  /// Remove entry at [path] for [accountId]. Returns `"ok"` or `"error:…"`. Null if unavailable.
+  static String? accountRemove(String accountId, String path) {
+    if (!_ensureSymbols() || _accountRemove == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountRemove!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Get metadata for entry at [path] for [accountId]. Returns JSON entry or `"error:…"`. Null if unavailable.
+  static String? accountGetEntry(String accountId, String path) {
+    if (!_ensureSymbols() || _accountGetEntry == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountGetEntry!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  // ── B1 step 3 — content / copy / ensure_dir / status_tags ───────────────────
+
+
+  /// Server-side copy of [srcPath] to [dstPath] (account-absolute). Returns
+  /// `"ok"` or `"error:…"`. Null if the FFI symbol is unavailable.
+  static String? accountCopy(String accountId, String srcPath, String dstPath) {
+    if (!_ensureSymbols() || _accountCopy == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pSrc = srcPath.toNativeUtf8();
+    final pDst = dstPath.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountCopy!(pAcc, pSrc, pDst));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pSrc);
+      calloc.free(pDst);
+    }
+  }
+
+  /// Idempotent directory creation at [path]. Returns `"ok"` or `"error:…"`.
+  static String? accountEnsureDir(String accountId, String path) {
+    if (!_ensureSymbols() || _accountEnsureDir == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountEnsureDir!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Write [dataBase64] (standard base64, no line breaks) to remote [path].
+  /// Returns `"ok"` or `"error:…"`.
+  static String? accountPutContent(String accountId, String path, String dataBase64) {
+    if (!_ensureSymbols() || _accountPutContent == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    final pData = dataBase64.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountPutContent!(pAcc, pPath, pData));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+      calloc.free(pData);
+    }
+  }
+
+  /// Fetch full raw bytes of remote [path]. Returns JSON `{"data":"<base64>"}`
+  /// or `"error:…"`.
+  static String? accountGetContent(String accountId, String path) {
+    if (!_ensureSymbols() || _accountGetContent == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountGetContent!(pAcc, pPath));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+    }
+  }
+
+  /// Fetch byte range `[start, end]` (inclusive) of remote [path].
+  /// Pass the string form of [u64.maxValue] (`'18446744073709551615'`) for
+  /// [endStr] to read to end of file. Returns JSON `{"data":"<base64>"}`
+  /// or `"error:…"`.
+  static String? accountGetContentRange(
+    String accountId,
+    String path,
+    String startStr,
+    String endStr,
+  ) {
+    if (!_ensureSymbols() || _accountGetContentRange == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    final pPath = path.toNativeUtf8();
+    final pStart = startStr.toNativeUtf8();
+    final pEnd = endStr.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountGetContentRange!(pAcc, pPath, pStart, pEnd));
+    } finally {
+      calloc.free(pAcc);
+      calloc.free(pPath);
+      calloc.free(pStart);
+      calloc.free(pEnd);
+    }
+  }
+
+  /// Short status labels for the accounts list. Returns JSON array
+  /// `[{"key":"…","label":"…"}, …]` (empty array when the driver has no
+  /// status API) or `"error:…"`.
+  static String? accountStatusTags(String accountId) {
+    if (!_ensureSymbols() || _accountStatusTags == null) return null;
+    final pAcc = accountId.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountStatusTags!(pAcc));
+    } finally {
+      calloc.free(pAcc);
+    }
+  }
+
+  /// Verify a cloud account connection. For OAuth providers (aliyun, baidu)
+  /// this exchanges the refresh_token for access_token (+ drive_id for aliyun).
+  /// For other providers this performs a list('/') connection test.
+  ///
+  /// Returns `{"ok":true,"token_patches":{…}}` or `"error:…"`. Patches must
+  /// be merged into the config before calling [accountUpsert].
+  static String? accountVerify(String providerType, String configJson) {
+    if (!_ensureSymbols() || _accountVerify == null) return null;
+    final pType = providerType.toNativeUtf8();
+    final pCfg = configJson.toNativeUtf8();
+    try {
+      return _readAndFreeString(_accountVerify!(pType, pCfg));
+    } finally {
+      calloc.free(pType);
+      calloc.free(pCfg);
+    }
+  }
+}
+
+// ignore: avoid_classes_with_only_static_members
+extension _Let<T> on T {
+  R let<R>(R Function(T) fn) => fn(this);
+}
+
+// ── Feature flags ───────────────────────────────────────────────────────────
+
+/// When true, [MangaLibraryService] routes manga index CRUD, reading progress,
+/// and tombstones through the Rust FFI (wdmm_manga_* / wdmm_deleted_manga_clear).
+/// Class B unload (2026-10-27): SyncService no longer reads sqflite
+/// `deleted_mangas` — manga sync is Core-only (`MangaSyncEngine` via
+/// `wdmm_sync_run`).
+/// Accounts SoT is Core FFI; [LibraryDatabase] may still open for cache/etc.

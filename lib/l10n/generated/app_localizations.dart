@@ -264,7 +264,7 @@ abstract class AppLocalizations {
   /// No description provided for @networkLibrary.
   ///
   /// In zh, this message translates to:
-  /// **'网络库'**
+  /// **'文件源'**
   String get networkLibrary;
 
   /// No description provided for @downloadQueue.
@@ -492,7 +492,7 @@ abstract class AppLocalizations {
   /// No description provided for @unboundSource.
   ///
   /// In zh, this message translates to:
-  /// **'未绑定网盘「{sourceName}」'**
+  /// **'未绑定源「{sourceName}」'**
   String unboundSource(Object sourceName);
 
   /// No description provided for @uncategorized.
@@ -516,7 +516,7 @@ abstract class AppLocalizations {
   /// No description provided for @accountsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'网盘账号管理'**
+  /// **'源管理'**
   String get accountsTitle;
 
   /// No description provided for @noAccounts.
@@ -570,7 +570,7 @@ abstract class AppLocalizations {
   /// No description provided for @confirmDeleteServer.
   ///
   /// In zh, this message translates to:
-  /// **'确定删除「{name}」？其曲目会变成「未绑定网盘」，加回同名即可恢复。'**
+  /// **'确定删除「{name}」？其曲目会变成「未绑定源」，加回同名即可恢复。'**
   String confirmDeleteServer(Object name);
 
   /// No description provided for @audioStreamingTitle.
@@ -624,7 +624,7 @@ abstract class AppLocalizations {
   /// No description provided for @scanSubdirectoriesHint.
   ///
   /// In zh, this message translates to:
-  /// **'打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。'**
+  /// **'打开后，从文件源打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。'**
   String get scanSubdirectoriesHint;
 
   /// No description provided for @streamSidecarCover.
@@ -1038,7 +1038,7 @@ abstract class AppLocalizations {
   /// No description provided for @accountDuplicateContent.
   ///
   /// In zh, this message translates to:
-  /// **'已有同名网盘「{name}」：\n{url}\n\n同名会被当成同一来源。'**
+  /// **'已有同名源「{name}」：\n{url}\n\n同名会被当成同一来源。'**
   String accountDuplicateContent(Object name, Object url);
 
   /// No description provided for @accountChangeName.
@@ -1068,7 +1068,7 @@ abstract class AppLocalizations {
   /// No description provided for @accountRenameContent.
   ///
   /// In zh, this message translates to:
-  /// **'「{name}」的曲目将变为「未绑定网盘」，改回原名即可恢复。\n仅改地址时请保持名称不变。'**
+  /// **'「{name}」的曲目将变为「未绑定源」，改回原名即可恢复。\n仅改地址时请保持名称不变。'**
   String accountRenameContent(Object name);
 
   /// No description provided for @accountUsernameChangedContent.
@@ -1182,7 +1182,7 @@ abstract class AppLocalizations {
   /// No description provided for @rememberNetworkPath.
   ///
   /// In zh, this message translates to:
-  /// **'网络库记住上次路径'**
+  /// **'文件源记住上次路径'**
   String get rememberNetworkPath;
 
   /// No description provided for @rememberNetworkPathSubtitle.
@@ -1344,7 +1344,7 @@ abstract class AppLocalizations {
   /// No description provided for @syncIntro.
   ///
   /// In zh, this message translates to:
-  /// **'凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。'**
+  /// **'凭证、歌单与音乐库共用一条远端路径：在下面选源、填路径即可。'**
   String get syncIntro;
 
   /// No description provided for @syncAll.
@@ -1386,7 +1386,7 @@ abstract class AppLocalizations {
   /// No description provided for @selectServer.
   ///
   /// In zh, this message translates to:
-  /// **'① 选择网盘'**
+  /// **'① 选择源'**
   String get selectServer;
 
   /// No description provided for @path.
@@ -1554,7 +1554,7 @@ abstract class AppLocalizations {
   /// No description provided for @fileExtIntro.
   ///
   /// In zh, this message translates to:
-  /// **'按后缀识别文件类型；多个后缀用空格或逗号分隔。返回网络库刷新后生效。下面每一类的「单击行为」就是网络库点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。'**
+  /// **'按后缀识别文件类型；多个后缀用空格或逗号分隔。返回文件源刷新后生效。下面每一类的「单击行为」就是文件源点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。'**
   String get fileExtIntro;
 
   /// No description provided for @fileCatMusic.
@@ -1968,7 +1968,7 @@ abstract class AppLocalizations {
   /// No description provided for @streamUrlFailed.
   ///
   /// In zh, this message translates to:
-  /// **'无法建立流式地址，请检查账户配置'**
+  /// **'无法建立流式地址，请检查源配置'**
   String get streamUrlFailed;
 
   /// No description provided for @loading.
@@ -2136,7 +2136,7 @@ abstract class AppLocalizations {
   /// No description provided for @nowPlayingQueueEmpty.
   ///
   /// In zh, this message translates to:
-  /// **'当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。'**
+  /// **'当前没有播放队列。\n从音乐库或文件源开始播放后会出现在此。'**
   String get nowPlayingQueueEmpty;
 
   /// No description provided for @queueAdd.
@@ -2589,47 +2589,11 @@ abstract class AppLocalizations {
   /// **'输入的口令未通过校验。若继续恢复，可能出现预料之外的问题（例如密码等密文字段被解成空）。可取消后改正口令，或强制按现有逻辑继续。'**
   String get restorePassphraseMismatchBody;
 
-  /// No description provided for @restorePassphraseUnverifiableTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法预检备份口令'**
-  String get restorePassphraseUnverifiableTitle;
-
-  /// No description provided for @restorePassphraseUnverifiableBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'这份旧备份没有校验块，也无法用已有密文字段试解。若口令不对，继续恢复可能出现预料之外的问题（例如空密文）。可取消，或强制按现有逻辑继续。'**
-  String get restorePassphraseUnverifiableBody;
-
-  /// No description provided for @restoreEnvelopeMismatchTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法解开整包备份'**
-  String get restoreEnvelopeMismatchTitle;
-
-  /// No description provided for @restoreEnvelopeMismatchBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'这份备份使用整包加密（WDMMEN01），当前口令无法解密。整包解不开就不能真正导入。可取消后改正口令，或继续再试一次；若仍失败将提示无法导入。'**
-  String get restoreEnvelopeMismatchBody;
-
   /// No description provided for @restoreContinue.
   ///
   /// In zh, this message translates to:
   /// **'继续'**
   String get restoreContinue;
-
-  /// No description provided for @restoreEnvelopeDecryptFailedTitle.
-  ///
-  /// In zh, this message translates to:
-  /// **'无法导入备份'**
-  String get restoreEnvelopeDecryptFailedTitle;
-
-  /// No description provided for @restoreEnvelopeDecryptFailedBody.
-  ///
-  /// In zh, this message translates to:
-  /// **'密钥不正确或备份密文损坏，整包无法解密，不能导入。'**
-  String get restoreEnvelopeDecryptFailedBody;
 
   /// No description provided for @restoreForceContinue.
   ///
@@ -2679,6 +2643,12 @@ abstract class AppLocalizations {
   /// **'远端路径已更新：{path}'**
   String remoteRootUpdated(Object path);
 
+  /// No description provided for @remoteRootRequired.
+  ///
+  /// In zh, this message translates to:
+  /// **'请先填写远端路径'**
+  String get remoteRootRequired;
+
   /// No description provided for @derivedPathCredentials.
   ///
   /// In zh, this message translates to:
@@ -2712,7 +2682,7 @@ abstract class AppLocalizations {
   /// No description provided for @syncIntroLong.
   ///
   /// In zh, this message translates to:
-  /// **'凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。'**
+  /// **'凭证、歌单与音乐库共用一条远端路径：在下面选源、填路径即可。'**
   String get syncIntroLong;
 
   /// No description provided for @scheduledSyncOff.
@@ -2742,7 +2712,7 @@ abstract class AppLocalizations {
   /// No description provided for @selectCloudDrive.
   ///
   /// In zh, this message translates to:
-  /// **'① 选择网盘'**
+  /// **'① 选择源'**
   String get selectCloudDrive;
 
   /// No description provided for @pathStep.
@@ -2766,7 +2736,7 @@ abstract class AppLocalizations {
   /// No description provided for @credentialsSectionDesc.
   ///
   /// In zh, this message translates to:
-  /// **'云端 {path}：全部网盘账号；密码类字段加密，不支持类型的账号恢复时自动跳过。'**
+  /// **'云端 {path}：全部源；密码类字段加密，不支持类型的账号恢复时自动跳过。'**
   String credentialsSectionDesc(Object path);
 
   /// No description provided for @encryptPasswordField.
@@ -3180,7 +3150,7 @@ abstract class AppLocalizations {
   /// No description provided for @recoveryClearContent.
   ///
   /// In zh, this message translates to:
-  /// **'建议先导出数据库。清除后请重新打开应用，网盘账号和本地索引需要重新配置。'**
+  /// **'建议先导出数据库。清除后请重新打开应用，源和本地索引需要重新配置。'**
   String get recoveryClearContent;
 
   /// No description provided for @recoveryClearPartial.
@@ -3681,7 +3651,7 @@ abstract class AppLocalizations {
   /// No description provided for @vaultSummarySkipped.
   ///
   /// In zh, this message translates to:
-  /// **'；跳过 {count} 个不支持的网盘类型'**
+  /// **'；跳过 {count} 个不支持的源类型'**
   String vaultSummarySkipped(Object count);
 
   /// No description provided for @vaultSyncedEncrypted.
@@ -3711,13 +3681,13 @@ abstract class AppLocalizations {
   /// No description provided for @errVaultDestNotConfigured.
   ///
   /// In zh, this message translates to:
-  /// **'凭证同步目的地网盘未配置'**
+  /// **'凭证同步目的地源未配置'**
   String get errVaultDestNotConfigured;
 
   /// No description provided for @errBackupDestNotConfigured.
   ///
   /// In zh, this message translates to:
-  /// **'备份目的地网盘未配置'**
+  /// **'备份目的地源未配置'**
   String get errBackupDestNotConfigured;
 
   /// No description provided for @backupDoneLatest.
@@ -3993,7 +3963,7 @@ abstract class AppLocalizations {
   /// No description provided for @dlErrSourceUnbound.
   ///
   /// In zh, this message translates to:
-  /// **'来源网盘未绑定（{source}）'**
+  /// **'来源未绑定（{source}）'**
   String dlErrSourceUnbound(Object source);
 
   /// No description provided for @dlErrWritePublicFailed.
@@ -4713,7 +4683,7 @@ abstract class AppLocalizations {
   /// No description provided for @sourceUnbound.
   ///
   /// In zh, this message translates to:
-  /// **'来源网盘未绑定'**
+  /// **'来源未绑定'**
   String get sourceUnbound;
 
   /// No description provided for @downloadingPercent.
@@ -4725,8 +4695,14 @@ abstract class AppLocalizations {
   /// No description provided for @libraryEmptyGuide.
   ///
   /// In zh, this message translates to:
-  /// **'暂无曲目：可在网络库扫描入库，或下载后进入曲库。'**
+  /// **'暂无曲目：可在文件源扫描入库，或下载后进入曲库。'**
   String get libraryEmptyGuide;
+
+  /// No description provided for @libraryRefreshFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'刷新音乐库失败'**
+  String get libraryRefreshFailed;
 
   /// No description provided for @tagTitle.
   ///
@@ -5523,7 +5499,7 @@ abstract class AppLocalizations {
   /// No description provided for @formHintSourceAccount.
   ///
   /// In zh, this message translates to:
-  /// **'选择现有 WebDAV 或网盘账号作为加密源'**
+  /// **'选择现有 WebDAV 或源作为加密源'**
   String get formHintSourceAccount;
 
   /// No description provided for @formLabelSourceDir.
@@ -7064,7 +7040,7 @@ abstract class AppLocalizations {
   /// No description provided for @taskErrSourceUnbound.
   ///
   /// In zh, this message translates to:
-  /// **'来源网盘未绑定'**
+  /// **'来源未绑定'**
   String get taskErrSourceUnbound;
 
   /// No description provided for @taskErrQueueSchemaDrift.
@@ -7304,7 +7280,7 @@ abstract class AppLocalizations {
   /// No description provided for @musicDefaultOpenHint.
   ///
   /// In zh, this message translates to:
-  /// **'网络库、媒体库、歌单点按音乐时：缓存播放或串流播放'**
+  /// **'文件源、媒体库、歌单点按音乐时：缓存播放或串流播放'**
   String get musicDefaultOpenHint;
 
   /// No description provided for @musicDefaultCache.
@@ -7340,14 +7316,44 @@ abstract class AppLocalizations {
   /// No description provided for @refreshTagsFromCloud.
   ///
   /// In zh, this message translates to:
-  /// **'从云端更新标签'**
+  /// **'从云端更新所有音乐元数据'**
   String get refreshTagsFromCloud;
 
   /// No description provided for @refreshTagsFromCloudHint.
   ///
   /// In zh, this message translates to:
-  /// **'排队从云端拉取标签'**
+  /// **'一次任务重读全部曲目的标签与封面'**
   String get refreshTagsFromCloudHint;
+
+  /// No description provided for @taskKindCoverRefresh.
+  ///
+  /// In zh, this message translates to:
+  /// **'恢复封面（云端）'**
+  String get taskKindCoverRefresh;
+
+  /// No description provided for @refreshCoversFromCloud.
+  ///
+  /// In zh, this message translates to:
+  /// **'从云端恢复封面'**
+  String get refreshCoversFromCloud;
+
+  /// No description provided for @refreshCoversFromCloudHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'更新缺失封面的音乐元数据'**
+  String get refreshCoversFromCloudHint;
+
+  /// No description provided for @coverRefreshQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入封面恢复队列'**
+  String get coverRefreshQueued;
+
+  /// No description provided for @retagAllQueued.
+  ///
+  /// In zh, this message translates to:
+  /// **'已加入队列：更新所有音乐元数据'**
+  String get retagAllQueued;
 
   /// No description provided for @destroyTracksAction.
   ///
@@ -7484,7 +7490,7 @@ abstract class AppLocalizations {
   /// No description provided for @audioPlaylistSection.
   ///
   /// In zh, this message translates to:
-  /// **'网络库连播列表'**
+  /// **'文件源连播列表'**
   String get audioPlaylistSection;
 
   /// No description provided for @waitingForCache.
@@ -7550,7 +7556,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryBackfillRootsHint.
   ///
   /// In zh, this message translates to:
-  /// **'开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。'**
+  /// **'开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；文件源「扫描音乐」仍可手动使用。'**
   String get libraryBackfillRootsHint;
 
   /// No description provided for @libraryBackfillAddRoot.
@@ -7562,13 +7568,13 @@ abstract class AppLocalizations {
   /// No description provided for @libraryBackfillNeedAccount.
   ///
   /// In zh, this message translates to:
-  /// **'请先添加网盘账号'**
+  /// **'请先添加源'**
   String get libraryBackfillNeedAccount;
 
   /// No description provided for @libraryBackfillPickAccount.
   ///
   /// In zh, this message translates to:
-  /// **'选择网盘账号'**
+  /// **'选择源'**
   String get libraryBackfillPickAccount;
 
   /// No description provided for @libraryBackfillPickFolder.
@@ -7772,7 +7778,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaLibraryEmptyGuide.
   ///
   /// In zh, this message translates to:
-  /// **'从网络库扫描文件夹或漫画文件，即可在这里浏览。'**
+  /// **'从文件源扫描文件夹或漫画文件，即可在这里浏览。'**
   String get mangaLibraryEmptyGuide;
 
   /// No description provided for @mangaSeriesCount.
@@ -8108,7 +8114,7 @@ abstract class AppLocalizations {
   /// No description provided for @mangaReaderUnboundSource.
   ///
   /// In zh, this message translates to:
-  /// **'来源网盘未绑定，无法打开'**
+  /// **'来源未绑定，无法打开'**
   String get mangaReaderUnboundSource;
 
   /// No description provided for @mangaUnspecifiedSeries.
@@ -8381,6 +8387,12 @@ abstract class AppLocalizations {
   /// **'部分失败'**
   String get taskPartialFailed;
 
+  /// No description provided for @taskAwaitingPlatform.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待系统处理'**
+  String get taskAwaitingPlatform;
+
   /// No description provided for @progressReadingCloudMangaIndex.
   ///
   /// In zh, this message translates to:
@@ -8421,6 +8433,12 @@ abstract class AppLocalizations {
     Object tombs,
     Object uploaded,
   );
+
+  /// No description provided for @stepSyncConflicts.
+  ///
+  /// In zh, this message translates to:
+  /// **'同步冲突 {count} 处（已保留较新的版本）'**
+  String stepSyncConflicts(Object count);
 
   /// No description provided for @stepMangaRebuildDone.
   ///
@@ -9237,6 +9255,222 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'该文件已在队列或已保存'**
   String get fileQueuedOrSavedShort;
+
+  /// No description provided for @dlnaHitCopy.
+  ///
+  /// In zh, this message translates to:
+  /// **'复制'**
+  String get dlnaHitCopy;
+
+  /// No description provided for @dlnaHitHw.
+  ///
+  /// In zh, this message translates to:
+  /// **'硬编'**
+  String get dlnaHitHw;
+
+  /// No description provided for @dlnaHitSw.
+  ///
+  /// In zh, this message translates to:
+  /// **'软编'**
+  String get dlnaHitSw;
+
+  /// No description provided for @dlnaHitVideo.
+  ///
+  /// In zh, this message translates to:
+  /// **'视频'**
+  String get dlnaHitVideo;
+
+  /// No description provided for @dlnaHitAudio.
+  ///
+  /// In zh, this message translates to:
+  /// **'音频'**
+  String get dlnaHitAudio;
+
+  /// No description provided for @settingsDlnaSection.
+  ///
+  /// In zh, this message translates to:
+  /// **'DLNA 投屏'**
+  String get settingsDlnaSection;
+
+  /// No description provided for @settingsTranscodePreset.
+  ///
+  /// In zh, this message translates to:
+  /// **'转码预设'**
+  String get settingsTranscodePreset;
+
+  /// No description provided for @settingsManagePresets.
+  ///
+  /// In zh, this message translates to:
+  /// **'管理转码预设'**
+  String get settingsManagePresets;
+
+  /// No description provided for @settingsDefaultDirect.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认直通'**
+  String get settingsDefaultDirect;
+
+  /// No description provided for @settingsDefaultDirectSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'投屏时默认不转码，直接播放原文件'**
+  String get settingsDefaultDirectSubtitle;
+
+  /// No description provided for @settingsMkvPassthrough.
+  ///
+  /// In zh, this message translates to:
+  /// **'MKV 直通（不转码）'**
+  String get settingsMkvPassthrough;
+
+  /// No description provided for @settingsTranscodeCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'转码缓存'**
+  String get settingsTranscodeCache;
+
+  /// No description provided for @settingsCacheBudget.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存预算'**
+  String get settingsCacheBudget;
+
+  /// No description provided for @settingsCacheBudgetTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'转码缓存预算'**
+  String get settingsCacheBudgetTitle;
+
+  /// No description provided for @settingsClearTranscodeCache.
+  ///
+  /// In zh, this message translates to:
+  /// **'清理缓存'**
+  String get settingsClearTranscodeCache;
+
+  /// No description provided for @cacheBudgetMustBePositive.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存预算必须大于 0 MB'**
+  String get cacheBudgetMustBePositive;
+
+  /// No description provided for @openApiSettingsTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'OpenAPI 设置'**
+  String get openApiSettingsTitle;
+
+  /// No description provided for @openApiSettingsSubtitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'配置外部 API 访问与鉴权'**
+  String get openApiSettingsSubtitle;
+
+  /// No description provided for @codecCapsSectionTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'设备编码能力'**
+  String get codecCapsSectionTitle;
+
+  /// No description provided for @codecCapsLoading.
+  ///
+  /// In zh, this message translates to:
+  /// **'正在查询本机编码能力…'**
+  String get codecCapsLoading;
+
+  /// No description provided for @codecCapsUnavailable.
+  ///
+  /// In zh, this message translates to:
+  /// **'无法查询本机编码能力（不影响投屏与转码）'**
+  String get codecCapsUnavailable;
+
+  /// No description provided for @codecCapsEmpty.
+  ///
+  /// In zh, this message translates to:
+  /// **'本机未报告可用的硬件编码器'**
+  String get codecCapsEmpty;
+
+  /// No description provided for @codecCapsRetry.
+  ///
+  /// In zh, this message translates to:
+  /// **'重新探测'**
+  String get codecCapsRetry;
+
+  /// No description provided for @codecCapsHardware.
+  ///
+  /// In zh, this message translates to:
+  /// **'硬件编码'**
+  String get codecCapsHardware;
+
+  /// No description provided for @codecCapsSoftware.
+  ///
+  /// In zh, this message translates to:
+  /// **'软件编码'**
+  String get codecCapsSoftware;
+
+  /// No description provided for @codecCapsRateControl.
+  ///
+  /// In zh, this message translates to:
+  /// **'码率控制'**
+  String get codecCapsRateControl;
+
+  /// No description provided for @codecCapsBitrateRange.
+  ///
+  /// In zh, this message translates to:
+  /// **'码率范围'**
+  String get codecCapsBitrateRange;
+
+  /// No description provided for @codecCapsResolutionRange.
+  ///
+  /// In zh, this message translates to:
+  /// **'分辨率范围'**
+  String get codecCapsResolutionRange;
+
+  /// No description provided for @codecCapsAlignment.
+  ///
+  /// In zh, this message translates to:
+  /// **'宽高对齐'**
+  String get codecCapsAlignment;
+
+  /// No description provided for @codecCapsFpsRange.
+  ///
+  /// In zh, this message translates to:
+  /// **'帧率范围'**
+  String get codecCapsFpsRange;
+
+  /// No description provided for @codecCapsProfileLevels.
+  ///
+  /// In zh, this message translates to:
+  /// **'Profile / Level'**
+  String get codecCapsProfileLevels;
+
+  /// No description provided for @codecCapsNotReported.
+  ///
+  /// In zh, this message translates to:
+  /// **'未报告'**
+  String get codecCapsNotReported;
+
+  /// No description provided for @codecCapsCodecH264.
+  ///
+  /// In zh, this message translates to:
+  /// **'H.264'**
+  String get codecCapsCodecH264;
+
+  /// No description provided for @codecCapsCodecHevc.
+  ///
+  /// In zh, this message translates to:
+  /// **'H.265（HEVC）'**
+  String get codecCapsCodecHevc;
+
+  /// No description provided for @codecCapsCodecMpeg4.
+  ///
+  /// In zh, this message translates to:
+  /// **'MPEG-4'**
+  String get codecCapsCodecMpeg4;
+
+  /// No description provided for @cacheBudgetUpdated.
+  ///
+  /// In zh, this message translates to:
+  /// **'缓存预算已设为 {mb} MB，新投屏会话生效'**
+  String cacheBudgetUpdated(Object mb);
 }
 
 class _AppLocalizationsDelegate

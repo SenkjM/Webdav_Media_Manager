@@ -1,13 +1,20 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../l10n/generated/app_localizations.dart';
 import '../models/app_locale.dart';
+import '../models/codec_capability.dart';
 import '../models/snack_duration.dart';
+import '../services/codec_capability_service.dart';
 import '../services/notification_permission_service.dart';
+import '../services/rust_core_service.dart';
 import '../services/settings_service.dart';
+import '../services/transcode_preset_catalog.dart';
+import '../widgets/trailing_dropdown.dart';
 import '../widgets/theme_settings_section.dart';
 import '../utils/app_snack.dart';
 import 'accounts_screen.dart';
@@ -18,8 +25,10 @@ import 'home_shell.dart';
 import 'image_settings_screen.dart';
 import 'manga_library_settings_screen.dart';
 import 'media_library_settings_screen.dart';
+import 'openapi_settings_screen.dart';
 import 'share_settings_screen.dart';
 import 'sync_screen.dart';
+import 'transcode_presets_screen.dart';
 import 'video_settings_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -31,13 +40,156 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen>
     with WidgetsBindingObserver {
+  /// DLNA 转码预设选项：来自 Core 数据库（已排除直通），管理页返回后刷新。
+  List<TranscodePresetOption> _dlnaPresets = TranscodePresetCatalog.fallback;
+
+  /// 转码缓存统计（Rust `wdmm_transcode_cache_stats_json`）。
+  /// null 且 [_transcodeCacheStatsLoaded] 为 true 表示旧版 `.so` 不支持。
+  _TranscodeCacheStats? _transcodeCacheStats;
+  bool _transcodeCacheStatsLoaded = false;
+
+  /// 统计读取失败时的可读原因（如「本地代理未启动」），成功时为 null。
+  String? _transcodeCacheStatsError;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _dlnaPresets = TranscodePresetCatalog.load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<NotificationPermissionService>().refresh();
+      unawaited(_refreshTranscodeCacheStats());
     });
+  }
+
+  /// 重新读取数据库里的转码预设（从「管理转码预设」返回后调用）。
+  void _reloadDlnaPresets() {
+    final presets = TranscodePresetCatalog.load();
+    if (!mounted) return;
+    setState(() => _dlnaPresets = presets);
+  }
+
+  // ── 转码缓存（契约 hls-vod-transcode-cache §3.5、§4）────────────────────
+
+  /// 读取转码缓存统计。轻量本地 FFI（只读内存里的统计），直接调用即可。
+  Future<void> _refreshTranscodeCacheStats() async {
+    final raw = RustCoreService.transcodeCacheStatsJson();
+    final stats = _TranscodeCacheStats.parse(raw);
+    final error =
+        stats == null && raw != null ? _decodeCacheError(raw) : null;
+    if (!mounted) return;
+    setState(() {
+      _transcodeCacheStats = stats;
+      _transcodeCacheStatsLoaded = true;
+      _transcodeCacheStatsError = error;
+    });
+  }
+
+  /// 清理全部转码缓存，然后刷新用量。
+  Future<void> _clearTranscodeCache() async {
+    final raw = RustCoreService.transcodeCacheClear();
+    if (!mounted) return;
+    final ok = _cacheClearSucceeded(raw);
+    final String message;
+    if (ok) {
+      message = '转码缓存已清理';
+    } else if (raw == null) {
+      message = '当前原生库不支持清理转码缓存';
+    } else {
+      final error = _decodeCacheError(raw);
+      message = error == null ? '清理失败' : '清理失败：$error';
+    }
+    AppSnack.show(context, message, error: !ok);
+    await _refreshTranscodeCacheStats();
+  }
+
+  /// Rust 清理命令的成功判定：字面量 `ok` 或 `{"ok":true,…}` 都算成功。
+  static bool _cacheClearSucceeded(String? raw) {
+    if (raw == null || raw.isEmpty) return false;
+    if (raw == 'ok') return true;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map) return decoded['ok'] == true;
+    } catch (_) {
+      // 非 JSON：旧版 `.so` 的 `error:…` 前缀走下面的兜底判定。
+    }
+    return !raw.startsWith('error:');
+  }
+
+  /// 从命令回包里取错误文本（`error:` 前缀或 `{"error":…}`）。
+  ///
+  /// Rust 的 `proxy not started` 在 UI 上换成中文，其余保持原样便于排查。
+  static String? _decodeCacheError(String raw) {
+    String? message;
+    if (raw.startsWith('error:')) {
+      message = raw.substring(6);
+    } else {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          final error = decoded['error']?.toString();
+          if (error != null && error.isNotEmpty) message = error;
+        }
+      } catch (_) {}
+    }
+    if (message == null) return null;
+    if (message.contains('proxy not started')) return '本地代理未启动';
+    return message;
+  }
+
+  /// 编辑缓存预算（MB）。非法值不落盘。
+  ///
+  /// 输入框的 controller 由对话框自己持有：[showDialog] 的 future 在 pop 那一刻
+  /// 就完成，但路由的退场动画还要跑几百毫秒、IME 也还在收。在这里 dispose 会让
+  /// 仍在树上的 TextField 摸到已释放的 controller（真机报 framework 断言）。
+  Future<void> _editTranscodeCacheBudget() async {
+    final l10n = AppLocalizations.of(context)!;
+    final settings = context.read<SettingsService>();
+    final saved = await showDialog<int>(
+      context: context,
+      builder: (_) => _TranscodeCacheBudgetDialog(
+        initialMb: settings.transcodeCacheBudgetMb,
+      ),
+    );
+    if (!mounted || saved == null) return;
+    if (saved <= 0) {
+      AppSnack.show(context, l10n.cacheBudgetMustBePositive, error: true);
+      return;
+    }
+    settings.transcodeCacheBudgetMb = saved;
+    AppSnack.show(context, l10n.cacheBudgetUpdated(saved));
+    await _refreshTranscodeCacheStats();
+  }
+
+  /// 缓存用量副标题：读取中 / 不可用原因 / 旧版不支持 / 已用 + 预算 + 文件数。
+  String _cacheStatsSubtitle() {
+    if (!_transcodeCacheStatsLoaded) return '读取中…';
+    final stats = _transcodeCacheStats;
+    if (stats == null) {
+      final error = _transcodeCacheStatsError;
+      return error == null ? '当前原生库不提供缓存统计' : '暂不可用：$error';
+    }
+    final parts = <String>[
+      '已用 ${_formatCacheBytes(stats.bytes)} / '
+          '${stats.budget > 0 ? _formatCacheBytes(stats.budget) : '未知'}',
+      '${stats.entries} 个文件',
+    ];
+    if (stats.hits > 0) parts.add('命中 ${stats.hits} 次');
+    if (stats.overBudget) parts.add('超出预算');
+    return parts.join(' · ');
+  }
+
+  static String _formatCacheBytes(int bytes) {
+    if (bytes <= 0) return '0 B';
+    if (bytes < 1024) return '$bytes B';
+    const units = ['KB', 'MB', 'GB', 'TB'];
+    var value = bytes / 1024;
+    var unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return '${value.toStringAsFixed(value >= 100 ? 0 : 1)} ${units[unit]}';
   }
 
   @override
@@ -108,19 +260,34 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
-  Widget _sectionTitle(BuildContext context, String text) {
-    return Text(
-      text,
-      style: Theme.of(context).textTheme.titleMedium
-          ?.copyWith(color: Theme.of(context).colorScheme.primary),
+  /// Section heading: one rhythm for every group (20 above, 6 below), small
+  /// caps-ish label in the primary colour. Groups used to be separated by a
+  /// `Divider(height: 40)` plus an 8px `SizedBox`, which left uneven gaps
+  /// whenever a group started with a taller widget.
+  Widget _sectionHeader(BuildContext context, String text) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 20, bottom: 6),
+      child: Text(
+        text,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+        ),
+      ),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsService>();
     final notif = context.watch<NotificationPermissionService>();
     final l10n = AppLocalizations.of(context)!;
+
+    // DLNA 转码预设选项来自 Core 数据库（不含直通）。
+    final dlnaPresetIds = [for (final preset in _dlnaPresets) preset.id];
 
     return Scaffold(
       appBar: AppBar(
@@ -130,15 +297,14 @@ class _SettingsScreenState extends State<SettingsScreen>
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _sectionTitle(context, l10n.homeAndNavigation),
+          _sectionHeader(context, l10n.homeAndNavigation),
           const SizedBox(height: 8),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.home_outlined),
             title: Text(l10n.customHome),
             subtitle: Text(l10n.customHomeSubtitle),
-            trailing: DropdownButton<int>(
-              borderRadius: BorderRadius.circular(10),
+            trailing: TrailingDropdown<int>(
               value: settings.homeTab,
               items: [
                 DropdownMenuItem(
@@ -178,7 +344,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               );
             },
           ),
-          const Divider(height: 40),
+          const SizedBox(height: 12),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             secondary: Icon(
@@ -214,9 +380,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                 ),
               ),
             ),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.mediaLibrarySection),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.mediaLibrarySection),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.library_music_outlined),
@@ -245,9 +409,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               );
             },
           ),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.networkLibrary),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.networkLibrary),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.dns_outlined),
@@ -324,9 +486,105 @@ class _SettingsScreenState extends State<SettingsScreen>
               );
             },
           ),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.settingsMisc),
-          const SizedBox(height: 8),
+          // ── DLNA 投屏 ──────────────────────────────────────────────────────
+          _sectionHeader(context, l10n.settingsDlnaSection),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.cast_outlined),
+            title: Text(l10n.settingsTranscodePreset),
+            trailing: TrailingDropdown<String>(
+              width: 168,
+              value: dlnaPresetIds.contains(settings.dlnaDefaultTranscodePreset)
+                  ? settings.dlnaDefaultTranscodePreset
+                  : _dlnaPresets.first.id,
+              items: [
+                for (final preset in _dlnaPresets)
+                  DropdownMenuItem(
+                    value: preset.id,
+                    child: Text(preset.label),
+                  ),
+              ],
+              onChanged: (v) {
+                if (v != null) {
+                  context
+                      .read<SettingsService>()
+                      .dlnaDefaultTranscodePreset = v;
+                }
+              },
+            ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.tune),
+            title: Text(l10n.settingsManagePresets),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const TranscodePresetsScreen(),
+                ),
+              );
+              if (!mounted) return;
+              _reloadDlnaPresets();
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.bolt_outlined),
+            title: Text(l10n.settingsDefaultDirect),
+            subtitle: Text(l10n.settingsDefaultDirectSubtitle),
+            value: settings.dlnaDefaultDirect,
+            onChanged: (v) {
+              context.read<SettingsService>().dlnaDefaultDirect = v;
+            },
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.movie_filter_outlined),
+            title: Text(l10n.settingsMkvPassthrough),
+            value: settings.dlnaMkvPassthrough,
+            onChanged: (v) {
+              context.read<SettingsService>().dlnaMkvPassthrough = v;
+            },
+          ),
+          // ── 转码缓存（VOD 点播化 §3.5）────────────────────────────────
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.sd_storage_outlined),
+            title: Text(l10n.settingsTranscodeCache),
+            subtitle: Text(_cacheStatsSubtitle()),
+            trailing: IconButton(
+              icon: const Icon(Icons.refresh),
+              tooltip: l10n.refresh,
+              onPressed: () => unawaited(_refreshTranscodeCacheStats()),
+            ),
+          ),
+          ListTile(
+            key: const ValueKey('settings.cacheBudget'),
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.data_usage),
+            title: Text(l10n.settingsCacheBudget),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${settings.transcodeCacheBudgetMb} MB'),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
+            onTap: () => unawaited(_editTranscodeCacheBudget()),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.delete_sweep_outlined),
+            title: Text(l10n.settingsClearTranscodeCache),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => unawaited(_clearTranscodeCache()),
+          ),
+          // ── 设备编码能力（契约 preset-rate-control-and-codec-probe §13.4）──
+          _sectionHeader(context, l10n.codecCapsSectionTitle),
+          const _CodecCapabilitySection(),
+          _sectionHeader(context, l10n.settingsMisc),
           ThemeSettingsSection(
             mode: settings.appThemeMode,
             onModeChanged: (value) {
@@ -342,8 +600,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             leading: const Icon(Icons.language),
             title: Text(l10n.language),
             subtitle: Text(l10n.languageSettingSubtitle),
-            trailing: DropdownButton<AppLocalePreference>(
-              borderRadius: BorderRadius.circular(10),
+            trailing: TrailingDropdown<AppLocalePreference>(
               value: settings.appLocale,
               items: [
                 DropdownMenuItem(
@@ -375,8 +632,7 @@ class _SettingsScreenState extends State<SettingsScreen>
             leading: const Icon(Icons.timer_outlined),
             title: Text(l10n.hintDuration),
             subtitle: Text(settings.snackMode.label(l10n)),
-            trailing: DropdownButton<SnackDuration>(
-              borderRadius: BorderRadius.circular(10),
+            trailing: TrailingDropdown<SnackDuration>(
               value: settings.snackMode,
               items: [
                 for (final m in SnackDuration.values)
@@ -387,9 +643,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               },
             ),
           ),
-          const Divider(height: 40),
-          _sectionTitle(context, l10n.syncAndBackup),
-          const SizedBox(height: 8),
+          _sectionHeader(context, l10n.syncAndBackup),
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.sync),
@@ -405,13 +659,359 @@ class _SettingsScreenState extends State<SettingsScreen>
                   .push(MaterialPageRoute(builder: (_) => const SyncScreen()));
             },
           ),
-
+          // ── OpenAPI ────────────────────────────────────────────────────────
+          _sectionHeader(context, 'OpenAPI'),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.api_outlined),
+            title: Text(l10n.openApiSettingsTitle),
+            subtitle: Text(l10n.openApiSettingsSubtitle),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const OpenApiSettingsScreen(),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
           Text(
             l10n.settingsPlaybackFooter,
             style: Theme.of(context).textTheme.bodySmall,
           ),
+          const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+}
+
+/// `wdmm_transcode_cache_stats_json()` 的解析结果。
+///
+/// 只用于设置页展示；旧版 `.so` 缺符号时解析为 null，页面显示「不支持」。
+class _TranscodeCacheStats {
+  const _TranscodeCacheStats({
+    required this.bytes,
+    required this.budget,
+    required this.entries,
+    required this.hits,
+    required this.overBudget,
+  });
+
+  final int bytes;
+  final int budget;
+  final int entries;
+  final int hits;
+  final bool overBudget;
+
+  /// 解析 Rust 回传的 JSON；null / `error:` 前缀 / 非法 JSON / `ok:false` → null。
+  static _TranscodeCacheStats? parse(String? raw) {
+    if (raw == null || raw.isEmpty || raw.startsWith('error:')) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map || decoded['ok'] == false) return null;
+      return _TranscodeCacheStats(
+        bytes: _int(decoded['bytes']) ?? 0,
+        budget: _int(decoded['budget']) ?? 0,
+        entries: _int(decoded['entries']) ?? 0,
+        hits: _int(decoded['hits']) ?? 0,
+        overBudget: decoded['over_budget'] == true,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static int? _int(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse('$value');
+  }
+}
+
+/// 只读的「设备编码能力」区块（契约 `preset-rate-control-and-codec-probe` §13.4）。
+///
+/// 数据来自安卓原生 `MediaCodecList` 的只读查询（Kotlin `CodecCapsProbe`），
+/// 只用于提示机型上有哪些编码器 / 码率控制模式可用；实际编码能力仍由 Rust
+/// 在转码开始时以「真开一次编码器」判定。因此探测不可用时这里只显示一行
+/// 说明，不隐藏、不禁用任何功能。
+class _CodecCapabilitySection extends StatefulWidget {
+  const _CodecCapabilitySection();
+
+  @override
+  State<_CodecCapabilitySection> createState() =>
+      _CodecCapabilitySectionState();
+}
+
+class _CodecCapabilitySectionState extends State<_CodecCapabilitySection> {
+  CodecCapabilityService get _service => CodecCapabilityService.shared;
+
+  @override
+  void initState() {
+    super.initState();
+    // 懒加载：进入设置页才探测一次（全进程缓存，重复进入不重复查询）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_service.load());
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _service,
+      builder: (context, _) => _buildBody(context),
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final service = _service;
+
+    if (service.status == CodecCapabilityStatus.idle || service.isLoading) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        title: Text(l10n.codecCapsLoading),
+      );
+    }
+
+    if (service.status == CodecCapabilityStatus.failed) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.info_outline),
+        title: Text(l10n.codecCapsUnavailable),
+        trailing: TextButton(
+          onPressed: () => unawaited(service.refresh()),
+          child: Text(l10n.codecCapsRetry),
+        ),
+      );
+    }
+
+    if (service.encoders.isEmpty) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.info_outline),
+        title: Text(l10n.codecCapsEmpty),
+        trailing: TextButton(
+          onPressed: () => unawaited(service.refresh()),
+          child: Text(l10n.codecCapsRetry),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final codecId in knownHwCodecIds)
+          _CodecCapabilityTile(
+            codecId: codecId,
+            capability: service.capabilitiesFor(codecId),
+          ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () => unawaited(service.refresh()),
+            icon: const Icon(Icons.refresh, size: 18),
+            label: Text(l10n.codecCapsRetry),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 单个硬件编码器（H.264 / H.265 / MPEG-4）的能力明细。
+class _CodecCapabilityTile extends StatelessWidget {
+  const _CodecCapabilityTile({required this.codecId, this.capability});
+
+  final String codecId;
+  final CodecCapability? capability;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final cap = capability;
+    final title = Text(_codecLabel(l10n));
+
+    if (cap == null) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.memory),
+        title: title,
+        subtitle: Text(l10n.codecCapsNotReported),
+      );
+    }
+
+    final subtitleParts = <String>[
+      cap.hardware ? l10n.codecCapsHardware : l10n.codecCapsSoftware,
+      if (cap.name.isNotEmpty) cap.name,
+    ];
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      leading: const Icon(Icons.memory),
+      title: title,
+      subtitle: Text(subtitleParts.join(' · ')),
+      children: [
+        _row(
+          context,
+          l10n.codecCapsRateControl,
+          _rateControlLabel(l10n, cap),
+        ),
+        _row(
+          context,
+          l10n.codecCapsBitrateRange,
+          _bitrateLabel(l10n, cap.bitrateRange),
+        ),
+        _row(context, l10n.codecCapsResolutionRange, _resolutionLabel(l10n, cap)),
+        _row(context, l10n.codecCapsAlignment, _alignmentLabel(l10n, cap)),
+        _row(context, l10n.codecCapsFpsRange, _fpsLabel(l10n, cap.fpsRange)),
+        _row(
+          context,
+          l10n.codecCapsProfileLevels,
+          _profileLevelsLabel(l10n, cap.profileLevels),
+        ),
+      ],
+    );
+  }
+
+  String _codecLabel(AppLocalizations l10n) => switch (codecId) {
+        'h264_mediacodec' => l10n.codecCapsCodecH264,
+        'hevc_mediacodec' => l10n.codecCapsCodecHevc,
+        _ => l10n.codecCapsCodecMpeg4,
+      };
+
+  String _rateControlLabel(AppLocalizations l10n, CodecCapability cap) {
+    final modes = cap.bitrateModes;
+    if (modes == null) return l10n.codecCapsNotReported;
+    return modes.map((m) => m.toUpperCase()).join(' / ');
+  }
+
+  String _bitrateLabel(AppLocalizations l10n, CodecRange? range) {
+    if (range == null) return l10n.codecCapsNotReported;
+    return '${_bps(range.min)} – ${_bps(range.max)}';
+  }
+
+  String _resolutionLabel(AppLocalizations l10n, CodecCapability cap) {
+    final width = cap.widthRange;
+    final height = cap.heightRange;
+    if (width == null || height == null) return l10n.codecCapsNotReported;
+    return '${width.min.toInt()}×${height.min.toInt()} – '
+        '${width.max.toInt()}×${height.max.toInt()}';
+  }
+
+  String _alignmentLabel(AppLocalizations l10n, CodecCapability cap) {
+    final width = cap.widthAlignment;
+    final height = cap.heightAlignment;
+    if (width == null && height == null) return l10n.codecCapsNotReported;
+    return '${width ?? '?'}×${height ?? '?'} px';
+  }
+
+  String _fpsLabel(AppLocalizations l10n, CodecRange? range) {
+    if (range == null) return l10n.codecCapsNotReported;
+    return '${_short(range.min)} – ${_short(range.max)} fps';
+  }
+
+  String _profileLevelsLabel(AppLocalizations l10n, List<String> levels) {
+    if (levels.isEmpty) return l10n.codecCapsNotReported;
+    const maxShown = 8;
+    final shown = levels.take(maxShown).join(' · ');
+    return levels.length > maxShown ? '$shown …' : shown;
+  }
+
+  static String _bps(num bitsPerSecond) {
+    final value = bitsPerSecond.toDouble();
+    if (value >= 1000000) {
+      return '${_short(value / 1000000)} Mbps';
+    }
+    if (value >= 1000) {
+      return '${_short(value / 1000)} kbps';
+    }
+    return '${value.toStringAsFixed(0)} bps';
+  }
+
+  /// 整数值不带小数点，例如 `4` / `4.5`。
+  static String _short(num value) {
+    final asDouble = value.toDouble();
+    if (asDouble == asDouble.roundToDouble()) {
+      return asDouble.round().toString();
+    }
+    return asDouble.toStringAsFixed(1);
+  }
+
+  Widget _row(BuildContext context, String label, String value) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 2, bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 120, child: Text(label, style: style)),
+          Expanded(child: Text(value, style: style)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 缓存预算的输入对话框。
+///
+/// 自己持有 controller 并在 State.dispose 里释放：`showDialog` 的 future 在 pop
+/// 时立刻完成，此时路由还在退场动画中，立即 dispose 会让仍在树上的 TextField
+/// 拿到已释放的 controller（真机报 framework 断言）。
+class _TranscodeCacheBudgetDialog extends StatefulWidget {
+  const _TranscodeCacheBudgetDialog({required this.initialMb});
+
+  final int initialMb;
+
+  @override
+  State<_TranscodeCacheBudgetDialog> createState() =>
+      _TranscodeCacheBudgetDialogState();
+}
+
+class _TranscodeCacheBudgetDialogState
+    extends State<_TranscodeCacheBudgetDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialMb.toString());
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('转码缓存预算'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+        decoration: const InputDecoration(
+          labelText: '预算（MB）',
+          helperText: '默认 2048 MB；超出后按最久未使用淘汰',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final parsed = int.tryParse(_controller.text.trim());
+            Navigator.of(context).pop(parsed);
+          },
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }

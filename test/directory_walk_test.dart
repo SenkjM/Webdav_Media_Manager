@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:webdav_media_manager/models/file_type_config.dart';
 import 'package:webdav_media_manager/utils/directory_walk.dart';
 
 void main() {
@@ -8,92 +9,114 @@ void main() {
       expect(o.effectiveMaxDepth, 0);
     });
 
+    test('effectiveMaxDepth honours maxDepth when subdirs on', () {
+      const o = WalkOptions(includeSubdirs: true, maxDepth: 3);
+      expect(o.effectiveMaxDepth, 3);
+    });
+
     test('clamp depth 0–20', () {
       expect(WalkOptions.clampDepth(-3), 0);
       expect(WalkOptions.clampDepth(1), 1);
       expect(WalkOptions.clampDepth(99), 20);
     });
+
+    test('maxEntries is clamped to the fuse range', () {
+      expect(WalkOptions.clampMaxEntries(0), 1);
+      expect(WalkOptions.clampMaxEntries(500), 500);
+      expect(WalkOptions.clampMaxEntries(999999), 50000);
+    });
+
+    test('copyWith keeps untouched fields', () {
+      const base = WalkOptions(includeSubdirs: true, maxDepth: 2, maxEntries: 9);
+      final copy = base.copyWith(maxDepth: 4);
+      expect(copy.includeSubdirs, isTrue);
+      expect(copy.maxDepth, 4);
+      expect(copy.maxEntries, 9);
+    });
+  });
+
+  group('WalkEntry', () {
+    test('decodes the Rust reply fields', () {
+      final entry = WalkEntry.fromJson({
+        'path': '/music/a.mp3',
+        'name': 'a.mp3',
+        'size': 1234,
+        'mtime': 1700000000000,
+        'is_dir': false,
+      });
+      expect(entry.path, '/music/a.mp3');
+      expect(entry.name, 'a.mp3');
+      expect(entry.size, 1234);
+      expect(entry.isDirectory, isFalse);
+      expect(
+        entry.modified,
+        DateTime.fromMillisecondsSinceEpoch(1700000000000, isUtc: true),
+      );
+    });
+
+    test('missing mtime decodes to null', () {
+      final entry = WalkEntry.fromJson({
+        'path': '/dir',
+        'name': 'dir',
+        'is_dir': true,
+      });
+      expect(entry.modified, isNull);
+      expect(entry.isDirectory, isTrue);
+    });
+
+    test('directory getter returns the parent', () {
+      const file = WalkEntry(
+        path: '/music/album/a.mp3',
+        name: 'a.mp3',
+        size: 1,
+        isDirectory: false,
+      );
+      expect(file.directory, '/music/album');
+      const root = WalkEntry(
+        path: '/a.mp3',
+        name: 'a.mp3',
+        size: 1,
+        isDirectory: false,
+      );
+      expect(root.directory, '/');
+      const relative = WalkEntry(
+        path: 'music/b.flac',
+        name: 'b.flac',
+        size: 1,
+        isDirectory: false,
+      );
+      expect(relative.directory, 'music');
+    });
+
+    test('toItem classifies files and leaves directories unclassified', () {
+      final types = FileTypeConfig();
+      final video = WalkEntry(
+        path: '/v/movie.mkv',
+        name: 'movie.mkv',
+        size: 1,
+        isDirectory: false,
+      ).toItem(types);
+      expect(video.category, FileCategory.video);
+      expect(video.isVideo, isTrue);
+      expect(video.isDirectory, isFalse);
+
+      final dir = WalkEntry(
+        path: '/v',
+        name: 'v',
+        size: 0,
+        isDirectory: true,
+      ).toItem(types);
+      expect(dir.isDirectory, isTrue);
+      expect(dir.category, FileCategory.other);
+    });
   });
 
   group('DirectoryWalker', () {
-    test('root only when includeSubdirs false', () {
-      final w = DirectoryWalker(
-        rootPath: '/album',
-        options: const WalkOptions(includeSubdirs: false, maxDepth: 5),
+    test('legacy planner throws instead of walking on the Dart side', () {
+      expect(
+        () => DirectoryWalker(rootPath: '/album'),
+        throwsA(isA<UnsupportedError>()),
       );
-      expect(w.nextDirectory(), '/album');
-      expect(w.acceptChildren('/album', ['/album/a', '/album/b']), 0);
-      expect(w.nextDirectory(), isNull);
-      expect(w.listedCount, 1);
-    });
-
-    test('maxDepth 1 lists root and one level', () {
-      final w = DirectoryWalker(
-        rootPath: '/root',
-        options: const WalkOptions(includeSubdirs: true, maxDepth: 1),
-      );
-      expect(w.nextDirectory(), '/root');
-      w.acceptChildren('/root', ['/root/a', '/root/b']);
-      expect(w.nextDirectory(), '/root/a');
-      // grandchildren must not be enqueued
-      expect(w.acceptChildren('/root/a', ['/root/a/deep']), 0);
-      expect(w.nextDirectory(), '/root/b');
-      expect(w.acceptChildren('/root/b', ['/root/b/x']), 0);
-      expect(w.nextDirectory(), isNull);
-      expect(w.listedCount, 3);
-    });
-
-    test('maxDepth 0 with includeSubdirs still only root', () {
-      final w = DirectoryWalker(
-        rootPath: '/r',
-        options: const WalkOptions(includeSubdirs: true, maxDepth: 0),
-      );
-      expect(w.nextDirectory(), '/r');
-      expect(w.acceptChildren('/r', ['/r/child']), 0);
-      expect(w.nextDirectory(), isNull);
-    });
-
-    test('cycle guard via visited normalized paths', () {
-      final w = DirectoryWalker(
-        rootPath: '/a',
-        options: const WalkOptions(includeSubdirs: true, maxDepth: 5),
-      );
-      expect(w.nextDirectory(), '/a');
-      w.acceptChildren('/a', ['/a/b', '/a/']); // /a/ normalizes to /a — skipped
-      expect(w.nextDirectory(), '/a/b');
-      // point back to /a
-      expect(w.acceptChildren('/a/b', ['/a', '/a/b/c']), 1);
-      expect(w.nextDirectory(), '/a/b/c');
-      expect(w.nextDirectory(), isNull);
-      expect(w.visited.contains('/a'), isTrue);
-      expect(w.visited.contains('/a/b'), isTrue);
-    });
-
-    test('trailing slash normalized for visited', () {
-      final w = DirectoryWalker(
-        rootPath: '/x/',
-        options: const WalkOptions(includeSubdirs: true, maxDepth: 2),
-      );
-      expect(w.nextDirectory(), '/x');
-      w.acceptChildren('/x/', ['/x/y/']);
-      expect(w.nextDirectory(), '/x/y');
-    });
-
-    test('maxEntries fuse stops listing', () {
-      final w = DirectoryWalker(
-        rootPath: '/r',
-        options: const WalkOptions(
-          includeSubdirs: true,
-          maxDepth: 5,
-          maxEntries: 2,
-        ),
-      );
-      expect(w.nextDirectory(), '/r');
-      w.acceptChildren('/r', ['/r/1', '/r/2', '/r/3']);
-      expect(w.nextDirectory(), '/r/1');
-      // fuse: listed already 2
-      expect(w.nextDirectory(), isNull);
-      expect(w.listedCount, 2);
     });
   });
 }

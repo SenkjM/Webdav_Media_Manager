@@ -91,7 +91,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get playlists => '歌单';
 
   @override
-  String get networkLibrary => '网络库';
+  String get networkLibrary => '文件源';
 
   @override
   String get downloadQueue => '任务队列';
@@ -206,7 +206,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String unboundSource(Object sourceName) {
-    return '未绑定网盘「$sourceName」';
+    return '未绑定源「$sourceName」';
   }
 
   @override
@@ -219,7 +219,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get defaultServer => '默认服务器';
 
   @override
-  String get accountsTitle => '网盘账号管理';
+  String get accountsTitle => '源管理';
 
   @override
   String get noAccounts => '尚未添加账号。点击右下角添加。';
@@ -247,7 +247,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String confirmDeleteServer(Object name) {
-    return '确定删除「$name」？其曲目会变成「未绑定网盘」，加回同名即可恢复。';
+    return '确定删除「$name」？其曲目会变成「未绑定源」，加回同名即可恢复。';
   }
 
   @override
@@ -276,7 +276,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get scanSubdirectoriesHint =>
-      '打开后，从网络库打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。';
+      '打开后，从文件源打开音乐时的播放列表包含子目录（深度见下方）；关闭则只列当前层。与视频播列表、刮削设置独立。';
 
   @override
   String get streamSidecarCover => '同目录封面';
@@ -508,7 +508,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String accountDuplicateContent(Object name, Object url) {
-    return '已有同名网盘「$name」：\n$url\n\n同名会被当成同一来源。';
+    return '已有同名源「$name」：\n$url\n\n同名会被当成同一来源。';
   }
 
   @override
@@ -525,7 +525,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String accountRenameContent(Object name) {
-    return '「$name」的曲目将变为「未绑定网盘」，改回原名即可恢复。\n仅改地址时请保持名称不变。';
+    return '「$name」的曲目将变为「未绑定源」，改回原名即可恢复。\n仅改地址时请保持名称不变。';
   }
 
   @override
@@ -587,7 +587,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get customHomeSubtitle => '在根页面按返回时回到这里';
 
   @override
-  String get rememberNetworkPath => '网络库记住上次路径';
+  String get rememberNetworkPath => '文件源记住上次路径';
 
   @override
   String get rememberNetworkPathSubtitle => '本次运行中记住上次浏览目录；重启后从根目录开始';
@@ -668,7 +668,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncTitle => '同步与备份';
 
   @override
-  String get syncIntro => '凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。';
+  String get syncIntro => '凭证、歌单与音乐库共用一条远端路径：在下面选源、填路径即可。';
 
   @override
   String get syncAll => '全部同步';
@@ -691,7 +691,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get remotePathSubtitle => '凭证、音乐库、歌单与备份都放在这条路径下面';
 
   @override
-  String get selectServer => '① 选择网盘';
+  String get selectServer => '① 选择源';
 
   @override
   String get path => '② 路径';
@@ -784,7 +784,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get fileExtIntro =>
-      '按后缀识别文件类型；多个后缀用空格或逗号分隔。返回网络库刷新后生效。下面每一类的「单击行为」就是网络库点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。';
+      '按后缀识别文件类型；多个后缀用空格或逗号分隔。返回文件源刷新后生效。下面每一类的「单击行为」就是文件源点按该文件时的动作，多选工具栏与「更多」菜单遵循同一套判定。';
 
   @override
   String get fileCatMusic => '音乐文件';
@@ -1029,7 +1029,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get noMatchingTracks => '没有匹配的曲目';
 
   @override
-  String get streamUrlFailed => '无法建立流式地址，请检查账户配置';
+  String get streamUrlFailed => '无法建立流式地址，请检查源配置';
 
   @override
   String get loading => '加载中…';
@@ -1129,7 +1129,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get nowPlayingQueueEmpty => '当前没有播放队列。\n从音乐库或网络库开始播放后会出现在此。';
+  String get nowPlayingQueueEmpty => '当前没有播放队列。\n从音乐库或文件源开始播放后会出现在此。';
 
   @override
   String get queueAdd => '添加';
@@ -1381,27 +1381,7 @@ class AppLocalizationsZh extends AppLocalizations {
       '输入的口令未通过校验。若继续恢复，可能出现预料之外的问题（例如密码等密文字段被解成空）。可取消后改正口令，或强制按现有逻辑继续。';
 
   @override
-  String get restorePassphraseUnverifiableTitle => '无法预检备份口令';
-
-  @override
-  String get restorePassphraseUnverifiableBody =>
-      '这份旧备份没有校验块，也无法用已有密文字段试解。若口令不对，继续恢复可能出现预料之外的问题（例如空密文）。可取消，或强制按现有逻辑继续。';
-
-  @override
-  String get restoreEnvelopeMismatchTitle => '无法解开整包备份';
-
-  @override
-  String get restoreEnvelopeMismatchBody =>
-      '这份备份使用整包加密（WDMMEN01），当前口令无法解密。整包解不开就不能真正导入。可取消后改正口令，或继续再试一次；若仍失败将提示无法导入。';
-
-  @override
   String get restoreContinue => '继续';
-
-  @override
-  String get restoreEnvelopeDecryptFailedTitle => '无法导入备份';
-
-  @override
-  String get restoreEnvelopeDecryptFailedBody => '密钥不正确或备份密文损坏，整包无法解密，不能导入。';
 
   @override
   String get restoreForceContinue => '强制继续';
@@ -1436,6 +1416,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get remoteRootRequired => '请先填写远端路径';
+
+  @override
   String get derivedPathCredentials => '账号凭证';
 
   @override
@@ -1451,7 +1434,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get syncAndBackup => '备份与同步';
 
   @override
-  String get syncIntroLong => '凭证、歌单与音乐库共用一条远端路径：在下面选网盘、填路径即可。';
+  String get syncIntroLong => '凭证、歌单与音乐库共用一条远端路径：在下面选源、填路径即可。';
 
   @override
   String get scheduledSyncOff => '已关闭，仅手动同步';
@@ -1468,7 +1451,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get needWebdavServer => '请先添加 WebDAV 服务器。';
 
   @override
-  String get selectCloudDrive => '① 选择网盘';
+  String get selectCloudDrive => '① 选择源';
 
   @override
   String get pathStep => '② 路径';
@@ -1481,7 +1464,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String credentialsSectionDesc(Object path) {
-    return '云端 $path：全部网盘账号；密码类字段加密，不支持类型的账号恢复时自动跳过。';
+    return '云端 $path：全部源；密码类字段加密，不支持类型的账号恢复时自动跳过。';
   }
 
   @override
@@ -1713,7 +1696,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get recoveryClearTitle => '清除本地数据库？';
 
   @override
-  String get recoveryClearContent => '建议先导出数据库。清除后请重新打开应用，网盘账号和本地索引需要重新配置。';
+  String get recoveryClearContent => '建议先导出数据库。清除后请重新打开应用，源和本地索引需要重新配置。';
 
   @override
   String recoveryClearPartial(int removed, String names) {
@@ -2012,7 +1995,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String vaultSummarySkipped(Object count) {
-    return '；跳过 $count 个不支持的网盘类型';
+    return '；跳过 $count 个不支持的源类型';
   }
 
   @override
@@ -2032,10 +2015,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get errVaultDestNotConfigured => '凭证同步目的地网盘未配置';
+  String get errVaultDestNotConfigured => '凭证同步目的地源未配置';
 
   @override
-  String get errBackupDestNotConfigured => '备份目的地网盘未配置';
+  String get errBackupDestNotConfigured => '备份目的地源未配置';
 
   @override
   String backupDoneLatest(Object remote, Object size) {
@@ -2222,7 +2205,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String dlErrSourceUnbound(Object source) {
-    return '来源网盘未绑定（$source）';
+    return '来源未绑定（$source）';
   }
 
   @override
@@ -2659,7 +2642,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get libraryTracksEmpty => '暂无曲目';
 
   @override
-  String get sourceUnbound => '来源网盘未绑定';
+  String get sourceUnbound => '来源未绑定';
 
   @override
   String downloadingPercent(Object p) {
@@ -2667,7 +2650,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get libraryEmptyGuide => '暂无曲目：可在网络库扫描入库，或下载后进入曲库。';
+  String get libraryEmptyGuide => '暂无曲目：可在文件源扫描入库，或下载后进入曲库。';
+
+  @override
+  String get libraryRefreshFailed => '刷新音乐库失败';
 
   @override
   String get tagTitle => '标题';
@@ -3177,7 +3163,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get formLabelSourceAccount => '源账号';
 
   @override
-  String get formHintSourceAccount => '选择现有 WebDAV 或网盘账号作为加密源';
+  String get formHintSourceAccount => '选择现有 WebDAV 或源作为加密源';
 
   @override
   String get formLabelSourceDir => '源目录';
@@ -4024,7 +4010,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get taskErrSourceUnbound => '来源网盘未绑定';
+  String get taskErrSourceUnbound => '来源未绑定';
 
   @override
   String get taskErrQueueSchemaDrift => '队列数据库需升级';
@@ -4150,7 +4136,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get musicDefaultOpen => '默认打开';
 
   @override
-  String get musicDefaultOpenHint => '网络库、媒体库、歌单点按音乐时：缓存播放或串流播放';
+  String get musicDefaultOpenHint => '文件源、媒体库、歌单点按音乐时：缓存播放或串流播放';
 
   @override
   String get musicDefaultCache => '缓存播放';
@@ -4168,10 +4154,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get refreshTagsFromLocalHint => '读取已缓存音频的标签';
 
   @override
-  String get refreshTagsFromCloud => '从云端更新标签';
+  String get refreshTagsFromCloud => '从云端更新所有音乐元数据';
 
   @override
-  String get refreshTagsFromCloudHint => '排队从云端拉取标签';
+  String get refreshTagsFromCloudHint => '一次任务重读全部曲目的标签与封面';
+
+  @override
+  String get taskKindCoverRefresh => '恢复封面（云端）';
+
+  @override
+  String get refreshCoversFromCloud => '从云端恢复封面';
+
+  @override
+  String get refreshCoversFromCloudHint => '更新缺失封面的音乐元数据';
+
+  @override
+  String get coverRefreshQueued => '已加入封面恢复队列';
+
+  @override
+  String get retagAllQueued => '已加入队列：更新所有音乐元数据';
 
   @override
   String get destroyTracksAction => '删除所选曲目';
@@ -4242,7 +4243,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get prefetchSectionHint => '串流写入临时预载；缓存播放按同一窗口后台缓存。';
 
   @override
-  String get audioPlaylistSection => '网络库连播列表';
+  String get audioPlaylistSection => '文件源连播列表';
 
   @override
   String get waitingForCache => '正在缓存…';
@@ -4278,16 +4279,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get libraryBackfillRootsHint =>
-      '开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；网络库「扫描音乐」仍可手动使用。';
+      '开启「绑定路径」后，仅这些根的前缀命中才会触发播放时刮削；文件源「扫描音乐」仍可手动使用。';
 
   @override
   String get libraryBackfillAddRoot => '添加根路径';
 
   @override
-  String get libraryBackfillNeedAccount => '请先添加网盘账号';
+  String get libraryBackfillNeedAccount => '请先添加源';
 
   @override
-  String get libraryBackfillPickAccount => '选择网盘账号';
+  String get libraryBackfillPickAccount => '选择源';
 
   @override
   String get libraryBackfillPickFolder => '选择根文件夹';
@@ -4399,7 +4400,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaTabAuthor => '作者';
 
   @override
-  String get mangaLibraryEmptyGuide => '从网络库扫描文件夹或漫画文件，即可在这里浏览。';
+  String get mangaLibraryEmptyGuide => '从文件源扫描文件夹或漫画文件，即可在这里浏览。';
 
   @override
   String mangaSeriesCount(int count) {
@@ -4579,7 +4580,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get mangaReaderPreparing => '正在准备页…';
 
   @override
-  String get mangaReaderUnboundSource => '来源网盘未绑定，无法打开';
+  String get mangaReaderUnboundSource => '来源未绑定，无法打开';
 
   @override
   String get mangaUnspecifiedSeries => '未指定系列';
@@ -4720,6 +4721,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get taskPartialFailed => '部分失败';
 
   @override
+  String get taskAwaitingPlatform => '等待系统处理';
+
+  @override
   String get progressReadingCloudMangaIndex => '读取云端漫画库清单…';
 
   @override
@@ -4746,6 +4750,11 @@ class AppLocalizationsZh extends AppLocalizations {
     Object uploaded,
   ) {
     return '漫画库：上传 $uploaded 部，采纳 $adopted 部，删除 $tombs 条，进度变更 $progress 处';
+  }
+
+  @override
+  String stepSyncConflicts(Object count) {
+    return '同步冲突 $count 处（已保留较新的版本）';
   }
 
   @override
@@ -5191,6 +5200,116 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get fileQueuedOrSavedShort => '该文件已在队列或已保存';
+
+  @override
+  String get dlnaHitCopy => '复制';
+
+  @override
+  String get dlnaHitHw => '硬编';
+
+  @override
+  String get dlnaHitSw => '软编';
+
+  @override
+  String get dlnaHitVideo => '视频';
+
+  @override
+  String get dlnaHitAudio => '音频';
+
+  @override
+  String get settingsDlnaSection => 'DLNA 投屏';
+
+  @override
+  String get settingsTranscodePreset => '转码预设';
+
+  @override
+  String get settingsManagePresets => '管理转码预设';
+
+  @override
+  String get settingsDefaultDirect => '默认直通';
+
+  @override
+  String get settingsDefaultDirectSubtitle => '投屏时默认不转码，直接播放原文件';
+
+  @override
+  String get settingsMkvPassthrough => 'MKV 直通（不转码）';
+
+  @override
+  String get settingsTranscodeCache => '转码缓存';
+
+  @override
+  String get settingsCacheBudget => '缓存预算';
+
+  @override
+  String get settingsCacheBudgetTitle => '转码缓存预算';
+
+  @override
+  String get settingsClearTranscodeCache => '清理缓存';
+
+  @override
+  String get cacheBudgetMustBePositive => '缓存预算必须大于 0 MB';
+
+  @override
+  String get openApiSettingsTitle => 'OpenAPI 设置';
+
+  @override
+  String get openApiSettingsSubtitle => '配置外部 API 访问与鉴权';
+
+  @override
+  String get codecCapsSectionTitle => '设备编码能力';
+
+  @override
+  String get codecCapsLoading => '正在查询本机编码能力…';
+
+  @override
+  String get codecCapsUnavailable => '无法查询本机编码能力（不影响投屏与转码）';
+
+  @override
+  String get codecCapsEmpty => '本机未报告可用的硬件编码器';
+
+  @override
+  String get codecCapsRetry => '重新探测';
+
+  @override
+  String get codecCapsHardware => '硬件编码';
+
+  @override
+  String get codecCapsSoftware => '软件编码';
+
+  @override
+  String get codecCapsRateControl => '码率控制';
+
+  @override
+  String get codecCapsBitrateRange => '码率范围';
+
+  @override
+  String get codecCapsResolutionRange => '分辨率范围';
+
+  @override
+  String get codecCapsAlignment => '宽高对齐';
+
+  @override
+  String get codecCapsFpsRange => '帧率范围';
+
+  @override
+  String get codecCapsProfileLevels => 'Profile / Level';
+
+  @override
+  String get codecCapsNotReported => '未报告';
+
+  @override
+  String get codecCapsCodecH264 => 'H.264';
+
+  @override
+  String get codecCapsCodecHevc => 'H.265（HEVC）';
+
+  @override
+  String get codecCapsCodecMpeg4 => 'MPEG-4';
+
+  @override
+  String cacheBudgetUpdated(Object mb) {
+    return '缓存预算已设为 $mb MB，新投屏会话生效';
+  }
 }
 
 /// The translations for Chinese, as used in Taiwan (`zh_TW`).
@@ -5279,7 +5398,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get playlists => '歌單';
 
   @override
-  String get networkLibrary => '網路庫';
+  String get networkLibrary => '檔案源';
 
   @override
   String get downloadQueue => '任務佇列';
@@ -5394,7 +5513,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String unboundSource(Object sourceName) {
-    return '未綁定網路磁碟「$sourceName」';
+    return '未綁定源「$sourceName」';
   }
 
   @override
@@ -5407,7 +5526,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get defaultServer => '預設伺服器';
 
   @override
-  String get accountsTitle => '網盤帳號管理';
+  String get accountsTitle => '源管理';
 
   @override
   String get noAccounts => '尚未新增帳號。點擊右下角新增。';
@@ -5435,7 +5554,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String confirmDeleteServer(Object name) {
-    return '確定刪除「$name」？其曲目會變成「未綁定網路磁碟」，加回同名即可恢復。';
+    return '確定刪除「$name」？其曲目會變成「未綁定源」，加回同名即可恢復。';
   }
 
   @override
@@ -5464,7 +5583,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get scanSubdirectoriesHint =>
-      '開啟後，從網路庫開啟音樂時的播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與影片播清單、刮削設定獨立。';
+      '開啟後，從檔案源開啟音樂時的播放清單包含子目錄（深度見下方）；關閉則只列目前這一層。與影片播清單、刮削設定獨立。';
 
   @override
   String get streamSidecarCover => '同目錄封面';
@@ -5713,7 +5832,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String accountRenameContent(Object name) {
-    return '「$name」的曲目將變為「未綁定網路磁碟」，改回原名即可恢復。\n僅修改位址時請保持名稱不變。';
+    return '「$name」的曲目將變為「未綁定源」，改回原名即可恢復。\n僅修改位址時請保持名稱不變。';
   }
 
   @override
@@ -5776,10 +5895,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get customHomeSubtitle => '從其他介面返回時回到此首頁';
 
   @override
-  String get rememberNetworkPath => '網路庫記住上次路徑';
+  String get rememberNetworkPath => '檔案源記住上次路徑';
 
   @override
-  String get rememberNetworkPathSubtitle => '同一執行期間再次開啟網路庫時恢復上次目錄（不跨冷啟動）';
+  String get rememberNetworkPathSubtitle => '同一執行期間再次開啟檔案源時恢復上次目錄（不跨冷啟動）';
 
   @override
   String get videoSettings => '影片播放設定';
@@ -5857,7 +5976,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get syncTitle => '同步與備份';
 
   @override
-  String get syncIntro => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選網路磁碟、填寫路徑即可。';
+  String get syncIntro => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選源、填寫路徑即可。';
 
   @override
   String get syncAll => '全部同步';
@@ -5880,7 +5999,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get remotePathSubtitle => '憑證、音樂庫、歌單與備份都放在這條路徑下方';
 
   @override
-  String get selectServer => '① 選擇網路磁碟';
+  String get selectServer => '① 選擇源';
 
   @override
   String get path => '② 路徑';
@@ -5973,7 +6092,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get fileExtIntro =>
-      '依副檔名辨識檔案類型；多個副檔名以空格或逗號分隔。返回網路庫重新整理後生效。下面每一類的「點按行為」就是網路庫點按該檔案時的動作，多選工具列與「更多」選單遵循同一套判定。';
+      '依副檔名辨識檔案類型；多個副檔名以空格或逗號分隔。返回檔案源重新整理後生效。下面每一類的「點按行為」就是檔案源點按該檔案時的動作，多選工具列與「更多」選單遵循同一套判定。';
 
   @override
   String get fileCatMusic => '音樂檔案';
@@ -6318,7 +6437,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
-  String get nowPlayingQueueEmpty => '目前沒有播放佇列。\n從音樂庫或網路庫開始播放後會出現在此。';
+  String get nowPlayingQueueEmpty => '目前沒有播放佇列。\n從音樂庫或檔案源開始播放後會出現在此。';
 
   @override
   String get queueAdd => '新增';
@@ -6570,27 +6689,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
       '輸入的口令未通過校驗。若繼續還原，可能出現預料之外的問題（例如密碼等密文字段被解成空）。可取消後改正口令，或強制按現有邏輯繼續。';
 
   @override
-  String get restorePassphraseUnverifiableTitle => '無法預檢備份口令';
-
-  @override
-  String get restorePassphraseUnverifiableBody =>
-      '這份舊備份沒有校驗塊，也無法用既有密文字段試解。若口令不對，繼續還原可能出現預料之外的問題（例如空密文）。可取消，或強制按現有邏輯繼續。';
-
-  @override
-  String get restoreEnvelopeMismatchTitle => '無法解開整包備份';
-
-  @override
-  String get restoreEnvelopeMismatchBody =>
-      '這份備份使用整包加密（WDMMEN01），目前口令無法解密。整包解不開就不能真正匯入。可取消後改正口令，或繼續再試一次；若仍失敗將提示無法匯入。';
-
-  @override
   String get restoreContinue => '繼續';
-
-  @override
-  String get restoreEnvelopeDecryptFailedTitle => '無法匯入備份';
-
-  @override
-  String get restoreEnvelopeDecryptFailedBody => '金鑰不正確或備份密文損毀，整包無法解密，不能匯入。';
 
   @override
   String get restoreForceContinue => '強制繼續';
@@ -6625,6 +6724,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   }
 
   @override
+  String get remoteRootRequired => '請先填寫遠端路徑';
+
+  @override
   String get derivedPathCredentials => '帳號憑證';
 
   @override
@@ -6640,7 +6742,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get syncAndBackup => '備份與同步';
 
   @override
-  String get syncIntroLong => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選網盤、填路徑即可。';
+  String get syncIntroLong => '憑證、歌單與音樂庫共用一條遠端路徑：在下面選源、填路徑即可。';
 
   @override
   String get scheduledSyncOff => '已關閉，僅手動同步';
@@ -6657,7 +6759,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get needWebdavServer => '請先新增 WebDAV 伺服器。';
 
   @override
-  String get selectCloudDrive => '① 選擇網盤';
+  String get selectCloudDrive => '① 選擇源';
 
   @override
   String get pathStep => '② 路徑';
@@ -6670,7 +6772,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String credentialsSectionDesc(Object path) {
-    return '雲端 $path：全部網盤帳號；密碼類欄位加密，不支援類型的帳號恢復時自動跳過。';
+    return '雲端 $path：全部源；密碼類欄位加密，不支援類型的帳號恢復時自動跳過。';
   }
 
   @override
@@ -6902,7 +7004,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get recoveryClearTitle => '清除本機資料庫？';
 
   @override
-  String get recoveryClearContent => '建議先匯出資料庫。清除後請重新開啟應用，網盤帳號和本機索引需要重新設定。';
+  String get recoveryClearContent => '建議先匯出資料庫。清除後請重新開啟應用，源和本機索引需要重新設定。';
 
   @override
   String recoveryClearPartial(int removed, String names) {
@@ -7859,6 +7961,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get libraryEmptyGuide => '暫無曲目：可在網路磁碟掃描入庫，或下載後進入曲庫。';
 
   @override
+  String get libraryRefreshFailed => '重新整理音樂庫失敗';
+
+  @override
   String get tagTitle => '標題';
 
   @override
@@ -7917,11 +8022,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String errCloudAccountMissing(Object a) {
-    return '網盤帳號不存在：$a';
+    return '源不存在：$a';
   }
 
   @override
-  String get errCloudWriteDisabled => '網盤帳號不支援上傳與雲端寫入同步';
+  String get errCloudWriteDisabled => '源不支援上傳與雲端寫入同步';
 
   @override
   String get errEnsureDirectoryUnsupported => '此驅動不支援建立目錄';
@@ -8366,7 +8471,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get formLabelSourceAccount => '來源帳號';
 
   @override
-  String get formHintSourceAccount => '選擇現有 WebDAV 或網盤帳號作為加密來源';
+  String get formHintSourceAccount => '選擇現有 WebDAV 或源作為加密來源';
 
   @override
   String get formLabelSourceDir => '來源目錄';
@@ -9339,7 +9444,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get musicDefaultOpen => '預設開啟';
 
   @override
-  String get musicDefaultOpenHint => '網路庫、媒體庫、歌單點按音樂時：快取播放或串流播放';
+  String get musicDefaultOpenHint => '檔案源、媒體庫、歌單點按音樂時：快取播放或串流播放';
 
   @override
   String get musicDefaultCache => '快取播放';
@@ -9357,10 +9462,25 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get refreshTagsFromLocalHint => '讀取已快取音訊的標籤';
 
   @override
-  String get refreshTagsFromCloud => '從雲端更新標籤';
+  String get refreshTagsFromCloud => '從雲端更新所有音樂中繼資料';
 
   @override
-  String get refreshTagsFromCloudHint => '排隊從雲端拉取標籤';
+  String get refreshTagsFromCloudHint => '以單一任務重讀全部曲目標籤與封面';
+
+  @override
+  String get taskKindCoverRefresh => '復原封面（雲端）';
+
+  @override
+  String get refreshCoversFromCloud => '從雲端復原封面';
+
+  @override
+  String get refreshCoversFromCloudHint => '更新缺少封面的音樂中繼資料';
+
+  @override
+  String get coverRefreshQueued => '已加入封面復原佇列';
+
+  @override
+  String get retagAllQueued => '已加入佇列：更新所有音樂中繼資料';
 
   @override
   String get destroyTracksAction => '刪除所選曲目';
@@ -9431,7 +9551,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get prefetchSectionHint => '串流寫入臨時預載；快取播放按同一視窗背景快取。';
 
   @override
-  String get audioPlaylistSection => '網路庫連播清單';
+  String get audioPlaylistSection => '檔案源連播清單';
 
   @override
   String get waitingForCache => '正在快取…';
@@ -9473,10 +9593,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get libraryBackfillAddRoot => '新增根路徑';
 
   @override
-  String get libraryBackfillNeedAccount => '請先新增網盤帳號';
+  String get libraryBackfillNeedAccount => '請先新增源';
 
   @override
-  String get libraryBackfillPickAccount => '選擇網盤帳號';
+  String get libraryBackfillPickAccount => '選擇源';
 
   @override
   String get libraryBackfillPickFolder => '選擇根資料夾';
@@ -9588,7 +9708,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaTabAuthor => '作者';
 
   @override
-  String get mangaLibraryEmptyGuide => '從網路庫掃描資料夾或漫畫檔案，即可在這裡瀏覽。';
+  String get mangaLibraryEmptyGuide => '從檔案源掃描資料夾或漫畫檔案，即可在這裡瀏覽。';
 
   @override
   String mangaSeriesCount(int count) {
@@ -9768,7 +9888,7 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get mangaReaderPreparing => '正在準備頁面…';
 
   @override
-  String get mangaReaderUnboundSource => '來源網盤未綁定，無法開啟';
+  String get mangaReaderUnboundSource => '來源未綁定，無法開啟';
 
   @override
   String get mangaUnspecifiedSeries => '未指定系列';
@@ -9909,6 +10029,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String get taskPartialFailed => '部分失敗';
 
   @override
+  String get taskAwaitingPlatform => '等待系統處理';
+
+  @override
   String get progressReadingCloudMangaIndex => '讀取雲端漫畫庫清單…';
 
   @override
@@ -9935,6 +10058,11 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
     Object uploaded,
   ) {
     return '漫畫庫：上傳 $uploaded 部，採納 $adopted 部，刪除 $tombs 條，進度變更 $progress 處';
+  }
+
+  @override
+  String stepSyncConflicts(Object count) {
+    return '同步衝突 $count 處（已保留較新的版本）';
   }
 
   @override
@@ -10380,4 +10508,114 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get fileQueuedOrSavedShort => '檔案已在佇列或已儲存';
+
+  @override
+  String get dlnaHitCopy => '複製';
+
+  @override
+  String get dlnaHitHw => '硬編';
+
+  @override
+  String get dlnaHitSw => '軟編';
+
+  @override
+  String get dlnaHitVideo => '影片';
+
+  @override
+  String get dlnaHitAudio => '音訊';
+
+  @override
+  String get settingsDlnaSection => 'DLNA 投放';
+
+  @override
+  String get settingsTranscodePreset => '轉碼預設';
+
+  @override
+  String get settingsManagePresets => '管理轉碼預設';
+
+  @override
+  String get settingsDefaultDirect => '預設直通';
+
+  @override
+  String get settingsDefaultDirectSubtitle => '投放時預設不轉碼，直接播放原始檔案';
+
+  @override
+  String get settingsMkvPassthrough => 'MKV 直通（不轉碼）';
+
+  @override
+  String get settingsTranscodeCache => '轉碼快取';
+
+  @override
+  String get settingsCacheBudget => '快取預算';
+
+  @override
+  String get settingsCacheBudgetTitle => '轉碼快取預算';
+
+  @override
+  String get settingsClearTranscodeCache => '清理快取';
+
+  @override
+  String get cacheBudgetMustBePositive => '快取預算必須大於 0 MB';
+
+  @override
+  String get openApiSettingsTitle => 'OpenAPI 設定';
+
+  @override
+  String get openApiSettingsSubtitle => '設定外部 API 存取與驗證';
+
+  @override
+  String get codecCapsSectionTitle => '裝置編碼能力';
+
+  @override
+  String get codecCapsLoading => '正在查詢本機編碼能力…';
+
+  @override
+  String get codecCapsUnavailable => '無法查詢本機編碼能力（不影響投屏與轉碼）';
+
+  @override
+  String get codecCapsEmpty => '本機未回報可用的硬體編碼器';
+
+  @override
+  String get codecCapsRetry => '重新偵測';
+
+  @override
+  String get codecCapsHardware => '硬體編碼';
+
+  @override
+  String get codecCapsSoftware => '軟體編碼';
+
+  @override
+  String get codecCapsRateControl => '位元率控制';
+
+  @override
+  String get codecCapsBitrateRange => '位元率範圍';
+
+  @override
+  String get codecCapsResolutionRange => '解析度範圍';
+
+  @override
+  String get codecCapsAlignment => '對齊';
+
+  @override
+  String get codecCapsFpsRange => '影格率範圍';
+
+  @override
+  String get codecCapsProfileLevels => 'Profile / Level';
+
+  @override
+  String get codecCapsNotReported => '未回報';
+
+  @override
+  String get codecCapsCodecH264 => 'H.264';
+
+  @override
+  String get codecCapsCodecHevc => 'H.265（HEVC）';
+
+  @override
+  String get codecCapsCodecMpeg4 => 'MPEG-4';
+
+  @override
+  String cacheBudgetUpdated(Object mb) {
+    return '快取預算已設為 $mb MB，新投放生效';
+  }
 }

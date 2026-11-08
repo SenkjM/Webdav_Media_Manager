@@ -1,27 +1,29 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../models/cache_policy.dart';
-import '../models/queue_task.dart';
-import '../models/file_type_config.dart';
+import '../models/queue_models.dart';
 import '../models/library_track.dart';
 import '../models/sync_interval.dart';
 import '../utils/app_snack.dart';
+import '../utils/boot_trace.dart';
 import '../utils/track_identity.dart';
 import '../services/accounts_service.dart';
 import '../services/audio_player_service.dart';
 import '../services/backup_service.dart';
-import '../services/cache_index_db.dart';
 import '../services/cache_service.dart';
 import '../services/credential_vault_service.dart';
 import '../services/download_destination_service.dart';
-import '../services/task_queue_service.dart';
-import '../services/library_database.dart';
+import '../services/download_keepalive.dart';
+import '../services/queue_service.dart';
 import '../services/library_service.dart';
 import '../services/user_folder_service.dart';
 import '../services/manga_library_service.dart';
-import '../utils/rev_clock.dart';
 import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
 import '../services/platform_export_service.dart';
@@ -30,8 +32,9 @@ import '../services/settings_service.dart';
 import '../services/sync_service.dart';
 import '../services/video_playback_service.dart';
 import '../services/cloud_drive_service.dart';
-import '../services/cloud_drivers/webdav_source.dart';
 import '../services/dlna_cast_service.dart';
+import '../services/rust_core_service.dart';
+import '../services/rust_dmr_prefs_service.dart';
 import '../services/webdav_service.dart';
 
 /// Root composition / lifecycle for the app.
@@ -40,26 +43,14 @@ class AppState extends ChangeNotifier {
     : _audioHandler = audioHandler {
     settings = SettingsService();
     notificationPermission = NotificationPermissionService();
-    final db = LibraryDatabase();
-    libraryDb = db;
-    cacheIndex = CacheIndexDb();
-    cache = CacheService(libraryDb: db, indexDb: cacheIndex);
-    library = LibraryService(db: db);
-    userFolders = UserFolderService(db: db);
-    mangaLibrary = MangaLibraryService(db: db);
-    accounts = AccountsService(db: db);
+    cache = CacheService();
+    library = LibraryService();
+    userFolders = UserFolderService();
+    mangaLibrary = MangaLibraryService();
+    accounts = AccountsService();
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
-    // 包装驱动（如 Crypt）的 WebDAV 源解析：装配层注入工厂（99 §7.5），
-    // 兼容层不依赖 WebDavService。
-    cloudDrive.attachWebDavSourceFactory((id) {
-      final acc = accounts.accountById(id);
-      if (acc == null || acc.providerType != 'webdav') return null;
-      return WebDavAccountSource(webDav: webDav, account: acc);
-    });
-    // Cover tier follows the music-library setting, so an embedded playlist
-    // cover is the same art the library would show (docs/10 §4.2 cover policy).
-    playlists = PlaylistService(webDav: webDav, covers: library.covers);
+    playlists = PlaylistService();
     // Built before BackupService: the archive embeds `encodeVaultBytes()`'s
     // output, so the vault service has to exist first (docs/10 §4.3).
     credentials = CredentialVaultService(
@@ -73,8 +64,15 @@ class AppState extends ChangeNotifier {
       settings: settings,
       export: platformExport,
     );
+    // Built before BackupService and DlnaCastService: both consume it in
+    // their constructors (backup embeds prefs for backup/restore; dlnaCast
+    // uses it to route USN-keyed force-direct). Assigning after BackupService
+    // (as a previous layout did) triggered a LateInitializationError because
+    // the BackupService ctor read the late field before it was set.
+    dmrPrefs = RustDmrPrefsService();
     backup = BackupService(
-      libraryDb: db,
+      userFolders: userFolders,
+      manga: mangaLibrary,
       library: library,
       accounts: accounts,
       settings: settings,
@@ -84,6 +82,7 @@ class AppState extends ChangeNotifier {
       cache: cache,
       // 备份导入后回调 alignNomedia
       onSettingsImported: () => downloadDestination.alignNomedia(),
+      dmrPrefs: dmrPrefs,
     );
     sync = SyncService(
       accounts: accounts,
@@ -95,23 +94,18 @@ class AppState extends ChangeNotifier {
       backup: backup,
       manga: mangaLibrary,
       folders: userFolders,
-      db: db,
       cache: cache,
     );
-    taskQueue = TaskQueueService(
-      webDav: webDav,
-      cache: cache,
-      library: library,
-      playlists: playlists,
+    keepAlive = DownloadKeepAlive();
+    queue = QueueService(
       settings: settings,
-      destination: downloadDestination,
-      // The network library classifies entries with the configured extension
-      // sets, so the queue must use the same list (never a hard-coded one).
-      isMusicFile: (name) =>
-          settings.fileTypes.categoryFor(name) == FileCategory.music,
+      cache: cache,
+      keepAlive: keepAlive,
+      platformExport: platformExport,
+      accountIdForSource: accounts.idForSource,
     );
     player = AudioPlayerService(
-      taskQueue: taskQueue,
+      taskQueue: queue,
       handler: audioHandler,
       webDav: webDav,
       cache: cache,
@@ -122,7 +116,7 @@ class AppState extends ChangeNotifier {
       notificationPermission: notificationPermission,
     );
     videoPlayback = VideoPlaybackService(handler: audioHandler);
-    dlnaCast = DlnaCastService(webDav: webDav);
+    dlnaCast = DlnaCastService(dmrPrefs: dmrPrefs, settings: settings);
   }
 
   final MusicAudioHandler _audioHandler;
@@ -130,12 +124,10 @@ class AppState extends ChangeNotifier {
   late final SettingsService settings;
   late final WebDavService webDav;
   late final DlnaCastService dlnaCast;
+  late final RustDmrPrefsService dmrPrefs;
   late final CloudDriveService cloudDrive;
   late final CacheService cache;
 
-  /// Access-time index shared by [cache]; owns `cache_index.db`.
-  late final CacheIndexDb cacheIndex;
-  late final LibraryDatabase libraryDb;
   late final LibraryService library;
   late final UserFolderService userFolders;
   late final MangaLibraryService mangaLibrary;
@@ -145,7 +137,8 @@ class AppState extends ChangeNotifier {
   late final CredentialVaultService credentials;
   late final DownloadDestinationService downloadDestination;
   late final SyncService sync;
-  late final TaskQueueService taskQueue;
+  late final QueueService queue;
+  late final DownloadKeepAlive keepAlive;
   late final NotificationPermissionService notificationPermission;
   late final AudioPlayerService player;
   late final VideoPlaybackService videoPlayback;
@@ -157,9 +150,7 @@ class AppState extends ChangeNotifier {
   String get initPhase => _initPhase;
 
   Future<void> closeDatabases() async {
-    await taskQueue.closeDatabase();
     await playlists.closeDatabase();
-    await libraryDb.close();
   }
 
   Future<void>? _shutdownFuture;
@@ -182,7 +173,7 @@ class AppState extends ChangeNotifier {
     dlnaCast.dispose();
     videoPlayback.dispose();
     player.dispose();
-    taskQueue.dispose();
+    queue.dispose();
     cache.dispose();
     webDav.dispose();
     library.dispose();
@@ -201,6 +192,25 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     try {
+      BootTrace.mark('init-start');
+      // Resolve the documents directory first: wdmm_library_init (I2) must
+      // receive the real DB path before the very first Core FFI call, which
+      // happens inside settings.init() → kvGet(). A :memory: fallback no
+      // longer exists in production builds — the singleton returns an error
+      // string on failure which we promote to a StateError here.
+      _initPhase = 'core-init';
+      final docs = await getApplicationDocumentsDirectory();
+      if (Platform.isAndroid) {
+        final coreDbPath = '${docs.path}/wdmm_library.db';
+        final coreResult = RustCoreService.libraryInit(coreDbPath);
+        if (coreResult == null) {
+          throw StateError('wdmm_library_init: FFI library unavailable');
+        }
+        if (coreResult.startsWith('error:')) {
+          throw StateError('wdmm_library_init failed: $coreResult');
+        }
+      }
+      BootTrace.mark('core-init-done');
       _initPhase = 'settings';
       await settings.init();
       AppSnack.attach(settings);
@@ -209,27 +219,31 @@ class AppState extends ChangeNotifier {
       // .nomedia 双向对齐（规格 §8：启动时不再只补不删）
       await downloadDestination.alignNomedia();
       _syncCoverThumbSize();
-      _syncDownloadFileTypes();
       // Existing schema path first (onCreate / onUpgrade, including account
       // column compat). The 0.2.2 sentinel only rewrites rows and must not
       // run against tables the open has not created yet.
       _initPhase = 'databases';
-      await libraryDb.database;
-      await playlists.openDatabase();
-      await taskQueue.openDatabase();
       _initPhase = 'cache';
       await cache.init();
+      _initPhase = 'dmr-prefs';
+      // docs already fetched above for core-init — reuse it here.
+      debugPrint('[AppState] dmr-prefs phase: docs path: ${docs.path}');
+      await dmrPrefs.init(docs.path);
+      debugPrint('[AppState] dmr-prefs phase: dmrPrefs.init completed');
+      // Configure Core cover roots once paths are known, so backup/restore operations
+      // see them. Call here (not just in BackupService create/restore) to cover
+      // upload/download paths that go through Core directly.
+      await backup.ensureCoversConfigured();
       // 0.2.4: legacy sentinel migration removed (99 §18.4).
-      // The rev clock is the single version source sync compares; it starts from
-      // the persisted high-water mark and reports every advance back.
-      // Music and manga rows share one clock, so their revs stay on one scale.
-      final revClock = RevClock(
-        nowMs: () => DateTime.now().millisecondsSinceEpoch,
-        initial: settings.lastRev,
-        onAdvance: settings.setLastRev,
-      );
-      library.attachRevClock(revClock);
-      libraryDb.mangaRevSource = revClock.next;
+      // Revisions come from the Rust watermark (wdmm_library_next_rev), which
+      // is the single clock sync compares; music and manga share its scale.
+      // One-shot sqflite→Core import (Android only). Must run before
+      // library.init() → refresh() consumes Core as truth, otherwise an
+      // unimported sqflite DB would read back as an empty library. Idempotent
+      // via Core KV `sqflite_imported` / `sqflite_imported_v6`; hard-fails on
+      // error when the file exists so we never silently lose data.
+      _initPhase = 'sqflite-import';
+      final sqfliteDbPath = await _importLibraryFromSqfliteIfNeeded();
       _initPhase = 'library';
       await library.init();
       _initPhase = 'user-folders';
@@ -239,15 +253,16 @@ class AppState extends ChangeNotifier {
       _initPhase = 'accounts';
       await accounts.init();
       await registerAllAccounts();
+      // Retire the legacy sqflite file once all migrates have completed on
+      // this same launch (library import + folders-kv migrate + cache groups
+      // migrate + accounts migrate). Best-effort; errors are logged, not fatal.
+      await _retireMusicLibraryDbIfMigrated(sqfliteDbPath);
       // The queue persists 网盘名, never an account id: it has to resolve one to
       // the other **after** the account list is loaded, or every transfer would
       // be judged "来源网盘未绑定".
-      taskQueue.configureAccountResolver(accounts.idForSource);
       applySyncConfiguration();
       _initPhase = 'playlists';
       await playlists.init();
-      taskQueue.attachLibrary(library);
-      taskQueue.attachMangaLibrary(mangaLibrary);
       // Incremental library sync: whenever a download (or a restore) changes
       // the local library, push just the new rows to the cloud index.
       library.addListener(_onLibraryChanged);
@@ -257,19 +272,29 @@ class AppState extends ChangeNotifier {
       // Changing 定时同步 in Settings must take effect immediately, not on the
       // next launch.
       settings.addListener(_onSettingsChanged);
-      _initPhase = 'taskQueue';
-      taskQueue.keepAliveEnabled = settings.downloadKeepAliveEnabled;
-      await taskQueue.init();
+      _initPhase = 'queue';
+      await queue.init(
+        appDocs: docs.path,
+        cacheRoot: (await getApplicationSupportDirectory()).path,
+      );
+      await queue.setNotificationsEnabled(settings.downloadNotificationsEnabled);
+      await queue.setKeepAliveEnabled(settings.downloadKeepAliveEnabled);
+      // The queue owns ingest, so the in-memory libraries go stale after an
+      // ingest task finishes. Watch its terminal revisions and refresh shortly
+      // after, instead of asking every caller to reload.
+      _queueMusicRevision = queue.musicLibraryRevision;
+      _queueMangaRevision = queue.mangaLibraryRevision;
+      queue.addListener(_onQueueChanged);
       // Restore the persisted now-playing queue after accounts + library are
       // loaded (entries bind accounts by source name, metadata comes from the
       // library). Restoring never starts audio.
       await player.restoreQueue();
-      // Download notifications: create the channel and honour the setting.
-      taskQueue.notificationsEnabled = settings.downloadNotificationsEnabled;
-      taskQueue.notificationService.enabled =
-          settings.downloadNotificationsEnabled;
-      unawaited(taskQueue.initNotifications());
       await notificationPermission.refresh();
+      // Request notification permission once the app is already on screen
+      // (init runs after runApp so the activity has a window).
+      if (!kIsWeb && Platform.isAndroid) {
+        unawaited(notificationPermission.request());
+      }
       unawaited(runCacheCleanup());
       // Startup scan: credentials + playlists both ways (best-effort, never
       // blocks the first frame).
@@ -291,9 +316,13 @@ class AppState extends ChangeNotifier {
   /// selection: a track row carries its own `accountId`, and its client stays
   /// available no matter which account the user is browsing.
   Future<void> registerAllAccounts() async {
+    // Every account gets a routing entry, cloud providers included: since
+    // B1 step 4 all I/O goes through [CloudDriveService], but the id set is
+    // still what guards credential vault / backup / playlist sync / network
+    // library writes. Skipping cloud types here left it empty after a restart,
+    // so `hasAccount()` said false for every account and the vault refused to
+    // push (`err.vaultDestNotConfigured`).
     for (final a in accounts.accounts) {
-      // 云盘账号不建 WebDAV 客户端（99 §7.2.2），由 cloudDrive 统一登记。
-      if (CloudDriveService.isCloudType(a.providerType)) continue;
       final pass = await accounts.passwordFor(a.id) ?? '';
       webDav.configure(
         accountId: a.id,
@@ -324,7 +353,7 @@ class AppState extends ChangeNotifier {
     _appliedSyncRoot = settings.syncRemoteRoot;
     _appliedSyncAccountId = settings.syncAccountId;
     playlists.configureSync(
-      remotePath: settings.playlistRemotePath,
+      syncRoot: settings.syncRemoteRoot,
       enabled: settings.playlistSyncEnabled,
       accountId: settings.syncAccountId ?? accounts.activeAccountId,
     );
@@ -342,6 +371,13 @@ class AppState extends ChangeNotifier {
   Timer? _libraryPushDebounce;
   Timer? _mangaPushDebounce;
   Timer? _foldersPushDebounce;
+
+  /// Coalesced library refresh driven by queue terminal events.
+  Timer? _libraryRefreshDebounce;
+  int _queueMusicRevision = 0;
+  int _queueMangaRevision = 0;
+  bool _queueMusicDirty = false;
+  bool _queueMangaDirty = false;
 
   /// True while a library maintenance action (从云端覆写 / 销毁) owns the library
   /// tables. Automatic writers are shut off for its duration rather than raced
@@ -394,6 +430,34 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// Coalesce queue terminal events into one library reload.
+  ///
+  /// A batch scan emits one `task_terminal` per member, so refreshing the
+  /// library per event would rebuild it dozens of times for one scrape.
+  void _onQueueChanged() {
+    if (_libraryMaintenance) return;
+    final music = queue.musicLibraryRevision;
+    final manga = queue.mangaLibraryRevision;
+    if (music != _queueMusicRevision) {
+      _queueMusicRevision = music;
+      _queueMusicDirty = true;
+    }
+    if (manga != _queueMangaRevision) {
+      _queueMangaRevision = manga;
+      _queueMangaDirty = true;
+    }
+    if (!_queueMusicDirty && !_queueMangaDirty) return;
+    _libraryRefreshDebounce?.cancel();
+    _libraryRefreshDebounce = Timer(const Duration(milliseconds: 400), () {
+      final refreshMusic = _queueMusicDirty;
+      final refreshManga = _queueMangaDirty;
+      _queueMusicDirty = false;
+      _queueMangaDirty = false;
+      if (refreshMusic) unawaited(library.refresh());
+      if (refreshManga) unawaited(mangaLibrary.reload());
+    });
+  }
+
   /// Background manga push (rows + tombstones + reading progress).
   Future<void> pushMangaIncrement() async {
     if (!ready || !sync.hasUsableAccount || _libraryMaintenance) return;
@@ -421,10 +485,8 @@ class AppState extends ChangeNotifier {
   /// playlist sync when the shared 远端路径 changes.
   void _onSettingsChanged() {
     if (!ready) return;
-    if (taskQueue.keepAliveEnabled != settings.downloadKeepAliveEnabled) {
-      unawaited(
-        taskQueue.setKeepAliveEnabled(settings.downloadKeepAliveEnabled),
-      );
+    if (queue.keepAliveEnabled != settings.downloadKeepAliveEnabled) {
+      unawaited(queue.setKeepAliveEnabled(settings.downloadKeepAliveEnabled));
     }
     if (settings.syncRemoteRoot != _appliedSyncRoot ||
         settings.syncAccountId != _appliedSyncAccountId) {
@@ -480,7 +542,7 @@ class AppState extends ChangeNotifier {
     final removed = await cache.cleanupKnown(
       retention: settings.retention,
       customDuration: settings.customRetentionDuration,
-      identityToLocal: taskQueue.completedIdentityToLocal,
+      identityToLocal: queue.completedIdentityToLocal,
       playingIdentityKey:
           player.currentSourceName != null && player.currentRemotePath != null
           ? trackIdentityKey(
@@ -488,7 +550,7 @@ class AppState extends ChangeNotifier {
               player.currentRemotePath!,
             )
           : null,
-      downloadingIdentityKeys: taskQueue.downloadingIdentityKeys,
+      downloadingIdentityKeys: queue.downloadingIdentityKeys,
     );
     // Second pass by expiry alone: files whose identity is no longer in the
     // completed-task map still have to age out.
@@ -502,8 +564,8 @@ class AppState extends ChangeNotifier {
 
   Future<int> manualClearCache() async {
     final protected = <String>{};
-    for (final t in taskQueue.tasks) {
-      if (t.status == TaskStatus.active || t.status == TaskStatus.pending) {
+    for (final t in queue.tasks) {
+      if (t.status == QueueTaskStatus.active || t.status == QueueTaskStatus.pending) {
         final f = cache.fileForRemote(t.remotePath, sourceName: t.sourceName);
         protected.add(f.path);
         protected.add('${f.path}.part');
@@ -517,7 +579,7 @@ class AppState extends ChangeNotifier {
     );
     // Drop stale completed entries so CUE clips re-download cleanly and
     // clip trimming still applies from library DB metadata.
-    await taskQueue.invalidateMissingCompleted();
+    await queue.invalidateMissingCompleted();
     await cache.pruneIndex(CacheKind.music);
     return removed;
   }
@@ -536,9 +598,9 @@ class AppState extends ChangeNotifier {
     final maxBytes = settings.musicCacheMaxBytes;
     if (maxBytes <= 0) return Future.value(0);
     final protected = <String>{};
-    for (final task in taskQueue.tasks) {
-      if (task.status == TaskStatus.active ||
-          task.status == TaskStatus.pending) {
+    for (final task in queue.tasks) {
+      if (task.status == QueueTaskStatus.active ||
+          task.status == QueueTaskStatus.pending) {
         final f = cache.fileForRemote(
           task.remotePath,
           sourceName: task.sourceName,
@@ -611,17 +673,6 @@ class AppState extends ChangeNotifier {
   void _syncCoverThumbSize() {
     library.covers.thumbSize = settings.coverThumbSizePx;
   }
-
-  /// Keep the download queue's music classifier aligned with the configured
-  /// extension sets (they are user-editable in 「文件后缀管理」).
-  void _syncDownloadFileTypes() {
-    taskQueue.configureFileTypes(
-      (name) => settings.fileTypes.categoryFor(name) == FileCategory.music,
-    );
-  }
-
-  /// Called after the user edits the extension sets in Settings.
-  void refreshFileTypeClassifiers() => _syncDownloadFileTypes();
 
   Future<void> setCoverThumbSize(int size) async {
     await settings.setCoverThumbSize(size);
@@ -713,7 +764,7 @@ class AppState extends ChangeNotifier {
       );
       // 库空了，歌单里指向它的引用成了悬空引用，下载队列也要重新对账。
       await playlists.removeEntriesNotIn(const <String>{});
-      await taskQueue.invalidateMissingCompleted();
+      await queue.invalidateMissingCompleted();
       await settings.setSyncInterval(SyncInterval.off);
       return destroyed;
     });
@@ -757,7 +808,10 @@ class AppState extends ChangeNotifier {
   /// Reading progress and `manga_cache/` stay (progress then merges as usual).
   Future<SyncOutcome> overwriteMangaFromCloud() {
     return _quietLibraryWrites(() async {
-      await libraryDb.clearMangaIndex();
+      final clear = RustCoreService.mangaClearIndex();
+      if (clear != null && clear.startsWith('error:')) {
+        throw StateError('Core manga clear-index failed: $clear');
+      }
       await mangaLibrary.reload();
       final outcome = await sync.syncMangaIncremental();
       await mangaLibrary.reload();
@@ -784,7 +838,7 @@ class AppState extends ChangeNotifier {
             if (await f.exists()) await f.delete();
           } catch (_) {}
         }
-        await libraryDb.deleteManga(m.id);
+        await mangaLibrary.deleteManga(m.id);
         processed++;
         onProgress?.call(processed, list.length);
       }
@@ -796,7 +850,112 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    queue.removeListener(_onQueueChanged);
+    _libraryRefreshDebounce?.cancel();
     unawaited(shutdown());
     super.dispose();
+  }
+
+  /// On Android: if [LibraryDatabase.fileName] exists under Documents, run a
+  /// one-shot sqflite→Core library import.
+  ///
+  /// The import is idempotent — Core KV `sqflite_imported` / `sqflite_imported_v6`
+  /// guard it, so calling it every launch is cheap once the file is imported.
+  ///
+  /// Returns the absolute path to the db file when an import was attempted
+  /// (whether already_done or freshly imported), or null when the file is
+  /// absent / non-Android.
+  ///
+  /// Hard-fails with [StateError] when the file exists on Android but the
+  /// import returns an error or null — same tone as other SoT cuts (e.g.
+  /// [RustLibraryService.listAll], manga clear-index).
+  static Future<String?> _importLibraryFromSqfliteIfNeeded() async {
+    if (!Platform.isAndroid) return null;
+    final dir = await getApplicationDocumentsDirectory();
+    final path = p.join(dir.path, 'music_library.db');
+    if (!File(path).existsSync()) return null;
+
+    final result = RustCoreService.libraryImportFromSqflite(path);
+    if (result == null || result.startsWith('error:')) {
+      throw StateError(
+        'sqflite→Core library import failed ($result); '
+        'aborting startup to protect data',
+      );
+    }
+    final logLine = _formatImportSummary(result);
+    if (logLine != null) {
+      debugPrint(logLine);
+    } else {
+      debugPrint('[AppState] sqflite import result: $result');
+    }
+    return path;
+  }
+
+  /// Format a one-line debug log for the sqflite→Core import JSON summary.
+  /// Returns null when [result] is not a decodable JSON object.
+  static String? _formatImportSummary(String? result) {
+    if (result == null || result.startsWith('error:')) return null;
+    try {
+      final parsed = jsonDecode(result);
+      if (parsed is! Map) return null;
+      final parts = <String>[];
+      for (final key in const [
+        'already_done',
+        'tracks',
+        'playlists',
+        'entries',
+        'deleted_tracks',
+        'sync_state',
+      ]) {
+        if (parsed.containsKey(key)) parts.add('$key: ${parsed[key]}');
+      }
+      return '[AppState] sqflite import — ${parts.join(', ')}';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Best-effort retire of the legacy sqflite files once all migrates have
+  /// succeeded on this launch.
+  ///
+  /// Only runs when [dbPath] is non-null (file existed at startup and the
+  /// library import succeeded) and the `folders_changed_at` KV sentinel is
+  /// set (confirming the folders-kv migrate ran this launch).
+  /// [cache.init()] is guaranteed to have run before this is called.
+  ///
+  /// Renames the sqflite file to a `.migrated-bak` sidecar instead of deleting
+  /// it (invariant I7: cutover must keep a restorable backup of the old
+  /// authority, never an auto-delete). Errors are logged, never fatal.
+  static Future<void> _retireMusicLibraryDbIfMigrated(String? dbPath) async {
+    if (dbPath == null) return; // file was absent at startup — nothing to retire
+
+    // Verify the folders-kv sentinel (same check as _migrateKvFoldersMeta).
+    final foldersAt = RustCoreService.kvGet('folders_changed_at');
+    final foldersOk = foldersAt != null &&
+        foldersAt.isNotEmpty &&
+        foldersAt != 'null' &&
+        !foldersAt.startsWith('error:');
+    if (!foldersOk) {
+      debugPrint(
+        '[AppState] retire: folders_changed_at not set — skipping rename',
+      );
+      return;
+    }
+
+    // Rename music_library.db and its WAL/SHM companions to a
+    // `.migrated-bak` sidecar (best-effort). I7: keep the old authority
+    // restorable — never auto-delete migrated data.
+    for (final suffix in const ['', '-wal', '-shm']) {
+      final file = File('$dbPath$suffix');
+      try {
+        if (await file.exists()) {
+          final target = '${file.path}.migrated-bak';
+          await file.rename(target);
+          debugPrint('[AppState] retire: renamed ${file.path} → $target');
+        }
+      } catch (e) {
+        debugPrint('[AppState] retire: could not rename ${file.path}: $e');
+      }
+    }
   }
 }

@@ -11,10 +11,10 @@ import '../services/accounts_service.dart';
 import '../models/webdav_item.dart';
 import '../services/audio_player_service.dart';
 import '../services/cache_service.dart';
-import '../services/task_queue_service.dart';
+import '../models/queue_models.dart';
+import '../services/queue_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
-import '../services/stream_cover_reader.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
@@ -52,6 +52,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  /// Pull-to-refresh: reload the in-memory library from the Rust store.
+  ///
+  /// The queue refreshes the library on its own after an ingest; this is the
+  /// manual escape hatch for another device's changes or a missed event.
+  Future<void> _refreshLibrary() async {
+    final l10n = AppLocalizations.of(context)!;
+    try {
+      await context.read<LibraryService>().refresh();
+    } catch (e) {
+      debugPrint('library refresh failed: $e');
+      if (!mounted) return;
+      AppSnack.showGlobal(l10n.libraryRefreshFailed);
+    }
   }
 
   @override
@@ -140,37 +155,40 @@ class _LibraryScreenState extends State<LibraryScreen> {
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            library.count == 0
-                ? _LibraryEmpty()
-                : _AlbumTab(
-                    library: library,
-                    query: _query,
-                    viewMode: settings.musicViewModeFor('albums'),
-                  ),
-            library.count == 0
-                ? _LibraryEmpty()
-                : _ArtistTab(
-                    library: library,
-                    query: _query,
-                    viewMode: settings.musicViewModeFor('artists'),
-                  ),
-            library.count == 0
-                ? _LibraryEmpty()
-                : _TitleTab(
-                    library: library,
-                    query: _query,
-                    viewMode: settings.musicViewModeFor('titles'),
-                  ),
-            library.count == 0
-                ? _LibraryEmpty()
-                : _TagsTab(
-                    library: library,
-                    query: _query,
-                    viewMode: settings.musicViewModeFor('genres'),
-                  ),
-          ],
+        body: RefreshIndicator(
+          onRefresh: _refreshLibrary,
+          child: TabBarView(
+            children: [
+              library.count == 0
+                  ? _LibraryEmpty()
+                  : _AlbumTab(
+                      library: library,
+                      query: _query,
+                      viewMode: settings.musicViewModeFor('albums'),
+                    ),
+              library.count == 0
+                  ? _LibraryEmpty()
+                  : _ArtistTab(
+                      library: library,
+                      query: _query,
+                      viewMode: settings.musicViewModeFor('artists'),
+                    ),
+              library.count == 0
+                  ? _LibraryEmpty()
+                  : _TitleTab(
+                      library: library,
+                      query: _query,
+                      viewMode: settings.musicViewModeFor('titles'),
+                    ),
+              library.count == 0
+                  ? _LibraryEmpty()
+                  : _TagsTab(
+                      library: library,
+                      query: _query,
+                      viewMode: settings.musicViewModeFor('genres'),
+                    ),
+            ],
+          ),
         ),
       ),
     );
@@ -180,17 +198,21 @@ class _LibraryScreenState extends State<LibraryScreen> {
 class _LibraryEmpty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Text(
-          AppLocalizations.of(context)!.libraryEmptyGuide,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+    // A scrollable empty state keeps pull-to-refresh usable on a fresh install.
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            AppLocalizations.of(context)!.libraryEmptyGuide,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -515,6 +537,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
         Expanded(
           child: widget.viewMode.isGrid
               ? GridView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(12),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: widget.viewMode.crossAxisCount!,
@@ -576,6 +599,7 @@ class _SelectableGroupGridState extends State<_SelectableGroupGrid> {
                   },
                 )
               : ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                   itemCount: widget.keys.length,
                   itemBuilder: (context, i) {
                     final key = widget.keys[i];
@@ -1065,6 +1089,7 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
         Expanded(
           child: widget.viewMode.isGrid
               ? GridView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.all(8),
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: widget.viewMode.crossAxisCount!,
@@ -1089,6 +1114,7 @@ class _SelectableTrackListState extends State<_SelectableTrackList> {
                   },
                 )
               : ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   itemCount: widget.tracks.length,
                   itemBuilder: (context, i) {
@@ -1241,11 +1267,11 @@ class _TrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
-    final downloads = context.watch<TaskQueueService>();
+    final queue = context.watch<QueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
     // A library row can be re-queued after its cache was deleted, so surface the
     // queue state here too (network library already does).
-    final task = downloads.taskForRemote(
+    final task = queue.taskForRemote(
       track.sourceName,
       track.effectiveAudioRemotePath,
     );
@@ -1253,7 +1279,8 @@ class _TrackTile extends StatelessWidget {
     // so watching it here would rebuild the whole list several times a second.
     final audio = context.read<AudioPlayerService>();
     final state = libraryRowUiState(
-      downloads: downloads,
+      queue: queue,
+      cache: cache,
       track: track,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,
@@ -1412,7 +1439,7 @@ class _TrackTile extends StatelessWidget {
           genre: row.genre,
           bitrate: row.bitrate,
           sampleRate: row.sampleRate,
-          coverPath: row.coverPath,
+          coverPath: null,
           cueRemotePath: row.cueRemotePath,
           cueTrackIndex: row.cueTrackIndex,
           audioRemotePath: row.audioRemotePath,
@@ -1623,7 +1650,8 @@ class _TrackTile extends StatelessWidget {
           );
           return;
         }
-        await context.read<TaskQueueService>().enqueueRetagCloud(
+        await context.read<QueueService>().enqueue(
+          kind: QueueTaskKind.retagCloud,
           sourceName: track.sourceName,
           remotePath: track.remotePath,
           fileName: track.fileName,
@@ -1673,23 +1701,12 @@ class _TrackTile extends StatelessWidget {
       missing: false,
     );
     try {
-      final source = await context.read<WebDavService>().resolveStreamSource(
+      await library.ingestRemoteFile(
         accountId: accountId,
+        sourceName: next.sourceName,
         remotePath: next.remotePath,
-        name: next.fileName,
-        kind: StreamKind.music,
+        fileName: next.fileName,
       );
-      if (source != null && source.uri.isNotEmpty && context.mounted) {
-        final tags = await StreamCoverReader().extractTags(source);
-        if (tags != null && context.mounted) {
-          await library.ingestFromTags(
-            sourceName: next.sourceName,
-            remotePath: next.remotePath,
-            fileName: next.fileName,
-            tags: tags,
-          );
-        }
-      }
     } catch (_) {
       // Redirect succeeded even if tag re-read fails.
     }
@@ -1718,16 +1735,17 @@ class _TrackGridTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
-    final downloads = context.watch<TaskQueueService>();
+    final queue = context.watch<QueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
-    final task = downloads.taskForRemote(
+    final task = queue.taskForRemote(
       track.sourceName,
       track.effectiveAudioRemotePath,
     );
     // `read` (not `watch`): AudioPlayerService ticks on every position update.
     final audio = context.read<AudioPlayerService>();
     final state = libraryRowUiState(
-      downloads: downloads,
+      queue: queue,
+      cache: cache,
       track: track,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,

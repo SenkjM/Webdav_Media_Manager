@@ -1,6 +1,9 @@
-import 'dart:collection';
+import 'dart:convert';
+import 'dart:isolate';
 
-import '../services/stream_window.dart' show normDir;
+import '../models/file_type_config.dart';
+import '../models/webdav_item.dart';
+import '../services/rust_core_service.dart';
 
 /// Shared directory-walk limits for playlists and (later) library scrape.
 ///
@@ -34,8 +37,7 @@ class WalkOptions {
   static int clampMaxEntries(int value) =>
       value.clamp(minEntries, maxEntriesClamp).toInt();
 
-  int get effectiveMaxDepth =>
-      includeSubdirs ? clampDepth(maxDepth) : minDepth;
+  int get effectiveMaxDepth => includeSubdirs ? clampDepth(maxDepth) : minDepth;
 
   int get effectiveMaxEntries => clampMaxEntries(maxEntries);
 
@@ -50,80 +52,210 @@ class WalkOptions {
   );
 }
 
-class _PendingDir {
-  const _PendingDir(this.path, this.depth);
+/// One directory entry returned by `wdmm_account_walk` (Rust).
+class WalkEntry {
+  const WalkEntry({
+    required this.path,
+    required this.name,
+    required this.size,
+    required this.isDirectory,
+    this.modified,
+  });
+
   final String path;
-  final int depth;
+  final String name;
+  final int size;
+  final bool isDirectory;
+
+  /// Remote modification time, null when the driver does not report it.
+  final DateTime? modified;
+
+  /// Parent directory of [path] (`/` for a top-level entry).
+  String get directory {
+    final slash = path.lastIndexOf('/');
+    if (slash <= 0) return '/';
+    return path.substring(0, slash);
+  }
+
+  /// Map to the UI model, classifying files with [fileTypes].
+  WebDavItem toItem(FileTypeConfig fileTypes) => WebDavItem(
+    name: name,
+    path: path,
+    isDirectory: isDirectory,
+    size: size,
+    modified: modified,
+    category: isDirectory ? FileCategory.other : fileTypes.categoryFor(name),
+  );
+
+  factory WalkEntry.fromJson(Map<String, dynamic> json) => WalkEntry(
+    path: json['path'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    size: (json['size'] as num?)?.toInt() ?? 0,
+    isDirectory: json['is_dir'] == true,
+    modified: switch (json['mtime']) {
+      final int ms => DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true),
+      _ => null,
+    },
+  );
 }
 
-/// Pure BFS walk planner: visited-set cycle guard, depth cap, entry fuse.
+/// Recursive remote walk owned by Rust (`wdmm_account_walk`, contract
+/// `dart-cutover-slices.md` §Slice 3).
 ///
-/// Call [nextDirectory] → list that path remotely → [acceptChildren] with the
-/// child directory paths. Unit-tested without I/O.
+/// Callers await [DirectoryWalker.scan]; the Rust side lists the remote tree
+/// iteratively, applies the depth/entry fuse, de-duplicates paths and reports
+/// the entries. Dart no longer walks directories itself.
 class DirectoryWalker {
+  DirectoryWalker._({
+    required this.rootPath,
+    required this.options,
+    required this.entries,
+    required this.truncated,
+    required this.scanned,
+  }) {
+    for (final entry in entries) {
+      _byDirectory.putIfAbsent(entry.directory, () => []).add(entry);
+    }
+  }
+
+  /// Legacy synchronous planner, retired in favour of [scan].
+  ///
+  /// Flutter code that still calls `nextDirectory()`/`acceptChildren()` fails
+  /// loudly instead of silently walking on the Dart side.
   DirectoryWalker({
     required String rootPath,
-    this.options = const WalkOptions(),
-  }) : _root = normDir(rootPath) {
-    _enqueue(_root, 0);
+    WalkOptions options = const WalkOptions(),
+  }) : rootPath = rootPath,
+       options = options,
+       entries = const [],
+       truncated = false,
+       scanned = 0 {
+    throw UnsupportedError(_legacyHint);
   }
 
-  final WalkOptions options;
-  final String _root;
-  final Queue<_PendingDir> _pending = Queue<_PendingDir>();
-  final Set<String> _visited = {};
-  final Set<String> _queued = {};
-  final Map<String, int> _depthOf = {};
-  int _listed = 0;
+  static const String _legacyHint =
+      'DirectoryWalker() no longer walks on the Dart side; '
+      'use DirectoryWalker.scan() (Rust wdmm_account_walk).';
 
-  /// Normalized paths already handed to the caller for listing.
-  Set<String> get visited => Set.unmodifiable(_visited);
-
-  int get listedCount => _listed;
-
-  bool get isDone =>
-      _pending.isEmpty || _listed >= options.effectiveMaxEntries;
-
-  void _enqueue(String path, int depth) {
-    final n = normDir(path);
-    if (_visited.contains(n) || _queued.contains(n)) return;
-    if (depth > options.effectiveMaxDepth) return;
-    _pending.add(_PendingDir(n, depth));
-    _queued.add(n);
-    _depthOf[n] = depth;
-  }
-
-  /// Next directory to list, or `null` when finished / fuse tripped.
-  String? nextDirectory() {
-    while (_pending.isNotEmpty) {
-      if (_listed >= options.effectiveMaxEntries) {
-        _pending.clear();
-        return null;
-      }
-      final next = _pending.removeFirst();
-      _queued.remove(next.path);
-      if (!_visited.add(next.path)) continue;
-      _listed++;
-      _depthOf[next.path] = next.depth;
-      return next.path;
-    }
-    return null;
-  }
-
-  /// After listing [dirPath], enqueue child directories within depth / cycle rules.
+  /// Walk [rootPath] of [accountId] in Rust and decode the reply.
   ///
-  /// Returns how many new children were enqueued.
-  int acceptChildren(String dirPath, Iterable<String> childDirPaths) {
-    final parent = normDir(dirPath);
-    final parentDepth = _depthOf[parent] ?? 0;
-    if (parentDepth >= options.effectiveMaxDepth) return 0;
-
-    final before = _queued.length;
-    for (final raw in childDirPaths) {
-      final child = normDir(raw);
-      if (child.isEmpty) continue;
-      _enqueue(child, parentDepth + 1);
+  /// [extensions] overrides the classification tables with the user's
+  /// configured extension sets; [kinds] is one of `video`, `audio`, `image`,
+  /// `manga`, `any`. A depth/entry fuse trip keeps the partial result and sets
+  /// [truncated].
+  static Future<DirectoryWalker> scan({
+    required String accountId,
+    required String rootPath,
+    WalkOptions options = const WalkOptions(),
+    List<String>? extensions,
+    List<String> kinds = const ['any'],
+  }) async {
+    final kindsJson = jsonEncode({
+      'kinds': kinds,
+      'extensions': ?extensions,
+    });
+    // The Dart fuse counts the root as depth 0; Rust counts directory levels
+    // with the root at level 1.
+    final maxDepth = '${options.effectiveMaxDepth + 1}';
+    final maxEntries = '${options.effectiveMaxEntries}';
+    final raw = await Isolate.run(
+      () => RustCoreService.accountWalk(
+        accountId: accountId,
+        root: rootPath,
+        maxDepth: maxDepth,
+        maxEntries: maxEntries,
+        kindsJson: kindsJson,
+      ),
+    );
+    if (raw == null) {
+      throw StateError(
+        'DirectoryWalker.scan: native Rust core is unavailable '
+        '(wdmm_account_walk)',
+      );
     }
-    return _queued.length - before;
+    final Object? decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic>) {
+      throw StateError('DirectoryWalker.scan: unexpected reply: $raw');
+    }
+    final ok = decoded['ok'] == true;
+    final error = decoded['error'];
+    if (!ok && error != 'limit') {
+      throw StateError('DirectoryWalker.scan: ${error ?? 'unknown error'}');
+    }
+    final entries = <WalkEntry>[
+      for (final rawEntry in decoded['entries'] as List? ?? const [])
+        if (rawEntry is Map<String, dynamic>) WalkEntry.fromJson(rawEntry),
+    ];
+    return DirectoryWalker._(
+      rootPath: rootPath,
+      options: options,
+      entries: entries,
+      truncated: !ok || decoded['truncated'] == true,
+      scanned: (decoded['scanned'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  final String rootPath;
+  final WalkOptions options;
+  final List<WalkEntry> entries;
+
+  /// True when the Rust depth/entry fuse stopped the walk early.
+  final bool truncated;
+
+  /// Directories the Rust walk actually listed.
+  final int scanned;
+
+  final Map<String, List<WalkEntry>> _byDirectory = {};
+
+  /// Regular files, in walk (breadth-first) order.
+  List<WalkEntry> get files => [
+    for (final entry in entries)
+      if (!entry.isDirectory) entry,
+  ];
+
+  /// Directories, in walk (breadth-first) order.
+  List<WalkEntry> get directories => [
+    for (final entry in entries)
+      if (entry.isDirectory) entry,
+  ];
+
+  /// Every entry whose parent is [dir].
+  List<WalkEntry> entriesIn(String dir) =>
+      List.unmodifiable(_byDirectory[_normDir(dir)] ?? const <WalkEntry>[]);
+
+  /// Regular files whose parent is [dir].
+  List<WalkEntry> filesIn(String dir) => [
+    for (final entry in entriesIn(dir))
+      if (!entry.isDirectory) entry,
+  ];
+
+  /// Directory paths that produced at least one entry.
+  List<String> get directoryPaths => List.unmodifiable(_byDirectory.keys);
+
+  /// File names grouped by directory (subtitle/sidecar matching).
+  Map<String, List<String>> get namesByDirectory => {
+    for (final group in _byDirectory.entries)
+      group.key: [
+        for (final entry in group.value)
+          if (!entry.isDirectory) entry.name,
+      ],
+  };
+
+  String? nextDirectory() => throw UnsupportedError(_legacyHint);
+
+  int acceptChildren(String dirPath, Iterable<String> childDirPaths) =>
+      throw UnsupportedError(_legacyHint);
+
+  Set<String> get visited => throw UnsupportedError(_legacyHint);
+
+  int get listedCount => throw UnsupportedError(_legacyHint);
+
+  bool get isDone => throw UnsupportedError(_legacyHint);
+
+  static String _normDir(String path) {
+    if (path.length > 1 && path.endsWith('/')) {
+      return path.substring(0, path.length - 1);
+    }
+    return path.isEmpty ? '/' : path;
   }
 }

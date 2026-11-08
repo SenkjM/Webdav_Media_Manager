@@ -1,98 +1,62 @@
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/playlist.dart';
-import '../models/playlist_deletion.dart';
-import '../utils/cover_image.dart';
 import '../utils/track_identity.dart';
-import '../utils/wmp_container.dart';
-import 'cover_service.dart';
-import 'playlist_codec.dart';
-import 'playlist_cover_policy.dart';
-import 'playlist_deletion_codec.dart';
-import 'playlist_deletion_log.dart';
 import 'playlist_store.dart';
-import 'playlist_sync_plan.dart';
-import 'webdav_service.dart';
+import 'rust_core_service.dart';
 
-/// Local playlist CRUD + optional WebDAV `WDMMPL01` sync (last-write-wins).
+/// Local playlist CRUD, plus a "publish right after the edit" hop into Core.
 ///
-/// Each playlist is one self-contained `.wdmp` document — see docs/10 §4.2.
-/// There is no `.m3u8` write path any more: the plan is to write only the new
-/// format and never delete whatever legacy files a server already holds
-/// (docs/10 §4.5).
+/// The cloud side lives entirely in Rust: `wdmm_sync_run` reconciles playlists
+/// together with their deletion packs, and `wdmm_playlist_publish` writes the
+/// one document a user just changed. This service only owns the in-memory list
+/// and the local store, so the old second sync engine (planner, deletion log,
+/// cover policy, `.wdmp` encoders) has no reason to exist here.
 class PlaylistService extends ChangeNotifier {
-  PlaylistService({
-    PlaylistStore? store,
-    PlaylistDeletionLog? deletions,
-    required WebDavService webDav,
-    CoverService? covers,
-  }) : _store = store ?? PlaylistStore(),
-       _deletions = deletions,
-       _webDav = webDav,
-       coverPolicy = PlaylistCoverPolicy(covers: covers),
-       _coverService = covers;
+  PlaylistService({PlaylistStore? store}) : _store = store ?? PlaylistStore();
 
   final PlaylistStore _store;
-  PlaylistDeletionLog? _deletions;
-  final WebDavService _webDav;
-  final CoverService? _coverService;
   final _uuid = const Uuid();
-
-  /// Cover tier / edge-length for embedded playlist art.
-  final PlaylistCoverPolicy coverPolicy;
 
   final List<Playlist> _playlists = [];
   bool _loaded = false;
-  String _remotePath = '/Playlists/';
-  bool _syncEnabled = true;
 
-  /// Account that owns the playlist `.wdmp` mirror (set from Settings). The
-  /// music library never depends on it.
+  /// Root of the unified sync tree. Core appends its own `playlists/` segment,
+  /// so this is the same root the music/manga sync uses.
+  String _syncRoot = '/wdmm_sync';
+  bool _syncEnabled = true;
   String? _syncAccountId;
   String? _lastSyncError;
 
   UnmodifiableListView<Playlist> get playlists =>
       UnmodifiableListView(_playlists);
   bool get loaded => _loaded;
-  String get remotePath => _remotePath;
-  bool get syncEnabled => _syncEnabled;
-  String? get lastSyncError => _lastSyncError;
   PlaylistStore get store => _store;
 
-  PlaylistDeletionLog get _log =>
-      _deletions ??= SqlitePlaylistDeletionLog(() => _store.database);
-
-  /// Library-side thumb edge length, used when [coverPolicy] has no override.
-  int get _libraryCoverEdge => _coverService?.thumbSize ?? coverThumbSize;
+  /// Last failure of a post-edit publish. Full sync failures are reported by
+  /// `SyncService`'s own outcome.
+  String? get lastSyncError => _lastSyncError;
 
   Future<void> closeDatabase() => _store.close();
 
-  /// Whether a usable destination account is configured for playlist sync.
-  bool get canSync =>
-      _syncEnabled &&
-      _syncAccountId != null &&
-      _webDav.hasAccount(_syncAccountId!);
+  /// Whether a usable destination is configured for publishing edits.
+  bool get canSync => _syncEnabled && _syncAccountId != null;
 
+  /// Point the publisher at the unified 远端路径 + account.
   void configureSync({
-    required String remotePath,
+    required String syncRoot,
     required bool enabled,
     String? accountId,
   }) {
-    _remotePath = _normalizeDir(remotePath);
+    _syncRoot = syncRoot;
     _syncEnabled = enabled;
     _syncAccountId = accountId;
   }
 
-  /// Opens the local playlist database. The 0.2.2 sentinel migration uses this
-  /// before [init] loads names into memory.
-  Future<Database> openDatabase() => _store.database;
-
   Future<void> init() async {
-    await _store.database;
     _playlists
       ..clear()
       ..addAll(await _store.loadAll());
@@ -108,11 +72,10 @@ class PlaylistService extends ChangeNotifier {
   }
 
   Playlist? findById(String id) {
-    try {
-      return _playlists.firstWhere((p) => p.id == id);
-    } catch (_) {
-      return null;
+    for (final pl in _playlists) {
+      if (pl.id == id) return pl;
     }
+    return null;
   }
 
   Future<Playlist> create({
@@ -125,12 +88,11 @@ class PlaylistService extends ChangeNotifier {
       entries: entries,
       updatedAt: DateTime.now().toUtc(),
     );
-    pl.remoteFileName = PlaylistCodec.safeFileName(pl.name, pl.id);
     await _store.upsert(pl);
     _playlists.add(pl);
     _sortLocal();
     notifyListeners();
-    unawaitedSyncUpload(pl);
+    _publishRemote(pl.id);
     return pl;
   }
 
@@ -143,121 +105,91 @@ class PlaylistService extends ChangeNotifier {
   }
 
   Future<void> rename(String id, String name) async {
-    final idx = _playlists.indexWhere((p) => p.id == id);
-    if (idx < 0) return;
-    final pl = _playlists[idx];
+    final pl = findById(id);
+    if (pl == null) return;
     pl.name = name.trim().isEmpty ? pl.name : name.trim();
     pl.updatedAt = DateTime.now().toUtc();
-    pl.remoteFileName ??= PlaylistCodec.safeFileName(pl.name, pl.id);
     await _store.upsert(pl);
     _sortLocal();
     notifyListeners();
-    unawaitedSyncUpload(pl);
+    _publishRemote(pl.id);
   }
 
   Future<void> deletePlaylist(String id, {bool deleteRemote = true}) async {
-    final pl = findById(id);
     await _store.delete(id);
     _playlists.removeWhere((p) => p.id == id);
     notifyListeners();
-    if (!deleteRemote || pl == null) return;
-    final deletedAt = DateTime.now().toUtc();
-    await _log.upsert([PlaylistDeletion(playlistId: id, deletedAt: deletedAt)]);
-    _publish(() async {
-      await _uploadPack(id);
-      try {
-        await _webDav.deletePath(_syncAccountId!, _remoteFilePath(pl));
-      } catch (_) {}
-    });
+    if (!deleteRemote) return;
+    // Core's delete wrote the whole-playlist tombstone; publishing it removes
+    // the cloud document and leaves a pack peers can consume.
+    _publishRemote(id);
   }
 
   Future<void> addTrack(String playlistId, PlaylistEntry entry) async {
-    final idx = _playlists.indexWhere((p) => p.id == playlistId);
-    if (idx < 0) return;
-    final pl = _playlists[idx];
+    final pl = findById(playlistId);
+    if (pl == null) return;
     if (pl.entries.any((e) => e.identityKey == entry.identityKey)) return;
     pl.entries.add(entry);
     pl.updatedAt = DateTime.now().toUtc();
     await _store.upsert(pl);
     notifyListeners();
-    unawaitedSyncUpload(pl);
+    _publishRemote(pl.id);
   }
 
   Future<void> removeTrack(String playlistId, PlaylistEntry entry) async {
-    final idx = _playlists.indexWhere((p) => p.id == playlistId);
-    if (idx < 0) return;
-    final pl = _playlists[idx];
+    final pl = findById(playlistId);
+    if (pl == null) return;
     final before = pl.entries.length;
     pl.entries.removeWhere((e) => e.identityKey == entry.identityKey);
     if (pl.entries.length == before) return;
-    final now = DateTime.now().toUtc();
-    pl.updatedAt = now;
-    await _log.upsert([
-      PlaylistDeletion(
-        playlistId: playlistId,
-        entryIdentity: entry.identityKey,
-        deletedAt: now,
-      ),
-    ]);
+    pl.updatedAt = DateTime.now().toUtc();
+    // Store diffs the rows, so the removal becomes an entry tombstone that the
+    // publish below ships next to the trimmed document.
     await _store.upsert(pl);
     notifyListeners();
-    _publish(() async {
-      await _uploadPack(playlistId);
-      await uploadPlaylist(pl);
-    });
+    _publishRemote(pl.id);
   }
 
   /// Replace [oldEntry] with [newEntry] in place (same list index).
   ///
-  /// Used after remote-missing redirect: library row is retargeted, then the
-  /// playlist reference follows the new musicId / path. Records a deletion for
-  /// the old identity so sync peers drop the stale reference.
+  /// Used after a remote-missing redirect: the library row is retargeted, then
+  /// the playlist reference follows the new musicId / path. The store records
+  /// the old identity as a tombstone as part of the same upsert.
   Future<void> replaceTrack(
     String playlistId,
     PlaylistEntry oldEntry,
     PlaylistEntry newEntry,
   ) async {
-    final idx = _playlists.indexWhere((p) => p.id == playlistId);
-    if (idx < 0) return;
-    final pl = _playlists[idx];
-    final at = pl.entries.indexWhere((e) => e.identityKey == oldEntry.identityKey);
+    final pl = findById(playlistId);
+    if (pl == null) return;
+    final at =
+        pl.entries.indexWhere((e) => e.identityKey == oldEntry.identityKey);
     if (at < 0) return;
     if (oldEntry.identityKey == newEntry.identityKey) {
       pl.entries[at] = newEntry;
       pl.updatedAt = DateTime.now().toUtc();
       await _store.upsert(pl);
       notifyListeners();
-      unawaitedSyncUpload(pl);
+      _publishRemote(pl.id);
       return;
     }
-    // Avoid duplicate if new identity already exists elsewhere in the list.
-    final dup = pl.entries.indexWhere((e) => e.identityKey == newEntry.identityKey);
+    // Avoid a duplicate if the new identity already exists elsewhere.
+    final dup =
+        pl.entries.indexWhere((e) => e.identityKey == newEntry.identityKey);
     if (dup >= 0 && dup != at) {
       pl.entries.removeAt(at);
     } else {
       pl.entries[at] = newEntry;
     }
-    final now = DateTime.now().toUtc();
-    pl.updatedAt = now;
-    await _log.upsert([
-      PlaylistDeletion(
-        playlistId: playlistId,
-        entryIdentity: oldEntry.identityKey,
-        deletedAt: now,
-      ),
-    ]);
+    pl.updatedAt = DateTime.now().toUtc();
     await _store.upsert(pl);
     notifyListeners();
-    _publish(() async {
-      await _uploadPack(playlistId);
-      await uploadPlaylist(pl);
-    });
+    _publishRemote(pl.id);
   }
 
-  /// Mirror cloud-absence onto playlist entries (independent of music library).
+  /// Mirror cloud-absence onto playlist entries (independent of the library).
   ///
-  /// Matches by [identityKeys] (musicId). No-op when nothing changes. Persists
-  /// and notifies; sync upload is best-effort like other entry edits.
+  /// Matches by [identityKeys] (musicId). No-op when nothing changes.
   Future<void> setRemoteMissingForIdentities({
     required Iterable<String> identityKeys,
     required bool missing,
@@ -286,7 +218,7 @@ class PlaylistService extends ChangeNotifier {
     }
     notifyListeners();
     for (final pl in touched) {
-      unawaitedSyncUpload(pl);
+      _publishRemote(pl.id);
     }
   }
 
@@ -310,222 +242,45 @@ class PlaylistService extends ChangeNotifier {
     );
   }
 
-    /// Drop playlist entries whose identity is not in [validKeys]
-  /// (`accountId\0remotePath` via [PlaylistEntry.identityKey]).
+  /// Drop playlist entries whose identity is not in [validKeys].
   /// Keeps playlist shells; empties entries that all became orphans.
   Future<int> removeEntriesNotIn(Set<String> validKeys) async {
     var removed = 0;
     for (final pl in _playlists) {
-      final removedEntries = <PlaylistEntry>[];
-      pl.entries.removeWhere((e) {
-        if (validKeys.contains(e.identityKey)) return false;
-        removedEntries.add(e);
-        return true;
-      });
-      final n = removedEntries.length;
-      if (n > 0) {
-        removed += n;
-        final now = DateTime.now().toUtc();
-        pl.updatedAt = now;
-        await _log.upsert([
-          for (final entry in removedEntries)
-            PlaylistDeletion(
-              playlistId: pl.id,
-              entryIdentity: entry.identityKey,
-              deletedAt: now,
-            ),
-        ]);
-        await _store.upsert(pl);
-        _publish(() async {
-          await _uploadPack(pl.id);
-          await uploadPlaylist(pl);
-        });
-      }
+      final before = pl.entries.length;
+      pl.entries.removeWhere((e) => !validKeys.contains(e.identityKey));
+      final n = before - pl.entries.length;
+      if (n == 0) continue;
+      removed += n;
+      pl.updatedAt = DateTime.now().toUtc();
+      await _store.upsert(pl);
+      _publishRemote(pl.id);
     }
     if (removed > 0) notifyListeners();
     return removed;
   }
 
-  Future<void> clearAllLocal() async {
-    await _store.clearAll();
-    await _log.clear();
-    _playlists.clear();
-    notifyListeners();
-  }
-
-  /// Pull remote playlist documents and per-playlist deletion packs.
+  /// Ask Core to write [playlistId] (document + deletion pack) now.
   ///
-  /// Legacy `.m3u`/`.m3u8` files are **ignored, not read and not deleted**.
-  /// A malformed file is skipped. Unchanged local playlists are **not**
-  /// uploaded: re-uploading every document after a pull is how a delete on
-  /// another device comes back.
-  ///
-  /// Returns false when the pull itself failed (nothing was published).
-  Future<bool> pullAndMergeFromWebDav({bool publishPacks = true}) async {
-    if (!canSync) return false;
-    try {
-      await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
-      final items = await _webDav.listDirectory(_syncAccountId!, _remotePath);
-      final remotes = <Playlist>[];
-      final remotePacks = <String, List<PlaylistDeletion>>{};
-      final stalePackNames = <String>[];
-      final canonicalPackSeen = <String>{};
-      for (final item in items) {
-        if (item.isDirectory) continue;
-        if (!item.name.toLowerCase().endsWith(
-          '.${PlaylistCodec.fileExtension}',
-        )) {
-          continue;
-        }
-        try {
-          final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
-          final kind = WmpContainer.kindOf(bytes);
-          if (kind == WmpFileKind.playlistDeletion) {
-            final decoded = PlaylistDeletionCodec.decode(bytes);
-            remotePacks
-                .putIfAbsent(decoded.playlistId, () => [])
-                .addAll(decoded.records);
-            if (item.name ==
-                PlaylistDeletionCodec.fileNameFor(decoded.playlistId)) {
-              canonicalPackSeen.add(decoded.playlistId);
-            } else {
-              // Content is merged, but the canonical name is what the next
-              // pull looks up. A misnamed pack is rewritten, then removed.
-              stalePackNames.add(item.name);
-            }
-          } else if (kind == WmpFileKind.playlist) {
-            final decoded = PlaylistCodec.decode(bytes);
-            decoded.playlist.remoteFileName = item.name;
-            remotes.add(decoded.playlist);
-          }
-        } catch (e) {
-          // Format/CRC failure on one file: skip it, keep the rest.
-          _lastSyncError = e.toString();
-        }
-      }
-
-      final localDeletions = await _log.loadAll();
-      final plan = planPlaylistSync(
-        local: _playlists,
-        remote: remotes,
-        tombstones: [
-          ...localDeletions,
-          for (final rows in remotePacks.values) ...rows,
-        ],
-        remotePacks: remotePacks,
-      );
-      await _store.replaceAll(plan.playlists);
-      await _log.replaceAll(plan.tombstones);
-      _playlists
-        ..clear()
-        ..addAll(plan.playlists);
-      _sortLocal();
-      notifyListeners();
-
-      if (publishPacks) {
-        final packIds = {
-          ...plan.uploadPackIds,
-          for (final record in plan.tombstones)
-            if (!canonicalPackSeen.contains(record.playlistId))
-              record.playlistId,
-        };
-        for (final id in packIds) {
-          await _uploadPack(id);
-        }
-      }
-      for (final name in {...stalePackNames, ...plan.deleteRemoteNames}) {
-        try {
-          await _webDav.deletePath(_syncAccountId!, _filePath(name));
-        } catch (_) {}
-      }
-      for (final pl in plan.upload) {
-        await uploadPlaylist(pl);
-      }
-      _lastSyncError = null;
-      return true;
-    } catch (e) {
-      _lastSyncError = e.toString();
-      notifyListeners();
-      return false;
-    }
-  }
-
-  /// Materialise the current playlists, then drop every deletion pack.
-  ///
-  /// Manual only. There is no periodic prompt: after this, an offline device
-  /// that still has the old copy can upload it again, the same way a library
-  /// rebuild drops `del-*` once the snapshot is the truth.
-  Future<void> compactDeletionQueue() async {
-    if (!canSync) throw StateError('err.noWebdavAccount');
-    final ok = await pullAndMergeFromWebDav(publishPacks: false);
-    if (!ok) {
-      throw StateError(_lastSyncError ?? 'err.noWebdavAccount');
-    }
-    final items = await _webDav.listDirectory(_syncAccountId!, _remotePath);
-    for (final item in items) {
-      if (item.isDirectory) continue;
-      if (!item.name.toLowerCase().endsWith(
-        '.${PlaylistCodec.fileExtension}',
-      )) {
-        continue;
-      }
-      try {
-        final bytes = await _webDav.readAsBytes(_syncAccountId!, item.path);
-        if (WmpContainer.kindOf(bytes) != WmpFileKind.playlistDeletion) {
-          continue;
-        }
-        await _webDav.deletePath(_syncAccountId!, item.path);
-      } catch (e) {
-        _lastSyncError = e.toString();
-        notifyListeners();
-        throw StateError(_lastSyncError!);
-      }
-    }
-    await _log.clear();
-    _lastSyncError = null;
-  }
-
-  /// Encode one playlist as a `WDMMPL01` document (with its entries' covers)
-  /// and upload it.
-  ///
-  /// Cover bytes are read fresh from disk on every upload instead of being
-  /// cached: the library can re-ingest art at any time, and a stale embedded
-  /// copy is worse than no copy. Missing art is not an error — the entry is
-  /// written without a `coverIndex`.
-  Future<void> uploadPlaylist(Playlist pl) async {
+  /// Best effort: a failure is kept for the playlists screen to show, never
+  /// retried in a loop — the next full sync reconciles whatever is left.
+  void _publishRemote(String playlistId) {
     if (!canSync) return;
-    pl.remoteFileName ??= PlaylistCodec.safeFileName(pl.name, pl.id);
-    await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
-    final bytes = await encodePlaylistBytes(pl);
-    await _webDav.writeBytes(_syncAccountId!, _remoteFilePath(pl), bytes);
-    await _store.upsert(pl);
-  }
-
-  /// Encode [pl] to bytes without uploading — used by backup embedding (⑥) and
-  /// by tests.
-  Future<Uint8List> encodePlaylistBytes(
-    Playlist pl, {
-    bool withCovers = true,
-  }) async {
-    final covers = withCovers
-        ? await readCoversForPlaylist(
-            pl,
-            policy: coverPolicy,
-            fallbackEdgeSize: _libraryCoverEdge,
-          )
-        : null;
-    return PlaylistCodec.encode(pl, coverBlobs: covers);
-  }
-
-  void unawaitedSyncUpload(Playlist pl) {
-    _publish(() => uploadPlaylist(pl));
-  }
-
-  void _publish(Future<void> Function() body) {
-    if (!canSync) return;
+    final accountId = _syncAccountId!;
     Future(() async {
       try {
-        await body();
+        final reply = await RustCoreService.runOffMain<String?>(() {
+          return RustCoreService.playlistPublish(
+            accountId: accountId,
+            playlistId: playlistId,
+            remoteDir: _syncRoot,
+          );
+        });
+        if (reply == null || reply.startsWith('error:')) {
+          _lastSyncError = reply ?? 'err.rustUnavailable:playlist publish';
+          notifyListeners();
+          return;
+        }
         _lastSyncError = null;
       } catch (e) {
         _lastSyncError = e.toString();
@@ -534,48 +289,14 @@ class PlaylistService extends ChangeNotifier {
     });
   }
 
-  Future<void> _uploadPack(String playlistId) async {
-    if (!canSync) return;
-    final records = [
-      for (final record in await _log.loadAll())
-        if (record.playlistId == playlistId) record,
-    ];
-    if (records.isEmpty) return;
-    await _webDav.ensureDirectory(_syncAccountId!, _remotePath);
-    final bytes = PlaylistDeletionCodec.encode(playlistId, records);
-    await _webDav.writeBytes(
-      _syncAccountId!,
-      _filePath(PlaylistDeletionCodec.fileNameFor(playlistId)),
-      bytes,
-    );
-  }
-
-  String _remoteFilePath(Playlist pl) {
-    final file =
-        pl.remoteFileName ?? PlaylistCodec.safeFileName(pl.name, pl.id);
-    return _filePath(file);
-  }
-
-  String _filePath(String fileName) {
-    final base = _remotePath.endsWith('/') ? _remotePath : '$_remotePath/';
-    return '$base$fileName';
-  }
-
   void _sortLocal() {
     _playlists.sort(
       (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
     );
   }
 
-  static String _normalizeDir(String path) {
-    var p = path.trim();
-    if (p.isEmpty) p = '/Playlists/';
-    if (!p.startsWith('/')) p = '/$p';
-    if (!p.endsWith('/')) p = '$p/';
-    return p;
-  }
-
-  /// Playlists that reference [accountId] (any entry). Entries keep their sourceName labels.
+  /// Playlists that reference [accountId] (any entry). Entries keep their
+  /// sourceName labels.
   List<Map<String, dynamic>> exportJsonForAccount(String accountId) {
     return _playlists
         .where((p) => p.entries.any((e) => e.sourceName == accountId))
@@ -588,20 +309,14 @@ class PlaylistService extends ChangeNotifier {
   Future<void> mergeFromPlaylists(List<Playlist> incoming) async {
     for (final pl in incoming) {
       final local = findById(pl.id);
-      final winner = local == null
-          ? pl
-          : mergePlaylistsLastWriteWins(local, pl);
-      // Keep the file name we already know; the backup blob carries no name.
-      if (winner.remoteFileName == null && local != null) {
-        winner.remoteFileName = local.remoteFileName;
-      }
+      final winner =
+          local == null ? pl : mergePlaylistsLastWriteWins(local, pl);
       await _store.upsert(winner);
     }
     await refresh();
   }
 
-  /// Export all playlists as JSON — human-inspectable export channel only
-  /// (`buildJsonExport`). The sync and backup paths use `encodePlaylistBytes`.
+  /// Export all playlists as JSON — human-inspectable export channel only.
   List<Map<String, dynamic>> exportJson() =>
       _playlists.map((p) => p.toJson()).toList();
 

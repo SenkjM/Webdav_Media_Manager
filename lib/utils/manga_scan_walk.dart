@@ -38,24 +38,16 @@ Future<List<MangaComicHit>> listComicContainersRecursive({
     maxEntries: 2000,
   ),
 }) async {
-  final walker = DirectoryWalker(rootPath: rootPath, options: walk);
-  final hits = <MangaComicHit>[];
-  while (true) {
-    final dir = walker.nextDirectory();
-    if (dir == null) break;
-    final items = await webDav.listDirectory(accountId, dir);
-    final childDirs = <String>[];
-    for (final item in items) {
-      if (item.isDirectory) {
-        childDirs.add(item.path);
-        continue;
-      }
-      if (isComicContainerFileName(item.name, extensions: comicExtensions)) {
-        hits.add(MangaComicHit(path: item.path, name: item.name));
-      }
-    }
-    walker.acceptChildren(dir, childDirs);
-  }
+  final result = await DirectoryWalker.scan(
+    accountId: accountId,
+    rootPath: rootPath,
+    options: walk,
+    extensions: comicExtensions ?? kDefaultComicExtensions,
+  );
+  final hits = [
+    for (final entry in result.files)
+      MangaComicHit(path: entry.path, name: entry.name),
+  ];
   hits.sort((a, b) => a.path.toLowerCase().compareTo(b.path.toLowerCase()));
   return hits;
 }
@@ -72,31 +64,21 @@ Future<List<MangaImageDirHit>> listImageDirsRecursive({
     maxEntries: 2000,
   ),
 }) async {
-  final walker = DirectoryWalker(rootPath: rootPath, options: walk);
+  final result = await DirectoryWalker.scan(
+    accountId: accountId,
+    rootPath: rootPath,
+    options: walk,
+    extensions: imageExtensions,
+  );
   final byDir = <String, List<String>>{};
   final names = <String, String>{};
-  while (true) {
-    final dir = walker.nextDirectory();
-    if (dir == null) break;
-    final items = await webDav.listDirectory(accountId, dir);
-    final childDirs = <String>[];
-    final images = <String>[];
-    for (final item in items) {
-      if (item.isDirectory) {
-        childDirs.add(item.path);
-        continue;
-      }
-      if (isMangaImageFileName(item.name, imageExtensions: imageExtensions)) {
-        images.add(item.name);
-      }
-    }
-    if (images.isNotEmpty) {
-      images.sort((a, b) => mangaPageSortKey(a).compareTo(mangaPageSortKey(b)));
-      final norm = normalizeRemotePath(dir);
-      byDir[norm] = images;
-      names[norm] = _folderName(norm);
-    }
-    walker.acceptChildren(dir, childDirs);
+  for (final entry in result.files) {
+    final norm = normalizeRemotePath(entry.directory);
+    (byDir[norm] ??= []).add(entry.name);
+    names[norm] = _folderName(norm);
+  }
+  for (final images in byDir.values) {
+    images.sort((a, b) => mangaPageSortKey(a).compareTo(mangaPageSortKey(b)));
   }
   final keys = byDir.keys.toList()
     ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
@@ -124,34 +106,24 @@ Future<List<String>> listMergedImageRelPaths({
 }) async {
   final root = normalizeRemotePath(rootPath);
   final rootPrefix = root.endsWith('/') ? root : '$root/';
-  final walker = DirectoryWalker(rootPath: rootPath, options: walk);
+  final result = await DirectoryWalker.scan(
+    accountId: accountId,
+    rootPath: rootPath,
+    options: walk,
+    extensions: imageExtensions,
+  );
   final rels = <String>[];
-  while (true) {
-    final dir = walker.nextDirectory();
-    if (dir == null) break;
-    final items = await webDav.listDirectory(accountId, dir);
-    final childDirs = <String>[];
-    final normDirPath = normalizeRemotePath(dir);
-    for (final item in items) {
-      if (item.isDirectory) {
-        childDirs.add(item.path);
-        continue;
-      }
-      if (!isMangaImageFileName(item.name, imageExtensions: imageExtensions)) {
-        continue;
-      }
-      final full = normalizeRemotePath(item.path);
-      String rel;
-      if (normDirPath == root || full == root) {
-        rel = item.name;
-      } else if (full.startsWith(rootPrefix)) {
-        rel = full.substring(rootPrefix.length);
-      } else {
-        rel = item.name;
-      }
-      rels.add(rel);
+  for (final entry in result.files) {
+    final full = normalizeRemotePath(entry.path);
+    String rel;
+    if (normalizeRemotePath(entry.directory) == root || full == root) {
+      rel = entry.name;
+    } else if (full.startsWith(rootPrefix)) {
+      rel = full.substring(rootPrefix.length);
+    } else {
+      rel = entry.name;
     }
-    walker.acceptChildren(dir, childDirs);
+    rels.add(rel);
   }
   rels.sort((a, b) => mangaPageSortKey(a).compareTo(mangaPageSortKey(b)));
   return rels;

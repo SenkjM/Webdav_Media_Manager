@@ -142,17 +142,14 @@ class MangaReaderPrep {
       );
     }
 
-    // Stream via HTTP Range.
+    // Stream entry by entry through the Rust ZIP reader (`wdmm_zip_open` /
+    // `wdmm_zip_read_entry`): the EOCD walk, the central directory and the
+    // range fetches all happen in Rust, so nothing ZIP-shaped is parsed here.
     try {
-      final source = await webDav.resolveStreamSource(
+      final zip = CbzRangeZip(
         accountId: accountId,
         remotePath: manga.remotePath,
-        name: p.basename(manga.remotePath),
       );
-      if (source == null) {
-        throw MangaReaderPrepareException(MangaReaderPrepareError.failed);
-      }
-      final zip = CbzRangeZip(source: source);
       await zip.open();
       return await _prepareCbzWithZip(
         manga: manga,
@@ -202,7 +199,6 @@ class MangaReaderPrep {
               relPath: imageEntries[i].name.replaceAll('\\', '/'),
             ),
         ],
-        coverRelpath: imageEntries.first.name.replaceAll('\\', '/'),
       );
     }
 

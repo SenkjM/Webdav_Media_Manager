@@ -27,14 +27,20 @@ val splitPerAbi =
 // 写成下面这三个 ABI；AGP 把 defaultConfig 与 flavor 的 abiFilters 取并集，
 // 于是 sandbox 的 arm64-v8a 过滤不起作用（插件 AAR 的 v7a / x86_64 库照样进包）。
 // gradle.properties 里设了 disable-abi-filtering=true 关掉这份默认，
-// 改由各 flavor 自己写：prod / dev 保持 Flutter 原来的三个 ABI，sandbox 只留 arm64。
-// split-per-abi 时插件本来就不写 abiFilters，这里也一个都不写。
-val flutterDefaultAbis = listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+// 改由各 flavor 自己写：prod / dev 保持 Flutter 原来的 ABI 集合减去 armeabi-v7a
+// （wdmm-ffi 无 armv7 Rust 目标，FFmpeg 也排除 v7a — LP64-only struct offsets），
+// sandbox 只留 arm64。split-per-abi 时插件本来就不写 abiFilters，这里也一个都不写。
+val flutterDefaultAbis = listOf("arm64-v8a", "x86_64")
 
 android {
     namespace = "com.senkjm.media_manager"
     compileSdk = maxOf(flutter.compileSdkVersion, 35)
-    ndkVersion = flutter.ndkVersion
+    // Pin NDK r28.x for the in-process libav transcoder (B3.5).
+    // FFmpeg 7.1 shared libs are built by `.github/workflows/build-ffmpeg-android.yml`
+    // against this exact NDK; the Rust `wdmm-ffi` link step and the prebuilt
+    // `.so` files must use the same toolchain. r28 is also the first NDK to
+    // default to 16 KB page alignment, matching `--max-page-size=16384`.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -126,6 +132,23 @@ android {
                 }
             }
         }
+        // Test-only flavour: `flutter test -d <device>` (integration tests) builds
+        // with the *test* as the entrypoint and would replace the dev APK on the
+        // phone with an unlaunchable build. The suites install this copy instead,
+        // so the app the user runs is never overwritten. Same everything as dev,
+        // only the package id (and sticker) differ, so both can coexist.
+        create("autodev") {
+            dimension = "env"
+            signingConfig = releaseSigning
+            applicationIdSuffix = ".autodev"
+            versionNameSuffix = "-autodev"
+            manifestPlaceholders["appName"] = "Webdav Media Manager AutoDev"
+            if (!splitPerAbi) {
+                ndk {
+                    abiFilters += "arm64-v8a"
+                }
+            }
+        }
         create("sandbox") {
             dimension = "env"
             applicationIdSuffix = ".test"
@@ -150,6 +173,34 @@ android {
 
     // release 的签名由各 flavor 决定（见 productFlavors 上方注释），这里不设。
 }
+
+// --- cargo-ndk build hook for WDMM Rust core (Testbuild CI covers this; see .github/workflows/testbuild.yml) ---
+// When wired up, this block will invoke cargo-ndk to build wdmm-ffi
+// for all required ABIs and copy libwdmm_ffi.so into jniLibs/.
+// Example task:
+//
+// tasks.register<Exec>("buildRustCore") {
+//     // rust/wdmm-core is the git submodule (repo-root-relative).
+//     // rootProject points to the android/ dir, so go up one level.
+//     workingDir = rootProject.file("../rust/wdmm-core")
+//     commandLine("cargo", "ndk",
+//         "-t", "armeabi-v7a",
+//         "-t", "arm64-v8a",
+//         "-t", "x86_64",
+//         "-o", project.file("src/main/jniLibs").absolutePath,
+//         "build", "--release", "-p", "wdmm-ffi"
+//     )
+// }
+//
+// tasks.matching { it.name.startsWith("merge") && it.name.contains("JniLibFolders") }
+//     .configureEach { dependsOn("buildRustCore") }
+//
+// Requires:
+// - cargo-ndk installed: `cargo install cargo-ndk`
+// - NDK_HOME or ANDROID_NDK_ROOT set
+// - WDMM-core submodule initialised: `git submodule update --init rust/wdmm-core`
+//   (submodule path: rust/wdmm-core relative to repo root; see .gitmodules)
+// ---
 
 kotlin {
     compilerOptions {

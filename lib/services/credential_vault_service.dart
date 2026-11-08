@@ -1,88 +1,14 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/webdav_account.dart';
 import '../utils/l10n_host.dart';
-import '../utils/credential_vault_crypto.dart';
 import 'accounts_service.dart';
-import 'cloud_drive_service.dart';
-import 'cloud_drivers/driver_registry.dart';
-import 'credential_vault_codec.dart';
+import 'wdmm_vfs/driver_registry.dart';
+import 'rust_core_service.dart';
 import 'settings_service.dart';
 import 'webdav_service.dart';
-
-/// One account entry inside the credential vault.
-///
-/// v2: WebDAV 服务器条目（url+username+password 三件套）之外，新增云盘
-/// 驱动条目——凭证收在驱动配置 JSON（secure storage `cloud_driver_cfg_<id>`）
-/// 里，其中「配置界面默认为密码」的字段（spec.secretFieldKeys，即
-/// CloudDriverField.obscure）逐字段按 [CredentialVaultCrypto] 加密。
-class VaultEntry {
-  const VaultEntry({
-    required this.id,
-    required this.name,
-    required this.url,
-    required this.username,
-    required this.password,
-    required this.passwordEncrypted,
-    this.providerType = 'webdav',
-    this.remotePath = '/',
-    this.driverConfig,
-  });
-
-  final String id;
-  final String name;
-
-  /// Stored in **plain text** by design.
-  final String url;
-
-  /// Stored in **plain text** by design.
-  final String username;
-
-  /// Plaintext password, or the `AESGCMv1:` blob when [passwordEncrypted].
-  final String password;
-  final bool passwordEncrypted;
-
-  /// 账号类型：'webdav' 或云盘驱动 typeId（99 §7.2.10）。
-  final String providerType;
-
-  /// 云盘账号的远端路径（WebDAV 条目恒 '/'）。
-  final String remotePath;
-
-  /// 云盘驱动的配置 JSON；null = WebDAV 条目。密文字段带 `AESGCMv1:` 前缀。
-  final Map<String, dynamic>? driverConfig;
-
-  bool get isCloud => providerType != 'webdav';
-
-  bool get isActive => false;
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    if (isCloud) 'providerType': providerType,
-    'url': url,
-    'username': username,
-    'password': password,
-    'passwordEncrypted': passwordEncrypted,
-    'remote_path': remotePath,
-    if (driverConfig != null) 'driverConfig': driverConfig,
-  };
-
-  factory VaultEntry.fromJson(Map<String, dynamic> json) => VaultEntry(
-    id: json['id'] as String? ?? '',
-    name: json['name'] as String? ?? json['url'] as String? ?? '服务器',
-    providerType: json['providerType'] as String? ?? 'webdav',
-    url: json['url'] as String? ?? '',
-    username: json['username'] as String? ?? '',
-    password: json['password'] as String? ?? '',
-    passwordEncrypted:
-        json['passwordEncrypted'] as bool? ??
-        CredentialVaultCrypto.isEncrypted(json['password'] as String?),
-    remotePath: json['remote_path'] as String? ?? '/',
-    driverConfig: json['driverConfig'] is Map
-        ? Map<String, dynamic>.from(json['driverConfig'] as Map)
-        : null,
-  );
-}
 
 /// Result of applying a vault to the local account list.
 class VaultApplyResult {
@@ -121,10 +47,12 @@ class VaultApplyResult {
 /// Account credential vault stored **on the WebDAV cloud** (同步根目录).
 ///
 /// Layout under [SettingsService.syncRemoteRoot]:
-/// * `credentials.json` — all accounts: WebDAV mounts with **plaintext
-///   URL + username** and an encrypted (`AESGCMv1:`) or plaintext password,
-///   plus cloud-driver accounts whose driver config carries the credentials
-///   (cookie / refresh_token / client_secret / crypt password+salt …).
+/// * `credentials.wdmcv` — one `WDMMCV01` container: WebDAV mounts with
+///   **plaintext URL + username** and an encrypted (`AESGCMv1:`) or plaintext
+///   password, plus cloud-driver accounts whose driver config carries the
+///   credentials (cookie / refresh_token / client_secret / crypt
+///   password+salt …). Encoded and decoded by Rust — this service never
+///   implements the wire format itself.
 ///
 /// Only「配置界面默认为密码」的数据 is ever encrypted, which is what makes
 /// recovery possible without the passphrase: the rest still identifies the
@@ -186,8 +114,10 @@ class CredentialVaultService extends ChangeNotifier {
     // 账号凭证库：WebDAV 三件套 + 云盘驱动配置。云盘条目的密文字段
     // （spec.secretFieldKeys）逐字段加密，地址类字段保持明文可辨识。
     for (final a in _accounts.accounts) {
-      if (CloudDriveService.isCloudType(a.providerType)) {
-        final spec = cloudDriverSpec(a.providerType);
+      // 云盘条目走驱动配置通道（判 providerType 而非 isCloudType，防止
+      // webdav 账号因 isCloudType=true 进错分支——webdav 用密码通道）。
+      if (a.providerType != 'webdav') {
+        final spec = wdmmVfsSpec(a.providerType);
         final raw = await _accounts.loadDriverConfig(a.id) ?? const {};
         final stored = <String, dynamic>{};
         for (final e in raw.entries) {
@@ -197,11 +127,8 @@ class CredentialVaultService extends ChangeNotifier {
               value.isNotEmpty &&
               spec != null &&
               spec.secretFieldKeys.contains(e.key) &&
-              !CredentialVaultCrypto.isEncrypted(value)) {
-            stored[e.key] = await CredentialVaultCrypto.encrypt(
-              plaintext: value,
-              passphrase: passphrase,
-            );
+              !await _vaultIsEncrypted(value)) {
+            stored[e.key] = await _vaultEncrypt(value, passphrase);
           } else {
             stored[e.key] = value;
           }
@@ -225,10 +152,7 @@ class CredentialVaultService extends ChangeNotifier {
       var stored = pass;
       var encrypted = false;
       if (encrypt && pass.isNotEmpty) {
-        stored = await CredentialVaultCrypto.encrypt(
-          plaintext: pass,
-          passphrase: passphrase,
-        );
+        stored = await _vaultEncrypt(pass, passphrase);
         encrypted = true;
       }
       entries.add(
@@ -285,8 +209,23 @@ class CredentialVaultService extends ChangeNotifier {
     return _encodeRecords(records);
   }
 
-  Uint8List _encodeRecords(List<VaultRecord> records) =>
-      CredentialVaultCodec.encode(records, formatVersion: formatVersion);
+  Uint8List _encodeRecords(List<VaultRecord> records) {
+    final reply = _rustReply(
+      RustCoreService.vaultEncode(
+        jsonEncode({
+          'device_id': '',
+          'format_version': formatVersion,
+          'records': [for (final record in records) record.toJson()],
+        }),
+      ),
+      'vault encode',
+    );
+    final encoded = reply['bytes_base64'];
+    if (encoded is! String || encoded.isEmpty) {
+      throw const FormatException('vault encode returned no bytes');
+    }
+    return base64Decode(encoded);
+  }
 
   /// Upload the vault to [accountId] (the credentials destination the user
   /// configured for this feature).
@@ -330,7 +269,21 @@ class CredentialVaultService extends ChangeNotifier {
     _requireAccount(accountId);
     try {
       final bytes = await _webDav.readAsBytes(accountId, remotePath);
-      return CredentialVaultCodec.decode(bytes);
+      final reply = _rustReply(
+        RustCoreService.vaultDecode(bytes),
+        'vault decode',
+      );
+      final entries = <VaultRecord>[
+        for (final record in (reply['records'] as List? ?? const []))
+          if (record is Map)
+            VaultRecord.fromJson(Map<String, dynamic>.from(record)),
+      ];
+      return DecodedVault(
+        formatVersion: (reply['format_version'] as num?)?.toInt() ?? 1,
+        deviceId: reply['device_id'] as String? ?? '',
+        createdAt: reply['created_at'] as String? ?? '',
+        entries: entries,
+      );
     } catch (e) {
       final msg = e.toString().toLowerCase();
       final missing =
@@ -391,7 +344,7 @@ class CredentialVaultService extends ChangeNotifier {
     for (final entry in vault.entries) {
       // 云盘条目走驱动配置通道；本机没有注册该类型时静默跳过。
       if (entry.isCloud) {
-        final spec = cloudDriverSpec(entry.providerType);
+        final spec = wdmmVfsSpec(entry.providerType);
         if (spec == null) {
           skippedUnknown++;
           continue;
@@ -412,12 +365,8 @@ class CredentialVaultService extends ChangeNotifier {
 
       if (entry.url.trim().isEmpty) continue;
       final String resolved;
-      if (entry.passwordEncrypted &&
-          CredentialVaultCrypto.isEncrypted(entry.password)) {
-        final clear = await CredentialVaultCrypto.tryDecrypt(
-          encoded: entry.password,
-          passphrase: passphrase,
-        );
+      if (entry.passwordEncrypted && await _vaultIsEncrypted(entry.password)) {
+        final clear = await _vaultTryDecrypt(entry.password, passphrase);
         if (clear == null) {
           // No unified decryption key: restore the account, leave password blank.
           resolved = '';
@@ -498,11 +447,8 @@ class CredentialVaultService extends ChangeNotifier {
     var restoredSecrets = true;
     for (final e in raw.entries) {
       final value = e.value;
-      if (value is String && CredentialVaultCrypto.isEncrypted(value)) {
-        final clear = await CredentialVaultCrypto.tryDecrypt(
-          encoded: value,
-          passphrase: passphrase,
-        );
+      if (value is String && await _vaultIsEncrypted(value)) {
+        final clear = await _vaultTryDecrypt(value, passphrase);
         if (clear == null) {
           // 留用本地值（若有）；新账号则该字段留空待用户补填。
           final localValue = local[e.key];
@@ -557,4 +503,161 @@ class CredentialVaultService extends ChangeNotifier {
       throw StateError('err.vaultDestNotConfigured');
     }
   }
+}
+
+/// One account entry inside the credential vault document (`WDMMCV01`).
+///
+/// The document is encoded and decoded by Rust (`wdmm_vault_encode` /
+/// `wdmm_vault_decode`); this class is the Dart view of one record, not a
+/// second implementation of the wire format.
+class VaultRecord {
+  const VaultRecord({
+    required this.id,
+    required this.name,
+    required this.url,
+    required this.username,
+    required this.password,
+    required this.passwordEncrypted,
+    this.providerType = 'webdav',
+    this.remotePath = '/',
+    this.driverConfig,
+  });
+
+  final String id;
+  final String name;
+  final String providerType;
+
+  /// Stored in **plain text** by design (WebDAV mount address).
+  final String url;
+
+  /// Stored in **plain text** by design.
+  final String username;
+
+  /// Plaintext password, or the `AESGCMv1:` blob when [passwordEncrypted].
+  final String password;
+  final bool passwordEncrypted;
+
+  /// 云盘账号的远端路径（WebDAV 条目恒 '/'）。
+  final String remotePath;
+
+  /// 云盘驱动的配置；null = WebDAV 条目。密文字段带 `AESGCMv1:` 前缀。
+  final Map<String, dynamic>? driverConfig;
+
+  bool get isCloud => providerType != 'webdav';
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'provider_type': providerType,
+    'url': url,
+    'username': username,
+    'password': password,
+    'password_encrypted': passwordEncrypted,
+    'remote_path': remotePath,
+    'driver_config': driverConfig,
+  };
+
+  factory VaultRecord.fromJson(Map<String, dynamic> json) => VaultRecord(
+    id: json['id'] as String? ?? '',
+    name: json['name'] as String? ?? '',
+    providerType: json['provider_type'] as String? ?? 'webdav',
+    url: json['url'] as String? ?? '',
+    username: json['username'] as String? ?? '',
+    password: json['password'] as String? ?? '',
+    passwordEncrypted: json['password_encrypted'] as bool? ?? false,
+    remotePath: json['remote_path'] as String? ?? '/',
+    driverConfig: json['driver_config'] is Map
+        ? Map<String, dynamic>.from(json['driver_config'] as Map)
+        : null,
+  );
+}
+
+/// One decoded `WDMMCV01` vault document.
+class DecodedVault {
+  const DecodedVault({
+    required this.formatVersion,
+    required this.deviceId,
+    required this.createdAt,
+    required this.entries,
+  });
+
+  final int formatVersion;
+  final String deviceId;
+  final String createdAt;
+  final List<VaultRecord> entries;
+
+  int get entryCount => entries.length;
+}
+
+/// Parse the JSON reply of an `ext::json_reply` handler.
+///
+/// Handlers answer `{"ok":true,...}` on success and `error:<msg>` on failure.
+/// A null reply means the native library is not available at all.
+Map<String, dynamic> _rustReply(String? raw, String what) {
+  if (raw == null || raw.isEmpty) {
+    throw StateError('err.rustUnavailable:$what');
+  }
+  if (raw.startsWith('error:')) {
+    throw FormatException('$what failed: ${raw.substring('error:'.length)}');
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } on FormatException {
+    throw FormatException('$what returned invalid JSON');
+  }
+  if (decoded is! Map) {
+    throw FormatException('$what returned a non-object reply');
+  }
+  final map = Map<String, dynamic>.from(decoded);
+  if (map['ok'] != true) {
+    throw FormatException('$what failed: ${map['error'] ?? raw}');
+  }
+  return map;
+}
+
+/// Bridge to the Rust-owned `AESGCMv1:` field crypto.
+///
+/// The wire format and PBKDF2 work live in `wdmm_sync::vault_crypto`; the
+/// helpers below only translate the JSON replies back into Dart values.
+Future<bool> _vaultIsEncrypted(String value) async {
+  final reply = await RustCoreService.vaultCryptoIsEncrypted(value);
+  if (reply == null || reply.isEmpty) {
+    throw StateError('err.rustUnavailable:vault crypto');
+  }
+  final decoded = jsonDecode(reply);
+  if (decoded is! Map || decoded['ok'] != true) {
+    throw FormatException('vault crypto is_encrypted failed: $reply');
+  }
+  return decoded['encrypted'] == true;
+}
+
+Future<String?> _vaultTryDecrypt(String value, String passphrase) async {
+  final reply = await RustCoreService.vaultCryptoDecrypt(value, passphrase);
+  if (reply == null || reply.isEmpty) {
+    throw StateError('err.rustUnavailable:vault crypto');
+  }
+  final decoded = jsonDecode(reply);
+  if (decoded is! Map) {
+    throw FormatException('vault crypto decrypt failed: $reply');
+  }
+  if (decoded['ok'] == true) {
+    return decoded['plaintext'] as String?;
+  }
+  if (decoded['reason'] == 'damaged') {
+    throw FormatException(L10nHost.current.vaultCiphertextDamaged);
+  }
+  return null;
+}
+
+Future<String> _vaultEncrypt(String plaintext, String passphrase) async {
+  final reply = await RustCoreService.vaultCryptoEncrypt(plaintext, passphrase);
+  if (reply == null || reply.isEmpty) {
+    throw StateError('err.rustUnavailable:vault crypto');
+  }
+  final decoded = jsonDecode(reply);
+  if (decoded is! Map || decoded['ok'] != true) {
+    throw FormatException('vault crypto encrypt failed: $reply');
+  }
+  return decoded['value'] as String;
 }

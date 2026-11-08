@@ -1,21 +1,29 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
+import '../models/app_locale.dart';
 import '../models/webdav_item.dart';
-import '../models/webdav_stream.dart';
 import '../screens/video_player_screen.dart' show VideoQueueSeed;
-import 'cloud_drivers/stream_bridge.dart';
+import '../utils/subtitle_sidecar.dart';
+import 'dlna_cast_channel.dart';
 import 'dlna_queue_controller.dart';
-import 'webdav_service.dart';
+import 'rust_core_service.dart';
+import 'rust_dmr_prefs_service.dart';
+import 'settings_service.dart';
+import 'transcode_preset_catalog.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // 数据模型
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// DLNA 渲染器（DMR 设备，如电视、投影仪、音箱）。
+///
+/// DLNA 协议层已整体移入 Rust，Dart 只在设备列表与详情页展示这些字段。
 class DlnaRenderer {
   const DlnaRenderer({
     required this.usn,
@@ -24,25 +32,43 @@ class DlnaRenderer {
     required this.controlUrl,
     required this.connMgrControlUrl,
     required this.host,
+    this.modelName,
+    this.manufacturer,
+    this.modelNumber,
+    this.sinkProtocolInfo,
   });
 
   /// 设备唯一标识（SSDP USN 字段）。
   final String usn;
 
-  /// 用户可读名称（来自 description.xml 的 friendlyName 元素）。
+  /// 用户可读名称（Rust 端从 description.xml 的 friendlyName 解析）。
   final String friendlyName;
 
   /// 设备描述 XML 的完整 URL。
   final String location;
 
-  /// AVTransport 服务的 SOAP 控制 URL（绝对 URL）。
+  /// 历史字段：AVTransport SOAP 控制 URL。
+  ///
+  /// 控制层在 Rust，Dart 不再自行发 SOAP；通过 FFI 发现的设备该字段为空串。
   final String controlUrl;
 
-  /// ConnectionManager 服务的 SOAP 控制 URL（绝对 URL）。
+  /// 历史字段：ConnectionManager SOAP 控制 URL。理由同 [controlUrl]。
   final String connMgrControlUrl;
 
   /// 渲染器 IP 地址。
   final String host;
+
+  /// 设备型号名称（description.xml 的 modelName 元素）。
+  final String? modelName;
+
+  /// 制造商（description.xml 的 manufacturer 元素）。
+  final String? manufacturer;
+
+  /// 型号编号（description.xml 的 modelNumber 元素）。
+  final String? modelNumber;
+
+  /// 支持的协议信息（Rust 会话协商出的 SinkProtocolInfo）。
+  final List<String>? sinkProtocolInfo;
 
   @override
   bool operator ==(Object other) =>
@@ -50,39 +76,36 @@ class DlnaRenderer {
 
   @override
   int get hashCode => usn.hashCode;
-}
 
-/// 兼容模式转码选项，默认全部关闭。
-class DlnaTranscodeSettings {
-  const DlnaTranscodeSettings({
-    this.remuxContainer = false,
-    this.transcodeVideo = false,
-    this.transcodeAudio = false,
-  });
-
-  /// 容器重封装：MKV/AVI 等→MP4，不重新编码，CPU 开销极低。
-  final bool remuxContainer;
-
-  /// 视频流转码：任意→H.264。CPU 开销高。
-  final bool transcodeVideo;
-
-  /// 音频流转码：任意→AAC。CPU 开销中等。
-  final bool transcodeAudio;
-
-  bool get anyEnabled => remuxContainer || transcodeVideo || transcodeAudio;
-
-  DlnaTranscodeSettings copyWith({
-    bool? remuxContainer,
-    bool? transcodeVideo,
-    bool? transcodeAudio,
-  }) => DlnaTranscodeSettings(
-    remuxContainer: remuxContainer ?? this.remuxContainer,
-    transcodeVideo: transcodeVideo ?? this.transcodeVideo,
-    transcodeAudio: transcodeAudio ?? this.transcodeAudio,
+  DlnaRenderer copyWith({
+    String? usn,
+    String? friendlyName,
+    String? location,
+    String? controlUrl,
+    String? connMgrControlUrl,
+    String? host,
+    String? modelName,
+    String? manufacturer,
+    String? modelNumber,
+    List<String>? sinkProtocolInfo,
+  }) => DlnaRenderer(
+    usn: usn ?? this.usn,
+    friendlyName: friendlyName ?? this.friendlyName,
+    location: location ?? this.location,
+    controlUrl: controlUrl ?? this.controlUrl,
+    connMgrControlUrl: connMgrControlUrl ?? this.connMgrControlUrl,
+    host: host ?? this.host,
+    modelName: modelName ?? this.modelName,
+    manufacturer: manufacturer ?? this.manufacturer,
+    modelNumber: modelNumber ?? this.modelNumber,
+    sinkProtocolInfo: sinkProtocolInfo ?? this.sinkProtocolInfo,
   );
 }
 
-/// 文件兼容性提示（按扩展名快速判断，不运行 ffprobe）。
+/// 文件兼容性提示。
+///
+/// 判断已由 Rust 在会话启动/状态同步时给出（`compat.requires_transcode` /
+/// `compat.reason`），Dart 不再按扩展名猜测。
 class DlnaCompatibilityHint {
   const DlnaCompatibilityHint({
     this.likelyNeedsRemux = false,
@@ -98,28 +121,124 @@ class DlnaCompatibilityHint {
       likelyNeedsRemux || likelyNeedsVideoTranscode || likelyNeedsAudioTranscode;
 }
 
+/// Rust 回传的 `subtitle_status`（契约 task-11 §6）。
+///
+/// 字幕准备状态：源文件里有多少内置文本 / 位图字幕轨，以及被降级时给用户看
+/// 的提示。旧版 `.so` 不返回该字段，此时 getter 为 null，UI 不显示任何提示。
+class DlnaSubtitleStatus {
+  const DlnaSubtitleStatus({
+    this.textTracks = 0,
+    this.bitmapTracks = 0,
+    this.bitmapNote,
+    this.message,
+  });
+
+  /// 源文件中的内置**文本**字幕轨数量（direct 模式不探测，恒为 0）。
+  final int textTracks;
+
+  /// 源文件中的内置**位图**字幕轨数量（direct 模式不探测，恒为 0）。
+  final int bitmapTracks;
+
+  /// 位图字幕被丢弃的说明（HLS 投屏无法显示 PGS/DVD）；null = 无。
+  final String? bitmapNote;
+
+  /// 字幕准备降级说明（侧车扫描超时 / 提取失败等）；null = 无。
+  final String? message;
+
+  /// 是否有需要展示给用户的提示。
+  bool get hasNotice => message != null || bitmapNote != null;
+}
+
+/// [DlnaCastService.selectSubtitle] 的结果状态。
+enum DlnaSubtitleSelectStatus { applied, failed }
+
+/// [DlnaCastService.selectSubtitle] 的返回结果。
+class DlnaSubtitleSelectResult {
+  const DlnaSubtitleSelectResult._(this.status, {this.message, this.resumedAt});
+
+  /// 命令已生效（字幕已切换或关闭）。
+  const DlnaSubtitleSelectResult.applied({Duration? resumedAt})
+    : this._(DlnaSubtitleSelectStatus.applied, resumedAt: resumedAt);
+
+  /// 切换失败，[message] 是给用户看的原因。
+  const DlnaSubtitleSelectResult.failed(String message)
+    : this._(DlnaSubtitleSelectStatus.failed, message: message);
+
+  final DlnaSubtitleSelectStatus status;
+
+  /// 仅 [DlnaSubtitleSelectStatus.failed] 时非空：失败原因。
+  final String? message;
+
+  /// 重新加载播放后 Rust 跳回的原位置（`resumed_at_ms`）；拿不到时为 null。
+  final Duration? resumedAt;
+}
+
 enum DlnaCastState { idle, discovering, casting, error }
 enum DlnaPlaybackState { playing, paused, buffering, stopped }
+
+/// 内部异常，携带给用户看的消息。
+class _CastError implements Exception {
+  const _CastError(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // DlnaCastService
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// DLNA 投屏核心服务。
+/// DLNA 投屏服务（薄 FFI 门面）。
 ///
-/// 完全独立于本地播放器（media_kit / AudioPlayerService / VideoPlaybackService），
-/// 通过 WebDavService 统一访问媒体流，通过 LocalStreamBridge 建立局域网代理。
+/// 定位：**Rust 是执行层，Dart 只是显示层 + 用户级控制层。**
+///
+/// * SSDP / 设备描述 / SOAP / DIDL-Lite / ConnectionManager / 传输状态机 /
+///   字幕匹配 / 媒体字节代理全部在 Rust；
+/// * Dart 只做三件事：把用户操作翻译成会话命令 JSON、按 1 秒节拍拉取状态
+///   JSON 渲染 UI、维护用户可见的播放队列（[DlnaQueueController]）与
+///   Android 前台服务 / MulticastLock（[DlnaCastChannel]）。
+///
+/// FFI 绑定统一在 [RustCoreService]，不在此文件直接持有 `DynamicLibrary`。
 ///
 /// 生命周期：
 /// 1. 设备选择界面调用 [startDiscovery] → [stopDiscovery]
-/// 2. [startCast] 建立投屏会话
+/// 2. [startCast] 建立投屏会话（Rust `wdmm_dlna_session_start`）
 /// 3. [stop] 结束会话 → state 回到 idle
+/// Whether a **new** cast session should send the file untouched (direct).
+///
+/// The device preset is the only persistent truth: a device the user configured
+/// keeps its own switch. Devices without a preset follow the settings-page
+/// default -- the very value the compatibility sheet shows for them -- so the UI
+/// and the cast can no longer disagree (they used to: the sheet read the global
+/// default while the cast hard-coded `true`).
+bool resolveSessionDirect({
+  required bool? deviceForceDirect,
+  required bool defaultValue,
+  required bool mkvDirect,
+}) {
+  if (mkvDirect) return true;
+  return deviceForceDirect ?? defaultValue;
+}
+
 class DlnaCastService extends ChangeNotifier {
-  DlnaCastService({required WebDavService webDav}) : _webDav = webDav;
+  DlnaCastService({
+    required RustDmrPrefsService dmrPrefs,
+    required SettingsService settings,
+  }) : _dmrPrefs = dmrPrefs,
+       _settings = settings;
 
-  final WebDavService _webDav;
+  final RustDmrPrefsService _dmrPrefs;
+  final SettingsService _settings;
 
-  // --- 状态 ---
+  /// 状态轮询间隔。Rust 内部每个 tick 只做一次轻量状态同步。
+  static const Duration _statePollInterval = Duration(seconds: 1);
+
+  /// SSDP 发现窗口。需短于设备选择页的 4 秒超时，让结果先于超时提示到达。
+  static const int _discoveryWindowMs = 3000;
+
+  // --- 对外状态 ---
   DlnaCastState _state = DlnaCastState.idle;
   DlnaPlaybackState _playbackState = DlnaPlaybackState.stopped;
   DlnaRenderer? _renderer;
@@ -129,8 +248,15 @@ class DlnaCastService extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration? _duration;
   String? _error;
-  DlnaTranscodeSettings _transcodeSettings = const DlnaTranscodeSettings();
   DlnaCompatibilityHint? _compatHint;
+
+  // --- 字幕状态 ---
+  /// 当前视频的候选字幕（由 Rust 匹配同级目录后回传）。
+  List<SidecarHit> _subtitleCandidates = const [];
+  /// 当前选中的字幕（null = 无字幕）。
+  SidecarHit? _selectedSubtitle;
+  /// Rust 回传的字幕准备状态（契约 task-11 §6）；旧版 `.so` 为 null。
+  DlnaSubtitleStatus? _subtitleStatus;
 
   DlnaCastState get state => _state;
   DlnaPlaybackState get playbackState => _playbackState;
@@ -141,142 +267,297 @@ class DlnaCastService extends ChangeNotifier {
   Duration get position => _position;
   Duration? get duration => _duration;
   String? get error => _error;
-  DlnaTranscodeSettings get transcodeSettings => _transcodeSettings;
   DlnaCompatibilityHint? get compatibilityHint => _compatHint;
 
-  /// 系统 FFmpeg 是否可用（null = 尚未检测，false = 不可用，true = 可用）。
-  bool? _ffmpegAvailable;
-  bool get ffmpegAvailable => _ffmpegAvailable ?? false;
-
-  // --- 内部 ---
-  RawDatagramSocket? _ssdpSocket;
-  Timer? _discoveryTimeout;
-  LocalStreamBridge? _bridge;
-  String? _localIp;
-  Timer? _pollTimer;
-
-  /// 创建一个禁用连接复用的短生命周期 HttpClient。
+  /// Rust 协商出的协议信息（会话建立 / 状态 tick 时更新）。
   ///
-  /// UPnP/DLNA 渲染器（如 SmartShare）通常不支持 HTTP keep-alive，
-  /// 每次响应后即关闭 TCP 连接。若复用旧连接则 Dart 报
-  /// "Connection closed before full header was received"。
-  /// 每次 SOAP 调用独立创建 + 销毁 HttpClient 可彻底规避此问题。
-  HttpClient _newHttpClient() => HttpClient()
-    ..connectionTimeout = const Duration(seconds: 8)
-    ..maxConnectionsPerHost = 1;
+  /// 设备详情页优先展示它；为 null 表示当前没有活动会话。
+  String? get protocolInfo => _protocolInfo;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SSDP 发现
-  // ──────────────────────────────────────────────────────────────────────────
+  /// 会话类型：`hls`（转码）/ `direct`（直通）；未知时为空串。
+  ///
+  /// 直通会话没有转码作业（Rust 仍会报 `run_state:"idle"`），播放态遥测行
+  /// 因此按它隐藏，避免在直通投屏上显示「闲置」这种误导性状态。
+  String get provider => _provider;
 
-  /// 开始 SSDP M-SEARCH 发现，4 秒后自动停止。
+  /// 本次会话开始时就已确定的直通意图（设备级开关或 MKV 强制直通）。
+  ///
+  /// 直通会话不显示 HLS 预热面板（契约 preset-encoder-tiers §7.4），但 phase
+  /// 要等 Rust 首个 tick 才回来；UI 先用这个「开始投屏时已知」的标志判定，
+  /// 后端随后回报 [provider]` == 'direct'` 时同样跳过。
+  bool get expectDirect => _expectDirect;
+
+  /// 视频流命中层：`copy` / `hw` / `sw` / `none`；null = 旧版 `.so` 未上报。
+  String? get videoAction => _videoAction;
+
+  /// 音频流命中层：`copy` / `hw` / `sw` / `none`；null = 旧版 `.so` 未上报。
+  String? get audioAction => _audioAction;
+
+  /// 是否正在建立投屏会话（已点投送、Rust 尚未返回 `phase:"warming"`）。
+  ///
+  /// UI 用它立刻渲染预热面板的「正在准备缓存预热…」状态（契约 task-21 §1）。
+  bool get preparing => _preparing;
+
+  /// Rust 上报的媒体类型：`audio` 为纯音频投送；空串/未知按视频处理。
+  String get mediaKind => _mediaKind;
+
+  /// 纯音频投送（契约 task-21 §3）：字幕等视频专属控件应隐藏。
+  bool get isAudioOnly => _mediaKind == 'audio';
+
+  /// 转码阶段（契约 §3）：`warming` / `playing` / `ended` / `failed` / `idle`。
+  ///
+  /// 旧版 `.so` 不返回该字段时按 `playing` 处理，绝不把用户困在预热界面里。
+  String get phase => _phase;
+
+  /// 实测转码速度（内容时间 / 墙钟时间）；direct 模式或未知时为 0。
+  double get encodeSpeed => _encodeSpeed;
+
+  /// 已编码到的**绝对**媒体时间（毫秒）：定位后新作业从锚点起算，这里报的是
+  /// 缓冲前沿在整片里的位置，UI 显示「已编码 x.x 秒」。
+  int get encodeContentMs => _encodeContentMs;
+
+  /// 播放列表是否已就绪；只有就绪后 `{"cmd":"cast"}` 才合法。
+  bool get playlistReady => _playlistReady;
+
+  /// 已落盘的分段数量（播放列表就绪时显示）。
+  int get segments => _segments;
+
+  /// 转码速度估算：`null` 表示还在测速，`true/false` 表示能否实时。
+  bool? get estimatedRealtime => _estimatedRealtime;
+
+  /// `phase == "failed"` 时的失败原因（投屏会话级错误见 [error]）。
+  String? get errorText => _warmupError;
+
+  /// `remux` / `transcode`；旧版 `.so` 或直通模式为空串。
+  String get encodeMode => _encodeMode;
+
+  /// 实际使用的视频编码器名；remux / 直通 / 未知为 null。
+  String? get videoEncoder => _videoEncoder;
+
+  /// 实际使用的音频编码名，`copy` 表示直拷；未知为 null。
+  String? get audioEncoder => _audioEncoder;
+
+  /// Rust 上报的转码警告（橙色提示，契约 §7.4 最多 8 条）。
+  List<String> get encodeWarnings => List.unmodifiable(_encodeWarnings);
+
+  /// Rust 诊断环形缓冲（最旧在前），用于「诊断日志」折叠区。
+  List<String> get diagnostics => List.unmodifiable(_diagnostics);
+
+  // --- HLS 点播化遥测（契约 hls-vod-transcode-cache §4）---
+
+  /// 转码速度（内容时间 / 墙钟时间）；>= 1 表示能实时产出，0 = 无数据。
+  double get transcodeSpeed => _encodeSpeed;
+
+  /// 按需转码运行状态：`active` / `idle` / `error`；空串 = 旧版 `.so` 或直通。
+  String get runState => _runState;
+
+  /// 定位对齐方式的中文标签（精确网格 / 关键帧）；未知为空串。
+  ///
+  /// Rust 只会上报 `exact` / `keyframe`：整份计划在会话建立前就由
+  /// `source_plan` 固定，没有测量标定或近似网格这两档了。
+  String get alignmentLabel {
+    switch (_alignment) {
+      case 'exact':
+        return '精确网格';
+      case 'keyframe':
+        return '关键帧';
+      default:
+        return '';
+    }
+  }
+
+  /// 当前会话已用的转码缓存字节数。
+  int get cacheBytes => _cacheBytes;
+
+  /// 分段计划：总片段数 / 每段秒数（旧版 `.so` 为 0）。
+  int get segCount => _segCount;
+  double get segSecs => _segSecs;
+
+  /// 已落盘分片数 / 预转窗口分片数 / 缓存命中次数 / 是否超出预算。
+  int get readySegments => _readySegments;
+  int get lookaheadSegments => _lookaheadSegments;
+  int get cacheHits => _cacheHits;
+  bool get cacheOverBudget => _cacheOverBudget;
+
+  /// 当前作业的产出位置与计划网格的偏差（毫秒）。两侧都用绝对媒体时间，
+  /// 所以偏差有界于一个分片；定位后不会再出现分钟级的假值。
+  int get driftMs => _driftMs;
+
+  /// 当前视频的字幕候选列表（Rust 匹配结果）。
+  List<SidecarHit> get subtitleCandidates =>
+      List.unmodifiable(_subtitleCandidates);
+
+  /// 当前选中的字幕，null 表示无字幕。
+  SidecarHit? get selectedSubtitle => _selectedSubtitle;
+
+  /// 字幕准备状态 / 降级提示；null 表示旧版 `.so` 未提供或当前无会话。
+  DlnaSubtitleStatus? get subtitleStatus => _subtitleStatus;
+
+  // --- 内部：Rust 会话 ---
+  int? _handle;
+  Timer? _stateTimer;
+  bool _stateTickInFlight = false;
+  bool _stateUnavailableLogged = false;
+  /// 已处理过 `ended` 的条目路径，避免每秒 tick 重复触发自动下一集。
+  String? _endedForPath;
+  /// 本次会话是否真的播起来过（用来区分「播完/用户停」与「压根没播起来」）。
+  bool _everPlaying = false;
+  /// Rust 协商出的协议信息（只用于设备详情页展示）。
+  String? _protocolInfo;
+  /// 会话类型：`hls` / `direct`（来自 start / state 的 `provider`）。
+  String _provider = '';
+
+  /// 会话开始前就确定的直通意图（契约 preset-encoder-tiers §7.4）。
+  bool _expectDirect = false;
+
+  /// 会话创建时快照下来的直通意图与转码预设（契约 §7.4）。
+  ///
+  /// 一条会话一旦建立，切集就不能再改模式与预设：设备级开关或设置页的
+  /// 全局默认在会话中途被改动时，后续条目仍沿用这份快照，直到下一次
+  /// 新建会话（`_cleanupSession` 会把它们清空）。
+  bool? _sessionDirect;
+  String? _sessionPresetId;
+
+  /// 本次会话的流命中层（契约 §11）：`copy` / `hw` / `sw` / `none`。
+  String? _videoAction;
+  String? _audioAction;
+
+  /// 用户刚点「投送」、会话尚未建立完成的乐观状态（契约 task-21 §1）。
+  ///
+  /// 真正的阶段仍以 Rust 的 `phase` 为准；这个标志只是让预热面板立刻出现，
+  /// 不必对着一个裸转圈等 driver / 代理 / 时长探测 / 字幕扫描。
+  bool _preparing = false;
+
+  /// 会话代次：每次 `_cleanupSession()` 自增，用来丢弃「取消后才返回」的句柄。
+  int _castEpoch = 0;
+
+  /// Rust 上报的媒体类型：`video` / `audio`（契约 task-21 §3）。
+  ///
+  /// 旧版 `.so` 不返回该字段，保持空串 → 按视频处理。
+  String _mediaKind = '';
+
+  // --- 内部：HLS 预热 / 转码遥测（契约 dlna-warmup-ffi §4、§7.5）---
+  /// 转码阶段：`warming` / `playing` / `ended` / `failed` / `idle`。
+  ///
+  /// 旧版 `.so` 不返回 `phase` 字段，此时按 `playing` 降级（见 [_applyWarmupFields]）。
+  String _phase = 'idle';
+  /// 实测转码速度（已编码媒体时间 / 墙钟时间）。
+  double _encodeSpeed = 0;
+  /// 已写入 muxer 的媒体时间（毫秒），UI 用来显示「已编码 x.x 秒」。
+  int _encodeContentMs = 0;
+  /// 播放列表（index.m3u8）是否已生成。
+  bool _playlistReady = false;
+  /// 已落盘的分段数量。
+  int _segments = 0;
+  /// 转码速度估算：`null` = 采样不足（`encode_content_ms < 3000`）。
+  bool? _estimatedRealtime;
+  /// `phase == "failed"` 时的失败原因；与投屏会话级错误 [error] 分开。
+  String? _warmupError;
+  /// `remux` / `transcode`；未知（旧 `.so` / direct）为空串。
+  String _encodeMode = '';
+  /// 实际使用的视频编码器名（remux 时为 null）。
+  String? _videoEncoder;
+  /// 实际使用的音频编码名，`copy` 表示直拷。
+  String? _audioEncoder;
+  /// Rust 上报的转码警告（硬件回退等），最多 8 条。
+  List<String> _encodeWarnings = const [];
+  /// Rust 诊断环形缓冲（最旧在前，最多 40 行）。
+  List<String> _diagnostics = const [];
+  /// 「投送」命令进行中，避免连点重复下发。
+  bool _castInFlight = false;
+
+  // --- 内部：HLS 点播化遥测（契约 hls-vod-transcode-cache §4）---
+  /// 按需转码运行状态：`active`（正在转码）/ `idle`（已追平，等播放推进）/
+  /// `error`；旧版 `.so` 或直通会话为空串。
+  String _runState = '';
+  /// 分段计划：总片段数与每段秒数（旧版 `.so` 为 0）。
+  int _segCount = 0;
+  double _segSecs = 0;
+  /// 已落盘分片数 / 预转窗口分片数。
+  int _readySegments = 0;
+  int _lookaheadSegments = 0;
+  /// 定位对齐方式：`exact` / `keyframe`；旧版 `.so` 为空串。
+  String _alignment = '';
+  /// 产出位置与计划网格的偏差（毫秒），正负都可能。
+  int _driftMs = 0;
+  /// 本次会话的转码缓存命中次数 / 缓存字节数 / 是否超出预算。
+  int _cacheHits = 0;
+  int _cacheBytes = 0;
+  bool _cacheOverBudget = false;
+  /// 会话配置里的缓存父目录（`<平台 cache_dir>`），首次会话时解析一次。
+  String? _resolvedCacheDir;
+
+  // --- 内部：发现 / 生命周期 ---
+  int _discoveryEpoch = 0;
+  bool _disposed = false;
+
+  // ── 发现 ──────────────────────────────────────────────────────────────────
+
+  /// 通过 Rust 发起一次 SSDP 发现（阻塞窗口 [_discoveryWindowMs]）。
   Future<void> startDiscovery() async {
+    if (_disposed) return;
+    final epoch = ++_discoveryEpoch;
     _discovered.clear();
     _state = DlnaCastState.discovering;
-    notifyListeners();
+    _notify();
+    unawaited(DlnaCastChannel.start());
 
-    try {
-      _ssdpSocket = await RawDatagramSocket.bind(
-        InternetAddress.anyIPv4,
-        0,
-        reuseAddress: true,
-      );
-      _ssdpSocket!.multicastHops = 4;
-      _ssdpSocket!.listen(_onSsdpDatagram, onError: (_) {});
+    String? raw = await _runOnWorker<String?>(
+      () => RustCoreService.dlnaDiscoverExt(timeoutMs: _discoveryWindowMs),
+    );
+    // 旧版 .so 没有 extended 发现符号：退化为 legacy 设备列表
+    // （只有 usn/location/server，没有 friendly_name）。
+    raw ??= await _runOnWorker<String?>(
+      () => RustCoreService.dlnaDiscover(timeoutMs: _discoveryWindowMs),
+    );
+    if (_disposed || epoch != _discoveryEpoch) return;
 
-      // 发送 M-SEARCH 组播
-      const msearch = 'M-SEARCH * HTTP/1.1\r\n'
-          'HOST: 239.255.255.250:1900\r\n'
-          'MAN: "ssdp:discover"\r\n'
-          'MX: 3\r\n'
-          'ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n'
-          '\r\n';
-      final data = utf8.encode(msearch);
-      final multicast = InternetAddress('239.255.255.250');
-      _ssdpSocket!.send(data, multicast, 1900);
-      // 发第二次提高发现率
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      _ssdpSocket!.send(data, multicast, 1900);
-
-      _discoveryTimeout = Timer(const Duration(seconds: 4), stopDiscovery);
-    } catch (e) {
-      _state = DlnaCastState.idle;
-      notifyListeners();
+    final renderers = _parseDiscovered(raw);
+    if (renderers.isNotEmpty) {
+      _discovered
+        ..clear()
+        ..addAll(renderers);
     }
-  }
-
-  void stopDiscovery() {
-    _discoveryTimeout?.cancel();
-    _discoveryTimeout = null;
-    _ssdpSocket?.close();
-    _ssdpSocket = null;
     if (_state == DlnaCastState.discovering) {
       _state = DlnaCastState.idle;
-      notifyListeners();
     }
+    unawaited(DlnaCastChannel.stop());
+    _notify();
   }
 
-  void _onSsdpDatagram(RawSocketEvent event) {
-    if (event != RawSocketEvent.read) return;
-    final datagram = _ssdpSocket?.receive();
-    if (datagram == null) return;
-    final msg = utf8.decode(datagram.data, allowMalformed: true);
-    if (!msg.contains('200 OK') && !msg.contains('ssdp:alive')) return;
-
-    // 提取 LOCATION header
-    final locationMatch = RegExp(
-      r'LOCATION:\s*(\S+)',
-      caseSensitive: false,
-    ).firstMatch(msg);
-    final location = locationMatch?.group(1);
-    if (location == null || location.isEmpty) return;
-
-    // 异步拉取设备描述，不阻塞 SSDP 监听
-    unawaited(_fetchDescription(location));
-  }
-
-  Future<void> _fetchDescription(String location) async {
-    final client = _newHttpClient();
-    try {
-      final uri = Uri.parse(location);
-      final req = await client.getUrl(uri);
-      final resp = await req.close();
-      if (resp.statusCode != 200) return;
-      final body = await resp.transform(utf8.decoder).join();
-
-      final friendlyName = _xmlText(body, 'friendlyName') ?? uri.host;
-      final controlPath = _avTransportControlUrl(body, location);
-      if (controlPath == null) return; // 不是 MediaRenderer
-
-      final connMgrPath = _connMgrControlUrl(body, location) ?? '';
-      final usn = _xmlText(body, 'UDN') ?? location;
-      final renderer = DlnaRenderer(
-        usn: usn,
-        friendlyName: friendlyName,
-        location: location,
-        controlUrl: controlPath,
-        connMgrControlUrl: connMgrPath,
-        host: uri.host,
-      );
-
-      if (!_discovered.any((r) => r.usn == renderer.usn)) {
-        _discovered.add(renderer);
-        notifyListeners();
-      }
-    } catch (_) {
-      // 单台设备解析失败不影响其他设备
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // 投屏控制
-  // ──────────────────────────────────────────────────────────────────────────
-
-  /// 开始投屏到指定渲染器。
+  /// 结束发现（用户选择设备、关闭面板或重试时调用）。
   ///
-  /// [seed] 来自视频播放器（含队列信息）；[singleItem] 来自网络库单文件。
+  /// 不递增 [_discoveryEpoch]：仍在关闭窗口内的 Rust 发现结果照常回填，
+  /// 只把 UI 状态收回 idle。
+  void stopDiscovery() {
+    unawaited(DlnaCastChannel.stop());
+    if (_state == DlnaCastState.discovering) {
+      _state = DlnaCastState.idle;
+      _notify();
+    }
+  }
+
+  /// 发布当前会话协商出的 protocolInfo。
+  ///
+  /// 协议层在 Rust：Dart 不再发 GetProtocolInfo / 做 DIDL 协商，这里只是把
+  /// 会话状态里带回的 `protocol_info` 挂到设备列表上供详情页展示。
+  Future<void> fetchProtocolInfo(DlnaRenderer renderer) async {
+    final info = _protocolInfo;
+    if (info == null || info.isEmpty) return;
+    final index = _discovered.indexWhere((r) => r.usn == renderer.usn);
+    if (index < 0) return;
+    _discovered[index] = _discovered[index].copyWith(
+      sinkProtocolInfo: [info],
+    );
+    _notify();
+  }
+
+  // ── 投屏会话 ──────────────────────────────────────────────────────────────
+
+  /// 开始投屏到 [renderer]。
+  ///
+  /// 媒体字节与协议交互全部由 Rust 完成；Dart 只把渲染器标识、账号、远端
+  /// 路径与用户偏好（强制直连 / 转码预设）打包成会话配置。
   Future<void> startCast({
     required DlnaRenderer renderer,
     VideoQueueSeed? seed,
@@ -284,489 +565,1225 @@ class DlnaCastService extends ChangeNotifier {
     String? accountId,
   }) async {
     assert(seed != null || (singleItem != null && accountId != null));
-
-    // 清理旧会话
-    await _cleanupSession();
-
-    _renderer = renderer;
+    // 乐观 UI（契约 task-21 §1）：点下去立刻显示预热面板。会话建立要等
+    // driver / 代理 / 时长探测 / 字幕扫描，不能让用户对着裸转圈干等；
+    // 随后由 Rust 的 `phase:"warming"` 接管。
     _state = DlnaCastState.casting;
-    _playbackState = DlnaPlaybackState.buffering;
+    _renderer = renderer;
     _error = null;
-    notifyListeners();
+    _preparing = true;
+    _notify();
 
-    try {
-      // 检测系统 FFmpeg 可用性（仅首次）
-      _ffmpegAvailable ??= await _checkFfmpeg();
-      // 选择与 DMR 同子网的本机 IP，确保 DMR 可路由到代理地址
-      _localIp = await _getLocalIpFor(renderer.host);
-      debugPrint('[DLNA] localIp=$_localIp rendererHost=${renderer.host}');
-      _bridge = LocalStreamBridge(
-        bindAddress: InternetAddress.anyIPv4,
-        externalHost: _localIp,
-        idleTimeout: const Duration(hours: 4),
-      );
-
-      // 建立队列
-      final effAccountId = accountId ?? seed!.accountId;
-      final initial = singleItem ?? seed!.current;
-      final siblings = seed?.siblings ?? [];
-      _queue = DlnaQueueController(
-        webDav: _webDav,
-        accountId: effAccountId,
-        rootPath: seed?.folderPath ?? _parentPath(initial.path),
-        seed: siblings.isNotEmpty ? siblings : [initial],
-        initialRemotePath: initial.path,
-      );
-      _queue!.startScan();
-
-      // 检测兼容性（按扩展名）
-      _compatHint = _detectHint(initial.name);
-
-      // 开始投屏第一个文件
-      await _castItem(initial, effAccountId);
-    } catch (e, stack) {
-      debugPrint('[DLNA] startCast/castItem error: $e\n$stack');
-      _state = DlnaCastState.error;
-      _error = e.toString();
-      notifyListeners();
-    }
-  }
-
-  Future<void> _castItem(WebDavItem item, String accountId) async {
-    _currentItem = item;
-    _position = Duration.zero;
-    _duration = null;
-    _playbackState = DlnaPlaybackState.buffering;
-    notifyListeners();
-
-    // 解析流源（WebDAV Basic Auth 或云盘直链）
-    final source = await _webDav.resolveStreamSource(
-      remotePath: item.path,
-      name: item.name,
-      accountId: accountId,
-    );
-    if (source == null) throw Exception('无法解析流源: ${item.name}');
-
-    // 生成代理 URL
-    final proxyUri = await _bridge!.expose(
-      accountId: accountId,
-      remotePath: item.path,
-      size: item.size ?? 0,
-      name: item.name,
-      ranges: (path, start, end) => _proxyRange(source, start, end),
-    );
-
-    final proxyUrl = proxyUri.toString();
-    final mimeType = _mimeFor(item.name);
-
-    // 查询 DMR 支持的 SinkProtocolInfo，协商 protocolInfo
-    final sinkProtocols = await _getSinkProtocolInfo(
-      _renderer!.connMgrControlUrl,
-    );
-
-    // 检测 DMR 是否支持视频
-    final supportsVideo = sinkProtocols.any((p) {
-      final parts = p.split(':');
-      return parts.length >= 3 && parts[2].startsWith('video/');
-    });
-    if (!supportsVideo) {
-      throw Exception(
-        '${_renderer!.friendlyName} 不支持视频播放'
-        '（SinkProtocolInfo 无 video/* 条目）',
-      );
-    }
-
-    final protocolInfo = _negotiateProtocolInfo(mimeType, sinkProtocols);
-    debugPrint('[DLNA] castItem: proxyUrl=$proxyUrl mimeType=$mimeType protocolInfo=$protocolInfo');
-
-    // SetAVTransportURI
-    await _soap(
-      _renderer!.controlUrl,
-      'SetAVTransportURI',
-      '<InstanceID>0</InstanceID>'
-      '<CurrentURI>${_xmlEscape(proxyUrl)}</CurrentURI>'
-      '<CurrentURIMetaData>${_xmlEscape(_didlLite(item.name, proxyUrl, protocolInfo))}</CurrentURIMetaData>',
-    );
-
-    // Play
-    await _soap(
-      _renderer!.controlUrl,
-      'Play',
-      '<InstanceID>0</InstanceID><Speed>1</Speed>',
-    );
-
-    _playbackState = DlnaPlaybackState.playing;
-    notifyListeners();
-
-    // 启动状态轮询
-    _startPolling(accountId);
-  }
-
-  /// 代理 Range 请求：透明转发或转码。
-  Stream<List<int>> _proxyRange(
-    WebDavStreamSource source,
-    int start,
-    int end,
-  ) {
-    if (_transcodeSettings.anyEnabled && _ffmpegAvailable == true) {
-      // 转码模式：忽略 Range（流式输出不支持随机访问），返回 ffmpeg stdout
-      return _transcodeStream(source);
-    }
-    // 透明转发：通过 dart:io HttpClient 带认证转发
-    return _forwardRange(source, start, end);
-  }
-
-  Stream<List<int>> _forwardRange(
-    WebDavStreamSource source,
-    int start,
-    int end,
-  ) async* {
-    final client = HttpClient();
-    try {
-      final req = await client.getUrl(Uri.parse(source.uri));
-      source.headers.forEach((k, v) => req.headers.set(k, v));
-      req.headers.set('Range', 'bytes=$start-$end');
-      final resp = await req.close();
-      await for (final chunk in resp) {
-        yield chunk;
-      }
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  Stream<List<int>> _transcodeStream(WebDavStreamSource source) async* {
-    final settings = _transcodeSettings;
-    final args = <String>[
-      '-loglevel', 'error',
-    ];
-    // 注入认证 header 给 ffmpeg（必须在 -i 之前）
-    if (source.headers.isNotEmpty) {
-      // ffmpeg 用单个 -headers 接受 "\r\n" 分隔的多行 header
-      final headerBlock = source.headers.entries
-          .map((e) => '${e.key}: ${e.value}')
-          .join('\r\n');
-      args.addAll(['-headers', '$headerBlock\r\n']);
-    }
-    args.addAll(['-i', source.uri]);
-    // 视频编码
-    if (settings.transcodeVideo) {
-      args.addAll(['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23']);
-    } else {
-      args.addAll(['-c:v', 'copy']);
-    }
-    // 音频编码
-    if (settings.transcodeAudio) {
-      args.addAll(['-c:a', 'aac', '-b:a', '192k']);
-    } else {
-      args.addAll(['-c:a', 'copy']);
-    }
-    // 输出容器（MP4 流式）
-    args.addAll([
-      '-f', 'mp4',
-      '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-      'pipe:1',
-    ]);
-
-    final process = await Process.start('ffmpeg', args);
-    // stderr 静默丢弃（避免管道阻塞）
-    unawaited(process.stderr.drain<List<int>>());
-    await for (final chunk in process.stdout) {
-      yield chunk;
-    }
-  }
-
-  Future<void> stop() async {
-    if (_state == DlnaCastState.idle) return;
-    try {
-      await _soap(
-        _renderer!.controlUrl,
-        'Stop',
-        '<InstanceID>0</InstanceID>',
-      );
-    } catch (_) {}
     await _cleanupSession();
-    _state = DlnaCastState.idle;
-    notifyListeners();
-  }
+    if (_disposed) return;
 
-  Future<void> playPause() async {
-    if (_renderer == null) return;
+    // cleanup 会把预热状态清空，重新建立乐观状态。
+    _preparing = true;
+    _renderer = renderer;
+    _error = null;
+    final epoch = _castEpoch;
+
+    final effAccountId = accountId ?? seed!.accountId;
+    final initial = singleItem ?? seed!.current;
+    final siblings = seed?.siblings ?? const <WebDavItem>[];
+    final queue = DlnaQueueController(
+      accountId: effAccountId,
+      rootPath: seed?.folderPath ?? _parentPath(initial.path),
+      seed: siblings.isNotEmpty ? siblings : [initial],
+      initialRemotePath: initial.path,
+      // 音频投送也走同一个队列：只按当前条目的类别过滤同名扫描结果。
+      category: initial.category,
+    );
+    _queue = queue;
+    _state = DlnaCastState.casting;
+    _notify();
+    if (epoch != _castEpoch) {
+      queue.dispose();
+      return;
+    }
+    queue.startScan();
+
     try {
-      if (_playbackState == DlnaPlaybackState.playing) {
-        await _soap(
-          _renderer!.controlUrl,
-          'Pause',
-          '<InstanceID>0</InstanceID>',
-        );
-        _playbackState = DlnaPlaybackState.paused;
-      } else {
-        await _soap(
-          _renderer!.controlUrl,
-          'Play',
-          '<InstanceID>0</InstanceID><Speed>1</Speed>',
-        );
-        _playbackState = DlnaPlaybackState.playing;
-      }
-      notifyListeners();
+      await _beginItem(initial, effAccountId, first: true, epoch: epoch);
     } catch (e) {
-      _error = e.toString();
-      notifyListeners();
+      if (epoch != _castEpoch) return;
+      await _failWith(e);
     }
   }
 
-  Future<void> seekTo(Duration pos) async {
-    if (_renderer == null) return;
-    final hms = _formatHms(pos);
-    try {
-      await _soap(
-        _renderer!.controlUrl,
-        'Seek',
-        '<InstanceID>0</InstanceID><Unit>REL_TIME</Unit><Target>$hms</Target>',
+  /// 结束投屏并回到 idle。
+  ///
+  /// 预热（`phase == "warming"`）中调用时，Rust 侧 `{"cmd":"stop"}` 会取消转码
+  /// 任务并清理分段目录（契约 §3），不会操作渲染器。
+  Future<void> stop() async {
+    _stateTimer?.cancel();
+    _stateTimer = null;
+    final handle = _handle;
+    if (handle != null) {
+      final cmdJson = jsonEncode(<String, Object?>{'cmd': 'stop'});
+      await _runOnWorker(
+        () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
       );
-      _position = pos;
-      notifyListeners();
-    } catch (_) {}
+    }
+    // 已发过 stop，避免 _cleanupSession 在 warming 时重复发送。
+    _phase = 'idle';
+    await _cleanupSession();
+    if (_disposed) return;
+    _state = DlnaCastState.idle;
+    _notify();
   }
 
+  /// 进入「选择投屏设备」搜索前调用：销毁上一次投屏残留的会话与 UI 状态。
+  ///
+  /// 复用 [stop] 的既有收尾路径（`{"cmd":"stop"}` → `dlnaSessionClose` →
+  /// 代次自增），再把设备列表与本地状态收回 idle：搜索面板出现的那一刻就
+  /// 不应该还看到上一次投屏的小窗 / 底部投屏条 / 预热面板 / 进度条 / 队列。
+  Future<void> prepareForDeviceSearch() async {
+    if (_disposed) return;
+    await stop();
+    if (_disposed) return;
+    // 进行中的旧发现窗口不再需要，避免搜索面板闪回上一次的设备列表。
+    _discoveryEpoch++;
+    unawaited(DlnaCastChannel.stop());
+    _discovered.clear();
+    _state = DlnaCastState.idle;
+    _notify();
+  }
+
+  /// 预热完成后把 HLS 会话投送到渲染器（契约 §3 `{"cmd":"cast"}`）。
+  ///
+  /// 只有 Rust 报告 `phase == "warming"` 且 `playlist_ready == true` 时才合法；
+  /// 失败时把原因写进 [error] 供 UI 提示，不抛异常（用户可点「取消」重来）。
+  Future<void> castNow() async {
+    final handle = _handle;
+    if (handle == null || _phase != 'warming' || _castInFlight) return;
+    _castInFlight = true;
+    try {
+      final cmdJson = jsonEncode(<String, Object?>{'cmd': 'cast'});
+      final raw = await _runOnWorker(
+        () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
+      );
+      if (_disposed || _handle != handle) return;
+      if (!_isOk(raw)) {
+        debugPrint('[DLNA] cast rejected: $raw');
+        _error = _cmdError(raw);
+        _notify();
+        return;
+      }
+      _phase = 'playing';
+      _error = null;
+      _warmupError = null;
+      _playbackState = DlnaPlaybackState.playing;
+      _notify();
+    } finally {
+      _castInFlight = false;
+    }
+  }
+
+  /// 切换播放 / 暂停。
+  Future<void> playPause() async {
+    final handle = _handle;
+    if (handle == null) return;
+    final wantPlay = _playbackState != DlnaPlaybackState.playing;
+    final cmdJson = jsonEncode(<String, Object?>{
+      'cmd': wantPlay ? 'play' : 'pause',
+    });
+    final raw = await _runOnWorker(
+      () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
+    );
+    if (!_isOk(raw)) {
+      _error = _cmdError(raw);
+      _notify();
+      return;
+    }
+    _playbackState =
+        wantPlay ? DlnaPlaybackState.playing : DlnaPlaybackState.paused;
+    _notify();
+  }
+
+  /// 跳转到指定播放位置。
+  Future<void> seekTo(Duration position) async {
+    final handle = _handle;
+    if (handle == null) return;
+    final cmdJson = jsonEncode(<String, Object?>{
+      'cmd': 'seek',
+      'position_ms': position.inMilliseconds,
+    });
+    final raw = await _runOnWorker(
+      () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
+    );
+    if (!_isOk(raw)) {
+      final message = _cmdError(raw);
+      debugPrint('[DLNA] seek rejected: $raw');
+      // 会话已经不存在说明投屏整体已经结束（本机代理/渲染器这边都没了），
+      // 静默返回会让用户以为进度条坏了，所以明确报错并收尾。
+      if (_isSessionErrorText(_errorRawText(raw))) {
+        await _failWith(_CastError(message));
+        return;
+      }
+      // 其余情况是渲染器暂时拒收（例如还在预热/切段），保持旧实现的静默处理。
+      return;
+    }
+    _position = position;
+    _notify();
+  }
+
+  /// 播放队列下一集。
   Future<void> playNext() async {
     final q = _queue;
     if (q == null || !q.hasNext) return;
     final next = q.next!;
     q.selectRemotePath(next.path);
-    await _castItem(next, q.accountId);
+    await _castQueuedItem(next, q.accountId);
   }
 
+  /// 播放队列上一集。
   Future<void> playPrevious() async {
     final q = _queue;
     if (q == null || !q.hasPrevious) return;
-    final prev = q.previous!;
-    q.selectRemotePath(prev.path);
-    await _castItem(prev, q.accountId);
+    final previous = q.previous!;
+    q.selectRemotePath(previous.path);
+    await _castQueuedItem(previous, q.accountId);
   }
 
-  /// 跳转到队列中指定下标的文件。
+  /// 播放队列中第 [index] 个条目。
   Future<void> playTrack(int index) async {
     final q = _queue;
-    if (q == null || index < 0 || index >= q.length) return;
-    final item = q.tracks[index];
-    q.selectRemotePath(item.path);
-    await _castItem(item, q.accountId);
+    if (q == null) return;
+    final item = q.selectIndex(index);
+    if (item == null) return;
+    await _castQueuedItem(item, q.accountId);
   }
 
-  /// 更新本次会话的转码设置（立即生效，下次代理请求时使用新设置）。
-  Future<void> setTranscodeSettings(DlnaTranscodeSettings settings) async {
-    _transcodeSettings = settings;
-    notifyListeners();
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // 状态轮询
-  // ──────────────────────────────────────────────────────────────────────────
-
-  void _startPolling(String accountId) {
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
-      await _poll(accountId);
+  /// 选择字幕（null = 关闭字幕）。
+  ///
+  /// 字幕在投屏开始时已一次性全量投送，播放期间切换会让渲染器**重新加载播放并
+  /// 二次 seek 回原播放位置**（画面短暂中断），实测稳定，因此直接执行、不再二次
+  /// 确认。
+  ///
+  /// 位图字幕（PGS/DVD）Rust 会明确拒绝
+  /// （`{"ok":false,"error":…,"support":"bitmap-unsupported"}`，契约 §5），
+  /// 这里翻译成中文提示；即使 UI 已禁用该行也要有兜底。
+  Future<DlnaSubtitleSelectResult> selectSubtitle(SidecarHit? hit) async {
+    final sessionHandle = _handle;
+    if (sessionHandle == null || _currentItem == null) {
+      return const DlnaSubtitleSelectResult.failed('投屏会话已结束');
+    }
+    // path 必须原样回传：内置字幕是 `<remote_path>#embedded:<index>`，
+    // 不要重新推导或做 URL 编码（契约 §4）。
+    final cmdJson = jsonEncode(<String, Object?>{
+      'cmd': 'subtitle',
+      'path': hit?.path,
     });
-  }
-
-  Future<void> _poll(String accountId) async {
-    if (_renderer == null || _state != DlnaCastState.casting) return;
-    try {
-      // GetPositionInfo
-      final posResp = await _soap(
-        _renderer!.controlUrl,
-        'GetPositionInfo',
-        '<InstanceID>0</InstanceID>',
-      );
-      if (posResp != null) {
-        final relTime = _xmlText(posResp, 'RelTime');
-        final trackDuration = _xmlText(posResp, 'TrackDuration');
-        if (relTime != null) _position = _parseDuration(relTime);
-        if (trackDuration != null && trackDuration != 'NOT_IMPLEMENTED') {
-          _duration = _parseDuration(trackDuration);
-        }
-      }
-
-      // GetTransportInfo（每 5 秒一次）
-      if (DateTime.now().second % 5 == 0) {
-        final transResp = await _soap(
-          _renderer!.controlUrl,
-          'GetTransportInfo',
-          '<InstanceID>0</InstanceID>',
-        );
-        if (transResp != null) {
-          final transportState = _xmlText(transResp, 'CurrentTransportState');
-          if (transportState == 'STOPPED' &&
-              _playbackState == DlnaPlaybackState.playing) {
-            // DMR 自然播放结束，触发下一首
-            _playbackState = DlnaPlaybackState.stopped;
-            notifyListeners();
-            if (_queue?.hasNext == true) {
-              await playNext();
-            }
-            return;
-          } else if (transportState == 'PLAYING') {
-            if (_playbackState != DlnaPlaybackState.playing) {
-              _playbackState = DlnaPlaybackState.playing;
-            }
-          } else if (transportState == 'PAUSED_PLAYBACK') {
-            if (_playbackState != DlnaPlaybackState.paused) {
-              _playbackState = DlnaPlaybackState.paused;
-            }
-          }
-        }
-      }
-      notifyListeners();
-    } catch (_) {
-      // 轮询失败不崩溃，等下次重试
+    final raw = await _runOnWorker(
+      () => RustCoreService.dlnaSessionCmd(sessionHandle, cmdJson),
+    );
+    if (!_isOk(raw)) {
+      final message = _subtitleErrorText(raw);
+      debugPrint('[DLNA] subtitle select failed: $raw');
+      _error = message;
+      _notify();
+      return DlnaSubtitleSelectResult.failed(message);
     }
+    _selectedSubtitle = hit;
+    _error = null;
+    _notify();
+    final resumedMs = _asInt(_decodeJson(raw)?['resumed_at_ms']);
+    return DlnaSubtitleSelectResult.applied(
+      resumedAt: resumedMs != null && resumedMs > 0
+          ? Duration(milliseconds: resumedMs)
+          : null,
+    );
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // SOAP
-  // ──────────────────────────────────────────────────────────────────────────
+  @override
+  Future<void> dispose() async {
+    _disposed = true;
+    _discoveryEpoch++;
+    unawaited(DlnaCastChannel.stop());
+    await _cleanupSession();
+    _discovered.clear();
+    super.dispose();
+  }
 
-  Future<String?> _soap(
-    String controlUrl,
-    String action,
-    String bodyContent,
-  ) async {
-    final envelope =
-        '<?xml version="1.0"?>'
-        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
-        's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
-        '<s:Body>'
-        '<u:$action xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">'
-        '$bodyContent'
-        '</u:$action>'
-        '</s:Body>'
-        '</s:Envelope>';
+  // ── 内部：会话推进 ────────────────────────────────────────────────────────
 
-    debugPrint('[DLNA] SOAP → $action @ $controlUrl');
-
-    final uri = Uri.parse(controlUrl);
-    final client = _newHttpClient();
+  /// 把队列中的条目切到当前投屏。
+  ///
+  /// 直通（`direct`）与 HLS 是两种会话类型，不能在同一条 Rust 会话里互转：
+  /// 下一条期望模式与当前会话不同时先收掉旧会话、再按 `first: true` 重开
+  /// （例如 HLS 队列里切到 `.mkv` 且 MKV 直通开关打开）。模式相同则沿用
+  /// 既有 `select` 命令切集，避免白白重建会话。
+  Future<void> _castQueuedItem(WebDavItem item, String accountId) async {
+    final renderer = _renderer;
+    if (renderer == null) return;
+    final prefs = _dmrPrefs[renderer.usn];
+    // 与 `_beginItem` 保持同一套判定：设备级直通开关 > 设置页全局默认 >
+    // MKV 全局直通。
+    final targetDirect = resolveSessionDirect(
+      deviceForceDirect: prefs?.forceDirect,
+      defaultValue: _settings.dlnaDefaultDirect,
+      mkvDirect: _settings.dlnaMkvPassthrough && _isMatroska(item.name),
+    );
+    final sessionDirect = _expectDirect || _provider == 'direct';
     try {
-      final req = await client.postUrl(uri);
-      req.headers.set('Content-Type', 'text/xml; charset="utf-8"');
-      req.headers.set(
-        'SOAPACTION',
-        '"urn:schemas-upnp-org:service:AVTransport:1#$action"',
-      );
-      final encoded = utf8.encode(envelope);
-      req.headers.contentLength = encoded.length;
-      req.add(encoded);
-      final resp = await req.close();
-      final body = await resp.transform(utf8.decoder).join();
-      if (resp.statusCode >= 300) {
-        // 完整日志：状态码 + 响应 body（含 UPnP 错误码）+ 发送的 envelope
-        debugPrint(
-          '[DLNA] SOAP $action FAILED\n'
-          '  controlUrl: $controlUrl\n'
-          '  status: ${resp.statusCode}\n'
-          '  response: $body\n'
-          '  envelope: $envelope',
+      if (targetDirect != sessionDirect) {
+        await _restartSessionForMode(
+          item,
+          accountId,
+          targetDirect: targetDirect,
         );
-        throw Exception(
-          'SOAP $action 失败 (HTTP ${resp.statusCode})\n'
-          'controlUrl: $controlUrl\n'
-          'response: $body',
-        );
+        return;
       }
-      debugPrint('[DLNA] SOAP ← $action OK (${resp.statusCode})');
-      return body;
-    } on SocketException catch (e) {
-      debugPrint('[DLNA] SOAP $action 网络错误: $e\n  controlUrl: $controlUrl');
-      rethrow;
+      await _beginItem(item, accountId, first: false);
     } catch (e) {
-      debugPrint('[DLNA] SOAP $action 异常: $e\n  controlUrl: $controlUrl');
-      rethrow;
-    } finally {
-      client.close(force: true);
+      await _failWith(e);
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // 工具方法
-  // ──────────────────────────────────────────────────────────────────────────
+  /// 切集时按新的投送模式（直通 / HLS）重建会话。
+  ///
+  /// 旧会话收尾时保留队列与渲染器（`keepQueue: true`），并在过渡期保持
+  /// `_preparing`，避免投屏条/小窗在 stop 与 restart 之间闪成 idle。
+  ///
+  /// 部分 DMR 收到 `Stop` 后几百毫秒内会拒绝新的 `SetAVTransportURI`：
+  /// 首次启动失败时清理半成品会话、等一小段再重试一次，两次都失败才把异常
+  /// 抛回 [stop]-[close]-[start] 的正常失败路径。
+  Future<void> _restartSessionForMode(
+    WebDavItem item,
+    String accountId, {
+    required bool targetDirect,
+  }) async {
+    if (_renderer == null) return;
+    final fromDirect = _expectDirect || _provider == 'direct';
+    debugPrint(
+      '[cast] mode switch ${fromDirect ? 'direct' : 'hls'}→'
+      '${targetDirect ? 'direct' : 'hls'} restart for ${item.name}',
+    );
+    // 过渡态：先亮「正在准备」再收尾，UI 不会掉回 idle。
+    _preparing = true;
+    _notify();
+    await _cleanupSession(reason: 'mode-switch', keepQueue: true);
+    // 过渡期用户可能按了停止 / 取消：`stop()` 会清空队列并回到 idle。
+    if (_disposed || _state != DlnaCastState.casting || _renderer == null) {
+      return;
+    }
+    _preparing = true;
+    final epoch = _castEpoch;
+    try {
+      await _beginItem(item, accountId, first: true, epoch: epoch);
+    } catch (e) {
+      debugPrint('[cast] mode switch restart failed, retrying in 600ms: $e');
+      // 先收掉可能已半建立的会话，再退避重试一次。
+      await _cleanupSession(reason: 'mode-switch-retry', keepQueue: true);
+      if (_disposed || _state != DlnaCastState.casting || _renderer == null) {
+        return;
+      }
+      _preparing = true;
+      _notify();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (_disposed || _state != DlnaCastState.casting || _renderer == null) {
+        return;
+      }
+      _preparing = true;
+      _notify();
+      await _beginItem(item, accountId, first: true, epoch: _castEpoch);
+    }
+  }
 
-  Future<void> _cleanupSession() async {
-    _pollTimer?.cancel();
-    _pollTimer = null;
-    _queue?.dispose();
-    _queue = null;
-    await _bridge?.dispose();
-    _bridge = null;
-    _renderer = null;
+  /// 解析转码路径下真正发给 Rust 的预设 id。
+  ///
+  /// 设备级覆盖优先于全局默认；直通（`passthrough`）、v13 已删除的旧内置 id
+  /// 与空值一律忽略，保证「直通」永远不会作为转码预设穿过 FFI，也不会把不存在
+  /// 的 preset id 发给 Rust。
+  String _effectivePresetId(String? devicePresetId) {
+    final override = devicePresetId?.trim();
+    if (override != null &&
+        override.isNotEmpty &&
+        !TranscodePresetCatalog.removedBuiltinIds.contains(override)) {
+      return override;
+    }
+    final global = _settings.dlnaDefaultTranscodePreset.trim();
+    if (global.isEmpty ||
+        TranscodePresetCatalog.removedBuiltinIds.contains(global)) {
+      return TranscodePresetCatalog.defaultId;
+    }
+    return global;
+  }
+
+  /// 解析会话配置里的缓存根目录（`<平台 cache_dir>/transcode`，契约 §3.5）。
+  ///
+  /// Rust 的 `cache_dir` 就是缓存根目录本身（缺省 `<temp>/wdmm-transcode`），
+  /// 所以这里显式加上 `transcode` 叶子目录，避免把分片直接撒在应用缓存根上。
+  /// 只解析一次；失败返回 null，让 Rust 用自己的默认目录（旧 `.so` 忽略该键）。
+  Future<String?> _resolveCacheDir() async {
+    final cached = _resolvedCacheDir;
+    if (cached != null) return cached;
+    try {
+      final dir = await getApplicationCacheDirectory();
+      final root = p.join(dir.path, 'transcode');
+      _resolvedCacheDir = root;
+      return root;
+    } catch (e) {
+      debugPrint('[DLNA] cache dir unavailable: $e');
+      return null;
+    }
+  }
+
+  Future<void> _beginItem(
+    WebDavItem item,
+    String accountId, {
+    required bool first,
+    int? epoch,
+  }) async {
+    final renderer = _renderer;
+    if (renderer == null) return;
+    final token = epoch ?? _castEpoch;
+
+    _currentItem = item;
+    _position = Duration.zero;
+    _duration = null;
+    _playbackState = DlnaPlaybackState.buffering;
+    _endedForPath = null;
+    _everPlaying = false;
+    _subtitleCandidates = const [];
+    _selectedSubtitle = null;
+    _subtitleStatus = null;
+    _resetWarmupState();
+
+    final prefs = _dmrPrefs[renderer.usn];
+    // MKV 直通（契约 preset-encoder-tiers §7.3）：Matroska 容器 + 全局开关
+    // ⇒ 强制直通，即使设备级「直通（不转码）」开关是关的。只对新建会话生效：
+    // 已建立的 HLS 会话无法在切集时改成直通，沿用原会话类型（已在报告点名）。
+    final mkvDirect =
+        first && _settings.dlnaMkvPassthrough && _isMatroska(item.name);
+    // 会话在创建时就把「直通 / 转码 + 预设」定下来，切集只沿用快照：设置页的
+    // 全局默认或设备预置在会话中途被改动时，不能悄悄换掉正在播的那条流。
+    final newSession = first || _handle == null;
+    final forceDirect = newSession
+        ? resolveSessionDirect(
+            deviceForceDirect: prefs?.forceDirect,
+            defaultValue: _settings.dlnaDefaultDirect,
+            mkvDirect: mkvDirect,
+          )
+        // 直通（不转码）只由 forceDirect 开关表达：`passthrough` 不是转码预设，
+        // 不允许经 `preset_id` 偷偷走直通，否则就绕过了兼容开关。
+        : (_sessionDirect ?? _expectDirect);
+    if (newSession) {
+      _expectDirect = forceDirect;
+      _sessionDirect = forceDirect;
+    }
+    final presetId = forceDirect
+        ? null
+        : (newSession
+              ? _effectivePresetId(prefs?.presetId)
+              : (_sessionPresetId ?? _effectivePresetId(prefs?.presetId)));
+    if (newSession) _sessionPresetId = presetId;
+
+    // 切到新条目同样要先亮「正在准备缓存预热…」，等 Rust 返回 phase 再切走。
+    _preparing = true;
+    _notify();
+
+    final handle = _handle;
+    if (first || handle == null) {
+      // §3.5 转码缓存：Dart 传缓存根目录（`<cache>/transcode`），预算随会话
+      // 下发；`cache_ident`（mtime）让同一源文件的第二次投屏直接复用分片。
+      final cacheDir = await _resolveCacheDir();
+      final cacheIdent = item.modified?.millisecondsSinceEpoch.toString() ?? '';
+      final config = <String, Object?>{
+        'renderer_location': renderer.location,
+        'renderer_usn': renderer.usn,
+        'account_id': accountId,
+        'remote_path': item.path,
+        'name': item.name,
+        'size': item.size ?? 0,
+        'preset_id': presetId,
+        'force_direct': forceDirect,
+        // §3 预热：HLS 起转码后立即返回 `phase:"warming"`，Dart 不再干等 20s。
+        // 旧版 `.so` 不认识该键（直接忽略），行为与之前一致。
+        'warmup': true,
+        'cache_budget_mb': _settings.transcodeCacheBudgetMb,
+        'cache_ident': cacheIdent,
+        'ui_lang': _settings.appLocale.locale?.languageCode ?? '',
+      };
+      if (cacheDir != null && cacheDir.isNotEmpty) {
+        config['cache_dir'] = cacheDir;
+      }
+      final configJson = jsonEncode(config);
+      final raw = await _runOnWorker(
+        () => RustCoreService.dlnaSessionStart(configJson),
+      );
+      final json = _decodeJson(raw);
+      if (token != _castEpoch) {
+        // 建立会话期间用户已取消（点「取消」/ 断开 / 切歌）：把晚到的 Rust
+        // 会话收掉，否则预热作业会在后台继续跑。
+        final lateHandle = _asInt(json?['handle']);
+        if (lateHandle != null) await _discardSession(lateHandle);
+        return;
+      }
+      final newHandle = _asInt(json?['handle']);
+      final started = json != null && json['ok'] != false && newHandle != null;
+      if (started) {
+        debugPrint('[DLNA] start ok: $raw');
+      } else {
+        debugPrint('[DLNA] start failed: $raw');
+      }
+      if (!started) {
+        throw _CastError(_sessionError(raw, json));
+      }
+      _handle = newHandle;
+      final info = json['protocol_info']?.toString();
+      if (info != null && info.isNotEmpty) _protocolInfo = info;
+      final provider = _nonEmpty(json['provider']);
+      if (provider != null) _provider = provider;
+      final compat = _compatFrom(json['compat']);
+      if (compat != null) _compatHint = compat;
+      // 启动响应里的 `phase`（旧版 `.so` 没有 → 降级为 playing）。
+      _applyWarmupFields(json);
+      _applySubtitleStatus(json);
+      _startStateTimer();
+    } else {
+      // §3.5：切集时缓存标识跟着新文件走，否则 Rust 把该文件当一次性条目。
+      final cmdJson = jsonEncode(<String, Object?>{
+        'cmd': 'select',
+        'remote_path': item.path,
+        'name': item.name,
+        'size': item.size ?? 0,
+        'preset_id': presetId,
+        // 显式带上会话快照，Rust 不再用「preset_id 为空」反推直通。
+        'force_direct': forceDirect,
+        'cache_ident': item.modified?.millisecondsSinceEpoch.toString() ?? '',
+      });
+      final raw = await _runOnWorker(
+        () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
+      );
+      if (token != _castEpoch) return;
+      if (!_isOk(raw)) {
+        debugPrint('[DLNA] select failed: $raw');
+        throw _CastError(_cmdError(raw));
+      }
+    }
+
+    if (_disposed || token != _castEpoch) return;
+    // 预热阶段（§3）还没投送：保持 buffering，UI 由「预热/预检」面板接管。
+    _playbackState = _phase == 'warming'
+        ? DlnaPlaybackState.buffering
+        : DlnaPlaybackState.playing;
+    _preparing = false;
+    _notify();
+  }
+
+  void _startStateTimer() {
+    _stateTimer?.cancel();
+    _stateTimer = Timer.periodic(
+      _statePollInterval,
+      (_) => unawaited(_tickState()),
+    );
+  }
+
+  /// 每次 tick 都向 Rust 要一次状态；Dart 不再解析 SOAP。
+  Future<void> _tickState() async {
+    final handle = _handle;
+    if (handle == null || _stateTickInFlight || _disposed) return;
+    if (_state != DlnaCastState.casting) return;
+    _stateTickInFlight = true;
+    try {
+      final raw = await _runOnWorker(
+        () => RustCoreService.dlnaSessionState(handle),
+      );
+      if (_disposed || _handle != handle) return;
+      final json = _decodeJson(raw);
+      if (json == null) {
+        if (!_stateUnavailableLogged) {
+          _stateUnavailableLogged = true;
+          debugPrint('[DLNA] session state unavailable: $raw');
+        }
+        return;
+      }
+      await _applyState(json);
+    } finally {
+      _stateTickInFlight = false;
+    }
+  }
+
+  Future<void> _applyState(Map<String, dynamic> json) async {
+    if (json['ok'] == false) {
+      final reason = json['error']?.toString();
+      // session 类错误（`unknown session handle` / 会话已被收尾）只是
+      // 「这一轮问得太晚」：切集 / mode-switch / 收尾与 tick 交锋时会短暂
+      // 出现。它不代表投屏失败，只跳过本轮，绝不让用户看到原生错误。
+      if (_isSessionErrorText(reason)) {
+        if (!_stateUnavailableLogged) {
+          _stateUnavailableLogged = true;
+          debugPrint('[DLNA] session state skipped: $reason');
+        }
+        return;
+      }
+      await _failWith(_CastError(reason ?? '投屏会话异常结束'));
+      return;
+    }
+
+    // §3 / §7.5 预热遥测：缺失的字段保持原值，不抛异常。
+    _applyWarmupFields(json);
+    _applySubtitleStatus(json);
+
+    // 预热 / 预热失败阶段还没投送到渲染器：此时传输层通常是 STOPPED，
+    // 但用户可见状态应由预热面板接管，所以不覆盖 playbackState。
+    final inWarmup = _phase == 'warming' || _phase == 'failed';
+    if (!inWarmup) {
+      final mapped = _playbackFromTransport(json['transport']?.toString());
+      if (mapped != null) {
+        if (mapped == DlnaPlaybackState.playing) _everPlaying = true;
+        _playbackState = mapped;
+      }
+    }
+
+    final positionMs = _asInt(json['position_ms']);
+    if (positionMs != null && positionMs >= 0) {
+      _position = Duration(milliseconds: positionMs);
+    }
+    final durationMs = _asInt(json['duration_ms']);
+    if (durationMs != null && durationMs > 0) {
+      _duration = Duration(milliseconds: durationMs);
+    }
+
+    final info = json['protocol_info']?.toString();
+    if (info != null && info.isNotEmpty) _protocolInfo = info;
+
+    final provider = _nonEmpty(json['provider']);
+    if (provider != null) _provider = provider;
+
+    final compat = _compatFrom(json['compat']);
+    if (compat != null) _compatHint = compat;
+
+    if (json.containsKey('subtitle_candidates')) {
+      _subtitleCandidates = _candidatesFrom(json['subtitle_candidates']);
+    }
+    final selected = _hitFromJson(json['selected_subtitle']);
+    _selectedSubtitle = selected == null
+        ? null
+        : _findCandidate(selected.path) ?? selected;
+
+    _notify();
+
+    // 预热 / 预热失败期间 Rust 可能报 ended（转码结束时内部状态机收尾），
+    // 这不是用户可见的播放结束，忽略即可。
+    if (json['ended'] == true && !inWarmup) {
+      await _handleEnded(
+        json['ended_reason']?.toString(),
+        json['current_path']?.toString(),
+      );
+    }
+  }
+
+  /// 处理 Rust 报告的播放结束事件。
+  ///
+  /// 这是 Dart 侧的用户级决策，不推给 Rust：
+  /// * `ended_reason == "eof"`：自然播完 → 队列有下一集就自动续播，否则收尾；
+  /// * `"stopped_by_device"`（以及 key 缺失 / null / 未知原因）：用户在 DMR
+  ///   端主动停止，保守处理 —— 只收尾，**不**自动播下一集。
+  Future<void> _handleEnded(String? reason, String? path) async {
+    final id = (path != null && path.isNotEmpty)
+        ? path
+        : (_currentItem?.path ?? '');
+    if (_endedForPath == id) return;
+    _endedForPath = id;
+    _playbackState = DlnaPlaybackState.stopped;
+    _notify();
+
+    if (reason == 'eof') {
+      final q = _queue;
+      if (q != null && q.hasNext) {
+        await playNext();
+        return;
+      }
+    } else if (!_everPlaying) {
+      // 设备从未进入过 PLAYING 就报 STOPPED：这不是"播完"，也不是用户主动停，
+      // 而是设备打不开流（转码未就绪、编码不支持、代理不可达）。以前这种情况
+      // 只会静默收起投屏条，用户以为"安卓直接退出投屏"。
+      await _failWith(
+        _CastError('设备没能开始播放（可能是转码未就绪或编码不被支持）'),
+      );
+      return;
+    }
+    await _windDown(reason: 'ended: ${reason ?? 'unknown'}');
+  }
+
+  Future<void> _windDown({String reason = 'wind-down'}) async {
+    await _cleanupSession(reason: reason);
+    if (_disposed) return;
+    _state = DlnaCastState.idle;
+    _notify();
+  }
+
+  Future<void> _failWith(Object error) async {
+    final text = _errorText(error);
+    // 用户报「投屏完全无响应」时，唯一可用的线索就是这条原始错误。
+    debugPrint('[DLNA] cast failed: $text');
+    await _cleanupSession(reason: 'failed: $text');
+    if (_disposed) return;
+    _state = DlnaCastState.error;
+    _error = text;
+    _notify();
+  }
+
+  /// 收掉当前 Rust 会话与 UI 会话态。
+  ///
+  /// [keepQueue] 仅用于「直通 / HLS 模式切换后重开会话」：保留队列与渲染器，
+  /// 由调用方在重建会话时重新挂回，避免切集把播放队列一起销毁。
+  Future<void> _cleanupSession({
+    String reason = 'unspecified',
+    bool keepQueue = false,
+  }) async {
+    // 代次自增：正在建立会话的 startCast/_beginItem 会在 await 之后发现
+    // 代次已变，丢弃晚到的句柄（见 _discardSession）。
+    _castEpoch++;
+    _stateTimer?.cancel();
+    _stateTimer = null;
+    final handle = _handle;
+    _handle = null;
+    if (handle != null) {
+      // 「seek 时报 unknown session handle」这类丢失会话现场的问题，只能靠这条
+      // 日志定位是谁先收的尾（失败 / 播完 / 用户停止）。
+      debugPrint('[DLNA] session teardown: handle=$handle reason=$reason');
+    }
+    // 预热中直接收尾（返回键 / 切歌 / 报错）：先让 Rust 取消转码任务并清理
+    // 分段目录（§3），再 close。旧版 `.so` 没有 warming 阶段，不会走到这里。
+    final wasWarming = _phase == 'warming' || _phase == 'failed';
+    if (handle != null && wasWarming) {
+      final cmdJson = jsonEncode(<String, Object?>{'cmd': 'stop'});
+      await _runOnWorker(
+        () => RustCoreService.dlnaSessionCmd(handle, cmdJson),
+      );
+    }
+    if (!keepQueue) {
+      _queue?.dispose();
+      _queue = null;
+      _renderer = null;
+    }
+    // `keepQueue`（模式切换重建）时保留队列与渲染器，避免过渡期 UI 看到
+    // 空的 renderer/queue；新会话由 `_beginItem(first: true)` 重开。
     _currentItem = null;
     _position = Duration.zero;
     _duration = null;
     _playbackState = DlnaPlaybackState.stopped;
     _compatHint = null;
-  }
-
-  /// 检测系统 ffmpeg 是否可用（运行 ffmpeg -version）。
-  /// 结果缓存在 [_ffmpegAvailable]，不重复检测。
-  Future<bool> _checkFfmpeg() async {
-    try {
-      final result = await Process.run('ffmpeg', ['-version']);
-      return result.exitCode == 0;
-    } catch (_) {
-      return false;
+    _subtitleCandidates = const [];
+    _selectedSubtitle = null;
+    _subtitleStatus = null;
+    _protocolInfo = null;
+    _provider = '';
+    _expectDirect = false;
+    // 会话结束即丢弃快照：下一次投屏重新读设备预置 / 全局默认。
+    _sessionDirect = null;
+    _sessionPresetId = null;
+    _endedForPath = null;
+    _everPlaying = false;
+    _error = null;
+    _resetWarmupState();
+    if (handle != null) {
+      await _runOnWorker(() => RustCoreService.dlnaSessionClose(handle));
     }
   }
 
-  /// 选择与 [targetIp]（DMR IP）同子网的本机 IPv4 地址。
+  /// 丢弃一个「取消后才返回」的 Rust 会话（`start` 在用户取消之后才完成）。
   ///
-  /// 优先返回与 targetIp 前 3 段（/24）相同的网卡 IP；
-  /// 找不到同子网地址时 fallback 到第一个私有 IP；
-  /// 再找不到返回 loopback。
-  Future<String> _getLocalIpFor(String targetIp) async {
-    final interfaces = await NetworkInterface.list(
-      type: InternetAddressType.IPv4,
-      includeLinkLocal: false,
-    );
+  /// 先 `{"cmd":"stop"}` 让 Rust 取消预热作业并清理分段（§3），再 close，
+  /// 避免取消投屏后后台还在转码。
+  Future<void> _discardSession(int handle) async {
+    debugPrint('[DLNA] discarding late session: handle=$handle');
+    final cmdJson = jsonEncode(<String, Object?>{'cmd': 'stop'});
+    await _runOnWorker(() => RustCoreService.dlnaSessionCmd(handle, cmdJson));
+    await _runOnWorker(() => RustCoreService.dlnaSessionClose(handle));
+  }
 
-    final privateIps = <String>[];
-    final targetParts = targetIp.split('.');
-    // 取前三段作为 /24 前缀，e.g. "192.168.0"
-    final prefix = targetParts.length == 4
-        ? targetParts.take(3).join('.')
-        : null;
+  // ── 内部：FFI 调度 ────────────────────────────────────────────────────────
 
-    for (final iface in interfaces) {
-      for (final addr in iface.addresses) {
-        final a = addr.address;
-        debugPrint('[DLNA] iface=${iface.name} addr=$a');
-        if (!_isPrivateIp(a)) continue;
-        privateIps.add(a);
-        // 优先：与 DMR 同 /24 子网
-        if (prefix != null && a.startsWith('$prefix.')) {
-          debugPrint('[DLNA] selected local IP (same /24): $a');
-          return a;
-        }
+  /// 所有 FFI 调用共用的串行队列尾（契约 preset-editor-slimming §6）。
+  ///
+  /// Rust 侧一个句柄同一时刻只允许一个 FFI 调用在飞（会话注册表是 take/put
+  /// 语义）。Dart 以前只串行化了 tick-vs-tick（[_stateTickInFlight]），命令
+  /// （select / stop / close / seek / 字幕）与 tick 仍然真并行，队列切集时
+  /// 于是会出现 `unknown session handle`。这里把每一次 FFI 调用挂到同一条
+  /// Future 链上，保证任一时刻只有一个调用在飞；队列只做串行化，真正的调用
+  /// 仍在 [_runOnWorkerTask] 的临时 isolate 里执行，不会把计算拉回主线程。
+  Future<void> _ffiTail = Future<void>.value();
+
+  /// 在临时 isolate 中串行执行 [body] 并返回结果。
+  ///
+  /// [body] 只能捕获可跨 isolate 传递的值（String / int 等），不能引用 `this`。
+  /// 调用按提交顺序逐个执行：上一调用结束后才开始下一调用（契约 §6）。
+  Future<T?> _runOnWorker<T>(FutureOr<T> Function() body) {
+    final completer = Completer<T?>();
+    _ffiTail = _ffiTail.then((_) async {
+      try {
+        completer.complete(await _runOnWorkerTask<T>(body));
+      } catch (e) {
+        // 兜底：completer 之外不应再抛；这里保证队列本身永不进入错误态，
+        // 否则后续所有 FFI 调用都会被 skipped。
+        debugPrint('[DLNA] FFI queue error: $e');
+        if (!completer.isCompleted) completer.complete(null);
       }
+    });
+    return completer.future;
+  }
+
+  /// 真正的 off-main 执行点（[Isolate.run]），只被串行队列调用。
+  ///
+  /// Rust 会话门面是**同步** FFI 调用，内部包含 SSDP / SOAP 网络往返
+  /// （单次 100–300 ms）。直接在主 isolate 调用会卡住帧循环（1 秒轮询尤甚），
+  /// 因此所有 FFI 调用都搬到后台 isolate。
+  Future<T?> _runOnWorkerTask<T>(FutureOr<T> Function() body) async {
+    try {
+      return await Isolate.run<T>(body);
+    } catch (e) {
+      debugPrint('[DLNA] FFI worker error: $e');
+      return null;
+    }
+  }
+
+  // ── 内部：状态解析 ────────────────────────────────────────────────────────
+
+  List<DlnaRenderer> _parseDiscovered(String? raw) {
+    if (raw == null || raw.isEmpty) return const [];
+    if (raw.startsWith('error:')) {
+      debugPrint('[DLNA] discovery failed: $raw');
+      return const [];
+    }
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      final renderers = <DlnaRenderer>[];
+      for (final entry in decoded) {
+        if (entry is! Map) continue;
+        final usn = entry['usn']?.toString() ?? '';
+        final location = entry['location']?.toString() ?? '';
+        if (usn.isEmpty || location.isEmpty) continue;
+        // Rust 只会返回 MediaRenderer；显式过滤以兼容旧版发现结果。
+        if (entry['has_avtransport'] == false) continue;
+        final host = Uri.tryParse(location)?.host ?? '';
+        final friendlyName =
+            _nonEmpty(entry['friendly_name']) ??
+            (host.isNotEmpty ? host : usn);
+        renderers.add(
+          DlnaRenderer(
+            usn: usn,
+            friendlyName: friendlyName,
+            location: location,
+            controlUrl: '',
+            connMgrControlUrl: '',
+            host: host,
+            modelName: _nonEmpty(entry['model_name']),
+            manufacturer: _nonEmpty(entry['manufacturer']),
+            modelNumber: _nonEmpty(entry['model_number']),
+            sinkProtocolInfo: _stringList(entry['sink_protocol_info']),
+          ),
+        );
+      }
+      return renderers;
+    } catch (e) {
+      debugPrint('[DLNA] discovery JSON parse failed: $e');
+      return const [];
+    }
+  }
+
+  DlnaCompatibilityHint? _compatFrom(Object? raw) {
+    if (raw is! Map) return null;
+    if (raw['requires_transcode'] != true) {
+      return const DlnaCompatibilityHint();
+    }
+    final reason = (raw['reason']?.toString() ?? '').toLowerCase();
+    final needsAudio = reason.contains('audio');
+    final needsVideo = reason.contains('video');
+    final needsRemux =
+        reason.contains('container') || reason.contains('remux');
+    if (!needsAudio && !needsVideo && !needsRemux) {
+      // 原因未知但对端确实需要转码：保守地提示全部维度。
+      return const DlnaCompatibilityHint(
+        likelyNeedsRemux: true,
+        likelyNeedsVideoTranscode: true,
+        likelyNeedsAudioTranscode: true,
+      );
+    }
+    return DlnaCompatibilityHint(
+      likelyNeedsRemux: needsRemux,
+      likelyNeedsVideoTranscode: needsVideo,
+      likelyNeedsAudioTranscode: needsAudio,
+    );
+  }
+
+  List<SidecarHit> _candidatesFrom(Object? raw) {
+    if (raw is! List) return const [];
+    final videoName = _currentItem?.name;
+    final hits = <SidecarHit>[];
+    for (final entry in raw) {
+      final hit = _hitFromJson(entry, videoName: videoName);
+      if (hit != null) hits.add(hit);
+    }
+    return hits;
+  }
+
+  /// 把 Rust 回传的候选字幕还原成 UI 需要的 [SidecarHit]。
+  ///
+  /// 契约 task-11 §3：外置字幕带 `embedded:false`、`track`/`codec` 为 null、
+  /// `support:"external"`；HLS 内置轨带 `embedded:true` + `track`/`codec`，
+  /// `support` 为 `webvtt` 或 `bitmap-unsupported`。旧版 `.so` 只有
+  /// `{name,path,lang,size}`，此时按外置字幕降级（support 为 null = 可投送）。
+  ///
+  /// 契约 task-21 §2：内置轨新增 `title`（容器标题）与 `language`（ISO-639
+  /// 语言码）；33 条轨道时两者是唯一的人类可读区分，缺失时退回 `lang`。
+  SidecarHit? _hitFromJson(Object? raw, {String? videoName}) {
+    if (raw is! Map) return null;
+    final name = raw['name']?.toString() ?? '';
+    final path = raw['path']?.toString() ?? '';
+    if (name.isEmpty || path.isEmpty) return null;
+    final lang = raw['lang']?.toString() ?? '';
+    final embedded = raw['embedded'] == true;
+    final codec = _nonEmpty(raw['codec']);
+    final support = _nonEmpty(raw['support']);
+    final title = _nonEmpty(raw['title']);
+    final languageCode =
+        _nonEmpty(raw['language']) ?? _nonEmpty(raw['language_code']);
+    // 内置轨优先展示中文语言名（ISO-639 码 → 中文），外置字幕仍用文件名解析。
+    final languageLabel =
+        subtitleLanguageName(languageCode ?? lang) ??
+            (lang.trim().isEmpty ? null : displaySubtitleLanguage(lang));
+    // 内置轨的 name 形如 `zh (ass, embedded)`，不能拿去匹配 sidecar 文件名；
+    // 语言直接用 Rust 的 `lang`，展示格式用 codec。
+    final match = (embedded || videoName == null)
+        ? null
+        : matchSubtitleFileName(
+            videoFileName: videoName,
+            subtitleFileName: name,
+          );
+    return SidecarHit(
+      name: name,
+      path: path,
+      language: match?.language ?? languageLabel ?? '默认',
+      languageKey: match?.languageKey ?? uiSubtitleLanguageKey(lang),
+      format: embedded
+          ? (codec ?? _extensionOf(name))
+          : (match?.format ?? _extensionOf(name)),
+      exact: match?.exact ?? false,
+      size: _asInt(raw['size']),
+      embedded: embedded,
+      track: _asInt(raw['track']),
+      codec: codec,
+      support: support,
+      title: title,
+      languageCode: languageCode,
+    );
+  }
+
+  SidecarHit? _findCandidate(String path) {
+    for (final hit in _subtitleCandidates) {
+      if (hit.path == path) return hit;
+    }
+    return null;
+  }
+
+  DlnaPlaybackState? _playbackFromTransport(String? transport) {
+    switch (transport) {
+      case 'PLAYING':
+        return DlnaPlaybackState.playing;
+      case 'PAUSED_PLAYBACK':
+        return DlnaPlaybackState.paused;
+      case 'TRANSITIONING':
+        return DlnaPlaybackState.buffering;
+      case 'STOPPED':
+      case 'NO_MEDIA_PRESENT':
+        return DlnaPlaybackState.stopped;
+      default:
+        return null;
+    }
+  }
+
+  // ── 内部：预热 / 转码遥测（契约 §3、§7.5）────────────────────────────────
+
+  /// 重置 §3 预热字段与 §7.5 遥测字段（新会话 / 切歌 / 收尾时调用）。
+  void _resetWarmupState() {
+    _phase = 'idle';
+    _encodeSpeed = 0;
+    _encodeContentMs = 0;
+    _playlistReady = false;
+    _segments = 0;
+    _estimatedRealtime = null;
+    _warmupError = null;
+    _encodeMode = '';
+    _videoEncoder = null;
+    _audioEncoder = null;
+    _encodeWarnings = const [];
+    _diagnostics = const [];
+    _castInFlight = false;
+    // §4 HLS 点播化遥测。
+    _runState = '';
+    _segCount = 0;
+    _segSecs = 0;
+    _readySegments = 0;
+    _lookaheadSegments = 0;
+    _alignment = '';
+    _driftMs = 0;
+    _cacheHits = 0;
+    _cacheBytes = 0;
+    _cacheOverBudget = false;
+    // §11 命中层：等 Rust 下一次上报。
+    _videoAction = null;
+    _audioAction = null;
+    // 乐观 UI：预热面板由真实 phase 接管；媒体类型等 Rust 下一次上报。
+    _preparing = false;
+    _mediaKind = '';
+  }
+
+  /// 合并一次 Rust 会话 JSON（start 响应 / state tick）里的预热字段。
+  ///
+  /// 所有字段都可缺失，**绝不**抛异常：
+  /// * `phase` 缺失（旧版 `.so`）或为 null → 按 `playing` 降级，不把用户困在
+  ///   预热界面里；
+  /// * 速度 / 播放列表就绪 / 编码器 / 警告 / 诊断缺省时保持原值，UI 自动隐藏。
+  void _applyWarmupFields(Map<String, dynamic> json) {
+    final phase = _nonEmpty(json['phase']);
+    // 旧版 `.so` 不返回 phase：直接当作已在播放。
+    _phase = phase ?? 'playing';
+    // Rust 已经报告真实阶段，乐观的「准备预热」状态让位。
+    _preparing = false;
+
+    final speed = _asDouble(json['encode_speed']);
+    if (speed != null && speed >= 0) _encodeSpeed = speed;
+
+    final contentMs = _asInt(json['encode_content_ms']);
+    if (contentMs != null && contentMs >= 0) _encodeContentMs = contentMs;
+
+    final segments = _asInt(json['segments']);
+    if (segments != null && segments >= 0) _segments = segments;
+
+    if (json.containsKey('playlist_ready')) {
+      _playlistReady = json['playlist_ready'] == true;
+    }
+    // null = 采样不足（encode_content_ms < 3000），必须保留 null 让 UI 显示「测速中」。
+    if (json.containsKey('estimated_realtime')) {
+      _estimatedRealtime = _asBool(json['estimated_realtime']);
     }
 
-    // Fallback：任意私有 IP
-    final result = privateIps.isNotEmpty ? privateIps.first : '127.0.0.1';
-    debugPrint('[DLNA] selected local IP (fallback): $result');
-    return result;
+    final mode = _nonEmpty(json['encode_mode']);
+    if (mode != null) _encodeMode = mode;
+    if (json.containsKey('video_encoder')) {
+      _videoEncoder = _nonEmpty(json['video_encoder']);
+    }
+    if (json.containsKey('audio_encoder')) {
+      _audioEncoder = _nonEmpty(json['audio_encoder']);
+    }
+    if (json.containsKey('encode_warnings')) {
+      _encodeWarnings = _stringList(json['encode_warnings']) ?? const [];
+    }
+    if (json.containsKey('diagnostics')) {
+      _diagnostics = _stringList(json['diagnostics']) ?? const [];
+    }
+
+    // §4 HLS 点播化遥测：按需运行状态 / 定位对齐 / 缓存统计；缺失保持原值。
+    final runState = _nonEmpty(json['run_state']);
+    if (runState != null) _runState = runState;
+    final alignment = _nonEmpty(json['alignment']);
+    if (alignment != null) _alignment = alignment;
+    final driftMs = _asInt(json['drift_ms']);
+    if (driftMs != null && driftMs >= 0) _driftMs = driftMs;
+    final segCount = _asInt(json['seg_count']);
+    if (segCount != null && segCount >= 0) _segCount = segCount;
+    final segSecs = _asDouble(json['seg_secs']);
+    if (segSecs != null && segSecs > 0) _segSecs = segSecs;
+    final readySegments = _asInt(json['ready_segments']);
+    if (readySegments != null && readySegments >= 0) {
+      _readySegments = readySegments;
+    }
+    final lookahead = _asInt(json['lookahead_segments']);
+    if (lookahead != null && lookahead >= 0) _lookaheadSegments = lookahead;
+    final cacheHits = _asInt(json['cache_hits']);
+    if (cacheHits != null && cacheHits >= 0) _cacheHits = cacheHits;
+    final cacheBytes = _asInt(json['cache_bytes']);
+    if (cacheBytes != null && cacheBytes >= 0) _cacheBytes = cacheBytes;
+    if (json.containsKey('cache_over_budget')) {
+      _cacheOverBudget = json['cache_over_budget'] == true;
+    }
+
+    if (json.containsKey('error')) {
+      _warmupError = _nonEmpty(json['error']);
+    }
+
+    // §3 音频投送：`media_kind:"audio"` 时 UI 隐藏字幕等视频专属控件。
+    final mediaKind = _nonEmpty(json['media_kind']);
+    if (mediaKind != null) _mediaKind = mediaKind;
+
+    // §11 命中层：`copy` / `hw` / `sw` / `none`。缺失或非法值保持原值
+    // （不猜），旧版 `.so` 因此永远是 null，UI 不显示标签。
+    final videoAction = _hitAction(json['video_action']);
+    if (videoAction != null) _videoAction = videoAction;
+    final audioAction = _hitAction(json['audio_action']);
+    if (audioAction != null) _audioAction = audioAction;
   }
 
-  bool _isPrivateIp(String ip) {
-    return ip.startsWith('192.168.') ||
-        ip.startsWith('10.') ||
-        (ip.startsWith('172.') && _is172Private(ip));
+  /// 解析 `video_action` / `audio_action` 的合法取值；其余（含 null）返回 null。
+  static String? _hitAction(Object? value) {
+    switch (value) {
+      case 'copy':
+      case 'hw':
+      case 'sw':
+      case 'none':
+        return value as String;
+      default:
+        return null;
+    }
   }
 
-  bool _is172Private(String ip) {
-    final parts = ip.split('.');
-    if (parts.length < 2) return false;
-    final second = int.tryParse(parts[1]) ?? 0;
-    return second >= 16 && second <= 31;
+  /// 合并 `subtitle_status`（契约 task-11 §6）。
+  ///
+  /// 旧版 `.so` 不返回该键 → 保持 null，UI 不显示字幕提示；
+  /// 非 Map 的脏值同样降级为 null，绝不抛异常。
+  void _applySubtitleStatus(Map<String, dynamic> json) {
+    if (!json.containsKey('subtitle_status')) return;
+    final raw = json['subtitle_status'];
+    if (raw is! Map) {
+      _subtitleStatus = null;
+      return;
+    }
+    _subtitleStatus = DlnaSubtitleStatus(
+      textTracks: _asInt(raw['text_tracks']) ?? 0,
+      bitmapTracks: _asInt(raw['bitmap_tracks']) ?? 0,
+      bitmapNote: _nonEmpty(raw['bitmap_note']),
+      message: _nonEmpty(raw['message']),
+    );
+  }
+
+  Map<String, dynamic>? _decodeJson(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    if (raw.startsWith('error:')) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (e) {
+      debugPrint('[DLNA] invalid JSON from Rust: $e');
+      return null;
+    }
+  }
+
+  /// 会话命令是否成功。
+  ///
+  /// Rust 成功时返回字面量 `"ok"`；失败时返回 `{"ok":false,"error":"…"}`
+  /// JSON（**不是** `"error:…"` 前缀）。为兼容旧版 `.so` 仍接受后者。
+  bool _isOk(String? raw) {
+    if (raw == null) return false;
+    if (raw == 'ok') return true;
+    final json = _decodeJson(raw);
+    if (json != null) return json['ok'] == true;
+    return !raw.startsWith('error:');
+  }
+
+  /// 从 Rust 返回值里取出原始错误文本（JSON `error` 字段或 `error:` 前缀）。
+  String? _errorRawText(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    final err = _decodeJson(raw)?['error']?.toString();
+    if (err != null && err.isNotEmpty) return err;
+    if (raw.startsWith('error:')) return raw.substring('error:'.length);
+    return raw;
+  }
+
+  /// 是否是 session 类错误（句柄已被取用 / 会话已收尾）。
+  ///
+  /// 串行队列（[_runOnWorker]）修好后，正常路径不应再出现；tick 一旦遇到
+  /// 只跳过本轮（见 [_applyState]），命令遇到时由 [_cmdError] 翻成中文。
+  static bool _isSessionErrorText(String? text) {
+    if (text == null || text.isEmpty) return false;
+    final lower = text.toLowerCase();
+    return lower.contains('unknown session handle') ||
+        lower.contains('unknown session') ||
+        lower.contains('session handle') ||
+        lower.contains('session not found') ||
+        lower.contains('session closed') ||
+        text.contains('会话已结束');
+  }
+
+  String _cmdError(String? raw) {
+    if (raw == null) return '原生投屏模块不可用';
+    final text = _errorRawText(raw);
+    if (text == null || text.isEmpty) return raw;
+    // 契约 preset-editor-slimming §6：session 类错误给用户可读文案，
+    // 不把 `unknown session handle` 这种原生错误直接抛到界面上。
+    if (_isSessionErrorText(text)) return '投屏会话已结束，请重新投屏';
+    return text;
+  }
+
+  /// 字幕命令失败原因：位图字幕（PGS/DVD）给出中文解释，其余沿用 Rust 文本。
+  String _subtitleErrorText(String? raw) {
+    final support = _nonEmpty(_decodeJson(raw)?['support']);
+    if (support == 'bitmap-unsupported') {
+      return '位图字幕（PGS/DVD）无法通过投屏显示，请改用文本字幕或直通模式';
+    }
+    return _cmdError(raw);
+  }
+
+  String _sessionError(String? raw, Map<String, dynamic>? json) {
+    final err = json?['error']?.toString();
+    if (err != null && err.isNotEmpty) return err;
+    if (raw == null || raw.isEmpty) {
+      return '原生投屏模块不可用（libwdmm_ffi 缺少 DLNA 会话接口）';
+    }
+    return raw;
+  }
+
+  String _errorText(Object error) {
+    final text = error.toString();
+    return text.startsWith('Exception: ')
+        ? text.substring('Exception: '.length)
+        : text;
+  }
+
+  int? _asInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  double? _asDouble(Object? value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  bool? _asBool(Object? value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    if (value is String) {
+      if (value == 'true') return true;
+      if (value == 'false') return false;
+    }
+    return null;
+  }
+
+  String? _nonEmpty(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
+  }
+
+  List<String>? _stringList(Object? value) {
+    if (value is! List) return null;
+    final out = <String>[];
+    for (final item in value) {
+      final text = item?.toString() ?? '';
+      if (text.isNotEmpty) out.add(text);
+    }
+    return out.isEmpty ? null : out;
+  }
+
+  String _extensionOf(String fileName) {
+    final dot = fileName.lastIndexOf('.');
+    if (dot < 0 || dot == fileName.length - 1) return '';
+    return fileName.substring(dot + 1).toLowerCase();
+  }
+
+  /// Matroska 容器（`.mkv` / `.mka`）：MKV 直通开关打开时强制直通。
+  bool _isMatroska(String fileName) {
+    final ext = _extensionOf(fileName);
+    return ext == 'mkv' || ext == 'mka';
   }
 
   String _parentPath(String path) {
@@ -774,250 +1791,8 @@ class DlnaCastService extends ChangeNotifier {
     return idx > 0 ? path.substring(0, idx) : '/';
   }
 
-  /// 按扩展名快速判断兼容性问题（不运行 ffprobe）。
-  DlnaCompatibilityHint _detectHint(String name) {
-    final ext = _ext(name);
-    const problematicContainers = {
-      'mkv', 'avi', 'mov', 'ts', 'm2ts', 'flv',
-      'rmvb', 'rm', 'wmv', 'asf', '3gp', 'webm',
-    };
-    const definitelyBadCodec = {'rmvb', 'rm', 'wmv', 'asf', 'flv'};
-    return DlnaCompatibilityHint(
-      likelyNeedsRemux: problematicContainers.contains(ext),
-      likelyNeedsVideoTranscode: definitelyBadCodec.contains(ext),
-      likelyNeedsAudioTranscode: definitelyBadCodec.contains(ext),
-    );
-  }
-
-  String _ext(String name) {
-    final dot = name.lastIndexOf('.');
-    return dot < 0 ? '' : name.substring(dot + 1).toLowerCase();
-  }
-
-  /// 代理层 HTTP Content-Type（按真实文件格式，供浏览器 / 调试工具识别）。
-  String _mimeFor(String name) {
-    switch (_ext(name)) {
-      case 'mp4':
-      case 'm4v':
-        return 'video/mp4';
-      case 'mkv':
-        return 'video/x-matroska';
-      case 'avi':
-        return 'video/x-msvideo';
-      case 'mov':
-        return 'video/quicktime';
-      case 'webm':
-        return 'video/webm';
-      case 'ts':
-      case 'm2ts':
-        return 'video/mp2t';
-      default:
-        return 'video/mp4';
-    }
-  }
-
-  String _didlLite(String title, String url, String protocolInfo) {
-    final escapedTitle = _xmlEscape(title);
-    final escapedUrl = _xmlEscape(url);
-    return '<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" '
-        'xmlns:dc="http://purl.org/dc/elements/1.1/" '
-        'xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">'
-        '<item id="0" parentID="-1" restricted="1">'
-        '<dc:title>$escapedTitle</dc:title>'
-        '<upnp:class>object.item.videoItem</upnp:class>'
-        '<res protocolInfo="${_xmlEscape(protocolInfo)}">'
-        '$escapedUrl'
-        '</res>'
-        '</item>'
-        '</DIDL-Lite>';
-  }
-
-  String _xmlEscape(String s) => s
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&apos;');
-
-  /// 从 XML 字符串中提取第一个匹配标签的文本内容。
-  /// 支持带属性的开标签，如 `<Sink xmlns:dt="..." dt:dt="string">content</Sink>`。
-  String? _xmlText(String xml, String tag) {
-    // 匹配 <tag> 或 <tag ...attrs...>，然后捕获内容直到 </tag>
-    final m = RegExp('<$tag(?:\\s[^>]*)?>([^<]*)</$tag>').firstMatch(xml);
-    return m?.group(1)?.trim();
-  }
-
-  /// 从 description.xml 解析 AVTransport controlURL（返回绝对 URL）。
-  String? _avTransportControlUrl(String xml, String location) {
-    // 找 AVTransport serviceType 所在的 service 块
-    final serviceBlocks = RegExp(
-      r'<service>(.*?)</service>',
-      dotAll: true,
-    ).allMatches(xml);
-    for (final block in serviceBlocks) {
-      final content = block.group(1) ?? '';
-      if (content.contains('AVTransport')) {
-        final control = _xmlText(content, 'controlURL');
-        if (control == null) continue;
-        // 拼成绝对 URL
-        final base = Uri.parse(location);
-        if (control.startsWith('http')) return control;
-        return base.resolve(control).toString();
-      }
-    }
-    return null;
-  }
-
-  /// 从 description.xml 解析 ConnectionManager controlURL（返回绝对 URL）。
-  String? _connMgrControlUrl(String xml, String location) {
-    final serviceBlocks = RegExp(
-      r'<service>(.*?)</service>',
-      dotAll: true,
-    ).allMatches(xml);
-    for (final block in serviceBlocks) {
-      final content = block.group(1) ?? '';
-      if (content.contains('ConnectionManager')) {
-        final control = _xmlText(content, 'controlURL');
-        if (control == null) continue;
-        final base = Uri.parse(location);
-        if (control.startsWith('http')) return control;
-        return base.resolve(control).toString();
-      }
-    }
-    return null;
-  }
-
-  /// 发送 ConnectionManager SOAP 请求。
-  Future<String?> _soapConnMgr(
-    String controlUrl,
-    String action,
-    String bodyContent,
-  ) async {
-    final envelope =
-        '<?xml version="1.0"?>'
-        '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" '
-        's:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">'
-        '<s:Body>'
-        '<u:$action xmlns:u="urn:schemas-upnp-org:service:ConnectionManager:1">'
-        '$bodyContent'
-        '</u:$action>'
-        '</s:Body>'
-        '</s:Envelope>';
-
-    debugPrint('[DLNA] ConnMgr SOAP → $action @ $controlUrl');
-    final uri = Uri.parse(controlUrl);
-    final client = _newHttpClient();
-    try {
-      final req = await client.postUrl(uri);
-      req.headers.set('Content-Type', 'text/xml; charset="utf-8"');
-      req.headers.set(
-        'SOAPACTION',
-        '"urn:schemas-upnp-org:service:ConnectionManager:1#$action"',
-      );
-      final encoded = utf8.encode(envelope);
-      req.headers.contentLength = encoded.length;
-      req.add(encoded);
-      final resp = await req.close();
-      final body = await resp.transform(utf8.decoder).join();
-      if (resp.statusCode >= 300) {
-        debugPrint('[DLNA] ConnMgr SOAP $action failed: ${resp.statusCode}\n$body');
-        return null;
-      }
-      return body;
-    } finally {
-      client.close(force: true);
-    }
-  }
-
-  /// 查询 DMR 的 ConnectionManager.GetProtocolInfo，
-  /// 返回其支持的 sink protocolInfo 列表（逗号分隔拆开后的列表）。
-  /// 失败时返回空列表。
-  Future<List<String>> _getSinkProtocolInfo(String connMgrControlUrl) async {
-    if (connMgrControlUrl.isEmpty) return [];
-    try {
-      final body = await _soapConnMgr(
-        connMgrControlUrl,
-        'GetProtocolInfo',
-        '',
-      );
-      if (body == null) return [];
-      debugPrint('[DLNA] GetProtocolInfo response: $body');
-      final sink = _xmlText(body, 'Sink') ?? '';
-      debugPrint('[DLNA] SinkProtocolInfo raw: "$sink"');
-      return sink.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-    } catch (e) {
-      debugPrint('[DLNA] GetProtocolInfo failed: $e');
-      return [];
-    }
-  }
-
-  /// 从 [sinkProtocols] 中为 [mimeType] 协商最合适的 protocolInfo。
-  ///
-  /// 返回完整的四元组字符串，例如
-  /// `http-get:*:video/mp4:DLNA.ORG_PN=AVC_MP4_MP_HD_1080i_AAC`。
-  /// 协商失败时返回 `http-get:*:$mimeType:DLNA.ORG_OP=01`。
-  String _negotiateProtocolInfo(String mimeType, List<String> sinkProtocols) {
-    // 精确匹配 contentFormat（第三字段）
-    final exact = sinkProtocols.where((p) {
-      final parts = p.split(':');
-      return parts.length >= 3 && parts[2] == mimeType;
-    }).toList();
-    if (exact.isNotEmpty) {
-      debugPrint('[DLNA] protocolInfo exact match: ${exact.first}');
-      return exact.first;
-    }
-
-    // 主类型匹配（如 mimeType=video/x-matroska，匹配 video/*）
-    final mainType = mimeType.split('/').first;
-    final wildcard = sinkProtocols.where((p) {
-      final parts = p.split(':');
-      if (parts.length < 3) return false;
-      final cf = parts[2];
-      return cf == '$mainType/*' || cf == '*/*';
-    }).toList();
-    if (wildcard.isNotEmpty) {
-      // 用匹配的协议但替换 contentFormat 为实际 MIME
-      final base = wildcard.first.split(':');
-      final result = '${base[0]}:${base[1]}:$mimeType:${base.length > 3 ? base.sublist(3).join(':') : 'DLNA.ORG_OP=01'}';
-      debugPrint('[DLNA] protocolInfo wildcard match: $result');
-      return result;
-    }
-
-    // 协商失败：用基本格式
-    final fallback = 'http-get:*:$mimeType:DLNA.ORG_OP=01';
-    debugPrint('[DLNA] protocolInfo no match, using fallback: $fallback');
-    return fallback;
-  }
-
-  Duration _parseDuration(String hms) {
-    // 格式：HH:MM:SS 或 HH:MM:SS.mmm
-    try {
-      final parts = hms.split(':');
-      if (parts.length != 3) return Duration.zero;
-      final h = int.parse(parts[0]);
-      final m = int.parse(parts[1]);
-      final sParts = parts[2].split('.');
-      final s = int.parse(sParts[0]);
-      final ms = sParts.length > 1
-          ? int.parse(sParts[1].padRight(3, '0').substring(0, 3))
-          : 0;
-      return Duration(hours: h, minutes: m, seconds: s, milliseconds: ms);
-    } catch (_) {
-      return Duration.zero;
-    }
-  }
-
-  String _formatHms(Duration d) {
-    final h = d.inHours.toString().padLeft(2, '0');
-    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
-    final s = (d.inSeconds % 60).toString().padLeft(2, '0');
-    return '$h:$m:$s';
-  }
-
-  @override
-  Future<void> dispose() async {
-    stopDiscovery();
-    await _cleanupSession();
-    super.dispose();
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
   }
 }

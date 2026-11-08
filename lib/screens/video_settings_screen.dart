@@ -1,4 +1,5 @@
 import '../l10n/generated/app_localizations.dart';
+import '../widgets/trailing_dropdown.dart';
 import '../utils/app_snack.dart';
 
 import 'package:flutter/material.dart';
@@ -430,8 +431,7 @@ class _VideoSettingsScreenState extends State<VideoSettingsScreen> {
       contentPadding: EdgeInsets.zero,
       leading: const Icon(Icons.touch_app_outlined),
       title: Text(label),
-      trailing: DropdownButton<VideoGestureAction>(
-        borderRadius: BorderRadius.circular(10),
+      trailing: TrailingDropdown<VideoGestureAction>(
         value: value,
         items: [
           for (final a in VideoGestureAction.values)

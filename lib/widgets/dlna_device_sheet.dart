@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../providers/app_state.dart';
 import '../services/dlna_cast_service.dart';
+import 'dlna_compat_sheet.dart';
+import 'dlna_device_info_sheet.dart';
 
 /// DLNA 设备选择 BottomSheet。
 ///
@@ -14,6 +17,10 @@ class DlnaDeviceSheet extends StatefulWidget {
 
   /// 弹出设备选择 Sheet，返回用户所选的 [DlnaRenderer]，取消时返回 null。
   static Future<DlnaRenderer?> show(BuildContext context) async {
+    // 进入设备搜索的瞬间就销毁上一次投屏残留的会话与 UI（小窗 / 投屏条 /
+    // 预热面板 / 进度条 / 队列 / 转码遥测），不要等新会话建立后才清。
+    await context.read<DlnaCastService>().prepareForDeviceSearch();
+    if (!context.mounted) return null;
     return showModalBottomSheet<DlnaRenderer>(
       context: context,
       isScrollControlled: true,
@@ -72,10 +79,45 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
   }
 
   /// 用户选择了一台渲染器
-  void _selectRenderer(BuildContext ctx, DlnaRenderer renderer) {
+  Future<void> _selectRenderer(BuildContext ctx, DlnaRenderer renderer) async {
     final castService = context.read<DlnaCastService>();
+    final appState = context.read<AppState>();
+
     castService.stopDiscovery();
+
+    // Gap 1: 首次投屏到此设备（无保存的偏好）→ 打开兼容性设置
+    final pref = appState.dmrPrefs[renderer.usn];
+    if (pref == null) {
+      // 打开兼容性设置页，让用户确认/调整后再返回
+      await DlnaCompatSheet.show(ctx, renderer, appState.dmrPrefs);
+      // 无论用户保存与否，都继续投屏（用户已查看过设置页）
+    }
+
+    if (!mounted) return;
     Navigator.pop(ctx, renderer);
+  }
+
+  /// 打开设备详细信息页。
+  Future<void> _showInfo(DlnaRenderer renderer) async {
+    final castService = context.read<DlnaCastService>();
+    final appState = context.read<AppState>();
+    // 异步加载协议信息
+    unawaited(castService.fetchProtocolInfo(renderer));
+    await DlnaDeviceInfoSheet.show(
+      context,
+      renderer,
+      dmrPrefs: appState.dmrPrefs,
+    );
+  }
+
+  /// 打开兼容性设置页。
+  Future<void> _showCompat(DlnaRenderer renderer) async {
+    final appState = context.read<AppState>();
+    await DlnaCompatSheet.show(
+      context,
+      renderer,
+      appState.dmrPrefs,
+    );
   }
 
   /// 关闭 Sheet
@@ -152,13 +194,19 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
               itemCount: discovered.length,
               itemBuilder: (ctx, i) {
                 final renderer = discovered[i];
+                final appState = context.read<AppState>();
+                final pref = appState.dmrPrefs[renderer.usn];
+                final displayName = pref?.overrideName?.isNotEmpty == true
+                    ? pref!.overrideName!
+                    : renderer.friendlyName;
+
                 return ListTile(
                   leading: Icon(
                     Icons.tv,
                     color: scheme.primary,
                   ),
                   title: Text(
-                    renderer.friendlyName,
+                    displayName,
                     style: Theme.of(ctx).textTheme.bodyLarge?.copyWith(
                       color: scheme.onSurface,
                       fontWeight: FontWeight.w500,
@@ -170,11 +218,31 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
                       color: scheme.onSurfaceVariant,
                     ),
                   ),
-                  trailing: Icon(
-                    Icons.chevron_right,
-                    color: scheme.onSurfaceVariant,
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // 信息按钮
+                      IconButton(
+                        icon: Icon(
+                          Icons.info_outline,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        onPressed: () => _showInfo(renderer),
+                        tooltip: '设备信息',
+                      ),
+                      // 兼容性设置按钮
+                      IconButton(
+                        icon: Icon(
+                          Icons.tune,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                        onPressed: () => _showCompat(renderer),
+                        tooltip: '兼容性设置',
+                      ),
+                    ],
                   ),
                   onTap: () => _selectRenderer(context, renderer),
+                  onLongPress: () => _showCompat(renderer),
                 );
               },
             )
@@ -195,14 +263,6 @@ class _DlnaDeviceSheetState extends State<DlnaDeviceSheet> {
                     '未找到 DLNA 设备',
                     style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                       color: scheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '请确认电视或音箱已开启并连接同一局域网',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 20),

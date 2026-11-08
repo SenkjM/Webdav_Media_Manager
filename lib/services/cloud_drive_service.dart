@@ -1,21 +1,23 @@
 import 'dart:async';
-import 'dart:io' hide BytesBuilder;
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:collection/collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/account_capabilities.dart';
 import '../models/file_type_config.dart';
+import '../models/rust_wdmm_vfs.dart';
 import '../models/webdav_account.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import 'accounts_service.dart';
-import 'cloud_driver.dart';
-import 'cloud_drivers/driver_registry.dart';
-import 'cloud_drivers/stream_bridge.dart';
+import 'wdmm_vfs.dart';
+import 'wdmm_vfs/driver_registry.dart';
 import 'resumable_download.dart';
+import 'rust_core_service.dart';
+import 'rust_proxy_stream_bridge.dart';
 
 /// 云盘 provider 的应用内入口（99 §7）。
 ///
@@ -34,7 +36,7 @@ class CloudDriveService extends ChangeNotifier {
   final AccountsService _accounts;
 
   /// accountId → 驱动实例。只含云盘账号。
-  final Map<String, CloudDriver> _drivers = {};
+  final Map<String, WdmmVfs> _drivers = {};
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -45,8 +47,11 @@ class CloudDriveService extends ChangeNotifier {
     ),
   );
 
-  /// 'webdav' 之外的一切类型都算云盘 provider。
-  static bool isCloudType(String providerType) => providerType != 'webdav';
+  /// B1 step 4：所有 provider（含 webdav）都进 CloudDriveService，
+  /// 通过 Rust FFI 统一路由。旧义"webdav 之外才是云盘"已废弃——
+  /// 请勿用本方法区分"driverConfig 格式 vs 密码格式"，
+  /// 那类判断直接写 `providerType == 'webdav'`。
+  static bool isCloudType(String providerType) => true;
 
   /// 该账号是否由本服务接管（WebDavService 分流缝调用）。
   bool handles(String accountId) {
@@ -65,7 +70,7 @@ class CloudDriveService extends ChangeNotifier {
     // 回落驱动静态表；未注册类型保守只给列出。
     final runtime = _drivers[accountId]?.runtimeCapabilities;
     if (runtime != null) return runtime;
-    return cloudDriverSpec(a.providerType)?.capabilities ?? AccountCaps.list;
+    return wdmmVfsSpec(a.providerType)?.capabilities ?? AccountCaps.list;
   }
 
   /// 账号是否具备某能力位（UI 按钮遮罩用，99 §7.2.3 / §7.2.6）。
@@ -88,7 +93,6 @@ class CloudDriveService extends ChangeNotifier {
     final cfgs = <String, Map<String, dynamic>?>{};
     final fresh = <String, String>{};
     for (final a in accounts) {
-      if (!isCloudType(a.providerType)) continue;
       wanted.add(a);
       ids.add(a.id);
       final cfg = await _accounts.loadDriverConfig(a.id);
@@ -101,15 +105,29 @@ class CloudDriveService extends ChangeNotifier {
       // 什么都不用通知——没有变化就没有需要重绘的东西。
       return;
     }
-    final replaced = <CloudDriver>[];
+    final replaced = <WdmmVfs>[];
     var complete = true;
     for (final a in wanted) {
       try {
+        // Core must have the account row before the driver can be instantiated.
+        // If missing, upsert from memory — fail hard if that also fails.
+        final coreAccount = RustCoreService.accountGet(a.id);
+        if (coreAccount == null || coreAccount == 'null' ||
+            coreAccount.startsWith('error:')) {
+          await _accounts.ensureAccountInCore(a.id); // throws on error
+          // Verify the row actually landed.
+          final check = RustCoreService.accountGet(a.id);
+          if (check == null || check == 'null' || check.startsWith('error:')) {
+            throw StateError(
+              '[cloud] Account ${a.id} still absent from Core after upsert',
+            );
+          }
+        }
         final old = _drivers[a.id];
         final driver = _createDriver(a, cfgs[a.id]);
         if (old != null && !identical(old, driver)) replaced.add(old);
         _drivers[a.id] = driver;
-      } on CloudDriverException catch (e) {
+      } on WdmmVfsException catch (e) {
         complete = false;
         final old = _drivers.remove(a.id);
         if (old != null) replaced.add(old);
@@ -125,14 +143,10 @@ class CloudDriveService extends ChangeNotifier {
     for (final d in replaced) {
       unawaited(d.dispose());
     }
-    _accountSignatures = fresh;
     _registeredBatch = batch;
     _registrationComplete = complete;
     notifyListeners();
   }
-
-  /// accountId → 该账号上次登记时的指纹（[cloudAccountSignature]）。
-  Map<String, String> _accountSignatures = <String, String>{};
 
   /// 上次登记时的整批指纹；[registerAccounts] 用它判断「要不要重建」。
   String? _registeredBatch;
@@ -147,22 +161,21 @@ class CloudDriveService extends ChangeNotifier {
   String typeLabelFor(WebDavAccount a) {
     final runtime = _drivers[a.id]?.runtimeTypeLabel;
     if (runtime != null && runtime.isNotEmpty) return runtime;
-    return cloudDriverSpec(a.providerType)?.displayName ?? a.providerType;
+    return wdmmVfsSpec(a.providerType)?.displayName ?? a.providerType;
   }
 
-  LocalStreamBridge? _bridgeInstance;
-
-  /// MustProxy 驱动的本地流桥（99 §7.5）：播放器拿到的是 127.0.0.1 的 URL。
-  /// 由本服务持有——驱动实例会被 [registerAccounts] 反复重建，桥不能跟着死。
-  LocalStreamBridge get _streamBridge =>
-      _bridgeInstance ??= LocalStreamBridge();
+  /// Tokens for active Rust proxy stream registrations owned by this service.
+  /// Cleaned up in [dispose] — each token corresponds to a MustProxy playback
+  /// session routed through [RustProxyStreamBridge].
+  final List<String> _proxyStreamTokens = [];
 
   @override
   void dispose() {
-    final bridge = _bridgeInstance;
-    _bridgeInstance = null;
-    // 关服务器是异步的；服务销毁时不必等它（force 关闭会立刻断连接）。
-    bridge?.dispose();
+    // Unregister all active stream slots from the Rust proxy.
+    for (final t in _proxyStreamTokens) {
+      RustProxyStreamBridge.unregister(t);
+    }
+    _proxyStreamTokens.clear();
     for (final d in _drivers.values) {
       unawaited(d.dispose());
     }
@@ -170,101 +183,58 @@ class CloudDriveService extends ChangeNotifier {
     super.dispose();
   }
 
-  CloudDriver _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
-    final spec = cloudDriverSpec(a.providerType);
-    if (spec == null) {
-      throw CloudDriverException('err.unknownDriverType|${a.providerType}');
-    }
-    // 驱动的全部知识都在其 spec（99 §7.2.10）；兼容层只管查表、持久化
-    // 与运行环境注入（crypt 的源解析，99 §7.5）。
-    return spec.create(
-      cfg ?? const <String, dynamic>{},
-      onTokenUpdate: (patch) => _persistTokens(a.id, patch),
-      env: _buildEnv(),
-    );
-  }
-
-  /// WebDAV 源工厂（crypt 的 WebDAV 源需要）。由装配层注入——兼容层
-  /// 只认 [CloudSource] 抽象，不反向依赖 WebDavService（保持解耦）。
-  CloudSource? Function(String accountId)? _webDavSourceFactory;
-
-  void attachWebDavSourceFactory(CloudSource? Function(String accountId) f) =>
-      _webDavSourceFactory = f;
-
-  /// 包装驱动等所需的源解析：WebDAV / 云盘账号各给一个适配器视图；
-  /// 源不存在返回 null（由驱动在浏览时报错，99 §7.5）。
-  CloudSource? _resolveSource(String accountId) {
-    final a = _accounts.accountById(accountId);
-    if (a == null) return null;
+  WdmmVfs _createDriver(WebDavAccount a, Map<String, dynamic>? cfg) {
+    // B1 step 4: webdav has no Dart WdmmVfsSpec (no form verify needed — Rust
+    // webdav driver authenticates directly with Basic creds from Core), so it
+    // short-circuits straight to the FFI wrapper before the spec null-check.
     if (a.providerType == 'webdav') {
-      return _webDavSourceFactory?.call(accountId);
+      return RustWdmmVfs(a);
     }
-    final driver = _drivers[accountId];
-    if (driver == null) return null;
-    final spec = cloudDriverSpec(a.providerType);
-    return CloudAccountSource(
-      driver: driver,
-      basePath: WebDavAccount.normalizeRemotePath(a.remotePath),
-      capabilities: spec?.capabilities ?? AccountCaps.list,
-      displayName: spec?.displayName ?? a.providerType,
-    );
-  }
-
-  /// 源被删后按**名字**找回：重添同名账号即可恢复（真机反馈：
-  /// 报错只显示一长串源 id，用户即使重加源也接不上）。
-  CloudSource? _resolveSourceByName(String accountName) {
-    final a = _accounts.accounts
-        .where((x) => cloudDriverSpec(x.providerType)?.isWrapper != true)
-        .where((x) => x.name.trim() == accountName.trim())
-        .firstOrNull;
-    if (a == null) return null;
-    return _resolveSource(a.id);
-  }
-
-  CloudDriverEnv _buildEnv() => CloudDriverEnv(
-    resolveSource: _resolveSource,
-    resolveSourceByName: _resolveSourceByName,
-  );
-
-  /// 令牌轮换持久化（驱动回调）：patch 原样合并进存储的配置。
-  ///
-  /// 驱动自己写回的令牌缓存**不算**「用户改了配置」：同步更新该账号的指纹，
-  /// 下一次 [registerAccounts] 才不会因为一次令牌轮换白重建一遍驱动（那会丢掉
-  /// 驱动的内部缓存与连接池）。指纹同步后与「重新从存储读一遍配置」逐字节一致。
-  Future<void> _persistTokens(
-    String accountId,
-    Map<String, dynamic> patch,
-  ) async {
-    final cfg =
-        await _accounts.loadDriverConfig(accountId) ?? <String, dynamic>{};
-    cfg.addAll(patch);
-    await _accounts.saveDriverConfig(accountId, cfg);
-    final account = _accounts.accountById(accountId);
-    if (account == null || !_accountSignatures.containsKey(accountId)) return;
-    _accountSignatures[accountId] = cloudAccountSignature(account, cfg);
-    _registeredBatch = cloudRegistrationSignature(_accountSignatures);
+    final spec = wdmmVfsSpec(a.providerType);
+    if (spec == null) {
+      throw WdmmVfsException('err.unknownDriverType|${a.providerType}');
+    }
+    // Phase 2.3: all cloud drivers now go through wdmm-core FFI via RustWdmmVfs.
+    // Dart driver constructors (spec.create) are no longer used.
+    return RustWdmmVfs(a);
   }
 
   /// 表单保存前的真连校验（99 §7.3.1：能换到 access_token 才保存）。
-  /// 失败原样抛 [CloudDriverException]，由表单展示给用户。
+  /// 失败原样抛 [WdmmVfsException]，由表单展示给用户。
+  ///
+  /// [config] 在校验期间会被**就地修改**（mutated in-place）：Rust 驱动 OAuth 换到的
+  /// access_token / drive_id / refresh_token 等令牌通过 token_patches 写回 config，
+  /// 这样调用方在校验成功后直接把 config 传给 saveDriverConfig，Core 库里存的
+  /// credentials 就已包含完整令牌，重启后可直接重建 driver（I2+aliyun drive_id）。
   Future<void> verifyNewAccount(
     WebDavAccount account,
     Map<String, dynamic> config,
   ) async {
-    final spec = cloudDriverSpec(account.providerType);
-    if (spec == null) {
-      throw CloudDriverException(
-        'err.unknownDriverType|${account.providerType}',
-      );
+    // 真连校验是一次网络 FFI（Rust 内部 block_on），留在 UI isolate 上会让
+    // 表单在账号不可达时整页冻死，因此放到 worker isolate 上跑。
+    final providerType = account.providerType;
+    final configJson = jsonEncode(config);
+    final raw = await RustCoreService.runOffMain<String?>(
+      () => RustCoreService.accountVerify(providerType, configJson),
+    );
+    if (raw == null) {
+      throw WdmmVfsException('err.ffiUnavailable');
     }
-    await spec.verify(config, env: _buildEnv());
+    if (raw.startsWith('error:')) {
+      throw WdmmVfsException(raw.substring(6));
+    }
+    final result = jsonDecode(raw) as Map<String, dynamic>;
+    final patches = result['token_patches'] as Map<String, dynamic>?;
+    if (patches != null && patches.isNotEmpty) {
+      config.addAll(patches);
+    }
   }
 
   /// 该账号的驱动；未接入返回 null。
-  CloudDriver? driverFor(String accountId) => _drivers[accountId];
+  WdmmVfs? driverFor(String accountId) => _drivers[accountId];
 
   /// 账号状态标签（会员 / 带宽等小 Chip，账号列表展示）。
-  /// 驱动已实现 [CloudDriver.statusTags] 就转调；WebDAV 与未接入类型返回空。
+  /// 驱动已实现 [WdmmVfs.statusTags] 就转调；WebDAV 与未接入类型返回空。
   /// 失败静默返回空，绝不阻塞账号列表。
   Future<List<AccountStatusTag>> statusTagsFor(String accountId) async {
     final driver = _drivers[accountId];
@@ -294,7 +264,7 @@ class CloudDriveService extends ChangeNotifier {
     try {
       await driver.init();
       return true;
-    } on CloudDriverException {
+    } on WdmmVfsException {
       return false;
     }
   }
@@ -366,7 +336,7 @@ class CloudDriveService extends ChangeNotifier {
       // 大小未知时拒绝下载：整包/分块的判定依赖密文总长，未知大小会被误当成
       // 「源回了整包」，静默产出损坏的空文件比明确报错糟糕得多。
       if (item.size <= 0) {
-        throw CloudDriverException('err.downloadSizeUnknown|${item.name}');
+        throw WdmmVfsException('err.downloadSizeUnknown|${item.name}');
       }
       final driver = _requireDriver(accountId);
       final canResume = resumeFrom > 0 && item.size > resumeFrom;
@@ -519,29 +489,6 @@ class CloudDriveService extends ChangeNotifier {
     );
   }
 
-  /// 与 WebDavService 同构的递归收集（走 [listDirectory]，自动继承分流与分类）。
-  Future<List<WebDavItem>> collectFilesRecursive(
-    String accountId,
-    String folderPath, {
-    FileTypeConfig? fileTypes,
-    bool onlyAudio = false,
-  }) async {
-    final result = <WebDavItem>[];
-    final queue = <String>[folderPath];
-    while (queue.isNotEmpty) {
-      final dir = queue.removeAt(0);
-      final items = await listDirectory(accountId, dir, fileTypes: fileTypes);
-      for (final item in items) {
-        if (item.isDirectory) {
-          queue.add(item.path);
-        } else if (!onlyAudio || item.isAudio) {
-          result.add(item);
-        }
-      }
-    }
-    return result;
-  }
-
   /// 异步流式源：driver.get() → 直链 + 头；后缀判定与 WebDAV 版一致。
   Future<WebDavStreamSource?> resolveStreamSource({
     required String remotePath,
@@ -558,23 +505,30 @@ class CloudDriveService extends ChangeNotifier {
     final raw = item.rawUrl;
     if (raw == null) {
       // MustProxy 驱动（拿不到直链，内容得由驱动自己解出来，99 §7.5）：
-      // media_kit 只认 URL，交给本地流桥按 Range 逐块取。大小未知时回不了
+      // media_kit 只认 URL，交给 Rust 代理按 Range 逐块取。大小未知时回不了
       // Content-Length，明确拒绝。
       if (item.size <= 0) {
-        throw CloudDriverException('err.streamSizeUnknown|$name');
+        throw WdmmVfsException('err.streamSizeUnknown|$name');
       }
-      final bridged = await _streamBridge.expose(
-        accountId: accountId,
-        remotePath: remotePath,
+      final (:uri, :token) = await RustProxyStreamBridge.expose(
         size: item.size,
         name: name,
+        accountId: accountId,
+        remotePath: remotePath,
         // 每次请求都重新取当前驱动实例：驱动会被 registerAccounts 重建，
         // 而播放中的 URL 不该因此失效。
-        ranges: (path, start, end) =>
-            _requireDriver(accountId).openContentRange(path, start, end),
+        readRange: (start, end) async {
+          final builder = BytesBuilder(copy: false);
+          await for (final chunk in _requireDriver(accountId)
+              .openContentRange(remotePath, start, end)) {
+            builder.add(chunk);
+          }
+          return builder.toBytes();
+        },
       );
+      _proxyStreamTokens.add(token);
       return WebDavStreamSource(
-        uri: bridged.toString(),
+        uri: uri.toString(),
         headers: const {},
         name: name,
         remotePath: remotePath,
@@ -622,7 +576,7 @@ class CloudDriveService extends ChangeNotifier {
     return a;
   }
 
-  CloudDriver _requireDriver(String accountId) {
+  WdmmVfs _requireDriver(String accountId) {
     final driver = _drivers[accountId];
     if (driver == null) {
       throw UnsupportedError(_notReady(accountId));

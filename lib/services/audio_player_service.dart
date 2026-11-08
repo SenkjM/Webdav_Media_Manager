@@ -9,15 +9,15 @@ import '../models/library_track.dart';
 import '../models/play_open_mode.dart';
 import '../models/playable_media.dart';
 import '../models/playback_queue_source.dart';
-import '../models/queue_task.dart';
+import '../models/queue_models.dart';
 import '../models/webdav_item.dart';
 import '../models/webdav_stream.dart';
 import '../utils/directory_walk.dart';
 import '../utils/l10n_host.dart';
 import '../utils/remote_path.dart';
-import '../utils/scan_candidates.dart';
 import '../utils/task_error.dart';
 import 'accounts_service.dart';
+import 'audio_tag_worker.dart';
 import 'cache_service.dart';
 import 'library_actions.dart';
 import 'library_backfill.dart';
@@ -30,8 +30,9 @@ import 'prefetch_cache.dart';
 import 'stream_window.dart';
 import 'notification_permission_service.dart';
 import 'settings_service.dart';
+import 'tag_service.dart';
 import 'stream_cover_reader.dart';
-import 'task_queue_service.dart';
+import 'queue_service.dart';
 import 'webdav_service.dart';
 
 /// Unified music player: local cache and stream share one queue, MiniPlayer,
@@ -41,7 +42,7 @@ import 'webdav_service.dart';
 /// stream URL + headers). Prefetch + tag ingest run on the same service.
 class AudioPlayerService extends ChangeNotifier {
   AudioPlayerService({
-    required TaskQueueService taskQueue,
+    required QueueService taskQueue,
     required MusicAudioHandler handler,
     required WebDavService webDav,
     required CacheService cache,
@@ -90,7 +91,7 @@ class AudioPlayerService extends ChangeNotifier {
     _library.addListener(_onLibraryChanged);
   }
 
-  final TaskQueueService _taskQueue;
+  final QueueService _taskQueue;
   final NotificationPermissionService? _notifications;
   final MusicAudioHandler _handler;
   final WebDavService _webDav;
@@ -136,9 +137,6 @@ class AudioPlayerService extends ChangeNotifier {
   final Map<String, int> _rowRevs = {};
   bool _enrichScheduled = false;
   bool _enriching = false;
-  bool _scrapePumping = false;
-  final Set<String> _scrapeAttempted = {};
-  final Map<String, Completer<void>> _scanWaiters = {};
   int _queueWalkToken = 0;
 
   /// Source descriptor of the now-playing queue (for the queue UI / debug).
@@ -178,9 +176,7 @@ class AudioPlayerService extends ChangeNotifier {
 
   void _onSettings() {
     _prefetch?.nudge();
-    // Turning 自动补齐 on mid-queue should start filling missing rows without
-    // requiring another play action.
-    if (_autoScrapeQueue) _scheduleMissingScrapes();
+    _scheduleNeighborFill();
   }
 
   /// Resolve playable for [track] under [_playOpenMode] (or [mode] override).
@@ -195,15 +191,8 @@ class AudioPlayerService extends ChangeNotifier {
     final openMode = mode ?? _playOpenMode;
     final audioRemote = track.effectiveAudioRemotePath;
 
-    // Prefer explicit localPath only when it is music_cache (or any file in
-    // stream mode — prefetch temp files are allowed for playback).
-    final existing = track.localPath;
-    if (existing != null && File(existing).existsSync()) {
-      if (openMode == PlayOpenMode.stream || _cache.isMusicCachePath(existing)) {
-        return PlayableMedia.file(existing);
-      }
-    }
-
+    // Always resolve via CacheService at use time — never trust a stored
+    // track.localPath as playback authority.
     final cached = await _cache.localPathIfCached(
       audioRemote,
       sourceName: track.sourceName,
@@ -213,9 +202,19 @@ class AudioPlayerService extends ChangeNotifier {
       return PlayableMedia.file(cached);
     }
 
+    // Stream mode may still use an explicit prefetch/temp path on the track
+    // after CacheService miss (ephemeral, not library SoT).
+    final existing = track.localPath;
+    if (existing != null &&
+        File(existing).existsSync() &&
+        openMode == PlayOpenMode.stream &&
+        !_cache.isMusicCachePath(existing)) {
+      return PlayableMedia.file(existing);
+    }
+
     final task = _taskQueue.taskForRemote(track.sourceName, audioRemote);
     if (task != null &&
-        task.status == TaskStatus.completed &&
+        task.status == QueueTaskStatus.completed &&
         task.localPath != null &&
         File(task.localPath!).existsSync() &&
         _cache.isMusicCachePath(task.localPath!)) {
@@ -268,30 +267,54 @@ class AudioPlayerService extends ChangeNotifier {
     return PlayableMedia.stream(uri: source.uri, headers: source.headers);
   }
 
-  /// In-memory Range covers for the player screen (never persisted).
+  /// In-memory Range metadata for the player screen (never persisted).
   ///
-  /// One request runs at a time (`_coverTail`), matching the single network
-  /// window the music cache/prefetch already uses. Entries are cheap bytes and
-  /// stay only for this process; the durable cover is the resampled thumb.
+  /// One request runs at a time (`_tagsTail`), matching the single network
+  /// window the music cache/prefetch already uses. One Rust
+  /// `wdmm_tags_extract` call yields both the fields the player shows and the
+  /// embedded cover, so a screen never pays two Range reads for one track.
   final StreamCoverReader _rangeCoverReader = StreamCoverReader();
-  final Map<String, Uint8List?> _rangeCoverCache = {};
-  final Map<String, Future<Uint8List?>> _rangeCoverInflight = {};
-  Future<void> _coverTail = Future<void>.value();
+  final Map<String, ReadTags?> _rangeTagsCache = {};
+  final Map<String, Future<ReadTags?>> _rangeTagsInflight = {};
+  Future<void> _tagsTail = Future<void>.value();
+  static const int _rangeTagsCacheLimit = 16;
 
-  /// Range-read the embedded cover for the player screen. Local audio should be
-  /// read from its file tags by the caller; this is the remote path.
-  Future<Uint8List?> networkCoverBytes({
+  /// Track keys whose metadata came from the durable library row.
+  ///
+  /// Library wins over tags; a library refresh clears this so the new rows are
+  /// applied on the next track change.
+  final Set<String> _libraryBackedTracks = {};
+
+  /// Track keys already resolved from audio tags in this session.
+  final Set<String> _tagFilledTracks = {};
+
+  /// Serial tail for local parses: one worker isolate at a time, matching the
+  /// single network window. Parsing two large covers in parallel would fight
+  /// playback for CPU without making metadata appear any sooner.
+  Future<void> _tagParseTail = Future<void>.value();
+
+  /// Generation of the neighbour fill pass, bumped on every schedule so a parse
+  /// started for the previous queue/window is dropped instead of written.
+  int _neighborFillGen = 0;
+  Timer? _neighborFillTimer;
+
+  /// Range-read the embedded tags for the remote track.
+  ///
+  /// Local audio is read from its own file by the caller. The result stays in
+  /// memory only: it is display metadata, never written to the library and
+  /// never enqueued as a scrape.
+  Future<ReadTags?> networkTags({
     required String sourceName,
     required String remotePath,
     required String fileName,
   }) {
     final key = '$sourceName\u0000$remotePath';
-    if (_rangeCoverCache.containsKey(key)) {
-      return Future.value(_rangeCoverCache[key]);
+    if (_rangeTagsCache.containsKey(key)) {
+      return Future.value(_rangeTagsCache[key]);
     }
-    final running = _rangeCoverInflight[key];
+    final running = _rangeTagsInflight[key];
     if (running != null) return running;
-    final future = _enqueueCover(() async {
+    final future = _enqueueSerial<ReadTags?>(() async {
       try {
         final accountId = _accounts.idForSource(sourceName) ?? '';
         if (accountId.isEmpty) return null;
@@ -303,26 +326,39 @@ class AudioPlayerService extends ChangeNotifier {
         );
         if (source == null || source.uri.isEmpty) return null;
         final tags = await _rangeCoverReader.extractTags(source);
-        final bytes = tags?.coverBytes;
-        if (bytes == null || bytes.isEmpty) return null;
-        _rangeCoverCache[key] = bytes;
-        if (_rangeCoverCache.length > 8) {
-          _rangeCoverCache.remove(_rangeCoverCache.keys.first);
+        _rangeTagsCache[key] = tags;
+        if (_rangeTagsCache.length > _rangeTagsCacheLimit) {
+          _rangeTagsCache.remove(_rangeTagsCache.keys.first);
         }
-        return bytes;
+        return tags;
       } catch (_) {
         return null;
       }
     });
-    _rangeCoverInflight[key] = future;
-    future.whenComplete(() => _rangeCoverInflight.remove(key));
+    _rangeTagsInflight[key] = future;
+    future.whenComplete(() => _rangeTagsInflight.remove(key));
     return future;
   }
 
-  Future<Uint8List?> _enqueueCover(Future<Uint8List?> Function() job) {
-    final previous = _coverTail;
+  /// Range-read the embedded cover for the player screen. Shares the tag read.
+  Future<Uint8List?> networkCoverBytes({
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
+  }) async {
+    final tags = await networkTags(
+      sourceName: sourceName,
+      remotePath: remotePath,
+      fileName: fileName,
+    );
+    final bytes = tags?.coverBytes;
+    return bytes == null || bytes.isEmpty ? null : bytes;
+  }
+
+  Future<T> _enqueueSerial<T>(Future<T> Function() job) {
+    final previous = _tagsTail;
     final gate = Completer<void>();
-    _coverTail = gate.future;
+    _tagsTail = gate.future;
     return previous.then((_) => job()).whenComplete(gate.complete);
   }
 
@@ -453,7 +489,6 @@ class AudioPlayerService extends ChangeNotifier {
     }
 
     _queueSource = source ?? PlaybackQueueSource.libraryQueue();
-    _scrapeAttempted.clear();
     _queueWalkToken++; // stop any previous network-folder walk
     // Library rows are already in memory: fill title/cover/duration before the
     // first frame so a scraped/cached track never waits on the network for its
@@ -469,7 +504,8 @@ class AudioPlayerService extends ChangeNotifier {
   void _afterQueueStarted() {
     _persistQueueSoon();
     _scheduleEnrichment();
-    _scheduleMissingScrapes();
+    final track = current;
+    if (track != null) unawaited(_maybePlayTriggeredBackfill(track));
   }
 
   // ---- persistent playback queue -----------------------------------------
@@ -522,14 +558,18 @@ class AudioPlayerService extends ChangeNotifier {
     if (row.year != null) t.year = row.year;
     if (row.bitrate != null) t.bitrate = row.bitrate;
     if (row.sampleRate != null) t.sampleRate = row.sampleRate;
-    if (_present(row.coverPath)) t.coverPath = row.coverPath;
+    final thumb = _library.covers.thumbPath(row.sourceName, row.effectiveAudioRemotePath);
+    if (thumb != null) t.coverPath = thumb;
   }
 
   static bool _present(String? value) =>
       value != null && value.trim().isNotEmpty;
 
   void _onLibraryChanged() {
+    // New/updated rows: let every track fall back to its durable row again.
+    _libraryBackedTracks.clear();
     _scheduleEnrichment();
+    _scheduleNeighborFill();
   }
 
   void _scheduleEnrichment() {
@@ -610,7 +650,6 @@ class AudioPlayerService extends ChangeNotifier {
       ...batch,
       ...old.sublist(at),
     ];
-    _scrapeAttempted.clear();
     await _loadAndPlay(next, at);
     _afterQueueStarted();
   }
@@ -633,7 +672,8 @@ class AudioPlayerService extends ChangeNotifier {
     notifyListeners();
     _persistQueueSoon();
     _scheduleEnrichment();
-    _scheduleMissingScrapes();
+    final track = current;
+    if (track != null) unawaited(_maybePlayTriggeredBackfill(track));
   }
 
   bool get canEditQueue => _handler.tracks.isNotEmpty;
@@ -683,7 +723,6 @@ class AudioPlayerService extends ChangeNotifier {
     await _handler.stop();
     await _queueStore.clear();
     _queueSource = null;
-    _scrapeAttempted.clear();
     notifyListeners();
   }
 
@@ -721,195 +760,56 @@ class AudioPlayerService extends ChangeNotifier {
     );
   }
 
-  // ---- auto-scrape missing queue rows ------------------------------------
-
-  /// Queue metadata scrape: one task at a time, in playback order. Library
-  /// changes then flow back through [_enrichQueue], so the queue updates
-  /// dynamically after the scrape completes.
-  void _scheduleMissingScrapes() {
-    unawaited(_pumpMissingScrapes());
-  }
-
-  /// Missing queue rows are scraped automatically for the network-library
-  /// auto-scrape feature, and for library queues only while 自动补齐 is on —
-  /// manual mode keeps the library manual (explicit scans still work).
-  bool get _autoScrapeQueue {
-    if (_settings.musicLibraryAutoBackfill) return true;
-    final kind = _queueSource?.kind;
-    return kind == PlaybackQueueSourceKind.networkFolder ||
-        kind == PlaybackQueueSourceKind.cueAlbum;
-  }
-
-  Future<void> _pumpMissingScrapes() async {
-    if (_scrapePumping) return;
-    if (!_autoScrapeQueue) return;
-    _scrapePumping = true;
-    try {
-      while (true) {
-        final entry = _nextUnscrapedEntry();
-        if (entry == null) break;
-        final key = _scrapeKey(entry);
-        if (!_scrapeAttempted.add(key)) continue;
-        final accountId = entry.accountId.isNotEmpty
-            ? entry.accountId
-            : (_accounts.idForSource(entry.sourceName) ?? '');
-        if (accountId.isEmpty) continue;
-        final path = entry.isCueVirtual
-            ? (entry.cueRemotePath ?? '')
-            : entry.effectiveAudioRemotePath;
-        if (path.isEmpty) continue;
-        final name = path.split('/').last;
-        final task = await _taskQueue.enqueueScan(
-          sourceName: entry.sourceName,
-          remotePath: path,
-          fileName: name,
-          unitsTotal: 1,
-          paths: [
-            ScanPathEntry(path: path, name: name, isCue: entry.isCueVirtual),
-          ],
-          priority: 5,
-        );
-        await _waitForScan(task.id);
-      }
-    } catch (_) {
-      // Best-effort background work; playback must never fail because of it.
-    } finally {
-      _scrapePumping = false;
-    }
-  }
-
-  TrackInfo? _nextUnscrapedEntry() {
-    final tracks = _handler.tracks;
-    if (tracks.isEmpty) return null;
-    final start = _handler.index >= 0 ? _handler.index : 0;
-    for (var step = 0; step < tracks.length; step++) {
-      final t = tracks[(start + step) % tracks.length];
-      final key = _scrapeKey(t);
-      if (_scrapeAttempted.contains(key)) continue;
-      if (_library.find(t.sourceName, t.remotePath) != null) {
-        // Already in the library: nothing to scrape, keep the cursor moving.
-        _scrapeAttempted.add(key);
-        continue;
-      }
-      return t;
-    }
-    return null;
-  }
-
-  static String _scrapeKey(TrackInfo t) =>
-      '${t.sourceName}\u0000${t.isCueVirtual ? (t.cueRemotePath ?? '') : t.effectiveAudioRemotePath}';
-
-  Future<void> _waitForScan(String taskId) async {
-    final completer = Completer<void>();
-    _scanWaiters[taskId] = completer;
-    try {
-      await completer.future.timeout(
-        const Duration(minutes: 5),
-        onTimeout: () {},
-      );
-    } finally {
-      _scanWaiters.remove(taskId);
-    }
-  }
-
-  void _resolveScanWaiters() {
-    if (_scanWaiters.isEmpty) return;
-    final done = <String>[];
-    for (final entry in _scanWaiters.entries) {
-      QueueTask? task;
-      for (final t in _taskQueue.tasks) {
-        if (t.id == entry.key) {
-          task = t;
-          break;
-        }
-      }
-      if (task == null) continue;
-      if (task.status == TaskStatus.completed ||
-          task.status == TaskStatus.failed ||
-          task.status == TaskStatus.partial ||
-          task.status == TaskStatus.cancelled) {
-        done.add(entry.key);
-      }
-    }
-    for (final id in done) {
-      _scanWaiters.remove(id)?.complete();
-    }
-  }
-
   /// Extend a network-folder queue with its subdirectories, using the audio
   /// playlist walk window (Settings → 音乐播放列表 → 搜索子目录/深度).
   ///
   /// Never blocks the first frame: the caller seeds the queue with the current
   /// directory and starts playback first, then this walks in the background.
   /// Current-directory order stays the listing order; subdirectories append in
-  /// walk order. [rootListing] reuses the listing the screen already has.
+  /// walk order. The directory walk itself runs in Rust.
   Future<void> extendNetworkFolderQueue({
     required String accountId,
     required String sourceName,
     required String rootPath,
     required bool includeSubdirs,
     required int maxDepth,
-    List<WebDavItem>? rootListing,
   }) async {
     if (!includeSubdirs) return;
     _queueWalkToken++;
     final token = _queueWalkToken;
     try {
-      final walker = DirectoryWalker(
+      final walk = await DirectoryWalker.scan(
+        accountId: accountId,
         rootPath: rootPath,
         options: WalkOptions(
           includeSubdirs: true,
           maxDepth: WalkOptions.clampDepth(maxDepth),
         ),
+        kinds: const ['music'],
       );
-      final root = walker.nextDirectory();
-      if (root == null) return;
-      final rootItems =
-          rootListing ??
-          await _webDav.listDirectory(
-            accountId,
-            root,
-            fileTypes: _settings.fileTypes,
-          );
-      walker.acceptChildren(
-        root,
-        rootItems.where((e) => e.isDirectory).map((e) => e.path),
-      );
+      if (token != _queueWalkToken) return;
       final known = <String>{
         for (final t in _handler.tracks) '${t.sourceName}\u0000${t.remotePath}',
       };
-      while (token == _queueWalkToken) {
-        final dir = walker.nextDirectory();
-        if (dir == null) break;
-        try {
-          final items = await _webDav.listDirectory(
-            accountId,
-            dir,
-            fileTypes: _settings.fileTypes,
-          );
-          if (token != _queueWalkToken) break;
-          walker.acceptChildren(
-            dir,
-            items.where((e) => e.isDirectory).map((e) => e.path),
-          );
-          final batch = <TrackInfo>[];
-          for (final item in items) {
-            if (item.category != FileCategory.music) continue;
-            final key = '$sourceName\u0000${item.path}';
-            if (!known.add(key)) continue;
-            batch.add(
-              TrackInfo(
-                sourceName: sourceName,
-                accountId: accountId,
-                remotePath: item.path,
-                fileName: item.name,
-              ),
-            );
+      for (final dir in walk.directoryPaths) {
+        if (token != _queueWalkToken) return;
+        final batch = <TrackInfo>[];
+        for (final entry in walk.filesIn(dir)) {
+          if (entry.toItem(_settings.fileTypes).category != FileCategory.music) {
+            continue;
           }
-          if (batch.isNotEmpty) await appendToQueue(batch);
-        } catch (_) {
-          // One unreadable subdirectory must not abort the rest of the walk.
+          final key = '$sourceName\u0000${entry.path}';
+          if (!known.add(key)) continue;
+          batch.add(
+            TrackInfo(
+              sourceName: sourceName,
+              accountId: accountId,
+              remotePath: entry.path,
+              fileName: entry.name,
+            ),
+          );
         }
+        if (batch.isNotEmpty) await appendToQueue(batch);
       }
     } catch (_) {
       // Best-effort background walk; playback already started from the seed.
@@ -982,7 +882,6 @@ class AudioPlayerService extends ChangeNotifier {
         playable: playable,
       );
       unawaited(_clearRemoteMissingMirror(track));
-      unawaited(_maybePlayTriggeredBackfill(track));
       if (_playOpenMode == PlayOpenMode.stream) {
         _startPrefetch(playlist, index, track.accountId);
       } else {
@@ -1044,8 +943,8 @@ class AudioPlayerService extends ChangeNotifier {
   /// Cache-mode neighbor warm: same forward/back window as stream prefetch,
   /// but enqueue into music_cache via the task queue (no prefetch_cache).
   ///
-  /// Neighbour covers are Range-read **first** (higher priority than audio) into
-  /// the player's memory cache, matching the stream-prefetch order.
+  /// Neighbours never touch the network for metadata: once their audio lands in
+  /// a local cache, the neighbour fill pass parses it from bytes.
   Future<void> _warmCacheNeighbors(List<TrackInfo> playlist, int index) async {
     final indexes = prefetchNeighborIndexes(
       current: index,
@@ -1053,13 +952,6 @@ class AudioPlayerService extends ChangeNotifier {
       backward: _settings.audioStreamPrefetchBackward,
       forward: _settings.audioStreamPrefetchForward,
     );
-    for (final i in indexes) {
-      final t = playlist[i];
-      if (t.localPath != null && File(t.localPath!).existsSync()) continue;
-      try {
-        await _loadRangeCoverFor(t);
-      } catch (_) {}
-    }
     for (final i in indexes) {
       final t = playlist[i];
       if (t.accountId.isEmpty && t.sourceName.isEmpty) continue;
@@ -1077,17 +969,21 @@ class AudioPlayerService extends ChangeNotifier {
         );
       } catch (_) {}
     }
+    _scheduleNeighborFill();
   }
 
-  bool _hasRangeCover(TrackInfo track) => _rangeCoverCache.containsKey(
-    '${track.sourceName}\u0000${track.effectiveAudioRemotePath}',
-  );
-
-  Future<Uint8List?> _loadRangeCoverFor(TrackInfo track) => networkCoverBytes(
-    sourceName: track.sourceName,
-    remotePath: track.effectiveAudioRemotePath,
-    fileName: track.fileName,
-  );
+  /// Full-size cover bytes already in memory for the now-playing track.
+  ///
+  /// The player backdrop asks for this before falling back to its own local
+  /// read, so a cache-mode track does not decode tags on the UI isolate.
+  Uint8List? cachedCoverBytes({
+    required String sourceName,
+    required String remotePath,
+  }) {
+    final tags = _rangeTagsCache['$sourceName\u0000$remotePath'];
+    final bytes = tags?.coverBytes;
+    return bytes == null || bytes.isEmpty ? null : bytes;
+  }
 
   void _startPrefetch(List<TrackInfo> playlist, int index, String accountId) {
     unawaited(_prefetch?.dispose());
@@ -1097,14 +993,249 @@ class AudioPlayerService extends ChangeNotifier {
       currentIndex: () => _handler.index,
       backward: () => _settings.audioStreamPrefetchBackward,
       forward: () => _settings.audioStreamPrefetchForward,
-      coverFor: _loadRangeCoverFor,
-      coverReady: _hasRangeCover,
+      onAudioComplete: (track, path) => _onPrefetchAudioReady(track),
     );
     _prefetch!.start(accountId: accountId);
   }
 
   void _applyMediaItemTags(MediaItem? item) {
-    // no-op placeholder — queue metadata is applied by [_enrichQueue].
+    // Every track change lands here. Fill the now-playing row from the
+    // library, its local file, or one transient Range read, so a streamed
+    // track never shows a bare file name in the player/notification.
+    unawaited(_fillTransientMetadata());
+    _scheduleNeighborFill();
+  }
+
+  /// Fill [current] from the cheapest source that has the fields.
+  ///
+  /// Order: durable library row -> local file tags (worker isolate) -> one
+  /// transient remote tag read (`wdmm_tags_extract`). Nothing is persisted and
+  /// no scrape is queued; the remote read exists only so the now-playing row is
+  /// never a bare file name.
+  Future<void> _fillTransientMetadata() async {
+    final track = current;
+    if (track == null) return;
+    final key = _metaKey(track);
+    if (_libraryBackedTracks.contains(key)) return;
+    final row = _library.find(track.sourceName, track.remotePath);
+    if (row != null) {
+      _applyRowMetadata(track, row);
+      _libraryBackedTracks.add(key);
+      notifyListeners();
+      return;
+    }
+    if (_tagFilledTracks.contains(key)) return;
+    final local = await _localAudioPathFor(track);
+    if (local != null) {
+      final parsed = await _parseLocalAudio(track, local, keepCoverBytes: true);
+      if (!identical(current, track)) return;
+      if (parsed != null) {
+        _rememberCurrentTags(track, parsed.tags);
+        _applyTags(track, parsed.tags);
+        _applyThumb(track, parsed.thumbPath);
+        _tagFilledTracks.add(key);
+        notifyListeners();
+        return;
+      }
+    }
+    final tags = await networkTags(
+      sourceName: track.sourceName,
+      remotePath: track.effectiveAudioRemotePath,
+      fileName: track.fileName,
+    );
+    if (!identical(current, track)) return;
+    if (_applyTags(track, tags)) {
+      _tagFilledTracks.add(key);
+      final cover = tags?.coverBytes;
+      if (cover != null && cover.isNotEmpty) {
+        unawaited(_writeRemoteCover(track, cover));
+      }
+      notifyListeners();
+    }
+  }
+
+  /// Remember the now-playing tags under both keys the screens use: the
+  /// track's own path (queue rows) and its backing audio path (the backdrop).
+  void _rememberCurrentTags(TrackInfo track, ReadTags tags) {
+    _rangeTagsCache[_metaKey(track)] = tags;
+    _rangeTagsCache['${track.sourceName}\u0000${track.effectiveAudioRemotePath}'] =
+        tags;
+    while (_rangeTagsCache.length > _rangeTagsCacheLimit) {
+      _rangeTagsCache.remove(_rangeTagsCache.keys.first);
+    }
+  }
+
+  /// Parse the now-playing track's audio off the UI isolate.
+  ///
+  /// [keepCoverBytes] is true for the current track only: the player backdrop
+  /// wants the full art, while neighbours get a thumb file and fields.
+  Future<ParsedAudioMetadata?> _parseLocalAudio(
+    TrackInfo track,
+    String localPath, {
+    required bool keepCoverBytes,
+  }) async {
+    var thumb = _library.covers.thumbPath(track.sourceName, track.remotePath);
+    if (thumb == null) {
+      await _library.covers.init();
+      thumb = _library.covers.thumbPath(track.sourceName, track.remotePath);
+    }
+    try {
+      return await _enqueueParse(
+        () => parseAudioMetadata(
+          path: localPath,
+          thumbPath: thumb,
+          thumbSize: _settings.coverThumbSizePx,
+          keepCoverBytes: keepCoverBytes,
+        ),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Write a thumb for a cover that came from the remote tag read.
+  Future<void> _writeRemoteCover(TrackInfo track, Uint8List bytes) async {
+    var thumb = _library.covers.thumbPath(track.sourceName, track.remotePath);
+    if (thumb == null) {
+      await _library.covers.init();
+      thumb = _library.covers.thumbPath(track.sourceName, track.remotePath);
+    }
+    if (thumb == null) return;
+    final written = await writeCoverThumbInWorker(
+      bytes: bytes,
+      thumbPath: thumb,
+      thumbSize: _settings.coverThumbSizePx,
+    );
+    if (!identical(current, track)) return;
+    _applyThumb(track, written);
+    notifyListeners();
+  }
+
+  Future<T> _enqueueParse<T>(Future<T> Function() job) {
+    final previous = _tagParseTail;
+    final gate = Completer<void>();
+    _tagParseTail = gate.future;
+    return previous.then((_) => job()).whenComplete(gate.complete);
+  }
+
+  void _applyThumb(TrackInfo track, String? thumbPath) {
+    if (thumbPath == null || thumbPath.isEmpty) return;
+    if (track.coverPath == thumbPath) return;
+    track.coverPath = thumbPath;
+    _queueRevision++;
+  }
+
+  String _metaKey(TrackInfo track) => '${track.sourceName}\u0000${track.remotePath}';
+
+  /// A local file for [track]'s audio, or null when nothing is on disk yet.
+  ///
+  /// Prefer the playing file, then the durable music cache, then this session's
+  /// prefetch file. Neighbours use this and never fall back to the network.
+  Future<String?> _localAudioPathFor(TrackInfo track) async {
+    final local = track.localPath;
+    if (local != null && local.isNotEmpty && File(local).existsSync()) {
+      return local;
+    }
+    final audioRemote = track.effectiveAudioRemotePath;
+    try {
+      final cached = await _cache.localPathIfCached(
+        audioRemote,
+        sourceName: track.sourceName,
+      );
+      if (cached != null) return cached;
+    } catch (_) {
+      // Cache index unavailable: fall through to the prefetch file.
+    }
+    return _prefetchedAudioPath(track, audioRemote);
+  }
+
+  /// Parse neighbours once their audio is on disk (prefetch completion, queue
+  /// terminal, window change), one worker isolate at a time.
+  void _scheduleNeighborFill() {
+    _neighborFillTimer?.cancel();
+    _neighborFillTimer = Timer(const Duration(milliseconds: 300), () {
+      unawaited(_fillNeighborMetadata());
+    });
+  }
+
+  void _onPrefetchAudioReady(TrackInfo track) {
+    if (_settings.audioStreamPrefetchBackward <= 0 &&
+        _settings.audioStreamPrefetchForward <= 0) {
+      return;
+    }
+    _scheduleNeighborFill();
+  }
+
+  Future<void> _fillNeighborMetadata() async {
+    final gen = ++_neighborFillGen;
+    final queue = _handler.tracks;
+    final index = _handler.index;
+    if (index < 0 || index >= queue.length) return;
+    final indexes = prefetchNeighborIndexes(
+      current: index,
+      length: queue.length,
+      backward: _settings.audioStreamPrefetchBackward,
+      forward: _settings.audioStreamPrefetchForward,
+    );
+    for (final i in indexes) {
+      if (gen != _neighborFillGen) return;
+      final track = queue[i];
+      final key = _metaKey(track);
+      if (_tagFilledTracks.contains(key) ||
+          _libraryBackedTracks.contains(key)) {
+        continue;
+      }
+      final path = await _localAudioPathFor(track);
+      if (path == null) continue;
+      final parsed = await _parseLocalAudio(
+        track,
+        path,
+        keepCoverBytes: false,
+      );
+      if (gen != _neighborFillGen) return;
+      if (parsed == null) continue;
+      _applyTags(track, parsed.tags);
+      _applyThumb(track, parsed.thumbPath);
+      _tagFilledTracks.add(key);
+      _queueRevision++;
+      notifyListeners();
+    }
+  }
+
+  /// Overwrite [t] with the present tag fields; returns whether anything moved.
+  bool _applyTags(TrackInfo t, ReadTags? tags) {
+    if (tags == null) return false;
+    var changed = false;
+    bool text(String? value, String? current, void Function(String) assign) {
+      if (!_present(value) || value == current) return false;
+      assign(value!.trim());
+      return true;
+    }
+
+    changed |= text(tags.title, t.title, (v) => t.title = v);
+    changed |= text(tags.artist, t.artist, (v) => t.artist = v);
+    changed |= text(tags.albumArtist, t.albumArtist, (v) => t.albumArtist = v);
+    changed |= text(tags.album, t.album, (v) => t.album = v);
+    changed |= text(tags.genre, t.genre, (v) => t.genre = v);
+    final ms = tags.durationMs;
+    if (ms != null && ms > 0 && t.duration?.inMilliseconds != ms) {
+      t.duration = Duration(milliseconds: ms);
+      changed = true;
+    }
+    bool number(int? value, int? current, void Function(int) assign) {
+      if (value == null || value <= 0 || value == current) return false;
+      assign(value);
+      return true;
+    }
+
+    changed |= number(tags.trackNumber, t.trackNumber, (v) => t.trackNumber = v);
+    changed |= number(tags.trackTotal, t.trackTotal, (v) => t.trackTotal = v);
+    changed |= number(tags.discNumber, t.discNumber, (v) => t.discNumber = v);
+    changed |= number(tags.discTotal, t.discTotal, (v) => t.discTotal = v);
+    changed |= number(tags.year, t.year, (v) => t.year = v);
+    changed |= number(tags.bitrate, t.bitrate, (v) => t.bitrate = v);
+    changed |= number(tags.sampleRate, t.sampleRate, (v) => t.sampleRate = v);
+    return changed;
   }
 
   Future<void> playPause() async {
@@ -1202,13 +1333,18 @@ class AudioPlayerService extends ChangeNotifier {
   /// When a scrape is enqueued, registers a pending queue-sync that runs only
   /// after that task successfully ingests (see [_onTaskQueueChanged]).
   Future<void> _maybePlayTriggeredBackfill(TrackInfo track) async {
-    // Network-folder queues already enumerate the queue's own walk window;
-    // their missing rows are scraped by the queue enrichment pump. Discovery
-    // of *unknown* files still follows the audio playlist window.
-    if (_queueSource?.kind == PlaybackQueueSourceKind.networkFolder) return;
-    // CUE slices carry a virtual path; the queue enrichment pump scrapes the
-    // real `.cue` path instead.
-    if (track.isCueVirtual) return;
+    // The queue enrichment pump only handles missing rows in the current
+    // playing directory; discovery of unknown files is also directory-local.
+    final source = _queueSource;
+    if (source?.isFolderRoot != true) return;
+    final current = _handler.index >= 0 && _handler.index < _handler.tracks.length
+        ? _handler.tracks[_handler.index]
+        : null;
+    if (current == null ||
+        current.sourceName != track.sourceName ||
+        remoteParent(current.remotePath) != remoteParent(track.remotePath)) {
+      return;
+    }
     final accountId = track.accountId.trim();
     final remotePath = track.remotePath.trim();
     final sourceName = track.sourceName.trim();
@@ -1241,7 +1377,7 @@ class AudioPlayerService extends ChangeNotifier {
   }
 
   void _onTaskQueueChanged() {
-    _resolveScanWaiters();
+    _scheduleNeighborFill();
     final pending = _pendingPlayBackfillSync;
     if (pending == null) return;
     QueueTask? task;
@@ -1252,12 +1388,12 @@ class AudioPlayerService extends ChangeNotifier {
       }
     }
     if (task == null) return;
-    if (task.status == TaskStatus.failed ||
-        task.status == TaskStatus.cancelled) {
+    if (task.status == QueueTaskStatus.failed ||
+        task.status == QueueTaskStatus.cancelled) {
       _pendingPlayBackfillSync = null;
       return;
     }
-    if (task.status != TaskStatus.completed) return;
+    if (task.status != QueueTaskStatus.completed) return;
     _pendingPlayBackfillSync = null;
     _syncQueueAfterPlayBackfill(pending);
   }
@@ -1373,10 +1509,6 @@ class AudioPlayerService extends ChangeNotifier {
     _pendingPlayBackfillSync = null;
     _persistTimer?.cancel();
     unawaited(_persistQueue());
-    for (final waiter in _scanWaiters.values) {
-      if (!waiter.isCompleted) waiter.complete();
-    }
-    _scanWaiters.clear();
     unawaited(_prefetch?.dispose());
     _posSub?.cancel();
     _durSub?.cancel();

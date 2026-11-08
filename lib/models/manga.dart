@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+
+import 'cover_state.dart';
+
 /// One readable manga unit (container or image directory). See docs/99 §19.
 ///
 /// A series is **not** an entity of its own: [series] is a plain tag on the
@@ -16,7 +19,7 @@ class Manga {
     this.volume,
     this.chapterNumber,
     this.pageCount = 0,
-    this.coverRelpath,
+    this.coverState = 0,
     this.format = MangaFormat.unknown,
     this.remoteMissing = false,
     this.pageTurn,
@@ -36,7 +39,15 @@ class Manga {
   final String? volume;
   final String? chapterNumber;
   final int pageCount;
-  final String? coverRelpath;
+
+  /// Cover availability state: 0=unknown, 1=none, 2=present (see [CoverState]).
+  /// The local thumb path is derived from identity via [CacheService]; never
+  /// persisted as a path column.
+  final int coverState;
+
+  /// Convenience accessor.
+  CoverState get coverStateEnum => CoverState.fromInt(coverState);
+
   final String format;
   final bool remoteMissing;
 
@@ -62,7 +73,7 @@ class Manga {
     'volume': volume,
     'chapter_number': chapterNumber,
     'page_count': pageCount,
-    'cover_relpath': coverRelpath,
+    'cover_state': coverState,
     'format': format,
     'remote_missing': remoteMissing ? 1 : 0,
     'page_turn': pageTurn,
@@ -72,6 +83,10 @@ class Manga {
 
   static Manga fromMap(Map<String, Object?> map) {
     final rawTurn = map['page_turn'] as String?;
+    // Legacy migration: non-empty cover_relpath → present(2), empty → unknown(0).
+    final legacyRelpath = map['cover_relpath'] as String?;
+    final legacyCoverState =
+        (legacyRelpath != null && legacyRelpath.isNotEmpty) ? 2 : 0;
     return Manga(
       id: map['id'] as String? ?? '',
       sourceName: map['source_name'] as String? ?? '',
@@ -82,7 +97,7 @@ class Manga {
       volume: map['volume'] as String?,
       chapterNumber: map['chapter_number'] as String?,
       pageCount: (map['page_count'] as int?) ?? 0,
-      coverRelpath: map['cover_relpath'] as String?,
+      coverState: (map['cover_state'] as int?) ?? legacyCoverState,
       format: map['format'] as String? ?? MangaFormat.unknown,
       remoteMissing: ((map['remote_missing'] as int?) ?? 0) != 0,
       pageTurn: (rawTurn == null || rawTurn.trim().isEmpty) ? null : rawTurn,
@@ -103,7 +118,7 @@ class Manga {
     String? volume,
     String? chapterNumber,
     int? pageCount,
-    String? coverRelpath,
+    int? coverState,
     String? format,
     bool? remoteMissing,
     String? pageTurn,
@@ -123,7 +138,7 @@ class Manga {
       volume: volume ?? this.volume,
       chapterNumber: chapterNumber ?? this.chapterNumber,
       pageCount: pageCount ?? this.pageCount,
-      coverRelpath: coverRelpath ?? this.coverRelpath,
+      coverState: coverState ?? this.coverState,
       format: format ?? this.format,
       remoteMissing: remoteMissing ?? this.remoteMissing,
       pageTurn: clearPageTurn ? null : (pageTurn ?? this.pageTurn),

@@ -9,6 +9,8 @@
 #
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File tool\dev-run-bg.ps1 -Device <serial>
+#   powershell -ExecutionPolicy Bypass -File tool\dev-run-bg.ps1 -Device <serial> -BuildRust
+#   powershell -ExecutionPolicy Bypass -File tool\dev-run-bg.ps1 -Device <serial> -BuildRust -Ffmpeg
 #   # 停止：
 #   powershell -ExecutionPolicy Bypass -File tool\dev-run-bg.ps1 -Stop
 #
@@ -17,8 +19,101 @@
 
 param(
     [string] $Device = '',
-    [switch] $Stop
+    [string] $Flavor = '',
+    [switch] $Stop,
+    # 启动前先编译 Rust FFI（等价于手动跑 tool\build-rust.ps1 再 flutter run）
+    [switch] $BuildRust,
+    # 传给 build-rust.ps1 的 -Ffmpeg 开关：下载 libav*.so 并以 --features ffmpeg 编译
+    [switch] $Ffmpeg
 )
+
+$ErrorActionPreference = 'Continue'
+$root = Split-Path -Parent $PSScriptRoot
+$tmpDir = Join-Path $root '.tmp'
+if (-not (Test-Path $tmpDir)) { New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null }
+
+$pidFile = Join-Path $tmpDir 'dev-run.pid'
+$logFile = Join-Path $tmpDir 'dev-run-bg.log'
+$uriFile = Join-Path $tmpDir 'vm-service-uri.txt'
+
+# --- 停止模式 ---------------------------------------------------------------
+if ($Stop) {
+    if (Test-Path $pidFile) {
+        $oldPid = (Get-Content $pidFile -Raw).Trim()
+        if ($oldPid) {
+            Write-Output "停止 flutter run (pid=$oldPid) …"
+            Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+    }
+    Write-Output '已停止。'
+    exit 0
+}
+
+# --- 可选：先编译 Rust FFI --------------------------------------------------
+if ($BuildRust) {
+    $buildScript = Join-Path $PSScriptRoot 'build-rust.ps1'
+    $buildArgs = @('-ExecutionPolicy', 'Bypass', '-File', $buildScript)
+    if ($Ffmpeg) { $buildArgs += '-Ffmpeg' }
+    Write-Host '==> build-rust.ps1 …' -ForegroundColor Cyan
+    & pwsh @buildArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "build-rust.ps1 failed (exit $LASTEXITCODE) — flutter run cancelled"
+        exit $LASTEXITCODE
+    }
+}
+
+# --- 清理旧实例 -------------------------------------------------------------
+if (Test-Path $pidFile) {
+    $oldPid = (Get-Content $pidFile -Raw).Trim()
+    if ($oldPid -and (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)) {
+        Write-Output "先停止已有实例 (pid=$oldPid) …"
+        Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
+    Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+}
+Remove-Item $logFile -Force -ErrorAction SilentlyContinue
+Remove-Item $uriFile -Force -ErrorAction SilentlyContinue
+
+# --- 组装命令 ---------------------------------------------------------------
+$argList = @('run')
+if ($Flavor) { $argList += @('--flavor', $Flavor) }
+if ($Device) { $argList += @('-d', $Device) }
+$argList += @('--dart-define=AUDIO_NOTIF_DEBUG=true')
+
+$flutter = (Get-Command flutter).Source
+# `powershell -Command` 让子进程自己处理重定向，父进程立刻返回。
+$inner = "& '$flutter' $($argList -join ' ') *> '$logFile'"
+
+$proc = Start-Process -FilePath 'powershell' `
+    -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $inner) `
+    -WindowStyle Hidden -PassThru
+
+$proc.Id | Out-File -FilePath $pidFile -Encoding ascii
+Write-Output "已启动 flutter run（独立进程 pid=$($proc.Id)）"
+Write-Output "日志：$logFile"
+
+# --- 等待 VM Service 就绪 ---------------------------------------------------
+Write-Output '等待 Dart VM Service …'
+$uri = $null
+for ($i = 0; $i -lt 90; $i++) {
+    Start-Sleep -Seconds 2
+    if (Test-Path $logFile) {
+        $m = Select-String -Path $logFile -Pattern 'A Dart VM Service on \S+ is available at: (\S+)' -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($m) { $uri = $m.Matches[0].Groups[1].Value; break }
+    }
+    if (-not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) { break }
+}
+
+if ($uri) {
+    $uri | Out-File -FilePath $uriFile -Encoding ascii
+    Write-Output "VM Service: $uri"
+    Write-Output "重新接上调试会话：flutter attach --debug-uri $uri"
+} else {
+    Write-Output '未捕获到 VM Service URI，请查看日志。'
+}
 
 $ErrorActionPreference = 'Continue'
 $root = Split-Path -Parent $PSScriptRoot
@@ -58,6 +153,7 @@ Remove-Item $uriFile -Force -ErrorAction SilentlyContinue
 
 # --- 组装命令 ---------------------------------------------------------------
 $argList = @('run')
+if ($Flavor) { $argList += @('--flavor', $Flavor) }
 if ($Device) { $argList += @('-d', $Device) }
 $argList += @('--dart-define=AUDIO_NOTIF_DEBUG=true')
 

@@ -6,6 +6,7 @@ import '../models/playlist.dart';
 import '../models/playlist_sentinels.dart';
 import '../services/audio_player_service.dart';
 import '../services/playlist_service.dart';
+import '../services/sync_service.dart';
 import '../widgets/meta_text.dart';
 import 'home_shell.dart';
 import 'playlist_detail_screen.dart';
@@ -146,14 +147,10 @@ class PlaylistsScreen extends StatelessWidget {
             tooltip: l10n.playlistSyncTooltip,
             icon: const Icon(Icons.cloud_sync_outlined),
             onPressed: () async {
-              await service.pullAndMergeFromWebDav();
+              final outcome =
+                  await context.read<SyncService>().syncPlaylistsNow();
               if (!context.mounted) return;
-              AppSnack.show(
-                context,
-                service.lastSyncError == null
-                    ? l10n.playlistSynced
-                    : l10n.playlistSyncFailed(service.lastSyncError!),
-              );
+              AppSnack.show(context, outcome.message);
             },
           ),
           IconButton(

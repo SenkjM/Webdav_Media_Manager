@@ -101,7 +101,6 @@ class Playlist {
     required this.name,
     List<PlaylistEntry>? entries,
     DateTime? updatedAt,
-    this.remoteFileName,
   }) : entries = List<PlaylistEntry>.from(entries ?? const []),
        updatedAt = updatedAt ?? DateTime.now();
 
@@ -110,8 +109,6 @@ class Playlist {
   final List<PlaylistEntry> entries;
   DateTime updatedAt;
 
-  /// Remote playlist file name under the playlists dir, e.g. `favorites.wdmp`.
-  String? remoteFileName;
 
   int get length => entries.length;
 
@@ -119,7 +116,6 @@ class Playlist {
     'id': id,
     'name': name,
     'updatedAt': updatedAt.toIso8601String(),
-    'remoteFileName': remoteFileName,
     'entries': entries.map((e) => e.toJson()).toList(),
   };
 
@@ -128,7 +124,7 @@ class Playlist {
     name: json['name'] as String? ?? kUnnamedPlaylistName,
     updatedAt:
         DateTime.tryParse(json['updatedAt'] as String? ?? '') ?? DateTime.now(),
-    remoteFileName: json['remoteFileName'] as String?,
+
     entries: (json['entries'] as List<dynamic>? ?? [])
         .map((e) => PlaylistEntry.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList(),
@@ -138,14 +134,12 @@ class Playlist {
     String? name,
     List<PlaylistEntry>? entries,
     DateTime? updatedAt,
-    String? remoteFileName,
   }) {
     return Playlist(
       id: id,
       name: name ?? this.name,
       entries: entries ?? List<PlaylistEntry>.from(this.entries),
       updatedAt: updatedAt ?? this.updatedAt,
-      remoteFileName: remoteFileName ?? this.remoteFileName,
     );
   }
 }

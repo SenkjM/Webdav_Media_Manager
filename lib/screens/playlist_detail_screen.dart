@@ -17,8 +17,7 @@ import '../services/cache_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
 import '../services/playlist_service.dart';
-import '../services/stream_cover_reader.dart';
-import '../services/task_queue_service.dart';
+import '../services/queue_service.dart';
 import '../services/webdav_service.dart';
 import '../utils/app_snack.dart';
 import '../utils/task_error.dart';
@@ -226,9 +225,9 @@ class _PlaylistTrackTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cache = context.watch<CacheService>();
-    final downloads = context.watch<TaskQueueService>();
+    final queue = context.watch<QueueService>();
     final isLocal = libraryTrackIsLocal(cache, track);
-    final task = downloads.taskForRemote(
+    final task = queue.taskForRemote(
       track.sourceName,
       track.effectiveAudioRemotePath,
     );
@@ -239,7 +238,8 @@ class _PlaylistTrackTile extends StatelessWidget {
     );
     final remoteMissing = entry.remoteMissing || track.remoteMissing;
     final state = libraryRowUiState(
-      downloads: downloads,
+      queue: queue,
+      cache: cache,
       track: track,
       playingRemotePath: audio.currentRemotePath,
       playingSourceName: audio.currentSourceName,
@@ -465,23 +465,12 @@ class _PlaylistTrackTile extends StatelessWidget {
           ),
         );
         try {
-          final source = await context.read<WebDavService>().resolveStreamSource(
+          await library.ingestRemoteFile(
             accountId: accountId,
+            sourceName: next.sourceName,
             remotePath: next.remotePath,
-            name: next.fileName,
-            kind: StreamKind.music,
+            fileName: next.fileName,
           );
-          if (source != null && source.uri.isNotEmpty && context.mounted) {
-            final tags = await StreamCoverReader().extractTags(source);
-            if (tags != null && context.mounted) {
-              await library.ingestFromTags(
-                sourceName: next.sourceName,
-                remotePath: next.remotePath,
-                fileName: next.fileName,
-                tags: tags,
-              );
-            }
-          }
         } catch (_) {
           // Redirect succeeded even if tag re-read fails.
         }

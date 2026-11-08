@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../models/file_actions.dart';
 import '../models/file_type_config.dart';
-import '../providers/app_state.dart';
 import '../services/settings_service.dart';
 
 /// 管理「哪些后缀算音乐 / 视频 / CUE」以及**每一类文件的单击行为**。
@@ -95,9 +94,6 @@ class _FileExtensionsScreenState extends State<FileExtensionsScreen> {
         comicExtensions: comic,
       ),
     );
-    // Re-point the download queue's classifier: it must never keep using the
-    // previous extension list after the user edits it here.
-    if (mounted) context.read<AppState>().refreshFileTypeClassifiers();
     if (!mounted) return;
     AppSnack.show(context, AppLocalizations.of(context)!.fileExtSaved);
   }

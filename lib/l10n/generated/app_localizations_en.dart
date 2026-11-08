@@ -93,7 +93,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get playlists => 'Playlists';
 
   @override
-  String get networkLibrary => 'Network library';
+  String get networkLibrary => 'File source';
 
   @override
   String get downloadQueue => 'Task queue';
@@ -208,7 +208,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String unboundSource(Object sourceName) {
-    return 'Unbound network drive “$sourceName”';
+    return 'Unbound source “$sourceName”';
   }
 
   @override
@@ -221,7 +221,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get defaultServer => 'Default server';
 
   @override
-  String get accountsTitle => 'Cloud account management';
+  String get accountsTitle => 'Source management';
 
   @override
   String get noAccounts => 'No accounts yet. Tap the add button to create one.';
@@ -687,7 +687,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncIntro =>
-      'Credentials, playlists, and the music library share one remote path. Choose a server and enter the path below.';
+      'Credentials, playlists, and the music library share one remote path. Pick a source and enter the path below.';
 
   @override
   String get syncAll => 'Sync all';
@@ -711,7 +711,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Credentials, music library, playlists, and backups are stored below this path';
 
   @override
-  String get selectServer => '1. Choose server';
+  String get selectServer => '1. Choose source';
 
   @override
   String get path => '2. Path';
@@ -1428,29 +1428,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'The passphrase did not pass verification. Continuing the restore may cause unexpected problems (for example password fields becoming empty ciphertext). Cancel to correct the passphrase, or force-continue with the existing restore logic.';
 
   @override
-  String get restorePassphraseUnverifiableTitle =>
-      'Cannot pre-check backup passphrase';
-
-  @override
-  String get restorePassphraseUnverifiableBody =>
-      'This older backup has no check block, and no existing ciphertext field could be tried. If the passphrase is wrong, continuing may cause unexpected problems (for example empty ciphertext). Cancel, or force-continue with the existing restore logic.';
-
-  @override
-  String get restoreEnvelopeMismatchTitle => 'Cannot open encrypted backup';
-
-  @override
-  String get restoreEnvelopeMismatchBody =>
-      'This backup uses whole-package encryption (WDMMEN01), and the current passphrase cannot decrypt it. Without opening the package, nothing can be imported. Cancel to correct the passphrase, or continue to try once more; if it still fails, you will be told import is impossible.';
-
-  @override
   String get restoreContinue => 'Continue';
-
-  @override
-  String get restoreEnvelopeDecryptFailedTitle => 'Cannot import backup';
-
-  @override
-  String get restoreEnvelopeDecryptFailedBody =>
-      'The passphrase is wrong or the ciphertext is damaged. The whole package cannot be decrypted, so nothing was imported.';
 
   @override
   String get restoreForceContinue => 'Force continue';
@@ -1485,6 +1463,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get remoteRootRequired => 'Enter a remote path first';
+
+  @override
   String get derivedPathCredentials => 'Credentials';
 
   @override
@@ -1501,7 +1482,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get syncIntroLong =>
-      'Credentials, playlists, and the library share one remote path: pick a drive and fill in the path below.';
+      'Credentials, playlists, and the library share one remote path: pick a source and fill in the path below.';
 
   @override
   String get scheduledSyncOff => 'Off; manual sync only';
@@ -1519,7 +1500,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get needWebdavServer => 'Add a WebDAV server first.';
 
   @override
-  String get selectCloudDrive => '① Pick a drive';
+  String get selectCloudDrive => '① Pick a source';
 
   @override
   String get pathStep => '② Path';
@@ -1775,7 +1756,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get recoveryClearContent =>
-      'Export first. After clearing, reopen the app and reconfigure cloud accounts and the local index.';
+      'Export first. After clearing, reopen the app and reconfigure sources and the local index.';
 
   @override
   String recoveryClearPartial(int removed, String names) {
@@ -2756,7 +2737,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get libraryTracksEmpty => 'No tracks yet';
 
   @override
-  String get sourceUnbound => 'Source drive not linked';
+  String get sourceUnbound => 'Source not linked';
 
   @override
   String downloadingPercent(Object p) {
@@ -2765,7 +2746,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryEmptyGuide =>
-      'No tracks yet: scan music in the Network library, or download to add tracks.';
+      'No tracks yet: scan music in the File source, or download to add tracks.';
+
+  @override
+  String get libraryRefreshFailed => 'Could not refresh the music library';
 
   @override
   String get tagTitle => 'Title';
@@ -2827,12 +2811,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String errCloudAccountMissing(Object a) {
-    return 'Cloud account does not exist: $a';
+    return 'Source does not exist: $a';
   }
 
   @override
   String get errCloudWriteDisabled =>
-      'Cloud accounts do not support upload or cloud write sync';
+      'Sources do not support upload or cloud write sync';
 
   @override
   String get errEnsureDirectoryUnsupported =>
@@ -4348,7 +4332,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get musicDefaultOpenHint =>
-      'Network library, media library, and playlists: cache play or stream play';
+      'File source, media library, and playlists: cache play or stream play';
 
   @override
   String get musicDefaultCache => 'Cache play';
@@ -4367,10 +4351,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get refreshTagsFromLocalHint => 'Read tags from cached audio';
 
   @override
-  String get refreshTagsFromCloud => 'Update tags from cloud';
+  String get refreshTagsFromCloud =>
+      'Refresh all music metadata from the cloud';
 
   @override
-  String get refreshTagsFromCloudHint => 'Queue cloud tag fetches';
+  String get refreshTagsFromCloudHint => 'Re-read every track in a single task';
+
+  @override
+  String get taskKindCoverRefresh => 'Cover refresh (cloud)';
+
+  @override
+  String get refreshCoversFromCloud => 'Recover covers from the cloud';
+
+  @override
+  String get refreshCoversFromCloudHint =>
+      'Refresh music metadata whose cover is missing';
+
+  @override
+  String get coverRefreshQueued => 'Cover recovery queued';
+
+  @override
+  String get retagAllQueued => 'Queued: refresh all music metadata';
 
   @override
   String get destroyTracksAction => 'Destroy selected tracks';
@@ -4444,7 +4445,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Stream play writes temporary prefetch; cache play uses the same window for background caching.';
 
   @override
-  String get audioPlaylistSection => 'Network library play queue';
+  String get audioPlaylistSection => 'File source play queue';
 
   @override
   String get waitingForCache => 'Caching…';
@@ -4482,13 +4483,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get libraryBackfillRootsHint =>
-      'With Bound paths on, play-triggered scrape runs only for these root prefixes; Network library “Scan music” stays available anytime.';
+      'With Bound paths on, play-triggered scrape runs only for these root prefixes; File source “Scan music” stays available anytime.';
 
   @override
   String get libraryBackfillAddRoot => 'Add root path';
 
   @override
-  String get libraryBackfillNeedAccount => 'Add a cloud account first';
+  String get libraryBackfillNeedAccount => 'Add a source first';
 
   @override
   String get libraryBackfillPickAccount => 'Choose account';
@@ -4943,6 +4944,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get taskPartialFailed => 'Partially failed';
 
   @override
+  String get taskAwaitingPlatform => 'Waiting for the system';
+
+  @override
   String get progressReadingCloudMangaIndex => 'Reading the cloud manga index…';
 
   @override
@@ -4969,6 +4973,11 @@ class AppLocalizationsEn extends AppLocalizations {
     Object uploaded,
   ) {
     return 'Manga: uploaded $uploaded, adopted $adopted, deleted $tombs, progress changes $progress';
+  }
+
+  @override
+  String stepSyncConflicts(Object count) {
+    return 'Sync conflicts resolved: $count';
   }
 
   @override
@@ -5444,5 +5453,118 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fileQueuedOrSavedShort => 'This file is already queued or saved';
-}
+
+  @override
+  String get dlnaHitCopy => 'Copy';
+
+  @override
+  String get dlnaHitHw => 'HW';
+
+  @override
+  String get dlnaHitSw => 'SW';
+
+  @override
+  String get dlnaHitVideo => 'Video';
+
+  @override
+  String get dlnaHitAudio => 'Audio';
+
+  @override
+  String get settingsDlnaSection => 'DLNA casting';
+
+  @override
+  String get settingsTranscodePreset => 'Transcode preset';
+
+  @override
+  String get settingsManagePresets => 'Manage presets';
+
+  @override
+  String get settingsDefaultDirect => 'Default passthrough';
+
+  @override
+  String get settingsDefaultDirectSubtitle =>
+      'Cast without transcoding by default';
+
+  @override
+  String get settingsMkvPassthrough => 'MKV passthrough (no transcode)';
+
+  @override
+  String get settingsTranscodeCache => 'Transcode cache';
+
+  @override
+  String get settingsCacheBudget => 'Cache budget';
+
+  @override
+  String get settingsCacheBudgetTitle => 'Transcode cache budget';
+
+  @override
+  String get settingsClearTranscodeCache => 'Clear cache';
+
+  @override
+  String get cacheBudgetMustBePositive =>
+      'The budget must be greater than 0 MB';
+
+  @override
+  String get openApiSettingsTitle => 'OpenAPI settings';
+
+  @override
+  String get openApiSettingsSubtitle =>
+      'Configure external API access and auth';
+
+  @override
+  String get codecCapsSectionTitle => 'Device encoder capabilities';
+
+  @override
+  String get codecCapsLoading => 'Querying device encoders…';
+
+  @override
+  String get codecCapsUnavailable =>
+      'Could not query device encoders (casting and transcoding are unaffected)';
+
+  @override
+  String get codecCapsEmpty => 'No hardware encoders reported';
+
+  @override
+  String get codecCapsRetry => 'Probe again';
+
+  @override
+  String get codecCapsHardware => 'Hardware encoder';
+
+  @override
+  String get codecCapsSoftware => 'Software encoder';
+
+  @override
+  String get codecCapsRateControl => 'Rate control';
+
+  @override
+  String get codecCapsBitrateRange => 'Bitrate range';
+
+  @override
+  String get codecCapsResolutionRange => 'Resolution range';
+
+  @override
+  String get codecCapsAlignment => 'Alignment';
+
+  @override
+  String get codecCapsFpsRange => 'Frame rate range';
+
+  @override
+  String get codecCapsProfileLevels => 'Profile / Level';
+
+  @override
+  String get codecCapsNotReported => 'Not reported';
+
+  @override
+  String get codecCapsCodecH264 => 'H.264';
+
+  @override
+  String get codecCapsCodecHevc => 'H.265 (HEVC)';
+
+  @override
+  String get codecCapsCodecMpeg4 => 'MPEG-4';
+
+  @override
+  String cacheBudgetUpdated(Object mb) {
+    return 'Budget set to $mb MB; applies to new casts';
+  }
 }

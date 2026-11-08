@@ -1,4 +1,4 @@
-﻿package com.senkjm.media_manager
+package com.senkjm.media_manager
 
 import android.app.Activity
 import android.app.NotificationManager
@@ -240,6 +240,65 @@ class MainActivity : AudioServiceFragmentActivity() {
             }
         }
         registerDownloadKeepAliveChannel(flutterEngine)
+        registerDlnaCastChannel(flutterEngine)
+        // Read-only video-encoder capability probe (settings screen hints only).
+        CodecCapsProbe.register(flutterEngine)
+    }
+
+    /**
+     * Thin channel for DLNA cast lifecycle: acquires/releases the Wi-Fi
+     * MulticastLock via [DlnaCastService]. Discovery itself stays in Dart
+     * (RawDatagramSocket); Android only needs the lock so the kernel delivers
+     * multicast packets to the app socket.
+     */
+    private fun registerDlnaCastChannel(flutterEngine: FlutterEngine) {
+        val channel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DlnaCastService.CHANNEL,
+        )
+        DlnaCastService.flutterChannel = channel
+        channel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> {
+                    try {
+                        ContextCompat.startForegroundService(
+                            this,
+                            DlnaCastService.startIntent(this),
+                        )
+                        result.success(mapOf("ok" to true))
+                    } catch (e: Exception) {
+                        result.success(
+                            mapOf(
+                                "ok" to false,
+                                "error" to "${e.javaClass.simpleName}: ${e.message}",
+                            ),
+                        )
+                    }
+                }
+                "stop" -> {
+                    try {
+                        startService(DlnaCastService.stopIntent(this))
+                        result.success(mapOf("ok" to true))
+                    } catch (e: IllegalStateException) {
+                        // Android 12+ refuses startService() from the background.
+                        // Stopping is still what the caller asked for, and
+                        // stopService() tears the service down just the same
+                        // (onDestroy releases the lock and leaves foreground).
+                        stopService(DlnaCastService.stopIntent(this))
+                        result.success(mapOf("ok" to true))
+                    } catch (e: Exception) {
+                        result.success(
+                            mapOf(
+                                "ok" to false,
+                                "error" to "${e.javaClass.simpleName}: ${e.message}",
+                            ),
+                        )
+                    }
+                }
+                "isRunning" -> result.success(mapOf("running" to DlnaCastService.isRunning))
+                else -> result.notImplemented()
+            }
+        }
     }
 
     /**

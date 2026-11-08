@@ -6,6 +6,8 @@ import 'package:webdav_media_manager/utils/audio_extensions.dart';
 import 'package:webdav_media_manager/utils/cue_sheet.dart';
 import 'package:webdav_media_manager/utils/track_identity.dart';
 
+/// `decodeCueText` stays in Dart (it turns file bytes into the text the Rust
+/// parser consumes); the CUE state machine itself is `wdmm_text::cue`.
 void main() {
   const sample = """
 REM GENRE Rock
@@ -24,9 +26,9 @@ FILE "great.flac" WAVE
 
   test('decodeCueText accepts strict UTF-8', () {
     final text = decodeCueText(utf8.encode(sample));
-    final sheet = CueSheetParser.tryParse(text);
-    expect(sheet, isNotNull);
-    expect(sheet!.tracks, hasLength(2));
+    expect(text, sample);
+    expect(text, contains('FILE "great.flac" WAVE'));
+    expect(text, contains('TRACK 02 AUDIO'));
   });
 
   test('decodeCueText does not throw on GBK-like high bytes', () {
@@ -42,9 +44,19 @@ FILE "great.flac" WAVE
     ];
     // Must not throw (File.readAsString would).
     final text = decodeCueText(bytes);
-    final sheet = CueSheetParser.tryParse(text);
-    expect(sheet, isNotNull);
-    expect(sheet!.tracks, hasLength(2));
+    expect(text, contains('FILE "a.flac" WAVE'));
+    expect(text, contains('TRACK 02 AUDIO'));
+    const sheet = CueSheet(
+      files: ['a.flac'],
+      tracks: [
+        CueTrack(number: 1, fileName: 'a.flac', index01: Duration.zero),
+        CueTrack(
+          number: 2,
+          fileName: 'a.flac',
+          index01: Duration(minutes: 1),
+        ),
+      ],
+    );
     expect(sheet.audioRemotePaths('/music/disc.cue'), ['/music/a.flac']);
   });
 
@@ -55,9 +67,9 @@ FILE "great.flac" WAVE
       bytes.add(u & 0xFF);
       bytes.add((u >> 8) & 0xFF);
     }
-    final sheet = CueSheetParser.tryParse(decodeCueText(bytes));
-    expect(sheet, isNotNull);
-    expect(sheet!.tracks.length, 2);
+    final text = decodeCueText(bytes);
+    expect(text, contains('TRACK 02 AUDIO'));
+    expect(text, contains('TITLE "Main Song"'));
   });
 
   test('raw .cue is not a library song; virtual slices are', () {

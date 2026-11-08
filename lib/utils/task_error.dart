@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 
 import '../l10n/generated/app_localizations.dart';
-import '../services/cloud_driver_errors.dart';
+import '../services/wdmm_vfs_errors.dart';
 
 /// Stable task-queue error: short code for the list, full [detail] for the dialog.
 ///
@@ -257,8 +257,8 @@ class TaskError {
         return l10n.errCustomDirInvalid;
       default:
         // Other err.* (cloud drivers etc.): prefer a single short line.
-        // CloudDriverErrors often embeds detail — trim to first sentence / 40 chars.
-        final localized = CloudDriverErrors.describe(err.persisted, l10n);
+        // WdmmVfsErrors often embeds detail — trim to first sentence / 40 chars.
+        final localized = WdmmVfsErrors.describe(err.persisted, l10n);
         if (localized != err.persisted && localized.length <= 40) {
           return localized;
         }
