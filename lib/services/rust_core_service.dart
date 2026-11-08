@@ -55,8 +55,6 @@ typedef _ThreeStrToOneStrDart = ffi.Pointer<Utf8> Function(
 typedef _Int32ToStrNative = ffi.Pointer<Utf8> Function(ffi.Int32);
 typedef _Int32ToStrDart = ffi.Pointer<Utf8> Function(int);
 
-typedef _Int64ToStrNative = ffi.Pointer<Utf8> Function(ffi.Int64);
-typedef _Int64ToStrDart = ffi.Pointer<Utf8> Function(int);
 
 typedef _FiveStrToOneStrNative = ffi.Pointer<Utf8> Function(
     ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
@@ -1355,15 +1353,6 @@ class RustCoreService {
 
   // ── Schema v6 — deleted_tracks + sync_state ───────────────────────────────
   static _OneStrToStrDart? _deletedTrackUpsert;
-  static _TwoStrToOneStrDart? _deletedTrackClear;
-  static _NoArgToStrDart? _deletedTracksList;
-  static _NoArgToStrDart? _deletedTracksUnpushed;
-  static _OneStrToStrDart? _deletedTracksMarkPushed;
-  static _Int64ToStrDart? _deletedTracksPurgeUpTo;
-  static _OneStrToStrDart? _tombstonedRemotePaths;
-  static _OneStrToStrDart? _syncStateGet;
-  static _OneStrToStrDart? _syncStateSave;
-  static _OneStrToStrDart? _syncStateClear;
 
   // ── Schema v7+v8 — aggregates + FTS5 ───────────────────────────────────────
   static _NoArgToStrDart? _artistList;
@@ -1436,33 +1425,6 @@ class RustCoreService {
     // Schema v6
     _deletedTrackUpsert = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_deleted_track_upsert')
-        .asFunction();
-    _deletedTrackClear = lib
-        .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_deleted_track_clear')
-        .asFunction();
-    _deletedTracksList = lib
-        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_deleted_tracks_list')
-        .asFunction();
-    _deletedTracksUnpushed = lib
-        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_deleted_tracks_unpushed')
-        .asFunction();
-    _deletedTracksMarkPushed = lib
-        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_deleted_tracks_mark_pushed')
-        .asFunction();
-    _deletedTracksPurgeUpTo = lib
-        .lookup<ffi.NativeFunction<_Int64ToStrNative>>('wdmm_deleted_tracks_purge_up_to')
-        .asFunction();
-    _tombstonedRemotePaths = lib
-        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_tombstoned_remote_paths')
-        .asFunction();
-    _syncStateGet = lib
-        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_state_get')
-        .asFunction();
-    _syncStateSave = lib
-        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_state_save')
-        .asFunction();
-    _syncStateClear = lib
-        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_state_clear')
         .asFunction();
 
     // Schema v7+v8 aggregates + FTS5
@@ -1788,7 +1750,7 @@ class RustCoreService {
     }
   }
 
-  // ── Schema v6 — deleted_tracks + sync_state public API ────────────────────
+  // ── Schema v6 — deleted_tracks public API ────────────────────────────────
 
   /// Upsert a deleted track tombstone from JSON.
   ///
@@ -1802,148 +1764,6 @@ class RustCoreService {
     final ptr = json.toNativeUtf8();
     try {
       return _readAndFreeString(_deletedTrackUpsert!(ptr));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  /// Clear a deleted track tombstone by source and remote path.
-  ///
-  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
-  static String? deletedTrackClear(String sourceName, String remotePath) {
-    if (!_ensureSymbols()) return null;
-    if (_deletedTrackClear == null) {
-      _loadLibrarySymbolsSafe();
-      if (_deletedTrackClear == null) return null;
-    }
-    final srcPtr = sourceName.toNativeUtf8();
-    final pathPtr = remotePath.toNativeUtf8();
-    try {
-      return _readAndFreeString(_deletedTrackClear!(srcPtr, pathPtr));
-    } finally {
-      calloc.free(srcPtr);
-      calloc.free(pathPtr);
-    }
-  }
-
-  /// List all deleted tracks.
-  ///
-  /// Returns JSON array or 'error:...' on failure, null if unavailable.
-  static String? deletedTracksList() {
-    if (!_ensureSymbols()) return null;
-    if (_deletedTracksList == null) {
-      _loadLibrarySymbolsSafe();
-      if (_deletedTracksList == null) return null;
-    }
-    return _readAndFreeString(_deletedTracksList!());
-  }
-
-  /// List unpushed deleted tracks (pushed=0).
-  ///
-  /// Returns JSON array or 'error:...' on failure, null if unavailable.
-  static String? deletedTracksUnpushed() {
-    if (!_ensureSymbols()) return null;
-    if (_deletedTracksUnpushed == null) {
-      _loadLibrarySymbolsSafe();
-      if (_deletedTracksUnpushed == null) return null;
-    }
-    return _readAndFreeString(_deletedTracksUnpushed!());
-  }
-
-  /// Mark deleted tracks as pushed by revision numbers.
-  ///
-  /// [revsJson] is a JSON array of integers. Returns 'ok' on success,
-  /// 'error:...' on failure, null if unavailable.
-  static String? deletedTracksMarkPushed(String revsJson) {
-    if (!_ensureSymbols()) return null;
-    if (_deletedTracksMarkPushed == null) {
-      _loadLibrarySymbolsSafe();
-      if (_deletedTracksMarkPushed == null) return null;
-    }
-    final ptr = revsJson.toNativeUtf8();
-    try {
-      return _readAndFreeString(_deletedTracksMarkPushed!(ptr));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  /// Purge pushed deleted tracks up to and including the given revision.
-  ///
-  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
-  static String? deletedTracksPurgeUpTo(int upTo) {
-    if (!_ensureSymbols()) return null;
-    if (_deletedTracksPurgeUpTo == null) {
-      _loadLibrarySymbolsSafe();
-      if (_deletedTracksPurgeUpTo == null) return null;
-    }
-    return _readAndFreeString(_deletedTracksPurgeUpTo!(upTo));
-  }
-
-  /// Get tombstoned remote paths for a source.
-  ///
-  /// Returns JSON array of strings or 'error:...' on failure, null if unavailable.
-  static String? tombstonedRemotePaths(String sourceName) {
-    if (!_ensureSymbols()) return null;
-    if (_tombstonedRemotePaths == null) {
-      _loadLibrarySymbolsSafe();
-      if (_tombstonedRemotePaths == null) return null;
-    }
-    final ptr = sourceName.toNativeUtf8();
-    try {
-      return _readAndFreeString(_tombstonedRemotePaths!(ptr));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  /// Get sync state by remote key.
-  ///
-  /// Returns JSON object, 'null', or 'error:...' on failure, null if unavailable.
-  static String? syncStateGet(String remoteKey) {
-    if (!_ensureSymbols()) return null;
-    if (_syncStateGet == null) {
-      _loadLibrarySymbolsSafe();
-      if (_syncStateGet == null) return null;
-    }
-    final ptr = remoteKey.toNativeUtf8();
-    try {
-      return _readAndFreeString(_syncStateGet!(ptr));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  /// Save sync state from JSON.
-  ///
-  /// Returns 'ok' on success, 'error:...' on failure, null if unavailable.
-  static String? syncStateSave(String json) {
-    if (!_ensureSymbols()) return null;
-    if (_syncStateSave == null) {
-      _loadLibrarySymbolsSafe();
-      if (_syncStateSave == null) return null;
-    }
-    final ptr = json.toNativeUtf8();
-    try {
-      return _readAndFreeString(_syncStateSave!(ptr));
-    } finally {
-      calloc.free(ptr);
-    }
-  }
-
-  /// Clear sync state by optional prefix.
-  ///
-  /// Pass empty string or null to clear all. Returns 'ok' on success,
-  /// 'error:...' on failure, null if unavailable.
-  static String? syncStateClear(String? prefix) {
-    if (!_ensureSymbols()) return null;
-    if (_syncStateClear == null) {
-      _loadLibrarySymbolsSafe();
-      if (_syncStateClear == null) return null;
-    }
-    final ptr = (prefix ?? '').toNativeUtf8();
-    try {
-      return _readAndFreeString(_syncStateClear!(ptr));
     } finally {
       calloc.free(ptr);
     }

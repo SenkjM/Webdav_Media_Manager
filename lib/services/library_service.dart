@@ -12,7 +12,6 @@ import '../utils/cue_sheet.dart';
 import '../utils/rev_clock.dart';
 import '../utils/track_identity.dart';
 import 'cover_service.dart';
-import 'library_sync_keys.dart';
 import 'rust_library_service.dart';
 import 'tag_service.dart';
 
@@ -26,156 +25,9 @@ class LibraryService extends ChangeNotifier {
   /// Wire the clock (AppState.init) — falls back to the wall clock when absent.
   void attachRevClock(RevClock clock) => _revClock = clock;
 
-  /// Sync cursor for one remote: how far we have consumed, plus the parts we
-  /// already read (so a pull only fetches what is new).
-  Future<({int lastSeq, int baseUpTo, Map<String, int> parts})> loadSyncCursor(
-    String remoteKey,
-  ) async {
-    final rustResult = RustLibraryService.syncStateGet(remoteKey);
-    if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
-      try {
-        final decoded = jsonDecode(rustResult);
-        if (decoded is Map) {
-          final partsStr = decoded['parts'] as String? ?? '{}';
-          final parts = <String, int>{};
-          try {
-            final partsDecoded = jsonDecode(partsStr);
-            if (partsDecoded is Map) {
-              partsDecoded.forEach((k, v) {
-                if (k is String) parts[k] = (v as num?)?.toInt() ?? 0;
-              });
-            }
-          } catch (_) {
-            // A corrupt cursor only costs one full re-read.
-          }
-          return (
-            lastSeq: (decoded['last_seq'] as num?)?.toInt() ?? 0,
-            baseUpTo: (decoded['base_up_to'] as num?)?.toInt() ?? 0,
-            parts: parts,
-          );
-        }
-      } catch (_) {
-        // Parse failure — start fresh
-      }
-    }
-    // No cursor or error — start from zero
-    return (lastSeq: 0, baseUpTo: 0, parts: <String, int>{});
-  }
-
-  Future<void> saveSyncCursor({
-    required String remoteKey,
-    required int lastSeq,
-    required int baseUpTo,
-    required Map<String, int> parts,
-  }) async {
-    final json = jsonEncode({
-      'remote_key': remoteKey,
-      'last_seq': lastSeq,
-      'base_up_to': baseUpTo,
-      'parts': jsonEncode(parts),
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    });
-    final result = RustLibraryService.syncStateSave(json);
-    if (result != null && result.startsWith('error:')) {
-      throw StateError('Rust sync_state save failed: $result');
-    }
-  }
-
-  Future<void> clearSyncCursor() async {
-    final result = RustLibraryService.syncStateClear(LibrarySyncKeys.musicCursorPrefix);
-    if (result != null && result.startsWith('error:')) {
-      throw StateError('Rust sync_state clear failed: $result');
-    }
-  }
-
   /// Adopt an externally observed rev (a row pulled from the cloud) so the next
   /// local write cannot go backwards relative to it.
   void observeRev(int rev) => _revClock?.observe(rev);
-
-  /// Deletions made here that the cloud has not been told about yet.
-  Future<List<Map<String, dynamic>>> pendingTombstones() async {
-    final rustResult = RustLibraryService.deletedTracksUnpushed();
-    if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
-      try {
-        final decoded = decodeDeletedTracks(rustResult);
-        if (decoded != null) return decoded;
-      } catch (_) {
-        // Parse failure — return empty
-      }
-    }
-    return [];
-  }
-
-  /// Mark the given tombstone revs as published.
-  Future<void> markTombstonesPushed(Set<int> revs) async {
-    if (revs.isEmpty) return;
-    final revsJson = jsonEncode(revs.toList());
-    final result = RustLibraryService.deletedTracksMarkPushed(revsJson);
-    if (result != null && result.startsWith('error:')) {
-      throw StateError('Rust deleted_tracks mark_pushed failed: $result');
-    }
-  }
-
-  /// Drop tombstones that a rebuild has materialised (`rev <= upTo`).
-  Future<int> purgeTombstonesUpTo(int upTo) async {
-    final result = RustLibraryService.deletedTracksPurgeUpTo(upTo);
-    if (result != null && result.startsWith('error:')) {
-      throw StateError('Rust deleted_tracks purge failed: $result');
-    }
-    return 0; // Core tracks the count internally
-  }
-
-  /// Every tombstone, pushed or not (重建后的残留检查要看全量).
-  Future<List<Map<String, dynamic>>> allTombstones() async {
-    final rustResult = RustLibraryService.deletedTracksList();
-    if (rustResult != null && !rustResult.startsWith('error:') && rustResult != 'null') {
-      try {
-        final decoded = decodeDeletedTracks(rustResult);
-        if (decoded != null) return decoded;
-      } catch (_) {
-        // Parse failure — return empty
-      }
-    }
-    return [];
-  }
-
-  /// 清掉「行已经不在」的墓碑，返回清掉几条。
-  ///
-  /// 重建之后云端 base 就是本地全部行的快照，删除意图也一起被物化了，所以
-  /// **本地不该再留着任何墓碑**。这里只清那些确实没有对应活行的——还留着活行
-  /// 的墓碑属于「行 rev 高于墓碑」的复活场景，要不要清得让用户看见。
-  Future<int> clearDeadTombstones() async {
-    final rows = await allTombstones();
-    var cleared = 0;
-    for (final row in rows) {
-      final source = row['source_name'] as String? ?? '';
-      final path = row['remote_path'] as String? ?? '';
-      if (source.isEmpty || path.isEmpty) continue;
-      if (find(source, path) != null) continue;
-      final result = RustLibraryService.deletedTrackClear(source, path);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust deleted_track clear failed: $result');
-      }
-      cleared++;
-    }
-    return cleared;
-  }
-
-  /// Forget tombstones for rows that were re-downloaded (they are alive again).
-  Future<void> clearTombstones(Set<int> revs) async {
-    if (revs.isEmpty) return;
-    final rows = await allTombstones();
-    for (final row in rows) {
-      final rev = (row['rev'] as num?)?.toInt() ?? 0;
-      if (!revs.contains(rev)) continue;
-      final source = row['source_name'] as String? ?? '';
-      final path = row['remote_path'] as String? ?? '';
-      final result = RustLibraryService.deletedTrackClear(source, path);
-      if (result != null && result.startsWith('error:')) {
-        throw StateError('Rust deleted_track clear failed: $result');
-      }
-    }
-  }
 
   int _nextRev() => _revClock?.next() ?? DateTime.now().millisecondsSinceEpoch;
 
