@@ -21,6 +21,7 @@ Suites:
   castplay casts a real video and waits for PLAYING  (integration_test/e2e_cast_play_test.dart)
   ui       walks every settings screen for overflows  (integration_test/e2e_layout_test.dart)
   sync     sync root field + credential round trip    (integration_test/e2e_sync_test.dart)
+  backup   backup archive create/upload/restore       (integration_test/e2e_backup_test.dart)
   crypt    crypt source config save/reload            (integration_test/e2e_crypt_config_test.dart)
   ui_regressions  preset editor + cache budget dialog (integration_test/e2e_ui_regressions_test.dart)
   all      read-only probes in one boot              (integration_test/e2e_full_test.dart)
@@ -56,8 +57,8 @@ On failure the run drops logcat and a uiautomator dump into
 [CmdletBinding()]
 param(
     [ValidateSet('boot', 'webdav', 'cast', 'music', 'cue', 'cbz', 'queue',
-        'scrape', 'maintenance', 'sync', 'crypt', 'ui_regressions', 'castplay',
-        'ui', 'all')]
+        'scrape', 'maintenance', 'sync', 'backup', 'crypt', 'ui_regressions',
+        'castplay', 'ui', 'all')]
     [string] $Suite = 'all',
 
     [string] $Device,
@@ -136,6 +137,7 @@ $targets = @{
     scrape   = 'integration_test\e2e_scrape_test.dart'
     maintenance = 'integration_test\e2e_library_maintenance_test.dart'
     sync     = 'integration_test\e2e_sync_test.dart'
+    backup   = 'integration_test\e2e_backup_test.dart'
     crypt    = 'integration_test\e2e_crypt_config_test.dart'
     ui_regressions = 'integration_test\e2e_ui_regressions_test.dart'
     castplay = 'integration_test\e2e_cast_play_test.dart'
