@@ -24,6 +24,20 @@ import 'rust_core_service.dart';
 /// sample_rate, cue_*, cache_group_id, remote_missing) are filled with safe
 /// defaults so the resulting LibraryTrack works correctly in the Dart UI.
 class RustLibraryService {
+  /// Next library revision from the persisted Rust watermark.
+  ///
+  /// Sync compares revisions against that watermark; a Dart-side monotonic
+  /// clock would let a local edit look older than a peer's write and lose the
+  /// last-write-wins comparison. Null when the native library is unavailable.
+  static int? nextRev() {
+    final raw = RustCoreService.libraryNextRev();
+    if (raw == null || raw.startsWith('error:')) return null;
+    final decoded = jsonDecode(raw);
+    if (decoded is Map && decoded['rev'] is num) {
+      return (decoded['rev'] as num).toInt();
+    }
+    return null;
+  }
   RustLibraryService._();
 
   // ── Read ops ────────────────────────────────────────────────────────────────

@@ -15,7 +15,6 @@ import '../models/queue_models.dart';
 import '../services/queue_service.dart';
 import '../services/library_actions.dart';
 import '../services/library_service.dart';
-import '../services/stream_cover_reader.dart';
 import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/meta_text.dart';
@@ -1702,23 +1701,12 @@ class _TrackTile extends StatelessWidget {
       missing: false,
     );
     try {
-      final source = await context.read<WebDavService>().resolveStreamSource(
+      await library.ingestRemoteFile(
         accountId: accountId,
+        sourceName: next.sourceName,
         remotePath: next.remotePath,
-        name: next.fileName,
-        kind: StreamKind.music,
+        fileName: next.fileName,
       );
-      if (source != null && source.uri.isNotEmpty && context.mounted) {
-        final tags = await StreamCoverReader().extractTags(source);
-        if (tags != null && context.mounted) {
-          await library.ingestFromTags(
-            sourceName: next.sourceName,
-            remotePath: next.remotePath,
-            fileName: next.fileName,
-            tags: tags,
-          );
-        }
-      }
     } catch (_) {
       // Redirect succeeded even if tag re-read fails.
     }

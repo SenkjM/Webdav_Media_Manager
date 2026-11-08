@@ -10,7 +10,6 @@ import '../models/manga_progress.dart';
 import '../models/manga_series.dart';
 import '../utils/manga_file_types.dart';
 import '../utils/manga_identity.dart';
-import '../utils/rev_clock.dart';
 import '../utils/track_identity.dart';
 import 'rust_core_service.dart';
 
@@ -60,14 +59,17 @@ class MangaIngestDraft {
 class MangaLibraryService extends ChangeNotifier {
   MangaLibraryService();
 
-  RevClock? _revClock;
-
-  /// Attach the shared rev clock (same instance as music) so manga revs stay
-  /// on the same strictly-increasing scale and are comparable across domains.
-  void attachRevClock(RevClock clock) => _revClock = clock;
-
-  int _nextRev() =>
-      _revClock?.next() ?? DateTime.now().millisecondsSinceEpoch;
+  /// Next rev from the Rust watermark — music and manga share one scale.
+  int _nextRev() {
+    final raw = RustCoreService.libraryNextRev();
+    if (raw != null && !raw.startsWith('error:')) {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map && decoded['rev'] is num) {
+        return (decoded['rev'] as num).toInt();
+      }
+    }
+    return DateTime.now().millisecondsSinceEpoch;
+  }
 
   // ── In-memory state ───────────────────────────────────────────────────────
 

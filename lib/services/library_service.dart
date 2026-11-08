@@ -1,35 +1,26 @@
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:path/path.dart' as p;
-
 import '../models/library_sentinels.dart';
 import '../models/library_track.dart';
-import '../utils/cue_sheet.dart';
-import '../utils/rev_clock.dart';
-import '../utils/track_identity.dart';
 import 'cover_service.dart';
+import 'rust_core_service.dart';
 import 'rust_library_service.dart';
 import 'tag_service.dart';
 
 /// Local music library: indexes tracks that have been cached at least once.
 /// Metadata + cover thumbs persist across audio-cache deletion.
 class LibraryService extends ChangeNotifier {
-  /// Monotonic version source; every locally-created or locally-changed row is
-  /// stamped with it so sync has a single comparable field.
-  RevClock? _revClock;
-
-  /// Wire the clock (AppState.init) — falls back to the wall clock when absent.
-  void attachRevClock(RevClock clock) => _revClock = clock;
-
-  /// Adopt an externally observed rev (a row pulled from the cloud) so the next
-  /// local write cannot go backwards relative to it.
-  void observeRev(int rev) => _revClock?.observe(rev);
-
-  int _nextRev() => _revClock?.next() ?? DateTime.now().millisecondsSinceEpoch;
+  /// Next revision for a locally-created or locally-changed row.
+  ///
+  /// Rust owns the single sync clock (library_rev_watermark); a Dart-side
+  /// monotonic clock would let a local edit look older than a peer's write and
+  /// lose the last-write-wins comparison. Falls back to the wall clock only when
+  /// the native library is unavailable.
+  int _nextRev() =>
+      RustLibraryService.nextRev() ?? DateTime.now().millisecondsSinceEpoch;
 
   /// Record a tombstone so a destroyed song is not pulled back by sync.
   ///
@@ -207,77 +198,6 @@ class LibraryService extends ChangeNotifier {
     };
   }
 
-  /// After a file finishes downloading: read tags, save thumb + full cover, upsert.
-  ///
-  /// The caller has already decided this file belongs in the library (it uses
-  /// the user's configured music extensions); this does not re-check against a
-  /// hard-coded list, which used to reject configured formats like `.m4a`.
-  Future<LibraryTrack> ingestDownloaded({
-    required String sourceName,
-    required String remotePath,
-    required String fileName,
-    required String localPath,
-    bool updateDownloadTime = true,
-  }) async {
-    final now = DateTime.now();
-    final existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
-    final read = await _tags.readFromFile(localPath);
-    // Cover availability state. Present only when we actually saved a thumb;
-    // re-download without art preserves the existing state (do not demote).
-    int coverState = existing?.coverState ?? 0;
-    if (read.coverBytes != null && read.coverBytes!.isNotEmpty) {
-      final saved = await _covers.saveThumb(
-        sourceName: sourceName,
-        remotePath: remotePath,
-        bytes: read.coverBytes!,
-      );
-      if (saved != null) coverState = 2;
-    }
-
-    final track = LibraryTrack(
-      musicId: existing?.musicId,
-      sourceName: sourceName,
-      remotePath: remotePath,
-      fileName: fileName,
-      title: read.title,
-      artist: read.artist,
-      albumArtist: read.albumArtist,
-      album: read.album,
-      durationMs: read.durationMs,
-      trackNumber: read.trackNumber,
-      trackTotal: read.trackTotal,
-      discNumber: read.discNumber,
-      discTotal: read.discTotal,
-      year: read.year,
-      genre: read.genre,
-      bitrate: read.bitrate,
-      sampleRate: read.sampleRate,
-      coverState: coverState,
-      cacheGroupId: existing?.cacheGroupId,
-      rev: _nextRev(),
-      lastDownloadedAt: updateDownloadTime
-          ? now
-          : existing?.lastDownloadedAt ?? now,
-      lastTagReadAt: now,
-    );
-    // Rust-only write: sqflite dual-path removed per Round 11 cutover.
-    final result = RustLibraryService.upsertTrack(track);
-    if (result != null && result.startsWith('error:')) {
-      throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-    }
-    final idx = _tracks.indexWhere(
-      (t) => t.sourceName == sourceName && t.remotePath == remotePath,
-    );
-    if (idx >= 0) {
-      _tracks[idx] = track;
-    } else {
-      _tracks.add(track);
-    }
-    notifyListeners();
-    return track;
-  }
-
-  /// Persist confirmed cloud absence (list red-dot). Skip when [hasLocalCache].
   Future<void> markRemoteMissing({
     required String sourceName,
     required String remotePath,
@@ -385,437 +305,64 @@ class LibraryService extends ChangeNotifier {
   /// Used after HTTP Range / stream tag reads. Does **not** bump
   /// [LibraryTrack.lastDownloadedAt] — a later [ingestDownloaded] still
   /// overwrites tags and records the download time.
-  Future<LibraryTrack> ingestFromTags({
+
+  /// Ingest one remote file through the Rust executor.
+  ///
+  /// Tags, CUE sheets, sidecar covers and identity hashing all live in
+  /// `wdmm_library_ingest`; Dart keeps only the in-memory projection, so a scan
+  /// item and a manual re-read write exactly the same row.
+  Future<LibraryTrack?> ingestRemoteFile({
+    required String accountId,
     required String sourceName,
     required String remotePath,
     required String fileName,
-    required ReadTags tags,
-  }) async {
-    final now = DateTime.now();
-    final existing = RustLibraryService.getBySourcePath(sourceName, remotePath);
-    // Cover availability state. Present only when we actually saved a thumb.
-    int coverState = existing?.coverState ?? 0;
-    if (tags.coverBytes != null && tags.coverBytes!.isNotEmpty) {
-      final saved = await _covers.saveThumb(
-        sourceName: sourceName,
-        remotePath: remotePath,
-        bytes: tags.coverBytes!,
-      );
-      if (saved != null) coverState = 2;
-    }
+  }) => _ingestThroughCore(
+    accountId: accountId,
+    sourceName: sourceName,
+    remotePath: remotePath,
+    fileName: fileName,
+  );
 
-    final track = LibraryTrack(
-      musicId: existing?.musicId,
-      sourceName: sourceName,
-      remotePath: remotePath,
-      fileName: fileName,
-      title: tags.title ?? existing?.title,
-      artist: tags.artist ?? existing?.artist,
-      albumArtist: tags.albumArtist ?? existing?.albumArtist,
-      album: tags.album ?? existing?.album,
-      durationMs: tags.durationMs ?? existing?.durationMs,
-      trackNumber: tags.trackNumber ?? existing?.trackNumber,
-      trackTotal: tags.trackTotal ?? existing?.trackTotal,
-      discNumber: tags.discNumber ?? existing?.discNumber,
-      discTotal: tags.discTotal ?? existing?.discTotal,
-      year: tags.year ?? existing?.year,
-      genre: tags.genre ?? existing?.genre,
-      bitrate: tags.bitrate ?? existing?.bitrate,
-      sampleRate: tags.sampleRate ?? existing?.sampleRate,
-      coverState: coverState,
-      cacheGroupId: existing?.cacheGroupId,
-      rev: _nextRev(),
-      lastDownloadedAt: existing?.lastDownloadedAt ??
-          DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-      lastTagReadAt: now,
-    );
-    final result = RustLibraryService.upsertTrack(track);
-    if (result != null && result.startsWith('error:')) {
-      throw StateError('Rust library upsert failed; sqflite fallback removed: $result');
-    }
-    final idx = _tracks.indexWhere(
-      (t) => t.sourceName == sourceName && t.remotePath == remotePath,
-    );
-    if (idx >= 0) {
-      _tracks[idx] = track;
-    } else {
-      _tracks.add(track);
-    }
-    notifyListeners();
-    return track;
-  }
-
-  /// Re-read tags from an already cached, non-CUE audio file and replace its
-  /// library metadata. CUE slices must be refreshed as a whole album.
-  Future<LibraryTrack> refreshTrackTagsFromFile({
-    required LibraryTrack track,
+  /// Re-read the tags of an already cached file through the Rust executor.
+  Future<LibraryTrack?> ingestCachedFile({
+    required String accountId,
+    required String sourceName,
+    required String remotePath,
+    required String fileName,
     required String localPath,
-  }) async {
-    if (track.isCueVirtual) {
-      throw ArgumentError('CUE tracks must be refreshed as an album');
-    }
-    return ingestDownloaded(
-      sourceName: track.sourceName,
-      remotePath: track.remotePath,
-      fileName: track.fileName,
-      localPath: localPath,
-      updateDownloadTime: false,
-    );
-  }
+  }) => _ingestThroughCore(
+    accountId: accountId,
+    sourceName: sourceName,
+    remotePath: remotePath,
+    fileName: fileName,
+    localPath: localPath,
+  );
 
-  /// Scrape/Range path: build CUE slices from a parsed sheet **without**
-  /// requiring local audio files. Clip ends stay open until a later cache ingest.
-  Future<List<LibraryTrack>> ingestCueRemote({
+  Future<LibraryTrack?> _ingestThroughCore({
+    required String accountId,
     required String sourceName,
-    required String cueRemotePath,
-    required CueSheet sheet,
-    Uint8List? coverBytes,
+    required String remotePath,
+    required String fileName,
+    String? localPath,
   }) async {
-    final existing = _tracks
-        .where(
-          (tr) =>
-              tr.sourceName == sourceName && tr.cueRemotePath == cueRemotePath,
-        )
-        .toList();
-    if (existing.isNotEmpty) {
-      // Re-scrape of an already ingested CUE album: rows exist, but they may
-      // predate the "scrape also builds a thumb" rule (or the thumb file may be
-      // gone). Fill/refresh covers without touching the clip rows.
-      if (coverBytes != null && coverBytes.isNotEmpty) {
-        await _refreshCueSliceCovers(existing, coverBytes);
-      }
-      return const [];
-    }
-    final now = DateTime.now();
-    final audioRemotes = sheet.audioRemotePaths(cueRemotePath);
-    final ranges = cueClipRanges(sheet.tracks);
-    final groupId = cueCacheGroupId(sourceName, cueRemotePath);
-    final created = <LibraryTrack>[];
-    for (var i = 0; i < sheet.tracks.length; i++) {
-      final ct = sheet.tracks[i];
-      final range = ranges[i];
-      final base = p.basename(ct.fileName.replaceAll('\\', '/'));
-      final resolved = audioRemotes.firstWhere(
-        (r) => p.basename(r) == base,
-        orElse: () =>
-            audioRemotes.isNotEmpty ? audioRemotes.first : ct.fileName,
-      );
-      final merged = mergeCueOverFileTags(
-        sheet: sheet,
-        cueTrack: ct,
-        fileTitle: null,
-        fileArtist: null,
-        fileAlbumArtist: null,
-        fileAlbum: null,
-        fileYear: null,
-        fileGenre: null,
-      );
-      final virtualPath = cueVirtualRemotePath(resolved, ct.number);
-      int coverState = 0;
-      if (coverBytes != null && coverBytes.isNotEmpty) {
-        final saved = await _covers.saveThumb(
-          sourceName: sourceName,
-          remotePath: virtualPath,
-          bytes: coverBytes,
-        );
-        if (saved != null) coverState = 2;
-      }
-      final audioMid = musicIdForRemote(sourceName, resolved);
-      final sliceMid = musicIdForCueSlice(sourceName, cueRemotePath, ct.number);
-      created.add(
-        LibraryTrack(
-          musicId: sliceMid,
-          sourceName: sourceName,
-          remotePath: virtualPath,
-          fileName: merged.title ?? ct.title ?? '${ct.number}',
-          title: merged.title,
-          artist: merged.artist,
-          albumArtist: merged.albumArtist,
-          album: merged.album,
-          durationMs: null,
-          trackNumber: merged.trackNumber,
-          trackTotal: sheet.tracks.length,
-          year: merged.year,
-          genre: merged.genre,
-          cueId: cueIdFor(sourceName, cueRemotePath),
-          cueRemotePath: cueRemotePath,
-          cueTrackIndex: ct.number,
-          audioMusicId: audioMid,
-          audioRemotePath: resolved,
-          clipStartMs: range.start.inMilliseconds,
-          clipEndMs: range.end?.inMilliseconds,
-          cacheGroupId: groupId,
-          lastDownloadedAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-          lastTagReadAt: now,
-          rev: _nextRev(),
-          remoteMissing: false,
-          coverState: coverState,
-        ),
-      );
-    }
-    if (created.isEmpty) return const [];
-
-    // Core-only CUE write (Class B sqflite dual-write unloaded)
-    // Delete-then-upsert mirrors replace semantics
-    final deleteResult = RustLibraryService.deleteCueAlbum(
-      sourceName,
-      cueRemotePath,
+    final reply = await RustCoreService.libraryIngestAsync(
+      jsonEncode({
+        'account_id': accountId,
+        'source_name': sourceName,
+        'remote_path': remotePath,
+        'file_name': fileName,
+        'local_path': ?localPath,
+      }),
     );
-    // Ignore "not found" errors — the album may not exist yet
-    if (deleteResult != null &&
-        deleteResult.startsWith('error:') &&
-        !deleteResult.contains('not found')) {
-      throw StateError('Rust CUE album delete failed during replace: $deleteResult');
+    if (reply == null) {
+      throw StateError('Core FFI unavailable — cannot ingest $remotePath');
     }
-
-    // Build and upsert the album record
-    final albumJson = RustLibraryService.cueAlbumJson(
-      cueId: created.first.cueId!,
-      sourceName: sourceName,
-      cueRemotePath: cueRemotePath,
-      title: created.first.album,
-      performer: created.first.albumArtist ?? created.first.artist,
-      cacheGroupId: groupId,
-      createdAt: now,
-    );
-    if (albumJson != null) {
-      final albumResult = RustLibraryService.upsertCueAlbum(
-        jsonEncode(albumJson),
-      );
-      if (albumResult != null && albumResult.startsWith('error:')) {
-        throw StateError('Rust CUE album upsert failed: $albumResult');
-      }
+    if (reply.startsWith('error:')) {
+      throw StateError('Core ingest failed: $reply');
     }
-
-    // Upsert each slice
-    for (final track in created) {
-      final sliceJson = RustLibraryService.cueSliceJson(track);
-      if (sliceJson != null) {
-        final sliceResult = RustLibraryService.upsertCueSlice(
-          jsonEncode(sliceJson),
-        );
-        if (sliceResult != null && sliceResult.startsWith('error:')) {
-          throw StateError('Rust CUE slice upsert failed: $sliceResult');
-        }
-      }
-    }
-
-    _tracks.removeWhere(
-      (t) =>
-          t.sourceName == sourceName &&
-          (t.cueRemotePath == cueRemotePath ||
-              audioRemotes.contains(t.remotePath) ||
-              audioRemotes.contains(t.audioRemotePath)),
-    );
-    _tracks.addAll(created);
-    notifyListeners();
-    return created;
+    await refresh();
+    return find(sourceName, remotePath);
   }
-
-  /// Backfill/refresh the persistent thumbs of an already ingested CUE album.
-  Future<void> _refreshCueSliceCovers(
-    List<LibraryTrack> slices,
-    Uint8List bytes,
-  ) async {
-    var changed = false;
-    for (final row in slices) {
-      final path = await _covers.saveThumb(
-        sourceName: row.sourceName,
-        remotePath: row.remotePath,
-        bytes: bytes,
-      );
-      if (path == null) continue;
-      row.coverState = 2;
-      row.rev = _nextRev();
-
-      // Core-only CUE write (Class B sqflite dual-write unloaded)
-      final sliceJson = RustLibraryService.cueSliceJson(row);
-      if (sliceJson != null) {
-        final sliceResult = RustLibraryService.upsertCueSlice(
-          jsonEncode(sliceJson),
-        );
-        if (sliceResult != null && sliceResult.startsWith('error:')) {
-          throw StateError('Rust CUE slice upsert failed in cover refresh: $sliceResult');
-        }
-      }
-
-      changed = true;
-    }
-    if (changed) notifyListeners();
-  }
-
-  Future<List<LibraryTrack>> ingestCueAlbum({
-    required String sourceName,
-    required String cueRemotePath,
-    required CueSheet sheet,
-    required String cacheGroupId,
-    required String Function(String remotePath) localPathFor,
-  }) async {
-    final now = DateTime.now();
-    final audioRemotes = sheet.audioRemotePaths(cueRemotePath);
-    final fileTags = <String, ReadTags>{};
-    final fileDurations = <String, Duration?>{};
-    for (final audioRemote in audioRemotes) {
-      final localPath = localPathFor(audioRemote);
-      if (!await File(localPath).exists()) {
-        throw StateError('CUE audio disappeared from cache: $audioRemote');
-      }
-      final tags = await _tags.readFromFile(localPath);
-      fileTags[audioRemote] = tags;
-      final base = p.basename(audioRemote);
-      if (tags.durationMs != null) {
-        final d = Duration(milliseconds: tags.durationMs!);
-        fileDurations[base] = d;
-        for (final f in sheet.files) {
-          if (p.basename(f.replaceAll('\\', '/')) == base) fileDurations[f] = d;
-        }
-      }
-    }
-    final ranges = cueClipRanges(sheet.tracks, fileDurations: fileDurations);
-    final created = <LibraryTrack>[];
-    ReadTags? coverSource;
-    for (final a in audioRemotes) {
-      final tags = fileTags[a];
-      if (tags?.coverBytes != null && tags!.coverBytes!.isNotEmpty) {
-        coverSource = tags;
-        break;
-      }
-    }
-    for (var i = 0; i < sheet.tracks.length; i++) {
-      final ct = sheet.tracks[i];
-      final range = ranges[i];
-      final base = p.basename(ct.fileName.replaceAll('\\', '/'));
-      final resolved = audioRemotes.firstWhere(
-        (r) => p.basename(r) == base,
-        orElse: () =>
-            audioRemotes.isNotEmpty ? audioRemotes.first : ct.fileName,
-      );
-      final fileTag = fileTags[resolved] ?? const ReadTags();
-      final merged = mergeCueOverFileTags(
-        sheet: sheet,
-        cueTrack: ct,
-        fileTitle: fileTag.title,
-        fileArtist: fileTag.artist,
-        fileAlbumArtist: fileTag.albumArtist,
-        fileAlbum: fileTag.album,
-        fileYear: fileTag.year,
-        fileGenre: fileTag.genre,
-      );
-      final virtualPath = cueVirtualRemotePath(resolved, ct.number);
-      int? durationMs;
-      if (range.end != null) {
-        final ms = (range.end! - range.start).inMilliseconds;
-        durationMs = ms >= 0 ? ms : null;
-      } else if (fileTag.durationMs != null) {
-        final ms = fileTag.durationMs! - range.start.inMilliseconds;
-        durationMs = ms >= 0 ? ms : null;
-      }
-      var coverState = 0;
-      final bytes = coverSource?.coverBytes ?? fileTag.coverBytes;
-      if (bytes != null && bytes.isNotEmpty) {
-        final saved = await _covers.saveThumb(
-          sourceName: sourceName,
-          remotePath: virtualPath,
-          bytes: bytes,
-        );
-        if (saved != null) coverState = 2;
-      }
-      final audioMid = musicIdForRemote(sourceName, resolved);
-      final sliceMid = musicIdForCueSlice(sourceName, cueRemotePath, ct.number);
-      final track = LibraryTrack(
-        musicId: sliceMid,
-        sourceName: sourceName,
-        remotePath: virtualPath,
-        fileName: merged.title ?? ct.title ?? '${ct.number}',
-        title: merged.title,
-        artist: merged.artist,
-        albumArtist: merged.albumArtist,
-        album: merged.album,
-        durationMs: durationMs,
-        trackNumber: merged.trackNumber,
-        trackTotal: sheet.tracks.length,
-        year: merged.year,
-        genre: merged.genre,
-        bitrate: fileTag.bitrate,
-        sampleRate: fileTag.sampleRate,
-        coverState: coverState,
-        cueId: cueIdFor(sourceName, cueRemotePath),
-        cueRemotePath: cueRemotePath,
-        cueTrackIndex: ct.number,
-        audioMusicId: audioMid,
-        audioRemotePath: resolved,
-        clipStartMs: range.start.inMilliseconds,
-        clipEndMs: range.end?.inMilliseconds,
-        cacheGroupId: cacheGroupId,
-        lastDownloadedAt: now,
-        lastTagReadAt: now,
-        rev: _nextRev(),
-      );
-      created.add(track);
-    }
-
-    // Read/build failures above leave the existing album untouched. Commit all
-    // persisted rows together, then replace the in-memory projection at once.
-
-    // Core-only CUE write (Class B sqflite dual-write unloaded)
-    // Delete-then-upsert mirrors replace semantics
-    final cueDeleteResult = RustLibraryService.deleteCueAlbum(
-      sourceName,
-      cueRemotePath,
-    );
-    // Ignore "not found" errors — the album may not exist yet
-    if (cueDeleteResult != null &&
-        cueDeleteResult.startsWith('error:') &&
-        !cueDeleteResult.contains('not found')) {
-      throw StateError('Rust CUE album delete failed during replace: $cueDeleteResult');
-    }
-
-    // Build and upsert the album record
-    final albumJson = RustLibraryService.cueAlbumJson(
-      cueId: created.first.cueId!,
-      sourceName: sourceName,
-      cueRemotePath: cueRemotePath,
-      title: created.first.album,
-      performer: created.first.albumArtist ?? created.first.artist,
-      cacheGroupId: cacheGroupId,
-      createdAt: now,
-    );
-    if (albumJson != null) {
-      final albumResult = RustLibraryService.upsertCueAlbum(
-        jsonEncode(albumJson),
-      );
-      if (albumResult != null && albumResult.startsWith('error:')) {
-        throw StateError('Rust CUE album upsert failed: $albumResult');
-      }
-    }
-
-    // Upsert each slice
-    for (final track in created) {
-      final sliceJson = RustLibraryService.cueSliceJson(track);
-      if (sliceJson != null) {
-        final sliceResult = RustLibraryService.upsertCueSlice(
-          jsonEncode(sliceJson),
-        );
-        if (sliceResult != null && sliceResult.startsWith('error:')) {
-          throw StateError('Rust CUE slice upsert failed: $sliceResult');
-        }
-      }
-    }
-
-    final removePaths = <String>{cueRemotePath, ...audioRemotes};
-    _tracks.removeWhere(
-      (t) =>
-          t.sourceName == sourceName &&
-          (t.cueRemotePath == cueRemotePath ||
-              removePaths.contains(t.remotePath) ||
-              audioRemotes.contains(t.audioRemotePath)),
-    );
-    _tracks.addAll(created);
-
-    notifyListeners();
-    return created;
-  }
-
   /// Case-insensitive search over title / artist / album / file name.
   List<LibraryTrack> search(
     String query, {

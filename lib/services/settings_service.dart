@@ -102,7 +102,6 @@ class SettingsService extends ChangeNotifier {
   static const _kSyncInterval = 'sync_interval';
   static const _kVaultPassphrase = 'vault_passphrase';
   static const _kDeviceId = 'sync_device_id';
-  static const _kLastRev = 'sync_last_rev';
   static const _kSnackDuration = 'snack_duration';
   static const _kDownloadNotifications = 'download_notifications';
   static const _kDownloadKeepAlive = 'download_keep_alive';
@@ -192,19 +191,6 @@ class SettingsService extends ChangeNotifier {
   static const int minCustomRetentionHours = 1;
   static const int maxCustomRetentionHours = 24 * 365 * 10;
 
-  /// Sub-directories (and the one file) the unified sync writes under
-  /// [syncRemoteRoot]. They are derived, never configured separately.
-  static const String credentialsFileName = 'credentials.json';
-  static const String playlistsSubdir = 'playlists';
-
-  /// Cloud media-library root. Every library kind lives in its own child
-  /// directory (`library/music/`, `library/manga/`, `library/folders/`), so a
-  /// future kind only adds one more child.
-  static const String librarySubdir = 'library';
-  static const String musicLibrarySubdir = 'music';
-  static const String mangaLibrarySubdir = 'manga';
-  static const String foldersLibrarySubdir = 'folders';
-  static const String backupSubdir = 'backup';
 
   /// Video streaming buffer clamp [8 MB, 512 MB]; default 64 MB.
   static const int minVideoBufferMb = 8;
@@ -396,8 +382,6 @@ class SettingsService extends ChangeNotifier {
   /// Stable id of this install; only used to break exact rev ties.
   String _deviceId = '';
 
-  /// Highest rev handed out or observed on this install.
-  int _lastRev = 0;
 
   /// How long in-app messages stay on screen.
   SnackDuration _snackMode = SnackDuration.normal;
@@ -522,35 +506,51 @@ class SettingsService extends ChangeNotifier {
   /// 远端路径). Every other cloud path is derived from it.
   String get syncRemoteRoot => _syncRemoteRoot;
 
-  /// `<远端路径>credentials.json` — the WebDAV credential vault.
-  String get credentialsRemotePath =>
-      '$_syncRemoteRootBase$credentialsFileName';
+  /// Cloud paths under [syncRemoteRoot], resolved by Core.
+  ///
+  /// Core owns the directory names (it writes them); Dart only displays them
+  /// and hands the backup subtree back to the backup FFI. A second copy here
+  /// drifted once already — Dart still advertised `credentials.json` after the
+  /// engine moved to `accounts.wdmcv`.
+  Map<String, String> get _syncLayout {
+    final root = syncRemoteRoot;
+    final cached = _syncLayoutCache;
+    if (cached != null && _syncLayoutRoot == root) return cached;
+    final paths = RustCoreService.syncLayout(root);
+    if (paths == null) {
+      throw StateError('Core sync layout unavailable for $root');
+    }
+    _syncLayoutRoot = root;
+    _syncLayoutCache = paths;
+    return paths;
+  }
 
-  /// `<远端路径>playlists/` — the M3U8 playlist mirror.
-  String get playlistRemotePath => _syncSubdir(playlistsSubdir);
+  String? _syncLayoutRoot;
+  Map<String, String>? _syncLayoutCache;
+
+  /// `<远端路径>accounts.wdmcv` — the account/credential snapshot.
+  String get credentialsRemotePath => _syncLayout['credentials']!;
+
+  /// `<远端路径>playlists/` — playlist documents and deletion packs.
+  String get playlistRemotePath => '${_syncLayout['playlists']!}/';
 
   /// `<远端路径>library/` — parent of every cloud library kind.
-  String get libraryRootRemotePath => _syncSubdir(librarySubdir);
+  String get libraryRootRemotePath => '${_syncLayout['library']!}/';
 
   /// `<远端路径>library/music/` — music index.json plus the binary shards.
-  String get libraryRemotePath => '$libraryRootRemotePath$musicLibrarySubdir/';
+  String get libraryRemotePath => '${_syncLayout['library_music']!}/';
 
   /// `<远端路径>library/manga/` — manga index.json, shards and progress.json.
-  String get mangaLibraryRemotePath =>
-      '$libraryRootRemotePath$mangaLibrarySubdir/';
+  String get mangaLibraryRemotePath => '${_syncLayout['library_manga']!}/';
 
-  /// `<远端路径>library/folders/` — user-folder snapshot (folders.json).
-  String get foldersRemotePath =>
-      '$libraryRootRemotePath$foldersLibrarySubdir/';
+  /// `<远端路径>library/folders/` — the user-folder overlay (`folders.json`).
+  ///
+  /// The overlay is a Dart feature (Core has no folders entity), so the child
+  /// name lives here; the `library/` parent still comes from the Core layout.
+  String get foldersRemotePath => '${libraryRootRemotePath}folders/';
 
   /// `<远端路径>backup/` — 全部备份 archives.
-  String get backupRemotePath => _syncSubdir(backupSubdir);
-
-  /// Root guaranteed to end with `/`, so plain concatenation stays correct.
-  String get _syncRemoteRootBase =>
-      _syncRemoteRoot.endsWith('/') ? _syncRemoteRoot : '$_syncRemoteRoot/';
-
-  String _syncSubdir(String name) => '$_syncRemoteRootBase$name/';
+  String get backupRemotePath => '${_syncLayout['backup']!}/';
 
   bool get playlistSyncEnabled => _playlistSyncEnabled;
 
@@ -1189,7 +1189,6 @@ class SettingsService extends ChangeNotifier {
           'dev-${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
       RustCoreService.kvSet(_kDeviceId, _deviceId);
     }
-    _lastRev = _readKvInt(_kLastRev, 0);
     _downloadNotifications = _readKvBool(_kDownloadNotifications, true);
     _downloadKeepAlive = _readKvBool(_kDownloadKeepAlive, true);
     _downloadNomedia = _readKvBool(_kDownloadNomedia, false);
@@ -2130,14 +2129,6 @@ class SettingsService extends ChangeNotifier {
   /// Stable id of this install (tie-breaker for identical `rev` values).
   String get deviceId => _deviceId;
 
-  /// Highest `rev` this install has handed out or observed.
-  int get lastRev => _lastRev;
-
-  Future<void> setLastRev(int value) async {
-    if (value <= _lastRev) return;
-    _lastRev = value;
-    RustCoreService.kvSet(_kLastRev, value.toString());
-  }
 
   /// Whether a unified decryption key is configured.
   bool get hasVaultPassphrase => _vaultPassphrase.isNotEmpty;

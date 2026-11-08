@@ -229,6 +229,7 @@ class RustCoreService {
 
   // Sync FFI — account_id based (Core resolves the driver via DriverRegistry).
   static _OneStrToStrDart? _syncRun;
+  static _OneStrToStrDart? _syncLayout;
   static _TwoStrToOneStrDart? _syncAuditMusic;
   static _TwoStrToOneStrDart? _syncAuditManga;
   static _TwoStrOneIntToStrDart? _syncEstimateMusic;
@@ -324,6 +325,9 @@ class RustCoreService {
         .asFunction();
     _syncRun = lib
         .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_run')
+        .asFunction();
+    _syncLayout = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_sync_layout_json')
         .asFunction();
     _syncAuditMusic = lib
         .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>('wdmm_sync_audit_music')
@@ -534,6 +538,29 @@ class RustCoreService {
     final ptr = payload.toNativeUtf8();
     try {
       return _readAndFreeString(_syncRun!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Cloud paths under one sync root, resolved by Core.
+  ///
+  /// Returns the `paths` map (`credentials`, `playlists`, `library`,
+  /// `library_music`, `library_manga`, `backup`) so Dart never keeps a second
+  /// copy of the directory names; null when the native library is unavailable.
+  static Map<String, String>? syncLayout(String remoteRoot) {
+    if (!_ensureSymbols() || _syncLayout == null) return null;
+    final ptr = remoteRoot.toNativeUtf8();
+    try {
+      final raw = _readAndFreeString(_syncLayout!(ptr));
+      if (raw.startsWith('error:')) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final paths = decoded['paths'];
+      if (paths is! Map) return null;
+      return paths.map(
+        (key, value) => MapEntry(key.toString(), value.toString()),
+      );
     } finally {
       calloc.free(ptr);
     }
@@ -1349,6 +1376,8 @@ class RustCoreService {
   static _OneStrToStrDart? _cueSliceUpsert;
   static _OneStrToStrDart? _cueAlbumUpsert;
   static _OneStrToStrDart? _libraryImport;
+  static _OneStrToStrDart? _libraryIngest;
+  static _NoArgToStrDart?  _libraryNextRev;
 
   // ── Class B reads — getTrack by source+path + CUE album/slices reads ──────
   static _TwoStrToOneStrDart? _trackGetBySourcePath;
@@ -1456,6 +1485,12 @@ class RustCoreService {
     _libraryRebuildFts = lib
         .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_rebuild_fts')
         .asFunction();
+    _libraryIngest = lib
+        .lookup<ffi.NativeFunction<_OneStrToStrNative>>('wdmm_library_ingest')
+        .asFunction();
+    _libraryNextRev = lib
+        .lookup<ffi.NativeFunction<_NoArgToStrNative>>('wdmm_library_next_rev')
+        .asFunction();
   }
 
   // ── Library public API ────────────────────────────────────────────────────
@@ -1482,6 +1517,42 @@ class RustCoreService {
     }
   }
 
+  /// Ingest one file into the library through the Rust executor.
+  ///
+  /// [json] is {"account_id","remote_path","file_name"?,"source_name"?,"local_path"?}.
+  /// Returns {"ok":true,"rows":n,"title":…,"cover":bool}, rror:…, or null.
+  /// Network reads happen on a worker isolate.
+  static Future<String?> libraryIngestAsync(String json) =>
+      runOffMain(() => libraryIngest(json));
+
+  /// Same as [libraryIngestAsync] on the calling isolate. Prefer the async
+  /// wrapper unless the caller already runs off the UI thread.
+  static String? libraryIngest(String json) {
+    if (!_ensureSymbols()) return null;
+    if (_libraryIngest == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryIngest == null) return null;
+    }
+    final ptr = json.toNativeUtf8();
+    try {
+      return _readAndFreeString(_libraryIngest!(ptr));
+    } finally {
+      calloc.free(ptr);
+    }
+  }
+
+  /// Next library revision from the persisted Rust watermark {"ok":true,"rev":n}.
+  ///
+  /// Dart used to keep its own monotonic clock in KV; sync compares revisions
+  /// against the Rust watermark, so a local edit must advance the same scale.
+  static String? libraryNextRev() {
+    if (!_ensureSymbols()) return null;
+    if (_libraryNextRev == null) {
+      _loadLibrarySymbolsSafe();
+      if (_libraryNextRev == null) return null;
+    }
+    return _readAndFreeString(_libraryNextRev!());
+  }
   /// Upsert a track into the Rust library DB.
   ///
   /// [json] must be a JSON object matching the LibraryTrack schema.

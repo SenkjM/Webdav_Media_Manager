@@ -24,7 +24,6 @@ import '../services/queue_service.dart';
 import '../services/library_service.dart';
 import '../services/user_folder_service.dart';
 import '../services/manga_library_service.dart';
-import '../utils/rev_clock.dart';
 import '../services/music_audio_handler.dart';
 import '../services/notification_permission_service.dart';
 import '../services/platform_export_service.dart';
@@ -236,16 +235,8 @@ class AppState extends ChangeNotifier {
       // upload/download paths that go through Core directly.
       await backup.ensureCoversConfigured();
       // 0.2.4: legacy sentinel migration removed (99 §18.4).
-      // The rev clock is the single version source sync compares; it starts from
-      // the persisted high-water mark and reports every advance back.
-      // Music and manga rows share one clock, so their revs stay on one scale.
-      final revClock = RevClock(
-        nowMs: () => DateTime.now().millisecondsSinceEpoch,
-        initial: settings.lastRev,
-        onAdvance: settings.setLastRev,
-      );
-      library.attachRevClock(revClock);
-      mangaLibrary.attachRevClock(revClock);
+      // Revisions come from the Rust watermark (wdmm_library_next_rev), which
+      // is the single clock sync compares; music and manga share its scale.
       // One-shot sqflite→Core import (Android only). Must run before
       // library.init() → refresh() consumes Core as truth, otherwise an
       // unimported sqflite DB would read back as an empty library. Idempotent

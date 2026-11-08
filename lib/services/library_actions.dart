@@ -92,13 +92,19 @@ TrackUiState queueTrackUiState({
 Future<bool> refreshCachedTrackTags({
   required CacheService cache,
   required LibraryService library,
+  required AccountsService accounts,
   required LibraryTrack track,
 }) async {
+  final accountId = accounts.idForSource(track.sourceName);
+  if (accountId == null) return false;
   if (!track.isCueVirtual) {
     final localPath = await cache.localPathForTrack(track);
     if (localPath == null) return false;
-    await library.refreshTrackTagsFromFile(
-      track: track,
+    await library.ingestCachedFile(
+      accountId: accountId,
+      sourceName: track.sourceName,
+      remotePath: track.remotePath,
+      fileName: track.fileName,
       localPath: localPath,
     );
     return true;
@@ -110,36 +116,27 @@ Future<bool> refreshCachedTrackTags({
     sourceName: track.sourceName,
   );
   if (cueLocal == null) return false;
-  final sheet = CueSheet.parseOrNull(
-    decodeCueText(await File(cueLocal).readAsBytes()),
-  );
-  if (sheet == null) return false;
-  final audioPaths = sheet.audioRemotePaths(cuePath);
-  for (final path in audioPaths) {
-    if (!await cache.isCached(path, sourceName: track.sourceName)) {
-      return false;
-    }
-  }
-  final groupId =
-      track.cacheGroupId ?? cueCacheGroupId(track.sourceName, cuePath);
-  await library.ingestCueAlbum(
+  // The Rust executor re-reads the sheet and rewrites the whole virtual album;
+  // Dart only rebinds the cache group of the audio files it already has.
+  await library.ingestRemoteFile(
+    accountId: accountId,
     sourceName: track.sourceName,
-    cueRemotePath: cuePath,
-    sheet: sheet,
-    cacheGroupId: groupId,
-    localPathFor: (remote) =>
-        cache.fileForRemote(remote, sourceName: track.sourceName).path,
+    remotePath: cuePath,
+    fileName: cuePath.split('/').last,
   );
-  for (final path in audioPaths) {
-    final file = cache.fileForRemote(path, sourceName: track.sourceName);
-    if (file.existsSync()) {
-      await cache.registerCompleted(
-        track.sourceName,
-        path,
-        file.path,
-        cacheGroupId: groupId,
-      );
-    }
+  final groupId = track.cacheGroupId;
+  for (final slice in library.tracksForSource(track.sourceName)) {
+    if (slice.cueRemotePath != cuePath) continue;
+    final audio = slice.audioRemotePath;
+    if (audio == null) continue;
+    final file = cache.fileForRemote(audio, sourceName: track.sourceName);
+    if (!file.existsSync()) continue;
+    await cache.registerCompleted(
+      track.sourceName,
+      audio,
+      file.path,
+      cacheGroupId: groupId,
+    );
   }
   return true;
 }
@@ -286,6 +283,7 @@ Future<bool> refreshOneLibraryTrackTags(
 ) async => refreshCachedTrackTags(
   cache: context.read<CacheService>(),
   library: context.read<LibraryService>(),
+  accounts: context.read<AccountsService>(),
   track: track,
 );
 
@@ -325,6 +323,7 @@ refreshLibraryTrackTags(
         if (await refreshCachedTrackTags(
           cache: cache,
           library: library,
+          accounts: context.read<AccountsService>(),
           track: track,
         )) {
           updated++;
