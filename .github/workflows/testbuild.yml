@@ -122,7 +122,9 @@ jobs:
             echo "::warning::FFmpeg libs for arm64-v8a not in release — run build-ffmpeg-android.yml first."
           }
           # Expose the arm64 lib dir to cargo-ndk for the linker search path.
-          echo "WDMM_FFMPEG_LIB_DIR=${JNILIBS}/arm64-v8a" >> "$GITHUB_ENV"
+          # Absolute path: the build step below runs from `rust/wdmm-core`, and a
+          # relative link-search path would resolve against the wrong directory.
+          echo "WDMM_FFMPEG_LIB_DIR=${GITHUB_WORKSPACE}/${JNILIBS}/arm64-v8a" >> "$GITHUB_ENV"
         env:
           GH_TOKEN: ${{ github.token }}
 

@@ -64,6 +64,10 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ needs.check.outputs.sha }}
+          # The Rust shared library is built from the `rust/wdmm-core` submodule;
+          # without this the checkout leaves the directory empty and the build
+          # fails inside `cargo ndk`.
+          submodules: recursive
 
       - name: Setup Java 17
         uses: actions/setup-java@v6
@@ -160,8 +164,10 @@ jobs:
             cp "${TMPLIBS}/${abi}/lib"*.so "${JNILIBS}/${abi}/"
             echo "FFmpeg libs for ${abi}: $(ls "${JNILIBS}/${abi}"/*.so | wc -l) .so files"
           done
-          echo "WDMM_FFMPEG_LIB_DIR_ARM64=${JNILIBS}/arm64-v8a" >> "$GITHUB_ENV"
-          echo "WDMM_FFMPEG_LIB_DIR_X86_64=${JNILIBS}/x86_64" >> "$GITHUB_ENV"
+          # Absolute paths: the build step below runs from `rust/wdmm-core`, and a
+          # relative link-search path would resolve against the wrong directory.
+          echo "WDMM_FFMPEG_LIB_DIR_ARM64=${GITHUB_WORKSPACE}/${JNILIBS}/arm64-v8a" >> "$GITHUB_ENV"
+          echo "WDMM_FFMPEG_LIB_DIR_X86_64=${GITHUB_WORKSPACE}/${JNILIBS}/x86_64" >> "$GITHUB_ENV"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -240,7 +246,11 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          # Match the APK split: no armeabi-v7a (FFmpeg has no v7a libs and
+          # libwdmm_ffi.so has no armv7 target), otherwise the bundle would ship
+          # a v7a APK that crashes at startup.
           flutter build appbundle --release --flavor prod \
+            --target-platform android-arm64,android-x64 \
             --build-name="${{ needs.check.outputs.version_name }}" \
             --build-number="${{ needs.check.outputs.version_code }}"
         continue-on-error: true
