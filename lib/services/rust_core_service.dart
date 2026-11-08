@@ -508,16 +508,19 @@ class RustCoreService {
   /// Run the aggregate Rust sync through the single Core entry point.
   ///
   /// [accountId]: Cloud account ID; Core resolves the driver via DriverRegistry.
-  /// [mode]: `incremental` (cursor driven) or `full` (reconcile, then rebuild
-  /// the base shards).
-  /// [withCovers]: embed cover blobs in rebuilt base shards (full mode only).
+  /// [mode]: `incremental` (cursor driven), `full` (reconcile, then rebuild
+  /// the base shards), or `compact_playlists` (sync playlists, then drop the
+  /// remote deletion packs and the local tombstones).
+  /// [scope]: `all` (credentials + library + manga + playlists) or `playlists`.
+  /// [withCovers]: embed cover blobs in rebuilt base shards and playlist docs.
   ///
-  /// Returns `{"ok":true,"mode":"…","conflicts":N,"entities":{…}}` or
-  /// `'error:...'`; null when the native library is unavailable.
+  /// Returns `{"ok":true,"mode":"…","scope":"…","conflicts":N,"entities":{…}}`
+  /// or `'error:...'`; null when the native library is unavailable.
   static String? syncRun({
     required String accountId,
     String remoteDir = '/wdmm_sync',
     String mode = 'incremental',
+    String scope = 'all',
     bool withCovers = false,
   }) {
     if (!_ensureSymbols() || _syncRun == null) return null;
@@ -525,6 +528,7 @@ class RustCoreService {
       'account_id': accountId,
       'remote_dir': remoteDir,
       'mode': mode,
+      'scope': scope,
       'with_covers': withCovers,
     });
     final ptr = payload.toNativeUtf8();
@@ -2322,6 +2326,7 @@ class RustCoreService {
   static _OneStrToStrDart? _playlistDelete;
   static _OneStrToStrDart? _playlistListEntries;
   static _TwoStrToOneStrDart? _playlistSetEntries;
+  static _OneStrToStrDart? _playlistPublish;
 
   static bool _bSymbolsLoaded = false;
 
@@ -2411,6 +2416,10 @@ class RustCoreService {
       _playlistSetEntries = lib
           .lookup<ffi.NativeFunction<_TwoStrToOneStrNative>>(
               'wdmm_playlist_set_entries')
+          .asFunction();
+      _playlistPublish = lib
+          .lookup<ffi.NativeFunction<_OneStrToStrNative>>(
+              'wdmm_playlist_publish')
           .asFunction();
       _bSymbolsLoaded = true;
     } catch (e) {
@@ -2697,6 +2706,29 @@ class RustCoreService {
     } finally {
       calloc.free(i);
       calloc.free(a);
+    }
+  }
+
+  /// Publish one playlist right after a local edit, without a full sync round
+  /// trip. Returns `{"ok":true,"action":"pushed"|"pulled"|"no_change"}`
+  /// (or `"none"` when the playlist is unknown), `'error:...'`, or null when
+  /// the native library is unavailable.
+  static String? playlistPublish({
+    required String accountId,
+    required String playlistId,
+    String remoteDir = '/wdmm_sync',
+  }) {
+    if (!_ensureBSymbols() || _playlistPublish == null) return null;
+    final payload = jsonEncode({
+      'account_id': accountId,
+      'playlist_id': playlistId,
+      'remote_dir': remoteDir,
+    });
+    final ptr = payload.toNativeUtf8();
+    try {
+      return _readAndFreeString(_playlistPublish!(ptr));
+    } finally {
+      calloc.free(ptr);
     }
   }
 

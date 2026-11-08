@@ -355,15 +355,7 @@ class SyncService extends ChangeNotifier {
         }
       }
       _progress(L10nHost.current.progressScanningPlaylists, 0.7);
-      _playlists.configureSync(
-        remotePath: _settings.playlistRemotePath,
-        enabled: true,
-        accountId: dest,
-      );
-      await _playlists.pullAndMergeFromWebDav();
-      outcome.step(
-        L10nHost.current.stepPlaylistsMerged(_playlists.playlists.length),
-      );
+      await _runPlaylistSync(outcome, compact: false);
     });
     lastAutoSyncAt = DateTime.now();
     lastAutoSyncSummary = outcome.message;
@@ -421,18 +413,7 @@ class SyncService extends ChangeNotifier {
   Future<SyncOutcome> syncPlaylistsNow() async {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
-      final dest = await syncDestination();
-      if (dest == null) throw StateError('err.noWebdavAccount');
-      _playlists.configureSync(
-        remotePath: _settings.playlistRemotePath,
-        enabled: true,
-        accountId: dest,
-      );
-      _progress(L10nHost.current.progressMergingPlaylists, 0.5);
-      await _playlists.pullAndMergeFromWebDav();
-      outcome.step(
-        L10nHost.current.stepPlaylistsSynced(_playlists.playlists.length),
-      );
+      await _runPlaylistSync(outcome, compact: false);
     });
     return outcome;
   }
@@ -441,18 +422,47 @@ class SyncService extends ChangeNotifier {
   Future<SyncOutcome> compactPlaylistDeletions() async {
     final outcome = SyncOutcome(direction: 'sync');
     await _run(outcome, () async {
-      final dest = await syncDestination();
-      if (dest == null) throw StateError('err.noWebdavAccount');
-      _playlists.configureSync(
-        remotePath: _settings.playlistRemotePath,
-        enabled: true,
-        accountId: dest,
-      );
-      _progress(L10nHost.current.progressCompactingPlaylistDeletions, 0.5);
-      await _playlists.compactDeletionQueue();
-      outcome.step(L10nHost.current.stepPlaylistDeletionsCompacted);
+      await _runPlaylistSync(outcome, compact: true);
     });
     return outcome;
+  }
+
+  /// Playlist-scoped Core sync: reconciles the playlist documents, their
+  /// deletion packs and both tombstone tables. Core owns the whole merge; this
+  /// only resolves the destination, runs it off the UI isolate, and refreshes
+  /// the Dart mirror.
+  Future<void> _runPlaylistSync(
+    SyncOutcome outcome, {
+    required bool compact,
+  }) async {
+    final dest = await syncDestination();
+    if (dest == null) throw StateError('err.noWebdavAccount');
+    _progress(
+      compact
+          ? L10nHost.current.progressCompactingPlaylistDeletions
+          : L10nHost.current.progressMergingPlaylists,
+      0.5,
+    );
+    final result = await RustCoreService.runOffMain<String?>(() {
+      return RustCoreService.syncRun(
+        accountId: dest,
+        remoteDir: _settings.syncRemoteRoot,
+        mode: compact ? 'compact_playlists' : 'incremental',
+        scope: 'playlists',
+      );
+    });
+    if (result == null) {
+      throw StateError('Core FFI unavailable — cannot run Core sync');
+    }
+    if (result.startsWith('error:')) {
+      throw StateError('Core playlist sync failed: $result');
+    }
+    await _playlists.refresh();
+    outcome.step(
+      compact
+          ? L10nHost.current.stepPlaylistDeletionsCompacted
+          : L10nHost.current.stepPlaylistsSynced(_playlists.playlists.length),
+    );
   }
 
   // --- Music library (incremental / rebuild) ----------------------------

@@ -51,9 +51,7 @@ class AppState extends ChangeNotifier {
     accounts = AccountsService();
     cloudDrive = CloudDriveService(accounts: accounts);
     webDav = WebDavService(cloudDrive: cloudDrive);
-    // Cover tier follows the music-library setting, so an embedded playlist
-    // cover is the same art the library would show (docs/10 §4.2 cover policy).
-    playlists = PlaylistService(webDav: webDav, covers: library.covers);
+    playlists = PlaylistService();
     // Built before BackupService: the archive embeds `encodeVaultBytes()`'s
     // output, so the vault service has to exist first (docs/10 §4.3).
     credentials = CredentialVaultService(
@@ -226,7 +224,6 @@ class AppState extends ChangeNotifier {
       // column compat). The 0.2.2 sentinel only rewrites rows and must not
       // run against tables the open has not created yet.
       _initPhase = 'databases';
-      await playlists.openDatabase();
       _initPhase = 'cache';
       await cache.init();
       _initPhase = 'dmr-prefs';
@@ -365,7 +362,7 @@ class AppState extends ChangeNotifier {
     _appliedSyncRoot = settings.syncRemoteRoot;
     _appliedSyncAccountId = settings.syncAccountId;
     playlists.configureSync(
-      remotePath: settings.playlistRemotePath,
+      syncRoot: settings.syncRemoteRoot,
       enabled: settings.playlistSyncEnabled,
       accountId: settings.syncAccountId ?? accounts.activeAccountId,
     );
