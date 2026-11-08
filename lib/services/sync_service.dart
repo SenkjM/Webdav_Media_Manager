@@ -443,11 +443,16 @@ class SyncService extends ChangeNotifier {
           : L10nHost.current.progressMergingPlaylists,
       0.5,
     );
+    // The isolate closure must capture plain locals only: touching `this`
+    // drags the whole service graph (timers, controllers) into the message and
+    // `Isolate.run` rejects unsendable objects.
+    final remoteDir = _settings.syncRemoteRoot;
+    final mode = compact ? 'compact_playlists' : 'incremental';
     final result = await RustCoreService.runOffMain<String?>(() {
       return RustCoreService.syncRun(
         accountId: dest,
-        remoteDir: _settings.syncRemoteRoot,
-        mode: compact ? 'compact_playlists' : 'incremental',
+        remoteDir: remoteDir,
+        mode: mode,
         scope: 'playlists',
       );
     });
