@@ -87,6 +87,11 @@ Flutter SDK root (defaults to `D:\flutter`); `pub get` redirects `PUB_CACHE` int
 `.pub-cache/`. This repo's tracked lockfile is pinned to `https://pub.dev` — do not set
 `PUB_HOSTED_URL`.
 
+CI pins Flutter **3.47.5** (`flutter-version` in all four workflows; checked 2026-11-27).
+Newer stable releases deprecate `package:flutter/material.dart` in favour of
+`package:material_ui/material_ui.dart`, which trips `dart analyze --fatal-infos lib/` in
+`verify.yml`. Bump the pin in every workflow together only after the import migration is done.
+
 ## Dependency freshness (mandatory)
 
 Whenever a new component, library, toolchain, prebuilt asset, or service dependency is introduced —

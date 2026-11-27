@@ -36,7 +36,10 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          # Pinned: 3.47.5 is what v0.4.0 shipped with; newest stable already
+          # deprecates package:flutter/material.dart (see material_ui). Bump all
+          # four workflows together once the imports are migrated.
+          flutter-version: '3.47.5'
           cache: true
 
       - name: flutter pub get
