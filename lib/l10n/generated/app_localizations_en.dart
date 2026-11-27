@@ -2879,6 +2879,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get errBaiduMissingRefreshToken =>
+      'Baidu Netdisk is missing a refresh_token: fill in refresh_token in the account form (see the OpenList docs for the baidu_netdisk driver).';
+
+  @override
   String errDriver123FileNotFound(Object a) {
     return '123 Cloud file not found: $a';
   }

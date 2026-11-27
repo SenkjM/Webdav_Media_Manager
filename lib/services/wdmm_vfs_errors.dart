@@ -62,6 +62,8 @@ class WdmmVfsErrors {
         return l10n.errAliyunEntryOrLinkFailed(detail);
       case 'err.baiduDirectLinkFailed':
         return l10n.errBaiduDirectLinkFailed(detail);
+      case 'err.baiduMissingRefreshToken':
+        return l10n.errBaiduMissingRefreshToken;
       case 'err.baiduRequestFailed':
         return l10n.errBaiduRequestFailed(detail);
       case 'err.baiduRiskControl':

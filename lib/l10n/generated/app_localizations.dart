@@ -4902,6 +4902,12 @@ abstract class AppLocalizations {
   /// **'{a} 百度网盘风控（触发安全策略，通常数分钟至数小时后自动解除）。refresh_token 无效或非官方渠道获取也可能触发；请确认通过 https://api.oplist.org/ 获取。'**
   String errBaiduRiskControl(Object a);
 
+  /// No description provided for @errBaiduMissingRefreshToken.
+  ///
+  /// In zh, this message translates to:
+  /// **'百度网盘缺少 refresh_token：请在账号表单填写 refresh_token（获取方法见 OpenList 官方文档 baidu_netdisk 驱动页）。'**
+  String get errBaiduMissingRefreshToken;
+
   /// No description provided for @errDriver123FileNotFound.
   ///
   /// In zh, this message translates to:

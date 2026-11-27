@@ -858,6 +858,7 @@
   "errBaiduDirectLinkFailed": "获取下载直链失败：{a}",
   "errBaiduRequestFailed": "百度网盘请求失败：{a}",
   "errBaiduRiskControl": "{a} 百度网盘风控（触发安全策略，通常数分钟至数小时后自动解除）。refresh_token 无效或非官方渠道获取也可能触发；请确认通过 https://api.oplist.org/ 获取。",
+  "errBaiduMissingRefreshToken": "百度网盘缺少 refresh_token：请在账号表单填写 refresh_token（获取方法见 OpenList 官方文档 baidu_netdisk 驱动页）。",
   "errDriver123FileNotFound": "123 云盘文件不存在：{a}",
   "errDriver123NetworkFailed": "[123Open] 网络请求失败：{a}",
   "errDriver123RequestFailed": "123 云盘请求失败：{a}",

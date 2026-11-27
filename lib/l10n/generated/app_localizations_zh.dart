@@ -2775,6 +2775,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get errBaiduMissingRefreshToken =>
+      '百度网盘缺少 refresh_token：请在账号表单填写 refresh_token（获取方法见 OpenList 官方文档 baidu_netdisk 驱动页）。';
+
+  @override
   String errDriver123FileNotFound(Object a) {
     return '123 云盘文件不存在：$a';
   }
@@ -8081,6 +8085,10 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
   String errBaiduRiskControl(Object a) {
     return '$a 百度網盤風控（觸發安全策略，通常數分鐘至數小時後自動解除）。refresh_token 無效或非官方管道取得也可能觸發；請確認透過 https://api.oplist.org/ 取得。';
   }
+
+  @override
+  String get errBaiduMissingRefreshToken =>
+      '百度網盤缺少 refresh_token：請在帳號表單填寫 refresh_token（取得方法見 OpenList 官方文件 baidu_netdisk 驅動頁）。';
 
   @override
   String errDriver123FileNotFound(Object a) {

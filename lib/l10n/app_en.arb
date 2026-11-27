@@ -858,6 +858,7 @@
   "errBaiduDirectLinkFailed": "Failed to get the direct download link: {a}",
   "errBaiduRequestFailed": "Baidu Netdisk request failed: {a}",
   "errBaiduRiskControl": "{a} Baidu Netdisk risk control (a security policy was triggered; it usually clears automatically within minutes to hours). An invalid or unofficial refresh_token can also trigger this; make sure it was obtained via https://api.oplist.org/.",
+  "errBaiduMissingRefreshToken": "Baidu Netdisk is missing a refresh_token: fill in refresh_token in the account form (see the OpenList docs for the baidu_netdisk driver).",
   "errDriver123FileNotFound": "123 Cloud file not found: {a}",
   "errDriver123NetworkFailed": "[123Open] network request failed: {a}",
   "errDriver123RequestFailed": "123 Cloud request failed: {a}",
