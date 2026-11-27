@@ -2813,6 +2813,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Netease raw RSA key must be exactly 16 bytes';
 
   @override
+  String get errContentTooLarge =>
+      'The file is too large to load into memory; use streaming playback or download it instead.';
+
+  @override
   String errStreamSizeUnknown(Object a) {
     return 'Cannot determine the size of “$a”; streaming is not supported yet';
   }

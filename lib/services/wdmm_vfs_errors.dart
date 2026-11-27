@@ -216,6 +216,8 @@ class WdmmVfsErrors {
         return l10n.errRefreshOnlineNon200(detail);
       case 'err.rootOp':
         return l10n.errRootOp;
+      case 'err.contentTooLarge':
+        return l10n.errContentTooLarge;
       case 'err.streamSizeUnknown':
         return l10n.errStreamSizeUnknown(detail);
       case 'err.teraboxSignKeyEmpty':

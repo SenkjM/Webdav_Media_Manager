@@ -834,6 +834,7 @@
   "errDriverNotReadyInfo": "Cloud driver is not available yet: {a}",
   "errDownloadSizeUnknown": "Cannot determine the size of “{a}”; download cancelled",
   "errNeteaseRsaKeyLength": "Netease raw RSA key must be exactly 16 bytes",
+  "errContentTooLarge": "The file is too large to load into memory; use streaming playback or download it instead.",
   "errStreamSizeUnknown": "Cannot determine the size of “{a}”; streaming is not supported yet",
   "errWebdavNotConfigured": "WebDAV is not configured",
   "errWebdavSourceNotConnected": "WebDAV is not connected; cannot fetch source content",

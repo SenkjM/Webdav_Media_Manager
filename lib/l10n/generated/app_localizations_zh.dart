@@ -2712,6 +2712,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errNeteaseRsaKeyLength => '网易 raw RSA 的密钥必须是 16 字节';
 
   @override
+  String get errContentTooLarge => '文件过大，无法一次性读入内存；请改用流式播放或下载。';
+
+  @override
   String errStreamSizeUnknown(Object a) {
     return '无法确定「$a」的大小，暂不支持流式播放';
   }
@@ -7985,6 +7988,9 @@ class AppLocalizationsZhTw extends AppLocalizationsZh {
 
   @override
   String get errNeteaseRsaKeyLength => '網易 raw RSA 的金鑰必須是 16 位元組';
+
+  @override
+  String get errContentTooLarge => '檔案過大，無法一次性讀入記憶體；請改用串流播放或下載。';
 
   @override
   String errStreamSizeUnknown(Object a) {

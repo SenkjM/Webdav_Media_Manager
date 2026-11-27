@@ -834,6 +834,7 @@
   "errDriverNotReadyInfo": "網盤驅動尚未接入：{a}",
   "errDownloadSizeUnknown": "無法確定「{a}」的大小，下載已取消",
   "errNeteaseRsaKeyLength": "網易 raw RSA 的金鑰必須是 16 位元組",
+  "errContentTooLarge": "檔案過大，無法一次性讀入記憶體；請改用串流播放或下載。",
   "errStreamSizeUnknown": "無法確定「{a}」的大小，暫不支援串流播放",
   "errWebdavNotConfigured": "未設定 WebDAV",
   "errWebdavSourceNotConnected": "WebDAV 未連線，無法取得來源內容",

@@ -834,6 +834,7 @@
   "errDriverNotReadyInfo": "云盘驱动尚未接入：{a}",
   "errDownloadSizeUnknown": "无法确定「{a}」的大小，下载已取消",
   "errNeteaseRsaKeyLength": "网易 raw RSA 的密钥必须是 16 字节",
+  "errContentTooLarge": "文件过大，无法一次性读入内存；请改用流式播放或下载。",
   "errStreamSizeUnknown": "无法确定「{a}」的大小，暂不支持流式播放",
   "errWebdavNotConfigured": "未配置 WebDAV",
   "errWebdavSourceNotConnected": "WebDAV 未连接，无法取源内容",

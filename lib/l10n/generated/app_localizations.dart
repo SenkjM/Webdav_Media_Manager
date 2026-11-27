@@ -4800,6 +4800,12 @@ abstract class AppLocalizations {
   /// **'网易 raw RSA 的密钥必须是 16 字节'**
   String get errNeteaseRsaKeyLength;
 
+  /// No description provided for @errContentTooLarge.
+  ///
+  /// In zh, this message translates to:
+  /// **'文件过大，无法一次性读入内存；请改用流式播放或下载。'**
+  String get errContentTooLarge;
+
   /// No description provided for @errStreamSizeUnknown.
   ///
   /// In zh, this message translates to:
